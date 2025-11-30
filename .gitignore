@@ -1,0 +1,23 @@
+# Environment Variables
+.env
+
+# Data & Databases
+data/*.db
+data/*.csv
+!data/.keep
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+
+# Mac OS
+.DS_Store
+
+# IDEs
+.vscode/
+.idea/
+
+# Docker
+.docker/

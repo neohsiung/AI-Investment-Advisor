@@ -1,0 +1,26 @@
+services:
+  dashboard:
+    build: .
+    container_name: investment_advisor_dashboard
+    command: streamlit run src/dashboard.py --server.port 8501 --server.address 0.0.0.0
+    volumes:
+      - ./data:/app/data
+      - ./src:/app/src
+      - ./prompts:/app/prompts
+    ports:
+      - "8501:8501"
+    env_file:
+      - .env
+    restart: unless-stopped
+
+  scheduler:
+    build: .
+    container_name: investment_advisor_scheduler
+    command: python src/scheduler.py
+    volumes:
+      - ./data:/app/data
+      - ./src:/app/src
+      - ./prompts:/app/prompts
+    env_file:
+      - .env
+    restart: unless-stopped
