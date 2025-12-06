@@ -14,3 +14,4 @@ SQLAlchemy
 psycopg2-binary
 multitasking<0.0.12
 bandit
+pip-licenses

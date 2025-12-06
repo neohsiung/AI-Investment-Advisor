@@ -62,18 +62,18 @@ This diagram illustrates the recommended deployment setup on Google Cloud Platfo
 
 ```mermaid
 graph TD
-    User[User / Client] -- HTTPS --> LB[Cloud Load Balancer]
-    LB --> CR[Cloud Run Service<br>(App Container)]
+    User["User / Client"] -- HTTPS --> LB["Cloud Load Balancer"]
+    LB --> CR["Cloud Run Service<br>(App Container)"]
     
     subgraph GCP Region (asia-east1)
-        CR -->|SQL Connection| SQL[(Cloud SQL<br>PostgreSQL)]
-        CR -->|Env Vars| SM[Secret Manager]
-        CR -->|Logs| CL[Cloud Logging]
+        CR -->|SQL Connection| SQL[("Cloud SQL<br>PostgreSQL")]
+        CR -->|Env Vars| SM["Secret Manager"]
+        CR -->|Logs| CL["Cloud Logging"]
     end
     
     subgraph External
-        CR -->|API| LLM[LLM Provider<br>(OpenAI/Gemini/OpenRouter)]
-        CR -->|API| Data[Market Data Source<br>(Yahoo Finance/FRED)]
+        CR -->|API| LLM["LLM Provider<br>(OpenAI/Gemini/OpenRouter)"]
+        CR -->|API| Data["Market Data Source<br>(Yahoo Finance/FRED)"]
     end
 ```
 
