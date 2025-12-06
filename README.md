@@ -65,9 +65,11 @@ graph TD
     User["User / Client"] -- HTTPS --> LB["Cloud Load Balancer"]
     LB --> CR["Cloud Run Service<br>(App Container)"]
     
-    subgraph GCP Region (asia-east1)
-        CR -->|SQL Connection| SQL[("Cloud SQL<br>PostgreSQL")]
-        CR -->|Env Vars| SM["Secret Manager"]
+    subgraph "GCP Region (asia-east1)"
+        CloudRun[Cloud Run Service]
+        CloudJobs[Cloud Run Jobs]
+        CloudSQL[(Cloud SQL PostgreSQL)]
+    end    CR -->|Env Vars| SM["Secret Manager"]
         CR -->|Logs| CL["Cloud Logging"]
     end
     
