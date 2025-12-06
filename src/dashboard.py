@@ -39,9 +39,14 @@ def main():
 
     # 獲取價格 (含 AI Fallback)
     current_prices = {}
+    @st.cache_data(ttl=300)
+    def fetch_market_prices(tickers):
+        service = MarketDataService()
+        return service.get_current_prices(tickers)
+
     if active_tickers:
-        # 先嘗試批量獲取
-        current_prices = market_service.get_current_prices(active_tickers)
+        # 先嘗試批量獲取 (Cached)
+        current_prices = fetch_market_prices(active_tickers)
         
         # 檢查是否有遺漏，若有則嘗試 AI Fallback
         for ticker in active_tickers:

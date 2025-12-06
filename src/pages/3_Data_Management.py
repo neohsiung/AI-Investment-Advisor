@@ -56,7 +56,7 @@ def render_transactions_tab(st, service: TransactionService):
             with st.form("delete_trans_form"):
                 
                 # Show last 10 for quick delete selection or text input
-                options = [(row['id'], f"{row['date']} - {row['ticker']} {row['action']} {row['quantity']} @ {row['price']}") 
+                options = [(row['id'], f"{row['trade_date']} - {row['ticker']} {row['action']} {row['quantity']} @ {row['price']}") 
                            for _, row in df.head(20).iterrows()]
                 
                 selected_id = st.selectbox("選擇要刪除的交易 (Select to Delete)", options=options, format_func=lambda x: x[1])

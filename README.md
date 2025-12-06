@@ -56,6 +56,27 @@ graph TD
     end
 ```
 
+### ☁️ Cloud Infrastructure Architecture
+
+This diagram illustrates the recommended deployment setup on Google Cloud Platform (GCP).
+
+```mermaid
+graph TD
+    User[User / Client] -- HTTPS --> LB[Cloud Load Balancer]
+    LB --> CR[Cloud Run Service<br>(App Container)]
+    
+    subgraph GCP Region (asia-east1)
+        CR -->|SQL Connection| SQL[(Cloud SQL<br>PostgreSQL)]
+        CR -->|Env Vars| SM[Secret Manager]
+        CR -->|Logs| CL[Cloud Logging]
+    end
+    
+    subgraph External
+        CR -->|API| LLM[LLM Provider<br>(OpenAI/Gemini/OpenRouter)]
+        CR -->|API| Data[Market Data Source<br>(Yahoo Finance/FRED)]
+    end
+```
+
 ## 🚀 Quick Start
 
 ### Prerequisites
@@ -155,6 +176,7 @@ The system is designed for "always-on" operation on a server or local machine (e
 ├── src/
 │   ├── agents/         # AI Agent implementations
 │   ├── pages/          # Streamlit dashboard pages
+│   ├── services/       # Business logic services
 │   ├── utils/          # Utilities (Logger, Cache, Time)
 │   ├── dashboard.py    # Main dashboard entry point
 │   ├── scheduler.py    # Background task scheduler

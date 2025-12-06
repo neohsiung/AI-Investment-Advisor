@@ -115,8 +115,7 @@ def render_scheduler_tab(st, db_path):
             
         if st.form_submit_button("更新排程 (Update Schedule)"):
             try:
-                engineer.update_schedule_config("schedule_daily", daily_time.strftime("%H:%M"))
-                engineer.update_schedule_config("schedule_weekly", weekly_time.strftime("%H:%M"))
+                engineer.set_schedule_config(daily_time.strftime("%H:%M"), weekly_time.strftime("%H:%M"))
                 st.success("排程設定已更新！請重啟 Scheduler 以生效。(Schedule updated! Please restart scheduler to apply.)")
             except Exception as e:
                 st.error(f"更新失敗: {e}")

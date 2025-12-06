@@ -18,6 +18,7 @@ fi
 source venv/bin/activate
 
 echo "Installing requirements..."
+pip install --upgrade pip
 pip install -r requirements.txt
 
 echo "Running Data Migration (if configured)..."
@@ -32,4 +33,5 @@ fi
 echo "Starting Dashboard..."
 # Run Streamlit in background or foreground? Usually foreground for local dev.
 echo "Access Dashboard at http://localhost:8501"
+export PYTHONPATH=$PYTHONPATH:.
 streamlit run src/dashboard.py
