@@ -2,6 +2,7 @@
 import streamlit as st
 import pandas as pd
 import requests
+import sys
 import subprocess
 import os
 import time
@@ -173,7 +174,7 @@ def render_report_dry_run_tab(st):
                 
                 # 非同步啟動
                 process = subprocess.Popen(
-                    ["python3", "src/workflow.py", "--mode", "weekly", "--dry-run"],
+                    [sys.executable, "src/workflow.py", "--mode", "weekly", "--dry-run"],
                     stdout=open(log_file, "a"),
                     stderr=subprocess.STDOUT,
                     preexec_fn=os.setsid # 確保可以被追蹤

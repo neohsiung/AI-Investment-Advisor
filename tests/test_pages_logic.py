@@ -233,7 +233,7 @@ class TestDataManagementRender:
         mock_df.empty = False
         # Mocking for options iteration
         mock_df.head.return_value.iterrows.return_value = [
-            (0, {'id': 1, 'date': '2023-01-01', 'ticker': 'AAPL', 'action': 'BUY', 'quantity': 10, 'price': 150})
+            (0, {'id': 1, 'trade_date': '2023-01-01', 'ticker': 'AAPL', 'action': 'BUY', 'quantity': 10, 'price': 150})
         ]
         mock_service.get_transactions.return_value = mock_df
         

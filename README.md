@@ -197,3 +197,11 @@ The system is designed for "always-on" operation on a server or local machine (e
 ## 📄 License
 
 This project is licensed under the MIT License - see the LICENSE file for details.
+
+### License Compliance & Third-Party Code
+This project uses open-source libraries. A partial list of licenses includes:
+*   **MIT / Apache 2.0 / BSD**: Most dependencies (Pandas, Streamlit, etc.).
+*   **LGPL**: Some utility libraries (e.g., `chardet` via `requests`).
+
+**Compliance Note**:
+This project is intended for usage as a standalone application. The source code is provided under MIT, but users should be aware of the licenses of the dependencies if they plan to redistribute or bundle this software. We run automated license checks (`pip-licenses`) in our CI/CD pipeline to ensure no viral GPL code is inadvertently introduced.

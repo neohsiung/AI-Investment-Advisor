@@ -103,8 +103,15 @@ def render_data_browser(st, db_path):
     st.subheader("資料庫瀏覽 (Data Browser)")
     table = st.selectbox("選擇資料表", ["transactions", "daily_snapshots", "cash_flows", "positions", "reports", "settings"])
     
+    # Whitelist validation for table name to prevent SQL Injection
+    allowed_tables = ["transactions", "daily_snapshots", "cash_flows", "positions", "reports", "settings", "prompt_history"]
+    if table not in allowed_tables:
+        st.error("Invalid table selected.")
+        return
+
     conn = get_db_connection(db_path)
     try:
+        # Using f-string is safe here because we validated 'table' against the whitelist
         df = pd.read_sql(text(f"SELECT * FROM {table} ORDER BY 1 DESC LIMIT 100"), conn)
         st.dataframe(df, use_container_width=True)
     except Exception as e:

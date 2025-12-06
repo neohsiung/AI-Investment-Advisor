@@ -4,6 +4,7 @@ import os
 import threading
 import subprocess
 import uuid
+import sys
 import argparse
 from datetime import datetime
 from sqlalchemy import text
@@ -37,7 +38,7 @@ def job_weekly_report():
     log_job_execution("Weekly Report", "STARTED", "Job started.")
     try:
         # 執行 workflow.py (Weekly Mode)
-        subprocess.run(["python3", "src/workflow.py", "--mode", "weekly"], check=True)
+        subprocess.run([sys.executable, "src/workflow.py", "--mode", "weekly"], check=True)
         print(f"[{format_time()}] Weekly Report Job Completed.")
         log_scheduler_event("Weekly Report", "COMPLETED", "Job completed successfully.")
     except Exception as e:
@@ -55,7 +56,7 @@ def job_daily_check():
     log_job_execution("Daily Check", "STARTED", "Job started.")
     try:
         # 執行 workflow.py (Daily Mode)
-        subprocess.run(["python3", "src/workflow.py", "--mode", "daily"], check=True)
+        subprocess.run([sys.executable, "src/workflow.py", "--mode", "daily"], check=True)
         print(f"[{format_time()}] Daily Check Job Completed.")
         log_job_execution("Daily Check", "COMPLETED", "Job completed successfully.")
     except Exception as e:
@@ -67,7 +68,7 @@ def job_monthly_refinement():
     log_job_execution("Monthly Refinement", "STARTED", "Job started.")
     try:
         # 執行 refinement.py
-        subprocess.run(["python3", "src/refinement.py"], check=True)
+        subprocess.run([sys.executable, "src/refinement.py"], check=True)
         print(f"[{format_time()}] Monthly Refinement Job Completed.")
         log_job_execution("Monthly Refinement", "COMPLETED", "Job completed successfully.")
     except Exception as e:
