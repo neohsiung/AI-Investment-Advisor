@@ -69,9 +69,11 @@ graph TD
         CloudRun[Cloud Run Service]
         CloudJobs[Cloud Run Jobs]
         CloudSQL[(Cloud SQL PostgreSQL)]
-    end    CR -->|Env Vars| SM["Secret Manager"]
-        CR -->|Logs| CL["Cloud Logging"]
     end
+
+    CR -->|Env Vars| SM["Secret Manager"]
+    CR -->|Logs| CL["Cloud Logging"]
+    CR -->|SQL Connection| CloudSQL
     
     subgraph External
         CR -->|API| LLM["LLM Provider<br>(OpenAI/Gemini/OpenRouter)"]
