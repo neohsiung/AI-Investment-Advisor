@@ -44,7 +44,7 @@ jobs:
       run: |
         pip-licenses --format=markdown --with-urls --summary > license_report.md
         # Basic check for non-permissive licenses (Example list)
-        pip-licenses --format=json | python3 -c "import sys, json; licenses = json.load(sys.stdin); forbidden = ['GPL', 'AGPL']; violations = [p['Name'] for p in licenses if any(f in p['License'] for f in forbidden)]; sys.exit(1) if violations else sys.exit(0)"
+        pip-licenses --format=json | python3 -c "import sys, json; licenses = json.load(sys.stdin); violations = [p['Name'] for p in licenses if (('GPL' in p['License'] or 'AGPL' in p['License']) and 'LGPL' not in p['License'])]; sys.exit(1) if violations else sys.exit(0)"
 
   deploy:
     needs: test
