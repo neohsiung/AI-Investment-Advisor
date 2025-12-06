@@ -30,3 +30,6 @@ env/
 
 # Docker
 .docker/
+
+# Secrets
+ai-investment-advisor-480409-edeae4e42611.json

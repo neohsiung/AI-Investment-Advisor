@@ -14,7 +14,9 @@ env:
   IMAGE: investment-advisor
 
 jobs:
-  test:
+  # Lab Environment: For Local Use Validation (Tests, Security, License)
+  lab:
+    name: Lab (CI / Validation)
     runs-on: ubuntu-latest
     steps:
     - uses: actions/checkout@v3
@@ -37,17 +39,17 @@ jobs:
     - name: Security Scan (Bandit)
       run: |
         bandit -r src/ -f json -o bandit_report.json || true
-        # Optional: Fail build on high severity
-        # bandit -r src/ -lll
 
     - name: License Compliance Check
       run: |
         pip-licenses --format=markdown --with-urls --summary > license_report.md
-        # Basic check for non-permissive licenses (Example list)
+        # Basic check for non-permissive licenses (Exclude LGPL from GPL detection)
         pip-licenses --format=json | python3 -c "import sys, json; licenses = json.load(sys.stdin); violations = [p['Name'] for p in licenses if (('GPL' in p['License'] or 'AGPL' in p['License']) and 'LGPL' not in p['License'])]; sys.exit(1) if violations else sys.exit(0)"
 
-  deploy:
-    needs: test
+  # Prd Environment: For Cloud Production (Deployment)
+  prd:
+    name: Prd (Cloud Deployment)
+    needs: lab
     if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     permissions:
@@ -83,7 +85,6 @@ jobs:
           --image ${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.REPOSITORY }}/${{ env.IMAGE }}:latest \
           --region ${{ env.REGION }} \
           --platform managed \
-          --allow-unauthenticated \
           --port 8501 \
           --command "streamlit" \
           --args "run,src/dashboard.py,--server.port,8501,--server.address,0.0.0.0" \
