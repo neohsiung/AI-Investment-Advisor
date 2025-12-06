@@ -10,3 +10,5 @@ pytz
 pytz
 pytest-cov
 pytest-mock
+SQLAlchemy
+psycopg2-binary

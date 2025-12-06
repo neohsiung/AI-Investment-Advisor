@@ -1,28 +1,40 @@
 import schedule
 import time
+import os
+import threading
 import subprocess
-import argparse
-import sys
-from src.database import get_db_connection
 import uuid
-from src.utils.time_utils import get_current_time, format_time
+import argparse
+from datetime import datetime
+from sqlalchemy import text
+from src.database import get_db_connection
+from src.utils.time_utils import get_current_time, format_time # Keep these as they are used elsewhere
 
 def log_scheduler_event(job_name, status, message=""):
+    """Wrapper for log_job_execution to maintain compatibility"""
+    log_job_execution(job_name, status, message)
+
+def log_job_execution(job_name, status, message=""):
+    conn = get_db_connection()
     try:
-        conn = get_db_connection()
-        cursor = conn.cursor()
         log_id = str(uuid.uuid4())
-        timestamp = format_time() # Use standardized time
-        cursor.execute("INSERT INTO scheduler_logs (id, timestamp, job_name, status, message) VALUES (?, ?, ?, ?, ?)",
-                       (log_id, timestamp, job_name, status, message))
+        timestamp = datetime.now().isoformat()
+        conn.execute(text("INSERT INTO scheduler_logs (id, timestamp, job_name, status, message) VALUES (:id, :timestamp, :job_name, :status, :message)"), {
+            "id": log_id,
+            "timestamp": timestamp,
+            "job_name": job_name,
+            "status": status,
+            "message": message
+        })
         conn.commit()
-        conn.close()
     except Exception as e:
-        print(f"Error logging scheduler event: {e}")
+        print(f"Error logging job: {e}")
+    finally:
+        conn.close()
 
 def job_weekly_report():
     print(f"[{format_time()}] Starting Weekly Report Job...")
-    log_scheduler_event("Weekly Report", "STARTED", "Job started.")
+    log_job_execution("Weekly Report", "STARTED", "Job started.")
     try:
         # 執行 workflow.py (Weekly Mode)
         subprocess.run(["python3", "src/workflow.py", "--mode", "weekly"], check=True)
@@ -40,27 +52,27 @@ def job_daily_check():
         return
 
     print(f"[{format_time()}] Starting Daily Check Job...")
-    log_scheduler_event("Daily Check", "STARTED", "Job started.")
+    log_job_execution("Daily Check", "STARTED", "Job started.")
     try:
         # 執行 workflow.py (Daily Mode)
         subprocess.run(["python3", "src/workflow.py", "--mode", "daily"], check=True)
         print(f"[{format_time()}] Daily Check Job Completed.")
-        log_scheduler_event("Daily Check", "COMPLETED", "Job completed successfully.")
+        log_job_execution("Daily Check", "COMPLETED", "Job completed successfully.")
     except Exception as e:
         print(f"[{format_time()}] Daily Check Job Failed: {e}")
-        log_scheduler_event("Daily Check", "FAILED", str(e))
+        log_job_execution("Daily Check", "FAILED", str(e))
 
 def job_monthly_refinement():
     print(f"[{format_time()}] Starting Monthly Refinement Job...")
-    log_scheduler_event("Monthly Refinement", "STARTED", "Job started.")
+    log_job_execution("Monthly Refinement", "STARTED", "Job started.")
     try:
         # 執行 refinement.py
         subprocess.run(["python3", "src/refinement.py"], check=True)
         print(f"[{format_time()}] Monthly Refinement Job Completed.")
-        log_scheduler_event("Monthly Refinement", "COMPLETED", "Job completed successfully.")
+        log_job_execution("Monthly Refinement", "COMPLETED", "Job completed successfully.")
     except Exception as e:
         print(f"[{format_time()}] Monthly Refinement Job Failed: {e}")
-        log_scheduler_event("Monthly Refinement", "FAILED", str(e))
+        log_job_execution("Monthly Refinement", "FAILED", str(e))
 
 def check_monthly_job():
     if get_current_time().day == 1:

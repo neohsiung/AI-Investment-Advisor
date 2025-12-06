@@ -7,33 +7,38 @@
 *   **`GCP_PROJECT_ID`**: 您的 Google Cloud Project ID。
 *   **`GCP_SA_KEY`**: 具有 Cloud Run 管理員與 Artifact Registry 寫入權限的 Service Account JSON 金鑰內容。
 
-### 2. 準備 GCP 環境
-請確保您的 GCP 專案已啟用以下服務，並建立儲存庫：
-*   **啟用 API**: Cloud Run API, Artifact Registry API, Cloud Scheduler API。
-*   **建立 Artifact Registry**: 建立一個 Docker Repository (名稱預設為 `investment-advisor`，若不同請修改 `.github/workflows/ci-cd.yml` 中的 `REPOSITORY` 變數)。
+### 2. 資料遷移 (Data Migration)
+若您是從本地 SQLite 遷移至雲端 PostgreSQL，請參考 `README.md` 中的 **Cloud Deployment & Data Migration Strategy** 章節。
+您可以選擇：
+*   **Remote Migration**: 透過 `cloud_sql_proxy` 從本地連線至雲端資料庫進行遷移。
+*   **VM-based Migration**: 將 SQLite 檔案上傳至 VM 直接遷移。
+指令範例：
+```bash
+# 本地執行遷移 (需設定 .env)
+python3 scripts/migrate_data.py --source data/portfolio.db
+```
 
-### 3. 部署與驗證
-完成上述設定後，您只需將目前的程式碼推送到 `main` 分支：
+### 3. 部署與驗證 (Deployment)
+目前程式碼已通過測試 (Coverage > 70%) 並且重構完畢。
+請執行以下指令將變更推送至 `main` 分支以觸發 CI/CD：
 ```bash
 git add .
-git commit -m "feat: add tests, refactor scheduler for cloud run jobs, setup ci/cd"
+git commit -m "release: finalize database extraction, cloud migration scripts, and test coverage > 70%"
 git push origin main
 ```
-這將會觸發 CI/CD 流程：
-1.  **CI**: 自動執行 `pytest` 確保測試覆蓋率 > 80%。
-2.  **CD**: 自動建置 Docker Image 並部署 Dashboard (Cloud Run Service) 與排程任務 (Cloud Run Jobs)。
 
-### 4. 設定排程觸發器 (一次性)
-部署完成後，請執行 `deploy.sh` 腳本 (或手動設定 Cloud Scheduler) 來定期觸發 Cloud Run Jobs：
-```bash
-chmod +x deploy.sh
-./deploy.sh
-```
-*(請記得先修改 `deploy.sh` 內的 `PROJECT_ID` 等變數)*
+流程說明：
+1.  **CI**: 自動執行 `pytest` 確保測試覆蓋率達標。
+2.  **CD**: 自動建置 Docker Image 並部署 Dashboard 與 Cron Jobs。
 
-### 5. 本地開發注意事項
-若您需要在本地執行測試，由於 `yfinance` 依賴的 `multitasking` 套件在 Python 3.8 有相容性問題，請執行以下指令修復（您已完成此步驟）：
+### 4. 本地開發 (Local Development)
+若需在本地開發測試，請使用輔助腳本：
 ```bash
-pip install "multitasking<0.0.12"
-pytest
+./start_local.sh
 ```
+此腳本會自動建立虛擬環境並安裝相依套件。
+若遇到 `yfinance` 相容性問題，請確保 `multitasking<0.0.12` (已在 requirements.txt 中)。
+
+### 5. 監控與維運
+*   **GCP Cloud Monitoring**: 請依據 `setup_monitoring.sh` 設定 Uptime Check。
+*   **Logs**: 使用 `docker compose logs -f` (本地) 或 GCP Logs Explorer (雲端) 查看排程執行狀況。

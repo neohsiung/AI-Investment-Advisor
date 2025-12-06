@@ -3,8 +3,11 @@ import hashlib
 import json
 import os
 from datetime import timedelta
+from datetime import timedelta, datetime
+from sqlalchemy import text
 from src.utils.logger import setup_logger
 from src.utils.time_utils import get_current_time, format_time
+from src.database import get_db_connection
 
 class ResponseCache:
     def __init__(self, db_path="data/cache.db", ttl_hours=24):
@@ -16,21 +19,21 @@ class ResponseCache:
     def _init_db(self):
         """Initialize the cache database."""
         os.makedirs(os.path.dirname(self.db_path), exist_ok=True)
+        conn = get_db_connection(self.db_path)
         try:
-            conn = sqlite3.connect(self.db_path)
-            cursor = conn.cursor()
-            cursor.execute("""
+            conn.execute(text("""
                 CREATE TABLE IF NOT EXISTS response_cache (
                     key TEXT PRIMARY KEY,
                     agent_name TEXT,
                     response TEXT,
                     timestamp DATETIME
                 )
-            """)
+            """))
             conn.commit()
-            conn.close()
         except Exception as e:
             self.logger.error(f"Failed to init cache DB: {e}")
+        finally:
+            conn.close()
 
     def _generate_key(self, agent_name, prompt):
         """Generate a unique key based on agent name and prompt content."""
@@ -40,19 +43,15 @@ class ResponseCache:
     def get(self, agent_name, prompt):
         """Retrieve a cached response if valid."""
         key = self._generate_key(agent_name, prompt)
+        conn = get_db_connection(self.db_path)
         try:
-            conn = sqlite3.connect(self.db_path)
-            cursor = conn.cursor()
-            cursor.execute("SELECT response, timestamp FROM response_cache WHERE key = ?", (key,))
-            row = cursor.fetchone()
-            conn.close()
-
+            row = conn.execute(text("SELECT response, timestamp FROM response_cache WHERE key = :key"), {"key": key}).fetchone()
+            
             if row:
                 response, timestamp_str = row
                 # Parse timestamp (assuming ISO format from format_time)
                 # We need to handle potential timezone differences if DB has old data
                 # But for now, let's assume consistent usage of time_utils
-                from datetime import datetime
                 try:
                     timestamp = datetime.fromisoformat(timestamp_str)
                 except ValueError:

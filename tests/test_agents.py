@@ -40,7 +40,8 @@ def test_base_agent_init_and_config(mock_db, mock_prompt_content, tmp_path):
 @patch('src.agents.base_agent.requests.post')
 def test_base_agent_call_real_llm(mock_post, mock_db, mock_prompt_content, tmp_path):
     # Mock DB
-    mock_db.return_value.cursor.return_value.fetchall.return_value = []
+    mock_db.return_value.execute.return_value.fetchall.return_value = [] # Fix for SQLAlchemy
+    mock_db.return_value.cursor.return_value.fetchall.return_value = [] # Fallback
     
     # Create dummy prompt
     prompt_file = tmp_path / "dummy_prompt.txt"
@@ -50,8 +51,13 @@ def test_base_agent_call_real_llm(mock_post, mock_db, mock_prompt_content, tmp_p
     agent = ConcreteAgent(name="TEST", prompt_path=str(prompt_file), use_cache=False)
     
     # Mock Config to have API Key
-    agent.config['api_key'] = "sk-test"
-    agent.config['provider'] = "OpenAI" # Test OpenAI path for simplicity
+    # We need to manually inject config because _load_config might fail or return defaults
+    agent.config = {
+        'provider': "OpenAI",
+        'api_key': "sk-test",
+        'base_url': None,
+        'model': 'gpt-4'
+    }
     
     # Mock API Success
     mock_post.return_value.status_code = 200
@@ -69,7 +75,7 @@ def test_base_agent_call_real_llm(mock_post, mock_db, mock_prompt_content, tmp_p
 
 @patch('src.agents.base_agent.get_db_connection')
 def test_momentum_agent_run(mock_db):
-    mock_db.return_value.cursor.return_value.fetchall.return_value = []
+    mock_db.return_value.execute.return_value.fetchall.return_value = []
     
     # MomentumAgent references hardcoded path likely, so we must mock open
     with patch('builtins.open', mock_open(read_data="Momentum System Prompt")):
@@ -84,7 +90,7 @@ def test_momentum_agent_run(mock_db):
 
 @patch('src.agents.base_agent.get_db_connection')
 def test_fundamental_agent_run(mock_db):
-    mock_db.return_value.cursor.return_value.fetchall.return_value = []
+    mock_db.return_value.execute.return_value.fetchall.return_value = []
     
     with patch('builtins.open', mock_open(read_data="Fundamental System Prompt")):
         with patch('os.path.exists', return_value=True):

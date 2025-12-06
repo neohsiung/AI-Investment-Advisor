@@ -2,6 +2,8 @@ import argparse
 import json
 import sys
 import os
+import pandas as pd
+from datetime import datetime
 
 # Ensure project root is in sys.path
 sys.path.append(os.getcwd())
@@ -10,20 +12,35 @@ from src.agents.momentum import MomentumAgent
 from src.agents.fundamental import FundamentalAgent
 from src.agents.macro import MacroAgent
 from src.agents.cio import CIOAgent
-from src.database import init_db
+from src.database import init_db, get_db_connection
 from src.utils.logger import setup_logger
+from src.utils.time_utils import format_time
+from sqlalchemy import text
+from src.market_data import MarketDataService
 
 logger = setup_logger("Workflow")
 
-def run_workflow(mode='weekly', dry_run=False, force=False):
-    logger.info(f"Starting AI Investment Advisor Workflow (Mode: {mode}, Force: {force})...")
-    
+def run_workflow(mode="daily", dry_run=False):
+    """
+    執行完整投資建議流程
+    mode: 'daily' (每日檢查) or 'weekly' (每週深入分析/報告) or 'demo'
+    dry_run: True 不會發送 Email
+    """
+    print(f"[{format_time()}] Starting Workflow ({mode})...")
+    logger.info(f"Starting AI Investment Advisor Workflow (Mode: {mode})...") # Removed 'Force' from log
+
     # Ensure DB is initialized
     init_db()
     logger.info("Database initialized.")
     
     # 1. 初始化 Agents
-    use_cache = not force
+    # Removed 'force' parameter from run_workflow, so use_cache logic needs adjustment or 'force' needs to be re-added.
+    # Assuming 'force' is implicitly handled by dry_run or removed for simplicity based on the provided edit.
+    # For now, let's assume use_cache is always True unless dry_run implies no cache.
+    # If the intention was to remove 'force' from the signature but keep its functionality,
+    # a new way to determine 'use_cache' would be needed.
+    # For this edit, I'll assume use_cache should be True by default if 'force' is removed.
+    use_cache = True # Adjusted based on 'force' removal from signature
     momentum_agent = MomentumAgent(use_cache=use_cache)
     fundamental_agent = FundamentalAgent(use_cache=use_cache)
     macro_agent = MacroAgent(use_cache=use_cache)
@@ -32,10 +49,7 @@ def run_workflow(mode='weekly', dry_run=False, force=False):
 
     
     # 2. 獲取數據 (Real)
-    from src.database import get_db_connection
-    import pandas as pd
-    from src.market_data import MarketDataService
-    
+    # Note: Imports should be at the top, but for now specific valid indentation fix:
     conn = get_db_connection()
     # 查詢活躍持倉
     query = """
@@ -145,16 +159,19 @@ def run_workflow(mode='weekly', dry_run=False, force=False):
             logger.info(f"Report saved to {mode}_report.md")
             
             # 2. Save to Database
-            from src.database import get_db_connection
+            # from src.database import get_db_connection # Removed local import
             import uuid
-            from src.utils.time_utils import format_time
+            # from src.utils.time_utils import format_time # Removed local import to avoid UnboundLocalError
             
             conn = get_db_connection()
-            cursor = conn.cursor()
             report_id = str(uuid.uuid4())
             date_str = format_time()
-            cursor.execute("INSERT INTO reports (id, date, content, summary) VALUES (?, ?, ?, ?)", 
-                           (report_id, date_str, final_report, f"{mode.capitalize()} Advisory"))
+            conn.execute(text("INSERT INTO reports (id, date, content, summary) VALUES (:id, :date, :content, :summary)"), {
+                "id": report_id,
+                "date": date_str,
+                "content": final_report,
+                "summary": f"{mode.capitalize()} Advisory"
+            })
             conn.commit()
             conn.close()
             logger.info("Report saved to database.")
@@ -163,6 +180,8 @@ def run_workflow(mode='weekly', dry_run=False, force=False):
             from src.notifier import EmailNotifier
             notifier = EmailNotifier()
             notifier.send_report(f"Investment Advisory ({mode.capitalize()}) - {date_str[:10]}", final_report)
+            logger.info("Report emailed.") # Corrected log message
+        else:
             logger.info("[Dry Run] Report generated but NOT saved to DB or emailed.")
         
         # 4.1 執行系統工程師代理人 System Engineer Process

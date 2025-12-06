@@ -2,6 +2,7 @@ import pytest
 import json
 from src.refinement import RefinementEngine
 from src.database import init_db, get_db_connection
+from sqlalchemy import text
 
 @pytest.fixture
 def setup_refinement_db(tmp_path):
@@ -20,11 +21,11 @@ def test_refinement_logic(setup_refinement_db):
     
     # 驗證寫入
     conn = get_db_connection(db_path)
-    cursor = conn.cursor()
-    cursor.execute("SELECT * FROM recommendations WHERE ticker='TEST'")
-    rec = cursor.fetchone()
+    # Use explicit column selection to avoid mapping issues
+    result = conn.execute(text("SELECT outcome_score FROM recommendations WHERE ticker='TEST'"))
+    rec = result.fetchone()
     assert rec is not None
-    assert rec['outcome_score'] == 0
+    assert rec[0] == 0
     conn.close()
     
     # 2. 執行分析 (假設當前價格 110 > 100*1.05 -> Score should be 1)
@@ -33,10 +34,9 @@ def test_refinement_logic(setup_refinement_db):
     
     # 驗證分數更新
     conn = get_db_connection(db_path)
-    cursor = conn.cursor()
-    cursor.execute("SELECT * FROM recommendations WHERE ticker='TEST'")
-    rec = cursor.fetchone()
-    assert rec['outcome_score'] == 1
+    result = conn.execute(text("SELECT outcome_score FROM recommendations WHERE ticker='TEST'"))
+    rec = result.fetchone()
+    assert rec[0] == 1
     conn.close()
     
     # 驗證 Config 更新

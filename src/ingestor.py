@@ -1,6 +1,8 @@
 import pandas as pd
-import uuid
 import json
+import uuid
+from datetime import datetime
+from sqlalchemy import text
 from pathlib import Path
 from src.database import get_db_connection
 from src.utils.time_utils import format_time
@@ -29,37 +31,48 @@ class TradeIngestor:
         # 格式: ticker (必填), quantity (選填), cost (選填)
         df = pd.read_csv(file_path)
         conn = get_db_connection(self.db_path)
-        cursor = conn.cursor()
         
         # 標準化欄位名稱 (全部轉小寫)
         df.columns = [c.lower().strip() for c in df.columns]
         
-        if 'ticker' not in df.columns:
-            raise ValueError("Simple CSV must contain 'ticker' column")
-            
-        for _, row in df.iterrows():
-            trans_id = str(uuid.uuid4())
-            ticker = row['ticker'].upper()
-            date_str = format_time()
-            
-            # 預設值
-            quantity = float(row.get('quantity', 0))
-            price = float(row.get('cost', 0))
-            fees = 0.0
-            
-            # 若 quantity > 0 視為 BUY，否則視為 Watchlist (Action=WATCH)
-            # 但為了資料庫一致性，我們可以用 'BUY' 且 quantity=0，或者新增 Action 'WATCH'
-            # 這裡假設 quantity=0 為 WATCH
-            action = 'BUY' if quantity > 0 else 'WATCH'
-            amount = quantity * price
-            
-            cursor.execute('''
-                INSERT INTO transactions (id, ticker, trade_date, action, quantity, price, fees, amount, source_file, raw_data)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            ''', (trans_id, ticker, date_str, action, quantity, price, fees, amount, file_path.name, json.dumps(row.to_dict())))
-            
-        conn.commit()
-        conn.close()
+        try:
+            if 'ticker' not in df.columns:
+                raise ValueError("Simple CSV must contain 'ticker' column")
+                
+            for _, row in df.iterrows():
+                trans_id = str(uuid.uuid4())
+                ticker = row['ticker'].upper()
+                date_str = format_time()
+                
+                # 預設值
+                quantity = float(row.get('quantity', 0))
+                price = float(row.get('cost', 0))
+                fees = 0.0
+                
+                action = 'BUY' if quantity > 0 else 'WATCH'
+                amount = quantity * price
+                
+                conn.execute(text('''
+                    INSERT INTO transactions (id, ticker, trade_date, action, quantity, price, fees, amount, source_file, raw_data)
+                    VALUES (:id, :ticker, :trade_date, :action, :quantity, :price, :fees, :amount, :source_file, :raw_data)
+                '''), {
+                    "id": trans_id,
+                    "ticker": ticker,
+                    "trade_date": date_str,
+                    "action": action,
+                    "quantity": quantity,
+                    "price": price,
+                    "fees": fees,
+                    "amount": amount,
+                    "source_file": str(file_path),
+                    "raw_data": json.dumps(row.to_dict())
+                })
+        except Exception as e:
+            # conn.rollback() # If we were doing transaction management
+            raise e
+        finally:
+            conn.commit()
+            conn.close()
         print(f"Ingested Simple Ticker data from {file_path}")
 
     def _parse_robinhood(self, file_path):
@@ -74,7 +87,7 @@ class TradeIngestor:
             df = df[df['state'] == 'filled']
 
         for _, row in df.iterrows():
-            # 簡單範例邏輯，需根據實際 CSV 調整
+            # 簡單範例邏輯, 需根據實際 CSV 調整
             trans_id = str(uuid.uuid4())
             ticker = row.get('symbol', 'UNKNOWN')
             date_str = row.get('date', format_time())
@@ -84,10 +97,21 @@ class TradeIngestor:
             fees = float(row.get('fees', 0))
             amount = quantity * price + fees # 簡化計算
 
-            cursor.execute('''
+            cursor.execute(text('''
                 INSERT INTO transactions (id, ticker, trade_date, action, quantity, price, fees, amount, source_file, raw_data)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            ''', (trans_id, ticker, date_str, action, quantity, price, fees, amount, file_path.name, json.dumps(row.to_dict())))
+                VALUES (:id, :ticker, :trade_date, :action, :quantity, :price, :fees, :amount, :source_file, :raw_data)
+            '''), {
+                "id": trans_id,
+                "ticker": ticker,
+                "trade_date": date_str,
+                "action": action,
+                "quantity": quantity,
+                "price": price,
+                "fees": fees,
+                "amount": amount,
+                "source_file": file_path.name,
+                "raw_data": json.dumps(row.to_dict())
+            })
 
         conn.commit()
         conn.close()
@@ -130,10 +154,21 @@ class TradeIngestor:
             # 這裡我們儲存絕對值或依據 Schema 定義。
             # Schema amount: 總金額。
             
-            cursor.execute('''
+            cursor.execute(text('''
                 INSERT INTO transactions (id, ticker, trade_date, action, quantity, price, fees, amount, source_file, raw_data)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            ''', (trans_id, ticker, date_str, action, quantity, price, fees, amount, file_path.name, json.dumps(row.to_dict())))
+                VALUES (:id, :ticker, :trade_date, :action, :quantity, :price, :fees, :amount, :source_file, :raw_data)
+            '''), {
+                "id": trans_id,
+                "ticker": ticker,
+                "trade_date": date_str,
+                "action": action,
+                "quantity": quantity,
+                "price": price,
+                "fees": fees,
+                "amount": amount,
+                "source_file": file_path.name,
+                "raw_data": json.dumps(row.to_dict())
+            })
 
         # 處理股息
         for _, row in dividends.iterrows():
@@ -142,10 +177,16 @@ class TradeIngestor:
             amount = float(row.get('Amount', 0))
             description = f"Dividend from {row.get('Symbol', 'UNKNOWN')}"
             
-            cursor.execute('''
+            cursor.execute(text('''
                 INSERT INTO cash_flows (id, date, amount, type, description)
-                VALUES (?, ?, ?, ?, ?)
-            ''', (cash_id, date_str, amount, 'DIVIDEND', description))
+                VALUES (:id, :date, :amount, :type, :description)
+            '''), {
+                "id": cash_id,
+                "date": date_str,
+                "amount": amount,
+                "type": 'DIVIDEND',
+                "description": description
+            })
 
         conn.commit()
         conn.close()
@@ -154,30 +195,42 @@ class TradeIngestor:
     def ingest_manual_trade(self, ticker, date, action, quantity, price, fees=0.0):
         """手動匯入單筆交易"""
         conn = get_db_connection(self.db_path)
-        cursor = conn.cursor()
         
-        trans_id = str(uuid.uuid4())
-        amount = quantity * price + fees
-        
-        # 建構類似原始數據的 JSON，方便除錯
-        raw_data = {
-            "source": "manual_entry",
-            "ticker": ticker,
-            "date": date,
-            "action": action,
-            "quantity": quantity,
-            "price": price,
-            "fees": fees
-        }
-        
-        cursor.execute('''
-            INSERT INTO transactions (id, ticker, trade_date, action, quantity, price, fees, amount, source_file, raw_data)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        ''', (trans_id, ticker, date, action, quantity, price, fees, amount, "MANUAL_ENTRY", json.dumps(raw_data)))
-        
-        conn.commit()
-        conn.close()
-        print(f"Manually ingested trade: {action} {quantity} {ticker} @ {price}")
+        try:
+            trans_id = str(uuid.uuid4())
+            amount = quantity * price + fees
+            
+            # 建構類似原始數據的 JSON，方便除錯
+            raw_data = {
+                "source": "manual_entry",
+                "ticker": ticker,
+                "date": date,
+                "action": action,
+                "quantity": quantity,
+                "price": price,
+                "fees": fees
+            }
+            
+            conn.execute(text('''
+                INSERT INTO transactions (id, ticker, trade_date, action, quantity, price, fees, amount, source_file, raw_data)
+                VALUES (:id, :ticker, :trade_date, :action, :quantity, :price, :fees, :amount, :source_file, :raw_data)
+            '''), {
+                "id": trans_id,
+                "ticker": ticker,
+                "trade_date": date,
+                "action": action,
+                "quantity": quantity,
+                "price": price,
+                "fees": fees,
+                "amount": amount,
+                "source_file": "MANUAL_ENTRY",
+                "raw_data": json.dumps(raw_data)
+            })
+            
+            conn.commit()
+            print(f"Manually ingested trade: {action} {quantity} {ticker} @ {price}")
+        finally:
+            conn.close()
 
 if __name__ == "__main__":
     # 測試用

@@ -2,6 +2,7 @@ import os
 import json
 import requests
 from abc import ABC, abstractmethod
+from sqlalchemy import text
 from src.database import get_db_connection
 from src.utils.logger import setup_logger
 from src.utils.cache import ResponseCache
@@ -23,20 +24,36 @@ class BaseAgent(ABC):
             "api_key": "",
             "base_url": ""
         }
+        
+        db_settings = self._load_config_from_db()
+        for key, value in db_settings.items():
+            if key == "AI_PROVIDER": config["provider"] = value
+            elif key == "AI_MODEL": config["model"] = value
+            elif key == "API_KEY": config["api_key"] = value
+            elif key == "BASE_URL": config["base_url"] = value
+            
+        return config
+
+    def _load_config_from_db(self):
+        """從資料庫載入 API 設定"""
+        settings = {}
         try:
             conn = get_db_connection()
-            cursor = conn.cursor()
-            rows = cursor.execute("SELECT key, value FROM settings").fetchall()
-            for row in rows:
-                if row[0] == "AI_PROVIDER": config["provider"] = row[1]
-                elif row[0] == "AI_MODEL": config["model"] = row[1]
-                elif row[0] == "API_KEY": config["api_key"] = row[1]
-                elif row[0] == "BASE_URL": config["base_url"] = row[1]
+            # Replace cursor with direct execution
+            rows = conn.execute(text("SELECT key, value FROM settings")).fetchall()
+            
+            # Attempt to access by _mapping first, then by index for compatibility
+            if rows:
+                try:
+                    settings = {row._mapping['key']: row._mapping['value'] for row in rows}
+                except AttributeError: # Fallback for older SQLAlchemy versions or different row objects
+                    settings = {row[0]: row[1] for row in rows}
+            
             conn.close()
         except Exception as e:
             # Logger 可能還沒初始化，這裡用 print 或延後 log
             print(f"[{self.name}] Warning: Failed to load settings from DB: {e}")
-        return config
+        return settings
 
     def _load_prompt(self):
         if not os.path.exists(self.prompt_path):

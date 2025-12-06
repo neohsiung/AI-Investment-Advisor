@@ -1,8 +1,10 @@
 import json
-import uuid
+from datetime import datetime
 import difflib
 import os
-from .base_agent import BaseAgent
+import uuid
+from sqlalchemy import text
+from src.agents.base_agent import BaseAgent
 from src.database import get_db_connection
 from src.utils.time_utils import format_time
 
@@ -42,17 +44,29 @@ class SystemEngineerAgent(BaseAgent):
         with open(prompt_path, "w") as f:
             f.write(content)
 
-    def _log_history(self, target_agent, reason, original, new, diff):
+    def _log_prompt_change(self, agent_name, reason, old_prompt, new_prompt, diff):
         conn = get_db_connection()
-        cursor = conn.cursor()
-        log_id = str(uuid.uuid4())
-        timestamp = format_time()
-        cursor.execute('''
-            INSERT INTO prompt_history (id, timestamp, target_agent, reason, original_prompt, new_prompt, diff_content)
-            VALUES (?, ?, ?, ?, ?, ?, ?)
-        ''', (log_id, timestamp, target_agent, reason, original, new, diff))
-        conn.commit()
-        conn.close()
+        try:
+            log_id = str(uuid.uuid4())
+            timestamp = datetime.now().isoformat()
+            
+            conn.execute(text('''
+                INSERT INTO prompt_history (id, timestamp, target_agent, reason, original_prompt, new_prompt, diff_content)
+                VALUES (:id, :timestamp, :target_agent, :reason, :original_prompt, :new_prompt, :diff_content)
+            '''), {
+                "id": log_id,
+                "timestamp": timestamp,
+                "target_agent": agent_name,
+                "reason": reason,
+                "original_prompt": old_prompt,
+                "new_prompt": new_prompt,
+                "diff_content": diff
+            })
+            conn.commit()
+        except Exception as e:
+            self.logger.error(f"Error logging prompt change: {e}")
+        finally:
+            conn.close()
 
     def run(self, context):
         """
@@ -134,28 +148,38 @@ class SystemEngineerAgent(BaseAgent):
 
     # Dictionary-like access methods for schedule config (Phase 37)
     def get_schedule_config(self):
+        """從資料庫讀取排程設定"""
         conn = get_db_connection()
-        cursor = conn.cursor()
-        cursor.execute("SELECT key, value FROM settings WHERE key LIKE 'schedule_%'")
-        rows = cursor.fetchall()
-        conn.close()
-        
-        config = {
-            "schedule_daily": "02:00", # Taipei Time 02:00 ~= US ET 13:00 (Mid-session)
-            "schedule_weekly": "02:00" # Taipei Time Sat 02:00 ~= US ET Fri 13:00
-        }
-        for row in rows:
-            config[row['key']] = row['value']
+        config = {}
+        try:
+            rows = conn.execute(text("SELECT key, value FROM settings WHERE key LIKE 'schedule_%'")).fetchall()
+            for row in rows:
+                # row access
+                key = row[0] # or row._mapping['key']
+                val = row[1]
+                config[key] = val
+        except Exception as e:
+            self.logger.error(f"Error reading schedule config: {e}")
+        finally:
+            conn.close()
+            
         return config
 
-    def update_schedule_config(self, key, value):
+    def set_schedule_config(self, daily_time, weekly_time):
+        """更新排程設定"""
         conn = get_db_connection()
         try:
-            conn.execute("INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)", (key, value))
+            updates = {
+                "schedule_daily": daily_time,
+                "schedule_weekly": weekly_time
+            }
+            
+            for key, value in updates.items():
+                conn.execute(text("INSERT OR REPLACE INTO settings (key, value) VALUES (:key, :value)"), {"key": key, "value": value})
+            
             conn.commit()
-            return True
+            self.logger.info("Schedule config updated via Engineer Agent.")
         except Exception as e:
-            print(f"Error updating schedule: {e}")
-            return False
+            self.logger.error(f"Error updating schedule config: {e}")
         finally:
             conn.close()

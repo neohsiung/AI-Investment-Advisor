@@ -2,158 +2,136 @@ import streamlit as st
 import pandas as pd
 from src.database import get_db_connection
 from src.analytics import LeverageCalculator, SnapshotRecorder, update_daily_snapshot
+from src.services.transaction_service import TransactionService
+from src.ingestor import TradeIngestor
+import os
+from sqlalchemy import text
+from tenacity import retry, stop_after_attempt, wait_fixed
 
-def process_manual_trade(db_path, ticker, date_str, action, quantity, price, fees):
-    """處理手動交易輸入邏輯"""
-    try:
-        from src.ingestor import TradeIngestor
-        ingestor = TradeIngestor(db_path=db_path)
-        ingestor.ingest_manual_trade(ticker, date_str, action, quantity, price, fees)
-        
-        # Update Snapshot
-        update_daily_snapshot(db_path)
-        return True, f"已新增交易: {action} {quantity} {ticker} @ {price}"
-    except Exception as e:
-        return False, f"新增失敗 (Error adding trade): {e}"
-
-def delete_transaction(db_path, transaction_id):
-    """處理交易刪除邏輯"""
-    try:
-        conn = get_db_connection(db_path)
-        conn.execute("DELETE FROM transactions WHERE id = ?", (transaction_id,))
-        conn.commit()
-        conn.close()
-        
-        # Update Snapshot
-        update_daily_snapshot(db_path)
-        return True, "交易已刪除 (Transaction deleted)"
-    except Exception as e:
-        return False, f"刪除失敗: {e}"
-
-def render_csv_import_tab(st, db_path):
-    st.subheader("從 CSV 匯入交易 (Import Trades from CSV)")
-    broker = st.selectbox("選擇券商 (Select Broker)", ["Robinhood", "IBKR", "Simple"])
-    uploaded_file = st.file_uploader("選擇 CSV 檔案 (Choose a CSV file)", type="csv")
+def render_manual_entry_tab(st, service: TransactionService):
+    st.subheader("新增交易 (Manual Entry)")
     
-    if uploaded_file is not None:
-        if st.button("匯入 CSV (Ingest CSV)"):
-            with st.spinner('處理中... (Processing...)'):
-                try:
-                    # Save uploaded file temporarily
-                    import os
-                    temp_path = f"data/temp_{uploaded_file.name}"
-                    with open(temp_path, "wb") as f:
-                        f.write(uploaded_file.getbuffer())
-                    
-                    # Ingest
-                    from src.ingestor import TradeIngestor
-                    ingestor = TradeIngestor(db_path=db_path)
-                    ingestor.ingest_csv(temp_path, broker=broker)
-                    
-                    # Update Snapshot
-                    update_daily_snapshot(db_path)
-                    
-                    st.success(f"成功匯入 {uploaded_file.name} (格式: {broker})")
-                    
-                    # Clean up
-                    os.remove(temp_path)
-                    
-                    # Rerun to update data
-                    st.rerun()
-                except Exception as e:
-                    st.error(f"匯入失敗 (Error ingesting CSV): {e}")
-
-def render_manual_entry_tab(st, db_path):
-    st.subheader("手動交易輸入 (Manual Trade Entry)")
     with st.form("manual_trade_form"):
-        col1, col2 = st.columns(2)
-        ticker = col1.text_input("股票代碼 (Ticker, e.g., AAPL)").upper()
-        date = col2.date_input("交易日期 (Trade Date)")
-        
-        col3, col4, col5 = st.columns(3)
-        action = col3.selectbox("動作 (Action)", ["BUY", "SELL"])
-        quantity = col4.number_input("數量 (Quantity)", min_value=0.01, step=0.01)
-        price = col5.number_input("價格 (Price)", min_value=0.01, step=0.01)
-        fees = st.number_input("手續費 (Fees)", min_value=0.0, step=0.01, value=0.0)
-        
-        submitted = st.form_submit_button("新增交易 (Add Trade)")
+        col1, col2, col3 = st.columns(3)
+        with col1:
+            ticker = st.text_input("代號 (Ticker)", value="AAPL").upper()
+            date_col = st.date_input("日期 (Date)")
+        with col2:
+            action = st.selectbox("動作 (Action)", ["BUY", "SELL", "DIVIDEND", "DEPOSIT", "WITHDRAW"])
+            quantity = st.number_input("數量 (Quantity)", min_value=0.0, value=1.0, step=0.1)
+        with col3:
+            price = st.number_input("價格 (Price)", min_value=0.0, value=150.0)
+            fees = st.number_input("手續費 (Fees)", min_value=0.0, value=0.0)
+            
+        submitted = st.form_submit_button("提交交易 (Submit Trade)")
         
         if submitted:
-            if not ticker or quantity <= 0 or price <= 0:
-                st.error("請正確填寫所有必填欄位 (Please fill in all required fields correctly).")
+            if not ticker:
+                 st.error("請輸入代號 (Ticker is required)")
+            elif quantity <= 0 and action in ['BUY', 'SELL']:
+                 st.error("數量必須大於 0")
+            elif price < 0:
+                 st.error("價格不能為負數")
             else:
-                with st.spinner('處理中... (Processing...)'):
-                    # Convert date to string
-                    date_str = date.strftime("%Y-%m-%d")
-                    success, cx_msg = process_manual_trade(db_path, ticker, date_str, action, quantity, price, fees)
-                    
-                    if success:
-                        st.success(cx_msg)
-                        st.rerun()
-                    else:
-                        st.error(cx_msg)
+                 date_str = date_col.strftime("%Y-%m-%d")
+                 success, msg = service.add_manual_trade(ticker, date_str, action, quantity, price, fees)
+                 if success:
+                     st.success(msg)
+                 else:
+                     st.error(msg)
 
-def render_transactions_tab(st, db_path):
-    st.subheader("近期交易紀錄 (Recent Transactions)")
+def render_transactions_tab(st, service: TransactionService):
+    st.subheader("交易紀錄 (Transaction History)")
+    
+    df = service.get_transactions()
+    
+    if df is not None:
+        if not df.empty:
+            # Display recent transactions
+            st.dataframe(df.style.format({"quantity": "{:.4f}", "price": "{:.2f}", "amount": "{:.2f}"}), use_container_width=True)
+            
+            # Delete functionality
+            st.markdown("### 刪除交易 (Delete Transaction)")
+            
+            with st.form("delete_trans_form"):
+                
+                # Show last 10 for quick delete selection or text input
+                options = [(row['id'], f"{row['date']} - {row['ticker']} {row['action']} {row['quantity']} @ {row['price']}") 
+                           for _, row in df.head(20).iterrows()]
+                
+                selected_id = st.selectbox("選擇要刪除的交易 (Select to Delete)", options=options, format_func=lambda x: x[1])
+                
+                if st.form_submit_button("刪除 (Delete)"):
+                    if selected_id:
+                        trans_id = selected_id[0]
+                        success, msg = service.delete_transaction(trans_id)
+                        if success:
+                            st.success(msg)
+                            st.rerun()
+                        else:
+                            st.error(msg)
+        else:
+             st.info("尚無交易紀錄。")
+    else:
+        st.error("無法讀取交易紀錄。")
+
+def render_csv_import_tab(st, db_path):
+    st.subheader("批次匯入 (CSV Import)")
+    
+    uploaded_file = st.file_uploader("上傳 CSV (Upload CSV)", type=["csv"])
+    broker = st.selectbox("券商格式 (Broker Format)", ["Robinhood", "IBKR", "Simple"])
+    
+    if uploaded_file and st.button("開始匯入 (Start Import)"):
+         # Save temp
+         import os
+         with open("temp.csv", "wb") as f:
+             f.write(uploaded_file.getbuffer())
+         
+         try:
+             ingestor = TradeIngestor(db_path)
+             ingestor.ingest_csv("temp.csv", broker.lower())
+             st.success("匯入成功！")
+             os.remove("temp.csv")
+             # Update snapshot
+             update_daily_snapshot(db_path)
+         except Exception as e:
+             st.error(f"匯入失敗: {e}")
+
+def render_data_browser(st, db_path):
+    # Data Browser Logic using direct SQL or Service
+    # To be clean, let's keep direct SQL here for read-only debug or add to service
+    st.subheader("資料庫瀏覽 (Data Browser)")
+    table = st.selectbox("選擇資料表", ["transactions", "daily_snapshots", "cash_flows", "positions", "reports", "settings"])
+    
     conn = get_db_connection(db_path)
     try:
-        # Include ID for deletion
-        transactions_df = pd.read_sql("SELECT id, date(trade_date) as date, ticker, action, quantity, price, amount FROM transactions ORDER BY trade_date DESC LIMIT 20", conn)
+        df = pd.read_sql(text(f"SELECT * FROM {table} ORDER BY 1 DESC LIMIT 100"), conn)
+        st.dataframe(df, use_container_width=True)
+    except Exception as e:
+        st.error(f"Error: {e}")
     finally:
         conn.close()
-    
-    if not transactions_df.empty:
-        # Header
-        h1, h2, h3, h4, h5, h6, h7 = st.columns([2, 2, 2, 2, 2, 2, 1])
-        h1.markdown("**日期 (Date)**")
-        h2.markdown("**代碼 (Ticker)**")
-        h3.markdown("**動作 (Action)**")
-        h4.markdown("**數量 (Qty)**")
-        h5.markdown("**價格 (Price)**")
-        h6.markdown("**金額 (Amount)**")
-        h7.markdown("**操作**")
-        
-        for index, row in transactions_df.iterrows():
-            c1, c2, c3, c4, c5, c6, c7 = st.columns([2, 2, 2, 2, 2, 2, 1])
-            c1.write(row['date'])
-            c2.write(row['ticker'])
-            c3.write(row['action'])
-            c4.write(f"{row['quantity']:.4f}")
-            c5.write(f"${row['price']:.2f}")
-            c6.write(f"${row['amount']:.2f}")
-            
-            if c7.button("刪除", key=f"del_{row['id']}", help="刪除此筆交易"):
-                with st.spinner('刪除中... (Deleting...)'):
-                    success, cx_msg = delete_transaction(db_path, row['id'])
-                    if success:
-                        st.success(cx_msg)
-                        st.rerun()
-                    else:
-                        st.error(cx_msg)
-    else:
-        st.info("尚無交易紀錄 (No transactions found).")
 
 def main():
-    st.set_page_config(page_title="數據管理 | AI 投資顧問", layout="wide")
-
-    st.title("數據管理 (Data Management)")
-
-    # Sidebar 設定
-    st.sidebar.header("設定 (Settings)")
+    st.set_page_config(page_title="資料管理 | AI 投資顧問", layout="wide")
+    st.title("資料管理 (Data Management)")
+    
     db_path = st.sidebar.text_input("資料庫路徑 (Database Path)", "data/portfolio.db")
-
-    # 移除本地定義的 update_daily_snapshot，直接使用 import 的版本
-
-    tab1, tab2, tab3 = st.tabs(["CSV 匯入 (Import)", "手動輸入 (Manual Entry)", "近期交易 (Recent Transactions)"])
-
+    service = TransactionService(db_path)
+    
+    tab1, tab2, tab3, tab4 = st.tabs(["手動輸入 (Manual Entry)", "CSV 匯入 (Import)", "交易紀錄 (Transactions)", "資料瀏覽 (Browser)"])
+    
     with tab1:
-        render_csv_import_tab(st, db_path)
-
+        render_manual_entry_tab(st, service)
+    
     with tab2:
-        render_manual_entry_tab(st, db_path)
-
+        render_csv_import_tab(st, db_path)
+        
     with tab3:
-        render_transactions_tab(st, db_path)
+        render_transactions_tab(st, service)
+
+    with tab4:
+        render_data_browser(st, db_path)
 
 if __name__ == "__main__":
     main()

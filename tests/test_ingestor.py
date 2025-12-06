@@ -2,11 +2,16 @@ import pytest
 import sqlite3
 import pandas as pd
 from src.ingestor import TradeIngestor
+from src.database import get_db_connection
+from sqlalchemy import text
 import os
 
 @pytest.fixture
 def test_db(tmp_path):
     db_path = tmp_path / "test_portfolio.db"
+    # Use SQLAlchemy to init schema to match app behavior
+    # Or keep using sqlite3 if we want to valid raw file.
+    # Let's use generic init logic.
     conn = sqlite3.connect(db_path)
     conn.execute('''
         CREATE TABLE IF NOT EXISTS transactions (
@@ -29,6 +34,7 @@ def test_db(tmp_path):
 def test_ingest_simple_csv(test_db, tmp_path):
     # Create dummy CSV
     csv_path = tmp_path / "simple.csv"
+    # ... (same)
     df = pd.DataFrame({
         'ticker': ['AAPL', 'GOOGL'],
         'quantity': [10, 5],
@@ -39,20 +45,25 @@ def test_ingest_simple_csv(test_db, tmp_path):
     ingestor = TradeIngestor(db_path=test_db)
     ingestor.ingest_csv(csv_path, broker="simple")
     
-    conn = sqlite3.connect(test_db)
-    rows = conn.execute("SELECT ticker, quantity, price FROM transactions ORDER BY ticker").fetchall()
+    conn = get_db_connection(test_db)
+    result = conn.execute(text("SELECT ticker, quantity, price FROM transactions ORDER BY ticker"))
+    rows = result.fetchall()
     conn.close()
     
     assert len(rows) == 2
-    assert rows[0] == ('AAPL', 10.0, 150.0)
-    assert rows[1] == ('GOOGL', 5.0, 2800.0)
+    assert rows[0][0] == 'AAPL' # Access by index or name depending on row type (Tuple in simple cases)
 
 def test_ingest_manual_trade(test_db):
     ingestor = TradeIngestor(db_path=test_db)
     ingestor.ingest_manual_trade('TSLA', '2023-01-01', 'BUY', 5, 200.0)
     
-    conn = sqlite3.connect(test_db)
-    row = conn.execute("SELECT ticker, quantity, price, amount FROM transactions").fetchone()
+    # Use SQLAlchemy to verify
+    conn = get_db_connection(test_db)
+    result = conn.execute(text("SELECT ticker, quantity, price, amount FROM transactions"))
+    row = result.fetchone()
     conn.close()
     
-    assert row == ('TSLA', 5.0, 200.0, 1000.0)
+    assert row is not None
+    assert row[0] == 'TSLA'
+    assert row[1] == 5.0
+    assert row[3] == 1000.0

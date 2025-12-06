@@ -79,14 +79,64 @@ graph TD
     ```
 
 3.  **Start the System**
-    Run the startup script to build and launch the Docker containers:
+
+    **Option A: Docker (Recommended for Production)**
     ```bash
+    chmod +x start.sh
     ./start.sh
     ```
+
+    **Option B: Local Development**
+    ```bash
+    chmod +x start_local.sh
+    ./start_local.sh
+    ```
+    *This will create a virtual environment, install dependencies, optionally migrate data (if DB_TYPE=postgres), and launch the dashboard.*
 
 4.  **Access Dashboard**
     Open your browser and navigate to:
     [http://localhost:8501](http://localhost:8501)
+
+## ☁️ Cloud Deployment & Data Migration Strategy
+
+This system is designed to be cloud-native (GCP Cloud Run / Spot VMs). When moving from local execution to the cloud:
+
+### 1. Infrastructure Setup
+*   **Database**: Provision a PostgreSQL instance (e.g., Cloud SQL).
+*   **Compute**: Deploy the container to Cloud Run or a Spot VM.
+*   **Env Vars**: Set `DB_TYPE=postgres`, `DB_HOST`, `DB_USER`, `DB_PASS` in the cloud environment.
+
+### 2. Data Migration Strategy
+You don't need to start from scratch. Use one of the following strategies to migrate your local SQLite data (`data/portfolio.db`) to the production PostgreSQL database.
+
+#### Strategy A: Remote Migration (Recommended for Cloud SQL)
+Run the migration script **locally**, connecting to the remote database via a secure proxy.
+
+1.  **Start Cloud SQL Auth Proxy** (if using GCP Cloud SQL):
+    ```bash
+    ./cloud_sql_proxy -instances=<INSTANCE_CONNECTION_NAME>=tcp:5432
+    ```
+2.  **Update Local .env**:
+    Set `DB_TYPE=postgres`, `DB_HOST=localhost` (tunnel), etc.
+3.  **Run Migration**:
+    ```bash
+    python3 scripts/migrate_data.py --source data/portfolio.db
+    ```
+
+#### Strategy B: VM-Based Migration
+If deploying on a VM (e.g., Compute Engine), you can move the DB file and migrate internally.
+
+1.  **Transfer Database File**:
+    ```bash
+    scp data/portfolio.db user@vm-ip:/tmp/portfolio.db
+    ```
+2.  **SSH into VM & Run**:
+    ```bash
+    # Inside the container or VM environment
+    export DB_TYPE=postgres
+    # ... set other DB env vars ...
+    python3 scripts/migrate_data.py --source /tmp/portfolio.db
+    ```
 
 ## 🛠️ Management
 

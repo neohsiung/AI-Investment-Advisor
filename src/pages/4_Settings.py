@@ -1,3 +1,4 @@
+
 import streamlit as st
 import pandas as pd
 import requests
@@ -5,75 +6,27 @@ import subprocess
 import os
 import time
 import json
+from sqlalchemy import text
 from src.database import get_db_connection
 
-def load_settings_from_db(db_path):
-    """從資料庫讀取設定"""
-    conn = get_db_connection(db_path)
-    cursor = conn.cursor()
-    settings = {}
-    try:
-        rows = cursor.execute("SELECT key, value FROM settings").fetchall()
-        for row in rows:
-            settings[row[0]] = row[1]
-    except Exception as e:
-        # In a real app, might separate UI error handling, but here we just re-raise or logging
-        print(f"Error loading settings: {e}")
-    finally:
-        conn.close()
-    return settings
+import streamlit as st
+import pandas as pd
+import time
+import os
+import subprocess
+from sqlalchemy import text
+from src.database import get_db_connection
+from src.services.settings_service import SettingsService
+from src.agents.engineer import SystemEngineerAgent
 
-def save_settings_to_db(db_path, provider, model_name, api_key, base_url):
-    """儲存設定到資料庫"""
-    conn = get_db_connection(db_path)
-    cursor = conn.cursor()
-    try:
-        cursor.execute("INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)", ("AI_PROVIDER", provider))
-        cursor.execute("INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)", ("AI_MODEL", model_name))
-        cursor.execute("INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)", ("API_KEY", api_key))
-        cursor.execute("INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)", ("BASE_URL", base_url))
-        conn.commit()
-        return True, "設定已儲存！(Settings saved successfully!)"
-    except Exception as e:
-        return False, f"儲存失敗: {e}"
-    finally:
-        conn.close()
-
-def fetch_openrouter_models():
-    """從 OpenRouter API 獲取模型列表"""
-    try:
-        response = requests.get("https://openrouter.ai/api/v1/models")
-        if response.status_code == 200:
-            data = response.json()
-            # 提取模型 ID 並排序
-            models = sorted([model["id"] for model in data["data"]])
-            return models
-        else:
-            # st.error logic should ideally be outside, but for now we return empty list
-            return []
-    except Exception:
-        return []
-
-
-def main():
-    st.set_page_config(page_title="設定 | AI 投資顧問", layout="wide")
-
-    st.title("系統設定 (System Settings)")
-
-    # Sidebar 設定
-    st.sidebar.header("設定 (Settings)")
-    db_path = st.sidebar.text_input("資料庫路徑 (Database Path)", "data/portfolio.db")
-
-    tab1, tab2, tab3, tab4, tab5 = st.tabs(["AI 模型設定 (AI Configuration)", "排程設定與紀錄 (Scheduler)", "報告試跑 (Report Dry Run)", "Agent 獨立測試 (Agent Playground)", "Prompt 優化 (Optimization)"])
-
-def render_ai_settings_tab(st, db_path, settings):
+def render_api_settings(st, service: SettingsService, settings: dict):
     st.subheader("AI 模型參數 (AI Model Parameters)")
     
     with st.form("ai_settings_form"):
         provider = st.selectbox(
             "AI 提供者 (Provider)", 
             ["Google Gemini", "OpenRouter", "OpenAI"],
-            index=["Google Gemini", "OpenRouter", "OpenAI"].index(settings.get("AI_PROVIDER", "Google Gemini"))
+            index=["Google Gemini", "OpenRouter", "OpenAI"].index(settings.get("AI_PROVIDER", "Google Gemini")) if settings.get("AI_PROVIDER") in ["Google Gemini", "OpenRouter", "OpenAI"] else 0
         )
         
         # 動態模型選擇邏輯
@@ -86,7 +39,7 @@ def render_ai_settings_tab(st, db_path, settings):
             col_model, col_btn = st.columns([3, 1])
             with col_btn:
                 if st.form_submit_button("更新模型列表 (Fetch Models)"):
-                    st.session_state['openrouter_models'] = fetch_openrouter_models()
+                    st.session_state['openrouter_models'] = service.fetch_openrouter_models()
                     st.rerun() # 重新整理以更新下拉選單
             
             with col_model:
@@ -131,7 +84,13 @@ def render_ai_settings_tab(st, db_path, settings):
         submitted = st.form_submit_button("儲存設定 (Save Settings)")
         
         if submitted:
-            success, msg = save_settings_to_db(db_path, provider, model_name, api_key, base_url)
+            updates = {
+                "AI_PROVIDER": provider,
+                "AI_MODEL": model_name,
+                "API_KEY": api_key,
+                "BASE_URL": base_url
+            }
+            success, msg = service.save_settings_bulk(updates)
             if success:
                 st.success(msg)
             else:
@@ -413,25 +372,28 @@ def render_optimization_history_tab(st, db_path):
     
     conn = get_db_connection(db_path)
     try:
-        # Check if table exists first (handling fresh DB)
-        cursor = conn.cursor()
-        cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='prompt_history'")
-        if not cursor.fetchone():
-            st.warning("Prompt History 資料表尚未建立。請先執行一次 Workflow 以觸發初始化。")
+        # Check if table exists by trying to select from it (DB agnostic way or use inspect)
+        # Using a simple query with LIMIT 0 is efficient and throws if table missing
+        try:
+             conn.execute(text("SELECT 1 FROM prompt_history LIMIT 1"))
+        except Exception:
+             st.warning("Prompt History 資料表尚未建立。請先執行一次 Workflow 以觸發初始化。")
+             return
+
+        history_df = pd.read_sql("SELECT timestamp, target_agent, reason, diff_content FROM prompt_history ORDER BY timestamp DESC", conn)
+        
+        if history_df.empty:
+            st.info("尚無優化紀錄。")
         else:
-            history_df = pd.read_sql("SELECT timestamp, target_agent, reason, diff_content FROM prompt_history ORDER BY timestamp DESC", conn)
-            
-            if history_df.empty:
-                st.info("尚無優化紀錄。")
-            else:
-                for _, row in history_df.iterrows():
-                    with st.expander(f"{row['timestamp']} - {row['target_agent']}"):
-                        st.caption(f"**Reason:** {row['reason']}")
-                        st.text("Prompt Diff:")
-                        st.code(row['diff_content'], language="diff")
+            for _, row in history_df.iterrows():
+                with st.expander(f"{row['timestamp']} - {row['target_agent']}"):
+                    st.caption(f"**Reason:** {row['reason']}")
+                    st.text("Prompt Diff:")
+                    st.code(row['diff_content'], language="diff")
     except Exception as e:
         st.error(f"讀取紀錄失敗: {e}")
-    conn.close()
+    finally:
+        conn.close()
 
 def main():
     st.set_page_config(page_title="設定 | AI 投資顧問", layout="wide")
@@ -444,10 +406,12 @@ def main():
 
     tab1, tab2, tab3, tab4, tab5 = st.tabs(["AI 模型設定 (AI Configuration)", "排程設定與紀錄 (Scheduler)", "報告試跑 (Report Dry Run)", "Agent 獨立測試 (Agent Playground)", "Prompt 優化 (Optimization)"])
 
+    settings_service = SettingsService(db_path)
+    
     with tab1:
         # 讀取現有設定
-        settings = load_settings_from_db(db_path)
-        render_ai_settings_tab(st, db_path, settings)
+        settings = settings_service.get_all_settings()
+        render_api_settings(st, settings_service, settings)
 
     with tab2:
         render_scheduler_tab(st, db_path)

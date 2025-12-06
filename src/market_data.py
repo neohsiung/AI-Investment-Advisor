@@ -1,10 +1,17 @@
+
 import yfinance as yf
 import pandas as pd
-from src.utils.logger import setup_logger
+from datetime import datetime, timedelta
+import os
+import json
+from sqlalchemy import text
 from src.database import get_db_connection
+from tenacity import retry, stop_after_attempt, wait_exponential
+from src.utils.logger import setup_logger
 
 class MarketDataService:
-    def __init__(self):
+    def __init__(self, db_path=None):
+        self.conn = get_db_connection(db_path)
         self.logger = setup_logger("MarketData")
 
     def get_current_prices(self, tickers):
@@ -195,7 +202,10 @@ class MarketDataService:
             import json
             
             conn = get_db_connection()
-            settings = dict(conn.execute("SELECT key, value FROM settings").fetchall())
+            # conn is now engine.connect()
+            # fetchall() works on ResultProxy in 1.4+
+            settings_rows = conn.execute(text("SELECT key, value FROM settings")).fetchall()
+            settings = dict(settings_rows)
             conn.close()
             
             provider = settings.get("AI_PROVIDER")

@@ -34,5 +34,7 @@ def test_get_db_connection(tmp_path):
     
     conn = get_db_connection(nested_path)
     assert nested_path.exists()
-    assert isinstance(conn, sqlite3.Connection)
+    # Updated to check for SQLAlchemy connection capabilities or simply non-None
+    assert conn is not None
+    assert hasattr(conn, 'execute')
     conn.close()

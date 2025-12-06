@@ -1,6 +1,7 @@
 import pandas as pd
 from src.database import get_db_connection
 from datetime import datetime
+from sqlalchemy import text
 
 class LeverageCalculator:
     def __init__(self, db_path="data/portfolio.db"):
@@ -48,7 +49,7 @@ class LeverageCalculator:
         # Cash Flows 表: Deposits (+), Withdrawals (-)
         # Transactions 表: Buy (-Amount), Sell (+Amount), Fees (-)
         
-        cash_query = "SELECT SUM(amount) FROM cash_flows"
+        cash_query = text("SELECT SUM(amount) FROM cash_flows")
         cash_flow_sum = conn.execute(cash_query).fetchone()[0] or 0.0
         
         # Transactions amount: Buy is positive cost? Ingestor logic: amount = qty * price + fees.
@@ -95,7 +96,7 @@ class ROIEngine:
         conn = get_db_connection(self.db_path)
         
         # Net Invested Capital = Deposits - Withdrawals
-        query = "SELECT SUM(CASE WHEN type='DEPOSIT' THEN amount WHEN type='WITHDRAWAL' THEN -amount ELSE 0 END) FROM cash_flows"
+        query = text("SELECT SUM(CASE WHEN type='DEPOSIT' THEN amount WHEN type='WITHDRAWAL' THEN -amount ELSE 0 END) FROM cash_flows")
         net_invested = conn.execute(query).fetchone()[0] or 0.0
         
         conn.close()
@@ -117,7 +118,7 @@ class SnapshotRecorder:
         conn = get_db_connection(self.db_path)
         
         # 計算總投入資本
-        query = "SELECT SUM(CASE WHEN type='DEPOSIT' THEN amount WHEN type='WITHDRAWAL' THEN -amount ELSE 0 END) FROM cash_flows"
+        query = text("SELECT SUM(CASE WHEN type='DEPOSIT' THEN amount WHEN type='WITHDRAWAL' THEN -amount ELSE 0 END) FROM cash_flows")
         net_invested = conn.execute(query).fetchone()[0] or 0.0
         
         pnl = nlv - net_invested
@@ -125,10 +126,16 @@ class SnapshotRecorder:
         date_str = get_current_date_str()
         
         # 使用 REPLACE INTO 確保同一天只會有一筆紀錄 (更新最新狀態)
-        conn.execute('''
+        conn.execute(text('''
             REPLACE INTO daily_snapshots (date, total_nlv, cash_balance, invested_capital, pnl)
-            VALUES (?, ?, ?, ?, ?)
-        ''', (date_str, nlv, cash_balance, net_invested, pnl))
+            VALUES (:date, :nlv, :cash_balance, :invested_capital, :pnl)
+        '''), {
+            "date": date_str,
+            "nlv": nlv,
+            "cash_balance": cash_balance,
+            "invested_capital": net_invested,
+            "pnl": pnl
+        })
         
         conn.commit()
         conn.close()

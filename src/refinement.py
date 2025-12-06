@@ -1,7 +1,10 @@
+
 import json
 import uuid
 from datetime import timedelta
+from datetime import datetime
 from src.utils.time_utils import format_time
+from sqlalchemy import text
 from src.database import get_db_connection
 
 class RefinementEngine:
@@ -27,29 +30,36 @@ class RefinementEngine:
     def record_recommendation(self, agent_name, ticker, signal, current_price):
         """記錄 Agent 的建議"""
         conn = get_db_connection(self.db_path)
-        cursor = conn.cursor()
         
-        rec_id = str(uuid.uuid4())
-        date_str = format_time()
-        
-        cursor.execute('''
-            INSERT INTO recommendations (id, date, agent, ticker, signal, price_at_signal)
-            VALUES (?, ?, ?, ?, ?, ?)
-        ''', (rec_id, date_str, agent_name, ticker, signal, current_price))
-        
-        conn.commit()
-        conn.close()
+        try:
+            rec_id = str(uuid.uuid4())
+            date_str = format_time()
+            
+            conn.execute(text('''
+                INSERT INTO recommendations (id, date, agent, ticker, signal, price_at_signal)
+                VALUES (:id, :date, :agent, :ticker, :signal, :price)
+            '''), {
+                "id": rec_id,
+                "date": date_str,
+                "agent": agent_name,
+                "ticker": ticker,
+                "signal": signal,
+                "price": current_price
+            })
+            
+            conn.commit()
+        finally:
+            conn.close()
 
     def run_attribution_analysis(self):
         """執行績效歸因分析 (Mock Implementation)"""
         print("Running Attribution Analysis...")
         conn = get_db_connection(self.db_path)
-        cursor = conn.cursor()
         
         # 1. 獲取 30 天前的建議
         # 這裡簡化邏輯，直接選取所有 outcome_score 為 0 的建議
-        cursor.execute("SELECT * FROM recommendations WHERE outcome_score = 0")
-        recs = cursor.fetchall()
+        recs_result = conn.execute(text("SELECT * FROM recommendations WHERE outcome_score = 0"))
+        recs = recs_result.mappings().fetchall()
         
         for rec in recs:
             # 2. 獲取當前價格 (Mock)
@@ -64,7 +74,7 @@ class RefinementEngine:
                     score = -1
             
             # 更新分數
-            cursor.execute("UPDATE recommendations SET outcome_score = ? WHERE id = ?", (score, rec['id']))
+            conn.execute(text("UPDATE recommendations SET outcome_score = :score WHERE id = :id"), {"score": score, "id": rec['id']})
             print(f"Updated score for {rec['agent']} on {rec['ticker']}: {score}")
             
         conn.commit()

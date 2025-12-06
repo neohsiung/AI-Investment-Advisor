@@ -78,13 +78,18 @@ def mock_engineer_agent():
 def test_engineer_get_schedule_config(mock_engineer_agent):
     # This method reads from DB, not LLM
     with patch("src.agents.engineer.get_db_connection") as mock_conn:
-        mock_cursor = mock_conn.return_value.cursor.return_value
-        # Mock DB returning a custom schedule
-        mock_cursor.fetchall.return_value = [{"key": "schedule_daily", "value": "12:00"}]
-        
+        # Mock conn.execute().fetchall()
+        mock_result = MagicMock()
+        # Return tuples to match row[0], row[1] access
+        mock_result.fetchall.return_value = [
+            ("schedule_daily", "12:00"),
+            ("schedule_weekly", "02:00")
+        ]
+        mock_conn.return_value.execute.return_value = mock_result
+    
         config = mock_engineer_agent.get_schedule_config()
         assert config["schedule_daily"] == "12:00"
-        assert config["schedule_weekly"] == "02:00" # Default value
+    assert config["schedule_weekly"] == "02:00" # Default value
 
 def test_engineer_analyze_optimization_needs(mock_engineer_agent):
     cio_report = "Some report... \nSystem Optimization Feedback\n Please optimize Momentum Agent."
