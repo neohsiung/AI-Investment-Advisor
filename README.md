@@ -14,11 +14,11 @@ An advanced, automated investment advisory system powered by a swarm of AI agent
     *   **Fundamental Agent**: Evaluates company financials, earnings reports, and valuation metrics.
     *   **Momentum Agent**: Tracks price action, trends, and technical indicators.
     *   **CIO Agent (Chief Investment Officer)**: Synthesizes all inputs to make final portfolio allocation decisions.
+    *   **System Engineer Agent (Self-Optimization)**: Monitors feedback from the CIO and automatically optimizes other agents' prompts to improve analysis quality continuously.
 *   **Real-time Data Injection**: Prevents AI hallucinations by injecting live market data (prices, financials, news) directly into agent prompts.
-*   **Smart Caching System**: Optimizes API costs and latency with granular Time-To-Live (TTL) settings for different analysis types.
-*   **Interactive Dashboard**: Built with Streamlit for real-time monitoring of portfolio performance, agent reports, and system status.
-*   **Automated Scheduling**: Background scheduler ensures analysis runs consistently at market close.
-*   **Production Ready**: Dockerized setup with timezone awareness (`Asia/Taipei` default) and auto-recovery capabilities.
+*   **Dynamic Scheduling for US Market**: Default schedule aligns with US mid-session (02:00 Taipei Time / 13:00 ET) to capture real-time market dynamics.
+*   **Smart Caching System**: Optimizes API costs and latency with granular Time-To-Live (TTL) settings.
+*   **Interactive Dashboard**: Real-time monitoring of portfolio, reports, and **Optimization History**.
 
 ## 🏗️ System Architecture
 
@@ -37,6 +37,11 @@ graph TD
         MA -->|Report| CIO[CIO Agent]
         FA -->|Report| CIO
         MO -->|Report| CIO
+        
+        CIO -.->|Feedback| SEA[System Engineer Agent]
+        SEA -.->|Prompt Optimization| MA
+        SEA -.->|Prompt Optimization| FA
+        SEA -.->|Prompt Optimization| MO
     end
 
     subgraph User Interface

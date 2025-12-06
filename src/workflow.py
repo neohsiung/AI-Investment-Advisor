@@ -163,8 +163,22 @@ def run_workflow(mode='weekly', dry_run=False, force=False):
             from src.notifier import EmailNotifier
             notifier = EmailNotifier()
             notifier.send_report(f"Investment Advisory ({mode.capitalize()}) - {date_str[:10]}", final_report)
-        else:
             logger.info("[Dry Run] Report generated but NOT saved to DB or emailed.")
+        
+        # 4.1 執行系統工程師代理人 System Engineer Process
+        # 不論 Dry Run 是否開啟，只要有 CIO 報告，我們都可以嘗試優化，
+        # 但為了安全，如果 Dry Run 開啟，我們也只在 Log 顯示優化結果而不寫入? 
+        # 其實 Engineer Agent 預設就會寫 DB 和檔案，如果是 Dry Run，我們可以傳遞參數讓它不要寫
+        # 但這裡簡化流程，假設 Dry Run 就完全不執行 Engineer
+        if not dry_run:
+            logger.info("Running System Engineer Agent for Optimization...")
+            from src.agents.engineer import SystemEngineerAgent
+            engineer_agent = SystemEngineerAgent()
+            optimization_report = engineer_agent.run({
+                "cio_report": final_report
+            })
+            logger.info(f"Engineer Agent Report: {optimization_report}")
+            
     else:
         logger.info("No significant changes or weekly trigger. Skipping CIO Agent and Report.")
 

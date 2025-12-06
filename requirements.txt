@@ -8,3 +8,5 @@ requests
 yfinance
 pytz
 pytz
+pytest-cov
+pytest-mock

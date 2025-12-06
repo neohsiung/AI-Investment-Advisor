@@ -2,15 +2,42 @@ import streamlit as st
 import pandas as pd
 import requests
 import subprocess
+import os
+import time
+import json
 from src.database import get_db_connection
 
-st.set_page_config(page_title="設定 | AI 投資顧問", layout="wide")
+def load_settings_from_db(db_path):
+    """從資料庫讀取設定"""
+    conn = get_db_connection(db_path)
+    cursor = conn.cursor()
+    settings = {}
+    try:
+        rows = cursor.execute("SELECT key, value FROM settings").fetchall()
+        for row in rows:
+            settings[row[0]] = row[1]
+    except Exception as e:
+        # In a real app, might separate UI error handling, but here we just re-raise or logging
+        print(f"Error loading settings: {e}")
+    finally:
+        conn.close()
+    return settings
 
-st.title("系統設定 (System Settings)")
-
-# Sidebar 設定
-st.sidebar.header("設定 (Settings)")
-db_path = st.sidebar.text_input("資料庫路徑 (Database Path)", "data/portfolio.db")
+def save_settings_to_db(db_path, provider, model_name, api_key, base_url):
+    """儲存設定到資料庫"""
+    conn = get_db_connection(db_path)
+    cursor = conn.cursor()
+    try:
+        cursor.execute("INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)", ("AI_PROVIDER", provider))
+        cursor.execute("INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)", ("AI_MODEL", model_name))
+        cursor.execute("INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)", ("API_KEY", api_key))
+        cursor.execute("INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)", ("BASE_URL", base_url))
+        conn.commit()
+        return True, "設定已儲存！(Settings saved successfully!)"
+    except Exception as e:
+        return False, f"儲存失敗: {e}"
+    finally:
+        conn.close()
 
 def fetch_openrouter_models():
     """從 OpenRouter API 獲取模型列表"""
@@ -22,28 +49,25 @@ def fetch_openrouter_models():
             models = sorted([model["id"] for model in data["data"]])
             return models
         else:
-            st.error(f"無法獲取模型列表 (Status: {response.status_code})")
+            # st.error logic should ideally be outside, but for now we return empty list
             return []
-    except Exception as e:
-        st.error(f"連線 OpenRouter 失敗: {e}")
+    except Exception:
         return []
 
-tab1, tab2, tab3, tab4 = st.tabs(["AI 模型設定 (AI Configuration)", "排程紀錄 (Scheduler Logs)", "報告試跑 (Report Dry Run)", "Agent 獨立測試 (Agent Playground)"])
 
-with tab1:
+def main():
+    st.set_page_config(page_title="設定 | AI 投資顧問", layout="wide")
+
+    st.title("系統設定 (System Settings)")
+
+    # Sidebar 設定
+    st.sidebar.header("設定 (Settings)")
+    db_path = st.sidebar.text_input("資料庫路徑 (Database Path)", "data/portfolio.db")
+
+    tab1, tab2, tab3, tab4, tab5 = st.tabs(["AI 模型設定 (AI Configuration)", "排程設定與紀錄 (Scheduler)", "報告試跑 (Report Dry Run)", "Agent 獨立測試 (Agent Playground)", "Prompt 優化 (Optimization)"])
+
+def render_ai_settings_tab(st, db_path, settings):
     st.subheader("AI 模型參數 (AI Model Parameters)")
-    
-    conn = get_db_connection(db_path)
-    cursor = conn.cursor()
-    
-    # 讀取現有設定
-    settings = {}
-    try:
-        rows = cursor.execute("SELECT key, value FROM settings").fetchall()
-        for row in rows:
-            settings[row[0]] = row[1]
-    except Exception as e:
-        st.error(f"讀取設定失敗: {e}")
     
     with st.form("ai_settings_form"):
         provider = st.selectbox(
@@ -53,7 +77,7 @@ with tab1:
         )
         
         # 動態模型選擇邏輯
-        model_options = []
+        model_name = settings.get("AI_MODEL", "google/gemini-pro-1.5")
         if provider == "OpenRouter":
             # 如果 Session State 中已有列表則使用，否則提供按鈕獲取
             if 'openrouter_models' not in st.session_state:
@@ -107,19 +131,38 @@ with tab1:
         submitted = st.form_submit_button("儲存設定 (Save Settings)")
         
         if submitted:
-            try:
-                cursor.execute("INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)", ("AI_PROVIDER", provider))
-                cursor.execute("INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)", ("AI_MODEL", model_name))
-                cursor.execute("INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)", ("API_KEY", api_key))
-                cursor.execute("INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)", ("BASE_URL", base_url))
-                conn.commit()
-                st.success("設定已儲存！(Settings saved successfully!)")
-            except Exception as e:
-                st.error(f"儲存失敗: {e}")
-    
-    conn.close()
+            success, msg = save_settings_to_db(db_path, provider, model_name, api_key, base_url)
+            if success:
+                st.success(msg)
+            else:
+                st.error(msg)
 
-with tab2:
+def render_scheduler_tab(st, db_path):
+    st.subheader("排程設定 (Schedule Configuration)")
+    
+    # 讀取目前排程設定
+    from src.agents.engineer import SystemEngineerAgent
+    engineer = SystemEngineerAgent()
+    config = engineer.get_schedule_config()
+    
+    with st.form("schedule_config_form"):
+        col_sch1, col_sch2 = st.columns(2)
+        with col_sch1:
+            daily_time = st.time_input("每日檢查時間 (Daily Check Time)", 
+                                       value=pd.to_datetime(config.get("schedule_daily", "09:00"), format="%H:%M").time())
+        with col_sch2:
+            weekly_time = st.time_input("每週報告時間 (Weekly Report Time - Sat)", 
+                                        value=pd.to_datetime(config.get("schedule_weekly", "09:00"), format="%H:%M").time())
+            
+        if st.form_submit_button("更新排程 (Update Schedule)"):
+            try:
+                engineer.update_schedule_config("schedule_daily", daily_time.strftime("%H:%M"))
+                engineer.update_schedule_config("schedule_weekly", weekly_time.strftime("%H:%M"))
+                st.success("排程設定已更新！請重啟 Scheduler 以生效。(Schedule updated! Please restart scheduler to apply.)")
+            except Exception as e:
+                st.error(f"更新失敗: {e}")
+    
+    st.markdown("---")
     st.subheader("排程執行紀錄 (Scheduler Execution Logs)")
     
     conn = get_db_connection(db_path)
@@ -134,10 +177,8 @@ with tab2:
         
     conn.close()
 
-import os
-import time
-
-with tab3:
+def render_report_dry_run_tab(st):
+    
     st.subheader("報告試跑 (Report Dry Run)")
     st.info("此功能將以 Dry Run 模式執行每週報告流程，不會發送 Email。")
     
@@ -269,13 +310,11 @@ with tab3:
         with st.expander("查看詳細日誌 (View Detailed Logs)", expanded=True):
             st.code(log_contents)
 
-# --- Tab 4: Agent Playground ---
-
-with tab4:
+def render_agent_playground_tab(st):
     st.subheader("Agent 獨立測試 (Agent Playground)")
     st.info("在此測試個別 Agent 的反應與輸出。請確保已設定 API Key。")
     
-    agent_type = st.selectbox("選擇 Agent (Select Agent)", ["Momentum", "Fundamental", "Macro", "CIO"])
+    agent_type = st.selectbox("選擇 Agent (Select Agent)", ["Momentum", "Fundamental", "Macro", "CIO", "Engineer"])
     
     default_context = ""
     if agent_type == "Momentum":
@@ -324,6 +363,11 @@ with tab4:
     ],
     "leverage_ratio": 1.1
 }"""
+    elif agent_type == "Engineer":
+        default_context = """{
+    "cio_report": "## System Optimization Feedback\\nCIO suggests that Momentum Agent should include explicit Volume Analysis for better trend confirmation.",
+    "target_agent_name": "Momentum"
+}"""
 
     context_input = st.text_area("輸入測試 Context (JSON)", value=default_context, height=200)
     
@@ -345,6 +389,9 @@ with tab4:
             elif agent_type == "CIO":
                 from src.agents.cio import CIOAgent
                 agent = CIOAgent()
+            elif agent_type == "Engineer":
+                from src.agents.engineer import SystemEngineerAgent
+                agent = SystemEngineerAgent()
             
             with st.spinner(f"Running {agent_type} Agent..."):
                 response = agent.run(context)
@@ -360,3 +407,59 @@ with tab4:
             st.error("JSON 格式錯誤，請檢查 Context 輸入。")
         except Exception as e:
             st.error(f"執行失敗: {e}")
+
+def render_optimization_history_tab(st, db_path):
+    st.subheader("Prompt 優化紀錄 (Optimization History)")
+    
+    conn = get_db_connection(db_path)
+    try:
+        # Check if table exists first (handling fresh DB)
+        cursor = conn.cursor()
+        cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='prompt_history'")
+        if not cursor.fetchone():
+            st.warning("Prompt History 資料表尚未建立。請先執行一次 Workflow 以觸發初始化。")
+        else:
+            history_df = pd.read_sql("SELECT timestamp, target_agent, reason, diff_content FROM prompt_history ORDER BY timestamp DESC", conn)
+            
+            if history_df.empty:
+                st.info("尚無優化紀錄。")
+            else:
+                for _, row in history_df.iterrows():
+                    with st.expander(f"{row['timestamp']} - {row['target_agent']}"):
+                        st.caption(f"**Reason:** {row['reason']}")
+                        st.text("Prompt Diff:")
+                        st.code(row['diff_content'], language="diff")
+    except Exception as e:
+        st.error(f"讀取紀錄失敗: {e}")
+    conn.close()
+
+def main():
+    st.set_page_config(page_title="設定 | AI 投資顧問", layout="wide")
+
+    st.title("系統設定 (System Settings)")
+
+    # Sidebar 設定
+    st.sidebar.header("設定 (Settings)")
+    db_path = st.sidebar.text_input("資料庫路徑 (Database Path)", "data/portfolio.db")
+
+    tab1, tab2, tab3, tab4, tab5 = st.tabs(["AI 模型設定 (AI Configuration)", "排程設定與紀錄 (Scheduler)", "報告試跑 (Report Dry Run)", "Agent 獨立測試 (Agent Playground)", "Prompt 優化 (Optimization)"])
+
+    with tab1:
+        # 讀取現有設定
+        settings = load_settings_from_db(db_path)
+        render_ai_settings_tab(st, db_path, settings)
+
+    with tab2:
+        render_scheduler_tab(st, db_path)
+
+    with tab3:
+        render_report_dry_run_tab(st)
+
+    with tab4:
+        render_agent_playground_tab(st)
+
+    with tab5:
+        render_optimization_history_tab(st, db_path)
+
+if __name__ == "__main__":
+    main()

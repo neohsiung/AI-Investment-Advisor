@@ -114,6 +114,19 @@ def init_db(db_path=None):
         )
     ''')
     
+    # 9. Prompt History Table
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS prompt_history (
+            id TEXT PRIMARY KEY,
+            timestamp TEXT,
+            target_agent TEXT,
+            reason TEXT,
+            original_prompt TEXT,
+            new_prompt TEXT,
+            diff_content TEXT
+        )
+    ''')
+    
     conn.commit()
     conn.close()
     print(f"Database initialized at {DB_PATH}")

@@ -1,6 +1,8 @@
 import schedule
 import time
 import subprocess
+import argparse
+import sys
 from src.database import get_db_connection
 import uuid
 from src.utils.time_utils import get_current_time, format_time
@@ -64,24 +66,48 @@ def check_monthly_job():
     if get_current_time().day == 1:
         job_monthly_refinement()
 
-def run_scheduler():
+def run_scheduler_loop():
     print(f"Scheduler started at {format_time()}. Press Ctrl+C to exit.")
     
-    # 每日 09:00 執行檢查 (Daily Mode)
-    # Note: schedule uses system time. If system is UTC, this is 09:00 UTC.
-    # To strictly follow Taipei time for scheduling, we might need to adjust or set system TZ.
-    # For now, we assume the container/system TZ is aligned or user accepts system time trigger.
-    schedule.every().day.at("09:00").do(job_daily_check)
+    from src.agents.engineer import SystemEngineerAgent
+    engineer = SystemEngineerAgent()
     
-    # 每週六 09:00 執行週報 (Weekly Mode)
-    schedule.every().saturday.at("09:00").do(job_weekly_report)
+    # 初始讀取配置
+    config = engineer.get_schedule_config()
+    daily_time = config.get("schedule_daily", "09:00")
+    weekly_time = config.get("schedule_weekly", "09:00")
+    
+    print(f"Loaded schedule config: Daily at {daily_time}, Weekly at {weekly_time}")
+    
+    # 每日執行檢查 (Daily Mode)
+    schedule.every().day.at(daily_time).do(job_daily_check)
+    
+    # 每週六執行週報 (Weekly Mode)
+    schedule.every().saturday.at(weekly_time).do(job_weekly_report)
     
     # 每月 1 號執行 Refinement
     schedule.every().day.at("00:00").do(check_monthly_job)
+    
+    # 定期重新加載配置 (例如每小時)
+    # 為了簡單起見，目前若要更改配置需重啟 Scheduler，
+    # 或者我們可以在 loop 中檢查 DB 變更 (較複雜)。
+    # 這裡先保持靜態載入，但至少是從 DB 讀的。
     
     while True:
         schedule.run_pending()
         time.sleep(60)
 
 if __name__ == "__main__":
-    run_scheduler()
+    parser = argparse.ArgumentParser(description="Investment Advisor Scheduler")
+    parser.add_argument("--task", choices=['daily', 'weekly', 'monthly', 'loop'], default='loop', 
+                        help="Task to run immediately (or 'loop' for daemon mode)")
+    args = parser.parse_args()
+
+    if args.task == 'daily':
+        job_daily_check()
+    elif args.task == 'weekly':
+        job_weekly_report()
+    elif args.task == 'monthly':
+        job_monthly_refinement()
+    else:
+        run_scheduler_loop()

@@ -1,6 +1,7 @@
 import yfinance as yf
 import pandas as pd
 from src.utils.logger import setup_logger
+from src.database import get_db_connection
 
 class MarketDataService:
     def __init__(self):
@@ -190,7 +191,6 @@ class MarketDataService:
         使用 LLM 查詢市場資訊 (Fallback)
         """
         try:
-            from src.database import get_db_connection
             import requests
             import json
             
