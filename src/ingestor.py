@@ -11,22 +11,22 @@ class TradeIngestor:
     def __init__(self, db_path="data/portfolio.db"):
         self.db_path = db_path
 
-    def ingest_csv(self, file_path, broker="robinhood"):
+    def ingest_csv(self, file_path, broker="robinhood", user_id=None):
         """攝取 CSV 檔案並寫入資料庫"""
         file_path = Path(file_path)
         if not file_path.exists():
             raise FileNotFoundError(f"File not found: {file_path}")
 
         if broker.lower() == "robinhood":
-            self._parse_robinhood(file_path)
+            self._parse_robinhood(file_path, user_id)
         elif broker.lower() == "ibkr":
-            self._parse_ibkr(file_path)
+            self._parse_ibkr(file_path, user_id)
         elif broker.lower() == "simple":
-            self._parse_simple_ticker(file_path)
+            self._parse_simple_ticker(file_path, user_id)
         else:
             raise ValueError(f"Unsupported broker: {broker}")
 
-    def _parse_simple_ticker(self, file_path):
+    def _parse_simple_ticker(self, file_path, user_id=None):
         """解析簡易 Ticker 清單"""
         # 格式: ticker (必填), quantity (選填), cost (選填)
         df = pd.read_csv(file_path)
@@ -53,10 +53,11 @@ class TradeIngestor:
                 amount = quantity * price
                 
                 conn.execute(text('''
-                    INSERT INTO transactions (id, ticker, trade_date, action, quantity, price, fees, amount, source_file, raw_data)
-                    VALUES (:id, :ticker, :trade_date, :action, :quantity, :price, :fees, :amount, :source_file, :raw_data)
+                    INSERT INTO transactions (id, user_id, ticker, trade_date, action, quantity, price, fees, amount, source_file, raw_data)
+                    VALUES (:id, :user_id, :ticker, :trade_date, :action, :quantity, :price, :fees, :amount, :source_file, :raw_data)
                 '''), {
                     "id": trans_id,
+                    "user_id": user_id,
                     "ticker": ticker,
                     "trade_date": date_str,
                     "action": action,
@@ -75,7 +76,7 @@ class TradeIngestor:
             conn.close()
         print(f"Ingested Simple Ticker data from {file_path}")
 
-    def _parse_robinhood(self, file_path):
+    def _parse_robinhood(self, file_path, user_id=None):
         """解析 Robinhood CSV"""
         df = pd.read_csv(file_path)
         conn = get_db_connection(self.db_path)
@@ -98,10 +99,11 @@ class TradeIngestor:
             amount = quantity * price + fees # 簡化計算
 
             cursor.execute(text('''
-                INSERT INTO transactions (id, ticker, trade_date, action, quantity, price, fees, amount, source_file, raw_data)
-                VALUES (:id, :ticker, :trade_date, :action, :quantity, :price, :fees, :amount, :source_file, :raw_data)
+                INSERT INTO transactions (id, user_id, ticker, trade_date, action, quantity, price, fees, amount, source_file, raw_data)
+                VALUES (:id, :user_id, :ticker, :trade_date, :action, :quantity, :price, :fees, :amount, :source_file, :raw_data)
             '''), {
                 "id": trans_id,
+                "user_id": user_id,
                 "ticker": ticker,
                 "trade_date": date_str,
                 "action": action,
@@ -117,7 +119,7 @@ class TradeIngestor:
         conn.close()
         print(f"Ingested Robinhood data from {file_path}")
 
-    def _parse_ibkr(self, file_path):
+    def _parse_ibkr(self, file_path, user_id=None):
         """解析 IBKR CSV"""
         # IBKR CSV 通常有兩部分：Statement 與 Data，或直接是 Flex Query
         # 這裡假設是 Flex Query 格式，或標準 Activity Statement
@@ -135,6 +137,7 @@ class TradeIngestor:
         else:
             # Fallback logic or assume all are trades if simple format
             trades = df
+            trades['Type'] = 'Trade' # Ensure column exists or logic holds
             dividends = pd.DataFrame()
 
         for _, row in trades.iterrows():
@@ -148,17 +151,14 @@ class TradeIngestor:
             # IBKR Quantity 負數為賣
             action = 'BUY' if quantity > 0 else 'SELL'
             quantity = abs(quantity)
-            amount = quantity * price + fees # IBKR fees 通常是負數，這裡需確認正負號慣例
-            
-            # 修正 Amount 計算: IBKR 報表中，買入金額為負(支出)，賣出為正(收入)
-            # 這裡我們儲存絕對值或依據 Schema 定義。
-            # Schema amount: 總金額。
+            amount = quantity * price + fees 
             
             cursor.execute(text('''
-                INSERT INTO transactions (id, ticker, trade_date, action, quantity, price, fees, amount, source_file, raw_data)
-                VALUES (:id, :ticker, :trade_date, :action, :quantity, :price, :fees, :amount, :source_file, :raw_data)
+                INSERT INTO transactions (id, user_id, ticker, trade_date, action, quantity, price, fees, amount, source_file, raw_data)
+                VALUES (:id, :user_id, :ticker, :trade_date, :action, :quantity, :price, :fees, :amount, :source_file, :raw_data)
             '''), {
                 "id": trans_id,
+                "user_id": user_id,
                 "ticker": ticker,
                 "trade_date": date_str,
                 "action": action,
@@ -178,10 +178,11 @@ class TradeIngestor:
             description = f"Dividend from {row.get('Symbol', 'UNKNOWN')}"
             
             cursor.execute(text('''
-                INSERT INTO cash_flows (id, date, amount, type, description)
-                VALUES (:id, :date, :amount, :type, :description)
+                INSERT INTO cash_flows (id, user_id, date, amount, type, description)
+                VALUES (:id, :user_id, :date, :amount, :type, :description)
             '''), {
                 "id": cash_id,
+                "user_id": user_id,
                 "date": date_str,
                 "amount": amount,
                 "type": 'DIVIDEND',
@@ -192,7 +193,7 @@ class TradeIngestor:
         conn.close()
         print(f"Ingested IBKR data from {file_path}")
 
-    def ingest_manual_trade(self, ticker, date, action, quantity, price, fees=0.0):
+    def ingest_manual_trade(self, ticker, date, action, quantity, price, fees=0.0, user_id=None):
         """手動匯入單筆交易"""
         conn = get_db_connection(self.db_path)
         
@@ -212,10 +213,11 @@ class TradeIngestor:
             }
             
             conn.execute(text('''
-                INSERT INTO transactions (id, ticker, trade_date, action, quantity, price, fees, amount, source_file, raw_data)
-                VALUES (:id, :ticker, :trade_date, :action, :quantity, :price, :fees, :amount, :source_file, :raw_data)
+                INSERT INTO transactions (id, user_id, ticker, trade_date, action, quantity, price, fees, amount, source_file, raw_data)
+                VALUES (:id, :user_id, :ticker, :trade_date, :action, :quantity, :price, :fees, :amount, :source_file, :raw_data)
             '''), {
                 "id": trans_id,
+                "user_id": user_id,
                 "ticker": ticker,
                 "trade_date": date,
                 "action": action,

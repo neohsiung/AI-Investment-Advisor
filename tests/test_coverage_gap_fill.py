@@ -8,7 +8,7 @@ from src.market_data import MarketDataService
 
 # --- Base Agent Tests ---
 
-class TestAgent(BaseAgent):
+class MockAgent(BaseAgent):
     def run(self, context):
         return "Test Run"
 
@@ -19,7 +19,7 @@ def mock_agent():
             with patch.object(BaseAgent, '_load_config', return_value={
                 "provider": "Google Gemini", "model": "gemini-1.5-pro", "api_key": "test_key"
             }):
-                agent = TestAgent("TestAgent", "prompt.txt")
+                agent = MockAgent("TestAgent", "prompt.txt")
                 return agent
 
 def test_base_agent_load_config_error():
@@ -28,13 +28,13 @@ def test_base_agent_load_config_error():
         with patch('builtins.open', mock_open(read_data="System Prompt")):
             with patch('os.path.exists', return_value=True):
                 # Should not raise, just log warning and return default
-                agent = TestAgent("TestAgent", "prompt.txt") 
+                agent = MockAgent("TestAgent", "prompt.txt") 
                 assert agent.config["provider"] == "Google Gemini" # Default
 
 def test_base_agent_load_prompt_error():
     with patch('os.path.exists', return_value=False):
         with pytest.raises(FileNotFoundError):
-            TestAgent("TestAgent", "missing.txt")
+            MockAgent("TestAgent", "missing.txt")
 
 def test_base_agent_real_llm_openrouter(mock_agent):
     mock_agent.config["provider"] = "OpenRouter"

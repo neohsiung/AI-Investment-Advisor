@@ -131,7 +131,7 @@ class BaseAgent(ABC):
                 ]
             }
             try:
-                response = requests.post(url, headers=headers, json=data)
+                response = requests.post(url, headers=headers, json=data, timeout=30)
                 response.raise_for_status()
                 
                 try:
@@ -162,7 +162,7 @@ class BaseAgent(ABC):
             }
             
             try:
-                response = requests.post(url, headers=headers, json=data)
+                response = requests.post(url, headers=headers, json=data, timeout=30)
                 response.raise_for_status()
                 try:
                     return response.json()['candidates'][0]['content']['parts'][0]['text']
@@ -191,7 +191,7 @@ class BaseAgent(ABC):
                 ]
             }
             try:
-                response = requests.post(url, headers=headers, json=data)
+                response = requests.post(url, headers=headers, json=data, timeout=30)
                 response.raise_for_status()
                 try:
                     return response.json()['choices'][0]['message']['content']

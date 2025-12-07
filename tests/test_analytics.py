@@ -15,6 +15,7 @@ def test_db(tmp_path):
     conn.execute('''
         CREATE TABLE IF NOT EXISTS transactions (
             id TEXT PRIMARY KEY,
+            user_id TEXT,
             ticker TEXT,
             trade_date TEXT,
             action TEXT,
@@ -29,6 +30,7 @@ def test_db(tmp_path):
     conn.execute('''
         CREATE TABLE IF NOT EXISTS cash_flows (
             id TEXT PRIMARY KEY,
+            user_id TEXT,
             date TEXT,
             amount REAL,
             type TEXT,
@@ -37,11 +39,13 @@ def test_db(tmp_path):
     ''')
     conn.execute('''
         CREATE TABLE IF NOT EXISTS daily_snapshots (
-            date TEXT PRIMARY KEY,
+            date TEXT,
+            user_id TEXT,
             total_nlv REAL,
             cash_balance REAL,
             invested_capital REAL,
-            pnl REAL
+            pnl REAL,
+            PRIMARY KEY (date, user_id)
         )
     ''')
     conn.commit()
@@ -51,16 +55,16 @@ def test_db(tmp_path):
 def test_leverage_calculator(test_db):
     conn = sqlite3.connect(test_db)
     # Deposit 10000
-    conn.execute("INSERT INTO cash_flows (id, date, amount, type) VALUES ('1', '2023-01-01', 10000, 'DEPOSIT')")
+    conn.execute("INSERT INTO cash_flows (id, user_id, date, amount, type) VALUES ('1', 'test_user', '2023-01-01', 10000, 'DEPOSIT')")
     # Buy AAPL: 10 shares @ 150 (Cost 1500)
-    conn.execute("INSERT INTO transactions (id, ticker, action, quantity, price, fees, amount) VALUES ('t1', 'AAPL', 'BUY', 10, 150, 0, 1500)")
+    conn.execute("INSERT INTO transactions (id, user_id, ticker, action, quantity, price, fees, amount) VALUES ('t1', 'test_user', 'AAPL', 'BUY', 10, 150, 0, 1500)")
     conn.commit()
     conn.close()
     
     calc = LeverageCalculator(db_path=test_db)
     current_prices = {'AAPL': 160.0} # Price goes up
     
-    metrics = calc.calculate_metrics(current_prices)
+    metrics = calc.calculate_metrics(current_prices, user_id='test_user')
     
     # TNV = 10 * 160 = 1600
     assert metrics['tnv'] == 1600.0
@@ -77,36 +81,39 @@ def test_leverage_calculator(test_db):
 def test_roi_engine(test_db):
     conn = sqlite3.connect(test_db)
     # Deposit 10000
-    conn.execute("INSERT INTO cash_flows (id, date, amount, type) VALUES ('1', '2023-01-01', 10000, 'DEPOSIT')")
+    conn.execute("INSERT INTO cash_flows (id, user_id, date, amount, type) VALUES ('1', 'test_user', '2023-01-01', 10000, 'DEPOSIT')")
     conn.commit()
     conn.close()
     
     engine = ROIEngine(db_path=test_db)
     
     # Case 1: No profit
-    roi = engine.calculate_roi(nlv=10000)
+    roi = engine.calculate_roi(nlv=10000, user_id='test_user')
     assert roi == 0.0
     
     # Case 2: Profit 1000
-    roi = engine.calculate_roi(nlv=11000)
+    roi = engine.calculate_roi(nlv=11000, user_id='test_user')
     assert roi == 10.0 # (11000 - 10000) / 10000 * 100
 
 def test_snapshot_recorder(test_db):
     conn = sqlite3.connect(test_db)
-    conn.execute("INSERT INTO cash_flows (id, date, amount, type) VALUES ('1', '2023-01-01', 10000, 'DEPOSIT')")
+    conn.execute("INSERT INTO cash_flows (id, user_id, date, amount, type) VALUES ('1', 'test_user', '2023-01-01', 10000, 'DEPOSIT')")
     conn.commit()
     conn.close()
     
     recorder = SnapshotRecorder(db_path=test_db)
-    recorder.record_daily_snapshot(nlv=10500, cash_balance=5000)
+    recorder.record_daily_snapshot(nlv=10500, cash_balance=5000, user_id='test_user')
     
     conn = sqlite3.connect(test_db)
     row = conn.execute("SELECT * FROM daily_snapshots").fetchone()
     conn.close()
     
     assert row is not None
-    # date, nlv, cash, invested, pnl
-    assert row[1] == 10500
-    assert row[2] == 5000
-    assert row[3] == 10000 # Invested
-    assert row[4] == 500 # PnL
+    # date, user_id, nlv, cash, invested, pnl
+    # Note: Using SELECT * order depends on schema creation. 
+    # Schema: date, user_id, total_nlv, cash_balance, invested_capital, pnl
+    assert row[1] == 'test_user'
+    assert row[2] == 10500
+    assert row[3] == 5000
+    assert row[4] == 10000 # Invested
+    assert row[5] == 500 # PnL

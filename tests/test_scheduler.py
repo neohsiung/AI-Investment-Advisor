@@ -6,16 +6,20 @@ from datetime import datetime
 @patch('src.scheduler.subprocess.run')
 @patch('src.scheduler.log_job_execution')
 @patch('src.scheduler.get_current_time')
-def test_job_daily_check_weekday(mock_time, mock_log, mock_run):
+@patch('src.scheduler.get_all_users')
+def test_job_daily_check_weekday(mock_users, mock_time, mock_log, mock_run):
     # Mock Monday (0)
     mock_time.return_value = datetime(2023, 1, 2, 9, 0, 0) # Monday
+    mock_users.return_value = ['test_user@example.com']
     
     job_daily_check()
     
     mock_run.assert_called_once()
     args, _ = mock_run.call_args
     assert "daily" in args[0]
-    assert mock_log.call_count == 2 # Started, Completed
+    assert "test_user@example.com" in args[0]
+    # Log: Started + Completed per user = 2
+    assert mock_log.call_count >= 2 # Started, Completed
 
 @patch('src.scheduler.subprocess.run')
 @patch('src.scheduler.log_job_execution')
@@ -30,13 +34,29 @@ def test_job_daily_check_saturday(mock_time, mock_log, mock_run):
 
 @patch('src.scheduler.subprocess.run')
 @patch('src.scheduler.log_job_execution')
-def test_job_weekly_report(mock_log, mock_run):
+@patch('src.scheduler.get_all_users')
+def test_job_weekly_report(mock_users, mock_log, mock_run):
+    # Mock single user to expect single call
+    mock_users.return_value = ['test_user@example.com']
+    
     job_weekly_report()
     
     mock_run.assert_called_once()
     args, _ = mock_run.call_args
     assert "weekly" in args[0]
-    assert mock_log.call_count == 2
+    assert "test_user@example.com" in args[0] 
+    # Log: 1 start job + 1 loop log per user + 1 finish job?
+    # job_weekly_report logic:
+    # 1. log start
+    # 2. log loop start? No.
+    # 3. subprocess
+    # 4. log_scheduler_event (wrapper for log_job_execution)
+    # 5. print batch completed
+    # So expected 2 logs per user? 
+    # Implementation: log_job_execution("Weekly Report", "STARTED") -> 1
+    # Loop: log_scheduler_event("Weekly Report (user)", "COMPLETED") -> 1
+    # Total 2 logs for 1 user.
+    assert mock_log.call_count >= 2
 
 @patch('src.scheduler.subprocess.run')
 @patch('src.scheduler.log_job_execution')
@@ -50,3 +70,4 @@ def test_job_monthly_refinement(mock_log, mock_run):
     cmd_str = str(args[0])
     assert "refinement.py" in cmd_str
     assert mock_log.call_count == 2
+

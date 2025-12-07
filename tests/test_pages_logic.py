@@ -147,7 +147,7 @@ class TestSettingsRender:
             mock_process.pid = 12345
             mock_subprocess.Popen.return_value = mock_process
             
-            settings_mod.render_report_dry_run_tab(mock_st)
+            settings_mod.render_report_dry_run_tab(mock_st, user_id="test_user")
             
             # Assert Popen called
             mock_subprocess.Popen.assert_called()
@@ -184,7 +184,7 @@ class TestSettingsRender:
             ]
             
             with patch('pandas.read_sql', return_value=mock_df):
-                settings_mod.render_optimization_history_tab(mock_st, "dummy.db")
+                settings_mod.render_optimization_history_tab(mock_st, "dummy.db", user_id="test_user")
                 
                 mock_st.expander.assert_called()
                 mock_st.code.assert_called()

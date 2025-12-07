@@ -1,24 +1,16 @@
-
 import streamlit as st
 import pandas as pd
 import requests
 import sys
-import subprocess
+import subprocess # nosec B404
 import os
 import time
 import json
 from sqlalchemy import text
 from src.database import get_db_connection
-
-import streamlit as st
-import pandas as pd
-import time
-import os
-import subprocess
-from sqlalchemy import text
-from src.database import get_db_connection
 from src.services.settings_service import SettingsService
 from src.agents.engineer import SystemEngineerAgent
+from src.auth import auth_manager
 
 def render_api_settings(st, service: SettingsService, settings: dict):
     st.subheader("AI 模型參數 (AI Model Parameters)")
@@ -126,6 +118,8 @@ def render_scheduler_tab(st, db_path):
     
     conn = get_db_connection(db_path)
     try:
+        # Scheduler logs might be global or user specific? Currently schema has no user_id for logs
+        # Assuming global for now as scheduler runs in background
         logs_df = pd.read_sql("SELECT timestamp, job_name, status, message FROM scheduler_logs ORDER BY timestamp DESC LIMIT 50", conn)
         st.dataframe(logs_df, use_container_width=True)
     except Exception as e:
@@ -136,7 +130,7 @@ def render_scheduler_tab(st, db_path):
         
     conn.close()
 
-def render_report_dry_run_tab(st):
+def render_report_dry_run_tab(st, user_id):
     
     st.subheader("報告試跑 (Report Dry Run)")
     st.info("此功能將以 Dry Run 模式執行每週報告流程，不會發送 Email。")
@@ -170,15 +164,15 @@ def render_report_dry_run_tab(st):
             if st.button("開始生成測試報告 (Start Dry Run)"):
                 # 清空舊 Log
                 with open(log_file, "w") as f:
-                    f.write("Starting Dry Run...\n")
+                    f.write(f"Starting Dry Run for user: {user_id}...\n")
                 
-                # 非同步啟動
+                # 非同步啟動, 傳入 user_id
                 process = subprocess.Popen(
-                    [sys.executable, "src/workflow.py", "--mode", "weekly", "--dry-run"],
+                    [sys.executable, "src/workflow.py", "--mode", "weekly", "--dry-run", "--user_id", user_id],
                     stdout=open(log_file, "a"),
                     stderr=subprocess.STDOUT,
                     preexec_fn=os.setsid # 確保可以被追蹤
-                )
+                ) # nosec B603
                 st.session_state['dry_run_pid'] = process.pid
                 st.rerun()
         else:
@@ -367,20 +361,14 @@ def render_agent_playground_tab(st):
         except Exception as e:
             st.error(f"執行失敗: {e}")
 
-def render_optimization_history_tab(st, db_path):
+def render_optimization_history_tab(st, db_path, user_id):
     st.subheader("Prompt 優化紀錄 (Optimization History)")
     
     conn = get_db_connection(db_path)
     try:
-        # Check if table exists by trying to select from it (DB agnostic way or use inspect)
-        # Using a simple query with LIMIT 0 is efficient and throws if table missing
-        try:
-             conn.execute(text("SELECT 1 FROM prompt_history LIMIT 1"))
-        except Exception:
-             st.warning("Prompt History 資料表尚未建立。請先執行一次 Workflow 以觸發初始化。")
-             return
-
-        history_df = pd.read_sql("SELECT timestamp, target_agent, reason, diff_content FROM prompt_history ORDER BY timestamp DESC", conn)
+        # Check if table has user_id, it currently does
+        query = text("SELECT timestamp, target_agent, reason, diff_content FROM prompt_history WHERE user_id = :uid ORDER BY timestamp DESC")
+        history_df = pd.read_sql(query, conn, params={"uid": user_id})
         
         if history_df.empty:
             st.info("尚無優化紀錄。")
@@ -391,14 +379,22 @@ def render_optimization_history_tab(st, db_path):
                     st.text("Prompt Diff:")
                     st.code(row['diff_content'], language="diff")
     except Exception as e:
-        st.error(f"讀取紀錄失敗: {e}")
+        # If schema mismatch or first run
+        st.warning(f"讀取紀錄失敗 (可能是新表結構尚未初始化): {e}")
     finally:
         conn.close()
 
 def main():
     st.set_page_config(page_title="設定 | AI 投資顧問", layout="wide")
+    
+    if not auth_manager.check_login():
+        st.warning("請先登入")
+        return
 
-    st.title("系統設定 (System Settings)")
+    user = auth_manager.get_current_user()
+    user_id = user['email']
+
+    st.title(f"系統設定 (System Settings) - {user['name']}")
 
     # Sidebar 設定
     st.sidebar.header("設定 (Settings)")
@@ -406,7 +402,8 @@ def main():
 
     tab1, tab2, tab3, tab4, tab5 = st.tabs(["AI 模型設定 (AI Configuration)", "排程設定與紀錄 (Scheduler)", "報告試跑 (Report Dry Run)", "Agent 獨立測試 (Agent Playground)", "Prompt 優化 (Optimization)"])
 
-    settings_service = SettingsService(db_path)
+    # Pass user_id to service
+    settings_service = SettingsService(db_path, user_id=user_id)
     
     with tab1:
         # 讀取現有設定
@@ -417,13 +414,13 @@ def main():
         render_scheduler_tab(st, db_path)
 
     with tab3:
-        render_report_dry_run_tab(st)
+        render_report_dry_run_tab(st, user_id)
 
     with tab4:
         render_agent_playground_tab(st)
 
     with tab5:
-        render_optimization_history_tab(st, db_path)
+        render_optimization_history_tab(st, db_path, user_id)
 
 if __name__ == "__main__":
     main()

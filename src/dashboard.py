@@ -1,12 +1,43 @@
 import streamlit as st
 import pandas as pd
-from src.database import get_db_connection
+from src.database import get_db_connection, init_db
 from src.analytics import LeverageCalculator, ROIEngine, update_daily_snapshot, PnLCalculator
 import plotly.express as px
 from src.market_data import MarketDataService
+from src.auth import auth_manager
 
 def main():
     st.set_page_config(page_title="總覽 | AI 投資顧問", layout="wide")
+    
+    # Initialize DB (Safe to call repeatedly, checks IF NOT EXISTS)
+    # Use default path or env var logic handled inside init_db
+    # Note: We use the default path here, if user changes sidebar input later, it might need re-init, 
+    # but usually `data/portfolio.db` is the target.
+    init_db()
+
+    # --- Authentication Check ---
+    if not auth_manager.check_login():
+        st.title("登入 (Login)")
+        # For prototype/mock purposes, a simple text input login
+        # TODO: Replace with real "Login with Google" button using streamlit-google-auth
+        with st.form("login_form"):
+            email = st.text_input("Email", placeholder="admin@example.com")
+            submitted = st.form_submit_button("Simulate Google Login")
+            if submitted and email:
+                auth_manager.login_mock(email)
+                st.rerun()
+        st.info("目前為模擬登入模式，輸入任意 Email 即可進入。")
+        return
+
+    user = auth_manager.get_current_user()
+    user_id = user['email'] # Using email as user_id for simplicity as per migration logic
+    
+    # Logout Button in Sidebar
+    with st.sidebar:
+        st.write(f"Logged in as: **{user['name']}**")
+        if st.button("Logout"):
+            auth_manager.logout()
+        st.divider()
 
     st.title("AI 投資顧問總覽 (Overview)")
 
@@ -16,7 +47,7 @@ def main():
 
     # 自動更新今日績效快照
     try:
-        update_daily_snapshot(db_path)
+        update_daily_snapshot(db_path, user_id=user_id)
     except Exception as e:
         st.warning(f"自動更新績效失敗 (Auto-update failed): {e}")
 
@@ -28,10 +59,11 @@ def main():
     # 2. 獲取真實市場數據
     market_service = MarketDataService()
 
-    # 取得活躍持倉 Tickers
+    # 取得活躍持倉 Tickers (Filtered by User)
     conn = get_db_connection(db_path)
     try:
-        active_tickers_df = pd.read_sql("SELECT ticker, SUM(CASE WHEN action='BUY' THEN quantity WHEN action='SELL' THEN -quantity ELSE 0 END) as quantity FROM transactions GROUP BY ticker HAVING quantity > 0.0001", conn)
+        query = "SELECT ticker, SUM(CASE WHEN action='BUY' THEN quantity WHEN action='SELL' THEN -quantity ELSE 0 END) as quantity FROM transactions WHERE user_id = :uid GROUP BY ticker HAVING quantity > 0.0001"
+        active_tickers_df = pd.read_sql(query, conn, params={"uid": user_id})
     finally:
         conn.close()
 
@@ -51,15 +83,16 @@ def main():
         # 檢查是否有遺漏，若有則嘗試 AI Fallback
         for ticker in active_tickers:
             if ticker not in current_prices or current_prices[ticker] == 0:
+                # Fallback needs improvement to avoid frequent calls, but kept logic same
                 ai_data = market_service._fetch_from_llm(ticker)
                 if ai_data:
                     current_prices[ticker] = ai_data.get('price', 0)
 
     # 1. 關鍵指標 (KPIs)
     try:
-        metrics = calc.calculate_metrics(current_prices)
-        pnl_data = pnl_calc.calculate_breakdown(current_prices)
-        roi = roi_engine.calculate_roi(metrics['nlv'])
+        metrics = calc.calculate_metrics(current_prices, user_id=user_id)
+        pnl_data = pnl_calc.calculate_breakdown(current_prices, user_id=user_id)
+        roi = roi_engine.calculate_roi(metrics['nlv'], user_id=user_id)
         
         # Row 1: NLV & Cash
         col1, col2, col3, col4 = st.columns(4)
@@ -95,7 +128,8 @@ def main():
     st.subheader("當前持倉 (Current Positions)")
     conn = get_db_connection(db_path)
     try:
-        positions_df = pd.read_sql("SELECT ticker, SUM(CASE WHEN action='BUY' THEN quantity WHEN action='SELL' THEN -quantity ELSE 0 END) as quantity FROM transactions GROUP BY ticker HAVING quantity != 0", conn)
+        query = "SELECT ticker, SUM(CASE WHEN action='BUY' THEN quantity WHEN action='SELL' THEN -quantity ELSE 0 END) as quantity FROM transactions WHERE user_id = :uid GROUP BY ticker HAVING quantity != 0"
+        positions_df = pd.read_sql(query, conn, params={"uid": user_id})
     finally:
         conn.close()
 

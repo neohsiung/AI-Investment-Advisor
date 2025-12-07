@@ -223,7 +223,8 @@ class MarketDataService:
                 resp = requests.post(
                     "https://openrouter.ai/api/v1/chat/completions",
                     headers={"Authorization": f"Bearer {api_key}"},
-                    json={"model": model, "messages": [{"role": "user", "content": prompt}]}
+                    json={"model": model, "messages": [{"role": "user", "content": prompt}]},
+                    timeout=30
                 )
                 if resp.status_code == 200:
                     content = resp.json()['choices'][0]['message']['content']
@@ -232,7 +233,8 @@ class MarketDataService:
                 resp = requests.post(
                     f"https://generativelanguage.googleapis.com/v1beta/{model_id}:generateContent?key={api_key}",
                     headers={"Content-Type": "application/json"},
-                    json={"contents": [{"parts": [{"text": prompt}]}]}
+                    json={"contents": [{"parts": [{"text": prompt}]}]},
+                    timeout=30
                 )
                 if resp.status_code == 200:
                     content = resp.json()['candidates'][0]['content']['parts'][0]['text']

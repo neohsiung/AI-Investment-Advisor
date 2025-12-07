@@ -7,6 +7,7 @@ from src.ingestor import TradeIngestor
 import os
 from sqlalchemy import text
 from tenacity import retry, stop_after_attempt, wait_fixed
+from src.auth import auth_manager
 
 def render_manual_entry_tab(st, service: TransactionService):
     st.subheader("新增交易 (Manual Entry)")
@@ -28,6 +29,7 @@ def render_manual_entry_tab(st, service: TransactionService):
         if submitted:
             if not ticker:
                  st.error("請輸入代號 (Ticker is required)")
+            # Allow 0 quantity for Dividend? usually dividend has no quantity, but check logic
             elif quantity <= 0 and action in ['BUY', 'SELL']:
                  st.error("數量必須大於 0")
             elif price < 0:
@@ -75,7 +77,7 @@ def render_transactions_tab(st, service: TransactionService):
     else:
         st.error("無法讀取交易紀錄。")
 
-def render_csv_import_tab(st, db_path):
+def render_csv_import_tab(st, db_path, user_id):
     st.subheader("批次匯入 (CSV Import)")
     
     uploaded_file = st.file_uploader("上傳 CSV (Upload CSV)", type=["csv"])
@@ -89,15 +91,16 @@ def render_csv_import_tab(st, db_path):
          
          try:
              ingestor = TradeIngestor(db_path)
-             ingestor.ingest_csv("temp.csv", broker.lower())
+             # Pass user_id to ingestor
+             ingestor.ingest_csv("temp.csv", broker.lower(), user_id=user_id)
              st.success("匯入成功！")
              os.remove("temp.csv")
              # Update snapshot
-             update_daily_snapshot(db_path)
+             update_daily_snapshot(db_path, user_id=user_id)
          except Exception as e:
              st.error(f"匯入失敗: {e}")
 
-def render_data_browser(st, db_path):
+def render_data_browser(st, db_path, user_id):
     # Data Browser Logic using direct SQL or Service
     # To be clean, let's keep direct SQL here for read-only debug or add to service
     st.subheader("資料庫瀏覽 (Data Browser)")
@@ -111,20 +114,37 @@ def render_data_browser(st, db_path):
 
     conn = get_db_connection(db_path)
     try:
+        # Filter by user_id
+        # Need to check if table has user_id, but per our migration, they all do (except scheduler_logs which is global?)
+        
+        # Check if table has user_id column logic or just try catch?
+        # Pragmatic: all user tables have user_id. 
         # Using f-string is safe here because we validated 'table' against the whitelist
-        df = pd.read_sql(text(f"SELECT * FROM {table} ORDER BY 1 DESC LIMIT 100"), conn)
+        df = pd.read_sql(text(f"SELECT * FROM {table} WHERE user_id = :uid ORDER BY 1 DESC LIMIT 100"), conn, params={"uid": user_id}) # nosec B608
         st.dataframe(df, use_container_width=True)
     except Exception as e:
-        st.error(f"Error: {e}")
+        # Fallback if table doesn't have user_id (e.g. maybe some system table)
+        # But we want to isolate data, so better fail or show empty if no user_id column
+        st.error(f"Error reading table (Access Denied or Schema Mismatch): {e}")
     finally:
         conn.close()
 
 def main():
     st.set_page_config(page_title="資料管理 | AI 投資顧問", layout="wide")
-    st.title("資料管理 (Data Management)")
+    
+    if not auth_manager.check_login():
+        st.warning("請先登入")
+        return
+
+    user = auth_manager.get_current_user()
+    user_id = user['email']
+
+    st.title(f"資料管理 (Data Management) - {user['name']}")
     
     db_path = st.sidebar.text_input("資料庫路徑 (Database Path)", "data/portfolio.db")
-    service = TransactionService(db_path)
+    
+    # Pass user_id to service
+    service = TransactionService(db_path, user_id=user_id)
     
     tab1, tab2, tab3, tab4 = st.tabs(["手動輸入 (Manual Entry)", "CSV 匯入 (Import)", "交易紀錄 (Transactions)", "資料瀏覽 (Browser)"])
     
@@ -132,13 +152,13 @@ def main():
         render_manual_entry_tab(st, service)
     
     with tab2:
-        render_csv_import_tab(st, db_path)
+        render_csv_import_tab(st, db_path, user_id)
         
     with tab3:
         render_transactions_tab(st, service)
 
     with tab4:
-        render_data_browser(st, db_path)
+        render_data_browser(st, db_path, user_id)
 
 if __name__ == "__main__":
     main()

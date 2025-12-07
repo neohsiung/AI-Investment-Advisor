@@ -3,8 +3,9 @@ import requests
 from src.database import get_db_connection
 
 class SettingsService:
-    def __init__(self, db_path=None):
+    def __init__(self, db_path=None, user_id=None):
         self.db_path = db_path
+        self.user_id = user_id
 
     def get_all_settings(self):
         """Retrieves all settings from the database as a dictionary."""
@@ -17,7 +18,17 @@ class SettingsService:
             except Exception:
                 return {}
 
-            rows = conn.execute(text("SELECT key, value FROM settings")).fetchall()
+            if self.user_id:
+                query = text("SELECT key, value FROM settings WHERE user_id = :uid")
+                rows = conn.execute(query, {"uid": self.user_id}).fetchall()
+            else:
+                # Fallback or admin global settings?
+                # For now return empty or global if we had global settings
+                # But schema requires PK (key, user_id)
+                # Query without filter might duplicate keys?
+                query = text("SELECT key, value FROM settings")
+                rows = conn.execute(query).fetchall()
+
             for row in rows:
                 settings[row[0]] = row[1]
         except Exception as e:
@@ -30,8 +41,13 @@ class SettingsService:
         """Saves a single setting."""
         conn = get_db_connection(self.db_path)
         try:
-            conn.execute(text("INSERT OR REPLACE INTO settings (key, value) VALUES (:key, :value)"), 
-                         {"key": key, "value": value})
+            if self.user_id:
+                conn.execute(text("INSERT OR REPLACE INTO settings (key, user_id, value) VALUES (:key, :uid, :value)"), 
+                             {"key": key, "uid": self.user_id, "value": value})
+            else:
+                # Fallback
+                 conn.execute(text("INSERT OR REPLACE INTO settings (key, value) VALUES (:key, :value)"), 
+                             {"key": key, "value": value})
             conn.commit()
             return True, "Success"
         except Exception as e:
@@ -44,8 +60,12 @@ class SettingsService:
         conn = get_db_connection(self.db_path)
         try:
             for key, value in settings_dict.items():
-                conn.execute(text("INSERT OR REPLACE INTO settings (key, value) VALUES (:key, :value)"), 
-                             {"key": key, "value": str(value)})
+                if self.user_id:
+                    conn.execute(text("INSERT OR REPLACE INTO settings (key, user_id, value) VALUES (:key, :uid, :value)"), 
+                                 {"key": key, "uid": self.user_id, "value": str(value)})
+                else:
+                    conn.execute(text("INSERT OR REPLACE INTO settings (key, value) VALUES (:key, :value)"), 
+                                 {"key": key, "value": str(value)})
             conn.commit()
             return True, "Settings saved successfully."
         except Exception as e:

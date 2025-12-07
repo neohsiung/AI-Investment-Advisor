@@ -15,3 +15,8 @@ psycopg2-binary
 multitasking<0.0.12
 bandit
 pip-licenses
+google-auth
+google-auth-oauthlib
+google-auth-httplib2
+streamlit-google-auth
+
