@@ -33,6 +33,13 @@
 - **手動輸入 (Manual Entry)**:
     - 適用於零星交易或股息 (Dividend) 紀錄。
     - 必填：Ticker, Action (BUY/SELL), Quantity, Price。
+- **資金管理 (Cash Management)**:
+    - 紀錄入金 (Deposit) 與出金 (Withdraw) 以正確計算投資報酬率 (ROI)。
+    - **操作**: 前往「手動輸入」分頁。
+        - **Ticker**: 輸入 `USD` 或 `CASH` (或其他貨幣代號)。
+        - **Action**: 選擇 `DEPOSIT` (入金) 或 `WITHDRAW` (出金)。
+        - **Quantity**: 輸入金額 (如 10000)。
+        - **Price**: 輸入 `1`。
 - **刪除/修正**: 可在「交易紀錄」Tab 刪除錯誤的條目。
 
 ### 3. 設定與報告 (Settings & Reports)

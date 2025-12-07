@@ -2,59 +2,101 @@
 
 > 返回 [[Deployment-GCP-CloudRun]] | 相關: [[System-Overview]]
 
-## 目標 (Goal)
-為系統啟用 Google 帳號登入功能，並保護應用程式僅供授權使用者存取，避免資料外洩。
+## 1. 簡介 (Introduction)
+本系統使用 Google OAuth 2.0 進行使用者登入驗證。為了在 Cloud Run 上正常運作，您必須提供 Google Cloud Credentials (`client_secret.json`) 與正確的 `REDIRECT_URI`。
 
-## 為什麼 (Why)
-- **安全性**: 取代簡易的密碼驗證，利用 Google 的強大安控機制 (2FA)。
-- **便利性**: 使用者無需記憶額外帳號密碼 (SSO)。
-- **SaaS 基礎**: 透過 Email 識別使用者身分，實現多租戶資料隔離。
+---
 
-## 做了什麼 (What)
-- 整合 **OAuth 2.0** 授權流程。
-- 使用 `streamlit-google-auth` 庫處理握手與 Token 交換。
-- 使用 **Secret Manager** (雲端) 或 `.env` (本地) 安全管理憑證。
+## 2. 取得憑證 (Get Credentials) - 必備步驟
+無論使用哪種部署方式，此前置步驟皆相同：
 
-## 如何進行 (How)
-
-### 1. 取得 Google 憑證 (Get Credentials)
 1.  前往 [Google Cloud Console - Credentials](https://console.cloud.google.com/apis/credentials)。
-2.  建立 **OAuth client ID** (Web application)。
-3.  設定 **Authorized redirect URIs** (這是最容易錯誤的步驟，請精確設定):
-    - 本地: `http://localhost:8501`
-    - 雲端: `https://[YOUR-CLOUD-RUN-URL].run.app`
-4.  下載 JSON 檔，重新命名為 `client_secret.json`。
+2.  建立 **OAuth client ID** (應用程式類型選擇 **Web application**)。
+3.  **設定 Redirect URI** (非常重要！):
+    - **本地測試**: `http://localhost:8501`
+    - **正式環境**: `https://[您的CloudRun網址].run.app` (例如 `https://investment-app-xyz.run.app`)
+      > *注意：若之後網址變更，請務必回來這裡更新。*
+4.  下載 JSON 檔案，建議重新命名為 `client_secret.json`。
 
-### 2. 本地環境設定 (Local Setup)
-將 `client_secret.json` 放入專案根目錄，並在 `.env` 設定：
+---
+
+## 3. 設定方式推薦 (Setup Methods)
+
+請依據您的需求選擇一種方式設定。
+
+### 🥇 推薦方式 1: 使用環境變數 (最簡單、適合初學者)
+直接將 JSON 內容貼入 Cloud Run 環境變數，無需處理檔案掛載。
+
+1.  **開啟文字編輯器**，打開您下載的 `client_secret.json`。
+2.  **複製**全部內容。
+3.  前往 GCP Console > Cloud Run > 您的服務 > **編輯與部署新修訂版本**。
+4.  切換到 **「變數與密鑰 (Variables & Secrets)」** 頁籤。
+5.  新增環境變數：
+    - **名稱 (Name)**: `client_secret.json` (或 `GOOGLE_CLIENT_SECRET_JSON`)
+    - **值 (Value)**: `[貼上剛剛複製的完整 JSON 內容]`
+6.  新增另一個環境變數：
+    - **名稱**: `REDIRECT_URI`
+    - **值**: `https://[您的CloudRun網址].run.app`
+7.  **部署 (Deploy)**。
+
+---
+
+### 🥈 推薦方式 2: 使用 CLI 指令 (最穩健、適合自動化)
+使用 `gcloud` 指令一次完成 Secret 上傳與部署，適合追求 Infrastructure as Code 的團隊。
+
 ```bash
-GOOGLE_CLIENT_SECRET_PATH=client_secret.json
-REDIRECT_URI=http://localhost:8501
-COOKIE_KEY=[隨機亂數密鑰]
-```
+# 1. 設定變數 (請替換為您的實際值)
+SERVICE_NAME="investment-dashboard"
+REGION="asia-east1"
+REDIRECT_URL="https://[YOUR-SERVICE-URL].run.app"
+SECRET_FILE_PATH="./client_secret.json"
 
-### 3. 雲端環境設定 (Cloud Setup) - 關鍵步驟！
-由於資安考量，**絕對不要**將 `client_secret.json` push 到 git。
-
-#### 方式 A: 使用 CLI (推薦，最穩健)
-直接執行指令，讓 GCP 自動處理 Secret 新增與掛載：
-```bash
-gcloud run services update investment-dashboard \
-  --region asia-east1 \
+# 2. 執行部署更新
+gcloud run services update $SERVICE_NAME \
+  --region $REGION \
   --update-secrets=/app/secrets/client_secret.json=oauth-client-secret:latest \
-  --update-env-vars="GOOGLE_CLIENT_SECRET_PATH=/app/secrets/client_secret.json"
+  --update-env-vars="GOOGLE_CLIENT_SECRET_PATH=/app/secrets/client_secret.json,REDIRECT_URI=$REDIRECT_URL"
 ```
 
-#### 方式 B: 使用 Console UI (變通 - 檔案掛載)
-若您堅持使用 UI 且找不到 "Target File" 欄位：
-1.  Mount Volume 時，Secret 會預設使用其名稱作為檔名 (例如 `oauth-client-secret`)。
-2.  請將環境變數 `GOOGLE_CLIENT_SECRET_PATH` 指向 `/app/secrets/oauth-client-secret` 即可。
+---
 
-#### 方式 C: 使用環境變數 (直接注入內容)
-若您無法掛載檔案，可將 JSON 內容直接作為環境變數注入：
-1.  在 Cloud Run 環境變數設定中，新增變數名為 `client_secret.json` (或 `GOOGLE_CLIENT_SECRET_JSON`)。
-2.  將 `client_secret.json` 的**完整內容**貼入作為值。
-3.  系統會自動偵測並解析該環境變數。
+### 🥉 方式 3: 使用 Secret Manager 檔案掛載 (進階)
+若您習慣使用 GCP Console 的 Secret Manager 介面進行檔案掛載。
 
-### 4. 驗證 (Verify)
-開啟 App，看到 "Login with Google" 按鈕，點擊後能成功跳轉並返回，即設定完成。
+1.  將 `client_secret.json` 上傳至 GCP Secret Manager。
+2.  在 Cloud Run 編輯頁面 > **Volumes** > 掛載該 Secret。
+    - **Mount Path**: `/app/secrets`
+3.  設定環境變數：
+    - `GOOGLE_CLIENT_SECRET_PATH`: `/app/secrets/[Secret名稱]` (例如 `oauth-client-secret`)
+    - `REDIRECT_URI`: `https://[您的CloudRun網址].run.app`
+
+---
+
+## 4. 本地開發 (Local Development)
+在本地電腦執行時：
+1.  將 `client_secret.json` 放在專案根目錄。
+2.  在 `.env` 檔案中確認：
+    ```bash
+    REDIRECT_URI=http://localhost:8501
+    COOKIE_KEY=[任意隨機字串]
+    ```
+
+---
+
+## 5. 常見問題排除 (Troubleshooting)
+
+### 🔴 錯誤 400: redirect_uri_mismatch
+> **原因**: GCP Console 上設定的 URI 與程式實際送出的不一致。
+
+**解決步驟**:
+1.  查看錯誤訊息中的詳細資訊，找到 `redirect_uri=...` 後面的網址。
+2.  注意網址**最後是否有斜線 `/`** (例如 `...run.app/`)。
+3.  前往 [Google Cloud Console](https://console.cloud.google.com/apis/credentials)。
+4.  將錯誤訊息中的網址，**完全一字不差**地加入到 **Authorized redirect URIs** 列表中。
+5.  儲存後等待約 1-5 分鐘生效。
+
+### 🔴 登入後被導向 localhost
+> **原因**: Cloud Run 上缺少 `REDIRECT_URI` 環境變數。
+
+**解決步驟**:
+- 請參考「推薦方式 1」的步驟 6，補上 `REDIRECT_URI` 環境變數。
