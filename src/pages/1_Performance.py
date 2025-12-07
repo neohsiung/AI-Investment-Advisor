@@ -9,13 +9,22 @@ def main():
 
     st.title("績效追蹤 (Performance Tracking)")
 
+    # --- Authentication Check ---
+    from src.auth import auth_manager
+    if not auth_manager.check_login():
+        st.warning("請先登入 (Please login first)")
+        st.stop()
+        
+    user = auth_manager.get_current_user()
+    user_id = user['email']
+
     # Sidebar 設定
     st.sidebar.header("設定 (Settings)")
     db_path = st.sidebar.text_input("資料庫路徑 (Database Path)", "data/portfolio.db")
 
     # 自動更新今日績效快照
     try:
-        update_daily_snapshot(db_path)
+        update_daily_snapshot(db_path, user_id=user_id)
     except Exception as e:
         st.warning(f"自動更新績效失敗 (Auto-update failed): {e}")
 
@@ -27,7 +36,7 @@ def main():
     }
 
     try:
-        pnl_data = pnl_calc.calculate_breakdown(current_prices)
+        pnl_data = pnl_calc.calculate_breakdown(current_prices, user_id=user_id)
         st.subheader("損益分析 (PnL Analysis)")
         c1, c2, c3 = st.columns(3)
         c1.metric("已實現損益 (Realized P&L)", f"${pnl_data['realized']:,.2f}")
@@ -38,7 +47,7 @@ def main():
 
     conn = get_db_connection(db_path)
     try:
-        snapshots_df = pd.read_sql("SELECT * FROM daily_snapshots ORDER BY date ASC", conn)
+        snapshots_df = pd.read_sql("SELECT * FROM daily_snapshots WHERE user_id = :uid ORDER BY date ASC", conn, params={"uid": user_id})
     finally:
         conn.close()
 
