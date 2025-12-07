@@ -45,10 +45,16 @@ gcloud run services update investment-dashboard \
   --update-env-vars="GOOGLE_CLIENT_SECRET_PATH=/app/secrets/client_secret.json"
 ```
 
-#### 方式 B: 使用 Console UI (變通)
+#### 方式 B: 使用 Console UI (變通 - 檔案掛載)
 若您堅持使用 UI 且找不到 "Target File" 欄位：
 1.  Mount Volume 時，Secret 會預設使用其名稱作為檔名 (例如 `oauth-client-secret`)。
 2.  請將環境變數 `GOOGLE_CLIENT_SECRET_PATH` 指向 `/app/secrets/oauth-client-secret` 即可。
+
+#### 方式 C: 使用環境變數 (直接注入內容)
+若您無法掛載檔案，可將 JSON 內容直接作為環境變數注入：
+1.  在 Cloud Run 環境變數設定中，新增變數名為 `client_secret.json` (或 `GOOGLE_CLIENT_SECRET_JSON`)。
+2.  將 `client_secret.json` 的**完整內容**貼入作為值。
+3.  系統會自動偵測並解析該環境變數。
 
 ### 4. 驗證 (Verify)
 開啟 App，看到 "Login with Google" 按鈕，點擊後能成功跳轉並返回，即設定完成。

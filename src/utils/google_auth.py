@@ -7,8 +7,9 @@ import json
 import base64
 
 class GoogleAuth:
-    def __init__(self, secret_credentials_path, redirect_uri, cookie_key, cookie_name="investment_advisor_auth"):
+    def __init__(self, secret_credentials_path, redirect_uri, cookie_key, cookie_name="investment_advisor_auth", client_config=None):
         self.client_secret_path = secret_credentials_path
+        self.client_config = client_config
         self.redirect_uri = redirect_uri
         self.cookie_name = cookie_name
         self.cookie_key = cookie_key
@@ -20,11 +21,17 @@ class GoogleAuth:
         ]
 
     def _get_flow(self):
-        """Initialize Flow from client secret file."""
-        flow = google_auth_oauthlib.flow.Flow.from_client_secrets_file(
-            self.client_secret_path,
-            scopes=self.scopes
-        )
+        """Initialize Flow from client secret file OR config dict."""
+        if self.client_config:
+            flow = google_auth_oauthlib.flow.Flow.from_client_config(
+                self.client_config,
+                scopes=self.scopes
+            )
+        else:
+            flow = google_auth_oauthlib.flow.Flow.from_client_secrets_file(
+                self.client_secret_path,
+                scopes=self.scopes
+            )
         flow.redirect_uri = self.redirect_uri
         return flow
 

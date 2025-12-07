@@ -19,15 +19,24 @@ def main():
     # --- Authentication Check ---
     # Check if client_secret.json exists (simplistic check for better UX)
     import os
-    if not os.path.exists(os.getenv('GOOGLE_CLIENT_SECRET_PATH', 'client_secret.json')):
+    
+    # Check if client_secret.json exists OR if we have the content in Env Vars
+    has_secret_file = os.path.exists(os.getenv('GOOGLE_CLIENT_SECRET_PATH', 'client_secret.json'))
+    has_secret_env = os.getenv('GOOGLE_CLIENT_SECRET_JSON') is not None or os.getenv('client_secret.json') is not None
+    
+    if not has_secret_file and not has_secret_env:
         st.error("⚠️ 找不到 Google OAuth 設定檔 (`client_secret.json`)。")
         st.markdown("""
         ### 如何解決 (How to fix):
-        1. 請前往 [Google Cloud Console](https://console.cloud.google.com/) 下載 OAuth 2.0 用戶端密鑰。
-        2. 將下載的 JSON 檔案重新命名為 `client_secret.json`。
-        3. 將該檔案放置於專案根目錄下 (`/Users/neohsiung/Work/go/投資策略建議/`)。
+        本系統需要 Google OAuth 憑證才能運作。
         
-        或者，您可以複製 `client_secret.example.json` (如果存在) 來測試結構。
+        請參考 Wiki 中的詳細設定指南：
+        👉 **[Google-OAuth-Setup](wiki/Google-OAuth-Setup.md)**
+        
+        **簡易步驟**:
+        1. 按照指南從 Google Cloud Console 下載憑證 JSON 檔。
+        2. 將檔案重新命名為 `client_secret.json`。
+        3. 將該檔案放置於此專案的**根目錄**下。
         """)
         st.stop()
 
