@@ -63,8 +63,13 @@ class LeverageCalculator:
         cash_balance = cash_flow_sum + trans_cash_impact
         nlv = cash_balance + portfolio_value
         
-        # 3. 槓桿比率
-        leverage_ratio = tnv / nlv if nlv > 0 else float('inf')
+        # 3. 槓桿比率 (Leverage Ratio)
+        # Ratio = NV / NLV
+        # If NLV <= 0 (Insolvent), leverage is effectively infinite or undefined.
+        if nlv <= 0:
+            leverage_ratio = float('inf')
+        else:
+            leverage_ratio = tnv / nlv
         
         conn.close()
         

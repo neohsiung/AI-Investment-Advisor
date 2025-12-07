@@ -16,11 +16,26 @@ def render_api_settings(st, service: SettingsService, settings: dict):
     st.subheader("AI 模型參數 (AI Model Parameters)")
     
     with st.form("ai_settings_form"):
-        provider = st.selectbox(
+    with st.form("ai_settings_form"):
+        provider_options = {
+            "Google Gemini": "Google Gemini (Google AI)",
+            "OpenRouter": "OpenRouter (Router)",
+            "OpenAI": "OpenAI (OpenAI)"
+        }
+        current_provider = settings.get("AI_PROVIDER", "Google Gemini")
+        # Ensure current provider is in options, mostly it is
+        if current_provider not in provider_options:
+            provider_index = 0
+        else:
+            provider_index = list(provider_options.keys()).index(current_provider)
+            
+        provider_key = st.selectbox(
             "AI 提供者 (Provider)", 
-            ["Google Gemini", "OpenRouter", "OpenAI"],
-            index=["Google Gemini", "OpenRouter", "OpenAI"].index(settings.get("AI_PROVIDER", "Google Gemini")) if settings.get("AI_PROVIDER") in ["Google Gemini", "OpenRouter", "OpenAI"] else 0
+            options=list(provider_options.keys()),
+            format_func=lambda x: provider_options[x],
+            index=provider_index
         )
+        provider = provider_key
         
         # 動態模型選擇邏輯
         model_name = settings.get("AI_MODEL", "google/gemini-pro-1.5")
@@ -267,7 +282,15 @@ def render_agent_playground_tab(st):
     st.subheader("Agent 獨立測試 (Agent Playground)")
     st.info("在此測試個別 Agent 的反應與輸出。請確保已設定 API Key。")
     
-    agent_type = st.selectbox("選擇 Agent (Select Agent)", ["Momentum", "Fundamental", "Macro", "CIO", "Engineer"])
+    agent_options = {
+        "Momentum": "Momentum (動能專家)",
+        "Fundamental": "Fundamental (基本面專家)",
+        "Macro": "Macro (總經專家)",
+        "CIO": "CIO (投資長)",
+        "Engineer": "Engineer (系統工程師)"
+    }
+    agent_key = st.selectbox("選擇 Agent (Select Agent)", options=list(agent_options.keys()), format_func=lambda x: agent_options[x])
+    agent_type = agent_key
     
     default_context = ""
     if agent_type == "Momentum":

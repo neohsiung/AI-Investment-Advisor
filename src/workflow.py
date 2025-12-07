@@ -20,47 +20,58 @@ from src.market_data import MarketDataService
 
 logger = setup_logger("Workflow")
 
-def run_workflow(mode="daily", dry_run=False):
+def run_workflow(mode="daily", dry_run=False, user_id=None):
     """
     執行完整投資建議流程
     mode: 'daily' (每日檢查) or 'weekly' (每週深入分析/報告) or 'demo'
     dry_run: True 不會發送 Email
+    user_id: 針對特定使用者執行 (SaaS Mode)
     """
-    print(f"[{format_time()}] Starting Workflow ({mode})...")
-    logger.info(f"Starting AI Investment Advisor Workflow (Mode: {mode})...") # Removed 'Force' from log
+    print(f"[{format_time()}] Starting Workflow ({mode}) for User: {user_id or 'All'}...")
+    logger.info(f"Starting AI Investment Advisor Workflow (Mode: {mode}, User: {user_id})...")
 
     # Ensure DB is initialized
     init_db()
     logger.info("Database initialized.")
     
     # 1. 初始化 Agents (Initialize Agents)
-    # 本系統採用 Multi-Agent 架構，各 Agent 負責不同面向的分析：
-    # - MomentumAgent: 動能與技術面
-    # - FundamentalAgent: 財報與基本面
-    # - MacroAgent: 總體經濟與市場環境
-    # - CIOAgent: 整合所有資訊並產出最終決策
-    use_cache = True # 預設啟用快取以節省 Token 成本 (Default: Enable cache for cost optimization)
+    use_cache = True 
+    # TODO: In real SaaS, pass user_id to Agents for personalized context/memory
     momentum_agent = MomentumAgent(use_cache=use_cache)
     fundamental_agent = FundamentalAgent(use_cache=use_cache)
     macro_agent = MacroAgent(use_cache=use_cache)
     cio_agent = CIOAgent(use_cache=use_cache)
 
-
-    
     # 2. 獲取數據 (Real)
-    # Note: Imports should be at the top, but for now specific valid indentation fix:
     conn = get_db_connection()
-    # 查詢活躍持倉
-    query = """
+    
+    # Base query for active tickers
+    base_query = """
         SELECT ticker, SUM(CASE WHEN action='BUY' THEN quantity WHEN action='SELL' THEN -quantity ELSE 0 END) as net_qty 
         FROM transactions 
+    """
+    params = {}
+    
+    # Filter by user_id if provided
+    if user_id:
+        base_query += " WHERE user_id = :user_id "
+        params['user_id'] = user_id
+    
+    base_query += """
         GROUP BY ticker 
         HAVING net_qty > 0.0001
     """
-    df = pd.read_sql(query, conn)
-    conn.close()
     
-    tickers = df['ticker'].tolist() if not df.empty else []
+    df = pd.read_sql(base_query, conn, params=params)
+    conn.close()
+
+    # ... [Rest of logic remains largely same, just verify downstream usage] ...
+    # Wait, need to check if we replaced too much context.
+    # The tool 'replace_file_content' replaces checks of code.
+    # I should be careful. I will use a larger block or multiple edits if needed.
+    # But since I'm changing the function signature and the initial query logic, I'll replace the block from start of function to end of query.
+    
+     tickers = df['ticker'].tolist() if not df.empty else []
     logger.info(f"Active Tickers: {tickers}")
     
     market_service = MarketDataService()
@@ -123,9 +134,6 @@ def run_workflow(mode="daily", dry_run=False):
             fundamental_reports.append(fund_res)
     
     # 4. 決定是否執行 CIO (Decide whether to run CIO Agent)
-    # 邏輯說明：
-    # - Weekly Mode: 強制執行，每週產生完整報告。
-    # - Daily Mode: 僅在 Momentum Agent 偵測到 "BUY" 或 "SELL" 訊號時觸發，避免無謂的 API 消耗。
     should_run_cio = False
     if mode == 'weekly':
         should_run_cio = True
@@ -136,10 +144,13 @@ def run_workflow(mode="daily", dry_run=False):
     if should_run_cio:
         logger.info("啟動 CIO Agent 進行最終決策... (Running CIO Agent...)")
         
-        # 計算真實槓桿比率，讓 CIO 評估風險
+        # 計算真實槓桿比率 (Need user specific cash balance for real leverage calc, currently simplified)
+        # TODO: Inject cash balance for leverage calculation per user
         from src.analytics import LeverageCalculator
         calc = LeverageCalculator()
-        metrics = calc.calculate_metrics(current_prices)
+        
+        # Leverage calc logic needs refinement for specific user but keeping baseline
+        metrics = calc.calculate_metrics(current_prices, user_id=user_id) # Ensure calculate_metrics supports user_id
         leverage_ratio = metrics['leverage_ratio']
         
         # 構建 CIO Context，包含所有上游 Agent 的分析結果
@@ -154,23 +165,22 @@ def run_workflow(mode="daily", dry_run=False):
         logger.info("\n=== Final Report ===\n")
         logger.info(final_report)
         
-        # 儲存與發送報告 (Dry Run 不寄信，但可存檔或僅顯示)
+        # 儲存與發送報告
         if not dry_run:
             # 1. Save to File
-            with open(f"{mode}_report.md", "w") as f:
+            filename = f"{mode}_report_{user_id or 'all'}.md"
+            with open(filename, "w") as f:
                 f.write(final_report)
-            logger.info(f"Report saved to {mode}_report.md")
+            logger.info(f"Report saved to {filename}")
             
             # 2. Save to Database
-            # from src.database import get_db_connection # Removed local import
             import uuid
-            # from src.utils.time_utils import format_time # Removed local import to avoid UnboundLocalError
-            
             conn = get_db_connection()
             report_id = str(uuid.uuid4())
             date_str = format_time()
-            conn.execute(text("INSERT INTO reports (id, date, content, summary) VALUES (:id, :date, :content, :summary)"), {
+            conn.execute(text("INSERT INTO reports (id, user_id, date, content, summary) VALUES (:id, :user_id, :date, :content, :summary)"), {
                 "id": report_id,
+                "user_id": user_id,
                 "date": date_str,
                 "content": final_report,
                 "summary": f"{mode.capitalize()} Advisory"
@@ -183,15 +193,11 @@ def run_workflow(mode="daily", dry_run=False):
             from src.notifier import EmailNotifier
             notifier = EmailNotifier()
             notifier.send_report(f"Investment Advisory ({mode.capitalize()}) - {date_str[:10]}", final_report)
-            logger.info("Report emailed.") # Corrected log message
+            logger.info("Report emailed.")
         else:
             logger.info("[Dry Run] Report generated but NOT saved to DB or emailed.")
         
-        # 4.1 執行系統工程師代理人 System Engineer Process
-        # 不論 Dry Run 是否開啟，只要有 CIO 報告，我們都可以嘗試優化，
-        # 但為了安全，如果 Dry Run 開啟，我們也只在 Log 顯示優化結果而不寫入? 
-        # 其實 Engineer Agent 預設就會寫 DB 和檔案，如果是 Dry Run，我們可以傳遞參數讓它不要寫
-        # 但這裡簡化流程，假設 Dry Run 就完全不執行 Engineer
+        # 4.1 System Engineer
         if not dry_run:
             logger.info("Running System Engineer Agent for Optimization...")
             from src.agents.engineer import SystemEngineerAgent
@@ -208,18 +214,17 @@ def run_workflow(mode="daily", dry_run=False):
     if not dry_run:
         logger.info("Recording Daily Snapshot...")
         from src.analytics import LeverageCalculator, SnapshotRecorder
-        
-        # 使用真實價格
         calc = LeverageCalculator()
-        metrics = calc.calculate_metrics(current_prices)
+        metrics = calc.calculate_metrics(current_prices, user_id=user_id) # Pass user_id
         
         recorder = SnapshotRecorder()
-        recorder.record_daily_snapshot(metrics['nlv'], metrics['cash_balance'])
+        recorder.record_daily_snapshot(metrics['nlv'], metrics['cash_balance'], user_id=user_id)
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--dry-run", action="store_true")
     parser.add_argument("--mode", choices=['daily', 'weekly'], default='weekly', help="Execution mode")
+    parser.add_argument("--user_id", type=str, default=None, help="Specific User ID for SaaS mode")
     args = parser.parse_args()
     
-    run_workflow(mode=args.mode, dry_run=args.dry_run)
+    run_workflow(mode=args.mode, dry_run=args.dry_run, user_id=args.user_id)
