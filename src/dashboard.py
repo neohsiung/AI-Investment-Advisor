@@ -16,18 +16,21 @@ def main():
     init_db()
 
     # --- Authentication Check ---
-    if not auth_manager.check_login():
+    # --- Authentication Check ---
+    # Check if client_secret.json exists (simplistic check for better UX)
+    import os
+    if not os.path.exists(os.getenv('GOOGLE_CLIENT_SECRET_PATH', 'client_secret.json')):
+        st.error("⚠️ 找不到 Google OAuth 設定檔 (client_secret.json)。")
+        st.info("請參考 Wiki: `Google-OAuth-Setup` 進行設定，或將檔案放入專案根目錄。")
+        st.stop()
+
+    auth_manager.check_login() # Initialize check
+
+    if not auth_manager.get_current_user():
         st.title("登入 (Login)")
-        # For prototype/mock purposes, a simple text input login
-        # TODO: Replace with real "Login with Google" button using streamlit-google-auth
-        with st.form("login_form"):
-            email = st.text_input("Email", placeholder="admin@example.com")
-            submitted = st.form_submit_button("Simulate Google Login")
-            if submitted and email:
-                auth_manager.login_mock(email)
-                st.rerun()
-        st.info("目前為模擬登入模式，輸入任意 Email 即可進入。")
-        return
+        st.write("請使用 Google 帳號登入以存取您的投資顧問儀表板。")
+        auth_manager.login()
+        st.stop()
 
     user = auth_manager.get_current_user()
     user_id = user['email'] # Using email as user_id for simplicity as per migration logic

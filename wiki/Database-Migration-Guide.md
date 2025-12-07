@@ -1,62 +1,53 @@
-# 資料庫雙向遷移指南 (Bidirectional Database Migration)
+# 資料庫遷移指南 (Database Migration Guide)
 
-> 返回 [[Home]] | 相關: [[Deployment-Options]]
+> 返回 [[Deployment-Options]]
 
-本指南提供 SQLite (本地) 與 Cloud SQL (雲端) 之間的雙向資料遷移流程，讓您能自由切換部署環境。
+## 目標 (Goal)
+提供一套安全、可靠的流程，讓使用者能在不同環境 (Local SQLite, Cloud SQL, Cloud Volume) 之間無縫遷移數據。
 
-## 情境 A: 上雲 (SQLite -> Cloud SQL)
-**適用於**: 從本地開發環境遷移至生產環境。
+## 為什麼 (Why)
+- **環境切換**: 從開發轉入生產環境，或從雲端備份回本地分析。
+- **技術升級**: 從 SQLite 升級至效能更好的 PostgreSQL。
+- **災難復原**: 在系統故障時還原數據。
 
-### 1. 準備工作
-- 確保本地 `data/portfolio.db` 資料完整。
-- 已建立 Cloud SQL PostgreSQL 實例。
+## 做了什麼 (What)
+本指南涵蓋三種主要的遷移路徑：
+1.  **SQLite -> Cloud SQL (PostgreSQL)**: 上雲升級。
+2.  **Cloud SQL -> SQLite**: 下雲備份。
+3.  **Local SQLite -> Cloud SQLite**: 雲端掛載。
 
-### 2. 使用 pgloader (推薦)
-`pgloader` 能自動處理 Schema 轉換與資料匯入。
+## 如何進行 (How)
 
-1.  **安裝**: `brew install pgloader`
-2.  **設定**: 建立 `migrate.load` 檔案 (參考 repo 範例)。
-3.  **執行**: `pgloader migrate.load`
+### 情境 A: 上雲 (SQLite -> Cloud SQL)
+*推薦工具: `pgloader`*
 
-### 3. 使用 CSV 中介 (手動)
-若無法使用 pgloader，可透過「匯出 CSV -> 匯入」的方式：
-1.  在本地 Dashboard 的 `Data Management` 頁面，使用 SQL 用戶端匯出 `transactions` 為 CSV。
-2.  連線至 Cloud SQL，使用 `\COPY` 指令或透過 Dashboard 的 CSV Import 功能將資料匯入。
+1.  **準備**: 確認本地 `portfolio.db` 完整。
+2.  **轉換**: 建立 `migrate.load` 腳本，描述 SQLite 到 PostgreSQL 的欄位對應。
+3.  **執行**:
+    ```bash
+    pgloader migrate.load
+    ```
+4.  **驗證**: 檢查 Cloud SQL 中的 `transactions` 筆數是否一致。
+
+### 情境 B: 下雲 (Cloud SQL -> SQLite)
+*推薦方式: CSV 中轉*
+
+1.  **匯出**: 使用 `psql` 或 GCP Console 匯出 `transactions` 表格為 CSV。
+    ```sql
+    \COPY (SELECT * FROM transactions) TO 'backup.csv' WITH CSV HEADER
+    ```
+2.  **初始化**: 在本地啟動一個乾淨的 `portfolio.db`。
+3.  **匯入**: 使用 Dashboard 的 [Data Management] -> [CSV Import] 功能匯入備份檔。
+
+### 情境 C: 雲端 SQLite (Local -> Cloud Volume)
+*適用於: 想用 Cloud Run 但不想付 Cloud SQL 費用的用戶*
+
+1.  **上傳**: 將 `portfolio.db` 上傳至 **Google Cloud Storage (GCS)**。
+    ```bash
+    gcloud storage cp data/portfolio.db gs://[YOUR_BUCKET]/portfolio.db
+    ```
+2.  **掛載**: 在 Cloud Run 中使用 GCS Fuse 掛載 Bucket 到 `/app/data`。
+3.  **設定**: 確保應用程式讀取路徑正確。
 
 ---
-
-## 情境 B: 下雲 (Cloud SQL -> SQLite)
-**適用於**: 備份數據、返回本地開發或降低成本。
-
-由於 SQLite 不直接支援 PostgreSQL 格式，我們建議採用 **CSV 匯出/匯入法**。
-
-### 1. 從 Cloud SQL 匯出資料
-使用 `gcloud` 或 `psql` 將核心資料表匯出為 CSV。
-
-```bash
-# 匯出 Transactions
-psql "host=[IP] user=[USER] dbname=portfolio" -c "\COPY (SELECT * FROM transactions) TO 'transactions_backup.csv' WITH CSV HEADER"
-
-# 匯出 Cash Flows (若有)
-psql ... -c "\COPY (SELECT * FROM cash_flows) TO 'cash_flows_backup.csv' WITH CSV HEADER"
-```
-
-### 2. 重置本地 SQLite
-若要全新開始：
-1.  停止本地服務。
-2.  移除或更名舊的 `data/portfolio.db`。
-3.  重新啟動服務 `./start.sh` (系統會自動初始化新的空 DB)。
-
-### 3. 匯入資料
-1.  開啟本地 Dashboard (`localhost:8501`)。
-2.  前往 **Data Management** 頁面。
-3.  使用 **CSV Import** 功能，上傳剛才匯出的 `transactions_backup.csv`。
-4.  系統會自動重新計算所有持倉與績效。
-
-## 資料驗證 (Validation)
-無論是上雲或下雲，遷移後請務必檢查：
-1.  **總資產價值 (NLV)**: 是否與遷移前一致？
-2.  **持倉數量**: 股數是否正確？
-3.  **歷史權益曲線**: 是否完整保留？
-
-> **Tip**: 使用 Dashboard 的 "Overview" 截圖作為遷移前後的比對基準。
+> **資料驗證重點**: 遷移後務必核對 **NLV (淨值)** 與 **ROI** 是否與原環境一致。

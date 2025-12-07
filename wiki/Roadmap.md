@@ -1,31 +1,43 @@
-# 專案路線圖 (Project Roadmap)
+# 專案藍圖 (Project Roadmap)
 
 > 返回 [[Home]]
 
-本文件追蹤專案的未來發展方向與待辦事項 (原 NEXT_STEPS)。
+## 目標 (Goal)
+清晰規劃專案的長期發展方向，確保資源投入在最具價值的優化項目上，並提供開發團隊明確的執行指引。
 
-## 🚀 已完成 / 文件化 (Done / Documented)
-- [x] **部署指南**: 詳見 [[Deployment-Options]]。
-- [x] **資料遷移**: 詳見 [[Database-Migration-Guide]]。
-- [x] **架構審查**: 詳見 [[Clean-Architecture-Review]]。
-- [x] **資安審計**: 詳見 [[Security-Audit-Report]]。
+## 為什麼 (Why)
+- **持續迭代**: 投資市場與 AI 技術瞬息萬變，系統需持續進化。
+- **品質控管**: 透過規劃 Clean Architecture 重構與測試覆蓋率，償還技術債。
+- **透明溝通**: 讓所有利害關係人了解下一個里程碑。
 
-## 🗓️ 待辦事項 (Backlog)
+## 做了什麼 (What)
+我們將未來的開發計畫分為四大階段：架構優化、雲端遷移、Agent 增強與社群開源。目前已完成 v1.0.0 的核心功能開發與 SaaS 架構轉型。
 
-### 架構重構 (Architecture Refactoring)
-- [ ] **實作 Clean Architecture**: 
-    - 依據 [[Clean-Architecture-Review]] 的規劃，建立 `src/domain` 與 `src/repositories`。
-    - 解耦 Service Layer 與 Database Layer。
+## 如何進行 (How)
 
-### 功能增強 (Feature Enhancements)
-- [ ] **多環境支援 (Multi-Environment)**:
-    - 設定 GitHub Environments (Dev / Staging / Prod)。
-    - 修改 `ci-cd.yml` 支援分支觸發不同環境部署。
-- [ ] **進階回測系統**: 提供更詳細的策略回測工具。
+### 🟢 Phase 1: 架構重構 (Refactoring)
+*目標：提升程式碼可測試性與模組化。*
+- [ ] **Repository Pattern 實作**: 將數據存取層 (Data Access) 與業務邏輯完全分離。
+- [ ] **Dependency Injection**: 導入依賴注入容器，解耦 Service 與 Agent。
+- [ ] **Domain-Driven Design (DDD)**: 重新定義 Entity 與 Value Object，強化業務邏輯核心。
 
-### 使用者體驗 (UX)
-- [ ] **手機版介面優化**: 針對行動裝置優化 Streamlit 版面配置。
-- [ ] **Line/Telegram 通知**: 除了 Email 外，整合即時通訊軟體通知。
+### 🔵 Phase 2: 效能與擴展 (Scalability)
+*目標：支援更多使用者與更大量數據。*
+- [ ] **AlloyDB / Cloud SQL 優化**: 導入 Connection Pooling 與 Read Replica。
+- [ ] **Redis 快取層**: 快取熱門的市場數據與即時股價，減少外部 API 呼叫。
+- [ ] **Celery / Cloud Tasks**: 將耗時的 AI 分析任務從主執行緒分離，改為異步隊列處理。
 
-## 貢獻指南 (Contribution)
-歡迎提交 PR！請確保所有新功能皆包含單元測試，並通過 `bandit` 安全掃描。
+### 🟣 Phase 3: AI 智慧增強 (AI Enhancement)
+*目標：提供更精確且個人化的投資建議。*
+- [ ] **RAG (Retrieval-Augmented Generation)**: 整合向量資料庫，讓 Agent 能檢索歷史財報與新聞。
+- [ ] **User Persona Learning**: 根據使用者的操作行為 (查看哪些股票、風險偏好)，動態調整 Prompt。
+- [ ] **Multi-Agent Debate**: 引入「辯論模式」，讓 Bull/Bear Agent 互相挑戰觀點。
+
+### 🟠 Phase 4: 開源與社群 (Open Source)
+*目標：建立生態系與貢獻者社群。*
+- [ ] **Plugin System**: 開放介面，允許開發者撰寫自定義的 Signal Generator。
+- [ ] **Documentation Site**: 建立獨立的文檔網站 (如 MkDocs/Docusaurus)。
+- [ ] **CI/CD Templates**: 提供標準化的 GitHub Actions 範本供社群使用。
+
+---
+> 追蹤最新進度，請查看專案的 Issues 與 Pull Requests。

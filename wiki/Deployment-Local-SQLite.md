@@ -1,61 +1,52 @@
-# 本地 SQLite 部署指南 (Local SQLite Deployment)
+# 本地部署指南 (Local SQLite)
 
 > 返回 [[Deployment-Options]]
 
-本方案適合個人開發者或希望將數據完全保留在本地端的使用者。
+## 目標 (Goal)
+在使用者本地機器上快速建立一個全功能的開發與測試環境，無需任何雲端依賴。
 
-## 系統需求 (Prerequisites)
-- Docker Desktop (已安裝並啟動)
-- Git
+## 為什麼 (Why)
+- **隱私第一**: 所有數據僅存於本地，確保絕對隱私。
+- **快速迭代**: 修改程式碼後可立即預覽，無需等待雲端 Build & Deploy。
+- **零成本**: 使用既有硬體資源。
 
-## 快速啟動 (Quick Start)
+## 做了什麼 (What)
+- 使用 **Docker Compose** 编排容器。
+- 內建 **SQLite** 作為輕量化資料庫。
+- 整合 **Streamlit** (UI) 與 **Schedule** (排程) 於同一服務或分離服務。
 
-### 1. 取得程式碼
+## 如何進行 (How)
+
+### 1. 前置需求 (Prerequisites)
+- 安裝 [Docker Desktop](https://www.docker.com/products/docker-desktop/)。
+- 安裝 [Git](https://git-scm.com/)。
+
+### 2. 下載與啟動 (Download & Start)
+打開終端機 (Terminal)，執行以下指令：
+
 ```bash
-git clone https://github.com/YOUR_REPO/investment-advisor.git
-cd investment-advisor
-```
+# 1. Clone 專案
+git clone https://github.com/neohsiung/AI-Investment-Advisor.git
+cd AI-Investment-Advisor
 
-### 2. 設定環境變數
-系統已包含 `.env.example`，啟動腳本會自動為您處理，但若需啟用 Email 通知，請手動編輯 `.env`：
-```bash
+# 2. 建立環境變數檔 (可選)
+# 若有 API Key，請填入 .env
 cp .env.example .env
-nano .env
-# 填入 SMTP_USER, SMTP_PASSWORD 等資訊 (選填)
-```
 
-### 3. 一鍵啟動
-執行啟動腳本：
-```bash
+# 3. 啟動服務
 ./start.sh
 ```
-此腳本會自檢環境、建置 Docker Image 並啟動服務。
 
-### 4. 訪問服務
-- **Dashboard**: [http://localhost:8501](http://localhost:8501)
-- **Scheduler**: 在背景運行，自動執行每週報告。
+### 3. 驗證 (Verify)
+- 瀏覽器打開 `http://localhost:8501`。
+- 您應能看到 Streamlit 儀表板登入畫面。
+- (本地模式預設可使用任意 Email 登入，或設定 OAuth 測試)。
 
----
-
-## 維運管理 (Operations)
-
-### 查看日誌
+### 4. 停止與維護 (Stop & Maintain)
 ```bash
+# 停止服務
+./stop.sh
+
+# 查看日誌
 docker compose logs -f
 ```
-
-### 停止服務
-```bash
-./stop.sh
-```
-
-### 資料備份
-所有資料皆位於 `data/` 目錄：
-- `data/portfolio.db`: 核心資料庫 (交易、持倉)。
-- `data/cache.db`: AI 分析快取。
-- `data/app.log`: 系統日誌。
-
-**備份方式**: 定期複製整個 `data/` 資料夾即可。
-
-## 下一步
-- 若希望遷移至雲端，請參考 [[Database-Migration-Guide]]。

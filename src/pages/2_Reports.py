@@ -5,6 +5,14 @@ from src.database import get_db_connection
 def main():
     st.set_page_config(page_title="分析報告 | AI 投資顧問", layout="wide")
 
+    # --- Authentication Check ---
+    from src.auth import auth_manager
+    if not auth_manager.check_login():
+        st.warning("請先登入")
+        st.stop()
+    
+    user = auth_manager.get_current_user()
+
     st.title("投資顧問報告 (Investment Advisory Reports)")
 
     # Sidebar 設定

@@ -1,41 +1,50 @@
-# 使用者操作手冊 (User Guide)
+# 使用者操作指南 (User Guide)
 
 > 返回 [[Home]]
 
-## 儀表板功能 (Dashboard)
+## 目標 (Goal)
+引導使用者熟悉 AI 投資顧問儀表板的操作，從數據輸入到解讀 AI 分析報告，發揮系統最大價值。
+
+## 為什麼 (Why)
+- **降低學習門檻**: 系統功能繁多 (手動交易、CSV 匯入、報告設定)，需提供清晰指引。
+- **避免操作錯誤**: 錯誤的數據輸入 (如買賣方向相反) 會導致分析結果嚴重失真。
+
+## 做了什麼 (What)
+本指南涵蓋三大核心功能模組：
+1.  **總覽 (Dashboard Overview)**: 即時監控資產狀況。
+2.  **數據管理 (Data Management)**: 記錄交易與維護資產。
+3.  **設定與報告 (Settings & Reports)**: 調整 AI 參數與查看分析建議。
+
+## 如何進行 (How)
 
 ### 1. 總覽 (Overview)
-- **KPIs**: 顯示淨清算價值 (NLV), 現金餘額, 槓桿比率與總 ROI。
-- **資產配置**: 圓餅圖顯示各標的佔比。
-- **持倉列表**: 即時計算每個持倉的現價、市值與未實現損益。
+登入後首頁即為總覽。
+- **KPIs**: 關注 NLV (淨值)、Cash (現金) 與 Risk (槓桿比率)。
+    - *Tips*: 若槓桿比率 > 1.5x，系統會顯示黃色警告；> 2.0x 顯示紅色危險。
+- **資產配置**: 圓餅圖顯示各持倉佔比。
+- **權益曲線**: 觀察資產隨時間的增長趨勢。
 
-### 2. 績效追蹤 (Performance)
-- **權益曲線 (Equity Curve)**: 追蹤每日資產淨值變化。
-- **投入 vs 現值**: 比較總投入成本 (Invested Capital) 與當前市場價值。
+### 2. 數據管理 (Data Management)
+前往側邊欄的 **Data Management** 頁面。
 
-### 3. 分析報告 (Reports)
-- **歷史報告**: 下拉選單檢視過去的 AI 投資建議報告 (Markdown 格式)。
-- **每週週報**: 系統每週六自動生成完整分析。
+- **匯入交易 (Import)**:
+    - 支援 **Robinhood** / **IBKR** 的 CSV 匯出檔。
+    - 上傳後系統自動去重並解析。
+- **手動輸入 (Manual Entry)**:
+    - 適用於零星交易或股息 (Dividend) 紀錄。
+    - 必填：Ticker, Action (BUY/SELL), Quantity, Price。
+- **刪除/修正**: 可在「交易紀錄」Tab 刪除錯誤的條目。
 
-## 數據管理 (Data Management)
+### 3. 設定與報告 (Settings & Reports)
+- **AI 設定**:
+    - 可切換模型 (e.g., Gemini-1.5-pro vs OpenRouter)。
+    - 設定排程時間 (Daily/Weekly Check)。
+- **查看報告**:
+    - 每週排程結束後，報告會存入資料庫並發送 Email。
+    - 可在 **Reports** 頁面回顧歷史報告。
 
-### CSV 匯入
-1. 前往「Data Management」頁面。
-2. 選擇 Broker (Robinhood, IBKR, Simple)。
-3. 上傳 CSV 檔案。
-4. 系統會自動解析並寫入資料庫，同時更新當日績效。
-
-### 手動交易 (Manual Entry)
-- 支援手動輸入 Ticker, Date, Action (BUY/SELL), Quantity, Price 與 Fees。
-- 新增後立即反映於持倉與現金餘額。
-
-## 系統設定 (Settings)
-
-### AI 模型設定
-- **Provider**: 支援 Google Gemini, OpenRouter, OpenAI。
-- **Model**: 可動態切換使用的模型 (如 `gemini-1.5-pro`)。
-- **API Key**: 安全輸入並儲存於本地資料庫。
-
-### 報告試跑 (Report Dry Run)
-- 點擊「生成測試報告」，系統將進行 Dry Run (不發送 Email)。
-- 透過即時日誌視窗監控 AI 思考過程與產出結果。
+### 4. 常見問題 (FAQ)
+- **Q: 為什麼我的損益顯示為 0？**
+    - A: 請確認是否有正確輸入「買入」交易。若只有賣出或股息，無法計算成本基礎。
+- **Q: AI 建議的股票去哪了？**
+    - A: AI 建議會顯示在每週的 Email 報告與 Reports 頁面中，不會自動下單。

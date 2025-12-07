@@ -2,23 +2,34 @@
 
 > 返回 [[Home]]
 
-本系統支援兩種主要部署模式，您可依據需求選擇最適合的方案。
+## 目標 (Goal)
+提供靈活且彈性的部署架構，滿足不同階段 (開發測試 vs 生產環境) 與不同資源預算的需求。
 
-## 方案比較 (Comparison)
+## 為什麼 (Why)
+- **開發效率**: 本地環境需快速啟動、零成本，適合快速迭代。
+- **生產穩定**: 線上環境需高可用 (High Availability)、零維護 (Serverless) 與安全性。
+- **成本控制**: 允許使用者根據流量與預算，自由切換算力與資料庫層級。
 
-| 特性 | [[Deployment-Local-SQLite]] | [[Deployment-GCP-CloudRun]] |
+## 做了什麼 (What)
+我們支援兩種主要的部署模式：
+
+| 特性 | 方案 A: 本地輕量版 (Local SQLite) | 方案 B: 雲端企業版 (GCP Cloud Run) |
 | :--- | :--- | :--- |
-| **適用場景** | 個人使用、開發測試、零成本 | 多人協作、SaaS 營運、高可用性 |
-| **資料庫** | SQLite (本地檔案) | Cloud SQL (PostgreSQL) |
-| **運算資源** | 本地 Docker (MacBook/PC) | Google Cloud Run (Serverless) |
-| **成本** | **$0** (Free) | **~$50/月** (視流量而定) |
-| **資料遷移** | 需手動備份檔案 | 自動備份、可擴展 |
-| **存取方式** | `localhost:8501` | 公網 URL (HTTPS) |
+| **適用場景** | 個人使用、開發測試、離線分析 | 團隊協作、長期運行、自動化排程 |
+| **運算資源** | 本機 CPU/RAM | AWS/GCP Serverless 容器 |
+| **資料庫** | SQLite (`.db` 檔案) | Cloud SQL (PostgreSQL) 或 SQLite (Volume) |
+| **成本** | $0 | 低 (依用量計費，有免費額度) |
+| **設定難度** | 低 (Docker Compose 一鍵啟動) | 中 (需設定 GCP 專案與權限) |
 
-## 詳細指南 (Detailed Guides)
+## 如何進行 (How)
 
-### 1. [[Deployment-Local-SQLite]]
-適合單人開發者。數據儲存於本地 `data/portfolio.db`，透過 Docker Compose 一鍵啟動。
+### 選擇您的路徑
 
-### 2. [[Deployment-GCP-CloudRun]]
-適合生產環境。利用 GCP 的強大基礎設施，包含 CI/CD 自動化部署流程與 Cloud SQL 資料庫設定。
+#### 路徑 1: 我想快速試用，只在自己電腦跑
+請參考 [[Deployment-Local-SQLite]]。您只需要安裝 Docker，即可在一分鐘內啟動系統。
+
+#### 路徑 2: 我需要 24/7 自動化監控與多裝置存取
+請參考 [[Deployment-GCP-CloudRun]]。這將引導您將容器部署至 Google Cloud Platform，並設定 HTTPS 與身分驗證。
+
+#### 進階: 資料庫遷移
+若您想從本地遷移至雲端，或反之，請參考 [[Database-Migration-Guide]]。

@@ -1,43 +1,49 @@
 # AI 代理人集群 (AI Agent Swarm)
 
-> 返回 [[Home]]
+> 返回 [[Home]] | 相關: [[System-Overview]]
 
-本系統的核心由多個專職 Agent 組成，模擬專業投資團隊的運作模式。
+## 目標 (Goal)
+模擬華爾街專業投資團隊的分工模式，透過多個專精不同領域的 AI Agent 協作，產出全面、客觀且具備深度的投資策略報告。
 
-## 角色介紹 (Roles)
+## 為什麼 (Why)
+- **專業分工**: 單一 LLM 難以同時精通技術面、基本面與總體經濟，分工能提升分析深度。
+- **減少幻覺**: 透過不同 Agent 的觀點交叉驗證 ("Multi-Agent Debate" 雛形)，降低單一模型產生偏誤的風險。
+- **自我進化**: 引入工程師 Agent，讓系統能根據回饋自動優化 Prompt，持續學習。
 
-### 1. Momentum Agent (動能專家)
-- **職責**: 分析市場趨勢與技術指標。
-- **關注點**: RSI, MACD, 均線系統 (MA5/10/20/60), 成交量變化。
-- **策略**: 尋找趨勢確立的標的，避免接刀或追高。
+## 做了什麼 (What)
+我們設計了五種角色的 Agent，彼此各司其職：
 
-### 2. Fundamental Agent (基本面專家)
-- **職責**: 分析公司財務狀況與長期競爭力。
-- **關注點**: 營收成長率, EPS, 本益比 (P/E), 財報會議重點, 重大新聞。
-- **策略**: 篩選具備護城河與成長潛力的優質企業。
+| Agent 角色 | 職責 (Responsibility) | 關注指標 (Key Metrics) |
+| :--- | :--- | :--- |
+| **Momentum Agent** | 技術面分析、市場情緒 | RSI, MACD, 均線排列 (MA), 成交量 |
+| **Fundamental Agent** | 公司基本面、財報分析 | EPS, P/E, 營收成長率, 利潤率 |
+| **Macro Agent** | 全球宏觀經濟環境 | 利率 (Yields), VIX, CPI, 聯準會政策 |
+| **CIO Agent** | 總結報告、資產配置決策 | 風險回報比, 投資組合健康度, 最終買賣建議 |
+| **Engineer Agent** | 系統自我優化 (Meta-Agent) | Prompt 效能, CIO 回饋, 格式正確性 |
 
-### 3. Macro Agent (總體經濟專家)
-- **職責**: 分析宏觀經濟環境與市場風險。
-- **關注點**: 10年期公債殖利率 (^TNX), 恐慌指數 (^VIX), 通膨數據 (CPI/PPI), Fed 政策。
-- **策略**: 判斷目前是 Risk-On (追求風險) 還是 Risk-Off (避險) 環境。
+## 如何進行 (How)
 
-### 4. CIO Agent (投資長)
-- **職責**: 綜合各方意見，做出最終投資決策並控管風險。
-- **能力**: 具備 CFA 等級的投資組合理論知識。
-- **產出**: 
-    - 投資組合健康度診斷。
-    - 0-3 檔精選推薦 (附帶決策理由與引用來源)。
-    - 風險提示與槓桿建議。
+### 協作流程 (Collaboration Workflow)
 
-### 5. System Engineer Agent (系統工程師)
-- **職責**: 系統自我優化 (Meta-Agent)。
-- **運作**: 
-    - 監控 CIO 對於報告品質的回饋。
-    - 自動優化其他 Agent 的 Prompt (提示詞)。
-    - 管理系統排程與參數設定。
+1.  **資訊蒐集 (Observation)**:
+    - 系統注入 `yfinance` 的即時報價、技術指標與新聞至各個 Agent 的 Context。
+    
+2.  **平行分析 (Parallel Analysis)**:
+    - **Momentum** 分析價格動能與趨勢。
+    - **Fundamental** 檢視財報與估值安全邊際。
+    - **Macro** 評估當前市場週期 (Risk-On/Risk-Off)。
+    
+3.  **決策整合 (Synthesis & Decision)**:
+    - **CIO Agent** 接收上述三份分析報告。
+    - 進行權重評估 (例如：總經逆風時，降低 Momentum 權重)。
+    - 產出最終建議 (Buy/Sell/Hold) 與理由。
 
-## 協同運作 (Collaboration)
-1. **Macro Agent** 先行判斷市場大環境。
-2. **Momentum** 與 **Fundamental** Agent 平行分析現有持倉與潛在標的。
-3. **CIO Agent** 接收所有報告與即時數據 (Context)，進行權衡與決策。
-4. **Engineer Agent** 於事後檢討流程，持續改進 Prompt 品質。
+4.  **優化迴圈 (Optimization Loop)**:
+    - **Engineer Agent** 讀取 CIO 的報告與潛在抱怨 (如 "數據不足")。
+    - 自動調整上游 Agent (Momentum/Fundamental) 的 System Prompt。
+    - 紀錄 Prompt Diff 至資料庫，實現系統自我迭代。
+
+### Prompt 設計哲學
+- **Persona (人設)**: 每個 Agent 都賦予資深專家的人設 (如 "20年經驗的華爾街交易員")。
+- **Chain of Thought (CoT)**: 要求 Agent 在給出結論前，先列出推論過程。
+- **Data-Driven**: 強制要求引用具體數據 (Quote specific numbers) 佐證觀點。

@@ -33,3 +33,9 @@ env/
 
 # Secrets
 ai-investment-advisor-480409-edeae4e42611.json
+client_secret.json
+oauth-client-secret.json
+client_secret_*.json
+*.apps.googleusercontent.com.json
+
+
