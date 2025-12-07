@@ -71,7 +71,7 @@ def run_workflow(mode="daily", dry_run=False, user_id=None):
     # I should be careful. I will use a larger block or multiple edits if needed.
     # But since I'm changing the function signature and the initial query logic, I'll replace the block from start of function to end of query.
     
-     tickers = df['ticker'].tolist() if not df.empty else []
+    tickers = df['ticker'].tolist() if not df.empty else []
     logger.info(f"Active Tickers: {tickers}")
     
     market_service = MarketDataService()

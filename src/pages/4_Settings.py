@@ -16,7 +16,6 @@ def render_api_settings(st, service: SettingsService, settings: dict):
     st.subheader("AI 模型參數 (AI Model Parameters)")
     
     with st.form("ai_settings_form"):
-    with st.form("ai_settings_form"):
         provider_options = {
             "Google Gemini": "Google Gemini (Google AI)",
             "OpenRouter": "OpenRouter (Router)",
