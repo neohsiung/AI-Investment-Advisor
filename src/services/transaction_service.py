@@ -4,38 +4,43 @@ import json
 from datetime import datetime
 import pandas as pd
 from src.database import get_db_connection
-from src.ingestor import TradeIngestor
+# from src.ingestor import TradeIngestor # Removed for Clean Clean Architecture
 from src.analytics import update_daily_snapshot
 
 class TransactionService:
-    def __init__(self, db_path=None, user_id=None):
+    def __init__(self, db_path="data/portfolio.db", user_id=None, repository=None):
         self.db_path = db_path
         self.user_id = user_id
+        # Allow injection or default to Sqlite
+        from src.repositories.transaction_repository import SqliteTransactionRepository
+        self.repository = repository or SqliteTransactionRepository()
 
-    def get_transactions(self, limit=100):
-        """Retrieves recent transactions."""
-        conn = get_db_connection(self.db_path)
-        try:
-            if self.user_id:
-                query = text("SELECT * FROM transactions WHERE user_id = :uid ORDER BY trade_date DESC LIMIT :limit")
-                df = pd.read_sql(query, conn, params={"limit": limit, "uid": self.user_id}) 
-            else:
-                # Fallback for generic access (admin tool?) or empty
-                query = text("SELECT * FROM transactions ORDER BY trade_date DESC LIMIT :limit")
-                df = pd.read_sql(query, conn, params={"limit": limit})
-            return df
-        except Exception as e:
-            print(f"Error fetching transactions: {e}")
-            return None # Return empty DF?
-        finally:
-            conn.close()
+    def get_transactions(self, user_id=None):
+        """
+        Get all transactions for a user.
+        If user_id is not provided, use self.user_id
+        """
+        uid = user_id or self.user_id
+        if not uid:
+            return pd.DataFrame()
+        return self.repository.get_all_by_user_df(uid)
 
     def add_manual_trade(self, ticker, date_str, action, quantity, price, fees):
-        """Adds a manual transaction via Ingestor and updates snapshot."""
+        """Adds a manual transaction via Repository and updates snapshot."""
+        if not self.user_id:
+             return False, "User ID not set."
+
         try:
-            ingestor = TradeIngestor(db_path=self.db_path)
-            # Pass user_id
-            ingestor.ingest_manual_trade(ticker, date_str, action, quantity, price, fees, user_id=self.user_id)
+            # Use Repository
+            self.repository.add(
+                user_id=self.user_id,
+                ticker=ticker,
+                date=date_str,
+                action=action,
+                quantity=quantity,
+                price=price,
+                fees=fees
+            )
             
             # Trigger snapshot update
             update_daily_snapshot(db_path=self.db_path, user_id=self.user_id)
@@ -45,14 +50,12 @@ class TransactionService:
 
     def delete_transaction(self, transaction_id):
         """Deletes a transaction by ID."""
-        conn = get_db_connection(self.db_path)
+        if not self.user_id:
+             return False, "User ID not set."
+             
         try:
-            # Enforce user_id check
-            if self.user_id:
-                conn.execute(text("DELETE FROM transactions WHERE id = :id AND user_id = :uid"), {"id": transaction_id, "uid": self.user_id})
-            else:
-                conn.execute(text("DELETE FROM transactions WHERE id = :id"), {"id": transaction_id})
-            conn.commit()
+            # Use Repository
+            self.repository.delete(user_id=self.user_id, transaction_id=transaction_id)
             
             # Recalculate snapshot
             update_daily_snapshot(db_path=self.db_path, user_id=self.user_id)
@@ -60,5 +63,3 @@ class TransactionService:
             return True, f"Transaction {transaction_id} deleted."
         except Exception as e:
             return False, f"Failed to delete transaction: {e}"
-        finally:
-            conn.close()

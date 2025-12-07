@@ -18,5 +18,5 @@ pip-licenses
 google-auth
 google-auth-oauthlib
 google-auth-httplib2
-streamlit-google-auth
+
 

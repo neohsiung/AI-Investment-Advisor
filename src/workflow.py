@@ -33,14 +33,13 @@ def run_workflow(mode="daily", dry_run=False):
     init_db()
     logger.info("Database initialized.")
     
-    # 1. 初始化 Agents
-    # Removed 'force' parameter from run_workflow, so use_cache logic needs adjustment or 'force' needs to be re-added.
-    # Assuming 'force' is implicitly handled by dry_run or removed for simplicity based on the provided edit.
-    # For now, let's assume use_cache is always True unless dry_run implies no cache.
-    # If the intention was to remove 'force' from the signature but keep its functionality,
-    # a new way to determine 'use_cache' would be needed.
-    # For this edit, I'll assume use_cache should be True by default if 'force' is removed.
-    use_cache = True # Adjusted based on 'force' removal from signature
+    # 1. 初始化 Agents (Initialize Agents)
+    # 本系統採用 Multi-Agent 架構，各 Agent 負責不同面向的分析：
+    # - MomentumAgent: 動能與技術面
+    # - FundamentalAgent: 財報與基本面
+    # - MacroAgent: 總體經濟與市場環境
+    # - CIOAgent: 整合所有資訊並產出最終決策
+    use_cache = True # 預設啟用快取以節省 Token 成本 (Default: Enable cache for cost optimization)
     momentum_agent = MomentumAgent(use_cache=use_cache)
     fundamental_agent = FundamentalAgent(use_cache=use_cache)
     macro_agent = MacroAgent(use_cache=use_cache)
@@ -123,23 +122,27 @@ def run_workflow(mode="daily", dry_run=False):
             fund_res = fundamental_agent.run(fund_ctx)
             fundamental_reports.append(fund_res)
     
-    # 4. 決定是否執行 CIO
+    # 4. 決定是否執行 CIO (Decide whether to run CIO Agent)
+    # 邏輯說明：
+    # - Weekly Mode: 強制執行，每週產生完整報告。
+    # - Daily Mode: 僅在 Momentum Agent 偵測到 "BUY" 或 "SELL" 訊號時觸發，避免無謂的 API 消耗。
     should_run_cio = False
     if mode == 'weekly':
         should_run_cio = True
     elif mode == 'daily' and has_significant_change:
-        logger.info("Significant momentum change detected. Triggering CIO Agent.")
+        logger.info("檢測到顯著動能變化，觸發 CIO Agent (Significant momentum change detected. Triggering CIO Agent).")
         should_run_cio = True
     
     if should_run_cio:
-        logger.info("Running CIO Agent...")
+        logger.info("啟動 CIO Agent 進行最終決策... (Running CIO Agent...)")
         
-        # 計算真實槓桿比率
+        # 計算真實槓桿比率，讓 CIO 評估風險
         from src.analytics import LeverageCalculator
         calc = LeverageCalculator()
         metrics = calc.calculate_metrics(current_prices)
         leverage_ratio = metrics['leverage_ratio']
         
+        # 構建 CIO Context，包含所有上游 Agent 的分析結果
         cio_context = {
             "macro_report": macro_report,
             "momentum_reports": momentum_reports,

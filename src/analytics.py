@@ -9,10 +9,19 @@ class LeverageCalculator:
 
     def calculate_metrics(self, current_prices, user_id):
         """
-        計算槓桿水位相關指標
-        current_prices: dict, {ticker: price}
-        user_id: str
-        return: dict, {tnv, nlv, leverage_ratio, margin_level}
+        計算槓桿水位相關指標 (Calculate Leverage Metrics)
+        
+        Args:
+            current_prices (dict): 當前市場價格 {ticker: price}
+            user_id (str): 使用者 ID
+            
+        Returns:
+            dict: {
+                tnv: 總名義價值 (Total Nominal Value) - 所有多空倉位絕對值總和
+                nlv: 淨流動資產價值 (Net Liquidation Value) - 現金 + 市值
+                leverage_ratio: 槓桿比率 (TNV / NLV)
+                cash_balance: 現金餘額
+            }
         """
         conn = get_db_connection(self.db_path)
         
@@ -72,8 +81,13 @@ class ROIEngine:
         
     def calculate_roi(self, nlv, user_id):
         """
-        計算簡單 ROI (Return on Investment)
-        ROI = (NLV - Net Invested Capital) / Net Invested Capital
+        計算簡單投資報酬率 (Calculate Simple ROI)
+        
+        Formula:
+            ROI = (當前淨值 NLV - 淨投入資本 Net Invested) / 淨投入資本 Net Invested
+            
+        Note:
+            淨投入資本 = 總入金 (Deposits) - 總出金 (Withdrawals)
         """
         conn = get_db_connection(self.db_path)
         
@@ -167,8 +181,17 @@ class PnLCalculator:
 
     def calculate_breakdown(self, current_prices, user_id):
         """
-        計算損益細分 (已實現 vs 未實現)
-        採用平均成本法 (Average Cost Method)
+        計算損益細分 (Calculate P&L Breakdown)
+        
+        Method: 平均成本法 (Weighted Average Cost)
+        
+        Returns:
+            dict: {
+                realized: 已實現損益 (賣出時產生的損益)
+                unrealized: 未實現損益 (持倉市值 - 成本)
+                total: 總損益
+                details: 個股詳細損益數據
+            }
         """
         conn = get_db_connection(self.db_path)
         # 取得所有交易，按時間排序

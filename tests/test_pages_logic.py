@@ -67,27 +67,36 @@ from src.services.transaction_service import TransactionService
 
 class TestTransactionService:
     def test_add_manual_trade(self):
-        with patch('src.services.transaction_service.TradeIngestor') as mock_ingestor_cls, \
-             patch('src.services.transaction_service.update_daily_snapshot') as mock_update:
+        # Mock repository
+        mock_repo = MagicMock()
+        
+        # We don't need to patch SqliteTransactionRepository if we inject the mock
+        # But we do need to patch update_daily_snapshot
+        with patch('src.services.transaction_service.update_daily_snapshot') as mock_update:
              
-            service = TransactionService("dummy.db")
+            # Inject mock_repo via constructor
+            service = TransactionService("dummy.db", user_id="test_user", repository=mock_repo)
             success, msg = service.add_manual_trade("AAPL", "2023-01-01", "BUY", 10, 150.0, 5.0)
             
             assert success is True
             assert "AAPL" in msg
-            mock_ingestor_cls.return_value.ingest_manual_trade.assert_called_once()
+            # Check if repository.add was called
+            mock_repo.add.assert_called_once()
             mock_update.assert_called_once()
 
     def test_delete_transaction(self):
-        with patch('src.services.transaction_service.get_db_connection') as mock_conn, \
-             patch('src.services.transaction_service.update_daily_snapshot') as mock_update:
+        # Mock repository
+        mock_repo = MagicMock()
+        
+        with patch('src.services.transaction_service.update_daily_snapshot') as mock_update:
             
-            service = TransactionService("dummy.db")
+            service = TransactionService("dummy.db", user_id="test_user", repository=mock_repo)
             success, msg = service.delete_transaction(123)
             
             assert success is True
             assert "deleted" in msg
-            mock_conn.return_value.execute.assert_called_once()
+            mock_repo.delete.assert_called_once()
+            mock_update.assert_called_once()
             
 class TestSettingsRender:
     def test_render_api_settings(self):

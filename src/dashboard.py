@@ -59,18 +59,33 @@ def main():
     roi_engine = ROIEngine(db_path=db_path)
     pnl_calc = PnLCalculator(db_path=db_path)
 
-    # 2. 獲取真實市場數據
+    # 初始化服務與 Repository (Initialize Services)
+    # 使用 TransactionService 來處理所有與交易相關的資料存取，實現 Clean Architecture
+    # Use TransactionService for all transaction-related data access
+    from src.services.transaction_service import TransactionService
+    from src.repositories.transaction_repository import SqliteTransactionRepository
+    
+    # 依賴注入 (Dependency Injection)
+    transaction_repo = SqliteTransactionRepository()
+    transaction_service = TransactionService(repository=transaction_repo)
+
+    # 2. 獲取真實市場數據 (Fetch Real Market Data)
     market_service = MarketDataService()
 
     # 取得活躍持倉 Tickers (Filtered by User)
-    conn = get_db_connection(db_path)
-    try:
-        query = "SELECT ticker, SUM(CASE WHEN action='BUY' THEN quantity WHEN action='SELL' THEN -quantity ELSE 0 END) as quantity FROM transactions WHERE user_id = :uid GROUP BY ticker HAVING quantity > 0.0001"
-        active_tickers_df = pd.read_sql(query, conn, params={"uid": user_id})
-    finally:
-        conn.close()
-
-    active_tickers = active_tickers_df['ticker'].tolist() if not active_tickers_df.empty else []
+    # 改用 Service 層獲取，避免直接 SQL 操作
+    transactions_df = transaction_service.get_transactions(user_id)
+    
+    # 計算活躍持倉 (Calculate Active Positions)
+    # 邏輯: 買入為正，賣出為負，加總後大於 0 代表持有
+    if not transactions_df.empty:
+        # 重整資料以計算持倉 (Reshape data to calculate holdings)
+        holdings = transactions_df.copy()
+        holdings['qty_signed'] = holdings.apply(lambda x: x['quantity'] if x['action'] == 'BUY' else -x['quantity'], axis=1)
+        active_holdings = holdings.groupby('ticker')['qty_signed'].sum()
+        active_tickers = active_holdings[active_holdings > 0.0001].index.tolist()
+    else:
+        active_tickers = []
 
     # 獲取價格 (含 AI Fallback)
     current_prices = {}
@@ -127,14 +142,18 @@ def main():
     except Exception as e:
         st.error(f"計算指標時發生錯誤 (Error calculating metrics): {e}")
 
-    # 2. 持倉明細
+    # 2. 持倉明細 (Current Positions)
     st.subheader("當前持倉 (Current Positions)")
-    conn = get_db_connection(db_path)
-    try:
-        query = "SELECT ticker, SUM(CASE WHEN action='BUY' THEN quantity WHEN action='SELL' THEN -quantity ELSE 0 END) as quantity FROM transactions WHERE user_id = :uid GROUP BY ticker HAVING quantity != 0"
-        positions_df = pd.read_sql(query, conn, params={"uid": user_id})
-    finally:
-        conn.close()
+    
+    # 使用與上方相同的邏輯計算持倉 DataFrame
+    if not transactions_df.empty:
+        # Group by Ticker to get total quantity
+        positions_df = transactions_df.copy()
+        positions_df['qty_signed'] = positions_df.apply(lambda x: x['quantity'] if x['action'] == 'BUY' else -x['quantity'], axis=1)
+        positions_grouped = positions_df.groupby('ticker')['qty_signed'].sum().reset_index()
+        positions_df = positions_grouped[positions_grouped['qty_signed'] > 0.0001].rename(columns={'qty_signed': 'quantity'})
+    else:
+        positions_df = pd.DataFrame(columns=['ticker', 'quantity'])
 
     # 補上市價與市值
     if not positions_df.empty:

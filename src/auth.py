@@ -1,6 +1,6 @@
-import os
 import streamlit as st
-from streamlit_google_auth import Authenticate
+import os
+from src.utils.google_auth import GoogleAuth
 
 class AuthManager:
     """
@@ -14,11 +14,11 @@ class AuthManager:
         
         # Check if secret exists, if not, we can't really init GoogleAuth safely
         # But we will instantiate it and let the library handle errors or prompt user.
-        self.authenticator = Authenticate(
+        self.authenticator = GoogleAuth(
             secret_credentials_path=self.secret_path,
-            cookie_name=self.cookie_name,
-            cookie_key=self.cookie_key,
             redirect_uri=self.redirect_uri,
+            cookie_key=self.cookie_key,
+            cookie_name=self.cookie_name
         )
 
     def check_login(self):

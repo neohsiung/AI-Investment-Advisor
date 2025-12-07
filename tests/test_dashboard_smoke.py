@@ -22,9 +22,15 @@ def test_dashboard_logic():
         
         # Setup mocks
         mock_read_sql.return_value.empty = False
-        mock_df = MagicMock()
-        mock_df.empty = False
-        mock_df.__getitem__.return_value.tolist.return_value = ['AAPL']
+        # Use real DataFrame to support copy(), apply(), groupby()
+        import pandas as pd
+        mock_df = pd.DataFrame({
+            'ticker': ['AAPL'],
+            'action': ['BUY'],
+            'quantity': [10.0],
+            'price': [150.0],
+            'amount': [1500.0]
+        })
         mock_read_sql.return_value = mock_df
         
         mock_market.return_value.get_current_prices.return_value = {'AAPL': 150}

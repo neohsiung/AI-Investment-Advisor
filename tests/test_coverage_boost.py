@@ -16,15 +16,14 @@ def test_ingestor_csv_missing_columns():
          patch("pathlib.Path.exists", return_value=True):
          
         with patch("pandas.read_csv", return_value=pd.DataFrame({"Symbol": ["AAPL"], "Date": ["2023-01-01"], "Amount": [100]})):
-             # The Simple broker parser raises ValueError if 'ticker' is missing.
              with pytest.raises(ValueError, match="ticker"):
-                ingestor.ingest_csv("dummy.csv", broker="Simple")
+                ingestor.ingest_csv("dummy.csv", broker="Simple", user_id="test")
 
 def test_ingestor_unsupported_broker():
     ingestor = TradeIngestor(":memory:")
     with patch("pathlib.Path.exists", return_value=True):
         with pytest.raises(ValueError):
-            ingestor.ingest_csv("dummy.csv", broker="UnknownBroker")
+            ingestor.ingest_csv("dummy.csv", broker="UnknownBroker", user_id="test")
 
 def test_ingestor_manual_trade_error():
     ingestor = TradeIngestor(":memory:")
@@ -114,7 +113,8 @@ def test_ingestor_robinhood(tmp_path):
     
     with patch("src.ingestor.get_db_connection") as mock_conn:
         ingestor.ingest_csv(str(csv_file), broker="robinhood", user_id="test_user")
-        mock_conn.return_value.cursor.return_value.execute.assert_called()
+        # Check execute on connection object yielded by context manager
+        mock_conn.return_value.__enter__.return_value.execute.assert_called()
 
 def test_ingestor_ibkr(tmp_path):
     ingestor = TradeIngestor(":memory:")
@@ -126,6 +126,5 @@ def test_ingestor_ibkr(tmp_path):
     with patch("src.ingestor.get_db_connection") as mock_conn:
         ingestor.ingest_csv(str(csv_file), broker="ibkr", user_id="test_user")
         # Should execute for Trade and Dividend
-        assert mock_conn.return_value.cursor.return_value.execute.call_count >= 2
-
+        assert mock_conn.return_value.__enter__.return_value.execute.call_count >= 2
 
