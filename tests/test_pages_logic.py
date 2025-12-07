@@ -114,7 +114,12 @@ class TestSettingsRender:
         
         # Verify UI interactions
         mock_st.subheader.assert_called_with("AI 模型參數 (AI Model Parameters)")
-        mock_st.selectbox.assert_any_call("AI 提供者 (Provider)", ["Google Gemini", "OpenRouter", "OpenAI"], index=1)
+        mock_st.selectbox.assert_any_call(
+            "AI 提供者 (Provider)", 
+            options=["Google Gemini", "OpenRouter", "OpenAI"], 
+            index=1,
+            format_func=ANY
+        )
 
     def test_render_scheduler_tab(self):
         mock_st = MagicMock()

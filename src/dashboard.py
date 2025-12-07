@@ -177,6 +177,10 @@ def main():
         positions_df['market_value'] = positions_df['quantity'] * positions_df['current_price']
         
         # Rename columns for display
+        display_df = positions_df.rename(columns={
+            'ticker': '股票代碼',
+            'quantity': '數量',
+            'current_price': '當前價格',
             'market_value': '市值'
         })
         st.dataframe(display_df.style.format({"數量": "{:.4f}", "當前價格": "{:.4f}", "市值": "{:.4f}"}), use_container_width=True)
