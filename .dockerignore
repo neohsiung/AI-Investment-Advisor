@@ -1,0 +1,3 @@
+# Exclude local app secrets
+app/client_secret_*.json
+src/pages/__pycache__/
