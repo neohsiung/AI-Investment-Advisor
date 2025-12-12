@@ -1,4 +1,7 @@
 # Environment Variables
+# Secrets
+client_secret.json
+app/client_secret_*.json
 .env
 
 # Data & Databases
