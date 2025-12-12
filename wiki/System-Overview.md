@@ -25,7 +25,7 @@ graph TD
     User((使用者)) --> UI[Streamlit Dashboard]
     UI --> Auth[Auth Manager]
     UI --> Backend[Workflow Engine]
-    
+
     subgraph AI Agent Swarm
         Backend --> Momentum[Momentum Agent]
         Backend --> Fundamental[Fundamental Agent]
@@ -37,14 +37,14 @@ graph TD
         CIO --> Report[Final Report]
         Report --> Engineer --Optimization--> DB[(Database)]
     end
-    
+
     subgraph Data & Services
         Backend --> MarketData[Market Data Service]
         MarketData --> YFinance[Yahoo Finance API]
         Backend --> Scheduler[Scheduler]
         Backend --> Notifier[Email Notifier]
     end
-    
+
     subgraph Infrastructure
         Auth --> DB
         Backend --> DB

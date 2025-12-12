@@ -46,7 +46,7 @@ class ResponseCache:
         conn = get_db_connection(self.db_path)
         try:
             row = conn.execute(text("SELECT response, timestamp FROM response_cache WHERE key = :key"), {"key": key}).fetchone()
-            
+
             if row:
                 response, timestamp_str = row
                 # Parse timestamp (assuming ISO format from format_time)
@@ -56,7 +56,7 @@ class ResponseCache:
                     timestamp = datetime.fromisoformat(timestamp_str)
                 except ValueError:
                     # Fallback for old data or different format
-                    timestamp = datetime.now() 
+                    timestamp = datetime.now()
 
                 # Check TTL
                 # get_current_time() returns aware datetime, timestamp from DB should be aware too if saved via format_time()
@@ -65,7 +65,7 @@ class ResponseCache:
                 now = get_current_time()
                 if timestamp.tzinfo is None:
                     timestamp = timestamp.replace(tzinfo=now.tzinfo) # Assume same TZ
-                
+
                 if now - timestamp < timedelta(hours=self.ttl_hours):
                     self.logger.info(f"Cache HIT for {agent_name}")
                     return response

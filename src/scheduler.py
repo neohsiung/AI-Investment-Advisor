@@ -56,7 +56,7 @@ def get_all_users():
 def job_weekly_report():
     print(f"[{format_time()}] Starting Weekly Report Job...")
     log_job_execution("Weekly Report", "STARTED", "Job started.")
-    
+
     users = get_all_users()
     if not users:
         print("No users found. Skipping.")
@@ -71,7 +71,7 @@ def job_weekly_report():
         except Exception as e:
             print(f"[{format_time()}] Weekly Report Job Failed for {user}: {e}")
             log_scheduler_event(f"Weekly Report ({user})", "FAILED", str(e))
-    
+
     print(f"[{format_time()}] Weekly Report Job Batch Completed.")
 
 def job_daily_check():
@@ -82,7 +82,7 @@ def job_daily_check():
 
     print(f"[{format_time()}] Starting Daily Check Job...")
     log_job_execution("Daily Check", "STARTED", "Job started.")
-    
+
     users = get_all_users()
     if not users:
         print("No users found. Skipping.")
@@ -103,9 +103,9 @@ def job_daily_check():
 def job_monthly_refinement():
     print(f"[{format_time()}] Starting Monthly Refinement Job...")
     log_job_execution("Monthly Refinement", "STARTED", "Job started.")
-    # Refinement might differ? For now run global or per user? 
-    # Refinement agent (Engineer) optimizes prompts. 
-    # Prompts are in `src/prompts.py` which are code files. 
+    # Refinement might differ? For now run global or per user?
+    # Refinement agent (Engineer) optimizes prompts.
+    # Prompts are in `src/prompts.py` which are code files.
     # So optimization is global for the codebase.
     # However, if we store prompts in DB per user later, this needs change.
     # For now, let's keep it global or maybe just run once?
@@ -125,41 +125,41 @@ def check_monthly_job():
 
 def run_scheduler_loop():
     print(f"Scheduler started at {format_time()}. Press Ctrl+C to exit.")
-    
+
     from src.agents.engineer import SystemEngineerAgent
     engineer = SystemEngineerAgent()
-    
+
     # 初始讀取配置
     config = engineer.get_schedule_config()
     daily_time = config.get("schedule_daily", "09:00")
     weekly_time = config.get("schedule_weekly", "09:00")
-    
+
     print(f"Loaded schedule config: Daily at {daily_time}, Weekly at {weekly_time}")
-    
+
     # 每日執行檢查 (Daily Mode)
     schedule.every().day.at(daily_time).do(job_daily_check)
-    
+
     # 每週六執行週報 (Weekly Mode)
     schedule.every().saturday.at(weekly_time).do(job_weekly_report)
-    
+
     # 每月 1 號執行 Refinement
     schedule.every().day.at("00:00").do(check_monthly_job)
-    
+
     # 定期重新加載配置 (例如每小時)
     # 為了簡單起見，目前若要更改配置需重啟 Scheduler，
     # 或者我們可以在 loop 中檢查 DB 變更 (較複雜)。
     # 這裡先保持靜態載入，但至少是從 DB 讀的。
-    
+
     while True:
         schedule.run_pending()
         time.sleep(60)
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Investment Advisor Scheduler")
-    parser.add_argument("--task", choices=['daily', 'weekly', 'monthly', 'loop'], default='loop', 
+    parser.add_argument("--task", choices=['daily', 'weekly', 'monthly', 'loop'], default='loop',
                         help="Task to run immediately (or 'loop' for daemon mode)")
     args = parser.parse_args()
-    
+
     # Initialize DB (Safe to call repeatedly, checks IF NOT EXISTS)
     # This ensures tables exist even if scheduler container starts first or alone
     init_db()

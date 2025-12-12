@@ -37,5 +37,3 @@ client_secret.json
 oauth-client-secret.json
 client_secret_*.json
 *.apps.googleusercontent.com.json
-
-

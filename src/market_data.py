@@ -22,13 +22,13 @@ class MarketDataService:
         """
         if not tickers:
             return {}
-        
+
         try:
             # period="1d" 獲取最近一天數據
             data = yf.download(tickers, period="1d", auto_adjust=True, progress=False)
-            
+
             prices = {}
-            
+
             if len(tickers) == 1:
                 # 單一 Ticker
                 ticker = tickers[0]
@@ -46,7 +46,7 @@ class MarketDataService:
                                 val = close_data[ticker].iloc[-1]
                                 if pd.notna(val):
                                     prices[ticker] = val
-            
+
             return prices
 
         except Exception as e:
@@ -60,11 +60,11 @@ class MarketDataService:
         """
         context = {}
         prices = self.get_current_prices(tickers)
-        
+
         for ticker in tickers:
             price = prices.get(ticker)
             indicators = self.get_technical_indicators(ticker)
-            
+
             # AI Fallback
             if price is None or price == 0:
                 self.logger.warning(f"Missing data for {ticker}, attempting AI fallback...")
@@ -73,7 +73,7 @@ class MarketDataService:
                     price = ai_data.get('price', 0)
                     if 'indicators' in ai_data:
                         indicators.update(ai_data['indicators'])
-            
+
             context[ticker] = {
                 "price": price,
                 "indicators": indicators
@@ -87,13 +87,13 @@ class MarketDataService:
         """
         try:
             df = yf.download(ticker, period="3mo", progress=False, auto_adjust=True)
-            if df.empty or len(df) < 26: 
-                return {"rsi": 50, "macd": "neutral"} 
-            
+            if df.empty or len(df) < 26:
+                return {"rsi": 50, "macd": "neutral"}
+
             close = df['Close']
             if isinstance(close, pd.DataFrame):
-                close = close.iloc[:, 0] 
-            
+                close = close.iloc[:, 0]
+
             # RSI (14)
             delta = close.diff()
             gain = (delta.where(delta > 0, 0)).rolling(window=14).mean()
@@ -101,24 +101,24 @@ class MarketDataService:
             rs = gain / loss
             rsi = 100 - (100 / (1 + rs))
             current_rsi = rsi.iloc[-1]
-            
+
             # MACD (12, 26, 9)
             exp1 = close.ewm(span=12, adjust=False).mean()
             exp2 = close.ewm(span=26, adjust=False).mean()
             macd = exp1 - exp2
             signal = macd.ewm(span=9, adjust=False).mean()
-            
+
             macd_val = macd.iloc[-1]
             signal_val = signal.iloc[-1]
-            
+
             macd_status = "bullish" if macd_val > signal_val else "bearish"
-            
+
             return {
                 "rsi": round(float(current_rsi), 2) if pd.notna(current_rsi) else 50,
                 "macd": macd_status,
                 "macd_val": round(float(macd_val), 2) if pd.notna(macd_val) else 0
             }
-            
+
         except Exception as e:
             self.logger.error(f"Error calculating indicators for {ticker}: {e}")
             return {"rsi": 50, "macd": "neutral"}
@@ -133,7 +133,7 @@ class MarketDataService:
             news = t.news
             if not news:
                 return []
-            
+
             formatted_news = []
             for n in news[:5]: # 取前 5 則
                 title = n.get('title', '')
@@ -153,7 +153,7 @@ class MarketDataService:
         try:
             t = yf.Ticker(ticker)
             info = t.info
-            
+
             return {
                 "market_cap": info.get('marketCap'),
                 "trailing_pe": info.get('trailingPE'),
@@ -176,7 +176,7 @@ class MarketDataService:
         try:
             tickers = ["^VIX", "^TNX", "SPY"]
             data = yf.download(tickers, period="5d", progress=False, auto_adjust=True)
-            
+
             result = {}
             if not data.empty and 'Close' in data.columns:
                 close = data['Close']
@@ -200,24 +200,24 @@ class MarketDataService:
         try:
             import requests
             import json
-            
+
             conn = get_db_connection()
             # conn is now engine.connect()
             # fetchall() works on ResultProxy in 1.4+
             settings_rows = conn.execute(text("SELECT key, value FROM settings")).fetchall()
             settings = dict(settings_rows)
             conn.close()
-            
+
             provider = settings.get("AI_PROVIDER")
             api_key = settings.get("API_KEY")
             model = settings.get("AI_MODEL")
             base_url = settings.get("BASE_URL")
-            
+
             if not api_key:
                 return None
-                
+
             prompt = f"What is the current stock price of {ticker}? Please provide a rough estimate based on your knowledge. Return ONLY a JSON string like {{\"price\": 150.0, \"indicators\": {{\"rsi\": 50, \"macd\": \"neutral\"}}}}."
-            
+
             content = ""
             if provider == "OpenRouter":
                 resp = requests.post(
@@ -238,11 +238,11 @@ class MarketDataService:
                 )
                 if resp.status_code == 200:
                     content = resp.json()['candidates'][0]['content']['parts'][0]['text']
-            
+
             if content:
                 content = content.replace("```json", "").replace("```", "").strip()
                 return json.loads(content)
-                
+
         except Exception as e:
             self.logger.error(f"LLM fallback failed: {e}")
             return None

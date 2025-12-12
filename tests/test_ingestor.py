@@ -42,15 +42,15 @@ def test_ingest_simple_csv(test_db, tmp_path):
         'cost': [150, 2800]
     })
     df.to_csv(csv_path, index=False)
-    
+
     ingestor = TradeIngestor(db_path=test_db)
     ingestor.ingest_csv(csv_path, broker="simple", user_id="test_user")
-    
+
     conn = get_db_connection(test_db)
     result = conn.execute(text("SELECT ticker, quantity, price, user_id FROM transactions ORDER BY ticker"))
     rows = result.fetchall()
     conn.close()
-    
+
     assert len(rows) == 2
     assert rows[0][0] == 'AAPL' # Access by index or name depending on row type (Tuple in simple cases)
     assert rows[0][3] == 'test_user'
@@ -58,13 +58,13 @@ def test_ingest_simple_csv(test_db, tmp_path):
 def test_ingest_manual_trade(test_db):
     ingestor = TradeIngestor(db_path=test_db)
     ingestor.ingest_manual_trade('TSLA', '2023-01-01', 'BUY', 5, 200.0, user_id="test_user")
-    
+
     # Use SQLAlchemy to verify
     conn = get_db_connection(test_db)
     result = conn.execute(text("SELECT ticker, quantity, price, amount, user_id FROM transactions"))
     row = result.fetchone()
     conn.close()
-    
+
     assert row is not None
     assert row[0] == 'TSLA'
     assert row[1] == 5.0

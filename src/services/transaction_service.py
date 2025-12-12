@@ -41,7 +41,7 @@ class TransactionService:
                 price=price,
                 fees=fees
             )
-            
+
             # Trigger snapshot update
             update_daily_snapshot(db_path=self.db_path, user_id=self.user_id)
             return True, f"已新增交易: {action} {quantity} {ticker} @ {price}"
@@ -52,14 +52,14 @@ class TransactionService:
         """Deletes a transaction by ID."""
         if not self.user_id:
              return False, "User ID not set."
-             
+
         try:
             # Use Repository
             self.repository.delete(user_id=self.user_id, transaction_id=transaction_id)
-            
+
             # Recalculate snapshot
             update_daily_snapshot(db_path=self.db_path, user_id=self.user_id)
-            
+
             return True, f"Transaction {transaction_id} deleted."
         except Exception as e:
             return False, f"Failed to delete transaction: {e}"

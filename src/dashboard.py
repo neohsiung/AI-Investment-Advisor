@@ -8,10 +8,10 @@ from src.auth import auth_manager
 
 def main():
     st.set_page_config(page_title="總覽 | AI 投資顧問", layout="wide")
-    
+
     # Initialize DB (Safe to call repeatedly, checks IF NOT EXISTS)
     # Use default path or env var logic handled inside init_db
-    # Note: We use the default path here, if user changes sidebar input later, it might need re-init, 
+    # Note: We use the default path here, if user changes sidebar input later, it might need re-init,
     # but usually `data/portfolio.db` is the target.
     init_db()
 
@@ -19,20 +19,20 @@ def main():
     # --- Authentication Check ---
     # Check if client_secret.json exists (simplistic check for better UX)
     import os
-    
+
     # Check if client_secret.json exists OR if we have the content in Env Vars
     has_secret_file = os.path.exists(os.getenv('GOOGLE_CLIENT_SECRET_PATH', 'client_secret.json'))
     has_secret_env = os.getenv('GOOGLE_CLIENT_SECRET_JSON') is not None or os.getenv('client_secret.json') is not None
-    
+
     if not has_secret_file and not has_secret_env:
         st.error("⚠️ 找不到 Google OAuth 設定檔 (`client_secret.json`)。")
         st.markdown("""
         ### 如何解決 (How to fix):
         本系統需要 Google OAuth 憑證才能運作。
-        
+
         請參考 Wiki 中的詳細設定指南：
         👉 **[Google-OAuth-Setup](wiki/Google-OAuth-Setup.md)**
-        
+
         **簡易步驟**:
         1. 按照指南從 Google Cloud Console 下載憑證 JSON 檔。
         2. 將檔案重新命名為 `client_secret.json`。
@@ -50,7 +50,7 @@ def main():
 
     user = auth_manager.get_current_user()
     user_id = user['email'] # Using email as user_id for simplicity as per migration logic
-    
+
     # Logout Button in Sidebar
     with st.sidebar:
         st.write(f"Logged in as: **{user['name']}**")
@@ -80,7 +80,7 @@ def main():
     # Use TransactionService for all transaction-related data access
     from src.services.transaction_service import TransactionService
     from src.repositories.transaction_repository import SqliteTransactionRepository
-    
+
     # 依賴注入 (Dependency Injection)
     transaction_repo = SqliteTransactionRepository()
     transaction_service = TransactionService(repository=transaction_repo)
@@ -91,7 +91,7 @@ def main():
     # 取得活躍持倉 Tickers (Filtered by User)
     # 改用 Service 層獲取，避免直接 SQL 操作
     transactions_df = transaction_service.get_transactions(user_id)
-    
+
     # 計算活躍持倉 (Calculate Active Positions)
     # 邏輯: 買入為正，賣出為負，加總後大於 0 代表持有
     if not transactions_df.empty:
@@ -113,7 +113,7 @@ def main():
     if active_tickers:
         # 先嘗試批量獲取 (Cached)
         current_prices = fetch_market_prices(active_tickers)
-        
+
         # 檢查是否有遺漏，若有則嘗試 AI Fallback
         for ticker in active_tickers:
             if ticker not in current_prices or current_prices[ticker] == 0:
@@ -127,12 +127,12 @@ def main():
         metrics = calc.calculate_metrics(current_prices, user_id=user_id)
         pnl_data = pnl_calc.calculate_breakdown(current_prices, user_id=user_id)
         roi = roi_engine.calculate_roi(metrics['nlv'], user_id=user_id)
-        
+
         # Row 1: NLV & Cash
         col1, col2, col3, col4 = st.columns(4)
         col1.metric("淨流動資產價值 (NLV)", f"${metrics['nlv']:,.2f}")
         col2.metric("現金餘額 (Cash Balance)", f"${metrics['cash_balance']:,.2f}")
-        
+
         lev_ratio = metrics['leverage_ratio']
         lev_color = "normal"
         if lev_ratio >= 2.0: lev_color = "inverse"
@@ -142,11 +142,11 @@ def main():
         # Row 2: PnL Breakdown
         st.markdown("---")
         c1, c2, c3 = st.columns(3)
-        c1.metric("已實現損益 (Realized P&L)", f"${pnl_data['realized']:,.2f}", 
+        c1.metric("已實現損益 (Realized P&L)", f"${pnl_data['realized']:,.2f}",
                   delta=f"${pnl_data['realized']:,.2f}")
-        c2.metric("未實現損益 (Unrealized P&L)", f"${pnl_data['unrealized']:,.2f}", 
+        c2.metric("未實現損益 (Unrealized P&L)", f"${pnl_data['unrealized']:,.2f}",
                   delta=f"${pnl_data['unrealized']:,.2f}")
-        c3.metric("總損益 (Total P&L)", f"${pnl_data['total']:,.2f}", 
+        c3.metric("總損益 (Total P&L)", f"${pnl_data['total']:,.2f}",
                   delta=f"${pnl_data['total']:,.2f}")
 
         # 警示
@@ -160,7 +160,7 @@ def main():
 
     # 2. 持倉明細 (Current Positions)
     st.subheader("當前持倉 (Current Positions)")
-    
+
     # 使用與上方相同的邏輯計算持倉 DataFrame
     if not transactions_df.empty:
         # Group by Ticker to get total quantity
@@ -175,7 +175,7 @@ def main():
     if not positions_df.empty:
         positions_df['current_price'] = positions_df['ticker'].map(current_prices).fillna(0)
         positions_df['market_value'] = positions_df['quantity'] * positions_df['current_price']
-        
+
         # Rename columns for display
         display_df = positions_df.rename(columns={
             'ticker': '股票代碼',
@@ -184,7 +184,7 @@ def main():
             'market_value': '市值'
         })
         st.dataframe(display_df.style.format({"數量": "{:.4f}", "當前價格": "{:.4f}", "市值": "{:.4f}"}), use_container_width=True)
-        
+
         # 3. 資產分佈圖
         st.subheader("資產配置 (Portfolio Allocation)")
         fig = px.pie(positions_df, values='market_value', names='ticker', title='資產分佈 (Portfolio Allocation)')

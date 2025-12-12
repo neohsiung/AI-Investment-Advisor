@@ -33,14 +33,14 @@ class EmailNotifier:
             self.logger.info(f"Connecting to SMTP server: {self.smtp_server}:{self.smtp_port}...")
             server = smtplib.SMTP(self.smtp_server, self.smtp_port)
             server.starttls()
-            
+
             self.logger.info(f"Logging in as {self.sender_email}...")
             server.login(self.sender_email, self.sender_password)
-            
+
             self.logger.info(f"Sending email to {self.recipient_email}...")
             server.send_message(msg)
             server.quit()
-            
+
             self.logger.info("Email sent successfully.")
             return True
         except Exception as e:

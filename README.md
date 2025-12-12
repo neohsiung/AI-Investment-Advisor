@@ -41,11 +41,11 @@ graph TD
         MA[Macro Agent]
         FA[Fundamental Agent]
         MO[Momentum Agent]
-        
+
         MA -->|Report| CIO[CIO Agent]
         FA -->|Report| CIO
         MO -->|Report| CIO
-        
+
         CIO -.->|Feedback| SEA[System Engineer Agent]
         SEA -.->|Prompt Optimization| MA
         SEA -.->|Prompt Optimization| FA
@@ -72,7 +72,7 @@ This diagram illustrates the recommended deployment setup on Google Cloud Platfo
 graph TD
     User["User / Client"] -- HTTPS --> LB["Cloud Load Balancer"]
     LB --> CR["Cloud Run Service<br>(App Container)"]
-    
+
     subgraph "GCP Region (asia-east1)"
         CloudRun[Cloud Run Service]
         CloudJobs[Cloud Run Jobs]
@@ -82,7 +82,7 @@ graph TD
     CR -->|Env Vars| SM["Secret Manager"]
     CR -->|Logs| CL["Cloud Logging"]
     CR -->|SQL Connection| CloudSQL
-    
+
     subgraph External
         CR -->|API| LLM["LLM Provider<br>(OpenAI/Gemini/OpenRouter)"]
         CR -->|API| Data["Market Data Source<br>(Yahoo Finance/FRED)"]
@@ -200,4 +200,3 @@ MIT License. See [LICENSE](LICENSE) for details.
 
 ### 📄 授權
 MIT License.
-

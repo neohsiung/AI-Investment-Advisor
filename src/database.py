@@ -14,14 +14,14 @@ def get_db_engine(db_path=None) -> Engine:
     Falls back to SQLite if DB_URL is not set.
     """
     global _db_engines
-    
+
     # Check for Postgres Environment Variables
     db_user = os.getenv("DB_USER", "postgres")
     db_pass = os.getenv("DB_PASS", "postgres")
     db_host = os.getenv("DB_HOST", "localhost")
     db_port = os.getenv("DB_PORT", "5432")
     db_name = os.getenv("DB_NAME", "portfolio")
-    
+
     # If DB_HOST is set to something other than localhost (e.g. 'postgres' in docker) or we want to force postgres
     # But for local dev defaults might be tricky.
     # Let's check a specific flag or if DB_TYPE is set.
@@ -35,21 +35,21 @@ def get_db_engine(db_path=None) -> Engine:
             target_path = Path(db_path)
         else:
             target_path = Path("data/portfolio.db")
-            
+
         if not target_path.parent.exists():
             target_path.parent.mkdir(parents=True, exist_ok=True)
-            
+
         db_url = f"sqlite:///{target_path}"
-        
+
     if db_url not in _db_engines:
         _db_engines[db_url] = create_engine(db_url)
-        
+
     return _db_engines[db_url]
 
 def get_db_connection(db_path=None):
     """
     Returns a SQLAlchemy Connection object.
-    
+
     NOTE: This is a breaking change from sqlite3.Connection.
     Callers must now use:
     1. conn.execute(text("SELECT..."), params) instead of conn.execute("SELECT...", params)
@@ -66,11 +66,11 @@ def init_db(db_path=None):
     For simplicity, we replicate the schema definition here using SQLAlchemy text.
     """
     engine = get_db_engine(db_path)
-    
+
     # Define Schema (Compatible with both generally, but simplistic)
-    # Note: In SQLite REAL is float. In Postgres REAL is float4. 
+    # Note: In SQLite REAL is float. In Postgres REAL is float4.
     # TEXT is same.
-    
+
     schema_commands = [
         """CREATE TABLE IF NOT EXISTS users (
             id TEXT PRIMARY KEY,
@@ -170,16 +170,16 @@ def init_db(db_path=None):
             FOREIGN KEY(user_id) REFERENCES users(id)
         )"""
     ]
-    
+
     with engine.connect() as conn:
         # 1. Create tables if not exist
         for cmd in schema_commands:
             conn.execute(text(cmd))
-            
+
         # 2. Migration: Check and add columns if missing (SQLite limitation: easy ADD COLUMN)
         # We need to check each table for 'user_id' column
         tables_to_check = ['transactions', 'cash_flows', 'recommendations', 'reports', 'prompt_history']
-        
+
         for table in tables_to_check:
             try:
                 # Check if column exists (pragmatic way for SQLite)
@@ -195,7 +195,7 @@ def init_db(db_path=None):
 
         # 3. Special Case: Schema Changes that require Recreation
         # Strategy: Rename old table, create new, copy data (with default user_id), drop old.
-        
+
         # Default user configuration
         # 使用者可以透過環境變數設定「現有資料」要歸屬給誰
         admin_email = os.getenv("ADMIN_EMAIL", "admin@example.com")
@@ -204,11 +204,11 @@ def init_db(db_path=None):
         # 當使用者登入時 (Google Auth)，我們需要邏輯將 'default_user' 的資料轉移給他，或者
         # 簡單一點：直接把 default_user_id 設為該 Email (假設 Email 不會變)
         # 這樣登入後直接用 Email 查詢就能看到舊資料
-        
+
         target_user_id = admin_email
-        
+
         # Ensure default user exists
-        conn.execute(text("INSERT OR IGNORE INTO users (id, email, name) VALUES (:id, :email, :name)"), 
+        conn.execute(text("INSERT OR IGNORE INTO users (id, email, name) VALUES (:id, :email, :name)"),
                      {"id": target_user_id, "email": admin_email, "name": "Admin User"})
 
         special_tables = ['positions', 'daily_snapshots', 'settings']
@@ -221,11 +221,11 @@ def init_db(db_path=None):
                     # Need migration
                     print(f"Migrating {table}: Recreating with Composite PK for {target_user_id}...")
                     conn.execute(text(f"ALTER TABLE {table} RENAME TO {table}_old")) # nosec B608
-                    
+
                     # Create new table
                     create_stmt = next(cmd for cmd in schema_commands if f"TABLE IF NOT EXISTS {table}" in cmd)
                     conn.execute(text(create_stmt))
-                    
+
                     # Copy Data
                     if table == 'positions':
                         cols = "ticker, quantity, avg_cost, current_price, market_value, unrealized_pl"
@@ -236,16 +236,15 @@ def init_db(db_path=None):
                     elif table == 'settings':
                         cols = "key, value"
                         conn.execute(text(f"INSERT INTO {table} (key, user_id, value) SELECT key, :uid, value FROM {table}_old"), {"uid": target_user_id}) # nosec B608
-                    
+
                     # Drop old
                     conn.execute(text(f"DROP TABLE {table}_old")) # nosec B608
             except Exception as e:
                 print(f"Special migration failed for {table}: {e}")
 
         conn.commit()
-    
+
     print(f"Database initialized and migrated.")
 
 if __name__ == "__main__":
     init_db()
-

@@ -24,13 +24,13 @@ def test_base_agent_init_and_config(mock_db, mock_prompt_content, tmp_path):
     mock_cursor.fetchall.return_value = []
     mock_conn.cursor.return_value = mock_cursor
     mock_db.return_value = mock_conn
-    
+
     # Create a dummy prompt file
     prompt_file = tmp_path / "dummy_prompt.txt"
     prompt_file.write_text(mock_prompt_content)
-    
+
     agent = ConcreteAgent(name="TEST", prompt_path=str(prompt_file), use_cache=False)
-    
+
     assert agent.getName() == "TEST" if hasattr(agent, 'getName') else agent.name == "TEST"
     assert agent.system_prompt == mock_prompt_content
     # Check default config
@@ -42,32 +42,32 @@ def test_base_agent_call_real_llm(mock_post, mock_db, mock_prompt_content, tmp_p
     # Mock DB
     mock_db.return_value.execute.return_value.fetchall.return_value = [] # Fix for SQLAlchemy
     mock_db.return_value.cursor.return_value.fetchall.return_value = [] # Fallback
-    
+
     # Create dummy prompt
     prompt_file = tmp_path / "dummy_prompt.txt"
     prompt_file.write_text(mock_prompt_content)
-    
+
     # Initialize agent
     agent = ConcreteAgent(name="TEST", prompt_path=str(prompt_file), use_cache=False)
-    
+
     # Mock Config to have API Key
     # We need to manually inject config because _load_config might fail or return defaults
     agent.config = {
         'provider': "OpenAI",
-        'api_key': "sk-test",
+        'api_key': "sk-test", # pragma: allowlist secret
         'base_url': None,
         'model': 'gpt-4'
     }
-    
+
     # Mock API Success
     mock_post.return_value.status_code = 200
     mock_post.return_value.json.return_value = {
         "choices": [{"message": {"content": "Real LLM Response"}}]
     }
-    
+
     response = agent._call_real_llm("User Prompt", "Sys Prompt")
     assert response == "Real LLM Response"
-    
+
     # Test API Failure
     mock_post.side_effect = Exception("API Error")
     with pytest.raises(Exception):
@@ -76,12 +76,12 @@ def test_base_agent_call_real_llm(mock_post, mock_db, mock_prompt_content, tmp_p
 @patch('src.agents.base_agent.get_db_connection')
 def test_momentum_agent_run(mock_db):
     mock_db.return_value.execute.return_value.fetchall.return_value = []
-    
+
     # MomentumAgent references hardcoded path likely, so we must mock open
     with patch('builtins.open', mock_open(read_data="Momentum System Prompt")):
         with patch('os.path.exists', return_value=True):
             agent = MomentumAgent(use_cache=False)
-            
+
             # Mock _mock_llm_call to avoid real logic
             with patch.object(agent, '_mock_llm_call', return_value="BUY AAPL"):
                 context = {"ticker": "AAPL", "price": 150, "indicators": {}}
@@ -91,11 +91,11 @@ def test_momentum_agent_run(mock_db):
 @patch('src.agents.base_agent.get_db_connection')
 def test_fundamental_agent_run(mock_db):
     mock_db.return_value.execute.return_value.fetchall.return_value = []
-    
+
     with patch('builtins.open', mock_open(read_data="Fundamental System Prompt")):
         with patch('os.path.exists', return_value=True):
             agent = FundamentalAgent(use_cache=False)
-            
+
             with patch.object(agent, '_mock_llm_call', return_value="Strong Fundamentals"):
                 context = {"ticker": "AAPL", "financials": {}, "news": []}
                 result = agent.run(context)

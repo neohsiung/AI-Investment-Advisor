@@ -43,11 +43,11 @@ class SqliteTransactionRepository(ITransactionRepository):
         新增一筆交易紀錄
         """
         import uuid
-        
+
         # Calculate amount (Total cost/proceeds)
         amount = price * quantity
         transaction_id = str(uuid.uuid4())
-        
+
         with get_db_connection() as conn:
             # Determine standardized action
             std_action = action.upper()
@@ -86,7 +86,7 @@ class SqliteTransactionRepository(ITransactionRepository):
                     "type": std_action,
                     "desc": f"Manual {std_action} via UI"
                 })
-            
+
             conn.commit()
 
     def delete(self, user_id: str, transaction_id: int):
@@ -98,11 +98,11 @@ class SqliteTransactionRepository(ITransactionRepository):
             # Delete from transactions
             query_trans = text("DELETE FROM transactions WHERE id = :id AND user_id = :user_id")
             conn.execute(query_trans, {"id": transaction_id, "user_id": user_id})
-            
+
             # Delete from cash_flows (if it was a deposit/withdrawal)
             query_cash = text("DELETE FROM cash_flows WHERE id = :id AND user_id = :user_id")
             conn.execute(query_cash, {"id": transaction_id, "user_id": user_id})
-            
+
             conn.commit()
 
     def get_holdings(self, user_id: str):

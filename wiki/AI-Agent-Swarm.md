@@ -27,12 +27,12 @@
 
 1.  **資訊蒐集 (Observation)**:
     - 系統注入 `yfinance` 的即時報價、技術指標與新聞至各個 Agent 的 Context。
-    
+
 2.  **平行分析 (Parallel Analysis)**:
     - **Momentum** 分析價格動能與趨勢。
     - **Fundamental** 檢視財報與估值安全邊際。
     - **Macro** 評估當前市場週期 (Risk-On/Risk-Off)。
-    
+
 3.  **決策整合 (Synthesis & Decision)**:
     - **CIO Agent** 接收上述三份分析報告。
     - 進行權重評估 (例如：總經逆風時，降低 Momentum 權重)。

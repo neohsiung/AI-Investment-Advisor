@@ -24,14 +24,14 @@ class BaseAgent(ABC):
             "api_key": "",
             "base_url": ""
         }
-        
+
         db_settings = self._load_config_from_db()
         for key, value in db_settings.items():
             if key == "AI_PROVIDER": config["provider"] = value
             elif key == "AI_MODEL": config["model"] = value
             elif key == "API_KEY": config["api_key"] = value
             elif key == "BASE_URL": config["base_url"] = value
-            
+
         return config
 
     def _load_config_from_db(self):
@@ -41,14 +41,14 @@ class BaseAgent(ABC):
             conn = get_db_connection()
             # Replace cursor with direct execution
             rows = conn.execute(text("SELECT key, value FROM settings")).fetchall()
-            
+
             # Attempt to access by _mapping first, then by index for compatibility
             if rows:
                 try:
                     settings = {row._mapping['key']: row._mapping['value'] for row in rows}
                 except AttributeError: # Fallback for older SQLAlchemy versions or different row objects
                     settings = {row[0]: row[1] for row in rows}
-            
+
             conn.close()
         except Exception as e:
             # Logger 可能還沒初始化，這裡用 print 或延後 log
@@ -81,11 +81,11 @@ class BaseAgent(ABC):
                 return self._call_real_llm(prompt, system_prompt)
             except Exception as e:
                 self.logger.error(f"Error calling real LLM: {e}. Falling back to mock.")
-        
+
         provider = self.config.get('provider')
         model = self.config.get('model')
         self.logger.info(f"Calling Mock LLM ({provider} - {model})...")
-        
+
         return f"Mock response from {self.name} using {model}. Context received: {len(str(prompt))} chars."
 
     def _call_real_llm(self, prompt, system_prompt):
@@ -94,15 +94,15 @@ class BaseAgent(ABC):
         """
         import requests
         import json
-        
+
         provider = self.config.get('provider')
         model = self.config.get('model')
         api_key = self.config.get('api_key')
         base_url = self.config.get('base_url')
-        
+
         # Log with more context (first 50 chars of prompt)
         prompt_snippet = prompt[:50].replace('\n', ' ') + "..."
-        
+
         # Check Cache
         if self.cache:
             cached_response = self.cache.get(self.name, prompt)
@@ -111,10 +111,10 @@ class BaseAgent(ABC):
                 return cached_response
 
         self.logger.info(f"Calling Real LLM ({provider} - {model}) | Prompt: {prompt_snippet}")
-        
+
         if not api_key:
             raise ValueError("API Key not found in settings")
-            
+
         if provider == "OpenRouter":
             url = "https://openrouter.ai/api/v1/chat/completions"
             headers = {
@@ -133,7 +133,7 @@ class BaseAgent(ABC):
             try:
                 response = requests.post(url, headers=headers, json=data, timeout=30)
                 response.raise_for_status()
-                
+
                 try:
                     return response.json()['choices'][0]['message']['content']
                 except json.JSONDecodeError as e:
@@ -145,22 +145,22 @@ class BaseAgent(ABC):
                  if hasattr(e.response, 'text'):
                      self.logger.error(f"Error response content: {e.response.text[:1000]}")
                  raise e
-            
+
         elif provider == "Google Gemini":
             # 使用 Google Generative AI REST API
             # https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={api_key}
-            
+
             # 若 model 名稱不包含 'models/', 嘗試自動補全
             model_id = model if model.startswith("models/") else f"models/{model}"
-            
+
             url = f"https://generativelanguage.googleapis.com/v1beta/{model_id}:generateContent?key={api_key}"
             headers = {"Content-Type": "application/json"}
             data = {
                 "contents": [{
-                    "parts": [{"text": f"{system_prompt}\n\n{prompt}"}] 
+                    "parts": [{"text": f"{system_prompt}\n\n{prompt}"}]
                 }]
             }
-            
+
             try:
                 response = requests.post(url, headers=headers, json=data, timeout=30)
                 response.raise_for_status()
@@ -175,7 +175,7 @@ class BaseAgent(ABC):
                  if hasattr(e.response, 'text'):
                      self.logger.error(f"Error response content: {e.response.text[:1000]}")
                  raise e
-            
+
         elif provider == "OpenAI":
              # OpenAI 格式
             url = base_url if base_url else "https://api.openai.com/v1/chat/completions"
@@ -204,6 +204,6 @@ class BaseAgent(ABC):
                  if hasattr(e.response, 'text'):
                      self.logger.error(f"Error response content: {e.response.text[:1000]}")
                  raise e
-            
+
         else:
             raise ValueError(f"Unsupported provider: {provider}")

@@ -19,7 +19,7 @@ def test_dashboard_logic():
          patch('src.analytics.ROIEngine') as mock_roi, \
          patch('src.analytics.PnLCalculator') as mock_pnl, \
          patch('src.analytics.update_daily_snapshot') as mock_update:
-        
+
         # Setup mocks
         mock_read_sql.return_value.empty = False
         # Use real DataFrame to support copy(), apply(), groupby()
@@ -32,9 +32,9 @@ def test_dashboard_logic():
             'amount': [1500.0]
         })
         mock_read_sql.return_value = mock_df
-        
+
         mock_market.return_value.get_current_prices.return_value = {'AAPL': 150}
-        
+
         mock_calc.return_value.calculate_metrics.return_value = {
             'nlv': 10000, 'cash_balance': 5000, 'leverage_ratio': 1.0, 'tnv': 5000
         }
@@ -53,7 +53,7 @@ def test_dashboard_logic():
                 pytest.fail("Dashboard module missing main() function")
         except Exception as e:
             pytest.fail(f"Dashboard failed to run: {e}")
-            
+
         # Verify interactions
         mock_update.assert_called()
         mock_calc.return_value.calculate_metrics.assert_called()

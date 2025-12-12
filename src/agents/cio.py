@@ -7,7 +7,7 @@ class CIOAgent(BaseAgent):
         super().__init__(name="CIO", prompt_path="prompts/cio_agent.txt", use_cache=use_cache, ttl_hours=24)
         # 常見 ETF 清單 (可擴充)
         self.etf_list = {
-            "SPY", "QQQ", "VOO", "IWM", "VT", "BND", "TLT", "VTI", "VEA", "VWO", 
+            "SPY", "QQQ", "VOO", "IWM", "VT", "BND", "TLT", "VTI", "VEA", "VWO",
             "IVV", "AGG", "GLD", "SLV", "ARKK", "SOXX", "XLE", "XLF", "XLK", "XLV"
         }
 
@@ -17,20 +17,20 @@ class CIOAgent(BaseAgent):
             conn = get_db_connection()
             # 查詢目前持倉 (Quantity != 0)
             query = """
-                SELECT ticker, SUM(CASE WHEN action='BUY' THEN quantity WHEN action='SELL' THEN -quantity ELSE 0 END) as net_qty 
-                FROM transactions 
-                GROUP BY ticker 
+                SELECT ticker, SUM(CASE WHEN action='BUY' THEN quantity WHEN action='SELL' THEN -quantity ELSE 0 END) as net_qty
+                FROM transactions
+                GROUP BY ticker
                 HAVING net_qty > 0.0001
             """
             df = pd.read_sql(query, conn)
             conn.close()
-            
+
             if df.empty:
                 return 0, []
-            
+
             tickers = df['ticker'].tolist()
             non_etf_tickers = [t for t in tickers if t not in self.etf_list]
-            
+
             return len(non_etf_tickers), non_etf_tickers
         except Exception as e:
             print(f"[CIO] Error calculating holdings: {e}")
@@ -47,24 +47,24 @@ class CIOAgent(BaseAgent):
         """
         macro = context.get("macro_report", "")
         leverage = context.get("leverage_ratio", 1.0)
-        
+
         # 計算非 ETF 持倉
         non_etf_count, non_etf_list = self._get_non_etf_holdings_count()
-        
+
         user_prompt = f"""
         Macro Outlook:
         {macro}
-        
+
         Portfolio Leverage: {leverage}x
         Non-ETF Holdings Count: {non_etf_count} (Tickers: {', '.join(non_etf_list)})
-        
+
         Team Reports:
         {context.get("momentum_reports")}
         {context.get("fundamental_reports")}
         """
-        
+
         response = self._mock_llm_call(user_prompt, self.system_prompt)
-        
+
         # 若使用 Mock，回傳更豐富的 Mock Response 以符合新格式
         if "Mock response" in response:
             return f"""
@@ -86,5 +86,5 @@ class CIOAgent(BaseAgent):
 
 *由 CIO Agent 生成 (Mock)*
             """
-        
+
         return response

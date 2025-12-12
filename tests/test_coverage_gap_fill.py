@@ -2,7 +2,7 @@ import pytest
 from unittest.mock import MagicMock, patch, mock_open
 import sys
 import os
-import requests 
+import requests
 from src.agents.base_agent import BaseAgent
 from src.market_data import MarketDataService
 
@@ -17,7 +17,7 @@ def mock_agent():
     with patch('builtins.open', mock_open(read_data="System Prompt")):
         with patch('os.path.exists', return_value=True):
             with patch.object(BaseAgent, '_load_config', return_value={
-                "provider": "Google Gemini", "model": "gemini-1.5-pro", "api_key": "test_key"
+                "provider": "Google Gemini", "model": "gemini-1.5-pro", "api_key": "test_key" # pragma: allowlist secret
             }):
                 agent = MockAgent("TestAgent", "prompt.txt")
                 return agent
@@ -28,7 +28,7 @@ def test_base_agent_load_config_error():
         with patch('builtins.open', mock_open(read_data="System Prompt")):
             with patch('os.path.exists', return_value=True):
                 # Should not raise, just log warning and return default
-                agent = MockAgent("TestAgent", "prompt.txt") 
+                agent = MockAgent("TestAgent", "prompt.txt")
                 assert agent.config["provider"] == "Google Gemini" # Default
 
 def test_base_agent_load_prompt_error():
@@ -64,7 +64,7 @@ def test_base_agent_real_llm_error_handling(mock_agent):
             mock_agent._call_real_llm("prompt", "system")
 
 def test_base_agent_mock_fallback(mock_agent):
-    mock_agent.config['api_key'] = 'valid_key'
+    mock_agent.config['api_key'] = 'valid_key' # pragma: allowlist secret
     with patch.object(mock_agent, '_call_real_llm', side_effect=Exception("Major Fail")):
         # fallback to mock
         resp = mock_agent._mock_llm_call("prompt", "system")
@@ -84,33 +84,34 @@ def test_market_data_fallback():
 
 # --- Scheduler CLI Tests ---
 # This is tricky without executing the file, but we can verify the function logic if refactored.
-# Since scheduler.py is hard to test directly due to while loop, we rely on the implementation 
-# refactor we did earlier (args parsing). 
+# Since scheduler.py is hard to test directly due to while loop, we rely on the implementation
+# refactor we did earlier (args parsing).
 
 # --- Additional Market Data Tests for specific methods ---
 
 def test_market_data_get_market_context_with_fallback(mock_agent):
     # Mock MarketDataService and its dependencies
     service = MarketDataService()
-    
+
     with patch.object(service, 'get_current_prices', return_value={'AAPL': 0}):
         with patch.object(service, '_fetch_from_llm', return_value={'price': 150.0, 'indicators': {'rsi': 60}}):
             with patch.object(service, 'get_technical_indicators', return_value={'rsi': 50}):
                 # Test logic
                 context = service.get_market_context(['AAPL'])
-                
+
                 assert context['AAPL']['price'] == 150.0
+
                 assert context['AAPL']['indicators']['rsi'] == 60
 
 def test_market_data_fetch_from_llm_success():
     service = MarketDataService()
-    
+
     # Mock database to return settings
     mock_db_conn = MagicMock()
     mock_db_conn.execute.return_value.fetchall.return_value = [
         ("AI_PROVIDER", "OpenRouter"), ("API_KEY", "test_key"), ("AI_MODEL", "gpt-4")
     ]
-    
+
     with patch('src.market_data.get_db_connection', return_value=mock_db_conn):
         with patch('requests.post') as mock_post:
             mock_post.return_value.status_code = 200
@@ -118,7 +119,7 @@ def test_market_data_fetch_from_llm_success():
             mock_post.return_value.json.return_value = {
                 "choices": [{"message": {"content": '{"price": 100.0, "indicators": {}}'}}]
             }
-            
+
             data = service._fetch_from_llm("AAPL")
             assert data['price'] == 100.0
 

@@ -10,7 +10,7 @@ def main():
     if not auth_manager.check_login():
         st.warning("請先登入")
         st.stop()
-    
+
     user = auth_manager.get_current_user()
 
     st.title("投資顧問報告 (Investment Advisory Reports)")

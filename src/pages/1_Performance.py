@@ -14,7 +14,7 @@ def main():
     if not auth_manager.check_login():
         st.warning("請先登入 (Please login first)")
         st.stop()
-        
+
     user = auth_manager.get_current_user()
     user_id = user['email']
 
@@ -55,12 +55,12 @@ def main():
         # A. 投入資本 vs 現值 (Bar Chart)
         latest = snapshots_df.iloc[-1]
         st.subheader("總投入資本 vs 當前價值 (Total Investment vs Current Value)")
-        
+
         col1, col2 = st.columns(2)
         col1.metric("總投入資本 (Total Invested Capital)", f"${latest['invested_capital']:,.2f}")
-        col2.metric("總損益 (Total PnL)", f"${latest['pnl']:,.2f}", 
+        col2.metric("總損益 (Total PnL)", f"${latest['pnl']:,.2f}",
                     delta=f"{(latest['pnl']/latest['invested_capital']*100):.2f}%" if latest['invested_capital'] != 0 else "0%")
-        
+
         # B. 權益曲線 (Line Chart)
         st.subheader("權益曲線 - 淨流動資產價值歷史 (Equity Curve - NLV History)")
         fig_equity = px.line(snapshots_df, x='date', y='total_nlv', title='淨流動資產價值 (Net Liquidation Value) 走勢', markers=True)

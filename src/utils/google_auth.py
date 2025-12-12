@@ -51,7 +51,7 @@ class GoogleAuth:
                 flow = self._get_flow()
                 flow.fetch_token(code=code)
                 credentials = flow.credentials
-                
+
                 # Verify ID Token
                 token_request = requests.Request()
                 id_info = id_token.verify_oauth2_token(
@@ -66,11 +66,11 @@ class GoogleAuth:
                     "picture": id_info.get("picture")
                 }
                 st.session_state['oauth_id'] = id_info.get("sub")
-                
+
                 # Clear query params to prevent re-triggering
                 # st.query_params.clear() # This might not be enough to clear URL bar visually
                 st.rerun()
-                
+
             except Exception as e:
                 st.error(f"Login failed: {e}")
                 # Optional: Clear params manually if needed
@@ -81,16 +81,16 @@ class GoogleAuth:
                 access_type='offline',
                 include_granted_scopes='true'
             )
-            
+
             st.link_button("Login with Google", authorization_url, type="primary")
 
     def check_authentification(self):
         """Check if user is authenticated (Check Session State)."""
         # In a real persistence scenario, we would check cookies here.
         # For simplicity and Streamlit Cloud compatibility without extra components,
-        # we rely on Session State. 
+        # we rely on Session State.
         # (Implementing secure JWT cookies in pure Streamlit requires extra component or hacky headers)
-        
+
         # Simplified for v1.1.0: Session State only (Lost on refresh)
         if 'connected' not in st.session_state:
             st.session_state['connected'] = False

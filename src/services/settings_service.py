@@ -42,11 +42,11 @@ class SettingsService:
         conn = get_db_connection(self.db_path)
         try:
             if self.user_id:
-                conn.execute(text("INSERT OR REPLACE INTO settings (key, user_id, value) VALUES (:key, :uid, :value)"), 
+                conn.execute(text("INSERT OR REPLACE INTO settings (key, user_id, value) VALUES (:key, :uid, :value)"),
                              {"key": key, "uid": self.user_id, "value": value})
             else:
                 # Fallback
-                 conn.execute(text("INSERT OR REPLACE INTO settings (key, value) VALUES (:key, :value)"), 
+                 conn.execute(text("INSERT OR REPLACE INTO settings (key, value) VALUES (:key, :value)"),
                              {"key": key, "value": value})
             conn.commit()
             return True, "Success"
@@ -61,10 +61,10 @@ class SettingsService:
         try:
             for key, value in settings_dict.items():
                 if self.user_id:
-                    conn.execute(text("INSERT OR REPLACE INTO settings (key, user_id, value) VALUES (:key, :uid, :value)"), 
+                    conn.execute(text("INSERT OR REPLACE INTO settings (key, user_id, value) VALUES (:key, :uid, :value)"),
                                  {"key": key, "uid": self.user_id, "value": str(value)})
                 else:
-                    conn.execute(text("INSERT OR REPLACE INTO settings (key, value) VALUES (:key, :value)"), 
+                    conn.execute(text("INSERT OR REPLACE INTO settings (key, value) VALUES (:key, :value)"),
                                  {"key": key, "value": str(value)})
             conn.commit()
             return True, "Settings saved successfully."

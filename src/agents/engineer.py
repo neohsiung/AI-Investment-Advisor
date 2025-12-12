@@ -25,7 +25,7 @@ class SystemEngineerAgent(BaseAgent):
             parts = cio_report.split("System Optimization Feedback")
             if len(parts) > 1:
                 feedback_section = parts[1].strip()
-        
+
         if not feedback_section or "無" in feedback_section or "None" in feedback_section:
             return []
 
@@ -49,7 +49,7 @@ class SystemEngineerAgent(BaseAgent):
         try:
             log_id = str(uuid.uuid4())
             timestamp = datetime.now().isoformat()
-            
+
             conn.execute(text('''
                 INSERT INTO prompt_history (id, timestamp, target_agent, reason, original_prompt, new_prompt, diff_content)
                 VALUES (:id, :timestamp, :target_agent, :reason, :original_prompt, :new_prompt, :diff_content)
@@ -76,50 +76,50 @@ class SystemEngineerAgent(BaseAgent):
         }
         """
         cio_report = context.get("cio_report", "")
-        
+
         # 1. 取得 Feedback
         optimizations = self.analyze_optimization_needs(cio_report)
         if not optimizations:
             return "No optimization feedback found."
 
         results = []
-        
+
         # 2. 針對每一條需求進行優化 (目前簡化邏輯，假設 Feedback 包含對象名稱)
         # 為了展示，我們假設 CIO 裡面的 Feedback 文字有提到 'Momentum'
         raw_feedback = optimizations[0]['raw_feedback']
-        
+
         target_agent = "Momentum" # Default or detected
         target_path = "prompts/momentum_agent.txt"
-        
+
         if "Fundamental" in raw_feedback:
             target_agent = "Fundamental"
             target_path = "prompts/fundamental_agent.txt"
         elif "Macro" in raw_feedback:
             target_agent = "Macro"
             target_path = "prompts/macro_agent.txt"
-            
+
         original_prompt = self._read_prompt(target_path)
-        
+
         # 3. 組建 Prompt 給 Engineer LLM
         engineer_input = {
             "cio_feedback": raw_feedback,
             "target_agent_prompt": original_prompt
         }
-        
+
         sys_prompt = self.system_prompt
         user_prompt = json.dumps(engineer_input, ensure_ascii=False)
-        
+
         # 4. 呼叫 LLM
         response_str = self._call_real_llm(user_prompt, sys_prompt)
-        
+
         # 解析 JSON 輸出 (需處理可能 Markdown code block)
         try:
             cleaned_response = response_str.replace("```json", "").replace("```", "").strip()
             result_json = json.loads(cleaned_response)
-            
+
             new_prompt = result_json.get("optimized_prompt", "")
             diff_explanation = result_json.get("diff_explanation", "")
-            
+
             if new_prompt and new_prompt != original_prompt:
                 # 產生 Diff
                 diff = difflib.unified_diff(
@@ -128,17 +128,17 @@ class SystemEngineerAgent(BaseAgent):
                     lineterm=""
                 )
                 diff_text = "\n".join(list(diff))
-                
+
                 # 存檔
                 self._save_prompt(target_path, new_prompt)
-                
+
                 # 寫入 DB
                 self._log_history(target_agent, raw_feedback, original_prompt, new_prompt, diff_text)
-                
+
                 results.append(f"Optimized {target_agent}: {diff_explanation}")
             else:
                 results.append(f"No changes made to {target_agent}.")
-                
+
         except json.JSONDecodeError:
             results.append(f"Failed to parse Engineer Agent response for {target_agent}.")
         except Exception as e:
@@ -162,7 +162,7 @@ class SystemEngineerAgent(BaseAgent):
             self.logger.error(f"Error reading schedule config: {e}")
         finally:
             conn.close()
-            
+
         return config
 
     def set_schedule_config(self, daily_time, weekly_time):
@@ -173,10 +173,10 @@ class SystemEngineerAgent(BaseAgent):
                 "schedule_daily": daily_time,
                 "schedule_weekly": weekly_time
             }
-            
+
             for key, value in updates.items():
                 conn.execute(text("INSERT OR REPLACE INTO settings (key, value) VALUES (:key, :value)"), {"key": key, "value": value})
-            
+
             conn.commit()
             self.logger.info("Schedule config updated via Engineer Agent.")
         except Exception as e:

@@ -19,14 +19,14 @@ class TradeIngestor:
                  raise ValueError(f"Unsupported broker: {broker}")
 
             df = pd.read_csv(file_path)
-            
+
             if broker == 'simple':
                 self._ingest_simple(df, user_id)
             elif broker == 'robinhood':
                 self._ingest_robinhood(df, user_id)
             elif broker == 'ibkr':
                 self._ingest_ibkr(df, user_id)
-                
+
         except Exception as e:
             raise e
 
@@ -45,12 +45,12 @@ class TradeIngestor:
                 quantity = float(row['quantity'])
                 price = float(row['cost'])
                 amount = quantity * price
-                
+
                 query = text("""
                     INSERT INTO transactions (id, user_id, ticker, trade_date, action, quantity, price, fees, amount, source_file)
                     VALUES (:id, :user_id, :ticker, :trade_date, :action, :quantity, :price, :fees, :amount, 'csv_import')
                 """)
-                
+
                 conn.execute(query, {
                     "id": str(uuid.uuid4()),
                     "user_id": user_id,
@@ -67,7 +67,7 @@ class TradeIngestor:
     def _ingest_robinhood(self, df, user_id):
         # Normalize columns to lower case for easier matching
         df.columns = df.columns.str.lower()
-        
+
         # Test input: state,symbol,date,side,quantity,price,fees
         with get_db_connection(self.db_path) as conn:
             for _, row in df.iterrows():
@@ -82,13 +82,13 @@ class TradeIngestor:
                     continue
 
                 action = 'BUY' if str(side).lower() == 'buy' else 'SELL'
-                amount = qty * price 
-                
+                amount = qty * price
+
                 query = text("""
                     INSERT INTO transactions (id, user_id, ticker, trade_date, action, quantity, price, fees, amount, source_file)
                     VALUES (:id, :user_id, :ticker, :trade_date, :action, :quantity, :price, :fees, :amount, 'robinhood_import')
                 """)
-                
+
                 conn.execute(query, {
                     "id": str(uuid.uuid4()),
                     "user_id": user_id,
@@ -107,34 +107,34 @@ class TradeIngestor:
         df.columns = df.columns.str.lower()
         # Test input: Type,Symbol,Date/Time,Quantity,T. Price,Comm/Fee
         # Lowercase: type, symbol, date/time, quantity, t. price, comm/fee
-        
+
         with get_db_connection(self.db_path) as conn:
             for _, row in df.iterrows():
                 row_type = row.get('type')
                 ticker = row.get('symbol')
                 date_str = row.get('date/time')
-                
+
                 if row_type == 'Trade':
                     qty = float(row['quantity'])
                     price = float(row.get('t. price', 0))
                     fees = float(row.get('comm/fee', 0))
                     action = 'BUY' if qty > 0 else 'SELL'
                     amount = abs(qty * price)
-                    
+
                 elif row_type == 'Dividend':
                     qty = 0
                     price = 0
-                    fees = 0 
+                    fees = 0
                     action = 'DIVIDEND'
                     amount = float(row.get('comm/fee', 0))
                 else:
                     continue
-                    
+
                 query = text("""
                     INSERT INTO transactions (id, user_id, ticker, trade_date, action, quantity, price, fees, amount, source_file)
                     VALUES (:id, :user_id, :ticker, :trade_date, :action, :quantity, :price, :fees, :amount, 'ibkr_import')
                 """)
-                
+
                 conn.execute(query, {
                     "id": str(uuid.uuid4()),
                     "user_id": user_id,
@@ -153,13 +153,13 @@ class TradeIngestor:
         Ingests a single manual trade.
         """
         amount = quantity * price
-        
+
         with get_db_connection(self.db_path) as conn:
             query = text("""
                 INSERT INTO transactions (id, user_id, ticker, trade_date, action, quantity, price, fees, amount, source_file)
                 VALUES (:id, :user_id, :ticker, :trade_date, :action, :quantity, :price, :fees, :amount, 'manual_entry')
             """)
-            
+
             conn.execute(query, {
                 "id": str(uuid.uuid4()),
                 "user_id": user_id,
