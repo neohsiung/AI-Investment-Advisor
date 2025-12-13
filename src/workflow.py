@@ -82,15 +82,20 @@ def run_workflow(mode="daily", dry_run=False, user_id=None):
     momentum_reports = []
     fundamental_reports = []
 
+    # Determine Report Focus
+    report_focus = "Daily Tactical (短期戰術)" if mode == 'daily' else "Weekly Strategic (長期戰略)"
+    logger.info(f"Report Focus: {report_focus}")
+
     # 3. 執行分析
     # Momentum (Always run)
     logger.info("Running Momentum Agent...")
     has_significant_change = False
+    significant_change_tickers = []
 
     for ticker in tickers:
-        logger.info(f"Processing {ticker} with Momentum Agent...")
+        # logger.info(f"Processing {ticker} with Momentum Agent...")
         price = current_prices.get(ticker, 0.0)
-
+        
         # 獲取技術指標
         indicators = market_service.get_technical_indicators(ticker)
 
@@ -100,11 +105,23 @@ def run_workflow(mode="daily", dry_run=False, user_id=None):
             "price_data": {"current_price": price},
             "indicators": indicators
         }
-        mom_res = momentum_agent.run(mom_ctx)
+        
+        # Smart Freshness Check
+        is_fresh, curr_hash, last_out = momentum_agent.check_freshness(mom_ctx, state_key=ticker)
+        
+        if is_fresh:
+            logger.info(f"[{ticker}] Data changed or no cache. Running Momentum Agent...")
+            mom_res = momentum_agent.run(mom_ctx)
+            momentum_agent.update_state(curr_hash, mom_res, state_key=ticker)
+        else:
+            logger.info(f"[{ticker}] Data unchanged. Using cached Momentum Analysis.")
+            mom_res = last_out
+
         momentum_reports.append(f"### {ticker}\n{mom_res}")
 
-        if "BUY" in mom_res or "SELL" in mom_res:
+        if mom_res and ("BUY" in mom_res or "SELL" in mom_res):
             has_significant_change = True
+            significant_change_tickers.append(ticker)
 
     # Macro & Fundamental (Weekly only)
     if mode == 'weekly':
@@ -121,11 +138,21 @@ def run_workflow(mode="daily", dry_run=False, user_id=None):
         macro_context = {
             "macro_data": macro_data
         }
-        macro_report = macro_agent.run(macro_context)
+        
+        # Smart Freshness Check (Global Key)
+        is_fresh, curr_hash, last_out = macro_agent.check_freshness(macro_context, state_key=None)
+        
+        if is_fresh:
+            logger.info("Macro Data changed. Running Macro Agent...")
+            macro_report = macro_agent.run(macro_context)
+            macro_agent.update_state(curr_hash, macro_report, state_key=None)
+        else:
+            logger.info("Macro Data unchanged. Using cached Macro Report.")
+            macro_report = last_out
 
         logger.info("Running Fundamental Agent...")
         for ticker in tickers:
-            logger.info(f"Processing {ticker} with Fundamental Agent...")
+            # logger.info(f"Processing {ticker} with Fundamental Agent...")
             # 獲取基本面與新聞
             financials = market_service.get_financials(ticker)
             news = market_service.get_news(ticker)
@@ -136,7 +163,18 @@ def run_workflow(mode="daily", dry_run=False, user_id=None):
                 "financials": financials,
                 "news": news
             }
-            fund_res = fundamental_agent.run(fund_ctx)
+            
+            # Smart Freshness Check
+            is_fresh, curr_hash, last_out = fundamental_agent.check_freshness(fund_ctx, state_key=ticker)
+            
+            if is_fresh:
+                logger.info(f"[{ticker}] Fundamental/News changed. Running Fundamental Agent...")
+                fund_res = fundamental_agent.run(fund_ctx)
+                fundamental_agent.update_state(curr_hash, fund_res, state_key=ticker)
+            else:
+                logger.info(f"[{ticker}] Fundamental unchanged. Using cached report.")
+                fund_res = last_out
+
             fundamental_reports.append(fund_res)
 
     # 4. 決定是否執行 CIO
@@ -156,16 +194,46 @@ def run_workflow(mode="daily", dry_run=False, user_id=None):
         metrics = calc.calculate_metrics(current_prices, user_id=user_id) 
         leverage_ratio = metrics['leverage_ratio']
 
+        # Fetch Agent Status (HR Check)
+        agent_status_str = "Unknown"
+        try:
+            conn = get_db_connection()
+            states = conn.execute(text("SELECT agent_name, last_run_time FROM agent_states")).fetchall()
+            status_lines = []
+            now = datetime.now()
+            for s in states:
+                name = s[0]
+                t_str = s[1]
+                # Calculate days inactive? simplified string for proper prompting
+                status_lines.append(f"- {name}: Last Run {t_str}")
+            agent_status_str = "\n".join(status_lines)
+            conn.close()
+        except Exception as e:
+            logger.error(f"Failed to fetch agent status: {e}")
+
         # 構建 CIO Context
         cio_context = {
             "user_id": user_id,
+            "report_focus": report_focus, # Daily Tactical vs Weekly Strategic
+            "agent_status": agent_status_str,
             "macro_report": macro_report,
             "momentum_reports": "\n".join(momentum_reports),
             "fundamental_reports": "\n".join(fundamental_reports),
             "leverage_ratio": leverage_ratio
         }
-        final_report = cio_agent.run(cio_context)
-
+        
+        # Smart Freshness Check for CIO (Uses user_id as state_key if relevant, or Global)
+        # CIO inputs (Reports + Portfolio) change -> Hash changes -> Re-run
+        is_fresh, curr_hash, last_out = cio_agent.check_freshness(cio_context, state_key=user_id)
+        
+        if is_fresh:
+            logger.info("Generating NEW CIO Report...")
+            final_report = cio_agent.run(cio_context)
+            cio_agent.update_state(curr_hash, final_report, state_key=user_id)
+        else:
+            logger.info("All inputs unchanged. Using cached CIO Report.")
+            final_report = last_out
+            
         logger.info("\n=== Final Report ===\n")
         logger.info(final_report)
 
@@ -201,15 +269,28 @@ def run_workflow(mode="daily", dry_run=False, user_id=None):
         else:
             logger.info("[Dry Run] Report generated but NOT saved to DB or emailed.")
 
-        # 4.1 System Engineer
-        if not dry_run:
-            logger.info("Running System Engineer Agent for Optimization...")
-            from src.agents.engineer import SystemEngineerAgent
-            engineer_agent = SystemEngineerAgent()
-            optimization_report = engineer_agent.run({
-                "cio_report": final_report
-            })
-            logger.info(f"Engineer Agent Report: {optimization_report}")
+        # 4.1 System Engineer (Optimization)
+        if not dry_run and mode == 'weekly': # Optimization usually runs weekly
+            logger.info("Running System Engineer Agent for Optimization Loop...")
+            try:
+                from src.agents.engineer import SystemEngineerAgent
+                engineer = SystemEngineerAgent()
+                
+                # SystemEngineerAgent.run() expects {"cio_report": final_report}
+                # It contains internal logic to parse feedback from the CIO report
+                optimization_results = engineer.run({
+                    "cio_report": final_report
+                })
+
+                logger.info(f"System Engineer Report:\n{optimization_results}")
+
+                # Log to file as well
+                log_entry = f"\n\n--- Optimization {date_str} ---\n{optimization_results}"
+                with open("logs/optimization_log.txt", "a") as logf:
+                    logf.write(log_entry)
+
+            except Exception as e:
+                logger.error(f"System Engineer Agent failed: {e}")
 
     else:
         logger.info("No significant changes or weekly trigger. Skipping CIO Agent and Report.")

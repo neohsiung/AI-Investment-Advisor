@@ -11,7 +11,7 @@ from src.utils.time_utils import format_time
 class SystemEngineerAgent(BaseAgent):
     def __init__(self, use_cache=False):
         # Engineer Agent 通常不快取，因為每次回饋都不同
-        super().__init__(name="Engineer", prompt_path="prompts/engineer_agent.txt", use_cache=use_cache)
+        super().__init__(name="Engineer", prompt_path="prompts/engineer_agent.txt", use_cache=use_cache, tier="smart")
 
     def analyze_optimization_needs(self, cio_report):
         """
@@ -27,6 +27,14 @@ class SystemEngineerAgent(BaseAgent):
                 feedback_section = parts[1].strip()
 
         if not feedback_section or "無" in feedback_section or "None" in feedback_section:
+            # Check for HR Request (New in Stage 5)
+            if "[HR_REQUEST]" in cio_report:
+                import re
+                match = re.search(r"\[HR_REQUEST\] Replace Agent: (\w+) \(Reason: (.*?)\)", cio_report)
+                if match:
+                    agent_name = match.group(1)
+                    reason = match.group(2)
+                    return [{"raw_feedback": f"HR Inactivity Trigger: {reason}", "target_agent": agent_name}]
             return []
 
         # 這裡其實可以再呼叫一次 LLM 來結構化解析 Feedback，

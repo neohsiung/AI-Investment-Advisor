@@ -5,7 +5,7 @@ import json
 
 class CIOAgent(BaseAgent):
     def __init__(self, use_cache=True):
-        super().__init__(name="CIO", prompt_path="prompts/cio_agent.txt", use_cache=use_cache, ttl_hours=24)
+        super().__init__(name="CIO", prompt_path="prompts/cio_agent.txt", use_cache=use_cache, ttl_hours=24, tier="smart")
         # Common ETFs to filter out for "Stock Picking" focus
         self.etf_list = {
             "SPY", "QQQ", "VOO", "IWM", "VT", "BND", "TLT", "VTI", "VEA", "VWO",

@@ -1,30 +1,80 @@
-# 使用者操作指南 (User Guide)
 
-> 返回 [[Home]]
+> **[English](#english) | [繁體中文 (Traditional Chinese)](#traditional-chinese)**
 
-## 目標 (Goal)
+<a id="english"></a>
+
+## 🇺🇸 User Guide
+
+### Goal
+Guide users to familiarize themselves with the AI Investment Advisor Dashboard, from data entry to interpreting AI analysis reports, maximizing system value.
+
+### Key Sections
+1.  **Dashboard Overview**: Real-time asset monitoring.
+2.  **Data Management**: Transaction recording and asset maintenance.
+3.  **Settings & Reports**: Adjusting AI parameters and viewing analysis.
+
+### How-To Instructions
+
+#### 1. Dashboard Overview
+The homepage after login.
+- **KPIs**: Monitor **NLV** (Net Liquidation Value), **Cash**, and **Risk** (Leverage Ratio).
+    - *Tip*: Risk > 1.5x shows yellow warning; > 2.0x shows red danger.
+- **Allocation**: Pie chart of current holdings.
+- **Equity Curve**: Asset growth trend over time.
+
+#### 2. Data Management
+Navigate to **Data Management** in the sidebar.
+- **Import**: Supports Robinhood / IBKR CSV files.
+- **Manual Entry**: For manual trades or dividends. Requires Ticker, Action (BUY/SELL), Quantity, Price.
+- **Cash Management**:
+    - Record **DEPOSIT** or **WITHDRAW** to ensure accurate ROI.
+    - Use Ticker `USD` or `CASH`, Quantiy `Amount`, Price `1`.
+- **Margin Trading**:
+    - Simply record `BUY` trades. If total cost > cash balance, cash becomes negative (representing margin loan). Leverage ratio updates automatically.
+
+#### 3. Advisor Chat
+- **Function**: Talk directly to the AI Advisor.
+- **Usage**: Type questions like "How is AAPL's technicals?" or "Is the market safe?". The system routes it to the relevant expert (Momentum, Macro, etc.).
+
+#### 4. System Settings
+- **AI Configuration**:
+    - **Model Tiering**: Configure `Smart Model` (Deep Analysis) vs `Fast Model` (Quick Screening).
+- **Schedule**: Set Daily/Weekly run times.
+- **Dry Run**: Manually trigger a report generation (no email).
+
+#### 5. Reports
+- View historical weekly reports in the **Reports** page.
+- AI suggestions are for reference only.
+
+---
+
+<a id="traditional-chinese"></a>
+
+## 🇹🇼 使用者操作指南 (User Guide)
+
+### 目標 (Goal)
 引導使用者熟悉 AI 投資顧問儀表板的操作，從數據輸入到解讀 AI 分析報告，發揮系統最大價值。
 
-## 為什麼 (Why)
+### 為什麼 (Why)
 - **降低學習門檻**: 系統功能繁多 (手動交易、CSV 匯入、報告設定)，需提供清晰指引。
 - **避免操作錯誤**: 錯誤的數據輸入 (如買賣方向相反) 會導致分析結果嚴重失真。
 
-## 做了什麼 (What)
+### 做了什麼 (What)
 本指南涵蓋三大核心功能模組：
 1.  **總覽 (Dashboard Overview)**: 即時監控資產狀況。
 2.  **數據管理 (Data Management)**: 記錄交易與維護資產。
 3.  **設定與報告 (Settings & Reports)**: 調整 AI 參數與查看分析建議。
 
-## 如何進行 (How)
+### 如何進行 (How)
 
-### 1. 總覽 (Overview)
+#### 1. 總覽 (Overview)
 登入後首頁即為總覽。
 - **KPIs**: 關注 NLV (淨值)、Cash (現金) 與 Risk (槓桿比率)。
     - *Tips*: 若槓桿比率 > 1.5x，系統會顯示黃色警告；> 2.0x 顯示紅色危險。
 - **資產配置**: 圓餅圖顯示各持倉佔比。
 - **權益曲線**: 觀察資產隨時間的增長趨勢。
 
-### 2. 數據管理 (Data Management)
+#### 2. 數據管理 (Data Management)
 前往側邊欄的 **Data Management** 頁面。
 
 - **匯入交易 (Import)**:
@@ -54,7 +104,19 @@
             - 淨值 (Equity): \$500 + (-\$400) = \$100
             - 槓桿比率: \$500 / \$100 = **5.0x**
 
-### 3. 設定與報告 (Settings & Reports)
+#### 2.4 顧問聊天室 (Advisor Chat)
+- **功能**: 直接與 AI 投資顧問對話。
+- **用法**:
+    - 輸入問題，例如：「AAPL 最近技術面如何？」或「美股大盤現在安全嗎？」。
+    - 系統會自動判斷並調用相應的專家 (動能、基本面、總經) 進行分析。
+
+#### 2.5 系統設定 (System Settings)
+- **API 設定**:
+    - **模型分級 (Model Tiering)**: 您可以分別設定 `Smart Model` (用於深度分析) 與 `Fast Model` (用於快速篩選)。
+- **排程設定**: 設定每日掃描與報告的時間。
+- **報告試跑**: 手動觸發每週報告生成流程 (不發送郵件)。
+
+#### 3. 設定與報告 (Settings & Reports)
 - **AI 設定**:
     - 可切換模型 (e.g., Gemini-1.5-pro vs OpenRouter)。
     - 設定排程時間 (Daily/Weekly Check)。

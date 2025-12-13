@@ -82,32 +82,7 @@ class GoogleAuth:
                 include_granted_scopes='true'
             )
 
-            # st.link_button("Login with Google", authorization_url, type="primary")
-            st.markdown(f'''
-                <a href="{authorization_url}" target="_self">
-                    <button style="
-                        display: inline-flex;
-                        -webkit-box-align: center;
-                        align-items: center;
-                        -webkit-box-pack: center;
-                        justify-content: center;
-                        font-weight: 400;
-                        padding: 0.25rem 0.75rem;
-                        border-radius: 0.5rem;
-                        min-height: 38.4px;
-                        margin: 0px;
-                        line-height: 1.6;
-                        color: white;
-                        width: auto;
-                        user-select: none;
-                        background-color: rgb(255, 75, 75);
-                        border: 1px solid rgb(255, 75, 75);
-                        text-decoration: none;
-                        cursor: pointer;">
-                        Login with Google
-                    </button>
-                </a>
-                ''', unsafe_allow_html=True)
+            st.link_button("Login with Google", authorization_url, type="primary")
 
     def check_authentification(self):
         """Check if user is authenticated (Check Session State)."""

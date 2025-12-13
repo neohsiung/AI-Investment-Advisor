@@ -3,7 +3,7 @@ from .base_agent import BaseAgent
 
 class MacroAgent(BaseAgent):
     def __init__(self, use_cache=True):
-        super().__init__(name="Macro", prompt_path="prompts/macro_agent.txt", use_cache=use_cache, ttl_hours=24)
+        super().__init__(name="Macro", prompt_path="prompts/macro_agent.txt", use_cache=use_cache, ttl_hours=24, tier="smart")
 
     def run(self, context):
         """

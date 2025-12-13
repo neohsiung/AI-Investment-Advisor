@@ -1,7 +1,39 @@
-# 系統架構現狀與雲端部署視圖 (System Architecture & Cloud Deployment)
+# System Landscape
 
-## 1. 部署現狀 (Deployment Status)
+> **[English](#english) | [繁體中文 (Traditional Chinese)](#traditional-chinese)**
 
+<a id="english"></a>
+
+## 🇺🇸 System Architecture Status
+
+### 1. Deployment Status
+**Cloud-Ready**. Application is containerized. Cloud SQL is provisioned.
+
+| Component | Status | Note |
+| :--- | :--- | :--- |
+| **App** | ✅ Containerized | Docker Image ready. |
+| **DB** | ✅ Provisioned | Cloud SQL (PostgreSQL) ready. |
+| **Scheduler**| ✅ Scripts Ready | Shell scripts ready. Cloud Run Jobs NOT yet linked. |
+| **Auth** | ✅ OAuth Ready | Google OAuth integrated. |
+
+### 2. Modern Cloud-Native Architecture
+(See Diagram below)
+- **Frontend**: Cloud Run Service (Streamlit).
+- **Backend**: Cloud Run Jobs (Scheduler).
+- **Data**: Cloud SQL + GCS.
+
+### 3. Next Steps
+1.  **Create Cloud SQL**: Provision instance.
+2.  **Deploy Cloud Run**: Deploy with Env Vars.
+3.  **Configure Env**: Set `DB_TYPE=postgres`, `DB_HOST`, etc.
+
+---
+
+<a id="traditional-chinese"></a>
+
+## 🇹🇼 系統架構現狀 (System Architecture)
+
+### 1. 部署現狀 (Deployment Status)
 目前的部署狀態為 **Cloud-Ready (雲端就緒)**，但實際生產環境尚未配置 (Provisioned)。
 
 | 組件 | 狀態 | 說明 |
@@ -11,8 +43,7 @@
 | **排程 (Scheduler)** | ✅ Scripts Ready | Shell scripts (`run_daily_check.sh`) 已就緒。GCP Cloud Run Jobs 尚未設定。 |
 | **認證 (Auth)** | ✅ OAuth Ready | Google OAuth 已整合，支援雲端與本地回呼。 |
 
-## 2. 現代化雲原生架構圖 (Modern Cloud-Native Architecture)
-
+### 2. 現代化雲原生架構圖 (Modern Cloud-Native Architecture)
 本系統遵循 **12-Factor App** 原則設計，目標架構如下：
 
 ```mermaid
@@ -49,7 +80,7 @@ graph TD
     CR_Job -->|Archive| GCS
 ```
 
-## 3. 下一步 (Next Steps)
+### 3. 下一步 (Next Steps)
 若要完成現代化部署，建議執行以下步驟 (需手動或 Terraform)：
 
 1.  **建立 Cloud SQL**:

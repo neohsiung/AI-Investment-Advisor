@@ -10,19 +10,32 @@ from src.utils.cache import ResponseCache
 
 class BaseAgent(ABC):
 
-    def __init__(self, name, prompt_path, use_cache=True, ttl_hours=24):
+    def __init__(self, name, prompt_path, use_cache=True, ttl_hours=24, tier="smart"):
         self.name = name
         self.logger = setup_logger(name)
         self.prompt_path = prompt_path
+        self.tier = tier  # 'smart' or 'fast'
         self.system_prompt = self._load_prompt()
         self.config = self._load_config()
         self.cache = ResponseCache(ttl_hours=ttl_hours) if use_cache else None
 
     def _load_config(self):
-        """讀取 AI 設定 (優先順序: DB > Env > Default)"""
+        """讀取 AI 設定 (優先順序: DB > Env > Default)
+        Support Model Tiering:
+        - AI_MODEL_SMART (e.g. gemini-1.5-pro)
+        - AI_MODEL_FAST (e.g. gemini-1.5-flash)
+        - AI_MODEL (Legacy fallback)
+        """
+        
+        # Determine target model env var based on tier
+        if self.tier == "fast":
+            default_model = os.getenv("AI_MODEL_FAST", os.getenv("AI_MODEL", "gemini-1.5-flash"))
+        else:
+            default_model = os.getenv("AI_MODEL_SMART", os.getenv("AI_MODEL", "gemini-1.5-pro"))
+
         config = {
             "provider": os.getenv("AI_PROVIDER", "Google Gemini"),
-            "model": os.getenv("AI_MODEL", "gemini-1.5-pro"),
+            "model": default_model,
             "api_key": os.getenv("API_KEY", ""),
             "base_url": os.getenv("BASE_URL", "")
         }
@@ -30,9 +43,19 @@ class BaseAgent(ABC):
         db_settings = self._load_config_from_db()
         for key, value in db_settings.items():
             if key == "AI_PROVIDER": config["provider"] = value
-            elif key == "AI_MODEL": config["model"] = value
+            # Override model if specific tier setting exists in DB
+            elif key == "AI_MODEL_SMART" and self.tier == "smart": config["model"] = value
+            elif key == "AI_MODEL_FAST" and self.tier == "fast": config["model"] = value
+            elif key == "AI_MODEL" and "model" not in config: config["model"] = value # Only fallback if not set by tier
             elif key == "API_KEY": config["api_key"] = value
             elif key == "BASE_URL": config["base_url"] = value
+        
+        # If DB overrode base AI_MODEL but we want tier specific, logic above might be slightly loose.
+        # But generally, if AI_MODEL_SMART is in DB, it wins. 
+        
+        # Final check if model is still empty (shouldn't happen with defaults)
+        if not config["model"]:
+            config["model"] = "gemini-1.5-pro" if self.tier == "smart" else "gemini-1.5-flash"
 
         return config
 
@@ -221,3 +244,74 @@ class BaseAgent(ABC):
 
         else:
             raise ValueError(f"Unsupported provider: {provider}")
+
+    def _compute_hash(self, data):
+        """Compute SHA256 hash of the input data (dict or str)"""
+        import hashlib
+        try:
+            if isinstance(data, dict):
+                # Sort keys for consistent hashing
+                s = json.dumps(data, sort_keys=True, ensure_ascii=False)
+            else:
+                s = str(data)
+            return hashlib.sha256(s.encode('utf-8')).hexdigest()
+        except Exception as e:
+            self.logger.warning(f"Failed to compute hash: {e}")
+            return None
+
+    def check_freshness(self, context, state_key=None):
+        """
+        Check if the input context is different from the last run.
+        state_key: Optional suffix for the state ID (e.g. ticker symbol)
+        Returns: (is_fresh: bool, current_hash: str, last_output: str)
+        """
+        current_hash = self._compute_hash(context)
+        if not current_hash:
+            return True, None, None # Force run if hash fails
+
+        # Construct ID
+        db_id = f"{self.name}_{state_key}" if state_key else self.name
+
+        # Check DB
+        try:
+            conn = get_db_connection()
+            # Query by ID not Name
+            row = conn.execute(text("SELECT last_input_hash, last_run_time, last_output FROM agent_states WHERE id = :id"), {"id": db_id}).fetchone()
+            conn.close()
+
+            if row:
+                last_hash = row[0]
+                last_output = row[2]
+                if last_hash == current_hash and last_output:
+                    # self.logger.info(f"Input is identical to last run for {db_id} ({last_hash[:8]}). Skipping re-run.")
+                    return False, current_hash, last_output
+            
+            return True, current_hash, None
+        except Exception as e:
+            self.logger.error(f"Error checking freshness: {e}")
+            return True, current_hash, None
+
+    def update_state(self, current_hash, output_content, state_key=None):
+        """Update the agent_state table with new hash, time, and output"""
+        conn = get_db_connection()
+        try:
+            import datetime
+            ts = datetime.datetime.now().isoformat()
+            db_id = f"{self.name}_{state_key}" if state_key else self.name
+
+            # Upsert (SQLite uses INSERT OR REPLACE)
+            conn.execute(text("""
+                INSERT OR REPLACE INTO agent_states (id, agent_name, last_input_hash, last_run_time, last_output) 
+                VALUES (:id, :name, :hash, :ts, :output)
+            """), {
+                "id": db_id,
+                "name": self.name,
+                "hash": current_hash,
+                "ts": ts,
+                "output": output_content
+            })
+            conn.commit()
+        except Exception as e:
+            self.logger.error(f"Error updating agent state: {e}")
+        finally:
+            conn.close()

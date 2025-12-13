@@ -18,50 +18,47 @@ An advanced, automated investment advisory system powered by a swarm of AI agent
 ### 🌟 Key Features
 
 *   **Multi-Agent Architecture**:
-    *   **Macro Agent**: Analyzes global economic trends, interest rates, and geopolitical events.
     *   **Fundamental Agent**: Evaluates company financials, earnings reports, and valuation metrics.
     *   **Momentum Agent**: Tracks price action, trends, and technical indicators.
-    *   **CIO Agent (Chief Investment Officer)**: Synthesizes all inputs to make final portfolio allocation decisions.
-    *   **System Engineer Agent (Self-Optimization)**: Monitors feedback from the CIO and automatically optimizes other agents' prompts to improve analysis quality continuously.
-*   **Real-time Data Injection**: Prevents AI hallucinations by injecting live market data (prices, financials, news) directly into agent prompts.
-*   **Dynamic Scheduling for US Market**: Default schedule aligns with US mid-session (02:00 Taipei Time / 13:00 ET) to capture real-time market dynamics.
-*   **Smart Caching System**: Optimizes API costs and latency with granular Time-To-Live (TTL) settings.
-*   **Interactive Dashboard**: Real-time monitoring of portfolio, reports, and **Optimization History**.
+    *   **Dispatcher Agent (New)**: Interactive chat interface that routes user questions to specific experts.
+    *   **CIO Agent (Chief Investment Officer)**: Synthesizes all inputs to make final portfolio allocation decisions. Enforces **HR Protocols** to monitor agent activity.
+    *   **System Engineer Agent (Self-Optimization)**: Monitors feedback and optimizes prompts.
+*   **Adaptive Intelligence**:
+    *   **Smart Freshness**: Skip analysis if data hasn't changed (hashing), saving costs.
+    *   **Model Tiering**: Uses **Smart Tier** (e.g., Gemini 1.5 Pro) for complex reasoning and **Fast Tier** (e.g., Gemini 1.5 Flash) for routine tasks.
+*   **Real-time Data Injection**: Prevents AI hallucinations by injecting live market data.
+*   **Interactive Dashboard**: Real-time monitoring, **Advisor Chat**, and Settings.
 
 ### 🏗️ System Architecture
 
 ```mermaid
 graph TD
-    subgraph Data Layer
-        MD[Market Data Service] -->|Prices/News| DB[(SQLite Database)]
-        MD -->|Injection| Agents
-    end
-
+    User((User)) <-->|Chat/UI| DASH[Streamlit Dashboard]
+    DASH <-->|Route| DISP[Dispatcher Agent]
+    
+    DISP -->|Query| Agents
+    
     subgraph AI Agent Swarm
         MA[Macro Agent]
         FA[Fundamental Agent]
         MO[Momentum Agent]
-
-        MA -->|Report| CIO[CIO Agent]
+        CIO[CIO Agent]
+        
+        MA -->|Report| CIO
         FA -->|Report| CIO
         MO -->|Report| CIO
-
-        CIO -.->|Feedback| SEA[System Engineer Agent]
-        SEA -.->|Prompt Optimization| MA
-        SEA -.->|Prompt Optimization| FA
-        SEA -.->|Prompt Optimization| MO
+        
+        CIO -.->|HR Request| SEA[System Engineer Agent]
+        SEA -.->|Optimize| MA & FA & MO
     end
 
-    subgraph User Interface
-        CIO -->|Final Strategy| DB
-        DB -->|Visuals| DASH[Streamlit Dashboard]
-        User((User)) <--> DASH
+    subgraph Data & State
+        DB[(PostgreSQL/SQLite)]
+        States[Agent States Table]
     end
 
-    subgraph Infrastructure
-        SCH[Scheduler] -->|Trigger| Agents
-        CACHE[Response Cache] <--> Agents
-    end
+    Agents <-->|Freshness Check| States
+    Agents <-->|Read| DB
 ```
 
 #### ☁️ Cloud Infrastructure Architecture
@@ -213,12 +210,49 @@ MIT License. See [LICENSE](LICENSE) for details.
 *   **🚀 部署與維運**:
     *   **[部署方案選擇](wiki/Deployment-Options.md)**: 包含 **[本地 SQLite](wiki/Deployment-Local-SQLite.md)** 與 **[GCP Cloud Run](wiki/Deployment-GCP-CloudRun.md)**。
     *   **[資料遷移指南](wiki/Database-Migration-Guide.md)**: 本地與雲端資料庫的雙向遷移教學。
-*   **📖 操作手冊**:
-    *   **[使用者指南](wiki/User-Guide.md)**: 儀表板操作與數據匯入。
-    *   **[系統總覽](wiki/System-Overview.md)**: 架構與核心邏輯。
-*   **🛡️ 稽核報告**:
-    *   **[資安審計](wiki/Security-Audit-Report.md)**: 安全性掃描結果。
-    *   **[架構審查](wiki/Clean-Architecture-Review.md)**: Clean Architecture 分析。
+*   **多重 Agent 架構**:
+    *   **Fundamental Agent (基本面)**: 評估財報、營收與估值。
+    *   **Momentum Agent (動能)**: 追蹤股價趨勢與技術指標。
+    *   **Dispatcher Agent (調度員 - NEW)**: 互動式對話介面，自動將您的問題分派給合適的專家。
+    *   **CIO Agent (投資長)**: 綜合所有資訊做出最終決策，並執行 **HR 協議** (監控 Agent 活躍度)。
+    *   **System Engineer Agent (系統工程師)**: 監控回饋並自動優化 Prompt。
+*   **自適應智能 (Adaptive Intelligence)**:
+    *   **智慧新鮮度 (Smart Freshness)**: 若數據未變更則跳過分析，節省成本。
+    *   **模型分級 (Model Tiering)**: 採用 **Smart Tier** (如 Gemini 1.5 Pro) 處理複雜推理，**Fast Tier** (如 Gemini 1.5 Flash) 處理例行任務。
+*   **即時數據注入**: 避免 AI 幻覺，直接注入即時市場數據。
+*   **互動式儀表板**: 即時監控資產、**顧問聊天室** 與 優化設定。
+
+### 🏗️ 系統架構 (System Architecture)
+
+```mermaid
+graph TD
+    User((User)) <-->|Chat/UI| DASH[Streamlit Dashboard]
+    DASH <-->|Route| DISP[Dispatcher Agent]
+    
+    DISP -->|Query| Agents
+    
+    subgraph AI Agent Swarm
+        MA[Macro Agent]
+        FA[Fundamental Agent]
+        MO[Momentum Agent]
+        CIO[CIO Agent]
+        
+        MA -->|Report| CIO
+        FA -->|Report| CIO
+        MO -->|Report| CIO
+        
+        CIO -.->|HR Request| SEA[System Engineer Agent]
+        SEA -.->|Optimize| MA & FA & MO
+    end
+
+    subgraph Data & State
+        DB[(PostgreSQL/SQLite)]
+        States[Agent States Table]
+    end
+
+    Agents <-->|Freshness Check| States
+    Agents <-->|Read| DB
+```
 
 ### 🚀 快速開始 (本地端)
 

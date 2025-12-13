@@ -3,7 +3,7 @@ from .base_agent import BaseAgent
 
 class MomentumAgent(BaseAgent):
     def __init__(self, use_cache=True):
-        super().__init__(name="Momentum", prompt_path="prompts/momentum_agent.txt", use_cache=use_cache, ttl_hours=4)
+        super().__init__(name="Momentum", prompt_path="prompts/momentum_agent.txt", use_cache=use_cache, ttl_hours=4, tier="fast")
 
     def run(self, context):
         """

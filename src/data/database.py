@@ -187,6 +187,13 @@ def init_db(db_path=None):
             timestamp TEXT,
             ttl_date TEXT,      -- For Data Lifecycle (Pruning)
             vector_id TEXT      -- If we add vector DB later
+        )""",
+        """CREATE TABLE IF NOT EXISTS agent_states (
+            id TEXT PRIMARY KEY,
+            agent_name TEXT,
+            last_input_hash TEXT,
+            last_run_time TEXT,
+            FOREIGN KEY(agent_name) REFERENCES settings(key) -- loose fk
         )"""
     ]
 
@@ -206,6 +213,16 @@ def init_db(db_path=None):
                 conn.execute(text("ALTER TABLE daily_snapshots ADD COLUMN leverage_ratio REAL DEFAULT 0"))
              except Exception as e:
                 print(f"Migration failed details: {e}")
+
+        # Migration for agent_states last_output
+        try:
+            conn.execute(text("SELECT last_output FROM agent_states LIMIT 1"))
+        except Exception:
+             print("Migrating agent_states: Adding last_output column...")
+             try:
+                conn.execute(text("ALTER TABLE agent_states ADD COLUMN last_output TEXT"))
+             except Exception as e:
+                print(f"Migration agent_states failed: {e}")
 
         conn.commit()
 

@@ -36,44 +36,45 @@ def render_api_settings(st, service: SettingsService, settings: dict):
         )
         provider = provider_key
 
-        # 動態模型選擇邏輯
-        model_name = settings.get("AI_MODEL", "google/gemini-pro-1.5")
-        if provider == "OpenRouter":
-            # 如果 Session State 中已有列表則使用，否則提供按鈕獲取
-            if 'openrouter_models' not in st.session_state:
-                st.session_state['openrouter_models'] = []
+        st.markdown("### 模型分級設定 (Model Tiering)")
+        st.info("請為不同任務需求設定合適的模型。Smart Tier 用於深度分析，Fast Tier 用於快速篩選。")
 
-            col_model, col_btn = st.columns([3, 1])
-            with col_btn:
+        # Smart Model
+        smart_default = settings.get("AI_MODEL_SMART", settings.get("AI_MODEL", "gemini-1.5-pro"))
+        st.markdown("#### 🧠 Smart Tier (智囊團)")
+        st.caption("適用角色: CIO, Macro, Fundamental, Engineer")
+        
+        if provider == "OpenRouter":
+             if 'openrouter_models' not in st.session_state:
+                st.session_state['openrouter_models'] = []
+             
+             col_model, col_btn = st.columns([3, 1])
+             with col_btn:
                 if st.form_submit_button("更新模型列表 (Fetch Models)"):
                     st.session_state['openrouter_models'] = service.fetch_openrouter_models()
-                    st.rerun() # 重新整理以更新下拉選單
+                    st.rerun()
 
-            with col_model:
+             with col_model:
                 if st.session_state['openrouter_models']:
-                    current_model = settings.get("AI_MODEL", "google/gemini-pro-1.5")
-                    # 確保當前模型在列表中，否則加入
-                    if current_model not in st.session_state['openrouter_models']:
-                        st.session_state['openrouter_models'].insert(0, current_model)
-
-                    model_name = st.selectbox(
-                        "模型名稱 (Model Name)",
-                        st.session_state['openrouter_models'],
-                        index=st.session_state['openrouter_models'].index(current_model) if current_model in st.session_state['openrouter_models'] else 0
-                    )
+                    if smart_default not in st.session_state['openrouter_models']:
+                        st.session_state['openrouter_models'].insert(0, smart_default)
+                    model_smart = st.selectbox("Smart Model", st.session_state['openrouter_models'], index=st.session_state['openrouter_models'].index(smart_default))
                 else:
-                    model_name = st.text_input(
-                        "模型名稱 (Model Name)",
-                        value=settings.get("AI_MODEL", "google/gemini-pro-1.5"),
-                        help="請點擊右側按鈕獲取列表，或手動輸入 (例如: google/gemini-pro-1.5)"
-                    )
+                    model_smart = st.text_input("Smart Model", value=smart_default)
         else:
-            # 其他 Provider 維持手動輸入
-            model_name = st.text_input(
-                "模型名稱 (Model Name)",
-                value=settings.get("AI_MODEL", "gemini-1.5-pro"),
-                help="例如: gemini-1.5-pro, gpt-4o"
-            )
+            model_smart = st.text_input("Smart Model", value=smart_default, help="e.g., gemini-1.5-pro, gpt-4o")
+
+        # Fast Model
+        fast_default = settings.get("AI_MODEL_FAST", "gemini-1.5-flash")
+        st.markdown("#### ⚡ Fast Tier (前鋒部隊)")
+        st.caption("適用角色: Momentum, Dispatcher, Daily Check")
+        
+        if provider == "OpenRouter" and st.session_state.get('openrouter_models'):
+             if fast_default not in st.session_state['openrouter_models']:
+                st.session_state['openrouter_models'].insert(0, fast_default)
+             model_fast = st.selectbox("Fast Model", st.session_state['openrouter_models'], index=st.session_state['openrouter_models'].index(fast_default))
+        else:
+            model_fast = st.text_input("Fast Model", value=fast_default, help="e.g., gemini-1.5-flash, gpt-4o-mini")
 
         api_key = st.text_input(
             "API Key",
@@ -93,7 +94,9 @@ def render_api_settings(st, service: SettingsService, settings: dict):
         if submitted:
             updates = {
                 "AI_PROVIDER": provider,
-                "AI_MODEL": model_name,
+                "AI_MODEL": model_smart, # Write to legacy/default as Smart
+                "AI_MODEL_SMART": model_smart,
+                "AI_MODEL_FAST": model_fast,
                 "API_KEY": api_key,
                 "BASE_URL": base_url
             }

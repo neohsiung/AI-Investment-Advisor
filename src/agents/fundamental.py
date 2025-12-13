@@ -3,7 +3,7 @@ from .base_agent import BaseAgent
 
 class FundamentalAgent(BaseAgent):
     def __init__(self, use_cache=True):
-        super().__init__(name="Fundamental", prompt_path="prompts/fundamental_agent.txt", use_cache=use_cache, ttl_hours=24)
+        super().__init__(name="Fundamental", prompt_path="prompts/fundamental_agent.txt", use_cache=use_cache, ttl_hours=24, tier="smart")
 
     def run(self, context):
         """

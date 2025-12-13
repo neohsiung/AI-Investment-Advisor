@@ -1,16 +1,56 @@
-# 部署方案選擇 (Deployment Options)
+# Deployment Options
 
-> 返回 [[Home]]
+> **[English](#english) | [繁體中文 (Traditional Chinese)](#traditional-chinese)**
 
-## 目標 (Goal)
+<a id="english"></a>
+
+## 🇺🇸 Deployment Options
+
+### Goal
+Provide flexible deployment architectures meeting different needs (Dev vs Prod) and budgets.
+
+### Why
+- **Dev Efficiency**: Local env needs fast startup, zero cost.
+- **Prod Stability**: Online env needs High Availability (HA) and Security.
+- **Cost Control**: Switch compute/database tiers based on budget.
+
+### What
+We support two main modes:
+
+| Feature | Option A: Local Lightweight (SQLite) | Option B: Cloud Enterprise (GCP Cloud Run) |
+| :--- | :--- | :--- |
+| **Scenario** | Personal use, Dev/Test, Offline | Team collaboration, Long-running, Automation |
+| **Compute** | Local CPU/RAM | Serverless Container |
+| **Database** | SQLite (`.db` file) | Cloud SQL (PostgreSQL) |
+| **Cost** | $0 | Low (Pay-as-you-go) |
+| **Difficulty** | Low (Docker Compose) | Medium (GCP Setup) |
+
+### How
+
+#### Path 1: Quick Trial (Local)
+See [[Deployment-Local-SQLite]]. Requires Docker only. Up in 1 minute.
+
+#### Path 2: 24/7 Automation (Cloud)
+See [[Deployment-GCP-CloudRun]]. Deploy to Google Cloud Platform with HTTPS.
+
+#### Advanced: Migration
+To move data between Local and Cloud, see [[Database-Migration-Guide]].
+
+---
+
+<a id="traditional-chinese"></a>
+
+## 🇹🇼 部署方案選擇 (Deployment Options)
+
+### 目標 (Goal)
 提供靈活且彈性的部署架構，滿足不同階段 (開發測試 vs 生產環境) 與不同資源預算的需求。
 
-## 為什麼 (Why)
+### 為什麼 (Why)
 - **開發效率**: 本地環境需快速啟動、零成本，適合快速迭代。
 - **生產穩定**: 線上環境需高可用 (High Availability)、零維護 (Serverless) 與安全性。
 - **成本控制**: 允許使用者根據流量與預算，自由切換算力與資料庫層級。
 
-## 做了什麼 (What)
+### 做了什麼 (What)
 我們支援兩種主要的部署模式：
 
 | 特性 | 方案 A: 本地輕量版 (Local SQLite) | 方案 B: 雲端企業版 (GCP Cloud Run) |
@@ -21,9 +61,7 @@
 | **成本** | $0 | 低 (依用量計費，有免費額度) |
 | **設定難度** | 低 (Docker Compose 一鍵啟動) | 中 (需設定 GCP 專案與權限) |
 
-## 如何進行 (How)
-
-### 選擇您的路徑
+### 如何進行 (How)
 
 #### 路徑 1: 我想快速試用，只在自己電腦跑
 請參考 [[Deployment-Local-SQLite]]。您只需要安裝 Docker，即可在一分鐘內啟動系統。

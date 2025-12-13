@@ -23,18 +23,25 @@ def test_run_workflow_weekly(mock_notifier, mock_recorder, mock_calc, mock_read_
     mock_market_instance = mock_market.return_value
     mock_market_instance.get_current_prices.return_value = {'AAPL': 150.0}
     mock_market_instance.get_technical_indicators.return_value = {'rsi': 50}
+    mock_market_instance.get_macro_data.return_value = {'market_macro': 'data'}
+    mock_market_instance.get_financials.return_value = 'financials'
+    mock_market_instance.get_news.return_value = 'news'
 
     mock_mom_instance = mock_mom.return_value
     mock_mom_instance.run.return_value = "HOLD"
+    mock_mom_instance.check_freshness.return_value = (True, "hash", None)
 
     mock_fund_instance = mock_fund.return_value
     mock_fund_instance.run.return_value = "Fundamental Analysis: Good"
+    mock_fund_instance.check_freshness.return_value = (True, "hash", None)
 
     mock_macro_instance = mock_macro.return_value
     mock_macro_instance.run.return_value = "Macro Analysis: Stable"
+    mock_macro_instance.check_freshness.return_value = (True, "hash", None)
 
     mock_cio_instance = mock_cio.return_value
     mock_cio_instance.run.return_value = "Final Report"
+    mock_cio_instance.check_freshness.return_value = (True, "hash", None)
 
     # Run workflow in weekly mode
     run_workflow(mode='weekly', dry_run=True)
@@ -71,6 +78,8 @@ def test_run_workflow_daily_no_change(mock_read_sql, mock_db_conn, mock_init, mo
 
     mock_mom_instance = mock_mom.return_value
     mock_mom_instance.run.return_value = "HOLD" # No significant change
+    # Simulate fresh run but result is HOLD
+    mock_mom_instance.check_freshness.return_value = (True, "hash", None)
 
     # Run workflow in daily mode
     run_workflow(mode='daily', dry_run=True)
@@ -102,9 +111,11 @@ def test_run_workflow_daily_with_change(mock_calc, mock_read_sql, mock_db_conn, 
 
     mock_mom_instance = mock_mom.return_value
     mock_mom_instance.run.return_value = "BUY AAPL" # Significant change
+    mock_mom_instance.check_freshness.return_value = (True, "hash", None)
 
     mock_cio_instance = mock_cio.return_value
     mock_cio_instance.run.return_value = "Final Report"
+    mock_cio_instance.check_freshness.return_value = (True, "hash", None)
 
     # Run workflow in daily mode
     run_workflow(mode='daily', dry_run=True)

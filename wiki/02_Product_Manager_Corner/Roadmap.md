@@ -1,41 +1,60 @@
-# 專案藍圖 (Project Roadmap)
+# Product Roadmap
 
-> 返回 [[Home]]
+> **[English](#english) | [繁體中文 (Traditional Chinese)](#traditional-chinese)**
 
-## 目標 (Goal)
-清晰規劃專案的長期發展方向，確保資源投入在最具價值的優化項目上，並提供開發團隊明確的執行指引。
+<a id="english"></a>
 
-## 為什麼 (Why)
-- **持續迭代**: 投資市場與 AI 技術瞬息萬變，系統需持續進化。
-- **品質控管**: 透過規劃 Clean Architecture 重構與測試覆蓋率，償還技術債。
-- **透明溝通**: 讓所有利害關係人了解下一個里程碑。
+## 🇺🇸 Product Roadmap
 
-## 做了什麼 (What)
-我們將未來的開發計畫分為四大階段：架構優化、雲端遷移、Agent 增強與社群開源。目前已完成 v1.0.0 的核心功能開發與 SaaS 架構轉型。
+### Goal
+Define the development path for the AI Investment Advisor, ensuring systematic feature rollout from basic functions to advanced AI autonomy.
 
-## 如何進行 (How)
+### 2024 Q4: Foundation & Cloud (Completed)
+- **v1.0 Basic Analysis**: Fundamental/Momentum Agents, Dashboard.
+- **v2.0 Cloud Native**: Dockerization, GCP Cloud Run support.
+- **v3.0 Data Integrity**: PostgreSQL migration, Persistent Storage.
 
-### 🟢 Phase 1: 架構重構 (Refactoring)
-*目標：提升程式碼可測試性與模組化。*
-- [ ] **Repository Pattern 實作**: 將數據存取層 (Data Access) 與業務邏輯完全分離。
-- [ ] **Dependency Injection**: 導入依賴注入容器，解耦 Service 與 Agent。
-- [ ] **Domain-Driven Design (DDD)**: 重新定義 Entity 與 Value Object，強化業務邏輯核心。
+### 2025 Q1: Adaptive Intelligence (Current)
+- **v4.0 Security**: OAuth 2.0, Clean Architecture Refactor.
+- **v5.0 Adaptive System (Stage 5)**:
+    - **Smart Cost**: Hash-based freshness checks.
+    - **Model Tiering**: Smart vs Fast models.
+    - **Interactive**: Dispatcher Agent & Chat UI.
+    - **HR Protocol**: Inactivity monitoring.
 
-### 🔵 Phase 2: 效能與擴展 (Scalability)
-*目標：支援更多使用者與更大量數據。*
-- [ ] **AlloyDB / Cloud SQL 優化**: 導入 Connection Pooling 與 Read Replica。
-- [ ] **Redis 快取層**: 快取熱門的市場數據與即時股價，減少外部 API 呼叫。
-- [ ] **Celery / Cloud Tasks**: 將耗時的 AI 分析任務從主執行緒分離，改為異步隊列處理。
+### 2025 Q2: Autonomous Evolution (Planned)
+- **v6.0 Auto-Optimization**: System Engineer automatically tunes prompts based on feedback loop (currently manual trigger).
+- **v7.0 Multi-Modal**: Vision capabilities for chart pattern recognition.
 
-### 🟣 Phase 3: AI 智慧增強 (AI Enhancement)
-*目標：提供更精確且個人化的投資建議。*
-- [ ] **RAG (Retrieval-Augmented Generation)**: 整合向量資料庫，讓 Agent 能檢索歷史財報與新聞。
+---
+
+<a id="traditional-chinese"></a>
+
+## 🇹🇼 產品發展藍圖 (Product Roadmap)
+
+### 目標 (Goal)
+定義 AI 投資顧問系統的發展路徑，確保功能從基礎設施到高階 AI 自主化，皆能有系統地逐步落地。
+
+### 2024 Q4: 基礎建設與雲端化 (已完成)
+- **v1.0 基礎分析**: 實作動能/基本面 Agent 與 Streamlit 儀表板。
+- **v2.0 雲端原生**: Docker 化容器部署，支援 GCP Cloud Run。
+- **v3.0 資料完整性**: 遷移至 PostgreSQL，確保資料持久化。
+
+### 2025 Q1: 自適應智能 (進行中)
+- **v4.0 安全性強化**: 導入 Google OAuth 2.0 登入，Clean Architecture 重構。
+- **v5.0 自適應系統 (Stage 5)**:
+    - **智慧成本控制**: 雜湊比對 (Hash-based) 避免重複分析。
+    - **模型分級**: 區分 Smart (高智商) 與 Fast (高速度) 模型。
+    - **互動式體驗**: 導入 Dispatcher Agent 與顧問聊天室。
+    - **HR 協議**: 自動監控 Agent 活躍度。
+
+### 2025 Q2: 自主進化 (規劃中)
+- **v6.0 自動優化**: System Engineer 依據回饋迴圈自動調整 Prompt (目前為手動觸發)。
+- **v7.0 多模態**: 加入視覺能力 (Vision)，識別 K 線圖型。
 - [ ] **User Persona Learning**: 根據使用者的操作行為 (查看哪些股票、風險偏好)，動態調整 Prompt。
 - [ ] **Multi-Agent Debate**: 引入「辯論模式」，讓 Bull/Bear Agent 互相挑戰觀點。
 
 ### 🟠 Phase 4: 開源與社群 (Open Source)
-*目標：建立生態系與貢獻者社群。*
-- [ ] **Plugin System**: 開放介面，允許開發者撰寫自定義的 Signal Generator。
 - [ ] **Documentation Site**: 建立獨立的文檔網站 (如 MkDocs/Docusaurus)。
 - [ ] **CI/CD Templates**: 提供標準化的 GitHub Actions 範本供社群使用。
 
