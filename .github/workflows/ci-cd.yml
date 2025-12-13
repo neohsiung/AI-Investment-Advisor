@@ -91,7 +91,7 @@ jobs:
           --set-env-vars "AI_PROVIDER=${{ secrets.AI_PROVIDER }},AI_MODEL_SMART=${{ secrets.AI_MODEL_SMART }},AI_MODEL_FAST=${{ secrets.AI_MODEL_FAST }}" \
           --set-env-vars "DB_TYPE=postgres,DB_HOST=${{ secrets.DB_HOST }},DB_USER=${{ secrets.DB_USER }},DB_PASS=${{ secrets.DB_PASS }},DB_NAME=${{ secrets.DB_NAME }}" \
           --set-env-vars "GOOGLE_CLIENT_SECRET_JSON=${{ secrets.GOOGLE_CLIENT_SECRET_JSON }},REDIRECT_URI=${{ secrets.REDIRECT_URI }}" \
-          --set-env-vars "API_KEY=${{ secrets.API_KEY }}"
+          --set-env-vars "API_KEY=${{ secrets.API_KEY }},FRED_API_KEY=${{ secrets.FRED_API_KEY }}"
 
     - name: Update Cloud Run Jobs
       run: |
@@ -103,7 +103,7 @@ jobs:
           --args "src/scheduler.py,--task,daily" \
           --set-env-vars "AI_PROVIDER=${{ secrets.AI_PROVIDER }},AI_MODEL_SMART=${{ secrets.AI_MODEL_SMART }},AI_MODEL_FAST=${{ secrets.AI_MODEL_FAST }}" \
           --set-env-vars "DB_TYPE=postgres,DB_HOST=${{ secrets.DB_HOST }},DB_USER=${{ secrets.DB_USER }},DB_PASS=${{ secrets.DB_PASS }},DB_NAME=${{ secrets.DB_NAME }}" \
-          --set-env-vars "API_KEY=${{ secrets.API_KEY }}" || \
+          --set-env-vars "API_KEY=${{ secrets.API_KEY }},FRED_API_KEY=${{ secrets.FRED_API_KEY }}" || \
         gcloud run jobs create daily-check \
           --image ${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.REPOSITORY }}/${{ env.IMAGE }}:latest \
           --region ${{ env.REGION }} \
@@ -111,7 +111,7 @@ jobs:
           --args "src/scheduler.py,--task,daily" \
           --set-env-vars "AI_PROVIDER=${{ secrets.AI_PROVIDER }},AI_MODEL_SMART=${{ secrets.AI_MODEL_SMART }},AI_MODEL_FAST=${{ secrets.AI_MODEL_FAST }}" \
           --set-env-vars "DB_TYPE=postgres,DB_HOST=${{ secrets.DB_HOST }},DB_USER=${{ secrets.DB_USER }},DB_PASS=${{ secrets.DB_PASS }},DB_NAME=${{ secrets.DB_NAME }}" \
-          --set-env-vars "API_KEY=${{ secrets.API_KEY }}"
+          --set-env-vars "API_KEY=${{ secrets.API_KEY }},FRED_API_KEY=${{ secrets.FRED_API_KEY }}"
 
         # Weekly Report Job
         gcloud run jobs update weekly-report \
@@ -121,7 +121,7 @@ jobs:
           --args "src/scheduler.py,--task,weekly" \
           --set-env-vars "AI_PROVIDER=${{ secrets.AI_PROVIDER }},AI_MODEL_SMART=${{ secrets.AI_MODEL_SMART }},AI_MODEL_FAST=${{ secrets.AI_MODEL_FAST }}" \
           --set-env-vars "DB_TYPE=postgres,DB_HOST=${{ secrets.DB_HOST }},DB_USER=${{ secrets.DB_USER }},DB_PASS=${{ secrets.DB_PASS }},DB_NAME=${{ secrets.DB_NAME }}" \
-          --set-env-vars "API_KEY=${{ secrets.API_KEY }}" || \
+          --set-env-vars "API_KEY=${{ secrets.API_KEY }},FRED_API_KEY=${{ secrets.FRED_API_KEY }}" || \
         gcloud run jobs create weekly-report \
           --image ${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.REPOSITORY }}/${{ env.IMAGE }}:latest \
           --region ${{ env.REGION }} \
@@ -129,7 +129,7 @@ jobs:
           --args "src/scheduler.py,--task,weekly" \
           --set-env-vars "AI_PROVIDER=${{ secrets.AI_PROVIDER }},AI_MODEL_SMART=${{ secrets.AI_MODEL_SMART }},AI_MODEL_FAST=${{ secrets.AI_MODEL_FAST }}" \
           --set-env-vars "DB_TYPE=postgres,DB_HOST=${{ secrets.DB_HOST }},DB_USER=${{ secrets.DB_USER }},DB_PASS=${{ secrets.DB_PASS }},DB_NAME=${{ secrets.DB_NAME }}" \
-          --set-env-vars "API_KEY=${{ secrets.API_KEY }}"
+          --set-env-vars "API_KEY=${{ secrets.API_KEY }},FRED_API_KEY=${{ secrets.FRED_API_KEY }}"
 
         # Monthly Refinement Job
         gcloud run jobs update monthly-refinement \
@@ -139,7 +139,7 @@ jobs:
           --args "src/scheduler.py,--task,monthly" \
           --set-env-vars "AI_PROVIDER=${{ secrets.AI_PROVIDER }},AI_MODEL_SMART=${{ secrets.AI_MODEL_SMART }},AI_MODEL_FAST=${{ secrets.AI_MODEL_FAST }}" \
           --set-env-vars "DB_TYPE=postgres,DB_HOST=${{ secrets.DB_HOST }},DB_USER=${{ secrets.DB_USER }},DB_PASS=${{ secrets.DB_PASS }},DB_NAME=${{ secrets.DB_NAME }}" \
-          --set-env-vars "API_KEY=${{ secrets.API_KEY }}" || \
+          --set-env-vars "API_KEY=${{ secrets.API_KEY }},FRED_API_KEY=${{ secrets.FRED_API_KEY }}" || \
         gcloud run jobs create monthly-refinement \
           --image ${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.REPOSITORY }}/${{ env.IMAGE }}:latest \
           --region ${{ env.REGION }} \
@@ -147,4 +147,4 @@ jobs:
           --args "src/scheduler.py,--task,monthly" \
           --set-env-vars "AI_PROVIDER=${{ secrets.AI_PROVIDER }},AI_MODEL_SMART=${{ secrets.AI_MODEL_SMART }},AI_MODEL_FAST=${{ secrets.AI_MODEL_FAST }}" \
           --set-env-vars "DB_TYPE=postgres,DB_HOST=${{ secrets.DB_HOST }},DB_USER=${{ secrets.DB_USER }},DB_PASS=${{ secrets.DB_PASS }},DB_NAME=${{ secrets.DB_NAME }}" \
-          --set-env-vars "API_KEY=${{ secrets.API_KEY }}"
+          --set-env-vars "API_KEY=${{ secrets.API_KEY }},FRED_API_KEY=${{ secrets.FRED_API_KEY }}"

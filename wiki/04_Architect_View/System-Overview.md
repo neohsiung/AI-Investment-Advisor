@@ -13,7 +13,7 @@ Build a **Dual-Unit** intelligent investment platform involving an "Investment A
 The system consists of two parallel units:
 
 #### 1. Investment Advisory Unit
-- **Event Bus**: Central nervous system receiving Webhooks and User Inputs.
+- **Event Bus**: Central Integration Hub receiving Webhooks and User Inputs.
 - **Light CIO (Router)**: Uses **Flash Model** to filter noise.
 - **Deep CIO (Decision Maker)**: Uses **Deep Model** (Gemini 1.5 Pro) for complex decisions.
 - **Analyst Pool**: Fundamental, Momentum, Macro Agents.
@@ -38,7 +38,7 @@ The system consists of two parallel units:
 
 ### 為什麼 (Why)
 - **成本與效能平衡**: 透過 **Flash/Deep 雙軌制**，在日常監控使用低成本模型，僅在關鍵時刻調用高算力模型。
-- **主動與被動分離**: 避免資訊過載，分析師平時保持沉默 (Passive)，僅在 CIO 召喚或重大事件時發言。
+- **事件驅動 (Event-Driven)**: 避免資訊過載，分析師平時保持待命 (Passive)，僅在 CIO 召喚或重大事件時執行深度分析。
 - **持續演進**: 系統不應是靜態的，應透過 **HR Unit** 自動優化 Prompt，適應市場變遷。
 
 ### 系統架構 (System Architecture v3)
@@ -46,7 +46,7 @@ The system consists of two parallel units:
 
 #### 3.1 投資顧問部 (Investment Advisory Unit)
 負責市場分析與策略輸出。
-*   **Event Bus**: 系統的中樞神經，接收新聞 Webhook、使用者手動匯入與排程訊號。
+*   **Event Bus**: 系統整合中樞，接收新聞 Webhook、使用者手動匯入與排程訊號。
 *   **Light CIO (Router)**: 使用 **Flash Model** 過濾噪音。若事件重要性 > 閾值，則喚醒核心團隊。
 *   **Deep CIO (Decision Maker)**: 使用 **Deep Model** (如 Gemini 1.5 Pro) 進行複雜決策，並動態調派分析師。
 *   **Analyst Pool**: 包含 Momentum, Fundamental, Macro 三大專家，依指令執行深度分析。

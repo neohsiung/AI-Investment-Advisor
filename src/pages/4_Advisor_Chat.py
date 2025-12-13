@@ -14,8 +14,12 @@ from src.agents.macro import MacroAgent
 from src.agents.cio import CIOAgent
 from src.market_data import MarketDataService
 from src.utils.logger import setup_logger
+from src.utils.ui import load_custom_css
 
 logger = setup_logger("Page_Chat")
+
+# Load Custom Global CSS
+load_custom_css()
 
 st.set_page_config(page_title="AI Advisor Chat", page_icon="💬", layout="wide")
 

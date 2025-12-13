@@ -7,14 +7,14 @@
 ## 🇺🇸 AI Agent Swarm
 
 ### 1. Design Philosophy
-**"Silence is Gold, Precision Strike."**
+**"Efficiency-Driven, Context-Aware Execution."**
 
 #### 1.1 Dual Models (Tiered)
 - **Flash Tier**: Gemini 2.0 Flash / GPT-4o-mini. Low cost. For daily scan `Light CIO`.
 - **Deep Tier**: Gemini 1.5 Pro / o1-preview. High reasoning. For complex analysis `Deep CIO`.
 
 #### 1.2 Passive Analysis
-- Agents are **Passive**.
+- Agents are **Event-Driven**.
 - **Daily Routine**: Flash scan. No alerts unless Signal > Threshold.
 - **Active Dispatch**: Only when `Deep CIO` commands.
 
@@ -41,7 +41,7 @@
 ## 🇹🇼 AI 代理人集群 (AI Agent Swarm)
 
 ### 1. 集群設計哲學 (Design Philosophy)
-本系統的 Agent 群體並非總是喋喋不休，而是遵循**「沉默是金，精準打擊」**的原則。
+系統採用**「事件驅動架構 (Event-Driven)」**與**「上下文感知執行 (Context-Aware)」**，強調資源效率最大化。
 
 #### 1.1 雙軌模型 (Tiered Models)
 為了最大化成本效益，我們依據任務難度分配模型資源：

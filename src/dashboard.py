@@ -1,5 +1,6 @@
 import streamlit as st
 import pandas as pd
+import os
 from src.data.database import get_db_connection, init_db
 from src.analytics import LeverageCalculator, ROIEngine, update_daily_snapshot, PnLCalculator
 import plotly.express as px
@@ -14,6 +15,15 @@ def main():
     # Note: We use the default path here, if user changes sidebar input later, it might need re-init,
     # but usually `data/portfolio.db` is the target.
     init_db()
+
+    init_db()
+
+    # --- UI Styling (SaaS Look) ---
+    from src.utils.ui import load_custom_css
+    load_custom_css()
+    # ------------------------------
+
+    # --- Authentication Check ---
 
     # --- Authentication Check ---
     # --- Authentication Check ---
