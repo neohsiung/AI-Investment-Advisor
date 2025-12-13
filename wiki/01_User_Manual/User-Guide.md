@@ -79,6 +79,7 @@ Navigate to **Data Management** in the sidebar.
 
 - **匯入交易 (Import)**:
     - 支援 **Robinhood** / **IBKR** 的 CSV 匯出檔。
+    - **簡易格式 (Simple)**: 選擇此選項後，可直接點擊 **「📥 下載匯入範本」** 按鈕取得標準 CSV 檔 (含範例資料)。
     - 上傳後系統自動去重並解析。
 - **手動輸入 (Manual Entry)**:
     - 適用於零星交易或股息 (Dividend) 紀錄。

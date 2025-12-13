@@ -82,7 +82,24 @@ class GoogleAuth:
                 include_granted_scopes='true'
             )
 
-            st.link_button("Login with Google", authorization_url, type="primary")
+            # Use Markdown with target="_self" to avoid new tab
+            st.markdown(
+                f"""
+                <a href="{authorization_url}" target="_self" style="
+                    display: inline-block;
+                    padding: 0.5rem 1rem;
+                    color: white;
+                    background-color: #6366f1;
+                    border-radius: 0.375rem;
+                    text-decoration: none;
+                    font-weight: 500;
+                    text-align: center;
+                ">
+                    Login with Google
+                </a>
+                """,
+                unsafe_allow_html=True
+            )
 
     def check_authentification(self):
         """Check if user is authenticated (Check Session State)."""

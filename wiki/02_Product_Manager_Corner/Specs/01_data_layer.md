@@ -64,10 +64,15 @@ Defined in `src/data/database.py`. New additions:
 ### 3. CSV 格式 (CSV Formats)
 
 #### 簡易標準格式 (Simple Format)
+支援的欄位：`ticker`, `quantity`, `price` (必填); `action`, `date`, `fees`, `leverage` (選填)。
+
 ```csv
-ticker,quantity,cost
-AAPL,10,150.0
-TSLA,5,200.0
+action,date,ticker,quantity,leverage,price,fees
+BUY,2023-10-01,AAPL,10,1.0,150.0,1.5
+BUY,2023-10-02,TSLA,5,2.0,200.0,2.0
+SELL,2023-10-15,NVDA,5,1.0,460.0,5.0
+DIVIDEND,2023-10-20,MSFT,0,1.0,0,0
+DEPOSIT,2023-10-01,USD,0,1.0,1000,0
 ```
 
 #### Robinhood / IBKR

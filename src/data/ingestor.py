@@ -37,36 +37,58 @@ class TradeIngestor:
             raise e
 
     def _ingest_simple(self, df, user_id):
-        # Validate columns
-        required_cols = ['ticker', 'quantity', 'cost']
+        # Normalize columns
+        df.columns = df.columns.str.lower().str.strip()
+
+        # Validate required columns
+        required_cols = ['ticker', 'quantity', 'price']
+        # 'cost' is alias for 'price', support both for backward compatibility
+        if 'cost' in df.columns and 'price' not in df.columns:
+            df.rename(columns={'cost': 'price'}, inplace=True)
+
         for col in required_cols:
             if col not in df.columns:
-                raise ValueError(f"Missing required column: {col}")
+                raise ValueError(f"Missing required column: {col} (Supports: ticker, quantity, price, action, date, fees)")
 
-        # Columns: ticker, quantity, cost (avg cost)
-        # We model this as a BUY transaction with price = cost
         with get_db_connection(self.db_path) as conn:
             for _, row in df.iterrows():
                 ticker = str(row['ticker']).upper().strip()
                 quantity = float(row['quantity'])
-                price = float(row['cost'])
+                price = float(row['price'])
+                
+                # Optional fields with defaults
+                fees = float(row.get('fees', 0))
+                date_str = row.get('date', datetime.date.today().strftime("%Y-%m-%d"))
+                action = str(row.get('action', 'BUY')).upper().strip()
+                leverage = float(row.get('leverage', 1.0))
+
+                # Basic validation for Action
+                valid_actions = ['BUY', 'SELL', 'DIVIDEND', 'DEPOSIT', 'WITHDRAW']
+                if action not in valid_actions:
+                    action = 'BUY'
+                
                 amount = quantity * price
+                
+                # Store extras in raw_data
+                import json
+                raw_data = json.dumps({"leverage": leverage, "source": "csv_simple"})
 
                 query = text("""
-                    INSERT INTO transactions (id, user_id, ticker, trade_date, action, quantity, price, fees, amount, source_file)
-                    VALUES (:id, :user_id, :ticker, :trade_date, :action, :quantity, :price, :fees, :amount, 'csv_import')
+                    INSERT INTO transactions (id, user_id, ticker, trade_date, action, quantity, price, fees, amount, source_file, raw_data)
+                    VALUES (:id, :user_id, :ticker, :trade_date, :action, :quantity, :price, :fees, :amount, 'csv_import', :raw_data)
                 """)
 
                 conn.execute(query, {
                     "id": str(uuid.uuid4()),
                     "user_id": user_id,
                     "ticker": ticker,
-                    "trade_date": datetime.date.today().strftime("%Y-%m-%d"),
-                    "action": "BUY",
+                    "trade_date": date_str,
+                    "action": action,
                     "quantity": quantity,
                     "price": price,
-                    "fees": 0,
-                    "amount": amount
+                    "fees": fees,
+                    "amount": amount,
+                    "raw_data": raw_data
                 })
             conn.commit()
 
