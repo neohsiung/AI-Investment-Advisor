@@ -115,6 +115,21 @@ def render_csv_import_tab(st, db_path, user_id):
     broker_key = st.selectbox("券商格式 (Broker Format)", options=list(broker_options.keys()), format_func=lambda x: broker_options[x])
     broker = broker_key
 
+    # Template Download
+    if broker == "Simple":
+        try:
+            with open("data/template_simple.csv", "r") as f:
+                template_data = f.read()
+            st.download_button(
+                label="📥 下載匯入範本 (Download Template)",
+                data=template_data,
+                file_name="import_template.csv",
+                mime="text/csv",
+                help="下載簡易格式的 CSV 範本以供參考"
+            )
+        except Exception as e:
+            st.error(f"無法讀取範本檔案: {e}")
+
     if uploaded_file and st.button("開始匯入 (Start Import)"):
          # Save temp
          import os
