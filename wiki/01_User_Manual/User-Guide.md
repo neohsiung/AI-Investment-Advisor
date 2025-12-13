@@ -36,7 +36,7 @@
 - **資金管理 (Cash Management)**:
     - 紀錄入金 (Deposit) 與出金 (Withdraw) 以正確計算投資報酬率 (ROI)。
     - **操作**: 前往「手動輸入」分頁。
-        - **Ticker**: 輸入 `USD` 或 `CASH` (或其他貨幣代號)。
+        - **Ticker**: 建議輸入 `USD` 或 `CASH` (系統無硬性限制，但統一代號方便管理)。
         - **Action**: 選擇 `DEPOSIT` (入金) 或 `WITHDRAW` (出金)。
         - **Quantity**: 輸入金額 (如 10000)。
         - **Price**: 輸入 `1`。

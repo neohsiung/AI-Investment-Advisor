@@ -1,6 +1,6 @@
 # AI Investment Advisor Platform
 
-![Python](https://img.shields.io/badge/Python-3.9+-blue.svg)
+![Python](https://img.shields.io/badge/Python-3.11+-blue.svg)
 ![Docker](https://img.shields.io/badge/Docker-Enabled-blue.svg)
 ![Streamlit](https://img.shields.io/badge/Streamlit-Dashboard-red.svg)
 ![License](https://img.shields.io/badge/License-MIT-green.svg)

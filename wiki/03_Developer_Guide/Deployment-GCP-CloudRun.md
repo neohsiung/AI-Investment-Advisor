@@ -33,21 +33,30 @@ gcloud sql databases create portfolio --instance=portfolio-db
 ```
 
 ### 3. 部署至 Cloud Run (Deploy)
-使用我們提供的 `gcloud run deploy` 指令或 Docker 部署。
-推薦使用 Source Deploy：
+推薦使用以下指令部署應用程式：
 
 ```bash
-gcloud run deploy investment-dashboard \
+gcloud run deploy portfolio-app \
     --source . \
     --platform managed \
     --region asia-east1 \
     --allow-unauthenticated \
-    --set-env-vars DB_TYPE=postgres,DB_HOST=/cloudsql/[PROJECT_ID]:asia-east1:portfolio-db,DB_USER=[USER],DB_PASS=[PASS],DB_NAME=portfolio
+    --set-env-vars DB_TYPE=postgres \
+    --set-env-vars DB_USER=portfolio_user \
+    --set-env-vars DB_PASS=[YOUR_PASSWORD] \
+    --set-env-vars DB_NAME=portfolio \
+    --set-env-vars DB_HOST=/cloudsql/[PROJECT_ID]:asia-east1:portfolio-prod \
+    --set-env-vars AI_PROVIDER=google \
+    --set-env-vars AI_MODEL=gemini-1.5-pro \
+    --set-env-vars API_KEY=[YOUR_GEMINI_API_KEY]
 ```
+*注意：`DB_PASS` 為您在執行 `setup_cloud_sql.sh` 時設定的密碼；`DB_HOST` 格式需完全符合 Script 輸出的 `Connection Name` (前綴 `/cloudsql/`)。*
 
 ### 4. 設定 OAuth (Configure OAuth)
-由於 Cloud Run 網址是動態生成的 (首次部署後)，您需要更新 OAuth 設定。
-請參閱 [[Google-OAuth-Setup]] 進行憑證設定與環境變數掛載。
+由於 Cloud Run 網址是動態生成的 (首次部署後)，您需要：
+1. 更新 Google Cloud Console 中的 **Authorized redirect URIs**。
+2. 或更新環境變數 `REDIRECT_URI` 指向 Cloud Run 網址。
+請參閱 [[Google-OAuth-Setup]]。
 
 ### 5. CI/CD 自動化 (Automation)
 本專案包含 GitHub Actions workflow (`.github/workflows/deploy.yml`)。

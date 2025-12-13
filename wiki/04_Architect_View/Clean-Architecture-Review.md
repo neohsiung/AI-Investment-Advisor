@@ -20,8 +20,8 @@
 ## 如何進行 (How) - 改善計畫
 
 ### 1. 現狀分析 (Current State)
-- ✅ **優點**: 模組分離清晰 (`agents/`, `pages/`, `services/`)。
-- ❌ **缺點**: `dashboard.py` 直接呼叫 SQL，違反分層原則。`workflow.py` 包含過多實作細節。
+- ✅ **優點**: 模組分離清晰 (Agents, Services, Pages)。導入 `DatabaseManager` 與 `Services` 層封裝外部數據。
+- ❌ **缺點**: UI 層 (`src/pages/*.py`) 仍包含直接 SQL 查詢 (`pd.read_sql`)，尚未完全導入 Repository Pattern。`workflow.py` 雖已支援 Event-Driven，但仍承擔部分調度細節。
 
 ### 2. 重構建議 (Refactoring Plan)
 

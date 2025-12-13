@@ -36,27 +36,27 @@
 
 ### 3.3 架構圖 (Architecture Diagram)
 ```mermaid
-graph TD
+graph TB
     subgraph "External World"
         News[News Stream] -->|Webhook| EventBus
         User[User] -->|Manual Input| EventBus
     end
 
     subgraph "Investment Advisory Unit"
-        EventBus --> LightCIO{Light CIO\n(Flash Model)}
-        LightCIO -- "Ignore" --> DB[(Log)]
-        LightCIO -- "Critical!" --> MainCIO[Main CIO\n(Deep Model)]
+        EventBus --> LightCIO{"Light CIO<br/>(Flash Model)"}
+        LightCIO -- "Ignore" --> Log[(Log DB)]
+        LightCIO -- "Critical!" --> MainCIO{"Main CIO<br/>(Deep Model)"}
         
         MainCIO -->|Dispatch| Analysts
         
         subgraph "Analyst Pool (Passive)"
-            MA[Macro]
-            FA[Fundamental]
-            MO[Momentum]
+            MA[Macro Agent]
+            FA[Fundamental Agent]
+            MO[Momentum Agent]
         end
         
-        Analysts -->|Write Report| DB
-        MainCIO -->|Read History| DB
+        Analysts -->|Write Report| Log
+        MainCIO -->|Read History| Log
         MainCIO -->|Final Report| Report[Strategy Report]
     end
 

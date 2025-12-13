@@ -10,9 +10,15 @@ fi
 echo "Starting Investment Advisor Platform (Local Mode)..."
 
 # Check for virtual environment
+# Check for virtual environment
 if [ ! -d "venv" ]; then
-    echo "Creating virtual environment..."
-    python3 -m venv venv
+    echo "Creating virtual environment with Python 3.11..."
+    if command -v python3.11 &> /dev/null; then
+        python3.11 -m venv venv
+    else
+        echo "Python 3.11 not found, falling back to python3..."
+        python3 -m venv venv
+    fi
 fi
 
 source venv/bin/activate

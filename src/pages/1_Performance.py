@@ -1,8 +1,8 @@
 import streamlit as st
 import pandas as pd
 import plotly.express as px
-from src.data.database import get_db_connection
-from src.analytics import update_daily_snapshot, PnLCalculator
+# from src.data.database import get_db_connection
+# from src.analytics import update_daily_snapshot, PnLCalculator
 
 def main():
     st.set_page_config(page_title="績效追蹤 | AI 投資顧問", layout="wide")
@@ -22,21 +22,23 @@ def main():
     st.sidebar.header("設定 (Settings)")
     db_path = st.sidebar.text_input("資料庫路徑 (Database Path)", "data/portfolio.db")
 
+    # 初始化 Analytics Service
+    from src.services.analytics_service import AnalyticsService
+    analytics_service = AnalyticsService(db_path=db_path, user_id=user_id)
+
     # 自動更新今日績效快照
     try:
-        update_daily_snapshot(db_path, user_id=user_id)
+        analytics_service.trigger_snapshot_update()
     except Exception as e:
         st.warning(f"自動更新績效失敗 (Auto-update failed): {e}")
 
-    # PnL Breakdown
-    pnl_calc = PnLCalculator(db_path=db_path)
     # Mock Prices (應與 Dashboard 一致)
     current_prices = {
         "AAPL": 180.0, "NVDA": 450.0, "TSLA": 240.0, "GOOGL": 140.0, "MSFT": 370.0
     }
 
     try:
-        pnl_data = pnl_calc.calculate_breakdown(current_prices, user_id=user_id)
+        pnl_data = analytics_service.get_pnl_breakdown(current_prices)
         st.subheader("損益分析 (PnL Analysis)")
         c1, c2, c3 = st.columns(3)
         c1.metric("已實現損益 (Realized P&L)", f"${pnl_data['realized']:,.2f}")
@@ -45,13 +47,10 @@ def main():
     except Exception as e:
         st.error(f"計算損益失敗: {e}")
 
-    conn = get_db_connection(db_path)
-    try:
-        snapshots_df = pd.read_sql("SELECT * FROM daily_snapshots WHERE user_id = :uid ORDER BY date ASC", conn, params={"uid": user_id})
-    finally:
-        conn.close()
+    # 獲取歷史紀錄
+    snapshots_df = analytics_service.get_performance_history()
 
-    if not snapshots_df.empty:
+    if snapshots_df is not None and not snapshots_df.empty:
         # A. 投入資本 vs 現值 (Bar Chart)
         latest = snapshots_df.iloc[-1]
         st.subheader("總投入資本 vs 當前價值 (Total Investment vs Current Value)")

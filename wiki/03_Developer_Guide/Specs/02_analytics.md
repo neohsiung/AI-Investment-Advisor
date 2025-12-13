@@ -1,48 +1,49 @@
-# Analytics Engine Specification (v3)
+# 分析引擎規格 (Analytics Engine Specification) v3
 
-> **Status**: Draft
-> **Version**: 1.0
+> **狀態**: 草稿 (Draft)
+> **版本**: 1.0
 
-## 1. Overview
-The Analytics Engine is the mathematical core of the system, responsible for calculating portfolio health, leverage ratios, and performance metrics (ROI). It must adhere to the `DETERMINISTIC_MATH` principle (Python-based, no LLM guessing).
+## 1. 概觀 (Overview)
 
-## 2. Core Components
+分析引擎是系統的數學核心，負責計算投資組合健康度、槓桿比率以及績效指標 (ROI)。必須嚴格遵守 **確定性數學 (DETERMINISTIC_MATH)** 原則 (基於 Python 計算，不依賴 LLM 猜測)。
 
-### 2.1 LeverageCalculator
-Calculates the "True Leverage" of the portfolio.
+## 2. 核心組件 (Core Components)
 
-*   **Total Nominal Value (TNV)**: Sum of absolute notional value of all positions.
+### 2.1 槓桿計算器 (LeverageCalculator)
+負責計算投資組合的「真實槓桿 (True Leverage)」。
+
+*   **總名義價值 (Total Nominal Value, TNV)**: 所有持倉絕對名義價值的總和。
     *   `TNV = Sum(abs(Quantity * Price))`
-*   **Net Liquidation Value (NLV)**: Total Equity.
+*   **淨流動資產價值 (Net Liquidation Value, NLV)**: 總權益。
     *   `NLV = Cash Balance + Market Value of Positions`
-*   **Leverage Ratio**:
+*   **槓桿比率 (Leverage Ratio)**:
     *   `Ratio = TNV / NLV`
-*   **Risk Levels**:
-    *   `< 1.0`: Safe (Cash heavy)
-    *   `1.0 - 1.5`: Normal
-    *   `1.5 - 2.0`: High Risk
-    *   `> 2.0`: Critical (Margin Call Warning)
+*   **風險等級 (Risk Levels)**:
+    *   `< 1.0`: 安全 (現金部位高)
+    *   `1.0 - 1.5`: 正常
+    *   `1.5 - 2.0`: 高風險
+    *   `> 2.0`: 危險 (保證金追繳警告)
 
-### 2.2 ROIEngine
-Calculates Return on Investment.
+### 2.2 投資報酬率引擎 (ROIEngine)
+負責計算投資報酬率 (Return on Investment)。
 
-*   **Simple ROI**:
+*   **簡單 ROI (Simple ROI)**:
     *   `ROI = (Net Profit / Net Invested Capital) * 100%`
-*   **Net Invested Capital**:
+*   **淨投入資本 (Net Invested Capital)**:
     *   `Sum(Deposits) - Sum(Withdrawals)`
-*   **Time-Weighted Return (TWR)**: *Future Scope*
+*   **時間加權報酬率 (Time-Weighted Return, TWR)**: *未來規劃*
 
-### 2.3 PnLCalculator
-Breakdown of Profit and Loss.
+### 2.3 損益計算器 (PnLCalculator)
+負責損益細項分析。
 
-*   **Realized P&L**: (Exit Price - Entry Cost) * Qty
-*   **Unrealized P&L**: (Current Price - Avg Cost) * Qty
-*   **Total P&L**: Realized + Unrealized
+*   **已實現損益 (Realized P&L)**: `(Exit Price - Entry Cost) * Qty`
+*   **未實現損益 (Unrealized P&L)**: `(Current Price - Avg Cost) * Qty`
+*   **總損益 (Total P&L)**: 已實現 + 未實現
 
-## 3. Data Dependency
-*   Input: `current_prices` (Dict[Ticker, Price]), `user_id`.
-*   Source: `src/market_data.py` (Real-time), `transactions` table (Historical).
+## 3. 數據依賴 (Data Dependency)
+*   輸入: `current_prices` (Dict[Ticker, Price]), `user_id`.
+*   來源: `src/market_data.py` (即時報價), `transactions` 資料表 (歷史紀錄)。
 
-## 4. Implementation Plan
-*   Location: `src/analytics.py`
-*   Tests: `tests/test_analytics.py`
+## 4. 實作計畫 (Implementation Plan)
+*   位置: `src/analytics.py`
+*   測試: `tests/test_analytics.py`

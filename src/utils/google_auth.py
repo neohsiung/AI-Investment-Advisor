@@ -55,7 +55,7 @@ class GoogleAuth:
                 # Verify ID Token
                 token_request = requests.Request()
                 id_info = id_token.verify_oauth2_token(
-                    credentials.id_token, token_request, flow.client_config['client_id']
+                    credentials.id_token, token_request, flow.client_config['client_id'], clock_skew_in_seconds=60
                 )
 
                 # Store user info in session
@@ -82,7 +82,32 @@ class GoogleAuth:
                 include_granted_scopes='true'
             )
 
-            st.link_button("Login with Google", authorization_url, type="primary")
+            # st.link_button("Login with Google", authorization_url, type="primary")
+            st.markdown(f'''
+                <a href="{authorization_url}" target="_self">
+                    <button style="
+                        display: inline-flex;
+                        -webkit-box-align: center;
+                        align-items: center;
+                        -webkit-box-pack: center;
+                        justify-content: center;
+                        font-weight: 400;
+                        padding: 0.25rem 0.75rem;
+                        border-radius: 0.5rem;
+                        min-height: 38.4px;
+                        margin: 0px;
+                        line-height: 1.6;
+                        color: white;
+                        width: auto;
+                        user-select: none;
+                        background-color: rgb(255, 75, 75);
+                        border: 1px solid rgb(255, 75, 75);
+                        text-decoration: none;
+                        cursor: pointer;">
+                        Login with Google
+                    </button>
+                </a>
+                ''', unsafe_allow_html=True)
 
     def check_authentification(self):
         """Check if user is authenticated (Check Session State)."""
