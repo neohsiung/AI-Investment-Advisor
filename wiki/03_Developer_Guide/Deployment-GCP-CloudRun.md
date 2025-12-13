@@ -38,6 +38,23 @@ gcloud run deploy portfolio-app \
 #### 3. Configure OAuth
 Update **Authorized redirect URIs** in Google Cloud Console to point to your new Cloud Run URL.
 
+#### 4. Setup CI/CD Environment Variables (GitHub Secrets)
+The following secrets are automatically injected into Cloud Run by `ci-cd.yml`. Please configure them in your GitHub Repository Secrets:
+
+| Category | Variable | Description |
+|---|---|---|
+| **AI** | `API_KEY` | API Key for Gemini or OpenAI. |
+| | `AI_PROVIDER` | `Google Gemini`, `OpenAI`, or `OpenRouter`. |
+| | `AI_MODEL_SMART` | High-reasoning model (e.g., `gemini-1.5-pro`). |
+| | `AI_MODEL_FAST` | Low-cost/fast model (e.g., `gemini-1.5-flash`). |
+| **DB** | `DB_TYPE` | Must be `postgres` for Cloud Run. |
+| | `DB_HOST` | Cloud SQL IP address. |
+| | `DB_USER` | Database username. |
+| | `DB_PASS` | Database password. |
+| | `DB_NAME` | Database name (e.g., `portfolio`). |
+| **Auth** | `GOOGLE_CLIENT_SECRET_JSON` | Content of `client_secret.json`. |
+| | `REDIRECT_URI` | Full URL of your Cloud Run service (e.g., `https://.../`). |
+
 ---
 
 <a id="traditional-chinese"></a>
@@ -80,4 +97,67 @@ gcloud run deploy portfolio-app \
 由於 Cloud Run 網址是動態生成的 (首次部署後)，您需要：
 1. 更新 Google Cloud Console 中的 **Authorized redirect URIs**。
 2. 或更新環境變數 `REDIRECT_URI` 指向 Cloud Run 網址。
-請參閱 [[Google-OAuth-Setup]]。
+#### 4. 設定 CI/CD 環境變數 (GitHub Secrets)
+以下變數由 `ci-cd.yml` 自動注入到 Cloud Run。請在 GitHub Repository Secrets 中設定：
+
+| 分類 (Category) | 變數名稱 (Variable) | 說明 (Description) |
+|---|---|---|
+| **AI** | `API_KEY` | Gemini 或 OpenAI 的 API Key。 |
+| | `AI_PROVIDER` | AI 提供者 (如 `Google Gemini`, `OpenAI`, `OpenRouter`)。 |
+| | `AI_MODEL_SMART` | 高推理能力模型 (例如 `gemini-1.5-pro`)，用於 CIO/總經分析。 |
+| | `AI_MODEL_FAST` | 快速/低成本模型 (例如 `gemini-1.5-flash`)，用於動能分析/調度。 |
+| **DB (資料庫)** | `DB_TYPE` | Cloud Run 環境必須設為 `postgres`。 |
+| | `DB_HOST` | Cloud SQL 的 IP 位址。 |
+| | `DB_USER` | 資料庫使用者名稱。 |
+| | `DB_PASS` | 資料庫密碼。 |
+| | `DB_NAME` | 資料庫名稱 (例如 `portfolio`)。 |
+| Auth (驗證) | `GOOGLE_CLIENT_SECRET_JSON` | `client_secret.json` 檔案的完整內容。 |
+| | `REDIRECT_URI` | Cloud Run 服務的完整網址 (例如 `https://.../`)。 |
+
+#### 5. 資源清理 (Resource Teardown)
+若需下線服務以停止計費，可使用專案提供的自動化腳本：
+
+```bash
+./scripts/gcp_teardown.sh
+```
+
+此腳本會刪除：
+*   Cloud Run Service (`investment-dashboard`)
+*   Cloud Run Jobs (`daily-check`, `weekly-report`, `monthly-refinement`)
+
+**注意**：為防止資料遺失，腳本 **不會** 自動刪除 Cloud SQL 資料庫與 Artifact Registry 的映像檔。若確定不再需要，請手動刪除：
+
+```bash
+# 刪除資料庫
+gcloud sql instances delete [INSTANCE_NAME]
+
+# 刪除映像檔儲存庫
+gcloud artifacts repositories delete investment-advisor --location=asia-east1
+```
+
+---
+
+<a id="english-teardown"></a>
+
+#### 5. Resource Teardown (Clean up)
+To take the service offline and stop billing, use the provided script:
+
+```bash
+./scripts/gcp_teardown.sh
+```
+
+This script will delete:
+*   Cloud Run Service (`investment-dashboard`)
+*   Cloud Run Jobs (`daily-check`, `weekly-report`, `monthly-refinement`)
+
+**Note**: To prevent data loss, the script does **NOT** delete the Cloud SQL database or Artifact Registry images. If you wish to delete them:
+
+```bash
+# Delete Cloud SQL
+gcloud sql instances delete [INSTANCE_NAME]
+
+# Delete Artifact Registry
+gcloud artifacts repositories delete investment-advisor --location=asia-east1
+```
+
+

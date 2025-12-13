@@ -88,7 +88,10 @@ jobs:
           --port 8501 \
           --command "streamlit" \
           --args "run,src/dashboard.py,--server.port,8501,--server.address,0.0.0.0" \
-          --set-env-vars "AI_PROVIDER=OpenRouter,AI_MODEL=openai/gpt-3.5-turbo"
+          --set-env-vars "AI_PROVIDER=${{ secrets.AI_PROVIDER }},AI_MODEL_SMART=${{ secrets.AI_MODEL_SMART }},AI_MODEL_FAST=${{ secrets.AI_MODEL_FAST }}" \
+          --set-env-vars "DB_TYPE=postgres,DB_HOST=${{ secrets.DB_HOST }},DB_USER=${{ secrets.DB_USER }},DB_PASS=${{ secrets.DB_PASS }},DB_NAME=${{ secrets.DB_NAME }}" \
+          --set-env-vars "GOOGLE_CLIENT_SECRET_JSON=${{ secrets.GOOGLE_CLIENT_SECRET_JSON }},REDIRECT_URI=${{ secrets.REDIRECT_URI }}" \
+          --set-env-vars "API_KEY=${{ secrets.API_KEY }}"
 
     - name: Update Cloud Run Jobs
       run: |
@@ -98,13 +101,17 @@ jobs:
           --region ${{ env.REGION }} \
           --command "python" \
           --args "src/scheduler.py,--task,daily" \
-          --set-env-vars "AI_PROVIDER=OpenRouter,AI_MODEL=openai/gpt-3.5-turbo" || \
+          --set-env-vars "AI_PROVIDER=${{ secrets.AI_PROVIDER }},AI_MODEL_SMART=${{ secrets.AI_MODEL_SMART }},AI_MODEL_FAST=${{ secrets.AI_MODEL_FAST }}" \
+          --set-env-vars "DB_TYPE=postgres,DB_HOST=${{ secrets.DB_HOST }},DB_USER=${{ secrets.DB_USER }},DB_PASS=${{ secrets.DB_PASS }},DB_NAME=${{ secrets.DB_NAME }}" \
+          --set-env-vars "API_KEY=${{ secrets.API_KEY }}" || \
         gcloud run jobs create daily-check \
           --image ${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.REPOSITORY }}/${{ env.IMAGE }}:latest \
           --region ${{ env.REGION }} \
           --command "python" \
           --args "src/scheduler.py,--task,daily" \
-          --set-env-vars "AI_PROVIDER=OpenRouter,AI_MODEL=openai/gpt-3.5-turbo"
+          --set-env-vars "AI_PROVIDER=${{ secrets.AI_PROVIDER }},AI_MODEL_SMART=${{ secrets.AI_MODEL_SMART }},AI_MODEL_FAST=${{ secrets.AI_MODEL_FAST }}" \
+          --set-env-vars "DB_TYPE=postgres,DB_HOST=${{ secrets.DB_HOST }},DB_USER=${{ secrets.DB_USER }},DB_PASS=${{ secrets.DB_PASS }},DB_NAME=${{ secrets.DB_NAME }}" \
+          --set-env-vars "API_KEY=${{ secrets.API_KEY }}"
 
         # Weekly Report Job
         gcloud run jobs update weekly-report \
@@ -112,13 +119,17 @@ jobs:
           --region ${{ env.REGION }} \
           --command "python" \
           --args "src/scheduler.py,--task,weekly" \
-          --set-env-vars "AI_PROVIDER=OpenRouter,AI_MODEL=openai/gpt-3.5-turbo" || \
+          --set-env-vars "AI_PROVIDER=${{ secrets.AI_PROVIDER }},AI_MODEL_SMART=${{ secrets.AI_MODEL_SMART }},AI_MODEL_FAST=${{ secrets.AI_MODEL_FAST }}" \
+          --set-env-vars "DB_TYPE=postgres,DB_HOST=${{ secrets.DB_HOST }},DB_USER=${{ secrets.DB_USER }},DB_PASS=${{ secrets.DB_PASS }},DB_NAME=${{ secrets.DB_NAME }}" \
+          --set-env-vars "API_KEY=${{ secrets.API_KEY }}" || \
         gcloud run jobs create weekly-report \
           --image ${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.REPOSITORY }}/${{ env.IMAGE }}:latest \
           --region ${{ env.REGION }} \
           --command "python" \
           --args "src/scheduler.py,--task,weekly" \
-          --set-env-vars "AI_PROVIDER=OpenRouter,AI_MODEL=openai/gpt-3.5-turbo"
+          --set-env-vars "AI_PROVIDER=${{ secrets.AI_PROVIDER }},AI_MODEL_SMART=${{ secrets.AI_MODEL_SMART }},AI_MODEL_FAST=${{ secrets.AI_MODEL_FAST }}" \
+          --set-env-vars "DB_TYPE=postgres,DB_HOST=${{ secrets.DB_HOST }},DB_USER=${{ secrets.DB_USER }},DB_PASS=${{ secrets.DB_PASS }},DB_NAME=${{ secrets.DB_NAME }}" \
+          --set-env-vars "API_KEY=${{ secrets.API_KEY }}"
 
         # Monthly Refinement Job
         gcloud run jobs update monthly-refinement \
@@ -126,10 +137,14 @@ jobs:
           --region ${{ env.REGION }} \
           --command "python" \
           --args "src/scheduler.py,--task,monthly" \
-          --set-env-vars "AI_PROVIDER=OpenRouter,AI_MODEL=openai/gpt-3.5-turbo" || \
+          --set-env-vars "AI_PROVIDER=${{ secrets.AI_PROVIDER }},AI_MODEL_SMART=${{ secrets.AI_MODEL_SMART }},AI_MODEL_FAST=${{ secrets.AI_MODEL_FAST }}" \
+          --set-env-vars "DB_TYPE=postgres,DB_HOST=${{ secrets.DB_HOST }},DB_USER=${{ secrets.DB_USER }},DB_PASS=${{ secrets.DB_PASS }},DB_NAME=${{ secrets.DB_NAME }}" \
+          --set-env-vars "API_KEY=${{ secrets.API_KEY }}" || \
         gcloud run jobs create monthly-refinement \
           --image ${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.REPOSITORY }}/${{ env.IMAGE }}:latest \
           --region ${{ env.REGION }} \
           --command "python" \
           --args "src/scheduler.py,--task,monthly" \
-          --set-env-vars "AI_PROVIDER=OpenRouter,AI_MODEL=openai/gpt-3.5-turbo"
+          --set-env-vars "AI_PROVIDER=${{ secrets.AI_PROVIDER }},AI_MODEL_SMART=${{ secrets.AI_MODEL_SMART }},AI_MODEL_FAST=${{ secrets.AI_MODEL_FAST }}" \
+          --set-env-vars "DB_TYPE=postgres,DB_HOST=${{ secrets.DB_HOST }},DB_USER=${{ secrets.DB_USER }},DB_PASS=${{ secrets.DB_PASS }},DB_NAME=${{ secrets.DB_NAME }}" \
+          --set-env-vars "API_KEY=${{ secrets.API_KEY }}"
