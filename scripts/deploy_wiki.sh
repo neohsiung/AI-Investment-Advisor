@@ -13,8 +13,9 @@ rm -rf $TEMP_DIR
 git clone $REPO_URL $TEMP_DIR
 
 # 3. Copy files (Home.md and others)
+# 3. Copy files (Recursive with exclusions)
 echo "📂 Copying files..."
-cp wiki/*.md $TEMP_DIR/
+rsync -av --exclude '.git' --exclude '.DS_Store' wiki/ $TEMP_DIR/
 
 # 4. Commit and Push
 cd $TEMP_DIR

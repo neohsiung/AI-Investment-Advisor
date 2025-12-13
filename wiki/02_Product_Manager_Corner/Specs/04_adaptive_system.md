@@ -6,11 +6,9 @@
 | v5.0 | 2025-12-13 | **Adaptive System Update**: Added Smart Freshness, Model Tiering, HR Protocol, and Interactive Dispatcher. | AI Assistant |
 
 
-> **[English](#english) | [繁體中文 (Traditional Chinese)](#traditional-chinese)**
+> [English](#english) | [Traditional Chinese](#traditional-chinese)
 
-<a id="english"></a>
-
-## 1. Overview
+## English
 The Adaptive Agent System (Stage 5) introduces intelligence layer enhancements to optimize cost, improve responsiveness, and enable interactive user engagement.
 
 ## 2. Core Features

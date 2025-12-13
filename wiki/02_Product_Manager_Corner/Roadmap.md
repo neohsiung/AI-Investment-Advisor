@@ -1,10 +1,8 @@
 # Product Roadmap
 
-> **[English](#english) | [繁體中文 (Traditional Chinese)](#traditional-chinese)**
+> [English](#english) | [Traditional Chinese](#traditional-chinese)
 
-<a id="english"></a>
-
-## 🇺🇸 Product Roadmap
+## English
 
 ### Goal
 Define the factual development path of the AI Investment Advisor based on the project's git history and delivered milestones.
@@ -63,9 +61,7 @@ Define the factual development path of the AI Investment Advisor based on the pr
 
 ---
 
-<a id="traditional-chinese"></a>
-
-## 🇹🇼 產品發展藍圖 (Product Roadmap)
+## Traditional Chinese
 
 ### 目標 (Goal)
 依據 Git 提交紀錄與實際交付的里程碑，紀錄 AI 投資顧問系統的真實發展路徑。
