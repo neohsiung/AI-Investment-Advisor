@@ -1,6 +1,6 @@
 from abc import ABC, abstractmethod
 from sqlalchemy import text
-from src.database import get_db_connection
+from src.data.database import get_db_connection
 import pandas as pd
 
 class ITransactionRepository(ABC):

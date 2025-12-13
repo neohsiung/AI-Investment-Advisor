@@ -1,5 +1,5 @@
 import pandas as pd
-from src.database import get_db_connection
+from src.data.database import get_db_connection
 from datetime import datetime
 from sqlalchemy import text
 
@@ -115,7 +115,7 @@ class SnapshotRecorder:
     def __init__(self, db_path=None):
         self.db_path = db_path
 
-    def record_daily_snapshot(self, nlv, cash_balance, user_id):
+    def record_daily_snapshot(self, nlv, cash_balance, user_id, total_tnv=0, leverage_ratio=0):
         """記錄每日資產快照"""
         conn = get_db_connection(self.db_path)
 
@@ -130,20 +130,22 @@ class SnapshotRecorder:
 
         # 使用 REPLACE INTO 確保同一天只會有一筆紀錄 (更新最新狀態)
         conn.execute(text('''
-            REPLACE INTO daily_snapshots (date, user_id, total_nlv, cash_balance, invested_capital, pnl)
-            VALUES (:date, :user_id, :nlv, :cash_balance, :invested_capital, :pnl)
+            REPLACE INTO daily_snapshots (date, user_id, total_nlv, cash_balance, invested_capital, pnl, total_tnv, leverage_ratio)
+            VALUES (:date, :user_id, :nlv, :cash_balance, :invested_capital, :pnl, :tnv, :lev)
         '''), {
             "date": date_str,
             "user_id": user_id,
             "nlv": nlv,
             "cash_balance": cash_balance,
             "invested_capital": net_invested,
-            "pnl": pnl
+            "pnl": pnl,
+            "tnv": total_tnv,
+            "lev": leverage_ratio
         })
 
         conn.commit()
         conn.close()
-        print(f"Recorded snapshot for {user_id} on {date_str}: NLV=${nlv:,.2f}, PnL=${pnl:,.2f}")
+        print(f"Recorded snapshot for {user_id} on {date_str}: NLV=${nlv:,.2f}, PnL=${pnl:,.2f}, Lev={leverage_ratio:.2f}x")
 
 from src.market_data import MarketDataService
 
@@ -178,7 +180,13 @@ def update_daily_snapshot(db_path="data/portfolio.db", user_id=None):
     metrics = calc.calculate_metrics(current_prices, user_id)
 
     recorder = SnapshotRecorder(db_path=db_path)
-    recorder.record_daily_snapshot(metrics['nlv'], metrics['cash_balance'], user_id)
+    recorder.record_daily_snapshot(
+        metrics['nlv'], 
+        metrics['cash_balance'], 
+        user_id,
+        total_tnv=metrics.get('tnv', 0),
+        leverage_ratio=metrics.get('leverage_ratio', 0)
+    )
 
 class PnLCalculator:
     def __init__(self, db_path="data/portfolio.db"):

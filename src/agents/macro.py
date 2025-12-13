@@ -1,35 +1,36 @@
+import json
 from .base_agent import BaseAgent
 
 class MacroAgent(BaseAgent):
     def __init__(self, use_cache=True):
-        super().__init__(name="MACRO", prompt_path="prompts/macro_agent.txt", use_cache=use_cache, ttl_hours=24)
+        super().__init__(name="Macro", prompt_path="prompts/macro_agent.txt", use_cache=use_cache, ttl_hours=24)
 
     def run(self, context):
         """
-        context: {}  # No specific input required, relies on Prompt
+        context: {
+            "macro_data": {...}
+        }
         """
-        from src.utils.time_utils import get_current_date_str
-        current_date = get_current_date_str()
-        macro_data = context.get("macro_data", {})
+        prompt_data = {
+            "macro_data": json.dumps(context.get("macro_data", {}), indent=2, ensure_ascii=False)
+        }
+        
+        system_prompt_rendered = self.render_system_prompt(prompt_data)
+        user_prompt = "Please provide the Global Macro Analysis based on the latest data."
 
-        user_prompt = f"""
-        Current Date: {current_date}
-
-        [Real-time Data Injection]
-        Market Indicators: {macro_data}
-        (^VIX: Volatility, ^TNX: 10Y Treasury Yield, SPY: S&P 500 ETF)
-
-        Please provide a comprehensive macro analysis based on these indicators.
-        """
-
-        response = self._mock_llm_call(user_prompt, self.system_prompt)
+        response = self._mock_llm_call(user_prompt, system_prompt_rendered)
 
         if "Mock response" in response:
-            return f"""
-## 總體經濟展望 (Mock)
-- **日期**: {current_date}
-- **觀點**: Risk-Neutral
-- **分析**: 等待更多經濟數據發布。
-            """
-
+            return """
+### 全球總經環境分析 (Mock)
+*   **週期階段**: 放緩 (Slowdown)
+*   **Fed 動向**: Hawkish
+*   **關鍵數據解讀**:
+    *   VIX 上升至 20
+    *   公債殖利率倒掛持續
+*   **配置建議**:
+    *   **看好板塊**: 醫療保健 (Healthcare), 公用事業 (Utilities)
+    *   **避開板塊**: 非必需消費 (Consumer Discretionary)
+*   **結論**: Risk Off (避險模式)
+"""
         return response

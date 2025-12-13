@@ -7,7 +7,7 @@ from datetime import timedelta, datetime
 from sqlalchemy import text
 from src.utils.logger import setup_logger
 from src.utils.time_utils import get_current_time, format_time
-from src.database import get_db_connection
+from src.data.database import get_db_connection
 
 class ResponseCache:
     def __init__(self, db_path="data/cache.db", ttl_hours=24):

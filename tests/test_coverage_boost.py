@@ -2,7 +2,7 @@
 import pytest
 from unittest.mock import MagicMock, patch, mock_open
 import pandas as pd
-from src.ingestor import TradeIngestor
+from src.data.ingestor import TradeIngestor
 from src.analytics import LeverageCalculator, SnapshotRecorder
 
 # --- Ingestor Tests ---
@@ -27,7 +27,7 @@ def test_ingestor_unsupported_broker():
 
 def test_ingestor_manual_trade_error():
     ingestor = TradeIngestor(":memory:")
-    with patch("src.ingestor.get_db_connection", side_effect=Exception("DB connection failed")):
+    with patch("src.data.ingestor.get_db_connection", side_effect=Exception("DB connection failed")):
         with pytest.raises(Exception):
             ingestor.ingest_manual_trade("AAPL", "2023-01-01", "BUY", 10, 150, 0, user_id="test_user")
 
@@ -111,7 +111,7 @@ def test_ingestor_robinhood(tmp_path):
     # We don't need to patch open since we use real file on tmp_path,
     # but ingestor checks file_path.exists(). tmp_path exists.
 
-    with patch("src.ingestor.get_db_connection") as mock_conn:
+    with patch("src.data.ingestor.get_db_connection") as mock_conn:
         ingestor.ingest_csv(str(csv_file), broker="robinhood", user_id="test_user")
         # Check execute on connection object yielded by context manager
         mock_conn.return_value.__enter__.return_value.execute.assert_called()
@@ -123,7 +123,7 @@ def test_ingestor_ibkr(tmp_path):
     csv_content = "Type,Symbol,Date/Time,Quantity,T. Price,Comm/Fee\nTrade,AAPL,2023-01-01,10,150,-1.0\nDividend,AAPL,2023-01-02,0,0,5.0"
     csv_file.write_text(csv_content)
 
-    with patch("src.ingestor.get_db_connection") as mock_conn:
+    with patch("src.data.ingestor.get_db_connection") as mock_conn:
         ingestor.ingest_csv(str(csv_file), broker="ibkr", user_id="test_user")
         # Should execute for Trade and Dividend
         assert mock_conn.return_value.__enter__.return_value.execute.call_count >= 2

@@ -7,6 +7,7 @@ services:
       - ./data:/app/data
       - ./src:/app/src
       - ./prompts:/app/prompts
+      - ./app/client_secret_930968735080-ubn9ptm0qu4mqln2l36cc4cukgmgvm57.apps.googleusercontent.com.json:/app/client_secret.json # LOCAL DEV ONLY
     ports:
       - "8501:8501"
     env_file:
@@ -21,6 +22,7 @@ services:
       - ./data:/app/data
       - ./src:/app/src
       - ./prompts:/app/prompts
+      - ./app/client_secret_930968735080-ubn9ptm0qu4mqln2l36cc4cukgmgvm57.apps.googleusercontent.com.json:/app/client_secret.json # LOCAL DEV ONLY
     env_file:
       - .env
     restart: unless-stopped

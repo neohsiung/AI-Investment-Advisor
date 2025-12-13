@@ -5,7 +5,7 @@ import os
 import uuid
 from sqlalchemy import text
 from src.agents.base_agent import BaseAgent
-from src.database import get_db_connection
+from src.data.database import get_db_connection
 from src.utils.time_utils import format_time
 
 class SystemEngineerAgent(BaseAgent):

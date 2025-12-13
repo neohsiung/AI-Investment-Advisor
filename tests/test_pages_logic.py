@@ -1,5 +1,5 @@
 import pytest
-from unittest.mock import MagicMock, patch, mock_open
+from unittest.mock import MagicMock, patch, mock_open, ANY
 import sys
 # Mock streamlit modules to allow importing the page files without error
 sys.modules["streamlit"] = MagicMock()
@@ -255,4 +255,57 @@ class TestDataManagementRender:
 
         assert mock_st.dataframe.called
 
-from unittest.mock import ANY
+    def test_render_manual_entry_validation(self):
+        mock_st = MagicMock()
+        mock_st.columns.return_value = [MagicMock(), MagicMock(), MagicMock()]
+        
+        # Scenario: Empty ticker
+        mock_st.text_input.return_value = "" # Ticker
+        mock_st.form_submit_button.return_value = True
+        
+        data_mod.render_manual_entry_tab(mock_st, MagicMock())
+        mock_st.error.assert_called_with("請輸入代號 (Ticker is required)")
+
+    def test_render_manual_entry_leverage_calc(self):
+        mock_st = MagicMock()
+        mock_st.columns.return_value = [MagicMock(), MagicMock(), MagicMock()]
+        mock_st.session_state = {"trade_mode": "依槓桿 (By Leverage)"}
+        
+        # Principal=1000, Leverage=2, Price=100 -> Buying Power 2000 -> Qty 20
+        mock_st.number_input.side_effect = [1000.0, 2.0, 100.0, 0.0] # Principal, Leverage, Price, Fees
+        mock_st.button.return_value = False
+        
+        data_mod.render_manual_entry_tab(mock_st, MagicMock())
+        
+        # Verify calculation info is shown
+        mock_st.info.assert_called()
+        args, _ = mock_st.info.call_args
+        assert "2,000.00" in args[0] # Buying Power
+        assert "20.0000" in args[0] # Quantity
+
+    def test_render_transactions_delete_flow(self):
+        mock_st = MagicMock()
+        mock_st.columns.return_value = [MagicMock()]
+        mock_service = MagicMock()
+        
+        # Setup mock transactions
+        mock_df = MagicMock()
+        mock_df.empty = False
+        mock_df.head.return_value.iterrows.return_value = [
+            (0, {'id': 'tx1', 'trade_date': '2023-01-01', 'ticker': 'AAPL', 'action': 'BUY', 'quantity': 10, 'price': 150})
+        ]
+        mock_service.get_transactions.return_value = mock_df
+        
+        # Scenario 1: Delete Success
+        mock_st.selectbox.return_value = ('tx1', 'Display String')
+        mock_st.form_submit_button.return_value = True
+        mock_service.delete_transaction.return_value = (True, "Deleted successfully")
+        
+        data_mod.render_transactions_tab(mock_st, mock_service)
+        mock_st.success.assert_called_with("Deleted successfully")
+        mock_st.rerun.assert_called()
+
+        # Scenario 2: Delete Failure
+        mock_service.delete_transaction.return_value = (False, "Delete failed")
+        data_mod.render_transactions_tab(mock_st, mock_service)
+        mock_st.error.assert_called_with("Delete failed")

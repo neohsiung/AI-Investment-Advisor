@@ -1,8 +1,8 @@
 import pytest
 import sqlite3
 import pandas as pd
-from src.ingestor import TradeIngestor
-from src.database import get_db_connection
+from src.data.ingestor import TradeIngestor
+from src.data.database import get_db_connection
 from sqlalchemy import text
 import os
 

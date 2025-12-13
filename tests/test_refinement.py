@@ -1,7 +1,7 @@
 import pytest
 import json
 from src.refinement import RefinementEngine
-from src.database import init_db, get_db_connection
+from src.data.database import init_db, get_db_connection
 from sqlalchemy import text
 
 @pytest.fixture

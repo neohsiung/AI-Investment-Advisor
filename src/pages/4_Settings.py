@@ -7,7 +7,7 @@ import os
 import time
 import json
 from sqlalchemy import text
-from src.database import get_db_connection
+from src.data.database import get_db_connection
 from src.services.settings_service import SettingsService
 from src.agents.engineer import SystemEngineerAgent
 from src.auth import auth_manager

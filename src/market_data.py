@@ -5,7 +5,7 @@ from datetime import datetime, timedelta
 import os
 import json
 from sqlalchemy import text
-from src.database import get_db_connection
+from src.data.database import get_db_connection
 from tenacity import retry, stop_after_attempt, wait_exponential
 from src.utils.logger import setup_logger
 

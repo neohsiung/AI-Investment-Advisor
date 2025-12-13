@@ -1,10 +1,15 @@
 import pandas as pd
-from src.database import get_db_connection
+from src.data.database import get_db_connection
 from sqlalchemy import text
 import uuid
 import datetime
+import os
 
 class TradeIngestor:
+    """
+    負責將外部交易數據 (CSV) 匯入至資料庫。
+    Support Brokers: Simple, Robinhood, IBKR.
+    """
     def __init__(self, db_path="data/portfolio.db"):
         self.db_path = db_path
 
@@ -28,6 +33,7 @@ class TradeIngestor:
                 self._ingest_ibkr(df, user_id)
 
         except Exception as e:
+            # Re-raise to let UI handle it
             raise e
 
     def _ingest_simple(self, df, user_id):
@@ -41,7 +47,7 @@ class TradeIngestor:
         # We model this as a BUY transaction with price = cost
         with get_db_connection(self.db_path) as conn:
             for _, row in df.iterrows():
-                ticker = row['ticker'].upper()
+                ticker = str(row['ticker']).upper().strip()
                 quantity = float(row['quantity'])
                 price = float(row['cost'])
                 amount = quantity * price
@@ -71,15 +77,25 @@ class TradeIngestor:
         # Test input: state,symbol,date,side,quantity,price,fees
         with get_db_connection(self.db_path) as conn:
             for _, row in df.iterrows():
+                # Robinhood export often has 'symbol', but sometimes 'ticker'
                 if 'symbol' in df.columns:
                      ticker = row['symbol']
-                     date_str = row['date']
-                     side = row['side']
-                     qty = float(row['quantity'])
-                     price = float(row['price'])
-                     fees = float(row['fees'])
+                elif 'ticker' in df.columns:
+                     ticker = row['ticker']
                 else:
-                    continue
+                    continue # Skip unrelated rows
+
+                date_str = row.get('date', datetime.date.today().strftime("%Y-%m-%d"))
+                side = row.get('side', 'buy')
+                
+                try:
+                    qty = float(row.get('quantity', 0))
+                    price = float(row.get('price', 0))
+                    fees = float(row.get('fees', 0))
+                except ValueError:
+                    continue # Skip invalid numbers
+
+                if qty == 0: continue
 
                 action = 'BUY' if str(side).lower() == 'buy' else 'SELL'
                 amount = qty * price
@@ -92,7 +108,7 @@ class TradeIngestor:
                 conn.execute(query, {
                     "id": str(uuid.uuid4()),
                     "user_id": user_id,
-                    "ticker": ticker,
+                    "ticker": ticker.upper(),
                     "trade_date": date_str,
                     "action": action,
                     "quantity": qty,
@@ -110,25 +126,39 @@ class TradeIngestor:
 
         with get_db_connection(self.db_path) as conn:
             for _, row in df.iterrows():
-                row_type = row.get('type')
+                row_type = row.get('type') # Trade, Dividend, ...
                 ticker = row.get('symbol')
-                date_str = row.get('date/time')
+                
+                # IBKR Date/Time format: "2023-10-27, 09:30:00" -> extract date
+                raw_date = str(row.get('date/time', '')).split(',')[0]
+                date_str = raw_date if raw_date else datetime.date.today().strftime("%Y-%m-%d")
 
                 if row_type == 'Trade':
-                    qty = float(row['quantity'])
-                    price = float(row.get('t. price', 0))
-                    fees = float(row.get('comm/fee', 0))
+                    try:
+                        qty = float(row.get('quantity', 0))
+                        price = float(row.get('t. price', 0))
+                        fees = float(row.get('comm/fee', 0))
+                    except ValueError:
+                        continue 
+
                     action = 'BUY' if qty > 0 else 'SELL'
                     amount = abs(qty * price)
+                    
+                    # IBKR represents sell as negative qty, we store absolute quantity
+                    qty = abs(qty)
+                    fees = abs(fees) # IBKR often shows fees as negative numbers (expense)
 
                 elif row_type == 'Dividend':
                     qty = 0
                     price = 0
                     fees = 0
                     action = 'DIVIDEND'
-                    amount = float(row.get('comm/fee', 0))
+                    amount = float(row.get('amount', row.get('comm/fee', 0))) # Sometimes in Amount column or Fee column depending on report
+                    # Logic might need tuning based on exact report CSV
                 else:
                     continue
+
+                if not ticker: continue
 
                 query = text("""
                     INSERT INTO transactions (id, user_id, ticker, trade_date, action, quantity, price, fees, amount, source_file)
@@ -138,12 +168,12 @@ class TradeIngestor:
                 conn.execute(query, {
                     "id": str(uuid.uuid4()),
                     "user_id": user_id,
-                    "ticker": ticker,
+                    "ticker": ticker.upper(),
                     "trade_date": date_str,
                     "action": action,
-                    "quantity": abs(qty),
+                    "quantity": qty,
                     "price": price,
-                    "fees": abs(fees),
+                    "fees": fees,
                     "amount": amount
                 })
             conn.commit()
@@ -163,7 +193,7 @@ class TradeIngestor:
             conn.execute(query, {
                 "id": str(uuid.uuid4()),
                 "user_id": user_id,
-                "ticker": ticker,
+                "ticker": ticker.upper(),
                 "trade_date": date_str,
                 "action": action,
                 "quantity": quantity,

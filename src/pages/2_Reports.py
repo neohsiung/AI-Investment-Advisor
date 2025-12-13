@@ -1,6 +1,6 @@
 import streamlit as st
 import pandas as pd
-from src.database import get_db_connection
+from src.data.database import get_db_connection
 
 def main():
     st.set_page_config(page_title="分析報告 | AI 投資顧問", layout="wide")

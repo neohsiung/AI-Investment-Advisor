@@ -3,40 +3,39 @@ from .base_agent import BaseAgent
 
 class MomentumAgent(BaseAgent):
     def __init__(self, use_cache=True):
-        super().__init__(name="MOMENTUM", prompt_path="prompts/momentum_agent.txt", use_cache=use_cache, ttl_hours=1)
+        super().__init__(name="Momentum", prompt_path="prompts/momentum_agent.txt", use_cache=use_cache, ttl_hours=4)
 
     def run(self, context):
         """
         context: {
-            "ticker": "AAPL"
+            "ticker": "AAPL",
+            "price_data": {...},
+            "indicators": {...}
         }
         """
         ticker = context.get("ticker", "UNKNOWN")
-        price = context.get("price", "N/A")
-        indicators = context.get("indicators", {})
+        
+        # Prepare data for prompt rendering
+        prompt_data = {
+            "ticker": ticker,
+            "price_data": json.dumps(context.get("price_data", {}), indent=2, ensure_ascii=False),
+            "indicators": json.dumps(context.get("indicators", {}), indent=2, ensure_ascii=False)
+        }
+        
+        system_prompt_rendered = self.render_system_prompt(prompt_data)
+        user_prompt = f"Analyze {ticker} based on the provided technical data."
 
-        # 建構 User Prompt
-        user_prompt = f"""
-        Analyze {ticker}.
-
-        [Real-time Data Injection]
-        Current Price: {price}
-        Technical Indicators: {json.dumps(indicators, indent=2)}
-
-        STRICT INSTRUCTION: Use the provided data above. Do NOT hallucinate prices or indicators.
-        """
-
-        # 呼叫 LLM (Mock)
-        response = self._mock_llm_call(user_prompt, self.system_prompt)
-
-        # 模擬回傳 JSON
-        # 在真實場景中，這裡會解析 LLM 的 JSON 輸出
+        response = self._mock_llm_call(user_prompt, system_prompt_rendered)
+        
         if "Mock response" in response:
-            mock_result = {
-                "signal": "HOLD",
-                "confidence": 6,
-                "reasoning": f"根據 AI 內部知識庫分析，{ticker} 目前動能中性。"
-            }
-            return mock_result
-
+            return f"""
+### {ticker} 分析報告 (Mock)
+*   **趨勢判斷**: Neutral
+*   **關鍵價位**: 支撐 145 | 壓力 155
+*   **動能儀表板**:
+    *   均線: 5MA, 10MA 糾結
+    *   RSI: 52 (中性)
+    *   成交量: 縮量整理
+*   **結論**: 暫時觀望，等待突破關鍵價位。
+"""
         return response

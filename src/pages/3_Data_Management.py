@@ -1,9 +1,9 @@
 import streamlit as st
 import pandas as pd
-from src.database import get_db_connection
+from src.data.database import get_db_connection
 from src.analytics import LeverageCalculator, SnapshotRecorder, update_daily_snapshot
 from src.services.transaction_service import TransactionService
-from src.ingestor import TradeIngestor
+from src.data.ingestor import TradeIngestor
 import os
 from sqlalchemy import text
 from tenacity import retry, stop_after_attempt, wait_fixed

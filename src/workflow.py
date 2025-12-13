@@ -12,11 +12,12 @@ from src.agents.momentum import MomentumAgent
 from src.agents.fundamental import FundamentalAgent
 from src.agents.macro import MacroAgent
 from src.agents.cio import CIOAgent
-from src.database import init_db, get_db_connection
+from src.data.database import init_db, get_db_connection
 from src.utils.logger import setup_logger
 from src.utils.time_utils import format_time
 from sqlalchemy import text
 from src.market_data import MarketDataService
+from src.services.fred_service import FredService
 
 logger = setup_logger("Workflow")
 
@@ -96,11 +97,11 @@ def run_workflow(mode="daily", dry_run=False, user_id=None):
         # Momentum Agent Context Injection
         mom_ctx = {
             "ticker": ticker,
-            "price": price,
+            "price_data": {"current_price": price},
             "indicators": indicators
         }
         mom_res = momentum_agent.run(mom_ctx)
-        momentum_reports.append(f"{ticker}: {mom_res}")
+        momentum_reports.append(f"### {ticker}\n{mom_res}")
 
         if "BUY" in mom_res or "SELL" in mom_res:
             has_significant_change = True
@@ -108,8 +109,13 @@ def run_workflow(mode="daily", dry_run=False, user_id=None):
     # Macro & Fundamental (Weekly only)
     if mode == 'weekly':
         logger.info("Running Macro Agent...")
-        # 獲取總經數據
-        macro_data = market_service.get_macro_data()
+        # 獲取總經數據 (Use FRED + Market Context)
+        fred_service = FredService()
+        fred_data = fred_service.get_macro_indicators()
+        market_macro = market_service.get_macro_data()
+        
+        # Merge data
+        macro_data = {**fred_data, **market_macro}
 
         # Macro Agent Context Injection
         macro_context = {
@@ -133,7 +139,7 @@ def run_workflow(mode="daily", dry_run=False, user_id=None):
             fund_res = fundamental_agent.run(fund_ctx)
             fundamental_reports.append(fund_res)
 
-    # 4. 決定是否執行 CIO (Decide whether to run CIO Agent)
+    # 4. 決定是否執行 CIO
     should_run_cio = False
     if mode == 'weekly':
         should_run_cio = True
@@ -144,20 +150,18 @@ def run_workflow(mode="daily", dry_run=False, user_id=None):
     if should_run_cio:
         logger.info("啟動 CIO Agent 進行最終決策... (Running CIO Agent...)")
 
-        # 計算真實槓桿比率 (Need user specific cash balance for real leverage calc, currently simplified)
-        # TODO: Inject cash balance for leverage calculation per user
+        # 計算真實槓桿比率
         from src.analytics import LeverageCalculator
         calc = LeverageCalculator()
-
-        # Leverage calc logic needs refinement for specific user but keeping baseline
-        metrics = calc.calculate_metrics(current_prices, user_id=user_id) # Ensure calculate_metrics supports user_id
+        metrics = calc.calculate_metrics(current_prices, user_id=user_id) 
         leverage_ratio = metrics['leverage_ratio']
 
-        # 構建 CIO Context，包含所有上游 Agent 的分析結果
+        # 構建 CIO Context
         cio_context = {
+            "user_id": user_id,
             "macro_report": macro_report,
-            "momentum_reports": momentum_reports,
-            "fundamental_reports": fundamental_reports,
+            "momentum_reports": "\n".join(momentum_reports),
+            "fundamental_reports": "\n".join(fundamental_reports),
             "leverage_ratio": leverage_ratio
         }
         final_report = cio_agent.run(cio_context)
@@ -218,7 +222,7 @@ def run_workflow(mode="daily", dry_run=False, user_id=None):
         metrics = calc.calculate_metrics(current_prices, user_id=user_id) # Pass user_id
 
         recorder = SnapshotRecorder()
-        recorder.record_daily_snapshot(metrics['nlv'], metrics['cash_balance'], user_id=user_id)
+        recorder.record_daily_snapshot(metrics['nlv'], metrics['cash_balance'], user_id=user_id, total_tnv=metrics.get('tnv', 0), leverage_ratio=metrics.get('leverage_ratio', 0))
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()

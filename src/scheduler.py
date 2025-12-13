@@ -8,7 +8,7 @@ import sys
 import argparse
 from datetime import datetime
 from sqlalchemy import text
-from src.database import get_db_connection, init_db
+from src.data.database import get_db_connection, init_db
 from src.utils.time_utils import get_current_time, format_time # Keep these as they are used elsewhere
 
 def log_scheduler_event(job_name, status, message=""):

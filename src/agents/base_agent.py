@@ -3,11 +3,13 @@ import json
 import requests
 from abc import ABC, abstractmethod
 from sqlalchemy import text
-from src.database import get_db_connection
+from jinja2 import Template
+from src.data.database import get_db_connection
 from src.utils.logger import setup_logger
 from src.utils.cache import ResponseCache
 
 class BaseAgent(ABC):
+
     def __init__(self, name, prompt_path, use_cache=True, ttl_hours=24):
         self.name = name
         self.logger = setup_logger(name)
@@ -17,12 +19,12 @@ class BaseAgent(ABC):
         self.cache = ResponseCache(ttl_hours=ttl_hours) if use_cache else None
 
     def _load_config(self):
-        """從資料庫讀取 AI 設定"""
+        """讀取 AI 設定 (優先順序: DB > Env > Default)"""
         config = {
-            "provider": "Google Gemini",
-            "model": "gemini-1.5-pro",
-            "api_key": "",
-            "base_url": ""
+            "provider": os.getenv("AI_PROVIDER", "Google Gemini"),
+            "model": os.getenv("AI_MODEL", "gemini-1.5-pro"),
+            "api_key": os.getenv("API_KEY", ""),
+            "base_url": os.getenv("BASE_URL", "")
         }
 
         db_settings = self._load_config_from_db()
@@ -60,6 +62,18 @@ class BaseAgent(ABC):
             raise FileNotFoundError(f"Prompt file not found: {self.prompt_path}")
         with open(self.prompt_path, 'r', encoding='utf-8') as f:
             return f.read()
+
+    def render_system_prompt(self, context):
+        """
+        使用 Jinja2 渲染 System Prompt
+        """
+        try:
+            template = Template(self.system_prompt)
+            return template.render(**context)
+        except Exception as e:
+            self.logger.error(f"Error rendering system prompt: {e}")
+            return self.system_prompt
+
 
     @abstractmethod
     def run(self, context):

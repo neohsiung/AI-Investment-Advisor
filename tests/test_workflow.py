@@ -8,7 +8,7 @@ from src.workflow import run_workflow
 @patch('src.workflow.CIOAgent')
 @patch('src.workflow.MarketDataService')
 @patch('src.workflow.init_db')
-@patch('src.database.get_db_connection')
+@patch('src.data.database.get_db_connection')
 @patch('pandas.read_sql')
 @patch('src.analytics.LeverageCalculator')
 @patch('src.analytics.SnapshotRecorder')
@@ -26,6 +26,12 @@ def test_run_workflow_weekly(mock_notifier, mock_recorder, mock_calc, mock_read_
 
     mock_mom_instance = mock_mom.return_value
     mock_mom_instance.run.return_value = "HOLD"
+
+    mock_fund_instance = mock_fund.return_value
+    mock_fund_instance.run.return_value = "Fundamental Analysis: Good"
+
+    mock_macro_instance = mock_macro.return_value
+    mock_macro_instance.run.return_value = "Macro Analysis: Stable"
 
     mock_cio_instance = mock_cio.return_value
     mock_cio_instance.run.return_value = "Final Report"
@@ -51,7 +57,7 @@ def test_run_workflow_weekly(mock_notifier, mock_recorder, mock_calc, mock_read_
 @patch('src.workflow.CIOAgent')
 @patch('src.workflow.MarketDataService')
 @patch('src.workflow.init_db')
-@patch('src.database.get_db_connection')
+@patch('src.data.database.get_db_connection')
 @patch('pandas.read_sql')
 def test_run_workflow_daily_no_change(mock_read_sql, mock_db_conn, mock_init, mock_market, mock_cio, mock_macro, mock_fund, mock_mom):
     # Setup mocks
@@ -81,7 +87,7 @@ def test_run_workflow_daily_no_change(mock_read_sql, mock_db_conn, mock_init, mo
 @patch('src.workflow.CIOAgent')
 @patch('src.workflow.MarketDataService')
 @patch('src.workflow.init_db')
-@patch('src.database.get_db_connection')
+@patch('src.data.database.get_db_connection')
 @patch('pandas.read_sql')
 @patch('src.analytics.LeverageCalculator')
 def test_run_workflow_daily_with_change(mock_calc, mock_read_sql, mock_db_conn, mock_init, mock_market, mock_cio, mock_macro, mock_fund, mock_mom):

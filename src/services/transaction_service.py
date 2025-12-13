@@ -3,7 +3,7 @@ import uuid
 import json
 from datetime import datetime
 import pandas as pd
-from src.database import get_db_connection
+from src.data.database import get_db_connection
 # from src.ingestor import TradeIngestor # Removed for Clean Clean Architecture
 from src.analytics import update_daily_snapshot
 

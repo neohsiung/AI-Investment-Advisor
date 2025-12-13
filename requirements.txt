@@ -19,3 +19,5 @@ google-auth
 google-auth-oauthlib
 google-auth-httplib2
 Jinja2>=3.1.0
+fredapi
+beautifulsoup4

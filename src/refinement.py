@@ -5,7 +5,7 @@ from datetime import timedelta
 from datetime import datetime
 from src.utils.time_utils import format_time
 from sqlalchemy import text
-from src.database import get_db_connection
+from src.data.database import get_db_connection
 
 class RefinementEngine:
     def __init__(self, db_path="data/portfolio.db", config_path="agent_config.json"):

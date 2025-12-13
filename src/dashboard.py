@@ -1,6 +1,6 @@
 import streamlit as st
 import pandas as pd
-from src.database import get_db_connection, init_db
+from src.data.database import get_db_connection, init_db
 from src.analytics import LeverageCalculator, ROIEngine, update_daily_snapshot, PnLCalculator
 import plotly.express as px
 from src.market_data import MarketDataService

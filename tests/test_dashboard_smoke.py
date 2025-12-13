@@ -12,7 +12,7 @@ def test_dashboard_logic():
     """
     Test that dashboard can be imported and main() logic executed without errors.
     """
-    with patch('src.database.get_db_connection') as mock_conn, \
+    with patch('src.data.database.get_db_connection') as mock_conn, \
          patch('pandas.read_sql') as mock_read_sql, \
          patch('src.market_data.MarketDataService') as mock_market, \
          patch('src.analytics.LeverageCalculator') as mock_calc, \

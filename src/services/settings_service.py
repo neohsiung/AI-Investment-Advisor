@@ -1,6 +1,6 @@
 from sqlalchemy import text
 import requests
-from src.database import get_db_connection
+from src.data.database import get_db_connection
 
 class SettingsService:
     def __init__(self, db_path=None, user_id=None):

@@ -1,7 +1,7 @@
 import streamlit as st
 import pandas as pd
 import plotly.express as px
-from src.database import get_db_connection
+from src.data.database import get_db_connection
 from src.analytics import update_daily_snapshot, PnLCalculator
 
 def main():
@@ -65,6 +65,15 @@ def main():
         st.subheader("權益曲線 - 淨流動資產價值歷史 (Equity Curve - NLV History)")
         fig_equity = px.line(snapshots_df, x='date', y='total_nlv', title='淨流動資產價值 (Net Liquidation Value) 走勢', markers=True)
         st.plotly_chart(fig_equity, use_container_width=True)
+
+        # C. 槓桿比率歷史 (Leverage History)
+        if 'leverage_ratio' in snapshots_df.columns:
+            st.subheader("槓桿比率歷史 (Leverage Ratio History)")
+            fig_lev = px.line(snapshots_df, x='date', y='leverage_ratio', title='槓桿比率 (Leverage Ratio) 走勢', markers=True)
+            # Add threshold lines
+            fig_lev.add_hline(y=1.5, line_dash="dash", line_color="orange", annotation_text="Warning (1.5x)")
+            fig_lev.add_hline(y=2.0, line_dash="dash", line_color="red", annotation_text="Critical (2.0x)")
+            st.plotly_chart(fig_lev, use_container_width=True)
 
     else:
         st.info("尚無績效歷史紀錄。每日快照將由系統自動記錄。(No performance history yet.)")

@@ -2,7 +2,7 @@ import pytest
 import sqlite3
 import pandas as pd
 from src.analytics import LeverageCalculator, ROIEngine, SnapshotRecorder
-from src.database import init_db
+from src.data.database import init_db
 
 @pytest.fixture
 def test_db(tmp_path):
@@ -45,6 +45,8 @@ def test_db(tmp_path):
             cash_balance REAL,
             invested_capital REAL,
             pnl REAL,
+            total_tnv REAL,
+            leverage_ratio REAL,
             PRIMARY KEY (date, user_id)
         )
     ''')

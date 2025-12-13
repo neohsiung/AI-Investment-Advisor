@@ -111,6 +111,26 @@ graph TD
     vim .env
     ```
 
+    **Environment Variables Reference:**
+
+    | Category | Variable | Required | Default | Description |
+    |----------|----------|----------|---------|-------------|
+    | **Email** | `SMTP_HOST` | Yes | smtp.gmail.com | SMTP Server Address |
+    | | `SMTP_PORT` | Yes | 587 | SMTP Port (TLS) |
+    | | `SMTP_USER` | Yes | - | Sender Email Address |
+    | | `SMTP_PASSWORD` | Yes | - | App Password (Not Login Pwd) |
+    | | `EMAIL_RECIPIENT` | Yes | - | Report Receiver Email |
+    | **Database** | `DB_TYPE` | No | sqlite | `sqlite` or `postgres` |
+    | | `DB_HOST` | If Postgres | localhost | Database Host |
+    | | `DB_PORT` | If Postgres | 5432 | Database Port |
+    | | `DB_USER` | If Postgres | postgres | Database User |
+    | | `DB_PASS` | If Postgres | postgres | Database Password |
+    | | `DB_NAME` | If Postgres | portfolio | Database Name |
+    | **AI** | `AI_PROVIDER` | No | Google Gemini | AI Service Provider |
+    | | `AI_MODEL` | No | gemini-1.5-pro | Model Name |
+    | | `API_KEY` | **Yes** | - | API Key for the Provider |
+    | **Data** | `FRED_API_KEY` | No | - | FRED Economic Data API Key |
+
 3.  **Start the System**
 
     **Option A: Docker (Recommended for Production)**
@@ -118,8 +138,20 @@ graph TD
     chmod +x start.sh
     ./start.sh
     ```
+    > **Note:** This command uses `docker-compose up -d --build` to compile and start containers (Dashboard, Scheduler, Database) in the background. Logs can be viewed via `docker start logs -f`.
 
-    **Option B: Local Development**
+    **Option B: Local Development (Python Virtual Env)**
+    ```bash
+    chmod +x start_local.sh
+    ./start_local.sh
+    ```
+    > **Note:** Improved for local debugging. No Docker required. Supports `src` hot-reloading.
+
+    **Option C: Google Cloud Platform (GCP)**
+    For production deployment on GCP (Cloud Run or Spot VM), please refer to the specific scripts:
+    *   **VM Setup**: `./setup_vm.sh` (Automates Docker installation on Debian-based VMs)
+    *   **Cloud Run Jobs**: `./deploy.sh` (Deploys Serverless Scheduler Jobs)
+    *   *See [Wiki](wiki/Deployment-Options.md) for full GCP guide.*
     ```bash
     chmod +x start_local.sh
     ./start_local.sh
@@ -191,8 +223,55 @@ MIT License. See [LICENSE](LICENSE) for details.
 ### 🚀 快速開始 (本地端)
 
 1.  **下載**: `git clone https://github.com/neohsiung/AI-Investment-Advisor.git`
-2.  **設定**: `cp .env.example .env` (填入 API Key)
-3.  **啟動**: `./start.sh`
+2.  **設定**:
+    ```bash
+    # 設定 .env
+    cp .env.example .env
+    # 使用編輯器填入您的 API Key 與 Email 設定
+    vim .env
+    ```
+
+    **環境變數說明 (Environment Variables):**
+
+    | 分類 | 變數名稱 | 必填 | 預設值 | 描述 |
+    |------|----------|------|--------|------|
+    | **Email** | `SMTP_HOST` | 是 | smtp.gmail.com | SMTP 伺服器 |
+    | | `SMTP_PORT` | 是 | 587 | SMTP 連接埠 |
+    | | `SMTP_USER` | 是 | - | 寄件者信箱 |
+    | | `SMTP_PASSWORD` | 是 | - | 應用程式密碼 |
+    | | `EMAIL_RECIPIENT` | 是 | - | 收件者信箱 |
+    | **資料庫** | `DB_TYPE` | 否 | sqlite | `sqlite` 或 `postgres` |
+    | | `DB_HOST` | 若為 PG | localhost | 資料庫主機 |
+    | | `DB_PORT` | 若為 PG | 5432 | 資料庫連接埠 |
+    | | `DB_USER` | 若為 PG | postgres | 資料庫使用者 |
+    | | `DB_PASS` | 若為 PG | postgres | 資料庫密碼 |
+    | | `DB_NAME` | 若為 PG | portfolio | 資料庫名稱 |
+    | **AI** | `AI_PROVIDER` | 否 | Google Gemini | AI 提供者 |
+    | | `AI_MODEL` | 否 | gemini-1.5-pro | 模型名稱 |
+    | | `API_KEY` | **是** | - | 對應的 API Key |
+    | **數據源** | `FRED_API_KEY` | 否 | - | FRED 經濟數據 API Key |
+
+3.  **啟動系統 (Start System)**
+
+    **選項 A: Docker (推薦/雲端)**
+    ```bash
+    chmod +x start.sh
+    ./start.sh
+    ```
+    > 自動編譯並在背景啟動所有服務 (儀表板、排程器、資料庫)。
+
+    **選項 B: 本地開發 (Local Dev)**
+    ```bash
+    chmod +x start_local.sh
+    ./start_local.sh
+    ```
+    > 適合開發除錯，支援程式碼熱重載，無需 Docker。
+
+    **選項 C: Google Cloud Platform (GCP)**
+    *   **VM 設定**: `./setup_vm.sh` (自動化安裝 Docker 環境)
+    *   **Cloud Run**: `./deploy.sh` (部署 Serverless 作業)
+    *   *詳見 [Wiki](wiki/Deployment-Options.md)*
+
 4.  **使用**: 瀏覽器打開 [http://localhost:8501](http://localhost:8501)
 
 ### ⚠️ 免責聲明

@@ -1,7 +1,7 @@
 import pytest
 import sqlite3
 import os
-from src.database import init_db, get_db_connection
+from src.data.database import init_db, get_db_connection
 
 def test_init_db(tmp_path):
     db_path = tmp_path / "test_portfolio.db"
