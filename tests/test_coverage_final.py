@@ -29,7 +29,13 @@ def test_auth_login_display_button(mock_streamlit, google_auth_instance):
 
         google_auth_instance.login()
 
-        mock_streamlit.link_button.assert_called_with("Login with Google", "http://auth_url", type="primary")
+        mock_streamlit.markdown.assert_called()
+        args, kwargs = mock_streamlit.markdown.call_args
+        html_content = args[0]
+        assert "http://auth_url" in html_content
+        assert "Login with Google" in html_content
+        assert 'target="_self"' in html_content
+        assert kwargs.get('unsafe_allow_html') is True
 
 def test_auth_login_success(mock_streamlit, google_auth_instance):
     # Case: Code in params
