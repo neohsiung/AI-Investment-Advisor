@@ -75,28 +75,55 @@ def render_transactions_tab(st, service: TransactionService):
     if df is not None:
         if not df.empty:
             # Display recent transactions
-            st.dataframe(df.style.format({"quantity": "{:.4f}", "price": "{:.4f}", "amount": "{:.4f}"}), use_container_width=True)
+            # Add selection column for deletion
+            df['Delete'] = False
+            
+            # Configure columns
+            column_config = {
+                "Delete": st.column_config.CheckboxColumn(
+                    "刪除? (Delete)",
+                    help="勾選以刪除此筆交易",
+                    default=False,
+                ),
+                "quantity": st.column_config.NumberColumn(format="%.4f"),
+                "price": st.column_config.NumberColumn(format="%.4f"),
+                "amount": st.column_config.NumberColumn(format="%.4f"),
+                "id": None, # Hide ID
+            }
 
-            # Delete functionality
-            st.markdown("### 刪除交易 (Delete Transaction)")
+            # Editable Dataframe
+            edited_df = st.data_editor(
+                df,
+                column_config=column_config,
+                disabled=["trade_date", "ticker", "action", "quantity", "price", "fees", "amount"],
+                hide_index=True,
+                use_container_width=True,
+                key="data_editor_transactions"
+            )
 
-            with st.form("delete_trans_form"):
-
-                # Show last 10 for quick delete selection or text input
-                options = [(row['id'], f"{row['trade_date']} - {row['ticker']} {row['action']} {row['quantity']} @ {row['price']}")
-                           for _, row in df.head(20).iterrows()]
-
-                selected_id = st.selectbox("選擇要刪除的交易 (Select to Delete)", options=options, format_func=lambda x: x[1])
-
-                if st.form_submit_button("刪除 (Delete)"):
-                    if selected_id:
-                        trans_id = selected_id[0]
-                        success, msg = service.delete_transaction(trans_id)
+            # Delete Action
+            to_delete = edited_df[edited_df['Delete'] == True]
+            
+            if not to_delete.empty:
+                st.warning(f"已選擇 {len(to_delete)} 筆交易")
+                if st.button(f"確認刪除 {len(to_delete)} 筆資料 (Confirm Delete)", type="primary"):
+                    success_count = 0
+                    fail_count = 0
+                    
+                    for _, row in to_delete.iterrows():
+                        success, _ = service.delete_transaction(row['id'])
                         if success:
-                            st.success(msg)
-                            st.rerun()
+                            success_count += 1
                         else:
-                            st.error(msg)
+                            fail_count += 1
+                    
+                    if success_count > 0:
+                        st.success(f"成功刪除 {success_count} 筆交易")
+                    if fail_count > 0:
+                        st.error(f"刪除失敗 {fail_count} 筆")
+                    
+                    if success_count > 0:
+                        st.rerun()
         else:
              st.info("尚無交易紀錄。")
     else:

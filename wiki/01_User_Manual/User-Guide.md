@@ -80,6 +80,7 @@ Navigate to **Data Management** in the sidebar.
 - **匯入交易 (Import)**:
     - 支援 **Robinhood** / **IBKR** 的 CSV 匯出檔。
     - **簡易格式 (Simple)**: 選擇此選項後，可直接點擊 **「📥 下載匯入範本」** 按鈕取得標準 CSV 檔 (含範例資料)。
+    - **備註欄位 (Note)**: 範本中包含 `note` 欄位供您填寫備註 (如交易策略或說明)，系統匯入時會自動忽略此欄位，不影響資料庫。
     - 上傳後系統自動去重並解析。
 - **手動輸入 (Manual Entry)**:
     - 適用於零星交易或股息 (Dividend) 紀錄。
@@ -91,6 +92,9 @@ Navigate to **Data Management** in the sidebar.
         - **Action**: 選擇 `DEPOSIT` (入金) 或 `WITHDRAW` (出金)。
         - **Quantity**: 輸入金額 (如 10000)。
         - **Price**: 輸入 `1`。
+- **股息處理 (Dividend Handling)**:
+    - **現金股息 (Cash Dividend)**: Action 設為 `DIVIDEND`，Quantity 設為總金額 (例如 50)，Price 設為 `1`。系統會增加您的現金餘額。
+    - **股票股息 (Stock Dividend)**: Action 設為 `BUY`，Quantity 設為獲得股數 (例如 5)，Price 設為 `0` (或稅務成本)。系統會增加持倉數量並稀釋平均成本。
 - **刪除/修正**: 可在「交易紀錄」Tab 刪除錯誤的條目。
 - **槓桿/融資交易 (Margin Trading)**:
     - 系統會自動計算槓桿水位。

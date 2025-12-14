@@ -55,10 +55,19 @@ class LeverageCalculator:
 
         trans_cash_impact = 0.0
         for _, row in trans_df.iterrows():
-            if row['action'] == 'BUY':
-                trans_cash_impact -= row['amount']
-            elif row['action'] == 'SELL':
-                trans_cash_impact += row['amount']
+            action = row['action']
+            amount = row['amount']
+            
+            if action == 'BUY':
+                trans_cash_impact -= amount
+            elif action == 'SELL':
+                trans_cash_impact += amount
+            elif action == 'DIVIDEND':
+                trans_cash_impact += amount
+            elif action == 'DEPOSIT':
+                trans_cash_impact += amount
+            elif action == 'WITHDRAW':
+                trans_cash_impact -= amount
 
         cash_balance = cash_flow_sum + trans_cash_impact
         nlv = cash_balance + portfolio_value
