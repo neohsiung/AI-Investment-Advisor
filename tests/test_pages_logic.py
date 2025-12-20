@@ -3,6 +3,7 @@ from unittest.mock import MagicMock, patch, mock_open, ANY
 import sys
 # Mock streamlit modules to allow importing the page files without error
 sys.modules["streamlit"] = MagicMock()
+sys.modules["extra_streamlit_components"] = MagicMock()
 # Helper to load modules with special names
 import importlib.util
 from pathlib import Path
