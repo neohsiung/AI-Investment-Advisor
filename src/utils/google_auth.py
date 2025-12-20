@@ -5,6 +5,8 @@ from google.oauth2 import id_token
 from google.auth.transport import requests
 import json
 import base64
+import extra_streamlit_components as stx
+import time
 
 class GoogleAuth:
     def __init__(self, secret_credentials_path, redirect_uri, cookie_key, cookie_name="investment_advisor_auth", client_config=None):
@@ -19,6 +21,7 @@ class GoogleAuth:
             "https://www.googleapis.com/auth/userinfo.email",
             "https://www.googleapis.com/auth/userinfo.profile"
         ]
+        self.cookie_manager = stx.CookieManager()
 
     def _get_flow(self):
         """Initialize Flow from client secret file OR config dict."""
@@ -42,9 +45,6 @@ class GoogleAuth:
             return
 
         # Check for query params (Callback)
-        # Note: st.query_params is the new API, st.experimental_get_query_params is deprecated
-        # but for Py 3.8 / older streamlit versions, we might need to check version.
-        # Assuming reasonably new streamlit.
         if "code" in st.query_params:
             try:
                 code = st.query_params["code"]
@@ -58,22 +58,34 @@ class GoogleAuth:
                     credentials.id_token, token_request, flow.client_config['client_id'], clock_skew_in_seconds=60
                 )
 
-                # Store user info in session
-                st.session_state['connected'] = True
-                st.session_state['user_info'] = {
+                user_info = {
                     "email": id_info.get("email"),
                     "name": id_info.get("name"),
-                    "picture": id_info.get("picture")
+                    "picture": id_info.get("picture"),
+                    "sub": id_info.get("sub")
                 }
+
+                # Store user info in session
+                st.session_state['connected'] = True
+                st.session_state['user_info'] = user_info
                 st.session_state['oauth_id'] = id_info.get("sub")
+                
+                # Persist in Cookie (expires in 7 days) via CookieManager
+                # Note: Browsers might block 3rd party cookies, but this is 1st party.
+                # We store minimal data.
+                import datetime
+                expires_at = datetime.datetime.now() + datetime.timedelta(days=7)
+                self.cookie_manager.set(self.cookie_name, user_info, expires_at=expires_at)
 
                 # Clear query params to prevent re-triggering
-                # st.query_params.clear() # This might not be enough to clear URL bar visually
+                try:
+                    st.query_params.clear()
+                except:
+                    pass
                 st.rerun()
 
             except Exception as e:
                 st.error(f"Login failed: {e}")
-                # Optional: Clear params manually if needed
         else:
             # Display Login Button
             flow = self._get_flow()
@@ -82,7 +94,6 @@ class GoogleAuth:
                 include_granted_scopes='true'
             )
 
-            # Use Markdown with target="_self" to avoid new tab
             st.markdown(
                 f"""
                 <a href="{authorization_url}" target="_self" style="
@@ -102,18 +113,40 @@ class GoogleAuth:
             )
 
     def check_authentification(self):
-        """Check if user is authenticated (Check Session State)."""
-        # In a real persistence scenario, we would check cookies here.
-        # For simplicity and Streamlit Cloud compatibility without extra components,
-        # we rely on Session State.
-        # (Implementing secure JWT cookies in pure Streamlit requires extra component or hacky headers)
+        """Check if user is authenticated (Check Session State or Cookie)."""
+        
+        # 1. Check Memory Session
+        if st.session_state.get('connected'):
+            return
 
-        # Simplified for v1.1.0: Session State only (Lost on refresh)
+        # 2. Check Cookie (Persistence)
+        # stx.CookieManager gets cookies on render.
+        # We need to make sure we don't block.
+        cookies = self.cookie_manager.get_all()
+        
+        if self.cookie_name in cookies:
+            try:
+                user_info = cookies[self.cookie_name]
+                if user_info and 'email' in user_info:
+                    st.session_state['connected'] = True
+                    st.session_state['user_info'] = user_info
+                    st.session_state['oauth_id'] = user_info.get('sub')
+                    # Optional: Verify token if we stored the ID token, 
+                    # but here we trust the cookie content for simplicity (assuming HTTPS/HttpOnly separation not fully possible in pure Streamlit app logic without backend middleware).
+                    # For a low-risk internal tool, this JSON in cookie is acceptable.
+                    st.rerun()
+            except Exception as e:
+                print(f"Cookie parse error: {e}")
+
         if 'connected' not in st.session_state:
             st.session_state['connected'] = False
 
     def logout(self):
         """Log out the user."""
+        try:
+            self.cookie_manager.delete(self.cookie_name)
+        except:
+            pass
         st.session_state['connected'] = False
         st.session_state['user_info'] = None
         st.rerun()

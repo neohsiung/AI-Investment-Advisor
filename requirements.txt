@@ -22,3 +22,4 @@ Jinja2>=3.1.0
 fredapi
 beautifulsoup4
 markdown
+extra-streamlit-components
