@@ -129,7 +129,21 @@ Navigate to **Data Management** in the sidebar.
     - 每週排程結束後，報告會存入資料庫並發送 Email。
     - 可在 **Reports** 頁面回顧歷史報告。
 
-### 4. 常見問題 (FAQ)
+### 4. 投資決策工作流 (Investment Decision Workflow)
+本系統採用多階段的專業分工模式，模擬真實對沖基金的運作流程：
+
+1.  **全局戰略 (Global Strategy)**:
+    - 結合總體經濟 (Macro) 與您目前的持倉板塊分佈，決定本週的進攻方向 (Target Sectors)。
+2.  **候選篩選 (Candidate Screening)**:
+    - 基於戰略方向，初步篩選出 15 檔具備潛力的個股 (嚴格排除 ETF，專注於尋找 Alpha)。
+3.  **深度研究 (Deep Research)**:
+    - 對現有持倉 + 篩選出的候選股進行全面掃描。
+    - **動能專家 (Momentum)**: 檢查技術面趨勢與支撐壓力。
+    - **基本面專家 (Fundamental)**: 檢查財報數據與新聞情緒。
+4.  **最終決策 (Final Decision)**:
+    - 投資長 (CIO) 綜合所有研究報告，挑選 **Top 3-5** 精選標的，並生成最終的投資建議報告。
+
+### 5. 常見問題 (FAQ)
 - **Q: 為什麼我的損益顯示為 0？**
     - A: 請確認是否有正確輸入「買入」交易。若只有賣出或股息，無法計算成本基礎。
 - **Q: AI 建議的股票去哪了？**

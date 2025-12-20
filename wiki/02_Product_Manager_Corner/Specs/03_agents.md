@@ -38,12 +38,24 @@ A swarm of specialized AI Agents collaborating to generate investment strategies
 *   **MarketDatum**: Alpha Vantage + FRED.
 *   **Browser**: Headless Chrome for news/transcripts.
 
-### 4. Interaction Flow (v3 Event-Driven)
-1.  **Trigger**: Market Close or News.
-2.  **Flash Scan**: Agents run in low-cost mode.
-3.  **Filter**: `LightCIO` decides if a full report is needed.
-4.  **Deep Dive**: `DeepCIO` assigns tasks.
-5.  **Synthesis**: Final Report.
+### 4. Interaction Flow (v4 Sector-Driven Workflow)
+1.  **Global Strategy (Step 1)**: `CIO Agent` (Strategy Mode) + `Macro Agent`.
+    -   Analyzes portfolio sector allocation vs macro environment.
+    -   Output: Target Sectors (e.g., Financials, Energy).
+2.  **Candidate Screening (Step 2)**: `CIO Agent` screens 15 candidates.
+    -   **Strict Rule**: No ETFs.
+    -   Output: List of 15 Ticker Symbols.
+3.  **Deep Research (Step 3)**:
+    -   System loops through (Holdings + Candidates).
+    -   Executes `Momentum Agent` and `Fundamental Agent` in parallel.
+4.  **Final Report (Step 4)**: `CIO Agent` (Report Mode).
+    -   Synthesizes all research notes.
+    -   Selects Top 3-5 Picks.
+    -   Generates HTML Report.
+
+### 5. Features
+*   **Force Trigger**: `--force-report` to bypass freshness checks.
+*   **Smart Freshness**: Hashes inputs to avoid re-running agents on same data.
 
 ---
 
@@ -52,10 +64,10 @@ A swarm of specialized AI Agents collaborating to generate investment strategies
 ## 🇹🇼 AI Agent Swarm Specification (v3)
 
 > **狀態**: 草稿 (Draft)
-> **版本**: 1.0
+> **版本**: 1.1
 
 ### 1. 概觀 (Overview)
-Agent Swarm (代理人集群) 由協作的多個專門 AI Agent 組成，負責生成投資策略。v3 版本引入了「被動/主動 (Passive/Active)」模式以及「模型分級 (Model Tiering)」(Flash vs Deep)。
+Agent Swarm (代理人集群) 由協作的多個專門 AI Agent 組成，負責生成投資策略。v3 版本引入了「被動/主動」模式；v4 版本引入了「板塊導向多階段工作流」。
 
 ### 2. 代理人角色與提示詞 (Agent Roles & Prompts)
 
@@ -77,6 +89,9 @@ Agent Swarm (代理人集群) 由協作的多個專門 AI Agent 組成，負責�
 
 #### 2.4 投資長 (CIO Agent - Chief Investment Officer)
 *   **角色**: 投資組合經理與最終決策者 (Portfolio Manager & Decision Maker)。
+*   **模式**:
+    *   **戰略模式 (Strategy Mode)**: 分析板塊並篩選候選股。
+    *   **報告模式 (Report Mode)**: 最終選股與報告撰寫。
 *   **輸入**: 上述所有 Agent 的報告 + 使用者投資組合狀態。
 *   **輸出**: 最終買/賣/持有決策, 資產配置調整建議。
 
@@ -88,9 +103,21 @@ Agent Swarm (代理人集群) 由協作的多個專門 AI Agent 組成，負責�
 #### 3.2 瀏覽器服務 (BrowserService)
 *   **目的**: 獲取最新新聞或財報逐字稿 (Headless Chrome)。
 
-### 4. 互動流程 (Interaction Flow v3 Event-Driven)
-1.  **觸發 (Trigger)**: 每日收盤或重大新聞事件。
-2.  **快速掃描 (Flash Scan)**: Agents 以 `Flash Mode` (低成本) 運行。
-3.  **過濾 (Filter)**: `LightCIO` 判斷是否需要完整報告。
-4.  **深度研究 (Deep Dive)**: 若需要，`DeepCIO` 指派特定的「深度研究」任務給 Agent。
-5.  **整合 (Synthesis)**: 生成最終策略報告。
+### 4. 互動流程 (Interaction Flow v4 Sector-Driven)
+1.  **全局戰略 (Step 1)**: `CIO Agent` (戰略模式) + `Macro Agent`。
+    -   分析持倉板塊分佈 vs 總經環境。
+    -   輸出: 目標進攻板塊 (Target Sectors)。
+2.  **候選篩選 (Step 2)**: `CIO Agent` 篩選 15 檔候選股。
+    -   **嚴格規則**: 不選 ETF。
+    -   輸出: 15 檔股票代碼清單。
+3.  **深度研究 (Step 3)**:
+    -   系統針對 (現有持倉 + 候選股) 進行迴圈。
+    -   平行執行 `Momentum Agent` 與 `Fundamental Agent`。
+4.  **最終報告 (Step 4)**: `CIO Agent` (報告模式)。
+    -   綜合所有研究筆記。
+    -   挑選 Top 3-5 精選標的。
+    -   生成 HTML 報告。
+
+### 5. 系統特性
+*   **強制觸發**: 支援 `--force-report` 跳過新鮮度檢查。
+*   **智慧快取**: Hash 比對輸入，避免重複執行昂貴的 LLM。

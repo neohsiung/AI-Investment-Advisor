@@ -77,7 +77,9 @@ def job_weekly_report():
 def job_daily_check():
     # 週六不執行每日檢查，因為有週報
     if get_current_time().weekday() == 5:
-        print(f"[{format_time()}] Skipping Daily Check (Saturday).")
+        msg = "Skipping Daily Check (Saturday) - Weekly Report runs today."
+        print(f"[{format_time()}] {msg}")
+        log_job_execution("Daily Check", "SKIPPED", msg)
         return
 
     print(f"[{format_time()}] Starting Daily Check Job...")
