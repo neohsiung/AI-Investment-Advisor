@@ -21,6 +21,7 @@
 * [[Setup-External-Services]]
 * [[Google-OAuth-Setup]]
 * [[Database-Migration-Guide]]
+* [[Testing-Guide]]
 
 ### 04_Architect_View
 * [[System-Overview]]

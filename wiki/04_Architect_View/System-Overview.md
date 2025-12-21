@@ -27,6 +27,17 @@ The system consists of two parallel units:
 2.  **Data Lifecycle**: Tech indicators (3 days) vs Macro (Permanent).
 3.  **Manual Injection**: User uploads -> Agent summary.
 
+### Codebase Structure
+- **src/**: Main Source Code.
+    - `agents/`: AI Agents (CIO, Macro, Momentum, etc).
+    - `data/`: Data access & Ingestor.
+    - `pages/`: Streamlit UI.
+    - `services/`: Business Logic (MarketData, Analytics).
+    - `workflow.py`: Main analysis engine.
+- **tests/**: Mirror of `src/`.
+- **data/**: SQLite DB location.
+- **deployment/**: Infrastructure setup.
+
 ---
 
 <a id="traditional-chinese"></a>
@@ -89,18 +100,65 @@ graph TB
     end
 ```
 
+### 3.4 板塊導向策略流程 (Sector-Based Strategy Workflow - v4)
+每週報告生成時，執行以下四階段流程：
+
+```mermaid
+graph TD
+    Start[Scheduler / User] -->|Start Weekly Mode| Step1
+    
+    subgraph "Step 1: Global Context"
+        Step1[Macro Agent] -->|Macro Report| Step2
+    end
+    
+    subgraph "Step 2: Strategy & Screening"
+        Step2[CIO Agent] -->|Sector Strategy| Screening
+        Step2 -->|Candidate List| Screening
+    end
+    
+    subgraph "Step 3: Deep Research"
+        Screening -->|Target Tickers| Analysts
+        Analysts[Momentum/Fundamental Agents] -->|Individual Reports| Step4
+    end
+    
+    subgraph "Step 4: Synthesis"
+        Step4[CIO Agent] -->|Final Decision| Report[Strategy Report]
+    end
+    
+    Report --> Database[(Database)]
+    Report --> Email[Email Notification]
+```
+
+
 ### 4. 核心功能流程 (Core Workflows)
 
-#### A. 事件驅動分析 (Event-Driven Analysis)
+#### A. 事件驅動分析 (Event-Driven - Daily)
 1.  **Ingest**: 外部新聞/數據進入 Event Bus。
 2.  **Filter**: Light CIO 判斷是否值得關注。
 3.  **Dispatch**: 若關鍵，Deep CIO 指派特定 Agent (如 Macro Agent 分析降息)。
 4.  **Synthesize**: CIO 整合報告並推送建議。
 
-#### B. 資料生命週期 (Data Lifecycle)
+#### B. 板塊導向策略 (Sector Strategy - Weekly)
+1.  **Macro Context**: Macro Agent 分析全​​球趨勢。
+2.  **Strategy**: CIO 制定板塊輪動策略與篩選標準 (Screener)。
+3.  **Research**: 針對篩選出的優質標的進行深度分析 (Momentum/Fundamental)。
+4.  **Report**: 綜合產出週報。
+
+#### C. 資料生命週期 (Data Lifecycle)
 *   **技術指標**: TTL 3天 (僅保留趨勢)。
 *   **財報數據**: TTL 90天 (季度歸檔)。
 *   **宏觀數據**: 永久保存 (用於週期比對)。
 
 #### C. 手動注入 (Manual Injection)
 使用者可上傳外部報告 (PDF/Text)，經由 Light CIO 指派給特定 Agent 進行摘要與知識庫存入。
+
+### 5. 程式碼結構 (Codebase Structure)
+- **src/**: 核心原始碼。
+    - `agents/`: AI Agents 實作 (CIO, Macro, Momentum 等).
+    - `data/`: 資料存取層 & Ingestor.
+    - `pages/`: Streamlit 前端頁面.
+    - `services/`: 商業邏輯 (MarketData, Analytics).
+    - `workflow.py`: 核心分析流程引擎.
+- **tests/**: 單元測試 (對應 src/).
+- **data/**: SQLite 資料庫存放位置.
+- **deployment/**: 基礎設施設定 (PostgreSQL init).

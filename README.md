@@ -61,6 +61,12 @@ graph TD
     Agents <-->|Read| DB
 ```
 
+### ⚙️ Core Workflows
+1.  **Event-Driven (Daily)**: News -> Light CIO -> Main CIO -> Strategy.
+2.  **Sector Strategy (Weekly)**: Macro -> CIO Strategy -> Screener -> Deep Research -> Synthesis.
+3.  **Data Lifecycle**: Tech indicators (3 days) vs Macro (Permanent).
+4.  **Manual Injection**: User uploads -> Agent summary.
+
 #### ☁️ Cloud Infrastructure Architecture
 
 This diagram illustrates the recommended deployment setup on Google Cloud Platform (GCP).
@@ -170,7 +176,9 @@ For detailed guides, please refer to our **[Project Wiki](wiki/Home.md)**:
     *   **[System Overview](wiki/System-Overview.md)**: detailed architecture.
 *   **🛡️ Audit**:
     *   **[Security Report](wiki/Security-Audit-Report.md)**: Vulnerability analysis.
-    *   **[Architecture Review](wiki/Clean-Architecture-Review.md)**: Clean Architecture analysis.
+    *   **[Architecture Review](wiki/04_Architect_View/Clean-Architecture-Review.md)**: Clean Architecture analysis.
+*   **🛠️ Developer**:
+    *   **[Testing Guide](wiki/03_Developer_Guide/Testing-Guide.md)**: How to run tests and mock dependencies.
 
 ### 🚀 Quick Start (Local)
 
@@ -219,6 +227,8 @@ MIT License. See [LICENSE](LICENSE) for details.
 *   **自適應智能 (Adaptive Intelligence)**:
     *   **智慧新鮮度 (Smart Freshness)**: 若數據未變更則跳過分析，節省成本。
     *   **模型分級 (Model Tiering)**: 採用 **Smart Tier** (如 Gemini 1.5 Pro) 處理複雜推理，**Fast Tier** (如 Gemini 1.5 Flash) 處理例行任務。
+*   **🛠️ 開發者專區**:
+    *   **[測試指南 (Testing Guide)](wiki/03_Developer_Guide/Testing-Guide.md)**: 單元測試與 Mock 策略說明。
 *   **即時數據注入**: 避免 AI 幻覺，直接注入即時市場數據。
 *   **互動式儀表板**: 即時監控資產、**顧問聊天室** 與 優化設定。
 
@@ -253,6 +263,12 @@ graph TD
     Agents <-->|Freshness Check| States
     Agents <-->|Read| DB
 ```
+
+### ⚙️ 核心功能流程 (Core Workflows)
+1.  **事件驅動分析 (Daily)**: News -> Light CIO -> Main CIO -> Strategy
+2.  **板塊導向策略 (Weekly)**: Macro -> CIO Strategy -> Screener -> Deep Research -> Synthesis
+3.  **資料生命週期**: 技術指標 (3天) vs 宏觀數據 (永久)
+4.  **手動注入**: 使用者上傳 -> Agent 摘要並存入 Vector DB
 
 ### 🚀 快速開始 (本地端)
 
