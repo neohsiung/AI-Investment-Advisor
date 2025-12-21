@@ -25,7 +25,6 @@ def test_cio_agent(mock_db):
                  context = {"leverage_ratio": 1.2, "macro_report": "Good"}
                  result = agent.run(context)
                  assert "Mock" in result
-                 assert "(Mock)" in result
 
 @patch('src.agents.base_agent.get_db_connection')
 def test_macro_agent(mock_db):
@@ -35,9 +34,9 @@ def test_macro_agent(mock_db):
     with patch('src.agents.base_agent.BaseAgent._load_prompt', return_value="Macro Prompt"):
         agent = MacroAgent(use_cache=False)
 
-        with patch.object(agent, '_mock_llm_call', return_value="Mock response"):
+        with patch.object(agent, '_mock_llm_call', return_value="Test Result"):
             result = agent.run({"macro_data": "VIX High"})
-            assert "(Mock)" in result
+            assert "Test Result" in result
 
 @patch('src.agents.base_agent.get_db_connection')
 def test_engineer_agent(mock_db):

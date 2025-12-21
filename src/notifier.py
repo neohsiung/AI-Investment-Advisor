@@ -17,6 +17,8 @@ class EmailNotifier:
         self.sender_password = os.getenv("SMTP_PASSWORD")
         self.recipient_email = os.getenv("EMAIL_RECIPIENT")
         self.logger = setup_logger("EmailNotifier")
+        self.blocked_domains = ["example.com"]
+        self.blocked_emails = ["your_email@gmail.com", "admin@example.com"]
 
     def _get_css(self):
         """Return professional CSS styles for the email."""
@@ -81,6 +83,16 @@ class EmailNotifier:
         recipient = to_email if to_email else self.recipient_email
         if not recipient:
              self.logger.warning("No recipient specified. Skipping email.")
+             return False
+
+        # Validate recipient
+        if recipient in self.blocked_emails:
+            self.logger.warning(f"Recipient {recipient} is in blocklist. Skipping email.")
+            return False
+            
+        domain = recipient.split('@')[-1] if '@' in recipient else ''
+        if domain in self.blocked_domains:
+             self.logger.warning(f"Recipient domain {domain} is in blocklist. Skipping email.")
              return False
 
         msg = MIMEMultipart('alternative')

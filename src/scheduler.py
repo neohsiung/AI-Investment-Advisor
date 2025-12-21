@@ -43,6 +43,9 @@ def get_all_users():
         try:
              rows = conn.execute(text("SELECT email FROM users")).fetchall()
              users = [row[0] for row in rows]
+             # Filter out default/invalid emails
+             invalid_emails = ["admin@example.com", "your_email@gmail.com"]
+             users = [u for u in users if u and u not in invalid_emails and not u.endswith("@example.com")]
         except Exception:
              # Fallback if users table empty or missing (legacy mode?)
              pass # nosec B110

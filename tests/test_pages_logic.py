@@ -1,9 +1,14 @@
 import pytest
-from unittest.mock import MagicMock, patch, mock_open, ANY
 import sys
-# Mock streamlit modules to allow importing the page files without error
+from unittest.mock import MagicMock, patch, mock_open, ANY
+# Force clean state for these modules to ensure they pick up the mocks
+for mod in ['src.auth', 'src.utils.google_auth', 'extra_streamlit_components']:
+    if mod in sys.modules:
+        del sys.modules[mod]
+
 sys.modules["streamlit"] = MagicMock()
 sys.modules["extra_streamlit_components"] = MagicMock()
+
 # Helper to load modules with special names
 import importlib.util
 from pathlib import Path
@@ -22,8 +27,10 @@ def load_page_module(name):
         raise e
         return None
 
-settings_mod = load_page_module("4_Settings.py")
-data_mod = load_page_module("3_Data_Management.py")
+# Ensure mocks are in place before loading
+with patch.dict(sys.modules, {'extra_streamlit_components': MagicMock()}):
+    settings_mod = load_page_module("4_Settings.py")
+    data_mod = load_page_module("3_Data_Management.py")
 
 from src.services.settings_service import SettingsService
 

@@ -18,9 +18,11 @@ def test_dashboard_logic():
          patch('src.analytics.LeverageCalculator') as mock_calc, \
          patch('src.analytics.ROIEngine') as mock_roi, \
          patch('src.analytics.PnLCalculator') as mock_pnl, \
-         patch('src.analytics.update_daily_snapshot') as mock_update:
+         patch('src.analytics.update_daily_snapshot') as mock_update, \
+         patch('google_auth_oauthlib.flow.Flow.from_client_secrets_file') as mock_flow_cls:
 
         # Setup mocks
+        mock_flow_cls.return_value = MagicMock()
         mock_read_sql.return_value.empty = False
         # Use real DataFrame to support copy(), apply(), groupby()
         import pandas as pd

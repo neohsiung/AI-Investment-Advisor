@@ -6,9 +6,9 @@ import os
 @patch('src.notifier.smtplib.SMTP')
 def test_send_email_success(mock_smtp):
     # Setup values
-    os.environ["SMTP_USER"] = "test@example.com"
+    os.environ["SMTP_USER"] = "sender@test.com"
     os.environ["SMTP_PASSWORD"] = "password" # pragma: allowlist secret
-    os.environ["EMAIL_RECIPIENT"] = "recipient@example.com"
+    os.environ["EMAIL_RECIPIENT"] = "recipient@test.com"
 
     # Setup mock
     instance = mock_smtp.return_value
@@ -19,7 +19,7 @@ def test_send_email_success(mock_smtp):
 
     assert result is True
     instance.starttls.assert_called_once()
-    instance.login.assert_called_with("test@example.com", "password")
+    instance.login.assert_called_with("sender@test.com", "password")
     instance.send_message.assert_called()
     instance.quit.assert_called()
 

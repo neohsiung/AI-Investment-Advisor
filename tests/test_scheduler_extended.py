@@ -7,13 +7,13 @@ from datetime import datetime
 def test_get_all_users_success(mock_conn):
     # Mock result with some users
     mock_result = MagicMock()
-    mock_result.fetchall.return_value = [("user1@example.com",), ("user2@example.com",)]
+    mock_result.fetchall.return_value = [("user1@test.com",), ("user2@test.com",)]
     mock_conn.return_value.execute.return_value = mock_result
     
     users = get_all_users()
     assert len(users) == 2
-    assert "user1@example.com" in users
-    assert "user2@example.com" in users
+    assert "user1@test.com" in users
+    assert "user2@test.com" in users
 
 @patch('src.scheduler.get_db_connection')
 def test_get_all_users_empty(mock_conn):
