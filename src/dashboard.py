@@ -50,7 +50,7 @@ def main():
         """)
         st.stop()
 
-    auth_manager.check_login() # Initialize check
+
 
     if not auth_manager.get_current_user():
         st.title("登入 (Login)")
