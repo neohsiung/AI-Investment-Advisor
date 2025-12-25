@@ -142,7 +142,7 @@ class TestSettingsRender:
 
             settings_mod.render_scheduler_tab(mock_st, "dummy.db")
 
-            mock_st.time_input.assert_any_call("每日檢查時間 (Daily Check Time)", value=ANY)
+            mock_st.time_input.assert_any_call("每日檢查時間 (Daily Check)", value=ANY)
 
 
     def test_render_report_dry_run_tab(self):
