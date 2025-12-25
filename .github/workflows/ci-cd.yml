@@ -21,10 +21,10 @@ jobs:
     steps:
     - uses: actions/checkout@v3
 
-    - name: Set up Python 3.9
+    - name: Set up Python 3.11
       uses: actions/setup-python@v4
       with:
-        python-version: 3.9
+        python-version: 3.11
 
     - name: Install dependencies
       run: |
@@ -100,7 +100,7 @@ jobs:
           --image ${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.REPOSITORY }}/${{ env.IMAGE }}:latest \
           --region ${{ env.REGION }} \
           --command "python" \
-          --args "src/scheduler.py,--task,daily" \
+          --args "src/cli.py,--mode,scheduler,--task,daily" \
           --set-env-vars "AI_PROVIDER=${{ secrets.AI_PROVIDER }},AI_MODEL_SMART=${{ secrets.AI_MODEL_SMART }},AI_MODEL_FAST=${{ secrets.AI_MODEL_FAST }}" \
           --set-env-vars "DB_TYPE=postgres,DB_HOST=${{ secrets.DB_HOST }},DB_USER=${{ secrets.DB_USER }},DB_PASS=${{ secrets.DB_PASS }},DB_NAME=${{ secrets.DB_NAME }}" \
           --set-env-vars "API_KEY=${{ secrets.API_KEY }},FRED_API_KEY=${{ secrets.FRED_API_KEY }}" || \
@@ -108,7 +108,7 @@ jobs:
           --image ${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.REPOSITORY }}/${{ env.IMAGE }}:latest \
           --region ${{ env.REGION }} \
           --command "python" \
-          --args "src/scheduler.py,--task,daily" \
+          --args "src/cli.py,--mode,scheduler,--task,daily" \
           --set-env-vars "AI_PROVIDER=${{ secrets.AI_PROVIDER }},AI_MODEL_SMART=${{ secrets.AI_MODEL_SMART }},AI_MODEL_FAST=${{ secrets.AI_MODEL_FAST }}" \
           --set-env-vars "DB_TYPE=postgres,DB_HOST=${{ secrets.DB_HOST }},DB_USER=${{ secrets.DB_USER }},DB_PASS=${{ secrets.DB_PASS }},DB_NAME=${{ secrets.DB_NAME }}" \
           --set-env-vars "API_KEY=${{ secrets.API_KEY }},FRED_API_KEY=${{ secrets.FRED_API_KEY }}"
@@ -118,7 +118,7 @@ jobs:
           --image ${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.REPOSITORY }}/${{ env.IMAGE }}:latest \
           --region ${{ env.REGION }} \
           --command "python" \
-          --args "src/scheduler.py,--task,weekly" \
+          --args "src/cli.py,--mode,scheduler,--task,weekly" \
           --set-env-vars "AI_PROVIDER=${{ secrets.AI_PROVIDER }},AI_MODEL_SMART=${{ secrets.AI_MODEL_SMART }},AI_MODEL_FAST=${{ secrets.AI_MODEL_FAST }}" \
           --set-env-vars "DB_TYPE=postgres,DB_HOST=${{ secrets.DB_HOST }},DB_USER=${{ secrets.DB_USER }},DB_PASS=${{ secrets.DB_PASS }},DB_NAME=${{ secrets.DB_NAME }}" \
           --set-env-vars "API_KEY=${{ secrets.API_KEY }},FRED_API_KEY=${{ secrets.FRED_API_KEY }}" || \
@@ -126,7 +126,7 @@ jobs:
           --image ${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.REPOSITORY }}/${{ env.IMAGE }}:latest \
           --region ${{ env.REGION }} \
           --command "python" \
-          --args "src/scheduler.py,--task,weekly" \
+          --args "src/cli.py,--mode,scheduler,--task,weekly" \
           --set-env-vars "AI_PROVIDER=${{ secrets.AI_PROVIDER }},AI_MODEL_SMART=${{ secrets.AI_MODEL_SMART }},AI_MODEL_FAST=${{ secrets.AI_MODEL_FAST }}" \
           --set-env-vars "DB_TYPE=postgres,DB_HOST=${{ secrets.DB_HOST }},DB_USER=${{ secrets.DB_USER }},DB_PASS=${{ secrets.DB_PASS }},DB_NAME=${{ secrets.DB_NAME }}" \
           --set-env-vars "API_KEY=${{ secrets.API_KEY }},FRED_API_KEY=${{ secrets.FRED_API_KEY }}"
@@ -136,7 +136,7 @@ jobs:
           --image ${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.REPOSITORY }}/${{ env.IMAGE }}:latest \
           --region ${{ env.REGION }} \
           --command "python" \
-          --args "src/scheduler.py,--task,monthly" \
+          --args "src/cli.py,--mode,scheduler,--task,monthly" \
           --set-env-vars "AI_PROVIDER=${{ secrets.AI_PROVIDER }},AI_MODEL_SMART=${{ secrets.AI_MODEL_SMART }},AI_MODEL_FAST=${{ secrets.AI_MODEL_FAST }}" \
           --set-env-vars "DB_TYPE=postgres,DB_HOST=${{ secrets.DB_HOST }},DB_USER=${{ secrets.DB_USER }},DB_PASS=${{ secrets.DB_PASS }},DB_NAME=${{ secrets.DB_NAME }}" \
           --set-env-vars "API_KEY=${{ secrets.API_KEY }},FRED_API_KEY=${{ secrets.FRED_API_KEY }}" || \
@@ -144,7 +144,7 @@ jobs:
           --image ${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.REPOSITORY }}/${{ env.IMAGE }}:latest \
           --region ${{ env.REGION }} \
           --command "python" \
-          --args "src/scheduler.py,--task,monthly" \
+          --args "src/cli.py,--mode,scheduler,--task,monthly" \
           --set-env-vars "AI_PROVIDER=${{ secrets.AI_PROVIDER }},AI_MODEL_SMART=${{ secrets.AI_MODEL_SMART }},AI_MODEL_FAST=${{ secrets.AI_MODEL_FAST }}" \
           --set-env-vars "DB_TYPE=postgres,DB_HOST=${{ secrets.DB_HOST }},DB_USER=${{ secrets.DB_USER }},DB_PASS=${{ secrets.DB_PASS }},DB_NAME=${{ secrets.DB_NAME }}" \
           --set-env-vars "API_KEY=${{ secrets.API_KEY }},FRED_API_KEY=${{ secrets.FRED_API_KEY }}"
