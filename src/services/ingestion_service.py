@@ -1,8 +1,10 @@
 import os
 import logging
+import pandas as pd
 # from src.data.ingestor import TradeIngestor # Deprecated
 
 from src.analytics import update_daily_snapshot
+from src.data.ingestors import IngestorFactory
 
 logger = logging.getLogger("IngestionService")
 
@@ -24,12 +26,11 @@ class IngestionService:
             
             logger.info(f"Ingesting CSV for user {self.user_id}, broker {broker_type}")
             
+            
             # Read CSV
-            import pandas as pd
             df = pd.read_csv(temp_filename)
 
             # Get Ingestor from Factory
-            from src.data.ingestors import IngestorFactory
             ingestor = IngestorFactory.get_ingestor(broker_type, self.db_path)
             
             # Ingest

@@ -39,6 +39,7 @@ Navigate to **Data Management** in the sidebar.
 #### 4. System Settings
 - **AI Configuration**:
     - **Model Tiering**: Configure `Smart Model` (Deep Analysis) vs `Fast Model` (Quick Screening).
+    - **Timezone**: Set your preferred **Display Timezone** (e.g., Asia/Taipei or US/Eastern) for all reports and UI timestamps. Default is Asia/Taipei.
 - **Schedule**: Set Daily/Weekly run times.
 - **Dry Run**: Manually trigger a report generation (no email).
 
@@ -118,6 +119,7 @@ Navigate to **Data Management** in the sidebar.
 #### 2.5 系統設定 (System Settings)
 - **API 設定**:
     - **模型分級 (Model Tiering)**: 您可以分別設定 `Smart Model` (用於深度分析) 與 `Fast Model` (用於快速篩選)。
+    - **時區設定 (Timezone)**: 設定您偏好的 **顯示時區** (如 Asia/Taipei 或 US/Eastern)，這將影響所有報告與介面的時間顯示。預設為 Asia/Taipei。
 - **排程設定**: 設定每日掃描與報告的時間。
 - **報告試跑**: 手動觸發每週報告生成流程 (不發送郵件)。
 

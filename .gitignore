@@ -6,6 +6,7 @@ app/client_secret_*.json
 
 # Data & Databases
 data/*.db
+*.db
 data/*.csv
 data/temp_*
 !data/.keep

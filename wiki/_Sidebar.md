@@ -14,10 +14,13 @@
   * [[02_analytics]]
   * [[03_agents]]
   * [[04_adaptive_system]]
+  * [[05_hr_protocol]]
 
 ### 03_Developer_Guide
 * [[Deployment-Local-SQLite]]
 * [[Deployment-GCP-CloudRun]]
+* [[Python-Environment-Setup]]
+* [[CLI-Reference]]
 * [[Setup-External-Services]]
 * [[Google-OAuth-Setup]]
 * [[Database-Migration-Guide]]

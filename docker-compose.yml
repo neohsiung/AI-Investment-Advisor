@@ -17,7 +17,7 @@ services:
   scheduler:
     build: .
     container_name: investment_advisor_scheduler
-    command: python src/scheduler.py
+    command: python src/cli.py --mode scheduler
     volumes:
       - ./data:/app/data
       - ./src:/app/src

@@ -26,4 +26,4 @@ ENV PYTHONPATH=/app
 ENV PIP_ROOT_USER_ACTION=ignore
 
 # Default command (can be overridden)
-CMD ["python", "src/scheduler.py"]
+CMD ["python", "src/cli.py", "--mode", "scheduler"]

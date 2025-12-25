@@ -1,9 +1,9 @@
 import pytest
 from unittest.mock import patch, MagicMock
-from src.workflow import run_workflow
+from src.cli import run_workflow
 
 def test_run_workflow_delegates_daily():
-    with patch('src.workflow.init_db'), \
+    with patch('src.cli.init_db'), \
          patch('src.services.workflow_service.DailyWorkflow') as MockWorkflow:
         
         mock_instance = MockWorkflow.return_value
@@ -16,7 +16,7 @@ def test_run_workflow_delegates_daily():
         mock_instance.run.assert_called_with(dry_run=True, force_refresh=False)
 
 def test_run_workflow_delegates_weekly():
-    with patch('src.workflow.init_db'), \
+    with patch('src.cli.init_db'), \
          patch('src.services.workflow_service.WeeklyWorkflow') as MockWorkflow:
         
         mock_instance = MockWorkflow.return_value

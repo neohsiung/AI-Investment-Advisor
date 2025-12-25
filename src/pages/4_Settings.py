@@ -107,6 +107,37 @@ def render_api_settings(st, service: SettingsService, settings: dict):
                 st.error(msg)
 
 def render_scheduler_tab(st, db_path):
+    st.subheader("一般設定 (General Settings)")
+    
+    # Timezone Setting
+    from src.services.settings_service import SettingsService
+    import pytz
+    
+    sys_settings_service = SettingsService(db_path, user_id='SYSTEM')
+    current_settings = sys_settings_service.get_all_settings()
+    current_tz = current_settings.get("DISPLAY_TIMEZONE", "Asia/Taipei")
+    
+    common_timezones = ['Asia/Taipei', 'UTC', 'US/Eastern', 'US/Pacific', 'Europe/London', 'Asia/Tokyo']
+    # Add current if not in common
+    if current_tz not in common_timezones:
+        common_timezones.append(current_tz)
+        
+    with st.expander("時區設定 (Timezone)", expanded=True):
+        new_tz = st.selectbox("顯示時區 (Display Timezone)", 
+                             options=common_timezones + [tz for tz in pytz.common_timezones if tz not in common_timezones],
+                             index=0 if current_tz not in common_timezones and current_tz not in pytz.common_timezones else \
+                                   (common_timezones + [tz for tz in pytz.common_timezones if tz not in common_timezones]).index(current_tz))
+        
+        if st.button("更新時區 (Update Timezone)"):
+            success, msg = sys_settings_service.save_setting('DISPLAY_TIMEZONE', new_tz)
+            if success:
+                st.success(f"已更新時區為: {new_tz}")
+                time.sleep(1)
+                st.rerun()
+            else:
+                st.error(f"更新失敗: {msg}")
+
+    st.markdown("---")
     st.subheader("排程設定 (Schedule Configuration)")
 
     # 讀取目前排程設定
@@ -190,7 +221,7 @@ def render_report_dry_run_tab(st, user_id):
 
                 # 非同步啟動, 傳入 user_id
                 process = subprocess.Popen(
-                    [sys.executable, "src/workflow.py", "--mode", "weekly", "--dry-run", "--user_id", user_id],
+                    [sys.executable, "src/cli.py", "--mode", "weekly", "--dry-run", "--user_id", user_id],
                     stdout=open(log_file, "a"),
                     stderr=subprocess.STDOUT,
                     preexec_fn=os.setsid # 確保可以被追蹤

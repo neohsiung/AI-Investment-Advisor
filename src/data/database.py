@@ -57,10 +57,18 @@ def init_db(db_path=None):
     """
     engine = get_db_engine(db_path)
 
-    schema_commands = [
-        # --- Extensions ---
-        "CREATE EXTENSION IF NOT EXISTS vector;",
+    # Detect DB Type from Engine Dialect
+    is_sqlite = 'sqlite' in str(engine.url)
+    embedding_type = "TEXT" if is_sqlite else "vector(1536)"
+
+    schema_commands = []
+    
+    # --- Extensions ---
+    if not is_sqlite:
+        schema_commands.append("CREATE EXTENSION IF NOT EXISTS vector;")
         
+    # --- Tables ---
+    schema_commands.extend([
         # --- Core User & Trans (v1) ---
         """CREATE TABLE IF NOT EXISTS users (
             id TEXT PRIMARY KEY,
@@ -196,17 +204,20 @@ def init_db(db_path=None):
             agent_name TEXT,
             last_input_hash TEXT,
             last_run_time TEXT,
+            last_output TEXT,
             FOREIGN KEY(agent_name) REFERENCES settings(key) -- loose fk
         )""",
-        """CREATE TABLE IF NOT EXISTS agent_feedback (
+        # Dynamic Table Definition for Vector Support
+        f'''CREATE TABLE IF NOT EXISTS agent_feedback (
             id TEXT PRIMARY KEY,
             agent_name TEXT,
-            context_embedding vector(1536), -- Assuming OpenAI dimension, can be adjusted
+            context_embedding {embedding_type}, 
+            context_text TEXT,
             response_text TEXT,
             outcome_score REAL,
             timestamp TEXT
-        )"""
-    ]
+        )'''
+    ])
 
     with engine.connect() as conn:
         for cmd in schema_commands:
@@ -225,19 +236,29 @@ def init_db(db_path=None):
              except Exception as e:
                 print(f"Migration failed details: {e}")
 
-        # Migration for agent_states last_output
+        # Migration for agent_states
         try:
-            conn.execute(text("SELECT last_output FROM agent_states LIMIT 1"))
+             conn.execute(text("SELECT last_output FROM agent_states LIMIT 1"))
         except Exception:
              print("Migrating agent_states: Adding last_output column...")
              try:
                 conn.execute(text("ALTER TABLE agent_states ADD COLUMN last_output TEXT"))
              except Exception as e:
-                print(f"Migration agent_states failed: {e}")
+                pass
+
+        # Migration for agent_feedback (context_text)
+        try:
+             conn.execute(text("SELECT context_text FROM agent_feedback LIMIT 1"))
+        except Exception:
+             print("Migrating agent_feedback: Adding context_text column...")
+             try:
+                conn.execute(text("ALTER TABLE agent_feedback ADD COLUMN context_text TEXT"))
+             except Exception as e:
+                print(f"Migration agent_feedback failed: {e}")
 
         conn.commit()
 
-    print(f"Database initialized with v3 schema.")
+    print(f"Database initialized with v3 schema (Adapter: {'SQLite' if is_sqlite else 'Postgres'}).")
 
 if __name__ == "__main__":
     init_db()

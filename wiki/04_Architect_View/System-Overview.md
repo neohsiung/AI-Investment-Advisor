@@ -18,9 +18,11 @@ The system consists of two parallel units:
 - **Deep CIO (Decision Maker)**: Uses **Deep Model** (Gemini 1.5 Pro) for complex decisions.
 - **Analyst Pool**: Fundamental, Momentum, Macro Agents.
 
-#### 2. HR Unit
-- **Engineer Agent**: Monitors CIO feedback and backtests.
-- **Optimization Loop**: Automatically tunes system prompts.
+#### 2. HR Unit (Self-Correcting Loop)
+- **Engineer Agent**: Monitors CIO feedback and backtest performance.
+- **FeedbackStore**: Vector DB (pgvector) storing "Input Context -> Agent Decision -> Market Outcome".
+- **OptimizerPipeline**: Uses `dspy.teleprompt.BootstrapFewShot` to compile optimized prompts based on high-scoring examples from the store.
+- **EvaluationService**: Calculates "Prediction Error" to grade agent performance.
 
 ### Core Workflows
 1.  **Event-Driven**: News -> Light CIO -> Main CIO -> Strategy.
@@ -68,10 +70,12 @@ The system consists of two parallel units:
 *   **Deep CIO (Decision Maker)**: 使用 **Deep Model** (如 Gemini 1.5 Pro) 進行複雜決策，並動態調派分析師。
 *   **Analyst Pool**: 包含 Momentum, Fundamental, Macro 三大專家，依指令執行深度分析。
 
-#### 3.2 人力資源部 (HR Unit)
+#### 3.2 人力資源部 (HR Unit - 自我優化迴圈)
 負責系統自我優化 (Meta-Level Optimization)。
 *   **Engineer Agent (HR)**: 監控 CIO 對分析報告的滿意度，以及回測績效。
-*   **Optimization Loop**: 定期調整各 Agent 的 System Prompt (例如：提高 Momentum Agent 對成交量的權重)。
+*   **FeedbackStore**: 向量資料庫 (pgvector)，儲存「輸入情境 -> Agent 決策 -> 市場結果」的映射。
+*   **OptimizerPipeline**: 使用 `dspy.teleprompt.BootstrapFewShot`，根據高分範例自動編譯優化後的 Prompt。
+*   **EvaluationService**: 計算「預測誤差 (Prediction Error)」來為 Agent 績效打分數。
 
 ### 3.3 架構圖 (Architecture Diagram)
 ```mermaid

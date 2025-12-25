@@ -56,6 +56,10 @@ A swarm of specialized AI Agents collaborating to generate investment strategies
 ### 5. Features
 *   **Force Trigger**: `--force-report` to bypass freshness checks.
 *   **Smart Freshness**: Hashes inputs to avoid re-running agents on same data.
+*   **DSPy Optimization (v3)**:
+    -   **Signatures**: All agents use typed DSPy signatures for structured input/output.
+    -   **BootstrapFewShot**: Momentum Agent is auto-optimized using a "Prediction Error" metric (Price Change vs Signal).
+    -   **Feedback Loop**: Weekly results are fed back into the Optimizer to refine prompts automatically.
 
 ---
 
@@ -120,4 +124,7 @@ Agent Swarm (代理人集群) 由協作的多個專門 AI Agent 組成，負責�
 
 ### 5. 系統特性
 *   **強制觸發**: 支援 `--force-report` 跳過新鮮度檢查。
-*   **智慧快取**: Hash 比對輸入，避免重複執行昂貴的 LLM。
+*   **DSPy 優化 (v3)**:
+    -   **Signatures**: 所有 Agent 使用強型別 DSPy Signatures 定義輸入/輸出。
+    -   **BootstrapFewShot**: Momentum Agent 透過「預測誤差」(價格變動 vs 訊號) 指標進行自動優化。
+    -   **Feedback Loop**: 每週驗證結果將反饋至 Optimizer，自動微調 Prompt。

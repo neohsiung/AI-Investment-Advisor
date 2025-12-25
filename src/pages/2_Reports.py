@@ -32,7 +32,7 @@ def main():
             st.markdown("---")
             st.markdown(report_content)
     else:
-        st.info("尚無報告可供檢視。請執行 workflow.py 生成報告。(No reports available yet.)")
+        st.info("尚無報告可供檢視。請執行 cli.py 生成報告。(No reports available yet.)")
 
 if __name__ == "__main__":
     main()

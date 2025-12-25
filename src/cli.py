@@ -55,12 +55,46 @@ def run_workflow(mode="daily", dry_run=False, user_id=None, force_report=False):
         # Re-raise to ensure scheduler knows it failed
         raise e
 
-if __name__ == "__main__":
+def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--dry-run", action="store_true")
-    parser.add_argument("--mode", choices=['daily', 'weekly'], default='weekly', help="Execution mode")
+    parser.add_argument("--mode", choices=['daily', 'weekly', 'backtest', 'optimize', 'scheduler'], default='weekly', help="Execution mode")
+    parser.add_argument("--task", choices=['daily', 'weekly', 'monthly'], help="Specific task for scheduler mode (optional, defaults to loop)")
     parser.add_argument("--user_id", type=str, default=None, help="Specific User ID for SaaS mode")
+    parser.add_argument("--ticker", type=str, default="AAPL", help="Ticker for backtest")
     parser.add_argument("--force-report", action="store_true", help="Force generate report even if no significant changes")
     args = parser.parse_args()
 
-    run_workflow(mode=args.mode, dry_run=args.dry_run, user_id=args.user_id, force_report=args.force_report)
+    if args.mode == 'backtest':
+        from src.services.backtest_service import BacktestService
+        BacktestService().run_simulation(args.ticker, days_back=30)
+    elif args.mode == 'optimize':
+        from src.workflow.optimizer import OptimizerPipeline
+        pipeline = OptimizerPipeline()
+        # Train on Momentum Agent examples
+        trainset = pipeline.load_training_data(agent_name="Momentum")
+        if trainset:
+            pipeline.optimize_momentum_agent(trainset)
+            
+    elif args.mode == 'scheduler':
+        from src.services.scheduler_service import SchedulerService
+        print(f"[{format_time()}] Starting Scheduler Service...")
+        service = SchedulerService()
+        
+        if args.task:
+            # Single task execution
+            if args.task == 'daily':
+                service.job_daily_check()
+            elif args.task == 'weekly':
+                service.job_weekly_report()
+            elif args.task == 'monthly':
+                service.job_monthly_refinement()
+        else:
+            # Daemon loop
+            service.run_loop()
+            
+    else:
+        run_workflow(mode=args.mode, dry_run=args.dry_run, user_id=args.user_id, force_report=args.force_report)
+
+if __name__ == "__main__":
+    main()
