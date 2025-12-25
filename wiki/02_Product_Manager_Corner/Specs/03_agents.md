@@ -16,8 +16,8 @@ A swarm of specialized AI Agents collaborating to generate investment strategies
 
 #### 2.1 Momentum Agent
 *   **Role**: Technical Analyst.
-*   **Input**: Price, Volume, RSI, MACD.
-*   **Output**: Trend (Bull/Bear), Support/Resistance.
+*   **Input**: Price, Volume (Current/Avg), RSI, MACD, SMA (20/50/200).
+*   **Output**: Trend (Bull/Bear), Support/Resistance, Volume Analysis.
 
 #### 2.2 Fundamental Agent
 *   **Role**: Fundamental Analyst (Value Investor).
@@ -73,8 +73,8 @@ Agent Swarm (代理人集群) 由協作的多個專門 AI Agent 組成，負責�
 
 #### 2.1 動能分析師 (Momentum Agent)
 *   **角色**: 技術分析師 (Technical Analyst)。
-*   **輸入**: 價格歷史, 成交量, RSI, MACD。
-*   **輸出**: 趨勢分析 (看多/看空), 支撐/壓力位。
+*   **輸入**: 價格歷史, 成交量 (當日/均量), RSI, MACD, 均線 (SMA 20/50/200)。
+*   **輸出**: 趨勢分析 (看多/看空), 支撐/壓力位, 量價分析。
 *   **系統提示詞**: `prompts/momentum_agent.txt`
 
 #### 2.2 基本面分析師 (Fundamental Agent)

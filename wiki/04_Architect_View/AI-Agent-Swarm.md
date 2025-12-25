@@ -34,6 +34,10 @@
 | :--- | :--- |
 | **Engineer** | **Prompt Optimizer**. Monitors performance and tunes prompts. |
 
+#### 2.3 Implementation (v1.1)
+- **Agent Factory**: All agents are instantiated via `AgentFactory` to ensure consistent configuration (TTL, Cache) and dependency injection.
+- **Thinking Process**: The user interface (`4_Advisor_Chat.py`) displays granular thinking steps (Dispatcher intent, Data fetching status).
+
 ---
 
 <a id="traditional-chinese"></a>
@@ -76,3 +80,8 @@
 | 角色 | 職責 (Responsibility) |
 | :--- | :--- |
 | **Engineer Agent** | **Prompt 優化師**。觀察分析結果的準確度，動態調整上述 Agent 的 System Prompt。例如發現 Momentum Agent 過於敏感，則修改 Prompt 提高訊號門檻。 |
+
+#### 2.3 實作細節 (Implementation v1.1)
+*   **Agent Factory**: 所有 Agent 皆透過 `AgentFactory` 統一建立，確保快取設定 (TTL) 與依賴注入的一致性。
+*   **思維透明化 (Thinking Process)**: 在互動式介面 (`4_Advisor_Chat.py`) 中，系統會即時顯示 Dispatcher 的意圖判斷、數據搜集進度與各 Agent 的分析狀態。
+

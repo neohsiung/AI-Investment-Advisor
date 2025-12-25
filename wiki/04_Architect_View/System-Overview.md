@@ -29,14 +29,20 @@ The system consists of two parallel units:
 
 ### Codebase Structure
 - **src/**: Main Source Code.
-    - `agents/`: AI Agents (CIO, Macro, Momentum, etc).
+    - `agents/`: AI Agents (`CIOAgent`) and Factory (`AgentFactory`).
     - `data/`: Data access & Ingestor.
-    - `pages/`: Streamlit UI.
-    - `services/`: Business Logic (MarketData, Analytics).
-    - `workflow.py`: Main analysis engine.
-- **tests/**: Mirror of `src/`.
+    - `pages/`: Streamlit UI (`4_Advisor_Chat.py`, etc).
+    - `services/`: Business Logic (`WorkflowService`, `SchedulerService`, `IngestionService`).
+    - `workflow.py`: Entry point delegating to `WorkflowService`.
+- **tests/**: Mirror of `src/` (Global Mocks used).
 - **data/**: SQLite DB location.
 - **deployment/**: Infrastructure setup.
+
+### Design Patterns (v1.1)
+- **Template Method**: `BaseWorkflow` defines the skeleton, subclasses (`DailyWorkflow`) implement specific logic.
+- **Factory Pattern**: `AgentFactory` centralizes agent creation and dependency injection.
+- **Dependency Injection**: Services and Agents accept repositories/deps via constructor for testability.
+
 
 ---
 
@@ -154,11 +160,17 @@ graph TD
 
 ### 5. 程式碼結構 (Codebase Structure)
 - **src/**: 核心原始碼。
-    - `agents/`: AI Agents 實作 (CIO, Macro, Momentum 等).
+    - `agents/`: AI Agents 實作與工廠模式 (`AgentFactory`).
     - `data/`: 資料存取層 & Ingestor.
-    - `pages/`: Streamlit 前端頁面.
-    - `services/`: 商業邏輯 (MarketData, Analytics).
-    - `workflow.py`: 核心分析流程引擎.
-- **tests/**: 單元測試 (對應 src/).
+    - `pages/`: Streamlit 前端頁面 (包含 `Advisor_Chat`).
+    - `services/`: 商業邏輯 (`WorkflowService`, `SchedulerService`).
+    - `workflow.py`: 進入點 (Entry Point).
+- **tests/**: 單元測試 (Mocking Strategy).
 - **data/**: SQLite 資料庫存放位置.
 - **deployment/**: 基礎設施設定 (PostgreSQL init).
+
+### 設計模式 (Design Patterns v1.1)
+- **Template Method**: `BaseWorkflow` 定義流程骨架，子類別實作具體分析步驟。
+- **Factory Pattern**: `AgentFactory` 統一負責 Agent 的建立與依賴注入。
+- **Dependency Injection**: 透過建構子注入 Repositories，提升測試可維護性。
+
