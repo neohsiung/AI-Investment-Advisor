@@ -430,7 +430,7 @@ def main():
     st.sidebar.header("設定 (Settings)")
     db_path = st.sidebar.text_input("資料庫路徑 (Database Path)", "data/portfolio.db")
 
-    tab1, tab2, tab3, tab4, tab5 = st.tabs(["AI 模型設定 (AI Configuration)", "排程設定與紀錄 (Scheduler)", "報告試跑 (Report Dry Run)", "Agent 獨立測試 (Agent Playground)", "Prompt 優化 (Optimization)"])
+    tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs(["AI 模型設定 (AI Configuration)", "排程設定與紀錄 (Scheduler)", "報告試跑 (Report Dry Run)", "Agent 獨立測試 (Agent Playground)", "Prompt 優化 (Optimization)", "HR 協議 (System Health)"])
 
     # Pass user_id to service
     settings_service = SettingsService(db_path, user_id=user_id)
@@ -451,6 +451,45 @@ def main():
 
     with tab5:
         render_optimization_history_tab(st, db_path, user_id)
+
+    with tab6:
+        render_hr_protocol_tab(st)
+
+def render_hr_protocol_tab(st):
+    st.subheader("HR 協議 (HR Protocol) - Agent Health Monitor")
+    st.info("監控 Agent 是否活躍。若 Agent 超過 7 天未進行任何回應 (Cache Update)，將被標記為 Zombie。")
+    
+    from src.services.hr_service import HRService
+    hr_service = HRService()
+    
+    if st.button("刷新狀態 (Check Health)"):
+        st.session_state['hr_check'] = True
+        
+    df = hr_service.check_agent_health()
+    
+    # Styling
+    def highlight_status(val):
+        color = ''
+        if 'Zombie' in val:
+            color = 'background-color: #ffcdd2' # Red
+        elif 'Active' in val:
+            color = 'background-color: #c8e6c9' # Green
+        elif 'Missing' in val:
+            color = 'background-color: #f5f5f5' # Grey
+        elif 'Idle' in val:
+            color = 'background-color: #fff9c4' # Yellow
+        return color
+
+    st.dataframe(df.style.applymap(highlight_status, subset=['Status']), use_container_width=True)
+    
+    st.markdown("### 處置建議")
+    zombies = df[df['Status'].str.contains("Zombie")]
+    if not zombies.empty:
+        st.error(f"⚠️ 偵測到 {len(zombies)} 個 Zombie Agents! 建議檢查排程或手動觸發。")
+        for _, z in zombies.iterrows():
+            st.write(f"- **{z['Agent']}**: {z['Days Inactive']} 天無活動。")
+    else:
+        st.success("✅ 所有 Agent 運作正常 (All Systems Operational)")
 
 if __name__ == "__main__":
     main()

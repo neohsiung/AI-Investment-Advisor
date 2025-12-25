@@ -1,6 +1,7 @@
 import os
 import logging
-from src.data.ingestor import TradeIngestor
+# from src.data.ingestor import TradeIngestor # Deprecated
+
 from src.analytics import update_daily_snapshot
 
 logger = logging.getLogger("IngestionService")
@@ -9,7 +10,8 @@ class IngestionService:
     def __init__(self, db_path=None, user_id=None):
         self.db_path = db_path
         self.user_id = user_id
-        self.ingestor = TradeIngestor(db_path)
+        # self.ingestor = TradeIngestor(db_path) # Deprecated
+
 
     def process_csv_upload(self, file_buffer, broker_type: str):
         """
@@ -22,8 +24,16 @@ class IngestionService:
             
             logger.info(f"Ingesting CSV for user {self.user_id}, broker {broker_type}")
             
+            # Read CSV
+            import pandas as pd
+            df = pd.read_csv(temp_filename)
+
+            # Get Ingestor from Factory
+            from src.data.ingestors import IngestorFactory
+            ingestor = IngestorFactory.get_ingestor(broker_type, self.db_path)
+            
             # Ingest
-            self.ingestor.ingest_csv(temp_filename, broker_type, user_id=self.user_id)
+            ingestor.ingest(df, user_id=self.user_id)
             
             # Update Snapshot
             if self.user_id:
