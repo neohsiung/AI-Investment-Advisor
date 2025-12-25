@@ -7,11 +7,7 @@ import os
 # Ensure project root is in sys.path
 sys.path.append(os.getcwd())
 
-from src.agents.dispatcher import DispatcherAgent
-from src.agents.momentum import MomentumAgent
-from src.agents.fundamental import FundamentalAgent
-from src.agents.macro import MacroAgent
-from src.agents.cio import CIOAgent
+from src.agents.factory import AgentFactory
 from src.market_data import MarketDataService
 from src.utils.logger import setup_logger
 from src.utils.ui import load_custom_css
@@ -49,7 +45,7 @@ if prompt := st.chat_input("請問關於投資的問題 (例如: AAPL 現在可�
         with st.status("思考與調度中 (Dispatching)...") as status:
             try:
                 # 1. Dispatch
-                dispatcher = DispatcherAgent()
+                dispatcher = AgentFactory.create_agent("Dispatcher")
                 dispatch_result = dispatcher.run({"user_input": prompt})
                 
                 agents_to_call = dispatch_result.get("agents", [])
@@ -69,7 +65,7 @@ if prompt := st.chat_input("請問關於投資的問題 (例如: AAPL 現在可�
                 
                 if "Macro" in agents_to_call:
                     status.write("🔄 **Macro Agent**: 正在搜集總體經濟數據 (GDP, CPI, VIX)...")
-                    macro_agent = MacroAgent()
+                    macro_agent = AgentFactory.create_macro_agent()
                     # Need real data
                     from src.services.fred_service import FredService
                     fred = FredService()
@@ -92,7 +88,7 @@ if prompt := st.chat_input("請問關於投資的問題 (例如: AAPL 現在可�
                     for ticker in tickers:
                         if "Momentum" in agents_to_call:
                             status.write(f"🔄 **Momentum Agent ({ticker})**: 計算技術指標 (RSI, SMA, MACD)...")
-                            mom_agent = MomentumAgent()
+                            mom_agent = AgentFactory.create_momentum_agent()
                             indicators = market_service.get_technical_indicators(ticker)
                             status.write(f"✅ 技術指標計算完成")
                             
@@ -108,7 +104,7 @@ if prompt := st.chat_input("請問關於投資的問題 (例如: AAPL 現在可�
 
                         if "Fundamental" in agents_to_call:
                             status.write(f"🔄 **Fundamental Agent ({ticker})**: 檢索財報與新聞...")
-                            fund_agent = FundamentalAgent()
+                            fund_agent = AgentFactory.create_fundamental_agent()
                             fin = market_service.get_financials(ticker)
                             news = market_service.get_news(ticker)
                             status.write(f"✅ 財報與新聞檢索完成 (News count: {len(news)})")
@@ -126,7 +122,7 @@ if prompt := st.chat_input("請問關於投資的問題 (例如: AAPL 現在可�
                 # 3. Final CIO Synthesis
                 if "CIO" in agents_to_call or len(results) > 0:
                     status.write("🧠 **CIO Agent**: 正在綜合各專家意見並生成策略建議...")
-                    cio_agent = CIOAgent()
+                    cio_agent = AgentFactory.create_cio_agent()
                     
                     # Construct ad-hoc context
                     cio_ctx = {

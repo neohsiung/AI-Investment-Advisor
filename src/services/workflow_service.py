@@ -13,6 +13,7 @@ from src.agents.cio import CIOAgent
 from src.agents.engineer import SystemEngineerAgent
 from src.data.database import get_db_connection
 from sqlalchemy import text
+from src.agents.factory import AgentFactory
 
 logger = logging.getLogger("WorkflowService")
 
@@ -25,10 +26,15 @@ class BaseWorkflow(ABC):
         self.transaction_service = transaction_service or TransactionService(repository=self.transaction_repo)
         self.market_service = market_service or MarketDataService()
         self.context = {}
+        self.logger = logging.getLogger(self.__class__.__name__) # Using existing logging setup
+        # Use Factory
+        self.cio_agent = AgentFactory.create_cio_agent(
+             transaction_repo=self.transaction_service.repository
+        )
 
     def run(self, dry_run=False, force_refresh=False):
         """Template Method defining the workflow structure."""
-        logger.info(f"Starting {self.__class__.__name__} for user {self.user_id}")
+        self.logger.info(f"Starting {self.__class__.__name__} for user {self.user_id}")
         
         try:
             # Step 1: Data Collection & Pre-checks
@@ -38,7 +44,7 @@ class BaseWorkflow(ABC):
             should_proceed = self.execute_analysis(force_refresh)
             
             if not should_proceed:
-                logger.info("Analysis determined no further action needed.")
+                self.logger.info("Analysis determined no further action needed.")
                 return "SKIPPED"
 
             # Step 3: Synthesis & Decision
@@ -48,7 +54,7 @@ class BaseWorkflow(ABC):
             if not dry_run:
                 self.distribute_report(final_report)
             else:
-                logger.info(f"[Dry Run] Report generated but not distributed:\n{final_report}")
+                self.logger.info(f"[Dry Run] Report generated but not distributed:\n{final_report}")
                 
             return final_report
 
@@ -109,13 +115,15 @@ class DailyWorkflow(BaseWorkflow):
         # Real implementation: Check specific alerts?
         
         # Here we run Momentum Agent
-        agent = MomentumAgent()
+        # Daily: Short TTL (1hr), assume force_refresh implies bypassing cache
+        agent = AgentFactory.create_momentum_agent(ttl_hours=1, use_cache=not force_refresh)
         results = []
         has_significant_change = False
         
         for ticker in self.context['tickers']:
             # Short TTL for daily
-            res = agent.run({"ticker": ticker}, ttl_hours=1, force_refresh=force_refresh)
+            # Short TTL for daily
+            res = agent.run({"ticker": ticker})
             results.append(res)
             # Simple heuristic: if 'BUY' or 'SELL' in response and 'STRONG'
             if "STRONG" in res.upper():
@@ -138,21 +146,23 @@ class WeeklyWorkflow(BaseWorkflow):
         """Weekly: Full Deep Dive (Macro -> Sector -> Ticker)."""
         
         # 1. Macro Analysis
-        macro_agent = MacroAgent()
-        macro_report = macro_agent.run({}, ttl_hours=24, force_refresh=force_refresh)
+        macro_agent = AgentFactory.create_macro_agent(ttl_hours=24, use_cache=not force_refresh)
+        macro_report = macro_agent.run({})
         self.context['macro_report'] = macro_report
         
         if not self.context['tickers']:
             logger.info("No tickers, but will do macro report.")
             
         # 2. Ticker Analysis (Fundamental + Momentum)
-        fund_agent = FundamentalAgent()
-        mom_agent = MomentumAgent()
+        fun_ttl = 168 # 1 week
+        mom_ttl = 1 # 1 hour
+        fund_agent = AgentFactory.create_fundamental_agent(ttl_hours=fun_ttl, use_cache=not force_refresh)
+        mom_agent = AgentFactory.create_momentum_agent(ttl_hours=mom_ttl, use_cache=not force_refresh)
         
         ticker_reports = {}
         for ticker in self.context['tickers']:
-            f_res = fund_agent.run({"ticker": ticker}, ttl_hours=168, force_refresh=force_refresh)
-            m_res = mom_agent.run({"ticker": ticker}, ttl_hours=1, force_refresh=force_refresh)
+            f_res = fund_agent.run({"ticker": ticker})
+            m_res = mom_agent.run({"ticker": ticker})
             ticker_reports[ticker] = {"fundamental": f_res, "momentum": m_res}
             
         self.context['ticker_reports'] = ticker_reports
@@ -160,7 +170,7 @@ class WeeklyWorkflow(BaseWorkflow):
 
     def synthesize_results(self) -> str:
         # CIO Agent Synthesis
-        cio = CIOAgent()
+        cio = AgentFactory.create_cio_agent()
         
         # Construct CIO Context
         cio_context = {
@@ -173,7 +183,7 @@ class WeeklyWorkflow(BaseWorkflow):
         
         # Optimization Loop (System Engineer)
         try:
-            engineer = SystemEngineerAgent()
+            engineer = AgentFactory.create_agent("Engineer")
             # Feed input to optimization (simplified)
             # engineer.optimize_prompts(...) 
             pass
