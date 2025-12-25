@@ -37,6 +37,11 @@ class SettingsService:
             conn.close()
         return settings
 
+    def get_setting(self, key, default=None):
+        """Retrieves a single setting value."""
+        all_settings = self.get_all_settings()
+        return all_settings.get(key, default)
+
     def save_setting(self, key, value):
         """Saves a single setting."""
         conn = get_db_connection(self.db_path)
