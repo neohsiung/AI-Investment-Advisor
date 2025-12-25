@@ -26,9 +26,27 @@ def main():
         conn.close()
 
     if not reports_df.empty:
-        selected_report_date = st.selectbox("選擇報告日期 (Select Report Date)", reports_df['date'].unique())
-        if selected_report_date:
-            report_content = reports_df[reports_df['date'] == selected_report_date]['content'].values[0]
+        # Convert date column to display timezone
+        from src.utils.time_utils import get_timezone
+        user_tz = get_timezone()
+        
+        def convert_tz(x):
+            try:
+                dt = pd.to_datetime(x)
+                if dt.tz is None:
+                    dt = dt.tz_localize('UTC')
+                return dt.tz_convert(user_tz).strftime('%Y-%m-%d %H:%M:%S')
+            except:
+                return x
+
+        reports_df['display_date'] = reports_df['date'].apply(convert_tz)
+        
+        selected_display = st.selectbox("選擇報告日期 (Select Report Date)", reports_df['display_date'].unique())
+        
+        if selected_display:
+            # Map back to original unique date to fetch content
+            original_date = reports_df[reports_df['display_date'] == selected_display]['date'].values[0]
+            report_content = reports_df[reports_df['date'] == original_date]['content'].values[0]
             st.markdown("---")
             st.markdown(report_content)
     else:

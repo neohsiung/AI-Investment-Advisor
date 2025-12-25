@@ -146,12 +146,15 @@ def render_scheduler_tab(st, db_path):
     config = engineer.get_schedule_config()
 
     with st.form("schedule_config_form"):
+        # Display current Timezone context
+        st.info(f"排程時間基準為: **{sys_settings_service.get_setting('DISPLAY_TIMEZONE', 'Asia/Taipei')}**")
+
         col_sch1, col_sch2 = st.columns(2)
         with col_sch1:
-            daily_time = st.time_input("每日檢查時間 (Daily Check Time)",
+            daily_time = st.time_input("每日檢查時間 (Daily Check)",
                                        value=pd.to_datetime(config.get("schedule_daily", "09:00"), format="%H:%M").time())
         with col_sch2:
-            weekly_time = st.time_input("每週報告時間 (Weekly Report Time - Sat)",
+            weekly_time = st.time_input("每週報告時間 (Weekly Report - Sat)",
                                         value=pd.to_datetime(config.get("schedule_weekly", "09:00"), format="%H:%M").time())
 
         if st.form_submit_button("更新排程 (Update Schedule)"):
@@ -174,6 +177,22 @@ def render_scheduler_tab(st, db_path):
         # Scheduler logs might be global or user specific? Currently schema has no user_id for logs
         # Assuming global for now as scheduler runs in background
         logs_df = pd.read_sql("SELECT timestamp, job_name, status, message FROM scheduler_logs ORDER BY timestamp DESC LIMIT 50", conn)
+        
+        # Convert timestamp to user timezone
+        from src.utils.time_utils import get_timezone
+        user_tz = get_timezone()
+        
+        # Ensure timestamp is datetime
+        logs_df['timestamp'] = pd.to_datetime(logs_df['timestamp'])
+        
+        # Determine if naive or aware. If naive, assume UTC then convert. If aware, convert direct.
+        # DB usually stores naive ISO (UTC) or naive local.
+        # Let's assume stored as UTC if naive.
+        if logs_df['timestamp'].dt.tz is None:
+             logs_df['timestamp'] = logs_df['timestamp'].dt.tz_localize('UTC')
+        
+        logs_df['timestamp'] = logs_df['timestamp'].dt.tz_convert(user_tz)
+        
         st.dataframe(logs_df, use_container_width=True)
     except Exception as e:
         st.info("尚無排程紀錄 (No scheduler logs found).")
@@ -262,7 +281,8 @@ def render_report_dry_run_tab(st, user_id):
 
             # 自動滾動到底部 (Streamlit 限制，只能盡量)
             if is_running:
-                st.caption(f"Last updated: {time.strftime('%H:%M:%S')}")
+                from src.utils.time_utils import get_current_time
+                st.caption(f"Last updated: {get_current_time().strftime('%H:%M:%S')}")
     else:
         st.info("尚無日誌檔案。")
 
@@ -435,7 +455,19 @@ def render_optimization_history_tab(st, db_path, user_id):
             st.info("尚無優化紀錄。")
         else:
             for _, row in history_df.iterrows():
-                with st.expander(f"{row['timestamp']} - {row['target_agent']}"):
+                # Convert History Timestamp
+                ts_str = row['timestamp']
+                try:
+                    from src.utils.time_utils import get_timezone
+                    user_tz = get_timezone()
+                    dt = pd.to_datetime(ts_str)
+                    if dt.tz is None:
+                        dt = dt.tz_localize('UTC')
+                    dt_display = dt.tz_convert(user_tz).strftime('%Y-%m-%d %H:%M:%S')
+                except:
+                    dt_display = ts_str
+
+                with st.expander(f"{dt_display} - {row['target_agent']}"):
                     st.caption(f"**Reason:** {row['reason']}")
                     st.text("Prompt Diff:")
                     st.code(row['diff_content'], language="diff")
