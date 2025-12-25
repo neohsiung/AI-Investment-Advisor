@@ -58,6 +58,9 @@ def init_db(db_path=None):
     engine = get_db_engine(db_path)
 
     schema_commands = [
+        # --- Extensions ---
+        "CREATE EXTENSION IF NOT EXISTS vector;",
+        
         # --- Core User & Trans (v1) ---
         """CREATE TABLE IF NOT EXISTS users (
             id TEXT PRIMARY KEY,
@@ -194,6 +197,14 @@ def init_db(db_path=None):
             last_input_hash TEXT,
             last_run_time TEXT,
             FOREIGN KEY(agent_name) REFERENCES settings(key) -- loose fk
+        )""",
+        """CREATE TABLE IF NOT EXISTS agent_feedback (
+            id TEXT PRIMARY KEY,
+            agent_name TEXT,
+            context_embedding vector(1536), -- Assuming OpenAI dimension, can be adjusted
+            response_text TEXT,
+            outcome_score REAL,
+            timestamp TEXT
         )"""
     ]
 

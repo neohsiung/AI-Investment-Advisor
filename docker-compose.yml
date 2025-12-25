@@ -31,7 +31,7 @@ services:
         condition: service_healthy
 
   postgres:
-    image: postgres:15-alpine
+    image: ankane/pgvector:v0.5.1
     container_name: investment_advisor_db
     environment:
       POSTGRES_USER: ${DB_USER:-postgres}

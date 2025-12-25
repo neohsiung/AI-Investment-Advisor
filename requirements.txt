@@ -23,3 +23,8 @@ fredapi
 beautifulsoup4
 markdown
 extra-streamlit-components
+
+# v3.0 Dependencies
+dspy; python_version >= "3.9"
+pgvector
+psycopg2-binary
