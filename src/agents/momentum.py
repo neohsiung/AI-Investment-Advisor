@@ -8,8 +8,9 @@ except ImportError:
     MomentumSignature = None
 
 class MomentumAgent(BaseAgent):
-    def __init__(self, use_cache=True):
-        super().__init__(name="Momentum", prompt_path="prompts/momentum_agent.txt", use_cache=use_cache, ttl_hours=4, tier="fast")
+    def __init__(self, use_cache=True, ttl_hours=None, **kwargs):
+        ttl = ttl_hours if ttl_hours is not None else 4
+        super().__init__(name="Momentum", prompt_path="prompts/momentum_agent.txt", use_cache=use_cache, ttl_hours=ttl, tier="fast")
         self.dspy_module = None
         if dspy and hasattr(dspy, 'ChainOfThought') and MomentumSignature:
             # Initialize DSPy Module if real DSPy is present
