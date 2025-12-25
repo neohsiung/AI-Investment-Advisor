@@ -126,7 +126,12 @@ def render_scheduler_tab(st, db_path):
         if st.form_submit_button("更新排程 (Update Schedule)"):
             try:
                 engineer.set_schedule_config(daily_time.strftime("%H:%M"), weekly_time.strftime("%H:%M"))
-                st.success("排程設定已更新！請重啟 Scheduler 以生效。(Schedule updated! Please restart scheduler to apply.)")
+                
+                # Trigger Scheduler Reload via DB Signal
+                sys_settings = SettingsService(db_path, user_id='SYSTEM')
+                sys_settings.save_setting('scheduler_reload_signal', 'true')
+                
+                st.success("排程設定已更新！已通知 Scheduler 重新載入。(Schedule updated! Reload signal sent.)")
             except Exception as e:
                 st.error(f"更新失敗: {e}")
 

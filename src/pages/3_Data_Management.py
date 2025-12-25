@@ -158,21 +158,18 @@ def render_csv_import_tab(st, db_path, user_id):
             st.error(f"無法讀取範本檔案: {e}")
 
     if uploaded_file and st.button("開始匯入 (Start Import)"):
-         # Save temp
-         import os
-         with open("temp.csv", "wb") as f:
-             f.write(uploaded_file.getbuffer())
-
          try:
-             ingestor = TradeIngestor(db_path)
-             # Pass user_id to ingestor
-             ingestor.ingest_csv("temp.csv", broker.lower(), user_id=user_id)
-             st.success("匯入成功！")
-             os.remove("temp.csv")
-             # Update snapshot
-             update_daily_snapshot(db_path, user_id=user_id)
+             from src.services.ingestion_service import IngestionService
+             ingestion_service = IngestionService(db_path, user_id=user_id)
+             
+             success, msg = ingestion_service.process_csv_upload(uploaded_file, broker.lower())
+             
+             if success:
+                 st.success(msg)
+             else:
+                 st.error(msg)
          except Exception as e:
-             st.error(f"匯入失敗: {e}")
+             st.error(f"System Error: {e}")
 
 def render_data_browser(st, db_path, user_id):
     # Data Browser Logic using direct SQL or Service

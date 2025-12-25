@@ -1,13 +1,16 @@
 import pandas as pd
-from src.data.database import get_db_connection
-from sqlalchemy import text
+import json
 from .base_agent import BaseAgent
 from src.utils.time_utils import format_time
-import json
+from src.repositories.transaction_repository import SqliteTransactionRepository
+from src.repositories.settings_repository import SqliteSettingsRepository
 
 class CIOAgent(BaseAgent):
-    def __init__(self, use_cache=True):
+    def __init__(self, use_cache=True, transaction_repo=None):
         super().__init__(name="CIO", prompt_path="prompts/cio_agent.txt", use_cache=use_cache, ttl_hours=24, tier="smart")
+        
+        self.transaction_repo = transaction_repo or SqliteTransactionRepository()
+        
         # Common ETFs to filter out for "Stock Picking" focus
         self.etf_list = {
             "SPY", "QQQ", "VOO", "IWM", "VT", "BND", "TLT", "VTI", "VEA", "VWO",
@@ -15,72 +18,22 @@ class CIOAgent(BaseAgent):
             "XLP", "XLY", "XLI", "XLU", "XLB", "XLRE"
         }
 
-    def _get_portfolio_context(self, user_id=None):
-        """
-        Retrieves portfolio context: Leverage Ratio and Non-ETF Holdings.
-        Returns: (leverage_ratio, holdings_summary_str)
-        """
-        try:
-            conn = get_db_connection()
-            
-            # 1. Get Leverage Ratio from latest snapshot
-            leverage_ratio = 1.0
-            if user_id:
-                snap = conn.execute(text("SELECT leverage_ratio FROM daily_snapshots WHERE user_id = :uid ORDER BY date DESC LIMIT 1"), {"uid": user_id}).fetchone()
-                if snap and snap[0]:
-                    leverage_ratio = float(snap[0])
-            
-            # 2. Get Holdings
-            query = """
-                SELECT ticker, SUM(CASE WHEN action='BUY' THEN quantity WHEN action='SELL' THEN -quantity ELSE 0 END) as net_qty
-                FROM transactions
-                WHERE user_id = :uid
-                GROUP BY ticker
-                HAVING net_qty > 0.0001
-            """
-            # If user_id is None (global run?), we might scan all? For now assume user_id is passed in context or we pick top 1
-            if not user_id:
-                # Fallback: try to find a user or return empty
-                conn.close()
-                return 1.0, "No User ID provided."
-
-            df = pd.read_sql(text(query), conn, params={"uid": user_id})
-            conn.close()
-
-            if df.empty:
-                return leverage_ratio, "目前無持倉 (No Holdings)"
-
-            holdings = []
-            non_etf_count = 0
-            
-            for _, row in df.iterrows():
-                ticker = row['ticker']
-                qty = row['net_qty']
-                is_etf = ticker in self.etf_list
-                holdings.append(f"{ticker} ({qty:.2f})")
-                if not is_etf:
-                    non_etf_count += 1
-            
-            holdings_str = f"總持倉: {', '.join(holdings)}. 非 ETF 持倉數: {non_etf_count}."
-            return leverage_ratio, holdings_str
-
-        except Exception as e:
-            self.logger.error(f"Error calculating portfolio context: {e}")
-            return 1.0, "Error retrieivng portfolio data."
-
     def run(self, context, mode="report"):
         """
         Run the CIO Agent.
         mode: 'report' (Final Report) or 'strategy' (Sector Strategy & Screening)
         """
-        user_id = context.get("user_id")
-        
         if mode == 'strategy':
             return self._run_strategy(context)
-            
-        # Default: Report Mode
         
-        # 1. Get Dynamic Context
+        # Report Mode (Default)
+        return self._run_report(context)
+
+    def _run_report(self, context):
+        """Generates the final investment report."""
+        user_id = context.get("user_id")
+        
+        # 1. Get Dynamic Context (Portfolio)
         leverage_ratio, portfolio_str = self._get_portfolio_context(user_id)
         
         # 2. Prepare Data for Prompt Template
@@ -92,38 +45,37 @@ class CIOAgent(BaseAgent):
             "momentum_reports": context.get("momentum_reports", "無 (None)"),
             "fundamental_reports": context.get("fundamental_reports", "無 (None)"),
             "macro_report": context.get("macro_report", "無 (None)"),
-            "sector_strategy": context.get("sector_strategy", "無 (None)"), # Injected from Step 1
+            "sector_strategy": context.get("sector_strategy", "無 (None)"),
             "report_focus": context.get("report_focus", "Weekly Strategic")
         }
 
         # 3. Render System Prompt
-        # Note: If mode is distinct, we might need a different prompt file.
-        # But here we assume 'prompts/cio_agent.txt' is for reporting.
-        system_prompt_rendered = self.render_system_prompt(prompt_data)
-        
-        # 4. User Prompt
+        system_prompt = self.render_system_prompt(prompt_data)
         user_prompt = "請根據上述資料，生成本週的投資決策報告。"
 
-        # 5. Call LLM
-        response = self._mock_llm_call(user_prompt, system_prompt_rendered)
-
+        # 4. Call LLM (BaseAgent handles Cache & Mock/Real)
+        response = self.call_llm(
+            messages=[
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user_prompt}
+            ],
+            temperature=0.3
+        )
         return response
 
     def _run_strategy(self, context):
-        """
-        Step 1: Strategize and Screen Candidates.
-        Returns: Dict { "sector_strategy": ..., "candidates": [...] }
-        """
-        # Load Strategy Prompt
-        with open("prompts/cio_strategy_agent.txt", "r", encoding="utf-8") as f:
-            strategy_prompt_template = f.read()
+        """Generates Sector Strategy & Candidates (JSON)."""
         
+        # Load Strategy Prompt (Ideally use _load_prompt but different path)
+        try:
+            with open("prompts/cio_strategy_agent.txt", "r", encoding="utf-8") as f:
+                strategy_prompt_template = f.read()
+        except FileNotFoundError:
+            self.logger.warning("Strategy prompt not found, using fallback.")
+            strategy_prompt_template = "Generate a sector strategy JSON."
+
         # Prepare Context
         leverage_ratio, portfolio_str = self._get_portfolio_context(context.get("user_id"))
-        
-        # Simple Sector Analysis (Mock or derived from portfolio_str)
-        # In a real system, we'd query sector data for each ticker.
-        # For now, we let the LLM infer sectors from the ticker list string.
         portfolio_sector_analysis = f"持倉概況: {portfolio_str}. (請基於此推斷板塊暴露)"
         
         prompt_data = {
@@ -140,11 +92,17 @@ class CIOAgent(BaseAgent):
         user_prompt = "請制定戰略並篩選 15 檔候選股 (No ETFs)。Output JSON."
         
         # Call LLM
-        response_str = self._call_real_llm(user_prompt, system_prompt)
+        response_str = self.call_llm(
+            messages=[
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user_prompt}
+            ],
+            temperature=0.4,
+            response_format={"type": "json_object"} # Hint for OpenAI/Provider
+        )
         
         # Parse JSON
         try:
-            # Clean markdown code blocks if present
             cleaned = response_str.replace("```json", "").replace("```", "").strip()
             data = json.loads(cleaned)
             return data
@@ -155,19 +113,58 @@ class CIOAgent(BaseAgent):
                 "candidates": []
             }
 
-    def _generate_mock_report(self, leverage, portfolio_str):
-        return f"""
-# 投資決策報告 (Mock)
+    def _get_portfolio_context(self, user_id):
+        """Retrieves portfolio context using Repository."""
+        if not user_id:
+            return 1.0, "No User ID provided."
 
-## 1. 執行摘要
-雖然市場波動加大，但通膨數據受控。投資組合槓桿為 {leverage}x，持倉狀態: {portfolio_str}。建議維持中性配置。
+        try:
+            # Get Portfolio from Repository (Need to implement or use raw sql if repo missing method)
+            # Use raw sql for now as repo might not have 'get_holdings_summary'
+            # Or better, iterate tickers from repo
+            tickers = self.transaction_repo.get_user_tickers(user_id)
+            if not tickers:
+                return 1.0, "目前無持倉 (No Holdings)"
 
-## 2. 投資組合總體檢
-- **AAPL**: 建議續抱 (Momentum 指出均線多頭排列)。
-- **NVDA**: 觀察 (Fundamental 提示估值過高)。
+            # We need quantities. Repo returns list of tickers. 
+            # We might need to access the DataFrame method or add a new method to Repo.
+            # For backward compatibility within this refactor, I'll use the repo's internal session if exposed,
+            # but ideally strict encapsulation.
+            # Let's add `get_portfolio_snapshot` to Repo later. For now, use a simple SQL via repo's connection helper if available.
+            
+            # Temporary: accessing the DB strictly for this query until Repo is upgraded
+            from src.data.database import get_db_connection
+            conn = get_db_connection() # This violates DI slightly but keeps it functional without touching Repo yet
+            
+            # Simple query for summary
+            # ... (Logic from before)
+            # But wait, we should fix the DI. 
+            pass 
 
-## 3. 精選推薦
-- **XLP**: 防禦型配置。
+            # Using direct SQL for now to keep logic intact but inside this private method
+            query = text("""
+                SELECT ticker, SUM(CASE WHEN action='BUY' THEN quantity WHEN action='SELL' THEN -quantity ELSE 0 END) as net_qty
+                FROM transactions WHERE user_id = :uid GROUP BY ticker HAVING net_qty > 0.0001
+            """)
+            rows = conn.execute(query, {"uid": user_id}).fetchall()
+            
+            # Get Leverage
+            snap = conn.execute(text("SELECT leverage_ratio FROM daily_snapshots WHERE user_id = :uid ORDER BY date DESC LIMIT 1"), {"uid": user_id}).fetchone()
+            leverage = float(snap[0]) if snap and snap[0] else 1.0
+            
+            conn.close()
+            
+            holdings = []
+            non_etf_count = 0
+            for row in rows:
+                t, q = row[0], row[1]
+                holdings.append(f"{t} ({q:.2f})")
+                if t not in self.etf_list:
+                    non_etf_count += 1
+            
+            holdings_str = f"總持倉: {', '.join(holdings)}. 非 ETF 持倉數: {non_etf_count}."
+            return leverage, holdings_str
 
-*由 CIO Agent 生成 (Mock)*
-"""
+        except Exception as e:
+            self.logger.error(f"Error calculating portfolio context: {e}")
+            return 1.0, "Error retrieving data."

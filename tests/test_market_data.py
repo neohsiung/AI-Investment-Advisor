@@ -87,7 +87,8 @@ def test_get_technical_indicators(mock_download, market_data):
     dates = pd.date_range(start='2023-01-01', periods=50)
     # Create a trend
     values = [100 + i for i in range(50)]
-    df = pd.DataFrame({'Close': values}, index=dates)
+    volumes = [1000000 for _ in range(50)]
+    df = pd.DataFrame({'Close': values, 'Volume': volumes}, index=dates)
 
     mock_download.return_value = df
 
@@ -96,6 +97,14 @@ def test_get_technical_indicators(mock_download, market_data):
     assert 'rsi' in indicators
     assert 'macd' in indicators
     assert 'macd_val' in indicators
+    assert 'sma' in indicators
+    assert 'volume' in indicators
+    
+    assert 'sma_20' in indicators['sma']
+    assert 'sma_50' in indicators['sma']
+    assert 'sma_200' in indicators['sma']
+    assert 'avg_20' in indicators['volume']
+    
     assert indicators['rsi'] > 0
 
 @patch('yfinance.Ticker')

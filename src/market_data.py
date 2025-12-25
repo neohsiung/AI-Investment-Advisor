@@ -86,13 +86,27 @@ class MarketDataService:
         return: dict
         """
         try:
-            df = yf.download(ticker, period="3mo", progress=False, auto_adjust=True)
+            df = yf.download(ticker, period="1y", progress=False, auto_adjust=True)
             if df.empty or len(df) < 26:
-                return {"rsi": 50, "macd": "neutral"}
+                return {"rsi": 50, "macd": "neutral", "sma": {}, "volume": {}}
 
             close = df['Close']
             if isinstance(close, pd.DataFrame):
                 close = close.iloc[:, 0]
+            
+            # Volume
+            volume = df['Volume']
+            if isinstance(volume, pd.DataFrame):
+                volume = volume.iloc[:, 0]
+            
+            # Simple Moving Averages
+            sma_20 = close.rolling(window=20).mean().iloc[-1]
+            sma_50 = close.rolling(window=50).mean().iloc[-1]
+            sma_200 = close.rolling(window=200).mean().iloc[-1]
+
+            # Volume Metrics
+            current_vol = volume.iloc[-1]
+            avg_vol_20 = volume.rolling(window=20).mean().iloc[-1]
 
             # RSI (14)
             delta = close.diff()
@@ -116,12 +130,21 @@ class MarketDataService:
             return {
                 "rsi": round(float(current_rsi), 2) if pd.notna(current_rsi) else 50,
                 "macd": macd_status,
-                "macd_val": round(float(macd_val), 2) if pd.notna(macd_val) else 0
+                "macd_val": round(float(macd_val), 2) if pd.notna(macd_val) else 0,
+                "sma": {
+                    "sma_20": round(float(sma_20), 2) if pd.notna(sma_20) else 0,
+                    "sma_50": round(float(sma_50), 2) if pd.notna(sma_50) else 0,
+                    "sma_200": round(float(sma_200), 2) if pd.notna(sma_200) else 0
+                },
+                "volume": {
+                    "current": int(current_vol) if pd.notna(current_vol) else 0,
+                    "avg_20": int(avg_vol_20) if pd.notna(avg_vol_20) else 0
+                }
             }
 
         except Exception as e:
             self.logger.error(f"Error calculating indicators for {ticker}: {e}")
-            return {"rsi": 50, "macd": "neutral"}
+            return {"rsi": 50, "macd": "neutral", "macd_val": 0, "sma": {}, "volume": {}}
 
     def get_news(self, ticker):
         """

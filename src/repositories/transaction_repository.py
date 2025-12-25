@@ -38,6 +38,13 @@ class SqliteTransactionRepository(ITransactionRepository):
             query = "SELECT * FROM transactions WHERE user_id = :user_id ORDER BY trade_date DESC"
             return pd.read_sql(query, conn, params={"user_id": user_id})
 
+    def get_unique_tickers(self, user_id: str):
+        """Get list of unique tickers traded by user."""
+        with get_db_connection() as conn:
+            query = text("SELECT DISTINCT ticker FROM transactions WHERE user_id = :user_id")
+            rows = conn.execute(query, {"user_id": user_id}).fetchall()
+            return [r[0] for r in rows]
+
     def add(self, user_id: str, ticker: str, date: str, action: str, quantity: float, price: float, fees: float):
         """
         新增一筆交易紀錄

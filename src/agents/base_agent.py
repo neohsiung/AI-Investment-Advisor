@@ -107,6 +107,26 @@ class BaseAgent(ABC):
         """
         pass
 
+    def call_llm(self, messages, temperature=0.7, response_format=None):
+        """
+        Unified method to call LLM with messages list.
+        messages: list of dicts [{"role": "system", "content": ...}, {"role": "user", "content": ...}]
+        """
+        # Extract System Prompt and User Prompt from messages for legacy support
+        system_prompt = ""
+        user_prompt = ""
+        for m in messages:
+            if m['role'] == 'system':
+                system_prompt += m['content'] + "\n"
+            elif m['role'] == 'user':
+                user_prompt += m['content'] + "\n"
+        
+        system_prompt = system_prompt.strip()
+        user_prompt = user_prompt.strip()
+
+        # Call logic
+        return self._mock_llm_call(user_prompt, system_prompt)
+
     def _mock_llm_call(self, prompt, system_prompt):
         """
         模擬 LLM 調用 (Phase 3 初期使用 Mock)

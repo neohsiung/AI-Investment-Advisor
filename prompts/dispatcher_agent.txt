@@ -11,7 +11,8 @@
 {
     "agents": ["Momentum", "Fundamental"],
     "tickers": ["AAPL", "TSLA"],
-    "intent": "user_question"
+    "intent": "user_question",
+    "reason": "User asked for trend and valuation check for AAPL and TSLA."
 }
 
 ## 範例

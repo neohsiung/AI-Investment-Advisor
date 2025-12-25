@@ -25,6 +25,10 @@ class TransactionService:
             return pd.DataFrame()
         return self.repository.get_all_by_user_df(uid)
 
+    def get_user_tickers(self, user_id):
+        """Get unique tickers for a user."""
+        return self.repository.get_unique_tickers(user_id)
+
     def add_manual_trade(self, ticker, date_str, action, quantity, price, fees):
         """Adds a manual transaction via Repository and updates snapshot."""
         if not self.user_id:

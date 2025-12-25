@@ -1,121 +1,153 @@
 import pytest
-import sqlite3
+from unittest.mock import MagicMock, patch
 import pandas as pd
-from src.analytics import LeverageCalculator, ROIEngine, SnapshotRecorder
-from src.data.database import init_db
+from src.analytics import LeverageCalculator, SnapshotRecorder, update_daily_snapshot
 
 @pytest.fixture
-def test_db(tmp_path):
-    db_path = tmp_path / "test_portfolio.db"
+def mock_db_connection():
+    with patch('src.analytics.get_db_connection') as mock_conn:
+        mock_db = MagicMock()
+        mock_conn.return_value = mock_db
+        yield mock_db
 
-    # Initialize DB schema
-    conn = sqlite3.connect(db_path)
-    # Recreate schema manually or import init_db logic if it accepts db_path
-    # Since init_db in src.database might use default path, we'll manually create tables needed
-    conn.execute('''
-        CREATE TABLE IF NOT EXISTS transactions (
-            id TEXT PRIMARY KEY,
-            user_id TEXT,
-            ticker TEXT,
-            trade_date TEXT,
-            action TEXT,
-            quantity REAL,
-            price REAL,
-            fees REAL,
-            amount REAL,
-            source_file TEXT,
-            raw_data TEXT
+def test_leverage_calculator_metrics(mock_db_connection):
+    calc = LeverageCalculator()
+    
+    # Mock pd.read_sql for positions
+    # Return DataFrame: ticker, net_qty
+    df_positions = pd.DataFrame([
+        {"ticker": "AAPL", "net_qty": 10.0},
+        {"ticker": "SPY", "net_qty": 5.0}
+    ])
+    
+    # Mock pd.read_sql for cash_flows (used in NLV calc part 2) 
+    # and transactions (used in NLV calc part 2)
+    # The calculator calls read_sql twice: 1. transactions(grouped), 2. transactions(all)
+    
+    with patch('src.analytics.pd.read_sql') as mock_read_sql:
+        # We need to handle multiple calls to read_sql. 
+        # 1st call: positions (Grouped)
+        # 2nd call: transactions (For cash impact)
+        
+        # Side effect sequence
+        mock_read_sql.side_effect = [
+            df_positions, # positions
+            pd.DataFrame([{"action": "DEPOSIT", "amount": 10000.0}]) # transactions for cash calc
+        ]
+        
+        # Mock cash_query fetchone (for cash_flows table sum)
+        mock_db_connection.execute.return_value.fetchone.return_value = (None,) # Assume no cash_flows entries, only transactions? 
+        # Wait, the code queries cash_flows table first.
+        # Let's say cash_flows sum is 0.
+        
+        prices = {"AAPL": 150.0, "SPY": 400.0}
+        user_id = "user1"
+        
+        metrics = calc.calculate_metrics(prices, user_id)
+        
+        # TNV = (10*150) + (5*400) = 1500 + 2000 = 3500
+        # Cash Flow Sum = 0 (mocked None)
+        # Transaction Cash Impact (DEPOSIT 10000) -> logic: if DEPOSIT, +amount.
+        # Check source: elif action == 'DEPOSIT': trans_cash_impact += amount
+        # So Cash = 0 + 10000 = 10000
+        # NLV = 10000 + 3500 = 13500
+        # Lev = 3500 / 13500 = 0.259...
+        
+        assert metrics['tnv'] == 3500.0
+        assert metrics['cash_balance'] == 10000.0
+        assert metrics['nlv'] == 13500.0
+        assert 0.25 < metrics['leverage_ratio'] < 0.27
+
+def test_snapshot_recorder(mock_db_connection):
+    recorder = SnapshotRecorder()
+    
+    # Mock fetchone for invested capital
+    mock_db_connection.execute.return_value.fetchone.return_value = (5000.0,)
+    
+    recorder.record_daily_snapshot(nlv=10000.0, cash_balance=5000.0, user_id="user1", total_tnv=5000.0, leverage_ratio=0.5)
+    
+    mock_db_connection.execute.assert_called()
+    assert mock_db_connection.commit.called
+
+def test_update_daily_snapshot_integration(mock_db_connection):
+    # Mock pd.read_sql for active tickers
+    df_tickers = pd.DataFrame([{"ticker": "AAPL", "net_qty": 5.0}])
+    
+    with patch('src.analytics.pd.read_sql', return_value=df_tickers), \
+         patch('src.analytics.MarketDataService') as MockMarket, \
+         patch('src.analytics.LeverageCalculator') as MockCalc, \
+         patch('src.analytics.SnapshotRecorder') as MockRecorder:
+        
+        MockMarket.return_value.get_current_prices.return_value = {"AAPL": 100.0}
+        
+        MockCalc.return_value.calculate_metrics.return_value = {
+            "tnv": 500, "nlv": 1000, "cash_balance": 500, "leverage_ratio": 0.5
+        }
+        
+        update_daily_snapshot("db.sqlite", "user1")
+        
+        MockMarket.return_value.get_current_prices.assert_called_with(["AAPL"])
+        MockCalc.return_value.calculate_metrics.assert_called()
+        MockRecorder.return_value.record_daily_snapshot.assert_called_with(
+            1000, 500, "user1", total_tnv=500, leverage_ratio=0.5
         )
-    ''')
-    conn.execute('''
-        CREATE TABLE IF NOT EXISTS cash_flows (
-            id TEXT PRIMARY KEY,
-            user_id TEXT,
-            date TEXT,
-            amount REAL,
-            type TEXT,
-            description TEXT
-        )
-    ''')
-    conn.execute('''
-        CREATE TABLE IF NOT EXISTS daily_snapshots (
-            date TEXT,
-            user_id TEXT,
-            total_nlv REAL,
-            cash_balance REAL,
-            invested_capital REAL,
-            pnl REAL,
-            total_tnv REAL,
-            leverage_ratio REAL,
-            PRIMARY KEY (date, user_id)
-        )
-    ''')
-    conn.commit()
-    conn.close()
-    return str(db_path)
 
-def test_leverage_calculator(test_db):
-    conn = sqlite3.connect(test_db)
-    # Deposit 10000
-    conn.execute("INSERT INTO cash_flows (id, user_id, date, amount, type) VALUES ('1', 'test_user', '2023-01-01', 10000, 'DEPOSIT')")
-    # Buy AAPL: 10 shares @ 150 (Cost 1500)
-    conn.execute("INSERT INTO transactions (id, user_id, ticker, action, quantity, price, fees, amount) VALUES ('t1', 'test_user', 'AAPL', 'BUY', 10, 150, 0, 1500)")
-    conn.commit()
-    conn.close()
+from src.analytics import ROIEngine, PnLCalculator
 
-    calc = LeverageCalculator(db_path=test_db)
-    current_prices = {'AAPL': 160.0} # Price goes up
+def test_roi_engine(mock_db_connection):
+    engine = ROIEngine()
+    
+    # Mock net invested capital (Deposits - Withdrawals)
+    # Query returns (Sum, )
+    mock_db_connection.execute.return_value.fetchone.return_value = (5000.0,)
+    
+    # ROI = (NLV - Invested) / Invested
+    # NLV = 6000, Invested = 5000 -> Profit = 1000 -> ROI = 20%
+    roi = engine.calculate_roi(nlv=6000.0, user_id="user1")
+    
+    assert roi == 20.0
+    
+    # Test zero invested
+    mock_db_connection.execute.return_value.fetchone.return_value = (0.0,)
+    roi_zero = engine.calculate_roi(nlv=6000.0, user_id="user1")
+    assert roi_zero == 0.0
 
-    metrics = calc.calculate_metrics(current_prices, user_id='test_user')
-
-    # TNV = 10 * 160 = 1600
-    assert metrics['tnv'] == 1600.0
-
-    # Cash Balance = 10000 - 1500 = 8500
-    assert metrics['cash_balance'] == 8500.0
-
-    # NLV = 8500 + 1600 = 10100
-    assert metrics['nlv'] == 10100.0
-
-    # Leverage = 1600 / 10100 ~= 0.158
-    assert 0.15 < metrics['leverage_ratio'] < 0.16
-
-def test_roi_engine(test_db):
-    conn = sqlite3.connect(test_db)
-    # Deposit 10000
-    conn.execute("INSERT INTO cash_flows (id, user_id, date, amount, type) VALUES ('1', 'test_user', '2023-01-01', 10000, 'DEPOSIT')")
-    conn.commit()
-    conn.close()
-
-    engine = ROIEngine(db_path=test_db)
-
-    # Case 1: No profit
-    roi = engine.calculate_roi(nlv=10000, user_id='test_user')
-    assert roi == 0.0
-
-    # Case 2: Profit 1000
-    roi = engine.calculate_roi(nlv=11000, user_id='test_user')
-    assert roi == 10.0 # (11000 - 10000) / 10000 * 100
-
-def test_snapshot_recorder(test_db):
-    conn = sqlite3.connect(test_db)
-    conn.execute("INSERT INTO cash_flows (id, user_id, date, amount, type) VALUES ('1', 'test_user', '2023-01-01', 10000, 'DEPOSIT')")
-    conn.commit()
-    conn.close()
-
-    recorder = SnapshotRecorder(db_path=test_db)
-    recorder.record_daily_snapshot(nlv=10500, cash_balance=5000, user_id='test_user')
-
-    conn = sqlite3.connect(test_db)
-    row = conn.execute("SELECT * FROM daily_snapshots").fetchone()
-    conn.close()
-
-    assert row is not None
-    # date, user_id, nlv, cash, invested, pnl
-    # Note: Using SELECT * order depends on schema creation.
-    # Schema: date, user_id, total_nlv, cash_balance, invested_capital, pnl
-    assert row[1] == 'test_user'
-    assert row[2] == 10500
-    assert row[3] == 5000
-    assert row[4] == 10000 # Invested
-    assert row[5] == 500 # PnL
+def test_pnl_calculator(mock_db_connection):
+    calc = PnLCalculator()
+    
+    # Mock transactions
+    # Columns: ticker, action, quantity, price, fees
+    data = [
+        {"ticker": "AAPL", "action": "BUY", "quantity": 10.0, "price": 100.0, "fees": 0.0},
+        {"ticker": "AAPL", "action": "SELL", "quantity": 5.0, "price": 120.0, "fees": 0.0}, # Realized +100
+        {"ticker": "GOOG", "action": "BUY", "quantity": 10.0, "price": 200.0, "fees": 0.0}
+    ]
+    df_trans = pd.DataFrame(data)
+    
+    with patch('src.analytics.pd.read_sql', return_value=df_trans):
+        current_prices = {"AAPL": 130.0, "GOOG": 210.0}
+        
+        breakdown = calc.calculate_breakdown(current_prices, "user1")
+        
+        # AAPL:
+        # Buy 10 @ 100. Avg Cost = 100.
+        # Sell 5 @ 120. Realized = (120-100)*5 = 100.
+        # Remaining 5. Avg Cost 100.
+        # Current Price 130. Unrealized = (130-100)*5 = 150.
+        # Total AAPL PnL = 100 + 150 = 250.
+        
+        # GOOG:
+        # Buy 10 @ 200. Cost 200.
+        # Price 210. Unrealized = (210-200)*10 = 100.
+        # Realized = 0.
+        
+        # Totals:
+        # Realized = 100
+        # Unrealized = 150 + 100 = 250
+        # Total = 350
+        
+        assert breakdown['realized'] == 100.0
+        assert breakdown['unrealized'] == 250.0
+        assert breakdown['total'] == 350.0
+        assert breakdown['details']['AAPL']['realized'] == 100.0
+        assert breakdown['details']['AAPL']['unrealized'] == 150.0

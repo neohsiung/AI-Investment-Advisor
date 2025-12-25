@@ -24,6 +24,7 @@ load_custom_css()
 st.set_page_config(page_title="AI Advisor Chat", page_icon="💬", layout="wide")
 
 st.title("💬 AI 投資顧問 (Interactive Advisor)")
+st.info("ℹ️ 此對話為即時諮詢模式，內容僅供當下參考，**不會**存入系統的正式週報/月報資料庫，亦不影響例行性績效追蹤。")
 
 if "messages" not in st.session_state:
     st.session_state.messages = []
@@ -53,8 +54,11 @@ if prompt := st.chat_input("請問關於投資的問題 (例如: AAPL 現在可�
                 
                 agents_to_call = dispatch_result.get("agents", [])
                 tickers = dispatch_result.get("tickers", [])
+                reason = dispatch_result.get("reason", "Analysis required.")
                 
-                status.write(f"已識別意圖: {tickers} | 調用專家: {agents_to_call}")
+                status.write(f"**意圖識別**: {dispatch_result.get('intent', 'unknown')}")
+                status.write(f"**思考路徑**: {reason}")
+                status.write(f"**涉及代碼**: {tickers} | **調用專家**: {agents_to_call}")
                 logger.info(f"Dispatch: {dispatch_result}")
                 
                 results = {}
@@ -64,25 +68,34 @@ if prompt := st.chat_input("請問關於投資的問題 (例如: AAPL 現在可�
                 context_texts = []
                 
                 if "Macro" in agents_to_call:
-                    status.write("正在諮詢 Macro Agent...")
+                    status.write("🔄 **Macro Agent**: 正在搜集總體經濟數據 (GDP, CPI, VIX)...")
                     macro_agent = MacroAgent()
                     # Need real data
                     from src.services.fred_service import FredService
                     fred = FredService()
-                    macro_data = {**fred.get_macro_indicators(), **market_service.get_macro_data()}
+                    fred_data = fred.get_macro_indicators()
+                    market_macro = market_service.get_macro_data()
+                    status.write(f"✅ Macro 數據獲取完成: {list(fred_data.keys())} ...")
+                    
+                    macro_data = {**fred_data, **market_macro}
                     res = macro_agent.run({"macro_data": macro_data})
                     results["Macro"] = res
                     context_texts.append(f"--- Macro Report ---\n{res}")
+                    status.write("✅ **Macro Agent**: 分析完成")
 
                 if tickers:
+                    status.write(f"📥 正在獲取市場報價: {tickers} ...")
                     # Fetch Data for Tickers
                     prices = market_service.get_current_prices(tickers)
+                    status.write(f"✅ 報價獲取完成: {prices}")
                     
                     for ticker in tickers:
                         if "Momentum" in agents_to_call:
-                            status.write(f"正在諮詢 Momentum Agent ({ticker})...")
+                            status.write(f"🔄 **Momentum Agent ({ticker})**: 計算技術指標 (RSI, SMA, MACD)...")
                             mom_agent = MomentumAgent()
                             indicators = market_service.get_technical_indicators(ticker)
+                            status.write(f"✅ 技術指標計算完成")
+                            
                             ctx = {
                                 "ticker": ticker,
                                 "price_data": {"current_price": prices.get(ticker, 0)},
@@ -91,12 +104,15 @@ if prompt := st.chat_input("請問關於投資的問題 (例如: AAPL 現在可�
                             res = mom_agent.run(ctx)
                             results[f"Momentum_{ticker}"] = res
                             context_texts.append(f"--- Momentum Report ({ticker}) ---\n{res}")
+                            status.write(f"✅ **Momentum Agent ({ticker})**: 分析完成")
 
                         if "Fundamental" in agents_to_call:
-                            status.write(f"正在諮詢 Fundamental Agent ({ticker})...")
+                            status.write(f"🔄 **Fundamental Agent ({ticker})**: 檢索財報與新聞...")
                             fund_agent = FundamentalAgent()
                             fin = market_service.get_financials(ticker)
                             news = market_service.get_news(ticker)
+                            status.write(f"✅ 財報與新聞檢索完成 (News count: {len(news)})")
+                            
                             ctx = {
                                 "ticker": ticker,
                                 "financials": fin,
@@ -105,10 +121,11 @@ if prompt := st.chat_input("請問關於投資的問題 (例如: AAPL 現在可�
                             res = fund_agent.run(ctx)
                             results[f"Fundamental_{ticker}"] = res
                             context_texts.append(f"--- Fundamental Report ({ticker}) ---\n{res}")
+                            status.write(f"✅ **Fundamental Agent ({ticker})**: 分析完成")
                 
-                # 3. Final CIO Synthesis if CIO is called or if we have multiple results
+                # 3. Final CIO Synthesis
                 if "CIO" in agents_to_call or len(results) > 0:
-                    status.write("CIO 正在統整報告...")
+                    status.write("🧠 **CIO Agent**: 正在綜合各專家意見並生成策略建議...")
                     cio_agent = CIOAgent()
                     
                     # Construct ad-hoc context
