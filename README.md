@@ -41,15 +41,16 @@ graph TD
         MA[Macro Agent]
         FA[Fundamental Agent]
         MO[Momentum Agent]
+        SA[Sentiment Agent]
         CIO[CIO Agent]
         PERF[Performance Service]
         
-        MA & FA & MO -->|Signals| DB[(Database)]
-        MA & FA & MO -->|Analysis| CIO
+        MA & FA & MO & SA -->|Signals| DB[(Database)]
+        MA & FA & MO & SA -->|Analysis| CIO
         DB -->|Win Rate/Alpha| PERF
         CIO -->|Qualitative Feedback| ENG
         PERF -->|Quant Metrics| ENG
-        ENG -.->|Optimize Prompts| MA & FA & MO
+        ENG -.->|Optimize Prompts| MA & FA & MO & SA
     end
 
     subgraph Infrastructure

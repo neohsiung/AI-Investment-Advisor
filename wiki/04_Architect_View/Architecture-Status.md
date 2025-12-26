@@ -16,6 +16,7 @@
 | **Scheduler**| ✅ Scripts Ready | Shell scripts ready. Cloud Run Jobs NOT yet linked. |
 | **Auth** | ✅ OAuth Ready | Google OAuth integrated. |
 | **Refinement** | ✅ Implementation Ready | Refactoring complete. Integrated with Scheduler. |
+| **Kubernetes** | ✅ Manifests Ready | `k8s/` folder contains Deployments/Services. Local support via Minikube. |
 
 ### 2. Modern Cloud-Native Architecture
 (See Diagram below)
@@ -44,6 +45,7 @@
 | **排程 (Scheduler)** | ✅ Scripts Ready | Shell scripts (`run_daily_check.sh`) 已就緒。GCP Cloud Run Jobs 尚未設定。 |
 | **認證 (Auth)** | ✅ OAuth Ready | Google OAuth 已整合，支援雲端與本地回呼。 |
 | **歸因引擎 (Refinement)** | ✅ Implementation Ready | 重構完成。已整合至排程器 (Scheduler)。 |
+| **Kubernetes** | ✅ Manifests Ready | k8s/ 目錄包含部署設定。支援 Minikube 本地測試。 |
 
 ### 2. 現代化雲原生架構圖 (Modern Cloud-Native Architecture)
 本系統遵循 **12-Factor App** 原則設計，目標架構如下：

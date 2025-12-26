@@ -4,7 +4,7 @@
 
 <a id="english"></a>
 
-## 🇺🇸 Local Deployment Guide (SQLite)
+## 🇺🇸 Local Deployment Guide (Docker)
 
 ### Goal
 Quickly establish a full-featured dev/test environment on a local machine without cloud dependencies.
@@ -42,14 +42,14 @@ cp .env.example .env
 ```bash
 ./stop.sh       # Stop services
 ./stop.sh       # Stop services
-kubectl logs -l app=dashboard -f # View logs
+docker compose logs -f dashboard # View logs
 ```
 
 ---
 
 <a id="traditional-chinese"></a>
 
-## 🇹🇼 本地部署指南 (Local SQLite)
+## 🇹🇼 本地部署指南 (Local Docker)
 
 ### 目標 (Goal)
 在使用者本地機器上快速建立一個全功能的開發與測試環境，無需任何雲端依賴。
@@ -93,5 +93,6 @@ cp .env.example .env
 
 # 查看日誌
 # 查看日誌
-kubectl logs -l app=dashboard -f
+# 查看日誌
+docker compose logs -f dashboard
 ```

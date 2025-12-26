@@ -28,6 +28,15 @@ The HR Protocol is a system health monitoring mechanism designed to detect "Zomb
 - **Auto-Restart**: Future versions should attempt to auto-restart or "heal" zombie agents by triggering a test run.
 - **Alerting**: Send Admin email when Zombie count > 0.
 
+### Self-Correction Mechanism (v3.1)
+The HR Unit now actively improves Agent performance using **DSPy**.
+
+- **Engineer Agent**: Analyzes weekly performance reports (`PerformanceService`).
+- **Optimization Loop**:
+  1.  Compare Agent signals vs Market Outcome.
+  2.  If Win Rate < Threshold, Engineer generates a new Prompt.
+  3.  New Prompt is tested and hot-swapped if better.
+
 ---
 
 <a id="traditional-chinese"></a>
@@ -55,3 +64,12 @@ HR 協議 (HR Protocol) 是一套系統健康監控機制，旨在偵測「殭�
 ### 未來路線圖 (Roadmap)
 - **自動重啟 (Auto-Restart)**: 未來版本應嘗試透過觸發測試執行來自動重啟或「治療」殭屍 Agent。
 - **警報 (Alerting)**: 當殭屍數量 > 0 時發送管理員郵件。
+
+### 自我修正機制 (Self-Correction Mechanism v3.1)
+HR 部門現在能透過 **DSPy** 主動提升 Agent 的工作績效。
+
+- **工程師 Agent (Engineer)**: 分析每週績效報告 (`PerformanceService`)。
+- **優化迴圈 (Optimization Loop)**:
+  1.  比對 Agent 過去發出的訊號 vs 真實市場結果。
+  2.  若 勝率 (Win Rate) < 閾值，Engineer 會撰寫新的 Prompt。
+  3.  系統測試新 Prompt，若效果更佳則即時熱替換 (Hot-swap)。

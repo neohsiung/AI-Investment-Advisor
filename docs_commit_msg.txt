@@ -1,0 +1,19 @@
+docs(v3.1): update architecture & specs for agent swarm, k8s, and self-correction | 更新架構與規格文檔以反映代理集群、K8s 與自我修正機制
+
+This update brings documentation in line with the v3.1 release.
+
+**Architecture & Specs | 架構與規格**:
+- **README**: Added Sentiment Agent to the system diagram.
+  - 在系統架構圖中新增情緒代理。
+- **Agents**: Updated `03_agents.md` to include Sentiment Agent in Deep Research flow.
+  - 更新代理規格書，將情緒代理加入深度研究流程。
+- **HR Protocol**: Added Self-Correction Mechanism (Engineer Agent) to `05_hr_protocol.md`.
+  - 在 HR 協議中新增自我修正機制與工程師代理的描述。
+
+**Deployment | 部署**:
+- **Options**: Added Kubernetes (Option C) to `Deployment-Options.md`.
+  - 在部署選項中新增 Kubernetes (方案 C)。
+- **Status**: Updated `Architecture-Status.md` to reflect K8s readiness.
+  - 更新架構狀態文檔以反映 K8s 就緒狀態。
+- **Guide**: Corrected `Deployment-Local-SQLite.md` to reflect Docker/Postgres default.
+  - 修正本地部署指南，反映預設使用 Docker/Postgres。

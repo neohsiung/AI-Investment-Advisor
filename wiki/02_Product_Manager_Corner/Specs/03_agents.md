@@ -52,7 +52,7 @@ A swarm of specialized AI Agents collaborating to generate investment strategies
     -   Output: List of 15 Ticker Symbols.
 3.  **Deep Research (Step 3)**:
     -   System loops through (Holdings + Candidates).
-    -   Executes `Momentum Agent` and `Fundamental Agent` in parallel.
+    -   Executes `Momentum Agent`, `Fundamental Agent`, and `Sentiment Agent` in parallel.
 4.  **Final Report (Step 4)**: `CIO Agent` (Report Mode).
     -   Synthesizes all research notes.
     -   Selects Top 3-5 Picks.
@@ -126,7 +126,7 @@ Agent Swarm (代理人集群) 由協作的多個專門 AI Agent 組成，負責�
     -   輸出: 15 檔股票代碼清單。
 3.  **深度研究 (Step 3)**:
     -   系統針對 (現有持倉 + 候選股) 進行迴圈。
-    -   平行執行 `Momentum Agent` 與 `Fundamental Agent`。
+    -   平行執行 `Momentum Agent`, `Fundamental Agent` 與 `Sentiment Agent`。
 4.  **最終報告 (Step 4)**: `CIO Agent` (報告模式)。
     -   綜合所有研究筆記。
     -   挑選 Top 3-5 精選標的。
