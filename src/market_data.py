@@ -11,7 +11,7 @@ from src.utils.logger import setup_logger
 
 class MarketDataService:
     def __init__(self, db_path=None):
-        self.conn = get_db_connection(db_path)
+        # self.conn = get_db_connection(db_path) # Unused and leaks connection
         self.logger = setup_logger("MarketData")
 
     def get_current_prices(self, tickers):
@@ -56,29 +56,61 @@ class MarketDataService:
     def get_market_context(self, tickers):
         """
         獲取更詳細的市場數據 (用於 Agent Context)
-        包含價格與技術指標
+        包含價格數據 (OHLCV) 與技術指標
         """
         context = {}
-        prices = self.get_current_prices(tickers)
-
         for ticker in tickers:
-            price = prices.get(ticker)
             indicators = self.get_technical_indicators(ticker)
+            ohlcv = self.get_ohlcv(ticker)
 
-            # AI Fallback
-            if price is None or price == 0:
+            # AI Fallback (Simplified, mainly relies on yfinance)
+            if not ohlcv:
                 self.logger.warning(f"Missing data for {ticker}, attempting AI fallback...")
                 ai_data = self._fetch_from_llm(ticker)
                 if ai_data:
-                    price = ai_data.get('price', 0)
-                    if 'indicators' in ai_data:
+                     # Attempt to map simple price to OHLCV structure if possible, or just pass what we have
+                     if 'price' in ai_data:
+                         ohlcv = {"close": [ai_data['price']]} 
+                     if 'indicators' in ai_data:
                         indicators.update(ai_data['indicators'])
 
             context[ticker] = {
-                "price": price,
+                "price_data": ohlcv,
                 "indicators": indicators
             }
         return context
+
+    def get_ohlcv(self, ticker, days=30):
+        """
+        獲取 OHLCV 歷史數據
+        return: dict of lists (open, high, low, close, volume)
+        """
+        try:
+            # Fetch slightly more to ensure cover
+            df = yf.download(ticker, period=f"{days+20}d", progress=False, auto_adjust=True)
+            if df.empty:
+                return {}
+            
+            # Keep only last 'days'
+            df = df.tail(days)
+            
+            # Helper to extract list from Series or DataFrame
+            def to_list(series):
+                if isinstance(series, pd.DataFrame):
+                    return series.iloc[:, 0].tolist()
+                return series.tolist()
+
+            return {
+                "date": [d.strftime('%Y-%m-%d') for d in df.index],
+                "open": to_list(df['Open']),
+                "high": to_list(df['High']),
+                "low": to_list(df['Low']),
+                "close": to_list(df['Close']),
+                "volume": to_list(df['Volume'])
+            }
+        except Exception as e:
+            self.logger.error(f"Error fetching OHLCV for {ticker}: {e}")
+            return {}
 
     def get_technical_indicators(self, ticker):
         """

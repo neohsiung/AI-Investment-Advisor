@@ -2,19 +2,41 @@ import pytest
 from unittest.mock import MagicMock, patch
 from src.services.scheduler_service import SchedulerService
 
+
 @pytest.fixture
 def mock_scheduler_deps():
     with patch('src.services.scheduler_service.SystemEngineerAgent') as eng_mock, \
          patch('src.services.scheduler_service.get_db_connection') as db_mock, \
          patch('src.services.scheduler_service.subprocess.run') as sub_mock, \
-         patch('src.services.scheduler_service.schedule') as schedule_mock:
+         patch('src.services.scheduler_service.schedule') as schedule_mock, \
+         patch('src.services.backtest_service.BacktestService') as backtest_mock:
         yield {
             "engineer": eng_mock,
             "db": db_mock,
             "subprocess": sub_mock,
-            "schedule": schedule_mock
+            "schedule": schedule_mock,
+            "backtest": backtest_mock
         }
 
+def test_get_all_users(mock_scheduler_deps):
+    """Test actual DB fetch logic for users."""
+    service = SchedulerService()
+    mock_conn = mock_scheduler_deps['db'].return_value
+    # Return list of tuples
+    mock_conn.execute.return_value.fetchall.return_value = [
+        ('user1@test.com',), 
+        ('admin@example.com',), # Should be filtered
+        ('user2@gmail.com',),   # Should be filtered by "your_email@gmail.com" logic if name matches list?
+        ('valid@test.com',)
+    ]
+    
+    users = service.get_all_users()
+    assert 'user1@test.com' in users
+    assert 'valid@test.com' in users
+    assert 'admin@example.com' not in users
+    # Based on code: invalid_emails = ["admin@example.com", "your_email@gmail.com"]
+    # So user2@gmail.com is valid unless it matches exactly
+    
 def test_job_daily_check_runs(mock_scheduler_deps):
     service = SchedulerService()
     
@@ -32,6 +54,14 @@ def test_job_daily_check_runs(mock_scheduler_deps):
             assert "daily" in args[0]
             assert "user@test.com" in args[0]
 
+def test_job_daily_check_no_users(mock_scheduler_deps):
+    service = SchedulerService()
+    with patch('src.services.scheduler_service.get_current_time') as time_mock:
+        time_mock.return_value.weekday.return_value = 0
+        with patch.object(service, 'get_all_users', return_value=[]):
+            service.job_daily_check()
+            mock_scheduler_deps['subprocess'].assert_not_called()
+
 def test_job_daily_check_skips_saturday(mock_scheduler_deps):
     service = SchedulerService()
     
@@ -42,6 +72,18 @@ def test_job_daily_check_skips_saturday(mock_scheduler_deps):
         
         mock_scheduler_deps['subprocess'].assert_not_called()
 
+def test_job_daily_check_exception(mock_scheduler_deps):
+    service = SchedulerService()
+    with patch('src.services.scheduler_service.get_current_time') as time_mock:
+        time_mock.return_value.weekday.return_value = 0
+        with patch.object(service, 'get_all_users', return_value=['u1']):
+            # Simulate subprocess error
+            mock_scheduler_deps['subprocess'].side_effect = Exception("Boom")
+            service.job_daily_check()
+            # Should not crash, but log error
+            # We can verify it continued (if loop) or finished
+            assert mock_scheduler_deps['subprocess'].call_count == 1
+
 def test_reload_schedule(mock_scheduler_deps):
     service = SchedulerService()
     mock_scheduler_deps['engineer'].return_value.get_schedule_config.return_value = {
@@ -49,12 +91,15 @@ def test_reload_schedule(mock_scheduler_deps):
         "schedule_weekly": "11:00"
     }
     
-    service.reload_schedule()
-    
-    # Check schedule calls
-    mock_scheduler_deps['schedule'].clear.assert_called()
-    mock_scheduler_deps['schedule'].every.return_value.day.at.assert_any_call("10:00")
-    mock_scheduler_deps['schedule'].every.return_value.saturday.at.assert_any_call("11:00")
+    # Mock the time conversion helper to return the time as-is
+    with patch('src.services.scheduler_service.convert_user_time_to_system_time', side_effect=lambda x: x):
+        service.reload_schedule()
+        
+        # Check schedule calls
+        mock_scheduler_deps['schedule'].clear.assert_called()
+        mock_scheduler_deps['schedule'].every.return_value.day.at.assert_any_call("10:00")
+        mock_scheduler_deps['schedule'].every.return_value.saturday.at.assert_any_call("11:00")
+        mock_scheduler_deps['schedule'].every.return_value.sunday.at.assert_any_call("10:00")
 
 def test_check_reload_signal_true(mock_scheduler_deps):
     service = SchedulerService()
@@ -90,16 +135,55 @@ def test_job_weekly_report(mock_scheduler_deps):
         args, _ = mock_scheduler_deps['subprocess'].call_args
         assert "weekly" in args[0]
 
+def test_job_weekly_report_exception(mock_scheduler_deps):
+    service = SchedulerService()
+    with patch.object(service, 'get_all_users', return_value=['u1']):
+        mock_scheduler_deps['subprocess'].side_effect = Exception("Fail")
+        service.job_weekly_report()
+        assert mock_scheduler_deps['subprocess'].call_count == 1
+
+def test_job_weekly_validation(mock_scheduler_deps):
+    service = SchedulerService()
+    # It mocks BacktestService imported inside the method if not patched correctly?
+    # We patched 'src.services.scheduler_service.BacktestService' in fixture
+    
+    service.job_weekly_validation()
+    
+    mock_bt_cls = mock_scheduler_deps['backtest']
+    mock_bt_instance = mock_bt_cls.return_value
+    
+    # Should call run_simulation for default tickers
+    assert mock_bt_instance.run_simulation.call_count >= 1
+    # Check args for one of them
+    call_args_list = mock_bt_instance.run_simulation.call_args_list
+    tickers_called = [args[0] for args, kwargs in call_args_list]
+    assert "AAPL" in tickers_called
+    assert "SPY" in tickers_called
+
 def test_job_monthly_refinement(mock_scheduler_deps):
     service = SchedulerService()
-    # Mock date to be 1st of month
+    # Mock execution
+    service.job_monthly_refinement()
+    
+    # Verify subprocess call to refinement.py
+    mock_scheduler_deps['subprocess'].assert_called()
+    args, _ = mock_scheduler_deps['subprocess'].call_args
+    assert "refinement.py" in str(args[0])
+
+def test_check_monthly_job_triggers(mock_scheduler_deps):
+    service = SchedulerService()
     with patch('src.services.scheduler_service.get_current_time') as time_mock:
-        time_mock.return_value.day = 1
+        time_mock.return_value.day = 1 # 1st day matches
         
-        # job_monthly_refinement calls subprocess run
-        service.job_monthly_refinement()
+        with patch.object(service, 'job_monthly_refinement') as job_mock:
+            service.check_monthly_job()
+            job_mock.assert_called()
+
+def test_check_monthly_job_skips(mock_scheduler_deps):
+    service = SchedulerService()
+    with patch('src.services.scheduler_service.get_current_time') as time_mock:
+        time_mock.return_value.day = 2 # Not 1st
         
-        # Verify subprocess call to refinement.py
-        mock_scheduler_deps['subprocess'].assert_called()
-        args, _ = mock_scheduler_deps['subprocess'].call_args
-        assert "refinement.py" in str(args[0])
+        with patch.object(service, 'job_monthly_refinement') as job_mock:
+            service.check_monthly_job()
+            job_mock.assert_not_called()

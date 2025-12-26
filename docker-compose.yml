@@ -34,9 +34,9 @@ services:
     image: ankane/pgvector:v0.5.1
     container_name: investment_advisor_db
     environment:
-      POSTGRES_USER: ${DB_USER:-postgres}
-      POSTGRES_PASSWORD: ${DB_PASS:-postgres}
-      POSTGRES_DB: ${DB_NAME:-portfolio}
+      POSTGRES_USER: "${DB_USER:-postgres}"
+      POSTGRES_PASSWORD: "${DB_PASS:-postgres}"
+      POSTGRES_DB: "${DB_NAME:-portfolio}"
     volumes:
       - postgres_data:/var/lib/postgresql/data
       - ./deployment/postgres/init.sql:/docker-entrypoint-initdb.d/init.sql

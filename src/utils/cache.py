@@ -50,8 +50,6 @@ class ResponseCache:
             if row:
                 response, timestamp_str = row
                 # Parse timestamp (assuming ISO format from format_time)
-                # We need to handle potential timezone differences if DB has old data
-                # But for now, let's assume consistent usage of time_utils
                 try:
                     timestamp = datetime.fromisoformat(timestamp_str)
                 except ValueError:
@@ -59,9 +57,6 @@ class ResponseCache:
                     timestamp = datetime.now()
 
                 # Check TTL
-                # get_current_time() returns aware datetime, timestamp from DB should be aware too if saved via format_time()
-                # If timestamp is naive (old data), we might get error comparing aware vs naive.
-                # Let's ensure we compare correctly.
                 now = get_current_time()
                 if timestamp.tzinfo is None:
                     timestamp = timestamp.replace(tzinfo=now.tzinfo) # Assume same TZ
@@ -75,6 +70,8 @@ class ResponseCache:
         except Exception as e:
             self.logger.error(f"Cache GET error: {e}")
             return None
+        finally:
+            conn.close()
 
     def set(self, agent_name, prompt, response):
         """Save a response to the cache."""

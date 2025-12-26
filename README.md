@@ -15,23 +15,17 @@
 
 **AI Investment Advisor** is an advanced, automated quantitative investment system empowered by a **Self-Correcting Agent Swarm**. Simulating a **Billion-Dollar Hedge Fund**, it employs specialized AI Agents (CIO, Macro, Fundamental, Momentum) to perform market research and portfolio management, while an **HR Unit** continuously monitors and optimizes their performance using **DSPy**.
 
-### 🌟 Key Features (v3.0)
+### 🌟 Key Features (v3.1 - Quant Optimized)
 
-*   **Self-Correcting Loop (New)**:
-    *   **HR Unit**: A dedicated "Human Resources" module that evaluates agent outputs.
-    *   **DSPy Optimization**: Automatically refines prompts and logic based on feedback/backtest results.
-*   **Multi-Agent Architecture**:
-    *   **CIO Agent**: Portfolio allocation & strategy synthesis.
-    *   **Fundamental Agent**: Evaluates financials and valuation.
-    *   **Momentum Agent**: Tracks technical trends and price action.
-    *   **Dispatcher Agent**: Interactive chat interface for user queries.
-    *   **System Engineer Agent**: Maintains system health and optimizations.
-*   **Adaptive Intelligence**:
-    *   **Smart Freshness**: Skips redundant analysis to save costs.
-    *   **Model Tiering**: Smart Tier (Gemini 1.5 Pro) for complex tasks, Fast Tier (Flash) for routine.
-*   **Enterprise-Grade**:
-    *   **Real-time Data**: Injects live market data (Yahoo Finance, FRED) to prevent hallucinations.
-    *   **Clean Architecture**: Modular design for scalability and testing.
+*   **Quantitative Feedback Loop (Active)**:
+    *   **Engineer Agent**: A specialized "Meta-Agent" that reads performance metrics (Win Rate, Alpha) and qualitative feedback from the CIO.
+    *   **Auto-Tuning**: Automatically rewrites Agent Prompts using **DSPy** logic to correct underperformance.
+*   **Institutional-Grade Personas**:
+    *   **CIO**: Modeled after top Hedge Fund Managers (Bridgewater/Citadel), focusing on Risk-Adjusted Returns.
+    *   **Macro/Fundamental/Momentum**: Specialized analysts with distinct data pipelines and reasoning frameworks.
+*   **Modern Infrastructure**:
+    *   **Kubernetes Ready**: Full K8s deployment manifests (`k8s/`) for scalable operations.
+    *   **Vector Database**: `pgvector` integration for future RAG/Long-term Memory.
 
 ### 🏗️ System Architecture
 
@@ -42,31 +36,35 @@ graph TD
     
     DISP -->|Query| Agents
     
-    subgraph "Self-Correcting Swarm (v3.0)"
-        HR[HR Unit / DSPy Opt]
+    subgraph "Quant-Driven Agent Swarm (v3.1)"
+        ENG[Engineer Agent]
         MA[Macro Agent]
         FA[Fundamental Agent]
         MO[Momentum Agent]
         CIO[CIO Agent]
+        PERF[Performance Service]
         
-        MA & FA & MO -->|Report| CIO
-        CIO -->|Performance Metrics| HR
-        HR -.->|Optimize Prompts| MA & FA & MO
+        MA & FA & MO -->|Signals| DB[(Database)]
+        MA & FA & MO -->|Analysis| CIO
+        DB -->|Win Rate/Alpha| PERF
+        CIO -->|Qualitative Feedback| ENG
+        PERF -->|Quant Metrics| ENG
+        ENG -.->|Optimize Prompts| MA & FA & MO
     end
 
-    subgraph Data & State
-        DB[(PostgreSQL/SQLite)]
-        States[Agent States Table]
+    subgraph Infrastructure
+        K8S[Kubernetes Cluster]
+        POSTGRES[(Postgres + pgvector)]
     end
-
-    Agents <-->|Freshness Check| States
-    Agents <-->|Read| DB
 ```
 
 ### ⚙️ Core Workflows
-1.  **Event-Driven (Daily)**: News -> Light CIO -> Main CIO -> Strategy.
-2.  **Sector Strategy (Weekly)**: Macro -> CIO Strategy -> Screener -> Deep Research -> Synthesis.
-3.  **Self-Correction**: Feedback -> HR Eval -> DSPy Optimizer -> Better Agents.
+1.  **Daily Tactical Check**: Momentum/Sentiment analysis -> Signal Generation -> CIO Review.
+2.  **Weekly Strategy**: Deep Dive (Macro + Fundamental) -> Portfolio Rebalancing -> Report.
+3.  **Optimization Loop (Weekly)**:
+    *   System calculates Agent Win Rates based on past signals vs current price.
+    *   **Engineer Agent** reviews Performance + CIO Feedback.
+    *   Prompts are auto-updated to fix weaknesses (e.g., "Momentum Agent is too aggressive in bear markets").
 
 ### 🚀 Quick Start
 
@@ -98,18 +96,21 @@ graph TD
     | `SMTP_PASSWORD`| App Password | Yes | - |
     | `DB_TYPE` | `sqlite` or `postgres` | No | sqlite |
 
-3.  **Start the System** (Recommended)
+3.  **Start the System**
     ```bash
+    # Default: Docker Compose (Local)
     ./start.sh
-    ```
-    *Builds Docker containers and launches Dashboard (http://localhost:8501) + Scheduler.*
 
-    **Alternative: Local Dev (Python 3.11)**
-    ```bash
-    # See wiki/Python-Environment-Setup for details
-    pip install -r requirements.txt
-    python src/cli.py --mode dashboard
+    # Option: Kubernetes (Minikube/Cloud)
+    ./start.sh --k8s
+    
+    # Cleanup
+    ./start.sh --clean
     ```
+    *Builds containers and launches Dashboard (http://localhost:8501).*
+
+    **Alternative: Cloud Deployment**
+    Follow the [GCP Guide](wiki/03_Developer_Guide/Deployment-GCP-CloudRun.md) for production deployment. The `start.sh` script is designed to work with both local Minikube and remote clusters.
 
 ### 📚 Documentation (Wiki)
 For detailed guides, please refer to our **[Project Wiki](wiki/Home.md)**:
@@ -126,36 +127,49 @@ For detailed guides, please refer to our **[Project Wiki](wiki/Home.md)**:
 
 **AI Investment Advisor** 是一個由 **自我修正 (Self-Correcting)** AI Agent 集群驅動的自動化投資顧問系統。它模擬了**頂級對沖基金**的運作架構，聘請了專業的 AI Agent (投資長、總經、基本面、動能) 進行市場分析，並設有 **HR Unit (人力資源部)** 利用 **DSPy** 技術監控並優化 Agent 的表現。
 
-### 🌟 核心功能 (v3.0)
+### 🌟 核心功能 (v3.1 - 量化優化版)
 
-*   **自我修正迴圈 (Self-Correcting Loop)**:
-    *   **HR Unit**: 專職監控 Agent 產出品質的模組。
-    *   **DSPy 優化**: 根據回測與反饋，自動優化 Agent 的 Prompt 與推論邏輯。
-*   **多重 Agent 架構**:
-    *   **CIO Agent (投資長)**: 負責資產配置與最終決策。
-    *   **Fundamental Agent (基本面)**: 評估財報與估值。
-    *   **Momentum Agent (動能)**: 追蹤價格趨勢。
-    *   **Dispatcher (調度員)**: 處理使用者對話與任務分派。
-*   **企業級架構**:
-    *   **整潔架構 (Clean Architecture)**: 高度模組化，易於測試與擴展。
-    *   **即時數據**: 串接 Yahoo Finance 與 FRED，避免 AI 幻覺。
+*   **量化反饋迴圈 (已啟用)**:
+    *   **工程師 Agent (Engineer)**: 類似 "Meta-Agent"，負責讀取績效指標 (勝率、Alpha) 與 CIO 的質化反饋。
+    *   **自動調校 (Auto-Tuning)**: 若發現某分析師表現不佳，會利用 **DSPy** 邏輯自動重寫其 Prompt。
+*   **機構級角色設定 (Institutional Personas)**:
+    *   **CIO**: 模擬頂級對沖基金經理 (如 Bridgewater/Citadel)，專注於風險調整後報酬。
+    *   **總經/基本面/動能分析師**: 根據華爾街標準 (Goldman Sachs/CMT) 設定的專業分析角色。
+*   **現代化基礎設施**:
+    *   **Kubernetes Ready**: 完整的 K8s 部署清單 (`k8s/`)，支援彈性擴展。
+    *   **向量資料庫**: 整合 `pgvector`，為未來的 RAG (長期記憶) 奠定基礎。
 
 ### 🏗️ 系統架構 (System Architecture)
 
-*(請見上方英文區塊的架構圖)*
+*(架構圖請參考上方英文區塊的 "Quant-Driven Agent Swarm")*
 
-*   **Agent Swarm**: 各司其職的 AI 專家團隊。
-*   **HR / DSPy Loop**: v3.0 的核心創新，讓系統越用越聰明。
+*   **Quant-Driven Swarm**: 數據驅動的 AI 專家團隊。
+*   **Engineer Optimization**: 系統會根據 "勝率" 自動優化分析師的大腦。
+
+### ⚙️ 核心流程 (Core Workflows)
+1.  **每日戰術 (Daily Tactical)**: 動能/情緒分析 -> 產生訊號 -> CIO 審閱 -> 戰術報告。
+2.  **每週戰略 (Weekly Strategy)**: 深度研究 (總經+基本面) -> 資產再平衡 -> 戰略報告。
+3.  **優化迴圈 (Optimization Loop)**:
+    *   系統計算過去訊號的準確度 (Win Rate)。
+    *   **工程師 Agent** 檢視績效數據 + CIO 反饋。
+    *   自動修正弱點 (例如："修正動能分析師在熊市中過於激進的問題")。
 
 ### 🚀 快速開始 (Quick Start)
 
 1.  **下載**: `git clone https://github.com/neohsiung/AI-Investment-Advisor.git`
 2.  **設定**: `cp .env.example .env` (填入 API Key)
-3.  **啟動**:
+3.  **啟動 (Start)**:
     ```bash
+    # 預設: Docker Compose (本地端)
     ./start.sh
+
+    # 選項: Kubernetes (Minikube/雲端)
+    ./start.sh --k8s
+
+    # 清除 (Cleanup)
+    ./start.sh --clean
     ```
-    *系統將自動以 Docker 啟動。瀏覽器打開: [http://localhost:8501](http://localhost:8501)*
+    *系統將自動啟動。瀏覽器打開: [http://localhost:8501](http://localhost:8501)*
 
 ### 📚 完整文檔 (Wiki)
 所有技術手冊與指南皆已移至 **[Project Wiki](wiki/Home.md)**：

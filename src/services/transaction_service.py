@@ -25,8 +25,15 @@ class TransactionService:
             return pd.DataFrame()
         return self.repository.get_all_by_user_df(uid)
 
-    def get_user_tickers(self, user_id):
-        """Get unique tickers for a user."""
+    def get_user_tickers(self, user_id, only_active=False):
+        """Get unique tickers for a user. If only_active=True, only return tickers with positive quantity."""
+        if only_active:
+            # Need to cast/check if repository has get_active_tickers
+            if hasattr(self.repository, 'get_active_tickers'):
+                return self.repository.get_active_tickers(user_id)
+            else:
+                # Fallback if specific repo doesn't support it (though Sqlite does now)
+                return self.repository.get_unique_tickers(user_id)
         return self.repository.get_unique_tickers(user_id)
 
     def add_manual_trade(self, ticker, date_str, action, quantity, price, fees):

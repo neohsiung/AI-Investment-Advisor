@@ -9,41 +9,45 @@
 ### Goal
 Build a **Dual-Unit** intelligent investment platform involving an "Investment Advisory Unit" for strategy and an "HR Unit" for continuous optimization.
 
-### Architecture (v3)
+### Architecture (v3.1 - Quant Optimized)
 The system consists of two parallel units:
 
 #### 1. Investment Advisory Unit
 - **Event Bus**: Central Integration Hub receiving Webhooks and User Inputs.
 - **Light CIO (Router)**: Uses **Flash Model** to filter noise.
 - **Deep CIO (Decision Maker)**: Uses **Deep Model** (Gemini 1.5 Pro) for complex decisions.
-- **Analyst Pool**: Fundamental, Momentum, Macro Agents.
+- **Analyst Pool**: Fundamental, Momentum, Macro Agents + **Sentiment Agent (New)**.
 
-#### 2. HR Unit (Self-Correcting Loop)
-- **Engineer Agent**: Monitors CIO feedback and backtest performance.
-- **FeedbackStore**: Vector DB (pgvector) storing "Input Context -> Agent Decision -> Market Outcome".
-- **OptimizerPipeline**: Uses `dspy.teleprompt.BootstrapFewShot` to compile optimized prompts based on high-scoring examples from the store.
-- **EvaluationService**: Calculates "Prediction Error" to grade agent performance.
+#### 2. Quant Feedback Unit (Self-Correction)
+- **Engineer Agent**: A specialized "Meta-Agent" (Head of Quant Dev).
+- **PerformanceService**: Tracks every signal ("BUY"/"SELL") and computes Win Rate/Alpha.
+- **Refinement Engine**: Runs batch attribution analysis, validating past signals against real market data (`MarketDataService`) to update `outcome_score`.
+- **Optimization Loop**:
+    1.  Refinement Engine scores past recommendations.
+    2.  Ingests CIO's qualitative feedback.
+    3.  Engineer updates Agent Prompts via **DSPy** to fix weaknesses.
 
 ### Core Workflows
-1.  **Event-Driven**: News -> Light CIO -> Main CIO -> Strategy.
-2.  **Data Lifecycle**: Tech indicators (3 days) vs Macro (Permanent).
-3.  **Manual Injection**: User uploads -> Agent summary.
+1.  **Daily Tactical**: Momentum + Sentiment -> Signal -> CIO Review.
+2.  **Weekly Strategy**: Macro + Fundamental -> Rebalancing -> Report.
+3.  **Quant Loop**: Weekly Performance Review -> Agent Optimization.
 
 ### Codebase Structure
 - **src/**: Main Source Code.
-    - `agents/`: AI Agents (`CIOAgent`) and Factory (`AgentFactory`).
+    - `agents/`: AI Agents (`CIOAgent`, `EngineerAgent`) and Factory (`AgentFactory`).
     - `data/`: Data access & Ingestor.
     - `pages/`: Streamlit UI (`4_Advisor_Chat.py`, etc).
-    - `services/`: Business Logic (`WorkflowService`, `SchedulerService`, `IngestionService`).
+    - `services/`: Business Logic (`WorkflowService`, `PerformanceService`).
     - `workflow.py`: Entry point delegating to `WorkflowService`.
 - **tests/**: Mirror of `src/` (Global Mocks used).
 - **data/**: SQLite DB location.
-- **deployment/**: Infrastructure setup.
+- **k8s/**: Kubernetes manifests.
 
-### Design Patterns (v1.1)
+### Design Patterns (v3.1)
 - **Template Method**: `BaseWorkflow` defines the skeleton, subclasses (`DailyWorkflow`) implement specific logic.
 - **Factory Pattern**: `AgentFactory` centralizes agent creation and dependency injection.
 - **Dependency Injection**: Services and Agents accept repositories/deps via constructor for testability.
+- **Observer Pattern**: Engineer observes Agent performance.
 
 
 ---
@@ -53,29 +57,29 @@ The system consists of two parallel units:
 ## 🇹🇼 系統概觀 (System Overview)
 
 ### 目標 (Goal)
-構建一個**雙部門制 (Dual-Unit)** 的智慧化投資顧問平台。不僅模擬華爾街的「投資顧問部」進行決策，更引入「人力資源部」透過 Prompt Engineering 持續優化 AI 員工績效。
+構建一個**雙部門制 (Dual-Unit)** 的智慧化投資顧問平台。不僅模擬華爾街的「投資顧問部」進行決策，更引入「量化工程部」透過大數據與 Prompt Engineering 持續優化 AI 員工績效。
 
 ### 為什麼 (Why)
 - **成本與效能平衡**: 透過 **Flash/Deep 雙軌制**，在日常監控使用低成本模型，僅在關鍵時刻調用高算力模型。
-- **事件驅動 (Event-Driven)**: 避免資訊過載，分析師平時保持待命 (Passive)，僅在 CIO 召喚或重大事件時執行深度分析。
-- **持續演進**: 系統不應是靜態的，應透過 **HR Unit** 自動優化 Prompt，適應市場變遷。
+- **數據驅動優化**: 系統不應是黑盒子，應透過 **勝率 (Win Rate)** 與 **CIO 反饋** 自動修正邏輯。
+- **制度化角色**: 每個 Agent 都有明確的華爾街職位定義 (如高盛分析師 vs 對沖基金經理)。
 
-### 系統架構 (System Architecture v3)
+### 系統架構 (System Architecture v3.1)
 本系統由兩個平行運作的單位組成：
 
 #### 3.1 投資顧問部 (Investment Advisory Unit)
 負責市場分析與策略輸出。
-*   **Event Bus**: 系統整合中樞，接收新聞 Webhook、使用者手動匯入與排程訊號。
-*   **Light CIO (Router)**: 使用 **Flash Model** 過濾噪音。若事件重要性 > 閾值，則喚醒核心團隊。
-*   **Deep CIO (Decision Maker)**: 使用 **Deep Model** (如 Gemini 1.5 Pro) 進行複雜決策，並動態調派分析師。
-*   **Analyst Pool**: 包含 Momentum, Fundamental, Macro 三大專家，依指令執行深度分析。
+*   **Event Bus**: 系統整合中樞。
+*   **Light CIO (Router)**: 使用 **Flash Model** 過濾噪音。
+*   **Deep CIO (Decision Maker)**: 使用 **Deep Model** (如 Gemini 1.5 Pro) 進行複雜決策。
+*   **Analyst Pool**: 包含 Momentum, Fundamental, Macro, Sentiment 四大專家。
 
-#### 3.2 人力資源部 (HR Unit - 自我優化迴圈)
+#### 3.2 量化工程部 (Quant Engineering Unit)
 負責系統自我優化 (Meta-Level Optimization)。
-*   **Engineer Agent (HR)**: 監控 CIO 對分析報告的滿意度，以及回測績效。
-*   **FeedbackStore**: 向量資料庫 (pgvector)，儲存「輸入情境 -> Agent 決策 -> 市場結果」的映射。
-*   **OptimizerPipeline**: 使用 `dspy.teleprompt.BootstrapFewShot`，根據高分範例自動編譯優化後的 Prompt。
-*   **EvaluationService**: 計算「預測誤差 (Prediction Error)」來為 Agent 績效打分數。
+*   **Engineer Agent**: 首席量化開發者，負責修改其他 Agent 的大腦 (Prompt)。
+*   **PerformanceService**: 記錄每一筆交易訊號，計算歷史勝率。
+*   **Refinement Engine**: 負責歸因分析 (Attribution Analysis)，使用真實市場數據驗證過去訊號並更新分數。
+*   **Optimization Loop**: 自我修正迴圈，確保系統越用越聰明。
 
 ### 3.3 架構圖 (Architecture Diagram)
 ```mermaid
@@ -86,26 +90,26 @@ graph TB
     end
 
     subgraph "Investment Advisory Unit"
-        EventBus --> LightCIO{"Light CIO<br/>(Flash Model)"}
-        LightCIO -- "Ignore" --> Log[(Log DB)]
-        LightCIO -- "Critical!" --> MainCIO{"Main CIO<br/>(Deep Model)"}
+        EventBus --> LightCIO{"Light CIO"}
+        LightCIO -- "Critical!" --> MainCIO{"Main CIO"}
         
         MainCIO -->|Dispatch| Analysts
         
-        subgraph "Analyst Pool (Passive)"
+        subgraph "Analyst Pool"
             MA[Macro Agent]
             FA[Fundamental Agent]
             MO[Momentum Agent]
+            SA[Sentiment Agent]
         end
         
-        Analysts -->|Write Report| Log
-        MainCIO -->|Read History| Log
+        Analysts -->|Signals| DB[(Database)]
         MainCIO -->|Final Report| Report[Strategy Report]
     end
 
-    subgraph "HR Unit (Optimization)"
-        Report --> HR[Engineer Agent]
-        Feedback[Backtest Results] --> HR
+    subgraph "Quant Engineering Unit"
+        DB -->|Win Rate| Perf[Performance Service]
+        Report -->|Qualitative Feedback| HR[Engineer Agent]
+        Perf -->|Quant Metrics| HR
         HR -->|Optimize Prompt| Analysts
     end
 ```

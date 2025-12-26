@@ -41,7 +41,8 @@ cp .env.example .env
 #### 4. Stop & Maintenance
 ```bash
 ./stop.sh       # Stop services
-docker compose logs -f # View logs
+./stop.sh       # Stop services
+kubectl logs -l app=dashboard -f # View logs
 ```
 
 ---
@@ -91,5 +92,6 @@ cp .env.example .env
 ./stop.sh
 
 # 查看日誌
-docker compose logs -f
+# 查看日誌
+kubectl logs -l app=dashboard -f
 ```

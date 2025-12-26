@@ -1,0 +1,22 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: scheduler
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: scheduler
+  template:
+    metadata:
+      labels:
+        app: scheduler
+    spec:
+      containers:
+      - name: scheduler
+        image: investment-advisor-scheduler:latest
+        imagePullPolicy: IfNotPresent
+        command: ["python", "src/cli.py", "--mode", "scheduler"]
+        envFrom:
+        - secretRef:
+            name: app-secrets

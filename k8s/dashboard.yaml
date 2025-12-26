@@ -1,0 +1,38 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: dashboard
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: dashboard
+  template:
+    metadata:
+      labels:
+        app: dashboard
+    spec:
+      containers:
+      - name: dashboard
+        image: investment-advisor-dashboard:latest
+        imagePullPolicy: IfNotPresent
+        ports:
+        - containerPort: 8501
+        envFrom:
+        - secretRef:
+            name: app-secrets
+        # For local dev, we might want to mount source code, but for now strict deployment
+        # To enable hot reload in minikube, we would need 'minikube mount' and hostPath
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: dashboard
+spec:
+  type: LoadBalancer
+  selector:
+    app: dashboard
+  ports:
+    - protocol: TCP
+      port: 8501
+      targetPort: 8501

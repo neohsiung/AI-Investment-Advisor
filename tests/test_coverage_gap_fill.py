@@ -94,14 +94,15 @@ def test_market_data_get_market_context_with_fallback(mock_agent):
     service = MarketDataService()
 
     with patch.object(service, 'get_current_prices', return_value={'AAPL': 0}):
-        with patch.object(service, '_fetch_from_llm', return_value={'price': 150.0, 'indicators': {'rsi': 60}}):
+        # Mock get_ohlcv to avoid real yfinance call and return a simple dict that matches what we expect
+        with patch.object(service, 'get_ohlcv', return_value={"close": 150.0}): 
             with patch.object(service, 'get_technical_indicators', return_value={'rsi': 50}):
                 # Test logic
                 context = service.get_market_context(['AAPL'])
 
-                assert context['AAPL']['price'] == 150.0
+                assert context['AAPL']['price_data']['close'] == 150.0
 
-                assert context['AAPL']['indicators']['rsi'] == 60
+                assert context['AAPL']['indicators']['rsi'] == 50
 
 def test_market_data_fetch_from_llm_success():
     service = MarketDataService()

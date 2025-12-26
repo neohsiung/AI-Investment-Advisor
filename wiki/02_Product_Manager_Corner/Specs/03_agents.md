@@ -29,7 +29,12 @@ A swarm of specialized AI Agents collaborating to generate investment strategies
 *   **Input**: FRED Data (GDP, CPI, Yields).
 *   **Output**: Economic Cycle, Sector Rotation.
 
-#### 2.4 CIO Agent (Chief Investment Officer)
+#### 2.4 Sentiment Agent (New)
+*   **Role**: Market Sentiment Analyst.
+*   **Input**: News Headlines, Fear & Greed Index, VIX.
+*   **Output**: Market Mood (Panic/Euphoria), Sentiment Score (0-100).
+
+#### 2.5 CIO Agent (Chief Investment Officer)
 *   **Role**: Portfolio Manager & Decision Maker.
 *   **Input**: Reports from above agents + Portfolio State.
 *   **Output**: Buy/Sell/Hold decisions, Allocation.
@@ -91,7 +96,12 @@ Agent Swarm (代理人集群) 由協作的多個專門 AI Agent 組成，負責�
 *   **輸入**: FRED 數據 (GDP, CPI, 失業率, 殖利率曲線)。
 *   **輸出**: 經濟週期階段, 類股輪動建議。
 
-#### 2.4 投資長 (CIO Agent - Chief Investment Officer)
+#### 2.4 市場情緒分析師 (Sentiment Agent)
+*   **角色**: 市場情緒分析師 (Market Sentiment Analyst)。
+*   **輸入**: 新聞標題, 恐懼貪婪指數 (Fear & Greed), VIX 指數。
+*   **輸出**: 市場情緒狀態 (恐慌/貪婪), 情緒分數 (0-100)。
+
+#### 2.5 投資長 (CIO Agent - Chief Investment Officer)
 *   **角色**: 投資組合經理與最終決策者 (Portfolio Manager & Decision Maker)。
 *   **模式**:
     *   **戰略模式 (Strategy Mode)**: 分析板塊並篩選候選股。

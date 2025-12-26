@@ -10,6 +10,7 @@
 | Version | Date | Description |
 | :--- | :--- | :--- |
 | **v1.0** | 2025-12-12 | Initial plan for v1->v3 migration. |
+| **v3.1** | 2025-12-26 | Updated status for v3.1 completion. |
 
 ### 1. Why Migrate?
 Current v1 system is linear and cannot handle "Real-time News" or "Cost Control" (v3 dual-unit requirements). A clean migration path is needed to ensure zero downtime.
@@ -21,17 +22,17 @@ Current v1 system is linear and cannot handle "Real-time News" or "Cost Control"
 
 ### 3. Side-by-Side Strategy (Incremental)
 
-#### Phase 1: Data Layer Expansion (Planning)
+#### Phase 1: Data Layer Expansion (Done)
 - **Action**: Modify `src/database.py`.
 - **Details**: Add `event_logs`, `manual_inputs` tables.
 
-#### Phase 2: Agent Dual-Mode (Pending)
+#### Phase 2: Agent Dual-Mode (Done)
 - **Action**: Refactor Agent classes.
-- **Details**: Add `run_flash()` / `run_deep()` methods.
+- **Details**: Implemented `AgentFactory` and `SystemEngineerAgent`.
 
-#### Phase 3: New Core (Pending)
-- **Action**: Create `src/workflow_v3.py`.
-- **Details**: New Event-Driven entry point.
+#### Phase 3: New Core (Done)
+- **Action**: Create `src/refinement.py` and `SchedulerService`.
+- **Details**: Implemented Feedback Loop and integrated with Scheduler.
 
 #### Phase 4: Traffic Switching (Pending)
 - **Action**: Switch entry point.
@@ -51,6 +52,7 @@ Since v1 code (`workflow.py`) remains, simply stop v3 process and ensure v1 cron
 | 版本 | 日期 | 摘要 |
 | :--- | :--- | :--- |
 | **v1.0** | 2025-12-12 | 初始遷移計畫：Side-by-Side 策略，確保 v1 服務不中斷。 |
+| **v3.1** | 2025-12-26 | 更新狀態以反映 v3.1 完成度。 |
 
 ### 1. 為什麼需要遷移？ (Why)
 目前的系統（v1）採用線性工作流，無法滿足「即時新聞回應」與「成本控管」的需求。
@@ -65,19 +67,19 @@ Since v1 code (`workflow.py`) remains, simply stop v3 process and ensure v1 cron
 我們採取 **增量式遷移 (Incremental Migration)**，分為四個階段：
 
 #### Phase 1: 數據層擴容 (Data Layer Expansion)
-*   **Status**: Planning
+*   **Status**: Done
 *   **Action**: 修改 `src/database.py`。
 *   **Details**: 新增此階段所需的 `event_logs`, `manual_inputs` 表格。現有的 `transactions` 表格保持不變。
 
 #### Phase 2: Agent 雙模化 (Agent Dual-Mode)
-*   **Status**: Pending
+*   **Status**: Done
 *   **Action**: 重構 Agent 類別。
-*   **Details**: 引入 Factory Pattern 或增加 `run_flash()` / `run_deep()` 方法，讓 Agent 能同時支援 v1 的同步呼叫與 v3 的異步調派。
+*   **Details**: 引入 Factory Pattern (已完成) 並實作 `SystemEngineerAgent`。
 
 #### Phase 3: 新核心搭建 (New Core Implementation)
-*   **Status**: Pending
-*   **Action**: 建立 `src/workflow_v3.py` 與 `src/core/event_bus.py`。
-*   **Details**: 這是 v3 的全都新入口。它將獨立運行，監聽 Webhook，而不干擾 v1 的 Cron Job。
+*   **Status**: Done
+*   **Action**: 建立 `src/refinement.py` 與 `SchedulerService`。
+*   **Details**: 已完成回饋迴圈 (Feedback Loop) 並整合至排程器。
 
 #### Phase 4: 流量切換 (Traffic Switching)
 *   **Status**: Pending

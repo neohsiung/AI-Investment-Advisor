@@ -8,7 +8,7 @@ from datetime import datetime
 from sqlalchemy import text
 from src.data.database import get_db_connection
 from src.agents.engineer import SystemEngineerAgent
-from src.utils.time_utils import format_time, get_current_time
+from src.utils.time_utils import format_time, get_current_time, convert_user_time_to_system_time
 
 logger = logging.getLogger("SchedulerService")
 
@@ -143,10 +143,14 @@ class SchedulerService:
         daily_time = config.get("schedule_daily", "09:00")
         weekly_time = config.get("schedule_weekly", "09:00")
         
-        logger.info(f"Loaded config: Daily={daily_time}, Weekly={weekly_time}")
+        # Convert User Time (e.g. Asia/Taipei) to System Time (UTC)
+        daily_time_sys = convert_user_time_to_system_time(daily_time)
+        weekly_time_sys = convert_user_time_to_system_time(weekly_time)
         
-        schedule.every().day.at(daily_time).do(self.job_daily_check)
-        schedule.every().saturday.at(weekly_time).do(self.job_weekly_report)
+        logger.info(f"Loaded config: Daily={daily_time} ({daily_time_sys} UTC), Weekly={weekly_time} ({weekly_time_sys} UTC)")
+        
+        schedule.every().day.at(daily_time_sys).do(self.job_daily_check)
+        schedule.every().saturday.at(weekly_time_sys).do(self.job_weekly_report)
         # Run validation on Sunday to review the week
         schedule.every().sunday.at("10:00").do(self.job_weekly_validation)
         schedule.every().day.at("00:00").do(self.check_monthly_job)

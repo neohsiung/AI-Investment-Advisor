@@ -15,9 +15,10 @@ def test_get_timezone():
     assert str(tz) == "Asia/Taipei"
 
     # Test valid env var
-    os.environ["TIMEZONE"] = "UTC"
-    tz = get_timezone()
-    assert str(tz) == "UTC"
+    with patch('src.utils.time_utils.get_db_timezone', return_value=None):
+        os.environ["TIMEZONE"] = "UTC"
+        tz = get_timezone()
+        assert str(tz) == "UTC"
 
     # Test invalid env var (fallback)
     os.environ["TIMEZONE"] = "Invalid/Timezone"

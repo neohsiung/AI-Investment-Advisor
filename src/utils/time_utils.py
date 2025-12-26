@@ -60,3 +60,33 @@ def get_current_date_str():
     Get current date string YYYY-MM-DD in configured timezone.
     """
     return format_time(fmt="%Y-%m-%d")
+
+def convert_user_time_to_system_time(time_str):
+    """
+    Convert a time string (HH:MM) from User Timezone to System Timezone (UTC/Local).
+    Used for scheduling jobs to run at the correct user time.
+    """
+    try:
+        user_tz = get_timezone()
+        
+        # Create a dummy datetime with today's date and the user's target time
+        now = datetime.now(user_tz)
+        target_time = datetime.strptime(time_str, "%H:%M").time()
+        user_dt = now.replace(hour=target_time.hour, minute=target_time.minute, second=0, microsecond=0)
+        
+        # Convert to UTC (or system local time effectively)
+        # Assuming container runs in UTC. If container has local timezone set, this needs 'datetime.now().astimezone()' logic.
+        # But 'schedule' library uses naive datetime.now().
+        
+        # Best practice: Convert to UTC, then strip tzinfo
+        utc_dt = user_dt.astimezone(pytz.utc)
+        
+        # If the system is NOT UTC, we might need system local.
+        # Check system offset
+        # But for Docker/Cloud, UTC is standard. We assume system is UTC.
+        
+        return utc_dt.strftime("%H:%M")
+        
+    except Exception as e:
+        print(f"Time conversion error: {e}")
+        return time_str # Fallback to original

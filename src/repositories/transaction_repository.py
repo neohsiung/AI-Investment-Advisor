@@ -45,6 +45,19 @@ class SqliteTransactionRepository(ITransactionRepository):
             rows = conn.execute(query, {"user_id": user_id}).fetchall()
             return [r[0] for r in rows]
 
+    def get_active_tickers(self, user_id: str):
+        """Get list of tickers where user has a positive holding quantity (> 0.0001)."""
+        with get_db_connection() as conn:
+            query = text("""
+                SELECT ticker, SUM(CASE WHEN action='BUY' THEN quantity WHEN action='SELL' THEN -quantity ELSE 0 END) as net_qty
+                FROM transactions
+                WHERE user_id = :user_id
+                GROUP BY ticker
+                HAVING net_qty > 0.0001
+            """)
+            rows = conn.execute(query, {"user_id": user_id}).fetchall()
+            return [r[0] for r in rows]
+
     def add(self, user_id: str, ticker: str, date: str, action: str, quantity: float, price: float, fees: float):
         """
         新增一筆交易紀錄

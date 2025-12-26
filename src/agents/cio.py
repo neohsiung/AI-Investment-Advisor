@@ -6,8 +6,9 @@ from src.repositories.transaction_repository import SqliteTransactionRepository
 from src.repositories.settings_repository import SqliteSettingsRepository
 
 class CIOAgent(BaseAgent):
-    def __init__(self, use_cache=True, transaction_repo=None):
-        super().__init__(name="CIO", prompt_path="prompts/cio_agent.txt", use_cache=use_cache, ttl_hours=24, tier="smart")
+    def __init__(self, use_cache=True, transaction_repo=None, prompt_path="prompts/cio_weekly.txt"):
+        # Default to Weekly if not specified
+        super().__init__(name="CIO", prompt_path=prompt_path, use_cache=use_cache, ttl_hours=24, tier="smart")
         
         self.transaction_repo = transaction_repo or SqliteTransactionRepository()
         

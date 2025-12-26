@@ -14,6 +14,8 @@ from src.agents.engineer import SystemEngineerAgent
 from src.data.database import get_db_connection
 from sqlalchemy import text
 from src.agents.factory import AgentFactory
+from src.services.performance_service import PerformanceService
+import re
 
 logger = logging.getLogger("WorkflowService")
 
@@ -27,10 +29,10 @@ class BaseWorkflow(ABC):
         self.market_service = market_service or MarketDataService()
         self.context = {}
         self.logger = logging.getLogger(self.__class__.__name__) # Using existing logging setup
-        # Use Factory
         self.cio_agent = AgentFactory.create_cio_agent(
              transaction_repo=self.transaction_service.repository
         )
+        self.performance_service = PerformanceService()
 
     def run(self, dry_run=False, force_refresh=False):
         """Template Method defining the workflow structure."""
@@ -64,10 +66,13 @@ class BaseWorkflow(ABC):
 
     def collect_data(self):
         """Common data collection: Get active tickers."""
-        user_tickers = self.transaction_service.get_user_tickers(self.user_id)
-        # TODO: Filter out tiny positions?
+        # Filter for active positions only to avoid analyzing sold stocks
+        user_tickers = self.transaction_service.get_user_tickers(self.user_id, only_active=True)
         self.context['tickers'] = user_tickers
         logger.info(f"Active tickers: {user_tickers}")
+        
+        # Prefetch Market Data (Technical) - Fixes Momentum Agent missing data
+        self.context['market_data'] = self.market_service.get_market_context(user_tickers)
 
     @abstractmethod
     def execute_analysis(self, force_refresh: bool) -> bool:
@@ -114,31 +119,124 @@ class DailyWorkflow(BaseWorkflow):
         # For simplicity, we assume we check all but filter in CIO
         # Real implementation: Check specific alerts?
         
-        # Here we run Momentum Agent
+        # Here we run Momentum Agent & Sentiment Agent
         # Daily: Short TTL (1hr), assume force_refresh implies bypassing cache
-        agent = AgentFactory.create_momentum_agent(ttl_hours=1, use_cache=not force_refresh)
+        mom_agent = AgentFactory.create_momentum_agent(ttl_hours=1, use_cache=not force_refresh)
+        sent_agent = AgentFactory.create_sentiment_agent(ttl_hours=4, use_cache=not force_refresh)
+        
         results = []
         has_significant_change = False
         
+        ticker_reports = {}
         for ticker in self.context['tickers']:
             # Short TTL for daily
-            # Short TTL for daily
-            res = agent.run({"ticker": ticker})
-            results.append(res)
+            ticker_data = self.context['market_data'].get(ticker, {})
+            agent_context = {
+                "ticker": ticker,
+                "price_data": ticker_data.get("price_data", {}),
+                "indicators": ticker_data.get("indicators", {})
+            }
+            res = mom_agent.run(agent_context)
+            results.append(res) # Keep for legacy check
+            
+            # Sentiment Analysis
+            news = self.market_service.get_news(ticker)
+            sent_context = {
+                "ticker": ticker,
+                "news": news
+            }
+            sent_res = sent_agent.run(sent_context)
+            
+            # Fundamental Analysis (Cached Reference)
+            f_agent = AgentFactory.create_fundamental_agent(ttl_hours=168, use_cache=True) 
+            # Note: We rely on cache. If miss, it runs.
+            # We need to fetch financials/news for it if not cached? 
+            # BaseAgent handles calls. We should construct context.
+            # Ideally FundamentalAgent runs on same context logic as Weekly.
+            f_context = {
+                "ticker": ticker,
+                "financials": self.market_service.get_financials(ticker), # Might be slow if not cached by requests_cache? 
+                # Actually MarketDataService uses yfinance which caches? No.
+                # But fundamental data updates rarely.
+                # Let's assume for now we fetch it. Providing full context ensures accuracy if cache miss.
+                "news": news # Reuse fetched news
+            }
+            f_res = f_agent.run(f_context)
+
+            # Format for CIO: Daily has Momentum, Sentiment, and Fundamental (Context)
+            ticker_reports[ticker] = {
+                "momentum": res,
+                "sentiment": sent_res,
+                "fundamental": f_res
+            }
+
+            # Record Recommendations for Performance Tracking
+            # Fix: Extract scalar price from list if needed
+            raw_price = ticker_data.get("price_data", {}).get("close", 0)
+            if isinstance(raw_price, list):
+                if raw_price:
+                    current_price = raw_price[-1]
+                else:
+                    current_price = 0.0
+            else:
+                current_price = raw_price
+            
+            # Simple Regex Signal Extraction (Robust to DSPy or Legacy text)
+            # Look for explicit "BUY", "SELL", "HOLD"
+            for agent_name, response in [("Momentum", res), ("Fundamental", f_res), ("Sentiment", str(sent_res))]:
+                signal = "HOLD"
+                text_res = str(response).upper()
+                if "BUY" in text_res:
+                    signal = "BUY"
+                elif "SELL" in text_res:
+                    signal = "SELL"
+                
+                # Only log if strong signal (not HOLD)
+                if signal != "HOLD":
+                    self.performance_service.record_recommendation(
+                        agent_name=agent_name,
+                        ticker=ticker,
+                        signal=signal,
+                        price=current_price
+                    )
+            
             # Simple heuristic: if 'BUY' or 'SELL' in response and 'STRONG'
             if "STRONG" in res.upper():
                 has_significant_change = True
 
         self.context['momentum_results'] = results
+        self.context['ticker_reports'] = ticker_reports
         
-        # If no significant change, maybe skip reporting?
-        # But user usually wants a daily summary if they asked for it.
-        # Let's say if list is empty we skip.
+        # Always proceed to report if user triggered it manually (implied by this flow usually)
+        # Or if we want to be strict about signals. For now let's return True to generate the CIO report.
         return True
 
     def synthesize_results(self) -> str:
-        # Use Light CIO or simple summary
-        return "\n\n".join(self.context.get('momentum_results', []))
+        # Use CIO Agent for Daily Report (Daily Pulse Mode)
+        cio = AgentFactory.create_cio_agent(mode="daily")
+        
+        # Retrieve simple macro data for context (not full report)
+        macro_data = self.market_service.get_macro_data()
+        macro_summary = f"Daily Market Check: VIX={macro_data.get('^VIX', 'N/A')}, SPY={macro_data.get('SPY','N/A')}"
+
+        # Run Cached Macro Agent for Context
+        macro_agent = AgentFactory.create_macro_agent(ttl_hours=24, use_cache=True)
+        macro_deep = macro_agent.run({})
+        
+        combined_macro = f"{macro_summary}\n\n[Reference Weekly Macro Context]:\n{macro_deep}"
+        
+        # Format metrics for CIO
+        portfolio_str = ", ".join(self.context['tickers']) if self.context['tickers'] else "No Tickers"
+
+        cio_context = {
+            "macro_report": combined_macro,
+            "ticker_data": self.context.get('ticker_reports', {}),
+            "portfolio": portfolio_str,
+            "report_focus": "Daily Tactical"
+        }
+        
+        final_report = cio.run(cio_context)
+        return final_report
 
 
 class WeeklyWorkflow(BaseWorkflow):
@@ -158,35 +256,82 @@ class WeeklyWorkflow(BaseWorkflow):
         mom_ttl = 1 # 1 hour
         fund_agent = AgentFactory.create_fundamental_agent(ttl_hours=fun_ttl, use_cache=not force_refresh)
         mom_agent = AgentFactory.create_momentum_agent(ttl_hours=mom_ttl, use_cache=not force_refresh)
+        sent_agent = AgentFactory.create_sentiment_agent(ttl_hours=4, use_cache=not force_refresh)
         
         ticker_reports = {}
+        ticker_reports = {}
         for ticker in self.context['tickers']:
-            f_res = fund_agent.run({"ticker": ticker})
-            m_res = mom_agent.run({"ticker": ticker})
-            ticker_reports[ticker] = {"fundamental": f_res, "momentum": m_res}
+            # Fetch Fundamental Data on demand (Weekly)
+            financials = self.market_service.get_financials(ticker)
+            news = self.market_service.get_news(ticker)
+            
+            f_context = {
+                "ticker": ticker,
+                "financials": financials,
+                "news": news
+            }
+            f_res = fund_agent.run(f_context)
+            
+            # Momentum Data (already fetched in collect_data)
+            ticker_data = self.context['market_data'].get(ticker, {})
+            m_context = {
+                "ticker": ticker,
+                "price_data": ticker_data.get("price_data", {}),
+                "indicators": ticker_data.get("indicators", {})
+            }
+            m_res = mom_agent.run(m_context)
+            
+            # Sentiment Data (Weekly check for narrative shifts)
+            s_context = {
+                "ticker": ticker,
+                "news": news
+            }
+            s_res = sent_agent.run(s_context)
+            
+            ticker_reports[ticker] = {
+                "fundamental": f_res, 
+                "momentum": m_res,
+                "sentiment": s_res
+            }
             
         self.context['ticker_reports'] = ticker_reports
         return True
 
     def synthesize_results(self) -> str:
-        # CIO Agent Synthesis
-        cio = AgentFactory.create_cio_agent()
+        # CIO Agent Synthesis (Weekly Strategy Mode)
+        cio = AgentFactory.create_cio_agent(mode="weekly")
         
         # Construct CIO Context
+        portfolio_str = ", ".join(self.context['tickers']) if self.context['tickers'] else "No Tickers"
+        
         cio_context = {
             "macro_report": self.context['macro_report'],
             "ticker_data": self.context.get('ticker_reports', {}),
-            "portfolio": self.context['tickers'] # simple list
+            "portfolio": portfolio_str 
         }
         
         final_report = cio.run(cio_context)
         
         # Optimization Loop (System Engineer)
         try:
-            engineer = AgentFactory.create_agent("Engineer")
-            # Feed input to optimization (simplified)
-            # engineer.optimize_prompts(...) 
-            pass
+            # 1. Get Performance Stats
+            perf_stats = self.performance_service.get_agent_performance()
+            
+            # 2. Engineer analyzes report + stats
+            engineer = AgentFactory.create_agent("Engineer", use_cache=False)
+            
+            # Context includes Report Feedback AND Quant/Performance Feedback
+            eng_context = {
+                "cio_report": final_report,
+                "performance_stats": perf_stats
+            }
+            
+            opt_result = engineer.run(eng_context)
+            logger.info(f"Engineer Optimization Result: {opt_result}")
+            
+            # Append optimization result to the report if relevant? 
+            # Ideally notify user separately or just log it. 
+            # For now, we log it.
         except Exception as e:
             logger.warning(f"Engineer optimization failed: {e}")
             

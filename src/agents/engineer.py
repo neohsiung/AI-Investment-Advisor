@@ -141,7 +141,7 @@ class SystemEngineerAgent(BaseAgent):
                 self._save_prompt(target_path, new_prompt)
 
                 # 寫入 DB
-                self._log_history(target_agent, raw_feedback, original_prompt, new_prompt, diff_text)
+                self._log_prompt_change(target_agent, raw_feedback, original_prompt, new_prompt, diff_text)
 
                 results.append(f"Optimized {target_agent}: {diff_explanation}")
             else:

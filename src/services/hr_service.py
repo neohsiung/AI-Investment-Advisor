@@ -33,7 +33,7 @@ class HRService:
             results = []
             
             # Known Agents List (to detect those never active)
-            known_agents = ["Momentum", "Fundamental", "Macro", "CIO", "Dispatcher", "System Engineer"]
+            known_agents = ["Momentum", "Fundamental", "Macro", "CIO", "Dispatcher", "System Engineer", "Sentiment"]
             
             # Map existing data
             agent_status_map = {}
