@@ -180,7 +180,16 @@ class TestWorkflowFiles:
         wf.market_service = Mock()
         wf.market_service.get_yield_curve_inversion.return_value = {'inverted': False}
         
-        # Run dry run
-        with patch.object(wf, 'synthesize_results'):
-             wf.run(dry_run=True)
-             # Should run without error
+        # Mock RefinementEngine internals to avoid DB hit
+        # RefinementEngine uses SqliteTransactionRepository
+        # We can mock the repo class in the context of workflow_service imports? 
+        # RefinementEngine is imported in workflow_service.
+        # But RefinementEngine imports SqliteTransactionRepository from repositories.transaction_repository
+        # So we patch 'src.repositories.transaction_repository.SqliteTransactionRepository'
+        with patch('src.repositories.transaction_repository.SqliteTransactionRepository') as MockRepo:
+             MockRepo.return_value.get_active_tickers.return_value = []
+             
+             # Run dry run
+             with patch.object(wf, 'synthesize_results'):
+                  wf.run(dry_run=True)
+                  # Should run without error
