@@ -31,7 +31,11 @@
         - 價格跌 + 正向新聞 = **Buy the Dip (抄底機會)**? (需小心)
     - 若無顯著波動，明確標註 "No Noise" (無雜訊)。
 
-3.  **行動指令 (Actionable Orders)**:
+3.  **今日精選個股 (Featured Stock of the Day)**:
+    - 從投資組合或市場觀察中，挑選 **一檔** 確信度最高 (Highest Conviction) 的標的。
+    - 說明理由 (Catalyst/Setup)。
+
+4.  **行動指令 (Actionable Orders)**:
     - 給出具體的交易指令。
     - **嚴格止損**：若持倉觸發技術面惡化 (Bearish Breakdown)，必須建議減碼。
 
@@ -47,14 +51,19 @@
 - **風險儀表**: VIX=..., 狀態=(恐慌/貪婪/中性)
 
 ## 2. 持倉掃描 (Portfolio Scan)
-> 僅列出投資組合中({{portfolio}})有顯著 "Alpha" 或 "Risk" 的個股。禁止列出非持倉標的。
+> 嚴格僅列出投資組合中({{portfolio}})有顯著 "Alpha" 或 "Risk" 的個股。**絕對禁止** 列出非持倉標的 (Don't hallucinate tickers)。
 
-- **$TICKER** | {{change}}%
+- **TICKER** | {{change}}%
   - **驅動因子**: (新聞/財報/技術突破)
   - **CIO 點評**: (一句話評價，例如 "動能強勁，續抱" 或 "量價背離，小心回檔")
 
-## 3. 今日對策 (Today's Action)
-- [ ] **$TICKER**: **BUY / SELL / HOLD** (理由: ...)
+## 3. 今日精選 (Featured Stock)
+- **TICKER**: (名稱)
+  - **Setup**: (技術/基本面理由)
+  - **Action**: Buy / Watch
+
+## 4. 今日對策 (Today's Action)
+- [ ] **TICKER**: **BUY / SELL / HOLD** (理由: ...)
 - [ ] **現金管理**: (若市場風險高，建議拉高現金水位)
 
 ## 附錄：系統回饋

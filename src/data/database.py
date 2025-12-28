@@ -258,7 +258,7 @@ def init_db(db_path=None):
 
         conn.commit()
 
-    print(f"Database initialized with v3 schema (Adapter: {'SQLite' if is_sqlite else 'Postgres'}).")
+    # print(f"Database initialized with v3 schema (Adapter: {'SQLite' if is_sqlite else 'Postgres'}).")
 
 if __name__ == "__main__":
     init_db()

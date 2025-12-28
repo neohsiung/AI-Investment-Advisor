@@ -1,7 +1,7 @@
 import pytest
 from unittest.mock import MagicMock, patch
 import pandas as pd
-from src.market_data import MarketDataService
+from src.services.market_data_service import MarketDataService
 
 @pytest.fixture
 def market_data():

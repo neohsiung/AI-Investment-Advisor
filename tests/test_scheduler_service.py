@@ -88,7 +88,8 @@ def test_reload_schedule(mock_scheduler_deps):
     service = SchedulerService()
     mock_scheduler_deps['engineer'].return_value.get_schedule_config.return_value = {
         "schedule_daily": "10:00",
-        "schedule_weekly": "11:00"
+        "schedule_weekly": "11:00",
+        "schedule_daily_days": "monday,tuesday"
     }
     
     # Mock the time conversion helper to return the time as-is
@@ -97,7 +98,11 @@ def test_reload_schedule(mock_scheduler_deps):
         
         # Check schedule calls
         mock_scheduler_deps['schedule'].clear.assert_called()
-        mock_scheduler_deps['schedule'].every.return_value.day.at.assert_any_call("10:00")
+        # Should be called for monday and tuesday
+        mock_scheduler_deps['schedule'].every.return_value.monday.at.assert_any_call("10:00")
+        mock_scheduler_deps['schedule'].every.return_value.tuesday.at.assert_any_call("10:00")
+        
+        # Weekly
         mock_scheduler_deps['schedule'].every.return_value.saturday.at.assert_any_call("11:00")
         mock_scheduler_deps['schedule'].every.return_value.sunday.at.assert_any_call("10:00")
 

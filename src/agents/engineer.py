@@ -5,13 +5,14 @@ import os
 import uuid
 from sqlalchemy import text
 from src.agents.base_agent import BaseAgent
-from src.data.database import get_db_connection
 from src.utils.time_utils import format_time
+from src.repositories.prompt_repository import SqlitePromptRepository
 
 class SystemEngineerAgent(BaseAgent):
-    def __init__(self, use_cache=False):
+    def __init__(self, use_cache=False, prompt_repo=None, **kwargs):
         # Engineer Agent 通常不快取，因為每次回饋都不同
-        super().__init__(name="Engineer", prompt_path="prompts/engineer_agent.txt", use_cache=use_cache, tier="smart")
+        super().__init__(name="Engineer", prompt_path="prompts/engineer_agent.txt", use_cache=use_cache, tier="smart", **kwargs)
+        self.prompt_repo = prompt_repo or SqlitePromptRepository()
 
     def analyze_optimization_needs(self, cio_report):
         """
@@ -53,28 +54,10 @@ class SystemEngineerAgent(BaseAgent):
             f.write(content)
 
     def _log_prompt_change(self, agent_name, reason, old_prompt, new_prompt, diff):
-        conn = get_db_connection()
         try:
-            log_id = str(uuid.uuid4())
-            timestamp = datetime.now().isoformat()
-
-            conn.execute(text('''
-                INSERT INTO prompt_history (id, timestamp, target_agent, reason, original_prompt, new_prompt, diff_content)
-                VALUES (:id, :timestamp, :target_agent, :reason, :original_prompt, :new_prompt, :diff_content)
-            '''), {
-                "id": log_id,
-                "timestamp": timestamp,
-                "target_agent": agent_name,
-                "reason": reason,
-                "original_prompt": old_prompt,
-                "new_prompt": new_prompt,
-                "diff_content": diff
-            })
-            conn.commit()
+            self.prompt_repo.log_change(agent_name, reason, old_prompt, new_prompt, diff)
         except Exception as e:
             self.logger.error(f"Error logging prompt change: {e}")
-        finally:
-            conn.close()
 
     def run(self, context):
         """
@@ -88,7 +71,7 @@ class SystemEngineerAgent(BaseAgent):
         # 1. 取得 Feedback
         optimizations = self.analyze_optimization_needs(cio_report)
         if not optimizations:
-            return "No optimization feedback found."
+            return []
 
         results = []
 
@@ -143,51 +126,68 @@ class SystemEngineerAgent(BaseAgent):
                 # 寫入 DB
                 self._log_prompt_change(target_agent, raw_feedback, original_prompt, new_prompt, diff_text)
 
-                results.append(f"Optimized {target_agent}: {diff_explanation}")
+                results.append({
+                    "target_agent": target_agent,
+                    "reason": raw_feedback,
+                    "goal": "Performance Optimization",
+                    "before_snippet": original_prompt[:200] + "...",
+                    "after_snippet": new_prompt[:200] + "...",
+                    "diff": diff_text
+                })
             else:
-                results.append(f"No changes made to {target_agent}.")
+                results.append({
+                    "target_agent": target_agent,
+                    "reason": "No optimization needed or possible",
+                    "goal": "N/A",
+                    "diff": None
+                })
 
         except json.JSONDecodeError:
-            results.append(f"Failed to parse Engineer Agent response for {target_agent}.")
+            results.append({"error": f"Failed to parse Engineer Agent response for {target_agent}."})
         except Exception as e:
-            results.append(f"Error optimizing {target_agent}: {e}")
+            results.append({"error": f"Error optimizing {target_agent}: {str(e)}"})
 
-        return "\n".join(results)
+        return results # Return structured list
+
 
     # Dictionary-like access methods for schedule config (Phase 37)
     def get_schedule_config(self):
-        """從資料庫讀取排程設定"""
-        conn = get_db_connection()
+        """從資料庫讀取排程設定 (Via Settings Repo)"""
         config = {}
         try:
-            rows = conn.execute(text("SELECT key, value FROM settings WHERE key LIKE 'schedule_%'")).fetchall()
+            # key, value tuples or dict?
+            # Repo returns rows: [(key, val), ...]
+            rows = self.settings_repo.get_by_prefix("schedule_")
             for row in rows:
-                # row access
-                key = row[0] # or row._mapping['key']
-                val = row[1]
+                key = row._mapping['key'] if hasattr(row, '_mapping') else row[0]
+                val = row._mapping['value'] if hasattr(row, '_mapping') else row[1]
                 config[key] = val
         except Exception as e:
             self.logger.error(f"Error reading schedule config: {e}")
-        finally:
-            conn.close()
-
+        
         return config
 
-    def set_schedule_config(self, daily_time, weekly_time):
-        """更新排程設定"""
-        conn = get_db_connection()
+    def set_schedule_config(self, daily_time, weekly_time, weekly_day="saturday", daily_days=None):
+        """更新排程設定 (Via Settings Repo)"""
         try:
             updates = {
                 "schedule_daily": daily_time,
-                "schedule_weekly": weekly_time
+                "schedule_weekly": weekly_time,
+                "schedule_weekly_day": weekly_day
             }
+            
+            if daily_days is not None:
+                # Serialize list to CSV string
+                if isinstance(daily_days, list):
+                    updates["schedule_daily_days"] = ",".join(daily_days)
+                else:
+                    updates["schedule_daily_days"] = str(daily_days)
 
             for key, value in updates.items():
-                conn.execute(text("INSERT OR REPLACE INTO settings (key, value) VALUES (:key, :value)"), {"key": key, "value": value})
+                # Use user_id context or system default?
+                # Assuming schedule is global, use self.user_id which defaults to "system"
+                self.settings_repo.set(self.user_id, key, value)
 
-            conn.commit()
             self.logger.info("Schedule config updated via Engineer Agent.")
         except Exception as e:
             self.logger.error(f"Error updating schedule config: {e}")
-        finally:
-            conn.close()

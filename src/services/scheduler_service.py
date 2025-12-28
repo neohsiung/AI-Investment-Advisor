@@ -49,13 +49,8 @@ class SchedulerService:
             conn.close()
 
     def job_daily_check(self):
-        # Skip Saturday
-        if get_current_time().weekday() == 5:
-            msg = "Skipping Daily Check (Saturday) - Weekly Report runs today."
-            logger.info(msg)
-            self.log_job_execution("Daily Check", "SKIPPED", msg)
-            return
-
+        # Strict adherence to Scheduler: If this function is called, it means it was scheduled.
+        # We rely on reload_schedule to set the correct days.
         logger.info("Starting Daily Check Job...")
         self.log_job_execution("Daily Check", "STARTED")
         
@@ -141,16 +136,32 @@ class SchedulerService:
         
         config = self.engineer.get_schedule_config()
         daily_time = config.get("schedule_daily", "09:00")
+        
+        daily_days_str = config.get("schedule_daily_days", "monday,tuesday,wednesday,thursday,friday")
+        daily_days = [d.strip().lower() for d in daily_days_str.split(",") if d.strip()]
+        
         weekly_time = config.get("schedule_weekly", "09:00")
+        weekly_day = config.get("schedule_weekly_day", "saturday").lower()
         
         # Convert User Time (e.g. Asia/Taipei) to System Time (UTC)
         daily_time_sys = convert_user_time_to_system_time(daily_time)
         weekly_time_sys = convert_user_time_to_system_time(weekly_time)
         
-        logger.info(f"Loaded config: Daily={daily_time} ({daily_time_sys} UTC), Weekly={weekly_time} ({weekly_time_sys} UTC)")
+        logger.info(f"Loaded config: Daily={daily_time} on {daily_days}, Weekly={weekly_day} {weekly_time}")
         
-        schedule.every().day.at(daily_time_sys).do(self.job_daily_check)
-        schedule.every().saturday.at(weekly_time_sys).do(self.job_weekly_report)
+        # Schedule Daily Job
+        for day in daily_days:
+            if hasattr(schedule.every(), day):
+                getattr(schedule.every(), day).at(daily_time_sys).do(self.job_daily_check)
+                logger.info(f"Scheduled Daily Check on {day} at {daily_time} ({daily_time_sys} UTC)")
+        
+        # Dynamic day scheduling for Weekly Report
+        if hasattr(schedule.every(), weekly_day):
+            getattr(schedule.every(), weekly_day).at(weekly_time_sys).do(self.job_weekly_report)
+        else:
+            logger.warning(f"Invalid weekly day '{weekly_day}', defaulting to saturday.")
+            schedule.every().saturday.at(weekly_time_sys).do(self.job_weekly_report)
+            
         # Run validation on Sunday to review the week
         schedule.every().sunday.at("10:00").do(self.job_weekly_validation)
         schedule.every().day.at("00:00").do(self.check_monthly_job)
@@ -180,3 +191,18 @@ class SchedulerService:
             conn.close()
         except Exception as e:
             logger.error(f"Error checking reload signal: {e}")
+
+    def get_execution_logs(self, limit: int = 50):
+        """Retrieves latest execution logs from DB."""
+        # Ensure pandas is available
+        import pandas as pd
+        conn = get_db_connection()
+        try:
+            query = text("SELECT timestamp, job_name, status, message FROM scheduler_logs ORDER BY timestamp DESC LIMIT :limit")
+            df = pd.read_sql(query, conn, params={"limit": limit})
+            return df
+        except Exception as e:
+            logger.error(f"Error fetching scheduler logs: {e}")
+            return pd.DataFrame()
+        finally:
+            conn.close()

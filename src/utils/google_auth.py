@@ -21,22 +21,36 @@ class GoogleAuth:
             "https://www.googleapis.com/auth/userinfo.email",
             "https://www.googleapis.com/auth/userinfo.profile"
         ]
-        self.cookie_manager = stx.CookieManager()
+        self._cookie_manager = None
+    
+    @property
+    def cookie_manager(self):
+        if self._cookie_manager is None:
+            self._cookie_manager = stx.CookieManager()
+        return self._cookie_manager
 
     def _get_flow(self):
         """Initialize Flow from client secret file OR config dict."""
-        if self.client_config:
-            flow = google_auth_oauthlib.flow.Flow.from_client_config(
-                self.client_config,
-                scopes=self.scopes
-            )
-        else:
-            flow = google_auth_oauthlib.flow.Flow.from_client_secrets_file(
-                self.client_secret_path,
-                scopes=self.scopes
-            )
-        flow.redirect_uri = self.redirect_uri
-        return flow
+        try:
+            if self.client_config:
+                flow = google_auth_oauthlib.flow.Flow.from_client_config(
+                    self.client_config,
+                    scopes=self.scopes
+                )
+            else:
+                flow = google_auth_oauthlib.flow.Flow.from_client_secrets_file(
+                    self.client_secret_path,
+                    scopes=self.scopes
+                )
+            flow.redirect_uri = self.redirect_uri
+            return flow
+        except ValueError as e:
+            # Catch specific error 'Client secrets must be for a web or installed app'
+            if "Client secrets must be for a web or installed app" in str(e):
+                # Raise as a clean error for the caller (dashboard) to handle UI for
+                raise ValueError("WRONG_CREDENTIAL_TYPE")
+            else:
+                raise e
 
     def login(self):
         """Displays login button and handles OAuth callbacks."""
@@ -88,29 +102,37 @@ class GoogleAuth:
                 st.error(f"Login failed: {e}")
         else:
             # Display Login Button
-            flow = self._get_flow()
-            authorization_url, state = flow.authorization_url(
-                access_type='offline',
-                include_granted_scopes='true'
-            )
-
-            st.markdown(
-                f"""
-                <a href="{authorization_url}" target="_self" style="
-                    display: inline-block;
-                    padding: 0.5rem 1rem;
-                    color: white;
-                    background-color: #6366f1;
-                    border-radius: 0.375rem;
-                    text-decoration: none;
-                    font-weight: 500;
-                    text-align: center;
-                ">
-                    Login with Google
-                </a>
-                """,
-                unsafe_allow_html=True
-            )
+            try:
+                flow = self._get_flow()
+                authorization_url, state = flow.authorization_url(
+                    access_type='offline',
+                    include_granted_scopes='true'
+                )
+                
+                # Render Clean Login Button
+                st.markdown(
+                    f"""
+                    <a href="{authorization_url}" target="_self" style="
+                        display: inline-block;
+                        padding: 0.5rem 1rem;
+                        color: white;
+                        background-color: #6366f1;
+                        border-radius: 0.375rem;
+                        text-decoration: none;
+                        font-weight: 500;
+                        text-align: center;
+                    ">
+                        Login with Google
+                    </a>
+                    """,
+                    unsafe_allow_html=True
+                )
+            except ValueError as e:
+                if str(e) == "WRONG_CREDENTIAL_TYPE":
+                   st.warning("⚠️ Authentication Unavailable")
+                   st.info("The system is configured with a Service Account Key instead of an OAuth Client ID. Please see the Wiki for setup instructions.")
+                else:
+                    st.error(f"Configuration Error: {e}")
 
     def check_authentification(self):
         """Check if user is authenticated (Check Session State or Cookie)."""
@@ -124,6 +146,27 @@ class GoogleAuth:
         # We need to make sure we don't block.
         cookies = self.cookie_manager.get_all()
         
+        # Retry logic for reading cookies (Essential for Cmd+Shift+R persistence)
+        # stx.CookieManager is async and may return None initially.
+        
+        cookie_retry_count = st.session_state.get('auth_cookie_retries', 0)
+        
+        if cookies is None and cookie_retry_count < 3:
+            # Increment retry counter
+            st.session_state['auth_cookie_retries'] = cookie_retry_count + 1
+            time.sleep(0.3) # Wait for component
+            st.rerun() # Reload to try fetching again
+            return "LOADING"
+        
+        # Reset retries if we found cookies or gave up
+        if cookies is not None:
+             st.session_state['auth_cookie_retries'] = 0
+
+        # If still None after retries, assume no cookies (or verify failed)
+        if cookies is None:
+             # Just in case, try one last check on None as empty dict
+             cookies = {}
+
         if self.cookie_name in cookies:
             try:
                 user_info = cookies[self.cookie_name]
@@ -135,11 +178,14 @@ class GoogleAuth:
                     # but here we trust the cookie content for simplicity (assuming HTTPS/HttpOnly separation not fully possible in pure Streamlit app logic without backend middleware).
                     # For a low-risk internal tool, this JSON in cookie is acceptable.
                     st.rerun()
+                    return "AUTHENTICATED"
             except Exception as e:
                 print(f"Cookie parse error: {e}")
 
         if 'connected' not in st.session_state:
             st.session_state['connected'] = False
+            
+        return "UNAUTHENTICATED"
 
     def logout(self):
         """Log out the user."""

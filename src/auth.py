@@ -45,13 +45,13 @@ class AuthManager:
     def check_login(self):
         """
         Check if the user is authenticated.
-        This must be called at the start of the app.
+        Returns: "AUTHENTICATED", "UNAUTHENTICATED", or "LOADING"
         """
-        self.authenticator.check_authentification()
-        # The library stores state in st.session_state['connected']?
-        # Actually it's cleaner to check login status via the authenticator methods usually.
-        # But looking at library source or common usage:
-        return st.session_state.get('connected', False)
+        status = self.authenticator.check_authentification()
+        # Fallback if check_authentification returns None (compatibility)
+        if status is None:
+             return "AUTHENTICATED" if st.session_state.get('connected') else "UNAUTHENTICATED"
+        return status
 
     def login(self):
         """

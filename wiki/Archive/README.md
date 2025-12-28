@@ -4,9 +4,9 @@
 
 ## 文件列表 (Documents)
 
-- **[[Cloud-Database-Migration]]**: 舊版雲端資料庫遷移指南。已整合至開發者指南。
-- **[[Feature-Dynamic-Analysis-Dispatch]]**: v3 核心功能原始規格草稿。已合併至 System Overview 與 Agent Swarm。
-- **[[Deployment-Guide]]**: 舊版部署指南。已拆分為 Local/Cloud 兩個獨立文件。
+- **[[wiki/Archive/雲端資料庫遷移指南-Cloud-Database-Migration.md|Cloud-Database-Migration]]**: 舊版雲端資料庫遷移指南。已整合至開發者指南。
+- **[[wiki/Archive/功能規格_動態分析調度-Feature-Dynamic-Analysis-Dispatch.md|Feature-Dynamic-Analysis-Dispatch]]**: v3 核心功能原始規格草稿。已合併至 System Overview 與 Agent Swarm。
+- **[[wiki/Archive/部署指南-Deployment-Guide.md|Deployment-Guide]]**: 舊版部署指南。已拆分為 Local/Cloud 兩個獨立文件。
 
 ## 程式碼存檔 (Code Archive)
 

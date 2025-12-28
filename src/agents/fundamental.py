@@ -4,7 +4,8 @@ from .base_agent import BaseAgent
 class FundamentalAgent(BaseAgent):
     def __init__(self, use_cache=True, ttl_hours=None, **kwargs):
         ttl = ttl_hours if ttl_hours is not None else 24
-        super().__init__(name="Fundamental", prompt_path="prompts/fundamental_agent.txt", use_cache=use_cache, ttl_hours=ttl, tier="smart")
+        tier = kwargs.pop('tier', 'smart')
+        super().__init__(name="Fundamental", prompt_path="prompts/fundamental_agent.txt", use_cache=use_cache, ttl_hours=ttl, tier=tier, **kwargs)
 
     def run(self, context):
         """
@@ -22,10 +23,8 @@ class FundamentalAgent(BaseAgent):
             "news": json.dumps(context.get("news", []), indent=2, ensure_ascii=False)
         }
         
-        system_prompt_rendered = self.render_system_prompt(prompt_data)
-        user_prompt = f"Evaluate the fundamental health of {ticker}."
 
-        response = self._mock_llm_call(user_prompt, system_prompt_rendered)
+        response = self.run_tool_loop(context=prompt_data)
 
         if "Mock response" in response:
             return f"""

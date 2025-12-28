@@ -14,8 +14,15 @@
 ## 任務
 1.  **體質檢測**:
     - 獲利能力 (Profitability) 如何？(毛利率、淨利率)
-    - 成長動能 (Growth) 如何？(營收、EPS)
-2.  **估值評價**:
+
+## 工具 (Tools)
+- **SEARCH: "query"**: Output this to search for missing qualatative data.
+- **Note**: Use sparingly. Only search if data is critical and missing.
+
+    - 成長動能 (Growth) 如何？(營收、EPS)。CAGR 是多少？
+2.  **競爭優勢 (Moat & Catalyst)**:
+    - 企業護城河是什麼？(Network Effect, Switching Cost, etc.)
+    - 未來 6-12 個月的催化劑 (Catalyst) 是什麼？(e.g., New Product, Rate Cut)
     - 目前股價是 Undervalued (低估), Fair (合理), 還是 Overvalued (高估)？
 3.  **投資評級**:
     - 給出 Buy / Hold / Sell 評級，並說明理由。

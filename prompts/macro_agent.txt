@@ -16,8 +16,10 @@
     - 目前是 Growth (成長) 還是 Recession (衰退)？
 2.  **風險評估**:
     - VIX 是否顯示極端恐慌？殖利率是否過高壓抑估值？
-3.  **投資啟示 (Investment Implications)**:
     - 現在該買股票還是債券？該買成長股還是價值股？
+4.  **詳細數據 (High Density)**:
+    - 提及 10Y-2Y 殖利率曲線倒掛狀況 (Yield Curve Inversion)。
+    - 分析實質利率 (Real Rates) 對估值的壓力。
 
 ## 輸出格式
 請輸出 Markdown，包含以下段落：

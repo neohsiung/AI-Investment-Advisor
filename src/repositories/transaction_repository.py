@@ -20,6 +20,36 @@ class ITransactionRepository(ABC):
     def get_holdings(self, user_id: str):
         pass
 
+    @abstractmethod
+    def get_holdings_summary(self, user_id: str):
+        """
+        Get aggregated holdings for a user.
+        取得使用者的聚合持倉 (Ticker, Quantity)。
+        """
+        pass
+
+    @abstractmethod
+    def get_latest_leverage(self, user_id: str):
+        """
+        Get the latest leverage ratio from daily snapshots.
+        從每日快照中取得最新的槓桿比率。
+        """
+        pass
+
+    @abstractmethod
+    def get_cash_flow_sum(self, user_id: str) -> float:
+        """
+        Calculate total cash flows (excluding trades).
+        """
+        pass
+
+    @abstractmethod
+    def calculate_net_invested_capital(self, user_id: str) -> float:
+        """
+        Calculate net invested capital (Deposits - Withdrawals).
+        """
+        pass
+
 class SqliteTransactionRepository(ITransactionRepository):
     def get_all_by_user(self, user_id: str):
         """
@@ -124,6 +154,47 @@ class SqliteTransactionRepository(ITransactionRepository):
             conn.execute(query_cash, {"id": transaction_id, "user_id": user_id})
 
             conn.commit()
+
+    def get_holdings_summary(self, user_id: str):
+        """
+        Get aggregated holdings for a user.
+        取得使用者的聚合持倉 (Ticker, Quantity)。
+        """
+        with get_db_connection() as conn:
+            query = text("""
+                SELECT ticker, SUM(CASE WHEN action='BUY' THEN quantity WHEN action='SELL' THEN -quantity ELSE 0 END) as net_qty
+                FROM transactions WHERE user_id = :uid GROUP BY ticker HAVING net_qty > 0.0001
+            """)
+            rows = conn.execute(query, {"uid": user_id}).fetchall()
+            return [(row[0], row[1]) for row in rows]
+
+    def get_latest_leverage(self, user_id: str):
+        """
+        Get the latest leverage ratio from daily snapshots.
+        從每日快照中取得最新的槓桿比率。
+        """
+        with get_db_connection() as conn:
+            snap = conn.execute(text("SELECT leverage_ratio FROM daily_snapshots WHERE user_id = :uid ORDER BY date DESC LIMIT 1"), {"uid": user_id}).fetchone()
+            return float(snap[0]) if snap and snap[0] else 1.0
+
+    def get_cash_flow_sum(self, user_id: str) -> float:
+        """
+        Calculate total cash flows (sum of amounts in cash_flows table).
+        Used for NLV calculation.
+        """
+        with get_db_connection() as conn:
+            query = text("SELECT SUM(amount) FROM cash_flows WHERE user_id = :user_id")
+            result = conn.execute(query, {"user_id": user_id}).fetchone()
+            return result[0] if result and result[0] is not None else 0.0
+
+    def calculate_net_invested_capital(self, user_id: str) -> float:
+        """
+        Calculate net invested capital (Deposits - Withdrawals).
+        """
+        with get_db_connection() as conn:
+            query = text("SELECT SUM(CASE WHEN type='DEPOSIT' THEN amount WHEN type='WITHDRAWAL' THEN -amount ELSE 0 END) FROM cash_flows WHERE user_id = :user_id")
+            result = conn.execute(query, {"user_id": user_id}).fetchone()
+            return result[0] if result and result[0] is not None else 0.0
 
     def get_holdings(self, user_id: str):
         """

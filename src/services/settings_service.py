@@ -90,3 +90,17 @@ class SettingsService:
         except Exception as e:
             print(f"Error fetching OpenRouter models: {e}")
             return []
+    def get_prompt_history(self, user_id, limit=50):
+        """Retrieves prompt optimization history."""
+        import pandas as pd
+        conn = get_db_connection(self.db_path)
+        try:
+            # Check if table exists (optional safety, or assume existence)
+            query = text("SELECT timestamp, target_agent, reason, diff_content FROM prompt_history WHERE user_id = :uid ORDER BY timestamp DESC LIMIT :limit")
+            df = pd.read_sql(query, conn, params={"uid": user_id, "limit": limit})
+            return df
+        except Exception as e:
+            print(f"Error reading prompt history: {e}")
+            return pd.DataFrame()
+        finally:
+            conn.close()

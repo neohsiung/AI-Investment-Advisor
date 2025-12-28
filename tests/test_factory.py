@@ -56,10 +56,7 @@ def test_create_sentiment_agent():
         agent = AgentFactory.create_agent("Sentiment")
         assert agent == mock_agent.return_value
 
-def test_create_dispatcher_agent():
-    with patch("src.agents.factory.DispatcherAgent") as mock_agent:
-        agent = AgentFactory.create_agent("Dispatcher")
-        assert agent == mock_agent.return_value
+# Removed Dispatcher Agent test
 
 def test_create_unknown_agent():
     with pytest.raises(ValueError):
@@ -68,4 +65,4 @@ def test_create_unknown_agent():
 def test_kwargs_passing():
     with patch("src.agents.factory.MomentumAgent") as mock_agent:
         AgentFactory.create_agent("Momentum", use_cache=False, extra_param="123")
-        mock_agent.assert_called_with(use_cache=False, extra_param="123")
+        mock_agent.assert_called_with(use_cache=False, user_id="system", extra_param="123")

@@ -25,6 +25,13 @@ spec:
       containers:
       - name: postgres
         image: ankane/pgvector:v0.5.1
+        resources:
+          requests:
+            cpu: "250m"
+            memory: "512Mi"
+          limits:
+            cpu: "1"
+            memory: "1Gi"
         ports:
         - containerPort: 5432
         envFrom:

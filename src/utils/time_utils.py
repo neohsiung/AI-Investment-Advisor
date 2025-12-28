@@ -90,3 +90,9 @@ def convert_user_time_to_system_time(time_str):
     except Exception as e:
         print(f"Time conversion error: {e}")
         return time_str # Fallback to original
+
+def get_current_utc_time():
+    """
+    Get current UTC time.
+    """
+    return datetime.now(pytz.utc)

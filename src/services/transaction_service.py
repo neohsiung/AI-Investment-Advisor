@@ -5,7 +5,7 @@ from datetime import datetime
 import pandas as pd
 from src.data.database import get_db_connection
 # from src.ingestor import TradeIngestor # Removed for Clean Clean Architecture
-from src.analytics import update_daily_snapshot
+from src.services.analytics_service import update_daily_snapshot
 
 class TransactionService:
     def __init__(self, db_path="data/portfolio.db", user_id=None, repository=None):

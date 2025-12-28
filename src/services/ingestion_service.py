@@ -3,7 +3,7 @@ import logging
 import pandas as pd
 # from src.data.ingestor import TradeIngestor # Deprecated
 
-from src.analytics import update_daily_snapshot
+from src.services.analytics_service import update_daily_snapshot
 from src.data.ingestors import IngestorFactory
 
 logger = logging.getLogger("IngestionService")

@@ -10,7 +10,9 @@ except ImportError:
 class MomentumAgent(BaseAgent):
     def __init__(self, use_cache=True, ttl_hours=None, **kwargs):
         ttl = ttl_hours if ttl_hours is not None else 4
-        super().__init__(name="Momentum", prompt_path="prompts/momentum_agent.txt", use_cache=use_cache, ttl_hours=ttl, tier="fast")
+        # Allow tier override
+        tier = kwargs.pop('tier', 'fast')
+        super().__init__(name="Momentum", prompt_path="prompts/momentum_agent.txt", use_cache=use_cache, ttl_hours=ttl, tier=tier, **kwargs)
         self.dspy_module = None
         if dspy and hasattr(dspy, 'ChainOfThought') and MomentumSignature:
             # Initialize DSPy Module if real DSPy is present
@@ -58,10 +60,8 @@ class MomentumAgent(BaseAgent):
             "indicators": json.dumps(context.get("indicators", {}), indent=2, ensure_ascii=False)
         }
         
-        system_prompt_rendered = self.render_system_prompt(prompt_data)
-        user_prompt = f"Analyze {ticker} based on the provided technical data."
 
-        response = self._mock_llm_call(user_prompt, system_prompt_rendered)
+        response = self.run_tool_loop(context=prompt_data)
         
         if "Mock response" in response:
             return f"""

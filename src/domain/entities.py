@@ -57,3 +57,41 @@ class FeedbackExample:
     signal: SignalType
     outcome_score: float # -1.0 to 1.0
     timestamp: datetime = field(default_factory=datetime.now)
+
+@dataclass
+class Position:
+    ticker: str
+    quantity: float
+    average_cost: float
+    current_price: float = 0.0
+    
+    @property
+    def market_value(self) -> float:
+        return self.quantity * self.current_price
+    
+    @property
+    def unrealized_pnl(self) -> float:
+        return (self.current_price - self.average_cost) * self.quantity
+
+@dataclass
+class Portfolio:
+    user_id: str
+    cash_balance: float
+    positions: Dict[str, Position] = field(default_factory=dict)
+    
+    @property
+    def total_market_value(self) -> float:
+        return sum(p.market_value for p in self.positions.values())
+        
+    @property
+    def net_liquidation_value(self) -> float:
+        return self.cash_balance + self.total_market_value
+
+@dataclass
+class AnalysisReport:
+    id: str
+    user_id: str
+    date: datetime
+    content: str
+    summary: str
+    signals: List[AgentSignal] = field(default_factory=list)

@@ -6,9 +6,10 @@ from src.repositories.transaction_repository import SqliteTransactionRepository
 from src.repositories.settings_repository import SqliteSettingsRepository
 
 class CIOAgent(BaseAgent):
-    def __init__(self, use_cache=True, transaction_repo=None, prompt_path="prompts/cio_weekly.txt"):
-        # Default to Weekly if not specified
-        super().__init__(name="CIO", prompt_path=prompt_path, use_cache=use_cache, ttl_hours=24, tier="smart")
+    def __init__(self, use_cache=True, transaction_repo=None, prompt_path="prompts/cio_weekly.txt", **kwargs):
+        # Allow tier override or kwargs
+        tier = kwargs.pop('tier', 'smart')
+        super().__init__(name="CIO", prompt_path=prompt_path, use_cache=use_cache, ttl_hours=24, tier=tier, **kwargs)
         
         self.transaction_repo = transaction_repo or SqliteTransactionRepository()
         
@@ -50,17 +51,10 @@ class CIOAgent(BaseAgent):
             "report_focus": context.get("report_focus", "Weekly Strategic")
         }
 
-        # 3. Render System Prompt
-        system_prompt = self.render_system_prompt(prompt_data)
-        user_prompt = "請根據上述資料，生成本週的投資決策報告。"
-
-        # 4. Call LLM (BaseAgent handles Cache & Mock/Real)
-        response = self.call_llm(
-            messages=[
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": user_prompt}
-            ],
-            temperature=0.3
+        # 4. Call Agent Tool Loop for Autonomous Search
+        response = self.run_tool_loop(
+            context=prompt_data, # run_tool_loop calls render_system_prompt internally
+            max_turns=3
         )
         return response
 
@@ -92,14 +86,20 @@ class CIOAgent(BaseAgent):
         
         user_prompt = "請制定戰略並篩選 15 檔候選股 (No ETFs)。Output JSON."
         
-        # Call LLM
+        # Use call_llm directly for strategy JSON as it's a specific format request, not a report
+        # Unless we want Strategy agent to also search? 
+        # Strategy generation usually based on already synthesized context. Keep as call_llm or simple loop.
+        # But wait, run_tool_loop re-renders system prompt.
+        # Here we manually render a DIFFERENT template. run_tool_loop uses self.system_prompt.
+        # So we stick to call_llm for this specific sub-task or trick it.
+        # Let's keep call_llm for strategy to minimize risk of breaking JSON generation.
         response_str = self.call_llm(
             messages=[
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": user_prompt}
             ],
             temperature=0.4,
-            response_format={"type": "json_object"} # Hint for OpenAI/Provider
+            response_format={"type": "json_object"} 
         )
         
         # Parse JSON
@@ -133,37 +133,19 @@ class CIOAgent(BaseAgent):
             # but ideally strict encapsulation.
             # Let's add `get_portfolio_snapshot` to Repo later. For now, use a simple SQL via repo's connection helper if available.
             
-            # Temporary: accessing the DB strictly for this query until Repo is upgraded
-            from src.data.database import get_db_connection
-            conn = get_db_connection() # This violates DI slightly but keeps it functional without touching Repo yet
+            # Use Repository for Holdings & Leverage
+            # 使用 Repository 獲取持倉與槓桿
+            holdings_list = self.transaction_repo.get_holdings_summary(user_id)
+            leverage = self.transaction_repo.get_latest_leverage(user_id)
             
-            # Simple query for summary
-            # ... (Logic from before)
-            # But wait, we should fix the DI. 
-            pass 
-
-            # Using direct SQL for now to keep logic intact but inside this private method
-            query = text("""
-                SELECT ticker, SUM(CASE WHEN action='BUY' THEN quantity WHEN action='SELL' THEN -quantity ELSE 0 END) as net_qty
-                FROM transactions WHERE user_id = :uid GROUP BY ticker HAVING net_qty > 0.0001
-            """)
-            rows = conn.execute(query, {"uid": user_id}).fetchall()
-            
-            # Get Leverage
-            snap = conn.execute(text("SELECT leverage_ratio FROM daily_snapshots WHERE user_id = :uid ORDER BY date DESC LIMIT 1"), {"uid": user_id}).fetchone()
-            leverage = float(snap[0]) if snap and snap[0] else 1.0
-            
-            conn.close()
-            
-            holdings = []
+            holdings_str_list = []
             non_etf_count = 0
-            for row in rows:
-                t, q = row[0], row[1]
-                holdings.append(f"{t} ({q:.2f})")
-                if t not in self.etf_list:
+            for ticker, qty in holdings_list:
+                holdings_str_list.append(f"{ticker} ({qty:.2f})")
+                if ticker not in self.etf_list:
                     non_etf_count += 1
             
-            holdings_str = f"總持倉: {', '.join(holdings)}. 非 ETF 持倉數: {non_etf_count}."
+            holdings_str = f"總持倉: {', '.join(holdings_str_list)}. 非 ETF 持倉數: {non_etf_count}."
             return leverage, holdings_str
 
         except Exception as e:

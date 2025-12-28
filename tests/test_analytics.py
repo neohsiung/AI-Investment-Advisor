@@ -1,153 +1,143 @@
 import pytest
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock, patch, ANY
 import pandas as pd
-from src.analytics import LeverageCalculator, SnapshotRecorder, update_daily_snapshot
+from src.services.analytics_service import LeverageCalculator, SnapshotRecorder, update_daily_snapshot, ROIEngine, PnLCalculator, AnalyticsService
+
+# Helpers for mocking repository returns
 
 @pytest.fixture
-def mock_db_connection():
-    with patch('src.analytics.get_db_connection') as mock_conn:
-        mock_db = MagicMock()
-        mock_conn.return_value = mock_db
-        yield mock_db
+def mock_trans_repo():
+    with patch('src.services.analytics_service.SqliteTransactionRepository') as MockRepo:
+        repo = MockRepo.return_value
+        yield repo
 
-def test_leverage_calculator_metrics(mock_db_connection):
-    calc = LeverageCalculator()
-    
-    # Mock pd.read_sql for positions
-    # Return DataFrame: ticker, net_qty
-    df_positions = pd.DataFrame([
-        {"ticker": "AAPL", "net_qty": 10.0},
-        {"ticker": "SPY", "net_qty": 5.0}
-    ])
-    
-    # Mock pd.read_sql for cash_flows (used in NLV calc part 2) 
-    # and transactions (used in NLV calc part 2)
-    # The calculator calls read_sql twice: 1. transactions(grouped), 2. transactions(all)
-    
-    with patch('src.analytics.pd.read_sql') as mock_read_sql:
-        # We need to handle multiple calls to read_sql. 
-        # 1st call: positions (Grouped)
-        # 2nd call: transactions (For cash impact)
-        
-        # Side effect sequence
-        mock_read_sql.side_effect = [
-            df_positions, # positions
-            pd.DataFrame([{"action": "DEPOSIT", "amount": 10000.0}]) # transactions for cash calc
-        ]
-        
-        # Mock cash_query fetchone (for cash_flows table sum)
-        mock_db_connection.execute.return_value.fetchone.return_value = (None,) # Assume no cash_flows entries, only transactions? 
-        # Wait, the code queries cash_flows table first.
-        # Let's say cash_flows sum is 0.
-        
-        prices = {"AAPL": 150.0, "SPY": 400.0}
-        user_id = "user1"
-        
-        metrics = calc.calculate_metrics(prices, user_id)
-        
-        # TNV = (10*150) + (5*400) = 1500 + 2000 = 3500
-        # Cash Flow Sum = 0 (mocked None)
-        # Transaction Cash Impact (DEPOSIT 10000) -> logic: if DEPOSIT, +amount.
-        # Check source: elif action == 'DEPOSIT': trans_cash_impact += amount
-        # So Cash = 0 + 10000 = 10000
-        # NLV = 10000 + 3500 = 13500
-        # Lev = 3500 / 13500 = 0.259...
-        
-        assert metrics['tnv'] == 3500.0
-        assert metrics['cash_balance'] == 10000.0
-        assert metrics['nlv'] == 13500.0
-        assert 0.25 < metrics['leverage_ratio'] < 0.27
+@pytest.fixture
+def mock_snapshot_repo():
+    with patch('src.services.analytics_service.SqliteSnapshotRepository') as MockRepo:
+        repo = MockRepo.return_value
+        yield repo
 
-def test_snapshot_recorder(mock_db_connection):
-    recorder = SnapshotRecorder()
-    
-    # Mock fetchone for invested capital
-    mock_db_connection.execute.return_value.fetchone.return_value = (5000.0,)
-    
-    recorder.record_daily_snapshot(nlv=10000.0, cash_balance=5000.0, user_id="user1", total_tnv=5000.0, leverage_ratio=0.5)
-    
-    mock_db_connection.execute.assert_called()
-    assert mock_db_connection.commit.called
+def test_leverage_calculator_metrics():
+    # Setup Data
+    holdings = [("AAPL", 10.0), ("SPY", 5.0)]
+    current_prices = {"AAPL": 150.0, "SPY": 400.0}
+    user_id = "user1"
 
-def test_update_daily_snapshot_integration(mock_db_connection):
-    # Mock pd.read_sql for active tickers
-    df_tickers = pd.DataFrame([{"ticker": "AAPL", "net_qty": 5.0}])
+    # Mock Repository
+    mock_repo = MagicMock()
+    mock_repo.get_holdings_summary.return_value = holdings
+    mock_repo.get_cash_flow_sum.return_value = 0.0 # From cash flows table
     
-    with patch('src.analytics.pd.read_sql', return_value=df_tickers), \
-         patch('src.analytics.MarketDataService') as MockMarket, \
-         patch('src.analytics.LeverageCalculator') as MockCalc, \
-         patch('src.analytics.SnapshotRecorder') as MockRecorder:
+    # Mock transactions for cash balance calculation logic that still exists in service
+    # The service iterates over transactions to adjust cash balance.
+    # We need to provide objects with .action and .amount attributes
+    t1 = MagicMock(); t1.action = 'DEPOSIT'; t1.amount = 10000.0
+    mock_repo.get_all_by_user.return_value = [t1]
+
+    calc = LeverageCalculator(repository=mock_repo)
+    metrics = calc.calculate_metrics(current_prices, user_id)
+
+    # Logic Check:
+    # TNV = (10*150) + (5*400) = 1500 + 2000 = 3500
+    # Cash Flow Sum (Direct) = 0
+    # Trans Cash Impact: DEPOSIT 10000 -> +10000
+    # Total Cash = 10000
+    # NLV = 10000 + 3500 = 13500
+    # Lev = 3500 / 13500 = 0.259...
+
+    assert metrics['tnv'] == 3500.0
+    assert metrics['cash_balance'] == 10000.0
+    assert metrics['nlv'] == 13500.0
+    assert 0.25 < metrics['leverage_ratio'] < 0.27
+
+def test_snapshot_recorder():
+    mock_trans_repo = MagicMock()
+    mock_trans_repo.calculate_net_invested_capital.return_value = 5000.0
+    
+    # Patch the classes inside analytics_service to ensure SnapshotRecorder uses our mocks
+    with patch('src.services.analytics_service.SqliteTransactionRepository', return_value=mock_trans_repo), \
+         patch('src.services.analytics_service.SqliteSnapshotRepository') as MockSnapRepo:
+        
+        recorder = SnapshotRecorder()
+        recorder.record_daily_snapshot(nlv=10000.0, cash_balance=5000.0, user_id="user1", total_tnv=5000.0, leverage_ratio=0.5)
+        
+        # Verify save_snapshot called on snapshot repo
+        MockSnapRepo.return_value.save_snapshot.assert_called_with(
+            user_id="user1",
+            date=ANY, # Any date string
+            nlv=10000.0,
+            cash_balance=5000.0,
+            invested_capital=5000.0, # From trans repo
+            pnl=5000.0, # 10000 - 5000
+            total_tnv=5000.0,
+            leverage_ratio=0.5
+        )
+
+def test_update_daily_snapshot_integration():
+    # This function uses local variables for services, so we MUST patch the classes used.
+    
+    with patch('src.services.analytics_service.SqliteTransactionRepository') as MockTransRepo, \
+         patch('src.services.analytics_service.SqliteSnapshotRepository') as MockSnapRepo, \
+         patch('src.services.analytics_service.MarketDataService') as MockMarket:
+         
+        # Setup
+        MockTransRepo.return_value.get_active_tickers.return_value = ["AAPL"]
+        # Mock get_holdings_summary and others needed by LeverageCalculator internally
+        MockTransRepo.return_value.get_holdings_summary.return_value = [("AAPL", 5.0)]
+        MockTransRepo.return_value.get_cash_flow_sum.return_value = 0.0
+        MockTransRepo.return_value.get_all_by_user.return_value = [] # No transactions for cash impact
+        MockTransRepo.return_value.calculate_net_invested_capital.return_value = 0.0
         
         MockMarket.return_value.get_current_prices.return_value = {"AAPL": 100.0}
         
-        MockCalc.return_value.calculate_metrics.return_value = {
-            "tnv": 500, "nlv": 1000, "cash_balance": 500, "leverage_ratio": 0.5
-        }
-        
         update_daily_snapshot("db.sqlite", "user1")
         
+        # Verify
+        MockTransRepo.return_value.get_active_tickers.assert_called_with("user1")
         MockMarket.return_value.get_current_prices.assert_called_with(["AAPL"])
-        MockCalc.return_value.calculate_metrics.assert_called()
-        MockRecorder.return_value.record_daily_snapshot.assert_called_with(
-            1000, 500, "user1", total_tnv=500, leverage_ratio=0.5
-        )
+        
+        # Check if snapshot was saved
+        # Note: update_daily_snapshot instantiates SnapshotRecorder, which instantiates SqliteSnapshotRepository
+        MockSnapRepo.return_value.save_snapshot.assert_called()
 
-from src.analytics import ROIEngine, PnLCalculator
 
-def test_roi_engine(mock_db_connection):
-    engine = ROIEngine()
+def test_roi_engine():
+    mock_repo = MagicMock()
+    mock_repo.calculate_net_invested_capital.return_value = 5000.0
     
-    # Mock net invested capital (Deposits - Withdrawals)
-    # Query returns (Sum, )
-    mock_db_connection.execute.return_value.fetchone.return_value = (5000.0,)
-    
-    # ROI = (NLV - Invested) / Invested
-    # NLV = 6000, Invested = 5000 -> Profit = 1000 -> ROI = 20%
+    engine = ROIEngine(repository=mock_repo)
     roi = engine.calculate_roi(nlv=6000.0, user_id="user1")
     
+    # ROI = (6000 - 5000) / 5000 = 0.20 = 20%
     assert roi == 20.0
     
-    # Test zero invested
-    mock_db_connection.execute.return_value.fetchone.return_value = (0.0,)
-    roi_zero = engine.calculate_roi(nlv=6000.0, user_id="user1")
-    assert roi_zero == 0.0
+    mock_repo.calculate_net_invested_capital.return_value = 0.0
+    assert engine.calculate_roi(nlv=6000.0, user_id="user1") == 0.0
 
-def test_pnl_calculator(mock_db_connection):
-    calc = PnLCalculator()
+def test_pnl_calculator():
+    mock_repo = MagicMock()
     
-    # Mock transactions
-    # Columns: ticker, action, quantity, price, fees
-    data = [
-        {"ticker": "AAPL", "action": "BUY", "quantity": 10.0, "price": 100.0, "fees": 0.0},
-        {"ticker": "AAPL", "action": "SELL", "quantity": 5.0, "price": 120.0, "fees": 0.0}, # Realized +100
-        {"ticker": "GOOG", "action": "BUY", "quantity": 10.0, "price": 200.0, "fees": 0.0}
-    ]
-    df_trans = pd.DataFrame(data)
+    # Mock Transactions
+    t1 = MagicMock(); t1.ticker="AAPL"; t1.action="BUY"; t1.quantity=10.0; t1.price=100.0; t1.fees=0.0
+    t2 = MagicMock(); t2.ticker="AAPL"; t2.action="SELL"; t2.quantity=5.0; t2.price=120.0; t2.fees=0.0
+    t3 = MagicMock(); t3.ticker="GOOG"; t3.action="BUY"; t3.quantity=10.0; t3.price=200.0; t3.fees=0.0
     
-    with patch('src.analytics.pd.read_sql', return_value=df_trans):
-        current_prices = {"AAPL": 130.0, "GOOG": 210.0}
-        
-        breakdown = calc.calculate_breakdown(current_prices, "user1")
-        
-        # AAPL:
-        # Buy 10 @ 100. Avg Cost = 100.
-        # Sell 5 @ 120. Realized = (120-100)*5 = 100.
-        # Remaining 5. Avg Cost 100.
-        # Current Price 130. Unrealized = (130-100)*5 = 150.
-        # Total AAPL PnL = 100 + 150 = 250.
-        
-        # GOOG:
-        # Buy 10 @ 200. Cost 200.
-        # Price 210. Unrealized = (210-200)*10 = 100.
-        # Realized = 0.
-        
-        # Totals:
-        # Realized = 100
-        # Unrealized = 150 + 100 = 250
-        # Total = 350
-        
-        assert breakdown['realized'] == 100.0
-        assert breakdown['unrealized'] == 250.0
-        assert breakdown['total'] == 350.0
-        assert breakdown['details']['AAPL']['realized'] == 100.0
-        assert breakdown['details']['AAPL']['unrealized'] == 150.0
+    # Note: PnLCalculator now expects Reverse Order (Desc) from repo, and does list()[::-1]
+    # So we provide them in DESC date order (newest first)
+    mock_repo.get_all_by_user.return_value = [t3, t2, t1]
+    
+    calc = PnLCalculator(repository=mock_repo)
+    current_prices = {"AAPL": 130.0, "GOOG": 210.0}
+    
+    breakdown = calc.calculate_breakdown(current_prices, "user1")
+    
+    # Logic Verification (Same as before)
+    # AAPL: Realized 100. Unrealized 150. Total 250.
+    # GOOG: Unrealized 100.
+    # Total: Realized 100. Unrealized 250. Total 350.
+    
+    assert breakdown['realized'] == 100.0
+    assert breakdown['unrealized'] == 250.0
+    assert breakdown['total'] == 350.0
+    assert breakdown['details']['AAPL']['realized'] == 100.0
+    assert breakdown['details']['AAPL']['unrealized'] == 150.0

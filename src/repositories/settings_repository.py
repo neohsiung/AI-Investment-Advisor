@@ -15,6 +15,14 @@ class ISettingsRepository(ABC):
     def get_all(self, user_id: str):
         pass
 
+    @abstractmethod
+    def get_global(self):
+        pass
+
+    @abstractmethod
+    def get_by_prefix(self, prefix: str):
+        pass
+
 class SqliteSettingsRepository(ISettingsRepository):
     def get(self, user_id: str, key: str, default=None):
         """
@@ -53,3 +61,18 @@ class SqliteSettingsRepository(ISettingsRepository):
         with get_db_connection() as conn:
             query = text("SELECT key, value FROM settings WHERE user_id = :user_id")
             return conn.execute(query, {"user_id": user_id}).fetchall()
+
+    def get_global(self):
+        """
+        取得全域設定 (假設 user_id IS NULL 或特定 admin user)
+        這裡假設全域設定的 user_id 為 NULL 或 'system'
+        """
+        with get_db_connection() as conn:
+            # Try NULL or 'system'
+            query = text("SELECT key, value FROM settings WHERE user_id IS NULL OR user_id = 'system'")
+            return conn.execute(query).fetchall()
+
+    def get_by_prefix(self, prefix: str):
+        with get_db_connection() as conn:
+            query = text("SELECT key, value FROM settings WHERE key LIKE :prefix")
+            return conn.execute(query, {"prefix": f"{prefix}%"}).fetchall()

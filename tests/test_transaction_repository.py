@@ -66,3 +66,47 @@ def test_delete_transaction(mock_db):
     # Called twice (transactions and cash_flows)
     assert mock_db.execute.call_count >= 1
     mock_db.commit.assert_called()
+
+def test_get_cash_flow_sum(mock_db):
+    repo = SqliteTransactionRepository()
+    mock_db.execute.return_value.fetchone.return_value = (5000.0,)
+    
+    result = repo.get_cash_flow_sum("user1")
+    assert result == 5000.0
+    
+    mock_db.execute.return_value.fetchone.return_value = (None,)
+    assert repo.get_cash_flow_sum("user1") == 0.0
+
+def test_calculate_net_invested_capital(mock_db):
+    repo = SqliteTransactionRepository()
+    mock_db.execute.return_value.fetchone.return_value = (10000.0,)
+    
+    result = repo.calculate_net_invested_capital("user1")
+    assert result == 10000.0
+
+def test_get_active_tickers(mock_db):
+    repo = SqliteTransactionRepository()
+    # Mock [(ticker,), (ticker,)]
+    mock_db.execute.return_value.fetchall.return_value = [("AAPL",), ("TSLA",)]
+    
+    tickers = repo.get_active_tickers("user1")
+    assert tickers == ["AAPL", "TSLA"]
+
+def test_get_holdings_summary(mock_db):
+    repo = SqliteTransactionRepository()
+    # Mock [(ticker, qty), (ticker, qty)]
+    mock_db.execute.return_value.fetchall.return_value = [("AAPL", 10.0), ("TSLA", 5.0)]
+    
+    summary = repo.get_holdings_summary("user1")
+    assert len(summary) == 2
+    assert summary[0] == ("AAPL", 10.0)
+
+def test_get_latest_leverage(mock_db):
+    repo = SqliteTransactionRepository()
+    mock_db.execute.return_value.fetchone.return_value = (1.5,)
+    
+    lev = repo.get_latest_leverage("user1")
+    assert lev == 1.5
+    
+    mock_db.execute.return_value.fetchone.return_value = None
+    assert repo.get_latest_leverage("user1") == 1.0

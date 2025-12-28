@@ -4,23 +4,38 @@ import requests
 from abc import ABC, abstractmethod
 from sqlalchemy import text
 from jinja2 import Template
-from src.data.database import get_db_connection
+# from src.data.database import get_db_connection # Removed for DIP
 from src.utils.logger import setup_logger
 from src.utils.cache import ResponseCache
+from src.repositories.settings_repository import SqliteSettingsRepository
+from src.repositories.agent_state_repository import SqliteAgentStateRepository
 
 class BaseAgent(ABC):
 
-    def __init__(self, name, prompt_path, use_cache=True, ttl_hours=24, tier="smart"):
+    def __init__(self, name, prompt_path, use_cache=True, ttl_hours=24, tier="smart", user_id="system", settings_repo=None, state_repo=None):
         self.name = name
         self.logger = setup_logger(name)
         self.prompt_path = prompt_path
-        self.tier = tier  # 'smart' or 'fast'
+        self.tier = tier
+        self.user_id = user_id
+        
+        # Dependency Injection withDefaults
+        self.settings_repo = settings_repo or SqliteSettingsRepository()
+        self.state_repo = state_repo or SqliteAgentStateRepository()
+        
         self.system_prompt = self._load_prompt()
         self.config = self._load_config()
         self.cache = ResponseCache(ttl_hours=ttl_hours) if use_cache else None
+        
+        # Initialize Search Service (lazy load or instance?)
+        # BaseAgent shouldn't depend heavily on service layer, but for tool loop we need it.
+        # We can import inside the method to avoid circular imports.
 
     def _load_config(self):
-        """讀取 AI 設定 (優先順序: DB > Env > Default)
+        """
+        讀取 AI 設定 (優先順序: DB > Env > Default)
+        Read AI configuration (Priority: DB > Env > Default).
+        
         Support Model Tiering:
         - AI_MODEL_SMART (e.g. gemini-1.5-pro)
         - AI_MODEL_FAST (e.g. gemini-1.5-flash)
@@ -60,23 +75,26 @@ class BaseAgent(ABC):
         return config
 
     def _load_config_from_db(self):
-        """從資料庫載入 API 設定"""
+        """從資料庫載入 API 設定 (Via Repository)"""
         settings = {}
         try:
-            conn = get_db_connection()
-            # Replace cursor with direct execution
-            rows = conn.execute(text("SELECT key, value FROM settings")).fetchall()
+            # Load Global
+            global_rows = self.settings_repo.get_global()
+            for row in global_rows:
+                 # Row might be tuple or mapping
+                 key = row._mapping['key'] if hasattr(row, '_mapping') else row[0]
+                 val = row._mapping['value'] if hasattr(row, '_mapping') else row[1]
+                 settings[key] = val
+            
+            # Load User Specific (Override)
+            if self.user_id:
+                user_rows = self.settings_repo.get_all(self.user_id)
+                for row in user_rows:
+                     key = row._mapping['key'] if hasattr(row, '_mapping') else row[0]
+                     val = row._mapping['value'] if hasattr(row, '_mapping') else row[1]
+                     settings[key] = val
 
-            # Attempt to access by _mapping first, then by index for compatibility
-            if rows:
-                try:
-                    settings = {row._mapping['key']: row._mapping['value'] for row in rows}
-                except AttributeError: # Fallback for older SQLAlchemy versions or different row objects
-                    settings = {row[0]: row[1] for row in rows}
-
-            conn.close()
         except Exception as e:
-            # Logger 可能還沒初始化，這裡用 print 或延後 log
             print(f"[{self.name}] Warning: Failed to load settings from DB: {e}")
         return settings
 
@@ -89,6 +107,7 @@ class BaseAgent(ABC):
     def render_system_prompt(self, context):
         """
         使用 Jinja2 渲染 System Prompt
+        Render System Prompt using Jinja2.
         """
         try:
             template = Template(self.system_prompt)
@@ -102,10 +121,91 @@ class BaseAgent(ABC):
     def run(self, context):
         """
         執行 Agent 任務
-        context: dict, 包含 Agent 所需的輸入數據
-        return: dict or str, Agent 的輸出
+        Execute Agent Task.
+        
+        context: dict, 包含 Agent 所需的輸入數據 (Context data required by Agent)
+        return: dict or str, Agent 的輸出 (Agent's output)
         """
         pass
+
+    def run_tool_loop(self, context, max_turns=3):
+        """
+        Executes a ReAct-style loop where the agent can request tools.
+        執行 ReAct 風格的迴圈，Agent 可以請求使用工具。
+        
+        Supported Tools (支援工具):
+        - SEARCH: "query" -> uses InternetSearchService (使用網路搜索服務)
+        """
+        messages = [
+            {"role": "system", "content": self.render_system_prompt(context)},
+            {"role": "user", "content": self._render_user_context(context)}
+        ]
+
+        from src.services.search_service import InternetSearchService
+        search_service = InternetSearchService()
+
+        for turn in range(max_turns):
+            # 1. Call LLM
+            response_text = self.call_llm(messages)
+            
+            # 2. Check for Tool Command
+            if "SEARCH:" in response_text:
+                # Extract query
+                # Assumption: Format is strict `SEARCH: "query"` or `SEARCH: query`
+                # Let's handle simple parsing
+                lines = response_text.split('\n')
+                search_query = None
+                for line in lines:
+                    if "SEARCH:" in line:
+                        parts = line.split("SEARCH:", 1)
+                        if len(parts) > 1:
+                            search_query = parts[1].strip().strip('"').strip("'")
+                            break
+                
+                if search_query:
+                    self.logger.info(f"Agent requested search: {search_query}")
+                    messages.append({"role": "assistant", "content": response_text})
+                    
+                    # Execute Search
+                    # 執行搜索
+                    results = search_service.search_financial_context(search_query, max_results=3)
+                    
+                    # Format Observation
+                    # 格式化觀察結果回傳給 Agent
+                    observation = f"System: [Search Results for '{search_query}']\n"
+                    if results:
+                        for r in results:
+                            observation += f"- {r.get('title')}: {r.get('snippet')} ({r.get('link')})\n"
+                    else:
+                        observation += "No relevant results found.\n"
+                    
+                    messages.append({"role": "user", "content": observation})
+                    continue # Loop again with observation
+            
+            # If no tool used, or after tool use we want final answer? 
+            # Actually ReAct usually outputs Thought -> Action -> Observation -> Thought -> Final Answer.
+            # If response didn't have SEARCH, we assume it's the final answer.
+            return response_text
+
+        return response_text # Return last response if max turns reached
+
+    def _render_user_context(self, context):
+        """
+        Default user context renderer. 
+        Can be overridden or we just dump the context as JSON/String.
+        Most agents currently construct user prompt inside run() or use Jinja.
+        To support standard run_tool_loop, we need a standard way to get initial user prompt.
+        For now, let's assume 'context' is passed directly if it's a string, or dumped.
+        """
+        # Hack for legacy compatibility: many agents construct prompt in run() then call call_llm
+        # We need them to pass the INITIAL user content.
+        # But wait, run() usually constructs specific prompts.
+        # So we expect run() to call run_tool_loop with prepared messages?
+        # Let's adjust run_tool_loop signature or usage.
+        # Better: run_tool_loop receives constructed initial_user_prompt.
+        if isinstance(context, str):
+            return context
+        return json.dumps(context, indent=2, ensure_ascii=False)
 
     def call_llm(self, messages, temperature=0.7, response_format=None):
         """
@@ -282,28 +382,19 @@ class BaseAgent(ABC):
     def check_freshness(self, context, state_key=None):
         """
         Check if the input context is different from the last run.
-        state_key: Optional suffix for the state ID (e.g. ticker symbol)
-        Returns: (is_fresh: bool, current_hash: str, last_output: str)
+        檢查輸入的 Context 是否與上次執行不同 (避免重複執行)。
         """
         current_hash = self._compute_hash(context)
         if not current_hash:
-            return True, None, None # Force run if hash fails
+            return True, None, None
 
-        # Construct ID
         db_id = f"{self.name}_{state_key}" if state_key else self.name
 
-        # Check DB
         try:
-            conn = get_db_connection()
-            # Query by ID not Name
-            row = conn.execute(text("SELECT last_input_hash, last_run_time, last_output FROM agent_states WHERE id = :id"), {"id": db_id}).fetchone()
-            conn.close()
-
-            if row:
-                last_hash = row[0]
-                last_output = row[2]
+            state = self.state_repo.get_state(db_id)
+            if state:
+                last_hash, last_output = state
                 if last_hash == current_hash and last_output:
-                    # self.logger.info(f"Input is identical to last run for {db_id} ({last_hash[:8]}). Skipping re-run.")
                     return False, current_hash, last_output
             
             return True, current_hash, None
@@ -312,26 +403,12 @@ class BaseAgent(ABC):
             return True, current_hash, None
 
     def update_state(self, current_hash, output_content, state_key=None):
-        """Update the agent_state table with new hash, time, and output"""
-        conn = get_db_connection()
+        """
+        Update the agent_state table with new hash, time, and output.
+        更新 agent_state 資料表，記錄新的雜湊值、時間與輸出。
+        """
         try:
-            import datetime
-            ts = datetime.datetime.now().isoformat()
             db_id = f"{self.name}_{state_key}" if state_key else self.name
-
-            # Upsert (SQLite uses INSERT OR REPLACE)
-            conn.execute(text("""
-                INSERT OR REPLACE INTO agent_states (id, agent_name, last_input_hash, last_run_time, last_output) 
-                VALUES (:id, :name, :hash, :ts, :output)
-            """), {
-                "id": db_id,
-                "name": self.name,
-                "hash": current_hash,
-                "ts": ts,
-                "output": output_content
-            })
-            conn.commit()
+            self.state_repo.save_state(db_id, self.name, current_hash, output_content)
         except Exception as e:
             self.logger.error(f"Error updating agent state: {e}")
-        finally:
-            conn.close()
