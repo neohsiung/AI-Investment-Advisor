@@ -184,9 +184,11 @@ class TestWorkflowFiles:
         # RefinementEngine uses SqliteTransactionRepository
         # We can mock the repo class in the context of workflow_service imports? 
         # RefinementEngine is imported in workflow_service.
-        # But RefinementEngine imports SqliteTransactionRepository from repositories.transaction_repository
-        # So we patch 'src.repositories.transaction_repository.SqliteTransactionRepository'
-        with patch('src.repositories.transaction_repository.SqliteTransactionRepository') as MockRepo:
+        # Mock SqliteTransactionRepository WHERE IT IS USED
+        # DailyWorkflow is in src.services.workflow_service
+        # It imports SqliteTransactionRepository.
+        # So we must patch src.services.workflow_service.SqliteTransactionRepository
+        with patch('src.services.workflow_service.SqliteTransactionRepository') as MockRepo:
              MockRepo.return_value.get_active_tickers.return_value = []
              
              # Run dry run
