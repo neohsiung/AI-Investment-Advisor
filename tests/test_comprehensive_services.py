@@ -174,24 +174,36 @@ class TestWorkflowFiles:
         """Test DailyWorkflow execution logic (Dry Run)"""
         from src.services.workflow_service import DailyWorkflow
         
-        wf = DailyWorkflow(user_id="test")
-        
-        # Mock dependencies
-        wf.market_service = Mock()
-        wf.market_service.get_yield_curve_inversion.return_value = {'inverted': False}
-        
-        # Mock RefinementEngine internals to avoid DB hit
-        # RefinementEngine uses SqliteTransactionRepository
-        # We can mock the repo class in the context of workflow_service imports? 
-        # RefinementEngine is imported in workflow_service.
         # Mock SqliteTransactionRepository WHERE IT IS USED
         # DailyWorkflow is in src.services.workflow_service
         # It imports SqliteTransactionRepository.
         # So we must patch src.services.workflow_service.SqliteTransactionRepository
         with patch('src.services.workflow_service.SqliteTransactionRepository') as MockRepo:
-             MockRepo.return_value.get_active_tickers.return_value = []
+             MockRepo.return_value.get_active_tickers.return_value = ['AAPL']
              
+             # Instantiate INSIDE the patch so it uses the mock
+             wf = DailyWorkflow(user_id="test")
+
+             # Mock dependencies on the instance (if not passed in init or set later)
+             wf.market_service = Mock()
+             wf.market_service.get_yield_curve_inversion.return_value = {'inverted': False}
+             wf.context['tickers'] = ['AAPL'] # Ensure we have tickers to avoid early return
+
              # Run dry run
+             # synthesize_results creates Agents which create NEW Repos. 
+             # We should patch synthesize_results to avoid that.
              with patch.object(wf, 'synthesize_results'):
+                  # Also avoid PerformanceService DB hits in execute_analysis
+                  wf.performance_service = Mock()
+                  
+                  # Avoid AgentFactory creating agents that hit DB?
+                  # execute_analysis creates Mom/Sent agents using Factory.
+                  # These agents might use DB?
+                  # MomentumAgent uses market data.
+                  # Check if we need to mock Factory.
+                  # For now, let's assume Agents don't hit Transaction DB directly in run()
+                  # But wait, logic earlier said they do?
+                  # "Record Recommendations for Performance Tracking" -> uses wf.performance_service.
+                  # We mocked wf.performance_service.
+                  
                   wf.run(dry_run=True)
-                  # Should run without error
