@@ -28,3 +28,4 @@ extra-streamlit-components
 dspy; python_version >= "3.9"
 pgvector
 psycopg2-binary
+duckduckgo-search
