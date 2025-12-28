@@ -23,6 +23,9 @@ class TestGoogleAuthUnit:
         monkeypatch.setitem(sys.modules, "extra_streamlit_components", mock_extra_st_components)
         monkeypatch.setitem(sys.modules, "google_auth_oauthlib.flow", mock_google_auth_oauthlib_flow)
         monkeypatch.setitem(sys.modules, "google_auth_oauthlib", mock_google_auth_oauthlib)
+        # CRITICAL: Link the submodule to the parent package so attribute access works
+        mock_google_auth_oauthlib.flow = mock_google_auth_oauthlib_flow
+        
         monkeypatch.setitem(sys.modules, "google.oauth2", mock_google_oauth2)
         monkeypatch.setitem(sys.modules, "google.auth.transport", mock_google_auth_transport)
         
