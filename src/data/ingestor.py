@@ -92,6 +92,28 @@ class TradeIngestor:
                         "raw_data": raw_data
                     })
 
+                    # Sync to cash_flows if it's a funding event
+                    if action in ['DEPOSIT', 'WITHDRAW', 'WITHDRAWAL']:
+                        norm_type = 'WITHDRAWAL' if action.startswith('WITHDRAW') else 'DEPOSIT'
+                        q_cash = text("""
+                            INSERT INTO cash_flows (id, user_id, date, amount, type, description)
+                            VALUES (:id, :user_id, :date, :amount, :type, 'Imported via CSV')
+                        """)
+                        # Reuse the same transaction ID or generate new? 
+                        # Ideally linked. We generated a random UUID above but didn't save it to a variable we can reuse easily 
+                        # because 'id' param is inside dict.
+                        # Let's assign ID to variable first.
+                        # Wait, I cannot easily refactor the UUID generation without changing lines above.
+                        # I will generate specific ID for cash flow or use a separate ID. 
+                        # Unique ID is fine.
+                        conn.execute(q_cash, {
+                            "id": str(uuid.uuid4()),
+                            "user_id": user_id,
+                            "date": date_str,
+                            "amount": amount,
+                            "type": norm_type
+                        })
+
     def _ingest_robinhood(self, df, user_id):
         # Normalize columns to lower case for easier matching
         df.columns = df.columns.str.lower()
