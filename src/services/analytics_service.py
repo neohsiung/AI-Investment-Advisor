@@ -59,10 +59,12 @@ class LeverageCalculator:
                 trans_cash_impact += amount
             elif action == 'DIVIDEND':
                 trans_cash_impact += amount
-            elif action == 'DEPOSIT':
-                trans_cash_impact += amount
-            elif action == 'WITHDRAWAL' or action == 'WITHDRAW':
-                trans_cash_impact -= amount
+            # DEPOSIT and WITHDRAW are handled via cash_flow_sum (from cash_flows table)
+            # preventing double counting.
+            # elif action == 'DEPOSIT':
+            #     trans_cash_impact += amount
+            # elif action == 'WITHDRAWAL' or action == 'WITHDRAW':
+            #     trans_cash_impact -= amount
 
         cash_balance = cash_flow_sum + trans_cash_impact
         nlv = cash_balance + portfolio_value

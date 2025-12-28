@@ -26,11 +26,10 @@ def test_leverage_calculator_metrics():
     # Mock Repository
     mock_repo = MagicMock()
     mock_repo.get_holdings_summary.return_value = holdings
-    mock_repo.get_cash_flow_sum.return_value = 0.0 # From cash flows table
+    mock_repo.get_cash_flow_sum.return_value = 10000.0 # From cash flows table (Simulating Deposit)
     
-    # Mock transactions for cash balance calculation logic that still exists in service
-    # The service iterates over transactions to adjust cash balance.
-    # We need to provide objects with .action and .amount attributes
+    # Mock transactions for cash balance calculation logic
+    # DEPOSIT in transactions should now be IGNORED by calculation
     t1 = MagicMock(); t1.action = 'DEPOSIT'; t1.amount = 10000.0
     mock_repo.get_all_by_user.return_value = [t1]
 
@@ -39,8 +38,8 @@ def test_leverage_calculator_metrics():
 
     # Logic Check:
     # TNV = (10*150) + (5*400) = 1500 + 2000 = 3500
-    # Cash Flow Sum (Direct) = 0
-    # Trans Cash Impact: DEPOSIT 10000 -> +10000
+    # Cash Flow Sum (Direct) = 10000
+    # Trans Cash Impact: DEPOSIT Ignored -> 0
     # Total Cash = 10000
     # NLV = 10000 + 3500 = 13500
     # Lev = 3500 / 13500 = 0.259...
