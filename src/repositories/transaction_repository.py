@@ -9,6 +9,11 @@ class ITransactionRepository(ABC):
         pass
 
     @abstractmethod
+    def get_active_tickers(self, user_id: str):
+        """Get list of tickers where user has a positive holding quantity (> 0.0001)."""
+        pass
+
+    @abstractmethod
     def add(self, user_id: str, ticker: str, date: str, action: str, quantity: float, price: float, fees: float):
         pass
 

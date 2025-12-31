@@ -123,7 +123,7 @@ class CIOAgent(BaseAgent):
             # Get Portfolio from Repository (Need to implement or use raw sql if repo missing method)
             # Use raw sql for now as repo might not have 'get_holdings_summary'
             # Or better, iterate tickers from repo
-            tickers = self.transaction_repo.get_user_tickers(user_id)
+            tickers = self.transaction_repo.get_active_tickers(user_id)
             if not tickers:
                 return 1.0, "目前無持倉 (No Holdings)"
 
