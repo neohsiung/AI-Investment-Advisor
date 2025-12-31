@@ -8,7 +8,17 @@
 
 ### 1. 我們遇到了什麼問題？ (The Problem)
 
+> **"Repository Pattern decouples the domain model from data mapping layers."** — *Microsoft Architecture Guide*
+
 在早期版本中，我們的業務邏輯層 (Agents & Services) 直接包含了 SQL 查詢語句。
+
+### 什麼是 Repository Pattern? (What is Repository Pattern?)
+Repository Pattern 是一種 **架構模式**。它在領域層 (Domain) 與數據層 (Persistence) 之間建立一個抽象層。對於業務邏輯來說，Repository 就像一個記憶體中的集合 (Collection)，可以 `add`, `get`, `delete`，而不需要知道背後是 SQL 還是 NoSQL。
+
+### 業界最佳實踐 (Industry Best Practices)
+1.  **Unit of Work (UoW)**: 常與 Repository 併用，確保多個 Repository 操作在同一個 Transaction 中原子化 (Atomic) 提交。
+2.  **Dependency Injection**: Service 不應自己 `new Repository()`，而應透過建構子注入，方便測試替換。
+3.  **Domain Models**: Repository 應回傳純 Python Object (Pydantic Model 或 Data Class) 而非 ORM Object。
 
 #### ❌ 重構前 (Before)
 `SystemEngineerAgent` 中直接寫 SQL：
@@ -60,9 +70,9 @@ class SqliteRecommendationRepository:
 - `src/repositories/` (本專案原始碼)
 
 ## 🔗 相關連結 (See Also)
-- [設計模式導讀](wiki/05_Engineering_Handbook/設計模式導讀-Design-Patterns-Intro.md)
-- [依賴注入 (Dependency Injection)](wiki/05_Engineering_Handbook/設計模式_依賴注入-Dependency-Injection.md)
-- [資料層定義 (Data Layer)](wiki/02_Product_Manager_Corner/Specs/資料層定義-Data-Layer.md)
+- [設計模式導讀](設計模式導讀-Design-Patterns-Intro)
+- [依賴注入 (Dependency Injection)](設計模式_依賴注入-Dependency-Injection)
+- [資料層定義 (Data Layer)](資料層定義-Data-Layer)
 
 ---
 

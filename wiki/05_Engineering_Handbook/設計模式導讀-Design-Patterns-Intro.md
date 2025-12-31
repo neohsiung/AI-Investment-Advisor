@@ -20,21 +20,37 @@
 
 ## 📚 章節索引 (Table of Contents)
 
-1.  **[工廠模式 (Factory Pattern)](wiki/05_Engineering_Handbook/設計模式_工廠-Factory-Pattern.md)**
+1.  **[工廠模式 (Factory Pattern)](設計模式_工廠-Factory-Pattern)**
     *   *解決問題*: Agent 初始化複雜，依賴眾多。
     *   *應用場景*: `AgentFactory` 統一創建 Momentum, Macro, CIO Agent。
 
-2.  **[存儲庫模式 (Repository Pattern)](wiki/05_Engineering_Handbook/設計模式_存儲庫-Repository-Pattern.md)**
+2.  **[存儲庫模式 (Repository Pattern)](設計模式_存儲庫-Repository-Pattern)**
     *   *解決問題*: SQL 散落在業務邏輯中，難以更換 DB 或 Mock。
     *   *應用場景*: `SettingsRepository`, `TransactionRepository`。
 
-3.  **[依賴注入 (Dependency Injection)](wiki/05_Engineering_Handbook/設計模式_依賴注入-Dependency-Injection.md)**
+3.  **[依賴注入 (Dependency Injection)](設計模式_依賴注入-Dependency-Injection)**
     *   *解決問題*: 高層模組 (Agent) 依賴低層實作 (Sqlite)，導致無法單元測試。
     *   *應用場景*: Agent 建構子注入 Repository。
 
-4.  **[樣板方法 (Template Method)](wiki/05_Engineering_Handbook/設計模式_樣板方法-Template-Method.md)**
+4.  **[樣板方法 (Template Method)](設計模式_樣板方法-Template-Method)**
     *   *解決問題*: DailyWorkflow 與 WeeklyWorkflow 流程高度重複。
     *   *應用場景*: `BaseWorkflow.run()` 定義骨架。
+
+## 🤖 Agentic Patterns (New in v3.1)
+
+隨著系統進化為 Agent Swarm，我們也引入了 Agent 專屬的設計模式：
+
+1.  **ReAct (Reason + Act)**
+    *   *定義*: 結合推理 (Thinking) 與行動 (Function Calling) 的循環。
+    *   *應用*: 本系統的 Agent 在決策前會先搜索新聞 (Act)，再進行分析 (Reason)。
+
+2.  **Reflection (Self-Correction)**
+    *   *定義*: Agent 產出結果後，由另一個角色 (或自身) 進行批判與改進。
+    *   *應用*: `RefinementEngine` 負責檢視 Agent 歷史表現並調整 Prompt。
+
+3.  **Collaborative Swarm**
+    *   *定義*: 多個角色 (Persona) 共同解決問題，而非單一大模型。
+    *   *應用*: CIO Agent 整合 Momentum, Fundamental, Sentiment Agents 的異質觀點。
 
 ## 🚀 如何學習 (How to Learn)
 
@@ -63,21 +79,37 @@ After reading this series, you will be able to:
 
 ## 📚 Table of Contents
 
-1.  **[Factory Pattern](wiki/05_Engineering_Handbook/設計模式_工廠-Factory-Pattern.md)**
+1.  **[Factory Pattern](設計模式_工廠-Factory-Pattern)**
     *   *Problem*: Complex Agent initialization with many dependencies.
     *   *Use Case*: `AgentFactory` centralizes creation of Momentum, Macro, and CIO Agents.
 
-2.  **[Repository Pattern](wiki/05_Engineering_Handbook/設計模式_存儲庫-Repository-Pattern.md)**
+2.  **[Repository Pattern](設計模式_存儲庫-Repository-Pattern)**
     *   *Problem*: SQL scattered across business logic, making it hard to switch DBs or Mock.
     *   *Use Case*: `SettingsRepository`, `TransactionRepository`.
 
-3.  **[Dependency Injection](wiki/05_Engineering_Handbook/設計模式_依賴注入-Dependency-Injection.md)**
+3.  **[Dependency Injection](設計模式_依賴注入-Dependency-Injection)**
     *   *Problem*: High-level modules (Agents) depending on low-level implementations (SQLite), preventing unit testing.
     *   *Use Case*: Injecting Repositories via Agent constructors.
 
-4.  **[Template Method](wiki/05_Engineering_Handbook/設計模式_樣板方法-Template-Method.md)**
+4.  **[Template Method](設計模式_樣板方法-Template-Method)**
     *   *Problem*: High duplication between DailyWorkflow and WeeklyWorkflow.
     *   *Use Case*: `BaseWorkflow.run()` defines the skeleton.
+
+## 🤖 Agentic Patterns (New in v3.1)
+
+As the system evolves into an Agent Swarm, we adopt specific patterns for AI Agents:
+
+1.  **ReAct (Reason + Act)**
+    *   *Definition*: Interleaving reasoning traces with action execution.
+    *   *Application*: Agents search news (Act) before analyzing (Reason).
+
+2.  **Reflection (Self-Correction)**
+    *   *Definition*: Critiquing and refining outputs iteratively.
+    *   *Application*: `RefinementEngine` reviews past predictions to optimize Prompts.
+
+3.  **Collaborative Swarm**
+    *   *Definition*: Multiple specialized personas working together.
+    *   *Application*: CIO Agent synthesizes diverse views from Momentum, Fundamental, and Sentiment Agents.
 
 ## 🚀 How to Learn
 

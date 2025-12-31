@@ -8,8 +8,18 @@
 
 ### 1. 我們遇到了什麼問題？ (The Problem)
 
+> **"Dependency Injection is a technique whereby one object supplies the dependencies of another object."** — *Martin Fowler*
+
 #### ❌ 重構前 (Before)
 在早期的 Agent 設計中，Agent "知道太多了"。它知道要使用 `SqliteSettingsRepository`，並且知道如何實例化它。
+
+### 什麼是 Dependency Injection? (What is DI?)
+DI 是一種 **控制反轉 (IoC)** 的實踐。物件不再負責創建自己的依賴，而是由外部 (Assembler/Container) 注入。這極大提升了模組的獨立性。
+
+### 著名的 Python DI 框架
+1.  **Dependency Injector**: 結構嚴謹，提供 Container 與 Providers，適合大型專案。
+2.  **Injector**: 類似 Java Guice 的風格。
+3.  **FastAPI Depends**: 現代 Web 框架內建的 DI 系統，極大簡化了 Request Scope 的依賴管理。
 
 ```python
 class BaseAgent:
@@ -56,9 +66,9 @@ agent = BaseAgent(settings_repo=mock_repo)
 - `src/agents/base_agent.py` (本專案原始碼)
 
 ## 🔗 相關連結 (See Also)
-- [設計模式導讀](wiki/05_Engineering_Handbook/設計模式導讀-Design-Patterns-Intro.md)
-- [工廠模式 (Factory Pattern)](wiki/05_Engineering_Handbook/設計模式_工廠-Factory-Pattern.md)
-- [存儲庫模式 (Repository Pattern)](wiki/05_Engineering_Handbook/設計模式_存儲庫-Repository-Pattern.md)
+- [設計模式導讀](設計模式導讀-Design-Patterns-Intro)
+- [工廠模式 (Factory Pattern)](設計模式_工廠-Factory-Pattern)
+- [存儲庫模式 (Repository Pattern)](設計模式_存儲庫-Repository-Pattern)
 
 ---
 

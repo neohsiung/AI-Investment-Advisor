@@ -8,7 +8,17 @@
 
 ### 1. 我們遇到了什麼問題？ (The Problem)
 
+> **"Defines the skeleton of an algorithm in the superclass but lets subclasses override specific steps of the algorithm without changing its structure."** — *GoF*
+
 我們需要實作 `DailyWorkflow` (日報) 和 `WeeklyWorkflow` (週報)。這兩者有 80% 的流程是一樣的：
+
+### 什麼是 Template Method?
+Template Method 是一種 **行為型模式**。它解決了 "兩個流程大同小異，只有特定步驟不同" 的問題。透過在父類別定義 `run()` (樣板)，並預留 `abstractmethod` 或 `hook` 給子類別實作，達到代碼復用。
+
+### 業界應用案例 (Real World Examples)
+1.  **Airflow DAGs**: 定義通用的 Operator 流程，讓不同的 DAG 繼承並填入具體 Task。
+2.  **Django Class Based Views**: `ListView` 定義了 `get_queryset` -> `get_context_data` -> `render` 的標準流程。
+3.  **Unittest**: Python 的 `unittest` 使用 `setUp` -> `test` -> `tearDown` 的固定樣板。
 1.  準備資料 (初始化 DB, 載入 User)。
 2.  執行分析 (日報跑動能，週報跑總經)。
 3.  綜合結果。
@@ -62,8 +72,8 @@ class WeeklyWorkflow(BaseWorkflow):
 - `src/services/workflow_service.py` (本專案原始碼)
 
 ## 🔗 相關連結 (See Also)
-- [設計模式導讀](wiki/05_Engineering_Handbook/設計模式導讀-Design-Patterns-Intro.md)
-- [系統概觀 (System Overview)](wiki/04_Architect_View/系統概觀-System-Overview.md)
+- [設計模式導讀](設計模式導讀-Design-Patterns-Intro)
+- [系統概觀 (System Overview)](系統概觀-System-Overview)
 
 ---
 

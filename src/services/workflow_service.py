@@ -237,7 +237,8 @@ class DailyWorkflow(BaseWorkflow):
             "macro_report": combined_macro,
             "ticker_data": self.context.get('ticker_reports', {}),
             "portfolio": portfolio_str,
-            "report_focus": "Daily Tactical"
+            "report_focus": "Daily Tactical",
+            "user_id": self.user_id
         }
         
         final_report = cio.run(cio_context)
@@ -366,7 +367,8 @@ class WeeklyWorkflow(BaseWorkflow):
             "macro_report": self.context['macro_report'],
             "ticker_data": self.context.get('ticker_reports', {}),
             "portfolio": portfolio_str,
-            "engineer_report": engineer_report # Pass integration context
+            "engineer_report": engineer_report, # Pass integration context
+            "user_id": self.user_id
         }
         
         final_report = cio.run(cio_context)

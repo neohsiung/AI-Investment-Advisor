@@ -8,7 +8,17 @@
 
 ### 1. 我們遇到了什麼問題？ (The Problem)
 
+> **"Factories decouple the creation of objects from their usage."** — *Real Python*
+
 在 v3.0 版本初期，要創建一個 `MomentumAgent` (動能分析師) 非常麻煩。你需要知道它依賴哪些組件，還需要正確設定 `Prompts` 的路徑、`ResponseCache` 的 TTL 時間以及 `User ID`。
+
+### 什麼是 Factory Pattern? (What is Factory Pattern?)
+工廠模式是一種 **創建型模式 (Creational Pattern)**。它提供了一種創建對象的介面，但允許子類別決定實例化哪一個類別。在 Python 中，它常被用來解決 "複雜初始化邏輯散落在各處" 的問題。
+
+### 業界應用案例 (Real World Examples)
+1.  **Game Development**: 根據玩家輸入動態生成 `Orc`, `Elf`, `Dragon` 等不同屬性的敵人實例。
+2.  **Payment Gateways**: 根據地區自動選擇創建 `StripePayment`, `PayPalPayment` 或 `ECPayPayment` 物件。
+3.  **Data Exporters**: 根據用戶選擇傳回 `PDFExporter`, `CSVExporter` 或 `JSONExporter`。
 
 #### ❌ 重構前 (Before)
 在 `WorkflowService` 或測試程式碼中，我們經常看到這樣的程式碼：
@@ -83,8 +93,8 @@ class AgentFactory:
 - `src/agents/factory.py` (本專案原始碼)
 
 ## 🔗 相關連結 (See Also)
-- [設計模式導讀](wiki/05_Engineering_Handbook/設計模式導讀-Design-Patterns-Intro.md)
-- [依賴注入 (Dependency Injection)](wiki/05_Engineering_Handbook/設計模式_依賴注入-Dependency-Injection.md)
+- [設計模式導讀](設計模式導讀-Design-Patterns-Intro)
+- [依賴注入 (Dependency Injection)](設計模式_依賴注入-Dependency-Injection)
 
 ---
 
