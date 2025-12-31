@@ -39,6 +39,15 @@ gcloud run deploy portfolio-app \
 Update **Authorized redirect URIs** in Google Cloud Console to point to your new Cloud Run URL.
 
 #### 4. Setup CI/CD Environment Variables (GitHub Secrets)
+**IMPORTANT Update (2026-01-01):** The CI/CD pipeline is now **Zero-Cost by Default**.
+- Automatic deployment on push is **DISABLED**.
+- To deploy, you must manually trigger the workflow:
+    1. Go to **Actions** tab in GitHub.
+    2. Select **CI/CD Pipeline**.
+    3. Click **Run workflow**.
+    4. Check the box **Deploy to GCP (Prd)?** (set to `true`).
+- This ensures you only pay for GCP resources when you explicitly intend to deploy.
+
 The following secrets are automatically injected into Cloud Run by `ci-cd.yml`. Please configure them in your GitHub Repository Secrets:
 
 | Category | Variable | Description |
@@ -98,6 +107,15 @@ gcloud run deploy portfolio-app \
 1. 更新 Google Cloud Console 中的 **Authorized redirect URIs**。
 2. 或更新環境變數 `REDIRECT_URI` 指向 Cloud Run 網址。
 #### 4. 設定 CI/CD 環境變數 (GitHub Secrets)
+**重要更新 (2026-01-01):** 目前 CI/CD 流程預設為 **零成本 (Zero-Cost)** 模式。
+- `git push` **不會** 自動觸發部署。
+- 若要部署至 GCP，必須手動觸發 Worklfow：
+    1. 前往 GitHub 的 **Actions** 分頁。
+    2. 選擇 **CI/CD Pipeline**。
+    3. 點擊 **Run workflow**。
+    4. 勾選 **Deploy to GCP (Prd)?** (設定為 `true`)。
+- 此機制確保只有在您明確想要部署時，才會建立雲端資源並產生費用。
+
 以下變數由 `ci-cd.yml` 自動注入到 Cloud Run。請在 GitHub Repository Secrets 中設定：
 
 | 分類 (Category) | 變數名稱 (Variable) | 說明 (Description) |
