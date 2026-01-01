@@ -32,7 +32,9 @@
     - 市場波動率 (Volatility) 反映了什麼預期？
 
 3.  **個股深度分析 (Individual Deep Dives)**:
+    - **CRITICAL**: 您必須分析 **每一檔** 非 ETF 的持倉個股。**不可遺漏任何一檔** (Do not skip any ticker)。
     - 針對持倉進行 **逐檔** 詳盡檢視 (基於基本面與技術面)。
+    - 若持倉數量較多，請依序條列，**禁止** 僅挑選幾檔或進行模糊的摘要。
     - 清楚說明每一檔股票的 "多空論述" (Bull/Bear Case)。
 
 4.  **系統優化報告 (System Health)**:

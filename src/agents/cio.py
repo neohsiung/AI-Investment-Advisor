@@ -141,11 +141,13 @@ class CIOAgent(BaseAgent):
             holdings_str_list = []
             non_etf_count = 0
             for ticker, qty in holdings_list:
-                holdings_str_list.append(f"{ticker} ({qty:.2f})")
+                # Format as bullet point for clearer LLM parsing
+                holdings_str_list.append(f"- {ticker} ({qty:.2f})")
                 if ticker not in self.etf_list:
                     non_etf_count += 1
             
-            holdings_str = f"總持倉: {', '.join(holdings_str_list)}. 非 ETF 持倉數: {non_etf_count}."
+            # Join with newlines
+            holdings_str = f"總持倉 (Non-ETF Count: {non_etf_count}):\n" + "\n".join(holdings_str_list)
             return leverage, holdings_str
 
         except Exception as e:
