@@ -12,7 +12,7 @@ from src.repositories.agent_state_repository import SqliteAgentStateRepository
 
 class BaseAgent(ABC):
 
-    def __init__(self, name, prompt_path, use_cache=True, ttl_hours=24, tier="smart", user_id="system", settings_repo=None, state_repo=None):
+    def __init__(self, name, prompt_path, use_cache=True, ttl_hours=24, tier="smart", user_id="system", settings_repo=None, state_repo=None, **kwargs):
         self.name = name
         self.logger = setup_logger(name)
         self.prompt_path = prompt_path
@@ -232,18 +232,31 @@ class BaseAgent(ABC):
         模擬 LLM 調用 (Phase 3 初期使用 Mock)
         實際專案應整合 Gemini API 或其他 LLM Client
         """
-        # 嘗試使用真實 API
-        if self.config.get('api_key'):
-            try:
-                return self._call_real_llm(prompt, system_prompt)
-            except Exception as e:
-                self.logger.error(f"Error calling real LLM: {e}. Falling back to mock.")
-
+        # Retry Logic
+        # 重試邏輯
+        import time
+        max_retries = 3
+        last_error = None
+        
+        for attempt in range(max_retries):
+            # 嘗試使用真實 API
+            if self.config.get('api_key'):
+                try:
+                    return self._call_real_llm(prompt, system_prompt)
+                except Exception as e:
+                    last_error = e
+                    self.logger.error(f"Error calling real LLM (Attempt {attempt+1}/{max_retries}): {e}")
+                    # Simple exponential backoff: 2s, 4s, 8s
+                    # 簡單的指數退避：2秒、4秒、8秒
+                    time.sleep(2 ** (attempt + 1))
+            else:
+                break # No API Key, fallback immediately
+        
         provider = self.config.get('provider')
         model = self.config.get('model')
-        self.logger.info(f"Calling Mock LLM ({provider} - {model})...")
+        self.logger.info(f"Falling back to Mock LLM ({provider} - {model})...")
 
-        return f"Mock response from {self.name} using {model}. Context received: {len(str(prompt))} chars."
+        return f"Mock response from {self.name} due to error: {last_error}. Context received: {len(str(prompt))} chars."
 
     def _call_real_llm(self, prompt, system_prompt):
         """

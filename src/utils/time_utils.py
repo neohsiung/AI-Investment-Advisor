@@ -64,32 +64,47 @@ def get_current_date_str():
 def convert_user_time_to_system_time(time_str):
     """
     Convert a time string (HH:MM) from User Timezone to System Timezone (UTC/Local).
+    將使用者時區的時間字串 (HH:MM) 轉換為系統時區 (UTC/Local)。
+    
     Used for scheduling jobs to run at the correct user time.
+    用於排程工作，確保在正確的使用者時間執行。
     """
     try:
         user_tz = get_timezone()
         
         # Create a dummy datetime with today's date and the user's target time
+        # 建立一個包含今日日期與使用者目標時間的 datetime 物件
         now = datetime.now(user_tz)
         target_time = datetime.strptime(time_str, "%H:%M").time()
         user_dt = now.replace(hour=target_time.hour, minute=target_time.minute, second=0, microsecond=0)
         
         # Convert to UTC (or system local time effectively)
+        # 轉換為 UTC (或有效的系統本地時間)
         # Assuming container runs in UTC. If container has local timezone set, this needs 'datetime.now().astimezone()' logic.
-        # But 'schedule' library uses naive datetime.now().
+        # 假設容器運行在 UTC 環境。若容器設定了本地時區，則需要調整。
         
         # Best practice: Convert to UTC, then strip tzinfo
+        # 最佳實踐：轉換為 UTC，然後移除時區資訊
         utc_dt = user_dt.astimezone(pytz.utc)
         
         # If the system is NOT UTC, we might need system local.
         # Check system offset
         # But for Docker/Cloud, UTC is standard. We assume system is UTC.
         
-        return utc_dt.strftime("%H:%M")
+        # Calculate day offset (e.g., -1 if crossed midnight backwards, +1 if forwards)
+        # 計算日期偏移量 (例如：若跨越午夜向前則為 -1，向後則為 +1)
+        # simplistic check: comparison of user_dt vs utc_dt isn't enough because of date.
+        # 簡單檢查：僅比較 user_dt 與 utc_dt 是不夠的，因為日期可能不同。
+        # We check the date difference.
+        # 我們檢查日期的差異。
+        
+        day_offset = (utc_dt.date() - user_dt.date()).days
+        
+        return utc_dt.strftime("%H:%M"), day_offset
         
     except Exception as e:
         print(f"Time conversion error: {e}")
-        return time_str # Fallback to original
+        return time_str, 0 # Fallback to original
 
 def get_current_utc_time():
     """

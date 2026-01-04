@@ -144,26 +144,50 @@ class SchedulerService:
         weekly_day = config.get("schedule_weekly_day", "saturday").lower()
         
         # Convert User Time (e.g. Asia/Taipei) to System Time (UTC)
-        daily_time_sys = convert_user_time_to_system_time(daily_time)
-        weekly_time_sys = convert_user_time_to_system_time(weekly_time)
+        # 將使用者時間 (如 Asia/Taipei) 轉換為系統時間 (UTC)
+        daily_time_sys, daily_offset = convert_user_time_to_system_time(daily_time)
+        weekly_time_sys, weekly_offset = convert_user_time_to_system_time(weekly_time)
         
-        logger.info(f"Loaded config: Daily={daily_time} on {daily_days}, Weekly={weekly_day} {weekly_time}")
+        logger.info(f"Loaded config: Daily={daily_time} ({daily_time_sys} UTC, offset {daily_offset}) on {daily_days}, Weekly={weekly_day} {weekly_time} ({weekly_time_sys} UTC, offset {weekly_offset})")
         
+        # Helper to shift day
+        # 輔助函式：根據時區偏移調整執行日期
+        days_map = ["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"]
+        def get_shifted_day(day_name, offset):
+            try:
+                curr_idx = days_map.index(day_name.lower())
+                new_idx = (curr_idx + offset) % 7
+                return days_map[new_idx]
+            except ValueError:
+                return day_name # Fallback
+
         # Schedule Daily Job
+        # 設定每日檢查排程
         for day in daily_days:
-            if hasattr(schedule.every(), day):
-                getattr(schedule.every(), day).at(daily_time_sys).do(self.job_daily_check)
-                logger.info(f"Scheduled Daily Check on {day} at {daily_time} ({daily_time_sys} UTC)")
+            target_day = get_shifted_day(day, daily_offset)
+            if hasattr(schedule.every(), target_day):
+                getattr(schedule.every(), target_day).at(daily_time_sys).do(self.job_daily_check)
+                logger.info(f"Scheduled Daily Check on {target_day} at {daily_time_sys} UTC (User: {day} {daily_time})")
         
         # Dynamic day scheduling for Weekly Report
-        if hasattr(schedule.every(), weekly_day):
-            getattr(schedule.every(), weekly_day).at(weekly_time_sys).do(self.job_weekly_report)
+        # 設定每週報告的動態日期
+        target_weekly_day = get_shifted_day(weekly_day, weekly_offset)
+        if hasattr(schedule.every(), target_weekly_day):
+            getattr(schedule.every(), target_weekly_day).at(weekly_time_sys).do(self.job_weekly_report)
+            logger.info(f"Scheduled Weekly Report on {target_weekly_day} at {weekly_time_sys} UTC (User: {weekly_day} {weekly_time})")
         else:
-            logger.warning(f"Invalid weekly day '{weekly_day}', defaulting to saturday.")
+            logger.warning(f"Invalid weekly day '{target_weekly_day}', defaulting to saturday.")
             schedule.every().saturday.at(weekly_time_sys).do(self.job_weekly_report)
             
         # Run validation on Sunday to review the week
+        # 週日執行驗證以回顧本週表現
+        # Validation time also needs checking, assuming fixed 10:00 UTC for now or user time?
+        # Let's align with Weekly report logic roughly (+2 hours)
+        # Using fixed Sunday 10:00 UTC for simplicity as before
         schedule.every().sunday.at("10:00").do(self.job_weekly_validation)
+        
+        # Monthly Check (UTC 00:00)
+        # 每月檢查 (UTC 00:00)
         schedule.every().day.at("00:00").do(self.check_monthly_job)
 
     def run_loop(self):

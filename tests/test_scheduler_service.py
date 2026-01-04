@@ -93,7 +93,8 @@ def test_reload_schedule(mock_scheduler_deps):
     }
     
     # Mock the time conversion helper to return the time as-is
-    with patch('src.services.scheduler_service.convert_user_time_to_system_time', side_effect=lambda x: x):
+    # Mock the time conversion helper to return the time as-is with 0 day offset
+    with patch('src.services.scheduler_service.convert_user_time_to_system_time', side_effect=lambda x: (x, 0)):
         service.reload_schedule()
         
         # Check schedule calls
