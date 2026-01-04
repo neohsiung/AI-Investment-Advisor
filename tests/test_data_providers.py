@@ -55,18 +55,18 @@ class TestFMPProvider:
             assert result == {}
     
     @patch('src.data.providers.fmp_provider.requests.get')
-    def test_fetch_financials(self, mock_get):
+    def test_fetch_info(self, mock_get):
         """Test fetching financial data."""
         with patch.dict('os.environ', {'FMP_API_KEY': 'test_key'}):
             mock_get.return_value.status_code = 200
             mock_get.return_value.json.return_value = [
-                {"netIncome": 1000000, "revenue": 5000000}
+                {"mktCap": 1000000, "sector": "Tech"}
             ]
             
             provider = FMPProvider()
-            result = provider.fetch_financials("AAPL")
+            result = provider.fetch_info("AAPL")
             
-            assert "netIncome" in str(result) or isinstance(result, (dict, list))
+            assert result["market_cap"] == 1000000
 
 class TestPolygonProvider:
     
@@ -88,14 +88,13 @@ class TestPolygonProvider:
         with patch.dict('os.environ', {'POLYGON_API_KEY': 'test_key'}):
             mock_get.return_value.status_code = 200
             mock_get.return_value.json.return_value = {
-                "results": [{"T": "AAPL", "c": 150.0}]
+                "ticker": {"lastTrade": {"p": 150.0}}
             }
             
             provider = PolygonProvider()
             result = provider.fetch_current_prices(["AAPL"])
             
-            # May return empty if not mocked correctly, check no exception
-            assert isinstance(result, dict)
+            assert result["AAPL"] == 150.0
     
     @patch('src.data.providers.polygon_provider.requests.get')
     def test_fetch_current_prices_error(self, mock_get):
@@ -116,15 +115,15 @@ class TestPolygonProvider:
             assert result == {}
     
     @patch('src.data.providers.polygon_provider.requests.get')
-    def test_fetch_financials(self, mock_get):
+    def test_fetch_info(self, mock_get):
         """Test fetching financial data."""
         with patch.dict('os.environ', {'POLYGON_API_KEY': 'test_key'}):
             mock_get.return_value.status_code = 200
             mock_get.return_value.json.return_value = {
-                "results": [{"financials": {"revenue": {"value": 1000000}}}]
+                "results": {"market_cap": 1000000}
             }
             
             provider = PolygonProvider()
-            result = provider.fetch_financials("AAPL")
+            result = provider.fetch_info("AAPL")
             
-            assert isinstance(result, (dict, list))
+            assert result["market_cap"] == 1000000
