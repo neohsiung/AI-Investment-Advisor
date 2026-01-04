@@ -82,10 +82,16 @@ cp .env.example .env  # 請在 .env 填入 API Keys (Google Gemini / OpenAI)
     - [核心系統規格 (Core System Specs)](wiki/02_產品經理-Product_Managers/Specs/核心系統規格-Core-System-Specs.md)
 - **開發者指南**:
     - [環境設定與本地開發 (Environment & Local Dev)](wiki/03_開發者指南-Developer_Guide/環境設定與本地開發-Environment-Local-Dev.md)
+    - [服務層子系統詳解 (Service Layer Blueprints)](wiki/03_開發者指南-Developer_Guide/服務層開發指南-Service-Layer-Blueprints.md)
+    - [前端架構與 UX 層 (Frontend & UX Layer)](wiki/03_開發者指南-Developer_Guide/前端架構與UX層-Frontend-UX-Layer.md)
     - [測試與外部服務整合 (Testing & External Services)](wiki/03_開發者指南-Developer_Guide/測試與外部服務整合-Testing-External-Services.md)
 - **架構設計**:
     - [系統全景圖 (System Landscape)](wiki/04_架構觀點-Architect_Views/系統全景圖-System-Landscape.md)
+    - [架構哲學 (Architectural Philosophies)](wiki/04_架構觀點-Architect_Views/架構哲學-Architectural-Philosophies.md)
     - [底層通信協議 (Agent Mesh Protocols)](wiki/04_架構觀點-Architect_Views/底層通信協議-Agent-Mesh-Protocols.md)
+- **工程手冊**:
+    - [研究與最佳實踐 (Research & Best Practices)](wiki/05_工程手冊-Engineering_Handbook/研究與最佳實踐-Research-Best-Practices.md)
+    - [設計模式導讀 (Design Patterns Intro)](wiki/05_工程手冊-Engineering_Handbook/設計模式導讀-Design-Patterns-Intro.md)
 
 ### 🏗️ 系統架構 (Architecture)
 
@@ -166,10 +172,15 @@ Detailed documentation is available in the `wiki/` directory:
     - [Core System Specs](wiki/02_產品經理-Product_Managers/Specs/核心系統規格-Core-System-Specs.md)
 - **Developer Guide**:
     - [Environment & Local Dev](wiki/03_開發者指南-Developer_Guide/環境設定與本地開發-Environment-Local-Dev.md)
+    - [Service Layer Blueprints](wiki/03_開發者指南-Developer_Guide/服務層開發指南-Service-Layer-Blueprints.md)
+    - [Frontend & UX Layer](wiki/03_開發者指南-Developer_Guide/前端架構與UX層-Frontend-UX-Layer.md)
     - [Testing & External Services](wiki/03_開發者指南-Developer_Guide/測試與外部服務整合-Testing-External-Services.md)
-- **Architecture**:
+- **Architecture & Engineering**:
     - [System Landscape](wiki/04_架構觀點-Architect_Views/系統全景圖-System-Landscape.md)
+    - [Architectural Philosophies](wiki/04_架構觀點-Architect_Views/架構哲學-Architectural-Philosophies.md)
     - [Agent Mesh Protocols](wiki/04_架構觀點-Architect_Views/底層通信協議-Agent-Mesh-Protocols.md)
+    - [Research & Best Practices](wiki/05_工程手冊-Engineering_Handbook/研究與最佳實踐-Research-Best-Practices.md)
+    - [Design Patterns Intro](wiki/05_工程手冊-Engineering_Handbook/設計模式導讀-Design-Patterns-Intro.md)
 
 ### ⚠️ Disclaimer
 **For Educational and Research Purposes Only.**
