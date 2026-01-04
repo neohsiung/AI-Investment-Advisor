@@ -17,20 +17,22 @@
 
 ### 2. 情境對比 (Good vs. Bad)
 
-#### ❌ 模式不當用 (Bad)
-業務邏輯直接耦合 SQL：
+````carousel
 ```python
-def get_user_config(self):
-    # SQL 語法散落在 Python 邏輯中，難以 Mock
-    return self.db.execute("SELECT * FROM settings WHERE key=?", (k,)).fetchone()
+# ❌ Before: 直接耦合 SQL
+def get_config(self):
+    return self.db.execute("SELECT * FROM settings").fetchone()
 ```
-
-#### ✅ 專業實作 (Good)
-透過介面調用，語意清晰：
+<!-- slide -->
 ```python
-# 業務端僅關心語意
+# ✅ After: 透過介面隔離 (詳見 src/repositories/settings_repository.py)
 config = self.repo.get_setting("api_key")
 ```
+<!-- slide -->
+> [!NOTE]
+> **架構價值**: 
+> 業務邏輯對「如何儲存」完全無知，這使得我們可以在單元測試中使用 `InMemoryRepository` 替代實體資料庫。
+````
 
 ### 3. 非功能性要求 (Persistence NFR)
 - **併發控制 (Concurrency)**: 針對 SQLite 必須處理 `Database is locked` 的重試邏輯，詳見 [環境設定](環境設定與本地開發-Environment-Local-Dev)。

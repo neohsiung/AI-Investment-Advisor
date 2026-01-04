@@ -15,28 +15,54 @@
 - **協定類型**: HTTP/1.1 + gRPC (內部)。
 - **訊息格式**: JSON。
 
-#### 1.1 請求格式示例 (Request Schema)
-每個工具調用必須遵循標準 Header 與 Payload：
+#### 1.1 訊息結構定義 (Protocol Schemas)
+
+##### [NEW] 工具註冊 (Tool Registration)
 ```json
 {
-  "agent_id": "CIO-001",
-  "tool": "get_current_price",
-  "params": {
-    "ticker": "AAPL",
-    "use_cache": true
-  },
-  "context_hash": "sha256_..."
+  "name": "string",
+  "description": "string",
+  "parameters": {
+    "key": "type (str/int/float)",
+    "description": "human readable"
+  }
 }
 ```
 
-### 2. 工具集詳細定義 (Toolset Specification)
-所有工具均封裝於 [MCP 微服務](系統全景圖-System-Landscape) 中，確保權限隔離。
+##### [NEW] Agent 間通訊 (Inter-Agent Message)
+```json
+{
+  "sender": "string",
+  "receiver": "string",
+  "content": "markdown_string",
+  "context": { "key": "any" }
+}
+```
 
-| 工具名稱 | 輸入參數 | 輸出範例 |
+#### 1.2 工具調用生命週期 (Tool Call Lifecycle)
+```mermaid
+sequenceDiagram
+    participant Agent
+    participant MCP as MCP Server (FastAPI)
+    participant Logic as Internal Service<br/>(MarketData/Search)
+
+    Agent->>MCP: POST /tools/call/{tool_name} (JSON Payload)
+    MCP->>MCP: 權限校驗與參數解碼
+    MCP->>Logic: 轉發至對應業務邏輯
+    Logic-->>Logic: 執行計算/API獲取
+    Logic-->>MCP: 返回原始數據
+    MCP-->>Agent: 返回封裝後的 JSON Response
+```
+
+### 2. 工具集詳細定義 (Toolset Specification)
+所有工具均封裝於 [MCP 微服務](系統全景圖-System-Landscape) 中。
+
+| 工具名稱 | 輸入參數 (Types) | 業務邏輯 / 數據源 |
 | :--- | :--- | :--- |
-| `get_current_price` | `ticker` (str) | `{"price": 180.25, "ts": 169...}` |
-| `get_news` | `query` (str), `limit` (int) | `[{"title": "...", "url": "..."}]` |
-| `calculate_leverage` | `current_prices` (dict) | `{"ratio": 1.25, "status": "safe"}` |
+| `get_current_price` | `ticker` (str) | [MarketDataService](服務層開發指南-Service-Layer-Blueprints) |
+| `get_news` | `ticker` (str) | FMP / YFinance API |
+| `get_financials` | `ticker` (str) | 基礎面數據聚合 |
+| `search` | `query` (str) | Tavily / DuckDuckGo |
 
 ### 3. 安全與品質要求 (Security & Quality NFR)
 

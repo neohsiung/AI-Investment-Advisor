@@ -29,12 +29,35 @@
 ```mermaid
 graph TD
     UI["Dashboard (Streamlit)"] -->|SQL| DB[(Portfolio DB)]
-    UI -->|gRPC/HTTP| MCP["MCP Microservice"]
+    UI -->|HTTP| MCP["MCP Microservice (FastAPI)"]
+    Sch["Scheduler (Cron)"] -->|Trigger| MCP
     MCP -->|Research| Agents["Agent Swarm (CIO, Analysts)"]
     Agents -->|Tool Call| MCP
-    MCP -->|Search| Tavily[Tavily Search]
-    MCP -->|Market Data| Poly[Financial APIs]
+    MCP -->|Market/Search| APIs[Financial APIs & Search]
 ```
+
+### 3. 基礎設施視角 (Infrastructure View)
+系統支援雲端原生部署，透過容器化管理各項服務。
+
+#### 3.1 佈署拓撲 (Deployment Topology)
+```mermaid
+graph LR
+    subgraph K8s["Kubernetes / Cloud Run"]
+        Ing["Cloud Ingress"] --> Dashboard["Dashboard Pod"]
+        Ing --> MCP_Serv["MCP Server Pod"]
+        Dashboard --> DB["Postgres / Cloud SQL"]
+        Scheduler["Scheduler Pod"] --> MCP_Serv
+    end
+    DB --> Storage["Persistence Storage"]
+```
+
+#### 3.2 關鍵配置文件映射 (Infrastructure Registry)
+| 組件 | 配置文件 | 說明 |
+| :--- | :--- | :--- |
+| **容器鏡像** | [Dockerfile](file:///Users/neohsiung/Work/go/investment-advisor/Dockerfile) | 全系統基礎鏡像與環境。 |
+| **MCP 鏡像** | [Dockerfile.mcp](file:///Users/neohsiung/Work/go/investment-advisor/Dockerfile.mcp) | 隔離工具服務的輕量化鏡像。 |
+| **K8s 定義** | [k8s/](file:///Users/neohsiung/Work/go/investment-advisor/k8s/) | 包含 Deployment, Service 與 Secret 定義。 |
+| **自動化** | [docker-compose.yml](file:///Users/neohsiung/Work/go/investment-advisor/docker-compose.yml) | 本地多服務開發環境。 |
 
 ### 3. 非功能性需求與性能 (NFR & Performance)
 - **可擴展性 (Scalability)**:

@@ -25,6 +25,45 @@
 - **混合計算引擎 (Hybrid Engine)**: 結合 LLM 推論與 Python 統計模組。
 - **自律 HR 協議**: 確保後台 Agent 運作穩定，自動偵測並恢復掛掉的服務。
 
+#### 2.1 專家協作時序圖 (Agent Collaboration Workflow)
+```mermaid
+sequenceDiagram
+    participant User
+    participant CIO as CIO Agent
+    participant Agents as Research Agents<br/>(Momentum/Fund/Macro)
+    participant Ser as MarketDataService
+    participant Tools as MCP Tools
+
+    User->>CIO: 提交投資分析請求 (e.g., AAPL)
+    CIO->>Ser: 獲取基礎數據與持倉
+    Ser-->>CIO: 返回交易歷史與報價
+    par 異質研究並行化
+        CIO->>Agents: 指派特定維度分析
+        Agents->>Tools: 調用搜尋與統計工具
+        Tools-->>Agents: 返回搜尋結果/技術指標
+    end
+    Agents-->>CIO: 返回分項報告 (Markdown)
+    CIO->>CIO: 交叉驗證與權重分配
+    CIO-->>User: 返回最終 CIO 戰略建議
+```
+
+#### 2.2 自適應優化循環 (Adaptive Reflection Loop)
+```mermaid
+sequenceDiagram
+    participant CIO as CIO Agent
+    participant Eng as Engineer Agent
+    participant DB as System Database
+    participant LLM as LLM Backend
+
+    CIO->>DB: 記錄預測與決策
+    Eng->>DB: 讀取歷史績效 (1d/7d Window)
+    Note over Eng: 執行 Reflection<br/>(自我批判與對比真值)
+    Eng->>LLM: 生成 Prompt 優化方案 (DSPy)
+    LLM-->>Eng: 返回精煉後的 Signature/Prompt
+    Eng->>CIO: 動態更新 Agent 行為邏輯
+    CIO->>DB: 儲存優化後的系統狀態碼
+```
+
 ### 3. 用戶體驗與使用者故事 (UX & User Stories)
 
 #### 3.1 故事: 我想要即時監控我的資產組合與風險 (Dashboard Flow)

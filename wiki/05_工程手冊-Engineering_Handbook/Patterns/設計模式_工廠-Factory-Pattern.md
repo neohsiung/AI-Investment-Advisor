@@ -17,27 +17,31 @@
 
 ### 2. 情境對比 (Good vs. Bad)
 
-#### ❌ 模式不當用 (Bad)
-直接調用建構子，導致依賴洩漏：
+````carousel
 ```python
-# 業務邏輯中夾雜路徑管理與依賴實例化
+# ❌ Before: 手動分散創建 (分散在 WorkflowService)
 agent = MomentumAgent(
-    prompt_path="prompts/momentum_agent.txt",
-    settings_repo=SqliteSettingsRepository(),
-    use_cache=True
+    name="Momentum",
+    prompt_path="prompts/momentum.txt",
+    user_id=uid,
+    repo=SqliteRepo()
 )
 ```
-
-#### ✅ 專業實作 (Good)
-透過工廠封裝所有黑盒細節：
+<!-- slide -->
 ```python
-# Client 端極簡化
-agent = AgentFactory.create_momentum_agent(user_id="user123")
+# ✅ After: 透過工廠統一生產
+# 詳見 src/agents/factory.py
+agent = AgentFactory.create_momentum_agent(user_id=uid)
 ```
+<!-- slide -->
+> [!TIP]
+> **為什麼好？**: 
+> 1. 初始化邏輯（如加載 Prompt 路徑）被封裝在單一位置。
+> 2. 變更依賴（例如換成 PostgresRepo）只需修改工廠，不影響調用端。
+````
 
-### 3. 非功能性要求 (Performance & Flexibility)
-- **初始化性能**: 每個 Agent 創建耗時目標 < 10ms。
-- **靈活性**: 工廠支持透過 `kwargs` 覆蓋預設 [LLM 分級設定](底層通信協議-Agent-Mesh-Protocols)。
+### 3. 非功能性要求 (Scalability)
+- **並行初始化**: `AgentFactory` 必須支援線程安全，確保在高並發場景下不會重複加載 Prompt 文件，詳見 [環境設定](環境設定與本地開發-Environment-Local-Dev)。
 
 ---
 

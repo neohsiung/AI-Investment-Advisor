@@ -29,6 +29,27 @@ pip install -r requirements.txt
 docker-compose up --build
 ```
 
+### 3. 本地開發與運行 (Development & Execution)
+
+#### 3.1 命令行工具註冊表 (CLI Registry)
+系統核心邏輯可透過 `python src/cli.py` 觸發。
+
+| 指令模式 | 參數示例 | 說明 |
+| :--- | :--- | :--- |
+| **Daily Workflow** | `--mode daily --user_id <ID>` | 執行每日收盤後的動能分析與快照。 |
+| **Weekly Workflow**| `--mode weekly --user_id <ID>` | 執行每週總經分析與完整週報發送。 |
+| **Backtest** | `--mode backtest --ticker AAPL` | 在本地執行 30 天標的回測模擬。 |
+| **Optimize** | `--mode optimize` | 啟動 DSPy 優化流程 (Engineer Agent 核心)。 |
+| **Scheduler** | `--mode scheduler` | 啟動守護進程，自動按時執行任務。 |
+
+#### 3.2 自動化腳本清單 (Automation Scripts)
+腳本存放於 `scripts/` 目錄，用於生產維護與部署。
+
+- **`run_daily_check.sh`**: 封裝了 `cli.py` 的每日檢測與日誌輸出，用於 Cron Job。
+- **`deploy_k8s.sh`**: 執行 `kubectl apply` 與 Secret 注入，實現 K8s 自動化。
+- **`seed_user.py`**: 快速在資料庫中建立初始用戶與 API 金鑰設置。
+- **`inspect_db.py`**: 診斷工具，快速查看 `transactions` 與 `holdings` 的一致性。
+
 ### 2. 環境變數手冊 (Environment Variable Glossary)
 核心邏輯詳見 [資料庫設計與代碼規範](資料庫設計與代碼規範-Database-Git-Standards)。
 

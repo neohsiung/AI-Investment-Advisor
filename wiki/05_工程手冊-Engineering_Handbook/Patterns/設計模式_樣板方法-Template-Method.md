@@ -17,25 +17,28 @@
 
 ### 2. 情境對比 (Good vs. Bad)
 
-#### ❌ 模式不當用 (Bad)
-手動複製流程邏輯，容易導致漏掉步驟：
+````carousel
 ```python
+# ❌ Before: 邏輯複製 (Code Cloning)
 class DailyWorkflow:
     def run(self):
-        # 初始化、資料獲取、報告發送等邏輯全寫在此，與 WeeklyWorkflow 高度重複
+        # 初始化、資料抓取、報告發送 (與 Weekly 重複)
         pass
 ```
-
-#### ✅ 專業實作 (Good)
-父類別控制流程，子類別僅實作變化點：
+<!-- slide -->
 ```python
-# BaseWorkflow 定義骨架
-def run(self):
-    self.init_env()
-    if self.should_analyze():
-        report = self.execute_specific_logic() # Hook method
-        self.dispatch_report(report)
+# ✅ After: 樣板繼承 (詳見 src/services/workflow_service.py)
+class BaseWorkflow:
+    def run(self):
+        self.prepare()
+        self.execute_specific() # 子類別實作
+        self.report()
 ```
+<!-- slide -->
+> [!CAUTION]
+> **程式碼重用**: 
+> 任何新的工作流（如每月報告）必須繼承 `BaseWorkflow`，以確保日誌與錯誤處理的一致性。
+````
 
 ### 3. 非功能性要求 (Workflow NFR)
 - **彈性 (Resilience)**: 核心樣板必須包含 Retry 機制，詳見 [底層通信協議](底層通信協議-Agent-Mesh-Protocols)。

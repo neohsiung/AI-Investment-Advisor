@@ -17,21 +17,23 @@
 
 ### 2. 情境對比 (Good vs. Bad)
 
-#### ❌ 模式不當用 (Bad)
-在建構子內部建立依賴，造成不可替換性：
+````carousel
 ```python
+# ❌ Before: 固定相依 (Hardcoded)
 def __init__(self):
-    # 強耦合，測試時無法替換為 Mock 版本
-    self.settings_repo = SqliteSettingsRepository()
+    self.repo = SqliteRepo() # 無法在測試時替換
 ```
-
-#### ✅ 專業實作 (Good)
-透過參數接收依賴，預設值僅為便利（Composition）：
+<!-- slide -->
 ```python
-def __init__(self, settings_repo=None):
-    # 支援被測試框架注入 Mock 物件
-    self.settings_repo = settings_repo or SqliteSettingsRepository()
+# ✅ After: 建構子注入 (詳見 src/agents/base_agent.py)
+def __init__(self, repo=None):
+    self.repo = repo or SqliteRepo()
 ```
+<!-- slide -->
+> [!IMPORTANT]
+> **可測試性**: 
+> DI 是達成 [高測試覆蓋率](測試與外部服務整合-Testing-External-Services) 的關鍵，它允許我們注入 Mock 物件來模擬 API 失敗等邊際情況。
+````
 
 ### 3. 非功能性要求 (Testing NFR)
 - **測試隔離 (Isolation)**: 核心業務測試嚴禁有任何 I/O 行為。DI 必須保證 Mock 注入的成功。
