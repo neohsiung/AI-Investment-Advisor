@@ -6,7 +6,6 @@ Welcome to the AI Investment Advisor knowledge base. All project documentation i
 ## 📚 導航 (Navigation)
 
 *   **[首頁](Home)**
-*   **[文件規範 (Wiki Standards)](文件規範-Wiki-Standard)**
 
 ### 01. 使用者手冊 (User Manual)
 *   **[快速啟動與操作指南 (Quickstart & User Guide)](快速啟動與操作指南-Quickstart-User-Guide)**: 涵蓋安裝、部署與核心儀表板操作。
@@ -35,6 +34,7 @@ Welcome to the AI Investment Advisor knowledge base. All project documentation i
 *   **[研究與最佳實踐 (Research & Best Practices)](研究與最佳實踐-Research-Best-Practices)**: 行業標準、代理模式與 RAG 研究。
 *   **規範 (Standards)**
     *   **[文件框架定義 (Document Frameworks)](文件框架定義-Document-Frameworks)**: 跨角色文檔結構標準。
+    *   **[文件規範 (Wiki Standards)](文件規範-Wiki-Standard)**: Wiki 維護與命名規範。
     *   **[資料庫設計與代碼規範 (Database & Git Standards)](資料庫設計與代碼規範-Database-Git-Standards)**: Schema 定義、遷移路徑與雙語 Commit 規範。
 *   **設計模式深度庫 (Patterns)**
     *   **[設計模式導讀 (Design Patterns Intro)](設計模式導讀-Design-Patterns-Intro)**: 為什麼我們這樣寫程式？

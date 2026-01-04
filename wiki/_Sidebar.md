@@ -1,5 +1,4 @@
 *   [首頁](Home)
-*   [文件規範](文件規範-Wiki-Standard)
 *   **01. 使用者手冊 (User Manual)**
     *   [快速啟動與操作指南](快速啟動與操作指南-Quickstart-User-Guide)
 *   **02. 產品規格 (Product Managers)**
@@ -25,6 +24,7 @@
     *   [研究與最佳實踐](研究與最佳實踐-Research-Best-Practices)
     *   **規範 (Standards)**
         *   [文件框架定義](文件框架定義-Document-Frameworks)
+        *   [文件規範](文件規範-Wiki-Standard)
         *   [資料庫設計與代碼規範](資料庫設計與代碼規範-Database-Git-Standards)
     *   **設計模式深度庫 (Patterns)**
         *   [設計模式導讀](設計模式導讀-Design-Patterns-Intro)
