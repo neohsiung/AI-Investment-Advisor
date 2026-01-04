@@ -1,5 +1,9 @@
 import streamlit as st
 import os
+# Allow basic HTTP for OAuth flow (Localhost support)
+# 允許本地開發使用 HTTP 進行 OAuth 驗證
+os.environ['OAUTHLIB_INSECURE_TRANSPORT'] = '1'
+
 import google_auth_oauthlib.flow
 from google.oauth2 import id_token
 from google.auth.transport import requests
@@ -99,7 +103,17 @@ class GoogleAuth:
                 st.rerun()
 
             except Exception as e:
+                # Handle 'invalid_grant' - usually means reuse of Authorization Code
+                # 處理 'invalid_grant' 錯誤 - 通常表示授權碼被重複使用
                 st.error(f"Login failed: {e}")
+                
+                # Automatically clear invalid query params to allow retry
+                try:
+                    st.query_params.clear()
+                    time.sleep(1) 
+                    st.rerun()
+                except:
+                    pass
         else:
             # Display Login Button
             try:
