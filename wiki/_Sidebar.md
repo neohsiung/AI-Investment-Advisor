@@ -13,7 +13,6 @@
     *   [環境設定與本地開發](環境設定與本地開發-Environment-Local-Dev)
     *   [服務層子系統詳解](服務層開發指南-Service-Layer-Blueprints)
     *   [前端架構與 UX 層](前端架構與UX層-Frontend-UX-Layer)
-    *   [資料庫設計與代碼規範](資料庫設計與代碼規範-Database-Git-Standards)
     *   [測試與外部服務整合](測試與外部服務整合-Testing-External-Services)
     *   [雲端部署 (GCP Cloud Run)](雲端部署-Deployment-GCP-CloudRun)
 *   **04. 架構觀點 (Architect View)**
@@ -24,6 +23,9 @@
 *   **05. 工程手冊 (Engineering Handbook)**
     *   [提示詞工程規範](提示詞工程規範-Prompt-Engineering-Specs)
     *   [研究與最佳實踐](研究與最佳實踐-Research-Best-Practices)
+    *   **規範 (Standards)**
+        *   [文件框架定義](文件框架定義-Document-Frameworks)
+        *   [資料庫設計與代碼規範](資料庫設計與代碼規範-Database-Git-Standards)
     *   **設計模式深度庫 (Patterns)**
         *   [設計模式導讀](設計模式導讀-Design-Patterns-Intro)
         *   [工廠模式 (Factory Pattern)](設計模式-工廠-Factory-Pattern)

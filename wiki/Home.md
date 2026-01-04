@@ -16,14 +16,11 @@ Welcome to the AI Investment Advisor knowledge base. All project documentation i
 *   **深度規格 (Specs)**
     *   **[核心系統規格 (Core System Specs)](核心系統規格-Core-System-Specs)**: Agent Swarm、HR 協議與資料層詳解。
     *   **[未來演進規格 (Future Roadmap Specs)](未來演進規格-Future-Roadmap-Specs)**: v3.3 危機自動駕駛與 v4.0 家族辦公室計畫。
-*   **規範 (Standards)**
-    *   **[文件框架定義 (Document Frameworks)](文件框架定義-Document-Frameworks)**
 
 ### 03. 開發者指南 (Developer Guide)
 *   **[環境設定與本地開發 (Environment & Local Dev)](環境設定與本地開發-Environment-Local-Dev)**: Python 環境建置與 CLI 使用手冊。
 *   **[服務層子系統詳解 (Service Layer Blueprints)](服務層開發指南-Service-Layer-Blueprints)**: 深入探賦服務層的設計與實現。
 *   **[前端架構與 UX 層 (Frontend & UX Layer)](前端架構與UX層-Frontend-UX-Layer)**: Streamlit 管理、狀態同步與用戶體驗流程。
-*   **[資料庫設計與代碼規範 (Database & Git Standards)](資料庫設計與代碼規範-Database-Git-Standards)**: Schema 定義、遷移路徑與雙語 Commit 規範。
 *   **[測試與外部服務整合 (Testing & External Services)](測試與外部服務整合-Testing-External-Services)**: 測試策略、第三方 API 設定 (Tavily, Polygon) 與 OAuth 配置。
 *   **[雲端部署 (GCP Cloud Run)](雲端部署-Deployment-GCP-CloudRun)**: 生產環境部署指南。
 
@@ -36,6 +33,9 @@ Welcome to the AI Investment Advisor knowledge base. All project documentation i
 ### 05. 工程手冊 (Engineering Handbook)
 *   **[提示詞工程規範 (Prompt Engineering Specs)](提示詞工程規範-Prompt-Engineering-Specs)**: 提示詞設計原則與最佳實踐。
 *   **[研究與最佳實踐 (Research & Best Practices)](研究與最佳實踐-Research-Best-Practices)**: 行業標準、代理模式與 RAG 研究。
+*   **規範 (Standards)**
+    *   **[文件框架定義 (Document Frameworks)](文件框架定義-Document-Frameworks)**: 跨角色文檔結構標準。
+    *   **[資料庫設計與代碼規範 (Database & Git Standards)](資料庫設計與代碼規範-Database-Git-Standards)**: Schema 定義、遷移路徑與雙語 Commit 規範。
 *   **設計模式深度庫 (Patterns)**
     *   **[設計模式導讀 (Design Patterns Intro)](設計模式導讀-Design-Patterns-Intro)**: 為什麼我們這樣寫程式？
     *   **[工廠模式 (Factory Pattern)](設計模式-工廠-Factory-Pattern)**
