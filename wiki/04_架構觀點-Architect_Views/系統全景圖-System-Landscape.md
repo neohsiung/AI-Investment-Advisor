@@ -29,12 +29,18 @@
 ```mermaid
 graph TD
     UI["Dashboard (Streamlit)"] -->|SQL| DB[(Portfolio DB)]
-    UI -->|HTTP| MCP["MCP Microservice (FastAPI)"]
-    Sch["Scheduler (Cron)"] -->|Trigger| MCP
-    MCP -->|Research| Agents["Agent Swarm (CIO, Analysts)"]
-    Agents -->|Tool Call| MCP
-    MCP -->|Market/Search| APIs[Financial APIs & Search]
+    UI -->|HTTP| MCP_Serv["MCP Microservice (FastAPI)"]
+    Sch["Scheduler (Cron)"] -->|Trigger| Agents["Agent Swarm (CIO, Analysts)"]
+    Agents -->|Local Tool Call| Local["Local MCP (Toolbox)"]
+    Agents -->|Remote Tool Call| MCP_Serv
+    MCP_Serv -->|Financial Data| APIs[Polygon/FMP/FRED]
+    Local -->|Search| APIs
 ```
+
+#### 2.3 組件互動流 (Interaction Flows)
+1.  **數據攝取**: `Dashboard` 接收用戶輸入 -> `DB` 持久化 -> `MCP_Serv` 註冊工具。
+2.  **研究週期**: `Scheduler` 觸發 `CIO Agent` -> `CIO` 實體化 `Analysts` (A2A) -> `Analysts` 通過 `Local MCP` 調用市場工具。
+3.  **搜尋擴展**: 若 `Local MCP` 無提供數據，Agent 透過 `mcp_service` 執行分佈式搜尋與數據聚合。
 
 ### 3. 基礎設施視角 (Infrastructure View)
 系統支援雲端原生部署，透過容器化管理各項服務。

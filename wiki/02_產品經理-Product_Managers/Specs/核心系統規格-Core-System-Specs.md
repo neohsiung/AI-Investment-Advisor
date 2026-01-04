@@ -47,7 +47,34 @@ sequenceDiagram
     CIO-->>User: 返回最終 CIO 戰略建議
 ```
 
-#### 2.2 自適應優化循環 (Adaptive Reflection Loop)
+#### 2.2 自適應優化與 HR 協議 (HR Protocol & Adaptation)
+本系統導入「代理人人力資源協議 (HR Protocol)」，實現 360 度互評機制。
+
+##### 2.2.1 HR 回饋協議規則 (HR Protocol Mechanics)
+1.  **360 度互評**: 每個 Agent 在完成協作後，可對協作者進行評分 (`rate_request`)。
+2.  **評分維度**:
+    - **準確度 (Accuracy)**: 數據是否屬實。
+    - **時效性 (Latencies)**: 回應是否及時。
+    - **邏輯性 (Logic)**: 推理過程是否合理。
+3.  **觸發閾值**: 當單個 Agent 的平均評分 < 3.0 或偵測到連續 3 次工具調用異常時，系統自動標記為「待優化」狀態。
+
+##### 2.2.2 提示詞優化生命週期 (Prompt Optimization Lifecycle)
+```mermaid
+sequenceDiagram
+    participant Feedback as Agent Reviews (DB)
+    participant Eng as Engineer Agent
+    participant Signature as Optimized Signature
+    participant Registry as Prompt Registry
+
+    Feedback->>Eng: 匯總低分評量與錯誤日誌
+    Eng->>Eng: 執行 Reflection (自我批判與真值對比)
+    Eng->>Eng: 透過 DSPy 重寫提示詞模組
+    Eng-->>Signature: 產生優化後的提示詞
+    Signature->>Registry: 自動更新 prompts/*.txt
+    Registry->>Registry: 記錄 Git Diff 版本
+```
+
+#### 2.3 自適應優化循環序圖 (Simplified Workflow)
 ```mermaid
 sequenceDiagram
     participant CIO as CIO Agent

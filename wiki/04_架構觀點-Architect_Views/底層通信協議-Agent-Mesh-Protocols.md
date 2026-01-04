@@ -11,11 +11,15 @@
 本文件依據 [文件框架定義](文件框架定義-Document-Frameworks) 編寫，詳細定義了 Agent Mesh 的通訊規範、安全性要求與工具調用協議。
 
 ### 1. 通訊框架 (Communication Framework)
-系統採用基於 MCP (Model Context Protocol) 的異步通信模式。
+系統採用雙層通訊架構，兼顧單機開發的便利性與分散式叢集的擴展性。
 - **協定類型**: HTTP/1.1 + gRPC (內部)。
 - **訊息格式**: JSON。
 
-#### 1.1 訊息結構定義 (Protocol Schemas)
+#### 1.1 雙模工具伺服器 (Dual-Mode MCP)
+- **個人工具箱 (Local Mode)**: 每個 Agent 動態建立獨立的 `McpServer` 實例，用於 ReAct 迴圈中的即時運算（如股價獲取）。
+- **微服務網格 (Service Mode)**: 獨立運行的 `mcp_service` FastAPI 容器，提供跨跨 Agent 共享的全局工具（如多源搜尋、報表歸檔）。
+
+#### 1.2 訊息結構定義 (Protocol Schemas)
 
 ##### [NEW] 工具註冊 (Tool Registration)
 ```json
@@ -39,20 +43,38 @@
 }
 ```
 
-#### 1.2 工具調用生命週期 (Tool Call Lifecycle)
+### 2. 執行模型：ReAct 迴圈 (Execution Model: ReAct)
+Agent 不僅僅是單次調用，而是透過 **Think-Act-Observe** 模式自主探索。
+
+#### 2.1 思考-行動-觀察週期的邏輯 (Cycle Logic)
+1.  **Think**: Agent 根據提示詞判斷是否需要外部工具。
+2.  **Act**: LLM 輸出特定格式字串 `CALL: tool_name({"arg": "val"})`。
+3.  **Observation**: 系統解析指令，執行 MCP 工具，並將結果以 `System: [Tool Output]` 形式回傳給 Agent 繼續思考。
+
+#### 2.2 工具調用生命週期 (Tool Call Lifecycle)
 ```mermaid
 sequenceDiagram
-    participant Agent
-    participant MCP as MCP Server (FastAPI)
-    participant Logic as Internal Service<br/>(MarketData/Search)
+    participant Agent as Agent (BaseAgent)
+    participant Local as Local MCP (Toolbox)
+    participant Remote as MCP Microservice
+    participant Logic as Business Service
 
-    Agent->>MCP: POST /tools/call/{tool_name} (JSON Payload)
-    MCP->>MCP: 權限校驗與參數解碼
-    MCP->>Logic: 轉發至對應業務邏輯
-    Logic-->>Logic: 執行計算/API獲取
-    Logic-->>MCP: 返回原始數據
-    MCP-->>Agent: 返回封裝後的 JSON Response
+    Agent->>Agent: Parse 'CALL:' from LLM
+    alt Is Local Tool?
+        Agent->>Local: execute(tool_name, args)
+        Local->>Logic: internal call
+    else Is Remote Tool?
+        Agent->>Remote: POST /tools/call/
+        Remote->>Logic: Distributed logic
+    end
+    Logic-->>Agent: JSON Result -> Observations
 ```
+
+### 3. Agent 對 Agent 網格 (Agent-to-Agent Mesh)
+本系統目前採用的 A2A 機制確保了任務的高度專業化與並行處理。
+
+- **靜態實例 (Static Mode)**: 透過 `AgentFactory` 直接進行對等實體化調用。
+- **訊息路由 (Message Mode)**: (v3.2+) 透過 `mcp_service/agents/message` 進行非同步任務分發，適合長耗時的研究任務。
 
 ### 2. 工具集詳細定義 (Toolset Specification)
 所有工具均封裝於 [MCP 微服務](系統全景圖-System-Landscape) 中。

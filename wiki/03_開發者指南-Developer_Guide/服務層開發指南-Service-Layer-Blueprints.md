@@ -43,6 +43,21 @@ graph TD
 - **Zombie Agent 偵測**: 檢查 Agent 是否在 300s 內有心跳回傳。
 - **自動修復**: 偵測到掛掉時，調用 Docker/K8s 重啟相應容器。
 
+### 3. 代理人執行引擎 (Agent Execution Engine)
+本專案的核心競爭力在於 `BaseAgent` 的執行邏輯。
+
+#### 3.1 ReAct 思考機制 (Think-Act-Observe)
+實現於 `BaseAgent.run_tool_loop`，其 Python 實現邏輯如下：
+1.  **Regex 解析**: 預設解析 `CALL: tool_name({"arg": "val"})` 或 `SEARCH: "query"`。
+2.  **McpServer 調度**: 優先搜尋 `self.toold` (Local MCP)。
+3.  **上下文拼接**: 工具輸出被封裝為 `System: [Tool Output]` 並重新注入 LLM 歷史紀錄。
+
+#### 3.2 A2A 實體化路徑 (A2A Instantiation)
+當 Agent 調用 `call_agent(target_name)` 時：
+1.  **Factory 介入**: 透過 `src.agents.factory.AgentFactory` 根據名稱動態建立對象。
+2.  **依賴注入**: 自動注入 `feedback_repo` 與 `market_tools` 的本地 MCP 實例。
+3.  **同步執行**: 目前採用同步阻塞調用，適合確定性的鏈式研究路徑。
+
 ### 3. 非功能性需求 (NFR)
 - **響應時間**: P95 本地處理延遲 < 500ms（不含 LLM 推論）。
 - **並發處理**: 使用 `ThreadPoolExecutor` 加速多標的數據抓取。
