@@ -30,3 +30,8 @@ pgvector
 psycopg2-binary
 duckduckgo-search
 tavily-python
+
+# MCP Microservice
+fastapi
+uvicorn[standard]
+httpx

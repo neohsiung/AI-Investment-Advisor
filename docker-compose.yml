@@ -12,6 +12,27 @@ services:
       - "8501:8501"
     env_file:
       - .env
+    environment:
+      - MCP_SERVER_URL=http://mcp_server:8000
+    restart: unless-stopped
+    depends_on:
+      mcp_server:
+        condition: service_healthy
+
+  mcp_server:
+    build:
+      context: .
+      dockerfile: Dockerfile.mcp
+    container_name: investment_advisor_mcp
+    ports:
+      - "8000:8000"
+    env_file:
+      - .env
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
     restart: unless-stopped
 
   scheduler:
@@ -25,9 +46,13 @@ services:
       - ./client_secret.json:/app/client_secret.json # Expected to be in project root
     env_file:
       - .env
+    environment:
+      - MCP_SERVER_URL=http://mcp_server:8000
     restart: unless-stopped
     depends_on:
       postgres:
+        condition: service_healthy
+      mcp_server:
         condition: service_healthy
 
   postgres:

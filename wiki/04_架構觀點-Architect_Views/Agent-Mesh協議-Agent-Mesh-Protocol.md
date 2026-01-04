@@ -3,39 +3,43 @@
 本文件說明系統的 Agent 間通訊與協作架構，包含 MCP 工具伺服器與 HR 360 回饋機制。
 This document describes the inter-agent communication architecture, including MCP tool server and HR 360 feedback mechanism.
 
-## 1. 架構概觀 (Architecture Overview)
+## 1. 微服務架構 (Microservice Architecture)
+
+MCP Server 已獨立為微服務，支援 Docker Compose 和 Kubernetes 部署。
 
 ```mermaid
 graph TD
-    subgraph "Agent Mesh"
+    subgraph "Docker Compose / K8s"
+        Dashboard[:8501<br>Dashboard] --> MCP[:8000<br>MCP Server]
+        Scheduler[Scheduler] --> MCP
+        MCP --> DB[(PostgreSQL)]
+    end
+    
+    subgraph "Agent Mesh (內部)"
         CIO[CIO Agent]
         Macro[Macro Agent]
         Fundamental[Fundamental Agent]
         Momentum[Momentum Agent]
-        Sentiment[Sentiment Agent]
-        Engineer[Engineer Agent]
     end
     
-    subgraph "MCP Server"
-        Market[Market Tools]
-        Search[Search Tools]
+    Scheduler --> Agents
+    subgraph "Agents"
+        CIO --> Macro
+        CIO --> Fundamental
+        CIO --> Momentum
+        Macro & Fundamental & Momentum -->|HTTP| MCP
     end
-    
-    subgraph "HR Protocol"
-        Feedback[(Feedback Repository)]
-        Reviews[(Agent Reviews)]
-    end
-    
-    CIO -->|call_agent| Macro
-    CIO -->|call_agent| Fundamental
-    CIO -->|rate_request| Reviews
-    
-    Macro -->|call_tool| Market
-    Fundamental -->|call_tool| Search
-    
-    Reviews --> Engineer
-    Engineer -->|optimize| Macro
 ```
+
+### 1.1 服務端點 (Service Endpoints)
+
+| 端點 | 方法 | 說明 |
+|---|---|---|
+| `/` | GET | 健康檢查 |
+| `/tools/register` | POST | 註冊工具 |
+| `/tools/list` | GET | 列出工具 |
+| `/tools/call/{name}` | POST | 調用工具 |
+| `/agents/message` | POST | Agent 間訊息 |
 
 ## 2. MCP 工具伺服器 (MCP Tool Server)
 

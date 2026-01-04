@@ -1,0 +1,18 @@
+# MCP Server Dockerfile
+FROM python:3.11-slim
+
+WORKDIR /app
+
+# 安裝依賴
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+
+# 複製應用程式碼
+COPY src/ ./src/
+COPY prompts/ ./prompts/
+
+# 暴露 MCP Server 端口
+EXPOSE 8000
+
+# 啟動 FastAPI 服務
+CMD ["uvicorn", "src.mcp_service:app", "--host", "0.0.0.0", "--port", "8000"]
