@@ -28,15 +28,16 @@ This document details how to apply for and configure external service APIs (Poly
     2. 至 Dashboard 獲取 API Key (Get API Key from Dashboard).
     3. 設定環境變數 (Set Env Var): `FMP_API_KEY`.
 
-### 1.3 FRED (Federal Reserve Economic Data) (Macro)
-*   **用途 (Usage)**: 總體經濟數據 (GDP, CPI, Interest Rates)。
-*   **網址 (URL)**: [https://fred.stlouisfed.org/docs/api/api_key.html](https://fred.stlouisfed.org/docs/api/api_key.html)
-*   **方案 (Plan)**: 免費 (Free)。
+### 1.4 Tavily (Search Service)
+*   **用途 (Usage)**: 主要網路搜尋服務 (Primary Search Service)。
+*   **網址 (URL)**: [https://tavily.com/](https://tavily.com/)
+*   **方案建議 (Recommendation)**:
+    *   **Free**: 每月 1000 次請求。1000 requests/mo.
 *   **申請步驟 (Application Steps)**:
-    1. 註冊 St. Louis Fed 帳號 (Register St. Louis Fed account).
-    2. 申請 API Key (Request API Key).
-    3. 設定環境變數 (Set Env Var): `FRED_API_KEY`.
-    
+    1. 註冊帳號 (Sign up).
+    2. 獲取 API Key.
+    3. 設定環境變數 (Set Env Var): `TAVILY_API_KEY`.
+
 ## 2. 數據源策略 (Data Source Strategy)
 為了確保系統穩定性與成本效益，每種資訊目標皆配置 **主要 (Primary)** 與 **備援 (Backup)** 數據源。
 
@@ -44,10 +45,20 @@ To ensure system stability and cost-efficiency, each information goal is assigne
 
 | 資訊目標 (Info Goal) | 主要來源 (Primary) | 備援來源 (Backup) | 考量 (Considerations) |
 | :--- | :--- | :--- | :--- |
-| **股價 (Price)** | **Polygon.io** (Paid) | **FMP** | Polygon 延遲低且穩定 (Tier 1 核心)；FMP 作為備案。若兩者皆掛，降級至 YFinance (不建議高頻使用)。 |
-| **新聞 (News)** | **FMP** (Paid) | **Google/YFinance** | FMP 專注財經新聞；Google Search 補足非財經事件。 |
-| **財報 (Fundamentals)** | **FMP** | **Polygon.io** | FMP 解析度高；Polygon 資料庫亦完整。 |
-| **總經 (Macro)** | **FRED** | **Yahoo Finance (^VIX)** | FRED 為官方數據源；Yahoo Finance 用於即時情緒。 |
+| **股價 (Price)** | **Polygon.io** (Paid) | **FMP / YF** | Polygon 延遲低且穩定；FMP/YFinance 作為備案。 |
+| **搜尋 (Search)** | **Tavily** | **DuckDuckGo** | Tavily 提供結構化結果；DDG 作為無金鑰備援。 |
+| **新聞 (News)** | **FMP** (Paid) | **Google/YF** | FMP 專注財經新聞。 |
+| **總經 (Macro)** | **FRED** | **YFinance** | FRED 為官方數據源。 |
+
+## 3. AI 模型與通訊相關 (AI & Communication)
+
+### 3.1 Google Gemini / OpenRouter API
+*   **用途 (Usage)**: 核心推理引擎 (Reasoning Engine)。
+*   **設定環境變數**: `GOOGLE_API_KEY` 或 `OPENROUTER_API_KEY`.
+
+### 3.2 MCP (Model Context Protocol)
+*   **用途 (Usage)**: 提供微服務化的工具註冊與 Agent 間通訊 (Agent Mesh)。
+*   **服務位址**: `MCP_SERVER_URL` (預設 http://mcp_server:8000)。
 
 ## 3. AI 模型服務 (AI Models)
 

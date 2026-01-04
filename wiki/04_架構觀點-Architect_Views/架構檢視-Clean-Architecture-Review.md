@@ -27,20 +27,23 @@
 - ✅ **優點**: 模組分離清晰 (Agents, Services, Pages)。導入 `DatabaseManager` 與 `Services` 層封裝外部數據。
 - ❌ **缺點**: 部分 UI 層仍包含直接 SQL 查詢，但 `AnalyticsService` 已完全重構為 Clean Architecture。
 
-#### 2. 重構建議 (Refactoring Plan)
+#### 2. 已達成之優化 (Achieved Optimizations)
 
-**A. 引入 Repository Pattern**
-- **狀態**: ✅ 已完成 (Transactions/Analytics)
-- **目標**: 建立 `TransactionRepository` 介面。
-- **效益**: 單元測試時可輕易 Mock 資料庫。
+**A. 引入 Repository Pattern 與 Service 層**
+- **狀態**: ✅ 已完成 (Transactions/Analytics/Settings)
+- **效益**: 單元測試覆蓋率提升至 77%，可輕易 Mock 資料庫與外部 API。
 
-**B. 依賴注入 (Dependency Injection)**
-- **狀態**: ✅ 已完成 (Analytics Service)
-- **目標**: 透過建構子注入依賴。
-- **範例**: `service = PortfolioService(repo=SqliteTransactionRepo())`
+**B. 搜尋服務解耦 (Internet Search Decoupling)**
+- **狀態**: ✅ 已完成 (InternetSearchService)
+- **設計**: 採用二層搜尋策略 (Tavily/DDG Fallback)，並封裝於 Domain Service 中，對 Agent 及 Workflow 透明。
 
-**C. Use Case 封裝**
-- 將 `workflow.py` 的邏輯封裝為 `GenerateReportUseCase` 類別，使其可被 API 或 CLI 呼叫，不綁定特定入口。
+**C. MCP 微服務化 (Microservice Architecture)**
+- **狀態**: ✅ 已完成 (mcp_server)
+- **設計**: 將工具註冊與 Agent 通訊邏輯移至獨立微服務，符合 Single Responsibility 原則，且可獨立擴展。
+
+**D. 依賴注入 (Dependency Injection)**
+- **狀態**: ✅ 已完成 (PortfolioService, CIOAgent)
+- **效益**: 提高程式碼的可測試性與靈活性。
 
 ---
 
