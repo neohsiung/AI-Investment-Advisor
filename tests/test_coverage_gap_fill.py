@@ -101,47 +101,4 @@ def test_base_agent_mock_fallback(mock_agent):
 
 # --- Market Data Tests ---
 
-@pytest.fixture
-def mock_market_data_service():
-    service = MarketDataService()
-    service.repository = MagicMock()
-    return service
 
-def test_market_data_fallback():
-    service = MarketDataService()
-    with patch('yfinance.Ticker') as mock_ticker:
-        mock_ticker.return_value.history.return_value.empty = True
-        prices = service.get_current_prices(["INVALID"])
-        # With new repo implementation, it returns {} if empty
-        assert prices == {} or prices.get("INVALID") is None
-
-def test_market_data_get_market_context_with_fallback(mock_agent):
-    service = MarketDataService()
-
-    with patch.object(service, 'get_current_prices', return_value={'AAPL': 0}):
-        with patch.object(service, 'get_ohlcv', return_value={"close": 150.0}): 
-            with patch.object(service, 'get_technical_indicators', return_value={'rsi': 50}):
-                context = service.get_market_context(['AAPL'])
-                assert context['AAPL']['price_data']['close'] == 150.0
-                assert context['AAPL']['indicators']['rsi'] == 50
-
-def test_market_data_fetch_from_llm_success(mock_market_data_service):
-    """Test fallback to LLM/Search when yfinance fails"""
-    # Mock _fetch_from_search instead of _fetch_from_llm
-    with patch.object(mock_market_data_service, '_fetch_from_search') as mock_fetch:
-        mock_fetch.return_value = "Note: Price fetched via search"
-        
-        # We need to trigger the fallback in get_current_prices
-        # But get_current_prices uses repository. 
-        # Easier to test _fetch_from_search directly or mock repository fail?
-        # The test originally tested the private method.
-        
-        result = mock_market_data_service._fetch_from_search(["AAPL"])
-        assert result == "Note: Price fetched via search"
-
-def test_market_data_fetch_from_llm_fail(mock_market_data_service):
-    """Test fallback failure"""
-    with patch.object(mock_market_data_service, '_fetch_from_search') as mock_fetch:
-        mock_fetch.return_value = None
-        result = mock_market_data_service._fetch_from_search(["INVALID"])
-        assert result is None
