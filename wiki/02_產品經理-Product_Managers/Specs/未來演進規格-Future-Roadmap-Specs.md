@@ -2,42 +2,51 @@
 
 > **[繁體中文 (Traditional Chinese)](#zh) | [English](#en)**
 
+---
+
 <a id="zh"></a>
 
-## 🇹🇼 未來演進規格 (v3.3 & v4.0)
+## 🇹🇼 未來演進規格書 (v3.3 & v4.0)
 
-本文件詳細記載了系統未來版本的核心投資方法論與技術框架，專注於「反脆弱」與「自我進化」能力。
+本文件描述了系統「反脆弱」與「自我進化」階段的技術深度與業務目標。
 
-### 1. v3.3 危機自動駕駛與自癒系統 (Crisis Autopilot)
+### 1. 問題與目標 (Problem & Goals)
+- **核心挑戰**: 傳統 AI 策略在市場進入「黑天鵝」體制時通常會失效（策略衰退）。
+- **目標**: 構建一個能自動偵測市場體制 (Regime) 並自主變異其代碼基底的「金融生命體」。
 
-**目標**: 在極端波動中實現絕對報酬，對抗策略衰退。
+### 2. 功能詳述 (Features & functionality)
 
-#### 1.1 核心功能 (Key Features)
-- **體制偵測器 (Regime Detector)**: 自動將市場分類為 4 象限 (通膨/通縮，成長/衰退)。
-- **自動化防禦**: 偵測到危機體制時，自動從 60/40 組合輪轉至黃金 (GLD) 或反向 ETF。
-- **神經型態自癒 (Neuromorphic Self-Healing)**: 當策略回撤超過 5% 時，啟動重新訓練。
+#### 2.1 v3.3 危機自動駕駛 (Crisis Autopilot)
+- **目標**: 回撤控制 < 10%。
+- **核心邏輯**: 
+    - **體制偵測 (Regime Switching)**: 透過 HMM (隱藏馬可夫模型) 將市場分為「通膨/成長」、「衰退」等象限。
+    - **自動化防禦**: 體制切換時，自動調整資產類別配比（從 Equity 轉向 Gold/Cash）。
+- **UX Story**: 當標普 500 週跌幅超過 10% 時，系統主動發送「防禦體制已啟動」報告，並展示資產遷移路徑。
 
-#### 1.2 技術框架 (Technical Framework)
-- **模擬環境 (Gym)**: 使用 `FinRL` 攝取 v3.2 產出的高信度 JSON 訊號，在虛擬股市中進行飛行模擬。
-- **分散式訓練**: 於 Kubernetes 啟動 `Ray Cluster` (KubeRay)，執行百個 Agent 同時進行超參數調優 (Hyperparameter Tuning)。
-- **熱抽換 (Hot-Swap)**: 將夏普比率 (Sharpe Ratio) 最高的模型權重即時更新至實盤機器人。
+#### 2.2 v4.0 演化智能 (Evolutionary Intelligence)
+- **目標**: 零人類干預的自主財富辦公室。
+- **核心邏輯**:
+    - **Prompt DNA**: 提示詞不只是文本，而是可被遺傳演算法 (GA) 優化的基因。
+    - **自主因子挖掘**: 系統會自主撰寫 Python 代碼，回測新因子並將高 alpha 因子合併進核心庫。
+- **UX Story**: 使用者可以用自然語言對系統說：「幫我尋找對抗火星殖民通膨的投資因子」，系統隨即啟動演化搜索工作流。
 
-### 2. v4.0 個人家族辦公室與演化智能 (Evolutionary Intelligence)
+### 3. 技術要求 (Technical Requirements)
 
-**目標**: 提供專屬於個人的「零人類」自主財富管理服務。
+- **分散式運算**: 
+    - 採用 **KubeRay** (Ray on Kubernetes)。
+    - **架構**: Head Node 管理任務分發，Worker Nodes (Spots 實例) 執行並行回測。
+- **演化引擎**:
+    - **MetaGPT 整合**: 用於自主代碼生成的代碼代理。
+    - **遺傳演算法 (Genetic Algorithm)**: 用於邏輯片段的交叉 (Crossover) 與變異 (Mutation)。
+- **數據湖 (Data Lake)**: 擴充至存儲非結構化社交媒體原始流以供情感演化。
 
-#### 2.1 核心功能 (Key Features)
-- **生成式遺產規劃**: 自然語言轉法律級別信託與遺產計劃。
-- **語意 ETF 構建器**: 根據主題 (如：火星殖民) 自動掃描並構建相關標的組合。
-- **反脆弱 DNA**: 投資組合會隨時間進化其自身的交易 DNA (代碼)。
+### 4. 非功能性需求 (NFR)
+- **可移植性**: 支援多雲 (AWS/GCP/Azure) 分散式混合部署。
+- **安全性**: 針對自主生成的代碼執行沙盒 (Sandbox) 隔離運行。
 
-#### 2.2 技術框架 (Evolutionary Engine)
-- **超越 RL**: 強化學習學習參數，**演化 (Evolution)** 編寫代碼。
-- **MetaGPT + 遺傳演算法 (GA)**: 
-    - 將交易策略視為軟體專案。
-    - **交叉 (Breeding)**: 結合高績效 Agent 的邏輯基因。
-    - **變異 (Mutation)**: LLM 隨機引入新的因子代碼或邏輯鏈。
-    - **Prompt DNA**: 透過演化提示工程 (EvoPrompt) 優化系統提示詞本身，而不僅是權重。
+### 5. 成功指標 (Success Metrics)
+- **Alpha**: 相較於大盤 (S&P 500) 超額報酬 > 5%。
+- **自我進化效率**: 每週自主生成的有效新因子數量 > 1。
 
 ---
 
@@ -45,16 +54,21 @@
 
 ## 🇺🇸 Future Roadmap Specifications (v3.3 & v4.0)
 
-### 1. v3.3: Crisis Autopilot (Self-Healing)
-- **Regime Switching**: Uses FRED and market data to detect "Growth/Recession" quadrants.
-- **FinRL Gym**: Training ground using v3.2 high-fidelity signals.
-- **Distributed Ray on K8s**: Hyperscale agent optimization for maximum Alpha.
+### 1. Problem & Goals
+Mitigating "Strategy Decay" in black-swan events through self-healing and code-level evolution.
 
-### 2. v4.0: Personal Family Office (Evolutionary DNA)
-- **Generative Allocation**: Converting goals into custom asset structures.
-- **Semantic ETFs**: Natural language to portfolio construction.
-- **Evolutionary Strategy Engine**: Using **MetaGPT** and **Genetic Algorithms** to write/evolve trading code (Prompt DNA).
+### 2. Features
+- **v3.3 Crisis Autopilot**: HMM-based regime detection and automated hedging transition.
+- **v4.0 Evolutionary Office**: Goal-oriented code generation (MetaGPT) and Agent DNA evolution.
 
-## 🔗 See Also
-- [Core System Specs](wiki/02_產品經理-Product_Managers/Specs/核心系統規格-Core-System-Specs.md)
-- [Evolutionary Roadmap](wiki/02_產品經理-Product_Managers/產品演進藍圖-Evolutionary-Roadmap.md)
+### 3. Technical Specs
+- **Ray on K8s**: Distributed hyper-parameter and因子 searching.
+- **Genetic Algorithms**: Prompt & Code snippet breeding.
+
+### 4. Success Metrics
+- **Alpha**: > 5% vs S&P 500.
+- **Evolution Rate**: > 1 valid new factor discovered per week.
+
+## 🔗 Bidirectional Links
+- **Core Specs**: [Core System Specs](核心系統規格-Core-System-Specs)
+- **Evolution Roadmap**: [Evolutionary Roadmap](產品演進藍圖-Evolutionary-Roadmap)

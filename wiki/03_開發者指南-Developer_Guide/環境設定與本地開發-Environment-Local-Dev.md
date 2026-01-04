@@ -2,63 +2,55 @@
 
 > **[繁體中文 (Traditional Chinese)](#zh) | [English](#en)**
 
+---
+
 <a id="zh"></a>
 
-## 🇹🇼 環境設定與本地開發指南
+## 🇹🇼 環境設定與本地開發指南 (v3.1)
 
-本文件引導開發者建置穩定的 Python 開發環境，並熟悉核心 CLI 工具的操作。
+本文件依據 [文件框架定義](文件框架定義-Document-Frameworks) 編寫，引導開發者從零開始建置專業的開發環境。
 
-### 1. 本地開發架構 (Local Development Architecture)
+### 1. 快速啟動 (Quick Start)
 
-#### 💻 本地整合開發流程 (Local Development Workflow)
-> [!NOTE]
-> 流程圖展示了從環境搭建到代碼測試的標準開發循環。
-> This diagram illustrates the standard development cycle from environment setup to code testing.
-
-```mermaid
-graph LR
-    A["環境搭建<br/>Env Setup"] --> B["API Key 配置<br/>API Config"]
-    B --> C["開發實作<br/>Coding"]
-    C --> D["本地測試<br/>Local Test"]
-    D --> E["容器化部署<br/>Docker Deploy"]
-```
-
-<details>
-<summary><b>🐍 點擊查看 Python 與 Conda 詳細設定 (Click for Python & Conda Setup)</b></summary>
-
-#### Python 開發環境 (推薦使用 Conda)
-為了避免套件衝突，建議使用 **Miniconda**。
+#### 1.1 傳統 Python 環境 (推薦)
+建議使用 **Python 3.11** 以確保非同步套件兼容性。
 ```bash
-# 建立虛擬環境
+# 建立環境 (以 Conda 為例)
 conda create -n ai-advisor python=3.11 -y
 conda activate ai-advisor
 
-# 安裝依賴項
+# 安裝依賴 (含 Linting 與測試工具)
 pip install -r requirements.txt
 ```
 
-</details>
+#### 1.2 Docker 容器化開發
+```bash
+# 啟動包含所有服務的開發環境
+docker-compose up --build
+```
 
-### 2. 命令行手冊 (CLI Reference)
+### 2. 環境變數手冊 (Environment Variable Glossary)
+核心邏輯詳見 [資料庫設計與代碼規範](資料庫設計與代碼規範-Database-Git-Standards)。
 
-<details>
-<summary><b>⌨️ 點擊查看 CLI 詳細參數 (Click for Detailed CLI Flags)</b></summary>
+| 變數名稱 | 類型 | 說明 |
+| :--- | :--- | :--- |
+| `GOOGLE_API_KEY` | Secret | Gemini 1.5 系列推理金鑰。 |
+| `DB_TYPE` | Enum | `sqlite` 或 `postgres`。預設 `sqlite`。 |
+| `DB_PATH` | Path | SQLite 檔案路徑。例：`data/portfolio.db`。 |
+| `LOG_LEVEL` | Enum | `DEBUG`, `INFO`, `WARNING`, `ERROR`。 |
 
-`src/cli.py` 是本系統的統一進入點，支援多種運作模式：
+### 3. 操作手冊與 CLI (CLI Handbook)
+`src/cli.py` 封裝了所有自動化任務：
+- **生成報告**: `python src/cli.py --mode daily --user_id <email>`
+- **回測模擬**: `python src/cli.py --mode backtest --ticker AAPL`
 
-- **排程模式 (`scheduler`)**: 啟動長駐守護進程，自動定時執行任務。
-- **每日/每週模式 (`daily` / `weekly`)**: 手動觸發分析。
-    - `python src/cli.py --mode weekly --user_id <EMAIL>`
-- **回測模式 (`backtest`)**: 針對特定代號執行歷史模擬。
-    - `python src/cli.py --mode backtest --ticker AAPL`
-- **優化模式 (`optimize`)**: 觸發 DSPy 提示詞優化管道。
+### 4. 疑難排解 (Troubleshooting)
 
-</details>
-
-### 3. 本地開發工作流
-1.  **資料庫控制**: 預設使用 SQLite。若需查看資料，建議使用 VS Code 的 `SQLite Viewer` 套件。
-2.  **前端調試**: 修改代碼後，Streamlit 會偵測變更並提示重新載入。
-3.  **日誌監控**: 執行 `tail -f logs/system.log` (需先建立目錄) 查看 Agent 推理細節。
+| 問題 | 可能原因 | 解決方法 |
+| :--- | :--- | :--- |
+| `SSL Certificate Error` | MacOS 預設證書失效。 | 執行 `/Applications/Python 3.11/Install Certificates.command`。 |
+| `Database is locked` | 多個行程同時寫入 SQLite。 | 確保僅有一個 CLI 排程器在運行。 |
+| `ModuleNotFoundError` | 虛擬環境未正確激活。 | 執行 `export PYTHONPATH=$PYTHONPATH:$(pwd)`。 |
 
 ---
 
@@ -66,23 +58,20 @@ pip install -r requirements.txt
 
 ## 🇺🇸 Environment & Local Dev
 
-### 1. Setup (Conda Preferred)
-Use **Miniconda** for better stability on macOS/Windows.
-- `conda create -n ai-advisor python=3.11 -y`
-- `conda activate ai-advisor`
-- `pip install -r requirements.txt`
+### 1. Installation
+- **Python 3.11**: Mandatory for async support.
+- **Docker**: Optional but recommended for microservice deployments.
 
-### 2. CLI Reference
-`src/cli.py` is the main entry point:
-- **Scheduler**: `python src/cli.py --mode scheduler`
-- **Manual Reports**: Run with `--mode daily` or `--mode weekly --dry-run`.
-- **Backtesting**: Use `--mode backtest --ticker <SYMBOL>`.
-- **Optimizer**: Use `--mode optimize` to refine agent prompts.
+### 2. Secrets Management
+Define all keys in `.env`. Security defaults are detailed in [Agent Mesh Protocols](底層通信協議-Agent-Mesh-Protocols).
+- `TAVILY_API_KEY`: High-precision search.
+- `FRED_API_KEY`: Macro trends.
 
-### 3. Local Workflow
-- **DB**: SQLite stored in `data/portfolio.db`.
-- **Logs**: Run `tail -f logs/system.log` to monitor Agent activities.
+### 3. Troubleshooting
+- **API Key issues**: Check for trailing spaces in `.env`.
+- **Latency**: Ensure stable internet; the primary search service has a 10s timeout policy.
 
-## 🔗 See Also
-- [Database & Git Standards](wiki/03_開發者指南-Developer_Guide/資料庫設計與代碼規範-Database-Git-Standards.md)
-- [Testing & External Services](wiki/03_開發者指南-Developer_Guide/測試與外部服務整合-Testing-External-Services.md)
+## 🔗 Bidirectional Links
+- **Standards**: [Database & Git Standards](資料庫設計與代碼規範-Database-Git-Standards)
+- **Architecture**: [System Landscape](系統全景圖-System-Landscape)
+- **User Guide**: [Quickstart & User Guide](快速啟動與操作指南-Quickstart-User-Guide)

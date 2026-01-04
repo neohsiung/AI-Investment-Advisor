@@ -2,34 +2,45 @@
 
 > **[繁體中文 (Traditional Chinese)](#zh) | [English](#en)**
 
+---
+
 <a id="zh"></a>
 
-## 🇹🇼 資料庫設計與代碼規範
+## 🇹🇼 資料庫設計與代碼規範 (v3.1)
 
-本文件定義了核心資料模型、遷移流程以及 Git 協作規範。
+本文件依據 [文件框架定義](文件框架定義-Document-Frameworks) 編寫，定義了系統持久層的物理設計、代碼風格與協作規範。
 
-### 1. 資料庫架構 (Database Schema)
-系統支援 SQLite 與 PostgreSQL。核心表格包含：
-- **`users`**: 使用者驗證元資料。
-- **`transactions`**: 買賣、股息與入金紀錄。
-- **`positions`**: 基於交易計算出的即時持倉。
-- **`recommendations`**: Agent 生成的買賣訊號與歷史績效 (`outcome_score`)。
-- **`agent_states`**: 快取機制，存放 Context Hash 與最後輸出以節省 Token。
-- **`event_logs`**: 系統匯流排驗證日誌。
+### 1. 資料庫物理設計 (Database Design)
 
-### 2. 資料庫遷移 (Migration)
-- **本地 -> 雲端 (SQLite -> Postgres)**: 推薦使用 `pgloader` 工具配合 `.load` 腳本。
-- **雲端 -> 本地 (Postgres -> SQLite)**: 推薦先匯出 `transactions` 為 CSV，再使用 Dashboard 的匯入功能。
+#### 1.1 核心資料表詳解 (Table Definitions)
 
-### 3. 代碼提交規範 (Git Commit Standard)
-本專案採用 **Conventional Commits** 並強制執行**雙語**說明。
-- **格式**: `<type>(<scope>): <English Subject> | <中文主旨>`
-- **常見類型**: 
-    - `feat`: 新增功能 ✨
-    - `fix`: 修復 Bug 🐛
-    - `refactor`: 重構代碼 🔨
-    - `docs`: 修改文件 📚
-- **範例**: `feat(market): implement Fred API | 實作 Fred API 串接`
+| 資料表 | 欄位 | 類型 | 描述與約束 |
+| :--- | :--- | :--- | :--- |
+| **`transactions`** | `id` | TEXT | PK, UUID。 |
+| | `ticker` | TEXT | 股票代號 (e.g., AAPL)，不允許 NULL。 |
+| | `action` | TEXT | 動作：`BUY`, `SELL`, `DIVIDEND`, `DEPOSIT`, `WITHDRAW`。 |
+| | `quantity` | REAL | 數量，保留 4 位小數。 |
+| | `price` | REAL | 執行價格，保留 4 位小數。 |
+| | `amount` | REAL | 總金額 (Quantity * Price + Fees)。關鍵財務數據。 |
+| **`daily_snapshots`** | `date` | TEXT | PK, 格式 `YYYY-MM-DD`。 |
+| | `total_nlv` | REAL | 該日結算淨值。用於繪製 [績效曲線](快速啟動與操作指南-Quickstart-User-Guide)。 |
+| | `leverage_ratio` | REAL | $TotalNominalValue / NLV$。超限觸發警告。 |
+
+#### 1.2 非功能性要求 (NFR)
+- **ACID 保證**: 所有外部 CSV 匯入必須使用 Transaction 封裝。任何一筆錯誤必須觸發 Full Rollback。
+- **性能**: 定期針對 `date` 與 `user_id` 欄位建立 Index，確保 Dashboard 加載 < 5s。
+
+### 2. 代碼規範 (Coding Best Practices)
+本專案遵循業界最高標準：
+- **Python 風格**: 遵循 [Google Python Style Guide](https://google.github.io/styleguide/pyguide.html)。
+- **類型提示 (Type Hinting)**: 所有函式必須標註 `typing` 提示以利於 AI 生成與靜態檢查。
+- **Docstrings**: 所有類別與方法必須提供 Google Style Docstrings (ZH/EN 雙語)。
+- **安全規範**: 詳見 [底層通信協議](底層通信協議-Agent-Mesh-Protocols) 的 SQL 注入防護規範。
+
+### 3. Git 協作與提交 (Git Standards)
+- **提交規範**: 遵循 [Conventional Commits](https://www.conventionalcommits.org/)。
+- **雙語要求**: 強制要求 `Subject` 為雙語，以便於全球協作團隊與各語系 AI 工程師理解。
+    - **範例**: `feat(agent): add FredService for macro data | 新增 FredService 支持總經數據`
 
 ---
 
@@ -37,20 +48,20 @@
 
 ## 🇺🇸 Database & Git Standards
 
-### 1. Database Schema
-- **Entities**: `users`, `transactions`, `positions`, `recommendations`.
-- **Caching**: `agent_states` stores SHA256 hashes of input context to minimize costs.
-- **Audit**: `event_logs` and `scheduler_logs` for traceability.
+### 1. Database Specifications
+- **Schema**: Detailed field definitions for `transactions`, `positions`, and `daily_snapshots`.
+- **Integrity**: Mandatory use of transactions for all batch imports (ACID compliance).
+- **Performance**: Indexing strategy focused on `date` and `user_id` for < 5s cold-load latency。
 
-### 2. Migration Guide
-- **SQLite to Cloud SQL**: Use `pgloader`.
-- **Cloud to Local**: CSV export/import via Data Management page.
+### 2. Code Quality
+- **Standard**: [Google Python Style Guide](https://google.github.io/styleguide/pyguide.html).
+- **Tooling**: Mandatory `bandit` for security and `typing` for static analysis.
 
-### 3. Git Commit Standard
-- **Bilingual Required**: `type(scope): English | 中文`.
-- **Types**: `feat`, `fix`, `docs`, `style`, `refactor`, `perf`, `test`, `chore`.
-- **Example**: `fix(auth): resolve oauth redirect loop | 修復 OAuth 重新導向無窮迴圈`
+### 3. Git Workflow
+- **Commit Pattern**: Conventional Commits + Bilingual (EN|ZH) subjects.
+- **Example**: `fix(auth): resolve Google OAuth token refresh | 修復 Google OAuth 憑證刷新問題`
 
-## 🔗 See Also
-- [Environment & Local Dev](wiki/03_開發者指南-Developer_Guide/環境設定與本地開發-Environment-Local-Dev.md)
-- [Testing & External Services](wiki/03_開發者指南-Developer_Guide/測試與外部服務整合-Testing-External-Services.md)
+## 🔗 Bidirectional Links
+- **Architect View**: [System Landscape](系統全景圖-System-Landscape)
+- **User Guide**: [Quickstart & User Guide](快速啟動與操作指南-Quickstart-User-Guide)
+- **Tech Protocols**: [Agent Mesh Protocols](底層通信協議-Agent-Mesh-Protocols)

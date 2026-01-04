@@ -2,62 +2,54 @@
 
 > **[繁體中文 (Traditional Chinese)](#zh) | [English](#en)**
 
+---
+
 <a id="zh"></a>
 
-## 🇹🇼 系統架構全景圖
+## 🇹🇼 系統架構全景圖 (Architect View)
 
-本文件提供系統的高層設計概覽，涵蓋組織架構、雲端拓撲與遷移路徑。
+本文件依據 [文件框架定義](文件框架定義-Document-Frameworks) 編寫，提供系統的高層設計、組件關係與運作指標。
 
-### 1. 雙部門架構 (Dual-Unit Architecture)
-系統由兩個平行運作的單位組成，確保「決策」與「自我優化」並行：
-- **投資顧問部 (Advisory Unit)**: 包含 CIO 與四大專家 Agent，負責市場分析與策略輸出。
-- **量化工程部 (Quant Engineering Unit)**: 包含 Engineer Agent，負責觀察績效並自動優化 Prompt 邏輯。
+### 1. 願景與設計目標 (Problem & Goals)
+- **挑戰**: AI 系統通常是黑盒且難以大規模管理。
+- **目標**: 構建一個高透明度、具備自我監控與自動化對沖能力的「雲端原生」金融代理。
+- **架構原則**: 分離推論、計算與持久化，支持 12-factor 無狀態部署。
 
-### 2. 雲端原生架構圖 (Cloud-Native Topology)
-> [!NOTE]
-> 系統遵循 12-Factor App 原則，隨時可部署至 GCP 進行大規模擴展。
-> The system follows 12-Factor App principles and is ready for large-scale scaling on GCP.
+### 2. C4 架構觀點 (C4 Architecture Model)
+
+#### 2.1 系統上下文 (Level 1: System Context)
+系統與外部實體（使用者、數據供應商、AI 基礎設施）的交互。
+- **使用者**: 透過 Dashboard 監控資產。
+- **外部 API**: Polygon.io (行情), FRED (總經), Tavily (搜尋), OpenRouter (LLM)。
+- **資料持久化**: SQLite (本地/持久磁碟)。
+
+#### 2.2 容器視角 (Level 2: Container Diagram)
+內部核心組件及其通訊方式。
 
 ```mermaid
 graph TD
-    User((使用者 User)) -->|HTTPS| LB[負載均衡 LB]
-    subgraph "無伺服器計算 Serverless (Cloud Run)"
-        LB --> UI["儀表板 Dashboard"]
-        Cron[排程任務 Jobs] -->|"觸發分析 Trigger"| UI
-    end
-    subgraph "持久化資料層 Data Layer"
-        UI --> DB[(關聯資料庫 SQL)]
-        UI --> GCS[雲端存儲 Storage]
-    end
-    subgraph "知識與工具集 Knowledge & Tools"
-        UI --> MCP[MCP 微服務]
-        MCP --> Search[搜尋服務 Search]
-    end
+    UI["Dashboard (Streamlit)"] -->|SQL| DB[(Portfolio DB)]
+    UI -->|gRPC/HTTP| MCP["MCP Microservice"]
+    MCP -->|Research| Agents["Agent Swarm (CIO, Analysts)"]
+    Agents -->|Tool Call| MCP
+    MCP -->|Search| Tavily[Tavily Search]
+    MCP -->|Market Data| Poly[Financial APIs]
 ```
 
-### 3. 整潔架構檢視 (Clean Architecture Review)
+### 3. 非功能性需求與性能 (NFR & Performance)
+- **可擴展性 (Scalability)**:
+    - 採用並行處理機制（ThreadPoolExecutor），支援同時對 50+ 標的執行分析。
+    - 未來支援 [KubeRay](未來演進規格-Future-Roadmap-Specs) 分散式集群。
+- **可靠性 (Reliability)**:
+    - **災難復原 (DR)**: 定時備份 `.db` 檔案至雲端存儲 (GCS)。
+    - **健康監控**: 透過 [HR 協議](底層通信協議-Agent-Mesh-Protocols) 實現 Agent 狀態監控。
+- **性能**:
+    - **智慧快取**: Hash-based 快取，命中率目標 > 40% (節省 LLM 成本)。
+    - **響應時間**: Dashboard 首屏加載 < 5s；單一專家報告生成 < 15s。
 
-<details>
-<summary><b>📐 點擊查看架構分層細節 (Click for Architectural Layering Details)</b></summary>
-
-- **實體層 (Entities)**: 定義交易與持倉核心邏輯。
-- **案例層 (Use Cases)**: 封裝 Workflow 與 Agent 決策流程。
-- **介面層 (Adapters)**: Ingestor (資料攝取) 與 Repository (資料庫存取)。
-- **框架層 (Frameworks)**: Streamlit 與 PostgreSQL。
-
-</details>
-
-### 4. 遷移路徑 (Migration Path)
-
-<details>
-<summary><b>🛣️ 點擊查看遷移策略詳解 (Click for Migration Strategy Details)</b></summary>
-
-從 v1 線性流程遷移至 v3 雙部門架構採取 **Side-by-Side (並行)** 策略：
-- **第一階段**: 資料層擴充 (日誌與手動輸入)。
-- **第二階段**: Agent 雙模化 (Flash/Deep 資源分級)。
-- **第三階段**: 流量切換至具備自適應能力的 v3 核心。
-
-</details>
+### 4. 成功指標 (Success Metrics)
+- **可用性 (Uptime)**: > 99.9%。
+- **自我修復率**: 系統偵測到 Zombie Agent 後的自動恢復率需為 100%。
 
 ---
 
@@ -65,24 +57,23 @@ graph TD
 
 ## 🇺🇸 System Landscape
 
-### 1. Dual-Unit Architecture
-- **Advisory Unit**: Market analysis and strategy generation (CIO + Analysts).
-- **HR Unit**: Performance monitoring and prompt self-healing (System Engineer).
+### 1. Vision & Design Goals
+Building a transparent, cloud-native financial agent suite with 0% hallucination risk through tiered decoupling of reasoning and math.
 
-### 2. Cloud-Native Topology
-- **Frontend**: Streamlit on Cloud Run.
-- **Backend**: Serverless Batch Jobs for daily/weekly reports.
-- **Data**: Cloud SQL (PostgreSQL) and GCS.
+### 2. C4 Architecture
+- **Context**: Interfacing with Polygon, FRED, and OpenRouter.
+- **Container**: Streamlit frontend for visualization, MCP for centralized tool management, and Agent Swarm for adaptive decision making.
 
-### 3. Clean Architecture Review
-High commitment to decoupling:
-- **Entities**: Core trade and portfolio logic.
-- **Use Cases**: Workflow services.
-- **Adapters**: Repository patterns for DB isolation.
+### 3. NFR & Performance
+- **Scalability**: Thread-parallel analysis; KubeRay readiness.
+- **Reliability**: Automated GCS backups and HR-based zombie detection.
+- **Efficiency**: Hash-based prompt caching to minimize latency and cost.
 
-### 4. Migration Strategy
-Incremental **Side-by-Side** transition ensuring zero downtime while upgrading from linear v1 to autonomous v3.
+### 4. Success Metrics
+- **Uptime**: > 99.9%.
+- **MTTR**: < 5 minutes via automated agent self-healing.
 
-## 🔗 See Also
-- [Agent Mesh Protocols](wiki/04_架構觀點-Architect_Views/底層通信協議-Agent-Mesh-Protocols.md)
-- [Evolutionary Roadmap](wiki/02_產品經理-Product_Managers/產品演進藍圖-Evolutionary-Roadmap.md)
+## 🔗 Bidirectional Links
+- **Communication Protocols**: [Agent Mesh Protocols](底層通信協議-Agent-Mesh-Protocols)
+- **Implementation Status**: [Architecture Status](架構狀態-Architecture-Status)
+- **Developer Guide**: [Local Dev Setup](環境設定與本地開發-Environment-Local-Dev)

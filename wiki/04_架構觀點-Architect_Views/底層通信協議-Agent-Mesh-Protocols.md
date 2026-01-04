@@ -2,32 +2,57 @@
 
 > **[繁體中文 (Traditional Chinese)](#zh) | [English](#en)**
 
+---
+
 <a id="zh"></a>
 
-## 🇹🇼 底層通信協議與 Agent Mesh
+## 🇹🇼 底層通信協議與 Agent Mesh (Internal Specs)
 
-本文件深入說明代理人之間的通訊模式、工具調用協議以及系統安全性保障。
+本文件依據 [文件框架定義](文件框架定義-Document-Frameworks) 編寫，詳細定義了 Agent Mesh 的通訊規範、安全性要求與工具調用協議。
 
-### 1. 模型分級執行 (Tiered Model Execution)
-為了平衡成本與智能，系統將運算資源分為兩層：
-- **Flash Tier (基礎)**: 使用 Gemini 1.5 Flash。用於初步數據清洗、新聞抓取與簡單過濾。
-- **Deep Tier (進階)**: 使用 Gemini 1.5 Pro。用於複雜財報分析、宏觀推論與最終選股。
+### 1. 通訊框架 (Communication Framework)
+系統採用基於 MCP (Model Context Protocol) 的異步通信模式。
+- **協定類型**: HTTP/1.1 + gRPC (內部)。
+- **訊息格式**: JSON。
 
-### 2. MCP 微服務協議 (Model Context Protocol)
-MCP Server 提供一個統一的微服務介面，讓所有 Agent 透過 HTTP 調用標準化工具：
-- **註冊中心**: 提供 `get_current_price` (股價)、`get_news` (新聞) 等工具。
-- **訊息匯流排**: 支持 Agent 間發送需求訊息 (Request) 與狀態同步。
+#### 1.1 請求格式示例 (Request Schema)
+每個工具調用必須遵循標準 Header 與 Payload：
+```json
+{
+  "agent_id": "CIO-001",
+  "tool": "get_current_price",
+  "params": {
+    "ticker": "AAPL",
+    "use_cache": true
+  },
+  "context_hash": "sha256_..."
+}
+```
 
-### 3. 搜尋服務架構 (Search Architecture)
-採用**雙層檢索策略**以確保持續可用性：
-1. **主要來源 (Tavily)**: 結構化、AI 優化的搜尋结果。
-2. **備援來源 (DuckDuckGo)**: 當 API 額度用罄或超時時自動降級。
+### 2. 工具集詳細定義 (Toolset Specification)
+所有工具均封裝於 [MCP 微服務](系統全景圖-System-Landscape) 中，確保權限隔離。
 
-### 4. 資安審計與防護 (Security & Protection)
-系統採取的安全性強化措施：
-- **預防 SQL 注入**: 核心層全面停用字串拼接，改用參數化查詢 (Parameterized Queries)。
-- **代碼執行保護**: 嚴格過濾 `subprocess` 呼叫，避免指令注入。
-- **API 金鑰管理**: 敏感資料全面由環境變數或加密資料庫儲存，嚴禁寫死在代碼中。
+| 工具名稱 | 輸入參數 | 輸出範例 |
+| :--- | :--- | :--- |
+| `get_current_price` | `ticker` (str) | `{"price": 180.25, "ts": 169...}` |
+| `get_news` | `query` (str), `limit` (int) | `[{"title": "...", "url": "..."}]` |
+| `calculate_leverage` | `current_prices` (dict) | `{"ratio": 1.25, "status": "safe"}` |
+
+### 3. 安全與品質要求 (Security & Quality NFR)
+
+- **預防 SQL 注入 (SQLi Prevention)**:
+    - **強制規範**: 嚴禁在 Repo 層使用字串格式化拼接 SQL。
+    - **範例**: `conn.execute("SELECT * FROM t WHERE id = ?", (id,))`。
+- **機密管理 (Secrets Management)**:
+    - 所有 API Keys 不得明文出現於日誌或代碼。
+    - 採用 `Environment Repository` 模式加載加密變數。
+- **HR 回饋協議**:
+    - Agent 互相對報告品質評分 (1-5 分)，存儲於 `agent_reviews` 表。
+    - 當平均評分 < 3.0 時，觸發 [Engineer Agent](核心系統規格-Core-System-Specs) 的 Prompt 重調。
+
+### 4. 成功指標 (Success Metrics)
+- **工具調用成功率**: > 99.5%。
+- **注入漏洞發生率**: 0 (由 SAST `bandit` 保證)。
 
 ---
 
@@ -35,22 +60,22 @@ MCP Server 提供一個統一的微服務介面，讓所有 Agent 透過 HTTP �
 
 ## 🇺🇸 Agent Mesh Protocols
 
-### 1. Tiered Execution
-- **Flash Tier**: Low-cost models (Flash) for preprocessing and data fetching.
-- **Deep Tier**: High-reasoning models (Pro) for complex final decision making.
+### 1. Framework
+Asynchronous MCP-based communication utilizing JSON payloads for inter-agent messages and tool execution.
 
-### 2. MCP Microservice
-- **Tool Registry**: Centralized service for data tools (Price, News, Financials).
-- **Communication**: Standardized HTTP endpoints for agent interaction.
+### 2. Toolset Spec
+Standardized interfaces for `get_current_price`, `get_news`, and `calculate_leverage`. Mathematical calculations are isolated in Python modules to prevent hallucinations.
 
-### 3. Search Strategy
-- **Primary (Tavily)**: Structured JSON output, AI-focused.
-- **Fallback (DuckDuckGo)**: High-latency, no-key backup.
+### 3. Security (NFR)
+- **SQLi**: Mandatory use of parameterized queries across all repositories.
+- **Secrets**: Encrypted storage and environment-only loading.
+- **HR Protocols**: 360-degree cross-agent scoring loop for automated prompt tuning.
 
-### 4. Security Audit
-- **SQLi Prevention**: Mandatory parameterized queries across the codebase.
-- **Secret Management**: DB-First or Env-based configuration; no hardcoded secrets.
+### 4. Success Metrics
+- **Tool Success Rate**: > 99.5%.
+- **Zero-Injection Policy**: Verified by monthly SAST scans.
 
-## 🔗 See Also
-- [System Landscape](wiki/04_架構觀點-Architect_Views/系統全景圖-System-Landscape.md)
-- [Database & Git Standards](wiki/03_開發者指南-Developer_Guide/資料庫設計與代碼規範-Database-Git-Standards.md)
+## 🔗 Bidirectional Links
+- **Architecture**: [System Landscape](系統全景圖-System-Landscape)
+- **PM Specs**: [Core System Specs](核心系統規格-Core-System-Specs)
+- **DB Design**: [Database Standards](資料庫設計與代碼規範-Database-Git-Standards)

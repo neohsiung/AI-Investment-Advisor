@@ -2,36 +2,41 @@
 
 > **[繁體中文 (Traditional Chinese)](#zh) | [English](#en)**
 
+---
+
 <a id="zh"></a>
 
-## 🇹🇼 測試與外部服務整合指南
+## 🇹🇼 測試與外部服務整合指南 (v3.1)
 
-本文件詳述如何驗證系統正確性，以及如何配置第三方數據源與身份驗證。
+本文件依據 [文件框架定義](文件框架定義-Document-Frameworks) 編寫，闡述如何驗證系統正確性以及如何配置關鍵外部數據源。
 
-### 1. 測試指南 (Testing Guide)
-- **框架**: 使用 `pytest` 與 `pytest-cov`。
-- **規範**: 覆蓋率目標為 **>75%**。涉及 Streamlit 的測試必須使用 `mock_streamlit_module` fixture。
-- **指令**:
-    ```bash
-    pytest                # 執行所有測試
-    pytest --cov=src      # 產生覆蓋率報告
-    ```
+### 1. 測試策略 (Testing Strategy)
 
-### 2. 第三方服務配置 (3rd-Party Setup)
-| 服務 | 用途 | 主要環境變數 |
-| :--- | :--- | :--- |
-| **Polygon.io** | 即時/延遲股價 | `POLYGON_API_KEY` |
-| **FMP** | 財報、財經新聞 | `FMP_API_KEY` |
-| **FRED** | 總體經濟數據 | `FRED_API_KEY` |
-| **Tavily** | AI 搜尋引擎 | `TAVILY_API_KEY` |
-| **Gemini** | 核心推理 (LLM) | `GOOGLE_API_KEY` |
+#### 1.1 測試層級 (Test Tiers)
+- **單元測試 (Unit)**: 針對 `AnalyticsService` 的數學公式進行 100% 覆蓋。
+- **整合測試 (Integration)**: 驗證 [Agent Mesh](底層通信協議-Agent-Mesh-Protocols) 與 SQLite 的交互。
+- **端到端測試 (E2E)**: 使用 Streamlit Test Runner 模擬使用者行為。
 
-**常見問題解決**: 若遇到搜尋超時 (`Timeout`)，請優先確認 `TAVILY_API_KEY` 是否有效。系統預設提供 DuckDuckGo 作為無金鑰備援，但穩定性較低。
+#### 1.2 模擬最佳實踐 (Mocking Best Practices)
+為了節省 Token 成本，所有非聯動測試必須使用 Mock：
+- **Agent Mocking**: 在 `conftest.py` 中建立全局 Agent Mock 選項。
+- **Streamlit Mocking**: 針對 `st.sidebar` 等 UI 元件執行 `patch`。
 
-### 3. Google OAuth 設定
-1.  前往 Google Cloud Console 建立 **OAuth 2.0 用戶端 ID**。
-2.  **Redirect URI**: 本地使用 `http://localhost:8501`；雲端使用 Cloud Run 網址。
-3.  下載 `client_secret.json` 並放置於專案根目錄。
+#### 1.3 成功指標 (Success Metrics)
+- **覆蓋率目標**: 系統核心功能覆蓋率需 > 75%。
+- **CI 通過率**: 100% 同步於 GitHub Actions。
+
+### 2. 外部服務配置與約束 (3rd-Party Specs)
+
+| 服務 | 類型 | 性能約束 | 備註 |
+| :--- | :--- | :--- | :--- |
+| **Polygon/FMP** | REST | 限流 5 req/sec (Free)。 | 用於 [資料管理](核心系統規格-Core-System-Specs)。 |
+| **Tavily** | Search | 逾時設為 10s。 | AI 時代的最佳實踐搜尋服務。 |
+| **OpenRouter** | Gateway | 支援熱切換模型。 | 關鍵秘密存儲於 [環境變數](環境設定與本地開發-Environment-Local-Dev)。 |
+
+### 3. 非功能性需求: 可觀測性 (Observability)
+- **日誌追蹤**: 每個 Agent 調用必須附帶 `request_id`。
+- **效能監控**: 定期稽核 `reports` 生成時間。
 
 ---
 
@@ -39,21 +44,17 @@
 
 ## 🇺🇸 Testing & External Services
 
-### 1. Testing
-- **Goal**: Maintain **>75% coverage**.
-- **Strategy**: Use `pytest`. Mock Streamlit using provided fixtures in `conftest.py`.
-- **Run**: `pytest --cov=src`
+### 1. Verification Tiers
+- **Math Reliability**: 100% unit test coverage for `PnLCalculator` and `LeverageEngine`.
+- **Consistency**: Integration tests for [Agent Mesh Protocols](底層通信協議-Agent-Mesh-Protocols) to prevent schema regression.
 
-### 2. External Services
-- **Data**: Polygon (Price), FMP (Financials), FRED (Macro).
-- **Search**: Tavily (Preferred) or DuckDuckGo (Fallback).
-- **AI**: Google Gemini 1.5 Pro/Flash via `GOOGLE_API_KEY`.
+### 2. Mocking Philosophy
+Use `unittest.mock` to bypass expensive LLM calls during CI/CD. Target coverage: **75%+**.
 
-### 3. Google OAuth
-- **Credentials**: Required for user login.
-- **URI**: Match exactly in Google Console (`http://localhost:8501` for locally).
-- **Secret**: Store `client_secret.json` in root or in env var.
+### 3. 3rd-Party Constraints
+Maintain strict Rate-Limiters for Polygon and FMP. Fallback logic for Search is mandatory for system reliability.
 
-## 🔗 See Also
-- [Environment & Local Dev](wiki/03_開發者指南-Developer_Guide/環境設定與本地開發-Environment-Local-Dev.md)
-- [Database & Git Standards](wiki/03_開發者指南-Developer_Guide/資料庫設計與代碼規範-Database-Git-Standards.md)
+## 🔗 Bidirectional Links
+- **Architecture**: [System Landscape](系統全景圖-System-Landscape)
+- **Dev Guide**: [Local Dev Setup](環境設定與本地開發-Environment-Local-Dev)
+- **PM Specs**: [Core System Specs](核心系統規格-Core-System-Specs)

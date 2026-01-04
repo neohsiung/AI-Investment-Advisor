@@ -14,7 +14,7 @@ This document defines the standards for creating and maintaining the project Wik
     *   **禁止 (Forbidden)**: 禁止使用空格、特殊符號 (底線 `_` 僅限於資料夾排序前綴，如 `01_`).
 *   **範例 (Examples)**:
     *   ✅ `系統概觀-System-Overview.md`
-    *   ✅ `資料庫架構-資料庫架構-Database-Schema.md`
+    *   ✅ `資料庫架構-Database-Schema.md`
     *   ❌ `SystemOverview.md` (缺少中文)
     *   ❌ `系統概觀.md` (缺少英文)
     *   ❌ `系統概觀_System_Overview.md` (連接符錯誤)
