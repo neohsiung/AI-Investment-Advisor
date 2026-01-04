@@ -55,17 +55,17 @@ cp .env.example .env
 本專案擁有完整的文檔體系，位於 `wiki/` 目錄：
 
 - **新手入門**:
-    - [使用手冊 (User Guide)](wiki/01_User_Manual/使用手冊-User-Guide.md)
-    - [部署選項 (Deployment Options)](wiki/01_User_Manual/部署選項-Deployment-Options.md)
+    - [使用手冊 (User Guide)](wiki/01_使用者手冊-User_Manual/使用手冊-User-Guide.md)
+    - [部署選項 (Deployment Options)](wiki/01_使用者手冊-User_Manual/部署選項-Deployment-Options.md)
 - **產品規格**:
-    - [產品藍圖 (Roadmap)](wiki/02_Product_Manager_Corner/產品藍圖-Roadmap.md)
-    - [代理人規格 (Agent Specs)](wiki/02_Product_Manager_Corner/Specs/代理人規格-Agent-Specs.md)
+    - [產品藍圖 (Roadmap)](wiki/02_產品經理-Product_Managers/產品藍圖-Roadmap.md)
+    - [代理人規格 (Agent Specs)](wiki/02_產品經理-Product_Managers/Specs/代理人規格-Agent-Specs.md)
 - **開發者指南**:
-    - [環境設定 (Setup)](wiki/03_Developer_Guide/環境設定-Python-Environment-Setup.md)
-    - [測試指南 (Testing)](wiki/03_Developer_Guide/測試指南-Testing-Guide.md)
+    - [環境設定 (Setup)](wiki/03_開發者指南-Developer_Guide/環境設定-Python-Environment-Setup.md)
+    - [測試指南 (Testing)](wiki/03_開發者指南-Developer_Guide/測試指南-Testing-Guide.md)
 - **架構設計**:
-    - [系統概觀 (System Overview)](wiki/04_Architect_View/系統概觀-System-Overview.md)
-    - [AI 代理集群 (Agent Swarm)](wiki/04_Architect_View/AI集群架構-AI-Agent-Swarm.md)
+    - [系統概觀 (System Overview)](wiki/04_架構觀點-Architect_Views/系統概觀-System-Overview.md)
+    - [AI 代理集群 (Agent Swarm)](wiki/04_架構觀點-Architect_Views/AI集群架構-AI-Agent-Swarm.md)
 
 ### 🏗️ 系統架構 (Architecture)
 
@@ -139,17 +139,17 @@ cp .env.example .env
 Detailed documentation is available in the `wiki/` directory:
 
 - **Getting Started**:
-    - [User Guide](wiki/01_User_Manual/使用手冊-User-Guide.md)
-    - [Deployment Options](wiki/01_User_Manual/部署選項-Deployment-Options.md)
+    - [User Guide](wiki/01_使用者手冊-User_Manual/使用手冊-User-Guide.md)
+    - [Deployment Options](wiki/01_使用者手冊-User_Manual/部署選項-Deployment-Options.md)
 - **Product Specs**:
-    - [Roadmap](wiki/02_Product_Manager_Corner/產品藍圖-Roadmap.md)
-    - [Agent Specs](wiki/02_Product_Manager_Corner/Specs/代理人規格-Agent-Specs.md)
+    - [Roadmap](wiki/02_產品經理-Product_Managers/產品藍圖-Roadmap.md)
+    - [Agent Specs](wiki/02_產品經理-Product_Managers/Specs/代理人規格-Agent-Specs.md)
 - **Developer Guide**:
-    - [Environment Setup](wiki/03_Developer_Guide/環境設定-Python-Environment-Setup.md)
-    - [Testing Guide](wiki/03_Developer_Guide/測試指南-Testing-Guide.md)
+    - [Environment Setup](wiki/03_開發者指南-Developer_Guide/環境設定-Python-Environment-Setup.md)
+    - [Testing Guide](wiki/03_開發者指南-Developer_Guide/測試指南-Testing-Guide.md)
 - **Architecture**:
-    - [System Overview](wiki/04_Architect_View/系統概觀-System-Overview.md)
-    - [Agent Swarm](wiki/04_Architect_View/AI集群架構-AI-Agent-Swarm.md)
+    - [System Overview](wiki/04_架構觀點-Architect_Views/系統概觀-System-Overview.md)
+    - [Agent Swarm](wiki/04_架構觀點-Architect_Views/AI集群架構-AI-Agent-Swarm.md)
 
 ### ⚠️ Disclaimer
 **For Educational and Research Purposes Only.**

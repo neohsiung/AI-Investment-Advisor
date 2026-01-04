@@ -39,6 +39,8 @@ graph TD
         subgraph "External Services"
             Gemini[Google Gemini API]
             Fred[FRED API]
+            Polygon[Polygon.io API]
+            FMP[FMP API]
             GoogleAuth[Google OAuth 2.0]
         end
     end

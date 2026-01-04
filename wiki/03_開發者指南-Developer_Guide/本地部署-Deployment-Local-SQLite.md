@@ -15,9 +15,9 @@ Quickly establish a full-featured dev/test environment on a local machine withou
 - **Zero Cost**: Uses existing hardware.
 
 ## 🔗 See Also
-- [Deployment Options](wiki/01_User_Manual/Deployment-Options.md)
-- [CLI Reference](wiki/03_Developer_Guide/命令行手冊-CLI-Reference.md)
-- [Database Migration Guide](wiki/03_Developer_Guide/資料庫遷移-Database-Migration-Guide.md)
+- [Deployment Options](wiki/01_使用者手冊-User_Manual/Deployment-Options.md)
+- [CLI Reference](wiki/03_開發者指南-Developer_Guide/命令行手冊-CLI-Reference.md)
+- [Database Migration Guide](wiki/03_開發者指南-Developer_Guide/資料庫遷移-Database-Migration-Guide.md)
 
 ### Setup Steps
 

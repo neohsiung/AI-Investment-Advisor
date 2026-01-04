@@ -66,21 +66,23 @@
     - **階段二 (v3.3)**: **The Brain (決策引擎)**。利用 v3.2 產生的高品質結構化信號 (Smart Signals)，驅動 RL 模擬環境 (Gym-Anytrading) 進行對沖決策。
     - **階段三 (v4.0)**: **The DNA (自我演化)**。在 v3.3 的基礎上，導入演化算法，讓策略代碼自我迭代。
 
-#### v3.2 混合分層分析架構 (Hybrid Tiered Analysis Architecture) (Mar 2026 - In Progress)
-> **[Spec 規格書: 05_roadmap_v3_2_hybrid_analysis.md](Specs/05_roadmap_v3_2_hybrid_analysis.md)**
+#### v3.2 混合分層分析架構 (Hybrid Tiered Analysis Architecture) (Mar 2026 - Completed)
+> **[Spec 規格書: 產品藍圖v3.2-Roadmap-v3.2.md](Specs/產品藍圖v3.2-Roadmap-v3.2.md)** (Status: Merged)
 
 *   **核心變革**: 從「全量索引」轉向「事件驅動分層分析」，實現最高成本效益。
 *   **技術基石**:
-    *   **混合架構 (Hybrid Tiering)**: Tier 1 (API 篩選) -> Tier 2 (新聞快篩) -> Tier 3 (Gemini 1.5 長文本深潛)。
+    *   **混合架構 (Hybrid Tiering)**: Tier 1 (API 篩選Polygon/FMP) -> Tier 2 (新聞快篩FMP) -> Tier 3 (Gemini 1.5 長文本深潛)。
+    *   **數據源策略**:
+        *   **股價 (Price)**: Polygon (Primary) -> FMP (Backup) -> YFinance (Fallback)
+        *   **宏觀 (Macro)**: FRED (Primary) -> Yahoo Finance (Backup)
     *   **矛盾檢測 (Consistency Check)**: 深度比對管理層文字承諾與實際財務數據趨勢是否一致。
-    *   **隱性關聯推導 (Implicit Relation Inference)**: 從財報模糊描述中推導上下游關係。
 *   **核心產品**:
     *   **即時 Alpha 儀表板**: 基於 Polygon/FMP 的實時機會推播。
     *   **機構級投資備忘錄**: 自動產出包含「供應鏈風險」與「財務一致性」的深度報告。
 
 
 #### v3.3 宏觀對沖與動態配置 (Macro Hedging & Dynamic Allocation) (Jun 2026 - Planned)
-> **[Spec 規格書: 06_roadmap_v3_3_self_healing.md](Specs/06_roadmap_v3_3_self_healing.md)**
+> **[Spec 規格書: 產品藍圖v3.3-Roadmap-v3.3.md](Specs/產品藍圖v3.3-Roadmap-v3.3.md)**
 
 *   **投資方法論 (Methodology)**: 專注於 **絕對報酬 (Absolute Returns)**，目標在空頭市場維持正收益。
     *   **總經體制變換 (Regime Switching)**: 整合 FRED 數據，自動判讀當前為「通膨/通縮」與「成長/衰退」四象限，動態調整股/債/原物料/現金比例。
@@ -90,7 +92,7 @@
     *   **信號驅動**: 依賴 v3.2 的高信度信號 (JSON Signals) 作為訓練輸入，而非原始視覺數據。
 
 #### v4.0 生成式佈局與超個人化 (Generative Allocation & Hyper-Personalization) (2026 Q4 - Concept)
-> **[Spec 規格書: 07_roadmap_v4_0_evolution.md](Specs/07_roadmap_v4_0_evolution.md)**
+> **[Spec 規格書: 產品藍圖v4.0-Roadmap-v4.0.md](Specs/產品藍圖v4.0-Roadmap-v4.0.md)**
 
 *   **投資方法論 (Methodology)**: **生成式 Alpha (Generative Alpha)**，將自然語言轉化為量化策略。
     *   **語意因子建構**: 用戶輸入「投資具備高 ESG 分數且供應鏈不依賴單一國家的 EV 公司」，Agent 自動掃描供應鏈數據構建客製化 ETF。
@@ -168,21 +170,23 @@ Define the factual development path of the AI Investment Advisor based on the pr
     - **Phase 2 (v3.3)**: **The Brain (Decision Engine)**. Build the RL Simulation (Gym) on top of v3.2's data. Without simulation, v4.0 cannot evolve.
     - **Phase 3 (v4.0)**: **The DNA (Evolution)**. Introduce Genetic Algorithms into v3.3's Gym to enable self-evolution.
 
-#### v3.2 Hybrid Tiered Analysis Architecture (Mar 2026 - In Progress)
-> **[Deep Dive Spec: 05_roadmap_v3_2_hybrid_analysis.md](Specs/05_roadmap_v3_2_hybrid_analysis.md)**
+#### v3.2 Hybrid Tiered Analysis Architecture (Mar 2026 - Completed)
+> **[Deep Dive Spec: 產品藍圖v3.2-Roadmap-v3.2.md](Specs/產品藍圖v3.2-Roadmap-v3.2.md)** (Status: Merged)
 
 *   **Core Pivot**: Moving from "Full Visual Indexing" to "Event-Driven Tiered Analysis" for maximum cost-efficiency.
 *   **Tech Stack**:
-    *   **Hybrid Tiering**: Tier 1 (API Screen) -> Tier 2 (News Filter) -> Tier 3 (Gemini 1.5 Deep Dive).
+    *   **Hybrid Tiering**: Tier 1 (API Screen: Polygon/FMP) -> Tier 2 (News Filter: FMP) -> Tier 3 (Gemini 1.5 Deep Dive).
+    *   **Data Source Strategy**:
+        *   **Price**: Polygon (Primary) -> FMP (Backup) -> YFinance (Fallback)
+        *   **Macro**: FRED (Primary) -> Yahoo Finance (Backup)
     *   **Consistency Check**: Validating optimistic MD&A text against actual financial trends.
-    *   **Implicit Relation Inference**: Inferring hidden B2B relationships from 10-K descriptions.
 *   **Core Products**:
     *   **Real-time Alpha Dashboard**: Live opportunities feed based on strict signal filtering.
     *   **Institutional Investment Memo**: Deep-dive reports generated JIT (Just-in-Time) with "Consistency Scores".
 
 
 #### v3.3 Macro Hedging & Dynamic Allocation (Jun 2026 - Planned)
-> **[Deep Dive Spec: 06_roadmap_v3_3_self_healing.md](Specs/06_roadmap_v3_3_self_healing.md)**
+> **[Deep Dive Spec: 產品藍圖v3.3-Roadmap-v3.3.md](Specs/產品藍圖v3.3-Roadmap-v3.3.md)**
 
 *   **Methodology**: Focus on **Absolute Returns**, aiming for positive yields even in bear markets.
     *   **Regime Switching**: Integrates FRED data to automatically classify potential "Inflation/Deflation" and "Growth/Recession" quadrants, dynamically adjusting Equity/Bond/Commodity/Cash ratios.
@@ -192,7 +196,7 @@ Define the factual development path of the AI Investment Advisor based on the pr
     *   **Signal-Driven**: Relies on high-fidelity JSON Signals from v3.2 as training inputs, replacing raw visual data.
 
 #### v4.0 Generative Allocation & Hyper-Personalization (2026 Q4 - Concept)
-> **[Deep Dive Spec: 07_roadmap_v4_0_evolution.md](Specs/07_roadmap_v4_0_evolution.md)**
+> **[Deep Dive Spec: 產品藍圖v4.0-Roadmap-v4.0.md](Specs/產品藍圖v4.0-Roadmap-v4.0.md)**
 
 *   **Methodology**: **Generative Alpha**, converting natural language into quantitative strategies.
     *   **Semantic Factor Construction**: User inputs "Invest in EV companies with high ESG scores and independent supply chains", Agent scans data to build a custom ETF.

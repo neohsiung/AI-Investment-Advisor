@@ -51,8 +51,8 @@ pyenv install -v 3.11.9
 ```
 
 ## 🔗 相關連結 (See Also)
-- [命令行手冊 (CLI)](wiki/03_Developer_Guide/命令行手冊-CLI-Reference.md)
-- [使用手冊 (User Guide)](wiki/01_User_Manual/使用手冊-User-Guide.md)
+- [命令行手冊 (CLI)](wiki/03_開發者指南-Developer_Guide/命令行手冊-CLI-Reference.md)
+- [使用手冊 (User Guide)](wiki/01_使用者手冊-User_Manual/使用手冊-User-Guide.md)
 
 ---
 

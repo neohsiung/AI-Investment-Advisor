@@ -65,8 +65,8 @@ python src/cli.py --mode optimize
 - `SMTP_SERVER`, `SENDER_EMAIL` (用於發送報告)
 
 ## 🔗 相關連結 (See Also)
-- [使用手冊 (User Guide)](wiki/01_User_Manual/使用手冊-User-Guide.md)
-- [排程設定 (Cron Setup)](wiki/01_User_Manual/排程設定-Cron-Setup.md)
+- [使用手冊 (User Guide)](wiki/01_使用者手冊-User_Manual/使用手冊-User-Guide.md)
+- [排程設定 (Cron Setup)](wiki/01_使用者手冊-User_Manual/排程設定-Cron-Setup.md)
 
 ---
 
@@ -133,5 +133,5 @@ Ensure `.env` is loaded or variables are set:
 - `SMTP_SERVER`, `SENDER_EMAIL` (for reports)
 
 ## 🔗 相關連結 (See Also)
-- [使用手冊 (User Guide)](wiki/01_User_Manual/使用手冊-User-Guide.md)
-- [排程設定 (Cron Setup)](wiki/01_User_Manual/排程設定-Cron-Setup.md)
+- [使用手冊 (User Guide)](wiki/01_使用者手冊-User_Manual/使用手冊-User-Guide.md)
+- [排程設定 (Cron Setup)](wiki/01_使用者手冊-User_Manual/排程設定-Cron-Setup.md)

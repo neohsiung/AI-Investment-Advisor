@@ -40,8 +40,8 @@
 若您想從本地遷移至雲端，或反之，請參考 [[資料庫遷移-Database-Migration-Guide]]。
 
 ## 🔗 相關連結 (See Also)
-- [本地部署指南 (Local)](wiki/03_Developer_Guide/本地部署-Deployment-Local-SQLite.md)
-- [雲端部署指南 (Cloud Run)](wiki/03_Developer_Guide/雲端部署-Deployment-GCP-CloudRun.md)
+- [本地部署指南 (Local)](wiki/03_開發者指南-Developer_Guide/本地部署-Deployment-Local-SQLite.md)
+- [雲端部署指南 (Cloud Run)](wiki/03_開發者指南-Developer_Guide/雲端部署-Deployment-GCP-CloudRun.md)
 
 ---
 

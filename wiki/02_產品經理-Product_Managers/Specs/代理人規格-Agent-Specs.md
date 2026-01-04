@@ -74,8 +74,8 @@ Agent Swarm (代理人集群) 由協作的多個專門 AI Agent 組成，負責�
     -   **Feedback Loop**: 每週驗證結果將反饋至 Optimizer，自動微調 Prompt。
 
 ## 🔗 相關連結 (See Also)
-- [設計模式_工廠 (Factory Pattern)](wiki/05_Engineering_Handbook/設計模式_工廠-Factory-Pattern.md)
-- [系統概觀 (System Overview)](wiki/04_Architect_View/系統概觀-System-Overview.md)
+- [設計模式_工廠 (Factory Pattern)](wiki/05_工程手冊-Engineering_Handbook/設計模式_工廠-Factory-Pattern.md)
+- [系統概觀 (System Overview)](wiki/04_架構觀點-Architect_Views/系統概觀-System-Overview.md)
 
 ---
 

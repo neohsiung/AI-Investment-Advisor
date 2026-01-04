@@ -49,8 +49,8 @@ crontab -l
 - **環境變數**: 若依賴特定虛擬環境 (pipenv/conda)，需在腳本中設定。
 
 ## 🔗 相關連結 (See Also)
-- [命令行手冊 (CLI)](wiki/03_Developer_Guide/命令行手冊-CLI-Reference.md)
-- [排程設定 (Cron)](wiki/01_User_Manual/排程設定-Cron-Setup.md)
+- [命令行手冊 (CLI)](wiki/03_開發者指南-Developer_Guide/命令行手冊-CLI-Reference.md)
+- [排程設定 (Cron)](wiki/01_使用者手冊-User_Manual/排程設定-Cron-Setup.md)
 
 ---
 

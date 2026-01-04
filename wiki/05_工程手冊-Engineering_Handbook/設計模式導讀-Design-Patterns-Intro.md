@@ -117,4 +117,4 @@ As the system evolves into an Agent Swarm, we adopt specific patterns for AI Age
 2.  **Compare Before/After**: Review the code changes from refactoring.
 3.  **Practice**: Try applying these patterns when adding new features (e.g., adding a `SentimentRepository`).
 
-*Next: [Deep Dive into Factory Pattern](wiki/05_Engineering_Handbook/設計模式_工廠-Factory-Pattern.md)*
+*Next: [Deep Dive into Factory Pattern](wiki/05_工程手冊-Engineering_Handbook/設計模式_工廠-Factory-Pattern.md)*

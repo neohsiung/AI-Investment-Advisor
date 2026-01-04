@@ -134,9 +134,9 @@ graph TD
 - **Observer Pattern**: Engineer 觀察 Agent 績效。
 
 ## 🔗 相關連結 (See Also)
-- [設計模式導讀 (Design Patterns)](wiki/05_Engineering_Handbook/設計模式導讀-Design-Patterns-Intro.md)
-- [Agent 規格 (Agents Spec)](wiki/02_Product_Manager_Corner/Specs/代理人規格-Agent-Specs.md)
-- [產品藍圖 (Roadmap)](wiki/02_Product_Manager_Corner/產品藍圖-Roadmap.md)
+- [設計模式導讀 (Design Patterns)](wiki/05_工程手冊-Engineering_Handbook/設計模式導讀-Design-Patterns-Intro.md)
+- [Agent 規格 (Agents Spec)](wiki/02_產品經理-Product_Managers/Specs/代理人規格-Agent-Specs.md)
+- [產品藍圖 (Roadmap)](wiki/02_產品經理-Product_Managers/產品藍圖-Roadmap.md)
 
 ---
 

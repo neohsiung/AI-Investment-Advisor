@@ -1,0 +1,105 @@
+# 第三方服務設定 (3rd Party Services Setup)
+
+> **[⬅️ Back to Developer Guide](README.md)**
+
+本文件詳細說明如何申請與設定系統所需的外部服務 API (Polygon, FMP, FRED, Gemini)。
+This document details how to apply for and configure external service APIs (Polygon, FMP, FRED, Gemini) required by the system.
+
+## 1. 核心數據源 (Core Data Sources)
+
+### 1.1 Polygon.io (Price Data)
+*   **用途 (Usage)**: 主要股價數據源 (Primary Price Data Source) - WebSocket & HTTP.
+*   **網址 (URL)**: [https://polygon.io/](https://polygon.io/)
+*   **方案建議 (Recommendation)**:
+    *   **Starter ($29/mo)**: 適合開發測試 (延遲 15 分鐘)。Suitable for dev/test (15 min delay).
+    *   **Developer ($200/mo)**: 若需即時數據 (Real-time) 則需升級此方案。Required for Real-time data.
+*   **申請步驟 (Application Steps)**:
+    1. 註冊帳號 (Sign up).
+    2. 至 Dashboard 獲取 API Key (Get API Key from Dashboard).
+    3. 設定環境變數 (Set Env Var): `POLYGON_API_KEY`.
+
+### 1.2 Financial Modeling Prep (FMP) (News & Fundamentals)
+*   **用途 (Usage)**: 財報數據 (Financials), 新聞 (Stock News). 亦作為股價備援。
+*   **網址 (URL)**: [https://site.financialmodelingprep.com/](https://site.financialmodelingprep.com/)
+*   **方案建議 (Recommendation)**:
+    *   **Starter ($19/mo)**: 足夠大部分財報與新聞需求。Sufficient for most financials & news needs.
+*   **申請步驟 (Application Steps)**:
+    1. 註冊帳號 (Sign up).
+    2. 至 Dashboard 獲取 API Key (Get API Key from Dashboard).
+    3. 設定環境變數 (Set Env Var): `FMP_API_KEY`.
+
+### 1.3 FRED (Federal Reserve Economic Data) (Macro)
+*   **用途 (Usage)**: 總體經濟數據 (GDP, CPI, Interest Rates)。
+*   **網址 (URL)**: [https://fred.stlouisfed.org/docs/api/api_key.html](https://fred.stlouisfed.org/docs/api/api_key.html)
+*   **方案 (Plan)**: 免費 (Free)。
+*   **申請步驟 (Application Steps)**:
+    1. 註冊 St. Louis Fed 帳號 (Register St. Louis Fed account).
+    2. 申請 API Key (Request API Key).
+    3. 設定環境變數 (Set Env Var): `FRED_API_KEY`.
+    
+## 2. 數據源策略 (Data Source Strategy)
+為了確保系統穩定性與成本效益，每種資訊目標皆配置 **主要 (Primary)** 與 **備援 (Backup)** 數據源。
+
+To ensure system stability and cost-efficiency, each information goal is assigned a **Primary** and a **Backup** source.
+
+| 資訊目標 (Info Goal) | 主要來源 (Primary) | 備援來源 (Backup) | 考量 (Considerations) |
+| :--- | :--- | :--- | :--- |
+| **股價 (Price)** | **Polygon.io** (Paid) | **FMP** | Polygon 延遲低且穩定 (Tier 1 核心)；FMP 作為備案。若兩者皆掛，降級至 YFinance (不建議高頻使用)。 |
+| **新聞 (News)** | **FMP** (Paid) | **Google/YFinance** | FMP 專注財經新聞；Google Search 補足非財經事件。 |
+| **財報 (Fundamentals)** | **FMP** | **Polygon.io** | FMP 解析度高；Polygon 資料庫亦完整。 |
+| **總經 (Macro)** | **FRED** | **Yahoo Finance (^VIX)** | FRED 為官方數據源；Yahoo Finance 用於即時情緒。 |
+
+## 3. AI 模型服務 (AI Models)
+
+### 2.1 Google Gemini API
+*   **用途 (Usage)**: 長文本分析 (Stock Analysis), 語意理解 (Semantic Understanding)。
+*   **網址 (URL)**: [https://aistudio.google.com/](https://aistudio.google.com/)
+*   **方案 (Plan)**:
+    *   **Free Service**: 適合開發測試 (有 Rate Limit)。Suitable for dev/test (Rate limited).
+    *   **Pay-as-you-go**: 實際上線建議使用 (Gemini 1.5 Flash 極度便宜)。Recommended for production (Gemini 1.5 Flash is extremely cheap).
+*   **申請步驟 (Application Steps)**:
+    1. 在 Google AI Studio 建立專案 (Create project in Google AI Studio).
+    2. 產生 API Key (Generate API Key).
+    3. 設定環境變數 (Set Env Var): `GOOGLE_API_KEY`.
+
+### 2.2 OpenAI API (備援 Backup)
+*   **用途 (Usage)**: 當 Gemini 不可用時的備援 (Fallback when Gemini is unavailable)。
+*   **網址 (URL)**: [https://platform.openai.com/](https://platform.openai.com/)
+*   **申請步驟 (Application Steps)**:
+    1. 註冊並綁定信用卡 (Sign up & Link Credit Card).
+    2. 產生 API Key (Generate API Key).
+    3. 設定環境變數 (Set Env Var): `OPENAI_API_KEY`.
+## 4. AI 設定比較 (Configuration Strategy)
+
+本系統採 **DB-First** 策略：
+1.  **環境變數 (.env)**: 僅用於初始化 (Bootstrap) 或當作預設值 (Setup Default)。
+2.  **系統設定 (GUI/DB)**: 運行期間優先使用資料庫中的設定。請透過 Web UI (`05_Settings`) 進行即時調整。
+
+Environmental variables are mainly for bootstrapping. Runtime configuration is managed via the Web UI (`05_Settings`) and stored in the database.
+
+## 3. 環境變數設定範例 (.env Example)
+
+```bash
+# SMTP Configuration (Required for Email Reports)
+SMTP_HOST=smtp.gmail.com
+SMTP_PORT=587
+SMTP_USER=your_email@gmail.com
+SMTP_PASSWORD=your_app_password
+EMAIL_RECIPIENT=recipient@example.com
+
+# External Data APIs
+POLYGON_API_KEY=your_polygon_api_key
+FMP_API_KEY=your_fmp_api_key
+FRED_API_KEY=your_fred_api_key_here
+
+# AI Models (Unified)
+# API_KEY=your_ai_api_key (Used for both Gemini & Factory Fallback)
+# LLM_API_KEY=your_llm_api_key (Optional: Only if different from API_KEY)
+
+
+# Google OAuth (Optional, for Web App)
+# GOOGLE_CLIENT_SECRET_PATH=client_secret.json
+# COOKIE_KEY=your_secret_cookie_key
+# REDIRECT_URI=http://localhost:8501
+
+```

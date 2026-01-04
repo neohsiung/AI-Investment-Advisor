@@ -8,9 +8,9 @@
 **Version**: 1.0
 
 ## 🔗 相關連結 (See Also)
-- [系統概觀 (System Overview)](wiki/04_Architect_View/系統概觀-System-Overview.md)
-- [Agent 規格 (Agents Spec)](wiki/02_Product_Manager_Corner/Specs/代理人規格-Agent-Specs.md)
-- [HR 協議 (HR Protocol)](wiki/02_Product_Manager_Corner/Specs/HR協議-HR-Protocol.md)
+- [系統概觀 (System Overview)](wiki/04_架構觀點-Architect_Views/系統概觀-System-Overview.md)
+- [Agent 規格 (Agents Spec)](wiki/02_產品經理-Product_Managers/Specs/代理人規格-Agent-Specs.md)
+- [HR 協議 (HR Protocol)](wiki/02_產品經理-Product_Managers/Specs/HR協議-HR-Protocol.md)
 
 ### 1. 集群設計哲學 (Design Philosophy)
 系統採用**「事件驅動架構 (Event-Driven)」**與**「上下文感知執行 (Context-Aware)」**，強調資源效率最大化。
