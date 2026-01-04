@@ -56,13 +56,17 @@ class BaseAgent(ABC):
         }
 
         db_settings = self._load_config_from_db()
+        self.logger.info(f"[_load_config] User: {self.user_id} | DB Settings Loaded: {list(db_settings.keys())}")
+        
         for key, value in db_settings.items():
             if key == "AI_PROVIDER": config["provider"] = value
             # Override model if specific tier setting exists in DB
             elif key == "AI_MODEL_SMART" and self.tier == "smart": config["model"] = value
             elif key == "AI_MODEL_FAST" and self.tier == "fast": config["model"] = value
             elif key == "AI_MODEL" and "model" not in config: config["model"] = value # Only fallback if not set by tier
-            elif key == "API_KEY": config["api_key"] = value
+            elif key == "API_KEY": 
+                config["api_key"] = value
+                self.logger.info(f"Loaded API_KEY from DB for {self.name}: {str(value)[:10]}...") # Debug only
             elif key == "BASE_URL": config["base_url"] = value
         
         # If DB overrode base AI_MODEL but we want tier specific, logic above might be slightly loose.
@@ -256,7 +260,23 @@ class BaseAgent(ABC):
         model = self.config.get('model')
         self.logger.info(f"Falling back to Mock LLM ({provider} - {model})...")
 
-        return f"Mock response from {self.name} due to error: {last_error}. Context received: {len(str(prompt))} chars."
+        simulated_response = f"""
+### ⚠️ Simulation Mode (Missing API Key)
+
+**Agent**: {self.name}
+
+#### Analysis
+- **Trend**: Neutral/Simulated.
+- **Signal**: HOLD.
+- **Reasoning**: System is running in simulation mode because valid API keys were not found.
+
+#### Recommendations
+- Validate your `.env` configuration.
+- Add `API_KEY` for {provider}.
+
+(Context received: {len(str(prompt))} chars)
+"""
+        return simulated_response.strip()
 
     def _call_real_llm(self, prompt, system_prompt):
         """

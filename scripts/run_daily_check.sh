@@ -11,8 +11,9 @@ cd "$PROJECT_ROOT"
 export PYTHONPATH="$PROJECT_ROOT"
 
 # Run Workflow in Daily Mode
-echo "Starting Daily Momentum Scan..."
-python3 src/workflow.py --mode daily
+echo "Starting Daily Momentum Scan (v3.2)..."
+# Using test_user for verification
+python3 src/cli.py --mode daily --user_id test_user --force-report
 
 EXIT_CODE=$?
 

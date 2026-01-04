@@ -42,3 +42,9 @@ oauth-client-secret.json
 client_secret_*.json
 *.apps.googleusercontent.com.json
 env.production
+
+# Temporary Scripts
+scripts/inspect_db.py
+scripts/run_full_verification.sh
+scripts/seed_data.py
+verification_output*.log

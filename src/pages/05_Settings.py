@@ -356,9 +356,10 @@ def render_report_dry_run_tab(st, user_id):
     st.header("郵件設定與測試 (Email Settings & Test)")
 
     # import os is already at the top of tab3
-    sender_email = os.getenv("SENDER_EMAIL", "Not Set")
-    recipient_email = os.getenv("RECIPIENT_EMAIL", "Not Set")
-    smtp_server = os.getenv("SMTP_SERVER", "smtp.gmail.com")
+    # import os is already at the top of tab3
+    sender_email = os.getenv("SMTP_USER", "Not Set")
+    recipient_email = os.getenv("EMAIL_RECIPIENT", "Not Set")
+    smtp_server = os.getenv("SMTP_HOST", "smtp.gmail.com") # Changed SMTP_SERVER to SMTP_HOST to match .env.example
 
     col1, col2 = st.columns(2)
     with col1:

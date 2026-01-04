@@ -1,6 +1,10 @@
 import argparse
 import sys
 import os
+from dotenv import load_dotenv
+
+# Load environment variables from .env file
+load_dotenv()
 
 # Ensure project root is in sys.path
 sys.path.append(os.getcwd())

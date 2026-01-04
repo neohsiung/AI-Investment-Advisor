@@ -25,13 +25,34 @@ class AgentFactory:
 
     @classmethod
     def _configure_dspy(cls):
-        """Enable DSPy if installed and credentials are present."""
+        """Enable DSPy if installed and credentials are present (Env > DB)."""
         if cls._dspy_configured or not has_dspy:
             return
 
-        api_key = os.getenv("LLM_API_KEY")
+        # 1. Try Environment Variables
+        api_key = os.getenv("LLM_API_KEY") or os.getenv("API_KEY")
         base_url = os.getenv("LLM_BASE_URL", "https://openrouter.ai/api/v1")
         model = os.getenv("LLM_MODEL_SMART", "google/gemini-2.0-flash-exp")
+
+        # 2. Try DB if Env missing (via SettingsRepository)
+        # Note: Factory is static, so we instantiate repo just for this check if needed.
+        if not api_key:
+            try:
+                from src.repositories.settings_repository import SqliteSettingsRepository
+                repo = SqliteSettingsRepository()
+                # Check Global or System settings
+                # Assuming 'system' user_id or global key
+                rows = repo.get_global()
+                for row in rows:
+                     # Adapt to return type of get_global which might be Row or Tuple
+                     k = row._mapping['key'] if hasattr(row, '_mapping') else row[0]
+                     v = row._mapping['value'] if hasattr(row, '_mapping') else row[1]
+                     if k == "API_KEY" and v:
+                         api_key = v
+                         logger.info("Loaded API_KEY from DB for DSPy.")
+                         break
+            except Exception as e:
+                logger.warning(f"Failed to load API_KEY from DB for DSPy: {e}")
 
         if api_key:
             try:
@@ -48,7 +69,7 @@ class AgentFactory:
             except Exception as e:
                 logger.warning(f"Failed to configure DSPy: {e}")
         else:
-            logger.warning("DSPy installed but LLM_API_KEY missing.")
+            logger.warning("DSPy installed but API_KEY missing (Env & DB).")
 
     @staticmethod
     def create_agent(agent_name, use_cache=True, user_id="system", **kwargs):

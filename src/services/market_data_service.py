@@ -1,141 +1,147 @@
 import pandas as pd
-from datetime import datetime
+from typing import List, Dict, Any, Optional
 from src.utils.logger import setup_logger
 
-from src.repositories.market_data_repository import MarketDataRepository
+# Providers
+from src.data.providers.base import MarketDataProvider
+from src.data.providers.polygon_provider import PolygonProvider
+from src.data.providers.fmp_provider import FMPProvider
+from src.data.providers.yfinance_provider import YFinanceProvider
+from src.services.fred_service import FredService
 
 class MarketDataService:
-    def __init__(self, db_path=None, repository=None):
-        self.logger = setup_logger("MarketData")
-        self.repository = repository or MarketDataRepository()
-
-    def get_current_prices(self, tickers):
-        """
-        Get current prices for a list of tickers.
-        獲取一組 Tickers 的最新價格。
+    def __init__(self):
+        self.logger = setup_logger("MarketDataService")
         
-        Args:
-            tickers (list): List of stock symbols.
-            
-        Returns:
-            dict: {ticker: price}
-        """
-        if not tickers:
-            return {}
+        # Initialize Providers
+        self.polygon = PolygonProvider()
+        self.fmp = FMPProvider()
+        self.yfinance = YFinanceProvider()
+        
+        # Initialize FRED (Macro Primary)
         try:
-            return self.repository.fetch_current_prices(tickers)
-        except Exception as e:
-            self.logger.error(f"Error fetching prices: {e}")
-            return {}
-
-    def get_market_context(self, tickers):
-        """
-        Get detailed market context (OHLCV + Indicators).
-        獲取更詳細的市場數據 (用於 Agent Context)，包含價格數據 (OHLCV) 與技術指標。
+            self.fred = FredService()
+        except Exception:
+            self.fred = None
+            self.logger.warning("FRED Service init failed, macro data will be limited.")
         
-        Args:
-            tickers (list): List of stock symbols.
-            
-        Returns:
-            dict: Nested dict with price_data and indicators for each ticker.
+        # Priority Order (Primary -> Backup -> Fallback)
+        self.providers: List[MarketDataProvider] = [
+            self.polygon,
+            self.fmp,
+            self.yfinance
+        ]
+
+    def _get_provider_name(self, provider):
+        return provider.__class__.__name__
+
+    def get_current_prices(self, tickers: List[str]) -> Dict[str, float]:
+        """
+        Get current prices with failover.
+        """
+        if not tickers: return {}
+        
+        for provider in self.providers:
+            try:
+                # Specific logic: Polygon might fail if no key, skip?
+                # The provider itself handles missing keys by logging warning and returning empty.
+                prices = provider.fetch_current_prices(tickers)
+                if prices:
+                    # Check if we got all tickers? Or at least some?
+                    # For now, if we got > 0 prices, return.
+                    # Ideally we merge results if partial.
+                    self.logger.info(f"Fetched prices from {self._get_provider_name(provider)}")
+                    return prices
+            except Exception as e:
+                self.logger.warning(f"Provider {self._get_provider_name(provider)} failed for prices: {e}")
+        
+        return {}
+
+    def get_market_context(self, tickers: List[str]):
+        """
+        Get detailed context (OHLCV + Indicators).
         """
         context = {}
         for ticker in tickers:
             indicators = self.get_technical_indicators(ticker)
             ohlcv = self.get_ohlcv(ticker)
-
-            # AI Fallback: If no data, try to fetch via search (Simplified logic)
-            # AI 備援機制：若無數據，嘗試透過搜尋獲取 (簡化邏辑)
-            if not ohlcv:
-                self.logger.warning(f"Missing data for {ticker}, attempting fallback...")
-                ai_data = self._fetch_from_search(ticker)
-                if ai_data:
-                     # Map simple data if possible (目前僅回傳註記，不強行轉換數值以避免風險)
-                     if 'price' in ai_data:
-                         ohlcv = {"close": [ai_data['price']]} 
-                     if 'indicators' in ai_data:
-                        indicators.update(ai_data['indicators'])
-
+            
+            # Note: The original Search fallback is simplified here or removed.
+            # We rely on our 3 layers of providers.
+            
             context[ticker] = {
                 "price_data": ohlcv,
                 "indicators": indicators
             }
         return context
 
-    def get_ohlcv(self, ticker, days=30):
+    def get_ohlcv(self, ticker: str, days=30) -> Dict[str, List]:
         """
-        Get historical OHLCV data.
-        獲取 OHLCV 歷史數據。
+        Get OHLCV History.
+        """
+        # History is tricky: Polygon API is different from YF.
+        # For v3.2 MVP, we default to YFinance for history as it is free and reliable for daily timeframe.
+        # Polygon/FMP history implementation is a TODO optimization.
+        # We manually prioritize YFinance for history for now, or just iterate.
         
-        Args:
-            ticker (str): Symbol.
-            days (int): Number of days to return.
-            
-        Returns:
-            dict: Lists for open, high, low, close, volume, date.
+        # Override Priority for History: YFinance -> Polygon -> FMP
+        # (Since YFinance implementation is most robust in our current code)
+        history_providers = [self.yfinance, self.polygon, self.fmp] 
+        
+        for provider in history_providers:
+            try:
+                df = provider.fetch_history(ticker, days=days)
+                if not df.empty:
+                    # Ensure format
+                    df = df.tail(days)
+                    def to_list(series):
+                        if isinstance(series, pd.DataFrame):
+                             return series.iloc[:, 0].tolist()
+                        return series.tolist()
+
+                    return {
+                        "date": [d.strftime('%Y-%m-%d') for d in df.index],
+                        "open": to_list(df['Open']),
+                        "high": to_list(df['High']),
+                        "low": to_list(df['Low']),
+                        "close": to_list(df['Close']),
+                        "volume": to_list(df['Volume'])
+                    }
+            except Exception as e:
+                 self.logger.warning(f"History fetch failed on {self._get_provider_name(provider)}: {e}")
+        return {}
+
+    def get_technical_indicators(self, ticker: str) -> Dict[str, Any]:
+        """
+        Calculate indicators. Relies on fetch_history (defaulting to YFinance).
         """
         try:
-            df = self.repository.fetch_history(ticker, days=days)
-            if df.empty:
-                return {}
+            # We use self.get_ohlcv methodology but need DataFrame.
+            # So we call fetch_history on YFinance directly or iterate.
             
-            # Keep only last 'days' (僅保留最近 N 天)
-            df = df.tail(days)
+            df = pd.DataFrame()
+            # Prioritize YFinance for indicators base data
+            for provider in [self.yfinance, self.polygon]:
+                df = provider.fetch_history(ticker, period="1y")
+                if not df.empty: break
             
-            # Helper to extract list from Series or DataFrame
-            def to_list(series):
-                if isinstance(series, pd.DataFrame):
-                    return series.iloc[:, 0].tolist()
-                return series.tolist()
-
-            return {
-                "date": [d.strftime('%Y-%m-%d') for d in df.index],
-                "open": to_list(df['Open']),
-                "high": to_list(df['High']),
-                "low": to_list(df['Low']),
-                "close": to_list(df['Close']),
-                "volume": to_list(df['Volume'])
-            }
-        except Exception as e:
-            self.logger.error(f"Error fetching OHLCV for {ticker}: {e}")
-            return {}
-
-    def get_technical_indicators(self, ticker):
-        """
-        Calculate technical indicators (RSI, MACD, SMA).
-        計算技術指標 (RSI, MACD, MA)。
-        
-        Args:
-            ticker (str): Stock symbol.
-            
-        Returns:
-            dict: Indicator values.
-        """
-        try:
-            # Fetch 1y using repository (讀取一年數據計算指標)
-            df = self.repository.fetch_history(ticker, period="1y")
             if df.empty or len(df) < 26:
                 return {"rsi": 50, "macd": "neutral", "sma": {}, "volume": {}}
 
             close = df['Close']
-            if isinstance(close, pd.DataFrame):
-                close = close.iloc[:, 0]
+            if isinstance(close, pd.DataFrame): close = close.iloc[:, 0]
             
-            # Volume
             volume = df['Volume']
-            if isinstance(volume, pd.DataFrame):
-                volume = volume.iloc[:, 0]
-            
-            # Simple Moving Averages (移動平均線)
+            if isinstance(volume, pd.DataFrame): volume = volume.iloc[:, 0]
+
+            # Indicators Logic (Same as before)
             sma_20 = close.rolling(window=20).mean().iloc[-1]
             sma_50 = close.rolling(window=50).mean().iloc[-1]
             sma_200 = close.rolling(window=200).mean().iloc[-1]
 
-            # Volume Metrics (成交量指標)
             current_vol = volume.iloc[-1]
             avg_vol_20 = volume.rolling(window=20).mean().iloc[-1]
 
-            # RSI (14)
             delta = close.diff()
             gain = (delta.where(delta > 0, 0)).rolling(window=14).mean()
             loss = (-delta.where(delta < 0, 0)).rolling(window=14).mean()
@@ -143,15 +149,12 @@ class MarketDataService:
             rsi = 100 - (100 / (1 + rs))
             current_rsi = rsi.iloc[-1]
 
-            # MACD (12, 26, 9)
             exp1 = close.ewm(span=12, adjust=False).mean()
             exp2 = close.ewm(span=26, adjust=False).mean()
             macd = exp1 - exp2
             signal = macd.ewm(span=9, adjust=False).mean()
-
             macd_val = macd.iloc[-1]
             signal_val = signal.iloc[-1]
-
             macd_status = "bullish" if macd_val > signal_val else "bearish"
 
             return {
@@ -168,151 +171,120 @@ class MarketDataService:
                     "avg_20": int(avg_vol_20) if pd.notna(avg_vol_20) else 0
                 }
             }
-
         except Exception as e:
-            self.logger.error(f"Error calculating indicators for {ticker}: {e}")
-            return {"rsi": 50, "macd": "neutral", "macd_val": 0, "sma": {}, "volume": {}}
+            self.logger.error(f"Indicator calc error for {ticker}: {e}")
+            return {"rsi": 50, "macd": "neutral", "sma": {}, "volume": {}}
 
-    def get_news(self, ticker):
+    def get_news(self, ticker: str) -> List[str]:
         """
-        Fetch news for a ticker.
-        獲取個股新聞。
+        Get News using Strategy: FMP -> YFinance -> Polygon
+        """
+        # News Strategy: FMP is best for Financial News
+        news_providers = [self.fmp, self.yfinance, self.polygon]
         
-        Args:
-            ticker (str): Stock symbol.
-            
-        Returns:
-            list: List of strings (Title - Link)
-        """
-        try:
-            raw_news = self.repository.fetch_news(ticker, limit=5)
-            formatted_news = []
-            for n in raw_news:
-                title = n.get('title', '')
-                link = n.get('link', '')
-                formatted_news.append(f"{title} ({link})")
-            return formatted_news
-        except Exception as e:
-            self.logger.error(f"Error fetching news for {ticker}: {e}")
-            return []
-
-    def get_financials(self, ticker):
-        """
-        Fetch fundamental financial data.
-        獲取基本面數據。
+        all_news = []
+        for provider in news_providers:
+            try:
+                news = provider.fetch_news(ticker, limit=5)
+                if news:
+                    # Format to strings
+                    for n in news:
+                        title = n.get('title', 'No Title')
+                        link = n.get('link', '#')
+                        all_news.append(f"{title} ({link})")
+                    
+                    if len(all_news) >= 5: break
+            except Exception as e:
+                 self.logger.warning(f"News fetch failed on {self._get_provider_name(provider)}")
         
-        Args:
-            ticker (str): Stock symbol.
-            
-        Returns:
-            dict: Fundamental data.
-        """
-        try:
-            info = self.repository.fetch_info(ticker)
+        return all_news[:5]
 
-            return {
-                "market_cap": info.get('marketCap'),
-                "trailing_pe": info.get('trailingPE'),
-                "forward_pe": info.get('forwardPE'),
-                "eps": info.get('trailingEps'),
-                "revenue_growth": info.get('revenueGrowth'),
-                "profit_margins": info.get('profitMargins'),
-                "sector": info.get('sector'),
-                "industry": info.get('industry')
-            }
-        except Exception as e:
-            self.logger.error(f"Error fetching financials for {ticker}: {e}")
-            return {}
+    def get_financials(self, ticker: str) -> Dict[str, Any]:
+        """
+        Get Fundamentals. Preferred: FMP -> YFinance
+        """
+        fund_providers = [self.fmp, self.yfinance, self.polygon]
+        
+        for provider in fund_providers:
+            try:
+                info = provider.fetch_info(ticker)
+                if info and info.get('market_cap'): # Basic validation
+                     # Normalize keys if needed, but for now we expect mostly common keys
+                     return info
+            except Exception:
+                continue
+        return {}
 
     def get_macro_data(self):
         """
-        Fetch macro economic data (VIX, 10Y Yield, SPY).
-        獲取總經數據 (VIX, 10Y Yield, SPY)。
-        
-        Returns:
-            dict: {symbol: price}
+        Get Macro Data. Priority: FRED -> YFinance
         """
+        macro_data = {}
+        
+        # 1. Try FRED (Primary)
         try:
-            tickers = ["^VIX", "^TNX", "SPY"]
-            result = {}
-            for t in tickers:
-                 df = self.repository.fetch_history(t, period="5d")
-                 if not df.empty and 'Close' in df.columns:
-                     val = df['Close'].iloc[-1]
-                     if isinstance(val, pd.Series): val = val.item()
-                     result[t] = round(float(val), 2)
-            return result
+            if self.fred:
+                fred_data = self.fred.get_macro_indicators()
+                if fred_data:
+                    macro_data["economics"] = fred_data
+                    self.logger.info("Fetched macro data from FRED")
         except Exception as e:
-            self.logger.error(f"Error fetching macro data: {e}")
-            return {}
+            self.logger.warning(f"FRED fetch failed: {e}")
+
+        # 2. Try YFinance (Backup/Real-time Sentiment)
+        try:
+             tickers = ["^VIX", "^TNX", "SPY"]
+             prices = self.yfinance.fetch_current_prices(tickers)
+             if prices:
+                 macro_data["market_indicators"] = prices
+        except Exception as e:
+             self.logger.error(f"YFinance Macro data error: {e}")
+             
+        return macro_data
 
     def get_yield_curve_inversion(self):
-        """
-        Calculate if the US Yield Curve is inverted (10Y - 3M).
-        計算美債殖利率曲線倒掛 (10Y - 3M)。
-        
-        Returns:
-            dict: {spread, inverted, 10y, 3m}
-        """
-        try:
-            # 1. Fetch 10Y (TNX)
-            df_tnx = self.repository.fetch_history("^TNX", period="5d")
-            tnx = None
-            if not df_tnx.empty and 'Close' in df_tnx.columns:
-                 val = df_tnx['Close'].iloc[-1]
-                 if isinstance(val, pd.Series): val = val.item()
-                 tnx = val
+         """
+         Legacy Logic using YFinance Provider History.
+         TODO: Can also use FRED series 'T10Y2Y' directly if available.
+         """
+         # 1. Try FRED (Primary)
+         try:
+             if self.fred:
+                 fred_data = self.fred.get_macro_indicators()
+                 if "10Y2Y_Spread" in fred_data:
+                     spread_val = fred_data["10Y2Y_Spread"]["value"]
+                     return {
+                         "spread": spread_val,
+                         "inverted": spread_val < 0,
+                         "desc": "10Y-2Y Spread (FRED)"
+                     }
+         except Exception as e:
+             self.logger.warning(f"FRED yield curve fetch failed: {e}")
 
-            # 2. Fetch 3M (IRX)
-            df_irx = self.repository.fetch_history("^IRX", period="5d")
-            irx = None
-            if not df_irx.empty and 'Close' in df_irx.columns:
-                val = df_irx['Close'].iloc[-1]
-                if isinstance(val, pd.Series): val = val.item()
-                irx = val
+         # 2. Fallback to YFinance
+         try:
+             # Fallback to YFinance 10Y - 3M (classic recession indicator)
+             # Fetch 5d history
+             df_tnx = self.yfinance.fetch_history("^TNX", period="5d")
+             df_irx = self.yfinance.fetch_history("^IRX", period="5d")
+             
+             tnx = df_tnx['Close'].iloc[-1] if not df_tnx.empty else None
+             irx = df_irx['Close'].iloc[-1] if not df_irx.empty else None
+             
+             if isinstance(tnx, pd.Series): tnx = tnx.item()
+             if isinstance(irx, pd.Series): irx = irx.item()
 
-            if tnx is not None and irx is not None:
-                spread = float(tnx) - float(irx)
-                return {
-                    "spread": round(spread, 2),
-                    "inverted": spread < 0,
-                    "10y": round(float(tnx), 2),
-                    "3m": round(float(irx), 2),
-                    "desc": "10Y-3M Spread"
-                }
-            return {}
-        except Exception as e:
-            self.logger.error(f"Error calculating yield curve: {e}")
-            return {}
+             if tnx is not None and irx is not None:
+                 spread = float(tnx) - float(irx)
+                 return {
+                     "spread": round(spread, 2),
+                     "inverted": spread < 0,
+                     "10y": round(float(tnx), 2),
+                     "3m": round(float(irx), 2),
+                     "desc": "10Y-3M Spread (Yahoo)"
+                 }
+             return {}
+         except Exception as e:
+             self.logger.error(f"Yield curve error: {e}")
+             return {}
 
-    def _fetch_from_search(self, ticker):
-        """
-        Fallback: Use Internet Search.
-        備援：使用網路搜尋。
-        
-        Args:
-            ticker (str): Stock symbol.
-            
-        Returns:
-            dict or None: Search results or None if not found.
-        """
-        try:
-            from src.services.search_service import InternetSearchService
-            search_service = InternetSearchService()
-            
-            # 1. Try Search for Price
-            query = f"{ticker} stock price today"
-            results = search_service.search_financial_context(query, max_results=1)
-            
-            if results:
-                snippet = results[0]['snippet']
-                return {"note": "Price data missing, search found: " + snippet[:100]}
-                
-            return None
-            
-        except ImportError:
-            self.logger.warning("SearchService not available.")
-            return None
-        except Exception as e:
-            self.logger.error(f"Search fallback failed: {e}")
-            return None

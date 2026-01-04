@@ -244,7 +244,29 @@ class DailyWorkflow(BaseWorkflow):
         
         # Retrieve simple macro data for context (not full report)
         macro_data = self.market_service.get_macro_data()
-        macro_summary = f"Daily Market Check: VIX={macro_data.get('^VIX', 'N/A')}, SPY={macro_data.get('SPY','N/A')}"
+        
+        # v3.2 Update: Handle nested structure (economics/market_indicators)
+        vix = "N/A"
+        spy = "N/A"
+        spread = "N/A"
+        
+        # Parse YFinance (Market Indicators)
+        if "market_indicators" in macro_data:
+             market_inds = macro_data["market_indicators"]
+             vix = market_inds.get('^VIX', 'N/A')
+             spy = market_inds.get('SPY', 'N/A')
+        elif isinstance(macro_data, dict): # Fallback for flat structure
+             vix = macro_data.get('^VIX', 'N/A')
+             spy = macro_data.get('SPY', 'N/A')
+             
+        # Parse FRED (Economics)
+        if "economics" in macro_data:
+             econ = macro_data["economics"]
+             if "10Y2Y_Spread" in econ:
+                  spread_data = econ["10Y2Y_Spread"]
+                  spread = f"{spread_data.get('value', 'N/A')} ({spread_data.get('trend', 'N/A')})"
+        
+        macro_summary = f"Daily Market Check (v3.2 Data):\n- VIX: {vix}\n- SPY: {spy}\n- Yield Spread (10Y-2Y): {spread}"
 
         # Run Cached Macro Agent for Context
         macro_agent = AgentFactory.create_macro_agent(ttl_hours=24, use_cache=True, user_id=self.user_id)
