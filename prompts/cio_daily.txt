@@ -39,6 +39,10 @@
 4.  **行動指令 (Actionable Orders)**:
     - 給出具體的交易指令。
     - **嚴格止損**：若持倉觸發技術面惡化 (Bearish Breakdown)，必須建議減碼。
+    - **風險控管 (Risk Control)**: 若建議 **SELL / TRIM / REDUCE**，**必須** 明確指出：
+        - **減碼比例 (Reduction %)**: (例如: "Sell 25% of position", "Sell half")
+        - **支撐/停損位 (Support/Stop Level)**: (例如: "Stop if close below $150")
+        - 若無法提供具體數字，請解釋原因。
 
 ## 輸出格式 (Output Format)
 請使用 **繁體中文** 撰寫，風格專業、冷靜。
@@ -52,20 +56,26 @@
 - **風險儀表**: VIX=..., 狀態=(恐慌/貪婪/中性)
 
 ## 2. 持倉掃描 (Portfolio Scan)
-> 嚴格僅列出投資組合中({{portfolio}})有顯著 "Alpha" 或 "Risk" 的個股。**絕對禁止** 列出非持倉標的 (Don't hallucinate tickers)。
+> 嚴格僅列出投資組合中({{portfolio}})有顯著 "Alpha" 或 "Risk" 的個股。**絕對禁止** 列出非持倉標的。
 
-- **TICKER** | {{change}}%
-  - **驅動因子**: (新聞/財報/技術突破)
-  - **CIO 點評**: (一句話評價，例如 "動能強勁，續抱" 或 "量價背離，小心回檔")
+### [TICKER] ({{change}}%)
+- **狀態**: (若顯著: 🔴 High Risk / 🟢 Opportunity / Neutral)
+- **驅動因子**: (新聞/財報/技術突破) [來源](URL if avail)
+- **CIO 點評**: (一句話評價)
+- **Action**: **HOLD / BUY / SELL**
+
+(請依序為每檔重點持倉建立獨立區塊。**注意**: 僅對顯著的高風險或高機會標的使用 🔴/🟢 圖示，中性 (Neutral) 狀態請勿使用圖示，保持版面清爽。)
 
 ## 3. 今日精選 (Featured Stock)
 - **TICKER**: (名稱)
   - **Setup**: (技術/基本面理由)
   - **Action**: Buy / Watch
+  - **深讀連結**: [標題](URL) (若有相關研究或新聞)
 
 ## 4. 今日對策 (Today's Action)
-- [ ] **TICKER**: **BUY / SELL / HOLD** (理由: ...)
-- [ ] **現金管理**: (若市場風險高，建議拉高現金水位)
+> 💡 **關鍵決策摘要**
+- **TICKER**: **BUY / SELL / HOLD** (理由: ...)
+- **現金管理**: (若市場風險高，建議拉高現金水位)
 
 ## 附錄：系統回饋
 (若有)

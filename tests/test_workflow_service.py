@@ -32,7 +32,7 @@ def test_daily_workflow_execution(mock_deps):
         MockFactory.create_momentum_agent.return_value = mock_mom
 
         mock_sent = MagicMock()
-        mock_sent.run.return_value = "Bullish"
+        mock_sent.run.return_value = {"sentiment": "Bullish", "score": 0.8, "narrative": "Good news found."}
         MockFactory.create_sentiment_agent.return_value = mock_sent
 
         mock_fund = MagicMock()
@@ -44,15 +44,35 @@ def test_daily_workflow_execution(mock_deps):
         MockFactory.create_macro_agent.return_value = mock_macro
 
         mock_cio = MagicMock()
-        mock_cio.run.return_value = "Daily Report with STRONG BUY"
+        mock_cio.run.return_value = """
+### NVDA (0.5)
+- **Action**: **SELL**
+
+### TSM (0.5)
+- **Action**: **HOLD**
+"""
         MockFactory.create_cio_agent.return_value = mock_cio
         
         # Instantiate inside structure where Factory is active
         workflow = DailyWorkflow(user_id, transaction_repo=mock_deps['repo'], transaction_service=mock_deps['trans'], market_service=mock_deps['market'])
+        # Mock context setup usually done in collect_data
+        workflow.context['tickers'] = ["NVDA", "TSM"]
+        workflow.context['market_data'] = {"NVDA": {"price_data": {"close": 100}}, "TSM": {"price_data": {"close": 200}}}
         
         result = workflow.run(dry_run=True)
         
-        assert "STRONG BUY" in result
+        # Verify CIO signal recorded
+        # We expect record_recommendation to be called for NVDA with SELL
+        # Check calls list
+        calls = workflow.performance_service.record_recommendation.call_args_list
+        cio_calls = [c for c in calls if c.kwargs.get('agent_name') == 'CIO']
+        assert len(cio_calls) >= 1
+        assert cio_calls[0].kwargs['ticker'] == 'NVDA'
+        assert cio_calls[0].kwargs['signal'] == 'SELL'
+        
+        # Verify content presence
+        assert "Action" in result
+        assert "SELL" in result
         mock_deps['trans'].get_user_tickers.assert_called_with(user_id, only_active=True)
         # Verify Factory called
         MockFactory.create_momentum_agent.assert_called()

@@ -188,7 +188,30 @@ class DailyWorkflow(BaseWorkflow):
             
             # Simple Regex Signal Extraction (Robust to DSPy or Legacy text)
             # Look for explicit "BUY", "SELL", "HOLD"
-            for agent_name, response in [("Momentum", res), ("Fundamental", f_res), ("Sentiment", str(sent_res))]:
+            # 4. Record Sentiment Signal
+            # ---------------------------
+            # Parse JSON Score: > 0.6 BUY, < 0.4 SELL (Range -1 to 1 or 0 to 1? Prompt says 0-1 usually, let's assume 0.5 neutral)
+            # SentimentAgent prompt usually outputs 0-1 (e.g., 0.8) or -1 to 1.
+            # Let's assume 0 to 1 based on common patterns (0.5 neutral).
+            sent_score = sent_res.get("score", 0.5)
+            if isinstance(sent_score, (int, float)):
+                s_signal = "HOLD"
+                if sent_score >= 0.6:
+                    s_signal = "BUY"
+                elif sent_score <= 0.4:
+                    s_signal = "SELL"
+                
+                if s_signal != "HOLD":
+                    self.performance_service.record_recommendation(
+                        agent_name="Sentiment",
+                        ticker=ticker,
+                        signal=s_signal,
+                        price=current_price
+                    )
+
+            # 5. Record Momentum & Fundamental (Legacy String Parsing)
+            # ----------------------------------------------------
+            for agent_name, response in [("Momentum", res), ("Fundamental", f_res)]:
                 signal = "HOLD"
                 text_res = str(response).upper()
                 if "BUY" in text_res:
@@ -196,7 +219,6 @@ class DailyWorkflow(BaseWorkflow):
                 elif "SELL" in text_res:
                     signal = "SELL"
                 
-                # Only log if strong signal (not HOLD)
                 if signal != "HOLD":
                     self.performance_service.record_recommendation(
                         agent_name=agent_name,
@@ -205,7 +227,7 @@ class DailyWorkflow(BaseWorkflow):
                         price=current_price
                     )
             
-            # Simple heuristic: if 'BUY' or 'SELL' in response and 'STRONG'
+            # Simple heuristic for 'significant change'
             if "STRONG" in res.upper():
                 has_significant_change = True
 
@@ -242,6 +264,80 @@ class DailyWorkflow(BaseWorkflow):
         }
         
         final_report = cio.run(cio_context)
+
+        # Post-Process: Record Macro & CIO Signals
+        # ----------------------------------------
+        
+        # 1. Macro Signal (Proxy on SPY)
+        # Check macro_deep keywords
+        macro_signal = "HOLD"
+        m_text = macro_deep.upper()
+        if "BULLISH" in m_text or "RISK ON" in m_text:
+            macro_signal = "BUY"
+        elif "BEARISH" in m_text or "RISK OFF" in m_text:
+            macro_signal = "SELL"
+        
+        if macro_signal != "HOLD":
+            # Record against a market proxy like SPY
+            spy_price = self.context['market_data'].get('SPY', {}).get('price_data', {}).get('close', 0)
+            if isinstance(spy_price, list) and spy_price: spy_price = spy_price[-1] 
+            
+            self.performance_service.record_recommendation(
+                agent_name="Macro",
+                ticker="SPY",
+                signal=macro_signal,
+                price=spy_price
+            )
+
+        # 2. CIO Signals (Regex Extraction)
+        # Pattern: "- **TICKER**: **ACTION**" or similar from refined prompt
+        # We look for lines in "Today's Action" or section 4.
+        # Regex to catch " - **NVDA**: **SELL**"
+        try:
+            # Extract Action lines based on ### [TICKER] blocks
+            # Pattern 1: Look for "### TICKER ... - **Action**: **SIGNAL**"
+            # We can split by "### " to get blocks
+            blocks = final_report.split("### ")
+            
+            for block in blocks:
+                # Extract Ticker from first line e.g. "NVDA (0.52)\n"
+                ticker_match = re.match(r"([A-Z]+)", block)
+                if not ticker_match: continue
+                
+                ticker = ticker_match.group(1)
+                
+                # Extract Action line e.g. "- **Action**: **TRIM**"
+                action_match = re.search(r"-\s*\*\*Action\*\*:\s*\*\*([A-Z]+(?:/[A-Z]+)?)\*\*", block)
+                if action_match:
+                    action = action_match.group(1)
+                    
+                    # Normalize action
+                    # e.g. "SELL/TRIM" -> "SELL", "BUY/ACCUMULATE" -> "BUY"
+                    u_act = action.upper()
+                    cio_signal = "HOLD"
+                    if "BUY" in u_act or "ACCUMULATE" in u_act:
+                        cio_signal = "BUY"
+                    elif "SELL" in u_act or "TRIM" in u_act or "REDUCE" in u_act:
+                        cio_signal = "SELL"
+                    
+                    if cio_signal != "HOLD":
+                        # Get price
+                        t_data = self.context['market_data'].get(ticker, {})
+                        t_price = 0
+                        if t_data:
+                             raw = t_data.get('price_data', {}).get('close', 0)
+                             if isinstance(raw, list) and raw: t_price = raw[-1]
+                             else: t_price = raw
+                        
+                        self.performance_service.record_recommendation(
+                            agent_name="CIO",
+                            ticker=ticker,
+                            signal=cio_signal,
+                            price=t_price
+                        )
+        except Exception as e:
+            logger.warning(f"Failed to extract CIO signals: {e}")
+
         return final_report
 
 

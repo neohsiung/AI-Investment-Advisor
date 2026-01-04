@@ -36,6 +36,7 @@
     - 針對持倉進行 **逐檔** 詳盡檢視 (基於基本面與技術面)。
     - 若持倉數量較多，請依序條列，**禁止** 僅挑選幾檔或進行模糊的摘要。
     - 清楚說明每一檔股票的 "多空論述" (Bull/Bear Case)。
+    - **風險控管 (Risk Control)**: 若對任一持倉持悲觀看法 (Bearish)，**必須** 建議具體的 **減碼比例 (Reduction %)** 或 **觀察價位 (Watch Level)**。
 
 4.  **系統優化報告 (System Health)**:
     - 整合人資系統反饋 (HR Report)，說明本週系統做了哪些自我修正或優化。
@@ -64,10 +65,16 @@
 
 ## 4. 持倉深度診斷 (Portfolio Deep Dive)
 **(僅分析目前持倉: {{portfolio}})**
-- **TICKER** (Leader/Laggard...):
-  - **基本面**: ...
-  - **技術面**: ...
-  - **操作**: ...
+
+### [TICKER]
+- **狀態**: 🔴 Bearish / 🟡 Neutral / 🟢 Bullish
+- **基本面**: ...
+- **技術面**: ...
+- **操作**: ...
+- **Risk Control**: ...
+- **深讀連結**: [標題](URL)
+
+## 5. 系統與人資反饋 (System & HR Feedback)
 
 ## 5. 系統與人資反饋 (System & HR Feedback)
 (整合 Engineer Report，說明 Agent 優化狀況)

@@ -2,9 +2,11 @@ import json
 from .base_agent import BaseAgent
 
 class SentimentAgent(BaseAgent):
-    def __init__(self, use_cache=True, ttl_hours=4, **kwargs):
+    def __init__(self, use_cache=True, ttl_hours=4, user_id="system", **kwargs):
         # Default 4 hours for Sentiment (News changes fast)
-        super().__init__(name="Sentiment", prompt_path="prompts/sentiment_agent.txt", use_cache=use_cache, ttl_hours=ttl_hours, tier="fast")
+        # Ensure 'tier' is not in kwargs to avoid duplicate argument error
+        kwargs.pop('tier', None)
+        super().__init__(name="Sentiment", prompt_path="prompts/sentiment_agent.txt", use_cache=use_cache, ttl_hours=ttl_hours, tier="fast", user_id=user_id, **kwargs)
 
     def run(self, context):
         """
@@ -49,6 +51,11 @@ class SentimentAgent(BaseAgent):
         # Parse JSON
         try:
             cleaned = response_str.replace("```json", "").replace("```", "").strip()
+            # Robust extraction
+            start = cleaned.find("{")
+            end = cleaned.rfind("}")
+            if start != -1 and end != -1:
+                cleaned = cleaned[start:end+1]
             return json.loads(cleaned)
         except json.JSONDecodeError:
             self.logger.warning(f"Failed to parse sentiment JSON for {ticker}: {response_str}")

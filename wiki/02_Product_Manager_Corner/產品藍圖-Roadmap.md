@@ -61,21 +61,23 @@
     *   **視覺接地 (Visual Grounding)**: Agent 需輸出座標邊界框 (Bounding Boxes) 以視覺化解釋其分析焦點。
 
 - **[NEW SECTION] 迭代式成長策略 (Iterative Growth Strategy)**
-    - **核心理念 (Philosophy)**: 每一代版本都是下一代的**技術基石 (Technical Cornerstone)**。不跳級，確保可行性。
-    - **階段一 (v3.2)**: **The Eyes (數據基石)**。建立 Visual RAG 以清洗數據。沒有乾淨數據，v3.3 的 RL 模型將無法運作 (Garbage In, Garbage Out)。
-    - **階段二 (v3.3)**: **The Brain (決策引擎)**。在 v3.2 的數據基礎上，建立 RL 模擬環境 (Gym)。沒有模擬環境，v4.0 的 Agent 無法進行演化。
-    - **階段三 (v4.0)**: **The DNA (自我演化)**。在 v3.3 的模擬環境中，導入遺傳演算法 (Genetic Algorithm)，實現策略的自我繁殖與優化。
+    - **核心理念 (Philosophy)**: **Smart Engineering (精益求精)**。避免為了技術而技術，專注於成本效益與 Alpha 的最大化。
+    - **階段一 (v3.2)**: **The Signal & The Deep Dive (訊號與深潛)**。建立混合分層架構。第一層用 API 快速篩選，第三層用 Long-Context AI 深度分析 (Just-in-Time)。
+    - **階段二 (v3.3)**: **The Brain (決策引擎)**。利用 v3.2 產生的高品質結構化信號 (Smart Signals)，驅動 RL 模擬環境 (Gym-Anytrading) 進行對沖決策。
+    - **階段三 (v4.0)**: **The DNA (自我演化)**。在 v3.3 的基礎上，導入演化算法，讓策略代碼自我迭代。
 
-#### v3.2 混合智能與深度價值 (Hybrid Intelligence & Deep Value) (Mar 2026 - In Progress)
-> **[Spec 規格書: 05_roadmap_v3_2_visual_rag.md](Specs/05_roadmap_v3_2_visual_rag.md)**
+#### v3.2 混合分層分析架構 (Hybrid Tiered Analysis Architecture) (Mar 2026 - In Progress)
+> **[Spec 規格書: 05_roadmap_v3_2_hybrid_analysis.md](Specs/05_roadmap_v3_2_hybrid_analysis.md)**
 
-*   **技術基石 (Dependency Focus)**: **Clean Data via Vision**.
-    *   **財報誠實度掃描 (Chart-Truth Scanner)**: 利用 **ColPali** 提取結構化數據。這是 v3.3 訓練 RL 模型唯一的可靠數據來源，必須優先完成。
-    *   **自主研究蜂群 (Autonomous Research Swarm)**: 建立多 Agent 協作框架。這是 v4.0 演化引擎的 "容器"，必須先穩定運作。
-
-    *   **護城河分析 (Moat Analysis)**: 模仿大師邏輯，量化定性優勢，讓散戶擁有巴菲特等級的選股濾鏡。
+*   **核心變革**: 從「全量索引」轉向「事件驅動分層分析」，實現最高成本效益。
+*   **技術基石**:
+    *   **混合架構 (Hybrid Tiering)**: Tier 1 (API 篩選) -> Tier 2 (新聞快篩) -> Tier 3 (Gemini 1.5 長文本深潛)。
+    *   **矛盾檢測 (Consistency Check)**: 深度比對管理層文字承諾與實際財務數據趨勢是否一致。
+    *   **隱性關聯推導 (Implicit Relation Inference)**: 從財報模糊描述中推導上下游關係。
 *   **核心產品**:
-    *   **深度研報生成 (Deep Research Generation)**: 自動產出長達 10 頁的機構級投資論文 (Investment Thesis)，包含風險評估、估值模型 (DCF/DDM) 與情境分析。
+    *   **即時 Alpha 儀表板**: 基於 Polygon/FMP 的實時機會推播。
+    *   **機構級投資備忘錄**: 自動產出包含「供應鏈風險」與「財務一致性」的深度報告。
+
 
 #### v3.3 宏觀對沖與動態配置 (Macro Hedging & Dynamic Allocation) (Jun 2026 - Planned)
 > **[Spec 規格書: 06_roadmap_v3_3_self_healing.md](Specs/06_roadmap_v3_3_self_healing.md)**
@@ -84,9 +86,8 @@
     *   **總經體制變換 (Regime Switching)**: 整合 FRED 數據，自動判讀當前為「通膨/通縮」與「成長/衰退」四象限，動態調整股/債/原物料/現金比例。
     *   **神經型態自癒系統 (Neuromorphic Self-Healing)**: 當策略回撤超過閾值 (Drawdown > 5%)，系統自動啟動 **FinRL** 本地訓練場，生成 100 種變異策略並回測，熱抽換 (Hot-Swap) 失效的策略，實現「反脆弱」投資。
     *   **波動率目標 (Volatility Targeting)**: 當市場 VIX 指數飆升時，自動降低槓桿或總曝險 (De-leveraging) 以控制最大回撤 (Max Drawdown)。
-*   **核心產品**:
-    *   **危機盾牌 (Crisis Shield)**: 一鍵切換「防禦模式」，系統自動將高波動資產轉換為短債 (SHV) 或黃金 (GLD) ETF。
-    *   **宏觀儀表板 (Macro Dashboard)**: 視覺化呈現當前經濟週期位置與建議配置。
+*   **技術基石**:
+    *   **信號驅動**: 依賴 v3.2 的高信度信號 (JSON Signals) 作為訓練輸入，而非原始視覺數據。
 
 #### v4.0 生成式佈局與超個人化 (Generative Allocation & Hyper-Personalization) (2026 Q4 - Concept)
 > **[Spec 規格書: 07_roadmap_v4_0_evolution.md](Specs/07_roadmap_v4_0_evolution.md)**
@@ -167,15 +168,18 @@ Define the factual development path of the AI Investment Advisor based on the pr
     - **Phase 2 (v3.3)**: **The Brain (Decision Engine)**. Build the RL Simulation (Gym) on top of v3.2's data. Without simulation, v4.0 cannot evolve.
     - **Phase 3 (v4.0)**: **The DNA (Evolution)**. Introduce Genetic Algorithms into v3.3's Gym to enable self-evolution.
 
-#### v3.2 Hybrid Intelligence & Deep Value (Mar 2026 - In Progress)
-> **[Deep Dive Spec: 05_roadmap_v3_2_visual_rag.md](Specs/05_roadmap_v3_2_visual_rag.md)**
+#### v3.2 Hybrid Tiered Analysis Architecture (Mar 2026 - In Progress)
+> **[Deep Dive Spec: 05_roadmap_v3_2_hybrid_analysis.md](Specs/05_roadmap_v3_2_hybrid_analysis.md)**
 
-*   **Dependency Focus**: **Clean Data via Vision**.
-    *   **Chart-Truth Scanner**: Using **ColPali** to extract structured data. This "Ground Truth" is mandatory for training v3.3 models.
-    *   **Autonomous Research Swarm**: Building the multi-agent framework that will serve as the "container" for v4.0 evolution.
-    *   **Moat Analysis**: Quantifying qualitative advantages to give retail users a Buffet-like filter.
+*   **Core Pivot**: Moving from "Full Visual Indexing" to "Event-Driven Tiered Analysis" for maximum cost-efficiency.
+*   **Tech Stack**:
+    *   **Hybrid Tiering**: Tier 1 (API Screen) -> Tier 2 (News Filter) -> Tier 3 (Gemini 1.5 Deep Dive).
+    *   **Consistency Check**: Validating optimistic MD&A text against actual financial trends.
+    *   **Implicit Relation Inference**: Inferring hidden B2B relationships from 10-K descriptions.
 *   **Core Products**:
-    *   **Deep Research Generation**: Automates the creation of 10-page institutional-grade Investment Theses, including risk assessment, valuation models (DCF/DDM), and scenario analysis.
+    *   **Real-time Alpha Dashboard**: Live opportunities feed based on strict signal filtering.
+    *   **Institutional Investment Memo**: Deep-dive reports generated JIT (Just-in-Time) with "Consistency Scores".
+
 
 #### v3.3 Macro Hedging & Dynamic Allocation (Jun 2026 - Planned)
 > **[Deep Dive Spec: 06_roadmap_v3_3_self_healing.md](Specs/06_roadmap_v3_3_self_healing.md)**
@@ -184,9 +188,8 @@ Define the factual development path of the AI Investment Advisor based on the pr
     *   **Regime Switching**: Integrates FRED data to automatically classify potential "Inflation/Deflation" and "Growth/Recession" quadrants, dynamically adjusting Equity/Bond/Commodity/Cash ratios.
     *   **Neuromorphic Self-Healing**: When strategy Drawdown > 5%, automatically spins up **FinRL** gym, generates/backtests 100 mutant strategies, and hot-swaps the failing one. "Antifragile" system.
     *   **Volatility Targeting**: Automatically deleverages or reduces exposure when Market VIX spikes to control Max Drawdown.
-*   **Core Products**:
-    *   **Crisis Shield**: One-click "Defense Mode" that automatically rotates volatile assets into Short-term Treasuries (SHV) or Gold (GLD) ETFs.
-    *   **Macro Dashboard**: Visualizes current economic cycle position and recommended allocation.
+*   **Technical Foundation**:
+    *   **Signal-Driven**: Relies on high-fidelity JSON Signals from v3.2 as training inputs, replacing raw visual data.
 
 #### v4.0 Generative Allocation & Hyper-Personalization (2026 Q4 - Concept)
 > **[Deep Dive Spec: 07_roadmap_v4_0_evolution.md](Specs/07_roadmap_v4_0_evolution.md)**

@@ -18,6 +18,13 @@
 1.  分析 CIO 的抱怨。
 2.  修改 Target Agent Prompt 以解決問題。
 3.  **禁止大幅更改 Agent 的核心人格 (Persona)**，僅針對痛點微調指令或輸出格式。
+System Principle: "Continuous Improvement via Recursive Feedback"
+Optimization Priority: Risk Control Specificity (High Priority)
+Optimization Scope: 360-Degree Review (Must evaluate CIO, Macro, Sentiment, Fundamental, Momentum equaly).
+If an agent has insufficient data, analyze its prompt logic instead of performance stats.
+4.  **優化優先級 (Optimization Priority)**:
+    - **Risk Control Specificity (風險控管明確度)**: 這是最高優先級。如果 Agent 給出 "小心一點" 這種模糊建議，你必須修改 Prompt 強制它給出 "減碼 %" 或 "止損價"。
+    - **Actionability (可執行性)**: 確保輸出包含具體數字或明確行動。
 
 ## 輸出格式 (JSON Only)
 {

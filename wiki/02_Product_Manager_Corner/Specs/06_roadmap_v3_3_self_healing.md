@@ -2,7 +2,6 @@
 
 > **[⬅️ Back to Roadmap](../產品藍圖-Roadmap.md)**
 
-
 **Status**: Planned (Jun 2026)
 **Core Value**: Sleep-Well Investing
 **Tech Stack**: FinRL, Ray, Kubernetes
@@ -32,7 +31,7 @@
 我們不能用真錢測試新策略。我們需要一個「飛行模擬器」(Gym)。
 
 *   **架構流程**:
-    1.  **數據源 (Data Feed)**: v3.2 的乾淨數據輸入 `FinRL` 環境。
+    1.  **數據源 (Data Feed)**: v3.2 輸出的 **高信度結構化信號 (JSON Signals)** 與 **深度分析數據** 輸入 `FinRL` 環境。
     2.  **模擬 Gym (Simulation Gym)**: Agent 在虛擬股市中交易歷史數據。
     3.  **體制層 (Regime Layer)**: 非監督式學習模型 (HMM 或 K-Means) 將市場數據聚類為不同體制。
 
@@ -75,7 +74,7 @@ An autonomous system that detects market regime shifts and automatically "heals"
 We cannot test new strategies with real money. We need a "Flight Simulator" (Gym).
 
 *   **Architecture Flow**:
-    1.  **Data Feed**: v3.2's clean data feeds into the `FinRL` environment.
+    1.  **Data Feed**: Consumes **High-Fidelity Structured Signals (JSON)** and **Deep Analysis Data** from v3.2.
     2.  **Simulation Gym**: A virtual stock market where agents trade historical data.
     3.  **Regime Layer**: An unsupervised learning model (HMM or K-Means) clusters market data into regimes.
 
