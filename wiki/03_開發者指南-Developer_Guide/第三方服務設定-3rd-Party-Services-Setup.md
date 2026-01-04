@@ -96,6 +96,9 @@ FRED_API_KEY=your_fred_api_key_here
 # API_KEY=your_ai_api_key (Used for both Gemini & Factory Fallback)
 # LLM_API_KEY=your_llm_api_key (Optional: Only if different from API_KEY)
 
+# Search Service (Tavily Recommended)
+TAVILY_API_KEY=your_tavily_api_key
+
 
 # Google OAuth (Optional, for Web App)
 # GOOGLE_CLIENT_SECRET_PATH=client_secret.json
@@ -103,3 +106,13 @@ FRED_API_KEY=your_fred_api_key_here
 # REDIRECT_URI=http://localhost:8501
 
 ```
+
+## 4. 搜索服務 (Search Services)
+
+### DuckDuckGo 替代方案
+- **Tavily**: 一個專為開發者設計的搜索 API，提供乾淨的 JSON 結果，支援快速搜尋與過濾，免費層有每日 1000 次請求，付費層可提升配額與可靠性。
+- **SerpAPI**: 支援 Google、Bing、Yahoo 等多種搜索引擎，返回結構化結果，適合需要高可靠性的商業應用（付費）。
+- **Google Custom Search JSON API**: 官方 Google API，可靠但有每日 100 次免費配額，需設定搜尋引擎 ID。
+- **Bing Web Search API (Azure Cognitive Services)**: 微軟提供的搜索服務，免費層每月 1000 次請求，支援 JSON 結構化回應。
+
+這些服務相較於 DuckDuckGo 的非官方 HTML 抓取，提供更穩定的 API、速率限制管理以及結構化回應，減少超時與解析錯誤的風險。建議在 `src/services/search_service.py` 中將 `InternetSearchService` 換成上述任一服務的客戶端實作，並在環境變數中設定相應的 API 金鑰，例如 `TAVILY_API_KEY`、`SERPAPI_KEY` 等。

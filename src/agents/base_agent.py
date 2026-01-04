@@ -1,6 +1,7 @@
 import os
 import json
 import requests
+import hashlib
 from abc import ABC, abstractmethod
 from sqlalchemy import text
 from jinja2 import Template
@@ -9,40 +10,42 @@ from src.utils.logger import setup_logger
 from src.utils.cache import ResponseCache
 from src.repositories.settings_repository import SqliteSettingsRepository
 from src.repositories.agent_state_repository import SqliteAgentStateRepository
+from src.repositories.feedback_repository import SqliteFeedbackRepository
+from src.tools.mcp_server import McpServer, McpTool
 
 class BaseAgent(ABC):
 
-    def __init__(self, name, prompt_path, use_cache=True, ttl_hours=24, tier="smart", user_id="system", settings_repo=None, state_repo=None, **kwargs):
+    def __init__(self, name, prompt_path, use_cache=True, ttl_hours=24, tier="smart", user_id="system", settings_repo=None, state_repo=None, feedback_repo=None, **kwargs):
         self.name = name
         self.logger = setup_logger(name)
         self.prompt_path = prompt_path
         self.tier = tier
         self.user_id = user_id
         
-        # Dependency Injection withDefaults
+        # Dependency Injection with Defaults (依賴注入與預設值)
         self.settings_repo = settings_repo or SqliteSettingsRepository()
         self.state_repo = state_repo or SqliteAgentStateRepository()
+        self.feedback_repo = feedback_repo or SqliteFeedbackRepository()
         
         self.system_prompt = self._load_prompt()
         self.config = self._load_config()
         self.cache = ResponseCache(ttl_hours=ttl_hours) if use_cache else None
         
-        # Initialize Search Service (lazy load or instance?)
-        # BaseAgent shouldn't depend heavily on service layer, but for tool loop we need it.
-        # We can import inside the method to avoid circular imports.
+        # [NEW] Tool Server (Personal Toolbox - 個人工具箱)
+        self.toold = McpServer(name=f"{self.name}_Tools")
+        
+    def register_tool(self, tool: McpTool):
+        """
+        Register a tool for the agent to use.
+        註冊一個工具供 Agent 使用。
+        """
+        self.toold.register_tool(tool)
 
     def _load_config(self):
         """
         讀取 AI 設定 (優先順序: DB > Env > Default)
         Read AI configuration (Priority: DB > Env > Default).
-        
-        Support Model Tiering:
-        - AI_MODEL_SMART (e.g. gemini-1.5-pro)
-        - AI_MODEL_FAST (e.g. gemini-1.5-flash)
-        - AI_MODEL (Legacy fallback)
         """
-        
-        # Determine target model env var based on tier
         if self.tier == "fast":
             default_model = os.getenv("AI_MODEL_FAST", os.getenv("AI_MODEL", "gemini-1.5-flash"))
         else:
@@ -60,49 +63,46 @@ class BaseAgent(ABC):
         
         for key, value in db_settings.items():
             if key == "AI_PROVIDER": config["provider"] = value
-            # Override model if specific tier setting exists in DB
             elif key == "AI_MODEL_SMART" and self.tier == "smart": config["model"] = value
             elif key == "AI_MODEL_FAST" and self.tier == "fast": config["model"] = value
-            elif key == "AI_MODEL" and "model" not in config: config["model"] = value # Only fallback if not set by tier
-            elif key == "API_KEY": 
-                config["api_key"] = value
-                self.logger.info(f"Loaded API_KEY from DB for {self.name}: {str(value)[:10]}...") # Debug only
+            elif key == "AI_MODEL" and "model" not in config: config["model"] = value
+            elif key == "API_KEY": config["api_key"] = value
             elif key == "BASE_URL": config["base_url"] = value
         
-        # If DB overrode base AI_MODEL but we want tier specific, logic above might be slightly loose.
-        # But generally, if AI_MODEL_SMART is in DB, it wins. 
-        
-        # Final check if model is still empty (shouldn't happen with defaults)
         if not config["model"]:
             config["model"] = "gemini-1.5-pro" if self.tier == "smart" else "gemini-1.5-flash"
 
         return config
 
     def _load_config_from_db(self):
-        """從資料庫載入 API 設定 (Via Repository)"""
+        """
+        從資料庫載入 API 設定 (Via Repository)
+        Load API settings from database via Repository.
+        """
         settings = {}
         try:
-            # Load Global
             global_rows = self.settings_repo.get_global()
             for row in global_rows:
-                 # Row might be tuple or mapping
                  key = row._mapping['key'] if hasattr(row, '_mapping') else row[0]
                  val = row._mapping['value'] if hasattr(row, '_mapping') else row[1]
                  settings[key] = val
             
-            # Load User Specific (Override)
             if self.user_id:
                 user_rows = self.settings_repo.get_all(self.user_id)
                 for row in user_rows:
                      key = row._mapping['key'] if hasattr(row, '_mapping') else row[0]
                      val = row._mapping['value'] if hasattr(row, '_mapping') else row[1]
                      settings[key] = val
-
         except Exception as e:
-            print(f"[{self.name}] Warning: Failed to load settings from DB: {e}")
+            # self.logger.warning(f"Failed to load settings from DB: {e}")
+            pass
         return settings
 
     def _load_prompt(self):
+        """
+        Load system prompt from file.
+        從檔案載入系統提示詞。
+        """
         if not os.path.exists(self.prompt_path):
             raise FileNotFoundError(f"Prompt file not found: {self.prompt_path}")
         with open(self.prompt_path, 'r', encoding='utf-8') as f:
@@ -110,12 +110,17 @@ class BaseAgent(ABC):
 
     def render_system_prompt(self, context):
         """
-        使用 Jinja2 渲染 System Prompt
         Render System Prompt using Jinja2.
+        使用 Jinja2 渲染系統提示詞。
         """
         try:
+            # Inject Tool Definitions (注入工具定義)
+            tool_definitions = json.dumps(self.toold.list_tools(), indent=2)
+            context_with_tools = context.copy() if isinstance(context, dict) else {}
+            context_with_tools["tools"] = tool_definitions
+            
             template = Template(self.system_prompt)
-            return template.render(**context)
+            return template.render(**context_with_tools)
         except Exception as e:
             self.logger.error(f"Error rendering system prompt: {e}")
             return self.system_prompt
@@ -124,21 +129,15 @@ class BaseAgent(ABC):
     @abstractmethod
     def run(self, context):
         """
-        執行 Agent 任務
         Execute Agent Task.
-        
-        context: dict, 包含 Agent 所需的輸入數據 (Context data required by Agent)
-        return: dict or str, Agent 的輸出 (Agent's output)
+        執行 Agent 任務。
         """
         pass
 
     def run_tool_loop(self, context, max_turns=3):
         """
-        Executes a ReAct-style loop where the agent can request tools.
-        執行 ReAct 風格的迴圈，Agent 可以請求使用工具。
-        
-        Supported Tools (支援工具):
-        - SEARCH: "query" -> uses InternetSearchService (使用網路搜索服務)
+        Executes a ReAct-style loop where the agent can request generic tools via MCP.
+        執行 ReAct 風格的迴圈，Agent 可以透過 MCP 請求使用通用工具。
         """
         messages = [
             {"role": "system", "content": self.render_system_prompt(context)},
@@ -149,112 +148,160 @@ class BaseAgent(ABC):
         search_service = InternetSearchService()
 
         for turn in range(max_turns):
-            # 1. Call LLM
             response_text = self.call_llm(messages)
             
-            # 2. Check for Tool Command
-            if "SEARCH:" in response_text:
-                # Extract query
-                # Assumption: Format is strict `SEARCH: "query"` or `SEARCH: query`
-                # Let's handle simple parsing
-                lines = response_text.split('\n')
-                search_query = None
-                for line in lines:
-                    if "SEARCH:" in line:
-                        parts = line.split("SEARCH:", 1)
-                        if len(parts) > 1:
-                            search_query = parts[1].strip().strip('"').strip("'")
-                            break
-                
-                if search_query:
-                    self.logger.info(f"Agent requested search: {search_query}")
-                    messages.append({"role": "assistant", "content": response_text})
-                    
-                    # Execute Search
-                    # 執行搜索
-                    results = search_service.search_financial_context(search_query, max_results=3)
-                    
-                    # Format Observation
-                    # 格式化觀察結果回傳給 Agent
-                    observation = f"System: [Search Results for '{search_query}']\n"
-                    if results:
-                        for r in results:
-                            observation += f"- {r.get('title')}: {r.get('snippet')} ({r.get('link')})\n"
-                    else:
-                        observation += "No relevant results found.\n"
-                    
-                    messages.append({"role": "user", "content": observation})
-                    continue # Loop again with observation
+            # [NEW] Generic Tool Parsing (通用工具解析)
+            tool_call = self._parse_tool_call(response_text)
             
-            # If no tool used, or after tool use we want final answer? 
-            # Actually ReAct usually outputs Thought -> Action -> Observation -> Thought -> Final Answer.
-            # If response didn't have SEARCH, we assume it's the final answer.
-            return response_text
+            if tool_call:
+                name, args = tool_call
+                self.logger.info(f"Agent requested tool: {name} with {args}")
+                messages.append({"role": "assistant", "content": response_text})
+                
+                try:
+                    result = ""
+                    if name == "SEARCH": # Legacy Handler (舊版處理器)
+                         # Search usually returns list of dicts
+                         q = args.get("query", str(args))
+                         res_list = search_service.search_financial_context(q, max_results=3)
+                         
+                         if res_list:
+                            for r in res_list:
+                                result += f"- {r.get('title')}: {r.get('snippet')} ({r.get('link')})\n"
+                         else:
+                            result = "No results found."
+                         
+                    else:
+                        # MCP Tool Call (MCP 工具調用)
+                        if name in self.toold.tools:
+                            raw_res = self.toold.call_tool(name, args)
+                            result = json.dumps(raw_res, ensure_ascii=False)
+                        else:
+                            result = f"Error: Tool '{name}' not found."
+                    
+                    observation = f"System: [Tool '{name}' Output]\n{result}\n"
+                
+                except Exception as e:
+                    self.logger.error(f"Tool execution failed: {e}")
+                    observation = f"System: [Tool Error] {e}\n"
+                
+                messages.append({"role": "user", "content": observation})
+                # Loop continues
+            else:
+                return response_text
 
-        return response_text # Return last response if max turns reached
+        return response_text 
+
+    def _parse_tool_call(self, text):
+        """
+        Heuristic parsing for tool calls.
+        啟發式工具調用解析。
+        Supported formats (支援格式):
+        1. SEARCH: "query"
+        2. CALL: tool_name({"arg": "val"})
+        """
+        for line in text.splitlines():
+            if "SEARCH:" in line:
+                # Legacy strict format often found in prompts
+                parts = line.split("SEARCH:", 1)
+                if len(parts) > 1:
+                    query = parts[1].strip().strip('"').strip("'")
+                    return ("SEARCH", {"query": query})
+            
+            if line.strip().startswith("CALL:"):
+                # CALL: get_price({"ticker": "AAPL"})
+                content = line.strip().replace("CALL:", "").strip()
+                if "(" in content and content.endswith(")"):
+                    name = content.split("(", 1)[0].strip()
+                    args_str = content.split("(", 1)[1][:-1]
+                    try:
+                        args = json.loads(args_str)
+                        return (name, args)
+                    except:
+                        return (name, {"arg": args_str})
+        return None
+
+    def call_agent(self, agent_name: str, message: str, context: dict = None):
+        """
+        Agent-to-Agent Communication (Agent Mesh).
+        Sends a message/task to another agent.
+        Agent 對 Agent 通訊 (Agent Mesh)。
+        發送訊息/任務給另一個 Agent。
+        """
+        self.logger.info(f"Calling Agent {agent_name} with message: {message[:50]}...")
+        
+        from src.agents.factory import AgentFactory
+        
+        target_agent = None
+        if agent_name.lower() == "cio":
+            target_agent = AgentFactory.create_cio_agent(user_id=self.user_id)
+        elif "fundamental" in agent_name.lower():
+            target_agent = AgentFactory.create_fundamental_agent(user_id=self.user_id)
+        elif "momentum" in agent_name.lower():
+            target_agent = AgentFactory.create_momentum_agent(user_id=self.user_id)
+        elif "sentiment" in agent_name.lower():
+            target_agent = AgentFactory.create_sentiment_agent(user_id=self.user_id)
+        
+        if target_agent:
+            call_context = context or {}
+            call_context["user_request"] = message
+            response = target_agent.run(call_context)
+            return response
+        
+        return f"Error: Agent {agent_name} not found."
+
+    def rate_request(self, sender: str, score: int, comment: str, context_hash: str = None):
+        """
+        HR Protocol: Rate an incoming request from another agent.
+        HR 協議：對來自其他 Agent 的請求進行評分。
+        """
+        try:
+            self.feedback_repo.add_review(
+                reviewer=self.name,
+                reviewee=sender,
+                score=score,
+                comment=comment,
+                context_hash=context_hash
+            )
+            self.logger.info(f"Recorded feedback for {sender}: {score}/5")
+        except Exception as e:
+            self.logger.error(f"Failed to record feedback: {e}")
 
     def _render_user_context(self, context):
-        """
-        Default user context renderer. 
-        Can be overridden or we just dump the context as JSON/String.
-        Most agents currently construct user prompt inside run() or use Jinja.
-        To support standard run_tool_loop, we need a standard way to get initial user prompt.
-        For now, let's assume 'context' is passed directly if it's a string, or dumped.
-        """
-        # Hack for legacy compatibility: many agents construct prompt in run() then call call_llm
-        # We need them to pass the INITIAL user content.
-        # But wait, run() usually constructs specific prompts.
-        # So we expect run() to call run_tool_loop with prepared messages?
-        # Let's adjust run_tool_loop signature or usage.
-        # Better: run_tool_loop receives constructed initial_user_prompt.
         if isinstance(context, str):
             return context
         return json.dumps(context, indent=2, ensure_ascii=False)
 
     def call_llm(self, messages, temperature=0.7, response_format=None):
         """
-        Unified method to call LLM with messages list.
-        messages: list of dicts [{"role": "system", "content": ...}, {"role": "user", "content": ...}]
+        Unified method to call LLM.
+        統一的 LLM 調用方法。
         """
-        # Extract System Prompt and User Prompt from messages for legacy support
         system_prompt = ""
         user_prompt = ""
         for m in messages:
-            if m['role'] == 'system':
-                system_prompt += m['content'] + "\n"
-            elif m['role'] == 'user':
-                user_prompt += m['content'] + "\n"
-        
+            if m['role'] == 'system': system_prompt += m['content'] + "\n"
+            elif m['role'] == 'user': user_prompt += m['content'] + "\n"
+            elif m['role'] == 'assistant': user_prompt += f"\n[Previous Output]: {m['content']}\n"
+
         system_prompt = system_prompt.strip()
         user_prompt = user_prompt.strip()
 
-        # Call logic
         return self._mock_llm_call(user_prompt, system_prompt)
 
     def _mock_llm_call(self, prompt, system_prompt):
-        """
-        模擬 LLM 調用 (Phase 3 初期使用 Mock)
-        實際專案應整合 Gemini API 或其他 LLM Client
-        """
-        # Retry Logic
-        # 重試邏輯
         import time
         max_retries = 3
-        last_error = None
         
         for attempt in range(max_retries):
-            # 嘗試使用真實 API
             if self.config.get('api_key'):
                 try:
                     return self._call_real_llm(prompt, system_prompt)
                 except Exception as e:
-                    last_error = e
                     self.logger.error(f"Error calling real LLM (Attempt {attempt+1}/{max_retries}): {e}")
-                    # Simple exponential backoff: 2s, 4s, 8s
-                    # 簡單的指數退避：2秒、4秒、8秒
                     time.sleep(2 ** (attempt + 1))
             else:
-                break # No API Key, fallback immediately
+                break
         
         provider = self.config.get('provider')
         model = self.config.get('model')
@@ -279,21 +326,13 @@ class BaseAgent(ABC):
         return simulated_response.strip()
 
     def _call_real_llm(self, prompt, system_prompt):
-        """
-        呼叫真實 LLM API
-        """
-        import requests
-        import json
-
         provider = self.config.get('provider')
         model = self.config.get('model')
         api_key = self.config.get('api_key')
         base_url = self.config.get('base_url')
 
-        # Log with more context (first 50 chars of prompt)
         prompt_snippet = prompt[:50].replace('\n', ' ') + "..."
 
-        # Check Cache
         if self.cache:
             cached_response = self.cache.get(self.name, prompt)
             if cached_response:
@@ -310,8 +349,8 @@ class BaseAgent(ABC):
             headers = {
                 "Authorization": f"Bearer {api_key}",
                 "Content-Type": "application/json",
-                "HTTP-Referer": "http://localhost:8501", # Optional
-                "X-Title": "AI Investment Advisor" # Optional
+                "HTTP-Referer": "http://localhost:8501", 
+                "X-Title": "AI Investment Advisor"
             }
             data = {
                 "model": model,
@@ -323,51 +362,26 @@ class BaseAgent(ABC):
             try:
                 response = requests.post(url, headers=headers, json=data, timeout=30)
                 response.raise_for_status()
-
-                try:
-                    return response.json()['choices'][0]['message']['content']
-                except json.JSONDecodeError as e:
-                    self.logger.error(f"Failed to decode JSON response from OpenRouter. Status: {response.status_code}")
-                    self.logger.error(f"Response content (first 1000 chars): {response.text[:1000]}")
-                    raise e
-            except requests.exceptions.RequestException as e:
-                 self.logger.error(f"Request failed: {e}")
-                 if hasattr(e.response, 'text'):
-                     self.logger.error(f"Error response content: {e.response.text[:1000]}")
-                 raise e
+                return response.json()['choices'][0]['message']['content']
+            except Exception as e:
+                self.logger.error(f"OpenRouter Request failed: {e}")
+                raise e
 
         elif provider == "Google Gemini":
-            # 使用 Google Generative AI REST API
-            # https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={api_key}
-
-            # 若 model 名稱不包含 'models/', 嘗試自動補全
             model_id = model if model.startswith("models/") else f"models/{model}"
-
             url = f"https://generativelanguage.googleapis.com/v1beta/{model_id}:generateContent?key={api_key}"
             headers = {"Content-Type": "application/json"}
-            data = {
-                "contents": [{
-                    "parts": [{"text": f"{system_prompt}\n\n{prompt}"}]
-                }]
-            }
+            data = {"contents": [{"parts": [{"text": f"{system_prompt}\n\n{prompt}"}]}]}
 
             try:
                 response = requests.post(url, headers=headers, json=data, timeout=30)
                 response.raise_for_status()
-                try:
-                    return response.json()['candidates'][0]['content']['parts'][0]['text']
-                except json.JSONDecodeError as e:
-                    self.logger.error(f"Failed to decode JSON response from Gemini. Status: {response.status_code}")
-                    self.logger.error(f"Response content (first 1000 chars): {response.text[:1000]}")
-                    raise e
-            except requests.exceptions.RequestException as e:
-                 self.logger.error(f"Request failed: {e}")
-                 if hasattr(e.response, 'text'):
-                     self.logger.error(f"Error response content: {e.response.text[:1000]}")
-                 raise e
+                return response.json()['candidates'][0]['content']['parts'][0]['text']
+            except Exception as e:
+                self.logger.error(f"Gemini Request failed: {e}")
+                raise e
 
         elif provider == "OpenAI":
-             # OpenAI 格式
             url = base_url if base_url else "https://api.openai.com/v1/chat/completions"
             headers = {
                 "Authorization": f"Bearer {api_key}",
@@ -383,27 +397,21 @@ class BaseAgent(ABC):
             try:
                 response = requests.post(url, headers=headers, json=data, timeout=30)
                 response.raise_for_status()
-                try:
-                    return response.json()['choices'][0]['message']['content']
-                except json.JSONDecodeError as e:
-                    self.logger.error(f"Failed to decode JSON response from OpenAI. Status: {response.status_code}")
-                    self.logger.error(f"Response content (first 1000 chars): {response.text[:1000]}")
-                    raise e
-            except requests.exceptions.RequestException as e:
-                 self.logger.error(f"Request failed: {e}")
-                 if hasattr(e.response, 'text'):
-                     self.logger.error(f"Error response content: {e.response.text[:1000]}")
-                 raise e
+                return response.json()['choices'][0]['message']['content']
+            except Exception as e:
+                self.logger.error(f"OpenAI Request failed: {e}")
+                raise e
 
         else:
             raise ValueError(f"Unsupported provider: {provider}")
 
     def _compute_hash(self, data):
-        """Compute SHA256 hash of the input data (dict or str)"""
-        import hashlib
+        """
+        Compute SHA256 hash of the input data.
+        計算輸入資料的 SHA256 雜湊值。
+        """
         try:
             if isinstance(data, dict):
-                # Sort keys for consistent hashing
                 s = json.dumps(data, sort_keys=True, ensure_ascii=False)
             else:
                 s = str(data)

@@ -216,7 +216,16 @@ def init_db(db_path=None):
             response_text TEXT,
             outcome_score REAL,
             timestamp TEXT
-        )'''
+        )''',
+        """CREATE TABLE IF NOT EXISTS agent_reviews (
+            id TEXT PRIMARY KEY,
+            reviewer TEXT,
+            reviewee TEXT,
+            score INTEGER,
+            comment TEXT,
+            context_hash TEXT,
+            timestamp TEXT
+        )"""
     ])
 
     with engine.connect() as conn:

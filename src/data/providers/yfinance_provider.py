@@ -52,27 +52,35 @@ class YFinanceProvider(MarketDataProvider):
             t = yf.Ticker(ticker)
             news = t.news
             formatted = []
-            for n in news[:limit]:
-                # Handle new yfinance news structure (nested in 'content')
-                content = n.get('content', {})
-                # Some older versions might be flat, so try both or check structure
-                title = content.get('title') if 'content' in n else n.get('title')
-                
-                # Link extraction
-                link = n.get('link')
-                if not link and 'clickThroughUrl' in content:
-                    link = content['clickThroughUrl'].get('url')
-                
-                # Publisher
-                publisher = n.get('publisher')
-                if not publisher and 'provider' in content:
-                    publisher = content['provider'].get('displayName')
+            if news:
+                for n in news[:limit]:
+                    # Handle new yfinance news structure (nested in 'content')
+                    # Safety check: ensure content is dict and not None
+                    content = n.get('content') or {}
+                    
+                    # Some older versions might be flat, so try both or check structure
+                    title = content.get('title') if content else n.get('title')
+                    if not title: continue 
 
-                formatted.append({
-                     "title": title,
-                     "link": link,
-                     "publisher": publisher
-                 })
+                    # Link extraction
+                    link = n.get('link')
+                    if not link and content and 'clickThroughUrl' in content:
+                        click_url = content['clickThroughUrl']
+                        if click_url:
+                            link = click_url.get('url')
+                    
+                    # Publisher
+                    publisher = n.get('publisher')
+                    if not publisher and content and 'provider' in content:
+                        prov = content['provider']
+                        if prov:
+                            publisher = prov.get('displayName')
+
+                    formatted.append({
+                         "title": title,
+                         "link": link,
+                         "publisher": publisher
+                     })
             return formatted
         except Exception as e:
             self.logger.error(f"YFinance fetch_news error: {e}")

@@ -83,7 +83,7 @@ class TestBaseAgentCoverage:
         # Mock config to have no key -> Mock
         agent.config['api_key'] = ''
         res = agent.call_llm([{"role": "user", "content": "Hi"}])
-        assert "Mock response" in res
+        assert "Simulation Mode" in res or "TestAgent" in res
 
     def test_run_tool_loop_search(self, agent):
         # Test tool loop calling search

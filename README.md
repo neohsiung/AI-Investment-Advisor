@@ -22,8 +22,9 @@
 | :--- | :--- |
 | **🏆 量化反饋迴圈** | **Engineer Agent** 讀取績效指標 (Win Rate, Alpha) 與 CIO 反饋，利用 **DSPy** 自動重寫表現不佳 Agent 的 Prompt。 |
 | **🏦 機構級角色設定** | **CIO (投資長)** 專注風險調整後報酬；**總經/基本面/動能/情緒** 分析師各司其職，擁有獨立數據管道。 |
-| **🏗️ 現代化基礎架構** | 支援 **Kubernetes** 集群部署，採用 **Clean Architecture** (Factory, Repository, DI) 確保系統穩健性與可測試性。 |
-| **🧠 長期記憶與 RAG** | 整合 **pgvector** 向量資料庫，支援歷史決策檢索與上下文增強生成。 |
+| **🏗️ 現代化基礎架構** | 支援 **Kubernetes** 集群部署，採用 **Clean Architecture** (Factory, Repository, DI) 確保系統穩健性與可測試性。**測試覆蓋率 75%+**。 |
+| **🔍 智慧搜尋引擎** | 整合 **Tavily API** 為主要搜尋引擎，DuckDuckGo 為備援，提供穩定的網路資訊檢索。 |
+| **🧠 Agent Mesh 協議** | **MCP (Model Context Protocol)** 伺服器支援，實現跨 Agent 工具共享與 **HR 360 回饋** 機制。 |
 
 ### 🚀 快速開始 (Quick Start)
 
@@ -106,8 +107,9 @@ This is not just a chatbot; it is an **autonomous financial analysis system capa
 | :--- | :--- |
 | **🏆 Quantitative Feedback Loop** | **Engineer Agent** reads performance metrics and CIO feedback, automatically rewriting Prompts for underperforming agents via **DSPy**. |
 | **🏦 Institutional Personas** | **CIO** focuses on Risk-Adjusted Returns; **Macro/Fundamental/Momentum** analysts have dedicated data pipelines. |
-| **🏗️ Modern Infrastructure** | **Kubernetes** ready, built with **Clean Architecture** (Factory, Repository, DI) for robustness and testability. |
-| **🧠 Long-Term Memory & RAG** | **pgvector** integration for historical decision retrieval and RAG (Retrieval-Augmented Generation). |
+| **🏗️ Modern Infrastructure** | **Kubernetes** ready, built with **Clean Architecture** (Factory, Repository, DI). **75%+ Test Coverage**. |
+| **🔍 Intelligent Search** | Integrated **Tavily API** as primary search engine with DuckDuckGo fallback for reliable web research. |
+| **🧠 Agent Mesh Protocol** | **MCP (Model Context Protocol)** server support enabling cross-agent tool sharing and **HR 360 Feedback**. |
 
 ### 🚀 Quick Start
 

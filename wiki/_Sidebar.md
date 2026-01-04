@@ -28,6 +28,8 @@
     *   [AI集群架構](04_架構觀點-Architect_Views/AI集群架構-AI-Agent-Swarm.md)
     *   [架構檢視](04_架構觀點-Architect_Views/架構檢視-Clean-Architecture-Review.md)
     *   [架構狀態](04_架構觀點-Architect_Views/架構狀態-Architecture-Status.md)
+    *   [搜尋服務架構](04_架構觀點-Architect_Views/搜尋服務架構-Search-Service-Architecture.md) 🆕
+    *   [Agent Mesh 協議](04_架構觀點-Architect_Views/Agent-Mesh協議-Agent-Mesh-Protocol.md) 🆕
     *   [資安審計](04_架構觀點-Architect_Views/資安審計-Security-Audit-Report.md)
     *   [遷移計畫](04_架構觀點-Architect_Views/遷移計畫-System-Migration-Plan.md)
 *   **05. 工程手冊 (Engineering Handbook)**

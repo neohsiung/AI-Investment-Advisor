@@ -97,7 +97,7 @@ def test_base_agent_mock_fallback(mock_agent):
     with patch.object(mock_agent, '_call_real_llm', side_effect=Exception("Major Fail")):
         # fallback to mock
         resp = mock_agent._mock_llm_call("prompt", "system")
-        assert "Mock response" in resp
+        assert "Simulation Mode" in resp or "TestAgent" in resp
 
 # --- Market Data Tests ---
 

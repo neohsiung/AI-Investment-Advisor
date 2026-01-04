@@ -1,6 +1,7 @@
 # AI Investment Advisor Wiki
 
 歡迎來到 AI Investment Advisor 的知識庫。這裡收錄了所有關於本專案的文檔，從新手入門到架構設計。
+Welcome to the AI Investment Advisor knowledge base. All project documentation is organized here.
 
 ## 📚 導航 (Navigation)
 
@@ -20,15 +21,17 @@
 
 ### 3. 開發者指南 (Developer Guide)
 *   **[環境設定 (Setup)](03_開發者指南-Developer_Guide/環境設定-Python-Environment-Setup.md)**: 如何搭建開發環境。
+*   **[第三方服務 (3rd Party)](03_開發者指南-Developer_Guide/第三方服務設定-3rd-Party-Services-Setup.md)**: API Key 設定 (Tavily, Polygon, FMP, FRED)。
 *   **[命令行手冊 (CLI)](03_開發者指南-Developer_Guide/命令行手冊-CLI-Reference.md)**: `src/cli.py` 指令大全。
-*   **[測試指南 (Testing)](03_開發者指南-Developer_Guide/測試指南-Testing-Guide.md)**: 如何執行單元測試與集成測試。
+*   **[測試指南 (Testing)](03_開發者指南-Developer_Guide/測試指南-Testing-Guide.md)**: 執行單元測試，**目前覆蓋率 75%+**。
 *   **[雲端部署 (GCP)](03_開發者指南-Developer_Guide/雲端部署-Deployment-GCP-CloudRun.md)**: Google Cloud Run 部署教學。
 
 ### 4. 架構設計 (Architect View)
 *   **[系統概觀 (Overview)](04_架構觀點-Architect_Views/系統概觀-System-Overview.md)**: 高層次架構圖與模組說明。
 *   **[架構狀態 (Status)](04_架構觀點-Architect_Views/架構狀態-Architecture-Status.md)**: 目前系統的技術債與改進點。
+*   **[Clean Architecture 審查](04_架構觀點-Architect_Views/架構檢視-Clean-Architecture-Review.md)**: DDD 合規性分析。
 
-### 5. 工程手冊 (Engineering Handbook) 🆕
+### 5. 工程手冊 (Engineering Handbook)
 *   **[設計模式導讀 (Design Patterns)](05_工程手冊-Engineering_Handbook/設計模式導讀-Design-Patterns-Intro.md)**: 為什麼我們這樣寫程式？
     *   [工廠模式 (Factory)](05_工程手冊-Engineering_Handbook/設計模式-工廠模式-Factory-Pattern.md)
     *   [存儲庫模式 (Repository)](05_工程手冊-Engineering_Handbook/設計模式-存儲庫模式-Repository-Pattern.md)
@@ -36,4 +39,16 @@
     *   [樣板方法 (Template Method)](05_工程手冊-Engineering_Handbook/設計模式-樣板方法-Template-Method.md)
 
 ---
-*Last Updated: 2025-12-27*
+
+## 🆕 最新功能 (Latest Features - v3.2)
+
+| 功能 | 說明 |
+|---|---|
+| **Tavily 搜尋整合** | 以 Tavily API 為主要搜尋引擎，DuckDuckGo 為備援 |
+| **MCP 工具伺服器** | Agent Mesh 架構，跨 Agent 工具共享 |
+| **HR 360 回饋** | Agent 間互評機制，追蹤表現 |
+| **75% 測試覆蓋率** | 298+ 個自動測試 |
+
+---
+*Last Updated: 2026-01-04*
+

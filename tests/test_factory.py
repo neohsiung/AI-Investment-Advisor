@@ -7,24 +7,41 @@ from src.agents.base_agent import BaseAgent
 @pytest.fixture
 def mock_dspy():
     with patch("src.agents.factory.dspy") as mock:
+        mock.OpenAI = MagicMock()  # Ensure OpenAI attribute exists
         yield mock
 
-def test_configure_dspy_with_env(mock_dspy):
+@pytest.fixture
+def enable_has_dspy():
+    with patch("src.agents.factory.has_dspy", True):
+        yield
+
+def test_configure_dspy_with_env(mock_dspy, enable_has_dspy):
     with patch.dict(os.environ, {"LLM_API_KEY": "test_key", "LLM_MODEL_SMART": "test_model"}):
         # Reset state
         AgentFactory._dspy_configured = False
         AgentFactory._configure_dspy()
         
+        # Since has_dspy is mocked to True and we have an api_key, configure should be called
         mock_dspy.settings.configure.assert_called()
         assert AgentFactory._dspy_configured is True
 
-def test_configure_dspy_without_env(mock_dspy):
+def test_configure_dspy_without_env(mock_dspy, enable_has_dspy):
     with patch.dict(os.environ, {}, clear=True):
+        # Also mock the settings repo to return empty
+        with patch("src.agents.factory.SqliteSettingsRepository") as MockRepo:
+            MockRepo.return_value.get_global.return_value = []
+            AgentFactory._dspy_configured = False
+            AgentFactory._configure_dspy()
+            
+            # No API key available, so configure should NOT be called
+            mock_dspy.settings.configure.assert_not_called()
+
+def test_configure_dspy_no_dspy_module():
+    with patch("src.agents.factory.has_dspy", False):
         AgentFactory._dspy_configured = False
         AgentFactory._configure_dspy()
-        
-        mock_dspy.settings.configure.assert_not_called()
-        # Should log warning but not crash
+        # Should just return without error
+        assert AgentFactory._dspy_configured is True
 
 def test_create_momentum_agent():
     with patch("src.agents.factory.MomentumAgent") as mock_agent:
@@ -55,8 +72,6 @@ def test_create_sentiment_agent():
     with patch("src.agents.factory.SentimentAgent") as mock_agent:
         agent = AgentFactory.create_agent("Sentiment")
         assert agent == mock_agent.return_value
-
-# Removed Dispatcher Agent test
 
 def test_create_unknown_agent():
     with pytest.raises(ValueError):
