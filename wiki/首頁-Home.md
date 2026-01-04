@@ -5,38 +5,27 @@ Welcome to the AI Investment Advisor knowledge base. All project documentation i
 
 ## 📚 導航 (Navigation)
 
-### 1. 新手入門 (User Manual)
-*   **[使用手冊 (User Guide)](01_使用者手冊-User_Manual/使用手冊-User-Guide.md)**: 系統功能介紹與操作說明。
-*   **[部署選項 (Deployment Options)](01_使用者手冊-User_Manual/部署選項-Deployment-Options.md)**: 選擇最適合你的部署方式 (Local vs Cloud)。
-*   **[排程設定 (Cron Setup)](01_使用者手冊-User_Manual/排程設定-Cron-Setup.md)**: 如何設定自動化排程。
+### 1. 使用者手冊 (User Manual)
+*   **[快速啟動與操作指南 (Quickstart & User Guide)](01_使用者手冊-User_Manual/快速啟動與操作指南-Quickstart-User-Guide.md)**: 涵蓋安裝、部署與核心儀表板操作。
 
 ### 2. 產品規格 (Product Manager Corner)
-*   **[產品藍圖 (Roadmap)](02_產品經理-Product_Managers/產品藍圖-Roadmap.md)**: 未來開發計畫與里程碑。
-*   **[關鍵規格 (Specs)]**:
-    *   [代理人規格 (Agent Specs)](02_產品經理-Product_Managers/Specs/代理人規格-Agent-Specs.md)
-    *   [HR 協議 (HR Protocol)](02_產品經理-Product_Managers/Specs/HR協議-HR-Protocol.md)
-    *   [資料層定義 (Data Layer)](02_產品經理-Product_Managers/Specs/資料層-Data-Layer.md)
-    *   [分析層定義 (Analytics)](02_產品經理-Product_Managers/Specs/分析層-Analytics.md)
-    *   [自適應系統 (Adaptive)](02_產品經理-Product_Managers/Specs/自適應系統-Adaptive-System.md)
+*   **[產品演進藍圖 (Evolutionary Roadmap)](02_產品經理-Product_Managers/產品演進藍圖-Evolutionary-Roadmap.md)**: 從 v1 到 v5 的研發歷程與願景。
+*   **[核心系統規格 (Core System Specs)](02_產品經理-Product_Managers/Specs/核心系統規格-Core-System-Specs.md)**: Agent Swarm、HR 協議與資料層詳解。
+*   **[未來演進規格 (Future Roadmap Specs)](02_產品經理-Product_Managers/Specs/未來演進規格-Future-Roadmap-Specs.md)**: v3.3 危機自動駕駛與 v4.0 家族辦公室計畫。
 
 ### 3. 開發者指南 (Developer Guide)
-*   **[環境設定 (Setup)](03_開發者指南-Developer_Guide/環境設定-Python-Environment-Setup.md)**: 如何搭建開發環境。
-*   **[第三方服務 (3rd Party)](03_開發者指南-Developer_Guide/第三方服務設定-3rd-Party-Services-Setup.md)**: API Key 設定 (Tavily, Polygon, FMP, FRED)。
-*   **[命令行手冊 (CLI)](03_開發者指南-Developer_Guide/命令行手冊-CLI-Reference.md)**: `src/cli.py` 指令大全。
-*   **[測試指南 (Testing)](03_開發者指南-Developer_Guide/測試指南-Testing-Guide.md)**: 執行單元測試，**目前覆蓋率 75%+**。
-*   **[雲端部署 (GCP)](03_開發者指南-Developer_Guide/雲端部署-Deployment-GCP-CloudRun.md)**: Google Cloud Run 部署教學。
+*   **[環境設定與本地開發 (Environment & Local Dev)](03_開發者指南-Developer_Guide/環境設定與本地開發-Environment-Local-Dev.md)**: Python 環境建置與 CLI 使用手冊。
+*   **[資料庫設計與代碼規範 (Database & Git Standards)](03_開發者指南-Developer_Guide/資料庫設計與代碼規範-Database-Git-Standards.md)**: Schema 定義、遷移路徑與雙語 Commit 規範。
+*   **[測試與外部服務整合 (Testing & External Services)](03_開發者指南-Developer_Guide/測試與外部服務整合-Testing-External-Services.md)**: 測試策略、第三方 API 設定 (Tavily, Polygon) 與 OAuth 配置。
+*   **[雲端部署 (GCP Cloud Run)](03_開發者指南-Developer_Guide/雲端部署-Deployment-GCP-CloudRun.md)**: 生產環境部署指南。
 
-### 4. 架構設計 (Architect View)
-*   **[系統概觀 (Overview)](04_架構觀點-Architect_Views/系統概觀-System-Overview.md)**: 高層次架構圖與模組說明。
-*   **[架構狀態 (Status)](04_架構觀點-Architect_Views/架構狀態-Architecture-Status.md)**: 目前系統的技術債與改進點。
-*   **[Clean Architecture 審查](04_架構觀點-Architect_Views/架構檢視-Clean-Architecture-Review.md)**: DDD 合規性分析。
+### 4. 架構觀點 (Architect View)
+*   **[系統全景圖 (System Landscape)](04_架構觀點-Architect_Views/系統全景圖-System-Landscape.md)**: 雙部門架構、雲端拓撲與 Clean Architecture 審查。
+*   **[底層通信協議 (Agent Mesh Protocols)](04_架構觀點-Architect_Views/底層通信協議-Agent-Mesh-Protocols.md)**: MCP 微服務、搜尋策略與資安審計。
 
 ### 5. 工程手冊 (Engineering Handbook)
 *   **[設計模式導讀 (Design Patterns)](05_工程手冊-Engineering_Handbook/設計模式導讀-Design-Patterns-Intro.md)**: 為什麼我們這樣寫程式？
-    *   [工廠模式 (Factory)](05_工程手冊-Engineering_Handbook/設計模式-工廠模式-Factory-Pattern.md)
-    *   [存儲庫模式 (Repository)](05_工程手冊-Engineering_Handbook/設計模式-存儲庫模式-Repository-Pattern.md)
-    *   [依賴注入 (DI)](05_工程手冊-Engineering_Handbook/設計模式-依賴注入-Dependency-Injection.md)
-    *   [樣板方法 (Template Method)](05_工程手冊-Engineering_Handbook/設計模式-樣板方法-Template-Method.md)
+    *   [代碼詳細模式庫 (Patterns Repository)](05_工程手冊-Engineering_Handbook/Patterns/)
 
 ---
 

@@ -18,25 +18,41 @@
 3.  掌握 Dependency Injection (DI) 在系統測試中的關鍵角色。
 4.  識別 Template Method 如何簡化日常與週報的工作流。
 
+### 🧩 模式關聯圖 (Inter-Pattern Relationship)
+> [!NOTE]
+> 此圖展示了不同設計模式如何協作，共同構建出高內聚、低耦合的系統。
+> This diagram shows how different design patterns collaborate to build a high-cohesion, low-coupling system.
+
+```mermaid
+graph TD
+    Factory["工廠模式<br/>Factory"] -->|創建 Create| Agent["代理人<br/>Agent"]
+    DI["依賴注入<br/>DI"] -->|注入 Inject| Agent
+    Repo["存儲庫<br/>Repository"] -->|被注入 Injected into| DI
+    Workflow["樣板方法<br/>Template Method"] -->|調用 Call| Agent
+```
+
 ## 📚 章節索引 (Table of Contents)
 
-1.  **[工廠模式 (Factory Pattern)](設計模式_工廠-Factory-Pattern)**
+1.  **[工廠模式 (Factory Pattern)](Patterns/Factory-Pattern.md)**
     *   *解決問題*: Agent 初始化複雜，依賴眾多。
     *   *應用場景*: `AgentFactory` 統一創建 Momentum, Macro, CIO Agent。
 
-2.  **[存儲庫模式 (Repository Pattern)](設計模式_存儲庫-Repository-Pattern)**
+2.  **[存儲庫模式 (Repository Pattern)](Patterns/Repository-Pattern.md)**
     *   *解決問題*: SQL 散落在業務邏輯中，難以更換 DB 或 Mock。
     *   *應用場景*: `SettingsRepository`, `TransactionRepository`。
 
-3.  **[依賴注入 (Dependency Injection)](設計模式_依賴注入-Dependency-Injection)**
+3.  **[依賴注入 (Dependency Injection)](Patterns/DI-Pattern.md)**
     *   *解決問題*: 高層模組 (Agent) 依賴低層實作 (Sqlite)，導致無法單元測試。
     *   *應用場景*: Agent 建構子注入 Repository。
 
-4.  **[樣板方法 (Template Method)](設計模式_樣板方法-Template-Method)**
+4.  **[樣板方法 (Template Method)](Patterns/Template-Method.md)**
     *   *解決問題*: DailyWorkflow 與 WeeklyWorkflow 流程高度重複。
     *   *應用場景*: `BaseWorkflow.run()` 定義骨架。
 
 ## 🤖 Agentic Patterns (New in v3.1)
+
+<details>
+<summary><b>🧠 點擊查看 Agent 專屬模式 (Click to View Agentic Patterns)</b></summary>
 
 隨著系統進化為 Agent Swarm，我們也引入了 Agent 專屬的設計模式：
 
@@ -51,6 +67,8 @@
 3.  **Collaborative Swarm**
     *   *定義*: 多個角色 (Persona) 共同解決問題，而非單一大模型。
     *   *應用*: CIO Agent 整合 Momentum, Fundamental, Sentiment Agents 的異質觀點。
+
+</details>
 
 ## 🚀 如何學習 (How to Learn)
 
@@ -79,19 +97,19 @@ After reading this series, you will be able to:
 
 ## 📚 Table of Contents
 
-1.  **[Factory Pattern](設計模式_工廠-Factory-Pattern)**
+1.  **[Factory Pattern](Patterns/Factory-Pattern.md)**
     *   *Problem*: Complex Agent initialization with many dependencies.
     *   *Use Case*: `AgentFactory` centralizes creation of Momentum, Macro, and CIO Agents.
 
-2.  **[Repository Pattern](設計模式_存儲庫-Repository-Pattern)**
+2.  **[Repository Pattern](Patterns/Repository-Pattern.md)**
     *   *Problem*: SQL scattered across business logic, making it hard to switch DBs or Mock.
     *   *Use Case*: `SettingsRepository`, `TransactionRepository`.
 
-3.  **[Dependency Injection](設計模式_依賴注入-Dependency-Injection)**
+3.  **[Dependency Injection](Patterns/DI-Pattern.md)**
     *   *Problem*: High-level modules (Agents) depending on low-level implementations (SQLite), preventing unit testing.
     *   *Use Case*: Injecting Repositories via Agent constructors.
 
-4.  **[Template Method](設計模式_樣板方法-Template-Method)**
+4.  **[Template Method](Patterns/Template-Method.md)**
     *   *Problem*: High duplication between DailyWorkflow and WeeklyWorkflow.
     *   *Use Case*: `BaseWorkflow.run()` defines the skeleton.
 
@@ -117,4 +135,4 @@ As the system evolves into an Agent Swarm, we adopt specific patterns for AI Age
 2.  **Compare Before/After**: Review the code changes from refactoring.
 3.  **Practice**: Try applying these patterns when adding new features (e.g., adding a `SentimentRepository`).
 
-*Next: [Deep Dive into Factory Pattern](wiki/05_工程手冊-Engineering_Handbook/設計模式_工廠-Factory-Pattern.md)*
+*Next: [Deep Dive into Factory Pattern](Patterns/Factory-Pattern.md)*
