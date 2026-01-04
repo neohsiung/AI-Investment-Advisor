@@ -75,14 +75,15 @@
 - **深讀連結**: [標題](URL)
 
 ## 5. 系統與人資反饋 (System & HR Feedback)
-
-## 5. 系統與人資反饋 (System & HR Feedback)
 (整合 Engineer Report，說明 Agent 優化狀況)
 
 ## 6. 精選機會 (High Conviction Ideas)
-1. **TICKER**:
-   - **Thesis**: ...
-   - **Catalyst**: ...
+
+請以 **表格 (Markdown Table)** 呈現 3 檔精選標的，務必結構清晰：
+
+| Ticker | Thesis (結構性趨勢/投資論述) | Catalyst (催化劑/關鍵與其) |
+| :--- | :--- | :--- |
+| **Example** | 結構性醫療通膨與機器人滲透率... | 新一代系統升級週期啟動... |
 
 ## 7. 風險與配置 (Risk & Allocation)
 - ...
