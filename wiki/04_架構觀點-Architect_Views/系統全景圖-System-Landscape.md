@@ -59,6 +59,13 @@ graph LR
 | **K8s 定義** | [k8s/](file:///Users/neohsiung/Work/go/investment-advisor/k8s/) | 包含 Deployment, Service 與 Secret 定義。 |
 | **自動化** | [docker-compose.yml](file:///Users/neohsiung/Work/go/investment-advisor/docker-compose.yml) | 本地多服務開發環境。 |
 
+#### 3.3 技術選型與權衡分析 (Selection Analysis & Tradeoffs)
+- **FastAPI vs. Flask/Django**: 選擇 FastAPI 是因為其原生支援非同步 (AsyncIO)，對於 Agent Mesh 中的大量異步 API 調用（如新聞抓取、多模型並行推論）具有顯著性能優勢。
+- **Streamlit vs. React/Vue**: 雖然 Streamlit 的自定義性較低，但其代碼即 UI 的特性極大縮短了從「模型實驗」到「可視化儀表板」的距離。
+- **SQLite vs. Postgres**: 
+    - **決定**: 開發環境預設 SQLite (零配置)，生產環境支援 Postgres (高併發)。
+    - **權衡**: 放棄了部分 Postgres 特有的 JSONB 優化，以換取極高的環境移植性與開發便捷度。
+
 ### 3. 非功能性需求與性能 (NFR & Performance)
 - **可擴展性 (Scalability)**:
     - 採用並行處理機制（ThreadPoolExecutor），支援同時對 50+ 標的執行分析。

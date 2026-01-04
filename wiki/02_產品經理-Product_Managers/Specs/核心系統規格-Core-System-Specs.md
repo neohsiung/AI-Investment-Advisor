@@ -93,7 +93,52 @@ sequenceDiagram
     | 動作 | Select | BUY, SELL, DIVIDEND, DEPOSIT, WITHDRAW。 |
     | 手續費 (Fees) | Float | 不可小於 0。 |
 
-### 4. 技術與非功能性需求 (Technical & NFR)
+### 4. 技術規格與數據合約 (Technical Specs & Data Contracts)
+
+#### 4.1 核心計算算法 (Mathematical Algorithms)
+為確保 0% 幻覺，系統必須嚴格執行以下公式：
+
+- **淨資產價值 (NLV)**:
+  $$NLV = CashBalance + \sum (Quantity_i \times CurrentPrice_i)$$
+- **名義總價值 (TNV)**:
+  $$TNV = \sum |Quantity_i \times CurrentPrice_i|$$
+- **槓桿比率 (Leverage Ratio)**:
+  $$Leverage = \frac{TNV}{NLV}$$ (若 $NLV \le 0$，則 Leverage = $\infty$)
+- **加權平均成本 (Average Cost - BUY)**:
+  $$AvgCost_{new} = \frac{(Qty_{old} \times AvgCost_{old}) + (Qty_{new} \times Price_{new}) + Fees}{Qty_{old} + Qty_{new}}$$
+
+#### 4.2 Agent Mesh 通信合約 (JSON Schemas)
+所有代理間的工具調用必須符合以下 MCP 格式：
+
+- **工具調用請求 (ToolCallRequest)**:
+  ```json
+  {
+    "tool_name": "string",
+    "arguments": {
+      "ticker": "string (uppercase)",
+      "limit": "integer (optional)"
+    }
+  }
+  ```
+- **代理訊息 (AgentMessage)**:
+  ```json
+  {
+    "sender": "string (agent_role)",
+    "receiver": "string (agent_role)",
+    "content": "string (markdown allowed)",
+    "context": "object (state data)"
+  }
+  ```
+
+#### 4.3 代理狀態機 (Agent State Machine)
+代理的生命週期應符合以下狀態切換鏈：
+1. **IDLE**: 等待任務。
+2. **RESEARCHING**: 正在調用 MCP 工具獲取數據（Polygon/FRED/Tavily）。
+3. **PONDERING**: LLM 正在處理 Context 並生成決策。
+4. **DECIDED**: 已產出 JSON 或 Markdown 報告。
+5. **REFLECTING**: (僅適用於 Engineer Agent) 分析輸出準確度並更新 Prompt。
+
+### 5. 技術與非功能性需求 (Technical & NFR)
 
 - **架構設計**: 詳見 [系統全景圖](系統全景圖-System-Landscape)。
 - **資料模型**: 基於 SQLite，詳見 [資料庫設計](資料庫設計與代碼規範-Database-Git-Standards)。
@@ -105,8 +150,11 @@ sequenceDiagram
     - **數據安全**: 所有外部 API Key 必須存放於 `.env` 或 GitHub Secrets，嚴禁硬編碼。
 - **可靠性 (Reliability)**:
     - 任務 Mean Time To Recovery (MTTR) < 5 分鐘（透過 HR 協議自癒）。
+- **資料完整性**: CSV 匯入必須採用「全有或全無」事務 (Atomic Transaction)。
+- **緩存策略**: 股價數據 TTL 設為 300 秒，以平衡時效性與 API 成本。
+- **錯誤處理**: 若 Agent 調用失敗，必須返回 `fallback_reason` 而非空白或錯誤代碼。
 
-### 5. 成功指標 (Success Metrics)
+### 6. 成功指標 (Success Metrics)
 - **投資績效**: 夏普比率 (Sharpe Ratio) > 1.2。
 - **系統效率**: 核心分析回應時間 (P95) < 30 秒。
 - **數據精確度**: 計算幻覺率 = 0%。

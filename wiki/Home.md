@@ -21,23 +21,27 @@ Welcome to the AI Investment Advisor knowledge base. All project documentation i
 
 ### 03. 開發者指南 (Developer Guide)
 *   **[環境設定與本地開發 (Environment & Local Dev)](環境設定與本地開發-Environment-Local-Dev)**: Python 環境建置與 CLI 使用手冊。
-*   **[服務層子系統詳解 (Service Layer Blueprints)](服務層開發指南-Service-Layer-Blueprints)**: 深入探討服務層的設計與實現。
+*   **[服務層子系統詳解 (Service Layer Blueprints)](服務層開發指南-Service-Layer-Blueprints)**: 深入探賦服務層的設計與實現。
+*   **[前端架構與 UX 層 (Frontend & UX Layer)](前端架構與UX層-Frontend-UX-Layer)**: Streamlit 管理、狀態同步與用戶體驗流程。
 *   **[資料庫設計與代碼規範 (Database & Git Standards)](資料庫設計與代碼規範-Database-Git-Standards)**: Schema 定義、遷移路徑與雙語 Commit 規範。
 *   **[測試與外部服務整合 (Testing & External Services)](測試與外部服務整合-Testing-External-Services)**: 測試策略、第三方 API 設定 (Tavily, Polygon) 與 OAuth 配置。
 *   **[雲端部署 (GCP Cloud Run)](雲端部署-Deployment-GCP-CloudRun)**: 生產環境部署指南。
 
 ### 04. 架構觀點 (Architect View)
-*   **[系統全景圖 (System Landscape)](系統全景圖-System-Landscape)**: 雙部門架構、雲端拓撲與 Clean Architecture 審查。
-*   **[底層通信協議 (Agent Mesh Protocols)](底層通信協議-Agent-Mesh-Protocols)**: MCP 微服務、搜尋策略與資安審計。
+*   **[系統全景圖 (System Landscape)](系統全景圖-System-Landscape)**: 雙部門架構、雲端拓撲與 Infrastructure 註冊表。
+*   **[架構哲學 (Architectural Philosophies)](架構哲學-Architectural-Philosophies)**: Clean Architecture、DDD 與 Spec-Driven Design 的實踐。
+*   **[資料與領域模型 (Data & Domain Models)](資料與領域模型-Data-Domain-Models)**: 實體關係圖、SQL Schema 與數據流動路徑。
+*   **[底層通信協議 (Agent Mesh Protocols)](底層通信協議-Agent-Mesh-Protocols)**: MCP 微服務、JSON Schema 與工具調用生命週期。
 
 ### 05. 工程手冊 (Engineering Handbook)
 *   **[提示詞工程規範 (Prompt Engineering Specs)](提示詞工程規範-Prompt-Engineering-Specs)**: 提示詞設計原則與最佳實踐。
+*   **[研究與最佳實踐 (Research & Best Practices)](研究與最佳實踐-Research-Best-Practices)**: 行業標準、代理模式與 RAG 研究。
 *   **設計模式深度庫 (Patterns)**
     *   **[設計模式導讀 (Design Patterns Intro)](設計模式導讀-Design-Patterns-Intro)**: 為什麼我們這樣寫程式？
-    *   **[工廠模式 (Factory Pattern)](設計模式_工廠-Factory-Pattern)**
-    *   **[存儲庫模式 (Repository Pattern)](設計模式_存儲庫-Repository-Pattern)**
-    *   **[依賴注入 (DI Pattern)](設計模式_依賴注入-DI-Pattern)**
-    *   **[樣板方法模式 (Template Method)](設計模式_樣板方法-Template-Method)**
+    *   **[工廠模式 (Factory Pattern)](設計模式-工廠-Factory-Pattern)**
+    *   **[存儲庫模式 (Repository Pattern)](設計模式-存儲庫-Repository-Pattern)**
+    *   **[依賴注入 (DI Pattern)](設計模式-依賴注入-DI-Pattern)**
+    *   **[樣板方法模式 (Template Method)](設計模式-樣板方法-Template-Method)**
 
 ---
 

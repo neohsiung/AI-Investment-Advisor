@@ -16,18 +16,18 @@
 
 ### 2. 核心架構決策 (ADR - Architectural Decision Records)
 
-| 編號 | 決策 (Decision) | 動機 (Problem) | 後果 (Consequence) |
+| 編號 | 決策 (Decision) | 動機 (Problem) | 權衡分析與代價 (Tradeoffs & Rationale) |
 | :--- | :--- | :--- | :--- |
-| **ADR-001** | **Repository Pattern** | 原生 SQL 散落各處，難以進行 Unit Test。 | 資料庫與業務邏輯解耦，達成 >75% 覆蓋率。 |
-| **ADR-002** | **Dependency Injection** | 靜態工廠導致類別間強耦合，難以 Mock。 | 可透過 [測試規範](測試與外部服務整合-Testing-External-Services) 輕鬆替換 LLM 與 DB。 |
-| **ADR-003** | **Template Method** | Daily 與 Weekly Workflows 重複代碼率 > 60%。 | 流程骨架統一化，新增週期性任務僅需 5 分鐘。 |
+| **ADR-001** | **Repository Pattern** | 原生 SQL 散落各處，難以進行 Unit Test。 | **優點**: 實現資料庫無關性。**代價**: 增加了介面定義的代碼量，但對長期維護極具價值。 |
+| **ADR-002** | **Dependency Injection** | 靜態工廠導致類別間強耦合，難以 Mock。 | **優點**: 極大提升測試覆蓋率。**評估**: 捨棄了簡單的單例（Singleton），以換取靈活性。 |
+| **ADR-003** | **Template Method** | Daily 與 Weekly Workflows 重複代碼率 > 60%。 | **優點**: 強制執行 [HR 協議](底層通信協議-Agent-Mesh-Protocols)。**限制**: 子類別必須遵守父類別骨架，靈活性受限。 |
 
 ### 3. 設計模式深度庫 (Pattern Deep Dives)
 每一個模式都具備詳盡的 **Good vs. Bad** 對比與實作規範：
-- **[工廠模式 (Factory Pattern)](設計模式_工廠-Factory-Pattern)**: 解決 Agent 初始化爆炸。
-- **[存儲庫模式 (Repository Pattern)](設計模式_存儲庫-Repository-Pattern)**: 解決持久層方言問題。
-- **[依賴注入 (DI Pattern)](設計模式_依賴注入-DI-Pattern)**: 解決可測試性問題。
-- **[樣板方法 (Template Method)](設計模式_樣板方法-Template-Method)**: 解決流程重複問題。
+- **[工廠模式 (Factory Pattern)](設計模式-工廠-Factory-Pattern)**: 解決 Agent 初始化爆炸。
+- **[存儲庫模式 (Repository Pattern)](設計模式-存儲庫-Repository-Pattern)**: 解決持久層方言問題。
+- **[依賴注入 (DI Pattern)](設計模式-依賴注入-DI-Pattern)**: 解決可測試性問題。
+- **[樣板方法 (Template Method)](設計模式-樣板方法-Template-Method)**: 解決流程重複問題。
 
 ---
 
@@ -44,10 +44,10 @@ Our goal is to build a **Model-Agnostic** and **Test-Driven** AI Advisor. Design
 - **ADR-003 (Template Method)**: Simplifying complex daily/weekly asynchronous workflows.
 
 ### 3. Deep Dive Series
-- [Factory Pattern](設計模式_工廠-Factory-Pattern)
-- [Repository Pattern](設計模式_存儲庫-Repository-Pattern)
-- [DI Pattern](設計模式_依賴注入-DI-Pattern)
-- [Template Method](設計模式_樣板方法-Template-Method)
+- [Factory Pattern](設計模式-工廠-Factory-Pattern)
+- [Repository Pattern](設計模式-存儲庫-Repository-Pattern)
+- [DI Pattern](設計模式-依賴注入-DI-Pattern)
+- [Template Method](設計模式-樣板方法-Template-Method)
 
 ## 🔗 Bidirectional Links
 - **Standards**: [Database & Git Standards](資料庫設計與代碼規範-Database-Git-Standards)

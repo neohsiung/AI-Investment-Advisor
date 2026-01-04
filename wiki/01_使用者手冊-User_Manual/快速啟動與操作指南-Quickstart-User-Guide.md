@@ -23,9 +23,9 @@ graph LR
 ```
 
 #### 1.2 顧問互動流程 (Advisor Interaction)
-- **問題輸入**: 使用者在 [顧問聊天室](核心系統規格-Core-System-Specs) 提問。
-- **專家協作**: CIO 調動基礎面、動能面專家生成綜合報告。
-- **績效反饋**: [Engineer Agent](未來演進規格-Future-Roadmap-Specs) 追蹤回報品質。
+- **問題輸入**: 使用者在 [AI 投資顧問](前端架構與UX層-Frontend-UX-Layer) 提問。
+- **指標分析**: [CIO Agent](服務層開發指南-Service-Layer-Blueprints) 調用專家代理進行多維度審查。
+- **績效反饋**: [Engineer Agent](服務層開發指南-Service-Layer-Blueprints) 追蹤回報品質。
 
 ### 2. 操作欄位定義 (Operational Glossary)
 
@@ -35,6 +35,52 @@ graph LR
 | **動作 (Action)** | 交易類型。 | `BUY`, `SELL`, `DIVIDEND` (現金股息)。 |
 | **數量 (Quantity)** | 交易股數。 | 支援 4 位小數。 |
 | **槓桿比例** | 針對該筆交易的預期槓桿。 | 系統自動計算槓桿，細節見 [系統全景圖](系統全景圖-System-Landscape)。 |
+
+### 📖 使用者操作詳解 (User Operation Details)
+
+### 1. 儀表板觀測 (Dashboard)
+- **視覺化指標**: 顯示 NLV、現金比例、總報酬率與目前槓桿比率。
+- **風險預警**: 槓桿比率超過 1.5x 顯示黃色警告，超過 2.0x 觸發紅色危險警報，提醒補足保證金。
+
+### 2. 資料管理 (Data Management)
+本模組負責系統的確定的性數據來源，支援以下操作：
+
+#### 2.1 手動輸入 (Manual Entry)
+- **交易模式**:
+    - **依數量 (By Quantity)**: 輸入具體股數與單價。
+    - **依槓桿 (By Leverage)**: 輸入「本金」與「槓桿倍數」(e.g., $1000, 3x)，系統自動換算購買力與股數。
+- **交易類型**: 支援 `BUY` (買入), `SELL` (賣出), `DIVIDEND` (股息), `DEPOSIT` (入金) 與 `WITHDRAW` (出金)。
+
+#### 2.2 批次匯入 (CSV Import)
+- **支援格式**: Robinhood, IBKR, Simple。
+- **操作**: 選擇格式、上傳檔案並點擊「開始匯入」。系統執行原子化寫入，確保數據一致性。
+
+### 3. AI 投資顧問 (Advisor Chat)
+- **意圖偵測**: 輸入包含股票代碼 (如: AAPL) 的問題，系統自動調用 **Stock Analyst Agent** 進行基本面分析。
+- **宏觀諮詢**: 一般性問題將調用 **CIO Agent**，綜合總經環境給予建議。
+- **注意**: 此對話為即時諮詢，不影響正式報告數據。
+
+### 4. 系統設定 (System Settings)
+這是系統的核心控制面板：
+
+- **AI 配置**: 設定 Provider (Gemini, OpenRouter, OpenAI) 與 **Model Tiering**。
+    - **Smart Tier**: 用於複雜邏輯推論。
+    - **Fast Tier**: 用於快速訊息過濾。
+- **排程管理**: 設定 Daily Check 與 Weekly Report 的執行時間（基於自定義時區）。
+- **HR 協議**: 監視 Agent 活躍度。若 Agent 超過 7 天無活動，狀態將轉為 **Zombie**，需檢查 API 配置。
+
+---
+
+## ❓ 常見問題與故障排除 (FAQ & Troubleshooting)
+
+**Q: 為什麼槓桿比率顯示不正確？**
+A: 請確保「資料管理」中的現金出入金（Deposit/Withdraw）已正確記錄，且已獲取最新股價。
+
+**Q: 收到 `API Key Error`？**
+A: 請至「系統設定 -> AI 配置」檢查 API Key 是否有效。
+
+**Q: 報告沒有按時發送？**
+A: 檢查「系統設定 -> 排程管理」中的時區設定是否與您的本地預期一致。
 
 ### 3. 個人成效指標 (Success Metrics for Users)
 - **Alpha**: 超額回報（相對於標普 500）。
@@ -63,6 +109,22 @@ graph LR
 ### 2. Glossary
 - **Action**: Use `DIVIDEND` for cash payouts; use `BUY` with price `$0` for stock splits.
 - **Leverage**: Visual warnings trigger when the portfolio leverage exceeds **1.5x**.
+
+## 🇺🇸 User Operation Details (English)
+
+### 1. Dashboard
+- **Risk Alerts**: Leverage ratio > 1.5x triggers a Yellow Warning; > 2.0x triggers a Red Margin Call alert.
+
+### 2. Data Management
+- **Manual Entry**: Choose "By Quantity" or "By Leverage" (auto-calculates buying power).
+- **Import**: Supports Robinhood, IBKR, and Simple CSV formats with atomic verification.
+
+### 3. Advisor Chat
+- **Ticker Detection**: Mentioning a symbol (e.g., "TSLA") triggers a deep fundamental dive by specialized agents.
+
+### 4. System Settings
+- **Model Tiering**: Configure separate models for "Smart Tasks" vs "Fast Scans" for cost efficiency.
+- **HR Protocol**: Monitors agent "heartbeats". Active agents are green; "Zombie" agents require maintenance.
 
 ### 3. Troubleshooting
 - **Zero Balance**: Ensure initial `DEPOSIT` or `BUY` events are recorded.
