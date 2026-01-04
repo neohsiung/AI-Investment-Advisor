@@ -27,13 +27,13 @@ graph TD
         LB[Cloud Load Balancer] --> CR_App
         
         subgraph "Cloud Run (Serverless)"
-            CR_App[Streamlit App\n(Dashboard)]
-            CR_Job[Cloud Run Jobs\n(Scheduler)]
+            CR_App["Streamlit App<br/>(Dashboard)"]
+            CR_Job["Cloud Run Jobs<br/>(Scheduler)"]
         end
         
         subgraph "Data Layer"
-            SQL[(Cloud SQL\nPostgreSQL)]
-            GCS[Cloud Storage\n(Artifacts/Logs)]
+            SQL[("Cloud SQL<br/>PostgreSQL")]
+            GCS["Cloud Storage<br/>(Artifacts/Logs)"]
         end
         
         subgraph "External Services"
