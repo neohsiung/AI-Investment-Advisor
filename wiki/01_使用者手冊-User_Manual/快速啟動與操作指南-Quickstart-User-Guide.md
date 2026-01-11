@@ -60,7 +60,12 @@ graph LR
 - **宏觀諮詢**: 一般性問題將調用 **CIO Agent**，綜合總經環境給予建議。
 - **注意**: 此對話為即時諮詢，不影響正式報告數據。
 
-### 4. 系統設定 (System Settings)
+### 4. 深度研究週報 (Deep Research Weekly Report) - v3.3
+- **結構化數據**: 透過 Markdown Table 呈現「蜂群洞察」(Swarm Insights) 與「市場焦點數據」(Market Focus Data)。
+- **精準引用**: 所有事實陳述皆附帶 `[來源名稱](URL)` 引用，確保資訊可信度。
+- **IC 決策**: 包含 Thesis (戰略主軸), Anti-Thesis (反論) 與 Synthesis (關鍵仲裁) 的完整論述。
+
+### 5. 系統設定 (System Settings)
 這是系統的核心控制面板：
 
 - **AI 配置**: 設定 Provider (Gemini, OpenRouter, OpenAI) 與 **Model Tiering**。
@@ -82,12 +87,12 @@ A: 請至「系統設定 -> AI 配置」檢查 API Key 是否有效。
 **Q: 報告沒有按時發送？**
 A: 檢查「系統設定 -> 排程管理」中的時區設定是否與您的本地預期一致。
 
-### 3. 個人成效指標 (Success Metrics for Users)
+### 6. 個人成效指標 (Success Metrics for Users)
 - **Alpha**: 超額回報（相對於標普 500）。
 - **最大回撤 (Max Drawdown)**: 投資組合從峰值回落的最大幅度。目標 < 15%。
 - **夏普比率 (Sharpe Ratio)**: 每單位風險的超額回報。目標 > 1.2。
 
-### 4. 疑難排解 (Support & Troubleshooting)
+### 7. 疑難排解 (Support & Troubleshooting)
 
 | 問題 | 可能原因 | 解決方案 |
 | :--- | :--- | :--- |

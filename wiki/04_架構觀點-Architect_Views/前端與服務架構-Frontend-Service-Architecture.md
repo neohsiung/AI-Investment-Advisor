@@ -45,6 +45,11 @@ graph TD
 *   **職責**: 負責單純的數據 CRUD 與外部 API 封裝。
 *   **位置**: `src/repositories/*.py`, `src/utils/*.py`.
 
+#### 1.4 MCP 服務層 (MCP Service Layer)
+*   **職責**: 負責跨 Agent 工具共享與 A2A 通訊 (使用 FastAPI)。
+*   **位置**: `src/mcp_service/*.py`.
+*   **性質**: 獨立運行的 Microservice，提供 HTTP API。
+
 ---
 
 <a id="en"></a>

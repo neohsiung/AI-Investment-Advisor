@@ -32,29 +32,45 @@ class CIOAgent(BaseAgent):
         return self._run_report(context)
 
     def _run_report(self, context):
-        """Generates the final investment report."""
+        """
+        Generates the final investment report using Swarm Intelligence & IC Protocol.
+        使用蜂群智慧與投資委員會協議生成最終投資報告。
+        """
         user_id = context.get("user_id")
         
         # 1. Get Dynamic Context (Portfolio)
+        # 1. 取得動態上下文 (投資組合)
         leverage_ratio, portfolio_str = self._get_portfolio_context(user_id)
         
-        # 2. Prepare Data for Prompt Template
+        # 2. Format Swarm Inputs (Aggregating Sub-Agent Reports)
+        # 2. 格式化蜂群輸入 (聚合子 Agent 的報告)
+        ticker_data = context.get("ticker_data", {})
+        swarm_context = ""
+        if ticker_data:
+            for ticker, reports in ticker_data.items():
+                swarm_context += f"### {ticker}\n"
+                swarm_context += f"- **Fundamental**: {reports.get('fundamental', 'N/A')}\n"
+                swarm_context += f"- **Momentum**: {reports.get('momentum', 'N/A')}\n"
+                swarm_context += f"- **Sentiment**: {reports.get('sentiment', 'N/A')}\n\n"
+        
+        # 3. Prepare Data for Prompt Template
         prompt_data = {
             "current_date": format_time(fmt="%Y-%m-%d"),
             "leverage_ratio": f"{leverage_ratio:.2f}",
             "portfolio": portfolio_str,
             "risk_profile": context.get("risk_profile", "Balanced (穩健型)"),
-            "momentum_reports": context.get("momentum_reports", "無 (None)"),
-            "fundamental_reports": context.get("fundamental_reports", "無 (None)"),
             "macro_report": context.get("macro_report", "無 (None)"),
+            "engineer_report": context.get("engineer_report", "無 (No Constraints)"),
+            "swarm_context": swarm_context, # [NEW] Consolidated Swarm Inputs
             "sector_strategy": context.get("sector_strategy", "無 (None)"),
             "report_focus": context.get("report_focus", "Weekly Strategic")
         }
 
-        # 4. Call Agent Tool Loop for Autonomous Search
+        # 4. Call Agent Tool Loop with Thought Chain (IC Protocol Enforcement)
         response = self.run_tool_loop(
-            context=prompt_data, # run_tool_loop calls render_system_prompt internally
-            max_turns=3
+            context=prompt_data, 
+            max_turns=3,
+            thought_chain=True # [NEW] Enable R.P.A. Loop
         )
         return response
 

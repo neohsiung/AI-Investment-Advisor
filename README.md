@@ -100,21 +100,20 @@ graph TD
     User((User)) <-->|UI/Chat| DASH[Streamlit Dashboard]
     DASH <-->|Route| DISP[Dispatcher Agent]
     
-    subgraph "Quant-Driven Agent Swarm (v3.2)"
-        ENG[Engineer Agent]
-        MA[Macro Agent]
-        FA[Fundamental Agent]
-        MO[Momentum Agent]
-        SA[Sentiment Agent]
+    subgraph "Agent Swarm (v3.3)"
         CIO[CIO Agent]
+        MACRO[Macro Strategist]
+        FUND[Fundamental Analyst]
+        SENT[Sentiment Analyst]
         
-        MA & FA & MO & SA -->|Research| CIO
+        CIO -->|IC Protocol| SWARM{Swarm}
+        SWARM -->|Request| MACRO & FUND & SENT
+        MACRO & FUND & SENT -->|Insights| CIO
         CIO -->|Decision| DB[(Database)]
-        DB -->|Metrics| PERF[Performance Service]
-        PERF -->|Feedback| ENG
-        ENG -.->|Optimize Prompts| MA & FA & MO & SA
     end
 ```
+
+參閱詳細架構與協議：[代理人戰略協定 (Agent Swarm Protocol)](wiki/04_架構觀點-Architect_Views/代理人戰略協定-Agent-Swarm-Protocol.md)
 
 ---
 

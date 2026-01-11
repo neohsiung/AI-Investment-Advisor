@@ -473,7 +473,13 @@ class WeeklyWorkflow(BaseWorkflow):
 
         except Exception as e:
             logger.warning(f"Engineer optimization failed: {e}")
-            engineer_report = f"Error retrieving optimization data: {e}"
+            # Safety Fallback Mode (User Directive)
+            engineer_report = (
+                "⚠️ **SYSTEM ALERT**: Performance Service Unavailable.\n"
+                "- **Action**: Enforce **Equal Weight Arbitration** (Average of Swarm Inputs).\n"
+                "- **Constraint**: Max Leverage **0.95x** (Risk Off).\n"
+                f"- **Error Details**: {e}"
+            )
 
         # CIO Agent Synthesis (Weekly Strategy Mode)
         cio = AgentFactory.create_cio_agent(mode="weekly", user_id=self.user_id)

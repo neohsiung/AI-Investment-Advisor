@@ -40,7 +40,10 @@ class DashboardPage(BasePage):
         
         # Initialize service on first render
         if self.dashboard_service is None:
-            self.dashboard_service = DashboardService(db_path=self.db_path)
+            # Use db_path from BasePage or default
+            db_path = getattr(self, 'db_path', 'data/portfolio.db')
+            self.dashboard_service = DashboardService(db_path=db_path)
+
         
         # High-level loading feedback for the entire Overview data preparation
         with st.spinner("總覽數據讀取中 (Overview Loading)..."):

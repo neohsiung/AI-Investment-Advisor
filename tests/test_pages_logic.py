@@ -169,33 +169,38 @@ class TestSettingsRender:
 
     def test_render_report_dry_run_tab(self):
         mock_st = MagicMock()
-        # Mock columns to return a fixed list of 2 mocks
+        # Mock columns to return a fixed list of  2 mocks
         col1, col2 = MagicMock(), MagicMock()
         mock_st.columns.return_value = [col1, col2]
 
         mock_st.session_state = {'dry_run_pid': None}
 
-        with patch.object(settings_mod, 'os') as mock_os, \
-             patch.object(settings_mod, 'subprocess') as mock_subprocess, \
+        # Patch in the actual tab module where os and subprocess are imported
+        with patch('src.pages.settings_tabs.report_dry_run_tab.os') as mock_os, \
+             patch('src.pages.settings_tabs.report_dry_run_tab.subprocess') as mock_subprocess, \
              patch('builtins.open', mock_open()):
 
             mock_os.path.exists.return_value = True
+            mock_os.makedirs.return_value = None
 
-            # Button logic:
-            # The code calls st.button inside the 'with col_btn:' block.
-            # If st is mocked, st.button is still st.button.
-            # We enforce return_value=True.
-            mock_st.button.return_value = True
+            # Setup button mock: first call returns True (start button clicked)
+            mock_st.button.side_effect = [True]  # "Start Dry Run" button
 
             mock_process = MagicMock()
             mock_process.pid = 12345
             mock_subprocess.Popen.return_value = mock_process
 
-            settings_mod.render_report_dry_run_tab(mock_st, user_id="test_user")
+            # Mock rerun to prevent actual rerun
+            mock_st.rerun = MagicMock()
+
+            # Import the function from the tab module
+            from src.pages.settings_tabs.report_dry_run_tab import render_report_dry_run_tab
+            render_report_dry_run_tab(mock_st, user_id="test_user")
 
             # Assert Popen called
-            mock_subprocess.Popen.assert_called()
+            mock_subprocess.Popen.assert_called_once()
             assert mock_st.session_state['dry_run_pid'] == 12345
+
 
     def test_render_agent_playground_tab(self):
         mock_st = MagicMock()

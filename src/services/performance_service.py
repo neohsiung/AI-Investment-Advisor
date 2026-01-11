@@ -35,3 +35,79 @@ class PerformanceService:
             'pnl_data': pnl_data,
             'history_df': history_df
         }
+
+    def record_recommendation(self, agent_name, ticker, signal, price):
+        """
+        Record an agent's recommendation for future performance tracking.
+        記錄 Agent 的推薦以便未來追蹤績效。
+        """
+        import uuid
+        from src.utils.time_utils import format_time
+        from src.data.database import get_db_connection
+        from sqlalchemy import text
+
+        rec_id = str(uuid.uuid4())
+        date_str = format_time() # YYYY-MM-DD HH:MM:SS
+
+        try:
+            with get_db_connection() as conn:
+                query = text("""
+                    INSERT INTO recommendations (id, user_id, date, agent, ticker, signal, price_at_signal)
+                    VALUES (:id, :user_id, :date, :agent, :ticker, :signal, :price)
+                """)
+                conn.execute(query, {
+                    "id": rec_id,
+                    "user_id": self.user_id,
+                    "date": date_str,
+                    "agent": agent_name,
+                    "ticker": ticker,
+                    "signal": signal,
+                    "price": price
+                })
+                conn.commit()
+        except Exception as e:
+            # Prevent blocking operations if logging fails
+            print(f"Error recording recommendation: {e}")
+
+    def get_agent_performance(self):
+        """
+        Calculate performance stats for each agent based on recommendation history.
+        Returns a dictionary or list of stats.
+        計算每個 Agent 根據歷史推薦的績效統計。
+        """
+        from src.data.database import get_db_connection
+        from sqlalchemy import text
+        import pandas as pd
+        
+        try:
+            with get_db_connection() as conn:
+                # Fetch all recommendations
+                query = text("SELECT * FROM recommendations WHERE user_id = :uid")
+                df = pd.read_sql(query, conn, params={"uid": self.user_id})
+                
+            if df.empty:
+                return []
+            
+            # TODO: Implement complex accuracy calculation (comparing signal price vs current/exit price)
+            # For now, return a placeholder or simple count
+            stats = df.groupby('agent').size().reset_index(name='count')
+            return stats.to_dict('records')
+            
+        except Exception as e:
+            print(f"Error calculating agent performance: {e}")
+            return []
+    
+    def calculate_portfolio_alpha(self, portfolio_return: float, benchmark_return: float) -> float:
+        """
+        Calculate portfolio alpha (excess return over benchmark).
+        計算投資組合的 Alpha 值 (超額報酬)。
+        
+        Args:
+            portfolio_return: Portfolio return rate (e.g., 0.10 for 10%)
+            benchmark_return: Benchmark return rate (e.g., 0.08 for 8%)
+            
+        Returns:
+            Alpha value (excess return)
+        """
+        return portfolio_return - benchmark_return
+

@@ -113,16 +113,18 @@ class TestSnapshotAndPerformance:
         """Test performance service metrics"""
         from src.services.performance_service import PerformanceService
         
-        service = PerformanceService()
+        service = PerformanceService(user_id="test_user")
         
         # Test record_recommendation
-        with patch('src.services.performance_service.get_db_connection') as mock_conn:
+        with patch('src.data.database.get_db_connection') as mock_conn:
+            mock_conn.return_value.__enter__.return_value = MagicMock()
+            mock_conn.return_value.__exit__.return_value = None
             service.record_recommendation("Momentum", "AAPL", "BUY", 150.0)
             mock_conn.assert_called()
     
     def test_performance_alpha(self):
         from src.services.performance_service import PerformanceService
-        service = PerformanceService()
+        service = PerformanceService(user_id="test_user")
         alpha = service.calculate_portfolio_alpha(0.10, 0.08)
         # Handle floating point precision if needed, but 0.10 - 0.08 should be approx 0.02
         assert abs(alpha - 0.02) < 0.0001

@@ -134,11 +134,16 @@ class BaseAgent(ABC):
         """
         pass
 
-    def run_tool_loop(self, context, max_turns=3):
+    def run_tool_loop(self, context, max_turns=3, thought_chain=False):
         """
         Executes a ReAct-style loop where the agent can request generic tools via MCP.
         執行 ReAct 風格的迴圈，Agent 可以透過 MCP 請求使用通用工具。
         """
+        # Inject Thought Chain context if enabled
+        if thought_chain:
+            context = context.copy() if isinstance(context, dict) else {}
+            context["thought_chain_mode"] = True
+            
         messages = [
             {"role": "system", "content": self.render_system_prompt(context)},
             {"role": "user", "content": self._render_user_context(context)}
@@ -191,6 +196,22 @@ class BaseAgent(ABC):
                 return response_text
 
         return response_text 
+
+    def call_swarm(self, agents: list, message: str, context: dict = None) -> dict:
+        """
+        Broadcasts a message to a swarm of agents effectively in parallel.
+        向 Agent Swarm 廣播訊息。
+        """
+        results = {}
+        for agent_name in agents:
+            try:
+                self.logger.info(f"Swarm Broadcast: {self.name} -> {agent_name}")
+                response = self.call_agent(agent_name, message, context)
+                results[agent_name] = response
+            except Exception as e:
+                self.logger.error(f"Swarm Broadcast Failed for {agent_name}: {e}")
+                results[agent_name] = f"Error: {e}"
+        return results
 
     def _parse_tool_call(self, text):
         """

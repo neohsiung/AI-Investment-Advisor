@@ -22,12 +22,12 @@
     - 建立 [資料庫設計](資料庫設計與代碼規範-Database-Git-Standards) 與初步 ETL 流程。
 - **成功指標**: 計算誤差率 = 0%；Google OAuth 登入成功率 100%。
 
-#### 🚀 階段 B (2026 Q1-Q2): 智能分層 - 當前階段
+#### 🚀 階段 B (2026 Q1): 智能分層 (已達成 - v3.3)
 - **核心功能**: 
-    - **混合分析架構 (Hybrid Tiered)**: 將分析分為 API 篩選、JIT 深度研究等 3 個層級。
-    - **自適應機制**: [核心系統規格](核心系統規格-Core-System-Specs) 中定義的智慧新鮮度與模型分級。
-- **技術需求**: Tavily Search Service, Gemini 1.5 系列 API。
-- **成功指標**: Token 消耗降低 40% 以上；P95 分析回應 < 30 秒。
+    - **混合分析架構 (Hybrid Tiered)**: 實作 "Deep Research" 報告模式 (表格與精準引用)。
+    - **安全機制**: [Agent Swarm 協定](代理人戰略協定-Agent-Swarm-Protocol.md) 中加入 Workflow Circuit Breaker 與 Engineer Fallback。
+- **技術需求**: Tavily Search, Gemini 1.5 Pro, MCP Integration (Foundation).
+- **成功指標**: 測試覆蓋率 > 75%；報告生成穩定性 99.9%。
 
 #### 🚀 階段 C (2026 Q3): 危機自癒 - 規劃中
 - **核心功能**: 核心細節見 [未來演進規格](未來演進規格-Future-Roadmap-Specs)。

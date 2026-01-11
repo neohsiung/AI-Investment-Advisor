@@ -32,6 +32,12 @@ graph LR
 - **Token 效率**: 核心提示詞長度控制在 2000 Tokens 以內，以維持高速響應。
 - **版本管理**: 所有經由 Engineer Agent 優化後的 Prompt 需儲存於 `prompts/optimized/`，並具備 Timestamp 追蹤。
 
+#### 3.1 深度研究輸出規範 (Deep Research Output Standards) - v3.3
+針對週報 (Weekly Report) 等高價值產出，提示詞需強制以下規範：
+1.  **結構化表格**: 必須使用 Markdown Table 呈現數據對比 (e.g., 同業比較、財務比率)。
+2.  **精準引用**: 所有客觀數據必須附帶 `[來源名稱](URL)` 格式的連結。
+3.  **辯證邏輯**: 必須包含 Thesis (正論) 與 Anti-Thesis (反論) 的對照分析。
+
 ---
 
 <a id="en"></a>
