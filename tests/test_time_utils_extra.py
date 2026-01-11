@@ -93,12 +93,14 @@ class TestTimeUtilsCoverage:
             assert t.tzinfo == pytz.utc
             assert t.year == 2023
 
+    @patch('src.utils.time_utils.get_system_timezone')
     @patch('src.utils.time_utils.get_timezone')
-    def test_convert_user_time_to_system_time(self, mock_get_tz):
+    def test_convert_user_time_to_system_time(self, mock_get_tz, mock_get_sys_tz):
         # Scenario: User is in UTC+8 (Taiwan)
-        # System is UTC
+        # System is UTC (Mocked)
         # User wants job at "08:00" (which is 00:00 UTC)
         mock_get_tz.return_value = pytz.timezone("Asia/Taipei")
+        mock_get_sys_tz.return_value = pytz.utc
         
         with freeze_time("2023-01-01 12:00:00"):
             utc_time_str, offset = convert_user_time_to_system_time("08:00")
@@ -107,14 +109,17 @@ class TestTimeUtilsCoverage:
             assert utc_time_str == "00:00"
             assert offset == 0
         
+    @patch('src.utils.time_utils.get_system_timezone')
     @patch('src.utils.time_utils.get_timezone')
-    def test_convert_user_time_to_system_time_cross_day(self, mock_get_tz):
+    def test_convert_user_time_to_system_time_cross_day(self, mock_get_tz, mock_get_sys_tz):
         # Scenario: User in Tokyo (UTC+9)
+        # System is UTC (Mocked)
         # User time "01:00" => UTC "16:00" (Previous Day)
         # If user sets "01:00", it means 01:00 local time.
         # Tokyo 01:00 Jan 2 = UTC 16:00 Jan 1.
         
         mock_get_tz.return_value = pytz.timezone("Asia/Tokyo")
+        mock_get_sys_tz.return_value = pytz.utc
         
         # We freeze at Jan 2 noon Tokyo time
         with freeze_time("2023-01-02 12:00:00", tz_offset=9):

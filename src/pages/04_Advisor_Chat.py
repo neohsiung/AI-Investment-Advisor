@@ -5,6 +5,7 @@ from src.agents.factory import AgentFactory
 from src.services.market_data_service import MarketDataService
 from src.utils.logger import setup_logger
 from src.utils.page_base import BasePage
+from src.utils.components import saas_alert
 
 logger = setup_logger("Page_Chat")
 
@@ -17,7 +18,7 @@ class AdvisorChatPage(BasePage):
     
     def render(self):
         """Render chat interface"""
-        st.info("ℹ️ 此對話為即時諮詢模式，內容僅供當下參考，**不會**存入系統的正式週報/月報資料庫，亦不影響例行性績效追蹤。")
+        saas_alert("此對話為即時諮詢模式，內容僅供當下參考，**不會**存入系統的正式資料庫，亦不影響例行性績效追蹤。", style="info", title="Real-time Advisory Mode")
 
         # Initialize chat messages
         if "messages" not in st.session_state:

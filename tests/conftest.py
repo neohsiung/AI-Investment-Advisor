@@ -15,5 +15,10 @@ def mock_streamlit_module():
     
     # We patch sys.modules to inject our mock
     # patch.dict handles restoration automatically
-    with patch.dict(sys.modules, {'streamlit': mock_st, 'streamlit.components.v1': MagicMock()}):
+    with patch.dict(sys.modules, {
+        'streamlit': mock_st, 
+        'streamlit.components.v1': MagicMock(),
+        'streamlit.components.v1.components': MagicMock(),
+        'extra_streamlit_components': MagicMock()
+    }):
         yield mock_st

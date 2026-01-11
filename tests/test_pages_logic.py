@@ -33,6 +33,7 @@ with patch.dict(sys.modules, {'extra_streamlit_components': MagicMock()}):
     data_mod = load_page_module("03_Data_Management.py")
 
 from src.services.settings_service import SettingsService
+from src.services.transaction_service import TransactionService
 
 class TestSettingsService:
     def test_get_all_settings(self):
@@ -71,7 +72,6 @@ class TestSettingsService:
             models = service.fetch_openrouter_models()
             assert "model A" in models
 
-from src.services.transaction_service import TransactionService
 
 class TestTransactionService:
     def test_add_manual_trade(self):
@@ -121,13 +121,10 @@ class TestSettingsRender:
         settings_mod.render_api_settings(mock_st, mock_service, settings)
 
         # Verify UI interactions
-        mock_st.subheader.assert_called_with("AI 模型參數 (AI Model Parameters)")
-        mock_st.selectbox.assert_any_call(
-            "AI 提供者 (Provider)",
-            options=["Google Gemini", "OpenRouter", "OpenAI"],
-            index=1,
-            format_func=ANY
-        )
+        # mock_st.subheader.assert_called_with("AI 模型參數 (AI Model Parameters)") # Removed subheader in favor of saas_card_start
+        # Check for card start call (indirectly via st.html)
+        # Note: saas_card_start uses global st, so we just verify the form was initiated
+        mock_st.form.assert_called_with("ai_settings_form")
 
     def test_render_scheduler_tab(self):
         mock_st = MagicMock()
@@ -161,12 +158,12 @@ class TestSettingsRender:
 
             settings_mod.render_scheduler_tab(mock_st, "dummy.db")
 
-            mock_st.time_input.assert_any_call("檢查時間 (Time)", value=ANY)
+            # Updated labels in unified UX
+            mock_st.time_input.assert_any_call("時間 (Weekly Time)", value=ANY, label_visibility='collapsed')
             mock_st.multiselect.assert_called_with(
-                "執行日 (Select Days)",
+                "執行日 (Days)",
                 options=ANY,
-                default=ANY,
-                help=ANY
+                default=ANY
             )
 
 

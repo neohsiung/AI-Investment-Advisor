@@ -56,6 +56,9 @@ docker-compose up --build
 | 變數名稱 | 類型 | 說明 |
 | :--- | :--- | :--- |
 | `GOOGLE_API_KEY` | Secret | Gemini 1.5 系列推理金鑰。 |
+| `POLYGON_API_KEY` | Secret | Polygon.io 金鑰，用於獲取無限次數的即時行與歷史數據。 |
+| `FMP_API_KEY` | Secret | Financial Modeling Prep 金鑰，用於獲取財報與新聞。 |
+| `DISPLAY_TIMEZONE`| Enum | 系統顯示時區 (預設 `Asia/Taipei`)。 |
 | `DB_TYPE` | Enum | `sqlite` 或 `postgres`。預設 `sqlite`。 |
 | `DB_PATH` | Path | SQLite 檔案路徑。例：`data/portfolio.db`。 |
 | `LOG_LEVEL` | Enum | `DEBUG`, `INFO`, `WARNING`, `ERROR`。 |
@@ -72,6 +75,7 @@ docker-compose up --build
 | `SSL Certificate Error` | MacOS 預設證書失效。 | 執行 `/Applications/Python 3.11/Install Certificates.command`。 |
 | `Database is locked` | 多個行程同時寫入 SQLite。 | 確保僅有一個 CLI 排程器在運行。 |
 | `ModuleNotFoundError` | 虛擬環境未正確激活。 | 執行 `export PYTHONPATH=$PYTHONPATH:$(pwd)`。 |
+| `Timezone Mismatch` | 系統時間與排程時間不符。 | 確保 `DISPLAY_TIMEZONE` 已設為您的本地時區並重新啟動 Scheduler。 |
 
 ---
 
@@ -86,7 +90,10 @@ docker-compose up --build
 ### 2. Secrets Management
 Define all keys in `.env`. Security defaults are detailed in [Agent Mesh Protocols](底層通信協議-Agent-Mesh-Protocols).
 - `TAVILY_API_KEY`: High-precision search.
+- `POLYGON_API_KEY`: Primary market data source.
+- `FMP_API_KEY`: Fundamental and financial news source.
 - `FRED_API_KEY`: Macro trends.
+- `DISPLAY_TIMEZONE`: User-interface timezone (Default: `Asia/Taipei`).
 
 ### 3. Troubleshooting
 - **API Key issues**: Check for trailing spaces in `.env`.

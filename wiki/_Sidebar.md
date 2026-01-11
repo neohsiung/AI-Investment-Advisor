@@ -16,6 +16,7 @@
     *   [雲端部署 (GCP Cloud Run)](雲端部署-Deployment-GCP-CloudRun)
 *   **04. 架構觀點 (Architect View)**
     *   [系統全景圖](系統全景圖-System-Landscape)
+    *   [前端與服務架構](前端與服務架構-Frontend-Service-Architecture)
     *   [架構哲學](架構哲學-Architectural-Philosophies)
     *   [資料與領域模型](資料與領域模型-Data-Domain-Models)
     *   [底層通信協議 (Agent Mesh)](底層通信協議-Agent-Mesh-Protocols)

@@ -9,7 +9,8 @@ styles, and authentication across all pages.
 import streamlit as st
 from abc import ABC, abstractmethod
 from src.utils.auth_guard import require_authentication
-from src.utils.ui import load_theme_css, render_sidebar
+from src.utils.ui import load_design_system_css, render_sidebar, render_top_profile
+from src.utils.components import saas_section_header
 
 class BasePage(ABC):
     """
@@ -62,9 +63,8 @@ class BasePage(ABC):
             layout=self.layout
         )
         
-        # Load Theme CSS (Material Design 3)
-        # 載入主題 CSS (Material Design 3 風格)
-        load_theme_css()
+        # Load Design System CSS with Theme Support
+        load_design_system_css()
         
         # Cleanup session state from other pages (optional/careful)
         # 清除來自其他頁面的 Session State (選用/需謹慎)
@@ -86,10 +86,10 @@ class BasePage(ABC):
 
     def render_header(self):
         """
-        Render the page header (title). Can be overridden.
-        渲染頁面標頭 (標題)。可被子類別覆寫。
+        Render the page header using SaaS style.
         """
-        st.title(f"{self.icon} {self.title}")
+        render_top_profile(self.user)
+        saas_section_header(self.title, icon=self.icon)
 
     @abstractmethod
     def render(self):

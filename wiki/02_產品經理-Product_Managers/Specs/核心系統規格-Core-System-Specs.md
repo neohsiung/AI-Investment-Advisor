@@ -23,6 +23,9 @@
 ### 2. 功能描述 (Features & Functionality)
 - **多專家代理集群 (Agent Swarm)**: 由 Momentum, Fundamental, Macro, Sentiment 組成研究端，CIO 進行最終裁決。
 - **混合計算引擎 (Hybrid Engine)**: 結合 LLM 推論與 Python 統計模組。
+- **A2A 思維鏈 (Agent-to-Agent Thought Chain)**: 透過 Fundamental, Macro, Momentum, Sentiment 專家的獨立推理，最後由 CIO 進行綜合判斷，模擬專業投研團隊流程。
+- **證據導向退場 (Reason-Based Exit)**: 系統僅在「買入理由消失」時（而非僅因股價波動）觸發 SELL 指令，有效防止頻繁交易。
+- **異構數據源最佳化**: 優先使用 Polygon (行情/歷史) 與 FMP (財報/新聞)，確保在高頻調用下仍能保持數據品質與成本平衡。
 - **自律 HR 協議**: 確保後台 Agent 運作穩定，自動偵測並恢復掛掉的服務。
 
 #### 2.1 專家協作時序圖 (Agent Collaboration Workflow)

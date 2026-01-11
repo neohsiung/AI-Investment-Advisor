@@ -1,72 +1,79 @@
 import streamlit as st
-import pandas as pd
 import plotly.express as px
 from src.utils.page_base import BasePage
-
+from src.utils.components import saas_metric, saas_card_start, saas_card_end, saas_section_header
+from src.utils.ui import get_plotly_template
+from src.services.performance_service import PerformanceService
 
 class PortfolioPerformancePage(BasePage):
     """Portfolio performance tracking page"""
     
     def __init__(self):
         super().__init__("績效追蹤 (Performance Tracking)", "📈")
+        self.perf_service = None # Init in render where user_id is available
     
     def render(self):
         """Render performance tracking content"""
         user_id = self.user['email']
         db_path = self.db_path
         
-        from src.services.analytics_service import AnalyticsService
-        analytics_service = AnalyticsService(db_path=db_path, user_id=user_id)
+        self.perf_service = PerformanceService(db_path=db_path, user_id=user_id)
 
-        # Auto-update snapshot
-        try:
-            analytics_service.trigger_snapshot_update()
-        except Exception as e:
-            st.warning(f"自動更新績效失敗 (Auto-update failed): {e}")
+        with st.spinner("正在讀取市場數據 (Fetching performance data)..."):
+            data = self.perf_service.prepare_performance_data()
+            pnl_data = data['pnl_data']
+            snapshots_df = data['history_df']
 
-        # Mock Prices
-        current_prices = {
-            "AAPL": 180.0, "NVDA": 450.0, "TSLA": 240.0, "GOOGL": 140.0, "MSFT": 370.0
-        }
+        # --- Section 1: P&L ---
+        saas_section_header("績效與損益分析 (P&L)", "詳細損益明細與實現狀況")
+        c1, c2, c3, c4 = st.columns(4)
+        with c1:
+            saas_metric("已實現損益", f"${pnl_data.get('realized', 0):,.0f}")
+        with c2:
+            saas_metric("未實現損益", f"${pnl_data.get('unrealized', 0):,.0f}")
+        with c3:
+            saas_metric("總累計損益", f"${pnl_data.get('total', 0):,.0f}", delta_color="normal")
 
-        try:
-            pnl_data = analytics_service.get_pnl_breakdown(current_prices)
-            st.subheader("損益分析 (PnL Analysis)")
-            c1, c2, c3 = st.columns(3)
-            c1.metric("已實現損益 (Realized P&L)", f"${pnl_data['realized']:,.2f}")
-            c2.metric("未實現損益 (Unrealized P&L)", f"${pnl_data['unrealized']:,.2f}")
-            c3.metric("總損益 (Total P&L)", f"${pnl_data['total']:,.2f}")
-        except Exception as e:
-            st.error(f"計算損益失敗: {e}")
-
-        # Get performance history
-        snapshots_df = analytics_service.get_performance_history()
-
+        # --- Section 2: Trends & Charts ---
         if snapshots_df is not None and not snapshots_df.empty:
             latest = snapshots_df.iloc[-1]
-            st.subheader("總投入資本 vs 當前價值 (Total Investment vs Current Value)")
+            with c4:
+                saas_metric("累積投入資本", f"${latest.get('invested_capital', 0):,.0f}", icon="🏦")
 
-            col1, col2 = st.columns(2)
-            col1.metric("總投入資本 (Total Invested Capital)", f"${latest['invested_capital']:,.2f}")
-            col2.metric("總損益 (Total PnL)", f"${latest['pnl']:,.2f}",
-                        delta=f"{(latest['pnl']/latest['invested_capital']*100):.2f}%" if latest['invested_capital'] != 0 else "0%")
-
-            # Equity Curve
-            st.subheader("權益曲線 - 淨流動資產價值歷史 (Equity Curve - NLV History)")
-            fig_equity = px.line(snapshots_df, x='date', y='total_nlv', title='淨流動資產價值 (Net Liquidation Value) 走勢', markers=True)
+            saas_section_header("趨勢與風險 (Trends & Risk)", "長期資產增長與槓桿監控")
+            
+            # NLV Chart
+            saas_card_start(title="NLV 歷史增長 (Growth)")
+            template, layout_overrides = get_plotly_template()
+            fig_equity = px.area(snapshots_df, x='date', y='total_nlv', markers=False, color_discrete_sequence=['var(--saas-primary)'], template=template)
+            fig_equity.update_layout(**layout_overrides)
+            fig_equity.update_layout(
+                height=180, 
+                margin=dict(t=5, b=5, l=0, r=0),
+                xaxis_title=None, yaxis_title=None,
+                hovermode="x unified"
+            )
             st.plotly_chart(fig_equity, use_container_width=True)
+            saas_card_end()
 
-            # Leverage History
+            # Leverage Chart
             if 'leverage_ratio' in snapshots_df.columns:
-                st.subheader("槓桿比率歷史 (Leverage Ratio History)")
-                fig_lev = px.line(snapshots_df, x='date', y='leverage_ratio', title='槓桿比率 (Leverage Ratio) 走勢', markers=True)
-                fig_lev.add_hline(y=1.5, line_dash="dash", line_color="orange", annotation_text="Warning (1.5x)")
-                fig_lev.add_hline(y=2.0, line_dash="dash", line_color="red", annotation_text="Critical (2.0x)")
+                st.markdown('<div style="margin-top: 0.5rem;"></div>', unsafe_allow_html=True)
+                saas_card_start(title="槓桿變動 (Leverage)")
+                fig_lev = px.line(snapshots_df, x='date', y='leverage_ratio', markers=False, color_discrete_sequence=['var(--saas-text-muted)'], template=template)
+                fig_lev.update_layout(**layout_overrides)
+                fig_lev.update_layout(
+                    height=180, 
+                    margin=dict(t=5, b=5, l=0, r=0),
+                    xaxis_title=None, yaxis_title=None,
+                    hovermode="x unified"
+                )
+                fig_lev.add_hline(y=1.5, line_dash="dash", line_color="var(--saas-warning)")
+                fig_lev.add_hline(y=2.0, line_dash="dash", line_color="var(--saas-danger)")
                 st.plotly_chart(fig_lev, use_container_width=True)
-
+                saas_card_end()
         else:
-            st.info("尚無績效歷史紀錄。每日快照將由系統自動記錄。(No performance history yet.)")
-
+            st.info("尚無績效歷史紀錄。每日快照將由系統自動記錄。")
 
 if __name__ == "__main__":
     PortfolioPerformancePage().run()

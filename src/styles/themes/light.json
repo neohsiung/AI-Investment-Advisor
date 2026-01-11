@@ -1,0 +1,13 @@
+{
+    "name": "Soft Light",
+    "mode": "light",
+    "colors": {
+        "primary": "#0D9488",
+        "bg": "#F8FAFC",
+        "card_bg": "#FFFFFF",
+        "sidebar_bg": "#F1F5F9",
+        "border": "#E2E8F0",
+        "text_main": "#1E293B",
+        "text_muted": "#64748B"
+    }
+}

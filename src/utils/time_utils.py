@@ -11,6 +11,7 @@ def get_db_timezone():
     """
     Attempt to fetch the display timezone from the database.
     Returns None if not found or error.
+    嘗試從資料庫獲取顯示時區。若未找到或發生錯誤則回傳 None。
     """
     try:
         conn = get_db_connection()
@@ -30,6 +31,8 @@ def get_timezone():
     """
     Get the timezone object based on DB setting, environment variable, or default.
     Priority: DB > Env Var > Default
+    根據資料庫設定、環境變數或預設值獲取時區物件。
+    優先順序：資料庫 > 環境變數 > 預設值
     """
     # 1. Try DB
     db_tz = get_db_timezone()
@@ -42,10 +45,19 @@ def get_timezone():
 
 def get_current_time():
     """
-    Get the current time in the configured timezone.
+    Get the current time in the configured (Display) timezone.
+    獲取設定（顯示）時區的目前時間。
     """
     tz = get_timezone()
     return datetime.now(tz)
+
+def get_system_timezone():
+    """
+    Get the system local timezone.
+    獲取系統本地時區。
+    """
+    system_tz = datetime.now().astimezone().tzinfo
+    return system_tz
 
 def format_time(dt=None, fmt="%Y-%m-%d %H:%M:%S"):
     """
@@ -71,36 +83,21 @@ def convert_user_time_to_system_time(time_str):
     """
     try:
         user_tz = get_timezone()
+        system_tz = get_system_timezone()
         
         # Create a dummy datetime with today's date and the user's target time
-        # 建立一個包含今日日期與使用者目標時間的 datetime 物件
         now = datetime.now(user_tz)
         target_time = datetime.strptime(time_str, "%H:%M").time()
         user_dt = now.replace(hour=target_time.hour, minute=target_time.minute, second=0, microsecond=0)
         
-        # Convert to UTC (or system local time effectively)
-        # 轉換為 UTC (或有效的系統本地時間)
-        # Assuming container runs in UTC. If container has local timezone set, this needs 'datetime.now().astimezone()' logic.
-        # 假設容器運行在 UTC 環境。若容器設定了本地時區，則需要調整。
+        # Convert to System Local Time (since schedule library uses local time)
+        # 轉換為系統本地時間 (因為 schedule 函式庫使用本地時間)
+        sys_dt = user_dt.astimezone(system_tz)
         
-        # Best practice: Convert to UTC, then strip tzinfo
-        # 最佳實踐：轉換為 UTC，然後移除時區資訊
-        utc_dt = user_dt.astimezone(pytz.utc)
+        # Calculate day offset
+        day_offset = (sys_dt.date() - user_dt.date()).days
         
-        # If the system is NOT UTC, we might need system local.
-        # Check system offset
-        # But for Docker/Cloud, UTC is standard. We assume system is UTC.
-        
-        # Calculate day offset (e.g., -1 if crossed midnight backwards, +1 if forwards)
-        # 計算日期偏移量 (例如：若跨越午夜向前則為 -1，向後則為 +1)
-        # simplistic check: comparison of user_dt vs utc_dt isn't enough because of date.
-        # 簡單檢查：僅比較 user_dt 與 utc_dt 是不夠的，因為日期可能不同。
-        # We check the date difference.
-        # 我們檢查日期的差異。
-        
-        day_offset = (utc_dt.date() - user_dt.date()).days
-        
-        return utc_dt.strftime("%H:%M"), day_offset
+        return sys_dt.strftime("%H:%M"), day_offset
         
     except Exception as e:
         print(f"Time conversion error: {e}")
@@ -109,5 +106,6 @@ def convert_user_time_to_system_time(time_str):
 def get_current_utc_time():
     """
     Get current UTC time.
+    獲取目前 UTC 時間。
     """
     return datetime.now(pytz.utc)

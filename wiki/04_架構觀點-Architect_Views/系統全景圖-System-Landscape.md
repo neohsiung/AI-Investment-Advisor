@@ -20,7 +20,7 @@
 #### 2.1 系統上下文 (Level 1: System Context)
 系統與外部實體（使用者、數據供應商、AI 基礎設施）的交互。
 - **使用者**: 透過 Dashboard 監控資產。
-- **外部 API**: Polygon.io (行情), FRED (總經), Tavily (搜尋), OpenRouter (LLM)。
+- **外部 API**: Polygon.io (行情/歷史), FMP (基本面/新聞), FRED (總經), Tavily (搜尋), OpenRouter (LLM)。
 - **資料持久化**: SQLite (本地/持久磁碟)。
 
 #### 2.2 容器視角 (Level 2: Container Diagram)
@@ -30,7 +30,7 @@
 graph TD
     UI["Dashboard (Streamlit)"] -->|SQL| DB[(Portfolio DB)]
     UI -->|HTTP| MCP_Serv["MCP Microservice (FastAPI)"]
-    Sch["Scheduler (Cron)"] -->|Trigger| Agents["Agent Swarm (CIO, Analysts)"]
+    Sch["Scheduler (Daemon)"] -->|Trigger| Agents["Agent Swarm (CIO, Analysts)"]
     Agents -->|Local Tool Call| Local["Local MCP (Toolbox)"]
     Agents -->|Remote Tool Call| MCP_Serv
     MCP_Serv -->|Financial Data| APIs[Polygon/FMP/FRED]
@@ -39,7 +39,7 @@ graph TD
 
 #### 2.3 組件互動流 (Interaction Flows)
 1.  **數據攝取**: `Dashboard` 接收用戶輸入 -> `DB` 持久化 -> `MCP_Serv` 註冊工具。
-2.  **研究週期**: `Scheduler` 觸發 `CIO Agent` -> `CIO` 實體化 `Analysts` (A2A) -> `Analysts` 通過 `Local MCP` 調用市場工具。
+2.  **A2A 研究週期**: `Scheduler` 依時區執行 `CIO Agent` -> `CIO` 發動分散式 `Analysts` (A2A Thought Chain) -> 匯總為具備「證據鏈」的報告。
 3.  **搜尋擴展**: 若 `Local MCP` 無提供數據，Agent 透過 `mcp_service` 執行分佈式搜尋與數據聚合。
 
 ### 3. 基礎設施視角 (Infrastructure View)
@@ -111,5 +111,6 @@ Building a transparent, cloud-native financial agent suite with 0% hallucination
 
 ## 🔗 Bidirectional Links
 - **Communication Protocols**: [Agent Mesh Protocols](底層通信協議-Agent-Mesh-Protocols)
+- **Frontend Architecture**: [View-Service Pattern](前端與服務架構-Frontend-Service-Architecture)
 - **Implementation Status**: [Architecture Status](架構狀態-Architecture-Status)
 - **Developer Guide**: [Local Dev Setup](環境設定與本地開發-Environment-Local-Dev)

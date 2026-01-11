@@ -4,6 +4,7 @@ import sys
 import subprocess
 import logging
 import uuid
+import pytz
 from datetime import datetime
 from sqlalchemy import text
 from src.data.database import get_db_connection
@@ -12,16 +13,28 @@ from src.utils.time_utils import format_time, get_current_time, convert_user_tim
 
 logger = logging.getLogger("SchedulerService")
 
+# Helper function to get current UTC time
+# 獲取目前 UTC 時間的輔助函式
+def get_current_utc_time():
+    """
+    Get current UTC time.
+    獲取目前 UTC 時間。
+    """
+    return datetime.now(pytz.utc)
+
 class SchedulerService:
     def __init__(self, db_engine=None):
         self.engineer = SystemEngineerAgent()
         # db_engine unused if we use get_db_connection, but keeping for DI signature
+        # 如果我們使用 get_db_connection，db_engine 未被使用，但保留用於依賴注入簽名
     
     def log_job_execution(self, job_name, status, message=""):
         conn = get_db_connection()
         try:
             log_id = str(uuid.uuid4())
-            timestamp = datetime.now().isoformat()
+            # Save as UTC ISO with Z suffix to be unambiguous
+            # 以帶有 Z 後綴的 UTC ISO 格式保存，以避免歧義
+            timestamp = get_current_utc_time().isoformat().replace("+00:00", "Z")
             conn.execute(text("INSERT INTO scheduler_logs (id, timestamp, job_name, status, message) VALUES (:id, :timestamp, :job_name, :status, :message)"), {
                 "id": log_id,
                 "timestamp": timestamp,
@@ -51,6 +64,8 @@ class SchedulerService:
     def job_daily_check(self):
         # Strict adherence to Scheduler: If this function is called, it means it was scheduled.
         # We rely on reload_schedule to set the correct days.
+        # 嚴格遵守排程器：如果此函式被呼叫，表示它已被排程。
+        # 我們依賴 reload_schedule 來設定正確的日期。
         logger.info("Starting Daily Check Job...")
         self.log_job_execution("Daily Check", "STARTED")
         
@@ -65,6 +80,8 @@ class SchedulerService:
                 # Using subprocess ensures clean memory state for heavy workflow
                 # But here we are refactoring, maybe we can run directly?
                 # Subprocess is safer for long running daemon.
+                # 使用 subprocess 來隔離執行上下文，還是直接使用 service？
+                # 使用 subprocess 可確保大型工作流的記憶體狀態乾淨，這對長期運行的守護程序較安全。
                 subprocess.run([sys.executable, "src/cli.py", "--mode", "daily", "--user_id", user], check=True)
                 self.log_job_execution(f"Daily Check ({user})", "COMPLETED")
             except Exception as e:
@@ -131,6 +148,10 @@ class SchedulerService:
             self.job_monthly_refinement()
 
     def reload_schedule(self):
+        """
+        Reload the schedule from database configuration.
+        從資料庫設定重新載入排程。
+        """
         logger.info("Reloading schedule configuration...")
         schedule.clear()
         
@@ -143,12 +164,12 @@ class SchedulerService:
         weekly_time = config.get("schedule_weekly", "09:00")
         weekly_day = config.get("schedule_weekly_day", "saturday").lower()
         
-        # Convert User Time (e.g. Asia/Taipei) to System Time (UTC)
-        # 將使用者時間 (如 Asia/Taipei) 轉換為系統時間 (UTC)
+        # Convert User Time (e.g. Asia/Taipei) to System Time (Local)
+        # 將使用者時間 (如 Asia/Taipei) 轉換為系統時間 (在地時間)
         daily_time_sys, daily_offset = convert_user_time_to_system_time(daily_time)
         weekly_time_sys, weekly_offset = convert_user_time_to_system_time(weekly_time)
         
-        logger.info(f"Loaded config: Daily={daily_time} ({daily_time_sys} UTC, offset {daily_offset}) on {daily_days}, Weekly={weekly_day} {weekly_time} ({weekly_time_sys} UTC, offset {weekly_offset})")
+        logger.info(f"Loaded config: Daily={daily_time} ({daily_time_sys} System, offset {daily_offset}) on {daily_days}, Weekly={weekly_day} {weekly_time} ({weekly_time_sys} System, offset {weekly_offset})")
         
         # Helper to shift day
         # 輔助函式：根據時區偏移調整執行日期
@@ -167,14 +188,14 @@ class SchedulerService:
             target_day = get_shifted_day(day, daily_offset)
             if hasattr(schedule.every(), target_day):
                 getattr(schedule.every(), target_day).at(daily_time_sys).do(self.job_daily_check)
-                logger.info(f"Scheduled Daily Check on {target_day} at {daily_time_sys} UTC (User: {day} {daily_time})")
+                logger.info(f"Scheduled Daily Check on {target_day} at {daily_time_sys} System (User: {day} {daily_time})")
         
         # Dynamic day scheduling for Weekly Report
         # 設定每週報告的動態日期
         target_weekly_day = get_shifted_day(weekly_day, weekly_offset)
         if hasattr(schedule.every(), target_weekly_day):
             getattr(schedule.every(), target_weekly_day).at(weekly_time_sys).do(self.job_weekly_report)
-            logger.info(f"Scheduled Weekly Report on {target_weekly_day} at {weekly_time_sys} UTC (User: {weekly_day} {weekly_time})")
+            logger.info(f"Scheduled Weekly Report on {target_weekly_day} at {weekly_time_sys} System (User: {weekly_day} {weekly_time})")
         else:
             logger.warning(f"Invalid weekly day '{target_weekly_day}', defaulting to saturday.")
             schedule.every().saturday.at(weekly_time_sys).do(self.job_weekly_report)

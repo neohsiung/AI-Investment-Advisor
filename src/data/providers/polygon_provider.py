@@ -9,6 +9,7 @@ class PolygonProvider(MarketDataProvider):
     """
     Polygon.io Data Provider.
     Requires POLYGON_API_KEY env var.
+    Polygon.io 資料提供者。需要 POLYGON_API_KEY 環境變數。
     """
     def __init__(self, api_key: str = None):
         self.logger = setup_logger("PolygonProvider")
@@ -23,6 +24,8 @@ class PolygonProvider(MarketDataProvider):
         prices = {}
         # Polygon Snapshot API (All tickers) is efficient but might be overkill.
         # Loop for now, optimize later or use Snapshot.
+        # Polygon Snapshot API (所有代號) 很有效率但可能過於繁重。
+        # 目前先用迴圈，之後再優化或改用 Snapshot。
         # Using Snapshot - Ticker
         try:
             for ticker in tickers:
@@ -32,6 +35,7 @@ class PolygonProvider(MarketDataProvider):
                 if resp.status_code == 200:
                     data = resp.json()
                     # Snapshot response: ticker.lastTrade.p or ticker.min.c (close)
+                    # Snapshot 回應：ticker.lastTrade.p 或 ticker.min.c (收盤價)
                     if 'ticker' in data and 'lastTrade' in data['ticker']:
                         prices[ticker] = data['ticker']['lastTrade']['p']
                     elif 'ticker' in data and 'day' in data['ticker']:
@@ -42,8 +46,34 @@ class PolygonProvider(MarketDataProvider):
         return prices
 
     def fetch_history(self, ticker: str, period: str = "1y", days: int = None) -> pd.DataFrame:
-        # Implementation for history - Aggregates (Bars)
-        # TODO: Map 'period' to Polygon timespan
+        if not self.api_key: return pd.DataFrame()
+        try:
+            # Map period/days to 'from' date. 
+            # Default to 1 year back for '1y' or 'days' if provided.
+            from_date = (pd.Timestamp.now() - pd.Timedelta(days=days if days else 365)).strftime('%Y-%m-%d')
+            to_date = pd.Timestamp.now().strftime('%Y-%m-%d')
+            
+            url = f"{self.base_url}/v2/aggs/ticker/{ticker}/range/1/day/{from_date}/{to_date}"
+            params = {"adjusted": "true", "sort": "asc", "limit": 5000, "apiKey": self.api_key}
+            
+            resp = requests.get(url, params=params, timeout=10)
+            if resp.status_code == 200:
+                data = resp.json()
+                results = data.get('results', [])
+                if not results:
+                    return pd.DataFrame()
+                
+                df = pd.DataFrame(results)
+                # Polygon keys: o (open), h (high), l (low), c (close), v (volume), t (timestamp)
+                # Polygon 鍵值：o (開盤), h (最高), l (最低), c (收盤), v (成交量), t (時間戳)
+                df = df.rename(columns={
+                    'o': 'Open', 'h': 'High', 'l': 'Low', 'c': 'Close', 'v': 'Volume', 't': 'Timestamp'
+                })
+                df['Date'] = pd.to_datetime(df['Timestamp'], unit='ms')
+                df.set_index('Date', inplace=True)
+                return df[['Open', 'High', 'Low', 'Close', 'Volume']]
+        except Exception as e:
+            self.logger.error(f"Polygon fetch_history error: {e}")
         return pd.DataFrame()
 
     def fetch_news(self, ticker: str, limit: int = 5) -> List[Dict[str, Any]]:

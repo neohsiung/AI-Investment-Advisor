@@ -1,6 +1,7 @@
 import streamlit as st
 import pandas as pd
 from src.utils.page_base import BasePage
+from src.utils.components import saas_section_header, saas_card_start, saas_card_end, saas_alert
 
 
 class AnalysisReportsPage(BasePage):
@@ -32,15 +33,19 @@ class AnalysisReportsPage(BasePage):
 
             reports_df['display_date'] = reports_df['date'].apply(convert_tz)
             
+            saas_section_header("歷史分析報告 (Archives)", "瀏覽歷史投資建議與分析報告")
+            
             selected_display = st.selectbox("選擇報告日期 (Select Report Date)", reports_df['display_date'].unique())
             
             if selected_display:
                 original_date = reports_df[reports_df['display_date'] == selected_display]['date'].values[0]
                 report_content = reports_df[reports_df['date'] == original_date]['content'].values[0]
-                st.markdown("---")
+                
+                saas_card_start(title=f"報告內容 - {selected_display}", icon="📄")
                 st.markdown(report_content)
+                saas_card_end()
         else:
-            st.info("尚無報告可供檢視。請執行 cli.py 生成報告。(No reports available yet.)")
+            saas_alert("尚無報告可供檢視。報告將由排程系統自動生成。", style="info")
 
 
 if __name__ == "__main__":

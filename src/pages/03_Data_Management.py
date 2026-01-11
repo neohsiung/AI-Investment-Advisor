@@ -1,13 +1,14 @@
+from __future__ import annotations
 import streamlit as st
-import pandas as pd
 from src.services.transaction_service import TransactionService
 from src.utils.page_base import BasePage
+from src.utils.components import saas_metric, saas_card_start, saas_card_end, saas_section_header, saas_alert
 
 
 # Helper functions for tabs
 def render_manual_entry_tab(st, service: TransactionService):
-    st.subheader("新增交易 (Manual Entry)")
-
+    saas_card_start(title="Transaction Input", subtitle="手動建立交易紀錄或調整持倉", icon="📝")
+    
     st.radio("輸入模式 (Trade Mode)", ["依數量 (By Quantity)", "依槓桿 (By Leverage)"], key="trade_mode", horizontal=True)
 
     col1, col2, col3 = st.columns(3)
@@ -49,7 +50,7 @@ def render_manual_entry_tab(st, service: TransactionService):
 
     if st.button("提交交易 (Submit Trade)", type="primary"):
         if not ticker:
-             st.error("請輸入代號 (Ticker is required)")
+             st.error("請輸入代號 (Ticker)")
         elif quantity <= 0 and action in ['BUY', 'SELL']:
              st.error("數量必須大於 0")
         elif price < 0:
@@ -61,9 +62,10 @@ def render_manual_entry_tab(st, service: TransactionService):
                  st.success(msg)
              else:
                  st.error(msg)
+    saas_card_end()
 
 def render_transactions_tab(st, service: TransactionService):
-    st.subheader("交易紀錄 (Transaction History)")
+    saas_card_start(title="Audit Trail", subtitle="歷史成交紀錄與管理", icon="📜")
 
     df = service.get_transactions()
 
@@ -116,11 +118,12 @@ def render_transactions_tab(st, service: TransactionService):
                         st.rerun()
         else:
              st.info("尚無交易紀錄。")
+        saas_card_end()
     else:
         st.error("無法讀取交易紀錄。")
 
 def render_csv_import_tab(st, db_path, user_id):
-    st.subheader("批次匯入 (CSV Import)")
+    saas_card_start(title="Batch Integration", subtitle="自動化匯入券商匯出資料", icon="📂")
 
     uploaded_file = st.file_uploader("上傳 CSV (Upload CSV)", type=["csv"])
 
@@ -159,12 +162,13 @@ def render_csv_import_tab(st, db_path, user_id):
                  st.error(msg)
          except Exception as e:
              st.error(f"System Error: {e}")
+    saas_card_end()
 
 def render_data_browser(st, db_path, user_id):
     from src.repositories.data_repository import SqliteDataRepository
     
     repo = SqliteDataRepository(db_path)
-    st.subheader("資料庫瀏覽 (Data Browser)")
+    saas_card_start(title="System Inspector", subtitle="直接瀏覽資料庫底層數據", icon="🔍")
     table = st.selectbox("選擇資料表", ["transactions", "daily_snapshots", "cash_flows", "positions", "reports", "settings"])
 
     try:
@@ -172,6 +176,8 @@ def render_data_browser(st, db_path, user_id):
         st.dataframe(df, use_container_width=True)
     except Exception as e:
         st.error(f"Error reading table (Access Denied or Schema Mismatch): {e}")
+    
+    saas_card_end()
 
 
 class DataManagementPage(BasePage):
@@ -187,7 +193,7 @@ class DataManagementPage(BasePage):
         user_name = self.user['name']
         
         # Update title with user name
-        st.caption(f"User: {user_name}")
+
         
         service = TransactionService(db_path, user_id=user_id)
 

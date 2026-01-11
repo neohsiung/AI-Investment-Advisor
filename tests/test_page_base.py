@@ -22,7 +22,7 @@ class TestBasePage:
         
         # Patch the alias 'st' in src.utils.page_base
         with patch('src.utils.page_base.st') as mock_st, \
-             patch('src.utils.page_base.load_theme_css') as mock_css, \
+             patch('src.utils.page_base.load_design_system_css') as mock_css, \
              patch('src.utils.page_base.render_sidebar') as mock_sidebar, \
              patch('src.utils.page_base.require_authentication') as mock_auth:
             
@@ -35,7 +35,7 @@ class TestBasePage:
             )
             mock_css.assert_called_once()
 
-    @patch('src.utils.page_base.load_theme_css') 
+    @patch('src.utils.page_base.load_design_system_css') 
     def test_render_not_implemented(self, mock_css):
         """Test abstract method requirement"""
         # Abstract class shouldn't be instantiated properly without implementing render
@@ -47,7 +47,7 @@ class TestBasePage:
         page = ConcretePage("Test", "🧪")
         
         with patch('src.utils.page_base.st') as mock_st, \
-             patch('src.utils.page_base.load_theme_css') as mock_css, \
+             patch('src.utils.page_base.load_design_system_css') as mock_css, \
              patch('src.utils.page_base.render_sidebar') as mock_sidebar, \
              patch('src.utils.page_base.require_authentication') as mock_auth:
              

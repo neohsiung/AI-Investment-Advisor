@@ -1,0 +1,13 @@
+{
+    "name": "True Dark",
+    "mode": "dark",
+    "colors": {
+        "primary": "#14B8A6",
+        "bg": "#0B1120",
+        "card_bg": "#1E293B",
+        "sidebar_bg": "#0F172A",
+        "border": "#334155",
+        "text_main": "#F8FAFC",
+        "text_muted": "#94A3B8"
+    }
+}

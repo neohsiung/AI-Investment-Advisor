@@ -230,7 +230,16 @@ def update_daily_snapshot(db_path="data/portfolio.db", user_id=None):
     if not user_id:
         return 
 
-    # Use Repository to get active tickers
+    # 1. Throttling: Check if today's snapshot exists
+    snapshot_repo = SqliteSnapshotRepository(db_path)
+    latest = snapshot_repo.get_latest_by_user(user_id)
+    today = get_current_date_str()
+    
+    if latest is not None and latest['date'] == today:
+        # Already have a snapshot for today, skip unless we implement forced updates or time-based TTL
+        # For SaaS 2026, daily is usually enough, or we check every 4 hours.
+        # Let's keep it daily for now to maximize speed.
+        return
     trans_repo = SqliteTransactionRepository()
     active_tickers = trans_repo.get_active_tickers(user_id)
 

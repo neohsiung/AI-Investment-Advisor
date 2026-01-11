@@ -37,19 +37,16 @@ class MarketDataService:
 
     def get_current_prices(self, tickers: List[str]) -> Dict[str, float]:
         """
-        Get current prices with failover.
+        Get current prices with failover. Polygon is primary (unlimited).
+        取得目前價格（含備援）。Polygon 為首選（不限次數）。
         """
         if not tickers: return {}
         
-        for provider in self.providers:
+        # Priority: Polygon (Unlimited) -> FMP (300/min) -> YFinance (Free)
+        for provider in [self.polygon, self.fmp, self.yfinance]:
             try:
-                # Specific logic: Polygon might fail if no key, skip?
-                # The provider itself handles missing keys by logging warning and returning empty.
                 prices = provider.fetch_current_prices(tickers)
                 if prices:
-                    # Check if we got all tickers? Or at least some?
-                    # For now, if we got > 0 prices, return.
-                    # Ideally we merge results if partial.
                     self.logger.info(f"Fetched prices from {self._get_provider_name(provider)}")
                     return prices
             except Exception as e:
@@ -78,15 +75,16 @@ class MarketDataService:
     def get_ohlcv(self, ticker: str, days=30) -> Dict[str, List]:
         """
         Get OHLCV History.
+        取得 OHLCV 歷史數據。
         """
         # History is tricky: Polygon API is different from YF.
         # For v3.2 MVP, we default to YFinance for history as it is free and reliable for daily timeframe.
         # Polygon/FMP history implementation is a TODO optimization.
         # We manually prioritize YFinance for history for now, or just iterate.
         
-        # Override Priority for History: YFinance -> Polygon -> FMP
-        # (Since YFinance implementation is most robust in our current code)
-        history_providers = [self.yfinance, self.polygon, self.fmp] 
+        # Override Priority for History: Polygon -> YFinance -> FMP
+        # 覆蓋歷史數據的優先順序：Polygon -> YFinance -> FMP
+        history_providers = [self.polygon, self.yfinance, self.fmp] 
         
         for provider in history_providers:
             try:
@@ -114,14 +112,15 @@ class MarketDataService:
     def get_technical_indicators(self, ticker: str) -> Dict[str, Any]:
         """
         Calculate indicators. Relies on fetch_history (defaulting to YFinance).
+        計算指標。依賴 fetch_history（預設為 YFinance）。
         """
         try:
             # We use self.get_ohlcv methodology but need DataFrame.
             # So we call fetch_history on YFinance directly or iterate.
             
             df = pd.DataFrame()
-            # Prioritize YFinance for indicators base data
-            for provider in [self.yfinance, self.polygon]:
+            # Prioritize Polygon for indicators base data (Unlimited history)
+            for provider in [self.polygon, self.yfinance]:
                 df = provider.fetch_history(ticker, period="1y")
                 if not df.empty: break
             
@@ -178,6 +177,7 @@ class MarketDataService:
     def get_news(self, ticker: str) -> List[str]:
         """
         Get News using Strategy: FMP -> YFinance -> Polygon
+        使用策略獲取新聞：FMP -> YFinance -> Polygon
         """
         # News Strategy: FMP is best for Financial News
         news_providers = [self.fmp, self.yfinance, self.polygon]
@@ -202,6 +202,7 @@ class MarketDataService:
     def get_financials(self, ticker: str) -> Dict[str, Any]:
         """
         Get Fundamentals. Preferred: FMP -> YFinance
+        獲取基本面數據。首選：FMP -> YFinance
         """
         fund_providers = [self.fmp, self.yfinance, self.polygon]
         
@@ -218,6 +219,7 @@ class MarketDataService:
     def get_macro_data(self):
         """
         Get Macro Data. Priority: FRED -> YFinance
+        獲取宏觀數據。優先順序：FRED -> YFinance
         """
         macro_data = {}
         
