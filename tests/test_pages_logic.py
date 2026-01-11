@@ -182,13 +182,15 @@ class TestSettingsRender:
 
             mock_os.path.exists.return_value = True
             mock_os.makedirs.return_value = None
+            mock_os.setsid = MagicMock()  # Mock the setsid function
 
-            # Setup button mock: first call returns True (start button clicked)
-            mock_st.button.side_effect = [True]  # "Start Dry Run" button
+            # Setup button mock: first call returns True (start button clicked), others False
+            mock_st.button.side_effect = [True, False, False]  # Multiple button calls in the function
 
             mock_process = MagicMock()
             mock_process.pid = 12345
             mock_subprocess.Popen.return_value = mock_process
+            mock_subprocess.STDOUT =  MagicMock()  # Mock STDOUT constant
 
             # Mock rerun to prevent actual rerun
             mock_st.rerun = MagicMock()

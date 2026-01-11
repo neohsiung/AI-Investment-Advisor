@@ -70,20 +70,32 @@ def test_dashboard_logic():
             
             if hasattr(dashboard, 'DashboardPage'):
                 page = dashboard.DashboardPage()
-                # Mock methods that interact with Streamlit to enable safe execution
-                with patch.object(page, 'setup_page'), \
-                     patch.object(page, 'handle_auth'), \
-                     patch.object(page, 'render_sidebar'), \
-                     patch.object(page, 'render_header'):
+                # Mock DashboardService
+                with patch('src.dashboard.DashboardService') as mock_dashboard_service:
+                    mock_service_instance = mock_dashboard_service.return_value
+                    mock_service_instance.prepare_dashboard_data.return_value = {
+                        'metrics': {'nlv': 10000, 'cash_balance': 5000, 'leverage_ratio': 1.0},
+                        'pnl_data': {'total': 300, 'unrealized': 200},
+                        'roi': 10.0,
+                        'transactions_df': mock_df,
+                        'current_prices': {'AAPL': 150},
+                        'positions_df': mock_df
+                    }
                     
-                    # Manually set user since handle_auth is mocked
-                    page.user = {'email': 'test@example.com', 'name': 'Tester'}
-                    
-                    page.render() # Call render directly to trigger calculation logic
+                    # Mock page methods
+                    with patch.object(page, 'setup_page'), \
+                         patch.object(page, 'handle_auth'), \
+                         patch.object(page, 'render_sidebar'), \
+                         patch.object(page, 'render_header'):
+                        
+                        # Manually set user since handle_auth is mocked
+                        page.user = {'email': 'test@example.com', 'name': 'Tester'}
+                        
+                        page.render() # Call render directly to trigger calculation logic
+                        
+                        # Verify dashboard service was used
+                        mock_service_instance.prepare_dashboard_data.assert_called_once()
             else:
                 pytest.fail("Dashboard module missing DashboardPage class")
         except Exception as e:
             pytest.fail(f"Dashboard execution failed: {e}")
-
-        # Verify key components were set up
-        mock_calc.return_value.calculate_metrics.assert_called()
