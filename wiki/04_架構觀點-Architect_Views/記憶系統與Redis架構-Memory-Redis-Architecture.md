@@ -4,6 +4,12 @@
 > **更新日期 (Last Updated):** 2026-01-14  
 > **狀態 (Status):** Production Ready
 
+> **[繁體中文 (Traditional Chinese)](#zh) | [English](#en)**
+
+---
+
+<a id="zh"></a>
+
 ## 1. 概述 (Overview)
 
 v3.2 引入了基於 Redis 的高性能記憶系統 (`MemoryService`)，取代了原本的純文件或 SQLite 短期記憶。此架構支援 "Adaptive Compression" (自適應壓縮) 與 "Cross-Session Context" (跨會話上下文)，賦予 Agent 長期連續性的思維能力。
@@ -54,5 +60,46 @@ v3.2 引入了基於 Redis 的高性能記憶系統 (`MemoryService`)，取代�
 
 ### 4.2 Configuration
 *   **Env Vars**:
-    *   `MEMORY_BACKEND=redis`
     *   `REDIS_URL=redis://redis:6379/0`
+
+---
+
+<a id="en"></a>
+
+## 🇺🇸 Memory System & Redis Architecture
+
+### 1. Overview
+v3.2 introduces a high-performance Redis-based `MemoryService`, replacing pure file or SQLite short-term memory. This architecture supports "Adaptive Compression" and "Cross-Session Context", enabling Agents to maintain long-term continuous thinking.
+
+### 2. Architecture Design
+
+#### 2.1 Memory Hierarchy
+*   **Short-Term Memory (Hot)**:
+    *   **Storage**: Redis (In-Memory).
+    *   **Scope**: Current execution context, last 5 interactions.
+    *   **TTL**: 24 hours ~ 7 days.
+*   **Long-Term Memory (Cold)**:
+    *   **Storage**: SQLite / Postgres.
+    *   **Scope**: Historical reports, user preferences, long-term Alpha strategies.
+
+#### 2.2 Core Components
+*   **MemoryService**: Unified interface (`get_context`, `store_report`) managing sync/tiering.
+*   **RedisMemoryRepository**: Adapter for connection pooling, JSON serialization, and TTL.
+*   **MemoryFactory**: Switchable backend support for Dev/Prod parity.
+
+### 3. Key Features
+
+#### 3.1 Adaptive Compression
+*   **Mechanism**: Triggered when Context Window exceeds 80%.
+*   **Algorithm**: Retains recent 20% raw data, summarizes older 80% into vectors/bullet points.
+
+#### 3.2 Conflict Detection
+*   Retrieves last 3 days of history before generating new views.
+*   Injects a `Consistency Warning` if today's view conflicts with yesterday's, forcing the Agent to justify the pivot.
+
+### 4. Infrastructure
+
+#### 4.1 Redis Deployment
+*   **Image**: `redis:7-alpine`.
+*   **Persistence**: RDB/AOF Enabled.
+*   **Config**: Controlled via `MEMORY_BACKEND` and `REDIS_URL` env vars.

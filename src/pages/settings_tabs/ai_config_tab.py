@@ -30,6 +30,7 @@ def render_api_settings(st, service: SettingsService, settings: dict):
         st.info("請為不同任務需求設定合適的模型。Smart Tier 用於深度分析，Fast Tier 用於快速篩選。")
 
         # OpenRouter Model Fetcher (Shared)
+        # OpenRouter 模型列表抓取器 (共享)
         if provider == "OpenRouter":
             if 'openrouter_models' not in st.session_state:
                 st.session_state['openrouter_models'] = []
@@ -44,9 +45,11 @@ def render_api_settings(st, service: SettingsService, settings: dict):
                     st.caption(f"已讀取 {len(st.session_state['openrouter_models'])} 個模型 (Shared List)")
 
         # 3-Column Layout for Tiers
+        # 三欄式層級佈局
         col_adv, col_smart, col_fast = st.columns(3)
 
         # --- Advanced Tier ---
+        # --- 進階層級 (Advanced) ---
         with col_adv:
             advanced_default = settings.get("AI_MODEL_ADVANCED", settings.get("AI_MODEL_SMART", "claude-3-5-sonnet-20240620"))
             st.markdown("#### 🚀 Advanced (戰略)")
@@ -60,6 +63,7 @@ def render_api_settings(st, service: SettingsService, settings: dict):
                 model_advanced = st.text_input("核心模型", value=advanced_default, key="inp_adv")
 
         # --- Smart Tier ---
+        # --- 智慧層級 (Smart) ---
         with col_smart:
             smart_default = settings.get("AI_MODEL_SMART", settings.get("AI_MODEL", "gemini-1.5-pro"))
             st.markdown("#### 🧠 Smart (智囊)")
@@ -73,6 +77,7 @@ def render_api_settings(st, service: SettingsService, settings: dict):
                 model_smart = st.text_input("分析模型", value=smart_default, key="inp_smart")
 
         # --- Fast Tier ---
+        # --- 快速層級 (Fast) ---
         with col_fast:
             fast_default = settings.get("AI_MODEL_FAST", "gemini-1.5-flash")
             st.markdown("#### ⚡ Fast (前鋒)")

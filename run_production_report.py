@@ -19,18 +19,23 @@ def generate_and_send_report(user_id: str, dry_run: bool = False):
     logger.info(f"Starting Production Report Generation for {user_id}")
     
     # 1. Initialize Services
+    # 初始化服務
     # Memory Service (Auto-selects Redis/SQLite based on Env)
+    # 記憶服務 (根據環境自動選擇 Redis/SQLite)
     memory_service = MemoryFactory.create_memory_service(user_id)
     
     # Task Planner (Standard Plan)
+    # 任務規劃器 (標準計畫)
     task_planner = TaskPlanningService()
     
     # Workflow
+    # 工作流
     workflow = WeeklyWorkflow(user_id=user_id)
     workflow.memory_service = memory_service
     workflow.task_planner = task_planner
     
     # 2. Run Workflow (Antigravity Plan)
+    # 執行工作流 (抗重力計畫)
     try:
         logger.info("Executing Weekly Workflow (Macro -> Micro)...")
         report_content = workflow.run_weekly_cycle(user_id)
@@ -42,6 +47,7 @@ def generate_and_send_report(user_id: str, dry_run: bool = False):
         print("="*50 + "\n")
         
         # 3. Distribution
+        # 分發報告
         if not dry_run:
             logger.info("Distributing Report via Email...")
             notifier = EmailNotifier()
@@ -49,12 +55,7 @@ def generate_and_send_report(user_id: str, dry_run: bool = False):
             
             # Attempt to send (might fail if no creds, but we try)
             try:
-                notifier.send_report(subject, report_content) # Assuming send_report handles "to" from somewhere or config
-                # Actually EmailNotifier usually takes 'to_email'. 
-                # Checking source, it might look up user email or take arg. 
-                # Based on previous usage, it seems it might imply user email from config?
-                # Let's check BaseNotifier or just call it. 
-                # If it needs modification, I'll catch the error.
+                notifier.send_report(subject, report_content) 
                 logger.info("Email sent successfully.")
             except Exception as e:
                 logger.error(f"Failed to send email: {e}")
