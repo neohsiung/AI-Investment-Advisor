@@ -23,7 +23,13 @@ class DashboardService:
     def _fetch_market_prices(_self, tickers):
         """Internal helper to fetch market prices with caching."""
         service = MarketDataService()
-        return service.get_current_prices(tickers)
+        prices = service.get_current_prices(tickers)
+        
+        # Hardcode USD if present (Cash/Currency)
+        if "USD" in tickers:
+            prices["USD"] = 1.0
+            
+        return prices
 
     def prepare_dashboard_data(self, user_id):
         """Fetch transactions, prices, and calculate all dashboard metrics."""

@@ -37,22 +37,38 @@ class MarketDataService:
 
     def get_current_prices(self, tickers: List[str]) -> Dict[str, float]:
         """
-        Get current prices with failover. Polygon is primary (unlimited).
-        取得目前價格（含備援）。Polygon 為首選（不限次數）。
+        Get current prices with failover and merging. 
+        Iterates providers until all tickers are resolved.
+        取得目前價格（含備援與合併）。遍歷提供者直到所有代號都解析完畢。
         """
         if not tickers: return {}
         
+        all_prices = {}
+        missing_tickers = list(tickers)
+        
         # Priority: Polygon (Unlimited) -> FMP (300/min) -> YFinance (Free)
         for provider in [self.polygon, self.fmp, self.yfinance]:
+            if not missing_tickers:
+                break
+                
             try:
-                prices = provider.fetch_current_prices(tickers)
+                # Only request missing tickers
+                prices = provider.fetch_current_prices(missing_tickers)
                 if prices:
-                    self.logger.info(f"Fetched prices from {self._get_provider_name(provider)}")
-                    return prices
+                    self.logger.info(f"Fetched {len(prices)} prices from {self._get_provider_name(provider)}")
+                    
+                    # VALIDATION: Only accept positive prices
+                    valid_prices = {k: v for k, v in prices.items() if v > 0}
+                    
+                    all_prices.update(valid_prices)
+                    # Update missing list
+                    missing_tickers = [t for t in tickers if t not in all_prices]
             except Exception as e:
                 self.logger.warning(f"Provider {self._get_provider_name(provider)} failed for prices: {e}")
         
-        return {}
+        return all_prices
+        
+        return all_prices
 
     def get_market_context(self, tickers: List[str], enrich: bool = False):
         """

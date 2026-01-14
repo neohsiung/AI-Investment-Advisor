@@ -64,10 +64,18 @@ class TestYFinanceProvider:
         result = provider.fetch_current_prices([])
         assert result == {}
     
+    @patch('yfinance.Ticker')
     @patch('yfinance.download')
-    def test_fetch_current_prices_error(self, mock_download, provider):
+    def test_fetch_current_prices_error(self, mock_download, mock_ticker_cls, provider):
         """Test error handling in fetch_current_prices."""
         mock_download.side_effect = Exception("Network Error")
+        
+        # Also mock fallback
+        mock_instance = MagicMock()
+        mock_instance.fast_info = {}
+        mock_instance.info = {}
+        # Or make it raise exception
+        mock_ticker_cls.side_effect = Exception("Fallback Failed")
         
         result = provider.fetch_current_prices(['AAPL'])
         

@@ -21,16 +21,28 @@ class FMPProvider(MarketDataProvider):
     def fetch_current_prices(self, tickers: List[str]) -> Dict[str, float]:
         if not self.api_key or not tickers: return {}
         prices = {}
+        
+        # Chunking to avoid "URI Too Long" (Limit batch to 50)
+        batch_size = 50
+        
         try:
-            ticker_str = ",".join(tickers)
-            url = f"{self.base_url}/quote/{ticker_str}"
-            params = {"apikey": self.api_key}
-            resp = requests.get(url, params=params, timeout=5)
-            if resp.status_code == 200:
-                data = resp.json()
-                for item in data:
-                    if 'symbol' in item and 'price' in item:
-                        prices[item['symbol']] = item['price']
+            for i in range(0, len(tickers), batch_size):
+                chunk = tickers[i:i + batch_size]
+                ticker_str = ",".join(chunk)
+                
+                # Use Verified Stable Endpoint (2025/2026 Standard)
+                # Replaces Legacy /api/v3/quote
+                url = "https://financialmodelingprep.com/stable/quote"
+                params = {"symbol": ticker_str, "apikey": self.api_key}
+                
+                resp = requests.get(url, params=params, timeout=5)
+                if resp.status_code == 200:
+                    data = resp.json()
+                    for item in data:
+                        if 'symbol' in item and 'price' in item:
+                            prices[item['symbol']] = item['price']
+                else:
+                     self.logger.warning(f"FMP Batch Failed ({resp.status_code})")
         except Exception as e:
             self.logger.error(f"FMP fetch_current_prices error: {e}")
         return prices

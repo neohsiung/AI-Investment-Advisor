@@ -111,11 +111,32 @@ class DashboardPage(BasePage):
                             saas_card_end()
                         else:
                             st.info("無法顯示分佈圖")
+                            zero_mv = positions_df[positions_df['market_value'] <= 0]
+                            if not zero_mv.empty:
+                                st.warning(f"目前無法取得以下資產價格: {zero_mv['ticker'].tolist()} (Prices not found)")
                 else:
                     st.info("尚無持倉紀錄 (No active positions found)。")
 
             except Exception as e:
                 st.error(f"儀表板畫面渲染錯誤: {e}")
-
+                
+        # Debug / Maintenance Section
+        with st.expander("🔧 除錯與維護 (Debug & Maintenance)"):
+             st.write("Current User:", user_id)
+             if st.button("清除快取 (Clear Cache)"):
+                 st.cache_data.clear()
+                 st.success("快取已清除，請重新整理頁面。")
+             
+             if 'active_tickers' in locals() and active_tickers:
+                 st.write("Active Tickers:", active_tickers)
+                 st.write("Current Prices:", self.dashboard_service._fetch_market_prices(active_tickers))
+                 
+             st.write("### API Key Status")
+             import os
+             keys = ["POLYGON_API_KEY", "FMP_API_KEY", "TAVILY_API_KEY", "FRED_API_KEY"]
+             status = {k: "✅ Loaded" if os.getenv(k) else "❌ Missing" for k in keys}
+             st.write(status)
+             st.info("若無法取得價格，可能是 API 額度用盡或數據異常 (例如回傳 0)。請檢查 API Key 或稍後再試。")
+             
 if __name__ == "__main__":
     DashboardPage().run()

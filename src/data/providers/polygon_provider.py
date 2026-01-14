@@ -37,13 +37,46 @@ class PolygonProvider(MarketDataProvider):
                     # Snapshot response: ticker.lastTrade.p or ticker.min.c (close)
                     # Snapshot 回應：ticker.lastTrade.p 或 ticker.min.c (收盤價)
                     if 'ticker' in data and 'lastTrade' in data['ticker']:
-                        prices[ticker] = data['ticker']['lastTrade']['p']
+                        val = data['ticker']['lastTrade']['p']
+                        if val > 0:
+                            prices[ticker] = val
                     elif 'ticker' in data and 'day' in data['ticker']:
-                         prices[ticker] = data['ticker']['day']['c']
+                         val = data['ticker']['day']['c']
+                         if val > 0:
+                             prices[ticker] = val
+                    
+                    # Fallback: internal prevDay (Efficient)
+                    # Fallback: 內部 prevDay (高效)
+                    if ticker not in prices and 'ticker' in data and 'prevDay' in data['ticker']:
+                        val = data['ticker']['prevDay']['c']
+                        if val > 0:
+                            prices[ticker] = val
+
+                    # Final External Fallback (Only if snapshot had NO data)
+                    if ticker not in prices:
+                        prev = self._fetch_prev_close(ticker)
+                        if prev > 0:
+                            prices[ticker] = prev
+
         except Exception as e:
             self.logger.error(f"Polygon fetch_current_prices error: {e}")
         
         return prices
+
+    def _fetch_prev_close(self, ticker: str) -> float:
+        """Fetch previous day's close price as fallback."""
+        try:
+            url = f"{self.base_url}/v2/aggs/ticker/{ticker}/prev"
+            params = {"adjusted": "true", "apiKey": self.api_key}
+            resp = requests.get(url, params=params, timeout=5)
+            if resp.status_code == 200:
+                data = resp.json()
+                results = data.get('results', [])
+                if results and 'c' in results[0]:
+                    return results[0]['c']
+        except Exception:
+            pass
+        return 0.0
 
     def fetch_history(self, ticker: str, period: str = "1y", days: int = None) -> pd.DataFrame:
         if not self.api_key: return pd.DataFrame()

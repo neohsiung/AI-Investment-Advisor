@@ -14,9 +14,11 @@ class YFinanceProvider(MarketDataProvider):
 
     def fetch_current_prices(self, tickers: List[str]) -> Dict[str, float]:
         if not tickers: return {}
+        prices = {}
+        
+        # 1. Try Bulk Download (Fastest)
         try:
             data = yf.download(tickers, period="1d", auto_adjust=True, progress=False)
-            prices = {}
             
             if len(tickers) == 1:
                 ticker = tickers[0]
@@ -32,10 +34,33 @@ class YFinanceProvider(MarketDataProvider):
                             val = close_data[ticker].iloc[-1]
                             if pd.notna(val):
                                 prices[ticker] = val
-            return prices
         except Exception as e:
-            self.logger.error(f"YFinance fetch_current_prices error: {e}")
-            return {}
+            self.logger.warning(f"YFinance bulk fetch failed: {e}. Trying individual fallback.")
+
+        # 2. Check for Missing Tickers (Fallback)
+        missing_tickers = [t for t in tickers if t not in prices]
+        if missing_tickers:
+            self.logger.info(f"YFinance: Falling back for {missing_tickers}")
+            for t in missing_tickers:
+                try:
+                    ticker_obj = yf.Ticker(t)
+                    # Try fast_info first (New YF API)
+                    if hasattr(ticker_obj, 'fast_info'):
+                        price = ticker_obj.fast_info.get('last_price')
+                        if price:
+                             prices[t] = price
+                             continue
+                    
+                    # Try regular info
+                    info = ticker_obj.info
+                    price = info.get('currentPrice') or info.get('regularMarketPrice')
+                    if price:
+                        prices[t] = price
+                except Exception as inner_e:
+                    # self.logger.warning(f"Failed individual fetch for {t}: {inner_e}")
+                    pass
+        
+        return prices
 
     def fetch_history(self, ticker: str, period: str = "1y", days: int = None) -> pd.DataFrame:
         try:
