@@ -81,10 +81,11 @@ sequenceDiagram
 
 | 工具名稱 | 輸入參數 (Types) | 業務邏輯 / 數據源 |
 | :--- | :--- | :--- |
-| `get_current_price` | `ticker` (str) | [MarketDataService](服務層開發指南-Service-Layer-Blueprints) |
-| `get_news` | `ticker` (str) | FMP / YFinance API |
-| `get_financials` | `ticker` (str) | 基礎面數據聚合 |
-| `search` | `query` (str) | Tavily / DuckDuckGo |
+| `get_current_price` | `ticker` (str) | [MarketDataService](服務層開發指南-Service-Layer-Blueprints) (Polygon/FMP) |
+| `get_valuation` | `ticker` (str) | FMP (Ratios, PE, PB) - Starter Plan |
+| `get_company_profile` | `ticker` (str) | FMP/Polygon (Sector, Ind, Desc) |
+| `web_search` | `query` (str) | Tavily (Financial Context) - Researcher |
+| `get_macro_indicators` | - | FRED (GDP, CPI, Rates) |
 
 ### 3. 安全與品質要求 (Security & Quality NFR)
 

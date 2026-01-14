@@ -23,6 +23,7 @@
 | **🧠 任務規劃引擎** | **TaskPlanningService** 將高層目標 (如週報) 自動分解為可執行的任務序列 (DAG)，並根據複雜度動態選擇模型 (Fast/Smart/Advanced)。 |
 | **⚡ Redis 記憶系統** | 引入 **Adaptive Compression** 技術，利用 Redis 高速存取短期記憶，並透過 **Cross-Session Context** 實現長期思維連續性。 |
 | **🐝 蜂群洞察 (Swarm)** | 整合 **Macro, Fundamental, Sentiment** 三維度訊號，由 CIO Agent 進行 **Gap Filling** (補倉) 與 Alpha 候選股最終仲裁。 |
+| **🔌 MCP 深度整合** | **FMP (Starter Plan)** 與 **Tavily (Researcher)** 服務深度整合，完全發揮訂閱權限，提供即時估值、財報與深度搜尋上下文。 |
 | **🏆 量化反饋迴圈** | **Engineer Agent** 利用 **DSPy** 自動重寫表現不佳 Agent 的 Prompt，確保持續進化。 |
 | **🏗️ 現代化基礎架構** | 支援 **Docker Compose / K8s** 部署，採用 Clean Architecture。測試覆蓋率 > 75%。 |
 
@@ -97,6 +98,7 @@ This is not just a chatbot; it is an **autonomous financial analysis system capa
 | **🏦 Institutional Personas** | **CIO** focuses on Risk-Adjusted Returns; **Macro/Fundamental/Momentum** analysts have dedicated data pipelines. |
 | **🏗️ Modern Infrastructure** | **Kubernetes** ready, built with **Clean Architecture** (Factory, Repository, DI). **75%+ Test Coverage**. |
 | **🔍 Intelligent Search** | Integrated **Tavily API** as primary search engine with DuckDuckGo fallback for reliable web research. |
+| **🔌 Deep MCP Integration** | Maximized **FMP (Starter)** & **Tavily (Researcher)** utility. Agents can now access Valuation Ratios, Key Metrics, and Deep Search Context via standardized MCP tools. |
 | **🧠 Agent Mesh Protocol** | **MCP (Model Context Protocol)** server support enabling cross-agent tool sharing and **HR 360 Feedback**. |
 
 ### 🚀 Quick Start

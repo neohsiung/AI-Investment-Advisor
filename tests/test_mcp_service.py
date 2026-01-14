@@ -4,9 +4,25 @@ Tests for MCP Microservice.
 """
 import pytest
 from fastapi.testclient import TestClient
-from src.mcp_service import app
+from src.mcp_service import app, services
+from unittest.mock import MagicMock
 
 client = TestClient(app)
+
+@pytest.fixture(autouse=True)
+def mock_mcp_services():
+    """Mock the global services dictionary to avoid real API calls."""
+    services["market"] = MagicMock()
+    # Mock return values for standard calls
+    services["market"].get_current_prices.return_value = {"AAPL": 150.0}
+    services["market"].get_valuation_metrics.return_value = {"pe": 20}
+    services["market"].get_financials.return_value = {"description": "Apple Inc."}
+    services["market"].get_macro_data.return_value = {"gdp": 2.0}
+    
+    services["search"] = MagicMock()
+    services["search"].search_financial_context.return_value = [{"title": "News"}]
+    
+    services["fred"] = MagicMock()
 
 def test_root():
     """Test root endpoint."""
@@ -51,7 +67,7 @@ def test_call_tool():
     with client as c:
         response = c.post("/tools/call/get_current_price", json=call_data)
         assert response.status_code == 200
-        assert response.json()["status"] == "called"
+        assert response.json()["status"] == "success"
         assert response.json()["tool"] == "get_current_price"
 
 def test_call_tool_not_found():

@@ -112,3 +112,31 @@ class FMPProvider(MarketDataProvider):
         except Exception as e:
             self.logger.error(f"FMP peers error: {e}")
         return []
+
+    def fetch_key_metrics(self, ticker: str) -> Dict[str, Any]:
+        """Fetch Key Metrics (TTM) - PE, EPS, etc."""
+        if not self.api_key: return {}
+        try:
+            url = f"{self.base_url}/key-metrics-ttm/{ticker}"
+            params = {"apikey": self.api_key}
+            resp = requests.get(url, params=params, timeout=5)
+            if resp.status_code == 200:
+                data = resp.json()
+                if data: return data[0]
+        except Exception as e:
+            self.logger.error(f"FMP key metrics error: {e}")
+        return {}
+    
+    def fetch_financial_ratios(self, ticker: str) -> Dict[str, Any]:
+        """Fetch Financial Ratios (TTM)"""
+        if not self.api_key: return {}
+        try:
+            url = f"{self.base_url}/ratios-ttm/{ticker}"
+            params = {"apikey": self.api_key}
+            resp = requests.get(url, params=params, timeout=5)
+            if resp.status_code == 200:
+                data = resp.json()
+                if data: return data[0]
+        except Exception as e:
+            self.logger.error(f"FMP ratios error: {e}")
+        return {}
