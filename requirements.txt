@@ -36,3 +36,4 @@ tavily-python
 fastapi
 uvicorn[standard]
 httpx
+redis
