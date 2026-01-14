@@ -48,6 +48,8 @@ class BaseAgent(ABC):
         """
         if self.tier == "fast":
             default_model = os.getenv("AI_MODEL_FAST", os.getenv("AI_MODEL", "gemini-1.5-flash"))
+        elif self.tier == "advanced":
+            default_model = os.getenv("AI_MODEL_ADVANCED", os.getenv("AI_MODEL_SMART", "claude-3-5-sonnet-20240620"))
         else:
             default_model = os.getenv("AI_MODEL_SMART", os.getenv("AI_MODEL", "gemini-1.5-pro"))
 
@@ -63,6 +65,7 @@ class BaseAgent(ABC):
         
         for key, value in db_settings.items():
             if key == "AI_PROVIDER": config["provider"] = value
+            elif key == "AI_MODEL_ADVANCED" and self.tier == "advanced": config["model"] = value
             elif key == "AI_MODEL_SMART" and self.tier == "smart": config["model"] = value
             elif key == "AI_MODEL_FAST" and self.tier == "fast": config["model"] = value
             elif key == "AI_MODEL" and "model" not in config: config["model"] = value
@@ -70,7 +73,12 @@ class BaseAgent(ABC):
             elif key == "BASE_URL": config["base_url"] = value
         
         if not config["model"]:
-            config["model"] = "gemini-1.5-pro" if self.tier == "smart" else "gemini-1.5-flash"
+            if self.tier == "advanced":
+                config["model"] = "claude-3-5-sonnet-20240620"
+            elif self.tier == "smart":
+                config["model"] = "gemini-1.5-pro"
+            else:
+                config["model"] = "gemini-1.5-flash"
 
         return config
 

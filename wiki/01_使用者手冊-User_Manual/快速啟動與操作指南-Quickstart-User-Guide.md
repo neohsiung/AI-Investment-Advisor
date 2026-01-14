@@ -65,6 +65,13 @@ graph LR
 - **精準引用**: 所有事實陳述皆附帶 `[來源名稱](URL)` 引用，確保資訊可信度。
 - **IC 決策**: 包含 Thesis (戰略主軸), Anti-Thesis (反論) 與 Synthesis (關鍵仲裁) 的完整論述。
 
+#### 4.1 手動觸發進階報告 (Advanced Report Trigger)
+若需立即生成包含 **Task Planner** 與 **Memory** 整合的完整週報（非 Scheduler 排程），請執行專用生產腳本：
+```bash
+python run_production_report.py
+```
+> **注意**: 此腳本會強制啟用 Advanced Tier 模型進行深度推論，並將結果存入 Redis Memory。
+
 ### 5. 系統設定 (System Settings)
 這是系統的核心控制面板：
 

@@ -75,8 +75,40 @@ class FMPProvider(MarketDataProvider):
                         "sector": item.get('sector'),
                         "industry": item.get('industry'),
                         "description": item.get('description'),
-                        "website": item.get('website')
+                        "website": item.get('website'),
+                        "ceo": item.get('ceo')
                     }
         except Exception as e:
             self.logger.error(f"FMP fetch_info error: {e}")
         return {}
+
+    def fetch_sector_performance(self) -> List[Dict[str, Any]]:
+        """Fetch real-time sector performance."""
+        if not self.api_key: return []
+        try:
+            url = f"{self.base_url}/sector-performance"
+            params = {"apikey": self.api_key}
+            resp = requests.get(url, params=params, timeout=5)
+            if resp.status_code == 200:
+                # Returns list of {sector: '...', changesPercentage: '...'}
+                return resp.json()
+        except Exception as e:
+            self.logger.error(f"FMP sector perf error: {e}")
+        return []
+
+    def fetch_stock_peers(self, ticker: str) -> List[str]:
+        """Fetch stock peers (competitors) for supply chain/industry analysis."""
+        if not self.api_key: return []
+        try:
+            url = f"{self.base_url}/stock_peers"
+            params = {"symbol": ticker, "apikey": self.api_key}
+            resp = requests.get(url, params=params, timeout=5)
+            if resp.status_code == 200:
+                data = resp.json()
+                # format: [{"peersList": ["A", "B"]}] or just list depending on version
+                if data and isinstance(data[0], dict):
+                    return data[0].get('peersList', [])
+                return [] 
+        except Exception as e:
+            self.logger.error(f"FMP peers error: {e}")
+        return []

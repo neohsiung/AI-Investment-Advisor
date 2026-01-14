@@ -81,3 +81,15 @@ def test_kwargs_passing():
     with patch("src.agents.factory.MomentumAgent") as mock_agent:
         AgentFactory.create_agent("Momentum", use_cache=False, extra_param="123")
         mock_agent.assert_called_with(use_cache=False, user_id="system", extra_param="123")
+
+def test_create_agent_with_tier_override():
+    with patch("src.agents.factory.CIOAgent") as mock_agent:
+        # Test default is 'smart'
+        AgentFactory.create_cio_agent()
+        args, kwargs = mock_agent.call_args
+        assert kwargs['tier'] == 'smart'
+        
+        # Test override is 'advanced'
+        AgentFactory.create_cio_agent(tier="advanced")
+        args, kwargs = mock_agent.call_args
+        assert kwargs['tier'] == 'advanced'

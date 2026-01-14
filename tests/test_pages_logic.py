@@ -135,36 +135,44 @@ class TestSettingsRender:
             [MagicMock(), MagicMock()]  # Weekly: Day, Time
         ]
 
-        # Mock SystemEngineerAgent inside the function
+        # Mock SystemEngineerAgent specifically
+        # 1. Remove the module from sys.modules to force re-import with mocks
+        if 'src.pages.settings_tabs.scheduler_tab' in sys.modules:
+            del sys.modules['src.pages.settings_tabs.scheduler_tab']
+            
         with patch('src.agents.engineer.SystemEngineerAgent') as mock_agent_cls, \
+             patch('sqlalchemy.create_engine'), \
+             patch('sqlalchemy.event.listen'), \
              patch.object(settings_mod, 'get_db_connection') as mock_conn, \
              patch.object(settings_mod, 'SettingsService') as mock_service_cls, \
              patch('pandas.read_sql') as mock_read_sql:
+             # Re-import inside the patch context
+             import src.pages.settings_tabs.scheduler_tab as scheduler_tab_module
 
-            mock_agent_cls.return_value.get_schedule_config.return_value = {
-                "schedule_daily": "10:00",
-                "schedule_daily_days": "monday,friday"
-            }
+             mock_agent_cls.return_value.get_schedule_config.return_value = {
+                 "schedule_daily": "10:00",
+                 "schedule_daily_days": "monday,friday"
+             }
             
-            # Mock SettingsService return for Timezone
-            mock_service_instance = mock_service_cls.return_value
-            mock_service_instance.get_setting.return_value = "UTC"
-            mock_service_instance.get_all_settings.return_value = {"DISPLAY_TIMEZONE": "UTC"}
+             # Mock SettingsService return for Timezone
+             mock_service_instance = mock_service_cls.return_value
+             mock_service_instance.get_setting.return_value = "UTC"
+             mock_service_instance.get_all_settings.return_value = {"DISPLAY_TIMEZONE": "UTC"}
 
-            # Fix: mock time_input return value to have .hour for smart hint logic
-            mock_time = MagicMock()
-            mock_time.hour = 10
-            mock_st.time_input.return_value = mock_time
+             # Fix: mock time_input return value to have .hour for smart hint logic
+             mock_time = MagicMock()
+             mock_time.hour = 10
+             mock_st.time_input.return_value = mock_time
 
-            settings_mod.render_scheduler_tab(mock_st, "dummy.db")
+             settings_mod.render_scheduler_tab(mock_st, "dummy.db")
 
-            # Updated labels in unified UX
-            mock_st.time_input.assert_any_call("時間 (Weekly Time)", value=ANY, label_visibility='collapsed')
-            mock_st.multiselect.assert_called_with(
-                "執行日 (Days)",
-                options=ANY,
-                default=ANY
-            )
+             # Updated labels in unified UX
+             mock_st.time_input.assert_any_call("時間 (Weekly Time)", value=ANY, label_visibility='collapsed')
+             mock_st.multiselect.assert_called_with(
+                 "執行日 (Days)",
+                 options=ANY,
+                 default=ANY
+             )
 
 
     def test_render_report_dry_run_tab(self):

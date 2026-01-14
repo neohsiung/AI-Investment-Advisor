@@ -10,31 +10,57 @@ class FundamentalAgent(BaseAgent):
     def run(self, context):
         """
         context: {
-            "ticker": "AAPL",
-            "financials": {...},
-            "news": [...]
+            "ticker": "AAPL" (Single Mode)
+            OR 
+            "tickers": ["AAPL", "GOOG"] (Batch Mode)
+            "market_data": { "AAPL": { "financials": ... } }
         }
         """
-        ticker = context.get("ticker", "UNKNOWN")
+        # 1. Single Ticker Mode
+        if "ticker" in context and context["ticker"] != "UNKNOWN":
+            ticker = context["ticker"]
+            prompt_data = {
+                "ticker": ticker,
+                "financials": json.dumps(context.get("financials", {}), indent=2, ensure_ascii=False),
+                "news": json.dumps(context.get("news", []), indent=2, ensure_ascii=False)
+            }
+            return self.run_tool_loop(context=prompt_data)
         
-        prompt_data = {
-            "ticker": ticker,
-            "financials": json.dumps(context.get("financials", {}), indent=2, ensure_ascii=False),
-            "news": json.dumps(context.get("news", []), indent=2, ensure_ascii=False)
-        }
+        # 2. Batch Mode (Portfolio Scan)
+        tickers = context.get("tickers", [])
+        if not tickers:
+            return "No tickers provided for Fundamental Analysis."
+            
+        market_data = context.get("market_data", {})
         
-
-        response = self.run_tool_loop(context=prompt_data)
-
-        if "Mock response" in response:
-            return f"""
-### {ticker} 基本面分析 (Mock)
-*   **估值評價**: Fair (合理)
-*   **關鍵財務亮點**:
-    *   營收年成長 +5%
-    *   毛利率維持 40% 水準
-*   **護城河分析**: 擁有強大的品牌忠誠度與生態系轉換成本。
-*   **風險提示**: 消費性電子需求疲軟。
-*   **結論**: Bullish (長期看好)，建議分批佈局。
-"""
-        return response
+        reports = []
+        # Optimization: Limit to top N or process all? For Deep Dive, process all.
+        # But to avoid Context limit, we might need to summarize or process one by one.
+        # Given this is "Deep-Dive", let's loop and concatenate.
+        
+        for t in tickers:
+            t_data = market_data.get(t, {})
+            
+            # Prepare context for this specific ticker
+            # Note: We re-use the same prompt logic but just run it multiple times.
+            # This is expensive but accurate.
+            
+            # Check if we have data
+            fin = t_data.get("financials", {})
+            news = t_data.get("news", [])
+            
+            prompt_data = {
+                "ticker": t,
+                "financials": json.dumps(fin, indent=2, ensure_ascii=False),
+                "news": json.dumps(news, indent=2, ensure_ascii=False)
+            }
+            
+            try:
+                # Run Agent for this ticker
+                # We prefix with header to distinguish in consolidated output
+                res = self.run_tool_loop(context=prompt_data)
+                reports.append(f"### {t} Analysis\n{res}")
+            except Exception as e:
+                reports.append(f"### {t} Analysis\nError: {e}")
+                
+        return "\n\n".join(reports)

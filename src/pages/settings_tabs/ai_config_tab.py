@@ -29,42 +29,61 @@ def render_api_settings(st, service: SettingsService, settings: dict):
         st.markdown("### 模型分級設定 (Model Tiering)")
         st.info("請為不同任務需求設定合適的模型。Smart Tier 用於深度分析，Fast Tier 用於快速篩選。")
 
-        # Smart Model
-        smart_default = settings.get("AI_MODEL_SMART", settings.get("AI_MODEL", "gemini-1.5-pro"))
-        st.markdown("#### 🧠 Smart Tier (智囊團)")
-        st.caption("適用角色: CIO, Macro, Fundamental, Engineer")
-        
+        # OpenRouter Model Fetcher (Shared)
         if provider == "OpenRouter":
-             if 'openrouter_models' not in st.session_state:
+            if 'openrouter_models' not in st.session_state:
                 st.session_state['openrouter_models'] = []
-             
-             col_model, col_btn = st.columns([3, 1])
-             with col_btn:
-                if st.form_submit_button("更新模型列表 (Fetch Models)"):
+            
+            col_fetch, col_status = st.columns([1, 3])
+            with col_fetch:
+                if st.form_submit_button("🔄 更新模型列表 (Fetch Models)"):
                     st.session_state['openrouter_models'] = service.fetch_openrouter_models()
                     st.rerun()
-
-             with col_model:
+            with col_status:
                 if st.session_state['openrouter_models']:
-                    if smart_default not in st.session_state['openrouter_models']:
-                        st.session_state['openrouter_models'].insert(0, smart_default)
-                    model_smart = st.selectbox("Smart Model", st.session_state['openrouter_models'], index=st.session_state['openrouter_models'].index(smart_default))
-                else:
-                    model_smart = st.text_input("Smart Model", value=smart_default)
-        else:
-            model_smart = st.text_input("Smart Model", value=smart_default, help="e.g., gemini-1.5-pro, gpt-4o")
+                    st.caption(f"已讀取 {len(st.session_state['openrouter_models'])} 個模型 (Shared List)")
 
-        # Fast Model
-        fast_default = settings.get("AI_MODEL_FAST", "gemini-1.5-flash")
-        st.markdown("#### ⚡ Fast Tier (前鋒部隊)")
-        st.caption("適用角色: Momentum, Dispatcher, Daily Check")
-        
-        if provider == "OpenRouter" and st.session_state.get('openrouter_models'):
-             if fast_default not in st.session_state['openrouter_models']:
-                st.session_state['openrouter_models'].insert(0, fast_default)
-             model_fast = st.selectbox("Fast Model", st.session_state['openrouter_models'], index=st.session_state['openrouter_models'].index(fast_default))
-        else:
-            model_fast = st.text_input("Fast Model", value=fast_default, help="e.g., gemini-1.5-flash, gpt-4o-mini")
+        # 3-Column Layout for Tiers
+        col_adv, col_smart, col_fast = st.columns(3)
+
+        # --- Advanced Tier ---
+        with col_adv:
+            advanced_default = settings.get("AI_MODEL_ADVANCED", settings.get("AI_MODEL_SMART", "claude-3-5-sonnet-20240620"))
+            st.markdown("#### 🚀 Advanced (戰略)")
+            st.caption("Task Planner, Gap Filling")
+            
+            if provider == "OpenRouter" and st.session_state.get('openrouter_models'):
+                if advanced_default not in st.session_state['openrouter_models']:
+                    st.session_state['openrouter_models'].insert(0, advanced_default)
+                model_advanced = st.selectbox("核心模型", st.session_state['openrouter_models'], index=st.session_state['openrouter_models'].index(advanced_default), key="sel_adv")
+            else:
+                model_advanced = st.text_input("核心模型", value=advanced_default, key="inp_adv")
+
+        # --- Smart Tier ---
+        with col_smart:
+            smart_default = settings.get("AI_MODEL_SMART", settings.get("AI_MODEL", "gemini-1.5-pro"))
+            st.markdown("#### 🧠 Smart (智囊)")
+            st.caption("CIO, Macro, Fundamental")
+
+            if provider == "OpenRouter" and st.session_state.get('openrouter_models'):
+                if smart_default not in st.session_state['openrouter_models']:
+                    st.session_state['openrouter_models'].insert(0, smart_default)
+                model_smart = st.selectbox("分析模型", st.session_state['openrouter_models'], index=st.session_state['openrouter_models'].index(smart_default), key="sel_smart")
+            else:
+                model_smart = st.text_input("分析模型", value=smart_default, key="inp_smart")
+
+        # --- Fast Tier ---
+        with col_fast:
+            fast_default = settings.get("AI_MODEL_FAST", "gemini-1.5-flash")
+            st.markdown("#### ⚡ Fast (前鋒)")
+            st.caption("Momentum, Dispatcher")
+
+            if provider == "OpenRouter" and st.session_state.get('openrouter_models'):
+                if fast_default not in st.session_state['openrouter_models']:
+                    st.session_state['openrouter_models'].insert(0, fast_default)
+                model_fast = st.selectbox("速度模型", st.session_state['openrouter_models'], index=st.session_state['openrouter_models'].index(fast_default), key="sel_fast")
+            else:
+                model_fast = st.text_input("速度模型", value=fast_default, key="inp_fast")
 
         api_key = st.text_input(
             "API Key",
@@ -85,6 +104,7 @@ def render_api_settings(st, service: SettingsService, settings: dict):
             updates = {
                 "AI_PROVIDER": provider,
                 "AI_MODEL": model_smart, 
+                "AI_MODEL_ADVANCED": model_advanced,
                 "AI_MODEL_SMART": model_smart,
                 "AI_MODEL_FAST": model_fast,
                 "API_KEY": api_key,

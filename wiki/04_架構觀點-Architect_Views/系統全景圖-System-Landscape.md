@@ -112,5 +112,7 @@ Building a transparent, cloud-native financial agent suite with 0% hallucination
 ## 🔗 Bidirectional Links
 - **Communication Protocols**: [Agent Mesh Protocols](底層通信協議-Agent-Mesh-Protocols)
 - **Frontend Architecture**: [View-Service Pattern](前端與服務架構-Frontend-Service-Architecture)
+- **Task Planning Engine**: [Task Planning & Execution](任務規劃與執行引擎-Task-Planning-Engine)
+- **Memory System**: [Memory & Redis Architecture](記憶系統與Redis架構-Memory-Redis-Architecture)
 - **Implementation Status**: [Architecture Status](架構狀態-Architecture-Status)
 - **Developer Guide**: [Local Dev Setup](環境設定與本地開發-Environment-Local-Dev)

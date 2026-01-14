@@ -6,12 +6,13 @@ from src.repositories.transaction_repository import SqliteTransactionRepository
 from src.repositories.settings_repository import SqliteSettingsRepository
 
 class CIOAgent(BaseAgent):
-    def __init__(self, use_cache=True, transaction_repo=None, prompt_path="prompts/cio_weekly.txt", **kwargs):
+    def __init__(self, use_cache=True, transaction_repo=None, prompt_path="prompts/cio_weekly.txt", mode="report", **kwargs):
         # Allow tier override or kwargs
         tier = kwargs.pop('tier', 'smart')
         super().__init__(name="CIO", prompt_path=prompt_path, use_cache=use_cache, ttl_hours=24, tier=tier, **kwargs)
         
         self.transaction_repo = transaction_repo or SqliteTransactionRepository()
+        self.mode = mode
         
         # Common ETFs to filter out for "Stock Picking" focus
         self.etf_list = {
@@ -20,12 +21,15 @@ class CIOAgent(BaseAgent):
             "XLP", "XLY", "XLI", "XLU", "XLB", "XLRE"
         }
 
-    def run(self, context, mode="report"):
+    def run(self, context, mode=None):
         """
         Run the CIO Agent.
         mode: 'report' (Final Report) or 'strategy' (Sector Strategy & Screening)
         """
-        if mode == 'strategy':
+        # Determine effective mode
+        effective_mode = mode or self.mode
+        
+        if effective_mode == 'strategy' or effective_mode == 'sector_analysis':
             return self._run_strategy(context)
         
         # Report Mode (Default)
@@ -36,7 +40,7 @@ class CIOAgent(BaseAgent):
         Generates the final investment report using Swarm Intelligence & IC Protocol.
         使用蜂群智慧與投資委員會協議生成最終投資報告。
         """
-        user_id = context.get("user_id")
+        user_id = context.get("user_id") or self.user_id
         
         # 1. Get Dynamic Context (Portfolio)
         # 1. 取得動態上下文 (投資組合)
@@ -63,7 +67,8 @@ class CIOAgent(BaseAgent):
             "engineer_report": context.get("engineer_report", "無 (No Constraints)"),
             "swarm_context": swarm_context, # [NEW] Consolidated Swarm Inputs
             "sector_strategy": context.get("sector_strategy", "無 (None)"),
-            "report_focus": context.get("report_focus", "Weekly Strategic")
+            # Use task_instruction if available (from TaskPlanner), else fallback to generic focus
+            "report_focus": context.get("task_instruction") or context.get("report_focus", "Weekly Strategic")
         }
 
         # 4. Call Agent Tool Loop with Thought Chain (IC Protocol Enforcement)

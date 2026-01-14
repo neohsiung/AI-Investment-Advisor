@@ -14,9 +14,13 @@ services:
       - .env
     environment:
       - MCP_SERVER_URL=http://mcp_server:8000
+      - MEMORY_BACKEND=redis
+      - REDIS_URL=redis://redis:6379/0
     restart: unless-stopped
     depends_on:
       mcp_server:
+        condition: service_healthy
+      redis:
         condition: service_healthy
 
   mcp_server:
@@ -28,12 +32,18 @@ services:
       - "8000:8000"
     env_file:
       - .env
+    environment:
+      - MEMORY_BACKEND=redis
+      - REDIS_URL=redis://redis:6379/0
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
       interval: 10s
       timeout: 5s
       retries: 3
     restart: unless-stopped
+    depends_on:
+      redis:
+        condition: service_healthy
 
   scheduler:
     build: .
@@ -48,11 +58,15 @@ services:
       - .env
     environment:
       - MCP_SERVER_URL=http://mcp_server:8000
+      - MEMORY_BACKEND=redis
+      - REDIS_URL=redis://redis:6379/0
     restart: unless-stopped
     depends_on:
       postgres:
         condition: service_healthy
       mcp_server:
+        condition: service_healthy
+      redis:
         condition: service_healthy
 
   postgres:
@@ -74,5 +88,21 @@ services:
       retries: 5
     restart: unless-stopped
 
+  redis:
+    image: redis:7-alpine
+    container_name: investment_advisor_redis
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+    restart: unless-stopped
+    volumes:
+      - redis_data:/data
+
+
 volumes:
   postgres_data:
+  redis_data:

@@ -54,9 +54,16 @@ graph TD
 
 #### 3.2 A2A 實體化路徑 (A2A Instantiation)
 當 Agent 調用 `call_agent(target_name)` 時：
-1.  **Factory 介入**: 透過 `src.agents.factory.AgentFactory` 根據名稱動態建立對象。
+1.  **Factory 介入**: 透過 `src.agents.factory.AgentFactory` 根據名稱動態建立對象 (支援 `tier` 參數，區分 Smart/Advanced)。
 2.  **依賴注入**: 自動注入 `feedback_repo` 與 `market_tools` 的本地 MCP 實例。
 3.  **同步執行**: 目前採用同步阻塞調用，適合確定性的鏈式研究路徑。
+
+#### 3.3 任務規劃引擎 (Task Planning Engine)
+*詳見: [任務規劃與執行引擎](任務規劃與執行引擎-Task-Planning-Engine)*
+
+負責將高層目標分解為執行計畫 (Execution Plan)。
+- **核心職責**: Goal Decomposition, Complexity Scoring, Model Tier Selection.
+- **協作模式**: `WorkflowService` -> `TaskPlanningService` (Generate Plan) -> `AgentFactory` (Execute Tasks).
 
 ### 3. 非功能性需求 (NFR)
 - **響應時間**: P95 本地處理延遲 < 500ms（不含 LLM 推論）。

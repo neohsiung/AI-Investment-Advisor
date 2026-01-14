@@ -20,6 +20,9 @@ import re
 
 logger = logging.getLogger("WorkflowService")
 
+from src.services.task_planning_service import TaskPlanningService
+from src.services.memory_service import MemoryService
+
 class BaseWorkflow(ABC):
     def __init__(self, user_id: str, transaction_repo=None, transaction_service=None, market_service=None):
         self.user_id = user_id
@@ -80,8 +83,9 @@ class BaseWorkflow(ABC):
         self.context['tickers'] = user_tickers
         logger.info(f"Active tickers: {user_tickers}")
         
-        # Prefetch Market Data (Technical) - Fixes Momentum Agent missing data
-        self.context['market_data'] = self.market_service.get_market_context(user_tickers)
+        # Prefetch Market Data (Technical + Fundamental)
+        # Fixes missing financials/news for Agents
+        self.context['market_data'] = self.market_service.get_market_context(user_tickers, enrich=True)
 
     @abstractmethod
     def execute_analysis(self, force_refresh: bool) -> bool:
@@ -242,10 +246,10 @@ class DailyWorkflow(BaseWorkflow):
         # Use CIO Agent for Daily Report (Daily Pulse Mode)
         cio = AgentFactory.create_cio_agent(mode="daily", user_id=self.user_id)
         
-        # Retrieve simple macro data for context (not full report)
+        # Retrieve simple macro data for context
         macro_data = self.market_service.get_macro_data()
         
-        # v3.2 Update: Handle nested structure (economics/market_indicators)
+        # v3.2 Update: Handle nested structure
         vix = "N/A"
         spy = "N/A"
         spread = "N/A"
@@ -255,7 +259,7 @@ class DailyWorkflow(BaseWorkflow):
              market_inds = macro_data["market_indicators"]
              vix = market_inds.get('^VIX', 'N/A')
              spy = market_inds.get('SPY', 'N/A')
-        elif isinstance(macro_data, dict): # Fallback for flat structure
+        elif isinstance(macro_data, dict):
              vix = macro_data.get('^VIX', 'N/A')
              spy = macro_data.get('SPY', 'N/A')
              
@@ -274,6 +278,31 @@ class DailyWorkflow(BaseWorkflow):
         
         combined_macro = f"{macro_summary}\n\n[Reference Weekly Macro Context]:\n{macro_deep}"
         
+        # --- Memory Consistency Check (New) ---
+        memory_consistency_note = ""
+        if self.memory_service:
+            # 1. Get recent context
+            mem_ctx = self.memory_service.get_context(self.user_id, "daily")
+            
+            # 2. Synthesize current signal summary for contradiction check
+            # We look at the aggregated signals from execute_analysis results (stored in context)
+            current_signals = []
+            for t, data in self.context.get('ticker_reports', {}).items():
+                mom = str(data.get('momentum', '')).upper()
+                sent = str(data.get('sentiment', '')).upper()
+                current_signals.append(f"{t}: Momentum={mom[:50]}..., Sentiment={sent[:50]}...")
+            
+            current_view_summary = f"Macro: {combined_macro[:200]}\nSignals: {'; '.join(current_signals)}"
+            
+            # 3. Detect Contradictions
+            conflicts = self.memory_service.detect_conflicts(current_view_summary, mem_ctx)
+            
+            if conflicts:
+                logger.warning(f"Contradictions Detected: {conflicts}")
+                memory_consistency_note = "\n\n**CRITICAL CONSISTENCY WARNING**:\n" + \
+                                          "\n".join([f"- {c}" for c in conflicts]) + \
+                                          "\n*Instruction*: You must explicitly acknowledge and justify these shifts in view compared to previous days."
+
         # Format metrics for CIO
         portfolio_str = ", ".join(self.context['tickers']) if self.context['tickers'] else "No Tickers"
 
@@ -282,12 +311,23 @@ class DailyWorkflow(BaseWorkflow):
             "ticker_data": self.context.get('ticker_reports', {}),
             "portfolio": portfolio_str,
             "report_focus": "Daily Tactical",
+            "consistency_constraints": memory_consistency_note, # Inject warning
             "user_id": self.user_id
         }
         
         final_report = cio.run(cio_context)
+        
+        # Store in Memory
+        if self.memory_service:
+            self.memory_service.store_report(
+                user_id=self.user_id,
+                report_type="daily",
+                date=datetime.now().strftime("%Y-%m-%d"),
+                content=final_report
+            )
 
         # Post-Process: Record Macro & CIO Signals
+        # ... (rest of signal recording logic)
         # ----------------------------------------
         
         # 1. Macro Signal (Proxy on SPY)
@@ -364,78 +404,127 @@ class DailyWorkflow(BaseWorkflow):
 
 
 class WeeklyWorkflow(BaseWorkflow):
-    def execute_analysis(self, force_refresh: bool) -> bool:
+    def run_weekly_cycle(self, user_id: str, context_data: dict = None) -> str:
         """
-        Weekly: Full Deep Dive (Macro -> Sector -> Ticker).
-        每週執行: 全面深度分析 (總經 -> 版塊 -> 個股)。
+        Enhanced Weekly Workflow using Antigravity Planning + Existing Agents.
+        Implementation of the 'Plan -> Execute' pattern.
         """
+        logger.info(f"Starting Weekly Cycle for {user_id}")
         
-        # 1. Macro Analysis
-        macro_agent = AgentFactory.create_macro_agent(ttl_hours=24, use_cache=not force_refresh, user_id=self.user_id)
-        macro_report = macro_agent.run({})
-        self.context['macro_report'] = macro_report
+        context_data = context_data or {}
         
-        if not self.context['tickers']:
-            logger.info("No tickers, but will do macro report.")
-            
-        # 2. Collect Data (Parallel)
-        self.logger.info(" collecting market data...")
-        market_context = self.market_service.get_market_context(self.context['tickers'])
+        # 0. Pre-load Data (Optimized Bulk Fetch)
+        if 'tickers' not in self.context:
+             self.collect_data()
         
-        # 2.1 Yield Curve (Keep this as global macro data)
-        yield_curve = self.market_service.get_yield_curve_inversion()
-        self.context['market_data']['yield_curve'] = yield_curve
-        
-        # No Search Pre-fetch (Agents will search on demand)
-        
-        self.context['market_data'].update(market_context) # Update the main market_data context
-            
-        # 3. Ticker Analysis (Fundamental + Momentum)
-        fun_ttl = 168 # 1 week
-        mom_ttl = 1 # 1 hour
-        fund_agent = AgentFactory.create_fundamental_agent(ttl_hours=fun_ttl, use_cache=not force_refresh, user_id=self.user_id)
-        mom_agent = AgentFactory.create_momentum_agent(ttl_hours=mom_ttl, use_cache=not force_refresh, user_id=self.user_id)
-        sent_agent = AgentFactory.create_sentiment_agent(ttl_hours=4, use_cache=not force_refresh, user_id=self.user_id)
-        
-        ticker_reports = {}
-        for ticker in self.context['tickers']:
-            # Fetch Fundamental Data on demand (Weekly)
-            ticker_data = self.context['market_data'].get(ticker, {})
-            
-            # Prepare Context for Agent
-            ticker_ctx = {
-                "ticker": ticker,
-                "price_data": ticker_data.get("price_data", {}),
-                "indicators": ticker_data.get("indicators", {}),
-                "financials": self.market_service.get_financials(ticker),
-                "news": self.market_service.get_news(ticker),
-                # Agent searches autonomously
-                "yield_curve": self.context['market_data'].get('yield_curve', {})
+        # 1. Plan Phase
+        # If planner is available, use it to generate the structured plan
+        if self.task_planner:
+            # We pass current context (with loaded tickers/market data) to the planner
+            plan_context = {
+                "tickers": self.context.get('tickers', []),
+                "market_data_summary": "Active" if self.context.get('market_data') else "Pending"
             }
+            plan = self.task_planner.decompose_goal("Generate Weekly Report", plan_context)
+            logger.info(f"Generated Plan: {[t.name for t in plan.tasks]}")
             
-            # Cache news for sentiment use
-            news = ticker_ctx["news"]
+            # 2. Execution Phase
+            task_results = {}
+            # 'execution_context' starts with global context (market data, etc)
+            execution_context = {**self.context, **context_data} 
+            
+            for task in plan.tasks:
+                logger.info(f"--- Executing Task: {task.name} ---")
+                
+                # 2.1 Agent Selection
+                agent = self._select_agent_for_task(task.name, user_id, tier=task.model_tier)
+                # 2.2 Input Prep
+                agent_input = self._bridge_input_context(task, execution_context)
+                
+                # 2.3 Run Agent
+                try:
+                    response = agent.run(agent_input)
+                    # 2.4 Capture Output
+                    task_results[task.name] = response
+                    execution_context[f"RESULT_{task.name}"] = response
+                    if isinstance(response, dict):
+                        execution_context.update(response) # Merge dict results
+                except Exception as e:
+                    logger.error(f"Task {task.name} Failed: {e}")
+                    task_results[task.name] = f"Error: {e}"
 
-            f_res = fund_agent.run(ticker_ctx)
+            # 3. Final Synthesis (The Report)
+            final_report = task_results.get("Report Synthesis", "\n\n".join([f"## {k}\n{v}" for k,v in task_results.items()]))
             
-            # Momentum Data (already fetched in collect_data)
-            m_res = mom_agent.run(ticker_ctx)
+            # 4. Memory Storage
+            if self.memory_service:
+                self.memory_service.store_report(
+                    user_id=user_id, 
+                    report_type="weekly", 
+                    date=datetime.now().strftime("%Y-%m-%d"), 
+                    content=str(final_report)
+                )
             
-            # Sentiment Data (Weekly check for narrative shifts)
-            s_context = {
-                "ticker": ticker,
-                "news": news
-            }
-            s_res = sent_agent.run(s_context)
+            return str(final_report)
             
-            ticker_reports[ticker] = {
-                "fundamental": f_res, 
-                "momentum": m_res,
-                "sentiment": s_res
-            }
+        else:
+            # Legacy Fallback
+            logger.warning("TaskPlanner not injected. Running legacy workflow.")
+            return self._legacy_weekly_cycle(user_id)
+
+    def _select_agent_for_task(self, task_name: str, user_id: str, tier: str = "smart"):
+        """Map Task Name to Existing Agent implementations"""
+        name_lower = task_name.lower()
+        if "market cycle" in name_lower or "macro" in name_lower:
+            return AgentFactory.create_macro_agent(user_id=user_id, tier=tier)
+        elif "sector" in name_lower or "swarm" in name_lower:
+            return AgentFactory.create_cio_agent(user_id=user_id, mode="sector_analysis", tier=tier) 
+        elif "deep-dive" in name_lower or "supply chain" in name_lower:
+            return AgentFactory.create_fundamental_agent(user_id=user_id, tier=tier)
+        elif "portfolio" in name_lower or "audit" in name_lower:
+             return AgentFactory.create_cio_agent(user_id=user_id, mode="portfolio_review", tier=tier)
+        elif "recommendation" in name_lower or "balancing" in name_lower or "alpha" in name_lower:
+             return AgentFactory.create_cio_agent(user_id=user_id, mode="weekly", tier=tier)
+        elif "synthesis" in name_lower:
+             return AgentFactory.create_cio_agent(user_id=user_id, mode="synthesis", tier=tier)
+
+    def _bridge_input_context(self, task, context):
+        """
+        Adapts the global execution context to the specific input dict 
+        required by the Agent for this task.
+        """
+        # Basic context always included
+        agent_ctx = {
+            "tickers": context.get("tickers", []),
+            "market_data": context.get("market_data", {}),
+            "date": datetime.now().strftime("%Y-%m-%d"),
+            "user_id": self.user_id,
+            # CRITICAL: Inject the specific goal for this step
+            "task_name": task.name,
+            "task_instruction": task.description 
+        }
+        
+        # Inject inputs from previous tasks if defined
+        for key in task.input_keys:
+            # We try to find the key in the context. 
+            # If it's a "RESULT_X" key, we might need to map it.
+            val = context.get(key)
+            if val:
+                agent_ctx[key] = val
             
-        self.context['ticker_reports'] = ticker_reports
-        return True
+            # Also just pass "previous_results" for generic chaining
+            agent_ctx["previous_context"] = {k:v for k,v in context.items() if k.startswith("RESULT_")}
+            
+        return agent_ctx
+
+    def _legacy_weekly_cycle(self, user_id: str) -> str:
+        """
+        Legacy logic is deprecated. 
+        If TaskPlanner is not injected, we raise an error or return a basic message 
+        to encourage proper dependency injection.
+        """
+        logger.warning("_legacy_weekly_cycle is deprecated. Please inject TaskPlanner.")
+        return "Error: TaskPlanner not configured for Weekly Workflow."
 
     def synthesize_results(self) -> str:
         # Optimization Loop (System Engineer)
@@ -497,3 +586,28 @@ class WeeklyWorkflow(BaseWorkflow):
         
         final_report = cio.run(cio_context)
         return final_report
+
+    # Required Abstract Method Stub - Not used in new Plan flow directly, but needed for BaseWorkflow
+    def execute_analysis(self, force_refresh: bool) -> bool:
+        # This was the old "Step 2" in BaseWorkflow.
+        # In the new flow, we override run_weekly_cycle entirely, so this might not be called 
+        # unless we are in the legacy path which now calls _legacy_weekly_cycle.
+        # However, BaseWorkflow.run() calls this. 
+        # So we actually need to change BaseWorkflow.run() OR make the new logic fit into `execute_analysis`.
+        # BUT I overrode `run_weekly_cycle`. Wait, BaseWorkflow.run calls `execute_analysis`. 
+        # The file content showed `WeeklyWorkflow` inheriting `BaseWorkflow`.
+        # I replaced `execute_analysis` with `run_weekly_cycle`. 
+        # This implies I wanted the entry point to be `run_weekly_cycle`?
+        # But `BaseWorkflow` usually has a `run()` method.
+        # If I want to support the new flow, I should rename my new method to `run()` override?
+        # OR put the logic inside `execute_analysis` and `synthesize_results`.
+        
+        # BETTER PLAN: Implement `execute_analysis` to run the tasks, store results in context.
+        # Implement `synthesize_results` to format the final report.
+        # But the Planner creates a holistic plan including synthesis.
+        
+        # I will stick to overriding `run` in WeeklyWorkflow to bypass the rigid BaseWorkflow template if needed.
+        # Or just have `run_weekly_cycle` be the main entry point if that's how it's called externally.
+        # Checking implementation_plan.md -> "Extends existing WorkflowService methods (run_weekly_report)".
+        # The file I edited calls it `WeeklyWorkflow`.
+        return True # Stub

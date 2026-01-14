@@ -54,22 +54,26 @@ class MarketDataService:
         
         return {}
 
-    def get_market_context(self, tickers: List[str]):
+    def get_market_context(self, tickers: List[str], enrich: bool = False):
         """
         Get detailed context (OHLCV + Indicators).
+        If enrich=True, also fetches Financials and News (slower).
         """
         context = {}
         for ticker in tickers:
             indicators = self.get_technical_indicators(ticker)
             ohlcv = self.get_ohlcv(ticker)
             
-            # Note: The original Search fallback is simplified here or removed.
-            # We rely on our 3 layers of providers.
-            
-            context[ticker] = {
+            data = {
                 "price_data": ohlcv,
                 "indicators": indicators
             }
+            
+            if enrich:
+                data["financials"] = self.get_financials(ticker)
+                data["news"] = self.get_news(ticker)
+                
+            context[ticker] = data
         return context
 
     def get_ohlcv(self, ticker: str, days=30) -> Dict[str, List]:

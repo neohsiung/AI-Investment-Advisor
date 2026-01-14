@@ -120,26 +120,26 @@ class AgentFactory:
         return AgentFactory._inject_dependencies(agent)
 
     @staticmethod
-    def create_fundamental_agent(use_cache=True, user_id="system", **kwargs):
-        agent = FundamentalAgent(use_cache=use_cache, tier="smart", user_id=user_id, **kwargs)
+    def create_fundamental_agent(use_cache=True, tier="smart", user_id="system", **kwargs):
+        agent = FundamentalAgent(use_cache=use_cache, tier=tier, user_id=user_id, **kwargs)
         return AgentFactory._inject_dependencies(agent)
         
     @staticmethod
-    def create_macro_agent(use_cache=True, user_id="system", **kwargs):
-        agent = MacroAgent(use_cache=use_cache, tier="smart", user_id=user_id, **kwargs)
+    def create_macro_agent(use_cache=True, tier="smart", user_id="system", **kwargs):
+        agent = MacroAgent(use_cache=use_cache, tier=tier, user_id=user_id, **kwargs)
         return AgentFactory._inject_dependencies(agent)
 
     @staticmethod
-    def create_sentiment_agent(use_cache=True, user_id="system", **kwargs):
-        agent = SentimentAgent(use_cache=use_cache, tier="fast", user_id=user_id, **kwargs)
+    def create_sentiment_agent(use_cache=True, tier="fast", user_id="system", **kwargs):
+        agent = SentimentAgent(use_cache=use_cache, tier=tier, user_id=user_id, **kwargs)
         return AgentFactory._inject_dependencies(agent)
 
     @staticmethod
-    def create_cio_agent(use_cache=True, transaction_repo=None, mode="weekly", user_id="system", **kwargs):
+    def create_cio_agent(use_cache=True, transaction_repo=None, mode="weekly", tier="smart", user_id="system", **kwargs):
         prompt_map = {
             "daily": "prompts/cio_daily.txt",
             "weekly": "prompts/cio_weekly.txt"
         }
         prompt_path = prompt_map.get(mode, "prompts/cio_weekly.txt")
-        agent = CIOAgent(use_cache=use_cache, transaction_repo=transaction_repo, prompt_path=prompt_path, tier="smart", user_id=user_id, **kwargs)
+        agent = CIOAgent(use_cache=use_cache, transaction_repo=transaction_repo, prompt_path=prompt_path, mode=mode, tier=tier, user_id=user_id, **kwargs)
         return AgentFactory._inject_dependencies(agent)
