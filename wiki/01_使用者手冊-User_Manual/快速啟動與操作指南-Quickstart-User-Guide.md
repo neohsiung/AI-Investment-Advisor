@@ -85,36 +85,39 @@ python run_production_report.py
 本版本新增 LINE Bot 即時推播功能：
 
 #### 6.1 LINE Bot 設定
-1.  前往 [LINE Developers Console](https://developers.line.biz/) 建立 Messaging API Channel。
-2.  取得 `Channel access token` 與 `Channel secret`。
-3.  將上述資訊填入 `.env` 檔：
+1.  **取得 Channel Token:**
+    *   登入 [LINE Developers Console](https://developers.line.biz/)。
+    *   建立新 Channel (Create a new channel)，**務必選擇 'Messaging API' 類型** (不要選擇 LINE Login)。
+    *   > **注意**: 若您在 Channel 中看到 `App types: Web app` 且沒有 `Messaging API` 分頁，代表您誤建了 LINE Login Channel。請回到 Provider 頁面重新建立 **Messaging API** Channel。
+2.  **設定 Access Token**:
+    *   進入 Channel，切換至 **Messaging API** 分頁。
+    *   捲動至下方找到 **Channel access token**，點擊 **Issue** 按鈕生成長效 Token。
+3.  **設定 Channel Secret**:
+    *   切換至 **Basic settings** 分頁，捲動至下方找到 **Channel secret**。
+4.  **填寫設定檔**:
+    *   找到 **Your user ID** (通常以 `U` 開頭)，將上述資訊填入 `.env`：
     ```env
     LINE_CHANNEL_ACCESS_TOKEN=你的Token
     LINE_CHANNEL_SECRET=你的Secret
-    LINE_USER_ID=你的UserID (若要接收單播)
+    LINE_USER_ID=你的UserID
     ```
-4.  **Webhook 設定**:
-    *   **Local**: 使用 `ngrok` 取得 HTTPS URL (e.g., `https://xxxx.ngrok.io/callback`).
-110: 5.  **User ID** (個人開發測試用):
-111:     *   切換至 **Basic settings** 分頁。
-112:     *   捲動至下方找到 **Your user ID** (通常以 `U` 開頭)。
-113:     *   將其填入 `.env` 的 `LINE_USER_ID` 欄位以接收測試通知。
 
-#### 6.1.2 本地開發 Webhook 設定 (Local Ngrok Setup)
+#### 6.2 本地開發 Webhook 設定 (Local Ngrok Setup)
 如果您在本地開發環境測試 LINE Bot，必須使用 `ngrok` 將本地伺服器暴露到公網。
-1.  安裝 ngrok: `brew install ngrok/ngrok/ngrok` (macOS) 或下載執行檔。
-2.  啟動 ngrok:
+1.  **安裝 ngrok**: `brew install ngrok/ngrok/ngrok` (macOS) 或下載執行檔。
+2.  **啟動 ngrok**:
     ```bash
     ngrok http 8501
     ```
     (假設 Streamlit 或 FastAPI 運行在 8501 埠)
-3.  複製 HTTPS URL (例如 `https://a1b2c3d4.ngrok.io`)。
-4.  回到 LINE Developers Console > Messaging API > Webhook settings。
-5.  貼上 URL 並加上 `/callback`路徑 (例如 `https://a1b2c3d4.ngrok.io/callback`)。
-6.  開啟 **Use webhook** 開關。
-7.  點擊 **Verify** 測試連線 (若服務未啟動會失敗，請確認 `python main.py` 已執行)。
+3.  **設定 Webhook**:
+    *   複製 HTTPS URL (例如 `https://a1b2c3d4.ngrok.io`)。
+    *   回到 LINE Developers Console > Messaging API > Webhook settings。
+    *   貼上 URL 並加上 `/callback`路徑 (例如 `https://a1b2c3d4.ngrok.io/callback`)。
+    *   開啟 **Use webhook** 開關。
+    *   點擊 **Verify** 測試連線 (若服務未啟動會失敗，請確認 `python main.py` 已執行)。
 
-#### 6.2 哨兵監控 (Sentinel Monitor)
+#### 6.3 哨兵監控 (Sentinel Monitor)
 系統內建「自適應哨兵 (Adaptive Sentinel)」，自動監控市場異常。
 - **觸發機制**: 不再依賴固定數值。系統依據過去 30 天的波動率 (MA + Sigma) 判斷「當前是否異常」。
 - **通知形式**: LINE Flex Message (圖文卡片)。
