@@ -95,7 +95,22 @@ python run_production_report.py
     ```
 4.  **Webhook 設定**:
     *   **Local**: 使用 `ngrok` 取得 HTTPS URL (e.g., `https://xxxx.ngrok.io/callback`).
-    *   **Prod**: 填入 Cloud Run URL.
+98:     *   **Prod**: 填入 Cloud Run URL.
+99: 
+100: #### 6.1.1 取得 LINE Channel Access Token & User ID
+101: 1.  登入 [LINE Developers Console](https://developers.line.biz/)。
+102: 2.  選擇或建立一個 Provider，並點擊進入您的 Messaging API Channel。
+103: 3.  **Channel Access Token (Long-lived)**:
+104:     *   切換至 **Messaging API** 分頁。
+105:     *   捲動至下方找到 **Channel access token**。
+106:     *   點擊 **Issue** 按鈕生成長效 Token。
+107: 4.  **Channel Secret**:
+108:     *   切換至 **Basic settings** 分頁。
+109:     *   捲動至下方找到 **Channel secret**。
+110: 5.  **User ID** (個人開發測試用):
+111:     *   切換至 **Basic settings** 分頁。
+112:     *   捲動至下方找到 **Your user ID** (通常以 `U` 開頭)。
+113:     *   將其填入 `.env` 的 `LINE_USER_ID` 欄位以接收測試通知。
 
 #### 6.2 哨兵監控 (Sentinel Monitor)
 系統內建「自適應哨兵 (Adaptive Sentinel)」，自動監控市場異常。
