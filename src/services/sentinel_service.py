@@ -97,7 +97,7 @@ class SentinelService:
                 }
                 
                 # Execute Council Session
-                result = self.council_service.start_session(topic, context)
+                result = await self.council_service.start_session(topic, context)
                 decision = result.get('consensus', 'No Consensus')
                 logger.info(f"Sentinel: Council Result Verified. Decision: {decision}")
                 
