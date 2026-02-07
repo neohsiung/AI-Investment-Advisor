@@ -112,6 +112,20 @@ python run_production_report.py
 112:     *   捲動至下方找到 **Your user ID** (通常以 `U` 開頭)。
 113:     *   將其填入 `.env` 的 `LINE_USER_ID` 欄位以接收測試通知。
 
+#### 6.1.2 本地開發 Webhook 設定 (Local Ngrok Setup)
+如果您在本地開發環境測試 LINE Bot，必須使用 `ngrok` 將本地伺服器暴露到公網。
+1.  安裝 ngrok: `brew install ngrok/ngrok/ngrok` (macOS) 或下載執行檔。
+2.  啟動 ngrok:
+    ```bash
+    ngrok http 8501
+    ```
+    (假設 Streamlit 或 FastAPI 運行在 8501 埠)
+3.  複製 HTTPS URL (例如 `https://a1b2c3d4.ngrok.io`)。
+4.  回到 LINE Developers Console > Messaging API > Webhook settings。
+5.  貼上 URL 並加上 `/callback`路徑 (例如 `https://a1b2c3d4.ngrok.io/callback`)。
+6.  開啟 **Use webhook** 開關。
+7.  點擊 **Verify** 測試連線 (若服務未啟動會失敗，請確認 `python main.py` 已執行)。
+
 #### 6.2 哨兵監控 (Sentinel Monitor)
 系統內建「自適應哨兵 (Adaptive Sentinel)」，自動監控市場異常。
 - **觸發機制**: 不再依賴固定數值。系統依據過去 30 天的波動率 (MA + Sigma) 判斷「當前是否異常」。
