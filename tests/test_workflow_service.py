@@ -44,13 +44,15 @@ def test_daily_workflow_execution(mock_deps):
         MockFactory.create_macro_agent.return_value = mock_macro
 
         mock_cio = MagicMock()
-        mock_cio.run.return_value = """
+        report_content = """
 ### NVDA (0.5)
 - **Action**: **SELL**
 
 ### TSM (0.5)
 - **Action**: **HOLD**
 """
+        mock_cio.run.return_value = report_content
+        mock_cio.polish_report.side_effect = lambda x: x # Identity function
         MockFactory.create_cio_agent.return_value = mock_cio
         
         # Instantiate inside structure where Factory is active

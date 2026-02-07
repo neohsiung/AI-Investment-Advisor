@@ -48,14 +48,21 @@ class CIOAgent(BaseAgent):
         
         # 2. Format Swarm Inputs (Aggregating Sub-Agent Reports)
         # 2. 格式化蜂群輸入 (聚合子 Agent 的報告)
-        ticker_data = context.get("ticker_data", {})
-        swarm_context = ""
-        if ticker_data:
-            for ticker, reports in ticker_data.items():
-                swarm_context += f"### {ticker}\n"
-                swarm_context += f"- **Fundamental**: {reports.get('fundamental', 'N/A')}\n"
-                swarm_context += f"- **Momentum**: {reports.get('momentum', 'N/A')}\n"
-                swarm_context += f"- **Sentiment**: {reports.get('sentiment', 'N/A')}\n\n"
+        # 2. Format Swarm Inputs (Aggregating Sub-Agent Reports)
+        # 2. 格式化蜂群輸入 (聚合子 Agent 的報告)
+        # [Map-Reduce Support]: Use pre-aggregated transcript if available
+        if "council_transcript" in context:
+            swarm_context = context["council_transcript"]
+        else:
+            # Legacy/Standard Mode: Aggregate from ticker_data dict
+            ticker_data = context.get("ticker_data", {})
+            swarm_context = ""
+            if ticker_data:
+                for ticker, reports in ticker_data.items():
+                    swarm_context += f"### {ticker}\n"
+                    swarm_context += f"- **Fundamental**: {reports.get('fundamental', 'N/A')}\n"
+                    swarm_context += f"- **Momentum**: {reports.get('momentum', 'N/A')}\n"
+                    swarm_context += f"- **Sentiment**: {reports.get('sentiment', 'N/A')}\n\n"
         
         # 3. Prepare Data for Prompt Template
         prompt_data = {
@@ -134,6 +141,40 @@ class CIOAgent(BaseAgent):
                 "sector_strategy": {"target_sectors": [], "rationale": "JSON Parse Error"},
                 "candidates": []
             }
+
+    def polish_report(self, report_content: str) -> str:
+        """
+        Refines the final report for readability and tone. 
+        Ensures Actionable Orders table includes holdings context if available in text.
+        
+        潤飾最終報告以提升可讀性與語氣。
+        確保行動指令表 (Actionable Orders) 包含持倉上下文 (若文本中有提供)。
+        """
+        system_prompt = (
+            "You are the Chief Investment Officer (Editor Mode). "
+            "Your task is to review the following investment report. "
+            "1. Improve readability, flow, and formatting. "
+            "2. Ensure the 'Actionable Orders' table is clear, well-formatted, and includes a 'Quantity/Weight' column if data allows. "
+            "3. DO NOT remove the Detailed Analysis sections. Keep them intact but fix any markdown issues. "
+            "4. Add a final professional concluding remark if missing. "
+            "5. Ensure all headers are consistent (e.g., '## 1. Market Sentiment'). "
+            "Output the polished report in Markdown."
+        )
+        
+        user_prompt = f"Please polish this report:\n\n{report_content}"
+        
+        try:
+            response = self.call_llm(
+                messages=[
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": user_prompt}
+                ],
+                temperature=0.3
+            )
+            return response
+        except Exception as e:
+            self.logger.error(f"Polish failed: {e}")
+            return report_content
 
     def _get_portfolio_context(self, user_id):
         """Retrieves portfolio context using Repository."""

@@ -14,75 +14,60 @@
     - 包含 Momentum (技術訊號)
     - 包含 Sentiment/News (驅動敘事)
     - 包含 Fundamental (估值參考 - 僅作安全邊際確認)
+
+## 任務 (Tasks) - System 2 Thinking (Slow & Deliberate)
+
+本次任務不僅是產生報告，而是執行 **"Fractal Debate" (碎形辯論)**。你必須針對每一個 **子項目 (每一檔持倉)**，都進行一次微型的評議會審議。
+
+1.  **Memory Chain (記憶鏈檢索)**:
+    - 在思考任何標的之前，先回想：上次我們對它的決策是什麼？為什麼？
+    - 確保今日的決策與過去的思路是連續的 (或有明確的轉折理由)。
+
+2.  **The Debate Loop (針對每一檔股票)**:
+    - **Thesis (正方)**: 哪些 Agent (Fundamental, Sentiment) 支持繼續持有？
+    - **Anti-Thesis (反方)**: 哪些 Agent (Risk, Momentum) 建議賣出？
+    - **Synthesis (仲裁)**: 權重如何分配？做出最終裁決。
+
+3.  **關鍵仲裁 (Output Synthesis)**: 
+    - 將上述的思考過程，濃縮為報告中的 "Debate Highlights"。
+    - **切記**: 每一條結論背後，都必須有 Agent 辯論的影子。絕不可憑空給出 "HOLD"。
 4.  **投資組合**: {{portfolio}}
 
-## 任務 (Tasks)
-1.  **市場定調 (The Setup)**:
-    - 用一句話定義今日市場主題 (Theme of the Day)。例如："Fed 轉鴿後的逼空行情 (Short Squeeze)" 或 "地緣政治引發的 Risk-off"。
-    - 檢查 VIX 是否飆升 (>20) 或過低 (<12)，判斷風險溢價。
-
-2.  **持倉掃描 (Portfolio Scan)**:
-    - **嚴格限制**：只檢查輸入資料中 `4. 投資組合: {{portfolio}}` 列出的代碼。
-    - **全面覆蓋**：您必須檢視清單中的 **每一檔** 非 ETF 持倉。**不可遺漏**。
-    - **禁止**：不要將宏觀指標 (如 $USD, $UST10Y, $GLD) 列在此處，除非它們真的在投資組合清單中。
-    - 找出 **"Outliers" (異常值)**。哪支股票漲跌幅超過 3%？為什麼？
-    - 結合 Momentum 與 Sentiment：
-        - 價格漲 + 正向新聞 = **Conviction Buy (加碼)**
-        - 價格跌 + 負向新聞 = **Cut Loss (停損)**
-        - 價格跌 + 正向新聞 = **Buy the Dip (抄底機會)**? (需小心)
-    - 若某檔股票無顯著波動，請標註 "無雜訊 (No Noise)" 或 "觀望 (Hold)"，但 **不能從報告中刪除该代碼**。
-
-3.  **今日精選個股 (Featured Stock of the Day)**:
-    - 從投資組合或市場觀察中，挑選 **一檔** 確信度最高 (Highest Conviction) 的標的。
-    - 說明理由 (Catalyst/Setup)。
-
-4.  **賣出驗證 (Sell Validation)**:
-    - **嚴格規則**：在建議 **SELL / TRIM** 之前，必須證明：
-        1. 原始的「長線基本面持有理由」已惡化或消失。
-        2. 或者「動能 (Technicals) 與情緒」顯示極端風險，威脅到長線 Beta。
-    - 若理由不充分，應維持 **HOLD**。
-
-5.  **行動指令 (Actionable Orders)**:
-    - 給出具體的交易指令。
-    - **嚴格止損**：若持倉觸發技術面惡化 (Bearish Breakdown)，必須建議減碼。
-    - **風險控管 (Risk Control)**: 若建議 **SELL / TRIM / REDUCE**，**必須** 明確指出：
-        - **減碼比例 (Reduction %)**: (例如: "Sell 25% of position", "Sell half")
-        - **支撐/停損位 (Support/Stop Level)**: (例如: "Stop if close below $150")
-        - 若無法提供具體數字，請解釋原因。
-
 ## 輸出格式 (Output Format)
-請使用 **繁體中文** 撰寫，風格專業、冷靜。
+請使用 **繁體中文** 撰寫，嚴格順守以下 Markdown 結構：
 
 ```markdown
-# 每日市場脈動 (Daily Market Pulse)
+# 🏛️ 每日評議會紀錄 (Daily Council Report)
 日期: {{current_date}}
 
-## 1. 市場定調 (The Setup)
-- **核心主題**: ...
-- **風險儀表**: VIX=..., 狀態=(恐慌/貪婪/中性)
+## 1. 市場定調 (Council Sentiment)
+- **核心主題**: (一句話定義今日市場, e.g. "Fed 鷹派言論引發科技股回調")
+- **風險狀態**: (VIX, 貪婪/恐慌指數)
 
-## 2. 持倉掃描 (Portfolio Scan)
-> 嚴格僅列出投資組合中({{portfolio}})有顯著 "Alpha" 或 "Risk" 的個股。**絕對禁止** 列出非持倉標的。
+## 2. 議會焦點辯論 (The Great Debate)
+> 本日針對關鍵持倉的深度思辨 (System 2 Thinking)。
 
 ### [TICKER] ({{change}}%)
-- **狀態**: (若顯著: 🔴 High Risk / 🟢 Opportunity / Neutral)
-- **驅動因子**: (新聞/財報/技術突破) [來源](URL if avail)
-- **CIO 點評**: (一句話評價)
-- **Action**: **HOLD / BUY / SELL**
+- **正方論述 (The Bull Case)**:
+  - 🟢 **[Agent Name]**: (引用其看多觀點，例如: "營收年增 50%，估值仍合理。")
+  - 🟢 **[Agent Name]**: (引用其看多觀點，例如: "均線黃金交叉。")
+- **反方論述 (The Bear Case)**:
+  - 🔴 **[Agent Name]**: (引用其警示，例如: "RSI 超買，且大盤 VIX 上升。")
+  - 🔴 **[Agent Name]**: (引用其警示，例如: "產業面臨監管逆風。")
+- **關鍵分歧 (Core Divergence)**: (例如: "基本面強勁但技術面過熱")
 
-(請依序為每檔重點持倉建立獨立區塊。**注意**: 僅對顯著的高風險或高機會標的使用 🔴/🟢 圖示，中性 (Neutral) 狀態請勿使用圖示，保持版面清爽。)
+### [Other Ticker]...
 
-## 3. 今日精選 (Featured Stock)
-- **TICKER**: (名稱)
-  - **Setup**: (技術/基本面理由)
-  - **Action**: Buy / Watch
-  - **深讀連結**: [標題](URL) (若有相關研究或新聞)
+## 3. 主席仲裁與決策 (CIO Synthesis)
+基於上述辯論，我的最終裁決如下：
 
-## 4. 今日對策 (Today's Action)
-> 💡 **關鍵決策摘要**
-- **TICKER**: **BUY / SELL / HOLD** (理由: ...)
-- **現金管理**: (若市場風險高，建議拉高現金水位)
+### [TICKER]
+- **最終決策**: **HOLD / BUY / SELL / REDUCE**
+- **仲裁邏輯**: (例如: "儘管技術面過熱 (Anti-Thesis)，但基本面的成長性 (Thesis) 具有壓倒性優勢，且長期護城河未受損。因此決策為 HOLD 並設下 5% 移動停利。")
 
-## 附錄：系統回饋
-(若有)
+## 4. 今日執行指令 (Actionable Orders)
+| 代號 | 動作 | 數量/比例 | 原因簡述 |
+| :--- | :--- | :--- | :--- |
+| TSLA | BUY | 10% | 突破關鍵阻力且基本面轉佳 |
+| AAPL | HOLD | - | 觀望季報 |
 ```

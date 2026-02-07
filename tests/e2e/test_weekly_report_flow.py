@@ -37,6 +37,9 @@ def mock_agent_factory():
         mock_cio.run.return_value = "Final Weekly Report Content"
         
         factory.create_macro_agent.return_value = mock_macro
+        
+        # Mock polish_report to return the same content or decorated content
+        mock_cio.polish_report.return_value = "Final Weekly Report Content"
         factory.create_cio_agent.return_value = mock_cio
         factory.create_fundamental_agent.return_value = MagicMock(run=lambda x: "Fundamental Data")
         
@@ -92,13 +95,15 @@ def test_weekly_cycle_flow(workflow, mock_transaction_service, mock_market_servi
         content=str(report)
     )
 
-def test_weekly_cycle_flow_legacy_fallback(workflow, mock_transaction_service):
+def test_weekly_cycle_flow_legacy_fallback(workflow, mock_transaction_service, mock_agent_factory):
     """Test fallback if Planner is missing."""
     workflow.task_planner = None
     
-    # Since legacy calls _legacy_weekly_cycle which returns an error string in current stub
-    # or warnings.
-    # We just verify it handles strict gracefully.
+    # It should now try to run the legacy flow. 
+    # With mock_agent_factory, it should succeed and return the synthesized report.
     
     report = workflow.run_weekly_cycle(user_id="test_user")
-    assert "Error: TaskPlanner not configured" in report
+    
+    # It should NOT return the old error message. 
+    # It should return the result from "mock_cio.run" which is "Final Weekly Report Content" (via synthesize_results)
+    assert "Final Weekly Report Content" in report

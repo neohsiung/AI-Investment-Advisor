@@ -3,7 +3,9 @@ from src.agents.fundamental import FundamentalAgent
 from src.agents.macro import MacroAgent
 from src.agents.cio import CIOAgent
 from src.agents.engineer import SystemEngineerAgent
+from src.agents.engineer import SystemEngineerAgent
 from src.agents.sentiment import SentimentAgent
+from src.agents.risk import RiskAgent
 import os
 import logging
 import traceback
@@ -108,6 +110,8 @@ class AgentFactory:
             agent = SystemEngineerAgent(use_cache=use_cache, user_id=user_id, **kwargs)
         elif name_lower == 'sentiment':
             agent = SentimentAgent(use_cache=use_cache, user_id=user_id, **kwargs)
+        elif name_lower == 'risk':
+            agent = RiskAgent(use_cache=use_cache, user_id=user_id, **kwargs)
         else:
             raise ValueError(f"Unknown agent type: {agent_name}")
             
@@ -116,22 +120,32 @@ class AgentFactory:
     @staticmethod
     def create_momentum_agent(use_cache=True, user_id="system", **kwargs):
         AgentFactory._configure_dspy()
-        agent = MomentumAgent(use_cache=use_cache, tier="fast", user_id=user_id, **kwargs)
+        tier = kwargs.pop('tier', 'fast')
+        agent = MomentumAgent(use_cache=use_cache, tier=tier, user_id=user_id, **kwargs)
         return AgentFactory._inject_dependencies(agent)
 
     @staticmethod
-    def create_fundamental_agent(use_cache=True, tier="smart", user_id="system", **kwargs):
+    def create_fundamental_agent(use_cache=True, user_id="system", **kwargs):
+        tier = kwargs.pop('tier', 'smart')
         agent = FundamentalAgent(use_cache=use_cache, tier=tier, user_id=user_id, **kwargs)
         return AgentFactory._inject_dependencies(agent)
         
     @staticmethod
-    def create_macro_agent(use_cache=True, tier="smart", user_id="system", **kwargs):
+    def create_macro_agent(use_cache=True, user_id="system", **kwargs):
+        tier = kwargs.pop('tier', 'smart')
         agent = MacroAgent(use_cache=use_cache, tier=tier, user_id=user_id, **kwargs)
         return AgentFactory._inject_dependencies(agent)
 
     @staticmethod
-    def create_sentiment_agent(use_cache=True, tier="fast", user_id="system", **kwargs):
+    def create_sentiment_agent(use_cache=True, user_id="system", **kwargs):
+        tier = kwargs.pop('tier', 'fast')
         agent = SentimentAgent(use_cache=use_cache, tier=tier, user_id=user_id, **kwargs)
+        return AgentFactory._inject_dependencies(agent)
+
+    @staticmethod
+    def create_risk_agent(use_cache=True, user_id="system", **kwargs):
+        tier = kwargs.pop('tier', 'fast')
+        agent = RiskAgent(use_cache=use_cache, tier=tier, user_id=user_id, **kwargs)
         return AgentFactory._inject_dependencies(agent)
 
     @staticmethod

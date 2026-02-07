@@ -1,8 +1,8 @@
 # 資料庫設計與代碼規範 (Database & Git Standards)
 
 > **[繁體中文 (Traditional Chinese)](#zh) | [English](#en)**
+> **最新版本 (Latest Version)**: 請參閱文件頂部的版本紀錄 (Iteration Record - Last 5).
 
----
 
 <a id="zh"></a>
 

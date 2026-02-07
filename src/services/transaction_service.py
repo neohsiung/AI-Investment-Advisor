@@ -35,6 +35,21 @@ class TransactionService:
                 # Fallback if specific repo doesn't support it (though Sqlite does now)
                 return self.repository.get_unique_tickers(user_id)
         return self.repository.get_unique_tickers(user_id)
+        
+    def get_holdings_map(self, user_id=None):
+        """
+        Get a dictionary of holdings: {ticker: {'quantity': q}}
+        """
+        uid = user_id or self.user_id
+        if not uid: return {}
+        
+        # Use existing summary method
+        summary = self.repository.get_holdings_summary(uid) # returns [(ticker, qty)]
+        
+        res = {}
+        for t, q in summary:
+            res[t] = {'quantity': q}
+        return res
 
     def add_manual_trade(self, ticker, date_str, action, quantity, price, fees):
         """Adds a manual transaction via Repository and updates snapshot."""

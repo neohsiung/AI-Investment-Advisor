@@ -35,8 +35,27 @@ def test_fundamental_agent_run_empty_context():
     result = agent.run({})
     assert result is not None
 
-def test_fundamental_agent_deep_dive_mode():
-    """Test specific mode if applicable"""
-    # Assuming FundamentalAgent might have different behaviors or prompt adjustments
-    # Currently it seems to use a standard prompt.
-    pass
+def test_fundamental_agent_batch_mode(mock_agent_deps):
+    """Test batch processing of multiple tickers."""
+    agent = FundamentalAgent(user_id="test_user")
+    
+    context = {
+        "tickers": ["AAPL", "GOOG"],
+        "market_data": {
+            "AAPL": {"financials": {"revenue": 100}, "news": [{"title": "News A"}]},
+            "GOOG": {"financials": {"revenue": 200}, "news": [{"title": "News B"}]}
+        }
+    }
+    
+    # Mock return value changes per call? Or just static.
+    # mock_agent_deps is the mock_llm function.
+    mock_agent_deps.side_effect = ["Analysis of AAPL", "Analysis of GOOG"]
+    
+    result = agent.run(context)
+    
+    assert "### AAPL Analysis" in result
+    assert "Analysis of AAPL" in result
+    assert "### GOOG Analysis" in result
+    assert "Analysis of GOOG" in result
+    
+    assert mock_agent_deps.call_count == 2

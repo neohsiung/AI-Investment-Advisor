@@ -55,18 +55,53 @@ This document defines the standards for creating and maintaining the project Wik
 
 ---
 
-## 4. 範例 (Template)
+## 4. 文件迭代與版本控制 (Iteration & Versioning)
+
+*   **整合現有架構 (Integration)**:
+    *   新文件應優先融入現有架構 (.md 檔案)，盡量避免新建檔案，除非該主題具有獨立且完整的敘事性。
+    *   若需新建檔案，命名須嚴格遵循「一文一事」原則與命名規範。
+*   **版本紀錄 (Version History)**:
+    *   **位置**: 文件頂部或尾部 (建議頂部)。
+    *   **內容**: 記錄每次重大迭代的原因 (Why) 與內容 (What)。
+    *   **保留原則**: 僅保留最近 5 筆迭代紀錄 (Last 5 iterations only)。
+    *   **格式**:
+        ```markdown
+        ### 版本紀錄 (Version History)
+        | Date | Version | Description | Author |
+        | :--- | :--- | :--- | :--- |
+        | 2024-01-20 | v1.2 | Added MCP integration details | Neo |
+        | 2024-01-10 | v1.1 | Refactored for v3.0 specs | Neo |
+        ```
+
+## 5. 語言工作流 (Language Workflow)
+
+*   **撰寫順序 (Writing Order)**:
+    1.  優先撰寫或更新 **英文 (English)** 內容，確保技術精確度。
+    2.  將英文內容翻譯為 **繁體中文 (Traditional Chinese)**。
+    3.  將繁體中文內容置於文件段落的上方 (Top)，英文在下方 (Bottom)。
+*   **維護 (Maintenance)**: 每次更新時，須同步更新雙語內容。
+
+---
+
+## 6. 範例 (Template)
 
 ```markdown
 # 範例標題 (Example Title)
 
-這裡簡要說明文件的目的。
-Briefly explain the purpose of this document.
+### 版本紀錄 (Version History)
+| Date | Version | Description | Author |
+| :--- | :--- | :--- | :--- |
+| 2024-02-07 | v1.0 | Initial Release | Neo |
+
+---
+
+這裏是繁體中文的內容描述。
+Here is the content description in English.
 
 ## 章節一 (Section 1)
 
-內容描述...
-Content description...
+繁體中文描述...
+English description...
 
 *   關鍵點 A (Key Point A)
 *   關鍵點 B (Key Point B)

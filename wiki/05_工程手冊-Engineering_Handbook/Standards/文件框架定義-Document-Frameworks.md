@@ -3,6 +3,15 @@
 本文件定義了 Wiki 中各類文檔的詳細結構標準，確保所有內容達到專業產品規格 (Product Spec) 的深度。
 
 This document defines the detailed structural standards for each category in the Wiki, ensuring all content reaches professional Product Spec depth.
+It also mandates the inclusion of a specialized "Iteration Record" for tracking major document updates.
+
+---
+
+## 0. 通用規範 (General Standards)
+
+所有類型文件均需包含：
+*   **版本紀錄 (Iteration Record)**: 位於文件頂部，記錄最近 5 次迭代原因與內容。
+*   **雙語並列 (Bilingual Structure)**: 中文在上，英文在下。
 
 ---
 

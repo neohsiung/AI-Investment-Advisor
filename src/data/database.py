@@ -168,7 +168,6 @@ def init_db(db_path=None):
             diff_content TEXT,
             FOREIGN KEY(user_id) REFERENCES users(id)
         )""",
-        # --- New Tables for v3 (Migration Phase 1) ---
         """CREATE TABLE IF NOT EXISTS event_logs (
             id TEXT PRIMARY KEY,
             timestamp TEXT,
@@ -207,7 +206,39 @@ def init_db(db_path=None):
             last_output TEXT,
             FOREIGN KEY(agent_name) REFERENCES settings(key) -- loose fk
         )""",
-        # Dynamic Table Definition for Vector Support
+        """CREATE TABLE IF NOT EXISTS position_snapshots (
+             id TEXT PRIMARY KEY,
+             date TEXT,
+             user_id TEXT,
+             ticker TEXT,
+             shares REAL,
+             avg_cost REAL,
+             market_price REAL,
+             market_value REAL,
+             unrealized_pl REAL,
+             FOREIGN KEY(user_id) REFERENCES users(id)
+        )""",
+        # --- New Tables for v3.4 (Sentinel & Council) ---
+        """CREATE TABLE IF NOT EXISTS memory_embeddings (
+            id TEXT PRIMARY KEY,
+            user_id TEXT,
+            timestamp TEXT,
+            category TEXT,      -- 'user_profile', 'market_event', 'news'
+            content TEXT,
+            embedding vector(1536),
+            metadata TEXT       -- JSON string for extra fields
+        )""",
+        """CREATE TABLE IF NOT EXISTS council_minutes (
+            id TEXT PRIMARY KEY,
+            session_id TEXT,
+            timestamp TEXT,
+            topic TEXT,
+            participants TEXT,  -- JSON list of agent names
+            consensus_decision TEXT,
+            full_transcript TEXT,
+            embedding vector(1536) -- Embedding of the consensus/topic for retrieval
+        )""",
+        # Dynamic Table Definition for Vector Support (Legacy/Compat)
         f'''CREATE TABLE IF NOT EXISTS agent_feedback (
             id TEXT PRIMARY KEY,
             agent_name TEXT,
@@ -264,6 +295,16 @@ def init_db(db_path=None):
                 conn.execute(text("ALTER TABLE agent_feedback ADD COLUMN context_text TEXT"))
              except Exception as e:
                 print(f"Migration agent_feedback failed: {e}")
+
+        # Migration for reports (report_type)
+        try:
+             conn.execute(text("SELECT report_type FROM reports LIMIT 1"))
+        except Exception:
+             print("Migrating reports: Adding report_type column...")
+             try:
+                conn.execute(text("ALTER TABLE reports ADD COLUMN report_type TEXT DEFAULT 'generic'"))
+             except Exception as e:
+                print(f"Migration reports failed: {e}")
 
         conn.commit()
 

@@ -14,6 +14,7 @@ from src.agents.engineer import SystemEngineerAgent
 from src.data.database import get_db_connection
 from sqlalchemy import text
 from src.agents.factory import AgentFactory
+from src.agents.council_adapter import CouncilAgentAdapter
 from src.services.performance_service import PerformanceService
 from src.utils.time_utils import get_current_utc_time
 import re
@@ -22,6 +23,9 @@ logger = logging.getLogger("WorkflowService")
 
 from src.services.task_planning_service import TaskPlanningService
 from src.services.memory_service import MemoryService
+from src.repositories.memory_repository import SqliteMemoryRepository
+from src.infrastructure.agent_llm_provider import AgentLLMProvider
+from src.utils.format_utils import format_agent_output
 
 class BaseWorkflow(ABC):
     def __init__(self, user_id: str, transaction_repo=None, transaction_service=None, market_service=None):
@@ -31,6 +35,12 @@ class BaseWorkflow(ABC):
         self.transaction_repo = transaction_repo or SqliteTransactionRepository()
         self.transaction_service = transaction_service or TransactionService(repository=self.transaction_repo)
         self.market_service = market_service or MarketDataService()
+        
+        # Memory Service Injection
+        self.memory_repo = SqliteMemoryRepository()
+        self.llm_provider = AgentLLMProvider(user_id=self.user_id)
+        self.memory_service = MemoryService(repository=self.memory_repo, llm_provider=self.llm_provider)
+        
         self.context = {}
         self.logger = logging.getLogger(self.__class__.__name__)
         self.cio_agent = AgentFactory.create_cio_agent(
@@ -75,6 +85,53 @@ class BaseWorkflow(ABC):
         except Exception as e:
             logger.error(f"Workflow failed: {e}")
             raise e
+
+    def _assemble_integrated_report(self, 
+                                  cio_full_output: str, 
+                                  detailed_debate_content: str, 
+                                  agent_for_polish=None) -> str:
+        """
+        組合最終報告 (Integrated Pattern)。
+        此方法統一了 Daily 與 Weekly 報告的生成邏輯，確保詳細分析被正確植入。
+
+        1. 使用正則表達式將 CIO 的摘要版 'Great Debate' 替換為詳細版。
+        2. 執行最終潤飾 (Polish) 以確保格式與語氣專業並包含行動指令表。
+        
+        Assembles the final report using the Integrated Pattern.
+        1. Replaces CIO's summarized 'Great Debate' with the detailed version using Regex.
+        2. Polishes the final output if an agent is provided.
+        """
+        import re
+        
+        # 定義替換模式：尋找 ## 2. (Debate) 與 ## 3. (Synthesis) 之間的內容 (包含標題本身)
+        # Define replacement pattern: Find content starting from ## 2 up to ## 3
+        # Assuming the generated detailed content INCLUDES the header "## 2. ..."
+        pattern = r"(## 2\..*?)(?=## 3\.)"
+        
+        # 若無詳細內容，提供預設訊息
+        if not detailed_debate_content:
+             detailed_debate_content = "## 2. 議會焦點辯論 (The Great Debate)\n(No detailed transcript available / 暫無詳細辯論紀錄)"
+
+        # 執行替換
+        # Execute Replacement
+        modified_report = re.sub(pattern, detailed_debate_content, cio_full_output, flags=re.DOTALL)
+        
+        final_report = modified_report
+        
+        # 若替換未發生 (例如找不到標題)，則將詳細內容附加於後，並發出警告
+        # If replacement failed (headers not found), append logic and warn
+        if modified_report == cio_full_output:
+             self.logger.warning("Report Injection Failed: Header '## 2...' or '## 3...' not found. Appending transcript.")
+             # 嘗試簡單附加確保資訊不丟失
+             final_report = f"{cio_full_output}\n\n{detailed_debate_content}"
+        
+        # 最終潤飾
+        # Final Polish
+        if agent_for_polish and hasattr(agent_for_polish, 'polish_report'):
+             final_report = agent_for_polish.polish_report(final_report)
+             
+        return final_report
+
 
     def collect_data(self):
         """Common data collection: Get active tickers."""
@@ -243,8 +300,14 @@ class DailyWorkflow(BaseWorkflow):
         return True
 
     def synthesize_results(self) -> str:
+        """
+        Combine analysis results into a final report.
+        將分析結果綜合成最終報告。
+        """
         # Use CIO Agent for Daily Report (Daily Pulse Mode)
         cio = AgentFactory.create_cio_agent(mode="daily", user_id=self.user_id)
+        
+        # --- Section 1: Memory & Macro Context ---
         
         # Retrieve simple macro data for context
         macro_data = self.market_service.get_macro_data()
@@ -270,22 +333,21 @@ class DailyWorkflow(BaseWorkflow):
                   spread_data = econ["10Y2Y_Spread"]
                   spread = f"{spread_data.get('value', 'N/A')} ({spread_data.get('trend', 'N/A')})"
         
-        macro_summary = f"Daily Market Check (v3.2 Data):\n- VIX: {vix}\n- SPY: {spy}\n- Yield Spread (10Y-2Y): {spread}"
+        macro_summary_line = f"- VIX: {vix}\n- SPY: {spy}\n- Yield Spread (10Y-2Y): {spread}"
 
         # Run Cached Macro Agent for Context
         macro_agent = AgentFactory.create_macro_agent(ttl_hours=24, use_cache=True, user_id=self.user_id)
         macro_deep = macro_agent.run({})
         
-        combined_macro = f"{macro_summary}\n\n[Reference Weekly Macro Context]:\n{macro_deep}"
+        combined_macro = f"Daily Market Check (v3.2 Data):\n{macro_summary_line}\n\n[Reference Weekly Macro Context]:\n{macro_deep}"
         
-        # --- Memory Consistency Check (New) ---
+        # --- Memory Consistency Check ---
         memory_consistency_note = ""
         if self.memory_service:
             # 1. Get recent context
             mem_ctx = self.memory_service.get_context(self.user_id, "daily")
             
-            # 2. Synthesize current signal summary for contradiction check
-            # We look at the aggregated signals from execute_analysis results (stored in context)
+            # 2. Synthesize current signal summary
             current_signals = []
             for t, data in self.context.get('ticker_reports', {}).items():
                 mom = str(data.get('momentum', '')).upper()
@@ -303,20 +365,72 @@ class DailyWorkflow(BaseWorkflow):
                                           "\n".join([f"- {c}" for c in conflicts]) + \
                                           "\n*Instruction*: You must explicitly acknowledge and justify these shifts in view compared to previous days."
 
-        # Format metrics for CIO
-        portfolio_str = ", ".join(self.context['tickers']) if self.context['tickers'] else "No Tickers"
+        # --- Section 2: The Great Debate (Detailed Ticker Analysis) ---
+        # Strategy: Build this section manually to ensure full detail is preserved inline.
+        # [NEW] Include Holdings Context from TransactionService
+        holdings_map = self.transaction_service.get_holdings_map(self.user_id)
+        
+        detailed_debate_section = "## 2. 議會焦點辯論 (The Great Debate & Detailed Analysis)\n\n"
+        detailed_debate_section += "本日針對投資組合進行深度多空思辨，並附上完整技術與基本面數據。\n\n"
+        
+        # Accumulate ticker contexts for CIO Synthesis
+        ticker_contexts = []
+        
+        for t, data in self.context.get('ticker_reports', {}).items():
+            mom = format_agent_output(data.get('momentum', 'N/A'))
+            sent = format_agent_output(data.get('sentiment', 'N/A'))
+            fun = format_agent_output(data.get('fundamental', 'N/A'))
+            
+            # [NEW] Add Quantity/Holding Info
+            qty = holdings_map.get(t, {}).get('quantity', 0)
+            
+            detailed_debate_section += f"### {t} (Holdings: {qty})\n"
+            detailed_debate_section += f"**Momentum (Technical)**:\n{mom}\n\n"
+            detailed_debate_section += f"**Fundamental (Quality)**:\n{fun}\n\n"
+            detailed_debate_section += f"**Sentiment (Market Psychology)**:\n{sent}\n\n"
+            detailed_debate_section += "---\n\n"
+            
+            ticker_contexts.append(f"Ticker: {t} (Qty: {qty})\nData:\n- Mom: {mom}\n- Fun: {fun}\n- Sent: {sent}")
 
+        # --- Section 3 & 4: CIO Synthesis & Orders ---
+        # We instruct the CIO to generate ONLY the synthesis and orders based on the detailed debate we just built.
+        
+        # [NEW] Use rich portfolio string from Repo for CIO Context (so it knows weights/quantities for orders)
+        # Using CIO's internal helper logic or just rely on Repo summary string
+        # TransactionService relies on Repo. Let's just construct it here or call repo method.
+        # Since we have holdings_map, let's build it.
+        portfolio_str = ", ".join([f"{t} ({d['quantity']})" for t, d in holdings_map.items()])
+        if not portfolio_str:
+             portfolio_str = ", ".join(self.context['tickers']) if self.context['tickers'] else "No Tickers"
+        
         cio_context = {
             "macro_report": combined_macro,
-            "ticker_data": self.context.get('ticker_reports', {}),
+            # We pass the pre-formatted debate section as the 'swarm_context' effectively
+            "council_transcript": "\n".join(ticker_contexts), 
             "portfolio": portfolio_str,
-            "report_focus": "Daily Tactical",
-            "consistency_constraints": memory_consistency_note, # Inject warning
-            "user_id": self.user_id
+            "consistency_constraints": memory_consistency_note,
+            "user_id": self.user_id,
+            "report_focus": "Daily Synthesis"
         }
         
-        final_report = cio.run(cio_context)
+        # Call CIO
+        # Note: The CIO prompt is structured to output the whole report usually.
+        # We might get some redundancy if CIO outputs "The Great Debate" again.
+        # However, since we are overriding the final report assembly, we can try to extract or just accept duplication for now
+        # OR we can update the Prompt. 
+        # Ideally, we want CIO to output 'Market Sentiment', 'CIO Synthesis', 'Actionable Orders'.
+        # And we inject 'The Great Debate' in between.
         
+        cio_output = cio.run(cio_context)
+        
+        # --- Final Assembly (Integrated Pattern) ---
+        # 組合最終報告 (集成模式)
+        final_report = self._assemble_integrated_report(
+            cio_full_output=cio_output,
+            detailed_debate_content=detailed_debate_section,
+            agent_for_polish=cio
+        )
+
         # Store in Memory
         if self.memory_service:
             self.memory_service.store_report(
@@ -331,7 +445,6 @@ class DailyWorkflow(BaseWorkflow):
         # ----------------------------------------
         
         # 1. Macro Signal (Proxy on SPY)
-        # Check macro_deep keywords
         macro_signal = "HOLD"
         m_text = macro_deep.upper()
         if "BULLISH" in m_text or "RISK ON" in m_text:
@@ -352,17 +465,12 @@ class DailyWorkflow(BaseWorkflow):
             )
 
         # 2. CIO Signals (Regex Extraction)
-        # Pattern: "- **TICKER**: **ACTION**" or similar from refined prompt
-        # We look for lines in "Today's Action" or section 4.
-        # Regex to catch " - **NVDA**: **SELL**"
         try:
             # Extract Action lines based on ### [TICKER] blocks
-            # Pattern 1: Look for "### TICKER ... - **Action**: **SIGNAL**"
-            # We can split by "### " to get blocks
             blocks = final_report.split("### ")
             
             for block in blocks:
-                # Extract Ticker from first line e.g. "NVDA (0.52)\n"
+                # Extract Ticker from first line e.g. "NVDA"
                 ticker_match = re.match(r"([A-Z]+)", block)
                 if not ticker_match: continue
                 
@@ -374,7 +482,6 @@ class DailyWorkflow(BaseWorkflow):
                     action = action_match.group(1)
                     
                     # Normalize action
-                    # e.g. "SELL/TRIM" -> "SELL", "BUY/ACCUMULATE" -> "BUY"
                     u_act = action.upper()
                     cio_signal = "HOLD"
                     if "BUY" in u_act or "ACCUMULATE" in u_act:
@@ -430,8 +537,13 @@ class WeeklyWorkflow(BaseWorkflow):
             
             # 2. Execution Phase
             task_results = {}
+            
+            # [NEW] Fetch Rich Portfolio for Council
+            holdings_map = self.transaction_service.get_holdings_map(user_id)
+            rich_portfolio = [{'symbol': t, 'quantity': d['quantity']} for t, d in holdings_map.items()]
+            
             # 'execution_context' starts with global context (market data, etc)
-            execution_context = {**self.context, **context_data} 
+            execution_context = {**self.context, **context_data, "portfolio": rich_portfolio} 
             
             for task in plan.tasks:
                 logger.info(f"--- Executing Task: {task.name} ---")
@@ -454,7 +566,46 @@ class WeeklyWorkflow(BaseWorkflow):
                     task_results[task.name] = f"Error: {e}"
 
             # 3. Final Synthesis (The Report)
-            final_report = task_results.get("Report Synthesis", "\n\n".join([f"## {k}\n{v}" for k,v in task_results.items()]))
+            # Strategy: Separate High-Level Strategy from Detailed Map-Reduce Output
+            
+            # A. Extract Portfolio Details (Map-Reduce Transcript)
+            portfolio_details = ""
+            for res_key, res_val in task_results.items():
+                if isinstance(res_val, dict) and "transcript" in res_val:
+                    # Found the Council Output
+                    portfolio_details = res_val["transcript"]
+            
+            # B. Synthesis (CIO) - Focus on Strategy
+            # We explicitly ask CIO to synthesize the Strategy, not the Portfolio Details
+            synthesis_agent = self._select_agent_for_task("Report Synthesis", user_id)
+            
+            # Construct Synthesis Context (Excluding giant transcript to avoid token waste/compression)
+            syn_context = {**execution_context}
+            # Remove the giant transcript from context passed to CIO to force it to focus on Strategy
+            # (or we pass it but instruct it to ignore?)
+            # Better: We rely on the "Report Synthesis" task instructions from Planner.
+            # But here we override to ensure "Append" behavior.
+            
+            syn_response = synthesis_agent.run(syn_context)
+            
+            # C. Assemble Final Report (Integrated Pattern)
+            
+            # Pattern: Replace CIO's "Great Debate" or "Sector Strategy" (if it contains debate) with Detailed Council Transcript
+            # We look for the standard header from CIO. If found, we inject.
+            
+            # Common headers for debate section in CIO output:
+            # "## 2. 議會焦點辯論" or "## 2. The Great Debate"
+            
+            import re
+            pattern = r"(## 2\..*?)(?=## 3\.)"
+            
+            # If portfolio_details (Transcript) is empty, warn
+            # C. Assemble Final Report (Integrated Pattern)
+            final_report = self._assemble_integrated_report(
+                cio_full_output=syn_response,
+                detailed_debate_content=portfolio_details,
+                agent_for_polish=synthesis_agent
+            )
             
             # 4. Memory Storage
             if self.memory_service:
@@ -482,7 +633,8 @@ class WeeklyWorkflow(BaseWorkflow):
         elif "deep-dive" in name_lower or "supply chain" in name_lower:
             return AgentFactory.create_fundamental_agent(user_id=user_id, tier=tier)
         elif "portfolio" in name_lower or "audit" in name_lower:
-             return AgentFactory.create_cio_agent(user_id=user_id, mode="portfolio_review", tier=tier)
+             # Use Map-Reduce Council for deep portfolio analysis
+             return CouncilAgentAdapter(scope="portfolio", topic=f"Weekly Portfolio Review ({name_lower})")
         elif "recommendation" in name_lower or "balancing" in name_lower or "alpha" in name_lower:
              return AgentFactory.create_cio_agent(user_id=user_id, mode="weekly", tier=tier)
         elif "synthesis" in name_lower:
@@ -504,6 +656,10 @@ class WeeklyWorkflow(BaseWorkflow):
             "task_instruction": task.description 
         }
         
+        # [NEW] Pass Rich Portfolio if available (For Council)
+        if "portfolio" in context:
+            agent_ctx["portfolio"] = context["portfolio"]
+        
         # Inject inputs from previous tasks if defined
         for key in task.input_keys:
             # We try to find the key in the context. 
@@ -524,7 +680,19 @@ class WeeklyWorkflow(BaseWorkflow):
         to encourage proper dependency injection.
         """
         logger.warning("_legacy_weekly_cycle is deprecated. Please inject TaskPlanner.")
-        return "Error: TaskPlanner not configured for Weekly Workflow."
+        # Fallback to manual execution logic anyway if planner is missing
+        try:
+             # Basic Data Collection is done.
+             # 1. Macro Analysis
+             macro_agent = AgentFactory.create_macro_agent(user_id=user_id)
+             macro_report = macro_agent.run({})
+             self.context['macro_report'] = macro_report
+             
+             # 2. Synthesis
+             return self.synthesize_results()
+        except Exception as e:
+             logger.error(f"Legacy fallback failed: {e}")
+             return f"Error: {e}"
 
     def synthesize_results(self) -> str:
         # Optimization Loop (System Engineer)
@@ -576,8 +744,11 @@ class WeeklyWorkflow(BaseWorkflow):
         # Construct CIO Context
         portfolio_str = ", ".join(self.context['tickers']) if self.context['tickers'] else "No Tickers"
         
+        # Fix: Ensure macro_report exists
+        macro_report = self.context.get('macro_report', "N/A (Macro Data Missing)")
+        
         cio_context = {
-            "macro_report": self.context['macro_report'],
+            "macro_report": macro_report,
             "ticker_data": self.context.get('ticker_reports', {}),
             "portfolio": portfolio_str,
             "engineer_report": engineer_report, # Pass integration context
@@ -589,17 +760,6 @@ class WeeklyWorkflow(BaseWorkflow):
 
     # Required Abstract Method Stub - Not used in new Plan flow directly, but needed for BaseWorkflow
     def execute_analysis(self, force_refresh: bool) -> bool:
-        # This was the old "Step 2" in BaseWorkflow.
-        # In the new flow, we override run_weekly_cycle entirely, so this might not be called 
-        # unless we are in the legacy path which now calls _legacy_weekly_cycle.
-        # However, BaseWorkflow.run() calls this. 
-        # So we actually need to change BaseWorkflow.run() OR make the new logic fit into `execute_analysis`.
-        # BUT I overrode `run_weekly_cycle`. Wait, BaseWorkflow.run calls `execute_analysis`. 
-        # The file content showed `WeeklyWorkflow` inheriting `BaseWorkflow`.
-        # I replaced `execute_analysis` with `run_weekly_cycle`. 
-        # This implies I wanted the entry point to be `run_weekly_cycle`?
-        # But `BaseWorkflow` usually has a `run()` method.
-        # If I want to support the new flow, I should rename my new method to `run()` override?
         # OR put the logic inside `execute_analysis` and `synthesize_results`.
         
         # BETTER PLAN: Implement `execute_analysis` to run the tasks, store results in context.

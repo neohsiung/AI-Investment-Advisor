@@ -11,7 +11,11 @@ from src.utils.cache import ResponseCache
 from src.repositories.settings_repository import SqliteSettingsRepository
 from src.repositories.agent_state_repository import SqliteAgentStateRepository
 from src.repositories.feedback_repository import SqliteFeedbackRepository
+from src.repositories.feedback_repository import SqliteFeedbackRepository
 from src.tools.mcp_server import McpServer, McpTool
+from src.infrastructure.memory.memory_manager import HybridMemory
+from src.agents.skills.skill_loader import SkillLoader
+from datetime import datetime
 
 class BaseAgent(ABC):
 
@@ -33,6 +37,15 @@ class BaseAgent(ABC):
         
         # [NEW] Tool Server (Personal Toolbox - 個人工具箱)
         self.toold = McpServer(name=f"{self.name}_Tools")
+
+        # [NEW] OpenClaw Components
+        self.memory = HybridMemory() # Shared DB for now
+        self.skill_loader = SkillLoader()
+        self.skill_loader.load_skills()
+        
+        # Bind implementations
+        from src.agents.skills.registry import bind_skills_to_agent
+        bind_skills_to_agent(self)
         
     def register_tool(self, tool: McpTool):
         """
@@ -122,10 +135,34 @@ class BaseAgent(ABC):
         使用 Jinja2 渲染系統提示詞。
         """
         try:
-            # Inject Tool Definitions (注入工具定義)
-            tool_definitions = json.dumps(self.toold.list_tools(), indent=2)
+            # 1. Inject Time Context
+            current_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            
+            # 2. Inject Tool Definitions (Prioritize Skills XML + MCP JSON)
+            # Legacy MCP Tools
+            mcp_tools_json = json.dumps(self.toold.list_tools(), indent=2)
+            # New Skills XML
+            skills_xml = self.skill_loader.get_skill_registry_xml()
+            
+            # 3. Inject Dynamic Memory (Contextual)
+            # If context has 'query' or 'topic', try to fetch memory
+            memory_context_str = ""
+            topic = context.get("topic") if isinstance(context, dict) else None
+            if topic:
+                # Retrieve relevant memories
+                # We need an embedding for the topic. 
+                # For now, we will just use Keyword Search or rely on hybrid if we had an embedder here.
+                # Since BaseAgent doesn't have an embedder yet, we skip vector part or pass dummy.
+                # In full implementation, we'd call self.llm_provider.embed(topic).
+                memories = self.memory.search(topic, query_vector=None, limit=3)
+                if memories:
+                    memory_context_str = "\n".join([f"- {m['content']} (Score: {m['score']:.2f})" for m in memories])
+
             context_with_tools = context.copy() if isinstance(context, dict) else {}
-            context_with_tools["tools"] = tool_definitions
+            context_with_tools["tools"] = mcp_tools_json # Keep for backward compatibility in templates
+            context_with_tools["skills_xml"] = skills_xml
+            context_with_tools["current_time"] = current_time
+            context_with_tools["memory_context"] = memory_context_str
             
             template = Template(self.system_prompt)
             return template.render(**context_with_tools)
@@ -161,6 +198,10 @@ class BaseAgent(ABC):
         search_service = InternetSearchService()
 
         for turn in range(max_turns):
+            # [Context Guard]
+            if self._check_context_window(messages):
+                self._perform_silent_flush(messages)
+
             response_text = self.call_llm(messages)
             
             # [NEW] Generic Tool Parsing (通用工具解析)
@@ -190,6 +231,7 @@ class BaseAgent(ABC):
                             raw_res = self.toold.call_tool(name, args)
                             result = json.dumps(raw_res, ensure_ascii=False)
                         else:
+                            # Try binding mapping just in case text differs from mapped name
                             result = f"Error: Tool '{name}' not found."
                     
                     observation = f"System: [Tool '{name}' Output]\n{result}\n"
@@ -204,6 +246,52 @@ class BaseAgent(ABC):
                 return response_text
 
         return response_text 
+
+    # --- Context Guard ---
+
+    def _check_context_window(self, messages, threshold=60000):
+        """
+        Estimate token count (approx 4 chars/token).
+        Default threshold ~15k tokens.
+        """
+        total_chars = sum(len(m.get('content', '')) for m in messages)
+        return total_chars > (threshold * 4)
+
+    def _perform_silent_flush(self, messages):
+        """
+        Silent Flush: Summarize facts to memory and prune history.
+        """
+        self.logger.warning("ContextGuard: Flush Triggered!")
+        
+        # 1. Summarize (Naive implementation: Just dump last user message as fact for now to save tokens)
+        # Real implementation would call LLM to summarize
+        try:
+            # Extract recent conversation
+            recent = messages[-2:] if len(messages) > 2 else messages
+            content_to_save = json.dumps(recent)
+            
+            # Save to HybridMemory
+            self.memory.add_memory(
+                memory_id=hashlib.sha256(content_to_save.encode()).hexdigest(),
+                user_id=self.user_id,
+                content=f"Archive from {datetime.now()}: {str(recent)[:200]}...",
+                embedding=[], # Skip embedding for flush if no embedder
+                category="conversation_archive"
+            )
+            
+            # 2. Prune: Keep System Prompt + Last 3 Turns
+            system_msg = next((m for m in messages if m['role'] == 'system'), None)
+            new_history = [system_msg] if system_msg else []
+            new_history.extend(messages[-6:])
+            
+            # Replace in place
+            messages.clear()
+            messages.extend(new_history)
+            
+            self.logger.info("ContextGuard: Flushed and Pruned history.")
+            
+        except Exception as e:
+            self.logger.error(f"Silent flush failed: {e}") 
 
     def call_swarm(self, agents: list, message: str, context: dict = None) -> dict:
         """

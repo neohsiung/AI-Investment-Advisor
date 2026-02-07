@@ -1,6 +1,13 @@
 # 系統全景圖 (System Landscape)
 
 > **[繁體中文 (Traditional Chinese)](#zh) | [English](#en)**
+> **最新版本 (Latest Version)**: 請參閱文件頂部的版本紀錄 (Iteration Record).
+
+### 版本紀錄 (Version History)
+| Date | Version | Description | Author |
+| :--- | :--- | :--- | :--- |
+| 2026-02-07 | v1.1 | Updated C4 Container Diagram to reflect Hybrid Tool Architecture | Neo |
+| 2024-01-04 | v1.0 | Initial Release | Neo |
 
 ---
 
@@ -31,16 +38,18 @@ graph TD
     UI["Dashboard (Streamlit)"] -->|SQL| DB[(Portfolio DB)]
     UI -->|HTTP| MCP_Serv["MCP Microservice (FastAPI)"]
     Sch["Scheduler (Daemon)"] -->|Trigger| Agents["Agent Swarm (CIO, Analysts)"]
-    Agents -->|Local Tool Call| Local["Local MCP (Toolbox)"]
-    Agents -->|Remote Tool Call| MCP_Serv
+    Agents -->|Direct Call| Local["Local Skills (Registry)"]
+    Agents -->|HTTP| MCP_Serv
     MCP_Serv -->|Financial Data| APIs[Polygon/FMP/FRED]
-    Local -->|Search| APIs
+    Local -->|Search/Compute| APIs
 ```
 
 #### 2.3 組件互動流 (Interaction Flows)
 1.  **數據攝取**: `Dashboard` 接收用戶輸入 -> `DB` 持久化 -> `MCP_Serv` 註冊工具。
 2.  **A2A 研究週期**: `Scheduler` 依時區執行 `CIO Agent` -> `CIO` 發動分散式 `Analysts` (A2A Thought Chain) -> 匯總為具備「證據鏈」的報告。
-3.  **搜尋擴展**: 若 `Local MCP` 無提供數據，Agent 透過 `mcp_service` 執行分佈式搜尋與數據聚合。
+3.  **混合工具調用**: 
+    - **Local Strategy**: Agent 優先調用本地 `Skills` (Registry) 進行快速運算與資料解析。
+    - **Scale Strategy**: 若需跨系統資料或全局搜尋，則透過 `mcp_service` 執行。
 
 ### 3. 基礎設施視角 (Infrastructure View)
 系統支援雲端原生部署，透過容器化管理各項服務。

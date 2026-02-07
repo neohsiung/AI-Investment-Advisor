@@ -53,6 +53,9 @@ def test_weekly_workflow_execution(mock_fund, mock_cio, mock_macro, mock_workflo
     # Setup Mock Agent Responses
     mock_macro.return_value.run.return_value = "Macro: Growth"
     mock_cio.return_value.run.return_value = "CIO: Buy Tech"
+    # Mock polish_report
+    mock_cio.return_value.polish_report.side_effect = lambda x: x
+    
     mock_fund.return_value.run.return_value = "Fund: Strong Cashflow"
     
     workflow = WeeklyWorkflow(user_id="test_user")

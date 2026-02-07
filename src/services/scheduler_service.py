@@ -211,6 +211,40 @@ class SchedulerService:
         # 每月檢查 (UTC 00:00)
         schedule.every().day.at("00:00").do(self.check_monthly_job)
 
+        # Sentinel Tick (Every Minute) - The Heartbeat of Agent Council
+        # 哨兵心跳 (每分鐘)
+        # In Local Mode, this drives the Sentinel. In Cloud, Cloud Scheduler drives it via API.
+        schedule.every(1).minutes.do(self.job_minutely_tick)
+
+    def job_minutely_tick(self):
+        """
+        Executes the Sentinel Tick.
+        Triggers the SentinelService to scan for market anomalies.
+        """
+        # Avoid log spam, use debug
+        # logger.debug("Sentinel Tick...")
+        try:
+            # Inline import for dependency management
+            from src.services.sentinel_service import SentinelService
+            import asyncio
+            
+            # Run async sentinel logic in sync scheduler
+            # Note: SentinelService needs to be robust and stateless
+            sentinel = SentinelService()
+            
+            # Check if there is an existing loop (unlikely in this thread, but safe check)
+            try:
+                loop = asyncio.get_event_loop()
+            except RuntimeError:
+                loop = asyncio.new_event_loop()
+                asyncio.set_event_loop(loop)
+            
+            loop.run_until_complete(sentinel.process_tick())
+            
+        except Exception as e:
+            # Only log errors to keep logs clean
+            logger.error(f"Sentinel Tick failed: {e}")
+
     def run_loop(self):
         self.reload_schedule()
         logger.info("Scheduler Service Running...")

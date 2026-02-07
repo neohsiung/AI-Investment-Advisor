@@ -81,6 +81,28 @@ python run_production_report.py
 - **排程管理**: 設定 Daily Check 與 Weekly Report 的執行時間（基於自定義時區）。
 - **HR 協議**: 監視 Agent 活躍度。若 Agent 超過 7 天無活動，狀態將轉為 **Zombie**，需檢查 API 配置。
 
+### 6. 整合通知設定 (Omni-Channel Setup) - v3.4
+本版本新增 LINE Bot 即時推播功能：
+
+#### 6.1 LINE Bot 設定
+1.  前往 [LINE Developers Console](https://developers.line.biz/) 建立 Messaging API Channel。
+2.  取得 `Channel access token` 與 `Channel secret`。
+3.  將上述資訊填入 `.env` 檔：
+    ```env
+    LINE_CHANNEL_ACCESS_TOKEN=你的Token
+    LINE_CHANNEL_SECRET=你的Secret
+    LINE_USER_ID=你的UserID (若要接收單播)
+    ```
+4.  **Webhook 設定**:
+    *   **Local**: 使用 `ngrok` 取得 HTTPS URL (e.g., `https://xxxx.ngrok.io/callback`).
+    *   **Prod**: 填入 Cloud Run URL.
+
+#### 6.2 哨兵監控 (Sentinel Monitor)
+系統內建「自適應哨兵 (Adaptive Sentinel)」，自動監控市場異常。
+- **觸發機制**: 不再依賴固定數值。系統依據過去 30 天的波動率 (MA + Sigma) 判斷「當前是否異常」。
+- **通知形式**: LINE Flex Message (圖文卡片)。
+- **操作**: 點擊卡片上的 **[前往 eToro 下單]** 按鈕，即可快速進行避險操作。
+
 ---
 
 ## ❓ 常見問題與故障排除 (FAQ & Troubleshooting)
@@ -137,6 +159,22 @@ A: 檢查「系統設定 -> 排程管理」中的時區設定是否與您的本�
 ### 4. System Settings
 - **Model Tiering**: Configure separate models for "Smart Tasks" vs "Fast Scans" for cost efficiency.
 - **HR Protocol**: Monitors agent "heartbeats". Active agents are green; "Zombie" agents require maintenance.
+
+### 5. Notification Setup (LINE Bot)
+v3.4 introduces real-time alerts via LINE:
+
+#### 5.1 LINE Configuration
+1.  Create a Messaging API Channel on [LINE Developers Console](https://developers.line.biz/).
+2.  Get `Channel access token` and `Channel secret`.
+3.  Add to `.env`:
+    ```env
+    LINE_CHANNEL_ACCESS_TOKEN=your_token
+    LINE_CHANNEL_SECRET=your_secret
+    ```
+
+#### 5.2 Sentinel Alerts
+- **Adaptive Logic**: Alerts are triggered based on dynamic market regimes (30-day MA + Sigma), not static numbers.
+- **Action**: Click **[Trade on eToro]** in the LINE notification to execute hedging strategies immediately.
 
 ### 3. Troubleshooting
 - **Zero Balance**: Ensure initial `DEPOSIT` or `BUY` events are recorded.
