@@ -147,8 +147,15 @@ class BaseAgent(ABC):
             # 3. Inject Dynamic Memory (Contextual)
             # If context has 'query' or 'topic', try to fetch memory
             memory_context_str = ""
-            topic = context.get("topic") if isinstance(context, dict) else None
-            if topic:
+            # Ensure context is dict
+            context_dict = context if isinstance(context, dict) else {}
+            
+            # Explicit Historical Context (from CouncilService)
+            if "historical_context" in context_dict:
+                 memory_context_str += f"\n[Historical Context]:\n{context_dict['historical_context']}\n"
+
+            topic = context_dict.get("topic")
+            if topic and not "historical_context" in context_dict: # Avoid Double Injection
                 # Retrieve relevant memories
                 # We need an embedding for the topic. 
                 # For now, we will just use Keyword Search or rely on hybrid if we had an embedder here.
@@ -156,9 +163,9 @@ class BaseAgent(ABC):
                 # In full implementation, we'd call self.llm_provider.embed(topic).
                 memories = self.memory.search(topic, query_vector=None, limit=3)
                 if memories:
-                    memory_context_str = "\n".join([f"- {m['content']} (Score: {m['score']:.2f})" for m in memories])
+                    memory_context_str += "\n".join([f"- {m['content']} (Score: {m['score']:.2f})" for m in memories])
 
-            context_with_tools = context.copy() if isinstance(context, dict) else {}
+            context_with_tools = context_dict.copy()
             context_with_tools["tools"] = mcp_tools_json # Keep for backward compatibility in templates
             context_with_tools["skills_xml"] = skills_xml
             context_with_tools["current_time"] = current_time

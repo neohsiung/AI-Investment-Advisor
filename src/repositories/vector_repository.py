@@ -130,3 +130,61 @@ class VectorRepository:
             raise
         finally:
             conn.close()
+    def search_similar_minutes(self, topic: str, limit: int = 1, threshold: float = 0.7) -> List[Dict]:
+        """
+        Retrieves past council minutes based on topic similarity.
+        Warning: Requires a real embedding model. For now we assume the 'topic' is already an embedding
+        or we skip if it's just a string in this refactor step (since we don't have an embedder here).
+
+        To make this functional:
+        1. We need an Embedder Service (e.g. OpenAI).
+        2. Here we will mock it or rely on the caller to provide embedding if topic is a list.
+        """
+        # NOTE: This signature is being updated to accept embedding or we need to embed inside.
+        # For this step, let's assume valid embedding is passed or we return empty if string.
+        # In a real app, `src.infrastructure.llm_provider` should generate the embedding.
+        
+        # Temporary safeguard: If topic is string, we can't search without embedding provider.
+        # So we return empty list to prevent crash, unless we integrate embedding here.
+        # Let's return empty for now to satisfy the call in CouncilService, 
+        # but mark for next iteration to add EmbeddingService.
+        logger.warning("VectorRepo: search_similar_minutes called without embedding service. Returning empty.")
+        return []
+
+    def search_similar_minutes_by_embedding(self, embedding: List[float], limit: int = 1, threshold: float = 0.7) -> List[Dict]:
+        """
+        True retrieval logic using embedding vector.
+        """
+        conn = get_db_connection()
+        try:
+            is_sqlite = 'sqlite' in str(conn.engine.url)
+            if is_sqlite:
+                return []
+
+            query = text("""
+                SELECT id, topic, consensus_decision, full_transcript, 1 - (embedding <=> :emb) as similarity
+                FROM council_minutes
+                WHERE 1 - (embedding <=> :emb) > :threshold
+                ORDER BY similarity DESC
+                LIMIT :limit
+            """)
+            
+            rows = conn.execute(query, {
+                "emb": self._ensure_string_embedding(embedding),
+                "threshold": threshold,
+                "limit": limit
+            }).fetchall()
+            
+            return [{
+                "id": row[0],
+                "topic": row[1],
+                "consensus": row[2],
+                "transcript": row[3],
+                "similarity": row[4]
+            } for row in rows]
+            
+        except Exception as e:
+            logger.error(f"VectorRepo: Search minutes failed: {e}")
+            return []
+        finally:
+            conn.close()

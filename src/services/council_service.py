@@ -146,13 +146,29 @@ class CouncilService:
         # 1. Experience Replay
         past_wisdom = ""
         try:
+             # We use keyword matching or simple topic lookup if no embedding provided
+             # But VectorRepo.search_similar_minutes expects explicit call
+             # Here we try to get "similar" minutes.
+             # Since we don't have an embedding service in CouncilService yet, 
+             # we might need to rely on the VectorRepo to handle text-based fallback or mock it for now.
+             
+             # If we are using the new 'search_similar_minutes' (which returns empty now),
+             # we should at least call it to verify the integration.
+             # In future, we will pass an embedding of 'topic'.
              similar = self.vector_repo.search_similar_minutes(topic, limit=1)
              if similar:
-                 past_wisdom = f"Previous Decision: {similar[0].consensus}"
-        except Exception: pass
+                 past_wisdom = f"Previous Related Decision for '{similar[0]['topic']}': {similar[0]['consensus']}"
+                 logger.info(f"Council: Recalled wisdom -> {past_wisdom[:50]}...")
+        except Exception as e:
+            logger.warning(f"Council: Memory recall failed: {e}")
 
         # 2. Members
+        # Determine Tier based on Topic Complexity or Market Regime
+        # (Router integration is already here)
         tier = self.router.select_tier(topic, round_num=1)
+        
+        # Instantiate Agents with retrieved context? 
+        # Actually, agents take context in .run(), so we just pass it there.
         members = [
             AgentFactory.create_momentum_agent(tier=tier),
             AgentFactory.create_fundamental_agent(tier=tier),
@@ -164,10 +180,17 @@ class CouncilService:
         # 3. Debate
         stances = []
         transcript = []
+        
+        # Inject Memory into Context
+        debate_context = {**context_data, "historical_context": past_wisdom, "topic": topic}
+        
         for agent in members:
             try:
-                inp = {"topic": topic, "historical_context": past_wisdom, **context_data}
-                res = agent.run(inp)
+                # Agents expect a single dict or string.
+                # If they support expanded context keys (like 'historical_context'), they will use it.
+                # If they utilize a base_agent prompt builder, we must ensure it handles this key.
+                # For now, we pass the dict.
+                res = agent.run(debate_context)
                 stances.append(f"[{agent.name}]: {res}")
                 transcript.append(f"[{agent.name}]: {res}")
             except Exception as e:
