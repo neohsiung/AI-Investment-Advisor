@@ -96,17 +96,29 @@ python run_production_report.py
     *   切換至 **Basic settings** 分頁，捲動至下方找到 **Channel secret**。
 5.  **加入好友**:
     *   在 **Messaging API** 分頁，掃描 QR code 將機器人加入好友。
-6.  **取得 User ID**:
-    *   方法一 (推薦)：在 **Basic settings** 分頁下方可找到 "Your user ID" (開發者本人)。
-    *   方法二：加入好友後，隨意發送一則訊息給機器人。查看伺服器 Log (`docker compose logs dashboard`)，會顯示 `[LINE] Received message from Uxxxxxxxx...`，即為您的 User ID。
-    *   將此 ID 填入 `.env` 的 `LINE_USER_ID` 欄位。
+#### 6.3 取得您的 User ID 與加入好友 (Friend & User ID)
+**注意**：`LINE_USER_ID` 是指**您的個人 ID** (機器人需要知道發訊息給誰)，而不是機器人的 ID。
+
+1.  **將機器人加入好友**:
+    *   在 LINE Developers Console 的 **Messaging API** 分頁，掃描 QR Code。
+    *   或者在 **Basic settings** 分頁複製 **Basic ID** (以 `@` 開頭)，在 LINE App 中搜尋ID加入。
+2.  **取得您的 User ID**:
+    *   **方法一 (推薦 - 開發者本人)**：在 **Basic settings** 分頁的最下方，找到 **Your user ID** (格式如 `U8923...`)。此 ID 僅開發者可見。
+    *   **方法二 (通用 - 非開發者)**：
+        1. 確保 Webhook 已設定並成功 Verify。
+        2. 在 LINE 對機器人發送隨意一則訊息 (例如 "Hi")。
+        3. 查看終端機 Log:
+           ```bash
+           docker compose logs dashboard | grep "Received message"
+           ```
+        4. 您會看到類似 `[LINE] Received message from Uxxxxxxxx...` 的紀錄，該 `U...` 字串即為您的 User ID。
+3.  **填入設定檔**:
+    將取得的 `U...` ID 填入 `.env`:
     ```env
-    LINE_CHANNEL_ACCESS_TOKEN=你的Token
-    LINE_CHANNEL_SECRET=你的Secret
-    LINE_USER_ID=你的UserID
+    LINE_USER_ID=Uxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
     ```
 
-#### 6.2 本地開發 Webhook 設定 (Local Ngrok Setup)
+#### 6.4 本地開發 Webhook 設定 (Local Ngrok Setup)
 如果您在本地開發環境測試 LINE Bot，必須使用 `ngrok` 將本地伺服器暴露到公網。
 1.  **安裝 ngrok**: `brew install ngrok/ngrok/ngrok` (macOS) 或下載執行檔。
 2.  **設定 Authtoken** (重要：現在使用 ngrok 必須註冊並設定 Token):
