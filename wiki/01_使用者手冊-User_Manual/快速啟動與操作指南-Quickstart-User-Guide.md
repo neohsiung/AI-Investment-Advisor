@@ -94,8 +94,12 @@ python run_production_report.py
     *   捲動至下方找到 **Channel access token**，點擊 **Issue** 按鈕生成長效 Token。
 3.  **設定 Channel Secret**:
     *   切換至 **Basic settings** 分頁，捲動至下方找到 **Channel secret**。
-4.  **填寫設定檔**:
-    *   找到 **Your user ID** (通常以 `U` 開頭)，將上述資訊填入 `.env`：
+5.  **加入好友**:
+    *   在 **Messaging API** 分頁，掃描 QR code 將機器人加入好友。
+6.  **取得 User ID**:
+    *   方法一 (推薦)：在 **Basic settings** 分頁下方可找到 "Your user ID" (開發者本人)。
+    *   方法二：加入好友後，隨意發送一則訊息給機器人。查看伺服器 Log (`docker compose logs dashboard`)，會顯示 `[LINE] Received message from Uxxxxxxxx...`，即為您的 User ID。
+    *   將此 ID 填入 `.env` 的 `LINE_USER_ID` 欄位。
     ```env
     LINE_CHANNEL_ACCESS_TOKEN=你的Token
     LINE_CHANNEL_SECRET=你的Secret
