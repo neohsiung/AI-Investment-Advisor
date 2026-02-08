@@ -62,8 +62,10 @@ class CouncilService:
             
             # Sub-Council: Momentum + Fundamental (Fast Tier)
             # We use a lightweight sub-council to save costs
-            mom_agent = AgentFactory.create_momentum_agent(tier="fast")
-            fun_agent = AgentFactory.create_fundamental_agent(tier="fast")
+            # Sub-Council: Momentum + Fundamental (Fast Tier)
+            # We use a lightweight sub-council to save costs
+            mom_agent = AgentFactory.create_agent("Momentum", tier="fast")
+            fun_agent = AgentFactory.create_agent("Fundamental", tier="fast")
             
             sub_context = {
                 "topic": f"Analysis of {ticker}",
