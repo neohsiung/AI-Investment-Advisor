@@ -75,10 +75,10 @@ graph LR
 
 ```mermaid
 graph LR
-    Line[LINE Platform] -->|Webhook (POST)| Ngrok[Ngrok Tunnel]
-    Ngrok -->|Forward| MCP[MCP Server (Port 8000)]
-    MCP -->|Verify & Parse| Handler[Webhook Handler]
-    Handler -->|Dispatch| Agent[Agent / Tool]
+    Line["LINE Platform"] -->|"Webhook (POST)"| Ngrok["Ngrok Tunnel"]
+    Ngrok -->|"Forward"| MCP["MCP Server (Port 8000)"]
+    MCP -->|"Verify & Parse"| Handler["Webhook Handler"]
+    Handler -->|"Dispatch"| Agent["Agent / Tool"]
 ```
 
 #### 3.3 關鍵配置文件映射 (Infrastructure Registry)
