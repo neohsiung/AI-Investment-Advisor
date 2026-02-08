@@ -105,12 +105,19 @@ python run_production_report.py
 #### 6.2 本地開發 Webhook 設定 (Local Ngrok Setup)
 如果您在本地開發環境測試 LINE Bot，必須使用 `ngrok` 將本地伺服器暴露到公網。
 1.  **安裝 ngrok**: `brew install ngrok/ngrok/ngrok` (macOS) 或下載執行檔。
-2.  **啟動 ngrok**:
+2.  **設定 Authtoken** (重要：現在使用 ngrok 必須註冊並設定 Token):
+    *   前往 [ngrok Dashboard](https://dashboard.ngrok.com/signup) 註冊帳號。
+    *   在 [Your Authtoken](https://dashboard.ngrok.com/get-started/your-authtoken) 頁面複製您的 Token。
+    *   執行命令設定：
+        ```bash
+        ngrok config add-authtoken <您的Token>
+        ```
+3.  **啟動 ngrok**:
     ```bash
     ngrok http 8501
     ```
     (假設 Streamlit 或 FastAPI 運行在 8501 埠)
-3.  **設定 Webhook**:
+4.  **設定 Webhook**:
     *   複製 HTTPS URL (例如 `https://a1b2c3d4.ngrok.io`)。
     *   回到 LINE Developers Console > Messaging API > Webhook settings。
     *   貼上 URL 並加上 `/callback`路徑 (例如 `https://a1b2c3d4.ngrok.io/callback`)。
