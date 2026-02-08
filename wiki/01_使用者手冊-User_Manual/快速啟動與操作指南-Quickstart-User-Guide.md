@@ -124,6 +124,21 @@ python run_production_report.py
     *   開啟 **Use webhook** 開關。
     *   點擊 **Verify** 測試連線 (若服務未啟動會失敗，請確認 `python main.py` 已執行)。
 
+#### 6.2.1 使用 Docker 微服務化啟動 (Docker Microservice)
+您可以將 ngrok 作為專案的一部分透過 Docker 啟動，無需手動執行指令。
+1.  在 `.env` 新增 Authtoken:
+    ```env
+    NGROK_AUTHTOKEN=你的Token
+    ```
+2.  啟動服務:
+    ```bash
+    docker-compose up -d ngrok
+    ```
+3.  取得 Webhook URL:
+    *   瀏覽器開啟 `http://localhost:4040` (ngrok Dashboard)。
+    *   複製 **Public URL** (https)。
+    *   填入 LINE Developer Console (同上步驟 4)。
+
 #### 6.3 哨兵監控 (Sentinel Monitor)
 系統內建「自適應哨兵 (Adaptive Sentinel)」，自動監控市場異常。
 - **觸發機制**: 不再依賴固定數值。系統依據過去 30 天的波動率 (MA + Sigma) 判斷「當前是否異常」。

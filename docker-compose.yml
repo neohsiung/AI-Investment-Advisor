@@ -102,6 +102,18 @@ services:
     volumes:
       - redis_data:/data
 
+  ngrok:
+    image: ngrok/ngrok:latest
+    container_name: investment_advisor_ngrok
+    command: "http dashboard:8501"
+    environment:
+      - NGROK_AUTHTOKEN=${NGROK_AUTHTOKEN}
+    ports:
+      - "4040:4040"
+    depends_on:
+      - dashboard
+    restart: unless-stopped
+
 
 volumes:
   postgres_data:
