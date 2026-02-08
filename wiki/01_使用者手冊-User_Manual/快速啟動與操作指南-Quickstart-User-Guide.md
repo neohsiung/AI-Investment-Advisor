@@ -94,8 +94,35 @@ python run_production_report.py
     *   捲動至下方找到 **Channel access token**，點擊 **Issue** 按鈕生成長效 Token。
 3.  **設定 Channel Secret**:
     *   切換至 **Basic settings** 分頁，捲動至下方找到 **Channel secret**。
-5.  **加入好友**:
-    *   在 **Messaging API** 分頁，掃描 QR code 將機器人加入好友。
+    *   切換至 **Basic settings** 分頁，捲動至下方找到 **Channel secret**。
+
+#### 6.2 本地開發 Webhook 設定 (Local Ngrok Setup)
+如果您在本地開發環境測試 LINE Bot，必須使用 `ngrok` 將本地伺服器暴露到公網，才能讓 LINE Platform 傳送 Webhook 驗證。
+
+**方式一：使用 Docker 微服務 (推薦)**
+1.  在 `.env` 新增 Authtoken:
+    ```env
+    NGROK_AUTHTOKEN=你的Token
+    ```
+2.  啟動服務:
+    ```bash
+    docker-compose up -d ngrok
+    ```
+3.  取得 Webhook URL:
+    *   瀏覽器開啟 `http://localhost:4040` (ngrok Dashboard)。
+    *   複製 **Public URL** (https)。
+
+**方式二：手動執行 ngrok**
+1.  安裝並設定 Authtoken。
+2.  執行命令: `ngrok http 8000` (指向 MCP Server)。
+3.  複製 HTTPS URL。
+
+**設定 Webhook URL**:
+*   回到 LINE Developers Console > Messaging API > Webhook settings。
+*   貼上 URL 並加上 `/callback`路徑 (例如 `https://a1b2c3d4.ngrok.io/callback`)。
+*   開啟 **Use webhook** 開關。
+*   點擊 **Verify** 測試連線 (若顯示 Success 即代表連線成功)。
+
 #### 6.3 取得您的 User ID 與加入好友 (Friend & User ID)
 **注意**：`LINE_USER_ID` 是指**您的個人 ID** (機器人需要知道發訊息給誰)，而不是機器人的 ID。
 
@@ -105,7 +132,7 @@ python run_production_report.py
 2.  **取得您的 User ID**:
     *   **方法一 (推薦 - 開發者本人)**：在 **Basic settings** 分頁的最下方，找到 **Your user ID** (格式如 `U8923...`)。此 ID 僅開發者可見。
     *   **方法二 (通用 - 非開發者)**：
-        1. 確保 Webhook 已設定並成功 Verify。
+        1. 確保上述 (6.2) Webhook 已設定並成功 Verify。
         2. 在 LINE 對機器人發送隨意一則訊息 (例如 "Hi")。
         3. 查看終端機 Log:
            ```bash
@@ -118,44 +145,7 @@ python run_production_report.py
     LINE_USER_ID=Uxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
     ```
 
-#### 6.4 本地開發 Webhook 設定 (Local Ngrok Setup)
-如果您在本地開發環境測試 LINE Bot，必須使用 `ngrok` 將本地伺服器暴露到公網。
-1.  **安裝 ngrok**: `brew install ngrok/ngrok/ngrok` (macOS) 或下載執行檔。
-2.  **設定 Authtoken** (重要：現在使用 ngrok 必須註冊並設定 Token):
-    *   前往 [ngrok Dashboard](https://dashboard.ngrok.com/signup) 註冊帳號。
-    *   在 [Your Authtoken](https://dashboard.ngrok.com/get-started/your-authtoken) 頁面複製您的 Token。
-    *   執行命令設定：
-        ```bash
-        ngrok config add-authtoken <您的Token>
-        ```
-3.  **啟動 ngrok**:
-    ```bash
-    ngrok http 8000
-    ```
-    (LINE Webhook 位於 MCP Server 埠口 8000)
-4.  **設定 Webhook**:
-    *   複製 HTTPS URL (例如 `https://a1b2c3d4.ngrok.io`)。
-    *   回到 LINE Developers Console > Messaging API > Webhook settings。
-    *   貼上 URL 並加上 `/callback`路徑 (例如 `https://a1b2c3d4.ngrok.io/callback`)。
-    *   開啟 **Use webhook** 開關。
-    *   點擊 **Verify** 測試連線 (若服務未啟動會失敗，請確認 `python main.py` 已執行)。
-
-#### 6.2.1 使用 Docker 微服務化啟動 (Docker Microservice)
-您可以將 ngrok 作為專案的一部分透過 Docker 啟動，無需手動執行指令。
-1.  在 `.env` 新增 Authtoken:
-    ```env
-    NGROK_AUTHTOKEN=你的Token
-    ```
-2.  啟動服務:
-    ```bash
-    docker-compose up -d ngrok
-    ```
-3.  取得 Webhook URL:
-    *   瀏覽器開啟 `http://localhost:4040` (ngrok Dashboard)。
-    *   複製 **Public URL** (https)。
-    *   填入 LINE Developer Console (同上步驟 4)。
-
-#### 6.3 哨兵監控 (Sentinel Monitor)
+#### 6.4 哨兵監控 (Sentinel Monitor)
 系統內建「自適應哨兵 (Adaptive Sentinel)」，自動監控市場異常。
 - **觸發機制**: 不再依賴固定數值。系統依據過去 30 天的波動率 (MA + Sigma) 判斷「當前是否異常」。
 - **通知形式**: LINE Flex Message (圖文卡片)。
