@@ -66,7 +66,22 @@ graph LR
     DB --> Storage["Persistence Storage"]
 ```
 
-#### 3.2 關鍵配置文件映射 (Infrastructure Registry)
+#### 3.2 外部事件與 Webhook 架構 (External Event & Webhook Architecture)
+- **架構變更 (v3.5)**: LINE Webhook 改為指向 `mcp_server` (FastAPI) 而非 `dashboard` (Streamlit)。
+- **原因與考量**:
+    - **職責分離 (Separation of Concerns)**: `mcp_server` 專注於 API 處理與高併發連線 (FastAPI/Uvicorn)，適合處理 Webhook 回調；`dashboard` 專注於 UI 渲染與使用者互動 (Streamlit)，不適合處理即時、無狀態的外部請求。
+    - **穩定性 (Reliability)**: Streamlit 的執行模型 (Execution Model) 較為特殊，處理外部 POST 請求不易且易受 UI 執行緒阻塞影響。移至 FastAPI 可確保 Webhook 的穩定響應 (200 OK)。
+    - **統一入口 (Unified Entry)**: `mcp_server` 作為 Agent Mesh 的對外接口，未來可擴充更多外部觸發事件 (如 TradingView Alert, Discord Bot)，統一由 MCP 層進行路由與分發。
+
+```mermaid
+graph LR
+    Line[LINE Platform] -->|Webhook (POST)| Ngrok[Ngrok Tunnel]
+    Ngrok -->|Forward| MCP[MCP Server (Port 8000)]
+    MCP -->|Verify & Parse| Handler[Webhook Handler]
+    Handler -->|Dispatch| Agent[Agent / Tool]
+```
+
+#### 3.3 關鍵配置文件映射 (Infrastructure Registry)
 | 組件 | 配置文件 | 說明 |
 | :--- | :--- | :--- |
 | **容器鏡像** | [Dockerfile](file:///Users/neohsiung/Work/go/investment-advisor/Dockerfile) | 全系統基礎鏡像與環境。 |
