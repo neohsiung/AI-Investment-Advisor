@@ -65,6 +65,9 @@ def test_weekly_workflow_execution(mock_fund, mock_cio, mock_macro, mock_workflo
     # Mock Context
     workflow.context = {"tickers": ["NVDA"], "market_data": {}}
     workflow.market_service = MagicMock() # Mock market service calls if any
+    workflow.transaction_service = MagicMock()
+    workflow.transaction_service.get_holdings_map.return_value = {}
+    workflow.performance_service = MagicMock()
     
     # Run
     report = workflow.run_weekly_cycle(user_id="test_user")
@@ -109,6 +112,9 @@ def test_daily_consistency_warning():
     # Mock Dependent Calls
     workflow.market_service = MagicMock()
     workflow.market_service.get_macro_data.return_value = {}
+    workflow.transaction_service = MagicMock()
+    workflow.transaction_service.get_holdings_map.return_value = {}
+    workflow.performance_service = MagicMock()
     
     with patch('src.agents.factory.AgentFactory.create_macro_agent') as mock_macro, \
          patch('src.agents.factory.AgentFactory.create_cio_agent') as mock_cio:
