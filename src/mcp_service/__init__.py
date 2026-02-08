@@ -216,3 +216,59 @@ async def call_tool(tool_name: str, request: ToolCallRequest):
     except Exception as e:
         logger.error(f"Tool execution failed: {e}")
         raise HTTPException(status_code=500, detail=str(e))
+
+# --- LINE Bot Webhook Support ---
+import os
+from linebot import LineBotApi, WebhookHandler
+from linebot.exceptions import InvalidSignatureError
+from linebot.models import MessageEvent, TextMessage, TextSendMessage
+from fastapi import Request, Header
+
+# Initialize LINE Bot
+line_channel_access_token = os.getenv("LINE_CHANNEL_ACCESS_TOKEN")
+line_channel_secret = os.getenv("LINE_CHANNEL_SECRET")
+
+if line_channel_access_token and line_channel_secret:
+    line_bot_api = LineBotApi(line_channel_access_token)
+    handler = WebhookHandler(line_channel_secret)
+    logger.info("LINE Bot initialized.")
+else:
+    line_bot_api = None
+    handler = None
+    logger.warning("LINE Bot credentials not found. Webhook disabled.")
+
+@app.post("/callback")
+async def callback(request: Request, x_line_signature: str = Header(None)):
+    """
+    LINE Messaging API Webhook Callback
+    """
+    if handler is None:
+        raise HTTPException(status_code=503, detail="LINE Bot not configured")
+        
+    body = await request.body()
+    body_str = body.decode('utf-8')
+    logger.info(f"LINE Webhook body: {body_str}")
+
+    try:
+        handler.handle(body_str, x_line_signature)
+    except InvalidSignatureError:
+        logger.error("Invalid LINE signature")
+        raise HTTPException(status_code=400, detail="Invalid signature")
+
+    return "OK"
+
+# Basic Message Handler (Echo for verification)
+if handler:
+    @handler.add(MessageEvent, message=TextMessage)
+    def handle_message(event):
+        try:
+            line_user_id = event.source.user_id
+            logger.info(f"[LINE] Received message from {line_user_id}: {event.message.text}")
+            
+            # Simple Echo for Verification
+            line_bot_api.reply_message(
+                event.reply_token,
+                TextSendMessage(text=f"收到: {event.message.text}\nUser ID: {line_user_id}")
+            )
+        except Exception as e:
+            logger.error(f"Error handling LINE message: {e}")
