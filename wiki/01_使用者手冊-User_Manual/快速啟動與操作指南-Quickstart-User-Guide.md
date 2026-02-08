@@ -109,7 +109,7 @@ python run_production_report.py
         2. 在 LINE 對機器人發送隨意一則訊息 (例如 "Hi")。
         3. 查看終端機 Log:
            ```bash
-           docker compose logs dashboard | grep "Received message"
+           docker compose logs mcp_server | grep "Received message"
            ```
         4. 您會看到類似 `[LINE] Received message from Uxxxxxxxx...` 的紀錄，該 `U...` 字串即為您的 User ID。
 3.  **填入設定檔**:
@@ -130,9 +130,9 @@ python run_production_report.py
         ```
 3.  **啟動 ngrok**:
     ```bash
-    ngrok http 8501
+    ngrok http 8000
     ```
-    (假設 Streamlit 或 FastAPI 運行在 8501 埠)
+    (LINE Webhook 位於 MCP Server 埠口 8000)
 4.  **設定 Webhook**:
     *   複製 HTTPS URL (例如 `https://a1b2c3d4.ngrok.io`)。
     *   回到 LINE Developers Console > Messaging API > Webhook settings。
