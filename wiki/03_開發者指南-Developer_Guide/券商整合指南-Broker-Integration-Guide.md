@@ -15,7 +15,7 @@ This guide details the integration steps for the three supported brokers (Etoro,
 ### 支援券商一覽 (Supported Brokers)
 | 券商 (Broker) | 核心依賴 (Core Dependency) | 連接埠 (Default Port) | 適用場景 (Use Case) |
 | :--- | :--- | :--- | :--- |
-| **Etoro** | Etoro Wrapper (Local Bridge) | 8000 | 模擬交易、跟單交易 (Copy Trading) |
+| **Etoro** | Official Public API (REST) | 443 (HTTPS) | 模擬交易、跟單交易 (Copy Trading) |
 | **Futu (富途)** | FutuOpenD | 11111 | 港股/美股 API 交易 |
 | **IBKR (盈透)** | TWS API / IB Gateway | 7497 (Paper) / 7496 (Live) | 全球市場、機構級執行 |
 
@@ -23,17 +23,36 @@ This guide details the integration steps for the three supported brokers (Etoro,
 
 ## 2. Etoro 整合 (Etoro Integration)
 
-### 2.1 環境準備 (Prerequisites)
-1.  **Etoro Bridge**: 需執行一個本地或遠端的 Bridge 服務 (模擬瀏覽器操作)。
-2.  **Environment Variables**:
-    ```bash
-    ETORO_API_BASE_URL=http://localhost:8000
-    ```
+本系統支援 eToro 官方 Public API。請按照以下步驟獲取認證憑證並設定環境。
 
-### 2.2 驗證 (Verification)
-執行整合測試以確認連線：
+### 2.1 官方 API 認證流程 (Step-by-Step)
+1.  **進入設定**: 登入 eToro 帳戶，導航至 [Settings > Trading](https://www.etoro.com/settings/trading)。
+2.  **建立金鑰**: 在 "Public API" 區塊點擊 **Create a New Key**。
+3.  **配置預設屬性**: 
+    - **Key Name**: 輸入識別名稱 (例如: `AI-Advisor-Prod`)。
+    - **Permissions**: 
+        - 選擇 `Read` (僅查詢持倉與歷史)。
+        - 選擇 `Write` (若需 AI 自動執行對沖/交易)。
+4.  **安全驗證**: 完成彈出的 2FA 驗證。
+5.  **複製憑證**: 保存畫面上顯示的 `Public API Key` 與 `User Key`。
+    > [!CAUTION]
+    > 憑證僅顯示一次，請妥善保管。
+
+### 2.2 系統設定 (Configuration)
+在 `.env` 中加入以下資訊：
 ```bash
-python3 tests/test_etoro_integration.py
+# eToro 官方 API 認證 (推薦)
+ETORO_API_KEY=your_public_api_key
+ETORO_USER_KEY=your_user_key
+
+# 舊有 Bridge 模式 (選填，若未提供 API_KEY 則回退至此)
+# ETORO_API_BASE_URL=http://localhost:8000
+```
+
+### 2.3 驗證 (Verification)
+執行整合測試以確認連線與認證標頭：
+```bash
+python3 tests/test_etoro_api_auth.py
 ```
 
 ---
