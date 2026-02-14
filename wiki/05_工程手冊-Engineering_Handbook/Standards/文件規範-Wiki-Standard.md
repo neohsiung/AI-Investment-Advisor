@@ -23,7 +23,12 @@ This document defines the standards for creating and maintaining the project Wik
 
 *   **雙語並列 (Bilingual)**:
     *   所有標題與關鍵段落原則上應採「先繁體中文，後英文」的方式呈現。
-    *   First Traditional Chinese, then English.
+    *   **排版佈局 (Layout)**:
+        *   **上半部 (Top Half)**: 繁體中文版本 (Traditional Chinese Version).
+        *   **下半部 (Bottom Half)**: 英文版本 (English Version).
+        *   **分隔線 (Separator)**: 使用 `---` 分隔兩種語言。
+    *   **撰寫建議 (Workflow)**: 建議先撰寫英文內容以確保技術精確度，再翻譯為中文置於文件上方。
+    *   First Traditional Chinese (Top), then English (Bottom).
 *   **行文風格 (Writing Style)**:
     *   **一文一事 (One Topic Per Doc)**: 每份文件應專注於單一主題。
     *   **簡明扼要 (Concise)**: 避免冗長贅述，使用列點 (Bullet points) 輔助說明。

@@ -370,7 +370,47 @@ class DailyWorkflow(BaseWorkflow):
         # [NEW] Include Holdings Context from TransactionService
         holdings_map = self.transaction_service.get_holdings_map(self.user_id)
         
+        # --- [NEW] Multi-Broker Integration ---
+        from src.services.broker_factory import BrokerFactory
+        from src.infrastructure.risk_manager import RiskManager
+        
+        # Initialize Broker
+        # Default to Etoro if not set, or read from settings
+        broker = BrokerFactory.get_broker(self.user_id)
+        risk_manager = RiskManager()
+        
+        broker_status_msg = ""
+        broker_connected = False
+        
+        try:
+            # 1. Sync History
+            broker.sync_history(self.user_id)
+            
+            # 2. Check Risk Status (Constraints)
+            # Fetch history and positions for Risk Manager
+            history = broker.get_history()
+            positions = broker.get_positions()
+            
+            constraints_ok = risk_manager.check_constraints(self.user_id, history, positions)
+            
+            if not constraints_ok:
+                broker_status_msg = f"🚨 **RISK ALERT ({broker.get_name()})**: AI Trading PAUSED. Manual Review Required."
+            else:
+                broker_status_msg = f"✅ **System Status ({broker.get_name()})**: Active & Monitoring."
+            
+            # 3. Get Financial Snapshot
+            account = broker.get_account()
+            if account:
+                broker_status_msg += f"\n- **Total Equity**: ${account.total_equity:,.2f}"
+                broker_status_msg += f"\n- **Cash**: ${account.available_cash:,.2f}"
+            
+            broker_connected = True
+        except Exception as e:
+            logger.warning(f"Broker ({broker.get_name()}) Service not available: {e}")
+            broker_status_msg = f"⚠️ **Connection Alert**: {broker.get_name()} Bridge Offline."
+
         detailed_debate_section = "## 2. 議會焦點辯論 (The Great Debate & Detailed Analysis)\n\n"
+        detailed_debate_section += f"{etoro_status_msg}\n\n"
         detailed_debate_section += "本日針對投資組合進行深度多空思辨，並附上完整技術與基本面數據。\n\n"
         
         # Accumulate ticker contexts for CIO Synthesis
@@ -504,6 +544,39 @@ class DailyWorkflow(BaseWorkflow):
                             signal=cio_signal,
                             price=t_price
                         )
+                        
+                        # [NEW] Auto-Trading Execution
+                        # -------------------------
+                        try:
+                            trading_settings = broker.transaction_repo.settings_repo # Access settings repo from broker
+                            is_auto_trade = trading_settings.get(self.user_id, "etoro_auto_trade") == "true"
+                            
+                            # 2. Execute if Enabled
+                            if is_auto_trade and constraints_ok and broker_connected:
+                                # Default Amount: 100 USD
+                                trade_amt = float(trading_settings.get(self.user_id, "etoro_trade_amount") or 100.0)
+                                
+                                # Construct Order Domain Object
+                                from src.domain.trading import Order, OrderAction
+                                action_enum = OrderAction.BUY if cio_signal == "BUY" else OrderAction.SELL
+                                
+                                order = Order(
+                                    symbol=ticker,
+                                    action=action_enum,
+                                    quantity=trade_amt, # Note: Etoro takes amount in USD for stocks usually, or units. Assuming USD amount for now. 
+                                    # If quantity is units, we need price to calc. 
+                                    # Etoro API 'Amount' usually means invested amount.
+                                    leverage=1,
+                                    reason=f"CIO Daily Signal ({cio_signal})"
+                                )
+
+                                # Execute
+                                logger.info(f"Auto-Trading Executing: {cio_signal} {ticker} ${trade_amt}")
+                                trade_res = broker.execute_order(order)
+                                logger.info(f"Trade Result: {trade_res}")
+
+                        except Exception as e:
+                            logger.error(f"Auto-Trade Execution Failed for {ticker}: {e}")
         except Exception as e:
             logger.warning(f"Failed to extract CIO signals: {e}")
 

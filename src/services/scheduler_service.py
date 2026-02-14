@@ -143,6 +143,30 @@ class SchedulerService:
         except Exception as e:
             self.log_job_execution("Monthly Refinement", "FAILED", str(e))
 
+    def job_etoro_sync(self):
+        """
+        Sync Broker trade history (Etoro/Futu/etc.) for all users.
+        """
+        logger.info("Starting Broker Sync Job...")
+        self.log_job_execution("Broker Sync", "STARTED")
+        
+        users = self.get_all_users()
+        from src.services.broker_factory import BrokerFactory
+        
+        for user in users:
+            try:
+                # Get preferred broker for user
+                broker = BrokerFactory.get_broker(user)
+                broker_name = broker.get_name()
+                
+                result = broker.sync_history(user)
+                msg = f"Synced {user} [{broker_name}]: +{result['added']} / skipped {result['skipped']}"
+                logger.info(msg)
+                self.log_job_execution(f"Broker Sync ({user})", "COMPLETED", msg)
+            except Exception as e:
+                logger.error(f"Broker Sync failed for {user}: {e}")
+                self.log_job_execution(f"Broker Sync ({user})", "FAILED", str(e))
+
     def check_monthly_job(self):
         if get_current_time().day == 1:
             self.job_monthly_refinement()
@@ -189,6 +213,11 @@ class SchedulerService:
             if hasattr(schedule.every(), target_day):
                 getattr(schedule.every(), target_day).at(daily_time_sys).do(self.job_daily_check)
                 logger.info(f"Scheduled Daily Check on {target_day} at {daily_time_sys} System (User: {day} {daily_time})")
+        
+        # Etoro Sync Job (Every 4 hours)
+        # 每 4 小時同步 Etoro 交易紀錄
+        schedule.every(4).hours.do(self.job_etoro_sync)
+        logger.info("Scheduled Etoro Sync every 4 hours.")
         
         # Dynamic day scheduling for Weekly Report
         # 設定每週報告的動態日期

@@ -38,3 +38,4 @@ fastapi
 uvicorn[standard]
 httpx
 redis
+futu-api

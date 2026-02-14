@@ -24,6 +24,7 @@
 | **⚡ Redis 記憶系統** | 引入 **Adaptive Compression** 技術，利用 Redis 高速存取短期記憶，並透過 **Cross-Session Context** 實現長期思維連續性。 |
 | **🐝 蜂群洞察 (Swarm)** | 整合 **Macro, Fundamental, Sentiment** 三維度訊號，由 CIO Agent 進行 **Gap Filling** (補倉) 與 Alpha 候選股最終仲裁。 |
 | **🔌 MCP 深度整合** | **FMP (Starter Plan)** 與 **Tavily (Researcher)** 服務深度整合，完全發揮訂閱權限，提供即時估值、財報與深度搜尋上下文。 |
+| **🌍 多券商架構** | **Broker Bridge** 支援 **Etoro**、**Futu (富途)** 與 **Interactive Brokers**，透過統一介面與 **Risk Manager** 實現跨平台自動交易與風控。 |
 | **🏆 量化反饋迴圈** | **Engineer Agent** 利用 **DSPy** 自動重寫表現不佳 Agent 的 Prompt，確保持續進化。 |
 | **🏗️ 現代化基礎架構** | 支援 **Docker Compose / K8s** 部署，採用 Clean Architecture。測試覆蓋率 > 75%。 |
 
@@ -99,6 +100,7 @@ This is not just a chatbot; it is an **autonomous financial analysis system capa
 | **🏗️ Modern Infrastructure** | **Kubernetes** ready, built with **Clean Architecture** (Factory, Repository, DI). **75%+ Test Coverage**. |
 | **🔍 Intelligent Search** | Integrated **Tavily API** as primary search engine with DuckDuckGo fallback for reliable web research. |
 | **🔌 Deep MCP Integration** | Maximized **FMP (Starter)** & **Tavily (Researcher)** utility. Agents can now access Valuation Ratios, Key Metrics, and Deep Search Context via standardized MCP tools. |
+| **🌍 Multi-Broker Arch** | **Broker Bridge** supporting **Etoro**, **Futu**, and **IBKR** via unified `IBroker` interface with centralized **Risk Manager** for cross-platform auto-trading. |
 | **🧠 Agent Mesh Protocol** | **MCP (Model Context Protocol)** server support enabling cross-agent tool sharing and **HR 360 Feedback**. |
 
 ### 🚀 Quick Start
