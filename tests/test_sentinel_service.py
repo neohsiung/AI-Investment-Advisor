@@ -207,7 +207,8 @@ class TestBreakingNews:
         mock_repo.get_all.return_value = keywords
         mock_repo.record_hit = MagicMock()
 
-        with patch('src.services.sentinel_service.RiskKeywordRepository', return_value=mock_repo):
+        with patch('src.services.sentinel_service.RiskKeywordRepository', return_value=mock_repo), \
+             patch.object(sentinel, '_get_all_user_ids', return_value=["user@test.com"]):
             triggers = sentinel._check_breaking_news()
 
         assert len(triggers) == 1
@@ -230,7 +231,8 @@ class TestBreakingNews:
         mock_repo = MagicMock()
         mock_repo.get_all.return_value = keywords
 
-        with patch('src.services.sentinel_service.RiskKeywordRepository', return_value=mock_repo):
+        with patch('src.services.sentinel_service.RiskKeywordRepository', return_value=mock_repo), \
+             patch.object(sentinel, '_get_all_user_ids', return_value=["user@test.com"]):
             triggers = sentinel._check_breaking_news()
 
         assert len(triggers) == 0
@@ -244,7 +246,8 @@ class TestBreakingNews:
         mock_repo = MagicMock()
         mock_repo.get_all.return_value = self._mock_repo(mock_services)
 
-        with patch('src.services.sentinel_service.RiskKeywordRepository', return_value=mock_repo):
+        with patch('src.services.sentinel_service.RiskKeywordRepository', return_value=mock_repo), \
+             patch.object(sentinel, '_get_all_user_ids', return_value=["user@test.com"]):
             triggers = sentinel._check_breaking_news()
 
         assert len(triggers) == 0
