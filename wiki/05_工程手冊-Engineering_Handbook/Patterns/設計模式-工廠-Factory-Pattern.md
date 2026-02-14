@@ -62,5 +62,5 @@ Encapsulate complex agent dependencies (Prompts, Repos, Caches) within a single 
 
 ## 🔗 Bidirectional Links
 - **Intro**: [Design Patterns Intro](設計模式導讀-Design-Patterns-Intro)
-- **DI Pattern**: [Dependency Injection](設計模式_依賴注入-DI-Pattern)
+- **DI Pattern**: [Dependency Injection](設計模式-依賴注入-DI-Pattern)
 - **Specs**: [Core System Specs](核心系統規格-Core-System-Specs)

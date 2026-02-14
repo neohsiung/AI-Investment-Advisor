@@ -212,6 +212,7 @@ class DailyWorkflow(BaseWorkflow):
                 "indicators": data.get("indicators", {}),
                 "financials": self.market_service.get_financials(ticker),
                 "news": self.market_service.get_news(ticker),
+                "web_intelligence": data.get("web_intelligence", []),
                 "yield_curve": self.context['market_data'].get('yield_curve', {}) 
             }
 

@@ -1,5 +1,6 @@
 import pandas as pd
 from typing import List, Dict, Any, Optional
+from datetime import date
 from src.utils.logger import setup_logger
 
 # Providers
@@ -8,6 +9,7 @@ from src.data.providers.polygon_provider import PolygonProvider
 from src.data.providers.fmp_provider import FMPProvider
 from src.data.providers.yfinance_provider import YFinanceProvider
 from src.services.fred_service import FredService
+from src.services.search_service import InternetSearchService
 
 class MarketDataService:
     def __init__(self):
@@ -24,6 +26,9 @@ class MarketDataService:
         except Exception:
             self.fred = None
             self.logger.warning("FRED Service init failed, macro data will be limited.")
+        
+        # Initialize Search (Tavily Primary, DuckDuckGo Fallback)
+        self.search_service = InternetSearchService()
         
         # Priority Order (Primary -> Backup -> Fallback)
         self.providers: List[MarketDataProvider] = [
@@ -73,7 +78,8 @@ class MarketDataService:
     def get_market_context(self, tickers: List[str], enrich: bool = False):
         """
         Get detailed context (OHLCV + Indicators).
-        If enrich=True, also fetches Financials and News (slower).
+        If enrich=True, also fetches Financials, News, and Web Intelligence.
+        enrich=True 時同時取得 FMP 財報/新聞 + Tavily 深度搜尋。
         """
         context = {}
         for ticker in tickers:
@@ -88,9 +94,42 @@ class MarketDataService:
             if enrich:
                 data["financials"] = self.get_financials(ticker)
                 data["news"] = self.get_news(ticker)
+                data["web_intelligence"] = self.get_web_intelligence(ticker)
                 
             context[ticker] = data
         return context
+
+    def get_web_intelligence(self, ticker: str) -> List[Dict[str, str]]:
+        """
+        Tavily-powered deep web search for qualitative intelligence.
+        Every call consumes Tavily credits to ensure the service is utilized.
+        透過 Tavily 搜尋個股的深度定性情報。每次呼叫消耗 Tavily Credits。
+        
+        Queries:
+          1. Breaking news / risk alerts for today
+          2. Analyst opinions / catalysts / competitive moat
+        """
+        today_str = date.today().isoformat()
+        queries = [
+            f"{ticker} stock latest news risk alert {today_str}",
+            f"{ticker} analyst opinion catalyst moat 2026",
+        ]
+        
+        results = []
+        for query in queries:
+            try:
+                search_results = self.search_service.search_financial_context(
+                    query, max_results=3
+                )
+                results.extend(search_results)
+            except Exception as e:
+                self.logger.warning(f"Web intelligence search failed for '{query}': {e}")
+        
+        if results:
+            self.logger.info(
+                f"Fetched {len(results)} web intelligence items for {ticker} via Tavily"
+            )
+        return results
 
     def get_ohlcv(self, ticker: str, days=30) -> Dict[str, List]:
         """

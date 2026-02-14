@@ -6,6 +6,7 @@
 ### 版本紀錄 (Version History)
 | Date | Version | Description | Author |
 | :--- | :--- | :--- | :--- |
+| 2026-02-14 | v1.2 | Added Multi-Broker + LINE Bot to C4, updated external integrations | Neo |
 | 2026-02-07 | v1.1 | Updated C4 Container Diagram to reflect Hybrid Tool Architecture | Neo |
 | 2024-01-04 | v1.0 | Initial Release | Neo |
 
@@ -27,8 +28,10 @@
 #### 2.1 系統上下文 (Level 1: System Context)
 系統與外部實體（使用者、數據供應商、AI 基礎設施）的交互。
 - **使用者**: 透過 Dashboard 監控資產。
-- **外部 API**: Polygon.io (行情/歷史), FMP (基本面/新聞), FRED (總經), Tavily (搜尋), OpenRouter (LLM)。
-- **資料持久化**: SQLite (本地/持久磁碟)。
+- **外部 API**: Polygon.io (行情), FMP (財報), FRED (總經), Tavily (搜尋), OpenRouter (LLM)。
+- **券商 API**: Etoro Bridge, futu-api, ib_insync。
+- **通知**: LINE Messaging API (日報/警報推送)。
+- **資料持久化**: SQLite (本地) / Redis (記憶系統)。
 
 #### 2.2 容器視角 (Level 2: Container Diagram)
 內部核心組件及其通訊方式。
@@ -37,11 +40,19 @@
 graph TD
     UI["Dashboard (Streamlit)"] -->|SQL| DB[(Portfolio DB)]
     UI -->|HTTP| MCP_Serv["MCP Microservice (FastAPI)"]
-    Sch["Scheduler (Daemon)"] -->|Trigger| Agents["Agent Swarm (CIO, Analysts)"]
+    Sch["Scheduler (Daemon)"] -->|Trigger| Agents["Agent Swarm (7 Agents + Council)"]
     Agents -->|Direct Call| Local["Local Skills (Registry)"]
     Agents -->|HTTP| MCP_Serv
-    MCP_Serv -->|Financial Data| APIs[Polygon/FMP/FRED]
+    MCP_Serv -->|Financial Data| APIs[Polygon/FMP/FRED/Tavily]
     Local -->|Search/Compute| APIs
+
+    subgraph "Multi-Broker"
+        BF[BrokerFactory] --> ET[Etoro] & FU[Futu] & IK[IBKR]
+    end
+
+    Agents -->|Orders| BF
+    LINE[LINE Bot] -->|Webhook| MCP_Serv
+    MCP_Serv -->|Notify| LINE
 ```
 
 #### 2.3 組件互動流 (Interaction Flows)
@@ -138,5 +149,5 @@ Building a transparent, cloud-native financial agent suite with 0% hallucination
 - **Frontend Architecture**: [View-Service Pattern](前端與服務架構-Frontend-Service-Architecture)
 - **Task Planning Engine**: [Task Planning & Execution](任務規劃與執行引擎-Task-Planning-Engine)
 - **Memory System**: [Memory & Redis Architecture](記憶系統與Redis架構-Memory-Redis-Architecture)
-- **Implementation Status**: [Architecture Status](架構狀態-Architecture-Status)
+- **Sentinel & Council**: [Sentinel & Council Architecture](哨兵與評議會架構-Sentinel-Council-Architecture)
 - **Developer Guide**: [Local Dev Setup](環境設定與本地開發-Environment-Local-Dev)

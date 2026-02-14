@@ -119,4 +119,4 @@ if not self.risk_manager.check_constraints(user_id, history, positions):
 ## 5. 參考 (References)
 
 *   [文件規範 (Wiki Standard)](../05_工程手冊-Engineering_Handbook/Standards/文件規範-Wiki-Standard.md)
-*   [API 規格 (API Design)](../05_工程手冊-Engineering_Handbook/Standards/API-Design-Standards.md)
+*   [底層通信協議 (Agent Mesh Protocols)](底層通信協議-Agent-Mesh-Protocols)

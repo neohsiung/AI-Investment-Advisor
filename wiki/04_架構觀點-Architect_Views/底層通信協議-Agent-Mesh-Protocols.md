@@ -100,10 +100,13 @@ sequenceDiagram
 | 工具名稱 | 輸入參數 (Types) | 業務邏輯 / 數據源 | 執行模式 |
 | :--- | :--- | :--- | :--- |
 | `get_current_price` | `ticker` (str) | [MarketDataService](服務層開發指南-Service-Layer-Blueprints) | Local/Remote |
+| `get_ohlcv` | `ticker` (str), `days` (int) | Polygon/FMP/YFinance | Local/Remote |
 | `get_valuation` | `ticker` (str) | FMP (Ratios, PE, PB) | Local/Remote |
 | `get_company_profile` | `ticker` (str) | FMP/Polygon | Local/Remote |
 | `web_search` | `query` (str) | Tavily (Financial Context) | Local/Remote |
 | `get_macro_indicators` | - | FRED (GDP, CPI, Rates) | Local/Remote |
+| `get_portfolio` | `user_id` (str) | [PortfolioAggregator](服務層開發指南-Service-Layer-Blueprints) | Local |
+| `execute_order` | `Order` (obj) | [BrokerFactory](券商整合指南-Broker-Integration-Guide) | Remote |
 
 ### 5. 安全與品質要求 (Security & Quality NFR)
 

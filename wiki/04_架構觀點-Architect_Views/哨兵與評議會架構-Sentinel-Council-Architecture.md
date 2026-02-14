@@ -6,6 +6,7 @@
 ### 版本紀錄 (Version History)
 | Date | Version | Description | Author |
 | :--- | :--- | :--- | :--- |
+| 2026-02-14 | v3.5 | 4D Multi-Trigger + Weighted Risk Keywords | Neo |
 | 2026-02-07 | v3.4 | Standardized naming and structure | Neo |
 | 2026-02-03 | v3.3 | Initial Draft (Rev 3) | Antigravity |
 
@@ -13,7 +14,7 @@
 
 <a id="zh"></a>
 
-## 🇹🇼 哨兵與評議會架構 (Architecture Overview)
+## 🇹🇼 哨兵與評議會架構 (Architecture Overview — v3.5)
 
 本架構融入 **丹尼爾·康納曼 (Daniel Kahneman)** 的《快思慢想》哲學，將系統劃分為兩個認知層次：
 
@@ -32,13 +33,41 @@
 
 ### 2. 組件設計 (Component Design)
 
-#### 2.1 哨兵服務 (Sentinel Service)
+#### 2.1 哨兵服務 — 四維觸發 (Sentinel Service — 4D Multi-Trigger)
 位於 `src/services/sentinel_service.py`。
-*   **職責**: 環境感知器與直覺反應。負責監控市場數據流，當數值異常 (Adaptive Threshold Trigger) 時喚醒 System 2。
+*   **職責**: 環境感知器與直覺反應。負責監控市場數據流，當任一維度異常時喚醒 System 2。
 *   **介面**: `async def process_tick(self)`
+*   **觸發維度 (Trigger Dimensions)**:
+
+| 維度 | 方法 | 資料源 | 門檻 |
+| :--- | :--- | :--- | :--- |
+| 📊 VIX 體制 | `_check_vix_anomaly()` | MarketDataService | Adaptive Z-Score / 靜態 VIX > 25 |
+| 📉 持倉異動 | `_check_position_moves()` | TransactionService | 日內跌 > 5% 或漲 > 8% |
+| 📰 突發新聞 | `_check_breaking_news()` | Tavily (SearchService) | **加權分數 ≥ 0.6** (DB Keywords) |
+| 🏦 宏觀異動 | `_check_macro_shifts()` | FRED (FredService) | 利率上升趨勢 / 殖利率曲線倒掛 |
+
+*   **每維度錯誤隔離 (Per-Dimension Error Isolation)**: 任一維度失敗不影響其他維度。
 *   **部署模式 (Dual Mode)**:
     1.  **Local (Docker)**: 由 `SchedulerService` 的 `while True` 迴圈每分鐘呼叫一次。
     2.  **GCP (Cloud Run)**: 透過 `Cloud Scheduler` 每分鐘發送 HTTP Request 觸發 API Endpoint。
+
+#### 2.1.1 加權風險關鍵字系統 (Weighted Risk Keyword System)
+
+突發新聞維度 (Dimension 3) 使用 DB 驅動的加權關鍵字評分機制，取代硬編碼清單：
+
+*   **架構**: `RiskKeyword` 領域實體 → `risk_keywords` 資料表 → `RiskKeywordRepository` CRUD。
+*   **評分算法**: 每篇搜尋結果匹配所有 active 關鍵字 → 加總 `weight` → 若 `total_score ≥ 0.6` 則觸發警報。
+*   **命中追蹤**: 觸發時自動 `record_hit()` → 累積 `hit_count` + `last_hit_date`，供復盤分析用。
+*   **復盤機制**: Settings UI 提供 Top 10 命中排行 + 90 天未觸發候選清除名單，支援批次停用。
+*   **預設種子**: 30+ 預設關鍵字，涵蓋 5 大風險類別：
+
+| 類別 | 範例 | 預設權重 |
+| :--- | :--- | :--- |
+| ⚖️ 法律 (Legal) | lawsuit, sec investigation, fraud | 0.85 – 0.9 |
+| 💰 財務 (Financial) | bankruptcy, credit downgrade, default | 0.75 – 0.9 |
+| 🏭 營運 (Operational) | recall, data breach, ceo resignation | 0.6 – 0.75 |
+| 🌍 地緣政治 (Geopolitical) | sanctions, tariff, trade war | 0.65 – 0.75 |
+| 📉 市場 (Market) | crash, margin call, delisted | 0.6 – 0.9 |
 
 #### 2.2 評議會核心 (The Council Core)
 位於 `src/services/council_service.py`。
@@ -73,12 +102,25 @@
 
 ### 3. 資料流 (Data Flow)
 
-1.  **市場事件**: `SentinelService` 偵測到 VIX > 25。
-2.  **觸發思考**: `SystemEngineerAgent` 被喚醒，讀取 `memory_service` 發現使用者 "討厭波動"。
-3.  **決策生成**: Agent 決定建議 "減倉 20%"。
-4.  **主動推播**: 透過 `LineAdapter` 發送 Flex Message 給使用者：「⚠️ **市場波動警報** (VIX=25.1) \n建議依您的保守策略減倉 20%。」
-5.  **使用者反饋**: 使用者點擊 Flex Message 上的 [執行] 按鈕 (Postback Action)。
-6.  **閉環執行**: 系統呼叫 `TransactionService` 下單，並寫入 `memory`：「使用者在 VIX>25 時同意減倉」。
+```mermaid
+graph LR
+    S["SentinelService.process_tick()"] --> D1["VIX Check"]
+    S --> D2["Position Moves"]
+    S --> D3["Breaking News"]
+    S --> D4["Macro Shifts"]
+    D3 -->|"load active"| DB[("risk_keywords DB")]
+    D3 -->|"record_hit()"| DB
+    D1 & D2 & D3 & D4 -->|"triggers"| AGG{"Aggregate"}
+    AGG -->|"≥1 trigger"| COUNCIL["CouncilService"]
+    COUNCIL -->|"decision"| LINE["LINE Push"]
+```
+
+1.  **多維偵測**: `SentinelService.process_tick()` 並行執行 4 維度檢測。
+2.  **加權新聞評分**: 突發新聞維度載入 DB 中 active 關鍵字，計算加權分數。
+3.  **命中追蹤**: 觸發時自動記錄 `hit_count`，供後續復盤與清除。
+4.  **聚合觸發**: 任一維度觸發 → 聚合警報訊息 → 喚醒 Council (System 2)。
+5.  **主動推播**: 透過 `LineAdapter` 發送 Flex Message 給使用者。
+6.  **閉環執行**: 系統呼叫 `TransactionService` 下單，並寫入 `memory`。
 
 ### 4. 記憶體架構與認知循環 (Memory Architecture & Cognitive Cycle)
 
@@ -125,7 +167,7 @@
 
 <a id="en"></a>
 
-## 🇺🇸 Sentinel & Council Architecture
+## 🇺🇸 Sentinel & Council Architecture (v3.5)
 
 ### 1. Architecture Overview (System 1 & 2)
 
@@ -133,7 +175,7 @@ Inspired by Daniel Kahneman's *Thinking, Fast and Slow*, the system is divided i
 
 #### System 1: The Sentinel (Fast)
 - **Role**: Intuition, Reflex, Pattern Matching.
-- **Implementation**: `SentinelService`.
+- **Implementation**: `SentinelService` with **4 trigger dimensions**.
 - **Characteristics**: Always-on, low cost. Matches patterns and wakes up System 2.
 
 #### System 2: The Council (Slow)
@@ -141,14 +183,24 @@ Inspired by Daniel Kahneman's *Thinking, Fast and Slow*, the system is divided i
 - **Implementation**: `CouncilService` + `Agent Swarm`.
 - **Characteristics**: On-Demand, high cost. Performs fractal debates on issues raised by Sentinel.
 
-### 2. Component Design
-*   **Sentinel Service**: Monitors market data streams using adaptive thresholds.
-*   **The Council**: A swarm of specialized agents (Risk, Macro, Fundamental) engaging in debate using the `Fractal Debate` protocol.
-*   **Router**: Dynamically routes easy tasks to Flash models and hard tasks to Pro models.
-*   **Unified PGVector**: Stores memories in PostgreSQL.
+### 2. Sentinel 4D Multi-Trigger
+
+| Dimension | Method | Source | Threshold |
+| :--- | :--- | :--- | :--- |
+| VIX Regime | `_check_vix_anomaly()` | MarketDataService | Adaptive Z-Score / VIX > 25 |
+| Position Moves | `_check_position_moves()` | TransactionService | Drop > 5% or Spike > 8% |
+| Breaking News | `_check_breaking_news()` | Tavily (SearchService) | **Weighted score ≥ 0.6** (DB keywords) |
+| Macro Shifts | `_check_macro_shifts()` | FRED | Fed rate up / Yield curve inversion |
+
+#### 2.1 Weighted Risk Keyword System
+- **Storage**: `risk_keywords` table with `keyword`, `weight` (0-1), `category`, `hit_count`, `is_active`.
+- **Scoring**: Sum of matched keyword weights per search result. Triggers if `total_score ≥ 0.6`.
+- **Hit Tracking**: `record_hit()` on trigger → analytics (Top 10 / Stale 90-day) in Settings UI.
+- **Seed**: 30+ default keywords across 5 categories (Legal, Financial, Operational, Geopolitical, Market).
+- **Management**: Settings tab (10th) → add/edit weight/toggle/delete + review analytics.
 
 ### 3. Data Flow
-Sentinel detects anomaly -> Wakes System 2 -> Agent generates decision based on Memory -> Pushes to LINE -> User Approves -> Transaction Executed.
+Sentinel runs 4 dimension checks in parallel → aggregates triggers → wakes Council → LINE push → User approves → Transaction executed.
 
 ### 4. Memory Architecture
 *   **STM (Daily)**: High-frequency, noisy. Used for pattern matching.

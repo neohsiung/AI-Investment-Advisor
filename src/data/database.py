@@ -256,6 +256,17 @@ def init_db(db_path=None):
             comment TEXT,
             context_hash TEXT,
             timestamp TEXT
+        )""",
+        # --- New Table for v3.5 (Weighted Risk Keywords) ---
+        """CREATE TABLE IF NOT EXISTS risk_keywords (
+            id TEXT PRIMARY KEY,
+            keyword TEXT NOT NULL,
+            weight REAL DEFAULT 0.5,
+            category TEXT DEFAULT 'custom',
+            hit_count INTEGER DEFAULT 0,
+            last_hit_date TEXT,
+            is_active INTEGER DEFAULT 1,
+            created_at TEXT
         )"""
     ])
 

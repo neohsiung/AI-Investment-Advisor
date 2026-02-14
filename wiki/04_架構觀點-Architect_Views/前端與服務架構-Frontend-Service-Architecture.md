@@ -83,4 +83,4 @@ To enhance maintainability and testability, the project adopts a **View-Service 
 
 ## 🔗 Bidirectional Links
 - **System Landscape**: [System Landscape](系統全景圖-System-Landscape.md)
-- **Directory Structure**: [Developer Guide](../03_開發者指南-Developer_Guide/目錄結構與模組-Directory-Modules.md)
+- **Developer Guide**: [Environment & Local Dev](環境設定與本地開發-Environment-Local-Dev)

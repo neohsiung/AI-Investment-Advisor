@@ -95,3 +95,49 @@ class AnalysisReport:
     content: str
     summary: str
     signals: List[AgentSignal] = field(default_factory=list)
+
+
+class RiskCategory(Enum):
+    """Categories of risk keywords. 風險關鍵字類別。"""
+    LEGAL = "legal"              # 法律風險 (lawsuit, SEC, fraud)
+    FINANCIAL = "financial"      # 財務風險 (bankruptcy, default, downgrade)
+    OPERATIONAL = "operational"  # 營運風險 (recall, data breach, layoff)
+    GEOPOLITICAL = "geopolitical"  # 地緣政治 (war, sanctions, tariff)
+    MARKET = "market"            # 市場風險 (crash, margin call, bubble)
+    CUSTOM = "custom"            # 使用者自訂
+
+
+@dataclass
+class RiskKeyword:
+    """
+    A weighted risk keyword for Sentinel news scanning.
+    哨兵新聞掃描的加權風險關鍵字。
+
+    Attributes:
+        keyword: The search keyword (e.g. 'SEC investigation')
+        weight: Importance weight (0.0-1.0). Higher = more urgent.
+        category: Risk category (legal/financial/operational/geopolitical/market/custom)
+        hit_count: Number of times this keyword triggered an alert.
+        last_hit_date: Last date this keyword triggered (for review/pruning).
+        is_active: Whether this keyword is active for scanning.
+        created_at: Creation timestamp.
+    """
+    keyword: str
+    weight: float = 0.5
+    category: RiskCategory = RiskCategory.CUSTOM
+    hit_count: int = 0
+    last_hit_date: Optional[str] = None
+    is_active: bool = True
+    created_at: str = field(default_factory=lambda: datetime.now().isoformat())
+    id: Optional[str] = None
+
+    def score(self, text: str) -> float:
+        """
+        Return weighted score if keyword is found in text, else 0.
+        計算此關鍵字在指定文字中的加權分數。
+        """
+        if not self.is_active:
+            return 0.0
+        if self.keyword.lower() in text.lower():
+            return self.weight
+        return 0.0

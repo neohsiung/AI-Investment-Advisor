@@ -14,6 +14,7 @@ from src.pages.settings_tabs.hr_protocol_tab import render_hr_protocol_tab
 from src.pages.settings_tabs.appearance_tab import render_appearance_tab
 from src.pages.settings_tabs.storage_tab import render_storage_tab
 from src.pages.settings_tabs.trading_tab import render_trading_tab
+from src.pages.settings_tabs.risk_keywords_tab import render_risk_keywords_tab
 
 class SettingsPage(BasePage):
     """System settings page"""
@@ -26,7 +27,7 @@ class SettingsPage(BasePage):
         user_id = self.user['email']
         db_path = self.db_path
 
-        tab1, tab2, tab3, tab4, tab5, tab6, tab7, tab8, tab9 = st.tabs([
+        tab1, tab2, tab3, tab4, tab5, tab6, tab7, tab8, tab9, tab10 = st.tabs([
             "交易與風控 (Trading & Risk)",
             "AI 模型設定 (AI Configuration)", 
             "排程設定與紀錄 (Scheduler)", 
@@ -35,7 +36,8 @@ class SettingsPage(BasePage):
             "Prompt 優化 (Optimization)", 
             "HR 協議 (System Health)",
             "介面與主題 (Appearance)",
-            "系統存儲 (Storage)"
+            "系統存儲 (Storage)",
+            "風險關鍵字 (Risk Keywords)"
         ])
 
         settings_service = SettingsService(db_path, user_id=user_id)
@@ -67,6 +69,9 @@ class SettingsPage(BasePage):
             
         with tab9:
             render_storage_tab(st, db_path)
+
+        with tab10:
+            render_risk_keywords_tab(st, db_path)
 
 if __name__ == "__main__":
     SettingsPage().run()

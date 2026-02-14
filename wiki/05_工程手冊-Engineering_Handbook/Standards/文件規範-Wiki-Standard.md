@@ -111,6 +111,6 @@ English description...
 *   關鍵點 A (Key Point A)
 *   關鍵點 B (Key Point B)
 
-參閱: [首頁](首頁-首頁-Home.md)
-See also: [Home](首頁-首頁-Home.md)
+參閱: [首頁](Home)
+See also: [Home](Home)
 ```

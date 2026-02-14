@@ -58,5 +58,5 @@ Eliminate hardcoded class dependencies within Agents to enable full testability.
 
 ## 🔗 Bidirectional Links
 - **Handbook Intro**: [Design Patterns Intro](設計模式導讀-Design-Patterns-Intro)
-- **Factory Pattern**: [Factory Pattern](設計模式_工廠-Factory-Pattern)
+- **Factory Pattern**: [Factory Pattern](設計模式-工廠-Factory-Pattern)
 - **Standards**: [Database & Git Standards](資料庫設計與代碼規範-Database-Git-Standards)

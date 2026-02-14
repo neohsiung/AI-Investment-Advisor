@@ -2,24 +2,39 @@
 
 > **[繁體中文 (Traditional Chinese)](#zh) | [English](#en)**
 
+### 版本紀錄 (Version History)
+| Date | Version | Description | Author |
+| :--- | :--- | :--- | :--- |
+| 2026-02-14 | v3.5 | Added RiskKeywordRepository, Sentinel 4D triggers, weighted keywords, Tavily pipeline | Neo |
+| 2026-02-14 | v3.5 | Full rewrite — 27 services documented, Multi-Broker, Sentinel/Council, Memory | Neo |
+| 2024-01-04 | v1.0 | Initial Release (3 services) | Neo |
+
 ---
 
 <a id="zh"></a>
 
-## 🇹🇼 服務層開發指南 (Service Layer Blueprints)
+## 🇹🇼 服務層開發指南 (v3.5)
 
-本文件依據 [文件框架定義](文件框架定義-Document-Frameworks) 編寫，詳解 `src/services/` 下核心業務邏輯的實作規範，達成全案 80% 以上的技術覆蓋率。
+本文件依據 [文件框架定義](文件框架定義-Document-Frameworks) 編寫，詳解 `src/services/` 下核心業務邏輯的實作規範。
 
-### 1. 服務層架構概覽 (Overview)
+### 1. 架構概覽 (Overview)
 服務層作為「領域邏輯」的承載者，負責協調 Repository 與外部 API。
-- **無狀態設計 (Stateless)**: 服務不持有用戶狀態，所有數據透過參數或 Repository 傳入。
-- **故障轉移 (Failover)**: 核心服務（如 MarketData）具備多層級 Provider 退避策略。
+- **無狀態設計 (Stateless)**: 不持有用戶狀態，透過參數或 Repository 傳入。
+- **故障轉移 (Failover)**: `MarketDataService` 等核心服務具備多層級 Provider 退避策略。
+- **依賴注入 (DI)**: Service 接受 Repository 介面注入，Details 見 [DI Pattern](設計模式-依賴注入-DI-Pattern)。
 
-### 2. 核心服務詳解 (Core Services)
+### 2. 服務總覽 (Service Registry)
 
-#### 2.1 市場數據服務 (MarketDataService)
-負責聚合 Polygon, FMP, YFinance 與 FRED 的數據。
-- **退避策略 (Failover Strategy)**:
+#### 2.1 數據與市場 (Data & Market)
+
+| 服務 | 檔案 | 核心職責 |
+| :--- | :--- | :--- |
+| `MarketDataService` | `market_data_service.py` | 聚合 Polygon/FMP/YFinance，含退避策略與 TTL=300s 快取。 |
+| `FredService` | `fred_service.py` | FRED 總經指標 (利率/CPI/GDP)。 |
+| `SearchService` | `search_service.py` | Tavily (主) + DuckDuckGo (備) 搜尋服務。 |
+| `BrowserService` | `browser_service.py` | 網頁內容擷取與解析。 |
+
+**退避策略 (Failover Strategy)**:
 ```mermaid
 graph TD
     Start[請求報價] --> P1{Polygon API}
@@ -29,66 +44,110 @@ graph TD
     P1 -->|成功| Success[返回數據]
     P2 -->|成功| Success
 ```
-- **核心方法**:
-    - `get_current_prices(tickers)`: 自動切換 Provider 獲取最新價。
-    - `get_ohlcv(ticker, days)`: 獲取歷史 K 線，預設優先使用 YFinance 以降低成本。
 
-#### 2.2 工作流服務 (WorkflowService)
-驅動系統的「主循環」，基於樣板方法模式。
-- **時效性**: 每日美股收盤後執行，目標單次優化耗時 < 2 分鐘。
-- **流程依賴**: `Init` -> `Data Ingestion` -> `Agent Analysis` -> `Report Generation`。
+#### 2.2 多券商與風控 (Multi-Broker & Risk)
 
-#### 2.3 自律 HR 服務 (HRService)
-監控 Agent 健康狀況。
-- **Zombie Agent 偵測**: 檢查 Agent 是否在 300s 內有心跳回傳。
-- **自動修復**: 偵測到掛掉時，調用 Docker/K8s 重啟相應容器。
+| 服務 | 檔案 | 核心職責 |
+| :--- | :--- | :--- |
+| `BrokerFactory` | `broker_factory.py` | 依據 `preferred_broker` 設定建立 `IBroker` 實例 (Factory Pattern)。 |
+| `EtoroService` | `etoro_service.py` | Etoro Bridge API 整合 — 帳戶/持倉/下單/歷史同步。 |
+| `FutuService` | `futu_service.py` | 富途 futu-api 整合 — 美港股交易與行情。 |
+| `IbkrService` | `ibkr_service.py` | IBKR ib_insync 骨架 — 多資產交易 (Planned)。 |
+| `PortfolioAggregatorService` | `portfolio_aggregator_service.py` | 跨券商統一持倉、NLV 與資產配置。 |
+
+#### 2.3 Agent 引擎 (Agent Engine)
+
+| 服務 | 檔案 | 核心職責 |
+| :--- | :--- | :--- |
+| `WorkflowService` | `workflow_service.py` | 主循環引擎 — Daily/Weekly 報告生成 (Template Method)。 |
+| `TaskPlanningService` | `task_planning_service.py` | DAG 任務分解、複雜度評分、動態模型路由。 |
+| `HRService` | `hr_service.py` | 360° 互評、Zombie Agent 偵測、績效追蹤。 |
+| `RefinementService` | `refinement_service.py` | DSPy Prompt 自動優化 (Engineer Agent 後端)。 |
+| `EvaluationService` | `evaluation_service.py` | Agent 產出品質評估。 |
+
+#### 2.4 監控與仲裁 (Monitoring & Arbitration)
+
+| 服務 | 檔案 | 核心職責 |
+| :--- | :--- | :--- |
+| `SentinelService` | `sentinel_service.py` | 7×24 市場事件監聽，**4 觸發維度**: VIX/持倉異動/加權新聞 (DB 關鍵字)/宏觀指標。 |
+| `CouncilService` | `council_service.py` | 碎形辯論 (Fractal Debate) — 對每檔持倉執行多角度質疑。 |
+
+#### 2.5 持久化與記憶 (Persistence & Memory)
+
+| 服務 | 檔案 | 核心職責 |
+| :--- | :--- | :--- |
+| `MemoryService` | `memory_service.py` | 統一記憶讀寫介面，支援對話/分析上下文。 |
+| `MemoryFactory` | `memory_factory.py` | 依環境自動選擇 Redis (生產) 或 SQLite (本地) 後端。 |
+| `TransactionService` | `transaction_service.py` | 交易記錄 CRUD、Atomic 匯入。 |
+| `IngestionService` | `ingestion_service.py` | CSV 匯入 (交易/股利)、全有或全無。 |
+| `RiskKeywordRepository` | `risk_keyword_repository.py` | 風險關鍵字 CRUD + 命中追蹤 + 復盤分析 (30+ 預設種子)。 |
+
+#### 2.6 Dashboard & UI 支援 (UI Support)
+
+| 服務 | 檔案 | 核心職責 |
+| :--- | :--- | :--- |
+| `AnalyticsService` | `analytics_service.py` | NLV/Leverage/P&L 確定性計算 (0% 幻覺)。 |
+| `DashboardService` | `dashboard_service.py` | Dashboard 數據聚合與即時指標。 |
+| `PerformanceService` | `performance_service.py` | 歷史績效追蹤與趨勢分析。 |
+| `SettingsService` | `settings_service.py` | 系統設定 CRUD (SQLite-backed)。 |
+| `ThemeService` | `theme_service.py` | CSS 主題管理 (Dark/Light)。 |
+| `BacktestService` | `backtest_service.py` | 策略回測引擎。 |
+
+#### 2.7 排程與通知 (Scheduling & Notifications)
+
+| 服務 | 檔案 | 核心職責 |
+| :--- | :--- | :--- |
+| `SchedulerService` | `scheduler_service.py` | Cron 排程 — 自動日報/週報生成。 |
+| Notifier | `src/notifier.py` | LINE Bot 推送 (日報/週報/警報)。 |
 
 ### 3. 代理人執行引擎 (Agent Execution Engine)
-本專案的核心競爭力在於 `BaseAgent` 的執行邏輯。
 
 #### 3.1 ReAct 思考機制 (Think-Act-Observe)
-實現於 `BaseAgent.run_tool_loop`，其 Python 實現邏輯如下：
-1.  **Regex 解析**: 預設解析 `CALL: tool_name({"arg": "val"})` 或 `SEARCH: "query"`。
-2.  **McpServer 調度**: 優先搜尋 `self.toold` (Local MCP)。
-3.  **上下文拼接**: 工具輸出被封裝為 `System: [Tool Output]` 並重新注入 LLM 歷史紀錄。
+實現於 `BaseAgent.run_tool_loop`：
+1.  **Regex 解析**: 解析 `CALL: tool_name({"arg": "val"})` 或 `SEARCH: "query"`。
+2.  **McpServer 調度**: 優先搜尋 Local Skills，無則調用 Remote MCP。
+3.  **上下文拼接**: 工具輸出封裝為 `System: [Tool Output]` 並重新注入 LLM 歷史。
 
-#### 3.2 A2A 實體化路徑 (A2A Instantiation)
-當 Agent 調用 `call_agent(target_name)` 時：
-1.  **Factory 介入**: 透過 `src.agents.factory.AgentFactory` 根據名稱動態建立對象 (支援 `tier` 參數，區分 Smart/Advanced)。
-2.  **依賴注入**: 自動注入 `feedback_repo` 與 `market_tools` 的本地 MCP 實例。
-3.  **同步執行**: 目前採用同步阻塞調用，適合確定性的鏈式研究路徑。
+#### 3.2 A2A 實體化路徑 (Agent Instantiation)
+1.  **Factory 介入**: `AgentFactory` 根據名稱動態建立 Agent (支援 `tier` 參數)。
+2.  **依賴注入**: 自動注入 `feedback_repo` 與 `market_tools`。
+3.  **同步執行**: 目前為同步阻塞調用，適合確定性研究路徑。
 
-#### 3.3 任務規劃引擎 (Task Planning Engine)
+#### 3.3 任務規劃引擎 (Task Planning)
 *詳見: [任務規劃與執行引擎](任務規劃與執行引擎-Task-Planning-Engine)*
+- **核心**: Goal → DAG 分解 → Complexity Scoring → Model Tier Selection。
+- **模型路由**: Fast (Flash) / Smart (Pro) / Advanced (Thinking)。
 
-負責將高層目標分解為執行計畫 (Execution Plan)。
-- **核心職責**: Goal Decomposition, Complexity Scoring, Model Tier Selection.
-- **協作模式**: `WorkflowService` -> `TaskPlanningService` (Generate Plan) -> `AgentFactory` (Execute Tasks).
-
-### 3. 非功能性需求 (NFR)
-- **響應時間**: P95 本地處理延遲 < 500ms（不含 LLM 推論）。
-- **並發處理**: 使用 `ThreadPoolExecutor` 加速多標的數據抓取。
+### 4. NFR
+- **響應時間**: P95 本地延遲 < 500ms (不含 LLM)。
+- **並發**: `ThreadPoolExecutor` 支援 50+ 標的並行分析。
 
 ---
 
 <a id="en"></a>
 
-## 🇺🇸 Service Layer Blueprints
+## 🇺🇸 Service Layer Blueprints (v3.5)
 
-### 1. Architectural Philosophy
+### 1. Architecture
 - **Model-Service Decoupling**: Services interact with Pydantic models, never raw SQL.
-- **Provider Aggregation**: Multiple data sources are unified under a single service interface.
+- **Provider Aggregation**: Multiple data sources under a single `MarketDataService`.
+- **Factory Pattern**: `BrokerFactory`, `MemoryFactory`, `AgentFactory` for runtime abstraction.
 
-### 2. Core Service Deep-Dives
-- **MarketDataService**: Implements a tiered priority system (Polygon -> FMP -> YFinance) to ensure 99.9% data availability.
-- **WorkflowService**: Manages the automated lifecycle of daily/weekly investment reports.
-- **HRService**: Performs self-healing by detecting "Zombie Agents" and triggering system restarts.
+### 2. Service Categories (27 Services)
+- **Data & Market** (4): MarketData, Fred, Search, Browser
+- **Multi-Broker** (5): BrokerFactory, Etoro, Futu, IBKR, PortfolioAggregator
+- **Agent Engine** (5): Workflow, TaskPlanning, HR, Refinement, Evaluation
+- **Monitoring** (2): Sentinel (4D Multi-Trigger + Weighted Risk Keywords), Council
+- **Persistence** (5): Memory, MemoryFactory, Transaction, Ingestion, **RiskKeyword**
+- **UI Support** (6): Analytics, Dashboard, Performance, Settings, Theme, Backtest
+- **Scheduling** (1): Scheduler + Notifier
 
-### 3. Performance Metrics
+### 3. Performance
 - **Local Latency**: < 500ms (P95).
-- **Throughput**: Supports parallel scanning of up to 50 tickers per cycle.
+- **Throughput**: 50+ tickers in parallel.
 
 ## 🔗 Bidirectional Links
 - **Architect View**: [System Landscape](系統全景圖-System-Landscape)
 - **Dev Guide**: [Local Dev Setup](環境設定與本地開發-Environment-Local-Dev)
 - **Patterns**: [Design Patterns Intro](設計模式導讀-Design-Patterns-Intro)
+- **Broker Guide**: [Broker Integration](券商整合指南-Broker-Integration-Guide)

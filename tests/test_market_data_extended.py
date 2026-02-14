@@ -16,19 +16,22 @@ class TestMarketDataServiceFixed:
         with patch('src.services.market_data_service.PolygonProvider') as MockPolygon, \
              patch('src.services.market_data_service.FMPProvider') as MockFMP, \
              patch('src.services.market_data_service.YFinanceProvider') as MockYF, \
-             patch('src.services.market_data_service.FredService') as MockFred:
+             patch('src.services.market_data_service.FredService') as MockFred, \
+             patch('src.services.market_data_service.InternetSearchService') as MockSearch:
             
             # Setup instances
             poly_instance = MockPolygon.return_value
             fmp_instance = MockFMP.return_value
             yf_instance = MockYF.return_value
             fred_instance = MockFred.return_value
+            search_instance = MockSearch.return_value
             
             yield {
                 'polygon': poly_instance,
                 'fmp': fmp_instance,
                 'yfinance': yf_instance,
-                'fred': fred_instance
+                'fred': fred_instance,
+                'search': search_instance
             }
 
     @pytest.fixture

@@ -1,120 +1,173 @@
 # 代理人戰略協定與認知授權 (Agent Swarm Protocol & Cognitive Mandates)
 
-## 1. 概述 (Overview)
-**代理人蜂群架構 (Agent Swarm Architecture)** 將投資顧問從線性流程轉變為由專業代理人組成的協作生態系統。每個代理人都在嚴格的「認知授權 (Cognitive Mandate)」下運作，並通過結構化的「投資委員會協定 (IC Protocol)」進行互動，以解決衝突並綜合出高確信度的洞察。
+### 版本紀錄 (Version History)
+| Date | Version | Description | Author |
+| :--- | :--- | :--- | :--- |
+| 2026-02-14 | v3.5 | Full 7+1 agent roster, Council Fractal Debate, AgentFactory | Neo |
+| 2024-01-04 | v1.0 | Initial 4-agent design | Neo |
 
-The **Agent Swarm Architecture** transforms the investment advisor from a linear pipeline into a collaborative ecosystem of specialized agents. Each agent operates under a strict "Cognitive Mandate" and interacts via a structured "IC Protocol" (Investment Committee) to resolve conflicts and synthesize high-conviction insights.
+> **[繁體中文 (Traditional Chinese)](#zh) | [English](#en)**
+
+---
+
+<a id="zh"></a>
+
+## 🇹🇼 代理人戰略協定 (v3.5)
+
+**代理人蜂群架構 (Agent Swarm Architecture)** 將投資顧問從線性流程轉變為由 **7 個專業 Agent + 1 個評議會** 組成的協作生態系統。每個 Agent 在嚴格的「認知授權 (Cognitive Mandate)」下運作，並通過「投資委員會協定 (IC Protocol)」與「碎形辯論 (Fractal Debate)」進行互動。
 
 ### 🏛️ 架構圖 (Architecture Diagram)
 
 ```mermaid
 graph TD
     user((User)) -->|Triggers| CIO[CIO Agent]
-    CIO -->|Broadcast| SWARM{Agent Swarm}
+    CIO -->|Broadcast| SWARM{Research Swarm}
     
-    subgraph "Swarm Intelligence"
-        MACRO[Macro Strategist]
+    subgraph "Research Layer"
         FUND[Fundamental Analyst]
+        MOM[Momentum Analyst]
+        MACRO[Macro Strategist]
         SENT[Sentiment Analyst]
-        TECH[Technical Analyst]
     end
     
-    SWARM -->|Request| MACRO
-    SWARM -->|Request| FUND
-    SWARM -->|Request| SENT
-    SWARM -->|Request| TECH
+    subgraph "Risk & Evolution Layer"
+        RISK[Risk Agent]
+        ENG[System Engineer]
+    end
+
+    SWARM --> FUND & MOM & MACRO & SENT
     
-    MACRO -->|Signal| AGG[Aggregation Layer]
-    FUND -->|Signal| AGG
-    SENT -->|Signal| AGG
-    TECH -->|Signal| AGG
+    FUND & MOM & MACRO & SENT -->|Insights| AGG[Aggregation]
+    AGG --> CIO
     
-    AGG -->|Conflict Matrix| CIO
-    CIO -->|Reasoning (R.P.A.)| DECISION[Final Decision]
+    CIO <-->|Validate| RISK
+    CIO <-->|Fractal Debate| COUNCIL{Council}
+    ENG -->|Optimize Prompts| CIO
+    
+    CIO -->|R.P.A.| DECISION[Final Decision]
 ```
 
-## 2. 蜂群角色 (Agent Swarm Roles)
+### 1. 代理人建構 (Agent Construction)
+所有 Agent 繼承 `BaseAgent`，由 `AgentFactory` (Factory Pattern) 統一建構。
+- **Factory**: `src/agents/factory.py` — `create_agent(name, tier)` 動態建立。
+- **依賴注入**: 自動注入 `feedback_repo`、`market_tools`、`mcp_server`。
+- **Tier 系統**: `Fast` (Flash) / `Smart` (Pro) / `Advanced` (Thinking)。
 
-### 2.1 首席投資官 (Chief Investment Officer, CIO)
-*   **認知授權 (Cognitive Mandate)**: 「綜合者與仲裁者 (Synthesizer & Arbitrator)」
-*   **職責 (Responsibility)**:
-    *   整合多模態輸入 (宏觀、基本面、情緒、技術面)。
-    *   使用 **衝突解決矩陣 (Conflict Resolution Matrix)** 解決分歧。
+### 2. 蜂群角色 (Agent Swarm Roles)
+
+#### 2.1 首席投資官 (CIO Agent)
+*   **認知授權**: 「綜合者與仲裁者 (Synthesizer & Arbitrator)」
+*   **職責**:
+    *   整合多模態輸入 (宏觀、基本面、動量、情緒)。
+    *   使用 **衝突解決矩陣** 解決分歧，參考 Council 碎形辯論結果。
     *   管理投資組合風險與最終決策。
-    *   **安全迴路 (Safety Fallback)**: 若績效服務失效，自動觸發「等權重裁決 (Equal Weight Arbitration)」與「最大槓桿限制 (Max Leverage 0.95x)」。
-    *   **產出**: 最終投資報告與再平衡指令。
-    *   Integrates multi-modal inputs (Macro, Fundamental, Sentiment, Technical).
-    *   Resolves conflicts using the **Conflict Resolution Matrix**.
-    *   Manages portfolio risk and final decision-making.
-    *   **Safety Fallback**: Triggers "Equal Weight Arbitration" and "Max Leverage 0.95x" if Performance Service fails.
-    *   **Output**: Final Investment Report & Rebalancing Orders.
+    *   **Safety Fallback**: 績效服務失效 → 等權重裁決 + Max Leverage 0.95x。
+*   **產出**: 最終投資報告與再平衡指令。
+*   **檔案**: `src/agents/cio.py`
 
-### 2.2 宏觀策略師 (Macro Strategist)
-*   **認知授權 (Cognitive Mandate)**: 「週期架構師 (Cycle Architect)」
-*   **職責 (Responsibility)**:
-    *   識別當前市場週期 (例如：週期末段、衰退、復甦)。
-    *   分析利率、通膨與地緣政治流向。
-    *   **產出**: 由上而下的資產配置觀點 (Risk-On vs. Risk-Off)。
-    *   Identifies the current market cycle (e.g., Late Cycle, Recession, Recovery).
-    *   Analyzes rates, inflation, and geopolitical flows.
-    *   **Output**: Top-down Asset Allocation Views (Risk-On vs. Risk-Off).
+#### 2.2 宏觀策略師 (Macro Strategist)
+*   **認知授權**: 「週期架構師 (Cycle Architect)」
+*   **職責**: 識別市場週期、分析利率/通膨/地緣政治。
+*   **產出**: Risk-On vs. Risk-Off 資產配置觀點。
+*   **工具**: `get_macro_indicators` (FRED)。
+*   **檔案**: `src/agents/macro.py`
 
-### 2.3 基本面分析師 (Fundamental Analyst)
-*   **認知授權 (Cognitive Mandate)**: 「由下而上偵探 (Bottom-Up Detective)」
-*   **職責 (Responsibility)**:
-    *   分析公司財報、護城河與估值。
-    *   識別高品質的複利機器與價值陷阱。
-    *   **產出**: 個股投資論述 (買入/賣出/持有)。
-    *   Analyzes company financials, moats, and valuation.
-    *   Identifies quality compounders and value traps.
-    *   **Output**: Company-specific Investment Theses (Buy/Sell/Hold).
+#### 2.3 基本面分析師 (Fundamental Analyst)
+*   **認知授權**: 「由下而上偵探 (Bottom-Up Detective)」
+*   **職責**: 財報分析、估值建模 (DCF/PE)、護城河評估。
+*   **產出**: 個股投資論述 (BUY/SELL/HOLD)。
+*   **工具**: `get_valuation`, `get_company_profile` (FMP)。
+*   **檔案**: `src/agents/fundamental.py`
 
-### 2.4 情緒分析師 (Sentiment Analyst)
-*   **認知授權 (Cognitive Mandate)**: 「行為計量分析師 (Behavioral Quant)」
-*   **職責 (Responsibility)**:
-    *   分析市場心理、新聞情緒與散戶活動。
-    *   識別反向訊號與群眾狂熱/恐慌。
-    *   **產出**: 情緒分數與行為警示。
-    *   Analyzes market psychology, news sentiment, and retail activity.
-    *   Identifies contrarian signals and crowd euphoria/panic.
-    *   **Output**: Sentiment Scores and Behavioral Flags.
+#### 2.4 動量分析師 (Momentum Analyst)
+*   **認知授權**: 「趨勢獵人 (Trend Hunter)」
+*   **職責**: 技術指標分析 (RSI/MACD/均線)、趨勢與型態辨識。
+*   **產出**: 技術面訊號與進出場時機。
+*   **工具**: `get_current_price`, `get_ohlcv` (Polygon/FMP)。
+*   **檔案**: `src/agents/momentum.py`
 
-## 3. 投資委員會協定 (IC Protocol)
-**IC 協定** 規範了代理人如何互動以達成共識。
-The **IC Protocol** governs how agents interact to reach a consensus.
+#### 2.5 情緒分析師 (Sentiment Analyst)
+*   **認知授權**: 「行為計量分析師 (Behavioral Quant)」
+*   **職責**: 新聞情緒、社群輿情、反向訊號偵測。
+*   **產出**: 情緒分數與行為警示。
+*   **工具**: `web_search` (Tavily)。
+*   **檔案**: `src/agents/sentiment.py`
 
-1.  **每日健康檢查 (Daily Health Check)**:
-    *   **觸發**: CIO 於開盤時發起。
-    *   **行動**: 代理人檢查各自的儀表板 (宏觀利率、特定個股、情緒指標)。
-    *   **匯報**: 代理人提交「每日簡報」給 CIO。
-    *   **Trigger**: CIO initiates at market open.
-    *   **Action**: Agents check their specific dashboards (Macro rates, specific tickers, sentiment gauges).
-    *   **Reporting**: Agents submit a "Daily Brief" to the CIO.
+#### 2.6 風險代理 (Risk Agent)
+*   **認知授權**: 「風控守門人 (Risk Gatekeeper)」
+*   **職責**: 持倉風險評估、相關性監控、板塊曝險檢查。
+*   **產出**: Risk Score、曝險警報、Rebalance 建議。
+*   **觸發**: CIO 裁決前必經 Risk 驗證。
+*   **檔案**: `src/agents/risk.py`
 
-2.  **衝突解決矩陣 (Conflict Resolution Matrix)**:
-    *   當代理人意見分歧時，CIO 根據當前體制 (Regime) 進行加權：
-        *   **財報季 (Earnings Season)**: 基本面 > 技術面 > 宏觀。
-        *   **危機/修正期 (Crisis/Correction)**: 宏觀 > 技術面 > 基本面。
-        *   **泡沫/狂熱期 (Bubble/Mania)**: 情緒 > 技術面 > 基本面。
-    *   When agents disagree, the CIO weighs them based on the current regime:
-        *   **Earnings Season**: Fundamental > Technical > Macro.
-        *   **Crisis/Correction**: Macro > Technical > Fundamental.
-        *   **Bubble/Mania**: Sentiment > Technical > Fundamental.
+#### 2.7 系統工程師 (System Engineer Agent)
+*   **認知授權**: 「自我進化工程師 (Self-Evolution Engineer)」
+*   **職責**: 分析 Agent 績效、自動重寫低分 Prompt (DSPy)。
+*   **產出**: 優化後的 Prompt Template。
+*   **觸發**: HR 評分 < 3.0 或連續 3 次工具失敗。
+*   **檔案**: `src/agents/engineer.py`
 
-3.  **思維鏈強制 (Thought Chain Enforcement)**:
-    *   所有代理人必須遵循 **R.P.A. 迴圈**:
-        *   **推理 (Reasoning)**: 「為什麼會發生這種情況？」(因果連結)
-        *   **計畫 (Plan)**: 「接下來需要什麼資訊？」(工具選擇)
-        *   **行動 (Action)**: 「執行工具/產生輸出。」
-    *   All agents must follow the **R.P.A. Loop**:
-        *   **Reasoning**: "Why is this happening?" (Causal Links)
-        *   **Plan**: "What information do I need next?" (Tool Selection)
-        *   **Action**: "Execute tool/Generate output."
+#### 2.8 評議會 (Council Agent Adapter)
+*   **職責**: 對每檔持倉執行碎形辯論 (Fractal Debate)。
+*   **機制**: 多角度質疑 → 反駁 → 綜合裁決。
+*   **觸發**: Sentinel 偵測異常 或 CIO 深度評議時。
+*   **檔案**: `src/agents/council_adapter.py` (Adapter Pattern)
 
-## 4. MCP 整合策略 (MCP Integration Strategy)
-*   **個人工具箱 (Personal Toolbox)**: 每個代理人擁有專屬的本地 MCP 伺服器，用於內部工具 (計算機、專用啟發式函數)。
-*   **共享服務 (Shared Services)**: 代理人透過中央 MCP 服務存取共享數據服務 (市場數據、新聞)。
-*   **A2A 通訊 (A2A Comm)**: 代理人透過 CIO 的協調進行「訊息傳遞」 (初期採軸輻式模型，後續移轉至網狀網路)。
-*   **Personal Toolbox**: Each agent has a dedicated local MCP server for internal tools (Calculator, specialized heuristic functions).
-*   **Shared Services**: Agents access shared data services (Market Data, News) via the central MCP Service.
-*   **A2A Comm**: Agents "message" each other via the CIO's orchestration (Hub-and-Spoke model initially, moving to Mesh later).
+### 3. 投資委員會協定 (IC Protocol)
+
+#### 3.1 每日健康檢查 (Daily Health Check)
+- **觸發**: CIO 於開盤時發起。
+- **行動**: 各 Agent 檢查儀表板 (利率/個股/情緒指標)。
+- **匯報**: Agent 提交「每日簡報」→ CIO 綜合裁決。
+
+#### 3.2 衝突解決矩陣 (Conflict Resolution Matrix)
+| 體制 (Regime) | 權重排序 |
+| :--- | :--- |
+| **財報季 (Earnings)** | Fundamental > Momentum > Macro |
+| **危機/修正 (Crisis)** | Macro > Momentum > Fundamental |
+| **泡沫/狂熱 (Bubble)** | Sentiment > Momentum > Fundamental |
+
+#### 3.3 碎形辯論 (Fractal Debate — Council)
+- **觸發**: Sentinel 偵測異常事件 或 Agent 意見分歧 > 閾值。
+- **流程**: Council 對持倉逐一執行正反辯論 → 產出加權結論 → CIO 最終裁決。
+
+#### 3.4 思維鏈強制 (R.P.A. Loop)
+所有 Agent 遵循：
+- **推理 (Reasoning)**: 「為什麼會發生？」(因果)
+- **計畫 (Plan)**: 「需要什麼資訊？」(工具選擇)
+- **行動 (Action)**: 「執行工具/產出。」
+
+### 4. MCP 整合策略 (MCP Integration)
+- **個人工具箱 (Local Skills)**: 每個 Agent 擁有本地 MCP 工具 (計算、解析)。
+- **共享服務 (Remote MCP)**: 市場數據、新聞搜尋等共享服務。
+- **A2A 通訊**: Hub-and-Spoke (CIO 協調)，路線圖: Mesh 網路。
+
+---
+
+<a id="en"></a>
+
+## 🇺🇸 Agent Swarm Protocol (v3.5)
+
+### Agents (7 + Council)
+| Agent | Mandate | File |
+|:---|:---|:---|
+| CIO | Synthesizer & Arbitrator | `cio.py` |
+| Macro | Cycle Architect | `macro.py` |
+| Fundamental | Bottom-Up Detective | `fundamental.py` |
+| Momentum | Trend Hunter | `momentum.py` |
+| Sentiment | Behavioral Quant | `sentiment.py` |
+| Risk | Risk Gatekeeper | `risk.py` |
+| Engineer | Self-Evolution Engineer | `engineer.py` |
+| Council | Fractal Debate Arbitrator | `council_adapter.py` |
+
+### IC Protocol
+1. **Daily Health Check**: CIO triggers, agents report daily briefs.
+2. **Conflict Resolution**: Regime-weighted matrix (Earnings/Crisis/Bubble).
+3. **Fractal Debate**: Council performs multi-angle challenge on each position.
+4. **R.P.A. Loop**: Reasoning → Plan → Action.
+
+## 🔗 Bidirectional Links
+- **Architecture**: [System Landscape](系統全景圖-System-Landscape)
+- **Communication**: [Agent Mesh Protocols](底層通信協議-Agent-Mesh-Protocols)
+- **Sentinel & Council**: [Sentinel & Council](哨兵與評議會架構-Sentinel-Council-Architecture)
+- **PM Specs**: [Core System Specs](核心系統規格-Core-System-Specs)

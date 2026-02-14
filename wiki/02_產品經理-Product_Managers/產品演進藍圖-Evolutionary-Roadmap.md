@@ -3,6 +3,7 @@
 ### 版本紀錄 (Version History)
 | Date | Version | Description | Author |
 | :--- | :--- | :--- | :--- |
+| 2026-02-14 | v4.0 | Added Phase B+ v3.5 delivery: 4D Sentinel + Weighted Risk Keywords | Neo |
 | 2026-02-14 | v4.0 | Redesigned Phase C/D: Agent Swarm as Role × Multi-Agent, monthly milestones targeting Q4 | Neo |
 | 2026-02-14 | v3.5 | Added Institutional-Grade Execution & Risk Roadmap | Neo |
 | 2026-01-01 | v3.3 | Updated for Multi-Broker & Risk limits | Neo |
@@ -38,12 +39,15 @@
 - **技術需求**: Tavily Search, Gemini 1.5 Pro, MCP Integration (Foundation).
 - **成功指標**: 測試覆蓋率 > 75%；報告生成穩定性 99.9%。
 
-#### 🚀 階段 B+ (2026 Q2): 哨兵與評議會 (v3.4 - Sentinel & Council)
+#### 🚀 階段 B+ (2026 Q2): 哨兵與評議會 (v3.4/v3.5 - Sentinel & Council)
 - **核心功能**: 實現 System 1 (快思) 與 System 2 (慢想) 的認知架構。
     - **主動監控 (Sentinel)**: [哨兵架構](../04_架構觀點-Architect_Views/哨兵與評議會架構-Sentinel-Council-Architecture.md) 實現 7x24 市場事件監聽。
+    - **4D 多維觸發**: VIX 體制 / 持倉異動 / 加權新聞 / 宏觀指標。
+    - **加權風險關鍵字 (Weighted Risk Keywords)**: DB 驅動的 30+ 種子關鍵字 (5 類別)，加權評分 + 命中追蹤 + 復盤機制。Settings UI 管理。
+    - **Tavily 標準管線**: 每日工作流自動消費 Tavily 配額進行網路研究。
     - **深度評議 (Council)**: 針對每一檔持倉執行碎形辯論 (Fractal Debate)。
-- **技術需求**: Asyncio Event Loop, Sentinel Service.
-- **成功指標**: 主動警報延遲 < 2分鐘；交互指令回應率 100%。
+- **技術需求**: Asyncio Event Loop, Sentinel Service, RiskKeywordRepository, Tavily API.
+- **成功指標**: 主動警報延遲 < 2分鐘；交互指令回應率 100%；測試覆蓋 405 passed。
 
 #### 🚀 階段 B++ (2026 Q3): 機構級執行與 OpenClaw (v3.5 - Institutional Execution)
 - **核心功能**: 深度整合 IBKR 與智能執行。
@@ -119,7 +123,7 @@ Transforming from a tool into an autonomous "Wealth Organism" that researches an
 ### 2. Milestones
 - **Phase A (2025) - Foundation**: Deterministic engine & secure DB (Completed).
 - **Phase B (2026 Q1) - Intelligence**: Hybrid Tiered Analysis, Multi-Broker support (Completed).
-- **Phase B+ (2026 Q2) - Sentinel**: Proactive Event Loops, Sentinel Service.
+- **Phase B+ (2026 Q2) - Sentinel (v3.5)**: 4D Multi-Trigger (VIX/Position/News/Macro), Weighted Risk Keywords (30+ seeds, DB scoring, hit tracking), Tavily standard pipeline, Fractal Debate. 405 tests.
 - **Phase B++ (2026 Q3) - Institutional (v3.5)**: Deep IBKR integration, SOR, OpenClaw concurrency, VaR.
 - **Phase C (2026 Q4) - Agent Swarm Economy**: Role × Multi-Agent decomposition.
 

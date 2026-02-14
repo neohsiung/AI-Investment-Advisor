@@ -2,16 +2,23 @@
 
 > **[繁體中文 (Traditional Chinese)](#zh) | [English](#en)**
 
+### 版本紀錄 (Version History)
+| Date | Version | Description | Author |
+| :--- | :--- | :--- | :--- |
+| 2026-02-14 | v3.5 | Added RiskKeyword entity, risk_keywords table, RiskKeywordRepository | Neo |
+| 2026-02-14 | v3.5 | Added Broker/Trading domain, Repository registry, Memory entities | Neo |
+| 2024-01-04 | v1.0 | Initial Release | Neo |
+
 ---
 
 <a id="zh"></a>
 
-## 🇹🇼 資料與領域模型 (Source of Truth)
+## 🇹🇼 資料與領域模型 (v3.5)
 
-本文件詳細定義系統的核心實體、資料庫架構與數據流動路徑，確保技術實作與業務邏輯高度一致。
+本文件定義系統的核心實體、資料庫架構與數據流動路徑，確保技術實作與業務邏輯 (DDD) 高度一致。
 
 ### 1. 領域實體關係 (Domain Entity Map)
-我們使用 Pydantic (v1/v2) 或 Dataclasses 作為領域內核，確保數據在進入資料庫前具備強型別校驗。
+使用 Pydantic / Dataclasses 作為領域內核，確保強型別校驗。
 
 ```mermaid
 classDiagram
@@ -35,41 +42,127 @@ classDiagram
         +Float confidence
         +String reasoning
     }
+    class IBroker {
+        <<interface>>
+        +get_account_info()
+        +get_positions()
+        +get_history()
+        +execute_order(Order)
+        +sync_history()
+    }
+    class BrokerType {
+        <<enum>>
+        ETORO
+        FUTU
+        IBKR
+    }
+    class Order {
+        +String ticker
+        +Enum action  BUY/SELL
+        +Float quantity
+        +Float price
+        +Float fees
+        +String order_type
+    }
+
     Portfolio "1" *-- "many" Position : contains
     AgentSignal ..> Position : influences
+    IBroker <|.. EtoroService
+    IBroker <|.. FutuService
+    IBroker <|.. IbkrService
+    IBroker ..> Order : executes
+    IBroker ..> Position : returns
+
+    class RiskKeyword {
+        +String id
+        +String keyword
+        +Float weight
+        +RiskCategory category
+        +Int hit_count
+        +String last_hit_date
+        +Bool is_active
+        +score(text) Float
+    }
+    class RiskCategory {
+        <<enum>>
+        LEGAL
+        FINANCIAL
+        OPERATIONAL
+        GEOPOLITICAL
+        MARKET
+        CUSTOM
+    }
+    RiskKeyword --> RiskCategory
 ```
 
-### 2. 資料庫架構 (Database Schema)
-系統採用 [SQLAlchemy](系統全景圖-System-Landscape) 管理多資料庫兼容性。
+### 2. Domain 檔案結構 (Domain Files)
 
-| 表名 (Table) | 核心用途 (Purpose) | 關鍵字段 (Key Fields) |
+| 檔案 | 核心實體 | 說明 |
+| :--- | :--- | :--- |
+| `src/domain/entities.py` | `Portfolio`, `Position`, `AgentSignal`, **`RiskKeyword`** | 投資組合核心實體 + 風險關鍵字實體。 |
+| `src/domain/broker.py` | `IBroker`, `BrokerType`, `Account` | 多券商介面 (Factory Pattern)。 |
+| `src/domain/trading.py` | `Order` | 交易指令 (BUY/SELL/Market/Limit)。 |
+| `src/domain/interfaces.py` | `IRepository`, `IService` | 基礎介面抽象。 |
+
+### 3. 資料庫架構 (Database Schema)
+
+| 表名 | 核心用途 | 關鍵字段 |
 | :--- | :--- | :--- |
 | `users` | 用戶權限與基本資訊 | `email`, `created_at` |
-| `transactions` | 原始交易日誌 | `ticker`, `action`, `quantity`, `price` |
-| `positions` | **當前持倉狀態 (Snapshot)** | `quantity`, `avg_cost`, `market_value` |
+| `transactions` | 原始交易日誌 (Event Log) | `ticker`, `action`, `quantity`, `price`, `broker` |
+| `positions` | 當前持倉快照 (Snapshot) | `quantity`, `avg_cost`, `market_value` |
 | `daily_snapshots` | 投資組合績效歷史 | `total_nlv`, `pnl`, `leverage_ratio` |
-| `agent_feedback` | **自我學習與反思數據** | `context_embedding`, `outcome_score` |
+| `agent_feedback` | 自我學習與 HR 回饋 | `context_embedding`, `outcome_score` |
+| `settings` | 系統設定 (KV Store) | `key`, `value`, `updated_at` |
+| `memory` | Agent 記憶 (SQLite Fallback) | `session_id`, `content`, `compressed` |
+| **`risk_keywords`** | **風險關鍵字 (Sentinel)** | **`keyword`, `weight`, `category`, `hit_count`, `is_active`** |
 
-### 3. 數據流動路徑 (Data Flow)
-1. **Ingestion**: 外部 CSV 或 API 資料透過 [Ingestor](環境設定與本地開發-Environment-Local-Dev) 進入 `transactions` 表。
-2. **Persistence**: `Repository` 在存儲過程中將 Dict 轉換為 `Domain Entities`。
-3. **Analytics**: `Service` 讀取實體集，執行計算（如 `unrealized_pnl`），並將結果寫入 `daily_snapshots`。
+### 4. Repository 註冊表 (Repository Registry)
+
+| Repository | 檔案 | 職責 |
+| :--- | :--- | :--- |
+| `TransactionRepository` | `transaction_repository.py` | 交易 CRUD、Atomic 批次匯入。 |
+| `SnapshotRepository` | `snapshot_repository.py` | 績效快照持久化。 |
+| `SettingsRepository` | `settings_repository.py` | KV 設定讀寫。 |
+| `FeedbackRepository` | `feedback_repository.py` | Agent 互評與回饋。 |
+| `MarketDataRepository` | `market_data_repository.py` | OHLCV 快取、行情紀錄。 |
+| `MemoryRepository` | `memory_repository.py` | 記憶存取 (SQLite)。 |
+| `AgentStateRepository` | `agent_state_repository.py` | Agent 執行狀態。 |
+| `PromptRepository` | `prompt_repository.py` | Prompt Template 儲存。 |
+| `ReportRepository` | `report_repository.py` | 報告檔案管理。 |
+| `DataRepository` | `data_repository.py` | 通用數據存取。 |
+| `VectorRepository` | `vector_repository.py` | 向量嵌入 (RAG)。 |
+| **`RiskKeywordRepository`** | **`risk_keyword_repository.py`** | **風險關鍵字 CRUD + 命中追蹤 + 復盤分析。** |
+
+### 5. 數據流動路徑 (Data Flow)
+1. **Ingestion**: CSV/API → `IngestionService` → `transactions` 表 (Atomic)。
+2. **Persistence**: `Repository` 將 Dict → Domain Entity。
+3. **Analytics**: `AnalyticsService` 讀取 Entity → 計算 PnL/NLV → 寫入 `daily_snapshots`。
+4. **Memory**: `MemoryService` → `MemoryFactory` 選擇 Redis/SQLite 後端。
 
 ---
 
 <a id="en"></a>
 
-## 🇺🇸 Data & Domain Models
+## 🇺🇸 Data & Domain Models (v3.5)
 
-### 1. The Domain Kernel
-We adhere to **DDD (Domain-Driven Design)** principles by centralizing all logic in the Domain Layer (`src/domain/`).
-- **Rich Models**: Our entities (`Portfolio`, `Position`) carry business logic properties like `market_value` and `unrealized_pnl`.
+### 1. Domain Kernel
+- **DDD**: All logic centralized in `src/domain/`.
+- **Rich Models**: `Portfolio`, `Position` carry `unrealized_pnl()`, `market_value()`.
+- **Broker Interface**: `IBroker` abstraction via `BrokerType` enum + `Order` entity.
 
-### 2. Strategic Schema Design
-- **Event Sourcing (Lite)**: `transactions` provide the immutable event log, while `positions` act as the read-optimized projection.
-- **Intelligence Loop**: The `agent_feedback` table stores RAG-ready embeddings for automated agent refinement.
+### 2. Schema Design
+- **Event Sourcing (Lite)**: `transactions` = immutable log; `positions` = read-optimized projection.
+- **Multi-Broker**: `transactions.broker` column tracks origin broker.
+- **Memory**: Dual-backend (Redis prod / SQLite local).
+
+### 3. Repository Pattern
+12 repositories following `IRepository` contract with parameterized queries (zero SQLi risk).
+
+**Additions in v3.5**: `RiskKeywordRepository` for weighted risk keyword CRUD, hit tracking, and review analytics (stale/top keywords).
 
 ## 🔗 Bidirectional Links
 - **Philosophy**: [Architectural Philosophies](架構哲學-Architectural-Philosophies)
 - **DB Standards**: [Database & Git Standards](資料庫設計與代碼規範-Database-Git-Standards)
 - **Service Layer**: [Service Layer Blueprints](服務層開發指南-Service-Layer-Blueprints)
+- **Repository Pattern**: [Repository Pattern](設計模式-存儲庫-Repository-Pattern)

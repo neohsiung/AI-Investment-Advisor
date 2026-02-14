@@ -3,6 +3,7 @@
 ### 版本紀錄 (Version History)
 | Date | Version | Description | Author |
 | :--- | :--- | :--- | :--- |
+| 2026-02-14 | v3.5 | Sentinel 4D Multi-Trigger + Weighted Risk Keywords + Tavily Pipeline | Neo |
 | 2026-02-14 | v3.5 | Multi-Broker, Sentinel/Council, Role × Multi-Agent roadmap | Neo |
 | 2026-01-01 | v3.3 | Multi-Broker (Futu/IBKR) & Advanced Risk Controls | Neo |
 
@@ -25,7 +26,7 @@
 | :--- | :--- |
 | **🧠 7 Agent + Council** | CIO/Fundamental/Momentum/Macro/Sentiment/Risk/Engineer Agent 集群，由 Council 碎形辯論仲裁。 |
 | **🌍 多券商架構** | 統一 `IBroker` 介面支援 **Etoro**、**Futu**、**IBKR**，集中 **RiskManager** 風控。 |
-| **🔭 哨兵與評議會** | **SentinelService** 7×24 市場監聽；**CouncilService** 碎形辯論 (Fractal Debate)。 |
+| **🔭 哨兵與評議會** | **SentinelService** 7×24 **四維度**監聽 (VIX/持倉/加權新聞/宏觀)；**CouncilService** 碎形辯論 (Fractal Debate)。 |
 | **⚡ 任務規劃引擎** | DAG 任務分解，依複雜度動態路由模型 (Fast/Smart/Advanced)。 |
 | **🔌 MCP 深度整合** | Polygon (行情) + FMP (財報) + FRED (總經) + Tavily (搜尋) 標準化工具。 |
 | **🏆 自我進化** | **Engineer Agent** 利用 DSPy 自動重寫低分 Agent Prompt。 |
@@ -114,7 +115,7 @@ graph TD
 | :--- | :--- |
 | **🧠 7-Agent Swarm + Council** | CIO/Fundamental/Momentum/Macro/Sentiment/Risk/Engineer agents with Fractal Debate arbitration. |
 | **🌍 Multi-Broker** | Unified `IBroker` interface for **Etoro**, **Futu**, **IBKR** with centralized **RiskManager**. |
-| **🔭 Sentinel & Council** | 24/7 market event monitoring + deep position review via Fractal Debate. |
+| **🔭 Sentinel & Council** | 24/7 **4-Dimensional** monitoring (VIX/Position/Weighted News/Macro) + deep position review via Fractal Debate. |
 | **⚡ Task Planning** | DAG-based decomposition with dynamic model routing (Fast/Smart/Advanced). |
 | **🔌 MCP Integration** | Polygon + FMP + FRED + Tavily as standardized agent tools. |
 | **🏆 Self-Evolution** | **Engineer Agent** auto-rewrites underperforming prompts via **DSPy**. |

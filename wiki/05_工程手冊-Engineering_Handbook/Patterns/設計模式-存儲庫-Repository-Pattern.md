@@ -58,4 +58,4 @@ Hide the details of SQL/NoSQL storage behind a "Collection-oriented" interface. 
 ## 🔗 Bidirectional Links
 - **Standards**: [Database & Git Standards](資料庫設計與代碼規範-Database-Git-Standards)
 - **Architect View**: [System Landscape](系統全景圖-System-Landscape)
-- **DI Pattern**: [Dependency Injection](設計模式_依賴注入-DI-Pattern)
+- **DI Pattern**: [Dependency Injection](設計模式-依賴注入-DI-Pattern)

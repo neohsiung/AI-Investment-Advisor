@@ -1,130 +1,375 @@
 import logging
 import asyncio
-from typing import Dict, Any
+import os
+from typing import Dict, Any, List
+from datetime import date
 
 from src.services.market_data_service import MarketDataService
+from src.services.search_service import InternetSearchService
 from src.services.council_service import CouncilService
+from src.services.transaction_service import TransactionService
 from src.infrastructure.channels.line_adapter import LineBotAdapter
 from src.domain.interfaces import IChannelAdapter
+
+from src.data.risk_keyword_repository import RiskKeywordRepository
 
 logger = logging.getLogger(__name__)
 
 class SentinelService:
     """
-    The Sentinel: 24/7 Proactive Monitoring Service.
-    哨兵服務：24/7 主動監控與事件驅動核心。
+    The Sentinel: 24/7 Proactive Multi-Dimensional Monitoring Service.
+    哨兵服務：24/7 主動多維監控與事件驅動核心。
     
-    Responsibilities (職責):
-    1. 'Tick' execution (Minutely) - 分鐘級掃描。
-    2. Market Sensing (VIX, News, Prices) - 市場感知。
-    3. Anomaly Detection (Rule-based Triggers) - 異常偵測。
-    4. Council Convener (Triggering Debates) - 召集評議會。
+    Trigger Dimensions (觸發維度):
+    1. VIX Regime (Adaptive Z-Score) - 波動率體制。
+    2. Position Price Moves (Intraday %) - 持倉價格異動。
+    3. Breaking News Risk (Tavily) - 突發新聞風險。
+    4. Macro Shifts (FRED) - 宏觀指標異動。
     """
 
-    def __init__(self):
-        self.market_service = MarketDataService()
-        self.council_service = CouncilService()
-        # Dependency Injection (Manual for now)
-        self.line_adapter: IChannelAdapter = LineBotAdapter()
+    def __init__(
+        self,
+        market_service: MarketDataService = None,
+        search_service: InternetSearchService = None,
+        transaction_service: TransactionService = None,
+        council_service: CouncilService = None,
+        line_adapter: IChannelAdapter = None,
+    ):
+        self.market_service = market_service or MarketDataService()
+        self.search_service = search_service or InternetSearchService()
+        self.transaction_service = transaction_service or TransactionService()
+        self.council_service = council_service or CouncilService()
+        self.line_adapter = line_adapter or LineBotAdapter()
         
-        # Thresholds (Config should be in DB/Settings, hardcoded for Phase 1)
+        # Thresholds (v3.5)
         self.thresholds = {
             "vix_high": 25.0,
-            "vix_extreme": 40.0
+            "vix_extreme": 40.0,
+            "position_drop_pct": -5.0,    # 個股日跌 > 5% 觸發
+            "position_spike_pct": 8.0,     # 個股日漲 > 8% 觸發 (可能泡沫)
+            "fed_funds_change_bps": 25,    # 聯邦利率變動 > 25bps
         }
+
+    # ──────────────────────────────────────────
+    # Main Entry Point
+    # ──────────────────────────────────────────
         
     async def process_tick(self):
         """
-        Main Event Loop Entry Point.
-        Called by Scheduler (Local) or Cloud Function (GCP).
-        主要事件迴圈入口。由 Scheduler (地端) 或 Cloud Function (雲端) 呼叫。
+        Main Event Loop: Multi-Dimensional Scan.
+        Called by Scheduler (Local, every minute) or Cloud Function (GCP).
+        主要事件迴圈：多維掃描。由 Scheduler 或 Cloud Function 呼叫。
         """
         try:
-            # 1. SENSE: Get Market Context & History for Adaptive Logic
-            # We need history for Volatility Regime (MA, StdDev)
-            history_data = self.market_service.get_ohlcv("^VIX", days=60)
+            triggers: List[str] = []
             
-            current_vix = 0.0
-            is_anomaly = False
-            triggers = []
+            # Dimension 1: VIX Regime (每次 tick)
+            triggers += self._check_vix_anomaly()
             
-            if history_data and history_data.get("close"):
-                 closes = history_data["close"]
-                 if len(closes) > 0:
-                     current_vix = closes[-1]
-                     
-                     # Adaptive Logic: Calculate Regime
-                     # Use last 30 days (excluding today potentially if live, but here we just take tail)
-                     window = 30
-                     if len(closes) >= window:
-                         recent_closes = closes[-window:]
-                         avg_vix = sum(recent_closes) / len(recent_closes)
-                         
-                         # StdDev Calculation
-                         variance = sum([((x - avg_vix) ** 2) for x in recent_closes]) / len(recent_closes)
-                         std_dev = variance ** 0.5
-                         
-                         # Z-Score (How many sigmas away is today?)
-                         # Avoid division by zero
-                         z_score = (current_vix - avg_vix) / std_dev if std_dev > 0 else 0
-                         
-                         # Dynamic Trigger Rule: VIX > Mean + 1.5 StdDev
-                         # This adapts: In calm markets (VIX=12), trigger might be 15. In crisis (VIX=30), trigger might be 40.
-                         threshold = avg_vix + (1.5 * std_dev)
-                         
-                         logger.info(f"Sentinel Regime: VIX={current_vix:.2f} (MA={avg_vix:.2f}, Sigma={std_dev:.2f}, Threshold={threshold:.2f})")
-                         
-                         if current_vix > threshold:
-                             is_anomaly = True
-                             triggers.append(f"Adaptive Volatility Alert (VIX {current_vix:.2f} > {threshold:.2f}, Z-Score={z_score:.1f})")
-                     else:
-                         # Fallback to static if not enough history
-                         if current_vix > self.thresholds["vix_high"]:
-                             triggers.append(f"Static Volatility Alert (VIX={current_vix:.2f})")
+            # Dimension 2: Position Price Moves (每次 tick)
+            triggers += self._check_position_moves()
             
-            # 2. ACT: Summon Council if needed
+            # Dimension 3: Breaking News (每 10 分鐘, 節省 Tavily credits)
+            # 使用 minute % 10 == 0 控制頻率
+            from datetime import datetime
+            if datetime.now().minute % 10 == 0:
+                triggers += self._check_breaking_news()
+            
+            # Dimension 4: Macro Shifts (每小時, FRED 數據更新頻率低)
+            if datetime.now().minute == 0:
+                triggers += self._check_macro_shifts()
+            
+            # ACT: Summon Council + LINE if triggered
             if triggers:
-                topic = f"SENTINEL ALERT: {'; '.join(triggers)}"
-                logger.info(f"Sentinel: Triggering Council for {topic}")
-                
-                context = {
-                    "source": "Sentinel",
-                    "market_data": {
-                        "vix": current_vix,
-                        "regime": "High Volatility" if is_anomaly else "Normal"
-                    },
-                    "triggered_rules": triggers
-                }
-                
-                # Execute Council Session
-                result = await self.council_service.start_session(topic, context)
-                decision = result.get('consensus', 'No Consensus')
-                logger.info(f"Sentinel: Council Result Verified. Decision: {decision}")
-                
-                # 3. NOTIFY: Send LINE Alert if actionable
-                # We broadcast to a default user or all users. For Phase 3, we might need a specific USER_ID env.
-                # In typical Line Bot, you push to a known user_id.
-                import os
-                target_user = os.getenv("LINE_USER_ID", "broadcast") 
-                
-                # Construct Actions based on decision keywords
-                actions = []
-                if "sell" in decision.lower() or "reduce" in decision.lower():
-                     # eToro Signal Mode
-                     actions.append({"label": "前往 eToro 下單", "data": "action=etoro_link"})
-                elif "buy" in decision.lower():
-                     actions.append({"label": "前往 eToro 下單", "data": "action=etoro_link"})
-                
-                self.line_adapter.send_flex_alert(
-                    user_id=target_user,
-                    title="⚠️ Sentinel Alert",
-                    content=f"**Topic**: {topic}\n\n**Council Consensus**:\n{decision}",
-                    actions=actions
-                )
-                
+                await self._escalate(triggers)
             else:
-                logger.info("Sentinel: Market Normal. No triggers.")
-                pass
+                logger.debug("Sentinel: All dimensions normal. No triggers.")
                 
         except Exception as e:
             logger.error(f"Sentinel Tick Error: {e}", exc_info=True)
+
+    # ──────────────────────────────────────────
+    # Dimension 1: VIX Regime (原有邏輯, 重構)
+    # ──────────────────────────────────────────
+
+    def _check_vix_anomaly(self) -> List[str]:
+        """
+        Adaptive VIX monitoring with Z-Score.
+        自適應 VIX 監控 (Z-Score)。
+        """
+        triggers = []
+        try:
+            history_data = self.market_service.get_ohlcv("^VIX", days=60)
+            if not history_data or not history_data.get("close"):
+                return triggers
+                
+            closes = history_data["close"]
+            if not closes:
+                return triggers
+                
+            current_vix = closes[-1]
+            window = 30
+            
+            if len(closes) >= window:
+                recent = closes[-window:]
+                avg_vix = sum(recent) / len(recent)
+                variance = sum(((x - avg_vix) ** 2) for x in recent) / len(recent)
+                std_dev = variance ** 0.5
+                z_score = (current_vix - avg_vix) / std_dev if std_dev > 0 else 0
+                threshold = avg_vix + (1.5 * std_dev)
+                
+                logger.info(
+                    f"Sentinel VIX: {current_vix:.2f} "
+                    f"(MA={avg_vix:.2f}, σ={std_dev:.2f}, threshold={threshold:.2f})"
+                )
+                
+                if current_vix > threshold:
+                    triggers.append(
+                        f"🔴 VIX Spike: {current_vix:.2f} > {threshold:.2f} "
+                        f"(Z={z_score:.1f}σ)"
+                    )
+            else:
+                if current_vix > self.thresholds["vix_high"]:
+                    triggers.append(f"⚠️ VIX High (Static): {current_vix:.2f}")
+                    
+        except Exception as e:
+            logger.warning(f"VIX check failed: {e}")
+        return triggers
+
+    # ──────────────────────────────────────────
+    # Dimension 2: Position Price Moves
+    # ──────────────────────────────────────────
+
+    def _check_position_moves(self) -> List[str]:
+        """
+        Monitor active positions for significant intraday price moves.
+        監控持倉的日內價格異動 (跌 > 5%, 漲 > 8%)。
+        """
+        triggers = []
+        try:
+            # Get all users for monitoring
+            users = self._get_all_user_ids()
+            all_tickers = set()
+            for user_id in users:
+                tickers = self.transaction_service.get_user_tickers(user_id, only_active=True)
+                all_tickers.update(tickers)
+            
+            if not all_tickers:
+                return triggers
+            
+            # Fetch current prices
+            current_prices = self.market_service.get_current_prices(list(all_tickers))
+            
+            # Compare with previous close (via OHLCV)
+            for ticker in all_tickers:
+                current = current_prices.get(ticker, 0)
+                if current <= 0:
+                    continue
+                    
+                ohlcv = self.market_service.get_ohlcv(ticker, days=2)
+                if not ohlcv or not ohlcv.get("close") or len(ohlcv["close"]) < 2:
+                    continue
+                
+                prev_close = ohlcv["close"][-2]
+                if prev_close <= 0:
+                    continue
+                    
+                change_pct = ((current - prev_close) / prev_close) * 100
+                
+                if change_pct <= self.thresholds["position_drop_pct"]:
+                    triggers.append(
+                        f"📉 {ticker} 跌 {change_pct:.1f}% "
+                        f"({prev_close:.2f} → {current:.2f})"
+                    )
+                elif change_pct >= self.thresholds["position_spike_pct"]:
+                    triggers.append(
+                        f"📈 {ticker} 漲 {change_pct:.1f}% "
+                        f"({prev_close:.2f} → {current:.2f}) — 留意泡沫風險"
+                    )
+                    
+        except Exception as e:
+            logger.warning(f"Position move check failed: {e}")
+        return triggers
+
+    # ──────────────────────────────────────────
+    # Dimension 3: Breaking News (Tavily)
+    # ──────────────────────────────────────────
+    
+    def _check_breaking_news(self) -> List[str]:
+        """
+        Search for risk-relevant breaking news using weighted DB keywords.
+        透過 Tavily 搜尋持倉相關的風險新聞，使用 DB 加權關鍵字評分。
+        消耗 Tavily Credits (每 10 分鐘一次)。
+        
+        Scoring: Each search result is scored by summing weights of all
+        matching keywords. Triggers if aggregate score >= threshold (0.6).
+        """
+        triggers = []
+        try:
+            # Load active keywords from DB
+            repo = RiskKeywordRepository()
+            active_keywords = repo.get_all(active_only=True)
+            
+            if not active_keywords:
+                logger.warning("No active risk keywords in DB, skipping news check.")
+                return triggers
+            
+            users = self._get_all_user_ids()
+            all_tickers = set()
+            for user_id in users:
+                tickers = self.transaction_service.get_user_tickers(user_id, only_active=True)
+                all_tickers.update(tickers)
+            
+            if not all_tickers:
+                return triggers
+            
+            risk_threshold = self.thresholds.get("news_risk_score", 0.6)
+            
+            for ticker in all_tickers:
+                query = f"{ticker} breaking news risk alert {date.today().isoformat()}"
+                results = self.search_service.search_financial_context(query, max_results=3)
+                
+                if not results:
+                    continue
+                
+                # Weighted keyword scoring
+                for result in results:
+                    snippet = (
+                        result.get("snippet", "") + " " + result.get("title", "")
+                    )
+                    
+                    total_score = 0.0
+                    matched_keywords = []
+                    
+                    for kw in active_keywords:
+                        score = kw.score(snippet)
+                        if score > 0:
+                            total_score += score
+                            matched_keywords.append((kw, score))
+                    
+                    if total_score >= risk_threshold:
+                        # Record hits for review/analytics
+                        for kw, _ in matched_keywords:
+                            repo.record_hit(kw.id)
+                        
+                        kw_summary = ", ".join(
+                            f"{kw.keyword}(w={s:.2f})" 
+                            for kw, s in sorted(matched_keywords, key=lambda x: -x[1])[:3]
+                        )
+                        triggers.append(
+                            f"\U0001f4f0 {ticker} \u98a8\u96aa\u65b0\u805e: {result.get('title', 'N/A')} "
+                            f"(\u52a0\u6b0a\u5206\u6578: {total_score:.2f}, \u95dc\u9375\u5b57: {kw_summary})"
+                        )
+                        break  # One trigger per ticker is enough
+                        
+        except Exception as e:
+            logger.warning(f"Breaking news check failed: {e}")
+        return triggers
+
+    # ──────────────────────────────────────────
+    # Dimension 4: Macro Shifts (FRED)
+    # ──────────────────────────────────────────
+
+    def _check_macro_shifts(self) -> List[str]:
+        """
+        Check for significant macro indicator changes via FRED.
+        透過 FRED 檢查宏觀指標異動。
+        """
+        triggers = []
+        try:
+            macro = self.market_service.get_macro_data()
+            economics = macro.get("economics", {})
+            
+            # Check Fed Funds Rate trend
+            fed = economics.get("FedFunds", {})
+            if fed and fed.get("trend") == "Up":
+                triggers.append(
+                    f"🏦 聯邦利率上升: {fed.get('value', 'N/A')}% "
+                    f"(as of {fed.get('date', 'N/A')})"
+                )
+            
+            # Check Yield Curve Inversion
+            spread = economics.get("10Y2Y_Spread", {})
+            if spread and isinstance(spread.get("value"), (int, float)):
+                if spread["value"] < 0:
+                    triggers.append(
+                        f"⚠️ 殖利率曲線倒掛: 10Y-2Y = {spread['value']:.2f}%"
+                    )
+            
+            # Check VIX from market indicators as supplementary
+            market = macro.get("market_indicators", {})
+            vix = market.get("^VIX", 0)
+            if isinstance(vix, (int, float)) and vix > self.thresholds["vix_extreme"]:
+                triggers.append(f"🔴 極端恐慌: VIX = {vix:.2f}")
+                
+        except Exception as e:
+            logger.warning(f"Macro shift check failed: {e}")
+        return triggers
+
+    # ──────────────────────────────────────────
+    # Escalation: Council + LINE
+    # ──────────────────────────────────────────
+
+    async def _escalate(self, triggers: List[str]):
+        """
+        Escalate triggers to Council for deliberation, then notify via LINE.
+        將觸發事件上報評議會並通過 LINE 通知。
+        """
+        topic = f"SENTINEL ALERT: {'; '.join(triggers)}"
+        logger.info(f"Sentinel: Escalating {len(triggers)} trigger(s)")
+        
+        context = {
+            "source": "Sentinel",
+            "triggered_rules": triggers,
+            "timestamp": date.today().isoformat(),
+        }
+        
+        # Council Deliberation
+        try:
+            result = await self.council_service.start_session(topic, context)
+            decision = result.get('consensus', 'No Consensus')
+        except Exception as e:
+            logger.error(f"Council session failed: {e}")
+            decision = f"Council Unavailable — Raw Triggers: {'; '.join(triggers)}"
+        
+        logger.info(f"Sentinel: Council decision: {decision}")
+        
+        # LINE Notification
+        target_user = os.getenv("LINE_USER_ID", "broadcast")
+        
+        actions = []
+        if any(kw in decision.lower() for kw in ["sell", "reduce", "trim"]):
+            actions.append({"label": "前往 eToro 下單", "data": "action=etoro_link"})
+        elif "buy" in decision.lower():
+            actions.append({"label": "前往 eToro 下單", "data": "action=etoro_link"})
+        
+        trigger_summary = "\n".join(f"• {t}" for t in triggers)
+        self.line_adapter.send_flex_alert(
+            user_id=target_user,
+            title="⚠️ Sentinel Alert",
+            content=(
+                f"**{len(triggers)} 個風險訊號偵測到**\n\n"
+                f"{trigger_summary}\n\n"
+                f"**Council 共識**: {decision}"
+            ),
+            actions=actions,
+        )
+
+    # ──────────────────────────────────────────
+    # Helpers
+    # ──────────────────────────────────────────
+
+    def _get_all_user_ids(self) -> List[str]:
+        """
+        Get all registered user IDs for position monitoring.
+        取得所有已註冊用戶 ID。
+        """
+        try:
+            from src.data.database import get_db_connection
+            from sqlalchemy import text
+            with get_db_connection() as conn:
+                rows = conn.execute(text("SELECT email FROM users")).fetchall()
+                return [row[0] for row in rows] if rows else []
+        except Exception as e:
+            logger.warning(f"Failed to get user IDs: {e}")
+            return []
