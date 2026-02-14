@@ -1,6 +1,6 @@
-*   [首頁](Home)
 *   **01. 使用者手冊 (User Manual)**
-    *   [快速啟動與操作指南](快速啟動與操作指南-Quickstart-User-Guide)
+    *   [快速啟動與操作指南](01_使用者手冊-User_Manual/快速啟動與操作指南-Quickstart-User-Guide.md)
+    *   [系統設定與金鑰管理](01_使用者手冊-User_Manual/系統設定與金鑰管理-System-Configuration.md)
 *   **02. 產品規格 (Product Managers)**
     *   [產品演進藍圖](產品演進藍圖-Evolutionary-Roadmap)
     *   **規格書 (Specs)**
@@ -18,22 +18,16 @@
 *   **04. 架構觀點 (Architect View)**
     *   [系統全景圖](系統全景圖-System-Landscape)
     *   [架構哲學](架構哲學-Architectural-Philosophies)
-    *   [前端與服務架構](前端與服務架構-Frontend-Service-Architecture)
-    *   [資料與領域模型](資料與領域模型-Data-Domain-Models)
+    *   [哨兵與評議會架構](04_架構觀點-Architect_Views/哨兵與評議會架構-Sentinel-Council-Architecture.md)
+    *   [配置管理架構](04_架構觀點-Architect_Views/配置管理架構-Configuration-Management.md)
     *   [底層通信協議 (Agent Mesh)](底層通信協議-Agent-Mesh-Protocols)
-    *   [代理人戰略協定 (Swarm Protocol)](代理人戰略協定-Agent-Swarm-Protocol)
-    *   [哨兵與評議會架構](哨兵與評議會架構-Sentinel-Council-Architecture)
     *   [任務規劃與執行引擎](任務規劃與執行引擎-Task-Planning-Engine)
     *   [記憶系統與 Redis 架構](記憶系統與Redis架構-Memory-Redis-Architecture)
-    *   [OpenClaw 執行環境](OpenClaw執行環境-OpenClaw-Runtime-Environment)
 *   **05. 工程手冊 (Engineering Handbook)**
-    *   [提示詞工程規範](提示詞工程規範-Prompt-Engineering-Specs)
-    *   [研究與最佳實踐](研究與最佳實踐-Research-Best-Practices)
-    *   **規範 (Standards)**
-        *   [文件框架定義](文件框架定義-Document-Frameworks)
-        *   [文件規範](文件規範-Wiki-Standard)
-        *   [資料庫設計與代碼規範](資料庫設計與代碼規範-Database-Git-Standards)
-    *   **設計模式深度庫 (Patterns)**
+    *   [文件規範](文件規範-Wiki-Standard)
+    *   [文件框架定義](文件框架定義-Document-Frameworks)
+    *   [資料庫設計與代碼規範](資料庫設計與代碼規範-Database-Git-Standards)
+    *   **設計模式 (Patterns)**
         *   [設計模式導讀](設計模式導讀-Design-Patterns-Intro)
         *   [工廠模式](設計模式-工廠-Factory-Pattern)
         *   [存儲庫模式](設計模式-存儲庫-Repository-Pattern)

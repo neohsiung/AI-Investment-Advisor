@@ -107,7 +107,7 @@ def render_sidebar(user, default_db_path="data/portfolio.db"):
             cols = st.columns([2.5, 1, 1])
             
             with cols[0]:
-                st.page_link("pages/05_Settings.py", label=f"{short_name}. {display_name[:6]}...", icon="👤", help="User Settings")
+                st.page_link("pages/Settings.py", label=f"{short_name}. {display_name[:6]}...", icon="👤", help="User Settings")
             
             with cols[1]:
                 render_theme_switcher(key_suffix="sidebar_v15", icon_only=True)

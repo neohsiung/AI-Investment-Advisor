@@ -20,10 +20,11 @@ class EtoroService(IBroker):
     Supports official Public API (api-portal.etoro.com).
     """
 
-    def __init__(self, base_url: str = None, mode: str = "real"):
-        self.api_key = os.getenv("ETORO_API_KEY")
-        self.user_key = os.getenv("ETORO_USER_KEY")
-        
+    def __init__(self, base_url: str = None, mode: str = "real", api_key: str = None, user_key: str = None):
+        # Authentication (Priority: Arg > Env)
+        self.api_key = api_key or os.getenv("ETORO_API_KEY")
+        self.user_key = user_key or os.getenv("ETORO_USER_KEY")
+
         # Use official endpoint if keys are provided, else fallback to bridge for legacy support
         default_base = "https://public-api.etoro.com" if self.api_key else "http://localhost:8000"
         self.base_url = base_url or os.getenv("ETORO_API_BASE_URL", default_base)
@@ -32,6 +33,7 @@ class EtoroService(IBroker):
         self.transaction_repo = SqliteTransactionRepository()
         self.risk_manager = RiskManager()
         self.name = "eToro"
+        self._id_to_symbol = {} # Reverse map: ID -> Ticker
 
     def get_name(self) -> str:
         return self.name
@@ -59,9 +61,28 @@ class EtoroService(IBroker):
         if not portfolio:
             return None
         
-        # Mapping based on official API / legacy bridge
-        equity = float(portfolio.get('TotalEquity', portfolio.get('equity', 0)))
-        cash = float(portfolio.get('AvailableCash', portfolio.get('cash', 0)))
+        # Handle clientPortfolio (Credit = Cash)
+        if 'clientPortfolio' in portfolio:
+             cp = portfolio['clientPortfolio']
+             try:
+                 cash = float(cp.get('credit', 0))
+                 # Equity = Cash + MV of positions
+                 # We need to parse positions from THIS raw data to avoid double fetch
+                 raw_positions = cp.get('positions', [])
+                 mv_sum = 0.0
+                 for p in raw_positions:
+                     val = float(p.get('unitsBaseValueDollars', p.get('CurrentAmount', 0)))
+                     mv_sum += val
+                 
+                 equity = cash + mv_sum
+             except Exception as e:
+                 logger.error(f"Failed to calc account from clientPortfolio: {e}")
+                 equity = 0.0
+                 cash = 0.0
+        else:
+            # Mapping based on official API / legacy bridge
+            equity = float(portfolio.get('TotalEquity', portfolio.get('equity', 0)))
+            cash = float(portfolio.get('AvailableCash', portfolio.get('cash', 0)))
         
         return Account(
             broker_type=BrokerType.ETORO,
@@ -77,22 +98,66 @@ class EtoroService(IBroker):
         """
         portfolio = self._fetch_portfolio_raw()
         if not portfolio:
+            logger.warning("Portfolio response is empty.")
             return []
             
-        raw_positions = portfolio.get('Positions', portfolio.get('positions', []))
+        # Inspect Map - Lazy Load if empty and we have raw numeric IDs?
+        # Actually, just check if we have the map.
+        if not self._id_to_symbol:
+            logger.info("ID Map empty, fetching watchlists to populate...")
+            self.get_watchlists()
+            
+        logger.info(f"Raw Portfolio Keys: {portfolio.keys()}")
+            
+        # Handle API response nesting: { "AggregatedMirror": { "positions": [...] } }
+        # Or { "clientPortfolio": { "positions": [...] } }
+        data_source = portfolio.get('AggregatedMirror', portfolio.get('clientPortfolio', portfolio))
+        
+        if isinstance(data_source, dict):
+             logger.info(f"DataSource Keys: {data_source.keys()}")
+        
+        raw_positions = data_source.get('Positions', data_source.get('positions', []))
+        
         positions = []
         for p in raw_positions:
             try:
                 # Map raw position to Domain Model
+                # Debug output shows: instrumentID, units, openRate, etc.
+                # Use provided mapping or fallback
+                
+                # Note: 'Instrument' name is not in the position object in debug output!
+                # We only have 'instrumentID'.
+                # We need to resolve ID back to Symbol? 
+                # Or maybe it's in the 'relatedAssets' or we need to use the cache/InstrumentID map.
+                # The debug output showed 'instrumentID': 4237.
+                # It does NOT show the symbol name directly in the position object.
+                
+                # We might need to fetch instrument details or use a map.
+                # For now, let's use ID as symbol if name missing, or try 'InstrumentID'.
+                
+                # ID Resolution
+                # We prioritize the cached Ticker from watchlists, fallback to Instrument ID
+                inst_id = str(p.get('instrumentID', p.get('Instrument', '')))
+                symbol = self._id_to_symbol.get(inst_id, inst_id) or "UNKNOWN"
+                
+                # Normalize Symbol (Remove .RTH, .EXT, etc. if breaking yfinance)
+                if symbol.endswith('.RTH'):
+                    symbol = symbol.replace('.RTH', '')
+                
                 pos = Position(
-                    symbol=p.get('Instrument', p.get('symbol', 'UNKNOWN')),
-                    quantity=float(p.get('Amount', p.get('quantity', 0))),
-                    open_price=float(p.get('OpenRate', p.get('open_price', 0))),
-                    current_price=float(p.get('CurrentRate', p.get('current_price', 0))),
-                    market_value=float(p.get('CurrentAmount', p.get('market_value', 0))),
-                    unrealized_pnl=float(p.get('NetProfit', p.get('unrealized_pnl', 0))),
-                    open_date=self._parse_date(p.get('OpenDateTime', p.get('open_date')))
+                    symbol=symbol,
+                    quantity=float(p.get('units', p.get('Amount', p.get('quantity', 0)))),
+                    open_price=float(p.get('openRate', p.get('OpenRate', p.get('open_price', 0)))),
+                    current_price=float(p.get('CurrentRate', 0)) or float(p.get('openRate', 0)),
+                    market_value=float(p.get('unitsBaseValueDollars', p.get('CurrentAmount', 0))),
+                    # NetProfit not in debug snippet, maybe calc?
+                    unrealized_pnl=float(p.get('NetProfit', 0)), 
+                    open_date=self._parse_date(p.get('openDateTime', p.get('OpenDateTime', '')))
                 )
+                # Force set leverage to avoid constructor issues
+                raw_lev = float(p.get('leverage', p.get('Leverage', 1.0)))
+                pos.leverage = raw_lev
+                
                 positions.append(pos)
             except Exception as e:
                 logger.warning(f"Failed to map position: {e}")
@@ -126,9 +191,27 @@ class EtoroService(IBroker):
         if not self.risk_manager.check_constraints(user_id, history, positions):
              return {"status": "failed", "reason": "Risk Manager Blocked"}
 
-        # 2. Execute
+    def execute_order(self, order: Order) -> Dict[str, Any]:
+        """
+        Execute Order with Risk Check.
+        """
+        user_id = "default_user" 
+        
+        # 1. Risk Check
+        history = self.get_history()
+        positions = self.get_positions()
+        
+        if not self.risk_manager.check_constraints(user_id, history, positions):
+             return {"status": "failed", "reason": "Risk Manager Blocked"}
+
+        # 2. Resolve Instrument ID
+        instrument_id = self._resolve_instrument_id(order.symbol)
+        if not instrument_id:
+             return {"status": "failed", "reason": f"Instrument ID not found for {order.symbol}"}
+
+        # 3. Execute
         order_payload = {
-            "Instrument": order.symbol,
+            "InstrumentID": instrument_id,
             "Action": order.action.value,
             "Amount": order.quantity,
             "Leverage": order.leverage
@@ -138,13 +221,90 @@ class EtoroService(IBroker):
         url = f"{self.base_url}{endpoint}"
         
         try:
-             logger.info(f"ETORO EXEC: {order.action.value} {order.symbol} Qty={order.quantity}")
+             logger.info(f"ETORO EXEC: {order.action.value} {order.symbol} (ID: {instrument_id}) Qty={order.quantity}")
              response = requests.post(url, json=order_payload, headers=self._get_headers(), timeout=10)
              response.raise_for_status()
              return response.json()
         except Exception as e:
              logger.error(f"Etoro Exec Failed: {e}")
              return {"status": "error", "error": str(e)}
+
+    def get_watchlists(self) -> List[Dict[str, Any]]:
+        """
+        Fetch all user watchlists.
+        """
+        endpoint = "/api/v1/watchlists"
+        try:
+            url = f"{self.base_url}{endpoint}"
+            logger.info(f"Fetching Watchlists from: {url}")
+            response = requests.get(url, headers=self._get_headers(), timeout=10)
+            logger.info(f"Watchlists HTTP Status: {response.status_code}")
+            response.raise_for_status()
+            data = response.json()
+            
+            # Populate ID Map from Watchlist Metadata
+            # Structure: { "Watchlists": [ ... ] } OR { "watchlists": [ ... ] }
+            watchlists = data.get('Watchlists', data.get('watchlists', []))
+            
+            logger.info(f"Raw Watchlists Keys: {data.keys()}")
+            logger.info(f"Watchlists Count in Response: {len(watchlists)}")
+            
+            for wl in watchlists:
+                # Items might be 'Items' or 'items'
+                items = wl.get('Items', wl.get('items', []))
+                for item in items:
+                    market = item.get('market')
+                    if market:
+                        m_id = str(market.get('id', ''))
+                        m_sym = market.get('symbolName')
+                        if m_id and m_sym:
+                            self._id_to_symbol[m_id] = m_sym
+                            
+            return data
+        except Exception as e:
+            logger.error(f"Failed to fetch watchlists: {e}")
+            return []
+
+    def _resolve_instrument_id(self, ticker: str) -> Optional[int]:
+        """
+        Resolve Ticker to eToro Instrument ID.
+        Uses simplistic caching.
+        """
+        if not hasattr(self, '_id_cache'):
+            self._id_cache = {}
+            
+        if ticker in self._id_cache:
+            return self._id_cache[ticker]
+            
+        endpoint = "/api/v1/market-data/search"
+        params = {"internalSymbolFull": ticker}
+        
+        try:
+            url = f"{self.base_url}{endpoint}"
+            response = requests.get(url, params=params, headers=self._get_headers(), timeout=10)
+            response.raise_for_status()
+            data = response.json()
+            
+            # Assuming resonse is list of matches or direct object
+            # Adjust based on actual API response structure for search
+            # If data is a list:
+            if isinstance(data, list) and len(data) > 0:
+                 inst_id = data[0].get('InstrumentID')
+                 if inst_id:
+                     self._id_cache[ticker] = inst_id
+                     return inst_id
+            
+            # If data is a dict (single result)
+            if isinstance(data, dict):
+                 inst_id = data.get('InstrumentID')
+                 if inst_id:
+                     self._id_cache[ticker] = inst_id
+                     return inst_id
+                     
+            return None
+        except Exception as e:
+            logger.error(f"Failed to resolve Instrument ID for {ticker}: {e}")
+            return None
 
     def sync_history(self, user_id: str = "default_user") -> Dict[str, int]:
         """
@@ -213,8 +373,16 @@ class EtoroService(IBroker):
         if not date_str:
              return datetime.now()
         try:
-             if 'T' in date_str:
-                  return datetime.strptime(date_str, '%Y-%m-%dT%H:%M:%S')
-             return datetime.strptime(date_str, '%Y-%m-%d')
-        except:
+            # Handle Z and fractional seconds
+            # Example: 2025-04-21T14:42:03.703Z
+            normalized = date_str.replace('Z', '')
+            if '.' in normalized:
+                # Truncate fractional seconds for simple parsing
+                normalized = normalized.split('.')[0]
+                
+            if 'T' in normalized:
+                 return datetime.strptime(normalized, '%Y-%m-%dT%H:%M:%S')
+            return datetime.strptime(normalized, '%Y-%m-%d')
+        except Exception as e:
+             logger.warning(f"Date parse error for {date_str}: {e}")
              return datetime.now()

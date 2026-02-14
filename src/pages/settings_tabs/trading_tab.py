@@ -34,39 +34,64 @@ def render_trading_tab(st, user_id: str):
     st.divider()
 
     with st.form("trading_settings_form"):
-        st.subheader("參數配置 (Configuration)")
-        col1, col2 = st.columns(2)
+        # Create Tabs for better organization
+        tab_broker, tab_config, tab_risk = st.tabs(["🔌 券商連結 (Connections)", "⚙️ 交易參數 (Configuration)", "🛡️ 風控管理 (Risk)"])
         
-        with col1:
-            new_broker = st.selectbox(
-                "選擇主要券商 (Preferred Broker)",
-                options=["etoro", "futu", "ibkr"],
-                index=["etoro", "futu", "ibkr"].index(current_broker) if current_broker in ["etoro", "futu", "ibkr"] else 0,
-                help="系統將使用此券商進行自動交易與資料同步。"
-            )
-            new_sector_limit = st.number_input(
-                "單一板塊曝險上限 (Max Sector Exposure %)",
-                min_value=0.1, max_value=1.0, value=float(sector_limit), step=0.05,
-                help="單一板塊持倉佔總資產的最大比例 (0.1 ~ 1.0)。"
-            )
-        
-        with col2:
-            new_max_daily = st.number_input(
-                "每日最大交易次數 (Max Daily Trades)",
-                min_value=1, max_value=100, value=int(max_daily),
-                help="超過此限制後，Risk Manager 將暫停當日交易。"
-            )
-            new_cb_loss = st.number_input(
-                "連續虧損熔斷 (Loss Streak Limit)",
-                min_value=1, max_value=20, value=int(cb_loss),
-                help="連續虧損達此次數後，自動停止交易。"
-            )
+        with tab_broker:
+            st.subheader("券商連結設定 (Broker Connections)")
+            st.caption("啟用並設定各券商的連線資訊 (Enable & Configure Brokers)")
+            
+            # Etoro Config
+            with st.expander("eToro Settings", expanded=True):
+                enable_etoro = st.checkbox("啟用 eToro (Enable eToro)", value=(settings_repo.get(user_id, "enable_etoro") == "true"))
+                etoro_api_key = st.text_input("eToro API Key", value=settings_repo.get(user_id, "etoro_api_key") or "", type="password")
+                etoro_user_key = st.text_input("eToro User Key", value=settings_repo.get(user_id, "etoro_user_key") or "", type="password")
+                etoro_demo = st.checkbox("Demo Mode", value=(settings_repo.get(user_id, "etoro_mode") == "demo"))
 
-        submitted = st.form_submit_button("儲存設定 (Save Settings)")
-        if submitted:
-            settings_repo.set(user_id, "preferred_broker", new_broker)
-            settings_repo.set(user_id, "ai_max_daily_trades", str(new_max_daily))
-            settings_repo.set(user_id, "cb_loss_streak", str(new_cb_loss))
-            settings_repo.set(user_id, "risk_max_sector_exposure", str(new_sector_limit))
-            st.success(f"設定已儲存! 券商: {new_broker}, Sector Limit: {new_sector_limit:.0%}")
-            st.rerun()
+            # Futu Config
+            with st.expander("Futu OpenD Settings", expanded=False):
+                enable_futu = st.checkbox("啟用 Futu (Enable Futu)", value=(settings_repo.get(user_id, "enable_futu") == "true"))
+                futu_host = st.text_input("Futu Host", value=settings_repo.get(user_id, "futu_host") or "127.0.0.1")
+                futu_port = st.number_input("Futu Port", value=int(settings_repo.get(user_id, "futu_port") or 11111))
+                futu_pwd = st.text_input("Unlock Password (Optional)", value=settings_repo.get(user_id, "futu_pwd") or "", type="password")
+
+            # IBKR Config
+            with st.expander("Interactive Brokers Settings", expanded=False):
+                enable_ibkr = st.checkbox("啟用 IBKR (Enable IBKR)", value=(settings_repo.get(user_id, "enable_ibkr") == "true"))
+                ibkr_host = st.text_input("IBKR Host", value=settings_repo.get(user_id, "ibkr_host") or "127.0.0.1")
+                ibkr_port = st.number_input("IBKR Port", value=int(settings_repo.get(user_id, "ibkr_port") or 7497))
+
+        with tab_config:
+            st.subheader("交易參數設定 (Trading Configuration)")
+            col1, col2 = st.columns(2)
+            with col1:
+                new_broker = st.selectbox(
+                    "選擇主要券商 (Preferred Broker)",
+                    options=["etoro", "futu", "ibkr"],
+                    index=["etoro", "futu", "ibkr"].index(current_broker) if current_broker in ["etoro", "futu", "ibkr"] else 0,
+                    help="系統將使用此券商進行自動交易與資料同步。"
+                )
+            with col2:
+                new_max_daily = st.number_input(
+                    "每日最大交易次數 (Max Daily Trades)",
+                    min_value=0, max_value=50, value=int(max_daily),
+                    help="限制 Agent 每日可執行的最大交易筆數。"
+                )
+        
+        with tab_risk:
+            st.subheader("風控參數設定 (Risk Management)")
+            col1, col2 = st.columns(2)
+            with col1:
+                new_sector_limit = st.slider(
+                    "單一板塊曝險上限 (Max Sector Exposure)",
+                    min_value=0.1, max_value=1.0, value=float(sector_limit), step=0.05,
+                    format="%.0f%%"
+                )
+            with col2:
+                new_cb_loss = st.number_input(
+                    "連續虧損熔斷次數 (Circuit Breaker Loss Streak)",
+                    min_value=1, max_value=10, value=int(cb_loss),
+                    help="連續虧損達此次數後，自動停止交易。"
+                )
+
+        submitted = st.form_submit_button("儲存設定 (Save Settings)", use_container_width=True)

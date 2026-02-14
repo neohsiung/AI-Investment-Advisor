@@ -39,6 +39,7 @@ class Position:
     market_value: float
     unrealized_pnl: float
     open_date: Optional[datetime] = None
+    leverage: float = 1.0
 
 @dataclass
 class Account:

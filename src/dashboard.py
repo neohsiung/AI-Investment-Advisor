@@ -59,9 +59,11 @@ class DashboardPage(BasePage):
                 # --- Section 1: Metrics ---
                 saas_section_header("系統概況與績效 (System Overview)", "即時資產概況與投報率指標")
                 
-                col1, col2, col3, col4, col5 = st.columns(5)
+                col1, col1b, col2, col3, col4, col5 = st.columns(6)
                 with col1:
                     saas_metric("資產淨值 (NLV)", f"${metrics.get('nlv', 0):,.0f}", icon="💰")
+                with col1b:
+                    saas_metric("總資產 (Gross)", f"${metrics.get('gross_nlv', 0):,.0f}", icon="📈")
                 with col2:
                     saas_metric("現金餘額 (Cash)", f"${metrics.get('cash_balance', 0):,.0f}", icon="💵")
                 with col3:
@@ -79,22 +81,31 @@ class DashboardPage(BasePage):
                     saas_alert("警告: 槓桿比率偏高 (Leverage Ratio is high)。", style="warning")
 
                 # --- Section 2: Positions ---
-                saas_section_header("資產配置與清單 (Positions)", "即時資產持倉與市場價值")
+                saas_section_header("資產配置與清單 (Positions)", "即時資產持倉與槓桿明細")
 
                 if not positions_df.empty:
-                    cola, colb = st.columns([2, 1])
+                    cola, colb = st.columns([2.5, 1])
                     with cola:
                         saas_card_start(title="持倉明細 (Holdings)", icon="📋")
+                        # Detailed Columns for Leverage Transparency
                         display_df = positions_df.rename(columns={
-                            'ticker': '代號 (Ticker)',
-                            'quantity': '數量 (Qty)',
-                            'current_price': '市價 (Price)',
-                            'market_value': '價值 (MV)'
+                            'ticker': '代號',
+                            'quantity': '數量',
+                            'current_price': '市價',
+                            'leverage': '槓桿',
+                            'gross_mv': '總價值',
+                            'loan': '貸款',
+                            'net_equity': '淨權益'
                         })
-                        st.dataframe(display_df.style.format({
-                            "數量 (Qty)": "{:.2f}", 
-                            "市價 (Price)": "{:.2f}", 
-                            "價值 (MV)": "{:.0f}"
+                        # Specify column order explicitly
+                        cols_order = ['代號', '數量', '市價', '槓桿', '總價值', '貸款', '淨權益']
+                        st.dataframe(display_df[cols_order].style.format({
+                            "數量": "{:.2f}", 
+                            "市價": "{:.2f}", 
+                            "槓桿": "{:.1f}x",
+                            "總價值": "{:.0f}",
+                            "貸款": "{:.0f}",
+                            "淨權益": "{:.0f}"
                         }), use_container_width=True)
                         saas_card_end()
                     

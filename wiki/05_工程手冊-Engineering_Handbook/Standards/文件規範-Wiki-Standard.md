@@ -11,13 +11,15 @@ This document defines the standards for creating and maintaining the project Wik
     *   **繁體中文 (Traditional Chinese)**: 使用精簡的中文詞彙描述主題。
     *   **英文 (English)**: 使用 PascalCase 或 hyphen-separated (kebab-case) 英文詞彙，需與中文對應。
     *   **連接符號 (Separator)**: 使用半形連字號 `-` 連接中英文與單字。
-    *   **禁止 (Forbidden)**: 禁止使用空格、特殊符號 (底線 `_` 僅限於資料夾排序前綴，如 `01_`).
+    *   **數字前綴 (Numeric Prefixes)**: 
+        *   **檔案 (Files)**: 禁止使用數字作為開頭 (No numeric prefixes for filenames)。
+        *   **資料夾 (Folders)**: 必須包含數字前綴以符合顯示順序 (Must use numeric prefixes for ordering)，格式為 `XX_名稱`。
+    *   **禁止 (Forbidden)**: 禁止使用空格、特殊符號 (底線 `_` 僅限於資料夾命名)。
 *   **範例 (Examples)**:
     *   ✅ `系統概觀-System-Overview.md`
-    *   ✅ `資料庫架構-Database-Schema.md`
+    *   ✅ `01_使用手冊` (資料夾)
+    *   ❌ `01-系統概觀.md` (檔案不應有數字)
     *   ❌ `SystemOverview.md` (缺少中文)
-    *   ❌ `系統概觀.md` (缺少英文)
-    *   ❌ `系統概觀_System_Overview.md` (連接符錯誤)
 
 ## 2. 內容結構 (Content Structure)
 

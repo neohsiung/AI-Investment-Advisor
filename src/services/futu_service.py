@@ -28,10 +28,11 @@ class FutuService(IBroker):
     Requires FutuOpenD running locally or remotely.
     """
 
-    def __init__(self, host: str = "127.0.0.1", port: int = 11111, is_sim: bool = False):
+    def __init__(self, host: str = "127.0.0.1", port: int = 11111, is_sim: bool = False, pwd: str = None):
         self.host = host
         self.port = port
         self.is_sim = is_sim
+        self.pwd = pwd
         self.transaction_repo = SqliteTransactionRepository()
         self.risk_manager = RiskManager()
         self.name = "Futu"

@@ -29,8 +29,8 @@ def load_page_module(name):
 
 # Ensure mocks are in place before loading
 with patch.dict(sys.modules, {'extra_streamlit_components': MagicMock()}):
-    settings_mod = load_page_module("05_Settings.py")
-    data_mod = load_page_module("03_Data_Management.py")
+    settings_mod = load_page_module("Settings.py")
+    data_mod = load_page_module("Data_Management.py")
 
 from src.services.settings_service import SettingsService
 from src.services.transaction_service import TransactionService

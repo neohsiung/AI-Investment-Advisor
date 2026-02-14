@@ -75,13 +75,44 @@ class DashboardService:
             
             # OVERRIDE with Real-time Data if available
             if live_portfolio['total_equity'] > 0:
-                 metrics['nlv'] = live_portfolio['total_equity']
+                 # Trust eToro's reported Cash Balance
                  metrics['cash_balance'] = live_portfolio['total_cash']
-                 # Recalculate leverage if needed, or use derived
-                 # metrics['leverage_ratio'] = ... 
-                 metrics['leverage_ratio'] = metrics_derived.get('leverage_ratio', 0) # Keep derived for now or recalc
+                 
+                 # Calculate Live Market Value of Positions
+                 live_mv_net = 0.0
+                 live_mv_gross = 0.0
+                 live_positions = live_portfolio.get('positions', [])
+                 
+                 for p in live_positions:
+                     price = current_prices.get(p.symbol, 0)
+                     if price == 0:
+                         price = p.current_price
+                     
+                     gross_exposure = p.quantity * price
+                     live_mv_gross += gross_exposure
+                     
+                     # Adjust for Leverage (Net Equity = Gross - Loan)
+                     # Loan = InitialInvestment * (Leverage - 1)
+                     # We use p.market_value (Cost Basis) as the "Initial Margin"
+                     loan = 0.0
+                     if hasattr(p, 'leverage') and p.leverage > 1:
+                         loan = p.market_value * (p.leverage - 1)
+                         
+                     net_equity = gross_exposure - loan
+                     live_mv_net += net_equity
+                 
+                 # NLV (Net) = Cash + Net Equity of Positions (Matches user's $1182)
+                 metrics['nlv'] = metrics['cash_balance'] + live_mv_net
+                 
+                 # Gross NLV = Cash + Gross Exposure (Matches user's $1483)
+                 metrics['gross_nlv'] = metrics['cash_balance'] + live_mv_gross
+                 
+                 # Update Leverage Ratio (Standard: Gross Exposure / Net NLV)
+                 if metrics['nlv'] > 0:
+                     metrics['leverage_ratio'] = live_mv_gross / metrics['nlv']
             else:
                  metrics = metrics_derived
+                 metrics['gross_nlv'] = metrics['nlv'] # Fallback
 
             roi = self.roi_engine.calculate_roi(metrics['nlv'], user_id=user_id)
         except Exception as e:
@@ -93,12 +124,22 @@ class DashboardService:
              # Convert live positions to DF
              data = []
              for p in live_positions:
+                 price = current_prices.get(p.symbol, 0) or p.current_price
+                 gross = p.quantity * price
+                 loan = 0.0
+                 if hasattr(p, 'leverage') and p.leverage > 1:
+                     loan = p.market_value * (p.leverage - 1)
+                 net_eq = gross - loan
+
                  data.append({
-                     'ticker': p.symbol,
-                     'quantity': p.quantity,
-                     'current_price': p.current_price or current_prices.get(p.symbol, 0),
-                     'market_value': p.market_value,
-                     'unrealized_pnl': p.unrealized_pnl
+                      'ticker': p.symbol,
+                      'quantity': p.quantity,
+                      'current_price': price,
+                      'leverage': p.leverage,
+                      'gross_mv': gross,
+                      'loan': loan,
+                      'net_equity': net_eq,
+                      'unrealized_pnl': p.unrealized_pnl
                  })
              positions_df = pd.DataFrame(data)
         elif not transactions_df.empty:

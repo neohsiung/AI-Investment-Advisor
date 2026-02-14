@@ -1,8 +1,10 @@
-# AI Investment Advisor (v3.5)
+# AI Investment Advisor (v3.6)
 
 ### 版本紀錄 (Version History)
 | Date | Version | Description | Author |
 | :--- | :--- | :--- | :--- |
+| 2026-02-15 | v3.6 | **Leverage Engine & Refactor**: Detailed Gross/Net NLV, Naming Standards. | Neo |
+| 2026-02-14 | v3.5 | **Settings UI Integration**: Broker Enablement & API Key Mgmt moved to DB. | Neo |
 | 2026-02-14 | v3.5 | Sentinel 4D Multi-Trigger + Weighted Risk Keywords + Tavily Pipeline | Neo |
 | 2026-02-14 | v3.5 | Multi-Broker, Sentinel/Council, Role × Multi-Agent roadmap | Neo |
 | 2026-01-01 | v3.3 | Multi-Broker (Futu/IBKR) & Advanced Risk Controls | Neo |
@@ -18,19 +20,20 @@
 
 ## 🇹🇼 專案概覽
 
-**AI Investment Advisor** 是由 **自我修正 (Self-Correcting)** AI Agent 集群驅動的自動化投資顧問系統。模擬頂級對沖基金運作，整合 **Task Planning (任務規劃)**、**Multi-Broker (多券商)**、**Sentinel & Council (哨兵與評議會)** 與 **Swarm Intelligence (蜂群智慧)**，提供全自動化的市場分析與投資決策。
+**AI Investment Advisor** 是由 **自我修正 (Self-Correcting)** AI Agent 集群驅動的自動化投資顧問系統。整合 **Task Planning (任務規劃)**、**Multi-Broker (多券商)**、**Sentinel & Council (哨兵與評議會)** 與 **Leveraged NLV Analysis (槓桿資產解析)**，提供全自動化的市場分析與投資決策。
 
 ### 🌟 核心能力 (Core Capabilities)
 
 | 模組 | 描述 |
 | :--- | :--- |
 | **🧠 7 Agent + Council** | CIO/Fundamental/Momentum/Macro/Sentiment/Risk/Engineer Agent 集群，由 Council 碎形辯論仲裁。 |
+| **⚖️ 槓桿引擎 (v3.6)** | 精確計算每筆部位的 **貸款 (Loan)** 與 **淨權益 (Net Equity)**，清楚對帳 $1483 與 $1182 的差異。 |
 | **🌍 多券商架構** | 統一 `IBroker` 介面支援 **Etoro**、**Futu**、**IBKR**，集中 **RiskManager** 風控。 |
 | **🔭 哨兵與評議會** | **SentinelService** 7×24 **四維度**監聽 (VIX/持倉/加權新聞/宏觀)；**CouncilService** 碎形辯論 (Fractal Debate)。 |
 | **⚡ 任務規劃引擎** | DAG 任務分解，依複雜度動態路由模型 (Fast/Smart/Advanced)。 |
 | **🔌 MCP 深度整合** | Polygon (行情) + FMP (財報) + FRED (總經) + Tavily (搜尋) 標準化工具。 |
 | **🏆 自我進化** | **Engineer Agent** 利用 DSPy 自動重寫低分 Agent Prompt。 |
-| **🏗️ 現代架構** | Clean Architecture · Docker/K8s · 測試覆蓋率 > 75%。 |
+| **🏗️ 現代架構** | Clean Architecture · Docker/K8s · 測試覆蓋率 > 75% · [Wiki 命名規範](wiki/05_工程手冊-Engineering_Handbook/Standards/文件規範-Wiki-Standard.md)。 |
 
 ### 🚀 快速開始
 
@@ -53,7 +56,7 @@ graph TD
     DASH <-->|Route| WF[WorkflowService]
     LINE[LINE Bot] <-->|Notify| WF
 
-    subgraph "Agent Swarm (v3.5)"
+    subgraph "Agent Swarm (v3.6)"
         CIO[CIO Agent]
         FUND[Fundamental]
         MOM[Momentum]

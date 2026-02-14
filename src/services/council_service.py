@@ -13,6 +13,8 @@ from src.utils.format_utils import format_agent_output
 
 logger = logging.getLogger(__name__)
 
+from src.services.user_focus_service import UserFocusService
+
 class CouncilService:
     """
     Orchestrates the Agent Council.
@@ -24,6 +26,7 @@ class CouncilService:
         self.router = DynamicModelRouter()
         self.vector_repo = VectorRepository()
         self.lane_manager = LaneManager()
+        self.user_focus_service = UserFocusService()
 
     async def start_session(self, topic: str, context_data: Dict[str, Any], scope: str = "single") -> Dict[str, Any]:
         """
@@ -183,8 +186,14 @@ class CouncilService:
         stances = []
         transcript = []
         
-        # Inject Memory into Context
-        debate_context = {**context_data, "historical_context": past_wisdom, "topic": topic}
+        # Inject Memory and User Focus
+        user_focus = self.user_focus_service.get_user_focus()
+        debate_context = {
+            **context_data, 
+            "historical_context": past_wisdom, 
+            "topic": topic,
+            "user_focus": user_focus
+        }
         
         for agent in members:
             try:

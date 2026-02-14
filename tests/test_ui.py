@@ -59,10 +59,10 @@ class TestUI:
         # Verify sidebar elements
         st_mock.sidebar.__enter__.assert_called()
         # Verify Profile/Settings link is present with the new label format
-        st_mock.page_link.assert_any_call("pages/05_Settings.py", label="T. Test U...", icon="👤", help="User Settings")
+        st_mock.page_link.assert_any_call("pages/Settings.py", label="T. Test U...", icon="👤", help="User Settings")
         # Verify columns allocation for the horizontal row (now 3 columns)
         st_mock.columns.assert_called_with([2.5, 1, 1])
         
         # Verify redundant gear icon is NOT present
         with pytest.raises(AssertionError):
-            st_mock.page_link.assert_any_call("pages/05_Settings.py", label="", icon="⚙️", help="Settings")
+            st_mock.page_link.assert_any_call("pages/Settings.py", label="", icon="⚙️", help="Settings")

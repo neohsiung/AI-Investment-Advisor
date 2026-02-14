@@ -63,7 +63,9 @@ class Position:
     ticker: str
     quantity: float
     average_cost: float
+    average_cost: float
     current_price: float = 0.0
+    leverage: float = 1.0
     
     @property
     def market_value(self) -> float:

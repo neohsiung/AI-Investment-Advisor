@@ -70,6 +70,7 @@ class LeverageCalculator:
         nlv = cash_balance + portfolio_value
 
         # 3. 槓桿比率 (Leverage Ratio)
+        # Standard: Gross Exposure (TNV) / Net Liquidity Value (NLV)
         if nlv <= 0:
             leverage_ratio = float('inf')
         else:

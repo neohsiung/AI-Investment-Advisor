@@ -56,6 +56,7 @@ class PortfolioAggregatorService:
                         existing.unrealized_pnl += pos.unrealized_pnl
                         # Current price should be similar, take latest
                         existing.current_price = pos.current_price 
+                        existing.leverage = pos.leverage
                         
                     else:
                         # New Entry (Clone to avoid mutating original if ref shared)
@@ -65,7 +66,8 @@ class PortfolioAggregatorService:
                             open_price=pos.open_price,
                             current_price=pos.current_price,
                             market_value=pos.market_value,
-                            unrealized_pnl=pos.unrealized_pnl
+                            unrealized_pnl=pos.unrealized_pnl,
+                            leverage=pos.leverage
                         )
             except Exception as e:
                 logger.error(f"Error aggregating broker {broker_name}: {e}")
