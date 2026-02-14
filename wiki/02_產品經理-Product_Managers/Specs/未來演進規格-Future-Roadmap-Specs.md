@@ -6,15 +6,15 @@
 
 <a id="zh"></a>
 
-## 🇹🇼 未來演進規格書 (v3.3 & v4.0)
+## 🇹🇼 未來演進規格書 (v4.0 — Agent Swarm Economy)
 
-本文件描述了系統「反脆弱」與「自我進化」階段的技術深度與業務目標。
+本文件描述了 Role × Multi-Agent 智能體集群經濟的技術深度與業務目標。
 
 ### 1. 問題與目標 (Problem & Goals)
-- **核心挑戰**: 傳統 AI 策略在市場進入「黑天鵝」體制時通常會失效（策略衰退）。
-- **目標**: 構建一個能自動偵測市場體制 (Regime) 並自主變異其代碼基底的「金融生命體」。
+- **核心挑戰**: 單體 Agent 模式下，每個角色以序列方式處理複雜研究任務（一份財報、一則宏觀事件），導致延遲瓶頸與單點決策風險。
+- **目標**: 將每個 Agent 角色拆分為 **Role × Multi-Agent** — 角色不變，背後由專注 Sub-Agent 群體併發執行，追求效率與正確性。
 
-### 2. 功能詳述 (Features & functionality)
+### 2. 功能詳述 (Features & Functionality)
 
 #### 2.1 v3.3 危機自動駕駛 (Crisis Autopilot)
 - **目標**: 回撤控制 < 10%。
@@ -33,15 +33,74 @@
 - **待辦事項 (To-Do)**:
     - [ ] 實作 `RouterAgent`，根據複雜度分類器 (Complexity Classifier) 分發請求。
 
-#### 2.3 v4.0 智能體集群 (Agent Swarm Economy)
-- **目標**: 突破單體智能的序列處理瓶頸，實現並行研究。
-- **核心邏輯 (PARL - Parallel Agent RL)**:
-    - **編排器 (Orchestrator)**: 將「分析 Apple 財報」拆解為「營收數據」、「供應鏈風險」、「AI 資本支出」三個子任務。
-    - **並行執行**: 同時啟動 3 個 Sub-Agents 進行搜尋與分析。
-    - **關鍵路徑優化**: 監控最慢的子任務（Critical Path），並動態分配更多資源加速之。
-- **待辦事項 (To-Do)**:
-    - [ ] 設計 `SwarmOrchestrator` 類別，支援 `asyncio.gather` 併發控制。
-    - [ ] 實作「關鍵路徑」監控儀表板。
+#### 2.3 v4.0 智能體集群 — Role × Multi-Agent (Agent Swarm Economy)
+
+> **核心理念: 角色即核心、群體即效率。**
+
+##### 2.3.1 Swarm Framework 基底設計
+
+```
+┌───────────────────────────────────────────────────────┐
+│  SwarmOrchestrator (全域編排器)                          │
+│  ├── 任務拆解 (Task Decomposition)                      │
+│  ├── asyncio.gather 併發分發                             │
+│  ├── Critical Path 監控 & 動態資源分配                    │
+│  └── Fan-in 結果匯聚 & 衝突仲裁                          │
+├───────────────────────────────────────────────────────┤
+│  RoleSwarmBase (角色群體基底類別)                         │
+│  ├── decompose(task) → List[SubTask]                  │
+│  ├── dispatch(subtasks) → List[SubAgentResult]        │
+│  └── aggregate(results) → RoleOutput                  │
+└───────────────────────────────────────────────────────┘
+```
+
+- **`SwarmOrchestrator`**: 統一的 Sub-Agent 編排框架，支援 `asyncio.gather` 併發 + 超時 + 重試 + 熔斷。
+- **`RoleSwarmBase`**: 各角色 Swarm 的抽象基底：任務拆解 (Fan-out) → 分發 → 匯聚 (Fan-in)。
+
+##### 2.3.2 各角色分群推進計劃 (Monthly Rollout)
+
+**🗓️ 2026 年 10 月 — 基底層 + Pilot**
+
+| 角色 | Sub-Agents | 職責說明 |
+| :--- | :--- | :--- |
+| **Fundamental Swarm** | `RevenueExtractor` | 專注營收、毛利率數據擷取。 |
+|  | `RiskFactorScanner` | 掃描風險因子 (負債比、訴訟、供應鏈)。 |
+|  | `ValuationModeler` | DCF / PE 相對估值建模。 |
+| **Sentiment Swarm** | `NewsScanner` | 即時新聞 API (Tavily) 情緒評分。 |
+|  | `SocialPulse` | 社群平台 (Reddit/X) 情緒脈搏。 |
+
+- 基礎工程: `SwarmOrchestrator`, `RoleSwarmBase`, 超時/重試機制, 單元測試基底。
+
+**🗓️ 2026 年 11 月 — 全面 Swarm 化**
+
+| 角色 | Sub-Agents | 職責說明 |
+| :--- | :--- | :--- |
+| **Momentum Swarm** | `TrendDetector` | 均線交叉、趨勢強度判定。 |
+|  | `PatternRecognizer` | 經典型態偵測 (頭肩頂/雙底)。 |
+|  | `VolumeAnalyst` | 量能分析與異常偵測。 |
+| **Macro Swarm** | `FedWatcher` | 聯準會聲明解讀、利率路徑推估。 |
+|  | `YieldCurveAnalyst` | 殖利率曲線形態分析 (正常/倒掛)。 |
+|  | `GeoPoliticalScanner` | 地緣政治事件影響評估。 |
+| **Risk Swarm** | `PortfolioStressTester` | 歷史情境壓力測試 (2008/2020)。 |
+|  | `CorrelationMonitor` | 資產相關性動態監控。 |
+|  | `TailRiskCalculator` | 尾部風險 (CVaR) 計算。 |
+
+- 整合 Toggle Algorithm: 各 Sub-Agent 可獨立使用 Fast/Think 路徑。
+
+**🗓️ 2026 年 12 月 — 頂層指揮 + 全系統整合**
+
+| 角色 | Sub-Agents | 職責說明 |
+| :--- | :--- | :--- |
+| **CIO Swarm** | `StrategyPlanner` | 生成投資主題與策略假設。 |
+|  | `AllocationOptimizer` | 基於各角色 Swarm 輸出的最優化資產配置。 |
+|  | `DecisionValidator` | 三層驗證 (反駁 → 壓力測試 → 合規檢查)。 |
+| **Engineer Swarm** | `CodeGenerator` | 基於 MetaGPT 的自主策略代碼生成。 |
+|  | `BacktestRunner` | 並行回測新因子的歷史表現。 |
+|  | `FactorMiner` | 遺傳演算法驅動的因子發掘與變異。 |
+
+- **Critical Path 優化**: 監控最慢 Sub-Agent，動態分配更多資源。
+- **多模態聯合優化**: K線圖 (視覺) + 財報文本的 Joint Optimization。
+- **全系統壓測**: 端對端 50+ 股票併發、Swarm 容錯回退驗證。
 
 #### 2.4 多模態聯合優化 (Multimodal Joint Optimization)
 - **目標**: 讓 AI 能像交易員一樣「看」懂 K 線圖。
@@ -56,6 +115,9 @@
 - **分散式運算**: 
     - 採用 **KubeRay** (Ray on Kubernetes)。
     - **架構**: Head Node 管理任務分發，Worker Nodes (Spots 實例) 執行並行回測。
+- **併發框架**:
+    - `asyncio.gather` + `asyncio.Semaphore` 控制併發度。
+    - Sub-Agent 間透過 `asyncio.Queue` 通訊。
 - **演化引擎**:
     - **MetaGPT 整合**: 用於自主代碼生成的代碼代理。
     - **遺傳演算法 (Genetic Algorithm)**: 用於邏輯片段的交叉 (Crossover) 與變異 (Mutation)。
@@ -64,34 +126,69 @@
 ### 4. 非功能性需求 (NFR)
 - **可移植性**: 支援多雲 (AWS/GCP/Azure) 分散式混合部署。
 - **安全性**: 針對自主生成的代碼執行沙盒 (Sandbox) 隔離運行。
+- **容錯**: 單一 Sub-Agent 失敗不影響整體 Swarm 輸出 (Graceful Degradation)。
 
 ### 5. 成功指標 (Success Metrics)
-- **Alpha**: 相較於大盤 (S&P 500) 超額報酬 > 5%。
-- **自我進化效率**: 每週自主生成的有效新因子數量 > 1。
+| 指標 | 目標 |
+| :--- | :--- |
+| **Alpha** (超額報酬) | > 5% vs S&P 500 |
+| **延遲改善** | 端對端研究任務延遲 ÷ 4 |
+| **Token 效率** | 降低 30% (Toggle) |
+| **最大回撤** | < 10% |
+| **自我進化** | 每週自主有效新因子 > 1 |
+
+### 6. 待辦事項總覽 (Master To-Do)
+
+- [ ] **10月** 實作 `SwarmOrchestrator` + `RoleSwarmBase`
+- [ ] **10月** 實作 Fundamental Swarm (`RevenueExtractor` / `RiskFactorScanner` / `ValuationModeler`)
+- [ ] **10月** 實作 Sentiment Swarm (`NewsScanner` / `SocialPulse`)
+- [ ] **11月** 實作 Momentum Swarm (`TrendDetector` / `PatternRecognizer` / `VolumeAnalyst`)
+- [ ] **11月** 實作 Macro Swarm (`FedWatcher` / `YieldCurveAnalyst` / `GeoPoliticalScanner`)
+- [ ] **11月** 實作 Risk Swarm (`PortfolioStressTester` / `CorrelationMonitor` / `TailRiskCalculator`)
+- [ ] **11月** 整合 Toggle Algorithm (Adaptive Compute) 至 Swarm 層
+- [ ] **12月** 實作 CIO Swarm (`StrategyPlanner` / `AllocationOptimizer` / `DecisionValidator`)
+- [ ] **12月** 實作 Engineer Swarm (`CodeGenerator` / `BacktestRunner` / `FactorMiner`)
+- [ ] **12月** 實作 Critical Path 監控與動態資源分配
+- [ ] **12月** 全系統端對端壓力測試 (50+ 併發)
 
 ---
 
 <a id="en"></a>
 
-## 🇺🇸 Future Roadmap Specifications (v3.3 & v4.0)
+## 🇺🇸 Future Roadmap Specifications (v4.0 — Agent Swarm Economy)
 
 ### 1. Problem & Goals
-Mitigating "Strategy Decay" in black-swan events through self-healing and code-level evolution.
+Single-agent serial processing creates latency bottlenecks and single-point decision risk. **Role × Multi-Agent** decomposes each role into parallel Sub-Agents for efficiency and correctness.
 
 ### 2. Features
-- **v3.3 Crisis Autopilot & Toggle**: HMM-based regime detection AND dynamic compute budget allocation (Fast vs Think models).
-- **v4.0 Agent Swarm**: PARL architecture for parallel task execution and Critical Path optimization.
+
+#### 2.1 Crisis Autopilot & Toggle
+- HMM-based regime detection with automatic defensive rebalancing.
+- Toggle Algorithm: Fast/Think dynamic compute budget allocation.
+
+#### 2.2 Agent Swarm — Monthly Rollout
+
+| Month | Scope | Deliverables |
+| :--- | :--- | :--- |
+| **Oct 2026** | Framework + Pilot | `SwarmOrchestrator`, `RoleSwarmBase`, Fundamental Swarm (3), Sentiment Swarm (2) |
+| **Nov 2026** | Full Rollout | Momentum (3), Macro (3), Risk (3) Swarms + Toggle integration |
+| **Dec 2026** | Command Layer | CIO Swarm (3-stage verification), Engineer Swarm (auto-evolution), Critical Path optimizer, Multimodal, full stress test |
 
 ### 3. Technical Specs
 - **Ray on K8s**: Distributed hyper-parameter searching.
-- **Swarm Orchestrator**: `asyncio`-based dynamic agent spawning.
-- **Toggle Router**: Confidence-based model routing.
+- **Swarm Orchestrator**: `asyncio`-based dynamic agent spawning, fan-out/fan-in.
+- **Toggle Router**: Confidence-based model routing per Sub-Agent.
+- **Fault Tolerance**: Graceful degradation on Sub-Agent failure.
 
 ### 4. Success Metrics
-- **Alpha**: > 5% vs S&P 500.
-- **Latency**: Critical path latency reduced by 50% via parallel execution.
-- **Cost Efficiency**: 30% reduction in token costs via Toggle Algorithm.
+| Metric | Target |
+| :--- | :--- |
+| Alpha | > 5% vs S&P 500 |
+| Latency | 4× reduction via parallel execution |
+| Token Cost | 30% reduction via Toggle |
+| Max Drawdown | < 10% |
 
 ## 🔗 Bidirectional Links
 - **Core Specs**: [Core System Specs](核心系統規格-Core-System-Specs)
 - **Evolution Roadmap**: [Evolutionary Roadmap](產品演進藍圖-Evolutionary-Roadmap)
+

@@ -1,132 +1,192 @@
 # 核心系統規格 (Core System Specifications)
 
+### 版本紀錄 (Version History)
+| Date | Version | Description | Author |
+| :--- | :--- | :--- | :--- |
+| 2026-02-14 | v3.5 | Full rewrite — aligned with actual codebase (Multi-Broker, Sentinel, MCP, Swarm) | Neo |
+| 2026-01-01 | v3.1 | Initial spec with Agent Mesh & Hybrid Engine | Neo |
+
 > **[繁體中文 (Traditional Chinese)](#zh) | [English](#en)**
 
 ---
 
 <a id="zh"></a>
 
-## 🇹🇼 核心系統規格書 (v3.1)
+## 🇹🇼 核心系統規格書 (v3.5)
 
-本文件依據 [文件框架定義](文件框架定義-Document-Frameworks) 編寫，旨在提供深度、專業且可供 AI IDE 直接實作的功能細節。
+本文件依據 [文件框架定義](文件框架定義-Document-Frameworks) 編寫，反映系統目前已實作的功能與架構。
 
 ### 1. 問題與目標 (Problem & Goals)
 - **核心痛點**:
     1. 傳統投資者面臨海量數據卻難以轉化為有效決策。
     2. 財務系統常因「AI 幻覺」導致數據計算錯誤，引發資產風險（如槓桿過高）。
-    3. 缺乏統一的「全局視角」將總經、基本面與技術面有機結合。
+    3. 缺乏統一「全局視角」將總經、基本面、技術面與情緒面有機結合。
+    4. 跨券商帳戶無法統一管理，風控分散。
 - **業務目標**:
-    - 建立一套 0% 幻覺風險的確定性計算引擎。
-    - 提供「自適應智能」機制，在節省 Token 的同時維持分析的時效性。
-    - 實現 24/7 自動監控與自我優化。
+    - 建立一套 **0% 幻覺風險** 的確定性計算引擎。
+    - 提供「自適應智能」機制，以 **Toggle Algorithm** 在節省 Token 的同時維持分析品質。
+    - 實現 **24/7 自動監控** (Sentinel) 與 **多角度評議** (Council)。
+    - 統一管理多券商 (Etoro / Futu / IBKR) 資產與風控。
 
 ### 2. 功能描述 (Features & Functionality)
-- **多專家代理集群 (Agent Swarm)**: 由 Momentum, Fundamental, Macro, Sentiment 組成研究端，CIO 進行最終裁決。
-- **混合計算引擎 (Hybrid Engine)**: 結合 LLM 推論與 Python 統計模組。
-- **A2A 思維鏈 (Agent-to-Agent Thought Chain)**: 透過 Fundamental, Macro, Momentum, Sentiment 專家的獨立推理，最後由 CIO 進行綜合判斷，模擬專業投研團隊流程。
-- **證據導向退場 (Reason-Based Exit)**: 系統僅在「買入理由消失」時（而非僅因股價波動）觸發 SELL 指令，有效防止頻繁交易。
-- **異構數據源最佳化**: 優先使用 Polygon (行情/歷史) 與 FMP (財報/新聞)，確保在高頻調用下仍能保持數據品質與成本平衡。
-- **自律 HR 協議**: 確保後台 Agent 運作穩定，自動偵測並恢復掛掉的服務。
 
-#### 2.1 專家協作時序圖 (Agent Collaboration Workflow)
+#### 2.1 多專家代理集群 (Agent Swarm)
+
+系統由 7 個專業 Agent 與 1 個評議會組成：
+
+| Agent | 類別 | 核心職責 |
+| :--- | :--- | :--- |
+| `CIOAgent` | 決策層 | 最終投資裁決、權重分配、交叉驗證。 |
+| `FundamentalAgent` | 研究層 | 財報分析、估值建模 (DCF/PE)、財務健康度。 |
+| `MomentumAgent` | 研究層 | 技術指標 (RSI/MACD/均線)、趨勢與型態辨識。 |
+| `MacroAgent` | 研究層 | 總經數據 (FRED)、聯準會政策、殖利率曲線。 |
+| `SentimentAgent` | 研究層 | 新聞情緒 (Tavily)、社群輿情分析。 |
+| `RiskAgent` | 風控層 | 持倉風險評估、相關性監控、曝險檢查。 |
+| `SystemEngineerAgent` | 演化層 | 自動重寫 Prompt (DSPy)、績效反省與策略優化。 |
+| `CouncilAgentAdapter` | 仲裁層 | 碎形辯論 (Fractal Debate)、多角度衝突仲裁。 |
+
+所有 Agent 繼承 `BaseAgent` 抽象基底類別，由 `AgentFactory` (Factory Pattern) 統一建構。
+
+#### 2.2 專家協作時序圖 (Agent Collaboration Workflow)
 ```mermaid
 sequenceDiagram
     participant User
+    participant WF as WorkflowService
     participant CIO as CIO Agent
-    participant Agents as Research Agents<br/>(Momentum/Fund/Macro)
-    participant Ser as MarketDataService
-    participant Tools as MCP Tools
+    participant Agents as Research Swarm<br/>(Momentum/Fund/Macro/Sent)
+    participant MDS as MarketDataService
+    participant MCP as MCP Tools
 
-    User->>CIO: 提交投資分析請求 (e.g., AAPL)
-    CIO->>Ser: 獲取基礎數據與持倉
-    Ser-->>CIO: 返回交易歷史與報價
+    User->>WF: 提交分析請求 (e.g., AAPL)
+    WF->>MDS: 獲取基礎數據與持倉
+    MDS-->>WF: 返回交易歷史與報價
     par 異質研究並行化
-        CIO->>Agents: 指派特定維度分析
-        Agents->>Tools: 調用搜尋與統計工具
-        Tools-->>Agents: 返回搜尋結果/技術指標
+        WF->>Agents: 指派多維度分析
+        Agents->>MCP: 調用搜尋 (Tavily) / 數據 (FMP/FRED/Polygon)
+        MCP-->>Agents: 返回搜尋結果/技術指標/財報
     end
     Agents-->>CIO: 返回分項報告 (Markdown)
     CIO->>CIO: 交叉驗證與權重分配
     CIO-->>User: 返回最終 CIO 戰略建議
 ```
 
-#### 2.2 自適應優化與 HR 協議 (HR Protocol & Adaptation)
-本系統導入「代理人人力資源協議 (HR Protocol)」，實現 360 度互評機制。
+#### 2.3 混合計算引擎 (Hybrid Engine)
+- **確定性計算**: 股價、NLV、槓桿等數值皆由 Python 統計模組執行，**0% 幻覺**。
+- **LLM 推論**: 僅用於非數值的「判斷」任務（趨勢解讀、新聞摘要、策略建議）。
+- **A2A 思維鏈 (Agent-to-Agent Thought Chain)**: 各專家獨立推理，最後由 CIO 綜合判斷。
+- **證據導向退場 (Reason-Based Exit)**: 僅在「買入理由消失」時觸發 SELL。
 
-##### 2.2.1 HR 回饋協議規則 (HR Protocol Mechanics)
-1.  **360 度互評**: 每個 Agent 在完成協作後，可對協作者進行評分 (`rate_request`)。
-2.  **評分維度**:
-    - **準確度 (Accuracy)**: 數據是否屬實。
-    - **時效性 (Latencies)**: 回應是否及時。
-    - **邏輯性 (Logic)**: 推理過程是否合理。
-3.  **觸發閾值**: 當單個 Agent 的平均評分 < 3.0 或偵測到連續 3 次工具調用異常時，系統自動標記為「待優化」狀態。
+#### 2.4 多券商架構 (Multi-Broker Architecture)
 
-##### 2.2.2 提示詞優化生命週期 (Prompt Optimization Lifecycle)
 ```mermaid
-sequenceDiagram
-    participant Feedback as Agent Reviews (DB)
-    participant Eng as Engineer Agent
-    participant Signature as Optimized Signature
-    participant Registry as Prompt Registry
+graph LR
+    subgraph "Domain Layer"
+        IB[IBroker Interface]
+        Order[Order]
+        Position[Position]
+        Account[Account]
+    end
 
-    Feedback->>Eng: 匯總低分評量與錯誤日誌
-    Eng->>Eng: 執行 Reflection (自我批判與真值對比)
-    Eng->>Eng: 透過 DSPy 重寫提示詞模組
-    Eng-->>Signature: 產生優化後的提示詞
-    Signature->>Registry: 自動更新 prompts/*.txt
-    Registry->>Registry: 記錄 Git Diff 版本
+    subgraph "Service Layer"
+        BF[BrokerFactory]
+        RM[RiskManager]
+        PA[PortfolioAggregator]
+    end
+
+    subgraph "Broker Adapters"
+        ET[EtoroService]
+        FU[FutuService]
+        IK[IBKRService]
+    end
+
+    BF --> IB
+    IB --> ET & FU & IK
+    RM --> IB
+    PA --> BF
 ```
 
-#### 2.3 自適應優化循環序圖 (Simplified Workflow)
-```mermaid
-sequenceDiagram
-    participant CIO as CIO Agent
-    participant Eng as Engineer Agent
-    participant DB as System Database
-    participant LLM as LLM Backend
+| 券商 | 實作狀態 | 資產類別 |
+| :--- | :--- | :--- |
+| **Etoro** | ✅ 完整 (Bridge Service) | 股票、ETF、CFD |
+| **Futu (富途)** | ✅ 完整 (futu-api) | 美股、港股 |
+| **IBKR** | 🔨 骨架 (ib_insync) | 股/債/期/選 |
 
-    CIO->>DB: 記錄預測與決策
-    Eng->>DB: 讀取歷史績效 (1d/7d Window)
-    Note over Eng: 執行 Reflection<br/>(自我批判與對比真值)
-    Eng->>LLM: 生成 Prompt 優化方案 (DSPy)
-    LLM-->>Eng: 返回精煉後的 Signature/Prompt
-    Eng->>CIO: 動態更新 Agent 行為邏輯
-    CIO->>DB: 儲存優化後的系統狀態碼
-```
+- **IBroker 介面**: `get_account()`, `get_positions()`, `execute_order()`, `sync_history()`。
+- **BrokerFactory**: 依 `preferred_broker` 設定建立對應服務實例。
+- **RiskManager**: Kill Switch、每日交易上限、連續虧損熔斷、板塊曝險上限。
+- **PortfolioAggregatorService**: 跨券商統一持倉視圖與資產淨值計算。
+
+#### 2.5 哨兵與評議會 (Sentinel & Council — v3.4)
+
+- **SentinelService**: 7×24 市場事件監聽，偵測異常波動並觸發主動警報。
+- **CouncilService**: 碎形辯論 (Fractal Debate) — 對每檔持倉執行多角度質疑與反駁。
+- **觸發機制**: Sentinel 偵測到事件 → Council 啟動深度評議 → CIO 裁決行動。
+
+#### 2.6 任務規劃引擎 (Task Planning — v3.3)
+
+- **TaskPlanningService**: 將高層目標 (如「生成週報」) 自動分解為可執行的任務 DAG。
+- **動態模型選擇**: 依複雜度路由至 Fast (Flash) / Smart (Pro) / Advanced (Thinking)。
+- **排程整合**: `SchedulerService` 支援 Cron 排程的日報/週報自動生成。
+
+#### 2.7 記憶與上下文 (Memory System)
+
+- **MemoryService**: 統一的記憶讀寫介面。
+- **MemoryFactory**: 依環境自動選擇 Redis (生產) 或 SQLite (本地) 後端。
+- **Redis**: 自適應壓縮 (Adaptive Compression)、跨會話上下文 (Cross-Session Context)。
+- **SQLite**: `SqliteMemoryRepository` 作為無 Redis 環境的完整替代。
+
+#### 2.8 MCP 整合 (Model Context Protocol)
+
+- **MCP Server** (`src/tools/mcp_server.py`): 標準化工具介面，供各 Agent 調用。
+- **MCP Service** (`src/mcp_service/`): FastAPI 微服務，提供外部 Agent 互操作。
+- **工具清單**: `get_portfolio`, `search_news`, `get_fundamental_data`, `get_macro_data`。
+
+#### 2.9 通知與整合 (Notifications)
+
+- **LINE Bot**: `notifier.py` 透過 LINE Messaging API 推送日報/週報/警報。
+- **Email**: 排程報告以 HTML 格式寄送。
+
+#### 2.10 自律 HR 協議 (HR Protocol & Self-Evolution)
+
+1. **360 度互評**: 每個 Agent 完成協作後對協作者進行評分 (準確度/時效性/邏輯性)。
+2. **觸發閾值**: 平均評分 < 3.0 或連續 3 次工具調用異常 → 標記為「待優化」。
+3. **Engineer Agent**: 利用 DSPy 自動重寫低分 Agent 的 Prompt，實現持續進化。
 
 ### 3. 用戶體驗與使用者故事 (UX & User Stories)
 
-#### 3.1 故事: 我想要即時監控我的資產組合與風險 (Dashboard Flow)
-- **操作路徑 (User Flow)**:
-    1. 使用者進入「總覽 (Overview)」頁面。
-    2. 系統背景調用 `MarketDataService` 獲取最新成交價。
-    3. 系統計算 NLV (淨資產)、Cash (現金) 與 Leverage (槓桿)。
-    4. **回饋**: 若槓桿比率 > 1.5x，顯示黃色警告；> 2.0x，顯示紅色危險區。
-- **欄位細節 (Field Specification)**:
-    | 欄位名稱 | 類型 | 邏輯說明 |
-    | :--- | :--- | :--- |
-    | 淨流動資產 (NLV) | Currency | 現金 + 所有持倉市值 (Quantity * Current Price)。 |
-    | 槓桿比率 | Indicator | $TotalMarketValue / NLV$。即時更新。 |
-    | 已實現損益 | Currency | 排除當前持倉後的累計盈虧。 |
+#### 3.1 頁面架構 (Page Architecture)
 
-#### 3.2 故事: 我想要精確記錄我的手動交易 (Manual Entry Flow)
-- **操作路徑 (User Flow)**:
-    1. 進入「資料管理 -> 手動輸入」。
-    2. 選擇「輸入模式」: 「依數量」或「依槓桿」。
-    3. **場景 (Scenario) - 依槓桿**: 使用者輸入「本金」與「槓桿倍數」(e.g., $1000, 3x)。
-    4. 系統自動換算「總購買力」並根據「目前價格」推導預計「股數」。
-    5. 點擊「提交」，系統執行原子化寫入 `transactions` 與 `daily_snapshots` 表。
-- **欄位細節 (Field Specification)**:
-    | 欄位名稱 | 類型 | 驗證規則 |
+| 頁面 | 檔案 | 功能 |
+| :--- | :--- | :--- |
+| 總覽 (Overview) | `dashboard.py` | NLV、Cash、Leverage、ROI、持倉、資產配置、券商分佈。 |
+| 績效追蹤 | `01_Portfolio_Performance.py` | 歷史淨值走勢、績效分析。 |
+| 分析報告 | `02_Analysis_Reports.py` | 日報/週報瀏覽與下載。 |
+| 資料管理 | `03_Data_Management.py` | 手動輸入、CSV 匯入 (Atomic)、交易紀錄。 |
+| 顧問對話 | `04_Advisor_Chat.py` | 與 CIO Agent 互動對話。 |
+| 系統設定 | `05_Settings.py` | 9 個 Tab: 交易風控、AI 模型、排程、報告試跑、Agent 沙盒、Prompt 管理、HR、外觀、儲存。 |
+
+#### 3.2 故事: 即時監控資產組合 (Dashboard Flow)
+- 使用者進入「總覽」→ 系統調用 `MarketDataService` 獲取最新成交價 → 計算 NLV/Cash/Leverage。
+- **回饋**: 槓桿 > 1.5x 黃色警告；> 2.0x 紅色危險。
+- **欄位細節**:
+
+    | 欄位 | 類型 | 邏輯說明 |
     | :--- | :--- | :--- |
-    | Ticker | Text | 必須是大寫且存在於市場數據庫中。 |
-    | 動作 | Select | BUY, SELL, DIVIDEND, DEPOSIT, WITHDRAW。 |
-    | 手續費 (Fees) | Float | 不可小於 0。 |
+    | 淨流動資產 (NLV) | Currency | Cash + Σ(Qty × Price) |
+    | 槓桿比率 | Indicator | TotalMV / NLV |
+    | 已實現損益 | Currency | 排除當前持倉後的累計盈虧 |
+
+#### 3.3 故事: 手動記錄交易 (Manual Entry Flow)
+- 進入「資料管理 → 手動輸入」→ 選擇「依數量」或「依槓桿」→ 原子化寫入。
+- **CSV 匯入**: 支援交易與股利 (現金/配股)，全有或全無 (Atomic Transaction)。
+
+#### 3.4 故事: 與 AI 顧問對話 (Advisor Chat)
+- 進入「顧問對話」→ 輸入自然語言 (如「分析 AAPL」) → CIO 啟動 Agent Swarm → 返回結構化報告。
 
 ### 4. 技術規格與數據合約 (Technical Specs & Data Contracts)
 
 #### 4.1 核心計算算法 (Mathematical Algorithms)
-為確保 0% 幻覺，系統必須嚴格執行以下公式：
+為確保 0% 幻覺，系統嚴格執行以下公式：
 
 - **淨資產價值 (NLV)**:
   $$NLV = CashBalance + \sum (Quantity_i \times CurrentPrice_i)$$
@@ -138,7 +198,6 @@ sequenceDiagram
   $$AvgCost_{new} = \frac{(Qty_{old} \times AvgCost_{old}) + (Qty_{new} \times Price_{new}) + Fees}{Qty_{old} + Qty_{new}}$$
 
 #### 4.2 Agent Mesh 通信合約 (JSON Schemas)
-所有代理間的工具調用必須符合以下 MCP 格式：
 
 - **工具調用請求 (ToolCallRequest)**:
   ```json
@@ -161,57 +220,90 @@ sequenceDiagram
   ```
 
 #### 4.3 代理狀態機 (Agent State Machine)
-代理的生命週期應符合以下狀態切換鏈：
 1. **IDLE**: 等待任務。
-2. **RESEARCHING**: 正在調用 MCP 工具獲取數據（Polygon/FRED/Tavily）。
-3. **PONDERING**: LLM 正在處理 Context 並生成決策。
-4. **DECIDED**: 已產出 JSON 或 Markdown 報告。
-5. **REFLECTING**: (僅適用於 Engineer Agent) 分析輸出準確度並更新 Prompt。
+2. **RESEARCHING**: 調用 MCP 工具獲取數據 (Polygon/FMP/FRED/Tavily)。
+3. **PONDERING**: LLM 處理 Context 並生成決策。
+4. **DECIDED**: 產出 JSON 或 Markdown 報告。
+5. **REFLECTING**: (Engineer Agent) 分析準確度並更新 Prompt。
+
+#### 4.4 異構數據源 (Data Sources)
+
+| 數據源 | 用途 | 優先級 |
+| :--- | :--- | :--- |
+| **Polygon** | 即時/歷史行情 | Primary |
+| **FMP** | 財報、估值、新聞 | Primary |
+| **FRED** | 總經指標 (利率/CPI/GDP) | Primary |
+| **Tavily** | 深度搜尋、即時新聞 | Primary |
+| **DuckDuckGo** | 搜尋 Fallback | Secondary |
 
 ### 5. 技術與非功能性需求 (Technical & NFR)
 
-- **架構設計**: 詳見 [系統全景圖](系統全景圖-System-Landscape)。
-- **資料模型**: 基於 SQLite，詳見 [資料庫設計](資料庫設計與代碼規範-Database-Git-Standards)。
-- **可擴展性 (Scalability)**:
-    - 支援 K8s 部署 (Helm Charts) 與 Ray Cluster 運算。
-    - 微服務解耦，Agent 運算可獨立擴容。
-- **安全規範 (Security)**:
-    - **SAST**: 每月執行 `bandit` 掃描。
-    - **數據安全**: 所有外部 API Key 必須存放於 `.env` 或 GitHub Secrets，嚴禁硬編碼。
-- **可靠性 (Reliability)**:
-    - 任務 Mean Time To Recovery (MTTR) < 5 分鐘（透過 HR 協議自癒）。
-- **資料完整性**: CSV 匯入必須採用「全有或全無」事務 (Atomic Transaction)。
-- **緩存策略**: 股價數據 TTL 設為 300 秒，以平衡時效性與 API 成本。
-- **錯誤處理**: 若 Agent 調用失敗，必須返回 `fallback_reason` 而非空白或錯誤代碼。
+- **架構設計**: Clean Architecture — Domain / Repository / Service / UI 分層。詳見 [系統全景圖](系統全景圖-System-Landscape)。
+- **設計模式**: Factory (AgentFactory/BrokerFactory)、Repository (SqliteTransactionRepo)、DI、Template Method (BasePage/BaseAgent)。
+- **資料模型**: SQLite，詳見 [資料庫設計](資料庫設計與代碼規範-Database-Git-Standards)。
+- **可擴展性**: K8s 部署 (Helm Charts)、Ray Cluster、微服務解耦。
+- **安全規範**: SAST (`bandit`)、API Key 存於 `.env` / GitHub Secrets。
+- **可靠性**: MTTR < 5min (HR 協議自癒)。
+- **資料完整性**: CSV 匯入 Atomic Transaction。
+- **緩存策略**: 股價 TTL = 300s。
+- **錯誤處理**: Agent 失敗返回 `fallback_reason`。
+- **測試覆蓋率**: > 75%。
 
 ### 6. 成功指標 (Success Metrics)
-- **投資績效**: 夏普比率 (Sharpe Ratio) > 1.2。
-- **系統效率**: 核心分析回應時間 (P95) < 30 秒。
-- **數據精確度**: 計算幻覺率 = 0%。
+
+| 指標 | 目標值 |
+| :--- | :--- |
+| 夏普比率 (Sharpe Ratio) | > 1.2 |
+| 核心分析 P95 延遲 | < 30 秒 |
+| 計算幻覺率 | 0% |
+| 測試覆蓋率 | > 75% |
+| 主動警報延遲 (Sentinel) | < 2 分鐘 |
 
 ---
 
 <a id="en"></a>
 
-## 🇺🇸 Core System Specifications (v3.1)
+## 🇺🇸 Core System Specifications (v3.5)
 
 ### 1. Problem & Goals
-Solving the "Information Overload" and "AI Hallucination" problems in AI-driven finance. Goal: Provide a 0%-hallucination deterministic engine for portfolio risk management.
+Solving "Information Overload" and "AI Hallucination" in AI-driven finance. Providing a **0% hallucination** deterministic engine with unified multi-broker risk management.
 
 ### 2. Features
-- **Agent Mesh**: Multi-agent collaboration protocols.
-- **Hybrid Analytics**: Precision math + LLM reasoning.
+- **Agent Swarm**: 7 specialized agents (CIO, Fundamental, Momentum, Macro, Sentiment, Risk, Engineer) + Council arbitration, built on `BaseAgent` with `AgentFactory`.
+- **Hybrid Analytics**: Deterministic math for calculations + LLM reasoning for qualitative analysis.
+- **Multi-Broker**: Unified `IBroker` interface supporting Etoro, Futu, IBKR with centralized `RiskManager` and `BrokerFactory`.
+- **Sentinel & Council**: 24/7 event monitoring + Fractal Debate for deep position review.
+- **Task Planning**: DAG-based task decomposition with dynamic model routing (Fast/Smart/Advanced).
+- **Memory System**: Redis (production) / SQLite (local) via `MemoryFactory`.
+- **MCP Integration**: Standardized tool interface for inter-agent and external communication.
+- **Notifications**: LINE Bot + Email for automated report delivery.
 
 ### 3. UX & User Stories
-- **Dashboard Monitoring**: Real-time NLV, Leverage, and P&L detection with risk thresholds (1.5x/2.0x).
-- **Data Management**: Atomic transaction writes with advanced "Leverage Mode" entry.
+- **Dashboard**: Real-time NLV, Leverage, P&L with risk thresholds (1.5x/2.0x).
+- **Data Management**: Atomic transaction writes with "Leverage Mode" entry and CSV import.
+- **Advisor Chat**: Natural language interaction with CIO Agent Swarm.
+- **Settings**: 9-tab configuration (Trading & Risk, AI Config, Scheduler, etc.).
 
 ### 4. NFR & Reliability
-- **Scalability**: High-concurrency Ray support.
-- **Security**: Strict SAST audits and secret management.
-- **Success Metrics**: Sharpe Ratio > 1.2, P95 Latency < 30s.
+- **Architecture**: Clean Architecture with Factory, Repository, DI, Template Method patterns.
+- **Scalability**: K8s + Ray Cluster for high-concurrency.
+- **Security**: SAST audits, strict secret management.
+- **Test Coverage**: > 75%.
+
+### 5. Success Metrics
+
+| Metric | Target |
+| :--- | :--- |
+| Sharpe Ratio | > 1.2 |
+| P95 Analysis Latency | < 30s |
+| Calculation Hallucination | 0% |
+| Test Coverage | > 75% |
+| Sentinel Alert Latency | < 2min |
 
 ## 🔗 Bidirectional Links
 - **Architecture**: [System Landscape](系統全景圖-System-Landscape)
 - **Database**: [Database Standards](資料庫設計與代碼規範-Database-Git-Standards)
 - **Environment**: [Environment Setup](環境設定與本地開發-Environment-Local-Dev)
+- **Roadmap**: [Evolutionary Roadmap](產品演進藍圖-Evolutionary-Roadmap)
+- **Future**: [Future Roadmap Specs](未來演進規格-Future-Roadmap-Specs)
+- **Broker Guide**: [Broker Integration Guide](券商整合指南-Broker-Integration-Guide)

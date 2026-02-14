@@ -3,6 +3,7 @@
 ### 版本紀錄 (Version History)
 | Date | Version | Description | Author |
 | :--- | :--- | :--- | :--- |
+| 2026-02-14 | v4.0 | Redesigned Phase C/D: Agent Swarm as Role × Multi-Agent, monthly milestones targeting Q4 | Neo |
 | 2026-02-14 | v3.5 | Added Institutional-Grade Execution & Risk Roadmap | Neo |
 | 2026-01-01 | v3.3 | Updated for Multi-Broker & Risk limits | Neo |
 
@@ -12,13 +13,14 @@
 
 <a id="zh"></a>
 
-## 🇹🇼 產品演進藍圖 (v3.5)
+## 🇹🇼 產品演進藍圖 (v4.0)
 
 本藍圖定義了本系統從「基礎記帳工具」進化為「自主決策生命體」的發展路徑。
 
 ### 1. 總體願景與目標 (Vision & Goals)
 - **願景**: 只要將資金存入，系統即會自主完成研究、對沖、交易與資產保護，無須人類干預。
 - **目標**: 追求超越標普 500 的風險調整後收益 (Sharpe > 1.2)。
+- **v4.0 核心理念**: **Role × Multi-Agent** — 每個角色保持其領域職責不變，背後由多個追求效率與正確性的 Sub-Agent 群體驅動。
 
 ### 2. 演進里程碑 (Milestones)
 
@@ -52,36 +54,94 @@
 - **技術需求**: ib_insync, SQLite-Vec, LaneManager.
 - **成功指標**: 滑價 (Slippage) < 0.1%；併發分析 50+ 檔股票。
 
-#### 🚀 階段 C (2026 Q4): 危機自癒 & 自適應算力 (Crisis Autopilot & Adaptive Compute)
-- **核心功能**: 核心細節見 [未來演進規格](../04_架構觀點-Architect_Views/未來演進規格-Future-Roadmap-Specs.md)。
-    - **體制切換 (Regime Switching)**: HMM 偵測異常市場體制。
-    - **Toggle 演算法**: 動態分配推理預算。平靜市場使用快模型 (Fast Tier)，劇烈波動時自動切換至深度思考模式 (Think Tier)。
-    - **FinRL 模擬**: 虛擬環境中的閉環策略優化。
-- **技術需求**: 分散式 **KubeRay** 運算集群。
-- **成功指標**: 最大回撤 (Max Drawdown) < 10%；Token 效率提升 25%。
+#### 🚀 階段 C (2026 Q4): 智能體集群經濟 — Role × Multi-Agent (Agent Swarm Economy)
 
-#### 🚀 階段 D (2027+): 智能體集群經濟 (Agent Swarm Economy)
-- **核心功能**: 從單體智能走向群體智能 (Swarm Intelligence)。
-    - **PARL 架構**: 並行智能體強化學習 (Parallel Agent RL)。由一個「編排器 (Orchestrator)」動態拆解任務，同時指揮數百個異構子智能體 (Sub-Agents) 併發研究。
-    - **多模態聯合優化**: 視覺 (K線圖) 與 文本 (財報) 的 Joint Optimization。
-- **成功指標**: 夏普比率 > 1.5；研究任務端對端延遲降低 400%。
+> **核心理念: 角色即核心、群體即效率。** 每一個現有 Agent 角色 (CIO, Analyst, Risk…) 不改變其對外職責，但內部拆分為多個專注子智能體 (Sub-Agents) 並行工作，追求正確性與速度。
+
+##### 🗓️ 2026 年 10 月 — 基底層: Swarm Framework & 首批 Pilot
+
+| 交付項目 | 說明 |
+| :--- | :--- |
+| `SwarmOrchestrator` 基底類別 | 統一的 Sub-Agent 編排框架，支援 `asyncio.gather` 併發 + 超時 + 重試。 |
+| `RoleSwarmBase` 抽象類別 | 各角色 Swarm 的共用基底：任務拆解 → 分發 → 匯聚 (Fan-out / Fan-in)。 |
+| **Pilot 1: Fundamental Swarm** | `FundamentalAgent` → 3 Sub-Agents: `RevenueExtractor`, `RiskFactorScanner`, `ValuationModeler`。併發分析一份財報。 |
+| **Pilot 2: Sentiment Swarm** | `SentimentAgent` → 2 Sub-Agents: `NewsScanner`, `SocialPulse`。併發蒐集新聞與社群情緒。 |
+
+##### 🗓️ 2026 年 11 月 — 角色擴展: 全面 Swarm 化
+
+| 交付項目 | 說明 |
+| :--- | :--- |
+| **Momentum Swarm** | `MomentumAgent` → `TrendDetector`, `PatternRecognizer`, `VolumeAnalyst`。 |
+| **Macro Swarm** | `MacroAgent` → `FedWatcher`, `YieldCurveAnalyst`, `GeoPoliticalScanner`。 |
+| **Risk Swarm** | `RiskAgent` → `PortfolioStressTester`, `CorrelationMonitor`, `TailRiskCalculator`。 |
+| **Adaptive Compute (Toggle)** | 整合自適應算力：平靜市場使用 Flash Sub-Agent，劇烈波動時升級至 Think Sub-Agent。 |
+
+##### 🗓️ 2026 年 12 月 — 頂層指揮: CIO Swarm & 全系統整合
+
+| 交付項目 | 說明 |
+| :--- | :--- |
+| **CIO Swarm** | `CIOAgent` → `StrategyPlanner`, `AllocationOptimizer`, `DecisionValidator`。三層驗證最終決策。 |
+| **Engineer Swarm** | `SystemEngineerAgent` → `CodeGenerator`, `BacktestRunner`, `FactorMiner`。自主演化策略基底。 |
+| **關鍵路徑優化** | 監控最慢 Sub-Agent (Critical Path)，動態分配資源加速。 |
+| **多模態聯合優化** | 視覺 (K線圖) + 文本 (財報) 的 Joint Optimization，為 Momentum Swarm 加入圖形理解力。 |
+| **全系統壓測 & 上線** | 端對端整合測試：50+ 檔股票併發分析、Swarm 容錯回退驗證。 |
+
+- **技術需求**: 分散式 **KubeRay** 運算集群、`asyncio` 併發控制、FinRL 模擬環境。
+- **成功指標**:
+    - 夏普比率 > 1.5
+    - 研究任務端對端延遲降低 400%
+    - Token 消耗降低 30% (Toggle)
+    - 最大回撤 < 10%
+
+#### 📌 角色 × 群體 對照表 (Role × Multi-Agent Mapping)
+
+| 現有角色 (Role) | Sub-Agents | 效益 |
+| :--- | :--- | :--- |
+| `CIOAgent` | `StrategyPlanner` · `AllocationOptimizer` · `DecisionValidator` | 三層驗證消除單點決策風險 |
+| `FundamentalAgent` | `RevenueExtractor` · `RiskFactorScanner` · `ValuationModeler` | 財報分析時間 ÷ 3 |
+| `MomentumAgent` | `TrendDetector` · `PatternRecognizer` · `VolumeAnalyst` | 覆蓋多維度技術面 |
+| `MacroAgent` | `FedWatcher` · `YieldCurveAnalyst` · `GeoPoliticalScanner` | 併發監控宏觀信號 |
+| `RiskAgent` | `PortfolioStressTester` · `CorrelationMonitor` · `TailRiskCalculator` | 併發壓力測試 |
+| `SentimentAgent` | `NewsScanner` · `SocialPulse` | 即時情緒覆蓋率 ↑ |
+| `SystemEngineerAgent` | `CodeGenerator` · `BacktestRunner` · `FactorMiner` | 自主策略因子進化 |
 
 ---
 
 <a id="en"></a>
 
-## 🇺🇸 Evolutionary Roadmap
+## 🇺🇸 Evolutionary Roadmap (v4.0)
 
 ### 1. Vision
 Transforming from a tool into an autonomous "Wealth Organism" that researches and trades with zero human intervention.
 
+**v4.0 Core Principle — Role × Multi-Agent**: Each existing Agent role retains its domain responsibility. Behind it, a swarm of specialized Sub-Agents works in parallel, maximizing efficiency and correctness.
+
 ### 2. Milestones
 - **Phase A (2025) - Foundation**: Deterministic engine & secure DB (Completed).
-- **Phase B (2026 H1) - Intelligence**: [Core Specs](核心系統規格-Core-System-Specs) implementation. Hybrid Tiered Analysis, Multi-Broker support (Current).
-- **Phase B+ (2026 Q2) - Sentinel**: [Automation Spec](OpenClaw自動化規格-OpenClaw-Automation-Spec). Proactive Event Loops, Sentinel Service.
-- **Phase B++ (2026 Q3) - Institutional (v3.5)**: Deep IBKR integration, Smart Order Routing (SOR), OpenClaw runtime for mass concurrency, and VaR risk analytics.
-- **Phase C (2026 H2) - Anti-fragility**: [Future Roadmap](未來演進規格-Future-Roadmap-Specs). Crisis Autopilot with **Toggle Algorithm** (Adaptive Compute Budget) and FinRL simulations.
-- **Phase D (2027+) - Agent Swarm**: **PARL Architecture** (Parallel Agent RL) for massively concurrent research. Joint Text-Vision optimization for chart patterns.
+- **Phase B (2026 Q1) - Intelligence**: Hybrid Tiered Analysis, Multi-Broker support (Completed).
+- **Phase B+ (2026 Q2) - Sentinel**: Proactive Event Loops, Sentinel Service.
+- **Phase B++ (2026 Q3) - Institutional (v3.5)**: Deep IBKR integration, SOR, OpenClaw concurrency, VaR.
+- **Phase C (2026 Q4) - Agent Swarm Economy**: Role × Multi-Agent decomposition.
+
+### 3. Phase C Monthly Breakdown (2026 Q4)
+
+| Month | Theme | Deliverables |
+| :--- | :--- | :--- |
+| **Oct** | Swarm Framework + Pilot | `SwarmOrchestrator`, `RoleSwarmBase`, Fundamental Swarm (3 sub-agents), Sentiment Swarm (2 sub-agents) |
+| **Nov** | Full Swarm Rollout | Momentum / Macro / Risk Swarms, Toggle Algorithm (Adaptive Compute) integration |
+| **Dec** | Command Layer + Integration | CIO Swarm (3-layer verification), Engineer Swarm (self-evolution), Critical Path optimizer, Multimodal Vision, full system stress test |
+
+### 4. Role × Multi-Agent Mapping
+
+| Role | Sub-Agents | Benefit |
+| :--- | :--- | :--- |
+| CIO | StrategyPlanner · AllocationOptimizer · DecisionValidator | Eliminates single-point decision risk |
+| Fundamental | RevenueExtractor · RiskFactorScanner · ValuationModeler | 3× faster earnings analysis |
+| Momentum | TrendDetector · PatternRecognizer · VolumeAnalyst | Multi-dimensional technical coverage |
+| Macro | FedWatcher · YieldCurveAnalyst · GeoPoliticalScanner | Concurrent macro signal monitoring |
+| Risk | StressTester · CorrelationMonitor · TailRiskCalculator | Parallel stress testing |
+| Sentiment | NewsScanner · SocialPulse | Real-time sentiment coverage ↑ |
+| Engineer | CodeGenerator · BacktestRunner · FactorMiner | Autonomous factor evolution |
 
 ## 🔗 Bidirectional Links
 - **Core Specs**: [Core System Specs](核心系統規格-Core-System-Specs)
