@@ -91,8 +91,14 @@ def test_dashboard_logic():
                         'roi': 10.0,
                         'transactions_df': mock_df,
                         'current_prices': {'AAPL': 150},
-                        'positions_df': mock_df
+                        'positions_df': mock_df,
+                        'broker_breakdown': {'etoro': MagicMock(total_equity=10000, available_cash=5000)}
                     }
+                    
+                    # Ensure columns mock is active on the imported module
+                    # dashboard module must be imported first
+                    dashboard.st.columns.side_effect = mock_columns
+                    dashboard.st.number_input.return_value = 1.0
                     
                     # Mock page methods
                     with patch.object(page, 'setup_page'), \

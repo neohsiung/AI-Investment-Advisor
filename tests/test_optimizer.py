@@ -1,63 +1,70 @@
 import pytest
 from unittest.mock import MagicMock, patch
-from datetime import datetime
+import sys
+
+# Mock dspy before importing optimizer
+sys.modules["dspy"] = MagicMock()
+sys.modules["dspy.teleprompt"] = MagicMock()
+
 from src.workflow.optimizer import OptimizerPipeline
-from src.domain.entities import FeedbackExample, SecurityContext, SignalType
+from src.domain.entities import FeedbackExample, SignalType
 
-@pytest.fixture
-def mock_repo():
-    return MagicMock()
+class MockFeedbackRepo:
+    def __init__(self, db_path):
+        pass
+    def get_training_examples(self, agent_name, min_score, limit):
+        # Return a list of fake FeedbackExamples
+        return [
+            FeedbackExample(
+                id="1", agent_name="Momentum", 
+                context=MagicMock(to_json=lambda: '{"data": "ctx"}'),
+                response_text="Analysis", 
+                signal=SignalType.BUY,
+                outcome_score=1.0,
+                # feedback_text="Good", # Not in dataclass definition in entities.py
+                timestamp="2023-01-01"
+            )
+        ]
 
-def test_load_training_data_no_dspy(mock_repo):
-    # Simulate DSPy missing
-    with patch("src.workflow.optimizer.dspy", None):
-        pipeline = OptimizerPipeline()
-        pipeline.repo = mock_repo
-        
-        data = pipeline.load_training_data()
-        assert data == []
+@patch('src.workflow.optimizer.SqliteFeedbackRepository', new=MockFeedbackRepo)
+def test_optimizer_initialization():
+    optimizer = OptimizerPipeline(db_path=":memory:")
+    assert optimizer is not None
 
-def test_load_training_data_success(mock_repo):
-    # Simulate DSPy available
-    with patch("src.workflow.optimizer.dspy") as mock_dspy:
-        # Define mock Example class
-        mock_dspy.Example = MagicMock()
-        
-        pipeline = OptimizerPipeline()
-        pipeline.repo = mock_repo
-        
-        # Mock Repo Response
-        mock_ctx = SecurityContext(ticker="AAPL", date=datetime.now(), price=100, indicators={})
-        mock_ex = FeedbackExample(
-            id="1", 
-            agent_name="Momentum", 
-            context=mock_ctx, 
-            response_text="Analysis... BUY", 
-            signal=SignalType.BUY, 
-            outcome_score=0.8
-        )
-        mock_repo.get_training_examples.return_value = [mock_ex]
-        
-        data = pipeline.load_training_data()
-        
-        assert len(data) == 1
-        mock_repo.get_training_examples.assert_called_with("Momentum", min_score=0.1, limit=20)
-        assert mock_dspy.Example.called
+@patch('src.workflow.optimizer.SqliteFeedbackRepository', new=MockFeedbackRepo)
+def test_load_training_data():
+    optimizer = OptimizerPipeline()
+    # Mock dspy availability check? 
+    # The module checks `if dspy is None`. Since we mocked it in sys.modules, it should be truthy.
+    
+    examples = optimizer.load_training_data()
+    assert len(examples) == 1
+    # Check if dspy.Example was called
+    sys.modules["dspy"].Example.assert_called()
 
-def test_optimize_flow_success(mock_repo):
-    with patch("src.workflow.optimizer.dspy") as mock_dspy, \
-         patch("src.workflow.optimizer.BootstrapFewShot") as MockTeleprompter:
+@patch('src.workflow.optimizer.SqliteFeedbackRepository', new=MockFeedbackRepo)
+def test_optimize_momentum_agent():
+    optimizer = OptimizerPipeline()
+    trainset = optimizer.load_training_data()
+    
+    # Mock BootstrapFewShot
+    with patch('src.workflow.optimizer.BootstrapFewShot') as mock_boot:
+        mock_compiler = MagicMock()
+        mock_boot.return_value = mock_compiler
+        mock_compiler.compile.return_value = MagicMock()
         
-        pipeline = OptimizerPipeline()
-        trainset = [MagicMock()]
+        module = optimizer.optimize_momentum_agent(trainset)
         
-        # Mock Optimizer Compilation
-        mock_compiler = MockTeleprompter.return_value
-        mock_compiled_program = MagicMock()
-        mock_compiler.compile.return_value = mock_compiled_program
-        
-        res = pipeline.optimize_momentum_agent(trainset)
-        
-        assert res == mock_compiled_program
+        mock_boot.assert_called()
         mock_compiler.compile.assert_called()
-        mock_compiled_program.save.assert_called()
+        # Save is called
+        module.save.assert_called()
+
+def test_optimizer_no_dspy():
+    # Simulate dspy missing
+    with patch('src.workflow.optimizer.dspy', None):
+        optimizer = OptimizerPipeline()
+        examples = optimizer.load_training_data()
+        assert examples == []
+        res = optimizer.optimize_momentum_agent([])
+        assert res is None

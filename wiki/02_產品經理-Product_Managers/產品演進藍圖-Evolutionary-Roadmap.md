@@ -1,12 +1,18 @@
 # 產品演進藍圖 (Evolutionary Roadmap)
 
+### 版本紀錄 (Version History)
+| Date | Version | Description | Author |
+| :--- | :--- | :--- | :--- |
+| 2026-02-14 | v3.5 | Added Institutional-Grade Execution & Risk Roadmap | Neo |
+| 2026-01-01 | v3.3 | Updated for Multi-Broker & Risk limits | Neo |
+
 > **[繁體中文 (Traditional Chinese)](#zh) | [English](#en)**
 
 ---
 
 <a id="zh"></a>
 
-## 🇹🇼 產品演進藍圖 (v3.1)
+## 🇹🇼 產品演進藍圖 (v3.5)
 
 本藍圖定義了本系統從「基礎記帳工具」進化為「自主決策生命體」的發展路徑。
 
@@ -26,6 +32,7 @@
 - **核心功能**: 
     - **混合分析架構 (Hybrid Tiered)**: 實作 "Deep Research" 報告模式 (表格與精準引用)。
     - **任務規劃引擎**: [Task Planning Engine](../04_架構觀點-Architect_Views/任務規劃與執行引擎-Task-Planning-Engine.md) 實作多模型動態路由。
+    - **多券商架構**: 整合 Etoro, Futu, IBKR。
 - **技術需求**: Tavily Search, Gemini 1.5 Pro, MCP Integration (Foundation).
 - **成功指標**: 測試覆蓋率 > 75%；報告生成穩定性 99.9%。
 
@@ -36,23 +43,28 @@
 - **技術需求**: Asyncio Event Loop, Sentinel Service.
 - **成功指標**: 主動警報延遲 < 2分鐘；交互指令回應率 100%。
 
-#### 🚀 階段 B++ (2026 Q3): OpenClaw 運行環境 (v3.5 - Runtime Upgrade)
-- **核心功能**: 解決併發與大規模持倉分析問題。
-    - **全持倉分析**: [OpenClaw 執行環境](../04_架構觀點-Architect_Views/OpenClaw執行環境-OpenClaw-Runtime-Environment.md) 引入 Map-Reduce 架構突破 5 檔限制。
-    - **混合記憶體**: 向量 + 關鍵字搜尋 (Hybrid Search)。
-    - **泳道隊列**: Lane Queue 確保併發安全性。
-- **技術需求**: SQLite-Vec, LaneManager.
+#### 🚀 階段 B++ (2026 Q3): 機構級執行與 OpenClaw (v3.5 - Institutional Execution)
+- **核心功能**: 深度整合 IBKR 與智能執行。
+    - **由 IBKR 驅動的資產擴展**: 支援期貨與選擇權 (Futures & Options)。
+    - **智能訂單路由 (SOR)**: 自動選擇最佳執行券商 (Fee-aware Router)。
+    - **全持倉分析 (OpenClaw)**: Map-Reduce 架構突破 5 檔限制，支援併發分析。
+    - **高級風控**: Value-at-Risk (VaR) 與壓力測試。
+- **技術需求**: ib_insync, SQLite-Vec, LaneManager.
+- **成功指標**: 滑價 (Slippage) < 0.1%；併發分析 50+ 檔股票。
 
-#### 🚀 階段 C (2026 Q4): 危機自癒 - 規劃中
+#### 🚀 階段 C (2026 Q4): 危機自癒 & 自適應算力 (Crisis Autopilot & Adaptive Compute)
 - **核心功能**: 核心細節見 [未來演進規格](../04_架構觀點-Architect_Views/未來演進規格-Future-Roadmap-Specs.md)。
-    - **危機自動駕駛**: 體制切換 (Regime Switching) 偵測。
+    - **體制切換 (Regime Switching)**: HMM 偵測異常市場體制。
+    - **Toggle 演算法**: 動態分配推理預算。平靜市場使用快模型 (Fast Tier)，劇烈波動時自動切換至深度思考模式 (Think Tier)。
     - **FinRL 模擬**: 虛擬環境中的閉環策略優化。
 - **技術需求**: 分散式 **KubeRay** 運算集群。
-- **成功指標**: 最大回撤 (Max Drawdown) < 10%。
+- **成功指標**: 最大回撤 (Max Drawdown) < 10%；Token 效率提升 25%。
 
-#### 🚀 階段 D (2027+): 演化智能 - 概念中
-- **核心功能**: 自主代碼變異、個人家族辦公室模式。
-- **成功指標**: 夏普比率 > 1.5。
+#### 🚀 階段 D (2027+): 智能體集群經濟 (Agent Swarm Economy)
+- **核心功能**: 從單體智能走向群體智能 (Swarm Intelligence)。
+    - **PARL 架構**: 並行智能體強化學習 (Parallel Agent RL)。由一個「編排器 (Orchestrator)」動態拆解任務，同時指揮數百個異構子智能體 (Sub-Agents) 併發研究。
+    - **多模態聯合優化**: 視覺 (K線圖) 與 文本 (財報) 的 Joint Optimization。
+- **成功指標**: 夏普比率 > 1.5；研究任務端對端延遲降低 400%。
 
 ---
 
@@ -65,10 +77,11 @@ Transforming from a tool into an autonomous "Wealth Organism" that researches an
 
 ### 2. Milestones
 - **Phase A (2025) - Foundation**: Deterministic engine & secure DB (Completed).
-- **Phase B (2026 H1) - Intelligence**: [Core Specs](核心系統規格-Core-System-Specs) implementation. Hybrid Tiered Analysis and cost-saving adaptive logic (Current).
-- **Phase B+ (2026 Q2) - Sentinel**: [Automation Spec](OpenClaw自動化規格-OpenClaw-Automation-Spec). Proactive Event Loops, Omni-channel A2A (Telegram/Slack), and Vector Memory.
-- **Phase C (2026 H2) - Anti-fragility**: [Future Roadmap](未來演進規格-Future-Roadmap-Specs). Crisis Autopilot and FinRL-based distributed learning via KubeRay.
-- **Phase D (2027+) - Evolution**: Code-level self-mutation and Generative Alpha.
+- **Phase B (2026 H1) - Intelligence**: [Core Specs](核心系統規格-Core-System-Specs) implementation. Hybrid Tiered Analysis, Multi-Broker support (Current).
+- **Phase B+ (2026 Q2) - Sentinel**: [Automation Spec](OpenClaw自動化規格-OpenClaw-Automation-Spec). Proactive Event Loops, Sentinel Service.
+- **Phase B++ (2026 Q3) - Institutional (v3.5)**: Deep IBKR integration, Smart Order Routing (SOR), OpenClaw runtime for mass concurrency, and VaR risk analytics.
+- **Phase C (2026 H2) - Anti-fragility**: [Future Roadmap](未來演進規格-Future-Roadmap-Specs). Crisis Autopilot with **Toggle Algorithm** (Adaptive Compute Budget) and FinRL simulations.
+- **Phase D (2027+) - Agent Swarm**: **PARL Architecture** (Parallel Agent RL) for massively concurrent research. Joint Text-Vision optimization for chart patterns.
 
 ## 🔗 Bidirectional Links
 - **Core Specs**: [Core System Specs](核心系統規格-Core-System-Specs)

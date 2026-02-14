@@ -23,12 +23,33 @@
     - **自動化防禦**: 體制切換時，自動調整資產類別配比（從 Equity 轉向 Gold/Cash）。
 - **UX Story**: 當標普 500 週跌幅超過 10% 時，系統主動發送「防禦體制已啟動」報告，並展示資產遷移路徑。
 
-#### 2.2 v4.0 演化智能 (Evolutionary Intelligence)
-- **目標**: 零人類干預的自主財富辦公室。
+#### 2.2 v3.4 自適應算力 (Adaptive Compute - Toggle Algorithm)
+- **目標**: 在不犧牲品質的前提下，降低 30% Token 消耗。
 - **核心邏輯**:
-    - **Prompt DNA**: 提示詞不只是文本，而是可被遺傳演算法 (GA) 優化的基因。
-    - **自主因子挖掘**: 系統會自主撰寫 Python 代碼，回測新因子並將高 alpha 因子合併進核心庫。
-- **UX Story**: 使用者可以用自然語言對系統說：「幫我尋找對抗火星殖民通膨的投資因子」，系統隨即啟動演化搜索工作流。
+    - **動態路由 (Dynamic Routing)**: 
+        - **Fast Path**: 對於簡單的新聞過濾，使用 `gemini-2.0-flash-lite`。
+        - **Think Path**: 對於複雜的財報解讀，使用 `gemini-2.0-pro-exp` 並開啟 `thinking_mode`。
+    - **信心閾值**: 若 Fast Path 信心分數 < 0.8，自動升級至 Think Path。
+- **待辦事項 (To-Do)**:
+    - [ ] 實作 `RouterAgent`，根據複雜度分類器 (Complexity Classifier) 分發請求。
+
+#### 2.3 v4.0 智能體集群 (Agent Swarm Economy)
+- **目標**: 突破單體智能的序列處理瓶頸，實現並行研究。
+- **核心邏輯 (PARL - Parallel Agent RL)**:
+    - **編排器 (Orchestrator)**: 將「分析 Apple 財報」拆解為「營收數據」、「供應鏈風險」、「AI 資本支出」三個子任務。
+    - **並行執行**: 同時啟動 3 個 Sub-Agents 進行搜尋與分析。
+    - **關鍵路徑優化**: 監控最慢的子任務（Critical Path），並動態分配更多資源加速之。
+- **待辦事項 (To-Do)**:
+    - [ ] 設計 `SwarmOrchestrator` 類別，支援 `asyncio.gather` 併發控制。
+    - [ ] 實作「關鍵路徑」監控儀表板。
+
+#### 2.4 多模態聯合優化 (Multimodal Joint Optimization)
+- **目標**: 讓 AI 能像交易員一樣「看」懂 K 線圖。
+- **核心邏輯**:
+    - **Zero-Vision SFT**: 訓練模型寫出「能繪製該圖表」的 Python 代碼，藉此理解圖形結構。
+    - **視覺強化學習**: 對齊視覺特徵與文本描述（如：「此處為頭肩頂結構」）。
+- **待辦事項 (To-Do)**:
+    - [ ] 收集 1000 張標註好的技術型態圖表作為預訓練數據。
 
 ### 3. 技術要求 (Technical Requirements)
 
@@ -58,16 +79,18 @@
 Mitigating "Strategy Decay" in black-swan events through self-healing and code-level evolution.
 
 ### 2. Features
-- **v3.3 Crisis Autopilot**: HMM-based regime detection and automated hedging transition.
-- **v4.0 Evolutionary Office**: Goal-oriented code generation (MetaGPT) and Agent DNA evolution.
+- **v3.3 Crisis Autopilot & Toggle**: HMM-based regime detection AND dynamic compute budget allocation (Fast vs Think models).
+- **v4.0 Agent Swarm**: PARL architecture for parallel task execution and Critical Path optimization.
 
 ### 3. Technical Specs
-- **Ray on K8s**: Distributed hyper-parameter and因子 searching.
-- **Genetic Algorithms**: Prompt & Code snippet breeding.
+- **Ray on K8s**: Distributed hyper-parameter searching.
+- **Swarm Orchestrator**: `asyncio`-based dynamic agent spawning.
+- **Toggle Router**: Confidence-based model routing.
 
 ### 4. Success Metrics
 - **Alpha**: > 5% vs S&P 500.
-- **Evolution Rate**: > 1 valid new factor discovered per week.
+- **Latency**: Critical path latency reduced by 50% via parallel execution.
+- **Cost Efficiency**: 30% reduction in token costs via Toggle Algorithm.
 
 ## 🔗 Bidirectional Links
 - **Core Specs**: [Core System Specs](核心系統規格-Core-System-Specs)

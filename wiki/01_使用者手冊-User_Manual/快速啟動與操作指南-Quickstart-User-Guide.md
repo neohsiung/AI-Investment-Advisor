@@ -75,6 +75,9 @@ python run_production_report.py
 ### 5. 系統設定 (System Settings)
 這是系統的核心控制面板：
 
+- **交易配置 (Trading Setup)**:
+    - **主要券商 (Preferred Broker)**: 支援 Etoro, Futu (富途), IBKR (盈透)。
+    - 詳細設定請參閱 [券商整合指南](../03_開發者指南-Developer_Guide/券商整合指南-Broker-Integration-Guide.md)。
 - **AI 配置**: 設定 Provider (Gemini, OpenRouter, OpenAI) 與 **Model Tiering**。
     - **Smart Tier**: 用於複雜邏輯推論。
     - **Fast Tier**: 用於快速訊息過濾。

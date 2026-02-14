@@ -10,6 +10,7 @@
         *   [文件框架定義](文件框架定義-Document-Frameworks)
 *   **03. 開發者指南 (Developer Guide)**
     *   [環境設定與本地開發](環境設定與本地開發-Environment-Local-Dev)
+    *   [券商整合指南](券商整合指南-Broker-Integration-Guide)
     *   [服務層子系統詳解](服務層開發指南-Service-Layer-Blueprints)
     *   [前端架構與 UX 層](前端架構與UX層-Frontend-UX-Layer)
     *   [測試與外部服務整合](測試與外部服務整合-Testing-External-Services)

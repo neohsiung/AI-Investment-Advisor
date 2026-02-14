@@ -1,5 +1,11 @@
 # AI Investment Advisor (v3.3)
 
+### 版本紀錄 (Version History)
+| Date | Version | Description | Author |
+| :--- | :--- | :--- | :--- |
+| 2026-02-14 | v3.3 | Multi-Broker (Futu/IBKR) & Advanced Risk Controls | Neo |
+| 2026-01-01 | v3.1 | Core Agent Swarm & Task Planning | Neo |
+
 ![Python](https://img.shields.io/badge/Python-3.11+-blue.svg?style=for-the-badge&logo=python&logoColor=white)
 ![Docker](https://img.shields.io/badge/Docker-Enabled-2496ED.svg?style=for-the-badge&logo=docker&logoColor=white)
 ![Redis](https://img.shields.io/badge/Redis-Inside-red.svg?style=for-the-badge&logo=redis&logoColor=white)
