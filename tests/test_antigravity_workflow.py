@@ -82,12 +82,25 @@ def test_weekly_workflow_execution(mock_fund, mock_cio, mock_macro, mock_workflo
 
 # --- Memory Consistency Tests ---
 
-def test_daily_consistency_warning():
+# --- Memory Consistency Tests ---
+
+@patch('src.services.workflow_service.AgentLLMProvider')
+@patch('src.services.workflow_service.SqliteMemoryRepository')
+@patch('src.services.workflow_service.SqliteTransactionRepository')
+@patch('src.services.workflow_service.TransactionService')
+@patch('src.services.workflow_service.MarketDataService')
+@patch('src.agents.factory.AgentFactory.create_cio_agent')
+@patch('src.agents.factory.AgentFactory.create_macro_agent')
+@patch('src.services.broker_factory.BrokerFactory')
+@patch('src.infrastructure.risk_manager.RiskManager')
+@patch('src.infrastructure.risk_manager.SqliteSettingsRepository')
+@patch('src.services.workflow_service.PerformanceService')
+def test_daily_consistency_warning(MockPerformanceService, MockRiskSettings, MockRiskManager, MockBrokerFactory, MockMacro, MockCIO, MockMarket, MockTransService, MockTransRepo, MockMemRepo, MockLLMProvider):
     """Test that contradictory views trigger a warning."""
     mem_repo = MagicMock()
     agent_provider = MagicMock()
     
-    # Mock Repository to return prior reports (Essential for get_context to work)
+    # Mock Repository to return prior reports
     from src.services.memory_service import ReportMemoryItem
     mem_repo.get_recent_reports.return_value = [
         ReportMemoryItem(
@@ -99,39 +112,41 @@ def test_daily_consistency_warning():
         )
     ]
     
-    # Mock Agent Provider to return a contradiction JSON
+    # Mock Agent Provider
     agent_provider.check_contradictions.return_value = ["Contradiction: Bull vs Bear"]
     
     memory_service = MemoryService(mem_repo, agent_provider)
     
-    # Mock Workflow
+    # Validate Mocks Setup
+    MockMacro.return_value.run.return_value = "Old Macro"
+    MockCIO.return_value.run.return_value = "Final Report with Warning"
+    
+    mock_broker = MagicMock()
+    mock_broker.get_name.return_value = "MockBroker"
+    mock_broker.get_account.return_value = MagicMock(total_equity=10000, available_cash=5000)
+    MockBrokerFactory.get_broker.return_value = mock_broker
+    
+    mock_risk = MagicMock()
+    mock_risk.check_constraints.return_value = True
+    MockRiskManager.return_value = mock_risk
+
+    # Instantiate Workflow (now under patch)
     workflow = DailyWorkflow(user_id="consistency_user")
     workflow.memory_service = memory_service
+    
+    # Mock Context
     workflow.context = {"tickers": ["S"]}
+    workflow.context['ticker_reports'] = {"S": {"momentum": "UP"}}
+    # Ensure Market/Transaction services are mocks (already patched in class but assigned in init)
+    # workflow.market_service is MockMarket()
     
-    # Mock Dependent Calls
-    workflow.market_service = MagicMock()
-    workflow.market_service.get_macro_data.return_value = {}
-    workflow.transaction_service = MagicMock()
-    workflow.transaction_service.get_holdings_map.return_value = {}
-    workflow.performance_service = MagicMock()
+    workflow.synthesize_results()
     
-    with patch('src.agents.factory.AgentFactory.create_macro_agent') as mock_macro, \
-         patch('src.agents.factory.AgentFactory.create_cio_agent') as mock_cio:
-        
-        mock_macro.return_value.run.return_value = "Old Macro"
-        mock_cio.return_value.run.return_value = "Final Report with Warning"
-        
-        # We need to ensure 'ticker_reports' is populated or logic inside synthesize works
-        workflow.context['ticker_reports'] = {"S": {"momentum": "UP"}}
-        
-        workflow.synthesize_results()
-        
-        # Check that check_contradictions was called
-        agent_provider.check_contradictions.assert_called()
-        
-        # Check that CIO agent received the warning in context
-        call_args = mock_cio.return_value.run.call_args
-        context_arg = call_args[0][0]
-        assert "consistency_constraints" in context_arg
-        assert "Contradiction: Bull vs Bear" in context_arg["consistency_constraints"]
+    # Check that check_contradictions was called
+    agent_provider.check_contradictions.assert_called()
+    
+    # Check that CIO agent received the warning in context
+    call_args = MockCIO.return_value.run.call_args
+    context_arg = call_args[0][0]
+    assert "consistency_constraints" in context_arg
+    assert "Contradiction: Bull vs Bear" in context_arg["consistency_constraints"]

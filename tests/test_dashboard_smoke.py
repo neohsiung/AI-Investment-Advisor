@@ -16,6 +16,16 @@ sys.modules["streamlit.components.v1.components"] = MagicMock() # Fix for "not a
 # Attempt to handle potential `html` or `iframe` usage
 mock_components.html = MagicMock()
 
+# Fix st.columns unpacking
+def mock_columns(spec):
+    if isinstance(spec, int):
+        return [MagicMock() for _ in range(spec)]
+    elif isinstance(spec, (list, tuple)):
+        return [MagicMock() for _ in range(len(spec))]
+    return [MagicMock()]
+sys.modules["streamlit"].columns.side_effect = mock_columns
+sys.modules["streamlit"].number_input.return_value = 1.0
+
 def test_dashboard_logic():
     """
     Test that dashboard can be imported and main() logic executed without errors.
@@ -29,7 +39,9 @@ def test_dashboard_logic():
          patch('src.services.analytics_service.update_daily_snapshot') as mock_update, \
          patch('google_auth_oauthlib.flow.Flow.from_client_secrets_file') as mock_flow_cls, \
          patch('src.services.transaction_service.TransactionService') as mock_trans_service, \
+         patch('src.services.transaction_service.TransactionService') as mock_trans_service, \
          patch('src.repositories.transaction_repository.SqliteTransactionRepository') as mock_trans_repo, \
+         patch('src.repositories.settings_repository.SqliteSettingsRepository') as mock_settings_repo, \
          patch('src.auth.auth_manager') as mock_auth_manager: # Patch global auth_manager
 
         # Setup mocks

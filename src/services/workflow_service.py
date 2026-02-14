@@ -410,7 +410,7 @@ class DailyWorkflow(BaseWorkflow):
             broker_status_msg = f"⚠️ **Connection Alert**: {broker.get_name()} Bridge Offline."
 
         detailed_debate_section = "## 2. 議會焦點辯論 (The Great Debate & Detailed Analysis)\n\n"
-        detailed_debate_section += f"{etoro_status_msg}\n\n"
+        detailed_debate_section += f"{broker_status_msg}\n\n"
         detailed_debate_section += "本日針對投資組合進行深度多空思辨，並附上完整技術與基本面數據。\n\n"
         
         # Accumulate ticker contexts for CIO Synthesis
