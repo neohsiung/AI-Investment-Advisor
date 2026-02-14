@@ -27,7 +27,7 @@
 | 模組 | 描述 |
 | :--- | :--- |
 | **🧠 7 Agent + Council** | CIO/Fundamental/Momentum/Macro/Sentiment/Risk/Engineer Agent 集群，由 Council 碎形辯論仲裁。 |
-| **⚖️ 槓桿引擎 (v3.6)** | 精確計算每筆部位的 **貸款 (Loan)** 與 **淨權益 (Net Equity)**，清楚對帳 $1483 與 $1182 的差異。 |
+| **⚖️ 槓桿引擎 (v3.6)** | 精確計算每筆部位的 **貸款 (Loan)** 與 **淨權益 (Net Equity)**。 |
 | **🌍 多券商架構** | 統一 `IBroker` 介面支援 **Etoro**、**Futu**、**IBKR**，集中 **RiskManager** 風控。 |
 | **🔭 哨兵與評議會** | **SentinelService** 7×24 **四維度**監聽 (VIX/持倉/加權新聞/宏觀)；**CouncilService** 碎形辯論 (Fractal Debate)。 |
 | **⚡ 任務規劃引擎** | DAG 任務分解，依複雜度動態路由模型 (Fast/Smart/Advanced)。 |

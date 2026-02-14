@@ -94,8 +94,8 @@ Environmental variables are mainly for bootstrapping. Runtime configuration is m
 # SMTP Configuration (Required for Email Reports)
 SMTP_HOST=smtp.gmail.com
 SMTP_PORT=587
-SMTP_USER=your_email@gmail.com
-SMTP_PASSWORD=your_app_password
+SMTP_USER=user@example.com
+SMTP_PASSWORD=app_password_placeholder
 EMAIL_RECIPIENT=recipient@example.com
 
 # External Data APIs

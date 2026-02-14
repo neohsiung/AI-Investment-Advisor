@@ -3,28 +3,7 @@ from unittest.mock import MagicMock, patch
 import sys
 import importlib
 
-# Mock external dependencies
-sys.modules["streamlit"] = MagicMock()
-sys.modules["plotly.express"] = MagicMock()
-# Create a mock for components.v1 that acts like a module
-mock_components = MagicMock()
-sys.modules["streamlit.components.v1"] = mock_components
-sys.modules["streamlit.components.v1.components"] = MagicMock() # Fix for "not a package" or import error
-# Also ensure likely sub-imports work if needed, though mostly attributes are accessed.
-# If something does `from streamlit.components.v1 import components`, this should work if we set it up right.
-# But usually usage is `import streamlit.components.v1 as components`.
-# Attempt to handle potential `html` or `iframe` usage
-mock_components.html = MagicMock()
-
-# Fix st.columns unpacking
-def mock_columns(spec):
-    if isinstance(spec, int):
-        return [MagicMock() for _ in range(spec)]
-    elif isinstance(spec, (list, tuple)):
-        return [MagicMock() for _ in range(len(spec))]
-    return [MagicMock()]
-sys.modules["streamlit"].columns.side_effect = mock_columns
-sys.modules["streamlit"].number_input.return_value = 1.0
+# Streamlit and common modules are centrally mocked in conftest.py
 
 def test_dashboard_logic():
     """
@@ -77,13 +56,13 @@ def test_dashboard_logic():
 
         # Import and run
         try:
-            from src import dashboard
+            from src import Dashboard as dashboard
             importlib.reload(dashboard) # Ensure fresh reload
             
             if hasattr(dashboard, 'DashboardPage'):
                 page = dashboard.DashboardPage()
                 # Mock DashboardService
-                with patch('src.dashboard.DashboardService') as mock_dashboard_service:
+                with patch('src.Dashboard.DashboardService') as mock_dashboard_service:
                     mock_service_instance = mock_dashboard_service.return_value
                     mock_service_instance.prepare_dashboard_data.return_value = {
                         'metrics': {'nlv': 10000, 'cash_balance': 5000, 'leverage_ratio': 1.0},
@@ -95,10 +74,7 @@ def test_dashboard_logic():
                         'broker_breakdown': {'etoro': MagicMock(total_equity=10000, available_cash=5000)}
                     }
                     
-                    # Ensure columns mock is active on the imported module
-                    # dashboard module must be imported first
-                    dashboard.st.columns.side_effect = mock_columns
-                    dashboard.st.number_input.return_value = 1.0
+                    # Streamlit side-effects are already handled by conftest.py
                     
                     # Mock page methods
                     with patch.object(page, 'setup_page'), \

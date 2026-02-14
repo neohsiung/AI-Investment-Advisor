@@ -162,5 +162,5 @@ class DashboardPage(BasePage):
              st.info("若無法取得價格，可能是 API 額度用盡或數據異常 (例如回傳 0)。請檢查 API Key 或稍後再試。")
 
 
-# Streamlit entry point
-DashboardPage().run()
+if __name__ == "__main__":
+    DashboardPage().run()

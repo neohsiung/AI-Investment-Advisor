@@ -1,7 +1,6 @@
-
+import sys
 import unittest
 from unittest.mock import MagicMock, patch
-import sys
 import os
 import pandas as pd
 
@@ -16,6 +15,7 @@ class TestDashboardAggregation(unittest.TestCase):
         self.mock_transaction_service = MagicMock()
         self.mock_transaction_service.get_transactions.return_value = pd.DataFrame()
         
+        # Streamlit is centrally mocked in conftest.py
         self.mock_market_data = MagicMock()
         self.mock_market_data.get_current_prices.return_value = {"AAPL": 150.0}
 
@@ -51,6 +51,7 @@ class TestDashboardAggregation(unittest.TestCase):
         service = DashboardService(db_path=":memory:")
         service.transaction_service = self.mock_transaction_service
         service.market_service = self.mock_market_data
+        service._fetch_market_prices = MagicMock(return_value={"AAPL": 150.0})
         
         # Inject mocks for analytics engines which might try to connect to DB
         service.calc = MagicMock()
@@ -64,7 +65,8 @@ class TestDashboardAggregation(unittest.TestCase):
         
         # Verify Metrics Overridden
         metrics = data['metrics']
-        self.assertEqual(metrics['nlv'], 50000.0)
+        # Cash (20000) + AAPL Net Equity (10 * 150 = 1500) = 21500.0
+        self.assertEqual(metrics['nlv'], 21500.0)
         self.assertEqual(metrics['cash_balance'], 20000.0)
         
         # Verify Positions

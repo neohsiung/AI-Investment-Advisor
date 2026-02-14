@@ -48,7 +48,7 @@ graph LR
 #### 2.1 手動輸入 (Manual Entry)
 - **交易模式**:
     - **依數量 (By Quantity)**: 輸入具體股數與單價。
-    - **依槓桿 (By Leverage)**: 輸入「本金」與「槓桿倍數」(e.g., $1000, 3x)，系統自動換算購買力與股數。
+    - **依槓桿 (By Leverage)**: 輸入「本金」與「槓桿倍數」(e.g., $X,XXX, 3x)，系統自動換算購買力與股數。
 - **交易類型**: 支援 `BUY` (買入), `SELL` (賣出), `DIVIDEND` (股息), `DEPOSIT` (入金) 與 `WITHDRAW` (出金)。
 
 #### 2.2 批次匯入 (CSV Import)

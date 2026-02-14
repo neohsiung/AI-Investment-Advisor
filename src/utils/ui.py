@@ -107,13 +107,14 @@ def render_sidebar(user, default_db_path="data/portfolio.db"):
             cols = st.columns([2.5, 1, 1])
             
             with cols[0]:
-                st.page_link("pages/Settings.py", label=f"{short_name}. {display_name[:6]}...", icon="👤", help="User Settings")
+                # Link to Settings page. Path is relative to dashboard.py/Main.py
+                st.page_link("pages/06_Settings.py", label=f"{short_name}. {display_name[:6]}...", icon="👤", help="User Settings")
             
             with cols[1]:
-                render_theme_switcher(key_suffix="sidebar_v15", icon_only=True)
+                render_theme_switcher(key_suffix="sidebar_v18", icon_only=True)
                 
             with cols[2]:
-                if st.button("", key="logout_v15", icon="🚪", help="Logout", use_container_width=True):
+                if st.button("", key="logout_v18", icon="🚪", help="Logout", use_container_width=True):
                     auth_manager.logout()
             
             st.divider()

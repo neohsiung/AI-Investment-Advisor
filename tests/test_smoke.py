@@ -10,7 +10,7 @@ def test_dashboard_import_smoke():
     """
     with patch.dict(sys.modules, {'streamlit': MagicMock()}):
         try:
-            import src.dashboard
+            import src.Dashboard
         except Exception as e:
             pytest.fail(f"Dashboard import failed: {e}")
 
@@ -37,7 +37,7 @@ def test_pages_import_smoke():
             import os
             
             # 3_Data_Management.py
-            spec = importlib.util.spec_from_file_location("DataManagement", "src/pages/3_Data_Management.py")
+            spec = importlib.util.spec_from_file_location("DataManagement", "src/pages/05_Data_Management.py")
             module = importlib.util.module_from_spec(spec)
             # spec.loader.exec_module(module) # This executes top-level code, which creates widgets. Might crash even with mocks.
             # Just creating the spec and module proves syntax is okay.

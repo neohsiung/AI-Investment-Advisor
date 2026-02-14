@@ -1,14 +1,6 @@
 import pytest
 import sys
 from unittest.mock import MagicMock, patch, mock_open, ANY
-# Force clean state for these modules to ensure they pick up the mocks
-for mod in ['src.auth', 'src.utils.google_auth', 'extra_streamlit_components']:
-    if mod in sys.modules:
-        del sys.modules[mod]
-
-sys.modules["streamlit"] = MagicMock()
-sys.modules["extra_streamlit_components"] = MagicMock()
-
 # Helper to load modules with special names
 import importlib.util
 from pathlib import Path
@@ -27,10 +19,19 @@ def load_page_module(name):
         raise e
         return None
 
+# Define the mapping for page names to their new file paths
+PAGE_FILE_MAP = {
+    "Portfolio_Performance": "02_Portfolio_Performance.py",
+    "Analysis_Reports": "03_Analysis_Reports.py",
+    "Advisor_Chat": "04_Advisor_Chat.py",
+    "Data_Management": "05_Data_Management.py",
+    "Settings": "06_Settings.py"
+}
+
 # Ensure mocks are in place before loading
 with patch.dict(sys.modules, {'extra_streamlit_components': MagicMock()}):
-    settings_mod = load_page_module("Settings.py")
-    data_mod = load_page_module("Data_Management.py")
+    settings_mod = load_page_module(PAGE_FILE_MAP["Settings"])
+    data_mod = load_page_module(PAGE_FILE_MAP["Data_Management"])
 
 from src.services.settings_service import SettingsService
 from src.services.transaction_service import TransactionService

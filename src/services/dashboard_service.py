@@ -75,7 +75,7 @@ class DashboardService:
             
             # OVERRIDE with Real-time Data if available
             if live_portfolio['total_equity'] > 0:
-                 # Trust eToro's reported Cash Balance
+                 # Trust reported Cash Balance
                  metrics['cash_balance'] = live_portfolio['total_cash']
                  
                  # Calculate Live Market Value of Positions
@@ -93,7 +93,6 @@ class DashboardService:
                      
                      # Adjust for Leverage (Net Equity = Gross - Loan)
                      # Loan = InitialInvestment * (Leverage - 1)
-                     # We use p.market_value (Cost Basis) as the "Initial Margin"
                      loan = 0.0
                      if hasattr(p, 'leverage') and p.leverage > 1:
                          loan = p.market_value * (p.leverage - 1)
@@ -101,10 +100,10 @@ class DashboardService:
                      net_equity = gross_exposure - loan
                      live_mv_net += net_equity
                  
-                 # NLV (Net) = Cash + Net Equity of Positions (Matches user's $1182)
+                 # NLV (Net) = Cash + Net Equity of Positions
                  metrics['nlv'] = metrics['cash_balance'] + live_mv_net
                  
-                 # Gross NLV = Cash + Gross Exposure (Matches user's $1483)
+                 # Gross NLV = Cash + Gross Exposure
                  metrics['gross_nlv'] = metrics['cash_balance'] + live_mv_gross
                  
                  # Update Leverage Ratio (Standard: Gross Exposure / Net NLV)

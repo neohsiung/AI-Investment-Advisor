@@ -166,3 +166,19 @@ classDiagram
 - **DB Standards**: [Database & Git Standards](資料庫設計與代碼規範-Database-Git-Standards)
 - **Service Layer**: [Service Layer Blueprints](服務層開發指南-Service-Layer-Blueprints)
 - **Repository Pattern**: [Repository Pattern](設計模式-存儲庫-Repository-Pattern)
+### 7. ⚖️ 槓桿引擎機制 (Leverage Engine Mechanism - v3.6)
+本模組精確計算每筆部位的 **貸款 (Loan)** 與 **淨權益 (Net Equity)**，確保對帳清晰。
+
+- **計算公式 (Formulas)**:
+    - **部位市值 (Gross MV)** = 數量 × 現價
+    - **部位貸款 (Loan)** = 買入成本 × (槓桿倍數 - 1)
+    - **淨權益 (Net Equity)** = 部位市值 - 部位貸款
+
+- **對帳範例 (Reconciliation Example)**:
+    - 假設以 **$X,XXX** 本金開立 **3x** 槓桿部位。
+    - **部位市值 (Gross)**: **$Y,YYY**
+    - **貸款 (Loan)**: **$Z,ZZZ**
+    - **淨權益 (Net Equity)**: **$W,WWW** (與現金合併計算 NLV)
+
+> [!IMPORTANT]
+> 清楚區分 Gross 與 Net 數據，能有效防止在劇烈波動時的保證金誤判。

@@ -1,10 +1,10 @@
+import sys
 import pytest
 from unittest.mock import Mock, patch, MagicMock
 import pandas as pd
 from src.services.dashboard_service import DashboardService
 
 class TestDashboardService:
-    """Test suite for DashboardService"""
     
     @pytest.fixture
     def mock_db_path(self, tmp_path):
@@ -20,7 +20,9 @@ class TestDashboardService:
                     with patch('src.services.dashboard_service.LeverageCalculator'):
                         with patch('src.services.dashboard_service.ROIEngine'):
                             with patch('src.services.dashboard_service.PnLCalculator'):
-                                return DashboardService(db_path=mock_db_path)
+                                with patch('src.services.portfolio_aggregator_service.PortfolioAggregatorService') as mock_agg_cls:
+                                    mock_agg_cls.return_value.get_aggregated_portfolio.return_value = {'total_equity': 0, 'positions': []}
+                                    yield DashboardService(db_path=mock_db_path)
     
     def test_init(self, service, mock_db_path):
         """Test service initialization"""
@@ -37,6 +39,8 @@ class TestDashboardService:
         """Test prepare_dashboard_data with no transactions"""
         # Mock empty transactions
         service.transaction_service.get_transactions = Mock(return_value=pd.DataFrame())
+        # Mock market prices to bypass st.cache_data
+        service._fetch_market_prices = Mock(return_value={})
         
         result = service.prepare_dashboard_data("test@example.com")
         
