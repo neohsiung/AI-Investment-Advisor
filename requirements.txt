@@ -7,7 +7,6 @@ python-dotenv
 requests
 yfinance
 pytz
-pytz
 pytest-cov
 pytest-mock
 freezegun
@@ -28,7 +27,6 @@ extra-streamlit-components
 # v3.0 Dependencies
 dspy; python_version >= "3.9"
 pgvector
-psycopg2-binary
 duckduckgo-search
 tavily-python
 line-bot-sdk
@@ -38,4 +36,7 @@ fastapi
 uvicorn[standard]
 httpx
 redis
+
+# Broker APIs
 futu-api
+ib_insync

@@ -122,6 +122,19 @@ class DashboardPage(BasePage):
                 else:
                     st.info("尚無持倉紀錄 (No active positions found)。")
 
+                # --- Section 3: Broker Breakdown (Unified View) ---
+                broker_breakdown = data.get('broker_breakdown', {})
+                if broker_breakdown:
+                    saas_section_header("券商資產分佈 (Broker Breakdown)", "各券商帳戶概況")
+                    
+                    b_cols = st.columns(len(broker_breakdown))
+                    for idx, (b_name, account) in enumerate(broker_breakdown.items()):
+                        with b_cols[idx]:
+                            saas_card_start(title=f"{b_name.upper()}", icon="🏦")
+                            st.metric("總權益 (Equity)", f"${account.total_equity:,.0f}")
+                            st.metric("現金 (Cash)", f"${account.available_cash:,.0f}")
+                            saas_card_end()
+
             except Exception as e:
                 st.error(f"儀表板畫面渲染錯誤: {e}")
                 
@@ -152,7 +165,20 @@ class DashboardPage(BasePage):
             current_broker = self.settings_repo.get(user_id, "preferred_broker") or "etoro"
             max_daily = self.settings_repo.get(user_id, "ai_max_daily_trades") or 10
             cb_loss = self.settings_repo.get(user_id, "cb_loss_streak") or 3
+            sector_limit = self.settings_repo.get(user_id, "risk_max_sector_exposure") or 0.30
+            trading_enabled = self.settings_repo.get(user_id, "ai_trading_enabled") or "true"
             
+            # Kill Switch Status
+            if trading_enabled.lower() != "true":
+                st.error("🔴 AI Trading is DISABLED (Kill Switch Active)")
+                if st.button("🟢 Re-enable Trading"):
+                    self.settings_repo.set(user_id, "ai_trading_enabled", "true")
+                    st.experimental_rerun()
+            else:
+                if st.button("🔴 Emergency Stop (Kill Switch)"):
+                    self.settings_repo.set(user_id, "ai_trading_enabled", "false")
+                    st.experimental_rerun()
+
             with st.form("trading_settings_form"):
                 col1, col2 = st.columns(2)
                 
@@ -162,6 +188,11 @@ class DashboardPage(BasePage):
                         options=["etoro", "futu", "ibkr"],
                         index=["etoro", "futu", "ibkr"].index(current_broker) if current_broker in ["etoro", "futu", "ibkr"] else 0,
                         help="系統將使用此券商進行自動交易與資料同步。"
+                    )
+                    new_sector_limit = st.number_input(
+                        "單一板塊曝險上限 (Max Sector Exposure %)",
+                        min_value=0.1, max_value=1.0, value=float(sector_limit), step=0.05,
+                        help="單一板塊持倉佔總資產的最大比例 (0.1 ~ 1.0)。"
                     )
                 
                 with col2:
@@ -181,6 +212,7 @@ class DashboardPage(BasePage):
                     self.settings_repo.set(user_id, "preferred_broker", new_broker)
                     self.settings_repo.set(user_id, "ai_max_daily_trades", str(new_max_daily))
                     self.settings_repo.set(user_id, "cb_loss_streak", str(new_cb_loss))
-                    st.success(f"設定已儲存! 券商: {new_broker}, Max Trades: {new_max_daily}")
+                    self.settings_repo.set(user_id, "risk_max_sector_exposure", str(new_sector_limit))
+                    st.success(f"設定已儲存! 券商: {new_broker}, Sector Limit: {new_sector_limit:.0%}")
                     st.experimental_rerun()
 

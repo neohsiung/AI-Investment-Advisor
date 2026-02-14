@@ -36,38 +36,73 @@ class DashboardService:
         # 0. Update snapshot
         update_daily_snapshot(self.db_path, user_id=user_id)
 
-        # 1. Fetch Transactions
+        # 1. Fetch Transactions (Historical)
         transactions_df = self.transaction_service.get_transactions(user_id)
         
-        # 2. Identify Active Tickers
+        # 2. Fetch Aggregated Live Data (Unified Portfolio)
+        from src.services.portfolio_aggregator_service import PortfolioAggregatorService
+        aggregator = PortfolioAggregatorService(user_id)
+        live_portfolio = aggregator.get_aggregated_portfolio()
+        
+        # 3. Identify Active Tickers
+        # Use live positions if available, else fallback to transaction-derived
         active_tickers = []
-        if not transactions_df.empty:
+        live_positions = live_portfolio.get('positions', [])
+        
+        if live_positions:
+            active_tickers = [p.symbol for p in live_positions]
+        elif not transactions_df.empty:
+            # Fallback
             holdings = transactions_df.copy()
             holdings['qty_signed'] = holdings.apply(lambda x: x['quantity'] if x['action'] == 'BUY' else -x['quantity'], axis=1)
             active_holdings = holdings.groupby('ticker')['qty_signed'].sum()
             active_tickers = active_holdings[active_holdings > 0.0001].index.tolist()
 
-        # 3. Fetch Prices
+        # 4. Fetch Prices
         current_prices = {}
         if active_tickers:
             current_prices = self._fetch_market_prices(active_tickers)
 
-        # 4. Calculate Core Metrics
+        # 5. Calculate Core Metrics
         metrics = {'nlv': 0, 'leveraged_value': 0, 'cash': 0, 'leverage_ratio': 0, 'cash_balance': 0}
         pnl_data = {'unrealized': 0, 'realized': 0, 'total': 0}
         roi = 0
 
         try:
-            metrics = self.calc.calculate_metrics(current_prices, user_id=user_id)
+            # Calculate basics
+            metrics_derived = self.calc.calculate_metrics(current_prices, user_id=user_id)
             pnl_data = self.pnl_calc.calculate_breakdown(current_prices, user_id=user_id)
+            
+            # OVERRIDE with Real-time Data if available
+            if live_portfolio['total_equity'] > 0:
+                 metrics['nlv'] = live_portfolio['total_equity']
+                 metrics['cash_balance'] = live_portfolio['total_cash']
+                 # Recalculate leverage if needed, or use derived
+                 # metrics['leverage_ratio'] = ... 
+                 metrics['leverage_ratio'] = metrics_derived.get('leverage_ratio', 0) # Keep derived for now or recalc
+            else:
+                 metrics = metrics_derived
+
             roi = self.roi_engine.calculate_roi(metrics['nlv'], user_id=user_id)
         except Exception as e:
-            # We log error but return defaults to prevent page crash
             st.error(f"指標計算錯誤: {e}")
 
-        # 5. Prepare Positions
+        # 6. Prepare Positions DataFrame
         positions_df = pd.DataFrame()
-        if not transactions_df.empty:
+        if live_positions:
+             # Convert live positions to DF
+             data = []
+             for p in live_positions:
+                 data.append({
+                     'ticker': p.symbol,
+                     'quantity': p.quantity,
+                     'current_price': p.current_price or current_prices.get(p.symbol, 0),
+                     'market_value': p.market_value,
+                     'unrealized_pnl': p.unrealized_pnl
+                 })
+             positions_df = pd.DataFrame(data)
+        elif not transactions_df.empty:
+             # Fallback to derived
             positions_raw = transactions_df.copy()
             positions_raw['qty_signed'] = positions_raw.apply(lambda x: x['quantity'] if x['action'] == 'BUY' else -x['quantity'], axis=1)
             positions_grouped = positions_raw.groupby('ticker')['qty_signed'].sum().reset_index()
@@ -83,5 +118,6 @@ class DashboardService:
             'metrics': metrics,
             'pnl_data': pnl_data,
             'roi': roi,
-            'positions_df': positions_df
+            'positions_df': positions_df,
+            'broker_breakdown': live_portfolio.get('broker_breakdown', {})
         }

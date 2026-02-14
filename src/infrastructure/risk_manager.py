@@ -135,3 +135,64 @@ class RiskManager:
                     continue
 
         return False
+
+    def check_sector_exposure(self, user_id: str, new_ticker: str, new_amount: float, current_positions: List[Any]) -> bool:
+        """
+        Check if adding this position would exceed sector exposure limits.
+        """
+        limit_pct = float(self._get_setting(user_id, "risk_max_sector_exposure", "0.30"))
+        
+        # If limit is 1.0 (100%), skip check
+        if limit_pct >= 1.0:
+            return True
+
+        from src.services.market_data_service import MarketDataService
+        mds = MarketDataService()
+        
+        # 1. Get Sector for New Ticker
+        new_sector = self._get_sector(mds, new_ticker)
+        if not new_sector:
+            logger.warning(f"Risk: Could not determine sector for {new_ticker}. Allowing trade.")
+            return True # Fail open? Or closed? Let's fail open for now.
+            
+        # 2. Calculate Current Sector Exposure
+        total_value = 0.0
+        sector_value = 0.0
+        
+        for pos in current_positions:
+            val = getattr(pos, 'market_value', 0)
+            total_value += val
+            
+            ticker = getattr(pos, 'symbol', None)
+            if ticker:
+                s = self._get_sector(mds, ticker)
+                if s == new_sector:
+                    sector_value += val
+                    
+        # 3. Add New Trade
+        total_value += new_amount
+        sector_value += new_amount
+        
+        exposure = sector_value / total_value if total_value > 0 else 0
+        
+        if exposure > limit_pct:
+            logger.warning(f"Risk Block: Sector {new_sector} exposure {exposure:.1%} exceeds limit {limit_pct:.1%} for {user_id}")
+            return False
+            
+        return True
+
+    def _get_sector(self, mds, ticker: str) -> str:
+        """Helper to get sector from MarketDataService (cached ideally)."""
+        # In real app, cache this. For now, fetch.
+        try:
+            info = mds.get_financials(ticker)
+            return info.get('sector', 'Unknown')
+        except:
+            return 'Unknown'
+
+    def trigger_kill_switch(self, user_id: str):
+        """
+        Emergency: Disable AI Trading immediately.
+        """
+        self._set_setting(user_id, "ai_trading_enabled", "false")
+        logger.critical(f"KILL SWITCH TRIGGERED for {user_id}. All AI trading halted.")

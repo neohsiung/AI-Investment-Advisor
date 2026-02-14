@@ -43,3 +43,25 @@ class BrokerFactory:
             
         BrokerFactory._instances[broker_type] = instance
         return instance
+
+    @staticmethod
+    def get_enabled_brokers(user_id: str) -> Dict[str, IBroker]:
+        """
+        Get all enabled brokers for a user.
+        Currently assumes all implemented brokers are enabled if configured.
+        """
+        # In a real scenario, check DB for 'etoro_enabled', 'futu_enabled' etc.
+        # For now, return all supported types.
+        
+        brokers = {}
+        supported_types = ["etoro", "futu", "ibkr"]
+        
+        for b_type in supported_types:
+            try:
+                # Reuse get_broker logic which handles caching
+                broker = BrokerFactory.get_broker(user_id, b_type)
+                brokers[b_type] = broker
+            except Exception as e:
+                logger.warning(f"Failed to initialize broker {b_type}: {e}")
+                
+        return brokers
