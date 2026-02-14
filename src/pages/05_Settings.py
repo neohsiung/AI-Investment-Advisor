@@ -13,6 +13,7 @@ from src.pages.settings_tabs.optimization_tab import render_optimization_history
 from src.pages.settings_tabs.hr_protocol_tab import render_hr_protocol_tab
 from src.pages.settings_tabs.appearance_tab import render_appearance_tab
 from src.pages.settings_tabs.storage_tab import render_storage_tab
+from src.pages.settings_tabs.trading_tab import render_trading_tab
 
 class SettingsPage(BasePage):
     """System settings page"""
@@ -25,7 +26,8 @@ class SettingsPage(BasePage):
         user_id = self.user['email']
         db_path = self.db_path
 
-        tab1, tab2, tab3, tab4, tab5, tab6, tab7, tab8 = st.tabs([
+        tab1, tab2, tab3, tab4, tab5, tab6, tab7, tab8, tab9 = st.tabs([
+            "交易與風控 (Trading & Risk)",
             "AI 模型設定 (AI Configuration)", 
             "排程設定與紀錄 (Scheduler)", 
             "報告試跑 (Report Dry Run)", 
@@ -39,28 +41,31 @@ class SettingsPage(BasePage):
         settings_service = SettingsService(db_path, user_id=user_id)
 
         with tab1:
+            render_trading_tab(st, user_id)
+
+        with tab2:
             settings = settings_service.get_all_settings()
             render_api_settings(st, settings_service, settings)
         
-        with tab2:
+        with tab3:
             render_scheduler_tab(st, db_path)
 
-        with tab3:
+        with tab4:
             render_report_dry_run_tab(st, user_id)
 
-        with tab4:
+        with tab5:
             render_agent_playground_tab(st)
 
-        with tab5:
+        with tab6:
             render_optimization_history_tab(st, db_path, user_id)
 
-        with tab6:
+        with tab7:
             render_hr_protocol_tab(st)
 
-        with tab7:
+        with tab8:
             render_appearance_tab(st)
             
-        with tab8:
+        with tab9:
             render_storage_tab(st, db_path)
 
 if __name__ == "__main__":

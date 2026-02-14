@@ -13,7 +13,6 @@ from src.utils.ui import get_plotly_template
 from src.utils.page_base import BasePage
 from src.utils.components import saas_metric, saas_card_start, saas_card_end, saas_section_header, saas_alert
 from src.services.dashboard_service import DashboardService
-from src.repositories.settings_repository import SqliteSettingsRepository
 
 class DashboardPage(BasePage):
     """
@@ -24,7 +23,6 @@ class DashboardPage(BasePage):
     1. Key Metrics (NLV, Cash, Leverage, ROI)
     2. Real-time P&L (Realized/Unrealized)
     3. Current Holdings & Asset Allocation
-    4. Trading Settings (Broker & Risk)
     """
     
     def __init__(self):
@@ -32,7 +30,6 @@ class DashboardPage(BasePage):
         init_db()
         super().__init__("總覽 (Overview)", "📊")
         self.dashboard_service = None  # Will be initialized in render()
-        self.settings_repo = SqliteSettingsRepository()
     
     def render(self):
         """
@@ -47,9 +44,6 @@ class DashboardPage(BasePage):
             db_path = getattr(self, 'db_path', 'data/portfolio.db')
             self.dashboard_service = DashboardService(db_path=db_path)
 
-        # --- Trading Settings Section ---
-        self._render_settings(user_id)
-        
         # High-level loading feedback for the entire Overview data preparation
         with st.spinner("總覽數據讀取中 (Overview Loading)..."):
             try:
@@ -156,63 +150,6 @@ class DashboardPage(BasePage):
              st.write(status)
              st.info("若無法取得價格，可能是 API 額度用盡或數據異常 (例如回傳 0)。請檢查 API Key 或稍後再試。")
 
-    def _render_settings(self, user_id: str):
-        """Render Trading Settings UI."""
-        with st.expander("⚙️ 交易設定 (Trading Configuration)", expanded=False):
-            st.caption("設定主要券商與風險控制參數 (Configure Broker & Risk Limits)")
-            
-            # Fetch current settings
-            current_broker = self.settings_repo.get(user_id, "preferred_broker") or "etoro"
-            max_daily = self.settings_repo.get(user_id, "ai_max_daily_trades") or 10
-            cb_loss = self.settings_repo.get(user_id, "cb_loss_streak") or 3
-            sector_limit = self.settings_repo.get(user_id, "risk_max_sector_exposure") or 0.30
-            trading_enabled = self.settings_repo.get(user_id, "ai_trading_enabled") or "true"
-            
-            # Kill Switch Status
-            if trading_enabled.lower() != "true":
-                st.error("🔴 AI Trading is DISABLED (Kill Switch Active)")
-                if st.button("🟢 Re-enable Trading"):
-                    self.settings_repo.set(user_id, "ai_trading_enabled", "true")
-                    st.experimental_rerun()
-            else:
-                if st.button("🔴 Emergency Stop (Kill Switch)"):
-                    self.settings_repo.set(user_id, "ai_trading_enabled", "false")
-                    st.experimental_rerun()
 
-            with st.form("trading_settings_form"):
-                col1, col2 = st.columns(2)
-                
-                with col1:
-                    new_broker = st.selectbox(
-                        "選擇主要券商 (Preferred Broker)",
-                        options=["etoro", "futu", "ibkr"],
-                        index=["etoro", "futu", "ibkr"].index(current_broker) if current_broker in ["etoro", "futu", "ibkr"] else 0,
-                        help="系統將使用此券商進行自動交易與資料同步。"
-                    )
-                    new_sector_limit = st.number_input(
-                        "單一板塊曝險上限 (Max Sector Exposure %)",
-                        min_value=0.1, max_value=1.0, value=float(sector_limit), step=0.05,
-                        help="單一板塊持倉佔總資產的最大比例 (0.1 ~ 1.0)。"
-                    )
-                
-                with col2:
-                    new_max_daily = st.number_input(
-                        "每日最大交易次數 (Max Daily Trades)",
-                        min_value=1, max_value=100, value=int(max_daily),
-                        help="超過此限制後，Risk Manager 將暫停當日交易。"
-                    )
-                    new_cb_loss = st.number_input(
-                        "連續虧損熔斷 (Loss Streak Limit)",
-                        min_value=1, max_value=20, value=int(cb_loss),
-                        help="連續虧損達此次數後，自動停止交易。"
-                    )
-
-                submitted = st.form_submit_button("儲存設定 (Save Settings)")
-                if submitted:
-                    self.settings_repo.set(user_id, "preferred_broker", new_broker)
-                    self.settings_repo.set(user_id, "ai_max_daily_trades", str(new_max_daily))
-                    self.settings_repo.set(user_id, "cb_loss_streak", str(new_cb_loss))
-                    self.settings_repo.set(user_id, "risk_max_sector_exposure", str(new_sector_limit))
-                    st.success(f"設定已儲存! 券商: {new_broker}, Sector Limit: {new_sector_limit:.0%}")
-                    st.experimental_rerun()
-
+# Streamlit entry point
+DashboardPage().run()
