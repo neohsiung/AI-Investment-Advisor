@@ -11,24 +11,28 @@ from src.data.providers.yfinance_provider import YFinanceProvider
 from src.services.fred_service import FredService
 from src.services.search_service import InternetSearchService
 
+from src.services.settings_service import SettingsService
+
 class MarketDataService:
-    def __init__(self):
+    def __init__(self, user_id=None, settings_service=None):
         self.logger = setup_logger("MarketDataService")
+        self.user_id = user_id
+        self.settings_service = settings_service or SettingsService(user_id=user_id)
         
         # Initialize Providers
-        self.polygon = PolygonProvider()
-        self.fmp = FMPProvider()
+        self.polygon = PolygonProvider(settings_service=self.settings_service)
+        self.fmp = FMPProvider(settings_service=self.settings_service)
         self.yfinance = YFinanceProvider()
         
         # Initialize FRED (Macro Primary)
         try:
-            self.fred = FredService()
+            self.fred = FredService(settings_service=self.settings_service)
         except Exception:
             self.fred = None
             self.logger.warning("FRED Service init failed, macro data will be limited.")
         
         # Initialize Search (Tavily Primary, DuckDuckGo Fallback)
-        self.search_service = InternetSearchService()
+        self.search_service = InternetSearchService(settings_service=self.settings_service)
         
         # Priority Order (Primary -> Backup -> Fallback)
         self.providers: List[MarketDataProvider] = [

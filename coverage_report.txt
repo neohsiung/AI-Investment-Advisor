@@ -1,0 +1,481 @@
+============================= test session starts ==============================
+platform darwin -- Python 3.8.2, pytest-7.1.1, pluggy-1.0.0
+rootdir: /Users/neohsiung/Work/go/investment-advisor, configfile: pytest.ini, testpaths: tests
+plugins: celery-4.4.0, freezegun-0.4.2, requests-mock-1.9.3, mock-3.6.1, anyio-4.5.2, django-4.2.0, Faker-9.8.3, cov-3.0.0
+collected 428 items
+
+tests/test_adaptive_logic.py ..                                          [  0%]
+tests/test_agents.py ......                                              [  1%]
+tests/test_agents_extended.py ...                                        [  2%]
+tests/test_analytics.py .....                                            [  3%]
+tests/test_antigravity_workflow.py ...                                   [  4%]
+tests/test_auth_guard.py .....                                           [  5%]
+tests/test_auth_manager.py ....                                          [  6%]
+tests/test_auth_unit.py .....                                            [  7%]
+tests/test_aux_services.py ....                                          [  8%]
+tests/test_backtest_service.py .                                         [  8%]
+tests/test_base_agent_coverage.py ........                               [ 10%]
+tests/test_base_agent_more_coverage.py .............                     [ 13%]
+tests/test_cio_agent.py ....                                             [ 14%]
+tests/test_cio_smoke.py .                                                [ 14%]
+tests/test_comprehensive_services.py ..........                          [ 17%]
+tests/test_council_adapter.py ..                                         [ 17%]
+tests/test_council_service.py ...                                        [ 18%]
+tests/test_coverage_gap_agents.py ...........                            [ 21%]
+tests/test_coverage_gap_fill.py ......                                   [ 22%]
+tests/test_dashboard_aggregation.py .                                    [ 22%]
+tests/test_dashboard_service.py ....                                     [ 23%]
+tests/test_dashboard_smoke.py .                                          [ 23%]
+tests/test_data_providers.py FF..F.FF..F.                                [ 26%]
+tests/test_database.py ..                                                [ 27%]
+tests/test_engineer.py ........                                          [ 28%]
+tests/test_etoro_api_auth.py ....                                        [ 29%]
+tests/test_etoro_id_resolution.py ...                                    [ 30%]
+tests/test_etoro_integration.py .....                                    [ 31%]
+tests/test_evaluation_service.py .......                                 [ 33%]
+tests/test_factory.py ............                                       [ 36%]
+tests/test_factory_and_tools.py ..                                       [ 36%]
+tests/test_feedback_repository.py .                                      [ 36%]
+tests/test_fmp_extended.py ....                                          [ 37%]
+tests/test_fred_service.py ...........                                   [ 40%]
+tests/test_fundamental_extended.py ...                                   [ 41%]
+tests/test_futu_integration.py ....                                      [ 42%]
+tests/test_gap_remediation.py ..                                         [ 42%]
+tests/test_hr_feedback_repository.py ......                              [ 43%]
+tests/test_infra_coverage.py ..                                          [ 44%]
+tests/test_ingestion_service.py ..                                       [ 44%]
+tests/test_ingestor.py .....                                             [ 46%]
+tests/test_ingestor_strategies.py ...                                    [ 46%]
+tests/test_lane_manager.py ....                                          [ 47%]
+tests/test_line_adapter.py .....                                         [ 48%]
+tests/test_market_data_extended.py ...........                           [ 51%]
+tests/test_mcp_service.py .......                                        [ 53%]
+tests/test_mcp_tools.py ...........                                      [ 55%]
+tests/test_memory_repository.py ....                                     [ 56%]
+tests/test_notifier.py ...                                               [ 57%]
+tests/test_optimizer.py ....                                             [ 58%]
+tests/test_page_base.py ......                                           [ 59%]
+tests/test_pages_logic.py .............                                  [ 62%]
+tests/test_performance_service.py ....                                   [ 63%]
+tests/test_portfolio_aggregator.py .                                     [ 63%]
+tests/test_refinement_coverage.py ...                                    [ 64%]
+tests/test_risk_keyword_repository.py ...............                    [ 67%]
+tests/test_risk_sector_limit.py ..                                       [ 68%]
+tests/test_scheduler_service.py ..............                           [ 71%]
+tests/test_search_service.py ....                                        [ 72%]
+tests/test_sentiment_agent.py .....x                                     [ 74%]
+tests/test_sentinel_service.py ..............                            [ 77%]
+tests/test_settings_service_coverage.py ..........                       [ 79%]
+tests/test_skill_registry.py ....                                        [ 80%]
+tests/test_smoke.py ...                                                  [ 81%]
+tests/test_snapshot_repository.py ........                               [ 83%]
+tests/test_theme_service.py ....                                         [ 84%]
+tests/test_time_utils_extra.py ..............                            [ 87%]
+tests/test_transaction_repository.py .........                           [ 89%]
+tests/test_transaction_service.py ....                                   [ 90%]
+tests/test_ui.py ...                                                     [ 91%]
+tests/test_user_focus_service.py ..                                      [ 91%]
+tests/test_utils.py .....                                                [ 92%]
+tests/test_v38_event_driven.py ss                                        [ 93%]
+tests/test_vector_repository.py .....                                    [ 94%]
+tests/test_workflow_integration.py ...                                   [ 95%]
+tests/test_workflow_service.py ...F                                      [ 96%]
+tests/test_yfinance_provider.py ...............                          [ 99%]
+tests/e2e/test_weekly_report_flow.py ..                                  [100%]
+
+=================================== FAILURES ===================================
+____________________ TestFMPProvider.test_init_without_key _____________________
+
+self = <tests.test_data_providers.TestFMPProvider object at 0x7fd060fb5250>
+
+    def test_init_without_key(self):
+        """Test initialization without API key."""
+        with patch.dict('os.environ', {}, clear=True):
+            provider = FMPProvider()
+>           assert provider.api_key is None
+E           AssertionError: assert 'pLKgTSUbhaLqogSVqEQinVCZoWEGPQPw' is None
+E            +  where 'pLKgTSUbhaLqogSVqEQinVCZoWEGPQPw' = <src.data.providers.fmp_provider.FMPProvider object at 0x7fd061e19880>.api_key
+
+tests/test_data_providers.py:16: AssertionError
+______________________ TestFMPProvider.test_init_with_key ______________________
+
+self = <tests.test_data_providers.TestFMPProvider object at 0x7fd060fb5130>
+
+    def test_init_with_key(self):
+        """Test initialization with API key."""
+        with patch.dict('os.environ', {'FMP_API_KEY': 'test_key'}):
+            provider = FMPProvider()
+>           assert provider.api_key == 'test_key'
+E           AssertionError: assert 'pLKgTSUbhaLq...inVCZoWEGPQPw' == 'test_key'
+E             - test_key
+E             + pLKgTSUbhaLqogSVqEQinVCZoWEGPQPw
+
+tests/test_data_providers.py:22: AssertionError
+___________________ TestFMPProvider.test_fetch_prices_no_key ___________________
+
+self = <tests.test_data_providers.TestFMPProvider object at 0x7fd060fb5c70>
+
+    def test_fetch_prices_no_key(self):
+        """Test fetching prices without API key."""
+        with patch.dict('os.environ', {}, clear=True):
+            provider = FMPProvider()
+            result = provider.fetch_current_prices(["AAPL"])
+>           assert result == {}
+E           AssertionError: assert {'AAPL': 255.78} == {}
+E             Left contains 1 more item:
+E             {'AAPL': 255.78}
+E             Use -v to get more diff
+
+tests/test_data_providers.py:55: AssertionError
+__________________ TestPolygonProvider.test_init_without_key ___________________
+
+self = <tests.test_data_providers.TestPolygonProvider object at 0x7fd060fb9340>
+
+    def test_init_without_key(self):
+        """Test initialization without API key."""
+        with patch.dict('os.environ', {}, clear=True):
+            provider = PolygonProvider()
+>           assert provider.api_key is None
+E           AssertionError: assert 'QkDtTO5hI2GaVrl7ZrM3TSCL8o6dgoiP' is None
+E            +  where 'QkDtTO5hI2GaVrl7ZrM3TSCL8o6dgoiP' = <src.data.providers.polygon_provider.PolygonProvider object at 0x7fd0683705e0>.api_key
+
+tests/test_data_providers.py:77: AssertionError
+____________________ TestPolygonProvider.test_init_with_key ____________________
+
+self = <tests.test_data_providers.TestPolygonProvider object at 0x7fd060fb9670>
+
+    def test_init_with_key(self):
+        """Test initialization with API key."""
+        with patch.dict('os.environ', {'POLYGON_API_KEY': 'test_key'}):
+            provider = PolygonProvider()
+>           assert provider.api_key == 'test_key'
+E           AssertionError: assert 'QkDtTO5hI2Ga...3TSCL8o6dgoiP' == 'test_key'
+E             - test_key
+E             + QkDtTO5hI2GaVrl7ZrM3TSCL8o6dgoiP
+
+tests/test_data_providers.py:83: AssertionError
+_________________ TestPolygonProvider.test_fetch_prices_no_key _________________
+
+self = <tests.test_data_providers.TestPolygonProvider object at 0x7fd060fb9fa0>
+
+    def test_fetch_prices_no_key(self):
+        """Test fetching prices without API key."""
+        with patch.dict('os.environ', {}, clear=True):
+            provider = PolygonProvider()
+            result = provider.fetch_current_prices(["AAPL"])
+>           assert result == {}
+E           AssertionError: assert {'AAPL': 255.78} == {}
+E             Left contains 1 more item:
+E             {'AAPL': 255.78}
+E             Use -v to get more diff
+
+tests/test_data_providers.py:115: AssertionError
+___________________________ test_report_distribution ___________________________
+
+__wrapped_mock_method__ = <function NonCallableMock.assert_called at 0x7fd0386709d0>
+args = (<MagicMock name='EmailNotifier().send_report' id='140532834221936'>,)
+kwargs = {}, __tracebackhide__ = True
+msg = "Expected 'send_report' to have been called."
+__mock_self = <MagicMock name='EmailNotifier().send_report' id='140532834221936'>
+
+    def assert_wrapper(
+        __wrapped_mock_method__: Callable[..., Any], *args: Any, **kwargs: Any
+    ) -> None:
+        __tracebackhide__ = True
+        try:
+>           __wrapped_mock_method__(*args, **kwargs)
+
+../../../Library/Python/3.8/lib/python/site-packages/pytest_mock/plugin.py:414: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <MagicMock name='EmailNotifier().send_report' id='140532834221936'>
+
+    def assert_called(self):
+        """assert that the mock was called at least once
+        """
+        if self.call_count == 0:
+            msg = ("Expected '%s' to have been called." %
+                   (self._mock_name or 'mock'))
+>           raise AssertionError(msg)
+E           AssertionError: Expected 'send_report' to have been called.
+
+/Library/Frameworks/Python.framework/Versions/3.8/lib/python3.8/unittest/mock.py:882: AssertionError
+
+During handling of the above exception, another exception occurred:
+
+mock_deps = {'market': <MagicMock id='140532834345168'>, 'repo': <MagicMock id='140532834257696'>, 'trans': <MagicMock id='140532834333216'>}
+
+    def test_report_distribution(mock_deps):
+        user_id = "test_user"
+        mock_deps['trans'].get_user_tickers.return_value = ["AAPL"]
+    
+        with patch('src.services.workflow_service.AgentFactory') as MockFactory, \
+             patch('src.services.workflow_service.get_db_connection') as MockDB, \
+             patch('src.notifier.EmailNotifier') as MockEmail, \
+             patch('src.services.workflow_service.PerformanceService') as MockPerf:
+    
+            mock_mom = MagicMock()
+            mock_mom.run.return_value = "STRONG BUY"
+            MockFactory.create_momentum_agent.return_value = mock_mom
+    
+            # Mock other agents
+            MockFactory.create_sentiment_agent.return_value = MagicMock()
+            MockFactory.create_fundamental_agent.return_value = MagicMock()
+            MockFactory.create_macro_agent.return_value = MagicMock()
+    
+            mock_cio = MagicMock()
+            mock_cio.run.return_value = "Report"
+            MockFactory.create_cio_agent.return_value = mock_cio
+    
+            workflow = DailyWorkflow(user_id, transaction_repo=mock_deps['repo'], transaction_service=mock_deps['trans'], market_service=mock_deps['market'])
+            workflow.memory_service = MagicMock() # FIX: Ensure memory service is mocked
+            workflow.memory_service.get_context.return_value.recent_items = []
+    
+            mock_conn = MagicMock()
+            MockDB.return_value = mock_conn
+    
+            workflow.run(dry_run=False)
+    
+>           MockEmail.return_value.send_report.assert_called()
+E           AssertionError: Expected 'send_report' to have been called.
+
+tests/test_workflow_service.py:173: AssertionError
+----------------------------- Captured stdout call -----------------------------
+2026-02-15 13:16:42 - INFO - [Engineer] - [_load_config] User: test_user | DB Settings Loaded: ['schedule_daily', 'schedule_weekly', 'schedule_weekly_day', 'schedule_daily_days']
+2026-02-15 13:16:42 - INFO - [Engineer] - SkillRegistry: Bound 'get_market_data' to agent.
+2026-02-15 13:16:42 - INFO - [Engineer] - SkillRegistry: Bound 'search_web' to agent.
+2026-02-15 13:16:42 - INFO - [Engineer] - SkillRegistry: Bound 'get_portfolio' to agent.
+2026-02-15 13:16:42 - INFO - [InternetSearch] - Tavily Search initialized successfully.
+2026-02-15 13:16:43 - WARNING - [EmailNotifier] - Email credentials not set. Skipping email notification.
+------------------------------ Captured log call -------------------------------
+INFO     Engineer:base_agent.py:77 [_load_config] User: test_user | DB Settings Loaded: ['schedule_daily', 'schedule_weekly', 'schedule_weekly_day', 'schedule_daily_days']
+INFO     Engineer:registry.py:101 SkillRegistry: Bound 'get_market_data' to agent.
+INFO     Engineer:registry.py:101 SkillRegistry: Bound 'search_web' to agent.
+INFO     Engineer:registry.py:101 SkillRegistry: Bound 'get_portfolio' to agent.
+INFO     InternetSearch:search_service.py:36 Tavily Search initialized successfully.
+WARNING  WorkflowService:workflow_service.py:364 Contradictions Detected: <MagicMock name='mock.detect_conflicts()' id='140532538510928'>
+ERROR    src.services.etoro_service:etoro_service.py:178 Failed to fetch history: 404 Client Error: Not Found for url: https://public-api.etoro.com/api/v1/trading/info/trade/history
+ERROR    src.services.etoro_service:etoro_service.py:178 Failed to fetch history: 404 Client Error: Not Found for url: https://public-api.etoro.com/api/v1/trading/info/trade/history
+WARNING  DailyWorkflow:workflow_service.py:124 Report Injection Failed: Header '## 2...' or '## 3...' not found. Appending transcript.
+WARNING  EmailNotifier:notifier.py:80 Email credentials not set. Skipping email notification.
+ERROR    src.infrastructure.channels.web_adapter:web_adapter.py:51 Failed to record Web Alert: (sqlite3.InterfaceError) Error binding parameter 5 - probably unsupported type.
+[SQL: INSERT INTO event_logs (id, timestamp, source, level, title, content, metadata) VALUES (?, ?, ?, ?, ?, ?, ?)]
+[parameters: ('29e05ead-3bc2-4575-ac89-e759ef8e073d', '2026-02-15T13:16:43.666858', 'DailyWorkflow', 'INFO', 'Investment Report (DailyWorkflow) - 2026-02-15', <MagicMock name='AgentFactory.create_cio_agent().polish_report()' id='140532833868624'>, '{"user_id": "test_user", "actions": null, "source_adapter": "WebAdapter"}')]
+(Background on this error at: https://sqlalche.me/e/20/rvf5)
+=============================== warnings summary ===============================
+../../../Library/Python/3.8/lib/python/site-packages/html5lib/_trie/_base.py:3
+  /Users/neohsiung/Library/Python/3.8/lib/python/site-packages/html5lib/_trie/_base.py:3: DeprecationWarning: Using or importing the ABCs from 'collections' instead of from 'collections.abc' is deprecated since Python 3.3, and in 3.9 it will stop working
+    from collections import Mapping
+
+src/mcp_service/__init__.py:330
+  /Users/neohsiung/Work/go/investment-advisor/src/mcp_service/__init__.py:330: LineBotSdkDeprecatedIn30: Call to deprecated class LineBotApi. (Use v3 class; linebot.v3.<feature>. See https://github.com/line/line-bot-sdk-python/blob/master/README.rst for more details.) -- Deprecated since version 3.0.0.
+    line_bot_api = LineBotApi(line_channel_access_token)
+
+src/mcp_service/__init__.py:331
+  /Users/neohsiung/Work/go/investment-advisor/src/mcp_service/__init__.py:331: LineBotSdkDeprecatedIn30: Call to deprecated class WebhookHandler. (Use 'from linebot.v3.webhook import WebhookHandler' instead. See https://github.com/line/line-bot-sdk-python/blob/master/README.rst for more details.) -- Deprecated since version 3.0.0.
+    handler = WebhookHandler(line_channel_secret)
+
+../../../Library/Python/3.8/lib/python/site-packages/linebot/webhook.py:209
+  /Users/neohsiung/Library/Python/3.8/lib/python/site-packages/linebot/webhook.py:209: LineBotSdkDeprecatedIn30: Call to deprecated class WebhookParser. (Use 'from linebot.v3.webhook import WebhookParser' instead. See https://github.com/line/line-bot-sdk-python/blob/master/README.rst for more details.) -- Deprecated since version 3.0.0.
+    self.parser = WebhookParser(channel_secret)
+
+../../../Library/Python/3.8/lib/python/site-packages/linebot/webhook.py:139
+  /Users/neohsiung/Library/Python/3.8/lib/python/site-packages/linebot/webhook.py:139: LineBotSdkDeprecatedIn30: Call to deprecated class SignatureValidator. (Use 'from linebot.v3.webhook import SignatureValidator' instead. See https://github.com/line/line-bot-sdk-python/blob/master/README.rst for more details.) -- Deprecated since version 3.0.0.
+    self.signature_validator = SignatureValidator(channel_secret)
+
+tests/test_v38_event_driven.py:7
+  /Users/neohsiung/Work/go/investment-advisor/tests/test_v38_event_driven.py:7: PytestUnknownMarkWarning: Unknown pytest.mark.asyncio - is this a typo?  You can register custom marks to avoid this warning - for details, see https://docs.pytest.org/en/stable/how-to/mark.html
+    @pytest.mark.asyncio
+
+tests/test_v38_event_driven.py:38
+  /Users/neohsiung/Work/go/investment-advisor/tests/test_v38_event_driven.py:38: PytestUnknownMarkWarning: Unknown pytest.mark.asyncio - is this a typo?  You can register custom marks to avoid this warning - for details, see https://docs.pytest.org/en/stable/how-to/mark.html
+    @pytest.mark.asyncio
+
+tests/test_lane_manager.py::test_lane_manager_run_batch
+  /Library/Frameworks/Python.framework/Versions/3.8/lib/python3.8/site-packages/_pytest/unraisableexception.py:78: PytestUnraisableExceptionWarning: Exception ignored in: <coroutine object LaneManager._process_lane at 0x7fd061dac4c0>
+  
+  Traceback (most recent call last):
+    File "/Library/Frameworks/Python.framework/Versions/3.8/lib/python3.8/asyncio/queues.py", line 163, in get
+      await getter
+  GeneratorExit
+  
+  During handling of the above exception, another exception occurred:
+  
+  Traceback (most recent call last):
+    File "/Users/neohsiung/Work/go/investment-advisor/src/infrastructure/lane_manager.py", line 60, in _process_lane
+      task_func, result_future = await lane.get()
+    File "/Library/Frameworks/Python.framework/Versions/3.8/lib/python3.8/asyncio/queues.py", line 165, in get
+      getter.cancel()  # Just in case getter is not done yet.
+    File "/Library/Frameworks/Python.framework/Versions/3.8/lib/python3.8/asyncio/base_events.py", line 719, in call_soon
+      self._check_closed()
+    File "/Library/Frameworks/Python.framework/Versions/3.8/lib/python3.8/asyncio/base_events.py", line 508, in _check_closed
+      raise RuntimeError('Event loop is closed')
+  RuntimeError: Event loop is closed
+  
+    warnings.warn(pytest.PytestUnraisableExceptionWarning(msg))
+
+tests/test_line_adapter.py::test_line_adapter_init
+  /Library/Frameworks/Python.framework/Versions/3.8/lib/python3.8/site-packages/_pytest/unraisableexception.py:78: PytestUnraisableExceptionWarning: Exception ignored in: <coroutine object LaneManager._process_lane at 0x7fd061da93c0>
+  
+  Traceback (most recent call last):
+    File "/Library/Frameworks/Python.framework/Versions/3.8/lib/python3.8/asyncio/queues.py", line 163, in get
+      await getter
+  GeneratorExit
+  
+  During handling of the above exception, another exception occurred:
+  
+  Traceback (most recent call last):
+    File "/Users/neohsiung/Work/go/investment-advisor/src/infrastructure/lane_manager.py", line 60, in _process_lane
+      task_func, result_future = await lane.get()
+    File "/Library/Frameworks/Python.framework/Versions/3.8/lib/python3.8/asyncio/queues.py", line 165, in get
+      getter.cancel()  # Just in case getter is not done yet.
+    File "/Library/Frameworks/Python.framework/Versions/3.8/lib/python3.8/asyncio/base_events.py", line 719, in call_soon
+      self._check_closed()
+    File "/Library/Frameworks/Python.framework/Versions/3.8/lib/python3.8/asyncio/base_events.py", line 508, in _check_closed
+      raise RuntimeError('Event loop is closed')
+  RuntimeError: Event loop is closed
+  
+    warnings.warn(pytest.PytestUnraisableExceptionWarning(msg))
+
+tests/test_v38_event_driven.py::test_sentinel_process_event
+tests/test_v38_event_driven.py::test_sentinel_vix_logic
+  /Library/Frameworks/Python.framework/Versions/3.8/lib/python3.8/site-packages/_pytest/python.py:181: PytestUnhandledCoroutineWarning:
+  
+  async def functions are not natively supported and have been skipped.
+  You need to install a suitable plugin for your async framework, for example:
+    - anyio
+    - pytest-asyncio
+    - pytest-tornasync
+    - pytest-trio
+    - pytest-twisted
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+
+---------- coverage: platform darwin, python 3.8.2-final-0 -----------
+Name                                              Stmts   Miss  Cover   Missing
+-------------------------------------------------------------------------------
+src/Dashboard.py                                     98     55    44%   63-141, 154-155, 166
+src/__init__.py                                       0      0   100%
+src/agents/base_agent.py                            326    100    69%   65, 89-94, 155, 164-166, 176-178, 187, 210, 233-242, 246-248, 255, 271-301, 308-317, 337-345, 355-375, 382-392, 396, 409, 463-464, 469, 490-492, 525-530, 541, 543-545, 554, 566-568, 578-579
+src/agents/cio.py                                    85     22    74%   55, 61-65, 96-98, 138-140, 153-177, 182, 190
+src/agents/council_adapter.py                        20      3    85%   24-26
+src/agents/dspy_modules.py                           27      0   100%
+src/agents/engineer.py                              102     15    85%   48, 53-54, 59-60, 86-87, 89-90, 138, 147-148, 165-166, 184
+src/agents/factory.py                               120     24    80%   24, 28-29, 60-66, 75-77, 85, 114, 135-137, 141-143, 147-149
+src/agents/fundamental.py                            28      2    93%   63-64
+src/agents/macro.py                                  13      1    92%   24
+src/agents/momentum.py                               30     10    67%   6-8, 19, 34-52
+src/agents/risk.py                                    9      3    67%   9-11
+src/agents/sentiment.py                              26      0   100%
+src/agents/skills/registry.py                        66      9    86%   15-17, 21-23, 27-29
+src/agents/skills/skill_loader.py                    80     16    80%   28, 37, 47-48, 75, 87-88, 97-98, 108-110, 127-130
+src/auth.py                                          35      4    89%   32-35, 79
+src/cli.py                                           64     18    72%   49, 57-60, 73-74, 76-81, 92-101, 104
+src/data/__init__.py                                  0      0   100%
+src/data/database.py                                 74     24    68%   27, 68, 289-296, 301-306, 311-316, 325-326, 333
+src/data/feedback_store.py                           43     15    65%   40-44, 53-80, 112-114
+src/data/ingestor.py                                112     13    88%   24, 35-37, 51, 69, 128-131, 140-141, 186-187, 204
+src/data/ingestors/__init__.py                        2      0   100%
+src/data/ingestors/base.py                            8      1    88%   13
+src/data/ingestors/factory.py                        13      0   100%
+src/data/ingestors/strategies.py                     91     19    79%   18, 22, 31-32, 43, 80-83, 92-93, 139-140, 149-157
+src/data/memory_repository.py                        19      0   100%
+src/data/providers/__init__.py                        0      0   100%
+src/data/providers/base.py                           16      4    75%   14, 19, 24, 29
+src/data/providers/fmp_provider.py                  116     47    59%   27, 53, 60, 63-81, 101-102, 107-117, 121-134, 146-147, 160-162
+src/data/providers/polygon_provider.py              106     55    48%   27, 58-60, 64-66, 75-86, 89-117, 120-138, 153-154
+src/data/providers/yfinance_provider.py              88      3    97%   51-52, 58
+src/data/redis_memory_repository.py                  45      5    89%   23-24, 62-63, 81
+src/data/repositories/feedback_repository.py         28      3    89%   61-63
+src/data/risk_keyword_repository.py                  72      2    97%   242-243
+src/data/sentinel_repository.py                      34     11    68%   29-30, 37-58, 67
+src/domain/broker.py                                 22      6    73%   15, 20, 25, 30, 35, 40
+src/domain/entities.py                               92      4    96%   72, 76, 86, 90
+src/domain/interfaces.py                             22      5    77%   13, 17, 28, 32, 45
+src/domain/trading.py                                45      0   100%
+src/infrastructure/agent_llm_provider.py             35      3    91%   36, 61, 70
+src/infrastructure/channels/email_adapter.py         18      6    67%   24-31
+src/infrastructure/channels/line_adapter.py          54      8    85%   23-25, 143-145, 162-163
+src/infrastructure/channels/web_adapter.py           23      3    87%   46-49
+src/infrastructure/lane_manager.py                   52      0   100%
+src/infrastructure/llm_router.py                     27     17    37%   35-65
+src/infrastructure/memory/memory_manager.py          87     57    34%   13, 40-41, 69, 83-122, 128-209
+src/infrastructure/risk_manager.py                  117     29    75%   42-43, 70, 92-109, 131-135, 147, 155-156, 190-191
+src/mcp_service/__init__.py                         172     62    64%   102-103, 133, 193-212, 222-224, 238, 244, 255, 266, 288-316, 334-336, 343-356, 362-372
+src/mcp_service/main.py                               4      4     0%   4-8
+src/notifier.py                                      67     10    85%   85-86, 90-91, 95-96, 114-115, 138-139
+src/pages/05_Data_Management.py                     125     61    51%   33-35, 46-49, 53, 55, 57, 64, 120, 123, 126-165, 168-180, 187, 191-212, 216
+src/pages/06_Settings.py                             49     29    41%   24, 28-79, 82
+src/pages/settings_tabs/agent_playground_tab.py      50     24    52%   29-66, 81-92, 104-107
+src/pages/settings_tabs/ai_config_tab.py             64     21    67%   17, 35-45, 59-61, 73-75, 87-89, 122
+src/pages/settings_tabs/appearance_tab.py            12      8    33%   6-14
+src/pages/settings_tabs/data_sources_tab.py          35     31    11%   10-207
+src/pages/settings_tabs/hr_protocol_tab.py           29     25    14%   6-38
+src/pages/settings_tabs/optimization_tab.py          31     24    23%   9-40
+src/pages/settings_tabs/report_dry_run_tab.py        89     42    53%   13, 19, 24-30, 51-60, 64, 84-87, 105-136
+src/pages/settings_tabs/risk_keywords_tab.py         93     88     5%   25-152
+src/pages/settings_tabs/scheduler_tab.py             80     11    86%   91-92, 108-114, 120-121
+src/pages/settings_tabs/storage_tab.py               10      7    30%   5-11
+src/pages/settings_tabs/trading_tab.py               56     53     5%   9-97
+src/refinement.py                                    16     16     0%   1-20
+src/repositories/agent_state_repository.py           24     11    54%   14, 21, 25-29, 32-44
+src/repositories/feedback_repository.py              43      5    88%   40, 45, 49, 60, 71
+src/repositories/memory_repository.py                31      0   100%
+src/repositories/prompt_repository.py                19      9    53%   10, 14-33
+src/repositories/settings_repository.py              44      7    84%   8, 12, 16, 20, 24, 40, 55
+src/repositories/snapshot_repository.py              39      3    92%   9, 13, 17
+src/repositories/transaction_repository.py           94     16    83%   9, 14, 18, 22, 26, 34, 42, 49, 56, 72-74, 110, 132-136, 209
+src/repositories/vector_repository.py                71     20    72%   98-100, 128-130, 151-152, 158-190
+src/services/analytics_service.py                   133     20    85%   24, 57, 59, 61, 75, 210-211, 232, 243, 272-273, 277-279, 283-285, 289-291
+src/services/backtest_service.py                     61      8    87%   47-48, 74, 113-114, 135-136, 141
+src/services/broker_factory.py                       61     32    48%   34-37, 40-43, 52-53, 66-100
+src/services/council_service.py                      94     18    81%   58, 63-88, 110, 167-168, 207-208, 243-244
+src/services/dashboard_service.py                    94      8    91%   25-32, 89, 98, 130
+src/services/etoro_service.py                       220     39    82%   62, 78-81, 162-164, 185-192, 210, 228-230, 264-266, 299-302, 305-307, 323-326, 339-340, 361, 374, 385-388
+src/services/evaluation_service.py                   23      3    87%   20, 28, 38
+src/services/fred_service.py                         34      0   100%
+src/services/futu_service.py                        146     37    75%   21-23, 50-51, 54, 61-62, 67-68, 76, 90-92, 96, 101-102, 131, 150, 166, 174, 203-204, 210-212, 220, 229-232, 255-256, 276, 278-280
+src/services/hr_service.py                           52      8    85%   26, 31, 49, 53-54, 63, 91-92
+src/services/ingestion_service.py                    27      0   100%
+src/services/market_data_service.py                 186     47    75%   30-32, 80, 88-104, 116-136, 160, 171-173, 191, 236-238, 260-261, 278-279, 296-297, 305-306, 351-354
+src/services/memory_factory.py                       19      0   100%
+src/services/memory_service.py                       84     13    85%   39, 43, 49, 53, 99-106, 118-119, 144
+src/services/notification_service.py                 29      4    86%   20, 71-73
+src/services/performance_service.py                  52      7    87%   19, 24-34
+src/services/portfolio_aggregator_service.py         40      3    92%   51, 72-73
+src/services/refinement_service.py                   71      7    90%   48-50, 55, 93, 108, 112
+src/services/scheduler_service.py                   183     52    72%   46-47, 58-60, 134-136, 143-144, 150-168, 206-207, 229-230, 255-275, 278-288, 300-301, 312-314
+src/services/search_service.py                       81     16    80%   37-42, 49-52, 85-86, 118-121, 124
+src/services/sentinel_service.py                    222     56    75%   89, 93, 104-105, 116-126, 141, 145, 207, 211, 215, 230-231, 254-255, 264, 273, 343-346, 374-376, 385, 387, 413-421, 439-445, 454-468
+src/services/settings_service.py                     73     16    78%   34-35, 54, 76-77, 89, 95-106
+src/services/task_planning_service.py                50     13    74%   59, 136, 141-156
+src/services/theme_service.py                        34      7    79%   44-59
+src/services/transaction_service.py                  50     11    78%   25, 36, 43-52, 57, 80
+src/services/user_focus_service.py                   49      7    86%   53-54, 77-78, 92-94
+src/services/workflow_service.py                    378     65    83%   85-87, 150, 155, 244-247, 263-264, 282, 323-325, 332-335, 398, 409-411, 492, 494, 498-501, 529, 538-540, 553-577, 581-582, 637-640, 650, 711, 743, 767-769, 793-801, 803-808, 847
+src/tools/market_tools.py                            20      4    80%   36-41
+src/tools/mcp_server.py                              41      0   100%
+src/utils/__init__.py                                 0      0   100%
+src/utils/auth_guard.py                              17      0   100%
+src/utils/cache.py                                   73      9    88%   33-34, 55-57, 70-72, 102-103
+src/utils/components.py                              30     13    57%   32-43, 55-64, 72-82
+src/utils/format_utils.py                            22      8    64%   17-21, 28-32
+src/utils/google_auth.py                            115     56    51%   40, 49-50, 63, 67-116, 121-127, 149, 156, 182, 185-197, 206-212, 216-218
+src/utils/logger.py                                  11      0   100%
+src/utils/page_base.py                               34      1    97%   100
+src/utils/time_utils.py                              51      0   100%
+src/utils/ui.py                                      50      2    96%   14, 18
+src/workflow/__init__.py                              0      0   100%
+src/workflow/optimizer.py                            48      6    88%   9-11, 83-84, 102
+-------------------------------------------------------------------------------
+TOTAL                                              6995   1805    74%
+
+=========================== short test summary info ============================
+FAILED tests/test_data_providers.py::TestFMPProvider::test_init_without_key
+FAILED tests/test_data_providers.py::TestFMPProvider::test_init_with_key - As...
+FAILED tests/test_data_providers.py::TestFMPProvider::test_fetch_prices_no_key
+FAILED tests/test_data_providers.py::TestPolygonProvider::test_init_without_key
+FAILED tests/test_data_providers.py::TestPolygonProvider::test_init_with_key
+FAILED tests/test_data_providers.py::TestPolygonProvider::test_fetch_prices_no_key
+FAILED tests/test_workflow_service.py::test_report_distribution - AssertionEr...
+====== 7 failed, 418 passed, 2 skipped, 1 xfailed, 11 warnings in 57.70s =======

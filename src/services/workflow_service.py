@@ -170,12 +170,12 @@ class BaseWorkflow(ABC):
         finally:
             conn.close()
 
-        # 2. Send Email
-        from src.notifier import EmailNotifier
-        notifier = EmailNotifier()
+        # 2. Send Notifications (Email & Web)
+        from src.services.notification_service import NotificationService
+        notifier = NotificationService()
         subject = f"Investment Report ({self.__class__.__name__}) - {get_current_time().strftime('%Y-%m-%d')}"
-        notifier.send_report(subject, content)
-        logger.info("Report email sent.")
+        notifier.send_report(subject, content, user_id=self.user_id, source=self.__class__.__name__)
+        logger.info("Report notifications sent.")
 
 
 class DailyWorkflow(BaseWorkflow):

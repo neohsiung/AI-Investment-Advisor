@@ -9,8 +9,9 @@ class DynamicModelRouter:
     Implements the 'Cost Optimization' strategy for the Agent Council.
     """
     
-    TIER_FAST = "fast"   # e.g., Gemini 1.5 Flash, GPT-4o-mini
-    TIER_SMART = "smart" # e.g., Gemini 1.5 Pro, GPT-4o
+    TIER_ADVANCED = "advanced" # Level 3+ (戰略): e.g., Deep Research, Strategy Refinement
+    TIER_SMART = "smart"      # Level 2  (智囊): e.g., Council Debate, Complex Analysis
+    TIER_FAST = "fast"        # Level 1  (前鋒): e.g., Sentinel ticks, simple tasks
 
     def __init__(self):
         self.complex_keywords = [
@@ -50,10 +51,10 @@ class DynamicModelRouter:
             tier = self.TIER_SMART
             reason.append(f"Complex Topic Keyword found")
 
-        # Rule 4: Explicit "Deep Research" Request
-        elif "deep research" in topic.lower() or "detailed analysis" in topic.lower():
-            tier = self.TIER_SMART
-            reason.append("Explicit Deep Research Request")
+        # Rule 4: Strategic / Deep Research
+        elif "deep research" in topic.lower() or "strategy" in topic.lower():
+            tier = self.TIER_ADVANCED
+            reason.append("Strategic / Deep Research Request")
             
         if tier == self.TIER_SMART:
             logger.info(f"Router: Escalated to SMART tier. Reason: {', '.join(reason)}")

@@ -88,13 +88,18 @@ sequenceDiagram
     Logic-->>Agent: JSON Result -> Observations
 ```
 
-### 3. Agent 對 Agent 網格 (Agent-to-Agent Mesh)
-本系統目前採用的 A2A 機制確保了任務的高度專業化與並行處理。
+### 4. 交付與通知協定 (Delivery & Notification Protocols)
+(v3.7+) 系統採用 **全通路適配器模式 (Omni-channel Adapter Pattern)**，將核心邏輯與交付管道徹底解耦。
 
-- **靜態實例 (Static Mode)**: 透過 `AgentFactory` 直接進行對等實體化調用。
-- **訊息路由 (Message Mode)**: (v3.2+) 透過 `mcp_service/agents/message` 進行非同步任務分發，適合長耗時的研究任務。
+#### 4.1 核心組件 (Core Components)
+- **NotificationService**: 統籌編排器，負責過濾管道並執行並行發送。
+- **IChannelAdapter**: 標準化介面，定義 `send_alert` 行為。
+- **Adapters**:
+    - `LineBotAdapter`: 封裝 LINE Flex Message。
+    - `EmailAdapter`: 封裝 SMTP 外發邏輯。
+    - `WebAdapter`: 將訊息寫入 DB `event_logs` 供 Dashboard 顯示。
 
-### 4. 工具集詳細定義 (Toolset Specification)
+#### 4.2 工具集詳細定義 (Toolset Specification)
 所有工具均透過 `Registry` (Local) 或 `MCP Service` (Remote) 暴露。
 
 | 工具名稱 | 輸入參數 (Types) | 業務邏輯 / 數據源 | 執行模式 |

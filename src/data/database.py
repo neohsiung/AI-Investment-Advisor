@@ -267,6 +267,14 @@ def init_db(db_path=None):
             last_hit_date TEXT,
             is_active INTEGER DEFAULT 1,
             created_at TEXT
+        )""",
+        """CREATE TABLE IF NOT EXISTS sentinel_thresholds (
+            key TEXT PRIMARY KEY,
+            value REAL NOT NULL,
+            description TEXT,
+            last_optimized_by TEXT,
+            roi_hint TEXT,
+            updated_at TEXT
         )"""
     ])
 

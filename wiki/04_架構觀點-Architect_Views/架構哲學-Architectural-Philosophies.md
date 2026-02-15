@@ -35,10 +35,14 @@
     3. 實作業務邏輯並透過 [LLM 回饋循環](提示詞工程規範-Prompt-Engineering-Specs) 進行驗證。
     4. 更新 Wiki 反映實作中的優化點。
 
-### 4. 智能分層與演化 (Intelligence Layering)
-**理論**: 模仿 Kimi K2.5 的混合控制架構。
+### 4. 智能分層與演化 (Intelligence Layering & Multi-Tier Architecture)
+**理論**: 模仿 Kimi K2.5 的混合控制架構 + **Role × Multi-Tier Agents** 並行執行。
 - **編排層 (Stateful Orchestrator)**: `CIOAgent` 負責任務拆解與資源調配，具備狀態記憶。
-- **執行層 (Stateless Sub-agents)**: 專責某一領域（如 `RevenueExtractor`）的子代理，保持功能單一且「凍結」，確保高度可預測性。
+- **執行層 (Multi-Tier Sub-agents)**: 每個專責領域的 Sub-Agent 有 **3 個層級**，並行執行：
+  - 🚀 **Advanced**: 關鍵決策、深度分析 (Claude Opus, Gemini Pro) - 高成本高質量
+  - 🧠 **Smart**: 日常分析、平衡質量與速度 (GPT-4, Gemini Pro) - 中等成本
+  - ⚡ **Fast**: 快速初篩、低風險探索 (Gemini Flash, GPT-3.5) - 低成本高速度
+- **策略**: Fast tier 先行輸出初步結果，並行等待 Advanced tier 補充深度洞察，通過 voting/fusion 機制整合最終輸出。
 
 ### 5. 事件驅動演進 (Event-Driven Evolution)
 - **主動監控**: 從「被動拉取 (Pull)」轉向「主動推送 (Push)」。`SentinelService` 實作了主動事件監聽，當 VIX 或持倉發生偏移時，主動喚醒慢想系統 (Council)。
@@ -67,9 +71,9 @@ The domain is the center of our universe.
 The Wiki serves as the living contract between design and execution.
 - **Design-First**: Architectural decisions are documented as ADRs before implementation.
 
-### 4. Proactive Intelligence
+### 4. Proactive Intelligence & Multi-Tier Execution
 - **Event-Driven**: Transitioning from a reactive "User Poll" model to a proactive "Sentinel Alert" model.
-- **Orchestrator-Subagent Pattern**: Decoupling complex reasoning (Stateful Orchestrator) from atomic execution (Stateless Sub-agents) for stable scaling.
+- **Orchestrator-Multi-Tier Pattern**: Stateful Orchestrator (CIO) coordinates N Sub-Agents, each executing in **3 parallel tiers** (Advanced 🚀 /  Smart 🧠 / Fast ⚡) for optimal cost-quality balance. Fast tier provides quick initial results, Advanced tier adds depth, with voting/fusion mechanisms for final output.
 
 ## 🔗 Bidirectional Links
 - **Architect View**: [System Landscape](系統全景圖-System-Landscape)

@@ -35,16 +35,19 @@ def mock_services():
     transaction = MagicMock()
     council = MagicMock()
     council.start_session = AsyncMock(return_value={"consensus": "Hold positions"})
-    line = MagicMock()
+    notification = MagicMock()
+    settings = MagicMock()
+    settings.get_all_settings.return_value = {}
+    settings.get_setting.return_value = None
 
     return {
         "market": market,
         "search": search,
         "transaction": transaction,
         "council": council,
-        "line": line,
+        "notification": notification,
+        "settings": settings,
     }
-
 
 def _create_sentinel(mock_services):
     from src.services.sentinel_service import SentinelService
@@ -53,7 +56,8 @@ def _create_sentinel(mock_services):
         search_service=mock_services["search"],
         transaction_service=mock_services["transaction"],
         council_service=mock_services["council"],
-        line_adapter=mock_services["line"],
+        notification_service=mock_services["notification"],
+        settings_service=mock_services["settings"],
     )
 
 
@@ -69,11 +73,12 @@ class TestVIXAnomaly:
         mock_services["transaction"].get_user_tickers.return_value = []
 
         async def _test():
-            # Patch _get_all_user_ids to avoid DB
-            with patch.object(sentinel, '_get_all_user_ids', return_value=[]):
+            # Patch _get_all_user_ids and _check_active_sources to avoid DB
+            with patch.object(sentinel, '_get_all_user_ids', return_value=[]), \
+                 patch.object(sentinel, '_check_active_sources', return_value=[]):
                 await sentinel.process_tick()
             mock_services["council"].start_session.assert_not_called()
-            mock_services["line"].send_flex_alert.assert_not_called()
+            mock_services["notification"].send_flex_alert.assert_not_called()
 
         run_async(_test())
 
@@ -98,18 +103,21 @@ class TestVIXAnomaly:
     def test_vix_static_fallback(self, mock_services, run_async):
         """Short history — uses static threshold."""
         sentinel = _create_sentinel(mock_services)
-        sentinel.thresholds["vix_high"] = 20.0
+        # 3.9 - Ensure thresholds are mockable
+        sentinel.thresholds = {"vix_high": 20.0}
+        
         mock_services["market"].get_ohlcv.return_value = {"close": [22.0]}
-        mock_services["market"].get_current_prices.return_value = {}
-        mock_services["market"].get_macro_data.return_value = {}
-        mock_services["transaction"].get_user_tickers.return_value = []
-
+        
         async def _test():
-            with patch.object(sentinel, '_get_all_user_ids', return_value=[]):
-                await sentinel.process_tick()
+            # Test the dimension logic directly to ensure it works
+            triggers = sentinel._check_vix_anomaly()
+            assert len(triggers) == 1
+            assert "VIX High (Static)" in triggers[0]
+            
+            # Now test the escalation via _escalate
+            await sentinel._escalate(triggers)
             mock_services["council"].start_session.assert_called_once()
-            args = mock_services["council"].start_session.call_args[0]
-            assert "VIX High (Static)" in args[0]
+            mock_services["notification"].notify_all.assert_called_once()
 
         run_async(_test())
 
@@ -171,7 +179,8 @@ class TestPositionMoves:
         mock_services["transaction"].get_user_tickers.return_value = ["MSFT"]
 
         async def _test():
-            with patch.object(sentinel, '_get_all_user_ids', return_value=["user@test.com"]):
+            with patch.object(sentinel, '_get_all_user_ids', return_value=["user@test.com"]), \
+                 patch.object(sentinel, '_check_active_sources', return_value=[]):
                 await sentinel.process_tick()
             mock_services["council"].start_session.assert_not_called()
 
@@ -314,8 +323,8 @@ class TestEscalation:
                 await sentinel._escalate(["Test trigger 1", "Test trigger 2"])
 
             mock_services["council"].start_session.assert_called_once()
-            mock_services["line"].send_flex_alert.assert_called_once()
-            call_kwargs = mock_services["line"].send_flex_alert.call_args[1]
+            mock_services["notification"].notify_all.assert_called_once()
+            call_kwargs = mock_services["notification"].notify_all.call_args[1]
             assert call_kwargs["user_id"] == "U123"
             assert "2 個風險訊號" in call_kwargs["content"]
 

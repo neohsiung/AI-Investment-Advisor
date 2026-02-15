@@ -6,15 +6,15 @@
 ### 版本紀錄 (Version History)
 | Date | Version | Description | Author |
 | :--- | :--- | :--- | :--- |
+| 2026-02-15 | v3.8 | Event-Driven (Webhooks) + Adaptive Compute | Neo |
 | 2026-02-14 | v3.5 | 4D Multi-Trigger + Weighted Risk Keywords | Neo |
 | 2026-02-07 | v3.4 | Standardized naming and structure | Neo |
-| 2026-02-03 | v3.3 | Initial Draft (Rev 3) | Antigravity |
 
 ---
 
 <a id="zh"></a>
 
-## 🇹🇼 哨兵與評議會架構 (Architecture Overview — v3.5)
+## 🇹🇼 哨兵與評議會架構 (Architecture Overview — v3.8)
 
 本架構融入 **丹尼爾·康納曼 (Daniel Kahneman)** 的《快思慢想》哲學，將系統劃分為兩個認知層次：
 
@@ -28,7 +28,10 @@
 #### System 2: 慢想 (The Council)
 - **角色**: 邏輯、運算、辯論、記憶檢索。
 - **實作**: `CouncilService` + `Agent Swarm`。
-- **特徵**: **On-Demand**，成本較高。它負責針對 System 1 拋出的議題 (或日報中的每一項子條目) 進行深度審議。
+- **算力分層 (Tiered Compute)**:
+    - **Advanced (戰略)**: 用於複雜復盤與中長期戰略修正。
+    - **Smart (智囊)**: 用於標準議會辯論與細節分析。
+    - **Fast (前鋒)**: 用於快速巡檢與基礎工具呼叫。
 - **碎形辯論 (Fractal Debate)**: 在生成「日報」或「週報」時，並非只進行一次辯論。而是針對報告中的 **每一個子項目 (每檔股票)**，都必須經過完整的 `Memory -> Debate -> Synthesis` 循環，確保每一個決策點都是深思熟慮的結果。
 
 ### 2. 組件設計 (Component Design)
@@ -45,6 +48,16 @@
 | 📉 持倉異動 | `_check_position_moves()` | TransactionService | 日內跌 > 5% 或漲 > 8% |
 | 📰 突發新聞 | `_check_breaking_news()` | Tavily (SearchService) | **加權分數 ≥ 0.6** (DB Keywords) |
 | 🏦 宏觀異動 | `_check_macro_shifts()` | FRED (FredService) | 利率上升趨勢 / 殖利率曲線倒掛 |
+| ⚡ 外部事件 | `process_event()` | Webhooks (MktRecap/TV) | **即時觸發** |
+
+*   **2.1.0 事件驅動演進 (Event-Driven Evolution — v3.8)**:
+    除了定時輪詢外，系統現在支援 **Inbound Webhooks**。
+    - **入口**: `src/mcp_service/__init__.py` 的 `/webhook/{source}` 端點。
+    - **適配器 (Inbound Adapters)**:
+        - **MktRecap**: 處理價格/成交量突發警報。
+        - **TradingView**: 處理技術指標訊號 (BUY/SELL)。
+        - **RSS Bridge**: 處理來自 IFTTT 或 RSS.app 的財經新聞。
+    - **機制**: Webhook 接收後 normalized 為 `SentinelEvent` 並透過 `asyncio.create_task` 進行非同步處理，確保高吞吐。
 
 *   **每維度錯誤隔離 (Per-Dimension Error Isolation)**: 任一維度失敗不影響其他維度。
 *   **部署模式 (Dual Mode)**:
@@ -89,12 +102,17 @@
 - **Reduce (聚合)**: 收集所有子評議會的 `SIGNAL | RATIONALE`，濃縮為結構化摘要。
 - **Synthesis (主席決策)**: CIO Agent 讀取摘要與宏觀背景，生成最終報告。
 
-#### 2.3 動態智商路由器 (Dynamic Intelligence Router)
-位於 `src/infra/llm_router.py`。
-*   **設計目標**: 在「成本」與「品質」間取得動態最佳解。
-*   **路由邏輯**:
-    *   **Default**: `Fabric.Flash` for general tasks (System 1).
-    *   **High Volatility / Debate**: `Fabric.Pro` for reasoning (System 2).
+#### 2.3 自適應算力切換 (Adaptive Compute Toggle — v3.8)
+位於 `src/infrastructure/llm_router.py`。
+*   **機制**: `SentinelService` 將 `market_volatility` (VIX) 傳遞給 `CouncilService`。
+*   **分層路由**:
+    - **Advanced**: 顯式標記為 "Deep Research" 或 "Strategy" 的任務。
+    - **Smart**: 高波動情境 (VIX > 25) 或深度辯論。
+    - **Fast**: 平穩期與例行巡檢。
+
+#### 2.4 動態參數優化 (Dynamic Heuristics)
+*   **儲存**: `sentinel_thresholds` 資料表。
+*   **權限**: Agents (如 `RiskAgent`) 可根據 ROI 復盤提案修改門檻。
 
 #### 2.4 強化記憶層 (Unified PGVector)
 位於 `src/repositories/vector_repository.py`。
@@ -173,7 +191,7 @@ graph LR
 
 <a id="en"></a>
 
-## 🇺🇸 Sentinel & Council Architecture (v3.5)
+## 🇺🇸 Sentinel & Council Architecture (v3.8)
 
 ### 1. Architecture Overview (System 1 & 2)
 
@@ -189,7 +207,10 @@ Inspired by Daniel Kahneman's *Thinking, Fast and Slow*, the system is divided i
 - **Implementation**: `CouncilService` + `Agent Swarm`.
 - **Characteristics**: On-Demand, high cost. Performs fractal debates on issues raised by Sentinel.
 
-### 2. Sentinel 4D Multi-Trigger
+### 2. Sentinel Multi-Trigger Evolution
+- **Hybrid Entry**: Supports both polling (`process_tick`) and webhooks (`process_event`).
+- **External Sources**: MktRecap, TradingView, RSS-to-webhook bridges.
+- **Adaptive Compute**: VIX-based model routing (Flash vs. Pro).
 
 | Dimension | Method | Source | Threshold |
 | :--- | :--- | :--- | :--- |

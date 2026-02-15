@@ -3,10 +3,18 @@ import pandas as pd
 from fredapi import Fred
 from src.utils.logger import setup_logger
 
+from src.services.settings_service import SettingsService
+
 class FredService:
-    def __init__(self, api_key=None):
+    """
+    FRED (Federal Reserve Economic Data) Service.
+    """
+    def __init__(self, user_id=None, settings_service=None):
         self.logger = setup_logger("FredService")
-        self.api_key = api_key or os.getenv("FRED_API_KEY")
+        self.settings_service = settings_service or SettingsService(user_id=user_id)
+        settings = self.settings_service.get_all_settings()
+        
+        self.api_key = settings.get("source_fred_api_key") or os.getenv("FRED_API_KEY")
         self.client = None
         if self.api_key:
             try:

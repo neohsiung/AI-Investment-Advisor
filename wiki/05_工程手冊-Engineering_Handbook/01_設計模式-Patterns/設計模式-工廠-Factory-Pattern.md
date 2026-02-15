@@ -32,12 +32,15 @@ agent = MomentumAgent(
 # ✅ After: 透過工廠統一生產
 # 詳見 src/agents/factory.py
 agent = AgentFactory.create_momentum_agent(user_id=uid)
+
+# 詳見 src/domain/broker.py
+broker = BrokerFactory.get_broker(broker_name)
 ```
 <!-- slide -->
 > [!TIP]
 > **為什麼好？**: 
-> 1. 初始化邏輯（如加載 Prompt 路徑）被封裝在單一位置。
-> 2. 變更依賴（例如換成 PostgresRepo）只需修改工廠，不影響調用端。
+> 1. 初始化邏輯（如加載 Prompt 路徑、API 認證）被封裝在單一位置。
+> 2. 模式切換：在建立 `IChannelAdapter` 時，Factory 會根據環境變數決定回傳 `LineBotAdapter` 或 `MockAdapter`。
 ````
 
 ### 3. 非功能性要求 (Scalability)
@@ -54,7 +57,7 @@ Encapsulate complex agent dependencies (Prompts, Repos, Caches) within a single 
 
 ### 2. Good vs. Bad Comparison
 - **Bad**: Deeply nested constructor calls inside business logic, leaking path constants and DB details.
-- **Good**: `AgentFactory.create_...()` hides all boilerplate, facilitating easier refactoring.
+- **Good**: `AgentFactory` and `BrokerFactory` hide all boilerplate, facilitating easier refactoring and mock injection.
 
 ### 3. Performance & NFR
 - **Latency**: Sub-10ms instantiation.

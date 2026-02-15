@@ -37,7 +37,7 @@ class IChannelAdapter(ABC):
     全通路通知適配器介面 (例如: Telegram, LINE)。
     """
     @abstractmethod
-    def send_flex_alert(self, user_id: str, title: str, content: str, actions: List[Dict[str, str]] = None):
+    def send_alert(self, user_id: str, title: str, content: str, actions: List[Dict[str, str]] = None, **kwargs) -> bool:
         """
         Send a rich alert message.
         發送豐富的警報訊息。

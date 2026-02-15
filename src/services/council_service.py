@@ -28,7 +28,7 @@ class CouncilService:
         self.lane_manager = LaneManager()
         self.user_focus_service = UserFocusService()
 
-    async def start_session(self, topic: str, context_data: Dict[str, Any], scope: str = "single") -> Dict[str, Any]:
+    async def start_session(self, topic: str, context_data: Dict[str, Any], scope: str = "single", market_volatility: float = 0.0) -> Dict[str, Any]:
         """
         Starts a Council Session.
         If scope="portfolio", it triggers the Map-Reduce flow.
@@ -38,15 +38,15 @@ class CouncilService:
         
         # 0. Check Scope for Map-Reduce
         if scope == "portfolio":
-            return await self._run_map_reduce_portfolio(session_id, topic, context_data)
+            return await self._run_map_reduce_portfolio(session_id, topic, context_data, market_volatility=market_volatility)
         
         # Default Single Topic Flow (Thread-blocking wrapper for async compatibility)
         # In a real async app, this should be fully async. 
         # Here we wrap the synchronous logic in a lane task or just run it if it's CPU bound.
         # For simplicity in this refactor, we keep standard flow as is but make it async-capable.
-        return await self._run_standard_session(session_id, topic, context_data)
+        return await self._run_standard_session(session_id, topic, context_data, market_volatility=market_volatility)
 
-    async def _run_map_reduce_portfolio(self, session_id: str, topic: str, context_data: Dict[str, Any]):
+    async def _run_map_reduce_portfolio(self, session_id: str, topic: str, context_data: Dict[str, Any], market_volatility: float = 0.0):
         """
         Phase 4: Map-Reduce for Full Portfolio.
         1. Map: Analyze each ticker in parallel (sub-councils).
@@ -110,7 +110,7 @@ class CouncilService:
                 aggregated_summary += f"- Error in analysis: {res}\n"
 
         # --- Phase 3: Synthesis (CIO) ---
-        consensus_tier = self.router.select_tier(topic, round_num=99)
+        consensus_tier = self.router.select_tier(topic, round_num=99, market_volatility=market_volatility)
         cio = AgentFactory.create_cio_agent(tier=consensus_tier)
         
         final_context = {
@@ -136,15 +136,15 @@ class CouncilService:
             "transcript": aggregated_summary
         }
 
-    async def _run_standard_session(self, session_id: str, topic: str, context_data: Dict[str, Any]):
+    async def _run_standard_session(self, session_id: str, topic: str, context_data: Dict[str, Any], market_volatility: float = 0.0):
         """
         Original logic wrapped for async.
         """
         # Run in thread to avoid blocking event loop
         loop = asyncio.get_running_loop()
-        return await loop.run_in_executor(None, self._run_sync_logic, session_id, topic, context_data)
+        return await loop.run_in_executor(None, self._run_sync_logic, session_id, topic, context_data, market_volatility)
 
-    def _run_sync_logic(self, session_id: str, topic: str, context_data: Dict[str, Any]):
+    def _run_sync_logic(self, session_id: str, topic: str, context_data: Dict[str, Any], market_volatility: float = 0.0):
         # ... (Original Logic from previous file version, kept for single-topic debates) ...
         # For brevity in this refactor, I will re-implement the core parts ensuring it addresses the task.
         
@@ -170,7 +170,7 @@ class CouncilService:
         # 2. Members
         # Determine Tier based on Topic Complexity or Market Regime
         # (Router integration is already here)
-        tier = self.router.select_tier(topic, round_num=1)
+        tier = self.router.select_tier(topic, round_num=1, market_volatility=market_volatility)
         
         # Instantiate Agents with retrieved context? 
         # Actually, agents take context in .run(), so we just pass it there.

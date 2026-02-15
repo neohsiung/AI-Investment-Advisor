@@ -23,6 +23,9 @@
 | **ADR-003** | **Template Method** | Daily/Weekly Workflows 重複代碼率 > 60%。 | **優點**: 強制執行 HR 協議。**限制**: 子類別必須遵守骨架。 |
 | **ADR-004** | **Factory Pattern** | Agent/Broker/Memory 建構邏輯複雜且分散。 | **優點**: 統一 `AgentFactory`/`BrokerFactory`/`MemoryFactory`。**代價**: 新增 Factory 類別。 |
 | **ADR-005** | **Adapter Pattern** | Council 與 base Agent 介面不相容，券商 API 異質性高。 | **優點**: `CouncilAgentAdapter` 將 Council 包裝為 Agent 介面；Broker Services 將異質 API 統一為 `IBroker`。 |
+| **ADR-006** | **Strategy Pattern** | 不同來源 (CSV, PDF, URL) 的資料攝取邏輯迥異，難以維護。 | **優點**: 實現攝取演算法的切換與擴展。**代價**: 需要管理多個 Strategy 類別。 |
+| **ADR-007** | **Tiered Compute** | 不同任務情境對模型智商與速度需求不同。 | **優點**: 實現 Advanced/Smart/Fast 分層算力路由，兼顧成本與品質。 |
+| **ADR-008** | **Dynamic Heuristics** | 硬編碼門檻導致系統難以在不同市場環境中自動優化。 | **優點**: 門檻值由 Agents 依照投資報酬率 (ROI) 與復盤結果動態微調。 |
 
 ### 3. 設計模式深度庫 (Pattern Deep Dives)
 每一個模式都具備詳盡的 **Good vs. Bad** 對比與實作規範：
@@ -30,7 +33,10 @@
 - **[存儲庫模式 (Repository Pattern)](設計模式-存儲庫-Repository-Pattern)**: 解決持久層方言問題。
 - **[依賴注入 (DI Pattern)](設計模式-依賴注入-DI-Pattern)**: 解決可測試性問題。
 - **[樣板方法 (Template Method)](設計模式-樣板方法-Template-Method)**: 解決流程重複問題。
-- **適配器模式 (Adapter Pattern)**: `CouncilAgentAdapter` 與 Broker Services 將異質介面統一化。
+- **[適配器模式 (Adapter Pattern)](設計模式-適配器-Adapter-Pattern)**: 異質介面統一化 (Council, Brokers, Notifications)。
+- **[策略模式 (Strategy Pattern)](設計模式-策略-Strategy-Pattern)**: 多樣化資料攝取與演算法切換。
+- **[智能體集群 (Swarm Patterns)](設計模式-智能體集群-Swarm-Patterns)**: 多 Agent 協作、並行分析與共識機制。
+- **[動態參數規範 (Dynamic Heuristics)](./02_規範標準-Standards/動態參數規範-Dynamic-Parameter-Standards)**: 運算門檻的主動演進與自優化。
 
 ---
 
@@ -47,13 +53,17 @@ Our goal is to build a **Model-Agnostic** and **Test-Driven** AI Advisor. Design
 - **ADR-003 (Template Method)**: Simplifying daily/weekly workflows.
 - **ADR-004 (Factory)**: Centralizing Agent/Broker/Memory construction.
 - **ADR-005 (Adapter)**: Unifying heterogeneous interfaces (Council, Brokers).
+- **ADR-007 (Tiered Compute)**: Dynamic Advanced/Smart/Fast model routing.
+- **ADR-008 (Dynamic Heuristics)**: Agent-driven thresholds via DB.
 
 ### 3. Deep Dive Series
 - [Factory Pattern](設計模式-工廠-Factory-Pattern)
 - [Repository Pattern](設計模式-存儲庫-Repository-Pattern)
 - [DI Pattern](設計模式-依賴注入-DI-Pattern)
 - [Template Method](設計模式-樣板方法-Template-Method)
-- Adapter Pattern (CouncilAgentAdapter, Broker Services)
+- [Adapter Pattern](設計模式-適配器-Adapter-Pattern)
+- [Strategy Pattern](設計模式-策略-Strategy-Pattern)
+- [Swarm Patterns](設計模式-智能體集群-Swarm-Patterns)
 
 ## 🔗 Bidirectional Links
 - **Standards**: [Database & Git Standards](資料庫設計與代碼規範-Database-Git-Standards)

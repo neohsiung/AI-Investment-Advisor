@@ -15,6 +15,7 @@ from src.pages.settings_tabs.appearance_tab import render_appearance_tab
 from src.pages.settings_tabs.storage_tab import render_storage_tab
 from src.pages.settings_tabs.trading_tab import render_trading_tab
 from src.pages.settings_tabs.risk_keywords_tab import render_risk_keywords_tab
+from src.pages.settings_tabs.data_sources_tab import render_data_sources_tab
 
 class SettingsPage(BasePage):
     """System settings page"""
@@ -27,8 +28,9 @@ class SettingsPage(BasePage):
         user_id = self.user['email']
         db_path = self.db_path
 
-        tab1, tab2, tab3, tab4, tab5, tab6, tab7, tab8, tab9, tab10 = st.tabs([
+        tab1, tab2, tab3, tab4, tab5, tab6, tab7, tab8, tab9, tab10, tab11 = st.tabs([
             "交易與風控 (Trading & Risk)",
+            "數據源管理 (Data Sources)",
             "AI 模型設定 (AI Configuration)", 
             "排程設定與紀錄 (Scheduler)", 
             "報告試跑 (Report Dry Run)", 
@@ -46,6 +48,9 @@ class SettingsPage(BasePage):
             render_trading_tab(st, user_id)
 
         with tab2:
+            render_data_sources_tab(st, settings_service, user_id)
+
+        with tab3:
             settings = settings_service.get_all_settings()
             render_api_settings(st, settings_service, settings)
         

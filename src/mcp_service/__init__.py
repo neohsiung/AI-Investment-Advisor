@@ -2,9 +2,10 @@
 MCP Service - FastAPI 微服務入口點
 Model Context Protocol Service - FastAPI Microservice Entry Point
 """
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request
 from pydantic import BaseModel
 from typing import Dict, List, Any, Optional
+from datetime import datetime
 import logging
 
 # 設定日誌
@@ -40,6 +41,7 @@ services: Dict[str, Any] = {}
 from src.services.market_data_service import MarketDataService
 from src.services.search_service import InternetSearchService
 from src.services.fred_service import FredService
+from src.services.sentinel_service import SentinelService
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -53,6 +55,10 @@ async def lifespan(app: FastAPI):
         services["market"] = MarketDataService()
         services["search"] = InternetSearchService()
         services["fred"] = FredService()
+        services["sentinel"] = SentinelService(
+            market_service=services["market"],
+            search_service=services["search"]
+        )
         
         # 2. Register Tools
         tool_definitions = [
@@ -216,6 +222,98 @@ async def call_tool(tool_name: str, request: ToolCallRequest):
     except Exception as e:
         logger.error(f"Tool execution failed: {e}")
         raise HTTPException(status_code=500, detail=str(e))
+
+# --- Webhook Router & Inbound Adapters ---
+
+class InboundEvent(BaseModel):
+    """通用進入事件"""
+    source: str
+    payload: Dict[str, Any]
+    timestamp: str = str(datetime.now().isoformat())
+
+class BaseSourceParser:
+    """各來源解析器基底"""
+    @staticmethod
+    def parse(payload: Dict[str, Any]) -> Dict[str, Any]:
+        return payload
+
+class MktRecapParser(BaseSourceParser):
+    @staticmethod
+    def parse(payload: Dict[str, Any]) -> Dict[str, Any]:
+        # 轉化 MktRecap 格式
+        return {
+            "type": "MARKET_SPIKE",
+            "ticker": payload.get("ticker", "UNKNOWN"),
+            "value": payload.get("price") or payload.get("volume"),
+            "msg": payload.get("alert_name", "MktRecap Trigger")
+        }
+
+class TradingViewParser(BaseSourceParser):
+    @staticmethod
+    def parse(payload: Dict[str, Any]) -> Dict[str, Any]:
+        # 轉化 TV 格式 (通常由 Bot 送出的 JSON)
+        return {
+            "type": "TECHNICAL_SIGNAL",
+            "ticker": payload.get("ticker"),
+            "signal": payload.get("signal"), # e.g., "BUY", "SELL"
+            "msg": payload.get("comment", "TV Alert")
+        }
+
+class RssBridgeParser(BaseSourceParser):
+    @staticmethod
+    def parse(payload: Dict[str, Any]) -> Dict[str, Any]:
+        # 轉化 IFTTT/RSS.app 格式
+        return {
+            "type": "NEWS_ALERT",
+            "msg": payload.get("title") or payload.get("description", "New RSS Item"),
+            "url": payload.get("link")
+        }
+
+SOURCE_PARSERS = {
+    "mktrecap": MktRecapParser,
+    "tradingview": TradingViewParser,
+    "tradingview_alerts": TradingViewParser,
+    "rss": RssBridgeParser,
+    "rss_bridge": RssBridgeParser,
+    "ifttt": RssBridgeParser
+}
+
+@app.post("/webhook/{source}")
+async def generic_webhook(source: str, request: Request):
+    """
+    通用 Webhook 入口
+    Unified Webhook Entry Point for external signals.
+    """
+    # 0. Security Check (Optional but recommended for ngrok)
+    webhook_secret = os.getenv("WEBHOOK_SECRET")
+    if webhook_secret:
+        request_secret = request.headers.get("X-Webhook-Secret")
+        if request_secret != webhook_secret:
+            logger.warning(f"Unauthorized webhook attempt from {source}")
+            raise HTTPException(status_code=403, detail="Unauthorized")
+
+    try:
+        payload = await request.json()
+        logger.info(f"Received webhook from {source}: {payload}")
+        
+        # 1. Parse Logic
+        parser = SOURCE_PARSERS.get(source.lower(), BaseSourceParser)
+        normalized_data = parser.parse(payload)
+        
+        # 2. Forward to Sentinel
+        if "sentinel" in services:
+            # 非同步處理，避免阻塞外部請求
+            asyncio.create_task(
+                services["sentinel"].process_event({
+                    "source": source,
+                    "data": normalized_data
+                })
+            )
+        
+        return {"status": "accepted", "source": source}
+    except Exception as e:
+        logger.error(f"Webhook error: {e}")
+        raise HTTPException(status_code=400, detail="Invalid payload")
 
 # --- LINE Bot Webhook Support ---
 import os

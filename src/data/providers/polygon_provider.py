@@ -5,15 +5,22 @@ from typing import Dict, Any, List
 from src.data.providers.base import MarketDataProvider
 from src.utils.logger import setup_logger
 
+from src.services.settings_service import SettingsService
+
 class PolygonProvider(MarketDataProvider):
     """
     Polygon.io Data Provider.
-    Requires POLYGON_API_KEY env var.
-    Polygon.io 資料提供者。需要 POLYGON_API_KEY 環境變數。
+    Requires POLYGON_API_KEY env var or DB setting.
     """
-    def __init__(self, api_key: str = None):
+    def __init__(self, api_key: str = None, user_id: str = None, settings_service: SettingsService = None):
         self.logger = setup_logger("PolygonProvider")
-        self.api_key = api_key or os.getenv("POLYGON_API_KEY")
+        
+        # Resolve Settings
+        self.settings_service = settings_service or SettingsService(user_id=user_id)
+        settings = self.settings_service.get_all_settings()
+        
+        # Priority: explicit -> DB -> Env
+        self.api_key = api_key or settings.get("source_polygon_api_key") or os.getenv("POLYGON_API_KEY")
         self.base_url = "https://api.polygon.io"
         
         if not self.api_key:

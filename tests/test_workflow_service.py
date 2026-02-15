@@ -19,6 +19,7 @@ def mock_deps():
     market.get_macro_data.return_value = {"^VIX": 15, "SPY": 400}
     return {"repo": repo, "trans": trans, "market": market}
 
+
 def test_daily_workflow_execution(mock_deps):
     user_id = "test_user"
     mock_deps['trans'].get_user_tickers.return_value = ["AAPL"]
@@ -144,7 +145,7 @@ def test_report_distribution(mock_deps):
     
     with patch('src.services.workflow_service.AgentFactory') as MockFactory, \
          patch('src.services.workflow_service.get_db_connection') as MockDB, \
-         patch('src.notifier.EmailNotifier') as MockEmail, \
+         patch('src.services.notification_service.NotificationService.send_report') as MockSendReport, \
          patch('src.services.workflow_service.PerformanceService') as MockPerf:
         
         mock_mom = MagicMock()
@@ -169,5 +170,5 @@ def test_report_distribution(mock_deps):
         
         workflow.run(dry_run=False)
         
-        MockEmail.return_value.send_report.assert_called()
+        MockSendReport.assert_called()
         mock_conn.execute.assert_called()

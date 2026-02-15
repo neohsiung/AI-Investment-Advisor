@@ -1,6 +1,7 @@
 ### 版本紀錄 (Version History)
 | Date | Version | Description | Author |
 | :--- | :--- | :--- | :--- |
+| 2026-02-15 | v3.6.1 | **Multi-Tier Agent Architecture**: Role × 3-Tier (Advanced/Smart/Fast) 並行模式 | Neo |
 | 2026-02-15 | v3.6 | Added Kimi K2.5 Swarm, OpenClaw Channel Adapters, UI Navigation research | Neo |
 | 2026-02-14 | v3.5 | Initial Release | Neo |
 
@@ -38,10 +39,20 @@
 - **Supervisor 模式**: BlackRock 的 Aladdin Copilot 採用此模式，由 Supervisor 協調多個專任 LLM，這與本系統的 CIO Agent 邏輯高度契合。
 - **MCP 標準化**: 系統已導入 Model Context Protocol，這與 Bloomberg 推動的開放工具連接標準一致，確保跨平台工具的可組合性。
 
-### 6. 智能體集群與併發優化 (Agent Swarm & Parallelism)
-**理論**: 模仿 Kimi K2.5 的 **Agent Swarm** 框架，將複雜任務拆解為並行執行的「關鍵步驟 (Critical Steps)」，而非傳統的序列推理。
-- **項目實作**: 詳見 [未來演進規格](未來演進規格-Future-Roadmap-Specs)。系統採用 Orchestrator-Subagent 模型，凍結底層執行能力以確保穩定性，僅訓練編排層。
-- **最佳實踐**: 使用「關鍵路徑」指標優化端到端延遲，優先處理最慢的 Sub-Agent 分支。
+### 6. 智能體集群與併發優化 (Agent Swarm & Multi-Tier Parallelism)
+**理論**: 模仿 Kimi K2.5 的 **Agent Swarm** 框架 + **Role × Multi-Tier Agents** 並行執行架構。
+- **項目實作**: 詳見 [產品演進藍圖](產品演進藍圖-Evolutionary-Roadmap)。系統採用 Orchestrator-Multi-Tier 模型：
+  - 每個 Role (如 `FundamentalAgent`) 下有 N 個 Sub-Agents (如 `RevenueExtractor`)
+  - 每個 Sub-Agent 有 **3 個層級**並行執行：
+    - 🚀 **Advanced** (戰略): 深度分析、關鍵決策 (Claude Opus, Gemini Pro)
+    - 🧠 **Smart** (智囊): 平衡質量與速度 (GPT-4, Gemini Pro)
+    - ⚡ **Fast** (前鋒): 快速初篩、探索性研究 (Gemini Flash, GPT-3.5)
+  - 例: `FundamentalAgent` → 3 Sub-Agents × 3 Tiers = **9 並行執行**
+- **最佳實踐**: 
+  - Progressive Output: Fast tier 30s 輸出初結論 → Smart 60s 補充 → Advanced 120s 深度洞察
+  - Voting/Fusion: 三層級投票或加權融合決定最終輸出
+  - Cost Optimization: 70% 任務由 Fast tier 承擔，僅 20% 需要 Advanced tier
+  - 使用「關鍵路徑」指標優化端對端延遲，優先處理最慢的 Sub-Agent 分支。
 
 ### 7. 確定性 UI 導航研究 (Deterministic UI Navigation)
 **研究**: 在 Streamlit 等動態 UI 框架中，頁面順序往往受載入速度影響。
@@ -49,7 +60,8 @@
 
 ### 8. 管道適配器模式 (Channel Adapter Pattern)
 **參考**: OpenClaw Architecture
-- **最佳實踐**: 將「智能內核」與「傳輸協議」徹底解耦。透過 Channel Adapters (LINE, Web, CLI) 處理身份驗證與消息格式化，核心 Agent 僅處理標準化的 `AgentCommand`。
+- **項目實作**: [NotificationService](file:///Users/neohsiung/Work/go/investment-advisor/src/services/notification_service.py) 作為單一入口，調用實作了 `IChannelAdapter` 的多元管道。這確保了當未來需要整合 Telegram 或 Slack 時，無須修改 Sentinel 或 Workflow 原始碼。
+- **最佳實踐**: 使用「管道過濾 (Channel Filtering)」機制。日常報告預設走 Email/Web，而 CRITICAL 等級的風險警報則強制觸發 LINE 推送。
 
 ### 9. 集中式 UI 模擬策略 (Centralized UI Mocking)
 **研究**: 測試 Streamlit 應用的主要挑戰在於模組污染與 `@st.cache_data` 的狀態殘留。
@@ -65,9 +77,13 @@
 - **Concept**: Self-correcting workflows to minimize hallucinations.
 - **Implementation**: The `EngineerAgent` serves as the primary evaluation engine.
 
-### 4. Agent Swarm & Parallelism (Kimi K2.5)
+### 4. Agent Swarm & Multi-Tier Parallelism (Kimi K2.5 + v3.7)
 - **Critical Path Optimization**: Shifting from total steps to "Critical Steps" metrics to minimize end-to-end latency.
-- **Decoupled Orchestration**: Using a stateful orchestrator with frozen, specialized sub-agents for stable convergence.
+- **Role × Multi-Tier Architecture**: Each role (e.g., `FundamentalAgent`) has N sub-agents, each executing in **3 parallel tiers** (Advanced 🚀 / Smart 🧠 / Fast ⚡):
+  - Example: `FundamentalAgent` → 3 Sub-Agents × 3 Tiers = 9 parallel executions
+  - Progressive output: Fast tier (30s) → Smart (60s) → Advanced (120s)
+  - Fusion via voting or weighted aggregation for final decision
+- **Decoupled Orchestration**: Using a stateful orchestrator with frozen, specialized multi-tier sub-agents for stable convergence.
 
 ### 5. Frontend & Reliability Research
 - **Deterministic Sidebar**: Enforcing page order via numeric prefixes to stabilize the User Mental Model in Streamlit.

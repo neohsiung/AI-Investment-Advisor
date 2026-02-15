@@ -54,20 +54,23 @@ class LineBotAdapter(IChannelAdapter):
             logger.warning("LINE Bot SDK not installed or tokens missing. Running in MOCK mode.")
             self.is_active = False
 
-    def send_flex_alert(self, user_id: str, title: str, content: str, actions: List[Dict[str, str]] = None):
+    def send_alert(self, user_id: str, title: str, content: str, actions: List[Dict[str, str]] = None, **kwargs) -> bool:
         """
         Sends a rich Flex Message Alert.
-        發送 Flex Message 格式的豐富警報。
+        發送 Flex Message 格式的豐富及時警報。
         
         Args:
             user_id: LINE User ID (or 'broadcast').
             title: Alert Title (e.g. "VIX SPIKE ALERT")
             content: Main body text (內文).
             actions: List of dicts [{"label": "Execute", "data": "action=buy"}] (按鈕動作)
+        
+        Returns:
+            bool: True if successful or mock.
         """
         if not self.is_active:
             logger.info(f"[MOCK LINE] Sending User {user_id}: {title} - {content}")
-            return
+            return True
 
         try:
             # Construct Flex Bubble
@@ -135,9 +138,17 @@ class LineBotAdapter(IChannelAdapter):
             )
             self.messaging_api.push_message(request)
             logger.info(f"LINE Alert sent to {user_id}")
+            return True
 
         except Exception as e:
             logger.error(f"Failed to send LINE Flex Message: {e}")
+            return False
+
+    def send_flex_alert(self, user_id: str, title: str, content: str, actions: List[Dict[str, str]] = None):
+        """
+        [DEPRECATED] Use send_alert instead.
+        """
+        return self.send_alert(user_id, title, content, actions)
 
     def handle_webhook(self, body: str, signature: str):
         """

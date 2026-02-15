@@ -51,8 +51,13 @@ graph TD
     end
 
     Agents -->|Orders| BF
-    LINE[LINE Bot] -->|Webhook| MCP_Serv
-    MCP_Serv -->|Notify| LINE
+    subgraph "Delivery"
+        NS[NotificationService] --> LNA[LINE Adapter] & MA[Email Adapter] & WA[Web Adapter]
+    end
+
+    Agents -->|Results| NS
+    LNA -->|Webhook| MCP_Serv
+    MCP_Serv -->|Notify| NS
 ```
 
 #### 2.3 組件互動流 (Interaction Flows)

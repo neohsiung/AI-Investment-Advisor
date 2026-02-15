@@ -8,10 +8,11 @@ from src.services.market_data_service import MarketDataService
 from src.services.search_service import InternetSearchService
 from src.services.council_service import CouncilService
 from src.services.transaction_service import TransactionService
-from src.infrastructure.channels.line_adapter import LineBotAdapter
-from src.domain.interfaces import IChannelAdapter
+from src.services.notification_service import NotificationService
 
 from src.data.risk_keyword_repository import RiskKeywordRepository
+from src.data.sentinel_repository import SentinelRepository
+from src.services.settings_service import SettingsService
 
 logger = logging.getLogger(__name__)
 
@@ -33,22 +34,33 @@ class SentinelService:
         search_service: InternetSearchService = None,
         transaction_service: TransactionService = None,
         council_service: CouncilService = None,
-        line_adapter: IChannelAdapter = None,
+        notification_service: NotificationService = None,
+        settings_service: SettingsService = None,
     ):
-        self.market_service = market_service or MarketDataService()
-        self.search_service = search_service or InternetSearchService()
+        self.repo = SentinelRepository()
+        self.settings_service = settings_service or SettingsService(user_id="supermfb@gmail.com")
+        
+        self.market_service = market_service or MarketDataService(settings_service=self.settings_service)
+        self.search_service = search_service or InternetSearchService(settings_service=self.settings_service)
         self.transaction_service = transaction_service or TransactionService()
         self.council_service = council_service or CouncilService()
-        self.line_adapter = line_adapter or LineBotAdapter()
+        self.notification_service = notification_service or NotificationService()
         
-        # Thresholds (v3.5)
-        self.thresholds = {
+        # Thresholds (v3.5 - Defaults seeded to DB)
+        self.default_thresholds = {
             "vix_high": 25.0,
             "vix_extreme": 40.0,
             "position_drop_pct": -5.0,    # 個股日跌 > 5% 觸發
             "position_spike_pct": 8.0,     # 個股日漲 > 8% 觸發 (可能泡沫)
             "fed_funds_change_bps": 25,    # 聯邦利率變動 > 25bps
+            "news_risk_score": 0.6,
         }
+        
+        # Sync defaults and load current
+        self.repo.seed_defaults(self.default_thresholds)
+        self.thresholds = self.repo.get_all_thresholds()
+        
+        self.current_vix = 20.0 # Default baseline
 
     # ──────────────────────────────────────────
     # Main Entry Point
@@ -57,9 +69,10 @@ class SentinelService:
     async def process_tick(self):
         """
         Main Event Loop: Multi-Dimensional Scan.
-        Called by Scheduler (Local, every minute) or Cloud Function (GCP).
-        主要事件迴圈：多維掃描。由 Scheduler 或 Cloud Function 呼叫。
+        Reloads dynamic thresholds to allow Agent-driven optimization.
         """
+        self.thresholds = self.repo.get_all_thresholds()
+        logger.info(f"Sentinel Check Started with {len(self.thresholds)} thresholds.")
         try:
             triggers: List[str] = []
             
@@ -79,6 +92,9 @@ class SentinelService:
             if datetime.now().minute == 0:
                 triggers += self._check_macro_shifts()
             
+            # Dimension 5: Active Polling (v3.9 - 根據 UI 設定主動輪詢)
+            triggers += await self._check_active_sources()
+            
             # ACT: Summon Council + LINE if triggered
             if triggers:
                 await self._escalate(triggers)
@@ -87,6 +103,27 @@ class SentinelService:
                 
         except Exception as e:
             logger.error(f"Sentinel Tick Error: {e}", exc_info=True)
+
+    # ──────────────────────────────────────────
+    # Event-Driven Entry (v3.8)
+    # ──────────────────────────────────────────
+
+    async def process_event(self, event: Dict[str, Any]):
+        """
+        Handle asynchronous external events (Webhooks).
+        處理非同步外部事件 (Webhooks)。
+        """
+        source = event.get("source", "unknown")
+        data = event.get("data", {})
+        msg = data.get("msg", "Event Triggered")
+        ticker = data.get("ticker")
+        
+        logger.info(f"Sentinel Processing Event: [{source}] {msg}")
+        
+        triggers = [f"🔔 [{source.upper()}] {msg} " + (f"({ticker})" if ticker else "")]
+        
+        # If it's a technical signal or critical spike, escalate immediately
+        await self._escalate(triggers, source=source)
 
     # ──────────────────────────────────────────
     # Dimension 1: VIX Regime (原有邏輯, 重構)
@@ -131,6 +168,9 @@ class SentinelService:
             else:
                 if current_vix > self.thresholds["vix_high"]:
                     triggers.append(f"⚠️ VIX High (Static): {current_vix:.2f}")
+                
+            # Update global state for adaptive compute
+            self.current_vix = current_vix
                     
         except Exception as e:
             logger.warning(f"VIX check failed: {e}")
@@ -306,27 +346,30 @@ class SentinelService:
             logger.warning(f"Macro shift check failed: {e}")
         return triggers
 
-    # ──────────────────────────────────────────
-    # Escalation: Council + LINE
+    # Escalation: Council + Notifications
     # ──────────────────────────────────────────
 
-    async def _escalate(self, triggers: List[str]):
+    async def _escalate(self, triggers: List[str], source: str = "Sentinel"):
         """
-        Escalate triggers to Council for deliberation, then notify via LINE.
-        將觸發事件上報評議會並通過 LINE 通知。
+        Escalate triggers to Council for deliberation, then notify.
+        將觸發事件上報評議會並通知。
         """
-        topic = f"SENTINEL ALERT: {'; '.join(triggers)}"
-        logger.info(f"Sentinel: Escalating {len(triggers)} trigger(s)")
+        topic = f"{source.upper()} ALERT: {'; '.join(triggers)}"
+        logger.info(f"Sentinel: Escalating {len(triggers)} trigger(s) from {source}")
         
         context = {
-            "source": "Sentinel",
+            "source": source,
             "triggered_rules": triggers,
             "timestamp": date.today().isoformat(),
         }
         
         # Council Deliberation
         try:
-            result = await self.council_service.start_session(topic, context)
+            result = await self.council_service.start_session(
+                topic, 
+                context, 
+                market_volatility=self.current_vix
+            )
             decision = result.get('consensus', 'No Consensus')
         except Exception as e:
             logger.error(f"Council session failed: {e}")
@@ -344,7 +387,8 @@ class SentinelService:
             actions.append({"label": "前往 eToro 下單", "data": "action=etoro_link"})
         
         trigger_summary = "\n".join(f"• {t}" for t in triggers)
-        self.line_adapter.send_flex_alert(
+        trigger_summary = "\n".join(f"• {t}" for t in triggers)
+        self.notification_service.notify_all(
             user_id=target_user,
             title="⚠️ Sentinel Alert",
             content=(
@@ -353,6 +397,8 @@ class SentinelService:
                 f"**Council 共識**: {decision}"
             ),
             actions=actions,
+            source="Sentinel",
+            level="CRITICAL" if any(kw in decision.lower() for kw in ["sell", "reduce"]) else "WARNING"
         )
 
     # ──────────────────────────────────────────
@@ -373,3 +419,50 @@ class SentinelService:
         except Exception as e:
             logger.warning(f"Failed to get user IDs: {e}")
             return []
+
+    async def _check_active_sources(self) -> List[str]:
+        """
+        Poll enabled data sources defined in the Settings UI.
+        根據 UI 設定，輪詢已啟用的資料源。
+        """
+        triggers = []
+        settings = self.settings_service.get_all_settings()
+        
+        # Sources identified in the Matrix that support polling
+        pollable_sources = [
+            "alternative_me", "cryptopanic", "whale_alert", "glassnode",
+            "tiingo", "news_api", "alpha_vantage", "fmp", "fred"
+        ]
+        
+        for sid in pollable_sources:
+            if settings.get(f"source_{sid}_enabled") == "true":
+                try:
+                    # Generic polling trigger (Routing logic can be expanded per sid)
+                    res = await self._poll_single_source(sid, settings)
+                    if res:
+                        triggers.append(res)
+                except Exception as e:
+                    logger.error(f"Polling failed for {sid}: {e}")
+        
+        return triggers
+
+    async def _poll_single_source(self, sid: str, settings: Dict[str, str]) -> str:
+        """
+        Routing logic for specific data source polling.
+        """
+        # Example for Fear & Greed (Alternative.me)
+        if sid == "alternative_me":
+            import requests
+            resp = requests.get("https://api.alternative.me/fng/", timeout=5)
+            if resp.status_code == 200:
+                data = resp.json().get("data", [{}])[0]
+                val = int(data.get("value", 50))
+                label = data.get("value_classification", "Neutral")
+                if val < 25 or val > 75:
+                    return f"📊 市場情緒極端 ({label}): Fear & Greed = {val}"
+        
+        # Other sources would call their respective service methods
+        # For now, we log the poll. In a full implementation, this 
+        # would interact with MarketDataService or SearchService.
+        logger.debug(f"Source {sid} polled as enabled.")
+        return ""

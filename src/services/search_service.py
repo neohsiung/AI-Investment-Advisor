@@ -7,20 +7,29 @@ import os
 import time
 from src.utils.logger import setup_logger
 
+from src.services.settings_service import SettingsService
+
 class InternetSearchService:
     """
     Internet Search Service with Tavily as primary and DuckDuckGo as fallback.
     Tavily 為主要搜尋引擎，DuckDuckGo 為備援。
     """
-    def __init__(self, cache_ttl=86400):
+    def __init__(self, cache_ttl=86400, user_id=None, settings_service=None):
         self.logger = setup_logger("InternetSearch")
         self.cache = {}
         self.cache_ttl = cache_ttl
         
+        # Initialize Settings
+        self.settings_service = settings_service or SettingsService(user_id=user_id)
+        settings = self.settings_service.get_all_settings()
+        
         # Initialize Tavily (Primary)
         self.tavily_client = None
-        tavily_api_key = os.getenv("TAVILY_API_KEY")
-        if tavily_api_key:
+        # Priority: DB -> Env
+        tavily_api_key = settings.get("source_tavily_api_key") or os.getenv("TAVILY_API_KEY")
+        tavily_enabled = settings.get("source_tavily_enabled", "true") == "true"
+        
+        if tavily_api_key and tavily_enabled:
             try:
                 from tavily import TavilyClient
                 self.tavily_client = TavilyClient(api_key=tavily_api_key)
