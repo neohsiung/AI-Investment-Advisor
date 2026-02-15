@@ -40,7 +40,7 @@ env/
 .docker/
 
 # Sub-repositories (Standalone git repos)
-wiki/
+wiki/**/*
 
 # Temporary / Specific Ignored Scripts
 scripts/inspect_db.py
