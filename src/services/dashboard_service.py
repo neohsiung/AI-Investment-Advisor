@@ -150,7 +150,10 @@ class DashboardService:
 
             if not positions_df.empty:
                 positions_df['current_price'] = positions_df['ticker'].map(current_prices).fillna(0)
-                positions_df['market_value'] = positions_df['quantity'] * positions_df['current_price']
+                positions_df['gross_mv'] = positions_df['quantity'] * positions_df['current_price']
+                # Also add loan and net_equity for consistent structure
+                positions_df['loan'] = 0.0
+                positions_df['net_equity'] = positions_df['gross_mv']
 
         return {
             'transactions_df': transactions_df,

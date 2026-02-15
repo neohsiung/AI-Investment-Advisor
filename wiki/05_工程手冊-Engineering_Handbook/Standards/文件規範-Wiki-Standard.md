@@ -29,7 +29,7 @@ This document defines the standards for creating and maintaining the project Wik
         *   **上半部 (Top Half)**: 繁體中文版本 (Traditional Chinese Version).
         *   **下半部 (Bottom Half)**: 英文版本 (English Version).
         *   **分隔線 (Separator)**: 使用 `---` 分隔兩種語言。
-    *   **撰寫建議 (Workflow)**: 建議先撰寫英文內容以確保技術精確度，再翻譯為中文置於文件上方。
+    *   **撰寫建議 (Workflow/Mandatory)**: 所有文件必備先完成英文內容（確保技術精確度與全球化通用性），再翻譯為中文置於文件上方。
     *   First Traditional Chinese (Top), then English (Bottom).
 *   **行文風格 (Writing Style)**:
     *   **一文一事 (One Topic Per Doc)**: 每份文件應專注於單一主題。
@@ -90,7 +90,13 @@ This document defines the standards for creating and maintaining the project Wik
 
 ---
 
-## 6. 範例 (Template)
+## 6. 敏捷文件政策 (Agile Documentation Policy)
+
+*   **去月份化 (No Deadlines)**: 針對未完成的未來特性，嚴禁加上固定月份或季度。使用「迭代 (Iteration)」或「里程碑 (Milestone)」取代。
+*   **代碼對齊 (Code Alignment)**: 文件的進度描述必須與 `src` 代碼庫實際狀態同步。定期審計 `src` 已完成功能並更新里程碑標記 `[x]`。
+*   **持續精進**: 文件為活動實體，應隨研究發現（如 OpenClaw/Kimi 研究）即時迭代最佳實踐與規格。
+
+## 7. 範例 (Template)
 
 ```markdown
 # 範例標題 (Example Title)

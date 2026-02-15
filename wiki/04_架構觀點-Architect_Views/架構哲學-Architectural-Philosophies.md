@@ -35,7 +35,16 @@
     3. 實作業務邏輯並透過 [LLM 回饋循環](提示詞工程規範-Prompt-Engineering-Specs) 進行驗證。
     4. 更新 Wiki 反映實作中的優化點。
 
-### 4. 技術選型分析 (Selection Analysis)
+### 4. 智能分層與演化 (Intelligence Layering)
+**理論**: 模仿 Kimi K2.5 的混合控制架構。
+- **編排層 (Stateful Orchestrator)**: `CIOAgent` 負責任務拆解與資源調配，具備狀態記憶。
+- **執行層 (Stateless Sub-agents)**: 專責某一領域（如 `RevenueExtractor`）的子代理，保持功能單一且「凍結」，確保高度可預測性。
+
+### 5. 事件驅動演進 (Event-Driven Evolution)
+- **主動監控**: 從「被動拉取 (Pull)」轉向「主動推送 (Push)」。`SentinelService` 實作了主動事件監聽，當 VIX 或持倉發生偏移時，主動喚醒慢想系統 (Council)。
+- **外部整合**: 透過標準化的 Channel Adapters (參考 OpenClaw) 整合 Webhook 觸發器。
+
+### 6. 技術選型分析 (Selection Analysis)
 - **為什麼選擇 Streamlit？**: 快速迭代 AI 互動介面，減少前端開發成本，專注於 Agent 邏輯。
 - **為什麼選擇 SQLite 加載 Postgres 兼容？**: 本專案支援本地單機運行（SQLite）與雲端擴張（Postgres），透過 SQLAlchemy 展示了極高的可移植性。
 
@@ -58,7 +67,11 @@ The domain is the center of our universe.
 The Wiki serves as the living contract between design and execution.
 - **Design-First**: Architectural decisions are documented as ADRs before implementation.
 
+### 4. Proactive Intelligence
+- **Event-Driven**: Transitioning from a reactive "User Poll" model to a proactive "Sentinel Alert" model.
+- **Orchestrator-Subagent Pattern**: Decoupling complex reasoning (Stateful Orchestrator) from atomic execution (Stateless Sub-agents) for stable scaling.
+
 ## 🔗 Bidirectional Links
 - **Architect View**: [System Landscape](系統全景圖-System-Landscape)
-- **Engineering Handbook**: [Design Patterns Intro](設計模式導讀-Design-Patterns-Intro)
+- **Engineering Handbook**: [Research & Best Practices](研究與最佳實踐-Research-Best-Practices)
 - **PM Specs**: [Core System Specs](核心系統規格-Core-System-Specs)

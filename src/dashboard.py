@@ -110,18 +110,18 @@ class DashboardPage(BasePage):
                         saas_card_end()
                     
                     with colb:
-                        valid_pie_data = positions_df[positions_df['market_value'] > 0]
+                        valid_pie_data = positions_df[positions_df['gross_mv'] > 0]
                         if not valid_pie_data.empty:
                             saas_card_start(title="分佈 (Allocation)", icon="🥧")
                             template, layout_overrides = get_plotly_template()
-                            fig = px.pie(valid_pie_data, values='market_value', names='ticker', template=template)
+                            fig = px.pie(valid_pie_data, values='gross_mv', names='ticker', template=template)
                             fig.update_layout(**layout_overrides)
                             fig.update_layout(margin=dict(t=10, b=10, l=10, r=10), showlegend=False)
                             st.plotly_chart(fig, use_container_width=True)
                             saas_card_end()
                         else:
                             st.info("無法顯示分佈圖")
-                            zero_mv = positions_df[positions_df['market_value'] <= 0]
+                            zero_mv = positions_df[positions_df['gross_mv'] <= 0]
                             if not zero_mv.empty:
                                 st.warning(f"目前無法取得以下資產價格: {zero_mv['ticker'].tolist()} (Prices not found)")
                 else:

@@ -57,50 +57,34 @@
 - **`SwarmOrchestrator`**: 統一的 Sub-Agent 編排框架，支援 `asyncio.gather` 併發 + 超時 + 重試 + 熔斷。
 - **`RoleSwarmBase`**: 各角色 Swarm 的抽象基底：任務拆解 (Fan-out) → 分發 → 匯聚 (Fan-in)。
 
-##### 2.3.2 各角色分群推進計劃 (Monthly Rollout)
+##### 2.3.2 智能體集群演進路徑 (Evolution Path)
 
-**🗓️ 2026 年 10 月 — 基底層 + Pilot**
+**里程碑: 基底層與首批 Pilot (Milestone: Foundation & Pilot)**
+*   **目標**: 實作 `SwarmOrchestrator` 與異步並行機制。
+*   **交付角色**:
+    - **Fundamental Swarm**: `RevenueExtractor`, `RiskFactorScanner`, `ValuationModeler`。
+    - **Sentiment Swarm**: `NewsScanner`, `SocialPulse`。
 
-| 角色 | Sub-Agents | 職責說明 |
-| :--- | :--- | :--- |
-| **Fundamental Swarm** | `RevenueExtractor` | 專注營收、毛利率數據擷取。 |
-|  | `RiskFactorScanner` | 掃描風險因子 (負債比、訴訟、供應鏈)。 |
-|  | `ValuationModeler` | DCF / PE 相對估值建模。 |
-| **Sentiment Swarm** | `NewsScanner` | 即時新聞 API (Tavily) 情緒評分。 |
-|  | `SocialPulse` | 社群平台 (Reddit/X) 情緒脈搏。 |
+**里程碑: 全面 Swarm 化 (Milestone: Full Swarm Rollout)**
+*   **目標**: 角色擴展與自適應算力整合。
+*   - **交付角色**: Momentum (3), Macro (3), Risk (3) Swarms。
 
-- 基礎工程: `SwarmOrchestrator`, `RoleSwarmBase`, 超時/重試機制, 單元測試基底。
+##### 2.3.3 自動共復盤協議 (Auto-Retrospective Protocol)
+- **目標**: 實作決策對帳與 Agent 權重自動校準。
+- **核心組件**: 
+    - `RetrospectiveAgent`: 編排歸因任務。
+    - `AttributionAnalyzer`: 執行 P&L 歸因 (Selection, Allocation, Timing)。
+    - `StrategyRefiner`: 根據歸因結果修正 Agent 配置。
+- **技術路徑**:
+    - [ ] 實作日終/週終歸因觸發器。
+    - [ ] 對接 `MarketDataService` 獲取真實基準回報。
 
-**🗓️ 2026 年 11 月 — 全面 Swarm 化**
-
-| 角色 | Sub-Agents | 職責說明 |
-| :--- | :--- | :--- |
-| **Momentum Swarm** | `TrendDetector` | 均線交叉、趨勢強度判定。 |
-|  | `PatternRecognizer` | 經典型態偵測 (頭肩頂/雙底)。 |
-|  | `VolumeAnalyst` | 量能分析與異常偵測。 |
-| **Macro Swarm** | `FedWatcher` | 聯準會聲明解讀、利率路徑推估。 |
-|  | `YieldCurveAnalyst` | 殖利率曲線形態分析 (正常/倒掛)。 |
-|  | `GeoPoliticalScanner` | 地緣政治事件影響評估。 |
-| **Risk Swarm** | `PortfolioStressTester` | 歷史情境壓力測試 (2008/2020)。 |
-|  | `CorrelationMonitor` | 資產相關性動態監控。 |
-|  | `TailRiskCalculator` | 尾部風險 (CVaR) 計算。 |
-
-- 整合 Toggle Algorithm: 各 Sub-Agent 可獨立使用 Fast/Think 路徑。
-
-**🗓️ 2026 年 12 月 — 頂層指揮 + 全系統整合**
-
-| 角色 | Sub-Agents | 職責說明 |
-| :--- | :--- | :--- |
-| **CIO Swarm** | `StrategyPlanner` | 生成投資主題與策略假設。 |
-|  | `AllocationOptimizer` | 基於各角色 Swarm 輸出的最優化資產配置。 |
-|  | `DecisionValidator` | 三層驗證 (反駁 → 壓力測試 → 合規檢查)。 |
-| **Engineer Swarm** | `CodeGenerator` | 基於 MetaGPT 的自主策略代碼生成。 |
-|  | `BacktestRunner` | 並行回測新因子的歷史表現。 |
-|  | `FactorMiner` | 遺傳演算法驅動的因子發掘與變異。 |
-
-- **Critical Path 優化**: 監控最慢 Sub-Agent，動態分配更多資源。
+#### 2.4 Alpha 優化與自主演化 (Alpha Optimization & Self-Evolution)
+- **目標**: 追求超越標普 500 的超額收益。
+- **技術需求**: 
+    - **FinRL 模擬環境**: 讓 `Engineer Swarm` 在虛擬沙盒中測試新因子，且僅當 Alpha > 基準 5% 時才准予上線。
+    - **Strategy Drift Sentinel**: 監控策略漂移。當回撤 (MDD) 超過 10% 或 Alpha 轉負時，強制暫停交易並啟動深度復盤。
 - **多模態聯合優化**: K線圖 (視覺) + 財報文本的 Joint Optimization。
-- **全系統壓測**: 端對端 50+ 股票併發、Swarm 容錯回退驗證。
 
 #### 2.4 多模態聯合優化 (Multimodal Joint Optimization)
 - **目標**: 讓 AI 能像交易員一樣「看」懂 K 線圖。
@@ -108,7 +92,12 @@
     - **Zero-Vision SFT**: 訓練模型寫出「能繪製該圖表」的 Python 代碼，藉此理解圖形結構。
     - **視覺強化學習**: 對齊視覺特徵與文本描述（如：「此處為頭肩頂結構」）。
 - **待辦事項 (To-Do)**:
-    - [ ] 收集 1000 張標註好的技術型態圖表作為預訓練數據。
+    ### 2.5 管道適配器架構 (Channel Adapter Architecture - v3.7)
+- **目標**: 實作「一次邏輯，多端分發」。
+- **介面定義**:
+    - `IChannelAdapter`: 定義 `send_message`, `receive_command`, `authenticate`。
+    - `LineAdapter`: 處理 LINE Message API 的 JSON 簽名與網址對應。
+    - `WebAdapter`: 處理 Streamlit 端的 Session 狀態。
 
 ### 3. 技術要求 (Technical Requirements)
 
@@ -136,20 +125,14 @@
 | **Token 效率** | 降低 30% (Toggle) |
 | **最大回撤** | < 10% |
 | **自我進化** | 每週自主有效新因子 > 1 |
+| **復盤覆蓋率** | 100% 決策均需完成自動歸因 |
 
-### 6. 待辦事項總覽 (Master To-Do)
+### 6. 發展迭代清單 (Milestone Checklist)
 
-- [ ] **10月** 實作 `SwarmOrchestrator` + `RoleSwarmBase`
-- [ ] **10月** 實作 Fundamental Swarm (`RevenueExtractor` / `RiskFactorScanner` / `ValuationModeler`)
-- [ ] **10月** 實作 Sentiment Swarm (`NewsScanner` / `SocialPulse`)
-- [ ] **11月** 實作 Momentum Swarm (`TrendDetector` / `PatternRecognizer` / `VolumeAnalyst`)
-- [ ] **11月** 實作 Macro Swarm (`FedWatcher` / `YieldCurveAnalyst` / `GeoPoliticalScanner`)
-- [ ] **11月** 實作 Risk Swarm (`PortfolioStressTester` / `CorrelationMonitor` / `TailRiskCalculator`)
-- [ ] **11月** 整合 Toggle Algorithm (Adaptive Compute) 至 Swarm 層
-- [ ] **12月** 實作 CIO Swarm (`StrategyPlanner` / `AllocationOptimizer` / `DecisionValidator`)
-- [ ] **12月** 實作 Engineer Swarm (`CodeGenerator` / `BacktestRunner` / `FactorMiner`)
-- [ ] **12月** 實作 Critical Path 監控與動態資源分配
-- [ ] **12月** 全系統端對端壓力測試 (50+ 併發)
+- [ ] **Milestone: Foundation** — Implement `SwarmOrchestrator`, Fundamental Swarm, Sentiment Swarm.
+- [ ] **Milestone: Expansion** — Implement Momentum, Macro, Risk Swarms + Toggle integration.
+- [ ] **Milestone: Integration** — Implement CIO Swarm, Engineer Swarm, Critical Path monitoring.
+- [ ] **Milestone: Multimodal** — End-to-end stress test & Multimodal alignment.
 
 ---
 
@@ -166,18 +149,16 @@ Single-agent serial processing creates latency bottlenecks and single-point deci
 - HMM-based regime detection with automatic defensive rebalancing.
 - Toggle Algorithm: Fast/Think dynamic compute budget allocation.
 
-#### 2.2 Agent Swarm — Monthly Rollout
+#### 2.2 Agent Swarm — Evolution Path
 
-| Month | Scope | Deliverables |
-| :--- | :--- | :--- |
-| **Oct 2026** | Framework + Pilot | `SwarmOrchestrator`, `RoleSwarmBase`, Fundamental Swarm (3), Sentiment Swarm (2) |
-| **Nov 2026** | Full Rollout | Momentum (3), Macro (3), Risk (3) Swarms + Toggle integration |
-| **Dec 2026** | Command Layer | CIO Swarm (3-stage verification), Engineer Swarm (auto-evolution), Critical Path optimizer, Multimodal, full stress test |
+- **Milestone 1: Framework + Pilot**: `SwarmOrchestrator`, Fundamental Swarm, Sentiment Swarm.
+- **Milestone 2: Full Rollout**: Momentum, Macro, Risk Swarms + Toggle integration.
+- **Milestone 3: Command & Evolution**: CIO Swarm, Engineer Swarm, Critical Path optimizer, full stress test.
 
 ### 3. Technical Specs
 - **Ray on K8s**: Distributed hyper-parameter searching.
 - **Swarm Orchestrator**: `asyncio`-based dynamic agent spawning, fan-out/fan-in.
-- **Toggle Router**: Confidence-based model routing per Sub-Agent.
+- **Retro-Logic**: Outcome-based agent weight calibration.
 - **Fault Tolerance**: Graceful degradation on Sub-Agent failure.
 
 ### 4. Success Metrics

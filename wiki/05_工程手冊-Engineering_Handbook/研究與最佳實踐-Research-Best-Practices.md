@@ -1,6 +1,8 @@
-# 研究與最佳實踐 (Research & Best Practices)
-
-> **[繁體中文 (Traditional Chinese)](#zh) | [English](#en)**
+### 版本紀錄 (Version History)
+| Date | Version | Description | Author |
+| :--- | :--- | :--- | :--- |
+| 2026-02-15 | v3.6 | Added Kimi K2.5 Swarm, OpenClaw Channel Adapters, UI Navigation research | Neo |
+| 2026-02-14 | v3.5 | Initial Release | Neo |
 
 ---
 
@@ -34,10 +36,22 @@
 - **Supervisor 模式**: BlackRock 的 Aladdin Copilot 採用此模式，由 Supervisor 協調多個專任 LLM，這與本系統的 CIO Agent 邏輯高度契合。
 - **MCP 標準化**: 系統已導入 Model Context Protocol，這與 Bloomberg 推動的開放工具連接標準一致，確保跨平台工具的可組合性。
 
-### 6. 系統演進與 MLOps (System Evolution & MLOps)
-**規律**: AI 投資系統需具備長期的自我更新能力。
-- **反饋閉環 (Feedback Loop)**: 實作「Human-on-the-loop」，允許用戶修正代理決策，並將修正數據回流至 RAG 向量庫。
-- **金字塔型測試**: 包含單元測試、集成測試與「代理對抗測試 (Agent Red Teaming)」，模擬市場極端情況下的代理穩定性。
+### 6. 智能體集群與併發優化 (Agent Swarm & Parallelism)
+**理論**: 模仿 Kimi K2.5 的 **Agent Swarm** 框架，將複雜任務拆解為並行執行的「關鍵步驟 (Critical Steps)」，而非傳統的序列推理。
+- **項目實作**: 詳見 [未來演進規格](未來演進規格-Future-Roadmap-Specs)。系統採用 Orchestrator-Subagent 模型，凍結底層執行能力以確保穩定性，僅訓練編排層。
+- **最佳實踐**: 使用「關鍵路徑」指標優化端到端延遲，優先處理最慢的 Sub-Agent 分支。
+
+### 7. 確定性 UI 導航研究 (Deterministic UI Navigation)
+**研究**: 在 Streamlit 等動態 UI 框架中，頁面順序往往受載入速度影響。
+- **最佳實踐**: 使用 **數字前綴 (02_..., 03_...)** 強制執行側邊欄順序。這能確保用戶形成穩定的心理模型 (Mental Model)，避免導航項隨機跳動。
+
+### 8. 管道適配器模式 (Channel Adapter Pattern)
+**參考**: OpenClaw Architecture
+- **最佳實踐**: 將「智能內核」與「傳輸協議」徹底解耦。透過 Channel Adapters (LINE, Web, CLI) 處理身份驗證與消息格式化，核心 Agent 僅處理標準化的 `AgentCommand`。
+
+### 9. 集中式 UI 模擬策略 (Centralized UI Mocking)
+**研究**: 測試 Streamlit 應用的主要挑戰在於模組污染與 `@st.cache_data` 的狀態殘留。
+- **最佳實踐**: 在 `tests/conftest.py` 中建立全域 Mock。透過 `sys.modules["streamlit"]` 注入具備 `.clear()` 方法的虛擬裝飾器，確保測試環境的乾淨啟動。
 
 ---
 
@@ -49,15 +63,19 @@
 - **Concept**: Self-correcting workflows to minimize hallucinations.
 - **Implementation**: The `EngineerAgent` serves as the primary evaluation engine.
 
-### 2. Industry Workflow Patterns (Bloomberg/BlackRock)
-- **Supervisor Architecture**: Adopting the Aladdin Copilot model where a supervisor (CIO Agent) orchestrates specialized model tiers.
-- **MCP Integration**: Leveraging the Model Context Protocol for seamless, vendor-neutral tool scaling.
+### 4. Agent Swarm & Parallelism (Kimi K2.5)
+- **Critical Path Optimization**: Shifting from total steps to "Critical Steps" metrics to minimize end-to-end latency.
+- **Decoupled Orchestration**: Using a stateful orchestrator with frozen, specialized sub-agents for stable convergence.
 
-### 3. Financial Risk & Compliance
-- **Human-on-the-Loop**: Maintaining explainability (XAI) for regulatory transparency, ensuring agents summarize exposures with cited sources before final execution.
-- **MLOps for Agents**: Implementing automated rollback and canary deployments for model updates to prevent sudden strategy drift.
+### 5. Frontend & Reliability Research
+- **Deterministic Sidebar**: Enforcing page order via numeric prefixes to stabilize the User Mental Model in Streamlit.
+- **Centralized UI Mocking**: Global `sys.modules` patching for clean, state-free unit testing of reactive frontend frameworks.
+
+### 6. Channel Abstraction (OpenClaw)
+- **Adapter Logic**: Decoupling the reasoning engine from delivery channels (LINE, Web) via standardized command parsing and formatting layers.
 
 ## 🔗 Bidirectional Links
 - **Product View**: [Evolutionary Roadmap](產品演進藍圖-Evolutionary-Roadmap)
+- **Technical Specs**: [Future Roadmap Specs](未來演進規格-Future-Roadmap-Specs)
 - **Engineering Handbook**: [Prompt Engineering Specs](提示詞工程規範-Prompt-Engineering-Specs)
 - **Architect View**: [Architectural Philosophies](架構哲學-Architectural-Philosophies)
