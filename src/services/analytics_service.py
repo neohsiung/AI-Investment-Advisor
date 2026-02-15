@@ -235,7 +235,6 @@ class PnLCalculator:
 
 def update_daily_snapshot(db_path="data/portfolio.db", user_id=None):
     """
-    """
     Recalculate and update today's performance snapshot (Helper Function).
     重新計算並更新今日績效快照 (Helper Function)。
     """

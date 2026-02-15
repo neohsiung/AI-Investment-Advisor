@@ -17,7 +17,6 @@ class SystemEngineerAgent(BaseAgent):
 
     def analyze_optimization_needs(self, cio_report):
         """
-        """
         Parse CIO report to identify 'System Optimization Feedback'.
         解析 CIO 報告，找出 'System Optimization Feedback'。
         
