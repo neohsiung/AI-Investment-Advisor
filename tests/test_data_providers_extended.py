@@ -77,10 +77,13 @@ class TestPolygonProviderExtended:
     
     def test_initialization_without_api_key(self, mock_settings):
         """Test provider initialization without API key."""
-        provider = PolygonProvider(settings_service=mock_settings)
-        
-        # Should warn but not fail
-        assert provider.api_key is None or provider.api_key == ""
+        # Ensure environment and settings don't have the key
+        with patch.dict('os.environ', {}, clear=True), \
+             patch.object(mock_settings, 'get_all_settings', return_value={}):
+            provider = PolygonProvider(settings_service=mock_settings)
+            
+            # Should warn but not fail
+            assert provider.api_key is None or provider.api_key == ""
         
         # fetch should return empty dict
         prices = provider.fetch_current_prices(['AAPL'])

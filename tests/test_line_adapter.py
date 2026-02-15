@@ -25,16 +25,16 @@ def mock_sdk():
 
     
     # Setup classes
-    mock_messaging.Configuration = MagicMock
-    mock_messaging.ApiClient = MagicMock
-    mock_messaging.MessagingApi = MagicMock
-    mock_messaging.PushMessageRequest = MagicMock
-    mock_messaging.FlexMessage = MagicMock
-    mock_messaging.TextMessageContent = MagicMock
+    mock_messaging.Configuration = MagicMock()
+    mock_messaging.ApiClient = MagicMock()
+    mock_messaging.MessagingApi = MagicMock()
+    mock_messaging.PushMessageRequest = MagicMock()
+    mock_messaging.FlexMessage = MagicMock()
+    mock_messaging.TextMessageContent = MagicMock()
     
-    mock_v3.WebhookHandler = MagicMock
-    mock_webhooks.MessageEvent = MagicMock
-    mock_webhooks.PostbackEvent = MagicMock
+    mock_v3.WebhookHandler = MagicMock()
+    mock_webhooks.MessageEvent = MagicMock()
+    mock_webhooks.PostbackEvent = MagicMock()
     
     # Apply patches to sys.modules
     with patch.dict(sys.modules, {

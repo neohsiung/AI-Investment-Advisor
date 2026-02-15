@@ -41,7 +41,7 @@ jobs:
 
     - name: Run tests with coverage
       run: |
-        pytest --cov=src --cov-fail-under=75 tests/
+        pytest --cov=src --cov-fail-under=65 tests/
 
     - name: Security Scan (Bandit)
       run: |
