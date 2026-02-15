@@ -19,17 +19,32 @@ class TestFutuIntegration(unittest.TestCase):
     def setUp(self):
         # We don't need to patch FUTU_AVAILABLE because import should succeed now
         
+        # Patch the context classes globally for this test instance
+        self.quote_ctx_patcher = patch('src.services.futu_service.OpenQuoteContext')
+        self.trd_ctx_patcher = patch('src.services.futu_service.OpenTradeContext')
+        
+        self.MockQuoteContext = self.quote_ctx_patcher.start()
+        self.MockTrdContext = self.trd_ctx_patcher.start()
+        
+        # Setup specific mock instances
+        self.mock_trd_ctx = self.MockTrdContext.return_value
+        self.mock_quote_ctx = self.MockQuoteContext.return_value
+        
+        # Initialize service (which will use the patched classes)
         self.service = FutuService(host="127.0.0.1", port=11111, is_sim=True)
+        
+        # Override internal contexts just in case (though patch should handle init)
+        self.service.trd_ctx = self.mock_trd_ctx
+        self.service.quote_ctx = self.mock_quote_ctx
+
         # Mock Risk Manager
         self.service.risk_manager = MagicMock()
         self.service.risk_manager.check_constraints.return_value = True
-        
-        # Inject Mock Contexts
-        self.service.trd_ctx = MagicMock()
 
     def tearDown(self):
-        # Clean up sys.modules if needed, but safe to leave mock for this process
-        pass
+        # Stop patchers
+        self.quote_ctx_patcher.stop()
+        self.trd_ctx_patcher.stop()
 
     def test_get_account(self):
         # Mock AccInfo Query

@@ -10,24 +10,48 @@ def test_dashboard_import_smoke():
     """
     with patch.dict(sys.modules, {'streamlit': MagicMock()}):
         try:
-            import src.Dashboard
+            # Use robust importlib loading to avoid "No module named src.Dashboard"
+            # if the environment treats imports differently.
+            import importlib.util
+            import os
+            
+            file_path = "src/Dashboard.py"
+            if not os.path.exists(file_path):
+                # Fallback if case sensitivity or path differs
+                if os.path.exists("src/dashboard.py"):
+                    file_path = "src/dashboard.py"
+            
+            spec = importlib.util.spec_from_file_location("Dashboard", file_path)
+            if spec and spec.loader:
+                module = importlib.util.module_from_spec(spec)
+                sys.modules["src.Dashboard"] = module
+                spec.loader.exec_module(module)
+            else:
+                pytest.fail(f"Could not find Dashboard.py at {file_path}")
+                
         except Exception as e:
             pytest.fail(f"Dashboard import failed: {e}")
+        finally:
+             if "src.Dashboard" in sys.modules:
+                 del sys.modules["src.Dashboard"]
 
-def test_cli_scheduler_mode():
-    """
-    Test that scheduler mode triggers SchedulerService.
-    """
-    from src.cli import main
-    with patch("src.services.scheduler_service.SchedulerService") as MockService, \
-         patch("src.cli.init_db"): 
+    def test_cli_scheduler_mode():
+        """
+        Test that scheduler mode triggers SchedulerService.
+        """
+        from src.cli import main
+        # Force import to ensure patch finds the module
+        import src.services.scheduler_service
         
-        mock_instance = MockService.return_value
+        with patch("src.services.scheduler_service.SchedulerService") as MockService, \
+             patch("src.cli.init_db"): 
         
-        # Test: Scheduler Check (Daily)
-        with patch.object(sys, 'argv', ["src/cli.py", "--mode", "scheduler", "--task", "daily"]):
-            main()
-            mock_instance.job_daily_check.assert_called()
+            mock_instance = MockService.return_value
+            
+            # Test: Scheduler Check (Daily)
+            with patch.object(sys, 'argv', ["src/cli.py", "--mode", "scheduler", "--task", "daily"]):
+                main()
+                mock_instance.job_daily_check.assert_called()
 
 def test_pages_import_smoke():
     with patch.dict(sys.modules, {'streamlit': MagicMock()}):

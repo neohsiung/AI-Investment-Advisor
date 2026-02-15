@@ -19,6 +19,12 @@
 
 ### 1. 測試策略 (Testing Strategy)
 
+#### 1.0 測試金字塔 (Testing Pyramid - Core Philosophy)
+遵循 **Unit > Integration > E2E** 的金字塔原則，確保反饋迴圈效率。
+- **Unit Tests (70%)**: 單一函數/類別，**嚴格 Mock** 所有依賴 (DB/Network)。速度 < 0.1s。
+- **Integration Tests (20%)**: 模組間交互 (Service + Repository)，使用 SQLite 內存或受控 Mocks。
+- **E2E Tests (10%)**: 關鍵路徑 (Smoke Tests)，模擬完整流程。
+
 #### 1.1 測試層級 (Test Tiers)
 - **單元測試 (Unit)**: `AnalyticsService` 數學公式 100% 覆蓋 (NLV/Leverage/P&L)。
 - **整合測試 (Integration)**: 驗證 [Agent Mesh](底層通信協議-Agent-Mesh-Protocols) 與 SQLite 的交互。
@@ -30,6 +36,12 @@
 - **Streamlit Mocking**: `unittest.mock.patch` 處理 `st.sidebar`, `st.session_state`。
 - **Broker Mocking**: Mock `EtoroService`, `FutuService` 以隔離網路依賴。
 - **Memory Mocking**: 測試環境使用 `SqliteMemoryRepository`，無需 Redis。
+
+#### 1.3 測試失敗的思考路徑 (Debugging Mindset)
+當測試失敗時，嚴格遵守以下優先順序：
+1. **診斷單元化程度**: 先思考「是否程式碼不夠單元 (Unit)？」若測試 Setup 太複雜，應重構源碼而非增加 Mock 難度。
+2. **契約驗證**: 檢查 Mock 是否符合最新的介面契約。
+3. **隔離性排除**: 檢查是否為全局狀態 (sys.modules, singleton) 污染。
 
 #### 1.3 成功指標 (Success Metrics)
 - **覆蓋率狀態**: **75%** ✅ (2026-02-15 達成，513+ tests, 6995 statements, 1757 missed)
@@ -65,6 +77,12 @@
 
 ## 🇺🇸 Testing & External Services (v3.5)
 
+### 0. Core Philosophy: The Testing Pyramid
+All development must adhere to the **Testing Pyramid** strategy:
+- **Unit Tests (70%)**: Single function/class. **STRICTLY mocked**. Fast (< 0.1s).
+- **Integration Tests (20%)**: Module interactions. In-memory DBs ok.
+- **E2E Tests (10%)**: Critical user flows. Expensive, use sparingly.
+
 ### 1. Verification Tiers
 - **Math Reliability**: 100% unit coverage for `AnalyticsService`.
 - **Broker Compliance**: Dedicated test suite for `IBroker` implementations.
@@ -77,6 +95,12 @@ Polygon, FMP, FRED, Tavily, DuckDuckGo, OpenRouter, Etoro Bridge, futu-api, ib_i
 
 ### 3. Mocking Philosophy
 Use `unittest.mock` to bypass LLM, broker API, and external service calls during CI/CD.
+
+#### Debugging Mindset (Root Cause Analysis)
+When a test fails, your first question should be: **"Is the code modular enough?"**
+- If setup is too heavy, the code is likely violating SRP (Single Responsibility Principle).
+- Refactor the code into pure units before fixing the test.
+- Priority: Unit Fix > Integration Fix > E2E Fix.
 
 ## 🔗 Bidirectional Links
 - **Architecture**: [System Landscape](系統全景圖-System-Landscape)

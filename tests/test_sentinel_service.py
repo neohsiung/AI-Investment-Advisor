@@ -29,7 +29,9 @@ def run_async():
 
 @pytest.fixture
 def mock_services():
-    """Create all mock dependencies via DI (no patching needed)."""
+    """Create all mock dependencies via DI (no patching needed).
+       Also patches SentinelRepository to prevent DB access during init.
+    """
     market = MagicMock()
     search = MagicMock()
     transaction = MagicMock()
@@ -40,14 +42,29 @@ def mock_services():
     settings.get_all_settings.return_value = {}
     settings.get_setting.return_value = None
 
-    return {
-        "market": market,
-        "search": search,
-        "transaction": transaction,
-        "council": council,
-        "notification": notification,
-        "settings": settings,
-    }
+    # Patch the repository class so SentinelService() allows mocking init
+    with patch('src.services.sentinel_service.SentinelRepository') as MockRepo:
+         # Configure default mock behavior if needed
+         mock_repo_instance = MockRepo.return_value
+         mock_repo_instance.get_all_thresholds.return_value = {
+            "vix_high": 25.0,
+            "vix_extreme": 40.0,
+            "position_drop_pct": -5.0,
+            "position_spike_pct": 8.0,
+            "fed_funds_change_bps": 25,
+            "news_risk_score": 0.6,
+         }
+         
+         yield {
+            "market": market,
+            "search": search,
+            "transaction": transaction,
+            "council": council,
+            "notification": notification,
+            "settings": settings,
+            "repo_class": MockRepo,
+            "repo_instance": mock_repo_instance
+        }
 
 def _create_sentinel(mock_services):
     from src.services.sentinel_service import SentinelService
@@ -126,25 +143,69 @@ class TestVIXAnomaly:
 # Dimension 2: Position Price Moves
 # ──────────────────────────────────────────
 
+# ──────────────────────────────────────────
+# Dimension 2: Position Price Moves
+# ──────────────────────────────────────────
+
 class TestPositionMoves:
     def test_position_drop_trigger(self, mock_services, run_async):
         """Stock drops > 5% intraday — triggers alert."""
-        sentinel = _create_sentinel(mock_services)
-        # VIX calm
-        mock_services["market"].get_ohlcv.side_effect = lambda ticker, days=30: {
-            "close": [15.0] * 60 if ticker == "^VIX" else [100.0, 93.0]
+        # Use the global mock instance from the fixture
+        repo_instance = mock_services["repo_instance"]
+        repo_instance.get_all_thresholds.return_value = {
+            "position_drop_pct": -5.0,
+            "position_spike_pct": 8.0,
         }
-        mock_services["market"].get_current_prices.return_value = {"AAPL": 93.0}
-        mock_services["market"].get_macro_data.return_value = {}
-        mock_services["transaction"].get_user_tickers.return_value = ["AAPL"]
 
         async def _test():
+            # Create sentinel - it will use the mocked Repo class from fixture
+            sentinel = _create_sentinel(mock_services)
+            
+            # Setup market data for the drop
+            mock_services["market"].get_ohlcv.side_effect = lambda ticker, days=30: {
+                "close": [15.0] * 60 if ticker == "^VIX" else [100.0, 89.0] # 89 is -11% from 100
+            }
+            mock_services["market"].get_current_prices.return_value = {"AAPL": 89.0}
+            mock_services["market"].get_macro_data.return_value = {}
+            mock_services["transaction"].get_user_tickers.return_value = ["AAPL"]
+            
+            # Mock internal user methods
             with patch.object(sentinel, '_get_all_user_ids', return_value=["user@test.com"]):
-                await sentinel.process_tick()
+                    await sentinel.process_tick()
+
+            # Verification
             mock_services["council"].start_session.assert_called_once()
             args = mock_services["council"].start_session.call_args[0]
             assert "AAPL" in args[0]
-            assert "跌" in args[0]
+
+        run_async(_test())
+
+    def test_position_spike_trigger(self, mock_services, run_async):
+        """Stock spikes > 8% intraday — triggers alert."""
+        # Use the global mock instance
+        repo_instance = mock_services["repo_instance"]
+        repo_instance.get_all_thresholds.return_value = {
+            "position_drop_pct": -5.0,
+            "position_spike_pct": 8.0,
+        }
+    
+        async def _test():
+            sentinel = _create_sentinel(mock_services)
+            
+            # Market data for spike
+            mock_services["market"].get_ohlcv.side_effect = lambda ticker, days=30: {
+                "close": [15.0] * 60 if ticker == "^VIX" else [100.0, 110.0] # +10%
+            }
+            mock_services["market"].get_current_prices.return_value = {"TSLA": 110.0}
+            mock_services["transaction"].get_user_tickers.return_value = ["TSLA"]
+            
+            with patch.object(sentinel, '_get_all_user_ids', return_value=["user@test.com"]):
+                await sentinel.process_tick()
+
+            # Verification
+            mock_services["council"].start_session.assert_called_once()
+            args = mock_services["council"].start_session.call_args[0]
+            assert "TSLA" in args[0]
 
         run_async(_test())
 

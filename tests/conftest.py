@@ -42,7 +42,8 @@ def pytest_configure(config):
         "extra_streamlit_components",
         "plotly.express",
         "streamlit.components.v1",
-        "streamlit.components.v1.components"
+        "streamlit.components.v1.components",
+        "yfinance"
     ]
     for mod in problematic_modules:
         if mod not in sys.modules:
