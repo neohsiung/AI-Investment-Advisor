@@ -67,7 +67,7 @@
     - **階段三 (v4.0)**: **The DNA (自我演化)**。在 v3.3 的基礎上，導入演化算法，讓策略代碼自我迭代。
 
 #### v3.2 混合分層分析架構 (Hybrid Tiered Analysis Architecture) (Mar 2026 - Completed)
-> **[Spec 規格書: 產品藍圖v3.2-Roadmap-v3.2.md](Specs/產品藍圖v3.2-Roadmap-v3.2.md)** (Status: Merged)
+> **[Spec 規格書: 產品藍圖v3.2-Roadmap-v3.2.md](01_規格書-Specs/產品藍圖v3.2-Roadmap-v3.2.md)** (Status: Merged)
 
 *   **核心變革**: 從「全量索引」轉向「事件驅動分層分析」，實現最高成本效益。
 *   **技術基石**:
@@ -82,7 +82,7 @@
 
 
 #### v3.3 宏觀對沖與動態配置 (Macro Hedging & Dynamic Allocation) (Jun 2026 - Planned)
-> **[Spec 規格書: 產品藍圖v3.3-Roadmap-v3.3.md](Specs/產品藍圖v3.3-Roadmap-v3.3.md)**
+> **[Spec 規格書: 產品藍圖v3.3-Roadmap-v3.3.md](01_規格書-Specs/產品藍圖v3.3-Roadmap-v3.3.md)**
 
 *   **投資方法論 (Methodology)**: 專注於 **絕對報酬 (Absolute Returns)**，目標在空頭市場維持正收益。
     *   **總經體制變換 (Regime Switching)**: 整合 FRED 數據，自動判讀當前為「通膨/通縮」與「成長/衰退」四象限，動態調整股/債/原物料/現金比例。
@@ -92,7 +92,7 @@
     *   **信號驅動**: 依賴 v3.2 的高信度信號 (JSON Signals) 作為訓練輸入，而非原始視覺數據。
 
 #### v4.0 生成式佈局與超個人化 (Generative Allocation & Hyper-Personalization) (2026 Q4 - Concept)
-> **[Spec 規格書: 產品藍圖v4.0-Roadmap-v4.0.md](Specs/產品藍圖v4.0-Roadmap-v4.0.md)**
+> **[Spec 規格書: 產品藍圖v4.0-Roadmap-v4.0.md](01_規格書-Specs/產品藍圖v4.0-Roadmap-v4.0.md)**
 
 *   **投資方法論 (Methodology)**: **生成式 Alpha (Generative Alpha)**，將自然語言轉化為量化策略。
     *   **語意因子建構**: 用戶輸入「投資具備高 ESG 分數且供應鏈不依賴單一國家的 EV 公司」，Agent 自動掃描供應鏈數據構建客製化 ETF。
@@ -171,7 +171,7 @@ Define the factual development path of the AI Investment Advisor based on the pr
     - **Phase 3 (v4.0)**: **The DNA (Evolution)**. Introduce Genetic Algorithms into v3.3's Gym to enable self-evolution.
 
 #### v3.2 Hybrid Tiered Analysis Architecture (Mar 2026 - Completed)
-> **[Deep Dive Spec: 產品藍圖v3.2-Roadmap-v3.2.md](Specs/產品藍圖v3.2-Roadmap-v3.2.md)** (Status: Merged)
+> **[Deep Dive Spec: 產品藍圖v3.2-Roadmap-v3.2.md](01_規格書-Specs/產品藍圖v3.2-Roadmap-v3.2.md)** (Status: Merged)
 
 *   **Core Pivot**: Moving from "Full Visual Indexing" to "Event-Driven Tiered Analysis" for maximum cost-efficiency.
 *   **Tech Stack**:
@@ -186,7 +186,7 @@ Define the factual development path of the AI Investment Advisor based on the pr
 
 
 #### v3.3 Macro Hedging & Dynamic Allocation (Jun 2026 - Planned)
-> **[Deep Dive Spec: 產品藍圖v3.3-Roadmap-v3.3.md](Specs/產品藍圖v3.3-Roadmap-v3.3.md)**
+> **[Deep Dive Spec: 產品藍圖v3.3-Roadmap-v3.3.md](01_規格書-Specs/產品藍圖v3.3-Roadmap-v3.3.md)**
 
 *   **Methodology**: Focus on **Absolute Returns**, aiming for positive yields even in bear markets.
     *   **Regime Switching**: Integrates FRED data to automatically classify potential "Inflation/Deflation" and "Growth/Recession" quadrants, dynamically adjusting Equity/Bond/Commodity/Cash ratios.
@@ -196,7 +196,7 @@ Define the factual development path of the AI Investment Advisor based on the pr
     *   **Signal-Driven**: Relies on high-fidelity JSON Signals from v3.2 as training inputs, replacing raw visual data.
 
 #### v4.0 Generative Allocation & Hyper-Personalization (2026 Q4 - Concept)
-> **[Deep Dive Spec: 產品藍圖v4.0-Roadmap-v4.0.md](Specs/產品藍圖v4.0-Roadmap-v4.0.md)**
+> **[Deep Dive Spec: 產品藍圖v4.0-Roadmap-v4.0.md](01_規格書-Specs/產品藍圖v4.0-Roadmap-v4.0.md)**
 
 *   **Methodology**: **Generative Alpha**, converting natural language into quantitative strategies.
     *   **Semantic Factor Construction**: User inputs "Invest in EV companies with high ESG scores and independent supply chains", Agent scans data to build a custom ETF.

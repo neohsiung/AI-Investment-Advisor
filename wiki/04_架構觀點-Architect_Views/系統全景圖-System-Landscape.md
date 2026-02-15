@@ -62,7 +62,20 @@ graph TD
     - **Local Strategy**: Agent 優先調用本地 `Skills` (Registry) 進行快速運算與資料解析。
     - **Scale Strategy**: 若需跨系統資料或全局搜尋，則透過 `mcp_service` 執行。
 
-### 3. 基礎設施視角 (Infrastructure View)
+### 3. 先進智能體作業系統模型 (Six-Layer Agentic OS Model)
+
+系統採用六層垂直抽象架構，確保從用戶指令到資產執行的高可靠度與確定性。
+
+| 層次 (Layer) | 角色 (Role) | 核心組件 (Component) | 邏輯說明 (Logic) |
+| :--- | :--- | :--- | :--- |
+| **L1: 存取層** | 正規化 I/O | `ChannelAdapter` | 將入口 (LINE/Web/CLI) 封裝為標準化的 `Event` 物件。 |
+| **L2: 控制層** | 併發與泳道 | `LaneManager` | 為 session 分配專屬 `Queue`。確保相同用戶指令序列執行。 |
+| **L3: 認知層** | 執行環境 | `AgentRuntime` | 動態構建 Prompt (注入時間、技能清單、Top-K 事實)。 |
+| **L4: 記憶層** | 混合檢索 | `VectorRepository` | 結合 `sqlite-vec` 與 FTS5 實現向量與關鍵字混合搜尋。 |
+| **L5: 互動層** | 回饋機制 | `A2A Protcol` | 處理 Agent 間的協作與衝突解決。 |
+| **L6: 策略層** | 持久化實施 | `StrategyEngine` | 將最終決策轉化為券商 API 可接受的格式並執行。 |
+
+### 4. 基礎設施視角 (Infrastructure View)
 系統支援雲端原生部署，透過容器化管理各項服務。
 
 #### 3.1 佈署拓撲 (Deployment Topology)

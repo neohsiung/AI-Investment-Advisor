@@ -152,5 +152,5 @@ python3 tests/test_ibkr_connection.py
 ## 6. 參考 (References)
 *   [Futu API Docs](https://openapi.futunn.com/futu-api-doc/)
 *   [IBKR TWS API](https://interactivebrokers.github.io/tws-api/)
-*   [核心系統規格](../02_產品經理-Product_Managers/Specs/核心系統規格-Core-System-Specs.md)
+*   [核心系統規格](../02_產品經理-Product_Managers/01_規格書-Specs/核心系統規格-Core-System-Specs.md)
 

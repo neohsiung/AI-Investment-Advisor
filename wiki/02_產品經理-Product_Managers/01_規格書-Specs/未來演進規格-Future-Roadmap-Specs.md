@@ -145,11 +145,13 @@ Single-agent serial processing creates latency bottlenecks and single-point deci
 
 ### 2. Features
 
-#### 2.1 Crisis Autopilot & Toggle
-- HMM-based regime detection with automatic defensive rebalancing.
-- Toggle Algorithm: Fast/Think dynamic compute budget allocation.
+#### 2.2 核心自動化特性 (Autonomous Lifecycle Features)
+- **無限事件循環 (Infinite Event Loop)**: 建立具備長期記憶的守護進程，主動輪詢市場變化而非僅依賴 Cron。
+- **全通路通知中樞 (Omni-Channel Notification Hub)**: 整合 Telegram/Slack/LINE，實現即時、雙向的「理財秘書」交互（如：推播警報並接收 "Yes/No" 執行指令）。
+- **強化型向量記憶 (Enhanced Vector Memory)**: 透過 ChromaDB/PGVector 記住使用者的長期投資哲學與風險偏好漂移。
+- **智能體技能標準化 (Standardized Skill Protocol)**: 全面落地 **Model Context Protocol (MCP)**，將所有工具模組化為獨立的 MCP Servers。
 
-#### 2.2 Agent Swarm — Evolution Path
+#### 2.3 Agent Swarm — Evolution Path
 
 - **Milestone 1: Framework + Pilot**: `SwarmOrchestrator`, Fundamental Swarm, Sentiment Swarm.
 - **Milestone 2: Full Rollout**: Momentum, Macro, Risk Swarms + Toggle integration.

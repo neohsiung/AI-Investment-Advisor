@@ -135,7 +135,7 @@ graph TD
 
 ## 🔗 相關連結 (See Also)
 - [設計模式導讀 (Design Patterns)](wiki/05_工程手冊-Engineering_Handbook/設計模式導讀-Design-Patterns-Intro.md)
-- [Agent 規格 (Agents Spec)](wiki/02_產品經理-Product_Managers/Specs/代理人規格-Agent-Specs.md)
+- [Agent 規格 (Agents Spec)](wiki/02_產品經理-Product_Managers/01_規格書-Specs/代理人規格-Agent-Specs.md)
 - [產品藍圖 (Roadmap)](wiki/02_產品經理-Product_Managers/產品藍圖-Roadmap.md)
 
 ---

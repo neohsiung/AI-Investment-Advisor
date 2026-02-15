@@ -63,7 +63,7 @@
 ##### 演進迭代路徑 (Iterative Evolution Path)
 *   **迭代: 確定性與通路強化 (v3.6-v3.7)**:
     - **重點**: 提升執行穩定性與通路解耦。
-    - **進度**: [x] 槓桿引擎 (v3.6) 已上線；[ ] OpenClaw Channel Adapter 模式研究中。
+    - **進度**: [x] 槓桿引擎 (v3.6) 已上線；[ ] [研究與最佳實踐](05_工程手冊-Engineering_Handbook/研究與最佳實踐-Research-Best-Practices) Channel Adapter 模式研究中。
 *   **迭代: 事件驅動與主動防禦 (v3.8)**:
     - **重點**: 實踐 Inbound Webhooks 與 Sentinel 4D 觸發器全面自動化。
 *   **迭代: 併發基礎與 Swarm 框架 (v3.9)**:
@@ -158,5 +158,5 @@ Transforming from a tool into an autonomous "Wealth Organism" that researches an
 ## 🔗 Bidirectional Links
 - **Core Specs**: [Core System Specs](核心系統規格-Core-System-Specs)
 - **Future Specs**: [Future Roadmap Specs](未來演進規格-Future-Roadmap-Specs)
-- **Automation Specs**: [OpenClaw Automation Specs](OpenClaw自動化規格-OpenClaw-Automation-Spec)
+- **Automation Specs**: [Future Roadmap Specs](01_規格書-Specs/未來演進規格-Future-Roadmap-Specs)
 - **Architecture**: [System Landscape](系統全景圖-System-Landscape)

@@ -83,6 +83,12 @@
     3.  **Fractal Debate**: 針對議題的每個子項目進行正反辯論。
     4.  **Consensus**: Chairperson (CIO) 綜合權衡，產出最終決策。
 
+#### 2.2.1 全投資組合評議會模式 (Map-Reduce Council Pattern)
+為了解決 LLM Context 限制並提升 20+ 檔持股的分析深度，系統採用 Map-Reduce 架構：
+- **Map (分發)**: 將投資組合拆分為多個 Chunks (例如每塊 5 檔)，併發啟動 `Sub-Council`。
+- **Reduce (聚合)**: 收集所有子評議會的 `SIGNAL | RATIONALE`，濃縮為結構化摘要。
+- **Synthesis (主席決策)**: CIO Agent 讀取摘要與宏觀背景，生成最終報告。
+
 #### 2.3 動態智商路由器 (Dynamic Intelligence Router)
 位於 `src/infra/llm_router.py`。
 *   **設計目標**: 在「成本」與「品質」間取得動態最佳解。

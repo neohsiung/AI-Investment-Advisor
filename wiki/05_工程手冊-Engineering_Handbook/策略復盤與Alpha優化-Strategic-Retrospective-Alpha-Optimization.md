@@ -52,5 +52,5 @@
 
 ## 🔗 Bidirectional Links
 - **Product View**: [Evolutionary Roadmap](../02_產品經理-Product_Managers/產品演進藍圖-Evolutionary-Roadmap)
-- **Technical Specs**: [Future Roadmap Specs](../02_產品經理-Product_Managers/Specs/未來演進規格-Future-Roadmap-Specs)
+- **Technical Specs**: [Future Roadmap Specs](../02_產品經理-Product_Managers/01_規格書-Specs/未來演進規格-Future-Roadmap-Specs)
 - **Engineer Handbook**: [Prompt Engineering Specs](提示詞工程規範-Prompt-Engineering-Specs)

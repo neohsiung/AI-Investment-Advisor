@@ -51,7 +51,7 @@ docker compose logs -f dashboard
 
 ### CI/CD 與安全性
 - 本專案已整合 `bandit` 進行靜態代碼掃描。詳見 [[Security-Audit-Report]]。
-- 若需遷移至雲端資料庫，請參考 [[wiki/Archive/雲端資料庫遷移指南-Cloud-Database-Migration.md|Cloud Database Migration]]。
+- 若需遷移至雲端資料庫，請參考 [[wiki/99_封存-Archive/雲端資料庫遷移指南-Cloud-Database-Migration.md|Cloud Database Migration]]。
 
 ---
 
@@ -104,4 +104,4 @@ docker compose logs -f dashboard
 
 ### CI/CD & Security
 -   Integrated `bandit` for static code analysis. See [[Security-Audit-Report]].
--   For cloud database migration, refer to [[wiki/Archive/雲端資料庫遷移指南-Cloud-Database-Migration.md|Cloud Database Migration]].
+-   For cloud database migration, refer to [[wiki/99_封存-Archive/雲端資料庫遷移指南-Cloud-Database-Migration.md|Cloud Database Migration]].

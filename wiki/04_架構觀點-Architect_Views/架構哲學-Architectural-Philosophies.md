@@ -42,7 +42,7 @@
 
 ### 5. 事件驅動演進 (Event-Driven Evolution)
 - **主動監控**: 從「被動拉取 (Pull)」轉向「主動推送 (Push)」。`SentinelService` 實作了主動事件監聽，當 VIX 或持倉發生偏移時，主動喚醒慢想系統 (Council)。
-- **外部整合**: 透過標準化的 Channel Adapters (參考 OpenClaw) 整合 Webhook 觸發器。
+- **外部整合**: 透過標準化的 Channel Adapters (參考 [研究與最佳實踐](研究與最佳實踐-Research-Best-Practices)) 整合 Webhook 觸發器。
 
 ### 6. 技術選型分析 (Selection Analysis)
 - **為什麼選擇 Streamlit？**: 快速迭代 AI 互動介面，減少前端開發成本，專注於 Agent 邏輯。

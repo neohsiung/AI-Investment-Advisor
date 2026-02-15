@@ -29,6 +29,8 @@
 ### 4. 零信任代理安全性 (Zero-Trust Agent Security)
 **理論**: 每一個 Agent 與工具的互動都必須經過驗證，防止惡意指令注入。
 - **項目實作**: [MCP Server](底層通信協議-Agent-Mesh-Protocols) 實現了權限隔離，Agent 只能透過受控的 API Endpoint 訪問工具。
+- **最佳實踐 (Tool Gating)**: 實施工具准入機制。在加載 Skill 前驗證 OS 依賴（如 `docker`, `curl`），若環境不具備則禁止該工具加載以防運行崩潰。
+- **最佳實踐 (Regex Guard)**: 建立提示詞層級的正則守衛，即時攔截並封鎖包含 `rm -rf`, `sudo` 等高危代碼的 LLM 輸出。
 
 ### 5. 行業工作流模式 (Industry Workflow Patterns)
 **參考**: Bloomberg & BlackRock (Aladdin)

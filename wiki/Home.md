@@ -10,10 +10,9 @@ Welcome to the AI Investment Advisor knowledge base, built on Spec-Driven Develo
 
 ### 02. 產品規格 (Product Managers)
 *   **[產品演進藍圖](產品演進藍圖-Evolutionary-Roadmap)**: v1 → v3.6 的研發歷程與 v4.0 Agent Swarm 願景。
-*   **規格書 (Specs)**
+*   **01_規格書-Specs**
     *   **[核心系統規格](核心系統規格-Core-System-Specs)**: 7 Agent Swarm、Multi-Broker 與 Leveraged NLV 解析。
-    *   **[未來演進規格 (v4.0)](未來演進規格-Future-Roadmap-Specs)**: v4.0 Role × Multi-Agent (Agent Swarm Economy)。
-*   **[OpenClaw 自動化規格](OpenClaw自動化規格-OpenClaw-Automation-Spec)**: Map-Reduce 全持倉併發分析。
+    *   **[未來演進規格 (v4.0)](未來演進規格-Future-Roadmap-Specs)**: v4.0 Role × Multi-Agent (Agent Swarm Economy) 與自動化特性。
 
 ### 03. 開發者指南 (Developer Guide)
 *   **[環境設定與本地開發](環境設定與本地開發-Environment-Local-Dev)**: Python 環境建置與 CLI。
@@ -33,12 +32,13 @@ Welcome to the AI Investment Advisor knowledge base, built on Spec-Driven Develo
 *   **[記憶系統與 Redis 架構](記憶系統與Redis架構-Memory-Redis-Architecture)**: 自適應壓縮記憶。
 
 ### 05. 工程手冊 (Engineering Handbook)
-*   **規範 (Standards)**
+*   **02_規範標準-Standards**
     *   **[文件規範 (Wiki Standards)](文件規範-Wiki-Standard)**: 檔案禁止數字開頭，目錄強制數字排序。
     *   **[資料庫設計與代碼規範](資料庫設計與代碼規範-Database-Git-Standards)**: Schema、Commit 規範。
-*   **設計模式深度庫 (Patterns)**
+*   **01_設計模式-Patterns**
     *   **[設計模式導讀](設計模式導讀-Design-Patterns-Intro)**: 為什麼我們這樣寫程式？
     *   **[工廠模式](設計模式-工廠-Factory-Pattern)** · **[存儲庫模式](設計模式-存儲庫-Repository-Pattern)** · **[依賴注入](設計模式-依賴注入-DI-Pattern)** · **[樣板方法](設計模式-樣板方法-Template-Method)**
+*   **[99_封存-Archive](99_封存-Archive)**: 歷史版本與舊型規格存檔。
 
 ---
 
