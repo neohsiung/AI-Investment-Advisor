@@ -43,3 +43,31 @@ class IChannelAdapter(ABC):
         發送豐富的警報訊息。
         """
         pass
+
+    @abstractmethod
+    def register_callback(self, callback_func: Any) -> None:
+        """
+        Register a callback function for user interactions.
+        Func signature: (request_id, action) -> None
+        """
+        pass
+
+    @abstractmethod
+    def handle_webhook(self, payload: Any, headers: Dict[str, Any] = None) -> Any:
+        """
+        Handle incoming webhook request.
+        Parses payload, verifies signature (if needed), and triggers callback.
+        """
+        pass
+
+class IIntentClassifier(ABC):
+    """
+    Interface for classifying user text intent.
+    使用者意圖分類介面。
+    """
+    @abstractmethod
+    def classify(self, text: str) -> str:
+        """
+        Returns: "APPROVE", "REJECT", or "UNKNOWN"
+        """
+        pass

@@ -55,4 +55,11 @@ class IChannelAdapter(ABC):
 ## 5. 擴充指引 (How to Add a Channel)
 1. 在 `src/infrastructure/channels/` 建立新的適配器類別。
 2. 繼承並實作 `IChannelAdapter`。
-3. 在 `NotificationService.__init__` 中將其實例化並加入列表。
+3. 在 `ChannelFactory.create_adapters` 中根據配置實例化並加入列表。
+
+---
+
+## 🔗 相關文件 (See Also)
+- **[互動頻道設定 (User Guide)](../../01_使用者手冊-User_Manual/互動頻道設定-Channel-Setup.md)**: 終端使用者如何設定各個頻道。
+- **[服務層開發指南](../服務層開發指南-Service-Layer-Blueprints.md)**: `InteractionService` 的設計與整合。
+- **[測試與外部服務整合](../../03_開發者指南-Developer_Guide/測試與外部服務整合-Testing-External-Services.md)**: 相關測試策略。

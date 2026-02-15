@@ -94,12 +94,13 @@ graph TD
 | `ThemeService` | `theme_service.py` | CSS 主題管理 (Dark/Light)。 |
 | `BacktestService` | `backtest_service.py` | 策略回測引擎。 |
 
-#### 2.7 排程與通知 (Scheduling & Notifications)
+#### 2.7 互動與通知 (Interaction & Notifications)
 
 | 服務 | 檔案 | 核心職責 |
 | :--- | :--- | :--- |
+| `InteractionService` | `interaction_service.py` | 雙向互動 (Approvals/Commands) — 支援 LINE Postback 與 Webhook 路由。 |
 | `SchedulerService` | `scheduler_service.py` | Cron 排程 — 自動日報/週報生成。 |
-| Notifier | `src/notifier.py` | LINE Bot 推送 (日報/週報/警報)。 |
+| `NotificationService` | `notification_service.py` | 單向警報推送 (Extracted from old implementation)。 |
 
 ### 3. 代理人執行引擎 (Agent Execution Engine)
 

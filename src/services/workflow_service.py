@@ -546,7 +546,7 @@ class DailyWorkflow(BaseWorkflow):
                             price=t_price
                         )
                         
-                        # [NEW] Auto-Trading Execution
+                        # [NEW] Auto-Trading Execution with Human-in-the-Loop
                         # -------------------------
                         try:
                             trading_settings = broker.transaction_repo.settings_repo # Access settings repo from broker
@@ -564,17 +564,37 @@ class DailyWorkflow(BaseWorkflow):
                                 order = Order(
                                     symbol=ticker,
                                     action=action_enum,
-                                    quantity=trade_amt, # Note: Etoro takes amount in USD for stocks usually, or units. Assuming USD amount for now. 
-                                    # If quantity is units, we need price to calc. 
-                                    # Etoro API 'Amount' usually means invested amount.
+                                    quantity=trade_amt, 
                                     leverage=1,
                                     reason=f"CIO Daily Signal ({cio_signal})"
                                 )
-
-                                # Execute
-                                logger.info(f"Auto-Trading Executing: {cio_signal} {ticker} ${trade_amt}")
-                                trade_res = broker.execute_order(order)
-                                logger.info(f"Trade Result: {trade_res}")
+                                
+                                # Check if manual approval is required (Conditional Design)
+                                if self._requires_human_approval(order, trading_settings):
+                                    # [NEW] Approval Workflow
+                                    from src.services.interaction_service import InteractionService
+                                    interaction_service = InteractionService() # Should be injected, but initializing here for now
+                                    
+                                    approval_request = f"CIO Signal for {ticker}: {cio_signal} ${trade_amt}?\nReason: {order.reason}"
+                                    is_approved = interaction_service.request_approval(
+                                        title="Trade Approval Request", 
+                                        content=approval_request,
+                                        context={"order": str(order)},
+                                        timeout_seconds=300, # 5 minutes to approve
+                                        user_id=self.user_id
+                                    )
+                                    
+                                    if is_approved:
+                                        logger.info(f"Auto-Trading Approved & Executing: {cio_signal} {ticker} ${trade_amt}")
+                                        trade_res = broker.execute_order(order)
+                                        logger.info(f"Trade Result: {trade_res}")
+                                    else:
+                                        logger.info(f"Auto-Trading Rejected or Timed Out for {ticker}")
+                                else:
+                                    # Execute directly if low risk / below threshold (Future capability)
+                                    logger.info(f"Auto-Trading Executing (No Approval Needed): {cio_signal} {ticker} ${trade_amt}")
+                                    trade_res = broker.execute_order(order)
+                                    logger.info(f"Trade Result: {trade_res}")
 
                         except Exception as e:
                             logger.error(f"Auto-Trade Execution Failed for {ticker}: {e}")
@@ -582,6 +602,25 @@ class DailyWorkflow(BaseWorkflow):
             logger.warning(f"Failed to extract CIO signals: {e}")
 
         return final_report
+
+    def _requires_human_approval(self, order, settings) -> bool:
+        """
+        Determines if an order requires human approval based on risk thresholds.
+        設計：有條件的確認 (Conditional Confirmation)
+        前期：全部詢問 (Always True)
+        後期：可調整閥值 (e.g. amount < 50 USD skip)
+        """
+        # Feature Flag: Global Force Approval (Default True for Early Stage)
+        if settings.get(self.user_id, "always_request_approval", "true") == "true":
+            return True
+            
+        # Example Future Logic (Commented out for now, to be verified later)
+        # risk_threshold = float(settings.get(self.user_id, "auto_trade_threshold", 0))
+        # if order.quantity > risk_threshold:
+        #    return True
+        
+        return True # Default safe fallback
+
 
 
 class WeeklyWorkflow(BaseWorkflow):

@@ -3,9 +3,10 @@
 ### 版本紀錄 (Version History)
 | Date | Version | Description | Author |
 | :--- | :--- | :--- | :--- |
-| 2026-02-15 | v3.6 | **Leverage Engine**: Detailed Gross/Net NLV, Bilingual Code Standards. | Neo |
-| 2026-02-14 | v3.5 | **Settings UI Integration**: Broker Enablement & API Key Mgmt moved to DB. | Neo |
-| 2026-02-14 | v3.5 | Sentinel 4D Multi-Trigger + Weighted Risk Keywords + Tavily Pipeline | Neo |
+| 2026-02-15 | v3.6.1 | **Standardized Multi-Channel Callbacks**: Unified adapter interface & webhook routing. | Neo |
+| 2026-02-15 | v3.6.0 | **Leverage Engine**: Detailed Gross/Net NLV, Bilingual Code Standards. | Neo |
+| 2026-02-14 | v3.5.5 | **Settings UI Integration**: Broker Enablement & API Key Mgmt moved to DB. | Neo |
+| 2026-02-14 | v3.5 | **Sentinel Hub**: 4D Multi-Trigger + Weighted Risk Keywords + Tavily Pipeline | Neo |
 | 2026-01-01 | v3.3 | Multi-Broker (Futu/IBKR) & Advanced Risk Controls | Neo |
 
 ![Python](https://img.shields.io/badge/Python-3.11+-blue.svg?style=for-the-badge&logo=python&logoColor=white)
@@ -30,6 +31,7 @@
 | **⚖️ 槓桿引擎 (v3.6)** | 精確計算 **TNV (總名義價值)**、**NLV (淨清算價值)** 與 **槓桿比率 (Leverage Ratio)**。 |
 | **🌍 多券商架構** | 統一 `IBroker` 介面支援 **Etoro**、**Futu**、**IBKR**，集中 **RiskManager** 風控。 |
 | **🔭 哨兵與評議會** | **SentinelService** 7×24 **四維度**監聽 (VIX/持倉/加權新聞/宏觀)；**CouncilService** 碎形辯論。 |
+| **🤝 雙向互動 (v3.6)** | **InteractionService** 支援 Human-in-the-Loop 審核機制與 LINE Postback 互動命理。 |
 | **⚡ 任務規劃引擎** | DAG 任務分解，依複雜度動態路由模型 (Fast/Smart/Advanced)。 |
 | **🔌 MCP 深度整合** | Polygon (行情) + FMP (財報) + FRED (總經) + Tavily (搜尋) 標準化工具。 |
 | **🏆 自我進化** | **Engineer Agent** 利用 DSPy 自動重寫低分 Agent Prompt。 |
@@ -118,6 +120,7 @@ graph TD
 | **⚖️ Leverage Engine (v3.6)** | Precise calculation of **TNV**, **NLV**, and **Leverage Ratio**. |
 | **🌍 Multi-Broker** | Unified `IBroker` interface for **Etoro**, **Futu**, **IBKR** with centralized **RiskManager**. |
 | **🔭 Sentinel & Council** | 24/7 **4-Dimensional** monitoring (VIX/Position/Weighted News/Macro) + deep position review. |
+| **🤝 Interaction (v3.6)** | **InteractionService** enabling Human-in-the-Loop approval workflows & LINE Postback commands. |
 | **⚡ Task Planning** | DAG-based decomposition with dynamic model routing (Fast/Smart/Advanced). |
 | **🔌 MCP Integration** | Polygon + FMP + FRED + Tavily as standardized agent tools. |
 | **🏆 Self-Evolution** | **Engineer Agent** auto-rewrites underperforming prompts via **DSPy**. |

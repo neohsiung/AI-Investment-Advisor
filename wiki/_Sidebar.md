@@ -1,6 +1,6 @@
-*   **01. 使用者手冊 (User Manual)**
     *   [快速啟動與操作指南](01_使用者手冊-User_Manual/快速啟動與操作指南-Quickstart-User-Guide.md)
     *   [系統設定與金鑰管理](01_使用者手冊-User_Manual/系統設定與金鑰管理-System-Configuration.md)
+    *   [互動頻道設定](01_使用者手冊-User_Manual/互動頻道設定-Channel-Setup.md)
 *   **02. 產品規格 (Product Managers)**
     *   [產品演進藍圖](02_產品經理-Product_Managers/產品演進藍圖-Evolutionary-Roadmap.md)
     *   **01_規格書-Specs**

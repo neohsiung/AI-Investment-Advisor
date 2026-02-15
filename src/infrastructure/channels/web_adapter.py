@@ -50,3 +50,9 @@ class WebAdapter(IChannelAdapter):
         except Exception as e:
             logger.error(f"Failed to record Web Alert: {e}")
             return False
+
+    def register_callback(self, callback_func: Any) -> None:
+        pass
+
+    def handle_webhook(self, payload: Any, headers: Dict[str, Any] = None) -> Any:
+        return {"ok": True}

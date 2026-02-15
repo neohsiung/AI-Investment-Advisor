@@ -8,6 +8,7 @@ Welcome to the AI Investment Advisor knowledge base, built on Spec-Driven Develo
 ### 01. 使用者手冊 (User Manual)
 *   **[快速啟動與操作指南](01_使用者手冊-User_Manual/快速啟動與操作指南-Quickstart-User-Guide.md)**: 安裝、部署與核心儀表板操作。
 *   **[系統設定與金鑰管理](01_使用者手冊-User_Manual/系統設定與金鑰管理-System-Configuration.md)**: 環境變數與 API Key 設定。
+*   **[互動頻道設定](01_使用者手冊-User_Manual/互動頻道設定-Channel-Setup.md)**: LINE, Slack, Telegram 等全通路設定 Step-by-Step 指南。
 
 ### 02. 產品規格 (Product Managers)
 *   **[產品演進藍圖](02_產品經理-Product_Managers/產品演進藍圖-Evolutionary-Roadmap.md)**: v1 → v3.6 的研發歷程與 v4.0 Agent Swarm 願景。

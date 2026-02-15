@@ -2,7 +2,10 @@
 MCP Service - FastAPI 微服務入口點
 Model Context Protocol Service - FastAPI Microservice Entry Point
 """
-from fastapi import FastAPI, HTTPException, Request
+from linebot import LineBotApi, WebhookHandler
+from linebot.exceptions import InvalidSignatureError
+from linebot.models import MessageEvent, TextMessage, TextSendMessage
+from fastapi import FastAPI, HTTPException, Request, Header
 from pydantic import BaseModel
 from typing import Dict, List, Any, Optional
 from datetime import datetime
@@ -44,6 +47,7 @@ from src.services.market_data_service import MarketDataService
 from src.services.search_service import InternetSearchService
 from src.services.fred_service import FredService
 from src.services.sentinel_service import SentinelService
+from src.services.interaction_service import InteractionService
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -60,6 +64,25 @@ async def lifespan(app: FastAPI):
         services["sentinel"] = SentinelService(
             market_service=services["market"],
             search_service=services["search"]
+        )
+        
+        # Initialize Settings Service for Adapter Configuration
+        from src.services.settings_service import SettingsService
+        from src.infrastructure.channels.channel_factory import ChannelFactory
+        from src.infrastructure.nlp.intent_classifier import IntentClassifier
+        
+        settings_svc_global = SettingsService(db_path="data/portfolio.db")
+        settings_global = settings_svc_global.get_all_settings()
+        
+        # Create Adapters via Factory
+        adapters = ChannelFactory.create_adapters(settings_global)
+        
+        # Create Intent Classifier
+        intent_classifier = IntentClassifier()
+        
+        services["interaction"] = InteractionService(
+            adapters=adapters,
+            intent_classifier=intent_classifier
         )
         
         # 2. Register Tools
@@ -386,57 +409,114 @@ async def finnhub_webhook(request: Request):
         logger.error(f"Finnhub webhook error: {e}")
         raise HTTPException(status_code=400, detail="Processing failed")
 # --- LINE Bot Webhook Support ---
-import os
-from linebot import LineBotApi, WebhookHandler
-from linebot.exceptions import InvalidSignatureError
-from linebot.models import MessageEvent, TextMessage, TextSendMessage
-from fastapi import Request, Header
-
-# Initialize LINE Bot
-line_channel_access_token = os.getenv("LINE_CHANNEL_ACCESS_TOKEN")
-line_channel_secret = os.getenv("LINE_CHANNEL_SECRET")
-
-if line_channel_access_token and line_channel_secret:
-    line_bot_api = LineBotApi(line_channel_access_token)
-    handler = WebhookHandler(line_channel_secret)
-    logger.info("LINE Bot initialized.")
-else:
-    line_bot_api = None
-    handler = None
-    logger.warning("LINE Bot credentials not found. Webhook disabled.")
-
+# --- LINE Bot Webhook Support (via InteractionService) ---
 @app.post("/callback")
 async def callback(request: Request, x_line_signature: str = Header(None)):
     """
     LINE Messaging API Webhook Callback
+    Routed to InteractionService -> LineBotAdapter
     """
-    if handler is None:
-        raise HTTPException(status_code=503, detail="LINE Bot not configured")
-        
+    interaction_svc = services.get("interaction")
+    if not interaction_svc:
+        # If service not ready, check if we can init it lazily or fail
+        logger.warning("InteractionService not initialized yet.")
+        raise HTTPException(status_code=503, detail="Service Unavailable")
+
     body = await request.body()
     body_str = body.decode('utf-8')
     logger.info(f"LINE Webhook body: {body_str}")
 
     try:
-        handler.handle(body_str, x_line_signature)
-    except InvalidSignatureError:
+        # Find LineBotAdapter
+        # We look for the adapter class name
+        adapter = next((a for a in interaction_svc.adapters if "LineBotAdapter" in a.__class__.__name__), None)
+        
+        if adapter:
+            adapter.handle_webhook(body_str, x_line_signature)
+        else:
+            logger.warning("No LineBotAdapter found in InteractionService.")
+            raise HTTPException(status_code=500, detail="Adapter Missing")
+            
+    except ValueError:
         logger.error("Invalid LINE signature")
         raise HTTPException(status_code=400, detail="Invalid signature")
+    except Exception as e:
+        logger.error(f"Error handling LINE webhook: {e}")
+        # Return OK to prevent LINE from retrying infinitely on logic errors
+        # unless it's a critical infrastructure failure
+        return "OK"
 
     return "OK"
 
-# Basic Message Handler (Echo for verification)
-if handler:
-    @handler.add(MessageEvent, message=TextMessage)
-    def handle_message(event):
-        try:
-            line_user_id = event.source.user_id
-            logger.info(f"[LINE] Received message from {line_user_id}: {event.message.text}")
+@app.post("/callback/{channel_name}")
+async def generic_channel_callback(channel_name: str, request: Request):
+    """
+    Unified Callback Entry Point for specialized channels.
+    Routes to: Slack, Telegram, Messenger
+    """
+    interaction_svc = services.get("interaction")
+    if not interaction_svc:
+         raise HTTPException(status_code=503, detail="Service Unavailable")
+
+    # 1. Find Adapter by Name
+    target_adapter = None
+    target_name = channel_name.lower()
+    
+    for adapter in interaction_svc.adapters:
+        cls_name = adapter.__class__.__name__.lower()
+        if target_name in cls_name:
+            target_adapter = adapter
+            break
             
-            # Simple Echo for Verification
-            line_bot_api.reply_message(
-                event.reply_token,
-                TextSendMessage(text=f"收到: {event.message.text}\nUser ID: {line_user_id}")
-            )
-        except Exception as e:
-            logger.error(f"Error handling LINE message: {e}")
+    if not target_adapter:
+        logger.warning(f"Callback received for unknown/inactive channel: {channel_name}")
+        raise HTTPException(status_code=404, detail="Channel not active")
+        
+    # 2. Extract Body and Headers
+    try:
+        content_type = request.headers.get("content-type", "")
+        payload = None
+        
+        if "application/x-www-form-urlencoded" in content_type:
+             # Parse form data (Slack)
+             try:
+                 form_data = await request.form()
+                 # Slack sends 'payload' JSON string inside form
+                 if "payload" in form_data:
+                     import json
+                     payload = json.loads(form_data["payload"])
+                 else:
+                     payload = dict(form_data)
+             except Exception:
+                 # Fallback if python-multipart is missing
+                 from urllib.parse import parse_qs
+                 body_bytes = await request.body()
+                 body_str = body_bytes.decode("utf-8")
+                 parsed = parse_qs(body_str)
+                 # parse_qs returns lists, e.g. {'payload': ['...']}
+                 if "payload" in parsed:
+                     import json
+                     payload = json.loads(parsed["payload"][0])
+                 else:
+                     payload = {k: v[0] for k, v in parsed.items()}
+        elif "application/json" in content_type:
+             payload = await request.json()
+        else:
+             # Fallback to generic JSON or raw body
+             try:
+                 payload = await request.json()
+             except Exception:
+                 body = await request.body()
+                 payload = body.decode("utf-8")
+
+        # Headers for verification
+        headers = dict(request.headers)
+        
+        # 3. Delegate to Adapter
+        result = target_adapter.handle_webhook(payload, headers)
+        
+        return result or "OK"
+        
+    except Exception as e:
+        logger.error(f"Error handling {channel_name} callback: {e}")
+        raise HTTPException(status_code=500, detail="Processing Failed")

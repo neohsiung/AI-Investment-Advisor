@@ -31,3 +31,9 @@ class EmailAdapter(IChannelAdapter):
                     body += f"- {label}\n"
 
         return self.notifier.send_report(title, body, to_email=kwargs.get("to_email"))
+
+    def register_callback(self, callback_func: Any) -> None:
+        pass
+
+    def handle_webhook(self, payload: Any, headers: Dict[str, Any] = None) -> Any:
+        return {"ok": True}

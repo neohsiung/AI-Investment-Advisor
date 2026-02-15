@@ -155,8 +155,11 @@ Building a transparent, cloud-native financial agent suite with 0% hallucination
 
 ### 3. NFR & Performance
 - **Scalability**: Thread-parallel analysis; KubeRay readiness.
-- **Reliability**: Automated GCS backups and HR-based zombie detection.
-- **Efficiency**: Hash-based prompt caching to minimize latency and cost.
+- **Interface Layer**:
+    - **API Gateway**: `mcp_service` (FastAPI) as the central entry point.
+    - **Interaction Service**: Handles 2-way communication (Approvals, Commands) via LINE/Slack.
+    - **Notification Service**: Handles 1-way alerts (Email, Web Push).
+    - **Dashboard**: Streamlit UI for monitoring and manual control.
 
 ### 4. Success Metrics
 - **Uptime**: > 99.9%.
