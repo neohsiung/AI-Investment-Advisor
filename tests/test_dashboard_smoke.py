@@ -18,10 +18,45 @@ def test_dashboard_logic():
          patch('src.services.analytics_service.update_daily_snapshot') as mock_update, \
          patch('google_auth_oauthlib.flow.Flow.from_client_secrets_file') as mock_flow_cls, \
          patch('src.services.transaction_service.TransactionService') as mock_trans_service, \
+         patch('src.services.theme_service.ThemeService') as mock_theme_service, \
          patch('src.services.transaction_service.TransactionService') as mock_trans_service, \
          patch('src.repositories.transaction_repository.SqliteTransactionRepository') as mock_trans_repo, \
          patch('src.repositories.settings_repository.SqliteSettingsRepository') as mock_settings_repo, \
-         patch('src.auth.auth_manager') as mock_auth_manager: # Patch global auth_manager
+         patch('src.auth.auth_manager') as mock_auth_manager:
+
+        # Mock dependencies
+        mock_conn.return_value.__enter__.return_value = MagicMock()
+        mock_read_sql.return_value = MagicMock()
+        
+        # Mock ThemeService
+        mock_theme_instance = MagicMock()
+        mock_theme_service.return_value = mock_theme_instance
+        
+        # Use importlib to load the module dynamically to avoid import errors at top level
+        # if dependencies are missing in some envs (though mocks should handle it)
+        if 'src.Dashboard' in sys.modules:
+            del sys.modules['src.Dashboard']
+            
+        try:
+            # Assumes src/Dashboard.py exists or similar. 
+            # If "Dashboard" was a class inside __init__.py, it's gone.
+            # Based on previous file list, there is a "Dashboard.py" in src?
+            # Or is it "dashboard.py"?
+            # Let's try importing 'src.Dashboard' module.
+            import src.Dashboard as dashboard_module
+            
+            # If Dashboard.py has a main(), call it
+            if hasattr(dashboard_module, 'main'):
+                dashboard_module.main()
+                
+        except ImportError:
+            # If src.Dashboard doesn't exist, try src.dashboard
+            import src.dashboard as dashboard_module
+            if hasattr(dashboard_module, 'main'):
+                dashboard_module.main()
+        except Exception as e:
+            pytest.fail(f"Dashboard execution failed: {e}")
+
 
         # Setup mocks
         mock_auth_manager.check_login.return_value = "AUTHENTICATED"

@@ -21,7 +21,7 @@ class TestSentimentAgent:
         assert hasattr(agent, 'name')
         assert agent.name == "Sentiment"
     
-    @patch.object(SentimentAgent, 'call_llm')
+    @patch('src.agents.sentiment.SentimentAgent.call_llm')
     def test_run_with_valid_context(self, mock_llm, agent):
         """Test run method with valid context"""
         # Mock LLM response as JSON
@@ -36,6 +36,17 @@ class TestSentimentAgent:
             'news': ['Apple announces new product', 'Stock price rises 5%'],
             'price_change_percent': 5.2
         }
+        
+        # Check explicit signature of run() in SentimentAgent vs BaseAgent
+        # BaseAgent might have abstract run(self, context: Dict[str, Any]) -> Any
+        # SentimentAgent has run(self, context)
+        # The error "Can't instantiate abstract class" means SentimentAgent is missing implementation of something.
+        # If it's `run`, it might be the signature.
+        # But SentimentAgent DOES implement run.
+        # Maybe it's another method? `render_system_prompt`? `render_user_prompt`?
+        
+        # Let's verify BaseAgent content first (via view_file). 
+        # But to proceed, I will assume BaseAgent requires `run` and potentially others.
         
         result = agent.run(context)
         

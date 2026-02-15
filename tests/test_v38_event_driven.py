@@ -43,12 +43,10 @@ def test_sentinel_process_event():
             
             # Process event
             await sentinel.process_event(event)
-            
+
             # Verify notification was called (via notify_all)
             assert mock_notification.notify_all.called
             args, kwargs = mock_notification.notify_all.call_args
-            # Verify content if possible, but notify_all args might vary
-            # assert "MKTRECAP ALERT" in str(kwargs) 
 
     asyncio.run(run_test())
 
