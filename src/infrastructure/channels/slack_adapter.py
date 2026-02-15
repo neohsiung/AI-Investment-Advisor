@@ -12,9 +12,11 @@ class SlackAdapter(IChannelAdapter):
     Supports Block Kit for rich interaction.
     """
     def __init__(self, bot_token: str = None, channel_id: str = None):
-        self.bot_token = bot_token
-        self.channel_id = channel_id
+        import os
+        self.bot_token = (bot_token or os.getenv("SLACK_BOT_TOKEN", "")).strip()
+        self.channel_id = (channel_id or os.getenv("SLACK_CHANNEL_ID", "")).strip()
         self.api_url = "https://slack.com/api/chat.postMessage"
+        self.is_active = bool(self.bot_token and self.channel_id)
 
     def send_alert(self, user_id: str, title: str, content: str, actions: List[Dict[str, str]] = None, **kwargs) -> bool:
         """

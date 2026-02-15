@@ -11,10 +11,12 @@ class MessengerAdapter(IChannelAdapter):
     Facebook Messenger Adapter using Graph API (Send API).
     """
     def __init__(self, page_token: str = None, verify_token: str = None):
-        self.page_token = page_token
-        self.verify_token = verify_token
+        import os
+        self.page_token = (page_token or os.getenv("MESSENGER_PAGE_TOKEN", "")).strip()
+        self.verify_token = (verify_token or os.getenv("MESSENGER_VERIFY_TOKEN", "")).strip()
         self.api_version = "v18.0" # Use a recent stable version
         self.base_url = f"https://graph.facebook.com/{self.api_version}/me/messages"
+        self.is_active = bool(self.page_token)
 
     def send_alert(self, user_id: str, title: str, content: str, actions: List[Dict[str, str]] = None, **kwargs) -> bool:
         """

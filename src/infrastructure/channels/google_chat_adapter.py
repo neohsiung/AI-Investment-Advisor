@@ -11,7 +11,9 @@ class GoogleChatAdapter(IChannelAdapter):
     Google Chat Adapter using Incoming Webhooks.
     """
     def __init__(self, webhook_url: str = None):
-        self.webhook_url = webhook_url
+        import os
+        self.webhook_url = (webhook_url or os.getenv("GOOGLE_CHAT_WEBHOOK_URL", "")).strip()
+        self.is_active = bool(self.webhook_url)
 
     def send_alert(self, user_id: str, title: str, content: str, actions: List[Dict[str, str]] = None, **kwargs) -> bool:
         """
