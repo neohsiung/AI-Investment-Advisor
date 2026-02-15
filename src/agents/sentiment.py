@@ -10,14 +10,6 @@ class SentimentAgent(BaseAgent):
         kwargs.pop('tier', None)
         super().__init__(name="Sentiment", prompt_path="prompts/sentiment_agent.txt", use_cache=use_cache, ttl_hours=ttl_hours, tier="fast", user_id=user_id, **kwargs)
 
-    def run(self, context):
-        """
-        Run Sentiment Analysis.
-        context: {
-            "ticker": "AAPL",
-            "news": ["Title - Source (Link)", ...],
-            "price_change_percent": optional float
-        }
         """
         Run Sentiment Analysis.
         執行情緒分析。
