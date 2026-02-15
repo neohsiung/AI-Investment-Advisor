@@ -1,12 +1,16 @@
-# Environment Variables
-# Secrets
-client_secret.json
-app/client_secret_*.json
+# Environment & Secrets
 .env
+env.production
+client_secret.json
+client_secret_*.json
+app/client_secret_*.json
+oauth-client-secret.json
+ai-investment-advisor-*.json
+*.apps.googleusercontent.com.json
 
 # Data & Databases
-data/*.db
 *.db
+data/*.db
 data/*.csv
 data/temp_*
 !data/.keep
@@ -14,6 +18,7 @@ data/temp_*
 # Logs
 logs/
 *.log
+verification_output*.log
 
 # Python
 __pycache__/
@@ -26,26 +31,18 @@ htmlcov/
 venv/
 env/
 
-# Mac OS
-.DS_Store
-
-# IDEs
+# IDEs & OS
 .vscode/
 .idea/
+.DS_Store
 
 # Docker
 .docker/
 
-# Secrets
-ai-investment-advisor-480409-edeae4e42611.json
-client_secret.json
-oauth-client-secret.json
-client_secret_*.json
-*.apps.googleusercontent.com.json
-env.production
+# Sub-repositories (Standalone git repos)
+wiki/
 
-# Temporary Scripts
+# Temporary / Specific Ignored Scripts
 scripts/inspect_db.py
 scripts/run_full_verification.sh
 scripts/seed_data.py
-verification_output*.log
