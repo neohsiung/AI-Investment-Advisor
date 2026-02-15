@@ -3,12 +3,14 @@
 ### 版本紀錄 (Version History)
 | Date | Version | Description | Author |
 | :--- | :--- | :--- | :--- |
+| 2026-02-15 | v3.6 | **Milestone**: Unified `BrokerFactory` implementation & stable Multi-Broker routing. | Neo |
 | 2026-02-14 | v1.0 | Initial Release: Integrated Etoro, Futu, and IBKR guides | Neo |
 
 ---
 
-本指南詳述了如何與三大支援券商 (Etoro, Futu, IBKR) 進行整合，實現自動化報價獲取與交易執行。
-This guide details the integration steps for the three supported brokers (Etoro, Futu, IBKR) to enable automated quoting and execution.
+本指南詳述了如何透過統一的 **`BrokerFactory`** 介面與三大支援券商 (Etoro, Futu, IBKR) 進行整合。系統會自動根據配置路由至正確的券商實作，實現自動化報價獲取與交易執行。
+
+This guide details how to integrate with the three supported brokers via the unified **`BrokerFactory`**, enabling automated execution and quoting through a single abstraction layer.
 
 ## 1. 快速導航 (Quick Nav)
 

@@ -56,14 +56,14 @@ docker-compose up --build
 | 變數名稱 | 類型 | 說明 |
 | :--- | :--- | :--- |
 | `GOOGLE_API_KEY` | Secret | Gemini 1.5 系列推理金鑰。 |
-| `POLYGON_API_KEY` | Secret | Polygon.io 金鑰，用於獲取無限次數的即時行與歷史數據。 |
-| `FMP_API_KEY` | Secret | Financial Modeling Prep 金鑰，用於獲取財報與新聞。 |
+| `TAVILY_API_KEY` | Secret | **(v3.6)** Tavily 高精度搜尋金鑰，用於 Sentinel 4D 監控。 |
+| `POLYGON_API_KEY` | Secret | Polygon.io 市場數據金鑰 (主)。 |
+| `FMP_API_KEY` | Secret | Financial Modeling Prep 財報與新聞金鑰。 |
+| `FRED_API_KEY` | Secret | **(v3.6)** FRED 總經指標 API 金鑰。 |
 | `DISPLAY_TIMEZONE`| Enum | 系統顯示時區 (預設 `Asia/Taipei`)。 |
-| `DB_TYPE` | Enum | `sqlite` 或 `postgres`。預設 `sqlite`。 |
-| `DB_PATH` | Path | SQLite 檔案路徑。例：`data/portfolio.db`。 |
-| `LOG_LEVEL` | Enum | `DEBUG`, `INFO`, `WARNING`, `ERROR`。 |
-| `RISK_KEYWORDS_WEIGHTS` | JSON | **(v3.6)** 風險關鍵字權重配置，通常存儲於資料庫。 |
-| `CHANNEL_CONFIG` | JSON | **(v3.6)** 通道適配器配置 (Email/LINE/Web)，通常存儲於資料庫。 |
+| `DB_PATH` | Path | SQLite 檔案路徑。例：`data/portfolio.db` |
+| `RISK_KEYWORDS_WEIGHTS` | JSON | **(v3.6)** 風險關鍵字權重配置 (DB driven)。 |
+| `CHANNEL_CONFIG` | JSON | **(v3.6)** 通道配置 (LINE/Email/Web Adapter)。 |
 
 ### 3. 操作手冊與 CLI (CLI Handbook)
 `src/cli.py` 封裝了所有自動化任務：
@@ -91,13 +91,14 @@ docker-compose up --build
 
 ### 2. Secrets Management
 Define all keys in `.env`. Security defaults are detailed in [Agent Mesh Protocols](底層通信協議-Agent-Mesh-Protocols).
-- `TAVILY_API_KEY`: High-precision search.
+- `GOOGLE_API_KEY`: Gemini 1.5 LLM inference.
+- `TAVILY_API_KEY`: **(v3.6)** High-precision search for Sentinel 4D.
 - `POLYGON_API_KEY`: Primary market data source.
 - `FMP_API_KEY`: Fundamental and financial news source.
-- `FRED_API_KEY`: Macro trends.
-- `DISPLAY_TIMEZONE`: User-interface timezone (Default: `Asia/Taipei`).
+- `FRED_API_KEY`: **(v3.6)** Macroeconomic data source.
 - `RISK_KEYWORDS_WEIGHTS`: (v3.6) DB-driven risk weights.
 - `CHANNEL_CONFIG`: (v3.6) Channel adapter settings.
+- `DISPLAY_TIMEZONE`: User-interface timezone (Default: `Asia/Taipei`).
 
 ### 3. Troubleshooting
 - **API Key issues**: Check for trailing spaces in `.env`.

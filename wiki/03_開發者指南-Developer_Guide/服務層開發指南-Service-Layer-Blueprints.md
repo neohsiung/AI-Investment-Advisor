@@ -121,30 +121,33 @@ graph TD
 
 ### 4. 槓桿引擎 (Leverage Engine) - v3.6 新增
 
-位於 `AnalyticsService`，負責精確計算帳戶健康度指標：
+位於 `AnalyticsService` -> `LeverageCalculator`，負責精確計算帳戶健康度指標：
 
 - **TNV (Total Nominal Value)**: 總名義價值 = $\sum |Position \times Price|$
-- **NLV (Net Liquidity Value)**: 淨清算價值 = $Cash + \sum (Position \times Price)$
-- **Leverage Ratio**: $TNV / NLV$
+  - *Note*: 包含多頭與空頭頭寸的絕對值總和 (Gross Exposure)。
+- **Portfolio Value**: 投資組合市值 = $\sum (Position \times Price)$
+- **Net Invested Capital**: 淨投入資本 = 累計存款 - 累計提款。
+- **Cash Balance**: 淨現金餘額 = $Cash Flow Sum + \sum Transaction Cash Impact$
+  - *Impact*: BUY (-), SELL (+), DIVIDEND (+).
+- **NLV (Net Liquidity Value)**: 淨清算價值 = $Cash Balance + Portfolio Value$
+- **Leverage Ratio**: $TNV / NLV$ (若 NLV $\le 0$ 則為 $\infty$)。
 
-**代碼範例 (符合雙語註解規範)**:
-```python
-def calculate_metrics(self, current_prices, user_id):
-    """
-    Calculate Leverage Metrics based on current holdings.
-    計算基於當前持倉的槓桿指標。
-    """
-    # 1. Calculate Total Nominal Value (TNV)
-    # 1. 計算總名義價值 (TNV)
-    tnv = 0.0
-    for ticker, qty in holdings:
-        price = current_prices.get(ticker, 0.0)
-        tnv += abs(qty * price)
-    
-    # ... (omitted)
-    
-    return {"leverage_ratio": tnv / nlv}
-```
+### 5. 資產快照流程 (Asset Snapshot Flow)
+
+位於 `AnalyticsService` -> `SnapshotRecorder`，由 `SchedulerService` 或 CLI 觸發：
+1. **數據獲取**: 從 `ITransactionRepository` 取得當前持倉與現金流。
+2. **行情刷新**: 透過 `MarketDataService` 獲取最新的標的價格。
+3. **指標計算**: 執行 `LeverageCalculator` 取得 NLV、TNV 與槓桿比率。
+4. **持久化**: 呼叫 `SqliteSnapshotRepository.save_snapshot` 記錄時間序列數據。
+
+### 6. 損益計算算法 (PnL Calculation Algorithm)
+
+位於 `AnalyticsService` -> `PnLCalculator`，採用 **加權平均成本法 (Weighted Average Cost)**：
+- **買入 (BUY)**: `new_avg_cost = ((old_qty * old_avg_cost) + (buy_qty * buy_price) + fees) / (old_qty + buy_qty)`
+- **賣出 (SELL)**: 
+  - `realized_pnl = (sell_price - avg_cost) * sell_qty - fees`
+  - *Note*: 賣出不改變平均成本，僅減少庫存量。
+- **未實現損益 (Unrealized PnL)**: `(current_price - avg_cost) * current_qty`
 
 ### 5. NFR
 - **響應時間**: P95 本地延遲 < 500ms (不含 LLM)。

@@ -6,8 +6,8 @@
 ### 版本紀錄 (Version History)
 | Date | Version | Description | Author |
 | :--- | :--- | :--- | :--- |
+| 2026-02-15 | v3.6 | **Milestone: 75% Coverage** + Leverage Engine & Channel Adapters | Neo |
 | 2026-02-14 | v1.2 | Added Multi-Broker + LINE Bot to C4, updated external integrations | Neo |
-| 2026-02-07 | v1.1 | Updated C4 Container Diagram to reflect Hybrid Tool Architecture | Neo |
 | 2024-01-04 | v1.0 | Initial Release | Neo |
 
 ---
@@ -75,7 +75,7 @@ graph TD
 | :--- | :--- | :--- | :--- |
 | **L1: 存取層** | 正規化 I/O | `ChannelAdapter` | 將入口 (LINE/Web/CLI) 封裝為標準化的 `Event` 物件。 |
 | **L2: 控制層** | 併發與泳道 | `LaneManager` | 為 session 分配專屬 `Queue`。確保相同用戶指令序列執行。 |
-| **L3: 認知層** | 執行環境 | `AgentRuntime` | 動態構建 Prompt (注入時間、技能清單、Top-K 事實)。 |
+| **L3: 認知層** | 執行環境 | `AgentRuntime` | 動態構建 Prompt (注入Facts)。包含 **Leverage Engine** (0% 幻覺數學運算)。 |
 | **L4: 記憶層** | 混合檢索 | `VectorRepository` | 結合 `sqlite-vec` 與 FTS5 實現向量與關鍵字混合搜尋。 |
 | **L5: 互動層** | 回饋機制 | `A2A Protcol` | 處理 Agent 間的協作與衝突解決。 |
 | **L6: 策略層** | 持久化實施 | `StrategyEngine` | 將最終決策轉化為券商 API 可接受的格式並執行。 |
