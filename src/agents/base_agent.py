@@ -26,7 +26,8 @@ class BaseAgent(ABC):
         self.tier = tier
         self.user_id = user_id
         
-        # Dependency Injection with Defaults (依賴注入與預設值)
+        # Dependency Injection with Defaults
+        # 依賴注入與預設值
         self.settings_repo = settings_repo or SqliteSettingsRepository()
         self.state_repo = state_repo or SqliteAgentStateRepository()
         self.feedback_repo = feedback_repo or SqliteFeedbackRepository()
@@ -35,11 +36,12 @@ class BaseAgent(ABC):
         self.config = self._load_config()
         self.cache = ResponseCache(ttl_hours=ttl_hours) if use_cache else None
         
-        # [NEW] Tool Server (Personal Toolbox - 個人工具箱)
+        # [NEW] Tool Server (Personal Toolbox)
+        # [NEW] 工具伺服器 (個人工具箱)
         self.toold = McpServer(name=f"{self.name}_Tools")
 
         # [NEW] OpenClaw Components
-        self.memory = HybridMemory() # Shared DB for now
+        self.memory = HybridMemory() # Shared DB for now (目前共用 DB)
         self.skill_loader = SkillLoader()
         self.skill_loader.load_skills()
         
@@ -56,8 +58,8 @@ class BaseAgent(ABC):
 
     def _load_config(self):
         """
-        讀取 AI 設定 (優先順序: DB > Env > Default)
         Read AI configuration (Priority: DB > Env > Default).
+        讀取 AI 設定 (優先順序: DB > Env > Default)。
         """
         if self.tier == "fast":
             default_model = os.getenv("AI_MODEL_FAST", os.getenv("AI_MODEL", "gemini-1.5-flash"))
@@ -97,7 +99,8 @@ class BaseAgent(ABC):
 
     def _load_config_from_db(self):
         """
-        從資料庫載入 API 設定 (Via Repository)
+        Load API settings from database (Via Repository).
+        從資料庫載入 API 設定 (Via Repository)。
         Load API settings from database via Repository.
         """
         settings = {}

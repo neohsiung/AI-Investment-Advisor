@@ -48,8 +48,6 @@ class CIOAgent(BaseAgent):
         
         # 2. Format Swarm Inputs (Aggregating Sub-Agent Reports)
         # 2. 格式化蜂群輸入 (聚合子 Agent 的報告)
-        # 2. Format Swarm Inputs (Aggregating Sub-Agent Reports)
-        # 2. 格式化蜂群輸入 (聚合子 Agent 的報告)
         # [Map-Reduce Support]: Use pre-aggregated transcript if available
         if "council_transcript" in context:
             swarm_context = context["council_transcript"]

@@ -11,8 +11,10 @@ class LeverageCalculator:
 
     def calculate_metrics(self, current_prices, user_id):
         """
-        計算槓桿水位相關指標 (Calculate Leverage Metrics)
+        Calculate Leverage Metrics.
+        計算槓桿水位相關指標 (Calculate Leverage Metrics)。
         """
+        # 1. Calculate Total Nominal Value (TNV)
         # 1. 計算總名義價值 (TNV)
         holdings = self.repo.get_holdings_summary(user_id) # List of (ticker, quantity)
 
@@ -25,9 +27,10 @@ class LeverageCalculator:
 
             price = current_prices.get(ticker, 0.0)
             market_val = qty * price
-            tnv += abs(market_val) # 名義價值取絕對值總和
-            portfolio_value += market_val # 投資組合市值 (Long - Short)
+            tnv += abs(market_val) # Absolute sum of Nominal Value (名義價值取絕對值總和)
+            portfolio_value += market_val # Portfolio Market Value (Long - Short) (投資組合市值)
 
+        # 2. Calculate Net Liquidity Value (NLV)
         # 2. 計算淨清算價值 (NLV)
         cash_flow_sum = self.repo.get_cash_flow_sum(user_id)
         
@@ -69,7 +72,8 @@ class LeverageCalculator:
         cash_balance = cash_flow_sum + trans_cash_impact
         nlv = cash_balance + portfolio_value
 
-        # 3. 槓桿比率 (Leverage Ratio)
+        # 3. Leverage Ratio
+        # 3. 槓桿比率
         # Standard: Gross Exposure (TNV) / Net Liquidity Value (NLV)
         if nlv <= 0:
             leverage_ratio = float('inf')
@@ -89,7 +93,8 @@ class ROIEngine:
 
     def calculate_roi(self, nlv, user_id):
         """
-        計算簡單投資報酬率 (Calculate Simple ROI)
+        Calculate Simple ROI.
+        計算簡單投資報酬率 (Calculate Simple ROI)。
         """
         net_invested = self.repo.calculate_net_invested_capital(user_id)
 
@@ -107,7 +112,10 @@ class SnapshotRecorder:
         self.trans_repo = SqliteTransactionRepository() # Need this for invested capital
 
     def record_daily_snapshot(self, nlv, cash_balance, user_id, total_tnv=0, leverage_ratio=0):
-        """記錄每日資產快照"""
+        """
+        Record Daily Asset Snapshot.
+        記錄每日資產快照。
+        """
         
         net_invested = self.trans_repo.calculate_net_invested_capital(user_id)
         pnl = nlv - net_invested
@@ -149,7 +157,8 @@ class PnLCalculator:
 
     def calculate_breakdown(self, current_prices, user_id):
         """
-        計算損益細分 (Calculate P&L Breakdown)
+        Calculate P&L Breakdown.
+        計算損益細分 (Calculate P&L Breakdown)。
         """
         transactions = self.repo.get_all_by_user(user_id) 
         # Note: interactions returns rows sorted by date DESC generally, checking repo implementation... 
@@ -226,7 +235,9 @@ class PnLCalculator:
 
 def update_daily_snapshot(db_path="data/portfolio.db", user_id=None):
     """
-    重新計算並更新今日績效快照 (Helper Function)
+    """
+    Recalculate and update today's performance snapshot (Helper Function).
+    重新計算並更新今日績效快照 (Helper Function)。
     """
     if not user_id:
         return 

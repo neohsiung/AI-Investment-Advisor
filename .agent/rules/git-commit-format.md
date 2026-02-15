@@ -4,6 +4,22 @@
 
 When generating or helping with Git commit messages, **ALWAYS** follow this bilingual detailed format.
 
+Since this project maintains two separate repositories (**Project Repo** and **Wiki Repo**), you must generate **two separate commit messages** when changes affect both source code and documentation.
+
+## 雙 Repo 規範 (Dual-Repo Standard)
+
+**當變更同時涉及代碼與文檔時，必須分別產出以下兩份訊息：**
+
+### 1. 專案 Repo (Project Repo)
+- **Scope**: `agents`, `services`, `infrastructure`, `workflow`, `config`, `tests`, `docs` (僅限 README 或非 Wiki 文檔)
+- **內容**: 聚焦於程式碼變更、邏輯調整、測試新增。
+
+### 2. Wiki Repo (Wiki Repo)
+- **Repo Path**: `wiki/` (本專案做為 submodule 或獨立 repo 管理)
+- **Scope**: `wiki`
+- **內容**: 聚焦於文檔更新、架構圖調整、規格變更。
+- **格式**: 雖然是文檔，仍需遵循相同結構 (Summary + Core Changes)。
+
 ## Format Template
 
 ```
@@ -220,25 +236,19 @@ docs(wiki): update roadmap with v3.7 Multi-Tier architecture
 
 ## 工具集成 (Tool Integration)
 
-### 生成commit message命令
+### 生成雙份 Commit Message
 ```bash
-# 1. 查看变更
-git diff
+# 1. Check status
+git status
 
-# 2. 请求AI生成commit message
-# (使用此rule自动生成标准格式)
+# 2. Project Repo Commit
+git add src/ .agent/ README.md
+git commit -m "<Project-Repo-Message>"
 
-# 3. 提交
-git commit -m "<generated-message>"
-```
-
-### 验证commit message格式
-```bash
-# 检查是否包含双语
-grep -c "/" commit_message.txt  # 应该 > 0
-
-# 检查是否包含核心变更标题
-grep "核心變更 (Core Changes)" commit_message.txt
+# 3. Wiki Repo Commit
+cd wiki
+git add .
+git commit -m "<Wiki-Repo-Message>"
 ```
 
 ## 参考 (References)

@@ -15,6 +15,7 @@ description: 当源码变更时自动同步更新Wiki文档
 - ✅ API接口变更后
 - ✅ 架构调整后
 - ✅ 每个milestone完成时
+- ✅ **Commit 前检查** (Pre-commit check)
 
 ## 执行步骤 (Steps)
 
@@ -60,7 +61,16 @@ find src/ -name "*.py" -mtime -7 -type f
 - [ ] **配置说明**: 环境变量/设定是否正确？
 - [ ] **代码示例**: 示例代码是否还能运行？
 
-### 4. 生成更新建议
+### 4. README.md 检查 (Pre-commit)
+
+**规则参照**: `.agent/rules/readme-standards.md`
+
+- [ ] **版本纪录**: 是否包含最新变动？
+- [ ] **双语同步**: 中英文内容是否一致？
+- [ ] **覆盖率徽章**: 是否反映当前测试覆盖率 (75%)？
+- [ ] **坏链检查**: 文档索引中的Wiki链接是否有效？
+
+### 5. 生成更新建议
 
 **输出格式**:
 
@@ -165,4 +175,5 @@ grep -A 10 "```python" wiki/*.md
 ## 参考 (References)
 
 - [Wiki标准规范](../wiki/05_工程手冊-Engineering_Handbook/02_規範標準-Standards/文件規範-Wiki-Standard.md)
+- [README标准规范](../.agent/rules/readme-standards.md)
 - [文档框架定义](../wiki/05_工程手冊-Engineering_Handbook/02_規範標準-Standards/文件框架定義-Document-Frameworks.md)

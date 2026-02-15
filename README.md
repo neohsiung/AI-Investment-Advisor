@@ -3,16 +3,16 @@
 ### 版本紀錄 (Version History)
 | Date | Version | Description | Author |
 | :--- | :--- | :--- | :--- |
-| 2026-02-15 | v3.6 | **Leverage Engine & Refactor**: Detailed Gross/Net NLV, Naming Standards. | Neo |
+| 2026-02-15 | v3.6 | **Leverage Engine**: Detailed Gross/Net NLV, Bilingual Code Standards. | Neo |
 | 2026-02-14 | v3.5 | **Settings UI Integration**: Broker Enablement & API Key Mgmt moved to DB. | Neo |
 | 2026-02-14 | v3.5 | Sentinel 4D Multi-Trigger + Weighted Risk Keywords + Tavily Pipeline | Neo |
-| 2026-02-14 | v3.5 | Multi-Broker, Sentinel/Council, Role × Multi-Agent roadmap | Neo |
 | 2026-01-01 | v3.3 | Multi-Broker (Futu/IBKR) & Advanced Risk Controls | Neo |
 
 ![Python](https://img.shields.io/badge/Python-3.11+-blue.svg?style=for-the-badge&logo=python&logoColor=white)
 ![Docker](https://img.shields.io/badge/Docker-Enabled-2496ED.svg?style=for-the-badge&logo=docker&logoColor=white)
-![Redis](https://img.shields.io/badge/Redis-Inside-red.svg?style=for-the-badge&logo=redis&logoColor=white)
+![Coverage](https://img.shields.io/badge/Coverage-75%25-green.svg?style=for-the-badge)
 ![Status](https://img.shields.io/badge/Status-Production-brightgreen.svg?style=for-the-badge)
+![License](https://img.shields.io/badge/License-MIT-yellow.svg?style=for-the-badge)
 
 > **[繁體中文 (Traditional Chinese)](#zh) | [English](#en)**
 
@@ -27,13 +27,13 @@
 | 模組 | 描述 |
 | :--- | :--- |
 | **🧠 7 Agent + Council** | CIO/Fundamental/Momentum/Macro/Sentiment/Risk/Engineer Agent 集群，由 Council 碎形辯論仲裁。 |
-| **⚖️ 槓桿引擎 (v3.6)** | 精確計算每筆部位的 **貸款 (Loan)** 與 **淨權益 (Net Equity)**。 |
+| **⚖️ 槓桿引擎 (v3.6)** | 精確計算 **TNV (總名義價值)**、**NLV (淨清算價值)** 與 **槓桿比率 (Leverage Ratio)**。 |
 | **🌍 多券商架構** | 統一 `IBroker` 介面支援 **Etoro**、**Futu**、**IBKR**，集中 **RiskManager** 風控。 |
-| **🔭 哨兵與評議會** | **SentinelService** 7×24 **四維度**監聽 (VIX/持倉/加權新聞/宏觀)；**CouncilService** 碎形辯論 (Fractal Debate)。 |
+| **🔭 哨兵與評議會** | **SentinelService** 7×24 **四維度**監聽 (VIX/持倉/加權新聞/宏觀)；**CouncilService** 碎形辯論。 |
 | **⚡ 任務規劃引擎** | DAG 任務分解，依複雜度動態路由模型 (Fast/Smart/Advanced)。 |
 | **🔌 MCP 深度整合** | Polygon (行情) + FMP (財報) + FRED (總經) + Tavily (搜尋) 標準化工具。 |
 | **🏆 自我進化** | **Engineer Agent** 利用 DSPy 自動重寫低分 Agent Prompt。 |
-| **🏗️ 現代架構** | Clean Architecture · Docker/K8s · 測試覆蓋率 > 75% · [Wiki 命名規範](wiki/05_工程手冊-Engineering_Handbook/Standards/文件規範-Wiki-Standard.md)。 |
+| **🏗️ 現代架構** | Clean Architecture · Docker/K8s · 測試覆蓋率 > 75% · [Wiki 命名規範](wiki/05_工程手冊-Engineering_Handbook/02_規範標準-Standards/文件規範-Wiki-Standard.md)。 |
 
 ### 🚀 快速開始
 
@@ -91,7 +91,6 @@ graph TD
 - **產品規格**:
     - [演進藍圖](wiki/02_產品經理-Product_Managers/產品演進藍圖-Evolutionary-Roadmap.md)
     - [核心系統規格](wiki/02_產品經理-Product_Managers/Specs/核心系統規格-Core-System-Specs.md)
-    - [未來規格 (v4.0 Agent Swarm)](wiki/02_產品經理-Product_Managers/Specs/未來演進規格-Future-Roadmap-Specs.md)
 - **開發者指南**:
     - [環境設定](wiki/03_開發者指南-Developer_Guide/環境設定與本地開發-Environment-Local-Dev.md)
     - [服務層指南](wiki/03_開發者指南-Developer_Guide/服務層開發指南-Service-Layer-Blueprints.md)
@@ -99,10 +98,9 @@ graph TD
 - **架構觀點**:
     - [系統全景圖](wiki/04_架構觀點-Architect_Views/系統全景圖-System-Landscape.md)
     - [通信協議](wiki/04_架構觀點-Architect_Views/底層通信協議-Agent-Mesh-Protocols.md)
-    - [哨兵與評議會](wiki/04_架構觀點-Architect_Views/哨兵與評議會架構-Sentinel-Council-Architecture.md)
 - **工程手冊**:
-    - [設計模式](wiki/05_工程手冊-Engineering_Handbook/設計模式導讀-Design-Patterns-Intro.md)
-    - [文件規範](wiki/05_工程手冊-Engineering_Handbook/Standards/文件規範-Wiki-Standard.md)
+    - [文件規範](wiki/05_工程手冊-Engineering_Handbook/02_規範標準-Standards/文件規範-Wiki-Standard.md)
+    - [代碼規範](.agent/rules/coding-standards.md)
 
 ---
 
@@ -117,12 +115,13 @@ graph TD
 | Module | Description |
 | :--- | :--- |
 | **🧠 7-Agent Swarm + Council** | CIO/Fundamental/Momentum/Macro/Sentiment/Risk/Engineer agents with Fractal Debate arbitration. |
+| **⚖️ Leverage Engine (v3.6)** | Precise calculation of **TNV**, **NLV**, and **Leverage Ratio**. |
 | **🌍 Multi-Broker** | Unified `IBroker` interface for **Etoro**, **Futu**, **IBKR** with centralized **RiskManager**. |
-| **🔭 Sentinel & Council** | 24/7 **4-Dimensional** monitoring (VIX/Position/Weighted News/Macro) + deep position review via Fractal Debate. |
+| **🔭 Sentinel & Council** | 24/7 **4-Dimensional** monitoring (VIX/Position/Weighted News/Macro) + deep position review. |
 | **⚡ Task Planning** | DAG-based decomposition with dynamic model routing (Fast/Smart/Advanced). |
 | **🔌 MCP Integration** | Polygon + FMP + FRED + Tavily as standardized agent tools. |
 | **🏆 Self-Evolution** | **Engineer Agent** auto-rewrites underperforming prompts via **DSPy**. |
-| **🏗️ Modern Infra** | Clean Architecture · Docker/K8s · 75%+ Test Coverage. |
+| **🏗️ Modern Infra** | Clean Architecture · Docker/K8s · 75% Test Coverage. |
 
 ### 🚀 Quick Start
 
@@ -134,9 +133,6 @@ cp .env.example .env
 
 # 2. Start (Docker Compose)
 ./start.sh
-
-# 3. Start (Kubernetes)
-./start.sh --k8s
 ```
 *Dashboard: [http://localhost:8501](http://localhost:8501)*
 
@@ -148,18 +144,13 @@ Detailed documentation in the `wiki/` directory:
 - **Product Specs**:
     - [Evolutionary Roadmap](wiki/02_產品經理-Product_Managers/產品演進藍圖-Evolutionary-Roadmap.md)
     - [Core System Specs](wiki/02_產品經理-Product_Managers/Specs/核心系統規格-Core-System-Specs.md)
-    - [Future Specs (v4.0 Agent Swarm)](wiki/02_產品經理-Product_Managers/Specs/未來演進規格-Future-Roadmap-Specs.md)
 - **Developer Guide**:
     - [Environment Setup](wiki/03_開發者指南-Developer_Guide/環境設定與本地開發-Environment-Local-Dev.md)
     - [Service Layer](wiki/03_開發者指南-Developer_Guide/服務層開發指南-Service-Layer-Blueprints.md)
-    - [Broker Integration](wiki/03_開發者指南-Developer_Guide/券商整合指南-Broker-Integration-Guide.md)
 - **Architecture**:
     - [System Landscape](wiki/04_架構觀點-Architect_Views/系統全景圖-System-Landscape.md)
-    - [Sentinel & Council](wiki/04_架構觀點-Architect_Views/哨兵與評議會架構-Sentinel-Council-Architecture.md)
-    - [Agent Mesh Protocols](wiki/04_架構觀點-Architect_Views/底層通信協議-Agent-Mesh-Protocols.md)
 - **Engineering**:
-    - [Design Patterns](wiki/05_工程手冊-Engineering_Handbook/設計模式導讀-Design-Patterns-Intro.md)
-    - [Doc Standards](wiki/05_工程手冊-Engineering_Handbook/Standards/文件規範-Wiki-Standard.md)
+    - [Doc Standards](wiki/05_工程手冊-Engineering_Handbook/02_規範標準-Standards/文件規範-Wiki-Standard.md)
 
 ### ⚠️ Disclaimer
 **For Educational and Research Purposes Only.**

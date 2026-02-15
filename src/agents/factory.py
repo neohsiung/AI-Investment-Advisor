@@ -11,19 +11,23 @@ import logging
 import traceback
 
 # [NEW] Imports for DI
+# [NEW] 依賴注入引入
 from src.repositories.feedback_repository import SqliteFeedbackRepository
 from src.repositories.settings_repository import SqliteSettingsRepository
 from src.tools.market_tools import create_market_server
 
 # Safe Import for DSPy
+# 安全引入 DSPy
 has_dspy = False
 try:
     import dspy
     # Check if a valid dspy module
+    # 檢查是否為有效的 dspy 模組
     if hasattr(dspy, 'OpenAI'):
         has_dspy = True
     else:
         # Try finding where OpenAI might be, or just fallback
+        # 嘗試尋找 OpenAI 類別位置，或直接使用備案
         pass
 except ImportError:
     pass
@@ -34,13 +38,18 @@ class AgentFactory:
     """
     Factory for creating Agent instances with consistent configuration.
     Implements **Factory Pattern** and **Dependency Injection**.
+    建立 Agent 實例的工廠，確保配置一致。
+    實作 **工廠模式 (Factory Pattern)** 與 **依賴注入 (Dependency Injection)**。
     """
     
     _dspy_configured = False
 
     @classmethod
     def _configure_dspy(cls):
-        """Enable DSPy if installed and credentials are present (Env > DB)."""
+        """
+        Enable DSPy if installed and credentials are present (Env > DB).
+        若已安裝 DSPy 且憑證存在 (Env > DB)，則啟用之。
+        """
         if cls._dspy_configured:
             return
             
@@ -80,7 +89,10 @@ class AgentFactory:
 
     @staticmethod
     def _inject_dependencies(agent):
-        """Helper to inject common dependencies."""
+        """
+        Helper to inject common dependencies.
+        注入通用依賴的輔助函數。
+        """
         if not hasattr(agent, 'feedback_repo') or agent.feedback_repo is None:
              agent.feedback_repo = SqliteFeedbackRepository()
         
