@@ -279,6 +279,14 @@ class MarketDataService:
                 continue
         return {}
 
+    def get_valuation_metrics(self, ticker: str) -> Dict[str, Any]:
+        """
+        Alias/Sub-set of financials for valuation.
+        估值指標的別名/子集。
+        """
+        # For now, it returns financials which contains valuation data (market cap etc.)
+        return self.get_financials(ticker)
+
     def get_macro_data(self):
         """
         Get Macro Data. Priority: FRED -> YFinance
