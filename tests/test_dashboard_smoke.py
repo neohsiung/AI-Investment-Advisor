@@ -56,7 +56,7 @@ def test_dashboard_logic():
 
         # Import and run
         try:
-            from src import Dashboard as dashboard
+            import src.Dashboard as dashboard
             importlib.reload(dashboard) # Ensure fresh reload
             
             if hasattr(dashboard, 'DashboardPage'):

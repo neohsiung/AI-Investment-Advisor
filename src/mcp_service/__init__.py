@@ -7,6 +7,8 @@ from pydantic import BaseModel
 from typing import Dict, List, Any, Optional
 from datetime import datetime
 import logging
+import os
+import asyncio
 
 # 設定日誌
 logging.basicConfig(level=logging.INFO)
@@ -269,13 +271,49 @@ class RssBridgeParser(BaseSourceParser):
             "url": payload.get("link")
         }
 
+
+class FinnhubParser(BaseSourceParser):
+    @staticmethod
+    def parse(payload: Dict[str, Any]) -> Dict[str, Any]:
+        # Finnhub Earnings/News Payload
+        event_type = payload.get("event", "news")
+        raw_data = payload.get("data", {})
+        
+        # Normalize data: Finnhub often sends a list for news
+        data = {}
+        if isinstance(raw_data, list):
+            if raw_data:
+                data = raw_data[0] # Take first item
+        elif isinstance(raw_data, dict):
+            data = raw_data
+            
+        # Ticker can be at root or in data
+        ticker = payload.get("ticker")
+        if not ticker:
+            ticker = data.get("symbol", "UNKNOWN")
+        
+        msg = f"Finnhub Alert: {event_type}"
+        
+        if event_type == "earnings":
+             msg = f"Earnings Alert for {ticker}: Q{data.get('quarter')} EPS={data.get('eps')}"
+        elif event_type == "news":
+             msg = data.get("headline", f"News Alert for {ticker}")
+             
+        return {
+            "type": "FINANCIAL_EVENT",
+            "ticker": ticker,
+            "msg": msg,
+            "url": data.get("url")
+        }
+
 SOURCE_PARSERS = {
     "mktrecap": MktRecapParser,
     "tradingview": TradingViewParser,
     "tradingview_alerts": TradingViewParser,
     "rss": RssBridgeParser,
     "rss_bridge": RssBridgeParser,
-    "ifttt": RssBridgeParser
+    "ifttt": RssBridgeParser,
+    "finnhub": FinnhubParser
 }
 
 @app.post("/webhook/{source}")
@@ -315,6 +353,38 @@ async def generic_webhook(source: str, request: Request):
         logger.error(f"Webhook error: {e}")
         raise HTTPException(status_code=400, detail="Invalid payload")
 
+@app.post("/webhook/finnhub")
+async def finnhub_webhook(request: Request):
+    """
+    Finnhub Specific Webhook
+    """
+    secret = os.getenv("FINNHUB_WEBHOOK_SECRET")
+    if secret:
+        # Check X-Finnhub-Secret
+        req_secret = request.headers.get("X-Finnhub-Secret")
+        if req_secret != secret:
+             logger.warning("Unauthorized Finnhub webhook attempt")
+             raise HTTPException(status_code=403, detail="Unauthorized")
+    
+    try:
+        payload = await request.json()
+        logger.info(f"Received Finnhub webhook: {payload}")
+        
+        # Use FinnhubParser
+        normalized = FinnhubParser.parse(payload)
+        
+        if "sentinel" in services:
+             asyncio.create_task(
+                services["sentinel"].process_event({
+                    "source": "finnhub",
+                    "data": normalized
+                })
+             )
+        
+        return {"status": "accepted"}
+    except Exception as e:
+        logger.error(f"Finnhub webhook error: {e}")
+        raise HTTPException(status_code=400, detail="Processing failed")
 # --- LINE Bot Webhook Support ---
 import os
 from linebot import LineBotApi, WebhookHandler

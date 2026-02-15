@@ -17,6 +17,10 @@ def test_notify_all_with_custom_adapters():
     mock_email.send_alert.return_value = True
     mock_web.send_alert.return_value = True
     
+    mock_line.__class__.__name__ = "LineBotAdapter"
+    mock_email.__class__.__name__ = "EmailAdapter"
+    mock_web.__class__.__name__ = "WebAdapter"
+    
     service = NotificationService(adapters=[mock_line, mock_email, mock_web])
     
     results = service.notify_all(
@@ -41,6 +45,10 @@ def test_notify_all_handles_adapter_failures():
     mock_email.send_alert.side_effect = Exception("Email error")
     mock_line.send_alert.return_value = True
     mock_web.send_alert.return_value = True
+
+    mock_line.__class__.__name__ = "LineBotAdapter"
+    mock_email.__class__.__name__ = "EmailAdapter"
+    mock_web.__class__.__name__ = "WebAdapter"
     
     service = NotificationService(adapters=[mock_line, mock_email, mock_web])
     

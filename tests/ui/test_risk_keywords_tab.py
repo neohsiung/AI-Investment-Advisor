@@ -15,6 +15,21 @@ class TestRiskKeywordsTab:
         """Mock Streamlit module."""
         st = MagicMock()
         st.session_state = {}
+        
+        # Configure columns to return list of mocks based on input
+        def columns_side_effect(spec, gap="small"):
+            count = 0
+            if isinstance(spec, int):
+                count = spec
+            else:
+                count = len(spec)
+            return [MagicMock() for _ in range(count)]
+            
+        st.columns.side_effect = columns_side_effect
+    
+        # Default selectbox to "all" to avoid early returns in render_risk_keywords_tab
+        st.selectbox.return_value = "all"
+    
         return st
     
     @pytest.fixture
@@ -32,6 +47,9 @@ class TestRiskKeywordsTab:
             mock_repo = MagicMock()
             MockRepo.return_value = mock_repo
             mock_repo.get_all.return_value = []
+            mock_repo.get_all.return_value = []
+            
+            mock_st.selectbox.return_value = "all"
             
             render_risk_keywords_tab(mock_st)
             
@@ -58,7 +76,16 @@ class TestRiskKeywordsTab:
             # Simulate user input
             mock_st.text_input.return_value = "bankruptcy"
             mock_st.slider.return_value = 0.8
-            mock_st.selectbox.return_value = "legal"
+            # Careful: There are multiple selectboxes. One for new cat, one for filter.
+            # We need side_effect to distinguish them or just ensure 'all' is returned when needed.
+            # But the code uses logic: new_category = st.selectbox(...) then filter_category = st.selectbox(...)
+            # If we return "all" for everything, new_category becomes "all" which might be invalid if it checks keys.
+            # Let's use side_effect.
+            def selectbox_side_effect(label, *args, **kwargs):
+                if "篩選" in label: return "all"
+                return "legal"
+            mock_st.selectbox.side_effect = selectbox_side_effect
+
             mock_st.button.return_value = True  # Simulate button click
             
             render_risk_keywords_tab(mock_st)
@@ -77,6 +104,7 @@ class TestRiskKeywordsTab:
             # Simulate empty input
             mock_st.text_input.return_value = "  "  # Whitespace only
             mock_st.button.return_value = True
+            mock_st.selectbox.return_value = "all"
             
             render_risk_keywords_tab(mock_st)
             
@@ -86,13 +114,12 @@ class TestRiskKeywordsTab:
     def test_keyword_list_display(self, mock_st):
         """Test keyword list displays correctly."""
         with patch('src.pages.settings_tabs.risk_keywords_tab.RiskKeywordRepository') as MockRepo:
-            # Create mock keyword
             mock_kw = MagicMock()
             mock_kw.id = 1
-            mock_kw.keyword = "recession"
-            mock_kw.weight = 0.7
+            mock_kw.keyword = "inactive"
+            mock_kw.weight = 0.5
             mock_kw.category.value = "market"
-            mock_kw.is_active = True
+            mock_kw.is_active = False
             mock_kw.hit_count = 5
             mock_kw.last_hit_date = "2024-01-15"
             
@@ -111,8 +138,9 @@ class TestRiskKeywordsTab:
         with patch('src.pages.settings_tabs.risk_keywords_tab.RiskKeywordRepository') as MockRepo:
             mock_kw = MagicMock()
             mock_kw.id = 1
-            mock_kw.keyword = "lawsuit"
-            mock_kw.category.value = "legal"
+            mock_kw.keyword = "active"
+            mock_kw.weight = 0.5
+            mock_kw.category.value = "market"
             mock_kw.is_active = True
             
             mock_repo = MagicMock()
@@ -140,6 +168,7 @@ class TestRiskKeywordsTab:
             
             # Simulate checkbox checked
             mock_st.checkbox.return_value = True
+            mock_st.selectbox.return_value = "all"
             
             render_risk_keywords_tab(mock_st)
             
@@ -164,6 +193,7 @@ class TestRiskKeywordsTab:
             
             # Simulate weight change
             mock_st.number_input.return_value = 0.7  # Changed from 0.5
+            mock_st.selectbox.return_value = "all"
             
             render_risk_keywords_tab(mock_st)
             
@@ -254,14 +284,17 @@ class TestRiskKeywordsTab:
         """Test displaying top keywords analytics."""
         with patch('src.pages.settings_tabs.risk_keywords_tab.RiskKeywordRepository') as MockRepo:
             mock_top_kw = MagicMock()
-            mock_top_kw.keyword = "trending"
-            mock_top_kw.hit_count = 10
-            mock_top_kw.weight = 0.8
+            mock_top_kw.keyword = "top1"
+            mock_top_kw.hit_count = 100
+            mock_top_kw.weight = 0.9
             
             mock_repo = MagicMock()
             MockRepo.return_value = mock_repo
-            mock_repo.get_all.return_value = []
+            # Ensure get_all returns something so we don't return early
+            mock_repo.get_all.return_value = [mock_top_kw]
             mock_repo.get_top_keywords.return_value = [mock_top_kw]
+            
+            mock_st.selectbox.return_value = "all"
             
             render_risk_keywords_tab(mock_st)
             
@@ -271,14 +304,17 @@ class TestRiskKeywordsTab:
         """Test displaying stale keywords."""
         with patch('src.pages.settings_tabs.risk_keywords_tab.RiskKeywordRepository') as MockRepo:
             mock_stale_kw = MagicMock()
-            mock_stale_kw.keyword = "old_keyword"
-            mock_stale_kw.weight = 0.4
+            mock_stale_kw.keyword = "stale"
             mock_stale_kw.last_hit_date = "2023-01-01"
+            mock_stale_kw.weight = 0.1
             
             mock_repo = MagicMock()
             MockRepo.return_value = mock_repo
-            mock_repo.get_all.return_value = []
+            # Ensure get_all returns something so we don't return early
+            mock_repo.get_all.return_value = [mock_stale_kw]
             mock_repo.get_stale_keywords.return_value = [mock_stale_kw]
+            
+            mock_st.selectbox.return_value = "all"
             
             render_risk_keywords_tab(mock_st)
             
@@ -290,14 +326,19 @@ class TestRiskKeywordsTab:
             mock_stale1 = MagicMock()
             mock_stale1.id = 10
             mock_stale1.keyword = "stale1"
+            mock_stale1.weight = 0.1
+            mock_stale1.last_hit_date = None
             
             mock_stale2 = MagicMock()
             mock_stale2.id = 11
             mock_stale2.keyword = "stale2"
+            mock_stale2.weight = 0.1
+            mock_stale2.last_hit_date = None
             
             mock_repo = MagicMock()
             MockRepo.return_value = mock_repo
-            mock_repo.get_all.return_value = []
+            # Ensure get_all returns something so we don't return early
+            mock_repo.get_all.return_value = [mock_stale1]
             mock_repo.get_stale_keywords.return_value = [mock_stale1, mock_stale2]
             
             # Simulate disable stale button click
@@ -329,6 +370,8 @@ class TestRiskKeywordsTab:
             mock_repo = MagicMock()
             MockRepo.return_value = mock_repo
             mock_repo.get_all.return_value = []
+            
+            mock_st.selectbox.return_value = "all"
             
             render_risk_keywords_tab(mock_st, db_path="/custom/path.db")
             
