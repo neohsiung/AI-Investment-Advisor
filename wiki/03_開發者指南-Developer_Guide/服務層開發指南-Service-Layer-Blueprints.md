@@ -5,6 +5,7 @@
 ### 版本紀錄 (Version History)
 | Date | Version | Description | Author |
 | :--- | :--- | :--- | :--- |
+| 2026-02-15 | v3.6 | Added Leverage Engine & Bilingual Code Standards | Neo |
 | 2026-02-14 | v3.5 | Added RiskKeywordRepository, Sentinel 4D triggers, weighted keywords, Tavily pipeline | Neo |
 | 2026-02-14 | v3.5 | Full rewrite — 27 services documented, Multi-Broker, Sentinel/Council, Memory | Neo |
 | 2024-01-04 | v1.0 | Initial Release (3 services) | Neo |
@@ -86,7 +87,7 @@ graph TD
 
 | 服務 | 檔案 | 核心職責 |
 | :--- | :--- | :--- |
-| `AnalyticsService` | `analytics_service.py` | NLV/Leverage/P&L 確定性計算 (0% 幻覺)。 |
+| `AnalyticsService` | `analytics_service.py` | NLV/Leverage/P&L 確定性計算 (0% 幻覺)。**[v3.6 New]** Leverage Engine. |
 | `DashboardService` | `dashboard_service.py` | Dashboard 數據聚合與即時指標。 |
 | `PerformanceService` | `performance_service.py` | 歷史績效追蹤與趨勢分析。 |
 | `SettingsService` | `settings_service.py` | 系統設定 CRUD (SQLite-backed)。 |
@@ -118,7 +119,34 @@ graph TD
 - **核心**: Goal → DAG 分解 → Complexity Scoring → Model Tier Selection。
 - **模型路由**: Fast (Flash) / Smart (Pro) / Advanced (Thinking)。
 
-### 4. NFR
+### 4. 槓桿引擎 (Leverage Engine) - v3.6 新增
+
+位於 `AnalyticsService`，負責精確計算帳戶健康度指標：
+
+- **TNV (Total Nominal Value)**: 總名義價值 = $\sum |Position \times Price|$
+- **NLV (Net Liquidity Value)**: 淨清算價值 = $Cash + \sum (Position \times Price)$
+- **Leverage Ratio**: $TNV / NLV$
+
+**代碼範例 (符合雙語註解規範)**:
+```python
+def calculate_metrics(self, current_prices, user_id):
+    """
+    Calculate Leverage Metrics based on current holdings.
+    計算基於當前持倉的槓桿指標。
+    """
+    # 1. Calculate Total Nominal Value (TNV)
+    # 1. 計算總名義價值 (TNV)
+    tnv = 0.0
+    for ticker, qty in holdings:
+        price = current_prices.get(ticker, 0.0)
+        tnv += abs(qty * price)
+    
+    # ... (omitted)
+    
+    return {"leverage_ratio": tnv / nlv}
+```
+
+### 5. NFR
 - **響應時間**: P95 本地延遲 < 500ms (不含 LLM)。
 - **並發**: `ThreadPoolExecutor` 支援 50+ 標的並行分析。
 
@@ -126,7 +154,7 @@ graph TD
 
 <a id="en"></a>
 
-## 🇺🇸 Service Layer Blueprints (v3.5)
+## 🇺🇸 Service Layer Blueprints (v3.6)
 
 ### 1. Architecture
 - **Model-Service Decoupling**: Services interact with Pydantic models, never raw SQL.
@@ -139,7 +167,7 @@ graph TD
 - **Agent Engine** (5): Workflow, TaskPlanning, HR, Refinement, Evaluation
 - **Monitoring** (2): Sentinel (4D Multi-Trigger + Weighted Risk Keywords), Council
 - **Persistence** (5): Memory, MemoryFactory, Transaction, Ingestion, **RiskKeyword**
-- **UI Support** (6): Analytics, Dashboard, Performance, Settings, Theme, Backtest
+- **UI Support** (6): Analytics (**Leverage Engine v3.6**), Dashboard, Performance, Settings, Theme, Backtest
 - **Scheduling** (1): Scheduler + Notifier
 
 ### 3. Performance

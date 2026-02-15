@@ -62,6 +62,8 @@ docker-compose up --build
 | `DB_TYPE` | Enum | `sqlite` 或 `postgres`。預設 `sqlite`。 |
 | `DB_PATH` | Path | SQLite 檔案路徑。例：`data/portfolio.db`。 |
 | `LOG_LEVEL` | Enum | `DEBUG`, `INFO`, `WARNING`, `ERROR`。 |
+| `RISK_KEYWORDS_WEIGHTS` | JSON | **(v3.6)** 風險關鍵字權重配置，通常存儲於資料庫。 |
+| `CHANNEL_CONFIG` | JSON | **(v3.6)** 通道適配器配置 (Email/LINE/Web)，通常存儲於資料庫。 |
 
 ### 3. 操作手冊與 CLI (CLI Handbook)
 `src/cli.py` 封裝了所有自動化任務：
@@ -94,6 +96,8 @@ Define all keys in `.env`. Security defaults are detailed in [Agent Mesh Protoco
 - `FMP_API_KEY`: Fundamental and financial news source.
 - `FRED_API_KEY`: Macro trends.
 - `DISPLAY_TIMEZONE`: User-interface timezone (Default: `Asia/Taipei`).
+- `RISK_KEYWORDS_WEIGHTS`: (v3.6) DB-driven risk weights.
+- `CHANNEL_CONFIG`: (v3.6) Channel adapter settings.
 
 ### 3. Troubleshooting
 - **API Key issues**: Check for trailing spaces in `.env`.
