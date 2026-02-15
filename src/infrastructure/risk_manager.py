@@ -186,9 +186,10 @@ class RiskManager:
         # In real app, cache this. For now, fetch.
         try:
             info = mds.get_financials(ticker)
-            return info.get('sector', 'Unknown')
+            sector = info.get('sector')
+            return sector if sector else None
         except:
-            return 'Unknown'
+            return None
 
     def trigger_kill_switch(self, user_id: str):
         """

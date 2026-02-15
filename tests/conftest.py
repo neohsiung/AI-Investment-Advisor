@@ -43,11 +43,21 @@ def pytest_configure(config):
         "plotly.express",
         "streamlit.components.v1",
         "streamlit.components.v1.components",
-        "yfinance"
+        "yfinance",
+        "futu"
     ]
     for mod in problematic_modules:
         if mod not in sys.modules:
-            sys.modules[mod] = MagicMock()
+            mock_mod = MagicMock()
+            if mod == "yfinance":
+                # Ensure Ticker().fast_info.get() returns None to avoid truthy mock issues
+                mock_mod.Ticker.return_value.fast_info = {}
+                mock_mod.Ticker.return_value.info = {}
+            elif mod == "futu":
+                # Basic symbols for futu to avoid AttributeError in services
+                from tests.mocks import futu as mock_futu_impl
+                mock_mod = mock_futu_impl
+            sys.modules[mod] = mock_mod
 
 @pytest.fixture
 def mock_streamlit_module():

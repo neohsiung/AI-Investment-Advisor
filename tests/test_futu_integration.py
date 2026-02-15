@@ -8,9 +8,7 @@ import pandas as pd
 # Add project root to path
 sys.path.append(os.getcwd())
 
-# Mock futu module BEFORE importing service
-from tests.mocks import futu as mock_futu
-sys.modules['futu'] = mock_futu
+# sys.modules['futu'] is now handled globally in conftest.py
 
 from src.services.futu_service import FutuService
 from src.domain.trading import Order, OrderAction

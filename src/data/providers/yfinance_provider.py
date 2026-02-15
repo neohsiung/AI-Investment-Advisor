@@ -47,14 +47,14 @@ class YFinanceProvider(MarketDataProvider):
                     # Try fast_info first (New YF API)
                     if hasattr(ticker_obj, 'fast_info'):
                         price = ticker_obj.fast_info.get('last_price')
-                        if price:
+                        if isinstance(price, (int, float)) and pd.notna(price):
                              prices[t] = price
                              continue
                     
                     # Try regular info
                     info = ticker_obj.info
                     price = info.get('currentPrice') or info.get('regularMarketPrice')
-                    if price:
+                    if isinstance(price, (int, float)) and pd.notna(price):
                         prices[t] = price
                 except Exception as inner_e:
                     # self.logger.warning(f"Failed individual fetch for {t}: {inner_e}")
