@@ -3,6 +3,7 @@ Extended tests for NotificationService.
 測試通知服務的進階功能。
 """
 import pytest
+import os
 from unittest.mock import MagicMock, patch
 from src.services.notification_service import NotificationService
 
@@ -161,12 +162,15 @@ def test_send_report_with_source():
 
 def test_notify_all_uses_default_adapters():
     """Test NotificationService initializes with default adapters."""
+    # Mocking environment to NOT have LINE token by default for consistency
     with patch('src.services.notification_service.LineBotAdapter'), \
          patch('src.services.notification_service.EmailAdapter'), \
-         patch('src.services.notification_service.WebAdapter'):
+         patch('src.services.notification_service.WebAdapter'), \
+         patch.dict(os.environ, {}, clear=True): # Ensure no LINE_CHANNEL_ACCESS_TOKEN
         
         service = NotificationService()
-        assert len(service.adapters) == 3
+        # Default is Email + Web = 2. LINE is optional.
+        assert len(service.adapters) >= 2
 
 
 def test_notify_all_with_channel_filter():

@@ -112,6 +112,7 @@ class TestVIXAnomaly:
         async def _test():
             with patch.object(sentinel, '_get_all_user_ids', return_value=[]):
                 await sentinel.process_tick()
+                await sentinel._flush_buffer(force=True)
             mock_services["council"].start_session.assert_called_once()
             args = mock_services["council"].start_session.call_args[0]
             assert "VIX Spike" in args[0]

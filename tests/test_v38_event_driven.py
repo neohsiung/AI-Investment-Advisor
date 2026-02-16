@@ -44,6 +44,8 @@ def test_sentinel_process_event():
             
             # Process event
             await sentinel.process_event(event)
+            # Force flush buffer to trigger notifications
+            await sentinel._flush_buffer(force=True)
 
             # Verify notification was called (via notify_all)
             assert mock_notification.notify_all.called

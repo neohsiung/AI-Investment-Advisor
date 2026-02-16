@@ -47,10 +47,10 @@ class AgentFactory:
     _dspy_configured = False
 
     @classmethod
-    def _configure_dspy(cls):
+    def _configure_dspy(cls, user_id: str = None):
         """
-        Enable DSPy if installed and credentials are present (Env > DB).
-        若已安裝 DSPy 且憑證存在 (Env > DB)，則啟用之。
+        Enable DSPy if installed and credentials are present (Env > User DB > Global DB).
+        若已安裝 DSPy 且憑證存在 (Env > User DB > Global DB)，則啟用之。
         """
         if cls._dspy_configured:
             return
@@ -66,13 +66,19 @@ class AgentFactory:
         if not api_key:
             try:
                 repo = SqliteSettingsRepository()
-                rows = repo.get_global()
-                for row in rows:
-                     k = row._mapping['key'] if hasattr(row, '_mapping') else row[0]
-                     v = row._mapping['value'] if hasattr(row, '_mapping') else row[1]
-                     if k == "API_KEY" and v:
-                         api_key = v
-                         break
+                # 1. Try User Specific Key
+                if user_id and user_id != "system":
+                    api_key = repo.get(user_id, "API_KEY") or repo.get(user_id, "LLM_API_KEY")
+                
+                # 2. Fallback to Global Key
+                if not api_key:
+                    rows = repo.get_global()
+                    for row in rows:
+                         k = row._mapping['key'] if hasattr(row, '_mapping') else row[0]
+                         v = row._mapping['value'] if hasattr(row, '_mapping') else row[1]
+                         if k in ["API_KEY", "LLM_API_KEY"] and v:
+                             api_key = v
+                             break
             except Exception as e:
                 logger.warning(f"Failed to load API_KEY from DB for DSPy: {e}")
 
@@ -81,7 +87,7 @@ class AgentFactory:
                 if hasattr(dspy, 'OpenAI'):
                     lm = dspy.OpenAI(model=model, api_key=api_key, api_base=base_url, max_tokens=2048)
                     dspy.settings.configure(lm=lm)
-                    logger.info(f"DSPy configured with model: {model}")
+                    logger.info(f"DSPy configured with model: {model} for user: {user_id}")
                 else:
                      logger.warning("DSPy module present but missing OpenAI class.")
             except Exception as e:
@@ -108,7 +114,7 @@ class AgentFactory:
 
     @staticmethod
     def create_agent(agent_name, use_cache=True, user_id="system", **kwargs):
-        AgentFactory._configure_dspy()
+        AgentFactory._configure_dspy(user_id=user_id)
         name_lower = agent_name.lower()
         
         agent = None
@@ -133,37 +139,42 @@ class AgentFactory:
 
     @staticmethod
     def create_momentum_agent(use_cache=True, user_id="system", **kwargs):
-        AgentFactory._configure_dspy()
+        AgentFactory._configure_dspy(user_id=user_id)
         # tier = kwargs.pop('tier', 'fast') # Swarm manages tiers
         agent = MomentumSwarm(user_id=user_id, use_cache=use_cache, **kwargs)
         return AgentFactory._inject_dependencies(agent)
 
     @staticmethod
     def create_fundamental_agent(use_cache=True, user_id="system", **kwargs):
+        AgentFactory._configure_dspy(user_id=user_id)
         # tier = kwargs.pop('tier', 'smart')
         agent = FundamentalSwarm(user_id=user_id, use_cache=use_cache, **kwargs)
         return AgentFactory._inject_dependencies(agent)
         
     @staticmethod
     def create_macro_agent(use_cache=True, user_id="system", **kwargs):
+        AgentFactory._configure_dspy(user_id=user_id)
         tier = kwargs.pop('tier', 'smart')
         agent = MacroAgent(use_cache=use_cache, tier=tier, user_id=user_id, **kwargs)
         return AgentFactory._inject_dependencies(agent)
 
     @staticmethod
     def create_sentiment_agent(use_cache=True, user_id="system", **kwargs):
+        AgentFactory._configure_dspy(user_id=user_id)
         # tier = kwargs.pop('tier', 'fast')
         agent = SentimentSwarm(user_id=user_id, use_cache=use_cache, **kwargs)
         return AgentFactory._inject_dependencies(agent)
 
     @staticmethod
     def create_risk_agent(use_cache=True, user_id="system", **kwargs):
+        AgentFactory._configure_dspy(user_id=user_id)
         tier = kwargs.pop('tier', 'fast')
         agent = RiskAgent(use_cache=use_cache, tier=tier, user_id=user_id, **kwargs)
         return AgentFactory._inject_dependencies(agent)
 
     @staticmethod
     def create_cio_agent(use_cache=True, transaction_repo=None, mode="weekly", tier="smart", user_id="system", **kwargs):
+        AgentFactory._configure_dspy(user_id=user_id)
         prompt_map = {
             "daily": "prompts/cio_daily.txt",
             "weekly": "prompts/cio_weekly.txt"

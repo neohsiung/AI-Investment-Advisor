@@ -468,7 +468,6 @@ class SentinelService:
             f"**Detected Signals ({len(triggers)})**:\n"
             f"{formatted_triggers}\n"
             f"---\n"
-            f"#### ⚖️ Council Consensus\n"
             f"{decision}\n"
         )
 
