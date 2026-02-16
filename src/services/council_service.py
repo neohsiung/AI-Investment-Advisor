@@ -28,30 +28,24 @@ class CouncilService:
         self.lane_manager = LaneManager()
         self.user_focus_service = UserFocusService()
 
-    async def start_session(self, topic: str, context_data: Dict[str, Any], scope: str = "single", market_volatility: float = 0.0) -> Dict[str, Any]:
+    async def start_session(self, topic: str, context_data: Dict[str, Any], scope: str = "single", market_volatility: float = 0.0, user_id: str = "system") -> Dict[str, Any]:
         """
         Starts a Council Session.
         If scope="portfolio", it triggers the Map-Reduce flow.
         """
         session_id = str(uuid.uuid4())
-        logger.info(f"Council Session {session_id} started. Topic: {topic} | Scope: {scope}")
+        logger.info(f"Council Session {session_id} started. Topic: {topic} | Scope: {scope} | User: {user_id}")
         
         # 0. Check Scope for Map-Reduce
         if scope == "portfolio":
-            return await self._run_map_reduce_portfolio(session_id, topic, context_data, market_volatility=market_volatility)
+            return await self._run_map_reduce_portfolio(session_id, topic, context_data, market_volatility=market_volatility, user_id=user_id)
         
         # Default Single Topic Flow (Thread-blocking wrapper for async compatibility)
-        # In a real async app, this should be fully async. 
-        # Here we wrap the synchronous logic in a lane task or just run it if it's CPU bound.
-        # For simplicity in this refactor, we keep standard flow as is but make it async-capable.
-        return await self._run_standard_session(session_id, topic, context_data, market_volatility=market_volatility)
+        return await self._run_standard_session(session_id, topic, context_data, market_volatility=market_volatility, user_id=user_id)
 
-    async def _run_map_reduce_portfolio(self, session_id: str, topic: str, context_data: Dict[str, Any], market_volatility: float = 0.0):
+    async def _run_map_reduce_portfolio(self, session_id: str, topic: str, context_data: Dict[str, Any], market_volatility: float = 0.0, user_id: str = "system"):
         """
         Phase 4: Map-Reduce for Full Portfolio.
-        1. Map: Analyze each ticker in parallel (sub-councils).
-        2. Reduce: Aggregate signals.
-        3. Synthesis: Final CIO Report.
         """
         portfolio = context_data.get("portfolio", [])
         if not portfolio:
@@ -64,11 +58,8 @@ class CouncilService:
             qty = ticker_data['quantity']
             
             # Sub-Council: Momentum + Fundamental (Fast Tier)
-            # We use a lightweight sub-council to save costs
-            # Sub-Council: Momentum + Fundamental (Fast Tier)
-            # We use a lightweight sub-council to save costs
-            mom_agent = AgentFactory.create_agent("Momentum", tier="fast")
-            fun_agent = AgentFactory.create_agent("Fundamental", tier="fast")
+            mom_agent = AgentFactory.create_agent("Momentum", tier="fast", user_id=user_id)
+            fun_agent = AgentFactory.create_agent("Fundamental", tier="fast", user_id=user_id)
             
             sub_context = {
                 "topic": f"Analysis of {ticker}",
@@ -78,7 +69,6 @@ class CouncilService:
             }
             
             # Parallel Run within Sub-Council
-            # Note: Agents are currently sync. We wrap them.
             loop = asyncio.get_running_loop()
             t1 = loop.run_in_executor(None, mom_agent.run, sub_context)
             t2 = loop.run_in_executor(None, fun_agent.run, sub_context)
@@ -111,7 +101,7 @@ class CouncilService:
 
         # --- Phase 3: Synthesis (CIO) ---
         consensus_tier = self.router.select_tier(topic, round_num=99, market_volatility=market_volatility)
-        cio = AgentFactory.create_cio_agent(tier=consensus_tier)
+        cio = AgentFactory.create_cio_agent(tier=consensus_tier, user_id=user_id)
         
         final_context = {
             "topic": topic,
@@ -136,30 +126,21 @@ class CouncilService:
             "transcript": aggregated_summary
         }
 
-    async def _run_standard_session(self, session_id: str, topic: str, context_data: Dict[str, Any], market_volatility: float = 0.0):
+    async def _run_standard_session(self, session_id: str, topic: str, context_data: Dict[str, Any], market_volatility: float = 0.0, user_id: str = "system"):
         """
         Original logic wrapped for async.
         """
         # Run in thread to avoid blocking event loop
         loop = asyncio.get_running_loop()
-        return await loop.run_in_executor(None, self._run_sync_logic, session_id, topic, context_data, market_volatility)
+        return await loop.run_in_executor(None, self._run_sync_logic, session_id, topic, context_data, market_volatility, user_id)
 
-    def _run_sync_logic(self, session_id: str, topic: str, context_data: Dict[str, Any], market_volatility: float = 0.0):
+    def _run_sync_logic(self, session_id: str, topic: str, context_data: Dict[str, Any], market_volatility: float = 0.0, user_id: str = "system"):
         # ... (Original Logic from previous file version, kept for single-topic debates) ...
         # For brevity in this refactor, I will re-implement the core parts ensuring it addresses the task.
         
         # 1. Experience Replay
         past_wisdom = ""
         try:
-             # We use keyword matching or simple topic lookup if no embedding provided
-             # But VectorRepo.search_similar_minutes expects explicit call
-             # Here we try to get "similar" minutes.
-             # Since we don't have an embedding service in CouncilService yet, 
-             # we might need to rely on the VectorRepo to handle text-based fallback or mock it for now.
-             
-             # If we are using the new 'search_similar_minutes' (which returns empty now),
-             # we should at least call it to verify the integration.
-             # In future, we will pass an embedding of 'topic'.
              similar = self.vector_repo.search_similar_minutes(topic, limit=1)
              if similar:
                  past_wisdom = f"Previous Related Decision for '{similar[0]['topic']}': {similar[0]['consensus']}"
@@ -169,17 +150,17 @@ class CouncilService:
 
         # 2. Members
         # Determine Tier based on Topic Complexity or Market Regime
-        # (Router integration is already here)
         tier = self.router.select_tier(topic, round_num=1, market_volatility=market_volatility)
         
         # Instantiate Agents with retrieved context? 
         # Actually, agents take context in .run(), so we just pass it there.
+        # [Fix] Pass user_id to ensure they get correct DB settings
         members = [
-            AgentFactory.create_momentum_agent(tier=tier),
-            AgentFactory.create_fundamental_agent(tier=tier),
-            AgentFactory.create_risk_agent(tier=tier),
-            AgentFactory.create_sentiment_agent(tier=tier),
-            AgentFactory.create_macro_agent(tier=tier)
+            AgentFactory.create_momentum_agent(tier=tier, user_id=user_id),
+            AgentFactory.create_fundamental_agent(tier=tier, user_id=user_id),
+            AgentFactory.create_risk_agent(tier=tier, user_id=user_id),
+            AgentFactory.create_sentiment_agent(tier=tier, user_id=user_id),
+            AgentFactory.create_macro_agent(tier=tier, user_id=user_id)
         ]
 
         # 3. Debate
@@ -198,9 +179,6 @@ class CouncilService:
         for agent in members:
             try:
                 # Agents expect a single dict or string.
-                # If they support expanded context keys (like 'historical_context'), they will use it.
-                # If they utilize a base_agent prompt builder, we must ensure it handles this key.
-                # For now, we pass the dict.
                 res = agent.run(debate_context)
                 stances.append(f"[{agent.name}]: {res}")
                 transcript.append(f"[{agent.name}]: {res}")
@@ -208,7 +186,7 @@ class CouncilService:
                 logger.error(f"Agent {agent.name} failed: {e}")
 
         # 4. Consensus
-        cio = AgentFactory.create_cio_agent(tier=self.router.select_tier(topic, round_num=99))
+        cio = AgentFactory.create_cio_agent(tier=self.router.select_tier(topic, round_num=99), user_id=user_id)
         debates_text = "\n".join(stances)
         
         final_context = {

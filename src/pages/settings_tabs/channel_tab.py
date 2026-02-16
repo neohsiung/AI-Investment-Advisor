@@ -146,56 +146,86 @@ def render_channel_tab(st, settings_service, user_id):
                                 if new_val != val:
                                     settings_service.save_setting(key, new_val)
                         
-                        # Test Button logic (Simulated for now for non-implemented adapters)
+                        # Test Button logic
                         st.markdown("---")
-                        if st.button(f"傳送測試訊息 ({channel['name']})", key=f"test_{cid}"):
-                            _handle_test_message(st, cid, settings)
+                        if channel.get("testable"):
+                            st.write("#### 驗證與測試 (Verification)")
+                            col_test_1, col_test_2 = st.columns(2)
+                            
+                            with col_test_1:
+                                if st.button(f"📶 連線測試 ({channel['name']})", key=f"test_{cid}"):
+                                    _handle_test_message(st, cid, settings)
+                            
+                            with col_test_2:
+                                with st.popover(f"🔐 交互驗證 ({channel['name']})"):
+                                    st.write("發送驗證碼並等待回覆")
+                                    timeout = st.number_input("等待時限 (小時)", min_value=1, value=1, key=f"timeout_{cid}")
+                                    if st.button("發送驗證請求", key=f"verify_{cid}"):
+                                        _handle_verification(st, cid, settings, timeout)
+
+                            # Show Pending Status if any
+                            _show_verification_status(st, cid, settings)
 
     def _handle_test_message(st, cid, settings):
+        from src.services.verification_service import VerificationService
+        
         with st.spinner(f"正在透過 {cid} 發送測試訊息..."):
             try:
-                # Instantiate Service (It will load updated settings from DB)
-                svc = InteractionService() 
+                # Instantiate Service
+                svc = VerificationService() 
                 
-                # Check specifics for each channel to ensure we have target ID
-                target_id = None
-                if cid == 'line':
-                    target_id = settings.get("channel_line_user_id")
-                elif cid == 'telegram':
-                    target_id = settings.get("channel_telegram_chat_id")
-                elif cid == 'slack':
-                    # slack adapter might take channel_id from config or arg
-                    target_id = settings.get("channel_slack_channel_id")
-                
-                # If target_id is needed but missing
-                if cid in ['line', 'telegram'] and not target_id:
+                # Check specifics
+                target_id = _get_target_id(cid, settings)
+                if not target_id:
                      st.error("請先設定 User ID / Chat ID")
                      return
 
-                # Generic Request
-                # For MVP, InteractionService.request_approval routes to ALL enabled adapters
-                # To test specific channel, we might need a way to target specific adapter 
-                # OR we just rely on the fact that if it's enabled, it will send.
-                # Since we are in the settings of *this* channel, users imply testing *this* channel.
-                # However, InteractionService broadcasts to all *enabled* adapters.
-                # If user enables multiple, all will get it.
-                # For better UX, we should probably allow InteractionService to target specific adapter.
-                # But for now, let's just trigger the broadcast and assume user is focused on this one.
+                success, msg = svc.test_connectivity(target_id, cid)
                 
-                result = svc.request_approval(
-                    title=f"Connectivity Test ({cid})",
-                    content=f"這是來自 Investment Advisor 的測試訊息。",
-                    user_id=target_id, # Might be ignored by some adapters or used as override
-                    timeout_seconds=5 
-                )
-                
-                if result:
-                    st.success("✅ 測試成功：收到確認或送達！")
+                if success:
+                    st.success(f"✅ 測試成功：{msg}")
                 else:
-                    st.info("ℹ️ 訊息已發送 (等待確認或無須確認)")
+                    st.error(f"❌ 發送失敗: {msg}")
                     
             except Exception as e:
-                st.error(f"發送失敗: {e}")
+                st.error(f"發送失敗 (System): {e}")
+
+    def _handle_verification(st, cid, settings, timeout):
+        from src.services.verification_service import VerificationService
+        with st.spinner("啟動驗證流程..."):
+            svc = VerificationService()
+            target_id = _get_target_id(cid, settings)
+            if not target_id:
+                 st.error("請先設定 User ID / Chat ID")
+                 return
+                 
+            success, msg, vid = svc.initiate_verification(target_id, cid, timeout_hours=timeout)
+            if success:
+                st.success(f"已發送驗證請求！{msg}")
+            else:
+                st.error(f"啟動失敗: {msg}")
+
+    def _show_verification_status(st, cid, settings):
+        from src.repositories.verification_repository import VerificationRepository
+        target_id = _get_target_id(cid, settings)
+        if not target_id:
+            return
+
+        repo = VerificationRepository()
+        pending = repo.get_pending_verification(target_id, cid)
+        
+        if pending:
+            st.info(f"⏳ 等待驗證中... (Expires: {pending['expires_at']})")
+            st.caption(f"請回覆 '{pending['code']}'")
+
+    def _get_target_id(cid, settings):
+        if cid == 'line':
+            return settings.get("channel_line_user_id")
+        elif cid == 'telegram':
+            return settings.get("channel_telegram_chat_id")
+        elif cid == 'slack':
+            return settings.get("channel_slack_channel_id")
+        return None
 
     # Render
     render_channels(tab_personal, channel_groups["個人通知 (Personal Channels)"]["channels"], channel_groups["個人通知 (Personal Channels)"]["desc"])

@@ -18,6 +18,20 @@ class MessengerAdapter(IChannelAdapter):
         self.base_url = f"https://graph.facebook.com/{self.api_version}/me/messages"
         self.is_active = bool(self.page_token)
 
+    def send_message(self, user_id: str, message: Any, **kwargs) -> bool:
+        """
+        Send a generic message.
+        """
+        if isinstance(message, str):
+            return self.send_alert(user_id, "Message", message)
+        return False
+
+    def receive_command(self, payload: Any, **kwargs) -> Any:
+        return None
+
+    def authenticate(self, request: Any, **kwargs) -> bool:
+        return True
+
     def send_alert(self, user_id: str, title: str, content: str, actions: List[Dict[str, str]] = None, **kwargs) -> bool:
         """
         Send message to Messenger (PSID).

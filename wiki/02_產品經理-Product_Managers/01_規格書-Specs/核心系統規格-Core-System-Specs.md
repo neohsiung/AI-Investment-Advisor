@@ -3,6 +3,8 @@
 ### 版本紀錄 (Version History)
 | Date | Version | Description | Author |
 | :--- | :--- | :--- | :--- |
+| 2026-02-16 | v3.8 | Sentinel Refinement (Deduplication, Buffering) & Channel Verification | Neo |
+| 2026-02-15 | v3.7 | Multi-Tier Agent Architecture (Fast/Smart/Advanced) & Omni-Channel Adapters | Neo |
 | 2026-02-14 | v3.5 | Full rewrite — aligned with actual codebase (Multi-Broker, Sentinel, MCP, Swarm) | Neo |
 | 2026-01-01 | v3.1 | Initial spec with Agent Mesh & Hybrid Engine | Neo |
 
@@ -32,7 +34,15 @@
 
 #### 2.1 多專家代理集群 (Agent Swarm)
 
-系統由 7 個專業 Agent 與 1 個評議會組成：
+系統採用 **Role × Multi-Tier Agent** 架構，由 7 個專業 Agent 與 1 個評議會組成。為平衡成本與品質，每個角色背後可能是一組 Swarm (Fast/Smart/Advanced)。
+
+**Tier 定義**:
+- **Fast Tier (Speed)**: 高速初篩，過濾雜訊 (e.g., Llama-3-8B)。
+- **Smart Tier (Balance)**: 標準分析，多模態理解 (e.g., GPT-4o-mini)。
+- **Advanced Tier (Depth)**: 深度推理，CoT 與複雜決策 (e.g., o1/Claude-3.5-Sonnet)。
+
+**Agent 角色清單**:
+
 
 | Agent | 類別 | 核心職責 |
 | :--- | :--- | :--- |
@@ -119,6 +129,8 @@ graph LR
 #### 2.5 哨兵與評議會 (Sentinel & Council — v3.4)
 
 - **SentinelService**: 7×24 市場事件監聽，偵測異常波動並觸發主動警報。
+    - **智能去重 (Deduplication)**: 基於 Content Signature (Topic + Triggers) 抑制 24 小時內的重複警報。
+    - **緩衝機制 (Buffering)**: 預設 15 分鐘緩衝視窗，聚合高頻訊號為單一 "Sentinel Event Loop" 報告。
 - **CouncilService**: 碎形辯論 (Fractal Debate) — 對每檔持倉執行多角度質疑與反駁。
 - **觸發機制**: Sentinel 偵測到事件 → Council 啟動深度評議 → CIO 裁決行動。
 
@@ -145,6 +157,13 @@ graph LR
 
 - **LINE Bot**: `notifier.py` 透過 LINE Messaging API 推送日報/週報/警報。
 - **Email**: 排程報告以 HTML 格式寄送。
+
+#### 2.11 通道驗證與適配器 (Channel Verification & Adapters — v3.8)
+
+- **全通路適配器 (Omni-Channel Adapter)**: 所有渠道 (Line, Slack, Telegram, Email, Web) 均實作 `IChannelAdapter` 標準介面 (`send_message`, `receive_command`, `authenticate`)。
+- **通道驗證 (Channel Verification)**:
+    1.  **連線測試**: 系統主動發送測試封包確認 API 狀態。
+    2.  **交互驗證**: "Challenge-Response" 流程 (發送驗證碼 V-xxxx -> 使用者回覆 -> Webhook 確認)，確保雙向通訊暢通。
 
 #### 2.10 自律 HR 協議 (HR Protocol & Self-Evolution)
 

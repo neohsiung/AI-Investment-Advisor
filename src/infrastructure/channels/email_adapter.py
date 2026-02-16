@@ -14,6 +14,20 @@ class EmailAdapter(IChannelAdapter):
     def __init__(self, notifier: EmailNotifier = None):
         self.notifier = notifier or EmailNotifier()
     
+    def send_message(self, user_id: str, message: Any, **kwargs) -> bool:
+        """
+        Send a generic message (Email).
+        """
+        if isinstance(message, str):
+            return self.send_alert(user_id, "Message", message)
+        return False
+
+    def receive_command(self, payload: Any, **kwargs) -> Any:
+        return None
+
+    def authenticate(self, request: Any, **kwargs) -> bool:
+        return True
+
     def send_alert(self, user_id: str, title: str, content: str, actions: List[Dict[str, str]] = None, **kwargs) -> bool:
         """
         Send an email report/alert.

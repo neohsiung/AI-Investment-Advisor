@@ -49,6 +49,17 @@ class InteractionService:
         Handle natural language response from user.
         Uses IntentClassifier to determine APPROVE/REJECT.
         """
+        # 0. Check for Verification (Intercept)
+        try:
+            from src.services.verification_service import VerificationService
+            # We instantiate here or inject. For now, on-demand.
+            ver_svc = VerificationService()
+            if ver_svc.verify_any_reply(user_id, text):
+                logger.info(f"User {user_id} verified via simple text.")
+                return # Stop processing if verification succeeded
+        except Exception as e:
+            logger.error(f"Verification check failed: {e}")
+
         if not self.intent_classifier:
             logger.warning("No IntentClassifier configured. Ignoring text response.")
             return

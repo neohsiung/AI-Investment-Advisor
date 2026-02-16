@@ -15,6 +15,20 @@ class WebAdapter(IChannelAdapter):
     Records alerts into the event_logs table for display on the Dashboard.
     """
     
+    def send_message(self, user_id: str, message: Any, **kwargs) -> bool:
+        """
+        Send a generic message (Web).
+        """
+        if isinstance(message, str):
+            return self.send_alert(user_id, "Message", message)
+        return False
+
+    def receive_command(self, payload: Any, **kwargs) -> Any:
+        return None
+
+    def authenticate(self, request: Any, **kwargs) -> bool:
+        return True
+
     def send_alert(self, user_id: str, title: str, content: str, actions: List[Dict[str, str]] = None, **kwargs) -> bool:
         """
         Record alert in event_logs.
@@ -53,6 +67,29 @@ class WebAdapter(IChannelAdapter):
 
     def register_callback(self, callback_func: Any) -> None:
         pass
+
+    def send_message(self, user_id: str, message: Any, **kwargs) -> bool:
+        """
+        Record message in event_logs.
+        """
+        title = "Notification"
+        content = ""
+        actions = None
+        
+        if isinstance(message, str):
+            content = message
+        elif isinstance(message, dict):
+            title = message.get("title", title)
+            content = message.get("content", str(message))
+            actions = message.get("actions")
+        
+        return self.send_alert(user_id, title, content, actions, **kwargs)
+
+    def authenticate(self, request: Any, **kwargs) -> bool:
+        return True
+
+    def receive_command(self, payload: Any, **kwargs) -> Any:
+        return None
 
     def handle_webhook(self, payload: Any, headers: Dict[str, Any] = None) -> Any:
         return {"ok": True}

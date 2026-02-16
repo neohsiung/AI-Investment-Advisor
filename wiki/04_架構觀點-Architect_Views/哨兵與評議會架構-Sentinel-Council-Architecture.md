@@ -7,6 +7,7 @@
 | Date | Version | Description | Author |
 | :--- | :--- | :--- | :--- |
 | 2026-02-16 | v3.8.1 | Smart Alert Deduplication (Event Logs) & Omni-Channel Fixes | Neo |
+| 2026-02-16 | v3.8.2 | Smart Buffering (15m Aggregation Window) | Neo |
 | 2026-02-15 | v3.8 | Event-Driven (Webhooks) + Adaptive Compute | Neo |
 | 2026-02-14 | v3.5 | 4D Multi-Trigger + Weighted Risk Keywords | Neo |
 | 2026-02-07 | v3.4 | Standardized naming and structure | Neo |
@@ -83,6 +84,15 @@
 | 🏭 營運 (Operational) | recall, data breach, ceo resignation | 0.6 – 0.75 |
 | 🌍 地緣政治 (Geopolitical) | sanctions, tariff, trade war | 0.65 – 0.75 |
 | 📉 市場 (Market) | crash, margin call, delisted | 0.6 – 0.9 |
+
+#### 2.1.2 智能緩衝機制 (Smart Buffering — v3.8.2)
+為了避免短時間內多維度觸發導致的通知轟炸 (Notification Fatigue)，系統引入了緩衝聚合機制：
+*   **緩衝視窗 (Aggregation Window)**: 15 分鐘。
+*   **運作邏輯**:
+    1.  首個非嚴重 (Non-Critical) 觸發啟動 Timer。
+    2.  後續 15 分鐘內的觸發事件 (如 VIX 波動、相關新聞) 會被暫存並去重。
+    3.  視窗結束時，將所有暫存事件聚合為 **單一通知** 發送。
+*   **嚴重略過 (Critical Bypass)**: 若偵測到嚴重風險 (e.g., VIX > 40, "CRITICAL" keyword)，則 **無視緩衝，立即發送**。
 
 #### 2.2 評議會核心 (The Council Core)
 位於 `src/services/council_service.py`。

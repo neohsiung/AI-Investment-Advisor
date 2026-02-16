@@ -13,7 +13,7 @@ Welcome to the AI Investment Advisor knowledge base, built on Spec-Driven Develo
 ### 02. 產品規格 (Product Managers)
 *   **[產品演進藍圖](02_產品經理-Product_Managers/產品演進藍圖-Evolutionary-Roadmap.md)**: v1 → v3.6 的研發歷程與 v4.0 Agent Swarm 願景。
 *   **01_規格書-Specs**
-    *   **[核心系統規格](02_產品經理-Product_Managers/01_規格書-Specs/核心系統規格-Core-System-Specs.md)**: 7 Agent Swarm、Multi-Broker 與 Leveraged NLV 解析。
+    *   **[核心系統規格 (v3.8)](02_產品經理-Product_Managers/01_規格書-Specs/核心系統規格-Core-System-Specs.md)**: 含 7 Agent Swarm、Sentinel Refinement、Channel Verification 與 Multi-Tier Agent 架構。
     *   **[未來演進規格 (v4.0)](02_產品經理-Product_Managers/01_規格書-Specs/未來演進規格-Future-Roadmap-Specs.md)**: v4.0 Role × Multi-Agent (Agent Swarm Economy) 與自動化特性。
 
 ### 03. 開發者指南 (Developer Guide)
@@ -46,12 +46,13 @@ Welcome to the AI Investment Advisor knowledge base, built on Spec-Driven Develo
 
 ---
 
-## 🆕 v3.6 重大更新 (Major Updates)
+## 🆕 最近更新 (Recent Updates)
 
-| 功能 | 說明 |
-|---|---|
-| **槓桿資產透明化** | 儀表板支援 Gross NLV / Net NLV 個別呈現，詳列每筆部位貸款金額。 |
-| **文件與頁面規範** | `src/pages/` 與 `wiki/` 移除檔案數字前綴，強化 PascalCase 命名準則。 |
-| **財務槓桿標準化** | 槓桿比率統一採 Gross Exposure / Net NLV (Financial Leverage) 計算。 |
+| 版本 | 功能 | 說明 |
+|---|---|---|
+| **v3.8** | **Sentinel Refinement** | 智能警報去重 (24h Cool-down)、Omni-Channel 全通路修復。 |
+| **v3.7** | **Multi-Tier Swarm** | 雙層模型路由 (Fast/Smart)、Channel Verification (Interactive Test)。 |
+| **v3.6** | **槓桿資產透明化** | 儀表板支援 Gross NLV / Net NLV 個別呈現，詳列每筆部位貸款金額。 |
+| **v3.5** | **Sentinel Hub** | 4D Multi-Trigger 監控、加權新聞風險評分。 |
 
 ---

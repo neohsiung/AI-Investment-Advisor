@@ -3,9 +3,11 @@ from src.agents.fundamental import FundamentalAgent
 from src.agents.macro import MacroAgent
 from src.agents.cio import CIOAgent
 from src.agents.engineer import SystemEngineerAgent
-from src.agents.engineer import SystemEngineerAgent
 from src.agents.sentiment import SentimentAgent
 from src.agents.risk import RiskAgent
+from src.agents.swarm.fundamental_swarm import FundamentalSwarm
+from src.agents.swarm.sentiment_swarm import SentimentSwarm
+from src.agents.swarm.momentum_swarm import MomentumSwarm
 import os
 import logging
 import traceback
@@ -111,9 +113,9 @@ class AgentFactory:
         
         agent = None
         if name_lower == 'momentum':
-            agent = MomentumAgent(use_cache=use_cache, user_id=user_id, **kwargs)
+            agent = MomentumSwarm(user_id=user_id, **kwargs)
         elif name_lower == 'fundamental':
-            agent = FundamentalAgent(use_cache=use_cache, user_id=user_id, **kwargs)
+            agent = FundamentalSwarm(user_id=user_id, **kwargs)
         elif name_lower == 'macro':
             agent = MacroAgent(use_cache=use_cache, user_id=user_id, **kwargs)
         elif name_lower == 'cio':
@@ -121,7 +123,7 @@ class AgentFactory:
         elif name_lower == 'engineer':
             agent = SystemEngineerAgent(use_cache=use_cache, user_id=user_id, **kwargs)
         elif name_lower == 'sentiment':
-            agent = SentimentAgent(use_cache=use_cache, user_id=user_id, **kwargs)
+            agent = SentimentSwarm(user_id=user_id, **kwargs)
         elif name_lower == 'risk':
             agent = RiskAgent(use_cache=use_cache, user_id=user_id, **kwargs)
         else:
@@ -132,14 +134,14 @@ class AgentFactory:
     @staticmethod
     def create_momentum_agent(use_cache=True, user_id="system", **kwargs):
         AgentFactory._configure_dspy()
-        tier = kwargs.pop('tier', 'fast')
-        agent = MomentumAgent(use_cache=use_cache, tier=tier, user_id=user_id, **kwargs)
+        # tier = kwargs.pop('tier', 'fast') # Swarm manages tiers
+        agent = MomentumSwarm(user_id=user_id, use_cache=use_cache, **kwargs)
         return AgentFactory._inject_dependencies(agent)
 
     @staticmethod
     def create_fundamental_agent(use_cache=True, user_id="system", **kwargs):
-        tier = kwargs.pop('tier', 'smart')
-        agent = FundamentalAgent(use_cache=use_cache, tier=tier, user_id=user_id, **kwargs)
+        # tier = kwargs.pop('tier', 'smart')
+        agent = FundamentalSwarm(user_id=user_id, use_cache=use_cache, **kwargs)
         return AgentFactory._inject_dependencies(agent)
         
     @staticmethod
@@ -150,8 +152,8 @@ class AgentFactory:
 
     @staticmethod
     def create_sentiment_agent(use_cache=True, user_id="system", **kwargs):
-        tier = kwargs.pop('tier', 'fast')
-        agent = SentimentAgent(use_cache=use_cache, tier=tier, user_id=user_id, **kwargs)
+        # tier = kwargs.pop('tier', 'fast')
+        agent = SentimentSwarm(user_id=user_id, use_cache=use_cache, **kwargs)
         return AgentFactory._inject_dependencies(agent)
 
     @staticmethod

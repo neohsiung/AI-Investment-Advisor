@@ -60,7 +60,12 @@ class SentinelService:
         self.repo.seed_defaults(self.default_thresholds)
         self.thresholds = self.repo.get_all_thresholds()
         
-        self.current_vix = 20.0 # Default baseline
+        # Buffer State
+        self._trigger_buffer: List[str] = []
+        self._buffer_deadline: float = 0.0
+        
+        # Volatility State
+        self.current_vix: float = 20.0 # Default fallback
 
     # ──────────────────────────────────────────
     # Main Entry Point
@@ -72,6 +77,10 @@ class SentinelService:
         Reloads dynamic thresholds to allow Agent-driven optimization.
         """
         self.thresholds = self.repo.get_all_thresholds()
+        
+        # [Optimization] Check and Flush Buffer if deadline reached
+        await self._check_buffer_flush()
+        
         logger.info(f"Sentinel Check Started with {len(self.thresholds)} thresholds.")
         try:
             triggers: List[str] = []
@@ -351,6 +360,56 @@ class SentinelService:
 
     async def _escalate(self, triggers: List[str], source: str = "Sentinel"):
         """
+        Escalate triggers. Applies buffering if source is Sentinel.
+        """
+        if not triggers:
+             return
+
+        # 1. Immediate Mode for Webhooks or Critical
+        is_critical = any("🔴" in t or "CRITICAL" in t for t in triggers)
+        is_internal = source == "Sentinel"
+        
+        if not is_internal or is_critical:
+            # Flush immediately if critical or external
+            self._trigger_buffer.extend(triggers)
+            await self._flush_buffer(force=True, source=source)
+            return
+
+        # 2. Buffering Mode (Sentinel Routine)
+        self._trigger_buffer.extend(triggers)
+        
+        # Deduplicate Buffer
+        self._trigger_buffer = list(set(self._trigger_buffer))
+        
+        # Start Timer if needed
+        from datetime import datetime
+        if self._buffer_deadline == 0.0:
+            # 15 minutes buffer
+            self._buffer_deadline = datetime.now().timestamp() + (15 * 60)
+            logger.info(f"Sentinel: Started alert buffer. deadline={self._buffer_deadline}")
+
+    async def _check_buffer_flush(self):
+        """Called by process_tick to optionally flush buffer."""
+        await self._flush_buffer(force=False)
+
+    async def _flush_buffer(self, force: bool = False, source: str = "Sentinel"):
+        """Flush the buffer if deadline reached or forced."""
+        if not self._trigger_buffer:
+             return
+             
+        # Check deadline
+        from datetime import datetime
+        if force or (self._buffer_deadline > 0 and datetime.now().timestamp() >= self._buffer_deadline):
+             unique_triggers = list(set(self._trigger_buffer))
+             if unique_triggers:
+                 await self._do_send_alert(unique_triggers, source=source)
+             
+             # Reset
+             self._trigger_buffer = []
+             self._buffer_deadline = 0.0
+
+    async def _do_send_alert(self, triggers: List[str], source: str = "Sentinel"):
+        """
         Escalate triggers to Council for deliberation, then notify.
         將觸發事件上報評議會並通知。
         """
@@ -358,7 +417,7 @@ class SentinelService:
         
         # 0. Deduplication (Cool-down)
         # Combine triggers and source to form unique content signature for this alert window
-        content_signature = f"{topic}|{''.join(triggers)}"
+        content_signature = f"{topic}|{''.join(sorted(triggers))}" # Sorted for consistency
         if self.repo.is_duplicate_alert(title=topic, content=content_signature, hours=24):
             logger.info(f"Sentinel: Suppressing duplicate alert: {topic}")
             return
@@ -373,10 +432,14 @@ class SentinelService:
         
         # Council Deliberation
         try:
+            # [Fix] Pass user_id explicitly to ensure Agents get correct DB settings
+            user_id = self.settings_service.user_id or "supermfb@gmail.com"
+            
             result = await self.council_service.start_session(
                 topic, 
                 context, 
-                market_volatility=self.current_vix
+                market_volatility=self.current_vix,
+                user_id=user_id
             )
             decision = result.get('consensus', 'No Consensus')
         except Exception as e:
@@ -394,12 +457,19 @@ class SentinelService:
         elif "buy" in decision.lower():
             actions.append({"label": "前往 eToro 下單", "data": "action=etoro_link"})
         
-        trigger_summary = "\n".join(f"• {t}" for t in triggers)
-        
+        # [Optimization] Structured Loop Format for Readability
+        # 結構化迴圈排版，提升閱讀體驗
+        formatted_triggers = ""
+        for i, t in enumerate(triggers, 1):
+            formatted_triggers += f"{i}. {t}\n"
+            
         alert_content = (
-            f"**{len(triggers)} 個風險訊號偵測到**\n\n"
-            f"{trigger_summary}\n\n"
-            f"**Council 共識**: {decision}"
+            f"### 🛡️ Sentinel Event Loop\n"
+            f"**Detected Signals ({len(triggers)})**:\n"
+            f"{formatted_triggers}\n"
+            f"---\n"
+            f"#### ⚖️ Council Consensus\n"
+            f"{decision}\n"
         )
 
         # 1. Log Alert first (Pass content_signature as content for exact matching next time)

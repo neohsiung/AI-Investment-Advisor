@@ -4,7 +4,7 @@
 *   **02. 產品規格 (Product Managers)**
     *   [產品演進藍圖](02_產品經理-Product_Managers/產品演進藍圖-Evolutionary-Roadmap.md)
     *   **01_規格書-Specs**
-        *   [核心系統規格](02_產品經理-Product_Managers/01_規格書-Specs/核心系統規格-Core-System-Specs.md)
+        *   [核心系統規格 (v3.8)](02_產品經理-Product_Managers/01_規格書-Specs/核心系統規格-Core-System-Specs.md)
         *   [未來演進規格 (v4.0)](02_產品經理-Product_Managers/01_規格書-Specs/未來演進規格-Future-Roadmap-Specs.md)
 *   **03. 開發者指南 (Developer Guide)**
     *   [環境設定與本地開發](03_開發者指南-Developer_Guide/環境設定與本地開發-Environment-Local-Dev.md)

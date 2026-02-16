@@ -12,7 +12,7 @@ This document defines the standards for creating and maintaining the project Wik
     *   **英文 (English)**: 使用 PascalCase 或 hyphen-separated (kebab-case) 英文詞彙，需與中文對應。
     *   **連接符號 (Separator)**: 使用半形連字號 `-` 連接中英文與單字。
     *   **數字前綴 (Numeric Prefixes)**: 
-        *   **檔案 (Files)**: 禁止使用數字作為開頭 (No numeric prefixes for filenames)。
+        *   **檔案 (Files)**: 禁止使用數字作為開頭 (No numeric prefixes for filenames)。禁止在檔名中包含版本號 (e.g., v3.7)，版本控制應於文件內部的「版本紀錄」表格維護 (No version numbers in filenames; manage versions within the document's Version History)。
         *   **資料夾 (Folders)**: 必須包含數字前綴以符合顯示順序 (Must use numeric prefixes for ordering)，格式為 `XX_名稱`。
     *   **禁止 (Forbidden)**: 禁止使用空格、特殊符號 (底線 `_` 僅限於資料夾命名)。
 *   **範例 (Examples)**:
@@ -122,3 +122,14 @@ English description...
 參閱: [首頁](Home)
 See also: [Home](Home)
 ```
+
+## 8. 技術計畫文件規範 (Technical Plan Documentation Standards)
+
+*   **圖表與設計原則 (Diagrams & Design Principles)**:
+    *   所有涉及技術實作的計畫 (Plan) 或設計文件，必須根據內容提供相應的圖表以輔助說明，並列出設計原則。
+    *   All technical plans or design documents must include relevant diagrams and design principles.
+    *   **必要項目 (Required Items)**:
+        *   **流程圖 (Flowchart)**: 描述業務邏輯或數據流向 (Describe business logic or data flow).
+        *   **循序圖 (Sequence Diagram)**: 描述系統組件間的時間序列互動 (Describe chronological interactions between components).
+        *   **架構圖 (Architecture Diagram)**: 描述系統整體結構與邊界 (Describe overall system structure and boundaries).
+        *   **設計原則 (Design Principles)**: 明確列出採用的設計模式與原則 (Explicitly list adopted design patterns and principles, e.g., SOLID, DDD).

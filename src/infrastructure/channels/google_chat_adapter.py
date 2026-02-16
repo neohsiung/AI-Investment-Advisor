@@ -15,6 +15,20 @@ class GoogleChatAdapter(IChannelAdapter):
         self.webhook_url = (webhook_url or os.getenv("GOOGLE_CHAT_WEBHOOK_URL", "")).strip()
         self.is_active = bool(self.webhook_url)
 
+    def send_message(self, user_id: str, message: Any, **kwargs) -> bool:
+        """
+        Send a generic message.
+        """
+        if isinstance(message, str):
+            return self.send_alert(user_id, "Message", message)
+        return False
+
+    def receive_command(self, payload: Any, **kwargs) -> Any:
+        return None
+
+    def authenticate(self, request: Any, **kwargs) -> bool:
+        return True
+
     def send_alert(self, user_id: str, title: str, content: str, actions: List[Dict[str, str]] = None, **kwargs) -> bool:
         """
         Send message to Google Chat via Webhook.

@@ -70,6 +70,8 @@ class NotificationService:
         results = {}
         target_user = user_id or os.getenv("LINE_USER_ID", "broadcast")
         
+        capture_error = kwargs.get('capture_error', False)
+
         for adapter in self.adapters:
             adapter_name = adapter.__class__.__name__.lower()
             
@@ -78,17 +80,33 @@ class NotificationService:
                 continue
             
             try:
+                # Pass kwargs down (including raise_error if set by caller, 
+                # or auto-set raise_error if capture_error is True logic below)
+                
+                # If capture_error is True, we want the adapter to raise exception so we can catch it here
+                call_kwargs = kwargs.copy()
+                if capture_error:
+                    call_kwargs['raise_error'] = True
+                
                 success = adapter.send_alert(
                     user_id=target_user,
                     title=title,
                     content=content,
                     actions=actions,
-                    **kwargs
+                    **call_kwargs
                 )
-                results[adapter.__class__.__name__] = success
+                
+                if capture_error:
+                    results[adapter.__class__.__name__] = (True, "OK")
+                else:
+                    results[adapter.__class__.__name__] = success
+
             except Exception as e:
                 logger.error(f"Notification failed for {adapter.__class__.__name__}: {e}")
-                results[adapter.__class__.__name__] = False
+                if capture_error:
+                    results[adapter.__class__.__name__] = (False, str(e))
+                else:
+                    results[adapter.__class__.__name__] = False
                 
         return results
 

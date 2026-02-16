@@ -54,6 +54,7 @@ def mock_services():
             "fed_funds_change_bps": 25,
             "news_risk_score": 0.6,
          }
+         mock_repo_instance.is_duplicate_alert.return_value = False
          
          yield {
             "market": market,
@@ -133,6 +134,7 @@ class TestVIXAnomaly:
             
             # Now test the escalation via _escalate
             await sentinel._escalate(triggers)
+            await sentinel._flush_buffer(force=True) # Force flush for testing
             mock_services["council"].start_session.assert_called_once()
             mock_services["notification"].notify_all.assert_called_once()
 
@@ -172,6 +174,7 @@ class TestPositionMoves:
             # Mock internal user methods
             with patch.object(sentinel, '_get_all_user_ids', return_value=["user@test.com"]):
                     await sentinel.process_tick()
+                    await sentinel._flush_buffer(force=True)
 
             # Verification
             mock_services["council"].start_session.assert_called_once()
@@ -201,6 +204,7 @@ class TestPositionMoves:
             
             with patch.object(sentinel, '_get_all_user_ids', return_value=["user@test.com"]):
                 await sentinel.process_tick()
+                await sentinel._flush_buffer(force=True)
 
             # Verification
             mock_services["council"].start_session.assert_called_once()
@@ -209,7 +213,7 @@ class TestPositionMoves:
 
         run_async(_test())
 
-    def test_position_spike_trigger(self, mock_services, run_async):
+    def test_position_bubble_trigger(self, mock_services, run_async):
         """Stock rises > 8% — triggers bubble warning."""
         sentinel = _create_sentinel(mock_services)
         mock_services["market"].get_ohlcv.side_effect = lambda ticker, days=30: {
@@ -222,6 +226,7 @@ class TestPositionMoves:
         async def _test():
             with patch.object(sentinel, '_get_all_user_ids', return_value=["user@test.com"]):
                 await sentinel.process_tick()
+                await sentinel._flush_buffer(force=True)
             mock_services["council"].start_session.assert_called_once()
             args = mock_services["council"].start_session.call_args[0]
             assert "TSLA" in args[0]
@@ -382,12 +387,13 @@ class TestEscalation:
         async def _test():
             with patch.dict('os.environ', {"LINE_USER_ID": "U123"}):
                 await sentinel._escalate(["Test trigger 1", "Test trigger 2"])
+                await sentinel._flush_buffer(force=True)
 
             mock_services["council"].start_session.assert_called_once()
             mock_services["notification"].notify_all.assert_called_once()
             call_kwargs = mock_services["notification"].notify_all.call_args[1]
             assert call_kwargs["user_id"] == "U123"
-            assert "2 個風險訊號" in call_kwargs["content"]
+            assert "**Detected Signals (2)**" in call_kwargs["content"]
 
         run_async(_test())
 

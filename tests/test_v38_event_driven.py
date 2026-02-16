@@ -25,6 +25,7 @@ def test_sentinel_process_event():
                 "position_spike_pct": 8.0,
                 "news_risk_score": 0.6
             }
+            mock_repo_instance.is_duplicate_alert.return_value = False
 
             sentinel = SentinelService(
                 notification_service=mock_notification,
