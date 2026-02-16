@@ -355,6 +355,14 @@ class SentinelService:
         將觸發事件上報評議會並通知。
         """
         topic = f"{source.upper()} ALERT: {'; '.join(triggers)}"
+        
+        # 0. Deduplication (Cool-down)
+        # Combine triggers and source to form unique content signature for this alert window
+        content_signature = f"{topic}|{''.join(triggers)}"
+        if self.repo.is_duplicate_alert(title=topic, content=content_signature, hours=24):
+            logger.info(f"Sentinel: Suppressing duplicate alert: {topic}")
+            return
+
         logger.info(f"Sentinel: Escalating {len(triggers)} trigger(s) from {source}")
         
         context = {
@@ -377,7 +385,7 @@ class SentinelService:
         
         logger.info(f"Sentinel: Council decision: {decision}")
         
-        # LINE Notification
+        # LINE Notification (and others via notify_all)
         target_user = os.getenv("LINE_USER_ID", "broadcast")
         
         actions = []
@@ -387,17 +395,23 @@ class SentinelService:
             actions.append({"label": "前往 eToro 下單", "data": "action=etoro_link"})
         
         trigger_summary = "\n".join(f"• {t}" for t in triggers)
-        trigger_summary = "\n".join(f"• {t}" for t in triggers)
+        
+        alert_content = (
+            f"**{len(triggers)} 個風險訊號偵測到**\n\n"
+            f"{trigger_summary}\n\n"
+            f"**Council 共識**: {decision}"
+        )
+
+        # 1. Log Alert first (Pass content_signature as content for exact matching next time)
+        self.repo.log_alert(topic, content_signature, metadata={"decision": decision, "full_content": alert_content})
+
+        # 2. Notify All Channels
         self.notification_service.notify_all(
             user_id=target_user,
-            title="⚠️ Sentinel Alert",
-            content=(
-                f"**{len(triggers)} 個風險訊號偵測到**\n\n"
-                f"{trigger_summary}\n\n"
-                f"**Council 共識**: {decision}"
-            ),
+            title=f"⚠️ {source} Alert",
+            content=alert_content,
             actions=actions,
-            source="Sentinel",
+            source=source,
             level="CRITICAL" if any(kw in decision.lower() for kw in ["sell", "reduce"]) else "WARNING"
         )
 

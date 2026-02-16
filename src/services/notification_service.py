@@ -15,16 +15,34 @@ class NotificationService:
     全通路通知編排器。負責將警報路由至多個管道。
     """
 
-    def __init__(self, adapters: List[IChannelAdapter] = None):
+    def __init__(self, adapters: List[IChannelAdapter] = None, settings_service=None):
         if adapters:
             self.adapters = adapters
         else:
-            # Default adapters
-            self.adapters = [
-                LineBotAdapter(),
-                EmailAdapter(),
-                WebAdapter()
-            ]
+            # Load settings to configure enabled adapters
+            from src.services.settings_service import SettingsService
+            from src.infrastructure.channels.channel_factory import ChannelFactory
+            from src.infrastructure.channels.email_adapter import EmailAdapter
+            from src.infrastructure.channels.web_adapter import WebAdapter
+            
+            self.settings_service = settings_service or SettingsService()
+            settings = self.settings_service.get_all_settings()
+            
+            # Use Factory to get enabled optional adapters (LINE, Slack, etc.)
+            self.adapters = ChannelFactory.create_adapters(settings)
+            
+            # Always include core adapters that don't need explicit enable (or have their own checks)
+            # Email and Web are considered core/default or have internal logic
+            self.adapters.append(EmailAdapter())
+            self.adapters.append(WebAdapter())
+            
+            # Fallback: If no LINE adapter was created by factory (e.g. settings missing),
+            # check ENV for legacy support and add if not present
+            has_line = any(a.__class__.__name__ == 'LineBotAdapter' for a in self.adapters)
+            if not has_line and os.getenv("LINE_CHANNEL_ACCESS_TOKEN"):
+                from src.infrastructure.channels.line_adapter import LineBotAdapter
+                logger.info("NotificationService: Added LINE Adapter via ENV fallback.")
+                self.adapters.append(LineBotAdapter())
         
     def notify_all(
         self, 
