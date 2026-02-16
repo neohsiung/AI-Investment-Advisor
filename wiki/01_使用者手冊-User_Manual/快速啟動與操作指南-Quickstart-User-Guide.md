@@ -151,7 +151,8 @@ python run_production_report.py
 #### 6.4 哨兵監控 (Sentinel Monitor)
 系統內建「自適應哨兵 (Adaptive Sentinel)」，自動監控市場異常。
 - **觸發機制**: 不再依賴固定數值。系統依據過去 30 天的波動率 (MA + Sigma) 判斷「當前是否異常」。
-- **通知形式**: LINE Flex Message (圖文卡片)。
+- **智能冷卻 (Smart Cool-down)**: 為避免警報疲勞，系統會自動抑制 24 小時內重複的警報內容。
+- **通知形式**: LINE Flex Message (圖文卡片) 或其他已啟用頻道 (Slack/Telegram)。
 - **操作**: 點擊卡片上的 **[前往 eToro 下單]** 按鈕，即可快速進行避險操作。
 
 ---
@@ -225,7 +226,8 @@ v3.4 introduces real-time alerts via LINE:
 
 #### 5.2 Sentinel Alerts
 - **Adaptive Logic**: Alerts are triggered based on dynamic market regimes (30-day MA + Sigma), not static numbers.
-- **Action**: Click **[Trade on eToro]** in the LINE notification to execute hedging strategies immediately.
+- **Smart Cool-down**: Automatically suppresses identical alerts within 24 hours to prevent fatigue.
+- **Action**: Click **[Trade on eToro]** in the notification to execute hedging strategies immediately.
 
 ### 3. Troubleshooting
 - **Zero Balance**: Ensure initial `DEPOSIT` or `BUY` events are recorded.

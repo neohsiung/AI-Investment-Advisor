@@ -6,6 +6,7 @@
 ### 版本紀錄 (Version History)
 | Date | Version | Description | Author |
 | :--- | :--- | :--- | :--- |
+| 2026-02-16 | v3.8.1 | Smart Alert Deduplication (Event Logs) & Omni-Channel Fixes | Neo |
 | 2026-02-15 | v3.8 | Event-Driven (Webhooks) + Adaptive Compute | Neo |
 | 2026-02-14 | v3.5 | 4D Multi-Trigger + Weighted Risk Keywords | Neo |
 | 2026-02-07 | v3.4 | Standardized naming and structure | Neo |
@@ -60,9 +61,10 @@
     - **機制**: Webhook 接收後 normalized 為 `SentinelEvent` 並透過 `asyncio.create_task` 進行非同步處理，確保高吞吐。
 
 *   **每維度錯誤隔離 (Per-Dimension Error Isolation)**: 任一維度失敗不影響其他維度。
-*   **部署模式 (Dual Mode)**:
-    1.  **Local (Docker)**: 由 `SchedulerService` 的 `while True` 迴圈每分鐘呼叫一次。
     2.  **GCP (Cloud Run)**: 透過 `Cloud Scheduler` 每分鐘發送 HTTP Request 觸發 API Endpoint。
+    3.  **智能冷卻 (Smart Cool-down)**: 
+        - 每次觸發前查詢 `event_logs` 資料表。
+        - 若 24 小時內存在完全相同 (Title + Content Hash) 的警報，則自動抑制，避免疲勞轟炸。
 
 #### 2.1.1 加權風險關鍵字系統 (Weighted Risk Keyword System)
 
@@ -143,7 +145,7 @@ graph LR
 2.  **加權新聞評分**: 突發新聞維度載入 DB 中 active 關鍵字，計算加權分數。
 3.  **命中追蹤**: 觸發時自動記錄 `hit_count`，供後續復盤與清除。
 4.  **聚合觸發**: 任一維度觸發 → 聚合警報訊息 → 喚醒 Council (System 2)。
-5.  **主動推播**: 透過 `LineAdapter` 發送 Flex Message 給使用者。
+5.  **主動推播**: 透過 `NotificationService` 發送至所有啟用頻道 (LINE, Slack, Telegram, etc.)。
 6.  **閉環執行**: 系統呼叫 `TransactionService` 下單，並寫入 `memory`。
 
 ### 4. 記憶體架構與認知循環 (Memory Architecture & Cognitive Cycle)
@@ -211,6 +213,7 @@ Inspired by Daniel Kahneman's *Thinking, Fast and Slow*, the system is divided i
 - **Hybrid Entry**: Supports both polling (`process_tick`) and webhooks (`process_event`).
 - **External Sources**: MktRecap, TradingView, RSS-to-webhook bridges.
 - **Adaptive Compute**: VIX-based model routing (Flash vs. Pro).
+- **Smart Cool-down**: Automatically suppresses identical alerts within a **24-hour window** using `event_logs` history/hashing.
 
 | Dimension | Method | Source | Threshold |
 | :--- | :--- | :--- | :--- |
@@ -227,7 +230,7 @@ Inspired by Daniel Kahneman's *Thinking, Fast and Slow*, the system is divided i
 - **Management**: Settings tab (10th) → add/edit weight/toggle/delete + review analytics.
 
 ### 3. Data Flow
-Sentinel runs 4 dimension checks in parallel → aggregates triggers → wakes Council → LINE push → User approves → Transaction executed.
+Sentinel runs 4 dimension checks in parallel → deduplicates (24h) → aggregates triggers → wakes Council → Omni-Channel push → User approves → Transaction executed.
 
 ### 4. Memory Architecture
 *   **STM (Daily)**: High-frequency, noisy. Used for pattern matching.
