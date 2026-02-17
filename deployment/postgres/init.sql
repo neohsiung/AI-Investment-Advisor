@@ -71,8 +71,10 @@ CREATE TABLE IF NOT EXISTS scheduler_logs (
 
 -- Settings Table
 CREATE TABLE IF NOT EXISTS settings (
-    key TEXT PRIMARY KEY,
-    value TEXT
+    key TEXT,
+    user_id TEXT,
+    value TEXT,
+    PRIMARY KEY (key, user_id)
 );
 
 -- Prompt History Table

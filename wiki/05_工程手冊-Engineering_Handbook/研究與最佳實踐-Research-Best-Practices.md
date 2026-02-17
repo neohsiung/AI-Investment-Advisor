@@ -1,6 +1,7 @@
 ### 版本紀錄 (Version History)
 | Date | Version | Description | Author |
 | :--- | :--- | :--- | :--- |
+| 2026-02-17 | v4.0.0 | **DB Evolution**: Evaluation of PostgreSQL JSONB vs NoSQL & pgvector. | Neo |
 | 2026-02-15 | v3.6.1 | **Multi-Tier Agent Architecture**: Role × 3-Tier (Advanced/Smart/Fast) 並行模式 | Neo |
 | 2026-02-15 | v3.6 | Added Kimi K2.5 Swarm, OpenClaw Channel Adapters, UI Navigation research | Neo |
 | 2026-02-14 | v3.5 | Initial Release | Neo |
@@ -92,8 +93,17 @@
 ### 6. Channel Abstraction (OpenClaw)
 - **Adapter Logic**: Decoupling the reasoning engine from delivery channels (LINE, Web) via standardized command parsing and formatting layers.
 
+### 10. Search & NoSQL Evaluation
+**Research**: Assessment of adding ElasticSearch or MongoDB for the v3.9 refactor.
+- **Best Practice**: **PostgreSQL JSONB** is sufficient for current semi-structured configs and tag data.
+- **Implementation**:
+    - ✅ **pgvector** meets 90% of vector search and semantic retrieval needs.
+    - ⚠️ **ElasticSearch** is categorized as a Phase 2 option, to be introduced only when event logs exceed 1M/month or advanced synonym search is required.
+    - ❌ **MongoDB** is not recommended due to lack of ACID necessity given Postgres's native JSONB flexibility.
+- **Reference**: [NoSQL & Search Evaluation](99_Archive/NoSQL-ElasticSearch-Evaluation.md) or `plans/nosql-elasticsearch-evaluation.md`.
+
 ## 🔗 Bidirectional Links
-- **Product View**: [Evolutionary Roadmap](產品演進藍圖-Evolutionary-Roadmap)
-- **Technical Specs**: [Future Roadmap Specs](未來演進規格-Future-Roadmap-Specs)
-- **Engineering Handbook**: [Prompt Engineering Specs](提示詞工程規範-Prompt-Engineering-Specs)
-- **Architect View**: [Architectural Philosophies](架構哲學-Architectural-Philosophies)
+- **Product View**: [Evolutionary Roadmap](Evolutionary-Roadmap)
+- **Technical Specs**: [Future Roadmap Specs](Future-Roadmap-Specs)
+- **Engineering Handbook**: [Prompt Engineering Specs](Prompt-Engineering-Specs)
+- **Architect View**: [Architectural Philosophies](Architectural-Philosophies)

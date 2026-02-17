@@ -33,6 +33,8 @@
     *   [動態參數規範](05_工程手冊-Engineering_Handbook/02_規範標準-Standards/動態參數規範-Dynamic-Parameter-Standards.md)
     *   [外部事件整合指南](05_工程手冊-Engineering_Handbook/02_規範標準-Standards/外部事件整合指南-External-Event-Integration.md)
     *   [金融數據矩陣與整合成本](05_工程手冊-Engineering_Handbook/02_規範標準-Standards/金融數據矩陣與整合成本-Financial-Data-Matrix-Cost.md)
+    *   [資安管理與基礎映像檔規範](05_工程手冊-Engineering_Handbook/02_規範標準-Standards/資安管理與基礎映像檔規範-Security-and-Base-Image-Standard.md)
+    *   [技術債與待辦清單](05_工程手冊-Engineering_Handbook/02_規範標準-Standards/技術債與待辦清單-Technical-Debt-And-Todos.md)
     *   **01_設計模式-Patterns**
         *   [設計模式導讀](05_工程手冊-Engineering_Handbook/設計模式導讀-Design-Patterns-Intro.md)
         *   [工廠模式](05_工程手冊-Engineering_Handbook/01_設計模式-Patterns/設計模式-工廠-Factory-Pattern.md)

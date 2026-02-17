@@ -2,15 +2,15 @@ name: CI/CD Pipeline
 
 on:
   push:
-    branches: [ main ]
+    branches: [main]
   pull_request:
-    branches: [ main ]
+    branches: [main]
   workflow_dispatch:
     inputs:
       deploy_to_gcp:
-        description: 'Deploy to GCP (Prd)?'
+        description: "Deploy to GCP (Prd)?"
         required: true
-        default: 'false'
+        default: false
         type: boolean
 
 env:
@@ -21,114 +21,135 @@ env:
   IMAGE: investment-advisor
 
 jobs:
-  # Lab Environment: For Local Use Validation (Tests, Security, License)
   lab:
     name: Lab (CI / Validation)
     runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:15
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: portfolio
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+      redis:
+        image: redis:7
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
     steps:
-    - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
 
-    - name: Set up Python 3.11
-      uses: actions/setup-python@v4
-      with:
-        python-version: 3.11
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: "pip"
 
-    - name: Install dependencies
-      run: |
-        python -m pip install --upgrade pip
-        pip install -r requirements.txt
-        pip install pytest pytest-cov pytest-mock
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install pytest pytest-cov pytest-mock bandit pip-licenses
 
-    - name: Run tests with coverage
-      run: |
-        pytest --cov=src --cov-fail-under=65 tests/
+      - name: Run tests with coverage
+        env:
+          DB_TYPE: postgres
+          DB_HOST: localhost
+          DB_PORT: 5432
+          DB_USER: postgres
+          DB_PASS: postgres
+          DB_NAME: portfolio
+          REDIS_HOST: localhost
+          REDIS_PORT: 6379
+          AI_PROVIDER: mock
+        run: |
+          pytest --cov=src --cov-report=xml --cov-fail-under=65 tests/
 
-    - name: Security Scan (Bandit)
-      run: |
-        bandit -r src/ -f json -o bandit_report.json || true
+      - name: Security Scan (Bandit)
+        run: |
+          # Fail if there are medium or high severity issues
+          bandit -r src/ -ll -f screen
 
-    - name: License Compliance Check
-      run: |
-        pip-licenses --format=markdown --with-urls --summary > license_report.md
-        # Basic check for non-permissive licenses (Exclude LGPL from GPL detection)
-        pip-licenses --format=json | python3 -c "import sys, json; licenses = json.load(sys.stdin); violations = [p['Name'] for p in licenses if (('GPL' in p['License'] or 'AGPL' in p['License']) and 'LGPL' not in p['License'])]; sys.exit(1) if violations else sys.exit(0)"
+      - name: License Compliance Check
+        run: |
+          pip-licenses --format=markdown --with-urls --summary > license_report.md
+          # Basic check for non-permissive licenses
+          pip-licenses --format=json | python3 -c "import sys, json; licenses = json.load(sys.stdin); violations = [p['Name'] for p in licenses if (('GPL' in p['License'] or 'AGPL' in p['License']) and 'LGPL' not in p['License'])]; sys.exit(1) if violations else sys.exit(0)"
 
-  # Prd Environment: For Cloud Production (Deployment)
   prd:
     name: Prd (Cloud Deployment)
     needs: lab
-    # STRICT GATE: Only run if manually triggered AND deploy_to_gcp input is explicitly true
     if: ${{ github.event_name == 'workflow_dispatch' && inputs.deploy_to_gcp == true }}
     runs-on: ubuntu-latest
     permissions:
-      contents: 'read'
-      id-token: 'write'
+      contents: "read"
+      id-token: "write"
 
     steps:
-    - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
 
-    - name: Google Auth
-      id: auth
-      uses: google-github-actions/auth@v1
-      with:
-        credentials_json: '${{ secrets.GCP_SA_KEY }}'
+      - name: Google Auth
+        id: auth
+        uses: google-github-actions/auth@v2
+        with:
+          credentials_json: "${{ secrets.GCP_SA_KEY }}"
 
-    - name: Set up Cloud SDK
-      uses: google-github-actions/setup-gcloud@v1
+      - name: Set up Cloud SDK
+        uses: google-github-actions/setup-gcloud@v2
 
-    - name: Configure Docker
-      run: |
-        gcloud auth configure-docker ${{ env.REGION }}-docker.pkg.dev
+      - name: Configure Docker
+        run: |
+          gcloud auth configure-docker ${{ env.REGION }}-docker.pkg.dev
 
-    - name: Build and Push Docker Image
-      run: |
-        docker build -t ${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.REPOSITORY }}/${{ env.IMAGE }}:${{ github.sha }} .
-        docker push ${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.REPOSITORY }}/${{ env.IMAGE }}:${{ github.sha }}
-        docker tag ${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.REPOSITORY }}/${{ env.IMAGE }}:${{ github.sha }} ${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.REPOSITORY }}/${{ env.IMAGE }}:latest
-        docker push ${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.REPOSITORY }}/${{ env.IMAGE }}:latest
+      - name: Build and Push Docker Image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          push: true
+          tags: |
+            ${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.REPOSITORY }}/${{ env.IMAGE }}:${{ github.sha }}
+            ${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.REPOSITORY }}/${{ env.IMAGE }}:latest
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
 
-    - name: Deploy Dashboard (Cloud Run Service)
-      run: |
-        gcloud run deploy investment-dashboard \
-          --image ${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.REPOSITORY }}/${{ env.IMAGE }}:latest \
-          --region ${{ env.REGION }} \
-          --platform managed \
-          --port 8501 \
-          --command "streamlit" \
-          --args "run,src/dashboard.py,--server.port,8501,--server.address,0.0.0.0" \
-          --set-env-vars "AI_PROVIDER=${{ secrets.AI_PROVIDER }},AI_MODEL_SMART=${{ secrets.AI_MODEL_SMART }},AI_MODEL_FAST=${{ secrets.AI_MODEL_FAST }}" \
-          --set-env-vars "DB_TYPE=postgres,DB_HOST=${{ secrets.DB_HOST }},DB_USER=${{ secrets.DB_USER }},DB_PASS=${{ secrets.DB_PASS }},DB_NAME=${{ secrets.DB_NAME }}" \
-          --set-env-vars "GOOGLE_CLIENT_SECRET_JSON=${{ secrets.GOOGLE_CLIENT_SECRET_JSON }},REDIRECT_URI=${{ secrets.REDIRECT_URI }}" \
-          --set-env-vars "API_KEY=${{ secrets.API_KEY }},FRED_API_KEY=${{ secrets.FRED_API_KEY }}"
+      - name: Deploy Dashboard (Cloud Run Service)
+        run: |
+          gcloud run deploy investment-dashboard \
+            --image ${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.REPOSITORY }}/${{ env.IMAGE }}:latest \
+            --region ${{ env.REGION }} \
+            --platform managed \
+            --port 8501 \
+            --command "streamlit" \
+            --args "run,src/dashboard.py,--server.port,8501,--server.address,0.0.0.0" \
+            --set-env-vars "AI_PROVIDER=${{ secrets.AI_PROVIDER }},AI_MODEL_SMART=${{ secrets.AI_MODEL_SMART }},AI_MODEL_FAST=${{ secrets.AI_MODEL_FAST }}" \
+            --set-env-vars "DB_TYPE=postgres,DB_HOST=${{ secrets.DB_HOST }},DB_USER=${{ secrets.DB_USER }},DB_PASS=${{ secrets.DB_PASS }},DB_NAME=${{ secrets.DB_NAME }}" \
+            --set-env-vars "GOOGLE_CLIENT_SECRET_JSON=${{ secrets.GOOGLE_CLIENT_SECRET_JSON }},REDIRECT_URI=${{ secrets.REDIRECT_URI }}" \
+            --set-env-vars "API_KEY=${{ secrets.API_KEY }},FRED_API_KEY=${{ secrets.FRED_API_KEY }}"
 
-    - name: Update Cloud Run Jobs
-      run: |
-        # Daily Check Job
-        gcloud run jobs update daily-check \
-          --image ${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.REPOSITORY }}/${{ env.IMAGE }}:latest \
-          --region ${{ env.REGION }} \
-          --command "python" \
-          --args "src/cli.py,--mode,scheduler,--task,daily" \
-          --set-env-vars "AI_PROVIDER=${{ secrets.AI_PROVIDER }},AI_MODEL_SMART=${{ secrets.AI_MODEL_SMART }},AI_MODEL_FAST=${{ secrets.AI_MODEL_FAST }}" \
-          --set-env-vars "DB_TYPE=postgres,DB_HOST=${{ secrets.DB_HOST }},DB_USER=${{ secrets.DB_USER }},DB_PASS=${{ secrets.DB_PASS }},DB_NAME=${{ secrets.DB_NAME }}" \
-          --set-env-vars "API_KEY=${{ secrets.API_KEY }},FRED_API_KEY=${{ secrets.FRED_API_KEY }}"
+      - name: Update Cloud Run Jobs
+        run: |
+          SERVICES=("daily-check" "weekly-report" "monthly-refinement")
+          TASKS=("daily" "weekly" "monthly")
 
-        # Weekly Report Job
-        gcloud run jobs update weekly-report \
-          --image ${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.REPOSITORY }}/${{ env.IMAGE }}:latest \
-          --region ${{ env.REGION }} \
-          --command "python" \
-          --args "src/cli.py,--mode,scheduler,--task,weekly" \
-          --set-env-vars "AI_PROVIDER=${{ secrets.AI_PROVIDER }},AI_MODEL_SMART=${{ secrets.AI_MODEL_SMART }},AI_MODEL_FAST=${{ secrets.AI_MODEL_FAST }}" \
-          --set-env-vars "DB_TYPE=postgres,DB_HOST=${{ secrets.DB_HOST }},DB_USER=${{ secrets.DB_USER }},DB_PASS=${{ secrets.DB_PASS }},DB_NAME=${{ secrets.DB_NAME }}" \
-          --set-env-vars "API_KEY=${{ secrets.API_KEY }},FRED_API_KEY=${{ secrets.FRED_API_KEY }}"
-
-        # Monthly Refinement Job
-        gcloud run jobs update monthly-refinement \
-          --image ${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.REPOSITORY }}/${{ env.IMAGE }}:latest \
-          --region ${{ env.REGION }} \
-          --command "python" \
-          --args "src/cli.py,--mode,scheduler,--task,monthly" \
-          --set-env-vars "AI_PROVIDER=${{ secrets.AI_PROVIDER }},AI_MODEL_SMART=${{ secrets.AI_MODEL_SMART }},AI_MODEL_FAST=${{ secrets.AI_MODEL_FAST }}" \
-          --set-env-vars "DB_TYPE=postgres,DB_HOST=${{ secrets.DB_HOST }},DB_USER=${{ secrets.DB_USER }},DB_PASS=${{ secrets.DB_PASS }},DB_NAME=${{ secrets.DB_NAME }}" \
-          --set-env-vars "API_KEY=${{ secrets.API_KEY }},FRED_API_KEY=${{ secrets.FRED_API_KEY }}"
+          for i in "${!SERVICES[@]}"; do
+            gcloud run jobs update ${SERVICES[$i]} \
+              --image ${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.REPOSITORY }}/${{ env.IMAGE }}:latest \
+              --region ${{ env.REGION }} \
+              --command "python" \
+              --args "src/cli.py,--mode,scheduler,--task,${TASKS[$i]}" \
+              --set-env-vars "AI_PROVIDER=${{ secrets.AI_PROVIDER }},AI_MODEL_SMART=${{ secrets.AI_MODEL_SMART }},AI_MODEL_FAST=${{ secrets.AI_MODEL_FAST }}" \
+              --set-env-vars "DB_TYPE=postgres,DB_HOST=${{ secrets.DB_HOST }},DB_USER=${{ secrets.DB_USER }},DB_PASS=${{ secrets.DB_PASS }},DB_NAME=${{ secrets.DB_NAME }}" \
+              --set-env-vars "API_KEY=${{ secrets.API_KEY }},FRED_API_KEY=${{ secrets.FRED_API_KEY }}"
+          done

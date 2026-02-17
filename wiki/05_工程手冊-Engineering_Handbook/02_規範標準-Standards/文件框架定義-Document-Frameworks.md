@@ -10,7 +10,8 @@ It also mandates the inclusion of a specialized "Iteration Record" for tracking 
 ## 0. 通用規範 (General Standards)
 
 所有類型文件均需包含：
-*   **版本紀錄 (Iteration Record)**: 位於文件頂部，記錄最近 5 次迭代原因與內容。
+*   **版本紀錄 (Iteration Record)**: 位於文件頂部，記錄最近 5 次迭代原因與內容。**每次變動文件（不論大小）均必須新增一筆紀錄。** (Mandatory entry for every change).
+*   **微幅增量原則 (Incremental Updates)**: 除非文件結構完全崩壞或過時，否則應優先在現有框架下進行微調與資料新增，**嚴禁隨意進行大範圍重寫**。必須找到最合適的插入點以保留歷史脈絡。 (Minimize major rewrites; prefer surgical additions to preserve context).
 *   **雙語並列 (Bilingual Structure)**: 中文在上，英文在下。
 
 ---
