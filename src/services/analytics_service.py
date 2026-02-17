@@ -1,19 +1,26 @@
 import pandas as pd
-from src.repositories.snapshot_repository import SqliteSnapshotRepository
-from src.repositories.transaction_repository import SqliteTransactionRepository, ITransactionRepository
-
+from typing import Dict, Any, List, Optional, Union
+from src.repositories.snapshot_repository import SnapshotRepositoryImpl, ISnapshotRepository
+from src.repositories.transaction_repository import TransactionRepositoryImpl, ITransactionRepository
 from src.services.market_data_service import MarketDataService
 from src.utils.time_utils import get_current_date_str
 
 class LeverageCalculator:
-    def __init__(self, repository: ITransactionRepository = None, db_path="data/portfolio.db"):
-        self.repo = repository or SqliteTransactionRepository()
-        # db_path kept for backward compatibility if needed by repo init, though repo handles it
-
-    def calculate_metrics(self, current_prices, user_id):
+    """
+    Service for calculating portfolio leverage and nominal values.
+    計算投資組合槓桿與名義價值的服務。
+    """
+    def __init__(self, repository: Optional[ITransactionRepository] = None, db_path: Optional[str] = None):
         """
-        Calculate Leverage Metrics.
-        計算槓桿水位相關指標 (Calculate Leverage Metrics)。
+        Initialize the calculator.
+        初始化計算器。
+        """
+        self.repo = repository or TransactionRepositoryImpl()
+
+    def calculate_metrics(self, current_prices: Dict[str, float], user_id: str) -> Dict[str, float]:
+        """
+        Calculate weight-based and leverage metrics.
+        計算基於權重與槓桿的指標。
         """
         # 1. Calculate Total Nominal Value (TNV)
         # 1. 計算總名義價值 (TNV)
@@ -33,44 +40,7 @@ class LeverageCalculator:
 
         # 2. Calculate Net Liquidity Value (NLV)
         # 2. 計算淨清算價值 (NLV)
-        cash_flow_sum = self.repo.get_cash_flow_sum(user_id)
-        
-        # Calculate cash impact from transactions (Buy requires cash, Sell gives cash)
-        # However, the previous logic was:
-        # cash_balance = cash_flow_sum + trans_cash_impact
-        # where trans_cash_impact was derived from iterating all transactions.
-        # This logic essentially reconstructs cash balance from history.
-        # Ideally, we should have a get_cash_balance method in repo, 
-        # but for now let's reuse the logic via retrieving all transactions if repo doesn't support it directly yet.
-        # Or better: let's move this calculation to the Repo or Service properly.
-        # Check if we can optimize by fetching simpler data.
-        
-        # Re-implementing the loop using repo's get_all_by_user for now to preserve exact logic logic
-        # TODO: Move this "cash balance calculation" to a dedicated method in Repository
-        transactions = self.repo.get_all_by_user(user_id)
-        
-        trans_cash_impact = 0.0
-        for txn in transactions:
-            # txn is a Row or tuple-like object (sqlalchemy result)
-            # Assuming it allows attribute access or dict access. 
-            # SQLAlchemy Rows are tuple-like but also allow key access.
-            action = txn.action
-            amount = txn.amount
-            
-            if action == 'BUY':
-                trans_cash_impact -= amount
-            elif action == 'SELL':
-                trans_cash_impact += amount
-            elif action == 'DIVIDEND':
-                trans_cash_impact += amount
-            # DEPOSIT and WITHDRAW are handled via cash_flow_sum (from cash_flows table)
-            # preventing double counting.
-            # elif action == 'DEPOSIT':
-            #     trans_cash_impact += amount
-            # elif action == 'WITHDRAWAL' or action == 'WITHDRAW':
-            #     trans_cash_impact -= amount
-
-        cash_balance = cash_flow_sum + trans_cash_impact
+        cash_balance = self.repo.get_cash_balance(user_id)
         nlv = cash_balance + portfolio_value
 
         # 3. Leverage Ratio
@@ -89,13 +59,21 @@ class LeverageCalculator:
         }
 
 class ROIEngine:
-    def __init__(self, repository: ITransactionRepository = None, db_path="data/portfolio.db"):
-        self.repo = repository or SqliteTransactionRepository()
-
-    def calculate_roi(self, nlv, user_id):
+    """
+    Engine for calculating Return on Investment (ROI).
+    計算投資報酬率 (ROI) 的引擎。
+    """
+    def __init__(self, repository: Optional[ITransactionRepository] = None, db_path: Optional[str] = None):
         """
-        Calculate Simple ROI.
-        計算簡單投資報酬率 (Calculate Simple ROI)。
+        Initialize the ROI engine.
+        初始化 ROI 引擎。
+        """
+        self.repo = repository or TransactionRepositoryImpl()
+
+    def calculate_roi(self, nlv: float, user_id: str) -> float:
+        """
+        Calculate simple ROI percentage.
+        計算簡單 ROI 百分比。
         """
         net_invested = self.repo.calculate_net_invested_capital(user_id)
 
@@ -108,14 +86,22 @@ class ROIEngine:
         return roi
 
 class SnapshotRecorder:
-    def __init__(self, db_path="data/portfolio.db"):
-        self.repo = SqliteSnapshotRepository(db_path)
-        self.trans_repo = SqliteTransactionRepository() # Need this for invested capital
-
-    def record_daily_snapshot(self, nlv, cash_balance, user_id, total_tnv=0, leverage_ratio=0):
+    """
+    Service for recording daily financial snapshots.
+    記錄每日財務快照的服務。
+    """
+    def __init__(self, db_path: Optional[str] = None, snapshot_repo: Optional[ISnapshotRepository] = None, trans_repo: Optional[ITransactionRepository] = None):
         """
-        Record Daily Asset Snapshot.
-        記錄每日資產快照。
+        Initialize the recorder.
+        初始化記錄器。
+        """
+        self.repo = snapshot_repo or SnapshotRepositoryImpl(db_path)
+        self.trans_repo = trans_repo or TransactionRepositoryImpl()
+
+    def record_daily_snapshot(self, nlv: float, cash_balance: float, user_id: str, total_tnv: float = 0.0, leverage_ratio: float = 0.0) -> None:
+        """
+        Record a daily asset snapshot to the database.
+        將每日資產快照記錄至資料庫。
         """
         
         net_invested = self.trans_repo.calculate_net_invested_capital(user_id)
@@ -153,13 +139,21 @@ class SnapshotRecorder:
         print(f"Recorded snapshot for {user_id} on {date_str}: NLV=${nlv:,.2f}, PnL=${pnl:,.2f}, Lev={leverage_ratio:.2f}x")
 
 class PnLCalculator:
-    def __init__(self, repository: ITransactionRepository = None, db_path="data/portfolio.db"):
-        self.repo = repository or SqliteTransactionRepository()
-
-    def calculate_breakdown(self, current_prices, user_id):
+    """
+    Calculator for profit and loss (P&L) breakdowns.
+    損益 (P&L) 細項計算器。
+    """
+    def __init__(self, repository: Optional[ITransactionRepository] = None, db_path: Optional[str] = None):
         """
-        Calculate P&L Breakdown.
-        計算損益細分 (Calculate P&L Breakdown)。
+        Initialize the calculator.
+        初始化計算器。
+        """
+        self.repo = repository or TransactionRepositoryImpl()
+
+    def calculate_breakdown(self, current_prices: Dict[str, float], user_id: str) -> Dict[str, Any]:
+        """
+        Calculate realized and unrealized P&L breakdown for each ticker.
+        計算每個標的的已實現與未實現損益細項。
         """
         transactions = self.repo.get_all_by_user(user_id) 
         # Note: interactions returns rows sorted by date DESC generally, checking repo implementation... 
@@ -234,16 +228,16 @@ class PnLCalculator:
             "details": breakdown
         }
 
-def update_daily_snapshot(db_path="data/portfolio.db", user_id=None):
+def update_daily_snapshot(db_path: str = None, user_id: str = None) -> None:
     """
-    Recalculate and update today's performance snapshot (Helper Function).
-    重新計算並更新今日績效快照 (Helper Function)。
+    Recalculate and update today's performance snapshot if not already present.
+    重新計算並更新今日績效快照（若尚未存在）。
     """
     if not user_id:
         return 
 
     # 1. Throttling: Check if today's snapshot exists
-    snapshot_repo = SqliteSnapshotRepository(db_path)
+    snapshot_repo = SnapshotRepositoryImpl(db_path)
     latest = snapshot_repo.get_latest_by_user(user_id)
     today = get_current_date_str()
     
@@ -252,7 +246,7 @@ def update_daily_snapshot(db_path="data/portfolio.db", user_id=None):
         # For SaaS 2026, daily is usually enough, or we check every 4 hours.
         # Let's keep it daily for now to maximize speed.
         return
-    trans_repo = SqliteTransactionRepository()
+    trans_repo = TransactionRepositoryImpl()
     active_tickers = trans_repo.get_active_tickers(user_id)
 
     market_service = MarketDataService()
@@ -271,32 +265,51 @@ def update_daily_snapshot(db_path="data/portfolio.db", user_id=None):
     )
 
 class AnalyticsService:
-    def __init__(self, db_path="data/portfolio.db", user_id=None, repository=None):
+    """
+    Unified service for portfolio analytics and performance tracking.
+    投資組合分析與績效追蹤的統一服務。
+    """
+    def __init__(self, db_path: Optional[str] = None, user_id: Optional[str] = None, repository: Optional[ISnapshotRepository] = None, pnl_calc: Optional[PnLCalculator] = None):
+        """
+        Initialize the analytics service.
+        初始化分析服務。
+        """
         self.db_path = db_path
         self.user_id = user_id
-        self.snapshot_repo = repository or SqliteSnapshotRepository(db_path)
-        # Assuming PnLCalculator and others are initialized internally or via DI if we were strict
-        self.pnl_calculator = PnLCalculator(db_path=db_path)
+        self.snapshot_repo = repository or SnapshotRepositoryImpl(db_path)
+        self.pnl_calculator = pnl_calc or PnLCalculator(db_path=self.db_path)
 
-    def trigger_snapshot_update(self):
-        """Manually trigger a snapshot update."""
+    def trigger_snapshot_update(self) -> None:
+        """
+        Manually trigger a snapshot update for the user.
+        手動觸發使用者的快照更新。
+        """
         if self.user_id:
             update_daily_snapshot(self.db_path, self.user_id)
 
-    def get_pnl_breakdown(self, current_prices):
-        """Calculate PnL Breakdown."""
+    def get_pnl_breakdown(self, current_prices: Dict[str, float]) -> Optional[Dict[str, Any]]:
+        """
+        Get P&L breakdown for the user's portfolio.
+        取得使用者投資組合的損益細項。
+        """
         if not self.user_id:
             return None
         return self.pnl_calculator.calculate_breakdown(current_prices, self.user_id)
 
-    def get_performance_history(self):
-        """Get historical performance data (snapshots)."""
+    def get_performance_history(self) -> Optional[pd.DataFrame]:
+        """
+        Get historical performance snapshots for the user.
+        取得使用者的歷史績效快照。
+        """
         if not self.user_id:
             return None
         return self.snapshot_repo.get_history_by_user(self.user_id)
 
-    def get_latest_performance(self):
-        """Get latest performance data."""
+    def get_latest_performance(self) -> Optional[Union[pd.Series, Dict[str, Any]]]:
+        """
+        Get the latest available performance data for the user.
+        取得使用者的最新績效數據。
+        """
         if not self.user_id:
             return None
         return self.snapshot_repo.get_latest_by_user(self.user_id)
