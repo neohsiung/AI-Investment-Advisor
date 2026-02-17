@@ -38,5 +38,5 @@ httpx==0.25.1
 redis==5.0.1
 
 # Broker APIs
-futu-api==6.12.3908
+futu-api==8.7.4708
 ib_insync==1.1dev2
