@@ -10,9 +10,16 @@ from src.services.settings_service import SettingsService
 class FMPProvider(MarketDataProvider):
     """
     Financial Modeling Prep Data Provider.
+    Financial Modeling Prep 數據提供者。
+    
     Requires FMP_API_KEY env var or DB setting.
+    需要 FMP_API_KEY 環境變數或資料庫設定。
     """
     def __init__(self, api_key: str = None, user_id: str = None, settings_service: SettingsService = None):
+        """
+        Initialize the FMP provider.
+        初始化 FMP 提供者。
+        """
         self.logger = setup_logger("FMPProvider")
         
         # Resolve Settings
@@ -27,6 +34,10 @@ class FMPProvider(MarketDataProvider):
             self.logger.warning("FMP_API_KEY not found.")
 
     def fetch_current_prices(self, tickers: List[str]) -> Dict[str, float]:
+        """
+        Fetch current stock prices in bulk using FMP's stable quote endpoint.
+        使用 FMP 的穩定報價端點批次獲取目前股價。
+        """
         if not self.api_key or not tickers: return {}
         prices = {}
         
@@ -56,10 +67,17 @@ class FMPProvider(MarketDataProvider):
         return prices
 
     def fetch_history(self, ticker: str, period: str = "1y", days: int = None) -> pd.DataFrame:
-        # FMP History
+        """
+        Fetch historical price data. (Currently not implemented for FMP).
+        獲取歷史價格數據（目前 FMP 未實作）。
+        """
         return pd.DataFrame()
 
     def fetch_news(self, ticker: str, limit: int = 5) -> List[Dict[str, Any]]:
+        """
+        Fetch financial news for a specific stock.
+        獲取特定股票的財經新聞。
+        """
         if not self.api_key: return []
         try:
              url = f"{self.base_url}/stock_news"
@@ -81,6 +99,10 @@ class FMPProvider(MarketDataProvider):
         return []
 
     def fetch_info(self, ticker: str) -> Dict[str, Any]:
+        """
+        Fetch company profile and fundamental information.
+        獲取公司概況與基本面資訊。
+        """
         if not self.api_key: return {}
         try:
             url = f"{self.base_url}/profile/{ticker}"

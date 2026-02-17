@@ -1,19 +1,63 @@
-
 import yfinance as yf
 import pandas as pd
+from abc import ABC, abstractmethod
 from typing import Dict, Any, List, Optional
 from src.utils.logger import setup_logger
 
-class MarketDataRepository:
+class IMarketDataRepository(ABC):
+    """
+    Interface for Market Data Repository.
+    市場數據儲存庫介面。
+    """
+    @abstractmethod
+    def fetch_current_prices(self, tickers: List[str]) -> Dict[str, float]:
+        """
+        Fetch latest closing prices for a list of tickers.
+        取得一系列標的的最新收盤價。
+        """
+        pass
+
+    @abstractmethod
+    def fetch_history(self, ticker: str, period: str = "1y", days: Optional[int] = None) -> pd.DataFrame:
+        """
+        Fetch historical data for a ticker.
+        取得標的的歷史數據。
+        """
+        pass
+
+    @abstractmethod
+    def fetch_news(self, ticker: str, limit: int = 5) -> List[Dict[str, Any]]:
+        """
+        Fetch news for a specific ticker.
+        取得特定標體的新聞。
+        """
+        pass
+
+    @abstractmethod
+    def fetch_info(self, ticker: str) -> Dict[str, Any]:
+        """
+        Fetch fundamental information for a ticker.
+        取得標底的基本面資訊。
+        """
+        pass
+
+class MarketDataRepositoryImpl(IMarketDataRepository):
     """
     Repository for fetching market data from external sources (e.g., yfinance).
-    Implements the Interface Adapter layer.
+    從外部來源（如 yfinance）獲取市場數據的儲存庫。
     """
     def __init__(self):
+        """
+        Initialize the repository.
+        初始化儲存庫。
+        """
         self.logger = setup_logger("MarketDataRepo")
 
     def fetch_current_prices(self, tickers: List[str]) -> Dict[str, float]:
-        """Fetch latest closing prices for a list of tickers."""
+        """
+        Fetch latest closing prices for a list of tickers.
+        取得一系列標的的最新收盤價。
+        """
         if not tickers:
             return {}
         
@@ -28,7 +72,7 @@ class MarketDataRepository:
                     # Handle Series vs Scalar
                     if isinstance(val, pd.Series):
                         val = val.item()
-                    prices[ticker] = val
+                    prices[ticker] = float(val)
             else:
                 if not data.empty and 'Close' in data.columns:
                     close_data = data['Close']
@@ -36,14 +80,17 @@ class MarketDataRepository:
                         if ticker in close_data.columns:
                             val = close_data[ticker].iloc[-1]
                             if pd.notna(val):
-                                prices[ticker] = val
+                                prices[ticker] = float(val)
             return prices
         except Exception as e:
             self.logger.error(f"Error fetching prices: {e}")
             return {}
 
-    def fetch_history(self, ticker: str, period: str = "1y", days: int = None) -> pd.DataFrame:
-        """Fetch historical data."""
+    def fetch_history(self, ticker: str, period: str = "1y", days: Optional[int] = None) -> pd.DataFrame:
+        """
+        Fetch historical data for a ticker.
+        取得標的的歷史數據。
+        """
         try:
             p = period
             if days:
@@ -56,7 +103,10 @@ class MarketDataRepository:
             return pd.DataFrame()
 
     def fetch_news(self, ticker: str, limit: int = 5) -> List[Dict[str, Any]]:
-        """Fetch news for a ticker."""
+        """
+        Fetch news for a specific ticker.
+        取得特定標體的新聞。
+        """
         try:
             t = yf.Ticker(ticker)
             news = t.news
@@ -66,10 +116,16 @@ class MarketDataRepository:
             return []
 
     def fetch_info(self, ticker: str) -> Dict[str, Any]:
-        """Fetch fundamental info."""
+        """
+        Fetch fundamental information for a ticker.
+        取得標底的基本面資訊。
+        """
         try:
             t = yf.Ticker(ticker)
             return t.info
         except Exception as e:
             self.logger.error(f"Error fetching info for {ticker}: {e}")
             return {}
+
+# Legacy alias
+MarketDataRepository = MarketDataRepositoryImpl

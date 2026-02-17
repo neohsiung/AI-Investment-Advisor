@@ -1,112 +1,199 @@
-import sqlite3
 import datetime
 import uuid
 import logging
-from src.data.database import get_db_connection
+from abc import ABC, abstractmethod
+from typing import Optional, Dict, Any, AnyStr
+from sqlalchemy import text, desc, or_
+from src.data.database import BaseRepository, get_db_engine
+from src.data.models import ChannelVerification
 
 logger = logging.getLogger(__name__)
 
-class VerificationRepository:
-    def __init__(self, db_path="data/portfolio.db"):
-        self.db_path = db_path
-        self._init_table()
-
-    def _init_table(self):
-        query = """
-        CREATE TABLE IF NOT EXISTS channel_verifications (
-            id TEXT PRIMARY KEY,
-            user_id TEXT,
-            channel TEXT,
-            code TEXT,
-            status TEXT DEFAULT 'pending',
-            error_message TEXT,
-            expires_at TIMESTAMP,
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-        );
+class IVerificationRepository(ABC):
+    """
+    Interface for Verification Repository.
+    驗證儲存庫介面。
+    """
+    @abstractmethod
+    def create_verification(self, user_id: str, channel: str, channel_user_id: str, code: str, expires_at: datetime.datetime) -> None:
         """
-        try:
-            with get_db_connection(self.db_path) as conn:
-                conn.execute(query)
-                conn.commit()
-        except Exception as e:
-            logger.error(f"Failed to init channel_verifications table: {e}")
-
-    def create_verification(self, user_id: str, channel: str, code: str, expires_at: datetime.datetime):
-        verification_id = str(uuid.uuid4())
-        query = """
-        INSERT INTO channel_verifications (id, user_id, channel, code, status, expires_at)
-        VALUES (?, ?, ?, ?, 'pending', ?)
+        Create a new verification record.
+        建立新的驗證記錄。
         """
+        pass
+
+    @abstractmethod
+    def get_by_code(self, channel: str, code: str) -> Optional[Dict[str, Any]]:
+        """
+        Get a pending verification by channel and code.
+        依頻道與代碼取得待處理的驗證。
+        """
+        pass
+
+    @abstractmethod
+    def get_by_user_id(self, user_id: str, channel: str) -> Optional[Dict[str, Any]]:
+        """
+        Get the latest verification for a user.
+        取得使用者的最新驗證。
+        """
+        pass
+
+    @abstractmethod
+    def get_pending_verification(self, user_id: str, channel: str) -> Optional[Dict[str, Any]]:
+        """
+        Get a pending, non-expired verification for a specific channel.
+        取得特定頻道且未過期的待處理驗證。
+        """
+        pass
+
+    @abstractmethod
+    def get_any_pending_verification(self, user_id: str) -> Optional[Dict[str, Any]]:
+        """
+        Get any pending, non-expired verification for a user.
+        取得使用者任何頻道的待處理驗證。
+        """
+        pass
+
+    @abstractmethod
+    def update_status(self, verification_id: str, status: str, error_message: str = None) -> bool:
+        """
+        Update the status of a verification.
+        更新驗證狀態。
+        """
+        pass
+
+    @abstractmethod
+    def get_verification_by_id(self, verification_id: str) -> Optional[Dict[str, Any]]:
+        """
+        Get a verification record by ID.
+        依 ID 取得驗證記錄。
+        """
+        pass
+
+class VerificationRepositoryImpl(BaseRepository, IVerificationRepository):
+    """
+    Implementation of IVerificationRepository using SQLAlchemy ORM.
+    使用 SQLAlchemy ORM 實作的 IVerificationRepository。
+    """
+    def __init__(self, db_path: str = None, engine: Any = None):
+        """
+        Initialize the repository.
+        初始化儲存庫。
+        """
+        BaseRepository.__init__(self, engine or get_db_engine(db_path))
+
+    def create_verification(self, user_id: str, channel: str, channel_user_id: str, code: str, expires_at: datetime.datetime) -> None:
+        """
+        Create a new verification record (ORM).
+        建立新的驗證記錄 (ORM)。
+        """
+        session = self.session
         try:
-            with get_db_connection(self.db_path) as conn:
-                conn.execute(query, (verification_id, user_id, channel, code, expires_at))
-                conn.commit()
-            return verification_id
+            verif = ChannelVerification(
+                id=str(uuid.uuid4()),
+                user_id=str(user_id),
+                channel=channel,
+                channel_user_id=str(channel_user_id),
+                code=code,
+                expires_at=expires_at
+            )
+            session.add(verif)
+            session.commit()
         except Exception as e:
+            session.rollback()
             logger.error(f"Failed to create verification: {e}")
-            return None
+            raise
 
-    def get_pending_verification(self, user_id: str, channel: str):
-        query = """
-        SELECT * FROM channel_verifications 
-        WHERE user_id = ? AND channel = ? AND status = 'pending' AND expires_at > CURRENT_TIMESTAMP
-        ORDER BY created_at DESC LIMIT 1
+    def get_by_code(self, channel: str, code: str) -> Optional[Dict[str, Any]]:
         """
-        try:
-            with get_db_connection(self.db_path) as conn:
-                row = conn.execute(query, (user_id, channel)).fetchone()
-                return self._row_to_dict(row) if row else None
-        except Exception as e:
-            logger.error(f"Failed to get pending verification: {e}")
-            return None
+        Get a pending verification by channel and code (ORM).
+        依頻道與代碼取得待處理的驗證 (ORM)。
+        """
+        verif = self.session.query(ChannelVerification).filter_by(
+            channel=channel, code=code, status='pending'
+        ).first()
+        return self._to_dict(verif) if verif else None
 
-    def get_any_pending_verification(self, user_id: str):
-        query = """
-        SELECT * FROM channel_verifications 
-        WHERE user_id = ? AND status = 'pending' AND expires_at > CURRENT_TIMESTAMP
-        ORDER BY created_at DESC LIMIT 1
+    def get_by_user_id(self, user_id: str, channel: str) -> Optional[Dict[str, Any]]:
         """
-        try:
-            with get_db_connection(self.db_path) as conn:
-                row = conn.execute(query, (user_id,)).fetchone()
-                return self._row_to_dict(row) if row else None
-        except Exception as e:
-            logger.error(f"Failed to get any pending verification: {e}")
-            return None
+        Get the latest verification for a user (ORM).
+        取得使用者的最新驗證 (ORM)。
+        """
+        verif = self.session.query(ChannelVerification).filter_by(
+            user_id=user_id, channel=channel
+        ).order_by(desc(ChannelVerification.created_at)).first()
+        return self._to_dict(verif) if verif else None
 
-    def update_status(self, verification_id: str, status: str, error_message: str = None):
-        query = """
-        UPDATE channel_verifications 
-        SET status = ?, error_message = ?
-        WHERE id = ?
+    def get_pending_verification(self, user_id: str, channel: str) -> Optional[Dict[str, Any]]:
         """
+        Get a pending, non-expired verification for a specific channel (ORM).
+        取得特定頻道且未過期的待處理驗證 (ORM)。
+        """
+        verif = self.session.query(ChannelVerification).filter(
+            or_(ChannelVerification.user_id == user_id, ChannelVerification.channel_user_id == user_id),
+            ChannelVerification.channel == channel,
+            ChannelVerification.status == 'pending',
+            ChannelVerification.expires_at > datetime.datetime.now(datetime.timezone.utc)
+        ).order_by(desc(ChannelVerification.created_at)).first()
+        return self._to_dict(verif) if verif else None
+
+    def get_any_pending_verification(self, user_id: str) -> Optional[Dict[str, Any]]:
+        """
+        Get any pending, non-expired verification for a user (ORM).
+        取得使用者任何頻道的待處理驗證 (ORM)。
+        """
+        verif = self.session.query(ChannelVerification).filter(
+            or_(ChannelVerification.user_id == user_id, ChannelVerification.channel_user_id == user_id),
+            ChannelVerification.status == 'pending',
+            ChannelVerification.expires_at > datetime.datetime.now(datetime.timezone.utc)
+        ).order_by(desc(ChannelVerification.created_at)).first()
+        return self._to_dict(verif) if verif else None
+
+    def update_status(self, verification_id: str, status: str, error_message: str = None) -> bool:
+        """
+        Update the status of a verification (ORM).
+        更新驗證狀態 (ORM)。
+        """
+        session = self.session
         try:
-            with get_db_connection(self.db_path) as conn:
-                conn.execute(query, (status, error_message, verification_id))
-                conn.commit()
-            return True
+            verif = session.get(ChannelVerification, verification_id)
+            if verif:
+                verif.status = status
+                verif.error_message = error_message
+                session.commit()
+                return True
+            return False
         except Exception as e:
+            session.rollback()
             logger.error(f"Failed to update verification status: {e}")
             return False
-            
-    def get_verification_by_id(self, verification_id: str):
-        query = "SELECT * FROM channel_verifications WHERE id = ?"
-        try:
-            with get_db_connection(self.db_path) as conn:
-                row = conn.execute(query, (verification_id,)).fetchone()
-                return self._row_to_dict(row) if row else None
-        except Exception as e:
-             logger.error(f"Failed to get verification by id: {e}")
-             return None
 
-    def _row_to_dict(self, row):
+    def get_verification_by_id(self, verification_id: str) -> Optional[Dict[str, Any]]:
+        """
+        Get a verification record by ID (ORM).
+        依 ID 取得驗證記錄 (ORM)。
+        """
+        verif = self.session.get(ChannelVerification, verification_id)
+        return self._to_dict(verif) if verif else None
+
+    def _to_dict(self, model: ChannelVerification) -> Dict[str, Any]:
+        """
+        Model to dict utility.
+        Model 轉 Dict 工具。
+        """
+        if not model: return None
         return {
-            "id": row[0],
-            "user_id": row[1],
-            "channel": row[2],
-            "code": row[3],
-            "status": row[4],
-            "error_message": row[5],
-            "expires_at": row[6],
-            "created_at": row[7]
+            "id": model.id,
+            "user_id": model.user_id,
+            "channel": model.channel,
+            "channel_user_id": model.channel_user_id,
+            "code": model.code,
+            "status": model.status,
+            "error_message": model.error_message,
+            "expires_at": model.expires_at,
+            "created_at": model.created_at
         }
+
+# Legacy alias
+# @deprecated: Use VerificationRepositoryImpl
+VerificationRepository = VerificationRepositoryImpl

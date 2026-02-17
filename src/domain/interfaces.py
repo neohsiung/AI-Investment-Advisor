@@ -72,8 +72,16 @@ class IChannelAdapter(ABC):
     @abstractmethod
     def register_callback(self, callback_func: Any) -> None:
         """
-        Register a callback function for user interactions.
+        Register a callback function for user interactions (e.g. Button clicks).
         Func signature: (request_id, action) -> None
+        """
+        pass
+
+    @abstractmethod
+    def register_text_callback(self, callback_func: Any) -> None:
+        """
+        Register a callback function for incoming text messages.
+        Func signature: (adapter, user_id, text) -> None
         """
         pass
 
@@ -94,5 +102,17 @@ class IIntentClassifier(ABC):
     def classify(self, text: str) -> str:
         """
         Returns: "APPROVE", "REJECT", or "UNKNOWN"
+        """
+        pass
+
+class INotificationFilter(ABC):
+    """
+    Interface for filtering notifications before sending.
+    通知過濾介面。
+    """
+    @abstractmethod
+    def should_notify(self, adapter: IChannelAdapter, category: str) -> bool:
+        """
+        Returns True if the notification should be sent through the given adapter.
         """
         pass

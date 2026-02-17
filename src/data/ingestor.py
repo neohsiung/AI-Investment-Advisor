@@ -10,7 +10,7 @@ class TradeIngestor:
     負責將外部交易數據 (CSV) 匯入至資料庫。
     Support Brokers: Simple, Robinhood, IBKR.
     """
-    def __init__(self, db_path="data/portfolio.db"):
+    def __init__(self, db_path=None):
         self.db_path = db_path
 
     def ingest_csv(self, file_path, broker, user_id):

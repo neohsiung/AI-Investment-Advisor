@@ -5,7 +5,7 @@ from src.data.feedback_store import FeedbackStore
 import json
 from datetime import datetime
 
-class SqliteFeedbackRepository(FeedbackRepository):
+class FeedbackRepositoryImpl(FeedbackRepository):
     """
     Adapter implementation of FeedbackRepository using SQLAlchemy (via FeedbackStore).
     """

@@ -9,10 +9,17 @@ from src.services.settings_service import SettingsService
 
 class PolygonProvider(MarketDataProvider):
     """
-    Polygon.io Data Provider.
+    Polygon.io Data Provider for stock snapshots and historical data.
+    Polygon.io 股票快照與歷史數據提供者。
+    
     Requires POLYGON_API_KEY env var or DB setting.
+    需要 POLYGON_API_KEY 環境變數或資料庫設定。
     """
     def __init__(self, api_key: str = None, user_id: str = None, settings_service: SettingsService = None):
+        """
+        Initialize the Polygon provider.
+        初始化 Polygon 提供者。
+        """
         self.logger = setup_logger("PolygonProvider")
         
         # Resolve Settings
@@ -27,13 +34,12 @@ class PolygonProvider(MarketDataProvider):
             self.logger.warning("POLYGON_API_KEY not found. Some features may fail.")
 
     def fetch_current_prices(self, tickers: List[str]) -> Dict[str, float]:
+        """
+        Fetch current stock prices using Polygon's snapshot API.
+        使用 Polygon 的快照 API 獲取目前股價。
+        """
         if not self.api_key: return {}
         prices = {}
-        # Polygon Snapshot API (All tickers) is efficient but might be overkill.
-        # Loop for now, optimize later or use Snapshot.
-        # Polygon Snapshot API (所有代號) 很有效率但可能過於繁重。
-        # 目前先用迴圈，之後再優化或改用 Snapshot。
-        # Using Snapshot - Ticker
         try:
             for ticker in tickers:
                 url = f"{self.base_url}/v2/snapshot/locale/us/markets/stocks/tickers/{ticker}"
@@ -42,7 +48,6 @@ class PolygonProvider(MarketDataProvider):
                 if resp.status_code == 200:
                     data = resp.json()
                     # Snapshot response: ticker.lastTrade.p or ticker.min.c (close)
-                    # Snapshot 回應：ticker.lastTrade.p 或 ticker.min.c (收盤價)
                     if 'ticker' in data and 'lastTrade' in data['ticker']:
                         val = data['ticker']['lastTrade']['p']
                         if val > 0:
@@ -53,7 +58,6 @@ class PolygonProvider(MarketDataProvider):
                              prices[ticker] = val
                     
                     # Fallback: internal prevDay (Efficient)
-                    # Fallback: 內部 prevDay (高效)
                     if ticker not in prices and 'ticker' in data and 'prevDay' in data['ticker']:
                         val = data['ticker']['prevDay']['c']
                         if val > 0:
@@ -71,7 +75,10 @@ class PolygonProvider(MarketDataProvider):
         return prices
 
     def _fetch_prev_close(self, ticker: str) -> float:
-        """Fetch previous day's close price as fallback."""
+        """
+        Fetch the previous day's close price as a fallback.
+        獲取前一交易日收盤價作為備援。
+        """
         try:
             url = f"{self.base_url}/v2/aggs/ticker/{ticker}/prev"
             params = {"adjusted": "true", "apiKey": self.api_key}
@@ -86,6 +93,10 @@ class PolygonProvider(MarketDataProvider):
         return 0.0
 
     def fetch_history(self, ticker: str, period: str = "1y", days: int = None) -> pd.DataFrame:
+        """
+        Fetch historical OHLCV data for a ticker.
+        獲取標的的歷史 OHLCV 數據。
+        """
         if not self.api_key: return pd.DataFrame()
         try:
             # Map period/days to 'from' date. 
@@ -117,6 +128,10 @@ class PolygonProvider(MarketDataProvider):
         return pd.DataFrame()
 
     def fetch_news(self, ticker: str, limit: int = 5) -> List[Dict[str, Any]]:
+        """
+        Fetch the latest stock news via Polygon's news API.
+        透過 Polygon 的新聞 API 獲取最新股票新聞。
+        """
         if not self.api_key: return []
         try:
             url = f"{self.base_url}/v2/reference/news"
@@ -138,6 +153,10 @@ class PolygonProvider(MarketDataProvider):
         return []
 
     def fetch_info(self, ticker: str) -> Dict[str, Any]:
+        """
+        Fetch ticker reference information (company profile).
+        獲取標的參考資訊（公司概況）。
+        """
         if not self.api_key: return {}
         try:
              url = f"{self.base_url}/v3/reference/tickers/{ticker}"

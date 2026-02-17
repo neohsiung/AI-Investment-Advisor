@@ -12,13 +12,6 @@ class FeedbackStore:
     def save_example(self, agent_name: str, context_embedding: list, response_text: str, outcome_score: float, context_text: str = None):
         """
         Save a feedback example with vector embedding.
-        
-        Args:
-            agent_name: Name of the agent.
-            context_embedding: List of floats representing the vector.
-            response_text: The actual response content.
-            outcome_score: Evaluation score (e.g., -1.0 to 1.0).
-            context_text: The input context (JSON string).
         """
         conn = get_db_connection(self.db_path)
         try:
@@ -30,17 +23,15 @@ class FeedbackStore:
             conn.execute(query, {
                 "id": str(uuid.uuid4()),
                 "agent_name": agent_name,
-                "embedding": str(context_embedding), # pgvector expects string representation
+                "embedding": str(context_embedding) if context_embedding else None,
                 "context_text": context_text,
                 "response": response_text,
                 "score": outcome_score,
-                "timestamp": datetime.now().isoformat()
+                "timestamp": datetime.now()
             })
             conn.commit()
         except Exception as e:
-            # Check if it's a "no such table" error (sqlite fallback)
-            # or vector type error
-            print(f"FeedbackStore Save Error: {e}")
+            logger.error(f"FeedbackStore Save Error: {e}")
             raise e
         finally:
             conn.close()

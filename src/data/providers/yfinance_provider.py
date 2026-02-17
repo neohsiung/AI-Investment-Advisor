@@ -6,13 +6,24 @@ from src.utils.logger import setup_logger
 
 class YFinanceProvider(MarketDataProvider):
     """
-    YFinance Provider (Wrapper around yfinance).
+    YFinance Provider (Wrapper around yfinance) for free market data access.
+    YFinance 提供者（yfinance 封裝），用於免費獲取市場數據。
+    
     Acts as the legacy/backup solution.
+    作為過往/備援解決方案。
     """
-    def __init__(self):
+    def __init__(self) -> None:
+        """
+        Initialize the YFinance provider.
+        初始化 YFinance 提供者。
+        """
         self.logger = setup_logger("YFinanceProvider")
 
     def fetch_current_prices(self, tickers: List[str]) -> Dict[str, float]:
+        """
+        Fetch current stock prices using yfinance (bulk download with individual fallback).
+        使用 yfinance 獲取目前股價（批次下載並含個別備援）。
+        """
         if not tickers: return {}
         prices = {}
         
@@ -63,6 +74,10 @@ class YFinanceProvider(MarketDataProvider):
         return prices
 
     def fetch_history(self, ticker: str, period: str = "1y", days: int = None) -> pd.DataFrame:
+        """
+        Fetch historical OHLCV data using yfinance.
+        使用 yfinance 獲取歷史 OHLCV 數據。
+        """
         try:
             p = period
             if days:
@@ -73,6 +88,10 @@ class YFinanceProvider(MarketDataProvider):
             return pd.DataFrame()
 
     def fetch_news(self, ticker: str, limit: int = 5) -> List[Dict[str, Any]]:
+        """
+        Fetch stock-related news using yfinance.
+        使用 yfinance 獲取股票相關新聞。
+        """
         try:
             t = yf.Ticker(ticker)
             news = t.news
@@ -112,6 +131,10 @@ class YFinanceProvider(MarketDataProvider):
             return []
 
     def fetch_info(self, ticker: str) -> Dict[str, Any]:
+        """
+        Fetch fundamental company information using yfinance.
+        使用 yfinance 獲取公司基本面資訊。
+        """
         try:
             t = yf.Ticker(ticker)
             info = t.info

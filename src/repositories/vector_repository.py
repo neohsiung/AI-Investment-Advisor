@@ -1,36 +1,77 @@
 import logging
 import uuid
 import json
-from typing import List, Dict, Optional
+from abc import ABC, abstractmethod
+from typing import List, Dict, Optional, Any
 from datetime import datetime
 from sqlalchemy import text
-from src.data.database import get_db_connection
+from src.data.database import BaseRepository, get_db_engine
 
 logger = logging.getLogger(__name__)
 
-class VectorRepository:
+class IVectorRepository(ABC):
     """
-    Repository for handling Vector Database operations (PGVector).
-    Supports `memory_embeddings` and `council_minutes`.
+    Interface for Vector Repository.
+    向量儲存庫介面。
     """
-
-    def __init__(self):
+    @abstractmethod
+    def add_memory(self, user_id: str, category: str, content: str, embedding: List[float], metadata: Dict = {}) -> str:
+        """
+        Inserts a new memory item with vector embedding.
+        新增帶有向量嵌入的記憶項目。
+        """
         pass
 
+    @abstractmethod
+    def search_memory(self, user_id: str, embedding: List[float], top_k: int = 5, threshold: float = 0.7) -> List[Dict]:
+        """
+        Searches similar memories using vector similarity.
+        使用向量相似度搜尋相似記憶。
+        """
+        pass
+
+    @abstractmethod
+    def add_council_minute(self, session_id: str, topic: str, participants: List[str], consensus: str, transcript: str, embedding: List[float]) -> str:
+        """
+        Logs a Council Session with vector embedding.
+        記錄帶有向量嵌入的議會會議記錄。
+        """
+        pass
+
+    @abstractmethod
+    def search_similar_minutes_by_embedding(self, embedding: List[float], limit: int = 1, threshold: float = 0.7) -> List[Dict]:
+        """
+        Retrieves past council minutes based on embedding similarity.
+        根據嵌入相似度檢索過去的議會記錄。
+        """
+        pass
+
+class VectorRepositoryImpl(BaseRepository, IVectorRepository):
+    """
+    Repository for handling Vector Database operations (PGVector/SQLite-Vec).
+    處理向量資料庫呈現 (PGVector/SQLite-Vec) 的儲存庫。
+    """
+    def __init__(self, engine: Any = None):
+        """
+        Initialize the repository.
+        初始化儲存庫。
+        """
+        BaseRepository.__init__(self, engine or get_db_engine())
+
     def _ensure_string_embedding(self, embedding: List[float]) -> str:
-        """Converts list to string format '[x,y,z]' for SQL insertion."""
+        """
+        Converts list to string format '[x,y,z]' for SQL insertion.
+        將列表轉換為字串格式以供 SQL 插入。
+        """
         return str(embedding)
 
     def add_memory(self, user_id: str, category: str, content: str, embedding: List[float], metadata: Dict = {}) -> str:
         """
-        Inserts a new memory item.
+        Inserts a new memory item with vector embedding.
+        新增帶有向量嵌入的記憶項目。
         """
-        conn = get_db_connection()
         new_id = str(uuid.uuid4())
-        try:
-            # Check if Postgres or SQLite
-            is_sqlite = 'sqlite' in str(conn.engine.url)
-            
+        with self.engine.begin() as conn:
             query = text("""
                 INSERT INTO memory_embeddings (id, user_id, timestamp, category, content, embedding, metadata)
                 VALUES (:id, :uid, :ts, :cat, :cont, :emb, :meta)
@@ -45,28 +86,19 @@ class VectorRepository:
                 "emb": self._ensure_string_embedding(embedding),
                 "meta": json.dumps(metadata)
             })
-            conn.commit()
             return new_id
-        except Exception as e:
-            logger.error(f"VectorRepo: Error adding memory: {e}")
-            raise
-        finally:
-            conn.close()
 
     def search_memory(self, user_id: str, embedding: List[float], top_k: int = 5, threshold: float = 0.7) -> List[Dict]:
         """
-        Searches similar memories using Cosine Similarity.
-        For SQLite, returns empty list (Vector Search not supported).
+        Searches similar memories using vector similarity.
+        使用向量相似度搜尋相似記憶。
         """
-        conn = get_db_connection()
-        try:
-            is_sqlite = 'sqlite' in str(conn.engine.url)
-            if is_sqlite:
-                logger.warning("VectorRepo: SQLite detected, vector search skipped.")
-                return []
+        if self.is_sqlite:
+            logger.warning("VectorRepo: SQLite detected, vector search skipped.")
+            return []
 
+        with self.engine.connect() as conn:
             # PGVector Cosine Similarity: 1 - (a <=> b)
-            # We filter by similarity > threshold
             query = text("""
                 SELECT id, content, category, metadata, 1 - (embedding <=> :emb) as similarity
                 FROM memory_embeddings
@@ -85,29 +117,22 @@ class VectorRepository:
 
             results = []
             for row in rows:
-                # Row access by index
                 results.append({
-                    "id": row[0],
-                    "content": row[1],
-                    "category": row[2],
-                    "metadata": json.loads(row[3]) if row[3] else {},
-                    "similarity": row[4]
+                    "id": row.id,
+                    "content": row.content,
+                    "category": row.category,
+                    "metadata": json.loads(row.metadata) if row.metadata else {},
+                    "similarity": row.similarity
                 })
             return results
 
-        except Exception as e:
-            logger.error(f"VectorRepo: Search failed: {e}")
-            return []
-        finally:
-            conn.close()
-
     def add_council_minute(self, session_id: str, topic: str, participants: List[str], consensus: str, transcript: str, embedding: List[float]) -> str:
         """
-        Logs a Council Session.
+        Logs a Council Session with vector embedding.
+        記錄帶有向量嵌入的議會會議記錄。
         """
-        conn = get_db_connection()
         new_id = str(uuid.uuid4())
-        try:
+        with self.engine.begin() as conn:
             query = text("""
                 INSERT INTO council_minutes (id, session_id, timestamp, topic, participants, consensus_decision, full_transcript, embedding)
                 VALUES (:id, :sid, :ts, :topic, :parts, :decision, :transcript, :emb)
@@ -123,44 +148,17 @@ class VectorRepository:
                 "transcript": transcript,
                 "emb": self._ensure_string_embedding(embedding)
             })
-            conn.commit()
             return new_id
-        except Exception as e:
-            logger.error(f"VectorRepo: Error adding minute: {e}")
-            raise
-        finally:
-            conn.close()
-    def search_similar_minutes(self, topic: str, limit: int = 1, threshold: float = 0.7) -> List[Dict]:
-        """
-        Retrieves past council minutes based on topic similarity.
-        Warning: Requires a real embedding model. For now we assume the 'topic' is already an embedding
-        or we skip if it's just a string in this refactor step (since we don't have an embedder here).
-
-        To make this functional:
-        1. We need an Embedder Service (e.g. OpenAI).
-        2. Here we will mock it or rely on the caller to provide embedding if topic is a list.
-        """
-        # NOTE: This signature is being updated to accept embedding or we need to embed inside.
-        # For this step, let's assume valid embedding is passed or we return empty if string.
-        # In a real app, `src.infrastructure.llm_provider` should generate the embedding.
-        
-        # Temporary safeguard: If topic is string, we can't search without embedding provider.
-        # So we return empty list to prevent crash, unless we integrate embedding here.
-        # Let's return empty for now to satisfy the call in CouncilService, 
-        # but mark for next iteration to add EmbeddingService.
-        logger.warning("VectorRepo: search_similar_minutes called without embedding service. Returning empty.")
-        return []
 
     def search_similar_minutes_by_embedding(self, embedding: List[float], limit: int = 1, threshold: float = 0.7) -> List[Dict]:
         """
-        True retrieval logic using embedding vector.
+        Retrieves past council minutes based on embedding similarity.
+        根據嵌入相似度檢索過去的議會記錄。
         """
-        conn = get_db_connection()
-        try:
-            is_sqlite = 'sqlite' in str(conn.engine.url)
-            if is_sqlite:
-                return []
+        if self.is_sqlite:
+            return []
 
+        with self.engine.connect() as conn:
             query = text("""
                 SELECT id, topic, consensus_decision, full_transcript, 1 - (embedding <=> :emb) as similarity
                 FROM council_minutes
@@ -176,15 +174,14 @@ class VectorRepository:
             }).fetchall()
             
             return [{
-                "id": row[0],
-                "topic": row[1],
-                "consensus": row[2],
-                "transcript": row[3],
-                "similarity": row[4]
+                "id": row.id,
+                "topic": row.topic,
+                "consensus": row.consensus_decision,
+                "transcript": row.full_transcript,
+                "similarity": row.similarity
             } for row in rows]
-            
-        except Exception as e:
-            logger.error(f"VectorRepo: Search minutes failed: {e}")
-            return []
-        finally:
-            conn.close()
+
+# Legacy alias
+# @deprecated: Use VectorRepositoryImpl
+SqliteVectorRepository = VectorRepositoryImpl
+VectorRepository = VectorRepositoryImpl
