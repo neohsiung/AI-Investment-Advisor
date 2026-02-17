@@ -1,42 +1,42 @@
-pandas
-pytest
-streamlit
-plotly
-schedule
-python-dotenv
-requests
-yfinance
-pytz
-pytest-cov
-pytest-mock
-freezegun
-SQLAlchemy
-psycopg2-binary
-multitasking<0.0.12
-bandit
-pip-licenses
-google-auth
-google-auth-oauthlib
-google-auth-httplib2
-Jinja2>=3.1.0
-fredapi
-beautifulsoup4
-markdown
-extra-streamlit-components
+pandas==2.1.1
+pytest==7.4.3
+streamlit==1.30.0
+plotly==5.18.0
+schedule==1.2.1
+python-dotenv==1.0.0
+requests==2.31.0
+yfinance==0.2.31
+pytz==2023.3.post1
+pytest-cov==4.1.0
+pytest-mock==3.12.0
+freezegun==1.2.2
+SQLAlchemy==2.0.23
+psycopg2-binary==2.9.9
+multitasking==0.0.11
+bandit==1.7.5
+pip-licenses==4.3.3
+google-auth==2.23.4
+google-auth-oauthlib==1.1.0
+google-auth-httplib2==0.1.1
+Jinja2==3.1.2
+fredapi==0.5.1
+beautifulsoup4==4.12.2
+markdown==3.5.1
+extra-streamlit-components==0.1.70
 
 # v3.0 Dependencies
-dspy; python_version >= "3.9"
-pgvector
-duckduckgo-search
-tavily-python
-line-bot-sdk
+dspy==2.5.1; python_version >= "3.9"
+pgvector==0.2.4
+duckduckgo-search==3.9.3
+tavily-python==0.2.7
+line-bot-sdk==3.6.0
 
 # MCP Microservice
-fastapi
-uvicorn[standard]
-httpx
-redis
+fastapi==0.104.1
+uvicorn[standard]==0.24.0.post1
+httpx==0.25.1
+redis==5.0.1
 
 # Broker APIs
-futu-api
-ib_insync
+futu-api==6.12.3908
+ib_insync==1.1dev2
