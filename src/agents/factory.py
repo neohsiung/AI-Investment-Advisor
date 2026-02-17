@@ -11,11 +11,12 @@ from src.agents.swarm.momentum_swarm import MomentumSwarm
 import os
 import logging
 import traceback
+from typing import Any, Optional, Dict, List, Union
 
 # [NEW] Imports for DI
 # [NEW] 依賴注入引入
-from src.repositories.feedback_repository import SqliteFeedbackRepository
-from src.repositories.settings_repository import SqliteSettingsRepository
+from src.repositories.feedback_repository import FeedbackRepositoryImpl
+from src.repositories.settings_repository import AlchemySettingsRepository
 from src.tools.market_tools import create_market_server
 
 # Safe Import for DSPy
@@ -65,7 +66,7 @@ class AgentFactory:
 
         if not api_key:
             try:
-                repo = SqliteSettingsRepository()
+                repo = AlchemySettingsRepository()
                 # 1. Try User Specific Key
                 if user_id and user_id != "system":
                     api_key = repo.get(user_id, "API_KEY") or repo.get(user_id, "LLM_API_KEY")
@@ -102,7 +103,7 @@ class AgentFactory:
         注入通用依賴的輔助函數。
         """
         if not hasattr(agent, 'feedback_repo') or agent.feedback_repo is None:
-             agent.feedback_repo = SqliteFeedbackRepository()
+             agent.feedback_repo = FeedbackRepositoryImpl()
         
         market_server = create_market_server()
         for tool in market_server.list_tools():

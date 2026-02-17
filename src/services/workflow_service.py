@@ -1,4 +1,5 @@
 from abc import ABC, abstractmethod
+from typing import Any, Optional, Dict, List, Union
 import logging
 import sys
 from datetime import datetime
@@ -28,7 +29,18 @@ from src.infrastructure.agent_llm_provider import AgentLLMProvider
 from src.utils.format_utils import format_agent_output
 
 class BaseWorkflow(ABC):
-    def __init__(self, user_id: str, transaction_repo=None, transaction_service=None, market_service=None):
+    """
+    Abstract base class for all investment workflows.
+    投資工作流抽象基底類別。
+    
+    Implements the Template Method pattern for workflow execution.
+    實作 Template Method 模式以執行工作流。
+    """
+    def __init__(self, user_id: str, transaction_repo: Any = None, transaction_service: Optional[TransactionService] = None, market_service: Optional[MarketDataService] = None) -> None:
+        """
+        Initialize the base workflow.
+        初始化基底工作流。
+        """
         self.user_id = user_id
         
         # Dependency Injection
@@ -49,7 +61,11 @@ class BaseWorkflow(ABC):
         )
         self.performance_service = PerformanceService()
 
-    def run(self, dry_run=False, force_refresh=False):
+    def run(self, dry_run: bool = False, force_refresh: bool = False) -> Any:
+        """
+        Execute the workflow skeleton (Template Method).
+        執行工作流骨架（樣板方法）。
+        """
         """
         Template Method defining the workflow structure.
         定義工作流結構的樣板方法。
@@ -172,13 +188,20 @@ class BaseWorkflow(ABC):
 
         # 2. Send Notifications (Email & Web)
         from src.services.notification_service import NotificationService
-        notifier = NotificationService()
+        from src.services.settings_service import SettingsService
+        
+        settings_service = SettingsService(user_id=self.user_id)
+        notifier = NotificationService.create_with_settings(settings_service)
         subject = f"Investment Report ({self.__class__.__name__}) - {get_current_time().strftime('%Y-%m-%d')}"
         notifier.send_report(subject, content, user_id=self.user_id, source=self.__class__.__name__)
         logger.info("Report notifications sent.")
 
 
 class DailyWorkflow(BaseWorkflow):
+    """
+    Workflow for daily market checks and brief reporting.
+    每日工作流：負責每日市場檢查與簡要報告。
+    """
     def execute_analysis(self, force_refresh: bool) -> bool:
         """
         Daily: Only check Momentum/News. If no major signal, skip.
@@ -624,6 +647,10 @@ class DailyWorkflow(BaseWorkflow):
 
 
 class WeeklyWorkflow(BaseWorkflow):
+    """
+    Workflow for comprehensive weekly analysis and strategy refinement.
+    每週工作流：負責全面的每週分析與策略調整。
+    """
     def run_weekly_cycle(self, user_id: str, context_data: dict = None) -> str:
         """
         Enhanced Weekly Workflow using Antigravity Planning + Existing Agents.

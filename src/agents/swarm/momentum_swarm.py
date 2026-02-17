@@ -34,7 +34,7 @@ class MomentumSwarm(RoleSwarm):
     Parallel processing of technical indicators using Fast Tier agents.
     """
     def __init__(self, user_id: str = "system", **kwargs):
-        super().__init__(name="MomentumSwarm", user_id=user_id, **kwargs)
+        super().__init__(name="MomentumSwarm", user_id=user_id, tier="fast", **kwargs)
         
         # Register default pool
         for _ in range(3):

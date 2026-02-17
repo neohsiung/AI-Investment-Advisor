@@ -25,10 +25,17 @@ except ImportError:
 class FutuService(IBroker):
     """
     Futu (FutuOpenD) Broker Implementation.
+    富途 (FutuOpenD) 證券商實作。
+    
     Requires FutuOpenD running locally or remotely.
+    需要 FutuOpenD 在本機或遠端運行。
     """
 
-    def __init__(self, host: str = "127.0.0.1", port: int = 11111, is_sim: bool = False, pwd: str = None):
+    def __init__(self, host: str = "127.0.0.1", port: int = 11111, is_sim: bool = False, pwd: str = None) -> None:
+        """
+        Initialize the Futu service.
+        初始化富途服務。
+        """
         self.host = host
         self.port = port
         self.is_sim = is_sim
@@ -53,7 +60,11 @@ class FutuService(IBroker):
     def get_name(self) -> str:
         return self.name
 
-    def _get_trd_env(self):
+    def _get_trd_env(self) -> Any:
+        """
+        Determine the trading environment (Simulate or Real).
+        確定交易環境（模擬或真實）。
+        """
         return TrdEnv.SIMULATE if self.is_sim else TrdEnv.REAL
 
     def get_account(self) -> Optional[Account]:
@@ -166,7 +177,7 @@ class FutuService(IBroker):
              return {"status": "failed", "reason": "Futu Context Offline"}
 
         # 1. Risk Check
-        user_id = "default_user" # TODO
+        user_id = self.user_id or "default_user"
         history = self.get_history()
         positions = self.get_positions()
         

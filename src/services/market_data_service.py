@@ -1,5 +1,5 @@
 import pandas as pd
-from typing import List, Dict, Any, Optional
+from typing import List, Dict, Any, Optional, Union
 from datetime import date
 from src.utils.logger import setup_logger
 
@@ -10,11 +10,18 @@ from src.data.providers.fmp_provider import FMPProvider
 from src.data.providers.yfinance_provider import YFinanceProvider
 from src.services.fred_service import FredService
 from src.services.search_service import InternetSearchService
-
 from src.services.settings_service import SettingsService
 
 class MarketDataService:
-    def __init__(self, user_id=None, settings_service=None):
+    """
+    Unified service for fetching market data from multiple providers.
+    從多個提供者獲取市場數據的統一服務。
+    """
+    def __init__(self, user_id: Optional[str] = None, settings_service: Optional[SettingsService] = None):
+        """
+        Initialize the market data service.
+        初始化市場數據服務。
+        """
         self.logger = setup_logger("MarketDataService")
         self.user_id = user_id
         self.settings_service = settings_service or SettingsService(user_id=user_id)
@@ -41,14 +48,17 @@ class MarketDataService:
             self.yfinance
         ]
 
-    def _get_provider_name(self, provider):
+    def _get_provider_name(self, provider: MarketDataProvider) -> str:
+        """
+        Helper to get the class name of a provider.
+        獲取提供者類別名稱的輔助方法。
+        """
         return provider.__class__.__name__
 
     def get_current_prices(self, tickers: List[str]) -> Dict[str, float]:
         """
-        Get current prices with failover and merging. 
-        Iterates providers until all tickers are resolved.
-        取得目前價格（含備援與合併）。遍歷提供者直到所有代號都解析完畢。
+        Get current prices with failover and merging. Iterates providers until all tickers are resolved.
+        獲取目前價格（含備援與合併）。遍歷提供者直到所有代號都解析完畢。
         """
         if not tickers: return {}
         
@@ -79,11 +89,10 @@ class MarketDataService:
         
         return all_prices
 
-    def get_market_context(self, tickers: List[str], enrich: bool = False):
+    def get_market_context(self, tickers: List[str], enrich: bool = False) -> Dict[str, Any]:
         """
-        Get detailed context (OHLCV + Indicators).
-        If enrich=True, also fetches Financials, News, and Web Intelligence.
-        enrich=True 時同時取得 FMP 財報/新聞 + Tavily 深度搜尋。
+        Get detailed market context (OHLCV + Indicators) for a list of tickers.
+        獲取一系列標的的詳細市場內容（OHLCV + 指標）。
         """
         context = {}
         for ticker in tickers:
@@ -135,10 +144,10 @@ class MarketDataService:
             )
         return results
 
-    def get_ohlcv(self, ticker: str, days=30) -> Dict[str, List]:
+    def get_ohlcv(self, ticker: str, days: int = 30) -> Dict[str, List[Any]]:
         """
-        Get OHLCV History.
-        取得 OHLCV 歷史數據。
+        Get historical OHLCV data for a specific ticker.
+        獲取特定標的的歷史 OHLCV 數據。
         """
         # History is tricky: Polygon API is different from YF.
         # For v3.2 MVP, we default to YFinance for history as it is free and reliable for daily timeframe.
@@ -264,8 +273,8 @@ class MarketDataService:
 
     def get_financials(self, ticker: str) -> Dict[str, Any]:
         """
-        Get Fundamentals. Preferred: FMP -> YFinance
-        獲取基本面數據。首選：FMP -> YFinance
+        Get fundamental financial data for a ticker.
+        獲取標底的基本面財務數據。
         """
         fund_providers = [self.fmp, self.yfinance, self.polygon]
         
@@ -287,10 +296,10 @@ class MarketDataService:
         # For now, it returns financials which contains valuation data (market cap etc.)
         return self.get_financials(ticker)
 
-    def get_macro_data(self):
+    def get_macro_data(self) -> Dict[str, Any]:
         """
-        Get Macro Data. Priority: FRED -> YFinance
-        獲取宏觀數據。優先順序：FRED -> YFinance
+        Get comprehensive macro economic indicators and market sentiment.
+        獲取全面的宏觀經濟指標與市場情緒。
         """
         macro_data = {}
         
@@ -315,10 +324,10 @@ class MarketDataService:
              
         return macro_data
 
-    def get_yield_curve_inversion(self):
+    def get_yield_curve_inversion(self) -> Dict[str, Any]:
          """
-         Legacy Logic using YFinance Provider History.
-         TODO: Can also use FRED series 'T10Y2Y' directly if available.
+         Check for yield curve inversion status.
+         檢查殖利率曲線倒掛狀態。
          """
          # 1. Try FRED (Primary)
          try:

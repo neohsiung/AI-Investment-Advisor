@@ -9,15 +9,24 @@ from src.data.ingestors import IngestorFactory
 logger = logging.getLogger("IngestionService")
 
 class IngestionService:
-    def __init__(self, db_path=None, user_id=None):
+    """
+    Service for handling data ingestion, specifically CSV uploads for trade history.
+    資料匯入服務：負責處理數據匯入，特別是交易歷史的 CSV 上傳。
+    """
+    def __init__(self, db_path: str = None, user_id: str = None) -> None:
+        """
+        Initialize the ingestion service.
+        初始化匯入服務。
+        """
         self.db_path = db_path
         self.user_id = user_id
         # self.ingestor = TradeIngestor(db_path) # Deprecated
 
 
-    def process_csv_upload(self, file_buffer, broker_type: str):
+    def process_csv_upload(self, file_buffer: Any, broker_type: str) -> tuple[bool, str]:
         """
-        Handles CSV upload, saves to temp, ingests, and cleans up.
+        Process a CSV file upload, ingest data, and update the daily snapshot.
+        處理 CSV 檔案上傳、匯入數據並更新每日快照。
         """
         temp_filename = f"temp_upload_{self.user_id or 'anon'}.csv"
         try:

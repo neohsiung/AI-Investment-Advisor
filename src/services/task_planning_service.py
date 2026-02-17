@@ -13,7 +13,8 @@ logger = logging.getLogger(__name__)
 @dataclass
 class Task:
     """
-    Represents a unit of work.
+    Represents a unit of work within an execution plan.
+    表示執行計畫中的一個工作單元。
     """
     name: str
     description: str
@@ -25,6 +26,10 @@ class Task:
 
 @dataclass
 class ExecutionPlan:
+    """
+    A structured plan consisting of multiple tasks to achieve a goal.
+    由多個任務組成以達成目標的結構化計畫。
+    """
     plan_id: str
     goal: str
     context: Dict[str, Any]
@@ -35,10 +40,17 @@ class ExecutionPlan:
 class TaskPlanningService:
     """
     Service responsible for decomposing high-level goals into executable tasks.
+    任務規劃服務：負責將高階目標分解為可執行的任務。
+    
     Acts as the 'Brain' in the 'Plan -> Execute' pattern.
+    在「計畫 -> 執行」模式中充當「大腦」。
     """
     
-    def __init__(self, llm_client=None):
+    def __init__(self, llm_client: Any = None) -> None:
+        """
+        Initialize the task planning service.
+        初始化任務規劃服務。
+        """
         # llm_client is optional/unused for standard plan
         self.llm = llm_client
         # Use an advanced model for "Thinking" / Dynamic Planning if needed

@@ -1,4 +1,5 @@
 import smtplib
+from typing import Dict, Any
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 import os
@@ -10,12 +11,19 @@ from src.utils.logger import setup_logger
 load_dotenv()
 
 class EmailNotifier:
-    def __init__(self):
-        self.smtp_server = os.getenv("SMTP_HOST", "smtp.gmail.com")
-        self.smtp_port = int(os.getenv("SMTP_PORT", "587"))
-        self.sender_email = os.getenv("SMTP_USER")
-        self.sender_password = os.getenv("SMTP_PASSWORD")
-        self.recipient_email = os.getenv("EMAIL_RECIPIENT")
+    def __init__(self, smtp_config: Dict[str, Any] = None):
+        if smtp_config:
+            self.smtp_server = smtp_config.get("server", "smtp.gmail.com")
+            self.smtp_port = int(smtp_config.get("port", "587"))
+            self.sender_email = smtp_config.get("user")
+            self.sender_password = smtp_config.get("password")
+            self.recipient_email = smtp_config.get("to_address")
+        else:
+            self.smtp_server = os.getenv("SMTP_HOST", "smtp.gmail.com")
+            self.smtp_port = int(os.getenv("SMTP_PORT", "587"))
+            self.sender_email = os.getenv("SMTP_USER")
+            self.sender_password = os.getenv("SMTP_PASSWORD")
+            self.recipient_email = os.getenv("EMAIL_RECIPIENT")
         self.logger = setup_logger("EmailNotifier")
         self.blocked_domains = ["example.com"]
         self.blocked_emails = ["your_email@gmail.com", "admin@example.com"]

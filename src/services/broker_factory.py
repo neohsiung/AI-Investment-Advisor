@@ -10,12 +10,18 @@ logger = logging.getLogger(__name__)
 
 class BrokerFactory:
     """
-    Factory to get the preferred broker instance.
+    Factory service to provide the preferred or enabled broker instances.
+    Broker 工廠服務，提供首選或已啟用的證券商實例。
     """
     _instances: Dict[str, IBroker] = {}
 
     @staticmethod
     def get_broker(user_id: str, broker_type: str = None) -> IBroker:
+        """
+        Get a specific broker instance based on type or user preference.
+        根據類型或使用者偏好獲取特定證券商實例。
+        """
+        from src.repositories.settings_repository import SqliteSettingsRepository
         settings_repo = SqliteSettingsRepository()
         
         # 1. Determine Broker Type
@@ -58,11 +64,10 @@ class BrokerFactory:
     @staticmethod
     def get_enabled_brokers(user_id: str) -> Dict[str, IBroker]:
         """
-        Get all enabled brokers for a user.
-        Checks settings (DB) first, falls back to Env Vars only if DB Not Configured?
-        Actually, we moved full control to DB + Env fallback within Service.
-        Here we strictly check DB 'enable_X' flags.
+        Retrieve all enabled brokers for a user based on database settings.
+        根據資料庫設定檢索使用者所有已啟用的證券商。
         """
+        from src.repositories.settings_repository import SqliteSettingsRepository
         settings_repo = SqliteSettingsRepository()
         brokers = {}
         

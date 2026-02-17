@@ -1,18 +1,28 @@
 import streamlit as st
 import os
 import json
+from typing import Optional, Dict, Any, Tuple
 
 class ThemeService:
-    """Service for managing theme colors, CSS, and Plotly templates."""
+    """
+    Service for managing theme colors, CSS, and Plotly templates for the Streamlit dashboard.
+    為 Streamlit 儀表板管理主題顏色、CSS 與 Plotly 模板的服務。
+    """
     
     @staticmethod
-    def get_current_theme():
-        """Get the current theme from session state, default to 'light'."""
+    def get_current_theme() -> str:
+        """
+        Get the current theme from session state, defaulting to 'light'.
+        從會話狀態獲取目前主題，預設為 'light'。
+        """
         return st.session_state.get('theme', 'light')
 
     @staticmethod
-    def load_theme_data(theme_name):
-        """Load theme color mapping from JSON file."""
+    def load_theme_data(theme_name: str) -> Optional[Dict[str, Any]]:
+        """
+        Load theme color mappings from a local JSON configuration file.
+        從本機 JSON 設定檔載入主題顏色映射。
+        """
         try:
             current_file = os.path.abspath(__file__)
             # Adjust path to find src/styles/themes/
@@ -25,22 +35,28 @@ class ThemeService:
         return None
 
     @staticmethod
-    def get_fallback_theme_data(theme_name):
-        """Standard fallback theme data if JSON is missing."""
+    def get_fallback_theme_data(theme_name: str) -> Dict[str, Any]:
+        """
+        Provide standard fallback theme data if the JSON configuration is missing.
+        如果 JSON 設定缺失，則提供標準的備援主題數據。
+        """
         return {
-            "colors": {
-                "primary": "#0D9488" if theme_name == 'light' else "#14B8A6",
-                "bg": "#F8FAFC" if theme_name == 'light' else "#0B1120",
-                "card_bg": "#FFFFFF" if theme_name == 'light' else "#1E293B",
-                "sidebar_bg": "#F1F5F9" if theme_name == 'light' else "#0F172A",
-                "border": "#E2E8F0" if theme_name == 'light' else "#334155",
-                "text_main": "#1E293B" if theme_name == 'light' else "#F8FAFC",
-                "text_muted": "#64748B" if theme_name == 'light' else "#94A3B8"
-            }
-        }
+             "colors": {
+                 "primary": "#0D9488" if theme_name == 'light' else "#14B8A6",
+                 "bg": "#F8FAFC" if theme_name == 'light' else "#0B1120",
+                 "card_bg": "#FFFFFF" if theme_name == 'light' else "#1E293B",
+                 "sidebar_bg": "#F1F5F9" if theme_name == 'light' else "#0F172A",
+                 "border": "#E2E8F0" if theme_name == 'light' else "#334155",
+                 "text_main": "#1E293B" if theme_name == 'light' else "#F8FAFC",
+                 "text_muted": "#64748B" if theme_name == 'light' else "#94A3B8"
+             }
+         }
 
-    def get_plotly_template(self):
-        """Return Plotly template and layout overrides based on current theme."""
+    def get_plotly_template(self) -> Tuple[str, Dict[str, Any]]:
+        """
+        Return the Plotly template name and layout overrides based on the current theme.
+        根據目前主題返回 Plotly 模板名稱與佈局覆蓋設定。
+        """
         theme = self.get_current_theme()
         is_dark = (theme == 'dark')
         template = "plotly_dark" if is_dark else "plotly_white"
@@ -58,8 +74,11 @@ class ThemeService:
         )
         return template, layout_overrides
 
-    def generate_theme_css(self):
-        """Generate the unified CSS variable block based on current theme."""
+    def generate_theme_css(self) -> Tuple[str, str, Dict[str, Any]]:
+        """
+        Generate the unified CSS variable block and return theme details.
+        產生統一的 CSS 變數區塊並返回主題詳情。
+        """
         theme_name = self.get_current_theme()
         theme_data = self.load_theme_data(theme_name) or self.get_fallback_theme_data(theme_name)
         c = theme_data["colors"]

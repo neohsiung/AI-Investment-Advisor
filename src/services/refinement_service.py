@@ -2,7 +2,7 @@ import logging
 from datetime import datetime
 from src.agents.engineer import SystemEngineerAgent
 from src.services.performance_service import PerformanceService
-from src.notifier import EmailNotifier
+from src.services.notification_service import NotificationService
 from src.utils.logger import setup_logger
 
 class RefinementService:
@@ -10,15 +10,22 @@ class RefinementService:
     Service for monthly system refinement (HR Protocol).
     月度系統進化服務 (HR 協議)。
     """
-    def __init__(self, user_id: str = "supermfb@gmail.com"):
+    def __init__(self, user_id: str = "supermfb@gmail.com", settings_service: Any = None, notification_service: Optional[NotificationService] = None) -> None:
+        """
+        Initialize the refinement service.
+        初始化進化服務。
+        """
         self.logger = setup_logger("RefinementService")
         self.user_id = user_id
         self.perf_service = PerformanceService()
         self.engineer = SystemEngineerAgent(user_id=self.user_id)
-        self.notifier = EmailNotifier()
+        self.notification_service = notification_service or NotificationService.create_with_settings(settings_service)
 
-    def run_monthly_refinement(self):
-        """Runs the monthly performance review and agent optimization."""
+    def run_monthly_refinement(self) -> bool:
+        """
+        Execute the monthly performance review and system optimization cycle.
+        執行月度效能回顧與系統優化週期。
+        """
         self.logger.info(f"Starting Monthly Refinement for {self.user_id}...")
         
         try:
@@ -40,8 +47,8 @@ class RefinementService:
             # 4. Generate Report
             report_content = self._generate_report(merged_stats, optimizations, target_agents)
             
-            # 5. Send Email
-            self.notifier.send_report("月度系統進化報告 (System Evolution Report)", report_content)
+            # 5. Send Report via Unified Channels
+            self.notification_service.send_report("月度系統進化報告 (System Evolution Report)", report_content)
             self.logger.info("Monthly Refinement Report sent successfully.")
             return True
             

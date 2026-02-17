@@ -55,18 +55,25 @@ class ILLMProvider(abc.ABC):
 # --- Use Case / Service ---
 class MemoryService:
     """
-    Core Domain Logic for Memory Management.
-    Decoupled from specific DBs or LLM APIs.
+    Core Domain Logic for context-aware Memory Management (Memory-Protocol-HR).
+    記憶管理核心領域邏輯（HR 記憶協議）。
+    
+    Decoupled from specific DBs or LLM APIs through interfaces.
+    透過介面與特定資料庫或 LLM API 解耦。
     """
-    def __init__(self, repository: IMemoryRepository, llm_provider: ILLMProvider):
+    def __init__(self, repository: IMemoryRepository, llm_provider: ILLMProvider) -> None:
+        """
+        Initialize the memory service.
+        初始化記憶服務。
+        """
         self.repo = repository
         self.llm = llm_provider
         self.lookback_window = 4
 
     def get_context(self, user_id: str, report_type: str, model_max_tokens: int = 8192) -> MemoryContext:
         """
-        Retrieves context with strict size limits (20% of model tolerance).
-        User Requirement: Total context < 20% of Model Capacity.
+        Retrieve memory context with strict size limits (20% of model tolerance).
+        檢索具有嚴格大小限制的記憶內容（模型容差的 20%）。
         """
         # 1. Fetch Candidates (fetch more than needed to allow filtering)
         items = self.repo.get_recent_reports(user_id, report_type, limit=10)
@@ -125,7 +132,11 @@ class MemoryService:
             recent_items=final_items
         )
 
-    def store_report(self, user_id: str, report_type: str, date: str, content: str):
+    def store_report(self, user_id: str, report_type: str, date: str, content: str) -> None:
+        """
+        Compress and store a report in the memory repository.
+        壓縮並將報告儲存在記憶儲存庫中。
+        """
         # 1. Generate Summary (Compressed) for long-term storage
         summary = self.llm.summarize(content)
         
@@ -140,6 +151,10 @@ class MemoryService:
         logger.info(f"Stored {report_type} memory for {user_id}")
 
     def detect_conflicts(self, current_analysis: str, context: MemoryContext) -> List[str]:
+        """
+        Detect contradictions between current analysis and historical memory context.
+        檢測目前分析與歷史記憶內容之間的矛盾。
+        """
         if not context.recent_items:
             return []
         context_str = context.get_compressed_context()

@@ -1,49 +1,26 @@
 import logging
 import os
 from typing import List, Dict, Any, Optional
-from src.domain.interfaces import IChannelAdapter
-from src.infrastructure.channels.line_adapter import LineBotAdapter
-from src.infrastructure.channels.email_adapter import EmailAdapter
-from src.infrastructure.channels.web_adapter import WebAdapter
+from src.domain.interfaces import IChannelAdapter, INotificationFilter
 
 logger = logging.getLogger(__name__)
 
 class NotificationService:
     """
-    Omni-channel Notification Orchestrator.
-    Handles routing alerts to multiple channels (LINE, Email, Web, etc.).
-    全通路通知編排器。負責將警報路由至多個管道。
+    Orchestrates notifications across multi-channel adapters (LINE, Telegram, Email, etc.).
+    在多管道適配器（LINE、Telegram、Email 等）之間協調通知。
+    
+    v3.9 Refactor: Strict Dependency Injection and Strategy Pattern.
+    v3.9 重構：嚴格的相依注入與策略模式。
     """
+    def __init__(
+        self, 
+        adapters: List[IChannelAdapter], 
+        notification_filter: INotificationFilter = None
+    ):
+        self.adapters = adapters
+        self.notification_filter = notification_filter
 
-    def __init__(self, adapters: List[IChannelAdapter] = None, settings_service=None):
-        if adapters:
-            self.adapters = adapters
-        else:
-            # Load settings to configure enabled adapters
-            from src.services.settings_service import SettingsService
-            from src.infrastructure.channels.channel_factory import ChannelFactory
-            from src.infrastructure.channels.email_adapter import EmailAdapter
-            from src.infrastructure.channels.web_adapter import WebAdapter
-            
-            self.settings_service = settings_service or SettingsService()
-            settings = self.settings_service.get_all_settings()
-            
-            # Use Factory to get enabled optional adapters (LINE, Slack, etc.)
-            self.adapters = ChannelFactory.create_adapters(settings)
-            
-            # Always include core adapters that don't need explicit enable (or have their own checks)
-            # Email and Web are considered core/default or have internal logic
-            self.adapters.append(EmailAdapter())
-            self.adapters.append(WebAdapter())
-            
-            # Fallback: If no LINE adapter was created by factory (e.g. settings missing),
-            # check ENV for legacy support and add if not present
-            has_line = any(a.__class__.__name__ == 'LineBotAdapter' for a in self.adapters)
-            if not has_line and os.getenv("LINE_CHANNEL_ACCESS_TOKEN"):
-                from src.infrastructure.channels.line_adapter import LineBotAdapter
-                logger.info("NotificationService: Added LINE Adapter via ENV fallback.")
-                self.adapters.append(LineBotAdapter())
-        
     def notify_all(
         self, 
         title: str, 
@@ -51,39 +28,35 @@ class NotificationService:
         user_id: str = None, 
         actions: List[Dict[str, str]] = None, 
         channels: List[str] = None,
+        category: str = "sentinel",
         **kwargs
-    ) -> Dict[str, bool]:
+    ) -> Dict[str, Any]:
         """
-        Send notification to all registered (or filtered) channels.
-        
-        Args:
-            title: Notification title.
-            content: Main text content (Markdown supported for Email/Web).
-            user_id: Target user ID (identifier for the channel).
-            actions: Action buttons/links.
-            channels: Optional list of channel types to use (e.g. ['line', 'email']).
-            **kwargs: Extra parameters passed to adapters (e.g. level, source).
-            
-        Returns:
-            Dict[str, bool]: Success status per channel class name.
+        Sends notifications to all enabled adapters, filtered by category and channel selection.
+        發送通知至所有啟用的適配器，並根據類別與管道選擇進行過濾。
         """
         results = {}
+        # Resolve target user (fallback to broadcast if allowed by context)
         target_user = user_id or os.getenv("LINE_USER_ID", "broadcast")
         
+        # Options
         capture_error = kwargs.get('capture_error', False)
 
         for adapter in self.adapters:
-            adapter_name = adapter.__class__.__name__.lower()
+            # e.g. telegramadapter -> telegram
+            adapter_type = adapter.__class__.__name__.lower().replace('adapter', '').replace('bot', '')
             
-            # Filter by channel names if provided
-            if channels and not any(c.lower() in adapter_name for c in channels):
+            # 1. Channel Filter (Selection by name)
+            if channels and not any(c.lower() in adapter_type for c in channels):
                 continue
             
+            # 2. Strategy Filter (Interests, System bypass, etc.)
+            if self.notification_filter:
+                if not self.notification_filter.should_notify(adapter, category):
+                    continue
+
             try:
-                # Pass kwargs down (including raise_error if set by caller, 
-                # or auto-set raise_error if capture_error is True logic below)
-                
-                # If capture_error is True, we want the adapter to raise exception so we can catch it here
+                # Prepare call args
                 call_kwargs = kwargs.copy()
                 if capture_error:
                     call_kwargs['raise_error'] = True
@@ -97,7 +70,7 @@ class NotificationService:
                 )
                 
                 if capture_error:
-                    results[adapter.__class__.__name__] = (True, "OK")
+                    results[adapter.__class__.__name__] = (success, "OK" if success else "Adapter returned False")
                 else:
                     results[adapter.__class__.__name__] = success
 
@@ -110,10 +83,28 @@ class NotificationService:
                 
         return results
 
-    def send_report(self, subject: str, content: str, user_id: str = None, **kwargs):
+    @staticmethod
+    def create_with_settings(settings_service) -> 'NotificationService':
         """
-        Convenience method for sending reports (primarily via Email and Web).
+        Helper to create a fully configured NotificationService from a SettingsService.
         """
+        from src.infrastructure.channels.channel_factory import ChannelFactory
+        from src.services.notification_filters import InterestBasedFilter
+        
+        settings = settings_service.get_all_settings() if settings_service else {}
+        adapters = ChannelFactory.create_adapters(settings)
+        noti_filter = InterestBasedFilter(settings_service)
+        
+        return NotificationService(adapters=adapters, notification_filter=noti_filter)
+
+    def send_report(self, subject: str, content: str, user_id: str = None, **kwargs) -> Dict[str, Any]:
+        """
+        Convenience method for sending reports, primarily via Email and Web channels.
+        發送報表的便利方法，主要透過 Email 與網頁管道。
+        """
+        if 'category' not in kwargs:
+            kwargs['category'] = 'report'
+            
         return self.notify_all(
             title=subject,
             content=content,

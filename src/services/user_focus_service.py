@@ -1,5 +1,5 @@
 import logging
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Optional
 from collections import Counter
 from src.services.etoro_service import EtoroService
 from src.services.market_data_service import MarketDataService
@@ -8,17 +8,22 @@ logger = logging.getLogger(__name__)
 
 class UserFocusService:
     """
-    Extracts user's investment focus (Sectors/Industries) from their eToro Watchlists.
+    Service for extracting the user's investment focus (Sectors/Industries) from eToro Watchlists.
+    使用者焦點服務：從 eToro 觀察名單中提取使用者的投資焦點（板塊/產業）。
     """
     
-    def __init__(self, etoro_service: EtoroService = None, market_data_service: MarketDataService = None):
+    def __init__(self, etoro_service: Optional[EtoroService] = None, market_data_service: Optional[MarketDataService] = None) -> None:
+        """
+        Initialize the UserFocusService with optional service overrides.
+        初始化 UserFocusService，可選用自定義服務覆蓋。
+        """
         self.etoro = etoro_service or EtoroService()
         self.market_data = market_data_service or MarketDataService()
         
     def get_user_focus(self, top_n: int = 3) -> Dict[str, Any]:
         """
-        Analyzes watchlists to find top sectors and industries.
-        Returns a dict summarizing the focus.
+        Analyzes watchlists to identify top sectors and industries of interest.
+        分析觀察名單以識別最感興趣的板塊與產業。
         """
         try:
             watchlists = self.etoro.get_watchlists()

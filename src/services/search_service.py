@@ -5,18 +5,22 @@ Search Service (Tavily Primary, DuckDuckGo Fallback)
 from __future__ import annotations
 import os
 import time
+from typing import List, Dict, Any, Optional, Tuple
 from src.utils.logger import setup_logger
-
 from src.services.settings_service import SettingsService
 
 class InternetSearchService:
     """
     Internet Search Service with Tavily as primary and DuckDuckGo as fallback.
-    Tavily 為主要搜尋引擎，DuckDuckGo 為備援。
+    網路搜尋服務：Tavily 為主要引擎，DuckDuckGo 為備援。
     """
-    def __init__(self, cache_ttl=86400, user_id=None, settings_service=None):
+    def __init__(self, cache_ttl: int = 86400, user_id: str = None, settings_service: SettingsService = None):
+        """
+        Initialize the search service.
+        初始化搜尋服務。
+        """
         self.logger = setup_logger("InternetSearch")
-        self.cache = {}
+        self.cache: Dict[str, Tuple[float, List[Dict[str, str]]]] = {}
         self.cache_ttl = cache_ttl
         
         # Initialize Settings
@@ -51,7 +55,7 @@ class InternetSearchService:
         except Exception as e:
             self.logger.warning(f"Failed to initialize DuckDuckGo: {e}")
 
-    def search_financial_context(self, query, max_results=3):
+    def search_financial_context(self, query: str, max_results: int = 3) -> List[Dict[str, str]]:
         """
         Search for financial context. Tries Tavily first, then DuckDuckGo.
         搜尋財經相關資訊。優先使用 Tavily，若失敗則使用 DuckDuckGo。
@@ -93,7 +97,7 @@ class InternetSearchService:
             self.cache[query] = (time.time(), results)
         return results
 
-    def _search_duckduckgo(self, query, max_results):
+    def _search_duckduckgo(self, query: str, max_results: int) -> List[Dict[str, str]]:
         """
         DuckDuckGo fallback search with retry logic.
         DuckDuckGo 備援搜尋，含重試邏輯。
@@ -124,7 +128,7 @@ class InternetSearchService:
             self.logger.warning(f"DuckDuckGo search failed after retries. Last Error: {last_error}")
         return results
 
-    def get_ticker_moat_and_catalyst(self, ticker):
+    def get_ticker_moat_and_catalyst(self, ticker: str) -> List[Dict[str, str]]:
         """
         Convenience method to fetch Moat and Catalyst info for a ticker.
         快速取得特定股票的競爭優勢與催化劑資訊。

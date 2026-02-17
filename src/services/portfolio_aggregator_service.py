@@ -9,17 +9,26 @@ logger = logging.getLogger(__name__)
 
 class PortfolioAggregatorService:
     """
-    Aggregates data from multiple brokers into a unified view.
+    Service for aggregating portfolio data from multiple broker sources into a unified view.
+    投資組合整合服務：將多個券商來源的投資組合數據整合為統一視圖。
     """
-    def __init__(self, user_id: str):
+    def __init__(self, user_id: str) -> None:
+        """
+        Initialize the portfolio aggregator service.
+        初始化投資組合整合服務。
+        """
         self.user_id = user_id
         # In future, we might want to check which brokers are actually enabled in settings
         self.brokers = BrokerFactory.get_enabled_brokers(user_id)
 
     def get_aggregated_portfolio(self) -> Dict[str, Any]:
         """
-        Fetch positions and account summaries from all brokers.
-        Merge them into a single view.
+        Fetch and merge positions and account summaries from all enabled brokers.
+        獲取並合併所有已啟用券商的部位與帳戶摘要。
+        
+        Returns:
+            Dict[str, Any]: Aggregated portfolio data including equity, cash, and positions.
+            Dict[str, Any]: 整合後的投資組合數據，包含權益、現金及部位。
         """
         aggregated_positions = {}
         total_equity = 0.0

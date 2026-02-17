@@ -1,16 +1,24 @@
 import streamlit as st
 import pandas as pd
+from typing import Dict, Any, List, Optional, Union
 from src.services.analytics_service import LeverageCalculator, ROIEngine, update_daily_snapshot, PnLCalculator
 from src.services.market_data_service import MarketDataService
 from src.services.transaction_service import TransactionService
-from src.repositories.transaction_repository import SqliteTransactionRepository
+from src.repositories.transaction_repository import TransactionRepositoryImpl
 
 class DashboardService:
-    """Service for orchestrating dashboard data fetching and calculations."""
+    """
+    Service for orchestrating dashboard data fetching and calculations.
+    協調儀表板數據獲取與計算的服務。
+    """
     
-    def __init__(self, db_path="data/portfolio.db"):
+    def __init__(self, db_path: str = "data/portfolio.db"):
+        """
+        Initialize the dashboard service.
+        初始化儀表板服務。
+        """
         self.db_path = db_path
-        self.transaction_repo = SqliteTransactionRepository()
+        self.transaction_repo = TransactionRepositoryImpl()
         self.transaction_service = TransactionService(repository=self.transaction_repo)
         self.market_service = MarketDataService()
         
@@ -20,8 +28,11 @@ class DashboardService:
         self.pnl_calc = PnLCalculator(db_path=self.db_path)
 
     @st.cache_data(ttl=300, show_spinner=False)
-    def _fetch_market_prices(_self, tickers):
-        """Internal helper to fetch market prices with caching."""
+    def _fetch_market_prices(_self, tickers: List[str]) -> Dict[str, float]:
+        """
+        Internal helper to fetch market prices with caching.
+        內部輔助方法：獲取帶快取的市場價格。
+        """
         service = MarketDataService()
         prices = service.get_current_prices(tickers)
         
@@ -31,8 +42,11 @@ class DashboardService:
             
         return prices
 
-    def prepare_dashboard_data(self, user_id):
-        """Fetch transactions, prices, and calculate all dashboard metrics."""
+    def prepare_dashboard_data(self, user_id: str) -> Dict[str, Any]:
+        """
+        Fetch transactions, prices, and calculate all dashboard metrics for the user.
+        獲取交易、價格並為使用者計算所有儀表板指標。
+        """
         # 0. Update snapshot
         update_daily_snapshot(self.db_path, user_id=user_id)
 
@@ -66,7 +80,7 @@ class DashboardService:
         # 5. Calculate Core Metrics
         metrics = {'nlv': 0, 'leveraged_value': 0, 'cash': 0, 'leverage_ratio': 0, 'cash_balance': 0}
         pnl_data = {'unrealized': 0, 'realized': 0, 'total': 0}
-        roi = 0
+        roi = 0.0
 
         try:
             # Calculate basics
@@ -74,9 +88,9 @@ class DashboardService:
             pnl_data = self.pnl_calc.calculate_breakdown(current_prices, user_id=user_id)
             
             # OVERRIDE with Real-time Data if available
-            if live_portfolio['total_equity'] > 0:
+            if live_portfolio.get('total_equity', 0) > 0:
                  # Trust reported Cash Balance
-                 metrics['cash_balance'] = live_portfolio['total_cash']
+                 metrics['cash_balance'] = live_portfolio.get('total_cash', 0)
                  
                  # Calculate Live Market Value of Positions
                  live_mv_net = 0.0
@@ -86,7 +100,7 @@ class DashboardService:
                  for p in live_positions:
                      price = current_prices.get(p.symbol, 0)
                      if price == 0:
-                         price = p.current_price
+                         price = getattr(p, 'current_price', 0)
                      
                      gross_exposure = p.quantity * price
                      live_mv_gross += gross_exposure
@@ -95,7 +109,7 @@ class DashboardService:
                      # Loan = InitialInvestment * (Leverage - 1)
                      loan = 0.0
                      if hasattr(p, 'leverage') and p.leverage > 1:
-                         loan = p.market_value * (p.leverage - 1)
+                         loan = getattr(p, 'market_value', 0) * (p.leverage - 1)
                          
                      net_equity = gross_exposure - loan
                      live_mv_net += net_equity
@@ -123,22 +137,22 @@ class DashboardService:
              # Convert live positions to DF
              data = []
              for p in live_positions:
-                 price = current_prices.get(p.symbol, 0) or p.current_price
+                 price = current_prices.get(p.symbol, 0) or getattr(p, 'current_price', 0)
                  gross = p.quantity * price
                  loan = 0.0
                  if hasattr(p, 'leverage') and p.leverage > 1:
-                     loan = p.market_value * (p.leverage - 1)
+                     loan = getattr(p, 'market_value', 0) * (p.leverage - 1)
                  net_eq = gross - loan
 
                  data.append({
                       'ticker': p.symbol,
                       'quantity': p.quantity,
                       'current_price': price,
-                      'leverage': p.leverage,
+                      'leverage': getattr(p, 'leverage', 1.0),
                       'gross_mv': gross,
                       'loan': loan,
                       'net_equity': net_eq,
-                      'unrealized_pnl': p.unrealized_pnl
+                      'unrealized_pnl': getattr(p, 'unrealized_pnl', 0.0)
                  })
              positions_df = pd.DataFrame(data)
         elif not transactions_df.empty:

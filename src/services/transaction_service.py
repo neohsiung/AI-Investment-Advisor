@@ -3,30 +3,42 @@ import uuid
 import json
 from datetime import datetime
 import pandas as pd
+from typing import List, Dict, Any, Optional, Tuple, Union
 from src.data.database import get_db_connection
 # from src.ingestor import TradeIngestor # Removed for Clean Clean Architecture
 from src.services.analytics_service import update_daily_snapshot
 
 class TransactionService:
-    def __init__(self, db_path="data/portfolio.db", user_id=None, repository=None):
+    """
+    Service for managing financial transactions and holdings.
+    管理財務交易與持倉的服務。
+    """
+    def __init__(self, db_path: str = None, user_id: str = None, repository: Any = None):
+        """
+        Initialize the transaction service.
+        初始化交易服務。
+        """
         self.db_path = db_path
         self.user_id = user_id
         # Allow injection or default to Sqlite
         from src.repositories.transaction_repository import SqliteTransactionRepository
         self.repository = repository or SqliteTransactionRepository()
 
-    def get_transactions(self, user_id=None):
+    def get_transactions(self, user_id: str = None) -> pd.DataFrame:
         """
-        Get all transactions for a user.
-        If user_id is not provided, use self.user_id
+        Get all transactions for a user as a DataFrame.
+        以 DataFrame 形式獲取使用者的所有交易。
         """
         uid = user_id or self.user_id
         if not uid:
             return pd.DataFrame()
         return self.repository.get_all_by_user_df(uid)
 
-    def get_user_tickers(self, user_id, only_active=False):
-        """Get unique tickers for a user. If only_active=True, only return tickers with positive quantity."""
+    def get_user_tickers(self, user_id: str, only_active: bool = False) -> List[str]:
+        """
+        Get unique tickers for a user.
+        獲取使用者的唯一交易標的。
+        """
         if only_active:
             # Need to cast/check if repository has get_active_tickers
             if hasattr(self.repository, 'get_active_tickers'):
@@ -36,9 +48,10 @@ class TransactionService:
                 return self.repository.get_unique_tickers(user_id)
         return self.repository.get_unique_tickers(user_id)
         
-    def get_holdings_map(self, user_id=None):
+    def get_holdings_map(self, user_id: str = None) -> Dict[str, Dict[str, float]]:
         """
-        Get a dictionary of holdings: {ticker: {'quantity': q}}
+        Get a dictionary of current holdings for the user.
+        獲取使用者目前持倉的字典。
         """
         uid = user_id or self.user_id
         if not uid: return {}
@@ -48,11 +61,14 @@ class TransactionService:
         
         res = {}
         for t, q in summary:
-            res[t] = {'quantity': q}
+            res[t] = {'quantity': float(q)}
         return res
 
-    def add_manual_trade(self, ticker, date_str, action, quantity, price, fees):
-        """Adds a manual transaction via Repository and updates snapshot."""
+    def add_manual_trade(self, ticker: str, date_str: str, action: str, quantity: float, price: float, fees: float) -> Tuple[bool, str]:
+        """
+        Adds a manual transaction via the repository and updates the daily snapshot.
+        透過儲存庫新增手動交易並更新每日快照。
+        """
         if not self.user_id:
              return False, "User ID not set."
 
@@ -74,8 +90,11 @@ class TransactionService:
         except Exception as e:
             return False, f"交易新增失敗: {e}"
 
-    def delete_transaction(self, transaction_id):
-        """Deletes a transaction by ID."""
+    def delete_transaction(self, transaction_id: str) -> Tuple[bool, str]:
+        """
+        Deletes a transaction by its ID and updates the daily snapshot.
+        根據 ID 刪除交易並更新每日快照。
+        """
         if not self.user_id:
              return False, "User ID not set."
 

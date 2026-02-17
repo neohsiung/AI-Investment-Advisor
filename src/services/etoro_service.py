@@ -15,12 +15,18 @@ logger = logging.getLogger(__name__)
 
 class EtoroService(IBroker):
     """
-    Etoro Broker Implementation.
-    Wraps Etoro API and enforces Risk Management.
-    Supports official Public API (api-portal.etoro.com).
+    eToro Broker Implementation.
+    eToro 證券商實作。
+    
+    Wraps eToro API and enforces Risk Management.
+    封裝 eToro API 並執行風險管理。
     """
 
-    def __init__(self, base_url: str = None, mode: str = "real", api_key: str = None, user_key: str = None):
+    def __init__(self, base_url: str = None, mode: str = "real", api_key: str = None, user_key: str = None) -> None:
+        """
+        Initialize the eToro service.
+        初始化 eToro 服務。
+        """
         # Authentication (Priority: Arg > Env)
         self.api_key = api_key or os.getenv("ETORO_API_KEY")
         self.user_key = user_key or os.getenv("ETORO_USER_KEY")
@@ -36,6 +42,10 @@ class EtoroService(IBroker):
         self._id_to_symbol = {} # Reverse map: ID -> Ticker
 
     def get_name(self) -> str:
+        """
+        Get the broker name.
+        獲取證券商名稱。
+        """
         return self.name
 
     def _get_headers(self) -> Dict[str, str]:
@@ -180,20 +190,8 @@ class EtoroService(IBroker):
 
     def execute_order(self, order: Order) -> Dict[str, Any]:
         """
-        Execute Order with Risk Check.
-        """
-        user_id = "default_user" 
-        
-        # 1. Risk Check
-        history = self.get_history()
-        positions = self.get_positions()
-        
-        if not self.risk_manager.check_constraints(user_id, history, positions):
-             return {"status": "failed", "reason": "Risk Manager Blocked"}
-
-    def execute_order(self, order: Order) -> Dict[str, Any]:
-        """
-        Execute Order with Risk Check.
+        Execute an order with risk management checks.
+        執行帶有風險管理檢查的訂單。
         """
         user_id = "default_user" 
         

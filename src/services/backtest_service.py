@@ -16,25 +16,34 @@ logger = logging.getLogger("BacktestService")
 
 class BacktestService:
     """
-    回測服務 (Backtest Service)
-    
-    負責模擬過去的市場環境，執行 Agent 的決策邏輯，並產生回饋數據。
+    Service for simulating historical market environments and evaluating agent decisions.
+    回測服務：負責模擬過去的市場環境，執行 Agent 的決策邏輯，並產生回饋數據。
     
     Attributes:
-        feedback_repo (FeedbackRepository): 負責儲存回饋數據的儲存庫。
+        feedback_repo (IFeedbackRepository): Repository for storing feedback data.
+        feedback_repo (IFeedbackRepository): 負責儲存回饋數據的儲存庫。
     """
 
-    def __init__(self, feedback_repo: Optional[SqliteFeedbackRepository] = None):
-        # Dependency Injection: 允許外部注入 Repository，若無則使用預設的 Sqlite 實作
+    def __init__(self, feedback_repo: Optional[Any] = None):
+        """
+        Initialize the backtest service.
+        初始化回測服務。
+        """
+        # Dependency Injection: Allow injecting Repository, default to Sqlite implementation
+        # 相依注入：允許注入 Repository，預設使用 Sqlite 實作
+        from src.data.repositories.feedback_repository import SqliteFeedbackRepository
         self.feedback_repo = feedback_repo if feedback_repo else SqliteFeedbackRepository()
 
-    def run_simulation(self, ticker: str, days_back: int = 30):
+    def run_simulation(self, ticker: str, days_back: int = 30) -> None:
         """
-        執行回測模擬 (Run Simulation)
+        Execute a day-by-day simulation for a specific ticker.
+        針對特定標的執行逐日模擬。
         
         Args:
-            ticker (str): 股票代碼 (e.g., 'AAPL')
-            days_back (int): 回測天數 (e.g., 30)
+            ticker (str): The stock symbol (e.g., 'AAPL').
+            ticker (str): 股票代碼（例如 'AAPL'）。
+            days_back (int): Number of days to look back for simulation.
+            days_back (int): 模擬回溯的天數。
         """
         print(f"--- Starting Backtest for {ticker} (Last {days_back} days) ---")
         

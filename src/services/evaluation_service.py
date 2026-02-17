@@ -1,9 +1,16 @@
 class EvaluationService:
+    """
+    Service for calculating agent performance scores based on signal accuracy.
+    評估服務：根據訊號準確度計算 Agent 績效得分。
+    """
     @staticmethod
     def calculate_score(signal: str, price_start: float, price_end: float) -> float:
         """
-        Calculate score based on signal and actual price movement.
-        Range: -1.0 (Wrong) to 1.0 (Correct)
+        Calculate a score based on the signal and actual price movement.
+        根據訊號與實際價格變動計算得分。
+        
+        Range: -1.0 (Wrong) to 1.0 (Correct).
+        範圍：-1.0（錯誤）到 1.0（正確）。
         """
         signal = signal.upper().strip()
         delta_pct = (price_end - price_start) / price_start if price_start != 0 else 0

@@ -17,9 +17,11 @@ from src.services.user_focus_service import UserFocusService
 
 class CouncilService:
     """
-    Orchestrates the Agent Council.
-    Manages the debate protocol, dynamic model routing, and consensus formation.
-    Supports Map-Reduce for full portfolio analysis.
+    Orchestrates the Agent Council, including debate protocols and consensus formation.
+    協調 Agent 委員會，包含辯論協議與共識達成。
+    
+    Supports Map-Reduce for full portfolio analysis and dynamic model routing.
+    支援用於全投資組合分析的 Map-Reduce 與動態模型路由。
     """
 
     def __init__(self):
@@ -30,8 +32,11 @@ class CouncilService:
 
     async def start_session(self, topic: str, context_data: Dict[str, Any], scope: str = "single", market_volatility: float = 0.0, user_id: str = "system") -> Dict[str, Any]:
         """
-        Starts a Council Session.
+        Starts a high-level Council Session.
+        啟動高階委員會議程。
+        
         If scope="portfolio", it triggers the Map-Reduce flow.
+        若 scope="portfolio"，則觸發 Map-Reduce 流程。
         """
         session_id = str(uuid.uuid4())
         logger.info(f"Council Session {session_id} started. Topic: {topic} | Scope: {scope} | User: {user_id}")
@@ -43,9 +48,10 @@ class CouncilService:
         # Default Single Topic Flow (Thread-blocking wrapper for async compatibility)
         return await self._run_standard_session(session_id, topic, context_data, market_volatility=market_volatility, user_id=user_id)
 
-    async def _run_map_reduce_portfolio(self, session_id: str, topic: str, context_data: Dict[str, Any], market_volatility: float = 0.0, user_id: str = "system"):
+    async def _run_map_reduce_portfolio(self, session_id: str, topic: str, context_data: Dict[str, Any], market_volatility: float = 0.0, user_id: str = "system") -> Dict[str, Any]:
         """
-        Phase 4: Map-Reduce for Full Portfolio.
+        Phase 4: Map-Reduce execution for full portfolio analysis.
+        第四階段：針對全投資組合分析的 Map-Reduce 執行。
         """
         portfolio = context_data.get("portfolio", [])
         if not portfolio:
@@ -126,17 +132,20 @@ class CouncilService:
             "transcript": aggregated_summary
         }
 
-    async def _run_standard_session(self, session_id: str, topic: str, context_data: Dict[str, Any], market_volatility: float = 0.0, user_id: str = "system"):
+    async def _run_standard_session(self, session_id: str, topic: str, context_data: Dict[str, Any], market_volatility: float = 0.0, user_id: str = "system") -> Dict[str, Any]:
         """
-        Original logic wrapped for async.
+        Standard single-topic Council session wrapped for asynchronous execution.
+        為非同步執行封裝的標準單一主題委員會議程。
         """
         # Run in thread to avoid blocking event loop
         loop = asyncio.get_running_loop()
         return await loop.run_in_executor(None, self._run_sync_logic, session_id, topic, context_data, market_volatility, user_id)
 
-    def _run_sync_logic(self, session_id: str, topic: str, context_data: Dict[str, Any], market_volatility: float = 0.0, user_id: str = "system"):
-        # ... (Original Logic from previous file version, kept for single-topic debates) ...
-        # For brevity in this refactor, I will re-implement the core parts ensuring it addresses the task.
+    def _run_sync_logic(self, session_id: str, topic: str, context_data: Dict[str, Any], market_volatility: float = 0.0, user_id: str = "system") -> Dict[str, Any]:
+        """
+        Core synchronous logic for running an agent debate and capturing the transcript.
+        執行 Agent 辯論並記錄逐字稿的核心同步邏輯。
+        """
         
         # 1. Experience Replay
         past_wisdom = ""
@@ -179,11 +188,13 @@ class CouncilService:
         for agent in members:
             try:
                 # Agents expect a single dict or string.
+                logger.debug(f"Council: Running agent {agent.name}...")
                 res = agent.run(debate_context)
                 stances.append(f"[{agent.name}]: {res}")
                 transcript.append(f"[{agent.name}]: {res}")
             except Exception as e:
                 logger.error(f"Agent {agent.name} failed: {e}")
+                transcript.append(f"[{agent.name}]: Error - {e}")
 
         # 4. Consensus
         cio = AgentFactory.create_cio_agent(tier=self.router.select_tier(topic, round_num=99), user_id=user_id)
@@ -206,7 +217,11 @@ class CouncilService:
             "transcript": transcript
         }
 
-    def _archive_minutes(self, session_id, topic, consensus, transcript):
+    def _archive_minutes(self, session_id: str, topic: str, consensus: str, transcript: str) -> None:
+        """
+        Archive the session results to the vector repository for experience replay.
+        將議程結果歸檔至向量儲存庫，以便進行復盤 (Experience Replay)。
+        """
         try:
             # Placeholder embedding
             dummy_embedding = [0.0] * 1536 

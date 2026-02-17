@@ -1,20 +1,33 @@
 import logging
 import datetime
-from typing import Dict, Any, Tuple
+from typing import Dict, Any, Tuple, Optional
 from src.repositories.verification_repository import VerificationRepository
 from src.services.notification_service import NotificationService
 
 logger = logging.getLogger(__name__)
 
 class VerificationService:
-    def __init__(self, repo: VerificationRepository = None, notification_service: NotificationService = None):
+    """
+    Service for handling multi-channel connectivity tests and identity verification.
+    驗證服務：負責處理多通路連線性測試與身份驗證。
+    """
+    def __init__(self, repo: Optional[VerificationRepository] = None, notification_service: Optional[NotificationService] = None, settings_service: Any = None, user_id: str = None) -> None:
+        """
+        Initialize the verification service.
+        初始化驗證服務。
+        """
+        self.user_id = user_id
         self.repo = repo or VerificationRepository()
-        self.notification_service = notification_service or NotificationService()
+        self.notification_service = notification_service or NotificationService.create_with_settings(settings_service)
 
     def test_connectivity(self, user_id: str, channel: str) -> Tuple[bool, str]:
         """
-        Sends a simple test message to check connectivity.
-        Returns: (success, message)
+        Send a test notification to verify channel connectivity.
+        發送測試通知以驗證管道連線性。
+        
+        Returns:
+            Tuple[bool, str]: (Success status, descriptive message)
+            Tuple[bool, str]: (成功狀態, 描述性訊息)
         """
         try:
             results = self.notification_service.notify_all(
@@ -22,6 +35,7 @@ class VerificationService:
                 content=f"✅ Transformation Complete. {channel} is online.",
                 user_id=user_id,
                 channels=[channel],
+                category="system",
                 capture_error=True
             )
             
@@ -35,24 +49,23 @@ class VerificationService:
         except Exception as e:
             return False, str(e)
 
-    def initiate_verification(self, user_id: str, channel: str, timeout_hours: int = 1) -> Tuple[bool, str, str]:
+    def initiate_verification(self, user_id: str, channel: str, timeout_hours: int = 1, channel_user_id: str = None) -> Tuple[bool, str, str]:
         """
-        Starts a verification process for a specific channel.
-        Sends a challenge message.
-        Returns: (success, message, verification_id)
+        Initiate a channel verification process by sending a challenge code.
+        透過發送挑戰碼啟動管道驗證程序。
+        
+        Returns:
+            Tuple[bool, str, str]: (Success status, response message, verification_id)
+            Tuple[bool, str, str]: (成功狀態, 回應訊息, 驗證 ID)
         """
         # 1. Create Challenge
-        code = "OK"  # Keeping it simple as requested
-        expires_at = datetime.datetime.now() + datetime.timedelta(hours=timeout_hours)
+        code = "OK"  
+        # Use UTC for consistency
+        now_utc = datetime.datetime.utcnow()
+        expires_at = now_utc + datetime.timedelta(hours=timeout_hours)
         
-        # 2. Persist State
-        verification_id = self.repo.create_verification(user_id, channel, code, expires_at)
-        if not verification_id:
-            return False, "Database error: Failed to create verification record.", None
-
-        # 3. Send Challenge Message
+        # 2. Send Challenge Message
         try:
-            # Message Content
             content = (
                 f"🛡️ Channel Verification Request\n"
                 f"Please reply with '{code}' to verify this channel.\n"
@@ -72,26 +85,41 @@ class VerificationService:
             for k, v in send_results.items():
                 if channel.lower() in k.lower():
                     adapter_key_found = True
-                    success, msg = v
+                    success, msg = v[:2]
                     if not success:
-                        self.repo.update_status(verification_id, "failed", msg)
-                        return False, f"Failed to send message: {msg}", verification_id
+                        return False, f"Failed to send message: {msg}", None
             
             if not adapter_key_found:
-                 self.repo.update_status(verification_id, "failed", "Adapter Not Found")
-                 return False, f"Adapter for {channel} not found or not enabled.", verification_id
+                 return False, f"Adapter for {channel} not found or not enabled.", None
+
+            # 3. Resolve channel_user_id (Fallback if not provided)
+            if not channel_user_id and self.notification_service.settings_service:
+                settings = self.notification_service.settings_service.get_all_settings()
+                key_map = {
+                    "line": "channel_line_user_id",
+                    "telegram": "channel_telegram_chat_id",
+                    "slack": "channel_slack_channel_id",
+                    "messenger": "channel_messenger_user_id"
+                }
+                key = key_map.get(channel.lower())
+                if key:
+                    channel_user_id = settings.get(key)
+
+            # 4. Persist State
+            verification_id = self.repo.create_verification(user_id, channel, code, expires_at, channel_user_id=channel_user_id)
+            if not verification_id:
+                return False, "Database error: Failed to create verification record.", None
 
             return True, "Verification message sent. Waiting for reply.", verification_id
 
         except Exception as e:
-            self.repo.update_status(verification_id, "failed", str(e))
             logger.error(f"Verification initiation failed: {e}")
-            return False, f"System error: {e}", verification_id
+            return False, f"System error: {e}", None
 
     def verify_reply(self, user_id: str, content: str, channel: str) -> bool:
         """
-        Called when a message is received from a user (e.g. via Webhook).
-        Matches against pending verifications.
+        Verify a user's reply against a pending verification challenge.
+        根據待處理的驗證挑戰核對使用者回覆。
         """
         # Normalize content
         content = content.strip().upper()
@@ -119,30 +147,45 @@ class VerificationService:
 
     def verify_any_reply(self, user_id: str, content: str) -> bool:
         """
-        Checks if the content matches ANY pending verification for this user.
-        Used when the source channel is not explicitly passed or to capture cross-channel verification.
+        Match a user reply against ANY pending verification challenge for that user.
+        核對使用者回覆是否與該使用者的任何待處理驗證挑戰匹配。
         """
         content = content.strip().upper()
+        # 1. Try finding by user_id (could be email or raw channel ID)
         pending = self.repo.get_any_pending_verification(user_id)
         
         if not pending:
+            # 2. Fallback: If maybe user_id was an email but record stored with channel ID? 
+            # Or vice versa? Repository already handles simple lookup by 'user_id' field.
             return False
             
         expected_code = pending['code'].upper()
         channel = pending['channel']
         
+        # Liberal matching: If expected is "OK", allow "OK", "OK!", etc.
+        # But for now, strict upper-case match is safer if it's a numeric code.
+        # If code is "OK", we match.
         if content == expected_code:
             self.repo.update_status(pending['id'], "verified")
             
             # Send Success Confirmation
-            self.notification_service.notify_all(
+            logger.info(f"Verification Success for {user_id} on {channel}. Sending feedback.")
+            success = self.notification_service.notify_all(
                 title="Verification Successful",
-                content=f"✅ {channel} Channel Verified Successfully!",
+                content=f"✅ {channel.upper()} Channel Verified Successfully!",
                 user_id=user_id,
                 channels=[channel]
             )
+            if not success:
+                logger.warning(f"Failed to send verification confirmation to {user_id} via {channel}")
             return True
+            
+        logger.debug(f"Verification mismatch for {user_id}: expected {expected_code}, got {content}")
         return False
 
     def get_status(self, verification_id: str) -> Dict[str, Any]:
+        """
+        Get the current status of a verification request.
+        獲取驗證請求的目前狀態。
+        """
         return self.repo.get_verification_by_id(verification_id)

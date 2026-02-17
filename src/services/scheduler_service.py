@@ -3,6 +3,7 @@ import time
 import sys
 import subprocess
 import logging
+from typing import Any, List, Dict, Optional
 import uuid
 import pytz
 from datetime import datetime
@@ -23,12 +24,24 @@ def get_current_utc_time():
     return datetime.now(pytz.utc)
 
 class SchedulerService:
-    def __init__(self, db_engine=None):
+    """
+    Service for managing scheduled jobs and background tasks.
+    排程服務：管理排程任務與背景作業。
+    """
+    def __init__(self, db_engine: Any = None) -> None:
+        """
+        Initialize the scheduler service.
+        初始化排程服務。
+        """
         self.engineer = SystemEngineerAgent()
         # db_engine unused if we use get_db_connection, but keeping for DI signature
         # 如果我們使用 get_db_connection，db_engine 未被使用，但保留用於依賴注入簽名
     
-    def log_job_execution(self, job_name, status, message=""):
+    def log_job_execution(self, job_name: str, status: str, message: str = "") -> None:
+        """
+        Log job execution details to the database.
+        將任務執行詳情記錄至資料庫。
+        """
         conn = get_db_connection()
         try:
             log_id = str(uuid.uuid4())
@@ -135,6 +148,31 @@ class SchedulerService:
             logger.error(f"Weekly Validation failed: {e}")
             self.log_job_execution("Weekly Validation", "FAILED", str(e))
 
+    def job_experience_replay(self):
+        """
+        Runs the Experience Replay optimization to tune Sentinel thresholds based on history.
+        執行復盤優化任務，根據歷史數據調整哨兵閾值。
+        """
+        logger.info("Starting Experience Replay Optimization Job...")
+        self.log_job_execution("Experience Replay", "STARTED")
+        
+        try:
+            from src.services.experience_replay_service import ExperienceReplayService
+            service = ExperienceReplayService()
+            
+            users = self.get_all_users()
+            for user in users:
+                logger.info(f"Optimizing for {user}...")
+                results = service.optimize_thresholds(user)
+                if results:
+                    self.log_job_execution(f"Experience Replay ({user})", "COMPLETED", f"Optimized: {results}")
+                else:
+                    self.log_job_execution(f"Experience Replay ({user})", "COMPLETED", "No adjustments needed.")
+                    
+        except Exception as e:
+            logger.error(f"Experience Replay failed: {e}")
+            self.log_job_execution("Experience Replay", "FAILED", str(e))
+
     def job_monthly_refinement(self):
         logger.info("Starting Monthly Refinement...")
         try:
@@ -167,7 +205,11 @@ class SchedulerService:
                 logger.error(f"Broker Sync failed for {user}: {e}")
                 self.log_job_execution(f"Broker Sync ({user})", "FAILED", str(e))
 
-    def check_monthly_job(self):
+    def check_monthly_job(self) -> None:
+        """
+        Check if today is the first of the month and trigger refinement if so.
+        檢查今天是否為每月第一天，如果是則觸發進化任務。
+        """
         if get_current_time().day == 1:
             self.job_monthly_refinement()
 
@@ -230,11 +272,9 @@ class SchedulerService:
             schedule.every().saturday.at(weekly_time_sys).do(self.job_weekly_report)
             
         # Run validation on Sunday to review the week
-        # 週日執行驗證以回顧本週表現
-        # Validation time also needs checking, assuming fixed 10:00 UTC for now or user time?
-        # Let's align with Weekly report logic roughly (+2 hours)
-        # Using fixed Sunday 10:00 UTC for simplicity as before
+        # 週日執行驗證與復盤以回顧本週表現
         schedule.every().sunday.at("10:00").do(self.job_weekly_validation)
+        schedule.every().sunday.at("11:00").do(self.job_experience_replay)
         
         # Monthly Check (UTC 00:00)
         # 每月檢查 (UTC 00:00)
@@ -245,10 +285,10 @@ class SchedulerService:
         # In Local Mode, this drives the Sentinel. In Cloud, Cloud Scheduler drives it via API.
         schedule.every(1).minutes.do(self.job_minutely_tick)
 
-    def job_minutely_tick(self):
+    def job_minutely_tick(self) -> None:
         """
-        Executes the Sentinel Tick.
-        Triggers the SentinelService to scan for market anomalies.
+        Executes the Sentinel heart-beat tick to scan for market anomalies.
+        執行哨兵心跳（每分鐘），掃描市場異常。
         """
         # Avoid log spam, use debug
         # logger.debug("Sentinel Tick...")
@@ -274,7 +314,11 @@ class SchedulerService:
             # Only log errors to keep logs clean
             logger.error(f"Sentinel Tick failed: {e}")
 
-    def run_loop(self):
+    def run_loop(self) -> None:
+        """
+        Start the infinite scheduler execution loop.
+        開始無限排程執行迴圈。
+        """
         self.reload_schedule()
         logger.info("Scheduler Service Running...")
         

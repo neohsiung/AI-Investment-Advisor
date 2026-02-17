@@ -3,15 +3,24 @@ from bs4 import BeautifulSoup
 from src.utils.logger import setup_logger
 
 class BrowserService:
-    def __init__(self):
+    """
+    Service for scraping web content and performing searches.
+    網頁瀏覽服務：負責抓取網頁內容與搜尋。
+    """
+    def __init__(self) -> None:
+        """
+        Initialize the browser service.
+        初始化瀏覽服務。
+        """
         self.logger = setup_logger("BrowserService")
         self.headers = {
             "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36"
         }
 
-    def fetch_page_content(self, url):
+    def fetch_page_content(self, url: str) -> str:
         """
-        Fetches main text content from a URL.
+        Fetches main text content from a URL with basic cleaning.
+        從 URL 獲取主要文字內容並進行基本清理。
         """
         try:
             response = requests.get(url, headers=self.headers, timeout=10)
@@ -36,12 +45,13 @@ class BrowserService:
             self.logger.error(f"Error scraping {url}: {e}")
             return f"Error fetching content: {e}"
 
-    def google_search(self, query):
+    def google_search(self, query: str) -> list[dict[str, str]]:
         """
-        Performs a simple Google Search (Custom Search JSON API would be better, but this is a stub).
+        Performs a Google search (currently a mock implementation).
+        執行 Google 搜尋（目前為模擬實作）。
+        
         REAL IMPLEMENTATION requires Google Custom Search API Key.
-        For now, this is a placeholder that might fail if scraped directly.
-        Alternative: DuckDuckGo HTML or use Serper.dev in future.
+        實際實作需要 Google Custom Search API 金鑰。
         """
         self.logger.warning("Google Search is not fully implemented (requires API). Returning mock results.")
         return [

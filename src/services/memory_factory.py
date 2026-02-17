@@ -1,8 +1,8 @@
 import os
 import logging
 from src.services.memory_service import MemoryService
-from src.data.memory_repository import SqliteMemoryRepository
-from src.data.redis_memory_repository import RedisMemoryRepository
+from src.repositories.memory_repository import MemoryRepositoryImpl as SqliteMemoryRepository
+from src.repositories.redis_memory_repository import RedisMemoryRepository
 from src.infrastructure.agent_llm_provider import AgentLLMProvider
 
 logger = logging.getLogger(__name__)
@@ -10,11 +10,18 @@ logger = logging.getLogger(__name__)
 class MemoryFactory:
     """
     Factory to create MemoryService instances.
+    用於建立 MemoryService 實例的工廠。
+    
     Selects backend based on 'MEMORY_BACKEND' env var ('redis' or 'sqlite').
+    根據 'MEMORY_BACKEND' 環境變數選擇後端（'redis' 或 'sqlite'）。
     """
     
     @staticmethod
     def create_memory_service(user_id: str = None) -> MemoryService:
+        """
+        Create a MemoryService instance with the configured repository and LLM provider.
+        使用配置的儲存庫與 LLM 提供者建立 MemoryService 實例。
+        """
         backend = os.getenv("MEMORY_BACKEND", "sqlite").lower()
         
         # 1. Select Repository

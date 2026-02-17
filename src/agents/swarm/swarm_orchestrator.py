@@ -3,7 +3,7 @@ import logging
 import time
 from typing import List, Dict, Any, Optional
 from src.agents.base_agent import BaseAgent
-from src.data.agent_repository import AgentRepository
+from src.repositories.agent_repository import AgentRepository
 
 logger = logging.getLogger(__name__)
 
@@ -69,9 +69,7 @@ class SwarmOrchestrator:
         
         return output
 
-    async def batch_run(self, agents: List[BaseAgent], tasks: List[str], contexts: List[Dict[str, Any]]) -> Dict[str, str]:
-        # ... (Similar logic for batch_run if needed, for MVP we focus on broadcast)
-        return await super_batch_run_logic_placeholder(agents, tasks, contexts) # Keeping original logic mostly
+    # Implementation moved to specialized method below to include performance tracking.
 
     # ... (Keep existing batch_run code but add metrics if possible, or leave as is)
     # Re-implementing batch_run to include metrics:

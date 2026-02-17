@@ -1,16 +1,24 @@
 import os
 import pandas as pd
-from fredapi import Fred
+import fredapi
+import logging
+from typing import Dict, List, Any, Union
 from src.utils.logger import setup_logger
 
 from src.services.settings_service import SettingsService
 
 class FredService:
     """
-    FRED (Federal Reserve Economic Data) Service.
+    FRED (Federal Reserve Economic Data) Service for fetching macro indicators.
+    FRED (聯邦儲備經濟數據) 服務，用於獲取宏觀經濟指標。
     """
-    def __init__(self, user_id=None, settings_service=None):
+    def __init__(self, user_id: str = None, settings_service: Any = None):
+        """
+        Initialize the FRED service.
+        初始化 FRED 服務。
+        """
         self.logger = setup_logger("FredService")
+        from src.services.settings_service import SettingsService
         self.settings_service = settings_service or SettingsService(user_id=user_id)
         settings = self.settings_service.get_all_settings()
         
@@ -22,10 +30,10 @@ class FredService:
             except Exception as e:
                 self.logger.error(f"Failed to initialize FRED client: {e}")
 
-    def get_macro_indicators(self):
+    def get_macro_indicators(self) -> Dict[str, Dict[str, Any]]:
         """
-        Fetches key macro indicators: GDP, CPI, Unemployment, Yield Spread.
-        Returns a dictionary with current values and trends.
+        Fetches key macro indicators like GDP, CPI, and Yield Spreads.
+        獲取關鍵宏觀指標，如 GDP、CPI 與殖利率利差。
         """
         if not self.client:
             self.logger.warning("FRED client not initialized (missing API key). Returning empty data.")

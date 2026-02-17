@@ -5,7 +5,6 @@ sys.path.append(os.getcwd())
 from datetime import datetime
 from src.agents.engineer import SystemEngineerAgent
 from src.services.performance_service import PerformanceService
-from src.notifier import EmailNotifier
 from src.utils.logger import setup_logger
 
 logger = setup_logger("MonthlyRefinement")

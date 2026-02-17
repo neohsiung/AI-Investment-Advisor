@@ -5,13 +5,25 @@ from src.data.database import get_db_connection
 from src.utils.time_utils import get_current_time
 
 class HRService:
-    def __init__(self, db_path="data/cache.db"):
+    """
+    Service for monitoring agent health and activity (HR Protocol).
+    HR 服務：負責監控 Agent 的健康狀況與活動（HR 協議）。
+    """
+    def __init__(self, db_path: str = None) -> None:
+        """
+        Initialize the HR service.
+        初始化 HR 服務。
+        """
         self.db_path = db_path
 
-    def check_agent_health(self):
+    def check_agent_health(self) -> pd.DataFrame:
         """
-        Check the health status of all agents based on their last activity in cache.
-        Returns a DataFrame with columns: [Agent, Last Active, Status, Days Inactive]
+        Evaluate the health status of all agents based on their cached activity.
+        根據快照活動評估所有 Agent 的健康狀況。
+        
+        Returns:
+            pd.DataFrame: Audit log containing [Agent, Last Active, Status, Days Inactive]
+            pd.DataFrame: 包含 [Agent, Last Active, Status, Days Inactive] 的審核日誌。
         """
         conn = get_db_connection(self.db_path)
         try:

@@ -10,15 +10,22 @@ logger = logging.getLogger(__name__)
 
 class IBKRService(IBroker):
     """
-    Interactive Brokers (IBKR) Implementation.
-    Intended to work with TWS API or Client Portal WebAPI.
-    Currently a Skeleton/Template.
+    Interactive Brokers (IBKR) implementation using TWS or Client Portal API.
+    盈透證券 (IBKR) 實作，使用 TWS 或客戶端入口 API。
+    
+    Currently acts as a skeleton for future integration.
+    目前作為未來整合的骨架。
     """
 
-    def __init__(self, host: str = "127.0.0.1", port: int = 7497, client_id: int = 1):
+    def __init__(self, host: str = "127.0.0.1", port: int = 7497, client_id: int = 1) -> None:
+        """
+        Initialize the IBKR service.
+        初始化 IBKR 服務。
+        """
         self.host = host
         self.port = port
         self.client_id = client_id
+        from src.repositories.transaction_repository import SqliteTransactionRepository
         self.transaction_repo = SqliteTransactionRepository()
         self.risk_manager = RiskManager()
         self.name = "Interactive Brokers"
@@ -31,9 +38,10 @@ class IBKRService(IBroker):
     def get_name(self) -> str:
         return self.name
 
-    def connect(self):
+    def connect(self) -> None:
         """
-        Connect to TWS/Gateway.
+        Connect to the IBKR TWS/Gateway.
+        連接至 IBKR TWS/網關。
         """
         try:
             # self.ib.connect(self.host, self.port, clientId=self.client_id)
