@@ -1,18 +1,28 @@
 import logging
+import os
 from typing import List, Dict, Any
 from src.domain.interfaces import IChannelAdapter
 from src.notifier import EmailNotifier
+from src.infrastructure.channels.base_adapter import BaseChannelAdapter
 
 logger = logging.getLogger(__name__)
 
-class EmailAdapter(IChannelAdapter):
+class EmailAdapter(BaseChannelAdapter):
     """
     Adapter for Email notifications.
     Wraps existing EmailNotifier.
     """
     
-    def __init__(self, notifier: EmailNotifier = None):
-        self.notifier = notifier or EmailNotifier()
+    def __init__(self, smtp_config: Dict[str, Any] = None):
+        super().__init__()
+        # If config is provided, use it to initialize the notifier
+        if smtp_config:
+            self.notifier = EmailNotifier(smtp_config=smtp_config)
+            self.is_active = True
+        else:
+            # Fallback for core/legacy compatibility
+            self.notifier = EmailNotifier()
+            self.is_active = bool(self.notifier.sender_email and self.notifier.sender_password)
     
     def send_message(self, user_id: str, message: Any, **kwargs) -> bool:
         """
@@ -45,9 +55,3 @@ class EmailAdapter(IChannelAdapter):
                     body += f"- {label}\n"
 
         return self.notifier.send_report(title, body, to_email=kwargs.get("to_email"))
-
-    def register_callback(self, callback_func: Any) -> None:
-        pass
-
-    def handle_webhook(self, payload: Any, headers: Dict[str, Any] = None) -> Any:
-        return {"ok": True}

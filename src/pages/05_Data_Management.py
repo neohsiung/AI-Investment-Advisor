@@ -165,9 +165,9 @@ def render_csv_import_tab(st, db_path, user_id):
     saas_card_end()
 
 def render_data_browser(st, db_path, user_id):
-    from src.repositories.data_repository import SqliteDataRepository
+    from src.repositories.data_repository import DataRepositoryImpl
     
-    repo = SqliteDataRepository(db_path)
+    repo = DataRepositoryImpl(db_path)
     saas_card_start(title="System Inspector", subtitle="直接瀏覽資料庫底層數據", icon="🔍")
     table = st.selectbox("選擇資料表", ["transactions", "daily_snapshots", "cash_flows", "positions", "reports", "settings"])
 

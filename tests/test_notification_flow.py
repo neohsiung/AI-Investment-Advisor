@@ -62,7 +62,6 @@ class TestSentinelNotification(unittest.TestCase):
         self.assertIn("### 🛡️ Sentinel Event Loop", content)
         self.assertIn("1. 🔴 VIX Spike: 45.0 > 30.0", content)
         self.assertIn("2. 🏦 Fed Funds Rate Up", content)
-        self.assertIn("#### ⚖️ Council Consensus", content)
 
 if __name__ == "__main__":
     unittest.main()

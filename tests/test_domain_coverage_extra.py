@@ -46,6 +46,12 @@ def test_channel_adapter_interface():
             pass
         def handle_webhook(self, payload, headers=None):
             return True
+        def send_message(self, user_id, message, **kwargs):
+            return True
+        def receive_command(self, payload, **kwargs):
+            return payload
+        def authenticate(self, request, **kwargs):
+            return True
         @property
         def is_active(self):
             return True

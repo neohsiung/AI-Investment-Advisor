@@ -14,8 +14,8 @@ class AnalysisReportsPage(BasePage):
         """Render reports content"""
         db_path = self.db_path
         
-        from src.repositories.report_repository import SqliteReportRepository  
-        repo = SqliteReportRepository(db_path)
+        from src.repositories.report_repository import ReportRepositoryImpl  
+        repo = ReportRepositoryImpl(db_path)
         reports_df = repo.get_latest_reports()
 
         if not reports_df.empty:

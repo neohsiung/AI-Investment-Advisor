@@ -1,4 +1,4 @@
-from typing import List
+from typing import List, Any, Optional, Dict
 import json
 import logging
 from src.services.memory_service import ILLMProvider

@@ -27,15 +27,16 @@ def render_scheduler_tab(st, db_path):
     reverse_days_map = {v: k for k, v in days_map.items()}
 
     with st.form("unified_config_form"):
+        st.write("##### 🌏 系統時區 (System Timezone)")
         # Top Row: Timezone
         c_tz1, c_tz2 = st.columns([2, 1])
         with c_tz1:
             all_tzs = common_timezones + [tz for tz in pytz.common_timezones if tz not in common_timezones]
-            new_tz = st.selectbox("顯示時區 (System Timezone)", 
+            new_tz = st.selectbox("顯示時區", 
                                  options=all_tzs,
-                                 index=all_tzs.index(current_tz) if current_tz in all_tzs else 0)
+                                 index=all_tzs.index(current_tz) if current_tz in all_tzs else 0,
+                                 label_visibility="collapsed")
         with c_tz2:
-            st.markdown('<div style="margin-top: 1.8rem;"></div>', unsafe_allow_html=True)
             st.caption(f"目前基準: **{current_tz}**")
 
         st.markdown('<hr style="margin: 0.75rem 0;">', unsafe_allow_html=True)

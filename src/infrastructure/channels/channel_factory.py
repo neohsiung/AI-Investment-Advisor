@@ -21,57 +21,83 @@ class ChannelFactory:
     def create_adapters(settings: Dict[str, str]) -> List[IChannelAdapter]:
         """
         Creates a list of enabled adapters based on settings.
+        v3.9 Refactor: Standardized parameter extraction and injection.
         """
         adapters = []
         
         # 1. LINE
         if settings.get("channel_line_enabled", "false") == "true":
             try:
-                line_token = settings.get("channel_line_access_token")
-                line_secret = settings.get("channel_line_secret")
-                # LineBotAdapter handles internal env fallback if None, but we pass what we have
-                adapters.append(LineBotAdapter(channel_access_token=line_token, channel_secret=line_secret))
-                logger.info("Channel: LINE enabled.")
+                adapters.append(LineBotAdapter(
+                    channel_access_token=settings.get("channel_line_access_token"), 
+                    channel_secret=settings.get("channel_line_secret"),
+                    line_user_id=settings.get("channel_line_user_id")
+                ))
             except Exception as e:
                 logger.error(f"Failed to initialize LINE adapter: {e}")
 
         # 2. Slack
         if settings.get("channel_slack_enabled", "false") == "true":
             try:
-                bot_token = settings.get("channel_slack_bot_token")
-                channel_id = settings.get("channel_slack_channel_id")
-                adapters.append(SlackAdapter(bot_token=bot_token, channel_id=channel_id))
-                logger.info("Channel: Slack enabled.")
+                adapters.append(SlackAdapter(
+                    bot_token=settings.get("channel_slack_bot_token"), 
+                    channel_id=settings.get("channel_slack_channel_id"),
+                    signing_secret=settings.get("channel_slack_signing_secret")
+                ))
             except Exception as e:
                 logger.error(f"Failed to initialize Slack adapter: {e}")
 
         # 3. Telegram
         if settings.get("channel_telegram_enabled", "false") == "true":
             try:
-                bot_token = settings.get("channel_telegram_bot_token")
-                chat_id = settings.get("channel_telegram_chat_id")
-                adapters.append(TelegramAdapter(bot_token=bot_token, chat_id=chat_id))
-                logger.info("Channel: Telegram enabled.")
+                adapters.append(TelegramAdapter(
+                    bot_token=settings.get("channel_telegram_bot_token"), 
+                    chat_id=settings.get("channel_telegram_chat_id")
+                ))
             except Exception as e:
                 logger.error(f"Failed to initialize Telegram adapter: {e}")
 
-        # 4. Messenger
+        # 4. Email
+        if settings.get("channel_email_enabled", "false") == "true":
+            try:
+                from src.infrastructure.channels.email_adapter import EmailAdapter
+                smtp_config = {
+                    'server': settings.get("channel_email_smtp_server"),
+                    'port': settings.get("channel_email_smtp_port", "587"),
+                    'user': settings.get("channel_email_smtp_user"),
+                    'password': settings.get("channel_email_smtp_pass"),
+                    'from_address': settings.get("channel_email_from_address"),
+                    'to_address': settings.get("channel_email_to_address")
+                }
+                adapters.append(EmailAdapter(smtp_config=smtp_config))
+            except Exception as e:
+                logger.error(f"Failed to initialize Email adapter: {e}")
+        
+        # 5. Messenger
         if settings.get("channel_messenger_enabled", "false") == "true":
             try:
-                page_token = settings.get("channel_messenger_page_token")
-                verify_token = settings.get("channel_messenger_verify_token")
-                adapters.append(MessengerAdapter(page_token=page_token, verify_token=verify_token))
-                logger.info("Channel: Messenger enabled.")
+                adapters.append(MessengerAdapter(
+                    page_token=settings.get("channel_messenger_page_token"), 
+                    verify_token=settings.get("channel_messenger_verify_token"),
+                    app_secret=settings.get("channel_messenger_app_secret")
+                ))
             except Exception as e:
                 logger.error(f"Failed to initialize Messenger adapter: {e}")
 
-        # 5. Google Chat
+        # 6. Google Chat
         if settings.get("channel_google_chat_enabled", "false") == "true":
             try:
-                webhook_url = settings.get("channel_google_chat_webhook_url")
-                adapters.append(GoogleChatAdapter(webhook_url=webhook_url))
-                logger.info("Channel: Google Chat enabled.")
+                adapters.append(GoogleChatAdapter(
+                    webhook_url=settings.get("channel_google_chat_webhook_url")
+                ))
             except Exception as e:
                 logger.error(f"Failed to initialize Google Chat adapter: {e}")
+        
+        # 7. Always include WebAdapter for event logging / dashboard view
+        try:
+            from src.infrastructure.channels.web_adapter import WebAdapter
+            adapters.append(WebAdapter())
+        except Exception as e:
+            logger.error(f"Failed to initialize Web adapter: {e}")
 
         return adapters

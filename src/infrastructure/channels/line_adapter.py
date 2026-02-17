@@ -14,10 +14,9 @@ try:
         PushMessageRequest,
         TextMessage,
         FlexMessage,
-        FlexContainer,
-        TextMessageContent
+        FlexContainer
     )
-    from linebot.v3.webhooks import MessageEvent, PostbackEvent
+    from linebot.v3.webhooks import MessageEvent, PostbackEvent, TextMessageContent
 
     from linebot.v3.exceptions import (
         InvalidSignatureError
@@ -28,18 +27,17 @@ except ImportError:
     WebhookHandler = object # Mock
 
 from src.domain.interfaces import IChannelAdapter
+from src.infrastructure.channels.base_adapter import BaseChannelAdapter
 
 logger = logging.getLogger(__name__)
 
-class LineBotAdapter(IChannelAdapter):
+class LineBotAdapter(BaseChannelAdapter):
     """
-    Adapter for LINE Messaging API (v3).
-    Handles Push Messages (Alerts) and Webhook Events (User Feedback).
-    LINE Messaging API (v3) 適配器。
+    LINE Bot Adapter using Messaging API (V3 SDK).
     處理推播訊息 (警報) 與 Webhook 事件 (使用者回饋)。
     """
 
-    def __init__(self, channel_access_token: str = None, channel_secret: str = None):
+    def __init__(self, channel_access_token: str = None, channel_secret: str = None, line_user_id: str = None):
         """
         Initialize LINE Bot API Client.
         初始化 LINE Bot API 客戶端。
@@ -47,6 +45,7 @@ class LineBotAdapter(IChannelAdapter):
             channel_access_token: Optional token (overrides env)
             channel_secret: Optional secret (overrides env)
         """
+        super().__init__(default_target_id=line_user_id)
         self.channel_access_token = (channel_access_token or os.getenv("LINE_CHANNEL_ACCESS_TOKEN", "mock_token")).strip()
         self.channel_secret = (channel_secret or os.getenv("LINE_CHANNEL_SECRET", "mock_secret")).strip()
         
@@ -81,9 +80,12 @@ class LineBotAdapter(IChannelAdapter):
                 if msg_type == "text":
                     line_message = TextMessage(text=message.get("text"))
                 elif msg_type == "flex":
+                    contents = message.get("contents")
+                    if isinstance(contents, dict):
+                        contents = FlexContainer.from_dict(contents)
                     line_message = FlexMessage(
                         alt_text=message.get("alt_text", "Flex Message"),
-                        contents=message.get("contents")
+                        contents=contents
                     )
                 elif msg_type == "alert":
                     return self.send_alert(
@@ -225,8 +227,11 @@ class LineBotAdapter(IChannelAdapter):
         """
         raise_error = kwargs.get("raise_error", False)
 
-        if not self.is_active:
-            logger.info(f"[MOCK LINE] Sending User {user_id}: {title} - {content}")
+        # Use Base helper to resolve target_to
+        target_to = self._resolve_target_id(user_id)
+
+        if not self.is_active or not target_to:
+            logger.info(f"[MOCK LINE] Sending User {target_to or user_id}: {title} - {content}")
             return True
 
         try:
@@ -285,16 +290,16 @@ class LineBotAdapter(IChannelAdapter):
 
             flex_message = FlexMessage(
                 alt_text=f"Alert: {title}",
-                contents=bubble_json
+                contents=FlexContainer.from_dict(bubble_json)
             )
 
             # Send
             request = PushMessageRequest(
-                to=user_id,
+                to=target_to,
                 messages=[flex_message]
             )
             self.messaging_api.push_message(request)
-            logger.info(f"LINE Alert sent to {user_id}")
+            logger.info(f"LINE Alert sent to {target_to}")
             return True
 
         except Exception as e:
@@ -302,26 +307,6 @@ class LineBotAdapter(IChannelAdapter):
             if raise_error:
                 raise e
             return False
-
-    def send_flex_alert(self, user_id: str, title: str, content: str, actions: List[Dict[str, str]] = None):
-        """
-        [DEPRECATED] Use send_alert instead.
-        """
-        return self.send_alert(user_id, title, content, actions)
-
-    def register_callback(self, callback_func):
-        """
-        Register a callback function to handle Button interactions (Postback).
-        callback_func(request_id, action)
-        """
-        self.callback = callback_func
-
-    def register_text_callback(self, callback_func):
-        """
-        Register a callback function to handle Text messages.
-        callback_func(user_id, text)
-        """
-        self.text_callback = callback_func
 
     def handle_webhook(self, payload: Any, headers: Dict[str, Any] = None):
         """
@@ -331,14 +316,10 @@ class LineBotAdapter(IChannelAdapter):
         if not self.is_active:
             return
             
-        # Extract Signature
         signature = None
         if isinstance(headers, str):
-             # Legacy call: handle_webhook(body, signature_str)
              signature = headers
         elif isinstance(headers, dict):
-             # New IChannelAdapter interface
-             # Case-insensitive lookup for headers if possible, but assuming standard dict
              for k, v in headers.items():
                  if k.lower() == 'x-line-signature':
                      signature = v
@@ -350,10 +331,6 @@ class LineBotAdapter(IChannelAdapter):
 
         try:
             body = payload # payload is the body string for LINE
-            # Define internal handler for events if not already done
-            # Note: In a real implementation this should be done in __init__ 
-            # but we need the handler instance to add specific event handlers
-            
             events = self.handler.parser.parse(body, signature)
             
             for event in events:
@@ -362,8 +339,6 @@ class LineBotAdapter(IChannelAdapter):
                 if isinstance(event, PostbackEvent):
                     # Handle Button Click
                     data_str = event.postback.data
-                    
-                    # Parse data string "action=approve&id=..."
                     parsed_data = {}
                     for pair in data_str.split('&'):
                         if '=' in pair:
@@ -372,24 +347,16 @@ class LineBotAdapter(IChannelAdapter):
                             
                     logger.info(f"LINE Postback: {parsed_data} from {user_id}")
                     
-                    if hasattr(self, 'callback') and self.callback:
-                        # InteractionService expects (request_id, action)
-                        req_id = parsed_data.get('id')
-                        action = parsed_data.get('action')
-                        if req_id and action:
-                            self.callback(req_id, action)
-                        else:
-                            # Fallback for legacy or raw data
-                            # self.callback(user_id, data_str) # Disable fallback if signature mismatch risk
-                            pass
+                    req_id = parsed_data.get('id')
+                    action = parsed_data.get('action')
+                    if req_id and action:
+                        self._trigger_callback(req_id, action)
 
                 elif isinstance(event, MessageEvent) and isinstance(event.message, TextMessageContent):
                     # Handle Text Message
                     text = event.message.text
                     logger.info(f"LINE Text: {text} from {user_id}")
-                    
-                    if hasattr(self, 'text_callback') and self.text_callback:
-                        self.text_callback(user_id, text)
+                    self._trigger_text_callback(user_id, text)
                         
         except InvalidSignatureError:
             raise ValueError("Invalid signature")

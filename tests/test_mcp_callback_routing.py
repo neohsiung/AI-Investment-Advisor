@@ -10,12 +10,18 @@ class MockSlackAdapter(IChannelAdapter):
     def register_callback(self, callback_func): pass
     def handle_webhook(self, payload, headers=None):
         return {"status": "mock_slack_handled", "payload": payload}
+    def authenticate(self, request, **kwargs): return True
+    def receive_command(self, payload, **kwargs): return payload
+    def send_message(self, user_id, message, **kwargs): return True
 
 class MockTelegramAdapter(IChannelAdapter):
     def send_alert(self, user_id, title, content, actions=None, **kwargs): pass
     def register_callback(self, callback_func): pass
     def handle_webhook(self, payload, headers=None):
         return {"status": "mock_telegram_handled", "payload": payload}
+    def authenticate(self, request, **kwargs): return True
+    def receive_command(self, payload, **kwargs): return payload
+    def send_message(self, user_id, message, **kwargs): return True
 
 @pytest.fixture
 def mock_interaction_service():

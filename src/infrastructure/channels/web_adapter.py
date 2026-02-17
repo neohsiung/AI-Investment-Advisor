@@ -7,13 +7,17 @@ from src.domain.interfaces import IChannelAdapter
 from src.data.database import get_db_connection
 from sqlalchemy import text
 
+from src.infrastructure.channels.base_adapter import BaseChannelAdapter
+
 logger = logging.getLogger(__name__)
 
-class WebAdapter(IChannelAdapter):
+class WebAdapter(BaseChannelAdapter):
     """
     Adapter for Web (Dashboard) notifications.
     Records alerts into the event_logs table for display on the Dashboard.
     """
+    def __init__(self):
+        super().__init__()
     
     def send_message(self, user_id: str, message: Any, **kwargs) -> bool:
         """
@@ -23,11 +27,6 @@ class WebAdapter(IChannelAdapter):
             return self.send_alert(user_id, "Message", message)
         return False
 
-    def receive_command(self, payload: Any, **kwargs) -> Any:
-        return None
-
-    def authenticate(self, request: Any, **kwargs) -> bool:
-        return True
 
     def send_alert(self, user_id: str, title: str, content: str, actions: List[Dict[str, str]] = None, **kwargs) -> bool:
         """
@@ -65,8 +64,6 @@ class WebAdapter(IChannelAdapter):
             logger.error(f"Failed to record Web Alert: {e}")
             return False
 
-    def register_callback(self, callback_func: Any) -> None:
-        pass
 
     def send_message(self, user_id: str, message: Any, **kwargs) -> bool:
         """
@@ -85,11 +82,3 @@ class WebAdapter(IChannelAdapter):
         
         return self.send_alert(user_id, title, content, actions, **kwargs)
 
-    def authenticate(self, request: Any, **kwargs) -> bool:
-        return True
-
-    def receive_command(self, payload: Any, **kwargs) -> Any:
-        return None
-
-    def handle_webhook(self, payload: Any, headers: Dict[str, Any] = None) -> Any:
-        return {"ok": True}

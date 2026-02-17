@@ -90,9 +90,15 @@ def render_report_dry_run_tab(st, user_id):
     # --- Email Settings & Test ---
     saas_card_start(title="Notification Gateway", subtitle="配置與測試 SMTP 外發服務之連通性", icon="📧")
 
-    sender_email = os.getenv("SMTP_USER", "Not Set")
-    recipient_email = os.getenv("EMAIL_RECIPIENT", "Not Set")
-    smtp_server = os.getenv("SMTP_HOST", "smtp.gmail.com")
+    from src.services.settings_service import SettingsService
+    from src.services.verification_service import VerificationService
+    
+    settings_service = SettingsService(user_id=user_id)
+    settings = settings_service.get_all_settings()
+
+    sender_email = settings.get("channel_email_smtp_user", "Not Set (From Settings)")
+    recipient_email = settings.get("channel_email_to_address", "Not Set (From Settings)")
+    smtp_server = settings.get("channel_email_smtp_server", "Not Set (From Settings)")
 
     col1, col2 = st.columns(2)
     with col1:
@@ -102,7 +108,6 @@ def render_report_dry_run_tab(st, user_id):
         st.info(f"**SMTP Server:** {smtp_server}")
 
     if st.button("發送測試郵件 (Send Test Email)"):
-        from src.notifier import EmailNotifier
         import logging
         import io
 
@@ -116,21 +121,21 @@ def render_report_dry_run_tab(st, user_id):
         logger = logging.getLogger("EmailNotifier")
         logger.addHandler(ch)
 
-        notifier = EmailNotifier()
         with st.spinner("正在發送測試郵件..."):
-            success = notifier.send_report(
-                "Test Email from AI Investment Advisor",
-                "This is a test email to verify your SMTP settings.\n\nIf you received this, your email configuration is correct."
-            )
+            try:
+                svc = VerificationService(user_id=user_id)
+                success, msg = svc.test_connectivity(recipient_email, "email")
+            except Exception as e:
+                success, msg = False, str(e)
 
         # Remove handler
         logger.removeHandler(ch)
-        log_contents = log_capture_string.getvalue()
+        log_contents = log_capture_string.getvalue() if log_capture_string.getvalue() else msg
 
         if success:
-            st.success("測試郵件發送成功！")
+            st.success(f"測試郵件發送成功！ {msg}")
         else:
-            st.error("測試郵件發送失敗 (Failed to send test email)")
+            st.error(f"測試郵件發送失敗: {msg}")
 
         with st.expander("查看詳細日誌 (View Detailed Logs)", expanded=True):
             st.code(log_contents)

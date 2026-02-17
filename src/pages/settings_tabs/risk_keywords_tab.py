@@ -3,7 +3,7 @@ Settings Tab: Risk Keyword Management (風險關鍵字管理)
 Provides CRUD UI and review/analytics for Sentinel risk keywords.
 """
 import logging
-from src.data.risk_keyword_repository import RiskKeywordRepository
+from src.repositories.risk_keyword_repository import RiskKeywordRepository, DEFAULT_KEYWORDS
 
 logger = logging.getLogger(__name__)
 

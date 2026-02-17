@@ -82,7 +82,8 @@ async def lifespan(app: FastAPI):
         
         services["interaction"] = InteractionService(
             adapters=adapters,
-            intent_classifier=intent_classifier
+            intent_classifier=intent_classifier,
+            settings_service=settings_svc_global
         )
         
         # 2. Register Tools
@@ -131,8 +132,6 @@ async def lifespan(app: FastAPI):
     yield
     
     # Teardown
-    services.clear()
-
     services.clear()
 
 app = FastAPI(

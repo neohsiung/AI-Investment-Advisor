@@ -44,12 +44,12 @@ def test_configure_dspy_no_dspy_module():
         assert AgentFactory._dspy_configured is True
 
 def test_create_momentum_agent():
-    with patch("src.agents.factory.MomentumAgent") as mock_agent:
+    with patch("src.agents.factory.MomentumSwarm") as mock_agent:
         agent = AgentFactory.create_agent("Momentum")
         assert agent == mock_agent.return_value
 
 def test_create_fundamental_agent():
-    with patch("src.agents.factory.FundamentalAgent") as mock_agent:
+    with patch("src.agents.factory.FundamentalSwarm") as mock_agent:
         agent = AgentFactory.create_agent("Fundamental")
         assert agent == mock_agent.return_value
 
@@ -69,7 +69,7 @@ def test_create_engineer_agent():
         assert agent == mock_agent.return_value
 
 def test_create_sentiment_agent():
-    with patch("src.agents.factory.SentimentAgent") as mock_agent:
+    with patch("src.agents.factory.SentimentSwarm") as mock_agent:
         agent = AgentFactory.create_agent("Sentiment")
         assert agent == mock_agent.return_value
 
@@ -78,9 +78,9 @@ def test_create_unknown_agent():
         AgentFactory.create_agent("UnknownAgent")
 
 def test_kwargs_passing():
-    with patch("src.agents.factory.MomentumAgent") as mock_agent:
-        AgentFactory.create_agent("Momentum", use_cache=False, extra_param="123")
-        mock_agent.assert_called_with(use_cache=False, user_id="system", extra_param="123")
+    with patch("src.agents.factory.MomentumSwarm") as mock_agent:
+        AgentFactory.create_agent("Momentum", extra_param="123")
+        mock_agent.assert_called_with(user_id="system", extra_param="123")
 
 def test_create_agent_with_tier_override():
     with patch("src.agents.factory.CIOAgent") as mock_agent:

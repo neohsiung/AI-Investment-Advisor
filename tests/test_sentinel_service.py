@@ -36,7 +36,7 @@ def mock_services():
     search = MagicMock()
     transaction = MagicMock()
     council = MagicMock()
-    council.start_session = AsyncMock(return_value={"consensus": "Hold positions"})
+    council.start_session = AsyncMock(return_value={"consensus": "Sell slightly"})
     notification = MagicMock()
     settings = MagicMock()
     settings.get_all_settings.return_value = {}
@@ -131,7 +131,7 @@ class TestVIXAnomaly:
             # Test the dimension logic directly to ensure it works
             triggers = sentinel._check_vix_anomaly()
             assert len(triggers) == 1
-            assert "VIX High (Static)" in triggers[0]
+            assert "vix_high_static" in triggers[0]["id"]
             
             # Now test the escalation via _escalate
             await sentinel._escalate(triggers)
@@ -288,9 +288,9 @@ class TestBreakingNews:
             triggers = sentinel._check_breaking_news()
 
         assert len(triggers) == 1
-        assert "AAPL" in triggers[0]
-        assert "風險新聞" in triggers[0]
-        assert "加權分數" in triggers[0]
+        assert "AAPL" in triggers[0]["id"]
+        assert "風險新聞" in triggers[0]["text"]
+        assert "加權分數" in triggers[0]["text"]
         # Verify hits were recorded
         assert mock_repo.record_hit.call_count >= 1
 
@@ -346,7 +346,7 @@ class TestMacroShifts:
 
         triggers = sentinel._check_macro_shifts()
         assert len(triggers) == 1
-        assert "聯邦利率上升" in triggers[0]
+        assert "聯邦利率上升" in triggers[0]["text"]
 
     def test_yield_inversion_triggers(self, mock_services):
         """Yield curve inverted — triggers alert."""
@@ -360,7 +360,7 @@ class TestMacroShifts:
 
         triggers = sentinel._check_macro_shifts()
         assert len(triggers) == 1
-        assert "殖利率曲線倒掛" in triggers[0]
+        assert "殖利率曲線倒掛" in triggers[0]["text"]
 
     def test_normal_macro_no_trigger(self, mock_services):
         """Normal macro conditions — no trigger."""
@@ -387,14 +387,14 @@ class TestEscalation:
 
         async def _test():
             with patch.dict('os.environ', {"LINE_USER_ID": "U123"}):
-                await sentinel._escalate(["Test trigger 1", "Test trigger 2"])
+                await sentinel._escalate([{"text": "Test trigger 1", "id": "t1"}, {"text": "Test trigger 2", "id": "t2"}])
                 await sentinel._flush_buffer(force=True)
-
+    
             mock_services["council"].start_session.assert_called_once()
             mock_services["notification"].notify_all.assert_called_once()
             call_kwargs = mock_services["notification"].notify_all.call_args[1]
             assert call_kwargs["user_id"] == "U123"
-            assert "**Detected Signals (2)**" in call_kwargs["content"]
+            assert "偵測到以下重要訊號 (2)" in call_kwargs["content"]
 
         run_async(_test())
 
