@@ -1,3 +1,4 @@
+version: "3.8"
 services:
   dashboard:
     build: .
@@ -18,10 +19,8 @@ services:
       - REDIS_URL=redis://redis:6379/0
     restart: unless-stopped
     depends_on:
-      mcp_server:
-        condition: service_healthy
-      redis:
-        condition: service_healthy
+      - mcp_server
+      - redis
 
   mcp_server:
     build:
@@ -30,6 +29,10 @@ services:
     container_name: investment_advisor_mcp
     ports:
       - "8000:8000"
+    volumes:
+      - ./data:/app/data
+      - ./src:/app/src
+      - ./prompts:/app/prompts
     env_file:
       - .env
     environment:
@@ -42,8 +45,8 @@ services:
       retries: 3
     restart: unless-stopped
     depends_on:
-      redis:
-        condition: service_healthy
+      - redis
+      - postgres
 
   scheduler:
     build: .
@@ -62,20 +65,17 @@ services:
       - REDIS_URL=redis://redis:6379/0
     restart: unless-stopped
     depends_on:
-      postgres:
-        condition: service_healthy
-      mcp_server:
-        condition: service_healthy
-      redis:
-        condition: service_healthy
+      - postgres
+      - mcp_server
+      - redis
 
   postgres:
     image: ankane/pgvector:v0.5.1
     container_name: investment_advisor_db
     environment:
-      POSTGRES_USER: "${DB_USER:-postgres}"
-      POSTGRES_PASSWORD: "${DB_PASS:-postgres}"
-      POSTGRES_DB: "${DB_NAME:-portfolio}"
+      - POSTGRES_USER=${DB_USER}
+      - POSTGRES_PASSWORD=${DB_PASS}
+      - POSTGRES_DB=${DB_NAME}
     volumes:
       - postgres_data:/var/lib/postgresql/data
       - ./deployment/postgres/init.sql:/docker-entrypoint-initdb.d/init.sql

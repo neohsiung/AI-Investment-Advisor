@@ -16,6 +16,13 @@ def mock_classifier():
     c.classify.return_value = "APPROVE"
     return c
 
+@pytest.fixture
+def mock_settings():
+    s = MagicMock()
+    # Mock find_user_by_channel_id to return the same ID for tests
+    s.find_user_by_channel_id.side_effect = lambda x: x
+    return s
+
 def test_interaction_service_init(mock_adapters, mock_classifier):
     service = InteractionService(adapters=mock_adapters, intent_classifier=mock_classifier)
     assert len(service.adapters) == 1
@@ -51,8 +58,12 @@ def test_interaction_service_handle_callback(mock_adapters, mock_classifier):
     # Verify status changed
     assert req.status == InteractionStatus.APPROVED
 
-def test_interaction_service_handle_text(mock_adapters, mock_classifier):
-    service = InteractionService(adapters=mock_adapters, intent_classifier=mock_classifier)
+def test_interaction_service_handle_text(mock_adapters, mock_classifier, mock_settings):
+    service = InteractionService(
+        adapters=mock_adapters, 
+        intent_classifier=mock_classifier,
+        settings_service=mock_settings
+    )
     
     # Mock a pending request for u1
     req = InteractionRequest(
@@ -65,7 +76,7 @@ def test_interaction_service_handle_text(mock_adapters, mock_classifier):
     service._pending_requests[request_id] = req
     
     # Simulate text from user
-    service.handle_text_response("u1", "Yes please")
+    service.handle_text_response(mock_adapters[0], "u1", "Yes please")
     
     # Classifier should be invoked
     mock_classifier.classify.assert_called_with("Yes please")
@@ -150,8 +161,12 @@ def test_interaction_domain_model():
     assert not req.is_pending()
     assert req.status == InteractionStatus.APPROVED
 
-def test_interaction_service_handle_text_response(mock_adapters, mock_classifier):
-    service = InteractionService(adapters=mock_adapters, intent_classifier=mock_classifier)
+def test_interaction_service_handle_text_response(mock_adapters, mock_classifier, mock_settings):
+    service = InteractionService(
+        adapters=mock_adapters, 
+        intent_classifier=mock_classifier,
+        settings_service=mock_settings
+    )
     
     # Mock a pending request
     req = InteractionRequest("u1", "T", "C", InteractionType.APPROVAL, expires_at=datetime.now() + timedelta(minutes=5))
@@ -159,7 +174,7 @@ def test_interaction_service_handle_text_response(mock_adapters, mock_classifier
     
     # Handle text response
     mock_classifier.classify.return_value = "APPROVE"
-    service.handle_text_response("u1", "Yes")
+    service.handle_text_response(mock_adapters[0], "u1", "Yes")
     
     assert req.status == InteractionStatus.APPROVED
 

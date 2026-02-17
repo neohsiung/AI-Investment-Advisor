@@ -1,6 +1,7 @@
 # Environment & Secrets
 .env
 env.production
+secrets/
 client_secret.json
 client_secret_*.json
 app/client_secret_*.json
