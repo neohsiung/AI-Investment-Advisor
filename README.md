@@ -3,106 +3,80 @@
 ### 版本紀錄 (Version History)
 | Date | Version | Description | Author |
 | :--- | :--- | :--- | :--- |
-| 2026-02-17 | v4.0.0 | **Hybrid Storage Strategy**: Unified PostgreSQL + pgvector, SQLAlchemy ORM for entities. | Neo |
-| 2026-02-16 | v3.9.0 | **Omni-Channel Unification**: Integrated Email notifications into Dashboard & ChannelMatrix. | Neo |
-| 2026-02-16 | v3.8.1 | **Sentinel Refinement**: Smart Alert Deduplication (24h Cool-down) & Omni-Channel Fixes. | Neo |
-| 2026-02-15 | v3.6.1 | **Standardized Multi-Channel Callbacks**: Unified adapter interface & webhook routing. | Neo |
+| 2026-02-17 | v4.0.0 | **Premium Governance Sync**: Unified single-source README distilled from Wiki. Implemented Atomic Sync (Rule #12). | Neo |
+| 2026-02-16 | v3.9.0 | **Security Hardening**: Hardened Base Images (Rule #11) & Secrets Isolation. | Neo |
 
-![Python](https://img.shields.io/badge/Python-3.11+-blue.svg?style=for-the-badge&logo=python&logoColor=white)
-![Docker](https://img.shields.io/badge/Docker-Enabled-2496ED.svg?style=for-the-badge&logo=docker&logoColor=white)
-![Database](https://img.shields.io/badge/PostgreSQL-15+-336791.svg?style=for-the-badge&logo=postgresql&logoColor=white)
-![Memory](https://img.shields.io/badge/pgvector-Semantic-FF6F61.svg?style=for-the-badge)
-![Coverage](https://img.shields.io/badge/Coverage-75%25-green.svg?style=for-the-badge)
-![Security](https://img.shields.io/badge/Security-Hardened-success.svg?style=for-the-badge)
+<p align="center">
+  <img src="https://img.shields.io/badge/Python-3.11+-blue.svg?style=for-the-badge&logo=python&logoColor=white" alt="Python">
+  <img src="https://img.shields.io/badge/Docker-Enabled-2496ED.svg?style=for-the-badge&logo=docker&logoColor=white" alt="Docker">
+  <img src="https://img.shields.io/badge/PostgreSQL-15+-336791.svg?style=for-the-badge&logo=postgresql&logoColor=white" alt="PostgreSQL">
+  <img src="https://img.shields.io/badge/pgvector-Semantic-FF6F61.svg?style=for-the-badge" alt="pgvector">
+  <img src="https://img.shields.io/badge/Coverage-75%25-green.svg?style=for-the-badge" alt="Coverage">
+</p>
+
+---
 
 > **[繁體中文 (Traditional Chinese)](#zh) | [English](#en)**
 
 <a id="zh"></a>
 
-## 🇹🇼 專案概覽
+## 🇹🇼 專案概覽 (Project Overview)
 
-**AI Investment Advisor** 是由 **自我修正 (Self-Correcting)** AI Agent 集群驅動的自動化投資顧問系統。v4.0 版本正式確立了 **Hybrid Storage Strategy**，統一採用 PostgreSQL 處理結構化交易資料與語義嵌入，並導入 ORM 提升管理效率。
+**AI Investment Advisor** 是一個模仿頂級對沖基金架構的自動化投資與風險管理系統。它結合了 **7 Agent Swarm (智能體集群)**、**Council Debate (評議會辯論)** 與 **Hybrid Storage (混合儲存)**，旨在提供專業級的自適應投資建議。
 
-### 🌟 核心能力 (Core Capabilities)
+### 🚀 核心優勢
+- **🧠 智能進化集群**: 由 CIO Agent 領銜，協同 Fundamental, Momentum, Macro 等專家智能體，透過 **Fractal Debate (碎形辯論)** 演算法產出決策。
+- **⚖️ 精確槓桿管理**: 獨有的槓桿引擎，嚴格區分 Gross/Net NLV，模擬真實專業交易員的風險曝險控制。
+- **🔭 7x24 事件哨兵**: 哨兵系統 (Sentinel) 同步監聽市場與總經事件，具備 **24 小時智能降噪** 功能。
+- **🗄️ 混合健壯架構**: PostgreSQL 處理結構化數據，pgvector 實現語義記憶 RAG，確保決策具備歷史脈絡。
+- **🛡️ 規範驅動開發**: 堅持 Clean Architecture 與 Rule-based 治理，代碼覆蓋率長期維持 > 75%。
 
-| 模組 | 描述 |
-| :--- | :--- |
-| **🗄️ 混合健壯存儲** | **PostgreSQL + pgvector**：統一處理金融數據、JSONB 配置與語義記憶。 |
-| **🧠 7 Agent + Council** | CIO/Fundamental/Momentum/Macro/Sentiment/Risk/Engineer Agent 集群，由 Council 碎形辯論仲裁。 |
-| **⚖️ 槓桿引擎** | 精確計算 **TNV (總名義價值)**、**NLV (淨清算價值)** 與 **槓桿比率 (Leverage Ratio)**。 |
-| **🌍 多渠道通知** | 統一 **ChannelMatrix**：支援 LINE、Email、Slack、Telegram 的動態熱載入與一鍵驗證。 |
-| **🔭 哨兵監聽** | **SentinelService** 7×24 監聽；具備 **24h 智能冷卻** 與加權風險評分機制。 |
-| **⚡ 任務規劃引擎** | DAG 任務分解，依複雜度動態路由模型 (Fast/Smart/Advanced)。 |
-| **🏆 自我進化** | **Engineer Agent** 利用 DSPy 自動優化 Agent Prompt 與模型參數。 |
-| **🏗️ 現代架構** | Clean Architecture · **SQLAlchemy ORM + Raw SQL** · 測試覆蓋率 > 75%。 |
+### 🛠️ 技術棧 (Technical Stack)
+- **核心**: Python 3.11 (Async I/O)
+- **智能體**: DSPy, OpenAI/Gemini/Claude Multi-Tier Routing
+- **基礎設施**: Docker Compose, PostgreSQL 15, Redis (Cache/Memory)
+- **數據協議**: MCP (Model Context Protocol), TAVILY, Polygon, FMP
 
-### 🚀 快速開始
-
+### 📦 快速開始
 ```bash
-# 1. 下載與設定
-git clone https://github.com/neohsiung/AI-Investment-Advisor.git
-cd AI-Investment-Advisor
+# 1. 複製專案並準備憑證
+git clone https://github.com/neohsiung/AI-Investment-Advisor.git && cd AI-Investment-Advisor
 cp .env.example .env
 
-# 2. 啟動 (Docker Compose - 包含 PostgreSQL + Redis)
-docker-compose up -d
+# 2. 一鍵啟動 (自動建置 PostgreSQL 與 Redis)
+./start.sh
 ```
-*Dashboard: [http://localhost:8501](http://localhost:8501)*
+*本地 Dashboard 入口: [http://localhost:8501](http://localhost:8501)*
 
-### 🏗️ 系統架構
+### 🏗️ 系統架構圖 (Architecture)
+詳細深挖請見 [架構哲學 (Architectural Philosophies)](wiki/04_架構觀點-Architect_Views/架構哲學-Architectural-Philosophies.md)。
 
 ```mermaid
 graph TD
-    User((User)) <-->|UI/Chat| DASH[Streamlit Dashboard]
-    DASH <-->|Route| WF[WorkflowService]
-    LINE[LINE Bot] <-->|Notify| WF
-    EMAIL[Email/SMTP] <-->|Notify| WF
-
-    subgraph "Agent Swarm (v4.0)"
-        CIO[CIO Agent]
-        FUND[Fundamental]
-        MOM[Momentum]
-        RISK[Risk]
-        ENG[Engineer]
-        
-        CIO -->|Dispatch| FUND & MOM
-        FUND & MOM -->|Insights| CIO
-        CIO <-->|Debate| COUNCIL{Council}
-        RISK -->|Validate| CIO
-        ENG -->|Optimize| CIO
+    User((User)) <-->|Bilingual Chat| DASH[Streamlit Dashboard]
+    DASH <--> WF[WorkflowService]
+    
+    subgraph "Intelligent Core"
+        CIO[CIO Agent] <--> COUNCIL{Council}
+        CIO -->|Decompose| SUB[7 Specialized Agents]
+        SUB -->|Feedback| ENG[Engineer Agent - Auto Optimize]
     end
 
-    subgraph "Hybrid Infrastructure"
-        DB[(PostgreSQL + pgvector)]
+    subgraph "Data & Memory"
+        PG[(PostgreSQL + pgvector)]
         RD[(Redis Cache)]
-        
-        ORM[SQLAlchemy ORM] -->|Entities| DB
-        SQL[Raw SQL / Core] -->|Financials/Vectors| DB
+        MEM[Adaptive Memory]
     end
 
     WF --> CIO
-    CIO -->|Data/State| DB
+    CIO <--> PG & RD
 ```
 
 ### 📚 文檔索引
-
-完整文檔位於 `wiki/` 目錄：
-
-- **使用者手冊**: [快速啟動指南](wiki/01_使用者手冊-User_Manual/快速啟動與操作指南-Quickstart-User-Guide.md)
-- **產品規格**:
-    - [演進藍圖](wiki/02_產品經理-Product_Managers/產品演進藍圖-Evolutionary-Roadmap.md)
-    - [核心系統規格](wiki/02_產品經理-Product_Managers/Specs/核心系統規格-Core-System-Specs.md)
-- **開發者指南**:
-    - [環境設定](wiki/03_開發者指南-Developer_Guide/環境設定與本地開發-Environment-Local-Dev.md)
-    - [服務層指南](wiki/03_開發者指南-Developer_Guide/服務層開發指南-Service-Layer-Blueprints.md)
-    - [券商整合指南](wiki/03_開發者指南-Developer_Guide/券商整合指南-Broker-Integration-Guide.md)
-- **架構觀點**:
-    - [系統全景圖](wiki/04_架構觀點-Architect_Views/系統全景圖-System-Landscape.md)
-    - [通信協議](wiki/04_架構觀點-Architect_Views/底層通信協議-Agent-Mesh-Protocols.md)
-- **工程手冊**:
-    - [文件規範](wiki/05_工程手冊-Engineering_Handbook/02_規範標準-Standards/文件規範-Wiki-Standard.md)
-    - [代碼規範](.agent/rules/coding-standards.md)
-    - [資安規範](.agent/rules/security-standards.md)
+- **快速入門**: [Quickstart Guide](wiki/01_使用者手冊-User_Manual/快速啟動與操作指南-Quickstart-User-Guide.md)
+- **架構深挖**: [Architectural Philosophies](wiki/04_架構觀點-Architect_Views/架構哲學-Architectural-Philosophies.md)
+- **開發者手冊**: [Engineering Standards](.agent/rules/engineering-standards.md)
+- **API 與數據**: [Financial Data Matrix](wiki/05_工程手冊-Engineering_Handbook/02_規範標準-Standards/金融數據矩陣與整合成本-Financial-Data-Matrix-Cost.md)
 
 ---
 
@@ -110,54 +84,33 @@ graph TD
 
 ## 🇺🇸 Project Overview
 
-**AI Investment Advisor** is an advanced automated quantitative investment system powered by a **Self-Correcting Agent Swarm**. Simulating a billion-dollar hedge fund, it employs 7 specialized AI Agents with Council arbitration, multi-broker execution, and 24/7 sentinel monitoring.
+**AI Investment Advisor** is a sophisticated, autonomous investment ecosystem designed to simulate the decision-making pipeline of a quantitative hedge fund. It leverages a self-optimizing swarm of **7 AI Agents** anchored by a **Council of Arbitrators** and a high-performance **Hybrid Storage Strategy**.
 
-### 🌟 Key Features
+### 🚀 Key Capabilities
+- **🧠 Swarm Intelligence (v4.0)**: CIO-led architecture coordinating specialized agents (Fundamental, Momentum, Macro, etc.) through Fractal Debate for superior Alpha.
+- **⚖️ Precision Leverage Engine**: Real-time tracking of Gross/Net NLV and margin utilization with professional-grade risk reporting.
+- **🔭 Sentinel & Council**: 24/7 scanning of 4D market events with **Smart Deduplication** (24h cooldown) and noise filtering.
+- **🗄️ Hybrid RAG Memory**: PostgreSQL + pgvector unified backbone for high-speed financial calculation and semantic decision history.
+- **🏆 Self-Optimizing Loop**: Integrated **Engineer Agent** using **DSPy** to auto-refine prompts based on execution performance.
 
-| Module | Description |
-| :--- | :--- |
-| **🧠 7-Agent Swarm + Council** | CIO/Fundamental/Momentum/Macro/Sentiment/Risk/Engineer agents with Fractal Debate arbitration. |
-| **⚖️ Leverage Engine (v3.6)** | Precise calculation of **TNV**, **NLV**, and **Leverage Ratio**. |
-| **🌍 Multi-Broker** | Unified `IBroker` interface for **Etoro**, **Futu**, **IBKR** with centralized **RiskManager**. |
-| **🔭 Sentinel & Council** | 24/7 **4-Dimensional** monitoring with **Smart Cool-down** (24h deduplication) & weighted risk scoring. |
-| **🤝 Interaction (v3.6)** | **InteractionService** enabling Omni-Channel (LINE/Slack/Telegram) workflows & human approval. |
-| **⚡ Task Planning** | DAG-based decomposition with dynamic model routing (Fast/Smart/Advanced). |
-| **🔌 MCP Integration** | Polygon + FMP + FRED + Tavily as standardized agent tools. |
-| **🏆 Self-Evolution** | **Engineer Agent** auto-rewrites underperforming prompts via **DSPy**. |
-| **🏗️ Modern Infra** | Clean Architecture · Docker/K8s · 75% Test Coverage. |
+### 🛠️ Built With
+- **Language**: Python 3.11 (optimized for async execution)
+- **AI Core**: Multi-LLM Tiered Routing (Advanced 🚀, Smart 🧠, Fast ⚡)
+- **Infrastructure**: Dockerized PostgreSQL 15, Redis semantic cache
+- **Data Layers**: MCP (Model Context Protocol), TAVILY Search, Financial Modeling Prep
 
-### 🚀 Quick Start
-
+### 📦 Quick Start
 ```bash
-# 1. Clone & Configure
-git clone https://github.com/neohsiung/AI-Investment-Advisor.git
-cd AI-Investment-Advisor
-cp .env.example .env
-
-# 2. Start (Docker Compose)
 ./start.sh
 ```
-*Dashboard: [http://localhost:8501](http://localhost:8501)*
+*Access the AI Dashboard at [http://localhost:8501](http://localhost:8501)*
 
-### 📚 Documentation
+### 📚 Deep Dives
+Visit our full [Wiki](wiki/Home.md) for architectural blueprints and contribution guides.
 
-Detailed documentation in the `wiki/` directory:
+### 📄 License & Disclaimer
+- **License**: MIT License.
+- **Disclaimer**: For educational purposes only. Not financial advice.
 
-- **Getting Started**: [Quickstart Guide](wiki/01_使用者手冊-User_Manual/快速啟動與操作指南-Quickstart-User-Guide.md)
-- **Product Specs**:
-    - [Evolutionary Roadmap](wiki/02_產品經理-Product_Managers/產品演進藍圖-Evolutionary-Roadmap.md)
-    - [Core System Specs](wiki/02_產品經理-Product_Managers/Specs/核心系統規格-Core-System-Specs.md)
-- **Developer Guide**:
-    - [Environment Setup](wiki/03_開發者指南-Developer_Guide/環境設定與本地開發-Environment-Local-Dev.md)
-    - [Service Layer](wiki/03_開發者指南-Developer_Guide/服務層開發指南-Service-Layer-Blueprints.md)
-- **Architecture**:
-    - [System Landscape](wiki/04_架構觀點-Architect_Views/系統全景圖-System-Landscape.md)
-- **Engineering**:
-    - [Doc Standards](wiki/05_工程手冊-Engineering_Handbook/02_規範標準-Standards/文件規範-Wiki-Standard.md)
-
-### ⚠️ Disclaimer
-**For Educational and Research Purposes Only.**
-This software simulates an investment system. It is not financial advice. Real trading usage is at your own risk.
-
-### 📄 License
-MIT License.
+---
+<p align="center">Built with ❤️ for Modern Quantitative Investing</p>

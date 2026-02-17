@@ -242,6 +242,14 @@ docs(wiki): update roadmap with v3.7 Multi-Tier architecture
 - **情境 2**: 修復 Bug 的同時更新了文檔 -> 拆分為 `fix` 和 `docs` 兩個 Commit。
 - **時序性**: Commit 順序應反映真實的開發路徑，避免「一次全加」的行為。
 
+## Agent 行為準則 (Agent Behavior Guidelines)
+
+**強制要求 (Mandatory)**: AI Agent **嚴禁**在未獲得使用者明確 `commit` 指令的情況下自動執行 `git commit`。
+
+- **工作流程**: Agent 的職責是執行研發、測試與驗證，並將變更處於暫存 (Staging) 狀態或待提交狀態。
+- **觸發條件**: 僅當使用者明確輸入「commit」指令時，Agent 才可根據上述原子原則執行真正的提交操作。
+- **Wiki 同步**: 同樣適用此原則。Agent 應準備好 Wiki 變更，並在使用者指令下執行 Wiki Repo 的提交。
+
 ## 工具集成 (Tool Integration)
 
 ### 生成雙份 Commit Message
@@ -252,11 +260,6 @@ git status
 # 2. Project Repo Commit
 git add src/ .agent/ README.md
 git commit -m "<Project-Repo-Message>"
-
-# 3. Wiki Repo Commit
-cd wiki
-git add .
-git commit -m "<Wiki-Repo-Message>"
 ```
 
 ## 参考 (References)

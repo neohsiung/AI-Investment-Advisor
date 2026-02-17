@@ -6,9 +6,9 @@
 
 <a id="zh"></a>
 
-## 🇹🇼 環境設定與本地開發指南 (v3.1)
+## 🇹🇼 環境設定與本地開發指南 (v4.0)
 
-本文件依據 [文件框架定義](文件框架定義-Document-Frameworks) 編寫，引導開發者從零開始建置專業的開發環境。
+本文件引導開發者建置符合 v4.0 標準的開發環境，包含 PostgreSQL + Redis 基礎設施與資安隔離規範。
 
 ### 1. 快速啟動 (Quick Start)
 
@@ -23,10 +23,11 @@ conda activate ai-advisor
 pip install -r requirements.txt
 ```
 
-#### 1.2 Docker 容器化開發
+#### 1.2 Docker 容器化開發 (推薦)
+ v4.0 強制要求在本地開發環境中使用 Docker 以包含 **PostgreSQL 15** 與 **Redis**。
 ```bash
-# 啟動包含所有服務的開發環境
-docker-compose up --build
+# 啟動包含所有服務的開發環境 (自動預熱數據庫)
+./start.sh
 ```
 
 ### 3. 本地開發與運行 (Development & Execution)
@@ -50,20 +51,21 @@ docker-compose up --build
 - **`seed_user.py`**: 快速在資料庫中建立初始用戶與 API 金鑰設置。
 - **`inspect_db.py`**: 診斷工具，快速查看 `transactions` 與 `holdings` 的一致性。
 
-### 2. 環境變數手冊 (Environment Variable Glossary)
-核心邏輯詳見 [資料庫設計與代碼規範](資料庫設計與代碼規範-Database-Git-Standards)。
+### 2. 環境變數與憑證管理 (Secrets Management)
+
+依據 **Rule #11 (Managed-Security-Base)**，所有機敏資產必須隔離。
+
+- **`.env`**: 存放非核心配置。
+- **`secrets/`**: **(NEW v4.0)** 強制隔離目錄，包含 OpenAI/Gemini API Keys、券商憑證 (IB/Futu)。*此目錄已加入 .gitignore*。
 
 | 變數名稱 | 類型 | 說明 |
 | :--- | :--- | :--- |
 | `GOOGLE_API_KEY` | Secret | Gemini 1.5 系列推理金鑰。 |
-| `TAVILY_API_KEY` | Secret | **(v3.6)** Tavily 高精度搜尋金鑰，用於 Sentinel 4D 監控。 |
+| `TAVILY_API_KEY` | Secret | Tavily 高精度搜尋金鑰。 |
 | `POLYGON_API_KEY` | Secret | Polygon.io 市場數據金鑰 (主)。 |
 | `FMP_API_KEY` | Secret | Financial Modeling Prep 財報與新聞金鑰。 |
-| `FRED_API_KEY` | Secret | **(v3.6)** FRED 總經指標 API 金鑰。 |
-| `DISPLAY_TIMEZONE`| Enum | 系統顯示時區 (預設 `Asia/Taipei`)。 |
-| `DB_PATH` | Path | SQLite 檔案路徑。例：`data/portfolio.db` |
-| `RISK_KEYWORDS_WEIGHTS` | JSON | **(v3.6)** 風險關鍵字權重配置 (DB driven)。 |
-| `CHANNEL_CONFIG` | JSON | **(v3.6)** 通道配置 (LINE/Email/Web Adapter)。 |
+| `DATABASE_URL` | URI | **(v4.0)** PostgreSQL 連線字串。 |
+| `REDIS_URL` | URI | **(v4.0)** Redis 快取連線字串。 |
 
 ### 3. 操作手冊與 CLI (CLI Handbook)
 `src/cli.py` 封裝了所有自動化任務：
