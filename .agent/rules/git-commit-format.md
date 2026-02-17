@@ -234,6 +234,14 @@ docs(wiki): update roadmap with v3.7 Multi-Tier architecture
 - 補充技術需求與預估時間 / Added technical requirements and time estimates
 ```
 
+## 原子提交原則 (Atomic Commits Principle)
+
+**強制要求 (Mandatory)**: 嚴禁將不同性質的變更（如：重構、新功能、錯誤修復、文檔）混合在同一個 Commit 中。必須依照修改時序與邏輯脈絡拆分為原子化的提交。
+
+- **情境 1**: 在開發新功能時發現需要重構舊代碼 -> 先提交重構 Commit，再提交新功能 Commit。
+- **情境 2**: 修復 Bug 的同時更新了文檔 -> 拆分為 `fix` 和 `docs` 兩個 Commit。
+- **時序性**: Commit 順序應反映真實的開發路徑，避免「一次全加」的行為。
+
 ## 工具集成 (Tool Integration)
 
 ### 生成雙份 Commit Message

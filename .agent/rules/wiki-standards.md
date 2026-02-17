@@ -199,6 +199,14 @@ AnalyticsService的calculate_net_equity函数计算净权益
 ✅ **正确**:
 包含完整的中文和English两部分
 
+## Git 同步規範 (Git Synchronization Standard)
+
+**強制要求 (Mandatory)**: 當變更涉及 Wiki 內容時，必須在同一個任務週期內完成 Wiki Repo 的提交。
+
+- **即時性**: 代碼變更與對應的文檔更新應同時提交，嚴禁「事後補檔」。
+- **檢查機制**: 在執行最後的 Commit 操作前，Agent 必須主動檢查 `wiki/` 目錄的狀態。
+- **雙 Repo 同步**: 確保主 Repo 的 `docs(wiki)` 提及與 Wiki Repo 的實際內容保持一致。
+
 ## 自动化检查 (Automated Checks)
 
 ### 检查是否有版本纪录

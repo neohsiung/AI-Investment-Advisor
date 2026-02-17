@@ -14,6 +14,7 @@ trigger: always_on
 9. 混合儲存原則 (Hybrid Strategy)：針對複雜行情計算與向量搜尋 (pgvector) 強制使用 Raw SQL (SQLAlchemy Core)；針對一般物件 (User, Settings) 與後台管理可選用 ORM。具體實施細節參見 `.agent/rules/coding-standards.md`。
 10. 資安唯一原則 (Safe-SQL-Only)：所有 Raw SQL 必須使用參數化查詢 (Parameterized Queries)，嚴禁使用字串拼接或 f-strings 組合 SQL 敘述。相關範例參見 `.agent/rules/coding-standards.md`。
 11. 基礎映像檔與資安審計原則 (Managed-Security-Base)：所有容器映像檔必須使用經過驗證的 Slim 或 Hardened Base Image (如 python:3.11-slim-bookworm)。強制定期執行依賴項版本與資安風險檢查，且生產環境嚴禁使用未鎖定版本 (Unpinned) 的套件。
+12. 原子提交與文檔同步原則 (Atomic-Wiki-Sync)：嚴禁混合變更提交。必須遵循原子化提交 (Atomic Commits) 且確保 Wiki 文檔與代碼變更在同一週期內完成同步。具體見 `.agent/rules/git-commit-format.md` 與 `wiki-standards.md`。
 
 ---
 *註：開發時請同時參考 `.agent/rules/` 下的 `security-standards.md`, `coding-standards.md` 與 `testing-standards.md`。*
