@@ -39,4 +39,4 @@ redis==5.0.1
 
 # Broker APIs
 futu-api==8.7.4708
-ib_insync==1.1dev2
+ib_insync==0.9.86
