@@ -7,7 +7,7 @@ from datetime import datetime
 
 from src.agents.factory import AgentFactory
 from src.infrastructure.llm_router import DynamicModelRouter
-from src.repositories.vector_repository import VectorRepository
+from src.repositories.vector_repository import AlchemyVectorRepository
 from src.infrastructure.lane_manager import LaneManager
 from src.utils.format_utils import format_agent_output
 
@@ -26,7 +26,7 @@ class CouncilService:
 
     def __init__(self):
         self.router = DynamicModelRouter()
-        self.vector_repo = VectorRepository()
+        self.vector_repo = AlchemyVectorRepository()
         self.lane_manager = LaneManager()
         self.user_focus_service = UserFocusService()
 

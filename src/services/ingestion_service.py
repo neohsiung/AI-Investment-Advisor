@@ -1,6 +1,7 @@
 import os
 import logging
 import pandas as pd
+from typing import Any
 # from src.data.ingestor import TradeIngestor # Deprecated
 
 from src.services.analytics_service import update_daily_snapshot

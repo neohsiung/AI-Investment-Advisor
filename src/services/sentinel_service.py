@@ -12,7 +12,7 @@ from src.services.transaction_service import TransactionService
 from src.services.notification_service import NotificationService
 
 from src.repositories.risk_keyword_repository import RiskKeywordRepository
-from src.repositories.sentinel_repository import SentinelRepository
+from src.repositories.sentinel_repository import AlchemySentinelRepository
 from src.services.settings_service import SettingsService
 
 logger = logging.getLogger(__name__)
@@ -39,7 +39,7 @@ class SentinelService:
         settings_service: Optional[SettingsService] = None,
         user_id: str = None,
     ):
-        self.repo = SentinelRepository()
+        self.repo = AlchemySentinelRepository()
         self.user_id = user_id
         self.settings_service = settings_service or SettingsService(user_id=self.user_id)
         

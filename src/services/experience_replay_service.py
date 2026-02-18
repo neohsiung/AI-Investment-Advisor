@@ -2,7 +2,7 @@ import logging
 import json
 from datetime import datetime, timedelta, timezone
 from typing import List, Dict, Any, Optional
-from src.repositories.sentinel_repository import AlchemySentinelRepository
+from src.repositories.sentinel_repository import AlchemySentinelRepository, ISentinelRepository
 from src.repositories.transaction_repository import AlchemyTransactionRepository, ITransactionRepository
 from src.data.database import get_db_connection
 from sqlalchemy import text

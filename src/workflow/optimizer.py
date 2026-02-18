@@ -11,7 +11,7 @@ except (ImportError, AttributeError):
     BootstrapFewShot = None
 
 from src.agents.dspy_modules import MomentumSignature
-from src.data.repositories.feedback_repository import AlchemyFeedbackRepository
+from src.repositories.feedback_repository import AlchemyFeedbackRepository
 from src.domain.entities import FeedbackExample
 
 class OptimizerPipeline:

@@ -10,7 +10,7 @@ from src.services.evaluation_service import EvaluationService
 
 # Domain & Infrastructure
 from src.domain.entities import SecurityContext, FeedbackExample, SignalType
-from src.data.repositories.feedback_repository import AlchemyFeedbackRepository
+from src.repositories.feedback_repository import AlchemyFeedbackRepository
 
 logger = logging.getLogger("BacktestService")
 
@@ -31,7 +31,7 @@ class BacktestService:
         """
         # Dependency Injection: Allow injecting Repository, default to Sqlite implementation
         # 相依注入：允許注入 Repository，預設使用 Sqlite 實作
-        from src.data.repositories.feedback_repository import AlchemyFeedbackRepository
+        from src.repositories.feedback_repository import AlchemyFeedbackRepository
         self.feedback_repo = feedback_repo if feedback_repo else AlchemyFeedbackRepository()
 
     def run_simulation(self, ticker: str, days_back: int = 30) -> None:

@@ -3,7 +3,7 @@ import logging
 import time
 from typing import List, Dict, Any, Optional
 from src.agents.base_agent import BaseAgent
-from src.repositories.agent_repository import AgentRepository
+from src.repositories.agent_repository import AlchemyAgentRepository
 
 logger = logging.getLogger(__name__)
 
@@ -21,7 +21,7 @@ class SwarmOrchestrator:
 
     def __init__(self, timeout_seconds: int = 60):
         self.timeout_seconds = timeout_seconds
-        self.agent_repo = AgentRepository()
+        self.agent_repo = AlchemyAgentRepository()
 
     async def broadcast(self, agents: List[BaseAgent], task: str, context: Dict[str, Any] = None) -> Dict[str, str]:
         """
