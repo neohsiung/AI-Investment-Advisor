@@ -9,32 +9,46 @@ from src.utils.logger import setup_logger
 from src.utils.time_utils import get_current_time, format_time
 from src.data.database import get_db_connection
 
+import threading
+
 class ResponseCache:
+    _db_initialized = False
+    _init_lock = threading.Lock()
+
     def __init__(self, db_path=None, ttl_hours=24):
         self.db_path = db_path
         self.ttl_hours = ttl_hours
         self.logger = setup_logger("ResponseCache")
-        self._init_db()
+        # Removed _init_db from __init__ to avoid connection spikes
 
-    def _init_db(self):
-        """Initialize the cache database."""
-        conn = get_db_connection(self.db_path)
-        is_sqlite = 'sqlite' in str(conn.engine.url)
-        timestamp_type = "DATETIME" if is_sqlite else "TIMESTAMP"
-        try:
-            conn.execute(text(f"""
-                CREATE TABLE IF NOT EXISTS response_cache (
-                    key TEXT PRIMARY KEY,
-                    agent_name TEXT,
-                    response TEXT,
-                    timestamp {timestamp_type}
-                )
-            """))
-            conn.commit()
-        except Exception as e:
-            self.logger.error(f"Failed to init cache DB: {e}")
-        finally:
-            conn.close()
+    def _ensure_db(self):
+        """Ensure the cache table exists, called lazily."""
+        if ResponseCache._db_initialized:
+            return
+            
+        with ResponseCache._init_lock:
+            # Double-check pattern
+            if ResponseCache._db_initialized:
+                return
+                
+            conn = get_db_connection(self.db_path)
+            is_sqlite = 'sqlite' in str(conn.engine.url)
+            timestamp_type = "DATETIME" if is_sqlite else "TIMESTAMP"
+            try:
+                conn.execute(text(f"""
+                    CREATE TABLE IF NOT EXISTS response_cache (
+                        key TEXT PRIMARY KEY,
+                        agent_name TEXT,
+                        response TEXT,
+                        timestamp {timestamp_type}
+                    )
+                """))
+                conn.commit()
+                ResponseCache._db_initialized = True
+            except Exception as e:
+                self.logger.error(f"Failed to init cache DB: {e}")
+            finally:
+                conn.close()
 
     def _generate_key(self, agent_name, prompt):
         """Generate a unique key based on agent name and prompt content."""
@@ -43,6 +57,7 @@ class ResponseCache:
 
     def get(self, agent_name, prompt):
         """Retrieve a cached response if valid."""
+        self._ensure_db()
         key = self._generate_key(agent_name, prompt)
         conn = get_db_connection(self.db_path)
         try:
@@ -79,6 +94,7 @@ class ResponseCache:
 
     def set(self, agent_name, prompt, response):
         """Save a response to the cache."""
+        self._ensure_db()
         key = self._generate_key(agent_name, prompt)
         conn = get_db_connection(self.db_path)
         is_sqlite = 'sqlite' in str(conn.engine.url)
@@ -108,6 +124,7 @@ class ResponseCache:
 
     def clear(self):
         """Clear all cache entries."""
+        self._ensure_db()
         conn = get_db_connection(self.db_path)
         try:
             conn.execute(text("DELETE FROM response_cache"))

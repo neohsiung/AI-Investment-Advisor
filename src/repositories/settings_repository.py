@@ -102,8 +102,9 @@ class AlchemySettingsRepository(BaseRepository, ISettingsRepository):
             session.commit()
         except Exception as e:
             session.rollback()
-            import logging
-            logging.error(f"Failed to set setting {key} for user {user_id}: {e}")
+            logger.error(f"Failed to set setting {key} for user {user_id}: {e}")
+        finally:
+            self.close_session()
             raise
 
     def get_all(self, user_id: str) -> List[Tuple[str, Any]]:

@@ -12,21 +12,28 @@ logger = logging.getLogger(__name__)
 # Global Engine Cache
 _db_engines: Dict[str, Engine] = {}
 
+# Global Session Factory
+_SessionFactory = None
+
 class BaseRepository:
-    """
-    Base repository with database-agnostic methods.
-    資料庫無關的基礎 Repository。
-    """
-    
     def __init__(self, engine: Engine):
         self.engine = engine
         self.is_sqlite = 'sqlite' in str(engine.url)
-        self.Session = scoped_session(sessionmaker(bind=self.engine))
+        
+        global _SessionFactory
+        if _SessionFactory is None:
+            _SessionFactory = sessionmaker(bind=self.engine)
+        
+        self.Session = scoped_session(_SessionFactory)
 
     @property
     def session(self):
         """Returns a scoped session for ORM operations."""
         return self.Session()
+        
+    def close_session(self):
+        """Closes and removes the current scoped session."""
+        self.Session.remove()
     
     def _get_json_extract(self, column: str, path: str) -> str:
         """
@@ -102,7 +109,7 @@ def get_db_engine(db_path=None) -> Engine:
     if db_url not in _db_engines:
         connect_args = {'check_same_thread': False} if "sqlite" in db_url else {}
         if "postgresql" in db_url:
-            _db_engines[db_url] = create_engine(db_url, pool_size=20, max_overflow=0)
+            _db_engines[db_url] = create_engine(db_url, pool_size=50, max_overflow=20)
         else:
             _db_engines[db_url] = create_engine(db_url, connect_args=connect_args)
 

@@ -120,6 +120,8 @@ class BaseAgent(ABC):
         except Exception as e:
             # self.logger.warning(f"Failed to load settings from DB: {e}")
             pass
+        finally:
+            self.settings_repo.close_session()
         return settings
 
     def _load_prompt(self):
