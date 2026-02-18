@@ -176,14 +176,15 @@ class BaseWorkflow(ABC):
             report_id = str(uuid.uuid4())
             date_str = get_current_time().isoformat()
             conn.execute(text("""
-                INSERT INTO reports (id, user_id, report_type, title, content, created_at) 
-                VALUES (:id, :uid, :type, :title, :content, :date)
+                INSERT INTO reports (id, user_id, report_type, title, content, created_at, date) 
+                VALUES (:id, :uid, :type, :title, :content, :created, :date)
             """), {
                 "id": report_id, 
                 "uid": self.user_id, 
                 "type": self.__class__.__name__,
                 "title": f"Workflow Report ({self.__class__.__name__})", 
                 "content": content, 
+                "created": date_str,
                 "date": date_str
             })
             conn.commit()
@@ -280,11 +281,16 @@ class DailyWorkflow(BaseWorkflow):
             # Look for explicit "BUY", "SELL", "HOLD"
             # 4. Record Sentiment Signal
             # ---------------------------
-            # Parse JSON Score: > 0.6 BUY, < 0.4 SELL (Range -1 to 1 or 0 to 1? Prompt says 0-1 usually, let's assume 0.5 neutral)
-            # SentimentAgent prompt usually outputs 0-1 (e.g., 0.8) or -1 to 1.
-            # Let's assume 0 to 1 based on common patterns (0.5 neutral).
-            sent_score = sent_res.get("score", 0.5)
-            if isinstance(sent_score, (int, float)):
+            # Parse Sentiment Score: > 0.6 BUY, < 0.4 SELL
+            sent_score = 0.5
+            if isinstance(sent_res, dict):
+                sent_score = sent_res.get("score", 0.5)
+            elif isinstance(sent_res, str):
+                # Try to extract score or use a default based on keywords
+                if "POSITIVE" in sent_res.upper() or "GOOD" in sent_res.upper():
+                    sent_score = 0.7
+                elif "NEGATIVE" in sent_res.upper() or "BAD" in sent_res.upper():
+                    sent_score = 0.3
                 s_signal = "HOLD"
                 if sent_score >= 0.6:
                     s_signal = "BUY"
