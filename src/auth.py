@@ -10,6 +10,18 @@ class AuthManager:
         import json
 
         self.secret_path = os.getenv('GOOGLE_CLIENT_SECRET_PATH', 'client_secret.json')
+        
+        # v4.1.8: Robustness Fix for IsADirectoryError
+        # 修正目錄衝突造成的 IsADirectoryError
+        if os.path.isdir(self.secret_path):
+            fallback_path = os.path.join('secrets', 'client_secret.json')
+            if os.path.exists(fallback_path):
+                self.secret_path = fallback_path
+            else:
+                fallback_path_2 = os.path.join(self.secret_path, 'client_secret.json')
+                if os.path.exists(fallback_path_2):
+                    self.secret_path = fallback_path_2
+
         self.cookie_name = "investment_advisor_auth"
         self.cookie_key = os.getenv('COOKIE_KEY', 'your_secret_cookie_key_should_be_long')
         self.redirect_uri = os.getenv('REDIRECT_URI', 'http://localhost:8501')
@@ -33,6 +45,11 @@ class AuthManager:
                 # Malformed JSON in env var
                 print("Warning: Malformed JSON in env variable")
                 pass
+
+        # Final check: If no config and file doesn't exist/is directory, warn
+        if not self.client_config and (not os.path.exists(self.secret_path) or os.path.isdir(self.secret_path)):
+            print(f"Warning: Google Client Secret not found or invalid at {self.secret_path}")
+            # We don't raise here to allow the app to boot, but login will fail later gracefully in GoogleAuth
 
         self.authenticator = GoogleAuth(
             secret_credentials_path=self.secret_path,

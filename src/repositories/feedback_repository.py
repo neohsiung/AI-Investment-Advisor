@@ -34,7 +34,7 @@ class IFeedbackRepository(ABC):
         """
         pass
 
-class FeedbackRepositoryImpl(BaseRepository, IFeedbackRepository):
+class AlchemyFeedbackRepository(BaseRepository, IFeedbackRepository):
     """
     Implementation of IFeedbackRepository using SQLAlchemy.
     使用 SQLAlchemy 實作的 IFeedbackRepository。
@@ -92,6 +92,5 @@ class FeedbackRepositoryImpl(BaseRepository, IFeedbackRepository):
             result = conn.execute(stmt, {"agent_name": agent_name})
             return [dict(row._mapping) for row in result]
 
-# Legacy alias
-# @deprecated: Use FeedbackRepositoryImpl
-SqliteFeedbackRepository = FeedbackRepositoryImpl
+# Legacy alias removed in v4.1.7
+# @deprecated: Use AlchemyFeedbackRepository

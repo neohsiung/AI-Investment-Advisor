@@ -3,7 +3,7 @@ Settings Tab: Risk Keyword Management (風險關鍵字管理)
 Provides CRUD UI and review/analytics for Sentinel risk keywords.
 """
 import logging
-from src.repositories.risk_keyword_repository import RiskKeywordRepository, DEFAULT_KEYWORDS
+from src.repositories.risk_keyword_repository import AlchemyRiskKeywordRepository, DEFAULT_KEYWORDS
 
 logger = logging.getLogger(__name__)
 
@@ -22,7 +22,7 @@ def render_risk_keywords_tab(st, db_path=None):
     Render the Risk Keywords management tab.
     渲染風險關鍵字管理分頁。
     """
-    repo = RiskKeywordRepository(db_path)
+    repo = AlchemyRiskKeywordRepository(db_path)
     
     # Ensure seed data exists
     repo.seed_defaults()

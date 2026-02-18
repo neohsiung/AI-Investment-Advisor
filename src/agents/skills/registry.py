@@ -1,6 +1,6 @@
 from src.services.search_service import InternetSearchService
 from src.services.market_data_service import MarketDataService
-from src.repositories.transaction_repository import SqliteTransactionRepository
+from src.repositories.transaction_repository import AlchemyTransactionRepository
 from src.utils.logger import setup_logger
 
 logger = setup_logger("SkillRegistry")
@@ -25,7 +25,7 @@ def get_market_service():
 def get_tx_repo():
     global _tx_repo
     if not _tx_repo:
-        _tx_repo = SqliteTransactionRepository()
+        _tx_repo = AlchemyTransactionRepository()
     return _tx_repo
 
 # --- Implementations ---

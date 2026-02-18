@@ -33,6 +33,8 @@ Welcome to the AI Investment Advisor knowledge base, built on Spec-Driven Develo
 *   **[任務規劃與執行引擎](04_架構觀點-Architect_Views/任務規劃與執行引擎-Task-Planning-Engine.md)**: DAG 任務分解。
 *   **[記憶系統與 Redis 架構](04_架構觀點-Architect_Views/記憶系統與Redis架構-Memory-Redis-Architecture.md)**: 自適應壓縮記憶。
 *   **[資料與領域模型](04_架構觀點-Architect_Views/資料與領域模型-Data-Domain-Models.md)**: Schema 與 Entity 定義。
+*   **[數據攝取架構](04_架構觀點-Architect_Views/數據攝取架構-Data-Ingestion-Architecture.md)**: 券商策略模式與攝取流程。
+*   **[動態指標與復盤機制](04_架構觀點-Architect_Views/動態指標與復盤機制-Dynamic-Indicators-and-Experience-Replay.md)**: Rule #8 自適應門檻與 Experience Replay。
 *   **[配置管理架構](04_架構觀點-Architect_Views/配置管理架構-Configuration-Management.md)**: 動態參數與環境變數。
 
 ### 05. 工程手冊 (Engineering Handbook)
@@ -41,7 +43,7 @@ Welcome to the AI Investment Advisor knowledge base, built on Spec-Driven Develo
 *   **[文件框架定義](05_工程手冊-Engineering_Handbook/02_規範標準-Standards/文件框架定義-Document-Frameworks.md)**: 各類文件標準結構。
 *   **01_設計模式-Patterns**
     *   **[設計模式導讀](05_工程手冊-Engineering_Handbook/設計模式導讀-Design-Patterns-Intro.md)**: 為什麼我們這樣寫程式？
-    *   **[工廠模式](05_工程手冊-Engineering_Handbook/01_設計模式-Patterns/設計模式-工廠-Factory-Pattern.md)** · **[存儲庫模式](05_工程手冊-Engineering_Handbook/01_設計模式-Patterns/設計模式-存儲庫-Repository-Pattern.md)** · **[依賴注入](05_工程手冊-Engineering_Handbook/01_設計模式-Patterns/設計模式-依賴注入-DI-Pattern.md)** · **[樣板方法](05_工程手冊-Engineering_Handbook/01_設計模式-Patterns/設計模式-樣板方法-Template-Method.md)**
+    *   **[工廠模式](05_工程手冊-Engineering_Handbook/01_設計模式-Patterns/設計模式-工廠-Factory-Pattern.md)** · **[存儲庫模式](05_工程手冊-Engineering_Handbook/01_設計模式-Patterns/設計模式-存儲庫-Repository-Pattern.md)** · **[依賴注入](05_工程手冊-Engineering_Handbook/01_設計模式-Patterns/設計模式-依賴注入-DI-Pattern.md)** · **[樣板方法](05_工程手冊-Engineering_Handbook/01_設計模式-Patterns/設計模式-樣板方法-Template-Method.md)** · **[策略模式](05_工程手冊-Engineering_Handbook/01_設計模式-Patterns/設計模式-策略-Strategy-Pattern.md)** · **[適配器模式](05_工程手冊-Engineering_Handbook/01_設計模式-Patterns/設計模式-適配器-Adapter-Pattern.md)** · **[智能體集群模式](05_工程手冊-Engineering_Handbook/01_設計模式-Patterns/設計模式-智能體集群-Swarm-Patterns.md)**
 *   **[99_封存-Archive](99_封存-Archive/README.md)**: 歷史版本與舊型規格存檔。
 
 ---

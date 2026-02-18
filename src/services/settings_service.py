@@ -31,9 +31,12 @@ class SettingsService:
             except Exception:
                 return {}
 
-            if self.user_id:
+            target_uid = self.user_id
+            
+            # v4.1.7: Strictly use UUID for data retrieval
+            if target_uid:
                 query = text("SELECT key, value FROM settings WHERE user_id = :uid")
-                rows = conn.execute(query, {"uid": self.user_id}).fetchall()
+                rows = conn.execute(query, {"uid": target_uid}).fetchall()
             else:
                 # Fallback or admin global settings?
                 # For now return empty or global if we had global settings
@@ -43,7 +46,21 @@ class SettingsService:
                 rows = conn.execute(query).fetchall()
 
             for row in rows:
-                settings[row[0]] = row[1]
+                key, value = row[0], row[1]
+                # v4.1.1: Auto-decode JSON strings if they look like JSON
+                # v4.1.1: 自動解碼看起來像 JSON 的字串
+                import json
+                if isinstance(value, str):
+                    # Try to parse as JSON (for dict/list values)
+                    if value.startswith(('{', '[')):
+                        try:
+                            settings[key] = json.loads(value)
+                        except:
+                            settings[key] = value
+                    else:
+                        settings[key] = value
+                else:
+                    settings[key] = value
         except Exception as e:
             print(f"Error loading settings: {e}")
         finally:
@@ -62,20 +79,35 @@ class SettingsService:
         """
         Saves or updates a single setting in the database.
         在資料庫中儲存或更新單一設定。
+        
+        v4.1.1: Values are stored as-is without JSON encoding.
+        v4.1.1: 值直接儲存，不進行 JSON 編碼。
         """
         conn = get_db_connection(self.db_path)
         try:
+            # v4.1.7: Strictly use UUID for data storage
+            target_uid = self.user_id
+
+            # v4.1.1: Store value as-is (no JSON encoding)
+            # If value is already a string, use it directly
+            # If value is a dict/list, convert to JSON string
+            import json
+            if isinstance(value, (dict, list)):
+                store_value = json.dumps(value)
+            else:
+                store_value = value
+
             # Cross-DB compatible Upsert: Delete then Insert
-            if self.user_id:
+            if target_uid:
                 conn.execute(text("DELETE FROM settings WHERE key = :key AND user_id = :uid"),
-                             {"key": key, "uid": self.user_id})
+                             {"key": key, "uid": target_uid})
                 conn.execute(text("INSERT INTO settings (key, user_id, value) VALUES (:key, :uid, :value)"),
-                             {"key": key, "uid": self.user_id, "value": value})
+                             {"key": key, "uid": target_uid, "value": store_value})
             else:
                 conn.execute(text("DELETE FROM settings WHERE key = :key AND user_id = 'SYSTEM'"),
                              {"key": key})
                 conn.execute(text("INSERT INTO settings (key, user_id, value) VALUES (:key, 'SYSTEM', :value)"),
-                             {"key": key, "value": value})
+                             {"key": key, "value": store_value})
             conn.commit()
             return True, "Success"
         except Exception as e:

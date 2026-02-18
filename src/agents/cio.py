@@ -2,7 +2,7 @@ import pandas as pd
 import json
 from .base_agent import BaseAgent
 from src.utils.time_utils import format_time
-from src.repositories.transaction_repository import TransactionRepositoryImpl
+from src.repositories.transaction_repository import AlchemyTransactionRepository
 from src.repositories.settings_repository import AlchemySettingsRepository
 
 class CIOAgent(BaseAgent):
@@ -11,7 +11,7 @@ class CIOAgent(BaseAgent):
         tier = kwargs.pop('tier', 'smart')
         super().__init__(name="CIO", prompt_path=prompt_path, use_cache=use_cache, ttl_hours=24, tier=tier, **kwargs)
         
-        self.transaction_repo = transaction_repo or TransactionRepositoryImpl()
+        self.transaction_repo = transaction_repo or AlchemyTransactionRepository()
         self.mode = mode
         
         # Common ETFs to filter out for "Stock Picking" focus

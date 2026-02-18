@@ -3,7 +3,7 @@ from typing import Dict, List, Any
 import logging
 from src.domain.trading import Position, Account
 from src.services.broker_factory import BrokerFactory
-from src.repositories.transaction_repository import SqliteTransactionRepository
+from src.repositories.transaction_repository import AlchemyTransactionRepository
 
 logger = logging.getLogger(__name__)
 

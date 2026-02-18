@@ -5,6 +5,7 @@
 ### 版本紀錄 (Version History)
 | Date | Version | Description | Author |
 | :--- | :--- | :--- | :--- |
+| 2026-02-18 | v4.1 | **Async & Multi-Identity**: Refactored Notification/Interaction services to be non-blocking. Unified user identity resolution. | Neo |
 | 2026-02-15 | v3.6 | Added Leverage Engine & Bilingual Code Standards | Neo |
 | 2026-02-14 | v3.5 | Added RiskKeywordRepository, Sentinel 4D triggers, weighted keywords, Tavily pipeline | Neo |
 | 2026-02-14 | v3.5 | Full rewrite — 27 services documented, Multi-Broker, Sentinel/Council, Memory | Neo |
@@ -14,7 +15,7 @@
 
 <a id="zh"></a>
 
-## 🇹🇼 服務層開發指南 (v3.5)
+## 🇹🇼 服務層開發指南 (v4.1)
 
 本文件依據 [文件框架定義](文件框架定義-Document-Frameworks) 編寫，詳解 `src/services/` 下核心業務邏輯的實作規範。
 
@@ -81,6 +82,7 @@ graph TD
 | `MemoryFactory` | `memory_factory.py` | 依環境自動選擇 Redis (生產) 或 SQLite (本地) 後端。 |
 | `TransactionService` | `transaction_service.py` | 交易記錄 CRUD、Atomic 匯入。 |
 | `IngestionService` | `ingestion_service.py` | CSV 匯入 (交易/股利)、全有或全無。 |
+| `UserRepository` | `user_repository.py` | **[NEW v4.1]** 跨通路身分映射與 UUID 解析核心介面。 |
 | `RiskKeywordRepository` | `risk_keyword_repository.py` | 風險關鍵字 CRUD + 命中追蹤 + 復盤分析 (30+ 預設種子)。 |
 
 #### 2.6 Dashboard & UI 支援 (UI Support)
@@ -90,7 +92,7 @@ graph TD
 | `AnalyticsService` | `analytics_service.py` | NLV/Leverage/P&L 確定性計算 (0% 幻覺)。**[v3.6 New]** Leverage Engine. |
 | `DashboardService` | `dashboard_service.py` | Dashboard 數據聚合與即時指標。 |
 | `PerformanceService` | `performance_service.py` | 歷史績效追蹤與趨勢分析。 |
-| `SettingsService` | `settings_service.py` | 系統設定 CRUD (SQLite-backed)。 |
+| `SettingsService` | `settings_service.py` | 系統設定 CRUD (Unified DB backed)。 |
 | `ThemeService` | `theme_service.py` | CSS 主題管理 (Dark/Light)。 |
 | `BacktestService` | `backtest_service.py` | 策略回測引擎。 |
 
@@ -98,9 +100,9 @@ graph TD
 
 | 服務 | 檔案 | 核心職責 |
 | :--- | :--- | :--- |
-| `InteractionService` | `interaction_service.py` | 雙向互動 (Approvals/Commands) — 支援 LINE Postback 與 Webhook 路由。 |
+| `InteractionService` | `interaction_service.py` | **[Async v4.1]** 雙向互動 (Approvals) — 支援 LINE Webhook 非同步路由。 |
 | `SchedulerService` | `scheduler_service.py` | Cron 排程 — 自動日報/週報生成。 |
-| `NotificationService` | `notification_service.py` | 單向警報推送 (Extracted from old implementation)。 |
+| `NotificationService` | `notification_service.py` | **[Async v4.1]** 非同步警報推送，具備 UUID 多通路映射能力。 |
 
 ### 3. 代理人執行引擎 (Agent Execution Engine)
 

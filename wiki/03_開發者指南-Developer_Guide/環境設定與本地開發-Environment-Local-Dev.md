@@ -2,11 +2,17 @@
 
 > **[繁體中文 (Traditional Chinese)](#zh) | [English](#en)**
 
+### 版本紀錄 (Version History)
+| Date | Version | Description | Author |
+| :--- | :--- | :--- | :--- |
+| 2026-02-18 | v4.1 | **Security & UUID Sync**: Updated secrets isolation policy and CLI identity resolution examples. | Neo |
+| 2026-02-17 | v4.0 | **Unified DB Strategy**: Migrated core entities to PostgreSQL + pgvector. | Neo |
+
 ---
 
 <a id="zh"></a>
 
-## 🇹🇼 環境設定與本地開發指南 (v4.0)
+## 🇹🇼 環境設定與本地開發指南 (v4.1)
 
 本文件引導開發者建置符合 v4.0 標準的開發環境，包含 PostgreSQL + Redis 基礎設施與資安隔離規範。
 
@@ -37,8 +43,8 @@ pip install -r requirements.txt
 
 | 指令模式 | 參數示例 | 說明 |
 | :--- | :--- | :--- |
-| **Daily Workflow** | `--mode daily --user_id <ID>` | 執行每日收盤後的動能分析與快照。 |
-| **Weekly Workflow**| `--mode weekly --user_id <ID>` | 執行每週總經分析與完整週報發送。 |
+| **Daily Workflow** | `--mode daily --user_id <UUID_or_Email>` | 執行每日收盤後的動能分析與快照。系統會自動解析身分。 |
+| **Weekly Workflow**| `--mode weekly --user_id <UUID_or_Email>` | 執行每週總經分析與完整週報發送。 |
 | **Backtest** | `--mode backtest --ticker AAPL` | 在本地執行 30 天標的回測模擬。 |
 | **Optimize** | `--mode optimize` | 啟動 DSPy 優化流程 (Engineer Agent 核心)。 |
 | **Scheduler** | `--mode scheduler` | 啟動守護進程，自動按時執行任務。 |
@@ -56,7 +62,8 @@ pip install -r requirements.txt
 依據 **Rule #11 (Managed-Security-Base)**，所有機敏資產必須隔離。
 
 - **`.env`**: 存放非核心配置。
-- **`secrets/`**: **(NEW v4.0)** 強制隔離目錄，包含 OpenAI/Gemini API Keys、券商憑證 (IB/Futu)。*此目錄已加入 .gitignore*。
+- **`secrets/`**: **(NEW v4.0)** 強制隔離目錄，包含 OpenAI/Gemini API Keys、券商憑證 (IB/Futu)。*此目錄與 `.env` 已加入 .gitignore*。
+- **禁止提交 (Forbidden)**: 嚴禁將包含連接測試、私有金鑰或臨時腳本 (如 `test_conn.py`, `debug_secrets.py`) 提交至倉庫。任何涉及機敏資訊的測試應在 `secrets/` 內進行。
 
 | 變數名稱 | 類型 | 說明 |
 | :--- | :--- | :--- |
@@ -69,8 +76,8 @@ pip install -r requirements.txt
 
 ### 3. 操作手冊與 CLI (CLI Handbook)
 `src/cli.py` 封裝了所有自動化任務：
-- **生成報告**: `python src/cli.py --mode daily --user_id <email>`
-- **回測模擬**: `python src/cli.py --mode backtest --ticker AAPL`
+- **生成報告**: `python src/cli.py --mode daily --user_id <UUID_or_email>`
+- **回測模擬**: `python src/cli.py --mode backtest --ticker AAPL --user_id <UUID>`
 
 ### 4. 疑難排解 (Troubleshooting)
 

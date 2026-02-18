@@ -4,7 +4,7 @@ import datetime
 from sqlalchemy import text
 from src.data.sentinel_repository import SentinelRepository
 from src.services.verification_service import VerificationService
-from src.repositories.verification_repository import VerificationRepository
+from src.repositories.verification_repository import AlchemyVerificationRepository
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -28,7 +28,7 @@ async def verify_stabilization():
     assert is_dup is True, "Suppression failed! Timestamp probably mismatch."
 
     print("\n--- Testing Early Identity Mapping ---")
-    v_repo = VerificationRepository()
+    v_repo = AlchemyVerificationRepository()
     v_service = VerificationService(repo=v_repo)
     
     user_email = "test_user@example.com"

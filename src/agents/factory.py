@@ -15,7 +15,7 @@ from typing import Any, Optional, Dict, List, Union
 
 # [NEW] Imports for DI
 # [NEW] 依賴注入引入
-from src.repositories.feedback_repository import FeedbackRepositoryImpl
+from src.repositories.feedback_repository import AlchemyFeedbackRepository
 from src.repositories.settings_repository import AlchemySettingsRepository
 from src.tools.market_tools import create_market_server
 
@@ -103,7 +103,7 @@ class AgentFactory:
         注入通用依賴的輔助函數。
         """
         if not hasattr(agent, 'feedback_repo') or agent.feedback_repo is None:
-             agent.feedback_repo = FeedbackRepositoryImpl()
+             agent.feedback_repo = AlchemyFeedbackRepository()
         
         market_server = create_market_server()
         for tool in market_server.list_tools():

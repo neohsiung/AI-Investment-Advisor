@@ -35,12 +35,12 @@ class DashboardPage(BasePage):
         Render dashboard content.
         渲染儀表板內容。
         """
-        user_id = self.user['email']
+        user_id = self.user['id']
         
         # Initialize service on first render
         if self.dashboard_service is None:
-            # Use db_path from BasePage or default
-            db_path = getattr(self, 'db_path', 'data/portfolio.db')
+            # Use db_path from BasePage (None will use environment DB_URL or DB_TYPE)
+            db_path = getattr(self, 'db_path', None)
             self.dashboard_service = DashboardService(db_path=db_path)
 
         # High-level loading feedback for the entire Overview data preparation
@@ -72,7 +72,10 @@ class DashboardPage(BasePage):
                 with col4:
                     saas_metric("總投報率 (ROI)", f"{roi:.2f}%", icon="📈")
                 with col5:
-                    saas_metric("今日總盈虧 (PnL)", f"${pnl_data.get('total', 0):,.0f}", delta=f"${pnl_data.get('unrealized', 0):,.0f}")
+                    # 顯示總累計盈虧，delta 顯示未實現盈虧
+                    total_pnl = pnl_data.get('total', 0)
+                    unrealized_pnl = pnl_data.get('unrealized', 0)
+                    saas_metric("累計盈虧 (Total P&L)", f"${total_pnl:,.0f}", delta=f"未實現: ${unrealized_pnl:,.0f}", icon="💰")
 
                 if metrics.get('leverage_ratio', 0) >= 2.0:
                     saas_alert("危險警告: 槓桿比率過高！有追繳保證金風險 (Margin Call Risk)。", style="danger", title="槓桿風險警告")

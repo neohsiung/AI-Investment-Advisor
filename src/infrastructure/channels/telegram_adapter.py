@@ -28,6 +28,26 @@ class TelegramAdapter(BaseChannelAdapter):
         if isinstance(message, str):
             return await self.send_alert(user_id, "Message", message)
         return False
+    
+    def send_message_sync(self, user_id: str, message: Any, **kwargs) -> bool:
+        """
+        Send a generic message synchronously (for backward compatibility).
+        同步發送訊息（向後相容）。
+        """
+        import asyncio
+        try:
+            loop = asyncio.get_event_loop()
+            if loop.is_running():
+                # If loop is already running, create a new task
+                import concurrent.futures
+                with concurrent.futures.ThreadPoolExecutor() as executor:
+                    future = executor.submit(asyncio.run, self.send_message(user_id, message, **kwargs))
+                    return future.result(timeout=30)
+            else:
+                return loop.run_until_complete(self.send_message(user_id, message, **kwargs))
+        except Exception as e:
+            logger.error(f"Sync send_message failed: {e}")
+            return False
 
     async def receive_command(self, payload: Any, **kwargs) -> Any:
         return None
@@ -88,6 +108,33 @@ class TelegramAdapter(BaseChannelAdapter):
         except Exception as e:
             logger.error(f"TelegramAdapter exception: {e}")
             if raise_error:
+                raise e
+            return False
+    
+    def send_alert_sync(self, user_id: str, title: str, content: str, actions: List[Dict[str, str]] = None, **kwargs) -> bool:
+        """
+        Send alert to Telegram synchronously (for backward compatibility).
+        同步發送警報到 Telegram（向後相容）。
+        """
+        import asyncio
+        try:
+            loop = asyncio.get_event_loop()
+            if loop.is_running():
+                # If loop is already running, create a new task in a new thread
+                import concurrent.futures
+                with concurrent.futures.ThreadPoolExecutor() as executor:
+                    future = executor.submit(
+                        asyncio.run,
+                        self.send_alert(user_id, title, content, actions, **kwargs)
+                    )
+                    return future.result(timeout=30)
+            else:
+                return loop.run_until_complete(
+                    self.send_alert(user_id, title, content, actions, **kwargs)
+                )
+        except Exception as e:
+            logger.error(f"Sync send_alert failed: {e}")
+            if kwargs.get("raise_error", False):
                 raise e
             return False
     

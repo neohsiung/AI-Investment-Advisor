@@ -2,7 +2,7 @@
 from typing import Dict, List, Optional, Any
 from src.domain.broker import IBroker
 from src.domain.trading import Order, Position, Account, BrokerType
-from src.repositories.transaction_repository import SqliteTransactionRepository
+from src.repositories.transaction_repository import AlchemyTransactionRepository
 from src.infrastructure.risk_manager import RiskManager
 import logging
 
@@ -25,8 +25,8 @@ class IBKRService(IBroker):
         self.host = host
         self.port = port
         self.client_id = client_id
-        from src.repositories.transaction_repository import SqliteTransactionRepository
-        self.transaction_repo = SqliteTransactionRepository()
+        from src.repositories.transaction_repository import AlchemyTransactionRepository
+        self.transaction_repo = AlchemyTransactionRepository()
         self.risk_manager = RiskManager()
         self.name = "Interactive Brokers"
         

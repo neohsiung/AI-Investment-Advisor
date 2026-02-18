@@ -1,6 +1,7 @@
 ### 版本紀錄 (Version History)
 | Date | Version | Description | Author |
 | :--- | :--- | :--- | :--- |
+| 2026-02-18 | v4.1.0 | **UUID Multi-Identity & Async**: Standardized on UUID identities and non-blocking I/O patterns. | Neo |
 | 2026-02-17 | v4.0.0 | **Full Migration to PostgreSQL**: pgvector, NUMERIC, and Hybrid ORM strategy. | Neo |
 | 2026-02-14 | v3.1.0 | Added "Safe-SQL-Only" principle and hybrid strategy. | Neo |
 | 2024-01-04 | v1.0.0 | Initial Release | Neo |
@@ -9,7 +10,7 @@
 
 <a id="zh"></a>
 
-## 🇹🇼 資料庫設計與代碼規範 (v4.0)
+## 🇹🇼 資料庫設計與代碼規範 (v4.1)
 
 本文件依據 [文件框架定義](文件框架定義-Document-Frameworks) 編寫，定義了系統持久層的物理設計、代碼風格與協作規範。v4.0 正式由 SQLite 全面遷移至 PostgreSQL。
 
@@ -19,8 +20,9 @@
 
 | 資料表 | 欄位 | 類型與約束 | 描述 |
 | :--- | :--- | :--- | :--- |
-| **`users`** | `id` | `UUID` (PK) | 使用 `uuid-ossp` 生成唯一識別碼。 |
+| **`users`** | `id` | `UUID` (PK) | 系統唯一識別碼，不再使用 Email 作為主鍵。 |
 | | `preferences` | `JSONB` | 支援 Indexable 的偏好設定儲存。 |
+| **`user_identities`** | `user_id` | `UUID` (FK) | **[NEW v4.1]** 映射 Email, LINE, Telegram 等外部標識至 UUID。 |
 | **`transactions`** | `quantity`, `price` | `NUMERIC(18, 8)` | 確保金融計算 100% 精度，避免 FLOAT 誤差。 |
 | | `raw_data` | `JSONB` | 儲存原始券商 API 回傳，帶 GIN 索引。 |
 | | `trade_date` | `DATE` | 交易執行日期，非文字格式。 |
@@ -43,7 +45,7 @@
 - **註解要求**: 所有 Docstrings 必須雙語，英文在上，中文在下。
 - **類型標註**: 函式定義強制要求 Type Hints。
 - **縮進**: 統一使用 4 個空格。
-- **異步處理**: 針對 I/O 密集型操作 (如通知、行情抓取) 優先考慮非同步架構。
+- **同步/非同步併行 (Async-First)**: **[Mandatory v4.1]** 所有網路 I/O (API, DB, Notifications) 必須採用 `async/await`。嚴禁在非同步上下文中使用同步阻塞套件 (如 `requests`)，應優先選用 `httpx` 或 `aiohttp`。
 
 ### 3. Git 協作與提交 (Git Standards)
 - **提交規範**: 遵循 [Conventional Commits](https://www.conventionalcommits.org/)。
@@ -54,7 +56,7 @@
 
 <a id="en"></a>
 
-## 🇺🇸 Database & Git Standards (v4.0)
+## 🇺🇸 Database & Git Standards (v4.1)
 
 This document defines the physical design of the persistence layer, coding style, and collaboration standards. v4.0 marks the full transition from SQLite to PostgreSQL.
 
@@ -64,8 +66,9 @@ This document defines the physical design of the persistence layer, coding style
 
 | Table | Columns | Type/Constraint | Description |
 | :--- | :--- | :--- | :--- |
-| **`users`** | `id` | `UUID` (PK) | Generated via `uuid-ossp`. |
+| **`users`** | `id` | `UUID` (PK) | System-wide unique identifier (UUID v4). |
 | | `preferences` | `JSONB` | Indexable JSON storage. |
+| **`user_identities`** | `user_id` | `UUID` (FK) | Maps Email/LINE/Telegram to UUID. |
 | **`transactions`** | `quantity`, `price` | `NUMERIC(18, 8)` | 100% precision for financial calculations. |
 | | `raw_data` | `JSONB` | Raw API payloads with GIN indexing. |
 | **`memory_embeddings`**| `embedding` | `vector(1536)` | Native **pgvector** embeddings. |
@@ -83,7 +86,7 @@ This document defines the physical design of the persistence layer, coding style
 Adhering to the **Google Python Style Guide**:
 - **Bilingual Docs**: Mandatory ZH/EN docstrings for all classes and functions.
 - **Type Hinting**: Required for all function signatures.
-- **Async I/O**: Prioritized for network-bound operations.
+- **Async-First Protocol**: **[v4.1]** Mandatory `async/await` for all network-bound operations (API, DB, Messaging). Use `httpx` or `aiosmtplib` to ensure non-blocking execution.
 
 ### 3. Git Workflow
 - **Pattern**: [Conventional Commits](https://www.conventionalcommits.org/).

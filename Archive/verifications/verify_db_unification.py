@@ -5,7 +5,7 @@ from datetime import datetime, date
 from src.data.database import get_db_engine, init_db
 from src.repositories.transaction_repository import TransactionRepositoryImpl
 from src.repositories.settings_repository import AlchemySettingsRepository
-from src.repositories.verification_repository import VerificationRepository
+from src.repositories.verification_repository import AlchemyVerificationRepository
 from src.infrastructure.memory.memory_manager import HybridMemory
 
 logging.basicConfig(level=logging.INFO)
@@ -52,8 +52,8 @@ def verify_unification():
         logger.info("   ✅ Memory OK")
 
         # 5. Test Verification
-        logger.info("🔑 Testing VerificationRepository...")
-        verify_repo = VerificationRepository(engine=engine)
+        logger.info("🔑 Testing AlchemyVerificationRepository...")
+        verify_repo = AlchemyVerificationRepository(engine=engine)
         verify_repo.create_verification(user_id, "matrix", "@user:matrix.org", "123456", datetime.now())
         v = verify_repo.get_by_user_id(user_id, "matrix")
         assert v["code"] == "123456"

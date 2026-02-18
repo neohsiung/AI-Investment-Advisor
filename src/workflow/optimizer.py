@@ -11,7 +11,7 @@ except (ImportError, AttributeError):
     BootstrapFewShot = None
 
 from src.agents.dspy_modules import MomentumSignature
-from src.data.repositories.feedback_repository import SqliteFeedbackRepository
+from src.data.repositories.feedback_repository import AlchemyFeedbackRepository
 from src.domain.entities import FeedbackExample
 
 class OptimizerPipeline:
@@ -25,9 +25,9 @@ class OptimizerPipeline:
         db_path (str): 資料庫路徑
         repo (FeedbackRepository): 回饋數據存取介面
     """
-    def __init__(self, db_path="data/portfolio.db", model_name="gemini-1.5-pro"):
-        self.db_path = db_path
-        self.repo = SqliteFeedbackRepository(db_path)
+    def __init__(self, db_path=None, model_name="gemini-1.5-pro"):
+        self.db_path = db_path  # None will use environment DB_URL or DB_TYPE
+        self.repo = AlchemyFeedbackRepository(db_path)
         
         # Setup DSPy LM
         # In real usage, we should use the API Key from settings or env

@@ -1,7 +1,7 @@
 import os
 import logging
 from src.services.memory_service import MemoryService
-from src.repositories.memory_repository import MemoryRepositoryImpl as SqliteMemoryRepository
+from src.repositories.memory_repository import AlchemyMemoryRepository
 from src.repositories.redis_memory_repository import RedisMemoryRepository
 from src.infrastructure.agent_llm_provider import AgentLLMProvider
 
@@ -31,7 +31,7 @@ class MemoryFactory:
             repo = RedisMemoryRepository(redis_url)
         else:
             logger.info("Initializing MemoryService with SQLITE backend.")
-            repo = SqliteMemoryRepository()
+            repo = AlchemyMemoryRepository()
             
         # 2. Select LLM Provider (Shared)
         # In production, this might also be an interface to a specialized Microservice

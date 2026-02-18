@@ -43,3 +43,21 @@
 ### 3.2 數據與 SQL 安全
 - **Safe-SQL-Only (Rule #10)**: 所有 Raw SQL 必須使用參數化查詢，嚴禁字串拼接。
 - **憑證管理**: 嚴禁硬編碼憑證，統一使用 `.env` 與隔離的 `secrets/` 目錄。
+
+---
+
+## 4. 專案組織與腳本管理 (Project Organization & Script Management)
+
+為了保持工作區整潔並確保通性工具的可用性，必須遵循以下組織規範：
+
+### 4.1 指令碼存放規範 (Script Locations)
+- **`scripts/`**: 僅存放核心工具。包含部署 (Deployment)、維運/CI (Ops/CI) 及開發者設定 (Dev Setup)。
+- **`Archive/scripts/`**: 存放一次性遷移 (Migration)、歷史修復 (Fixes) 及臨時診斷腳本。
+- **`Archive/verifications/`**: 存放過往開發階段使用的 Ad-hoc 整合驗證腳本。
+
+### 4.2 個人用腳本規範 (Personal Scripts & Gitignore)
+- **命名約定**: 所有個人臨時用或開發中尚未成熟的腳本必須遵循以下命名模式以自動被 Git 排除：
+    - `scripts/personal_*` (例如：`scripts/personal_test_api.py`)
+    - `scripts/tmp_*`
+    - `*_local.py`
+- **通性工具**: 具備通用性且需於團隊/CI 間共享的工具（如 `run_full_verification.sh`, `seed_data.py`）嚴禁使用上述個人命名模式，且必須由 Git 追蹤。

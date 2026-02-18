@@ -43,7 +43,7 @@ class ISnapshotRepository(ABC):
         """
         pass
 
-class SnapshotRepositoryImpl(BaseRepository, ISnapshotRepository):
+class AlchemySnapshotRepository(BaseRepository, ISnapshotRepository):
     """
     Implementation of ISnapshotRepository using SQLAlchemy.
     使用 SQLAlchemy 實作的 ISnapshotRepository。
@@ -104,18 +104,23 @@ class SnapshotRepositoryImpl(BaseRepository, ISnapshotRepository):
                     leverage_ratio = EXCLUDED.leverage_ratio
             ''')
             
+            # v4.1.1 Patch: Sanitize inf/nan for Postgres NUMERIC compatibility
+            import math
+            def sanitize(v):
+                if v is None or math.isinf(v) or math.isnan(v):
+                    return 0.0
+                return v
+
             conn.execute(sql, {
                 "date": date,
                 "user_id": user_id,
-                "nlv": nlv,
-                "cash_balance": cash_balance,
-                "invested_capital": invested_capital,
-                "pnl": pnl,
-                "tnv": total_tnv,
-                "lev": leverage_ratio
+                "nlv": sanitize(nlv),
+                "cash_balance": sanitize(cash_balance),
+                "invested_capital": sanitize(invested_capital),
+                "pnl": sanitize(pnl),
+                "tnv": sanitize(total_tnv),
+                "lev": sanitize(leverage_ratio)
             })
 
-# Legacy aliases
-# @deprecated: Use SnapshotRepositoryImpl
-SqliteSnapshotRepository = SnapshotRepositoryImpl
-SnapshotRepository = ISnapshotRepository
+# Legacy aliases removed in v4.1.7
+# @deprecated: Use AlchemySnapshotRepository

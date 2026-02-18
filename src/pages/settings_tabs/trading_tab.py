@@ -97,27 +97,38 @@ def render_trading_tab(st, user_id: str):
                 )
 
         if st.form_submit_button("💾 儲存交易設定", use_container_width=True):
-            updates = {
-                "preferred_broker": new_broker,
-                "ai_max_daily_trades": new_max_daily,
-                "cb_loss_streak": new_cb_loss,
-                "risk_max_sector_exposure": new_sector_limit,
-                "enable_etoro": "true" if enable_etoro else "false",
-                "etoro_api_key": etoro_api_key,
-                "etoro_user_key": etoro_user_key,
-                "etoro_mode": "demo" if etoro_demo else "live",
-                "enable_futu": "true" if enable_futu else "false",
-                "futu_host": futu_host,
-                "futu_port": futu_port,
-                "futu_pwd": futu_pwd,
-                "enable_ibkr": "true" if enable_ibkr else "false",
-                "ibkr_host": ibkr_host,
-                "ibkr_port": ibkr_port
-            }
-            for k, v in updates.items():
-                settings_repo.set(user_id, k, str(v))
-            st.success("✅ 交易設定已更新")
-            time.sleep(1)
-            st.rerun()
+            try:
+                def to_bool(v):
+                    if isinstance(v, bool): return v
+                    return str(v).lower() == "true"
+
+                updates = {
+                    "preferred_broker": new_broker,
+                    "ai_max_daily_trades": new_max_daily,
+                    "cb_loss_streak": new_cb_loss,
+                    "risk_max_sector_exposure": new_sector_limit,
+                    "enable_etoro": enable_etoro,
+                    "etoro_api_key": etoro_api_key,
+                    "etoro_user_key": etoro_user_key,
+                    "etoro_mode": "demo" if etoro_demo else "real",
+                    "enable_futu": enable_futu,
+                    "futu_host": futu_host,
+                    "futu_port": futu_port,
+                    "futu_pwd": futu_pwd,
+                    "enable_ibkr": enable_ibkr,
+                    "ibkr_host": ibkr_host,
+                    "ibkr_port": ibkr_port
+                }
+                # v4.1.1: Don't use str(v) for all values - it double-encodes strings
+                # v4.1.1: 不要對所有值使用 str(v) - 這會導致字串被雙重編碼
+                for k, v in updates.items():
+                    settings_repo.set(user_id, k, v)
+                st.success("✅ 交易設定已更新")
+                time.sleep(2)  # 延長顯示時間讓使用者看到成功訊息
+                st.rerun()
+            except Exception as e:
+                st.error(f"❌ 儲存設定時發生錯誤: {str(e)}")
+                st.exception(e)  # 顯示完整錯誤堆疊
+                # 不執行 rerun，讓錯誤訊息保留在頁面上
 
     saas_card_end()

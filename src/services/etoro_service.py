@@ -8,7 +8,7 @@ import json
 
 from src.domain.broker import IBroker
 from src.domain.trading import Order, Position, Account, OrderAction, BrokerType
-from src.repositories.transaction_repository import SqliteTransactionRepository
+from src.repositories.transaction_repository import AlchemyTransactionRepository
 from src.infrastructure.risk_manager import RiskManager
 
 logger = logging.getLogger(__name__)
@@ -22,24 +22,90 @@ class EtoroService(IBroker):
     封裝 eToro API 並執行風險管理。
     """
 
-    def __init__(self, base_url: str = None, mode: str = "real", api_key: str = None, user_key: str = None) -> None:
+    def __init__(self, base_url: str = None, mode: str = "real", api_key: str = None, user_key: str = None, user_id: str = None) -> None:
         """
         Initialize the eToro service.
         初始化 eToro 服務。
+        
+        Args:
+            base_url: API base URL (optional)
+            mode: 'real' or 'demo'
+            api_key: API key (optional, will read from DB if not provided)
+            user_key: User key (optional, will read from DB if not provided)
+            user_id: User ID for loading credentials from database
         """
-        # Authentication (Priority: Arg > Env)
-        self.api_key = api_key or os.getenv("ETORO_API_KEY")
-        self.user_key = user_key or os.getenv("ETORO_USER_KEY")
+        # Authentication (Priority: Arg > DB > Env)
+        self.api_key = api_key
+        self.user_key = user_key
+        
+        # If not provided, try to load from database
+        if (not self.api_key or not self.user_key) and user_id:
+            self._load_credentials_from_db(user_id)
+        
+        # Fallback to environment variables
+        if not self.api_key:
+            self.api_key = os.getenv("ETORO_API_KEY")
+        if not self.user_key:
+            self.user_key = os.getenv("ETORO_USER_KEY")
 
         # Use official endpoint if keys are provided, else fallback to bridge for legacy support
-        default_base = "https://public-api.etoro.com" if self.api_key else "http://localhost:8000"
+        if self.api_key and self.user_key:
+            default_base = "https://public-api.etoro.com"
+            logger.info(f"Using official eToro Public API with provided credentials")
+        else:
+            default_base = "http://localhost:8000"
+            logger.warning(f"No eToro API credentials found, using local bridge at {default_base}")
+        
         self.base_url = base_url or os.getenv("ETORO_API_BASE_URL", default_base)
         
-        self.mode = mode  # 'real' or 'demo'
-        self.transaction_repo = SqliteTransactionRepository()
+        # Normalize mode: 'live' -> 'real' per BrokerFactory requirements
+        self.mode = "real" if mode == "live" else mode
+        self.transaction_repo = AlchemyTransactionRepository()
         self.risk_manager = RiskManager()
         self.name = "eToro"
         self._id_to_symbol = {} # Reverse map: ID -> Ticker
+
+    def _load_credentials_from_db(self, user_id: str) -> None:
+        """
+        Load eToro API credentials from database settings.
+        從資料庫設定載入 eToro API 憑證。
+        """
+        try:
+            # Ensure PostgreSQL connection
+            if os.getenv('DB_TYPE') == 'postgres' and os.getenv('DB_HOST') == 'postgres':
+                os.environ['DB_HOST'] = 'localhost'
+            
+            from src.data.database import get_db_connection
+            from sqlalchemy import text
+            import json
+            
+            conn = get_db_connection()
+            result = conn.execute(text(
+                "SELECT key, value FROM settings WHERE user_id = :uid AND key IN ('etoro_api_key', 'etoro_user_key')"
+            ), {'uid': user_id}).fetchall()
+            
+            for row in result:
+                key, value = row[0], row[1]
+                # Parse JSON value if it's a JSON string
+                try:
+                    # Check if value starts with quote (JSON encoded string)
+                    if isinstance(value, str) and value.startswith('"') and value.endswith('"'):
+                        parsed_value = json.loads(value)
+                    else:
+                        parsed_value = value
+                except:
+                    parsed_value = value
+                
+                if key == 'etoro_api_key':
+                    self.api_key = parsed_value
+                    logger.info(f"✓ Loaded eToro API key from database")
+                elif key == 'etoro_user_key':
+                    self.user_key = parsed_value
+                    logger.info(f"✓ Loaded eToro user key from database")
+            
+            conn.close()
+        except Exception as e:
+            logger.warning(f"Failed to load eToro credentials from database: {e}")
 
     def get_name(self) -> str:
         """
@@ -177,15 +243,61 @@ class EtoroService(IBroker):
     def get_history(self, days: int = 30) -> List[Dict[str, Any]]:
         """
         Fetch Trade History.
+        獲取交易歷史紀錄。
+        
+        Reference: https://public-api.etoro.com/api/v1/trading/info/trade/history
+        Official endpoint: GET /api/v1/trading/info/trade/history
+        
+        Required Parameters:
+        - minDate: The start date of the period (YYYY-MM-DD format)
+        
+        Optional Parameters:
+        - page: The page number
+        - pageSize: The amount of trades in each page
+        
+        Workflow:
+        1. Call GET /api/v1/trading/info/trade/history to get all historical trades
+        2. Filter by instrumentId on client side if needed
+        3. Use GET /api/v1/market-data/search?internalSymbolFull=SYMBOL to get instrumentId
         """
+        # Official eToro API endpoint for trading history
+        # 官方 eToro API 交易歷史端點
         endpoint = "/api/v1/trading/info/trade/history"
+        if self.mode == "demo":
+            endpoint = "/api/v1/trading/info/demo/trade/history"
+        
         try:
             url = f"{self.base_url}{endpoint}"
-            response = requests.get(url, headers=self._get_headers(), timeout=10)
-            response.raise_for_status()
-            return response.json()
+            headers = self._get_headers()
+            
+            # Query parameters based on official API documentation
+            # Required: minDate (YYYY-MM-DD format)
+            from datetime import timedelta
+            start_date = datetime.now() - timedelta(days=days)
+            
+            params = {
+                'minDate': start_date.strftime('%Y-%m-%d'),
+                'pageSize': 100  # Get up to 100 trades per request
+            }
+            
+            logger.info(f"ETORO HISTORY: Fetching from {url}")
+            logger.info(f"ETORO HISTORY: Query params: {params}")
+            
+            response = requests.get(url, headers=headers, params=params, timeout=15)
+            
+            if response.status_code == 200:
+                data = response.json()
+                # Response is a list of trade objects
+                # Each trade contains: netProfit, closeRate, closeTimestamp, positionId, instrumentId,
+                # isBuy, leverage, openRate, openTimestamp, stopLossRate, takeProfitRate, etc.
+                history = data if isinstance(data, list) else []
+                logger.info(f"ETORO HISTORY: Retrieved {len(history)} trade records")
+                return history
+            else:
+                logger.warning(f"ETORO HISTORY: {response.status_code} - {response.text[:200]}")
+                return []
         except Exception as e:
-            logger.error(f"Failed to fetch history: {e}")
+            logger.error(f"ETORO HISTORY: Failed to fetch trade history: {e}")
             return []
 
     def execute_order(self, order: Order) -> Dict[str, Any]:
@@ -304,13 +416,44 @@ class EtoroService(IBroker):
             logger.error(f"Failed to resolve Instrument ID for {ticker}: {e}")
             return None
 
-    def sync_history(self, user_id: str = "default_user") -> Dict[str, int]:
+    def sync_history(self, user_id: str = "default_user", days: int = 30, initial_sync: bool = False) -> Dict[str, int]:
         """
         Sync external history to local DB.
+        同步外部交易歷史到本地資料庫。
+        
+        Args:
+            user_id: User ID for the transactions
+            days: Number of days to fetch (default: 30 for regular sync)
+            initial_sync: If True, fetch all history from 2024-01-01; if False, use days parameter
+        
+        Returns:
+            Dict with 'added' and 'skipped' counts
+        
+        Usage:
+            # Initial sync: Get all history from 2024
+            service.sync_history(user_id, initial_sync=True)
+            
+            # Regular sync: Get last 30 days
+            service.sync_history(user_id, days=30)
         """
-        history = self.get_history()
+        # Determine fetch period
+        if initial_sync:
+            from datetime import datetime
+            start_date = datetime(2024, 1, 1)
+            days = (datetime.now() - start_date).days
+            logger.info(f"Initial sync: Fetching all history from 2024-01-01 ({days} days)")
+        else:
+            logger.info(f"Regular sync: Fetching last {days} days")
+        
+        history = self.get_history(days=days)
         if not history:
+            logger.warning("No history retrieved from eToro API")
             return {"added": 0, "skipped": 0}
+
+        # Ensure ID map is populated for symbol resolution
+        if not self._id_to_symbol:
+            logger.info("Populating instrument ID map from watchlists...")
+            self.get_watchlists()
 
         added_count = 0
         skipped_count = 0
@@ -324,42 +467,139 @@ class EtoroService(IBroker):
             except: continue
 
         for trade in history:
-            ticker = trade.get('Instrument', trade.get('symbol', 'UNKNOWN'))
-            date_str = trade.get('OpenDateTime', trade.get('open_date', datetime.now().strftime('%Y-%m-%d')))
-            action = trade.get('Action', trade.get('action', 'BUY')).upper()
-            quantity = float(trade.get('Amount', trade.get('quantity', 0)))
-            price = float(trade.get('OpenRate', trade.get('open_price', 0)))
-            fees = float(trade.get('Fees', trade.get('fees', 0)))
+            # instrumentId, openTimestamp, closeTimestamp, isBuy, units, openRate, closeRate, fees, netProfit
             
-            sig = f"{ticker}_{date_str}_{action}_{quantity:.4f}_{price:.4f}"
+            instrument_id = str(trade.get('instrumentId', ''))
+            ticker = self._id_to_symbol.get(instrument_id, f"ID_{instrument_id}")
             
-            if sig in existing_sigs:
+            open_ts = trade.get('openTimestamp', '')
+            close_ts = trade.get('closeTimestamp', '')
+            
+            is_buy = trade.get('isBuy', True)
+            open_action = 'BUY' if is_buy else 'SELL'
+            
+            quantity = float(trade.get('units', 0))
+            open_price = float(trade.get('openRate', 0))
+            leverage = float(trade.get('leverage', 1.0))
+            fees = abs(float(trade.get('fees', 0))) 
+            
+            # 1. Opening Leg
+            open_date_str = open_ts[:10] if open_ts else datetime.now().strftime('%Y-%m-%d')
+            open_sig = f"{ticker}_{open_date_str}_{open_action}_{quantity:.4f}_{open_price:.4f}"
+            
+            if open_sig not in existing_sigs:
+                self.transaction_repo.add(
+                    user_id=user_id,
+                    ticker=ticker,
+                    date=open_date_str,
+                    action=open_action,
+                    quantity=quantity,
+                    price=open_price,
+                    fees=fees if not close_ts else 0.0,
+                    leverage=leverage
+                )
+                added_count += 1
+            else:
                 skipped_count += 1
-                continue
+
+            # 2. Closing Leg (if closed)
+            if close_ts:
+                close_action = 'SELL' if open_action == 'BUY' else 'BUY'
+                close_price = float(trade.get('closeRate', 0))
+                close_date_str = close_ts[:10]
+                close_sig = f"{ticker}_{close_date_str}_{close_action}_{quantity:.4f}_{close_price:.4f}"
+                
+                if close_sig not in existing_sigs:
+                    self.transaction_repo.add(
+                        user_id=user_id,
+                        ticker=ticker,
+                        date=close_date_str,
+                        action=close_action,
+                        quantity=quantity,
+                        price=close_price,
+                        fees=0.0,
+                        leverage=leverage
+                    )
+                    added_count += 1
+                else:
+                    skipped_count += 1
             
-            self.transaction_repo.add(
-                user_id=user_id,
-                ticker=ticker,
-                date=date_str,
-                action=action,
-                quantity=quantity,
-                price=price,
-                fees=fees
-            )
-            added_count += 1
-            
+        # [NEW] v4.2.0: Synchronize Cash Balance and Backfill Positions
+        # [NEW] v4.2.0: 同步現金餘額並回補持倉
+        try:
+            self._sync_cash_balance(user_id)
+            self._backfill_from_positions(user_id)
+        except Exception as e:
+            logger.error(f"Post-sync logic failed: {e}")
+
         logger.info(f"Etoro Sync: Added {added_count}, Skipped {skipped_count}")
         return {"added": added_count, "skipped": skipped_count}
 
+    def _sync_cash_balance(self, user_id: str) -> None:
+        """
+        Adjust local cash balance to match broker's available cash.
+        調整本地現金餘額以匹配券商的可提款現金。
+        """
+        account = self.get_account()
+        if not account:
+            return
+
+        broker_cash = account.available_cash
+        local_cash = self.transaction_repo.get_cash_balance(user_id)
+        
+        diff = broker_cash - local_cash
+        
+        # We only adjust if difference is significant (> $0.10)
+        if abs(diff) > 0.10:
+            action = "DEPOSIT" if diff > 0 else "WITHDRAWAL"
+            logger.info(f"Syncing Cash: Local={local_cash}, Broker={broker_cash}, Diff={diff}, Action={action}")
+            self.transaction_repo.add(
+                user_id=user_id,
+                ticker="CASH",
+                date=datetime.now().strftime('%Y-%m-%d'),
+                action=action,
+                quantity=1.0,
+                price=abs(diff),
+                fees=0.0
+            )
+
+    def _backfill_from_positions(self, user_id: str) -> None:
+        """
+        Backfill BUY transactions for active positions that have no trade history.
+        回補沒有交易歷史的現有持倉 BUY 記錄。
+        """
+        positions = self.get_positions()
+        active_tickers = self.transaction_repo.get_active_tickers(user_id)
+        
+        for pos in positions:
+            if pos.symbol not in active_tickers:
+                logger.info(f"Backfilling Position: Missing BUY for {pos.symbol}")
+                # Create synthetic BUY record
+                self.transaction_repo.add(
+                    user_id=user_id,
+                    ticker=pos.symbol,
+                    date=pos.open_date.strftime('%Y-%m-%d'),
+                    action="BUY",
+                    quantity=pos.quantity,
+                    price=pos.open_price,
+                    fees=0.0
+                )
+
     # --- Helpers ---
     def _fetch_portfolio_raw(self) -> Dict[str, Any]:
-        """Raw API Call"""
+        """
+        Raw API Call to fetch portfolio.
+        Official eToro API: https://api-portal.etoro.com/api-reference/trading--real/retrieve-comprehensive-portfolio-information-including-positions-orders-and-account-status
+        """
+        # Official API endpoint (confirmed working: /api/v1/trading/info/portfolio)
+        # 官方 API 端點（已確認可用：/api/v1/trading/info/portfolio）
         endpoint = "/api/v1/trading/info/portfolio"
-        if not self.api_key and self.mode == "demo":
-             endpoint = "/api/v1/trading/info/demo/portfolio"
+        if self.mode == "demo":
+            endpoint = "/api/v1/trading/info/demo/portfolio"
              
         try:
             url = f"{self.base_url}{endpoint}"
+            logger.info(f"Fetching portfolio from: {url}")
             response = requests.get(url, headers=self._get_headers(), timeout=10)
             response.raise_for_status()
             return response.json()

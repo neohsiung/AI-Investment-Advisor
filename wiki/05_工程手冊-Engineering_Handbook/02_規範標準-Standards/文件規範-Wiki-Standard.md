@@ -67,6 +67,11 @@ This document defines the standards for creating and maintaining the project Wik
 *   **整合現有架構 (Integration)**:
     *   新文件應優先融入現有架構 (.md 檔案)，盡量避免新建檔案，除非該主題具有獨立且完整的敘事性。
     *   若需新建檔案，命名須嚴格遵循「一文一事」原則與命名規範。
+
+### 4.1 迴圈式填補迭代 (Iterative Patching Loop)
+*   **核心機制**: 更新文件時，嚴禁一次性大範圍重寫。應採用「迴圈 (Loop)」模式，針對文件中的各個相關段落進行局部的「補丁式 (Patching)」更新。
+*   **上下文保留**: 這種方式能確保在引入新功能的同時，保留原有的歷史背景與技術細節，達成新舊資訊的無縫接軌。
+*   **Mechanism**: Wholesale rewrites are strictly forbidden. Use an iterative "loop" approach to patch specific sections or paragraphs throughout the document, ensuring new features are integrated while preserving valuable context.
 *   **版本紀錄 (Version History)**:
     *   **位置**: 文件頂部或尾部 (建議頂部)。
     *   **內容**: 記錄每次重大迭代的原因 (Why) 與內容 (What)。

@@ -14,9 +14,9 @@ class AnalysisReportsPage(BasePage):
         """Render reports content"""
         db_path = self.db_path
         
-        from src.repositories.report_repository import ReportRepositoryImpl  
-        repo = ReportRepositoryImpl(db_path)
-        reports_df = repo.get_latest_reports()
+        from src.repositories.report_repository import AlchemyReportRepository  
+        repo = AlchemyReportRepository(db_path)
+        reports_df = repo.get_latest_reports(self.user['id'])
 
         if not reports_df.empty:
             from src.utils.time_utils import get_timezone

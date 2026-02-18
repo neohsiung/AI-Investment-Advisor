@@ -4,7 +4,7 @@ from typing import Dict, Any, List, Optional, Union
 from src.services.analytics_service import LeverageCalculator, ROIEngine, update_daily_snapshot, PnLCalculator
 from src.services.market_data_service import MarketDataService
 from src.services.transaction_service import TransactionService
-from src.repositories.transaction_repository import TransactionRepositoryImpl
+from src.repositories.transaction_repository import AlchemyTransactionRepository
 
 class DashboardService:
     """
@@ -12,13 +12,13 @@ class DashboardService:
     協調儀表板數據獲取與計算的服務。
     """
     
-    def __init__(self, db_path: str = "data/portfolio.db"):
+    def __init__(self, db_path: str = None):
         """
         Initialize the dashboard service.
         初始化儀表板服務。
         """
-        self.db_path = db_path
-        self.transaction_repo = TransactionRepositoryImpl()
+        self.db_path = db_path  # None will use environment DB_URL or DB_TYPE
+        self.transaction_repo = AlchemyTransactionRepository()
         self.transaction_service = TransactionService(repository=self.transaction_repo)
         self.market_service = MarketDataService()
         

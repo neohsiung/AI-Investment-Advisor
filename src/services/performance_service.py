@@ -2,7 +2,7 @@ import streamlit as st
 import pandas as pd
 from typing import Dict, Any, List, Optional
 from src.services.analytics_service import AnalyticsService
-from src.repositories.transaction_repository import TransactionRepositoryImpl
+from src.repositories.transaction_repository import AlchemyTransactionRepository
 from src.services.market_data_service import MarketDataService
 
 class PerformanceService:
@@ -20,7 +20,7 @@ class PerformanceService:
         self.user_id = user_id
         self.analytics_service = AnalyticsService(db_path=db_path, user_id=user_id)
         self.market_service = MarketDataService()
-        self.trans_repo = TransactionRepositoryImpl()
+        self.trans_repo = AlchemyTransactionRepository()
 
     @st.cache_data(ttl=300, show_spinner=False)
     def _fetch_prices(_self, tickers: List[str]) -> Dict[str, float]:
@@ -42,13 +42,24 @@ class PerformanceService:
         # 2. Trigger snapshot update and get PnL
         self.analytics_service.trigger_snapshot_update()
         pnl_data = self.analytics_service.get_pnl_breakdown(current_prices)
+        
+        # 確保 pnl_data 不為 None
+        if pnl_data is None:
+            pnl_data = {'realized': 0, 'unrealized': 0, 'total': 0, 'details': {}}
 
         # 3. Get performance history
         history_df = self.analytics_service.get_performance_history()
+        
+        # 確保 history_df 不為 None
+        if history_df is None:
+            import pandas as pd
+            history_df = pd.DataFrame()
 
         return {
             'pnl_data': pnl_data,
-            'history_df': history_df
+            'history_df': history_df,
+            'current_prices': current_prices,
+            'active_tickers': active_tickers
         }
 
     def record_recommendation(self, agent_name: str, ticker: str, signal: str, price: float) -> None:

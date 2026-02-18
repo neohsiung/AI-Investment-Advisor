@@ -71,15 +71,15 @@ class BaseRepository:
 def get_db_engine(db_path=None) -> Engine:
     """
     Returns a SQLAlchemy Engine.
-    Strictly prioritizes PostgreSQL if DB_TYPE=postgres or DB_URL is set.
+    Strictly uses PostgreSQL. SQLite fallback is disabled unless ALLOW_SQLITE=true.
     """
     global _db_engines
 
-    # 1. Check for explicit DB_URL (Environment variable override)
+    # 1. Check for explicit DB_URL
     db_url = os.getenv("DB_URL")
     
-    # 2. Construct from components if DB_TYPE is postgres
-    if not db_url and os.getenv("DB_TYPE", "sqlite") == "postgres":
+    # 2. Construct from components (Default to Postgres)
+    if not db_url:
         db_user = os.getenv("DB_USER", "postgres")
         db_pass = os.getenv("DB_PASS", "postgres")
         db_host = os.getenv("DB_HOST", "localhost")
@@ -87,22 +87,20 @@ def get_db_engine(db_path=None) -> Engine:
         db_name = os.getenv("DB_NAME", "portfolio")
         db_url = f"postgresql+psycopg2://{db_user}:{db_pass}@{db_host}:{db_port}/{db_name}"
 
-    # 3. Fallback to SQLite
-    if not db_url:
-        if db_path:
-            target_path = Path(db_path)
-        else:
-            target_path = Path("data/portfolio.db")
-
-        if not target_path.parent.exists():
-            target_path.parent.mkdir(parents=True, exist_ok=True)
-
-        db_url = f"sqlite:///{target_path}"
+    # 3. Allow SQLite ONLY if explicitly enabled for local dev/testing
+    if os.getenv("ALLOW_SQLITE", "false").lower() == "true":
+        if "postgresql" not in db_url:
+            logger.warning("ALLOW_SQLITE is true, using SQLite fallback.")
+            if not db_url.startswith("sqlite"):
+                 target_path = Path(db_path) if db_path else Path("data/portfolio.db")
+                 if not target_path.parent.exists():
+                     target_path.parent.mkdir(parents=True, exist_ok=True)
+                 db_url = f"sqlite:///{target_path}"
+    elif "sqlite" in db_url:
+        raise ConnectionError("SQLite is disabled. Please configure PostgreSQL via DB_URL or DB_USER/PASS/HOST/PORT/NAME.")
 
     if db_url not in _db_engines:
-        # SQLite specific args for concurrency
         connect_args = {'check_same_thread': False} if "sqlite" in db_url else {}
-        # Increase pool size for Postgres if needed
         if "postgresql" in db_url:
             _db_engines[db_url] = create_engine(db_url, pool_size=20, max_overflow=0)
         else:
@@ -119,22 +117,23 @@ def get_db_connection(db_path=None):
 
 def init_db(db_path=None):
     """
-    Initializes the database schema (v4.0 Optimized).
-    If Postgres: uses UUID, JSONB, NUMERIC, DATE, vector(1536).
-    If SQLite: uses TEXT/REAL (fallback).
+    Initializes the database schema (v4.1.7 Optimized for Postgres).
+    Strictly uses UUID, JSONB, NUMERIC, DATE, vector(1536).
     """
     engine = get_db_engine(db_path)
     is_sqlite = 'sqlite' in str(engine.url)
     
-    # Type definitions based on dialect
-    # v4.0 Patch: Standardize on TEXT/VARCHAR for user identifiers to support email-based logic
+    if is_sqlite:
+        logger.warning("Initializing on SQLite. Some v4.1+ features may be limited.")
+
+    # Type definitions (Optimized for Postgres)
     pk_type = "TEXT PRIMARY KEY"
     fk_type = "TEXT"
-    json_type = "TEXT" if is_sqlite else "JSONB"
-    timestamp_type = "TEXT" if is_sqlite else "TIMESTAMPTZ"
-    date_type = "TEXT" if is_sqlite else "DATE"
-    numeric_type = "REAL" if is_sqlite else "NUMERIC(18, 8)"
-    vector_type = "TEXT" if is_sqlite else "vector(1536)"
+    json_type = "JSONB" if not is_sqlite else "TEXT"
+    timestamp_type = "TIMESTAMPTZ" if not is_sqlite else "TEXT"
+    date_type = "DATE" if not is_sqlite else "TEXT"
+    numeric_type = "NUMERIC(18, 8)" if not is_sqlite else "REAL"
+    vector_type = "vector(1536)" if not is_sqlite else "TEXT"
 
     schema_commands = []
     
@@ -252,7 +251,20 @@ def init_db(db_path=None):
     );
     """)
 
-    # Support tables (Legacy/Compat)
+    # 9. User Identities table (v4.0 Identity Resolution)
+    schema_commands.append(f"""
+    CREATE TABLE IF NOT EXISTS user_identities (
+        id {pk_type},
+        user_id {fk_type} NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        provider TEXT NOT NULL,
+        identifier TEXT NOT NULL,
+        is_primary INTEGER DEFAULT 0,
+        created_at {timestamp_type} DEFAULT CURRENT_TIMESTAMP,
+        UNIQUE(provider, identifier)
+    );
+    """)
+
+    # Support tables
     schema_commands.append(f"""
     CREATE TABLE IF NOT EXISTS daily_snapshots (
         date {date_type},
@@ -315,53 +327,19 @@ def init_db(db_path=None):
                 if "already exists" not in str(e).lower():
                     logger.warning(f"Error executing schema command: {e}")
         
-        # Schema Patching (Migration for v4.0 Multi-user support)
+        # v4.1.7: Post-deployment strict migrations (UUID focus)
         if not is_sqlite:
-            # PostgreSQL Migrations
-            # 1. Ensure extensions
+            # Add Unique Index for UPSERT on daily_snapshots if missing
             try:
-                conn.execute(text('CREATE EXTENSION IF NOT EXISTS "uuid-ossp";'))
-                conn.execute(text('CREATE EXTENSION IF NOT EXISTS "vector";'))
+                check_idx = text("SELECT indexname FROM pg_indexes WHERE tablename = 'daily_snapshots' AND indexdef LIKE '%(date, user_id)%'")
+                if not conn.execute(check_idx).fetchone():
+                    conn.execute(text("CREATE UNIQUE INDEX IF NOT EXISTS idx_daily_snapshots_upsert ON daily_snapshots(date, user_id)"))
             except Exception as e:
-                logger.debug(f"Extension check info: {e}")
-
-            # 2. Add missing columns (Robust check)
-            migration_tasks = [
-                ("users", "id", "TEXT"),
-                ("transactions", "user_id", "TEXT"),
-                ("daily_snapshots", "user_id", "TEXT"),
-                ("cash_flows", "user_id", "TEXT"),
-                ("settings", "user_id", "TEXT"),
-                ("settings", "updated_at", "TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP")
-            ]
-            for table, col, col_def in migration_tasks:
-                try:
-                    # Check if column exists first to avoid complex ALTER constraints issues
-                    check_query = text(f"SELECT column_name FROM information_schema.columns WHERE table_name = '{table}' AND column_name = '{col}'")
-                    exists = conn.execute(check_query).fetchone()
-                    if not exists:
-                        logger.info(f"Adding missing column {col} to table {table}")
-                        conn.execute(text(f"ALTER TABLE {table} ADD COLUMN {col} {col_def}"))
-                except Exception as e:
-                    logger.warning(f"Migration failed for {table}.{col}: {e}")
-        else:
-            # SQLite Migrations (Simpler, no IF NOT EXISTS for columns in older SQLite)
-            # We try-catch each to ignore if columns already exist
-            sqlite_tasks = [
-                "ALTER TABLE transactions ADD COLUMN user_id TEXT",
-                "ALTER TABLE daily_snapshots ADD COLUMN user_id TEXT",
-                "ALTER TABLE cash_flows ADD COLUMN user_id TEXT"
-            ]
-            for cmd in sqlite_tasks:
-                try:
-                    conn.execute(text(cmd))
-                except Exception as e:
-                    if "duplicate column name" not in str(e).lower():
-                        logger.debug(f"SQLite migration info: {e}")
+                logger.warning(f"Failed to create unique index: {e}")
 
         conn.commit()
     
-    logger.info(f"Database initialized with v4.0 optimized schema (Dialect: {'SQLite' if is_sqlite else 'Postgres'}).")
+    logger.info(f"Database initialized with v4.1.7 optimized Postgres schema.")
 
 if __name__ == "__main__":
     init_db()

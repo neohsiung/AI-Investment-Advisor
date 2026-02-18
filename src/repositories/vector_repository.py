@@ -46,7 +46,7 @@ class IVectorRepository(ABC):
         """
         pass
 
-class VectorRepositoryImpl(BaseRepository, IVectorRepository):
+class AlchemyVectorRepository(BaseRepository, IVectorRepository):
     """
     Repository for handling Vector Database operations (PGVector/SQLite-Vec).
     處理向量資料庫呈現 (PGVector/SQLite-Vec) 的儲存庫。
@@ -181,7 +181,5 @@ class VectorRepositoryImpl(BaseRepository, IVectorRepository):
                 "similarity": row.similarity
             } for row in rows]
 
-# Legacy alias
-# @deprecated: Use VectorRepositoryImpl
-SqliteVectorRepository = VectorRepositoryImpl
-VectorRepository = VectorRepositoryImpl
+# Legacy aliases removed in v4.1.7
+# @deprecated: Use AlchemyVectorRepository

@@ -41,7 +41,7 @@ class IMarketDataRepository(ABC):
         """
         pass
 
-class MarketDataRepositoryImpl(IMarketDataRepository):
+class AlchemyMarketDataRepository(IMarketDataRepository):
     """
     Repository for fetching market data from external sources (e.g., yfinance).
     從外部來源（如 yfinance）獲取市場數據的儲存庫。
@@ -127,5 +127,5 @@ class MarketDataRepositoryImpl(IMarketDataRepository):
             self.logger.error(f"Error fetching info for {ticker}: {e}")
             return {}
 
-# Legacy alias
-MarketDataRepository = MarketDataRepositoryImpl
+# Legacy alias removed in v4.1.7
+# @deprecated: Use AlchemyMarketDataRepository

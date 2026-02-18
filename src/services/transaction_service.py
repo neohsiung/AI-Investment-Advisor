@@ -20,9 +20,9 @@ class TransactionService:
         """
         self.db_path = db_path
         self.user_id = user_id
-        # Allow injection or default to Sqlite
-        from src.repositories.transaction_repository import SqliteTransactionRepository
-        self.repository = repository or SqliteTransactionRepository()
+        # Use Alchemy Repository for Postgres strictness
+        from src.repositories.transaction_repository import AlchemyTransactionRepository
+        self.repository = repository or AlchemyTransactionRepository()
 
     def get_transactions(self, user_id: str = None) -> pd.DataFrame:
         """

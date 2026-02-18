@@ -43,8 +43,10 @@ env/
 # Sub-repositories (Standalone git repos)
 wiki/**/*
 
-# Temporary / Specific Ignored Scripts
+# Personal & Temporary Scripts (Excluded from Git)
+scripts/personal_*
+scripts/tmp_*
+*_local.py
 test_conn.py
-scripts/inspect_db.py
-scripts/run_full_verification.sh
-scripts/seed_data.py
+Archive/scripts/inspect_db.py
+Archive/scripts/test_db_conn.py

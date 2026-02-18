@@ -22,13 +22,22 @@ class FredService:
         self.settings_service = settings_service or SettingsService(user_id=user_id)
         settings = self.settings_service.get_all_settings()
         
-        self.api_key = settings.get("source_fred_api_key") or os.getenv("FRED_API_KEY")
+        fred_api_key = settings.get("source_fred_api_key") or os.getenv("FRED_API_KEY")
         self.client = None
-        if self.api_key:
-            try:
-                self.client = Fred(api_key=self.api_key)
-            except Exception as e:
-                self.logger.error(f"Failed to initialize FRED client: {e}")
+        if not fred_api_key:
+            self.logger.warning("FRED_API_KEY not found in environment or database.")
+            self.client = None
+            return
+
+        try:
+            import fredapi
+            self.client = fredapi.Fred(api_key=fred_api_key)
+            self.logger.info("✓ FRED client initialized successfully.")
+        except ImportError:
+            self.logger.error("fredapi package not found. Please install it.")
+            self.client = None
+        except Exception as e:
+            self.logger.error(f"Failed to initialize FRED client: {e}")
 
     def get_macro_indicators(self) -> Dict[str, Dict[str, Any]]:
         """

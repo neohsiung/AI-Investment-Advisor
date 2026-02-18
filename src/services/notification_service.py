@@ -16,10 +16,56 @@ class NotificationService:
     def __init__(
         self, 
         adapters: List[IChannelAdapter], 
-        notification_filter: INotificationFilter = None
+        notification_filter: INotificationFilter = None,
+        user_repo = None
     ):
         self.adapters = adapters
         self.notification_filter = notification_filter
+        self._user_repo = user_repo
+
+    async def _resolve_channel_id(self, user_id: str, adapter_type: str) -> str:
+        """
+        Resolves a channel-specific identifier from a user UUID or legacy ID.
+        從使用者 UUID 或舊版 ID 解析特定管道的識別碼。
+        """
+        # 1. Simple broadcast or None
+        if not user_id or user_id == "broadcast":
+            return user_id
+
+        # 2. Check if it's a UUID (v4 scheme)
+        import re
+        is_uuid = re.match(r'^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$', user_id.lower())
+        
+        if not is_uuid:
+            # Other legacy or direct channel ID
+            return user_id
+
+        # 3. Resolve from UserIdentities
+        try:
+            if self._user_repo:
+                user_repo = self._user_repo
+            else:
+                from src.repositories.user_repository import AlchemyUserRepository
+                user_repo = AlchemyUserRepository()
+                
+            identities = user_repo.get_identities(user_id)
+            
+            # Map adapter type to identity provider
+            # adapter_type is like 'line', 'telegram', 'email', 'messenger', 'slack', 'googlechat', 'web'
+            for identity in identities:
+                if identity['provider'].lower() == adapter_type.lower():
+                    return identity['identifier']
+            
+            # Fallback to secondary identities or original UUID
+            # If it's email adapter, try to find 'email' provider
+            if adapter_type == 'email':
+                for identity in identities:
+                    if identity['is_primary']:
+                        return identity['identifier']
+        except Exception as e:
+            logger.debug(f"Identity resolution failed for {user_id} on {adapter_type}: {e}")
+
+        return user_id
 
     async def notify_all(
         self, 
@@ -39,8 +85,8 @@ class NotificationService:
         tasks = []
         adapter_names = []
         
-        # Resolve target user
-        target_user = user_id or os.getenv("LINE_USER_ID", "broadcast")
+        # Resolve initial user
+        raw_user = user_id or os.getenv("LINE_USER_ID", "broadcast")
         capture_error = kwargs.get('capture_error', False)
 
         for adapter in self.adapters:
@@ -55,6 +101,9 @@ class NotificationService:
                 if not self.notification_filter.should_notify(adapter, category):
                     continue
 
+            # 3. Resolve Identity for this specific adapter
+            resolved_id = await self._resolve_channel_id(raw_user, adapter_type)
+
             # Prepare call args
             call_kwargs = kwargs.copy()
             if capture_error:
@@ -62,7 +111,7 @@ class NotificationService:
             
             # Add to async queue
             tasks.append(adapter.send_alert(
-                user_id=target_user,
+                user_id=resolved_id,
                 title=title,
                 content=content,
                 actions=actions,
@@ -87,15 +136,17 @@ class NotificationService:
         return results
 
     @staticmethod
-    def create_with_settings(settings_service) -> 'NotificationService':
+    def create_with_settings(settings_service, user_id: str = None) -> 'NotificationService':
         """
         Helper to create a fully configured NotificationService from a SettingsService.
         """
         from src.infrastructure.channels.channel_factory import ChannelFactory
         from src.services.notification_filters import InterestBasedFilter
         
-        # Settings retrieval might be sync or async depending on implementation, 
-        # but factory usually handles it.
+        # v4.1.4: Ensure user_id is passed to get_all_settings for correct adapter config
+        if settings_service and user_id:
+            settings_service.user_id = user_id
+
         settings = settings_service.get_all_settings() if settings_service else {}
         adapters = ChannelFactory.create_adapters(settings)
         noti_filter = InterestBasedFilter(settings_service)

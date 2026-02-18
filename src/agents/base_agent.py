@@ -8,10 +8,10 @@ from jinja2 import Template
 # from src.data.database import get_db_connection # Removed for DIP
 from src.utils.logger import setup_logger
 from src.utils.cache import ResponseCache
-from src.repositories.settings_repository import SqliteSettingsRepository
-from src.repositories.agent_state_repository import SqliteAgentStateRepository
-from src.repositories.feedback_repository import SqliteFeedbackRepository
-from src.repositories.feedback_repository import SqliteFeedbackRepository
+from src.repositories.settings_repository import AlchemySettingsRepository
+from src.repositories.agent_state_repository import AlchemyAgentStateRepository
+from src.repositories.feedback_repository import AlchemyFeedbackRepository
+from src.repositories.feedback_repository import AlchemyFeedbackRepository
 from src.tools.mcp_server import McpServer, McpTool
 from src.infrastructure.memory.memory_manager import HybridMemory
 from src.agents.skills.skill_loader import SkillLoader
@@ -28,9 +28,9 @@ class BaseAgent(ABC):
         
         # Dependency Injection with Defaults
         # 依賴注入與預設值
-        self.settings_repo = settings_repo or SqliteSettingsRepository()
-        self.state_repo = state_repo or SqliteAgentStateRepository()
-        self.feedback_repo = feedback_repo or SqliteFeedbackRepository()
+        self.settings_repo = settings_repo or AlchemySettingsRepository()
+        self.state_repo = state_repo or AlchemyAgentStateRepository()
+        self.feedback_repo = feedback_repo or AlchemyFeedbackRepository()
         
         self.system_prompt = self._load_prompt()
         self.config = self._load_config()

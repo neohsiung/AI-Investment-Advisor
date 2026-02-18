@@ -15,6 +15,7 @@ trigger: always_on
 10. 資安唯一原則 (Safe-SQL-Only)：所有 Raw SQL 必須使用參數化查詢 (Parameterized Queries)，嚴禁使用字串拼接或 f-strings 組合 SQL 敘述。相關範例參見 `.agent/rules/engineering-standards.md`。
 11. 基礎映像檔與資安審計原則 (Managed-Security-Base)：所有容器映像檔必須使用經過驗證的 Slim 或 Hardened Base Image (如 python:3.11-slim-bookworm)。強制定期執行依賴項版本與資安風險檢查，且生產環境嚴禁使用未鎖定版本 (Unpinned) 的套件。
 12. 原子提交與文檔同步原則 (Atomic-Wiki-Sync)：嚴禁混合變更提交。必須遵循原子化提交 (Atomic Commits) 且確保 Wiki 文檔與代碼變更在同一週期內完成同步。**Agent 僅在使用者明確下達 commit 指令時才執行提交操作**。具體規範見 `git-commit-format.md` 與 `documentation-standards.md`。
+13. 敏感資訊零容忍原則 (No-Hardcoded-Secrets)：嚴禁將任何 API 金鑰、資料庫密碼或個人敏感身分資訊 (PII) 硬編碼於代碼中，特別是 `src/data` 路徑下的模型與 Provider 定義。所有敏感配置必須透過環境變數或資料庫加密儲存區 (Settings) 讀取。
 
 ---
 *註：開發時請同時參考 `.agent/rules/` 下的 `security-standards.md`, `coding-standards.md` 與 `testing-standards.md`。*

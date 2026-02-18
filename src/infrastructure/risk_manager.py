@@ -1,8 +1,8 @@
 
 from typing import Dict, Any, List
 from datetime import datetime
-from src.repositories.transaction_repository import SqliteTransactionRepository
-from src.repositories.settings_repository import SqliteSettingsRepository
+from src.repositories.transaction_repository import AlchemyTransactionRepository
+from src.repositories.settings_repository import AlchemySettingsRepository
 from src.utils.logger import setup_logger
 
 logger = setup_logger("RiskManager")
@@ -13,8 +13,8 @@ class RiskManager:
     Enforces limits and circuit breakers across all brokers.
     """
     def __init__(self):
-        self.transaction_repo = SqliteTransactionRepository()
-        self.settings_repo = SqliteSettingsRepository()
+        self.transaction_repo = AlchemyTransactionRepository()
+        self.settings_repo = AlchemySettingsRepository()
         
         # Default Limits
         self.default_max_daily_trades = 10

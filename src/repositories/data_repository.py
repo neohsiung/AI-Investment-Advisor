@@ -25,7 +25,7 @@ class IDataRepository(ABC):
         """
         pass
 
-class DataRepositoryImpl(BaseRepository, IDataRepository):
+class AlchemyDataRepository(BaseRepository, IDataRepository):
     """
     Implementation of IDataRepository using SQLAlchemy.
     使用 SQLAlchemy 實作的 IDataRepository。
@@ -53,6 +53,5 @@ class DataRepositoryImpl(BaseRepository, IDataRepository):
             df = pd.read_sql(query, conn, params={"uid": user_id, "limit": limit})
             return df
 
-# Legacy alias
-# @deprecated: Use DataRepositoryImpl
-SqliteDataRepository = DataRepositoryImpl
+# Legacy alias removed in v4.1.7
+# @deprecated: Use AlchemyDataRepository

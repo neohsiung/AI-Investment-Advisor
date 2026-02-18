@@ -10,7 +10,7 @@ class RefinementService:
     Service for monthly system refinement (HR Protocol).
     月度系統進化服務 (HR 協議)。
     """
-    def __init__(self, user_id: str = "supermfb@gmail.com", settings_service: Any = None, notification_service: Optional[NotificationService] = None) -> None:
+    def __init__(self, user_id: str = None, settings_service: Any = None, notification_service: Optional[NotificationService] = None) -> None:
         """
         Initialize the refinement service.
         初始化進化服務。
@@ -19,7 +19,15 @@ class RefinementService:
         self.user_id = user_id
         self.perf_service = PerformanceService()
         self.engineer = SystemEngineerAgent(user_id=self.user_id)
-        self.notification_service = notification_service or NotificationService.create_with_settings(settings_service)
+        
+        # Create notification service with user_id
+        if notification_service:
+            self.notification_service = notification_service
+        else:
+            if not settings_service:
+                from src.services.settings_service import SettingsService
+                settings_service = SettingsService(user_id=self.user_id)
+            self.notification_service = NotificationService.create_with_settings(settings_service, user_id=self.user_id)
 
     async def run_monthly_refinement(self) -> bool:
         """

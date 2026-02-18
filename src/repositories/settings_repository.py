@@ -49,7 +49,7 @@ class ISettingsRepository(ABC):
         """
         pass
 
-class SettingsRepositoryImpl(BaseRepository, ISettingsRepository):
+class AlchemySettingsRepository(BaseRepository, ISettingsRepository):
     """
     Implementation of ISettingsRepository using SQLAlchemy ORM.
     使用 SQLAlchemy ORM 實作的 ISettingsRepository。
@@ -66,6 +66,7 @@ class SettingsRepositoryImpl(BaseRepository, ISettingsRepository):
         Get a specific setting value (ORM).
         取得特定設定值 (ORM)。
         """
+        # Strictly use user_id as UUID per v4.1.7 requirements
         setting = self.session.query(Setting).filter_by(user_id=user_id, key=key).first()
         return setting.value if setting else default
 
@@ -76,15 +77,33 @@ class SettingsRepositoryImpl(BaseRepository, ISettingsRepository):
         """
         session = self.session
         try:
+            # Ensure value is JSON-serializable
+            # SQLAlchemy JSON column will handle serialization, but we need to ensure the value is valid
+            import json
+            if isinstance(value, bool):
+                # Standardize boolean storage
+                store_value = value
+            elif isinstance(value, str):
+                # For string values, store as-is (SQLAlchemy will wrap in JSON)
+                store_value = value
+            elif isinstance(value, (dict, list, int, float)):
+                # For basic and complex types, let SQLAlchemy handle it
+                store_value = value
+            else:
+                # For other types, convert to string
+                store_value = str(value)
+            
             setting = session.query(Setting).filter_by(user_id=user_id, key=key).first()
             if setting:
-                setting.value = value
+                setting.value = store_value
             else:
-                setting = Setting(user_id=user_id, key=key, value=value)
+                setting = Setting(user_id=user_id, key=key, value=store_value)
                 session.add(setting)
             session.commit()
-        except Exception:
+        except Exception as e:
             session.rollback()
+            import logging
+            logging.error(f"Failed to set setting {key} for user {user_id}: {e}")
             raise
 
     def get_all(self, user_id: str) -> List[Tuple[str, Any]]:
@@ -114,7 +133,5 @@ class SettingsRepositoryImpl(BaseRepository, ISettingsRepository):
         rows = self.session.query(Setting).filter(Setting.key.like(f"{prefix}%")).all()
         return [(r.key, r.value) for r in rows]
 
-# Legacy aliases
-# @deprecated: Use SettingsRepositoryImpl
-AlchemySettingsRepository = SettingsRepositoryImpl
-SqliteSettingsRepository = SettingsRepositoryImpl
+# Legacy aliases removed in v4.1.7
+# @deprecated: Use AlchemySettingsRepository

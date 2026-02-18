@@ -230,7 +230,7 @@ def render_channel_tab(st, settings_service, user_id):
                             
                             with col_test_1:
                                 if st.button(f"📶 連線測試 ({channel['name']})", key=f"test_{cid}"):
-                                    _handle_test_message(st, cid, settings)
+                                    _handle_test_message(st, cid, settings, user_id)
                             
                             if col_test_2:
                                 with col_test_2:
@@ -243,14 +243,14 @@ def render_channel_tab(st, settings_service, user_id):
                             # Show Pending Status if any
                             _show_verification_status(st, cid, settings, user_id)
 
-    def _handle_test_message(st, cid, settings):
+    def _handle_test_message(st, cid, settings, user_id):
         from src.services.verification_service import VerificationService
         
         with st.spinner(f"正在透過 {cid} 發送測試訊息..."):
             try:
                 import asyncio
                 # Instantiate Service with current user_id (email) to load correct settings
-                svc = VerificationService(user_id=user_id) 
+                svc = VerificationService(user_id=user_id)
                 
                 # Check specifics
                 target_id = _get_target_id(cid, settings)
@@ -286,9 +286,9 @@ def render_channel_tab(st, settings_service, user_id):
                 st.error(f"啟動失敗: {msg}")
 
     def _show_verification_status(st, cid, settings, user_id):
-        from src.repositories.verification_repository import VerificationRepository
+        from src.repositories.verification_repository import AlchemyVerificationRepository
         from datetime import datetime, timezone
-        repo = VerificationRepository()
+        repo = AlchemyVerificationRepository()
         
         # Get the most recent record regardless of status to show results
         query = text("""
@@ -298,9 +298,10 @@ def render_channel_tab(st, settings_service, user_id):
             ORDER BY created_at DESC LIMIT 1
         """)
         try:
-            with get_db_connection(repo.db_path) as conn:
+            from src.data.database import get_db_connection
+            with get_db_connection(repo.engine) as conn:
                 row = conn.execute(query, {"user_id": user_id, "channel": cid}).fetchone()
-                pending = repo._row_to_dict(row) if row else None
+                pending = repo._to_dict(row) if row else None
         except:
             pending = None
         

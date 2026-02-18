@@ -6,6 +6,7 @@
 ### 版本紀錄 (Version History)
 | Date | Version | Description | Author |
 | :--- | :--- | :--- | :--- |
+| 2026-02-18 | v4.1 | **Async & Multi-Identity Topology**: Refined infrastructure view to reflect non-blocking protocols and UUID resolution. | Neo |
 | 2026-02-15 | v3.6 | **Milestone: 75% Coverage** + Leverage Engine & Channel Adapters | Neo |
 | 2026-02-14 | v1.2 | Added Multi-Broker + LINE Bot to C4, updated external integrations | Neo |
 | 2024-01-04 | v1.0 | Initial Release | Neo |
@@ -14,7 +15,7 @@
 
 <a id="zh"></a>
 
-## 🇹🇼 系統架構全景圖 (Architect View)
+## 🇹🇼 系統架構全景圖 (v4.1 Architect View)
 
 本文件依據 [文件框架定義](文件框架定義-Document-Frameworks) 編寫，提供系統的高層設計、組件關係與運作指標。
 
@@ -73,7 +74,7 @@ graph TD
 
 | 層次 (Layer) | 角色 (Role) | 核心組件 (Component) | 邏輯說明 (Logic) |
 | :--- | :--- | :--- | :--- |
-| **L1: 存取層** | 正規化 I/O | `ChannelAdapter` | 將入口 (LINE/Web/CLI) 封裝為標準化的 `Event` 物件。 |
+| **L1: 存取層** | 正規化 I/O | `ChannelAdapter` | **[v4.1 Async]** 將入口 (LINE/Web) 封裝為標準化的 `Event`。整合 `UserRepository` 進行多身分轉 UUID 映射。 |
 | **L2: 控制層** | 併發與泳道 | `LaneManager` | 為 session 分配專屬 `Queue`。確保相同用戶指令序列執行。 |
 | **L3: 認知層** | 執行環境 | `AgentRuntime` | 動態構建 Prompt (注入Facts)。包含 **Leverage Engine** (0% 幻覺數學運算)。 |
 | **L4: 記憶層** | 混合檢索 | `VectorRepository` | 結合 `sqlite-vec` 與 FTS5 實現向量與關鍵字混合搜尋。 |
@@ -121,9 +122,9 @@ graph LR
 #### 3.3 技術選型與權衡分析 (Selection Analysis & Tradeoffs)
 - **FastAPI vs. Flask/Django**: 選擇 FastAPI 是因為其原生支援非同步 (AsyncIO)，對於 Agent Mesh 中的大量異步 API 調用（如新聞抓取、多模型並行推論）具有顯著性能優勢。
 - **Streamlit vs. React/Vue**: 雖然 Streamlit 的自定義性較低，但其代碼即 UI 的特性極大縮短了從「模型實驗」到「可視化儀表板」的距離。
-- **SQLite vs. Postgres**: 
-    - **決定**: 開發環境預設 SQLite (零配置)，生產環境支援 Postgres (高併發)。
-    - **權衡**: 放棄了部分 Postgres 特有的 JSONB 優化，以換取極高的環境移植性與開發便捷度。
+- **PostgreSQL as Primary (v4.0+)**: 
+    - **決定**: 全面採用 PostgreSQL 作為核心後端（含本地 Docker 環境），支援 `pgvector` 與 `NUMERIC` 高精度計算。
+    - **權衡**: 放棄了 SQLite 的零配置便利，以換取生產環境級別的資料一致性、高併發能力與向量原生檢索。
 
 ### 3. 非功能性需求與性能 (NFR & Performance)
 - **可擴展性 (Scalability)**:

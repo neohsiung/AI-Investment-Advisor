@@ -6,7 +6,7 @@ import time
 
 from src.domain.broker import IBroker
 from src.domain.trading import Order, Position, Account, BrokerType, OrderAction, OrderType
-from src.repositories.transaction_repository import SqliteTransactionRepository
+from src.repositories.transaction_repository import AlchemyTransactionRepository
 from src.infrastructure.risk_manager import RiskManager
 
 logger = logging.getLogger(__name__)
@@ -40,7 +40,7 @@ class FutuService(IBroker):
         self.port = port
         self.is_sim = is_sim
         self.pwd = pwd
-        self.transaction_repo = SqliteTransactionRepository()
+        self.transaction_repo = AlchemyTransactionRepository()
         self.risk_manager = RiskManager()
         self.name = "Futu"
         

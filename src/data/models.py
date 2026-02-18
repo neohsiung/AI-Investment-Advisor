@@ -16,6 +16,19 @@ class User(Base):
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     last_login = Column(DateTime(timezone=True))
 
+class UserIdentity(Base):
+    """
+    Stores multiple identity providers (Email, LINE, Telegram, Phone) linked to a single UUID user.
+    """
+    __tablename__ = 'user_identities'
+    
+    id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
+    user_id = Column(String, ForeignKey('users.id', ondelete='CASCADE'), nullable=False)
+    provider = Column(String, nullable=False) # 'email', 'line', 'telegram', 'phone'
+    identifier = Column(String, nullable=False) # the actual email, line_id, etc.
+    is_primary = Column(Integer, default=0) # 1 for primary, 0 for secondary
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+
 class Setting(Base):
     __tablename__ = 'settings'
     

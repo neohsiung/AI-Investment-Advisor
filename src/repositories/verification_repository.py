@@ -70,7 +70,7 @@ class IVerificationRepository(ABC):
         """
         pass
 
-class VerificationRepositoryImpl(BaseRepository, IVerificationRepository):
+class AlchemyVerificationRepository(BaseRepository, IVerificationRepository):
     """
     Implementation of IVerificationRepository using SQLAlchemy ORM.
     使用 SQLAlchemy ORM 實作的 IVerificationRepository。
@@ -194,6 +194,5 @@ class VerificationRepositoryImpl(BaseRepository, IVerificationRepository):
             "created_at": model.created_at
         }
 
-# Legacy alias
-# @deprecated: Use VerificationRepositoryImpl
-VerificationRepository = VerificationRepositoryImpl
+# Legacy alias removed in v4.1.7
+# @deprecated: Use AlchemyVerificationRepository

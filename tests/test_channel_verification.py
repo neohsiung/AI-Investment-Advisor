@@ -9,12 +9,12 @@ import os
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
 from src.services.verification_service import VerificationService
-from src.repositories.verification_repository import VerificationRepository
+from src.repositories.verification_repository import AlchemyVerificationRepository
 from src.services.notification_service import NotificationService
 
 class TestChannelVerification(unittest.TestCase):
     def setUp(self):
-        self.mock_repo = MagicMock(spec=VerificationRepository)
+        self.mock_repo = MagicMock(spec=AlchemyVerificationRepository)
         self.mock_notification = MagicMock(spec=NotificationService)
         self.service = VerificationService(repo=self.mock_repo, notification_service=self.mock_notification)
 

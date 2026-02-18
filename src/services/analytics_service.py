@@ -1,9 +1,10 @@
 import pandas as pd
 from typing import Dict, Any, List, Optional, Union
-from src.repositories.snapshot_repository import SnapshotRepositoryImpl, ISnapshotRepository
-from src.repositories.transaction_repository import TransactionRepositoryImpl, ITransactionRepository
+from src.repositories.snapshot_repository import AlchemySnapshotRepository, ISnapshotRepository
+from src.repositories.transaction_repository import AlchemyTransactionRepository, ITransactionRepository
 from src.services.market_data_service import MarketDataService
 from src.utils.time_utils import get_current_date_str
+from sqlalchemy import text
 
 class LeverageCalculator:
     """
@@ -15,7 +16,7 @@ class LeverageCalculator:
         Initialize the calculator.
         初始化計算器。
         """
-        self.repo = repository or TransactionRepositoryImpl()
+        self.repo = repository or AlchemyTransactionRepository()
 
     def calculate_metrics(self, current_prices: Dict[str, float], user_id: str) -> Dict[str, float]:
         """
@@ -24,19 +25,26 @@ class LeverageCalculator:
         """
         # 1. Calculate Total Nominal Value (TNV)
         # 1. 計算總名義價值 (TNV)
-        holdings = self.repo.get_holdings_summary(user_id) # List of (ticker, quantity)
+        # We need more than just ticker, qty - we need leverage per transaction (or average weighted leverage)
+        # To keep it efficient, let's get weighted average leverage per ticker or sum of Nominal Values from DB.
+        
+        holdings = self.repo.get_leverage_summary(user_id)
 
         tnv = 0.0
         portfolio_value = 0.0
 
-        for ticker, qty in holdings:
+        for ticker, qty, leverage in holdings:
             if qty == 0:
                 continue
 
             price = current_prices.get(ticker, 0.0)
             market_val = qty * price
-            tnv += abs(market_val) # Absolute sum of Nominal Value (名義價值取絕對值總和)
-            portfolio_value += market_val # Portfolio Market Value (Long - Short) (投資組合市值)
+            
+            # Nominal Exposure = Market Value * Leverage
+            nominal_exposure = market_val * leverage
+            
+            tnv += abs(nominal_exposure)
+            portfolio_value += market_val # NLV is still based on Market Value (Equity)
 
         # 2. Calculate Net Liquidity Value (NLV)
         # 2. 計算淨清算價值 (NLV)
@@ -68,7 +76,7 @@ class ROIEngine:
         Initialize the ROI engine.
         初始化 ROI 引擎。
         """
-        self.repo = repository or TransactionRepositoryImpl()
+        self.repo = repository or AlchemyTransactionRepository()
 
     def calculate_roi(self, nlv: float, user_id: str) -> float:
         """
@@ -95,8 +103,8 @@ class SnapshotRecorder:
         Initialize the recorder.
         初始化記錄器。
         """
-        self.repo = snapshot_repo or SnapshotRepositoryImpl(db_path)
-        self.trans_repo = trans_repo or TransactionRepositoryImpl()
+        self.repo = snapshot_repo or AlchemySnapshotRepository(db_path)
+        self.trans_repo = trans_repo or AlchemyTransactionRepository()
 
     def record_daily_snapshot(self, nlv: float, cash_balance: float, user_id: str, total_tnv: float = 0.0, leverage_ratio: float = 0.0) -> None:
         """
@@ -110,7 +118,7 @@ class SnapshotRecorder:
 
         # Use SnapshotRepository to save
         # The existing repository might need an 'add' method or we use execute directly if repo is missing it
-        # Checking SqliteSnapshotRepository capabilities... 
+        # Checking AlchemySnapshotRepository capabilities... 
         # It usually reads. Let's add 'save_snapshot' method to it later or just assume standard repo pattern.
         # Since I can't easily see SnapshotRepository right now, I will use the one I see in imports.
         # Wait, I didn't verify SnapshotRepository has a save method. 
@@ -121,8 +129,8 @@ class SnapshotRecorder:
         
         # Actually, let's look at the `SnapshotRepository` interface if strictly following DDD.
         # For now, I will implement the save logic using the repository's connection or method.
-        # Since `SnapshotRecorder` WAS executing SQL directly, let's delegate to a new method on `SqliteSnapshotRepository` called `save`.
-        # I will implement `save` in `SqliteSnapshotRepository` in the next step if it doesn't exist.
+        # Since `SnapshotRecorder` WAS executing SQL directly, let's delegate to a new method on `AlchemySnapshotRepository` called `save`.
+        # I will implement `save` in `AlchemySnapshotRepository` in the next step if it doesn't exist.
         # For now, I'll rely on `self.repo.save_snapshot(...)`
         
         self.repo.save_snapshot(
@@ -148,7 +156,7 @@ class PnLCalculator:
         Initialize the calculator.
         初始化計算器。
         """
-        self.repo = repository or TransactionRepositoryImpl()
+        self.repo = repository or AlchemyTransactionRepository()
 
     def calculate_breakdown(self, current_prices: Dict[str, float], user_id: str) -> Dict[str, Any]:
         """
@@ -191,8 +199,10 @@ class PnLCalculator:
                 pos['qty'] -= qty
                 if pos['qty'] < 0: pos['qty'] = 0
             
-            # Dividends or other actions processing could be added here if needed for PnL
-            # Previous code didn't handle DIVIDEND in breakdown, so sticking to original logic for now.
+            # [NEW] v4.2.0: Handle Dividends (增量已實現損益)
+            elif action == 'DIVIDEND':
+                pos['realized_pnl'] += price * qty # Amount is price * qty (usually 1.0 for cash)
+                total_realized_pnl += price * qty
 
         total_unrealized_pnl = 0.0
         breakdown = {}
@@ -228,7 +238,7 @@ class PnLCalculator:
             "details": breakdown
         }
 
-def update_daily_snapshot(db_path: str = None, user_id: str = None) -> None:
+def update_daily_snapshot(db_path: str = None, user_id: str = None, force: bool = False) -> None:
     """
     Recalculate and update today's performance snapshot if not already present.
     重新計算並更新今日績效快照（若尚未存在）。
@@ -237,20 +247,27 @@ def update_daily_snapshot(db_path: str = None, user_id: str = None) -> None:
         return 
 
     # 1. Throttling: Check if today's snapshot exists
-    snapshot_repo = SnapshotRepositoryImpl(db_path)
+    snapshot_repo = AlchemySnapshotRepository(db_path)
     latest = snapshot_repo.get_latest_by_user(user_id)
     today = get_current_date_str()
     
-    if latest is not None and latest['date'] == today:
+    if not force and latest is not None and latest['date'] == today:
         # Already have a snapshot for today, skip unless we implement forced updates or time-based TTL
         # For SaaS 2026, daily is usually enough, or we check every 4 hours.
         # Let's keep it daily for now to maximize speed.
         return
-    trans_repo = TransactionRepositoryImpl()
+    trans_repo = AlchemyTransactionRepository()
     active_tickers = trans_repo.get_active_tickers(user_id)
 
     market_service = MarketDataService()
     current_prices = market_service.get_current_prices(active_tickers)
+
+    # [NEW] v4.2.1: Snapshot Validation (防呆機制)
+    # If more than 50% of active tickers have 0.0 price, the data is likely corrupted.
+    zero_prices = [t for t in active_tickers if current_prices.get(t, 0.0) == 0.0]
+    if len(active_tickers) > 0 and (len(zero_prices) / len(active_tickers)) > 0.5:
+        logger.warning(f"Snapshot Validation Failed: {len(zero_prices)}/{len(active_tickers)} tickers have zero prices. Skipping snapshot.")
+        return
 
     calc = LeverageCalculator(repository=trans_repo, db_path=db_path)
     metrics = calc.calculate_metrics(current_prices, user_id)
@@ -276,16 +293,16 @@ class AnalyticsService:
         """
         self.db_path = db_path
         self.user_id = user_id
-        self.snapshot_repo = repository or SnapshotRepositoryImpl(db_path)
+        self.snapshot_repo = repository or AlchemySnapshotRepository(db_path)
         self.pnl_calculator = pnl_calc or PnLCalculator(db_path=self.db_path)
 
-    def trigger_snapshot_update(self) -> None:
+    def trigger_snapshot_update(self, force: bool = False) -> None:
         """
         Manually trigger a snapshot update for the user.
         手動觸發使用者的快照更新。
         """
         if self.user_id:
-            update_daily_snapshot(self.db_path, self.user_id)
+            update_daily_snapshot(self.db_path, self.user_id, force=force)
 
     def get_pnl_breakdown(self, current_prices: Dict[str, float]) -> Optional[Dict[str, Any]]:
         """

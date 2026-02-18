@@ -44,7 +44,7 @@ class ISentinelRepository(ABC):
         """Log an alert to event_logs."""
         pass
 
-class SentinelRepositoryImpl(BaseRepository, ISentinelRepository):
+class AlchemySentinelRepository(BaseRepository, ISentinelRepository):
     """
     Implementation of ISentinelRepository handling dynamic thresholds and alerts.
     實作 ISentinelRepository，處理動態閾值與警報。
@@ -217,6 +217,5 @@ class SentinelRepositoryImpl(BaseRepository, ISentinelRepository):
         except Exception as e:
             logger.error(f"SentinelRepository: Failed to log alert: {e}")
 
-# Legacy alias
-# @deprecated: Use SentinelRepositoryImpl
-SentinelRepository = SentinelRepositoryImpl
+# Legacy alias removed in v4.1.7
+# @deprecated: Use AlchemySentinelRepository

@@ -63,16 +63,17 @@ class WebAdapter(BaseChannelAdapter):
                     }
                     
                     conn.execute(text(
-                        "INSERT INTO event_logs (id, timestamp, source, level, title, content, metadata) "
-                        "VALUES (:id, :ts, :source, :level, :title, :content, :meta)"
+                        "INSERT INTO event_logs (id, user_id, event_type, severity, title, content, metadata, created_at) "
+                        "VALUES (:id, :user_id, :event_type, :severity, :title, :content, :meta, :created_at)"
                     ), {
                         "id": log_id,
-                        "ts": timestamp,
-                        "source": kwargs.get("source", "Sentinel/Workflow"),
-                        "level": kwargs.get("level", "INFO"),
+                        "user_id": user_id,
+                        "event_type": kwargs.get("source", "Sentinel/Workflow"),
+                        "severity": kwargs.get("level", "INFO"),
                         "title": title,
                         "content": content,
-                        "meta": json.dumps(metadata)
+                        "meta": json.dumps(metadata),
+                        "created_at": timestamp
                     })
                     conn.commit()
                 return True
@@ -80,5 +81,6 @@ class WebAdapter(BaseChannelAdapter):
                 logger.error(f"Failed to record Web Alert: {e}")
                 return False
 
-        return await asyncio.to_thread(_execute_db)
+        loop = asyncio.get_event_loop()
+        return await loop.run_in_executor(None, _execute_db)
 

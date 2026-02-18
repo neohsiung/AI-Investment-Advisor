@@ -5,8 +5,8 @@
 ### 版本紀錄 (Version History)
 | Date | Version | Description | Author |
 | :--- | :--- | :--- | :--- |
+| 2026-02-18 | v4.1 | **UUID Multi-Identity**: Migrated to UUID-based unique identifiers. Added `user_identities` table to support multiple linked logins (Email, LINE, etc.). | Neo |
 | 2026-02-17 | v4.0.1 | **Comprehensive Audit**: Added missing domain entities (SecurityContext, Feedback), expanded repository registry, and clarified DB physical types. | Neo |
-| 2026-02-17 | v4.0 | **Unified DB Strategy**: Migrated core entities to PostgreSQL + pgvector. Added Hybrid ORM support. | Neo |
 | 2026-02-14 | v3.5 | Added RiskKeyword entity, risk_keywords table, RiskKeywordRepository | Neo |
 | 2024-01-04 | v1.0 | Initial Release | Neo |
 
@@ -14,7 +14,7 @@
 
 <a id="zh"></a>
 
-## 🇹🇼 資料與領域模型 (v4.0)
+## 🇹🇼 資料與領域模型 (v4.1)
 
 本文件定義系統的核心實體、資料庫架構與數據流動路徑。v4.0 正式由 SQLite 全面遷移至 PostgreSQL + pgvector。
 
@@ -25,10 +25,17 @@
 classDiagram
     class User {
         +UUID id
-        +String email
         +JSONB preferences
         +JSONB metadata
     }
+    class UserIdentity {
+        +UUID id
+        +UUID user_id
+        +String provider
+        +String identifier
+        +Bool is_primary
+    }
+    User "1" *-- "many" UserIdentity : has
     class Portfolio {
         +UUID user_id
         +NUMERIC cash_balance
@@ -123,6 +130,7 @@ classDiagram
 | 表名 | 核心用途 | 關鍵物理設計 (PostgreSQL) |
 | :--- | :--- | :--- |
 | `users` | 使用者資訊 | `id (UUID)`, `preferences (JSONB)`, `last_login (TIMESTAMPTZ)` |
+| `user_identities` | 多通路身分映射 | `id (UUID)`, `user_id (UUID)`, `provider (TEXT)`, `identifier (TEXT)` |
 | `transactions` | 原始交易日誌 | `id (UUID)`, `quantity (NUMERIC)`, `price (NUMERIC)`, `raw_data (JSONB)` |
 | `positions` | 持倉快照 | `user_id (UUID)`, `avg_cost (NUMERIC)`, `market_value (NUMERIC)` |
 | `daily_snapshots` | 績效歷史 | `user_id (UUID)`, `total_nlv (NUMERIC)`, `leverage_ratio (NUMERIC)` |
@@ -138,6 +146,7 @@ classDiagram
 
 | Repository | 檔案 | 職責 |
 | :--- | :--- | :--- |
+| `UserRepository` | `user_repository.py` | 身分解析與 UUID 關聯管理 (**SQLAlchemy ORM**) |
 | `TransactionRepository` | `transaction_repository.py` | 交易 CRUD (Raw SQL / Performance) |
 | `SettingsRepository` | `settings_repository.py` | KV 設定 (**SQLAlchemy ORM**) |
 | `HybridMemory` | `memory_manager.py` | 向量嵌入 (pgvector / Raw SQL) |
@@ -150,6 +159,8 @@ classDiagram
 | `PromptRepository` | `prompt_repository.py` | Prompt 範本版本控制。 |
 | `ReportRepository` | `report_repository.py` | 分析報告管理。 |
 | `VectorRepository` | `vector_repository.py` | 通用向量操作底層。 |
+| `IngestorFactory` | `ingestors/factory.py` | 券商攝取策略註冊表。 |
+| `SkillRegistry` | `skills/registry.py` | Agent 本地功能 (Local Skills) 註冊表。 |
 
 ### 5. 數據流動路徑 (Data Flow)
 1. **Ingestion**: CSV/API → `IngestionService` → `transactions` (Atomic Batch)。
@@ -172,7 +183,7 @@ classDiagram
 
 <a id="en"></a>
 
-## 🇺🇸 Data & Domain Models (v4.0)
+## 🇺🇸 Data & Domain Models (v4.1)
 
 This document defines core entities and DB architecture, establishing the PostgreSQL + pgvector backbone.
 
@@ -185,6 +196,11 @@ classDiagram
         +UUID id
         +JSONB preferences
     }
+    class UserIdentity {
+        +UUID user_id
+        +String provider
+    }
+    User "1" *-- "many" UserIdentity : has
     class SecurityContext {
         +String ticker
         +DateTime date
@@ -215,6 +231,7 @@ classDiagram
 | Table | Core Purpose | PostgreSQL Design |
 | :--- | :--- | :--- |
 | `users` | User metadata | `UUID`, `JSONB` |
+| `user_identities` | Multi-provider Map | `UUID`, `TEXT`, `TEXT` |
 | `transactions` | Event Log | `NUMERIC`, `JSONB` |
 | `daily_snapshots` | NLV History | `NUMERIC`, `DATE` |
 | `memory_embeddings` | Semantic RAG | `vector(1536)` |
@@ -227,6 +244,7 @@ classDiagram
 ### 3. Repository Registry
 | Repository | Role | Implementation |
 | :--- | :--- | :--- |
+| `UserRepository` | Identity Resolution | **SQLAlchemy ORM** |
 | `TransactionRepository` | Performance-critical CRUD | Raw SQL / Core |
 | `SettingsRepository` | KV-based entities | **SQLAlchemy ORM** |
 | `HybridMemory` | Semantic retrieval | pgvector / Core |
@@ -237,6 +255,8 @@ classDiagram
 | `AgentStateRepository` | Agent State Persistence | Database |
 | `PromptRepository` | Prompt Template Versioning | Database |
 | `ReportRepository` | Analysis Report Management | Database |
+| `IngestorFactory` | Broker-specific Ingestion Strategies| Ingestor Layer |
+| `SkillRegistry` | Agent Local Skills Registry | Skills Layer |
 
 ### 4. Hybrid Storage Strategy
 - **ORM Admin Layer**: SQLAlchemy ORM for entities (Users, Settings, Logs).
@@ -250,18 +270,15 @@ classDiagram
 ## 🔗 Bidirectional Links
 - **Philosophy**: [Architectural Philosophies](Architectural-Philosophies)
 - **DB Standards**: [Database & Git Standards](Database-Git-Standards)
-本模組精確計算每筆部位的 **貸款 (Loan)** 與 **淨權益 (Net Equity)**，確保對帳清晰。
 
-- **計算公式 (Formulas)**:
-    - **部位市值 (Gross MV)** = 數量 × 現價
-    - **部位貸款 (Loan)** = 買入成本 × (槓桿倍數 - 1)
-    - **淨權益 (Net Equity)** = 部位市值 - 部位貸款
+---
 
-- **對帳範例 (Reconciliation Example)**:
-    - 假設以 **$X,XXX** 本金開立 **3x** 槓桿部位。
-    - **部位市值 (Gross)**: **$Y,YYY**
-    - **貸款 (Loan)**: **$Z,ZZZ**
-    - **淨權益 (Net Equity)**: **$W,WWW** (與現金合併計算 NLV)
+### 6. ⚖️ Leverage Engine Mechanism (v3.6)
+Precise calculation of **Loan** and **Net Equity** for each position.
+- **Formulas**:
+    - **Gross MV** = Qty × Price
+    - **Loan** = Cost × (Leverage - 1)
+    - **Net Equity** = Gross MV - Loan
 
 > [!IMPORTANT]
-> 清楚區分 Gross 與 Net 數據，能有效防止在劇烈波動時的保證金誤判。
+> Distinguishing Gross from Net data prevents margin miscalculations during high volatility.

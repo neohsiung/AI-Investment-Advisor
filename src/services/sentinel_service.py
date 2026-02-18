@@ -37,15 +37,17 @@ class SentinelService:
         council_service: Optional[CouncilService] = None,
         notification_service: Optional[NotificationService] = None,
         settings_service: Optional[SettingsService] = None,
+        user_id: str = None,
     ):
         self.repo = SentinelRepository()
-        self.settings_service = settings_service or SettingsService(user_id="supermfb@gmail.com")
+        self.user_id = user_id
+        self.settings_service = settings_service or SettingsService(user_id=self.user_id)
         
         self.market_service = market_service or MarketDataService(settings_service=self.settings_service)
         self.search_service = search_service or InternetSearchService(settings_service=self.settings_service)
         self.transaction_service = transaction_service or TransactionService()
         self.council_service = council_service or CouncilService()
-        self.notification_service = notification_service or NotificationService.create_with_settings(self.settings_service)
+        self.notification_service = notification_service or NotificationService.create_with_settings(self.settings_service, user_id=self.user_id)
         
         # Thresholds (v3.5 - Defaults seeded to DB)
         self.default_thresholds = {
@@ -496,7 +498,10 @@ class SentinelService:
         
         # Council Deliberation
         try:
-            user_id = self.settings_service.user_id or "supermfb@gmail.com"
+            user_id = self.settings_service.user_id or self.user_id
+            if not user_id:
+                logger.warning("No user_id available for council session")
+                return None
             result = await self.council_service.start_session(
                 topic, 
                 context, 

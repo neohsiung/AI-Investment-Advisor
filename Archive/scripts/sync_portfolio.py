@@ -7,6 +7,13 @@ from datetime import datetime, timedelta
 from dotenv import load_dotenv
 from sqlalchemy import text
 
+# Load environment variables first
+load_dotenv()
+
+# Override DB_HOST for local development (after load_dotenv)
+if os.getenv('DB_TYPE') == 'postgres' and os.getenv('DB_HOST') == 'postgres':
+    os.environ['DB_HOST'] = 'localhost'
+
 sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
 
 from src.services.etoro_service import EtoroService
@@ -18,8 +25,13 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("PortfolioFix")
 
 def main():
-    load_dotenv()
-    user_id = "supermfb@gmail.com"
+    """
+    Main function to sync portfolio positions and history.
+    主函式：同步投資組合持倉和歷史。
+    """
+    # v4.1: Use UUID instead of email
+    # v4.1: 使用 UUID 而非 email
+    user_id = "90693c07-6177-42df-97d9-915f3ce7c573"
     
     # --- PART 1: SYNC POSITIONS ---
     logger.info("🚀 STARTING: Sync Positions (Full Restore)...")
@@ -58,8 +70,10 @@ def main():
     logger.info("🚀 STARTING: Backfill History...")
     
     with get_db_connection() as conn:
-        txns = pd.read_sql("SELECT * FROM transactions WHERE user_id = :uid ORDER BY trade_date ASC", conn, params={"uid": user_id})
-        cfs = pd.read_sql("SELECT * FROM cash_flows WHERE user_id = :uid ORDER BY date ASC", conn, params={"uid": user_id})
+        # PostgreSQL uses %(uid)s for pandas.read_sql, not :uid
+        # PostgreSQL 在 pandas.read_sql 中使用 %(uid)s 而非 :uid
+        txns = pd.read_sql("SELECT * FROM transactions WHERE user_id = %(uid)s ORDER BY trade_date ASC", conn, params={"uid": user_id})
+        cfs = pd.read_sql("SELECT * FROM cash_flows WHERE user_id = %(uid)s ORDER BY date ASC", conn, params={"uid": user_id})
         
     if txns.empty:
         logger.warning("No transactions to backfill.")

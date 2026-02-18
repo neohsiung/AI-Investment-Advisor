@@ -1,7 +1,7 @@
 import logging
 import datetime
 from typing import Dict, Any, Tuple, Optional
-from src.repositories.verification_repository import VerificationRepository
+from src.repositories.verification_repository import AlchemyVerificationRepository
 from src.services.notification_service import NotificationService
 
 logger = logging.getLogger(__name__)
@@ -11,14 +11,26 @@ class VerificationService:
     Service for handling multi-channel connectivity tests and identity verification.
     驗證服務：負責處理多通路連線性測試與身份驗證。
     """
-    def __init__(self, repo: Optional[VerificationRepository] = None, notification_service: Optional[NotificationService] = None, settings_service: Any = None, user_id: str = None) -> None:
+    def __init__(self, repo: Optional[AlchemyVerificationRepository] = None, notification_service: Optional[NotificationService] = None, settings_service: Any = None, user_id: str = None) -> None:
         """
         Initialize the verification service.
         初始化驗證服務。
         """
         self.user_id = user_id
-        self.repo = repo or VerificationRepository()
-        self.notification_service = notification_service or NotificationService.create_with_settings(settings_service)
+        self.repo = repo or AlchemyVerificationRepository()
+        
+        # Create notification service with settings
+        if notification_service:
+            self.notification_service = notification_service
+        else:
+            # If settings_service not provided, create one
+            if not settings_service:
+                from src.services.settings_service import SettingsService
+                settings_service = SettingsService(user_id=self.user_id)
+            self.notification_service = NotificationService.create_with_settings(settings_service, user_id=self.user_id)
+        
+        # Store settings_service for later use
+        self.settings_service = settings_service
 
     async def test_connectivity(self, user_id: str, channel: str) -> Tuple[bool, str]:
         """
@@ -93,8 +105,8 @@ class VerificationService:
                  return False, f"Adapter for {channel} not found or not enabled.", None
 
             # 3. Resolve channel_user_id (Fallback if not provided)
-            if not channel_user_id and self.notification_service.settings_service:
-                settings = self.notification_service.settings_service.get_all_settings()
+            if not channel_user_id and self.settings_service:
+                settings = self.settings_service.get_all_settings()
                 key_map = {
                     "line": "channel_line_user_id",
                     "telegram": "channel_telegram_chat_id",

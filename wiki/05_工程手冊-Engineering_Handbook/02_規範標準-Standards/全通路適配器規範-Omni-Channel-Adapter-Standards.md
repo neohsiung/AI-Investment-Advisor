@@ -1,7 +1,7 @@
 # 全通路適配器規範 (Omni-Channel Adapter Standards)
 
-> **版本**: v1.0 (2026-02-15)
-> **狀態**: 實作中 (v3.7 Milestone)
+> **版本**: v4.1 (2026-02-18)
+> **狀態**: 已發布 (v4.1 Async & UUID Milestone)
 
 ## 1. 設計哲學 (Design Philosophy)
 為了解決核心業務邏輯與通訊平台（LINE, Telegram, Email, Web UI）之間的強耦合問題，本系統採用 **適配器模式 (Adapter Pattern)**。
@@ -28,7 +28,8 @@ graph LR
 ```python
 class IChannelAdapter(ABC):
     @abstractmethod
-    def send_alert(self, user_id: str, title: str, content: str, actions: List[Dict[str, str]] = None, **kwargs) -> bool:
+    async def send_alert(self, user_id: str, title: str, content: str, actions: List[Dict[str, str]] = None, **kwargs) -> bool:
+        """非同步發送警報，支援 UUID 身分解析"""
         pass
 ```
 
@@ -49,8 +50,9 @@ class IChannelAdapter(ABC):
 ## 4. 最佳實踐 (Best Practices)
 
 1. **Markdown 優勢**: content 應儘可能使用標準 Markdown，由各適配器自行決定如何降級（例如 LINE 降級為純文字，Web/Email 渲染為 HTML）。
-2. **非同步發送**: 在 `notify_all` 中建議使用並行處理，避免單一慢速 API (如 SMTP) 阻塞整個行程。
-3. **行動指令 (Actions)**: `actions` 應為標籤與數據對，適配器應能轉化為按鈕或連結。
+2. **強制非同步並行 (Async Mandatory)**: **[v4.1]** 必須在 `notify_all` 中使用 `asyncio.gather` 進行並行發送，嚴禁使用同步迴圈，以避免單一慢速 API (如 SMTP) 阻塞其它通道。
+3. **身分映射解決 (Identity Resolution)**: 核心服務僅傳入 UUID，適配器應配合 `NotificationService` 的 `_resolve_channel_id` 邏輯，將 UUID 轉化為如 LINE User ID 等管道特有標識。
+4. **行動指令 (Actions)**: `actions` 應為標籤與數據對，適配器應能轉化為按鈕或連結。
 
 ## 5. 擴充指引 (How to Add a Channel)
 1. 在 `src/infrastructure/channels/` 建立新的適配器類別。

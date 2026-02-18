@@ -6,6 +6,7 @@
 ### 版本紀錄 (Version History)
 | Date | Version | Description | Author |
 | :--- | :--- | :--- | :--- |
+| 2026-02-18 | v4.1 | **Async & Identity Mesh**: Standardized on non-blocking notification adapters and multi-identity resolution. | Neo |
 | 2026-02-07 | v1.1 | Enhanced "Tools & Skills" architecture (Local Skills + Remote MCP) | Neo |
 | 2024-01-04 | v1.0 | Initial Release | Neo |
 
@@ -19,14 +20,15 @@
 
 ### 1. 通訊框架 (Communication Framework)
 系統採用雙層通訊架構，兼顧單機開發的便利性與分散式叢集的擴展性。
-- **協定類型**: HTTP/1.1 + gRPC (內部)。
+- **協定類型**: HTTP/1.1 + gRPC + **Asyncio** (內生异步流程)。
 - **訊息格式**: JSON。
+- **並行模型**: 核心服務採用 `async/await` 並行處理，極大化 I/O 吞吐量。
 
 #### 1.1 混合工具架構 (Hybrid Tool Architecture)
 為了平衡效能與擴展性，系統採用 **本地技能 (Local Skills)** 與 **遠端服務 (Remote MCP)** 並行的架構：
 
 1.  **本地技能 (Local Skills - "The Brain")**:
-    -   **機制**: 透過 `SkillLoader` 讀取 `SKILL.md` 並綁定 Python 實作。
+    -   **機制**: 透過 `SkillLoader` 讀取 `SKILL.md` 並透過 `SkillRegistry` 綁定 Python 實作。
     -   **執行**: 在 Agent 行程內 **本地執行**，無網路延遲。
     -   **用途**: 高頻邏輯運算、資料解析、格式化。
     -   **優勢**: 極致效能 (Optimal Performance)。
@@ -93,11 +95,13 @@ sequenceDiagram
 
 #### 4.1 核心組件 (Core Components)
 - **NotificationService**: 統籌編排器，負責過濾管道並執行並行發送。
-- **IChannelAdapter**: 標準化介面，定義 `send_alert` 行為。
-- **Adapters**:
-    - `LineBotAdapter`: 封裝 LINE Flex Message。
-    - `EmailAdapter`: 封裝 SMTP 外發邏輯。
-    - `WebAdapter`: 將訊息寫入 DB `event_logs` 供 Dashboard 顯示。
+- **IChannelAdapter**: 標準化 **非同步** 介面，定義 `await send_alert` 行為。
+- **Adapters (v4.1 Async)**:
+    - `LineBotAdapter`: 使用 `httpx` 封裝 LINE Flex Message。
+    - `EmailAdapter`: 使用 `aiosmtplib` 封裝 SMTP 外發。
+    - `Slack/TelegramAdapter`: 使用 `httpx` 非同步推播。
+    - `WebAdapter`: 非同步寫入 DB `event_logs` 供 Dashboard 顯示。
+- **身分解析 (Identity Mapping)**: 整合 `UserRepository`，將 UUID 自動轉換為各通路專屬識別標籤 (LINE ID, Email)。
 
 #### 4.2 工具集詳細定義 (Toolset Specification)
 所有工具均透過 `Registry` (Local) 或 `MCP Service` (Remote) 暴露。

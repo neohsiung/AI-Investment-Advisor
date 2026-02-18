@@ -7,13 +7,13 @@ from src.services.analytics_service import LeverageCalculator, SnapshotRecorder,
 
 @pytest.fixture
 def mock_trans_repo():
-    with patch('src.services.analytics_service.SqliteTransactionRepository') as MockRepo:
+    with patch('src.services.analytics_service.AlchemyTransactionRepository') as MockRepo:
         repo = MockRepo.return_value
         yield repo
 
 @pytest.fixture
 def mock_snapshot_repo():
-    with patch('src.services.analytics_service.SqliteSnapshotRepository') as MockRepo:
+    with patch('src.services.analytics_service.AlchemySnapshotRepository') as MockRepo:
         repo = MockRepo.return_value
         yield repo
 
@@ -25,8 +25,9 @@ def test_leverage_calculator_metrics():
 
     # Mock Repository
     mock_repo = MagicMock()
-    mock_repo.get_holdings_summary.return_value = holdings
-    mock_repo.get_cash_flow_sum.return_value = 10000.0 # From cash flows table (Simulating Deposit)
+    # Mock Repository: Return (ticker, net_qty, avg_leverage)
+    mock_repo.get_leverage_summary.return_value = [("AAPL", 10.0, 1.0), ("SPY", 5.0, 1.0)]
+    mock_repo.get_cash_balance.return_value = 10000.0 # From cash flows table (Simulating Deposit)
     
     # Mock transactions for cash balance calculation logic
     # DEPOSIT in transactions should now be IGNORED by calculation
@@ -54,8 +55,8 @@ def test_snapshot_recorder():
     mock_trans_repo.calculate_net_invested_capital.return_value = 5000.0
     
     # Patch the classes inside analytics_service to ensure SnapshotRecorder uses our mocks
-    with patch('src.services.analytics_service.SqliteTransactionRepository', return_value=mock_trans_repo), \
-         patch('src.services.analytics_service.SqliteSnapshotRepository') as MockSnapRepo:
+    with patch('src.services.analytics_service.AlchemyTransactionRepository', return_value=mock_trans_repo), \
+         patch('src.services.analytics_service.AlchemySnapshotRepository') as MockSnapRepo:
         
         recorder = SnapshotRecorder()
         recorder.record_daily_snapshot(nlv=10000.0, cash_balance=5000.0, user_id="user1", total_tnv=5000.0, leverage_ratio=0.5)
@@ -75,15 +76,15 @@ def test_snapshot_recorder():
 def test_update_daily_snapshot_integration():
     # This function uses local variables for services, so we MUST patch the classes used.
     
-    with patch('src.services.analytics_service.SqliteTransactionRepository') as MockTransRepo, \
-         patch('src.services.analytics_service.SqliteSnapshotRepository') as MockSnapRepo, \
+    with patch('src.services.analytics_service.AlchemyTransactionRepository') as MockTransRepo, \
+         patch('src.services.analytics_service.AlchemySnapshotRepository') as MockSnapRepo, \
          patch('src.services.analytics_service.MarketDataService') as MockMarket:
          
         # Setup
         MockTransRepo.return_value.get_active_tickers.return_value = ["AAPL"]
-        # Mock get_holdings_summary and others needed by LeverageCalculator internally
-        MockTransRepo.return_value.get_holdings_summary.return_value = [("AAPL", 5.0)]
-        MockTransRepo.return_value.get_cash_flow_sum.return_value = 0.0
+        # Mock get_leverage_summary and others needed by LeverageCalculator internally
+        MockTransRepo.return_value.get_leverage_summary.return_value = [("AAPL", 5.0, 1.0)]
+        MockTransRepo.return_value.get_cash_balance.return_value = 0.0
         MockTransRepo.return_value.get_all_by_user.return_value = [] # No transactions for cash impact
         MockTransRepo.return_value.calculate_net_invested_capital.return_value = 0.0
         

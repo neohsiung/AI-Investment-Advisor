@@ -1,33 +1,39 @@
 """
-Test coverage for SqliteSnapshotRepository
+Test coverage for AlchemySnapshotRepository
 """
 import pytest
 import pandas as pd
 from unittest.mock import Mock, patch, MagicMock
 from datetime import datetime
-from src.repositories.snapshot_repository import SqliteSnapshotRepository
+from src.repositories.snapshot_repository import AlchemySnapshotRepository
 
 
 class TestSnapshotRepository:
-    """Test suite for SqliteSnapshotRepository"""
+    """Test suite for AlchemySnapshotRepository"""
     
     @pytest.fixture
-    def repo(self):
+    def mock_engine(self):
+        mock_eng = MagicMock()
+        with patch('src.repositories.snapshot_repository.get_db_engine', return_value=mock_eng):
+            yield mock_eng
+
+    @pytest.fixture
+    def mock_conn(self, mock_engine):
+        conn = MagicMock()
+        mock_engine.connect.return_value.__enter__.return_value = conn
+        mock_engine.begin.return_value.__enter__.return_value = conn
+        return conn
+
+    @pytest.fixture
+    def repo(self, mock_engine):
         """Create repository instance"""
-        return SqliteSnapshotRepository(db_path=':memory:')
+        return AlchemySnapshotRepository()
     
     def test_initialization(self, repo):
         """Test repository initializes correctly"""
         assert repo is not None
-        assert hasattr(repo, 'db_path')
-        assert repo.db_path == ':memory:'
+        assert hasattr(repo, 'engine')
     
-    def test_initialization_with_custom_path(self):
-        """Test initialization with custom database path"""
-        repo = SqliteSnapshotRepository(db_path='/custom/path/db.sqlite')
-        assert repo.db_path == '/custom/path/db.sqlite'
-    
-    @patch('src.repositories.snapshot_repository.get_db_connection')
     @patch('src.repositories.snapshot_repository.pd.read_sql')
     def test_get_history_by_user(self, mock_read_sql, mock_conn, repo):
         """Test retrieving snapshot history for a user"""
@@ -46,10 +52,8 @@ class TestSnapshotRepository:
         
         assert result is not None
         assert len(result) == 2
-        mock_conn.assert_called_once_with(':memory:')
         mock_read_sql.assert_called_once()
     
-    @patch('src.repositories.snapshot_repository.get_db_connection')
     @patch('src.repositories.snapshot_repository.pd.read_sql')
     def test_get_latest_by_user(self, mock_read_sql, mock_conn, repo):
         """Test getting most recent snapshot"""
@@ -68,7 +72,6 @@ class TestSnapshotRepository:
         assert result['total_nlv'] == 10500
         mock_read_sql.assert_called_once()
     
-    @patch('src.repositories.snapshot_repository.get_db_connection')
     @patch('src.repositories.snapshot_repository.pd.read_sql')
     def test_get_latest_returns_none_when_no_data(self, mock_read_sql, mock_conn, repo):
         """Test get_latest returns None for user with no snapshots"""
@@ -78,12 +81,8 @@ class TestSnapshotRepository:
         
         assert result is None
     
-    @patch('src.repositories.snapshot_repository.get_db_connection')
     def test_save_snapshot(self, mock_conn, repo):
         """Test saving a snapshot"""
-        mock_connection = Mock()
-        mock_conn.return_value = mock_connection
-        
         repo.save_snapshot(
             user_id='test@example.com',
             date='2025-01-01',
@@ -95,13 +94,9 @@ class TestSnapshotRepository:
             leverage_ratio=1.2
         )
         
-        # Verify connection was obtained and commit was called
-        mock_conn.assert_called_once_with(':memory:')
-        mock_connection.execute.assert_called_once()
-        mock_connection.commit.assert_called_once()
-        mock_connection.close.assert_called_once()
+        # Verify connection was obtained and execute was called
+        mock_conn.execute.assert_called()
     
-    @patch('src.repositories.snapshot_repository.get_db_connection')
     @patch('src.repositories.snapshot_repository.pd.read_sql')
     def test_get_history_returns_empty_dataframe_when_no_data(self, mock_read_sql, mock_conn, repo):
         """Test empty dataframe returned when no history"""

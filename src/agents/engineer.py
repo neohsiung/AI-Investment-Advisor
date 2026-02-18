@@ -6,14 +6,14 @@ import uuid
 from sqlalchemy import text
 from src.agents.base_agent import BaseAgent
 from src.utils.time_utils import format_time
-from src.repositories.prompt_repository import SqlitePromptRepository
+from src.repositories.prompt_repository import AlchemyPromptRepository
 
 class SystemEngineerAgent(BaseAgent):
     def __init__(self, use_cache=False, prompt_repo=None, **kwargs):
         # Engineer Agent usually does not cache because feedback varies every time.
         # Engineer Agent 通常不快取，因為每次回饋都不同。
         super().__init__(name="Engineer", prompt_path="prompts/engineer_agent.txt", use_cache=use_cache, tier="smart", **kwargs)
-        self.prompt_repo = prompt_repo or SqlitePromptRepository()
+        self.prompt_repo = prompt_repo or AlchemyPromptRepository()
 
     def analyze_optimization_needs(self, cio_report):
         """

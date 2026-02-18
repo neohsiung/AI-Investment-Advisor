@@ -90,7 +90,15 @@ class ITransactionRepository(ABC):
         """
         pass
 
-class TransactionRepositoryImpl(BaseRepository, ITransactionRepository):
+    @abstractmethod
+    def get_leverage_summary(self, user_id: str) -> List[tuple]:
+        """
+        Get leverage summary (Ticker, Net Qty, Avg Leverage) for a user.
+        取得投資組合槓桿摘要 (標的, 淨數量, 平均槓桿)。
+        """
+        pass
+
+class AlchemyTransactionRepository(BaseRepository, ITransactionRepository):
     """
     Implementation of ITransactionRepository using SQLAlchemy.
     使用 SQLAlchemy 實作的 ITransactionRepository。
@@ -137,7 +145,7 @@ class TransactionRepositoryImpl(BaseRepository, ITransactionRepository):
             rows = conn.execute(query, {"user_id": user_id}).fetchall()
             return [r[0] for r in rows]
 
-    def add(self, user_id: str, ticker: str, date: str, action: str, quantity: float, price: float, fees: float) -> None:
+    def add(self, user_id: str, ticker: str, date: str, action: str, quantity: float, price: float, fees: float, leverage: float = 1.0) -> None:
         """
         Add a new transaction.
         新增一筆交易。
@@ -148,8 +156,8 @@ class TransactionRepositoryImpl(BaseRepository, ITransactionRepository):
         with self.engine.begin() as conn:
             std_action = action.upper()
             query_trans = text("""
-                INSERT INTO transactions (id, user_id, ticker, trade_date, action, quantity, price, fees, amount)
-                VALUES (:id, :user_id, :ticker, :trade_date, :action, :quantity, :price, :fees, :amount)
+                INSERT INTO transactions (id, user_id, ticker, trade_date, action, quantity, price, fees, amount, leverage)
+                VALUES (:id, :user_id, :ticker, :trade_date, :action, :quantity, :price, :fees, :amount, :leverage)
             """)
             conn.execute(query_trans, {
                 "id": str(uuid.uuid4()),
@@ -160,7 +168,8 @@ class TransactionRepositoryImpl(BaseRepository, ITransactionRepository):
                 "quantity": quantity,
                 "price": price,
                 "fees": fees,
-                "amount": amount
+                "amount": amount,
+                "leverage": leverage
             })
 
     def get_holdings_summary(self, user_id: str) -> List[tuple]:
@@ -188,8 +197,15 @@ class TransactionRepositoryImpl(BaseRepository, ITransactionRepository):
 
     def get_cash_flow_sum(self, user_id: str) -> float:
         with self.engine.connect() as conn:
-            # Logic: Sum of DEPOSIT - WITHDRAWAL
-            query = text("SELECT SUM(amount) FROM transactions WHERE user_id = :user_id AND action IN ('DEPOSIT', 'WITHDRAWAL')")
+            # Logic: Sum of DEPOSIT - WITHDRAWAL (Corrected v4.2.0)
+            # v4.2.0: 修正存款與提款的加總邏輯
+            query = text("""
+                SELECT SUM(CASE 
+                    WHEN action = 'DEPOSIT' THEN amount 
+                    WHEN action = 'WITHDRAWAL' THEN -amount 
+                    ELSE 0 
+                END) FROM transactions WHERE user_id = :user_id
+            """)
             result = conn.execute(query, {"user_id": user_id}).fetchone()
             return float(result[0]) if result and result[0] is not None else 0.0
     def get_cash_balance(self, user_id: str) -> float:
@@ -251,6 +267,27 @@ class TransactionRepositoryImpl(BaseRepository, ITransactionRepository):
             rows = conn.execute(query, {"uid": user_id}).fetchall()
             return [{"ticker": r[0], "quantity": float(r[1]), "avg_price": float(r[2])} for r in rows]
 
-# Legacy alias
-# @deprecated: Use TransactionRepositoryImpl
-SqliteTransactionRepository = TransactionRepositoryImpl
+    def get_leverage_summary(self, user_id: str) -> List[tuple]:
+        """
+        Get leverage summary (Ticker, Net Qty, Avg Leverage) for a user.
+        取得投資組合槓桿摘要 (標的, 淨數量, 平均槓桿)。
+        """
+        with self.engine.connect() as conn:
+            query = text("""
+                SELECT ticker, 
+                       SUM(CASE WHEN action='BUY' THEN quantity WHEN action='SELL' THEN -quantity ELSE 0 END) as net_qty,
+                       SUM(CASE 
+                         WHEN action='BUY' THEN quantity * leverage 
+                         WHEN action='SELL' THEN -quantity * leverage 
+                         ELSE 0 END) / 
+                       NULLIF(SUM(CASE WHEN action='BUY' THEN quantity WHEN action='SELL' THEN -quantity ELSE 0 END), 0) as avg_leverage
+                FROM transactions 
+                WHERE user_id = :uid 
+                GROUP BY ticker
+                HAVING SUM(CASE WHEN action='BUY' THEN quantity WHEN action='SELL' THEN -quantity ELSE 0 END) > 0.0001
+            """)
+            rows = conn.execute(query, {"uid": user_id}).fetchall()
+            return [(r[0], float(r[1]), float(r[2] or 1.0)) for r in rows]
+
+# Legacy alias removed in v4.1.7
+# @deprecated: Use AlchemyTransactionRepository

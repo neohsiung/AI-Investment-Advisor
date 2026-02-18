@@ -2,8 +2,8 @@ import logging
 import json
 from datetime import datetime, timedelta, timezone
 from typing import List, Dict, Any, Optional
-from src.repositories.sentinel_repository import SentinelRepository, ISentinelRepository
-from src.repositories.transaction_repository import TransactionRepositoryImpl, ITransactionRepository
+from src.repositories.sentinel_repository import AlchemySentinelRepository
+from src.repositories.transaction_repository import AlchemyTransactionRepository, ITransactionRepository
 from src.data.database import get_db_connection
 from sqlalchemy import text
 
@@ -24,8 +24,8 @@ class ExperienceReplayService:
         sentinel_repo: ISentinelRepository = None,
         trans_repo: ITransactionRepository = None
     ):
-        self.sentinel_repo = sentinel_repo or SentinelRepository()
-        self.trans_repo = trans_repo or TransactionRepositoryImpl()
+        self.sentinel_repo = sentinel_repo or AlchemySentinelRepository()
+        self.trans_repo = trans_repo or AlchemyTransactionRepository()
 
     def optimize_thresholds(self, user_id: str) -> Dict[str, Any]:
         """

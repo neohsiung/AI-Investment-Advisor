@@ -111,7 +111,7 @@ class IRiskKeywordRepository(ABC):
         """Get top keywords by hit count."""
         pass
 
-class RiskKeywordRepositoryImpl(BaseRepository, IRiskKeywordRepository):
+class AlchemyRiskKeywordRepository(BaseRepository, IRiskKeywordRepository):
     """
     Implementation of IRiskKeywordRepository using SQLAlchemy.
     使用 SQLAlchemy 實作的 IRiskKeywordRepository。
@@ -305,5 +305,5 @@ class RiskKeywordRepositoryImpl(BaseRepository, IRiskKeywordRepository):
             created_at=row.created_at if hasattr(row, 'created_at') else row[7],
         )
 
-# Legacy alias
-RiskKeywordRepository = RiskKeywordRepositoryImpl
+# Legacy alias removed in v4.1.7
+# @deprecated: Use AlchemyRiskKeywordRepository

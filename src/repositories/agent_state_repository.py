@@ -37,7 +37,7 @@ class IAgentStateRepository(ABC):
         """
         pass
 
-class AgentStateRepositoryImpl(BaseRepository, IAgentStateRepository):
+class AlchemyAgentStateRepository(BaseRepository, IAgentStateRepository):
     """
     Implementation of IAgentStateRepository using SQLAlchemy.
     使用 SQLAlchemy 實作的 IAgentStateRepository。
@@ -94,7 +94,5 @@ class AgentStateRepositoryImpl(BaseRepository, IAgentStateRepository):
                 "output": output
             })
 
-# Legacy aliases
-# @deprecated: Use AgentStateRepositoryImpl
-SqliteAgentStateRepository = AgentStateRepositoryImpl
-IAgentStateRepository = IAgentStateRepository
+# Legacy alias removed in v4.1.7
+# @deprecated: Use AlchemyAgentStateRepository

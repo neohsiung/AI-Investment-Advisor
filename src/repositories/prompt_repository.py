@@ -18,7 +18,7 @@ class IPromptRepository(ABC):
         """
         pass
 
-class PromptRepositoryImpl(BaseRepository, IPromptRepository):
+class AlchemyPromptRepository(BaseRepository, IPromptRepository):
     """
     Implementation of IPromptRepository using SQLAlchemy.
     使用 SQLAlchemy 實作的 IPromptRepository。
@@ -52,6 +52,5 @@ class PromptRepositoryImpl(BaseRepository, IPromptRepository):
                 "diff_content": diff
             })
 
-# Legacy alias
-# @deprecated: Use PromptRepositoryImpl
-SqlitePromptRepository = PromptRepositoryImpl
+# Legacy alias removed in v4.1.7
+# @deprecated: Use AlchemyPromptRepository

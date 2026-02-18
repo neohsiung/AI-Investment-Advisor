@@ -16,6 +16,11 @@
 - **迭代紀錄 (Version History)**: 位於文件頂部，記錄最近 5 次重大變動（Date, Version, Description, Author）。
 - ** additive 原則**: 除非結構崩壞，否則更新應視為疊加與增量，嚴禁隨意重寫以保留歷史背景。
 
+### 1.3 迴圈式填補迭代 (Iterative Patching Loop) - **核心規則**
+- **微調而非重寫**: 更新單一文件時，應以「迴圈 (Loop)」形式針對每一個段落進行填補與調整，而非一次性大範圍覆蓋。
+- **段落校對**: 每次技術迭代後，需對應 Wiki 中所有相關文件的段落進行掃描，確保新舊資訊邏輯自洽，達成精確的「手術式增補」。
+- **Surgical Additions**: When updating documents, use a loop-based approach to patch individual sections or paragraphs specifically, rather than performing wholesale rewrites. Scan all affected sections after each technical iteration to ensure contextual consistency.
+
 ---
 
 ## 2. README 門戶標準 (README Portal Standards)

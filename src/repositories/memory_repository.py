@@ -5,7 +5,7 @@ import uuid
 from src.data.database import BaseRepository, get_db_engine
 from src.services.memory_service import IMemoryRepository, ReportMemoryItem
 
-class MemoryRepositoryImpl(BaseRepository, IMemoryRepository):
+class AlchemyMemoryRepository(BaseRepository, IMemoryRepository):
     """
     Implementation of IMemoryRepository using SQLAlchemy.
     使用 SQLAlchemy 實作的 IMemoryRepository。
@@ -64,6 +64,5 @@ class MemoryRepositoryImpl(BaseRepository, IMemoryRepository):
                 "rtype": item.report_type
             })
 
-# Legacy alias
-# @deprecated: Use MemoryRepositoryImpl
-SqliteMemoryRepository = MemoryRepositoryImpl
+# Legacy alias removed in v4.1.7
+# @deprecated: Use AlchemyMemoryRepository

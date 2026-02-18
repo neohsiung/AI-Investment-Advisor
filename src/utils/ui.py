@@ -74,28 +74,34 @@ def load_design_system_css():
         with open(ds_path, 'r', encoding='utf-8') as f:
             css_base = f.read()
 
-    # Inject everything using markdown for maximum compatibility
-    st.markdown(f"""
-    <style>{css_base}\n{theme_css}</style>
+    # Inject CSS using markdown
+    st.markdown(f"<style>{css_base}\n{theme_css}</style>", unsafe_allow_html=True)
+    
+    # Inject JS using components.html to prevent visible text on page
+    from streamlit.components.v1 import html
+    html(f"""
     <script>
         (function() {{
             const theme = '{theme_name}';
             const apply = () => {{
-                document.documentElement.setAttribute('data-theme', theme);
-                localStorage.setItem('st-theme', theme);
                 try {{
+                    // Try to apply to parent (Streamlit main window)
                     const root = window.parent.document.querySelector('.stApp');
                     if (root) {{
                         root.setAttribute('data-theme', theme);
                         root.style.backgroundColor = (theme === "dark") ? "{c['bg']}" : "{c['bg']}";
                     }}
-                }} catch (e) {{}}
+                    document.documentElement.setAttribute('data-theme', theme);
+                    window.parent.localStorage.setItem('st-theme', theme);
+                }} catch (e) {{
+                    console.error("Theme application failed:", e);
+                }}
             }};
             apply();
-            window.addEventListener('load', apply);
+            window.parent.addEventListener('load', apply);
         }})();
     </script>
-    """, unsafe_allow_html=True)
+    """, height=0)
 
 def render_theme_switcher(key_suffix="", icon_only=False):
     """Render a professional minimalist theme toggle."""
@@ -112,7 +118,7 @@ def load_theme_css(theme="light"):
     """Legacy fallback - delegated to main design system loader."""
     load_design_system_css()
 
-def render_sidebar(user, default_db_path="data/portfolio.db"):
+def render_sidebar(user, default_db_path=None):
     """Sleek minimalist sidebar with horizontal preference-centric navigation."""
     from src.auth import auth_manager
     

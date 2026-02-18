@@ -28,7 +28,7 @@ class IAgentRepository(ABC):
         """Get high-performing agents for a specific tier."""
         pass
 
-class AgentRepositoryImpl(BaseRepository, IAgentRepository):
+class AlchemyAgentRepository(BaseRepository, IAgentRepository):
     """
     Implementation of IAgentRepository using SQLAlchemy.
     使用 SQLAlchemy 實作的 IAgentRepository。
@@ -145,6 +145,5 @@ class AgentRepositoryImpl(BaseRepository, IAgentRepository):
             logger.error(f"Failed to get top agents: {e}")
         return agents
 
-# Legacy alias
-# @deprecated: Use AgentRepositoryImpl
-AgentRepository = AgentRepositoryImpl
+# Legacy alias removed in v4.1.7
+# @deprecated: Use AlchemyAgentRepository

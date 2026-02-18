@@ -26,8 +26,14 @@ class SettingsPage(BasePage):
         super().__init__("系統設定 (System Settings)", "⚙️")
     
     def render(self):
-        """Render settings content"""
-        user_id = self.user['email']
+        """
+        Render settings content.
+        渲染設定內容。
+        """
+        # v4.1: Use UUID instead of email for user_id
+        # v4.1: 使用 UUID 而非 email 作為 user_id
+        # auth_guard already resolves email to UUID and adds 'id' to user object
+        user_id = self.user['id']
         db_path = self.db_path
 
         # 1. Define Tabs (Reordered by Usage Frequency)

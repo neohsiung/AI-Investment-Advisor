@@ -23,6 +23,8 @@
     *   [任務規劃與執行引擎](04_架構觀點-Architect_Views/任務規劃與執行引擎-Task-Planning-Engine.md)
     *   [記憶系統與 Redis 架構](04_架構觀點-Architect_Views/記憶系統與Redis架構-Memory-Redis-Architecture.md)
     *   [資料與領域模型](04_架構觀點-Architect_Views/資料與領域模型-Data-Domain-Models.md)
+    *   [數據攝取架構](04_架構觀點-Architect_Views/數據攝取架構-Data-Ingestion-Architecture.md)
+    *   [動態指標與復盤機制](04_架構觀點-Architect_Views/動態指標與復盤機制-Dynamic-Indicators-and-Experience-Replay.md)
     *   [前端與服務架構](04_架構觀點-Architect_Views/前端與服務架構-Frontend-Service-Architecture.md)
     *   [代理人戰略協定](04_架構觀點-Architect_Views/代理人戰略協定-Agent-Swarm-Protocol.md)
 *   **05. 工程手冊 (Engineering Handbook)**

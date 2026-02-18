@@ -11,5 +11,7 @@ class IngestorFactory:
             return RobinhoodIngestor(db_path)
         elif broker == 'ibkr':
             return IBKRIngestor(db_path)
+        elif broker == 'etoro':
+            return EtoroIngestor(db_path)
         else:
             raise ValueError(f"Unknown broker: {broker_name}")

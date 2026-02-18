@@ -71,7 +71,7 @@ async def lifespan(app: FastAPI):
         from src.infrastructure.channels.channel_factory import ChannelFactory
         from src.infrastructure.nlp.intent_classifier import IntentClassifier
         
-        settings_svc_global = SettingsService(db_path="data/portfolio.db")
+        settings_svc_global = SettingsService(db_path=None)  # Use environment DB_URL or DB_TYPE
         settings_global = settings_svc_global.get_all_settings()
         
         # Create Adapters via Factory

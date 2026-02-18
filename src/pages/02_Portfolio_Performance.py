@@ -14,38 +14,50 @@ class PortfolioPerformancePage(BasePage):
     
     def render(self):
         """Render performance tracking content"""
-        user_id = self.user['email']
+        user_id = self.user['id']
         db_path = self.db_path
         
         self.perf_service = PerformanceService(db_path=db_path, user_id=user_id)
 
         with st.spinner("正在讀取市場數據 (Fetching performance data)..."):
             data = self.perf_service.prepare_performance_data()
-            pnl_data = data['pnl_data']
-            snapshots_df = data['history_df']
+            pnl_data = data.get('pnl_data', {'realized': 0, 'unrealized': 0, 'total': 0})
+            snapshots_df = data.get('history_df')
 
         # --- Section 1: P&L ---
         saas_section_header("績效與損益分析 (P&L)", "詳細損益明細與實現狀況")
         c1, c2, c3, c4 = st.columns(4)
         with c1:
-            saas_metric("已實現損益", f"${pnl_data.get('realized', 0):,.0f}")
+            saas_metric("已實現損益", f"${pnl_data.get('realized', 0):,.0f}", icon="✅")
         with c2:
-            saas_metric("未實現損益", f"${pnl_data.get('unrealized', 0):,.0f}")
+            saas_metric("未實現損益", f"${pnl_data.get('unrealized', 0):,.0f}", icon="⏳")
         with c3:
-            saas_metric("總累計損益", f"${pnl_data.get('total', 0):,.0f}", delta_color="normal")
+            saas_metric("總累計損益", f"${pnl_data.get('total', 0):,.0f}", delta_color="normal", icon="💰")
+        
+        # 顯示累積投入資本（從快照或計算）
+        with c4:
+            if snapshots_df is not None and not snapshots_df.empty:
+                latest = snapshots_df.iloc[-1]
+                invested_capital = latest.get('invested_capital', 0)
+            else:
+                # 如果沒有快照，嘗試從交易計算
+                from src.repositories.transaction_repository import AlchemyTransactionRepository
+                trans_repo = AlchemyTransactionRepository()
+                invested_capital = trans_repo.calculate_net_invested_capital(user_id)
+            saas_metric("累積投入資本", f"${invested_capital:,.0f}", icon="🏦")
 
         # --- Section 2: Trends & Charts ---
         if snapshots_df is not None and not snapshots_df.empty:
-            latest = snapshots_df.iloc[-1]
-            with c4:
-                saas_metric("累積投入資本", f"${latest.get('invested_capital', 0):,.0f}", icon="🏦")
 
             saas_section_header("趨勢與風險 (Trends & Risk)", "長期資產增長與槓桿監控")
+            
+            # 檢查欄位名稱並標準化
+            nlv_column = 'total_nlv' if 'total_nlv' in snapshots_df.columns else 'nlv'
             
             # NLV Chart
             saas_card_start(title="NLV 歷史增長 (Growth)")
             template, layout_overrides = get_plotly_template()
-            fig_equity = px.area(snapshots_df, x='date', y='total_nlv', markers=False, color_discrete_sequence=['var(--saas-primary)'], template=template)
+            fig_equity = px.area(snapshots_df, x='date', y=nlv_column, markers=False, color_discrete_sequence=['var(--saas-primary)'], template=template)
             fig_equity.update_layout(**layout_overrides)
             fig_equity.update_layout(
                 height=180, 
@@ -72,8 +84,19 @@ class PortfolioPerformancePage(BasePage):
                 fig_lev.add_hline(y=2.0, line_dash="dash", line_color="var(--saas-danger)")
                 st.plotly_chart(fig_lev, use_container_width=True)
                 saas_card_end()
-        else:
-            st.info("尚無績效歷史紀錄。每日快照將由系統自動記錄。")
+            else:
+                st.info("快照資料中缺少槓桿比率欄位。")
+        # --- Section 3: Tools ---
+        st.markdown('<div style="margin-top: 2rem;"></div>', unsafe_allow_html=True)
+        with st.expander("🛠️ 進階工具 (Advanced Tools)"):
+            st.warning("修復快照功能將重新計算今日績效並更新數據。")
+            if st.button("手動修復今日快照 (Repair Today's Snapshot)"):
+                from src.services.analytics_service import AnalyticsService
+                analytics = AnalyticsService(db_path=db_path, user_id=user_id)
+                with st.spinner("正在修復中..."):
+                    analytics.trigger_snapshot_update(force=True)
+                st.success("今日快照已更新！請重新整理頁面。")
+                st.rerun()
 
 if __name__ == "__main__":
     PortfolioPerformancePage().run()

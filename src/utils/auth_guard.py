@@ -44,5 +44,24 @@ def require_authentication():
         st.error("Authentication Error: 無效的使用者資料 (Invalid user data)")
         auth_manager.logout()
         st.stop()
+
+    # v4.0 Patch: Resolve UUID identity
+    from src.repositories.user_repository import AlchemyUserRepository
+    from src.utils.logger import setup_logger
+    logger = setup_logger("AuthGuard")
+    
+    user_repo = AlchemyUserRepository()
+    
+    email = user['email']
+    user_record = user_repo.get_by_identity('email', email)
+    
+    if not user_record:
+        # Auto-create user if first login
+        logger.info(f"Creating new user for {email}")
+        new_uuid = user_repo.create_user(email, name=user.get('name'))
+        user['id'] = new_uuid
+    else:
+        user['id'] = user_record['id']
+        logger.debug(f"Resolved user {email} to ID: {user['id']}")
         
     return user

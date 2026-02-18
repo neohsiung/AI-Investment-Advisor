@@ -174,3 +174,69 @@ class IBKRIngestor(BaseIngestor):
                         "fees": fees,
                         "amount": amount
                     })
+class EtoroIngestor(BaseIngestor):
+    """
+    Ingestor for eToro Financial Statement (CSV).
+    eToro 財務報表 (CSV) 匯入器。
+    """
+    def ingest(self, df: pd.DataFrame, user_id: str) -> None:
+        # Standard eToro columns: Date, Type, Amount, Units, Asset, Details, Realized Equity
+        # We also support a simplified format if mapped manually.
+        
+        # 1. Column Normalization
+        col_map = {
+            'Date': 'trade_date',
+            'Type': 'action',
+            'Amount': 'amount',
+            'Units': 'quantity',
+            'Asset': 'ticker',
+            'Details': 'details'
+        }
+        df = df.rename(columns={c: col_map[c] for c in df.columns if c in col_map})
+        
+        # 2. Validation
+        required = ['trade_date', 'action', 'quantity', 'amount']
+        missing = [c for c in required if c not in df.columns]
+        if missing:
+            raise ValueError(f"Missing required columns: {missing}")
+
+        with get_db_connection(self.db_path) as conn:
+            with conn.begin():
+                for _, row in df.iterrows():
+                    ticker = str(row.get('ticker', 'USD')).strip()
+                    date_str = pd.to_datetime(row['trade_date']).strftime('%Y-%m-%d')
+                    action = str(row['action']).upper().strip()
+                    
+                    # Normalize action
+                    if 'DEPOSIT' in action: action = 'DEPOSIT'
+                    elif 'WITHDRAW' in action: action = 'WITHDRAWAL'
+                    elif 'BUY' in action or 'OPEN' in action: action = 'BUY'
+                    elif 'SELL' in action or 'CLOSE' in action: action = 'SELL'
+                    elif 'DIVIDEND' in action: action = 'DIVIDEND'
+                    
+                    quantity = float(row.get('quantity', 0))
+                    amount = float(row['amount'])
+                    price = amount / quantity if quantity != 0 else 1.0
+                    leverage = float(row.get('Leverage', 1.0)) # Extraction from row
+                    fees = 0.0 # Often separate in eToro
+                    
+                    raw_data = json.dumps({"source": "csv_etoro", "raw_row": row.to_dict()}, default=str)
+
+                    query = text("""
+                        INSERT INTO transactions (id, user_id, ticker, trade_date, action, quantity, price, fees, amount, leverage, source_file, raw_data)
+                        VALUES (:id, :user_id, :ticker, :trade_date, :action, :quantity, :price, :fees, :amount, :leverage, 'csv_etoro', :raw_data)
+                    """)
+
+                    conn.execute(query, {
+                        "id": str(uuid.uuid4()),
+                        "user_id": user_id,
+                        "ticker": ticker,
+                        "trade_date": date_str,
+                        "action": action,
+                        "quantity": quantity,
+                        "price": price,
+                        "fees": fees,
+                        "amount": amount,
+                        "leverage": leverage,
+                        "raw_data": raw_data
+                    })

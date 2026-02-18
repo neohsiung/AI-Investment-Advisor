@@ -3,6 +3,7 @@
 ### 版本紀錄 (Version History)
 | Date | Version | Description | Author |
 | :--- | :--- | :--- | :--- |
+| 2026-02-18 | v3.6 | **Agent Skills & Orchestration**: Integrated `SkillRegistry` and `SwarmOrchestrator` with adaptive performance tracking (Reward/Penalty). | Neo |
 | 2026-02-14 | v3.5 | Full 7+1 agent roster, Council Fractal Debate, AgentFactory | Neo |
 | 2024-01-04 | v1.0 | Initial 4-agent design | Neo |
 
@@ -113,7 +114,29 @@ graph TD
 *   **觸發**: Sentinel 偵測異常 或 CIO 深度評議時。
 *   **檔案**: `src/agents/council_adapter.py` (Adapter Pattern)
 
-### 3. 投資委員會協定 (IC Protocol)
+### 3. 技能系統與註冊表 (Agent Skills & Registry — v3.6)
+為了提升 Agent 的執行效能，系統將通用功能封裝為 **本地技能 (Local Skills)**，避免過度的 LLM 推理。
+
+*   **技能下載器 (SkillLoader)**: 位於 `src/agents/skills/skill_loader.py`，負責解析 `SKILL.md` 規格。
+*   **技能註冊表 (SkillRegistry)**: 位於 `src/agents/skills/registry.py`，將規格綁定至具體的 Python 實作。
+*   **核心技能範例**:
+    *   `search_web`: 整合 Tavily 金融搜尋。
+    *   `get_market_data`: 獲取 OHLCV 與技術指標。
+    *   `get_portfolio`: 獲取投資組合摘要與槓桿率。
+*   **優勢**: **本地執行 (Local Execution)** 消除網路延遲，並提供型態檢查的參數傳遞。
+
+### 4. 蜂群編排與效能演化 (Swarm Orchestration & Evolution — v3.6)
+系統透過 `SwarmOrchestrator` 實現並行任務分發與結果聚合。
+
+*   **編排模式**:
+    *   **Broadcast (廣播)**: 將單一任務發送至多個 Agent 並行執行。
+    *   **Batch Run (批次)**: 為不同 Agent 分配不同任務。
+*   **獎懲機制 (Reward & Penalty)**:
+    *   **Reward (+0.01)**: 任務成功完成後，增加 Agent 的權重比例。
+    *   **Penalty (-0.1)**: 若執行失敗或超時 (Timeout)，則大幅降低權重，並觸發 [System Engineer](engineer) 進行調優。
+*   **融合策略 (Fusion)**: CIO Agent 根據 Agent 權重與信心分數，融合產出最終裁決。
+
+### 5. 投資委員會協定 (IC Protocol)
 
 #### 3.1 每日健康檢查 (Daily Health Check)
 - **觸發**: CIO 於開盤時發起。
@@ -159,6 +182,15 @@ graph TD
 | Risk | Risk Gatekeeper | `risk.py` |
 | Engineer | Self-Evolution Engineer | `engineer.py` |
 | Council | Fractal Debate Arbitrator | `council_adapter.py` |
+
+### Agent Skills & Registry (v3.6)
+- **SkillLoader**: Parses `SKILL.md` specifications.
+- **SkillRegistry**: Binds specifications to Python implementations (`registry.py`).
+- **Core Skills**: `search_web`, `get_market_data`, `get_portfolio`.
+
+### Swarm Orchestration (v3.6)
+- **Orchestrator**: Parallel dispatch (Broadcast/Batch) and fan-in aggregation.
+- **Adaptive Evolution**: Reward/Penalty system based on performance metrics (Success/Latency/Quality).
 
 ### IC Protocol
 1. **Daily Health Check**: CIO triggers, agents report daily briefs.

@@ -5,7 +5,7 @@ import sys
 from datetime import datetime
 from src.utils.time_utils import get_current_time
 from src.services.transaction_service import TransactionService
-from src.repositories.transaction_repository import SqliteTransactionRepository
+from src.repositories.transaction_repository import AlchemyTransactionRepository
 from src.services.market_data_service import MarketDataService
 from src.agents.momentum import MomentumAgent
 from src.agents.fundamental import FundamentalAgent
@@ -24,7 +24,7 @@ logger = logging.getLogger("WorkflowService")
 
 from src.services.task_planning_service import TaskPlanningService
 from src.services.memory_service import MemoryService
-from src.repositories.memory_repository import SqliteMemoryRepository
+from src.repositories.memory_repository import AlchemyMemoryRepository
 from src.infrastructure.agent_llm_provider import AgentLLMProvider
 from src.utils.format_utils import format_agent_output
 
@@ -44,12 +44,12 @@ class BaseWorkflow(ABC):
         self.user_id = user_id
         
         # Dependency Injection
-        self.transaction_repo = transaction_repo or SqliteTransactionRepository()
+        self.transaction_repo = transaction_repo or AlchemyTransactionRepository()
         self.transaction_service = transaction_service or TransactionService(repository=self.transaction_repo)
         self.market_service = market_service or MarketDataService()
         
         # Memory Service Injection
-        self.memory_repo = SqliteMemoryRepository()
+        self.memory_repo = AlchemyMemoryRepository()
         self.llm_provider = AgentLLMProvider(user_id=self.user_id)
         self.memory_service = MemoryService(repository=self.memory_repo, llm_provider=self.llm_provider)
         
@@ -175,9 +175,17 @@ class BaseWorkflow(ABC):
             import uuid
             report_id = str(uuid.uuid4())
             date_str = get_current_time().isoformat()
-            conn.execute(text(
-                "INSERT INTO reports (id, user_id, date, content, summary) VALUES (:id, :uid, :date, :content, :summary)"
-            ), {"id": report_id, "uid": self.user_id, "date": date_str, "content": content, "summary": "Workflow Report"})
+            conn.execute(text("""
+                INSERT INTO reports (id, user_id, report_type, title, content, created_at) 
+                VALUES (:id, :uid, :type, :title, :content, :date)
+            """), {
+                "id": report_id, 
+                "uid": self.user_id, 
+                "type": self.__class__.__name__,
+                "title": f"Workflow Report ({self.__class__.__name__})", 
+                "content": content, 
+                "date": date_str
+            })
             conn.commit()
             logger.info("Report stored in database.")
         finally:
@@ -188,7 +196,7 @@ class BaseWorkflow(ABC):
         from src.services.settings_service import SettingsService
         
         settings_service = SettingsService(user_id=self.user_id)
-        notifier = NotificationService.create_with_settings(settings_service)
+        notifier = NotificationService.create_with_settings(settings_service, user_id=self.user_id)
         subject = f"Investment Report ({self.__class__.__name__}) - {get_current_time().strftime('%Y-%m-%d')}"
         await notifier.send_report(subject, content, user_id=self.user_id, source=self.__class__.__name__)
         logger.info("Report notifications sent.")
