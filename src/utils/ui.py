@@ -9,6 +9,45 @@ from src.services.theme_service import ThemeService
 # Initialize Service
 theme_service = ThemeService()
 
+def safe_page_link(page: str, label: str, icon: str = None, help: str = None, use_container_width: bool = False):
+    """
+    Safely render a page link, falling back to a button + switch_page if st.page_link is unavailable (Streamlit < 1.31.0).
+    """
+    if hasattr(st, "page_link"):
+        st.page_link(page, label=label, icon=icon, help=help, use_container_width=use_container_width)
+    else:
+        # Fallback for older Streamlit versions
+        if st.button(f"{icon + ' ' if icon else ''}{label}", help=help, use_container_width=use_container_width):
+            st.switch_page(page)
+
+def safe_button(label: str, key: str = None, help: str = None, icon: str = None, use_container_width: bool = False, **kwargs):
+    """
+    Safely render a button, handling the 'icon' parameter which is only available in Streamlit >= 1.35.0.
+    """
+    from inspect import signature
+    try:
+        # Check if st.button accepts 'icon' argument
+        sig = signature(st.button)
+        if 'icon' in sig.parameters:
+            return st.button(label, key=key, help=help, icon=icon, use_container_width=use_container_width, **kwargs)
+        else:
+            # Fallback for Streamlit < 1.35.0: Prepend icon to label
+            display_label = f"{icon + ' ' if icon else ''}{label}"
+            return st.button(display_label, key=key, help=help, use_container_width=use_container_width, **kwargs)
+    except Exception:
+        # Extreme fallback if signature check fails
+        display_label = f"{icon + ' ' if icon else ''}{label}"
+        return st.button(display_label, key=key, help=help, use_container_width=use_container_width, **kwargs)
+
+def safe_html(body: str):
+    """
+    Safely render HTML, falling back to st.markdown with unsafe_allow_html=True if st.html is unavailable (Streamlit < 1.34.0).
+    """
+    if hasattr(st, "html"):
+        st.html(body)
+    else:
+        st.markdown(body, unsafe_allow_html=True)
+
 def get_plotly_template():
     """Return Plotly template and layout overrides based on current theme."""
     return theme_service.get_plotly_template()
@@ -35,8 +74,8 @@ def load_design_system_css():
         with open(ds_path, 'r', encoding='utf-8') as f:
             css_base = f.read()
 
-    # Inject everything
-    st.html(f"""
+    # Inject everything using markdown for maximum compatibility
+    st.markdown(f"""
     <style>{css_base}\n{theme_css}</style>
     <script>
         (function() {{
@@ -56,7 +95,7 @@ def load_design_system_css():
             window.addEventListener('load', apply);
         }})();
     </script>
-    """)
+    """, unsafe_allow_html=True)
 
 def render_theme_switcher(key_suffix="", icon_only=False):
     """Render a professional minimalist theme toggle."""
@@ -65,7 +104,7 @@ def render_theme_switcher(key_suffix="", icon_only=False):
     label = "" if icon_only else ("Switch to Dark Mode" if theme == "light" else "Switch to Light Mode")
     icon = "🌙" if theme == "light" else "☀️"
     
-    if st.button(label, use_container_width=True if not icon_only else False, key=f"toggle_{key_suffix}", icon=icon):
+    if safe_button(label, use_container_width=True if not icon_only else False, key=f"toggle_{key_suffix}", icon=icon):
         st.session_state.theme = new_theme
         st.rerun()
 
@@ -108,13 +147,13 @@ def render_sidebar(user, default_db_path="data/portfolio.db"):
             
             with cols[0]:
                 # Link to Settings page. Path is relative to dashboard.py/Main.py
-                st.page_link("pages/06_Settings.py", label=f"{short_name}. {display_name[:6]}...", icon="👤", help="User Settings")
+                safe_page_link("pages/06_Settings.py", label=f"{short_name}. {display_name[:6]}...", icon="👤", help="User Settings")
             
             with cols[1]:
                 render_theme_switcher(key_suffix="sidebar_v18", icon_only=True)
                 
             with cols[2]:
-                if st.button("", key="logout_v18", icon="🚪", help="Logout", use_container_width=True):
+                if safe_button("", key="logout_v18", icon="🚪", help="Logout", use_container_width=True):
                     auth_manager.logout()
             
             st.divider()

@@ -3,6 +3,7 @@
    Reusable UI elements for a professional Investment Advisor experience.
 """
 import streamlit as st
+from src.utils.ui import safe_html
 
 def saas_card_start(title=None, subtitle=None, icon=None):
     """Start a SaaS-styled card container."""
@@ -18,11 +19,11 @@ def saas_card_start(title=None, subtitle=None, icon=None):
             {subtitle_html}
         </div>
         """
-    st.html(html)
+    safe_html(html)
 
 def saas_card_end():
     """End a SaaS-styled card container."""
-    st.html("</div>")
+    safe_html("</div>")
 
 def saas_metric(label, value, delta=None, delta_color="normal", icon=None):
     """
@@ -40,7 +41,7 @@ def saas_metric(label, value, delta=None, delta_color="normal", icon=None):
     </div>
     """ if icon else ""
 
-    st.html(f"""
+    safe_html(f"""
     <div class="saas-card" style="height: 100%; padding: var(--saas-spacing-sm); background: var(--saas-card-bg); border-color: var(--saas-border);">
         {icon_html}
         <div style="font-size: 0.7rem; color: var(--saas-text-muted); text-transform: uppercase; letter-spacing: 0.5px; font-weight: 600;">{label}</div>
@@ -79,7 +80,7 @@ def saas_alert(message, style="info", title=None):
     
     title_html = f'<div style="font-weight: 700; margin-bottom: 2px; font-size: 0.85rem;">{title}</div>' if title else ""
     
-    st.html(f"""
+    safe_html(f"""
     <div style="background-color: {bg}; border-left: 3px solid {color}; padding: var(--saas-spacing-sm); border-radius: var(--saas-radius-sm); margin-bottom: var(--saas-spacing-md); display: flex; align-items: flex-start;">
         <div style="margin-right: var(--saas-spacing-sm); font-size: 0.9rem; line-height: 1.2;">{icon}</div>
         <div style="color: var(--saas-text-main); font-size: 0.8rem;">{title_html}{message}</div>
@@ -90,7 +91,7 @@ def saas_section_header(title, subtitle=None, icon=None):
     """Render a clean section header with optional icon."""
     icon_html = f'<span style="margin-right: var(--saas-spacing-sm);">{icon}</span>' if icon else ""
     subtitle_html = f'<div style="color: var(--saas-text-muted); font-size: 0.8rem; margin-top: 2px;">{subtitle}</div>' if subtitle else ""
-    st.html(f"""
+    safe_html(f"""
     <div style="margin: var(--saas-spacing-lg) 0 var(--saas-spacing-sm) 0; border-bottom: 2px solid var(--saas-primary); padding-bottom: 2px; display: inline-block; min-width: 120px;">
         <h2 style="font-family: 'Outfit', sans-serif; font-weight: 700; color: var(--saas-text-main); font-size: 1.15rem; margin: 0; display: flex; align-items: center;">
             {icon_html}{title}

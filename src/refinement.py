@@ -11,9 +11,11 @@ logger = setup_logger("MonthlyRefinement")
 
 from src.services.refinement_service import RefinementService
 
+import asyncio
+
 def main():
     service = RefinementService()
-    service.run_monthly_refinement()
+    asyncio.run(service.run_monthly_refinement())
 
 if __name__ == "__main__":
     main()

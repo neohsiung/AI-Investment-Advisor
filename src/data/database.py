@@ -127,8 +127,9 @@ def init_db(db_path=None):
     is_sqlite = 'sqlite' in str(engine.url)
     
     # Type definitions based on dialect
-    pk_type = "TEXT PRIMARY KEY" if is_sqlite else "UUID PRIMARY KEY DEFAULT uuid_generate_v4()"
-    fk_type = "TEXT" if is_sqlite else "UUID"
+    # v4.0 Patch: Standardize on TEXT/VARCHAR for user identifiers to support email-based logic
+    pk_type = "TEXT PRIMARY KEY"
+    fk_type = "TEXT"
     json_type = "TEXT" if is_sqlite else "JSONB"
     timestamp_type = "TEXT" if is_sqlite else "TIMESTAMPTZ"
     date_type = "TEXT" if is_sqlite else "DATE"
@@ -314,12 +315,49 @@ def init_db(db_path=None):
                 if "already exists" not in str(e).lower():
                     logger.warning(f"Error executing schema command: {e}")
         
-        # Schema Patching (Migration)
+        # Schema Patching (Migration for v4.0 Multi-user support)
         if not is_sqlite:
+            # PostgreSQL Migrations
+            # 1. Ensure extensions
             try:
-                conn.execute(text("ALTER TABLE settings ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP"))
-            except:
-                pass
+                conn.execute(text('CREATE EXTENSION IF NOT EXISTS "uuid-ossp";'))
+                conn.execute(text('CREATE EXTENSION IF NOT EXISTS "vector";'))
+            except Exception as e:
+                logger.debug(f"Extension check info: {e}")
+
+            # 2. Add missing columns (Robust check)
+            migration_tasks = [
+                ("users", "id", "TEXT"),
+                ("transactions", "user_id", "TEXT"),
+                ("daily_snapshots", "user_id", "TEXT"),
+                ("cash_flows", "user_id", "TEXT"),
+                ("settings", "user_id", "TEXT"),
+                ("settings", "updated_at", "TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP")
+            ]
+            for table, col, col_def in migration_tasks:
+                try:
+                    # Check if column exists first to avoid complex ALTER constraints issues
+                    check_query = text(f"SELECT column_name FROM information_schema.columns WHERE table_name = '{table}' AND column_name = '{col}'")
+                    exists = conn.execute(check_query).fetchone()
+                    if not exists:
+                        logger.info(f"Adding missing column {col} to table {table}")
+                        conn.execute(text(f"ALTER TABLE {table} ADD COLUMN {col} {col_def}"))
+                except Exception as e:
+                    logger.warning(f"Migration failed for {table}.{col}: {e}")
+        else:
+            # SQLite Migrations (Simpler, no IF NOT EXISTS for columns in older SQLite)
+            # We try-catch each to ignore if columns already exist
+            sqlite_tasks = [
+                "ALTER TABLE transactions ADD COLUMN user_id TEXT",
+                "ALTER TABLE daily_snapshots ADD COLUMN user_id TEXT",
+                "ALTER TABLE cash_flows ADD COLUMN user_id TEXT"
+            ]
+            for cmd in sqlite_tasks:
+                try:
+                    conn.execute(text(cmd))
+                except Exception as e:
+                    if "duplicate column name" not in str(e).lower():
+                        logger.debug(f"SQLite migration info: {e}")
 
         conn.commit()
     

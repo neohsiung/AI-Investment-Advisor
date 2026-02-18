@@ -44,6 +44,7 @@ env/
 wiki/**/*
 
 # Temporary / Specific Ignored Scripts
+test_conn.py
 scripts/inspect_db.py
 scripts/run_full_verification.sh
 scripts/seed_data.py

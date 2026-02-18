@@ -25,18 +25,18 @@ class SlackAdapter(BaseChannelAdapter):
         self.api_url = "https://slack.com/api/chat.postMessage"
         self.is_active = bool(self.bot_token and self.channel_id)
 
-    def send_message(self, user_id: str, message: Any, **kwargs) -> bool:
+    async def send_message(self, user_id: str, message: Any, **kwargs) -> bool:
         """
         Send a generic message.
         """
         if isinstance(message, str):
-            return self.send_alert(user_id, "Message", message)
+            return await self.send_alert(user_id, "Message", message)
         return False
 
-    def receive_command(self, payload: Any, **kwargs) -> Any:
+    async def receive_command(self, payload: Any, **kwargs) -> Any:
         return None
 
-    def authenticate(self, request: Any, **kwargs) -> bool:
+    async def authenticate(self, request: Any, **kwargs) -> bool:
         """
         Legacy authenticate method, delegating to verify_signature if headers are present.
         """
@@ -52,7 +52,7 @@ class SlackAdapter(BaseChannelAdapter):
         """
         if not self.signing_secret:
             logger.warning("SlackAdapter: Missing SLACK_SIGNING_SECRET. Skipping signature verification.")
-            return True # Fallback to allow if not configured, or change to False for strict security
+            return True
             
         if not headers:
             return False
@@ -64,18 +64,17 @@ class SlackAdapter(BaseChannelAdapter):
             logger.error("Slack signature or timestamp missing.")
             return False
             
-        # 1. Prevent replay attacks (limit to 5 minutes)
-        if abs(time.time() - int(timestamp)) > 60 * 5:
-            logger.error("Slack request timestamp too old.")
+        # 1. Prevent replay attacks
+        try:
+            if abs(time.time() - int(timestamp)) > 60 * 5:
+                logger.error("Slack request timestamp too old.")
+                return False
+        except (ValueError, TypeError):
             return False
             
         # 2. Reconstruct the base string
-        # Slack sends body as raw bytes or string. 
-        # For signature, it must be exactly as received.
         request_body = payload
         if isinstance(request_body, dict):
-            # If already parsed, this is problematic for signature.
-            # Usually the router should pass the raw body.
             request_body = json.dumps(request_body, separators=(',', ':'))
             
         sig_basestring = f"v0:{timestamp}:{request_body}"
@@ -93,24 +92,23 @@ class SlackAdapter(BaseChannelAdapter):
             logger.error("Slack signature verification failed.")
             return False
 
-    def send_alert(self, user_id: str, title: str, content: str, actions: List[Dict[str, str]] = None, **kwargs) -> bool:
+    async def send_alert(self, user_id: str, title: str, content: str, actions: List[Dict[str, str]] = None, **kwargs) -> bool:
         """
-        Send message to Slack.
-        user_id arg can be used to override self.channel_id if provided (e.g. DM).
+        Send message to Slack asynchronously.
         """
+        import httpx
         target_channel = self._resolve_target_id(user_id)
         
         if not self.bot_token or not target_channel:
             logger.warning("SlackAdapter: Missing token or channel_id. Skipping.")
             return False
 
-        # Build Block Kit
         blocks = [
             {
                 "type": "header",
                 "text": {
                     "type": "plain_text",
-                    "text": title[:3000],  # Slack limit
+                    "text": title[:3000],
                     "emoji": True
                 }
             },
@@ -123,7 +121,6 @@ class SlackAdapter(BaseChannelAdapter):
             }
         ]
 
-        # Add Actions (Buttons)
         if actions:
             elements = []
             for action in actions:
@@ -146,7 +143,7 @@ class SlackAdapter(BaseChannelAdapter):
         payload = {
             "channel": target_channel,
             "blocks": blocks,
-            "text": f"{title}: {content}" # Fallback text
+            "text": f"{title}: {content}"
         }
 
         headers = {
@@ -155,19 +152,20 @@ class SlackAdapter(BaseChannelAdapter):
         }
 
         try:
-            response = requests.post(self.api_url, headers=headers, json=payload, timeout=10)
-            data = response.json()
-            if data.get("ok"):
-                logger.info(f"Slack message sent to {target_channel}")
-                return True
-            else:
-                logger.error(f"Slack API error: {data.get('error')}")
-                return False
+            async with httpx.AsyncClient() as client:
+                response = await client.post(self.api_url, headers=headers, json=payload, timeout=10.0)
+                data = response.json()
+                if data.get("ok"):
+                    logger.info(f"Slack message sent to {target_channel}")
+                    return True
+                else:
+                    logger.error(f"Slack API error: {data.get('error')}")
+                    return False
         except Exception as e:
             logger.error(f"SlackAdapter exception: {e}")
             return False
 
-    def handle_webhook(self, payload: Dict[str, Any], headers: Dict[str, Any] = None):
+    async def handle_webhook(self, payload: Dict[str, Any], headers: Dict[str, Any] = None):
         """
         Handle Slack Interactive Components (Block Actions).
         """
@@ -183,7 +181,7 @@ class SlackAdapter(BaseChannelAdapter):
                 
                 if self.callback and action_id and value:
                     logger.info(f"Slack Callback: {action_id} for {value}")
-                    self._trigger_callback(value, action_id)
+                    await self._trigger_callback(value, action_id)
         
         # 2. Handle Message Events (Text)
         elif payload.get("type") == "event_callback":
@@ -195,6 +193,6 @@ class SlackAdapter(BaseChannelAdapter):
                 if text and (user or channel):
                     logger.info(f"Slack Text: {text} from {user or channel}")
                     # For Slack, we use channel ID or user ID as the 'address'
-                    self._trigger_text_callback(channel or user, text)
+                    await self._trigger_text_callback(channel or user, text)
         
         return {"ok": True}

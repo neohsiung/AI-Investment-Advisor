@@ -11,6 +11,7 @@ from abc import ABC, abstractmethod
 from src.utils.auth_guard import require_authentication
 from src.utils.ui import load_design_system_css, render_sidebar, render_top_profile
 from src.utils.components import saas_section_header
+from src.data.database import init_db
 
 class BasePage(ABC):
     """
@@ -57,6 +58,9 @@ class BasePage(ABC):
         Configure Streamlit page settings and load custom CSS.
         設定 Streamlit 頁面組態並載入自訂 CSS。
         """
+        # Ensure Database Schema is up to date (Migration/Patching)
+        init_db()
+        
         st.set_page_config(
             page_title=self.title,
             page_icon=self.icon,

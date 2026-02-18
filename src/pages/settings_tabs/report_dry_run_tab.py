@@ -122,9 +122,10 @@ def render_report_dry_run_tab(st, user_id):
         logger.addHandler(ch)
 
         with st.spinner("正在發送測試郵件..."):
+            import asyncio
             try:
                 svc = VerificationService(user_id=user_id)
-                success, msg = svc.test_connectivity(recipient_email, "email")
+                success, msg = asyncio.run(svc.test_connectivity(recipient_email, "email"))
             except Exception as e:
                 success, msg = False, str(e)
 

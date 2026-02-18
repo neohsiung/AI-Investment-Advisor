@@ -59,12 +59,11 @@ class LineBotAdapter(BaseChannelAdapter):
             logger.warning("LINE Bot SDK not installed or tokens missing. Running in MOCK mode.")
             self.is_active = False
 
-    def send_message(self, user_id: str, message: Any, **kwargs) -> bool:
+    async def send_message(self, user_id: str, message: Any, **kwargs) -> bool:
         """
-        Send a generic message.
-        kwargs:
-            raise_error (bool): If True, raise exception on failure instead of returning False.
+        Send a generic message asynchronously.
         """
+        import httpx
         raise_error = kwargs.get("raise_error", False)
         
         if not self.is_active:
@@ -72,23 +71,22 @@ class LineBotAdapter(BaseChannelAdapter):
             return True
 
         try:
-            line_message = None
+            line_message_data = None
             if isinstance(message, str):
-                line_message = TextMessage(text=message)
+                line_message_data = {"type": "text", "text": message}
             elif isinstance(message, dict):
                 msg_type = message.get("type")
                 if msg_type == "text":
-                    line_message = TextMessage(text=message.get("text"))
+                    line_message_data = {"type": "text", "text": message.get("text")}
                 elif msg_type == "flex":
-                    contents = message.get("contents")
-                    if isinstance(contents, dict):
-                        contents = FlexContainer.from_dict(contents)
-                    line_message = FlexMessage(
-                        alt_text=message.get("alt_text", "Flex Message"),
-                        contents=contents
-                    )
+                    # Flex message data is passed as dict
+                    line_message_data = {
+                        "type": "flex",
+                        "altText": message.get("alt_text", "Flex Message"),
+                        "contents": message.get("contents")
+                    }
                 elif msg_type == "alert":
-                    return self.send_alert(
+                    return await self.send_alert(
                         user_id, 
                         message.get("title"), 
                         message.get("content"), 
@@ -96,14 +94,28 @@ class LineBotAdapter(BaseChannelAdapter):
                         **kwargs
                     )
 
-            if line_message:
-                request = PushMessageRequest(
-                    to=user_id,
-                    messages=[line_message]
-                )
-                self.messaging_api.push_message(request)
-                logger.info(f"LINE Message sent to {user_id}")
-                return True
+            if line_message_data:
+                payload = {
+                    "to": user_id,
+                    "messages": [line_message_data]
+                }
+                headers = {
+                    "Authorization": f"Bearer {self.channel_access_token}",
+                    "Content-Type": "application/json"
+                }
+                async with httpx.AsyncClient() as client:
+                    response = await client.post(
+                        "https://api.line.me/v2/bot/message/push",
+                        headers=headers,
+                        json=payload,
+                        timeout=10.0
+                    )
+                    if response.status_code == 200:
+                        logger.info(f"LINE Message sent to {user_id}")
+                        return True
+                    else:
+                        logger.error(f"LINE API error: {response.status_code} {response.text}")
+                        return False
             else:
                 error_msg = f"Unsupported message format: {message}"
                 logger.warning(error_msg)
@@ -117,7 +129,7 @@ class LineBotAdapter(BaseChannelAdapter):
                 raise e
             return False
 
-    def authenticate(self, request: Any, headers: Dict[str, Any] = None, **kwargs) -> bool:
+    async def authenticate(self, request: Any, headers: Dict[str, Any] = None, **kwargs) -> bool:
         """
         Verify request signature.
         """
@@ -127,104 +139,33 @@ class LineBotAdapter(BaseChannelAdapter):
         if not headers:
             return False
 
-        signature = None
-        if isinstance(headers, dict):
-             # Header keys might be case-insensitive in frameworks, 
-             # but here we expect a dict.
-             # Look for 'x-line-signature' or 'X-Line-Signature'
-             signature = headers.get('x-line-signature') or headers.get('X-Line-Signature')
-        
+        signature = headers.get('x-line-signature') or headers.get('X-Line-Signature')
         if not signature:
             logger.error("LINE Authenticate: Missing signature header.")
             return False
 
-        # Use 3rd party SDK validator if available, or just rely on parser in handle_webhook
-        # Since parser.parse raises InvalidSignatureError, we can simulate auth check:
-        # But to be strict `authenticate`, we should use SignatureValidator.
-        # For now, we will assume true if signature exists, and let handle_webhook/parser fail if invalid.
-        # OR, strictly:
-        # signature_validator = SignatureValidator(self.channel_secret)
-        # return signature_validator.validate(request, signature)
-        # Since we didn't import SignatureValidator explicitly in current imports,
-        # we'll rely on handle_webhook's try-catch for now for deep validation.
         return True
 
-    def receive_command(self, payload: Any, **kwargs) -> Any:
+    async def receive_command(self, payload: Any, **kwargs) -> Any:
         """
         Parse payload into events.
         """
         if not self.is_active:
             return []
 
-        # In LINE SDK, parsing requires signature validation too usually.
-        # If we separate them, we pass the signature in kwargs?
         signature = kwargs.get("signature")
         if not signature:
              raise ValueError("Signature required for parsing LINE events")
 
         return self.handler.parser.parse(payload, signature)
 
-    def handle_webhook(self, payload: Any, headers: Dict[str, Any] = None) -> Any:
+
+    async def send_alert(self, user_id: str, title: str, content: str, actions: List[Dict[str, str]] = None, **kwargs) -> bool:
         """
-        Handle incoming webhook request.
+        Sends a rich Flex Message Alert asynchronously.
+        发送 Flex Message 格式的豐富及時警報（非同步）。
         """
-        if not self.is_active:
-            return
-
-        # 1. Authenticate
-        if not self.authenticate(payload, headers):
-            logger.warning("LINE Webhook Authentication Failed.")
-            return
-
-        signature = headers.get('x-line-signature') or headers.get('X-Line-Signature')
-
-        try:
-            # 2. Receive Command (Parse)
-            events = self.receive_command(payload, signature=signature)
-            
-            # 3. Process Events
-            for event in events:
-                user_id = event.source.user_id
-                
-                if isinstance(event, PostbackEvent):
-                    # Handle Button Click
-                    data_str = event.postback.data
-                    parsed_data = {}
-                    for pair in data_str.split('&'):
-                        if '=' in pair:
-                            k, v = pair.split('=', 1)
-                            parsed_data[k] = v
-                            
-                    logger.info(f"LINE Postback: {parsed_data} from {user_id}")
-                    
-                    if hasattr(self, 'callback') and self.callback:
-                        req_id = parsed_data.get('id')
-                        action = parsed_data.get('action')
-                        # Support simple 'action=etoro_link' without id
-                        if action: 
-                            self.callback(req_id or "global", action)
-
-                elif isinstance(event, MessageEvent) and isinstance(event.message, TextMessageContent):
-                    # Handle Text Message
-                    text = event.message.text
-                    logger.info(f"LINE Text: {text} from {user_id}")
-                    
-                    if hasattr(self, 'text_callback') and self.text_callback:
-                        self.text_callback(user_id, text)
-                        
-        except InvalidSignatureError:
-            logger.error("Invalid LINE signature.")
-            raise ValueError("Invalid signature")
-        except Exception as e:
-            logger.error(f"LINE Webhook Error: {e}")
-
-    def send_alert(self, user_id: str, title: str, content: str, actions: List[Dict[str, str]] = None, **kwargs) -> bool:
-        """
-        Sends a rich Flex Message Alert.
-        发送 Flex Message 格式的豐富及時警報。
-        kwargs:
-            raise_error (bool): If True, raise exception on failure.
-        """
+        import httpx
         raise_error = kwargs.get("raise_error", False)
 
         # Use Base helper to resolve target_to
@@ -288,19 +229,34 @@ class LineBotAdapter(BaseChannelAdapter):
                     "contents": footer_contents
                 }
 
-            flex_message = FlexMessage(
-                alt_text=f"Alert: {title}",
-                contents=FlexContainer.from_dict(bubble_json)
-            )
-
-            # Send
-            request = PushMessageRequest(
-                to=target_to,
-                messages=[flex_message]
-            )
-            self.messaging_api.push_message(request)
-            logger.info(f"LINE Alert sent to {target_to}")
-            return True
+            # Send via httpx
+            payload = {
+                "to": target_to,
+                "messages": [
+                    {
+                        "type": "flex",
+                        "altText": f"Alert: {title}",
+                        "contents": bubble_json
+                    }
+                ]
+            }
+            headers = {
+                "Authorization": f"Bearer {self.channel_access_token}",
+                "Content-Type": "application/json"
+            }
+            async with httpx.AsyncClient() as client:
+                response = await client.post(
+                    "https://api.line.me/v2/bot/message/push",
+                    headers=headers,
+                    json=payload,
+                    timeout=10.0
+                )
+                if response.status_code == 200:
+                    logger.info(f"LINE Alert sent to {target_to}")
+                    return True
+                else:
+                    logger.error(f"LINE API error: {response.status_code} {response.text}")
+                    return False
 
         except Exception as e:
             logger.error(f"Failed to send LINE Flex Message: {e}")
@@ -308,9 +264,9 @@ class LineBotAdapter(BaseChannelAdapter):
                 raise e
             return False
 
-    def handle_webhook(self, payload: Any, headers: Dict[str, Any] = None):
+    async def handle_webhook(self, payload: Any, headers: Dict[str, Any] = None):
         """
-        Forward webhook to handler.
+        Forward webhook to handler asynchronously.
         Matching IChannelAdapter interface.
         """
         if not self.is_active:
@@ -350,13 +306,13 @@ class LineBotAdapter(BaseChannelAdapter):
                     req_id = parsed_data.get('id')
                     action = parsed_data.get('action')
                     if req_id and action:
-                        self._trigger_callback(req_id, action)
+                        await self._trigger_callback(req_id, action)
 
                 elif isinstance(event, MessageEvent) and isinstance(event.message, TextMessageContent):
                     # Handle Text Message
                     text = event.message.text
                     logger.info(f"LINE Text: {text} from {user_id}")
-                    self._trigger_text_callback(user_id, text)
+                    await self._trigger_text_callback(user_id, text)
                         
         except InvalidSignatureError:
             raise ValueError("Invalid signature")

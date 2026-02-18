@@ -48,7 +48,7 @@ class InteractionService:
             if hasattr(adapter, 'register_text_callback'):
                 adapter.register_text_callback(self.handle_text_response)
 
-    def handle_text_response(self, adapter: IChannelAdapter, user_id: str, text: str) -> None:
+    async def handle_text_response(self, adapter: IChannelAdapter, user_id: str, text: str) -> None:
         """
         Handle a natural language text response received from a user.
         處理從使用者接收到的自然語言文字回覆。
@@ -69,7 +69,7 @@ class InteractionService:
             ver_svc = VerificationService() 
             
             # verify_any_reply returns True if it was a verification message and handled it
-            if ver_svc.verify_any_reply(user_id, text):
+            if await ver_svc.verify_any_reply(user_id, text):
                 logger.info(f"InteractionService: Verification logic successfully handled reply for ID: {user_id}")
                 return # VerificationService sends its own confirmation message
         except Exception as e:
@@ -100,7 +100,7 @@ class InteractionService:
         if not pending_reqs:
             logger.info(f"InteractionService: No pending requests for {resolved_user_id}. Acknowledging.")
             msg = f"✅ 系統已收到您的回覆：'{text}'\n目前無待處理的審核請求 (No pending requests)."
-            adapter.send_message(user_id, msg)
+            await adapter.send_message(user_id, msg)
             return
             
         # Sort by creation time desc
@@ -113,15 +113,15 @@ class InteractionService:
             
             if intent in ["APPROVE", "REJECT"]:
                 # Trigger standard handler
-                self.handle_response(latest_req.request_id, intent.lower())
+                await self.handle_response(latest_req.request_id, intent.lower())
             else:
                 # Generic acknowledgment for other text
                 msg = f"✅ 系統已收到您的訊息：'{text}'\n正在交由 AI 分析中 (Processing...)"
-                adapter.send_message(user_id, msg)
+                await adapter.send_message(user_id, msg)
         except Exception as e:
             logger.error(f"InteractionService: Text processing error: {e}")
 
-    def request_approval(self, 
+    async def request_approval(self, 
                           title: str, 
                           content: str, 
                           context: Optional[Dict[str, Any]] = None, 
@@ -155,10 +155,10 @@ class InteractionService:
         self._pending_requests[req.request_id] = req
         
         # 1. Send Request to User
-        self._send_approval_request(req)
+        await self._send_approval_request(req)
         
         # 2. Wait for Response (Polling for MVP)
-        # TODO: Use Async/Await or Event Bus in production
+        import asyncio
         start_time = time.time()
         while time.time() - start_time < timeout_seconds:
             if req.status == InteractionStatus.APPROVED:
@@ -167,13 +167,13 @@ class InteractionService:
             if req.status == InteractionStatus.REJECTED:
                 logger.info(f"Interaction {req.request_id} REJECTED")
                 return False
-            time.sleep(1) # Poll interval
+            await asyncio.sleep(1) # Poll interval
             
         req.status = InteractionStatus.EXPIRED
         logger.warning(f"Interaction {req.request_id} EXPIRED")
         return False
 
-    def _send_approval_request(self, req: InteractionRequest) -> None:
+    async def _send_approval_request(self, req: InteractionRequest) -> None:
         """
         Route approval request to all active communication channels.
         將審核請求路由至所有啟用的通訊管道。
@@ -225,7 +225,7 @@ class InteractionService:
             try:
                 # Use adapters that support interaction
                 # For now using send_alert mechanism but with actions
-                adapter.send_alert(
+                await adapter.send_alert(
                     user_id=req.user_id or "broadcast",
                     title=f"⚠️ {req.title}",
                     content=alert_content, # Use the formatted alert content
@@ -234,7 +234,7 @@ class InteractionService:
             except Exception as e:
                 logger.error(f"Failed to send interaction via {adapter}: {e}")
 
-    def handle_response(self, request_id: str, action: str) -> None:
+    async def handle_response(self, request_id: str, action: str) -> None:
         """
         Process a formal response (Approve/Reject) for a specific request.
         針對特定請求處理正式回覆（批准/婉拒）。
@@ -269,6 +269,6 @@ class InteractionService:
              try:
                  # req.user_id is the internal email. Adapter will resolve to channel ID.
                  logger.info(f"InteractionService: Sending action feedback via {adapter.__class__.__name__} to user {req.user_id}")
-                 adapter.send_message(req.user_id, resp_msg) 
+                 await adapter.send_message(req.user_id, resp_msg) 
              except Exception as e:
                  logger.error(f"InteractionService: Failed to send interaction ack via {adapter}: {e}")

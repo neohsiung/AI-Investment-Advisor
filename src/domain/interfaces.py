@@ -38,7 +38,7 @@ class IChannelAdapter(ABC):
     v3.7 Update: Added send_message, receive_command, authenticate.
     """
     @abstractmethod
-    def send_message(self, user_id: str, message: Any, **kwargs) -> bool:
+    async def send_message(self, user_id: str, message: Any, **kwargs) -> bool:
         """
         Send a generic message (Text or Structured).
         發送通用訊息 (文字或結構化資料).
@@ -46,7 +46,7 @@ class IChannelAdapter(ABC):
         pass
 
     @abstractmethod
-    def receive_command(self, payload: Any, **kwargs) -> Any:
+    async def receive_command(self, payload: Any, **kwargs) -> Any:
         """
         Parse incoming payload into a Standard Command object.
         解析傳入負載為標準命令物件.
@@ -54,7 +54,7 @@ class IChannelAdapter(ABC):
         pass
 
     @abstractmethod
-    def authenticate(self, request: Any, **kwargs) -> bool:
+    async def authenticate(self, request: Any, **kwargs) -> bool:
         """
         Verify the authenticity of the incoming request.
         驗證請求的真實性.
@@ -62,7 +62,7 @@ class IChannelAdapter(ABC):
         pass
 
     @abstractmethod
-    def send_alert(self, user_id: str, title: str, content: str, actions: List[Dict[str, str]] = None, **kwargs) -> bool:
+    async def send_alert(self, user_id: str, title: str, content: str, actions: List[Dict[str, str]] = None, **kwargs) -> bool:
         """
         Send a rich alert message. (Legacy/Convenience)
         發送豐富的警報訊息.
@@ -86,7 +86,7 @@ class IChannelAdapter(ABC):
         pass
 
     @abstractmethod
-    def handle_webhook(self, payload: Any, headers: Dict[str, Any] = None) -> Any:
+    async def handle_webhook(self, payload: Any, headers: Dict[str, Any] = None) -> Any:
         """
         Handle incoming webhook request.
         Parses payload, verifies signature (if needed), and triggers callback.

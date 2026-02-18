@@ -248,6 +248,7 @@ def render_channel_tab(st, settings_service, user_id):
         
         with st.spinner(f"正在透過 {cid} 發送測試訊息..."):
             try:
+                import asyncio
                 # Instantiate Service with current user_id (email) to load correct settings
                 svc = VerificationService(user_id=user_id) 
                 
@@ -257,7 +258,7 @@ def render_channel_tab(st, settings_service, user_id):
                      st.error("請先設定 User ID / Chat ID")
                      return
 
-                success, msg = svc.test_connectivity(target_id, cid)
+                success, msg = asyncio.run(svc.test_connectivity(target_id, cid))
                 
                 if success:
                     st.success(f"✅ 測試成功：{msg}")
@@ -270,6 +271,7 @@ def render_channel_tab(st, settings_service, user_id):
     def _handle_verification(st, cid, settings, timeout, user_id):
         from src.services.verification_service import VerificationService
         with st.spinner("啟動驗證流程..."):
+            import asyncio
             svc = VerificationService(user_id=user_id)
             target_id = _get_target_id(cid, settings)
             if not target_id:
@@ -277,7 +279,7 @@ def render_channel_tab(st, settings_service, user_id):
                  return
                  
             # Pass internal user_id (email) for DB record, AND target_id (channel-specific) for early mapping
-            success, msg, vid = svc.initiate_verification(user_id, cid, timeout_hours=timeout, channel_user_id=target_id)
+            success, msg, vid = asyncio.run(svc.initiate_verification(user_id, cid, timeout_hours=timeout, channel_user_id=target_id))
             if success:
                 st.success(f"已發送驗證請求！{msg}")
             else:

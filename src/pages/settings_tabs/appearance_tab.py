@@ -9,6 +9,7 @@ def render_appearance_tab(st):
     
     st.divider()
     st.markdown("### 快訊與指南 (Quick Links)")
-    st.page_link("pages/07_UI_Styleguide.py", label="介面開發組件手冊 (Interface Guide)", icon="🎨")
+    from src.utils.ui import safe_page_link
+    safe_page_link("pages/07_UI_Styleguide.py", label="介面開發組件手冊 (Interface Guide)", icon="🎨")
     st.caption("查看系統支援的所有 SaaS UI 組件、配色與排版規範。")
     saas_card_end()

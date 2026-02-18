@@ -24,23 +24,23 @@ class EmailAdapter(BaseChannelAdapter):
             self.notifier = EmailNotifier()
             self.is_active = bool(self.notifier.sender_email and self.notifier.sender_password)
     
-    def send_message(self, user_id: str, message: Any, **kwargs) -> bool:
+    async def send_message(self, user_id: str, message: Any, **kwargs) -> bool:
         """
-        Send a generic message (Email).
+        Send a generic message (Email) asynchronously.
         """
         if isinstance(message, str):
-            return self.send_alert(user_id, "Message", message)
+            return await self.send_alert(user_id, "Message", message)
         return False
 
-    def receive_command(self, payload: Any, **kwargs) -> Any:
+    async def receive_command(self, payload: Any, **kwargs) -> Any:
         return None
 
-    def authenticate(self, request: Any, **kwargs) -> bool:
+    async def authenticate(self, request: Any, **kwargs) -> bool:
         return True
 
-    def send_alert(self, user_id: str, title: str, content: str, actions: List[Dict[str, str]] = None, **kwargs) -> bool:
+    async def send_alert(self, user_id: str, title: str, content: str, actions: List[Dict[str, str]] = None, **kwargs) -> bool:
         """
-        Send an email report/alert.
+        Send an email report/alert asynchronously.
         """
         # Note: Email ignores actions in a raw sense, but we can append them as links if provided
         body = content
@@ -54,4 +54,4 @@ class EmailAdapter(BaseChannelAdapter):
                 else:
                     body += f"- {label}\n"
 
-        return self.notifier.send_report(title, body, to_email=kwargs.get("to_email"))
+        return await self.notifier.send_report(title, body, to_email=kwargs.get("to_email"))

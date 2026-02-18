@@ -38,28 +38,36 @@ class BaseChannelAdapter(IChannelAdapter):
             
         return user_id
 
-    def _trigger_callback(self, request_id: str, action: str):
+    async def _trigger_callback(self, request_id: str, action: str):
         if self.callback:
-            self.callback(request_id, action)
+            import asyncio
+            if asyncio.iscoroutinefunction(self.callback):
+                await self.callback(request_id, action)
+            else:
+                self.callback(request_id, action)
 
-    def _trigger_text_callback(self, user_id: str, text: str):
+    async def _trigger_text_callback(self, user_id: str, text: str):
         if self.text_callback:
-            self.text_callback(self, user_id, text)
+            import asyncio
+            if asyncio.iscoroutinefunction(self.text_callback):
+                await self.text_callback(self, user_id, text)
+            else:
+                self.text_callback(self, user_id, text)
 
     # stubs for abstract methods
-    def send_message(self, user_id: str, message: Any, **kwargs) -> bool:
+    async def send_message(self, user_id: str, message: Any, **kwargs) -> bool:
         return False
 
-    def receive_command(self, payload: Any, **kwargs) -> Any:
+    async def receive_command(self, payload: Any, **kwargs) -> Any:
         return None
 
-    def authenticate(self, request: Any, **kwargs) -> bool:
+    async def authenticate(self, request: Any, **kwargs) -> bool:
         return True
 
-    def send_alert(self, user_id: str, title: str, content: str, actions: List[Dict[str, str]] = None, **kwargs) -> bool:
+    async def send_alert(self, user_id: str, title: str, content: str, actions: List[Dict[str, str]] = None, **kwargs) -> bool:
         return False
 
-    def handle_webhook(self, payload: Any, headers: Dict[str, Any] = None) -> Any:
+    async def handle_webhook(self, payload: Any, headers: Dict[str, Any] = None) -> Any:
         return {"ok": True}
 
     def verify_signature(self, payload: Any, headers: Dict[str, Any] = None) -> bool:

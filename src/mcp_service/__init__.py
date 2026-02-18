@@ -431,7 +431,7 @@ async def callback(request: Request, x_line_signature: str = Header(None)):
         adapter = next((a for a in interaction_svc.adapters if "LineBotAdapter" in a.__class__.__name__), None)
         
         if adapter:
-            adapter.handle_webhook(body_str, x_line_signature)
+            await adapter.handle_webhook(body_str, x_line_signature)
         else:
             logger.warning("No LineBotAdapter found in InteractionService.")
             raise HTTPException(status_code=500, detail="Adapter Missing")
@@ -512,7 +512,7 @@ async def generic_channel_callback(channel_name: str, request: Request):
         headers = dict(request.headers)
         
         # 3. Delegate to Adapter
-        result = target_adapter.handle_webhook(payload, headers)
+        result = await target_adapter.handle_webhook(payload, headers)
         
         return result or "OK"
         

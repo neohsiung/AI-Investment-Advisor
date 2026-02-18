@@ -27,7 +27,6 @@ class DashboardPage(BasePage):
     
     def __init__(self):
         """Initialize Dashboard Page and Services."""
-        init_db()
         super().__init__("總覽 (Overview)", "📊")
         self.dashboard_service = None  # Will be initialized in render()
     

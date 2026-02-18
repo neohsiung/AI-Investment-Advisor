@@ -21,7 +21,7 @@ class NotificationService:
         self.adapters = adapters
         self.notification_filter = notification_filter
 
-    def notify_all(
+    async def notify_all(
         self, 
         title: str, 
         content: str, 
@@ -32,54 +32,57 @@ class NotificationService:
         **kwargs
     ) -> Dict[str, Any]:
         """
-        Sends notifications to all enabled adapters, filtered by category and channel selection.
-        發送通知至所有啟用的適配器，並根據類別與管道選擇進行過濾。
+        Sends notifications to all enabled adapters in parallel, filtered by category and channel selection.
+        建立非同步任務並使用 asyncio.gather 併行發送通知。
         """
-        results = {}
-        # Resolve target user (fallback to broadcast if allowed by context)
-        target_user = user_id or os.getenv("LINE_USER_ID", "broadcast")
+        import asyncio
+        tasks = []
+        adapter_names = []
         
-        # Options
+        # Resolve target user
+        target_user = user_id or os.getenv("LINE_USER_ID", "broadcast")
         capture_error = kwargs.get('capture_error', False)
 
         for adapter in self.adapters:
-            # e.g. telegramadapter -> telegram
             adapter_type = adapter.__class__.__name__.lower().replace('adapter', '').replace('bot', '')
             
-            # 1. Channel Filter (Selection by name)
+            # 1. Channel Filter
             if channels and not any(c.lower() in adapter_type for c in channels):
                 continue
             
-            # 2. Strategy Filter (Interests, System bypass, etc.)
+            # 2. Strategy Filter (Sync check is fine)
             if self.notification_filter:
                 if not self.notification_filter.should_notify(adapter, category):
                     continue
 
-            try:
-                # Prepare call args
-                call_kwargs = kwargs.copy()
-                if capture_error:
-                    call_kwargs['raise_error'] = True
-                
-                success = adapter.send_alert(
-                    user_id=target_user,
-                    title=title,
-                    content=content,
-                    actions=actions,
-                    **call_kwargs
-                )
-                
-                if capture_error:
-                    results[adapter.__class__.__name__] = (success, "OK" if success else "Adapter returned False")
-                else:
-                    results[adapter.__class__.__name__] = success
+            # Prepare call args
+            call_kwargs = kwargs.copy()
+            if capture_error:
+                call_kwargs['raise_error'] = True
+            
+            # Add to async queue
+            tasks.append(adapter.send_alert(
+                user_id=target_user,
+                title=title,
+                content=content,
+                actions=actions,
+                **call_kwargs
+            ))
+            adapter_names.append(adapter.__class__.__name__)
 
-            except Exception as e:
-                logger.error(f"Notification failed for {adapter.__class__.__name__}: {e}")
-                if capture_error:
-                    results[adapter.__class__.__name__] = (False, str(e))
-                else:
-                    results[adapter.__class__.__name__] = False
+        if not tasks:
+            return {}
+
+        # Execute in parallel
+        raw_results = await asyncio.gather(*tasks, return_exceptions=True)
+        
+        results = {}
+        for name, res in zip(adapter_names, raw_results):
+            if isinstance(res, Exception):
+                logger.error(f"Notification failed for {name}: {res}")
+                results[name] = (False, str(res)) if capture_error else False
+            else:
+                results[name] = (res, "OK" if res else "Failed") if capture_error else res
                 
         return results
 
@@ -91,21 +94,23 @@ class NotificationService:
         from src.infrastructure.channels.channel_factory import ChannelFactory
         from src.services.notification_filters import InterestBasedFilter
         
+        # Settings retrieval might be sync or async depending on implementation, 
+        # but factory usually handles it.
         settings = settings_service.get_all_settings() if settings_service else {}
         adapters = ChannelFactory.create_adapters(settings)
         noti_filter = InterestBasedFilter(settings_service)
         
         return NotificationService(adapters=adapters, notification_filter=noti_filter)
 
-    def send_report(self, subject: str, content: str, user_id: str = None, **kwargs) -> Dict[str, Any]:
+    async def send_report(self, subject: str, content: str, user_id: str = None, **kwargs) -> Dict[str, Any]:
         """
-        Convenience method for sending reports, primarily via Email and Web channels.
-        發送報表的便利方法，主要透過 Email 與網頁管道。
+        Convenience method for sending reports asynchronously.
+        發送報表的非同步便利方法。
         """
         if 'category' not in kwargs:
             kwargs['category'] = 'report'
             
-        return self.notify_all(
+        return await self.notify_all(
             title=subject,
             content=content,
             user_id=user_id,

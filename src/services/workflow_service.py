@@ -61,24 +61,18 @@ class BaseWorkflow(ABC):
         )
         self.performance_service = PerformanceService()
 
-    def run(self, dry_run: bool = False, force_refresh: bool = False) -> Any:
+    async def run(self, dry_run: bool = False, force_refresh: bool = False) -> Any:
         """
-        Execute the workflow skeleton (Template Method).
-        執行工作流骨架（樣板方法）。
-        """
-        """
-        Template Method defining the workflow structure.
-        定義工作流結構的樣板方法。
+        Execute the workflow skeleton asynchronously (Template Method).
+        執行工作流骨架（樣板方法 - 非同步）。
         """
         self.logger.info(f"Starting {self.__class__.__name__} for user {self.user_id}")
         
         try:
             # Step 1: Data Collection & Pre-checks
-            # 步驟 1: 數據收集與預檢查
             self.collect_data()
             
             # Step 2: Strategy/Analysis
-            # 步驟 2: 執行策略與分析
             should_proceed = self.execute_analysis(force_refresh)
             
             if not should_proceed:
@@ -86,13 +80,16 @@ class BaseWorkflow(ABC):
                 return "SKIPPED"
 
             # Step 3: Synthesis & Decision
-            # 步驟 3: 綜合結果與決策
-            final_report = self.synthesize_results()
+            # [Optimization] If synthesize_results is sync, it runs normally. 
+            # If we make it async, we must await it.
+            if hasattr(self, 'synthesize_results_async'):
+                final_report = await self.synthesize_results_async()
+            else:
+                final_report = self.synthesize_results()
             
             # Step 4: Reporting & Storage
-            # 步驟 4: 報告生成與儲存
             if not dry_run:
-                self.distribute_report(final_report)
+                await self.distribute_report(final_report)
             else:
                 self.logger.info(f"[Dry Run] Report generated but not distributed:\n{final_report}")
                 
@@ -170,8 +167,8 @@ class BaseWorkflow(ABC):
         """Combine analysis results into a final report."""
         pass
 
-    def distribute_report(self, content: str):
-        """Store in DB and send Email."""
+    async def distribute_report(self, content: str):
+        """Store in DB and send Email asynchronously."""
         # 1. Store in DB
         conn = get_db_connection()
         try:
@@ -193,7 +190,7 @@ class BaseWorkflow(ABC):
         settings_service = SettingsService(user_id=self.user_id)
         notifier = NotificationService.create_with_settings(settings_service)
         subject = f"Investment Report ({self.__class__.__name__}) - {get_current_time().strftime('%Y-%m-%d')}"
-        notifier.send_report(subject, content, user_id=self.user_id, source=self.__class__.__name__)
+        await notifier.send_report(subject, content, user_id=self.user_id, source=self.__class__.__name__)
         logger.info("Report notifications sent.")
 
 

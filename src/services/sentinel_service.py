@@ -550,7 +550,7 @@ class SentinelService:
         if is_actionable:
             actions.append({"label": "前往 eToro 下單", "data": "action=etoro_link"})
 
-        self.notification_service.notify_all(
+        await self.notification_service.notify_all(
             user_id=target_user,
             title=f"⚠️ {source} Alert",
             content=alert_content,

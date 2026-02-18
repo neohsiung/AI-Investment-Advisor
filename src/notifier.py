@@ -88,7 +88,11 @@ class EmailNotifier:
         </html>
         """
 
-    def send_report(self, subject, content, to_email=None):
+    async def send_report(self, subject, content, to_email=None):
+        """
+        Send a beautified HTML report asynchronously using aiosmtplib.
+        """
+        import aiosmtplib
         if not self.sender_email or not self.sender_password:
             self.logger.warning("Email credentials not set. Skipping email notification.")
             return False
@@ -113,12 +117,11 @@ class EmailNotifier:
         msg['To'] = recipient
         msg['Subject'] = subject
 
-        # 1. Attach Plain Text Version (Backup)
+        # Attach Plain Text Version
         part1 = MIMEText(content, 'plain', 'utf-8')
         msg.attach(part1)
 
-        # 2. Attach HTML Version (Beautified)
-        # Convert Markdown to HTML
+        # Attach HTML Version
         try:
             html_body = markdown.markdown(content, extensions=['tables', 'fenced_code'])
             full_html = self._structure_html(subject, html_body)
@@ -126,24 +129,25 @@ class EmailNotifier:
             msg.attach(part2)
         except Exception as e:
             self.logger.error(f"Markdown conversion failed: {e}. Sending plain text only.")
-            # Already attached plain text, so just proceed
 
         try:
-            self.logger.info(f"Connecting to SMTP server: {self.smtp_server}:{self.smtp_port}...")
-            server = smtplib.SMTP(self.smtp_server, self.smtp_port)
-            server.starttls()
+            self.logger.info(f"Connecting to SMTP server (async): {self.smtp_server}:{self.smtp_port}...")
+            
+            await aiosmtplib.send(
+                msg,
+                hostname=self.smtp_server,
+                port=self.smtp_port,
+                username=self.sender_email,
+                password=self.sender_password,
+                use_tls=self.smtp_port == 465,
+                start_tls=self.smtp_port == 587,
+                timeout=20
+            )
 
-            self.logger.info(f"Logging in as {self.sender_email}...")
-            server.login(self.sender_email, self.sender_password)
-
-            self.logger.info(f"Sending email to {recipient}...")
-            server.send_message(msg)
-            server.quit()
-
-            self.logger.info("Email sent successfully.")
+            self.logger.info(f"Email sent successfully to {recipient}.")
             return True
         except Exception as e:
-            self.logger.error(f"Failed to send email: {e}", exc_info=True)
+            self.logger.error(f"Failed to send async email: {e}")
             return False
 
 if __name__ == "__main__":

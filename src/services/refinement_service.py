@@ -21,10 +21,10 @@ class RefinementService:
         self.engineer = SystemEngineerAgent(user_id=self.user_id)
         self.notification_service = notification_service or NotificationService.create_with_settings(settings_service)
 
-    def run_monthly_refinement(self) -> bool:
+    async def run_monthly_refinement(self) -> bool:
         """
-        Execute the monthly performance review and system optimization cycle.
-        執行月度效能回顧與系統優化週期。
+        Execute the monthly performance review and system optimization cycle asynchronously.
+        執行月度效能回顧與系統優化週期（非同步）。
         """
         self.logger.info(f"Starting Monthly Refinement for {self.user_id}...")
         
@@ -48,10 +48,9 @@ class RefinementService:
             report_content = self._generate_report(merged_stats, optimizations, target_agents)
             
             # 5. Send Report via Unified Channels
-            self.notification_service.send_report("月度系統進化報告 (System Evolution Report)", report_content)
+            await self.notification_service.send_report("月度系統進化報告 (System Evolution Report)", report_content)
             self.logger.info("Monthly Refinement Report sent successfully.")
             return True
-            
         except Exception as e:
             self.logger.error(f"Monthly Refinement Failed: {e}")
             return False

@@ -21,33 +21,31 @@ class TelegramAdapter(BaseChannelAdapter):
         self.base_url = f"https://api.telegram.org/bot{self.bot_token}" if self.bot_token else None
         self.is_active = bool(self.bot_token and self.chat_id)
 
-    def send_message(self, user_id: str, message: Any, **kwargs) -> bool:
+    async def send_message(self, user_id: str, message: Any, **kwargs) -> bool:
         """
-        Send a generic message.
+        Send a generic message asynchronously.
         """
         if isinstance(message, str):
-            return self.send_alert(user_id, "Message", message)
+            return await self.send_alert(user_id, "Message", message)
         return False
 
-    def receive_command(self, payload: Any, **kwargs) -> Any:
+    async def receive_command(self, payload: Any, **kwargs) -> Any:
         return None
 
-    def authenticate(self, request: Any, **kwargs) -> bool:
+    async def authenticate(self, request: Any, **kwargs) -> bool:
         return True
 
-    def send_alert(self, user_id: str, title: str, content: str, actions: List[Dict[str, str]] = None, **kwargs) -> bool:
+    async def send_alert(self, user_id: str, title: str, content: str, actions: List[Dict[str, str]] = None, **kwargs) -> bool:
         """
-        Send message to Telegram.
-        user_id arg overrides self.chat_id if provided.
+        Send message to Telegram via Bot API asynchronously.
         """
-        # Use Base helper to resolve target_chat_id
+        import httpx
         target_chat_id = self._resolve_target_id(user_id)
         
         if not self.base_url or not target_chat_id:
             return False
 
         url = f"{self.base_url}/sendMessage"
-        
         text_body = f"*{title}*\n\n{content}"
         
         payload = {
@@ -56,15 +54,13 @@ class TelegramAdapter(BaseChannelAdapter):
             "parse_mode": "Markdown"
         }
 
-        # Add Inline Keyboard
         if actions:
             keyboard_buttons = []
-            # Telegram rows usually have 2-3 buttons. Let's arrange them.
             row = []
             for action in actions:
                 row.append({
                     "text": action.get("label", "Click"),
-                    "callback_data": action.get("data", "")[:64] # Telegram limit 64 chars
+                    "callback_data": action.get("data", "")[:64]
                 })
                 if len(row) >= 2:
                     keyboard_buttons.append(row)
@@ -72,45 +68,39 @@ class TelegramAdapter(BaseChannelAdapter):
             if row:
                 keyboard_buttons.append(row)
                 
-            payload["reply_markup"] = {
-                "inline_keyboard": keyboard_buttons
-            }
+            payload["reply_markup"] = {"inline_keyboard": keyboard_buttons}
 
         raise_error = kwargs.get("raise_error", False)
 
         try:
-            response = requests.post(url, json=payload, timeout=10)
-            data = response.json()
-            if data.get("ok"):
-                logger.info(f"Telegram message sent to {target_chat_id}")
-                return True
-            else:
-                desc = data.get('description', 'Unknown error')
-                error_msg = f"Telegram API error: {desc}"
-                if "chat not found" in desc.lower():
-                    error_msg += " (Hint: Check if your Chat ID is correct and you have started the bot)"
-                
-                logger.error(error_msg)
-                if raise_error:
-                    raise ValueError(error_msg)
-                return False
+            async with httpx.AsyncClient() as client:
+                response = await client.post(url, json=payload, timeout=10.0)
+                data = response.json()
+                if data.get("ok"):
+                    logger.info(f"Telegram message sent to {target_chat_id}")
+                    return True
+                else:
+                    error_msg = f"Telegram API error: {data.get('description', 'Unknown error')}"
+                    logger.error(error_msg)
+                    if raise_error:
+                        raise ValueError(error_msg)
+                    return False
         except Exception as e:
             logger.error(f"TelegramAdapter exception: {e}")
             if raise_error:
                 raise e
             return False
     
-    def handle_webhook(self, payload: Dict[str, Any], headers: Dict[str, Any] = None):
+    async def handle_webhook(self, payload: Dict[str, Any], headers: Dict[str, Any] = None):
         """
-        Handle Telegram Callback Query.
+        Handle Telegram Callback Query asynchronously.
         """
-        # 1. Handle Callback Query (Buttons)
+        import httpx
         callback_query = payload.get("callback_query")
         if callback_query:
             query_id = callback_query.get("id")
-            data = callback_query.get("data") # e.g. "action=approve&id=123"
+            data = callback_query.get("data")
             
-            # Parse data
             params = {}
             if data:
                 for part in data.split("&"):
@@ -123,16 +113,15 @@ class TelegramAdapter(BaseChannelAdapter):
             
             if self.callback and request_id and action:
                 logger.info(f"Telegram Callback: {action} for {request_id}")
-                self._trigger_callback(request_id, action)
+                await self._trigger_callback(request_id, action)
                 
-            # Answer callback query to stop loading animation
             if query_id and self.base_url:
                 try:
-                    requests.post(f"{self.base_url}/answerCallbackQuery", json={"callback_query_id": query_id})
+                    async with httpx.AsyncClient() as client:
+                        await client.post(f"{self.base_url}/answerCallbackQuery", json={"callback_query_id": query_id}, timeout=5.0)
                 except Exception as e:
                     logger.error(f"Failed to answer Telegram callback: {e}")
         
-        # 2. Handle Message (Text)
         message = payload.get("message")
         if message:
             chat = message.get("chat")
@@ -140,6 +129,7 @@ class TelegramAdapter(BaseChannelAdapter):
             if chat and text:
                 chat_id = str(chat.get("id"))
                 logger.info(f"Telegram Text: {text} from {chat_id}")
-                self._trigger_text_callback(chat_id, text)
+                await self._trigger_text_callback(chat_id, text)
         
         return {"ok": True}
+        

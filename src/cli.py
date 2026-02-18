@@ -13,9 +13,11 @@ from src.utils.logger import setup_logger
 from src.utils.time_utils import format_time
 from src.data.database import init_db
 
+import asyncio
+
 logger = setup_logger("Workflow")
 
-def run_workflow(mode="daily", dry_run=False, user_id=None, force_report=False):
+async def run_workflow(mode="daily", dry_run=False, user_id=None, force_report=False):
     """
     Orchestrates the investment advisory workflow using WorkflowService.
     
@@ -49,7 +51,7 @@ def run_workflow(mode="daily", dry_run=False, user_id=None, force_report=False):
             raise ValueError(f"Unknown mode: {mode}")
 
         # Execute using the Template Method
-        result = workflow.run(dry_run=dry_run, force_refresh=force_report)
+        result = await workflow.run(dry_run=dry_run, force_refresh=force_report)
         
         logger.info("Workflow completed successfully.")
         return result
@@ -98,7 +100,7 @@ def main():
             service.run_loop()
             
     else:
-        run_workflow(mode=args.mode, dry_run=args.dry_run, user_id=args.user_id, force_report=args.force_report)
+        asyncio.run(run_workflow(mode=args.mode, dry_run=args.dry_run, user_id=args.user_id, force_report=args.force_report))
 
 if __name__ == "__main__":
     main()

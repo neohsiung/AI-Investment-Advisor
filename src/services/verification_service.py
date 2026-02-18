@@ -20,17 +20,17 @@ class VerificationService:
         self.repo = repo or VerificationRepository()
         self.notification_service = notification_service or NotificationService.create_with_settings(settings_service)
 
-    def test_connectivity(self, user_id: str, channel: str) -> Tuple[bool, str]:
+    async def test_connectivity(self, user_id: str, channel: str) -> Tuple[bool, str]:
         """
-        Send a test notification to verify channel connectivity.
-        發送測試通知以驗證管道連線性。
+        Send a test notification to verify channel connectivity asynchronously.
+        發送測試通知以驗證管道連線性（非同步）。
         
         Returns:
             Tuple[bool, str]: (Success status, descriptive message)
             Tuple[bool, str]: (成功狀態, 描述性訊息)
         """
         try:
-            results = self.notification_service.notify_all(
+            results = await self.notification_service.notify_all(
                 title="Connectivity Test",
                 content=f"✅ Transformation Complete. {channel} is online.",
                 user_id=user_id,
@@ -49,10 +49,10 @@ class VerificationService:
         except Exception as e:
             return False, str(e)
 
-    def initiate_verification(self, user_id: str, channel: str, timeout_hours: int = 1, channel_user_id: str = None) -> Tuple[bool, str, str]:
+    async def initiate_verification(self, user_id: str, channel: str, timeout_hours: int = 1, channel_user_id: str = None) -> Tuple[bool, str, str]:
         """
-        Initiate a channel verification process by sending a challenge code.
-        透過發送挑戰碼啟動管道驗證程序。
+        Initiate a channel verification process by sending a challenge code asynchronously.
+        透過發送挑戰碼啟動管道驗證程序（非同步）。
         
         Returns:
             Tuple[bool, str, str]: (Success status, response message, verification_id)
@@ -72,7 +72,7 @@ class VerificationService:
                 f"This request expires in {timeout_hours} hour(s)."
             )
             
-            send_results = self.notification_service.notify_all(
+            send_results = await self.notification_service.notify_all(
                 title="Channel Verification",
                 content=content,
                 user_id=user_id,
@@ -116,10 +116,9 @@ class VerificationService:
             logger.error(f"Verification initiation failed: {e}")
             return False, f"System error: {e}", None
 
-    def verify_reply(self, user_id: str, content: str, channel: str) -> bool:
+    async def verify_reply(self, user_id: str, content: str, channel: str) -> bool:
         """
-        Verify a user's reply against a pending verification challenge.
-        根據待處理的驗證挑戰核對使用者回覆。
+        Verify a user's reply against a pending verification challenge asynchronously.
         """
         # Normalize content
         content = content.strip().upper()
@@ -134,7 +133,7 @@ class VerificationService:
             self.repo.update_status(pending['id'], "verified")
             
             # Send Success Confirmation
-            self.notification_service.notify_all(
+            await self.notification_service.notify_all(
                 title="Verification Successful",
                 content=f"✅ {channel} Channel Verified Successfully!",
                 user_id=user_id,
@@ -145,32 +144,26 @@ class VerificationService:
             # Optional: Log failure or ignore non-matching messages
             return False
 
-    def verify_any_reply(self, user_id: str, content: str) -> bool:
+    async def verify_any_reply(self, user_id: str, content: str) -> bool:
         """
-        Match a user reply against ANY pending verification challenge for that user.
-        核對使用者回覆是否與該使用者的任何待處理驗證挑戰匹配。
+        Match a user reply against ANY pending verification challenge for that user asynchronously.
         """
         content = content.strip().upper()
         # 1. Try finding by user_id (could be email or raw channel ID)
         pending = self.repo.get_any_pending_verification(user_id)
         
         if not pending:
-            # 2. Fallback: If maybe user_id was an email but record stored with channel ID? 
-            # Or vice versa? Repository already handles simple lookup by 'user_id' field.
             return False
             
         expected_code = pending['code'].upper()
         channel = pending['channel']
         
-        # Liberal matching: If expected is "OK", allow "OK", "OK!", etc.
-        # But for now, strict upper-case match is safer if it's a numeric code.
-        # If code is "OK", we match.
         if content == expected_code:
             self.repo.update_status(pending['id'], "verified")
             
             # Send Success Confirmation
             logger.info(f"Verification Success for {user_id} on {channel}. Sending feedback.")
-            success = self.notification_service.notify_all(
+            success = await self.notification_service.notify_all(
                 title="Verification Successful",
                 content=f"✅ {channel.upper()} Channel Verified Successfully!",
                 user_id=user_id,
