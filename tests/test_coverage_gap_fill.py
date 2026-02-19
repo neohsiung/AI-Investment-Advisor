@@ -52,12 +52,13 @@ def test_base_agent_load_config_error(mock_settings_repo, mock_state_repo):
     
     with patch('builtins.open', mock_open(read_data="System Prompt")):
         with patch('os.path.exists', return_value=True):
-            # Should not raise, just log warning and return default
-            agent = MockAgent("TestAgent", "prompt.txt",
-                              settings_repo=mock_settings_repo, state_repo=mock_state_repo)
-            # Default fallback in BaseAgent is empty or checks os.environ
-            # BaseAgent._load_config sets defaults if not in DB
-            assert agent.config["provider"] == "Google Gemini" # Default
+            with patch.dict(os.environ, {"AI_PROVIDER": "Google Gemini"}):
+                # Should not raise, just log warning and return default
+                agent = MockAgent("TestAgent", "prompt.txt",
+                                  settings_repo=mock_settings_repo, state_repo=mock_state_repo)
+                # Default fallback in BaseAgent is empty or checks os.environ
+                # BaseAgent._load_config sets defaults if not in DB
+                assert agent.config["provider"] == "Google Gemini" # Default
 
 def test_base_agent_load_prompt_error(mock_settings_repo, mock_state_repo):
     with patch('os.path.exists', return_value=False):

@@ -32,7 +32,7 @@ def test_etoro_headers_without_api_keys():
 def test_etoro_base_url_logic():
     """Verify base_url switches between official and local bridge based on keys."""
     # 1. Official
-    with patch.dict(os.environ, {"ETORO_API_KEY": "some_key"}):
+    with patch.dict(os.environ, {"ETORO_API_KEY": "some_key", "ETORO_USER_KEY": "some_user_key"}):
         service = EtoroService()
         assert service.base_url == "https://public-api.etoro.com"
         
