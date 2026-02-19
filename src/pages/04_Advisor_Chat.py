@@ -56,9 +56,13 @@ class AdvisorChatPage(BasePage):
                         ticker_match = re.search(r'\\b([A-Z]{1,5})\\b', prompt)
                         ticker = ticker_match.group(1) if ticker_match else None
 
+                        # Get User ID for authentic DB config loading
+                        user_id = self.user.get('id', 'system') if hasattr(self, 'user') else 'system'
+
                         if ticker == "AAPL":
                             st.write("偵測到代碼: AAPL")
-                            agent = factory.create_stock_analyst_agent()
+                            # Fix: Use create_fundamental_agent instead of non-existent create_stock_analyst_agent
+                            agent = factory.create_fundamental_agent(user_id=user_id)
                             result = agent.run({
                                 "ticker": "AAPL",
                                 "analyst_type": "fundamental"
@@ -67,7 +71,8 @@ class AdvisorChatPage(BasePage):
 
                         elif ticker:
                             st.write(f"偵測到代碼: {ticker}")
-                            agent = factory.create_stock_analyst_agent()
+                            # Fix: Use create_fundamental_agent
+                            agent = factory.create_fundamental_agent(user_id=user_id)
                             result = agent.run({
                                 "ticker": ticker,
                                 "analyst_type": "fundamental"
@@ -77,7 +82,8 @@ class AdvisorChatPage(BasePage):
                         else:
                             agent_type = "cio"
                             st.write(f"調用 {agent_type.upper()} Agent...")
-                            cio_agent = factory.create_cio_agent()
+                            # Fix: Pass user_id to load user-specific DB settings (API Keys)
+                            cio_agent = factory.create_cio_agent(user_id=user_id)
 
                             cio_ctx = {
                                 'macro_report': "宏觀經濟環境摘要",

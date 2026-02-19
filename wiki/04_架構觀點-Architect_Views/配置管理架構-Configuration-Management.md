@@ -4,6 +4,7 @@
 | Date | Version | Description | Author |
 | :--- | :--- | :--- | :--- |
 | 2026-02-14 | v1.0 | Initial Release: DB-based Config & Security | Neo |
+| 2026-02-19 | v1.1 | Enforced strict DB precedence for AI settings | Agent |
 
 ---
 

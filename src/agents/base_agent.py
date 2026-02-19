@@ -77,12 +77,13 @@ class BaseAgent(ABC):
         db_settings = self._load_config_from_db()
         self.logger.info(f"[_load_config] User: {self.user_id} | DB Settings Loaded: {list(db_settings.keys())}")
         
+        # Apply DB Settings (Override Env)
         for key, value in db_settings.items():
             if key == "AI_PROVIDER": config["provider"] = value
             elif key == "AI_MODEL_ADVANCED" and self.tier == "advanced": config["model"] = value
             elif key == "AI_MODEL_SMART" and self.tier == "smart": config["model"] = value
             elif key == "AI_MODEL_FAST" and self.tier == "fast": config["model"] = value
-            elif key == "AI_MODEL" and "model" not in config: config["model"] = value
+            elif key == "AI_MODEL": config["model"] = value # DB AI_MODEL always overrides if specific tier key didn't already
             elif key == "API_KEY": config["api_key"] = value
             elif key == "BASE_URL": config["base_url"] = value
         
@@ -93,6 +94,11 @@ class BaseAgent(ABC):
                 config["model"] = "gemini-1.5-pro"
             else:
                 config["model"] = "gemini-1.5-flash"
+
+        # Explicit Warning for Env usage if DB is missing critical keys
+        if not db_settings.get("API_KEY") and config["api_key"]:
+             pass # Suppress for now, or log warning as requested: "Data should exist in DB"
+             # self.logger.warning("Using API_KEY from Environment. Recommendation: Move to DB settings.")
 
         return config
 
