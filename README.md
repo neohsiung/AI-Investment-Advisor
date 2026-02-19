@@ -35,6 +35,21 @@
 
 本專案採用高度優化的分層策略，確保成本與效能的完美平衡：
 
+```mermaid
+graph LR
+    subgraph "AI Tiers"
+        A[Advanced 🚀] -->|Deep Analysis| LLMA[GPT-4o / Claude 3.5]
+        B[Smart 🧠] -->|Debate & Logic| LLMB[Gemini 1.5 Pro]
+        C[Fast ⚡] -->|Formatting| LLMC[GPT-4o-mini]
+    end
+    
+    subgraph "Data Tiers"
+        Hot[Hot 🔥] --- RD[Redis - Semantic Cache]
+        Warm[Warm ☀️] --- PG[Postgres - Structured]
+        Cold[Cold ❄️] --- FS[File System - Reports]
+    end
+```
+
 *   **3-Tier AI 路由**:
     *   **Advanced (🚀)**: 高難度分析 (GPT-4o / Claude 3.5 Sonnet)。
     *   **Smart (🧠)**: 邏輯推理與辯論 (Gemini 1.5 Pro)。
@@ -116,6 +131,21 @@ graph TD
 ### 📐 Strategic Tiered Architecture
 
 This project employs a highly optimized layering strategy to balance cost and performance:
+
+```mermaid
+graph LR
+    subgraph "AI Tiers"
+        A[Advanced 🚀] -->|Deep Analysis| LLMA[GPT-4o / Claude 3.5]
+        B[Smart 🧠] -->|Debate & Logic| LLMB[Gemini 1.5 Pro]
+        C[Fast ⚡] -->|Formatting| LLMC[GPT-4o-mini]
+    end
+    
+    subgraph "Data Tiers"
+        Hot[Hot 🔥] --- RD[Redis - Semantic Cache]
+        Warm[Warm ☀️] --- PG[Postgres - Structured]
+        Cold[Cold ❄️] --- FS[File System - Reports]
+    end
+```
 
 *   **3-Tier AI Routing**:
     *   **Advanced (🚀)**: Complex analysis (GPT-4o / Claude 3.5 Sonnet).
