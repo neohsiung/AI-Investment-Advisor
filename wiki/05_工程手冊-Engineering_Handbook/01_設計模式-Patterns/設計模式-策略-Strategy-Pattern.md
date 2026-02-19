@@ -57,5 +57,5 @@ Encapsulate different algorithms or processing logics into separate classes to e
 
 ## 🔗 Bidirectional Links
 - **Intro**: [Design Patterns Intro](設計模式導讀-Design-Patterns-Intro)
-- **DB Standards**: [Database & Git Standards](../02_規範標準-Standards/資料庫設計與代碼規範-Database-Git-Standards)
+- **DB Standards**: [Database & Git Standards](資料庫設計與代碼規範-Database-Git-Standards)
 - **Ingestion Service**: [Service Layer Blueprints](服務層開發指南-Service-Layer-Blueprints)

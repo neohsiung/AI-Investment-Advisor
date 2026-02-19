@@ -114,10 +114,10 @@ graph LR
 #### 3.3 關鍵配置文件映射 (Infrastructure Registry)
 | 組件 | 配置文件 | 說明 |
 | :--- | :--- | :--- |
-| **容器鏡像** | [Dockerfile](file:///Users/neohsiung/Work/go/investment-advisor/Dockerfile) | 全系統基礎鏡像與環境。 |
-| **MCP 鏡像** | [Dockerfile.mcp](file:///Users/neohsiung/Work/go/investment-advisor/Dockerfile.mcp) | 隔離工具服務的輕量化鏡像。 |
+| **容器鏡像** | [Dockerfile](Dockerfile) | 全系統基礎鏡像與環境。 |
+| **MCP 鏡像** | [Dockerfile.mcp](Dockerfile.mcp) | 隔離工具服務的輕量化鏡像。 |
 | **K8s 定義** | [k8s/](file:///Users/neohsiung/Work/go/investment-advisor/k8s/) | 包含 Deployment, Service 與 Secret 定義。 |
-| **自動化** | [docker-compose.yml](file:///Users/neohsiung/Work/go/investment-advisor/docker-compose.yml) | 本地多服務開發環境。 |
+| **自動化** | [docker-compose.yml](docker-compose.yml) | 本地多服務開發環境。 |
 
 #### 3.3 技術選型與權衡分析 (Selection Analysis & Tradeoffs)
 - **FastAPI vs. Flask/Django**: 選擇 FastAPI 是因為其原生支援非同步 (AsyncIO)，對於 Agent Mesh 中的大量異步 API 調用（如新聞抓取、多模型並行推論）具有顯著性能優勢。
@@ -168,7 +168,7 @@ Building a transparent, cloud-native financial agent suite with 0% hallucination
 
 ## 🔗 Bidirectional Links
 - **Communication Protocols**: [Agent Mesh Protocols](底層通信協議-Agent-Mesh-Protocols)
-- **Frontend Architecture**: [View-Service Pattern](前端與服務架構-Frontend-Service-Architecture)
+- **Frontend Architecture**: [View-Service Pattern](前端架構與UX層-Frontend-UX-Layer)
 - **Task Planning Engine**: [Task Planning & Execution](任務規劃與執行引擎-Task-Planning-Engine)
 - **Memory System**: [Memory & Redis Architecture](記憶系統與Redis架構-Memory-Redis-Architecture)
 - **Sentinel & Council**: [Sentinel & Council Architecture](哨兵與評議會架構-Sentinel-Council-Architecture)

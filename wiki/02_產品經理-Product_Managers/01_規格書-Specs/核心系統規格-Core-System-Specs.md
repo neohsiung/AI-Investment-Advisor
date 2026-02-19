@@ -16,7 +16,7 @@
 
 ## 🇹🇼 核心系統規格書 (v3.8)
 
-本文件依據 [文件框架定義](../../00_規則規範-Rules/文件框架定義-Document-Frameworks.md) 編寫，反映系統目前已實作的功能與架構。
+本文件依據 [文件框架定義](文件框架定義-Document-Frameworks) 編寫，反映系統目前已實作的功能與架構。
 
 ### 1. 問題與目標 (Problem & Goals)
 - **核心痛點**:
@@ -134,8 +134,8 @@ Providing a **0% hallucination** deterministic engine with unified multi-broker 
 - **P95 Latency**: < 30s
 
 ## 🔗 Bidirectional Links
-- **Architecture**: [System Landscape](../../04_架構觀點-Architect_Views/系統全景圖-System-Landscape.md)
-- **Database**: [Database Standards](../../00_規則規範-Rules/資料庫設計與代碼規範-Database-Git-Standards.md)
-- **Environment**: [Environment Setup](../../03_開發者指南-Developer_Guide/環境設定與本地開發-Environment-Local-Dev.md)
-- **Roadmap**: [Evolutionary Roadmap](../01_規格書-Specs/產品演進藍圖-Evolutionary-Roadmap.md)
-- **Wiki Standard**: [Wiki Standard](../../00_規則規範-Rules/文件規範-Wiki-Standard.md)
+- **Architecture**: [System Landscape](系統全景圖-System-Landscape)
+- **Database**: [Database Standards](資料庫設計與代碼規範-Database-Git-Standards)
+- **Environment**: [Environment Setup](環境設定與本地開發-Environment-Local-Dev)
+- **Roadmap**: [Evolutionary Roadmap](產品演進藍圖-Evolutionary-Roadmap)
+- **Wiki Standard**: [Wiki Standard](文件規範-Wiki-Standard)

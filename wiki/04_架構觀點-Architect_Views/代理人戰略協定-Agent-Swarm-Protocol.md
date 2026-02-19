@@ -133,7 +133,7 @@ graph TD
     *   **Batch Run (批次)**: 為不同 Agent 分配不同任務。
 *   **獎懲機制 (Reward & Penalty)**:
     *   **Reward (+0.01)**: 任務成功完成後，增加 Agent 的權重比例。
-    *   **Penalty (-0.1)**: 若執行失敗或超時 (Timeout)，則大幅降低權重，並觸發 [System Engineer](engineer) 進行調優。
+    *   **Penalty (-0.1)**: 若執行失敗或超時 (Timeout)，則大幅降低權重，並觸發 [System Engineer](提示詞工程規範-Prompt-Engineering-Specs) 進行調優。
 *   **融合策略 (Fusion)**: CIO Agent 根據 Agent 權重與信心分數，融合產出最終裁決。
 
 ### 5. 投資委員會協定 (IC Protocol)

@@ -58,5 +58,5 @@ Standardize heterogeneous interfaces (Notifications, Brokers, Council) to protec
 
 ## 🔗 Bidirectional Links
 - **Intro**: [Design Patterns Intro](設計模式導讀-Design-Patterns-Intro)
-- **Landscape**: [System Landscape](../04_架構觀點-Architect_Views/系統全景圖-System-Landscape)
-- **Notification Standards**: [Omni-Channel Adapter Standards](../02_規範標準-Standards/全通路適配器規範-Omni-Channel-Adapter-Standards)
+- **Landscape**: [System Landscape](系統全景圖-System-Landscape)
+- **Notification Standards**: [Omni-Channel Adapter Standards](全通路適配器規範-Omni-Channel-Adapter-Standards)

@@ -76,4 +76,4 @@ api_key = settings_repo.get(uid, "API_KEY") or os.getenv("API_KEY")
 
 ---
 ### 參閱 (See Also)
-*   [使用者手冊: 系統設定與金鑰管理](../01_使用者手冊-User_Manual/02_系統設定與金鑰管理-System-Configuration.md)
+*   [使用者手冊: 系統設定與金鑰管理](系統設定與金鑰管理-System-Configuration)

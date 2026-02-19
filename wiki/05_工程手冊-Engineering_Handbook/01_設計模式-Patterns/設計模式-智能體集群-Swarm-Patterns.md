@@ -45,5 +45,5 @@
 
 ## 🔗 Bidirectional Links
 - **Intro**: [Design Patterns Intro](設計模式導讀-Design-Patterns-Intro)
-- **Sentinel Architecture**: [Sentinel & Council Architecture](../04_架構觀點-Architect_Views/哨兵與評議會架構-Sentinel-Council-Architecture)
-- **Swarm Protocol**: [Agent Swarm Protocol](../04_架構觀點-Architect_Views/代理人戰略協定-Agent-Swarm-Protocol.md)
+- **Sentinel Architecture**: [Sentinel & Council Architecture](哨兵與評議會架構-Sentinel-Council-Architecture)
+- **Swarm Protocol**: [Agent Swarm Protocol](代理人戰略協定-Agent-Swarm-Protocol)

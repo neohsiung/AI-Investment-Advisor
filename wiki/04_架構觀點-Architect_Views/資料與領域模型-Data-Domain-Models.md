@@ -281,8 +281,8 @@ classDiagram
 4. **Cache**: LLM Outputs cached in `ResponseCache` (Redis) for repeated hits.
 
 ## 🔗 Bidirectional Links
-- **Philosophy**: [Architectural Philosophies](Architectural-Philosophies)
-- **DB Standards**: [Database & Git Standards](Database-Git-Standards)
+- **Philosophy**: [Architectural Philosophies](架構哲學-Architectural-Philosophies)
+- **DB Standards**: [Database & Git Standards](資料庫設計與代碼規範-Database-Git-Standards)
 
 ---
 

@@ -128,7 +128,7 @@ Strict separation of concerns to enhance maintainability and testability.
 - **Transparent AI**: Agent reasoning displayed alongside raw data.
 
 ## 🔗 Bidirectional Links
-- **Architecture**: [System Landscape](../04_架構觀點-Architect_Views/系統全景圖-System-Landscape.md)
-- **Data Layer**: [Data & Domain Models](../04_架構觀點-Architect_Views/資料與領域模型-Data-Domain-Models.md)
-- **Service Layer**: [Service Layer Blueprints](服務層開發指南-Service-Layer-Blueprints.md)
-- **BasePage Pattern**: [Template Method](../05_工程手冊-Engineering_Handbook/01_設計模式-Patterns/設計模式-樣板方法-Template-Method.md)
+- **Architecture**: [System Landscape](系統全景圖-System-Landscape)
+- **Data Layer**: [Data & Domain Models](資料與領域模型-Data-Domain-Models)
+- **Service Layer**: [Service Layer Blueprints](服務層開發指南-Service-Layer-Blueprints)
+- **BasePage Pattern**: [Template Method](設計模式-樣板方法-Template-Method)
