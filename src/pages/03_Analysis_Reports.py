@@ -38,12 +38,23 @@ class AnalysisReportsPage(BasePage):
             selected_display = st.selectbox("選擇報告日期 (Select Report Date)", reports_df['display_date'].unique())
             
             if selected_display:
-                original_date = reports_df[reports_df['display_date'] == selected_display]['date'].values[0]
-                report_content = reports_df[reports_df['date'] == original_date]['content'].values[0]
-                
-                saas_card_start(title=f"報告內容 - {selected_display}", icon="📄")
-                st.markdown(report_content)
-                saas_card_end()
+                # Safe lookup for original date
+                date_rows = reports_df[reports_df['display_date'] == selected_display]
+                if not date_rows.empty:
+                    original_date = date_rows['date'].values[0]
+                    
+                    # Safe lookup for content
+                    content_rows = reports_df[reports_df['date'] == original_date]
+                    if not content_rows.empty:
+                        report_content = content_rows['content'].values[0]
+                        
+                        saas_card_start(title=f"報告內容 - {selected_display}", icon="📄")
+                        st.markdown(report_content)
+                        saas_card_end()
+                    else:
+                         st.error("Report content not found for selected date.")
+                else:
+                    st.error("Selected date record not found.")
         else:
             saas_alert("尚無報告可供檢視。報告將由排程系統自動生成。", style="info")
 
