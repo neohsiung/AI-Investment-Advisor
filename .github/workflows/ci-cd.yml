@@ -81,6 +81,10 @@ jobs:
           # Fail if there are medium or high severity issues
           bandit -r src/ -ll -f screen
 
+      - name: Wiki Integrity Check (Flat-Linking)
+        run: |
+          python skills/wiki-maintainer/scripts/verify_wiki_links.py
+
       - name: License Compliance Check
         run: |
           pip-licenses --format=markdown --with-urls --summary > license_report.md
