@@ -60,7 +60,7 @@ graph LR
     *   **Cold (❄️)**: 文件系統用於原始報告與歷史復盤。
 
 ### 🛠️ 技術棧 (Technical Stack)
-- **核心**: Python 3.11 (Async I/O)
+- **核心**: Python 3.10+ (Local), Python 3.11 (Docker) - Optimized for Async I/O
 - **智能體**: DSPy, OpenAI/Gemini/Claude Multi-Tier Routing
 - **基礎設施**: Docker Compose, PostgreSQL 15, Redis (Cache/Memory)
 - **數據協議**: MCP (Model Context Protocol), TAVILY, Polygon, FMP
@@ -157,7 +157,7 @@ graph LR
     *   **Cold (❄️)**: File system for raw reports and historical backtests.
 
 ### 🛠️ Built With
-- **Language**: Python 3.11 (optimized for async execution)
+- **Language**: Python 3.10+ (Local), Python 3.11 (Docker)
 - **AI Core**: Multi-LLM Tiered Routing (Advanced 🚀, Smart 🧠, Fast ⚡)
 - **Infrastructure**: Dockerized PostgreSQL 15, Redis semantic cache
 - **Data Layers**: MCP (Model Context Protocol), TAVILY Search, Financial Modeling Prep

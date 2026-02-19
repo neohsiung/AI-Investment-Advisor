@@ -3,6 +3,9 @@ import sys
 import os
 from dotenv import load_dotenv
 
+if sys.version_info < (3, 10):
+    sys.exit("Error: This project requires Python 3.10 or higher. Your current version is " + sys.version)
+
 # Load environment variables from .env file
 load_dotenv()
 
