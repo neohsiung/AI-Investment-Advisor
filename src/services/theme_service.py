@@ -31,7 +31,7 @@ class ThemeService:
                 with open(theme_path, 'r', encoding='utf-8') as f:
                     return json.load(f)
         except Exception:
-            pass
+            pass # Theme file might not exist, fallback to default
         return None
 
     @staticmethod

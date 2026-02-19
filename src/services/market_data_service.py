@@ -284,7 +284,8 @@ class MarketDataService:
                 if info and info.get('market_cap'): # Basic validation
                      # Normalize keys if needed, but for now we expect mostly common keys
                      return info
-            except Exception:
+            except Exception as e:
+                self.logger.debug(f"Provider {self._get_provider_name(provider)} failed for financials: {e}")
                 continue
         return {}
 

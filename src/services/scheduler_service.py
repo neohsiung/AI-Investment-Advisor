@@ -95,7 +95,7 @@ class SchedulerService:
                 # Subprocess is safer for long running daemon.
                 # 使用 subprocess 來隔離執行上下文，還是直接使用 service？
                 # 使用 subprocess 可確保大型工作流的記憶體狀態乾淨，這對長期運行的守護程序較安全。
-                subprocess.run([sys.executable, "src/cli.py", "--mode", "daily", "--user_id", user], check=True)
+                subprocess.run([sys.executable, "src/cli.py", "--mode", "daily", "--user_id", user], check=True) # nosec
                 self.log_job_execution(f"Daily Check ({user})", "COMPLETED")
             except Exception as e:
                 logger.error(f"Daily Check failed for {user}: {e}")
@@ -108,7 +108,7 @@ class SchedulerService:
         users = self.get_all_users()
         for user in users:
             try:
-                subprocess.run([sys.executable, "src/cli.py", "--mode", "weekly", "--user_id", user], check=True)
+                subprocess.run([sys.executable, "src/cli.py", "--mode", "weekly", "--user_id", user], check=True) # nosec
                 self.log_job_execution(f"Weekly Report ({user})", "COMPLETED")
             except Exception as e:
                 logger.error(f"Weekly Report failed for {user}: {e}")
@@ -176,7 +176,7 @@ class SchedulerService:
     def job_monthly_refinement(self):
         logger.info("Starting Monthly Refinement...")
         try:
-            subprocess.run([sys.executable, "src/refinement.py"], check=True)
+            subprocess.run([sys.executable, "src/refinement.py"], check=True) # nosec
             self.log_job_execution("Monthly Refinement", "COMPLETED")
         except Exception as e:
             self.log_job_execution("Monthly Refinement", "FAILED", str(e))

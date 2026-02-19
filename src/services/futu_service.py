@@ -241,7 +241,7 @@ class FutuService(IBroker):
             try:
                 sig = f"{tx.ticker}_{tx.trade_date}_{tx.action}_{float(tx.quantity):.4f}_{float(tx.price):.4f}"
                 existing_sigs.add(sig)
-            except: continue
+            except Exception: continue
 
         for trade in history:
             # Map Futu History Row to Transaction
@@ -285,8 +285,8 @@ class FutuService(IBroker):
         if self.trd_ctx:
             try:
                 self.trd_ctx.close()
-            except: pass
+            except Exception: pass
         if self.quote_ctx:
             try:
                 self.quote_ctx.close()
-            except: pass
+            except Exception: pass

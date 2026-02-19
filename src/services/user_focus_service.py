@@ -79,7 +79,8 @@ class UserFocusService:
                     
                     if sec: sectors.append(sec)
                     if ind: industries.append(ind)
-                except Exception:
+                except Exception as e:
+                    logger.debug(f"Error fetching financials for {ticker}: {e}")
                     continue
                     
             top_sectors = [s for s, c in Counter(sectors).most_common(top_n)]

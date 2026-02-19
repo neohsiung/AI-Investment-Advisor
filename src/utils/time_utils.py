@@ -24,7 +24,7 @@ def get_db_timezone():
             return result[0]
     except Exception:
         # DB might not be ready or reachable
-        pass
+        pass # nosec
     return None
 
 def get_timezone():
