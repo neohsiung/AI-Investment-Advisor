@@ -26,6 +26,10 @@
 - **整合測試 (Integration Tests)**: 佔比 20%。驗證 Service 與 Repository 間的契約（可用 In-memory SQLite）。
 - **端到端測試 (E2E Tests)**: 佔比 10%。僅針對核心 CLI/Workflow，模擬真實用戶行為。
 
+### 2.3 環境確定性 (Environment Determinism)
+- **環境隔離**: 單元測試嚴禁依賴主機或 CI 環境變數（如 `AI_PROVIDER`, `API_KEY`）。
+- **強制 Patch**: 所有涉及環境變數的邏輯必須在測試中使用 `unittest.mock.patch.dict(os.environ, ...)` 進行明確模擬，確保測試在任何機器上執行的結果完全一致。
+
 ### 2.2 覆蓋率指標 (Coverage Targets)
 - **總覆蓋率**: 強制 > 70%，目標 **> 75%**。
 - **核心邏輯 (Services)**: 必須 > 80%。
