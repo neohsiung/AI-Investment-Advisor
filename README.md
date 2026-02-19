@@ -31,6 +31,19 @@
 - **🗄️ 混合健壯架構**: PostgreSQL 處理結構化數據，pgvector 實現語義記憶 RAG，確保決策具備歷史脈絡。
 - **🛡️ 規範驅動開發**: 堅持 Clean Architecture 與 Rule-based 治理，代碼覆蓋率長期維持 > 75%。
 
+### 📐 策略性分層架構 (Strategic Tiered Architecture)
+
+本專案採用高度優化的分層策略，確保成本與效能的完美平衡：
+
+*   **3-Tier AI 路由**:
+    *   **Advanced (🚀)**: 高難度分析 (GPT-4o / Claude 3.5 Sonnet)。
+    *   **Smart (🧠)**: 邏輯推理與辯論 (Gemini 1.5 Pro)。
+    *   **Fast (⚡)**: 格式化輸出與初步篩選 (GPT-4o-mini)。
+*   **3-Tier 數據存儲**:
+    *   **Hot (🔥)**: Redis 用於語義緩存與即時狀態。
+    *   **Warm (☀️)**: PostgreSQL 用於結構化交易紀錄與中維度分析。
+    *   **Cold (❄️)**: 文件系統用於原始報告與歷史復盤。
+
 ### 🛠️ 技術棧 (Technical Stack)
 - **核心**: Python 3.11 (Async I/O)
 - **智能體**: DSPy, OpenAI/Gemini/Claude Multi-Tier Routing
@@ -72,7 +85,14 @@ graph TD
     CIO <--> PG & RD
 ```
 
-### 📚 文檔索引
+### �️ 治理與規範 (Governance & Standards)
+
+為了確保 AI 協作的高一致性，本專案實施嚴格的治理規範：
+- **[文件維護標準](.agent/rules/documentation-standards.md)**: 規範 Wiki 扁平化連結與雙語排版。
+- **[設計與代碼規範](.agent/rules/engineering-standards.md)**: 強制測試隔離與 Clean Architecture。
+- **[原子提交規範](.agent/rules/git-commit-format.md)**: 確保開發軌跡清晰且具備雙語描述。
+
+### �📚 文檔索引
 - **快速入門**: [Quickstart Guide](wiki/01_使用者手冊-User_Manual/快速啟動與操作指南-Quickstart-User-Guide.md)
 - **架構深挖**: [Architectural Philosophies](wiki/04_架構觀點-Architect_Views/架構哲學-Architectural-Philosophies.md)
 - **開發者手冊**: [Engineering Standards](.agent/rules/engineering-standards.md)
@@ -93,6 +113,19 @@ graph TD
 - **🗄️ Hybrid RAG Memory**: PostgreSQL + pgvector unified backbone for high-speed financial calculation and semantic decision history.
 - **🏆 Self-Optimizing Loop**: Integrated **Engineer Agent** using **DSPy** to auto-refine prompts based on execution performance.
 
+### 📐 Strategic Tiered Architecture
+
+This project employs a highly optimized layering strategy to balance cost and performance:
+
+*   **3-Tier AI Routing**:
+    *   **Advanced (🚀)**: Complex analysis (GPT-4o / Claude 3.5 Sonnet).
+    *   **Smart (🧠)**: Reasoning and Council debates (Gemini 1.5 Pro).
+    *   **Fast (⚡)**: Data formatting and initial screening (GPT-4o-mini).
+*   **3-Tier Data Storage**:
+    *   **Hot (🔥)**: Redis for semantic caching and real-time state.
+    *   **Warm (☀️)**: PostgreSQL for structured trade records and mid-tier analytics.
+    *   **Cold (❄️)**: File system for raw reports and historical backtests.
+
 ### 🛠️ Built With
 - **Language**: Python 3.11 (optimized for async execution)
 - **AI Core**: Multi-LLM Tiered Routing (Advanced 🚀, Smart 🧠, Fast ⚡)
@@ -105,7 +138,14 @@ graph TD
 ```
 *Access the AI Dashboard at [http://localhost:8501](http://localhost:8501)*
 
-### 📚 Deep Dives
+### �️ Governance & Standards
+
+To ensure high-fidelity AI collaboration, the project enforces strict governance:
+- **[Documentation Standards](.agent/rules/documentation-standards.md)**: Enforces flat-linking and bilingual formatting for the Wiki.
+- **[Engineering Standards](.agent/rules/engineering-standards.md)**: Mandates test isolation and Clean Architecture.
+- **[Git Commit Standards](.agent/rules/git-commit-format.md)**: Ensures atomic commits with professional bilingual summaries.
+
+### �📚 Deep Dives
 Visit our full [Wiki](wiki/Home.md) for architectural blueprints and contribution guides.
 
 ### 📄 License & Disclaimer
