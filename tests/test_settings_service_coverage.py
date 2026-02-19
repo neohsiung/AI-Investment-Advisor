@@ -104,7 +104,7 @@ class TestSettingsService:
         success, msg = service.save_settings_bulk({"k1": "v1", "k2": "v2"})
         
         assert success is True
-        assert mock_conn.execute.call_count == 2
+        assert mock_conn.execute.call_count == 4
     
     @patch('src.services.settings_service.requests.get')
     def test_fetch_openrouter_models(self, mock_get):

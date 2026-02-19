@@ -18,7 +18,11 @@ class TestEtoroIntegration(unittest.TestCase):
         self.service.risk_manager.settings_repo = MagicMock()
         
         # Default Settings
-        self.service.risk_manager.settings_repo.get.side_effect = lambda uid, k, default=None: "true" if k == "ai_trading_enabled" else default
+        def mock_get(uid, k, default=None):
+            if k == "ai_trading_enabled": return "true"
+            if k == "ai_max_daily_trades": return "10"
+            return default
+        self.service.risk_manager.settings_repo.get.side_effect = mock_get
 
     def test_check_constraints_ok(self):
         # Mock transaction count on RiskManager
@@ -50,8 +54,17 @@ class TestEtoroIntegration(unittest.TestCase):
     def test_sync_history(self, mock_get):
         # Mock Etoro History Response
         mock_response = MagicMock()
+        mock_response.status_code = 200
         mock_response.json.return_value = [
-            {"Instrument": "AAPL", "OpenDateTime": "2025-01-01T10:00:00", "Action": "Buy", "Amount": 100, "OpenRate": 150}
+            {
+                "instrumentId": "1", 
+                "openTimestamp": "2025-01-01T10:00:00", 
+                "isBuy": True, 
+                "units": 100, 
+                "openRate": 150,
+                "leverage": 1,
+                "fees": 0
+            }
         ]
         mock_get.return_value = mock_response
         self.service.transaction_repo = MagicMock()

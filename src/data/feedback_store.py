@@ -4,6 +4,8 @@ from datetime import datetime
 from sqlalchemy import text
 from src.data.database import get_db_connection
 import json
+import logging
+logger = logging.getLogger(__name__)
 
 class FeedbackStore:
     def __init__(self, db_path=None):

@@ -1,38 +1,47 @@
-"""
-Tests for Refinement Service.
-測試 Refinement 服務。
-"""
 import pytest
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock, patch, AsyncMock
 from src.services.refinement_service import RefinementService
+
+@pytest.fixture
+def anyio_backend():
+    return 'asyncio'
 
 class TestRefinementService:
     
+    @pytest.mark.anyio
     @patch('src.services.refinement_service.setup_logger')
     @patch('src.services.refinement_service.PerformanceService')
     @patch('src.services.refinement_service.SystemEngineerAgent')
-    @patch('src.services.refinement_service.EmailNotifier')
-    def test_run_monthly_refinement(self, mock_notifier, mock_engineer, mock_perf, mock_logger):
+    @patch('src.services.refinement_service.NotificationService')
+    async def test_run_monthly_refinement(self, MockNotification, MockEngineer, MockPerf, mock_logger):
         """Test running the monthly refinement process."""
-        service = RefinementService(user_id="test@user.com")
+        # Setup mocks
+        mock_noti_instance = MagicMock()
+        mock_noti_instance.send_report = AsyncMock(return_value=True)
+        MockNotification.create_with_settings.return_value = mock_noti_instance
         
-        # Mock dependencies
-        mock_perf.return_value.get_agent_performance.return_value = {
+        mock_perf_instance = MockPerf.return_value
+        mock_perf_instance.get_agent_performance.return_value = {
             "Momentum": {"win_rate": 0.8, "count": 10},
             "Fundamental": {"win_rate": 0.3, "count": 10}
         }
-        mock_engineer.return_value.run.return_value = [
+        
+        mock_eng_instance = MockEngineer.return_value
+        mock_eng_instance.run.return_value = [
             {"target_agent": "Fundamental", "reason": "Low win rate"}
         ]
         
-        result = service.run_monthly_refinement()
+        # We need to mock SettingsService because it's imported inside __init__
+        with patch('src.services.settings_service.SettingsService'):
+            service = RefinementService(user_id="test@user.com")
+            result = await service.run_monthly_refinement()
         
         assert result is True
-        mock_notifier.return_value.send_report.assert_called()
+        mock_noti_instance.send_report.assert_called()
     
     def test_merge_stats(self):
         """Test merging and normalizing statistics."""
-        service = RefinementService()
+        service = RefinementService(user_id="test@user.com", notification_service=MagicMock())
         stats = {
             "momentum": {"win_rate": 0.5, "count": 4},
             "UnknownAgent": {"win_rate": 1.0, "count": 1}
@@ -43,11 +52,11 @@ class TestRefinementService:
         
         assert "Momentum" in merged
         assert merged["Momentum"]["count"] == 4
-        assert "Unknownagent" in merged or "UnknownAgent" in merged # Depending on title()
+        assert "Unknownagent" in merged or "UnknownAgent" in merged
 
     def test_generate_report(self):
         """Test generating report content."""
-        service = RefinementService()
+        service = RefinementService(user_id="test@user.com", notification_service=MagicMock())
         merged_stats = {
             "Momentum": {"wins": 4.0, "count": 5},
             "Fundamental": {"wins": 1.0, "count": 5}
