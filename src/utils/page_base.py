@@ -11,7 +11,12 @@ from abc import ABC, abstractmethod
 from src.utils.auth_guard import require_authentication
 from src.utils.ui import load_design_system_css, render_sidebar, render_top_profile
 from src.utils.components import saas_section_header
+from src.utils.components import saas_section_header
 from src.data.database import init_db
+from dotenv import load_dotenv
+
+# Load environment variables (Robustness for local run)
+load_dotenv()
 
 class BasePage(ABC):
     """
