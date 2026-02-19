@@ -1,10 +1,10 @@
-pandas==2.1.1
+pandas==2.0.3
 pytest==7.4.3
-streamlit==1.35.0
+streamlit==1.37.0
 plotly==5.18.0
 schedule==1.2.1
 python-dotenv==1.0.0
-requests==2.31.0
+requests
 yfinance==0.2.31
 pytz==2023.3.post1
 pytest-cov==4.1.0
@@ -19,21 +19,25 @@ pip-licenses==4.3.3
 google-auth==2.23.4
 google-auth-oauthlib==1.1.0
 google-auth-httplib2==0.1.1
-Jinja2==3.1.2
+Jinja2==3.1.6
 fredapi==0.5.1
 beautifulsoup4==4.12.2
 markdown==3.5.1
 extra-streamlit-components==0.1.70
+
+# Security Tools
+safety
+pip-audit
 
 # v3.0 Dependencies
 dspy==2.5.1; python_version >= "3.9"
 pgvector==0.2.4
 duckduckgo-search==3.9.3
 tavily-python==0.2.7
-line-bot-sdk==3.6.0
+line-bot-sdk
 
 # MCP Microservice
-fastapi==0.104.1
+fastapi==0.124.4
 uvicorn[standard]==0.24.0.post1
 httpx==0.25.1
 redis==5.0.1
@@ -42,3 +46,15 @@ aiosmtplib==3.0.1
 # Broker APIs
 futu-api==8.7.4708
 ib_insync==0.9.86
+
+# Security Overrides (pip-audit fixes)
+# protobuf>=4.25.8 # Conflict with futu-api (requires protobuf==3.*)
+aiohttp>=3.10.11
+authlib>=1.6.4
+filelock>=3.20.1
+marshmallow>=3.26.2
+pillow>=10.4.0
+starlette>=0.47.2
+tornado>=6.5
+urllib3>=2.5.0
+h2>=4.3.0
