@@ -40,7 +40,8 @@ broker = BrokerFactory.get_broker(broker_name)
 > [!TIP]
 > **為什麼好？**: 
 > 1. 初始化邏輯（如加載 Prompt 路徑、API 認證）被封裝在單一位置。
-> 2. 模式切換：在建立 `IChannelAdapter` 時，Factory 會根據環境變數決定回傳 `LineBotAdapter` 或 `MockAdapter`。
+> 2. **DB 配置注入**: Factory 自動將 `user_id` 注入 Agent，確保正確讀取使用者的 DB 設定 (API Keys, Providers)，而非 fallback 到系統環境變數。
+> 3. 模式切換：在建立 `IChannelAdapter` 時，Factory 會根據環境變數決定回傳 `LineBotAdapter` 或 `MockAdapter`。
 ````
 
 ### 3. 非功能性要求 (Scalability)
