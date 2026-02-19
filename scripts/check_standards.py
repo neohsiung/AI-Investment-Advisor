@@ -38,8 +38,8 @@ def main():
 
     checks = [
         ("Unit Tests", "pytest --cov=src --cov-report=term-missing tests/"),
-        ("Security Scan", "bandit -r src/ -ll"),
-        ("Wiki Integrity", "python skills/wiki-maintainer/scripts/verify_wiki_links.py")
+        ("Security Scan", "python3 -m bandit -r src/ -ll"),
+        ("Wiki Integrity", "python3 skills/wiki-maintainer/scripts/verify_wiki_links.py")
     ]
 
     all_passed = True
