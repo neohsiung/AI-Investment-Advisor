@@ -1,10 +1,10 @@
 pandas==2.1.1
 pytest==7.4.3
-streamlit==1.35.0
+streamlit==1.37.0
 plotly==5.18.0
 schedule==1.2.1
 python-dotenv==1.0.0
-requests==2.31.0
+requests==2.32.4
 yfinance==0.2.31
 pytz==2023.3.post1
 pytest-cov==4.1.0
@@ -19,7 +19,7 @@ pip-licenses==4.3.3
 google-auth==2.23.4
 google-auth-oauthlib==1.1.0
 google-auth-httplib2==0.1.1
-Jinja2==3.1.2
+Jinja2==3.1.6
 fredapi==0.5.1
 beautifulsoup4==4.12.2
 markdown==3.5.1
