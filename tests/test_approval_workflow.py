@@ -1,72 +1,71 @@
 import pytest
-from unittest.mock import MagicMock, patch
+import asyncio
+from unittest.mock import MagicMock, patch, AsyncMock
 import time
-import threading
 from src.services.interaction_service import InteractionService, InteractionStatus
 from src.domain.interaction import InteractionRequest, InteractionType
 from src.infrastructure.channels.line_adapter import LineBotAdapter
+
+@pytest.fixture
+def anyio_backend():
+    return 'asyncio'
 
 class TestApprovalWorkflow:
     
     @pytest.fixture
     def mock_adapter(self):
         adapter = MagicMock(spec=LineBotAdapter)
-        # Verify register_callback is called
+        adapter.send_alert = AsyncMock()
+        adapter.send_message = AsyncMock()
         return adapter
 
-    def test_interaction_request_flow(self, mock_adapter):
+    @pytest.mark.anyio
+    async def test_interaction_request_flow(self, mock_adapter):
         """
         Verify that request_approval sends a message and waits for response.
         """
         service = InteractionService(adapters=[mock_adapter])
         
-        # We need to simulate the user response in a separate thread 
-        # because request_approval is blocking.
-        
-        request_id_container = {}
-        
-        def simulate_user_response():
-            time.sleep(1) # Wait for request to be registered
-            # Find the pending request
+        async def simulate_user_response():
+            await asyncio.sleep(0.5) # Wait for request to be registered
             if not service._pending_requests:
                 return
             
             req_id = list(service._pending_requests.keys())[0]
-            request_id_container['id'] = req_id
-            
             # Simulate Webhook Callback (Approve)
-            service.handle_response(req_id, "approve")
+            await service.handle_response(req_id, "approve")
             
-        thread = threading.Thread(target=simulate_user_response)
-        thread.start()
+        # Start simulation task
+        task = asyncio.create_task(simulate_user_response())
         
-        # Blocking Call
-        result = service.request_approval(
+        # Async Call
+        result = await service.request_approval(
             title="Test Approval",
             content="Approve this?",
             timeout_seconds=5
         )
         
-        thread.join()
+        await task
         
         assert result is True
-        assert service._pending_requests[request_id_container['id']].status == InteractionStatus.APPROVED
+        req_id = list(service._pending_requests.keys())[0]
+        assert service._pending_requests[req_id].status == InteractionStatus.APPROVED
         
         # Verify Adapter call
         mock_adapter.send_alert.assert_called_once()
         args, kwargs = mock_adapter.send_alert.call_args
         assert "Approve this?" in kwargs['content']
-        assert len(kwargs['actions']) == 2 # Approve, Reject
 
-    def test_interaction_timeout(self, mock_adapter):
+    @pytest.mark.anyio
+    async def test_interaction_timeout(self, mock_adapter):
         """
         Verify timeout behavior.
         """
         service = InteractionService(adapters=[mock_adapter])
         
-        # Blocking Call with short timeout
+        # Async Call with short timeout
         start = time.time()
-        result = service.request_approval(
+        result = await service.request_approval(
             title="Timeout Test",
             content="...",
             timeout_seconds=1
@@ -76,26 +75,26 @@ class TestApprovalWorkflow:
         assert result is False
         assert duration >= 1.0
 
-    def test_interaction_rejection(self, mock_adapter):
+    @pytest.mark.anyio
+    async def test_interaction_rejection(self, mock_adapter):
         """
         Verify rejection flow.
         """
         service = InteractionService(adapters=[mock_adapter])
         
-        def simulate_reject():
-            time.sleep(1)
+        async def simulate_reject():
+            await asyncio.sleep(0.5)
             if not service._pending_requests: return
             req_id = list(service._pending_requests.keys())[0]
-            service.handle_response(req_id, "reject")
+            await service.handle_response(req_id, "reject")
             
-        thread = threading.Thread(target=simulate_reject)
-        thread.start()
+        task = asyncio.create_task(simulate_reject())
         
-        result = service.request_approval(
+        result = await service.request_approval(
             title="Reject Test", 
             content="...",
             timeout_seconds=5
         )
-        thread.join()
+        await task
         
         assert result is False

@@ -38,12 +38,14 @@ def mock_services():
     council = MagicMock()
     council.start_session = AsyncMock(return_value={"consensus": "Sell slightly"})
     notification = MagicMock()
+    notification.notify_all = AsyncMock()
+    notification.send_flex_alert = AsyncMock()
     settings = MagicMock()
     settings.get_all_settings.return_value = {}
     settings.get_setting.return_value = None
 
     # Patch the repository class so SentinelService() allows mocking init
-    with patch('src.services.sentinel_service.SentinelRepository') as MockRepo:
+    with patch('src.services.sentinel_service.AlchemySentinelRepository') as MockRepo:
          # Configure default mock behavior if needed
          mock_repo_instance = MockRepo.return_value
          mock_repo_instance.get_all_thresholds.return_value = {
@@ -283,7 +285,7 @@ class TestBreakingNews:
         mock_repo.get_all.return_value = keywords
         mock_repo.record_hit = MagicMock()
 
-        with patch('src.services.sentinel_service.RiskKeywordRepository', return_value=mock_repo), \
+        with patch('src.services.sentinel_service.AlchemyRiskKeywordRepository', return_value=mock_repo), \
              patch.object(sentinel, '_get_all_user_ids', return_value=["user@test.com"]):
             triggers = sentinel._check_breaking_news()
 
@@ -307,7 +309,7 @@ class TestBreakingNews:
         mock_repo = MagicMock()
         mock_repo.get_all.return_value = keywords
 
-        with patch('src.services.sentinel_service.RiskKeywordRepository', return_value=mock_repo), \
+        with patch('src.services.sentinel_service.AlchemyRiskKeywordRepository', return_value=mock_repo), \
              patch.object(sentinel, '_get_all_user_ids', return_value=["user@test.com"]):
             triggers = sentinel._check_breaking_news()
 
@@ -322,7 +324,7 @@ class TestBreakingNews:
         mock_repo = MagicMock()
         mock_repo.get_all.return_value = self._mock_repo(mock_services)
 
-        with patch('src.services.sentinel_service.RiskKeywordRepository', return_value=mock_repo), \
+        with patch('src.services.sentinel_service.AlchemyRiskKeywordRepository', return_value=mock_repo), \
              patch.object(sentinel, '_get_all_user_ids', return_value=["user@test.com"]):
             triggers = sentinel._check_breaking_news()
 

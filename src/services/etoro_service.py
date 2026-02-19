@@ -438,7 +438,6 @@ class EtoroService(IBroker):
         """
         # Determine fetch period
         if initial_sync:
-            from datetime import datetime
             start_date = datetime(2024, 1, 1)
             days = (datetime.now() - start_date).days
             logger.info(f"Initial sync: Fetching all history from 2024-01-01 ({days} days)")

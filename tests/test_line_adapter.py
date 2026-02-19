@@ -1,7 +1,11 @@
 import pytest
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock, patch, AsyncMock
 import os
 import sys
+
+@pytest.fixture
+def anyio_backend():
+    return 'asyncio'
 
 @pytest.fixture
 def mock_sdk():
@@ -61,14 +65,16 @@ def mock_sdk():
                 'subject': src.infrastructure.channels.line_adapter
             }
 
-def test_line_adapter_init(mock_sdk):
+@pytest.mark.anyio
+async def test_line_adapter_init(mock_sdk):
     """Test initialization with SDK present."""
     LineBotAdapter = mock_sdk['adapter_class']
     adapter = LineBotAdapter()
     assert adapter.is_active is True
     assert adapter.messaging_api is not None
 
-def test_line_adapter_mock_mode(mock_sdk):
+@pytest.mark.anyio
+async def test_line_adapter_mock_mode(mock_sdk):
     """Test fallback when SDK missing or token missing."""
     subject = mock_sdk['subject']
     LineBotAdapter = mock_sdk['adapter_class']
@@ -80,29 +86,30 @@ def test_line_adapter_mock_mode(mock_sdk):
         adapter = LineBotAdapter()
         assert adapter.is_active is False
         # Verify send doesn't crash
-        adapter.send_flex_alert("u1", "Title", "Content")
+        await adapter.send_alert("u1", "Title", "Content")
     finally:
         subject.HAS_LINE_SDK = orig
 
-def test_send_flex_alert(mock_sdk):
+@pytest.mark.anyio
+async def test_send_flex_alert(mock_sdk):
     """Test sending logic."""
     LineBotAdapter = mock_sdk['adapter_class']
     adapter = LineBotAdapter()
-    adapter.messaging_api.push_message = MagicMock()
     
-    actions = [{"label": "Buy", "data": "action=buy"}]
-    adapter.send_flex_alert("u1", "Alert Title", "Main Content", actions)
-    
-    # Verify push_message call
-    adapter.messaging_api.push_message.assert_called_once()
-    
-    # Verify logic
-    call_args = adapter.messaging_api.push_message.call_args
-    request = call_args[0][0]
-    # Simple check that it's a request object
-    assert request is not None
+    # Mock httpx.AsyncClient
+    with patch('httpx.AsyncClient.post', new_callable=AsyncMock) as mock_post:
+        mock_post.return_value.status_code = 200
+        
+        actions = [{"label": "Buy", "data": "action=buy"}]
+        success = await adapter.send_alert("u1", "Alert Title", "Main Content", actions)
+        
+        assert success is True
+        mock_post.assert_called_once()
+        # Verify URL
+        assert "api.line.me/v2/bot/message/push" in str(mock_post.call_args[0][0])
 
-def test_handle_webhook(mock_sdk):
+@pytest.mark.anyio
+async def test_handle_webhook(mock_sdk):
     """Test webhook logic."""
     LineBotAdapter = mock_sdk['adapter_class']
     adapter = LineBotAdapter()
@@ -115,12 +122,13 @@ def test_handle_webhook(mock_sdk):
     adapter.handler.parser = mock_parser
     
     # New signature: payload, headers dict
-    adapter.handle_webhook("body", {"X-Line-Signature": "sig"})
+    await adapter.handle_webhook("body", {"X-Line-Signature": "sig"})
     
     # Assert parser.parse is called
     mock_parser.parse.assert_called_with("body", "sig")
 
-def test_handle_webhook_inactive(mock_sdk):
+@pytest.mark.anyio
+async def test_handle_webhook_inactive(mock_sdk):
     subject = mock_sdk['subject']
     LineBotAdapter = mock_sdk['adapter_class']
     
@@ -129,8 +137,6 @@ def test_handle_webhook_inactive(mock_sdk):
     try:
         adapter = LineBotAdapter()
         # Should do nothing
-        adapter.handle_webhook("body", "sig")
+        await adapter.handle_webhook("body", "sig")
     finally:
         subject.HAS_LINE_SDK = orig
-
-

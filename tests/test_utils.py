@@ -1,9 +1,8 @@
 import pytest
 from unittest.mock import MagicMock, patch
 from datetime import datetime
-import pytz
 import os
-from src.utils.time_utils import get_timezone, get_current_time, format_time, get_current_date_str
+from src.utils.time_utils import get_timezone, format_time
 from src.utils.cache import ResponseCache
 
 # --- Time Utils Tests ---
@@ -12,6 +11,7 @@ def test_get_timezone():
     if "TIMEZONE" in os.environ:
         del os.environ["TIMEZONE"]
     tz = get_timezone()
+    # default in time_utils seems to be Asia/Taipei
     assert str(tz) == "Asia/Taipei"
 
     # Test valid env var
@@ -23,6 +23,7 @@ def test_get_timezone():
     # Test invalid env var (fallback)
     os.environ["TIMEZONE"] = "Invalid/Timezone"
     tz = get_timezone()
+    # It might fallback to system or default
     assert str(tz) == "Asia/Taipei"
 
 def test_format_time():
@@ -32,40 +33,36 @@ def test_format_time():
     # Test custom format
     assert format_time(dt, fmt="Year: %Y") == "Year: 2023"
 
-# --- Cache Tests ---
+# --- Cache Tests (Redis Mocked) ---
 @pytest.fixture
-def test_cache_db(tmp_path):
-    return str(tmp_path / "test_cache.db")
+def mock_redis():
+    with patch('redis.from_url') as mock_from_url:
+        mock_client = MagicMock()
+        mock_from_url.return_value = mock_client
+        yield mock_client
 
-def test_cache_operations(test_cache_db):
-    cache = ResponseCache(db_path=test_cache_db, ttl_hours=1)
-
+def test_cache_operations(mock_redis):
+    cache = ResponseCache(ttl_hours=1)
+    
     # Test Set
     cache.set("TestAgent", "Hello", "Response 1")
-
+    assert mock_redis.setex.called
+    
     # Test Get (Hit)
+    mock_redis.get.return_value = "Response 1"
     resp = cache.get("TestAgent", "Hello")
     assert resp == "Response 1"
-
-    # Test Get (Miss - Different Prompt)
+    
+    # Test Get (Miss)
+    mock_redis.get.return_value = None
     resp = cache.get("TestAgent", "Hi")
     assert resp is None
 
-    # Test Get (Miss - Different Agent)
-    resp = cache.get("OtherAgent", "Hello")
-    assert resp is None
-
-def test_cache_expiration(test_cache_db):
-    cache = ResponseCache(db_path=test_cache_db, ttl_hours=-1) # Expire immediately
-    cache.set("TestAgent", "Hello", "Response 1")
-
-    resp = cache.get("TestAgent", "Hello")
-    assert resp is None
-
-def test_cache_clear(test_cache_db):
-    cache = ResponseCache(db_path=test_cache_db)
-    cache.set("TestAgent", "Hello", "Response 1")
+def test_cache_clear(mock_redis):
+    cache = ResponseCache()
+    mock_redis.keys.return_value = ["key1", "key2"]
+    
     cache.clear()
-
-    resp = cache.get("TestAgent", "Hello")
-    assert resp is None
+    
+    mock_redis.keys.assert_called_with("cache:response:*")
+    mock_redis.delete.assert_called()

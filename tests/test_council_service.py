@@ -6,7 +6,7 @@ from src.services.council_service import CouncilService
 @pytest.fixture
 def mock_deps():
     with patch('src.services.council_service.AgentFactory') as mock_factory, \
-         patch('src.services.council_service.VectorRepository') as mock_vector, \
+         patch('src.services.council_service.AlchemyVectorRepository') as mock_vector, \
          patch('src.services.council_service.LaneManager') as mock_lane_cls, \
          patch('src.services.council_service.DynamicModelRouter') as mock_router:
         

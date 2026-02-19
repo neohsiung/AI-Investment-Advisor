@@ -1,6 +1,5 @@
 import os
 import logging
-import sqlite3
 from pathlib import Path
 from sqlalchemy import create_engine, text, Engine
 from sqlalchemy.orm import sessionmaker, scoped_session
@@ -18,7 +17,6 @@ _SessionFactory = None
 class BaseRepository:
     def __init__(self, engine: Engine):
         self.engine = engine
-        self.is_sqlite = 'sqlite' in str(engine.url)
         
         global _SessionFactory
         if _SessionFactory is None:
@@ -37,53 +35,44 @@ class BaseRepository:
     
     def _get_json_extract(self, column: str, path: str) -> str:
         """
-        Get database-specific JSON extraction syntax.
-        取得資料庫特定的 JSON 提取語法。
+        Get PostgreSQL JSONB extraction syntax.
+        取得 PostgreSQL JSONB 提取語法。
         """
-        if self.is_sqlite:
-            # path like '$.category'
-            return f"json_extract({column}, '{path}')"
-        else:
-            # PostgreSQL JSONB path like 'category'
-            json_path = path.replace('$.', '')
-            return f"{column}->>'{json_path}'"
+        # PostgreSQL JSONB path like 'category'
+        json_path = path.replace('$.', '')
+        return f"{column}->>'{json_path}'"
     
     def _get_vector_distance(self, column: str, metric: str = "cosine") -> str:
         """
-        Get database-specific vector distance calculation.
-        取得資料庫特定的向量距離計算。
+        Get PostgreSQL pgvector distance calculation.
+        取得 PostgreSQL pgvector 向量距離計算。
         """
-        if self.is_sqlite:
-            # sqlite-vec syntax
-            return f"vec_distance_{metric}({column}, :embedding)"
+        if metric == "cosine":
+            return f"{column} <=> :embedding"
+        elif metric == "l2":
+            return f"{column} <-> :embedding"
         else:
-            # pgvector syntax
-            if metric == "cosine":
-                return f"{column} <=> :embedding"
-            elif metric == "l2":
-                return f"{column} <-> :embedding"
-            else:
-                return f"{column} <=> :embedding"
+            return f"{column} <=> :embedding"
     
     def _format_vector(self, vector: List[float]) -> Any:
         """
         Format vector for database storage.
         """
-        if self.is_sqlite:
-            import json
-            return json.dumps(vector)
-        else:
-            return vector
+        return vector
 
 def get_db_engine(db_path=None) -> Engine:
     """
     Returns a SQLAlchemy Engine.
-    Strictly uses PostgreSQL. SQLite fallback is disabled unless ALLOW_SQLITE=true.
+    Strictly uses PostgreSQL. SQLite is disabled.
     """
     global _db_engines
 
     # 1. Check for explicit DB_URL
     db_url = os.getenv("DB_URL")
+    
+    # v4.2.1: Allow SQLite *only* if db_path is explicitly provided (Test Isolation)
+    if db_path:
+        db_url = f"sqlite:///{db_path}"
     
     # 2. Construct from components (Default to Postgres)
     if not db_url:
@@ -94,24 +83,21 @@ def get_db_engine(db_path=None) -> Engine:
         db_name = os.getenv("DB_NAME", "portfolio")
         db_url = f"postgresql+psycopg2://{db_user}:{db_pass}@{db_host}:{db_port}/{db_name}"
 
-    # 3. Allow SQLite ONLY if explicitly enabled for local dev/testing
-    if os.getenv("ALLOW_SQLITE", "false").lower() == "true":
-        if "postgresql" not in db_url:
-            logger.warning("ALLOW_SQLITE is true, using SQLite fallback.")
-            if not db_url.startswith("sqlite"):
-                 target_path = Path(db_path) if db_path else Path("data/portfolio.db")
-                 if not target_path.parent.exists():
-                     target_path.parent.mkdir(parents=True, exist_ok=True)
-                 db_url = f"sqlite:///{target_path}"
-    elif "sqlite" in db_url:
-        raise ConnectionError("SQLite is disabled. Please configure PostgreSQL via DB_URL or DB_USER/PASS/HOST/PORT/NAME.")
+    # 3. Strictly disallow SQLite in production (default) paths
+    # v4.2.1: Allow SQLite if it's a test environment or db_path is provided
+    if not db_path and "sqlite" in db_url.lower() and "PYTEST_CURRENT_TEST" not in os.environ:
+        raise ConnectionError("SQLite is disabled for production. Please configure PostgreSQL via DB_URL or DB_USER/PASS/HOST/PORT/NAME.")
+
+    # 4. Create directory for SQLite if it doesn't exist
+    if "sqlite" in db_url.lower() and not db_url.startswith("sqlite:///:memory:"):
+        db_file_path = db_url.replace("sqlite:///", "")
+        os.makedirs(os.path.dirname(os.path.abspath(db_file_path)), exist_ok=True)
 
     if db_url not in _db_engines:
-        connect_args = {'check_same_thread': False} if "sqlite" in db_url else {}
-        if "postgresql" in db_url:
+        if "postgres" in db_url:
             _db_engines[db_url] = create_engine(db_url, pool_size=50, max_overflow=20)
         else:
-            _db_engines[db_url] = create_engine(db_url, connect_args=connect_args)
+            _db_engines[db_url] = create_engine(db_url)
 
     return _db_engines[db_url]
 
@@ -128,18 +114,15 @@ def init_db(db_path=None):
     Strictly uses UUID, JSONB, NUMERIC, DATE, vector(1536).
     """
     engine = get_db_engine(db_path)
-    is_sqlite = 'sqlite' in str(engine.url)
+    is_sqlite = engine.dialect.name == "sqlite"
     
-    if is_sqlite:
-        logger.warning("Initializing on SQLite. Some v4.1+ features may be limited.")
-
-    # Type definitions (Optimized for Postgres)
+    # Type mapping (v4.2.1: Optimized for Postgres with SQLite fallback for tests)
     pk_type = "TEXT PRIMARY KEY"
     fk_type = "TEXT"
-    json_type = "JSONB" if not is_sqlite else "TEXT"
-    timestamp_type = "TIMESTAMPTZ" if not is_sqlite else "TEXT"
-    date_type = "DATE" if not is_sqlite else "TEXT"
-    numeric_type = "NUMERIC(18, 8)" if not is_sqlite else "REAL"
+    json_type = "JSONB" if not is_sqlite else "JSON"
+    timestamp_type = "TIMESTAMPTZ" if not is_sqlite else "TIMESTAMP"
+    date_type = "DATE"
+    numeric_type = "NUMERIC(18, 8)"
     vector_type = "vector(1536)" if not is_sqlite else "TEXT"
 
     schema_commands = []
@@ -210,12 +193,13 @@ def init_db(db_path=None):
     schema_commands.append(f"""
     CREATE TABLE IF NOT EXISTS council_minutes (
         id {pk_type},
-        user_id {fk_type} NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        user_id {fk_type} NOT NULL {"REFERENCES users(id) ON DELETE CASCADE" if not is_sqlite else ""},
         session_id TEXT NOT NULL,
         triggers {json_type} DEFAULT '[]',
         decision TEXT,
         confidence {numeric_type},
         metadata {json_type} DEFAULT '{{}}',
+        embedding {vector_type},
         created_at {timestamp_type} DEFAULT CURRENT_TIMESTAMP
     );
     """)
@@ -326,6 +310,33 @@ def init_db(db_path=None):
     );
     """)
 
+    # 10. Agent Feedback (Experience Training)
+    schema_commands.append(f"""
+    CREATE TABLE IF NOT EXISTS agent_feedback (
+        id {pk_type},
+        agent_name TEXT NOT NULL,
+        context_embedding {vector_type},
+        context_text TEXT,
+        response_text TEXT,
+        signal TEXT,
+        outcome_score {numeric_type},
+        timestamp {timestamp_type} DEFAULT CURRENT_TIMESTAMP
+    );
+    """)
+
+    # 11. Agent Reviews (HR 360)
+    schema_commands.append(f"""
+    CREATE TABLE IF NOT EXISTS agent_reviews (
+        id {pk_type},
+        reviewer TEXT NOT NULL,
+        reviewee TEXT NOT NULL,
+        score INTEGER NOT NULL,
+        comment TEXT,
+        context_hash TEXT,
+        timestamp {timestamp_type} DEFAULT CURRENT_TIMESTAMP
+    );
+    """)
+
     with engine.connect() as conn:
         for cmd in schema_commands:
             try:
@@ -335,8 +346,8 @@ def init_db(db_path=None):
                     logger.warning(f"Error executing schema command: {e}")
         
         # v4.1.7: Post-deployment strict migrations (UUID focus)
+        # Add Unique Index for UPSERT on daily_snapshots if missing
         if not is_sqlite:
-            # Add Unique Index for UPSERT on daily_snapshots if missing
             try:
                 check_idx = text("SELECT indexname FROM pg_indexes WHERE tablename = 'daily_snapshots' AND indexdef LIKE '%(date, user_id)%'")
                 if not conn.execute(check_idx).fetchone():

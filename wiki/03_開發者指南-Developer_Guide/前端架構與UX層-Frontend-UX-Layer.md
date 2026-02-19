@@ -12,13 +12,32 @@
 
 <a id="zh"></a>
 
-## 🇹🇼 前端架構與 UX 層 (v3.5)
+### 1. 視圖與服務分層架構 (View-Service Layered Architecture)
 
-本文件詳解以 Streamlit 為核心的前端架構，包括頁面管理、狀態同步與用戶體驗設計。
+為了提高可維護性與職責分離，本系統採用 **View-Service 分層設計**。
 
-### 1. 頁面管理與基類 (Page Architecture)
+```mermaid
+graph TD
+    Page["UI View Layer (Streamlit Pages)"] -->|Calls| Service["Service Layer (Orchestration)"]
+    Service -->|Uses| Repo["Repository Layer (Data Access)"]
+    Service -->|Calls| Ext["External APIs / Agents"]
+    Service -->|Uses| Calc["Domain Logic (Calculators)"]
+```
 
-#### 1.1 BasePage 樣板方法 (Template Method)
+#### 1.1 職責定義 (Roles & Responsibilities)
+
+| 層級 | 位置 | 職責 |
+| :--- | :--- | :--- |
+| **View Layer** | `src/pages/`, `src/dashboard.py` | UI 渲染、佈局、使用者輸入、Session State。 |
+| **Service Layer** | `src/services/` | 數據編排、業務邏輯、快取策略、錯誤處理。 |
+| **Repo / Infra** | `src/data/`, `src/utils/` | 數據 CRUD、外部 API 封裝、技術工具集。 |
+| **MCP Layer** | `src/mcp_service/` | 跨 Agent 工具共享、A2A 通訊 (FastAPI)。 |
+
+---
+
+### 2. 頁面管理與基類 (Page Architecture)
+
+#### 2.1 BasePage 樣板方法 (Template Method)
 所有頁面繼承 `BasePage` (`src/utils/page_base.py`)，強制執行一致的生命週期：
 
 ```mermaid
@@ -33,7 +52,7 @@ graph LR
 - **`run()`**: 基類統一的進入點，處理錯誤邊界與頁面標題。
 - **`render()`**: 子類覆寫，實作業務 UI 邏輯。
 
-#### 1.2 頁面清單 (Page Registry)
+#### 2.2 頁面清單 (Page Registry)
 
 | 頁面 | 檔案 | 功能 |
 | :--- | :--- | :--- |
@@ -44,7 +63,7 @@ graph LR
 | 顧問對話 | `src/pages/04_Advisor_Chat.py` | 與 CIO Agent Swarm 互動。 |
 | 系統設定 | `src/pages/05_Settings.py` | 9 Tab 設定中心 (見下節)。 |
 
-#### 1.3 設定頁 Tab 架構 (Settings Tabs)
+#### 2.3 設定頁 Tab 架構 (Settings Tabs)
 
 | Tab | 檔案 | 功能 |
 | :--- | :--- | :--- |
@@ -58,9 +77,9 @@ graph LR
 | 外觀 | `appearance_tab.py` | Dark/Light 主題切換。 |
 | 儲存 | `storage_tab.py` | 資料庫路徑、備份狀態。 |
 
-### 2. UX 流程 (UX Flows)
+### 3. UX 流程 (UX Flows)
 
-#### 2.1 儀表板全景 (Dashboard Flow)
+#### 3.1 儀表板全景 (Dashboard Flow)
 ```mermaid
 graph TD
     Load[進入頁面] --> Sync[更新 Daily Snapshot]
@@ -70,7 +89,7 @@ graph TD
     Calc --> Render[渲染指標、持倉表與配置圖]
 ```
 
-#### 2.2 顧問對話流 (Advisor Chat Flow)
+#### 3.2 顧問對話流 (Advisor Chat Flow)
 ```mermaid
 graph TD
     Input[用戶輸入] --> CIO[CIO Agent]
@@ -80,7 +99,7 @@ graph TD
     Merge --> Report[返回 Markdown 報告]
 ```
 
-### 3. 技術重點 (Technical Highlights)
+### 4. 技術重點 (Technical Highlights)
 - **智慧快取 (`@st.cache_data`)**: TTL=300s 降低 API 成本。
 - **狀態管理**: `st.session_state` 管理 `user_id`，跨頁面安全隔離。
 - **風險提示**: Leverage > 1.5x 黃色警告、> 2.0x 紅色危險。
@@ -92,18 +111,24 @@ graph TD
 
 ## 🇺🇸 Frontend Architecture & UX (v3.5)
 
-### 1. Page Architecture
+### 1. View-Service Layered Architecture
+Strict separation of concerns to enhance maintainability and testability.
+- **View Layer**: `src/pages/`, `src/dashboard.py` (Streamlit UI).
+- **Service Layer**: `src/services/` (Orchestration & Logic).
+- **Repo/Infra**: `src/data/`, `src/utils/` (Data Access & Utils).
+
+### 2. Page Architecture
 - **BasePage Template Method**: Unified lifecycle (`__init__` → `run()` → `render()`).
 - **6 Pages**: Dashboard, Performance, Reports, Data Management, Advisor Chat, Settings.
 - **9 Settings Tabs**: Trading & Risk, AI Config, Scheduler, Report Dry-Run, Agent Playground, Prompt Management, HR Protocol, Appearance, Storage.
 
-### 2. UX Patterns
+### 3. UX Patterns
 - **Just-In-Time Calculation**: Metrics computed on-the-fly with current market prices.
 - **Risk Highlighting**: Color-coded leverage warnings (1.5x yellow, 2.0x red).
 - **Transparent AI**: Agent reasoning displayed alongside raw data.
 
 ## 🔗 Bidirectional Links
-- **Architecture**: [System Landscape](系統全景圖-System-Landscape)
-- **Data Layer**: [Data & Domain Models](資料與領域模型-Data-Domain-Models)
-- **Service Layer**: [Service Layer Blueprints](服務層開發指南-Service-Layer-Blueprints)
-- **BasePage Pattern**: [Template Method](設計模式-樣板方法-Template-Method)
+- **Architecture**: [System Landscape](../04_架構觀點-Architect_Views/系統全景圖-System-Landscape.md)
+- **Data Layer**: [Data & Domain Models](../04_架構觀點-Architect_Views/資料與領域模型-Data-Domain-Models.md)
+- **Service Layer**: [Service Layer Blueprints](服務層開發指南-Service-Layer-Blueprints.md)
+- **BasePage Pattern**: [Template Method](../05_工程手冊-Engineering_Handbook/01_設計模式-Patterns/設計模式-樣板方法-Template-Method.md)

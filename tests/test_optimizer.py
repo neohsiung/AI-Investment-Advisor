@@ -26,12 +26,12 @@ class MockFeedbackRepo:
             )
         ]
 
-@patch('src.workflow.optimizer.SqliteFeedbackRepository', new=MockFeedbackRepo)
+@patch('src.workflow.optimizer.AlchemyFeedbackRepository', new=MockFeedbackRepo)
 def test_optimizer_initialization():
     optimizer = OptimizerPipeline(db_path=":memory:")
     assert optimizer is not None
 
-@patch('src.workflow.optimizer.SqliteFeedbackRepository', new=MockFeedbackRepo)
+@patch('src.workflow.optimizer.AlchemyFeedbackRepository', new=MockFeedbackRepo)
 def test_load_training_data():
     optimizer = OptimizerPipeline()
     # Mock dspy availability check? 
@@ -42,7 +42,7 @@ def test_load_training_data():
     # Check if dspy.Example was called
     sys.modules["dspy"].Example.assert_called()
 
-@patch('src.workflow.optimizer.SqliteFeedbackRepository', new=MockFeedbackRepo)
+@patch('src.workflow.optimizer.AlchemyFeedbackRepository', new=MockFeedbackRepo)
 def test_optimize_momentum_agent():
     optimizer = OptimizerPipeline()
     trainset = optimizer.load_training_data()

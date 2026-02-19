@@ -12,8 +12,8 @@ class MemoryFactory:
     Factory to create MemoryService instances.
     用於建立 MemoryService 實例的工廠。
     
-    Selects backend based on 'MEMORY_BACKEND' env var ('redis' or 'sqlite').
-    根據 'MEMORY_BACKEND' 環境變數選擇後端（'redis' 或 'sqlite'）。
+    Selects backend based on 'MEMORY_BACKEND' env var ('redis' or 'alchemy').
+    根據 'MEMORY_BACKEND' 環境變數選擇後端（'redis' 或 'alchemy'）。
     """
     
     @staticmethod
@@ -22,7 +22,7 @@ class MemoryFactory:
         Create a MemoryService instance with the configured repository and LLM provider.
         使用配置的儲存庫與 LLM 提供者建立 MemoryService 實例。
         """
-        backend = os.getenv("MEMORY_BACKEND", "sqlite").lower()
+        backend = os.getenv("MEMORY_BACKEND", "alchemy").lower()
         
         # 1. Select Repository
         if backend == "redis":
@@ -30,7 +30,7 @@ class MemoryFactory:
             logger.info(f"Initializing MemoryService with REDIS backend at {redis_url}")
             repo = RedisMemoryRepository(redis_url)
         else:
-            logger.info("Initializing MemoryService with SQLITE backend.")
+            logger.info("Initializing MemoryService with PostgreSQL (Alchemy) backend.")
             repo = AlchemyMemoryRepository()
             
         # 2. Select LLM Provider (Shared)

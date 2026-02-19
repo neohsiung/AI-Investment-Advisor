@@ -14,7 +14,7 @@ class TestDashboardService:
     @pytest.fixture
     def service(self, mock_db_path):
         """Create a DashboardService instance"""
-        with patch('src.services.dashboard_service.SqliteTransactionRepository'):
+        with patch('src.services.dashboard_service.AlchemyTransactionRepository'):
             with patch('src.services.dashboard_service.TransactionService'):
                 with patch('src.services.dashboard_service.MarketDataService'):
                     with patch('src.services.dashboard_service.LeverageCalculator'):

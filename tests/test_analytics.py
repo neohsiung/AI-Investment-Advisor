@@ -97,7 +97,7 @@ def test_update_daily_snapshot_integration():
         MockMarket.return_value.get_current_prices.assert_called_with(["AAPL"])
         
         # Check if snapshot was saved
-        # Note: update_daily_snapshot instantiates SnapshotRecorder, which instantiates SqliteSnapshotRepository
+        # Note: update_daily_snapshot instantiates SnapshotRecorder, which instantiates AlchemySnapshotRepository
         MockSnapRepo.return_value.save_snapshot.assert_called()
 
 

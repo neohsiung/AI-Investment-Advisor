@@ -21,7 +21,8 @@ class SlackAdapter(BaseChannelAdapter):
         super().__init__(default_target_id=channel_id)
         self.bot_token = (bot_token or os.getenv("SLACK_BOT_TOKEN", "")).strip()
         self.signing_secret = (signing_secret or os.getenv("SLACK_SIGNING_SECRET", "")).strip()
-        self.channel_id = self.default_target_id
+        self.channel_id = (channel_id or os.getenv("SLACK_CHANNEL_ID", "")).strip()
+        self.default_target_id = self.channel_id
         self.api_url = "https://slack.com/api/chat.postMessage"
         self.is_active = bool(self.bot_token and self.channel_id)
 

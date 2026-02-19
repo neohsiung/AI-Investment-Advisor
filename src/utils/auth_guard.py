@@ -29,12 +29,14 @@ def require_authentication():
         # Cookie synchronization in progress
         st.info("🔄 驗證中... (Authenticating...)", icon="🔄")
         st.stop()
+        return
         
     elif auth_status == "UNAUTHENTICATED" or auth_status is False:
         # Not authenticated - show login UI
         st.warning("⚠️ 請先登入 (Please login first)")
         auth_manager.login()  # Show the login button
         st.stop()
+        return
     
     # Authenticated - return user object
     user = auth_manager.get_current_user()
@@ -44,6 +46,7 @@ def require_authentication():
         st.error("Authentication Error: 無效的使用者資料 (Invalid user data)")
         auth_manager.logout()
         st.stop()
+        return
 
     # v4.0 Patch: Resolve UUID identity
     from src.repositories.user_repository import AlchemyUserRepository

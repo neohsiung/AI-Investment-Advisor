@@ -1,7 +1,7 @@
 import os
 import logging
 import pandas as pd
-from typing import Any
+from typing import Any, Tuple
 # from src.data.ingestor import TradeIngestor # Deprecated
 
 from src.services.analytics_service import update_daily_snapshot
@@ -24,7 +24,7 @@ class IngestionService:
         # self.ingestor = TradeIngestor(db_path) # Deprecated
 
 
-    def process_csv_upload(self, file_buffer: Any, broker_type: str) -> tuple[bool, str]:
+    def process_csv_upload(self, file_buffer: Any, broker_type: str) -> Tuple[bool, str]:
         """
         Process a CSV file upload, ingest data, and update the daily snapshot.
         處理 CSV 檔案上傳、匯入數據並更新每日快照。

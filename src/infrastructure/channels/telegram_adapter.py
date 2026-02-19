@@ -17,7 +17,8 @@ class TelegramAdapter(BaseChannelAdapter):
         import os
         super().__init__(default_target_id=chat_id)
         self.bot_token = (bot_token or os.getenv("TELEGRAM_BOT_TOKEN", "")).strip()
-        self.chat_id = self.default_target_id
+        self.chat_id = (chat_id or os.getenv("TELEGRAM_CHAT_ID", "")).strip()
+        self.default_target_id = self.chat_id
         self.base_url = f"https://api.telegram.org/bot{self.bot_token}" if self.bot_token else None
         self.is_active = bool(self.bot_token and self.chat_id)
 

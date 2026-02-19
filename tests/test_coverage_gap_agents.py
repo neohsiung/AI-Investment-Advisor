@@ -4,7 +4,7 @@ These agents have low coverage because their init/run paths
 are not exercised by the main workflow tests.
 """
 import pytest
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock, patch, Mock
 import json
 
 
@@ -73,35 +73,39 @@ class TestRiskAgentCoverage:
         agent.run_tool_loop.assert_called_once_with(context=context)
 
 
-class TestSqliteMemoryRepositoryCoverage:
-    """Cover SqliteMemoryRepository with mocked DB."""
+class TestAlchemyMemoryRepositoryCoverage:
+    """Cover AlchemyMemoryRepository with mocked DB."""
 
     def test_get_recent_reports(self):
         """get_recent_reports queries DB and returns ReportMemoryItem list."""
         from src.services.memory_service import ReportMemoryItem
 
-        mock_row = {
-            "report_date": "2026-02-14",
-            "full_content": "Daily report content",
-            "compressed_summary": "Summary",
-            "key_findings": json.dumps(["finding1", "finding2"]),
-        }
+        # Setup mock row with attributes
+        mock_row = MagicMock()
+        mock_row.date = "2026-02-14"
+        mock_row.content = "Daily report content"
+        mock_row.summary = "Summary"
+        mock_row.user_id = "user@test.com"
+        mock_row.report_type = "daily"
 
-        mock_conn = MagicMock()
-        mock_result = MagicMock()
-        mock_result.mappings.return_value = [mock_row]
-        mock_conn.execute.return_value = mock_result
-        mock_conn.__enter__ = MagicMock(return_value=mock_conn)
-        mock_conn.__exit__ = MagicMock(return_value=False)
+        with patch('src.repositories.memory_repository.get_db_engine') as mock_engine_func:
+            mock_engine = MagicMock()
+            mock_engine_func.return_value = mock_engine
+            
+            mock_conn = MagicMock()
+            mock_engine.connect.return_value.__enter__.return_value = mock_conn
+            
+            mock_result = MagicMock()
+            mock_result.fetchall.return_value = [mock_row]
+            mock_conn.execute.return_value = mock_result
 
-        with patch('src.data.memory_repository.get_db_connection', return_value=mock_conn):
-            from src.data.memory_repository import SqliteMemoryRepository
-            repo = SqliteMemoryRepository()
+            from src.repositories.memory_repository import AlchemyMemoryRepository
+            repo = AlchemyMemoryRepository()
             items = repo.get_recent_reports("user@test.com", "daily", 5)
 
-        assert len(items) == 1
-        assert items[0].report_date == "2026-02-14"
-        assert items[0].key_findings == ["finding1", "finding2"]
+            assert len(items) == 1
+            assert items[0].report_date == "2026-02-14"
+            assert items[0].user_id == "user@test.com"
 
     def test_save_report(self):
         """save_report inserts/upserts into DB."""
@@ -112,45 +116,40 @@ class TestSqliteMemoryRepositoryCoverage:
             report_type="daily",
             report_date="2026-02-14",
             full_content="content",
-            compressed_summary="summary",
-            key_findings=["f1"],
+            compressed_summary="summary"
         )
 
-        mock_conn = MagicMock()
-        mock_conn.__enter__ = MagicMock(return_value=mock_conn)
-        mock_conn.__exit__ = MagicMock(return_value=False)
+        with patch('src.repositories.memory_repository.get_db_engine') as mock_engine_func:
+            mock_engine = MagicMock()
+            mock_engine_func.return_value = mock_engine
+            
+            mock_conn = MagicMock()
+            mock_engine.begin.return_value.__enter__.return_value = mock_conn
 
-        with patch('src.data.memory_repository.get_db_connection', return_value=mock_conn):
-            from src.data.memory_repository import SqliteMemoryRepository
-            repo = SqliteMemoryRepository()
+            from src.repositories.memory_repository import AlchemyMemoryRepository
+            repo = AlchemyMemoryRepository()
             repo.save_report(item)
 
-        mock_conn.execute.assert_called_once()
-        mock_conn.commit.assert_called_once()
+            mock_conn.execute.assert_called_once()
 
     def test_get_recent_reports_null_findings(self):
-        """Handles null key_findings gracefully."""
-        mock_row = {
-            "report_date": "2026-02-14",
-            "full_content": "content",
-            "compressed_summary": "summary",
-            "key_findings": None,
-        }
+        """Handles empty results gracefully."""
+        with patch('src.repositories.memory_repository.get_db_engine') as mock_engine_func:
+            mock_engine = MagicMock()
+            mock_engine_func.return_value = mock_engine
+            
+            mock_conn = MagicMock()
+            mock_engine.connect.return_value.__enter__.return_value = mock_conn
+            
+            mock_result = MagicMock()
+            mock_result.fetchall.return_value = []
+            mock_conn.execute.return_value = mock_result
 
-        mock_conn = MagicMock()
-        mock_result = MagicMock()
-        mock_result.mappings.return_value = [mock_row]
-        mock_conn.execute.return_value = mock_result
-        mock_conn.__enter__ = MagicMock(return_value=mock_conn)
-        mock_conn.__exit__ = MagicMock(return_value=False)
-
-        with patch('src.data.memory_repository.get_db_connection', return_value=mock_conn):
-            from src.data.memory_repository import SqliteMemoryRepository
-            repo = SqliteMemoryRepository()
+            from src.repositories.memory_repository import AlchemyMemoryRepository
+            repo = AlchemyMemoryRepository()
             items = repo.get_recent_reports("user@test.com", "weekly", 3)
 
-        assert len(items) == 1
-        assert items[0].key_findings is None
+            assert len(items) == 0
 
 
 class TestAgentLLMProviderCoverage:

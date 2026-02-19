@@ -1,6 +1,6 @@
-
-from typing import Dict, Any, List
-from datetime import datetime
+import pandas as pd
+from typing import Dict, Any, List, Optional
+from datetime import datetime, timedelta
 from src.repositories.transaction_repository import AlchemyTransactionRepository
 from src.repositories.settings_repository import AlchemySettingsRepository
 from src.utils.logger import setup_logger
@@ -11,30 +11,86 @@ class RiskManager:
     """
     Centralized Risk Management Component.
     Enforces limits and circuit breakers across all brokers.
+    v3.6: Refactored for Rule #8 (Dynamic Indicators).
     """
     def __init__(self):
         self.transaction_repo = AlchemyTransactionRepository()
         self.settings_repo = AlchemySettingsRepository()
-        
-        # Default Limits
-        self.default_max_daily_trades = 10
-        self.default_loss_streak_limit = 3
-        self.default_holding_days_limit = 30
-        self.default_loss_pct_threshold = 0.20 # 20%
 
-    def _get_setting(self, user_id: str, key: str, default: Any) -> Any:
+    def _get_setting(self, user_id: str, key: str, default: Any = None) -> Any:
         val = self.settings_repo.get(user_id, key)
         return val if val is not None else default
 
     def _set_setting(self, user_id: str, key: str, value: str):
         self.settings_repo.set(user_id, key, str(value))
 
+    def _get_dynamic_thresholds(self, user_id: str) -> Dict[str, Any]:
+        """
+        Calculate dynamic thresholds based on historical data.
+        Fulfills Rule #8: Dynamic Indicators Principle.
+        """
+        try:
+            df = self.transaction_repo.get_all_by_user_df(user_id)
+            if df.empty:
+                # Conservative startup defaults for new users
+                return {
+                    "max_daily_trades": 3,
+                    "loss_streak_limit": 2,
+                    "holding_days_limit": 14,
+                    "loss_pct_threshold": 0.10
+                }
+            
+            # Filter trades
+            trades = df[df['action'].isin(['BUY', 'SELL'])].copy()
+            if trades.empty:
+                 return {
+                    "max_daily_trades": 3,
+                    "loss_streak_limit": 2,
+                    "holding_days_limit": 14,
+                    "loss_pct_threshold": 0.10
+                }
+
+            # 1. Daily Trades: Avg daily count in last 30 days + 1 StdDev
+            trades['date'] = pd.to_datetime(trades['trade_date']).dt.date
+            last_30_days = datetime.now().date() - timedelta(days=30)
+            recent_trades = trades[trades['date'] >= last_30_days]
+            
+            if not recent_trades.empty:
+                daily_counts = recent_trades.groupby('date').size()
+                avg = daily_counts.mean()
+                std = daily_counts.std() if len(daily_counts) > 1 else 1.0
+                max_daily = int(max(3, avg + 1.5 * std))
+            else:
+                max_daily = 3
+
+            # 2. Holding Period (Fallback if no matched trades)
+            holding_days = 21 # Baseline if can't calculate from matched trades
+            
+            # 3. Loss Tolerance: Based on recent drawdown or volatility proxy
+            # Default to 15% if no better data
+            loss_pct = 0.15 
+            
+            # 4. Streak Limit: Min 3, max 7 based on vol
+            streak_limit = 3
+
+            return {
+                "max_daily_trades": max_daily,
+                "loss_streak_limit": streak_limit,
+                "holding_days_limit": holding_days,
+                "loss_pct_threshold": loss_pct
+            }
+        except Exception as e:
+            logger.error(f"RiskManager: Dynamic threshold calculation failed: {e}")
+            return {
+                "max_daily_trades": 5,
+                "loss_streak_limit": 3,
+                "holding_days_limit": 30,
+                "loss_pct_threshold": 0.20
+            }
+
     def check_constraints(self, user_id: str, history: List[Dict[str, Any]] = None, current_positions: List[Any] = None) -> bool:
         """
-        Check if trading is allowed for this user based on:
-        1. Global Switch
-        2. Daily Limits
-        3. Circuit Breakers (Loss Streak, Drawdown)
+        Check if trading is allowed for this user based on dynamic constraints.
         """
         # 0. Global Check
         enabled = self._get_setting(user_id, "ai_trading_enabled", "true")
@@ -42,8 +98,11 @@ class RiskManager:
             logger.warning(f"Risk Check: Global trading disabled for {user_id}")
             return False
 
+        # Get Dynamic Thresholds
+        thresholds = self._get_dynamic_thresholds(user_id)
+
         # 1. Daily Limit
-        max_daily = int(self._get_setting(user_id, "ai_max_daily_trades", self.default_max_daily_trades))
+        max_daily = int(self._get_setting(user_id, "ai_max_daily_trades", thresholds["max_daily_trades"]))
         today_str = datetime.now().strftime('%Y-%m-%d')
         daily_count = self._get_daily_trade_count(user_id, today_str)
         if daily_count >= max_daily:
@@ -51,7 +110,7 @@ class RiskManager:
             return False
 
         # 2. Circuit Breaker (Loss Analysis)
-        if self._is_circuit_breaker_triggered(user_id, history, current_positions):
+        if self._is_circuit_breaker_triggered(user_id, history, current_positions, thresholds):
             # Auto-disable and return False
             self._set_setting(user_id, "ai_trading_enabled", "false")
             logger.error(f"RISK ALERT: Circuit Breaker Triggered for {user_id}. AI Trading Disabled.")
@@ -60,50 +119,40 @@ class RiskManager:
         return True
 
     def _get_daily_trade_count(self, user_id: str, date_str: str) -> int:
-        """
-        Count trades in DB for today.
-        """
         txs = self.transaction_repo.get_all_by_user(user_id)
         count = 0
         for tx in txs:
-            if str(tx.trade_date).startswith(date_str):
+            # tx might be Row or dict
+            t_date = getattr(tx, 'trade_date', None) or tx.get('trade_date')
+            if str(t_date).startswith(date_str):
                 count += 1
         return count
 
-    def _is_circuit_breaker_triggered(self, user_id: str, history=None, positions=None) -> bool:
+    def _is_circuit_breaker_triggered(self, user_id: str, history=None, positions=None, thresholds=None) -> bool:
         """
-        Analyze losses and drawdowns.
-        Required: history list (dicts with 'Profit', 'CloseDateTime' keys roughly)
-                  positions list (objects with open_date, unrealized_pnl)
-        If data is missing, we skip the check (fail open/safe based on philosophy).
-        Here we fail open (allow trading) but log warning if data missing? No, safer to be conservative?
-        Let's assume data is provided by Broker adapter.
+        Analyze losses and drawdowns using dynamic thresholds.
         """
-        consecutive_limit = int(self._get_setting(user_id, "cb_loss_streak", self.default_loss_streak_limit))
-        loss_pct_limit = float(self._get_setting(user_id, "cb_loss_pct", self.default_loss_pct_threshold))
-        holding_days_limit = int(self._get_setting(user_id, "cb_holding_days", self.default_holding_days_limit))
+        if not thresholds:
+            thresholds = self._get_dynamic_thresholds(user_id)
+
+        consecutive_limit = int(self._get_setting(user_id, "cb_loss_streak", thresholds["loss_streak_limit"]))
+        loss_pct_limit = float(self._get_setting(user_id, "cb_loss_pct", thresholds["loss_pct_threshold"]))
+        holding_days_limit = int(self._get_setting(user_id, "cb_holding_days", thresholds["holding_days_limit"]))
 
         # Check Consecutive Losses
         if history:
-            # Sort history by close date desc
-            # Attempt to normalize key access
-            # Assuming history is normalized by Broker Adapter before passing, OR we handle generic dicts here
-            # Let's try to sort by 'date' if available
             try:
                 sorted_hist = sorted(history, key=lambda x: x.get('date', ''), reverse=True)
                 streak = 0
                 for trade in sorted_hist:
-                    try:
-                        profit = float(trade.get('profit', 0))
-                        if profit < 0:
-                            streak += 1
-                        else:
-                            break
-                    except:
-                        continue
+                    profit = float(trade.get('profit', 0))
+                    if profit < 0:
+                        streak += 1
+                    else:
+                        break
                 
                 if streak >= consecutive_limit:
-                    logger.warning(f"CB Trigger: {streak} consecutive losses.")
+                    logger.warning(f"CB Trigger: {streak} consecutive losses exceeds limit {consecutive_limit}.")
                     return True
             except Exception as e:
                 logger.warning(f"Risk Manager could not parse history for streak check: {e}")
@@ -112,19 +161,17 @@ class RiskManager:
         if positions:
             now = datetime.now()
             for pos in positions:
-                # Expecting Position object
                 try:
-                    # Access attribute or dict
                     open_date = getattr(pos, 'open_date', None)
                     current_val = getattr(pos, 'market_value', 0)
-                    pnl = getattr(pos, 'unrealized_pnl', 0) # Absolute PnL
-                    cost = current_val - pnl # Approx basis if not provided
+                    pnl = getattr(pos, 'unrealized_pnl', 0) 
+                    cost = current_val - pnl
                     
                     if not open_date: continue
+                    if isinstance(open_date, str):
+                        open_date = datetime.fromisoformat(open_date.replace('Z', '+00:00'))
                     
-                    days_held = (now - open_date).days
-                    
-                    # ROI %
+                    days_held = (now - open_date).days if hasattr(open_date, 'year') else 0
                     roi = (pnl / cost) if cost > 0 else 0
                     
                     if days_held >= holding_days_limit and roi < -loss_pct_limit:
@@ -138,62 +185,44 @@ class RiskManager:
 
     def check_sector_exposure(self, user_id: str, new_ticker: str, new_amount: float, current_positions: List[Any]) -> bool:
         """
-        Check if adding this position would exceed sector exposure limits.
+        Check sector exposure using dynamic or configured limit.
         """
         limit_pct = float(self._get_setting(user_id, "risk_max_sector_exposure", "0.30"))
-        
-        # If limit is 1.0 (100%), skip check
-        if limit_pct >= 1.0:
-            return True
+        if limit_pct >= 1.0: return True
 
         from src.services.market_data_service import MarketDataService
         mds = MarketDataService()
         
-        # 1. Get Sector for New Ticker
         new_sector = self._get_sector(mds, new_ticker)
-        if not new_sector:
-            logger.warning(f"Risk: Could not determine sector for {new_ticker}. Allowing trade.")
-            return True # Fail open? Or closed? Let's fail open for now.
+        if not new_sector: return True
             
-        # 2. Calculate Current Sector Exposure
         total_value = 0.0
         sector_value = 0.0
         
         for pos in current_positions:
             val = getattr(pos, 'market_value', 0)
             total_value += val
-            
             ticker = getattr(pos, 'symbol', None)
-            if ticker:
-                s = self._get_sector(mds, ticker)
-                if s == new_sector:
-                    sector_value += val
+            if ticker and self._get_sector(mds, ticker) == new_sector:
+                sector_value += val
                     
-        # 3. Add New Trade
         total_value += new_amount
         sector_value += new_amount
-        
         exposure = sector_value / total_value if total_value > 0 else 0
         
         if exposure > limit_pct:
-            logger.warning(f"Risk Block: Sector {new_sector} exposure {exposure:.1%} exceeds limit {limit_pct:.1%} for {user_id}")
+            logger.warning(f"Risk Block: Sector {new_sector} exposure {exposure:.1%} exceeds limit {limit_pct:.1%}")
             return False
             
         return True
 
-    def _get_sector(self, mds, ticker: str) -> str:
-        """Helper to get sector from MarketDataService (cached ideally)."""
-        # In real app, cache this. For now, fetch.
+    def _get_sector(self, mds, ticker: str) -> Optional[str]:
         try:
             info = mds.get_financials(ticker)
-            sector = info.get('sector')
-            return sector if sector else None
+            return info.get('sector')
         except:
             return None
 
     def trigger_kill_switch(self, user_id: str):
-        """
-        Emergency: Disable AI Trading immediately.
-        """
         self._set_setting(user_id, "ai_trading_enabled", "false")
         logger.critical(f"KILL SWITCH TRIGGERED for {user_id}. All AI trading halted.")

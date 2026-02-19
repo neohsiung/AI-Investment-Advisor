@@ -60,7 +60,7 @@ class TestSettingsService:
             success, msg = service.save_settings_bulk(updates)
 
             assert success is True
-            assert mock_conn.return_value.execute.call_count == 2
+            assert mock_conn.return_value.execute.call_count == 4
 
     def test_fetch_openrouter_models(self):
         with patch('requests.get') as mock_get:
@@ -79,7 +79,7 @@ class TestTransactionService:
         # Mock repository
         mock_repo = MagicMock()
 
-        # We don't need to patch SqliteTransactionRepository if we inject the mock
+        # We don't need to patch AlchemyTransactionRepository if we inject the mock
         # But we do need to patch update_daily_snapshot
         with patch('src.services.transaction_service.update_daily_snapshot') as mock_update:
 

@@ -43,7 +43,7 @@ class TestRiskKeywordsTab:
     
     def test_render_calls_seed_defaults(self, mock_st):
         """Test that render calls seed_defaults on repository."""
-        with patch('src.pages.settings_tabs.risk_keywords_tab.RiskKeywordRepository') as MockRepo:
+        with patch('src.pages.settings_tabs.risk_keywords_tab.AlchemyRiskKeywordRepository') as MockRepo:
             mock_repo = MagicMock()
             MockRepo.return_value = mock_repo
             mock_repo.get_all.return_value = []
@@ -57,7 +57,7 @@ class TestRiskKeywordsTab:
     
     def test_render_displays_no_keywords_message(self, mock_st):
         """Test display when no keywords exist."""
-        with patch('src.pages.settings_tabs.risk_keywords_tab.RiskKeywordRepository') as MockRepo:
+        with patch('src.pages.settings_tabs.risk_keywords_tab.AlchemyRiskKeywordRepository') as MockRepo:
             mock_repo = MagicMock()
             MockRepo.return_value = mock_repo
             mock_repo.get_all.return_value = []
@@ -68,7 +68,7 @@ class TestRiskKeywordsTab:
     
     def test_add_keyword_with_valid_input(self, mock_st):
         """Test adding a new keyword with valid input."""
-        with patch('src.pages.settings_tabs.risk_keywords_tab.RiskKeywordRepository') as MockRepo:
+        with patch('src.pages.settings_tabs.risk_keywords_tab.AlchemyRiskKeywordRepository') as MockRepo:
             mock_repo = MagicMock()
             MockRepo.return_value = mock_repo
             mock_repo.get_all.return_value = []
@@ -96,7 +96,7 @@ class TestRiskKeywordsTab:
     
     def test_add_keyword_with_empty_input(self, mock_st):
         """Test adding keyword with empty input shows warning."""
-        with patch('src.pages.settings_tabs.risk_keywords_tab.RiskKeywordRepository') as MockRepo:
+        with patch('src.pages.settings_tabs.risk_keywords_tab.AlchemyRiskKeywordRepository') as MockRepo:
             mock_repo = MagicMock()
             MockRepo.return_value = mock_repo
             mock_repo.get_all.return_value = []
@@ -113,7 +113,7 @@ class TestRiskKeywordsTab:
     
     def test_keyword_list_display(self, mock_st):
         """Test keyword list displays correctly."""
-        with patch('src.pages.settings_tabs.risk_keywords_tab.RiskKeywordRepository') as MockRepo:
+        with patch('src.pages.settings_tabs.risk_keywords_tab.AlchemyRiskKeywordRepository') as MockRepo:
             mock_kw = MagicMock()
             mock_kw.id = 1
             mock_kw.keyword = "inactive"
@@ -135,7 +135,7 @@ class TestRiskKeywordsTab:
     
     def test_filter_by_category(self, mock_st):
         """Test filtering keywords by category."""
-        with patch('src.pages.settings_tabs.risk_keywords_tab.RiskKeywordRepository') as MockRepo:
+        with patch('src.pages.settings_tabs.risk_keywords_tab.AlchemyRiskKeywordRepository') as MockRepo:
             mock_kw = MagicMock()
             mock_kw.id = 1
             mock_kw.keyword = "active"
@@ -161,7 +161,7 @@ class TestRiskKeywordsTab:
     
     def test_show_inactive_keywords(self, mock_st):
         """Test showing inactive keywords."""
-        with patch('src.pages.settings_tabs.risk_keywords_tab.RiskKeywordRepository') as MockRepo:
+        with patch('src.pages.settings_tabs.risk_keywords_tab.AlchemyRiskKeywordRepository') as MockRepo:
             mock_repo = MagicMock()
             MockRepo.return_value = mock_repo
             mock_repo.get_all.return_value = []
@@ -177,7 +177,7 @@ class TestRiskKeywordsTab:
     
     def test_update_keyword_weight(self, mock_st):
         """Test updating keyword weight."""
-        with patch('src.pages.settings_tabs.risk_keywords_tab.RiskKeywordRepository') as MockRepo:
+        with patch('src.pages.settings_tabs.risk_keywords_tab.AlchemyRiskKeywordRepository') as MockRepo:
             mock_kw = MagicMock()
             mock_kw.id = 1
             mock_kw.keyword = "crisis"
@@ -201,7 +201,7 @@ class TestRiskKeywordsTab:
     
     def test_toggle_keyword_active_to_inactive(self, mock_st):
         """Test toggling keyword from active to inactive."""
-        with patch('src.pages.settings_tabs.risk_keywords_tab.RiskKeywordRepository') as MockRepo:
+        with patch('src.pages.settings_tabs.risk_keywords_tab.AlchemyRiskKeywordRepository') as MockRepo:
             mock_kw = MagicMock()
             mock_kw.id = 1
             mock_kw.keyword = "volatility"
@@ -217,7 +217,11 @@ class TestRiskKeywordsTab:
             
             # Simulate pause button click
             def button_side_effect(*args, **kwargs):
+                # Handle positional args or keyword args
                 key = kwargs.get('key', '')
+                if not key and args:
+                    # In Streamlit, button(label, key=None, ...)
+                    if len(args) > 1: key = args[1]
                 return key == 'rk_pause_1'
             
             mock_st.button.side_effect = button_side_effect
@@ -228,7 +232,7 @@ class TestRiskKeywordsTab:
     
     def test_toggle_keyword_inactive_to_active(self, mock_st):
         """Test toggling keyword from inactive to active."""
-        with patch('src.pages.settings_tabs.risk_keywords_tab.RiskKeywordRepository') as MockRepo:
+        with patch('src.pages.settings_tabs.risk_keywords_tab.AlchemyRiskKeywordRepository') as MockRepo:
             mock_kw = MagicMock()
             mock_kw.id = 2
             mock_kw.keyword = "disabled_keyword"
@@ -245,6 +249,8 @@ class TestRiskKeywordsTab:
             # Simulate resume button click
             def button_side_effect(*args, **kwargs):
                 key = kwargs.get('key', '')
+                if not key and args:
+                    if len(args) > 1: key = args[1]
                 return key == 'rk_resume_2'
             
             mock_st.button.side_effect = button_side_effect
@@ -255,7 +261,7 @@ class TestRiskKeywordsTab:
     
     def test_delete_keyword(self, mock_st):
         """Test deleting a keyword."""
-        with patch('src.pages.settings_tabs.risk_keywords_tab.RiskKeywordRepository') as MockRepo:
+        with patch('src.pages.settings_tabs.risk_keywords_tab.AlchemyRiskKeywordRepository') as MockRepo:
             mock_kw = MagicMock()
             mock_kw.id = 3
             mock_kw.keyword = "to_delete"
@@ -272,6 +278,8 @@ class TestRiskKeywordsTab:
             # Simulate delete button click
             def button_side_effect(*args, **kwargs):
                 key = kwargs.get('key', '')
+                if not key and args:
+                    if len(args) > 1: key = args[1]
                 return key == 'rk_del_3'
             
             mock_st.button.side_effect = button_side_effect
@@ -282,7 +290,7 @@ class TestRiskKeywordsTab:
     
     def test_display_top_keywords(self, mock_st):
         """Test displaying top keywords analytics."""
-        with patch('src.pages.settings_tabs.risk_keywords_tab.RiskKeywordRepository') as MockRepo:
+        with patch('src.pages.settings_tabs.risk_keywords_tab.AlchemyRiskKeywordRepository') as MockRepo:
             mock_top_kw = MagicMock()
             mock_top_kw.keyword = "top1"
             mock_top_kw.hit_count = 100
@@ -302,7 +310,7 @@ class TestRiskKeywordsTab:
     
     def test_display_stale_keywords(self, mock_st):
         """Test displaying stale keywords."""
-        with patch('src.pages.settings_tabs.risk_keywords_tab.RiskKeywordRepository') as MockRepo:
+        with patch('src.pages.settings_tabs.risk_keywords_tab.AlchemyRiskKeywordRepository') as MockRepo:
             mock_stale_kw = MagicMock()
             mock_stale_kw.keyword = "stale"
             mock_stale_kw.last_hit_date = "2023-01-01"
@@ -322,7 +330,7 @@ class TestRiskKeywordsTab:
     
     def test_disable_all_stale_keywords(self, mock_st):
         """Test batch disabling all stale keywords."""
-        with patch('src.pages.settings_tabs.risk_keywords_tab.RiskKeywordRepository') as MockRepo:
+        with patch('src.pages.settings_tabs.risk_keywords_tab.AlchemyRiskKeywordRepository') as MockRepo:
             mock_stale1 = MagicMock()
             mock_stale1.id = 10
             mock_stale1.keyword = "stale1"
@@ -344,6 +352,8 @@ class TestRiskKeywordsTab:
             # Simulate disable stale button click
             def button_side_effect(*args, **kwargs):
                 key = kwargs.get('key', '')
+                if not key and args:
+                    if len(args) > 1: key = args[1]
                 return key == 'rk_disable_stale'
             
             mock_st.button.side_effect = button_side_effect
@@ -366,7 +376,7 @@ class TestRiskKeywordsTab:
     
     def test_render_with_custom_db_path(self, mock_st):
         """Test render with custom database path."""
-        with patch('src.pages.settings_tabs.risk_keywords_tab.RiskKeywordRepository') as MockRepo:
+        with patch('src.pages.settings_tabs.risk_keywords_tab.AlchemyRiskKeywordRepository') as MockRepo:
             mock_repo = MagicMock()
             MockRepo.return_value = mock_repo
             mock_repo.get_all.return_value = []

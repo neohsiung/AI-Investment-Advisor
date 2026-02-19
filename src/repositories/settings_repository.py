@@ -18,6 +18,14 @@ class ISettingsRepository(ABC):
         pass
 
     @abstractmethod
+    def close_session(self) -> None:
+        """
+        Close the database session.
+        關閉資料庫工作階段。
+        """
+        pass
+
+    @abstractmethod
     def set(self, user_id: str, key: str, value: Any) -> None:
         """
         Set or update a specific setting value.

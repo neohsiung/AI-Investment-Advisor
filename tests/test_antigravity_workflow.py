@@ -6,7 +6,7 @@ import json
 from src.services.task_planning_service import TaskPlanningService, ExecutionPlan, Task
 from src.services.workflow_service import WeeklyWorkflow, DailyWorkflow
 from src.services.memory_service import MemoryService
-from src.data.memory_repository import SqliteMemoryRepository
+from src.repositories.memory_repository import AlchemyMemoryRepository
 from src.infrastructure.agent_llm_provider import AgentLLMProvider
 
 # --- TaskPlanningService Tests ---
@@ -39,7 +39,7 @@ def mock_workflow_deps():
     # Mock Memory Service
     mem_repo = MagicMock()
     agent_provider = MagicMock()
-    memory_service = MemoryService(mem_repo, agent_provider)
+    memory_service = MemoryService(repository=mem_repo, llm_provider=agent_provider)
     
     return planner, memory_service
 
@@ -85,15 +85,15 @@ def test_weekly_workflow_execution(mock_fund, mock_cio, mock_macro, mock_workflo
 # --- Memory Consistency Tests ---
 
 @patch('src.services.workflow_service.AgentLLMProvider')
-@patch('src.services.workflow_service.SqliteMemoryRepository')
-@patch('src.services.workflow_service.SqliteTransactionRepository')
+@patch('src.services.workflow_service.AlchemyMemoryRepository')
+@patch('src.services.workflow_service.AlchemyTransactionRepository')
 @patch('src.services.workflow_service.TransactionService')
 @patch('src.services.workflow_service.MarketDataService')
 @patch('src.agents.factory.AgentFactory.create_cio_agent')
 @patch('src.agents.factory.AgentFactory.create_macro_agent')
 @patch('src.services.broker_factory.BrokerFactory')
 @patch('src.infrastructure.risk_manager.RiskManager')
-@patch('src.infrastructure.risk_manager.SqliteSettingsRepository')
+@patch('src.infrastructure.risk_manager.AlchemySettingsRepository')
 @patch('src.services.workflow_service.PerformanceService')
 def test_daily_consistency_warning(MockPerformanceService, MockRiskSettings, MockRiskManager, MockBrokerFactory, MockMacro, MockCIO, MockMarket, MockTransService, MockTransRepo, MockMemRepo, MockLLMProvider):
     """Test that contradictory views trigger a warning."""

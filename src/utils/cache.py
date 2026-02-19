@@ -1,136 +1,66 @@
-import sqlite3
+import redis
 import hashlib
 import json
 import os
-from datetime import timedelta
+import logging
+from typing import Optional
 from datetime import timedelta, datetime
-from sqlalchemy import text
 from src.utils.logger import setup_logger
-from src.utils.time_utils import get_current_time, format_time
-from src.data.database import get_db_connection
-
-import threading
+from src.utils.time_utils import get_current_time
 
 class ResponseCache:
-    _db_initialized = False
-    _init_lock = threading.Lock()
-
-    def __init__(self, db_path=None, ttl_hours=24):
-        self.db_path = db_path
-        self.ttl_hours = ttl_hours
+    """
+    Redis-based cache for agent responses.
+    使用 Redis 的 Agent 回應快取層。
+    """
+    def __init__(self, redis_url: str = None, ttl_hours: int = 24):
+        self.redis_url = redis_url or os.getenv("REDIS_URL", "redis://localhost:6379/0")
+        self.ttl_seconds = ttl_hours * 3600
         self.logger = setup_logger("ResponseCache")
-        # Removed _init_db from __init__ to avoid connection spikes
-
-    def _ensure_db(self):
-        """Ensure the cache table exists, called lazily."""
-        if ResponseCache._db_initialized:
-            return
-            
-        with ResponseCache._init_lock:
-            # Double-check pattern
-            if ResponseCache._db_initialized:
-                return
-                
-            conn = get_db_connection(self.db_path)
-            is_sqlite = 'sqlite' in str(conn.engine.url)
-            timestamp_type = "DATETIME" if is_sqlite else "TIMESTAMP"
-            try:
-                conn.execute(text(f"""
-                    CREATE TABLE IF NOT EXISTS response_cache (
-                        key TEXT PRIMARY KEY,
-                        agent_name TEXT,
-                        response TEXT,
-                        timestamp {timestamp_type}
-                    )
-                """))
-                conn.commit()
-                ResponseCache._db_initialized = True
-            except Exception as e:
-                self.logger.error(f"Failed to init cache DB: {e}")
-            finally:
-                conn.close()
-
-    def _generate_key(self, agent_name, prompt):
-        """Generate a unique key based on agent name and prompt content."""
-        content = f"{agent_name}:{prompt}"
-        return hashlib.sha256(content.encode('utf-8')).hexdigest()
-
-    def get(self, agent_name, prompt):
-        """Retrieve a cached response if valid."""
-        self._ensure_db()
-        key = self._generate_key(agent_name, prompt)
-        conn = get_db_connection(self.db_path)
+        self.client = redis.from_url(self.redis_url, decode_responses=True)
+        
+        # Verify connection
         try:
-            row = conn.execute(text("SELECT response, timestamp FROM response_cache WHERE key = :key"), {"key": key}).fetchone()
+            self.client.ping()
+            self.logger.info(f"Connected to Redis cache at {self.redis_url}")
+        except Exception as e:
+            self.logger.error(f"Failed to connect to Redis cache: {e}")
 
-            if row:
-                response, db_timestamp = row
-                
-                # SQLAlchemy might return datetime object or string
-                if isinstance(db_timestamp, str):
-                    try:
-                        timestamp = datetime.fromisoformat(db_timestamp)
-                    except ValueError:
-                        timestamp = datetime.now()
-                else:
-                    timestamp = db_timestamp
+    def _generate_key(self, agent_name: str, prompt: str) -> str:
+        """Generate a unique Redis key based on agent name and prompt content."""
+        content = f"{agent_name}:{prompt}"
+        hashed = hashlib.sha256(content.encode('utf-8')).hexdigest()
+        return f"cache:response:{agent_name}:{hashed}"
 
-                # Check TTL
-                now = datetime.now() if timestamp.tzinfo is None else get_current_time()
-                if timestamp.tzinfo is None and now.tzinfo is not None:
-                    timestamp = timestamp.replace(tzinfo=now.tzinfo)
-
-                if now - timestamp < timedelta(hours=self.ttl_hours):
-                    self.logger.info(f"Cache HIT for {agent_name}")
-                    return response
-                else:
-                    self.logger.info(f"Cache EXPIRED for {agent_name}")
+    def get(self, agent_name: str, prompt: str) -> Optional[str]:
+        """Retrieve a cached response if valid."""
+        key = self._generate_key(agent_name, prompt)
+        try:
+            val = self.client.get(key)
+            if val:
+                self.logger.info(f"Cache HIT for {agent_name}")
+                return val
             return None
         except Exception as e:
             self.logger.error(f"Cache GET error: {e}")
             return None
-        finally:
-            conn.close()
 
-    def set(self, agent_name, prompt, response):
-        """Save a response to the cache."""
-        self._ensure_db()
+    def set(self, agent_name: str, prompt: str, response: str):
+        """Save a response to the cache with TTL."""
         key = self._generate_key(agent_name, prompt)
-        conn = get_db_connection(self.db_path)
-        is_sqlite = 'sqlite' in str(conn.engine.url)
-        timestamp = format_time() if is_sqlite else datetime.now()
-        
         try:
-            # Use SQLAlchemy for consistent DB handling (Postgres/SQLite)
-            query = text("""
-                INSERT INTO response_cache (key, agent_name, response, timestamp)
-                VALUES (:key, :agent_name, :response, :timestamp)
-                ON CONFLICT(key) DO UPDATE SET 
-                    response = excluded.response, 
-                    timestamp = excluded.timestamp
-            """)
-            conn.execute(query, {
-                "key": key, 
-                "agent_name": agent_name, 
-                "response": response, 
-                "timestamp": timestamp
-            })
-            conn.commit()
-            self.logger.info(f"Cache SET for {agent_name}")
+            # Atomic set with expiration
+            self.client.setex(key, self.ttl_seconds, response)
+            self.logger.info(f"Cache SET for {agent_name} (TTL: {self.ttl_seconds}s)")
         except Exception as e:
             self.logger.error(f"Cache SET error: {e}")
-        finally:
-            conn.close()
 
     def clear(self):
-        """Clear all cache entries."""
-        self._ensure_db()
-        conn = get_db_connection(self.db_path)
+        """Clear all cache entries matching the prefix."""
         try:
-            conn.execute(text("DELETE FROM response_cache"))
-            conn.commit()
-            self.logger.info("Cache cleared.")
+            keys = self.client.keys("cache:response:*")
+            if keys:
+                self.client.delete(*keys)
+                self.logger.info(f"Cleared {len(keys)} cache entries.")
         except Exception as e:
             self.logger.error(f"Cache CLEAR error: {e}")
-        finally:
-            conn.close()

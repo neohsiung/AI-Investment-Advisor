@@ -2,9 +2,7 @@
 
 > **[繁體中文 (Traditional Chinese)](#zh) | [English](#en)**
 
-### 版本紀錄 (Version History)
-| Date | Version | Description | Author |
-| :--- | :--- | :--- | :--- |
+| 2026-02-19 | v4.2 | **Purge SQLite & Three-Tier Architecture**: Removed all SQLite dependencies. Enforced PostgreSQL for persistent storage and Redis for caching. Formalized Three-Tier data strategy. | Neo |
 | 2026-02-18 | v4.1 | **UUID Multi-Identity**: Migrated to UUID-based unique identifiers. Added `user_identities` table to support multiple linked logins (Email, LINE, etc.). | Neo |
 | 2026-02-17 | v4.0.1 | **Comprehensive Audit**: Added missing domain entities (SecurityContext, Feedback), expanded repository registry, and clarified DB physical types. | Neo |
 | 2026-02-14 | v3.5 | Added RiskKeyword entity, risk_keywords table, RiskKeywordRepository | Neo |
@@ -14,9 +12,9 @@
 
 <a id="zh"></a>
 
-## 🇹🇼 資料與領域模型 (v4.1)
+## 🇹🇼 資料與領域模型 (v4.2)
 
-本文件定義系統的核心實體、資料庫架構與數據流動路徑。v4.0 正式由 SQLite 全面遷移至 PostgreSQL + pgvector。
+本文件定義系統的核心實體、資料庫架構與數據流動路徑。v4.2 正式移除 SQLite 支援，全面轉向 **PostgreSQL (Warm Tier)** + **Redis (Hot Tier)** + **CSV/Files (Cold Tier)** 的三層式儲存架構。
 
 ### 1. 領域實體關係 (Domain Entity Map)
 使用 Pydantic / SQLAlchemy Models 作為領域與持久層的橋樑。
@@ -42,13 +40,16 @@ classDiagram
         +Map positions
         +total_market_value()
     }
-    class Position {
-        +String ticker
-        +NUMERIC quantity
-        +NUMERIC average_cost
-        +NUMERIC current_price
-        +unrealized_pnl()
+    class AlchemyVectorRepository {
+        +add_memory()
+        +search_memory()
+        +add_council_minute()
     }
+    class ResponseCache {
+        +get(key)
+        +set(key, val, ttl)
+    }
+    MemoryEmbedding "1" -- "1" AlchemyVectorRepository : managed by
     class SecurityContext {
         +String ticker
         +DateTime date
@@ -125,22 +126,22 @@ classDiagram
 | `src/domain/entities.py` | `Portfolio`, `Position`, `AgentSignal`, `SecurityContext`, `FeedbackExample` | 投資組合與 Agent 決策核心實體。 |
 | `src/domain/broker.py` | `IBroker` | 多券商介面封裝。 |
 
-### 3. 資料庫架構 (Database Schema v4.0 Full Architecture)
+### 3. 資料庫架構 (Database Schema v4.2 Full Architecture)
 
 | 表名 | 核心用途 | 關鍵物理設計 (PostgreSQL) |
 | :--- | :--- | :--- |
-| `users` | 使用者資訊 | `id (UUID)`, `preferences (JSONB)`, `last_login (TIMESTAMPTZ)` |
-| `user_identities` | 多通路身分映射 | `id (UUID)`, `user_id (UUID)`, `provider (TEXT)`, `identifier (TEXT)` |
-| `transactions` | 原始交易日誌 | `id (UUID)`, `quantity (NUMERIC)`, `price (NUMERIC)`, `raw_data (JSONB)` |
-| `positions` | 持倉快照 | `user_id (UUID)`, `avg_cost (NUMERIC)`, `market_value (NUMERIC)` |
-| `daily_snapshots` | 績效歷史 | `user_id (UUID)`, `total_nlv (NUMERIC)`, `leverage_ratio (NUMERIC)` |
-| `settings` | 系統設定 | `user_id (UUID)`, `key (TEXT)`, `value (JSONB)` |
+| `users` | 使用者資訊 | `id (TEXT/UUID)`, `preferences (JSONB)`, `last_login (TIMESTAMPTZ)` |
+| `user_identities` | 多通路身分映射 | `id (TEXT)`, `user_id (TEXT)`, `provider (TEXT)`, `identifier (TEXT)` |
+| `transactions` | 原始交易日誌 | `id (TEXT)`, `quantity (NUMERIC)`, `price (NUMERIC)`, `raw_data (JSONB)` |
+| `positions` | 持倉快照 | `user_id (TEXT)`, `avg_cost (NUMERIC)`, `market_value (NUMERIC)` |
+| `daily_snapshots` | 績效歷史 | `user_id (TEXT)`, `total_nlv (NUMERIC)`, `leverage_ratio (NUMERIC)` |
+| `settings` | 系統設定 | `user_id (TEXT)`, `key (TEXT)`, `value (JSONB)` |
 | `memory_embeddings`| RAG 記憶 (pgvector) | `embedding (vector(1536))`, `metadata (JSONB)` |
-| `event_logs` | 審核日誌 | `id (UUID)`, `event_type (TEXT)`, `meta (JSONB)` |
-| `risk_keywords` | 風險關鍵字 (Sentinel) | `id (UUID)`, `weight (NUMERIC)`, `category (TEXT)` |
-| `reports` | 歷史分析報告 | `id (UUID)`, `content (TEXT)`, `summary (TEXT)` |
-| `agent_state` | 執行狀態追踪 | `agent_name (TEXT)`, `state (JSONB)` |
-| `prompts` | Prompt 範本庫 | `name (TEXT)`, `template (TEXT)`, `version (INT)` |
+| `event_logs` | 審核日誌 | `id (TEXT)`, `event_type (TEXT)`, `meta (JSONB)` |
+| `risk_keywords` | 風險關鍵字 (Sentinel) | `id (TEXT)`, `weight (NUMERIC)`, `category (TEXT)` |
+| `reports` | 歷史分析報告 | `id (TEXT)`, `content (TEXT)`, `summary (TEXT)` |
+| `agent_states` | 執行狀態追踪 | `id (TEXT)`, `agent_name (TEXT)`, `last_output (TEXT)` |
+| `council_minutes` | 評議路徑錄 | `id (TEXT)`, `embedding (vector(1536))`, `transcript (TEXT)` |
 
 ### 4. Repository 註冊表 (Repository Registry)
 
@@ -162,13 +163,26 @@ classDiagram
 | `IngestorFactory` | `ingestors/factory.py` | 券商攝取策略註冊表。 |
 | `SkillRegistry` | `skills/registry.py` | Agent 本地功能 (Local Skills) 註冊表。 |
 
-### 5. 數據流動路徑 (Data Flow)
-1. **Ingestion**: CSV/API → `IngestionService` → `transactions` (Atomic Batch)。
-2. **Memory**: `MemoryManager` → `pgvector` 語義檢索 → `SecurityContext` 注入。
-3. **Analytics**: 讀取 `NUMERIC` 資料 → `Portfolio` 計算器 → 寫入快照。
-4. **Learning**: `Agent` 執行後 → 分析遺漏關鍵字 → 寫入 `FeedbackExample`。
+### 5. 三層式資料存儲策略 (Three-Tier Data Strategy [NEW v4.2])
 
-### 6. ⚖️ 槓桿引擎機制 (Leverage Engine Mechanism - v3.6)
+為了解決大模型應用的高頻快取與低頻持久化平衡，系統採用以下三層架構：
+
+1.  **🚀 Hot Tier (Redis)**:
+    - **用途**: 高頻快取 (`ResponseCache`)、短期會話上下文。
+    - **優點**: 極速存取、支援自動過期 (TTL)。
+2.  **🧠 Warm Tier (PostgreSQL)**:
+    - **用途**: 結構化交易數據、使用者實體、嵌入向量 (`pgvector`)。
+    - **優點**: 強大事務、支援複雜 SQL 運算與語義搜尋。
+3.  **❄️ Cold Tier (Files/CSV)**:
+    - **用途**: 原始 CSV 檔案、離線日誌備份。
+    - **優點**: 低成本、作為資料攝取 (Ingestor) 的物理來源。
+
+### 6. 數據流動路徑 (Data Flow)
+1. **Ingestion**: CSV/Raw Files → `TradeIngestor` → `transactions` (Warm Tier).
+2. **Context Retrieval**: `MemoryManager` → `pgvector` (Warm Tier) → Cache to Redis (Hot Tier) → LLM.
+3. **Caching**: LLM Response → `ResponseCache` (Redis) → 重複請求實惠命中。
+
+### 7. ⚖️ 槓桿引擎機制 (Leverage Engine Mechanism - v3.6)
 本模組精確計算每筆部位的 **貸款 (Loan)** 與 **淨權益 (Net Equity)**，確保對帳清晰。
 
 - **計算公式 (Formulas)**:
@@ -183,11 +197,11 @@ classDiagram
 
 <a id="en"></a>
 
-## 🇺🇸 Data & Domain Models (v4.1)
+## 🇺🇸 Data & Domain Models (v4.2)
 
-This document defines core entities and DB architecture, establishing the PostgreSQL + pgvector backbone.
+This document defines core entities and DB architecture, establishing the strictly PostgreSQL (Warm Tier) + Redis (Hot Tier) + Files (Cold Tier) backbone. Version 4.2 formally removes all SQLite fallbacks.
 
-### 1. Domain Entity Map (v4.0)
+### 1. Domain Entity Map (v4.2)
 Pydantic and SQLAlchemy models bridge the domain and persistence layers.
 
 ```mermaid
@@ -206,10 +220,13 @@ classDiagram
         +DateTime date
         +JSONB indicators
     }
-    class FeedbackExample {
-        +UUID id
-        +SecurityContext context
-        +Float outcome_score
+    class AlchemyVectorRepository {
+        +add_memory()
+        +search_memory()
+    }
+    class ResponseCache {
+        +get(key)
+        +set(key, val, ttl)
     }
     class Transaction {
         +UUID id
@@ -219,15 +236,10 @@ classDiagram
     class MemoryEmbedding {
         +vector(1536) embedding
     }
-    class RiskKeyword {
-        +UUID id
-        +String keyword
-        +Bool is_active
-    }
     FeedbackExample --> SecurityContext : evaluates
 ```
 
-### 2. Database Schema (v4.0 Full)
+### 2. Database Schema (v4.2 Full)
 | Table | Core Purpose | PostgreSQL Design |
 | :--- | :--- | :--- |
 | `users` | User metadata | `UUID`, `JSONB` |
@@ -238,8 +250,8 @@ classDiagram
 | `event_logs` | Audit Trail | `JSONB`, `TIMESTAMPTZ` |
 | `risk_keywords` | Risk Keywords | `UUID`, `TEXT`, `NUMERIC` |
 | `reports` | Historical Analysis | `UUID`, `TEXT` |
-| `agent_state` | Agent Execution State | `TEXT`, `JSONB` |
-| `prompts` | Prompt Templates | `TEXT`, `TEXT`, `INT` |
+| `agent_states` | Agent Execution State | `TEXT`, `JSONB` |
+| `council_minutes` | Council Path Records | `vector(1536)`, `JSONB` |
 
 ### 3. Repository Registry
 | Repository | Role | Implementation |
@@ -256,16 +268,17 @@ classDiagram
 | `PromptRepository` | Prompt Template Versioning | Database |
 | `ReportRepository` | Analysis Report Management | Database |
 | `IngestorFactory` | Broker-specific Ingestion Strategies| Ingestor Layer |
-| `SkillRegistry` | Agent Local Skills Registry | Skills Layer |
 
-### 4. Hybrid Storage Strategy
-- **ORM Admin Layer**: SQLAlchemy ORM for entities (Users, Settings, Logs).
-- **Raw SQL Performance Layer**: Raw SQL or Core for performance tracks (Transactions, Memory).
+### 4. Three-Tier Storage Strategy (v4.2)
+- **🚀 Hot Tier (Redis)**: High-speed caching (`ResponseCache`) and session state.
+- **🧠 Warm Tier (Postgres)**: Persistent structured data, embeddings (`pgvector`), and ACID transactions.
+- **❄️ Cold Tier (Files)**: Raw data ingestion sources and offline backups.
 
 ### 5. Data Flow
-1. **Ingest**: Raw Data → `transactions` (Batch Insert).
+1. **Ingest**: Raw Files → `TradeIngestor` → `transactions` (Warm Tier).
 2. **Context**: `MemoryManager` → `pgvector` → `SecurityContext` construction.
-3. **Logic**: `Portfolio` entities calculate PnL via `NUMERIC` precision.
+3. **Logic**: `Portfolio` entities calculate PnL via `NUMERIC` precision from Postgres.
+4. **Cache**: LLM Outputs cached in `ResponseCache` (Redis) for repeated hits.
 
 ## 🔗 Bidirectional Links
 - **Philosophy**: [Architectural Philosophies](Architectural-Philosophies)

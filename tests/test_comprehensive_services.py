@@ -27,18 +27,21 @@ class TestAnalyticsService:
         
         # Mock Repository
         mock_repo = Mock()
-        # get_holdings_summary returns list of (ticker, quantity) tuples
-        mock_repo.get_holdings_summary.return_value = [('AAPL', 12)]
-        # Also called by calculate_metrics for cash calculation
-        mock_repo.get_all_by_user.return_value = []
-        mock_repo.get_cash_flow_sum.return_value = 10000 
-        
+        # get_leverage_summary returns list of (ticker, quantity, leverage) tuples
+        mock_repo.get_leverage_summary.return_value = [('AAPL', 12, 1.0)]
+        # get_cash_balance returns total cash
+        mock_repo.get_cash_balance.return_value = 10000
+    
         calc.repo = mock_repo
-        
+    
         result = calc.calculate_metrics(prices, user_id="test_user")
         
-        assert 'leverage_ratio' in result
-    
+        # NLV = 10000 (cash) + 1200 (equity) = 11200
+        # TNV = 12 * 100 * 1.0 = 1200
+        # Ratio = 1200 / 11200 = 0.10714...
+        assert result['leverage_ratio'] == pytest.approx(0.10714, rel=1e-3)
+        assert result['tnv'] == 1200.0
+        
     def test_roi_engine(self):
         """Test ROI calculation"""
         from src.services.analytics_service import ROIEngine
@@ -82,28 +85,25 @@ class TestCacheUtility:
         """Test cache operations"""
         from src.utils.cache import ResponseCache
         
-        # Mock DB connection and OS
-        with patch('src.utils.cache.get_db_connection') as mock_conn, \
-             patch('os.makedirs'):  # Mock makedirs to prevent FileNotFoundError
+        # Mock redis.from_url
+        with patch('redis.from_url') as mock_redis_factory:
+            mock_client = MagicMock()
+            mock_redis_factory.return_value = mock_client
             
-            # Setup mock DB cursor
-            mock_cursor = Mock()
-            mock_cursor.fetchone.return_value = None
-            mock_conn.return_value.execute.return_value = mock_cursor
-            
-            cache = ResponseCache(db_path=":memory:")
+            cache = ResponseCache(redis_url="redis://localhost:6379/0")
             
             # Test key generation
             key = cache._generate_key("Agent", "Prompt")
-            assert isinstance(key, str)
+            assert "cache:response:Agent" in key
             
             # Test get (miss)
+            mock_client.get.return_value = None
             result = cache.get("Agent", "Prompt")
             assert result is None
             
             # Test set
             cache.set("Agent", "Prompt", "Response")
-            mock_conn.return_value.execute.assert_called()
+            mock_client.setex.assert_called_once()
 
 
 class TestSnapshotAndPerformance:
@@ -176,11 +176,11 @@ class TestWorkflowFiles:
         """Test DailyWorkflow execution logic (Dry Run)"""
         from src.services.workflow_service import DailyWorkflow
         
-        # Mock SqliteTransactionRepository WHERE IT IS USED
+        # Mock AlchemyTransactionRepository WHERE IT IS USED
         # DailyWorkflow is in src.services.workflow_service
-        # It imports SqliteTransactionRepository.
-        # So we must patch src.services.workflow_service.SqliteTransactionRepository
-        with patch('src.services.workflow_service.SqliteTransactionRepository') as MockRepo:
+        # It imports AlchemyTransactionRepository.
+        # So we must patch src.services.workflow_service.AlchemyTransactionRepository
+        with patch('src.services.workflow_service.AlchemyTransactionRepository') as MockRepo:
              MockRepo.return_value.get_active_tickers.return_value = ['AAPL']
              
              # Instantiate INSIDE the patch so it uses the mock

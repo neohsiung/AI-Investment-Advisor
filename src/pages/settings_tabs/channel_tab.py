@@ -316,7 +316,7 @@ def render_channel_tab(st, settings_service, user_id):
                 return
 
             if status == 'pending':
-                # Parse expires_at: SQLite returns strings or datetime objects depending on engine
+                # Parse expires_at: PostgreSQL returns datetime/TIMESTAMPTZ objects.
                 ext = pending['expires_at']
                 if isinstance(ext, str):
                     ext = ext.replace(' ', 'T')

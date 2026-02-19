@@ -17,7 +17,7 @@ def mock_settings():
 def test_init_with_api_key(mock_settings):
     """Test initialization with API key from settings."""
     mock_settings.get_all_settings.return_value = {"source_fred_api_key": "test_key"}
-    with patch('src.services.fred_service.Fred') as MockFred:
+    with patch('fredapi.Fred') as MockFred:
         service = FredService(settings_service=mock_settings)
         MockFred.assert_called_once_with(api_key="test_key")
         assert service.client is not None
@@ -26,7 +26,7 @@ def test_init_without_api_key(mock_settings):
     """Test initialization without API key."""
     mock_settings.get_all_settings.return_value = {}
     with patch.dict('os.environ', {}, clear=True):
-        with patch('src.services.fred_service.Fred') as MockFred:
+        with patch('fredapi.Fred') as MockFred:
             service = FredService(settings_service=mock_settings)
             assert service.client is None
 
@@ -34,14 +34,14 @@ def test_init_from_env(mock_settings):
     """Test initialization from environment variable."""
     mock_settings.get_all_settings.return_value = {}
     with patch.dict('os.environ', {'FRED_API_KEY': 'env_test_key'}):
-        with patch('src.services.fred_service.Fred') as MockFred:
+        with patch('fredapi.Fred') as MockFred:
             service = FredService(settings_service=mock_settings)
             MockFred.assert_called_once_with(api_key="env_test_key")
 
 def test_init_error_handling(mock_settings):
     """Test error handling during initialization."""
     mock_settings.get_all_settings.return_value = {"source_fred_api_key": "test_key"}
-    with patch('src.services.fred_service.Fred') as MockFred:
+    with patch('fredapi.Fred') as MockFred:
         MockFred.side_effect = Exception("Init Error")
         service = FredService(settings_service=mock_settings)
         assert service.client is None
@@ -57,7 +57,7 @@ def test_get_macro_indicators_no_client(mock_settings):
 def test_get_macro_indicators_success(mock_settings):
     """Test successful macro indicator retrieval."""
     mock_settings.get_all_settings.return_value = {"source_fred_api_key": "test_key"}
-    with patch('src.services.fred_service.Fred') as MockFred:
+    with patch('fredapi.Fred') as MockFred:
         mock_client = MockFred.return_value
         
         # Create mock series response
@@ -81,7 +81,7 @@ def test_get_macro_indicators_success(mock_settings):
 def test_get_macro_indicators_trend_up(mock_settings):
     """Test trend detection when value increases."""
     mock_settings.get_all_settings.return_value = {"source_fred_api_key": "test_key"}
-    with patch('src.services.fred_service.Fred') as MockFred:
+    with patch('fredapi.Fred') as MockFred:
         mock_client = MockFred.return_value
         
         # Current > Previous = Up trend
@@ -101,7 +101,7 @@ def test_get_macro_indicators_trend_up(mock_settings):
 def test_get_macro_indicators_trend_down(mock_settings):
     """Test trend detection when value decreases."""
     mock_settings.get_all_settings.return_value = {"source_fred_api_key": "test_key"}
-    with patch('src.services.fred_service.Fred') as MockFred:
+    with patch('fredapi.Fred') as MockFred:
         mock_client = MockFred.return_value
         
         # Current < Previous = Down trend
@@ -121,7 +121,7 @@ def test_get_macro_indicators_trend_down(mock_settings):
 def test_get_macro_indicators_empty_series(mock_settings):
     """Test handling of empty series response."""
     mock_settings.get_all_settings.return_value = {"source_fred_api_key": "test_key"}
-    with patch('src.services.fred_service.Fred') as MockFred:
+    with patch('fredapi.Fred') as MockFred:
         mock_client = MockFred.return_value
         mock_client.get_series.return_value = pd.Series(dtype=float)
         
@@ -134,7 +134,7 @@ def test_get_macro_indicators_empty_series(mock_settings):
 def test_get_macro_indicators_error_handling(mock_settings):
     """Test error handling during data fetch."""
     mock_settings.get_all_settings.return_value = {"source_fred_api_key": "test_key"}
-    with patch('src.services.fred_service.Fred') as MockFred:
+    with patch('fredapi.Fred') as MockFred:
         mock_client = MockFred.return_value
         mock_client.get_series.side_effect = Exception("API Error")
         
@@ -147,7 +147,7 @@ def test_get_macro_indicators_error_handling(mock_settings):
 def test_get_macro_indicators_single_datapoint(mock_settings):
     """Test handling when only one datapoint is available."""
     mock_settings.get_all_settings.return_value = {"source_fred_api_key": "test_key"}
-    with patch('src.services.fred_service.Fred') as MockFred:
+    with patch('fredapi.Fred') as MockFred:
         mock_client = MockFred.return_value
         
         # Only one datapoint

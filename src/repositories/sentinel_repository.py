@@ -44,10 +44,15 @@ class ISentinelRepository(ABC):
         """Log an alert to event_logs."""
         pass
 
+    @abstractmethod
+    def close_session(self) -> None:
+        """Close the database session."""
+        pass
+
 class AlchemySentinelRepository(BaseRepository, ISentinelRepository):
     """
-    Implementation of ISentinelRepository handling dynamic thresholds and alerts.
-    實作 ISentinelRepository，處理動態閾值與警報。
+    Implementation of ISentinelRepository handling dynamic thresholds and alerts (PostgreSQL Strictly).
+    實作 ISentinelRepository，處理動態閾值與警報 (PostgreSQL 專用)。
     """
 
     def __init__(self, db_path: str = None, engine: Any = None):
@@ -68,7 +73,6 @@ class AlchemySentinelRepository(BaseRepository, ISentinelRepository):
             with self.engine.connect() as conn:
                 result = conn.execute(query)
                 for row in result:
-                    # Using attribute access (key, value)
                     thresholds[row.key] = float(row.value)
         except Exception as e:
             logger.error(f"Failed to fetch sentinel thresholds: {e}")
@@ -113,51 +117,32 @@ class AlchemySentinelRepository(BaseRepository, ISentinelRepository):
 
     def is_duplicate_alert(self, title: str, content: str, hours: int = 24, signal_id: str = None) -> bool:
         """
-        Check for duplicate alerts within a timeframe.
+        Check for duplicate alerts within a timeframe (PostgreSQL JSONB optimized).
         檢查在特定時間範圍內是否有重複警報。
         """
         try:
             with self.engine.connect() as conn:
                 if signal_id:
-                    if self.is_sqlite:
-                        query = text("""
-                            SELECT COUNT(*) FROM event_logs 
-                            WHERE source = 'Sentinel'
-                            AND json_extract(metadata, '$.signal_id') = :signal_id
-                            AND timestamp >= datetime('now', 'utc', :modifier)
-                        """)
-                        count = conn.execute(query, {"signal_id": signal_id, "modifier": f"-{hours} hours"}).scalar()
-                    else:
-                        query = text("""
-                            SELECT COUNT(*) FROM event_logs 
-                            WHERE source = 'Sentinel'
-                            AND metadata @> CAST(:signal_json AS JSONB)
-                            AND timestamp >= NOW() - CAST(:hours || ' hours' AS INTERVAL)
-                        """)
-                        signal_json = json.dumps({"signal_id": signal_id})
-                        count = conn.execute(query, {"signal_json": signal_json, "hours": str(hours)}).scalar()
+                    query = text("""
+                        SELECT COUNT(*) FROM event_logs 
+                        WHERE source = 'Sentinel'
+                        AND metadata @> CAST(:signal_json AS JSONB)
+                        AND timestamp >= NOW() - CAST(:hours || ' hours' AS INTERVAL)
+                    """)
+                    signal_json = json.dumps({"signal_id": signal_id})
+                    count = conn.execute(query, {"signal_json": signal_json, "hours": str(hours)}).scalar()
                     
                     if count > 0:
                         return True
 
-                if not self.is_sqlite:
-                    query_exact = text("""
-                        SELECT COUNT(*) FROM event_logs 
-                        WHERE source = 'Sentinel'
-                        AND title = :title
-                        AND content = :content
-                        AND timestamp >= NOW() - CAST(:hours || ' hours' AS INTERVAL)
-                    """)
-                    count = conn.execute(query_exact, {"title": title, "content": content, "hours": str(hours)}).scalar()
-                else:
-                    query_exact = text("""
-                        SELECT COUNT(*) FROM event_logs 
-                        WHERE source = 'Sentinel'
-                        AND title = :title
-                        AND content = :content
-                        AND timestamp >= datetime('now', 'utc', :modifier)
-                    """)
-                    count = conn.execute(query_exact, {"title": title, "content": content, "modifier": f"-{hours} hours"}).scalar()
+                query_exact = text("""
+                    SELECT COUNT(*) FROM event_logs 
+                    WHERE source = 'Sentinel'
+                    AND title = :title
+                    AND content = :content
+                    AND timestamp >= NOW() - CAST(:hours || ' hours' AS INTERVAL)
+                """)
+                count = conn.execute(query_exact, {"title": title, "content": content, "hours": str(hours)}).scalar()
                 
                 return count > 0
         except Exception as e:
@@ -166,28 +151,19 @@ class AlchemySentinelRepository(BaseRepository, ISentinelRepository):
 
     def get_last_signal_value(self, signal_id: str) -> float:
         """
-        Retrieve the last recorded numeric value for a signal.
+        Retrieve the last recorded numeric value for a signal (PostgreSQL JSONB optimized).
         獲取訊號的最後記錄值。
         """
         try:
             with self.engine.connect() as conn:
-                if not self.is_sqlite:
-                    query = text("""
-                        SELECT (metadata->>'value')::float FROM event_logs 
-                        WHERE source = 'Sentinel' 
-                        AND metadata @> CAST(:signal_json AS JSONB)
-                        ORDER BY timestamp DESC LIMIT 1
-                    """)
-                    signal_json = json.dumps({"signal_id": signal_id})
-                    val = conn.execute(query, {"signal_json": signal_json}).scalar()
-                else:
-                    query = text("""
-                        SELECT json_extract(metadata, '$.value') FROM event_logs
-                        WHERE source = 'Sentinel'
-                        AND json_extract(metadata, '$.signal_id') = :signal_id
-                        ORDER BY timestamp DESC LIMIT 1
-                    """)
-                    val = conn.execute(query, {"signal_id": signal_id}).scalar()
+                query = text("""
+                    SELECT (metadata->>'value')::float FROM event_logs 
+                    WHERE source = 'Sentinel' 
+                    AND metadata @> CAST(:signal_json AS JSONB)
+                    ORDER BY timestamp DESC LIMIT 1
+                """)
+                signal_json = json.dumps({"signal_id": signal_id})
+                val = conn.execute(query, {"signal_json": signal_json}).scalar()
                 
                 return float(val) if val is not None else 0.0
         except Exception as e:
@@ -216,6 +192,3 @@ class AlchemySentinelRepository(BaseRepository, ISentinelRepository):
                 logger.debug(f"SentinelRepository: Logged alert '{title}' at {current_time}")
         except Exception as e:
             logger.error(f"SentinelRepository: Failed to log alert: {e}")
-
-# Legacy alias removed in v4.1.7
-# @deprecated: Use AlchemySentinelRepository

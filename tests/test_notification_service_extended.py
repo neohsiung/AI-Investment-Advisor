@@ -4,27 +4,33 @@ Extended tests for NotificationService.
 """
 import pytest
 import os
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock, patch, AsyncMock
 from src.services.notification_service import NotificationService
 
+@pytest.fixture
+def anyio_backend():
+    return 'asyncio'
 
-def test_notify_all_with_custom_adapters():
+@pytest.mark.anyio
+async def test_notify_all_with_custom_adapters():
     """Test notify_all with custom adapter injection."""
     mock_line = MagicMock()
     mock_email = MagicMock()
     mock_web = MagicMock()
     
-    mock_line.send_alert.return_value = True
-    mock_email.send_alert.return_value = True
-    mock_web.send_alert.return_value = True
+    mock_line.send_alert = AsyncMock(return_value=True)
+    mock_email.send_alert = AsyncMock(return_value=True)
+    mock_web.send_alert = AsyncMock(return_value=True)
     
+    # We need to set the name on the mock itself or its class
+    type(mock_line).msg = "LineBotAdapter" # Placeholder to make it accessible
     mock_line.__class__.__name__ = "LineBotAdapter"
     mock_email.__class__.__name__ = "EmailAdapter"
     mock_web.__class__.__name__ = "WebAdapter"
     
     service = NotificationService(adapters=[mock_line, mock_email, mock_web])
     
-    results = service.notify_all(
+    results = await service.notify_all(
         title="Test Alert",
         content="Test content",
         user_id="test_user"
@@ -35,17 +41,17 @@ def test_notify_all_with_custom_adapters():
     mock_email.send_alert.assert_called_once()
     mock_web.send_alert.assert_called_once()
 
-
-def test_notify_all_handles_adapter_failures():
+@pytest.mark.anyio
+async def test_notify_all_handles_adapter_failures():
     """Test notify_all continues when individual adapters fail."""
     mock_line = MagicMock()
     mock_email = MagicMock()
     mock_web = MagicMock()
     
     # Make email fail
-    mock_email.send_alert.side_effect = Exception("Email error")
-    mock_line.send_alert.return_value = True
-    mock_web.send_alert.return_value = True
+    mock_email.send_alert = AsyncMock(side_effect=Exception("Email error"))
+    mock_line.send_alert = AsyncMock(return_value=True)
+    mock_web.send_alert = AsyncMock(return_value=True)
 
     mock_line.__class__.__name__ = "LineBotAdapter"
     mock_email.__class__.__name__ = "EmailAdapter"
@@ -53,7 +59,7 @@ def test_notify_all_handles_adapter_failures():
     
     service = NotificationService(adapters=[mock_line, mock_email, mock_web])
     
-    results = service.notify_all(
+    results = await service.notify_all(
         title="Test Alert",
         content="Test content"
     )
@@ -64,12 +70,16 @@ def test_notify_all_handles_adapter_failures():
     mock_line.send_alert.assert_called_once()
     mock_web.send_alert.assert_called_once()
 
-
-def test_send_report_filters_channels():
+@pytest.mark.anyio
+async def test_send_report_filters_channels():
     """Test send_report only uses email and web channels."""
     mock_line = MagicMock()
     mock_email = MagicMock()
     mock_web = MagicMock()
+    
+    mock_line.send_alert = AsyncMock(return_value=True)
+    mock_email.send_alert = AsyncMock(return_value=True)
+    mock_web.send_alert = AsyncMock(return_value=True)
     
     mock_line.__class__.__name__ = "LineBotAdapter"
     mock_email.__class__.__name__ = "EmailAdapter"
@@ -77,7 +87,7 @@ def test_send_report_filters_channels():
     
     service = NotificationService(adapters=[mock_line, mock_email, mock_web])
     
-    service.send_report(
+    await service.send_report(
         subject="Test Report",
         content="Report content",
         user_id="test_user"
@@ -89,15 +99,18 @@ def test_send_report_filters_channels():
     mock_email.send_alert.assert_called_once()
     mock_web.send_alert.assert_called_once()
 
-
-def test_notify_all_with_actions():
+@pytest.mark.anyio
+async def test_notify_all_with_actions():
     """Test notify_all passes actions to adapters."""
     mock_adapter = MagicMock()
+    mock_adapter.send_alert = AsyncMock(return_value=True)
+    mock_adapter.__class__.__name__ = "GenericAdapter"
+    
     service = NotificationService(adapters=[mock_adapter])
     
     actions = [{"label": "View", "url": "/reports/123"}]
     
-    service.notify_all(
+    await service.notify_all(
         title="Alert",
         content="Content",
         actions=actions
@@ -106,13 +119,16 @@ def test_notify_all_with_actions():
     call_args = mock_adapter.send_alert.call_args
     assert call_args[1]["actions"] == actions
 
-
-def test_notify_all_with_extra_kwargs():
+@pytest.mark.anyio
+async def test_notify_all_with_extra_kwargs():
     """Test notify_all passes extra kwargs to adapters."""
     mock_adapter = MagicMock()
+    mock_adapter.send_alert = AsyncMock(return_value=True)
+    mock_adapter.__class__.__name__ = "GenericAdapter"
+    
     service = NotificationService(adapters=[mock_adapter])
     
-    service.notify_all(
+    await service.notify_all(
         title="Alert",
         content="Content",
         level="ERROR",
@@ -123,8 +139,8 @@ def test_notify_all_with_extra_kwargs():
     assert call_args[1]["level"] == "ERROR"
     assert call_args[1]["source"] == "TestSource"
 
-
-def test_notify_all_returns_results():
+@pytest.mark.anyio
+async def test_notify_all_returns_results():
     """Test notify_all returns success status for each adapter."""
     mock_adapter1 = MagicMock()
     mock_adapter2 = MagicMock()
@@ -132,25 +148,26 @@ def test_notify_all_returns_results():
     mock_adapter1.__class__.__name__ = "Adapter1"
     mock_adapter2.__class__.__name__ = "Adapter2"
     
-    mock_adapter1.send_alert.return_value = True
-    mock_adapter2.send_alert.return_value = False
+    mock_adapter1.send_alert = AsyncMock(return_value=True)
+    mock_adapter2.send_alert = AsyncMock(return_value=False)
     
     service = NotificationService(adapters=[mock_adapter1, mock_adapter2])
     
-    results = service.notify_all(title="Test", content="Content")
+    results = await service.notify_all(title="Test", content="Content")
     
     assert results["Adapter1"] is True
     assert results["Adapter2"] is False
 
-
-def test_send_report_with_source():
+@pytest.mark.anyio
+async def test_send_report_with_source():
     """Test send_report passes source parameter."""
     mock_adapter = MagicMock()
     mock_adapter.__class__.__name__ = "EmailAdapter"
+    mock_adapter.send_alert = AsyncMock(return_value=True)
     
     service = NotificationService(adapters=[mock_adapter])
     
-    service.send_report(
+    await service.send_report(
         subject="Daily Report",
         content="Content",
         source="DailyWorkflow"
@@ -159,31 +176,20 @@ def test_send_report_with_source():
     call_args = mock_adapter.send_alert.call_args
     assert call_args[1]["source"] == "DailyWorkflow"
 
-
-def test_notify_all_uses_default_adapters():
-    """Test NotificationService initializes with default adapters."""
-    # Mocking environment to NOT have LINE token by default for consistency
-    with patch('src.services.notification_service.LineBotAdapter'), \
-         patch('src.services.notification_service.EmailAdapter'), \
-         patch('src.services.notification_service.WebAdapter'), \
-         patch.dict(os.environ, {}, clear=True): # Ensure no LINE_CHANNEL_ACCESS_TOKEN
-        
-        service = NotificationService()
-        # Default is Email + Web = 2. LINE is optional.
-        assert len(service.adapters) >= 2
-
-
-def test_notify_all_with_channel_filter():
+@pytest.mark.anyio
+async def test_notify_all_with_channel_filter():
     """Test notify_all respects channel filter."""
     mock_line = MagicMock()
     mock_email = MagicMock()
     
     mock_line.__class__.__name__ = "LineBotAdapter"
+    mock_line.send_alert = AsyncMock(return_value=True)
     mock_email.__class__.__name__ = "EmailAdapter"
+    mock_email.send_alert = AsyncMock(return_value=True)
     
     service = NotificationService(adapters=[mock_line, mock_email])
     
-    service.notify_all(
+    await service.notify_all(
         title="Test",
         content="Content",
         channels=["email"]

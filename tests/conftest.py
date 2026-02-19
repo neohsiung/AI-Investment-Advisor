@@ -59,6 +59,16 @@ def pytest_configure(config):
                 mock_mod = mock_futu_impl
             sys.modules[mod] = mock_mod
 
+    # v4.2.1: Ensure Test Isolation (Database)
+    # Patch environment variables to force SQLite in-memory for unit tests
+    import os
+    os.environ["DB_TYPE"] = "sqlite"
+    os.environ["DB_URL"] = "sqlite:///:memory:"
+    # Unset Postgres variables if they exist in .env to prevent leaky defaults
+    for env_var in ["DB_HOST", "DB_USER", "DB_PASS", "DB_NAME"]:
+        if env_var in os.environ:
+            del os.environ[env_var]
+
 @pytest.fixture
 def mock_streamlit_module():
     """Fixture to provide access to the centralized Streamlit mock."""

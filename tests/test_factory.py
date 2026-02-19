@@ -28,7 +28,7 @@ def test_configure_dspy_with_env(mock_dspy, enable_has_dspy):
 def test_configure_dspy_without_env(mock_dspy, enable_has_dspy):
     with patch.dict(os.environ, {}, clear=True):
         # Also mock the settings repo to return empty
-        with patch("src.agents.factory.SqliteSettingsRepository") as MockRepo:
+        with patch("src.agents.factory.AlchemySettingsRepository") as MockRepo:
             MockRepo.return_value.get_global.return_value = []
             AgentFactory._dspy_configured = False
             AgentFactory._configure_dspy()

@@ -1,6 +1,4 @@
-### 版本紀錄 (Version History)
-| Date | Version | Description | Author |
-| :--- | :--- | :--- | :--- |
+| 2026-02-19 | v4.2 | **Postgres-Strict Architecture**: Formalized Three-Tier Data Strategy (Redis/Postgres/Files). Purged all SQLite logic to ensure production reliability (Rule #9). | Neo |
 | 2026-02-17 | v4.0.0 | **Hybrid Storage & Security Hardening**: Integrated Rule #11 (Hardened Base) and Rule #12 (Atomic Commit/Wiki Sync). Formalized Hybrid ORM strategy. | Neo |
 | 2026-02-15 | v3.6.1 | **Multi-Tier Agent Architecture**: Role × 3-Tier (Advanced/Smart/Fast) 並行模式 | Neo |
 
@@ -50,8 +48,9 @@
 
 ### 6. 技術選型分析 (Selection Analysis)
 - **為什麼選擇 Streamlit？**: 快速迭代 AI 互動介面，減少前端開發成本，專注於 Agent 邏輯。
-- **為什麼選擇 PostgreSQL？**: v4.0 全面遷移至 Postgres，利用 `pgvector` 實現原生向量搜索，並透過其強大的 JSONB 支援處理非結構化配置。
-- **為什麼選擇 Hybrid Strategy？**: 針對交易數據使用 Raw SQL (Performance)；針對管理類實體使用 ORM (Efficiency)。
+- **為什麼選擇 PostgreSQL？**: v4.2 全面清除 SQLite 並實施 Postgres 強制政策，利用 `pgvector` 實現全系統統一的語義搜索，並確保資料庫操作具有 ACID 特性。
+- **為什麼選擇 Redis？**: 作為 Hot Tier，我們利用 Redis 的極速 Response Caching 顯著降低 OpenRouter/OpenAI API 延遲與成本。
+- **為什麼選擇 Hybrid Strategy？**: 針對複雜行情計算與向量搜尋強制使用 Raw SQL (Performance)；針對管理類實體使用 ORM (Efficiency)。
 
 ### 7. 資安加固與治理 (Rule #11 & #12)
 - **Managed-Security-Base**: 統一使用 `python:3.11-slim-bookworm`，非 root 執行，並嚴格隔離憑證至 `secrets/` 目錄。

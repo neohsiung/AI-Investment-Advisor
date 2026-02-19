@@ -17,8 +17,10 @@ def test_init_db(tmp_path):
     table_names = [t[0] for t in tables]
 
     expected_tables = [
-        'transactions', 'positions', 'cash_flows', 'recommendations',
-        'reports', 'daily_snapshots', 'scheduler_logs', 'settings', 'prompt_history'
+        'users', 'transactions', 'memory_embeddings', 'settings',
+        'council_minutes', 'event_logs', 'reports', 'schema_version',
+        'user_identities', 'daily_snapshots', 'cash_flows', 'risk_keywords',
+        'channel_verifications'
     ]
 
     for table in expected_tables:

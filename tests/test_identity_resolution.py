@@ -4,7 +4,7 @@ import asyncio
 from sqlalchemy import create_engine
 from src.data.database import init_db
 from src.data.models import Base, User, UserIdentity
-from src.repositories.user_repository import UserRepositoryImpl
+from src.repositories.user_repository import AlchemyUserRepository
 from src.services.notification_service import NotificationService
 
 @pytest.fixture
@@ -12,7 +12,7 @@ def test_repo():
     """Create an in-memory SQLite database for testing."""
     engine = create_engine("sqlite:///:memory:")
     Base.metadata.create_all(engine)
-    return UserRepositoryImpl(engine)
+    return AlchemyUserRepository(engine)
 
 def test_identity_linking_and_resolution(test_repo):
     """Test creating a user and linking multiple identities."""

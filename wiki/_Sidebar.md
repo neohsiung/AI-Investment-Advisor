@@ -1,8 +1,21 @@
-    *   [快速啟動與操作指南](01_使用者手冊-User_Manual/快速啟動與操作指南-Quickstart-User-Guide.md)
-    *   [系統設定與金鑰管理](01_使用者手冊-User_Manual/系統設定與金鑰管理-System-Configuration.md)
-    *   [互動頻道設定](01_使用者手冊-User_Manual/互動頻道設定-Channel-Setup.md)
+*   **[🏠 Home](Home)**
+*   **00. 規則規範 (Rules)**
+    *   [文件規範](00_規則規範-Rules/文件規範-Wiki-Standard.md)
+    *   [文件框架定義](00_規則規範-Rules/文件框架定義-Document-Frameworks.md)
+    *   [資料庫設計與代碼規範](00_規則規範-Rules/資料庫設計與代碼規範-Database-Git-Standards.md)
+    *   [資安管理與基礎映像檔規範](00_規則規範-Rules/資安管理與基礎映像檔規範-Security-and-Base-Image-Standard.md)
+    *   [動態參數規範](00_規則規範-Rules/動態參數規範-Dynamic-Parameter-Standards.md)
+    *   [全通路適配器規範](00_規則規範-Rules/全通路適配器規範-Omni-Channel-Adapter-Standards.md)
+    *   [金融數據矩陣與整合成本](00_規則規範-Rules/金融數據矩陣與整合成本-Financial-Data-Matrix-Cost.md)
+    *   [非同步開發庫指南](00_規則規範-Rules/非同步開發庫指南-Async-Libraries-Guide.md)
+    *   [外部事件整合指南](00_規則規範-Rules/外部事件整合指南-External-Event-Integration.md)
+    *   [技術債與待辦清單](00_規則規範-Rules/技術債與待辦清單-Technical-Debt-And-Todos.md)
+*   **01. 使用手冊 (User Manual)**
+    *   [快速啟動與操作指南](01_使用手冊-User_Manual/快速啟動與操作指南-Quickstart-User-Guide.md)
+    *   [系統設定與金鑰管理](01_使用手冊-User_Manual/系統設定與金鑰管理-System-Configuration.md)
+    *   [互動頻道設定](01_使用手冊-User_Manual/互動頻道設定-Channel-Setup.md)
 *   **02. 產品規格 (Product Managers)**
-    *   [產品演進藍圖](02_產品經理-Product_Managers/產品演進藍圖-Evolutionary-Roadmap.md)
+    *   [產品演進藍圖](02_產品經理-Product_Managers/01_規格書-Specs/產品演進藍圖-Evolutionary-Roadmap.md)
     *   **01_規格書-Specs**
         *   [核心系統規格 (v3.8)](02_產品經理-Product_Managers/01_規格書-Specs/核心系統規格-Core-System-Specs.md)
         *   [未來演進規格 (v4.0)](02_產品經理-Product_Managers/01_規格書-Specs/未來演進規格-Future-Roadmap-Specs.md)
@@ -17,28 +30,11 @@
 *   **04. 架構觀點 (Architect View)**
     *   [系統全景圖](04_架構觀點-Architect_Views/系統全景圖-System-Landscape.md)
     *   [架構哲學](04_架構觀點-Architect_Views/架構哲學-Architectural-Philosophies.md)
-    *   [哨兵與評議會架構](04_架構觀點-Architect_Views/哨兵與評議會架構-Sentinel-Council-Architecture.md)
-    *   [配置管理架構](04_架構觀點-Architect_Views/配置管理架構-Configuration-Management.md)
     *   [底層通信協議 (Agent Mesh)](04_架構觀點-Architect_Views/底層通信協議-Agent-Mesh-Protocols.md)
-    *   [任務規劃與執行引擎](04_架構觀點-Architect_Views/任務規劃與執行引擎-Task-Planning-Engine.md)
-    *   [記憶系統與 Redis 架構](04_架構觀點-Architect_Views/記憶系統與Redis架構-Memory-Redis-Architecture.md)
-    *   [資料與領域模型](04_架構觀點-Architect_Views/資料與領域模型-Data-Domain-Models.md)
-    *   [數據攝取架構](04_架構觀點-Architect_Views/數據攝取架構-Data-Ingestion-Architecture.md)
-    *   [動態指標與復盤機制](04_架構觀點-Architect_Views/動態指標與復盤機制-Dynamic-Indicators-and-Experience-Replay.md)
-    *   [前端與服務架構](04_架構觀點-Architect_Views/前端與服務架構-Frontend-Service-Architecture.md)
-    *   [代理人戰略協定](04_架構觀點-Architect_Views/代理人戰略協定-Agent-Swarm-Protocol.md)
+    *   [哨兵與評議會架構](04_架構觀點-Architect_Views/哨兵與評議會架構-Sentinel-Council-Architecture.md)
 *   **05. 工程手冊 (Engineering Handbook)**
-    *   [文件規範](05_工程手冊-Engineering_Handbook/02_規範標準-Standards/文件規範-Wiki-Standard.md)
-    *   [文件框架定義](05_工程手冊-Engineering_Handbook/02_規範標準-Standards/文件框架定義-Document-Frameworks.md)
-    *   [資料庫設計與代碼規範](05_工程手冊-Engineering_Handbook/02_規範標準-Standards/資料庫設計與代碼規範-Database-Git-Standards.md)
-    *   [全通路適配器規範](05_工程手冊-Engineering_Handbook/02_規範標準-Standards/全通路適配器規範-Omni-Channel-Adapter-Standards.md)
-    *   [動態參數規範](05_工程手冊-Engineering_Handbook/02_規範標準-Standards/動態參數規範-Dynamic-Parameter-Standards.md)
-    *   [外部事件整合指南](05_工程手冊-Engineering_Handbook/02_規範標準-Standards/外部事件整合指南-External-Event-Integration.md)
-    *   [金融數據矩陣與整合成本](05_工程手冊-Engineering_Handbook/02_規範標準-Standards/金融數據矩陣與整合成本-Financial-Data-Matrix-Cost.md)
-    *   [資安管理與基礎映像檔規範](05_工程手冊-Engineering_Handbook/02_規範標準-Standards/資安管理與基礎映像檔規範-Security-and-Base-Image-Standard.md)
-    *   [技術債與待辦清單](05_工程手冊-Engineering_Handbook/02_規範標準-Standards/技術債與待辦清單-Technical-Debt-And-Todos.md)
     *   **01_設計模式-Patterns**
-        *   [設計模式導讀](05_工程手冊-Engineering_Handbook/設計模式導讀-Design-Patterns-Intro.md)
+        *   [設計模式導讀](05_工程手冊-Engineering_Handbook/02_常用工具與整合-Tools_and_Integration/設計模式導讀-Design-Patterns-Intro.md)
         *   [工廠模式](05_工程手冊-Engineering_Handbook/01_設計模式-Patterns/設計模式-工廠-Factory-Pattern.md)
         *   [存儲庫模式](05_工程手冊-Engineering_Handbook/01_設計模式-Patterns/設計模式-存儲庫-Repository-Pattern.md)
         *   [依賴注入](05_工程手冊-Engineering_Handbook/01_設計模式-Patterns/設計模式-依賴注入-DI-Pattern.md)
@@ -46,7 +42,8 @@
         *   [策略模式](05_工程手冊-Engineering_Handbook/01_設計模式-Patterns/設計模式-策略-Strategy-Pattern.md)
         *   [適配器模式](05_工程手冊-Engineering_Handbook/01_設計模式-Patterns/設計模式-適配器-Adapter-Pattern.md)
         *   [智能體集群模式](05_工程手冊-Engineering_Handbook/01_設計模式-Patterns/設計模式-智能體集群-Swarm-Patterns.md)
-    *   [研究與最佳實踐](05_工程手冊-Engineering_Handbook/研究與最佳實踐-Research-Best-Practices.md)
-    *   [提示詞工程規範](05_工程手冊-Engineering_Handbook/提示詞工程規範-Prompt-Engineering-Specs.md)
-    *   [策略復盤與Alpha優化](05_工程手冊-Engineering_Handbook/策略復盤與Alpha優化-Strategic-Retrospective-Alpha-Optimization.md)
+    *   **02_常用工具與整合-Tools_and_Integration**
+        *   [研究與最佳實踐](05_工程手冊-Engineering_Handbook/02_常用工具與整合-Tools_and_Integration/研究與最佳實踐-Research-Best-Practices.md)
+        *   [提示詞工程規範](05_工程手冊-Engineering_Handbook/02_常用工具與整合-Tools_and_Integration/提示詞工程規範-Prompt-Engineering-Specs.md)
+        *   [策略復盤與Alpha優化](05_工程手冊-Engineering_Handbook/02_常用工具與整合-Tools_and_Integration/策略復盤與Alpha優化-Strategic-Retrospective-Alpha-Optimization.md)
 *   **[99_封存-Archive](99_封存-Archive)**

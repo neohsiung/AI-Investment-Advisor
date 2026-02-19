@@ -14,12 +14,6 @@ class IAgentStateRepository(ABC):
         """
         Get the last known state for an agent execution context.
         取得代理人執行上下文的最後已知狀態。
-        
-        Args:
-            agent_id (str): Unique ID for the execution context. (執行上下文的唯一 ID)
-            
-        Returns:
-            Optional[Tuple[str, str]]: (last_input_hash, last_output) or None. (最後輸入雜湊與最後輸出，或 None)
         """
         pass
         
@@ -28,19 +22,21 @@ class IAgentStateRepository(ABC):
         """
         Save the current state of an agent execution.
         儲存代理人執行的當前狀態。
-        
-        Args:
-            agent_id (str): Unique ID for the execution context. (執行上下文的唯一 ID)
-            agent_name (str): Name of the agent. (代理人名稱)
-            input_hash (str): Hash of the current input. (當前輸入的雜湊)
-            output (str): The execution output to cache. (要快取的執行輸出)
+        """
+        pass
+
+    @abstractmethod
+    def close_session(self) -> None:
+        """
+        Close the database session.
+        關閉資料庫工作階段。
         """
         pass
 
 class AlchemyAgentStateRepository(BaseRepository, IAgentStateRepository):
     """
-    Implementation of IAgentStateRepository using SQLAlchemy.
-    使用 SQLAlchemy 實作的 IAgentStateRepository。
+    Implementation of IAgentStateRepository using SQLAlchemy (PostgreSQL Optimized).
+    使用 SQLAlchemy 實作的 IAgentStateRepository (PostgreSQL 優化)。
     """
     def __init__(self, engine: Any = None):
         """
@@ -63,28 +59,19 @@ class AlchemyAgentStateRepository(BaseRepository, IAgentStateRepository):
 
     def save_state(self, agent_id: str, agent_name: str, input_hash: str, output: str) -> None:
         """
-        Save the current state of an agent execution.
-        儲存代理人執行的當前狀態。
+        Save the current state of an agent execution using ON CONFLICT (Upsert).
         """
         with self.engine.begin() as conn:
             ts = datetime.now().isoformat()
-            # Note: INSERT OR REPLACE is SQLite specific. For Postgres we'd use ON CONFLICT.
-            # BaseRepository.is_sqlite can be used to branch.
-            if self.is_sqlite:
-                query = text("""
-                    INSERT OR REPLACE INTO agent_states (id, agent_name, last_input_hash, last_run_time, last_output) 
-                    VALUES (:id, :name, :hash, :ts, :output)
-                """)
-            else:
-                query = text("""
-                    INSERT INTO agent_states (id, agent_name, last_input_hash, last_run_time, last_output) 
-                    VALUES (:id, :name, :hash, :ts, :output)
-                    ON CONFLICT (id) DO UPDATE SET
-                        agent_name = EXCLUDED.agent_name,
-                        last_input_hash = EXCLUDED.last_input_hash,
-                        last_run_time = EXCLUDED.last_run_time,
-                        last_output = EXCLUDED.last_output
-                """)
+            query = text("""
+                INSERT INTO agent_states (id, agent_name, last_input_hash, last_run_time, last_output) 
+                VALUES (:id, :name, :hash, :ts, :output)
+                ON CONFLICT (id) DO UPDATE SET
+                    agent_name = EXCLUDED.agent_name,
+                    last_input_hash = EXCLUDED.last_input_hash,
+                    last_run_time = EXCLUDED.last_run_time,
+                    last_output = EXCLUDED.last_output
+            """)
                 
             conn.execute(query, {
                 "id": agent_id,
@@ -93,6 +80,3 @@ class AlchemyAgentStateRepository(BaseRepository, IAgentStateRepository):
                 "ts": ts,
                 "output": output
             })
-
-# Legacy alias removed in v4.1.7
-# @deprecated: Use AlchemyAgentStateRepository

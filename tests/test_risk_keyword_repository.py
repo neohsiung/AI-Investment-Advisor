@@ -1,12 +1,12 @@
 """
-Tests for RiskKeywordRepository — CRUD, Seeding, Hit Tracking, Analytics
+Tests for AlchemyRiskKeywordRepository — CRUD, Seeding, Hit Tracking, Analytics
 風險關鍵字資料存取層測試
 
 Tests use an in-memory SQLite database for isolation.
 """
 import pytest
 from unittest.mock import patch
-from src.data.risk_keyword_repository import RiskKeywordRepository, DEFAULT_KEYWORDS
+from src.repositories.risk_keyword_repository import AlchemyRiskKeywordRepository, DEFAULT_KEYWORDS
 from src.data.database import init_db
 from src.domain.entities import RiskKeyword, RiskCategory
 
@@ -16,7 +16,7 @@ def repo(tmp_path):
     """Create a repo with a fresh in-memory DB."""
     db_path = str(tmp_path / "test_rk.db")
     init_db(db_path)
-    return RiskKeywordRepository(db_path)
+    return AlchemyRiskKeywordRepository(db_path)
 
 
 class TestSeedDefaults:

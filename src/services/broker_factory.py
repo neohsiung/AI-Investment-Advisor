@@ -21,7 +21,6 @@ class BrokerFactory:
         Get a specific broker instance based on type or user preference.
         根據類型或使用者偏好獲取特定證券商實例。
         """
-        from src.repositories.settings_repository import AlchemySettingsRepository
         settings_repo = AlchemySettingsRepository()
         
         # 1. Determine Broker Type
@@ -67,7 +66,6 @@ class BrokerFactory:
         Retrieve all enabled brokers for a user based on database settings.
         根據資料庫設定檢索使用者所有已啟用的證券商。
         """
-        from src.repositories.settings_repository import AlchemySettingsRepository
         settings_repo = AlchemySettingsRepository()
         brokers = {}
         

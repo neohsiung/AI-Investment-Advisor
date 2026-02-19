@@ -44,7 +44,7 @@ class TransactionService:
             if hasattr(self.repository, 'get_active_tickers'):
                 return self.repository.get_active_tickers(user_id)
             else:
-                # Fallback if specific repo doesn't support it (though Sqlite does now)
+                # Fallback if specific repo doesn't support it
                 return self.repository.get_unique_tickers(user_id)
         return self.repository.get_unique_tickers(user_id)
         

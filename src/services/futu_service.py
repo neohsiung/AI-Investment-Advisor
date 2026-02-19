@@ -31,7 +31,7 @@ class FutuService(IBroker):
     需要 FutuOpenD 在本機或遠端運行。
     """
 
-    def __init__(self, host: str = "127.0.0.1", port: int = 11111, is_sim: bool = False, pwd: str = None) -> None:
+    def __init__(self, host: str = "127.0.0.1", port: int = 11111, is_sim: bool = False, pwd: str = None, user_id: str = None) -> None:
         """
         Initialize the Futu service.
         初始化富途服務。
@@ -40,6 +40,7 @@ class FutuService(IBroker):
         self.port = port
         self.is_sim = is_sim
         self.pwd = pwd
+        self.user_id = user_id
         self.transaction_repo = AlchemyTransactionRepository()
         self.risk_manager = RiskManager()
         self.name = "Futu"

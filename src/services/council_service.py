@@ -123,7 +123,7 @@ class CouncilService:
         final_report = await loop.run_in_executor(None, cio.run, final_context)
         
         # Archive (Simple)
-        self._archive_minutes(session_id, topic, str(final_report), aggregated_summary)
+        self._archive_minutes(user_id, session_id, topic, str(final_report), aggregated_summary)
 
         return {
             "session_id": session_id,
@@ -209,7 +209,7 @@ class CouncilService:
         }
         
         decision = cio.run(final_context)
-        self._archive_minutes(session_id, topic, str(decision), "\n".join(transcript))
+        self._archive_minutes(user_id, session_id, topic, str(decision), "\n".join(transcript))
         
         return {
             "session_id": session_id,
@@ -217,7 +217,7 @@ class CouncilService:
             "transcript": transcript
         }
 
-    def _archive_minutes(self, session_id: str, topic: str, consensus: str, transcript: str) -> None:
+    def _archive_minutes(self, user_id: str, session_id: str, topic: str, consensus: str, transcript: str) -> None:
         """
         Archive the session results to the vector repository for experience replay.
         將議程結果歸檔至向量儲存庫，以便進行復盤 (Experience Replay)。
@@ -226,6 +226,7 @@ class CouncilService:
             # Placeholder embedding
             dummy_embedding = [0.0] * 1536 
             self.vector_repo.add_council_minute(
+                user_id=user_id,
                 session_id=session_id,
                 topic=topic,
                 participants=["MapReduce_Council"],

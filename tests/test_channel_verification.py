@@ -1,94 +1,102 @@
-import unittest
+import pytest
 from unittest.mock import MagicMock, patch
 import logging
 from datetime import datetime, timedelta
-
-# Adjust path
-import sys
-import os
-sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
 from src.services.verification_service import VerificationService
 from src.repositories.verification_repository import AlchemyVerificationRepository
 from src.services.notification_service import NotificationService
 
-class TestChannelVerification(unittest.TestCase):
-    def setUp(self):
-        self.mock_repo = MagicMock(spec=AlchemyVerificationRepository)
-        self.mock_notification = MagicMock(spec=NotificationService)
-        self.service = VerificationService(repo=self.mock_repo, notification_service=self.mock_notification)
+@pytest.fixture
+def anyio_backend():
+    return 'asyncio'
 
-    def test_connectivity_success(self):
-        # Mock notify_all returning success for LINE
-        self.mock_notification.notify_all.return_value = {"LineBotAdapter": (True, "OK")}
-        
-        success, msg = self.service.test_connectivity("user123", "line")
-        
-        self.assertTrue(success)
-        self.assertEqual(msg, "OK")
-        self.mock_notification.notify_all.assert_called_once()
-        args, kwargs = self.mock_notification.notify_all.call_args
-        self.assertTrue(kwargs['capture_error'])
+@pytest.fixture
+def mock_repo():
+    return MagicMock(spec=AlchemyVerificationRepository)
 
-    def test_connectivity_failure(self):
-        # Mock notify_all returning failure
-        self.mock_notification.notify_all.return_value = {"LineBotAdapter": (False, "Invalid Token")}
-        
-        success, msg = self.service.test_connectivity("user123", "line")
-        
-        self.assertFalse(success)
-        self.assertIn("Invalid Token", msg)
+@pytest.fixture
+def mock_notification():
+    return MagicMock(spec=NotificationService)
 
-    def test_connectivity_adapter_not_found(self):
-         self.mock_notification.notify_all.return_value = {"EmailAdapter": (True, "OK")}
-         
-         success, msg = self.service.test_connectivity("user123", "line")
-         self.assertFalse(success)
-         self.assertIn("not found", msg)
+@pytest.fixture
+def service(mock_repo, mock_notification):
+    return VerificationService(repo=mock_repo, notification_service=mock_notification)
 
-    def test_initiate_verification_flow(self):
-        self.mock_repo.create_verification.return_value = "verif_123"
-        self.mock_notification.notify_all.return_value = {"LineBotAdapter": (True, "OK")}
-        
-        success, msg, vid = self.service.initiate_verification("user_1", "line", timeout_hours=2)
-        
-        self.assertTrue(success)
-        self.assertEqual(vid, "verif_123")
-        self.mock_repo.create_verification.assert_called_once()
+@pytest.mark.anyio
+async def test_connectivity_success(service, mock_notification):
+    # Mock notify_all returning success for LINE
+    mock_notification.notify_all.return_value = {"LineBotAdapter": (True, "OK")}
+    
+    success, msg = await service.test_connectivity("user123", "line")
+    
+    assert success is True
+    assert msg == "OK"
+    mock_notification.notify_all.assert_called_once()
+    args, kwargs = mock_notification.notify_all.call_args
+    assert kwargs['capture_error'] is True
 
-    def test_verify_reply_success(self):
-        # Mock pending verification
-        self.mock_repo.get_pending_verification.return_value = {
-            "id": "v1", "user_id": "u1", "channel": "line", "code": "OK"
-        }
-        
-        # Act
-        result = self.service.verify_reply("u1", "ok", "line") # Case insensitive match
-        
-        self.assertTrue(result)
-        self.mock_repo.update_status.assert_called_with("v1", "verified")
-        self.mock_notification.notify_all.assert_called() # Confirmation sent
+@pytest.mark.anyio
+async def test_connectivity_failure(service, mock_notification):
+    # Mock notify_all returning failure
+    mock_notification.notify_all.return_value = {"LineBotAdapter": (False, "Invalid Token")}
+    
+    success, msg = await service.test_connectivity("user123", "line")
+    
+    assert success is False
+    assert "Invalid Token" in msg
 
-    def test_verify_reply_fail(self):
-        self.mock_repo.get_pending_verification.return_value = {
-            "id": "v1", "user_id": "u1", "channel": "line", "code": "OK"
-        }
-        
-        result = self.service.verify_reply("u1", "WRONG_CODE", "line")
-        
-        self.assertFalse(result)
-        self.mock_repo.update_status.assert_not_called()
+@pytest.mark.anyio
+async def test_connectivity_adapter_not_found(service, mock_notification):
+     mock_notification.notify_all.return_value = {"EmailAdapter": (True, "OK")}
+     
+     success, msg = await service.test_connectivity("user123", "line")
+     assert success is False
+     assert "not found" in msg
 
-    def test_verify_any_reply_success(self):
-        self.mock_repo.get_any_pending_verification.return_value = {
-            "id": "v1", "user_id": "u1", "channel": "line", "code": "OK"
-        }
-        
-        result = self.service.verify_any_reply("u1", "OK")
-        
-        self.assertTrue(result)
-        self.mock_repo.update_status.assert_called_with("v1", "verified")
+@pytest.mark.anyio
+async def test_initiate_verification_flow(service, mock_repo, mock_notification):
+    mock_repo.create_verification.return_value = "verif_123"
+    mock_notification.notify_all.return_value = {"LineBotAdapter": (True, "OK")}
+    
+    success, msg, vid = await service.initiate_verification("user_1", "line", timeout_hours=2)
+    
+    assert success is True
+    assert vid == "verif_123"
+    mock_repo.create_verification.assert_called_once()
 
-if __name__ == '__main__':
-    logging.basicConfig(level=logging.CRITICAL)
-    unittest.main()
+@pytest.mark.anyio
+async def test_verify_reply_success(service, mock_repo, mock_notification):
+    # Mock pending verification
+    mock_repo.get_pending_verification.return_value = {
+        "id": "v1", "user_id": "u1", "channel": "line", "code": "OK"
+    }
+    
+    # Act
+    result = await service.verify_reply("u1", "ok", "line") # Case insensitive match
+    
+    assert result is True
+    mock_repo.update_status.assert_called_with("v1", "verified")
+    mock_notification.notify_all.assert_called() # Confirmation sent
+
+@pytest.mark.anyio
+async def test_verify_reply_fail(service, mock_repo):
+    mock_repo.get_pending_verification.return_value = {
+        "id": "v1", "user_id": "u1", "channel": "line", "code": "OK"
+    }
+    
+    result = await service.verify_reply("u1", "WRONG_CODE", "line")
+    
+    assert result is False
+    mock_repo.update_status.assert_not_called()
+
+@pytest.mark.anyio
+async def test_verify_any_reply_success(service, mock_repo, mock_notification):
+    mock_repo.get_any_pending_verification.return_value = {
+        "id": "v1", "user_id": "u1", "channel": "line", "code": "OK"
+    }
+    
+    result = await service.verify_any_reply("u1", "OK")
+    
+    assert result is True
+    mock_repo.update_status.assert_called_with("v1", "verified")

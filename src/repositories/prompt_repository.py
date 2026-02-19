@@ -35,22 +35,26 @@ class AlchemyPromptRepository(BaseRepository, IPromptRepository):
         Log a change to an agent's prompt.
         記錄代理人提示詞的變更。
         """
-        with self.engine.begin() as conn:
-            log_id = str(uuid.uuid4())
-            timestamp = datetime.now().isoformat()
-            query = text('''
-                INSERT INTO prompt_history (id, timestamp, target_agent, reason, original_prompt, new_prompt, diff_content)
-                VALUES (:id, :timestamp, :target_agent, :reason, :original_prompt, :new_prompt, :diff_content)
-            ''')
-            conn.execute(query, {
-                "id": log_id,
-                "timestamp": timestamp,
-                "target_agent": agent_name,
-                "reason": reason,
-                "original_prompt": old_prompt,
-                "new_prompt": new_prompt,
-                "diff_content": diff
-            })
+        try:
+            with self.engine.begin() as conn:
+                log_id = str(uuid.uuid4())
+                timestamp = datetime.now().isoformat()
+                query = text('''
+                    INSERT INTO prompt_history (id, timestamp, target_agent, reason, original_prompt, new_prompt, diff_content)
+                    VALUES (:id, :timestamp, :target_agent, :reason, :original_prompt, :new_prompt, :diff_content)
+                ''')
+                conn.execute(query, {
+                    "id": log_id,
+                    "timestamp": timestamp,
+                    "target_agent": agent_name,
+                    "reason": reason,
+                    "original_prompt": old_prompt,
+                    "new_prompt": new_prompt,
+                    "diff_content": diff
+                })
+        except Exception as e:
+            # We don't want to fail the whole agent run if logging prompt fails
+            print(f"Error logging prompt change: {e}")
 
 # Legacy alias removed in v4.1.7
 # @deprecated: Use AlchemyPromptRepository

@@ -2,7 +2,7 @@ import pytest
 from unittest.mock import MagicMock, patch
 import os
 import json
-from src.data.redis_memory_repository import RedisMemoryRepository
+from src.repositories.redis_memory_repository import RedisMemoryRepository
 from src.services.memory_factory import MemoryFactory
 from src.services.memory_service import MemoryService, ReportMemoryItem
 
@@ -43,7 +43,7 @@ class MockRedis:
     def hgetall(self, key):
         return self.data.get(key, {})
 
-@patch('src.data.redis_memory_repository.redis.from_url')
+@patch('src.repositories.redis_memory_repository.redis.from_url')
 def test_redis_repo_save_and_fetch(mock_from_url):
     mock_r = MockRedis()
     mock_from_url.return_value = mock_r
@@ -72,7 +72,7 @@ def test_redis_repo_save_and_fetch(mock_from_url):
 # --- Memory Factory Tests ---
 
 @patch('src.services.memory_factory.RedisMemoryRepository')
-@patch('src.services.memory_factory.SqliteMemoryRepository')
+@patch('src.services.memory_factory.AlchemyMemoryRepository')
 def test_memory_factory_switching(mock_sqlite, mock_redis):
     # Case 1: Default (SQLite)
     if "MEMORY_BACKEND" in os.environ: del os.environ["MEMORY_BACKEND"]

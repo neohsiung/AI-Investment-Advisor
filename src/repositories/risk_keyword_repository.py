@@ -111,6 +111,11 @@ class IRiskKeywordRepository(ABC):
         """Get top keywords by hit count."""
         pass
 
+    @abstractmethod
+    def close_session(self) -> None:
+        """Close the database session."""
+        pass
+
 class AlchemyRiskKeywordRepository(BaseRepository, IRiskKeywordRepository):
     """
     Implementation of IRiskKeywordRepository using SQLAlchemy.
@@ -122,7 +127,8 @@ class AlchemyRiskKeywordRepository(BaseRepository, IRiskKeywordRepository):
         Initialize the repository.
         初始化儲存庫。
         """
-        BaseRepository.__init__(self, engine or get_db_engine(db_path))
+        engine = engine or get_db_engine(db_path)
+        BaseRepository.__init__(self, engine)
 
     def seed_defaults(self) -> None:
         """
@@ -154,7 +160,7 @@ class AlchemyRiskKeywordRepository(BaseRepository, IRiskKeywordRepository):
 
     def get_all(self, active_only: bool = False) -> List[RiskKeyword]:
         """
-        Get all keywords (ORM-eligible but using Core for performance).
+        Get all keywords (PostgreSQL optimized).
         取得所有關鍵字。
         """
         with self.engine.connect() as conn:
@@ -190,9 +196,15 @@ class AlchemyRiskKeywordRepository(BaseRepository, IRiskKeywordRepository):
                 """),
                 {"id": kw_id, "keyword": keyword, "weight": weight, "category": category, "created_at": now}
             )
+        # Validate category or fallback to CUSTOM
+        try:
+            cat_enum = RiskCategory(category.lower()) if isinstance(category, str) else category
+        except ValueError:
+            cat_enum = RiskCategory.CUSTOM
+
         return RiskKeyword(
-            id=kw_id, keyboard=keyword, weight=weight,
-            category=RiskCategory(category), hit_count=0, is_active=True, created_at=now
+            id=kw_id, keyword=keyword, weight=weight,
+            category=cat_enum, hit_count=0, is_active=True, created_at=now
         )
 
     def update_weight(self, kw_id: str, new_weight: float) -> None:
@@ -242,29 +254,18 @@ class AlchemyRiskKeywordRepository(BaseRepository, IRiskKeywordRepository):
 
     def get_stale_keywords(self, days_threshold: int = 90) -> List[RiskKeyword]:
         """
-        Find keywords that haven't triggered in N days.
+        Find keywords that haven't triggered in N days (PostgreSQL).
         取得過期的關鍵字。
         """
         with self.engine.connect() as conn:
-            is_sqlite = 'sqlite' in str(conn.engine.url)
-            if is_sqlite:
-                query = text("""
-                    SELECT * FROM risk_keywords 
-                    WHERE is_active = 1 AND (
-                        last_hit_date IS NULL OR 
-                        julianday('now') - julianday(last_hit_date) > :days
-                    )
-                    ORDER BY hit_count ASC
-                """)
-            else:
-                query = text("""
-                    SELECT * FROM risk_keywords 
-                    WHERE is_active = 1 AND (
-                        last_hit_date IS NULL OR 
-                        CURRENT_DATE - CAST(last_hit_date AS DATE) > :days
-                    )
-                    ORDER BY hit_count ASC
-                """)
+            query = text("""
+                SELECT * FROM risk_keywords 
+                WHERE is_active = 1 AND (
+                    last_hit_date IS NULL OR 
+                    CURRENT_DATE - CAST(last_hit_date AS DATE) > :days
+                )
+                ORDER BY hit_count ASC
+            """)
                 
             rows = conn.execute(query, {"days": days_threshold}).fetchall()
             return [self._row_to_entity(row) for row in rows]
@@ -283,27 +284,44 @@ class AlchemyRiskKeywordRepository(BaseRepository, IRiskKeywordRepository):
 
     @staticmethod
     def _row_to_entity(row: Any) -> RiskKeyword:
-        """
-        Convert a DB row to a RiskKeyword entity.
-        將資料列轉換為實體。
-        """
+        if row is None:
+            return None
+        # Handle both SQLAlchemy Row and dictionary-like mapping
         try:
-            # SQLAlchemy Row supports attribute access
-            category_str = row.category if hasattr(row, 'category') else row[3]
-            cat = RiskCategory(category_str) if category_str else RiskCategory.CUSTOM
-        except ValueError:
-            cat = RiskCategory.CUSTOM
-            
-        return RiskKeyword(
-            id=row.id if hasattr(row, 'id') else row[0],
-            keyword=row.keyword if hasattr(row, 'keyword') else row[1],
-            weight=row.weight if hasattr(row, 'weight') else row[2],
-            category=cat,
-            hit_count=row.hit_count if hasattr(row, 'hit_count') else row[4],
-            last_hit_date=row.last_hit_date if hasattr(row, 'last_hit_date') else row[5],
-            is_active=bool(row.is_active if hasattr(row, 'is_active') else row[6]),
-            created_at=row.created_at if hasattr(row, 'created_at') else row[7],
-        )
+             # Try mapping first (SQLAlchemy 1.4/2.0)
+             r = row._mapping
+             
+             try:
+                 cat_val = r['category']
+                 cat_enum = RiskCategory(cat_val.lower()) if isinstance(cat_val, str) else cat_val
+             except (ValueError, KeyError):
+                 cat_enum = RiskCategory.CUSTOM
 
-# Legacy alias removed in v4.1.7
-# @deprecated: Use AlchemyRiskKeywordRepository
+             return RiskKeyword(
+                 id=r['id'],
+                 keyword=r['keyword'],
+                 weight=float(r['weight']),
+                 category=cat_enum,
+                 hit_count=int(r['hit_count']),
+                 last_hit_date=r.get('last_hit_date'),
+                 is_active=bool(r['is_active']),
+                 created_at=r['created_at']
+             )
+        except AttributeError:
+             # Fallback to index-based for older versions or edge cases
+             try:
+                 cat_val = row[3]
+                 cat_enum = RiskCategory(cat_val.lower()) if isinstance(cat_val, str) else cat_val
+             except (ValueError, IndexError):
+                 cat_enum = RiskCategory.CUSTOM
+
+             return RiskKeyword(
+                 id=row[0],
+                 keyword=row[1],
+                 weight=float(row[2]),
+                 category=cat_enum,
+                 hit_count=int(row[4]),
+                 last_hit_date=row[5],
+                 is_active=bool(row[6]),
+                 created_at=row[7]
+             )

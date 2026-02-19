@@ -11,7 +11,7 @@ class TestBrokerFactory:
     
     def test_get_broker_etoro(self):
         """Test getting eToro broker instance."""
-        with patch('src.services.broker_factory.SqliteSettingsRepository') as MockRepo, \
+        with patch('src.services.broker_factory.AlchemySettingsRepository') as MockRepo, \
              patch('src.services.broker_factory.EtoroService') as MockEtoro:
             
             mock_repo_instance = MagicMock()
@@ -28,7 +28,7 @@ class TestBrokerFactory:
     
     def test_get_broker_futu(self):
         """Test getting Futu broker instance."""
-        with patch('src.services.broker_factory.SqliteSettingsRepository') as MockRepo, \
+        with patch('src.services.broker_factory.AlchemySettingsRepository') as MockRepo, \
              patch('src.services.broker_factory.FutuService') as MockFutu:
             
             mock_repo_instance = MagicMock()
@@ -49,7 +49,7 @@ class TestBrokerFactory:
     
     def test_get_broker_invalid_defaults_to_etoro(self):
         """Test getting broker with invalid type defaults to eToro."""
-        with patch('src.services.broker_factory.SqliteSettingsRepository') as MockRepo, \
+        with patch('src.services.broker_factory.AlchemySettingsRepository') as MockRepo, \
              patch('src.services.broker_factory.EtoroService') as MockEtoro:
             
             mock_repo_instance = MagicMock()
@@ -63,7 +63,7 @@ class TestBrokerFactory:
     
     def test_get_broker_case_insensitive(self):
         """Test broker type is case-insensitive."""
-        with patch('src.services.broker_factory.SqliteSettingsRepository') as MockRepo, \
+        with patch('src.services.broker_factory.AlchemySettingsRepository') as MockRepo, \
              patch('src.services.broker_factory.EtoroService') as MockEtoro:
             
             mock_repo_instance = MagicMock()
@@ -84,7 +84,7 @@ class TestBrokerFactory:
     
     def test_get_broker_caching(self):
         """Test broker instances are cached."""
-        with patch('src.services.broker_factory.SqliteSettingsRepository') as MockRepo, \
+        with patch('src.services.broker_factory.AlchemySettingsRepository') as MockRepo, \
              patch('src.services.broker_factory.EtoroService') as MockEtoro:
             
             mock_repo_instance = MagicMock()
@@ -106,7 +106,7 @@ class TestBrokerFactory:
     
     def test_get_enabled_brokers_with_etoro_enabled(self):
         """Test get_enabled_brokers returns eToro when enabled."""
-        with patch('src.services.broker_factory.SqliteSettingsRepository') as MockRepo, \
+        with patch('src.services.broker_factory.AlchemySettingsRepository') as MockRepo, \
              patch('src.services.broker_factory.EtoroService') as MockEtoro:
             
             mock_repo_instance = MagicMock()
@@ -124,7 +124,7 @@ class TestBrokerFactory:
     
     def test_get_enabled_brokers_fallback_to_etoro(self):
         """Test get_enabled_brokers falls back to eToro when nothing enabled."""
-        with patch('src.services.broker_factory.SqliteSettingsRepository') as MockRepo, \
+        with patch('src.services.broker_factory.AlchemySettingsRepository') as MockRepo, \
              patch('src.services.broker_factory.EtoroService') as MockEtoro:
             
             mock_repo_instance = MagicMock()
@@ -140,7 +140,7 @@ class TestBrokerFactory:
     
     def test_get_broker_with_settings_from_db(self):
         """Test broker initialization uses settings from database."""
-        with patch('src.services.broker_factory.SqliteSettingsRepository') as MockRepo, \
+        with patch('src.services.broker_factory.AlchemySettingsRepository') as MockRepo, \
              patch('src.services.broker_factory.EtoroService') as MockEtoro:
             
             mock_repo_instance = MagicMock()

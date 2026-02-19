@@ -3,7 +3,7 @@ import pandas as pd
 import json
 import logging
 from datetime import timedelta, datetime
-from typing import Optional
+from typing import Optional, Any
 
 from src.agents.factory import AgentFactory
 from src.services.evaluation_service import EvaluationService
@@ -29,8 +29,8 @@ class BacktestService:
         Initialize the backtest service.
         初始化回測服務。
         """
-        # Dependency Injection: Allow injecting Repository, default to Sqlite implementation
-        # 相依注入：允許注入 Repository，預設使用 Sqlite 實作
+        # Dependency Injection: Allow injecting Repository, default to Alchemy (Postgres) implementation
+        # 相依注入：允許注入 Repository，預設使用 SQLAlchemy (Postgres) 實作
         from src.repositories.feedback_repository import AlchemyFeedbackRepository
         self.feedback_repo = feedback_repo if feedback_repo else AlchemyFeedbackRepository()
 

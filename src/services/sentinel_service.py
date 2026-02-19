@@ -11,7 +11,7 @@ from src.services.council_service import CouncilService
 from src.services.transaction_service import TransactionService
 from src.services.notification_service import NotificationService
 
-from src.repositories.risk_keyword_repository import RiskKeywordRepository
+from src.repositories.risk_keyword_repository import AlchemyRiskKeywordRepository
 from src.repositories.sentinel_repository import AlchemySentinelRepository
 from src.services.settings_service import SettingsService
 
@@ -274,7 +274,7 @@ class SentinelService:
         triggers = []
         try:
             # Load active keywords from DB
-            repo = RiskKeywordRepository()
+            repo = AlchemyRiskKeywordRepository()
             active_keywords = repo.get_all(active_only=True)
             
             if not active_keywords:
