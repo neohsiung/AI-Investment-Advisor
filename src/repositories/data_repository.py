@@ -49,7 +49,7 @@ class AlchemyDataRepository(BaseRepository, IDataRepository):
 
         with self.engine.connect() as conn:
             # Using f-string safely because of whitelist above
-            query = text(f"SELECT * FROM {table_name} WHERE user_id = :uid ORDER BY 1 DESC LIMIT :limit")
+            query = text(f"SELECT * FROM {table_name} WHERE user_id = :uid ORDER BY 1 DESC LIMIT :limit")  # nosec B608
             df = pd.read_sql(query, conn, params={"uid": user_id, "limit": limit})
             return df
 

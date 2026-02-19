@@ -1,15 +1,9 @@
 *   **[🏠 Home](Home)**
 *   **00. 規則規範 (Rules)**
-    *   [文件規範](文件規範-Wiki-Standard)
-    *   [文件框架定義](文件框架定義-Document-Frameworks)
-    *   [資料庫設計與代碼規範](資料庫設計與代碼規範-Database-Git-Standards)
-    *   [資安管理與基礎映像檔規範](資安管理與基礎映像檔規範-Security-and-Base-Image-Standard)
-    *   [動態參數規範](動態參數規範-Dynamic-Parameter-Standards)
-    *   [全通路適配器規範](全通路適配器規範-Omni-Channel-Adapter-Standards)
-    *   [金融數據矩陣與整合成本](金融數據矩陣與整合成本-Financial-Data-Matrix-Cost)
-    *   [非同步開發庫指南](非同步開發庫指南-Async-Libraries-Guide)
-    *   [外部事件整合指南](外部事件整合指南-External-Event-Integration)
-    *   [技術債與待辦清單](技術債與待辦清單-Technical-Debt-And-Todos)
+    *   **[文件規範 (Wiki Standard)](文件規範-Wiki-Standard)**
+    *   **[資安與基礎映像檔規範](資安管理與基礎映像檔規範-Security-and-Base-Image-Standard)**
+    *   **[資料庫與代碼規範](資料庫設計與代碼規範-Database-Git-Standards)**
+    *   **[技術債與待辦清單](技術債與待辦清單-Technical-Debt-And-Todos)**
 *   **01. 使用手冊 (User Manual)**
     *   [快速啟動與操作指南](快速啟動與操作指南-Quickstart-User-Guide)
     *   [系統設定與金鑰管理](系統設定與金鑰管理-System-Configuration)

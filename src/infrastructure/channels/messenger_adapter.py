@@ -121,7 +121,7 @@ class MessengerAdapter(BaseChannelAdapter):
              }
 
         try:
-            async with httpx.AsyncClient() as client:
+            async with httpx.AsyncClient(timeout=10.0) as client:
                 response = await client.post(self.base_url, params=params, json=payload, timeout=10.0)
                 data = response.json()
                 if "recipient_id" in data:

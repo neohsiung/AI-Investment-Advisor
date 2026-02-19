@@ -47,7 +47,7 @@ class GoogleChatAdapter(BaseChannelAdapter):
         payload = {"text": text_body}
 
         try:
-            async with httpx.AsyncClient() as client:
+            async with httpx.AsyncClient(timeout=10.0) as client:
                 response = await client.post(target_url, json=payload, timeout=10.0)
                 if response.status_code == 200:
                     logger.info(f"Google Chat message sent.")

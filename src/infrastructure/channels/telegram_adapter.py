@@ -94,7 +94,7 @@ class TelegramAdapter(BaseChannelAdapter):
         raise_error = kwargs.get("raise_error", False)
 
         try:
-            async with httpx.AsyncClient() as client:
+            async with httpx.AsyncClient(timeout=10.0) as client:
                 response = await client.post(url, json=payload, timeout=10.0)
                 data = response.json()
                 if data.get("ok"):
@@ -165,7 +165,7 @@ class TelegramAdapter(BaseChannelAdapter):
                 
             if query_id and self.base_url:
                 try:
-                    async with httpx.AsyncClient() as client:
+                    async with httpx.AsyncClient(timeout=10.0) as client:
                         await client.post(f"{self.base_url}/answerCallbackQuery", json={"callback_query_id": query_id}, timeout=5.0)
                 except Exception as e:
                     logger.error(f"Failed to answer Telegram callback: {e}")

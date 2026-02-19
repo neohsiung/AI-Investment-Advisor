@@ -103,7 +103,7 @@ class LineBotAdapter(BaseChannelAdapter):
                     "Authorization": f"Bearer {self.channel_access_token}",
                     "Content-Type": "application/json"
                 }
-                async with httpx.AsyncClient() as client:
+                async with httpx.AsyncClient(timeout=10.0) as client:
                     response = await client.post(
                         "https://api.line.me/v2/bot/message/push",
                         headers=headers,
@@ -244,7 +244,7 @@ class LineBotAdapter(BaseChannelAdapter):
                 "Authorization": f"Bearer {self.channel_access_token}",
                 "Content-Type": "application/json"
             }
-            async with httpx.AsyncClient() as client:
+            async with httpx.AsyncClient(timeout=10.0) as client:
                 response = await client.post(
                     "https://api.line.me/v2/bot/message/push",
                     headers=headers,

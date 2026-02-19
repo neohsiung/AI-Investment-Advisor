@@ -153,7 +153,7 @@ class SlackAdapter(BaseChannelAdapter):
         }
 
         try:
-            async with httpx.AsyncClient() as client:
+            async with httpx.AsyncClient(timeout=10.0) as client:
                 response = await client.post(self.api_url, headers=headers, json=payload, timeout=10.0)
                 data = response.json()
                 if data.get("ok"):

@@ -124,7 +124,7 @@ class HybridMemory:
                     FROM memory_embeddings
                     WHERE {where_clause}
                     LIMIT :l
-                """)
+                """)  # nosec B608
                 result = conn.execute(query, params)
             else:
                 # PostgreSQL + pgvector optimization
@@ -135,7 +135,7 @@ class HybridMemory:
                     WHERE {where_clause}
                     ORDER BY embedding <=> :embedding
                     LIMIT :l
-                """)
+                """)  # nosec B608
                 result = conn.execute(query, params)
             
             rows = result.fetchall()

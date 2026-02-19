@@ -241,7 +241,7 @@ class InteractionService:
         """
         logger.info(f"InteractionService: [ACTION] Handling {action} for request {request_id}")
         
-        req = self._pending_requests.get(request_id)
+        req = self._pending_requests.get(request_id)  # nosec B113
         if not req:
             logger.warning(f"InteractionService: Request {request_id} not found in pending list.")
             return
