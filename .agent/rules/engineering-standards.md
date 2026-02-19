@@ -40,9 +40,10 @@
 ## 3. 資安規範 (Security Standards - Rule #11)
 
 ### 3.1 基礎設施安全
-- **基礎映像檔**: 必須使用 `python:3.11-slim-bookworm`。
+- **基礎映像檔**: 必須使用 `python:3.11-slim-bookworm` (Docker)，本地開發強制使用 **Python 3.10+**。
 - **非 Root 執行**: 所有容器內程序必須以 `appuser` 執行。
 - **依賴鎖定**: 嚴禁在 `requirements.txt` 使用無版本號或 `latest` 標籤。
+- **二進制相容性**: 核心數據庫 (`numpy`, `pandas`) 必須鎖定主版本號 (Major Version Pinning) 以防止 ABI 不相容 (如 `numpy<2.0.0`)。
 
 ### 3.2 數據與 SQL 安全
 - **Safe-SQL-Only (Rule #10)**: 所有 Raw SQL 必須使用參數化查詢，嚴禁字串拼接。
