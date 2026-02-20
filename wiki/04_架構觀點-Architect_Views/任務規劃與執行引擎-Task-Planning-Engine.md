@@ -35,6 +35,21 @@
 
 #### 2.1 標準週報生成流程 (Standard Weekly Workflow)
 
+```mermaid
+sequenceDiagram
+    participant Planner as TaskPlanningService
+    participant Router as Model Router
+    participant Macro as Macro Agent
+    participant Sector as CIO (Sector Mode)
+    participant Council as Council (Map-Reduce)
+    
+    Planner->>Router: 生成執行計畫 (DAG) & 複雜度評分
+    Router-->>Macro: 分配 Fast/Smart 算力
+    Macro->>Sector: 傳遞週期配置
+    Sector->>Council: 指定關注板塊
+    Council-->>Planner: 聚合個股掃描結論
+```
+
 1.  **Plan Phase**:
     *   `WeeklyWorkflow` 調用 `TaskPlanningService` 生成標準化 `TaskPlan`。
 2.  **Execute Phase**:
@@ -54,6 +69,10 @@
 #### 3.2 Swarm Insights (蜂群洞察)
 *   整合 Momentum (動能)、Sentiment (情緒) 與 Fundamental (基本面) 的多維度訊號。
 *   CIO Agent 作為最終仲裁者 (Arbiter)，解決不同 Agent 間的觀點衝突。
+
+### 4. 預期效益與成果 (Expected Outcomes)
+- **商業價值 (Business Value)**: 解耦任務規劃與實際執行，讓系統能像人類基金經理一樣「先定戰略再下戰術」，確保研究報告的邏輯嚴密性與連貫性。
+- **性能指標 (Performance Target)**: 透過 LiteLLM 的動態路由，將低複雜度任務導向低成本模型 (如 Gemini-Flash)，相較全域使用 GPT-4o 可節省高達 40% 的 API 成本，同時維持決策品質。
 
 ---
 
@@ -79,3 +98,8 @@ The Task Planning & Execution Engine decouples "Goal Setting" from "Task Executi
 ### 4. Key Mechanisms
 *   **Gap Filling**: Triggered when active holdings < 15.
 *   **Swarm Insights**: Cross-agent signal integration with CIO arbitration.
+
+### 5. Expected Outcomes
+- **Business Value**: Decoupled planning forces the system to strategize before executing, ensuring logical consistency akin to a human portfolio manager.
+- **Performance Target**: Dynamic routing to cost-effective models for simple tasks reduces API expenditure by up to 40% without compromising analytical depth.
+

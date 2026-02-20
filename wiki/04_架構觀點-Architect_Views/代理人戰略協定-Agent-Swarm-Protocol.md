@@ -17,33 +17,45 @@
 
 **代理人蜂群架構 (Agent Swarm Architecture)** 將投資顧問從線性流程轉變為由 **7 個專業 Agent + 1 個評議會** 組成的協作生態系統。每個 Agent 在嚴格的「認知授權 (Cognitive Mandate)」下運作，並通過「投資委員會協定 (IC Protocol)」與「碎形辯論 (Fractal Debate)」進行互動。
 
-### 🏛️ 架構圖 (Architecture Diagram)
+### 🏛️ 架構圖 (Architecture Diagram - v4.0)
 
 ```mermaid
 graph TD
-    user((User)) -->|Triggers| CIO[CIO Agent]
-    CIO -->|Broadcast| SWARM{Research Swarm}
+    user((User/Webhook)) -->|Triggers| CIO[CIO Agent]
+    CIO -->|Broadcast| ORCH{Swarm Orchestrator}
     
-    subgraph "Research Layer"
-        FUND[Fundamental Analyst]
+    subgraph "Milestone 5: RoleSwarm Clusters"
+        subgraph "Sentiment Swarm"
+            SENT_FAST[News Scanner]
+            SENT_ADV[Social Pulse]
+        end
+        
+        subgraph "Fundamental Swarm"
+            FUND_FAST[Risk Scanner]
+            FUND_SMART[Revenue Extractor]
+            FUND_ADV[Valuation Modeler]
+        end
+        
         MOM[Momentum Analyst]
         MACRO[Macro Strategist]
-        SENT[Sentiment Analyst]
     end
     
     subgraph "Risk & Evolution Layer"
         RISK[Risk Agent]
-        ENG[System Engineer]
+        ENG[System Engineer Agent]
     end
 
-    SWARM --> FUND & MOM & MACRO & SENT
+    ORCH --> SENT_FAST & SENT_ADV
+    ORCH --> FUND_FAST & FUND_SMART & FUND_ADV
+    ORCH --> MOM & MACRO
     
-    FUND & MOM & MACRO & SENT -->|Insights| AGG[Aggregation]
-    AGG --> CIO
+    SENT_FAST & SENT_ADV & FUND_FAST & FUND_SMART & FUND_ADV & MOM & MACRO -->|Insights / Attributes| ORCH
+    ORCH -->|Aggregated Protocol| CIO
     
     CIO <-->|Validate| RISK
     CIO <-->|Fractal Debate| COUNCIL{Council}
-    ENG -->|Optimize Prompts| CIO
+    
+    ENG -->|Generate Alpha Code & Backtest| SETTINGS[(Settings/DB)]
     
     CIO -->|R.P.A.| DECISION[Final Decision]
 ```
@@ -102,11 +114,11 @@ graph TD
 *   **檔案**: `src/agents/risk.py`
 
 #### 2.7 系統工程師 (System Engineer Agent)
-*   **認知授權**: 「自我進化工程師 (Self-Evolution Engineer)」
-*   **職責**: 分析 Agent 績效、自動重寫低分 Prompt (DSPy)。
-*   **產出**: 優化後的 Prompt Template。
-*   **觸發**: HR 評分 < 3.0 或連續 3 次工具失敗。
-*   **檔案**: `src/agents/engineer.py`
+*   **認知授權**: 「自我進化工程師 (Self-Evolution Engineer & Alpha Seeker)」
+*   **職責**: 分析 Agent 績效、自動生成 Alpha 量化因子代碼並執行基因演算法迴圈回測。
+*   **產出**: 經回測驗證 (最佳 Sharpe Ratio) 的量化策略代碼 (儲存於 Repo)。
+*   **觸發**: 獨立的演化排程或低績效觸發。
+*   **檔案**: `src/agents/system_engineer_agent.py`與`src/agents/engineer.py`
 
 #### 2.8 評議會 (Council Agent Adapter)
 *   **職責**: 對每檔持倉執行碎形辯論 (Fractal Debate)。
@@ -125,16 +137,39 @@ graph TD
     *   `get_portfolio`: 獲取投資組合摘要與槓桿率。
 *   **優勢**: **本地執行 (Local Execution)** 消除網路延遲，並提供型態檢查的參數傳遞。
 
-### 4. 蜂群編排與效能演化 (Swarm Orchestration & Evolution — v3.6)
-系統透過 `SwarmOrchestrator` 實現並行任務分發與結果聚合。
+### 4. 蜂群編排與效能演化 (Swarm Orchestration & Evolution — v4.0)
+系統透過 `SwarmOrchestrator` 與 `RoleSwarm` 實現真正的非同步並行任務分發與結果聚合。
+
+#### 4.1 三階層並發架構 (3-Tier Concurrency Architecture)
+```mermaid
+sequenceDiagram
+    participant Orchestrator
+    participant FastTier as ⚡ Fast Tier (Scanner)
+    participant SmartTier as 🧠 Smart Tier (Analyst)
+    participant AdvTier as 🚀 Advanced Tier (Modeler)
+    
+    Orchestrator->>FastTier: Dispatch (asyncio.gather)
+    Orchestrator->>SmartTier: Dispatch (asyncio.gather)
+    Orchestrator->>AdvTier: Dispatch (asyncio.gather)
+    
+    FastTier-->>Orchestrator: Return Results (e.g. 1s)
+    
+    alt Graceful Degradation (CRITICAL DANGER)
+        Orchestrator->>SmartTier: Preempt (Cancel Task)
+        Orchestrator->>AdvTier: Preempt (Cancel Task)
+        Orchestrator-->>CIO: Emergency Stop Signal
+    else Normal Processing
+        SmartTier-->>Orchestrator: Return Results (e.g. 3s)
+        AdvTier-->>Orchestrator: Return Results (e.g. 5s)
+        Orchestrator->>Orchestrator: Fusion Strategy Array
+        Orchestrator-->>CIO: Aggregated Deep Analysis
+    end
+```
 
 *   **編排模式**:
-    *   **Broadcast (廣播)**: 將單一任務發送至多個 Agent 並行執行。
-    *   **Batch Run (批次)**: 為不同 Agent 分配不同任務。
-*   **獎懲機制 (Reward & Penalty)**:
-    *   **Reward (+0.01)**: 任務成功完成後，增加 Agent 的權重比例。
-    *   **Penalty (-0.1)**: 若執行失敗或超時 (Timeout)，則大幅降低權重，並觸發 [System Engineer](提示詞工程規範-Prompt-Engineering-Specs) 進行調優。
-*   **融合策略 (Fusion)**: CIO Agent 根據 Agent 權重與信心分數，融合產出最終裁決。
+    *   **Broadcast (廣播)**: 將單一任務並行發送。
+    *   **Batch Run (批次)**: 透過 `RoleSwarm` 針對不同股票指派動態叢集。
+*   **動態歸因機制 (Auto-Attribution)**: 依循動態指標原則，系統透過 `AttributionAnalyzer` 獨立以 Raw SQL 掃描判斷的準確率與 ROI，自動上調 (Reward) 或下修 (Penalty) 該 Agent 的信任權重。
 
 ### 5. 投資委員會協定 (IC Protocol)
 

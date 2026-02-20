@@ -1,62 +1,44 @@
-*   **[🏠 Home](Home)**
-*   **00. 規則規範 (Rules)**
-    *   [文件規範 (Wiki Standard)](文件規範-Wiki-Standard)
+*   **[🏠 知識庫主頁 (Knowledge Hub)](Home)**
+*   **00. 規則規範與基線 (Governance & Baselines)**
     *   [文件框架定義 (Document Frameworks)](文件框架定義-Document-Frameworks)
+    *   [文件規範 (Wiki Standard)](文件規範-Wiki-Standard)
     *   [資安管理與基礎映像檔規範](資安管理與基礎映像檔規範-Security-and-Base-Image-Standard)
     *   [資料庫設計與代碼規範](資料庫設計與代碼規範-Database-Git-Standards)
-    *   [技術債與待辦清單](技術債與待辦清單-Technical-Debt-And-Todos)
-    *   [全通路適配器規範](全通路適配器規範-Omni-Channel-Adapter-Standards)
-    *   [動態參數規範](動態參數規範-Dynamic-Parameter-Standards)
-    *   [外部事件整合指南](外部事件整合指南-External-Event-Integration)
-    *   [非同步開發庫指南](非同步開發庫指南-Async-Libraries-Guide)
-    *   [金融數據矩陣與整合成本](金融數據矩陣與整合成本-Financial-Data-Matrix-Cost)
-*   **01. 使用手冊 (User Manual)**
-    *   [快速啟動與操作指南](快速啟動與操作指南-Quickstart-User-Guide)
-    *   [系統設定與金鑰管理](系統設定與金鑰管理-System-Configuration)
-    *   [互動頻道設定](互動頻道設定-Channel-Setup)
-*   **02. 產品規格 (Product Managers)**
-    *   **01_規格書-Specs**
-        *   [產品演進藍圖](產品演進藍圖-Evolutionary-Roadmap)
-        *   [架構總綱](架構總綱-Architecture-Blueprint)
-        *   [核心系統規格 (v3.8)](核心系統規格-Core-System-Specs)
-        *   [未來演進規格 (v4.0)](未來演進規格-Future-Roadmap-Specs)
-        *   [哨兵與評議會架構](哨兵與評議會架構-Sentinel-Council-Architecture)
-        *   [數據與記憶核心架構](數據與記憶核心架構-Data-Memory-Core-Specs)
-        *   [智能體調度與通訊規範](智能體調度與通訊規範-Agentic-Orchestration-Specs)
-        *   [配置管理與動態演化](配置管理與動態演化-Config-and-Evolution-Spec)
-*   **03. 開發者指南 (Developer Guide)**
-    *   [環境設定與本地開發](環境設定與本地開發-Environment-Local-Dev)
-    *   [券商整合指南](券商整合指南-Broker-Integration-Guide)
-    *   [交易系統架構](交易系統架構-Trading-Architecture)
-    *   [服務層開發指南](服務層開發指南-Service-Layer-Blueprints)
-    *   [前端架構與 UX 層](前端架構與UX層-Frontend-UX-Layer)
-    *   [測試與外部服務整合](測試與外部服務整合-Testing-External-Services)
+    *   [動態參數規範 (Dynamic Parameters)](動態參數規範-Dynamic-Parameter-Standards)
+    *   [技術債與待辦清單 (Tech Debt)](技術債與待辦清單-Technical-Debt-And-Todos)
+    *   [全通路適配器規範 (Omni-Channel)](全通路適配器規範-Omni-Channel-Adapter-Standards)
+*   **01. 使用手冊 (User Manual & Operations)**
+    *   [快速啟動與操作指南 (Quickstart)](快速啟動與操作指南-Quickstart-User-Guide)
+    *   [行動端 Vibe Coding 使用指南](行動端-Vibe-Coding-使用指南-Mobile-Vibe-Coding-User-Guide)
+    *   [系統設定與金鑰管理 (System Config)](系統設定與金鑰管理-System-Configuration)
+    *   [互動頻道設定 (Channel Setup)](互動頻道設定-Channel-Setup)
+*   **02. 產品規格 (Product Specifications)**
+    *   **01_規格書 (Specs)**
+        *   [產品演進藍圖 (Evolution Roadmap)](產品演進藍圖-Evolutionary-Roadmap)
+        *   [核心系統規格 (Core Specs)](核心系統規格-Core-System-Specs)
+        *   [未來演進規格 (Future Roadmap)](未來演進規格-Future-Roadmap-Specs)
+        *   [哨兵與評議會架構 (Sentinel & Council)](哨兵與評議會架構-Sentinel-Council-Architecture)
+        *   [數據與記憶核心架構 (Data & Memory)](數據與記憶核心架構-Data-Memory-Core-Specs)
+        *   [智能體調度與通訊規範 (Agentic Orchestration)](智能體調度與通訊規範-Agentic-Orchestration-Specs)
+*   **03. 開發者指南 (Developer Guides)**
+    *   [環境設定與本地開發 (Local Dev)](環境設定與本地開發-Environment-Local-Dev)
+    *   [交易系統架構 (Trading Architecture)](交易系統架構-Trading-Architecture)
+    *   [服務層開發指南 (Service Blueprints)](服務層開發指南-Service-Layer-Blueprints)
+    *   [測試與外部服務整合 (Testing & APIs)](測試與外部服務整合-Testing-External-Services)
     *   [雲端部署 (GCP Cloud Run)](雲端部署-Deployment-GCP-CloudRun)
-*   **04. 架構觀點 (Architect View)**
-    *   [系統全景圖](系統全景圖-System-Landscape)
-    *   [架構哲學](架構哲學-Architectural-Philosophies)
-    *   [底層通信協議 (Agent Mesh)](底層通信協議-Agent-Mesh-Protocols)
-    *   [代理人戰略協定](代理人戰略協定-Agent-Swarm-Protocol)
-    *   [任務規劃與執行引擎](任務規劃與執行引擎-Task-Planning-Engine)
-    *   [動態指標與復盤機制](動態指標與復盤機制-Dynamic-Indicators-and-Experience-Replay)
-    *   [數據攝取架構](數據攝取架構-Data-Ingestion-Architecture)
-    *   [記憶系統與Redis架構](記憶系統與Redis架構-Memory-Redis-Architecture)
-    *   [資料與領域模型](資料與領域模型-Data-Domain-Models)
-    *   [配置管理架構](配置管理架構-Configuration-Management)
+*   **04. 架構觀點 (Architecture Blueprints)**
+    *   [系統全景圖 (System Landscape)](系統全景圖-System-Landscape)
+    *   [架構哲學 (ADR & Philosophies)](架構哲學-Architectural-Philosophies)
+    *   [代理人戰略協定 (Agent Swarm Protocol)](代理人戰略協定-Agent-Swarm-Protocol)
+    *   [底層通信協議 (Agent Mesh Protocols)](底層通信協議-Agent-Mesh-Protocols)
+    *   [記憶系統與Redis架構 (Memory Architecture)](記憶系統與Redis架構-Memory-Redis-Architecture)
+    *   [數據攝取架構 (Data Ingestion)](數據攝取架構-Data-Ingestion-Architecture)
 *   **05. 工程手冊 (Engineering Handbook)**
-    *   **01_設計模式-Patterns**
-        *   [設計模式導讀](設計模式導讀-Design-Patterns-Intro)
-        *   [工廠模式](設計模式-工廠-Factory-Pattern)
-        *   [存儲庫模式](設計模式-存儲庫-Repository-Pattern)
-        *   [依賴注入](設計模式-依賴注入-DI-Pattern)
-        *   [樣板方法](設計模式-樣板方法-Template-Method)
-        *   [策略模式](設計模式-策略-Strategy-Pattern)
-        *   [適配器模式](設計模式-適配器-Adapter-Pattern)
-        *   [智能體集群模式](設計模式-智能體集群-Swarm-Patterns)
-    *   **02_常用工具與整合-Tools_and_Integration**
-        *   [研究與最佳實踐](研究與最佳實踐-Research-Best-Practices)
-        *   [提示詞工程規範](提示詞工程規範-Prompt-Engineering-Specs)
-        *   [策略復盤與 Alpha 優化](策略復盤與Alpha優化-Strategic-Retrospective-Alpha-Optimization)
-        *   [故障排除與驗證迴圈 (Streamlit Postmortem)](故障排除與驗證迴圈-Streamlit-Auth-Loop-Postmortem)
-*   **[封存-Archive](封存-Archive)**
+    *   **01_設計模式 (Patterns)**
+        *   [設計模式導讀 (Pattern Intro)](設計模式導讀-Design-Patterns-Intro)
+        *   [智能體集群模式 (Swarm Patterns)](設計模式-智能體集群-Swarm-Patterns)
+        *   [依賴注入 (DI Pattern)](設計模式-依賴注入-DI-Pattern)
+        *   [存儲庫模式 (Repository Pattern)](設計模式-存儲庫-Repository-Pattern)
+        *   [工廠模式 (Factory Pattern)](設計模式-工廠-Factory-Pattern)
+*   **[封存與歷史 (Archive)](封存-Archive)**
 

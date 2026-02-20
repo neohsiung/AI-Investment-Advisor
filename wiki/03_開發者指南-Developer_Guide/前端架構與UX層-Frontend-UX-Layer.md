@@ -105,6 +105,10 @@ graph TD
 - **風險提示**: Leverage > 1.5x 黃色警告、> 2.0x 紅色危險。
 - **ThemeService**: CSS 主題注入，支援 Dark/Light 切換。
 
+### 5. 預期效益與成果 (Expected Outcomes)
+- **商業價值 (Business Value)**: 透過高度解耦的視圖與服務層設計，讓前端儀表板能在極低成本的 Streamlit 環境下，提供近乎原生 App 的專業級對沖基金監控體驗。
+- **性能指標 (Performance Target)**: 結合 JIT (即時) 渲染與 300s 智慧快取，確保在切換各個監控 Tab 時的 P99 響應時間小於 2 秒。
+
 ---
 
 <a id="en"></a>
@@ -126,6 +130,10 @@ Strict separation of concerns to enhance maintainability and testability.
 - **Just-In-Time Calculation**: Metrics computed on-the-fly with current market prices.
 - **Risk Highlighting**: Color-coded leverage warnings (1.5x yellow, 2.0x red).
 - **Transparent AI**: Agent reasoning displayed alongside raw data.
+
+### 4. Expected Outcomes
+- **Business Value**: Delivers an institutional-grade monitoring experience in a cost-effective environment via strict View-Service decoupling.
+- **Performance Target**: P99 response time under 2 seconds during tab switching, powered by 300s intelligent JIT caching.
 
 ## 🔗 Bidirectional Links
 - **Architecture**: [System Landscape](系統全景圖-System-Landscape)

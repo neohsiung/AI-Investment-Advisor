@@ -1,5 +1,11 @@
 # 樣板方法模式 (Template Method Pattern)
 
+### 版本紀錄 (Version History)
+| Date | Version | Description | Author |
+| :--- | :--- | :--- | :--- |
+| 2026-02-20 | v4.5 | Document audit and history alignment | Neo |
+
+
 > **[繁體中文 (Traditional Chinese)](#zh) | [English](#en)**
 
 ---

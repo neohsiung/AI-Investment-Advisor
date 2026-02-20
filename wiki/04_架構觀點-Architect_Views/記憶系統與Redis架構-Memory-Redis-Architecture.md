@@ -1,5 +1,11 @@
 # 記憶系統與 Redis 架構 (Memory System & Redis Architecture)
 
+### 版本紀錄 (Version History)
+| Date | Version | Description | Author |
+| :--- | :--- | :--- | :--- |
+| 2026-02-20 | v4.5 | Document audit and history alignment | Neo |
+
+
 > **版本 (Version):** v4.2  
 > **更新日期 (Last Updated):** 2026-02-19  
 > **狀態 (Status):** Production Optimized

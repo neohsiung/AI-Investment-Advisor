@@ -23,14 +23,17 @@
 
 ## 🇹🇼 專案概覽 (Project Overview)
 
-**AI Investment Advisor** 是一個模仿頂級對沖基金架構的自動化投資與風險管理系統。它結合了 **7 Agent Swarm (智能體集群)**、**Council Debate (評議會辯論)** 與 **Hybrid Storage (混合儲存)**，旨在提供專業級的自適應投資建議。
+> **Elevator Pitch**:
+> AI Investment Advisor 是一個模仿頂級對沖基金大腦架構的自動化量化投資平台。透過搭載 **7 Agent Swarm (智能體集群)** 與獨家的 **Fractal Debate (碎形辯論)** 演算法，系統能自主掃描全球市場巨量異質數據，執行 3-Tier 分層並發決策，並無縫整合至全通路 (LINE/Slack) 進行毫秒級的 Auto-Hedging 防禦。此專案具備高度的工程規範驅動 (Rule-driven) 特性，兼具專業風控層與自演化 Alpha 尋求能力。
 
-### 🚀 核心優勢
-- **🧠 智能進化集群**: 由 CIO Agent 領銜，協同 Fundamental, Momentum, Macro 等專家智能體，透過 **Fractal Debate (碎形辯論)** 演算法產出決策。
-- **⚖️ 精確槓桿管理**: 獨有的槓桿引擎，嚴格區分 Gross/Net NLV，模擬真實專業交易員的風險曝險控制。
-- **🔭 7x24 事件哨兵**: 哨兵系統 (Sentinel) 同步監聽市場與總經事件，具備 **24 小時智能降噪** 功能。
-- **🗄️ 混合健壯架構**: PostgreSQL 處理結構化數據，pgvector 實現語義記憶 RAG，確保決策具備歷史脈絡。
-- **🛡️ 規範驅動開發**: 堅持 Clean Architecture 與 Rule-based 治理，代碼覆蓋率長期維持 > 75%。
+**AI Investment Advisor** 結合了前端儀表板、混合儲存 (Hybrid Storage) 與多元模型調度，旨在為現代量化投資者提供一套能落地運行且成本可控的專業級自適應投資建議系統。
+
+### 🚀 核心效益與功能亮點 (Key Features & Outcomes)
+- **🧠 智能進化集群 (Swarm Intelligence)**: 由 CIO Agent 領銜協同 Fundamental, Momentum 等專家智能體，消除單一模型幻覺 (Hallucinations)，提升決策勝率與可解釋性。
+- **⏱️ 毫秒級自動化防禦 (Auto-Defense via Webhooks)**: 內建 `AutomatedTradingService` 與 `SentinelService`，可在偵測到 VIX 飆升或外部暴跌訊號時（如 TradingView），免人工干預**自動執行清倉與避險機制**。
+- **⚖️ 專業級風控與槓桿管理 (Institutional Risk Management)**: 獨有的槓桿引擎，嚴格追蹤 Gross/Net NLV，配有 24 小時動態異常降噪與 Margin Call 熔斷機制。
+- **🗄️ 混合 RAG 與記憶檢索 (Hybrid Memory Architecture)**: 以 PostgreSQL 作為結構化核心，輔以 pgvector 實現語義記憶 RAG，確保 AI 決策具備深度的歷史復盤脈絡與一致性。
+- **🔬 自導演算法工程師 (Code-Level Alpha Seeking)**: 內置 `SystemEngineerAgent`，能運用遺傳演算法 (Genetic Algorithm) 自行撰寫、回測並迭代因子 (Alpha) 程式碼，持續演化交易邏輯。
 
 ### 📐 策略性分層架構 (Strategic Tiered Architecture)
 
@@ -120,14 +123,17 @@ graph TD
 
 ## 🇺🇸 Project Overview
 
-**AI Investment Advisor** is a sophisticated, autonomous investment ecosystem designed to simulate the decision-making pipeline of a quantitative hedge fund. It leverages a self-optimizing swarm of **7 AI Agents** anchored by a **Council of Arbitrators** and a high-performance **Hybrid Storage Strategy**.
+> **Elevator Pitch**:
+> AI Investment Advisor is an automated quantitative investment platform architected to mirror the central nervous system of a top-tier hedge fund. Powered by a **7 Agent Swarm** and an exclusive **Fractal Debate** algorithmic framework, the system autonomously ingests heterogeneous global market data, executing high-stakes decisions via a 3-Tier concurrency engine. It seamlessly integrates with omni-channel platforms (LINE/Slack) to deploy millisecond-precision Auto-Hedging defenses. Driven by rigorous engineering standards, it delivers professional-grade risk management combined with self-evolving Alpha generation.
 
-### 🚀 Key Capabilities
-- **🧠 Swarm Intelligence (v1.0)**: CIO-led architecture coordinating specialized agents (Fundamental, Momentum, Macro, etc.) through Fractal Debate for superior Alpha.
-- **⚖️ Precision Leverage Engine**: Real-time tracking of Gross/Net NLV and margin utilization with professional-grade risk reporting.
-- **🔭 Sentinel & Council**: 24/7 scanning of 4D market events with **Smart Deduplication** (24h cooldown) and noise filtering.
-- **🗄️ Hybrid RAG Memory**: PostgreSQL + pgvector unified backbone for high-speed financial calculation and semantic decision history.
-- **🏆 Self-Optimizing Loop**: Integrated **Engineer Agent** using **DSPy** to auto-refine prompts based on execution performance.
+**AI Investment Advisor** synthesizes a frontend dashboard, Hybrid Storage, and multi-model orchestration, aiming to provide modern quantitative investors with a production-ready, cost-optimized, and adaptive professional advisory system.
+
+### 🚀 Key Capabilities & Outcomes
+- **🧠 Swarm Intelligence (v1.0)**: A CIO-led cluster coordinating domain experts (Fundamental, Momentum, Macro) via Fractal Debate, eliminating single-model hallucinations and boosting decision win rates and explainability.
+- **⏱️ Automated Millisecond Defense (Auto-Defense via Webhooks)**: Built-in `AutomatedTradingService` and `Sentinel` autonomously execute emergency liquidation and hedging upon extreme signal detection (e.g., VIX spikes, TradingView alerts) with zero human intervention.
+- **⚖️ Institutional Risk Engine (Precision Leverage Engine)**: Professional-grade tracking of Gross/Net NLV and margin utilization with 24-hour smart dynamic noise reduction and dynamic Circuit Breakers.
+- **🗄️ Hybrid RAG Memory (Hybrid Memory Architecture)**: Employs PostgreSQL as the structured backbone alongside pgvector for semantic retrieval-augmented generation (RAG), guaranteeing historical consistency and context-aware decisions.
+- **🔬 Autonomous Quant Engineer (Code-Level Alpha Seeking)**: The integrated `SystemEngineerAgent` utilizes genetic algorithms to write, backtest, and iterate Alpha creation scripts, ensuring the trading logic continually evolves without manual intervention.
 
 ### 📐 Strategic Tiered Architecture
 

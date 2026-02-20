@@ -156,6 +156,10 @@ graph TD
 - **響應時間**: P95 本地延遲 < 500ms (不含 LLM)。
 - **並發**: `ThreadPoolExecutor` 支援 50+ 標的並行分析。
 
+### 6. 預期效益與成果 (Expected Outcomes)
+- **商業價值 (Business Value)**: 將散亂的 API 邏輯收攏至統一的 27 個 Service 節點中，大幅提升了程式碼復用率。開發者可透過這份「功能型錄」在 1 天內即插即用完成新業務功能的組合。
+- **性能指標 (Performance Target)**: 確保 `AnalyticsService` 與 `MarketDataService` 等核心路徑 P95 響應延遲小於 500 毫秒，支撐多 Agent 併發讀取。
+
 ---
 
 <a id="en"></a>
@@ -179,6 +183,10 @@ graph TD
 ### 3. Performance
 - **Local Latency**: < 500ms (P95).
 - **Throughput**: 50+ tickers in parallel.
+
+### 4. Expected Outcomes
+- **Business Value**: Centralizes disparate APIs into 27 cohesive service nodes, maximizing code reusability. Developers can leverage this 'feature catalog' to compose new business functions rapidly.
+- **Performance Target**: Ensures P95 response latency under 500ms for core paths like `AnalyticsService` and `MarketDataService` to support high-concurrency Agent reads.
 
 ## 🔗 Bidirectional Links
 - **Architect View**: [System Landscape](系統全景圖-System-Landscape)

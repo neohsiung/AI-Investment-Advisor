@@ -1,5 +1,11 @@
 # 資料與領域模型 (Data & Domain Models)
 
+### 版本紀錄 (Version History)
+| Date | Version | Description | Author |
+| :--- | :--- | :--- | :--- |
+| 2026-02-20 | v4.5 | Document audit and history alignment | Neo |
+
+
 > **[繁體中文 (Traditional Chinese)](#zh) | [English](#en)**
 
 | 2026-02-19 | v4.2 | **Purge SQLite & Three-Tier Architecture**: Removed all SQLite dependencies. Enforced PostgreSQL for persistent storage and Redis for caching. Formalized Three-Tier data strategy. | Neo |

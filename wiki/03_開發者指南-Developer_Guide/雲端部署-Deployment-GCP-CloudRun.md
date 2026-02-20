@@ -1,5 +1,11 @@
 # GCP Cloud Run Deployment Guide
 
+### 版本紀錄 (Version History)
+| Date | Version | Description | Author |
+| :--- | :--- | :--- | :--- |
+| 2026-02-20 | v4.5 | Document audit and history alignment | Neo |
+
+
 > **[English](#english) | [繁體中文 (Traditional Chinese)](#traditional-chinese)**
 
 <a id="english"></a>

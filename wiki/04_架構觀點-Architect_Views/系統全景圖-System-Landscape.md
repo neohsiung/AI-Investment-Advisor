@@ -40,25 +40,33 @@
 ```mermaid
 graph TD
     UI["Dashboard (Streamlit)"] -->|SQL| DB[(Portfolio DB)]
-    UI -->|HTTP| MCP_Serv["MCP Microservice (FastAPI)"]
-    Sch["Scheduler (Daemon)"] -->|Trigger| Agents["Agent Swarm (7 Agents + Council)"]
+    UI -->|HTTP| MCP_Serv["MCP Microservice"]
+    Sch["Scheduler (Daemon)"] -->|Trigger| Agents["Agent Swarm (Clusters & Council)"]
     Agents -->|Direct Call| Local["Local Skills (Registry)"]
     Agents -->|HTTP| MCP_Serv
     MCP_Serv -->|Financial Data| APIs[Polygon/FMP/FRED/Tavily]
     Local -->|Search/Compute| APIs
 
+    subgraph "Milestone 5: Trading & Defense"
+        ATS[AutomatedTradingService]
+        WHS[WebhookService (FastAPI)]
+    end
+
     subgraph "Multi-Broker"
         BF[BrokerFactory] --> ET[Etoro] & FU[Futu] & IK[IBKR]
     end
 
-    Agents -->|Orders| BF
+    Agents -->|Auto-Hedge/Orders| ATS
+    ATS -->|Execute| BF
+    WHS -->|Trigger| Agents
+    
     subgraph "Delivery"
         NS[NotificationService] --> LNA[LINE Adapter] & MA[Email Adapter] & WA[Web Adapter]
     end
 
-    Agents -->|Results| NS
-    LNA -->|Webhook| MCP_Serv
-    MCP_Serv -->|Notify| NS
+    Agents -->|Results/Alerts| NS
+    LNA -->|Callback| WHS
+    WHS -->|Notify| NS
 ```
 
 #### 2.3 組件互動流 (Interaction Flows)
@@ -97,18 +105,19 @@ graph LR
 ```
 
 #### 3.2 外部事件與 Webhook 架構 (External Event & Webhook Architecture)
-- **架構變更 (v3.5)**: LINE Webhook 改為指向 `mcp_server` (FastAPI) 而非 `dashboard` (Streamlit)。
+- **架構變更 (v3.5 - v4.0)**: LINE Webhook 與外部警報 (如 TradingView) 改由專屬的 `webhook_service.py` (FastAPI) 獨立處理。
 - **原因與考量**:
-    - **職責分離 (Separation of Concerns)**: `mcp_server` 專注於 API 處理與高併發連線 (FastAPI/Uvicorn)，適合處理 Webhook 回調；`dashboard` 專注於 UI 渲染與使用者互動 (Streamlit)，不適合處理即時、無狀態的外部請求。
-    - **穩定性 (Reliability)**: Streamlit 的執行模型 (Execution Model) 較為特殊，處理外部 POST 請求不易且易受 UI 執行緒阻塞影響。移至 FastAPI 可確保 Webhook 的穩定響應 (200 OK)。
-    - **統一入口 (Unified Entry)**: `mcp_server` 作為 Agent Mesh 的對外接口，未來可擴充更多外部觸發事件 (如 TradingView Alert, Discord Bot)，統一由 MCP 層進行路由與分發。
+    - **職責分離 (Separation of Concerns)**: 專注於高併發的事件接收，脫離 MCP 與 Streamlit 的主循環。
+    - **全自動防禦 (Auto-Defense)**: `WebhookService` 直接喚醒 `SentinelService` 進行分析，若判定為極端情況，立刻非同步調用 `AutomatedTradingService` 執行清倉與避險。
 
 ```mermaid
 graph LR
-    Line["LINE Platform"] -->|"Webhook (POST)"| Ngrok["Ngrok Tunnel"]
-    Ngrok -->|"Forward"| MCP["MCP Server (Port 8000)"]
-    MCP -->|"Verify & Parse"| Handler["Webhook Handler"]
-    Handler -->|"Dispatch"| Agent["Agent / Tool"]
+    Ext["External Alerts (TradingView/LINE)"] -->|"Webhook (POST)"| Ngrok["Ngrok Tunnel"]
+    Ngrok -->|"Forward"| WHS["WebhookService (Port 8000)"]
+    WHS -->|"Verify Signature"| Routing["Router Dispatch"]
+    Routing -->|"Signal Trigger"| Sentinel["SentinelService"]
+    Sentinel -->|"CRITICAL DANGER"| ATS["AutomatedTradingService"]
+    ATS -->|"Emergency Liquidation / Hedge"| Broker["BrokerFactory"]
 ```
 
 #### 3.3 關鍵配置文件映射 (Infrastructure Registry)

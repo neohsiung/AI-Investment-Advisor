@@ -22,6 +22,14 @@ graph TD
     Workflow[Workflow Service] -->|Get Broker| Factory[Broker Factory]
     Scheduler[Scheduler Service] -->|Sync| Factory
     
+    subgraph "Milestone 5: Automated Trading & Defense"
+        ATS[AutomatedTradingService]
+    end
+    
+    ATS -->|Check auto_trade_threshold| DB
+    ATS -->|Execute (Confidence >= Threshold)| Factory
+    ATS -->|Request Approval (Confidence < Threshold)| User
+
     Factory -->|Returns| Broker{IBroker}
     
     Broker <|..| Etoro[EtoroService]
@@ -61,6 +69,11 @@ Centralized risk control enforcing:
 2.  **熔斷機制 (Circuit Breakers)**:
     *   連續虧損 (Consecutive Losses).
     *   深度回撤持倉 (Deep Drawdown Positions).
+
+### 自動交易審批服務 (AutomatedTradingService) - `src/services/automated_trading_service.py`
+串接 Agent 決策與 Broker 的中介層 (v3.5+)：
+1. **信心閾值判斷 (Confidence Threshold)**: 若 Agent 的交易提案 `confidence_score` 大於或等於 `auto_trade_threshold` (預設 9)，則**免審批全自動下單**。
+2. **限時審批迴圈 (Approval Loop)**: 若分數未達標，系統會透過全通路 (LINE/Email) 發送審批請求，限時 5 分鐘內回應，逾期失效。
 
 ## 3. 擴充指南 (Extension Guide)
 
@@ -113,6 +126,10 @@ All implementations must strictly invoke `RiskManager`:
 if not self.risk_manager.check_constraints(user_id, history, positions):
     return {"status": "failed", "reason": "Risk Manager Blocked"}
 ```
+
+### 4.4 預期效益與成果 (Expected Outcomes)
+- **商業價值 (Business Value)**: Adapter Pattern 完全隔離了底層券商 API 邏輯，使得未來系統能達到「一鍵跨券商套利」與「資產無縫轉移」的商業願景，避免被單一交易商綁架。
+- **性能指標 (Performance Target)**: 從觸發警告到下達 Auto-Hedging 指令，並透過 `IBroker` 實行委託，整體端對端延遲 (End-to-End Latency) 控制在 500ms 內。
 
 ---
 

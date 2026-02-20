@@ -15,7 +15,7 @@ Welcome to the AI Investment Advisor knowledge portal—a high-stakes agent swar
 
 ## 🧭 按角色導引 (Knowledge by Persona)
 
-無論你是決定產品方向、編寫代碼、還是優化架構，請從下方入口進入對應深度文檔：
+無論你是決定產品領域的 PM、編寫代碼的開發者、還是規劃系統的架構師，請選擇對應的「降落傘 (Parachute)」進入深度文檔。這份指引將幫助你迅速掌握專案輪廓：
 
 ```mermaid
 mindmap
@@ -41,30 +41,30 @@ mindmap
 ```
 
 ### 👑 產品經理 (Product Manager - Vision)
-*聚焦於產品演進、核心價值與業務邏輯。*
-- **[產品演進藍圖](產品演進藍圖-Evolutionary-Roadmap)**: 從 v1 到 v4.0 的戰略規劃。
-- **[核心系統規格 (v3.8)](核心系統規格-Core-System-Specs)**: 哨兵與評議會的決策機制細節。
-- **[未來演進規格 (v4.0)](未來演進規格-Future-Roadmap-Specs)**: 邁向 Agent Swarm Economy 的下一站。
+*聚焦於商業價值、產品演進軌跡與核心業務邏輯的定義，目標是最大化 Alpha 產出與風險防禦。*
+- **[產品演進藍圖](產品演進藍圖-Evolutionary-Roadmap)**: 了解專案從 v1 工具型應用，演化至 v4.0 Agent Swarm Economy 的戰略發展史。
+- **[核心系統規格 (v3.8)](核心系統規格-Core-System-Specs)**: 深入了解「哨兵防禦 (Sentinel)」與「評議會辯論 (Council)」的具體產品機制與邊界條件。
+- **[未來演進規格 (v4.0)](未來演進規格-Future-Roadmap-Specs)**: 探索下一階段「智慧管家」與「全通路 (Omni-channel)」落地的藍圖。
 
 ### 🛠️ 開發者 (Developer - Execution)
-*聚焦於快速上手、API 整合與測試覆蓋。*
-- **[快速啟動與操作指南](快速啟動與操作指南-Quickstart-User-Guide)**: 環境建置與一鍵啟動。
-- **[環境設定與本地開發](環境設定與本地開發-Environment-Local-Dev)**: Python Async I/O 與 VS Code 調試。
-- **[服務層開發指南](服務層開發指南-Service-Layer-Blueprints)**: 如何新增一個 Service 或自定義 Agent。
-- **[測試與外部服務整合](測試與外部服務整合-Testing-External-Services)**: 100% 錯誤路徑覆蓋策略。
+*聚焦於快速上手開發、API 整合實踐、以及如何在測試覆蓋率 > 75% 的標準下貢獻代碼。*
+- **[快速啟動與操作指南](快速啟動與操作指南-Quickstart-User-Guide)**: 如何在 5 分鐘內建置環境並透過 Docker Compose 啟動全端點。
+- **[環境設定與本地開發](環境設定與本地開發-Environment-Local-Dev)**: 掌握 Python Async I/O 除錯技巧與本地端 VS Code 配置。
+- **[服務層開發指南](服務層開發指南-Service-Layer-Blueprints)**: 學習系統特有的 Service / Repository 模式，以及如何註冊一個新的 Agent 到 Swarm 體系。
+- **[測試與外部服務整合](測試與外部服務整合-Testing-External-Services)**: 了解如何模擬 (Mock) LLM 回應以撰寫可靠的單元測試，達成 100% 錯誤路徑覆蓋。
 
 ### 📐 架構師 (Architect - Blueprints)
-*聚焦於系統全景、通信協議與清潔架構。*
-- **[系統全景圖](系統全景圖-System-Landscape)**: 混合雲拓撲與數據流向。
-- **[架構哲學](架構哲學-Architectural-Philosophies)**: 為什麼我們選擇 Clean Architecture & DDD。
-- **[底層通信協議](底層通信協議-Agent-Mesh-Protocols)**: MCP 協議與 Tool Calling 的深入解析。
-- **[哨兵與評議會架構](哨兵與評議會架構-Sentinel-Council-Architecture)**: 碎形辯論機制的底層設計。
+*聚焦於高併發系統設計、微服務邊界劃分、以及為何選擇如此混搭 (PostgreSQL + Redis + pgvector) 的數據庫拓樸。*
+- **[系統全景圖](系統全景圖-System-Landscape)**: 系統 C4 模型拓樸，展示 Webhook 觸發、Agent 喚醒與券商下單的全局數據流向。
+- **[架構哲學](架構哲學-Architectural-Philosophies)**: 探討 Clean Architecture 與 Domain-Driven Design (DDD) 在本專案中的落地權衡與決策 (ADR)。
+- **[底層通信協議](底層通信協議-Agent-Mesh-Protocols)**: 詳解 Model Context Protocol (MCP) 與 Swarm 內部 Tool Calling 的通訊標準。
+- **[哨兵與評議會架構](哨兵與評議會架構-Sentinel-Council-Architecture)**: 剖析 Fast/Smart/Advanced 3-Tier 降級引擎與碎形辯論機制的底層實作。
 
 ### 🛡️ 維護者 (Maintainer - Governance)
-*聚焦於標準執行、資安審計與性能監控。*
-- **[文件規範 (Wiki Standard)](文件規範-Wiki-Standard)**: 確保知識庫的可讀性與一致性。
-- **[資料庫設計與代碼規範](資料庫設計與代碼規範-Database-Git-Standards)**: Schema 異動與 Commit 嚴謹度。
-- **[資安管理與基礎映像檔規範](資安管理與基礎映像檔規範-Security-and-Base-Image-Standard)**: 安全基線與祕鑰管理。
+*確保所有程式碼提交與知識累積符合最高標準，負責資安基線、依賴項審計與效能監控。*
+- **[文件規範 (Wiki Standard)](文件規範-Wiki-Standard)**: 維護專案知識的「單一真理點」，確保連結扁平化與雙語雙軌並行的高一致性。
+- **[資料庫設計與代碼規範](資料庫設計與代碼規範-Database-Git-Standards)**: 嚴格執行 Schema Migration 審查、原子化 Commit (Atomic Commits) 紀律。
+- **[資安管理與基礎映像檔規範](資安管理與基礎映像檔規範-Security-and-Base-Image-Standard)**: 從 Docker Hardened Image 選型到 .env 密鑰隔離的最高指導方針。
 
 ---
 
