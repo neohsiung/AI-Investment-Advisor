@@ -199,8 +199,10 @@ class GoogleAuth:
         if cookies is None and cookie_retry_count < 3:
             # Increment retry counter
             st.session_state['auth_cookie_retries'] = cookie_retry_count + 1
-            time.sleep(0.3) # Wait for component
-            st.rerun() # Reload to try fetching again
+            # CRITICAL FIX: Do NOT call st.rerun() here. 
+            # We must return "LOADING" so auth_guard can call st.stop().
+            # st.stop() flushes to the frontend, allowing the CookieManager iframe to mount.
+            # Once mounted, the CookieManager will automatically send the cookie data back and trigger a rerun.
             return "LOADING"
         
         # Reset retries if we found cookies or gave up
