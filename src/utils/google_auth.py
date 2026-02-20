@@ -105,15 +105,27 @@ class GoogleAuth:
                 expires_at = datetime.datetime.now() + datetime.timedelta(days=7)
                 self.cookie_manager.set(self.cookie_name, user_info, expires_at=expires_at)
 
-                # Clear query params to prevent re-triggering
+                # Clear query params internally
                 try:
                     st.query_params.clear()
                 except Exception:
                     pass
                 
-                st.success("✅ 登入成功！為確保安全，請點擊按鈕進入系統。(Login successful! Please click to enter.)")
-                if st.button("進入儀表板 (Enter Dashboard)", type="primary"):
-                    st.rerun()
+                st.info("🔄 登入成功！正在建立安全連線... (Login successful! Establishing secure connection...)", icon="🔄")
+                
+                # Inject JS to auto-reload the page after 1.5 seconds.
+                # This guarantees the cookie manager component has time to render and set the cookie in the browser.
+                from streamlit.components.v1 import html
+                html(
+                    """
+                    <script>
+                        setTimeout(function() {
+                            window.parent.location.href = window.parent.location.pathname;
+                        }, 1500);
+                    </script>
+                    """,
+                    height=0
+                )
                 
                 return # Return so auth_guard can st.stop() and render the UI/cookie
 
