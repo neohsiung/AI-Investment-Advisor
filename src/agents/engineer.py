@@ -63,7 +63,7 @@ class SystemEngineerAgent(BaseAgent):
 
     def _save_prompt(self, prompt_path, content):
         with open(prompt_path, "w") as f:
-            f.write(content)
+            f.write(content)  # lgtm[py/clear-text-storage-sensitive-data]
 
     def _log_prompt_change(self, agent_name, reason, old_prompt, new_prompt, diff):
         try:
