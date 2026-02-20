@@ -30,7 +30,9 @@ class GoogleAuth:
     @property
     def cookie_manager(self):
         if self._cookie_manager is None:
-            self._cookie_manager = stx.CookieManager()
+            import extra_streamlit_components as stx
+            # A strict key is REQUIRED for stx.CookieManager to preserve its identity across component remounts!
+            self._cookie_manager = stx.CookieManager(key="auth_cookie_manager_stable")
         return self._cookie_manager
 
     def _get_flow(self):
