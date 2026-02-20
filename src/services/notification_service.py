@@ -36,10 +36,8 @@ class NotificationService:
         import re
         is_uuid = re.match(r'^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$', user_id.lower())
         
-        if not is_uuid:
-            # Other legacy or direct channel ID
-            return user_id
-
+        target_uuid = user_id
+        
         # 3. Resolve from UserIdentities
         try:
             if self._user_repo:
@@ -48,7 +46,18 @@ class NotificationService:
                 from src.repositories.user_repository import AlchemyUserRepository
                 user_repo = AlchemyUserRepository()
                 
-            identities = user_repo.get_identities(user_id)
+            if not is_uuid:
+                # If not UUID, it might be an email or another provider ID
+                # Attempt to look up the UUID first
+                if "@" in user_id:
+                    user_data = user_repo.get_by_identity("email", user_id)
+                    if user_data and "id" in user_data:
+                        target_uuid = user_data["id"]
+                else:
+                    # Fallback if there's other logic (e.g. legacy IDs)
+                    return user_id
+
+            identities = user_repo.get_identities(target_uuid)
             
             # Map adapter type to identity provider
             # adapter_type is like 'line', 'telegram', 'email', 'messenger', 'slack', 'googlechat', 'web'
@@ -65,7 +74,7 @@ class NotificationService:
         except Exception as e:
             logger.debug(f"Identity resolution failed for {user_id} on {adapter_type}: {e}")
 
-        return user_id
+        return target_uuid
 
     async def notify_all(
         self, 
