@@ -110,7 +110,12 @@ class GoogleAuth:
                     st.query_params.clear()
                 except Exception:
                     pass
-                st.rerun()
+                
+                st.success("✅ 登入成功！為確保安全，請點擊按鈕進入系統。(Login successful! Please click to enter.)")
+                if st.button("進入儀表板 (Enter Dashboard)", type="primary"):
+                    st.rerun()
+                
+                return # Return so auth_guard can st.stop() and render the UI/cookie
 
             except Exception as e:
                 # Handle 'invalid_grant' - usually means reuse of Authorization Code
