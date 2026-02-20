@@ -154,6 +154,71 @@ def render_data_sources_tab(st, settings_service, user_id):
                     "fields": {}
                 }
             ]
+        },
+        "事件驅動 Webhook 觸發源 (Event-Driven Triggers)": {
+            "priority": 6,
+            "sources": [
+                {
+                    "id": "webhook_tradingview",
+                    "name": "1. TradingView Alerts",
+                    "desc": "接收專屬技術指標或價格突破 Webhook。",
+                    "fields": {"secret": {"label": "Webhook Secret", "type": "password", "help": "用於 URL 參數驗證"}}
+                },
+                {
+                    "id": "webhook_zapier_sec",
+                    "name": "2. Zapier (SEC EDGAR)",
+                    "desc": "攔截 SEC 官網 10-K/10-Q 最新財報提交。",
+                    "fields": {"secret": {"label": "Webhook Secret", "type": "password"}}
+                },
+                {
+                    "id": "webhook_make_social",
+                    "name": "3. Make.com (X / Reddit)",
+                    "desc": "關鍵意見領袖推文或社群聲量爆發展發 Webhook。",
+                    "fields": {"secret": {"label": "Webhook Secret", "type": "password"}}
+                },
+                {
+                    "id": "webhook_finnhub",
+                    "name": "4. Finnhub Webhooks",
+                    "desc": "即時財報預期落差 (Earnings Surprises)。",
+                    "fields": {"secret": {"label": "Webhook Secret", "type": "password"}}
+                },
+                {
+                    "id": "webhook_polygon",
+                    "name": "5. Polygon.io Webhooks",
+                    "desc": "市場停牌 (Halts) 與異常期權 (Options Sweeps) 事件。",
+                    "fields": {"secret": {"label": "Webhook Secret", "type": "password"}}
+                },
+                {
+                    "id": "webhook_macro",
+                    "name": "6. Macro Calendar (Zapier)",
+                    "desc": "CPI / FOMC 總經數據發布時即時觸發。",
+                    "fields": {"secret": {"label": "Webhook Secret", "type": "password"}}
+                },
+                {
+                    "id": "webhook_github",
+                    "name": "7. GitHub Ops",
+                    "desc": "策略代碼庫更新或 Issue 觸發 Vibe Coding Agent。",
+                    "fields": {"secret": {"label": "Webhook Secret", "type": "password"}}
+                },
+                {
+                    "id": "webhook_sentry",
+                    "name": "8. Sentry Alerts",
+                    "desc": "投資顧問系統或資料管線異常攔截。",
+                    "fields": {"secret": {"label": "Webhook Secret", "type": "password"}}
+                },
+                {
+                    "id": "webhook_typeform",
+                    "name": "9. Typeform (KYC)",
+                    "desc": "新客戶風險評估填寫完畢事件。",
+                    "fields": {"secret": {"label": "Webhook Secret", "type": "password"}}
+                },
+                {
+                    "id": "webhook_ifttt",
+                    "name": "10. IFTTT (Broker Email)",
+                    "desc": "攔截未提供 API 之券商 PDF 報告轉發觸發。",
+                    "fields": {"secret": {"label": "Webhook Secret", "type": "password"}}
+                }
+            ]
         }
     }
 
