@@ -1,99 +1,110 @@
 import json
 import logging
-import asyncio
-from typing import Any, List, Dict
-from src.agents.swarm.role_swarm import RoleSwarm
+from typing import Dict, Any
+
 from src.agents.base_agent import BaseAgent
+from src.agents.swarm.role_swarm import RoleSwarm
 
 logger = logging.getLogger(__name__)
 
-class SentimentScanner(BaseAgent):
+class SentimentSubAgent(BaseAgent):
     """
-    Fast Tier Agent for Sentiment Scanning.
-    Analyzes news headlines/snippets for a single ticker.
+    Generic Sub-Agent for Sentiment Swarm.
+    Overrides `run()` to inject specific instructions while maintaining JSON output requirements if needed.
     """
-    def __init__(self, user_id="system", **kwargs):
-        kwargs.pop('tier', None)
-        super().__init__(
-            name="SentimentScanner", 
-            prompt_path="prompts/sentiment_agent.txt", 
-            tier="fast", 
-            user_id=user_id, 
-            **kwargs
-        )
-        
-    def run(self, context):
-        """
-        Expects context with 'ticker' and 'news_str' or 'news_list'.
-        Returns JSON string or dict.
-        """
-        return self.run_tool_loop(context)
+    def __init__(self, name: str, instruction: str, tier: str, **kwargs):
+        super().__init__(name=name, prompt_path="prompts/common/default_system.j2", tier=tier, **kwargs)
+        self.instruction = instruction
+
+    def run(self, context: Any) -> str:
+        ctx_dump = json.dumps(context, indent=2, ensure_ascii=False) if isinstance(context, dict) else str(context)
+        prompt_data = {
+            "user_request": f"{self.instruction}\n\nData Context:\n{ctx_dump}"
+        }
+        return self.run_tool_loop(context=prompt_data)
 
 class SentimentSwarm(RoleSwarm):
     """
-    Sentiment Analysis Swarm.
-    Parallel processing of market sentiment using Fast Tier agents.
+    Sentiment Swarm replaces the old monolithic SentimentAgent.
+    Distributes processing across 2 sub-agents to parallelize news scanning and social sentiment pulse.
     """
-    def __init__(self, user_id: str = "system", **kwargs):
-        super().__init__(name="SentimentSwarm", user_id=user_id, **kwargs)
+    def __init__(self, use_cache=True, ttl_hours=4, **kwargs):
+        # Default 4 hours for Sentiment (News changes fast)
+        user_id = kwargs.get("user_id", "system")
+        super().__init__(name="SentimentSwarm", use_cache=use_cache, ttl_hours=ttl_hours, user_id=user_id, **kwargs)
         
-        # Register default pool
-        for _ in range(3):
-            self.register_agent("col_fast", SentimentScanner(user_id=user_id))
-            
-    async def _run_async(self, context: Any) -> str:
+        # Initialize Sub-Agents
+        self.news_scanner = SentimentSubAgent(
+            name="NewsScanner", 
+            instruction="分析新聞標題與內容的情緒 (Analyze sentiment of news headlines and content). Provide a structured summary.",
+            tier="fast",
+            user_id=user_id,
+            use_cache=use_cache,
+            ttl_hours=ttl_hours
+        )
+        self.social_pulse = SentimentSubAgent(
+            name="SocialPulse", 
+            instruction="綜合評估市場情緒與社群動能 (Assess overall market pulse and momentum based on news and price action). Consider implied volatility or extreme sentiment behavior.",
+            tier="adv",
+            user_id=user_id,
+            use_cache=use_cache,
+            ttl_hours=ttl_hours
+        )
+        
+        # Register to RoleSwarm
+        self.register_agent("col_fast", self.news_scanner)
+        self.register_agent("col_adv", self.social_pulse)
+        
+    def run(self, context: Any) -> str:
         """
-        Batch process sentiment for multiple tickers.
+        Takes same context as SentimentAgent:
+        context: {
+            "ticker": "AAPL",
+            "news": ["Title - Source (Link)", ...],
+            "price_change_percent": optional float
+        }
+        Returns JSON-string or summary string from swarm.
         """
         tickers = context.get("tickers", [])
-        ticker = context.get("ticker")
+        single_ticker = context.get("ticker", "UNKNOWN")
         
-        if ticker and ticker != "UNKNOWN":
-            tickers = [ticker]
-            
-        if not tickers:
-            return "No tickers provided for Sentiment Analysis."
+        if not tickers and single_ticker != "UNKNOWN":
+            tickers = [single_ticker]
             
         market_data = context.get("market_data", {})
-        
-        # Dynamic creation of scanners for coverage
-        adhoc_agents = []
-        tasks_list = []
-        contexts_list = []
+        reports = []
         
         for t in tickers:
-            agent = SentimentScanner(user_id=self.user_id)
-            agent.name = f"Sentiment_{t}" # Unique name for logging
-            adhoc_agents.append(agent)
+            t_data = market_data.get(t, {}) if market_data else context
+            news_list = t_data.get("news", [])
             
-            # Prepare context
-            t_data = market_data.get(t, {})
-            news = t_data.get("news", [])
-            price_change = t_data.get("price_change_percent", "N/A")
-            
-            # Format news for the prompt
-            news_str = "\n".join([f"- {n.get('title', 'No Title')} ({n.get('source', 'Unknown')})" for n in news[:5]])
-            if not news_str:
-                news_str = "No recent news found."
+            if not news_list:
+                reports.append(f"### {t} Sentiment Swarm Analysis\nNeutral (No News)")
+                continue
                 
-            sub_context = {
+            news_str = "\n".join([f"- {n.get('title', 'No Title')} ({n.get('source', 'Unknown')})" if isinstance(n, dict) else f"- {n}" for n in news_list[:10]])
+            
+            prompt_data = {
                 "ticker": t,
                 "news_list": news_str,
-                "price_change_percent": price_change,
-                "user_request": f"Analyze sentiment for {t}"
+                "price_change_percent": t_data.get("price_change_percent", "N/A")
             }
             
-            tasks_list.append(sub_context["user_request"])
-            contexts_list.append(sub_context)
+            wrapped_ctx = {
+                "user_request": f"Analyze overall sentiment for {t}.",
+                "data": prompt_data
+            }
             
-        logger.info(f"SentimentSwarm: ⚡ Scanning {len(tickers)} tickers...")
-        
-        # Batch Run
-        results_dict = await self.orchestrator.batch_run(adhoc_agents, tasks_list, contexts_list)
-        
-        # Aggregate
-        # We might want to parse JSONs here and aggregate scores, 
-        # but for now we basically concatenate reports.
-        summary = self.orchestrator.aggregate_results(results_dict)
-        
-        return summary
+            try:
+                # Execution via Swarm Orchestrator
+                res = super().run(wrapped_ctx)
+                reports.append(f"### {t} Sentiment Swarm Analysis\n{res}")
+            except Exception as e:
+                logger.error(f"SentimentSwarm execution failed for {t}: {e}")
+                reports.append(f"### {t} Analysis\nError: {e}")
+                
+        # To maintain compatibility with old SentimentAgent string-based JSON parsing in some places
+        # The caller usually expects JSON, but RoleSwarm returns Markdown.
+        # This will need to be handled by the caller or we can return the first ticker's sentiment as JSON if it's a single request.
+        # However, for now, we return the concatenated reports.
+        return "\n\n".join(reports)

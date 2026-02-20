@@ -16,12 +16,17 @@
 - **路徑規範**: 嚴禁使用資料夾路徑（如 `../` 或 `01_Manual/`）及 `.md` 副檔名。
 - **雙向一致性**: 指向文件的名稱必須與該文件的 `basename`（不含副檔名）完全一致，確保在 GitHub Wiki 中具備正確的雙向導航功能。
 
-### 1.2 雙語並列與版本紀錄
-- **排版**: 繁體中文在上，英文在下。
+### 1.2 雙語並列與撰寫順序 (Bilingual Workflow)
+本專案嚴格依循 [文件框架定義](wiki/00_規則規範-Rules/文件框架定義-Document-Frameworks.md) 與 [文件規範](wiki/00_規則規範-Rules/文件規範-Wiki-Standard.md) 實施雙語工作流：
+- **撰寫順序 (Writing Order)**:
+  1. **英文優先 (English First)**: 先以專業、具備產業規格的英文撰寫或更新內容，確保技術精確度與全球化通用性。
+  2. **中文翻譯 (Traditional Chinese Translation)**: 完成英文後，完整翻譯為繁體中文。
+- **排版佈局 (Layout)**: 必須將繁體中文內容置於對應段落的上方 (Top)，英文放置於下方 (Bottom)。
 - **迭代紀錄 (Version History)**: 位於文件頂部，記錄最近 5 次重大變動（Date, Version, Description, Author）。
 - ** additive 原則**: 除非結構崩壞，否則更新應視為疊加與增量，嚴禁隨意重寫以保留歷史背景。
 
 ### 1.3 迴圈式填補迭代 (Iterative Patching Loop) - **核心規則**
+- **視覺化指導原則 (Visual Documentation Rule)**: 新增技術設計或操作說明時，必須 **加上流程圖 (Flowcharts)、循序圖 (Sequence Diagrams)、架構圖 (Architecture Diagrams)** 等 Mermaid 圖表來展示邏輯。在將圖表加入 Wiki 之前，Agent 必須驗證語法與雙向結構正確無誤，確保圖表能被 UI 渲染。
 - **微調而非重寫**: 更新單一文件時，應以「迴圈 (Loop)」形式針對每一個段落進行填補與調整，而非一次性大範圍覆蓋。
 - **段落校對**: 每次技術迭代後，需對應 Wiki 中所有相關文件的段落進行掃描，確保新舊資訊邏輯自洽，達成精確的「手術式增補」。
 - **Surgical Additions**: When updating documents, use a loop-based approach to patch individual sections or paragraphs specifically, rather than performing wholesale rewrites. Scan all affected sections after each technical iteration to ensure contextual consistency.

@@ -9,7 +9,7 @@ trigger: always_on
 4. 模組化設計：所有開發必須模組化，確保具備良好的可單元測試性 (Unit Testability) 與整合測試性 (Integration Testability)
 5. 測試覆蓋率 > 70%，包含正反向情境 (CI 標準 65%)
 6. 若有較佳的 Design Pattern 則可以進行重構 (Refactor)
-7. 所有 Plan 根據技術有關的依照內容要提供給我流程圖 / 循序圖 / 架構圖 / 設計原則
+7. 視覺化指導原則 (Visual Documentation Rule): 所有技術相關的計畫 (Plan)、架構設計、操作手冊或規格文件，必須盡可能使用 Mermaid 語法提供對應的圖表 (包含流程圖 Flowcharts、循序圖 Sequence Diagrams、架構圖/類別圖 Class/Architecture Diagrams 等)。在寫入文件之前，必須驗證圖表結構與語法正確且能順利渲染，確保文件具備極高的可讀性與專業度。
 8. 動態指標原則：所有系統閾值 (Thresholds) 必須是基於歷史數據計算的動態變數，或可經由復盤 (Experience Replay) 調整的參數，嚴禁使用寫死 (Hardcoded) 的定值。
 9. 混合儲存原則 (Hybrid Strategy)：針對複雜行情計算與向量搜尋 (pgvector) 強制使用 Raw SQL (SQLAlchemy Core)；針對一般物件 (User, Settings) 與後台管理可選用 ORM。具體實施細節參見 `.agent/rules/engineering-standards.md`。
 10. 資安唯一原則 (Safe-SQL-Only)：所有 Raw SQL 必須使用參數化查詢 (Parameterized Queries)，嚴禁使用字串拼接或 f-strings 組合 SQL 敘述。相關範例參見 `.agent/rules/engineering-standards.md`。

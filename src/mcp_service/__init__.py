@@ -66,6 +66,9 @@ async def lifespan(app: FastAPI):
             search_service=services["search"]
         )
         
+        from src.services.webhook_service import webhook_service_instance
+        webhook_service_instance.set_sentinel_service(services["sentinel"])
+        
         # Initialize Settings Service for Adapter Configuration
         from src.services.settings_service import SettingsService
         from src.infrastructure.channels.channel_factory import ChannelFactory
@@ -248,165 +251,9 @@ async def call_tool(tool_name: str, request: ToolCallRequest):
         raise HTTPException(status_code=500, detail=str(e))
 
 # --- Webhook Router & Inbound Adapters ---
+from src.services.webhook_service import webhook_router
 
-class InboundEvent(BaseModel):
-    """通用進入事件"""
-    source: str
-    payload: Dict[str, Any]
-    timestamp: str = str(datetime.now().isoformat())
-
-class BaseSourceParser:
-    """各來源解析器基底"""
-    @staticmethod
-    def parse(payload: Dict[str, Any]) -> Dict[str, Any]:
-        return payload
-
-class MktRecapParser(BaseSourceParser):
-    @staticmethod
-    def parse(payload: Dict[str, Any]) -> Dict[str, Any]:
-        # 轉化 MktRecap 格式
-        return {
-            "type": "MARKET_SPIKE",
-            "ticker": payload.get("ticker", "UNKNOWN"),
-            "value": payload.get("price") or payload.get("volume"),
-            "msg": payload.get("alert_name", "MktRecap Trigger")
-        }
-
-class TradingViewParser(BaseSourceParser):
-    @staticmethod
-    def parse(payload: Dict[str, Any]) -> Dict[str, Any]:
-        # 轉化 TV 格式 (通常由 Bot 送出的 JSON)
-        return {
-            "type": "TECHNICAL_SIGNAL",
-            "ticker": payload.get("ticker"),
-            "signal": payload.get("signal"), # e.g., "BUY", "SELL"
-            "msg": payload.get("comment", "TV Alert")
-        }
-
-class RssBridgeParser(BaseSourceParser):
-    @staticmethod
-    def parse(payload: Dict[str, Any]) -> Dict[str, Any]:
-        # 轉化 IFTTT/RSS.app 格式
-        return {
-            "type": "NEWS_ALERT",
-            "msg": payload.get("title") or payload.get("description", "New RSS Item"),
-            "url": payload.get("link")
-        }
-
-
-class FinnhubParser(BaseSourceParser):
-    @staticmethod
-    def parse(payload: Dict[str, Any]) -> Dict[str, Any]:
-        # Finnhub Earnings/News Payload
-        event_type = payload.get("event", "news")
-        raw_data = payload.get("data", {})
-        
-        # Normalize data: Finnhub often sends a list for news
-        data = {}
-        if isinstance(raw_data, list):
-            if raw_data:
-                data = raw_data[0] # Take first item
-        elif isinstance(raw_data, dict):
-            data = raw_data
-            
-        # Ticker can be at root or in data
-        ticker = payload.get("ticker")
-        if not ticker:
-            ticker = data.get("symbol", "UNKNOWN")
-        
-        msg = f"Finnhub Alert: {event_type}"
-        
-        if event_type == "earnings":
-             msg = f"Earnings Alert for {ticker}: Q{data.get('quarter')} EPS={data.get('eps')}"
-        elif event_type == "news":
-             msg = data.get("headline", f"News Alert for {ticker}")
-             
-        return {
-            "type": "FINANCIAL_EVENT",
-            "ticker": ticker,
-            "msg": msg,
-            "url": data.get("url")
-        }
-
-SOURCE_PARSERS = {
-    "mktrecap": MktRecapParser,
-    "tradingview": TradingViewParser,
-    "tradingview_alerts": TradingViewParser,
-    "rss": RssBridgeParser,
-    "rss_bridge": RssBridgeParser,
-    "ifttt": RssBridgeParser,
-    "finnhub": FinnhubParser
-}
-
-@app.post("/webhook/{source}")
-async def generic_webhook(source: str, request: Request):
-    """
-    通用 Webhook 入口
-    Unified Webhook Entry Point for external signals.
-    """
-    # 0. Security Check (Optional but recommended for ngrok)
-    webhook_secret = os.getenv("WEBHOOK_SECRET")
-    if webhook_secret:
-        request_secret = request.headers.get("X-Webhook-Secret")
-        if request_secret != webhook_secret:
-            logger.warning(f"Unauthorized webhook attempt from {source}")
-            raise HTTPException(status_code=403, detail="Unauthorized")
-
-    try:
-        payload = await request.json()
-        logger.info(f"Received webhook from {source}: {payload}")
-        
-        # 1. Parse Logic
-        parser = SOURCE_PARSERS.get(source.lower(), BaseSourceParser)
-        normalized_data = parser.parse(payload)
-        
-        # 2. Forward to Sentinel
-        if "sentinel" in services:
-            # 非同步處理，避免阻塞外部請求
-            asyncio.create_task(
-                services["sentinel"].process_event({
-                    "source": source,
-                    "data": normalized_data
-                })
-            )
-        
-        return {"status": "accepted", "source": source}
-    except Exception as e:
-        logger.error(f"Webhook error: {e}")
-        raise HTTPException(status_code=400, detail="Invalid payload")
-
-@app.post("/webhook/finnhub")
-async def finnhub_webhook(request: Request):
-    """
-    Finnhub Specific Webhook
-    """
-    secret = os.getenv("FINNHUB_WEBHOOK_SECRET")
-    if secret:
-        # Check X-Finnhub-Secret
-        req_secret = request.headers.get("X-Finnhub-Secret")
-        if req_secret != secret:
-             logger.warning("Unauthorized Finnhub webhook attempt")
-             raise HTTPException(status_code=403, detail="Unauthorized")
-    
-    try:
-        payload = await request.json()
-        logger.info(f"Received Finnhub webhook: {payload}")
-        
-        # Use FinnhubParser
-        normalized = FinnhubParser.parse(payload)
-        
-        if "sentinel" in services:
-             asyncio.create_task(
-                services["sentinel"].process_event({
-                    "source": "finnhub",
-                    "data": normalized
-                })
-             )
-        
-        return {"status": "accepted"}
-    except Exception as e:
-        logger.error(f"Finnhub webhook error: {e}")
-        raise HTTPException(status_code=400, detail="Processing failed")
+app.include_router(webhook_router)
 # --- LINE Bot Webhook Support ---
 # --- LINE Bot Webhook Support (via InteractionService) ---
 @app.post("/callback")

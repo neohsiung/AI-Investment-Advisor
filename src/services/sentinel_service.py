@@ -682,6 +682,61 @@ class SentinelService:
             source=source,
             level="CRITICAL" if is_extreme or any(kw in decision.lower() for kw in ["sell", "reduce"]) else "WARNING"
         )
+        
+        # 🚨 Auto-hedging / Emergency Liquidation (Milestone 5.1)
+        if is_extreme and any(kw in decision.lower() for kw in ["liquidate", "hedge", "panic", "emergency"]):
+            # Run in background to avoid blocking notification flow
+            import asyncio
+            asyncio.create_task(self._trigger_emergency_protocol(target_user, decision))
+
+    async def _trigger_emergency_protocol(self, user_id: str, rationale: str) -> None:
+        """
+        Execute Auto-hedging / Emergency Liquidation via AutomatedTradingService (Milestone 5.1).
+        針對所有持倉發送清倉建議，並可選擇買入避險 ETF。
+        """
+        if user_id == "broadcast":
+             # For broadcast, we need to iterate actual real users. 
+             # Safe fallback: retrieve all active users.
+             users = self._get_all_user_ids()
+        else:
+             users = [user_id]
+             
+        logger.warning(f"Sentinel: Triggering Emergency Liquidation Protocol for {len(users)} users.")
+        
+        try:
+            from src.services.automated_trading_service import AutomatedTradingService
+            from src.services.transaction_service import TransactionService
+            
+            auto_trade_svc = AutomatedTradingService()
+            tx_service = TransactionService()
+            
+            for uid in users:
+                active_tickers = tx_service.get_user_tickers(user_id=uid, only_active=True)
+                if not active_tickers:
+                     continue
+                     
+                for ticker in active_tickers:
+                    # 發送清倉建議
+                    await auto_trade_svc.evaluate_and_execute_trade(
+                        user_id=uid,
+                        ticker=ticker,
+                        action="SELL",
+                        quantity=1.0, # 此處在正式上線應根據倉位動態計算
+                        confidence_score=9, # 系統異常/緊急事件高信心度
+                        rationale=f"🚨 Sentinel 緊急防禦機制啟動 (Emergency Liquidation)。\n判定: {rationale[:100]}..."
+                    )
+                    
+                # 附帶建議：自動對沖 (Buy SQQQ for Nasdaq hedge)
+                await auto_trade_svc.evaluate_and_execute_trade(
+                    user_id=uid,
+                    ticker="SQQQ",
+                    action="BUY",
+                    quantity=1.0,
+                    confidence_score=8, 
+                    rationale=f"🚨 Sentinel 自動對沖機制啟動 (Auto-Hedging)。建議建立 SQQQ 避險。"
+                )
+        except Exception as e:
+            logger.error(f"Emergency Protocol failed: {e}")
 
     def _calibrate_thresholds(self) -> None:
         """
