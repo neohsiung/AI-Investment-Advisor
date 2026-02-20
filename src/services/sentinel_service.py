@@ -323,8 +323,18 @@ class SentinelService:
                             f"{kw.keyword}(w={s:.2f})" 
                             for kw, s in sorted(matched_keywords, key=lambda x: -x[1])[:3]
                         )
+                        
+                        # Scenario Logic: Tariff -> Inventory Restocking
+                        scenario_note = ""
+                        has_tariff = any("tariff" in kw.keyword.lower() or "關稅" in kw.keyword.lower() for kw, _ in matched_keywords)
+                        has_restock = any("inventory restocking" in kw.keyword.lower() or "回補庫存" in kw.keyword.lower() for kw, _ in matched_keywords)
+                        
+                        if has_tariff or has_restock:
+                            scenario_note = " (Scenario Triggered: Anticipate inventory restocking as a catalyst for economic expansion before tariffs hit)"
+                            total_score += 0.2 # Boost score for matching the specific roadmap scenario
+                            
                         triggers.append({
-                            "text": f"📰 {ticker} 風險新聞: {result.get('title', 'N/A')} (加權分數: {total_score:.2f}, 關鍵字: {kw_summary})",
+                            "text": f"📰 {ticker} 風險新聞: {result.get('title', 'N/A')} (加權分數: {total_score:.2f}, 關鍵字: {kw_summary}){scenario_note}",
                             "id": f"news_{ticker}_{result.get('title', 'N/A')[:20]}",
                             "value": total_score
                         })

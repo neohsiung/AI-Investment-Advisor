@@ -200,12 +200,18 @@ class CouncilService:
         cio = AgentFactory.create_cio_agent(tier=self.router.select_tier(topic, round_num=99), user_id=user_id)
         debates_text = "\n".join(stances)
         
+        # Determine if Structural Cooling was detected by MacroAgent
+        fractal_debate_rules = ""
+        if "Structural Cooling Detected" in debates_text:
+             fractal_debate_rules = "FRACTAL RULE APPLIED: Structural Cooling detected. Systematically reduce weight of traditional cyclical stocks (e.g., industrials, materials) and increase weight of software/infrastructure moats."
+        
         final_context = {
             "topic": topic,
             "council_transcript": debates_text,
             "memory_chain": past_wisdom,
             "current_date": datetime.now().strftime("%Y-%m-%d"),
-            "market_data": context_data.get("market_data")
+            "market_data": context_data.get("market_data"),
+            "fractal_debate_rules": fractal_debate_rules 
         }
         
         decision = cio.run(final_context)

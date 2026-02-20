@@ -35,8 +35,10 @@ DEFAULT_KEYWORDS = [
     ("ceo resignation", 0.7, "operational"),
     ("supply chain disruption", 0.65, "operational"),
     ("sanctions", 0.75, "geopolitical"),
-    ("tariff", 0.7, "geopolitical"),
-    ("trade war", 0.7, "geopolitical"),
+    ("tariff", 0.9, "geopolitical"), # Increased weight
+    ("trade war", 0.85, "geopolitical"), # Increased weight
+    ("rare earth exports", 0.85, "geopolitical"), # New
+    ("inventory restocking", 0.7, "market"), # New
     ("war", 0.65, "geopolitical"),
     ("embargo", 0.7, "geopolitical"),
     ("crash", 0.85, "market"),
@@ -53,7 +55,9 @@ DEFAULT_KEYWORDS = [
     ("裁員", 0.6, "operational"),
     ("資安事件", 0.75, "operational"),
     ("制裁", 0.75, "geopolitical"),
-    ("關稅", 0.7, "geopolitical"),
+    ("關稅", 0.9, "geopolitical"), # Increased weight
+    ("稀土出口", 0.85, "geopolitical"), # New
+    ("回補庫存", 0.7, "market"), # New
 ]
 
 class IRiskKeywordRepository(ABC):
