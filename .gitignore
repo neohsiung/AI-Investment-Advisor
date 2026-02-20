@@ -41,11 +41,13 @@ env/
 .docker/
 
 # Sub-repositories (Standalone git repos)
-wiki/**/*
+wiki/
 
 # Personal & Temporary Scripts (Excluded from Git)
 scripts/personal_*
 scripts/tmp_*
+scripts/github_bridge.py
+.agent/workflows/vibe-mobile.md
 *_local.py
 test_conn.py
 Archive/scripts/inspect_db.py
