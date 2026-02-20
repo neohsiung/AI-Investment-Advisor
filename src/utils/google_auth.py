@@ -66,6 +66,16 @@ class GoogleAuth:
         if "code" in st.query_params:
             try:
                 code = st.query_params["code"]
+                
+                # Prevent Double Execution (Fix invalid_grant)
+                if st.session_state.get("last_used_code") == code:
+                    try:
+                        st.query_params.clear()
+                    except Exception:
+                        pass
+                    return
+                st.session_state["last_used_code"] = code
+
                 flow = self._get_flow()
                 flow.fetch_token(code=code)
                 credentials = flow.credentials
