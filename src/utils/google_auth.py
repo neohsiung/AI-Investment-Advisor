@@ -70,8 +70,7 @@ class GoogleAuth:
                 # Prevent Double Execution (Fix invalid_grant)
                 if st.session_state.get("last_used_code") == code:
                     # We already fetched tokens for this code, so just show the success screen
-                    st.success("✅ **驗證成功 (Authentication successful)**")
-                    st.info("💡 為了確保安全憑證寫入瀏覽器，請點擊下方按鈕以進入。(To securely save your login state, please click the button below.)")
+                    st.success("✅ **登入成功！請點擊按鈕進入系統 (Login successful! Click to enter)**")
                     
                     if st.button("🚀 進入系統 (Enter System)", type="primary", use_container_width=True):
                         try:
@@ -117,8 +116,7 @@ class GoogleAuth:
                 if 'sub' in user_info:
                     st.session_state['oauth_id'] = user_info['sub']
 
-                st.success("✅ **驗證成功 (Authentication successful)**")
-                st.info("💡 為了確保安全憑證寫入瀏覽器，請點擊下方按鈕以進入。(To securely save your login state, please click the button below.)")
+                st.success("✅ **登入成功！請點擊按鈕進入系統 (Login successful! Click to enter)**")
                 
                 if st.button("🚀 進入系統 (Enter System)", type="primary", use_container_width=True):
                     # Clear query params internally on click
@@ -131,6 +129,9 @@ class GoogleAuth:
                 return # Crucial to abort execution so the frontend renders CookieManager iframe
 
             except Exception as e:
+                if type(e).__name__ in ("RerunException", "RerunData", "StopException"):
+                    raise  # Let Streamlit handle its internal control flow exceptions
+                
                 # Handle 'invalid_grant' - usually means reuse of Authorization Code
                 # 處理 'invalid_grant' 錯誤 - 通常表示授權碼被重複使用
                 st.error(f"Login failed: {e}")
