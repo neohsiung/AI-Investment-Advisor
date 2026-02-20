@@ -1,7 +1,7 @@
 pandas>=2.2.0
 numpy>=1.26.0,<2.0.0
 pytest==7.4.3
-streamlit==1.37.0
+streamlit>=1.42.0
 plotly==5.18.0
 schedule==1.2.1
 python-dotenv==1.0.0
@@ -36,7 +36,7 @@ pgvector==0.2.4
 duckduckgo-search==3.9.3
 tavily-python>=0.5.0
 line-bot-sdk
-nltk>=3.9.1
+nltk>=3.9.2 # Vulnerable but no patch exists. Mitigated by restricting downloads of untrusted zip files.
 
 # MCP Microservice
 fastapi==0.124.4
@@ -50,12 +50,12 @@ futu-api==9.6.5608
 ib_insync==0.9.86
 
 # Security Overrides (pip-audit / Dependabot fixes)
-protobuf>=3.20.3,<4.0.0 # Conflict with futu-api (requires protobuf==3.*), but fixes CVEs
+protobuf>=3.20.3,<4.0.0 # CVE exists, but futu-api strictly requires 3.x
 aiohttp>=3.11.0
 authlib>=1.6.4
 filelock>=3.20.1
 marshmallow>=3.26.2
-pillow>=10.4.0,<11.0.0 # Conflict: streamlit 1.37.0 requires pillow<11
+pillow>=12.1.1 # Upgraded to fix PSD out-of-bounds write
 starlette>=0.47.2
 tornado>=6.5
 urllib3>=2.6.0
