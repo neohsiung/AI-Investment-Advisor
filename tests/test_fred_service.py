@@ -94,9 +94,10 @@ def test_get_macro_indicators_trend_up(mock_settings):
         service = FredService(settings_service=mock_settings)
         result = service.get_macro_indicators()
         
-        # All should show "Up" trend
+        # All should show "Up" trend, except Labor_Cooling_Indicator
         for key, data in result.items():
-            assert data['trend'] == "Up"
+            if key != "Labor_Cooling_Indicator":
+                assert data['trend'] == "Up"
 
 def test_get_macro_indicators_trend_down(mock_settings):
     """Test trend detection when value decreases."""
@@ -114,9 +115,10 @@ def test_get_macro_indicators_trend_down(mock_settings):
         service = FredService(settings_service=mock_settings)
         result = service.get_macro_indicators()
         
-        # All should show "Down" trend
+        # All should show "Down" trend, except Labor_Cooling_Indicator
         for key, data in result.items():
-            assert data['trend'] == "Down"
+            if key != "Labor_Cooling_Indicator":
+                assert data['trend'] == "Down"
 
 def test_get_macro_indicators_empty_series(mock_settings):
     """Test handling of empty series response."""
@@ -128,8 +130,9 @@ def test_get_macro_indicators_empty_series(mock_settings):
         service = FredService(settings_service=mock_settings)
         result = service.get_macro_indicators()
         
-        # Should return empty dict when series is empty
-        assert result == {}
+        # Should return mostly empty dict when series is empty
+        assert "NFP" not in result
+        assert result.get("Labor_Cooling_Indicator", {}).get("value") is False
 
 def test_get_macro_indicators_error_handling(mock_settings):
     """Test error handling during data fetch."""
@@ -162,5 +165,6 @@ def test_get_macro_indicators_single_datapoint(mock_settings):
         
         # Should handle single datapoint gracefully
         for key, data in result.items():
-            assert data['value'] == 3.5
-            assert data['trend'] == "Down"  # current == prev, so not >
+            if key != "Labor_Cooling_Indicator":
+                assert data['value'] == 3.5
+                assert data['trend'] == "Down"  # current == prev, so not >

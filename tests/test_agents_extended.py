@@ -44,7 +44,7 @@ def test_macro_agent(mock_settings_repo, mock_state_repo):
         agent = MacroAgent(use_cache=False, settings_repo=mock_settings_repo, state_repo=mock_state_repo)
 
         with patch.object(agent, '_mock_llm_call', return_value="Test Result"):
-            result = agent.run({"macro_data": "VIX High"})
+            result = agent.run({"macro_data": {"ISM_Mfg_PMI": {"value": 45}, "ISM_Svc_PMI": {"value": 55}}})
             assert "Test Result" in result
 
 @pytest.fixture
