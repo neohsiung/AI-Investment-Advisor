@@ -30,7 +30,7 @@ class SentimentSwarm(RoleSwarm):
     """
     def __init__(self, use_cache=True, ttl_hours=4, **kwargs):
         # Default 4 hours for Sentiment (News changes fast)
-        user_id = kwargs.get("user_id", "system")
+        user_id = kwargs.pop("user_id", "system")
         super().__init__(name="SentimentSwarm", use_cache=use_cache, ttl_hours=ttl_hours, user_id=user_id, **kwargs)
         
         # Initialize Sub-Agents

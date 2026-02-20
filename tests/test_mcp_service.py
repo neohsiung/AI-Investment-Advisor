@@ -13,7 +13,12 @@ def mock_mcp_services():
     # We also need to patch the classes themselves if lifespan instantiates them
     with patch("src.mcp_service.MarketDataService") as MockMarket, \
          patch("src.mcp_service.InternetSearchService") as MockSearch, \
-         patch("src.mcp_service.FredService") as MockFred:
+         patch("src.mcp_service.FredService") as MockFred, \
+         patch("src.mcp_service.SentinelService"), \
+         patch("src.services.settings_service.SettingsService"), \
+         patch("src.infrastructure.channels.channel_factory.ChannelFactory"), \
+         patch("src.infrastructure.nlp.intent_classifier.IntentClassifier"), \
+         patch("src.mcp_service.InteractionService"):
          
         # Ensure instances are mocks
         MockMarket.return_value = MagicMock()

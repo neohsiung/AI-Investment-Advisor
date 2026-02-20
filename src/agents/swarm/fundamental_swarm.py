@@ -32,7 +32,7 @@ class FundamentalSwarm(RoleSwarm):
     def __init__(self, use_cache=True, ttl_hours=None, **kwargs):
         ttl = ttl_hours if ttl_hours is not None else 24
         
-        user_id = kwargs.get("user_id", "system")
+        user_id = kwargs.pop("user_id", "system")
         super().__init__(name="FundamentalSwarm", use_cache=use_cache, ttl_hours=ttl, user_id=user_id, **kwargs)
         
         # Initialize Sub-Agents

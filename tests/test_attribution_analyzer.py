@@ -5,6 +5,9 @@ from src.data.database import get_db_connection
 
 def test_attribution_analyzer_logic():
     # Setup test data
+    from src.repositories.agent_repository import AlchemyAgentRepository
+    AlchemyAgentRepository() # Ensure the agent_performance table is initialized
+
     conn = get_db_connection()
     try:
         # Clear existing test data
