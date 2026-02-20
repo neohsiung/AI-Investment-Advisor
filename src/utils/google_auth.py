@@ -69,11 +69,18 @@ class GoogleAuth:
                 
                 # Prevent Double Execution (Fix invalid_grant)
                 if st.session_state.get("last_used_code") == code:
-                    try:
-                        st.query_params.clear()
-                    except Exception:
-                        pass
+                    # We already fetched tokens for this code, so just show the success screen
+                    st.success("✅ **驗證成功 (Authentication successful)**")
+                    st.info("💡 為了確保安全憑證寫入瀏覽器，請點擊下方按鈕以進入。(To securely save your login state, please click the button below.)")
+                    
+                    if st.button("🚀 進入系統 (Enter System)", type="primary", use_container_width=True):
+                        try:
+                            st.query_params.clear()
+                        except Exception:
+                            pass
+                        st.rerun()
                     return
+
                 st.session_state["last_used_code"] = code
 
                 flow = self._get_flow()
