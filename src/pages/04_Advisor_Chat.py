@@ -59,43 +59,35 @@ class AdvisorChatPage(BasePage):
                         # Get User ID for authentic DB config loading
                         user_id = self.user.get('id', 'system') if hasattr(self, 'user') else 'system'
 
-                        if ticker == "AAPL":
-                            st.write("偵測到代碼: AAPL")
-                            # Fix: Use create_fundamental_agent instead of non-existent create_stock_analyst_agent
-                            agent = factory.create_fundamental_agent(user_id=user_id)
-                            result = agent.run({
-                                "ticker": "AAPL",
-                                "analyst_type": "fundamental"
-                            })
-                            full_response = result
+                        # Always use CIO Agent for Interactive Advisory
+                        cio_agent = factory.create_cio_agent(user_id=user_id)
+                        
+                        system_prompt = (
+                            "You are a professional AI Investment Advisor. "
+                            "Your goal is to answer the user's financial questions concisely, directly, and interactively. "
+                            "Do NOT generate a full multi-section weekly/daily report unless explicitly asked. "
+                            "Provide actionable, insightful, and data-driven responses. "
+                            "Use traditional Chinese (繁體中文)."
+                        )
+                        
+                        # Add ticker context if detected
+                        if ticker:
+                            system_prompt += f"\\n\\nThe user is asking about the ticker: {ticker}. Please focus your advice on this asset if relevant."
+                            st.write(f"已識別標的: {ticker}")
 
-                        elif ticker:
-                            st.write(f"偵測到代碼: {ticker}")
-                            # Fix: Use create_fundamental_agent
-                            agent = factory.create_fundamental_agent(user_id=user_id)
-                            result = agent.run({
-                                "ticker": ticker,
-                                "analyst_type": "fundamental"
-                            })
-                            full_response = result
+                        messages = [{"role": "system", "content": system_prompt}]
+                        
+                        # Append short dialogue history (last 5 messages) for conversational memory
+                        for msg in st.session_state.messages[-5:]:
+                            if msg["role"] != "system":
+                                messages.append(msg)
+                                
+                        messages.append({"role": "user", "content": prompt})
 
-                        else:
-                            agent_type = "cio"
-                            st.write(f"調用 {agent_type.upper()} Agent...")
-                            # Fix: Pass user_id to load user-specific DB settings (API Keys)
-                            cio_agent = factory.create_cio_agent(user_id=user_id)
-
-                            cio_ctx = {
-                                'macro_report': "宏觀經濟環境摘要",
-                                'portfolio_snapshot': {"total_nlv": 1000},
-                                'recent_transactions': []
-                            }
-                            cio_ctx['macro_report'] = f"User Question: {prompt}\\n\\n" + cio_ctx['macro_report']
-
-                            final_response = cio_agent.run(cio_ctx)
-                            full_response = final_response
-
-                        status.update(label="完成!", state="complete", expanded=False)
+                        # Call LLM directly for interactive response
+                        full_response = cio_agent.call_llm(messages=messages, temperature=0.7)
+                        
+                        status.update(label="分析完成!", state="complete", expanded=False)
                         message_placeholder.markdown(full_response)
 
                     except Exception as e:
