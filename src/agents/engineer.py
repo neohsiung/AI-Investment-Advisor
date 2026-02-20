@@ -3,6 +3,7 @@ from datetime import datetime
 import difflib
 import os
 import uuid
+import re
 from sqlalchemy import text
 from src.agents.base_agent import BaseAgent
 from src.utils.time_utils import format_time
@@ -61,10 +62,51 @@ class SystemEngineerAgent(BaseAgent):
         with open(prompt_path, "r") as f:
             return f.read()
 
+    def _redact_secrets(self, text_value):
+        """
+        Best-effort redaction of common secret patterns (API keys, bearer tokens)
+        before persisting content to disk.
+        """
+        if not isinstance(text_value, str):
+            return text_value
+
+        redacted = text_value
+
+        # Redact obvious bearer tokens (e.g., "Authorization: Bearer <token>" or "Bearer <token>")
+        redacted = re.sub(
+            r"(Authorization:\s*Bearer\s+)[^\s\"']+",
+            r"\1[REDACTED]",
+            redacted,
+            flags=re.IGNORECASE,
+        )
+        redacted = re.sub(
+            r"(Bearer\s+)[^\s\"']+",
+            r"\1[REDACTED]",
+            redacted,
+            flags=re.IGNORECASE,
+        )
+
+        # Redact common api_key patterns in code / JSON / config-like text
+        redacted = re.sub(
+            r"([\"']?api_key[\"']?\s*[:=]\s*[\"'])[A-Za-z0-9_\-\.]+([\"'])",
+            r"\1[REDACTED]\2",
+            redacted,
+            flags=re.IGNORECASE,
+        )
+        redacted = re.sub(
+            r"([\"']?API_KEY[\"']?\s*[:=]\s*[\"'])[A-Za-z0-9_\-\.]+([\"'])",
+            r"\1[REDACTED]\2",
+            redacted,
+            flags=re.IGNORECASE,
+        )
+
+        return redacted
+
     def _save_prompt(self, prompt_path, file_content):
-        # Renamed variable from 'prompt_text' to 'file_content' to avoid CodeQL false positive heuristics
+        # Redact any accidental secrets before writing to disk to avoid CodeQL false positive heuristics
+        safe_content = self._redact_secrets(file_content)
         with open(prompt_path, "w") as f:
-            f.write(file_content)
+            f.write(safe_content)
 
     def _log_prompt_change(self, agent_name, reason, old_prompt, new_prompt, diff):
         try:
