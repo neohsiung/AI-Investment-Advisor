@@ -10,6 +10,7 @@
 - **Ticker**: {{ticker}}
 - **Financials**: {{financials}}
 - **News/Events**: {{news}}
+- **Supply Chain & Shortage Premium**: {{shortage_premium}}
 
 ## 輸出格式 (Markdown)
 ```markdown

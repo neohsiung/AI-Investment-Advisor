@@ -133,9 +133,19 @@ class AgentFactory:
             agent = SentimentSwarm(user_id=user_id, **kwargs)
         elif name_lower == 'risk':
             agent = RiskAgent(use_cache=use_cache, user_id=user_id, **kwargs)
+        elif name_lower == 'thematic':
+            from src.agents.thematic import ThematicAgent
+            agent = ThematicAgent(use_cache=use_cache, user_id=user_id, **kwargs)
         else:
             raise ValueError(f"Unknown agent type: {agent_name}")
             
+        return AgentFactory._inject_dependencies(agent)
+
+    @staticmethod
+    def create_thematic_agent(use_cache=True, user_id="system", **kwargs):
+        AgentFactory._configure_dspy(user_id=user_id)
+        from src.agents.thematic import ThematicAgent
+        agent = ThematicAgent(use_cache=use_cache, user_id=user_id, **kwargs)
         return AgentFactory._inject_dependencies(agent)
 
     @staticmethod

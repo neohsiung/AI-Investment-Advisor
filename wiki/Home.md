@@ -1,5 +1,12 @@
 # AI Investment Advisor Wiki 🚀
 
+### 版本紀錄 (Version History)
+| Date | Version | Description | Author |
+| :--- | :--- | :--- | :--- |
+| 2026-02-20 | v4.2 | **Production Standardization**: Standardized all internal links and file structures for Production v1.0.0 release. | Neo |
+| 2026-02-18 | v4.1 | **Architectural Sync**: Enhanced persona-based navigation and Mermaid diagrams. | Neo |
+
+
 歡迎來到 AI Investment Advisor 的專業知識門戶。本專案不僅是一個投資系統，更是高度工程化、規範驅動 (Rule-driven) 的智能體協作平台。
 
 Welcome to the AI Investment Advisor knowledge portal—a high-stakes agent swarm platform built on rigorous engineering and governance.
@@ -69,4 +76,4 @@ mindmap
 - **交付目標**: 100% Dockerized, > 75% Test Coverage
 
 ---
-*欲瀏覽完整文件清單，請使用左側導引列 (Sidebar)。*
+*欲瀏覽完整文件清單，請使用左側導引列 (Sidebar)。如有需要查看歷史文檔，請參閱 [封存-Archive](封存-Archive)。*

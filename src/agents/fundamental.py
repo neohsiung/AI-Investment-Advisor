@@ -20,10 +20,17 @@ class FundamentalAgent(BaseAgent):
         # 1. 單一標的模式
         if "ticker" in context and context["ticker"] != "UNKNOWN":
             ticker = context["ticker"]
+            
+            from src.services.supply_chain_service import SupplyChainService
+            sc_service = SupplyChainService()
+            sc_info = sc_service.get_shortage_premium(ticker)
+            shortage_narrative = sc_info.get("narrative", "")
+            
             prompt_data = {
                 "ticker": ticker,
                 "financials": json.dumps(context.get("financials", {}), indent=2, ensure_ascii=False),
-                "news": json.dumps(context.get("news", []), indent=2, ensure_ascii=False)
+                "news": json.dumps(context.get("news", []), indent=2, ensure_ascii=False),
+                "shortage_premium": shortage_narrative
             }
             return self.run_tool_loop(context=prompt_data)
         
@@ -58,10 +65,17 @@ class FundamentalAgent(BaseAgent):
             fin = t_data.get("financials", {})
             news = t_data.get("news", [])
             
+            # Milestone 2.1: Supply Chain & Shortage Premium Integration
+            from src.services.supply_chain_service import SupplyChainService
+            sc_service = SupplyChainService()
+            sc_info = sc_service.get_shortage_premium(t)
+            shortage_narrative = sc_info.get("narrative", "")
+            
             prompt_data = {
                 "ticker": t,
                 "financials": json.dumps(fin, indent=2, ensure_ascii=False),
-                "news": json.dumps(news, indent=2, ensure_ascii=False)
+                "news": json.dumps(news, indent=2, ensure_ascii=False),
+                "shortage_premium": shortage_narrative
             }
             
             try:

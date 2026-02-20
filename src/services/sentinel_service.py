@@ -141,6 +141,15 @@ class SentinelService:
         # Use message content as ID for generic events if no specific ID provided
         signal_id = f"event_{source}_{ticker or 'global'}"
         
+        # Milestone 2.1: Webhook for semiconductor earnings calls/reports
+        if source == "earnings_call" and ticker:
+            from src.services.supply_chain_service import SupplyChainService
+            sc_service = SupplyChainService()
+            sc_info = sc_service.get_shortage_premium(ticker)
+            if sc_info.get("has_premium"):
+                display_text += f"\n💡 [Supply Chain Impact]: {sc_info.get('narrative')}"
+                signal_id = f"earnings_sc_impact_{ticker}"
+        
         triggers = [{"text": display_text, "id": signal_id}]
         
         # If it's a technical signal or critical spike, escalate immediately
@@ -332,9 +341,108 @@ class SentinelService:
                         if has_tariff or has_restock:
                             scenario_note = " (Scenario Triggered: Anticipate inventory restocking as a catalyst for economic expansion before tariffs hit)"
                             total_score += 0.2 # Boost score for matching the specific roadmap scenario
+
+                        # Scenario Logic: PPA Signings / AI Energy Moat (Milestone 2.2)
+                        # Dynamic AI Energy Tickers 
+                        ai_energy_tickers = self.settings_service.get_setting("ai_energy_tickers")
+                        if not ai_energy_tickers:
+                            # [Phase 0 Cold Start]
+                            try:
+                                from src.services.transaction_service import TransactionService
+                                tx_service = TransactionService(user_id=self.user_id)
+                                active_tickers = tx_service.get_user_tickers(user_id=self.user_id, only_active=True)
+                                if active_tickers:
+                                    logger.info(f"Bootstrapping AI Energy Tickers from Watchlist: {active_tickers}")
+                                    from src.agents.factory import AgentFactory
+                                    thematic_agent = AgentFactory.create_thematic_agent(user_id=self.user_id)
+                                    context = {
+                                        "event_text": f"Initial Bootstrapping. Find 'AI Energy / Infrastructure / Grid' beneficiaries from this watchlist: {', '.join(active_tickers)}",
+                                        "theme_key": "ai_energy_tickers",
+                                        "current_state": []
+                                    }
+                                    res = thematic_agent.run(context)
+                                    if res.get("status") == "success":
+                                        ai_energy_tickers = self.settings_service.get_setting("ai_energy_tickers")
+                            except Exception as e:
+                                logger.error(f"Failed to bootstrap Energy tickers: {e}")
+                                
+                            if not ai_energy_tickers:
+                                ai_energy_tickers = ["CEG", "VST", "MSFT", "AMZN", "GOOGL"]
+                                self.settings_service.save_setting("ai_energy_tickers", ai_energy_tickers)
+
+                        if isinstance(ai_energy_tickers, str):
+                            try:
+                                import json
+                                ai_energy_tickers = json.loads(ai_energy_tickers)
+                            except:
+                                ai_energy_tickers = [t.strip() for t in ai_energy_tickers.split(',')]
+                                
+                        has_ppa = any(keyword in result.get('title', '').lower() + result.get('snippet', '').lower() for keyword in ["ppa", "power purchase agreement", "nuclear", "smr", "datacenter power", "grid"])
+                        if has_ppa:
+                            if ticker in ai_energy_tickers:
+                                scenario_note += " ⚡ (AI Energy Catalyst: Potential PPA signing or nuclear/grid infrastructure deal detected)"
+                                total_score += 0.3 # Boost for milestone 2.2 energy moat
                             
+                            # EVENT-DRIVEN THEMATIC OPTIMIZATION: Energy
+                            # If score is very high and it's a structural news event, trigger the ThematicAgent
+                            if total_score > 1.0:
+                                self._trigger_thematic_update(
+                                    event_text=f"{result.get('title')} - {result.get('snippet')}", 
+                                    theme_key="ai_energy_tickers", 
+                                    current_state=ai_energy_tickers
+                                )
+                            
+                        # Scenario Logic: Physical AI Transformation (Milestone 2.3)
+                        # Dynamic Physical AI Tickers
+                        physical_ai_tickers = self.settings_service.get_setting("physical_ai_tickers")
+                        if not physical_ai_tickers:
+                            # [Phase 0 Cold Start]
+                            try:
+                                from src.services.transaction_service import TransactionService
+                                tx_service = TransactionService(user_id=self.user_id)
+                                active_tickers = tx_service.get_user_tickers(user_id=self.user_id, only_active=True)
+                                if active_tickers:
+                                    logger.info(f"Bootstrapping Physical AI Tickers from Watchlist: {active_tickers}")
+                                    from src.agents.factory import AgentFactory
+                                    thematic_agent = AgentFactory.create_thematic_agent(user_id=self.user_id)
+                                    context = {
+                                        "event_text": f"Initial Bootstrapping. Find 'Physical AI / Robotics / Autonomous' beneficiaries from this watchlist: {', '.join(active_tickers)}",
+                                        "theme_key": "physical_ai_tickers",
+                                        "current_state": []
+                                    }
+                                    res = thematic_agent.run(context)
+                                    if res.get("status") == "success":
+                                        physical_ai_tickers = self.settings_service.get_setting("physical_ai_tickers")
+                            except Exception as e:
+                                logger.error(f"Failed to bootstrap Physical AI tickers: {e}")
+                                
+                            if not physical_ai_tickers:
+                                physical_ai_tickers = ["TSLA", "NVDA", "BDX", "PLTR", "UBER"]
+                                self.settings_service.save_setting("physical_ai_tickers", physical_ai_tickers)
+
+                        if isinstance(physical_ai_tickers, str):
+                            try:
+                                import json
+                                physical_ai_tickers = json.loads(physical_ai_tickers)
+                            except:
+                                physical_ai_tickers = [t.strip() for t in physical_ai_tickers.split(',')]
+                                
+                        has_physical_ai = any(keyword in result.get('title', '').lower() + result.get('snippet', '').lower() for keyword in ["fsd", "humanoid", "robotaxi", "optimus", "autonomous driving", "industrial automation"])
+                        if has_physical_ai:
+                            if ticker in physical_ai_tickers:
+                                scenario_note += " 🤖 (Physical AI Catalyst: Advancement in autonomous robotics or self-driving technology)"
+                                total_score += 0.3 # Boost for milestone 2.3 physical AI moat
+                            
+                            # EVENT-DRIVEN THEMATIC OPTIMIZATION: Physical AI
+                            if total_score > 1.0:
+                                self._trigger_thematic_update(
+                                    event_text=f"{result.get('title')} - {result.get('snippet')}", 
+                                    theme_key="physical_ai_tickers", 
+                                    current_state=physical_ai_tickers
+                                )
+
                         triggers.append({
-                            "text": f"📰 {ticker} 風險新聞: {result.get('title', 'N/A')} (加權分數: {total_score:.2f}, 關鍵字: {kw_summary}){scenario_note}",
+                            "text": f"📰 {ticker} 新聞異動: {result.get('title', 'N/A')} (加權分數: {total_score:.2f}, 關鍵字: {kw_summary}){scenario_note}",
                             "id": f"news_{ticker}_{result.get('title', 'N/A')[:20]}",
                             "value": total_score
                         })
@@ -667,3 +775,23 @@ class SentinelService:
                         "value": val
                     }
         return None
+
+    def _trigger_thematic_update(self, event_text: str, theme_key: str, current_state: Any) -> None:
+        """
+        Helper to asynchronously trigger the ThematicAgent to update dynamic tracking lists based on events.
+        """
+        logger.info(f"Triggering Thematic Update for {theme_key} due to high-impact event.")
+        try:
+            from src.agents.factory import AgentFactory
+            thematic_agent = AgentFactory.create_thematic_agent(user_id=self.user_id)
+            context = {
+                "event_text": event_text,
+                "theme_key": theme_key,
+                "current_state": current_state
+            }
+            # Run in a separate thread so we don't block the main event loop
+            import asyncio
+            loop = asyncio.get_event_loop()
+            loop.run_in_executor(None, thematic_agent.run, context)
+        except Exception as e:
+            logger.error(f"Failed to trigger thematic update for {theme_key}: {e}")

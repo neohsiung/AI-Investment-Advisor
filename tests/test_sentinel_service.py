@@ -291,7 +291,7 @@ class TestBreakingNews:
 
         assert len(triggers) == 1
         assert "AAPL" in triggers[0]["id"]
-        assert "風險新聞" in triggers[0]["text"]
+        assert "新聞異動" in triggers[0]["text"]
         assert "加權分數" in triggers[0]["text"]
         # Verify hits were recorded
         assert mock_repo.record_hit.call_count >= 1

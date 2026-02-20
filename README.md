@@ -1,10 +1,11 @@
-# AI Investment Advisor (v4.0)
+# AI Investment Advisor (v1.0.0)
 
 ### 版本紀錄 (Version History)
 | Date | Version | Description | Author |
 | :--- | :--- | :--- | :--- |
-| 2026-02-17 | v4.0.0 | **Premium Governance Sync**: Unified single-source README distilled from Wiki. Implemented Atomic Sync (Rule #12). | Neo |
-| 2026-02-16 | v3.9.0 | **Security Hardening**: Hardened Base Images (Rule #11) & Secrets Isolation. | Neo |
+| 2026-02-20 | v1.0.0 | **Production Release**: Officially transitioned to production. Standardized all documentation and architectural tiers. | Neo |
+| 2026-02-17 | v4.0.0-rc | **Premium Governance Sync**: Unified single-source README distilled from Wiki. Implemented Atomic Sync (Rule #12). | Neo |
+| 2026-02-16 | v3.9.0-rc | **Security Hardening**: Hardened Base Images (Rule #11) & Secrets Isolation. | Neo |
 
 <p align="center">
   <img src="https://img.shields.io/badge/Python-3.11+-blue.svg?style=for-the-badge&logo=python&logoColor=white" alt="Python">
@@ -77,7 +78,7 @@ cp .env.example .env
 *本地 Dashboard 入口: [http://localhost:8501](http://localhost:8501)*
 
 ### 🏗️ 系統架構圖 (Architecture)
-詳細深挖請見 [架構哲學 (Architectural Philosophies)](wiki/04_架構觀點-Architect_Views/架構哲學-Architectural-Philosophies.md)。
+詳細深挖請見 [架構哲學-Architectural-Philosophies](架構哲學-Architectural-Philosophies)。
 
 ```mermaid
 graph TD
@@ -108,10 +109,10 @@ graph TD
 - **[原子提交規範](.agent/rules/git-commit-format.md)**: 確保開發軌跡清晰且具備雙語描述。
 
 ### �📚 文檔索引
-- **快速入門**: [Quickstart Guide](wiki/01_使用者手冊-User_Manual/快速啟動與操作指南-Quickstart-User-Guide.md)
-- **架構深挖**: [Architectural Philosophies](wiki/04_架構觀點-Architect_Views/架構哲學-Architectural-Philosophies.md)
+- **快速入門**: [快速啟動與操作指南-Quickstart-User-Guide](快速啟動與操作指南-Quickstart-User-Guide)
+- **架構深挖**: [架構哲學-Architectural-Philosophies](架構哲學-Architectural-Philosophies)
 - **開發者手冊**: [Engineering Standards](.agent/rules/engineering-standards.md)
-- **API 與數據**: [Financial Data Matrix](wiki/05_工程手冊-Engineering_Handbook/02_規範標準-Standards/金融數據矩陣與整合成本-Financial-Data-Matrix-Cost.md)
+- **API 與數據**: [金融數據矩陣與整合成本-Financial-Data-Matrix-Cost](金融數據矩陣與整合成本-Financial-Data-Matrix-Cost)
 
 ---
 
@@ -122,7 +123,7 @@ graph TD
 **AI Investment Advisor** is a sophisticated, autonomous investment ecosystem designed to simulate the decision-making pipeline of a quantitative hedge fund. It leverages a self-optimizing swarm of **7 AI Agents** anchored by a **Council of Arbitrators** and a high-performance **Hybrid Storage Strategy**.
 
 ### 🚀 Key Capabilities
-- **🧠 Swarm Intelligence (v4.0)**: CIO-led architecture coordinating specialized agents (Fundamental, Momentum, Macro, etc.) through Fractal Debate for superior Alpha.
+- **🧠 Swarm Intelligence (v1.0)**: CIO-led architecture coordinating specialized agents (Fundamental, Momentum, Macro, etc.) through Fractal Debate for superior Alpha.
 - **⚖️ Precision Leverage Engine**: Real-time tracking of Gross/Net NLV and margin utilization with professional-grade risk reporting.
 - **🔭 Sentinel & Council**: 24/7 scanning of 4D market events with **Smart Deduplication** (24h cooldown) and noise filtering.
 - **🗄️ Hybrid RAG Memory**: PostgreSQL + pgvector unified backbone for high-speed financial calculation and semantic decision history.
@@ -176,7 +177,7 @@ To ensure high-fidelity AI collaboration, the project enforces strict governance
 - **[Git Commit Standards](.agent/rules/git-commit-format.md)**: Ensures atomic commits with professional bilingual summaries.
 
 ### �📚 Deep Dives
-Visit our full [Wiki](wiki/Home.md) for architectural blueprints and contribution guides.
+Visit our full [Wiki](Home) for architectural blueprints and contribution guides.
 
 ### 📄 License & Disclaimer
 - **License**: MIT License.
