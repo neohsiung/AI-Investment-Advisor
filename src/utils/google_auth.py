@@ -94,40 +94,34 @@ class GoogleAuth:
                 }
 
                 # Store user info in session
-                st.session_state['connected'] = True
                 st.session_state['user_info'] = user_info
                 st.session_state['oauth_id'] = id_info.get("sub")
                 
                 # Persist in Cookie (expires in 7 days) via CookieManager
                 # Note: Browsers might block 3rd party cookies, but this is 1st party.
-                # We store minimal data.
+                # Store user info in cookie
                 import datetime
                 expires_at = datetime.datetime.now() + datetime.timedelta(days=7)
                 self.cookie_manager.set(self.cookie_name, user_info, expires_at=expires_at)
 
-                # Clear query params internally
-                try:
-                    st.query_params.clear()
-                except Exception:
-                    pass
+                # Sync state immediately into session
+                st.session_state['connected'] = True
+                st.session_state['user_info'] = user_info
+                if 'sub' in user_info:
+                    st.session_state['oauth_id'] = user_info['sub']
+
+                st.success("✅ **驗證成功 (Authentication successful)**")
+                st.info("💡 為了確保安全憑證寫入瀏覽器，請點擊下方按鈕以進入。(To securely save your login state, please click the button below.)")
                 
-                st.info("🔄 登入成功！正在建立安全連線... (Login successful! Establishing secure connection...)", icon="🔄")
+                if st.button("🚀 進入系統 (Enter System)", type="primary", use_container_width=True):
+                    # Clear query params internally on click
+                    try:
+                        st.query_params.clear()
+                    except Exception:
+                        pass
+                    st.rerun()
                 
-                # Inject JS to auto-reload the page after 1.5 seconds.
-                # This guarantees the cookie manager component has time to render and set the cookie in the browser.
-                from streamlit.components.v1 import html
-                html(
-                    """
-                    <script>
-                        setTimeout(function() {
-                            window.parent.location.href = window.parent.location.pathname;
-                        }, 1500);
-                    </script>
-                    """,
-                    height=0
-                )
-                
-                return # Return so auth_guard can st.stop() and render the UI/cookie
+                return # Crucial to abort execution so the frontend renders CookieManager iframe
 
             except Exception as e:
                 # Handle 'invalid_grant' - usually means reuse of Authorization Code
