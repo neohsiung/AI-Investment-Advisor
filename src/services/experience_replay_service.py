@@ -84,3 +84,78 @@ class ExperienceReplayService:
         """
         # Future enhancement: correlate signal with 30d forward returns
         pass
+
+    def analyze_narrative_drift(self, user_id: str, current_market_data: str) -> Dict[str, Any]:
+        """
+        Milestone 3.2: Narrative Drift Analysis.
+        敘事偏離度分析：對比上週週報的共識與本週的實際行情。
+        """
+        logger.info(f"Starting Narrative Drift Analysis for user {user_id}")
+        
+        try:
+            # 1. Retrieve the last weekly CIO report
+            with get_db_connection() as conn:
+                query = text("""
+                    SELECT consensus 
+                    FROM council_minutes 
+                    WHERE user_id = :uid 
+                      AND topic LIKE '%Weekly Macro & Sector Report%'
+                    ORDER BY created_at DESC 
+                    LIMIT 1
+                """)
+                result = conn.execute(query, {'uid': user_id}).fetchone()
+                
+            if not result:
+                logger.warning("No past weekly report found for narrative drift analysis.")
+                return {"accuracy_score": 10, "suggested_correction": "無歷史參考資料 (No historical data)."}
+                
+            past_consensus = result[0]
+            
+            # 2. Call LLM directly to analyze the drift
+            from src.infrastructure.llm_router import DynamicModelRouter
+            from src.utils.llm_clients.openrouter_client import OpenRouterClient
+            import os
+            
+            router = DynamicModelRouter()
+            tier = router.select_tier("Narrative Drift Analysis", round_num=99)
+            
+            # Retrieve Model config
+            with get_db_connection() as conn:
+                config_query = text("SELECT value FROM settings WHERE user_id = :uid AND key = 'ai_models_config'")
+                config_res = conn.execute(config_query, {'uid': user_id}).fetchone()
+                
+            provider = "openrouter"
+            model_id = "openai/gpt-4o-mini" # Default fallback
+            api_key = os.environ.get("OPENROUTER_API_KEY", "")
+            
+            if config_res and config_res[0]:
+                config = json.loads(config_res[0])
+                model_info = config.get(tier, {})
+                provider = model_id.split('/')[0] if '/' in model_info.get("model", "") else "openrouter"
+                model_id = model_info.get("model", model_id)
+                api_key = config.get("api_keys", {}).get(provider, api_key)
+            
+            prompt_path = "prompts/narrative_drift_agent.txt"
+            with open(prompt_path, "r", encoding="utf-8") as f:
+                sys_prompt_template = f.read()
+                
+            system_prompt = sys_prompt_template.replace("{{past_consensus}}", past_consensus).replace("{{market_data}}", current_market_data)
+            
+            client = OpenRouterClient()
+            response_str = client.generate(
+                system_prompt=system_prompt,
+                user_prompt="Analyze the narrative drift and output JSON only.",
+                model=model_id,
+                api_key=api_key,
+                temperature=0.3
+            )
+            
+            # Clean and Parse JSON
+            cleaned = response_str.replace("```json", "").replace("```", "").strip()
+            data = json.loads(cleaned)
+            logger.info(f"Narrative Delta Score: {data.get('accuracy_score')}/10")
+            return data
+            
+        except Exception as e:
+            logger.error(f"Narrative Drift Analysis failed: {e}")
+            return {"accuracy_score": 10, "suggested_correction": f"分析失敗 (Analysis Failed): {e}"}

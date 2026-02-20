@@ -169,12 +169,23 @@ class BaseWorkflow(ABC):
 
     async def distribute_report(self, content: str):
         """Store in DB and send Email asynchronously."""
+        # 0. Generate Professional HTML (Milestone 3.3)
+        from src.services.reporting_service import ReportingService
+        reporting_service = ReportingService()
+        title = f"Strategic Investment Insight - {self.__class__.__name__}"
+        html_content = reporting_service.generate_professional_html(content, title=title)
+        
         # 1. Store in DB
         conn = get_db_connection()
         try:
             import uuid
             report_id = str(uuid.uuid4())
             date_str = get_current_time().isoformat()
+            
+            # We store the raw markdown in 'content' and HTML in a new column if exists, 
+            # but for standard DB schema we will store HTML in 'content' or modify logic.
+            # Assuming DB schema support for raw markdown, we store Markdown. Email gets HTML.
+            # We'll store HTML in db for Dashboard web view to render directly.
             conn.execute(text("""
                 INSERT INTO reports (id, user_id, report_type, title, content, created_at, date) 
                 VALUES (:id, :uid, :type, :title, :content, :created, :date)
@@ -182,13 +193,13 @@ class BaseWorkflow(ABC):
                 "id": report_id, 
                 "uid": self.user_id, 
                 "type": self.__class__.__name__,
-                "title": f"Workflow Report ({self.__class__.__name__})", 
-                "content": content, 
+                "title": title, 
+                "content": html_content, # Store HTML for frontend
                 "created": date_str,
                 "date": date_str
             })
             conn.commit()
-            logger.info("Report stored in database.")
+            logger.info("Report stored in database (HTML format).")
         finally:
             conn.close()
 
@@ -199,8 +210,10 @@ class BaseWorkflow(ABC):
         settings_service = SettingsService(user_id=self.user_id)
         notifier = NotificationService.create_with_settings(settings_service, user_id=self.user_id)
         subject = f"Investment Report ({self.__class__.__name__}) - {get_current_time().strftime('%Y-%m-%d')}"
-        await notifier.send_report(subject, content, user_id=self.user_id, source=self.__class__.__name__)
-        logger.info("Report notifications sent.")
+        
+        # Send HTML content via NotificationService (assuming it handles HTML for email)
+        await notifier.send_report(subject, html_content, user_id=self.user_id, source=self.__class__.__name__)
+        logger.info("Report notifications sent in HTML format.")
 
 
 class DailyWorkflow(BaseWorkflow):

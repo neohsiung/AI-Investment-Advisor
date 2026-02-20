@@ -27,8 +27,14 @@ While your Daily Reports focus on "Tactical/Reflexive" actions (System 1), this 
 # 🦁 週報：戰略復盤與記憶鞏固 (Weekly Strategy & Memory Consolidation)
 日期: {{current_date}}
 
+## 0. 產業大局觀 (Thematic & Big Picture)
+> 系統追蹤的核心主題與供應鏈動態。
+{{thematic_context}}
+
 ## 1. 記憶鏈回顧 (Memory Chain Review)
-> System 2 對本週 System 1 決策的審計。
+> System 2 對本週 System 1 決策的審計，並糾正敘事偏離。
+{{narrative_drift_context}}
+
 - **本週戰術總結**: (例如: "本週我們在 NVDA 財報前進行了兩次加碼，目前看來是正確的...")
 - **決策一致性檢查**: (例如: "週三的止損操作過於急躁，違反了長線持有原則，需改進。")
 

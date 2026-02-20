@@ -71,57 +71,67 @@ class RoleSwarm(BaseAgent):
 
     async def _run_async(self, context: Any) -> str:
         """
-        Core Swarm Execution Flow (Breadth-First -> Selection -> Depth-First).
-        核心 Swarm 執行流程 (廣度優先 -> 篩選 -> 深度優先)。
+        Core Swarm Execution Flow (Parallel Dispatch -> Fusion Strategy).
+        核心 Swarm 執行流程 (並發派發 -> 融合策略)。
         """
         task = context.get("user_request", "")
-        # 1. Breadth-First: Fan-out to Fast Tier
-        # 廣度優先：分發至 Fast Tier
-        candidates = self.tiers["col_fast"]
         
-        if candidates:
-            # [Evolution] Adaptive Selection
-            # Sort candidates by weight (descending)
-            weighted_agents = []
-            for agent in candidates:
-                w = self.orchestrator.agent_repo.get_agent_weight(agent.name, default=1.0)
-                weighted_agents.append((w, agent))
+        # 1. Prepare candidate agents by tier
+        fast_candidates = self._select_top_k(self.tiers.get("col_fast", []), k=5)
+        smart_candidates = self._select_top_k(self.tiers.get("col_smart", []), k=3)
+        adv_candidates = self._select_top_k(self.tiers.get("col_adv", []), k=2)
+        
+        # 2. Parallel Dispatch using asyncio.create_task
+        logger.info(f"RoleSwarm {self.name}: 🚀 Dispatching to Fast({len(fast_candidates)}), Smart({len(smart_candidates)}), Adv({len(adv_candidates)})")
+        
+        async def run_tier(tier_name, agents, ctx):
+            if not agents: return {}
+            logger.info(f"RoleSwarm {self.name}: Starting {tier_name} Tier Analysis...")
+            return await self.orchestrator.broadcast(agents, task, ctx)
             
-            # Sort by weight desc
-            weighted_agents.sort(key=lambda x: x[0], reverse=True)
+        fast_task = asyncio.create_task(run_tier("Fast", fast_candidates, context))
+        smart_task = asyncio.create_task(run_tier("Smart", smart_candidates, context))
+        adv_task = asyncio.create_task(run_tier("Advanced", adv_candidates, context))
+        
+        # Phase 1: Await Fast Tier explicitly for Graceful Degradation / Preemption
+        fast_results = await fast_task
+        fast_summary = self.orchestrator.aggregate_results(fast_results, strategy="concat")
+        
+        # [Evolution] Graceful Degradation / Override check
+        # If Fast Tier (e.g., Risk Agent) detects extreme danger, preempt the rest to save time and compute.
+        fast_summary_upper = fast_summary.upper()
+        if "CRITICAL DANGER" in fast_summary_upper or "EMERGENCY STOP" in fast_summary_upper or "SYSTEM PAUSE" in fast_summary_upper:
+            logger.warning(f"RoleSwarm {self.name}: 🚨 Fast Tier triggered GRACEFUL DEGRADATION. Preempting.")
+            smart_task.cancel()
+            adv_task.cancel()
+            return f"🚨 **EMERGENCY STOP TRIGGERED BY FAST TIER**:\n\n{fast_summary}"
             
-            # Select Top K (e.g., Top 5 or all if fewer)
-            top_k = 5
-            selected_agents = [a for w, a in weighted_agents[:top_k]]
-            
-            logger.info(f"RoleSwarm {self.name}: ⚡ Fast Tier Scan ({len(selected_agents)}/{len(candidates)} agents)...")
-            logger.debug(f"Selected Agents: {[(a.name, w) for w, a in weighted_agents[:top_k]]}")
-            
-            fast_results = await self.orchestrator.broadcast(selected_agents, task, context)
-            
-            # TODO: Implement Selection / Filtering Logic here
-            # For MVP, we aggregate and pass to Smart Tier if exists, or return.
-            
-            summary = self.orchestrator.aggregate_results(fast_results)
-        else:
-            summary = "No Fast Tier agents registered."
-
-        # 2. Depth-First: Drill-down with Smart Tier (if needed/configured)
-        # 深度優先：使用 Smart Tier 進行深入分析
-        smart_agents = self.tiers["col_smart"]
-        if smart_agents:
-            logger.info(f"RoleSwarm {self.name}: 🧠 Smart Tier Analysis ({len(smart_agents)} agents)...")
-            
-            # Inject fast tier results into context for smart tier
-            drill_context = context.copy() if isinstance(context, dict) else {}
-            drill_context["preliminary_insights"] = summary
-            
-            smart_results = await self.orchestrator.broadcast(smart_agents, task, drill_context)
-            final_output = self.orchestrator.aggregate_results(smart_results)
-        else:
-            final_output = summary
-
-        # 3. Final Synthesis (Optional: Use Orchestrator LLM)
-        # For now return the aggregated result.
+        # Phase 2: Wait for Smart and Advanced Tiers (they were already running in the background)
+        results = await asyncio.gather(smart_task, adv_task, return_exceptions=True)
+        smart_results = results[0] if not isinstance(results[0], Exception) else {}
+        adv_results = results[1] if not isinstance(results[1], Exception) else {}
+        
+        # 3. Fusion Strategy (Aggregate everything)
+        final_output = f"## Role Swarm Synthesis: {self.name}\n\n"
+        if fast_results:
+            final_output += "### 1. ⚡ Fast Tier Insights\n" + fast_summary + "\n"
+        if smart_results:
+            final_output += "### 2. 🧠 Smart Tier Analysis\n" + self.orchestrator.aggregate_results(smart_results, strategy="concat") + "\n"
+        if adv_results:
+            final_output += "### 3. 🚀 Advanced Tier Deep Dive\n" + self.orchestrator.aggregate_results(adv_results, strategy="concat") + "\n"
         
         return final_output
+
+    def _select_top_k(self, candidates, k=3):
+        """Select top performing agents based on learned weights."""
+        if not candidates: 
+            return []
+        weighted_agents = []
+        for agent in candidates:
+            # Default to 1.0 if no history
+            w = self.orchestrator.agent_repo.get_agent_weight(agent.name, default=1.0)
+            weighted_agents.append((w, agent))
+            
+        # Sort by weight desc
+        weighted_agents.sort(key=lambda x: x[0], reverse=True)
+        return [a for w, a in weighted_agents[:k]]

@@ -206,9 +206,6 @@ class InteractionService:
         if filtered_triggers:
             for i, t in enumerate(filtered_triggers, 1):
                 formatted_triggers += f"• {t.get('text', '未知觸發')}\n"
-        else:
-            formatted_triggers = "無特定觸發訊號。\n"
-            
         alert_content = (
             f"### 🛡️ Sentinel 監控警報 (Sentinel Alert)\n\n"
             f"**偵測到以下重要訊號 ({len(filtered_triggers)}):**\n"
@@ -219,7 +216,7 @@ class InteractionService:
             f"---\n"
             f"**原始請求內容 (Original Request):**\n"
             f"{req.content}"
-        )
+        ) if filtered_triggers else req.content
         
         for adapter in self.adapters:
             try:
@@ -227,8 +224,8 @@ class InteractionService:
                 # For now using send_alert mechanism but with actions
                 await adapter.send_alert(
                     user_id=req.user_id or "broadcast",
-                    title=f"⚠️ {req.title}",
-                    content=alert_content, # Use the formatted alert content
+                    title=f"⚠️ {req.title}" if filtered_triggers else req.title,
+                    content=alert_content, 
                     actions=actions
                 )
             except Exception as e:

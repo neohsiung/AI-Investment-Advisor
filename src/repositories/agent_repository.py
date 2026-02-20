@@ -86,16 +86,15 @@ class AlchemyAgentRepository(BaseRepository, IAgentRepository):
         """
         now = datetime.now().isoformat()
         
-        # Upsert Logic using ON CONFLICT (id is agent_name)
         upsert_sql = text("""
             INSERT INTO agent_performance (agent_name, tier, weight, success_count, failure_count, total_latency, avg_latency, last_updated)
             VALUES (:name, :tier, :weight, :s_count, :f_count, :latency, :latency, :updated)
             ON CONFLICT(agent_name) DO UPDATE SET
-                weight = weight + :w_delta,
-                success_count = success_count + :s_inc,
-                failure_count = failure_count + :f_inc,
-                total_latency = total_latency + :lat,
-                avg_latency = (total_latency + :lat) / (success_count + failure_count + 1),
+                weight = agent_performance.weight + :w_delta,
+                success_count = agent_performance.success_count + :s_inc,
+                failure_count = agent_performance.failure_count + :f_inc,
+                total_latency = agent_performance.total_latency + :lat,
+                avg_latency = (agent_performance.total_latency + :lat) / (agent_performance.success_count + agent_performance.failure_count + 1),
                 last_updated = :updated
         """)
         

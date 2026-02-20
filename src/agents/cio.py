@@ -62,7 +62,45 @@ class CIOAgent(BaseAgent):
                     swarm_context += f"- **Momentum**: {reports.get('momentum', 'N/A')}\n"
                     swarm_context += f"- **Sentiment**: {reports.get('sentiment', 'N/A')}\n\n"
         
-        # 3. Prepare Data for Prompt Template
+        # 3. Get Thematic Data (Milestone 3.1)
+        # 3. 取得主題資料 (整合實體 AI, AI 能源與供應鏈瓶頸)
+        try:
+            settings_repo = AlchemySettingsRepository()
+            physical_ai = settings_repo.get(user_id, "physical_ai_tickers")
+            ai_energy = settings_repo.get(user_id, "ai_energy_tickers")
+            supply_chain = settings_repo.get(user_id, "supply_chain_knowledge_graph")
+            
+            thematic_context = "### 目前追蹤之核心主題與供應鏈 (Current Thematic & Supply Chain Tracks)\n"
+            if physical_ai: thematic_context += f"- **實體 AI (Physical AI)**: {physical_ai}\n"
+            if ai_energy: thematic_context += f"- **AI 能源護城河 (AI Energy Moat)**: {ai_energy}\n"
+            if supply_chain:
+                # Convert dict to string if it's stored as JSON dict
+                sc_str = json.dumps(supply_chain, ensure_ascii=False) if isinstance(supply_chain, dict) else str(supply_chain)
+                thematic_context += f"- **供應鏈瓶頸預測 (Supply Chain Bottlenecks)**: {sc_str}\n"
+        except Exception as e:
+            self.logger.error(f"Failed to load thematic context for CIO: {e}")
+            thematic_context = "無法取得主題數據 (Failed to load thematic context)."
+
+        # 4. Get Narrative Drift (Milestone 3.2)
+        # 4. 取得敘事偏離度分析
+        try:
+            from src.services.experience_replay_service import ExperienceReplayService
+            er_service = ExperienceReplayService()
+            # For market data, we pass a simplified string of current macro/portfolio
+            current_market_data = f"Macro: {context.get('macro_report', 'N/A')} | Portfolio: {portfolio_str}"
+            drift_data = er_service.analyze_narrative_drift(user_id, current_market_data)
+            
+            narrative_drift_context = (
+                f"### 上週敘事偏離復盤 (Narrative Drift Analysis)\n"
+                f"- **準確度評分 (Accuracy)**: {drift_data.get('accuracy_score', 'N/A')}/10\n"
+                f"- **偏離理由 (Rationale)**: {drift_data.get('narrative_delta_rationale', 'N/A')}\n"
+                f"- **本週修正建議 (Correction)**: {drift_data.get('suggested_correction', 'N/A')}\n"
+            )
+        except Exception as e:
+            self.logger.error(f"Failed to load narrative drift: {e}")
+            narrative_drift_context = "無敘事偏離數據 (No narrative drift data)."
+
+        # 5. Prepare Data for Prompt Template
         prompt_data = {
             "current_date": format_time(fmt="%Y-%m-%d"),
             "leverage_ratio": f"{leverage_ratio:.2f}",
@@ -70,13 +108,14 @@ class CIOAgent(BaseAgent):
             "risk_profile": context.get("risk_profile", "Balanced (穩健型)"),
             "macro_report": context.get("macro_report", "無 (None)"),
             "engineer_report": context.get("engineer_report", "無 (No Constraints)"),
-            "swarm_context": swarm_context, # [NEW] Consolidated Swarm Inputs
+            "swarm_context": swarm_context, 
+            "thematic_context": thematic_context, 
+            "narrative_drift_context": narrative_drift_context, # [NEW] Milestone 3.2 Context
             "sector_strategy": context.get("sector_strategy", "無 (None)"),
-            # Use task_instruction if available (from TaskPlanner), else fallback to generic focus
             "report_focus": context.get("task_instruction") or context.get("report_focus", "Weekly Strategic")
         }
 
-        # 4. Call Agent Tool Loop with Thought Chain (IC Protocol Enforcement)
+        # 6. Call Agent Tool Loop with Thought Chain (IC Protocol Enforcement)
         response = self.run_tool_loop(
             context=prompt_data, 
             max_turns=3,
