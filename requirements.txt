@@ -34,7 +34,7 @@ pip-audit
 dspy==2.5.1; python_version >= "3.9"
 pgvector==0.2.4
 duckduckgo-search==3.9.3
-tavily-python==0.2.7
+tavily-python>=0.5.0
 line-bot-sdk
 
 # MCP Microservice
