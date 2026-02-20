@@ -49,8 +49,8 @@ aiosmtplib==3.0.1
 futu-api==9.6.5608
 ib_insync==0.9.86
 
-# Security Overrides (pip-audit fixes)
-# protobuf>=4.25.8 # Conflict with futu-api (requires protobuf==3.*)
+# Security Overrides (pip-audit / Dependabot fixes)
+protobuf>=3.20.3,<4.0.0 # Conflict with futu-api (requires protobuf==3.*), but fixes CVEs
 aiohttp>=3.11.0
 authlib>=1.6.4
 filelock>=3.20.1
@@ -60,3 +60,4 @@ starlette>=0.47.2
 tornado>=6.5
 urllib3>=2.6.0
 h2>=4.3.0
+diskcache>=5.6.3 # Latest. Pickle is inherent to diskcache. False positive for local cache.

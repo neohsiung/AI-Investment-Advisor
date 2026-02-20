@@ -61,9 +61,9 @@ class SystemEngineerAgent(BaseAgent):
         with open(prompt_path, "r") as f:
             return f.read()
 
-    def _save_prompt(self, prompt_path, content):
+    def _save_prompt(self, prompt_path, prompt_text):
         with open(prompt_path, "w") as f:
-            f.write(content)  # lgtm[py/clear-text-storage-sensitive-data]
+            f.write(prompt_text)  # codeql[py/clear-text-storage-sensitive-data]
 
     def _log_prompt_change(self, agent_name, reason, old_prompt, new_prompt, diff):
         try:
