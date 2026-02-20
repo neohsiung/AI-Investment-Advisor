@@ -204,16 +204,29 @@ class BaseWorkflow(ABC):
             conn.close()
 
         # 2. Send Notifications (Email & Web)
-        from src.services.notification_service import NotificationService
-        from src.services.settings_service import SettingsService
+        import os
+        import httpx
         
-        settings_service = SettingsService(user_id=self.user_id)
-        notifier = NotificationService.create_with_settings(settings_service, user_id=self.user_id)
+        notification_api_url = os.getenv("NOTIFICATION_API_URL", "http://localhost:8001/api/v1/notify")
         subject = f"Investment Report ({self.__class__.__name__}) - {get_current_time().strftime('%Y-%m-%d')}"
         
-        # Send HTML content via NotificationService (assuming it handles HTML for email)
-        await notifier.send_report(subject, html_content, user_id=self.user_id, source=self.__class__.__name__)
-        logger.info("Report notifications sent in HTML format.")
+        payload = {
+            "user_id": self.user_id,
+            "title": subject,
+            "content": html_content,
+            "channels": ["email"], # Explicitly target Email for reports
+            "category": "report"
+        }
+        
+        try:
+            async with httpx.AsyncClient() as client:
+                response = await client.post(notification_api_url, json=payload, timeout=10.0)
+                if response.status_code == 202:
+                    logger.info("Report notifications queued successfully via API.")
+                else:
+                    logger.warning(f"Notification API returned {response.status_code}: {response.text}")
+        except Exception as e:
+            logger.error(f"Failed to trigger Report Notification via API: {e}")
 
 
 class DailyWorkflow(BaseWorkflow):

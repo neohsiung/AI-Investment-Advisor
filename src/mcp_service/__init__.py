@@ -19,6 +19,25 @@ logger = logging.getLogger("MCPService")
 
 from contextlib import asynccontextmanager
 
+# --- OpenTelemetry Setup ---
+from opentelemetry import trace
+from opentelemetry.sdk.trace import TracerProvider
+from opentelemetry.sdk.trace.export import BatchSpanProcessor
+from opentelemetry.exporter.otlp.proto.grpc.trace_exporter import OTLPSpanExporter
+from opentelemetry.sdk.resources import Resource
+from opentelemetry.instrumentation.fastapi import FastAPIInstrumentor
+
+# Initialize OTel resource
+resource = Resource.create({"service.name": os.getenv("OTEL_SERVICE_NAME", "investment-advisor-core")})
+provider = TracerProvider(resource=resource)
+trace.set_tracer_provider(provider)
+
+# OTLP Exporter (Defaults to SigNoz endpoint on 4317 if not set)
+otlp_endpoint = os.getenv("OTEL_EXPORTER_OTLP_ENDPOINT", "http://localhost:4317")
+otlp_exporter = OTLPSpanExporter(endpoint=otlp_endpoint, insecure=True)
+provider.add_span_processor(BatchSpanProcessor(otlp_exporter))
+# -------------------------
+
 # Define Models (Restored)
 class ToolRegistration(BaseModel):
     """工具註冊請求"""
@@ -143,6 +162,9 @@ app = FastAPI(
     version="1.1.0",
     lifespan=lifespan
 )
+
+# Instrument the FastAPI app for OTel
+FastAPIInstrumentor.instrument_app(app)
 
 @app.get("/")
 async def root():

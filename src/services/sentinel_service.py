@@ -9,7 +9,7 @@ from src.services.market_data_service import MarketDataService
 from src.services.search_service import InternetSearchService
 from src.services.council_service import CouncilService
 from src.services.transaction_service import TransactionService
-from src.services.notification_service import NotificationService
+import httpx
 
 from src.repositories.risk_keyword_repository import AlchemyRiskKeywordRepository
 from src.repositories.sentinel_repository import AlchemySentinelRepository
@@ -35,7 +35,6 @@ class SentinelService:
         search_service: Optional[InternetSearchService] = None,
         transaction_service: Optional[TransactionService] = None,
         council_service: Optional[CouncilService] = None,
-        notification_service: Optional[NotificationService] = None,
         settings_service: Optional[SettingsService] = None,
         user_id: str = None,
     ):
@@ -47,7 +46,8 @@ class SentinelService:
         self.search_service = search_service or InternetSearchService(settings_service=self.settings_service)
         self.transaction_service = transaction_service or TransactionService()
         self.council_service = council_service or CouncilService()
-        self.notification_service = notification_service or NotificationService.create_with_settings(self.settings_service, user_id=self.user_id)
+        
+        self.notification_api_url = os.getenv("NOTIFICATION_API_URL", "http://localhost:8001/api/v1/notify")
         
         # Thresholds (v3.5 - Defaults seeded to DB)
         self.default_thresholds = {
@@ -673,15 +673,23 @@ class SentinelService:
         if is_actionable:
             actions.append({"label": "前往 eToro 下單", "data": "action=etoro_link"})
 
-        await self.notification_service.notify_all(
-            user_id=target_user,
-            title=f"⚠️ {source} Alert",
-            content=alert_content,
-            actions=actions,
-            category="sentinel",
-            source=source,
-            level="CRITICAL" if is_extreme or any(kw in decision.lower() for kw in ["sell", "reduce"]) else "WARNING"
-        )
+        # Dispatch via Standalone Notification Microservice HTTP API
+        payload = {
+            "user_id": target_user,
+            "title": f"⚠️ {source} Alert",
+            "content": alert_content,
+            "actions": actions,
+            "channels": ["line", "telegram", "email", "discord", "slack"], # Will be filtered down by microservice depending on user settings
+            "category": "sentinel"
+        }
+        
+        try:
+            async with httpx.AsyncClient() as client:
+                response = await client.post(self.notification_api_url, json=payload, timeout=5.0)
+                if response.status_code != 202:
+                    logger.warning(f"Notification Service returned non-202 status: {response.status_code} - {response.text}")
+        except Exception as e:
+            logger.error(f"Failed to reach Standalone Notification Service: {e}")
         
         # 🚨 Auto-hedging / Emergency Liquidation (Milestone 5.1)
         if is_extreme and any(kw in decision.lower() for kw in ["liquidate", "hedge", "panic", "emergency"]):

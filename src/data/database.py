@@ -95,9 +95,19 @@ def get_db_engine(db_path=None) -> Engine:
 
     if db_url not in _db_engines:
         if "postgres" in db_url:
-            _db_engines[db_url] = create_engine(db_url, pool_size=50, max_overflow=20)
+            engine = create_engine(db_url, pool_size=50, max_overflow=20)
         else:
-            _db_engines[db_url] = create_engine(db_url)
+            engine = create_engine(db_url)
+            
+        # Optional: Instrument the engine for OpenTelemetry
+        try:
+            from opentelemetry.instrumentation.sqlalchemy import SQLAlchemyInstrumentor
+            SQLAlchemyInstrumentor().instrument(engine=engine)
+            logger.info("SQLAlchemy OpenTelemetry Instrumentation enabled.")
+        except ImportError:
+            pass
+            
+        _db_engines[db_url] = engine
 
     return _db_engines[db_url]
 
