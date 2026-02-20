@@ -38,7 +38,7 @@ class SystemEngineerAgent(BaseAgent):
             # Check for HR Request (New in Stage 5)
             if "[HR_REQUEST]" in cio_report:
                 import re
-                match = re.search(r"\[HR_REQUEST\] Replace Agent: (\w+) \(Reason: (.*?)\)", cio_report)
+                match = re.search(r"\[HR_REQUEST\] Replace Agent: (\w+) \(Reason: ([^)]*)\)", cio_report)
                 if match:
                     agent_name = match.group(1)
                     reason = match.group(2)

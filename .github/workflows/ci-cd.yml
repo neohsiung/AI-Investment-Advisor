@@ -24,6 +24,9 @@ jobs:
   lab:
     name: Lab (CI / Validation)
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      security-events: write
     services:
       postgres:
         image: postgres:15

@@ -14,6 +14,7 @@ from src.repositories.feedback_repository import AlchemyFeedbackRepository
 from src.tools.mcp_server import McpServer, McpTool
 from src.infrastructure.memory.memory_manager import HybridMemory
 from src.agents.skills.skill_loader import SkillLoader
+import uuid
 from datetime import datetime
 
 class BaseAgent(ABC):
@@ -289,7 +290,7 @@ class BaseAgent(ABC):
             
             # Save to HybridMemory
             self.memory.add_memory(
-                memory_id=hashlib.sha256(content_to_save.encode()).hexdigest(),
+                memory_id=str(uuid.uuid4()),
                 user_id=self.user_id,
                 content=f"Archive from {datetime.now()}: {str(recent)[:200]}...",
                 embedding=[], # Skip embedding for flush if no embedder
