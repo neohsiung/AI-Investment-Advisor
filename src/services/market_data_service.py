@@ -149,19 +149,13 @@ class MarketDataService:
         Get historical OHLCV data for a specific ticker.
         獲取特定標的的歷史 OHLCV 數據。
         """
-        # History is tricky: Polygon API is different from YF.
-        # For v3.2 MVP, we default to YFinance for history as it is free and reliable for daily timeframe.
-        # Polygon/FMP history implementation is a TODO optimization.
-        # We manually prioritize YFinance for history for now, or just iterate.
-        
         # Override Priority for History: Polygon -> YFinance -> FMP
-        # 覆蓋歷史數據的優先順序：Polygon -> YFinance -> FMP
         history_providers = [self.polygon, self.yfinance, self.fmp] 
         
         for provider in history_providers:
             try:
                 df = provider.fetch_history(ticker, days=days)
-                if not df.empty:
+                if df is not None and not df.empty:
                     # Ensure format
                     df = df.tail(days)
                     def to_list(series):
@@ -180,6 +174,18 @@ class MarketDataService:
             except Exception as e:
                  self.logger.warning(f"History fetch failed on {self._get_provider_name(provider)}: {e}")
         return {}
+
+    def get_ohlcv_batch(self, tickers: List[str], days: int = 30) -> Dict[str, Dict[str, List[Any]]]:
+        """
+        Get historical OHLCV data for multiple tickers in batch.
+        批次獲取多個標的的歷史 OHLCV 數據。
+        """
+        results = {}
+        for ticker in tickers:
+            data = self.get_ohlcv(ticker, days=days)
+            if data:
+                results[ticker] = data
+        return results
 
     def get_technical_indicators(self, ticker: str) -> Dict[str, Any]:
         """

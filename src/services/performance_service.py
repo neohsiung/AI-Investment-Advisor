@@ -113,9 +113,43 @@ class PerformanceService:
             if df.empty:
                 return []
             
-            # TODO: Implement complex accuracy calculation (comparing signal price vs current/exit price)
-            # For now, return a placeholder or simple count
-            stats = df.groupby('agent').size().reset_index(name='count')
+            # Fetch current prices for all tickers in recommendations
+            unique_tickers = df['ticker'].unique().tolist()
+            current_prices = self.market_service.get_current_prices(unique_tickers)
+            
+            # Function to determine if a signal was correct
+            def check_accuracy(row):
+                ticker = row['ticker']
+                signal = str(row['signal']).upper()
+                price_at_signal = row['price_at_signal']
+                current_price = current_prices.get(ticker)
+                
+                if current_price is None or price_at_signal is None or price_at_signal == 0:
+                    return None
+                
+                if signal == 'BUY':
+                    return 1 if current_price > price_at_signal else 0
+                elif signal == 'SELL':
+                    return 1 if current_price < price_at_signal else 0
+                return None
+
+            df['is_correct'] = df.apply(check_accuracy, axis=1)
+            
+            # Calculate accuracy per agent
+            # Filter rows where correctness could be determined
+            valid_df = df[df['is_correct'].notnull()]
+            if valid_df.empty:
+                stats = df.groupby('agent').size().reset_index(name='recommendation_count')
+                stats['accuracy'] = 0.0
+                return stats.to_dict('records')
+            
+            stats = valid_df.groupby('agent').agg(
+                recommendation_count=('id', 'count'),
+                correct_count=('is_correct', 'sum')
+            ).reset_index()
+            
+            stats['accuracy'] = (stats['correct_count'] / stats['recommendation_count']) * 100
+            
             return stats.to_dict('records')
             
         except Exception as e:

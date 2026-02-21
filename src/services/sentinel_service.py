@@ -1,7 +1,7 @@
 import logging
 import asyncio
 import os
-from typing import Dict, Any, List, Optional
+from typing import Dict, Any, List, Optional, Tuple
 from datetime import date
 import pandas as pd
 
@@ -14,6 +14,7 @@ import httpx
 from src.repositories.risk_keyword_repository import AlchemyRiskKeywordRepository
 from src.repositories.sentinel_repository import AlchemySentinelRepository
 from src.services.settings_service import SettingsService
+from src.domain.entities import RiskKeyword
 
 logger = logging.getLogger(__name__)
 
@@ -94,16 +95,29 @@ class SentinelService:
         try:
             triggers: List[Dict[str, Any]] = []
             
+            # Dimension 0: Multi-User Ticker Aggregation (Optimization)
+            # Aggregate all unique tickers from all users once per tick
+            users = self._get_all_user_ids()
+            all_tickers = set()
+            for uid in users:
+                user_tickers = self.transaction_service.get_user_tickers(uid, only_active=True)
+                all_tickers.update(user_tickers)
+            
+            ticker_list = list(all_tickers)
+            logger.info(f"Sentinel: Monitoring {len(ticker_list)} unique tickers across {len(users)} users.")
+            
             # Dimension 1: VIX Regime (每次 tick)
             triggers += self._check_vix_anomaly()
             
             # Dimension 2: Position Price Moves (每次 tick)
-            triggers += self._check_position_moves()
+            # Pass aggregated data to avoid redundant fetches
+            current_prices = self.market_service.get_current_prices(ticker_list)
+            triggers += self._check_position_moves_v2(ticker_list, current_prices)
             
             # Dimension 3: Breaking News (每 10 分鐘, 節省 Tavily credits)
             from datetime import datetime
             if datetime.now().minute % 10 == 0:
-                triggers += self._check_breaking_news()
+                triggers += self._check_breaking_news_v2(ticker_list)
             
             # Dimension 4: Macro Shifts (每小時, FRED 數據更新頻率低)
             if datetime.now().minute == 0:
@@ -219,32 +233,26 @@ class SentinelService:
     # Dimension 2: Position Price Moves
     # ──────────────────────────────────────────
 
-    def _check_position_moves(self) -> List[Dict[str, Any]]:
+    def _check_position_moves_v2(self, all_tickers: List[str], current_prices: Dict[str, float]) -> List[Dict[str, Any]]:
         """
-        Monitor active positions for significant intraday price moves.
+        Monitor aggregated tickers for significant intraday price moves.
+        Optimized to use pre-fetched current prices and batch OHLCV.
         """
         triggers = []
+        if not all_tickers:
+            return triggers
+            
         try:
-            # Get all users for monitoring
-            users = self._get_all_user_ids()
-            all_tickers = set()
-            for user_id in users:
-                tickers = self.transaction_service.get_user_tickers(user_id, only_active=True)
-                all_tickers.update(tickers)
+            # Batch fetch OHLCV for all tickers (2 days needed for prev-close)
+            ohlcv_batch = self.market_service.get_ohlcv_batch(all_tickers, days=2)
             
-            if not all_tickers:
-                return triggers
-            
-            # Fetch current prices
-            current_prices = self.market_service.get_current_prices(list(all_tickers))
-            
-            # Compare with previous close (via OHLCV)
+            # Compare with previous close 
             for ticker in all_tickers:
                 current = current_prices.get(ticker, 0)
                 if current <= 0:
                     continue
                     
-                ohlcv = self.market_service.get_ohlcv(ticker, days=2)
+                ohlcv = ohlcv_batch.get(ticker)
                 if not ohlcv or not ohlcv.get("close") or len(ohlcv["close"]) < 2:
                     continue
                 
@@ -271,16 +279,28 @@ class SentinelService:
             logger.warning(f"Position move check failed: {e}")
         return triggers
 
+    def _check_position_moves(self) -> List[Dict[str, Any]]:
+        """Deprecated wrapper for backward compatibility."""
+        users = self._get_all_user_ids()
+        all_tickers = set()
+        for uid in users:
+            all_tickers.update(self.transaction_service.get_user_tickers(uid, only_active=True))
+        ticker_list = list(all_tickers)
+        current_prices = self.market_service.get_current_prices(ticker_list)
+        return self._check_position_moves_v2(ticker_list, current_prices)
+
     # ──────────────────────────────────────────
     # Dimension 3: Breaking News (Tavily)
     # ──────────────────────────────────────────
     
-    def _check_breaking_news(self) -> List[Dict[str, Any]]:
+    def _check_breaking_news_v2(self, all_tickers: List[str]) -> List[Dict[str, Any]]:
         """
-        Search for risk-relevant breaking news using weighted keywords from the repository.
-        使用儲存庫中的加權關鍵字搜尋與風險相關的突發新聞。
+        Search for risk-relevant breaking news for aggregated tickers.
         """
         triggers = []
+        if not all_tickers:
+            return triggers
+            
         try:
             # Load active keywords from DB
             repo = AlchemyRiskKeywordRepository()
@@ -290,167 +310,181 @@ class SentinelService:
                 logger.warning("No active risk keywords in DB, skipping news check.")
                 return triggers
             
-            users = self._get_all_user_ids()
-            all_tickers = set()
-            for user_id in users:
-                tickers = self.transaction_service.get_user_tickers(user_id, only_active=True)
-                all_tickers.update(tickers)
-            
-            if not all_tickers:
-                return triggers
-            
             risk_threshold = self.thresholds.get("news_risk_score", 0.6)
             
             for ticker in all_tickers:
-                query = f"{ticker} breaking news risk alert {date.today().isoformat()}"
-                results = self.search_service.search_financial_context(query, max_results=3)
-                
-                if not results:
-                    continue
-                
-                # Weighted keyword scoring
-                for result in results:
-                    snippet = (
-                        result.get("snippet", "") + " " + result.get("title", "")
-                    )
-                    
-                    total_score = 0.0
-                    matched_keywords = []
-                    
-                    for kw in active_keywords:
-                        score = kw.score(snippet)
-                        if score > 0:
-                            total_score += score
-                            matched_keywords.append((kw, score))
-                    
-                    if total_score >= risk_threshold:
-                        # Record hits for review/analytics
-                        for kw, _ in matched_keywords:
-                            repo.record_hit(kw.id)
-                        
-                        kw_summary = ", ".join(
-                            f"{kw.keyword}(w={s:.2f})" 
-                            for kw, s in sorted(matched_keywords, key=lambda x: -x[1])[:3]
-                        )
-                        
-                        # Scenario Logic: Tariff -> Inventory Restocking
-                        scenario_note = ""
-                        has_tariff = any("tariff" in kw.keyword.lower() or "關稅" in kw.keyword.lower() for kw, _ in matched_keywords)
-                        has_restock = any("inventory restocking" in kw.keyword.lower() or "回補庫存" in kw.keyword.lower() for kw, _ in matched_keywords)
-                        
-                        if has_tariff or has_restock:
-                            scenario_note = " (Scenario Triggered: Anticipate inventory restocking as a catalyst for economic expansion before tariffs hit)"
-                            total_score += 0.2 # Boost score for matching the specific roadmap scenario
-
-                        # Scenario Logic: PPA Signings / AI Energy Moat (Milestone 2.2)
-                        # Dynamic AI Energy Tickers 
-                        ai_energy_tickers = self.settings_service.get_setting("ai_energy_tickers")
-                        if not ai_energy_tickers:
-                            # [Phase 0 Cold Start]
-                            try:
-                                from src.services.transaction_service import TransactionService
-                                tx_service = TransactionService(user_id=self.user_id)
-                                active_tickers = tx_service.get_user_tickers(user_id=self.user_id, only_active=True)
-                                if active_tickers:
-                                    logger.info(f"Bootstrapping AI Energy Tickers from Watchlist: {active_tickers}")
-                                    from src.agents.factory import AgentFactory
-                                    thematic_agent = AgentFactory.create_thematic_agent(user_id=self.user_id)
-                                    context = {
-                                        "event_text": f"Initial Bootstrapping. Find 'AI Energy / Infrastructure / Grid' beneficiaries from this watchlist: {', '.join(active_tickers)}",
-                                        "theme_key": "ai_energy_tickers",
-                                        "current_state": []
-                                    }
-                                    res = thematic_agent.run(context)
-                                    if res.get("status") == "success":
-                                        ai_energy_tickers = self.settings_service.get_setting("ai_energy_tickers")
-                            except Exception as e:
-                                logger.error(f"Failed to bootstrap Energy tickers: {e}")
-                                
-                            if not ai_energy_tickers:
-                                ai_energy_tickers = ["CEG", "VST", "MSFT", "AMZN", "GOOGL"]
-                                self.settings_service.save_setting("ai_energy_tickers", ai_energy_tickers)
-
-                        if isinstance(ai_energy_tickers, str):
-                            try:
-                                import json
-                                ai_energy_tickers = json.loads(ai_energy_tickers)
-                            except:
-                                ai_energy_tickers = [t.strip() for t in ai_energy_tickers.split(',')]
-                                
-                        has_ppa = any(keyword in result.get('title', '').lower() + result.get('snippet', '').lower() for keyword in ["ppa", "power purchase agreement", "nuclear", "smr", "datacenter power", "grid"])
-                        if has_ppa:
-                            if ticker in ai_energy_tickers:
-                                scenario_note += " ⚡ (AI Energy Catalyst: Potential PPA signing or nuclear/grid infrastructure deal detected)"
-                                total_score += 0.3 # Boost for milestone 2.2 energy moat
-                            
-                            # EVENT-DRIVEN THEMATIC OPTIMIZATION: Energy
-                            # If score is very high and it's a structural news event, trigger the ThematicAgent
-                            if total_score > 1.0:
-                                self._trigger_thematic_update(
-                                    event_text=f"{result.get('title')} - {result.get('snippet')}", 
-                                    theme_key="ai_energy_tickers", 
-                                    current_state=ai_energy_tickers
-                                )
-                            
-                        # Scenario Logic: Physical AI Transformation (Milestone 2.3)
-                        # Dynamic Physical AI Tickers
-                        physical_ai_tickers = self.settings_service.get_setting("physical_ai_tickers")
-                        if not physical_ai_tickers:
-                            # [Phase 0 Cold Start]
-                            try:
-                                from src.services.transaction_service import TransactionService
-                                tx_service = TransactionService(user_id=self.user_id)
-                                active_tickers = tx_service.get_user_tickers(user_id=self.user_id, only_active=True)
-                                if active_tickers:
-                                    logger.info(f"Bootstrapping Physical AI Tickers from Watchlist: {active_tickers}")
-                                    from src.agents.factory import AgentFactory
-                                    thematic_agent = AgentFactory.create_thematic_agent(user_id=self.user_id)
-                                    context = {
-                                        "event_text": f"Initial Bootstrapping. Find 'Physical AI / Robotics / Autonomous' beneficiaries from this watchlist: {', '.join(active_tickers)}",
-                                        "theme_key": "physical_ai_tickers",
-                                        "current_state": []
-                                    }
-                                    res = thematic_agent.run(context)
-                                    if res.get("status") == "success":
-                                        physical_ai_tickers = self.settings_service.get_setting("physical_ai_tickers")
-                            except Exception as e:
-                                logger.error(f"Failed to bootstrap Physical AI tickers: {e}")
-                                
-                            if not physical_ai_tickers:
-                                physical_ai_tickers = ["TSLA", "NVDA", "BDX", "PLTR", "UBER"]
-                                self.settings_service.save_setting("physical_ai_tickers", physical_ai_tickers)
-
-                        if isinstance(physical_ai_tickers, str):
-                            try:
-                                import json
-                                physical_ai_tickers = json.loads(physical_ai_tickers)
-                            except:
-                                physical_ai_tickers = [t.strip() for t in physical_ai_tickers.split(',')]
-                                
-                        has_physical_ai = any(keyword in result.get('title', '').lower() + result.get('snippet', '').lower() for keyword in ["fsd", "humanoid", "robotaxi", "optimus", "autonomous driving", "industrial automation"])
-                        if has_physical_ai:
-                            if ticker in physical_ai_tickers:
-                                scenario_note += " 🤖 (Physical AI Catalyst: Advancement in autonomous robotics or self-driving technology)"
-                                total_score += 0.3 # Boost for milestone 2.3 physical AI moat
-                            
-                            # EVENT-DRIVEN THEMATIC OPTIMIZATION: Physical AI
-                            if total_score > 1.0:
-                                self._trigger_thematic_update(
-                                    event_text=f"{result.get('title')} - {result.get('snippet')}", 
-                                    theme_key="physical_ai_tickers", 
-                                    current_state=physical_ai_tickers
-                                )
-
-                        triggers.append({
-                            "text": f"📰 {ticker} 新聞異動: {result.get('title', 'N/A')} (加權分數: {total_score:.2f}, 關鍵字: {kw_summary}){scenario_note}",
-                            "id": f"news_{ticker}_{result.get('title', 'N/A')[:20]}",
-                            "value": total_score
-                        })
-                        break  # One trigger per ticker is enough
-                        
+                risk_score, summary = self._analyze_ticker_news(ticker, active_keywords)
+                if risk_score >= risk_threshold:
+                    triggers.append({
+                        "text": f"⚠️ {ticker} 新聞異動: {summary} (加權分數: {risk_score:.2f})",
+                        "id": f"news_{ticker}_{risk_score:.2f}",
+                        "value": risk_score
+                    })
         except Exception as e:
             logger.warning(f"Breaking news check failed: {e}")
         return triggers
+
+    def _check_breaking_news(self) -> List[Dict[str, Any]]:
+        """Deprecated wrapper for backward compatibility."""
+        users = self._get_all_user_ids()
+        all_tickers = set()
+        for uid in users:
+            all_tickers.update(self.transaction_service.get_user_tickers(uid, only_active=True))
+        return self._check_breaking_news_v2(list(all_tickers))
+
+    def _analyze_ticker_news(self, ticker: str, active_keywords: List[RiskKeyword]) -> Tuple[float, str]:
+        """
+        Analyzes news for a given ticker against active risk keywords and returns a risk score and summary.
+        """
+        repo = AlchemyRiskKeywordRepository() # Re-initialize or pass if needed
+        risk_threshold = self.thresholds.get("news_risk_score", 0.6) # Re-fetch or pass if needed
+
+        query = f"{ticker} breaking news risk alert {date.today().isoformat()}"
+        results = self.search_service.search_financial_context(query, max_results=3)
+        
+        if not results:
+            return 0.0, "No relevant news found."
+        
+        best_score = 0.0
+        best_summary = ""
+
+        for result in results:
+            snippet = (
+                result.get("snippet", "") + " " + result.get("title", "")
+            )
+            
+            total_score = 0.0
+            matched_keywords = []
+            
+            for kw in active_keywords:
+                score = kw.score(snippet)
+                if score > 0:
+                    total_score += score
+                    matched_keywords.append((kw, score))
+            
+            if total_score >= risk_threshold:
+                # Record hits for review/analytics
+                for kw, _ in matched_keywords:
+                    repo.record_hit(kw.id)
+                
+                kw_summary = ", ".join(
+                    f"{kw.keyword}(w={s:.2f})" 
+                    for kw, s in sorted(matched_keywords, key=lambda x: -x[1])[:3]
+                )
+                
+                # Scenario Logic: Tariff -> Inventory Restocking
+                scenario_note = ""
+                has_tariff = any("tariff" in kw.keyword.lower() or "關稅" in kw.keyword.lower() for kw, _ in matched_keywords)
+                has_restock = any("inventory restocking" in kw.keyword.lower() or "回補庫存" in kw.keyword.lower() for kw, _ in matched_keywords)
+                
+                if has_tariff or has_restock:
+                    scenario_note = " (Scenario Triggered: Anticipate inventory restocking as a catalyst for economic expansion before tariffs hit)"
+                    total_score += 0.2 # Boost score for matching the specific roadmap scenario
+
+                # Scenario Logic: PPA Signings / AI Energy Moat (Milestone 2.2)
+                # Dynamic AI Energy Tickers 
+                ai_energy_tickers = self.settings_service.get_setting("ai_energy_tickers")
+                if not ai_energy_tickers:
+                    # [Phase 0 Cold Start]
+                    try:
+                        from src.services.transaction_service import TransactionService
+                        tx_service = TransactionService(user_id=self.user_id)
+                        active_tickers = tx_service.get_user_tickers(user_id=self.user_id, only_active=True)
+                        if active_tickers:
+                            logger.info(f"Bootstrapping AI Energy Tickers from Watchlist: {active_tickers}")
+                            from src.agents.factory import AgentFactory
+                            thematic_agent = AgentFactory.create_thematic_agent(user_id=self.user_id)
+                            context = {
+                                "event_text": f"Initial Bootstrapping. Find 'AI Energy / Infrastructure / Grid' beneficiaries from this watchlist: {', '.join(active_tickers)}",
+                                "theme_key": "ai_energy_tickers",
+                                "current_state": []
+                            }
+                            res = thematic_agent.run(context)
+                            if res.get("status") == "success":
+                                ai_energy_tickers = self.settings_service.get_setting("ai_energy_tickers")
+                    except Exception as e:
+                        logger.error(f"Failed to bootstrap Energy tickers: {e}")
+                        
+                    if not ai_energy_tickers:
+                        ai_energy_tickers = ["CEG", "VST", "MSFT", "AMZN", "GOOGL"]
+                        self.settings_service.save_setting("ai_energy_tickers", ai_energy_tickers)
+
+                if isinstance(ai_energy_tickers, str):
+                    try:
+                        import json
+                        ai_energy_tickers = json.loads(ai_energy_tickers)
+                    except:
+                        ai_energy_tickers = [t.strip() for t in ai_energy_tickers.split(',')]
+                        
+                has_ppa = any(keyword in result.get('title', '').lower() + result.get('snippet', '').lower() for keyword in ["ppa", "power purchase agreement", "nuclear", "smr", "datacenter power", "grid"])
+                if has_ppa:
+                    if ticker in ai_energy_tickers:
+                        scenario_note += " ⚡ (AI Energy Catalyst: Potential PPA signing or nuclear/grid infrastructure deal detected)"
+                        total_score += 0.3 # Boost for milestone 2.2 energy moat
+                    
+                    # EVENT-DRIVEN THEMATIC OPTIMIZATION: Energy
+                    # If score is very high and it's a structural news event, trigger the ThematicAgent
+                    if total_score > 1.0:
+                        self._trigger_thematic_update(
+                            event_text=f"{result.get('title')} - {result.get('snippet')}", 
+                            theme_key="ai_energy_tickers", 
+                            current_state=ai_energy_tickers
+                        )
+                    
+                # Scenario Logic: Physical AI Transformation (Milestone 2.3)
+                # Dynamic Physical AI Tickers
+                physical_ai_tickers = self.settings_service.get_setting("physical_ai_tickers")
+                if not physical_ai_tickers:
+                    # [Phase 0 Cold Start]
+                    try:
+                        from src.services.transaction_service import TransactionService
+                        tx_service = TransactionService(user_id=self.user_id)
+                        active_tickers = tx_service.get_user_tickers(user_id=self.user_id, only_active=True)
+                        if active_tickers:
+                            logger.info(f"Bootstrapping Physical AI Tickers from Watchlist: {active_tickers}")
+                            from src.agents.factory import AgentFactory
+                            thematic_agent = AgentFactory.create_thematic_agent(user_id=self.user_id)
+                            context = {
+                                "event_text": f"Initial Bootstrapping. Find 'Physical AI / Robotics / Autonomous' beneficiaries from this watchlist: {', '.join(active_tickers)}",
+                                "theme_key": "physical_ai_tickers",
+                                "current_state": []
+                            }
+                            res = thematic_agent.run(context)
+                            if res.get("status") == "success":
+                                physical_ai_tickers = self.settings_service.get_setting("physical_ai_tickers")
+                    except Exception as e:
+                        logger.error(f"Failed to bootstrap Physical AI tickers: {e}")
+                        
+                    if not physical_ai_tickers:
+                        physical_ai_tickers = ["TSLA", "NVDA", "BDX", "PLTR", "UBER"]
+                        self.settings_service.save_setting("physical_ai_tickers", physical_ai_tickers)
+
+                if isinstance(physical_ai_tickers, str):
+                    try:
+                        import json
+                        physical_ai_tickers = json.loads(physical_ai_tickers)
+                    except:
+                        physical_ai_tickers = [t.strip() for t in physical_ai_tickers.split(',')]
+                        
+                has_physical_ai = any(keyword in result.get('title', '').lower() + result.get('snippet', '').lower() for keyword in ["fsd", "humanoid", "robotaxi", "optimus", "autonomous driving", "industrial automation"])
+                if has_physical_ai:
+                    if ticker in physical_ai_tickers:
+                        scenario_note += " 🤖 (Physical AI Catalyst: Advancement in autonomous robotics or self-driving technology)"
+                        total_score += 0.3 # Boost for milestone 2.3 physical AI moat
+                    
+                    # EVENT-DRIVEN THEMATIC OPTIMIZATION: Physical AI
+                    if total_score > 1.0:
+                        self._trigger_thematic_update(
+                            event_text=f"{result.get('title')} - {result.get('snippet')}", 
+                            theme_key="physical_ai_tickers", 
+                            current_state=physical_ai_tickers
+                        )
+                
+                if total_score > best_score:
+                    best_score = total_score
+                    best_summary = f"{result.get('title', 'N/A')} (關鍵字: {kw_summary}){scenario_note}"
+                    
+        return best_score, best_summary
 
     # ──────────────────────────────────────────
     # Dimension 4: Macro Shifts (FRED)
