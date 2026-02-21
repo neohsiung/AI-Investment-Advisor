@@ -3,6 +3,7 @@
 ### 版本紀錄 (Version History)
 | Date | Version | Description | Author |
 | :--- | :--- | :--- | :--- |
+| 2026-02-21 | v4.1 | **Thematic & Narrative Drift Agents**: Added ThematicAgent (supply chain/theme optimization) and Narrative Drift Agent (System 2 auditor for CIO narrative accuracy). | Neo |
 | 2026-02-18 | v3.6 | **Agent Skills & Orchestration**: Integrated `SkillRegistry` and `SwarmOrchestrator` with adaptive performance tracking (Reward/Penalty). | Neo |
 | 2026-02-14 | v3.5 | Full 7+1 agent roster, Council Fractal Debate, AgentFactory | Neo |
 | 2024-01-04 | v1.0 | Initial 4-agent design | Neo |
@@ -13,11 +14,11 @@
 
 <a id="zh"></a>
 
-## 🇹🇼 代理人戰略協定 (v3.5)
+## 🇹🇼 代理人戰略協定 (v4.1)
 
-**代理人蜂群架構 (Agent Swarm Architecture)** 將投資顧問從線性流程轉變為由 **7 個專業 Agent + 1 個評議會** 組成的協作生態系統。每個 Agent 在嚴格的「認知授權 (Cognitive Mandate)」下運作，並通過「投資委員會協定 (IC Protocol)」與「碎形辯論 (Fractal Debate)」進行互動。
+**代理人蜂群架構 (Agent Swarm Architecture)** 將投資顧問從線性流程轉變為由 **9 個專業 Agent + 1 個評議會** 組成的協作生態系統。每個 Agent 在嚴格的「認知授權 (Cognitive Mandate)」下運作，並通過「投資委員會協定 (IC Protocol)」與「碎形辯論 (Fractal Debate)」進行互動。
 
-### 🏛️ 架構圖 (Architecture Diagram - v4.0)
+### 🏛️ 架構圖 (Architecture Diagram - v4.1)
 
 ```mermaid
 graph TD
@@ -40,6 +41,11 @@ graph TD
         MACRO[Macro Strategist]
     end
     
+    subgraph "Thematic & Narrative Layer"
+        THEMATIC[Thematic Agent]
+        NARRATIVE[Narrative Drift Agent]
+    end
+    
     subgraph "Risk & Evolution Layer"
         RISK[Risk Agent]
         ENG[System Engineer Agent]
@@ -55,7 +61,10 @@ graph TD
     CIO <-->|Validate| RISK
     CIO <-->|Fractal Debate| COUNCIL{Council}
     
-    ENG -->|Generate Alpha Code & Backtest| SETTINGS[(Settings/DB)]
+    THEMATIC -->|Update Theme Lists & Supply Chain| SETTINGS[(Settings/DB)]
+    NARRATIVE -->|Narrative Delta & Corrections| CIO
+    
+    ENG -->|Generate Alpha Code & Backtest| SETTINGS
     
     CIO -->|R.P.A.| DECISION[Final Decision]
 ```
@@ -120,7 +129,27 @@ graph TD
 *   **觸發**: 獨立的演化排程或低績效觸發。
 *   **檔案**: `src/agents/system_engineer_agent.py`與`src/agents/engineer.py`
 
-#### 2.8 評議會 (Council Agent Adapter)
+#### 2.8 主題優化代理 (Thematic Agent)
+*   **認知授權**: 「主題與供應鏈優化師 (Theme & Supply Chain Optimizer)」
+*   **職責**: 根據市場事件動態更新主題股票清單 (如 Physical AI、AI Energy) 與供應鏈知識圖譜。
+*   **機制**: 接收事件文本 (`event_text`) 與主題鍵 (`theme_key`)，透過 LLM 評估事件影響並輸出更新後的 JSON 結構。
+*   **產出**: 更新後的主題股票清單 (`updated_tickers`) 或供應鏈圖譜 (`updated_graph`)，自動寫入 `SettingsService`。
+*   **觸發**: 重大市場事件或定期主題審查。
+*   **檔案**: `src/agents/thematic.py`，Prompt: `prompts/thematic_agent.txt`
+
+#### 2.9 敘事偏離代理 (Narrative Drift Agent)
+*   **認知授權**: 「System 2 審計師 (System 2 Auditor)」
+*   **職責**: 比較上週 CIO 週報敘事 (`past_consensus`) 與本週實際市場行情 (`market_data`)，識別「敘事偏離 (Narrative Drift)」或重大誤判。
+*   **機制**:
+    1.  識別核心論點 (Core Thesis)。
+    2.  對照實際市場數據驗證論點。
+    3.  計算敘事偏離度 (Accuracy Score, 1-10)。
+    4.  若分數低於 7，提供具體可行的修正建議。
+*   **產出**: JSON 結構包含 `core_thesis`、`reality_check`、`accuracy_score`、`narrative_delta_rationale`、`suggested_correction`。
+*   **觸發**: 每週報告生成前，作為 CIO 的前置審計步驟。
+*   **檔案**: Prompt: `prompts/narrative_drift_agent.txt`
+
+#### 2.10 評議會 (Council Agent Adapter)
 *   **職責**: 對每檔持倉執行碎形辯論 (Fractal Debate)。
 *   **機制**: 多角度質疑 → 反駁 → 綜合裁決。
 *   **觸發**: Sentinel 偵測異常 或 CIO 深度評議時。
@@ -204,9 +233,9 @@ sequenceDiagram
 
 <a id="en"></a>
 
-## 🇺🇸 Agent Swarm Protocol (v3.5)
+## 🇺🇸 Agent Swarm Protocol (v4.1)
 
-### Agents (7 + Council)
+### Agents (9 + Council)
 | Agent | Mandate | File |
 |:---|:---|:---|
 | CIO | Synthesizer & Arbitrator | `cio.py` |
@@ -216,6 +245,8 @@ sequenceDiagram
 | Sentiment | Behavioral Quant | `sentiment.py` |
 | Risk | Risk Gatekeeper | `risk.py` |
 | Engineer | Self-Evolution Engineer | `engineer.py` |
+| Thematic | Theme & Supply Chain Optimizer | `thematic.py` |
+| Narrative Drift | System 2 Auditor | `prompts/narrative_drift_agent.txt` |
 | Council | Fractal Debate Arbitrator | `council_adapter.py` |
 
 ### Agent Skills & Registry (v3.6)

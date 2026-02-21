@@ -62,8 +62,21 @@ def standardize_link(match):
     if path.startswith("http") or path.startswith("#"):
         return match.group(0)
     
+    # Skip relative paths pointing outside wiki (e.g. ../../.agent/...)
+    if path.startswith("../") or path.startswith("./"):
+        return match.group(0)
+    
     # Skip non-wiki files usually referenced from repo root
-    if path in ["Dockerfile", "Dockerfile.mcp", "docker-compose.yml"] or path.startswith("file://") or path.startswith("k8s/"):
+    source_prefixes = ("scripts/", "src/", "services/", "prompts/", "k8s/", "tests/",
+                       "data/", "infra/", "deployment/", ".agent/", ".github/", ".streamlit/",
+                       "file://")
+    if path in ["Dockerfile", "Dockerfile.mcp", "docker-compose.yml"]:
+        return match.group(0)
+    if any(path.startswith(p) for p in source_prefixes):
+        return match.group(0)
+    # Skip paths that look like source code files (contain / and have code extensions)
+    code_extensions = (".py", ".sh", ".sql", ".js", ".ts", ".yaml", ".yml", ".json", ".toml", ".cfg", ".xml")
+    if "/" in path and any(path.endswith(ext) for ext in code_extensions):
         return match.group(0)
 
     match_page = find_best_match(path)

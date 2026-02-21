@@ -38,7 +38,7 @@
 
 #### 2.1 多專家代理集群 (Agent Swarm)
 
-系統採用 **Role × Multi-Tier Agent** 架構，由 7 個專業 Agent 與 1 個評議會組成。為平衡成本與品質，每個角色背後可能是一組 Swarm (Fast/Smart/Advanced)。
+系統採用 **Role × Multi-Tier Agent** 架構，由 9 個專業 Agent 與 1 個評議會組成。為平衡成本與品質，每個角色背後可能是一組 Swarm (Fast/Smart/Advanced)。
 
 **Tier 定義**:
 - **Fast Tier (Speed)**: 高速初篩，過濾雜訊 (e.g., Llama-3-8B)。
@@ -55,6 +55,8 @@
 | `MacroAgent` | 研究層 | 總經數據 (FRED)、聯準會政策、殖利率曲線。 |
 | `SentimentAgent` | 研究層 | 新聞情緒 (Tavily)、社群輿情分析。 |
 | `RiskAgent` | 風控層 | 持倉風險評估、相關性監控、曝險檢查。 |
+| `ThematicAgent` | 研究層 | 主題最佳化 — 依據市場事件動態更新主題股票清單與供應鏈知識圖譜。 |
+| `NarrativeDriftAgent` | 審計層 | 敘事偏離分析 (System 2 Auditor) — 比對過去週報共識與實際行情，計算敘事偏離度並提出修正建議。 |
 | `SystemEngineerAgent` | 演化層 | 自動重寫 Prompt (DSPy)、績效反省與策略優化。 |
 | `CouncilAgentAdapter` | 仲裁層 | 碎形辯論 (Fractal Debate)、多角度衝突仲裁。 |
 
@@ -127,7 +129,7 @@ sequenceDiagram
 Providing a **0% hallucination** deterministic engine with unified multi-broker risk management and Agent Swarm analytics.
 
 ### 2. Features
-- **Agent Swarm**: 7 specialized agents + Council arbitration, using a Multi-Tier routing strategy.
+- **Agent Swarm**: 9 specialized agents + Council arbitration, using a Multi-Tier routing strategy (incl. Thematic & Narrative Drift agents).
 - **Hybrid Strategy Persistence**: Leveraging SQLAlchemy Core for performance/security and ORM for simplicity.
 - **Sentinel & Council**: Real-time event deduplication and Fractal Debate for rigorous risk analysis.
 - **Channel Verification**: Automated connectivity checks for LINE, Slack, and email notifications.

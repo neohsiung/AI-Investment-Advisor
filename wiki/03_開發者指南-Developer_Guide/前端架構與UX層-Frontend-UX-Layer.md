@@ -5,6 +5,7 @@
 ### 版本紀錄 (Version History)
 | Date | Version | Description | Author |
 | :--- | :--- | :--- | :--- |
+| 2026-02-21 | v4.2 | **Page & Tab Census Update**: Updated page numbering (02_~07_), added channel_tab & data_sources_tab (11 tabs total). | Antigravity |
 | 2026-02-14 | v3.5 | Full rewrite — 6 pages, 9 settings tabs, BasePage pattern | Neo |
 | 2024-01-04 | v1.0 | Initial Release | Neo |
 
@@ -56,14 +57,15 @@ graph LR
 
 | 頁面 | 檔案 | 功能 |
 | :--- | :--- | :--- |
-| 總覽 (Dashboard) | `src/dashboard.py` | NLV、Cash、Leverage、ROI、持倉、資產配置、券商分佈。 |
-| 績效追蹤 | `src/pages/01_Portfolio_Performance.py` | 歷史淨值走勢、績效分析。 |
-| 分析報告 | `src/pages/02_Analysis_Reports.py` | 日報/週報瀏覽與下載。 |
-| 資料管理 | `src/pages/03_Data_Management.py` | 手動輸入、CSV 匯入 (Atomic)、交易紀錄管理。 |
-| 顧問對話 | `src/pages/04_Advisor_Chat.py` | 與 CIO Agent Swarm 互動。 |
-| 系統設定 | `src/pages/05_Settings.py` | 9 Tab 設定中心 (見下節)。 |
+| 總覽 (Dashboard) | `app.py` | NLV、Cash、Leverage、ROI、持倉、資產配置、券商分佈。 |
+| 績效追蹤 | `pages/02_Portfolio_Performance.py` | 歷史淨值走勢、績效分析。 |
+| 分析報告 | `pages/03_Analysis_Reports.py` | 日報/週報瀏覽與下載。 |
+| 顧問對話 | `pages/04_Advisor_Chat.py` | 與 CIO Agent Swarm 互動。 |
+| 資料管理 | `pages/05_Data_Management.py` | 手動輸入、CSV 匯入 (Atomic)、交易紀錄管理。 |
+| 系統設定 | `pages/06_Settings.py` | 11 Tab 設定中心 (見下節)。 |
+| UI 風格指南 | `pages/07_UI_Styleguide.py` | 設計系統元件展示與風格規範。 |
 
-#### 2.3 設定頁 Tab 架構 (Settings Tabs)
+#### 2.3 設定頁 Tab 架構 (Settings Tabs — 11 Tabs)
 
 | Tab | 檔案 | 功能 |
 | :--- | :--- | :--- |
@@ -76,6 +78,9 @@ graph LR
 | HR 協議 | `hr_protocol_tab.py` | 360° 互評記錄查看。 |
 | 外觀 | `appearance_tab.py` | Dark/Light 主題切換。 |
 | 儲存 | `storage_tab.py` | 資料庫路徑、備份狀態。 |
+| 通道管理 | `channel_tab.py` | 多通路 (LINE/Slack/Email/Telegram 等) 連線設定與驗證。 |
+| 資料來源 | `data_sources_tab.py` | 外部資料源 (Polygon/FMP/FRED 等) API 金鑰與啟用管理。 |
+| 風險關鍵字 | `risk_keywords_tab.py` | Sentinel 風險關鍵字 CRUD、權重設定與命中追蹤。 |
 
 ### 3. UX 流程 (UX Flows)
 
@@ -123,8 +128,8 @@ Strict separation of concerns to enhance maintainability and testability.
 
 ### 2. Page Architecture
 - **BasePage Template Method**: Unified lifecycle (`__init__` → `run()` → `render()`).
-- **6 Pages**: Dashboard, Performance, Reports, Data Management, Advisor Chat, Settings.
-- **9 Settings Tabs**: Trading & Risk, AI Config, Scheduler, Report Dry-Run, Agent Playground, Prompt Management, HR Protocol, Appearance, Storage.
+- **7 Pages**: Dashboard, Portfolio Performance, Analysis Reports, Advisor Chat, Data Management, Settings, UI Styleguide.
+- **11 Settings Tabs**: Trading & Risk, AI Config, Scheduler, Report Dry-Run, Agent Playground, Prompt Management, HR Protocol, Appearance, Storage, Channel Management, Data Sources, Risk Keywords.
 
 ### 3. UX Patterns
 - **Just-In-Time Calculation**: Metrics computed on-the-fly with current market prices.

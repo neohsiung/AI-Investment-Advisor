@@ -6,6 +6,7 @@
 ### 版本紀錄 (Version History)
 | Date | Version | Description | Author |
 | :--- | :--- | :--- | :--- |
+| 2026-02-21 | v5.1 | **Stability & Performance Optimization**: Added Optimized Monitoring Flow (Batch Fetching) and real-time accuracy logic descriptions. | Neo |
 | 2026-02-21 | v5.0 | **Microservices Monorepo & Observability**: Integrated SigNoz APM, OpenTelemetry, and Standalone Notification Service into the architecture. | Neo |
 | 2026-02-18 | v4.1 | **Async & Multi-Identity Topology**: Refined infrastructure view to reflect non-blocking protocols and UUID resolution. | Neo |
 | 2026-02-15 | v3.6 | **Milestone: 75% Coverage** + Leverage Engine & Channel Adapters | Neo |
@@ -16,7 +17,7 @@
 
 <a id="zh"></a>
 
-## 🇹🇼 系統架構全景圖 (v4.1 Architect View)
+## 🇹🇼 系統架構全景圖 (v5.0 Architect View)
 
 本文件依據 [文件框架定義](文件框架定義-Document-Frameworks) 編寫，提供系統的高層設計、組件關係與運作指標。
 
@@ -33,16 +34,16 @@
 - **外部 API**: Polygon.io (行情), FMP (財報), FRED (總經), Tavily (搜尋), OpenRouter (LLM)。
 - **券商 API**: Etoro Bridge, futu-api, ib_insync。
 - **通知**: LINE Messaging API (日報/警報推送)。
-- **資料持久化**: SQLite (本地) / Redis (記憶系統)。
+- **資料持久化**: PostgreSQL (pgvector) / Redis (快取與記憶系統)。
 
 #### 2.2 容器視角 (Level 2: Container Diagram)
 內部核心組件及其通訊方式。
 
 ```mermaid
 graph TD
-    UI["Dashboard (Streamlit)"] -->|SQL| DB[(Portfolio DB)]
-    UI -->|HTTP| MCP_Serv["MCP Microservice"]
-    Sch["Scheduler (Daemon)"] -->|Trigger| Agents["Agent Swarm (Clusters & Council)"]
+    UI["Dashboard (Streamlit)<br/>services/dashboard"] -->|SQL| DB[(PostgreSQL + pgvector)]
+    UI -->|HTTP| MCP_Serv["MCP Microservice<br/>services/mcp_server"]
+    Sch["Scheduler (Daemon)<br/>services/scheduler"] -->|Trigger| Agents["Agent Swarm (Clusters & Council)"]
     Agents -->|Direct Call| Local["Local Skills (Registry)"]
     Agents -->|HTTP| MCP_Serv
     MCP_Serv -->|Financial Data| APIs[Polygon/FMP/FRED/Tavily]
@@ -61,13 +62,14 @@ graph TD
     ATS -->|Execute| BF
     WHS -->|Trigger| Agents
     
-    subgraph "Delivery"
-        NS[NotificationService] --> LNA[LINE Adapter] & MA[Email Adapter] & WA[Web Adapter]
+    subgraph "Standalone Notification Microservice"
+        NS["NotificationService (FastAPI)<br/>services/notification"] --> LNA[LINE Adapter] & MA[Email Adapter] & WA[Web Adapter]
     end
 
-    Agents -->|Results/Alerts| NS
+    Agents -->|HTTP /notify| NS
+    Sch -->|HTTP /notify| NS
     LNA -->|Callback| WHS
-    WHS -->|Notify| NS
+    WHS -->|HTTP /notify| NS
 ```
 
 #### 2.3 組件互動流 (Interaction Flows)
@@ -83,10 +85,10 @@ graph TD
 
 | 層次 (Layer) | 角色 (Role) | 核心組件 (Component) | 邏輯說明 (Logic) |
 | :--- | :--- | :--- | :--- |
-| **L1: 存取層** | 正規化 I/O | `ChannelAdapter` | **[v4.1 Async]** 將入口 (LINE/Web) 封裝為標準化的 `Event`。整合 `UserRepository` 進行多身分轉 UUID 映射。 |
+| **L1: 存取層** | 正規化 I/O | `ChannelAdapter` | **[v5.0 Async]** 將入口 (LINE/Web) 封裝為標準化的 `Event`。整合 `UserRepository` 進行多身分轉 UUID 映射。 |
 | **L2: 控制層** | 併發與泳道 | `LaneManager` | 為 session 分配專屬 `Queue`。確保相同用戶指令序列執行。 |
 | **L3: 認知層** | 執行環境 | `AgentRuntime` | 動態構建 Prompt (注入Facts)。包含 **Leverage Engine** (0% 幻覺數學運算)。 |
-| **L4: 記憶層** | 混合檢索 | `VectorRepository` | 結合 `sqlite-vec` 與 FTS5 實現向量與關鍵字混合搜尋。 |
+| **L4: 記憶層** | 混合檢索 | `VectorRepository` | 結合 `pgvector` 與 PostgreSQL 全文搜尋實現向量與關鍵字混合搜尋。 |
 | **L5: 互動層** | 回饋機制 | `A2A Protcol` | 處理 Agent 間的協作與衝突解決。 |
 | **L6: 策略層** | 持久化實施 | `StrategyEngine` | 將最終決策轉化為券商 API 可接受的格式並執行。 |
 
@@ -139,7 +141,30 @@ graph LR
     ATS -->|"Emergency Liquidation / Hedge"| Broker["BrokerFactory"]
 ```
 
-#### 3.3 關鍵配置文件映射 (Infrastructure Registry)
+#### 3.3 優化市場監控流 (Optimized Monitoring Flow - v1.2.0+)
+為了提升擴展性，`SentinelService` 採用了 **Ticker 聚合與批量擷取 (Batch Fetching)** 策略，有效降低 API 負載。
+
+```mermaid
+sequenceDiagram
+    participant S as Scheduler
+    participant Sen as SentinelService
+    participant TR as TransactionRepo
+    participant MDS as MarketDataService
+    participant P as Providers
+
+    S->>Sen: process_tick()
+    Sen->>TR: get_user_tickers(all_users)
+    TR-->>Sen: set of unique tickers
+    Sen->>MDS: get_current_prices(ticker_list)
+    MDS->>P: Batch Fetch (e.g. FMP Quote)
+    P-->>MDS: price map
+    Sen->>MDS: get_ohlcv_batch(ticker_list)
+    MDS->>P: Concurrent Fetches 
+    P-->>MDS: OHLCV map
+    Sen->>Sen: Evaluate Anomalies
+```
+
+#### 3.4 關鍵配置文件映射 (Infrastructure Registry)
 | 組件 | 配置文件 | 說明 |
 | :--- | :--- | :--- |
 | **容器鏡像** | [Dockerfile](Dockerfile) | 全系統基礎鏡像與環境。 |

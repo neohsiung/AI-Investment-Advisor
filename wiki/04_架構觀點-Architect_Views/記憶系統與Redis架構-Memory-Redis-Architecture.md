@@ -3,11 +3,12 @@
 ### 版本紀錄 (Version History)
 | Date | Version | Description | Author |
 | :--- | :--- | :--- | :--- |
+| 2026-02-21 | v4.6 | Unified version, confirmed PostgreSQL primary & AgentLLMProvider integration | Neo |
 | 2026-02-20 | v4.5 | Document audit and history alignment | Neo |
+| 2026-02-19 | v4.2 | Three-tier memory architecture (Hot/Warm/Cold) established | Neo |
 
-
-> **版本 (Version):** v4.2  
-> **更新日期 (Last Updated):** 2026-02-19  
+> **版本 (Version):** v4.6
+> **更新日期 (Last Updated):** 2026-02-21
 > **狀態 (Status):** Production Optimized
 
 > **[繁體中文 (Traditional Chinese)](#zh) | [English](#en)**
@@ -18,7 +19,7 @@
 
 ## 1. 概述 (Overview)
 
-v4.2 正式確立了三層式記憶架構：Hot (Redis)、Warm (PostgreSQL) 與 Cold (原始文件)。核心回應快取 (`ResponseCache`) 與高頻 Session 狀態由 Redis 承載，持久化記憶（RAG、用戶偏好）由 PostgreSQL 承載。SQLite 已完全從 `src/` 中移除，確保生產環境的高一致性與可擴展性。
+v4.6 延續三層式記憶架構：Hot (Redis)、Warm (PostgreSQL) 與 Cold (原始文件)。核心回應快取 (`ResponseCache`) 與高頻 Session 狀態由 Redis 承載，持久化記憶（RAG、用戶偏好）由 PostgreSQL 承載。SQLite 已完全從 `src/` 中移除，確保生產環境的高一致性與可擴展性。`MemoryFactory` 預設使用 `alchemy` (PostgreSQL) 後端，並透過 `AgentLLMProvider` 整合 Agent 進行摘要與矛盾檢測。
 
 ## 2. 架構設計 (Architecture Design)
 
@@ -38,13 +39,23 @@ v4.2 正式確立了三層式記憶架構：Hot (Redis)、Warm (PostgreSQL) 與 
 
 ### 2.2 核心組件 (Core Components)
 
-*   **MemoryService**:
-    *   提供統一介面 (`get_context`, `store_report`, `detect_conflicts`)。
-    *   負責在 Redis 與 DB 之間進行數據同步與分層。
-*   **RedisMemoryRepository**:
+*   **MemoryService** (`src/services/memory_service.py`):
+    *   提供統一介面 (`get_context`, `store_report`, `check_contradictions`)。
+    *   透過 `IMemoryRepository` 與 `ILLMProvider` 介面解耦，支援依賴注入。
+    *   內建 **Adaptive Compression**：根據模型 Token 上限的 20% 自動壓縮歷史記憶。
+*   **RedisMemoryRepository** (`src/repositories/redis_memory_repository.py`):
     *   Redis 適配器，處理連線池、序列化 (JSON) 與 TTL 管理。
-*   **MemoryFactory**:
-    - **狀態**: 不再支援 SQLite 切換。預設使用 `alchemy` (PostgreSQL) 作為 Memory Repository 的主持久層，`redis` 適合作為向量搜索的另一個選項。
+*   **HybridMemory** (`src/infrastructure/memory/memory_manager.py`):
+    *   統一的 PostgreSQL + pgvector 記憶子系統，支援向量嵌入搜尋與關鍵字搜尋。
+    *   保留 SQLite 相容性僅供測試環境使用。
+*   **MemoryFactory** (`src/services/memory_factory.py`):
+    - **狀態**: 不再支援 SQLite 切換。透過 `MEMORY_BACKEND` 環境變數選擇後端：
+      - `alchemy` (預設): 使用 `AlchemyMemoryRepository` (PostgreSQL) 作為主持久層。
+      - `redis`: 使用 `RedisMemoryRepository` 作為替代選項。
+    - 自動注入 `AgentLLMProvider` 提供摘要與矛盾檢測的 LLM 能力。
+*   **AgentLLMProvider** (`src/infrastructure/agent_llm_provider.py`):
+    *   實作 `ILLMProvider` 介面，將現有 Agent (Engineer) 適配為 MemoryService 的 LLM 服務提供者。
+    *   提供 `summarize()` 與 `check_contradictions()` 方法。
 
 ## 3. 關鍵特性 (Key Features)
 
@@ -75,10 +86,10 @@ v4.2 正式確立了三層式記憶架構：Hot (Redis)、Warm (PostgreSQL) 與 
 
 <a id="en"></a>
 
-## 🇺🇸 Memory System & Redis Architecture (v4.2)
+## 🇺🇸 Memory System & Redis Architecture (v4.6)
 
 ### 1. Overview
-v4.2 establishes a Three-Tier Memory Architecture: Hot (Redis), Warm (PostgreSQL), and Cold (Raw Files). The core `ResponseCache` and high-frequency session states are handled by Redis, while persistent memories (RAG, user preferences) are stored in PostgreSQL. SQLite has been completely removed from `src/` to ensure production-grade consistency and scalability.
+v4.6 continues the Three-Tier Memory Architecture: Hot (Redis), Warm (PostgreSQL), and Cold (Raw Files). The core `ResponseCache` and high-frequency session states are handled by Redis, while persistent memories (RAG, user preferences) are stored in PostgreSQL. SQLite has been completely removed from `src/` to ensure production-grade consistency and scalability. `MemoryFactory` defaults to `alchemy` (PostgreSQL) backend and integrates `AgentLLMProvider` for summarization and contradiction detection.
 
 ### 2. Architecture Design
 
@@ -96,9 +107,11 @@ v4.2 establishes a Three-Tier Memory Architecture: Hot (Redis), Warm (PostgreSQL
     - **Scope**: Original data ingestion sources.
 
 #### 2.2 Core Components
-*   **MemoryService**: Unified interface (`get_context`, `store_report`) managing tiering logic.
+*   **MemoryService**: Unified interface (`get_context`, `store_report`, `check_contradictions`) managing tiering logic with adaptive compression (20% of model token limit).
 *   **RedisMemoryRepository**: Adapter for connection pooling, serialization, and TTL management.
-*   **MemoryFactory**: Purged SQLite support; defaults to `alchemy` (PostgreSQL) for persistent repositories.
+*   **HybridMemory**: Unified PostgreSQL + pgvector memory subsystem for vector embedding and keyword search.
+*   **MemoryFactory**: Purged SQLite support; defaults to `alchemy` (PostgreSQL) for persistent repositories. Injects `AgentLLMProvider` for LLM-powered summarization and contradiction detection.
+*   **AgentLLMProvider**: Adapts existing Agents (Engineer) to provide `ILLMProvider` services for MemoryService.
 
 ### 3. Key Features
 

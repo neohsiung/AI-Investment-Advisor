@@ -5,6 +5,7 @@
 | :--- | :--- | :--- | :--- |
 | 2026-02-14 | v1.0 | Initial Release: DB-based Config & Security | Neo |
 | 2026-02-19 | v1.1 | Enforced strict DB precedence for AI settings | Agent |
+| 2026-02-21 | v1.2 | **DB Migration**: Updated all references from SQLite to PostgreSQL to reflect production architecture. | Antigravity |
 
 ---
 
@@ -23,9 +24,9 @@ To address the inflexibility of `.env` files and the need for restarts, we imple
 
 ### 2.1 資料庫 Schema (Database Schema)
 
-所有設定儲存於 SQLite `settings` 資料表：
+所有設定儲存於 PostgreSQL `settings` 資料表：
 
-All settings are stored in the SQLite `settings` table:
+All settings are stored in the PostgreSQL `settings` table:
 
 ```sql
 CREATE TABLE settings (
@@ -70,7 +71,11 @@ api_key = settings_repo.get(uid, "API_KEY") or os.getenv("API_KEY")
 
 ## 4. 遷移指南 (Migration Guide)
 
-從 v3.4 升級至 v3.5 的開發者，建議將 `.env` 中的以下變數遷移至設定頁面：
+從 v3.4 升級至 v3.5 的開發者，建議將 `.env` 中的以下變數遷移至設定頁面。
+
+> **⚠️ 注意 (v4.2+)**: 系統已全面遷移至 **PostgreSQL**，生產環境中 SQLite 已被停用。連線設定透過 `DB_URL` 或 `DB_USER`/`DB_PASS`/`DB_HOST`/`DB_PORT`/`DB_NAME` 環境變數配置（預設連線至 `postgresql+psycopg2://postgres:postgres@localhost:5432/portfolio`）。SQLite 僅允許在測試環境 (`PYTEST_CURRENT_TEST`) 或明確傳入 `db_path` 時使用。
+
+需遷移的變數：
 *   `ETORO_API_KEY` / `ETORO_USER_KEY`
 *   `OPENROUTER_API_KEY` / `GOOGLE_API_KEY`
 *   `FUTU_HOST` / `IBKR_HOST`

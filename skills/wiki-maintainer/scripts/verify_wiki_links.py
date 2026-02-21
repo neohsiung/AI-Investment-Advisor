@@ -25,11 +25,24 @@ def verify():
                 links = link_pattern.findall(content)
                 for label, path in links:
                     # Skip external, anchor, or special files
-                    if (path.startswith("http") or 
-                        path.startswith("#") or 
-                        path in ["Dockerfile", "Dockerfile.mcp", "docker-compose.yml"] or 
-                        path.startswith("file://") or 
-                        path.startswith("k8s/")):
+                    if (path.startswith("http") or
+                        path.startswith("#") or
+                        path in ["Dockerfile", "Dockerfile.mcp", "docker-compose.yml"] or
+                        path.startswith("file://")):
+                        continue
+                    
+                    # Skip relative paths pointing outside wiki (e.g. ../../.agent/...)
+                    if path.startswith("../") or path.startswith("./"):
+                        continue
+                    
+                    # Skip source code references (not wiki internal links)
+                    source_prefixes = ("scripts/", "src/", "services/", "prompts/", "k8s/", "tests/",
+                                       "data/", "infra/", "deployment/", ".agent/", ".github/", ".streamlit/")
+                    if any(path.startswith(p) for p in source_prefixes):
+                        continue
+                    # Skip paths that look like source code files (contain / and have code extensions)
+                    code_extensions = (".py", ".sh", ".sql", ".js", ".ts", ".yaml", ".yml", ".json", ".toml", ".cfg", ".xml")
+                    if "/" in path and any(path.endswith(ext) for ext in code_extensions):
                         continue
                     
                     # Check if the page exists in our flat namespace

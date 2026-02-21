@@ -8,6 +8,7 @@
 | 2026-02-18 | v4.1 | **Async & Multi-Identity**: Refactored Notification/Interaction services to be non-blocking. Unified user identity resolution. | Neo |
 | 2026-02-15 | v3.6 | Added Leverage Engine & Bilingual Code Standards | Neo |
 | 2026-02-14 | v3.5 | Added RiskKeywordRepository, Sentinel 4D triggers, weighted keywords, Tavily pipeline | Neo |
+| 2026-02-21 | v4.2 | **Service Census Update**: 38 services documented. Added Attribution, SupplyChain, UserFocus, Verification, Reporting, NotificationFilters, AutomatedTrading, ExperienceReplay, Webhook. | Antigravity |
 | 2026-02-14 | v3.5 | Full rewrite — 27 services documented, Multi-Broker, Sentinel/Council, Memory | Neo |
 | 2024-01-04 | v1.0 | Initial Release (3 services) | Neo |
 
@@ -25,7 +26,7 @@
 - **故障轉移 (Failover)**: `MarketDataService` 等核心服務具備多層級 Provider 退避策略。
 - **依賴注入 (DI)**: Service 接受 Repository 介面注入，Details 見 [DI Pattern](設計模式-依賴注入-DI-Pattern)。
 
-### 2. 服務總覽 (Service Registry)
+### 2. 服務總覽 (Service Registry — 38 Services)
 
 #### 2.1 數據與市場 (Data & Market)
 
@@ -35,6 +36,7 @@
 | `FredService` | `fred_service.py` | FRED 總經指標 (利率/CPI/GDP)。 |
 | `SearchService` | `search_service.py` | Tavily (主) + DuckDuckGo (備) 搜尋服務。 |
 | `BrowserService` | `browser_service.py` | 網頁內容擷取與解析。 |
+| `SupplyChainService` | `supply_chain_service.py` | 硬體瓶頸追蹤 (CoWoS/HBM)、MAG7 CaPex 供應鏈知識圖譜映射與短缺溢價估算。 |
 
 **退避策略 (Failover Strategy)**:
 ```mermaid
@@ -56,6 +58,7 @@ graph TD
 | `FutuService` | `futu_service.py` | 富途 futu-api 整合 — 美港股交易與行情。 |
 | `IbkrService` | `ibkr_service.py` | IBKR ib_insync 骨架 — 多資產交易 (Planned)。 |
 | `PortfolioAggregatorService` | `portfolio_aggregator_service.py` | 跨券商統一持倉、NLV 與資產配置。 |
+| `AutomatedTradingService` | `automated_trading_service.py` | 自動化交易執行 — 依據 AI 信心分數與使用者閾值觸發下單。 |
 
 #### 2.3 Agent 引擎 (Agent Engine)
 
@@ -66,6 +69,8 @@ graph TD
 | `HRService` | `hr_service.py` | 360° 互評、Zombie Agent 偵測、績效追蹤。 |
 | `RefinementService` | `refinement_service.py` | DSPy Prompt 自動優化 (Engineer Agent 後端)。 |
 | `EvaluationService` | `evaluation_service.py` | Agent 產出品質評估。 |
+| `AttributionAnalyzer` | `attribution_analyzer.py` | 自動歸因與動態權重校準引擎 — 掃描歷史推薦、比對市場表現、計算勝率與 Alpha。 |
+| `ExperienceReplayService` | `experience_replay_service.py` | 復盤服務 — 分析警報歷史與投資組合表現，動態調整 SNR 閾值與誤報抑制。 |
 
 #### 2.4 監控與仲裁 (Monitoring & Arbitration)
 
@@ -73,6 +78,7 @@ graph TD
 | :--- | :--- | :--- |
 | `SentinelService` | `sentinel_service.py` | 7×24 市場事件監聽，**4 觸發維度**: VIX/持倉異動/加權新聞 (DB 關鍵字)/宏觀指標。 |
 | `CouncilService` | `council_service.py` | 碎形辯論 (Fractal Debate) — 對每檔持倉執行多角度質疑。 |
+| `VerificationService` | `verification_service.py` | 多通路連線性測試與身份驗證 (Challenge-Response)。 |
 
 #### 2.5 持久化與記憶 (Persistence & Memory)
 
@@ -103,6 +109,10 @@ graph TD
 | `InteractionService` | `interaction_service.py` | **[Async v4.1]** 雙向互動 (Approvals) — 支援 LINE Webhook 非同步路由。 |
 | `SchedulerService` | `scheduler_service.py` | Cron 排程 — 自動日報/週報生成。 |
 | `NotificationService` | `notification_service.py` | **[Async v4.1]** 非同步警報推送，具備 UUID 多通路映射能力。 |
+| `NotificationFilters` | `notification_filters.py` | 興趣導向通知過濾 — 依據使用者每通道訂閱的類別 (sentinel/report/approval) 決定是否推送。 |
+| `ReportingService` | `reporting_service.py` | Agent Markdown 報告轉換為專業機構級 HTML 格式 (Email/Web)。 |
+| `WebhookService` | `webhook_service.py` | 外部 Webhook 接收與解析 — 支援多來源 (MktRecap 等) 事件觸發 Sentinel。 |
+| `UserFocusService` | `user_focus_service.py` | 使用者投資焦點提取 — 從 eToro 觀察名單分析板塊/產業偏好。 |
 
 ### 3. 代理人執行引擎 (Agent Execution Engine)
 
@@ -157,7 +167,7 @@ graph TD
 - **並發**: `ThreadPoolExecutor` 支援 50+ 標的並行分析。
 
 ### 6. 預期效益與成果 (Expected Outcomes)
-- **商業價值 (Business Value)**: 將散亂的 API 邏輯收攏至統一的 27 個 Service 節點中，大幅提升了程式碼復用率。開發者可透過這份「功能型錄」在 1 天內即插即用完成新業務功能的組合。
+- **商業價值 (Business Value)**: 將散亂的 API 邏輯收攏至統一的 38 個 Service 節點中，大幅提升了程式碼復用率。開發者可透過這份「功能型錄」在 1 天內即插即用完成新業務功能的組合。
 - **性能指標 (Performance Target)**: 確保 `AnalyticsService` 與 `MarketDataService` 等核心路徑 P95 響應延遲小於 500 毫秒，支撐多 Agent 併發讀取。
 
 ---
@@ -171,21 +181,21 @@ graph TD
 - **Provider Aggregation**: Multiple data sources under a single `MarketDataService`.
 - **Factory Pattern**: `BrokerFactory`, `MemoryFactory`, `AgentFactory` for runtime abstraction.
 
-### 2. Service Categories (27 Services)
-- **Data & Market** (4): MarketData, Fred, Search, Browser
-- **Multi-Broker** (5): BrokerFactory, Etoro, Futu, IBKR, PortfolioAggregator
-- **Agent Engine** (5): Workflow, TaskPlanning, HR, Refinement, Evaluation
-- **Monitoring** (2): Sentinel (4D Multi-Trigger + Weighted Risk Keywords), Council
+### 2. Service Categories (38 Services)
+- **Data & Market** (5): MarketData, Fred, Search, Browser, SupplyChain
+- **Multi-Broker & Trading** (6): BrokerFactory, Etoro, Futu, IBKR, PortfolioAggregator, AutomatedTrading
+- **Agent Engine** (8): Workflow, TaskPlanning, HR, Refinement, Evaluation, Attribution, ExperienceReplay, UserFocus
+- **Monitoring & Verification** (3): Sentinel (4D Multi-Trigger + Weighted Risk Keywords), Council, Verification
 - **Persistence** (5): Memory, MemoryFactory, Transaction, Ingestion, **RiskKeyword**
 - **UI Support** (6): Analytics (**Leverage Engine v3.6**), Dashboard, Performance, Settings, Theme, Backtest
-- **Scheduling** (1): Scheduler + Notifier
+- **Interaction & Notifications** (5): Scheduler, Notification, NotificationFilters, Reporting, Webhook
 
 ### 3. Performance
 - **Local Latency**: < 500ms (P95).
 - **Throughput**: 50+ tickers in parallel.
 
 ### 4. Expected Outcomes
-- **Business Value**: Centralizes disparate APIs into 27 cohesive service nodes, maximizing code reusability. Developers can leverage this 'feature catalog' to compose new business functions rapidly.
+- **Business Value**: Centralizes disparate APIs into 38 cohesive service nodes, maximizing code reusability. Developers can leverage this 'feature catalog' to compose new business functions rapidly.
 - **Performance Target**: Ensures P95 response latency under 500ms for core paths like `AnalyticsService` and `MarketDataService` to support high-concurrency Agent reads.
 
 ## 🔗 Bidirectional Links

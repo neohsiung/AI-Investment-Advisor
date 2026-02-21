@@ -3,12 +3,13 @@
 ### 版本紀錄 (Version History)
 | Date | Version | Description | Author |
 | :--- | :--- | :--- | :--- |
+| 2026-02-21 | v2.0 | Updated: eToro Official API migration, IBKR skeleton, BrokerType enum expansion | Neo |
 | 2026-02-14 | v1.0 | Initial Release: Multi-Broker Architecture | Neo |
 
 ---
 
-本文件詳述了 v3.3 的多券商交易架構。系統透過與 Broker 無關的介面 (`IBroker`)，支援 Etoro、Futu (富途) 與通用美股券商的整合。
-This document details the v3.3 Multi-Broker Trading Architecture. The system supports integration with Etoro, Futu, and generic US brokers via a broker-agnostic interface (`IBroker`).
+本文件詳述了 v5.0 的多券商交易架構。系統透過與 Broker 無關的介面 (`IBroker`)，支援 eToro (官方 API)、Futu (富途) 與 IBKR (盈透證券) 的整合。`BrokerType` 列舉涵蓋 `ETORO`、`FUTU`、`IBKR`、`US_GENERIC` 與 `MOCK`。
+This document details the v5.0 Multi-Broker Trading Architecture. The system supports integration with eToro (Official API), Futu, and IBKR via a broker-agnostic interface (`IBroker`). `BrokerType` enum covers `ETORO`, `FUTU`, `IBKR`, `US_GENERIC`, and `MOCK`.
 
 ## 1. 架構概觀 (Architecture Overview)
 
@@ -18,8 +19,8 @@ The system uses the **Adapter Pattern** and **Abstract Factory** to isolate busi
 
 ```mermaid
 graph TD
-    User((User)) -->|Settings| DB[(Database)]
-    Workflow[Workflow Service] -->|Get Broker| Factory[Broker Factory]
+    User((User)) -->|Settings| DB[(PostgreSQL)]
+    Workflow[Workflow Service] -->|Get Broker| Factory[BrokerFactory]
     Scheduler[Scheduler Service] -->|Sync| Factory
     
     subgraph "Milestone 5: Automated Trading & Defense"
@@ -32,9 +33,9 @@ graph TD
 
     Factory -->|Returns| Broker{IBroker}
     
-    Broker <|..| Etoro[EtoroService]
-    Broker <|..| Futu[FutuService]
-    Broker <|..| USBroker[USBrokerService]
+    Broker <|..| Etoro["EtoroService<br/>(Official API + Bridge Fallback)"]
+    Broker <|..| Futu["FutuService<br/>(futu-api / FutuOpenD)"]
+    Broker <|..| IBKR["IBKRService<br/>(TWS/Client Portal - Skeleton)"]
     
     subgraph "Infrastructure"
         Risk[RiskManager]
@@ -42,7 +43,7 @@ graph TD
     
     Etoro -->|Check Constraints| Risk
     Futu -->|Check Constraints| Risk
-    USBroker -->|Check Constraints| Risk
+    IBKR -->|Check Constraints| Risk
 ```
 
 ## 2. 核心組件 (Core Components)
@@ -50,17 +51,20 @@ graph TD
 ### 領域模型 (Domain Models) - `src/domain/trading.py`
 定義了統一的資料結構：
 Unified data structures:
-*   **Order**: 訂單 (Symbol, Action, Quantity, Price, Type).
-*   **Position**: 持倉 (Symbol, Quantity, AvgPrice, PnL).
-*   **Account**: 帳戶摘要 (Equity, Cash).
+*   **BrokerType** (Enum): `ETORO`, `FUTU`, `IBKR`, `US_GENERIC`, `MOCK`。
+*   **Order**: 訂單 (Symbol, Action, Quantity, Price, OrderType, Leverage, Reason).
+*   **Position**: 持倉 (Symbol, Quantity, OpenPrice, CurrentPrice, MarketValue, UnrealizedPnL, Leverage).
+*   **Account**: 帳戶摘要 (BrokerType, AccountId, TotalEquity, AvailableCash, Currency, MaintenanceMargin, DayTradesRemaining).
 
 ### 介面定義 (Interface) - `src/domain/broker.py`
 所有券商必須實作 `IBroker` 介面：
 All brokers must implement the `IBroker` interface:
-*   `get_account()`
-*   `get_positions()`
-*   `execute_order(order)`
-*   `sync_history()`
+*   `get_name()` → 券商名稱
+*   `get_account()` → 帳戶摘要
+*   `get_positions()` → 當前持倉
+*   `get_history(days)` → 交易歷史
+*   `execute_order(order)` → 執行訂單
+*   `sync_history()` → 同步歷史至本地 DB
 
 ### 風險管理 (Risk Manager) - `src/infrastructure/risk_manager.py`
 集中式的風險控制中心，強制執行：
@@ -75,12 +79,27 @@ Centralized risk control enforcing:
 1. **信心閾值判斷 (Confidence Threshold)**: 若 Agent 的交易提案 `confidence_score` 大於或等於 `auto_trade_threshold` (預設 9)，則**免審批全自動下單**。
 2. **限時審批迴圈 (Approval Loop)**: 若分數未達標，系統會透過全通路 (LINE/Email) 發送審批請求，限時 5 分鐘內回應，逾期失效。
 
+### 券商實作狀態 (Broker Implementation Status)
+
+| 券商 | 服務檔案 | 狀態 | 說明 |
+| :--- | :--- | :--- | :--- |
+| **eToro** | `src/services/etoro_service.py` | ✅ Production | 已遷移至 **eToro Official Public API** (`https://public-api.etoro.com`)。支援 `api_key` + `user_key` 認證，保留本地 Bridge (`localhost:8000`) 作為 Legacy Fallback。憑證優先順序：參數 > DB > 環境變數。 |
+| **Futu** | `src/services/futu_service.py` | ✅ Production | 透過 `futu-api` 連接 FutuOpenD。支援美股交易、持倉查詢與歷史同步。需本地或遠端運行 FutuOpenD。 |
+| **IBKR** | `src/services/ibkr_service.py` | 🔧 Skeleton | TWS/Client Portal API 骨架實作。已定義完整 `IBroker` 介面方法，但核心邏輯為 placeholder。`BrokerFactory` 已支援 lazy import。 |
+
+### BrokerFactory (`src/services/broker_factory.py`)
+*   **動態實例化**: 根據 `preferred_broker` 設定或 `broker_type` 參數建立對應券商實例。
+*   **快取機制**: 已建立的 Broker 實例會被快取，避免重複初始化。
+*   **多券商啟用**: `get_enabled_brokers(user_id)` 可同時啟用多個券商 (透過 `enable_etoro`、`enable_futu`、`enable_ibkr` 設定)。
+*   **Fallback**: 若無任何券商被啟用，預設啟用 eToro。
+
 ## 3. 擴充指南 (Extension Guide)
 
 ### 新增券商 (Adding a New Broker)
-1.  在 `src/services/` 建立新服務 (例如 `ibkr_service.py`)。
-2.  繼承並實作 `IBroker`。
-3.  在 `src/services/broker_factory.py` 註冊新券商。
+1.  在 `src/services/` 建立新服務 (例如 `new_broker_service.py`)。
+2.  繼承並實作 `IBroker` 的所有抽象方法。
+3.  在 `src/services/broker_factory.py` 的 `get_broker()` 中註冊新券商。
+4.  在 `src/domain/trading.py` 的 `BrokerType` 列舉中新增對應類型。
 
 ### 配置 (Configuration)
 使用者可透過 Dashboard 的 **"⚙️ 交易設定 (Trading Configuration)"** 面板進行設定：
@@ -90,6 +109,7 @@ Users can configure settings via the Dashboard's **"⚙️ Trading Configuration
 2.  **Risk Settings**:
     *   Max Daily Trades.
     *   Loss Streak Limit.
+    *   Day Trades Remaining (PDT Rules).
 
 ## 4. 貢獻與合規 (Contribution & Compliance)
 
