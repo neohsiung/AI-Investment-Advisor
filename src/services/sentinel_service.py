@@ -276,7 +276,7 @@ class SentinelService:
                     })
                     
         except Exception as e:
-            logger.warning(f"Position move check failed: {e}")
+            logger.warning(f"Position move check failed for {all_tickers}: {e}")
         return triggers
 
     def _check_position_moves(self) -> List[Dict[str, Any]]:

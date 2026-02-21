@@ -77,7 +77,13 @@ class MarketDataService:
                     self.logger.info(f"Fetched {len(prices)} prices from {self._get_provider_name(provider)}")
                     
                     # VALIDATION: Only accept positive prices
-                    valid_prices = {k: v for k, v in prices.items() if v > 0}
+                    # v4.2.2: Log suspicious "100.0" values for debugging
+                    valid_prices = {}
+                    for k, v in prices.items():
+                        if v > 0:
+                            if v == 100.0 or v == 110.0 or v == 89.0:
+                                 self.logger.warning(f"SUSPICIOUS PRICE DETECTED: {k} = {v} from {self._get_provider_name(provider)}")
+                            valid_prices[k] = v
                     
                     all_prices.update(valid_prices)
                     # Update missing list
@@ -156,6 +162,7 @@ class MarketDataService:
             try:
                 df = provider.fetch_history(ticker, days=days)
                 if df is not None and not df.empty:
+                    self.logger.info(f"Fetched history for {ticker} from {self._get_provider_name(provider)}")
                     # Ensure format
                     df = df.tail(days)
                     def to_list(series):
@@ -171,6 +178,17 @@ class MarketDataService:
                         "close": to_list(df['Close']),
                         "volume": to_list(df['Volume'])
                     }
+                
+                # Sanity check for historical data
+                closes = df['Close'].tolist()
+                suspicious_vals = [100.0, 110.0, 89.0]
+                bad_prices = [p for p in closes if p in suspicious_vals]
+                if bad_prices:
+                    self.logger.warning(
+                        f"SUSPICIOUS HISTORICAL PRICE DETECTED for {ticker} from {self._get_provider_name(provider)}: "
+                        f"{bad_prices[0]}. This might be an API fallback error."
+                    )
+
             except Exception as e:
                  self.logger.warning(f"History fetch failed on {self._get_provider_name(provider)}: {e}")
         return {}
