@@ -347,6 +347,20 @@ def init_db(db_path=None):
     );
     """)
 
+    # 12. Recommendations table
+    schema_commands.append(f"""
+    CREATE TABLE IF NOT EXISTS recommendations (
+        id {pk_type},
+        user_id {fk_type} NOT NULL {"REFERENCES users(id) ON DELETE CASCADE" if not is_sqlite else ""},
+        date {timestamp_type} DEFAULT CURRENT_TIMESTAMP,
+        agent TEXT NOT NULL,
+        ticker TEXT NOT NULL,
+        signal TEXT NOT NULL,
+        price_at_signal {numeric_type},
+        created_at {timestamp_type} DEFAULT CURRENT_TIMESTAMP
+    );
+    """)
+
     with engine.connect() as conn:
         for cmd in schema_commands:
             try:

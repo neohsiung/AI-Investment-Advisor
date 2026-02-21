@@ -68,9 +68,40 @@ class FMPProvider(MarketDataProvider):
 
     def fetch_history(self, ticker: str, period: str = "1y", days: int = None) -> pd.DataFrame:
         """
-        Fetch historical price data. (Currently not implemented for FMP).
-        獲取歷史價格數據（目前 FMP 未實作）。
+        Fetch historical price data using FMP's historical-price-full endpoint.
         """
+        if not self.api_key: return pd.DataFrame()
+        
+        try:
+            # Replaces legacy empty implementation
+            url = f"{self.base_url}/historical-price-full/{ticker}"
+            params = {"apikey": self.api_key}
+            
+            # Map period to 'from' date if needed, but FMP returns a clean list we can slice
+            resp = requests.get(url, params=params, timeout=10)
+            if resp.status_code == 200:
+                data = resp.json()
+                historical = data.get('historical', [])
+                if not historical:
+                    return pd.DataFrame()
+                
+                df = pd.DataFrame(historical)
+                # FMP keys: date, open, high, low, close, volume
+                df['Date'] = pd.to_datetime(df['date'])
+                df.set_index('Date', inplace=True)
+                df = df.rename(columns={
+                    'open': 'Open', 'high': 'High', 'low': 'Low', 'close': 'Close', 'volume': 'Volume'
+                })
+                df = df.sort_index()
+                
+                # Slice by days if requested
+                if days:
+                    df = df.tail(days)
+                
+                return df[['Open', 'High', 'Low', 'Close', 'Volume']]
+        except Exception as e:
+            self.logger.error(f"FMP fetch_history error: {e}")
+            
         return pd.DataFrame()
 
     def fetch_news(self, ticker: str, limit: int = 5) -> List[Dict[str, Any]]:
