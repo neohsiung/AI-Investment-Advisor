@@ -44,7 +44,13 @@ class AnalysisReportsPage(BasePage):
                     report_content = date_rows['content'].values[0]
                     
                     saas_card_start(title=f"報告內容 - {selected_display}", icon="📄")
-                    st.markdown(report_content)
+                    if isinstance(report_content, str) and report_content.strip().startswith("<!DOCTYPE html>"):
+                        import streamlit.components.v1 as components
+                        # Professional HTML report: Render in components
+                        # Adjust height dynamically - 800px is a good balance for full-page reports
+                        components.html(report_content, height=800, scrolling=True)
+                    else:
+                        st.markdown(report_content)
                     saas_card_end()
                 else:
                     st.error("Selected date record not found.")
