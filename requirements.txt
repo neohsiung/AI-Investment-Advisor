@@ -45,6 +45,14 @@ httpx==0.25.1
 redis==5.0.1
 aiosmtplib==3.0.1
 
+# Observability (OTel & JSON Logging)
+python-json-logger>=2.0.7
+opentelemetry-api
+opentelemetry-sdk
+opentelemetry-exporter-otlp
+opentelemetry-instrumentation-fastapi
+opentelemetry-instrumentation-sqlalchemy
+
 # Broker APIs
 futu-api==9.6.5608
 ib_insync==0.9.86

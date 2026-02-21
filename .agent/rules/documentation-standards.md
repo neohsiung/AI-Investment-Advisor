@@ -31,6 +31,12 @@
 - **段落校對**: 每次技術迭代後，需對應 Wiki 中所有相關文件的段落進行掃描，確保新舊資訊邏輯自洽，達成精確的「手術式增補」。
 - **Surgical Additions**: When updating documents, use a loop-based approach to patch individual sections or paragraphs specifically, rather than performing wholesale rewrites. Scan all affected sections after each technical iteration to ensure contextual consistency.
 
+### 1.5 本地專屬文件標準 (Local-Only Document Standard)
+- 當使用者要求「產出文檔但不要放到 GitHub 上」或標記為「Local-Only」時：
+  1. 檔案依舊產生於對應的 `wiki/` 目錄中。
+  2. **嚴禁**將該檔案連結加入到 `wiki/_Sidebar.md` 或 `wiki/Home.md` 之中。
+  3. **必須**將該檔案名稱 (或路徑) 加到 `wiki/.gitignore` 中，確保它永遠不會被 commit 回 GitHub 遠端庫。
+
 ---
 
 ## 2. README 門戶標準 (README Portal Standards)
