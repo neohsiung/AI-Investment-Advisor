@@ -1,8 +1,9 @@
-# AI Investment Advisor (v1.0.0)
+# AI Investment Advisor (v1.1.0)
 
 ### 版本紀錄 (Version History)
 | Date | Version | Description | Author |
 | :--- | :--- | :--- | :--- |
+| 2026-02-21 | v1.1.0 | **Microservices Monorepo & Observability**: Integrated SigNoz APM, OpenTelemetry, and Standalone Notification Service into the architecture. | Neo |
 | 2026-02-20 | v1.0.0 | **Production Release**: Officially transitioned to production. Standardized all documentation and architectural tiers. | Neo |
 | 2026-02-17 | v4.0.0-rc | **Premium Governance Sync**: Unified single-source README distilled from Wiki. Implemented Atomic Sync (Rule #12). | Neo |
 | 2026-02-16 | v3.9.0-rc | **Security Hardening**: Hardened Base Images (Rule #11) & Secrets Isolation. | Neo |
@@ -64,10 +65,11 @@ graph LR
     *   **Cold (❄️)**: 文件系統用於原始報告與歷史復盤。
 
 ### 🛠️ 技術棧 (Technical Stack)
+- **架構**: Microservices Monorepo (Dashboard, MCP Server, Notification, Scheduler)
 - **核心**: Python 3.10+ (Local), Python 3.11 (Docker) - Optimized for Async I/O
 - **智能體**: DSPy, OpenAI/Gemini/Claude Multi-Tier Routing
-- **基礎設施**: Docker Compose, PostgreSQL 15, Redis (Cache/Memory)
-- **數據協議**: MCP (Model Context Protocol), TAVILY, Polygon, FMP
+- **基礎設施**: Docker Compose, PostgreSQL 16, Redis, SigNoz (Local APM 觀測平台)
+- **資料與遙測**: MCP (Model Context Protocol), OpenTelemetry, TAVILY, Polygon, FMP
 
 ### 📦 快速開始
 ```bash
@@ -164,10 +166,11 @@ graph LR
     *   **Cold (❄️)**: File system for raw reports and historical backtests.
 
 ### 🛠️ Built With
+- **Architecture**: Microservices Monorepo (Dashboard, MCP Server, Notification, Scheduler)
 - **Language**: Python 3.10+ (Local), Python 3.11 (Docker)
 - **AI Core**: Multi-LLM Tiered Routing (Advanced 🚀, Smart 🧠, Fast ⚡)
-- **Infrastructure**: Dockerized PostgreSQL 15, Redis semantic cache
-- **Data Layers**: MCP (Model Context Protocol), TAVILY Search, Financial Modeling Prep
+- **Infrastructure**: Dockerized PostgreSQL 16, Redis semantic cache, SigNoz (Local APM Observability)
+- **Data & Telemetry**: MCP (Model Context Protocol), OpenTelemetry, TAVILY Search, Financial Modeling Prep
 
 ### 📦 Quick Start
 ```bash

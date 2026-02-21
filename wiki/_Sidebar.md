@@ -1,7 +1,13 @@
+### 版本紀錄 (Version History)
+| Date | Version | Description | Author |
+| :--- | :--- | :--- | :--- |
+| 2026-02-21 | v5.0 | **Documentation Refresh**: Integrated Observability Standards into the Sidebar. Added version tracking loop. | Neo |
+
 *   **[🏠 知識庫主頁 (Knowledge Hub)](Home)**
 *   **00. 規則規範與基線 (Governance & Baselines)**
     *   [文件框架定義 (Document Frameworks)](文件框架定義-Document-Frameworks)
     *   [文件規範 (Wiki Standard)](文件規範-Wiki-Standard)
+    *   [系統可觀測性與通知規範 (Observability)](系統可觀測性與通知規範-Observability-Notification-Standards)
     *   [資安管理與基礎映像檔規範](資安管理與基礎映像檔規範-Security-and-Base-Image-Standard)
     *   [資料庫設計與代碼規範](資料庫設計與代碼規範-Database-Git-Standards)
     *   [動態參數規範 (Dynamic Parameters)](動態參數規範-Dynamic-Parameter-Standards)

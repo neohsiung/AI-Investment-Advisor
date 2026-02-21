@@ -1,3 +1,4 @@
+| 2026-02-21 | v5.0 | **Monorepo & Observability**: Formally adopted Microservices Monorepo pattern and integrated OpenTelemetry with SigNoz. | Neo |
 | 2026-02-19 | v4.2 | **Postgres-Strict Architecture**: Formalized Three-Tier Data Strategy (Redis/Postgres/Files). Purged all SQLite logic to ensure production reliability (Rule #9). | Neo |
 | 2026-02-17 | v4.0.0 | **Hybrid Storage & Security Hardening**: Integrated Rule #11 (Hardened Base) and Rule #12 (Atomic Commit/Wiki Sync). Formalized Hybrid ORM strategy. | Neo |
 | 2026-02-15 | v3.6.1 | **Multi-Tier Agent Architecture**: Role × 3-Tier (Advanced/Smart/Fast) 並行模式 | Neo |
@@ -56,6 +57,11 @@
 - **Managed-Security-Base**: 統一使用 `python:3.11-slim-bookworm`，非 root 執行，並嚴格隔離憑證至 `secrets/` 目錄。
 - **Atomic-Wiki-Sync**: 堅持原子提交原則，且代碼變更必須同步更新 Wiki。
 
+### 8. 領域微服務庫與可觀測性 (Microservices Monorepo & Observability)
+為確保模組不受第三方 I/O 特殊邏輯干擾，採用 **Monorepo** 封裝：
+- **邊界隔離**: Dashboard、Notification、MCP Server 與 Scheduler 皆具有獨立的 Dockerfile。
+- **單一玻璃窗 (Single Pane of Glass)**: 以 OpenTelemetry 貫穿各模組的通訊，並將 Traces 集中於本地 SigNoz 平台。
+
 ---
 
 <a id="en"></a>
@@ -78,6 +84,10 @@ The Wiki serves as the living contract between design and execution.
 ### 4. Proactive Intelligence & Multi-Tier Execution
 - **Event-Driven**: Transitioning from a reactive "User Poll" model to a proactive "Sentinel Alert" model.
 - **Orchestrator-Multi-Tier Pattern**: Stateful Orchestrator (CIO) coordinates N Sub-Agents, each executing in **3 parallel tiers** (Advanced 🚀 /  Smart 🧠 / Fast ⚡) for optimal cost-quality balance. Fast tier provides quick initial results, Advanced tier adds depth, with voting/fusion mechanisms for final output.
+
+### 5. Microservices Monorepo & Observability
+- **Bounded Contexts**: Applications are split into micro-apps `services/dashboard`, `services/scheduler`, etc., sharing logic from `pkg/` or `src/`.
+- **Telemetry**: Leveraging OpenTelemetry and SigNoz to ensure total visibility of the Agent Swarm and Event actions.
 
 ## 🔗 Bidirectional Links
 - **Architect View**: [System Landscape](系統全景圖-System-Landscape)

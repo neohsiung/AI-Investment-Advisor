@@ -3,6 +3,7 @@
 ### 版本紀錄 (Version History)
 | Date | Version | Description | Author |
 | :--- | :--- | :--- | :--- |
+| 2026-02-21 | v5.0 | **Microservices Monorepo & Observability**: Integrated SigNoz APM, OpenTelemetry, and Standalone Notification Service into the architecture. | Neo |
 | 2026-02-20 | v4.2 | **Production Standardization**: Standardized all internal links and file structures for Production v1.0.0 release. | Neo |
 | 2026-02-18 | v4.1 | **Architectural Sync**: Enhanced persona-based navigation and Mermaid diagrams. | Neo |
 
@@ -63,6 +64,7 @@ mindmap
 ### 🛡️ 維護者 (Maintainer - Governance)
 *確保所有程式碼提交與知識累積符合最高標準，負責資安基線、依賴項審計與效能監控。*
 - **[文件規範 (Wiki Standard)](文件規範-Wiki-Standard)**: 維護專案知識的「單一真理點」，確保連結扁平化與雙語雙軌並行的高一致性。
+- **[系統可觀測性與通知規範](系統可觀測性與通知規範-Observability-Notification-Standards)**: 定義 OTel 打點、SigNoz 集中監控以及通知服務非同步化的標準。
 - **[資料庫設計與代碼規範](資料庫設計與代碼規範-Database-Git-Standards)**: 嚴格執行 Schema Migration 審查、原子化 Commit (Atomic Commits) 紀律。
 - **[資安管理與基礎映像檔規範](資安管理與基礎映像檔規範-Security-and-Base-Image-Standard)**: 從 Docker Hardened Image 選型到 .env 密鑰隔離的最高指導方針。
 

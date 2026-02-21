@@ -6,6 +6,7 @@
 ### 版本紀錄 (Version History)
 | Date | Version | Description | Author |
 | :--- | :--- | :--- | :--- |
+| 2026-02-21 | v5.0 | **Microservices Monorepo & Observability**: Integrated SigNoz APM, OpenTelemetry, and Standalone Notification Service into the architecture. | Neo |
 | 2026-02-18 | v4.1 | **Async & Multi-Identity Topology**: Refined infrastructure view to reflect non-blocking protocols and UUID resolution. | Neo |
 | 2026-02-15 | v3.6 | **Milestone: 75% Coverage** + Leverage Engine & Channel Adapters | Neo |
 | 2026-02-14 | v1.2 | Added Multi-Broker + LINE Bot to C4, updated external integrations | Neo |
@@ -93,14 +94,32 @@ graph TD
 系統支援雲端原生部署，透過容器化管理各項服務。
 
 #### 3.1 佈署拓撲 (Deployment Topology)
+- **架構變更 (v5.0)**: 系統已重構為 **Microservices Monorepo (領域微服務單體庫)**。核心業務邏輯移至 `pkg/` 或 `src/` 作為共享庫，而各個可獨立部署的進入點 (Dashboard, Scheduler, Notification, MCP Server) 皆隔離於 `services/` 目錄中。
+- **統一遙測 (Unified Telemetry)**: 每個微服務透過 OpenTelemetry 發送 Metrics/Traces 至自建的 SigNoz 本地集群。
+
 ```mermaid
 graph LR
-    subgraph K8s["Kubernetes / Cloud Run"]
-        Ing["Cloud Ingress"] --> Dashboard["Dashboard Pod"]
-        Ing --> MCP_Serv["MCP Server Pod"]
-        Dashboard --> DB["Postgres / Cloud SQL"]
-        Scheduler["Scheduler Pod"] --> MCP_Serv
+    subgraph Self-Hosted Infrastructure["Local Docker Compose / Cloud Run"]
+        Ing["Traefik / Nginx Ingress"] --> Dashboard["services/dashboard"]
+        Dashboard --> DB["Postgres (pgvector)"]
+        Dashboard --> Redis["Redis Cache"]
+        
+        Scheduler["services/scheduler"] -->|Trigger| Agents["Core Agents"]
+        Scheduler -->|Notify| Notif["services/notification"]
+        
+        MCP_Serv["services/mcp_server"] -->|Data| APIs[Polygon/FMP]
+        
+        Dashboard -.->|OTLP| OTel["OTel Collector"]
+        Scheduler -.->|OTLP| OTel
+        MCP_Serv -.->|OTLP| OTel
+        Notif -.->|OTLP| OTel
     end
+    
+    subgraph Observability["SigNoz APM Stack"]
+        OTel --> ClickHouse[(ClickHouse)]
+        ClickHouse --> SigNozUI["SigNoz Dashboard (Port 8080)"]
+    end
+    
     DB --> Storage["Persistence Storage"]
 ```
 
