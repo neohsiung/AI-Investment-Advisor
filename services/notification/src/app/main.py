@@ -73,22 +73,23 @@ async def health():
 
 async def _process_notification(req: NotificationRequest):
     """Background task to heavily process the actual notification logic."""
-    if not notification_service:
-        logger.error("Notification Service is not initialized.")
-        return
+    # tracer = trace.get_tracer(__name__)
+    # with tracer.start_as_current_span("process_notification"):
+    try:
+        # v4.2.1: Dynamically resolve user settings for each request
+        # This ensures that channel adapters use the user's specific credentials from the DB
+        user_settings_svc = SettingsService(user_id=req.user_id)
+        svc = NotificationService.create_with_settings(settings_service=user_settings_svc, user_id=req.user_id)
         
-    tracer = trace.get_tracer(__name__)
-    with tracer.start_as_current_span("process_notification"):
-        try:
-            results = await notification_service.notify_all(
-                title=req.title,
-                content=req.content,
-                user_id=req.user_id,
-                actions=req.actions,
-                channels=req.channels,
-                category=req.category,
-                capture_error=True
-            )
+        results = await svc.notify_all(
+            title=req.title,
+            content=req.content,
+            user_id=req.user_id,
+            actions=req.actions,
+            channels=req.channels,
+            category=req.category,
+            capture_error=True
+        )
             
             logger.info("Notification process completed", extra={"results": results, "user_id": req.user_id})
             

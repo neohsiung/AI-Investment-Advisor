@@ -31,19 +31,12 @@ class SettingsService:
             except Exception:
                 return {}
 
-            target_uid = self.user_id
+            target_uid = self.user_id or 'SYSTEM'
             
             # v4.1.7: Strictly use UUID for data retrieval
             if target_uid:
                 query = text("SELECT key, value FROM settings WHERE user_id = :uid")
                 rows = conn.execute(query, {"uid": target_uid}).fetchall()
-            else:
-                # Fallback or admin global settings?
-                # For now return empty or global if we had global settings
-                # But schema requires PK (key, user_id)
-                # Query without filter might duplicate keys?
-                query = text("SELECT key, value FROM settings")
-                rows = conn.execute(query).fetchall()
 
             for row in rows:
                 key, value = row[0], row[1]
