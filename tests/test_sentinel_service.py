@@ -142,10 +142,6 @@ class TestVIXAnomaly:
 # Dimension 2: Position Price Moves
 # ──────────────────────────────────────────
 
-# ──────────────────────────────────────────
-# Dimension 2: Position Price Moves
-# ──────────────────────────────────────────
-
 class TestPositionMoves:
     def test_position_drop_trigger(self, mock_services, run_async):
         """Stock drops > 5% intraday — triggers alert."""
@@ -161,11 +157,10 @@ class TestPositionMoves:
             sentinel = _create_sentinel(mock_services)
             
             # Setup market data for the drop
-            mock_services["market"].get_ohlcv.side_effect = lambda ticker, days=30: {
-                "close": [15.0] * 60 if ticker == "^VIX" else [100.0, 89.0] # 89 is -11% from 100
+            mock_services["market"].get_ohlcv_batch.return_value = {
+                "AAPL": {"close": [100.0, 89.0]} # -11%
             }
             mock_services["market"].get_current_prices.return_value = {"AAPL": 89.0}
-            mock_services["market"].get_macro_data.return_value = {}
             mock_services["transaction"].get_user_tickers.return_value = ["AAPL"]
             
             # Mock internal user methods
@@ -193,8 +188,8 @@ class TestPositionMoves:
             sentinel = _create_sentinel(mock_services)
             
             # Market data for spike
-            mock_services["market"].get_ohlcv.side_effect = lambda ticker, days=30: {
-                "close": [15.0] * 60 if ticker == "^VIX" else [100.0, 110.0] # +10%
+            mock_services["market"].get_ohlcv_batch.return_value = {
+                "TSLA": {"close": [100.0, 110.0]} # +10%
             }
             mock_services["market"].get_current_prices.return_value = {"TSLA": 110.0}
             mock_services["transaction"].get_user_tickers.return_value = ["TSLA"]
@@ -213,8 +208,8 @@ class TestPositionMoves:
     def test_position_bubble_trigger(self, mock_services, run_async):
         """Stock rises > 8% — triggers bubble warning."""
         sentinel = _create_sentinel(mock_services)
-        mock_services["market"].get_ohlcv.side_effect = lambda ticker, days=30: {
-            "close": [15.0] * 60 if ticker == "^VIX" else [100.0, 110.0]
+        mock_services["market"].get_ohlcv_batch.return_value = {
+            "TSLA": {"close": [100.0, 110.0]}
         }
         mock_services["market"].get_current_prices.return_value = {"TSLA": 110.0}
         mock_services["market"].get_macro_data.return_value = {}
@@ -234,11 +229,11 @@ class TestPositionMoves:
     def test_no_trigger_small_move(self, mock_services, run_async):
         """Stock moves < 5% — no trigger."""
         sentinel = _create_sentinel(mock_services)
-        mock_services["market"].get_ohlcv.side_effect = lambda ticker, days=30: {
-            "close": [15.0] * 60 if ticker == "^VIX" else [100.0, 98.0]
+        mock_services["market"].get_ohlcv_batch.return_value = {
+            "MSFT": {"close": [100.0, 98.0]}
         }
         mock_services["market"].get_current_prices.return_value = {"MSFT": 98.0}
-        mock_services["market"].get_macro_data.return_value = {}
+        mock_services["transaction"].get_user_tickers.return_value = ["MSFT"]
         mock_services["transaction"].get_user_tickers.return_value = ["MSFT"]
 
         async def _test():
@@ -281,7 +276,7 @@ class TestBreakingNews:
 
         with patch('src.services.sentinel_service.AlchemyRiskKeywordRepository', return_value=mock_repo), \
              patch.object(sentinel, '_get_all_user_ids', return_value=["user@test.com"]):
-            triggers = sentinel._check_breaking_news()
+            triggers = sentinel._check_breaking_news_v2(["AAPL"])
 
         assert len(triggers) == 1
         assert "AAPL" in triggers[0]["id"]
@@ -305,7 +300,7 @@ class TestBreakingNews:
 
         with patch('src.services.sentinel_service.AlchemyRiskKeywordRepository', return_value=mock_repo), \
              patch.object(sentinel, '_get_all_user_ids', return_value=["user@test.com"]):
-            triggers = sentinel._check_breaking_news()
+            triggers = sentinel._check_breaking_news_v2(["MSFT"])
 
         assert len(triggers) == 0
 
@@ -320,7 +315,7 @@ class TestBreakingNews:
 
         with patch('src.services.sentinel_service.AlchemyRiskKeywordRepository', return_value=mock_repo), \
              patch.object(sentinel, '_get_all_user_ids', return_value=["user@test.com"]):
-            triggers = sentinel._check_breaking_news()
+            triggers = sentinel._check_breaking_news_v2(["AAPL"])
 
         assert len(triggers) == 0
 

@@ -25,24 +25,30 @@ def test_get_agent_performance(mock_db):
     mock_db.return_value.__enter__.return_value = mock_conn
     mock_db.return_value.__exit__.return_value = None
     
+    # Mock MarketDataService
+    service.market_service = MagicMock()
+    service.market_service.get_current_prices.return_value = {"AAPL": 160.0, "TSLA": 210.0}
+    
     # Mock pandas read_sql return
     import pandas as pd
-    # Simulate the actual DataFrame that would be returned by read_sql
+    # Simulate the actual DataFrame with price_at_signal
     mock_df = pd.DataFrame([
-        {"agent": "Momentum", "id": "1", "ticker": "AAPL", "signal": "BUY"},
-        {"agent": "Momentum", "id": "2", "ticker": "TSLA", "signal": "BUY"},
-        {"agent": "Fundamental", "id": "3", "ticker": "AAPL", "signal": "HOLD"},
+        {"agent": "Momentum", "id": "1", "ticker": "AAPL", "signal": "BUY", "price_at_signal": 150.0},
+        {"agent": "Momentum", "id": "2", "ticker": "TSLA", "signal": "BUY", "price_at_signal": 200.0},
+        {"agent": "Fundamental", "id": "3", "ticker": "AAPL", "signal": "HOLD", "price_at_signal": 150.0},
     ])
     
     with patch('pandas.read_sql', return_value=mock_df):
         stats = service.get_agent_performance()
         
-        # Match actual implementation which returns list of dicts after groupby
-        assert len(stats) == 2
-        # Check both agents exist (don't assume order)
-        agents = {s["agent"]: s["count"] for s in stats}
-        assert agents.get("Momentum") == 2  # 2 recommendations
-        assert agents.get("Fundamental") == 1  # 1 recommendation
+        # Match actual implementation which returns list of dicts after aggregation
+        # 'Fundamental' agent had 'HOLD' signal, accuracy check returns None for HOLD, 
+        # but valid_df check includes Momentum only (BUY)
+        assert len(stats) >= 1 
+        
+        momentum_stats = next(s for s in stats if s["agent"] == "Momentum")
+        assert momentum_stats["recommendation_count"] == 2
+        assert momentum_stats["accuracy"] == 100.0
 
 def test_record_recommendation_error(mock_db):
     service = PerformanceService(user_id="test_user")

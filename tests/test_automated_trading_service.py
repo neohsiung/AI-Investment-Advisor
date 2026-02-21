@@ -17,14 +17,14 @@ def mock_settings_repo():
 
 @pytest.fixture
 def mock_interaction_service():
-    service = MagicMock()
-    service.request_approval = AsyncMock(return_value=True)
+    service = AsyncMock()
+    service.request_approval.return_value = True
     return service
 
 @pytest.fixture
 def mock_notification_service():
-    service = MagicMock()
-    service.send_alert = AsyncMock()
+    service = AsyncMock()
+    service.send_alert.return_value = None
     return service
 
 @pytest.fixture
