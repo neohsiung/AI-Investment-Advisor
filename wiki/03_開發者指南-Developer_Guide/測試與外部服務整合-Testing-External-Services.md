@@ -5,6 +5,7 @@
 ### 版本紀錄 (Version History)
 | Date | Version | Description | Author |
 | :--- | :--- | :--- | :--- |
+| 2026-02-21 | v1.2 | **v1.2.0+ Stability Fix**: Transitioned to native `pytest-asyncio` standards and resolved coroutine warnings. | Neo |
 | 2026-02-15 | v3.6 | **Achieved 75% coverage milestone**: +88 tests, -68 missed statements | Neo |
 | 2026-02-14 | v3.5 | Added Multi-Broker, LINE, Memory, DSPy external services | Neo |
 | 2024-01-04 | v1.0 | Initial Release | Neo |
@@ -46,6 +47,7 @@
 #### 1.3 成功指標 (Success Metrics)
 - **覆蓋率狀態**: **75%** ✅ (2026-02-15 達成，513+ tests, 6995 statements, 1757 missed)
 - **CI 目標**: > 70% (configured in pytest.ini)
+- **非同步測試標竿**: 統一使用 `pytest-asyncio` 直播模式，嚴格要求 `await` 所有非同步 Mock 以維護日誌整潔。
 - **CI 通過率**: 100% (GitHub Actions)。
 
 ### 2. 外部服務清單 (External Services Registry)

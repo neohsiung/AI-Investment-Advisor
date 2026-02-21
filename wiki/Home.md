@@ -3,6 +3,7 @@
 ### 版本紀錄 (Version History)
 | Date | Version | Description | Author |
 | :--- | :--- | :--- | :--- |
+| 2026-02-21 | v5.1 | **Stability & Accuracy Release (v1.2.0+)**: Refactored test suite to native `pytest-asyncio`, optimized Sentinel monitoring via batch fetching, and implemented real-time accuracy analytics based on `price_at_signal`. | Neo |
 | 2026-02-21 | v5.0 | **Microservices Monorepo & Observability**: Integrated SigNoz APM, OpenTelemetry, and Standalone Notification Service into the architecture. | Neo |
 | 2026-02-20 | v4.2 | **Production Standardization**: Standardized all internal links and file structures for Production v1.0.0 release. | Neo |
 | 2026-02-18 | v4.1 | **Architectural Sync**: Enhanced persona-based navigation and Mermaid diagrams. | Neo |
