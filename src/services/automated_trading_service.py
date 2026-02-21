@@ -25,7 +25,7 @@ class AutomatedTradingService:
                  notification_service: Optional[NotificationService] = None):
         self.settings_repo = settings_repo or AlchemySettingsRepository()
         self.interaction_service = interaction_service or InteractionService()
-        self.notification_service = notification_service or NotificationService()
+        self.notification_service = notification_service
 
     async def evaluate_and_execute_trade(self, user_id: str, ticker: str, action: str, quantity: float, 
                                          confidence_score: int, rationale: str) -> Dict[str, Any]:
@@ -34,6 +34,13 @@ class AutomatedTradingService:
         評估並可能根據信心分數執行交易。
         """
         
+        # v4.2.2: Ensure notification service is correctly configured for this user
+        if not self.notification_service:
+            from src.services.settings_service import SettingsService
+            from src.services.notification_service import NotificationService
+            settings_svc = SettingsService(user_id=user_id)
+            self.notification_service = NotificationService.create_with_settings(settings_service=settings_svc, user_id=user_id)
+
         # 1. Check if trading is enabled
         trading_enabled = self.settings_repo.get(user_id, "ai_trading_enabled")
         if trading_enabled is not None and str(trading_enabled).lower() != "true":
@@ -59,7 +66,7 @@ class AutomatedTradingService:
         # 3. Decision Logic
         if confidence_score >= threshold:
             logger.info(f"Score {confidence_score} >= {threshold}. Executing automatically.")
-            return await self._execute_trade(user_id, order, confidence_score, rationale, "Auto-Approved")
+            return await self._execute_trade(user_id, order, confidence_score, rationale, "✅ [自動執行] (Auto-Approved)")
         else:
             logger.info(f"Score {confidence_score} < {threshold}. Requesting approval.")
             return await self._request_approval_and_execute(user_id, order, confidence_score, rationale)
@@ -67,7 +74,7 @@ class AutomatedTradingService:
     async def _request_approval_and_execute(self, user_id: str, order: Order, confidence_score: int, rationale: str) -> Dict[str, Any]:
         """Request user approval synchronously via InteractionService."""
         
-        title = f"🛎️ 交易批准請求 (Trade Approval Request) - {order.symbol}"
+        title = f"🛎️ [需要核准] 交易請求 (Trade Approval Required) - {order.symbol}"
         content = (
             f"**AI 建議執行交易 (AI Trade Recommendation)**\n\n"
             f"• **標的 (Ticker)**: {order.symbol}\n"
@@ -83,7 +90,8 @@ class AutomatedTradingService:
         logger.info(f"Requesting approval from user {user_id} for {order.symbol}")
         
         try:
-            is_approved = await self.interaction_service.request_approval(
+            # v4.2.3: Handle detailed status results (Approved/Rejected/Expired)
+            is_approved, status = await self.interaction_service.request_approval(
                 user_id=user_id,
                 title=title,
                 content=content,
@@ -92,16 +100,25 @@ class AutomatedTradingService:
             
             if is_approved:
                 logger.info(f"User {user_id} approved trade for {order.symbol}")
-                return await self._execute_trade(user_id, order, confidence_score, rationale, "User-Approved")
+                return await self._execute_trade(user_id, order, confidence_score, rationale, "👤 [核准執行] (User-Approved)")
             else:
-                logger.info(f"User {user_id} rejected or timed out trade for {order.symbol}")
-                # Notify rejection/timeout
-                await self.notification_service.send_alert(
+                from src.domain.interaction import InteractionStatus
+                if status == InteractionStatus.EXPIRED:
+                    logger.warning(f"Trade approval for {order.symbol} EXPIRED after 5 mins.")
+                    notif_title = f"❌ [交易失效] 逾時未處理 - {order.symbol}"
+                    notif_content = f"審核請求已逾時過期 (Approval Request Expired)。\n\n**標的:** {order.symbol}\n**方向:** {order.action.value}\n**原因:** 5 分鐘內未收到回應。"
+                else:
+                    logger.info(f"User {user_id} rejected trade for {order.symbol}")
+                    notif_title = f"❌ [交易取消] 使用者拒絕 - {order.symbol}"
+                    notif_content = f"使用者已拒絕此項交易 (User Rejected)。\n\n**標的:** {order.symbol}\n**方向:** {order.action.value}"
+
+                await self.notification_service.notify_all(
                     user_id=user_id,
-                    title=f"❌ 交易取消 (Trade Cancelled) - {order.symbol}",
-                    content=f"使用者拒絕或已逾時 (Rejected or Timed Out)。\n\n**標的:** {order.symbol}\n**方向:** {order.action.value}"
+                    title=notif_title,
+                    content=notif_content,
+                    category="approval"
                 )
-                return {"status": "rejected_or_timeout", "reason": "User rejected or request expired"}
+                return {"status": "rejected_or_timeout", "reason": f"Trade {status.name if hasattr(status, 'name') else status}"}
                 
         except Exception as e:
             logger.error(f"Approval workflow failed: {e}")
@@ -138,7 +155,12 @@ class AutomatedTradingService:
                 f"**詳細結果 (Details)**: `{result}`"
             )
             
-            await self.notification_service.send_alert(user_id=user_id, title=title, content=content)
+            await self.notification_service.notify_all(
+                user_id=user_id, 
+                title=title, 
+                content=content,
+                category="approval"
+            )
             
             return result
         except Exception as e:

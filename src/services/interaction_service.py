@@ -41,7 +41,10 @@ class InteractionService:
         self.settings_service = settings_service
         self._pending_requests: Dict[str, InteractionRequest] = {} 
         
-        # 3. Register Callbacks
+        # v4.2.3: We will resolve adapters dynamically in _send_approval_request if needed
+        # to ensure user-specific settings are honored.
+        
+        # 3. Register Callbacks for static adapters
         for adapter in self.adapters:
             if hasattr(adapter, 'register_callback'):
                 adapter.register_callback(self.handle_response)
@@ -163,15 +166,15 @@ class InteractionService:
         while time.time() - start_time < timeout_seconds:
             if req.status == InteractionStatus.APPROVED:
                 logger.info(f"Interaction {req.request_id} APPROVED")
-                return True
+                return True, InteractionStatus.APPROVED
             if req.status == InteractionStatus.REJECTED:
                 logger.info(f"Interaction {req.request_id} REJECTED")
-                return False
+                return False, InteractionStatus.REJECTED
             await asyncio.sleep(1) # Poll interval
             
         req.status = InteractionStatus.EXPIRED
         logger.warning(f"Interaction {req.request_id} EXPIRED")
-        return False
+        return False, InteractionStatus.EXPIRED
 
     async def _send_approval_request(self, req: InteractionRequest) -> None:
         """
@@ -183,6 +186,27 @@ class InteractionService:
             {"label": "Reject", "data": f"action=reject&id={req.request_id}", "style": "secondary"}
         ]
         
+        # v4.2.3: Resolve target adapters based on user settings if possible
+        target_adapters = self.adapters
+        if req.user_id and req.user_id != "broadcast":
+            try:
+                from src.infrastructure.channels.channel_factory import ChannelFactory
+                from src.services.settings_service import SettingsService
+                
+                # Fetch user-specific settings to get their specific adapters
+                user_settings_svc = SettingsService(user_id=req.user_id)
+                user_settings = user_settings_svc.get_all_settings()
+                
+                dynamic_adapters = ChannelFactory.create_adapters(user_settings)
+                if dynamic_adapters:
+                    target_adapters = dynamic_adapters
+                    # Register this service to handle their callbacks
+                    for adapter in target_adapters:
+                        if hasattr(adapter, 'register_callback'):
+                            adapter.register_callback(self.handle_response)
+            except Exception as e:
+                logger.error(f"InteractionService: Failed to resolve dynamic adapters for {req.user_id}: {e}")
+
         # Placeholder for Council/Sentinel logic (assuming req.payload contains 'triggers')
         decision = "AI 委員會正在評估中..." # Default decision
         filtered_triggers = req.payload.get('triggers', []) # Assuming triggers are in payload
@@ -218,7 +242,7 @@ class InteractionService:
             f"{req.content}"
         ) if filtered_triggers else req.content
         
-        for adapter in self.adapters:
+        for adapter in target_adapters:
             try:
                 # Use adapters that support interaction
                 # For now using send_alert mechanism but with actions
@@ -261,8 +285,22 @@ class InteractionService:
 
         logger.info(f"InteractionService: Request {request_id} status updated to {req.status}")
 
+        # v4.2.3: Resolve target adapters based on user settings for feedback consistency
+        target_adapters = self.adapters
+        if req.user_id and req.user_id != "broadcast":
+            try:
+                from src.infrastructure.channels.channel_factory import ChannelFactory
+                from src.services.settings_service import SettingsService
+                user_settings_svc = SettingsService(user_id=req.user_id)
+                user_settings = user_settings_svc.get_all_settings()
+                dynamic_adapters = ChannelFactory.create_adapters(user_settings)
+                if dynamic_adapters:
+                    target_adapters = dynamic_adapters
+            except Exception as e:
+                logger.error(f"InteractionService: Failed to resolve dynamic adapters for feedback {req.user_id}: {e}")
+
         # Notify user of receipt across active adapters (Omni-channel feedback)
-        for adapter in self.adapters:
+        for adapter in target_adapters:
              try:
                  # req.user_id is the internal email. Adapter will resolve to channel ID.
                  logger.info(f"InteractionService: Sending action feedback via {adapter.__class__.__name__} to user {req.user_id}")
