@@ -132,17 +132,20 @@ class AlchemyVectorRepository(BaseRepository, IVectorRepository):
         """
         new_id = str(uuid.uuid4())
         with self.engine.begin() as conn:
-            # v4.2.1: Aligned with database.py schema (including user_id)
+            # v4.2.1: Aligned with database.py schema (including user_id and consensus)
             query = text("""
-                INSERT INTO council_minutes (id, user_id, session_id, decision, embedding, created_at)
-                VALUES (:id, :uid, :sid, :decision, :emb, :ts)
+                INSERT INTO council_minutes (id, user_id, session_id, topic, participants, consensus, transcript, embedding, created_at)
+                VALUES (:id, :uid, :sid, :topic, :parts, :consensus, :transcript, :emb, :ts)
             """)
             
             conn.execute(query, {
                 "id": new_id,
                 "uid": user_id,
                 "sid": session_id,
-                "decision": consensus,
+                "topic": topic,
+                "parts": ", ".join(participants),
+                "consensus": consensus,
+                "transcript": transcript,
                 "emb": self._ensure_string_embedding(embedding),
                 "ts": datetime.utcnow()
             })
@@ -157,7 +160,7 @@ class AlchemyVectorRepository(BaseRepository, IVectorRepository):
 
         with self.engine.connect() as conn:
             query = text("""
-                SELECT id, decision as consensus, 1 - (embedding <=> :emb) as similarity
+                SELECT id, consensus, 1 - (embedding <=> :emb) as similarity
                 FROM council_minutes
                 WHERE 1 - (embedding <=> :emb) > :threshold
                 ORDER BY similarity DESC

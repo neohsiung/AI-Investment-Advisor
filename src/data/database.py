@@ -205,10 +205,10 @@ def init_db(db_path=None):
         id {pk_type},
         user_id {fk_type} NOT NULL {"REFERENCES users(id) ON DELETE CASCADE" if not is_sqlite else ""},
         session_id TEXT NOT NULL,
-        triggers {json_type} DEFAULT '[]',
-        decision TEXT,
-        confidence {numeric_type},
-        metadata {json_type} DEFAULT '{{}}',
+        topic TEXT,
+        participants TEXT,
+        consensus TEXT,
+        transcript TEXT,
         embedding {vector_type},
         created_at {timestamp_type} DEFAULT CURRENT_TIMESTAMP
     );
