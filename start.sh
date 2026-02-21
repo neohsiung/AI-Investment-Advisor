@@ -41,9 +41,10 @@ function deploy_docker {
     echo "✅ Deployment Complete"
     echo "----------------------"
     echo "📊 Dashboard: http://localhost:8501"
+    echo "🩺 APM/Traces: http://localhost:8080 (SigNoz)"
     echo "🗄️  Database:  localhost:5432"
     echo ""
-    echo "To view logs: docker compose logs -f dashboard"
+    echo "To view logs: docker compose logs -f"
 }
 
 function deploy_k8s {
