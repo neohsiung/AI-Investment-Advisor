@@ -15,43 +15,50 @@ def test_dashboard_import_smoke():
             import importlib.util
             import os
             
-            file_path = "src/Dashboard.py"
+            file_path = "services/dashboard/src/app.py"
             if not os.path.exists(file_path):
                 # Fallback if case sensitivity or path differs
-                if os.path.exists("src/dashboard.py"):
-                    file_path = "src/dashboard.py"
+                if os.path.exists("services/dashboard/src/Dashboard.py"):
+                    file_path = "services/dashboard/src/Dashboard.py"
             
             spec = importlib.util.spec_from_file_location("Dashboard", file_path)
             if spec and spec.loader:
                 module = importlib.util.module_from_spec(spec)
                 sys.modules["src.Dashboard"] = module
+                
+                # Add services/dashboard to sys.path so Dashboard can find its own 'src'
+                dashboard_root = os.path.abspath("services/dashboard")
+                if dashboard_root not in sys.path:
+                    sys.path.insert(0, dashboard_root)
+                
                 spec.loader.exec_module(module)
             else:
-                pytest.fail(f"Could not find Dashboard.py at {file_path}")
+                pytest.fail(f"Could not find Dashboard main entry at {file_path}")
                 
         except Exception as e:
             pytest.fail(f"Dashboard import failed: {e}")
         finally:
-             if "src.Dashboard" in sys.modules:
-                 del sys.modules["src.Dashboard"]
+            if "src.Dashboard" in sys.modules:
+                del sys.modules["src.Dashboard"]
 
-    def test_cli_scheduler_mode():
-        """
-        Test that scheduler mode triggers SchedulerService.
-        """
-        from services.scheduler.src.app import main
-        # Force import to ensure patch finds the module
-        import src.services.scheduler_service
+def test_cli_scheduler_mode():
+    """
+    Test that scheduler mode triggers SchedulerService.
+    """
+    from services.scheduler.src.app import main
+    # Force import to ensure patch finds the module
+    import src.services.scheduler_service
+    
+    with patch("src.services.scheduler_service.SchedulerService") as MockService, \
+         patch("services.scheduler.src.app.init_db"): 
+    
+        mock_instance = MockService.return_value
         
-        with patch("src.services.scheduler_service.SchedulerService") as MockService, \
-             patch("services.scheduler.src.app.init_db"): 
-        
-            mock_instance = MockService.return_value
-            
-            # Test: Scheduler Check (Daily)
-            with patch.object(sys, 'argv', ["src/cli.py", "--mode", "scheduler", "--task", "daily"]):
-                main()
-                mock_instance.job_daily_check.assert_called()
+        # Test: Scheduler Check (Daily)
+        # Fix path to cli.py if needed, or use app.py directly
+        with patch.object(sys, 'argv', ["services/scheduler/src/app.py", "--mode", "scheduler", "--task", "daily"]):
+            main()
+            mock_instance.job_daily_check.assert_called()
 
 def test_pages_import_smoke():
     with patch.dict(sys.modules, {'streamlit': MagicMock()}):
@@ -60,8 +67,8 @@ def test_pages_import_smoke():
             import importlib.util
             import os
             
-            # 3_Data_Management.py
-            spec = importlib.util.spec_from_file_location("DataManagement", "src/pages/05_Data_Management.py")
+            # 5_Data_Management.py
+            spec = importlib.util.spec_from_file_location("DataManagement", "services/dashboard/src/05_Data_Management.py")
             module = importlib.util.module_from_spec(spec)
             # spec.loader.exec_module(module) # This executes top-level code, which creates widgets. Might crash even with mocks.
             # Just creating the spec and module proves syntax is okay.

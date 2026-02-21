@@ -37,14 +37,8 @@ def mock_services():
     transaction = MagicMock()
     council = MagicMock()
     council.start_session = AsyncMock(return_value={"consensus": "Sell slightly"})
-    notification = MagicMock()
-    notification.notify_all = AsyncMock()
-    notification.send_flex_alert = AsyncMock()
     settings = MagicMock()
-    settings.get_all_settings.return_value = {}
-    settings.get_setting.return_value = None
-
-    # Patch the repository class so SentinelService() allows mocking init
+     # Patch the repository class so SentinelService() allows mocking init
     with patch('src.services.sentinel_service.AlchemySentinelRepository') as MockRepo:
          # Configure default mock behavior if needed
          mock_repo_instance = MockRepo.return_value
@@ -63,7 +57,6 @@ def mock_services():
             "search": search,
             "transaction": transaction,
             "council": council,
-            "notification": notification,
             "settings": settings,
             "repo_class": MockRepo,
             "repo_instance": mock_repo_instance
@@ -76,7 +69,6 @@ def _create_sentinel(mock_services):
         search_service=mock_services["search"],
         transaction_service=mock_services["transaction"],
         council_service=mock_services["council"],
-        notification_service=mock_services["notification"],
         settings_service=mock_services["settings"],
     )
 
@@ -95,10 +87,11 @@ class TestVIXAnomaly:
         async def _test():
             # Patch _get_all_user_ids and _check_active_sources to avoid DB
             with patch.object(sentinel, '_get_all_user_ids', return_value=[]), \
-                 patch.object(sentinel, '_check_active_sources', return_value=[]):
+                 patch.object(sentinel, '_check_active_sources', return_value=[]), \
+                 patch('httpx.AsyncClient.post') as mock_post:
                 await sentinel.process_tick()
+                mock_post.assert_not_called()
             mock_services["council"].start_session.assert_not_called()
-            mock_services["notification"].send_flex_alert.assert_not_called()
 
         run_async(_test())
 
@@ -136,10 +129,11 @@ class TestVIXAnomaly:
             assert "vix_high_static" in triggers[0]["id"]
             
             # Now test the escalation via _escalate
-            await sentinel._escalate(triggers)
-            await sentinel._flush_buffer(force=True) # Force flush for testing
-            mock_services["council"].start_session.assert_called_once()
-            mock_services["notification"].notify_all.assert_called_once()
+            with patch('httpx.AsyncClient.post', return_value=MagicMock(status_code=202)) as mock_post:
+                await sentinel._escalate(triggers)
+                await sentinel._flush_buffer(force=True) # Force flush for testing
+                mock_services["council"].start_session.assert_called_once()
+                assert mock_post.called
 
         run_async(_test())
 
@@ -384,19 +378,23 @@ class TestMacroShifts:
 
 class TestEscalation:
     def test_escalation_calls_council_and_line(self, mock_services, run_async):
-        """Triggers escalate to Council then LINE."""
+        """Triggers escalate to Council then Notification API."""
         sentinel = _create_sentinel(mock_services)
 
         async def _test():
-            with patch.dict('os.environ', {"LINE_USER_ID": "U123"}):
+            with patch.dict('os.environ', {"LINE_USER_ID": "U123"}), \
+                 patch('httpx.AsyncClient.post', return_value=MagicMock(status_code=202)) as mock_post:
                 await sentinel._escalate([{"text": "Test trigger 1", "id": "t1"}, {"text": "Test trigger 2", "id": "t2"}])
                 await sentinel._flush_buffer(force=True)
     
-            mock_services["council"].start_session.assert_called_once()
-            mock_services["notification"].notify_all.assert_called_once()
-            call_kwargs = mock_services["notification"].notify_all.call_args[1]
-            assert call_kwargs["user_id"] == "U123"
-            assert "偵測到以下重要訊號 (2)" in call_kwargs["content"]
+                mock_services["council"].start_session.assert_called_once()
+                assert mock_post.called
+                
+                # Check payload
+                call_args = mock_post.call_args
+                payload = call_args.kwargs['json']
+                assert payload["user_id"] == "U123"
+                assert "偵測到以下重要訊號 (2)" in payload["content"]
 
         run_async(_test())
 

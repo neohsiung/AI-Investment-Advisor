@@ -12,6 +12,12 @@ def load_page_module(name):
         path = Path("services/dashboard/src/pages") / name
         spec = importlib.util.spec_from_file_location(path.stem, path)
         module = importlib.util.module_from_spec(spec)
+        
+        # Add services/dashboard to sys.path so Dashboard can find its own 'src'
+        dashboard_root = os.path.abspath("services/dashboard")
+        if dashboard_root not in sys.path:
+            sys.path.insert(0, dashboard_root)
+            
         spec.loader.exec_module(module)
         return module
     except Exception as e:

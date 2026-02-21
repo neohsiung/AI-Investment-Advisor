@@ -24,18 +24,11 @@ def mock_council():
     return c
 
 @pytest.fixture
-def mock_notifier():
-    n = MagicMock(spec=NotificationService)
-    n.notify_all = AsyncMock(return_value={})
-    return n
-
-@pytest.fixture
-def sentinel_service(mock_repo, mock_council, mock_notifier):
+def sentinel_service(mock_repo, mock_council):
     # Patch the internal repo creation
     with patch("src.services.sentinel_service.AlchemySentinelRepository", return_value=mock_repo):
         service = SentinelService(
             council_service=mock_council,
-            notification_service=mock_notifier,
             settings_service=MagicMock()
         )
         # Force inject the mock repo if the init created a new one
@@ -43,7 +36,7 @@ def sentinel_service(mock_repo, mock_council, mock_notifier):
         return service
 
 @pytest.mark.anyio
-async def test_escalate_deduplication(sentinel_service, mock_repo, mock_notifier):
+async def test_escalate_deduplication(sentinel_service, mock_repo):
     # Setup: Repo says it IS a duplicate
     mock_repo.is_duplicate_alert.return_value = True
     
@@ -51,26 +44,28 @@ async def test_escalate_deduplication(sentinel_service, mock_repo, mock_notifier
     triggers = [{"text": "Test Trigger 1", "id": "t1"}, {"text": "Test Trigger 2", "id": "t2"}]
     
     # source="Test" makes it "external" which triggers immediate flush
-    await sentinel_service._escalate(triggers, source="Test")
-    
-    # Assert: Should NOT notify or deliberate
-    assert sentinel_service.council_service.start_session.call_count == 0
-    mock_notifier.notify_all.assert_not_called()
+    with patch('httpx.AsyncClient.post') as mock_post:
+        await sentinel_service._escalate(triggers, source="Test")
+        
+        # Assert: Should NOT notify or deliberate
+        assert sentinel_service.council_service.start_session.call_count == 0
+        mock_post.assert_not_called()
     
     # Should check duplication
     assert mock_repo.is_duplicate_alert.called
 
 @pytest.mark.anyio
-async def test_escalate_new_alert(sentinel_service, mock_repo, mock_notifier):
+async def test_escalate_new_alert(sentinel_service, mock_repo):
     # Setup: Repo says it is NOT a duplicate
     mock_repo.is_duplicate_alert.return_value = False
     
     triggers = [{"text": "New Trigger", "id": "new_t"}]
-    await sentinel_service._escalate(triggers, source="Test")
-    
-    # Assert: Should notify and log
-    mock_notifier.notify_all.assert_called_once()
-    assert mock_repo.log_alert.called
+    with patch('httpx.AsyncClient.post', return_value=MagicMock(status_code=202)) as mock_post:
+        await sentinel_service._escalate(triggers, source="Test")
+        
+        # Assert: Should notify and log
+        assert mock_post.called
+        assert mock_repo.log_alert.called
     
     # Check arguments
     args, _ = mock_repo.log_alert.call_args

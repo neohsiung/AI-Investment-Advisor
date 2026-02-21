@@ -27,9 +27,6 @@ def mock_sentinel_repo():
 @pytest.mark.anyio
 async def test_sentinel_process_event(mock_sentinel_repo):
     # Setup mocks for services
-    mock_notification = MagicMock()
-    mock_notification.notify_all = AsyncMock()
-    
     mock_council = MagicMock()
     mock_council.start_session = AsyncMock(return_value={"consensus": "⚠️ Sell AAPL immediately"})
     
@@ -37,10 +34,10 @@ async def test_sentinel_process_event(mock_sentinel_repo):
     with patch('src.services.sentinel_service.SettingsService') as MockSettings, \
          patch('src.services.sentinel_service.MarketDataService'), \
          patch('src.services.sentinel_service.InternetSearchService'), \
-         patch('src.services.sentinel_service.TransactionService'):
+         patch('src.services.sentinel_service.TransactionService'), \
+         patch('httpx.AsyncClient.post', return_value=MagicMock(status_code=202)) as mock_post:
         
         sentinel = SentinelService(
-            notification_service=mock_notification,
             council_service=mock_council,
             user_id="test_user"
         )
@@ -58,10 +55,11 @@ async def test_sentinel_process_event(mock_sentinel_repo):
         # Process event (Webhooks flush immediately)
         await sentinel.process_event(event)
 
-        # Verify notification was called
-        assert mock_notification.notify_all.called
-        args, kwargs = mock_notification.notify_all.call_args
-        assert "AAPL" in kwargs['content']
+        # Verify notification was called through HTTP
+        assert mock_post.called
+        args, kwargs = mock_post.call_args
+        payload = kwargs['json']
+        assert "AAPL" in payload['content']
 
 @pytest.mark.anyio
 async def test_sentinel_vix_logic(mock_sentinel_repo):
@@ -74,8 +72,7 @@ async def test_sentinel_vix_logic(mock_sentinel_repo):
     with patch('src.services.sentinel_service.SettingsService'), \
          patch('src.services.sentinel_service.InternetSearchService'), \
          patch('src.services.sentinel_service.TransactionService'), \
-         patch('src.services.sentinel_service.CouncilService'), \
-         patch('src.services.sentinel_service.NotificationService'):
+         patch('src.services.sentinel_service.CouncilService'):
         
         sentinel = SentinelService(market_service=mock_market, user_id="test_user")
         triggers = sentinel._check_vix_anomaly()

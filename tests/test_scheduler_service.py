@@ -22,17 +22,17 @@ def test_get_all_users(mock_scheduler_deps):
     """Test actual DB fetch logic for users."""
     service = SchedulerService()
     mock_conn = mock_scheduler_deps['db'].return_value
-    # Return list of tuples
+    # Return list of tuples (id, email)
     mock_conn.execute.return_value.fetchall.return_value = [
-        ('user1@test.com',), 
-        ('admin@example.com',), # Should be filtered
-        ('user2@gmail.com',),   # Should be filtered by "your_email@gmail.com" logic if name matches list?
-        ('valid@test.com',)
+        ('u1', 'user1@test.com'), 
+        ('admin_id', 'admin@example.com'), # Should be filtered
+        ('u2', 'user2@gmail.com'),   
+        ('u_valid', 'valid@test.com')
     ]
     
     users = service.get_all_users()
-    assert 'user1@test.com' in users
-    assert 'valid@test.com' in users
+    assert 'u1' in users
+    assert 'u_valid' in users
     assert 'admin@example.com' not in users
     # Based on code: invalid_emails = ["admin@example.com", "your_email@gmail.com"]
     # So user2@gmail.com is valid unless it matches exactly

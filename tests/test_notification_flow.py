@@ -22,20 +22,15 @@ def sentinel_setup():
         # Actionable decision to bypass Significance Filter
         mock_council.start_session = AsyncMock(return_value={"consensus": "Decision: SELL AAPL immediately."})
         
-        mock_notification = MagicMock(spec=NotificationService)
-        mock_notification.notify_all = AsyncMock(return_value={"Success": True})
-        
         sentinel = SentinelService(
             settings_service=mock_settings,
-            council_service=mock_council,
-            notification_service=mock_notification
+            council_service=mock_council
         )
         
         return {
             "sentinel": sentinel,
             "mock_repo": mock_repo,
             "mock_council": mock_council,
-            "mock_notification": mock_notification,
             "mock_settings": mock_settings
         }
 
@@ -43,7 +38,6 @@ def sentinel_setup():
 async def test_alert_flow_and_format(sentinel_setup):
     sentinel = sentinel_setup["sentinel"]
     mock_council = sentinel_setup["mock_council"]
-    mock_notification = sentinel_setup["mock_notification"]
     
     triggers = [
         {"id": "vix_spike", "text": "🔴 VIX Spike: 45.0 > 30.0"},
@@ -51,20 +45,22 @@ async def test_alert_flow_and_format(sentinel_setup):
     ]
     
     # execution
-    await sentinel._do_send_alert(triggers, source="TestSentinel")
+    with patch('httpx.AsyncClient.post', return_value=MagicMock(status_code=202)) as mock_post:
+        await sentinel._do_send_alert(triggers, source="TestSentinel")
     
-    # Verify CouncilService called with user_id
-    mock_council.start_session.assert_called_once()
-    args, kwargs = mock_council.start_session.call_args
-    assert kwargs['user_id'] == "test_user_123"
-    
-    # Verify Notification Format
-    mock_notification.notify_all.assert_called_once()
-    call_args = mock_notification.notify_all.call_args[1]
-    content = call_args['content']
-    
-    # Verify content presence
-    assert "### 🛡️ Sentinel 監控警報" in content
-    assert "• 🔴 VIX Spike: 45.0 > 30.0" in content
-    assert "• 🏦 Fed Funds Rate Up" in content
-    assert "Decision: SELL AAPL immediately." in content
+        # Verify CouncilService called with user_id
+        mock_council.start_session.assert_called_once()
+        args, kwargs = mock_council.start_session.call_args
+        assert kwargs['user_id'] == "test_user_123"
+        
+        # Verify Notification Format through HTTP
+        assert mock_post.called
+        call_kwargs = mock_post.call_args.kwargs
+        payload = call_kwargs['json']
+        content = payload['content']
+        
+        # Verify content presence
+        assert "### 🛡️ Sentinel 監控警報" in content
+        assert "• 🔴 VIX Spike: 45.0 > 30.0" in content
+        assert "• 🏦 Fed Funds Rate Up" in content
+        assert "Decision: SELL AAPL immediately." in content

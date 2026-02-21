@@ -50,7 +50,7 @@ def test_add_council_minute(repo):
         assert row is not None
         r = row._mapping
         assert r['session_id'] == "sess1"
-        assert r['decision'] == consensus
+        assert r['consensus'] == consensus
         assert r['embedding'] == str(embedding)
 
 def test_search_similar_minutes_sqlite_fallback(repo):

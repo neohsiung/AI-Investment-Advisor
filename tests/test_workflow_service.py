@@ -110,7 +110,6 @@ async def test_report_distribution(mock_deps):
     with patch('src.services.workflow_service.AgentFactory') as MockFactory, \
          patch('src.services.workflow_service.get_db_connection') as MockDB, \
          patch('src.services.broker_factory.BrokerFactory') as MockBrokerFactory, \
-         patch('src.services.notification_service.NotificationService.create_with_settings') as MockNotiFactory, \
          patch('src.services.workflow_service.PerformanceService') as MockPerf:
         
         # Mock Broker
@@ -130,12 +129,8 @@ async def test_report_distribution(mock_deps):
         
         mock_cio = MagicMock()
         mock_cio.run.return_value = "Report"
+        mock_cio.polish_report.side_effect = lambda x: f"<html>{x}</html>"
         MockFactory.create_cio_agent.return_value = mock_cio
-
-        # Mock Notifier
-        mock_notifier = MagicMock()
-        mock_notifier.send_report = AsyncMock(return_value={"Email": True})
-        MockNotiFactory.return_value = mock_notifier
 
         workflow = DailyWorkflow(user_id, transaction_repo=mock_deps['repo'], transaction_service=mock_deps['trans'], market_service=mock_deps['market'])
         workflow.memory_service = MagicMock() # FIX: Ensure memory service is mocked
@@ -144,7 +139,14 @@ async def test_report_distribution(mock_deps):
         mock_conn = MagicMock()
         MockDB.return_value = mock_conn
         
-        await workflow.run(dry_run=False)
-        
-        mock_notifier.send_report.assert_called()
-        mock_conn.execute.assert_called()
+        with patch('httpx.AsyncClient.post', return_value=MagicMock(status_code=202)) as mock_post:
+            await workflow.run(dry_run=False)
+            
+            # Verify HTTP call
+            assert mock_post.called
+            call_kwargs = mock_post.call_args.kwargs
+            assert call_kwargs['json']['user_id'] == user_id
+            assert "Report" in call_kwargs['json']['content']
+            
+            # Verify DB storage
+            assert mock_conn.execute.called
