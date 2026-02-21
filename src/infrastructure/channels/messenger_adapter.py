@@ -1,14 +1,12 @@
+import os
+import json
 import hmac
 import hashlib
-import requests
-import json
-import logging
-from typing import List, Dict, Optional, Any
-from src.domain.interfaces import IChannelAdapter
-
+from typing import Dict, Any, List
+from src.utils.logger import setup_logger
 from src.infrastructure.channels.base_adapter import BaseChannelAdapter
 
-logger = logging.getLogger(__name__)
+logger = setup_logger("MessengerAdapter")
 
 class MessengerAdapter(BaseChannelAdapter):
     """

@@ -1,9 +1,8 @@
-import logging
-import json
-from typing import Dict, Any, List
-from src.services.settings_service import SettingsService
+from typing import Dict, Any
+from src.utils.logger import setup_logger
+from src.repositories.settings_repository import AlchemySettingsRepository as SettingsService
 
-logger = logging.getLogger(__name__)
+logger = setup_logger("SupplyChainService")
 
 class SupplyChainService:
     """

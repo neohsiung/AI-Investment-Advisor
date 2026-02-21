@@ -1,15 +1,13 @@
-import logging
 import json
 import uuid
-from typing import List, Dict, Any
 from datetime import datetime
-from src.domain.interfaces import IChannelAdapter
-from src.data.database import get_db_connection
+from typing import Dict, Any, List
 from sqlalchemy import text
-
+from src.utils.logger import setup_logger
 from src.infrastructure.channels.base_adapter import BaseChannelAdapter
+from src.data.database import get_db_connection
 
-logger = logging.getLogger(__name__)
+logger = setup_logger("WebAdapter")
 
 class WebAdapter(BaseChannelAdapter):
     """

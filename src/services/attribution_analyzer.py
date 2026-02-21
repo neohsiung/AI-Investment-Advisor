@@ -1,9 +1,9 @@
-import logging
 from sqlalchemy import text
-from src.data.database import get_db_connection
+from src.utils.logger import setup_logger
 from src.repositories.agent_repository import AlchemyAgentRepository
+from src.data.database import get_db_connection
 
-logger = logging.getLogger(__name__)
+logger = setup_logger("AttributionAnalyzer")
 
 class AttributionAnalyzer:
     """

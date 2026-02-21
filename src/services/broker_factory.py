@@ -4,9 +4,8 @@ from src.domain.broker import IBroker
 from src.repositories.settings_repository import AlchemySettingsRepository
 from src.services.etoro_service import EtoroService
 from src.services.futu_service import FutuService
-import logging
-
-logger = logging.getLogger(__name__)
+from src.utils.logger import setup_logger
+logger = setup_logger("BrokerFactory")
 
 class BrokerFactory:
     """

@@ -1,17 +1,14 @@
-
-import requests
-import logging
-from typing import Dict, List, Optional, Any
-from datetime import datetime
 import os
-import json
-
+from typing import Dict, List, Any, Optional
+from datetime import datetime
+from src.utils.logger import setup_logger
+from src.domain.broker import IBroker
 from src.domain.broker import IBroker
 from src.domain.trading import Order, Position, Account, OrderAction, BrokerType
 from src.repositories.transaction_repository import AlchemyTransactionRepository
 from src.infrastructure.risk_manager import RiskManager
 
-logger = logging.getLogger(__name__)
+logger = setup_logger("EtoroService")
 
 class EtoroService(IBroker):
     """

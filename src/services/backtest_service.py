@@ -1,18 +1,13 @@
-import yfinance as yf
 import pandas as pd
-import json
-import logging
-from datetime import timedelta, datetime
+import yfinance as yf
 from typing import Optional, Any
-
+from datetime import datetime, timedelta
+from src.utils.logger import setup_logger
 from src.agents.factory import AgentFactory
 from src.services.evaluation_service import EvaluationService
-
-# Domain & Infrastructure
 from src.domain.entities import SecurityContext, FeedbackExample, SignalType
-from src.repositories.feedback_repository import AlchemyFeedbackRepository
 
-logger = logging.getLogger("BacktestService")
+logger = setup_logger("BacktestService")
 
 class BacktestService:
     """

@@ -1,15 +1,13 @@
-
-from typing import Dict, List, Optional, Any
-from datetime import datetime
-import logging
-import time
-
+from typing import List, Dict, Any, Optional
+from datetime import datetime, timedelta
+from src.utils.logger import setup_logger
 from src.domain.broker import IBroker
-from src.domain.trading import Order, Position, Account, BrokerType, OrderAction, OrderType
+from src.domain.broker import IBroker
+from src.domain.trading import Order, Position, Account, OrderAction, BrokerType
 from src.repositories.transaction_repository import AlchemyTransactionRepository
 from src.infrastructure.risk_manager import RiskManager
 
-logger = logging.getLogger(__name__)
+logger = setup_logger("FutuService")
 
 # Try import futu, handle missing dependency for optional components
 try:

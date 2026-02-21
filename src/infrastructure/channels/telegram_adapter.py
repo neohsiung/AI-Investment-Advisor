@@ -1,10 +1,7 @@
-import requests
-import json
-import logging
-from typing import List, Dict, Optional, Any
-from src.domain.interfaces import IChannelAdapter
-
-logger = logging.getLogger(__name__)
+import os
+from typing import Dict, Any, List
+from src.utils.logger import setup_logger
+logger = setup_logger("TelegramAdapter")
 
 from src.infrastructure.channels.base_adapter import BaseChannelAdapter
 

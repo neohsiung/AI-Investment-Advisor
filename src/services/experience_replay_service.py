@@ -1,13 +1,12 @@
-import logging
 import json
-from datetime import datetime, timedelta, timezone
-from typing import List, Dict, Any, Optional
-from src.repositories.sentinel_repository import AlchemySentinelRepository, ISentinelRepository
-from src.repositories.transaction_repository import AlchemyTransactionRepository, ITransactionRepository
-from src.data.database import get_db_connection
+from typing import Dict, Any, Optional
 from sqlalchemy import text
+from src.utils.logger import setup_logger
+from src.data.database import get_db_connection
+from src.repositories.sentinel_repository import ISentinelRepository, AlchemySentinelRepository
+from src.repositories.transaction_repository import ITransactionRepository, AlchemyTransactionRepository
 
-logger = logging.getLogger(__name__)
+logger = setup_logger("ExperienceReplay")
 
 class ExperienceReplayService:
     """

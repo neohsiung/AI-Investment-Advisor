@@ -1,35 +1,23 @@
-import logging
 import os
-import json
-from typing import Dict, Any, List
+from typing import Dict, List, Any
+from src.utils.logger import setup_logger
+from src.infrastructure.channels.base_adapter import BaseChannelAdapter
 
-# Try importing linebot sdk, handle if missing for phase-by-phase dev
 try:
     from linebot.v3 import WebhookHandler
+    from linebot.v3.exceptions import InvalidSignatureError
     from linebot.v3.messaging import (
         Configuration,
         ApiClient,
         MessagingApi,
-        ReplyMessageRequest,
-        PushMessageRequest,
-        TextMessage,
-        FlexMessage,
-        FlexContainer
+        TextMessageContent,
     )
-    from linebot.v3.webhooks import MessageEvent, PostbackEvent, TextMessageContent
-
-    from linebot.v3.exceptions import (
-        InvalidSignatureError
-    )
+    from linebot.v3.webhooks import MessageEvent, PostbackEvent
     HAS_LINE_SDK = True
 except ImportError:
     HAS_LINE_SDK = False
-    WebhookHandler = object # Mock
 
-from src.domain.interfaces import IChannelAdapter
-from src.infrastructure.channels.base_adapter import BaseChannelAdapter
-
-logger = logging.getLogger(__name__)
+logger = setup_logger("LineBotAdapter")
 
 class LineBotAdapter(BaseChannelAdapter):
     """

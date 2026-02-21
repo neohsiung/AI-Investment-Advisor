@@ -1,11 +1,9 @@
-import logging
-import os
-from typing import List, Dict, Any
-from src.domain.interfaces import IChannelAdapter
-from src.notifier import EmailNotifier
+from typing import Dict, Any, List
+from src.utils.logger import setup_logger
 from src.infrastructure.channels.base_adapter import BaseChannelAdapter
+from src.notifier import EmailNotifier
 
-logger = logging.getLogger(__name__)
+logger = setup_logger("EmailAdapter")
 
 class EmailAdapter(BaseChannelAdapter):
     """

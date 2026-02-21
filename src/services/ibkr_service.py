@@ -1,12 +1,11 @@
-
-from typing import Dict, List, Optional, Any
+from typing import List, Dict, Any, Optional
+from src.utils.logger import setup_logger
 from src.domain.broker import IBroker
-from src.domain.trading import Order, Position, Account, BrokerType
-from src.repositories.transaction_repository import AlchemyTransactionRepository
+from src.domain.broker import IBroker
+from src.domain.trading import Order, Position, Account, OrderAction, BrokerType
 from src.infrastructure.risk_manager import RiskManager
-import logging
 
-logger = logging.getLogger(__name__)
+logger = setup_logger("IBKRService")
 
 class IBKRService(IBroker):
     """

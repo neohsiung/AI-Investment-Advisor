@@ -1,8 +1,9 @@
-import logging
-from typing import List, Any, Dict, Optional
-from src.domain.interfaces import INotificationFilter, IChannelAdapter
+from typing import Any
+from src.utils.logger import setup_logger
+from .base_adapter import IChannelAdapter
+from src.services.notification_service import INotificationFilter
 
-logger = logging.getLogger(__name__)
+logger = setup_logger("NotificationFilter")
 
 class InterestBasedFilter(INotificationFilter):
     """

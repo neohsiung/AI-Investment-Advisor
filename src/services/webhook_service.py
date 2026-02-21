@@ -1,11 +1,10 @@
-import logging
 import os
 import asyncio
-from datetime import datetime
-from typing import Dict, Any, Optional
+from typing import Dict, Any
 from fastapi import APIRouter, Request, HTTPException
+from src.utils.logger import setup_logger
 
-logger = logging.getLogger(__name__)
+logger = setup_logger("WebhookService")
 
 webhook_router = APIRouter(prefix="/webhook", tags=["Webhook"])
 
