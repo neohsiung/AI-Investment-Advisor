@@ -1,4 +1,6 @@
-import logging
+from src.utils.logger import setup_logger
+logger = setup_logger("CouncilService")
+
 import uuid
 import json
 import asyncio
@@ -10,8 +12,6 @@ from src.infrastructure.llm_router import DynamicModelRouter
 from src.repositories.vector_repository import AlchemyVectorRepository
 from src.infrastructure.lane_manager import LaneManager
 from src.utils.format_utils import format_agent_output
-
-logger = logging.getLogger(__name__)
 
 from src.services.user_focus_service import UserFocusService
 

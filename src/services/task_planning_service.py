@@ -3,12 +3,8 @@ import uuid
 from typing import List, Dict, Any, Optional
 from dataclasses import dataclass, field
 from datetime import datetime
-import logging
-
-# Removed SimpleLLMClient import as we use hardcoded plans or AgentFactory in future
-# from src.services.llm_client import SimpleLLMClient, Task
-
-logger = logging.getLogger(__name__)
+from src.utils.logger import setup_logger
+logger = setup_logger("TaskPlanningService")
 
 @dataclass
 class Task:

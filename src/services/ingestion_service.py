@@ -1,13 +1,12 @@
+from src.utils.logger import setup_logger
+logger = setup_logger("IngestionService")
+
 import os
-import logging
 import pandas as pd
 from typing import Any, Tuple
-# from src.data.ingestor import TradeIngestor # Deprecated
 
 from src.services.analytics_service import update_daily_snapshot
 from src.data.ingestors import IngestorFactory
-
-logger = logging.getLogger("IngestionService")
 
 class IngestionService:
     """

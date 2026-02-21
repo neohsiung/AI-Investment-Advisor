@@ -1,4 +1,6 @@
-import logging
+from src.utils.logger import setup_logger
+logger = setup_logger("VectorRepository")
+
 import uuid
 import json
 from abc import ABC, abstractmethod
@@ -6,8 +8,6 @@ from typing import List, Dict, Optional, Any
 from datetime import datetime
 from sqlalchemy import text
 from src.data.database import BaseRepository, get_db_engine
-
-logger = logging.getLogger(__name__)
 
 class IVectorRepository(ABC):
     """

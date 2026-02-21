@@ -13,9 +13,8 @@ import logging
 import os
 import asyncio
 
-# 設定日誌
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger("MCPService")
+from src.utils.logger import setup_logger
+logger = setup_logger("MCPService")
 
 from contextlib import asynccontextmanager
 

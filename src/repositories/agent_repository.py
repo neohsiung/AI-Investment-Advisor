@@ -1,12 +1,12 @@
-import logging
+from src.utils.logger import setup_logger
+logger = setup_logger("AgentRepository")
+
 import time
 from abc import ABC, abstractmethod
 from typing import Dict, List, Optional, Any
 from sqlalchemy import text
 from datetime import datetime
 from src.data.database import BaseRepository, get_db_engine
-
-logger = logging.getLogger(__name__)
 
 class IAgentRepository(ABC):
     """

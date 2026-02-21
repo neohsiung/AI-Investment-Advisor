@@ -30,7 +30,10 @@ def setup_logger(name, level=logging.INFO):
         return _loggers[name]
 
     logger = logging.getLogger(name)
-    logger.propagate = False # 避免重複輸出到 Root Logger
+    # Enable propagation in tests for caplog compatibility
+    # 偵測是否在測試環境，若是則允許傳回 Root Logger 供 pytest caplog 捕獲
+    is_testing = "pytest" in sys.modules or os.getenv("PYTEST_CURRENT_TEST")
+    logger.propagate = bool(is_testing)
 
     # 避免重複添加 Handler
     if not logger.handlers:

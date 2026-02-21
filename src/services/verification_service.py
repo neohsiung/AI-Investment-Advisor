@@ -1,10 +1,10 @@
-import logging
+from src.utils.logger import setup_logger
+logger = setup_logger("VerificationService")
+
 import datetime
 from typing import Dict, Any, Tuple, Optional
 from src.repositories.verification_repository import AlchemyVerificationRepository
 from src.services.notification_service import NotificationService
-
-logger = logging.getLogger(__name__)
 
 class VerificationService:
     """

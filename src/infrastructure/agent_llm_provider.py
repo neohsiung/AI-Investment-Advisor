@@ -1,10 +1,7 @@
 from typing import List, Any, Optional, Dict
 import json
-import logging
-from src.services.memory_service import ILLMProvider
-from src.agents.factory import AgentFactory
-
-logger = logging.getLogger(__name__)
+from src.utils.logger import setup_logger
+logger = setup_logger("AgentLLMProvider")
 
 class AgentLLMProvider(ILLMProvider):
     """

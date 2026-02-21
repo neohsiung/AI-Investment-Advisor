@@ -1,4 +1,6 @@
-import logging
+from src.utils.logger import setup_logger
+logger = setup_logger("SentinelService")
+
 import asyncio
 import os
 from typing import Dict, Any, List, Optional, Tuple
@@ -15,8 +17,6 @@ from src.repositories.risk_keyword_repository import AlchemyRiskKeywordRepositor
 from src.repositories.sentinel_repository import AlchemySentinelRepository
 from src.services.settings_service import SettingsService
 from src.domain.entities import RiskKeyword
-
-logger = logging.getLogger(__name__)
 
 class SentinelService:
     """

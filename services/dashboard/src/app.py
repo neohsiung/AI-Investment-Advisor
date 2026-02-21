@@ -13,6 +13,9 @@ from src.utils.ui import get_plotly_template
 from src.utils.page_base import BasePage
 from src.utils.components import saas_metric, saas_card_start, saas_card_end, saas_section_header, saas_alert
 from src.services.dashboard_service import DashboardService
+from src.utils.logger import setup_logger
+
+logger = setup_logger("DashboardPage")
 
 class DashboardPage(BasePage):
     """

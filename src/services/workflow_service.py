@@ -1,6 +1,6 @@
+from src.utils.logger import setup_logger
 from abc import ABC, abstractmethod
 from typing import Any, Optional, Dict, List, Union
-import logging
 import sys
 from datetime import datetime
 from src.utils.time_utils import get_current_time
@@ -20,7 +20,7 @@ from src.services.performance_service import PerformanceService
 from src.utils.time_utils import get_current_utc_time
 import re
 
-logger = logging.getLogger("WorkflowService")
+logger = setup_logger("WorkflowService")
 
 from src.services.task_planning_service import TaskPlanningService
 from src.services.memory_service import MemoryService
@@ -54,7 +54,7 @@ class BaseWorkflow(ABC):
         self.memory_service = MemoryService(repository=self.memory_repo, llm_provider=self.llm_provider)
         
         self.context = {}
-        self.logger = logging.getLogger(self.__class__.__name__)
+        self.logger = setup_logger(self.__class__.__name__)
         self.cio_agent = AgentFactory.create_cio_agent(
              transaction_repo=self.transaction_service.repository,
              user_id=self.user_id

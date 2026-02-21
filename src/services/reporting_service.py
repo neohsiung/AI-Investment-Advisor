@@ -1,9 +1,9 @@
+from src.utils.logger import setup_logger
+logger = setup_logger("ReportingService")
+
 import markdown
-import logging
 from typing import Optional
 from datetime import datetime
-
-logger = logging.getLogger(__name__)
 
 class ReportingService:
     """

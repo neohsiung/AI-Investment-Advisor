@@ -1,10 +1,5 @@
-import asyncio
-import logging
-from typing import List, Dict, Any, Optional
-from src.agents.base_agent import BaseAgent
-from src.agents.swarm.swarm_orchestrator import SwarmOrchestrator
-
-logger = logging.getLogger(__name__)
+from src.utils.logger import setup_logger
+logger = setup_logger("RoleSwarm")
 
 class RoleSwarm(BaseAgent):
     """

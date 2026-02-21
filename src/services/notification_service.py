@@ -1,9 +1,9 @@
-import logging
+from src.utils.logger import setup_logger
+logger = setup_logger("NotificationService")
+
 import os
 from typing import List, Dict, Any, Optional
 from src.domain.interfaces import IChannelAdapter, INotificationFilter
-
-logger = logging.getLogger(__name__)
 
 class NotificationService:
     """

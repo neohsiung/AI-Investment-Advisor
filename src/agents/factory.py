@@ -1,41 +1,5 @@
-from src.agents.momentum import MomentumAgent
-from src.agents.fundamental import FundamentalAgent
-from src.agents.macro import MacroAgent
-from src.agents.cio import CIOAgent
-from src.agents.engineer import SystemEngineerAgent
-from src.agents.sentiment import SentimentAgent
-from src.agents.risk import RiskAgent
-from src.agents.swarm.fundamental_swarm import FundamentalSwarm
-from src.agents.swarm.sentiment_swarm import SentimentSwarm
-from src.agents.swarm.momentum_swarm import MomentumSwarm
-import os
-import logging
-import traceback
-from typing import Any, Optional, Dict, List, Union
-
-# [NEW] Imports for DI
-# [NEW] 依賴注入引入
-from src.repositories.feedback_repository import AlchemyFeedbackRepository
-from src.repositories.settings_repository import AlchemySettingsRepository
-from src.tools.market_tools import create_market_server
-
-# Safe Import for DSPy
-# 安全引入 DSPy
-has_dspy = False
-try:
-    import dspy
-    # Check if a valid dspy module
-    # 檢查是否為有效的 dspy 模組
-    if hasattr(dspy, 'OpenAI'):
-        has_dspy = True
-    else:
-        # Try finding where OpenAI might be, or just fallback
-        # 嘗試尋找 OpenAI 類別位置，或直接使用備案
-        pass
-except ImportError:
-    pass
-
-logger = logging.getLogger(__name__)
+from src.utils.logger import setup_logger
+logger = setup_logger("AgentFactory")
 
 class AgentFactory:
     """

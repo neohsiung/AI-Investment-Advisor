@@ -1,4 +1,6 @@
-import logging
+from src.utils.logger import setup_logger
+logger = setup_logger("InteractionService")
+
 import time
 from typing import Dict, Optional, List, Any
 from datetime import datetime, timedelta
@@ -6,9 +8,6 @@ from datetime import datetime, timedelta
 from src.domain.interaction import InteractionRequest, InteractionType, InteractionStatus
 from src.domain.interfaces import IChannelAdapter
 from src.infrastructure.channels.line_adapter import LineBotAdapter
-# from src.infrastructure.channels.slack_adapter import SlackAdapter # Future
-
-logger = logging.getLogger(__name__)
 
 class InteractionService:
     """

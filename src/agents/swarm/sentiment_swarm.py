@@ -1,11 +1,5 @@
-import json
-import logging
-from typing import Dict, Any
-
-from src.agents.base_agent import BaseAgent
-from src.agents.swarm.role_swarm import RoleSwarm
-
-logger = logging.getLogger(__name__)
+from src.utils.logger import setup_logger
+logger = setup_logger("SentimentSwarm")
 
 class SentimentSubAgent(BaseAgent):
     """

@@ -2,9 +2,8 @@ import abc
 from dataclasses import dataclass
 from typing import List, Optional, Dict, Any
 import json
-import logging
-
-logger = logging.getLogger(__name__)
+from src.utils.logger import setup_logger
+logger = setup_logger("MemoryService")
 
 # --- Domain Entities ---
 @dataclass

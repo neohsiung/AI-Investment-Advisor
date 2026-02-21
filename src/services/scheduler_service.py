@@ -2,7 +2,9 @@ import schedule
 import time
 import sys
 import subprocess
-import logging
+from src.utils.logger import setup_logger
+logger = setup_logger("SchedulerService")
+
 from typing import Any, List, Dict, Optional
 import uuid
 import pytz
@@ -11,8 +13,6 @@ from sqlalchemy import text
 from src.data.database import get_db_connection
 from src.agents.engineer import SystemEngineerAgent
 from src.utils.time_utils import format_time, get_current_time, convert_user_time_to_system_time
-
-logger = logging.getLogger("SchedulerService")
 
 # Helper function to get current UTC time
 # 獲取目前 UTC 時間的輔助函式

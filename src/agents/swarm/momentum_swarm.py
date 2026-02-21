@@ -1,11 +1,5 @@
-import json
-import logging
-import asyncio
-from typing import Any, List, Dict
-from src.agents.swarm.role_swarm import RoleSwarm
-from src.agents.base_agent import BaseAgent
-
-logger = logging.getLogger(__name__)
+from src.utils.logger import setup_logger
+logger = setup_logger("MomentumSwarm")
 
 class MomentumScanner(BaseAgent):
     """

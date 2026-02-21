@@ -1,9 +1,9 @@
-import logging
+from src.utils.logger import setup_logger
+from src.domain.interfaces import IChannelAdapter
+logger = setup_logger("BaseChannelAdapter")
+
 import re
 from typing import List, Dict, Optional, Any, Callable
-from src.domain.interfaces import IChannelAdapter
-
-logger = logging.getLogger(__name__)
 
 class BaseChannelAdapter(IChannelAdapter):
     """
