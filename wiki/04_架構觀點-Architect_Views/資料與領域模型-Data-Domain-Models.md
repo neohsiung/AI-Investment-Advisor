@@ -147,7 +147,7 @@ classDiagram
 | `risk_keywords` | 風險關鍵字 (Sentinel) | `id (TEXT)`, `weight (NUMERIC)`, `category (TEXT)` |
 | `reports` | 歷史分析報告 | `id (TEXT)`, `content (TEXT)`, `summary (TEXT)` |
 | `agent_states` | 執行狀態追踪 | `id (TEXT)`, `agent_name (TEXT)`, `last_output (TEXT)` |
-| `council_minutes` | 評議路徑錄 | `id (TEXT)`, `embedding (vector(1536))`, `transcript (TEXT)` |
+| `council_minutes` | 評議路徑錄 | `id (TEXT/UUID)`, `user_id (TEXT)`, `session_id (TEXT)`, `topic (TEXT)`, `participants (TEXT)`, `consensus (TEXT)`, `transcript (TEXT)`, `embedding (vector(1536))` |
 
 ### 4. Repository 註冊表 (Repository Registry)
 
@@ -257,7 +257,7 @@ classDiagram
 | `risk_keywords` | Risk Keywords | `UUID`, `TEXT`, `NUMERIC` |
 | `reports` | Historical Analysis | `UUID`, `TEXT` |
 | `agent_states` | Agent Execution State | `TEXT`, `JSONB` |
-| `council_minutes` | Council Path Records | `vector(1536)`, `JSONB` |
+| `council_minutes` | Council Path Records | `UUID`, `TEXT (user_id)`, `TEXT (session_id)`, `TEXT (topic)`, `TEXT (participants)`, `TEXT (consensus)`, `TEXT (transcript)`, `vector(1536)` |
 
 ### 3. Repository Registry
 | Repository | Role | Implementation |
