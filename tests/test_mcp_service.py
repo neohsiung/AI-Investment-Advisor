@@ -4,21 +4,21 @@ Tests for MCP Microservice.
 """
 import pytest
 from fastapi.testclient import TestClient
-from src.mcp_service import app, services
+from services.mcp_server.src.app import app, services
 from unittest.mock import MagicMock, patch
 
 @pytest.fixture(autouse=True)
 def mock_mcp_services():
     """Mock the global services dictionary to avoid real API calls."""
     # We also need to patch the classes themselves if lifespan instantiates them
-    with patch("src.mcp_service.MarketDataService") as MockMarket, \
-         patch("src.mcp_service.InternetSearchService") as MockSearch, \
-         patch("src.mcp_service.FredService") as MockFred, \
-         patch("src.mcp_service.SentinelService"), \
+    with patch("services.mcp_server.src.app.MarketDataService") as MockMarket, \
+         patch("services.mcp_server.src.app.InternetSearchService") as MockSearch, \
+         patch("services.mcp_server.src.app.FredService") as MockFred, \
+         patch("services.mcp_server.src.app.SentinelService"), \
          patch("src.services.settings_service.SettingsService"), \
          patch("src.infrastructure.channels.channel_factory.ChannelFactory"), \
          patch("src.infrastructure.nlp.intent_classifier.IntentClassifier"), \
-         patch("src.mcp_service.InteractionService"):
+         patch("services.mcp_server.src.app.InteractionService"):
          
         # Ensure instances are mocks
         MockMarket.return_value = MagicMock()

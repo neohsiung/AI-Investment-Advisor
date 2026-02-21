@@ -1,6 +1,6 @@
 import pytest
 from unittest.mock import patch, MagicMock, AsyncMock
-from src.cli import run_workflow
+from services.scheduler.src.app import run_workflow
 
 @pytest.fixture
 def anyio_backend():
@@ -8,7 +8,7 @@ def anyio_backend():
 
 @pytest.mark.anyio
 async def test_run_workflow_delegates_daily():
-    with patch('src.cli.init_db'), \
+    with patch('services.scheduler.src.app.init_db'), \
          patch('src.services.workflow_service.DailyWorkflow') as MockWorkflow:
         
         mock_instance = MockWorkflow.return_value
@@ -22,7 +22,7 @@ async def test_run_workflow_delegates_daily():
 
 @pytest.mark.anyio
 async def test_run_workflow_delegates_weekly():
-    with patch('src.cli.init_db'), \
+    with patch('services.scheduler.src.app.init_db'), \
          patch('src.services.workflow_service.WeeklyWorkflow') as MockWorkflow:
         
         mock_instance = MockWorkflow.return_value
@@ -36,7 +36,7 @@ async def test_run_workflow_delegates_weekly():
 
 @pytest.mark.anyio
 async def test_run_workflow_missing_user():
-    with patch('src.cli.init_db'), \
+    with patch('services.scheduler.src.app.init_db'), \
          patch('src.utils.logger.logging.Logger.error') as mock_log:
         res = await run_workflow(mode='daily', user_id=None)
         # Should return None and log error

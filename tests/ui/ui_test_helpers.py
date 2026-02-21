@@ -84,7 +84,7 @@ def create_streamlit_context(session_state: Dict[str, Any] = None):
     
     Usage:
         with create_streamlit_context({'user_id': 'test'}):
-            from src.pages.settings_tabs import some_tab
+            from services.dashboard.src.pages.settings_tabs import some_tab
             some_tab.render()
     """
     import streamlit as st

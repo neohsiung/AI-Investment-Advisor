@@ -1,7 +1,7 @@
 import pytest
 from unittest.mock import MagicMock, patch
 import sys
-from src.cli import run_workflow
+from services.scheduler.src.app import run_workflow
 
 def test_dashboard_import_smoke():
     """
@@ -39,12 +39,12 @@ def test_dashboard_import_smoke():
         """
         Test that scheduler mode triggers SchedulerService.
         """
-        from src.cli import main
+        from services.scheduler.src.app import main
         # Force import to ensure patch finds the module
         import src.services.scheduler_service
         
         with patch("src.services.scheduler_service.SchedulerService") as MockService, \
-             patch("src.cli.init_db"): 
+             patch("services.scheduler.src.app.init_db"): 
         
             mock_instance = MockService.return_value
             

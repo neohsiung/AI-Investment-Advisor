@@ -9,7 +9,7 @@ sys.path.append(os.getcwd()) # Ensure src is resolvable
 
 def load_page_module(name):
     try:
-        path = Path("src/pages") / name
+        path = Path("services/dashboard/src/pages") / name
         spec = importlib.util.spec_from_file_location(path.stem, path)
         module = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(module)
@@ -138,8 +138,8 @@ class TestSettingsRender:
 
         # Mock SystemEngineerAgent specifically
         # 1. Remove the module from sys.modules to force re-import with mocks
-        if 'src.pages.settings_tabs.scheduler_tab' in sys.modules:
-            del sys.modules['src.pages.settings_tabs.scheduler_tab']
+        if 'services.dashboard.src.pages.settings_tabs.scheduler_tab' in sys.modules:
+            del sys.modules['services.dashboard.src.pages.settings_tabs.scheduler_tab']
             
         with patch('src.agents.engineer.SystemEngineerAgent') as mock_agent_cls, \
              patch('sqlalchemy.create_engine'), \
@@ -148,7 +148,7 @@ class TestSettingsRender:
              patch.object(settings_mod, 'SettingsService') as mock_service_cls, \
              patch('pandas.read_sql') as mock_read_sql:
              # Re-import inside the patch context
-             import src.pages.settings_tabs.scheduler_tab as scheduler_tab_module
+             import services.dashboard.src.pages.settings_tabs.scheduler_tab as scheduler_tab_module
 
              mock_agent_cls.return_value.get_schedule_config.return_value = {
                  "schedule_daily": "10:00",
@@ -185,8 +185,8 @@ class TestSettingsRender:
         mock_st.session_state = {'dry_run_pid': None}
 
         # Patch in the actual tab module where os and subprocess are imported
-        with patch('src.pages.settings_tabs.report_dry_run_tab.os') as mock_os, \
-             patch('src.pages.settings_tabs.report_dry_run_tab.subprocess') as mock_subprocess, \
+        with patch('services.dashboard.src.pages.settings_tabs.report_dry_run_tab.os') as mock_os, \
+             patch('services.dashboard.src.pages.settings_tabs.report_dry_run_tab.subprocess') as mock_subprocess, \
              patch('builtins.open', mock_open()):
 
             mock_os.path.exists.return_value = True
@@ -205,7 +205,7 @@ class TestSettingsRender:
             mock_st.rerun = MagicMock()
 
             # Import the function from the tab module
-            from src.pages.settings_tabs.report_dry_run_tab import render_report_dry_run_tab
+            from services.dashboard.src.pages.settings_tabs.report_dry_run_tab import render_report_dry_run_tab
             render_report_dry_run_tab(mock_st, user_id="test_user")
 
             # Assert Popen called

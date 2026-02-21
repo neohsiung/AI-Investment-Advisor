@@ -64,10 +64,14 @@ class SchedulerService:
     def get_all_users(self):
         conn = get_db_connection()
         try:
-            rows = conn.execute(text("SELECT email FROM users")).fetchall()
-            users = [row[0] for row in rows]
-            invalid_emails = ["admin@example.com", "your_email@gmail.com"]
-            return [u for u in users if u and u not in invalid_emails and not u.endswith("@example.com")]
+            rows = conn.execute(text("SELECT id, email FROM users")).fetchall()
+            valid_users = []
+            invalid_emails = ["admin@example.com", "your_email@gmail.com", "test@example.com"]
+            for row in rows:
+                uid, email = row[0], row[1]
+                if email and email not in invalid_emails and not email.endswith("@example.com"):
+                    valid_users.append(uid)
+            return valid_users
         except Exception as e:
             logger.error(f"Error fetching users: {e}")
             return []
@@ -95,7 +99,7 @@ class SchedulerService:
                 # Subprocess is safer for long running daemon.
                 # 使用 subprocess 來隔離執行上下文，還是直接使用 service？
                 # 使用 subprocess 可確保大型工作流的記憶體狀態乾淨，這對長期運行的守護程序較安全。
-                subprocess.run([sys.executable, "src/cli.py", "--mode", "daily", "--user_id", user], check=True) # nosec
+                subprocess.run([sys.executable, "services/scheduler/src/app.py", "--mode", "daily", "--user_id", user], check=True) # nosec
                 self.log_job_execution(f"Daily Check ({user})", "COMPLETED")
             except Exception as e:
                 logger.error(f"Daily Check failed for {user}: {e}")
@@ -108,7 +112,7 @@ class SchedulerService:
         users = self.get_all_users()
         for user in users:
             try:
-                subprocess.run([sys.executable, "src/cli.py", "--mode", "weekly", "--user_id", user], check=True) # nosec
+                subprocess.run([sys.executable, "services/scheduler/src/app.py", "--mode", "weekly", "--user_id", user], check=True) # nosec
                 self.log_job_execution(f"Weekly Report ({user})", "COMPLETED")
             except Exception as e:
                 logger.error(f"Weekly Report failed for {user}: {e}")

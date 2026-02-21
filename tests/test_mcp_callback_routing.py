@@ -1,7 +1,7 @@
 import pytest
 from fastapi.testclient import TestClient
 from unittest.mock import MagicMock, patch
-from src.mcp_service import app, services
+from services.mcp_server.src.app import app, services
 from src.domain.interfaces import IChannelAdapter
 
 # Define Mock Adapters with proper class names

@@ -123,12 +123,16 @@ class EmailNotifier:
 
         # Attach HTML Version
         try:
-            html_body = markdown.markdown(content, extensions=['tables', 'fenced_code'])
-            full_html = self._structure_html(subject, html_body)
-            part2 = MIMEText(full_html, 'html', 'utf-8')
+            if content.strip().lower().startswith("<!doctype html>") or "<html" in content[:200].lower():
+                # Content is already fully formatted HTML
+                part2 = MIMEText(content, 'html', 'utf-8')
+            else:
+                html_body = markdown.markdown(content, extensions=['tables', 'fenced_code'])
+                full_html = self._structure_html(subject, html_body)
+                part2 = MIMEText(full_html, 'html', 'utf-8')
             msg.attach(part2)
         except Exception as e:
-            self.logger.error(f"Markdown conversion failed: {e}. Sending plain text only.")
+            self.logger.error(f"HTML attachment failed: {e}. Sending plain text only.")
 
         try:
             self.logger.info(f"Connecting to SMTP server (async): {self.smtp_server}:{self.smtp_port}...")

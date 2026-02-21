@@ -1,6 +1,6 @@
 import pytest
 from fastapi.testclient import TestClient
-from src.mcp_service import app, services, registered_tools
+from services.mcp_server.src.app import app, services, registered_tools
 from unittest.mock import MagicMock, patch
 
 def test_mcp_health_and_root():
