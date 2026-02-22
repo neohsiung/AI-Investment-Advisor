@@ -43,11 +43,15 @@ class GoogleAuth:
                     self.client_config,
                     scopes=self.scopes
                 )
-            else:
+            elif self.client_secret_path and os.path.exists(self.client_secret_path):
                 flow = google_auth_oauthlib.flow.Flow.from_client_secrets_file(
                     self.client_secret_path,
                     scopes=self.scopes
                 )
+            else:
+                # v4.2.3: Graceful failure when no credentials found
+                raise ValueError("MISSING_CREDENTIALS")
+            
             flow.redirect_uri = self.redirect_uri
             return flow
         except ValueError as e:
@@ -174,8 +178,11 @@ class GoogleAuth:
                 )
             except ValueError as e:
                 if str(e) == "WRONG_CREDENTIAL_TYPE":
-                   st.warning("⚠️ Authentication Unavailable")
+                   st.warning("⚠️ Authentication Unavailable (Wrong Type)")
                    st.info("The system is configured with a Service Account Key instead of an OAuth Client ID. Please see the Wiki for setup instructions.")
+                elif str(e) == "MISSING_CREDENTIALS":
+                   st.warning("⚠️ Authentication Unavailable (Missing Secrets)")
+                   st.info("No Google Client Secrets found (neither client_secret.json nor environment variables). Restricted mode enabled.")
                 else:
                     st.error(f"Configuration Error: {e}")
 

@@ -47,10 +47,19 @@ class AlchemyDataRepository(BaseRepository, IDataRepository):
         if table_name not in allowed_tables:
             raise ValueError("Invalid table name")
 
+        from sqlalchemy import inspect
+        inspector = inspect(self.engine)
+        columns = [c['name'] for c in inspector.get_columns(table_name)]
+        
         with self.engine.connect() as conn:
-            # Using f-string safely because of whitelist above
-            query = text(f"SELECT * FROM {table_name} WHERE user_id = :uid ORDER BY 1 DESC LIMIT :limit")  # nosec B608
-            df = pd.read_sql(query, conn, params={"uid": user_id, "limit": limit})
+            # Dynamically build query based on column existence
+            if 'user_id' in columns:
+                query = text(f"SELECT * FROM {table_name} WHERE user_id = :uid ORDER BY 1 DESC LIMIT :limit")  # nosec B608
+                df = pd.read_sql(query, conn, params={"uid": user_id, "limit": limit})
+            else:
+                # If no user_id, show global data (safely as it is whitelisted)
+                query = text(f"SELECT * FROM {table_name} ORDER BY 1 DESC LIMIT :limit")  # nosec B608
+                df = pd.read_sql(query, conn, params={"limit": limit})
             return df
 
 # Legacy alias removed in v4.1.7

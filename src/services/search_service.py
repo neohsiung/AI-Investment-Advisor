@@ -108,7 +108,7 @@ class InternetSearchService:
 
         for attempt in range(retries + 1):
             try:
-                gen = self.ddgs.text(query, max_results=max_results, timelimit='y')
+                gen = self.ddgs.text(query, max_results=max_results)
                 if gen:
                     raw_results = list(gen)
                     for r in raw_results:

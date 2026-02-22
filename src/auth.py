@@ -12,15 +12,27 @@ class AuthManager:
         self.secret_path = os.getenv('GOOGLE_CLIENT_SECRET_PATH', 'client_secret.json')
         
         # v4.1.8: Robustness Fix for IsADirectoryError
-        # 修正目錄衝突造成的 IsADirectoryError
-        if os.path.isdir(self.secret_path):
-            fallback_path = os.path.join('secrets', 'client_secret.json')
-            if os.path.exists(fallback_path):
-                self.secret_path = fallback_path
+        # 修正目錄衝突造成的 IsADirectoryError 并加入默認 secrets 目錄檢查
+        if not self.secret_path or not os.path.exists(self.secret_path):
+             # Try common locations
+             for p in ['secrets/client_secret.json', 'client_secret.json']:
+                 if os.path.exists(p) and not os.path.isdir(p):
+                     self.secret_path = p
+                     break
+
+        if self.secret_path and os.path.exists(self.secret_path) and os.path.isdir(self.secret_path):
+            print(f"Warning: {self.secret_path} is a directory, searching for nested file...")
+            nested_file = os.path.join(self.secret_path, 'client_secret.json')
+            if os.path.exists(nested_file) and not os.path.isdir(nested_file):
+                self.secret_path = nested_file
             else:
-                fallback_path_2 = os.path.join(self.secret_path, 'client_secret.json')
-                if os.path.exists(fallback_path_2):
-                    self.secret_path = fallback_path_2
+                self.secret_path = None # Will force Env variable or warning
+        elif self.secret_path and not os.path.exists(self.secret_path):
+             # Try common locations
+             for p in [os.path.join('secrets', 'client_secret.json'), 'client_secret.json']:
+                 if os.path.exists(p) and not os.path.isdir(p):
+                     self.secret_path = p
+                     break
 
         self.cookie_name = "investment_advisor_auth"
         self.cookie_key = os.getenv('COOKIE_KEY', 'your_secret_cookie_key_should_be_long')
@@ -47,7 +59,7 @@ class AuthManager:
                 pass
 
         # Final check: If no config and file doesn't exist/is directory, warn
-        if not self.client_config and (not os.path.exists(self.secret_path) or os.path.isdir(self.secret_path)):
+        if not self.client_config and (not self.secret_path or not os.path.exists(self.secret_path) or os.path.isdir(self.secret_path)):
             print(f"Warning: Google Client Secret not found or invalid at {self.secret_path}")
             # We don't raise here to allow the app to boot, but login will fail later gracefully in GoogleAuth
 

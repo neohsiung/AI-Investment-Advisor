@@ -77,12 +77,9 @@ class MarketDataService:
                     self.logger.info(f"Fetched {len(prices)} prices from {self._get_provider_name(provider)}")
                     
                     # VALIDATION: Only accept positive prices
-                    # v4.2.2: Log suspicious "100.0" values for debugging
                     valid_prices = {}
                     for k, v in prices.items():
                         if v > 0:
-                            if v == 100.0 or v == 110.0 or v == 89.0:
-                                 self.logger.warning(f"SUSPICIOUS PRICE DETECTED: {k} = {v} from {self._get_provider_name(provider)}")
                             valid_prices[k] = v
                     
                     all_prices.update(valid_prices)
@@ -91,10 +88,43 @@ class MarketDataService:
             except Exception as e:
                 self.logger.warning(f"Provider {self._get_provider_name(provider)} failed for prices: {e}")
         
-        return all_prices
+        # v4.2.3: Final Fallback: Internet Search for critical missing tickers
+        if missing_tickers:
+             self.logger.info(f"Final Fallback: Searching web for {missing_tickers}")
+             for ticker in missing_tickers:
+                 price = self.get_price_from_search(ticker)
+                 if price > 0:
+                     all_prices[ticker] = price
         
         return all_prices
 
+    def get_price_from_search(self, ticker: str) -> float:
+        """
+        Last-resort method to extract price from internet search results.
+        最後的備援方法：從網路搜尋結果中提取價格。
+        """
+        import re
+        query = f"{ticker} stock current price USD"
+        try:
+            results = self.search_service.search_financial_context(query, max_results=2)
+            for res in results:
+                snippet = res.get('snippet', '') + " " + res.get('title', '')
+                # Look for patterns like $123.45 or 123.45 USD
+                patterns = [
+                    r'\$\s?([0-9]{1,5}\.[0-9]{1,2})',
+                    r'([0-9]{1,5}\.[0-9]{1,2})\s?USD'
+                ]
+                for p in patterns:
+                    matches = re.findall(p, snippet)
+                    if matches:
+                        price = float(matches[0])
+                        # Basic sanity check (exclude 0 or ridiculously high values if not BRK.A)
+                        if price > 0 and (price < 10000 or ticker == 'BRK.A'):
+                            self.logger.info(f"Verified {ticker} price from search: ${price}")
+                            return price
+        except Exception as e:
+            self.logger.warning(f"Search-based price fetch failed for {ticker}: {e}")
+        return 0.0
     def get_market_context(self, tickers: List[str], enrich: bool = False) -> Dict[str, Any]:
         """
         Get detailed market context (OHLCV + Indicators) for a list of tickers.

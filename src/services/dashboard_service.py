@@ -76,6 +76,14 @@ class DashboardService:
         current_prices = {}
         if active_tickers:
             current_prices = self._fetch_market_prices(active_tickers)
+            
+            # v4.2.3: Price Resilience Fix
+            # If APIs fail, fallback to prices reported by the Broker in live_portfolio
+            if live_positions:
+                for p in live_positions:
+                    ticker = getattr(p, 'symbol', None)
+                    if ticker and (ticker not in current_prices or current_prices[ticker] == 0):
+                        current_prices[ticker] = getattr(p, 'current_price', 0)
 
         # 5. Calculate Core Metrics
         metrics = {'nlv': 0, 'leveraged_value': 0, 'cash': 0, 'leverage_ratio': 0, 'cash_balance': 0}
@@ -89,40 +97,28 @@ class DashboardService:
             
             # OVERRIDE with Real-time Data if available
             if live_portfolio.get('total_equity', 0) > 0:
-                 # Trust reported Cash Balance
-                 metrics['cash_balance'] = live_portfolio.get('total_cash', 0)
+                 # v4.2.3: Standardized Metrics Alignment (Follows Core-Metrics-Specs)
+                 # NLV = Database Cash + (Invested Capital + Unrealized P&L)
+                 metrics['cash_balance'] = metrics_derived.get('cash_balance', 0)
+                 metrics['invested_capital'] = pnl_data.get('invested_capital', 0)
+                 metrics['unrealized_pnl'] = pnl_data.get('unrealized', 0)
                  
-                 # Calculate Live Market Value of Positions
-                 live_mv_net = 0.0
-                 live_mv_gross = 0.0
+                 # Target NLV = Cash + Invested + Unrealized
+                 metrics['nlv'] = metrics['cash_balance'] + metrics['invested_capital'] + metrics['unrealized_pnl']
+                 
+                 # Gross Exposure calculation based on CORE_METRICS_SPEC
+                 # Gross = Cash + Nominal MV + Unrealized P&L
+                 live_mv_nominal = 0.0
                  live_positions = live_portfolio.get('positions', [])
-                 
                  for p in live_positions:
-                     price = current_prices.get(p.symbol, 0)
-                     if price == 0:
-                         price = getattr(p, 'current_price', 0)
-                     
-                     gross_exposure = p.quantity * price
-                     live_mv_gross += gross_exposure
-                     
-                     # Adjust for Leverage (Net Equity = Gross - Loan)
-                     # Loan = InitialInvestment * (Leverage - 1)
-                     loan = 0.0
-                     if hasattr(p, 'leverage') and p.leverage > 1:
-                         loan = getattr(p, 'market_value', 0) * (p.leverage - 1)
-                         
-                     net_equity = gross_exposure - loan
-                     live_mv_net += net_equity
+                     price = current_prices.get(p.symbol, 0) or getattr(p, 'current_price', 0)
+                     leverage = getattr(p, 'leverage', 1.0)
+                     live_mv_nominal += (p.quantity * price) * leverage
                  
-                 # NLV (Net) = Cash + Net Equity of Positions
-                 metrics['nlv'] = metrics['cash_balance'] + live_mv_net
+                 metrics['gross_nlv'] = metrics['cash_balance'] + live_mv_nominal + metrics['unrealized_pnl']
                  
-                 # Gross NLV = Cash + Gross Exposure
-                 metrics['gross_nlv'] = metrics['cash_balance'] + live_mv_gross
-                 
-                 # Update Leverage Ratio (Standard: Gross Exposure / Net NLV)
                  if metrics['nlv'] > 0:
-                     metrics['leverage_ratio'] = live_mv_gross / metrics['nlv']
+                     metrics['leverage_ratio'] = metrics['gross_nlv'] / metrics['nlv']
             else:
                  metrics = metrics_derived
                  metrics['gross_nlv'] = metrics['nlv'] # Fallback
@@ -168,6 +164,7 @@ class DashboardService:
                 # Also add loan and net_equity for consistent structure
                 positions_df['loan'] = 0.0
                 positions_df['net_equity'] = positions_df['gross_mv']
+                positions_df['leverage'] = 1.0 # Added for fallback consistency
 
         return {
             'transactions_df': transactions_df,

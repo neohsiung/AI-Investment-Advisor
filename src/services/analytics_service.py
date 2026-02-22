@@ -5,6 +5,9 @@ from src.repositories.transaction_repository import AlchemyTransactionRepository
 from src.services.market_data_service import MarketDataService
 from src.utils.time_utils import get_current_date_str
 from sqlalchemy import text
+from src.utils.logger import setup_logger
+
+logger = setup_logger("AnalyticsService")
 
 class LeverageCalculator:
     """
@@ -181,6 +184,13 @@ class PnLCalculator:
             price = row.price
             fees = row.fees
 
+            # [NEW] v4.2.3: Exclude Stabilization records from Cost Basis / Holdings
+            # These are ghost-adjustments for Cash/Capital reconciliation.
+            if 'STABILIZE' in ticker:
+                if action in ['FEE', 'TAX']:
+                    total_realized_pnl -= getattr(row, 'amount', 0)
+                continue
+
             if ticker not in portfolio:
                 portfolio[ticker] = {'qty': 0.0, 'avg_cost': 0.0, 'realized_pnl': 0.0}
 
@@ -201,8 +211,15 @@ class PnLCalculator:
             
             # [NEW] v4.2.0: Handle Dividends (增量已實現損益)
             elif action == 'DIVIDEND':
-                pos['realized_pnl'] += price * qty # Amount is price * qty (usually 1.0 for cash)
+                pos['realized_pnl'] += price * qty 
                 total_realized_pnl += price * qty
+            
+            # [NEW] v4.2.2: Handle Fees and Taxes as realized costs
+            elif action in ['FEE', 'TAX']:
+                # Amount is already positive in DB for Fee/Tax records usually
+                # We deduct it from the tracker (either per-ticker or global)
+                pos['realized_pnl'] -= getattr(row, 'amount', 0)
+                total_realized_pnl -= getattr(row, 'amount', 0)
 
         total_unrealized_pnl = 0.0
         breakdown = {}
@@ -235,6 +252,7 @@ class PnLCalculator:
             "realized": total_realized_pnl,
             "unrealized": total_unrealized_pnl,
             "total": total_realized_pnl + total_unrealized_pnl,
+            "invested_capital": sum(pos['avg_cost'] * pos['qty'] for pos in portfolio.values() if pos['qty'] > 0),
             "details": breakdown
         }
 

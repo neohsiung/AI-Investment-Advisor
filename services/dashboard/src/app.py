@@ -63,22 +63,28 @@ class DashboardPage(BasePage):
                 
                 col1, col1b, col2, col3, col4, col5 = st.columns(6)
                 with col1:
-                    saas_metric("資產淨值 (NLV)", f"${metrics.get('nlv', 0):,.0f}", icon="💰")
+                    saas_metric("資產淨值 (NLV)", f"${metrics.get('nlv', 0):,.0f}", icon="💰",
+                                help="您帳戶的總資產價值，包含「現金+持股市場價值+浮動盈虧」。")
                 with col1b:
-                    saas_metric("總資產 (Gross)", f"${metrics.get('gross_nlv', 0):,.0f}", icon="📈")
+                    saas_metric("總曝險 (Gross)", f"${metrics.get('gross_nlv', 0):,.0f}", icon="📈",
+                                help="系統控制的名義資產總額。包含槓桿後的部位總價值與現金，反映真實風險敞口。")
                 with col2:
-                    saas_metric("現金餘額 (Cash)", f"${metrics.get('cash_balance', 0):,.0f}", icon="💵")
+                    saas_metric("可用現金 (Cash)", f"${metrics.get('cash_balance', 0):,.0f}", icon="💵",
+                                help="您帳戶中尚未用於購買資產的美元資金。用於支付保證金、隔夜費或做為建立新部位的資金。")
                 with col3:
                     lev_ratio = metrics.get('leverage_ratio', 0)
                     lev_color = "normal" if lev_ratio < 2.0 else "inverse"
-                    saas_metric("槓桿比率 (Lev)", f"{lev_ratio:.2f}x", delta_color=lev_color, icon="⚖️")
+                    saas_metric("槓桿比率 (Lev)", f"{lev_ratio:.2f}x", delta_color=lev_color, icon="⚖️",
+                                help="總曝險與資產淨值的比率。反映資金放大程度與風險密集度。")
                 with col4:
-                    saas_metric("總投報率 (ROI)", f"{roi:.2f}%", icon="📈")
+                    saas_metric("總投報率 (ROI)", f"{roi:.2f}%", icon="📈",
+                                help="累積盈虧相對於淨投入本金的百分比回報率。")
                 with col5:
-                    # 顯示總累計盈虧，delta 顯示未實現盈虧
                     total_pnl = pnl_data.get('total', 0)
                     unrealized_pnl = pnl_data.get('unrealized', 0)
-                    saas_metric("累計盈虧 (Total P&L)", f"${total_pnl:,.0f}", delta=f"未實現: ${unrealized_pnl:,.0f}", icon="💰")
+                    saas_metric("獲利/虧損 (P/L)", f"${total_pnl:,.0f}", 
+                                delta=f"浮動: ${unrealized_pnl:,.0f}", icon="📊",
+                                help="所有未平倉部位的即時價值與開倉時的價值差異。包含已實現利息、紅利和未實現漲跌。")
 
                 if metrics.get('leverage_ratio', 0) >= 2.0:
                     saas_alert("危險警告: 槓桿比率過高！有追繳保證金風險 (Margin Call Risk)。", style="danger", title="槓桿風險警告")

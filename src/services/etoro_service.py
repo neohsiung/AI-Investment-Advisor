@@ -1,8 +1,8 @@
 import os
+import requests
 from typing import Dict, List, Any, Optional
 from datetime import datetime
 from src.utils.logger import setup_logger
-from src.domain.broker import IBroker
 from src.domain.broker import IBroker
 from src.domain.trading import Order, Position, Account, OrderAction, BrokerType
 from src.repositories.transaction_repository import AlchemyTransactionRepository

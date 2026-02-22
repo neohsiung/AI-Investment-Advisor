@@ -23,7 +23,7 @@ def render_manual_entry_tab(st, service: TransactionService):
             "SELL": "SELL (賣出)",
             "DIVIDEND": "DIVIDEND (股息)",
             "DEPOSIT": "DEPOSIT (入金)",
-            "WITHDRAW": "WITHDRAW (出金)"
+            "WITHDRAWAL": "WITHDRAWAL (出金)"
         }
         action_key = st.selectbox("動作 (Action)", options=list(action_options.keys()), format_func=lambda x: action_options[x])
         action = action_key
@@ -67,6 +67,7 @@ def render_manual_entry_tab(st, service: TransactionService):
 def render_transactions_tab(st, service: TransactionService):
     saas_card_start(title="Audit Trail", subtitle="歷史成交紀錄與管理", icon="📜")
 
+    # Get transactions sorted by trade_date DESC by default
     df = service.get_transactions()
 
     if df is not None:

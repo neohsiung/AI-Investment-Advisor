@@ -214,24 +214,27 @@ class AlchemyTransactionRepository(BaseRepository, ITransactionRepository):
         計算最終現金餘額。
         """
         with self.engine.connect() as conn:
-            # 1. Get Sum of (DEPOSIT - WITHDRAWAL) from cash_flows (or transactions with these actions)
-            # In our current schema, deposits/withdrawals are in transactions table.
+            # 1. Get Sum of (DEPOSIT - WITHDRAWAL) from transactions table.
             cash_flow_sum = self.get_cash_flow_sum(user_id)
             
-            # 2. Get Sum of cash impact from trades (BUY requires cash, SELL/DIVIDEND gives cash)
-            query_trades = text("""
+            # 2. Get Sum of cash impact from other actions
+            # BUY, FEE, TAX require cash (-)
+            # SELL, DIVIDEND provide cash (+)
+            query_actions = text("""
                 SELECT SUM(CASE 
                     WHEN action = 'BUY' THEN -amount 
                     WHEN action = 'SELL' THEN amount 
                     WHEN action = 'DIVIDEND' THEN amount 
+                    WHEN action = 'FEE' THEN -amount
+                    WHEN action = 'TAX' THEN -amount
                     ELSE 0 
-                END) as trade_impact
+                END) as impact
                 FROM transactions 
                 WHERE user_id = :user_id
             """)
-            trade_impact = conn.execute(query_trades, {"user_id": user_id}).scalar() or 0.0
+            impact = conn.execute(query_actions, {"user_id": user_id}).scalar() or 0.0
             
-            return float(cash_flow_sum + trade_impact)
+            return float(cash_flow_sum + impact)
 
     def calculate_net_invested_capital(self, user_id: str) -> float:
         """

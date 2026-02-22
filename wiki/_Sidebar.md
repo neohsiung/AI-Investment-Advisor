@@ -18,6 +18,7 @@
     *   [全通路適配器規範 (Omni-Channel)](全通路適配器規範-Omni-Channel-Adapter-Standards)
     *   [外部事件整合指南 (External Events)](外部事件整合指南-External-Event-Integration)
     *   [金融數據矩陣與整合成本 (Data Matrix)](金融數據矩陣與整合成本-Financial-Data-Matrix-Cost)
+    *   [核心指標計算規範 (Core Metrics)](核心指標計算規範-Core-Metrics-Specs)
     *   [非同步開發庫指南 (Async Libraries)](非同步開發庫指南-Async-Libraries-Guide)
 *   **01. 使用手冊 (User Manual & Operations)**
     *   [快速啟動與操作指南 (Quickstart)](快速啟動與操作指南-Quickstart-User-Guide)

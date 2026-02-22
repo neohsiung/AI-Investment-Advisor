@@ -18,6 +18,15 @@ class YFinanceProvider(MarketDataProvider):
         初始化 YFinance 提供者。
         """
         self.logger = setup_logger("YFinanceProvider")
+        # v4.2.3: Use a custom session with a browser-like User-Agent to avoid blocking
+        import requests
+        self.session = requests.Session()
+        self.session.headers.update({
+            'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
+            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7',
+            'Accept-Language': 'en-US,en;q=0.9',
+            'Upgrade-Insecure-Requests': '1'
+        })
 
     def fetch_current_prices(self, tickers: List[str]) -> Dict[str, float]:
         """
@@ -29,7 +38,7 @@ class YFinanceProvider(MarketDataProvider):
         
         # 1. Try Bulk Download (Fastest)
         try:
-            data = yf.download(tickers, period="1d", auto_adjust=True, progress=False)
+            data = yf.download(tickers, period="1d", auto_adjust=True, progress=False, session=self.session)
             
             if len(tickers) == 1:
                 ticker = tickers[0]
@@ -54,7 +63,7 @@ class YFinanceProvider(MarketDataProvider):
             self.logger.info(f"YFinance: Falling back for {missing_tickers}")
             for t in missing_tickers:
                 try:
-                    ticker_obj = yf.Ticker(t)
+                    ticker_obj = yf.Ticker(t, session=self.session)
                     # Try fast_info first (New YF API)
                     if hasattr(ticker_obj, 'fast_info'):
                         price = ticker_obj.fast_info.get('last_price')
@@ -82,7 +91,7 @@ class YFinanceProvider(MarketDataProvider):
             p = period
             if days:
                 p = f"{days + 20}d" 
-            return yf.download(ticker, period=p, progress=False, auto_adjust=True)
+            return yf.download(ticker, period=p, progress=False, auto_adjust=True, session=self.session)
         except Exception as e:
             self.logger.error(f"YFinance fetch_history error: {e}")
             return pd.DataFrame()
@@ -93,7 +102,7 @@ class YFinanceProvider(MarketDataProvider):
         使用 yfinance 獲取股票相關新聞。
         """
         try:
-            t = yf.Ticker(ticker)
+            t = yf.Ticker(ticker, session=self.session)
             news = t.news
             formatted = []
             if news:
@@ -136,7 +145,7 @@ class YFinanceProvider(MarketDataProvider):
         使用 yfinance 獲取公司基本面資訊。
         """
         try:
-            t = yf.Ticker(ticker)
+            t = yf.Ticker(ticker, session=self.session)
             info = t.info
             return {
                 "market_cap": info.get('marketCap'),

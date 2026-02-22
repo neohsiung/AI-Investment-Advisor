@@ -25,10 +25,11 @@ def saas_card_end():
     """End a SaaS-styled card container."""
     safe_html("</div>")
 
-def saas_metric(label, value, delta=None, delta_color="normal", icon=None):
+def saas_metric(label, value, delta=None, delta_color="normal", icon=None, help=None):
     """
     Render a modern SaaS metric card.
     delta_color: "normal" (green up, red down), "inverse" (red up, green down)
+    help: Tooltip text appearing on title hover.
     """
     delta_html = ""
     if delta:
@@ -41,10 +42,15 @@ def saas_metric(label, value, delta=None, delta_color="normal", icon=None):
     </div>
     """ if icon else ""
 
+    # Tooltip CSS/HTML
+    help_html = f'''<span style="cursor: help; margin-left: 4px;" title="{help}">ⓘ</span>''' if help else ""
+
     safe_html(f"""
     <div class="saas-card" style="height: 100%; padding: var(--saas-spacing-sm); background: var(--saas-card-bg); border-color: var(--saas-border);">
         {icon_html}
-        <div style="font-size: 0.7rem; color: var(--saas-text-muted); text-transform: uppercase; letter-spacing: 0.5px; font-weight: 600;">{label}</div>
+        <div style="font-size: 0.7rem; color: var(--saas-text-muted); text-transform: uppercase; letter-spacing: 0.5px; font-weight: 600; display: flex; align-items: center;">
+            {label} {help_html}
+        </div>
         <div style="font-family: 'Outfit', sans-serif; font-size: 1.25rem; font-weight: 700; color: var(--saas-text-main); margin-top: 2px;">{value}</div>
         {delta_html}
     </div>

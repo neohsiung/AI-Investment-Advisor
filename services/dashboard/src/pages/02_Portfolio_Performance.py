@@ -25,16 +25,19 @@ class PortfolioPerformancePage(BasePage):
             snapshots_df = data.get('history_df')
 
         # --- Section 1: P&L ---
-        saas_section_header("績效與損益分析 (P&L)", "詳細損益明細與實現狀況")
+        saas_section_header("績效與損益分析 (Analysis)", "詳細損益明細與實現狀況")
         c1, c2, c3, c4 = st.columns(4)
         with c1:
-            saas_metric("已實現損益", f"${pnl_data.get('realized', 0):,.0f}", icon="✅")
+            saas_metric("已實現損益 (Realized)", f"${pnl_data.get('realized', 0):,.0f}", icon="✅",
+                        help="已平倉部位的獲利與收到的股息總和 (包含已實現利息、紅利與費用)。")
         with c2:
-            saas_metric("未實現損益", f"${pnl_data.get('unrealized', 0):,.0f}", icon="⏳")
+            saas_metric("獲利/虧損 (P/L)", f"${pnl_data.get('unrealized', 0):,.0f}", icon="⏳",
+                        help="所有未平倉 (Open) 部位的目前即時價值與開倉時的價值差異。")
         with c3:
-            saas_metric("總累計損益", f"${pnl_data.get('total', 0):,.0f}", delta_color="normal", icon="💰")
+            saas_metric("累積淨損益 (Total)", f"${pnl_data.get('total', 0):,.0f}", delta_color="normal", icon="💰",
+                        help="帳戶自成立以來的所有獲利總額。")
         
-        # 顯示累積投入資本（從快照或計算）
+        # 顯示淨投入資本（從快照或計算）
         with c4:
             if snapshots_df is not None and not snapshots_df.empty:
                 latest = snapshots_df.iloc[-1]
@@ -44,7 +47,8 @@ class PortfolioPerformancePage(BasePage):
                 from src.repositories.transaction_repository import AlchemyTransactionRepository
                 trans_repo = AlchemyTransactionRepository()
                 invested_capital = trans_repo.calculate_net_invested_capital(user_id)
-            saas_metric("累積投入資本", f"${invested_capital:,.0f}", icon="🏦")
+            saas_metric("持股現值 (Invested)", f"${invested_capital:,.0f}", icon="🏦",
+                        help="所有交易、複製跟單及 Smart Portfolios 的當前投入資金淨額，不含未實現盈虧。")
 
         # --- Section 2: Trends & Charts ---
         if snapshots_df is not None and not snapshots_df.empty:
