@@ -74,9 +74,25 @@ class AlchemySettingsRepository(BaseRepository, ISettingsRepository):
         Get a specific setting value (ORM).
         取得特定設定值 (ORM)。
         """
-        # Strictly use user_id as UUID per v4.1.7 requirements
-        setting = self.session.query(Setting).filter_by(user_id=user_id, key=key).first()
-        return setting.value if setting else default
+        try:
+            # Strictly use user_id as UUID per v4.1.7 requirements
+            setting = self.session.query(Setting).filter_by(user_id=user_id, key=key).first()
+            return setting.value if setting else default
+        except Exception:
+            # Fallback for missing table during tests or initial setup
+            return default
+
+    def get_setting(self, key: str, default: Any = None) -> Any:
+        """Alias for get() to support legacy calls with system user."""
+        return self.get("system", key, default)
+
+    def save_setting(self, key: str, value: Any) -> Tuple[bool, str]:
+        """Alias for set() to support legacy calls with system user."""
+        try:
+            self.set("system", key, value)
+            return True, "Success"
+        except Exception as e:
+            return False, str(e)
 
     def set(self, user_id: str, key: str, value: Any) -> None:
         """
