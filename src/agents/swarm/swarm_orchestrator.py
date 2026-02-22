@@ -1,4 +1,10 @@
+from typing import List, Dict, Any
+import time
+import asyncio
 from src.utils.logger import setup_logger
+from src.agents.base_agent import BaseAgent
+from src.repositories.agent_repository import AlchemyAgentRepository
+
 logger = setup_logger("SwarmOrchestrator")
 
 class SwarmOrchestrator:
@@ -41,32 +47,22 @@ class SwarmOrchestrator:
         except asyncio.TimeoutError:
             logger.error("SwarmOrchestrator: Broadcast timed out.")
             # Record timeout failure for all? Or just return error.
-            # For strictness, we can penalize them, but let's keep it simple for now.
             return {a.name: "Error: Timeout" for a in agents}
             
         output = {}
         for agent, res in zip(agents, results):
-            latency = time.time() - start_time # Approximate latency for the batch, individual would be better but requires wrapper
+            latency = time.time() - start_time
             
             if isinstance(res, Exception):
                 logger.error(f"SwarmOrchestrator: Agent {agent.name} failed: {res}")
                 output[agent.name] = f"Error: {str(res)}"
-                # Penalty for crash
                 self.agent_repo.update_performance(agent.name, "unknown", success=False, latency=latency, weight_delta=-0.1)
             else:
                 output[agent.name] = res
-                # Reward for completion (basic)
-                # True validation happens in "Fusion" phase which is not here yet.
-                # We just record availability here.
-                # We reserve weight_delta=0.01 for successful return to encourage activity.
                 self.agent_repo.update_performance(agent.name, "unknown", success=True, latency=latency, weight_delta=0.01)
         
         return output
 
-    # Implementation moved to specialized method below to include performance tracking.
-
-    # ... (Keep existing batch_run code but add metrics if possible, or leave as is)
-    # Re-implementing batch_run to include metrics:
     async def batch_run(self, agents: List[BaseAgent], tasks: List[str], contexts: List[Dict[str, Any]]) -> Dict[str, str]:
         """
         Execute different tasks/contexts across multiple agents in parallel.
@@ -122,12 +118,12 @@ class SwarmOrchestrator:
             
     def evaluate_outcome(self, agent_name: str, score: float, tier: str = "unknown"):
         """
-        Manual evaluation from higher-level logic (e.g. RoleSwarm Fusion).
+        Manual evaluation from higher-level logic.
         score: -1.0 to 1.0
         """
         self.agent_repo.update_performance(
             agent_name=agent_name, 
             tier=tier, 
             success=(score > 0), 
-            weight_delta=score * 0.1 # Scaling factor
+            weight_delta=score * 0.1
         )

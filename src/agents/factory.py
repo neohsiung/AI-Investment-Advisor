@@ -1,4 +1,26 @@
+import os
+import json
+import uuid
+import difflib
+try:
+    import dspy
+    has_dspy = True
+except ImportError:
+    dspy = None
+    has_dspy = False
+
 from src.utils.logger import setup_logger
+from src.repositories.settings_repository import AlchemySettingsRepository
+from src.repositories.feedback_repository import AlchemyFeedbackRepository
+from src.agents.swarm.momentum_swarm import MomentumSwarm
+from src.agents.swarm.fundamental_swarm import FundamentalSwarm
+from src.agents.swarm.sentiment_swarm import SentimentSwarm
+from src.agents.macro import MacroAgent
+from src.agents.cio import CIOAgent
+from src.agents.engineer import SystemEngineerAgent
+from src.agents.risk import RiskAgent
+from src.tools.market_tools import create_market_server
+
 logger = setup_logger("AgentFactory")
 
 class AgentFactory:

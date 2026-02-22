@@ -1,4 +1,9 @@
+import json
+from typing import Any
 from src.utils.logger import setup_logger
+from src.agents.base_agent import BaseAgent
+from .role_swarm import RoleSwarm
+
 logger = setup_logger("MomentumSwarm")
 
 class MomentumScanner(BaseAgent):
@@ -17,15 +22,11 @@ class MomentumScanner(BaseAgent):
         )
         
     def run(self, context):
-        """
-        Expects context with 'ticker', 'price_data', 'indicators'.
-        """
         return self.run_tool_loop(context)
 
 class MomentumSwarm(RoleSwarm):
     """
     Momentum Analysis Swarm.
-    Parallel processing of technical indicators using Fast Tier agents.
     """
     def __init__(self, user_id: str = "system", **kwargs):
         super().__init__(name="MomentumSwarm", user_id=user_id, tier="fast", **kwargs)
@@ -35,9 +36,6 @@ class MomentumSwarm(RoleSwarm):
             self.register_agent("col_fast", MomentumScanner(user_id=user_id))
             
     async def _run_async(self, context: Any) -> str:
-        """
-        Batch process technical analysis for multiple tickers.
-        """
         tickers = context.get("tickers", [])
         ticker = context.get("ticker")
         
@@ -49,7 +47,6 @@ class MomentumSwarm(RoleSwarm):
             
         market_data = context.get("market_data", {})
         
-        # Dynamic creation of scanners
         adhoc_agents = []
         tasks_list = []
         contexts_list = []
@@ -59,7 +56,6 @@ class MomentumSwarm(RoleSwarm):
             agent.name = f"Momentum_{t}"
             adhoc_agents.append(agent)
             
-            # Prepare context
             t_data = market_data.get(t, {})
             price_data = t_data.get("price_data", {})
             indicators = t_data.get("indicators", {})
@@ -75,11 +71,5 @@ class MomentumSwarm(RoleSwarm):
             contexts_list.append(sub_context)
             
         logger.info(f"MomentumSwarm: ⚡ Scanning {len(tickers)} tickers...")
-        
-        # Batch Run
         results_dict = await self.orchestrator.batch_run(adhoc_agents, tasks_list, contexts_list)
-        
-        # Aggregate
-        summary = self.orchestrator.aggregate_results(results_dict)
-        
-        return summary
+        return self.orchestrator.aggregate_results(results_dict)
