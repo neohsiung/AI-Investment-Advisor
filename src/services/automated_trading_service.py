@@ -4,6 +4,11 @@ logger = setup_logger("AutomatedTradingService")
 from typing import Optional, Dict, Any
 from datetime import datetime
 import asyncio
+from src.repositories.settings_repository import AlchemySettingsRepository
+from src.services.interaction_service import InteractionService
+from src.services.notification_service import NotificationService
+from src.domain.trading import Order, OrderAction, OrderType
+from src.services.broker_factory import BrokerFactory
 
 class AutomatedTradingService:
     """
