@@ -90,14 +90,14 @@ async def _process_notification(req: NotificationRequest):
             category=req.category,
             capture_error=True
         )
-            
-            logger.info("Notification process completed", extra={"results": results, "user_id": req.user_id})
-            
-            # Here we could record OTel metrics based on the results to fulfill SLO tracking
-            # e.g. success_count, failure_count for each channel
 
-        except Exception as e:
-            logger.error(f"Critical failure sending background notification: {e}")
+        logger.info("Notification process completed", extra={"results": results, "user_id": req.user_id})
+
+        # Here we could record OTel metrics based on the results to fulfill SLO tracking
+        # e.g. success_count, failure_count for each channel
+
+    except Exception as e:
+        logger.error(f"Critical failure sending background notification: {e}")
 
 @app.post("/api/v1/notify")
 async def send_notification(request: NotificationRequest, background_tasks: BackgroundTasks):

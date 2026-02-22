@@ -1,7 +1,7 @@
 """
 MCP Service Main Entry
 """
-from src.mcp_service import app
+from services.mcp_server.src.app import app
 
 if __name__ == "__main__":
     import uvicorn
