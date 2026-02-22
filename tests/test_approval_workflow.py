@@ -47,7 +47,7 @@ class TestApprovalWorkflow:
         
         await task
         
-        assert result is True
+        assert result[0] is True
         req_id = list(service._pending_requests.keys())[0]
         assert service._pending_requests[req_id].status == InteractionStatus.APPROVED
         
@@ -72,7 +72,7 @@ class TestApprovalWorkflow:
         )
         duration = time.time() - start
         
-        assert result is False
+        assert result[0] is False
         assert duration >= 1.0
 
     @pytest.mark.anyio
@@ -97,4 +97,4 @@ class TestApprovalWorkflow:
         )
         await task
         
-        assert result is False
+        assert result[0] is False

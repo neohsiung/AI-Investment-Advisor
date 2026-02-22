@@ -96,7 +96,7 @@ async def test_interaction_service_request_approval_timeout(mock_adapters, mock_
         mock_time.side_effect = get_time
         
         result = await service.request_approval("Title", "Content", timeout_seconds=300)
-        assert result is False
+        assert result[0] is False
         assert len(service._pending_requests) > 0
 
 @pytest.mark.anyio
@@ -121,7 +121,7 @@ async def test_interaction_service_request_approval_success(mock_adapters, mock_
         mock_sleep.side_effect = mock_approve_side_effect
         
         result = await service.request_approval("Title", "Content", timeout_seconds=10)
-        assert result is True
+        assert result[0] is True
 
 @pytest.mark.anyio
 async def test_interaction_service_request_approval_rejected(mock_adapters, mock_classifier):
@@ -143,7 +143,7 @@ async def test_interaction_service_request_approval_rejected(mock_adapters, mock
         mock_sleep.side_effect = mock_reject_side_effect
         
         result = await service.request_approval("Title", "Content", timeout_seconds=10)
-        assert result is False
+        assert result[0] is False
 
 def test_interaction_domain_model():
     req = InteractionRequest(

@@ -18,13 +18,13 @@ def mock_settings_repo():
 @pytest.fixture
 def mock_interaction_service():
     service = AsyncMock()
-    service.request_approval.return_value = True
+    service.request_approval.return_value = (True, "APPROVED")
     return service
 
 @pytest.fixture
 def mock_notification_service():
     service = AsyncMock()
-    service.send_alert.return_value = None
+    service.notify_all.return_value = {}
     return service
 
 @pytest.fixture
@@ -56,8 +56,8 @@ async def test_auto_execute_when_score_above_threshold(test_svc, mock_broker):
     mock_broker.execute_order.assert_called_once()
     
     # Check that notification was called indicating Auto-Approved
-    test_svc.notification_service.send_alert.assert_called_once()
-    call_args = test_svc.notification_service.send_alert.call_args[1]
+    test_svc.notification_service.notify_all.assert_called_once()
+    call_args = test_svc.notification_service.notify_all.call_args[1]
     assert "Auto-Approved" in call_args["content"]
 
 @pytest.mark.asyncio
@@ -73,15 +73,15 @@ async def test_require_approval_when_score_below_threshold(test_svc, mock_intera
     mock_interaction_service.request_approval.assert_called_once()
     assert res["status"] == "success"
     
-    test_svc.notification_service.send_alert.assert_called_once()
-    call_args = test_svc.notification_service.send_alert.call_args[1]
+    test_svc.notification_service.notify_all.assert_called_once()
+    call_args = test_svc.notification_service.notify_all.call_args[1]
     assert "User-Approved" in call_args["content"]
 
 @pytest.mark.asyncio
 async def test_rejection_or_timeout(test_svc, mock_interaction_service, mock_broker):
     user_id = "test_user"
     # Mocking interaction service to return False (rejected or timeout)
-    mock_interaction_service.request_approval.return_value = False
+    mock_interaction_service.request_approval.return_value = (False, "REJECTED")
     
     with patch('src.services.automated_trading_service.BrokerFactory.get_broker', return_value=mock_broker):
         res = await test_svc.evaluate_and_execute_trade(
@@ -93,8 +93,8 @@ async def test_rejection_or_timeout(test_svc, mock_interaction_service, mock_bro
     mock_broker.execute_order.assert_not_called()
     
     # Notification for rejection should have been sent
-    test_svc.notification_service.send_alert.assert_called_once()
-    call_kwargs = test_svc.notification_service.send_alert.call_args[1]
+    test_svc.notification_service.notify_all.assert_called_once()
+    call_kwargs = test_svc.notification_service.notify_all.call_args[1]
     assert "Cancelled" in call_kwargs["title"] or "取消" in call_kwargs["title"]
 
 @pytest.mark.asyncio

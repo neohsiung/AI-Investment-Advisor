@@ -87,7 +87,7 @@ class TestGoogleAuthUnit:
             auth_instance.login()
             
             # Should have called st.warning
-            st_mock.warning.assert_called_with("⚠️ Authentication Unavailable")
+            st_mock.warning.assert_called_with("⚠️ Authentication Unavailable (Wrong Type)")
             # Should NOT have called st.stop() or st.error() in the old crashing way
             st_mock.stop.assert_not_called()
 
