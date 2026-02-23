@@ -55,9 +55,19 @@ class TestDashboardAggregation(unittest.TestCase):
         
         # Inject mocks for analytics engines which might try to connect to DB
         service.calc = MagicMock()
-        service.calc.calculate_metrics.return_value = {'nlv': 0, 'leverage_ratio': 1.0}
+        # NLV calc logic: cash_balance + invested_capital + unrealized_pnl
+        # Expected: 20000 + 1500 + 0 = 21500
+        service.calc.calculate_metrics.return_value = {
+            'nlv': 21500.0, 
+            'cash_balance': 20000.0, 
+            'leverage_ratio': 1.0
+        }
         service.pnl_calc = MagicMock()
-        service.pnl_calc.calculate_breakdown.return_value = {}
+        service.pnl_calc.calculate_breakdown.return_value = {
+            'invested_capital': 1500.0,
+            'unrealized': 0.0,
+            'realized': 0.0
+        }
         service.roi_engine = MagicMock()
         service.roi_engine.calculate_roi.return_value = 5.0
 

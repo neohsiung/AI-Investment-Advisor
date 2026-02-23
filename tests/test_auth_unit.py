@@ -29,6 +29,13 @@ class TestGoogleAuthUnit:
         monkeypatch.setitem(sys.modules, "google.oauth2", mock_google_oauth2)
         monkeypatch.setitem(sys.modules, "google.auth.transport", mock_google_auth_transport)
         
+        # Patch os.path.exists for the credentials file
+        def mock_exists(path):
+            if "client_secret.json" in str(path):
+                return True
+            return os.path.exists(path)
+        monkeypatch.setattr("os.path.exists", mock_exists)
+        
         # Yield the mock_st object for direct access in tests if needed
         yield mock_st
 

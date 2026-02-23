@@ -66,6 +66,7 @@ from src.services.search_service import InternetSearchService
 from src.services.fred_service import FredService
 from src.services.sentinel_service import SentinelService
 from src.services.interaction_service import InteractionService
+from src.services.github_service import GitHubService
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -83,6 +84,7 @@ async def lifespan(app: FastAPI):
             market_service=services["market"],
             search_service=services["search"]
         )
+        services["github"] = GitHubService()
         
         from src.services.webhook_service import webhook_service_instance
         webhook_service_instance.set_sentinel_service(services["sentinel"])
@@ -138,6 +140,28 @@ async def lifespan(app: FastAPI):
                 "name": "get_macro_indicators", 
                 "description": "取得總經指標 (Macro Data) - FRED", 
                 "parameters": {}
+            },
+            
+            # GitHub Operations
+            {
+                "name": "github_list_issues",
+                "description": "列出 GitHub Repository 中的 Issues",
+                "parameters": {"repo_full_name": "Repo完整名稱 (e.g., owner/repo)", "state": "狀態 (open/closed)"}
+            },
+            {
+                "name": "github_get_issue_detail",
+                "description": "取得 GitHub Issue 詳細內容與評論",
+                "parameters": {"repo_full_name": "Repo完整名稱", "issue_number": "Issue編號"}
+            },
+            {
+                "name": "github_create_issue_comment",
+                "description": "在 GitHub Issue 下方新增評論",
+                "parameters": {"repo_full_name": "Repo完整名稱", "issue_number": "Issue編號", "body": "評論內容"}
+            },
+            {
+                "name": "github_search_repos",
+                "description": "搜尋 GitHub 儲存庫",
+                "parameters": {"query": "搜尋關鍵字"}
             }
         ]
 
@@ -255,6 +279,31 @@ async def call_tool(tool_name: str, request: ToolCallRequest):
                 
         elif tool_name == "get_macro_indicators":
             result = services["market"].get_macro_data()
+            
+        # GitHub Dispatch
+        elif tool_name == "github_list_issues":
+            repo = args.get("repo_full_name")
+            state = args.get("state", "open")
+            if repo:
+                result = services["github"].list_issues(repo, state)
+                
+        elif tool_name == "github_get_issue_detail":
+            repo = args.get("repo_full_name")
+            num = args.get("issue_number")
+            if repo and num:
+                result = services["github"].get_issue_detail(repo, int(num))
+                
+        elif tool_name == "github_create_issue_comment":
+            repo = args.get("repo_full_name")
+            num = args.get("issue_number")
+            body = args.get("body")
+            if repo and num and body:
+                result = services["github"].create_issue_comment(repo, int(num), body)
+                
+        elif tool_name == "github_search_repos":
+            query = args.get("query")
+            if query:
+                result = services["github"].search_repos(query)
             
         else:
             result = "Tool implementation not found in dispatch logic."

@@ -40,6 +40,7 @@ services:
       - ./data:/workspace/data
       - ./src:/workspace/src
       - ./prompts:/workspace/prompts
+      - ./services/mcp_server:/workspace/services/mcp_server
     env_file:
       - .env
     environment:
