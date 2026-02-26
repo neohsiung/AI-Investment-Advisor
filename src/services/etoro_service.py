@@ -2,6 +2,7 @@ import os
 import requests
 from typing import Dict, List, Any, Optional
 from datetime import datetime
+from sqlalchemy import text
 from src.utils.logger import setup_logger
 from src.domain.broker import IBroker
 from src.domain.trading import Order, Position, Account, OrderAction, BrokerType
@@ -535,29 +536,61 @@ class EtoroService(IBroker):
         """
         Adjust local cash balance to match broker's available cash.
         調整本地現金餘額以匹配券商的可提款現金。
+        
+        v4.2.3: Fixed circular correction bug — now deletes prior sync entries
+        before recalculating, preventing compounding DEPOSIT/WITHDRAWAL entries.
         """
         account = self.get_account()
         if not account:
             return
 
         broker_cash = account.available_cash
+
+        # 1. Delete any previous CASH sync entries to prevent circular corrections
+        #    These are identified by ticker='CASH' and source_file='ETORO_SYNC'
+        with self.transaction_repo.engine.begin() as conn:
+            conn.execute(
+                text("DELETE FROM transactions WHERE user_id = :uid AND ticker = 'CASH' AND source_file = 'ETORO_SYNC'"),
+                {"uid": user_id}
+            )
+
+        # 2. Recalculate local cash WITHOUT our own sync entries
         local_cash = self.transaction_repo.get_cash_balance(user_id)
         
         diff = broker_cash - local_cash
         
-        # We only adjust if difference is significant (> $0.10)
-        if abs(diff) > 0.10:
+        # 3. Only adjust if difference is significant (> $0.50) and within safety cap
+        SYNC_THRESHOLD = 0.50
+        SAFETY_CAP = 500.0  # Reject corrections larger than $500 — indicates deeper issue
+        
+        if abs(diff) > SYNC_THRESHOLD:
+            if abs(diff) > SAFETY_CAP:
+                logger.warning(
+                    f"Cash sync diff too large (${diff:.2f}), skipping. "
+                    f"Local={local_cash:.2f}, Broker={broker_cash:.2f}. "
+                    f"Investigate manually."
+                )
+                return
+            
             action = "DEPOSIT" if diff > 0 else "WITHDRAWAL"
-            logger.info(f"Syncing Cash: Local={local_cash}, Broker={broker_cash}, Diff={diff}, Action={action}")
-            self.transaction_repo.add(
-                user_id=user_id,
-                ticker="CASH",
-                date=datetime.now().strftime('%Y-%m-%d'),
-                action=action,
-                quantity=1.0,
-                price=abs(diff),
-                fees=0.0
-            )
+            logger.info(f"Syncing Cash: Local={local_cash:.2f}, Broker={broker_cash:.2f}, Diff={diff:.2f}, Action={action}")
+            
+            with self.transaction_repo.engine.begin() as conn:
+                import uuid as _uuid
+                conn.execute(
+                    text("""
+                        INSERT INTO transactions (id, user_id, ticker, trade_date, action, quantity, price, fees, amount, source_file)
+                        VALUES (:id, :uid, 'CASH', :dt, :action, 1, :price, 0, :amount, 'ETORO_SYNC')
+                    """),
+                    {
+                        "id": str(_uuid.uuid4()),
+                        "uid": user_id,
+                        "dt": datetime.now().strftime('%Y-%m-%d'),
+                        "action": action,
+                        "price": abs(diff),
+                        "amount": abs(diff),
+                    }
+                )
 
     def _backfill_from_positions(self, user_id: str) -> None:
         """
