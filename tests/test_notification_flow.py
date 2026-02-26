@@ -59,6 +59,11 @@ async def test_alert_flow_and_format(sentinel_setup):
         payload = call_kwargs['json']
         content = payload['content']
         
+        # v4.2.2: Verify user_id is the internal user_id from settings_service
+        assert payload['user_id'] == "test_user_123", (
+            f"Expected internal user_id 'test_user_123', got '{payload['user_id']}'"
+        )
+        
         # Verify content presence
         assert "### 🛡️ Sentinel 監控警報" in content
         assert "• 🔴 VIX Spike: 45.0 > 30.0" in content

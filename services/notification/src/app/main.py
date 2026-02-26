@@ -10,6 +10,7 @@ the 'Settings Page' without breaking existing user workflows.
 """
 
 from fastapi import FastAPI, BackgroundTasks, HTTPException, Header
+from starlette.responses import JSONResponse
 from pydantic import BaseModel
 from typing import List, Dict, Any, Optional
 import os
@@ -73,18 +74,34 @@ async def health():
 
 async def _process_notification(req: NotificationRequest):
     """Background task to heavily process the actual notification logic."""
-    # tracer = trace.get_tracer(__name__)
-    # with tracer.start_as_current_span("process_notification"):
     try:
-        # v4.2.1: Dynamically resolve user settings for each request
-        # This ensures that channel adapters use the user's specific credentials from the DB
-        user_settings_svc = SettingsService(user_id=req.user_id)
-        svc = NotificationService.create_with_settings(settings_service=user_settings_svc, user_id=req.user_id)
+        # v4.2.2: Resolve internal user_id from the incoming request
+        # The incoming user_id might be an internal email/UUID OR a channel-specific ID (e.g., LINE User ID).
+        # We must resolve it to the internal user_id that has settings stored in the DB.
+        resolved_user_id = req.user_id
+        settings_svc = SettingsService(user_id=resolved_user_id)
+        settings = settings_svc.get_all_settings()
+
+        # Check if any channel settings exist for this user_id
+        has_any_channel = any(
+            k.startswith("channel_") and k.endswith("_enabled")
+            for k in settings
+        )
+
+        if not has_any_channel and resolved_user_id and resolved_user_id != "broadcast":
+            # Fallback: incoming ID might be a channel-specific ID (LINE User ID, Telegram Chat ID, etc.)
+            fallback_id = settings_svc.find_user_by_channel_id(resolved_user_id)
+            if fallback_id:
+                logger.info(f"Resolved channel ID '{resolved_user_id}' to internal user '{fallback_id}'")
+                resolved_user_id = fallback_id
+                settings_svc = SettingsService(user_id=resolved_user_id)
+
+        svc = NotificationService.create_with_settings(settings_service=settings_svc, user_id=resolved_user_id)
         
         results = await svc.notify_all(
             title=req.title,
             content=req.content,
-            user_id=req.user_id,
+            user_id=resolved_user_id,
             actions=req.actions,
             channels=req.channels,
             category=req.category,
@@ -110,7 +127,10 @@ async def send_notification(request: NotificationRequest, background_tasks: Back
          
     # Enqueue internal background task
     background_tasks.add_task(_process_notification, request)
-    return {"status": "accepted", "message": "Notification queued for delivery."}
+    return JSONResponse(
+        status_code=202,
+        content={"status": "accepted", "message": "Notification queued for delivery."}
+    )
 
 if __name__ == "__main__":
     import uvicorn

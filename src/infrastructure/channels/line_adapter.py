@@ -10,8 +10,12 @@ try:
         Configuration,
         ApiClient,
         MessagingApi,
-        TextMessageContent,
     )
+    # SDK v3.22+ renamed TextMessageContent → TextMessage
+    try:
+        from linebot.v3.messaging import TextMessage as TextMessageContent
+    except ImportError:
+        from linebot.v3.messaging import TextMessageContent
     from linebot.v3.webhooks import MessageEvent, PostbackEvent
     HAS_LINE_SDK = True
 except ImportError:
@@ -34,18 +38,27 @@ class LineBotAdapter(BaseChannelAdapter):
             channel_secret: Optional secret (overrides env)
         """
         super().__init__(default_target_id=line_user_id)
-        self.channel_access_token = (channel_access_token or os.getenv("LINE_CHANNEL_ACCESS_TOKEN", "mock_token")).strip()
-        self.channel_secret = (channel_secret or os.getenv("LINE_CHANNEL_SECRET", "mock_secret")).strip()
+        # Treat empty strings as None for proper fallback
+        raw_token = channel_access_token or os.getenv("LINE_CHANNEL_ACCESS_TOKEN") or ""
+        raw_secret = channel_secret or os.getenv("LINE_CHANNEL_SECRET") or ""
+        self.channel_access_token = raw_token.strip()
+        self.channel_secret = raw_secret.strip()
         
-        if HAS_LINE_SDK and self.channel_access_token != "mock_token":
+        if not HAS_LINE_SDK:
+            logger.warning("LINE Bot SDK (line-bot-sdk) not installed. Running in MOCK mode.")
+            self.is_active = False
+        elif not self.channel_access_token or not self.channel_secret:
+            logger.warning(
+                f"LINE tokens missing (token={'SET' if self.channel_access_token else 'EMPTY'}, "
+                f"secret={'SET' if self.channel_secret else 'EMPTY'}). Running in MOCK mode."
+            )
+            self.is_active = False
+        else:
             configuration = Configuration(access_token=self.channel_access_token)
             self.api_client = ApiClient(configuration)
             self.messaging_api = MessagingApi(self.api_client)
             self.handler = WebhookHandler(self.channel_secret)
             self.is_active = True
-        else:
-            logger.warning("LINE Bot SDK not installed or tokens missing. Running in MOCK mode.")
-            self.is_active = False
 
     async def send_message(self, user_id: str, message: Any, **kwargs) -> bool:
         """

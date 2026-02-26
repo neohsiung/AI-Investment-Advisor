@@ -250,8 +250,8 @@ def render_channel_tab(st, settings_service, user_id):
         
         with st.spinner(f"正在透過 {cid} 發送測試訊息..."):
             try:
-                target_id = getattr(sys.modules[__name__], '_get_target_id', lambda c, s: None)(cid, settings)
-                # Fallback to lookup strategy if helper missing in strict context
+                target_id = _get_target_id(cid, settings)
+                # Fallback to generic key lookup if helper returned None
                 if not target_id:
                      target_id = settings.get(f"channel_{cid}_user_id") or settings.get(f"channel_{cid}_to_address") or settings.get(f"channel_{cid}_chat_id") or settings.get(f"channel_{cid}_channel_id")
                 
@@ -263,11 +263,11 @@ def render_channel_tab(st, settings_service, user_id):
                 notification_api_url = os.environ.get("NOTIFICATION_API_URL", "http://localhost:8001/api/v1/notify")
                 
                 payload = {
-                    "user_id": target_id,  # For the test, we direct it to the specific ID
+                    "user_id": user_id,  # v4.2.2: Use internal user_id for settings lookup
                     "title": f"🔔 {cid.upper()} 渠道測試",
                     "content": f"這是一條從 Investment Advisor Settings 發送的測試訊息。\n時間：{time.strftime('%Y-%m-%d %H:%M:%S')}",
                     "channels": [cid],
-                    "category": "sentinel"
+                    "category": "system"  # Use 'system' to bypass InterestBasedFilter for tests
                 }
 
                 async def send_test():
@@ -277,7 +277,7 @@ def render_channel_tab(st, settings_service, user_id):
 
                 response = asyncio.run(send_test())
                 
-                if response.status_code == 202:
+                if 200 <= response.status_code < 300:
                     st.success(f"✅ 測試請求已送出至微服務 (排隊中)。")
                 else:
                     st.error(f"❌ 服務回應異常: HTTP {response.status_code}")

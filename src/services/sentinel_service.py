@@ -690,7 +690,8 @@ class SentinelService:
             self.repo.log_alert(topic, t["text"], metadata=meta)
 
         # Notify All Channels (Significance Filter applied)
-        target_user = os.getenv("LINE_USER_ID", "broadcast")
+        # v4.2.2: Use internal user_id (email/UUID) for settings lookup, NOT LINE-specific ID
+        target_user = self.settings_service.user_id or self.user_id or "broadcast"
         actions = []
         
         is_actionable = any(kw in decision.lower() for kw in ["sell", "reduce", "trim", "buy", "exit", "hedge"])
