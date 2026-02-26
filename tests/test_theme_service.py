@@ -26,7 +26,7 @@ class TestThemeService:
         assert data['colors']['primary'] == '#14B8A6'
         assert data['colors']['bg'] == '#0B1120'
         assert data['colors']['card_bg'] == '#1E293B'
-        assert data['colors']['text_main'] == '#F8FAFC'
+        assert data['colors']['text_main'] == '#F1F5F9'
     
     @patch('os.path.exists', return_value=True)
     @patch('builtins.open', create=True)

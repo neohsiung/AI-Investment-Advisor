@@ -3,11 +3,25 @@
     "mode": "dark",
     "colors": {
         "primary": "#14B8A6",
+        "primary_light": "#134E4A",
+        "primary_gradient": "linear-gradient(135deg, #14B8A6, #2DD4BF)",
         "bg": "#0B1120",
         "card_bg": "#1E293B",
         "sidebar_bg": "#0F172A",
         "border": "#334155",
-        "text_main": "#F8FAFC",
-        "text_muted": "#94A3B8"
+        "text_main": "#F1F5F9",
+        "text_muted": "#94A3B8",
+        "success": "#34D399",
+        "success_bg": "rgba(52, 211, 153, 0.12)",
+        "warning": "#FBBF24",
+        "warning_bg": "rgba(251, 191, 36, 0.12)",
+        "danger": "#F87171",
+        "danger_bg": "rgba(248, 113, 113, 0.12)",
+        "info": "#60A5FA",
+        "info_bg": "rgba(96, 165, 250, 0.12)",
+        "input_bg": "#1E293B",
+        "hover_bg": "#334155",
+        "shadow": "0 1px 3px rgba(0,0,0,0.3), 0 1px 2px rgba(0,0,0,0.2)",
+        "shadow_hover": "0 10px 15px -3px rgba(0,0,0,0.3), 0 4px 6px -2px rgba(0,0,0,0.2)"
     }
 }

@@ -58,13 +58,12 @@ def saas_metric(label, value, delta=None, delta_color="normal", icon=None, help=
 
 def saas_badge(text, style="info"):
     """Render a modern theme-aware badge (pill). style: success, warning, danger, info, neutral"""
-    # Use CSS variables for theme-aware colors
     styles = {
-        "success": ("var(--saas-success)", "rgba(16, 185, 129, 0.1)"),
-        "warning": ("var(--saas-warning)", "rgba(245, 158, 11, 0.1)"),
-        "danger": ("var(--saas-danger)", "rgba(239, 68, 68, 0.1)"),
-        "info": ("var(--saas-info)", "rgba(59, 130, 246, 0.1)"),
-        "neutral": ("var(--saas-text-muted)", "rgba(100, 116, 139, 0.1)")
+        "success": ("var(--saas-success)", "var(--saas-success-bg)"),
+        "warning": ("var(--saas-warning)", "var(--saas-warning-bg)"),
+        "danger": ("var(--saas-danger)", "var(--saas-danger-bg)"),
+        "info": ("var(--saas-info)", "var(--saas-info-bg)"),
+        "neutral": ("var(--saas-text-muted)", "var(--saas-hover-bg)")
     }
     fg, bg = styles.get(style, styles["info"])
     
@@ -77,10 +76,10 @@ def saas_badge(text, style="info"):
 def saas_alert(message, style="info", title=None):
     """Render a clean SaaS alert banner."""
     styles = {
-        "success": ("var(--saas-success)", "rgba(16, 185, 129, 0.1)", "✓"),
-        "warning": ("var(--saas-warning)", "rgba(245, 158, 11, 0.1)", "⚠️"),
-        "danger": ("var(--saas-danger)", "rgba(239, 68, 68, 0.1)", "✕"),
-        "info": ("var(--saas-info)", "rgba(59, 130, 246, 0.1)", "ℹ️")
+        "success": ("var(--saas-success)", "var(--saas-success-bg)", "✓"),
+        "warning": ("var(--saas-warning)", "var(--saas-warning-bg)", "⚠️"),
+        "danger": ("var(--saas-danger)", "var(--saas-danger-bg)", "✕"),
+        "info": ("var(--saas-info)", "var(--saas-info-bg)", "ℹ️")
     }
     color, bg, icon = styles.get(style, styles["info"])
     

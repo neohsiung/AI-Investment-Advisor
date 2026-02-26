@@ -25,13 +25,12 @@ class ThemeService:
         """
         try:
             current_file = os.path.abspath(__file__)
-            # Adjust path to find src/styles/themes/
             theme_path = os.path.join(os.path.dirname(os.path.dirname(current_file)), 'styles', 'themes', f'{theme_name}.json')
             if os.path.exists(theme_path):
                 with open(theme_path, 'r', encoding='utf-8') as f:
                     return json.load(f)
         except Exception:
-            pass # Theme file might not exist, fallback to default
+            pass
         return None
 
     @staticmethod
@@ -40,15 +39,30 @@ class ThemeService:
         Provide standard fallback theme data if the JSON configuration is missing.
         如果 JSON 設定缺失，則提供標準的備援主題數據。
         """
+        is_light = (theme_name == 'light')
         return {
              "colors": {
-                 "primary": "#0D9488" if theme_name == 'light' else "#14B8A6",
-                 "bg": "#F8FAFC" if theme_name == 'light' else "#0B1120",
-                 "card_bg": "#FFFFFF" if theme_name == 'light' else "#1E293B",
-                 "sidebar_bg": "#F1F5F9" if theme_name == 'light' else "#0F172A",
-                 "border": "#E2E8F0" if theme_name == 'light' else "#334155",
-                 "text_main": "#1E293B" if theme_name == 'light' else "#F8FAFC",
-                 "text_muted": "#64748B" if theme_name == 'light' else "#94A3B8"
+                 "primary": "#0D9488" if is_light else "#14B8A6",
+                 "primary_light": "#CCFBF1" if is_light else "#134E4A",
+                 "primary_gradient": "linear-gradient(135deg, #0D9488, #14B8A6)" if is_light else "linear-gradient(135deg, #14B8A6, #2DD4BF)",
+                 "bg": "#F8FAFC" if is_light else "#0B1120",
+                 "card_bg": "#FFFFFF" if is_light else "#1E293B",
+                 "sidebar_bg": "#F1F5F9" if is_light else "#0F172A",
+                 "border": "#E2E8F0" if is_light else "#334155",
+                 "text_main": "#1E293B" if is_light else "#F1F5F9",
+                 "text_muted": "#64748B" if is_light else "#94A3B8",
+                 "success": "#10B981" if is_light else "#34D399",
+                 "success_bg": "rgba(16, 185, 129, 0.08)" if is_light else "rgba(52, 211, 153, 0.12)",
+                 "warning": "#D97706" if is_light else "#FBBF24",
+                 "warning_bg": "rgba(217, 119, 6, 0.08)" if is_light else "rgba(251, 191, 36, 0.12)",
+                 "danger": "#DC2626" if is_light else "#F87171",
+                 "danger_bg": "rgba(220, 38, 38, 0.08)" if is_light else "rgba(248, 113, 113, 0.12)",
+                 "info": "#2563EB" if is_light else "#60A5FA",
+                 "info_bg": "rgba(37, 99, 235, 0.08)" if is_light else "rgba(96, 165, 250, 0.12)",
+                 "input_bg": "#FFFFFF" if is_light else "#1E293B",
+                 "hover_bg": "#F1F5F9" if is_light else "#334155",
+                 "shadow": "0 1px 3px rgba(0,0,0,0.08)" if is_light else "0 1px 3px rgba(0,0,0,0.3)",
+                 "shadow_hover": "0 10px 15px -3px rgba(0,0,0,0.08)" if is_light else "0 10px 15px -3px rgba(0,0,0,0.3)",
              }
          }
 
@@ -85,7 +99,10 @@ class ThemeService:
         
         return f"""
         :root {{
+            /* Core Palette */
             --saas-primary: {c['primary']} !important;
+            --saas-primary-light: {c.get('primary_light', '#CCFBF1')};
+            --saas-primary-gradient: {c.get('primary_gradient', c['primary'])};
             --saas-bg: {c['bg']} !important;
             --saas-card-bg: {c['card_bg']} !important;
             --saas-sidebar-bg: {c['sidebar_bg']} !important;
@@ -93,6 +110,23 @@ class ThemeService:
             --saas-text-main: {c['text_main']} !important;
             --saas-text-muted: {c['text_muted']} !important;
 
+            /* Semantic Colors (Theme-Aware) */
+            --saas-success: {c.get('success', '#10B981')} !important;
+            --saas-success-bg: {c.get('success_bg', 'rgba(16,185,129,0.08)')};
+            --saas-warning: {c.get('warning', '#F59E0B')} !important;
+            --saas-warning-bg: {c.get('warning_bg', 'rgba(245,158,11,0.08)')};
+            --saas-danger: {c.get('danger', '#EF4444')} !important;
+            --saas-danger-bg: {c.get('danger_bg', 'rgba(239,68,68,0.08)')};
+            --saas-info: {c.get('info', '#3B82F6')} !important;
+            --saas-info-bg: {c.get('info_bg', 'rgba(59,130,246,0.08)')};
+
+            /* Surfaces & Interaction */
+            --saas-input-bg: {c.get('input_bg', c['card_bg'])};
+            --saas-hover-bg: {c.get('hover_bg', c['sidebar_bg'])};
+            --saas-shadow: {c.get('shadow', '0 1px 3px rgba(0,0,0,0.1)')};
+            --saas-shadow-hover: {c.get('shadow_hover', '0 10px 15px -3px rgba(0,0,0,0.1)')};
+
+            /* Streamlit Built-in Overrides */
             --primary-color: {c['primary']} !important;
             --background-color: {c['bg']} !important;
             --secondary-background-color: {c['sidebar_bg']} !important;
@@ -114,27 +148,27 @@ class ThemeService:
             color: var(--saas-text-main) !important;
         }}
         .stTextInput input, .stSelectbox [data-baseweb="select"], .stTextArea textarea, .stNumberInput input {{
-            background-color: {c['card_bg']} !important;
-            color: {c['text_main']} !important;
-            border: 1px solid {c['border']} !important;
+            background-color: var(--saas-input-bg) !important;
+            color: var(--saas-text-main) !important;
+            border: 1px solid var(--saas-border) !important;
             border-radius: 8px !important;
         }}
         .stButton button, .stPageLink {{
-            background-color: {c['card_bg']} !important;
-            border: 1px solid {c['border']} !important;
-            color: {c['text_main']} !important;
+            background-color: var(--saas-card-bg) !important;
+            border: 1px solid var(--saas-border) !important;
+            color: var(--saas-text-main) !important;
             border-radius: 8px !important;
             font-weight: 500 !important;
         }}
         .stButton button:hover, .stPageLink:hover {{
-            background-color: {c['primary']}1A !important;
+            background-color: var(--saas-hover-bg) !important;
             border-color: var(--saas-primary) !important;
             color: var(--saas-primary) !important;
         }}
         .stButton button[kind="primary"], 
         .stButton button[kind="primaryFormSubmit"],
         .stButton button[data-testid="baseButton-primary"] {{
-            background: {c['primary']} !important;
+            background: var(--saas-primary) !important;
             color: white !important;
             border: none !important;
             font-weight: 600 !important;
@@ -145,7 +179,7 @@ class ThemeService:
             box-shadow: 0 4px 12px {c['primary']}33 !important;
         }}
         button[data-testid="stFormSubmitButton"], .stFormSubmitButton button {{
-            background-color: {c['primary']} !important;
+            background-color: var(--saas-primary) !important;
             color: white !important;
             border: none !important;
         }}
@@ -157,5 +191,39 @@ class ThemeService:
         }}
         header[data-testid="stHeader"] button:hover {{
             color: var(--saas-primary) !important;
+        }}
+        /* Tabs */
+        .stTabs [data-baseweb="tab-list"] {{
+            background-color: transparent !important;
+            gap: 2px;
+        }}
+        .stTabs [data-baseweb="tab"] {{
+            color: var(--saas-text-muted) !important;
+            background-color: transparent !important;
+            border-radius: 8px 8px 0 0 !important;
+        }}
+        .stTabs [aria-selected="true"] {{
+            color: var(--saas-primary) !important;
+            border-bottom-color: var(--saas-primary) !important;
+        }}
+        /* Toggle / Checkbox */
+        .stCheckbox label span {{
+            color: var(--saas-text-main) !important;
+        }}
+        .stToggle label span {{
+            color: var(--saas-text-main) !important;
+        }}
+        /* Expander */
+        .streamlit-expanderHeader {{
+            color: var(--saas-text-main) !important;
+            background-color: var(--saas-card-bg) !important;
+        }}
+        [data-testid="stExpander"] {{
+            border-color: var(--saas-border) !important;
+        }}
+        /* Multiselect */
+        .stMultiSelect [data-baseweb="tag"] {{
+            background-color: var(--saas-primary) !important;
+            color: white !important;
         }}
         """, theme_name, c

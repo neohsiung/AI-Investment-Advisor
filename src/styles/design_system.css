@@ -2,6 +2,10 @@
    2026 SaaS Design System 
    Professional Investment Advisor Aesthetic
    State-of-the-art Variable-Driven CSS
+   
+   Note: Core color tokens (--saas-primary, --saas-success, etc.)
+   are injected dynamically by ThemeService based on light/dark mode.
+   This file defines only structural tokens and base rules.
 */
 
 :root {
@@ -18,37 +22,39 @@
 
     --saas-blur: blur(10px);
 
-    /* Global Semantic Colors (Theme Switchable) */
-    --saas-success: #10B981;
-    --saas-warning: #F59E0B;
-    --saas-danger: #EF4444;
-    --saas-info: #3B82F6;
+    /* Transitions */
+    --saas-transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
-/* Base Styles & Utility Classes */
-.saas-container {
-    padding: 2rem;
-    max-width: 1200px;
-    margin: 0 auto;
+/* Typography */
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700&display=swap');
+
+.saas-font-main {
+    font-family: 'Inter', sans-serif;
 }
 
-/* Custom Card Base - Modern Glassmorphism */
+.saas-font-display {
+    font-family: 'Outfit', sans-serif;
+}
+
+/* Custom Card Base */
 .saas-card {
     background: var(--saas-card-bg);
     border: 1px solid var(--saas-border);
     border-radius: var(--saas-radius-xl);
     padding: 1.5rem;
-    box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
-    transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+    box-shadow: var(--saas-shadow, 0 1px 3px rgba(0,0,0,0.08));
+    transition: var(--saas-transition);
 }
 
 .saas-card:hover {
-    box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
+    box-shadow: var(--saas-shadow-hover, 0 10px 15px -3px rgba(0,0,0,0.08));
     border-color: var(--saas-primary);
-    transform: translateY(-2px);
+    transform: translateY(-1px);
 }
 
-/* Metric Refinement - High Fidelity */
+/* Metric Refinement */
 [data-testid="stMetricValue"] {
     font-family: 'Outfit', sans-serif !important;
     font-weight: 700 !important;
@@ -63,18 +69,6 @@
     font-weight: 600 !important;
     text-transform: uppercase !important;
     letter-spacing: 0.05em !important;
-}
-
-/* Typography Overrides */
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
-@import url('https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700&display=swap');
-
-.saas-font-main {
-    font-family: 'Inter', sans-serif;
-}
-
-.saas-font-display {
-    font-family: 'Outfit', sans-serif;
 }
 
 /* Dashboard Card Containers (Streamlit Blocks) */
@@ -120,11 +114,14 @@ header[data-testid="stHeader"] .st-emotion-cache-1offfwp {
 }
 
 /* Clean Header Typography */
-h1,
-h2,
-h3,
-h4 {
+h1, h2, h3, h4 {
     font-family: 'Outfit', sans-serif !important;
     font-weight: 700 !important;
     color: var(--saas-text-main) !important;
 }
+
+/* Status Badge Utility Classes */
+.saas-badge-success { color: var(--saas-success); background: var(--saas-success-bg); }
+.saas-badge-warning { color: var(--saas-warning); background: var(--saas-warning-bg); }
+.saas-badge-danger  { color: var(--saas-danger);  background: var(--saas-danger-bg);  }
+.saas-badge-info    { color: var(--saas-info);    background: var(--saas-info-bg);    }

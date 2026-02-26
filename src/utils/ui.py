@@ -57,10 +57,14 @@ def load_theme_from_json(theme_name):
     return theme_service.load_theme_data(theme_name)
 
 def load_design_system_css():
-    """Load theme-driven CSS with deep Streamlit variable integration."""
-    # Ensure theme is initialized
+    """Load theme-driven CSS with OS auto-detection and deep Streamlit integration."""
+    # v4.2.2: OS Auto-Detection on first visit
     if 'theme' not in st.session_state:
-        st.session_state['theme'] = 'light'
+        # Check if OS preference was detected by JS on previous render
+        if 'os_theme_detected' in st.session_state:
+            st.session_state['theme'] = st.session_state['os_theme_detected']
+        else:
+            st.session_state['theme'] = 'light'  # Safe default until JS detects
     
     theme_css, theme_name, c = theme_service.generate_theme_css()
     
@@ -77,19 +81,25 @@ def load_design_system_css():
     # Inject CSS using markdown
     st.markdown(f"<style>{css_base}\n{theme_css}</style>", unsafe_allow_html=True)
     
-    # Inject JS using components.html to prevent visible text on page
+    # Inject JS: Apply theme to DOM + OS auto-detection
     from streamlit.components.v1 import html
+    
+    # Only inject OS detection script if theme hasn't been manually set
+    theme_manually_set = st.session_state.get('theme_manual', False)
+    
     html(f"""
     <script>
         (function() {{
             const theme = '{theme_name}';
+            const manuallySet = {'true' if theme_manually_set else 'false'};
+            
+            // 1. Apply current theme to DOM
             const apply = () => {{
                 try {{
-                    // Try to apply to parent (Streamlit main window)
                     const root = window.parent.document.querySelector('.stApp');
                     if (root) {{
                         root.setAttribute('data-theme', theme);
-                        root.style.backgroundColor = (theme === "dark") ? "{c['bg']}" : "{c['bg']}";
+                        root.style.backgroundColor = "{c['bg']}";
                     }}
                     document.documentElement.setAttribute('data-theme', theme);
                     window.parent.localStorage.setItem('st-theme', theme);
@@ -98,7 +108,39 @@ def load_design_system_css():
                 }}
             }};
             apply();
-            window.parent.addEventListener('load', apply);
+            
+            // 2. OS Auto-Detection (only on first visit, not if manually toggled)
+            if (!manuallySet) {{
+                try {{
+                    const savedTheme = window.parent.localStorage.getItem('st-theme');
+                    if (!savedTheme) {{
+                        const prefersDark = window.parent.matchMedia('(prefers-color-scheme: dark)').matches;
+                        const osTheme = prefersDark ? 'dark' : 'light';
+                        
+                        if (osTheme !== theme) {{
+                            // Send detected theme to Streamlit by updating URL query params
+                            window.parent.localStorage.setItem('st-theme', osTheme);
+                            // Trigger Streamlit rerun via postMessage
+                            window.parent.postMessage({{
+                                type: 'streamlit:setComponentValue',
+                                value: osTheme
+                            }}, '*');
+                        }}
+                    }}
+                }} catch (e) {{
+                    console.warn("OS theme detection failed:", e);
+                }}
+            }}
+            
+            // 3. Listen for OS theme changes in real-time
+            try {{
+                window.parent.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', (e) => {{
+                    if (!manuallySet) {{
+                        const newTheme = e.matches ? 'dark' : 'light';
+                        window.parent.localStorage.setItem('st-theme', newTheme);
+                    }}
+                }});
+            }} catch (e) {{}}
         }})();
     </script>
     """, height=0)
@@ -112,6 +154,7 @@ def render_theme_switcher(key_suffix="", icon_only=False):
     
     if safe_button(label, use_container_width=True if not icon_only else False, key=f"toggle_{key_suffix}", icon=icon):
         st.session_state.theme = new_theme
+        st.session_state.theme_manual = True  # Mark as manually set to prevent OS override
         st.rerun()
 
 def load_theme_css(theme="light"):
