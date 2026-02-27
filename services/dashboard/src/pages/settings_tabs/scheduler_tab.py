@@ -7,6 +7,17 @@ from src.agents.engineer import SystemEngineerAgent
 from src.utils.time_utils import get_timezone
 from src.utils.components import saas_card_start, saas_card_end
 
+def _clean_time_str(raw: str, default: str = "09:00") -> str:
+    """Strip extraneous quotes from DB time values and validate HH:MM format."""
+    cleaned = raw.strip().strip('"').strip("'")
+    if not cleaned:
+        return default
+    try:
+        pd.to_datetime(cleaned, format="%H:%M")
+        return cleaned
+    except (ValueError, TypeError):
+        return default
+
 def render_scheduler_tab(st, db_path):
     sys_settings_service = SettingsService(db_path, user_id='SYSTEM')
     engineer = SystemEngineerAgent()
@@ -46,7 +57,7 @@ def render_scheduler_tab(st, db_path):
         
         with col_left:
             st.markdown("##### 📅 每日分析 (Daily)")
-            d_time_val = pd.to_datetime(config.get("schedule_daily", "09:00"), format="%H:%M").time()
+            d_time_val = pd.to_datetime(_clean_time_str(config.get("schedule_daily", "09:00")), format="%H:%M").time()
             d_time = st.time_input("時間 (Daily Time)", value=d_time_val, label_visibility="collapsed")
             
             d_days_str = config.get("schedule_daily_days", "monday,tuesday,wednesday,thursday,friday")
@@ -57,7 +68,7 @@ def render_scheduler_tab(st, db_path):
             
         with col_right:
             st.markdown("##### 📊 每週報告 (Weekly)")
-            w_time_val = pd.to_datetime(config.get("schedule_weekly", "09:00"), format="%H:%M").time()
+            w_time_val = pd.to_datetime(_clean_time_str(config.get("schedule_weekly", "09:00")), format="%H:%M").time()
             weekly_time = st.time_input("時間 (Weekly Time)", value=w_time_val, label_visibility="collapsed")
             
             w_day = config.get("schedule_weekly_day", "saturday")

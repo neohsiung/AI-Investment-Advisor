@@ -82,6 +82,8 @@ def convert_user_time_to_system_time(time_str):
     用於排程工作，確保在正確的使用者時間執行。
     """
     try:
+        # Defensive: strip extraneous quotes from DB values
+        time_str = time_str.strip().strip('"').strip("'")
         user_tz = get_timezone()
         system_tz = get_system_timezone()
         

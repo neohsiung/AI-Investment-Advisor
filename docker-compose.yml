@@ -12,7 +12,7 @@ services:
       - ./data:/workspace/data
       - ./src:/workspace/src
       - ./prompts:/workspace/prompts
-      - ./client_secret.json:/workspace/client_secret.json # Expected to be in project root
+      - ./secrets/client_secret.json:/workspace/client_secret.json:ro
     ports:
       - "8501:8501"
     env_file:
@@ -68,7 +68,7 @@ services:
       - ./data:/workspace/data
       - ./src:/workspace/src
       - ./prompts:/workspace/prompts
-      - ./client_secret.json:/workspace/client_secret.json # Expected to be in project root
+      - ./secrets/client_secret.json:/workspace/client_secret.json:ro
     env_file:
       - .env
     environment:
