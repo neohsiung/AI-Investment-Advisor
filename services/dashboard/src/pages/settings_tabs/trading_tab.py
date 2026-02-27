@@ -80,46 +80,61 @@ def render_trading_tab(st, user_id: str):
                     index=["etoro", "futu", "ibkr"].index(current_broker) if current_broker in ["etoro", "futu", "ibkr"] else 0,
                     help="系統將優先使用此券商執行指令"
                 )
-            with col2:
+            with col1:
                 new_max_daily = st.number_input(
                     "每日最大筆數",
-                    min_value=0, max_value=50, value=int(max_daily)
+                    min_value=0, max_value=50, value=int(max_daily),
+                    help="AI 每日允許執行的最大交易筆數，防止過度交易。"
                 )
             
             st.write("---")
             st.write("##### 信心評分與自動執行 (Confidence Scoring)")
-            st.info("💡 當 AI 信心分數 >= 閥值時自動執行；否則將發送『審核請求』(Option A)。")
+            st.info("💡 當 AI 信心分數 > 閥值時自動執行；否則將發送『審核請求』(Approve/Reject)。")
             col_th, col_spacer = st.columns(2)
             with col_th:
                 new_auto_threshold = st.slider(
                     "自動執行信心閥值 (1-10)",
                     min_value=1, max_value=10, value=int(auto_threshold),
-                    help="低於此分數的交易建議將需要手動核准"
+                    help="代理授權門檻。若 AI 信心評分低於此值，交易將進入『人工審核』流程。"
                 )
         
         with tab_risk:
             st.write("##### 權益防護設定")
             col1, col2 = st.columns(2)
             with col1:
-                new_sector_limit = st.slider(
+                # v5.1: Convert decimal to percentage for display (0.3 -> 30)
+                # v5.1: 將小數轉換為整數百分比顯示 (0.3 -> 30)
+                display_sector = int(float(sector_limit) * 100)
+                new_sector_pct = st.slider(
                     "單一板塊曝險上限",
-                    min_value=0.1, max_value=1.0, value=float(sector_limit), step=0.05,
-                    format="%.0f%%"
+                    min_value=10, max_value=100, value=display_sector, step=5,
+                    format="%d%%",
+                    help="限制單一產業佔總資產的最高比例。例如 30% 代表科技股合共不得超過淨值的三成。"
                 )
+                new_sector_limit = new_sector_pct / 100.0
             with col2:
                 new_cb_loss = st.number_input(
                     "連續虧損熔斷 (次)",
-                    min_value=1, max_value=10, value=int(cb_loss)
+                    min_value=1, max_value=10, value=int(cb_loss),
+                    help="當帳戶發生連續 N 次虧損交易時，將自動關閉 AI 交易開關以暫停策略執行。"
                 )
             
             st.write("---")
             st.write("##### 🚨 Sentinel 緊急事件評分")
-            st.caption("當系統偵測到行情異常時，預設帶入的信心分數。")
+            st.caption("當系統偵測到行情異常時，預設帶入的虛擬評分。")
             col_e, col_h = st.columns(2)
             with col_e:
-                 new_emer_score = st.number_input("緊急清倉信心分數", min_value=1, max_value=10, value=int(emer_score))
+                 new_emer_score = st.number_input(
+                     "緊急清倉信心分數", 
+                     min_value=1, max_value=10, value=int(emer_score),
+                     help="當偵測到極度風險 (如 VIX 飆升) 時，哨兵提議『出清持倉』所使用的評分。若大於自動執行閥值，則會主動清倉。"
+                )
             with col_h:
-                 new_hedge_score = st.number_input("自動避險信心分數", min_value=1, max_value=10, value=int(hedge_score))
+                 new_hedge_score = st.number_input(
+                     "自動避險信心分數", 
+                     min_value=1, max_value=10, value=int(hedge_score),
+                     help="當偵測到市場恐慌時，哨兵提議『買入 SQQQ 避險』所使用的評分。"
+                )
 
         if st.form_submit_button("💾 儲存交易設定", use_container_width=True):
             try:
