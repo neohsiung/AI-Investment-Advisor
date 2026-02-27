@@ -55,3 +55,6 @@ coverage_output*.txt
 dummy_prompt.txt
 Archive/scripts/inspect_db.py
 Archive/scripts/test_db_conn.py
+
+# n8n templates
+n8n_workflow_template.json
