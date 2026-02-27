@@ -43,6 +43,7 @@ function deploy_docker {
     echo "📊 Dashboard: http://localhost:8501"
     echo "🩺 APM/Traces: http://localhost:8080 (SigNoz)"
     echo "🗄️  Database:  localhost:5432"
+    echo "🔗 n8n:       http://localhost:5678"
     echo ""
     echo "To view logs: docker compose logs -f"
 }
