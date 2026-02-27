@@ -5,6 +5,7 @@
 ### 版本紀錄 (Version History)
 | Date | Version | Description | Author |
 | :--- | :--- | :--- | :--- |
+| 2026-02-26 | v4.3 | **Unified Theme System**: OS auto-detection (`prefers-color-scheme`), 22 design tokens (semantic colors, shadows, gradients), WCAG AA dark mode. | Antigravity |
 | 2026-02-21 | v4.2 | **Page & Tab Census Update**: Updated page numbering (02_~07_), added channel_tab & data_sources_tab (11 tabs total). | Antigravity |
 | 2026-02-14 | v3.5 | Full rewrite — 6 pages, 9 settings tabs, BasePage pattern | Neo |
 | 2024-01-04 | v1.0 | Initial Release | Neo |
@@ -76,7 +77,7 @@ graph LR
 | Agent 沙盒 | `agent_playground_tab.py` | 單一 Agent 互動測試。 |
 | Prompt 管理 | `optimization_tab.py` | 查看/編輯 Agent Prompt、觸發 DSPy 優化。 |
 | HR 協議 | `hr_protocol_tab.py` | 360° 互評記錄查看。 |
-| 外觀 | `appearance_tab.py` | Dark/Light 主題切換。 |
+| 外觀 | `appearance_tab.py` | Dark/Light 主題切換（含 OS 自動偵測 `prefers-color-scheme`）。 |
 | 儲存 | `storage_tab.py` | 資料庫路徑、備份狀態。 |
 | 通道管理 | `channel_tab.py` | 多通路 (LINE/Slack/Email/Telegram 等) 連線設定與驗證。 |
 | 資料來源 | `data_sources_tab.py` | 外部資料源 (Polygon/FMP/FRED 等) API 金鑰與啟用管理。 |
@@ -108,7 +109,7 @@ graph TD
 - **智慧快取 (`@st.cache_data`)**: TTL=300s 降低 API 成本。
 - **狀態管理**: `st.session_state` 管理 `user_id`，跨頁面安全隔離。
 - **風險提示**: Leverage > 1.5x 黃色警告、> 2.0x 紅色危險。
-- **ThemeService**: CSS 主題注入，支援 Dark/Light 切換。
+- **ThemeService**: 統一主題系統 — 22 個 CSS Design Tokens（語意色彩、陰影、漸層）動態注入，支援 OS 自動偵測（`prefers-color-scheme`）與手動切換優先機制。Dark Mode 採用 WCAG AA 對比度優化色彩。
 
 ### 5. 預期效益與成果 (Expected Outcomes)
 - **商業價值 (Business Value)**: 透過高度解耦的視圖與服務層設計，讓前端儀表板能在極低成本的 Streamlit 環境下，提供近乎原生 App 的專業級對沖基金監控體驗。

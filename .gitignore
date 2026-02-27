@@ -41,7 +41,7 @@ env/
 .docker/
 
 # Sub-repositories (Standalone git repos)
-wiki/
+wiki/*/**
 
 # Personal & Temporary Scripts (Excluded from Git)
 scripts/personal_*

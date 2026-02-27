@@ -99,7 +99,7 @@ graph TD
 | `DashboardService` | `dashboard_service.py` | Dashboard 數據聚合與即時指標。 |
 | `PerformanceService` | `performance_service.py` | 歷史績效追蹤與趨勢分析。 |
 | `SettingsService` | `settings_service.py` | 系統設定 CRUD (Unified DB backed)。 |
-| `ThemeService` | `theme_service.py` | CSS 主題管理 (Dark/Light)。 |
+| `ThemeService` | `theme_service.py` | 統一主題系統 (22 Design Tokens)，支援 OS 自動偵測與 WCAG AA Dark Mode。 |
 | `BacktestService` | `backtest_service.py` | 策略回測引擎。 |
 
 #### 2.7 互動與通知 (Interaction & Notifications)
@@ -187,7 +187,7 @@ graph TD
 - **Agent Engine** (8): Workflow, TaskPlanning, HR, Refinement, Evaluation, Attribution, ExperienceReplay, UserFocus
 - **Monitoring & Verification** (3): Sentinel (4D Multi-Trigger + Weighted Risk Keywords), Council, Verification
 - **Persistence** (5): Memory, MemoryFactory, Transaction, Ingestion, **RiskKeyword**
-- **UI Support** (6): Analytics (**Leverage Engine v3.6**), Dashboard, Performance, Settings, Theme, Backtest
+- **UI Support** (6): Analytics (**Leverage Engine v3.6**), Dashboard, Performance, Settings, Theme (**v4.3 Unified: 22 tokens, OS auto-detect, WCAG AA**), Backtest
 - **Interaction & Notifications** (5): Scheduler, Notification, NotificationFilters, Reporting, Webhook
 
 ### 3. Performance
