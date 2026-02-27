@@ -116,7 +116,9 @@ class AlchemyTransactionRepository(BaseRepository, ITransactionRepository):
         取得特定使用者的所有交易。
         """
         with self.engine.connect() as conn:
-            query = text("SELECT * FROM transactions WHERE user_id = :user_id ORDER BY trade_date DESC")
+            # v4.2.3: Used action DESC for deterministic tie-breaking without created_at dependency.
+            # Reversed in PnLCalculator, this ensures BUY is processed before SELL.
+            query = text("SELECT * FROM transactions WHERE user_id = :user_id ORDER BY trade_date DESC, action DESC")
             result = conn.execute(query, {"user_id": user_id})
             return result.fetchall()
 
@@ -126,7 +128,8 @@ class AlchemyTransactionRepository(BaseRepository, ITransactionRepository):
         取得使用者的所有交易資料 (DataFrame)。
         """
         with self.engine.connect() as conn:
-            query = text("SELECT * FROM transactions WHERE user_id = :user_id ORDER BY trade_date DESC")
+            # v4.2.3: Deterministic tie-breaking
+            query = text("SELECT * FROM transactions WHERE user_id = :user_id ORDER BY trade_date DESC, action DESC")
             return pd.read_sql(query, conn, params={"user_id": user_id})
 
     def get_active_tickers(self, user_id: str) -> List[str]:
@@ -150,8 +153,10 @@ class AlchemyTransactionRepository(BaseRepository, ITransactionRepository):
         Add a new transaction.
         新增一筆交易。
         """
-        # Calculate amount
-        amount = price * quantity
+        # Calculate amount (true cash impact, which is nominal value divided by leverage)
+        # 修正: amount 代表真實的現金影響 (Margin)，而非名目價值 (Nominal Value)
+        # 若為 2x 槓桿，實際投入現金只需一半。
+        amount = (price * quantity) / leverage if leverage and leverage > 0 else (price * quantity)
         
         with self.engine.begin() as conn:
             std_action = action.upper()

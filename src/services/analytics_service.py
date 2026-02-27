@@ -192,7 +192,7 @@ class PnLCalculator:
                 continue
 
             if ticker not in portfolio:
-                portfolio[ticker] = {'qty': 0.0, 'avg_cost': 0.0, 'realized_pnl': 0.0}
+                portfolio[ticker] = {'qty': 0.0, 'avg_cost': 0.0, 'realized_pnl': 0.0, 'margin_invested': 0.0}
 
             pos = portfolio[ticker]
 
@@ -200,14 +200,27 @@ class PnLCalculator:
                 total_cost = (pos['qty'] * pos['avg_cost']) + (qty * price) + fees
                 new_qty = pos['qty'] + qty
                 pos['avg_cost'] = total_cost / new_qty if new_qty > 0 else 0.0
+                # Add to margin invested
+                leverage = getattr(row, 'leverage', 1.0) or 1.0
+                pos['margin_invested'] += ((qty * price) / leverage) + fees
                 pos['qty'] = new_qty
 
             elif action == 'SELL':
                 trade_pnl = (price - pos['avg_cost']) * qty - fees
                 pos['realized_pnl'] += trade_pnl
                 total_realized_pnl += trade_pnl
+                
+                # Reduce margin invested proportionally
+                if pos['qty'] > 0:
+                    reduction_ratio = qty / pos['qty']
+                    pos['margin_invested'] -= pos['margin_invested'] * reduction_ratio
+                else:
+                    pos['margin_invested'] = 0.0
+                    
                 pos['qty'] -= qty
-                if pos['qty'] < 0: pos['qty'] = 0
+                if pos['qty'] <= 0:
+                    pos['qty'] = 0
+                    pos['margin_invested'] = 0.0
             
             # [NEW] v4.2.0: Handle Dividends (增量已實現損益)
             elif action == 'DIVIDEND':
@@ -233,6 +246,7 @@ class PnLCalculator:
                 breakdown[ticker] = {
                     'qty': pos['qty'],
                     'avg_cost': pos['avg_cost'],
+                    'margin_invested': pos['margin_invested'],
                     'current_price': curr_price,
                     'realized': pos['realized_pnl'],
                     'unrealized': unrealized,
@@ -242,6 +256,7 @@ class PnLCalculator:
                  breakdown[ticker] = {
                     'qty': 0,
                     'avg_cost': 0,
+                    'margin_invested': 0.0,
                     'current_price': current_prices.get(ticker, 0.0),
                     'realized': pos['realized_pnl'],
                     'unrealized': 0,
@@ -253,6 +268,7 @@ class PnLCalculator:
             "unrealized": total_unrealized_pnl,
             "total": total_realized_pnl + total_unrealized_pnl,
             "invested_capital": sum(pos['avg_cost'] * pos['qty'] for pos in portfolio.values() if pos['qty'] > 0),
+            "margin_invested": sum(pos['margin_invested'] for pos in portfolio.values() if pos['qty'] > 0),
             "details": breakdown
         }
 

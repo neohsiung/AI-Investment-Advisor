@@ -100,14 +100,14 @@ class DashboardService:
                  # v4.2.3: Standardized Metrics Alignment (Follows Core-Metrics-Specs)
                  # NLV = Database Cash + (Invested Capital + Unrealized P&L)
                  metrics['cash_balance'] = metrics_derived.get('cash_balance', 0)
-                 metrics['invested_capital'] = pnl_data.get('invested_capital', 0)
+                 metrics['invested_capital'] = pnl_data.get('margin_invested', pnl_data.get('invested_capital', 0))
                  metrics['unrealized_pnl'] = pnl_data.get('unrealized', 0)
                  
                  # Target NLV = Cash + Invested + Unrealized
                  metrics['nlv'] = metrics['cash_balance'] + metrics['invested_capital'] + metrics['unrealized_pnl']
                  
                  # Gross Exposure calculation based on CORE_METRICS_SPEC
-                 # Gross = Cash + Nominal MV + Unrealized P&L
+                 # Gross = Cash + Nominal MV (Nominal MV already includes Unrealized P&L)
                  live_mv_nominal = 0.0
                  live_positions = live_portfolio.get('positions', [])
                  for p in live_positions:
@@ -115,13 +115,15 @@ class DashboardService:
                      leverage = getattr(p, 'leverage', 1.0)
                      live_mv_nominal += (p.quantity * price) * leverage
                  
-                 metrics['gross_nlv'] = metrics['cash_balance'] + live_mv_nominal + metrics['unrealized_pnl']
+                 metrics['gross_nlv'] = metrics['cash_balance'] + live_mv_nominal
                  
                  if metrics['nlv'] > 0:
                      metrics['leverage_ratio'] = metrics['gross_nlv'] / metrics['nlv']
             else:
                  metrics = metrics_derived
                  metrics['gross_nlv'] = metrics['nlv'] # Fallback
+                 metrics['invested_capital'] = pnl_data.get('margin_invested', pnl_data.get('invested_capital', 0))
+                 metrics['unrealized_pnl'] = pnl_data.get('unrealized', 0)
 
             roi = self.roi_engine.calculate_roi(metrics['nlv'], user_id=user_id)
         except Exception as e:
