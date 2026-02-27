@@ -169,6 +169,39 @@ class SentinelService:
         # If it's a technical signal or critical spike, escalate immediately
         await self._escalate(triggers, source=source)
 
+    async def on_realtime_event(self, event: Dict[str, Any]) -> None:
+        """
+        Callback for real-time WebSocket events.
+        WebSocket 即時事件的回調函數。
+        """
+        ev_type = event.get("ev")
+        symbol = event.get("sym")
+        
+        # Mapping Polygon events to Sentinel logic
+        if ev_type == "T": # Trade
+            price = event.get("p")
+            size = event.get("s")
+            # Logic: If trade size is huge or price deviates from last tick significantly
+            # For now, bridge to process_event
+            await self.process_event({
+                "source": "polygon_websocket",
+                "data": {
+                    "ticker": symbol,
+                    "msg": f"Real-time Trade: ${price} (Size: {size})",
+                    "price": price
+                }
+            })
+        elif ev_type == "A": # Aggregate
+            close = event.get("c")
+            await self.process_event({
+                "source": "polygon_websocket",
+                "data": {
+                    "ticker": symbol,
+                    "msg": f"Real-time Bar Close: ${close}",
+                    "price": close
+                }
+            })
+
     # ──────────────────────────────────────────
     # Dimension 1: VIX Regime (原有邏輯, 重構)
     # ──────────────────────────────────────────
@@ -313,6 +346,11 @@ class SentinelService:
             risk_threshold = self.thresholds.get("news_risk_score", 0.6)
             
             for ticker in all_tickers:
+                # v5.0 Optimization: Use new news strategy
+                # Prioritize Tiingo/FMP via market_service (which now includes Tiingo)
+                # Only use Tavily for deep "risk score" analysis if tickers are identified as high-volatility
+                # or if deep search is enabled.
+                
                 risk_score, summary = self._analyze_ticker_news(ticker, active_keywords)
                 if risk_score >= risk_threshold:
                     triggers.append({
@@ -335,29 +373,34 @@ class SentinelService:
     def _analyze_ticker_news(self, ticker: str, active_keywords: List[RiskKeyword]) -> Tuple[float, str]:
         """
         Analyzes news for a given ticker against active risk keywords and returns a risk score and summary.
+        v5.0 Optimization: Prioritize Tiingo/FMP over Tavily Search to save credits.
         """
-        repo = AlchemyRiskKeywordRepository() # Re-initialize or pass if needed
-        risk_threshold = self.thresholds.get("news_risk_score", 0.6) # Re-fetch or pass if needed
+        repo = AlchemyRiskKeywordRepository()
+        risk_threshold = self.thresholds.get("news_risk_score", 0.6)
 
-        query = f"{ticker} breaking news risk alert {date.today().isoformat()}"
-        results = self.search_service.search_financial_context(query, max_results=3)
+        # Optimization: Use standardized news fetching (Tiingo -> FMP -> YFinance)
+        results = self.market_service.get_news(ticker)
         
+        # v5.0 Fallback Logic: Only use search if NO news found AND this ticker is a High-Impact Watchlist item
         if not results:
-            return 0.0, "No relevant news found."
+             # Check if it's a critical ticker (optional logic, for now let's just stick to providers)
+             # results = self.search_service.search_financial_context(query, max_results=3)
+             return 0.0, "No recent news captured by primary providers."
         
         best_score = 0.0
         best_summary = ""
 
         for result in results:
-            snippet = (
-                result.get("snippet", "") + " " + result.get("title", "")
-            )
+            # Result is now a dict from Tiingo/FMP/Polygon/YFinance
+            title = result.get("title", "")
+            summary = result.get("summary", "") or result.get("description", "")
+            full_text = f"{title} {summary}"
             
             total_score = 0.0
             matched_keywords = []
             
             for kw in active_keywords:
-                score = kw.score(snippet)
+                score = kw.score(full_text)
                 if score > 0:
                     total_score += score
                     matched_keywords.append((kw, score))
@@ -876,6 +919,44 @@ class SentinelService:
                         "id": "fng_extreme",
                         "value": val
                     }
+        
+        # Tiingo Integration (v5.0)
+        elif sid == "tiingo":
+            try:
+                # Quick health check via Tiingo news (1 item)
+                news = self.market_service.tiingo.get_news("AAPL")
+                if news:
+                    return {
+                        "text": f"✅ Tiingo API 聯通正常: 獲取最新新聞 '{news[0]['title'][:30]}...'",
+                        "id": "tiingo_health_check"
+                    }
+            except Exception as e:
+                logger.error(f"Tiingo health check failed: {e}")
+
+        # Finnhub Integration (v5.0)
+        elif sid == "finnhub":
+            try:
+                sentiment = self.market_service.finnhub.get_sentiment("AAPL")
+                if sentiment:
+                    return {
+                        "text": f"✅ Finnhub API 聯通正常: 獲取情緒指標 ({sentiment.get('sentiment', 'N/A')})",
+                        "id": "finnhub_health_check"
+                    }
+            except Exception as e:
+                logger.error(f"Finnhub health check failed: {e}")
+
+        # AlphaVantage Integration (v5.0)
+        elif sid == "alpha_vantage":
+            try:
+                news = self.market_service.alpha_vantage.get_news("AAPL")
+                if news:
+                    return {
+                        "text": f"✅ AlphaVantage API 聯通正常: 獲取新聞情緒 '{news[0]['sentiment_label']}'",
+                        "id": "alphavantage_health_check"
+                    }
+            except Exception as e:
+                logger.error(f"AlphaVantage health check failed: {e}")
+                
         return None
 
     def _trigger_thematic_update(self, event_text: str, theme_key: str, current_state: Any) -> None:

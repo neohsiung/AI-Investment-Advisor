@@ -19,22 +19,10 @@ logger = setup_logger("MCPService")
 from contextlib import asynccontextmanager
 
 # --- OpenTelemetry Setup ---
-from opentelemetry import trace
-from opentelemetry.sdk.trace import TracerProvider
-from opentelemetry.sdk.trace.export import BatchSpanProcessor
-from opentelemetry.exporter.otlp.proto.grpc.trace_exporter import OTLPSpanExporter
-from opentelemetry.sdk.resources import Resource
-from opentelemetry.instrumentation.fastapi import FastAPIInstrumentor
+from src.utils.tracing import init_tracing
 
-# Initialize OTel resource
-resource = Resource.create({"service.name": os.getenv("OTEL_SERVICE_NAME", "investment-advisor-core")})
-provider = TracerProvider(resource=resource)
-trace.set_tracer_provider(provider)
-
-# OTLP Exporter (Defaults to SigNoz endpoint on 4317 if not set)
-otlp_endpoint = os.getenv("OTEL_EXPORTER_OTLP_ENDPOINT", "http://localhost:4317")
-otlp_exporter = OTLPSpanExporter(endpoint=otlp_endpoint, insecure=True)
-provider.add_span_processor(BatchSpanProcessor(otlp_exporter))
+# 1. Initialize OpenTelemetry Tracing
+tracer = init_tracing("mcp_server")
 # -------------------------
 
 # Define Models (Restored)
@@ -109,7 +97,18 @@ async def lifespan(app: FastAPI):
             settings_service=settings_svc_global
         )
         
-        # 2. Register Tools
+        # 2. Start Real-time Streaming (Polygon WebSocket)
+        try:
+            from src.infrastructure.streams.polygon_stream_client import PolygonStreamClient
+            stream_client = PolygonStreamClient()
+            stream_client.add_callback(services["sentinel"].on_realtime_event)
+            asyncio.create_task(stream_client.connect(tickers=["*"])) # Listen to all trades
+            services["polygon_stream"] = stream_client
+            logger.info("Polygon Real-time Stream Client started in background.")
+        except Exception as e:
+            logger.error(f"Failed to start Polygon Stream client: {e}")
+
+        # 3. Register Tools
         tool_definitions = [
             # Market Data (FMP/Polygon)
             {

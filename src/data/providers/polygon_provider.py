@@ -6,6 +6,7 @@ from src.data.providers.base import MarketDataProvider
 from src.utils.logger import setup_logger
 
 from src.services.settings_service import SettingsService
+from src.utils.tracing import trace_external_call
 
 class PolygonProvider(MarketDataProvider):
     """
@@ -33,44 +34,63 @@ class PolygonProvider(MarketDataProvider):
         if not self.api_key:
             self.logger.warning("POLYGON_API_KEY not found. Some features may fail.")
 
+    @trace_external_call("polygon")
     def fetch_current_prices(self, tickers: List[str]) -> Dict[str, float]:
         """
         Fetch current stock prices using Polygon's snapshot API.
-        使用 Polygon 的快照 API 獲取目前股價。
+        Optimized to use v3 bulk snapshot if multiple tickers are requested.
         """
-        if not self.api_key: return {}
+        if not self.api_key or not tickers: return {}
         prices = {}
+        
+        # Strategy: Use v3 snapshot for bulk (Up to 1 call instead of N)
+        try:
+            ticker_list = ",".join(tickers)
+            url = f"{self.base_url}/v3/snapshot"
+            params = {
+                "ticker.any_of": ticker_list,
+                "apiKey": self.api_key
+            }
+            
+            resp = requests.get(url, params=params, timeout=10)
+            if resp.status_code == 200:
+                data = resp.json()
+                results = data.get('results', [])
+                for res in results:
+                    ticker = res.get('ticker')
+                    # v3 snapshot structure: session.price or last_trade.p
+                    session = res.get('session', {})
+                    val = session.get('price') or res.get('last_trade', {}).get('p')
+                    if ticker and val and val > 0:
+                        prices[ticker] = val
+                
+                if prices:
+                    self.logger.info(f"Polygon: Fetched {len(prices)} bulk prices via v3 snapshot.")
+                    return prices
+            else:
+                self.logger.warning(f"Polygon v3 snapshot failed (Status {resp.status_code}): {resp.text}")
+        except Exception as e:
+            self.logger.warning(f"Polygon v3 bulk snapshot failed: {e}. Falling back to v2 single-ticker.")
+
+        # Fallback: v2 Single-ticker snapshots (Expensive but reliable if v3 fails)
         try:
             for ticker in tickers:
+                if ticker in prices: continue
                 url = f"{self.base_url}/v2/snapshot/locale/us/markets/stocks/tickers/{ticker}"
                 params = {"apiKey": self.api_key}
                 resp = requests.get(url, params=params, timeout=5)
                 if resp.status_code == 200:
                     data = resp.json()
-                    # Snapshot response: ticker.lastTrade.p or ticker.min.c (close)
-                    if 'ticker' in data and 'lastTrade' in data['ticker']:
-                        val = data['ticker']['lastTrade']['p']
-                        if val > 0:
-                            prices[ticker] = val
-                    elif 'ticker' in data and 'day' in data['ticker']:
-                         val = data['ticker']['day']['c']
-                         if val > 0:
-                             prices[ticker] = val
+                    t_data = data.get('ticker', {})
+                    val = t_data.get('lastTrade', {}).get('p') or t_data.get('day', {}).get('c')
                     
-                    # Fallback: internal prevDay (Efficient)
-                    if ticker not in prices and 'ticker' in data and 'prevDay' in data['ticker']:
-                        val = data['ticker']['prevDay']['c']
-                        if val > 0:
-                            prices[ticker] = val
+                    if not val or val <= 0:
+                        val = t_data.get('prevDay', {}).get('c')
 
-                    # Final External Fallback (Only if snapshot had NO data)
-                    if ticker not in prices:
-                        prev = self._fetch_prev_close(ticker)
-                        if prev > 0:
-                            prices[ticker] = prev
-
+                    if val and val > 0:
+                        prices[ticker] = val
         except Exception as e:
-            self.logger.error(f"Polygon fetch_current_prices error: {e}")
+            self.logger.error(f"Polygon v2 fallback error: {e}")
         
         return prices
 
@@ -92,6 +112,7 @@ class PolygonProvider(MarketDataProvider):
             pass
         return 0.0
 
+    @trace_external_call("polygon")
     def fetch_history(self, ticker: str, period: str = "1y", days: int = None) -> pd.DataFrame:
         """
         Fetch historical OHLCV data for a ticker.
@@ -127,6 +148,7 @@ class PolygonProvider(MarketDataProvider):
             self.logger.error(f"Polygon fetch_history error: {e}")
         return pd.DataFrame()
 
+    @trace_external_call("polygon")
     def fetch_news(self, ticker: str, limit: int = 5) -> List[Dict[str, Any]]:
         """
         Fetch the latest stock news via Polygon's news API.
@@ -152,6 +174,7 @@ class PolygonProvider(MarketDataProvider):
             self.logger.error(f"Polygon news error: {e}")
         return []
 
+    @trace_external_call("polygon")
     def fetch_info(self, ticker: str) -> Dict[str, Any]:
         """
         Fetch ticker reference information (company profile).

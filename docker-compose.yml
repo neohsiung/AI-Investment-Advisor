@@ -24,6 +24,11 @@ services:
       - OTEL_SERVICE_NAME=dashboard
       - OTEL_EXPORTER_OTLP_ENDPOINT=http://otel-collector:4317
       - NOTIFICATION_API_URL=http://notification:8001/api/v1/notify
+      - DB_USER=${DB_USER}
+      - DB_PASS=${DB_PASS}
+      - DB_HOST=postgres
+      - DB_PORT=5432
+      - DB_NAME=${DB_NAME}
     restart: unless-stopped
     depends_on:
       - mcp_server
@@ -49,6 +54,11 @@ services:
       - OTEL_SERVICE_NAME=mcp_server
       - OTEL_EXPORTER_OTLP_ENDPOINT=http://otel-collector:4317
       - NOTIFICATION_API_URL=http://notification:8001/api/v1/notify
+      - DB_USER=${DB_USER}
+      - DB_PASS=${DB_PASS}
+      - DB_HOST=postgres
+      - DB_PORT=5432
+      - DB_NAME=${DB_NAME}
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
       interval: 10s
@@ -78,6 +88,11 @@ services:
       - OTEL_SERVICE_NAME=scheduler
       - OTEL_EXPORTER_OTLP_ENDPOINT=http://otel-collector:4317
       - NOTIFICATION_API_URL=http://notification:8001/api/v1/notify
+      - DB_USER=${DB_USER}
+      - DB_PASS=${DB_PASS}
+      - DB_HOST=postgres
+      - DB_PORT=5432
+      - DB_NAME=${DB_NAME}
     restart: unless-stopped
     depends_on:
       - postgres
@@ -100,6 +115,11 @@ services:
     environment:
       - OTEL_SERVICE_NAME=notification_service
       - OTEL_EXPORTER_OTLP_ENDPOINT=http://otel-collector:4317
+      - DB_USER=${DB_USER}
+      - DB_PASS=${DB_PASS}
+      - DB_HOST=postgres
+      - DB_PORT=5432
+      - DB_NAME=${DB_NAME}
     restart: unless-stopped
     depends_on:
       - postgres

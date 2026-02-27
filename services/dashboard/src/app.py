@@ -14,6 +14,10 @@ from src.utils.page_base import BasePage
 from src.utils.components import saas_metric, saas_card_start, saas_card_end, saas_section_header, saas_alert
 from src.services.dashboard_service import DashboardService
 from src.utils.logger import setup_logger
+from src.utils.tracing import init_tracing
+
+# Initialize Tracing
+init_tracing("dashboard")
 
 logger = setup_logger("DashboardPage")
 

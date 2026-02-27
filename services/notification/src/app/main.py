@@ -21,8 +21,9 @@ from contextlib import asynccontextmanager
 from src.utils.logger import setup_logger
 logger = setup_logger("NotificationAPI")
 
-from opentelemetry import trace
+from src.utils.tracing import init_tracing
 from opentelemetry.instrumentation.fastapi import FastAPIInstrumentor
+init_tracing("notification_service")
 
 # Import existing core infrastructure for Notification dispatch
 from src.services.settings_service import SettingsService

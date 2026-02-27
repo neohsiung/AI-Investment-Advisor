@@ -183,12 +183,6 @@ def render_data_sources_tab(st, settings_service, user_id):
                     "fields": {"secret": {"label": "Webhook Secret", "type": "password"}}
                 },
                 {
-                    "id": "webhook_polygon",
-                    "name": "5. Polygon.io Webhooks",
-                    "desc": "市場停牌 (Halts) 與異常期權 (Options Sweeps) 事件。",
-                    "fields": {"secret": {"label": "Webhook Secret", "type": "password"}}
-                },
-                {
                     "id": "webhook_macro",
                     "name": "6. Macro Calendar (Zapier)",
                     "desc": "CPI / FOMC 總經數據發布時即時觸發。",

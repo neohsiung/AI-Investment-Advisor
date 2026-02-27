@@ -6,6 +6,7 @@ from src.data.providers.base import MarketDataProvider
 from src.utils.logger import setup_logger
 
 from src.services.settings_service import SettingsService
+from src.utils.tracing import trace_external_call
 
 class FMPProvider(MarketDataProvider):
     """
@@ -33,6 +34,7 @@ class FMPProvider(MarketDataProvider):
         if not self.api_key:
             self.logger.warning("FMP_API_KEY not found.")
 
+    @trace_external_call("fmp")
     def fetch_current_prices(self, tickers: List[str]) -> Dict[str, float]:
         """
         Fetch current stock prices in bulk using FMP's stable quote endpoint.

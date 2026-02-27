@@ -260,6 +260,9 @@ class TestBreakingNews:
         """Tavily returns SEC + fraud news — weighted score >= 0.6 triggers."""
         sentinel = _create_sentinel(mock_services)
         mock_services["transaction"].get_user_tickers.return_value = ["AAPL"]
+        mock_services["market"].get_news.return_value = [
+            {"title": "AAPL faces SEC investigation for fraud", "summary": "SEC investigation ongoing"}
+        ]
         mock_services["search"].search_financial_context.return_value = [
             {"title": "AAPL faces SEC investigation for fraud", "snippet": "SEC investigation ongoing"}
         ]

@@ -96,12 +96,22 @@ def get_db_engine(db_path=None) -> Engine:
     if db_url not in _db_engines:
         if "postgres" in db_url:
             engine = create_engine(db_url, pool_size=50, max_overflow=20)
+            logger.info(f"Using PostgreSQL engine: {db_url.split('@')[-1]}")
         else:
             engine = create_engine(db_url)
+            logger.warning(f"Using fallback engine (likely SQLite): {db_url}")
             
         # Optional: Instrument the engine for OpenTelemetry
         try:
             from opentelemetry.instrumentation.sqlalchemy import SQLAlchemyInstrumentor
+            from opentelemetry import trace
+            
+            # Add dynamic attributes to current span if exists
+            span = trace.get_current_span()
+            if span:
+                span.set_attribute("db.system", "postgresql" if "postgres" in db_url else "sqlite")
+                span.set_attribute("db.url.masked", db_url.split('@')[-1] if "@" in db_url else "sqlite")
+
             SQLAlchemyInstrumentor().instrument(engine=engine)
             logger.info("SQLAlchemy OpenTelemetry Instrumentation enabled.")
         except ImportError:

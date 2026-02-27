@@ -6,9 +6,12 @@ from src.utils.logger import setup_logger
 # Providers
 from src.data.providers.base import MarketDataProvider
 from src.data.providers.polygon_provider import PolygonProvider
+from src.data.providers.tiingo_provider import TiingoProvider
 from src.data.providers.fmp_provider import FMPProvider
 from src.data.providers.yfinance_provider import YFinanceProvider
-from src.services.fred_service import FredService
+from src.data.providers.fred_provider import FredProvider
+from src.data.providers.alpha_vantage_provider import AlphaVantageProvider
+from src.data.providers.finnhub_provider import FinnhubProvider
 from src.services.search_service import InternetSearchService
 from src.services.settings_service import SettingsService
 
@@ -28,23 +31,24 @@ class MarketDataService:
         
         # Initialize Providers
         self.polygon = PolygonProvider(settings_service=self.settings_service)
+        self.tiingo = TiingoProvider(settings_service=self.settings_service)
         self.fmp = FMPProvider(settings_service=self.settings_service)
         self.yfinance = YFinanceProvider()
-        
-        # Initialize FRED (Macro Primary)
-        try:
-            self.fred = FredService(settings_service=self.settings_service)
-        except Exception:
-            self.fred = None
-            self.logger.warning("FRED Service init failed, macro data will be limited.")
+        self.fred = FredProvider(user_id=self.user_id)
+        self.alpha_vantage = AlphaVantageProvider(user_id=self.user_id)
+        self.finnhub = FinnhubProvider(user_id=self.user_id)
         
         # Initialize Search (Tavily Primary, DuckDuckGo Fallback)
         self.search_service = InternetSearchService(settings_service=self.settings_service)
         
         # Priority Order (Primary -> Backup -> Fallback)
+        # Optimized Order: Polygon (Unlimited) -> Tiingo (P1) -> Finnhub -> FMP -> AlphaVantage -> YFinance
         self.providers: List[MarketDataProvider] = [
             self.polygon,
+            self.tiingo,
+            self.finnhub,
             self.fmp,
+            self.alpha_vantage,
             self.yfinance
         ]
 
@@ -300,25 +304,21 @@ class MarketDataService:
             self.logger.error(f"Indicator calc error for {ticker}: {e}")
             return {"rsi": 50, "macd": "neutral", "sma": {}, "volume": {}}
 
-    def get_news(self, ticker: str) -> List[str]:
+    def get_news(self, ticker: str) -> List[Dict[str, Any]]:
         """
-        Get News using Strategy: FMP -> YFinance -> Polygon
-        使用策略獲取新聞：FMP -> YFinance -> Polygon
+        Get News using Strategy: Tiingo -> Finnhub -> AlphaVantage -> FMP -> YFinance -> Polygon
+        返回結構化新聞數據：優先使用 Tiingo。
         """
-        # News Strategy: FMP is best for Financial News
-        news_providers = [self.fmp, self.yfinance, self.polygon]
+        # News Strategy: Tiingo is best for tagged financial news, Finnhub/AlphaVantage following.
+        news_providers = [self.tiingo, self.finnhub, self.alpha_vantage, self.fmp, self.yfinance, self.polygon]
         
         all_news = []
         for provider in news_providers:
             try:
                 news = provider.fetch_news(ticker, limit=5)
                 if news:
-                    # Format to strings
-                    for n in news:
-                        title = n.get('title', 'No Title')
-                        link = n.get('link', '#')
-                        all_news.append(f"{title} ({link})")
-                    
+                    # v5.0: Return raw dicts for better flexibility in agents/sentinel
+                    all_news.extend(news)
                     if len(all_news) >= 5: break
             except Exception as e:
                  self.logger.warning(f"News fetch failed on {self._get_provider_name(provider)}")
@@ -330,7 +330,7 @@ class MarketDataService:
         Get fundamental financial data for a ticker.
         獲取標底的基本面財務數據。
         """
-        fund_providers = [self.fmp, self.yfinance, self.polygon]
+        fund_providers = [self.fmp, self.alpha_vantage, self.finnhub, self.yfinance, self.polygon]
         
         for provider in fund_providers:
             try:
@@ -361,7 +361,9 @@ class MarketDataService:
         # 1. Try FRED (Primary)
         try:
             if self.fred:
-                fred_data = self.fred.get_macro_indicators()
+                # Use standard fetch_historical or specialized getter
+                # For backward compatibility with existing agents:
+                fred_data = self.fred.fred_service.get_macro_indicators()
                 if fred_data:
                     macro_data["economics"] = fred_data
                     self.logger.info("Fetched macro data from FRED")
@@ -387,7 +389,7 @@ class MarketDataService:
          # 1. Try FRED (Primary)
          try:
              if self.fred:
-                 fred_data = self.fred.get_macro_indicators()
+                 fred_data = self.fred.fred_service.get_macro_indicators()
                  if "10Y2Y_Spread" in fred_data:
                      spread_val = fred_data["10Y2Y_Spread"]["value"]
                      return {

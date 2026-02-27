@@ -3,6 +3,7 @@ import pandas as pd
 from typing import Dict, Any, List
 from src.data.providers.base import MarketDataProvider
 from src.utils.logger import setup_logger
+from src.utils.tracing import trace_external_call
 
 class YFinanceProvider(MarketDataProvider):
     """
@@ -28,6 +29,7 @@ class YFinanceProvider(MarketDataProvider):
             'Upgrade-Insecure-Requests': '1'
         })
 
+    @trace_external_call("yfinance")
     def fetch_current_prices(self, tickers: List[str]) -> Dict[str, float]:
         """
         Fetch current stock prices using yfinance (bulk download with individual fallback).
@@ -77,11 +79,14 @@ class YFinanceProvider(MarketDataProvider):
                     if isinstance(price, (int, float)) and pd.notna(price):
                         prices[t] = price
                 except Exception as inner_e:
-                    # self.logger.warning(f"Failed individual fetch for {t}: {inner_e}")
+                    # v4.2.4: Silently ignore index fetch failures for known indices to reduce log noise
+                    if not t.startswith('^'):
+                        self.logger.debug(f"Failed individual fetch for {t}: {inner_e}")
                     pass
         
         return prices
 
+    @trace_external_call("yfinance")
     def fetch_history(self, ticker: str, period: str = "1y", days: int = None) -> pd.DataFrame:
         """
         Fetch historical OHLCV data using yfinance.

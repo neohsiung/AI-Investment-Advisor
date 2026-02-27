@@ -13,6 +13,10 @@ load_dotenv()
 sys.path.append(os.getcwd())
 
 from src.utils.logger import setup_logger
+from src.utils.tracing import init_tracing
+
+# Initialize Tracing
+init_tracing("scheduler")
 from src.utils.time_utils import format_time
 from src.data.database import init_db
 
