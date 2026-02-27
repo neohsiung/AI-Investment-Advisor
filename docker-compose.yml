@@ -181,6 +181,10 @@ services:
       - N8N_PROTOCOL=http
       - NODE_ENV=production
       - WEBHOOK_URL=https://chummy-nonpathologically-lilla.ngrok-free.dev/
+      - N8N_OTEL_SDK_ENABLED=true
+      - OTEL_EXPORTER_OTLP_ENDPOINT=http://otel-collector:4317
+      - OTEL_EXPORTER_OTLP_PROTOCOL=grpc
+      - OTEL_SERVICE_NAME=n8n
     volumes:
       - n8n_data:/home/node/.n8n
       - ./n8n_workflow_template.json:/home/node/template.json:ro
