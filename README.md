@@ -3,6 +3,7 @@
 ### 版本紀錄 (Version History)
 | Date | Version | Description | Author |
 | :--- | :--- | :--- | :--- |
+| 2026-02-27 | v1.2.1 | **Data Provider Standardization**: Standardized Fred, Finnhub, and AlphaVantage providers. Resolved test collection errors and restored coverage to 72%. | Antigravity |
 | 2026-02-27 | v1.2.0 | **Dynamic AI Orchestration**: Implemented dynamic confidence thresholds, 1-10 scoring, and bilingual "English Thinking" directives. Optimized CIO report parsing. | Antigravity |
 | 2026-02-21 | v1.1.0 | **Microservices Monorepo & Observability**: Integrated SigNoz APM, OpenTelemetry, and Standalone Notification Service into the architecture. | Neo |
 | 2026-02-20 | v1.0.0 | **Production Release**: Officially transitioned to production. Standardized all documentation and architectural tiers. | Neo |
@@ -14,7 +15,7 @@
   <img src="https://img.shields.io/badge/Docker-Enabled-2496ED.svg?style=for-the-badge&logo=docker&logoColor=white" alt="Docker">
   <img src="https://img.shields.io/badge/PostgreSQL-15+-336791.svg?style=for-the-badge&logo=postgresql&logoColor=white" alt="PostgreSQL">
   <img src="https://img.shields.io/badge/pgvector-Semantic-FF6F61.svg?style=for-the-badge" alt="pgvector">
-  <img src="https://img.shields.io/badge/Coverage-74%25-green.svg?style=for-the-badge" alt="Coverage">
+  <img src="https://img.shields.io/badge/Coverage-72%25-green.svg?style=for-the-badge" alt="Coverage">
 </p>
 
 ---
@@ -70,7 +71,7 @@ graph LR
 - **核心**: Python 3.10+ (Local), Python 3.11 (Docker) - Optimized for Async I/O
 - **智能體**: DSPy, OpenAI/Gemini/Claude Multi-Tier Routing
 - **基礎設施**: Docker Compose, PostgreSQL 16, Redis, SigNoz (Local APM 觀測平台)
-- **資料與遙測**: MCP (Model Context Protocol), OpenTelemetry, TAVILY, Polygon, FMP
+- **資料與遙測**: MCP (Model Context Protocol), OpenTelemetry, TAVILY, Polygon, FMP, Tiingo, Finnhub, AlphaVantage, FRED
 
 ### 📦 快速開始
 ```bash
@@ -171,7 +172,7 @@ graph LR
 - **Language**: Python 3.10+ (Local), Python 3.11 (Docker)
 - **AI Core**: Multi-LLM Tiered Routing (Advanced 🚀, Smart 🧠, Fast ⚡)
 - **Infrastructure**: Dockerized PostgreSQL 16, Redis semantic cache, SigNoz (Local APM Observability)
-- **Data & Telemetry**: MCP (Model Context Protocol), OpenTelemetry, TAVILY Search, Financial Modeling Prep
+- **Data & Telemetry**: MCP (Model Context Protocol), OpenTelemetry, TAVILY Search, Polygon, Tiingo, Finnhub, AlphaVantage, FMP, FRED
 
 ### 📦 Quick Start
 ```bash

@@ -1,5 +1,6 @@
 from typing import Dict, List, Any, Optional
 from datetime import datetime
+import pandas as pd
 from src.data.providers.base import MarketDataProvider
 from src.services.fred_service import FredService
 from src.utils.logger import setup_logger
@@ -23,23 +24,30 @@ class FredProvider(MarketDataProvider):
         return {}
 
     @trace_external_call("fred")
-    def fetch_historical(self, ticker: str, start_date: str, end_date: str) -> List[Dict[str, Any]]:
+    def fetch_history(self, ticker: str, period: str = "1y", days: int = None) -> pd.DataFrame:
         """
         Fetches historical macro data. 
         獲取歷史宏觀數據。
         """
-        # Note: FredService.get_macro_indicators returns a specific structured format.
-        # We might need to extend it for generic historical series if needed.
         self.logger.info(f"Fetching historical data for {ticker} from FRED")
         if not self.fred_service.client:
-            return []
+            return pd.DataFrame()
         
         try:
+            # period/days conversion to dates if needed, but FRED usually takes dates.
+            # For now, let's assume ticker as series_id
+            # Default to 1 year if days not provided
+            days_int = days if days else 365
+            start_date = (datetime.now() - pd.Timedelta(days=days_int)).strftime('%Y-%m-%d')
+            end_date = datetime.now().strftime('%Y-%m-%d')
+
             series = self.fred_service.client.get_series(ticker, observation_start=start_date, observation_end=end_date)
-            return [{"date": idx.strftime("%Y-%m-%d"), "value": val} for idx, val in series.items()]
+            df = pd.DataFrame(series)
+            df.columns = ["Close"] # Generic close for series
+            return df
         except Exception as e:
             self.logger.error(f"Failed to fetch {ticker} from FRED: {e}")
-            return []
+            return pd.DataFrame()
 
     def fetch_info(self, ticker: str) -> Dict[str, Any]:
         """
@@ -55,7 +63,7 @@ class FredProvider(MarketDataProvider):
             self.logger.error(f"Failed to fetch info for {ticker} from FRED: {e}")
             return {}
 
-    def get_news(self, ticker: str) -> List[Dict[str, Any]]:
+    def fetch_news(self, ticker: str, limit: int = 5) -> List[Dict[str, Any]]:
         """
         FRED doesn't provide news articles. Returns empty.
         """

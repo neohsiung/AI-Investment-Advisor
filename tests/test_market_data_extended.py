@@ -16,7 +16,7 @@ class TestMarketDataServiceFixed:
         with patch('src.services.market_data_service.PolygonProvider') as MockPolygon, \
              patch('src.services.market_data_service.FMPProvider') as MockFMP, \
              patch('src.services.market_data_service.YFinanceProvider') as MockYF, \
-             patch('src.services.market_data_service.FredService') as MockFred, \
+             patch('src.services.market_data_service.FredProvider') as MockFred, \
              patch('src.services.market_data_service.InternetSearchService') as MockSearch:
             
             # Setup instances
@@ -45,7 +45,7 @@ class TestMarketDataServiceFixed:
         assert service.polygon is not None
         assert service.fmp is not None
         assert service.yfinance is not None
-        assert len(service.providers) == 3
+        assert len(service.providers) == 6
 
     def test_get_current_prices_success_primary(self, service, mock_providers):
         """Test getting current prices from primary provider (Polygon)"""
@@ -124,7 +124,7 @@ class TestMarketDataServiceFixed:
         result = service.get_news('AAPL')
         
         assert len(result) == 2
-        assert 'Apple releases' in result[0]
+        assert 'Apple releases' in result[0]['title']
         
     def test_get_financials(self, service, mock_providers):
         """Test fetching financial data"""
@@ -140,7 +140,7 @@ class TestMarketDataServiceFixed:
 
     def test_get_yield_curve_inversion_fred(self, service, mock_providers):
         """Test yield curve inversion with FRED data (Priority)"""
-        mock_providers['fred'].get_macro_indicators.return_value = {
+        mock_providers['fred'].fred_service.get_macro_indicators.return_value = {
             "10Y2Y_Spread": {"value": -0.5, "trend": "Down"}
         }
         
@@ -153,7 +153,7 @@ class TestMarketDataServiceFixed:
     def test_get_yield_curve_inversion_fallback(self, service, mock_providers):
         """Test yield curve inversion fallback to YFinance"""
         # FRED fails
-        mock_providers['fred'].get_macro_indicators.side_effect = Exception("API Fail")
+        mock_providers['fred'].fred_service.get_macro_indicators.side_effect = Exception("API Fail")
         
         def fetch_history_side_effect(ticker, period=None, days=None):
             if ticker == '^TNX':  # 10Y
@@ -172,7 +172,7 @@ class TestMarketDataServiceFixed:
 
     def test_get_macro_data(self, service, mock_providers):
         """Test macro data fetching (FRED + YFinance)"""
-        mock_providers['fred'].get_macro_indicators.return_value = {"GDP": {"value": 100}}
+        mock_providers['fred'].fred_service.get_macro_indicators.return_value = {"GDP": {"value": 100}}
         mock_providers['yfinance'].fetch_current_prices.return_value = {'^VIX': 20.0}
         
         result = service.get_macro_data()

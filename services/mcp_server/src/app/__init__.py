@@ -22,6 +22,7 @@ from contextlib import asynccontextmanager
 from src.utils.tracing import init_tracing
 
 # 1. Initialize OpenTelemetry Tracing
+from opentelemetry.instrumentation.fastapi import FastAPIInstrumentor
 tracer = init_tracing("mcp_server")
 # -------------------------
 

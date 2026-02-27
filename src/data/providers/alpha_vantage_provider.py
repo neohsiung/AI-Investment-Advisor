@@ -1,9 +1,10 @@
 import os
 import requests
+import pandas as pd
 from typing import Dict, List, Any, Optional
 from src.data.providers.base import MarketDataProvider
 from src.utils.logger import setup_logger
-from src.repositories.settings_repository import AlchemySettingsRepository
+from src.services.settings_service import SettingsService
 from src.utils.tracing import trace_external_call
 
 class AlphaVantageProvider(MarketDataProvider):
@@ -11,16 +12,16 @@ class AlphaVantageProvider(MarketDataProvider):
     Alpha Vantage Provider for financial data and indicators.
     Alpha Vantage 數據提供者，支援行情與技術指標。
     """
-    def __init__(self, user_id: str = "system", settings_repo=None):
+    def __init__(self, user_id: str = "system", settings_service: SettingsService = None):
         self.logger = setup_logger("AlphaVantageProvider")
         self.user_id = user_id
-        self.settings_repo = settings_repo or AlchemySettingsRepository()
+        self.settings_service = settings_service or SettingsService(user_id=user_id)
         self.base_url = "https://www.alphavantage.co/query"
         self.api_key = self._get_api_key()
 
     def _get_api_key(self) -> str:
-        settings = self.settings_repo.get_all_dict(self.user_id)
-        return settings.get("ALPHA_VANTAGE_API_KEY") or os.getenv("ALPHA_VANTAGE_API_KEY", "")
+        settings = self.settings_service.get_all_settings()
+        return settings.get("source_alpha_vantage_api_key") or settings.get("ALPHA_VANTAGE_API_KEY") or os.getenv("ALPHA_VANTAGE_API_KEY", "")
 
     @trace_external_call("alpha_vantage")
     def fetch_current_prices(self, tickers: List[str]) -> Dict[str, float]:
@@ -44,11 +45,12 @@ class AlphaVantageProvider(MarketDataProvider):
         return results
 
     @trace_external_call("alpha_vantage")
-    def fetch_historical(self, ticker: str, start_date: str, end_date: str) -> List[Dict[str, Any]]:
+    def fetch_history(self, ticker: str, period: str = "1y", days: int = None) -> pd.DataFrame:
         """
         Fetches historical data using TIME_SERIES_DAILY.
         """
         try:
+            import pandas as pd
             params = {
                 "function": "TIME_SERIES_DAILY",
                 "symbol": ticker,
@@ -58,21 +60,32 @@ class AlphaVantageProvider(MarketDataProvider):
             resp = requests.get(self.base_url, params=params, timeout=10)
             raw_data = resp.json().get("Time Series (Daily)", {})
             
+            if not raw_data:
+                return pd.DataFrame()
+
             history = []
+            # Calculate start date based on days or 1y
+            days_int = days if days else 365
+            start_date = (pd.Timestamp.now() - pd.Timedelta(days=days_int)).strftime('%Y-%m-%d')
+
             for date_str, values in raw_data.items():
-                if start_date <= date_str <= end_date:
+                if date_str >= start_date:
                     history.append({
-                        "date": date_str,
-                        "open": float(values["1. open"]),
-                        "high": float(values["2. high"]),
-                        "low": float(values["3. low"]),
-                        "close": float(values["4. close"]),
-                        "volume": int(values["5. volume"])
+                        "Date": pd.to_datetime(date_str),
+                        "Open": float(values["1. open"]),
+                        "High": float(values["2. high"]),
+                        "Low": float(values["3. low"]),
+                        "Close": float(values["4. close"]),
+                        "Volume": int(values["5. volume"])
                     })
-            return sorted(history, key=lambda x: x["date"])
+            df = pd.DataFrame(history)
+            if not df.empty:
+                df.set_index("Date", inplace=True)
+                df = df.sort_index()
+            return df
         except Exception as e:
             self.logger.error(f"AlphaVantage historical failed for {ticker}: {e}")
-            return []
+            return pd.DataFrame()
 
     def fetch_info(self, ticker: str) -> Dict[str, Any]:
         """
@@ -90,7 +103,7 @@ class AlphaVantageProvider(MarketDataProvider):
             self.logger.error(f"AlphaVantage overview failed for {ticker}: {e}")
             return {}
 
-    def get_news(self, ticker: str) -> List[Dict[str, Any]]:
+    def fetch_news(self, ticker: str, limit: int = 5) -> List[Dict[str, Any]]:
         """
         Fetches news sentiment using NEWS_SENTIMENT.
         """
@@ -104,7 +117,7 @@ class AlphaVantageProvider(MarketDataProvider):
             feed = resp.json().get("feed", [])
             
             results = []
-            for item in feed:
+            for item in feed[:limit]:
                 results.append({
                     "title": item.get("title"),
                     "url": item.get("url"),
