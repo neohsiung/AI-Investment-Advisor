@@ -3,7 +3,7 @@ from src.services.settings_service import SettingsService
 from src.utils.components import saas_card_start, saas_card_end
 
 def render_api_settings(st, service: SettingsService, settings: dict):
-    saas_card_start(title="AI Model Parameters", subtitle="配置核心 AI 調度提供者與模型分級設定", icon="🧠")
+    saas_card_start(title="AI Model Parameters", subtitle="配置核心 AI 調度提供者與模型分級設定", icon="🧬")
 
     with st.form("ai_settings_form"):
         provider_options = {

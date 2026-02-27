@@ -9,7 +9,7 @@ def render_trading_tab(st, user_id: str):
     """
     settings_repo = AlchemySettingsRepository()
     
-    saas_card_start(title="Trading & Risk Hub", subtitle="配置主要券商與風險控制參數 (Configure Broker & Risk Limits)", icon="📈")
+    saas_card_start(title="Trading & Risk Hub", subtitle="配置主要券商與風險控制參數 (Configure Broker & Risk Limits)", icon="📊")
     
     # Fetch current settings
     current_broker = settings_repo.get(user_id, "preferred_broker") or "etoro"
@@ -39,9 +39,9 @@ def render_trading_tab(st, user_id: str):
 
     st.divider()
 
-    with st.form("trading_settings_form"):
+    with st.form("trading_form"):
         # Create Tabs for better organization
-        tab_broker, tab_config, tab_risk = st.tabs(["🔌 券商連結 (Connections)", "⚙️ 交易參數 (Configuration)", "🛡️ 風控管理 (Risk)"])
+        tab_broker, tab_config, tab_risk = st.tabs([":material/link: 券商連結", ":material/tune: 交易參數", ":material/shield: 風控管理"])
         
         with tab_broker:
             st.write("##### 券商帳號設定")

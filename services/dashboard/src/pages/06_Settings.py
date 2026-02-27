@@ -23,7 +23,7 @@ class SettingsPage(BasePage):
     """System settings page"""
     
     def __init__(self):
-        super().__init__("系統設定 (System Settings)", "⚙️")
+        super().__init__("系統設定 (System Settings)", ":material/tune:")
     
     def render(self):
         """
@@ -38,14 +38,14 @@ class SettingsPage(BasePage):
 
         # 1. Define Tabs (Reordered by Usage Frequency)
         tab_names = [
-            "互動與通知 (Interaction & Comms)", # P0: Channels & Alerts
-            "交易與風控 (Trading & Risk)",      # P1: Broker & Risk
-            "數據源矩陣 (Data Source Matrix)",  # P2: API Keys
-            "AI 模型設定 (AI Models)",          # P3: LLM Config
-            "排程與任務 (Scheduler)",           # P4: Automation
-            "風險關鍵字 (Risk Keywords)",       # P5: Sentinel Config
-            "開發者實驗室 (Dev Playground)",    # P6: Agent Test & Dry Run
-            "系統核心 (System Core)"            # P7: HR, Storage, Appearance
+            ":material/forum: 互動通知",
+            ":material/candlestick_chart: 交易風控",
+            ":material/api: 數據源",
+            ":material/model_training: AI 模型",
+            ":material/schedule: 排程",
+            ":material/emergency: 風險詞",
+            ":material/science: 實驗室",
+            ":material/settings: 系統",
         ]
         
         tabs = st.tabs(tab_names)
@@ -90,7 +90,7 @@ class SettingsPage(BasePage):
         # --- Tab 7: Developer Playground (Merged) ---
         with t_playground:
             st.info("此區域包含開發與測試工具。")
-            sub_t1, sub_t2, sub_t3 = st.tabs(["Agent 測試 (Playground)", "報告試跑 (Dry Run)", "Prompt 優化"])
+            sub_t1, sub_t2, sub_t3 = st.tabs([":material/smart_toy: Agent", ":material/draft: 試跑", ":material/auto_fix_high: Prompt"])
             
             with sub_t1:
                 render_agent_playground_tab(st)
@@ -101,7 +101,7 @@ class SettingsPage(BasePage):
 
         # --- Tab 8: System Core (Merged) ---
         with t_system:
-            sub_t1, sub_t2, sub_t3 = st.tabs(["介面與主題 (Appearance)", "HR 協議 (Health)", "系統存儲 (Storage)"])
+            sub_t1, sub_t2, sub_t3 = st.tabs([":material/palette: 外觀", ":material/monitor_heart: HR", ":material/storage: 存儲"])
             
             with sub_t1:
                 render_appearance_tab(st)

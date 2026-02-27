@@ -6,7 +6,7 @@ from src.utils.components import saas_card_start, saas_card_end
 from src.utils.time_utils import get_timezone
 
 def render_optimization_history_tab(st, db_path, user_id):
-    saas_card_start(title="Prompt Meta-Learning", subtitle="追蹤 Engineer Agent 對系統 Prompt 的迭代優化軌跡", icon="📈")
+    saas_card_start(title="Prompt Meta-Learning", subtitle="追蹤 Engineer Agent 對系統 Prompt 的迭代優化軌跡", icon="✨")
 
     settings_service = SettingsService(db_path, user_id=user_id)
     

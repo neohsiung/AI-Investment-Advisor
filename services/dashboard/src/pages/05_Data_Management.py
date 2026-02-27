@@ -185,7 +185,7 @@ class DataManagementPage(BasePage):
     """Data management page"""
     
     def __init__(self):
-        super().__init__("資料管理 (Data Management)", "💾")
+        super().__init__("資料管理 (Data Management)", ":material/database:")
     
     def render(self):
         """Render data management content"""
@@ -198,7 +198,7 @@ class DataManagementPage(BasePage):
         
         service = TransactionService(db_path, user_id=user_id)
 
-        tab1, tab2, tab3, tab4 = st.tabs(["手動輸入 (Manual Entry)", "CSV 匯入 (Import)", "交易紀錄 (Transactions)", "資料瀏覽 (Browser)"])
+        tab1, tab2, tab3, tab4 = st.tabs([":material/edit_note: 手動輸入", ":material/upload_file: CSV 匯入", ":material/receipt_long: 交易紀錄", ":material/table_view: 資料瀏覽"])
 
         with tab1:
             render_manual_entry_tab(st, service)

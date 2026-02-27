@@ -119,10 +119,10 @@ def render_sidebar(user, default_db_path=None):
             
             with cols[0]:
                 # Link to Settings page. Path is relative to dashboard.py/Main.py
-                safe_page_link("pages/06_Settings.py", label=f"{short_name}. {display_name[:6]}...", icon="👤", help="User Settings")
+                safe_page_link("pages/06_Settings.py", label=f"{short_name}. {display_name[:6]}...", icon=":material/account_circle:", help="User Settings")
             
             with cols[1]:
-                if safe_button("", key="logout_v18", icon="🚪", help="Logout", use_container_width=True):
+                if safe_button("", key="logout_v18", icon=":material/logout:", help="Logout", use_container_width=True):
                     auth_manager.logout()
             
             st.divider()

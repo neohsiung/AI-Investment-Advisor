@@ -9,7 +9,7 @@ class PortfolioPerformancePage(BasePage):
     """Portfolio performance tracking page"""
     
     def __init__(self):
-        super().__init__("績效追蹤 (Performance Tracking)", "📈")
+        super().__init__("績效追蹤 (Performance Tracking)", ":material/trending_up:")
         self.perf_service = None # Init in render where user_id is available
     
     def render(self):

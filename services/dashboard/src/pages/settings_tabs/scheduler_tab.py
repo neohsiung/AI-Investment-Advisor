@@ -23,7 +23,7 @@ def render_scheduler_tab(st, db_path):
     engineer = SystemEngineerAgent()
     config = engineer.get_schedule_config()
     
-    saas_card_start(title="Automation & Preferences", subtitle="統一配置系統時區與自動化分析排程", icon="🤖")
+    saas_card_start(title="Automation & Preferences", subtitle="統一配置系統時區與自動化分析排程", icon="⏱")
     
     # Common Timezones
     current_tz = sys_settings_service.get_setting("DISPLAY_TIMEZONE", "Asia/Taipei")
@@ -105,7 +105,7 @@ def render_scheduler_tab(st, db_path):
                 
     saas_card_end()
 
-    saas_card_start(title="Operational Logs", subtitle="查看 Scheduler 最近 50 筆執行狀態與錯誤日誌", icon="📋")
+    saas_card_start(title="Operational Logs", subtitle="查看 Scheduler 最近 50 筆執行狀態與錯誤日誌", icon="📝")
 
     # Scheduler logs via Service
     from src.services.scheduler_service import SchedulerService

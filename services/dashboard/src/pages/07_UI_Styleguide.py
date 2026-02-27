@@ -11,7 +11,7 @@ from src.utils.components import (
 
 class UIStyleguidePage(BasePage):
     def __init__(self):
-        super().__init__("UI Styleguide", "🎨")
+        super().__init__("UI Styleguide", ":material/palette:")
         
     def render(self):
         st.markdown("""

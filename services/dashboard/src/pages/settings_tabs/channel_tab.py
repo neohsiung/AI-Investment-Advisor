@@ -137,7 +137,7 @@ def render_channel_tab(st, settings_service, user_id):
     }
 
     # Render Tabs for Personal vs Group
-    tab_personal, tab_group = st.tabs(["👤 個人通知 (Personal)", "👥 群組協作 (Group)"])
+    tab_personal, tab_group = st.tabs([":material/person: 個人通知", ":material/groups: 群組協作"])
 
     def render_channels(container, channels, prompt_text):
         with container:

@@ -3,7 +3,7 @@ from src.services.hr_service import HRService
 from src.utils.components import saas_card_start, saas_card_end
 
 def render_hr_protocol_tab(st):
-    saas_card_start(title="Agent Health Monitor", subtitle="監控 Agent 活躍度與系統健康狀態 (HR 協議)", icon="🏥")
+    saas_card_start(title="Agent Health Monitor", subtitle="監控 Agent 活躍度與系統健康狀態 (HR 協議)", icon="🩺")
     
     hr_service = HRService()
     

@@ -2,14 +2,30 @@
    2026 SaaS Component Library for Streamlit
    Reusable UI elements for a professional Investment Advisor experience.
 """
+import re
 import streamlit as st
 from src.utils.ui import safe_html
+
+# Inject Google Material Symbols font (once per session)
+if "material_font_loaded" not in st.session_state:
+    safe_html('<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined" rel="stylesheet">')
+    st.session_state["material_font_loaded"] = True
+
+def _resolve_icon(icon: str) -> str:
+    """Convert :material/icon_name: shortcode to Material Symbols HTML span, or return emoji as-is."""
+    if not icon:
+        return ""
+    m = re.match(r'^:material/(\w+):$', icon)
+    if m:
+        return f'<span class="material-symbols-outlined" style="font-size: 1.1rem; vertical-align: middle;">{m.group(1)}</span>'
+    return icon
 
 def saas_card_start(title=None, subtitle=None, icon=None):
     """Start a SaaS-styled card container."""
     html = f"""<div class="saas-card" style="margin-bottom: var(--saas-spacing-md); padding: var(--saas-spacing-md); background: var(--saas-card-bg); border-color: var(--saas-border);">"""
     if title:
-        icon_html = f'<span style="margin-right: var(--saas-spacing-sm); font-size: 1.1rem;">{icon}</span>' if icon else ""
+        resolved = _resolve_icon(icon) if icon else ""
+        icon_html = f'<span style="margin-right: var(--saas-spacing-sm); font-size: 1.1rem;">{resolved}</span>' if resolved else ""
         subtitle_html = f'<div style="font-size: 0.75rem; color: var(--saas-text-muted); margin-top: 2px;">{subtitle}</div>' if subtitle else ""
         html += f"""
         <div style="margin-bottom: var(--saas-spacing-sm); border-bottom: 1px solid var(--saas-border); padding-bottom: 4px;">
@@ -94,7 +110,8 @@ def saas_alert(message, style="info", title=None):
 
 def saas_section_header(title, subtitle=None, icon=None):
     """Render a clean section header with optional icon."""
-    icon_html = f'<span style="margin-right: var(--saas-spacing-sm);">{icon}</span>' if icon else ""
+    resolved = _resolve_icon(icon) if icon else ""
+    icon_html = f'<span style="margin-right: var(--saas-spacing-sm);">{resolved}</span>' if resolved else ""
     subtitle_html = f'<div style="color: var(--saas-text-muted); font-size: 0.8rem; margin-top: 2px;">{subtitle}</div>' if subtitle else ""
     safe_html(f"""
     <div style="margin: var(--saas-spacing-lg) 0 var(--saas-spacing-sm) 0; border-bottom: 2px solid var(--saas-primary); padding-bottom: 2px; display: inline-block; min-width: 120px;">

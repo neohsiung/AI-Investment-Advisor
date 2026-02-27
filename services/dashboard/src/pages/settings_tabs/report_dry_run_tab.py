@@ -88,7 +88,7 @@ def render_report_dry_run_tab(st, user_id):
     saas_card_end()
 
     # --- Email Settings & Test ---
-    saas_card_start(title="Notification Gateway", subtitle="配置與測試 SMTP 外發服務之連通性", icon="📧")
+    saas_card_start(title="Notification Gateway", subtitle="配置與測試 SMTP 外發服務之連通性", icon="✉️")
 
     from src.services.settings_service import SettingsService
     from src.services.verification_service import VerificationService

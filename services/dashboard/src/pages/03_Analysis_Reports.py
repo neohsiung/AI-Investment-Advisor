@@ -8,7 +8,7 @@ class AnalysisReportsPage(BasePage):
     """Investment advisory reports page"""
     
     def __init__(self):
-        super().__init__("投資顧問報告 (Investment Advisory Reports)", "📊")
+        super().__init__("投資顧問報告 (Investment Advisory Reports)", ":material/lab_profile:")
     
     def render(self):
         """Render reports content"""

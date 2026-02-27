@@ -3,7 +3,7 @@ import json
 from src.utils.components import saas_card_start, saas_card_end
 
 def render_agent_playground_tab(st):
-    saas_card_start(title="Agent Playground", subtitle="獨立測試各個 AI Agent 的邏輯處理能力", icon="🎮")
+    saas_card_start(title="Agent Playground", subtitle="獨立測試各個 AI Agent 的邏輯處理能力", icon="🕹️")
 
     agent_options = {
         "Momentum": "Momentum (動能專家)",

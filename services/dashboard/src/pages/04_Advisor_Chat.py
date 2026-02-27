@@ -14,7 +14,7 @@ class AdvisorChatPage(BasePage):
     """AI Advisor interactive chat page"""
     
     def __init__(self):
-        super().__init__("AI 投資顧問 (Interactive Advisor)", "💬")
+        super().__init__("AI 投資顧問 (Interactive Advisor)", ":material/smart_toy:")
     
     def render(self):
         """Render chat interface"""
