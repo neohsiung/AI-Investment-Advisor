@@ -1,0 +1,73 @@
+{
+    "name": "Investment Advisor Alert Bridge",
+    "nodes": [
+        {
+            "parameters": {
+                "httpMethod": "POST",
+                "path": "advisor-alert",
+                "options": {}
+            },
+            "name": "Webhook",
+            "type": "n8n-nodes-base.webhook",
+            "typeVersion": 1,
+            "position": [
+                250,
+                300
+            ],
+            "webhookId": "advisor-webhook-in"
+        },
+        {
+            "parameters": {
+                "method": "POST",
+                "url": "https://your-advisor-domain.com/webhook/n8n",
+                "sendHeaders": true,
+                "headerParameters": {
+                    "parameters": [
+                        {
+                            "name": "X-Webhook-Secret",
+                            "value": "your_webhook_secret_here"
+                        }
+                    ]
+                },
+                "sendBody": true,
+                "bodyParameters": {
+                    "parameters": [
+                        {
+                            "name": "ticker",
+                            "value": "={{ $node[\"Webhook\"].json[\"ticker\"] || \"GLOBAL\" }}"
+                        },
+                        {
+                            "name": "message",
+                            "value": "={{ $node[\"Webhook\"].json[\"message\"] || \"New Event from n8n\" }}"
+                        },
+                        {
+                            "name": "event_type",
+                            "value": "={{ $node[\"Webhook\"].json[\"event_type\"] || \"NEWS_ALERT\" }}"
+                        }
+                    ]
+                },
+                "options": {}
+            },
+            "name": "HTTP Request",
+            "type": "n8n-nodes-base.httpRequest",
+            "typeVersion": 1,
+            "position": [
+                500,
+                300
+            ]
+        }
+    ],
+    "connections": {
+        "Webhook": {
+            "main": [
+                [
+                    {
+                        "node": "HTTP Request",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        }
+    }
+}

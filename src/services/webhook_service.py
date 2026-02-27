@@ -80,6 +80,19 @@ class FinnhubParser(BaseSourceParser):
             "url": data.get("url")
         }
 
+class N8nParser(BaseSourceParser):
+    @staticmethod
+    def parse(payload: Dict[str, Any]) -> Dict[str, Any]:
+        # n8n typically passes the object directly or via 'body' depending on setup
+        data = payload.get("body", payload) if isinstance(payload.get("body"), dict) else payload
+        return {
+            "type": data.get("event_type", "N8N_AUTOMATION"),
+            "ticker": data.get("ticker", "GLOBAL"),
+            "msg": data.get("message") or data.get("msg") or "n8n Triggered Event",
+            "value": data.get("value"),
+            "url": data.get("link") or data.get("url")
+        }
+
 SOURCE_PARSERS = {
     "mktrecap": MktRecapParser,
     "tradingview": TradingViewParser,
@@ -87,7 +100,10 @@ SOURCE_PARSERS = {
     "rss": RssBridgeParser,
     "rss_bridge": RssBridgeParser,
     "ifttt": RssBridgeParser,
-    "finnhub": FinnhubParser
+    "finnhub": FinnhubParser,
+    "n8n": N8nParser,
+    "make": N8nParser,       # Make.com follows similar logic
+    "pipedream": N8nParser   # Pipedream follows similar logic
 }
 
 class WebhookService:
