@@ -50,5 +50,8 @@ scripts/github_bridge.py
 .agent/workflows/vibe-mobile.md
 *_local.py
 test_conn.py
+debug_*.py
+coverage_output*.txt
+dummy_prompt.txt
 Archive/scripts/inspect_db.py
 Archive/scripts/test_db_conn.py
