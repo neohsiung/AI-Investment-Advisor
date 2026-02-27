@@ -199,6 +199,9 @@ services:
       - OTEL_EXPORTER_OTLP_ENDPOINT=http://otel-collector:4317
       - OTEL_EXPORTER_OTLP_PROTOCOL=grpc
       - OTEL_SERVICE_NAME=n8n
+      - N8N_LOG_LEVEL=info
+      - N8N_LOG_OUTPUT=console,file
+      - OTEL_LOGS_EXPORTER=otlp
     volumes:
       - n8n_data:/home/node/.n8n
       - ./n8n_workflow_template.json:/home/node/template.json:ro
