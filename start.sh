@@ -45,6 +45,15 @@ function deploy_docker {
     echo "🗄️  Database:  localhost:5432"
     echo "🔗 n8n:       http://localhost:5678"
     echo ""
+    
+    # Auto-import n8n workflow
+    if [ -f n8n_workflow_template.json ]; then
+        echo "Attempting to auto-import n8n workflow..."
+        # Wait a few seconds for n8n to be ready to accept CLI commands
+        sleep 5
+        docker exec investment_advisor_n8n n8n import:workflow --file /home/node/template.json || echo "Warning: n8n import failed (may still be initializing)"
+    fi
+
     echo "To view logs: docker compose logs -f"
 }
 

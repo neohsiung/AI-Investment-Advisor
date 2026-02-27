@@ -170,6 +170,25 @@ services:
       - mcp_server
     restart: unless-stopped
 
+  n8n:
+    image: n8nio/n8n:latest
+    container_name: investment_advisor_n8n
+    ports:
+      - "5678:5678"
+    environment:
+      - N8N_HOST=${N8N_HOST:-localhost}
+      - N8N_PORT=5678
+      - N8N_PROTOCOL=http
+      - NODE_ENV=production
+      - WEBHOOK_URL=https://chummy-nonpathologically-lilla.ngrok-free.dev/
+    volumes:
+      - n8n_data:/home/node/.n8n
+      - ./n8n_workflow_template.json:/home/node/template.json:ro
+    restart: unless-stopped
+    depends_on:
+      - mcp_server
+
 volumes:
   postgres_data:
   redis_data:
+  n8n_data:
