@@ -5,8 +5,8 @@
 ### 版本紀錄 (Version History)
 | Date | Version | Description | Author |
 | :--- | :--- | :--- | :--- |
-| 2026-02-21 | v1.2 | **v1.2.0+ Stability Fix**: Transitioned to native `pytest-asyncio` standards and resolved coroutine warnings. | Neo |
-| 2026-02-15 | v3.6 | **Achieved 75% coverage milestone**: +88 tests, -68 missed statements | Neo |
+| 2026-02-27 | v3.8 | **Observability Expansion**: Integrated SigNoz OTel tracing for n8n and fixed OTLP gRPC dependencies. | Neo |
+| 2026-02-21 | v3.7 | **v1.2.0+ Stability Fix**: Transitioned to native `pytest-asyncio` standards and resolved coroutine warnings. | Neo |
 | 2026-02-14 | v3.5 | Added Multi-Broker, LINE, Memory, DSPy external services | Neo |
 | 2024-01-04 | v1.0 | Initial Release | Neo |
 
@@ -45,8 +45,8 @@
 3. **隔離性排除**: 檢查是否為全局狀態 (sys.modules, singleton) 污染。
 
 #### 1.3 成功指標 (Success Metrics)
-- **覆蓋率狀態**: **75%** ✅ (2026-02-15 達成，513+ tests, 6995 statements, 1757 missed)
-- **CI 目標**: > 70% (configured in pytest.ini)
+- **覆蓋率狀態**: **72%** ✅ (2026-02-27 達成，641 tests collected)
+- **CI 目標**: > 65% (Required) / 70% (Internal target)
 - **非同步測試標竿**: 統一使用 `pytest-asyncio` 直播模式，嚴格要求 `await` 所有非同步 Mock 以維護日誌整潔。
 - **CI 通過率**: 100% (GitHub Actions)。
 
@@ -67,9 +67,13 @@
 | **Redis** | TCP | N/A | 生產記憶後端 (AdaptiveCompression) |
 | **DSPy** | Library | N/A | Prompt 自動優化 (Engineer Agent) |
 | **Google OAuth** | OAuth 2.0 | N/A | 使用者認證 |
+| **n8n** | Automation | N/A | RSS/Webhook 橋接 (OTel Enabled) |
+| **SigNoz** | Monitoring | N/A | 分散式追蹤與日誌中心 (OTLP gRPC) |
 
 ### 3. 非功能性: 可觀測性 (Observability)
 - **日誌追蹤**: 每個 Agent 調用附帶 `request_id`。
+- **SigNoz (OTel)**: 核心服務透過 OTLP gRPC 匯出追蹤數據至 `otel-collector:4317`。
+- **n8n 觀測性**: 已啟用內建 OTel SDK 以實現服務地圖 (Service Map) 平滑對接。
 - **效能監控**: `reports/` 目錄生成時間定期稽核。
 - **HR 回饋**: Agent 互評分數追蹤於 `agent_reviews` 表。
 

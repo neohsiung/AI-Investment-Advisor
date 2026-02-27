@@ -5,8 +5,8 @@
 ### 版本紀錄 (Version History)
 | Date | Version | Description | Author |
 | :--- | :--- | :--- | :--- |
+| 2026-02-27 | v4.2 | **Dev Tools Expansion**: Added n8n (automation) and SigNoz (OTel) local access details. | Neo |
 | 2026-02-18 | v4.1 | **Security & UUID Sync**: Updated secrets isolation policy and CLI identity resolution examples. | Neo |
-| 2026-02-17 | v4.0 | **Unified DB Strategy**: Migrated core entities to PostgreSQL + pgvector. | Neo |
 
 ---
 
@@ -30,11 +30,13 @@ pip install -r requirements.txt
 ```
 
 #### 1.2 Docker 容器化開發 (推薦)
- v4.0 強制要求在本地開發環境中使用 Docker 以包含 **PostgreSQL 15** 與 **Redis**。
+ v4.0+ 環境要求使用 Docker 以包含 **PostgreSQL 15**、**Redis**、**SigNoz (OTel)** 與 **n8n**。
 ```bash
-# 啟動包含所有服務的開發環境 (自動預熱數據庫)
+# 啟動開發環境 (自動匯入 n8n 模板與預熱數據庫)
 ./start.sh
 ```
+- **n8n 存取**: `http://localhost:5678` (用於 RSS 橋接)
+- **SigNoz 存取**: `http://localhost:3301` (用於分散式追蹤)
 
 ### 3. 本地開發與運行 (Development & Execution)
 
