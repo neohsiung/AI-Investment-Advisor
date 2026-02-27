@@ -3,6 +3,7 @@
 ### 版本紀錄 (Version History)
 | Date | Version | Description | Author |
 | :--- | :--- | :--- | :--- |
+| 2026-02-27 | v3.0 | Added: Dynamic Confidence Threshold, Interactive Approval Request (Option A), Sentinel scoring refactoring | Antigravity |
 | 2026-02-21 | v2.0 | Updated: eToro Official API migration, IBKR skeleton, BrokerType enum expansion | Neo |
 | 2026-02-14 | v1.0 | Initial Release: Multi-Broker Architecture | Neo |
 
@@ -75,9 +76,10 @@ Centralized risk control enforcing:
     *   深度回撤持倉 (Deep Drawdown Positions).
 
 ### 自動交易審批服務 (AutomatedTradingService) - `src/services/automated_trading_service.py`
-串接 Agent 決策與 Broker 的中介層 (v3.5+)：
-1. **信心閾值判斷 (Confidence Threshold)**: 若 Agent 的交易提案 `confidence_score` 大於或等於 `auto_trade_threshold` (預設 9)，則**免審批全自動下單**。
-2. **限時審批迴圈 (Approval Loop)**: 若分數未達標，系統會透過全通路 (LINE/Email) 發送審批請求，限時 5 分鐘內回應，逾期失效。
+串接 Agent 決策與 Broker 的中介層 (v5.0 更新)：
+1. **信心閾值判斷 (Confidence Threshold)**: 系統從 `SettingsService` 動態讀取 `auto_trade_threshold` (1-10)。若 Agent 的交易提案 `confidence_score` **大於** 該閾值，則**免審批全自動下單**。
+2. **互動式審核 (Approval Request)**: 若分數未達門檻，系統會透過全通路 (LINE/Email) 發送帶有 **[Approve/Reject] 互動式按鈕** 的審核請求通知。使用者可在 5 分鐘內手動批准執行，否則逾期失效。
+3. **動態風險指標**: Sentinel 事件的緊急操作（如緊急清倉、避險）現在同樣使用設定檔中的動態分數，而非寫死的定值。
 
 ### 券商實作狀態 (Broker Implementation Status)
 

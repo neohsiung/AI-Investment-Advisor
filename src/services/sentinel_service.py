@@ -754,6 +754,10 @@ class SentinelService:
             tx_service = TransactionService()
             
             for uid in users:
+                # [NEW] Fetch dynamic scores from settings (Milestone 13.2)
+                emergency_score = int(self.settings_service.get(uid, "emergency_liquidation_score") or 9)
+                hedge_score = int(self.settings_service.get(uid, "auto_hedge_score") or 8)
+                
                 active_tickers = tx_service.get_user_tickers(user_id=uid, only_active=True)
                 if not active_tickers:
                      continue
@@ -765,7 +769,7 @@ class SentinelService:
                         ticker=ticker,
                         action="SELL",
                         quantity=1.0, # 此處在正式上線應根據倉位動態計算
-                        confidence_score=9, # 系統異常/緊急事件高信心度
+                        confidence_score=emergency_score, 
                         rationale=f"🚨 Sentinel 緊急防禦機制啟動 (Emergency Liquidation)。\n判定: {rationale[:100]}..."
                     )
                     
@@ -775,7 +779,7 @@ class SentinelService:
                     ticker="SQQQ",
                     action="BUY",
                     quantity=1.0,
-                    confidence_score=8, 
+                    confidence_score=hedge_score, 
                     rationale=f"🚨 Sentinel 自動對沖機制啟動 (Auto-Hedging)。建議建立 SQQQ 避險。"
                 )
         except Exception as e:

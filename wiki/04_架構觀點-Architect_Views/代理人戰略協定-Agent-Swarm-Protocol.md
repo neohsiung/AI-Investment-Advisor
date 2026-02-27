@@ -3,8 +3,8 @@
 ### 版本紀錄 (Version History)
 | Date | Version | Description | Author |
 | :--- | :--- | :--- | :--- |
-| 2026-02-21 | v4.1 | **Thematic & Narrative Drift Agents**: Added ThematicAgent (supply chain/theme optimization) and Narrative Drift Agent (System 2 auditor for CIO narrative accuracy). | Neo |
-| 2026-02-18 | v3.6 | **Agent Skills & Orchestration**: Integrated `SkillRegistry` and `SwarmOrchestrator` with adaptive performance tracking (Reward/Penalty). | Neo |
+| 2026-02-27 | v4.2 | **Graceful Degradation Fix**: Enforced strict `asyncio.Task.cancel()` and `await` on pre-empted Swift/Adv tier tasks to prevent orphaned event loops in non-async testing environments. | Neo |
+| 2026-02-21 | v4.1 | **Thematic & Narrative Drift Agents**: Added ThematicAgent at system level and Narrative Drift Agent (System 2 auditor for CIO narrative accuracy). | Neo |
 | 2026-02-14 | v3.5 | Full 7+1 agent roster, Council Fractal Debate, AgentFactory | Neo |
 | 2024-01-04 | v1.0 | Initial 4-agent design | Neo |
 
@@ -198,6 +198,7 @@ sequenceDiagram
 *   **編排模式**:
     *   **Broadcast (廣播)**: 將單一任務並行發送。
     *   **Batch Run (批次)**: 透過 `RoleSwarm` 針對不同股票指派動態叢集。
+    *   **Graceful Degradation (優雅降級)**: 當 Fast Tier 觸發 Emergency Stop 優先搶佔時，系統會嚴密執行 `asyncio.Task.cancel()` 並於事件迴圈中強制 `await` 被取消的任務 (Smart/Adv)，避免產生孤兒進程 (Orphan Tasks) 或 `Event loop is closed` 例外異常，確保非同步環境 (如 CI/CD pytest) 的高穩定性。
 *   **動態歸因機制 (Auto-Attribution)**: 依循動態指標原則，系統透過 `AttributionAnalyzer` 獨立以 Raw SQL 掃描判斷的準確率與 ROI，自動上調 (Reward) 或下修 (Penalty) 該 Agent 的信任權重。
 
 ### 5. 投資委員會協定 (IC Protocol)

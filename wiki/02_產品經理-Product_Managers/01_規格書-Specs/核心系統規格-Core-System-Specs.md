@@ -3,6 +3,7 @@
 ### 版本紀錄 (Version History)
 | Date | Version | Description | Author |
 | :--- | :--- | :--- | :--- |
+| 2026-02-27 | v5.0 | Added: Dynamic Execution Thresholds, 1-10 Confidence Scoring, English Thinking/Traditional Chinese Output. | Antigravity |
 | 2026-02-19 | v4.1 | Wiki Reorganization — standardized folder structure and numbering. | Antigravity |
 | 2026-02-16 | v3.8 | Sentinel Refinement (Deduplication, Buffering) & Channel Verification | Neo |
 | 2026-02-15 | v3.7 | Multi-Tier Agent Architecture (Fast/Smart/Advanced) & Omni-Channel Adapters | Neo |
@@ -14,7 +15,7 @@
 
 <a id="zh"></a>
 
-## 🇹🇼 核心系統規格書 (v3.8)
+## 🇹🇼 核心系統規格書 (v5.0)
 
 本文件依據 [文件框架定義](文件框架定義-Document-Frameworks) 編寫，反映系統目前已實作的功能與架構。
 
@@ -87,6 +88,10 @@ sequenceDiagram
 - **確定性計算**: 數值計算皆由 Python 統計模組執行，**0% 幻覺**。
 - **LLM 推論**: 僅用於非數值的「判斷」任務（趨勢解讀、新聞摘要、策略建議）。
 - **A2A 思維鏈 (Agent-to-Agent Thought Chain)**: 各專家獨立推理，最後由 CIO 綜合判斷。
+- **雙語處理規範 (Bilingual Processing)**: 所有 Agent 執行前必須進行 **English Thinking** (思維鏈分析)，最終以專業的 **繁體中文 (Traditional Chinese)** 輸出結果。
+- **1-10 信用評分系統 (Confidence Scoring)**: 買入/賣出建議必須包含 1-10 的信心分數。
+    - **自動執行**: 分數 > `auto_trade_threshold` (於設定頁動態配置)。
+    - **手動審核**: 分數 <= 門檻時，觸發互動式審核按鈕 (Option A)。
 - **證據導向退場 (Reason-Based Exit)**: 僅在「買入理由消失」時觸發 SELL。
 
 #### 2.4 多券商架構 (Multi-Broker Architecture)

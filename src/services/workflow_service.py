@@ -90,6 +90,34 @@ class BaseWorkflow(ABC):
             # Step 4: Reporting & Storage
             if not dry_run:
                 await self.distribute_report(final_report)
+                
+                # [NEW] Multi-Agent Trade Execution (System 2 Integration)
+                # -------------------------
+                actionable_orders = self.context.get('actionable_orders', [])
+                if actionable_orders:
+                    self.logger.info(f"Processing {len(actionable_orders)} actionable orders via AutomatedTradingService.")
+                    from src.services.automated_trading_service import AutomatedTradingService
+                    auto_trade_svc = AutomatedTradingService()
+                    
+                    for order_data in actionable_orders:
+                        try:
+                            # Parse quantity to float safely
+                            try:
+                                qty_val = float(str(order_data['quantity']).replace('%', ''))
+                            except:
+                                qty_val = 100.0 # Default fallback amount
+                                
+                            # This handles threshold check, auto-exec, and notification/approval requests (Option A)
+                            await auto_trade_svc.evaluate_and_execute_trade(
+                                ticker=order_data['ticker'],
+                                action=order_data['action'],
+                                quantity=qty_val,
+                                confidence_score=order_data['score'],
+                                rationale=order_data['reason'], # Passing our internal 'reason' as 'rationale'
+                                user_id=self.user_id
+                            )
+                        except Exception as e:
+                            self.logger.error(f"Failed to execute trade for {order_data['ticker']}: {e}")
             else:
                 self.logger.info(f"[Dry Run] Report generated but not distributed:\n{final_report}")
                 
@@ -574,112 +602,110 @@ class DailyWorkflow(BaseWorkflow):
                 # Extract Ticker from first line e.g. "NVDA"
                 ticker_match = re.match(r"([A-Z]+)", block)
                 if not ticker_match: continue
-                
                 ticker = ticker_match.group(1)
+
+                # Extract Action from the block
+                action_match = re.search(r"\*\*Action\*\*:\s*\*\*(\w+)\*\*", block, re.IGNORECASE)
+                if not action_match: continue
                 
-                # Extract Action line e.g. "- **Action**: **TRIM**"
-                action_match = re.search(r"-\s*\*\*Action\*\*:\s*\*\*([A-Z]+(?:/[A-Z]+)?)\*\*", block)
-                if action_match:
-                    action = action_match.group(1)
+                u_act = action_match.group(1).upper()
+                cio_signal = "HOLD"
+                if any(x in u_act for x in ["BUY", "ACCUMULATE", "加碼"]):
+                    cio_signal = "BUY"
+                elif any(x in u_act for x in ["SELL", "TRIM", "REDUCE", "LIQUIDATE", "減碼", "出清"]):
+                    cio_signal = "SELL"
+                
+                if cio_signal != "HOLD":
+                    # Get price
+                    t_data = self.context['market_data'].get(ticker, {})
+                    t_price = 0
+                    if t_data:
+                         raw = t_data.get('price_data', {}).get('close', 0)
+                         if isinstance(raw, list) and raw: t_price = raw[-1]
+                         else: t_price = raw
                     
-                    # Normalize action
-                    u_act = action.upper()
-                    cio_signal = "HOLD"
-                    if "BUY" in u_act or "ACCUMULATE" in u_act:
-                        cio_signal = "BUY"
-                    elif "SELL" in u_act or "TRIM" in u_act or "REDUCE" in u_act:
-                        cio_signal = "SELL"
-                    
-                    if cio_signal != "HOLD":
-                        # Get price
-                        t_data = self.context['market_data'].get(ticker, {})
-                        t_price = 0
-                        if t_data:
-                             raw = t_data.get('price_data', {}).get('close', 0)
-                             if isinstance(raw, list) and raw: t_price = raw[-1]
-                             else: t_price = raw
-                        
+                    if self.performance_service:
                         self.performance_service.record_recommendation(
                             agent_name="CIO",
                             ticker=ticker,
                             signal=cio_signal,
                             price=t_price
                         )
-                        
-                        # [NEW] Auto-Trading Execution with Human-in-the-Loop
-                        # -------------------------
-                        try:
-                            trading_settings = broker.transaction_repo.settings_repo # Access settings repo from broker
-                            is_auto_trade = trading_settings.get(self.user_id, "etoro_auto_trade") == "true"
-                            
-                            # 2. Execute if Enabled
-                            if is_auto_trade and constraints_ok and broker_connected:
-                                # Default Amount: 100 USD
-                                trade_amt = float(trading_settings.get(self.user_id, "etoro_trade_amount") or 100.0)
-                                
-                                # Construct Order Domain Object
-                                from src.domain.trading import Order, OrderAction
-                                action_enum = OrderAction.BUY if cio_signal == "BUY" else OrderAction.SELL
-                                
-                                order = Order(
-                                    symbol=ticker,
-                                    action=action_enum,
-                                    quantity=trade_amt, 
-                                    leverage=1,
-                                    reason=f"CIO Daily Signal ({cio_signal})"
-                                )
-                                
-                                # Check if manual approval is required (Conditional Design)
-                                if self._requires_human_approval(order, trading_settings):
-                                    # [NEW] Approval Workflow
-                                    from src.services.interaction_service import InteractionService
-                                    interaction_service = InteractionService() # Should be injected, but initializing here for now
-                                    
-                                    approval_request = f"CIO Signal for {ticker}: {cio_signal} ${trade_amt}?\nReason: {order.reason}"
-                                    is_approved = interaction_service.request_approval(
-                                        title="Trade Approval Request", 
-                                        content=approval_request,
-                                        context={"order": str(order)},
-                                        timeout_seconds=300, # 5 minutes to approve
-                                        user_id=self.user_id
-                                    )
-                                    
-                                    if is_approved:
-                                        logger.info(f"Auto-Trading Approved & Executing: {cio_signal} {ticker} ${trade_amt}")
-                                        trade_res = broker.execute_order(order)
-                                        logger.info(f"Trade Result: {trade_res}")
-                                    else:
-                                        logger.info(f"Auto-Trading Rejected or Timed Out for {ticker}")
-                                else:
-                                    # Execute directly if low risk / below threshold (Future capability)
-                                    logger.info(f"Auto-Trading Executing (No Approval Needed): {cio_signal} {ticker} ${trade_amt}")
-                                    trade_res = broker.execute_order(order)
-                                    logger.info(f"Trade Result: {trade_res}")
-
-                        except Exception as e:
-                            logger.error(f"Auto-Trade Execution Failed for {ticker}: {e}")
         except Exception as e:
-            logger.warning(f"Failed to extract CIO signals: {e}")
+            logger.warning(f"Failed to extract CIO signals block by block: {e}")
+
+        # [NEW] Global Parse for Actionable Orders Table
+        self._parse_actionable_orders(final_report)
 
         return final_report
 
-    def _requires_human_approval(self, order, settings) -> bool:
+    def _parse_actionable_orders(self, final_report: str):
         """
-        Determines if an order requires human approval based on risk thresholds.
-        設計：有條件的確認 (Conditional Confirmation)
-        前期：全部詢問 (Always True)
-        後期：可調整閥值 (e.g. amount < 50 USD skip)
+        Parses the actionable orders table from the final report and populates the context.
         """
-        # Feature Flag: Global Force Approval (Default True for Early Stage)
-        if settings.get(self.user_id, "always_request_approval", "true") == "true":
-            return True
-            
-        # Example Future Logic (Commented out for now, to be verified later)
-        # risk_threshold = float(settings.get(self.user_id, "auto_trade_threshold", 0))
-        # if order.quantity > risk_threshold:
-        #    return True
-        
-        return True # Default safe fallback
+        try:
+            import re
+            lines = final_report.split('\n')
+            for i, line in enumerate(lines):
+                # Look for a table divider | --- | --- |
+                if '|' in line and '---' in line:
+                    # The previous line was likely the header
+                    # The following lines are data
+                    for j in range(i + 1, len(lines)):
+                        row_line = lines[j]
+                        if not row_line.strip().startswith('|'):
+                            break # End of table
+                        
+                        cols = [c.strip() for c in row_line.split('|') if c.strip()]
+                        if len(cols) >= 4:
+                            ticker = cols[0]
+                            action = cols[1]
+                            quantity = cols[2]
+                            
+                            try:
+                                # Clean score: might have " (High)" etc.
+                                score_raw = re.search(r"(\d+)", cols[3])
+                                score = int(score_raw.group(1)) if score_raw else 5
+                            except (ValueError, IndexError):
+                                score = 5
+                                
+                            u_act = action.upper()
+                            cio_signal = "HOLD"
+                            if any(x in u_act for x in ["BUY", "ACCUMULATE", "加碼", "買"]):
+                                cio_signal = "BUY"
+                            elif any(x in u_act for x in ["SELL", "TRIM", "REDUCE", "LIQUIDATE", "減碼", "出清", "賣", "避險"]):
+                                cio_signal = "SELL"
+                                
+                            if cio_signal != "HOLD":
+                                # Get price for performance tracing
+                                t_data = self.context.get('market_data', {}).get(ticker, {})
+                                t_price = 0
+                                if t_data:
+                                     raw = t_data.get('price_data', {}).get('close', 0)
+                                     if isinstance(raw, list) and raw: t_price = raw[-1]
+                                     else: t_price = raw
+                                
+                                if self.performance_service:
+                                    self.performance_service.record_recommendation(
+                                        agent_name="CIO",
+                                        ticker=ticker,
+                                        signal=cio_signal,
+                                        price=t_price
+                                    )
+                                
+                                if 'actionable_orders' not in self.context:
+                                    self.context['actionable_orders'] = []
+                                    
+                                self.context['actionable_orders'].append({
+                                    'ticker': ticker,
+                                    'action': cio_signal,
+                                    'quantity': quantity,
+                                    'score': score,
+                                    'reason': cols[4] if len(cols) >= 5 else f"CIO Daily Signal ({cio_signal})"
+                                })
+                    break # Only parse the first such table (Actionable Orders)
+        except Exception as e:
+            logger.warning(f"Failed to parse Actionable Orders table: {e}")
 
 
 

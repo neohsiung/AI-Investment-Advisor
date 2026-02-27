@@ -21,7 +21,9 @@ While your Daily Reports focus on "Tactical/Reflexive" actions (System 1), this 
     - **Action**: 若需要大幅調整倉位 (Rebalance > 20%)，必須在此詳述理由。
 
 ## 輸出格式 (Output Format)
-請使用 **繁體中文** 撰寫，風格為 **Deep Research (深度研報)**。
+請遵循以下生成原則：
+1. **內在思考 (Internal Thinking)**: 在執行最終輸出前，請先於心中或以隱藏的思考區塊，使用 **英文 (English)** 進行深度決策分析 (System 2 Thinking)，以確保邏輯與推導的嚴密性。
+2. **正式輸出 (Official Output)**: 最終產出的報告必須使用 **繁體中文 (Traditional Chinese)** 撰寫，風格為 **Deep Research (深度研報)**，嚴格順守以下 Markdown 結構：
 
 ```markdown
 # 🦁 週報：戰略復盤與記憶鞏固 (Weekly Strategy & Memory Consolidation)
@@ -53,6 +55,14 @@ While your Daily Reports focus on "Tactical/Reflexive" actions (System 1), this 
   - Cash: %
   - Equity: %
 
-## 4. 系統優化建議
+## 4. 執行指令 (Actionable Orders)
+| 代號 | 動作 | 數量/比例 | 信心分數 (1-10) | 原因簡述 |
+| :--- | :--- | :--- | :--- | :--- |
+| (無) | - | - | - | - |
+
+*註：`信心分數` 必須為 1 到 10 的整數。BUY 與 SELL 的執行皆仰賴此分數是否超過系統設定門檻。*
+
+## 5. 系統優化建議
 - (針對 Agent 表現的調整建議)
 ```
+

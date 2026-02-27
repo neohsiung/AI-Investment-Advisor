@@ -8,6 +8,8 @@
 
 > **[繁體中文 (Traditional Chinese)](#zh) | [English](#en)**
 
+| 2026-02-27 | v4.6 | **NLV & Margin Tracker Fix**: Enforced precise `margin_invested` tracking across `TransactionRepository` and `PnLCalculator`, rectifying phantom cash drift in leveraged trades. | Neo |
+| 2026-02-20 | v4.5 | Document audit and history alignment | Neo |
 | 2026-02-19 | v4.2 | **Purge SQLite & Three-Tier Architecture**: Removed all SQLite dependencies. Enforced PostgreSQL for persistent storage and Redis for caching. Formalized Three-Tier data strategy. | Neo |
 | 2026-02-18 | v4.1 | **UUID Multi-Identity**: Migrated to UUID-based unique identifiers. Added `user_identities` table to support multiple linked logins (Email, LINE, etc.). | Neo |
 | 2026-02-17 | v4.0.1 | **Comprehensive Audit**: Added missing domain entities (SecurityContext, Feedback), expanded repository registry, and clarified DB physical types. | Neo |
@@ -195,9 +197,10 @@ classDiagram
     - **部位市值 (Gross MV)** = 數量 × 現價
     - **部位貸款 (Loan)** = 買入成本 × (槓桿倍數 - 1)
     - **淨權益 (Net Equity)** = 部位市值 - 部位貸款
+    - **保證金投入 (Margin Invested)** = 名目價值 / 槓桿倍數 (在 `transactions` 中扣除實質現金)
 
 > [!IMPORTANT]
-> 清楚區分 Gross 與 Net 數據，能有效防止在劇烈波動時的保證金誤判。
+> 清楚區分 Gross (名目) 與 Net (保證金/權益) 數據，能有效防止在劇烈波動時的保證金誤判。確保 `transaction_repository` 的交易 `amount` 是按照 `(數量 * 買入價) / 槓桿倍數` 扣款，以忠實呈現現金水位的變化。
 
 ---
 
@@ -298,6 +301,7 @@ Precise calculation of **Loan** and **Net Equity** for each position.
     - **Gross MV** = Qty × Price
     - **Loan** = Cost × (Leverage - 1)
     - **Net Equity** = Gross MV - Loan
+    - **Margin Invested** = Nominal Value / Leverage (Calculated directly in `transactions` amount)
 
 > [!IMPORTANT]
-> Distinguishing Gross from Net data prevents margin miscalculations during high volatility.
+> Distinguishing Gross from Net data prevents margin miscalculations during high volatility. Ensure transaction `amount` reflects `(Qty * Price) / Leverage` to maintain an accurate cash balance proxy.

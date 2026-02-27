@@ -18,6 +18,11 @@ def render_trading_tab(st, user_id: str):
     sector_limit = settings_repo.get(user_id, "risk_max_sector_exposure") or 0.30
     trading_enabled = settings_repo.get(user_id, "ai_trading_enabled") or "true"
     
+    # [NEW] Confidence Thresholds (Milestone 13.2)
+    auto_threshold = settings_repo.get(user_id, "auto_trade_threshold") or 9
+    emer_score = settings_repo.get(user_id, "emergency_liquidation_score") or 9
+    hedge_score = settings_repo.get(user_id, "auto_hedge_score") or 8
+    
     # Kill Switch Status
     st.write("#### ⚠️ 緊急開關 (Kill Switch)")
     col_status, col_btn = st.columns([2, 1])
@@ -80,6 +85,17 @@ def render_trading_tab(st, user_id: str):
                     "每日最大筆數",
                     min_value=0, max_value=50, value=int(max_daily)
                 )
+            
+            st.write("---")
+            st.write("##### 信心評分與自動執行 (Confidence Scoring)")
+            st.info("💡 當 AI 信心分數 >= 閥值時自動執行；否則將發送『審核請求』(Option A)。")
+            col_th, col_spacer = st.columns(2)
+            with col_th:
+                new_auto_threshold = st.slider(
+                    "自動執行信心閥值 (1-10)",
+                    min_value=1, max_value=10, value=int(auto_threshold),
+                    help="低於此分數的交易建議將需要手動核准"
+                )
         
         with tab_risk:
             st.write("##### 權益防護設定")
@@ -95,6 +111,15 @@ def render_trading_tab(st, user_id: str):
                     "連續虧損熔斷 (次)",
                     min_value=1, max_value=10, value=int(cb_loss)
                 )
+            
+            st.write("---")
+            st.write("##### 🚨 Sentinel 緊急事件評分")
+            st.caption("當系統偵測到行情異常時，預設帶入的信心分數。")
+            col_e, col_h = st.columns(2)
+            with col_e:
+                 new_emer_score = st.number_input("緊急清倉信心分數", min_value=1, max_value=10, value=int(emer_score))
+            with col_h:
+                 new_hedge_score = st.number_input("自動避險信心分數", min_value=1, max_value=10, value=int(hedge_score))
 
         if st.form_submit_button("💾 儲存交易設定", use_container_width=True):
             try:
@@ -107,6 +132,9 @@ def render_trading_tab(st, user_id: str):
                     "ai_max_daily_trades": new_max_daily,
                     "cb_loss_streak": new_cb_loss,
                     "risk_max_sector_exposure": new_sector_limit,
+                    "auto_trade_threshold": new_auto_threshold,
+                    "emergency_liquidation_score": new_emer_score,
+                    "auto_hedge_score": new_hedge_score,
                     "enable_etoro": enable_etoro,
                     "etoro_api_key": etoro_api_key,
                     "etoro_user_key": etoro_user_key,
