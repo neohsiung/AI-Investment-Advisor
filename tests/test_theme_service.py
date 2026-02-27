@@ -14,19 +14,19 @@ class TestThemeService:
         """Test fallback theme data for light mode"""
         data = service.get_fallback_theme_data('light')
         assert 'colors' in data
-        assert data['colors']['primary'] == '#0D9488'
-        assert data['colors']['bg'] == '#F8FAFC'
+        assert data['colors']['primary'] == '#6C5CE7'
+        assert data['colors']['bg'] == '#FAFBFC'
         assert data['colors']['card_bg'] == '#FFFFFF'
-        assert data['colors']['text_main'] == '#1E293B'
+        assert data['colors']['text_main'] == '#1A1D2E'
     
     def test_get_fallback_theme_data_dark(self, service):
         """Test fallback theme data for dark mode"""
         data = service.get_fallback_theme_data('dark')
         assert 'colors' in data
-        assert data['colors']['primary'] == '#14B8A6'
-        assert data['colors']['bg'] == '#0B1120'
-        assert data['colors']['card_bg'] == '#1E293B'
-        assert data['colors']['text_main'] == '#F1F5F9'
+        assert data['colors']['primary'] == '#A78BFA'
+        assert data['colors']['bg'] == '#0A0E1A'
+        assert data['colors']['card_bg'] == '#151929'
+        assert data['colors']['text_main'] == '#E8ECF4'
     
     @patch('os.path.exists', return_value=True)
     @patch('builtins.open', create=True)

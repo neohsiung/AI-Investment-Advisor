@@ -3,7 +3,7 @@ from src.utils.ui import render_theme_switcher
 from src.utils.components import saas_card_start, saas_card_end
 
 def render_appearance_tab(st):
-    saas_card_start(title="Visual Identity", subtitle="切換系統佈景主題及存取介面開發手冊", icon="🎨")
+    saas_card_start(title="Visual Identity", subtitle="系統佈景主題及存取介面開發手冊", icon="🎨")
     st.markdown("### 主題切換 (Theme Switching)")
     render_theme_switcher(key_suffix="settings_page")
     

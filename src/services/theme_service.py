@@ -42,48 +42,43 @@ class ThemeService:
         is_light = (theme_name == 'light')
         return {
              "colors": {
-                 "primary": "#0D9488" if is_light else "#14B8A6",
-                 "primary_light": "#CCFBF1" if is_light else "#134E4A",
-                 "primary_gradient": "linear-gradient(135deg, #0D9488, #14B8A6)" if is_light else "linear-gradient(135deg, #14B8A6, #2DD4BF)",
-                 "bg": "#F8FAFC" if is_light else "#0B1120",
-                 "card_bg": "#FFFFFF" if is_light else "#1E293B",
-                 "sidebar_bg": "#F1F5F9" if is_light else "#0F172A",
-                 "border": "#E2E8F0" if is_light else "#334155",
-                 "text_main": "#1E293B" if is_light else "#F1F5F9",
-                 "text_muted": "#64748B" if is_light else "#94A3B8",
-                 "success": "#10B981" if is_light else "#34D399",
-                 "success_bg": "rgba(16, 185, 129, 0.08)" if is_light else "rgba(52, 211, 153, 0.12)",
+                 "primary": "#6C5CE7" if is_light else "#A78BFA",
+                 "primary_light": "#EDE9FE" if is_light else "#2E1065",
+                 "primary_gradient": "linear-gradient(135deg, #6C5CE7, #A78BFA)" if is_light else "linear-gradient(135deg, #A78BFA, #7DD3FC)",
+                 "bg": "#FAFBFC" if is_light else "#0A0E1A",
+                 "card_bg": "#FFFFFF" if is_light else "#151929",
+                 "sidebar_bg": "#F3F4F8" if is_light else "#0D1120",
+                 "border": "#E5E7EB" if is_light else "#1E2640",
+                 "text_main": "#1A1D2E" if is_light else "#E8ECF4",
+                 "text_muted": "#6B7280" if is_light else "#8B95AD",
+                 "success": "#059669" if is_light else "#34D399",
+                 "success_bg": "rgba(5, 150, 105, 0.08)" if is_light else "rgba(52, 211, 153, 0.10)",
                  "warning": "#D97706" if is_light else "#FBBF24",
-                 "warning_bg": "rgba(217, 119, 6, 0.08)" if is_light else "rgba(251, 191, 36, 0.12)",
-                 "danger": "#DC2626" if is_light else "#F87171",
-                 "danger_bg": "rgba(220, 38, 38, 0.08)" if is_light else "rgba(248, 113, 113, 0.12)",
+                 "warning_bg": "rgba(217, 119, 6, 0.08)" if is_light else "rgba(251, 191, 36, 0.10)",
+                 "danger": "#E11D48" if is_light else "#FB7185",
+                 "danger_bg": "rgba(225, 29, 72, 0.06)" if is_light else "rgba(251, 113, 133, 0.10)",
                  "info": "#2563EB" if is_light else "#60A5FA",
-                 "info_bg": "rgba(37, 99, 235, 0.08)" if is_light else "rgba(96, 165, 250, 0.12)",
-                 "input_bg": "#FFFFFF" if is_light else "#1E293B",
-                 "hover_bg": "#F1F5F9" if is_light else "#334155",
-                 "shadow": "0 1px 3px rgba(0,0,0,0.08)" if is_light else "0 1px 3px rgba(0,0,0,0.3)",
-                 "shadow_hover": "0 10px 15px -3px rgba(0,0,0,0.08)" if is_light else "0 10px 15px -3px rgba(0,0,0,0.3)",
+                 "info_bg": "rgba(37, 99, 235, 0.07)" if is_light else "rgba(96, 165, 250, 0.10)",
+                 "input_bg": "#FFFFFF" if is_light else "#151929",
+                 "hover_bg": "#F0F1F5" if is_light else "#1E2640",
+                 "shadow": "0 1px 3px rgba(108, 92, 231, 0.06), 0 1px 2px rgba(0,0,0,0.04)" if is_light else "0 1px 3px rgba(0,0,0,0.4), 0 1px 2px rgba(0,0,0,0.3)",
+                 "shadow_hover": "0 10px 25px -5px rgba(108, 92, 231, 0.12), 0 4px 6px -2px rgba(0,0,0,0.04)" if is_light else "0 10px 25px -5px rgba(167, 139, 250, 0.15), 0 4px 6px -2px rgba(0,0,0,0.3)",
              }
          }
 
     def get_plotly_template(self) -> Tuple[str, Dict[str, Any]]:
         """
-        Return the Plotly template name and layout overrides based on the current theme.
-        根據目前主題返回 Plotly 模板名稱與佈局覆蓋設定。
+        Return the Plotly template name and layout overrides based on CSS variables.
+        根據 CSS 變數返回 Plotly 模板名稱與佈局覆蓋設定。
         """
-        theme = self.get_current_theme()
-        is_dark = (theme == 'dark')
-        template = "plotly_dark" if is_dark else "plotly_white"
-        
-        c = self.load_theme_data(theme) or self.get_fallback_theme_data(theme)
-        colors = c["colors"]
+        template = "plotly_white"
         
         layout_overrides = dict(
             paper_bgcolor='rgba(0,0,0,0)',
             plot_bgcolor='rgba(0,0,0,0)',
-            font=dict(color=colors['text_main'], family='Inter, sans-serif'),
-            xaxis=dict(gridcolor=colors['border'], zerolinecolor=colors['border']),
-            yaxis=dict(gridcolor=colors['border'], zerolinecolor=colors['border']),
+            font=dict(color='var(--saas-text-main)', family='Inter, sans-serif'),
+            xaxis=dict(gridcolor='var(--saas-border)', zerolinecolor='var(--saas-border)'),
+            yaxis=dict(gridcolor='var(--saas-border)', zerolinecolor='var(--saas-border)'),
             margin=dict(t=30, b=30, l=30, r=30)
         )
         return template, layout_overrides
@@ -91,14 +86,16 @@ class ThemeService:
     def generate_theme_css(self) -> Tuple[str, str, Dict[str, Any]]:
         """
         Generate the unified CSS variable block and return theme details.
-        產生統一的 CSS 變數區塊並返回主題詳情。
+        產生統一的 CSS 變數區塊並返回主題詳情。包含自動跟隨 OS 的 Media Queries。
         """
-        theme_name = self.get_current_theme()
-        theme_data = self.load_theme_data(theme_name) or self.get_fallback_theme_data(theme_name)
-        c = theme_data["colors"]
+        light_data = self.load_theme_data("light") or self.get_fallback_theme_data("light")
+        dark_data  = self.load_theme_data("dark")  or self.get_fallback_theme_data("dark")
         
-        return f"""
-        :root {{
+        c_light = light_data["colors"]
+        c_dark  = dark_data["colors"]
+        
+        def dict_to_css_vars(c):
+            return f"""
             /* Core Palette */
             --saas-primary: {c['primary']} !important;
             --saas-primary-light: {c.get('primary_light', '#CCFBF1')};
@@ -110,7 +107,7 @@ class ThemeService:
             --saas-text-main: {c['text_main']} !important;
             --saas-text-muted: {c['text_muted']} !important;
 
-            /* Semantic Colors (Theme-Aware) */
+            /* Semantic Colors */
             --saas-success: {c.get('success', '#10B981')} !important;
             --saas-success-bg: {c.get('success_bg', 'rgba(16,185,129,0.08)')};
             --saas-warning: {c.get('warning', '#F59E0B')} !important;
@@ -132,8 +129,22 @@ class ThemeService:
             --secondary-background-color: {c['sidebar_bg']} !important;
             --text-color: {c['text_main']} !important;
             --font: 'Inter', sans-serif !important;
+            """
+        
+        css = f"""
+        /* Light mode (default) */
+        :root {{
+            {dict_to_css_vars(c_light)}
         }}
         
+        /* Dark mode */
+        @media (prefers-color-scheme: dark) {{
+            :root {{
+                {dict_to_css_vars(c_dark)}
+            }}
+        }}
+        
+        /* Static CSS Overrides */
         html, body, [data-testid="stHeader"], .stApp {{
             background-color: var(--saas-bg) !important;
             color: var(--saas-text-main) !important;
@@ -152,6 +163,10 @@ class ThemeService:
             color: var(--saas-text-main) !important;
             border: 1px solid var(--saas-border) !important;
             border-radius: 8px !important;
+        }}
+        /* Fix native streamlit metric styling for delta */
+        [data-testid="stMetricDelta"] svg {{
+            margin-right: 4px;
         }}
         .stButton button, .stPageLink {{
             background-color: var(--saas-card-bg) !important;
@@ -176,7 +191,7 @@ class ThemeService:
         .stButton button[kind="primary"]:hover,
         .stButton button[kind="primaryFormSubmit"]:hover {{
             opacity: 0.9 !important;
-            box-shadow: 0 4px 12px {c['primary']}33 !important;
+            box-shadow: 0 4px 12px var(--saas-primary-light) !important;
         }}
         button[data-testid="stFormSubmitButton"], .stFormSubmitButton button {{
             background-color: var(--saas-primary) !important;
@@ -226,4 +241,10 @@ class ThemeService:
             background-color: var(--saas-primary) !important;
             color: white !important;
         }}
-        """, theme_name, c
+        /* Dataframes base fix */
+        [data-testid="stDataFrame"] {{
+            background-color: var(--saas-card-bg) !important;
+        }}
+        """
+        return css, "auto", c_light
+

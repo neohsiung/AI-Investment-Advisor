@@ -57,16 +57,10 @@ def load_theme_from_json(theme_name):
     return theme_service.load_theme_data(theme_name)
 
 def load_design_system_css():
-    """Load theme-driven CSS with OS auto-detection and deep Streamlit integration."""
-    # v4.2.2: OS Auto-Detection on first visit
-    if 'theme' not in st.session_state:
-        # Check if OS preference was detected by JS on previous render
-        if 'os_theme_detected' in st.session_state:
-            st.session_state['theme'] = st.session_state['os_theme_detected']
-        else:
-            st.session_state['theme'] = 'light'  # Safe default until JS detects
-    
-    theme_css, theme_name, c = theme_service.generate_theme_css()
+    """Load theme-driven CSS deeply integrated via Streamlit and generic OS Media Queries."""
+    # We no longer rely on python-side state for static theme application.
+    # Theme Service now generates CSS vars for BOTH light and dark via media queries.
+    theme_css, _, _ = theme_service.generate_theme_css()
     
     # Get absolute path to styles directory for base CSS
     current_file = os.path.abspath(__file__)
@@ -78,84 +72,13 @@ def load_design_system_css():
         with open(ds_path, 'r', encoding='utf-8') as f:
             css_base = f.read()
 
-    # Inject CSS using markdown
+    # Inject static CSS using markdown
     st.markdown(f"<style>{css_base}\n{theme_css}</style>", unsafe_allow_html=True)
-    
-    # Inject JS: Apply theme to DOM + OS auto-detection
-    from streamlit.components.v1 import html
-    
-    # Only inject OS detection script if theme hasn't been manually set
-    theme_manually_set = st.session_state.get('theme_manual', False)
-    
-    html(f"""
-    <script>
-        (function() {{
-            const theme = '{theme_name}';
-            const manuallySet = {'true' if theme_manually_set else 'false'};
-            
-            // 1. Apply current theme to DOM
-            const apply = () => {{
-                try {{
-                    const root = window.parent.document.querySelector('.stApp');
-                    if (root) {{
-                        root.setAttribute('data-theme', theme);
-                        root.style.backgroundColor = "{c['bg']}";
-                    }}
-                    document.documentElement.setAttribute('data-theme', theme);
-                    window.parent.localStorage.setItem('st-theme', theme);
-                }} catch (e) {{
-                    console.error("Theme application failed:", e);
-                }}
-            }};
-            apply();
-            
-            // 2. OS Auto-Detection (only on first visit, not if manually toggled)
-            if (!manuallySet) {{
-                try {{
-                    const savedTheme = window.parent.localStorage.getItem('st-theme');
-                    if (!savedTheme) {{
-                        const prefersDark = window.parent.matchMedia('(prefers-color-scheme: dark)').matches;
-                        const osTheme = prefersDark ? 'dark' : 'light';
-                        
-                        if (osTheme !== theme) {{
-                            // Send detected theme to Streamlit by updating URL query params
-                            window.parent.localStorage.setItem('st-theme', osTheme);
-                            // Trigger Streamlit rerun via postMessage
-                            window.parent.postMessage({{
-                                type: 'streamlit:setComponentValue',
-                                value: osTheme
-                            }}, '*');
-                        }}
-                    }}
-                }} catch (e) {{
-                    console.warn("OS theme detection failed:", e);
-                }}
-            }}
-            
-            // 3. Listen for OS theme changes in real-time
-            try {{
-                window.parent.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', (e) => {{
-                    if (!manuallySet) {{
-                        const newTheme = e.matches ? 'dark' : 'light';
-                        window.parent.localStorage.setItem('st-theme', newTheme);
-                    }}
-                }});
-            }} catch (e) {{}}
-        }})();
-    </script>
-    """, height=0)
 
 def render_theme_switcher(key_suffix="", icon_only=False):
-    """Render a professional minimalist theme toggle."""
-    theme = st.session_state.get('theme', 'light')
-    new_theme = "dark" if theme == "light" else "light"
-    label = "" if icon_only else ("Switch to Dark Mode" if theme == "light" else "Switch to Light Mode")
-    icon = "🌙" if theme == "light" else "☀️"
-    
-    if safe_button(label, use_container_width=True if not icon_only else False, key=f"toggle_{key_suffix}", icon=icon):
-        st.session_state.theme = new_theme
-        st.session_state.theme_manual = True  # Mark as manually set to prevent OS override
-        st.rerun()
+    """Render a professional minimalist theme guideline."""
+    if not icon_only:
+        st.info("🌗 系統主題現已自動與您的作業系統 (OS) 同步。若需手動覆寫，請點擊螢幕右上角選單 (⋮) ➔ Settings ➔ Theme 進行切換。", icon="💡")
 
 def load_theme_css(theme="light"):
     """Legacy fallback - delegated to main design system loader."""
@@ -191,17 +114,14 @@ def render_sidebar(user, default_db_path=None):
             </style>
             """, unsafe_allow_html=True)
             
-            # The Integrated Preference Row: [Profile/Settings | Theme | Logout]
-            cols = st.columns([2.5, 1, 1])
+            # The Integrated Preference Row: [Profile/Settings | Logout]
+            cols = st.columns([3.5, 1])
             
             with cols[0]:
                 # Link to Settings page. Path is relative to dashboard.py/Main.py
                 safe_page_link("pages/06_Settings.py", label=f"{short_name}. {display_name[:6]}...", icon="👤", help="User Settings")
             
             with cols[1]:
-                render_theme_switcher(key_suffix="sidebar_v18", icon_only=True)
-                
-            with cols[2]:
                 if safe_button("", key="logout_v18", icon="🚪", help="Logout", use_container_width=True):
                     auth_manager.logout()
             

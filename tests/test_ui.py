@@ -22,7 +22,7 @@ class TestUI:
              return importlib.import_module('src.utils.ui')
 
     def test_load_design_system_css(self, ui_module):
-        """Test that load_design_system_css initializes theme and calls st.markdown."""
+        """Test that load_design_system_css calls st.markdown with CSS variables."""
         st_mock = sys.modules['streamlit']
         mock_state = MockSessionState()
         with patch.object(st_mock, 'session_state', mock_state), \
@@ -30,7 +30,6 @@ class TestUI:
              patch('builtins.open', mock_open(read_data=".test { color: red; }")), \
              patch('os.path.exists', return_value=True):
             ui_module.load_design_system_css()
-            assert mock_state['theme'] == 'light'
             mock_md.assert_called()
 
     def test_load_theme_css_defaults_light(self, ui_module):
@@ -48,7 +47,7 @@ class TestUI:
         """Test sidebar rendering structure with hyper-minimalist preference bar."""
         st_mock = sys.modules['streamlit']
         st_mock.session_state = MockSessionState({'theme': 'light'})
-        st_mock.columns.return_value = [MagicMock(), MagicMock(), MagicMock()]
+        st_mock.columns.return_value = [MagicMock(), MagicMock()]
         
         user = {'name': 'Test User', 'email': 'test@example.com', 'picture': 'pic.jpg'}
         
@@ -60,4 +59,4 @@ class TestUI:
         # Verify Profile/Settings link
         st_mock.page_link.assert_any_call("pages/06_Settings.py", label="T. Test U...", icon="👤", help="User Settings", use_container_width=False)
         # Verify columns allocation
-        st_mock.columns.assert_called_with([2.5, 1, 1])
+        st_mock.columns.assert_called_with([3.5, 1])
