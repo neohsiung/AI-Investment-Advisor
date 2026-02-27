@@ -38,6 +38,9 @@ class RoleSwarm(BaseAgent):
     def run(self, context: Any) -> str:
         try:
             loop = asyncio.get_event_loop()
+            if loop.is_closed():
+                loop = asyncio.new_event_loop()
+                asyncio.set_event_loop(loop)
         except RuntimeError:
             loop = asyncio.new_event_loop()
             asyncio.set_event_loop(loop)
@@ -75,6 +78,10 @@ class RoleSwarm(BaseAgent):
             logger.warning(f"RoleSwarm {self.name}: 🚨 Fast Tier triggered GRACEFUL DEGRADATION. Preempting.")
             smart_task.cancel()
             adv_task.cancel()
+            # Await cancelled tasks to prevent "Event loop is closed" warnings
+            import contextlib
+            with contextlib.suppress(asyncio.CancelledError):
+                await asyncio.gather(smart_task, adv_task)
             return f"🚨 **EMERGENCY STOP TRIGGERED BY FAST TIER**:\n\n{fast_summary}"
             
         results = await asyncio.gather(smart_task, adv_task, return_exceptions=True)

@@ -18,12 +18,7 @@ from unittest.mock import MagicMock, AsyncMock, patch
 @pytest.fixture
 def run_async():
     def _run(coro):
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
-        try:
-            return loop.run_until_complete(coro)
-        finally:
-            loop.close()
+        return asyncio.run(coro)
     return _run
 
 
@@ -375,10 +370,11 @@ class TestEscalation:
     def test_escalation_calls_council_and_line(self, mock_services, run_async):
         """Triggers escalate to Council then Notification API."""
         sentinel = _create_sentinel(mock_services)
+        sentinel.settings_service.user_id = "U123"
+        sentinel.user_id = "U123"
 
         async def _test():
-            with patch.dict('os.environ', {"LINE_USER_ID": "U123"}), \
-                 patch('httpx.AsyncClient.post', return_value=MagicMock(status_code=202)) as mock_post:
+            with patch('httpx.AsyncClient.post', return_value=MagicMock(status_code=202)) as mock_post:
                 await sentinel._escalate([{"text": "Test trigger 1", "id": "t1"}, {"text": "Test trigger 2", "id": "t2"}])
                 await sentinel._flush_buffer(force=True)
     

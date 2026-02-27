@@ -57,6 +57,6 @@ class TestUI:
         # Verify sidebar elements
         st_mock.sidebar.__enter__.assert_called()
         # Verify Profile/Settings link
-        st_mock.page_link.assert_any_call("pages/06_Settings.py", label="T. Test U...", icon="👤", help="User Settings", use_container_width=False)
+        st_mock.page_link.assert_any_call("pages/06_Settings.py", label="T. Test U...", icon=":material/account_circle:", help="User Settings", use_container_width=False)
         # Verify columns allocation
         st_mock.columns.assert_called_with([3.5, 1])

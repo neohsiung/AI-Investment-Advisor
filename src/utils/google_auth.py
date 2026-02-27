@@ -79,6 +79,7 @@ class GoogleAuth:
                     st.success("✅ **登入成功！請點擊按鈕進入系統 (Login successful! Click to enter)**")
                     
                     if st.button("🚀 進入系統 (Enter System)", type="primary", use_container_width=True):
+                        st.session_state['connected'] = True
                         try:
                             st.query_params.clear()
                         except Exception:
@@ -110,21 +111,15 @@ class GoogleAuth:
                 st.session_state['oauth_id'] = id_info.get("sub")
                 
                 # Persist in Cookie (expires in 7 days) via CookieManager
-                # Note: Browsers might block 3rd party cookies, but this is 1st party.
-                # Store user info in cookie
                 import datetime
                 expires_at = datetime.datetime.now() + datetime.timedelta(days=7)
                 self.cookie_manager.set(self.cookie_name, user_info, expires_at=expires_at)
 
-                # Sync state immediately into session
-                st.session_state['connected'] = True
-                st.session_state['user_info'] = user_info
-                if 'sub' in user_info:
-                    st.session_state['oauth_id'] = user_info['sub']
-
                 st.success("✅ **登入成功！請點擊按鈕進入系統 (Login successful! Click to enter)**")
                 
                 if st.button("🚀 進入系統 (Enter System)", type="primary", use_container_width=True):
+                    # Sync state immediately into session
+                    st.session_state['connected'] = True
                     # Clear query params internally on click
                     try:
                         st.query_params.clear()
