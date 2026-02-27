@@ -1,6 +1,6 @@
 # Git Commit Message Format Standard
 
-## 强制要求 (Mandatory)
+## 強制要求 (Mandatory)
 
 When generating or helping with Git commit messages, **ALWAYS** follow this bilingual detailed format.
 
@@ -38,49 +38,49 @@ Since this project maintains two separate repositories (**Project Repo** and **W
 
 ## Type Values
 
-| Type | 使用场景 | 示例 |
+| Type | 使用場景 | 範例 |
 |:-----|:---------|:-----|
 | `feat` | 新功能 | `feat(analytics): add Leverage Engine` |
-| `fix` | 错误修复 | `fix(sentinel): correct 4D trigger logic` |
-| `refactor` | 代码重构 | `refactor(agents): extract factory pattern` |
-| `test` | 测试相关 | `test(services): add analytics service tests` |
-| `docs` | 文档更新 | `docs(wiki): update roadmap to v3.7` |
-| `chore` | 构建/配置 | `chore(deps): upgrade pytest to 8.0` |
-| `perf` | 性能优化 | `perf(workflow): optimize agent parallelism` |
-| `style` | 代码格式 | `style(services): apply black formatter` |
+| `fix` | 錯誤修復 | `fix(sentinel): correct 4D trigger logic` |
+| `refactor` | 代碼重構 | `refactor(agents): extract factory pattern` |
+| `test` | 測試相關 | `test(services): add analytics service tests` |
+| `docs` | 文檔更新 | `docs(wiki): update roadmap to v3.7` |
+| `chore` | 建構/配置 | `chore(deps): upgrade pytest to 8.0` |
+| `perf` | 效能優化 | `perf(workflow): optimize agent parallelism` |
+| `style` | 代碼格式 | `style(services): apply black formatter` |
 
 ## Scope Values
 
-| Scope | 范围 |
+| Scope | 範圍 |
 |:------|:-----|
-| `agents` | Agent相关 |
-| `services` | 服务层 |
-| `infrastructure` | 基础设施 |
-| `data` | 数据层 |
-| `repositories` | 仓储层 |
+| `agents` | Agent 相關 |
+| `services` | 服務層 |
+| `infrastructure` | 基礎設施 |
+| `data` | 資料層 |
+| `repositories` | 倉儲層 |
 | `ui` | UI/Pages |
 | `workflow` | 工作流 |
 | `config` | 配置 |
-| `docs` | 文档 |
-| `tests` | 测试 |
+| `docs` | 文檔 |
+| `tests` | 測試 |
 
-## Category Headers (分类标题)
+## Category Headers (分類標題)
 
-使用以下标准分类（双语）:
+使用以下標準分類（雙語）:
 
-1. **核心變更 (Core Changes)** - 最重要的变更，必须包含
-2. **資料層 (Data Layer)** - 数据库、仓储、providers
-3. **服務層 (Service Layer)** - 业务逻辑服务
+1. **核心變更 (Core Changes)** - 最重要的變更，必須包含
+2. **資料層 (Data Layer)** - 資料庫、倉儲、providers
+3. **服務層 (Service Layer)** - 業務邏輯服務
 4. **基礎設施 (Infrastructure)** - LLM router, channel adapters, etc.
-5. **測試覆蓋 (Test Coverage)** - 测试相关变更
-6. **文檔更新 (Documentation)** - Wiki、README更新
-7. **配置 (Configuration)** - 环境变量、settings
+5. **測試覆蓋 (Test Coverage)** - 測試相關變更
+6. **文檔更新 (Documentation)** - Wiki、README 更新
+7. **配置 (Configuration)** - 環境變數、settings
 
-**规则**: 至少包含"核心變更"，其他根据实际情况选择相关分类。
+**規則**: 至少包含「核心變更」，其他根據實際情況選擇相關分類。
 
-## 示例 (Examples)
+## 範例 (Examples)
 
-### 示例1: 新功能 (Feature)
+### 範例 1: 新功能 (Feature)
 
 ```
 feat(analytics): implement Leverage Engine for precise net equity calculation
@@ -103,7 +103,7 @@ feat(analytics): implement Leverage Engine for precise net equity calculation
 - 補充 Leverage Engine 使用範例 / Added Leverage Engine usage examples
 ```
 
-### 示例2: Channel Adapter重构
+### 範例 2: Channel Adapter 重構
 
 ```
 refactor(infrastructure): implement Channel Adapter pattern for notification decoupling
@@ -122,7 +122,7 @@ refactor(infrastructure): implement Channel Adapter pattern for notification dec
 - Mock 外部服務整合測試 / Mocked external service integration tests
 ```
 
-### 示例3: 测试覆盖率提升
+### 範例 3: 測試覆蓋率提升
 
 ```
 test(services): add comprehensive error handling tests for Polygon and FMP providers
@@ -134,7 +134,7 @@ test(services): add comprehensive error handling tests for Polygon and FMP provi
 
 **測試覆蓋 (Test Coverage)**:
 - 測試 API 錯誤處理 (401, 403, 429, 500) / Tested API error handling (401, 403, 429, 500)
-- 測試網路超時與 Malformed JSON / Tested network timeouts and malformed JSON
+- 測試網路逾時與 Malformed JSON / Tested network timeouts and malformed JSON
 - 覆蓋 prev_close fallback 邏輯 / Covered prev_close fallback logic
 
 **服務層 (Service Layer)**:
@@ -142,7 +142,7 @@ test(services): add comprehensive error handling tests for Polygon and FMP provi
 - 驗證 FMPProvider 新聞與價格 API / Validated FMPProvider news and price APIs
 ```
 
-### 示例4: 文档更新
+### 範例 4: 文檔更新
 
 ```
 docs(wiki): update roadmap with v3.7-v4.0 Multi-Tier Agent architecture
@@ -158,49 +158,49 @@ docs(wiki): update roadmap with v3.7-v4.0 Multi-Tier Agent architecture
 - 同步更新 `研究與最佳實踐-Research-Best-Practices.md` / Synced updates to Research & Best Practices
 ```
 
-## 规则细节 (Detailed Rules)
+## 規則細節 (Detailed Rules)
 
-### 1. Summary行
+### 1. Summary 行
 
 - **第一行**: 英文，遵循 Conventional Commits `<type>(<scope>): <summary>`
-- **第二行**: 繁体中文，简洁描述
-- **字数**: 英文 ≤ 72字符，中文 ≤ 30字
+- **第二行**: 繁體中文，簡潔描述
+- **字數**: 英文 ≤ 72 字元，中文 ≤ 30 字
 
-### 2. 核心变更 (必须)
+### 2. 核心變更 (必須)
 
-- 至少包含 1-3 项核心变更
-- 每项使用中文 / 英文格式
-- 描述最重要的变更内容
+- 至少包含 1-3 項核心變更
+- 每項使用中文 / 英文格式
+- 描述最重要的變更內容
 
-### 3. 分类sections (按需)
+### 3. 分類 Sections (按需)
 
-- 根据实际变更选择1-3个相关分类
-- 每个分类下列举具体变更
-- 保持双语格式
+- 根據實際變更選擇 1-3 個相關分類
+- 每個分類下列舉具體變更
+- 保持雙語格式
 
 ### 4. 格式要求
 
-- 使用markdown格式
+- 使用 markdown 格式
 - 中英文使用 ` / ` 分隔
-- 使用bullet points (`-`)
-- 代码元素使用backticks (`` `AnalyticsService` ``)
+- 使用 bullet points (`-`)
+- 代碼元素使用 backticks (`` `AnalyticsService` ``)
 
-### 5. 长度控制
+### 5. 長度控制
 
-- 总长度: 150-300行为佳
-- 核心变更: 1-3项
-- 每个分类: 2-5项细节
+- 總長度: 150-300 行為佳
+- 核心變更: 1-3 項
+- 每個分類: 2-5 項細節
 
-## 违规示例与修正
+## 違規範例與修正
 
-### ❌ 错误: 只有英文
+### ❌ 錯誤: 只有英文
 ```
 feat(analytics): add leverage calculation
 
 Added new methods for calculating net equity and loan values.
 ```
 
-### ✅ 正确: 双语+详细分类
+### ✅ 正確: 雙語 + 詳細分類
 ```
 feat(analytics): implement Leverage Engine for precise net equity calculation
 實現槓桿引擎精確計算淨權益
@@ -212,7 +212,7 @@ feat(analytics): implement Leverage Engine for precise net equity calculation
 - 更新 `AnalyticsService` / Updated `AnalyticsService`
 ```
 
-### ❌ 错误: 缺少分类
+### ❌ 錯誤: 缺少分類
 ```
 feat: update roadmap
 
@@ -221,7 +221,7 @@ feat: update roadmap
 Made changes to roadmap file.
 ```
 
-### ✅ 正确: 清晰分类
+### ✅ 正確: 清晰分類
 ```
 docs(wiki): update roadmap with v3.7 Multi-Tier architecture
 更新產品藍圖新增 v3.7 Multi-Tier 架構
@@ -250,9 +250,24 @@ docs(wiki): update roadmap with v3.7 Multi-Tier architecture
 - **觸發條件**: 僅當使用者明確輸入「commit」指令時，Agent 才可根據上述原子原則執行真正的提交操作。
 - **Wiki 同步**: 同樣適用此原則。Agent 應準備好 Wiki 變更，並在使用者指令下執行 Wiki Repo 的提交。
 
-## 工具集成 (Tool Integration)
+## Wiki 提交規範 (Wiki Commit Convention)
 
-### 生成雙份 Commit Message
+**強制要求 (Mandatory)**: `wiki/` 目錄是一個獨立的 Git Repository（擁有獨立的 `wiki/.git`），與主專案 Repo 分開管理。
+
+- **「wiki commit」指令**: 當使用者說「wiki commit」時，**僅針對 `wiki/` Repo 執行 commit**，不影響主專案 Repo。
+  ```bash
+  # Wiki Commit 操作
+  git -C wiki add <files>
+  git -C wiki commit -m "<message>"
+  git -C wiki push
+  ```
+- **「commit」指令**: 僅針對主專案 Repo 執行 commit，不包含 wiki 目錄（wiki 已在 `.gitignore` 中排除）。
+- **「commit & wiki commit」指令**: 依序執行兩個 Repo 的原子化提交，分別產出符合格式的 commit message。
+- **Push 獨立性**: 兩個 Repo 的 push 操作互相獨立，使用者需分別下達 push 指令或同時指定。
+
+## 工具整合 (Tool Integration)
+
+### 產出雙份 Commit Message
 ```bash
 # 1. Check status
 git status
@@ -262,7 +277,7 @@ git add src/ .agent/ README.md
 git commit -m "<Project-Repo-Message>"
 ```
 
-## 参考 (References)
+## 參考 (References)
 
 - Conventional Commits: https://www.conventionalcommits.org/
 - Git commit best practices: https://chris.beams.io/posts/git-commit/

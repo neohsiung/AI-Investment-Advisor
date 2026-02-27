@@ -1,76 +1,76 @@
 ---
-description: 自动检查测试覆盖率并提供改进建议
+description: 自動檢查測試覆蓋率並提供改進建議 (Automatically check test coverage and provide improvement suggestions)
 ---
 
 # Test Coverage Check Workflow
 
 ## 目的 (Purpose)
 
-在重大功能完成或PR提交前，自动检查测试覆盖率并识别需要补充测试的代码区域。
+在重大功能完成或 PR 提交前，自動檢查測試覆蓋率並識別需要補充測試的代碼區域。
 
-## 触发时机 (When to Run)
+## 觸發時機 (When to Run)
 
-- ✅ 完成新功能开发后
-- ✅ 提交PR前
-- ✅ 定期检查（建议每周）
-- ✅ 覆盖率低于CI门槛（70%）时
+- ✅ 完成新功能開發後
+- ✅ 提交 PR 前
+- ✅ 定期檢查（建議每週）
+- ✅ 覆蓋率低於 CI 門檻（70%）時
 
-## 执行步骤 (Steps)
+## 執行步驟 (Steps)
 
-### 1. 运行完整测试套件
+### 1. 執行完整測試套件
 
 ```bash
 pytest --cov=src --cov-report=term --cov-report=html tests/
 ```
 
-**输出**: 
-- 终端覆盖率报告
-- HTML详细报告 (`htmlcov/index.html`)
+**輸出**: 
+- 終端覆蓋率報告
+- HTML 詳細報告 (`htmlcov/index.html`)
 
-### 2. 比较基准线
+### 2. 比較基準線
 
-当前基准:
-- **目标**: > 75%
-- **CI门槛**: > 70% (pytest.ini: fail_under = 70)
-- **v3.6达成**: 75% (513+ tests, 1757 missed statements)
+當前基準:
+- **目標**: > 75%
+- **CI 門檻**: > 70% (pytest.ini: fail_under = 70)
+- **v3.6 達成**: 75% (513+ tests, 1757 missed statements)
 
-检查命令:
+檢查指令:
 ```bash
-# 查看当前覆盖率
+# 查看當前覆蓋率
 pytest --cov=src --cov-report=term-missing tests/ | grep "TOTAL"
 
-# 识别未覆盖文件
+# 識別未覆蓋檔案
 pytest --cov=src --cov-report=term-missing tests/ | grep -A 100 "TOTAL"
 ```
 
-### 3. 识别未覆盖代码
+### 3. 識別未覆蓋代碼
 
-**优先级排序**:
+**優先順序排列**:
 
-| 优先级 | 模块类型 | 目标覆盖率 | 原因 |
+| 優先級 | 模組類型 | 目標覆蓋率 | 原因 |
 |:-------|:---------|:-----------|:-----|
-| P0 | Services层 | > 80% | 核心业务逻辑 |
-| P0 | Error handling | 100% | 关键错误路径 |
-| P1 | Repositories | > 75% | 数据持久化 |
-| P1 | Agents | > 70% | Agent逻辑 |
-| P2 | UI/Pages | > 50% | Streamlit组件（可选） |
+| P0 | Services 層 | > 80% | 核心業務邏輯 |
+| P0 | Error handling | 100% | 關鍵錯誤路徑 |
+| P1 | Repositories | > 75% | 資料持久化 |
+| P1 | Agents | > 70% | Agent 邏輯 |
+| P2 | UI/Pages | > 50% | Streamlit 元件（可選） |
 
-### 4. 生成测试建议
+### 4. 產出測試建議
 
-根据未覆盖代码，建议创建:
+根據未覆蓋代碼，建議建立:
 
-**Service层** (if coverage < 80%):
+**Service 層** (if coverage < 80%):
 ```python
 # tests/test_{service_name}.py
-- 正常流程测试 (happy path)
-- 错误处理测试 (error paths)
+- 正常流程測試 (happy path)
+- 錯誤處理測試 (error paths)
   - API failures (401, 403, 429, 500)
   - Network timeouts
   - Malformed responses
-- Edge cases (empty data, null values)
+- 邊界案例 (empty data, null values)
 ```
 
-**Provider层** (if coverage < 75%):
+**Provider 層** (if coverage < 75%):
 ```python
 # tests/test_{provider_name}.py
 - Mocked API responses
@@ -79,46 +79,45 @@ pytest --cov=src --cov-report=term-missing tests/ | grep -A 100 "TOTAL"
 - Fallback mechanisms
 ```
 
-### 5. 更新覆盖率状态
+### 5. 更新覆蓋率狀態
 
-如果跨越重要门槛（如75% → 76%），更新文档:
+如果跨越重要門檻（如 75% → 76%），更新文檔:
 
 - [ ] `wiki/03_開發者指南-Developer_Guide/測試與外部服務整合-Testing-External-Services.md`
-  - 更新版本纪录
-  - 更新当前覆盖率数值
+  - 更新版本紀錄
+  - 更新當前覆蓋率數值
 
 - [ ] `README.md` (if milestone achieved)
-  - 更新测试覆盖率徽章
-  - 添加里程碑说明
+  - 更新測試覆蓋率徽章
+  - 新增里程碑說明
 
-## 成功标准 (Success Criteria)
+## 成功標準 (Success Criteria)
 
-- ✅ 总覆盖率 ≥ 70% (CI通过)
-- ✅ Services层覆盖率 ≥ 80%
-- ✅ 错误处理路径已测试
-- ✅ 新功能有对应测试
+- ✅ 總覆蓋率 ≥ 70% (CI 通過)
+- ✅ Services 層覆蓋率 ≥ 80%
+- ✅ 錯誤處理路徑已測試
+- ✅ 新功能有對應測試
 
 ## 工具提示 (Tool Tips)
 
-### 快速查看覆盖率缺口
+### 快速查看覆蓋率缺口
 ```bash
-# 只显示覆盖率<75%的文件
+# 只顯示覆蓋率 < 75% 的檔案
 pytest --cov=src --cov-report=term tests/ | awk '$NF < 75 {print}'
 ```
 
-### 分析特定模块
+### 分析特定模組
 ```bash
 pytest --cov=src/services --cov-report=term-missing tests/
 ```
 
-### 生成HTML报告供查看
+### 產出 HTML 報告供查看
 ```bash
 pytest --cov=src --cov-report=html tests/
 open htmlcov/index.html  # macOS
 ```
 
-## 参考 (References)
+## 參考 (References)
 
-- [测试覆盖率指南](../wiki/03_開發者指南-Developer_Guide/測試與外部服務整合-Testing-External-Services.md)
-- [V3.6 75%达成Walkthrough](../brain/walkthrough.md)
-- pytest文档: https://docs.pytest.org/en/stable/how-to/coverage.html
+- [測試覆蓋率指南](../wiki/03_開發者指南-Developer_Guide/測試與外部服務整合-Testing-External-Services.md)
+- pytest 文檔: https://docs.pytest.org/en/stable/how-to/coverage.html
