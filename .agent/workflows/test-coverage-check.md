@@ -20,7 +20,7 @@ description: 自動檢查測試覆蓋率並提供改進建議 (Automatically che
 ### 1. 執行完整測試套件
 
 ```bash
-pytest --cov=src --cov-report=term --cov-report=html tests/
+python3 -m pytest --cov=src --cov-report=term --cov-report=html tests/
 ```
 
 **輸出**: 
