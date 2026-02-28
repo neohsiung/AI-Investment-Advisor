@@ -46,7 +46,8 @@ v4.6 延續三層式記憶架構：Hot (Redis)、Warm (PostgreSQL) 與 Cold (原
 *   **RedisMemoryRepository** (`src/repositories/redis_memory_repository.py`):
     *   Redis 適配器，處理連線池、序列化 (JSON) 與 TTL 管理。
 *   **HybridMemory** (`src/infrastructure/memory/memory_manager.py`):
-    *   統一的 PostgreSQL + pgvector 記憶子系統，支援向量嵌入搜尋與關鍵字搜尋。
+    *   統一的 PostgreSQL + pgvector 記憶子系統，支援向量嵌入搜尋與全文關鍵字搜尋 (FTS/BM25)。
+    *   **加權融合檢索 (Weighted Score Fusion)**: 捨棄倒數排名融合 (RRF)，採用純量加權 (e.g. `0.7 * Cosine + 0.3 * BM25`)，以保留精準相似度的絕對信號梯度，確保股票代號等冰冷關鍵字與語義知識能被 100% 準確召回。
     *   保留 SQLite 相容性僅供測試環境使用。
 *   **MemoryFactory** (`src/services/memory_factory.py`):
     - **狀態**: 不再支援 SQLite 切換。透過 `MEMORY_BACKEND` 環境變數選擇後端：
@@ -59,10 +60,10 @@ v4.6 延續三層式記憶架構：Hot (Redis)、Warm (PostgreSQL) 與 Cold (原
 
 ## 3. 關鍵特性 (Key Features)
 
-### 3.1 Adaptive Compression (自適應壓縮)
-*   **機制**: 當 Context Window 超過 80% Token 上限時，自動觸發壓縮演算法。
-*   **算法**: 保留最近 20% 的原始訊息，並將其餘 80% 摘要為 "Summary Vector" 或條列式重點。
-*   **目的**: 防止 Token Overflow，同時保留關鍵歷史脈絡。
+### 3.1 壓縮前靜默沖洗與自適應壓縮 (Pre-Compaction Flush & Adaptive Compression)
+*   **觸發機制**: 不等到 Token Overflow，系統會設立「壓縮安全墊 (Reserve Floor)」，當 Session Context 即將逼近上限 (e.g. 達模型上限 80% 或剩餘 4000 tokens) 時觸發。
+*   **靜默沖洗 (Pre-Compaction Flush)**: 在清除舊對話前，Gateway 或者 Workflow 引擎會安插一次「無感知」的 Agent 推理，指示 Agent 將進行中的重要狀態與關鍵字寫入持久化資料庫 (PostgreSQL 或 `MEMORY.md` 狀態日誌)，回覆 `NO_REPLY`。
+*   **算法**: 完成沖洗存檔後，保留最近 20% 的原始訊息，並將其餘 80% 快取轉存為 "Summary Vector" 封存，清空主工作區流。確保高長度對話中的決策與長文背景絕不遺失。
 
 ### 3.2 Conflict Detection (矛盾檢測)
 *   每次生成新觀點 (View) 前，系統會自動檢索歷史記憶 (Latest 3 Days)。
@@ -109,15 +110,16 @@ v4.6 continues the Three-Tier Memory Architecture: Hot (Redis), Warm (PostgreSQL
 #### 2.2 Core Components
 *   **MemoryService**: Unified interface (`get_context`, `store_report`, `check_contradictions`) managing tiering logic with adaptive compression (20% of model token limit).
 *   **RedisMemoryRepository**: Adapter for connection pooling, serialization, and TTL management.
-*   **HybridMemory**: Unified PostgreSQL + pgvector memory subsystem for vector embedding and keyword search.
+*   **HybridMemory**: Unified PostgreSQL + pgvector memory subsystem combining vector embeddings with Full-Text Keyword Search (FTS/BM25). Uses **Weighted Score Fusion** (discarding Reciprocal Rank Fusion) with explicit scalar weighting (e.g. 70% Cosine, 30% BM25) to preserve absolute signal strength for precision matching of stock tickers and error codes.
 *   **MemoryFactory**: Purged SQLite support; defaults to `alchemy` (PostgreSQL) for persistent repositories. Injects `AgentLLMProvider` for LLM-powered summarization and contradiction detection.
 *   **AgentLLMProvider**: Adapts existing Agents (Engineer) to provide `ILLMProvider` services for MemoryService.
 
 ### 3. Key Features
 
-#### 3.1 Adaptive Compression
-*   **Mechanism**: Triggered when Context Window exceeds 80%.
-*   **Algorithm**: Retains recent 20% raw data, summarizes older 80% into vectors/bullet points.
+#### 3.1 Pre-Compaction Flush & Adaptive Compression
+*   **Mechanism**: Triggered silently prior to overflowing (e.g. Context Window reaches 80% or threshold of 4000 tokens remaining).
+*   **Pre-Compaction Flush**: Instead of randomly forgetting, a silent agent logic injects a "Save state" request, storing remaining mission-critical context to DB / `MEMORY.md`, returning `NO_REPLY` before clearing out the context.
+*   **Algorithm**: Retains recent 20% raw data, caches older 80% into "Summary Vector" archives, clearing the primary workspace buffer.
 
 #### 3.2 Conflict Detection
 *   Retrieves last 3 days of history (Warm Tier) before generating new views.

@@ -130,3 +130,26 @@
 *   **初期總成本 (TCO)**: 約落於 **$15 ~ $100 /月** (根據流量與 LLM Token 用量浮動)。
 *   **PAAS 選擇建議**: 就上述架構而言，我們最推薦 **【GCP GKE Autopilot + Vercel + Supabase】** 作為首發陣容。因 GKE Autopilot 是目前三大雲中 Kubernetes 託管體驗最接近 Serverless 且對開發者最友好的選項 (也是 AI Support 輔助最好寫的部署環境)。
 *   **無痛轉換保證**: 在這個架構下，若未來因 Credits 補助或企業策略需要搬遷至 AWS/Azure，我們只需無縫切換 `kubeconfig`，運行相同的 Helm 腳本，前端轉指 Vercel Domain 即完成轉站。沒有任何技術債 (Technical Debt) 被綁架。
+
+---
+
+## 七、 智能體大腦進化：參考 OpenClaw 建立混合記憶與主動探索 (Agentic Storage & Heartbeat)
+
+基於業界頂尖的自主 Agent 開源專案（OpenClaw/Clawdbot）技術架構拆解，我們在原本的基礎儲存 (Supabase) 與調度引擎 (Temporal) 設計之上，**截取以「資安防護」與「高可讀性」為核心的四大優化實踐**，明確納入我們的 B2C 演進藍圖：
+
+### 1. 純文本配置即大腦 (Files as Source of Truth & Security Isolation)
+*   **優化方案**: 將 Agent 的核心長期記憶 (Long-term Memory) 與技能模板 (Skills)，全面改為由 Markdown (`.md`) 檔案承載，取代完全不透明且易遭污染的向量 Blob。
+*   **資安確保 (Security)**: 遵循嚴格的物理隔離與上下文隔絕。包含敏感用戶喜好或金鑰位置的 `MEMORY.md` **絕對禁止在公開/群組對話 (Public Context) 的 RAG 處理中被掛載**，只允許在私密的端對端 Session 中讀取。
+*   **AI Support**: Markdown 是 AI 代碼生成最友善的語法，這使我們的工程師或 AI 夥伴能直接修改 Agent 能力而無需重新發布。
+
+### 2. 混合式搜尋保留絕對信號 (Hybrid Search weighted over RRF)
+*   **優化方案**: 在我們的 **Supabase** 資料庫查詢中，除了使用 `pgvector` 進行提問的語意搜索 (Cosine Similarity) 之外，必須結合 Postgres 內建的全力搜尋功能 (`FTS / BM25`)。
+*   **絕對信號邏輯**: 放棄主流但抹平信號梯度的 RRF (倒數排名融合)，改採**加權分數融合 (Weighted Score Fusion, 例如 70% 向量 + 30% FTS)**。因為對於股票代號、錯誤碼等冰冷文本，BM25 是最能強制確保 100% 召回率的基石。
+
+### 3. 主動性心跳機制 (Active Heartbeat vs. Passive Cron)
+*   **優化方案**: 使用 Temporal.io 排程實作 Agent 的「心跳 (Heartbeat)」調度。每 30 分鐘自動向主 Agent 注入一次靜默的推理請求，讀取 `HEARTBEAT.md` (包含：市場警報、持股異動、系統監控)。
+*   **靜默過濾 (ACK Filter)**: 若 Agent 推理後判斷無異常，僅向後台回傳 `HEARTBEAT_OK`，系統在 Gateway 層面攔截該訊息。只有當出現嚴重市場轉折時，才主動推播至使用者的 Line/APP，形成「無感防護、有感示警」的高端 B2C 使用者體驗。
+
+### 4. 壓縮前靜默沖洗 (Pre-Compaction Memory Flush)
+*   **優化方案**: 在連續持久化對話中 (長 Context)，為避免 Token 溢出導致對話直接中斷或丟失，系統會在逼近 Token 上限 (e.g. 剩餘 4000 token) 時自動觸發強制的「壓縮前沖洗轉寫」。
+*   **實踐目標**: 由系統直接要求 Agent 將剩餘的重要狀態壓縮並以 UUID 為基準 `INSERT` 寫回暫存區或資料庫，確保高延遲投資決策推理過程中的完美狀態保存。
