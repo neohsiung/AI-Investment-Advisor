@@ -203,8 +203,3 @@ volumes:
     name: signoz-sqlite
   zookeeper-1:
     name: signoz-zookeeper-1
-
-networks:
-  advisor-net:
-    external: true
-    name: investment_advisor_advisor-net
