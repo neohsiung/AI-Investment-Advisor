@@ -18,7 +18,7 @@
 
 1. **共享且不透明的黑盒子大腦 (Shared Opaque Memory DBs)**
    - **現況**: 目前的記憶被單一系統共享並序列化存入 PG/Redis。缺乏智能體隔離，開發者也無法一目了然看見各個 Agent 的上下文與學習曲線。如果未來需要擴充第 10 個 Agent，系統架構將難以乾淨切割。
-   - **OpenClaw 解法**: **多智能體獨立純文本大腦 (Multi-Agent independent files)**。為專案中的 **9個 Agent** 建立完全獨立的 Workspace (如 `~/.agent/workspace/<agentId>`)。長期記憶、人格設定、專屬技能全部依賴檔案隔離。未來新增 Agent 時完美繼承此標準。
+   - **OpenClaw 解法**: **多智能體獨立純文本大腦 (Multi-Agent independent files)**。為專案中的 **9個 Agent** 建立完全獨立的 Workspace (如 `workspace/<agentId>`)。長期記憶、人格設定、專屬技能全部依賴檔案隔離。未來新增 Agent 時完美繼承此標準。
 
 2. **RRF 排序導致絕對信號喪失 (Flattened Signal in RRF)**
    - **現況**: Hybrid Search 常依賴 RRF 將向量與全文檢索引擎的分數打平為排名，使語意極度相近 (0.98) 的結果與次等結果 (0.71) 沒有數學權重上的巨大差異。
@@ -75,7 +75,7 @@ flowchart TD
 ### Phase 1: 九大智能體「獨立大腦」分割 (9-Agent Memory Workspace Setup)
 *   **目標**: 將黑盒子的記憶庫拆分為 9 個完全獨立的目錄實體與資料庫結構，未來每增加一個 Agent，均可透過相同的 Template 開箱具備同樣的檢索能力與隔離性。
 *   **任務清單**:
-    *   [ ] 建立 `~/.agent/workspace/<agent_name>/` 路徑結構 (共 9 組)。
+    *   [ ] 建立 `workspace/<agent_name>/` 路徑結構 (共 9 組)。
     *   [ ] 為每個 Agent 配置專屬的 `IDENTITY.md`, `SOUL.md` 與獨立的寫入 `MEMORY.md`。
     *   [ ] 確保 RAG 查詢與寫入時，SQL 層面對 `agent_id` 加入強過濾器 (Role-Level Isolation)。
     *   [ ] **驗收標準**: 各自 Agent 學習到的上下文與習慣絕對不會跨界污染。
