@@ -59,7 +59,17 @@
 5. **架構圖**: 具備 Mermaid 渲染的高級架構概覽。
 6. **深度導航**: 指向 `wiki/` 目錄的精確分類連結。
 
+## 3. 智能體產出物標準 (Agentic Artifacts Standards)
+
+本項標準適用於所有由 Agent 產出的階段性文件，包括 `implementation_plan.md` (Plan)、`task.md` (Task) 與 `walkthrough.md` (Walkthrough)。
+
+### 3.1 雙語撰寫與翻譯流程 (Bilingual Workflow)
+- **撰寫順序 (Writing Order)**: 
+  1. **英文優先 (English First)**: Agent 必須先以專業英文完成上述文件的內容撰寫與更新。
+  2. **繁體中文化 (Traditional Chinese Translation)**: 完成英文版後，必須立即將內容完整翻譯為繁體中文。
+- **排版要求 (Layout)**: 必須確保繁體中文與英文內容並列或分區清晰，方便使用者核對。
+
 ---
 
-## 3. 同步規範 (Sync Rules - Rule #12)
+## 4. 同步規範 (Sync Rules - Rule #12)
 - **原子化同步**: 代碼變更、Commit 文檔、Wiki 更新、README 亮點增補必須在同一週期內完成同步。

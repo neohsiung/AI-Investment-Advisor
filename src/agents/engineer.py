@@ -110,7 +110,7 @@ class SystemEngineerAgent(BaseAgent):
 
     def _log_prompt_change(self, agent_name, reason, old_prompt, new_prompt, diff):
         try:
-            self.prompt_repo.log_change(agent_name, reason, old_prompt, new_prompt, diff)
+            self.prompt_repo.log_change(agent_name, reason, old_prompt, new_prompt, diff, user_id=self.user_id)
         except Exception as e:
             self.logger.error(f"Error logging prompt change: {e}")
 

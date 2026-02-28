@@ -11,7 +11,7 @@ class IPromptRepository(ABC):
     提示詞儲存庫介面。
     """
     @abstractmethod
-    def log_change(self, agent_name: str, reason: str, old_prompt: str, new_prompt: str, diff: str) -> None:
+    def log_change(self, agent_name: str, reason: str, old_prompt: str, new_prompt: str, diff: str, user_id: str = "system") -> None:
         """
         Log a change to an agent's prompt.
         記錄代理人提示詞的變更。
@@ -30,7 +30,7 @@ class AlchemyPromptRepository(BaseRepository, IPromptRepository):
         """
         BaseRepository.__init__(self, engine or get_db_engine())
 
-    def log_change(self, agent_name: str, reason: str, old_prompt: str, new_prompt: str, diff: str) -> None:
+    def log_change(self, agent_name: str, reason: str, old_prompt: str, new_prompt: str, diff: str, user_id: str = "system") -> None:
         """
         Log a change to an agent's prompt.
         記錄代理人提示詞的變更。
@@ -40,8 +40,8 @@ class AlchemyPromptRepository(BaseRepository, IPromptRepository):
                 log_id = str(uuid.uuid4())
                 timestamp = datetime.now().isoformat()
                 query = text('''
-                    INSERT INTO prompt_history (id, timestamp, target_agent, reason, original_prompt, new_prompt, diff_content)
-                    VALUES (:id, :timestamp, :target_agent, :reason, :original_prompt, :new_prompt, :diff_content)
+                    INSERT INTO prompt_history (id, timestamp, target_agent, reason, original_prompt, new_prompt, diff_content, user_id)
+                    VALUES (:id, :timestamp, :target_agent, :reason, :original_prompt, :new_prompt, :diff_content, :user_id)
                 ''')
                 conn.execute(query, {
                     "id": log_id,
@@ -50,7 +50,8 @@ class AlchemyPromptRepository(BaseRepository, IPromptRepository):
                     "reason": reason,
                     "original_prompt": old_prompt,
                     "new_prompt": new_prompt,
-                    "diff_content": diff
+                    "diff_content": diff,
+                    "user_id": user_id
                 })
         except Exception as e:
             # We don't want to fail the whole agent run if logging prompt fails

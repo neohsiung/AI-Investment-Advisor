@@ -1,8 +1,4 @@
-# AI Investment Advisor (v1.2.0)
-
-### 版本紀錄 (Version History)
-| Date | Version | Description | Author |
-| :--- | :--- | :--- | :--- |
+| 2026-02-28 | v1.2.2 | **Observability & Audit Alignment**: Fixed OTel connectivity via `host.docker.internal`. Implemented `user_id` audit tracking in `prompt_history` and enhanced agent session persistence. | Antigravity |
 | 2026-02-27 | v1.2.1 | **Data Provider Standardization**: Standardized Fred, Finnhub, and AlphaVantage providers. Resolved test collection errors and restored coverage to 72%. | Antigravity |
 | 2026-02-27 | v1.2.0 | **Dynamic AI Orchestration**: Implemented dynamic confidence thresholds, 1-10 scoring, and bilingual "English Thinking" directives. Optimized CIO report parsing. | Antigravity |
 | 2026-02-21 | v1.1.0 | **Microservices Monorepo & Observability**: Integrated SigNoz APM, OpenTelemetry, and Standalone Notification Service into the architecture. | Neo |
@@ -35,8 +31,9 @@
 - **🧠 智能進化集群 (Swarm Intelligence)**: 由 CIO Agent 領銜協同 Fundamental, Momentum 等專家智能體，消除單一模型幻覺 (Hallucinations)，提升決策勝率與可解釋性。
 - **⏱️ 毫秒級自動化防禦 (Auto-Defense via Dynamic Threshold)**: 內建 `AutomatedTradingService` 與 `SentinelService`。系統現在會根據您設定的**動態信心門檻 (1-10)** 自動下單。當 CIO 評分超過門檻時自動執行；若未達標則發送帶有按鈕的**互動式審核通知**，將主動防禦與人工掌控完美結合。
 - **⚖️ 專業級風控與槓桿管理 (Institutional Risk Management)**: 獨有的槓桿引擎，嚴格追蹤 Gross/Net NLV，配有 24 小時動態異常降噪與 Margin Call 熔斷機制。
-- **🗄️ 混合 RAG 與記憶檢索 (Hybrid Memory Architecture)**: 以 PostgreSQL 作為結構化核心，輔以 pgvector 實現語義記憶 RAG，確保 AI 決策具備深度的歷史復盤脈絡與一致性。
+- **🗄️ 混合 RAG 與記憶檢索 (Hybrid Memory Architecture)**: 以 PostgreSQL 作為結構化核心，輔以 pgvector 實現語義記憶 RAG。現在支援全域 `user_id` 審計（包含提示詞歷史），確保 AI 決策具備深度的歷史復盤脈絡與一致性。
 - **🔬 自導演算法工程師 (Code-Level Alpha Seeking)**: 內置 `SystemEngineerAgent`，能運用遺傳演算法 (Genetic Algorithm) 自行撰寫、回測並迭代因子 (Alpha) 程式碼，持續演化交易邏輯。
+- **📊 強化觀測性 (Enhanced Observability)**: 預配置 SigNoz APM。在 Mac 執行時透過 `host.docker.internal` 提供高可靠性的遙測橋接，確保追蹤與日誌零失誤。
 
 ### 📐 策略性分層架構 (Strategic Tiered Architecture)
 
@@ -136,8 +133,9 @@ graph TD
 - **🧠 Swarm Intelligence (v1.0)**: A CIO-led cluster coordinating domain experts (Fundamental, Momentum, Macro) via Fractal Debate, eliminating single-model hallucinations and boosting decision win rates and explainability.
 - **⏱️ Automated Millisecond Defense (Dynamic Threshold Logic)**: Integrated `AutomatedTradingService` and `Sentinel` autonomously execute trades based on **Dynamic Confidence Thresholds (1-10)**. Orders exceeding thresholds are executed instantly, while others trigger **Interactive Approval Requests**, merging machine speed with human oversight.
 - **⚖️ Institutional Risk Engine (Precision Leverage Engine)**: Professional-grade tracking of Gross/Net NLV and margin utilization with 24-hour smart dynamic noise reduction and dynamic Circuit Breakers.
-- **🗄️ Hybrid RAG Memory (Hybrid Memory Architecture)**: Employs PostgreSQL as the structured backbone alongside pgvector for semantic retrieval-augmented generation (RAG), guaranteeing historical consistency and context-aware decisions.
+- **🗄️ Hybrid RAG Memory (Hybrid Memory Architecture)**: Employs PostgreSQL as the structured backbone alongside pgvector for semantic retrieval-augmented generation (RAG). Now supports global `user_id` audit (including prompt history), guaranteeing historical consistency and context-aware decisions.
 - **🔬 Autonomous Quant Engineer (Code-Level Alpha Seeking)**: The integrated `SystemEngineerAgent` utilizes genetic algorithms to write, backtest, and iterate Alpha creation scripts, ensuring the trading logic continually evolves without manual intervention.
+- **📊 Robust Observability**: Pre-configured SigNoz APM with specialized `host.docker.internal` bridging for high-reliability telemetry on macOS, ensuring seamless tracing and logging.
 
 ### 📐 Strategic Tiered Architecture
 

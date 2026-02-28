@@ -77,6 +77,8 @@ services:
     restart: on-failure
     volumes:
       - ../common/clickhouse/user_scripts:/var/lib/clickhouse/user_scripts/
+    networks:
+      - advisor-net
   zookeeper-1:
     !!merge <<: *zookeeper-defaults
     container_name: signoz-zookeeper-1
@@ -92,6 +94,8 @@ services:
       - ZOO_AUTOPURGE_INTERVAL=1
       - ZOO_ENABLE_PROMETHEUS_METRICS=yes
       - ZOO_PROMETHEUS_METRICS_PORT_NUMBER=9141
+    networks:
+      - advisor-net
   clickhouse:
     !!merge <<: *clickhouse-defaults
     container_name: signoz-clickhouse
@@ -106,6 +110,8 @@ services:
       - ../common/clickhouse/user_scripts:/var/lib/clickhouse/user_scripts/
       - ../common/clickhouse/cluster.xml:/etc/clickhouse-server/config.d/cluster.xml
       - clickhouse:/var/lib/clickhouse/
+    networks:
+      - advisor-net
       # - ../common/clickhouse/storage.xml:/etc/clickhouse-server/config.d/storage.xml
   signoz:
     !!merge <<: *db-depend
@@ -130,6 +136,8 @@ services:
       - TELEMETRY_ENABLED=true
       - DEPLOYMENT_TYPE=docker-standalone-amd
       - DOT_METRICS_ENABLED=true
+    networks:
+      - advisor-net
     healthcheck:
       test:
         - CMD
@@ -158,6 +166,8 @@ services:
       # - "1777:1777"     # pprof extension
       - "4317:4317" # OTLP gRPC receiver
       - "4318:4318" # OTLP HTTP receiver
+    networks:
+      - advisor-net
     depends_on:
       signoz:
         condition: service_healthy
@@ -172,6 +182,8 @@ services:
     depends_on:
       clickhouse:
         condition: service_healthy
+    networks:
+      - advisor-net
     restart: on-failure
   schema-migrator-async:
     !!merge <<: *db-depend
@@ -182,6 +194,8 @@ services:
       - --dsn=tcp://clickhouse:9000
       - --up=
     restart: on-failure
+    networks:
+      - advisor-net
 volumes:
   clickhouse:
     name: signoz-clickhouse
@@ -189,3 +203,8 @@ volumes:
     name: signoz-sqlite
   zookeeper-1:
     name: signoz-zookeeper-1
+
+networks:
+  advisor-net:
+    external: true
+    name: investment_advisor_advisor-net

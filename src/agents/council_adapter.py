@@ -18,6 +18,8 @@ class CouncilAgentAdapter:
         Synchronous wrapper for start_session.
         start_session 的同步封裝函式。
         """
+        user_id = context.get("user_id", "system")
+        
         # Create a new loop if needed, or use existing
         try:
              loop = asyncio.get_event_loop()
@@ -30,7 +32,7 @@ class CouncilAgentAdapter:
              # We might need a thread.
              import concurrent.futures
              with concurrent.futures.ThreadPoolExecutor() as executor:
-                  future = executor.submit(asyncio.run, self.service.start_session(self.topic, context, self.scope))
+                  future = executor.submit(asyncio.run, self.service.start_session(self.topic, context, self.scope, user_id=user_id))
                   return future.result()
         else:
-             return loop.run_until_complete(self.service.start_session(self.topic, context, self.scope))
+             return loop.run_until_complete(self.service.start_session(self.topic, context, self.scope, user_id=user_id))

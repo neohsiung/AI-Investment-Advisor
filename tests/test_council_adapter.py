@@ -27,7 +27,7 @@ def test_council_adapter_run_sync_loop():
         result = adapter.run({})
         
         assert result["result"] == "success"
-        mock_instance.start_session.assert_called_with("Test Topic", {}, "test")
+        mock_instance.start_session.assert_called_with("Test Topic", {}, "test", user_id='system')
         mock_loop.run_until_complete.assert_called_with(mock_coro)
 
 def test_council_adapter_run_async_loop_running():
