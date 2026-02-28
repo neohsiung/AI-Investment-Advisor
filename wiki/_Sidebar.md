@@ -48,6 +48,7 @@
     *   [工具函式庫指南 (Utils Library)](工具函式庫指南-Utils-Library-Guide)
 *   **04. 架構觀點 (Architecture Blueprints)**
     *   [C端 SAAS 技術選型與演進計畫 (B2C Tech Evolution)](C端-SAAS-技術選型與演進計畫-B2C-SaaS-Tech-Stack-Evolution)
+    *   [C端 SAAS 技術選型深度解析 (B2C Tech Stack Deep Dive)](C端-SAAS-技術選型深度解析-B2C-Tech-Stack-Deep-Dive)
     *   [系統全景圖 (System Landscape)](系統全景圖-System-Landscape)
     *   [架構哲學 (ADR & Philosophies)](架構哲學-Architectural-Philosophies)
     *   [代理人戰略協定 (Agent Swarm Protocol)](代理人戰略協定-Agent-Swarm-Protocol)
