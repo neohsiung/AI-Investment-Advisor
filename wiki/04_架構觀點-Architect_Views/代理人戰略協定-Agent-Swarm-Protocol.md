@@ -3,6 +3,7 @@
 ### 版本紀錄 (Version History)
 | Date | Version | Description | Author |
 | :--- | :--- | :--- | :--- |
+| 2026-02-28 | v4.3 | **Context Safety & WAL Protocol**: Implemented `_check_context_window` and `_perform_silent_flush` into `BaseAgent` to handle extreme long-context overflow safely without memory loss. | Agent |
 | 2026-02-27 | v4.2 | **Graceful Degradation Fix**: Enforced strict `asyncio.Task.cancel()` and `await` on pre-empted Swift/Adv tier tasks to prevent orphaned event loops in non-async testing environments. | Neo |
 | 2026-02-21 | v4.1 | **Thematic & Narrative Drift Agents**: Added ThematicAgent at system level and Narrative Drift Agent (System 2 auditor for CIO narrative accuracy). | Neo |
 | 2026-02-14 | v3.5 | Full 7+1 agent roster, Council Fractal Debate, AgentFactory | Neo |
@@ -74,6 +75,7 @@ graph TD
 - **Factory**: `src/agents/factory.py` — `create_agent(name, tier)` 動態建立。
 - **依賴注入**: 自動注入 `feedback_repo`、`market_tools`、`mcp_server`。
 - **Tier 系統**: `Fast` (Flash) / `Smart` (Pro) / `Advanced` (Thinking)。
+- **安全上下文管理 (Context Guard & WAL Protocol)**: BaseAgent 實作了 Token 預留墊 (預設 4,000 tokens)。當上下文逼近上限時，會觸發 `_perform_silent_flush`，透過 `SYSTEM SILENT COMMAND` 讓 LLM 自動輸出 `WAL_CHECKPOINT` 並保存至專屬 workspace 的 `STATE.md` 中，接著截斷訊息歷史，保證「不丟失推論脈絡的前提下釋放 Token 負載」。
 
 ### 2. 蜂群角色 (Agent Swarm Roles)
 
