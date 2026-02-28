@@ -3,6 +3,7 @@ import json
 import requests
 import hashlib
 from abc import ABC, abstractmethod
+from typing import List, Dict, Optional
 from sqlalchemy import text
 from jinja2 import Template
 # from src.data.database import get_db_connection # Removed for DIP
@@ -229,6 +230,58 @@ class BaseAgent(ABC):
         執行 Agent 任務。
         """
         pass
+
+    def _estimate_tokens(self, text: str) -> int:
+        """
+        Estimate token count (approx. 4 chars per token).
+        """
+        return len(text) // 4
+
+    def _check_context_window(self, messages: List[Dict[str, str]], reserve_floor: int = 4000, max_tokens: int = 32000) -> bool:
+        """
+        Check if the current context approaches the token limit.
+        如果上下文超過安全線，提早觸發 Flush 訊號。
+        """
+        total_tokens = sum(self._estimate_tokens(msg.get("content", "")) for msg in messages)
+        if total_tokens > (max_tokens - reserve_floor):
+            self.logger.warning(f"Context Window approaching limit! Tokens: {total_tokens} (Reserve: {reserve_floor})")
+            return True
+        return False
+
+    def _perform_silent_flush(self, messages: List[Dict[str, str]]):
+        """
+        WAL Protocol: Write state context out and truncate history to preserve trajectory.
+        將當前思考軌跡壓縮，寫入狀態日誌，避免斷片。
+        """
+        self.logger.info(f"[{self.name}] Initiating Silent Pre-Compaction Flush & WAL")
+        
+        # 1. Ask LLM to summarize and generate a WAL checkpoint
+        flush_prompt = (
+            "SYSTEM SILENT COMMAND: The context window is almost full. "
+            "Please summarize your current reasoning state, memory trajectory, and any pending tool calls. "
+            "Output MUST be in markdown format prefixed with 'WAL_CHECKPOINT:' so I can restore this session."
+        )
+        temp_messages = messages + [{"role": "user", "content": flush_prompt}]
+        
+        try:
+            # Simple sync call for the summary
+            wal_state = self.call_llm(temp_messages, temperature=0.1)
+            
+            # 2. Write WAL to Workspace /STATE.md (Rule #1)
+            if hasattr(self, 'workspace_path') and self.workspace_path:
+                state_path = os.path.join(self.workspace_path, "STATE.md")
+                with open(state_path, "w", encoding="utf-8") as f:
+                    f.write(f"# Session Checkpoint: {datetime.now().isoformat()}\n\n{wal_state}")
+            
+            # 3. Truncate History: Keep System Prompt, latest WAL state, and drop the middle
+            if len(messages) > 3:
+                system_msg = messages[0]
+                messages.clear()
+                messages.append(system_msg)
+                messages.append({"role": "user", "content": f"Session Restored from Checkpoint:\n\n{wal_state}\n\nPlease continue where you left off."})
+                self.logger.info("Context truncated via WAL.")
+        except Exception as e:
+            self.logger.error(f"Silent flush failed: {e}")
 
     def run_tool_loop(self, context, max_turns=3, thought_chain=False):
         """
