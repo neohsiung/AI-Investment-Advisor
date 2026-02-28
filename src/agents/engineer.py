@@ -139,14 +139,48 @@ class SystemEngineerAgent(BaseAgent):
         raw_feedback = optimizations[0]['raw_feedback']
 
         target_agent = "Momentum" # Default or detected
-        target_path = "prompts/momentum_agent.txt"
+        
+        # New Workspace mappings
+        workspace_map = {
+            "Momentum": "market-scanner",
+            "Fundamental": "data-prep",
+            "Macro": "macro-evaluator",
+            "CIO": "captain",
+            "Risk": "risk-assessor",
+            "Sentiment": "sentiment-analyst",
+            "Thematic": "portfolio-manager"
+        }
 
         if "Fundamental" in raw_feedback:
             target_agent = "Fundamental"
-            target_path = "prompts/fundamental_agent.txt"
         elif "Macro" in raw_feedback:
             target_agent = "Macro"
-            target_path = "prompts/macro_agent.txt"
+        elif "CIO" in raw_feedback or "Captain" in raw_feedback:
+            target_agent = "CIO"
+        elif "Risk" in raw_feedback:
+            target_agent = "Risk"
+        elif "Sentiment" in raw_feedback:
+            target_agent = "Sentiment"
+        elif "Thematic" in raw_feedback:
+            target_agent = "Thematic"
+
+        # Determine target path
+        ws_name = workspace_map.get(target_agent, target_agent.lower().replace(" ", "-"))
+        workspace_dir = f"workspace/{ws_name}"
+        target_path = f"{workspace_dir}/IDENTITY.md"
+
+        # Fallback to legacy path if workspace does not exist or IDENTITY.md doesn't exist
+        if not os.path.exists(target_path):
+            legacy_map = {
+                "Momentum": "prompts/momentum_agent.txt",
+                "Fundamental": "prompts/fundamental_agent.txt",
+                "Macro": "prompts/macro_agent.txt",
+                "CIO": "prompts/cio_weekly.txt",
+                "Risk": "prompts/risk_agent.txt",
+                "Sentiment": "prompts/sentiment_agent.txt",
+                "Thematic": "prompts/thematic_agent.txt"
+            }
+            target_path = legacy_map.get(target_agent, f"prompts/{target_agent.lower()}_agent.txt")
 
         original_prompt = self._read_prompt(target_path)
 

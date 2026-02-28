@@ -32,18 +32,32 @@ class BaseAgent(ABC):
         self.state_repo = state_repo or AlchemyAgentStateRepository()
         self.feedback_repo = feedback_repo or AlchemyFeedbackRepository()
         
-        self.system_prompt = self._load_prompt()
-        self.config = self._load_config()
-        self.cache = ResponseCache(ttl_hours=ttl_hours) if use_cache else None
-        
-        # [NEW] Tool Server (Personal Toolbox)
-        # [NEW] 工具伺服器 (個人工具箱)
-        self.toold = McpServer(name=f"{self.name}_Tools")
-
         # [NEW] OpenClaw Components
         self.memory = HybridMemory() # Shared DB for now (目前共用 DB)
         self.skill_loader = SkillLoader()
         self.skill_loader.load_skills()
+        
+        # [NEW] Agentic Brain (Workspace)
+        workspace_map = {
+            "CIO": "captain",
+            "Macro": "macro-evaluator",
+            "Risk": "risk-assessor",
+            "Sentiment": "sentiment-analyst",
+            "Momentum": "market-scanner",
+            "Fundamental": "data-prep",
+            "Thematic": "portfolio-manager",
+            "Engineer": "system-engineer"
+        }
+        mapped_name = workspace_map.get(self.name, self.name.lower().replace(" ", "-"))
+        self.workspace_path = f"workspace/{mapped_name}"
+        
+        # Must load prompt after workspace_path is defined
+        self.system_prompt = self._load_prompt()
+        self.config = self._load_config()
+        self.cache = ResponseCache(ttl_hours=ttl_hours) if use_cache else None
+        
+        # Set up Tool Server
+        self.toold = McpServer(name=f"{self.name}_Tools")
         
         # Bind implementations
         from src.agents.skills.registry import bind_skills_to_agent
@@ -132,9 +146,27 @@ class BaseAgent(ABC):
 
     def _load_prompt(self):
         """
-        Load system prompt from file.
-        從檔案載入系統提示詞。
+        Load system prompt from workspace if available, else fallback to prompt_path file.
+        從檔案或獨立大腦載入系統提示詞。
         """
+        # [Phase 1] Attempt to load from new Workspace directories first
+        prompt_content = ""
+        if hasattr(self, 'workspace_path') and self.workspace_path and os.path.exists(self.workspace_path):
+            identity_path = os.path.join(self.workspace_path, "IDENTITY.md")
+            soul_path = os.path.join(self.workspace_path, "SOUL.md")
+            
+            if os.path.exists(identity_path):
+                with open(identity_path, 'r', encoding='utf-8') as f:
+                    prompt_content += f.read() + "\n\n"
+                    
+            if os.path.exists(soul_path):
+                with open(soul_path, 'r', encoding='utf-8') as f:
+                    prompt_content += f.read() + "\n\n"
+                    
+            if prompt_content.strip():
+                return prompt_content.strip()
+
+        # Fallback to legacy path
         if not os.path.exists(self.prompt_path):
             raise FileNotFoundError(f"Prompt file not found: {self.prompt_path}")
         with open(self.prompt_path, 'r', encoding='utf-8') as f:
