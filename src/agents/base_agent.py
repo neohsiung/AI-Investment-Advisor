@@ -353,49 +353,7 @@ class BaseAgent(ABC):
 
     # --- Context Guard ---
 
-    def _check_context_window(self, messages, threshold=60000):
-        """
-        Estimate token count (approx 4 chars/token).
-        Default threshold ~15k tokens.
-        """
-        total_chars = sum(len(m.get('content', '')) for m in messages)
-        return total_chars > (threshold * 4)
 
-    def _perform_silent_flush(self, messages):
-        """
-        Silent Flush: Summarize facts to memory and prune history.
-        """
-        self.logger.warning("ContextGuard: Flush Triggered!")
-        
-        # 1. Summarize (Naive implementation: Just dump last user message as fact for now to save tokens)
-        # Real implementation would call LLM to summarize
-        try:
-            # Extract recent conversation
-            recent = messages[-2:] if len(messages) > 2 else messages
-            content_to_save = json.dumps(recent)
-            
-            # Save to HybridMemory
-            self.memory.add_memory(
-                memory_id=str(uuid.uuid4()),
-                user_id=self.user_id,
-                content=f"Archive from {datetime.now()}: {str(recent)[:200]}...",
-                embedding=[], # Skip embedding for flush if no embedder
-                category="conversation_archive"
-            )
-            
-            # 2. Prune: Keep System Prompt + Last 3 Turns
-            system_msg = next((m for m in messages if m['role'] == 'system'), None)
-            new_history = [system_msg] if system_msg else []
-            new_history.extend(messages[-6:])
-            
-            # Replace in place
-            messages.clear()
-            messages.extend(new_history)
-            
-            self.logger.info("ContextGuard: Flushed and Pruned history.")
-            
-        except Exception as e:
-            self.logger.error(f"Silent flush failed: {e}") 
 
     def call_swarm(self, agents: list, message: str, context: dict = None) -> dict:
         """
