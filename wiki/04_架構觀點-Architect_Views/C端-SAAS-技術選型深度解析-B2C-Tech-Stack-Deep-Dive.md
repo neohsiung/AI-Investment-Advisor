@@ -105,3 +105,28 @@
 | **GitBook / Notion** | SaaS 不用自己架；好寫。 | 無法輕易將代碼庫與 MDX 結合；外部 SaaS 或有資安顧慮。 | ❌ 無法與 Monorepo 進行「原子提交與文檔同步原則」。 | 捨棄 |
 | **MkDocs (Material)** | Python 原生，與現有生態近。 | UI/UX 較傳統；前端客製化受限。 | 🟡 契合標準，但質感不如 React 系流暢。 | 備選 |
 | **Docusaurus** | Meta 開發；React 驅動；內建 Algolia 搜尋；輕易整合 Swagger/OpenAPI。 | 需要裝 Node.js 環境。 | ✅ **完美契合**, 以一流的開發者體驗 (DX) 滿足我們所有的視覺化與規格驅動原則。 | 🏆 **勝出選用** |
+
+---
+
+## 六、 多雲部署成本評估基準與架構設計 (1-Person Scale Cloud Cost & Architecture)
+
+在符合 **Google Cloud Well-Architected Framework (GCWAF)** 的「成本最佳化 (Cost Optimization)」原則下，我們採取**高度按需計費 (Pay-as-you-go)** 與 **Serverless** 優先的模型。
+這套基於 **Next.js + Kubernetes (API) + Supabase (State)** 的組合，即使被部署在三大公有雲的任何一家（滿足雲端可攜性），以「1 人規模的企業/個人驗證環境」起步，每月的營運成本 (OPEX) 基本都能被精準壓制在極低的水準。
+
+> 🤖 **開發為 AI Support First 優先**:
+> K8s Config (YAML) 與 Helm Charts 是結構化宣告語法 (Declarative Schema)，這種標準化能完美讓 AI 進行「代碼即基礎架構 (IaC)」部署腳本的編寫與審查。所有的架構都不依賴雲服務後台的手動點擊設定，實現高可移植性。
+
+以下為三大 PAAS/CAAS 服務商每月預估的基準啟動成本比較 (預估為每月 1 萬次以內請求的早期流量)：
+
+| 基礎設施元件 | Google Cloud (GCP) 方案 | AWS 方案 | Azure 方案 | 月成本預估 (USD) | GCWAF 基準匹配度 |
+| :--- | :--- | :--- | :--- | :--- | :--- |
+| **Frontend CDN Edge** | **Vercel** 部署 (強綁定 Next.js，底層為 Cloudflare) 或 Firebase Hosting | Vercel (推薦) / AWS Amplify | Vercel (推薦) / Azure Static Web Apps | **$0** (Hobby) ~ **$20** (Pro) | 邊緣節點極致快取；AI 支援友好 |
+| **無狀態 API (K8s)** | **GKE Autopilot** (免維護掌控層，完全按 Pod 使用秒數計費) | **EKS + Fargate** (Serverless K8s 定價) | **AKS Serverless** (Azure Container Apps) | **$10** ~ **$40** (僅於流量峰值計費) | 高可用部署 (HA)、無狀態擴容彈性 |
+| **Stateful Database** | **Supabase** (代管 Postgres + pgvector) | Supabase (架構跨雲) 或 Neon DB | Supabase (架構跨雲) | **$0** (Free) ~ **$25** (Pro) | 全代管；消除人為維運與升級麻煩 |
+| **Stateful Cache** | **Upstash** (Serverless Redis) | Upstash | Upstash | **$0** (Free) ~ **$10** | 按請求計次收費，免除常駐 VM 昂貴費用 |
+| **AI 推理 API (LLM)** | Google Gemini API / Vertex AI | Anthropic Claude API / Bedrock | OpenAI API (Azure OpenAI) | **按 Token 計費** ($5 ~ $20) | 多模型路由，防護閘限流設定 |
+
+### 💰 總成本比較與策略結論
+*   **初期總成本 (TCO)**: 約落於 **$15 ~ $100 /月** (根據流量與 LLM Token 用量浮動)。
+*   **PAAS 選擇建議**: 就上述架構而言，我們最推薦 **【GCP GKE Autopilot + Vercel + Supabase】** 作為首發陣容。因 GKE Autopilot 是目前三大雲中 Kubernetes 託管體驗最接近 Serverless 且對開發者最友好的選項 (也是 AI Support 輔助最好寫的部署環境)。
+*   **無痛轉換保證**: 在這個架構下，若未來因 Credits 補助或企業策略需要搬遷至 AWS/Azure，我們只需無縫切換 `kubeconfig`，運行相同的 Helm 腳本，前端轉指 Vercel Domain 即完成轉站。沒有任何技術債 (Technical Debt) 被綁架。
