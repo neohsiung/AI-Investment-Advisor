@@ -91,10 +91,11 @@ flowchart TD
 ### Phase 3: Webhook 雙軌制與部分主動心跳 (Dual-Track: Heartbeat / Webhooks)
 *   **目標**: 大幅降低 API 成本，僅分配算力給需要守望市場變化的特務，剩餘 Agent 從旁待機。
 *   **任務清單**:
-    *   [ ] 分析 9 個 Agent，僅指定 (例如 Sentinel Agent、Captain Agent) 掛載每 30 分鐘的 `HeartbeatScheduler`，讓它們主動關注市場大盤或重要事件。
-    *   [ ] 為另外一批功能單純的 Agent (如 Backtest Agent、Data Prep)，保留現有的低成本 `Webhook` 被動觸發機制，有指令才喚醒。
-    *   [ ] 實作過濾器 (ACK Filter): 心跳推論後回傳 `HEARTBEAT_OK` 者直接靜默不推播給外部使用者。
+    *   [x] 分析 9 個 Agent，僅指定 (例如 Sentinel Agent、Captain Agent) 掛載每 30 分鐘的 `HeartbeatScheduler`，讓它們主動關注市場大盤或重要事件。
+    *   [x] 為另外一批功能單純的 Agent (如 Backtest Agent、Data Prep)，保留現有的低成本 `Webhook` 被動觸發機制，有指令才喚醒。
+    *   [x] 實作過濾器 (ACK Filter): 心跳推論後回傳 `HEARTBEAT_OK` 者直接靜默不推播給外部使用者。
     *   [ ] **驗收標準**: 系統維護了極高的市場敏銳度，但 API 消耗成本精準可控，未產生通知疲勞。
+
 
 ### Phase 4: Token 安全墊與 WAL 狀態寫入 (Pre-Compaction Flush & WAL Protocol)
 *   **目標**: 終結高長度財報分析中 Context Token 溢出導致的斷片現象，實作極致的壓縮儲存。

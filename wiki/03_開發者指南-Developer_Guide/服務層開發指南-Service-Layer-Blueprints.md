@@ -5,6 +5,7 @@
 ### 版本紀錄 (Version History)
 | Date | Version | Description | Author |
 | :--- | :--- | :--- | :--- |
+| 2026-02-28 | v4.3 | **Webhook Updates**: Added Heartbeat API and Market-Alert webhooks for Sentinel. | Antigravity |
 | 2026-02-18 | v4.1 | **Async & Multi-Identity**: Refactored Notification/Interaction services to be non-blocking. Unified user identity resolution. | Neo |
 | 2026-02-15 | v3.6 | Added Leverage Engine & Bilingual Code Standards | Neo |
 | 2026-02-14 | v3.5 | Added RiskKeywordRepository, Sentinel 4D triggers, weighted keywords, Tavily pipeline | Neo |
@@ -111,7 +112,7 @@ graph TD
 | `NotificationService` | `notification_service.py` | **[Async v4.1]** 非同步警報推送，具備 UUID 多通路映射能力。 |
 | `NotificationFilters` | `notification_filters.py` | 興趣導向通知過濾 — 依據使用者每通道訂閱的類別 (sentinel/report/approval) 決定是否推送。 |
 | `ReportingService` | `reporting_service.py` | Agent Markdown 報告轉換為專業機構級 HTML 格式 (Email/Web)。 |
-| `WebhookService` | `webhook_service.py` | 外部 Webhook 接收與解析 — 支援多來源 (MktRecap 等) 事件觸發 Sentinel。 |
+| `WebhookService` | `webhook_service.py` | 外部 Webhook 接收與解析 — 支援心跳檢查 (Heartbeat) 與異常警報 (Market-Alert) 觸發 Sentinel。 |
 | `UserFocusService` | `user_focus_service.py` | 使用者投資焦點提取 — 從 eToro 觀察名單分析板塊/產業偏好。 |
 
 ### 3. 代理人執行引擎 (Agent Execution Engine)
