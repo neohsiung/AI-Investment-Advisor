@@ -29,7 +29,7 @@ class FMPProvider(MarketDataProvider):
         
         # Priority: explicit -> DB -> Env
         self.api_key = api_key or settings.get("source_fmp_api_key") or os.getenv("FMP_API_KEY")
-        self.base_url = "https://financialmodelingprep.com/api/v3"
+        self.base_url = "https://financialmodelingprep.com/stable"
         
         if not self.api_key:
             self.logger.warning("FMP_API_KEY not found.")
@@ -75,15 +75,15 @@ class FMPProvider(MarketDataProvider):
         if not self.api_key: return pd.DataFrame()
         
         try:
-            # Replaces legacy empty implementation
-            url = f"{self.base_url}/historical-price-full/{ticker}"
-            params = {"apikey": self.api_key}
+            # Replaces legacy empty implementation with stable endpoint
+            url = "https://financialmodelingprep.com/stable/historical-price-eod/full"
+            params = {"symbol": ticker, "apikey": self.api_key}
             
             # Map period to 'from' date if needed, but FMP returns a clean list we can slice
             resp = requests.get(url, params=params, timeout=10)
             if resp.status_code == 200:
                 data = resp.json()
-                historical = data.get('historical', [])
+                historical = data if isinstance(data, list) else data.get('historical', [])
                 if not historical:
                     return pd.DataFrame()
                 
@@ -113,8 +113,8 @@ class FMPProvider(MarketDataProvider):
         """
         if not self.api_key: return []
         try:
-             url = f"{self.base_url}/stock_news"
-             params = {"tickers": ticker, "limit": limit, "apikey": self.api_key}
+             url = "https://financialmodelingprep.com/stable/news/stock"
+             params = {"symbol": ticker, "limit": limit, "apikey": self.api_key}
              resp = requests.get(url, params=params, timeout=5)
              if resp.status_code == 200:
                  data = resp.json()
@@ -138,8 +138,8 @@ class FMPProvider(MarketDataProvider):
         """
         if not self.api_key: return {}
         try:
-            url = f"{self.base_url}/profile/{ticker}"
-            params = {"apikey": self.api_key}
+            url = "https://financialmodelingprep.com/stable/profile"
+            params = {"symbol": ticker, "apikey": self.api_key}
             resp = requests.get(url, params=params, timeout=5)
             if resp.status_code == 200:
                 data = resp.json()
@@ -175,15 +175,17 @@ class FMPProvider(MarketDataProvider):
         """Fetch stock peers (competitors) for supply chain/industry analysis."""
         if not self.api_key: return []
         try:
-            url = f"{self.base_url}/stock_peers"
+            url = "https://financialmodelingprep.com/stable/stock-peers"
             params = {"symbol": ticker, "apikey": self.api_key}
             resp = requests.get(url, params=params, timeout=5)
             if resp.status_code == 200:
                 data = resp.json()
                 # format: [{"peersList": ["A", "B"]}] or just list depending on version
                 if data and isinstance(data[0], dict):
-                    return data[0].get('peersList', [])
-                return [] 
+                    if 'peersList' in data[0]:
+                        return data[0].get('peersList', [])
+                    return [item.get('symbol') for item in data if item.get('symbol')]
+                return data if isinstance(data, list) else []
         except Exception as e:
             self.logger.error(f"FMP peers error: {e}")
         return []
@@ -192,8 +194,8 @@ class FMPProvider(MarketDataProvider):
         """Fetch Key Metrics (TTM) - PE, EPS, etc."""
         if not self.api_key: return {}
         try:
-            url = f"{self.base_url}/key-metrics-ttm/{ticker}"
-            params = {"apikey": self.api_key}
+            url = "https://financialmodelingprep.com/stable/key-metrics-ttm"
+            params = {"symbol": ticker, "apikey": self.api_key}
             resp = requests.get(url, params=params, timeout=5)
             if resp.status_code == 200:
                 data = resp.json()
@@ -206,8 +208,8 @@ class FMPProvider(MarketDataProvider):
         """Fetch Financial Ratios (TTM)"""
         if not self.api_key: return {}
         try:
-            url = f"{self.base_url}/ratios-ttm/{ticker}"
-            params = {"apikey": self.api_key}
+            url = "https://financialmodelingprep.com/stable/ratios-ttm"
+            params = {"symbol": ticker, "apikey": self.api_key}
             resp = requests.get(url, params=params, timeout=5)
             if resp.status_code == 200:
                 data = resp.json()

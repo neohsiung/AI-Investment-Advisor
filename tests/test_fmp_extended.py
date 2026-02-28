@@ -16,7 +16,8 @@ def test_fetch_key_metrics(fmp):
         assert metrics["peRatioTTM"] == 15.5
         assert "symbol" in metrics
         mock_get.assert_called_once()
-        assert "key-metrics-ttm/AAPL" in mock_get.call_args[0][0]
+        assert "key-metrics-ttm" in mock_get.call_args[0][0]
+        assert mock_get.call_args[1]["params"]["symbol"] == "AAPL"
 
 def test_fetch_financial_ratios(fmp):
     with patch('requests.get') as mock_get:
@@ -27,7 +28,8 @@ def test_fetch_financial_ratios(fmp):
         
         assert ratios["grossProfitMarginTTM"] == 0.45
         mock_get.assert_called_once()
-        assert "ratios-ttm/AAPL" in mock_get.call_args[0][0]
+        assert "ratios-ttm" in mock_get.call_args[0][0]
+        assert mock_get.call_args[1]["params"]["symbol"] == "AAPL"
 
 def test_fetch_key_metrics_fail(fmp):
     with patch('requests.get') as mock_get:

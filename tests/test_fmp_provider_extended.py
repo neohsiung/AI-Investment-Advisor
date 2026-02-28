@@ -159,17 +159,19 @@ class TestFMPProviderExtended:
     
     def test_fetch_news_without_api_key(self, mock_settings):
         """Test fetch_news without API key returns empty list."""
-        provider = FMPProvider(api_key=None, settings_service=mock_settings)
-        news = provider.fetch_news('AAPL', limit=5)
-        
-        assert news == []
+        with patch.dict('os.environ', {}, clear=True):
+            provider = FMPProvider(api_key=None, settings_service=mock_settings)
+            news = provider.fetch_news('AAPL', limit=5)
+            
+            assert news == []
     
     def test_fetch_info_without_api_key(self, mock_settings):
         """Test fetch_info without API key returns empty dict."""
-        provider = FMPProvider(api_key=None, settings_service=mock_settings)
-        info = provider.fetch_info('AAPL')
-        
-        assert info == {}
+        with patch.dict('os.environ', {}, clear=True):
+            provider = FMPProvider(api_key=None, settings_service=mock_settings)
+            info = provider.fetch_info('AAPL')
+            
+            assert info == {}
     
     def test_fetch_current_prices_empty_ticker_list(self, mock_settings):
         """Test fetch_current_prices with empty ticker list."""
