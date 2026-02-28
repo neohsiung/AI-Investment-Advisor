@@ -19,6 +19,8 @@ trigger: always_on
 14. 工作流自動觸發原則 (Workflow Auto-Trigger)：以下工作流在符合條件時，Agent 必須**主動提議**執行（提示使用者確認），無需等待使用者下達 slash command：
     - `/walkthrough-wiki-sync`：當 Agent 完成含架構變更的 task 並產出 walkthrough 後，自動提議執行 Wiki 文檔同步。
     - `/test-coverage-check`：當使用者下達 `commit` 指令前，若本次變更涉及 `src/` 下的業務邏輯，自動提議執行覆蓋率檢查。
+15. AI 輔助優先原則 (AI-Support First): 所有技術選型與架構部署設定 (如 Helm, IaC) 必須確保對 AI 代理人 (Agent) 擁有最高的代碼生成友善性，偏好聲明式 (Declarative) 的結構化語法與支援良好的生態系 (如 Next.js, Python, TypeScript)，以便 Agent 能夠精準重構。
+16. 多雲可攜性原則 (Multi-Cloud Portability): 系統架構在設計與部署時，必須確保不被單一雲服務商獨家綁定 (No Vendor Lock-in)。透過採用 Kubernetes (K8s) 與標準化 Helm Charts，保證應用程式能在 GCP, AWS, Azure 等不同 PAAS 間無痛且低成本地搬遷。
 
 ---
 *註：開發時請同時參考 `.agent/rules/` 下的 `engineering-standards.md`, `governance-standards.md`, `observability-standards.md` 與 `git-commit-format.md`。*
