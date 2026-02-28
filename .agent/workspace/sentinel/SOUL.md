@@ -1,0 +1,1 @@
+# SOUL\n\nCore Traits:
