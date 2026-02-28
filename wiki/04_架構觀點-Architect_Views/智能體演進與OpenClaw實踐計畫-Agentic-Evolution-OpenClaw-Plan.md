@@ -16,21 +16,21 @@
 
 ### 現況痛點對比 OpenClaw 設計：
 
-1. **記憶的黑盒子 (Opaque Memory DBs)**
-   - **現況**: 所有的長期記憶、使用者偏好、金融工具定義都被序列化塞進 PostgreSQL 或 Redis 中，開發者或使用者無法「一目了然」看到 AI 到底知道什麼。
-   - **OpenClaw 解法**: **純文字配置即大腦 (Files as Source of Truth)**。將長期記憶 (`MEMORY.md`)、任務心跳 (`HEARTBEAT.md`)、人格 (`IDENTITY.md`) 與技能配置都透過 Markdown 留存在本地，達成絕對的透明度與**最高度的代碼生成友善性 (AI-Support First)**。
+1. **共享且不透明的黑盒子大腦 (Shared Opaque Memory DBs)**
+   - **現況**: 目前的記憶被單一系統共享並序列化存入 PG/Redis。缺乏智能體隔離，開發者也無法一目了然看見各個 Agent 的上下文與學習曲線。如果未來需要擴充第 10 個 Agent，系統架構將難以乾淨切割。
+   - **OpenClaw 解法**: **多智能體獨立純文本大腦 (Multi-Agent independent files)**。為專案中的 **9個 Agent** 建立完全獨立的 Workspace (如 `~/.agent/workspace/<agentId>`)。長期記憶、人格設定、專屬技能全部依賴檔案隔離。未來新增 Agent 時完美繼承此標準。
 
 2. **RRF 排序導致絕對信號喪失 (Flattened Signal in RRF)**
-   - **現況**: 在執行 Hybrid Search 時，傳統常依賴倒數排名融合 (Reciprocal Rank Fusion; RRF) 將向量與全文檢索引擎的分數打平為排名。這會導致語意極度相近 (Cosine Similarity 0.98) 的結果，與一般相近的結果 (0.71) 沒有數學權重上的差異。
-   - **OpenClaw 解法**: 採用**加權分數融合 (Weighted Score Fusion)** (e.g., `0.7 * Cosine + 0.3 * BM25`)，確保冰冷的股票代號或關鍵錯碼 (FTS) 與極度相關的語意背景，能得到最高度且真實的召回權重。
+   - **現況**: Hybrid Search 常依賴 RRF 將向量與全文檢索引擎的分數打平為排名，使語意極度相近 (0.98) 的結果與次等結果 (0.71) 沒有數學權重上的巨大差異。
+   - **OpenClaw 解法**: 採用**加權分數融合 (Weighted Score Fusion)** (e.g., `0.7 * Cosine + 0.3 * BM25`)，並導入 **MMR Re-ranking** (最大邊際相關性以防結果過度重複) 與 **Temporal Decay** (時間衰減給予近期記憶高比重)，這套機制需要更嚴密的成本控制來實現。
 
-3. **被動的排程任務與盲目通知 (Passive Cron & Blind Alerts)**
-   - **現況**: 排程任務 (如早晨寄送每日財報) 是盲目的、硬編碼的 cron job，不具備上下文感知能力。只要觸發，就會通知使用者，極易造成「通知疲勞」。
-   - **OpenClaw 解法**: **主動心跳機制 (Active Heartbeat)**。系統每 30 分鐘向主 Session 靜默注入 `HEARTBEAT.md` 檢查任務。Agent 使用上下文判斷是否有事；沒事則回傳 `HEARTBEAT_OK` 讓 Gateway 丟棄訊息，達到**「無感守護、有感示警」**的最高標準。
+3. **被動的排程任務與高昂盲目通知 (Passive Cron & Blind Alerts)**
+   - **現況**: 盲目排程會不斷消耗 LLM Token 判斷是否有事，如果讓全部 9 個 Agent 都定期甦醒，會造成龐大的 API 成本。
+   - **優化解法**: **部分主動心跳與 Webhook 雙軌並存 (Selective Heartbeat & Webhooks)**。只有需要深度宏觀判斷的特務 Agent (如 Sentinel/Captain) 配備每 30 分鐘的主動 `HEARTBEAT.md` 檢查，其餘負責被動計算的 Agent 保留現有低成本的 Webhook 觸發模式，兼顧敏感度與預算。
 
 4. **長對話 Token 溢出導致斷片 (Context Overflow Amnesia)**
-   - **現況**: 對話一旦到達 LLM Token 上限，常用的作法是直接切除最早的記憶，導致「斷片」，高難度決策任務失敗。
-   - **OpenClaw 解法**: **壓縮前記憶沖洗 (Pre-Compaction Memory Flush)**。在逼近 Token 儲備底線 (Reserve Limit) 時，系統會強迫注入一次無感知的 Agent Turn 讓其主動將重要進行中狀態寫回 `MEMORY.md` 或是 PostgreSQL 中，保障分析思路的持久性。
+   - **現況**: Token 溢出時，傳統作法直接切除最早記憶，導致高難度決策流產。
+   - **OpenClaw 解法**: **WAL Protocol 與壓縮前記憶沖洗 (Pre-Compaction Flush)**。在逼近 Token 底線前，不僅強制靜默沖洗，更寫入 WAL (Write-Ahead Logging) 軌跡，保證重要思維狀態如實存入該 Agent 專屬的資料庫，保證不丟失推理脈絡。
 
 ---
 
@@ -39,24 +39,25 @@
 ```mermaid
 flowchart TD
     %% 用戶輸入層
-    User([User / Messaging Channel]) <--> Gateway[Multi-Channel Gateway]
+    User([User / Webhooks]) <--> Gateway[Multi-Channel Gateway]
     
     %% 主進程
     subgraph Agentic Orchestrator [Agent System (Temporal Workflow + Gateway)]
         Gateway <--> SessionManager[Session Manager & Lane FIFO]
-        Heartbeat[Heartbeat Scheduler \n(Every 30m)] -.->|Injects Silent Turn| SessionManager
+        Heartbeat[Selective Heartbeat \n(Critical Agents Only)] -.->|Silent Turn| SessionManager
     end
 
     %% 智能體與記憶庫交互
-    subgraph AI Engine [LLM Core (Agents)]
-        SessionManager <--> ReAct[ReAct / Workflow Loop]
-        ReAct <--> Tools((External APIs \n Yahoo / Fred))
+    subgraph Multi Agent Swarm [9 Independent Agents]
+        SessionManager <--> ReAct[Agent 1: Captain]
+        SessionManager <--> ReAct2[Agent 2: Sentinel...]
+        SessionManager <--> ReAct9[Agent N]
     end
     
-    %% 混合記憶架構
-    subgraph Storage [Three-Tier Agentic Memory]
-        ReAct <--> Workspace[<b>Workspace Directory (Markdown)</b>\n- IDENTITY.md\n- HEARTBEAT.md\n- MEMORY.md\n- skills/SKILL.md]
-        ReAct <--> DB[(PostgreSQL + pgvector\n<b>Weighted Score Fusion</b>\n 0.7 Vector + 0.3 BM25)]
+    %% 混合記憶架構 (獨立分離)
+    subgraph Storage [Independent Brain architecture (Cost Optimized)]
+        ReAct <--> Workspace[<b>Workspace: /agent-1/</b>\n- IDENTITY.md\n- HEARTBEAT.md\n- WAL/STATE.md]
+        ReAct <--> DB[(PostgreSQL + pgvector\n<b>QMD Sidecar Logic</b>\n 0.7 Vector + 0.3 BM25\n + Temporal Decay\n + MMR Re-ranking)]
         ReAct <--> Redis[(Redis Cache)]
     end
     
@@ -71,36 +72,37 @@ flowchart TD
 
 為確保現有服務的穩定，我們將遵循**領域驅動設計 (DDD)**，對服務進行漸進式重構。此計畫高度符合 **GCWAF (卓越營運)** 與我們的 **Rule #15 (AI-Support First)** 哲學。
 
-### Phase 1: 知識庫 Markdown 結構化 (Markdown Workspace Setup)
-*   **目標**: 將黑盒子的 Persona (人格設定)、LLM Prompts 與長時間不變的技能規則，抽取至目錄管理的 Markdown 文件。
+### Phase 1: 九大智能體「獨立大腦」分割 (9-Agent Memory Workspace Setup)
+*   **目標**: 將黑盒子的記憶庫拆分為 9 個完全獨立的目錄實體與資料庫結構，未來每增加一個 Agent，均可透過相同的 Template 開箱具備同樣的檢索能力與隔離性。
 *   **任務清單**:
-    *   [ ] 在專案建立 `~/.agent/workspace/` 與 `skills/` 路徑。
-    *   [ ] 將現行 `prompt.py` 中硬編碼的 System Prompts 解耦為 `IDENTITY.md` 與 `SOUL.md`。
-    *   [ ] 將使用者偏好存入唯讀在私人通道的 `MEMORY.md` 中。
-    *   [ ] **驗收標準**: `AgentLLMProvider` 改由掛載 `workspace/` 底下的文本組裝 `SystemMessage`。修改完畢可輕易在 GitHub PR 單中由人類進行肉眼 code review。
+    *   [ ] 建立 `~/.agent/workspace/<agent_name>/` 路徑結構 (共 9 組)。
+    *   [ ] 為每個 Agent 配置專屬的 `IDENTITY.md`, `SOUL.md` 與獨立的寫入 `MEMORY.md`。
+    *   [ ] 確保 RAG 查詢與寫入時，SQL 層面對 `agent_id` 加入強過濾器 (Role-Level Isolation)。
+    *   [ ] **驗收標準**: 各自 Agent 學習到的上下文與習慣絕對不會跨界污染。
 
-### Phase 2: 混合搜索加權改造 (Hybrid Search Fusion Override)
-*   **目標**: 升級我們基於 PostgreSQL/pgvector 的 Hybrid Search，揚棄 RRF，改為「加權分數融合 (Weighted Score Fusion)」。
+### Phase 2: QMD 概念導入與進階檢索算分 (Advanced Storage, MMR & Temporal Decay)
+*   **目標**: 為求精準召回與成本控制，導入 QMD (Sidecar) 概念來維護向量庫，並升級混合分數演算法。
 *   **任務清單**:
-    *   [ ] 改寫 `HybridMemory` 或 `search_service.py` 裡的 Postgres SQL 語句。
-    *   [ ] 在查詢時引入權重公式 `finalScore = (vectorWeight * cosineSimilarity) + (textWeight * BM25Score)` (預設 `0.7 / 0.3`)。
-    *   [ ] **驗收標準**: 在提供錯字或明確指定股票代號 `#AAPL` 時，即便語義不相近，也能因高達 30% 分數的 BM25 強制命中而被喚醒。
+    *   [ ] 揚棄 RRF，改寫 Postgres SQL 以 `finalScore = (0.7 * Cosine) + (0.3 * BM25)` 融合搜尋。
+    *   [ ] 引入 **MMR (最大邊際相關性)** 來 Re-ranking，過濾完全重複的知識塊。
+    *   [ ] 引入 **Temporal Decay (時間衰減)**，確保在相似度相同時，近期的記憶段落獲得加分。
+    *   [ ] **驗收標準**: 搜尋結果召回率達 100% 同時具備時間敏感度。
 
-### Phase 3: 主動心跳與靜默示警 (Active Heartbeat Implementation)
-*   **目標**: 取代依賴 Cron 定時發送「盲目報表」的架構。
+### Phase 3: Webhook 雙軌制與部分主動心跳 (Dual-Track: Heartbeat / Webhooks)
+*   **目標**: 大幅降低 API 成本，僅分配算力給需要守望市場變化的特務，剩餘 Agent 從旁待機。
 *   **任務清單**:
-    *   [ ] 在 Temporal 工作流或主 API 中，刻劃一個 `HeartbeatScheduler` (每 30 分鐘自動對主 Agent Trigger 一次)。
-    *   [ ] 把檢查清單寫在 `workspace/HEARTBEAT.md` (e.g., 檢查大盤漲跌、持股重大新聞)。
-    *   [ ] 實作過濾器 (ACK Filter): 若 LLM 推理回傳 `HEARTBEAT_OK`，則在 `notification_service.py` 直接廢棄不推播；否則才轉發 LINE / Discord。
-    *   [ ] **驗收標準**: 使用者不再每天收到例行「無異狀」公報，但當標的暴跌時，能立刻收到 Agent **連同處理對策** 一起整理好的主動通知。
+    *   [ ] 分析 9 個 Agent，僅指定 (例如 Sentinel Agent、Captain Agent) 掛載每 30 分鐘的 `HeartbeatScheduler`，讓它們主動關注市場大盤或重要事件。
+    *   [ ] 為另外一批功能單純的 Agent (如 Backtest Agent、Data Prep)，保留現有的低成本 `Webhook` 被動觸發機制，有指令才喚醒。
+    *   [ ] 實作過濾器 (ACK Filter): 心跳推論後回傳 `HEARTBEAT_OK` 者直接靜默不推播給外部使用者。
+    *   [ ] **驗收標準**: 系統維護了極高的市場敏銳度，但 API 消耗成本精準可控，未產生通知疲勞。
 
-### Phase 4: Token 安全墊與壓縮前沖洗 (Pre-Compaction Memory Flush)
-*   **目標**: 終結高長度財報會議分析中，Token Overflow 造成的斷片問題。
+### Phase 4: Token 安全墊與 WAL 狀態寫入 (Pre-Compaction Flush & WAL Protocol)
+*   **目標**: 終結高長度財報分析中 Context Token 溢出導致的斷片現象，實作極致的壓縮儲存。
 *   **任務清單**:
-    *   [ ] 於 `MemoryService` 設置 `reserveTokensFloor` (e.g., 4,000 token 預備空間)。
-    *   [ ] 當 Session 空間即將過載，自動插入一條不可見 (Silent) 的任務要求 LLM：「將目前重要思路持久化記錄回 PostgreSQL，並回傳 NO_REPLY」。
-    *   [ ] 在收到 `NO_REPLY` 後，執行原有的 80% 摘要壓縮清理。
-    *   [ ] **驗收標準**: 無論對話延長多少週，過去被「提煉」的知識仍可從持久層被完美拉出，不會中斷。
+    *   [ ] 於 `SessionManager` 設置 `reserveTokensFloor` (e.g., 預留 4,000 token 空間)。
+    *   [ ] 空間超載前插入 Silent Turn 要求 LLM 輸出 Write-Ahead Logging (WAL) 到 `STATE.md`。
+    *   [ ] 在收到 `NO_REPLY` 後，清除緩存，系統根據日誌重建上下文而不丟失核心推導。
+    *   [ ] **驗收標準**: 對話無論長度多龐大，都不中斷推論脈絡。
 
 ---
 > 註：此演進計畫將在下一個 Sprint 啟動，請工程師與 AI Agent 將精力先集中在 **Phase 1** 與 **Phase 2** 的基底架構改造。
