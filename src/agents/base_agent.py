@@ -19,10 +19,11 @@ from datetime import datetime
 
 class BaseAgent(ABC):
 
-    def __init__(self, name, prompt_path, use_cache=True, ttl_hours=24, tier="smart", user_id="system", settings_repo=None, state_repo=None, feedback_repo=None, **kwargs):
+    def __init__(self, name, prompt_path, use_cache=True, ttl_hours=24, tier="smart", user_id="system", settings_repo=None, state_repo=None, feedback_repo=None, identity_file="IDENTITY.md", **kwargs):
         self.name = name
         self.logger = setup_logger(name)
         self.prompt_path = prompt_path
+        self.identity_file = identity_file
         self.tier = tier
         self.user_id = user_id
         
@@ -152,7 +153,7 @@ class BaseAgent(ABC):
         # [Phase 1] Attempt to load from new Workspace directories first
         prompt_content = ""
         if hasattr(self, 'workspace_path') and self.workspace_path and os.path.exists(self.workspace_path):
-            identity_path = os.path.join(self.workspace_path, "IDENTITY.md")
+            identity_path = os.path.join(self.workspace_path, self.identity_file)
             soul_path = os.path.join(self.workspace_path, "SOUL.md")
             
             if os.path.exists(identity_path):

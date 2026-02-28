@@ -175,6 +175,27 @@ webhook_service_instance = WebhookService()
 async def finnhub_webhook(request: Request):
     return await webhook_service_instance.handle_finnhub_webhook(request)
 
+@webhook_router.get("/heartbeat")
+@webhook_router.post("/heartbeat")
+async def heartbeat_webhook():
+    """
+    系統心跳端口 (Phase 3)
+    觸發 Sentinel 常規掃描或做為外部存活檢查 (Heartbeat API)。
+    """
+    if webhook_service_instance.sentinel_service:
+        # Trigger an asynchronous tick
+        import asyncio
+        asyncio.create_task(webhook_service_instance.sentinel_service.process_tick())
+    return {"status": "alive", "message": "Heartbeat received. Sentinel tick triggered in background."}
+
+@webhook_router.post("/market-alert")
+async def market_alert_webhook(request: Request):
+    """
+    市場異常波動警報端口 (Phase 3)
+    當接收到如 TradingView, News API 傳來的異常波動訊號時，系統直接喚醒 Sentinel 進行即時分析。
+    """
+    return await webhook_service_instance.handle_generic_webhook("market-alert", request)
+
 @webhook_router.post("/{source}")
 async def generic_webhook(source: str, request: Request):
     return await webhook_service_instance.handle_generic_webhook(source, request)

@@ -1,3 +1,4 @@
+import os
 import pandas as pd
 import json
 from .base_agent import BaseAgent
@@ -9,7 +10,12 @@ class CIOAgent(BaseAgent):
     def __init__(self, use_cache=True, transaction_repo=None, prompt_path="prompts/cio_weekly.txt", mode="report", **kwargs):
         # Allow tier override or kwargs
         tier = kwargs.pop('tier', 'smart')
-        super().__init__(name="CIO", prompt_path=prompt_path, use_cache=use_cache, ttl_hours=24, tier=tier, **kwargs)
+        mode_map = {
+            "daily": "IDENTITY_daily.md",
+            "weekly": "IDENTITY_weekly.md"
+        }
+        identity_file = kwargs.pop('identity_file', mode_map.get(mode, "IDENTITY_weekly.md"))
+        super().__init__(name="CIO", prompt_path=prompt_path, identity_file=identity_file, use_cache=use_cache, ttl_hours=24, tier=tier, **kwargs)
         
         self.transaction_repo = transaction_repo or AlchemyTransactionRepository()
         self.mode = mode
@@ -127,9 +133,18 @@ class CIOAgent(BaseAgent):
         """Generates Sector Strategy & Candidates (JSON)."""
         
         # Load Strategy Prompt (Ideally use _load_prompt but different path)
+        strategy_prompt_template = ""
+        # New Workspace path priority
+        workspace_path = "workspace/captain/IDENTITY_strategy.md"
+        legacy_path = "prompts/cio_strategy_agent.txt"
+        
         try:
-            with open("prompts/cio_strategy_agent.txt", "r", encoding="utf-8") as f:
-                strategy_prompt_template = f.read()
+            if os.path.exists(workspace_path):
+                with open(workspace_path, "r", encoding="utf-8") as f:
+                    strategy_prompt_template = f.read()
+            else:
+                with open(legacy_path, "r", encoding="utf-8") as f:
+                    strategy_prompt_template = f.read()
         except FileNotFoundError:
             self.logger.warning("Strategy prompt not found, using fallback.")
             strategy_prompt_template = "Generate a sector strategy JSON."
