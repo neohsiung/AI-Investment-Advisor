@@ -83,10 +83,10 @@ flowchart TD
 ### Phase 2: QMD 概念導入與進階檢索算分 (Advanced Storage, MMR & Temporal Decay)
 *   **目標**: 為求精準召回與成本控制，導入 QMD (Sidecar) 概念來維護向量庫，並升級混合分數演算法。
 *   **任務清單**:
-    *   [ ] 揚棄 RRF，改寫 Postgres SQL 以 `finalScore = (0.7 * Cosine) + (0.3 * BM25)` 融合搜尋。
-    *   [ ] 引入 **MMR (最大邊際相關性)** 來 Re-ranking，過濾完全重複的知識塊。
-    *   [ ] 引入 **Temporal Decay (時間衰減)**，確保在相似度相同時，近期的記憶段落獲得加分。
-    *   [ ] **驗收標準**: 搜尋結果召回率達 100% 同時具備時間敏感度。
+    *   [x] 揚棄 RRF，改寫 Postgres SQL 以 `finalScore = (0.7 * Cosine) + (0.3 * BM25)` 融合搜尋。
+    *   [x] 引入 **MMR (最大邊際相關性)** 來 Re-ranking，過濾完全重複的知識塊。
+    *   [x] 引入 **Temporal Decay (時間衰減)**，確保在相似度相同時，近期的記憶段落獲得加分。
+    *   [x] **驗收標準**: 搜尋結果召回率達 100% 同時具備時間敏感度。
 
 ### Phase 3: Webhook 雙軌制與部分主動心跳 (Dual-Track: Heartbeat / Webhooks)
 *   **目標**: 大幅降低 API 成本，僅分配算力給需要守望市場變化的特務，剩餘 Agent 從旁待機。
@@ -100,10 +100,10 @@ flowchart TD
 ### Phase 4: Token 安全墊與 WAL 狀態寫入 (Pre-Compaction Flush & WAL Protocol)
 *   **目標**: 終結高長度財報分析中 Context Token 溢出導致的斷片現象，實作極致的壓縮儲存。
 *   **任務清單**:
-    *   [ ] 於 `SessionManager` 設置 `reserveTokensFloor` (e.g., 預留 4,000 token 空間)。
-    *   [ ] 空間超載前插入 Silent Turn 要求 LLM 輸出 Write-Ahead Logging (WAL) 到 `STATE.md`。
-    *   [ ] 在收到 `NO_REPLY` 後，清除緩存，系統根據日誌重建上下文而不丟失核心推導。
-    *   [ ] **驗收標準**: 對話無論長度多龐大，都不中斷推論脈絡。
+    *   [x] 於 `SessionManager` 設置 `reserveTokensFloor` (e.g., 預留 4,000 token 空間)。
+    *   [x] 空間超載前插入 Silent Turn 要求 LLM 輸出 Write-Ahead Logging (WAL) 到 `STATE.md`。
+    *   [x] 在收到 `NO_REPLY` 後，清除緩存，系統根據日誌重建上下文而不丟失核心推導。
+    *   [x] **驗收標準**: 對話無論長度多龐大，都不中斷推論脈絡。
 
 ---
 > 註：此演進計畫將在下一個 Sprint 啟動，請工程師與 AI Agent 將精力先集中在 **Phase 1** 與 **Phase 2** 的基底架構改造。
