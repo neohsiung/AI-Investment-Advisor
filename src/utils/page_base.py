@@ -8,15 +8,7 @@ styles, and authentication across all pages.
 """
 import streamlit as st
 from abc import ABC, abstractmethod
-from src.utils.auth_guard import require_authentication
-from src.utils.ui import load_design_system_css, render_sidebar, render_top_profile
-from src.utils.components import saas_section_header
-from src.utils.components import saas_section_header
-from src.utils.logger import setup_logger
-from src.data.database import init_db
 from dotenv import load_dotenv
-
-logger = setup_logger("BasePage")
 
 # Load environment variables (Robustness for local run)
 load_dotenv()
@@ -56,7 +48,6 @@ class BasePage(ABC):
         除錯 Session State 以識別殘留的元件狀態。
         目前已停用主動清除功能，以防止發生白畫面問題。
         """
-        import streamlit as st
         # Log session keys for debugging (Session keys 除錯紀錄)
         # print(f"DEBUG: Session keys on {self.title}: {list(st.session_state.keys())}")
         pass
@@ -66,6 +57,9 @@ class BasePage(ABC):
         Configure Streamlit page settings and load custom CSS.
         設定 Streamlit 頁面組態並載入自訂 CSS。
         """
+        from src.data.database import init_db
+        from src.utils.ui import load_design_system_css
+
         # Ensure Database Schema is up to date (Migration/Patching)
         init_db()
         
@@ -87,6 +81,7 @@ class BasePage(ABC):
         Check authentication logic. Stop execution if not authorized.
         檢查身分驗證邏輯。若未驗證通過則停止執行。
         """
+        from src.utils.auth_guard import require_authentication
         self.user = require_authentication()
 
     def render_sidebar(self):
@@ -94,12 +89,16 @@ class BasePage(ABC):
         Render the common sidebar.
         渲染共用的側邊欄。
         """
+        from src.utils.ui import render_sidebar
         self.db_path = render_sidebar(self.user)
 
     def render_header(self):
         """
         Render the page header using SaaS style.
         """
+        from src.utils.ui import render_top_profile
+        from src.utils.components import saas_section_header
+        
         render_top_profile(self.user)
         saas_section_header(self.title, icon=self.icon)
 
@@ -128,3 +127,4 @@ class BasePage(ABC):
         with st.container():
             self.render_header()
             self.render()
+

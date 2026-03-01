@@ -22,9 +22,11 @@ class TestBasePage:
         
         # Patch the alias 'st' in src.utils.page_base
         with patch('src.utils.page_base.st') as mock_st, \
-             patch('src.utils.page_base.load_design_system_css') as mock_css, \
-             patch('src.utils.page_base.render_sidebar') as mock_sidebar, \
-             patch('src.utils.page_base.require_authentication') as mock_auth:
+             patch('src.utils.ui.load_design_system_css') as mock_css, \
+             patch('src.utils.ui.render_sidebar') as mock_sidebar, \
+             patch('src.utils.auth_guard.require_authentication') as mock_auth, \
+             patch('src.data.database.init_db') as mock_db:
+
             
             page.setup_page()
             
@@ -35,7 +37,7 @@ class TestBasePage:
             )
             mock_css.assert_called_once()
 
-    @patch('src.utils.page_base.load_design_system_css') 
+    @patch('src.utils.ui.load_design_system_css') 
     def test_render_not_implemented(self, mock_css):
         """Test abstract method requirement"""
         # Abstract class shouldn't be instantiated properly without implementing render
@@ -47,9 +49,13 @@ class TestBasePage:
         page = ConcretePage("Test", "🧪")
         
         with patch('src.utils.page_base.st') as mock_st, \
-             patch('src.utils.page_base.load_design_system_css') as mock_css, \
-             patch('src.utils.page_base.render_sidebar') as mock_sidebar, \
-             patch('src.utils.page_base.require_authentication') as mock_auth:
+             patch('src.utils.ui.load_design_system_css') as mock_css, \
+             patch('src.utils.ui.render_sidebar') as mock_sidebar, \
+             patch('src.utils.auth_guard.require_authentication') as mock_auth, \
+             patch('src.data.database.init_db') as mock_db, \
+             patch('src.utils.ui.render_top_profile') as mock_top, \
+             patch('src.utils.components.saas_section_header') as mock_header:
+
              
             # Mock container context manager
             mock_container = Mock()
