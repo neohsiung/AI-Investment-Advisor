@@ -37,7 +37,9 @@ class TestMarketDataServiceFixed:
     @pytest.fixture
     def service(self, mock_providers):
         """Create service with mocked providers"""
-        return MarketDataService()
+        mock_settings = MagicMock()
+        mock_settings.get_setting.return_value = "true"
+        return MarketDataService(settings_service=mock_settings)
     
     def test_initialization(self, service):
         """Test service initializes correctly with providers"""
@@ -179,3 +181,73 @@ class TestMarketDataServiceFixed:
         
         assert result['economics']['GDP']['value'] == 100
         assert result['market_indicators']['^VIX'] == 20.0
+
+    def test_get_current_prices_final_fallback_search(self, service, mock_providers):
+        """Test final fallback to internet search when all providers fail"""
+        # All providers fail
+        mock_providers['polygon'].fetch_current_prices.return_value = {}
+        mock_providers['fmp'].fetch_current_prices.side_effect = Exception("Fail")
+        mock_providers['yfinance'].fetch_current_prices.side_effect = Exception("Fail")
+        
+        # Search succeeds
+        mock_providers['search'].search_financial_context.return_value = [
+            {'title': 'AAPL Stock', 'snippet': 'AAPL is currently trading at $155.50 USD.'}
+        ]
+        
+        result = service.get_current_prices(['AAPL'])
+        assert result == {'AAPL': 155.5}
+
+    def test_get_price_from_search(self, service, mock_providers):
+        """Test parsing price from search snippet"""
+        mock_providers['search'].search_financial_context.return_value = [
+            {'title': 'AAPL Stock', 'snippet': 'AAPL is currently at 160.00 USD'}
+        ]
+        price = service.get_price_from_search('AAPL')
+        assert price == 160.0
+
+    def test_get_price_from_search_failure(self, service, mock_providers):
+        mock_providers['search'].search_financial_context.side_effect = Exception("Search Fail")
+        price = service.get_price_from_search('AAPL')
+        assert price == 0.0
+
+    def test_get_market_context(self, service, mock_providers):
+        """Test fetching full market context"""
+        mock_df = pd.DataFrame({'Close': [100]}, index=[datetime.now()])
+        mock_providers['yfinance'].fetch_history.return_value = mock_df
+        # Mock tech indicators via poly if YF fails or just let YF succeed above
+        
+        closes = list(range(100, 300))  # 200 data points for TA
+        mock_df_ta = pd.DataFrame({'Close': closes, 'Volume': [1000] * 200}, index=pd.date_range('2024-01-01', periods=200))
+        mock_providers['yfinance'].fetch_history.return_value = mock_df_ta
+        
+        mock_providers['fmp'].fetch_news.return_value = [{'title': 'news'}]
+        mock_providers['fmp'].fetch_info.return_value = {'market_cap': 100}
+        mock_providers['search'].search_financial_context.return_value = [{'title': 'moat'}]
+        
+        result = service.get_market_context(['AAPL'], enrich=True)
+        assert 'AAPL' in result
+        assert 'price_data' in result['AAPL']
+        assert 'news' in result['AAPL']
+        assert 'financials' in result['AAPL']
+
+    def test_get_web_intelligence(self, service, mock_providers):
+        mock_providers['search'].search_financial_context.return_value = [{'title': 'Intel', 'snippet': 'moat'}]
+        result = service.get_web_intelligence('AAPL')
+        assert len(result) == 2 # Called twice with 2 queries
+        assert result[0]['title'] == 'Intel'
+
+    def test_get_ohlcv_provider_exception(self, service, mock_providers):
+        mock_providers['polygon'].fetch_history.side_effect = Exception("Fail")
+        mock_df = pd.DataFrame({
+            'Open': [100], 'High': [105], 'Low': [95], 'Close': [100], 'Volume': [1000]
+        }, index=[datetime.now()])
+        mock_providers['yfinance'].fetch_history.return_value = mock_df
+        res = service.get_ohlcv('AAPL')
+        assert 'close' in res
+
+    def test_get_technical_indicators_provider_exception(self, service, mock_providers):
+        mock_providers['polygon'].fetch_history.side_effect = Exception("Fail")
+        closes = list(range(100, 300))
+        mock_providers['yfinance'].fetch_history.return_value = pd.DataFrame({'Close': closes, 'Volume': [10] * 200}, index=pd.date_range('2024-01-01', periods=200))
+        res = service.get_technical_indicators('AAPL')
+        assert 'rsi' in res

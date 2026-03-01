@@ -410,3 +410,145 @@ class TestErrorHandling:
             assert "VIX check failed" in caplog.text
 
         run_async(_test())
+
+# ──────────────────────────────────────────
+# Data Source Polling & Thematic Updates
+# ──────────────────────────────────────────
+
+class TestSourcePollingAndThematic:
+    def test_poll_alternative_me(self, mock_services, run_async):
+        """Test Fear & Greed API polling"""
+        sentinel = _create_sentinel(mock_services)
+        with patch('requests.get') as mock_get:
+            mock_resp = MagicMock()
+            mock_resp.status_code = 200
+            mock_resp.json.return_value = {"data": [{"value": "15", "value_classification": "Extreme Fear"}]}
+            mock_get.return_value = mock_resp
+            
+            async def _test():
+                res = await sentinel._poll_single_source("alternative_me", {})
+                assert res is not None
+                assert res["id"] == "fng_extreme"
+                assert res["value"] == 15
+            run_async(_test())
+
+    def test_poll_tiingo(self, mock_services, run_async):
+        sentinel = _create_sentinel(mock_services)
+        mock_services["market"].tiingo.get_news.return_value = [{"title": "Tiingo Test News"}]
+        async def _test():
+            res = await sentinel._poll_single_source("tiingo", {})
+            assert res is not None
+            assert res["id"] == "tiingo_health_check"
+        run_async(_test())
+
+    def test_poll_finnhub(self, mock_services, run_async):
+        sentinel = _create_sentinel(mock_services)
+        mock_services["market"].finnhub.get_sentiment.return_value = {"sentiment": "Bullish"}
+        async def _test():
+            res = await sentinel._poll_single_source("finnhub", {})
+            assert res is not None
+            assert res["id"] == "finnhub_health_check"
+        run_async(_test())
+
+    def test_poll_alpha_vantage(self, mock_services, run_async):
+        sentinel = _create_sentinel(mock_services)
+        mock_services["market"].alpha_vantage.get_news.return_value = [{"sentiment_label": "Somewhat-Bullish"}]
+        async def _test():
+            res = await sentinel._poll_single_source("alpha_vantage", {})
+            assert res is not None
+            assert res["id"] == "alphavantage_health_check"
+        run_async(_test())
+        
+    def test_poll_readwise(self, mock_services, run_async):
+        sentinel = _create_sentinel(mock_services)
+        sentinel.settings_service.get_setting.return_value = "2024-01-01"
+        
+        with patch('src.services.readwise_service.ReadwiseService') as MockRW:
+            rw_instance = MockRW.return_value
+            rw_instance.fetch_and_analyze_highlights.return_value = [
+                {
+                    "id": "123",
+                    "text": "Important highlight about TSLA",
+                    "analysis": {
+                        "requires_action": True,
+                        "reasoning": "TSLA strategy",
+                        "suggested_action": "Buy TSLA"
+                    }
+                }
+            ]
+            async def _test():
+                res = await sentinel._poll_single_source("readwise", {})
+                assert res is not None
+                assert len(res) == 1
+                assert res[0]["id"] == "readwise_123"
+                assert res[0]["category"] == "READWISE_INSIGHT"
+            run_async(_test())
+
+    def test_trigger_thematic_update(self, mock_services, run_async):
+        sentinel = _create_sentinel(mock_services)
+        with patch('src.agents.factory.AgentFactory.create_thematic_agent', create=True) as mock_create, \
+             patch('asyncio.create_task') as mock_task:
+            
+            # Mock analyze for thematic agent
+            mock_agent_instance = MagicMock()
+            
+            # Use AsyncMock for the return value of analyze
+            mock_agent_instance.analyze = AsyncMock(return_value={"new_tickers": ["NVDA", "AMD"]})
+            mock_create.return_value = mock_agent_instance
+            
+            # Call synchronous wrapper that fires task
+            sentinel._trigger_thematic_update("Nvidia releases new chip", "ai", ["AAPL"])
+            
+            assert mock_task.called
+
+    def test_check_active_sources(self, mock_services, run_async):
+        sentinel = _create_sentinel(mock_services)
+        sentinel.settings_service.get_setting.return_value = "true"
+        async def _test():
+            res = await sentinel._check_active_sources()
+            assert isinstance(res, list)
+        run_async(_test())
+        
+    def test_analyze_ticker_news_ai_energy(self, mock_services):
+        sentinel = _create_sentinel(mock_services)
+        
+        # Force empty settings so bootstrapping triggers
+        sentinel.settings_service.get_setting.return_value = None
+        
+        mock_results = [{
+            "title": "Microsoft signs PPA for datacenter power",
+            "snippet": "nuclear"
+        }]
+        
+        mock_keywords = [MagicMock(keyword="ppa")]
+        
+        with patch('src.services.transaction_service.TransactionService.get_user_tickers', return_value=["AAPL"]), \
+             patch('src.agents.factory.AgentFactory.create_thematic_agent', create=True) as mock_create_agent:
+                 
+            mock_agent = MagicMock()
+            mock_agent.run.return_value = {"status": "success"}
+            mock_create_agent.return_value = mock_agent
+            
+            mock_services["market"].get_news.return_value = []
+            mock_services["search"].search_financial_context.return_value = mock_results
+            
+            score, summary = sentinel._analyze_ticker_news("MSFT", mock_results, mock_keywords)
+            # PPA deals get score boost, even if it has to fallback to default MSFT ticker list
+            assert score > 0.0
+
+    def test_analyze_ticker_news_physical_ai(self, mock_services):
+        sentinel = _create_sentinel(mock_services)
+        sentinel.settings_service.get_setting.side_effect = lambda k: "TSLA" if "physical_ai" in k else None
+        
+        mock_results = [{
+            "title": "TSLA Robotaxi",
+            "snippet": "autonomous driving"
+        }]
+        mock_keywords = [MagicMock(keyword="robotaxi")]
+        
+        mock_services["market"].get_news.return_value = []
+        mock_services["search"].search_financial_context.return_value = mock_results
+        
+        score, summary = sentinel._analyze_ticker_news("TSLA", mock_results, mock_keywords)
+        # Should detect Physical AI keywords and boost
+        assert score > 0.0
