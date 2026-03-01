@@ -153,7 +153,7 @@ class SentinelService:
         
         display_text = f"🔔 [{source.upper()}] {msg} " + (f"({ticker})" if ticker else "")
         # Use message content as ID for generic events if no specific ID provided
-        signal_id = f"event_{source}_{ticker or 'global'}"
+        signal_id = data.get("signal_id") or f"event_{source}_{ticker or 'global'}"
         
         # Milestone 2.1: Webhook for semiconductor earnings calls/reports
         if source == "earnings_call" and ticker:

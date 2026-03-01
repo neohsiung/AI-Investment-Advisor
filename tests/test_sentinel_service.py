@@ -612,3 +612,57 @@ class TestEventDriven:
                 assert mock_escalate.called
         run_async(_test())
 
+
+class TestRssDeduplication:
+    def test_process_event_with_provided_signal_id(self, mock_services, run_async):
+        """Verify that process_event uses the signal_id from the payload."""
+        sentinel = _create_sentinel(mock_services)
+        event = {
+            "source": "n8n",
+            "data": {
+                "msg": "Test RSS Item",
+                "ticker": "GLOBAL",
+                "signal_id": "rss_abc123"
+            }
+        }
+        
+        async def _test():
+            with patch.object(sentinel, '_escalate', new_callable=AsyncMock) as mock_escalate:
+                await sentinel.process_event(event)
+                # Check that _escalate was called with the correct signal_id
+                args = mock_escalate.call_args[0]
+                assert args[0][0]["id"] == "rss_abc123"
+        run_async(_test())
+
+    def test_suppression_logic_with_signal_id(self, mock_services, run_async):
+        """Verify that _do_send_alert suppresses duplicate signal_ids."""
+        sentinel = _create_sentinel(mock_services)
+        mock_services["repo_instance"].is_duplicate_alert.return_value = True
+        
+        triggers = [{"text": "Duplicate Signal", "id": "rss_abc123"}]
+        
+        async def _test():
+            with patch.object(sentinel, 'council_service') as mock_council:
+                await sentinel._do_send_alert(triggers)
+                # Council should NOT be consulted because the signal is a duplicate
+                mock_council.start_session.assert_not_called()
+        run_async(_test())
+
+    def test_n8n_parser_generates_correct_signal_id(self):
+        """Verify N8nParser hash-based signal_id generation."""
+        from src.services.webhook_service import N8nParser
+        import hashlib
+        
+        url = "https://example.com/news/1"
+        payload = {
+            "body": {
+                "link": url,
+                "message": "Breaking News"
+            }
+        }
+        
+        normalized = N8nParser.parse(payload)
+        expected_hash = f"rss_{hashlib.md5(url.encode()).hexdigest()}"
+        assert normalized["signal_id"] == expected_hash
+        assert normalized["url"] == url
+
