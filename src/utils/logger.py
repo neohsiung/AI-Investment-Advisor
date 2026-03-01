@@ -3,25 +3,12 @@ import sys
 import os
 from pythonjsonlogger import jsonlogger
 
-# OpenTelemetry Logging Imports (OTel 1.25.0+ stable paths)
+# OpenTelemetry Logging Imports (OTel 1.39.1 compatible internal paths)
 try:
     from opentelemetry._logs import set_logger_provider
-    try:
-        # Modern stable path (1.25.0+)
-        from opentelemetry.exporter.otlp.proto.grpc.logs_exporter import OTLPLogExporter
-    except ImportError:
-        # Legacy/internal path
-        from opentelemetry.exporter.otlp.proto.grpc._log_exporter import OTLPLogExporter
-    
-    try:
-        # Modern stable SDK path
-        from opentelemetry.sdk.logs import LoggerProvider, LoggingHandler
-        from opentelemetry.sdk.logs.export import BatchLogRecordProcessor
-    except ImportError:
-        # Legacy/internal SDK path
-        from opentelemetry.sdk._logs import LoggerProvider, LoggingHandler
-        from opentelemetry.sdk._logs.export import BatchLogRecordProcessor
-        
+    from opentelemetry.exporter.otlp.proto.grpc._log_exporter import OTLPLogExporter
+    from opentelemetry.sdk._logs import LoggerProvider, LoggingHandler
+    from opentelemetry.sdk._logs.export import BatchLogRecordProcessor
     from opentelemetry.sdk.resources import Resource
     OTEL_LOGGING_AVAILABLE = True
 except ImportError:

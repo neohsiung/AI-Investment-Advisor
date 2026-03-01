@@ -5,6 +5,7 @@
 ### 版本紀錄 (Version History)
 | Date | Version | Description | Author |
 | :--- | :--- | :--- | :--- |
+| 2026-03-01 | v5.0 | **Tech Stack Modernization**: Upgraded OTel to 1.39.1, Protobuf to 5.x, and removed `futu-api`. | Antigravity |
 | 2026-02-27 | v3.8 | **Observability Expansion**: Integrated SigNoz OTel tracing for n8n and fixed OTLP gRPC dependencies. | Neo |
 | 2026-02-21 | v3.7 | **v1.2.0+ Stability Fix**: Transitioned to native `pytest-asyncio` standards and resolved coroutine warnings. | Neo |
 | 2026-02-14 | v3.5 | Added Multi-Broker, LINE, Memory, DSPy external services | Neo |
@@ -61,8 +62,7 @@
 | **DuckDuckGo** | REST | 無限制 | 搜尋 Fallback |
 | **OpenRouter** | Gateway | 依模型不同 | LLM 推論 (Gemini/Claude 等) |
 | **Etoro Bridge** | REST | Session-based | 帳戶/持倉/下單 |
-| **futu-api** | TCP/Protobuf | 需 FutuOpenD | 美港股行情/交易 |
-| **ib_insync** | TWS API | 50 req/sec | 多資產交易 (Planned) |
+| **ib_insync** | TWS API | 50 req/sec | 多資產交易 (Alpha) |
 | **LINE Messaging** | REST | 500 msg/min (Free) | 日報/週報推送 |
 | **Redis** | TCP | N/A | 生產記憶後端 (AdaptiveCompression) |
 | **DSPy** | Library | N/A | Prompt 自動優化 (Engineer Agent) |
@@ -72,7 +72,8 @@
 
 ### 3. 非功能性: 可觀測性 (Observability)
 - **日誌追蹤**: 每個 Agent 調用附帶 `request_id`。
-- **SigNoz (OTel)**: 核心服務透過 OTLP gRPC 匯出追蹤數據至 `otel-collector:4317`。
+- **SigNoz (OTel 1.39.1)**: 核心服務透過 OTLP gRPC 匯出追蹤數據至 `otel-collector:4317`。
+- **OTel 穩定性**: 已升級至 OpenTelemetry 1.39.1 穩定版本，解決了與舊版 Protobuf 的衝突。
 - **n8n 觀測性**: 已啟用內建 OTel SDK 以實現服務地圖 (Service Map) 平滑對接。
 - **效能監控**: `reports/` 目錄生成時間定期稽核。
 - **HR 回饋**: Agent 互評分數追蹤於 `agent_reviews` 表。
@@ -96,10 +97,12 @@ All development must adhere to the **Testing Pyramid** strategy:
 - **Coverage Status**: **75%** ✅ (Achieved 2026-02-15, 513+ tests, 6995 stmts)
 - **CI Target**: > 70%
 
-### 2. External Services (13 integrations)
-Polygon, FMP, FRED, Tavily, DuckDuckGo, OpenRouter, Etoro Bridge, futu-api, ib_insync, LINE Messaging, Redis, DSPy, Google OAuth.
+### 2. External Services (12 active integrations)
+Polygon, FMP, FRED, Tavily, DuckDuckGo, OpenRouter, Etoro Bridge, ib_insync, LINE Messaging, Redis, DSPy, Google OAuth.
 
-### 3. Mocking Philosophy
+### 3. Observability (Modernized)
+- **OTel Stack**: Upgraded to **1.39.1** with Protobuf **5.29+** for enhanced security and stability.
+- **Logging**: High-fidelity JSON logging integrated with SigNoz.
 Use `unittest.mock` to bypass LLM, broker API, and external service calls during CI/CD.
 
 #### Debugging Mindset (Root Cause Analysis)

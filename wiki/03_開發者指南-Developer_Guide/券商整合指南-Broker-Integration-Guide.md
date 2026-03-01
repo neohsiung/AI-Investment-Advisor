@@ -3,22 +3,20 @@
 ### 版本紀錄 (Version History)
 | Date | Version | Description | Author |
 | :--- | :--- | :--- | :--- |
-| 2026-02-15 | v3.6 | **Milestone**: Unified `BrokerFactory` implementation & stable Multi-Broker routing. | Neo |
-| 2026-02-14 | v1.0 | Initial Release: Integrated Etoro, Futu, and IBKR guides | Neo |
+| 2026-03-01 | v5.0  | **Tech Stack Modernization**: Removed `futu-api` to upgrade to OTel 1.39.1 & Protobuf 5.x. | Antigravity |
+| 2026-02-15 | v3.6  | **Milestone**: Unified `BrokerFactory` implementation & stable Multi-Broker routing. | Neo |
+| 2026-02-14 | v1.0  | Initial Release: Integrated Etoro, Futu, and IBKR guides | Neo |
 
 ---
 
-本指南詳述了如何透過統一的 **`BrokerFactory`** 介面與三大支援券商 (Etoro, Futu, IBKR) 進行整合。系統會自動根據配置路由至正確的券商實作，實現自動化報價獲取與交易執行。
+本指南詳述了如何透過統一的 **`BrokerFactory`** 介面與支援券商 (Etoro, IBKR) 進行整合。系統會自動根據配置路由至正確的券商實作。
 
-This guide details how to integrate with the three supported brokers via the unified **`BrokerFactory`**, enabling automated execution and quoting through a single abstraction layer.
+This guide details how to integrate with the supported brokers via the unified **`BrokerFactory`**, enabling automated execution through a single abstraction layer.
 
 ## 1. 快速導航 (Quick Nav)
 
 ### 支援券商一覽 (Supported Brokers)
-| 券商 (Broker) | 核心依賴 (Core Dependency) | 連接埠 (Default Port) | 適用場景 (Use Case) |
-| :--- | :--- | :--- | :--- |
 | **Etoro** | Official Public API (REST) | 443 (HTTPS) | 模擬交易、跟單交易 (Copy Trading) |
-| **Futu (富途)** | FutuOpenD | 11111 | 港股/美股 API 交易 |
 | **IBKR (盈透)** | TWS API / IB Gateway | 7497 (Paper) / 7496 (Live) | 全球市場、機構級執行 |
 
 ---
@@ -59,45 +57,12 @@ python3 tests/test_etoro_api_auth.py
 
 ---
 
-## 3. Futu (富途) 整合 (Futu Integration)
+## 3. [DEPRECATED] Futu (富途) 整合 (Futu Integration)
 
-### 3.1 安裝與啟動 (Installation & Start)
-FutuOpenD 是富途提供的官方閘道器，必須與本系統同時運行。
-
-**方式一：Docker (推薦 - Headless)**
-適用於雲端或無介面伺服器。
-```yaml
-# docker-compose.yml (範例)
-services:
-  futu-opend:
-    image: neohsiung/futu-opend:latest
-    ports:
-      - "11111:11111"
-    environment:
-      - OPEND_USER=your_futu_user
-      - OPEND_PWD_MD5=your_password_md5
-```
-
-**方式二：本地 GUI (Local GUI)**
-適用於開發調試。
-1.  下載並安裝 [FutuOpenD](https://www.futunn.com/download/OpenAPI) (Windows/Mac)。
-2.  登入您的牛牛號/Moomoo ID。
-3.  確認監聽端口為 `11111`。
-
-### 3.2 系統設定 (Configuration)
-在 `.env` 中確認設定 (雖程式碼預設為 localhost，但建議明確定義)：
-```bash
-FUTU_HOST=127.0.0.1
-FUTU_PORT=11111
-```
-
-### 3.3 驗證連線 (Verification)
-我們提供了專用的整合測試：
-```bash
-# 確保 FutuOpenD 已啟動
-python3 tests/test_futu_integration.py
-```
-若成功，您將看到 `[Futu] Connected` 與測試下單成功的 Log。
+> [!CAUTION]
+> **已於 v5.0 移除 (Removed in v5.0)**
+> 為了升級至最新的 OpenTelemetry 1.39.1 與 Protobuf 5.x，系統已移除 `futu-api` 依賴。
+> `futu-api` remained on older Protobuf versions which blocked critical tech stack upgrades.
 
 ---
 

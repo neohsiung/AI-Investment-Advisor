@@ -1,3 +1,4 @@
+| 2026-03-01 | v1.5.0 | **Tech Stack Modernization**: Upgraded OpenTelemetry to 1.39.1 and Protobuf to 5.x. Formally removed `futu-api` and refined Sentinel fallback logic for cleaner architecture. | Antigravity |
 | 2026-03-01 | v1.4.0 | **Data Source Centralization & Readwise Integration**: Refactored the Data Source Matrix into a unified registry for UI and Sentinel parity. Implemented Readwise API into the core tracking radar, and introduced the Architecture-First Preflight Check rule. | Antigravity |
 | 2026-02-28 | v1.3.0 | **OpenClaw Architecture & Agent Evolution**: Completed Phase 1-4. Implemented Independent Workspaces, QMD Retrieval Engine (BM25+Decay), Dual-Track Webhooks, and WAL Protocol with Token Safety Pads. | Agent |
 | 2026-02-28 | v1.2.2 | **Observability & Audit Alignment**: Fixed OTel connectivity via `host.docker.internal`. Implemented `user_id` audit tracking in `prompt_history` and enhanced agent session persistence. | Antigravity |
@@ -71,7 +72,7 @@ graph LR
 - **核心**: Python 3.10+ (Local), Python 3.11 (Docker) - Optimized for Async I/O
 - **智能體**: DSPy, OpenAI/Gemini/Claude Multi-Tier Routing
 - **基礎設施**: Docker Compose, PostgreSQL 16, Redis, SigNoz (Local APM 觀測平台)
-- **資料與遙測**: MCP (Model Context Protocol), OpenTelemetry, TAVILY, Polygon, FMP, Tiingo, Finnhub, AlphaVantage, FRED
+- **資料與遙測**: MCP (Model Context Protocol), **OpenTelemetry 1.39.1**, TAVILY, Polygon, FMP, Tiingo, Finnhub, AlphaVantage, FRED
 
 ### 📦 快速開始
 ```bash
@@ -175,7 +176,7 @@ graph LR
 - **Language**: Python 3.10+ (Local), Python 3.11 (Docker)
 - **AI Core**: Multi-LLM Tiered Routing (Advanced 🚀, Smart 🧠, Fast ⚡)
 - **Infrastructure**: Dockerized PostgreSQL 16, Redis semantic cache, SigNoz (Local APM Observability)
-- **Data & Telemetry**: MCP (Model Context Protocol), OpenTelemetry, TAVILY Search, Polygon, Tiingo, Finnhub, AlphaVantage, FMP, FRED
+- **Data & Telemetry**: MCP (Model Context Protocol), **OpenTelemetry 1.39.1**, TAVILY Search, Polygon, Tiingo, Finnhub, AlphaVantage, FMP, FRED
 
 ### 📦 Quick Start
 ```bash

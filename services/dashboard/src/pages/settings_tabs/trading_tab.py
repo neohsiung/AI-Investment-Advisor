@@ -57,12 +57,6 @@ def render_trading_tab(st, user_id: str):
                 etoro_user_key = st.text_input("eToro User Key", value=settings_repo.get(user_id, "etoro_user_key") or "", type="password")
                 etoro_demo = st.checkbox("Demo Mode", value=(settings_repo.get(user_id, "etoro_mode") == "demo"))
 
-            # Futu Config
-            with st.expander("🔹 Futu OpenD Settings", expanded=False):
-                enable_futu = st.checkbox("啟用 Futu (Enable Futu)", value=(settings_repo.get(user_id, "enable_futu") == "true"))
-                futu_host = st.text_input("Futu Host", value=settings_repo.get(user_id, "futu_host") or "127.0.0.1")
-                futu_port = st.number_input("Futu Port", value=int(settings_repo.get(user_id, "futu_port") or 11111))
-                futu_pwd = st.text_input("Unlock Password (Optional)", value=settings_repo.get(user_id, "futu_pwd") or "", type="password")
 
             # IBKR Config
             with st.expander("🔹 Interactive Brokers Settings", expanded=False):
@@ -76,8 +70,8 @@ def render_trading_tab(st, user_id: str):
             with col1:
                 new_broker = st.selectbox(
                     "主要交易券商",
-                    options=["etoro", "futu", "ibkr"],
-                    index=["etoro", "futu", "ibkr"].index(current_broker) if current_broker in ["etoro", "futu", "ibkr"] else 0,
+                    options=["etoro", "ibkr"],
+                    index=["etoro", "ibkr"].index(current_broker) if current_broker in ["etoro", "ibkr"] else 0,
                     help="系統將優先使用此券商執行指令"
                 )
             with col1:
@@ -154,10 +148,6 @@ def render_trading_tab(st, user_id: str):
                     "etoro_api_key": etoro_api_key,
                     "etoro_user_key": etoro_user_key,
                     "etoro_mode": "demo" if etoro_demo else "real",
-                    "enable_futu": enable_futu,
-                    "futu_host": futu_host,
-                    "futu_port": futu_port,
-                    "futu_pwd": futu_pwd,
                     "enable_ibkr": enable_ibkr,
                     "ibkr_host": ibkr_host,
                     "ibkr_port": ibkr_port

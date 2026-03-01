@@ -3,7 +3,6 @@ from typing import Dict
 from src.domain.broker import IBroker
 from src.repositories.settings_repository import AlchemySettingsRepository
 from src.services.etoro_service import EtoroService
-from src.services.futu_service import FutuService
 from src.utils.logger import setup_logger
 logger = setup_logger("BrokerFactory")
 
@@ -34,13 +33,7 @@ class BrokerFactory:
             
         logger.info(f"Initializing Broker: {broker_type}")
         
-        if broker_type == "futu":
-            host = settings_repo.get(user_id, "futu_host") or "127.0.0.1"
-            port = int(settings_repo.get(user_id, "futu_port") or 11111)
-            pwd = settings_repo.get(user_id, "futu_pwd")
-            instance = FutuService(host=host, port=port, pwd=pwd)
-            
-        elif broker_type == "ibkr":
+        if broker_type == "ibkr":
             from src.services.ibkr_service import IBKRService
             host = settings_repo.get(user_id, "ibkr_host") or "127.0.0.1"
             port = int(settings_repo.get(user_id, "ibkr_port") or 7497)
@@ -82,11 +75,6 @@ class BrokerFactory:
              if os.getenv("ETORO_API_KEY"): 
                  brokers["etoro"] = BrokerFactory.get_broker(user_id, "etoro")
 
-        # Check Futu
-        if settings_repo.get(user_id, "enable_futu") == "true":
-             try:
-                 brokers["futu"] = BrokerFactory.get_broker(user_id, "futu")
-             except: pass
 
         # Check IBKR
         if settings_repo.get(user_id, "enable_ibkr") == "true":

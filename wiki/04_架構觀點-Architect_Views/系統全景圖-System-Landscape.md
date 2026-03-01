@@ -6,6 +6,7 @@
 ### 版本紀錄 (Version History)
 | Date | Version | Description | Author |
 | :--- | :--- | :--- | :--- |
+| 2026-03-01 | v5.2 | **Tech Stack Modernization**: Removed `futu-api` and upgraded OTel to 1.39.1 / Protobuf 5.x for enhanced security. | Antigravity |
 | 2026-02-21 | v5.1 | **Stability & Performance Optimization**: Added Optimized Monitoring Flow (Batch Fetching) and real-time accuracy logic descriptions. | Neo |
 | 2026-02-21 | v5.0 | **Microservices Monorepo & Observability**: Integrated SigNoz APM, OpenTelemetry, and Standalone Notification Service into the architecture. | Neo |
 | 2026-02-18 | v4.1 | **Async & Multi-Identity Topology**: Refined infrastructure view to reflect non-blocking protocols and UUID resolution. | Neo |
@@ -32,7 +33,7 @@
 系統與外部實體（使用者、數據供應商、AI 基礎設施）的交互。
 - **使用者**: 透過 Dashboard 監控資產。
 - **外部 API**: Polygon.io (行情), FMP (財報), FRED (總經), Tavily (搜尋), OpenRouter (LLM)。
-- **券商 API**: Etoro Bridge, futu-api, ib_insync。
+- **券商 API**: Etoro Bridge, ib_insync (Alpha)。
 - **通知**: LINE Messaging API (日報/警報推送)。
 - **資料持久化**: PostgreSQL (pgvector) / Redis (快取與記憶系統)。
 
@@ -55,7 +56,7 @@ graph TD
     end
 
     subgraph "Multi-Broker"
-        BF[BrokerFactory] -->"ET[Etoro] & FU[Futu] & IK[IBKR]"
+        BF[BrokerFactory] -->"ET[Etoro] & IK[IBKR]"
     end
 
     Agents -->|Auto-Hedge/Orders| ATS
@@ -97,7 +98,7 @@ graph TD
 
 #### 3.1 佈署拓撲 (Deployment Topology)
 - **架構變更 (v5.0)**: 系統已重構為 **Microservices Monorepo (領域微服務單體庫)**。核心業務邏輯移至 `pkg/` 或 `src/` 作為共享庫，而各個可獨立部署的進入點 (Dashboard, Scheduler, Notification, MCP Server) 皆隔離於 `services/` 目錄中。
-- **統一遙測 (Unified Telemetry)**: 每個微服務透過 OpenTelemetry 發送 Metrics/Traces 至自建的 SigNoz 本地集群。
+- **統一遙測 (Unified Telemetry)**: 每個微服務透過 **OpenTelemetry 1.39.1** 發送 Metrics/Traces 至自建的 SigNoz 本地集群。解決了舊版 Protobuf 導致的日誌中斷問題。
 
 ```mermaid
 graph LR

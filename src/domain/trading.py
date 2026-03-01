@@ -6,7 +6,6 @@ from datetime import datetime
 
 class BrokerType(Enum):
     ETORO = "etoro"
-    FUTU = "futu"
     IBKR = "ibkr"
     US_GENERIC = "us_generic"
     MOCK = "mock"
