@@ -23,7 +23,7 @@
 
 ```mermaid
 graph TD
-    user((User/Webhook)) -->|Triggers| CIO[CIO Agent]
+    user((User/Webhook)) -->"|Triggers| CIO[CIO Agent]"
     CIO -->|Broadcast| ORCH{Swarm Orchestrator}
     
     subgraph "Milestone 5: RoleSwarm Clusters"
@@ -62,12 +62,12 @@ graph TD
     CIO <-->|Validate| RISK
     CIO <-->|Fractal Debate| COUNCIL{Council}
     
-    THEMATIC -->|Update Theme Lists & Supply Chain| SETTINGS[(Settings/DB)]
+    THEMATIC -->"|Update Theme Lists & Supply Chain| SETTINGS[""(Settings/DB")]
     NARRATIVE -->|Narrative Delta & Corrections| CIO
     
     ENG -->|Generate Alpha Code & Backtest| SETTINGS
     
-    CIO -->|R.P.A.| DECISION[Final Decision]
+    CIO -->"|R.P.A.| DECISION[Final Decision]"
 ```
 
 ### 1. 代理人建構 (Agent Construction)
@@ -175,23 +175,23 @@ graph TD
 ```mermaid
 sequenceDiagram
     participant Orchestrator
-    participant FastTier as ⚡ Fast Tier (Scanner)
-    participant SmartTier as 🧠 Smart Tier (Analyst)
-    participant AdvTier as 🚀 Advanced Tier (Modeler)
+    participant FastTier as "⚡ Fast Tier (Scanner)"
+    participant SmartTier as "🧠 Smart Tier (Analyst)"
+    participant AdvTier as "🚀 Advanced Tier (Modeler)"
     
-    Orchestrator->>FastTier: Dispatch (asyncio.gather)
-    Orchestrator->>SmartTier: Dispatch (asyncio.gather)
-    Orchestrator->>AdvTier: Dispatch (asyncio.gather)
+    Orchestrator->>FastTier:"Dispatch (asyncio.gather)"
+    Orchestrator->>SmartTier:"Dispatch (asyncio.gather)"
+    Orchestrator->>AdvTier:"Dispatch (asyncio.gather)"
     
-    FastTier-->>Orchestrator: Return Results (e.g. 1s)
+    FastTier-->>Orchestrator: Return Results (e.g. 1s)"
     
     alt Graceful Degradation (CRITICAL DANGER)
-        Orchestrator->>SmartTier: Preempt (Cancel Task)
-        Orchestrator->>AdvTier: Preempt (Cancel Task)
+        Orchestrator->>SmartTier:"Preempt (Cancel Task)"
+        Orchestrator->>AdvTier:"Preempt (Cancel Task)"
         Orchestrator-->>CIO: Emergency Stop Signal
     else Normal Processing
-        SmartTier-->>Orchestrator: Return Results (e.g. 3s)
-        AdvTier-->>Orchestrator: Return Results (e.g. 5s)
+        SmartTier-->>Orchestrator: Return Results (e.g. 3s)"
+        AdvTier-->>Orchestrator: Return Results (e.g. 5s)"
         Orchestrator->>Orchestrator: Fusion Strategy Array
         Orchestrator-->>CIO: Aggregated Deep Analysis
     end

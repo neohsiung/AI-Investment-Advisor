@@ -49,7 +49,7 @@ def __init__(self, repo=None):
 classDiagram
     class BaseAgent {
         +repo: IRepository
-        +__init__(repo: IRepository)
+        +__init__(repo:"IRepository)"
     }
     class IRepository {
         <<interface>>
@@ -62,9 +62,9 @@ classDiagram
         +get_data()
     }
     
-    BaseAgent --> IRepository : 依賴 (Depends on)
-    SqliteRepo ..|> IRepository : 實作 (Implements)
-    MockRepo ..|> IRepository : 模擬 (Mocks)
+    BaseAgent --> IRepository : "依賴 (Depends on)"
+    SqliteRepo ..|> IRepository : "實作 (Implements)"
+    MockRepo ..|> IRepository : "模擬 (Mocks)"
 ```
 
 ### 4. 預期效益與成果 (Expected Outcomes)

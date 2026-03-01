@@ -96,7 +96,7 @@ classDiagram
     class MemoryEmbedding {
         +UUID id
         +UUID user_id
-        +vector(1536) embedding
+        +vector_1536_ embedding
         +JSONB metadata
     }
 
@@ -243,7 +243,7 @@ classDiagram
         +NUMERIC price
     }
     class MemoryEmbedding {
-        +vector(1536) embedding
+        +vector_1536_ embedding
     }
     FeedbackExample --> SecurityContext : evaluates
 ```

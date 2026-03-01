@@ -20,8 +20,8 @@ The system uses the **Adapter Pattern** and **Abstract Factory** to isolate busi
 
 ```mermaid
 graph TD
-    User((User)) -->|Settings| DB[(PostgreSQL)]
-    Workflow[Workflow Service] -->|Get Broker| Factory[BrokerFactory]
+    User((User)) -->"|Settings| DB[""(PostgreSQL")]
+    Workflow[Workflow Service] -->"|Get Broker| Factory[BrokerFactory]"
     Scheduler[Scheduler Service] -->|Sync| Factory
     
     subgraph "Milestone 5: Automated Trading & Defense"
@@ -29,14 +29,14 @@ graph TD
     end
     
     ATS -->|Check auto_trade_threshold| DB
-    ATS -->|Execute (Confidence >= Threshold)| Factory
-    ATS -->|Request Approval (Confidence < Threshold)| User
+    ATS -->"|Execute (Confidence >= Threshold)| Factory"
+    ATS -->"|Request Approval (Confidence < Threshold)| User"
 
     Factory -->|Returns| Broker{IBroker}
     
-    Broker <|..| Etoro["EtoroService<br/>(Official API + Bridge Fallback)"]
-    Broker <|..| Futu["FutuService<br/>(futu-api / FutuOpenD)"]
-    Broker <|..| IBKR["IBKRService<br/>(TWS/Client Portal - Skeleton)"]
+    Broker <|..| Etoro[""EtoroService<br/>(Official API + Bridge Fallback")"]
+    Broker <|..| Futu[""FutuService<br/>(futu-api / FutuOpenD")"]
+    Broker <|..| IBKR[""IBKRService<br/>(TWS/Client Portal - Skeleton")"]
     
     subgraph "Infrastructure"
         Risk[RiskManager]

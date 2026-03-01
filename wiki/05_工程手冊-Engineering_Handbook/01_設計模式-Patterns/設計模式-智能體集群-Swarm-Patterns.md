@@ -40,20 +40,20 @@
 
 ```mermaid
 flowchart LR
-    Start([Trigger: Schedule/HR Request]) --> Setup[Initialize Gen = 0]
+    Start("[Trigger: Schedule/HR Request"]) -->"Setup[Initialize Gen = 0]"
     
     subgraph "Evolutionary Loop (SystemEngineerAgent)"
-        Setup --> Gen[Generate Code<br/>Mutate Baseline]
-        Gen --> BT[BacktestRunner<br/>Execute Code vs History]
+        Setup -->"Gen[Generate Code<br/>Mutate Baseline]"
+        Gen -->"BT[BacktestRunner<br/>Execute Code vs History]"
         BT --> Eval{Sharpe > Best?}
-        Eval -- Yes --> Save[Save as Best Model]
-        Eval -- No --> Next[Next Population/Generation]
+        Eval --"Yes --> Save[Save as Best Model]"
+        Eval --"No --> Next[Next Population/Generation]"
         Save --> Next
         Next -->|Loop till Max Gen| Gen
     end
     
-    Next -->|Complete| DB[(SettingsRepository<br/>Save Alpha Code)]
-    DB --> Output([Return Report])
+    Next -->"|Complete| DB[""(SettingsRepository<br/>Save Alpha Code")]
+    DB -->"Output(""[Return Report"])
 ```
 
 ### 5. Map-Reduce 持倉分析

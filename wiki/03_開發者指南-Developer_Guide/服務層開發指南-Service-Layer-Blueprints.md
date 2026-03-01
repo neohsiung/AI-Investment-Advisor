@@ -45,8 +45,8 @@ graph TD
     Start[請求報價] --> P1{Polygon API}
     P1 -->|失敗/無金鑰| P2{FMP API}
     P2 -->|失敗| P3{YFinance}
-    P3 -->|最終失敗| Err[返回空值/日誌紀錄]
-    P1 -->|成功| Success[返回數據]
+    P3 -->"|最終失敗| Err[返回空值/日誌紀錄]"
+    P1 -->"|成功| Success[返回數據]"
     P2 -->|成功| Success
 ```
 

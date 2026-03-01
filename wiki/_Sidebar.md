@@ -47,7 +47,6 @@
     *   [工具層指南 (Tools Layer)](工具層指南-Tools-Layer-Guide)
     *   [工具函式庫指南 (Utils Library)](工具函式庫指南-Utils-Library-Guide)
 *   **04. 架構觀點 (Architecture Blueprints)**
-    *   [C端 SAAS 技術選型與演進計畫 (B2C Tech Evolution)](C端-SAAS-技術選型與演進計畫-B2C-SaaS-Tech-Stack-Evolution)
     *   [C端 SAAS 技術選型深度解析 (B2C Tech Stack Deep Dive)](C端-SAAS-技術選型深度解析-B2C-Tech-Stack-Deep-Dive)
     *   [智能體演進與OpenClaw實踐計畫 (Agentic Evolution Plan)](智能體演進與OpenClaw實踐計畫-Agentic-Evolution-OpenClaw-Plan)
     *   [系統全景圖 (System Landscape)](系統全景圖-System-Landscape)
@@ -56,6 +55,7 @@
     *   [底層通信協議 (Agent Mesh Protocols)](底層通信協議-Agent-Mesh-Protocols)
     *   [記憶系統與Redis架構 (Memory Architecture)](記憶系統與Redis架構-Memory-Redis-Architecture)
     *   [數據攝取架構 (Data Ingestion)](數據攝取架構-Data-Ingestion-Architecture)
+    *   [數據源矩陣管理 (Data Source Matrix)](數據源矩陣管理-Data-Source-Matrix)
     *   [任務規劃與執行引擎 (Task Planning)](任務規劃與執行引擎-Task-Planning-Engine)
     *   [配置管理架構 (Configuration Mgmt)](配置管理架構-Configuration-Management)
     *   [動態指標與復盤機制 (Dynamic Indicators)](動態指標與復盤機制-Dynamic-Indicators-and-Experience-Replay)
@@ -76,6 +76,7 @@
         *   [樣板方法 (Template Method)](設計模式-樣板方法-Template-Method)
         *   [適配器模式 (Adapter Pattern)](設計模式-適配器-Adapter-Pattern)
         *   [混合儲存架構 (Hybrid Storage)](混合儲存架構-Hybrid-Storage-Architecture)
+        *   [數據源架構一致性審查 (Data Source Review)](數據源架構一致性審查-Data-Source-Architecture-Review)
     *   **02_常用工具與整合 (Tools & Integration)**
         *   [研究與最佳實踐 (Research Best Practices)](研究與最佳實踐-Research-Best-Practices)
         *   [提示詞工程規範 (Prompt Engineering)](提示詞工程規範-Prompt-Engineering-Specs)

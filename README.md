@@ -1,3 +1,4 @@
+| 2026-03-01 | v1.4.0 | **Data Source Centralization & Readwise Integration**: Refactored the Data Source Matrix into a unified registry for UI and Sentinel parity. Implemented Readwise API into the core tracking radar, and introduced the Architecture-First Preflight Check rule. | Antigravity |
 | 2026-02-28 | v1.3.0 | **OpenClaw Architecture & Agent Evolution**: Completed Phase 1-4. Implemented Independent Workspaces, QMD Retrieval Engine (BM25+Decay), Dual-Track Webhooks, and WAL Protocol with Token Safety Pads. | Agent |
 | 2026-02-28 | v1.2.2 | **Observability & Audit Alignment**: Fixed OTel connectivity via `host.docker.internal`. Implemented `user_id` audit tracking in `prompt_history` and enhanced agent session persistence. | Antigravity |
 | 2026-02-27 | v1.2.1 | **Data Provider Standardization**: Standardized Fred, Finnhub, and AlphaVantage providers. Resolved test collection errors and restored coverage to 72%. | Antigravity |
@@ -44,15 +45,15 @@
 ```mermaid
 graph LR
     subgraph "AI Tiers"
-        A[Advanced 🚀] -->|Deep Analysis| LLMA[GPT-4o / Claude 3.5]
-        B[Smart 🧠] -->|Debate & Logic| LLMB[Gemini 1.5 Pro]
-        C[Fast ⚡] -->|Formatting| LLMC[GPT-4o-mini]
+        A[Advanced 🚀] -->"|Deep Analysis| LLMA[GPT-4o / Claude 3.5]"
+        B[Smart 🧠] -->"|Debate & Logic| LLMB[Gemini 1.5 Pro]"
+        C[Fast ⚡] -->"|Formatting| LLMC[GPT-4o-mini]"
     end
     
     subgraph "Data Tiers"
-        Hot[Hot 🔥] --- RD[Redis - Semantic Cache]
-        Warm[Warm ☀️] --- PG[Postgres - Structured]
-        Cold[Cold ❄️] --- FS[File System - Reports]
+        Hot[Hot 🔥] --"- RD[Redis - Semantic Cache]"
+        Warm[Warm ☀️] --"- PG[Postgres - Structured]"
+        Cold[Cold ❄️] --"- FS[File System - Reports]"
     end
 ```
 
@@ -88,19 +89,19 @@ cp .env.example .env
 
 ```mermaid
 graph TD
-    User((User)) <-->|Bilingual Chat| DASH[Streamlit Dashboard]
-    DASH <--> WF[WorkflowService]
+    User((User)) <-->"|Bilingual Chat| DASH[Streamlit Dashboard]"
+    DASH <-->"WF[WorkflowService]"
     
     subgraph "Intelligent Core"
         CIO[CIO Agent] <--> COUNCIL{Council}
-        CIO -->|Decompose| SUB[7 Specialized Agents]
-        SUB -->|Feedback| ENG[Engineer Agent - Auto Optimize]
+        CIO -->"|Decompose| SUB[7 Specialized Agents]"
+        SUB -->"|Feedback| ENG[Engineer Agent - Auto Optimize]"
         S[🦅 Sentinel<br/>5D Tracker] --> COUNCIL
     end
 
     subgraph "Data & Memory"
-        PG[(PostgreSQL + pgvector)]
-        RD[(Redis Cache)]
+        PG["(PostgreSQL + pgvector")]
+        RD["(Redis Cache")]
         MEM[Adaptive Memory]
     end
 
@@ -111,14 +112,14 @@ graph TD
 ### �️ 治理與規範 (Governance & Standards)
 
 為了確保 AI 協作的高一致性，本專案實施嚴格的治理規範：
-- **[文件維護標準](.agent/rules/documentation-standards.md)**: 規範 Wiki 扁平化連結與雙語排版。
-- **[設計與代碼規範](.agent/rules/engineering-standards.md)**: 強制測試隔離與 Clean Architecture。
-- **[原子提交規範](.agent/rules/git-commit-format.md)**: 確保開發軌跡清晰且具備雙語描述。
+- **[文件維護標準](documentation-standards)**: 規範 Wiki 扁平化連結與雙語排版。
+- **[設計與代碼規範](engineering-standards)**: 強制測試隔離與 Clean Architecture。
+- **[原子提交規範](git-commit-format)**: 確保開發軌跡清晰且具備雙語描述。
 
 ### �📚 文檔索引
 - **快速入門**: [快速啟動與操作指南-Quickstart-User-Guide](快速啟動與操作指南-Quickstart-User-Guide)
 - **架構深挖**: [架構哲學-Architectural-Philosophies](架構哲學-Architectural-Philosophies)
-- **開發者手冊**: [Engineering Standards](.agent/rules/engineering-standards.md)
+- **開發者手冊**: [Engineering Standards](engineering-standards)
 - **API 與數據**: [金融數據矩陣與整合成本-Financial-Data-Matrix-Cost](金融數據矩陣與整合成本-Financial-Data-Matrix-Cost)
 
 ---
@@ -148,15 +149,15 @@ This project employs a highly optimized layering strategy to balance cost and pe
 ```mermaid
 graph LR
     subgraph "AI Tiers"
-        A[Advanced 🚀] -->|Deep Analysis| LLMA[GPT-4o / Claude 3.5]
-        B[Smart 🧠] -->|Debate & Logic| LLMB[Gemini 1.5 Pro]
-        C[Fast ⚡] -->|Formatting| LLMC[GPT-4o-mini]
+        A[Advanced 🚀] -->"|Deep Analysis| LLMA[GPT-4o / Claude 3.5]"
+        B[Smart 🧠] -->"|Debate & Logic| LLMB[Gemini 1.5 Pro]"
+        C[Fast ⚡] -->"|Formatting| LLMC[GPT-4o-mini]"
     end
     
     subgraph "Data Tiers"
-        Hot[Hot 🔥] --- RD[Redis - Semantic Cache]
-        Warm[Warm ☀️] --- PG[Postgres - Structured]
-        Cold[Cold ❄️] --- FS[File System - Reports]
+        Hot[Hot 🔥] --"- RD[Redis - Semantic Cache]"
+        Warm[Warm ☀️] --"- PG[Postgres - Structured]"
+        Cold[Cold ❄️] --"- FS[File System - Reports]"
     end
 ```
 
@@ -185,9 +186,9 @@ graph LR
 ### �️ Governance & Standards
 
 To ensure high-fidelity AI collaboration, the project enforces strict governance:
-- **[Documentation Standards](.agent/rules/documentation-standards.md)**: Enforces flat-linking and bilingual formatting for the Wiki.
-- **[Engineering Standards](.agent/rules/engineering-standards.md)**: Mandates test isolation and Clean Architecture.
-- **[Git Commit Standards](.agent/rules/git-commit-format.md)**: Ensures atomic commits with professional bilingual summaries.
+- **[Documentation Standards](documentation-standards)**: Enforces flat-linking and bilingual formatting for the Wiki.
+- **[Engineering Standards](engineering-standards)**: Mandates test isolation and Clean Architecture.
+- **[Git Commit Standards](git-commit-format)**: Ensures atomic commits with professional bilingual summaries.
 
 ### �📚 Deep Dives
 Visit our full [Wiki](Home) for architectural blueprints and contribution guides.

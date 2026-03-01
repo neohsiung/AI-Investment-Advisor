@@ -74,18 +74,18 @@ Agent 不僅僅是單次調用，而是透過 **Think-Act-Observe** 模式自主
 #### 2.2 工具調用生命週期 (Tool Call Lifecycle)
 ```mermaid
 sequenceDiagram
-    participant Agent as Agent (BaseAgent)
-    participant Local as Local Skills (Registry)
+    participant Agent as "Agent (BaseAgent)"
+    participant Local as "Local Skills (Registry)"
     participant Remote as MCP Microservice
     participant Logic as Business Service
 
     Agent->>Agent: Parse 'CALL:' from LLM
     alt Is Local Skill?
-        Agent->>Local: execute(tool_name, args)
-        Local->>Logic: Direct Call (Fast)
+        Agent->>Local:"execute(tool_name, args)"
+        Local->>Logic:"Direct Call (Fast)"
     else Is Remote Tool?
         Agent->>Remote: POST /tools/call/
-        Remote->>Logic: Distributed Call (Scalable)
+        Remote->>Logic:"Distributed Call (Scalable)"
     end
     Logic-->>Agent: JSON Result -> Observations
 ```

@@ -67,19 +67,19 @@ sequenceDiagram
     participant User
     participant WF as WorkflowService
     participant CIO as CIO Agent
-    participant Agents as Research Swarm<br/>(Momentum/Fund/Macro/Sent)
+    participant Agents as "Research Swarm<br/>(Momentum/Fund/Macro/Sent)"
     participant MDS as MarketDataService
     participant MCP as MCP Tools
 
-    User->>WF: 提交分析請求 (e.g., AAPL)
+    User->>WF:"提交分析請求 (e.g., AAPL)"
     WF->>MDS: 獲取基礎數據與持倉
     MDS-->>WF: 返回交易歷史與報價
     par 異質研究並行化
         WF->>Agents: 指派多維度分析
-        Agents->>MCP: 調用搜尋 (Tavily) / 數據 (FMP/FRED/Polygon)
+        Agents->>MCP:"調用搜尋 (Tavily) / 數據 (FMP/FRED/Polygon)"
         MCP-->>Agents: 返回搜尋結果/技術指標/財報
     end
-    Agents-->>CIO: 返回分項報告 (Markdown)
+    Agents-->>CIO: 返回分項報告 (Markdown)"
     CIO->>CIO: 交叉驗證與權重分配
     CIO-->>User: 返回最終 CIO 戰略建議
 ```

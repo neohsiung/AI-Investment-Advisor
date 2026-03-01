@@ -39,26 +39,26 @@
 ```mermaid
 flowchart TD
     %% 用戶輸入層
-    User([User / Webhooks]) <--> Gateway[Multi-Channel Gateway]
+    User("[User / Webhooks"]) <-->"Gateway[Multi-Channel Gateway]"
     
     %% 主進程
     subgraph Agentic Orchestrator [Agent System (Temporal Workflow + Gateway)]
-        Gateway <--> SessionManager[Session Manager & Lane FIFO]
-        Heartbeat[Selective Heartbeat \n(Critical Agents Only)] -.->|Silent Turn| SessionManager
+        Gateway <-->"SessionManager[Session Manager & Lane FIFO]"
+        Heartbeat["Selective Heartbeat \n(Critical Agents Only")] -.->|Silent Turn| SessionManager
     end
 
     %% 智能體與記憶庫交互
     subgraph Multi Agent Swarm [9 Independent Agents]
-        SessionManager <--> ReAct[Agent 1: Captain]
-        SessionManager <--> ReAct2[Agent 2: Sentinel...]
-        SessionManager <--> ReAct9[Agent N]
+        SessionManager <-->"ReAct[Agent 1: Captain]"
+        SessionManager <-->"ReAct2[Agent 2: Sentinel...]"
+        SessionManager <-->"ReAct9[Agent N]"
     end
     
     %% 混合記憶架構 (獨立分離)
     subgraph Storage [Independent Brain architecture (Cost Optimized)]
-        ReAct <--> Workspace[<b>Workspace: /agent-1/</b>\n- IDENTITY.md\n- HEARTBEAT.md\n- WAL/STATE.md]
-        ReAct <--> DB[(PostgreSQL + pgvector\n<b>QMD Sidecar Logic</b>\n 0.7 Vector + 0.3 BM25\n + Temporal Decay\n + MMR Re-ranking)]
-        ReAct <--> Redis[(Redis Cache)]
+        ReAct <-->"Workspace[<b>Workspace: /agent-1/</b>\n- IDENTITY.md\n- HEARTBEAT.md\n- WAL/STATE.md]"
+        ReAct <-->"DB[""(PostgreSQL + pgvector\n<b>QMD Sidecar Logic</b>\n 0.7 Vector + 0.3 BM25\n + Temporal Decay\n + MMR Re-ranking")]
+        ReAct <-->"Redis[""(Redis Cache")]
     end
     
     %% 安全隔離機制

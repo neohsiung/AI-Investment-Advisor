@@ -41,21 +41,21 @@
 
 ```mermaid
 graph TD
-    UI["Dashboard (Streamlit)<br/>services/dashboard"] -->|SQL| DB[(PostgreSQL + pgvector)]
-    UI -->|HTTP| MCP_Serv["MCP Microservice<br/>services/mcp_server"]
-    Sch["Scheduler (Daemon)<br/>services/scheduler"] -->|Trigger| Agents["Agent Swarm (Clusters & Council)"]
-    Agents -->|Direct Call| Local["Local Skills (Registry)"]
+    UI[""Dashboard (Streamlit")<br/>services/dashboard"] -->"|SQL| DB[""(PostgreSQL + pgvector")]
+    UI -->"|HTTP| MCP_Serv[""MCP Microservice<br/>services/mcp_server"]
+    Sch[""Scheduler (Daemon")<br/>services/scheduler"] -->"|Trigger| Agents["""Agent Swarm (Clusters & Council")"]
+    Agents -->"|Direct Call| Local["""Local Skills (Registry")"]
     Agents -->|HTTP| MCP_Serv
-    MCP_Serv -->|Financial Data| APIs[Polygon/FMP/FRED/Tavily]
+    MCP_Serv -->"|Financial Data| APIs[Polygon/FMP/FRED/Tavily]"
     Local -->|Search/Compute| APIs
 
     subgraph "Milestone 5: Trading & Defense"
         ATS[AutomatedTradingService]
-        WHS[WebhookService (FastAPI)]
+        WHS["WebhookService (FastAPI")]
     end
 
     subgraph "Multi-Broker"
-        BF[BrokerFactory] --> ET[Etoro] & FU[Futu] & IK[IBKR]
+        BF[BrokerFactory] -->"ET[Etoro] & FU[Futu] & IK[IBKR]"
     end
 
     Agents -->|Auto-Hedge/Orders| ATS
@@ -63,7 +63,7 @@ graph TD
     WHS -->|Trigger| Agents
     
     subgraph "Standalone Notification Microservice"
-        NS["NotificationService (FastAPI)<br/>services/notification"] --> LNA[LINE Adapter] & MA[Email Adapter] & WA[Web Adapter]
+        NS[""NotificationService (FastAPI")<br/>services/notification"] -->"LNA[LINE Adapter] & MA[Email Adapter] & WA[Web Adapter]"
     end
 
     Agents -->|HTTP /notify| NS
@@ -102,14 +102,14 @@ graph TD
 ```mermaid
 graph LR
     subgraph Self-Hosted Infrastructure["Local Docker Compose / Cloud Run"]
-        Ing["Traefik / Nginx Ingress"] --> Dashboard["services/dashboard"]
-        Dashboard --> DB["Postgres (pgvector)"]
-        Dashboard --> Redis["Redis Cache"]
+        Ing["Traefik / Nginx Ingress"] -->"Dashboard[""services/dashboard"]
+        Dashboard -->"DB["""Postgres (pgvector")"]
+        Dashboard -->"Redis[""Redis Cache"]
         
-        Scheduler["services/scheduler"] -->|Trigger| Agents["Core Agents"]
-        Scheduler -->|Notify| Notif["services/notification"]
+        Scheduler["services/scheduler"] -->"|Trigger| Agents[""Core Agents"]
+        Scheduler -->"|Notify| Notif[""services/notification"]
         
-        MCP_Serv["services/mcp_server"] -->|Data| APIs[Polygon/FMP]
+        MCP_Serv["services/mcp_server"] -->"|Data| APIs[Polygon/FMP]"
         
         Dashboard -.->|OTLP| OTel["OTel Collector"]
         Scheduler -.->|OTLP| OTel
@@ -118,11 +118,11 @@ graph LR
     end
     
     subgraph Observability["SigNoz APM Stack"]
-        OTel --> ClickHouse[(ClickHouse)]
-        ClickHouse --> SigNozUI["SigNoz Dashboard (Port 8080)"]
+        OTel -->"ClickHouse[""(ClickHouse")]
+        ClickHouse -->"SigNozUI["""SigNoz Dashboard (Port 8080")"]
     end
     
-    DB --> Storage["Persistence Storage"]
+    DB -->"Storage[""Persistence Storage"]
 ```
 
 #### 3.2 外部事件與 Webhook 架構 (External Event & Webhook Architecture)
@@ -133,8 +133,8 @@ graph LR
 
 ```mermaid
 graph LR
-    Ext["External Alerts (TradingView/LINE)"] -->|"Webhook (POST)"| Ngrok["Ngrok Tunnel"]
-    Ngrok -->|"Forward"| WHS["WebhookService (Port 8000)"]
+    Ext[""External Alerts (TradingView/LINE")"] -->|"Webhook (POST)"| Ngrok["Ngrok Tunnel"]
+    Ngrok -->|"Forward"| WHS[""WebhookService (Port 8000")"]
     WHS -->|"Verify Signature"| Routing["Router Dispatch"]
     Routing -->|"Signal Trigger"| Sentinel["SentinelService"]
     Sentinel -->|"CRITICAL DANGER"| ATS["AutomatedTradingService"]
@@ -152,13 +152,13 @@ sequenceDiagram
     participant MDS as MarketDataService
     participant P as Providers
 
-    S->>Sen: process_tick()
-    Sen->>TR: get_user_tickers(all_users)
+    S->>Sen:"process_tick()"
+    Sen->>TR:"get_user_tickers(all_users)"
     TR-->>Sen: set of unique tickers
-    Sen->>MDS: get_current_prices(ticker_list)
-    MDS->>P: Batch Fetch (e.g. FMP Quote)
+    Sen->>MDS:"get_current_prices(ticker_list)"
+    MDS->>P:"Batch Fetch (e.g. FMP Quote)"
     P-->>MDS: price map
-    Sen->>MDS: get_ohlcv_batch(ticker_list)
+    Sen->>MDS:"get_ohlcv_batch(ticker_list)"
     MDS->>P: Concurrent Fetches 
     P-->>MDS: OHLCV map
     Sen->>Sen: Evaluate Anomalies
@@ -169,7 +169,7 @@ sequenceDiagram
 | :--- | :--- | :--- |
 | **容器鏡像** | [Dockerfile](Dockerfile) | 全系統基礎鏡像與環境。 |
 | **MCP 鏡像** | [Dockerfile.mcp](Dockerfile.mcp) | 隔離工具服務的輕量化鏡像。 |
-| **K8s 定義** | [k8s/](file:///Users/neohsiung/Work/go/investment-advisor/k8s/) | 包含 Deployment, Service 與 Secret 定義。 |
+| **K8s 定義** | [k8s/]() | 包含 Deployment, Service 與 Secret 定義。 |
 | **自動化** | [docker-compose.yml](docker-compose.yml) | 本地多服務開發環境。 |
 
 #### 3.3 技術選型與權衡分析 (Selection Analysis & Tradeoffs)

@@ -50,8 +50,8 @@ sequenceDiagram
     participant Planner as TaskPlanningService
     participant Router as DynamicModelRouter
     participant Macro as Macro Agent
-    participant Sector as CIO (Sector Mode)
-    participant Council as Council (Map-Reduce)
+    participant Sector as "CIO (Sector Mode)"
+    participant Council as "Council (Map-Reduce)"
     
     Planner->>Router: 生成 ExecutionPlan & 複雜度評分
     Router-->>Macro: 分配 Fast/Smart/Advanced 算力

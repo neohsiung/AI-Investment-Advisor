@@ -20,10 +20,10 @@
 
 ```mermaid
 graph TD
-    Page["UI View Layer (Streamlit Pages)"] -->|Calls| Service["Service Layer (Orchestration)"]
-    Service -->|Uses| Repo["Repository Layer (Data Access)"]
-    Service -->|Calls| Ext["External APIs / Agents"]
-    Service -->|Uses| Calc["Domain Logic (Calculators)"]
+    Page[""UI View Layer (Streamlit Pages")"] -->"|Calls| Service["""Service Layer (Orchestration")"]
+    Service -->"|Uses| Repo["""Repository Layer (Data Access")"]
+    Service -->"|Calls| Ext[""External APIs / Agents"]
+    Service -->"|Uses| Calc["""Domain Logic (Calculators")"]
 ```
 
 #### 1.1 職責定義 (Roles & Responsibilities)
@@ -44,10 +44,10 @@ graph TD
 
 ```mermaid
 graph LR
-    Init["__init__()"] --> Config["set_page_config()"]
-    Config --> Auth["check_auth()"]
-    Auth --> Run["run()"]
-    Run --> Render["render() — 子類覆寫"]
+    Init[""__init__(")"] -->"Config["""set_page_config(")"]
+    Config -->"Auth["""check_auth(")"]
+    Auth -->"Run["""run(")"]
+    Run -->"Render["""render(") — 子類覆寫"]
 ```
 
 - **`__init__`**: 各頁面自行實例化所需 Service (Composition Root 模式)。
@@ -88,21 +88,21 @@ graph LR
 #### 3.1 儀表板全景 (Dashboard Flow)
 ```mermaid
 graph TD
-    Load[進入頁面] --> Sync[更新 Daily Snapshot]
-    Sync --> FetchTx[拉取交易紀錄]
-    FetchTx --> Mkt[獲取即時價格 — 具 TTL=300s 快取]
-    Mkt --> Calc[執行 Analytics 計算 — 0% 幻覺]
-    Calc --> Render[渲染指標、持倉表與配置圖]
+    Load[進入頁面] -->"Sync[更新 Daily Snapshot]"
+    Sync -->"FetchTx[拉取交易紀錄]"
+    FetchTx -->"Mkt[獲取即時價格 — 具 TTL=300s 快取]"
+    Mkt -->"Calc[執行 Analytics 計算 — 0% 幻覺]"
+    Calc -->"Render[渲染指標、持倉表與配置圖]"
 ```
 
 #### 3.2 顧問對話流 (Advisor Chat Flow)
 ```mermaid
 graph TD
-    Input[用戶輸入] --> CIO[CIO Agent]
-    CIO --> Dispatch[Dispatch to Research Swarm]
-    Dispatch --> Agents[Fund/Mom/Macro/Sent 並行]
-    Agents --> Merge[CIO 交叉驗證]
-    Merge --> Report[返回 Markdown 報告]
+    Input[用戶輸入] -->"CIO[CIO Agent]"
+    CIO -->"Dispatch[Dispatch to Research Swarm]"
+    Dispatch -->"Agents[Fund/Mom/Macro/Sent 並行]"
+    Agents -->"Merge[CIO 交叉驗證]"
+    Merge -->"Report[返回 Markdown 報告]"
 ```
 
 ### 4. 技術重點 (Technical Highlights)
