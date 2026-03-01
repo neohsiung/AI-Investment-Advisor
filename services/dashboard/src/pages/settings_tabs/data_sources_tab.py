@@ -117,6 +117,14 @@ def render_data_sources_tab(st, settings_service, user_id):
                     "fields": {
                         "api_key": {"label": "API Key", "type": "password"}
                     }
+                },
+                {
+                    "id": "readwise",
+                    "name": "Readwise Highlights",
+                    "desc": "自動同步並以 AI 篩選你畫線的投資筆記，匯入 Sentinel 監控迴圈。",
+                    "fields": {
+                        "api_key": {"label": "API Key", "type": "password", "help": "可在 readwise.io/access_token 取得"}
+                    }
                 }
             ]
         },

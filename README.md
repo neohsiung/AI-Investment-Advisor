@@ -31,7 +31,7 @@
 ### 🚀 核心效益與功能亮點 (Key Features & Outcomes)
 - **🧠 獨立微型大腦演化 (OpenClaw Architecture)**: 九大 Agent 完全解除黑盒，獨立掛載個人專屬 Workspace (`IDENTITY.md`, `STATE.md`)。結合 **WAL (Write-Ahead Logging)** 協議與 Token 安全墊機制，終結高長度財報推論斷片現象，實現不掉幀的長文脈思考。
 - **🧠 智能進化集群 (Swarm Intelligence)**: 由 CIO Agent 領銜協同 Fundamental, Momentum 等專家智能體，消除單一模型幻覺 (Hallucinations)，提升決策勝率與可解釋性。
-- **⏱️ 毫秒級自動化防禦 (Auto-Defense via Dynamic Threshold)**: 內建 `AutomatedTradingService` 與 `SentinelService`。系統現在會根據您設定的**動態信心門檻 (1-10)** 自動下單。支援**雙軌心跳 Webhooks**，兼顧主動警報與被動排程的低成本運行。
+- **⏱️ 毫秒級自動化防禦 (Auto-Defense via Dynamic Threshold)**: 內建 `AutomatedTradingService` 與 `SentinelService` (支援 VIX, 行情, 新聞, 總經, Readwise 等 5D 維度監控)。系統現在會根據您設定的**動態信心門檻 (1-10)** 自動下單。支援**雙軌心跳 Webhooks**，兼顧主動警報與被動排程的低成本運行。
 - **⚖️ 專業級風控與槓桿管理 (Institutional Risk Management)**: 獨有的槓桿引擎，嚴格追蹤 Gross/Net NLV，配有 24 小時動態異常降噪與 Margin Call 熔斷機制。
 - **🗄️ QMD 混合檢索架構 (QMD Hybrid Retrieval)**: 以 PostgreSQL 作為結構化核心，輔以 pgvector 實現語義記憶 RAG，並升級 **BM25 全文檢索** 與 **Temporal Decay (時間衰減)**，確保 AI 決策具備深度的歷史復盤脈絡與時間敏感度。
 - **🔬 自導演算法工程師 (Code-Level Alpha Seeking)**: 內置 `SystemEngineerAgent`，能運用遺傳演算法 (Genetic Algorithm) 自行撰寫、回測並迭代因子 (Alpha) 程式碼，持續演化交易邏輯。
@@ -95,6 +95,7 @@ graph TD
         CIO[CIO Agent] <--> COUNCIL{Council}
         CIO -->|Decompose| SUB[7 Specialized Agents]
         SUB -->|Feedback| ENG[Engineer Agent - Auto Optimize]
+        S[🦅 Sentinel<br/>5D Tracker] --> COUNCIL
     end
 
     subgraph "Data & Memory"
@@ -134,7 +135,7 @@ graph TD
 ### 🚀 Key Capabilities & Outcomes
 - **🧠 Independent Micro-Brains (OpenClaw Architecture)**: De-coupled the 9 Agent collective, providing independent structural Workspaces (`IDENTITY.md`, `STATE.md`). Empowered with the **WAL (Write-Ahead Logging)** Protocol and Token Safety Pads, eliminating context overflow amnesia.
 - **🧠 Swarm Intelligence (v1.0)**: A CIO-led cluster coordinating domain experts (Fundamental, Momentum, Macro) via Fractal Debate, eliminating single-model hallucinations and boosting decision win rates and explainability.
-- **⏱️ Automated Millisecond Defense (Dynamic Threshold Logic)**: Integrated `AutomatedTradingService` and `Sentinel` autonomously execute trades based on **Dynamic Confidence Thresholds (1-10)**. Enhanced by **Dual-Track Webhooks** balancing proactive market-watching and passive payload triggers at zero blind API costs.
+- **⏱️ Automated Millisecond Defense (Dynamic Threshold Logic)**: Integrated `AutomatedTradingService` and `Sentinel` (5D radar tracking VIX, Price, News, Macro, and Readwise API) autonomously execute trades based on **Dynamic Confidence Thresholds (1-10)**. Enhanced by **Dual-Track Webhooks** balancing proactive market-watching and passive payload triggers at zero blind API costs.
 - **⚖️ Institutional Risk Engine (Precision Leverage Engine)**: Professional-grade tracking of Gross/Net NLV and margin utilization with 24-hour smart dynamic noise reduction and dynamic Circuit Breakers.
 - **🗄️ QMD Hybrid Retrieval (QMD Architecture)**: Employs PostgreSQL as the structured backbone alongside pgvector. Features **BM25 Text Rank** combined with **Temporal Decay** to synthesize both exact matches and historically-weighted contextual decisions.
 - **🔬 Autonomous Quant Engineer (Code-Level Alpha Seeking)**: The integrated `SystemEngineerAgent` utilizes genetic algorithms to write, backtest, and iterate Alpha creation scripts, ensuring the trading logic continually evolves without manual intervention.

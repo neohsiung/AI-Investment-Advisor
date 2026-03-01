@@ -886,22 +886,24 @@ class SentinelService:
         # Sources identified in the Matrix that support polling
         pollable_sources = [
             "alternative_me", "cryptopanic", "whale_alert", "glassnode",
-            "tiingo", "news_api", "alpha_vantage", "fmp", "fred"
+            "tiingo", "news_api", "alpha_vantage", "fmp", "fred", "readwise"
         ]
         
         for sid in pollable_sources:
             if settings.get(f"source_{sid}_enabled") == "true":
                 try:
                     # Generic polling trigger
-                    res_dict = await self._poll_single_source(sid, settings)
-                    if res_dict:
-                        triggers.append(res_dict)
+                    res = await self._poll_single_source(sid, settings)
+                    if isinstance(res, list):
+                        triggers.extend(res)
+                    elif res:
+                        triggers.append(res)
                 except Exception as e:
                     logger.error(f"Polling failed for {sid}: {e}")
         
         return triggers
 
-    async def _poll_single_source(self, sid: str, settings: Dict[str, str]) -> Optional[Dict[str, Any]]:
+    async def _poll_single_source(self, sid: str, settings: Dict[str, str]) -> Any:
         """
         Routing logic for specific data source polling.
         """
@@ -956,6 +958,38 @@ class SentinelService:
                     }
             except Exception as e:
                 logger.error(f"AlphaVantage health check failed: {e}")
+                
+        # Readwise Integration
+        elif sid == "readwise":
+            try:
+                from src.services.readwise_service import ReadwiseService
+                readwise_svc = ReadwiseService(user_id=self.user_id)
+                last_sync = self.settings_service.get_setting("readwise_last_sync")
+                
+                # Fetch highlights in background thread
+                import asyncio
+                loop = asyncio.get_event_loop()
+                analyzed = await loop.run_in_executor(
+                    None, 
+                    lambda: readwise_svc.fetch_and_analyze_highlights(updated_after=last_sync)
+                )
+                
+                if analyzed:
+                    from datetime import datetime, timezone
+                    self.settings_service.save_setting("readwise_last_sync", datetime.now(timezone.utc).isoformat())
+                    
+                    rw_triggers = []
+                    for item in analyzed:
+                        analysis = item.get("analysis", {})
+                        if analysis.get("requires_action"):
+                            rw_triggers.append({
+                                "text": f"💡 Readwise Insight: {item.get('text')}\nAI Comment: {analysis.get('reasoning')}\nAction: {analysis.get('suggested_action')}",
+                                "id": f"readwise_{item.get('id')}",
+                                "category": "READWISE_INSIGHT"
+                            })
+                    return rw_triggers
+            except Exception as e:
+                logger.error(f"Readwise polling failed: {e}")
                 
         return None
 
