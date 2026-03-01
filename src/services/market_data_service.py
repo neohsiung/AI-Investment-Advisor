@@ -32,12 +32,19 @@ class MarketDataService:
         
         # Initialize Providers
         self.polygon = PolygonProvider(settings_service=self.settings_service)
+        self.polygon.id = "polygon"
         self.tiingo = TiingoProvider(settings_service=self.settings_service)
+        self.tiingo.id = "tiingo"
         self.fmp = FMPProvider(settings_service=self.settings_service)
+        self.fmp.id = "fmp"
         self.yfinance = YFinanceProvider()
+        self.yfinance.id = "yahoo_finance"
         self.fred = FredProvider(user_id=self.user_id)
+        self.fred.id = "fred"
         self.alpha_vantage = AlphaVantageProvider(user_id=self.user_id)
+        self.alpha_vantage.id = "alpha_vantage"
         self.finnhub = FinnhubProvider(user_id=self.user_id)
+        self.finnhub.id = "finnhub"
         
         # Initialize Search (Tavily Primary, DuckDuckGo Fallback)
         self.search_service = InternetSearchService(settings_service=self.settings_service)
@@ -60,6 +67,16 @@ class MarketDataService:
         """
         return provider.__class__.__name__
 
+    def _is_provider_enabled(self, provider: MarketDataProvider) -> bool:
+        """
+        Check if a provider is enabled in the current user's settings.
+        檢查提供者是否在當前用戶設定中啟用。
+        """
+        if not hasattr(provider, "id"): return True
+        # YFinance is a free fallback, assume it's always enabled if no toggle exists
+        if provider.id == "yahoo_finance": return True
+        return self.settings_service.get_setting(f"source_{provider.id}_enabled") == "true"
+
     def get_current_prices(self, tickers: List[str]) -> Dict[str, float]:
         """
         Get current prices with failover and merging. Iterates providers until all tickers are resolved.
@@ -74,6 +91,8 @@ class MarketDataService:
         for provider in [self.polygon, self.fmp, self.yfinance]:
             if not missing_tickers:
                 break
+            if not self._is_provider_enabled(provider):
+                continue
                 
             try:
                 # Only request missing tickers
@@ -194,6 +213,7 @@ class MarketDataService:
         history_providers = [self.polygon, self.yfinance, self.fmp] 
         
         for provider in history_providers:
+            if not self._is_provider_enabled(provider): continue
             try:
                 df = provider.fetch_history(ticker, days=days)
                 if df is not None and not df.empty:
@@ -252,6 +272,7 @@ class MarketDataService:
             df = pd.DataFrame()
             # Prioritize Polygon for indicators base data (Unlimited history)
             for provider in [self.polygon, self.yfinance]:
+                if not self._is_provider_enabled(provider): continue
                 df = provider.fetch_history(ticker, period="1y")
                 if not df.empty: break
             
@@ -315,6 +336,7 @@ class MarketDataService:
         
         all_news = []
         for provider in news_providers:
+            if not self._is_provider_enabled(provider): continue
             try:
                 news = provider.fetch_news(ticker, limit=5)
                 if news:
@@ -334,6 +356,7 @@ class MarketDataService:
         fund_providers = [self.fmp, self.alpha_vantage, self.finnhub, self.yfinance, self.polygon]
         
         for provider in fund_providers:
+            if not self._is_provider_enabled(provider): continue
             try:
                 info = provider.fetch_info(ticker)
                 if info and info.get('market_cap'): # Basic validation
@@ -361,7 +384,7 @@ class MarketDataService:
         
         # 1. Try FRED (Primary)
         try:
-            if self.fred:
+            if self.fred and self._is_provider_enabled(self.fred):
                 # Use standard fetch_historical or specialized getter
                 # For backward compatibility with existing agents:
                 fred_data = self.fred.fred_service.get_macro_indicators()
@@ -389,7 +412,7 @@ class MarketDataService:
          """
          # 1. Try FRED (Primary)
          try:
-             if self.fred:
+             if self.fred and self._is_provider_enabled(self.fred):
                  fred_data = self.fred.fred_service.get_macro_indicators()
                  if "10Y2Y_Spread" in fred_data:
                      spread_val = fred_data["10Y2Y_Spread"]["value"]

@@ -884,10 +884,8 @@ class SentinelService:
         settings = self.settings_service.get_all_settings()
         
         # Sources identified in the Matrix that support polling
-        pollable_sources = [
-            "alternative_me", "cryptopanic", "whale_alert", "glassnode",
-            "tiingo", "news_api", "alpha_vantage", "fmp", "fred", "readwise"
-        ]
+        from src.config.data_source_matrix_config import get_pollable_sources
+        pollable_sources = get_pollable_sources()
         
         for sid in pollable_sources:
             if settings.get(f"source_{sid}_enabled") == "true":
