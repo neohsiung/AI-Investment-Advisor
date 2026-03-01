@@ -11,7 +11,7 @@
 ### 1.1 基本格式 (Basics)
 - **縮進**: 統一使用 **4 個空格**。
 - **行寬**: Soft limit 100, Hard limit 120。
-- **雙語註解 (Bilingual Docs)**: 所有核心 Docstrings 必須包含 **英文 (上) 與 繁體中文 (下)**。
+- **雙語註解 (Bilingual Comments & Docs)**: 遵循多人協作與開源標準 (Best Practice for Collaborative Development)，所有註解、函數說明 (Docstrings) 必須包含 **英文 (上)** 與 **繁體中文 (下)**。英文作為國際共通語境，中文輔助快速理解業務邏輯。
 
 ### 1.2 混合儲存策略 (Hybrid Strategy - Rule #9)
 [詳細配置範例與優缺點比較，請參閱《混合儲存架構指南》](../../wiki/05_工程手冊-Engineering_Handbook/01_設計模式-Patterns/混合儲存架構-Hybrid-Storage-Architecture.md)
