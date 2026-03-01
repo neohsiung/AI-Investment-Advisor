@@ -323,7 +323,7 @@ async def call_tool(tool_name: str, request: ToolCallRequest):
 # --- Webhook Router & Inbound Adapters ---
 from src.services.webhook_service import webhook_router
 
-app.include_router(webhook_router)
+app.include_router(webhook_router, prefix="/webhook")
 # --- LINE Bot Webhook Support ---
 # --- LINE Bot Webhook Support (via InteractionService) ---
 @app.post("/callback")

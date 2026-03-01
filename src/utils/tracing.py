@@ -3,11 +3,20 @@ import logging
 from opentelemetry import trace
 from opentelemetry.sdk.trace import TracerProvider
 from opentelemetry.sdk.trace.export import BatchSpanProcessor
-from opentelemetry.exporter.otlp.proto.grpc.trace_exporter import OTLPSpanExporter
 from opentelemetry.sdk.resources import Resource
-from opentelemetry.instrumentation.requests import RequestsInstrumentor
-from opentelemetry.instrumentation.httpx import HTTPXClientInstrumentor
-from opentelemetry.instrumentation.psycopg2 import Psycopg2Instrumentor
+try:
+    from opentelemetry.exporter.otlp.proto.grpc.trace_exporter import OTLPSpanExporter
+    OTEL_EXPORTER_AVAILABLE = True
+except ImportError:
+    OTEL_EXPORTER_AVAILABLE = False
+
+try:
+    from opentelemetry.instrumentation.requests import RequestsInstrumentor
+    from opentelemetry.instrumentation.httpx import HTTPXClientInstrumentor
+    from opentelemetry.instrumentation.psycopg2 import Psycopg2Instrumentor
+    OTEL_INSTRUMENTATION_AVAILABLE = True
+except ImportError:
+    OTEL_INSTRUMENTATION_AVAILABLE = False
 
 logger = logging.getLogger(__name__)
 
@@ -33,6 +42,10 @@ def init_tracing(service_name: str):
     trace.set_tracer_provider(provider)
 
     # Initialize OTLP Exporter (gRPC)
+    if not OTEL_EXPORTER_AVAILABLE:
+        logger.warning(f"OTLP Exporter not available. Tracing partially disabled for {service_name}.")
+        return
+
     try:
         otlp_exporter = OTLPSpanExporter(endpoint=endpoint, insecure=True)
         span_processor = BatchSpanProcessor(otlp_exporter)
@@ -43,13 +56,16 @@ def init_tracing(service_name: str):
         return
 
     # Auto-instrumentation for Trace Propagation
-    try:
-        RequestsInstrumentor().instrument()
-        HTTPXClientInstrumentor().instrument()
-        Psycopg2Instrumentor().instrument()
-        logger.info("Auto-instrumentation for 'requests', 'httpx', and 'psycopg2' enabled.")
-    except Exception as e:
-        logger.warning(f"Failed to auto-instrument libraries: {e}")
+    if OTEL_INSTRUMENTATION_AVAILABLE:
+        try:
+            RequestsInstrumentor().instrument()
+            HTTPXClientInstrumentor().instrument()
+            Psycopg2Instrumentor().instrument()
+            logger.info("Auto-instrumentation for 'requests', 'httpx', and 'psycopg2' enabled.")
+        except Exception as e:
+            logger.warning(f"Failed to auto-instrument libraries: {e}")
+    else:
+        logger.info("Auto-instrumentation libraries not available. Skipping.")
 
     # Note: SQLAlchemy instrumentation is handled in get_db_engine to avoid circular imports
     return trace.get_tracer(__name__)

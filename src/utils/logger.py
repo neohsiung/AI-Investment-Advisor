@@ -1,7 +1,10 @@
 import logging
 import sys
 import os
-from pythonjsonlogger import jsonlogger
+try:
+    from pythonjsonlogger import jsonlogger
+except ImportError:
+    jsonlogger = None
 
 # OpenTelemetry Logging Imports (OTel 1.39.1 compatible internal paths)
 try:
@@ -44,12 +47,17 @@ def setup_logger(name, level=logging.INFO):
         stdout_handler = logging.StreamHandler(sys.stdout)
         
         # 建立 JSON Formatter，並指定標準化與 OTel 所需的關鍵欄位
-        formatter = jsonlogger.JsonFormatter(
-            '%(asctime)s %(levelname)s %(name)s %(filename)s %(lineno)d %(message)s',
-            datefmt='%Y-%m-%dT%H:%M:%SZ',  # ISO-8601 UTC string
-            rename_fields={"levelname": "level", "asctime": "timestamp", "name": "service.name"}
-        )
-        stdout_handler.setFormatter(formatter)
+        if jsonlogger:
+            formatter = jsonlogger.JsonFormatter(
+                '%(asctime)s %(levelname)s %(name)s %(filename)s %(lineno)d %(message)s',
+                datefmt='%Y-%m-%dT%H:%M:%SZ',  # ISO-8601 UTC string
+                rename_fields={"levelname": "level", "asctime": "timestamp", "name": "service.name"}
+            )
+            stdout_handler.setFormatter(formatter)
+        else:
+            # Fallback for missing jsonlogger
+            formatter = logging.Formatter('%(asctime)s %(levelname)s %(name)s %(filename)s %(lineno)d %(message)s')
+            stdout_handler.setFormatter(formatter)
         logger.addHandler(stdout_handler)
 
         # 2. OpenTelemetry OTLP Log Handler (Optional)

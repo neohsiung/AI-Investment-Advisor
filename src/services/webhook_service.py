@@ -1,12 +1,14 @@
 import os
 import asyncio
-from typing import Dict, Any
+import hashlib
+from typing import Dict, Any, List
 from fastapi import APIRouter, Request, HTTPException
 from src.utils.logger import setup_logger
+from src.config.rss_config import get_rss_sources
 
 logger = setup_logger("WebhookService")
 
-webhook_router = APIRouter(prefix="/webhook", tags=["Webhook"])
+webhook_router = APIRouter(tags=["Webhook"])
 
 # Services instance from mcp_service to be injected or accessed
 # We will use a dependency or global reference. To avoid circular imports,
@@ -85,12 +87,20 @@ class N8nParser(BaseSourceParser):
     def parse(payload: Dict[str, Any]) -> Dict[str, Any]:
         # n8n typically passes the object directly or via 'body' depending on setup
         data = payload.get("body", payload) if isinstance(payload.get("body"), dict) else payload
+        
+        # Link-based Deduplication ID
+        msg_url = data.get("link") or data.get("url")
+        signal_id = data.get("event_id")
+        if not signal_id and msg_url:
+            signal_id = f"rss_{hashlib.md5(msg_url.encode()).hexdigest()}"
+            
         return {
             "type": data.get("event_type", "N8N_AUTOMATION"),
             "ticker": data.get("ticker", "GLOBAL"),
             "msg": data.get("message") or data.get("msg") or "n8n Triggered Event",
             "value": data.get("value"),
-            "url": data.get("link") or data.get("url")
+            "url": msg_url,
+            "signal_id": signal_id
         }
 
 SOURCE_PARSERS = {
@@ -174,6 +184,20 @@ webhook_service_instance = WebhookService()
 @webhook_router.post("/finnhub")
 async def finnhub_webhook(request: Request):
     return await webhook_service_instance.handle_finnhub_webhook(request)
+
+@webhook_router.get("/rss-sources", tags=["RSS"])
+async def get_rss_sources_list():
+    """
+    Expose RSS configuration for n8n to fetch dynamically.
+    """
+    logger.info("Serving /rss-sources request")
+    try:
+        sources = get_rss_sources()
+        logger.info(f"Returning {len(sources)} RSS sources")
+        return sources
+    except Exception as e:
+        logger.error(f"Error getting RSS sources: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
 
 @webhook_router.get("/heartbeat")
 @webhook_router.post("/heartbeat")

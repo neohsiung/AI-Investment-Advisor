@@ -6,7 +6,7 @@ from src.services.webhook_service import webhook_router, webhook_service_instanc
 from fastapi import FastAPI
 
 app = FastAPI()
-app.include_router(webhook_router)
+app.include_router(webhook_router, prefix="/webhook")
 client = TestClient(app)
 
 @pytest.fixture
@@ -34,3 +34,12 @@ def test_market_alert_webhook(mock_sentinel):
         response = client.post("/webhook/market-alert", json=payload)
         assert response.status_code == 200
         mock_handler.assert_called_once()
+
+def test_rss_sources_webhook():
+    response = client.get("/webhook/rss-sources")
+    assert response.status_code == 200
+    data = response.json()
+    assert isinstance(data, list)
+    assert len(data) > 0
+    assert "url" in data[0]
+    assert "name" in data[0]
