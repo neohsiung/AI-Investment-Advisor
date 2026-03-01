@@ -381,11 +381,14 @@ class SentinelService:
         # Optimization: Use standardized news fetching (Tiingo -> FMP -> YFinance)
         results = self.market_service.get_news(ticker)
         
-        # v5.0 Fallback Logic: Only use search if NO news found AND this ticker is a High-Impact Watchlist item
+        # v5.0 Fallback Logic: Only use search if NO news found
+        # Fallback 機制：若主要供應商無新聞，則使用搜尋引擎進行抓取
         if not results:
-             # Check if it's a critical ticker (optional logic, for now let's just stick to providers)
-             # results = self.search_service.search_financial_context(query, max_results=3)
-             return 0.0, "No recent news captured by primary providers."
+             query = f"{ticker} latest news investment impact"
+             results = self.search_service.search_financial_context(query, max_results=3)
+             
+        if not results:
+             return 0.0, "No recent news captured by primary providers or search."
         
         best_score = 0.0
         best_summary = ""
@@ -1005,8 +1008,16 @@ class SentinelService:
                 "current_state": current_state
             }
             # Run in a separate thread so we don't block the main event loop
+            # 用於異步執行耗時的智能體分析，確保不會阻塞主事件迴圈
             import asyncio
-            loop = asyncio.get_event_loop()
+            try:
+                loop = asyncio.get_event_loop()
+            except RuntimeError:
+                # Create a new loop if one doesn't exist for this thread
+                # 若當前執行度無事件迴圈，則建立新的
+                loop = asyncio.new_event_loop()
+                asyncio.set_event_loop(loop)
+                
             loop.run_in_executor(None, thematic_agent.run, context)
         except Exception as e:
             logger.error(f"Failed to trigger thematic update for {theme_key}: {e}")

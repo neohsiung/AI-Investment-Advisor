@@ -485,21 +485,25 @@ class TestSourcePollingAndThematic:
             run_async(_test())
 
     def test_trigger_thematic_update(self, mock_services, run_async):
+        """Test asynchronous thematic update trigger"""
+        # Test asynchronous thematic update trigger
+        # 測試非同步題材更新觸發
         sentinel = _create_sentinel(mock_services)
         with patch('src.agents.factory.AgentFactory.create_thematic_agent', create=True) as mock_create, \
-             patch('asyncio.create_task') as mock_task:
+             patch('asyncio.get_event_loop') as mock_get_loop:
+            
+            mock_loop = MagicMock()
+            mock_get_loop.return_value = mock_loop
+            mock_loop.is_closed.return_value = False
             
             # Mock analyze for thematic agent
             mock_agent_instance = MagicMock()
-            
-            # Use AsyncMock for the return value of analyze
-            mock_agent_instance.analyze = AsyncMock(return_value={"new_tickers": ["NVDA", "AMD"]})
             mock_create.return_value = mock_agent_instance
             
             # Call synchronous wrapper that fires task
             sentinel._trigger_thematic_update("Nvidia releases new chip", "ai", ["AAPL"])
             
-            assert mock_task.called
+            assert mock_loop.run_in_executor.called
 
     def test_check_active_sources(self, mock_services, run_async):
         sentinel = _create_sentinel(mock_services)
@@ -520,11 +524,17 @@ class TestSourcePollingAndThematic:
             "snippet": "nuclear"
         }]
         
-        mock_keywords = [MagicMock(keyword="ppa")]
+        kw = MagicMock(keyword="ppa")
+        kw.score.return_value = 0.8
+        mock_keywords = [kw]
         
         with patch('src.services.transaction_service.TransactionService.get_user_tickers', return_value=["AAPL"]), \
-             patch('src.agents.factory.AgentFactory.create_thematic_agent', create=True) as mock_create_agent:
-                 
+             patch('src.agents.factory.AgentFactory.create_thematic_agent', create=True) as mock_create_agent, \
+             patch('src.services.sentinel_service.AlchemyRiskKeywordRepository') as mock_repo_class:
+                  
+            mock_repo = MagicMock()
+            mock_repo_class.return_value = mock_repo
+            
             mock_agent = MagicMock()
             mock_agent.run.return_value = {"status": "success"}
             mock_create_agent.return_value = mock_agent
@@ -532,7 +542,7 @@ class TestSourcePollingAndThematic:
             mock_services["market"].get_news.return_value = []
             mock_services["search"].search_financial_context.return_value = mock_results
             
-            score, summary = sentinel._analyze_ticker_news("MSFT", mock_results, mock_keywords)
+            score, summary = sentinel._analyze_ticker_news("MSFT", mock_keywords)
             # PPA deals get score boost, even if it has to fallback to default MSFT ticker list
             assert score > 0.0
 
@@ -544,11 +554,61 @@ class TestSourcePollingAndThematic:
             "title": "TSLA Robotaxi",
             "snippet": "autonomous driving"
         }]
-        mock_keywords = [MagicMock(keyword="robotaxi")]
+        kw = MagicMock(keyword="robotaxi")
+        kw.score.return_value = 0.9
+        mock_keywords = [kw]
         
         mock_services["market"].get_news.return_value = []
         mock_services["search"].search_financial_context.return_value = mock_results
         
-        score, summary = sentinel._analyze_ticker_news("TSLA", mock_results, mock_keywords)
-        # Should detect Physical AI keywords and boost
-        assert score > 0.0
+        with patch('src.services.sentinel_service.AlchemyRiskKeywordRepository') as mock_repo_class:
+            mock_repo = MagicMock()
+            mock_repo_class.return_value = mock_repo
+            
+            score, summary = sentinel._analyze_ticker_news("TSLA", mock_keywords)
+            # Should detect Physical AI keywords and boost
+            assert score > 0.0
+
+
+class TestEventDriven:
+    def test_process_event_general(self, mock_services, run_async):
+        """Test general event processing"""
+        # Test general event processing
+        # 測試一般事件處理
+        sentinel = _create_sentinel(mock_services)
+        event = {"source": "test_source", "data": {"msg": "Test Message", "ticker": "AAPL"}}
+        
+        async def _test():
+            with patch.object(sentinel, '_escalate', new_callable=AsyncMock) as mock_escalate:
+                await sentinel.process_event(event)
+                assert mock_escalate.called
+        run_async(_test())
+
+    def test_process_event_earnings_premium(self, mock_services, run_async):
+        """Test earnings call event with shortage premium"""
+        # Test earnings call event with shortage premium
+        # 測試帶有供應短缺溢價的財報電話事件
+        sentinel = _create_sentinel(mock_services)
+        event = {"source": "earnings_call", "data": {"msg": "Earnings Report", "ticker": "TSMC"}}
+        
+        async def _test():
+            with patch('src.services.supply_chain_service.SupplyChainService.get_shortage_premium', 
+                       return_value={"has_premium": True, "narrative": "Severe shortage"}) as mock_sc, \
+                 patch.object(sentinel, '_escalate', new_callable=AsyncMock) as mock_escalate:
+                await sentinel.process_event(event)
+                assert mock_escalate.called
+        run_async(_test())
+
+    def test_realtime_vix_spike(self, mock_services, run_async):
+        """Test real-time VIX alert logic"""
+        # Test real-time VIX alert logic
+        # 測試即時 VIX 警報邏輯
+        sentinel = _create_sentinel(mock_services)
+        event = {"ev": "A", "sym": "VIX", "c": 35.0} # VIX > 25
+        
+        async def _test():
+            with patch.object(sentinel, '_escalate', new_callable=AsyncMock) as mock_escalate:
+                await sentinel.on_realtime_event(event)
+                assert mock_escalate.called
+        run_async(_test())
+
