@@ -210,6 +210,8 @@ services:
       - N8N_LOG_LEVEL=info
       - N8N_LOG_OUTPUT=console,file
       - OTEL_LOGS_EXPORTER=otlp
+      - OTEL_TRACES_EXPORTER=otlp
+      - OTEL_METRICS_EXPORTER=otlp
     extra_hosts:
       - "host.docker.internal:host-gateway"
     volumes:
