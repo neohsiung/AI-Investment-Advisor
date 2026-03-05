@@ -72,6 +72,10 @@ class BasePage(ABC):
         # Load Design System CSS with Theme Support
         load_design_system_css()
         
+        # Load Material Font (v4.2.4: Moved from top-level to after set_page_config)
+        from src.utils.components import load_material_font
+        load_material_font()
+        
         # Cleanup session state from other pages (optional/careful)
         # 清除來自其他頁面的 Session State (選用/需謹慎)
         self._cleanup_session_state()

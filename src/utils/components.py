@@ -6,10 +6,11 @@ import re
 import streamlit as st
 from src.utils.ui import safe_html
 
-# Inject Google Material Symbols font (once per session)
-if "material_font_loaded" not in st.session_state:
-    safe_html('<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined" rel="stylesheet">')
-    st.session_state["material_font_loaded"] = True
+def load_material_font():
+    """Inject Google Material Symbols font (once per session)."""
+    if "material_font_loaded" not in st.session_state:
+        safe_html('<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined" rel="stylesheet">')
+        st.session_state["material_font_loaded"] = True
 
 def _resolve_icon(icon: str) -> str:
     """Convert :material/icon_name: shortcode to Material Symbols HTML span, or return emoji as-is."""
