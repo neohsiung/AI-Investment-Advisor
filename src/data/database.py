@@ -305,12 +305,13 @@ def init_db(db_path=None):
     schema_commands.append(f"""
     CREATE TABLE IF NOT EXISTS risk_keywords (
         id {pk_type},
-        keyword TEXT NOT NULL,
+        keyword TEXT NOT NULL UNIQUE,
         weight {numeric_type} DEFAULT 0.5,
         category TEXT DEFAULT 'custom',
         hit_count INTEGER DEFAULT 0,
         last_hit_date {date_type},
         is_active INTEGER DEFAULT 1,
+        source TEXT DEFAULT 'seed',
         created_at {timestamp_type} DEFAULT CURRENT_TIMESTAMP
     );
     """)

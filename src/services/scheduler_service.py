@@ -217,6 +217,31 @@ class SchedulerService:
         if get_current_time().day == 1:
             self.job_monthly_refinement()
 
+    def job_keyword_refine(self) -> None:
+        """
+        Weekly keyword lifecycle management: discover from 3 sources + refine weights.
+        每週關鍵字生命週期管理：3 來源探索 + 自動調權。
+        """
+        logger.info("Starting Keyword Refine Job...")
+        self.log_job_execution("Keyword Refine", "STARTED")
+        try:
+            from src.services.risk_keyword_service import RiskKeywordService
+            service = RiskKeywordService()
+            result = service.discover_and_refine()
+            msg = (
+                f"Discovered: reports={result['discovered']['reports']}, "
+                f"webhook={result['discovered']['webhook']}, "
+                f"trends={result['discovered']['trends']}. "
+                f"Inserted {result['inserted']}, Pruned {result['pruned']}, "
+                f"Refined: decay={result['refined']['decayed']}, boost={result['refined']['boosted']}. "
+                f"Total: {result['total_after']}"
+            )
+            logger.info(f"Keyword Refine completed: {msg}")
+            self.log_job_execution("Keyword Refine", "COMPLETED", msg)
+        except Exception as e:
+            logger.error(f"Keyword Refine failed: {e}")
+            self.log_job_execution("Keyword Refine", "FAILED", str(e))
+
     def reload_schedule(self):
         """
         Reload the schedule from database configuration.
@@ -276,9 +301,10 @@ class SchedulerService:
             schedule.every().saturday.at(weekly_time_sys).do(self.job_weekly_report)
             
         # Run validation on Sunday to review the week
-        # 週日執行驗證與復盤以回顧本週表現
+        # 週日執行驗證、復盤與關鍵字精煉
         schedule.every().sunday.at("10:00").do(self.job_weekly_validation)
         schedule.every().sunday.at("11:00").do(self.job_experience_replay)
+        schedule.every().sunday.at("12:00").do(self.job_keyword_refine)
         
         # Monthly Check (UTC 00:00)
         # 每月檢查 (UTC 00:00)

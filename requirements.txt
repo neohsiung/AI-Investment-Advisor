@@ -39,6 +39,7 @@ tavily-python>=0.5.0
 line-bot-sdk
 PyGithub>=2.1.1
 nltk>=3.9.3 # Upgraded to fix CVE-2025-14009
+pytrends>=4.9.2 # Google Trends fallback for keyword discovery
 
 # MCP Microservice
 fastapi==0.124.4
