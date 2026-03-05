@@ -1,7 +1,7 @@
 from typing import Any
 from src.utils.logger import setup_logger
 from src.infrastructure.channels.base_adapter import IChannelAdapter
-from src.services.notification_service import INotificationFilter
+from src.domain.interfaces import INotificationFilter
 
 logger = setup_logger("NotificationFilter")
 

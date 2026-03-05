@@ -198,3 +198,36 @@ async def test_notify_all_with_channel_filter():
     # Only email should be called
     assert not mock_line.send_alert.called
     mock_email.send_alert.assert_called_once()
+
+
+def test_notification_filters_import_from_domain():
+    """Verify that INotificationFilter is correctly imported from domain.interfaces."""
+    import inspect
+    from src.services.notification_filters import InterestBasedFilter
+    from src.domain.interfaces import INotificationFilter
+    
+    # Check that InterestBasedFilter is indeed a subclass of INotificationFilter from domain.interfaces
+    assert issubclass(InterestBasedFilter, INotificationFilter)
+
+@pytest.mark.anyio
+async def test_distribute_report_includes_web_channel():
+    """Verify distribute_report sends to both email AND web channels."""
+    from src.services.workflow_service import DailyWorkflow
+    from unittest.mock import patch, ANY
+    
+    workflow = DailyWorkflow(user_id="test_user")
+    
+    with patch("httpx.AsyncClient.post", new_callable=AsyncMock) as mock_post:
+        # Simulate successful API response
+        mock_post.return_value.status_code = 202
+        
+        await workflow.distribute_report(content="Test HTML Content")
+        
+        # Verify the payload in the API call
+        mock_post.assert_called_once()
+        call_kwargs = mock_post.call_args[1]
+        payload = call_kwargs.get('json', {})
+        
+        assert "email" in payload.get('channels', [])
+        assert "web" in payload.get('channels', [])
+        assert payload.get('category') == "report"

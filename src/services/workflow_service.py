@@ -85,6 +85,28 @@ class BaseWorkflow(ABC):
             else:
                 final_report = self.synthesize_results()
             
+            # --- Translate to Traditional Chinese ---
+            self.logger.info("Translating final report to Traditional Chinese...")
+            try:
+                from src.agents.factory import AgentFactory
+                translator = AgentFactory.create_agent("Engineer", use_cache=True, user_id=self.user_id)
+                prompt = (
+                    "TASK: Please translate the following investment report into Traditional Chinese (zh-TW).\n"
+                    "RULES:\n"
+                    "1. Keep all financial domain terms (like 'Momentum', 'Fundamental', 'Sentiment', ticker symbols, etc.) in English.\n"
+                    "2. Do NOT translate proper nouns (company names, asset classes if better known in English).\n"
+                    "3. Keep ALL formatting strictly intact (Markdown, HTML, brackets, tables).\n"
+                    "4. Output ONLY the translated text, no conversational filler.\n\n"
+                    f"REPORT TO TRANSLATE:\n{final_report}"
+                )
+                res = translator.run(prompt)
+                translated_report = str(res.get("content", res.get("output", res))) if isinstance(res, dict) else str(res)
+                if translated_report.strip():
+                    final_report = translated_report
+                self.logger.info("Translation successful.")
+            except Exception as e:
+                self.logger.error(f"Translation failed: {e}. Falling back to original English report.")
+                
             # Step 4: Reporting & Storage
             if not dry_run:
                 await self.distribute_report(final_report)
@@ -229,7 +251,7 @@ class BaseWorkflow(ABC):
             "user_id": self.user_id,
             "title": subject,
             "content": html_content,
-            "channels": ["email"], # Explicitly target Email for reports
+            "channels": ["email", "web"], # Explicitly target Email and Web for reports
             "category": "report"
         }
         
@@ -240,8 +262,31 @@ class BaseWorkflow(ABC):
                     logger.info("Report notifications queued successfully via API.")
                 else:
                     logger.warning(f"Notification API returned {response.status_code}: {response.text}")
+                    # Fallback to direct call if API exists but returned non-202
+                    await self._fallback_direct_notify(title, html_content)
         except Exception as e:
-            logger.error(f"Failed to trigger Report Notification via API: {e}")
+            logger.error(f"Failed to trigger Report Notification via API: {e}. Attempting direct fallback.")
+            await self._fallback_direct_notify(title, html_content)
+
+    async def _fallback_direct_notify(self, title: str, html_content: str):
+        """Fallback to use direct NotificationService if API is down"""
+        try:
+            from src.services.notification_service import NotificationService
+            from src.services.settings_service import SettingsService
+            
+            settings_svc = SettingsService(user_id=self.user_id)
+            notification_svc = NotificationService.create_with_settings(settings_service=settings_svc, user_id=self.user_id)
+            
+            await notification_svc.notify_all(
+                title=title,
+                content=html_content,
+                user_id=self.user_id,
+                channels=["email", "web"],
+                category="report"
+            )
+            logger.info("Fallback direct notification successful.")
+        except Exception as fallback_e:
+            logger.error(f"Fallback direct notification failed: {fallback_e}")
 
 
 class DailyWorkflow(BaseWorkflow):

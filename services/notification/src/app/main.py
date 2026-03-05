@@ -52,11 +52,9 @@ async def lifespan(app: FastAPI):
         # Load global settings or specific adapter configs 
         settings_svc = SettingsService(db_path=None)
         
-        # Instantiate the NotificationService precisely as the monolith did
-        notification_service = NotificationService.create_with_settings(settings_service=settings_svc)
-        logger.info("Notification Service initialized successfully.")
+        logger.info("Standalone Notification Service ready.")
     except Exception as e:
-        logger.error(f"Failed to initialize Notification Service: {e}")
+        logger.error(f"Failed to initialize Standalone Notification Service: {e}")
         
     yield
     
