@@ -47,45 +47,44 @@ class DashboardService:
         Fetch transactions, prices, and calculate all dashboard metrics for the user.
         獲取交易、價格並為使用者計算所有儀表板指標。
         """
-        # 0. Update snapshot
-        update_daily_snapshot(self.db_path, user_id=user_id)
-
-        # 1. Fetch Transactions (Historical)
-        transactions_df = self.transaction_service.get_transactions(user_id)
-        
-        # 2. Fetch Aggregated Live Data (Unified Portfolio)
+        # 1. Identify Active Tickers First
         from src.services.portfolio_aggregator_service import PortfolioAggregatorService
         aggregator = PortfolioAggregatorService(user_id)
         live_portfolio = aggregator.get_aggregated_portfolio()
         
-        # 3. Identify Active Tickers
-        # Use live positions if available, else fallback to transaction-derived
         active_tickers = []
         live_positions = live_portfolio.get('positions', [])
         
         if live_positions:
             active_tickers = [p.symbol for p in live_positions]
-        elif not transactions_df.empty:
-            # Fallback
-            holdings = transactions_df.copy()
-            holdings['qty_signed'] = holdings.apply(lambda x: x['quantity'] if x['action'] == 'BUY' else -x['quantity'], axis=1)
-            active_holdings = holdings.groupby('ticker')['qty_signed'].sum()
-            active_tickers = active_holdings[active_holdings > 0.0001].index.tolist()
-
-        # 4. Fetch Prices
+        else:
+            # Fallback to transactions if no live positions
+            transactions_df = self.transaction_service.get_transactions(user_id)
+            if not transactions_df.empty:
+                holdings = transactions_df.copy()
+                holdings['qty_signed'] = holdings.apply(lambda x: x['quantity'] if x['action'] == 'BUY' else -x['quantity'], axis=1)
+                active_holdings = holdings.groupby('ticker')['qty_signed'].sum()
+                active_tickers = active_holdings[active_holdings > 0.0001].index.tolist()
+        
+        # 2. Fetch Prices ONCE
         current_prices = {}
         if active_tickers:
             current_prices = self._fetch_market_prices(active_tickers)
             
-            # v4.2.3: Price Resilience Fix
-            # If APIs fail, fallback to prices reported by the Broker in live_portfolio
+            # price resilience fix
             if live_positions:
                 for p in live_positions:
                     ticker = getattr(p, 'symbol', None)
                     if ticker and (ticker not in current_prices or current_prices[ticker] == 0):
                         current_prices[ticker] = getattr(p, 'current_price', 0)
 
-        # 5. Calculate Core Metrics
+        # 3. Update snapshot WITH pre-fetched prices (Eliminates redundant fetch inside update_daily_snapshot)
+        update_daily_snapshot(self.db_path, user_id=user_id, current_prices=current_prices)
+
+        # 4. Fetch Transactions for other UI needs
+        transactions_df = self.transaction_service.get_transactions(user_id)
+
+        # 5. Calculate Core Metrics using the same prices
         metrics = {'nlv': 0, 'leveraged_value': 0, 'cash': 0, 'leverage_ratio': 0, 'cash_balance': 0}
         pnl_data = {'unrealized': 0, 'realized': 0, 'total': 0}
         roi = 0.0
@@ -97,31 +96,23 @@ class DashboardService:
             
             # OVERRIDE with Real-time Data if available
             if live_portfolio.get('total_equity', 0) > 0:
-                 # v4.2.3: Standardized Metrics Alignment (Follows Core-Metrics-Specs)
-                 # NLV = Database Cash + (Invested Capital + Unrealized P&L)
                  metrics['cash_balance'] = metrics_derived.get('cash_balance', 0)
                  metrics['invested_capital'] = pnl_data.get('margin_invested', pnl_data.get('invested_capital', 0))
                  metrics['unrealized_pnl'] = pnl_data.get('unrealized', 0)
-                 
-                 # Target NLV = Cash + Invested + Unrealized
                  metrics['nlv'] = metrics['cash_balance'] + metrics['invested_capital'] + metrics['unrealized_pnl']
                  
-                 # Gross Exposure calculation based on CORE_METRICS_SPEC
-                 # Gross = Cash + Nominal MV (Nominal MV already includes Unrealized P&L)
                  live_mv_nominal = 0.0
-                 live_positions = live_portfolio.get('positions', [])
                  for p in live_positions:
                      price = current_prices.get(p.symbol, 0) or getattr(p, 'current_price', 0)
                      leverage = getattr(p, 'leverage', 1.0)
                      live_mv_nominal += (p.quantity * price) * leverage
                  
                  metrics['gross_nlv'] = metrics['cash_balance'] + live_mv_nominal
-                 
                  if metrics['nlv'] > 0:
                      metrics['leverage_ratio'] = metrics['gross_nlv'] / metrics['nlv']
             else:
                  metrics = metrics_derived
-                 metrics['gross_nlv'] = metrics['nlv'] # Fallback
+                 metrics['gross_nlv'] = metrics['nlv']
                  metrics['invested_capital'] = pnl_data.get('margin_invested', pnl_data.get('invested_capital', 0))
                  metrics['unrealized_pnl'] = pnl_data.get('unrealized', 0)
 
@@ -132,7 +123,6 @@ class DashboardService:
         # 6. Prepare Positions DataFrame
         positions_df = pd.DataFrame()
         if live_positions:
-             # Convert live positions to DF
              data = []
              for p in live_positions:
                  price = current_prices.get(p.symbol, 0) or getattr(p, 'current_price', 0)
@@ -154,7 +144,6 @@ class DashboardService:
                  })
              positions_df = pd.DataFrame(data)
         elif not transactions_df.empty:
-             # Fallback to derived
             positions_raw = transactions_df.copy()
             positions_raw['qty_signed'] = positions_raw.apply(lambda x: x['quantity'] if x['action'] == 'BUY' else -x['quantity'], axis=1)
             positions_grouped = positions_raw.groupby('ticker')['qty_signed'].sum().reset_index()
@@ -163,10 +152,9 @@ class DashboardService:
             if not positions_df.empty:
                 positions_df['current_price'] = positions_df['ticker'].map(current_prices).fillna(0)
                 positions_df['gross_mv'] = positions_df['quantity'] * positions_df['current_price']
-                # Also add loan and net_equity for consistent structure
                 positions_df['loan'] = 0.0
                 positions_df['net_equity'] = positions_df['gross_mv']
-                positions_df['leverage'] = 1.0 # Added for fallback consistency
+                positions_df['leverage'] = 1.0
 
         return {
             'transactions_df': transactions_df,

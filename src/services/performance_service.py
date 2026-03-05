@@ -39,8 +39,8 @@ class PerformanceService:
         active_tickers = self.trans_repo.get_active_tickers(self.user_id)
         current_prices = self._fetch_prices(active_tickers) if active_tickers else {}
 
-        # 2. Trigger snapshot update and get PnL
-        self.analytics_service.trigger_snapshot_update()
+        # 2. Trigger snapshot update with pre-fetched prices
+        self.analytics_service.trigger_snapshot_update(current_prices=current_prices)
         pnl_data = self.analytics_service.get_pnl_breakdown(current_prices)
         
         # 確保 pnl_data 不為 None

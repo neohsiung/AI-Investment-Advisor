@@ -5,6 +5,7 @@
 ### 版本紀錄 (Version History)
 | Date | Version | Description | Author |
 | :--- | :--- | :--- | :--- |
+| 2026-03-05 | v4.4 | **Keyword Discovery Service**: 新增 `RiskKeywordService` 3源探索、DI 注入、MAX_KEYWORDS 動態上限。Repository 新增 3 方法。 | Antigravity |
 | 2026-02-28 | v4.3 | **Webhook Updates**: Added Heartbeat API and Market-Alert webhooks for Sentinel. | Antigravity |
 | 2026-02-18 | v4.1 | **Async & Multi-Identity**: Refactored Notification/Interaction services to be non-blocking. Unified user identity resolution. | Neo |
 | 2026-02-15 | v3.6 | Added Leverage Engine & Bilingual Code Standards | Neo |
@@ -65,7 +66,7 @@ graph TD
 
 | 服務 | 檔案 | 核心職責 |
 | :--- | :--- | :--- |
-| `WorkflowService` | `workflow_service.py` | 主循環引擎 — Daily/Weekly 報告生成 (Template Method)。 |
+| `WorkflowService` | `workflow_service.py` | 主循環引擎 — Daily/Weekly 報告生成 (Template Method)，並呼叫 `Engineer Agent` 進行繁體中文翻譯。 |
 | `TaskPlanningService` | `task_planning_service.py` | DAG 任務分解、複雜度評分、動態模型路由。 |
 | `HRService` | `hr_service.py` | 360° 互評、Zombie Agent 偵測、績效追蹤。 |
 | `RefinementService` | `refinement_service.py` | DSPy Prompt 自動優化 (Engineer Agent 後端)。 |
@@ -90,7 +91,8 @@ graph TD
 | `TransactionService` | `transaction_service.py` | 交易記錄 CRUD、Atomic 匯入。 |
 | `IngestionService` | `ingestion_service.py` | CSV 匯入 (交易/股利)、全有或全無。 |
 | `UserRepository` | `user_repository.py` | **[NEW v4.1]** 跨通路身分映射與 UUID 解析核心介面。 |
-| `RiskKeywordRepository` | `risk_keyword_repository.py` | 風險關鍵字 CRUD + 命中追蹤 + 復盤分析 (30+ 預設種子)。 |
+| `RiskKeywordService` | `risk_keyword_service.py` | **[NEW v4.4]** 動態關鍵字探索與精煉。快取存取 + 3 源探索 + 自動精煉 + 修剪。|
+| `RiskKeywordRepository` | `risk_keyword_repository.py` | 風險關鍵字 CRUD + 命中追蹤 + 復盤分析 + UPSERT 探索 (160+ 預設種子)。 |
 
 #### 2.6 Dashboard & UI 支援 (UI Support)
 
@@ -187,7 +189,7 @@ graph TD
 - **Multi-Broker & Trading** (6): BrokerFactory, Etoro, Futu, IBKR, PortfolioAggregator, AutomatedTrading
 - **Agent Engine** (8): Workflow, TaskPlanning, HR, Refinement, Evaluation, Attribution, ExperienceReplay, UserFocus
 - **Monitoring & Verification** (3): Sentinel (4D Multi-Trigger + Weighted Risk Keywords), Council, Verification
-- **Persistence** (5): Memory, MemoryFactory, Transaction, Ingestion, **RiskKeyword**
+- **Persistence** (6): Memory, MemoryFactory, Transaction, Ingestion, **RiskKeyword**, **RiskKeywordService (v4.4: 3-source discovery)**
 - **UI Support** (6): Analytics (**Leverage Engine v3.6**), Dashboard, Performance, Settings, Theme (**v4.3 Unified: 22 tokens, OS auto-detect, WCAG AA**), Backtest
 - **Interaction & Notifications** (5): Scheduler, Notification, NotificationFilters, Reporting, Webhook
 

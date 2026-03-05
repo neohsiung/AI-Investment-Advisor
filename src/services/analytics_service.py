@@ -272,7 +272,7 @@ class PnLCalculator:
             "details": breakdown
         }
 
-def update_daily_snapshot(db_path: str = None, user_id: str = None, force: bool = False) -> None:
+def update_daily_snapshot(db_path: str = None, user_id: str = None, force: bool = False, current_prices: Optional[Dict[str, float]] = None) -> None:
     """
     Recalculate and update today's performance snapshot if not already present.
     重新計算並更新今日績效快照（若尚未存在）。
@@ -293,8 +293,10 @@ def update_daily_snapshot(db_path: str = None, user_id: str = None, force: bool 
     trans_repo = AlchemyTransactionRepository()
     active_tickers = trans_repo.get_active_tickers(user_id)
 
-    market_service = MarketDataService()
-    current_prices = market_service.get_current_prices(active_tickers)
+    # 2. Fetch prices only if not provided
+    if current_prices is None:
+        market_service = MarketDataService()
+        current_prices = market_service.get_current_prices(active_tickers)
 
     # [NEW] v4.2.1: Snapshot Validation (防呆機制)
     # If more than 50% of active tickers have 0.0 price, the data is likely corrupted.
@@ -330,13 +332,13 @@ class AnalyticsService:
         self.snapshot_repo = repository or AlchemySnapshotRepository(db_path)
         self.pnl_calculator = pnl_calc or PnLCalculator(db_path=self.db_path)
 
-    def trigger_snapshot_update(self, force: bool = False) -> None:
+    def trigger_snapshot_update(self, force: bool = False, current_prices: Optional[Dict[str, float]] = None) -> None:
         """
         Manually trigger a snapshot update for the user.
         手動觸發使用者的快照更新。
         """
         if self.user_id:
-            update_daily_snapshot(self.db_path, self.user_id, force=force)
+            update_daily_snapshot(self.db_path, self.user_id, force=force, current_prices=current_prices)
 
     def get_pnl_breakdown(self, current_prices: Dict[str, float]) -> Optional[Dict[str, Any]]:
         """

@@ -11,18 +11,24 @@ logger = logging.getLogger(__name__)
 # Global Engine Cache
 _db_engines: Dict[str, Engine] = {}
 
-# Global Session Factory
-_SessionFactory = None
+# Global Session Registries (one per engine) to prevent leaks
+_session_registries: Dict[Engine, Any] = {}
+
+# Global Initialization Flag
+_db_initialized = False
 
 class BaseRepository:
     def __init__(self, engine: Engine):
         self.engine = engine
         
-        global _SessionFactory
-        if _SessionFactory is None:
-            _SessionFactory = sessionmaker(bind=self.engine)
+        global _session_registries
+        if engine not in _session_registries:
+            # v4.2.6: Use a single shared scoped_session registry per engine
+            # to ensure thread-local sessions are shared across repository instances.
+            factory = sessionmaker(bind=self.engine)
+            _session_registries[engine] = scoped_session(factory)
         
-        self.Session = scoped_session(_SessionFactory)
+        self.Session = _session_registries[engine]
 
     @property
     def session(self):
@@ -95,7 +101,8 @@ def get_db_engine(db_path=None) -> Engine:
 
     if db_url not in _db_engines:
         if "postgres" in db_url:
-            engine = create_engine(db_url, pool_size=50, max_overflow=20)
+            # v4.2.5: Reduced from 50 to 10 to accommodate multi-service container architecture
+            engine = create_engine(db_url, pool_size=10, max_overflow=10)
             logger.info(f"Using PostgreSQL engine: {db_url.split('@')[-1]}")
         else:
             engine = create_engine(db_url)
@@ -128,11 +135,15 @@ def get_db_connection(db_path=None):
     engine = get_db_engine(db_path)
     return engine.connect()
 
-def init_db(db_path=None):
+def init_db(db_path=None, force=False):
     """
     Initializes the database schema (v4.1.7 Optimized for Postgres).
     Strictly uses UUID, JSONB, NUMERIC, DATE, vector(1536).
     """
+    global _db_initialized
+    if _db_initialized and not force:
+        return
+
     engine = get_db_engine(db_path)
     is_sqlite = engine.dialect.name == "sqlite"
     
@@ -372,6 +383,18 @@ def init_db(db_path=None):
     );
     """)
 
+    # 13. Scheduler Logs table
+    schema_commands.append(f"""
+    CREATE TABLE IF NOT EXISTS scheduler_logs (
+        id {pk_type},
+        timestamp {timestamp_type} DEFAULT CURRENT_TIMESTAMP,
+        job_name TEXT NOT NULL,
+        status TEXT NOT NULL,
+        message TEXT,
+        created_at {timestamp_type} DEFAULT CURRENT_TIMESTAMP
+    );
+    """)
+
     with engine.connect() as conn:
         for cmd in schema_commands:
             try:
@@ -392,6 +415,7 @@ def init_db(db_path=None):
 
         conn.commit()
     
+    _db_initialized = True
     logger.info(f"Database initialized with v4.1.7 optimized Postgres schema.")
 
 if __name__ == "__main__":

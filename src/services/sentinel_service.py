@@ -143,6 +143,11 @@ class SentinelService:
                 
         except Exception as e:
             logger.error(f"Sentinel Tick Error: {e}", exc_info=True)
+        finally:
+            # v4.2.6: Explicitly close repository sessions after each tick
+            self.repo.close_session()
+            if self.settings_service:
+                self.settings_service.repo.close_session()
 
     # ──────────────────────────────────────────
     # Event-Driven Entry (v3.8)
@@ -1013,28 +1018,42 @@ class SentinelService:
         取得所有已註冊用戶 ID。
         """
         try:
-            from src.data.database import get_db_engine
+            # v4.2.6: Use with self.engine.connect() to avoid session leaks in helper method
             from sqlalchemy import text
-            engine = get_db_engine()
-            with engine.connect() as conn:
+            with self.repo.engine.connect() as conn:
                 # Primary: use user id (UUID) from users table
                 rows = conn.execute(text("SELECT id FROM users")).fetchall()
-                user_ids = [row[0] for row in rows] if rows else []
+                user_ids = [str(row[0]) for row in rows] if rows else []
                 
                 # Fallback: also include user_ids from settings table
-                # (covers cases where user exists in settings but not users table)
                 settings_rows = conn.execute(text(
                     "SELECT DISTINCT user_id FROM settings "
-                    "WHERE user_id NOT IN ('system', 'SYSTEM')"
+                    "WHERE user_id IS NOT NULL AND user_id NOT IN ('system', 'SYSTEM')"
                 )).fetchall()
                 for row in settings_rows:
-                    if row[0] and row[0] not in user_ids:
-                        user_ids.append(row[0])
+                    uid_str = str(row[0])
+                    if uid_str and uid_str not in user_ids:
+                        user_ids.append(uid_str)
                 
                 return user_ids
         except Exception as e:
             logger.warning(f"Failed to get user IDs: {e}")
             return []
+
+    def close(self):
+        """
+        Explicitly close all resources.
+        明確關閉所有資源。
+        """
+        try:
+            self.repo.close_session()
+            if self.settings_service:
+                self.settings_service.repo.close_session()
+            if self.keyword_service:
+                self.keyword_service._repo.close_session()
+            logger.info("SentinelService context closed.")
+        except Exception as e:
+            logger.error(f"Error during SentinelService close: {e}")
 
     def _get_polling_tickers(self) -> List[str]:
         """

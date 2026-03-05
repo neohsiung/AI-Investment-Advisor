@@ -89,6 +89,8 @@ class AlchemySettingsRepository(BaseRepository, ISettingsRepository):
         except Exception as e:
             # Fallback for missing table during tests or initial setup
             return default
+        finally:
+            self.close_session()
 
     def get_setting(self, key: str, default: Any = None) -> Any:
         """Alias for get() to support legacy calls with system user."""
@@ -144,27 +146,36 @@ class AlchemySettingsRepository(BaseRepository, ISettingsRepository):
         Get all settings for a user (ORM).
         取得該使用者所有設定 (ORM)。
         """
-        rows = self.session.query(Setting).filter_by(user_id=user_id).all()
-        return [(r.key, r.value) for r in rows]
+        try:
+            rows = self.session.query(Setting).filter_by(user_id=user_id).all()
+            return [(r.key, r.value) for r in rows]
+        finally:
+            self.close_session()
 
     def get_global(self) -> List[Tuple[str, Any]]:
         """
         Get all global/system settings (ORM).
         取得全域設定 (ORM)。
         """
-        # Logic: user_id is NULL or 'system'
-        rows = self.session.query(Setting).filter(
-            (Setting.user_id == None) | (Setting.user_id == 'system')
-        ).all()
-        return [(r.key, r.value) for r in rows]
+        try:
+            # Logic: user_id is NULL or 'system'
+            rows = self.session.query(Setting).filter(
+                (Setting.user_id == None) | (Setting.user_id == 'system')
+            ).all()
+            return [(r.key, r.value) for r in rows]
+        finally:
+            self.close_session()
 
     def get_by_prefix(self, prefix: str) -> List[Tuple[str, Any]]:
         """
         Get settings starting with a specific prefix (ORM).
         依前綴取得設定 (ORM)。
         """
-        rows = self.session.query(Setting).filter(Setting.key.like(f"{prefix}%")).all()
-        return [(r.key, r.value) for r in rows]
+        try:
+            rows = self.session.query(Setting).filter(Setting.key.like(f"{prefix}%")).all()
+            return [(r.key, r.value) for r in rows]
+        finally:
+            self.close_session()
 
     def find_user_by_channel_id(self, channel_id: str) -> Optional[str]:
         """
@@ -184,6 +195,8 @@ class AlchemySettingsRepository(BaseRepository, ISettingsRepository):
             return result[0] if result else None
         except Exception as e:
             return None
+        finally:
+            self.close_session()
 
 # Legacy aliases removed in v4.1.7
 # @deprecated: Use AlchemySettingsRepository

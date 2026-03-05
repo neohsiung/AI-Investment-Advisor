@@ -20,6 +20,7 @@ def render_trading_tab(st, user_id: str):
     
     # [NEW] Confidence Thresholds (Milestone 13.2)
     auto_threshold = settings_repo.get(user_id, "auto_trade_threshold") or 9
+    auto_min_threshold = settings_repo.get(user_id, "auto_trade_min_threshold") or 3
     emer_score = settings_repo.get(user_id, "emergency_liquidation_score") or 9
     hedge_score = settings_repo.get(user_id, "auto_hedge_score") or 8
     
@@ -83,14 +84,30 @@ def render_trading_tab(st, user_id: str):
             
             st.write("---")
             st.write("##### 信心評分與自動執行 (Confidence Scoring)")
-            st.info("💡 當 AI 信心分數 > 閥值時自動執行；否則將發送『審核請求』(Approve/Reject)。")
-            col_th, col_spacer = st.columns(2)
-            with col_th:
+            st.info(
+                "💡 **三段式閥值邏輯**：\n"
+                "- 低於『最低通報閾值』→ 靜默跳過，不發送任何通知\n"
+                "- 介於兩閾值之間 → 通知所有啟用管道，等待使用者核准\n"
+                "- 高於『自動執行閾值』→ 直接自動執行買賣操作"
+            )
+            col_min, col_max = st.columns(2)
+            with col_min:
+                new_auto_min_threshold = st.slider(
+                    "最低通報閾值 (Min)",
+                    min_value=1, max_value=10, value=int(auto_min_threshold),
+                    help="低於此值的評估結果將不會產生任何通知，靜默跳過。"
+                )
+            with col_max:
                 new_auto_threshold = st.slider(
                     "自動執行信心閥值 (1-10)",
                     min_value=1, max_value=10, value=int(auto_threshold),
-                    help="代理授權門檻。若 AI 信心評分低於此值，交易將進入『人工審核』流程。"
+                    help="代理授權門檻。若 AI 信心評分低於此值但高於最低通報閾值，交易將進入『人工審核』流程。"
                 )
+            
+            # Validation: min <= max
+            if new_auto_min_threshold > new_auto_threshold:
+                st.warning("⚠️ 最低通報閾值不得大於自動執行閾值，將自動修正。")
+                new_auto_min_threshold = new_auto_threshold
         
         with tab_risk:
             st.write("##### 權益防護設定")
@@ -142,6 +159,7 @@ def render_trading_tab(st, user_id: str):
                     "cb_loss_streak": new_cb_loss,
                     "risk_max_sector_exposure": new_sector_limit,
                     "auto_trade_threshold": new_auto_threshold,
+                    "auto_trade_min_threshold": new_auto_min_threshold,
                     "emergency_liquidation_score": new_emer_score,
                     "auto_hedge_score": new_hedge_score,
                     "enable_etoro": enable_etoro,

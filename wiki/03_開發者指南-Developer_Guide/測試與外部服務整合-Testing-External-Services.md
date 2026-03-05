@@ -5,6 +5,7 @@
 ### 版本紀錄 (Version History)
 | Date | Version | Description | Author |
 | :--- | :--- | :--- | :--- |
+| 2026-03-05 | v5.1 | **Rule #5 & #11 Compliance**: Removed Futu tests/mocks. Pinned all dependencies. | Antigravity |
 | 2026-03-01 | v5.0 | **Tech Stack Modernization**: Upgraded OTel to 1.39.1, Protobuf to 5.x, and removed `futu-api`. | Antigravity |
 | 2026-02-27 | v3.8 | **Observability Expansion**: Integrated SigNoz OTel tracing for n8n and fixed OTLP gRPC dependencies. | Neo |
 | 2026-02-21 | v3.7 | **v1.2.0+ Stability Fix**: Transitioned to native `pytest-asyncio` standards and resolved coroutine warnings. | Neo |
@@ -36,7 +37,7 @@
 #### 1.2 模擬最佳實踐 (Mocking Best Practices)
 - **Agent Mocking**: `conftest.py` 中全局 Mock Agent 選項 — 節省 LLM Token。
 - **Streamlit Mocking**: `unittest.mock.patch` 處理 `st.sidebar`, `st.session_state`。
-- **Broker Mocking**: Mock `EtoroService`, `FutuService` 以隔離網路依賴。
+- **Broker Mocking**: Mock `EtoroService`, `IbkrService` 以隔離網路依賴。清理了所有 Futu 殘留 Mock (Rule #5)。
 - **Memory Mocking**: 測試環境使用 `SqliteMemoryRepository`，無需 Redis。
 
 #### 1.3 測試失敗的思考路徑 (Debugging Mindset)
@@ -46,7 +47,7 @@
 3. **隔離性排除**: 檢查是否為全局狀態 (sys.modules, singleton) 污染。
 
 #### 1.3 成功指標 (Success Metrics)
-- **覆蓋率狀態**: **72%** ✅ (2026-02-27 達成，641 tests collected)
+- **覆蓋率狀態**: **75%** ✅ (2026-03-05 達成，689 tests collected)
 - **CI 目標**: > 65% (Required) / 70% (Internal target)
 - **非同步測試標竿**: 統一使用 `pytest-asyncio` 直播模式，嚴格要求 `await` 所有非同步 Mock 以維護日誌整潔。
 - **CI 通過率**: 100% (GitHub Actions)。
@@ -62,7 +63,7 @@
 | **DuckDuckGo** | REST | 無限制 | 搜尋 Fallback |
 | **OpenRouter** | Gateway | 依模型不同 | LLM 推論 (Gemini/Claude 等) |
 | **Etoro Bridge** | REST | Session-based | 帳戶/持倉/下單 |
-| **ib_insync** | TWS API | 50 req/sec | 多資產交易 (Alpha) |
+| **ib_insync** | TWS API | 50 req/sec | 多資產交易 (IBKR) |
 | **LINE Messaging** | REST | 500 msg/min (Free) | 日報/週報推送 |
 | **Redis** | TCP | N/A | 生產記憶後端 (AdaptiveCompression) |
 | **DSPy** | Library | N/A | Prompt 自動優化 (Engineer Agent) |
