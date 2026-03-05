@@ -1,11 +1,11 @@
-pandas>=2.2.0
-numpy>=1.26.0,<2.0.0
+pandas==2.3.3
+numpy==1.26.4
 pytest==7.4.3
-streamlit>=1.42.0
+streamlit==1.37.0
 plotly==5.18.0
 schedule==1.2.1
 python-dotenv==1.0.0
-requests
+requests==2.32.5
 yfinance==0.2.31
 pytz==2023.3.post1
 pytest-cov==4.1.0
@@ -28,18 +28,18 @@ markdown==3.5.1
 extra-streamlit-components==0.1.70
 
 # Security Tools
-safety
-pip-audit
+safety==3.7.0
+pip-audit==2.10.0
 
 # v3.0 Dependencies
-dspy>=3.1.3; python_version >= "3.9"
+dspy==2.5.1
 pgvector==0.2.4
 duckduckgo-search==3.9.3
-tavily-python>=0.5.0
-line-bot-sdk
-PyGithub>=2.1.1
-nltk>=3.9.3 # Upgraded to fix CVE-2025-14009
-pytrends>=4.9.2 # Google Trends fallback for keyword discovery
+tavily-python==0.5.0 # Upgraded from 0.2.7 to resolve tiktoken conflict with litellm
+line-bot-sdk==3.22.0
+PyGithub==2.8.1
+nltk==3.9.2
+pytrends==4.9.2
 
 # MCP Microservice
 fastapi==0.124.4
@@ -66,18 +66,18 @@ ib_insync==0.9.86
 
 # Security Overrides (pip-audit / Dependabot fixes)
 protobuf>=5.29.0
-aiohttp>=3.11.0
-authlib>=1.6.4
-filelock>=3.20.1
-marshmallow>=3.26.2
-pillow>=12.1.1 # Upgraded to fix PSD out-of-bounds write
-starlette>=0.47.2
-tornado>=6.5
-urllib3>=2.6.0
-h2>=4.3.0
-diskcache>=5.6.3 # Latest. Pickle is inherent to diskcache. False positive for local cache.
-transformers>=4.53.0
-litellm>=1.61.15
-python-multipart>=0.0.22
-sentencepiece>=0.2.1
-gradio>=5.31.0
+aiohttp==3.13.3
+authlib==1.6.4
+filelock==3.20.1
+marshmallow==3.26.2
+pillow==10.4.0 # Downgraded from 12.1.1 due to conflict with streamlit 1.37.0 (<11)
+starlette==0.47.2
+tornado==6.5
+urllib3==2.6.0
+h2==4.3.0
+diskcache==5.6.3 # Latest. Pickle is inherent to diskcache. False positive for local cache.
+transformers==4.53.0
+litellm==1.61.15
+python-multipart==0.0.22
+sentencepiece==0.2.1
+gradio==5.31.0

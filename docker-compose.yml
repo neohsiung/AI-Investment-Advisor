@@ -1,4 +1,4 @@
-version: "3.8"
+# version: "3.8" is obsolete, removed to prevent warnings
 include:
   - infra/signoz/docker/docker-compose.yaml
 
@@ -11,6 +11,7 @@ services:
     volumes:
       - ./data:/workspace/data
       - ./src:/workspace/src
+      - ./services/dashboard:/workspace/services/dashboard
       - ./prompts:/workspace/prompts
       - ./secrets/client_secret.json:/workspace/client_secret.json:ro
     ports:
@@ -179,7 +180,7 @@ services:
       - redis_data:/data
 
   ngrok:
-    image: ngrok/ngrok:latest
+    image: ngrok/ngrok:3-alpine
     container_name: investment_advisor_ngrok
     command: "http mcp_server:8000"
     environment:
@@ -193,7 +194,7 @@ services:
     restart: unless-stopped
 
   n8n:
-    image: n8nio/n8n:latest
+    image: n8nio/n8n@sha256:fdf1e22bc04a03e38da41da5a56ba9b9a48510f480874290ea9c180844cbdb0c
     container_name: investment_advisor_n8n
     ports:
       - "5678:5678"
