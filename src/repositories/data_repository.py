@@ -47,20 +47,58 @@ class AlchemyDataRepository(BaseRepository, IDataRepository):
         if table_name not in allowed_tables:
             raise ValueError("Invalid table name")
 
-        from sqlalchemy import inspect
-        inspector = inspect(self.engine)
-        columns = [c['name'] for c in inspector.get_columns(table_name)]
+        from sqlalchemy import MetaData, Table, select, desc
+
+        metadata = MetaData()
         
         with self.engine.connect() as conn:
+            # Reflect the specific table
+            table = Table(table_name, metadata, autoload_with=conn)
+            
             # Dynamically build query based on column existence
-            if 'user_id' in columns:
-                query = text(f"SELECT * FROM {table_name} WHERE user_id = :uid ORDER BY 1 DESC LIMIT :limit")  # nosec B608
-                df = pd.read_sql(query, conn, params={"uid": user_id, "limit": limit})
+            if 'user_id' in table.columns:
+                stmt = select(table).where(table.c.user_id == user_id).order_by(desc(table.columns.items()[0][1])).limit(limit)
+                df = pd.read_sql(stmt, conn)
             else:
                 # If no user_id, show global data (safely as it is whitelisted)
-                query = text(f"SELECT * FROM {table_name} ORDER BY 1 DESC LIMIT :limit")  # nosec B608
-                df = pd.read_sql(query, conn, params={"limit": limit})
+                stmt = select(table).order_by(desc(table.columns.items()[0][1])).limit(limit)
+                df = pd.read_sql(stmt, conn)
+                
             return df
+
+    def get_recent_event_logs(self, days: int = 7, limit: int = 50) -> Any:
+        """
+        Get recent event logs across the system.
+        """
+        from sqlalchemy import text
+        with self.engine.connect() as conn:
+            try:
+                rows = conn.execute(text("""
+                    SELECT title, content FROM event_logs
+                    WHERE created_at >= CURRENT_DATE - (CAST(:days AS TEXT) || ' days')::INTERVAL
+                    ORDER BY created_at DESC
+                    LIMIT :limit
+                """), {"days": days, "limit": limit}).fetchall()
+                return rows
+            except Exception:
+                return []
+
+    def get_recent_aggregated_reports(self, days: int = 7, limit: int = 10) -> Any:
+        """
+        Get recent reports aggregated across users for system analysis.
+        """
+        from sqlalchemy import text
+        with self.engine.connect() as conn:
+            try:
+                rows = conn.execute(text("""
+                    SELECT content FROM reports
+                    WHERE created_at >= CURRENT_DATE - (CAST(:days AS TEXT) || ' days')::INTERVAL
+                    ORDER BY created_at DESC
+                    LIMIT :limit
+                """), {"days": days, "limit": limit}).fetchall()
+                return rows
+            except Exception:
+                return []
 
 # Legacy alias removed in v4.1.7
 # @deprecated: Use AlchemyDataRepository
