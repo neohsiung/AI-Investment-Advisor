@@ -14,8 +14,8 @@ _db_engines: Dict[str, Engine] = {}
 # Global Session Registries (one per engine) to prevent leaks
 _session_registries: Dict[Engine, Any] = {}
 
-# Global Initialization Flag
-_db_initialized = False
+# Global Initialization Registry to track which databases have been initialized
+_db_initialized: set = set()
 
 class BaseRepository:
     def __init__(self, engine: Engine):
@@ -105,8 +105,17 @@ def get_db_engine(db_path=None) -> Engine:
             engine = create_engine(db_url, pool_size=10, max_overflow=10)
             logger.info(f"Using PostgreSQL engine: {db_url.split('@')[-1]}")
         else:
-            engine = create_engine(db_url)
-            logger.warning(f"Using fallback engine (likely SQLite): {db_url}")
+            from sqlalchemy.pool import StaticPool
+            if "memory" in db_url.lower():
+                engine = create_engine(
+                    db_url, 
+                    poolclass=StaticPool, 
+                    connect_args={'check_same_thread': False}
+                )
+                logger.info(f"Using SQLite in-memory engine with StaticPool.")
+            else:
+                engine = create_engine(db_url)
+                logger.warning(f"Using fallback engine (likely SQLite): {db_url}")
             
         # Optional: Instrument the engine for OpenTelemetry
         try:
@@ -141,7 +150,18 @@ def init_db(db_path=None, force=False):
     Strictly uses UUID, JSONB, NUMERIC, DATE, vector(1536).
     """
     global _db_initialized
-    if _db_initialized and not force:
+    db_url = os.getenv("DB_URL")
+    if db_path:
+        db_url = f"sqlite:///{db_path}"
+    elif not db_url:
+        db_user = os.getenv("DB_USER", "postgres")
+        db_pass = os.getenv("DB_PASS", "postgres")
+        db_host = os.getenv("DB_HOST", "localhost")
+        db_port = os.getenv("DB_PORT", "5432")
+        db_name = os.getenv("DB_NAME", "portfolio")
+        db_url = f"postgresql+psycopg2://{db_user}:{db_pass}@{db_host}:{db_port}/{db_name}"
+
+    if db_url in _db_initialized and not force:
         return
 
     engine = get_db_engine(db_path)
@@ -415,7 +435,7 @@ def init_db(db_path=None, force=False):
 
         conn.commit()
     
-    _db_initialized = True
+    _db_initialized.add(db_url)
     logger.info(f"Database initialized with v4.1.7 optimized Postgres schema.")
 
 if __name__ == "__main__":
