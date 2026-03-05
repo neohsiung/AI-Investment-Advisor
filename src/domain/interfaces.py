@@ -116,3 +116,31 @@ class INotificationFilter(ABC):
         Returns True if the notification should be sent through the given adapter.
         """
         pass
+
+
+class IMemoryRepository(ABC):
+    """
+    Interface for Memory Repository (Report Memory).
+    記憶儲存庫介面（報告記憶）。
+    """
+    @abstractmethod
+    def get_recent_reports(self, user_id: str, report_type: str, limit: int) -> List[Any]:
+        pass
+
+    @abstractmethod
+    def save_report(self, item: Any) -> None:
+        pass
+
+
+class ILLMProvider(ABC):
+    """
+    Interface for LLM operations needed by MemoryService.
+    MemoryService 所需的 LLM 操作介面。
+    """
+    @abstractmethod
+    def summarize(self, text: str) -> str:
+        pass
+
+    @abstractmethod
+    def check_contradictions(self, new_text: str, context_text: str) -> List[str]:
+        pass

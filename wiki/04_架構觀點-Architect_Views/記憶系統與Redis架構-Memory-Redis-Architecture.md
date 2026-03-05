@@ -41,7 +41,7 @@ v4.6 延續三層式記憶架構：Hot (Redis)、Warm (PostgreSQL) 與 Cold (原
 
 *   **MemoryService** (`src/services/memory_service.py`):
     *   提供統一介面 (`get_context`, `store_report`, `check_contradictions`)。
-    *   透過 `IMemoryRepository` 與 `ILLMProvider` 介面解耦，支援依賴注入。
+    *   透過 `IMemoryRepository` (`src/domain/interfaces.py`) 與 `ILLMProvider` 介面解耦，支援依賴注入。
     *   內建 **Adaptive Compression**：根據模型 Token 上限的 20% 自動壓縮歷史記憶。
 *   **RedisMemoryRepository** (`src/repositories/redis_memory_repository.py`):
     *   Redis 適配器，處理連線池、序列化 (JSON) 與 TTL 管理。
