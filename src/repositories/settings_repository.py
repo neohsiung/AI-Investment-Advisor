@@ -57,6 +57,14 @@ class ISettingsRepository(ABC):
         """
         pass
 
+    @abstractmethod
+    def find_user_by_channel_id(self, channel_id: str) -> Optional[str]:
+        """
+        Find an internal user ID based on a channel-specific ID.
+        根據管道 ID 尋找內部使用者 ID。
+        """
+        pass
+
 class AlchemySettingsRepository(BaseRepository, ISettingsRepository):
     """
     Implementation of ISettingsRepository using SQLAlchemy ORM.
@@ -78,7 +86,7 @@ class AlchemySettingsRepository(BaseRepository, ISettingsRepository):
             # Strictly use user_id as UUID per v4.1.7 requirements
             setting = self.session.query(Setting).filter_by(user_id=user_id, key=key).first()
             return setting.value if setting else default
-        except Exception:
+        except Exception as e:
             # Fallback for missing table during tests or initial setup
             return default
 
@@ -157,6 +165,25 @@ class AlchemySettingsRepository(BaseRepository, ISettingsRepository):
         """
         rows = self.session.query(Setting).filter(Setting.key.like(f"{prefix}%")).all()
         return [(r.key, r.value) for r in rows]
+
+    def find_user_by_channel_id(self, channel_id: str) -> Optional[str]:
+        """
+        Find an internal user ID (email) based on a channel-specific ID (e.g., LINE/Telegram).
+        根據特定管道 ID（如 LINE/Telegram）尋找內部使用者 ID（電子郵件）。
+        """
+        try:
+            # We look for ANY key that contains 'user_id' or 'chat_id' where value matches
+            from sqlalchemy import text
+            query = text("""
+                SELECT user_id FROM settings 
+                WHERE value = :val 
+                AND (key LIKE '%user_id' OR key LIKE '%chat_id')
+                LIMIT 1
+            """)
+            result = self.session.execute(query, {"val": channel_id}).fetchone()
+            return result[0] if result else None
+        except Exception as e:
+            return None
 
 # Legacy aliases removed in v4.1.7
 # @deprecated: Use AlchemySettingsRepository

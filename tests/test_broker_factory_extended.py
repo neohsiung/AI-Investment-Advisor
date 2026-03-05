@@ -26,27 +26,7 @@ class TestBrokerFactory:
             assert broker is not None
             MockEtoro.assert_called_once()
     
-    def test_get_broker_futu(self):
-        """Test getting Futu broker instance."""
-        with patch('src.services.broker_factory.AlchemySettingsRepository') as MockRepo, \
-             patch('src.services.broker_factory.FutuService') as MockFutu:
-            
-            mock_repo_instance = MagicMock()
-            mock_repo_instance.get.side_effect = lambda user_id, key: {
-                "futu_host": "127.0.0.1",
-                "futu_port": "11111",
-                "futu_pwd": None
-            }.get(key)
-            MockRepo.return_value = mock_repo_instance
-            
-            mock_broker = MagicMock()
-            MockFutu.return_value = mock_broker
-            
-            broker = BrokerFactory.get_broker("test_user", broker_type="futu")
-            
-            assert broker is not None
-            MockFutu.assert_called_once()
-    
+
     def test_get_broker_invalid_defaults_to_etoro(self):
         """Test getting broker with invalid type defaults to eToro."""
         with patch('src.services.broker_factory.AlchemySettingsRepository') as MockRepo, \

@@ -220,7 +220,8 @@ class RiskManager:
         try:
             info = mds.get_financials(ticker)
             return info.get('sector')
-        except:
+        except Exception as e:
+            logger.warning(f"Error getting sector for {ticker}: {e}")
             return None
 
     def trigger_kill_switch(self, user_id: str):

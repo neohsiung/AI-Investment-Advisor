@@ -34,7 +34,7 @@ class TestDashboardAggregation(unittest.TestCase):
             ],
             "broker_breakdown": {
                 "etoro": Account(BrokerType.ETORO, "e1", 25000, 10000),
-                "futu": Account(BrokerType.FUTU, "f1", 25000, 10000)
+                "ibkr": Account(BrokerType.IBKR, "i1", 25000, 10000)
             }
         }
         

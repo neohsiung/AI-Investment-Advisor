@@ -4,7 +4,6 @@ import json
 from datetime import datetime
 import pandas as pd
 from typing import List, Dict, Any, Optional, Tuple, Union
-from src.data.database import get_db_connection
 # from src.ingestor import TradeIngestor # Removed for Clean Clean Architecture
 from src.services.analytics_service import update_daily_snapshot
 

@@ -1,9 +1,11 @@
 from src.utils.logger import setup_logger
 logger = setup_logger("AutomatedTradingService")
 
+import os
 from typing import Optional, Dict, Any
 from datetime import datetime
 import asyncio
+import httpx
 from src.repositories.settings_repository import AlchemySettingsRepository
 from src.services.interaction_service import InteractionService
 from src.services.notification_service import NotificationService
@@ -25,6 +27,7 @@ class AutomatedTradingService:
         self.settings_repo = settings_repo or AlchemySettingsRepository()
         self.interaction_service = interaction_service or InteractionService()
         self.notification_service = notification_service
+        self.notification_api_url = os.getenv("NOTIFICATION_API_URL", "http://localhost:8001/api/v1/notify")
 
     async def evaluate_and_execute_trade(self, user_id: str, ticker: str, action: str, quantity: float, 
                                          confidence_score: int, rationale: str) -> Dict[str, Any]:
@@ -46,11 +49,26 @@ class AutomatedTradingService:
             logger.warning(f"Trade Execution Blocked: AI Trading is disabled for user {user_id}")
             return {"status": "blocked", "reason": "Trading is disabled in settings"}
         
-        # 2. Get the threshold
+        # 2. Get the thresholds (upper + lower bound)
         raw_threshold = self.settings_repo.get(user_id, "auto_trade_threshold")
         threshold = int(raw_threshold) if raw_threshold is not None else 9
         
-        logger.info(f"evaluating trade for {ticker}. Score: {confidence_score}, Threshold: {threshold}")
+        raw_min_threshold = self.settings_repo.get(user_id, "auto_trade_min_threshold")
+        min_threshold = int(raw_min_threshold) if raw_min_threshold is not None else 3
+        
+        logger.info(
+            f"evaluating trade for {ticker}. Score: {confidence_score}, "
+            f"Min: {min_threshold}, Threshold: {threshold}"
+        )
+        
+        # 3. Decision Logic (三段式閥值)
+        # 3a. Below minimum → skip silently, no notification
+        if confidence_score < min_threshold:
+            logger.info(
+                f"Score {confidence_score} < min_threshold {min_threshold}. "
+                f"Skipping silently for {ticker}."
+            )
+            return {"status": "skipped", "reason": f"Score {confidence_score} below minimum threshold {min_threshold}"}
         
         # Prepare Order object
         order_action = OrderAction.BUY if action.upper() == "BUY" else OrderAction.SELL
@@ -62,13 +80,14 @@ class AutomatedTradingService:
             reason=rationale
         )
         
-        # 3. Decision Logic
+        # 3b. Above upper threshold → auto-execute
         if confidence_score >= threshold:
             logger.info(f"Score {confidence_score} >= {threshold}. Executing automatically.")
             return await self._execute_trade(user_id, order, confidence_score, rationale, "✅ [自動執行] (Auto-Approved)")
-        else:
-            logger.info(f"Score {confidence_score} < {threshold}. Requesting approval.")
-            return await self._request_approval_and_execute(user_id, order, confidence_score, rationale)
+        
+        # 3c. Between min and upper → notify all channels, request approval
+        logger.info(f"Score {confidence_score} in [{min_threshold}, {threshold}). Requesting approval.")
+        return await self._request_approval_and_execute(user_id, order, confidence_score, rationale)
 
     async def _request_approval_and_execute(self, user_id: str, order: Order, confidence_score: int, rationale: str) -> Dict[str, Any]:
         """Request user approval synchronously via InteractionService."""
@@ -111,7 +130,7 @@ class AutomatedTradingService:
                     notif_title = f"❌ [交易取消] 使用者拒絕 - {order.symbol}"
                     notif_content = f"使用者已拒絕此項交易 (User Rejected)。\n\n**標的:** {order.symbol}\n**方向:** {order.action.value}"
 
-                await self.notification_service.notify_all(
+                await self._notify_via_api(
                     user_id=user_id,
                     title=notif_title,
                     content=notif_content,
@@ -154,7 +173,7 @@ class AutomatedTradingService:
                 f"**詳細結果 (Details)**: `{result}`"
             )
             
-            await self.notification_service.notify_all(
+            await self._notify_via_api(
                 user_id=user_id, 
                 title=title, 
                 content=content,
@@ -165,3 +184,31 @@ class AutomatedTradingService:
         except Exception as e:
              logger.error(f"Trade execution failed: {e}")
              return {"status": "error", "reason": str(e)}
+
+    async def _notify_via_api(
+        self, user_id: str, title: str, content: str, category: str = "approval"
+    ) -> None:
+        """
+        Dispatch notification via standalone Notification Microservice HTTP API.
+        透過獨立通知微服務 HTTP API 發送通知，確保所有啟用管道（含 LINE）都能收到。
+        """
+        payload = {
+            "user_id": user_id,
+            "title": title,
+            "content": content,
+            "channels": ["line", "telegram", "email", "discord", "slack"],
+            "category": category
+        }
+        try:
+            async with httpx.AsyncClient() as client:
+                response = await client.post(
+                    self.notification_api_url, json=payload, timeout=5.0
+                )
+                if response.status_code == 202:
+                    logger.info(f"Trade notification dispatched for {user_id}")
+                else:
+                    logger.warning(
+                        f"Notification API returned {response.status_code}: {response.text}"
+                    )
+        except Exception as e:
+            logger.error(f"Failed to dispatch trade notification via API: {e}")

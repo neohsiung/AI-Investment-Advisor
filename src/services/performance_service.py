@@ -69,14 +69,15 @@ class PerformanceService:
         """
         import uuid
         from src.utils.time_utils import format_time
-        from src.data.database import get_db_connection
+        from src.data.database import get_db_engine
         from sqlalchemy import text
 
         rec_id = str(uuid.uuid4())
         date_str = format_time() # YYYY-MM-DD HH:MM:SS
 
         try:
-            with get_db_connection() as conn:
+            engine = get_db_engine(self.db_path)
+            with engine.begin() as conn:
                 query = text("""
                     INSERT INTO recommendations (id, user_id, date, agent, ticker, signal, price_at_signal)
                     VALUES (:id, :user_id, :date, :agent, :ticker, :signal, :price)
@@ -90,7 +91,6 @@ class PerformanceService:
                     "signal": signal,
                     "price": price
                 })
-                conn.commit()
         except Exception as e:
             # Prevent blocking operations if logging fails
             print(f"Error recording recommendation: {e}")
@@ -100,12 +100,13 @@ class PerformanceService:
         Calculate performance stats for each agent based on recommendation history.
         計算每個 Agent 根據歷史推薦的績效統計。
         """
-        from src.data.database import get_db_connection
+        from src.data.database import get_db_engine
         from sqlalchemy import text
         import pandas as pd
         
         try:
-            with get_db_connection() as conn:
+            engine = get_db_engine(self.db_path)
+            with engine.connect() as conn:
                 # Fetch all recommendations
                 query = text("SELECT * FROM recommendations WHERE user_id = :uid")
                 df = pd.read_sql(query, conn, params={"uid": self.user_id})

@@ -10,7 +10,6 @@ import uuid
 import pytz
 from datetime import datetime
 from sqlalchemy import text
-from src.data.database import get_db_connection
 from src.agents.engineer import SystemEngineerAgent
 from src.utils.time_utils import format_time, get_current_time, convert_user_time_to_system_time
 
@@ -42,41 +41,44 @@ class SchedulerService:
         Log job execution details to the database.
         將任務執行詳情記錄至資料庫。
         """
-        conn = get_db_connection()
         try:
-            log_id = str(uuid.uuid4())
-            # Save as UTC ISO with Z suffix to be unambiguous
-            # 以帶有 Z 後綴的 UTC ISO 格式保存，以避免歧義
-            timestamp = get_current_utc_time().isoformat().replace("+00:00", "Z")
-            conn.execute(text("INSERT INTO scheduler_logs (id, timestamp, job_name, status, message) VALUES (:id, :timestamp, :job_name, :status, :message)"), {
-                "id": log_id,
-                "timestamp": timestamp,
-                "job_name": job_name,
-                "status": status,
-                "message": message
-            })
-            conn.commit()
+            from sqlalchemy import text
+            from src.data.database import get_db_engine
+            
+            engine = get_db_engine()
+            with engine.begin() as conn:
+                log_id = str(uuid.uuid4())
+                # Save as UTC ISO with Z suffix to be unambiguous
+                # 以帶有 Z 後綴的 UTC ISO 格式保存，以避免歧義
+                timestamp = get_current_utc_time().isoformat().replace("+00:00", "Z")
+                conn.execute(text("INSERT INTO scheduler_logs (id, timestamp, job_name, status, message) VALUES (:id, :timestamp, :job_name, :status, :message)"), {
+                    "id": log_id,
+                    "timestamp": timestamp,
+                    "job_name": job_name,
+                    "status": status,
+                    "message": message
+                })
         except Exception as e:
             logger.error(f"Error logging job: {e}")
-        finally:
-            conn.close()
 
     def get_all_users(self):
-        conn = get_db_connection()
         try:
-            rows = conn.execute(text("SELECT id, email FROM users")).fetchall()
-            valid_users = []
-            invalid_emails = ["admin@example.com", "your_email@gmail.com", "test@example.com"]
-            for row in rows:
-                uid, email = row[0], row[1]
-                if email and email not in invalid_emails and not email.endswith("@example.com"):
-                    valid_users.append(uid)
-            return valid_users
+            from sqlalchemy import text
+            from src.data.database import get_db_engine
+            
+            engine = get_db_engine()
+            with engine.connect() as conn:
+                rows = conn.execute(text("SELECT id, email FROM users")).fetchall()
+                valid_users = []
+                invalid_emails = ["admin@example.com", "your_email@gmail.com", "test@example.com"]
+                for row in rows:
+                    uid, email = row[0], row[1]
+                    if email and email not in invalid_emails and not email.endswith("@example.com"):
+                        valid_users.append(uid)
+                return valid_users
         except Exception as e:
             logger.error(f"Error fetching users: {e}")
             return []
-        finally:
-            conn.close()
 
     def job_daily_check(self):
         # Strict adherence to Scheduler: If this function is called, it means it was scheduled.
@@ -363,14 +365,15 @@ class SchedulerService:
 
     def _check_reload_signal(self):
         try:
-            conn = get_db_connection()
-            row = conn.execute(text("SELECT value FROM settings WHERE key='scheduler_reload_signal' AND user_id='SYSTEM'")).fetchone()
-            if row and row[0] == 'true':
+            from src.repositories.settings_repository import AlchemySettingsRepository
+            settings_repo = AlchemySettingsRepository()
+            
+            val = settings_repo.get('SYSTEM', 'scheduler_reload_signal')
+            if val == 'true':
                 logger.info("Received reload signal!")
                 self.reload_schedule()
-                conn.execute(text("UPDATE settings SET value='false' WHERE key='scheduler_reload_signal' AND user_id='SYSTEM'"))
-                conn.commit()
-            conn.close()
+                settings_repo.set('SYSTEM', 'scheduler_reload_signal', 'false')
+                
         except Exception as e:
             logger.error(f"Error checking reload signal: {e}")
 
@@ -378,13 +381,15 @@ class SchedulerService:
         """Retrieves latest execution logs from DB."""
         # Ensure pandas is available
         import pandas as pd
-        conn = get_db_connection()
         try:
-            query = text("SELECT timestamp, job_name, status, message FROM scheduler_logs ORDER BY timestamp DESC LIMIT :limit")
-            df = pd.read_sql(query, conn, params={"limit": limit})
-            return df
+            from sqlalchemy import text
+            from src.data.database import get_db_engine
+            
+            engine = get_db_engine()
+            with engine.connect() as conn:
+                query = text("SELECT timestamp, job_name, status, message FROM scheduler_logs ORDER BY timestamp DESC LIMIT :limit")
+                df = pd.read_sql(query, conn, params={"limit": limit})
+                return df
         except Exception as e:
             logger.error(f"Error fetching scheduler logs: {e}")
             return pd.DataFrame()
-        finally:
-            conn.close()

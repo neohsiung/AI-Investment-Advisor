@@ -80,7 +80,7 @@ class BrokerFactory:
         if settings_repo.get(user_id, "enable_ibkr") == "true":
              try:
                  brokers["ibkr"] = BrokerFactory.get_broker(user_id, "ibkr")
-             except: pass
+             except Exception: pass
              
         # FALLBACK: If nothing enabled (e.g. first run), enable Etoro
         if not brokers:

@@ -3,7 +3,8 @@ import pandas as pd
 from sqlalchemy import text
 import uuid
 from src.data.database import BaseRepository, get_db_engine
-from src.services.memory_service import IMemoryRepository, ReportMemoryItem
+from src.domain.interfaces import IMemoryRepository
+from src.domain.entities import ReportMemoryItem
 
 class AlchemyMemoryRepository(BaseRepository, IMemoryRepository):
     """

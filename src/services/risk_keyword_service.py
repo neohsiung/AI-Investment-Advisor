@@ -244,7 +244,7 @@ class RiskKeywordService:
             val = svc.get_setting("keyword_target_count")
             if val:
                 return min(int(val), self._get_max_keywords())
-        except Exception:
+        except (ValueError, TypeError):
             pass
         return self.DEFAULT_TARGET
 
@@ -259,7 +259,7 @@ class RiskKeywordService:
             val = svc.get_setting("keyword_max_count")
             if val:
                 return int(val)
-        except Exception:
+        except (ValueError, TypeError):
             pass
         return self.MAX_KEYWORDS
 
@@ -274,22 +274,20 @@ class RiskKeywordService:
 
         Cost: ~$0.005 per call (gpt-4o-mini, ~1000 tokens)
         """
-        from src.data.database import get_db_connection
-        from sqlalchemy import text
+        from src.repositories.report_repository import AlchemyReportRepository
 
-        conn = get_db_connection()
+        repo = AlchemyReportRepository()
         try:
-            rows = conn.execute(text("""
-                SELECT content FROM reports
-                WHERE created_at >= CURRENT_DATE - INTERVAL '7 days'
-                ORDER BY created_at DESC
-                LIMIT 10
-            """)).fetchall()
+            # We use get_latest_reports which requires a user_id, 
+            # for discovery we'll use a new method we added to DataRepository or just fetch broadly 
+            # Let's use the new DataRepository method since it aggregates across users
+            from src.repositories.data_repository import AlchemyDataRepository
+            data_repo = AlchemyDataRepository()
+            
+            rows = data_repo.get_recent_aggregated_reports(days=7, limit=10)
         except Exception as e:
             logger.warning(f"Failed to query reports: {e}")
             return []
-        finally:
-            conn.close()
 
         if not rows:
             logger.debug("No recent reports for keyword discovery.")
@@ -367,22 +365,14 @@ Text:
         Extract keywords from recent event_logs via TF-IDF (zero LLM cost).
         從最近的事件日誌透過 TF-IDF 提取關鍵字（零 LLM 成本）。
         """
-        from src.data.database import get_db_connection
-        from sqlalchemy import text
+        from src.repositories.data_repository import AlchemyDataRepository
 
-        conn = get_db_connection()
+        repo = AlchemyDataRepository()
         try:
-            rows = conn.execute(text("""
-                SELECT title, content FROM event_logs
-                WHERE created_at >= CURRENT_DATE - INTERVAL '7 days'
-                ORDER BY created_at DESC
-                LIMIT 50
-            """)).fetchall()
+            rows = repo.get_recent_event_logs(days=7, limit=50)
         except Exception as e:
             logger.warning(f"Failed to query event_logs: {e}")
             return []
-        finally:
-            conn.close()
 
         if not rows:
             logger.debug("No recent event_logs for keyword discovery.")

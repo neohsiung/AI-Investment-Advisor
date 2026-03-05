@@ -108,7 +108,7 @@ class PolygonProvider(MarketDataProvider):
                 results = data.get('results', [])
                 if results and 'c' in results[0]:
                     return results[0]['c']
-        except Exception:
+        except (requests.RequestException, ValueError, IndexError):
             pass
         return 0.0
 

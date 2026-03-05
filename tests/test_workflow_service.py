@@ -108,7 +108,7 @@ async def test_report_distribution(mock_deps):
     mock_deps['trans'].get_user_tickers.return_value = ["AAPL"]
     
     with patch('src.services.workflow_service.AgentFactory') as MockFactory, \
-         patch('src.services.workflow_service.get_db_connection') as MockDB, \
+         patch('src.repositories.report_repository.AlchemyReportRepository') as MockRepo, \
          patch('src.services.broker_factory.BrokerFactory') as MockBrokerFactory, \
          patch('src.services.workflow_service.PerformanceService') as MockPerf:
         
@@ -136,8 +136,8 @@ async def test_report_distribution(mock_deps):
         workflow.memory_service = MagicMock() # FIX: Ensure memory service is mocked
         workflow.memory_service.get_context.return_value.recent_items = []
 
-        mock_conn = MagicMock()
-        MockDB.return_value = mock_conn
+        mock_repo_instance = MagicMock()
+        MockRepo.return_value = mock_repo_instance
         
         with patch('httpx.AsyncClient.post', return_value=MagicMock(status_code=202)) as mock_post:
             await workflow.run(dry_run=False)
@@ -149,4 +149,4 @@ async def test_report_distribution(mock_deps):
             assert "Report" in call_kwargs['json']['content']
             
             # Verify DB storage
-            assert mock_conn.execute.called
+            assert mock_repo_instance.save.called

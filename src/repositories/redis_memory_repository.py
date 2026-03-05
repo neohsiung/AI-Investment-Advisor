@@ -4,7 +4,8 @@ import logging
 import os
 from typing import List
 from datetime import datetime
-from src.services.memory_service import IMemoryRepository, ReportMemoryItem
+from src.domain.interfaces import IMemoryRepository
+from src.domain.entities import ReportMemoryItem
 
 logger = logging.getLogger(__name__)
 

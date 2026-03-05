@@ -1,7 +1,5 @@
 from datetime import datetime, timedelta
 import pandas as pd
-from sqlalchemy import text
-from src.data.database import get_db_connection
 from src.utils.time_utils import get_current_time
 
 class HRService:
@@ -25,14 +23,18 @@ class HRService:
             pd.DataFrame: Audit log containing [Agent, Last Active, Status, Days Inactive]
             pd.DataFrame: 包含 [Agent, Last Active, Status, Days Inactive] 的審核日誌。
         """
-        conn = get_db_connection(self.db_path)
         try:
-            query = text("""
-                SELECT agent_name, MAX(timestamp) as last_active 
-                FROM response_cache 
-                GROUP BY agent_name
-            """)
-            df = pd.read_sql(query, conn)
+            from sqlalchemy import text
+            from src.data.database import get_db_engine
+            
+            engine = get_db_engine(self.db_path)
+            with engine.connect() as conn:
+                query = text("""
+                    SELECT agent_name, MAX(timestamp) as last_active 
+                    FROM response_cache 
+                    GROUP BY agent_name
+                """)
+                df = pd.read_sql(query, conn)
             
             if df.empty:
                 return pd.DataFrame(columns=["Agent", "Last Active", "Status", "Days Inactive"])
@@ -62,7 +64,7 @@ class HRService:
                     elif last_active.tzinfo is None and now.tzinfo is not None:
                          last_active = last_active.tz_localize(now.tzinfo)
                          
-                except Exception:
+                except (ValueError, TypeError):
                     last_active = now # Fallback
                 
                 diff = now - last_active
@@ -107,6 +109,7 @@ class HRService:
                     })
 
             return pd.DataFrame(final_data)
-            
-        finally:
-            conn.close()
+        except Exception as e:
+            import logging
+            logging.getLogger(__name__).error(f"Failed to check agent health: {e}")
+            return pd.DataFrame(columns=["Agent", "Last Active", "Status", "Days Inactive"])

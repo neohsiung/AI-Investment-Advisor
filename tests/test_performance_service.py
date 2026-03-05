@@ -5,25 +5,24 @@ from src.services.performance_service import PerformanceService
 @pytest.fixture
 def mock_db():
     # Mock the actual import location
-    with patch('src.data.database.get_db_connection') as mock:
+    with patch('src.data.database.get_db_engine') as mock:
         yield mock
 
 def test_record_recommendation(mock_db):
     service = PerformanceService(user_id="test_user")
     mock_conn = MagicMock()
-    mock_db.return_value.__enter__.return_value = mock_conn
-    mock_db.return_value.__exit__.return_value = None
+    mock_db.return_value.begin.return_value.__enter__.return_value = mock_conn
+    mock_db.return_value.begin.return_value.__exit__.return_value = None
     
     service.record_recommendation("Momentum", "AAPL", "BUY", 150.0)
     
     mock_conn.execute.assert_called()
-    mock_conn.commit.assert_called()
 
 def test_get_agent_performance(mock_db):
     service = PerformanceService(user_id="test_user")
     mock_conn = MagicMock()
-    mock_db.return_value.__enter__.return_value = mock_conn
-    mock_db.return_value.__exit__.return_value = None
+    mock_db.return_value.begin.return_value.__enter__.return_value = mock_conn
+    mock_db.return_value.begin.return_value.__exit__.return_value = None
     
     # Mock MarketDataService
     service.market_service = MagicMock()
@@ -52,14 +51,14 @@ def test_get_agent_performance(mock_db):
 
 def test_record_recommendation_error(mock_db):
     service = PerformanceService(user_id="test_user")
-    mock_db.return_value.__enter__.side_effect = Exception("DB Fail")
+    mock_db.return_value.begin.return_value.__enter__.side_effect = Exception("DB Fail")
     
     # Should not raise
     service.record_recommendation("Momentum", "AAPL", "BUY", 150.0)
 
 def test_get_agent_performance_error(mock_db):
     service = PerformanceService(user_id="test_user")
-    mock_db.return_value.__enter__.side_effect = Exception("DB Fail")
+    mock_db.return_value.begin.return_value.__enter__.side_effect = Exception("DB Fail")
     
     stats = service.get_agent_performance()
     assert stats == []

@@ -118,7 +118,7 @@ class BacktestService:
                     signal_str = "SELL"
                 
                 # Calculate Score
-                score = EvaluationService.calculate_score(signal_str, current_price, future_price)
+                score = EvaluationService().calculate_score(signal_str, current_price, future_price)
                 
                 # 7. 儲存回饋 (Store Feedback)
                 example = FeedbackExample(

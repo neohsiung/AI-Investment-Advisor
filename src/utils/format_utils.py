@@ -28,7 +28,7 @@ def format_agent_output(output):
                 import ast
                 val = ast.literal_eval(output)
                 return format_agent_output(val)
-        except Exception:
+        except (ValueError, SyntaxError):
             pass
         return output
     return str(output)

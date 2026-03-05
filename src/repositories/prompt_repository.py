@@ -18,6 +18,14 @@ class IPromptRepository(ABC):
         """
         pass
 
+    @abstractmethod
+    def get_history(self, user_id: str, limit: int = 50) -> Any:
+        """
+        Get the prompt optimization history.
+        取得提示詞優化歷史記錄。
+        """
+        pass
+
 class AlchemyPromptRepository(BaseRepository, IPromptRepository):
     """
     Implementation of IPromptRepository using SQLAlchemy.
@@ -56,6 +64,22 @@ class AlchemyPromptRepository(BaseRepository, IPromptRepository):
         except Exception as e:
             # We don't want to fail the whole agent run if logging prompt fails
             print(f"Error logging prompt change: {e}")
+
+    def get_history(self, user_id: str, limit: int = 50) -> Any:
+        """
+        Retrieves the history of prompt optimizations for a user.
+        檢索使用者的提示詞優化歷史記錄。
+        """
+        try:
+            import pandas as pd
+            from sqlalchemy import text
+            query = text("SELECT timestamp, target_agent, reason, diff_content FROM prompt_history WHERE user_id = :uid ORDER BY timestamp DESC LIMIT :limit")
+            with self.engine.connect() as conn:
+                df = pd.read_sql(query, conn, params={"uid": user_id, "limit": limit})
+                return df
+        except Exception:
+            import pandas as pd
+            return pd.DataFrame()
 
 # Legacy alias removed in v4.1.7
 # @deprecated: Use AlchemyPromptRepository

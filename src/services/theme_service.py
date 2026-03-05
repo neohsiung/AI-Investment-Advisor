@@ -29,7 +29,7 @@ class ThemeService:
             if os.path.exists(theme_path):
                 with open(theme_path, 'r', encoding='utf-8') as f:
                     return json.load(f)
-        except Exception:
+        except (FileNotFoundError, json.JSONDecodeError):
             pass
         return None
 

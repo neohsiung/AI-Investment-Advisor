@@ -19,9 +19,9 @@ class TestPortfolioAggregator(unittest.TestCase):
             Position("TSLA", 5, 200, 210, 1050, 50)
         ]
 
-        self.futu = MagicMock()
-        self.futu.get_account.return_value = Account(BrokerType.FUTU, "f1", 20000, 10000)
-        self.futu.get_positions.return_value = [
+        self.ibkr = MagicMock()
+        self.ibkr.get_account.return_value = Account(BrokerType.IBKR, "i1", 20000, 10000)
+        self.ibkr.get_positions.return_value = [
             Position("AAPL", 5, 140, 160, 800, 100), # Overlap with Etoro
             Position("NVDA", 2, 500, 550, 1100, 100)
         ]
@@ -29,7 +29,7 @@ class TestPortfolioAggregator(unittest.TestCase):
         # Patch Factory to return mocks
         self.factory_patcher = unittest.mock.patch('src.services.broker_factory.BrokerFactory.get_enabled_brokers')
         self.mock_get_brokers = self.factory_patcher.start()
-        self.mock_get_brokers.return_value = {"etoro": self.etoro, "futu": self.futu}
+        self.mock_get_brokers.return_value = {"etoro": self.etoro, "ibkr": self.ibkr}
         
     def tearDown(self):
         self.factory_patcher.stop()

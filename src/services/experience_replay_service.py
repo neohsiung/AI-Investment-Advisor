@@ -2,7 +2,6 @@ import json
 from typing import Dict, Any, Optional
 from sqlalchemy import text
 from src.utils.logger import setup_logger
-from src.data.database import get_db_connection
 from src.repositories.sentinel_repository import ISentinelRepository, AlchemySentinelRepository
 from src.repositories.transaction_repository import ITransactionRepository, AlchemyTransactionRepository
 
@@ -48,15 +47,12 @@ class ExperienceReplayService:
         基於近期警報頻率調整 VIX 閾值。
         """
         try:
+            from src.repositories.data_repository import AlchemyDataRepository
+            data_repo = AlchemyDataRepository()
+            
             # Count Sentinel alerts in the last 7 days
-            with get_db_connection() as conn:
-                query = text("""
-                    SELECT COUNT(*) FROM event_logs 
-                    WHERE source = 'Sentinel' 
-                    AND title LIKE '%VIX%'
-                    AND timestamp >= datetime('now', '-7 days')
-                """)
-                alert_count = conn.execute(query).scalar() or 0
+            recent_logs = data_repo.get_recent_event_logs(days=7, limit=100)
+            alert_count = sum(1 for row in recent_logs if "VIX" in row.title)
                 
             if alert_count > 10: # More than ~1.5 per day is "noisy"
                 current = self.sentinel_repo.get_all_thresholds()
@@ -93,22 +89,20 @@ class ExperienceReplayService:
         
         try:
             # 1. Retrieve the last weekly CIO report
-            with get_db_connection() as conn:
-                query = text("""
-                    SELECT consensus 
-                    FROM council_minutes 
-                    WHERE user_id = :uid 
-                      AND topic LIKE '%Weekly Macro & Sector Report%'
-                    ORDER BY created_at DESC 
-                    LIMIT 1
-                """)
-                result = conn.execute(query, {'uid': user_id}).fetchone()
+            from src.repositories.report_repository import AlchemyReportRepository
+            report_repo = AlchemyReportRepository()
+            reports_df = report_repo.get_latest_reports(user_id=user_id, limit=5)
+            
+            past_consensus = None
+            if not reports_df.empty:
+                for _, row in reports_df.iterrows():
+                    if "Weekly Macro" in str(row['summary']):
+                        past_consensus = row['content']
+                        break
                 
-            if not result:
+            if not past_consensus:
                 logger.warning("No past weekly report found for narrative drift analysis.")
                 return {"accuracy_score": 10, "suggested_correction": "無歷史參考資料 (No historical data)."}
-                
-            past_consensus = result[0]
             
             # 2. Call LLM directly to analyze the drift
             from src.infrastructure.llm_router import DynamicModelRouter
@@ -119,16 +113,16 @@ class ExperienceReplayService:
             tier = router.select_tier("Narrative Drift Analysis", round_num=99)
             
             # Retrieve Model config
-            with get_db_connection() as conn:
-                config_query = text("SELECT value FROM settings WHERE user_id = :uid AND key = 'ai_models_config'")
-                config_res = conn.execute(config_query, {'uid': user_id}).fetchone()
+            from src.repositories.settings_repository import AlchemySettingsRepository
+            settings_repo = AlchemySettingsRepository()
+            config_res_val = settings_repo.get(user_id, 'ai_models_config')
                 
             provider = "openrouter"
             model_id = "openai/gpt-4o-mini" # Default fallback
             api_key = os.environ.get("OPENROUTER_API_KEY", "")
             
-            if config_res and config_res[0]:
-                config = json.loads(config_res[0])
+            if config_res_val:
+                config = json.loads(config_res_val) if isinstance(config_res_val, str) else config_res_val
                 model_info = config.get(tier, {})
                 provider = model_id.split('/')[0] if '/' in model_info.get("model", "") else "openrouter"
                 model_id = model_info.get("model", model_id)

@@ -34,7 +34,7 @@ def safe_button(label: str, key: str = None, help: str = None, icon: str = None,
             # Fallback for Streamlit < 1.35.0: Prepend icon to label
             display_label = f"{icon + ' ' if icon else ''}{label}"
             return st.button(display_label, key=key, help=help, use_container_width=use_container_width, **kwargs)
-    except Exception:
+    except (ValueError, TypeError, AttributeError):
         # Extreme fallback if signature check fails
         display_label = f"{icon + ' ' if icon else ''}{label}"
         return st.button(display_label, key=key, help=help, use_container_width=use_container_width, **kwargs)

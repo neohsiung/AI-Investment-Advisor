@@ -14,7 +14,7 @@
   <img src="https://img.shields.io/badge/Docker-Enabled-2496ED.svg?style=for-the-badge&logo=docker&logoColor=white" alt="Docker">
   <img src="https://img.shields.io/badge/PostgreSQL-15+-336791.svg?style=for-the-badge&logo=postgresql&logoColor=white" alt="PostgreSQL">
   <img src="https://img.shields.io/badge/pgvector-Semantic-FF6F61.svg?style=for-the-badge" alt="pgvector">
-  <img src="https://img.shields.io/badge/Coverage-72%25-green.svg?style=for-the-badge" alt="Coverage">
+  <img src="https://img.shields.io/badge/Coverage-75%25-green.svg?style=for-the-badge" alt="Coverage">
 </p>
 
 ---

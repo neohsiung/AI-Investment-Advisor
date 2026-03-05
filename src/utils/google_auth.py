@@ -82,7 +82,7 @@ class GoogleAuth:
                         st.session_state['connected'] = True
                         try:
                             st.query_params.clear()
-                        except Exception:
+                        except Exception as e:
                             pass
                         st.rerun()
                     return
@@ -123,7 +123,7 @@ class GoogleAuth:
                     # Clear query params internally on click
                     try:
                         st.query_params.clear()
-                    except Exception:
+                    except Exception as e:
                         pass
                     st.rerun()
                 
@@ -142,7 +142,7 @@ class GoogleAuth:
                     st.query_params.clear()
                     time.sleep(1) 
                     st.rerun()
-                except Exception:
+                except Exception as e:
                     pass
         else:
             # Display Login Button
@@ -240,7 +240,7 @@ class GoogleAuth:
         """Log out the user."""
         try:
             self.cookie_manager.delete(self.cookie_name)
-        except Exception:
+        except Exception as e:
             pass
         st.session_state['connected'] = False
         st.session_state['user_info'] = None

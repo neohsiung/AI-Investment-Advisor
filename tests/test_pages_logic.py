@@ -44,29 +44,24 @@ from src.services.transaction_service import TransactionService
 
 class TestSettingsService:
     def test_get_all_settings(self):
-        with patch('src.services.settings_service.get_db_connection') as mock_conn:
-            mock_result = MagicMock()
-            mock_result.fetchall.return_value = [
-                ("AI_PROVIDER", "Google Gemini"),
-                ("AI_MODEL", "gemini-1.5-pro")
-            ]
-            mock_conn.return_value.execute.return_value = mock_result
+        mock_repo = MagicMock()
+        mock_repo.get_all.return_value = [("AI_PROVIDER", "Google Gemini"), ("AI_MODEL", "gemini-1.5-pro")]
 
-            service = SettingsService("dummy.db")
-            settings = service.get_all_settings()
+        service = SettingsService("dummy.db", settings_repo=mock_repo)
+        settings = service.get_all_settings()
 
-            assert settings["AI_PROVIDER"] == "Google Gemini"
-            assert settings["AI_MODEL"] == "gemini-1.5-pro"
+        assert settings["AI_PROVIDER"] == "Google Gemini"
+        assert settings["AI_MODEL"] == "gemini-1.5-pro"
 
     def test_save_settings_bulk(self):
-        with patch('src.services.settings_service.get_db_connection') as mock_conn:
-            service = SettingsService("dummy.db")
-            updates = {"AI_PROVIDER": "OpenAI", "API_KEY": "sk-123"} # pragma: allowlist secret
+        mock_repo = MagicMock()
+        service = SettingsService("dummy.db", settings_repo=mock_repo)
+        updates = {"AI_PROVIDER": "OpenAI", "API_KEY": "sk-123"} # pragma: allowlist secret
 
-            success, msg = service.save_settings_bulk(updates)
+        success, msg = service.save_settings_bulk(updates)
 
-            assert success is True
-            assert mock_conn.return_value.execute.call_count == 4
+        assert success is True
+        assert mock_repo.set.call_count == 2
 
     def test_fetch_openrouter_models(self):
         with patch('requests.get') as mock_get:
@@ -150,9 +145,9 @@ class TestSettingsRender:
         with patch('src.agents.engineer.SystemEngineerAgent') as mock_agent_cls, \
              patch('sqlalchemy.create_engine'), \
              patch('sqlalchemy.event.listen'), \
-             patch.object(settings_mod, 'get_db_connection') as mock_conn, \
-             patch.object(settings_mod, 'SettingsService') as mock_service_cls, \
-             patch('pandas.read_sql') as mock_read_sql:
+             patch('services.dashboard.src.pages.settings_tabs.scheduler_tab.SettingsService') as mock_service_cls, \
+             patch('pandas.read_sql') as mock_read_sql, \
+             patch('src.services.scheduler_service.SchedulerService') as mock_scheduler_cls:
              # Re-import inside the patch context
              import services.dashboard.src.pages.settings_tabs.scheduler_tab as scheduler_tab_module
 
@@ -164,7 +159,12 @@ class TestSettingsRender:
              # Mock SettingsService return for Timezone
              mock_service_instance = mock_service_cls.return_value
              mock_service_instance.get_setting.return_value = "UTC"
-             mock_service_instance.get_all_settings.return_value = {"DISPLAY_TIMEZONE": "UTC"}
+             mock_service_instance.get_all_settings.return_value = [("DISPLAY_TIMEZONE", "UTC")]
+
+             # Mock SchedulerService return
+             mock_scheduler_instance = mock_scheduler_cls.return_value
+             import pandas as pd
+             mock_scheduler_instance.get_execution_logs.return_value = pd.DataFrame(columns=['id', 'timestamp', 'job_name', 'status', 'details'])
 
              # Fix: mock time_input return value to have .hour for smart hint logic
              mock_time = MagicMock()
@@ -239,9 +239,7 @@ class TestSettingsRender:
     def test_render_optimization_history_tab(self):
         mock_st = MagicMock()
 
-        with patch.object(settings_mod, 'get_db_connection') as mock_conn:
-            # Code: conn.execute(...) checks existence. Mock works by default.
-
+        with patch('src.data.database.get_db_engine') as mock_engine:
             # Mock data retrieval
             mock_df = MagicMock()
             mock_df.empty = False

@@ -6,22 +6,24 @@ from src.services.scheduler_service import SchedulerService
 @pytest.fixture
 def mock_scheduler_deps():
     with patch('src.services.scheduler_service.SystemEngineerAgent') as eng_mock, \
-         patch('src.services.scheduler_service.get_db_connection') as db_mock, \
+         patch('src.data.database.get_db_engine') as db_mock, \
          patch('src.services.scheduler_service.subprocess.run') as sub_mock, \
          patch('src.services.scheduler_service.schedule') as schedule_mock, \
-         patch('src.services.backtest_service.BacktestService') as backtest_mock:
+         patch('src.services.backtest_service.BacktestService') as backtest_mock, \
+         patch('src.repositories.settings_repository.AlchemySettingsRepository') as settings_mock:
         yield {
             "engineer": eng_mock,
             "db": db_mock,
             "subprocess": sub_mock,
             "schedule": schedule_mock,
-            "backtest": backtest_mock
+            "backtest": backtest_mock,
+            "settings": settings_mock
         }
 
 def test_get_all_users(mock_scheduler_deps):
     """Test actual DB fetch logic for users."""
     service = SchedulerService()
-    mock_conn = mock_scheduler_deps['db'].return_value
+    mock_conn = mock_scheduler_deps['db'].return_value.connect.return_value.__enter__.return_value
     # Return list of tuples (id, email)
     mock_conn.execute.return_value.fetchall.return_value = [
         ('u1', 'user1@test.com'), 
@@ -110,24 +112,24 @@ def test_reload_schedule(mock_scheduler_deps):
 def test_check_reload_signal_true(mock_scheduler_deps):
     service = SchedulerService()
     
-    # Mock DB return
-    mock_conn = mock_scheduler_deps['db'].return_value
-    mock_conn.execute.return_value.fetchone.return_value = ['true']
+    # Mock Settings Repo return
+    mock_repo = mock_scheduler_deps['settings'].return_value
+    mock_repo.get.return_value = 'true'
     
     with patch.object(service, 'reload_schedule') as reload_mock:
         service._check_reload_signal()
         
         reload_mock.assert_called()
         # Verify update to false
-        mock_conn.execute.assert_called() # Select and Update
+        mock_repo.set.assert_called_with('SYSTEM', 'scheduler_reload_signal', 'false')
 
     
 def test_check_reload_signal_false(mock_scheduler_deps):
     service = SchedulerService()
     
-    # Mock DB return false
-    mock_conn = mock_scheduler_deps['db'].return_value
-    mock_conn.execute.return_value.fetchone.return_value = ['false']
+    # Mock Settings Repo return false
+    mock_repo = mock_scheduler_deps['settings'].return_value
+    mock_repo.get.return_value = 'false'
     
     with patch.object(service, 'reload_schedule') as reload_mock:
         service._check_reload_signal()

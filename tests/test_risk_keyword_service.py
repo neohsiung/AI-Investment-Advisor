@@ -54,18 +54,16 @@ def service(mock_repo):
 class TestDiscoverFromReports:
     """Tests for _discover_from_reports."""
 
-    @patch("src.data.database.get_db_connection")
+    @patch("src.repositories.data_repository.AlchemyDataRepository")
     @patch("litellm.completion")
-    def test_extracts_keywords_from_reports(self, mock_llm, mock_conn, service):
+    def test_extracts_keywords_from_reports(self, mock_llm, mock_data_repo, service):
         """Should extract keywords from DB reports via LLM."""
-        # Mock DB return
-        FakeRow = namedtuple("FakeRow", ["content"])
-        mock_connection = MagicMock()
-        mock_connection.execute.return_value.fetchall.return_value = [
-            FakeRow(content="Fed rate hike signals recession fears among investors"),
-            FakeRow(content="NVIDIA earnings beat expectations, AI chip demand soaring"),
+        mock_repo_instance = MagicMock()
+        mock_repo_instance.get_recent_aggregated_reports.return_value = [
+            ("Fed rate hike signals recession fears among investors",),
+            ("NVIDIA earnings beat expectations, AI chip demand soaring",),
         ]
-        mock_conn.return_value = mock_connection
+        mock_data_repo.return_value = mock_repo_instance
 
         # Mock LLM response
         mock_llm.return_value = MagicMock(
@@ -79,26 +77,25 @@ class TestDiscoverFromReports:
         assert result[0][3] == "report"  # source
         mock_llm.assert_called_once()
 
-    @patch("src.data.database.get_db_connection")
-    def test_no_reports_returns_empty(self, mock_conn, service):
+    @patch("src.repositories.data_repository.AlchemyDataRepository")
+    def test_no_reports_returns_empty(self, mock_data_repo, service):
         """Should return empty list when no recent reports."""
-        mock_connection = MagicMock()
-        mock_connection.execute.return_value.fetchall.return_value = []
-        mock_conn.return_value = mock_connection
+        mock_repo_instance = MagicMock()
+        mock_repo_instance.get_recent_aggregated_reports.return_value = []
+        mock_data_repo.return_value = mock_repo_instance
 
         result = service._discover_from_reports()
         assert result == []
 
-    @patch("src.data.database.get_db_connection")
+    @patch("src.repositories.data_repository.AlchemyDataRepository")
     @patch("litellm.completion")
-    def test_llm_failure_returns_empty(self, mock_llm, mock_conn, service):
+    def test_llm_failure_returns_empty(self, mock_llm, mock_data_repo, service):
         """Should gracefully return empty on LLM failure."""
-        FakeRow = namedtuple("FakeRow", ["content"])
-        mock_connection = MagicMock()
-        mock_connection.execute.return_value.fetchall.return_value = [
-            FakeRow(content="Some report content"),
+        mock_repo_instance = MagicMock()
+        mock_repo_instance.get_recent_aggregated_reports.return_value = [
+            ("Some report content",),
         ]
-        mock_conn.return_value = mock_connection
+        mock_data_repo.return_value = mock_repo_instance
         mock_llm.side_effect = Exception("LLM API error")
 
         result = service._discover_from_reports()
@@ -112,16 +109,15 @@ class TestDiscoverFromReports:
 class TestDiscoverFromWebhookNews:
     """Tests for _discover_from_webhook_news."""
 
-    @patch("src.data.database.get_db_connection")
-    def test_extracts_keywords_from_events(self, mock_conn, service):
+    @patch("src.repositories.data_repository.AlchemyDataRepository")
+    def test_extracts_keywords_from_events(self, mock_data_repo, service):
         """Should extract high-frequency terms from event_logs."""
-        FakeRow = namedtuple("FakeRow", ["title", "content"])
-        mock_connection = MagicMock()
-        mock_connection.execute.return_value.fetchall.return_value = [
-            FakeRow(title="Tariff hike announced", content="China tariff escalation impacts semiconductor tariff trade"),
-            FakeRow(title="Tariff concerns", content="Global semiconductor shortage tariff impact"),
+        mock_repo_instance = MagicMock()
+        mock_repo_instance.get_recent_event_logs.return_value = [
+            ("Tariff hike announced", "China tariff escalation impacts semiconductor tariff trade"),
+            ("Tariff concerns", "Global semiconductor shortage tariff impact"),
         ]
-        mock_conn.return_value = mock_connection
+        mock_data_repo.return_value = mock_repo_instance
 
         result = service._discover_from_webhook_news()
 
@@ -130,12 +126,12 @@ class TestDiscoverFromWebhookNews:
         assert any("tariff" in kw for kw in keywords_found)
         assert all(r[3] == "webhook" for r in result)  # source
 
-    @patch("src.data.database.get_db_connection")
-    def test_no_events_returns_empty(self, mock_conn, service):
+    @patch("src.repositories.data_repository.AlchemyDataRepository")
+    def test_no_events_returns_empty(self, mock_data_repo, service):
         """Should return empty when no recent events."""
-        mock_connection = MagicMock()
-        mock_connection.execute.return_value.fetchall.return_value = []
-        mock_conn.return_value = mock_connection
+        mock_repo_instance = MagicMock()
+        mock_repo_instance.get_recent_event_logs.return_value = []
+        mock_data_repo.return_value = mock_repo_instance
 
         result = service._discover_from_webhook_news()
         assert result == []

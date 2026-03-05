@@ -121,7 +121,7 @@ class InternetSearchService:
             if self.redis_cache:
                 try:
                     self.redis_cache.set("InternetSearch", query, json.dumps(results))
-                except Exception:
+                except (TypeError, ValueError):
                     pass
         return results
 

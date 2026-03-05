@@ -116,11 +116,11 @@ class TestSnapshotAndPerformance:
         service = PerformanceService(user_id="test_user")
         
         # Test record_recommendation
-        with patch('src.data.database.get_db_connection') as mock_conn:
-            mock_conn.return_value.__enter__.return_value = MagicMock()
-            mock_conn.return_value.__exit__.return_value = None
+        with patch('src.data.database.get_db_engine') as mock_engine:
+            mock_conn = MagicMock()
+            mock_engine.return_value.begin.return_value.__enter__.return_value = mock_conn
             service.record_recommendation("Momentum", "AAPL", "BUY", 150.0)
-            mock_conn.assert_called()
+            mock_conn.execute.assert_called()
     
     def test_performance_alpha(self):
         from src.services.performance_service import PerformanceService
@@ -172,7 +172,8 @@ class TestWorkflowFiles:
     
     @patch('src.services.workflow_service.MarketDataService')
     @patch('src.services.workflow_service.AgentFactory')
-    def test_daily_workflow_execution(self, mock_factory, mock_market):
+    @pytest.mark.asyncio
+    async def test_daily_workflow_execution(self, mock_factory, mock_market):
         """Test DailyWorkflow execution logic (Dry Run)"""
         from src.services.workflow_service import DailyWorkflow
         
@@ -208,4 +209,4 @@ class TestWorkflowFiles:
                   # "Record Recommendations for Performance Tracking" -> uses wf.performance_service.
                   # We mocked wf.performance_service.
                   
-                  wf.run(dry_run=True)
+                  await wf.run(dry_run=True)

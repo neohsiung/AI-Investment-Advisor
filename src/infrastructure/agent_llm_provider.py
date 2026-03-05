@@ -2,7 +2,7 @@ from typing import List, Any, Optional, Dict
 import json
 import re
 from src.utils.logger import setup_logger
-from src.services.memory_service import ILLMProvider
+from src.domain.interfaces import ILLMProvider
 from src.agents.factory import AgentFactory
 
 logger = setup_logger("AgentLLMProvider")

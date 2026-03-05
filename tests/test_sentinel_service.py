@@ -59,12 +59,18 @@ def mock_services():
 
 def _create_sentinel(mock_services):
     from src.services.sentinel_service import SentinelService
+    from src.services.risk_keyword_service import RiskKeywordService
+    mock_keyword_service = MagicMock(spec=RiskKeywordService)
+    mock_keyword_service.get_active_keywords.return_value = []
+    mock_keyword_service.contains_risk.return_value = False
+    mock_keyword_service.score_text.return_value = (0.0, [])
     return SentinelService(
         market_service=mock_services["market"],
         search_service=mock_services["search"],
         transaction_service=mock_services["transaction"],
         council_service=mock_services["council"],
         settings_service=mock_services["settings"],
+        keyword_service=mock_keyword_service,
     )
 
 
@@ -245,16 +251,14 @@ class TestPositionMoves:
 # ──────────────────────────────────────────
 
 class TestBreakingNews:
-    def _mock_repo(self, mock_services, keywords=None):
-        """Helper to patch RiskKeywordRepository with test keywords."""
+    def _get_test_keywords(self):
+        """Helper to create test keywords."""
         from src.domain.entities import RiskKeyword, RiskCategory
-        if keywords is None:
-            keywords = [
-                RiskKeyword(id="k1", keyword="sec investigation", weight=0.9, category=RiskCategory.LEGAL),
-                RiskKeyword(id="k2", keyword="fraud", weight=0.9, category=RiskCategory.LEGAL),
-                RiskKeyword(id="k3", keyword="earnings", weight=0.1, category=RiskCategory.FINANCIAL),
-            ]
-        return keywords
+        return [
+            RiskKeyword(id="k1", keyword="sec investigation", weight=0.9, category=RiskCategory.LEGAL),
+            RiskKeyword(id="k2", keyword="fraud", weight=0.9, category=RiskCategory.LEGAL),
+            RiskKeyword(id="k3", keyword="earnings", weight=0.1, category=RiskCategory.FINANCIAL),
+        ]
 
     def test_risk_keyword_weighted_trigger(self, mock_services, run_async):
         """Tavily returns SEC + fraud news — weighted score >= 0.6 triggers."""
@@ -263,41 +267,33 @@ class TestBreakingNews:
         mock_services["market"].get_news.return_value = [
             {"title": "AAPL faces SEC investigation for fraud", "summary": "SEC investigation ongoing"}
         ]
-        mock_services["search"].search_financial_context.return_value = [
-            {"title": "AAPL faces SEC investigation for fraud", "snippet": "SEC investigation ongoing"}
-        ]
 
-        keywords = self._mock_repo(mock_services)
-        mock_repo = MagicMock()
-        mock_repo.get_all.return_value = keywords
-        mock_repo.record_hit = MagicMock()
+        keywords = self._get_test_keywords()
+        sentinel.keyword_service.get_active_keywords.return_value = keywords
 
-        with patch('src.services.sentinel_service.AlchemyRiskKeywordRepository', return_value=mock_repo), \
-             patch.object(sentinel, '_get_all_user_ids', return_value=["user@test.com"]):
+        with patch.object(sentinel, '_get_all_user_ids', return_value=["user@test.com"]):
             triggers = sentinel._check_breaking_news_v2(["AAPL"])
 
         assert len(triggers) == 1
         assert "AAPL" in triggers[0]["id"]
         assert "新聞異動" in triggers[0]["text"]
         assert "加權分數" in triggers[0]["text"]
-        # Verify hits were recorded
-        assert mock_repo.record_hit.call_count >= 1
+        # Verify hits were recorded via keyword_service
+        assert sentinel.keyword_service.record_hit.call_count >= 1
 
     def test_no_risk_keyword_no_trigger(self, mock_services, run_async):
         """Tavily returns normal news — weighted score < 0.6, no trigger."""
         sentinel = _create_sentinel(mock_services)
         mock_services["transaction"].get_user_tickers.return_value = ["MSFT"]
-        mock_services["search"].search_financial_context.return_value = [
-            {"title": "MSFT reports strong Q4 earnings", "snippet": "Revenue up 15%"}
+        mock_services["market"].get_news.return_value = [
+            {"title": "MSFT reports strong Q4 earnings", "summary": "Revenue up 15%"}
         ]
 
         # "earnings" has weight 0.1, below threshold
-        keywords = self._mock_repo(mock_services)
-        mock_repo = MagicMock()
-        mock_repo.get_all.return_value = keywords
+        keywords = self._get_test_keywords()
+        sentinel.keyword_service.get_active_keywords.return_value = keywords
 
-        with patch('src.services.sentinel_service.AlchemyRiskKeywordRepository', return_value=mock_repo), \
-             patch.object(sentinel, '_get_all_user_ids', return_value=["user@test.com"]):
+        with patch.object(sentinel, '_get_all_user_ids', return_value=["user@test.com"]):
             triggers = sentinel._check_breaking_news_v2(["MSFT"])
 
         assert len(triggers) == 0
@@ -306,13 +302,13 @@ class TestBreakingNews:
         """Tavily API fails — returns empty, no crash."""
         sentinel = _create_sentinel(mock_services)
         mock_services["transaction"].get_user_tickers.return_value = ["AAPL"]
+        mock_services["market"].get_news.return_value = None
         mock_services["search"].search_financial_context.side_effect = Exception("Tavily down")
 
-        mock_repo = MagicMock()
-        mock_repo.get_all.return_value = self._mock_repo(mock_services)
+        keywords = self._get_test_keywords()
+        sentinel.keyword_service.get_active_keywords.return_value = keywords
 
-        with patch('src.services.sentinel_service.AlchemyRiskKeywordRepository', return_value=mock_repo), \
-             patch.object(sentinel, '_get_all_user_ids', return_value=["user@test.com"]):
+        with patch.object(sentinel, '_get_all_user_ids', return_value=["user@test.com"]):
             triggers = sentinel._check_breaking_news_v2(["AAPL"])
 
         assert len(triggers) == 0
@@ -434,30 +430,40 @@ class TestSourcePollingAndThematic:
 
     def test_poll_tiingo(self, mock_services, run_async):
         sentinel = _create_sentinel(mock_services)
-        mock_services["market"].tiingo.get_news.return_value = [{"title": "Tiingo Test News"}]
-        async def _test():
-            res = await sentinel._poll_single_source("tiingo", {})
-            assert res is not None
-            assert res["id"] == "tiingo_health_check"
-        run_async(_test())
+        mock_services["market"].tiingo.get_news.return_value = [{"title": "AAPL crash amid SEC investigation"}]
+        with patch.object(sentinel, '_get_polling_tickers', return_value=["AAPL"]), \
+             patch.object(sentinel, '_contains_risk_keywords', return_value=True):
+            async def _test():
+                res = await sentinel._poll_single_source("tiingo", {})
+                assert res is not None
+                assert isinstance(res, list)
+                assert len(res) >= 1
+                assert "tiingo_risk" in res[0]["id"]
+            run_async(_test())
 
     def test_poll_finnhub(self, mock_services, run_async):
         sentinel = _create_sentinel(mock_services)
-        mock_services["market"].finnhub.get_sentiment.return_value = {"sentiment": "Bullish"}
-        async def _test():
-            res = await sentinel._poll_single_source("finnhub", {})
-            assert res is not None
-            assert res["id"] == "finnhub_health_check"
-        run_async(_test())
+        mock_services["market"].finnhub.get_sentiment.return_value = {"sentiment": -0.7}
+        with patch.object(sentinel, '_get_polling_tickers', return_value=["AAPL"]):
+            async def _test():
+                res = await sentinel._poll_single_source("finnhub", {})
+                assert res is not None
+                assert isinstance(res, list)
+                assert len(res) >= 1
+                assert "finnhub_neg" in res[0]["id"]
+            run_async(_test())
 
     def test_poll_alpha_vantage(self, mock_services, run_async):
         sentinel = _create_sentinel(mock_services)
-        mock_services["market"].alpha_vantage.get_news.return_value = [{"sentiment_label": "Somewhat-Bullish"}]
-        async def _test():
-            res = await sentinel._poll_single_source("alpha_vantage", {})
-            assert res is not None
-            assert res["id"] == "alphavantage_health_check"
-        run_async(_test())
+        mock_services["market"].alpha_vantage.get_news.return_value = [{"sentiment_label": "Bearish", "title": "Market crash fears rise"}]
+        with patch.object(sentinel, '_get_polling_tickers', return_value=["AAPL"]):
+            async def _test():
+                res = await sentinel._poll_single_source("alpha_vantage", {})
+                assert res is not None
+                assert isinstance(res, list)
+                assert len(res) >= 1
+                assert "av_risk" in res[0]["id"]
+            run_async(_test())
         
     def test_poll_readwise(self, mock_services, run_async):
         sentinel = _create_sentinel(mock_services)
@@ -528,23 +534,12 @@ class TestSourcePollingAndThematic:
         kw.score.return_value = 0.8
         mock_keywords = [kw]
         
-        with patch('src.services.transaction_service.TransactionService.get_user_tickers', return_value=["AAPL"]), \
-             patch('src.agents.factory.AgentFactory.create_thematic_agent', create=True) as mock_create_agent, \
-             patch('src.services.sentinel_service.AlchemyRiskKeywordRepository') as mock_repo_class:
-                  
-            mock_repo = MagicMock()
-            mock_repo_class.return_value = mock_repo
-            
-            mock_agent = MagicMock()
-            mock_agent.run.return_value = {"status": "success"}
-            mock_create_agent.return_value = mock_agent
-            
-            mock_services["market"].get_news.return_value = []
-            mock_services["search"].search_financial_context.return_value = mock_results
-            
-            score, summary = sentinel._analyze_ticker_news("MSFT", mock_keywords)
-            # PPA deals get score boost, even if it has to fallback to default MSFT ticker list
-            assert score > 0.0
+        mock_services["market"].get_news.return_value = []
+        mock_services["search"].search_financial_context.return_value = mock_results
+        
+        score, summary = sentinel._analyze_ticker_news("MSFT", mock_keywords)
+        # PPA deals get score boost
+        assert score > 0.0
 
     def test_analyze_ticker_news_physical_ai(self, mock_services):
         sentinel = _create_sentinel(mock_services)
@@ -561,13 +556,9 @@ class TestSourcePollingAndThematic:
         mock_services["market"].get_news.return_value = []
         mock_services["search"].search_financial_context.return_value = mock_results
         
-        with patch('src.services.sentinel_service.AlchemyRiskKeywordRepository') as mock_repo_class:
-            mock_repo = MagicMock()
-            mock_repo_class.return_value = mock_repo
-            
-            score, summary = sentinel._analyze_ticker_news("TSLA", mock_keywords)
-            # Should detect Physical AI keywords and boost
-            assert score > 0.0
+        score, summary = sentinel._analyze_ticker_news("TSLA", mock_keywords)
+        # Should detect Physical AI keywords and boost
+        assert score > 0.0
 
 
 class TestEventDriven:

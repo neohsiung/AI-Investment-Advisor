@@ -106,6 +106,9 @@ class RiskCategory(Enum):
     OPERATIONAL = "operational"  # 營運風險 (recall, data breach, layoff)
     GEOPOLITICAL = "geopolitical"  # 地緣政治 (war, sanctions, tariff)
     MARKET = "market"            # 市場風險 (crash, margin call, bubble)
+    MACRO = "macro"              # 總經指標 (CPI, GDP, rate hike, inflation)
+    SENTIMENT = "sentiment"      # 市場情緒 (panic, euphoria, capitulation)
+    SECTOR = "sector"            # 板塊趨勢 (AI, semiconductor, EV, biotech)
     CUSTOM = "custom"            # 使用者自訂
 
 
@@ -143,3 +146,38 @@ class RiskKeyword:
         if self.keyword.lower() in text.lower():
             return self.weight
         return 0.0
+
+
+@dataclass
+class ReportMemoryItem:
+    """
+    Domain entity for a report memory item.
+    報告記憶項目的領域實體。
+    """
+    user_id: str
+    report_type: str
+    report_date: str
+    full_content: str
+    compressed_summary: Optional[str] = None
+    key_findings: Optional[Dict] = None
+
+
+@dataclass
+class MemoryContext:
+    """
+    Domain entity representing contextual memory for LLM injection.
+    用於 LLM 注入的情境記憶領域實體。
+    """
+    user_id: str
+    report_type: str
+    lookback_window: int
+    recent_items: List[ReportMemoryItem]
+
+    def get_compressed_context(self) -> str:
+        """Formatted context string for LLM injection"""
+        parts = []
+        for i, item in enumerate(self.recent_items):
+             offset = f"T-{i+1}"
+             content = item.compressed_summary if item.compressed_summary else item.full_content[:500] + "..."
+             parts.append(f"[{offset} Date: {item.report_date}]\n{content}\n")
+        return "\n---\n".join(parts)

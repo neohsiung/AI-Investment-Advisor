@@ -13,9 +13,9 @@ from src.services.council_service import CouncilService
 from src.services.transaction_service import TransactionService
 import httpx
 
-from src.repositories.risk_keyword_repository import AlchemyRiskKeywordRepository
 from src.repositories.sentinel_repository import AlchemySentinelRepository
 from src.services.settings_service import SettingsService
+from src.services.risk_keyword_service import RiskKeywordService
 from src.domain.entities import RiskKeyword
 
 class SentinelService:
@@ -37,6 +37,7 @@ class SentinelService:
         transaction_service: Optional[TransactionService] = None,
         council_service: Optional[CouncilService] = None,
         settings_service: Optional[SettingsService] = None,
+        keyword_service: Optional[RiskKeywordService] = None,
         user_id: str = None,
     ):
         self.repo = AlchemySentinelRepository()
@@ -47,6 +48,7 @@ class SentinelService:
         self.search_service = search_service or InternetSearchService(settings_service=self.settings_service)
         self.transaction_service = transaction_service or TransactionService()
         self.council_service = council_service or CouncilService()
+        self.keyword_service = keyword_service or RiskKeywordService()
         
         self.notification_api_url = os.getenv("NOTIFICATION_API_URL", "http://localhost:8001/api/v1/notify")
         
@@ -111,13 +113,15 @@ class SentinelService:
             
             # Dimension 2: Position Price Moves (每次 tick)
             # Pass aggregated data to avoid redundant fetches
-            current_prices = self.market_service.get_current_prices(ticker_list)
-            triggers += self._check_position_moves_v2(ticker_list, current_prices)
+            if ticker_list:
+                current_prices = self.market_service.get_current_prices(ticker_list)
+                triggers += self._check_position_moves_v2(ticker_list, current_prices)
             
             # Dimension 3: Breaking News (每 10 分鐘, 節省 Tavily credits)
             from datetime import datetime
             if datetime.now().minute % 10 == 0:
-                triggers += self._check_breaking_news_v2(ticker_list)
+                if ticker_list:
+                    triggers += self._check_breaking_news_v2(ticker_list)
             
             # Dimension 4: Macro Shifts (每小時, FRED 數據更新頻率低)
             if datetime.now().minute == 0:
@@ -125,6 +129,11 @@ class SentinelService:
             
             # Dimension 5: Active Polling
             triggers += await self._check_active_sources()
+
+            # Dimension 6: Global Macro / Geopolitical Events (每 30 分鐘)
+            # 持倉數量無關的全球重大事件掃描
+            if datetime.now().minute % 30 == 0:
+                triggers += self._check_global_macro_events()
             
             # ACT: Summon Council + Notifications if triggered
             if triggers:
@@ -335,22 +344,15 @@ class SentinelService:
             return triggers
             
         try:
-            # Load active keywords from DB
-            repo = AlchemyRiskKeywordRepository()
-            active_keywords = repo.get_all(active_only=True)
+            active_keywords = self.keyword_service.get_active_keywords()
             
             if not active_keywords:
-                logger.warning("No active risk keywords in DB, skipping news check.")
+                logger.warning("No active risk keywords, skipping news check.")
                 return triggers
             
             risk_threshold = self.thresholds.get("news_risk_score", 0.6)
             
             for ticker in all_tickers:
-                # v5.0 Optimization: Use new news strategy
-                # Prioritize Tiingo/FMP via market_service (which now includes Tiingo)
-                # Only use Tavily for deep "risk score" analysis if tickers are identified as high-volatility
-                # or if deep search is enabled.
-                
                 risk_score, summary = self._analyze_ticker_news(ticker, active_keywords)
                 if risk_score >= risk_threshold:
                     triggers.append({
@@ -375,14 +377,12 @@ class SentinelService:
         Analyzes news for a given ticker against active risk keywords and returns a risk score and summary.
         v5.0 Optimization: Prioritize Tiingo/FMP over Tavily Search to save credits.
         """
-        repo = AlchemyRiskKeywordRepository()
         risk_threshold = self.thresholds.get("news_risk_score", 0.6)
 
         # Optimization: Use standardized news fetching (Tiingo -> FMP -> YFinance)
         results = self.market_service.get_news(ticker)
         
-        # v5.0 Fallback Logic: Only use search if NO news found
-        # Fallback 機制：若主要供應商無新聞，則使用搜尋引擎進行抓取
+        # Fallback: search if NO news from primary providers
         if not results:
              query = f"{ticker} latest news investment impact"
              results = self.search_service.search_financial_context(query, max_results=3)
@@ -394,7 +394,6 @@ class SentinelService:
         best_summary = ""
 
         for result in results:
-            # Result is now a dict from Tiingo/FMP/Polygon/YFinance
             title = result.get("title", "")
             summary = result.get("summary", "") or result.get("description", "")
             full_text = f"{title} {summary}"
@@ -409,9 +408,9 @@ class SentinelService:
                     matched_keywords.append((kw, score))
             
             if total_score >= risk_threshold:
-                # Record hits for review/analytics
+                # Record hits via keyword service
                 for kw, _ in matched_keywords:
-                    repo.record_hit(kw.id)
+                    self.keyword_service.record_hit(kw.id)
                 
                 kw_summary = ", ".join(
                     f"{kw.keyword}(w={s:.2f})" 
@@ -459,7 +458,7 @@ class SentinelService:
                     try:
                         import json
                         ai_energy_tickers = json.loads(ai_energy_tickers)
-                    except:
+                    except json.JSONDecodeError:
                         ai_energy_tickers = [t.strip() for t in ai_energy_tickers.split(',')]
                         
                 has_ppa = any(keyword in result.get('title', '').lower() + result.get('snippet', '').lower() for keyword in ["ppa", "power purchase agreement", "nuclear", "smr", "datacenter power", "grid"])
@@ -509,7 +508,7 @@ class SentinelService:
                     try:
                         import json
                         physical_ai_tickers = json.loads(physical_ai_tickers)
-                    except:
+                    except json.JSONDecodeError:
                         physical_ai_tickers = [t.strip() for t in physical_ai_tickers.split(',')]
                         
                 has_physical_ai = any(keyword in result.get('title', '').lower() + result.get('snippet', '').lower() for keyword in ["fsd", "humanoid", "robotaxi", "optimus", "autonomous driving", "industrial automation"])
@@ -576,6 +575,59 @@ class SentinelService:
                 
         except Exception as e:
             logger.warning(f"Macro shift check failed: {e}")
+        return triggers
+
+    def _check_global_macro_events(self) -> List[Dict[str, Any]]:
+        """
+        Dimension 6: Scan for major global/geopolitical events independent of user positions.
+        持倉無關的全球重大事件掃描（戰爭、制裁、疫情、金融危機等）。
+        Uses existing AlchemyRiskKeywordRepository for keyword matching.
+        """
+        triggers = []
+        try:
+            risk_threshold = self.thresholds.get("news_risk_score", 0.6)
+
+            queries = [
+                "breaking financial market crisis OR crash OR war today",
+                "geopolitical conflict sanctions impact stock market today",
+            ]
+
+            seen_ids = set()
+            for query in queries:
+                try:
+                    results = self.search_service.search(query, max_results=3)
+                    if not results:
+                        continue
+
+                    for item in results:
+                        title = item.get("title", "")
+                        content = item.get("content", "")
+                        combined = f"{title} {content}"
+
+                        # Score using keyword service (cached + records hits)
+                        total_weight, matched = self.keyword_service.score_text(combined)
+
+                        if total_weight >= risk_threshold:
+                            event_id = f"global_macro_{hash(title) % 100000}"
+                            if event_id not in seen_ids:
+                                seen_ids.add(event_id)
+                                triggers.append({
+                                    "text": f"🌍 全球重大事件: {title[:100]} (加權分數: {total_weight:.2f})",
+                                    "id": event_id,
+                                    "ticker": "GLOBAL",
+                                    "data": {
+                                        "keywords": matched[:5],
+                                        "source": item.get("url", ""),
+                                    }
+                                })
+                except Exception as e:
+                    logger.debug(f"Global macro search query failed: {e}")
+
+            if triggers:
+                logger.info(f"Sentinel Dimension 6: Detected {len(triggers)} global macro events.")
+
+        except Exception as e:
+            logger.warning(f"Global macro event check failed: {e}")
         return triggers
 
     # Escalation: Council + Notifications
@@ -778,6 +830,97 @@ class SentinelService:
             import asyncio
             asyncio.create_task(self._trigger_emergency_protocol(target_user, decision))
 
+        # 📊 Actionable Trade Signals → evaluate_and_execute_trade (Milestone 13.2)
+        # All trade signals go through the unified confidence threshold logic
+        elif is_actionable:
+            trade_signals = self._extract_trade_signals_from_decision(decision, filtered_triggers)
+            if trade_signals:
+                import asyncio
+                asyncio.create_task(self._execute_trade_signals(target_user, trade_signals, source))
+
+    def _extract_trade_signals_from_decision(self, decision: str, triggers: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        """
+        Extract actionable trade signals from Council decision text.
+        從委員會決策文字中提取可執行交易訊號。
+        """
+        import re
+        signals = []
+
+        # Strategy 1: Look for explicit action keywords with tickers
+        # Pattern: BUY/SELL TICKER or 買入/賣出 TICKER
+        patterns = [
+            r'(?:BUY|ACCUMULATE|買入|加碼)\s+([A-Z]{1,5})',
+            r'(?:SELL|REDUCE|TRIM|賣出|減碼|出清)\s+([A-Z]{1,5})',
+            r'([A-Z]{1,5})\s*[：:]\s*(?:BUY|SELL|買入|賣出|加碼|減碼)',
+        ]
+
+        for pattern in patterns:
+            matches = re.finditer(pattern, decision, re.IGNORECASE)
+            for m in matches:
+                ticker = m.group(1).upper()
+                full_match = m.group(0).upper()
+
+                action = "HOLD"
+                if any(kw in full_match for kw in ["BUY", "ACCUMULATE", "加碼", "買"]):
+                    action = "BUY"
+                elif any(kw in full_match for kw in ["SELL", "REDUCE", "TRIM", "出清", "減碼", "賣"]):
+                    action = "SELL"
+
+                if action != "HOLD" and ticker not in [s['ticker'] for s in signals]:
+                    signals.append({
+                        'ticker': ticker,
+                        'action': action,
+                        'quantity': 1.0,
+                        'score': 7,  # Council-recommended default confidence
+                        'reason': f"Sentinel Council 決策: {decision[:120]}..."
+                    })
+
+        # Strategy 2: Use ticker from trigger context if Council is actionable but no ticker in text
+        if not signals:
+            for t in triggers:
+                ticker = t.get("ticker") or t.get("data", {}).get("ticker")
+                if ticker and ticker != "GLOBAL" and ticker != "UNKNOWN":
+                    d_lower = decision.lower()
+                    action = "HOLD"
+                    if any(kw in d_lower for kw in ["buy", "accumulate", "加碼", "買"]):
+                        action = "BUY"
+                    elif any(kw in d_lower for kw in ["sell", "reduce", "trim", "exit", "減碼", "賣"]):
+                        action = "SELL"
+
+                    if action != "HOLD":
+                        signals.append({
+                            'ticker': ticker.upper(),
+                            'action': action,
+                            'quantity': 1.0,
+                            'score': 7,
+                            'reason': f"Sentinel Council 決策: {decision[:120]}..."
+                        })
+
+        if signals:
+            logger.info(f"Sentinel: Extracted {len(signals)} trade signals from Council decision.")
+        return signals
+
+    async def _execute_trade_signals(self, user_id: str, signals: List[Dict[str, Any]], source: str) -> None:
+        """
+        Execute trade signals via AutomatedTradingService (unified confidence threshold logic).
+        透過 AutomatedTradingService 執行交易訊號（套用統一信心指數閥值邏輯）。
+        """
+        try:
+            from src.services.automated_trading_service import AutomatedTradingService
+            auto_trade_svc = AutomatedTradingService()
+
+            for signal in signals:
+                await auto_trade_svc.evaluate_and_execute_trade(
+                    user_id=user_id,
+                    ticker=signal['ticker'],
+                    action=signal['action'],
+                    quantity=signal['quantity'],
+                    confidence_score=signal['score'],
+                    rationale=signal['reason']
+                )
+        except Exception as e:
+            logger.error(f"Sentinel trade signal execution failed: {e}")
+
     async def _trigger_emergency_protocol(self, user_id: str, rationale: str) -> None:
         """
         Execute Auto-hedging / Emergency Liquidation via AutomatedTradingService (Milestone 5.1).
@@ -870,14 +1013,51 @@ class SentinelService:
         取得所有已註冊用戶 ID。
         """
         try:
-            from src.data.database import get_db_connection
+            from src.data.database import get_db_engine
             from sqlalchemy import text
-            with get_db_connection() as conn:
-                rows = conn.execute(text("SELECT email FROM users")).fetchall()
-                return [row[0] for row in rows] if rows else []
+            engine = get_db_engine()
+            with engine.connect() as conn:
+                # Primary: use user id (UUID) from users table
+                rows = conn.execute(text("SELECT id FROM users")).fetchall()
+                user_ids = [row[0] for row in rows] if rows else []
+                
+                # Fallback: also include user_ids from settings table
+                # (covers cases where user exists in settings but not users table)
+                settings_rows = conn.execute(text(
+                    "SELECT DISTINCT user_id FROM settings "
+                    "WHERE user_id NOT IN ('system', 'SYSTEM')"
+                )).fetchall()
+                for row in settings_rows:
+                    if row[0] and row[0] not in user_ids:
+                        user_ids.append(row[0])
+                
+                return user_ids
         except Exception as e:
             logger.warning(f"Failed to get user IDs: {e}")
             return []
+
+    def _get_polling_tickers(self) -> List[str]:
+        """
+        Get tickers to scan during polling (user's active holdings).
+        取得輪詢時需掃描的標的（用戶持有的活躍部位）。
+        """
+        try:
+            tickers = set()
+            user_ids = self._get_all_user_ids()
+            for uid in user_ids:
+                user_tickers = self.transaction_service.get_user_tickers(uid, only_active=True)
+                tickers.update(user_tickers)
+            return list(tickers) if tickers else ["SPY"]  # Fallback to SPY
+        except Exception as e:
+            logger.warning(f"Failed to get polling tickers: {e}")
+            return ["SPY"]
+
+    def _contains_risk_keywords(self, text: str) -> bool:
+        """
+        Check if text contains risk-related keywords using keyword service.
+        使用關鍵字服務進行風險關鍵詞比對。
+        """
+        return self.keyword_service.contains_risk(text)
 
     async def _check_active_sources(self) -> List[Dict[str, Any]]:
         """
@@ -923,42 +1103,78 @@ class SentinelService:
                         "value": val
                     }
         
-        # Tiingo Integration (v5.0)
+        # Tiingo Integration (v5.0) - Event-Driven News Scanning
         elif sid == "tiingo":
             try:
-                # Quick health check via Tiingo news (1 item)
-                news = self.market_service.tiingo.get_news("AAPL")
-                if news:
-                    return {
-                        "text": f"✅ Tiingo API 聯通正常: 獲取最新新聞 '{news[0]['title'][:30]}...'",
-                        "id": "tiingo_health_check"
-                    }
+                triggers = []
+                tickers = self._get_polling_tickers()
+                for ticker in tickers[:3]:  # Rate limit: scan top 3
+                    news = self.market_service.tiingo.get_news(ticker)
+                    if news:
+                        for item in news[:2]:  # Check latest 2 headlines per ticker
+                            title = (item.get('title') or '').lower()
+                            if self._contains_risk_keywords(title):
+                                triggers.append({
+                                    "text": f"📰 [Tiingo] {ticker} 風險新聞: {item.get('title', '')[:80]}",
+                                    "id": f"tiingo_risk_{ticker}_{hash(item.get('title', '')) % 10000}",
+                                    "ticker": ticker
+                                })
+                return triggers if triggers else None
             except Exception as e:
-                logger.error(f"Tiingo health check failed: {e}")
+                logger.error(f"Tiingo polling failed: {e}")
 
-        # Finnhub Integration (v5.0)
+        # Finnhub Integration (v5.0) - Event-Driven Sentiment Scanning
         elif sid == "finnhub":
             try:
-                sentiment = self.market_service.finnhub.get_sentiment("AAPL")
-                if sentiment:
-                    return {
-                        "text": f"✅ Finnhub API 聯通正常: 獲取情緒指標 ({sentiment.get('sentiment', 'N/A')})",
-                        "id": "finnhub_health_check"
-                    }
+                triggers = []
+                tickers = self._get_polling_tickers()
+                for ticker in tickers[:3]:
+                    sentiment = self.market_service.finnhub.get_sentiment(ticker)
+                    if sentiment:
+                        score = sentiment.get('sentiment', 0)
+                        # Trigger on extreme negative sentiment
+                        if isinstance(score, (int, float)) and score < -0.5:
+                            triggers.append({
+                                "text": f"📉 [Finnhub] {ticker} 極端負面情緒: sentiment={score:.2f}",
+                                "id": f"finnhub_neg_{ticker}",
+                                "ticker": ticker,
+                                "value": score
+                            })
+                    # Also check news
+                    news = self.market_service.finnhub.get_news(ticker) if hasattr(self.market_service.finnhub, 'get_news') else None
+                    if news:
+                        for item in news[:2]:
+                            headline = (item.get('headline') or item.get('title', '')).lower()
+                            if self._contains_risk_keywords(headline):
+                                triggers.append({
+                                    "text": f"📰 [Finnhub] {ticker} 風險新聞: {(item.get('headline') or item.get('title', ''))[:80]}",
+                                    "id": f"finnhub_risk_{ticker}_{hash(item.get('headline', '')) % 10000}",
+                                    "ticker": ticker
+                                })
+                return triggers if triggers else None
             except Exception as e:
-                logger.error(f"Finnhub health check failed: {e}")
+                logger.error(f"Finnhub polling failed: {e}")
 
-        # AlphaVantage Integration (v5.0)
+        # AlphaVantage Integration (v5.0) - Sentiment-Driven Event Detection
         elif sid == "alpha_vantage":
             try:
-                news = self.market_service.alpha_vantage.get_news("AAPL")
-                if news:
-                    return {
-                        "text": f"✅ AlphaVantage API 聯通正常: 獲取新聞情緒 '{news[0]['sentiment_label']}'",
-                        "id": "alphavantage_health_check"
-                    }
+                triggers = []
+                tickers = self._get_polling_tickers()
+                for ticker in tickers[:3]:
+                    news = self.market_service.alpha_vantage.get_news(ticker)
+                    if news:
+                        for item in news[:2]:
+                            label = (item.get('sentiment_label') or '').lower()
+                            title = item.get('title', '')
+                            if label in ('bearish', 'strongly_bearish') or self._contains_risk_keywords(title.lower()):
+                                triggers.append({
+                                    "text": f"📰 [AlphaVantage] {ticker} 風險事件 ({label}): {title[:80]}",
+                                    "id": f"av_risk_{ticker}_{hash(title) % 10000}",
+                                    "ticker": ticker
+                                })
+                return triggers if triggers else None
             except Exception as e:
-                logger.error(f"AlphaVantage health check failed: {e}")
+                logger.error(f"AlphaVantage polling failed: {e}")
                 
         # Readwise Integration
         elif sid == "readwise":

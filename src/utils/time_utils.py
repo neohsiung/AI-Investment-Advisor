@@ -22,7 +22,7 @@ def get_db_timezone():
         conn.close()
         if result:
             return result[0]
-    except Exception:
+    except Exception as e:
         # DB might not be ready or reachable
         pass # nosec
     return None

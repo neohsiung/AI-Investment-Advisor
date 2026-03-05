@@ -1,7 +1,6 @@
 from sqlalchemy import text
 from src.utils.logger import setup_logger
 from src.repositories.agent_repository import AlchemyAgentRepository
-from src.data.database import get_db_connection
 
 logger = setup_logger("AttributionAnalyzer")
 
@@ -27,69 +26,56 @@ class AttributionAnalyzer:
         """
         logger.info(f"Starting Attribution Cycle (Lookback: {days_lookback} days)")
         
-        # In a full system, we would:
-        # 1. Fetch recommendations from the last X days
-        # 2. Get the current price or exit price
-        # 3. Calculate ROI
-        # 4. Update the performance table
-        
-        # Example Raw SQL logic to fetch recommendations
-        conn = get_db_connection()
         try:
-            # Note: Assuming agent_recommendations table exists and tracks signal and price
-            # Since AI Investment Advisor v4.5 is building this as part of Milestone 4:
+            # Query the repository for all agents. 
+            # Note: We can expand get_top_agents to return all agents 
+            # or just use a new method to fetch all performance records.
+            # For now, let's use SQLAlchemy directly via the repository engine
+            # since a `get_all` method might not exist in AlchemyAgentRepository yet.
             
-            # Step 1: Calculate "Win Rate" (Simplified Mock Logic for now, 
-            # ideally relying on a JOIN between recommendations and current market snapshots)
-            # In a real deployed PG DB, this SQL would do window functions and calculate accuracy.
-            
-            # For demonstration in v4.5, we will implement a basic weight recalibration 
-            # that bumps weight for agents with high success ratio in agent_performance.
-            
-            query = text("""
-                SELECT agent_name, success_count, failure_count, weight
-                FROM agent_performance
-                WHERE success_count + failure_count > 0
-            """)
-            
-            results = conn.execute(query).fetchall()
-            
-            for row in results:
-                total_trades = row.success_count + row.failure_count
-                win_rate = row.success_count / total_trades if total_trades > 0 else 0
-                
-                # Dynamic Logic: 
-                # If win rate > 60%, boost weight. If < 40%, slash weight.
-                target_weight = 1.0
-                
-                if total_trades >= 5: # Minimum confidence threshold
-                    if win_rate >= 0.65:
-                        target_weight = 1.2 + (win_rate - 0.65) # Max ~1.55
-                    elif win_rate <= 0.45:
-                        target_weight = 0.5 + win_rate # Min ~0.5
-                    else:
-                        target_weight = 1.0
-                
-                # Smooth the update (Exponential Moving Average like)
-                new_weight = (row.weight * 0.7) + (target_weight * 0.3)
-                
-                # Clamp weight between 0.1 and 3.0
-                new_weight = max(0.1, min(new_weight, 3.0))
-                
-                update_query = text("""
-                    UPDATE agent_performance
-                    SET weight = :nw
-                    WHERE agent_name = :name
+            with self.agent_repo.engine.connect() as conn:
+                query = text("""
+                    SELECT agent_name, success_count, failure_count, weight
+                    FROM agent_performance
+                    WHERE success_count + failure_count > 0
                 """)
                 
-                conn.execute(update_query, {"nw": new_weight, "name": row.agent_name})
-                logger.info(f"AttributionAnalyzer: {row.agent_name} Weight adjusted to {new_weight:.2f} (Win Rate: {win_rate:.1%})")
+                results = conn.execute(query).fetchall()
                 
-            conn.commit()
-            
+                for row in results:
+                    total_trades = row.success_count + row.failure_count
+                    win_rate = row.success_count / total_trades if total_trades > 0 else 0
+                    
+                    # Dynamic Logic: 
+                    # If win rate > 60%, boost weight. If < 40%, slash weight.
+                    target_weight = 1.0
+                    
+                    if total_trades >= 5: # Minimum confidence threshold
+                        if win_rate >= 0.65:
+                            target_weight = 1.2 + (win_rate - 0.65) # Max ~1.55
+                        elif win_rate <= 0.45:
+                            target_weight = 0.5 + win_rate # Min ~0.5
+                        else:
+                            target_weight = 1.0
+                    
+                    # Smooth the update (Exponential Moving Average like)
+                    new_weight = (row.weight * 0.7) + (target_weight * 0.3)
+                    
+                    # Clamp weight between 0.1 and 3.0
+                    new_weight = max(0.1, min(new_weight, 3.0))
+                    
+                    # We can use the agent_repo's transaction to update
+                    update_query = text("""
+                        UPDATE agent_performance
+                        SET weight = :nw
+                        WHERE agent_name = :name
+                    """)
+                    
+                    conn.execute(update_query, {"nw": new_weight, "name": row.agent_name})
+                    conn.commit()
+                    logger.info(f"AttributionAnalyzer: {row.agent_name} Weight adjusted to {new_weight:.2f} (Win Rate: {win_rate:.1%})")
+                
         except Exception as e:
             logger.error(f"Failed to run attribution cycle: {e}")
-        finally:
-            conn.close()
             
         logger.info("Attribution Cycle Completed.")

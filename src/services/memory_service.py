@@ -5,51 +5,11 @@ import json
 from src.utils.logger import setup_logger
 logger = setup_logger("MemoryService")
 
-# --- Domain Entities ---
-@dataclass
-class ReportMemoryItem:
-    user_id: str
-    report_type: str
-    report_date: str
-    full_content: str
-    compressed_summary: Optional[str] = None
-    key_findings: Optional[Dict] = None
-
-@dataclass
-class MemoryContext:
-    user_id: str
-    report_type: str
-    lookback_window: int
-    recent_items: List[ReportMemoryItem]
-
-    def get_compressed_context(self) -> str:
-        """Formatted context string for LLM injection"""
-        parts = []
-        for i, item in enumerate(self.recent_items):
-             offset = f"T-{i+1}"
-             content = item.compressed_summary if item.compressed_summary else item.full_content[:500] + "..."
-             parts.append(f"[{offset} Date: {item.report_date}]\n{content}\n")
-        return "\n---\n".join(parts)
-
-# --- Ports / Interfaces ---
-class IMemoryRepository(abc.ABC):
-    @abc.abstractmethod
-    def get_recent_reports(self, user_id: str, report_type: str, limit: int) -> List[ReportMemoryItem]:
-        pass
-
-    @abc.abstractmethod
-    def save_report(self, item: ReportMemoryItem) -> None:
-        pass
-
-class ILLMProvider(abc.ABC):
-    """Interface for LLM operations needed by MemoryService"""
-    @abc.abstractmethod
-    def summarize(self, text: str) -> str:
-        pass
-    
-    @abc.abstractmethod
-    def check_contradictions(self, new_text: str, context_text: str) -> List[str]:
-        pass
+# --- Domain Entities & Interfaces (Canonical Source: src.domain) ---
+# Re-exported here for backward compatibility.
+# 領域實體與介面（規範來源：src.domain），此處為向後相容重新匯出。
+from src.domain.entities import ReportMemoryItem, MemoryContext  # noqa: F401
+from src.domain.interfaces import IMemoryRepository, ILLMProvider  # noqa: F401
 
 # --- Use Case / Service ---
 class MemoryService:

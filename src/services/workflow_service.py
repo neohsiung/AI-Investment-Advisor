@@ -12,8 +12,6 @@ from src.agents.fundamental import FundamentalAgent
 from src.agents.macro import MacroAgent
 from src.agents.cio import CIOAgent
 from src.agents.engineer import SystemEngineerAgent
-from src.data.database import get_db_connection
-from sqlalchemy import text
 from src.agents.factory import AgentFactory
 from src.agents.council_adapter import CouncilAgentAdapter
 from src.services.performance_service import PerformanceService
@@ -104,7 +102,7 @@ class BaseWorkflow(ABC):
                             # Parse quantity to float safely
                             try:
                                 qty_val = float(str(order_data['quantity']).replace('%', ''))
-                            except:
+                            except (ValueError, TypeError):
                                 qty_val = 100.0 # Default fallback amount
                                 
                             # This handles threshold check, auto-exec, and notification/approval requests (Option A)
@@ -204,32 +202,21 @@ class BaseWorkflow(ABC):
         html_content = reporting_service.generate_professional_html(content, title=title)
         
         # 1. Store in DB
-        conn = get_db_connection()
         try:
-            import uuid
-            report_id = str(uuid.uuid4())
-            date_str = get_current_time().isoformat()
+            from src.repositories.report_repository import AlchemyReportRepository
+            report_repo = AlchemyReportRepository()
             
-            # We store the raw markdown in 'content' and HTML in a new column if exists, 
-            # but for standard DB schema we will store HTML in 'content' or modify logic.
-            # Assuming DB schema support for raw markdown, we store Markdown. Email gets HTML.
-            # We'll store HTML in db for Dashboard web view to render directly.
-            conn.execute(text("""
-                INSERT INTO reports (id, user_id, report_type, title, content, created_at, date) 
-                VALUES (:id, :uid, :type, :title, :content, :created, :date)
-            """), {
-                "id": report_id, 
-                "uid": self.user_id, 
-                "type": self.__class__.__name__,
-                "title": title, 
-                "content": html_content, # Store HTML for frontend
-                "created": date_str,
-                "date": date_str
-            })
-            conn.commit()
+            # Save the generated HTML content (We still pass content as 'markdown' 
+            # and HTML as 'html_content' if schema is updated, but for now just pass to repo)
+            report_repo.save(
+                user_id=self.user_id,
+                report_type=self.__class__.__name__,
+                summary=title, # use title as summary for now
+                content=html_content # store HTML
+            )
             logger.info("Report stored in database (HTML format).")
-        finally:
-            conn.close()
+        except Exception as e:
+            logger.error(f"Failed to store report: {e}")
 
         # 2. Send Notifications (Email & Web)
         import os
@@ -642,68 +629,93 @@ class DailyWorkflow(BaseWorkflow):
     def _parse_actionable_orders(self, final_report: str):
         """
         Parses the actionable orders table from the final report and populates the context.
+        Supports both Markdown pipe tables and HTML <table> formats.
+        解析最終報告中的可執行指令表格，支援 Markdown 與 HTML 格式。
         """
         try:
             import re
+            rows = []
+
+            # --- Strategy 1: Markdown pipe table (preferred) ---
             lines = final_report.split('\n')
             for i, line in enumerate(lines):
-                # Look for a table divider | --- | --- |
                 if '|' in line and '---' in line:
-                    # The previous line was likely the header
-                    # The following lines are data
                     for j in range(i + 1, len(lines)):
                         row_line = lines[j]
                         if not row_line.strip().startswith('|'):
-                            break # End of table
-                        
+                            break
                         cols = [c.strip() for c in row_line.split('|') if c.strip()]
                         if len(cols) >= 4:
-                            ticker = cols[0]
-                            action = cols[1]
-                            quantity = cols[2]
-                            
-                            try:
-                                # Clean score: might have " (High)" etc.
-                                score_raw = re.search(r"(\d+)", cols[3])
-                                score = int(score_raw.group(1)) if score_raw else 5
-                            except (ValueError, IndexError):
-                                score = 5
-                                
-                            u_act = action.upper()
-                            cio_signal = "HOLD"
-                            if any(x in u_act for x in ["BUY", "ACCUMULATE", "加碼", "買"]):
-                                cio_signal = "BUY"
-                            elif any(x in u_act for x in ["SELL", "TRIM", "REDUCE", "LIQUIDATE", "減碼", "出清", "賣", "避險"]):
-                                cio_signal = "SELL"
-                                
-                            if cio_signal != "HOLD":
-                                # Get price for performance tracing
-                                t_data = self.context.get('market_data', {}).get(ticker, {})
-                                t_price = 0
-                                if t_data:
-                                     raw = t_data.get('price_data', {}).get('close', 0)
-                                     if isinstance(raw, list) and raw: t_price = raw[-1]
-                                     else: t_price = raw
-                                
-                                if self.performance_service:
-                                    self.performance_service.record_recommendation(
-                                        agent_name="CIO",
-                                        ticker=ticker,
-                                        signal=cio_signal,
-                                        price=t_price
-                                    )
-                                
-                                if 'actionable_orders' not in self.context:
-                                    self.context['actionable_orders'] = []
-                                    
-                                self.context['actionable_orders'].append({
-                                    'ticker': ticker,
-                                    'action': cio_signal,
-                                    'quantity': quantity,
-                                    'score': score,
-                                    'reason': cols[4] if len(cols) >= 5 else f"CIO Daily Signal ({cio_signal})"
-                                })
-                    break # Only parse the first such table (Actionable Orders)
+                            rows.append(cols)
+                    break
+
+            # --- Strategy 2: HTML <table> fallback ---
+            if not rows:
+                # Find all <tr> blocks, skip header row
+                tr_blocks = re.findall(r'<tr[^>]*>(.*?)</tr>', final_report, re.DOTALL | re.IGNORECASE)
+                for tr in tr_blocks:
+                    # Skip header rows containing <th>
+                    if '<th' in tr.lower():
+                        continue
+                    tds = re.findall(r'<td[^>]*>(.*?)</td>', tr, re.DOTALL | re.IGNORECASE)
+                    cleaned = [re.sub(r'<[^>]+>', '', td).strip() for td in tds]
+                    if len(cleaned) >= 4:
+                        rows.append(cleaned)
+
+            if not rows:
+                logger.info("No Actionable Orders table found in CIO report.")
+                return
+
+            # --- Process parsed rows ---
+            for cols in rows:
+                ticker = cols[0].strip().upper()
+                action = cols[1]
+                quantity = cols[2]
+
+                try:
+                    score_raw = re.search(r"(\d+)", cols[3])
+                    score = int(score_raw.group(1)) if score_raw else 5
+                except (ValueError, IndexError):
+                    score = 5
+
+                u_act = action.upper()
+                cio_signal = "HOLD"
+                if any(x in u_act for x in ["BUY", "ACCUMULATE", "加碼", "買"]):
+                    cio_signal = "BUY"
+                elif any(x in u_act for x in ["SELL", "TRIM", "REDUCE", "LIQUIDATE", "減碼", "出清", "賣", "避險"]):
+                    cio_signal = "SELL"
+
+                if cio_signal != "HOLD":
+                    # Get price for performance tracing
+                    t_data = self.context.get('market_data', {}).get(ticker, {})
+                    t_price = 0
+                    if t_data:
+                         raw = t_data.get('price_data', {}).get('close', 0)
+                         if isinstance(raw, list) and raw: t_price = raw[-1]
+                         else: t_price = raw
+
+                    if self.performance_service:
+                        self.performance_service.record_recommendation(
+                            agent_name="CIO",
+                            ticker=ticker,
+                            signal=cio_signal,
+                            price=t_price
+                        )
+
+                    if 'actionable_orders' not in self.context:
+                        self.context['actionable_orders'] = []
+
+                    self.context['actionable_orders'].append({
+                        'ticker': ticker,
+                        'action': cio_signal,
+                        'quantity': quantity,
+                        'score': score,
+                        'reason': cols[4] if len(cols) >= 5 else f"CIO Daily Signal ({cio_signal})"
+                    })
+
+            if self.context.get('actionable_orders'):
+                logger.info(f"Parsed {len(self.context['actionable_orders'])} actionable orders from CIO report.")
+
         except Exception as e:
             logger.warning(f"Failed to parse Actionable Orders table: {e}")
 
