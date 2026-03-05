@@ -91,7 +91,7 @@ class EtoroService(IBroker):
                         parsed_value = json.loads(value)
                     else:
                         parsed_value = value
-                except:
+                except json.JSONDecodeError:
                     parsed_value = value
                 
                 if key == 'etoro_api_key':
@@ -461,7 +461,7 @@ class EtoroService(IBroker):
             try:
                 sig = f"{tx.ticker}_{tx.trade_date}_{tx.action}_{float(tx.quantity):.4f}_{float(tx.price):.4f}"
                 existing_sigs.add(sig)
-            except: continue
+            except (ValueError, TypeError, AttributeError): continue
 
         for trade in history:
             # instrumentId, openTimestamp, closeTimestamp, isBuy, units, openRate, closeRate, fees, netProfit
@@ -560,8 +560,9 @@ class EtoroService(IBroker):
         diff = broker_cash - local_cash
         
         # 3. Only adjust if difference is significant (> $0.50) and within safety cap
-        SYNC_THRESHOLD = 0.50
-        SAFETY_CAP = 500.0  # Reject corrections larger than $500 — indicates deeper issue
+        # Get dynamic thresholds (Rule 8 compliance)
+        SYNC_THRESHOLD = float(os.getenv("ETORO_CASH_SYNC_THRESHOLD", 0.50))
+        SAFETY_CAP = float(os.getenv("ETORO_CASH_SAFETY_CAP", 500.0))  # Reject corrections larger than cap — indicates deeper issue
         
         if abs(diff) > SYNC_THRESHOLD:
             if abs(diff) > SAFETY_CAP:

@@ -396,7 +396,7 @@ class BaseAgent(ABC):
                     try:
                         args = json.loads(args_str)
                         return (name, args)
-                    except:
+                    except json.JSONDecodeError:
                         return (name, {"arg": args_str})
         return None
 
@@ -470,7 +470,7 @@ class BaseAgent(ABC):
 
     def _mock_llm_call(self, prompt, system_prompt):
         import time
-        max_retries = 3
+        max_retries = self.config.get('max_retries', 3)
         
         for attempt in range(max_retries):
             if self.config.get('api_key'):
