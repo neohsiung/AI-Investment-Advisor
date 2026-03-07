@@ -23,7 +23,8 @@ class TestSettingsService:
         result = service.get_all_settings()
         
         assert result == {"key1": "value1", "key2": "value2"}
-        mock_repo.get_all.assert_called_once_with("user123")
+        # Should be called for both SYSTEM and user123
+        assert mock_repo.get_all.call_count == 2
     
     def test_get_all_settings_empty_table(self):
         """Test getting settings when table doesn't exist."""
@@ -44,7 +45,8 @@ class TestSettingsService:
         result = service.get_setting("test_key", default="default")
         
         assert result == "test_value"
-        mock_repo.get.assert_called_once_with("user123", "test_key", "default")
+        # repo.get is called with user_id, key, and None as default
+        mock_repo.get.assert_called_once_with("user123", "test_key", None)
     
     def test_get_setting_default(self):
         """Test getting a single setting with default value."""

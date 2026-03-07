@@ -151,27 +151,27 @@ class TestFMPProviderExtended:
         # FMP history is not implemented, should return empty DF
         assert len(df) == 0
     
-    def test_initialization_without_api_key_from_env(self, mock_settings):
-        """Test initialization gets API key from environment."""
-        with patch.dict('os.environ', {'FMP_API_KEY': 'env_fmp_key'}):
-            provider = FMPProvider(settings_service=mock_settings)
-            assert provider.api_key == 'env_fmp_key'
+    def test_initialization_with_settings_key(self, mock_settings):
+        """Test initialization gets API key from settings."""
+        mock_settings.get_all_settings.return_value = {'source_fmp_api_key': 'settings_fmp_key'}
+        provider = FMPProvider(settings_service=mock_settings)
+        assert provider.api_key == 'settings_fmp_key'
     
     def test_fetch_news_without_api_key(self, mock_settings):
         """Test fetch_news without API key returns empty list."""
-        with patch.dict('os.environ', {}, clear=True):
-            provider = FMPProvider(api_key=None, settings_service=mock_settings)
-            news = provider.fetch_news('AAPL', limit=5)
-            
-            assert news == []
+        mock_settings.get_all_settings.return_value = {}
+        provider = FMPProvider(api_key=None, settings_service=mock_settings)
+        news = provider.fetch_news('AAPL', limit=5)
+        
+        assert news == []
     
     def test_fetch_info_without_api_key(self, mock_settings):
         """Test fetch_info without API key returns empty dict."""
-        with patch.dict('os.environ', {}, clear=True):
-            provider = FMPProvider(api_key=None, settings_service=mock_settings)
-            info = provider.fetch_info('AAPL')
-            
-            assert info == {}
+        mock_settings.get_all_settings.return_value = {}
+        provider = FMPProvider(api_key=None, settings_service=mock_settings)
+        info = provider.fetch_info('AAPL')
+        
+        assert info == {}
     
     def test_fetch_current_prices_empty_ticker_list(self, mock_settings):
         """Test fetch_current_prices with empty ticker list."""

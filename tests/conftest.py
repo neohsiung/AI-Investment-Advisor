@@ -6,15 +6,18 @@ import pytest
 def pytest_configure(config):
     # This runs before any tests are collected or imported
     
+    # Define the pass-through decorator
+    def mock_cache_decorator(*args, **kwargs):
+        def decorator(func):
+            return func
+        return decorator
+    mock_cache_decorator.clear = MagicMock()
+
     # Mock Streamlit
     if "streamlit" not in sys.modules:
         mock_st = MagicMock()
-        def mock_cache_data(*args, **kwargs):
-            def decorator(func):
-                return func
-            return decorator
-        mock_cache_data.clear = MagicMock()
-        mock_st.cache_data = mock_cache_data
+        mock_st.cache_data = mock_cache_decorator
+        mock_st.cache_resource = mock_cache_decorator
         
         # Mock columns to handle spec variations
         def mock_columns(spec):
@@ -27,15 +30,15 @@ def pytest_configure(config):
         
         sys.modules["streamlit"] = mock_st
     else:
-        # If already imported (e.g. by another mock or early import), patch it
+        # If already imported, force patch the decorators
         mock_st = sys.modules["streamlit"]
-        if not hasattr(mock_st.cache_data, 'clear'):
-            def mock_cache_data(*args, **kwargs):
-                def decorator(func):
-                    return func
-                return decorator
-            mock_cache_data.clear = MagicMock()
-            mock_st.cache_data = mock_cache_data
+        try:
+            mock_st.cache_data = mock_cache_decorator
+            mock_st.cache_resource = mock_cache_decorator
+        except Exception:
+            # If it's a module that doesn't allow assignment, we might need a different approach
+            # but usually sys.modules contains a mock or a real module we can patch
+            pass
 
     # Mock other problematic modules
     problematic_modules = [

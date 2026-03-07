@@ -20,6 +20,11 @@ class TestTimeUtilsCoverage:
     
     @patch('src.utils.time_utils.get_db_connection')
     def test_get_db_timezone_found(self, mock_conn):
+        # Reset cache
+        import src.utils.time_utils
+        src.utils.time_utils._cached_timezone = None
+        src.utils.time_utils._cached_timezone_time = 0
+        
         # Mock DB return
         mock_result = MagicMock()
         mock_result.fetchone.return_value = ["Europe/London"]
@@ -30,6 +35,11 @@ class TestTimeUtilsCoverage:
         
     @patch('src.utils.time_utils.get_db_connection')
     def test_get_db_timezone_none(self, mock_conn):
+        # Reset cache
+        import src.utils.time_utils
+        src.utils.time_utils._cached_timezone = None
+        src.utils.time_utils._cached_timezone_time = 0
+        
         # Mock DB empty
         mock_result = MagicMock()
         mock_result.fetchone.return_value = None
@@ -40,6 +50,11 @@ class TestTimeUtilsCoverage:
 
     @patch('src.utils.time_utils.get_db_connection')
     def test_get_db_timezone_error(self, mock_conn):
+        # Reset cache
+        import src.utils.time_utils
+        src.utils.time_utils._cached_timezone = None
+        src.utils.time_utils._cached_timezone_time = 0
+        
         mock_conn.side_effect = Exception("DB Fail")
         tz = get_db_timezone()
         assert tz is None

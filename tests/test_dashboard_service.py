@@ -70,11 +70,15 @@ class TestDashboardService:
         # Mock market prices
         service._fetch_market_prices = Mock(return_value={'AAPL': 160, 'GOOGL': 2900})
         
+        # Mock Repository
+        service.transaction_repo.calculate_net_invested_capital = Mock(return_value=98500.0)
+        
         # Mock calculators
         service.calc.calculate_metrics = Mock(return_value={
             'nlv': 100000,
             'cash_balance': 50000,
-            'leverage_ratio': 1.2
+            'leverage_ratio': 1.2,
+            'tnv': 50000
         })
         service.pnl_calc.calculate_breakdown = Mock(return_value={
             'unrealized': 1000,
@@ -104,6 +108,9 @@ class TestDashboardService:
         })
         service.transaction_service.get_transactions = Mock(return_value=transactions_df)
         service._fetch_market_prices = Mock(return_value={'AAPL': 160})
+        
+        # Mock Repository
+        service.transaction_repo.calculate_net_invested_capital = Mock(return_value=100.0)
         
         # Mock calculator to raise exception
         service.calc.calculate_metrics = Mock(side_effect=Exception("Calculation error"))

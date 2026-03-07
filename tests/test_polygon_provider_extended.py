@@ -217,11 +217,11 @@ class TestPolygonProviderEdgeCases:
             
             assert len(df) == 0
     
-    def test_initialization_with_env_api_key(self, mock_settings):
-        """Test provider initialization from environment variable."""
-        with patch.dict('os.environ', {'POLYGON_API_KEY': 'env_test_key'}):
-            provider = PolygonProvider(settings_service=mock_settings)
-            assert provider.api_key == 'env_test_key'
+    def test_initialization_with_settings_api_key(self, mock_settings):
+        """Test provider initialization from settings."""
+        mock_settings.get_all_settings.return_value = {'source_polygon_api_key': 'settings_test_key'}
+        provider = PolygonProvider(settings_service=mock_settings)
+        assert provider.api_key == 'settings_test_key'
     
     def test_fetch_current_prices_partial_success(self, mock_settings):
         """Test when some tickers succeed and others fail."""

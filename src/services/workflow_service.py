@@ -218,6 +218,7 @@ class BaseWorkflow(ABC):
 
     async def distribute_report(self, content: str):
         """Store in DB and send Email asynchronously."""
+        title = f"Investment Report ({self.__class__.__name__}) - {get_current_time().strftime('%Y-%m-%d')}"
         try:
             from src.services.reporting_service import ReportingService
             reporting_service = ReportingService()

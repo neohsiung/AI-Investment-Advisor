@@ -59,6 +59,9 @@ class TestAuthManager:
         # Setup session state
         st_mock.session_state = {'connected': True, 'user_info': {'email': 'test@test.com'}}
         
+        # Ensure authenticator reports as authenticated
+        manager.authenticator.check_authentification.return_value = "AUTHENTICATED"
+        
         # We need to mock how get_current_user accesses session_state
         # src.auth imports st. If we reloaded auth, it uses mock_st.
         

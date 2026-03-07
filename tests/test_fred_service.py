@@ -25,18 +25,16 @@ def test_init_with_api_key(mock_settings):
 def test_init_without_api_key(mock_settings):
     """Test initialization without API key."""
     mock_settings.get_all_settings.return_value = {}
-    with patch.dict('os.environ', {}, clear=True):
-        with patch('fredapi.Fred') as MockFred:
-            service = FredService(settings_service=mock_settings)
-            assert service.client is None
+    with patch('fredapi.Fred') as MockFred:
+        service = FredService(settings_service=mock_settings)
+        assert service.client is None
 
-def test_init_from_env(mock_settings):
-    """Test initialization from environment variable."""
-    mock_settings.get_all_settings.return_value = {}
-    with patch.dict('os.environ', {'FRED_API_KEY': 'env_test_key'}):
-        with patch('fredapi.Fred') as MockFred:
-            service = FredService(settings_service=mock_settings)
-            MockFred.assert_called_once_with(api_key="env_test_key")
+def test_init_from_settings(mock_settings):
+    """Test initialization with key in settings."""
+    mock_settings.get_all_settings.return_value = {'source_fred_api_key': 'settings_test_key'}
+    with patch('fredapi.Fred') as MockFred:
+        service = FredService(settings_service=mock_settings)
+        MockFred.assert_called_once_with(api_key="settings_test_key")
 
 def test_init_error_handling(mock_settings):
     """Test error handling during initialization."""
@@ -49,10 +47,9 @@ def test_init_error_handling(mock_settings):
 def test_get_macro_indicators_no_client(mock_settings):
     """Test get_macro_indicators without initialized client."""
     mock_settings.get_all_settings.return_value = {}
-    with patch.dict('os.environ', {}, clear=True):
-        service = FredService(settings_service=mock_settings)
-        result = service.get_macro_indicators()
-        assert result == {}
+    service = FredService(settings_service=mock_settings)
+    result = service.get_macro_indicators()
+    assert result == {}
 
 def test_get_macro_indicators_success(mock_settings):
     """Test successful macro indicator retrieval."""

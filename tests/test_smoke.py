@@ -8,38 +8,36 @@ def test_dashboard_import_smoke():
     Smoke test to ensure dashboard imports without crashing.
     We mock streamlit to avoid actual UI rendering.
     """
-    with patch.dict(sys.modules, {'streamlit': MagicMock()}):
-        try:
-            # Use robust importlib loading to avoid "No module named src.Dashboard"
-            # if the environment treats imports differently.
-            import importlib.util
-            import os
+    # Streamlit is centrally mocked in conftest.py
+    try:
+        # Use robust importlib loading to avoid "No module named src.Dashboard"
+        # if the environment treats imports differently.
+        import importlib.util
+        import os
+        
+        file_path = "services/dashboard/src/app.py"
+        if not os.path.exists(file_path):
+            # Fallback if case sensitivity or path differs
+            if os.path.exists("services/dashboard/src/Dashboard.py"):
+                file_path = "services/dashboard/src/Dashboard.py"
+        
+        spec = importlib.util.spec_from_file_location("Dashboard", file_path)
+        if spec and spec.loader:
+            module = importlib.util.module_from_spec(spec)
+            sys.modules["src.Dashboard"] = module
             
-            file_path = "services/dashboard/src/app.py"
-            if not os.path.exists(file_path):
-                # Fallback if case sensitivity or path differs
-                if os.path.exists("services/dashboard/src/Dashboard.py"):
-                    file_path = "services/dashboard/src/Dashboard.py"
+            # Add services/dashboard to sys.path so Dashboard can find its own 'src'
+            dashboard_root = os.path.abspath("services/dashboard")
+            if dashboard_root not in sys.path:
+                sys.path.insert(0, dashboard_root)
             
-            spec = importlib.util.spec_from_file_location("Dashboard", file_path)
-            if spec and spec.loader:
-                module = importlib.util.module_from_spec(spec)
-                sys.modules["src.Dashboard"] = module
-                
-                # Add services/dashboard to sys.path so Dashboard can find its own 'src'
-                dashboard_root = os.path.abspath("services/dashboard")
-                if dashboard_root not in sys.path:
-                    sys.path.insert(0, dashboard_root)
-                
-                spec.loader.exec_module(module)
-            else:
-                pytest.fail(f"Could not find Dashboard main entry at {file_path}")
-                
-        except Exception as e:
-            pytest.fail(f"Dashboard import failed: {e}")
-        finally:
-            if "src.Dashboard" in sys.modules:
-                del sys.modules["src.Dashboard"]
+            spec.loader.exec_module(module)
+        else:
+            pytest.fail(f"Could not find Dashboard main entry at {file_path}")
+            
+    finally:
+        if "src.Dashboard" in sys.modules:
+            del sys.modules["src.Dashboard"]
 
 def test_cli_scheduler_mode():
     """
@@ -61,16 +59,16 @@ def test_cli_scheduler_mode():
             mock_instance.job_daily_check.assert_called()
 
 def test_pages_import_smoke():
-    with patch.dict(sys.modules, {'streamlit': MagicMock()}):
-        try:
-            # Use importlib to import arbitrary filenames
-            import importlib.util
-            import os
-            
-            # 5_Data_Management.py
-            spec = importlib.util.spec_from_file_location("DataManagement", "services/dashboard/src/05_Data_Management.py")
-            module = importlib.util.module_from_spec(spec)
-            # spec.loader.exec_module(module) # This executes top-level code, which creates widgets. Might crash even with mocks.
-            # Just creating the spec and module proves syntax is okay.
-        except Exception as e:
-            pytest.fail(f"Page import failed: {e}")
+    # Streamlit is centrally mocked in conftest.py
+    try:
+        # Use importlib to import arbitrary filenames
+        import importlib.util
+        import os
+        
+        # 5_Data_Management.py
+        spec = importlib.util.spec_from_file_location("DataManagement", "services/dashboard/src/05_Data_Management.py")
+        module = importlib.util.module_from_spec(spec)
+        # spec.loader.exec_module(module) # This executes top-level code, which creates widgets. Might crash even with mocks.
+        # Just creating the spec and module proves syntax is okay.
+    except Exception as e:
+        pytest.fail(f"Page import failed: {e}")

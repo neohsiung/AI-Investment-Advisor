@@ -77,13 +77,12 @@ class TestPolygonProviderExtended:
     
     def test_initialization_without_api_key(self, mock_settings):
         """Test provider initialization without API key."""
-        # Ensure environment and settings don't have the key
-        with patch.dict('os.environ', {}, clear=True), \
-             patch.object(mock_settings, 'get_all_settings', return_value={}):
-            provider = PolygonProvider(settings_service=mock_settings)
-            
-            # Should warn but not fail
-            assert provider.api_key is None or provider.api_key == ""
+        # Ensure settings don't have the key
+        mock_settings.get_all_settings.return_value = {}
+        provider = PolygonProvider(settings_service=mock_settings)
+        
+        # Should warn but not fail
+        assert provider.api_key is None or provider.api_key == ""
         
         # fetch should return empty dict
         prices = provider.fetch_current_prices(['AAPL'])
@@ -179,12 +178,12 @@ class TestFMPProviderExtended:
             assert data is not None
             assert data.get('sector') == 'Technology'
     
-    def test_initialization_with_env_fallback(self, mock_settings):
-        """Test provider falls back to environment variable."""
-        with patch.dict('os.environ', {'FMP_API_KEY': 'env_key'}):
-            provider = FMPProvider(settings_service=mock_settings)
-            
-            assert provider.api_key == 'env_key'
+    def test_initialization_with_settings_key(self, mock_settings):
+        """Test provider gets API key from settings."""
+        mock_settings.get_all_settings.return_value = {'source_fmp_api_key': 'settings_key'}
+        provider = FMPProvider(settings_service=mock_settings)
+        
+        assert provider.api_key == 'settings_key'
     
     def test_fetch_current_prices_multiple_tickers(self, mock_settings):
         """Test fetching prices for multiple tickers."""

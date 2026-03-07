@@ -40,5 +40,5 @@ def test_intent_classifier_exception(mock_agent):
         
         # Test exception during run, not init
         mock_agent.run.side_effect = Exception("LLM Error")
-        result = classifier.classify("Approve")
+        result = classifier.classify("I think we should proceed")
         assert result == "UNKNOWN"

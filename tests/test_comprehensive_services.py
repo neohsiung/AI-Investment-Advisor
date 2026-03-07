@@ -7,8 +7,7 @@ import pandas as pd
 from datetime import datetime
 import sys
 
-# Mock streamlit
-sys.modules["streamlit"] = MagicMock()
+# Mock problematic modules (Streamlit is centrally mocked in conftest.py)
 sys.modules["plotly.express"] = MagicMock()
 sys.modules["streamlit.components.v1"] = MagicMock()
 

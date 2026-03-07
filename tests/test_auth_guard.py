@@ -2,8 +2,7 @@ import pytest
 from unittest.mock import MagicMock, patch
 import sys
 
-# Mock all dependencies before importing
-sys.modules["streamlit"] = MagicMock()
+# Streamlit is centrally mocked in conftest.py
 sys.modules["extra_streamlit_components"] = MagicMock()
 sys.modules["google_auth_oauthlib"] = MagicMock()
 sys.modules["google_auth_oauthlib.flow"] = MagicMock()

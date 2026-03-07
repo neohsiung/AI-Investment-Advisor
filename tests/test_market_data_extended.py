@@ -233,7 +233,7 @@ class TestMarketDataServiceFixed:
     def test_get_web_intelligence(self, service, mock_providers):
         mock_providers['search'].search_financial_context.return_value = [{'title': 'Intel', 'snippet': 'moat'}]
         result = service.get_web_intelligence('AAPL')
-        assert len(result) == 2 # Called twice with 2 queries
+        assert len(result) == 1 # Now called once with an optimized query (v4.3 requirement)
         assert result[0]['title'] == 'Intel'
 
     def test_get_ohlcv_provider_exception(self, service, mock_providers):
