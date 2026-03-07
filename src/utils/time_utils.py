@@ -4,8 +4,13 @@ import pytz
 from src.data.database import get_db_connection
 from sqlalchemy import text
 
+import time
+
 # Default timezone
 DEFAULT_TIMEZONE = "Asia/Taipei"
+
+_cached_timezone = None
+_cached_timezone_time = 0
 
 def get_db_timezone():
     """
@@ -13,6 +18,11 @@ def get_db_timezone():
     Returns None if not found or error.
     嘗試從資料庫獲取顯示時區。若未找到或發生錯誤則回傳 None。
     """
+    global _cached_timezone, _cached_timezone_time
+    now = time.time()
+    if _cached_timezone and (now - _cached_timezone_time) < 60:
+        return _cached_timezone
+        
     try:
         conn = get_db_connection()
         # Assuming 'SYSTEM' user or global setting for display timezone
@@ -21,7 +31,9 @@ def get_db_timezone():
         result = conn.execute(query).fetchone()
         conn.close()
         if result:
-            return result[0]
+            _cached_timezone = result[0]
+            _cached_timezone_time = now
+            return _cached_timezone
     except Exception as e:
         # DB might not be ready or reachable
         pass # nosec

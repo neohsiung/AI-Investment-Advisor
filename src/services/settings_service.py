@@ -21,51 +21,92 @@ class SettingsService:
         self.settings_repo = settings_repo or AlchemySettingsRepository()
         self.prompt_repo = prompt_repo or AlchemyPromptRepository()
 
+    def _get_effective_uid(self) -> str:
+        """
+        Determine the effective human user ID for settings retrieval.
+        Stricly avoids internal 'system' users in single-user setups.
+        """
+        # Internal known system IDs to be redirected
+        system_ids = ('SYSTEM', 'system', 'None', '', None)
+        
+        target_uid = self.user_id
+        if target_uid not in system_ids:
+            return target_uid
+             
+        # Resolve to the actual human user
+        try:
+            from sqlalchemy import text
+            engine = self.settings_repo.engine
+            with engine.connect() as conn:
+                # Find the primary human user
+                query = text("""
+                    SELECT user_id FROM settings 
+                    WHERE user_id NOT IN ('SYSTEM', 'system') 
+                    GROUP BY user_id 
+                    ORDER BY COUNT(*) DESC 
+                    LIMIT 1
+                """)
+                result = conn.execute(query).fetchone()
+                if result:
+                    return result[0]
+        except Exception:
+            pass
+             
+        return target_uid or 'SYSTEM' # Last resort if DB is empty
+
     def get_all_settings(self) -> Dict[str, str]:
         """
         Retrieves all settings from the database for the current user.
         為目前使用者從資料庫檢索所有設定。
         """
         settings = {}
-        target_uid = self.user_id or 'SYSTEM'
+        target_uid = self._get_effective_uid()
         
         try:
+            # 1. Fetch SYSTEM fallback first (if we aren't already targeting SYSTEM)
+            if target_uid != 'SYSTEM':
+                system_rows = self.settings_repo.get_all('SYSTEM')
+                for key, value in system_rows:
+                    settings[key] = self._parse_setting_value(value)
+            
+            # 2. Fetch effective user (which might be the discovery human user)
             rows = self.settings_repo.get_all(target_uid)
             
             for key, value in rows:
-                # v4.1.1: Auto-decode JSON strings if they look like JSON
-                import json
-                if isinstance(value, str):
-                    if value.startswith(('{', '[')):
-                        try:
-                            settings[key] = json.loads(value)
-                        except json.JSONDecodeError:
-                            settings[key] = value
-                    else:
-                        settings[key] = value
-                else:
-                    settings[key] = value
+                settings[key] = self._parse_setting_value(value)
         except Exception as e:
             print(f"Error loading settings: {e}")
             
         return settings
+
+    def _parse_setting_value(self, value: Any) -> Any:
+        # v4.1.1: Auto-decode JSON strings if they look like JSON
+        import json
+        if isinstance(value, str):
+            if value.startswith(('{', '[')):
+                try:
+                    return json.loads(value)
+                except json.JSONDecodeError:
+                    return value
+            else:
+                return value
+        return value
 
     def get_setting(self, key: str, default: Any = None) -> Any:
         """
         Retrieves a single setting value by its key.
         根據鍵值檢索單一設定值。
         """
-        target_uid = self.user_id or 'SYSTEM'
+        target_uid = self._get_effective_uid()
         try:
-            val = self.settings_repo.get(target_uid, key, default)
+            val = self.settings_repo.get(target_uid, key, None)
+            if val is None and target_uid != 'SYSTEM':
+                val = self.settings_repo.get('SYSTEM', key, None)
             
-            import json
-            if isinstance(val, str) and val.startswith(('{', '[')):
-                try:
-                    return json.loads(val)
-                except json.JSONDecodeError:
-                    pass
-            return val
+            if val is None:
+                return default
+                
+            return self._parse_setting_value(val)
         except Exception:
             return default
 

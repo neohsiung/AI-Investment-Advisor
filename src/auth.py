@@ -98,8 +98,8 @@ class AuthManager:
         """
         Returns a dict with user info: {'email': ..., 'name': ..., 'picture': ...}
         """
-        if self.check_login():
-            user_info = st.session_state.get('user_info', {})
+        if self.check_login() == "AUTHENTICATED":
+            user_info = st.session_state.get('user_info') or {}
             # Ensure email is present
             if 'email' not in user_info:
                 # Fallback or strict error

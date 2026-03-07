@@ -547,12 +547,10 @@ class EtoroService(IBroker):
         broker_cash = account.available_cash
 
         # 1. Delete any previous CASH sync entries to prevent circular corrections
-        #    These are identified by ticker='CASH' and source_file='ETORO_SYNC'
-        with self.transaction_repo.engine.begin() as conn:
-            conn.execute(
-                text("DELETE FROM transactions WHERE user_id = :uid AND ticker = 'CASH' AND source_file = 'ETORO_SYNC'"),
-                {"uid": user_id}
-            )
+        # 1. We no longer blindly delete existing 'ETORO_SYNC' CASH entries.
+        # Instead, we recalculate based on the current state and only add a delta if needed.
+        # Original code deleted them here, which caused frequent drift.
+        pass
 
         # 2. Recalculate local cash WITHOUT our own sync entries
         local_cash = self.transaction_repo.get_cash_balance(user_id)
@@ -602,8 +600,14 @@ class EtoroService(IBroker):
         active_tickers = self.transaction_repo.get_active_tickers(user_id)
         
         for pos in positions:
+            # Avoid numeric IDs if we already have the named ticker
+            if pos.symbol.isdigit():
+                 # Look if we have a named ticker that might match this qty (approximate)
+                 # Or just skip numeric IDs if we want to be safe, as named ones come from sync_history
+                 continue
+
             if pos.symbol not in active_tickers:
-                logger.info(f"Backfilling Position: Missing BUY for {pos.symbol}")
+                logger.info(f"Backfilling Position: Missing BUY for {pos.symbol}, Leverage={getattr(pos, 'leverage', 1.0)}")
                 # Create synthetic BUY record
                 self.transaction_repo.add(
                     user_id=user_id,
@@ -612,7 +616,8 @@ class EtoroService(IBroker):
                     action="BUY",
                     quantity=pos.quantity,
                     price=pos.open_price,
-                    fees=0.0
+                    fees=0.0,
+                    leverage=getattr(pos, 'leverage', 1.0)
                 )
 
     # --- Helpers ---

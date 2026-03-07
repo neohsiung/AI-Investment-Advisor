@@ -44,12 +44,12 @@
     border: 1px solid var(--saas-border);
     border-radius: var(--saas-radius-xl);
     padding: 1.5rem;
-    box-shadow: var(--saas-shadow, 0 1px 3px rgba(0,0,0,0.08));
+    box-shadow: var(--saas-shadow, 0 1px 3px rgba(0, 0, 0, 0.08));
     transition: var(--saas-transition);
 }
 
 .saas-card:hover {
-    box-shadow: var(--saas-shadow-hover, 0 10px 15px -3px rgba(0,0,0,0.08));
+    box-shadow: var(--saas-shadow-hover, 0 10px 15px -3px rgba(0, 0, 0, 0.08));
     border-color: var(--saas-primary);
     transform: translateY(-1px);
 }
@@ -106,22 +106,105 @@
     background: var(--saas-text-muted);
 }
 
-/* Hide Streamlit Clutter */
+/* Hide Streamlit Clutter & Fix Top Whitespace */
+header[data-testid="stHeader"],
 #MainMenu,
-footer,
-header[data-testid="stHeader"] .st-emotion-cache-1offfwp {
+footer {
     visibility: hidden;
+    height: 0;
+    padding: 0;
+}
+
+[data-testid="stAppViewBlockContainer"] {
+    padding-top: 1.5rem !important;
+}
+
+.stMainBlockContainer {
+    padding-top: 1.5rem !important;
 }
 
 /* Clean Header Typography */
-h1, h2, h3, h4 {
+h1,
+h2,
+h3,
+h4 {
     font-family: 'Outfit', sans-serif !important;
     font-weight: 700 !important;
     color: var(--saas-text-main) !important;
 }
 
 /* Status Badge Utility Classes */
-.saas-badge-success { color: var(--saas-success); background: var(--saas-success-bg); }
-.saas-badge-warning { color: var(--saas-warning); background: var(--saas-warning-bg); }
-.saas-badge-danger  { color: var(--saas-danger);  background: var(--saas-danger-bg);  }
-.saas-badge-info    { color: var(--saas-info);    background: var(--saas-info-bg);    }
+.saas-badge-success {
+    color: var(--saas-success);
+    background: var(--saas-success-bg);
+}
+
+.saas-badge-warning {
+    color: var(--saas-warning);
+    background: var(--saas-warning-bg);
+}
+
+.saas-badge-danger {
+    color: var(--saas-danger);
+    background: var(--saas-danger-bg);
+}
+
+.saas-badge-info {
+    color: var(--saas-info);
+    background: var(--saas-info-bg);
+}
+
+/* Reliable CSS Tooltips for ⓘ Icons */
+.saas-tooltip {
+    position: relative;
+    display: inline-flex;
+    cursor: help;
+    margin-left: 6px;
+    align-items: center;
+    justify-content: center;
+    color: var(--saas-primary);
+    font-weight: bold;
+    font-size: 0.85rem;
+}
+
+.saas-tooltip .saas-tooltip-text {
+    visibility: hidden;
+    width: 220px;
+    background-color: var(--saas-card-bg);
+    color: var(--saas-text-main);
+    text-align: left;
+    border-radius: var(--saas-radius-md);
+    padding: 10px;
+    position: absolute;
+    z-index: 9999;
+    bottom: 140%;
+    left: 50%;
+    transform: translateX(-50%);
+    opacity: 0;
+    transition: opacity 0.2s, visibility 0.2s;
+    border: 1px solid var(--saas-border);
+    box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.15);
+    font-size: 0.72rem;
+    font-weight: 400;
+    text-transform: none;
+    line-height: 1.4;
+    white-space: normal;
+    pointer-events: none;
+}
+
+/* Tooltip Arrow */
+.saas-tooltip .saas-tooltip-text::after {
+    content: "";
+    position: absolute;
+    top: 100%;
+    left: 50%;
+    margin-left: -5px;
+    border-width: 5px;
+    border-style: solid;
+    border-color: var(--saas-border) transparent transparent transparent;
+}
+
+.saas-tooltip:hover .saas-tooltip-text {
+    visibility: visible;
+    opacity: 1;
+}

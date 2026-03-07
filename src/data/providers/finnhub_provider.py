@@ -21,7 +21,7 @@ class FinnhubProvider(MarketDataProvider):
 
     def _get_api_key(self) -> str:
         settings = self.settings_service.get_all_settings()
-        return settings.get("source_finnhub_api_key") or settings.get("FINNHUB_API_KEY") or os.getenv("FINNHUB_API_KEY", "")
+        return settings.get("source_finnhub_api_key") or settings.get("FINNHUB_API_KEY")
 
     @trace_external_call("finnhub")
     def fetch_current_prices(self, tickers: List[str]) -> Dict[str, float]:

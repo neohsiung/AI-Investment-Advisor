@@ -142,10 +142,14 @@ class AlchemyVerificationRepository(BaseRepository, IVerificationRepository):
         Get any pending, non-expired verification for a user (ORM).
         取得使用者任何頻道的待處理驗證 (ORM)。
         """
+        # Improved: Check both user_id (internal) AND channel_user_id (external/platform ID)
         verif = self.session.query(ChannelVerification).filter(
-            or_(ChannelVerification.user_id == user_id, ChannelVerification.channel_user_id == user_id),
+            or_(
+                ChannelVerification.user_id == user_id, 
+                ChannelVerification.channel_user_id == user_id
+            ),
             ChannelVerification.status == 'pending',
-            ChannelVerification.expires_at > datetime.datetime.now(datetime.timezone.utc)
+            ChannelVerification.expires_at > datetime.datetime.utcnow() # Use UTC
         ).order_by(desc(ChannelVerification.created_at)).first()
         return self._to_dict(verif) if verif else None
 

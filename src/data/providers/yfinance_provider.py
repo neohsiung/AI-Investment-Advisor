@@ -40,11 +40,12 @@ class YFinanceProvider(MarketDataProvider):
         
         # 1. Try Bulk Download (Fastest)
         try:
-            data = yf.download(tickers, period="1d", auto_adjust=True, progress=False, session=self.session)
+            # Setting threads=False often avoids "Exception('%ticker%')" thread-lock issues in yfinance
+            data = yf.download(tickers, period="1d", auto_adjust=True, progress=False, session=self.session, threads=False)
             
             if len(tickers) == 1:
                 ticker = tickers[0]
-                if not data.empty:
+                if not data.empty and 'Close' in data:
                     val = data['Close'].iloc[-1]
                     if isinstance(val, pd.Series): val = val.item()
                     prices[ticker] = val
@@ -52,12 +53,19 @@ class YFinanceProvider(MarketDataProvider):
                  if not data.empty and 'Close' in data.columns:
                     close_data = data['Close']
                     for ticker in tickers:
-                        if ticker in close_data.columns:
-                            val = close_data[ticker].iloc[-1]
-                            if pd.notna(val):
-                                prices[ticker] = val
+                        # Depending on yfinance version, columns could be flat or MultiIndex
+                        if isinstance(close_data, pd.DataFrame):
+                            if ticker in close_data.columns:
+                                val = close_data[ticker].iloc[-1]
+                                if pd.notna(val):
+                                    prices[ticker] = val
+                        elif isinstance(close_data, pd.Series):
+                            # Edge case where MultiIndex flattens unexpectedly
+                            if ticker == close_data.name:
+                                prices[ticker] = close_data.iloc[-1]
+                                
         except Exception as e:
-            self.logger.warning(f"YFinance bulk fetch failed: {e}. Trying individual fallback.")
+            self.logger.warning(f"YFinance bulk fetch failed: {type(e).__name__} - {e}. Trying individual fallback.")
 
         # 2. Check for Missing Tickers (Fallback)
         missing_tickers = [t for t in tickers if t not in prices]

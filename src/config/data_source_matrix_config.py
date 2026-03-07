@@ -2,6 +2,7 @@
 Centralized Configuration for the Data Source Matrix.
 統一數據源矩陣設定，作為 Frontend UI 與 Backend (Sentinel) Polling 邏輯的唯一真實來源 (Source of Truth)。
 """
+from typing import List, Dict, Any, Optional
 
 DATA_SOURCE_GROUPS = {
     "總體經濟 (Macro - P0)": {
@@ -241,7 +242,7 @@ DATA_SOURCE_GROUPS = {
     }
 }
 
-def get_pollable_sources() -> list[str]:
+def get_pollable_sources() -> List[str]:
     """
     Returns a list of source IDs that should be actively polled by Sentinel.
     """
@@ -252,7 +253,7 @@ def get_pollable_sources() -> list[str]:
                 pollable.append(source["id"])
     return pollable
 
-def get_webhook_sources() -> list[str]:
+def get_webhook_sources() -> List[str]:
     """
     Returns a list of source IDs that operate via webhooks.
     """
@@ -262,3 +263,13 @@ def get_webhook_sources() -> list[str]:
             if source.get("trigger_type") == "webhook":
                 webhooks.append(source["id"])
     return webhooks
+
+def get_source_schema(source_id: str) -> Optional[Dict[str, Any]]:
+    """
+    Returns the schema definition for a given source_id.
+    """
+    for group in DATA_SOURCE_GROUPS.values():
+        for source in group["sources"]:
+            if source["id"] == source_id:
+                return source
+    return None

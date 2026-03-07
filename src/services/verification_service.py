@@ -2,6 +2,7 @@ from src.utils.logger import setup_logger
 logger = setup_logger("VerificationService")
 
 import datetime
+import uuid
 from typing import Dict, Any, Tuple, Optional
 from src.repositories.verification_repository import AlchemyVerificationRepository
 from src.services.notification_service import NotificationService
@@ -118,9 +119,26 @@ class VerificationService:
                     channel_user_id = settings.get(key)
 
             # 4. Persist State
-            verification_id = self.repo.create_verification(user_id, channel, code, expires_at, channel_user_id=channel_user_id)
-            if not verification_id:
-                return False, "Database error: Failed to create verification record.", None
+            # Correctly align arguments: user_id, channel, channel_user_id, code, expires_at
+            # repo.create_verification doesn't return the ID, so we must retrieve it or generate one here
+            verif_id = str(uuid.uuid4())
+            
+            # Note: I'm patching the repository call to include the ID if possible, 
+            # or relying on the fact that AlchemyVerificationRepository.create_verification 
+            # might already generate one but we need to return it to the caller.
+            # Looking at verification_repository.py, it generates its own UUID.
+            
+            self.repo.create_verification(
+                user_id=user_id, 
+                channel=channel, 
+                channel_user_id=channel_user_id, 
+                code=code, 
+                expires_at=expires_at
+            )
+            
+            # Since create_verification doesn't return the ID, we query the latest one
+            latest = self.repo.get_by_user_id(user_id, channel)
+            verification_id = latest.get('id') if latest else None
 
             return True, "Verification message sent. Waiting for reply.", verification_id
 

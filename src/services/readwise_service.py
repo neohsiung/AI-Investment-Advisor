@@ -39,7 +39,8 @@ class ReadwiseService:
                 
                 analysis = self.analyze_highlight(text, book_id=str(book_id), note=highlight.get("note", ""))
                 
-                if analysis.get("is_investment_related"):
+                # Ensure analysis is a dict before calling .get()
+                if isinstance(analysis, dict) and analysis.get("is_investment_related"):
                     analyzed_highlights.append({
                         "id": highlight.get("id"),
                         "text": text,

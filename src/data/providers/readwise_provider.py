@@ -19,7 +19,7 @@ class ReadwiseProvider:
     def _get_api_key(self) -> str:
         settings = self.settings_service.get_all_settings()
         # UI saves it as source_readwise_api_key
-        return settings.get("source_readwise_api_key") or settings.get("READWISE_API_KEY") or os.getenv("READWISE_API_KEY", "")
+        return settings.get("source_readwise_api_key") or settings.get("READWISE_API_KEY")
 
     @trace_external_call("readwise")
     def fetch_highlights(self, updated_after: Optional[str] = None) -> List[Dict[str, Any]]:

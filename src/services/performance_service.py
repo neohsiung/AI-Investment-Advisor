@@ -30,25 +30,26 @@ class PerformanceService:
         """
         return _self.market_service.get_current_prices(tickers)
 
-    def prepare_performance_data(self) -> Dict[str, Any]:
+    @st.cache_data(ttl=60, show_spinner=False)
+    def prepare_performance_data(_self) -> Dict[str, Any]:
         """
         Fetch all data needed for the performance page.
         獲取績效頁面所需的所有數據。
         """
         # 1. Fetch active tickers and prices
-        active_tickers = self.trans_repo.get_active_tickers(self.user_id)
-        current_prices = self._fetch_prices(active_tickers) if active_tickers else {}
+        active_tickers = _self.trans_repo.get_active_tickers(_self.user_id)
+        current_prices = _self._fetch_prices(active_tickers) if active_tickers else {}
 
         # 2. Trigger snapshot update with pre-fetched prices
-        self.analytics_service.trigger_snapshot_update(current_prices=current_prices)
-        pnl_data = self.analytics_service.get_pnl_breakdown(current_prices)
+        _self.analytics_service.trigger_snapshot_update(current_prices=current_prices)
+        pnl_data = _self.analytics_service.get_pnl_breakdown(current_prices)
         
         # 確保 pnl_data 不為 None
         if pnl_data is None:
             pnl_data = {'realized': 0, 'unrealized': 0, 'total': 0, 'details': {}}
 
         # 3. Get performance history
-        history_df = self.analytics_service.get_performance_history()
+        history_df = _self.analytics_service.get_performance_history()
         
         # 確保 history_df 不為 None
         if history_df is None:

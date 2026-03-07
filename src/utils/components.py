@@ -59,8 +59,13 @@ def saas_metric(label, value, delta=None, delta_color="normal", icon=None, help=
     </div>
     """ if icon else ""
 
-    # Tooltip CSS/HTML
-    help_html = f'''<span style="cursor: help; margin-left: 4px;" title="{help}">ⓘ</span>''' if help else ""
+    # Reliable CSS Tooltip
+    help_html = f'''
+    <div class="saas-tooltip">
+        ⓘ
+        <span class="saas-tooltip-text">{help}</span>
+    </div>
+    ''' if help else ""
 
     safe_html(f"""
     <div class="saas-card" style="height: 100%; padding: var(--saas-spacing-sm); background: var(--saas-card-bg); border-color: var(--saas-border);">

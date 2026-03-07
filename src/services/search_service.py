@@ -37,8 +37,8 @@ class InternetSearchService:
         
         # Initialize Tavily (Primary)
         self.tavily_client = None
-        # Priority: DB -> Env
-        tavily_api_key = settings.get("source_tavily_api_key") or os.getenv("TAVILY_API_KEY")
+        # Priority: DB
+        tavily_api_key = settings.get("source_tavily_api_key")
         tavily_enabled = settings.get("source_tavily_enabled", "true") == "true"
         
         if tavily_api_key and tavily_enabled:
@@ -106,9 +106,9 @@ class InternetSearchService:
                         self.cache[query] = (time.time(), results)
                         return results
             except Exception as e:
-                error_msg = str(e)
+                error_msg = str(e).lower()
                 self.logger.warning(f"Tavily search failed: {error_msg}. Falling back to DuckDuckGo.")
-                if "exceeds your plan" in error_msg.lower() or "limit" in error_msg.lower():
+                if any(k in error_msg for k in ["exceeds your plan", "limit", "429", "too many requests", "exhausted", "insufficient_balance"]):
                     self.logger.error("Tavily API quota exhausted. Disabling Tavily for this session.")
                     self._tavily_exhausted = True
 
@@ -128,9 +128,9 @@ class InternetSearchService:
     def _search_duckduckgo(self, query: str, max_results: int) -> List[Dict[str, str]]:
         """
         DuckDuckGo fallback search with retry logic.
-        DuckDuckGo 備援搜尋，含重試邏輯。
+        DuckDuckGo 備援搜尋，降低重試次數避免阻塞 Dashboard。
         """
-        retries = 2
+        retries = 1 # 降低重試次數，避免超時 (Reduce retries to avoid timeout)
         results = []
         last_error = None
 
@@ -149,11 +149,15 @@ class InternetSearchService:
                     break
             except Exception as e:
                 last_error = e
-                self.logger.warning(f"DuckDuckGo attempt {attempt+1} failed: {e}")
-                time.sleep(3 * (attempt + 1)) # Wait longer for DDG rate limit
+                # 取得更詳細的錯誤名稱以防 str(e) 為空
+                self.logger.warning(f"DuckDuckGo attempt {attempt+1} failed: {type(e).__name__} - {e}")
+                
+                 # 若已達最後一次重試，不需要再 sleep
+                if attempt < retries:
+                    time.sleep(1) # 縮短等待時間 (Shorten wait time)
 
         if not results:
-            self.logger.warning(f"DuckDuckGo search failed after retries. Last Error: {last_error}")
+            self.logger.warning(f"DuckDuckGo search failed after retries. Last Error: {type(last_error).__name__} - {last_error}")
         return results
 
     def get_ticker_moat_and_catalyst(self, ticker: str) -> List[Dict[str, str]]:

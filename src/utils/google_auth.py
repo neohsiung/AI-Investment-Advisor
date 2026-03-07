@@ -75,17 +75,30 @@ class GoogleAuth:
                 
                 # Prevent Double Execution (Fix invalid_grant)
                 if st.session_state.get("last_used_code") == code:
-                    # We already fetched tokens for this code, so just show the success screen
-                    st.success("✅ **登入成功！請點擊按鈕進入系統 (Login successful! Click to enter)**")
-                    
-                    if st.button("🚀 進入系統 (Enter System)", type="primary", use_container_width=True):
-                        st.session_state['connected'] = True
+                    # Only show success screen if we ACTUALLY have the user info
+                    if st.session_state.get('user_info'):
+                        # We already fetched tokens for this code, so just show the success screen
+                        st.success("✅ **登入成功！請點擊按鈕進入系統 (Login successful! Click to enter)**")
+                        
+                        if st.button("🚀 進入系統 (Enter System)", type="primary", use_container_width=True):
+                            st.session_state['connected'] = True
+                            try:
+                                st.query_params.clear()
+                            except Exception as e:
+                                pass
+                            st.rerun()
+                        return
+                    else:
+                        # Corrupted state: code exists, but user_info is gone (e.g., from an error logout).
+                        # Since OAuth codes are single-use, we CANNOT fetch again. 
+                        # We must clear the URL parameters and force a fresh login attempt.
+                        if "last_used_code" in st.session_state:
+                            del st.session_state["last_used_code"]
                         try:
                             st.query_params.clear()
-                        except Exception as e:
+                        except Exception:
                             pass
                         st.rerun()
-                    return
 
                 st.session_state["last_used_code"] = code
 
@@ -106,44 +119,49 @@ class GoogleAuth:
                     "sub": id_info.get("sub")
                 }
 
-                # Store user info in session
+                # Store user info in session IMMEDIATELY
                 st.session_state['user_info'] = user_info
                 st.session_state['oauth_id'] = id_info.get("sub")
+                st.session_state['connected'] = True
                 
                 # Persist in Cookie (expires in 7 days) via CookieManager
                 import datetime
                 expires_at = datetime.datetime.now() + datetime.timedelta(days=7)
                 self.cookie_manager.set(self.cookie_name, user_info, expires_at=expires_at)
 
-                st.success("✅ **登入成功！請點擊按鈕進入系統 (Login successful! Click to enter)**")
+                # Clear query params so refresh doesn't trigger invalid_grant
+                try:
+                    st.query_params.clear()
+                except Exception:
+                    pass
+
+                st.success("✅ **登入成功！正在進入系統... (Login successful! Entering system...)**")
                 
-                if st.button("🚀 進入系統 (Enter System)", type="primary", use_container_width=True):
-                    # Sync state immediately into session
-                    st.session_state['connected'] = True
-                    # Clear query params internally on click
-                    try:
-                        st.query_params.clear()
-                    except Exception as e:
-                        pass
-                    st.rerun()
-                
-                return # Crucial to abort execution so the frontend renders CookieManager iframe
+                # Use a small sleep to ensure the frontend receives the CookieManager iframe
+                time.sleep(1.0)
+                st.rerun()
 
             except Exception as e:
                 if type(e).__name__ in ("RerunException", "RerunData", "StopException"):
                     raise  # Let Streamlit handle its internal control flow exceptions
                 
-                # Handle 'invalid_grant' - usually means reuse of Authorization Code
-                # 處理 'invalid_grant' 錯誤 - 通常表示授權碼被重複使用
-                st.error(f"Login failed: {e}")
-                
-                # Automatically clear invalid query params to allow retry
-                try:
-                    st.query_params.clear()
-                    time.sleep(1) 
+                error_str = str(e)
+                if "invalid_grant" in error_str.lower():
+                    # Handle 'invalid_grant' - usually means reuse of Authorization Code (e.g. F5 refresh on callback page)
+                    # 處理 'invalid_grant' 錯誤 - 默默清空過期授權碼並重整，不要顯示嚇人的錯誤
+                    try:
+                        st.query_params.clear()
+                    except Exception:
+                        pass
                     st.rerun()
-                except Exception as e:
-                    pass
+                else:
+                    st.error(f"Login failed: {error_str}")
+                    try:
+                        st.query_params.clear()
+                        time.sleep(1) 
+                        st.rerun()
+                    except Exception:
+                        pass
         else:
             # Display Login Button
             try:
@@ -186,50 +204,42 @@ class GoogleAuth:
         
         # 1. Check Memory Session
         if st.session_state.get('connected'):
-            return
+            print("[DEBUG AUTH] check_authentification: Found 'connected' in session_state -> AUTHENTICATED")
+            return "AUTHENTICATED"
 
         # 2. Check Cookie (Persistence)
-        # stx.CookieManager gets cookies on render.
-        # We need to make sure we don't block.
         cookies = self.cookie_manager.get_all()
-        
-        # Retry logic for reading cookies (Essential for Cmd+Shift+R persistence)
-        # stx.CookieManager is async and may return None initially.
+        print(f"[DEBUG AUTH] check_authentification: Retrieved cookies from manager: {cookies}")
         
         cookie_retry_count = st.session_state.get('auth_cookie_retries', 0)
         
         if cookies is None and cookie_retry_count < 3:
-            # Increment retry counter
             st.session_state['auth_cookie_retries'] = cookie_retry_count + 1
-            # CRITICAL FIX: Do NOT call st.rerun() here. 
-            # We must return "LOADING" so auth_guard can call st.stop().
-            # st.stop() flushes to the frontend, allowing the CookieManager iframe to mount.
-            # Once mounted, the CookieManager will automatically send the cookie data back and trigger a rerun.
+            print(f"[DEBUG AUTH] check_authentification: Cookies is None. Incrementing retry to {cookie_retry_count + 1}. Returning LOADING.")
             return "LOADING"
         
-        # Reset retries if we found cookies or gave up
         if cookies is not None:
              st.session_state['auth_cookie_retries'] = 0
+             print("[DEBUG AUTH] check_authentification: Cookies NOT None. Resetting retries.")
 
-        # If still None after retries, assume no cookies (or verify failed)
         if cookies is None:
-             # Just in case, try one last check on None as empty dict
+             print("[DEBUG AUTH] check_authentification: Cookies completely missing/None after retries. Defaulting to empty dict.")
              cookies = {}
 
         if self.cookie_name in cookies:
             try:
                 user_info = cookies[self.cookie_name]
+                print(f"[DEBUG AUTH] Found cookie '{self.cookie_name}': {user_info}")
                 if user_info and 'email' in user_info:
                     st.session_state['connected'] = True
                     st.session_state['user_info'] = user_info
                     st.session_state['oauth_id'] = user_info.get('sub')
-                    # Optional: Verify token if we stored the ID token, 
-                    # but here we trust the cookie content for simplicity (assuming HTTPS/HttpOnly separation not fully possible in pure Streamlit app logic without backend middleware).
-                    # For a low-risk internal tool, this JSON in cookie is acceptable.
-                    st.rerun()
+                    print("[DEBUG AUTH] Cookie verified and applied. Returning AUTHENTICATED.")
                     return "AUTHENTICATED"
+                else:
+                    print(f"[DEBUG AUTH] Cookie found but missing 'email' or empty: {user_info}")
             except Exception as e:
-                print(f"Cookie parse error: {e}")
+                print(f"[DEBUG AUTH] Cookie parse error: {e}")
 
         if 'connected' not in st.session_state:
             st.session_state['connected'] = False
@@ -244,6 +254,10 @@ class GoogleAuth:
             pass
         st.session_state['connected'] = False
         st.session_state['user_info'] = None
+        if 'oauth_id' in st.session_state:
+            st.session_state['oauth_id'] = None
+        if 'last_used_code' in st.session_state:
+            del st.session_state['last_used_code']
         st.rerun()
 
     def get_user_info(self):

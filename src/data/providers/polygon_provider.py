@@ -27,8 +27,8 @@ class PolygonProvider(MarketDataProvider):
         self.settings_service = settings_service or SettingsService(user_id=user_id)
         settings = self.settings_service.get_all_settings()
         
-        # Priority: explicit -> DB -> Env
-        self.api_key = api_key or settings.get("source_polygon_api_key") or os.getenv("POLYGON_API_KEY")
+        # Priority: explicit -> DB
+        self.api_key = api_key or settings.get("source_polygon_api_key")
         self.base_url = "https://api.polygon.io"
         
         if not self.api_key:

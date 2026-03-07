@@ -217,11 +217,13 @@ class BaseWorkflow(ABC):
 
     async def distribute_report(self, content: str):
         """Store in DB and send Email asynchronously."""
-        # 0. Generate Professional HTML (Milestone 3.3)
-        from src.services.reporting_service import ReportingService
-        reporting_service = ReportingService()
-        title = f"Strategic Investment Insight - {self.__class__.__name__}"
-        html_content = reporting_service.generate_professional_html(content, title=title)
+        try:
+            from src.services.reporting_service import ReportingService
+            reporting_service = ReportingService()
+            html_content = reporting_service.generate_professional_html(content, title=title)
+        except Exception as e:
+            logger.error(f"HTML transformation failed: {e}. Falling back to markdown.")
+            html_content = content
         
         # 1. Store in DB
         try:
@@ -538,18 +540,27 @@ class DailyWorkflow(BaseWorkflow):
         ticker_contexts = []
         
         for t, data in self.context.get('ticker_reports', {}).items():
-            mom = format_agent_output(data.get('momentum', 'N/A'))
-            sent = format_agent_output(data.get('sentiment', 'N/A'))
-            fun = format_agent_output(data.get('fundamental', 'N/A'))
+            # Truncate agent outputs for Daily (70% conciseness rule)
+            def summarize(text):
+                text = str(text or "N/A").strip()
+                if not text or text == "N/A":
+                    return "N/A"
+                lines = [l.strip() for l in text.split('\n') if l.strip()]
+                # Take only the first few meaningful lines or bullet points
+                summary_lines = [l for l in lines if l.startswith('-') or l.startswith('*') or len(l) > 15][:3]
+                return "\n".join(summary_lines) if summary_lines else text[:150] + "..."
+
+            mom = summarize(format_agent_output(data.get('momentum', 'N/A')))
+            sent = summarize(format_agent_output(data.get('sentiment', 'N/A')))
+            fun = summarize(format_agent_output(data.get('fundamental', 'N/A')))
             
             # [NEW] Add Quantity/Holding Info
             qty = holdings_map.get(t, {}).get('quantity', 0)
             
             detailed_debate_section += f"### {t} (Holdings: {qty})\n"
-            detailed_debate_section += f"**Momentum (Technical)**:\n{mom}\n\n"
-            detailed_debate_section += f"**Fundamental (Quality)**:\n{fun}\n\n"
-            detailed_debate_section += f"**Sentiment (Market Psychology)**:\n{sent}\n\n"
-            detailed_debate_section += "---\n\n"
+            detailed_debate_section += f"- **Technical (Mom)**: {mom}\n"
+            detailed_debate_section += f"- **Quality (Fun)**: {fun}\n"
+            detailed_debate_section += f"- **Psychology (Sent)**: {sent}\n\n"
             
             ticker_contexts.append(f"Ticker: {t} (Qty: {qty})\nData:\n- Mom: {mom}\n- Fun: {fun}\n- Sent: {sent}")
 
@@ -685,14 +696,17 @@ class DailyWorkflow(BaseWorkflow):
             lines = final_report.split('\n')
             for i, line in enumerate(lines):
                 if '|' in line and '---' in line:
-                    for j in range(i + 1, len(lines)):
-                        row_line = lines[j]
-                        if not row_line.strip().startswith('|'):
-                            break
-                        cols = [c.strip() for c in row_line.split('|') if c.strip()]
-                        if len(cols) >= 4:
-                            rows.append(cols)
-                    break
+                    # Validate that this is likely the Actionable Orders table
+                    prev_line = lines[i-1].lower() if i > 0 else ""
+                    if "action" in prev_line or "動作" in prev_line or "代號" in prev_line or "ticker" in prev_line:
+                        for j in range(i + 1, len(lines)):
+                            row_line = lines[j].strip()
+                            if not row_line.startswith('|'):
+                                break
+                            cols = [c.strip() for c in row_line.split('|') if c.strip()]
+                            if len(cols) >= 4 and "---" not in row_line:
+                                rows.append(cols)
+                        break
 
             # --- Strategy 2: HTML <table> fallback ---
             if not rows:

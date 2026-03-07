@@ -32,109 +32,126 @@ class ReportingService:
             # 1. Professional CSS Styles (Inline for email compatibility)
             css_styles = """
             <style>
+                @import url('https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;700&display=swap');
                 body {
-                    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-                    line-height: 1.6;
-                    color: #333333;
-                    background-color: #f9fafc;
+                    font-family: 'Outfit', 'Segoe UI', Roboto, -apple-system, sans-serif;
+                    line-height: 1.7;
+                    color: #1e293b;
+                    background-color: #f1f5f9;
                     margin: 0;
-                    padding: 0;
+                    padding: 40px 20px;
                 }
                 .container {
-                    max-width: 800px;
-                    margin: 20px auto;
+                    max-width: 720px;
+                    margin: 0 auto;
                     background: #ffffff;
-                    padding: 40px;
-                    border-radius: 8px;
-                    box-shadow: 0 4px 12px rgba(0,0,0,0.05);
+                    padding: 50px;
+                    border-radius: 20px;
+                    box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04);
+                    border: 1px solid #e2e8f0;
                 }
                 .header {
-                    border-bottom: 2px solid #1a365d;
-                    padding-bottom: 20px;
-                    margin-bottom: 30px;
-                    text-align: center;
+                    text-align: left;
+                    margin-bottom: 40px;
+                    border-left: 5px solid #0f172a;
+                    padding-left: 20px;
                 }
                 .header h1 {
-                    color: #1a365d;
-                    margin: 0 0 10px 0;
-                    font-size: 28px;
+                    color: #0f172a;
+                    margin: 0;
+                    font-size: 32px;
                     font-weight: 700;
-                    letter-spacing: -0.5px;
+                    line-height: 1.2;
                 }
                 .header p {
-                    color: #718096;
-                    margin: 0;
+                    color: #64748b;
+                    margin: 8px 0 0 0;
                     font-size: 14px;
+                    font-weight: 500;
                     text-transform: uppercase;
-                    letter-spacing: 1px;
+                    letter-spacing: 2px;
                 }
                 h1, h2, h3, h4 {
-                    color: #2d3748;
-                    margin-top: 1.5em;
-                    margin-bottom: 0.5em;
-                    font-weight: 600;
+                    color: #0f172a;
+                    margin-top: 2em;
+                    margin-bottom: 0.8em;
                 }
                 h2 {
-                    border-bottom: 1px solid #e2e8f0;
-                    padding-bottom: 8px;
-                    font-size: 22px;
-                    color: #2b6cb0;
+                    font-size: 24px;
+                    font-weight: 600;
+                    border-bottom: 2px solid #f1f5f9;
+                    padding-bottom: 12px;
+                    color: #2563eb;
                 }
                 h3 {
                     font-size: 18px;
+                    font-weight: 600;
+                    color: #334155;
                 }
                 p {
-                    margin-bottom: 1.2em;
+                    margin-bottom: 1.5em;
                 }
                 ul, ol {
                     margin-bottom: 1.5em;
-                    padding-left: 20px;
+                    padding-left: 25px;
                 }
                 li {
-                    margin-bottom: 0.5em;
+                    margin-bottom: 0.8em;
                 }
                 table {
                     width: 100%;
-                    border-collapse: collapse;
-                    margin-bottom: 2em;
-                    font-size: 14px;
+                    border-collapse: separate;
+                    border-spacing: 0;
+                    margin: 30px 0;
+                    border: 1px solid #e2e8f0;
+                    border-radius: 12px;
+                    overflow: hidden;
                 }
                 th, td {
-                    padding: 12px 15px;
+                    padding: 16px 20px;
                     text-align: left;
-                    border-bottom: 1px solid #e2e8f0;
+                    border-bottom: 1px solid #f1f5f9;
                 }
                 th {
-                    background-color: #f7fafc;
-                    color: #4a5568;
+                    background-color: #f8fafc;
+                    color: #475569;
                     font-weight: 600;
-                    text-transform: uppercase;
                     font-size: 12px;
-                    letter-spacing: 0.5px;
+                    text-transform: uppercase;
+                    letter-spacing: 0.05em;
                 }
-                tr:hover {
-                    background-color: #fbfdff;
+                tr:last-child td {
+                    border-bottom: none;
                 }
                 blockquote {
-                    margin: 0 0 1.5em 0;
-                    padding: 15px 20px;
-                    background-color: #ebf8ff;
-                    border-left: 4px solid #3182ce;
-                    color: #2b6cb0;
+                    margin: 40px 0;
+                    padding: 24px 30px;
+                    background-color: #f8fafc;
+                    border-left: 6px solid #2563eb;
+                    color: #1e293b;
                     font-style: italic;
-                    border-radius: 0 4px 4px 0;
+                    font-size: 17px;
+                    border-radius: 0 16px 16px 0;
                 }
                 strong {
-                    color: #1a202c;
+                    color: #0f172a;
+                    font-weight: 600;
+                }
+                .highlight {
+                    background-color: #eff6ff;
+                    color: #1e40af;
+                    padding: 2px 6px;
+                    border-radius: 4px;
+                    font-weight: 600;
                 }
                 .disclaimer {
-                    margin-top: 40px;
-                    padding-top: 20px;
-                    border-top: 1px solid #edf2f7;
-                    font-size: 11px;
-                    color: #a0aec0;
+                    margin-top: 60px;
+                    padding-top: 30px;
+                    border-top: 1px solid #e2e8f0;
+                    font-size: 12px;
+                    color: #94a3b8;
                     text-align: justify;
-                    line-height: 1.5;
+                    line-height: 1.6;
                 }
             </style>
             """

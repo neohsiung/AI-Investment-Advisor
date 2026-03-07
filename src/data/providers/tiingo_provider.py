@@ -25,8 +25,8 @@ class TiingoProvider(MarketDataProvider):
         self.settings_service = settings_service or SettingsService(user_id=user_id)
         settings = self.settings_service.get_all_settings()
         
-        # Priority: explicit -> DB -> Env
-        self.api_key = api_key or settings.get("source_tiingo_api_key") or os.getenv("TIINGO_API_KEY")
+        # Priority: explicit -> DB
+        self.api_key = api_key or settings.get("source_tiingo_api_key")
         self.base_url = "https://api.tiingo.com"
         
         if not self.api_key:

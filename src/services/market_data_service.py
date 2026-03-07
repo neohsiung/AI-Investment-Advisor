@@ -75,7 +75,7 @@ class MarketDataService:
         if not hasattr(provider, "id"): return True
         # YFinance is a free fallback, assume it's always enabled if no toggle exists
         if provider.id == "yahoo_finance": return True
-        return self.settings_service.get_setting(f"source_{provider.id}_enabled") == "true"
+        return self.settings_service.get_setting(f"source_{provider.id}_enabled", "true") == "true"
 
     def get_current_prices(self, tickers: List[str]) -> Dict[str, float]:
         """
@@ -87,8 +87,8 @@ class MarketDataService:
         all_prices = {}
         missing_tickers = list(tickers)
         
-        # Priority: Polygon (Unlimited) -> FMP (300/min) -> YFinance (Free)
-        for provider in [self.polygon, self.fmp, self.yfinance]:
+        # Priority: Polygon (Unlimited) -> Tiingo (P1) -> FMP (300/min) -> YFinance (Free)
+        for provider in [self.polygon, self.tiingo, self.fmp, self.yfinance]:
             if not missing_tickers:
                 break
             if not self._is_provider_enabled(provider):
@@ -178,29 +178,28 @@ class MarketDataService:
         Every call consumes Tavily credits to ensure the service is utilized.
         透過 Tavily 搜尋個股的深度定性情報。每次呼叫消耗 Tavily Credits。
         
-        Queries:
-          1. Breaking news / risk alerts for today
-          2. Analyst opinions / catalysts / competitive moat
+        Optimization (v4.3): 
+        Merged multiple queries into a single comprehensive query to halve credit consumption 
+        while maximizing LLM context extraction.
         """
         today_str = date.today().isoformat()
-        queries = [
-            f"{ticker} stock latest news risk alert {today_str}",
-            f"{ticker} analyst opinion catalyst moat 2026",
-        ]
+        # Combine risk alerts and catalysts into a single robust query
+        query = f"{ticker} stock latest news risk alert analyst opinion catalyst moat 2026 {today_str}"
         
         results = []
-        for query in queries:
-            try:
-                search_results = self.search_service.search_financial_context(
-                    query, max_results=3
-                )
-                results.extend(search_results)
-            except Exception as e:
-                self.logger.warning(f"Web intelligence search failed for '{query}': {e}")
+        try:
+            # We fetch 4 results to compensate for the single query, 
+            # still saving credits compared to 2 queries * 3 results.
+            search_results = self.search_service.search_financial_context(
+                query, max_results=4
+            )
+            results.extend(search_results)
+        except Exception as e:
+            self.logger.warning(f"Web intelligence search failed for '{query}': {e}")
         
         if results:
             self.logger.info(
-                f"Fetched {len(results)} web intelligence items for {ticker} via Tavily"
+                f"Fetched {len(results)} web intelligence items for {ticker} via Tavily (Single optimized query)"
             )
         return results
 
@@ -209,8 +208,8 @@ class MarketDataService:
         Get historical OHLCV data for a specific ticker.
         獲取特定標的的歷史 OHLCV 數據。
         """
-        # Override Priority for History: Polygon -> YFinance -> FMP
-        history_providers = [self.polygon, self.yfinance, self.fmp] 
+        # Override Priority for History: Polygon -> Tiingo -> FMP -> YFinance
+        history_providers = [self.polygon, self.tiingo, self.fmp, self.yfinance] 
         
         for provider in history_providers:
             if not self._is_provider_enabled(provider): continue

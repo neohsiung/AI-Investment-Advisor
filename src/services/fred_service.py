@@ -22,7 +22,7 @@ class FredService:
         self.settings_service = settings_service or SettingsService(user_id=user_id)
         settings = self.settings_service.get_all_settings()
         
-        fred_api_key = settings.get("source_fred_api_key") or os.getenv("FRED_API_KEY")
+        fred_api_key = settings.get("source_fred_api_key")
         self.client = None
         if not fred_api_key:
             self.logger.warning("FRED_API_KEY not found in environment or database.")

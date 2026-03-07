@@ -92,7 +92,7 @@ class N8nParser(BaseSourceParser):
         msg_url = data.get("link") or data.get("url")
         signal_id = data.get("event_id")
         if not signal_id and msg_url:
-            signal_id = f"rss_{hashlib.md5(msg_url.encode(), usedforsecurity=False).hexdigest()}"
+            signal_id = f"rss_{hashlib.md5(msg_url.encode()).hexdigest()}"
             
         return {
             "type": data.get("event_type", "N8N_AUTOMATION"),

@@ -77,27 +77,42 @@ class AlchemySettingsRepository(BaseRepository, ISettingsRepository):
         """
         BaseRepository.__init__(self, engine or get_db_engine())
 
+    def _resolve_user(self, user_id: str) -> str:
+        """Helper to redirect systemic IDs to the primary human user."""
+        if user_id not in ('system', 'SYSTEM', 'None', '', None):
+            return user_id
+            
+        # For systemic IDs, find the first human user in DB
+        try:
+            # Avoid infinite recursion by using raw SQL to find a human user
+            query = text("SELECT DISTINCT user_id FROM settings WHERE user_id NOT IN ('system', 'SYSTEM', 'None', '') LIMIT 1")
+            with self.engine.connect() as conn:
+                res = conn.execute(query).fetchone()
+                if res:
+                    return res[0]
+        except Exception:
+            pass
+        return user_id
+
     def get(self, user_id: str, key: str, default: Any = None) -> Any:
         """
         Get a specific setting value (ORM).
-        取得特定設定值 (ORM)。
         """
+        user_id = self._resolve_user(user_id)
         try:
-            # Strictly use user_id as UUID per v4.1.7 requirements
             setting = self.session.query(Setting).filter_by(user_id=user_id, key=key).first()
             return setting.value if setting else default
-        except Exception as e:
-            # Fallback for missing table during tests or initial setup
+        except Exception:
             return default
         finally:
             self.close_session()
 
     def get_setting(self, key: str, default: Any = None) -> Any:
-        """Alias for get() to support legacy calls with system user."""
+        """Alias for get() starting from 'system' target."""
         return self.get("system", key, default)
 
     def save_setting(self, key: str, value: Any) -> Tuple[bool, str]:
-        """Alias for set() to support legacy calls with system user."""
+        """Alias for set() starting from 'system' target."""
         try:
             self.set("system", key, value)
             return True, "Success"
@@ -107,8 +122,8 @@ class AlchemySettingsRepository(BaseRepository, ISettingsRepository):
     def set(self, user_id: str, key: str, value: Any) -> None:
         """
         Set or update a specific setting value (Upsert via ORM).
-        設定或更新特定設定值 (透過 ORM Upsert)。
         """
+        user_id = self._resolve_user(user_id)
         session = self.session
         try:
             # Ensure value is JSON-serializable

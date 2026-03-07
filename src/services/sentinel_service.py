@@ -146,8 +146,8 @@ class SentinelService:
         finally:
             # v4.2.6: Explicitly close repository sessions after each tick
             self.repo.close_session()
-            if self.settings_service:
-                self.settings_service.repo.close_session()
+            if self.settings_service and hasattr(self.settings_service, 'settings_repo'):
+                self.settings_service.settings_repo.close_session()
 
     # ──────────────────────────────────────────
     # Event-Driven Entry (v3.8)

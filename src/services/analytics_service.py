@@ -40,7 +40,7 @@ class LeverageCalculator:
             if qty == 0:
                 continue
 
-            price = current_prices.get(ticker, 0.0)
+            price = self._get_effective_price(ticker, current_prices, user_id)
             market_val = qty * price
             
             # Nominal Exposure = Market Value * Leverage
@@ -68,6 +68,15 @@ class LeverageCalculator:
             "cash_balance": cash_balance,
             "leverage_ratio": leverage_ratio
         }
+
+    def _get_effective_price(self, ticker: str, current_prices: Dict[str, float], user_id: str) -> float:
+        """Helper to resolve price with static anchor support."""
+        if ticker.startswith("__ANCHOR_") or ticker.startswith("NLV_") or ticker.startswith("STABILIZE_"):
+            holdings_detail = self.repo.get_holdings(user_id)
+            for h in holdings_detail:
+                if h['ticker'] == ticker:
+                    return h['avg_price']
+        return current_prices.get(ticker, 0.0)
 
 class ROIEngine:
     """
@@ -161,6 +170,15 @@ class PnLCalculator:
         """
         self.repo = repository or AlchemyTransactionRepository()
 
+    def _get_effective_price(self, ticker: str, current_prices: Dict[str, float], user_id: str) -> float:
+        """Helper to resolve price with static anchor support."""
+        if ticker.startswith("__ANCHOR_") or ticker.startswith("NLV_") or ticker.startswith("STABILIZE_"):
+            holdings_detail = self.repo.get_holdings(user_id)
+            for h in holdings_detail:
+                if h['ticker'] == ticker:
+                    return h['avg_price']
+        return current_prices.get(ticker, 0.0)
+
     def calculate_breakdown(self, current_prices: Dict[str, float], user_id: str) -> Dict[str, Any]:
         """
         Calculate realized and unrealized P&L breakdown for each ticker.
@@ -239,7 +257,7 @@ class PnLCalculator:
 
         for ticker, pos in portfolio.items():
             if pos['qty'] > 0.0001: 
-                curr_price = current_prices.get(ticker, 0.0)
+                curr_price = self._get_effective_price(ticker, current_prices, user_id)
                 unrealized = (curr_price - pos['avg_cost']) * pos['qty']
                 total_unrealized_pnl += unrealized
 

@@ -118,21 +118,32 @@ class EmailNotifier:
         msg['Subject'] = subject
 
         # Attach Plain Text Version
-        part1 = MIMEText(content, 'plain', 'utf-8')
-        msg.attach(part1)
+        import re
+        def strip_html(html):
+            text = re.sub(r'<style.*?>.*?</style>', '', html, flags=re.DOTALL | re.IGNORECASE)
+            text = re.sub(r'<[^>]+>', '', text)
+            return text.strip()
 
-        # Attach HTML Version
+        # Attach Parts
         try:
             if content.strip().lower().startswith("<!doctype html>") or "<html" in content[:200].lower():
                 # Content is already fully formatted HTML
+                plain_text = strip_html(content)
+                part1 = MIMEText(plain_text, 'plain', 'utf-8')
                 part2 = MIMEText(content, 'html', 'utf-8')
             else:
+                # Content is Markdown
+                part1 = MIMEText(content, 'plain', 'utf-8')
                 html_body = markdown.markdown(content, extensions=['tables', 'fenced_code'])
                 full_html = self._structure_html(subject, html_body)
                 part2 = MIMEText(full_html, 'html', 'utf-8')
+            
+            msg.attach(part1)
             msg.attach(part2)
         except Exception as e:
             self.logger.error(f"HTML attachment failed: {e}. Sending plain text only.")
+            part1 = MIMEText(content, 'plain', 'utf-8')
+            msg.attach(part1)
 
         try:
             self.logger.info(f"Connecting to SMTP server (async): {self.smtp_server}:{self.smtp_port}...")

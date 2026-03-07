@@ -21,7 +21,7 @@ class AlphaVantageProvider(MarketDataProvider):
 
     def _get_api_key(self) -> str:
         settings = self.settings_service.get_all_settings()
-        return settings.get("source_alpha_vantage_api_key") or settings.get("ALPHA_VANTAGE_API_KEY") or os.getenv("ALPHA_VANTAGE_API_KEY", "")
+        return settings.get("source_alpha_vantage_api_key") or settings.get("ALPHA_VANTAGE_API_KEY")
 
     @trace_external_call("alpha_vantage")
     def fetch_current_prices(self, tickers: List[str]) -> Dict[str, float]:
