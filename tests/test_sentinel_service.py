@@ -653,7 +653,7 @@ class TestRssDeduplication:
         }
         
         normalized = N8nParser.parse(payload)
-        expected_hash = f"rss_{hashlib.md5(url.encode()).hexdigest()}"
+        expected_hash = f"rss_{hashlib.sha256(url.encode()).hexdigest()}"
         assert normalized["signal_id"] == expected_hash
         assert normalized["url"] == url
 
