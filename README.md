@@ -56,9 +56,9 @@ graph LR
     end
     
     subgraph "Data Tiers"
-        Hot[Hot 🔥] --"- RD[Redis - Semantic Cache]"
-        Warm[Warm ☀️] --"- PG[Postgres - Structured]"
-        Cold[Cold ❄️] --"- FS[File System - Reports]"
+        Hot["Hot 🔥"] --> RD["Redis - Semantic Cache"]
+        Warm["Warm ☀️"] --> PG["Postgres - Structured"]
+        Cold["Cold ❄️"] --> FS["File System - Reports"]
     end
 ```
 
@@ -168,9 +168,9 @@ graph LR
     end
     
     subgraph "Data Tiers"
-        Hot[Hot 🔥] --"- RD[Redis - Semantic Cache]"
-        Warm[Warm ☀️] --"- PG[Postgres - Structured]"
-        Cold[Cold ❄️] --"- FS[File System - Reports]"
+        Hot["Hot 🔥"] --> RD["Redis - Semantic Cache"]
+        Warm["Warm ☀️"] --> PG["Postgres - Structured"]
+        Cold["Cold ❄️"] --> FS["File System - Reports"]
     end
 ```
 
