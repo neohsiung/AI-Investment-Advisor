@@ -6,6 +6,7 @@
 
 | Date | Version | Description | Author |
 | :--- | :--- | :--- | :--- |
+| 2026-03-08 | v4.6 | **Security Hardening**: `WebhookService` upgraded to SHA256; `BaseAgent` state redaction implemented. | Antigravity |
 | 2026-03-07 | v4.5 | **Async Interaction Loop**: `InteractionService` 支援雙向委派至 `VerificationService`，實現全通路 "OK" 應答驗證。 | Antigravity |
 | 2026-03-05 | v4.4 | **Keyword Discovery Service**: 新增 `RiskKeywordService` 3源探索、DI 注入、MAX_KEYWORDS 動態上限。Repository 新增 3 方法。 | Antigravity |
 | 2026-02-28 | v4.3 | **Webhook Updates**: Added Heartbeat API and Market-Alert webhooks for Sentinel. | Antigravity |
@@ -119,7 +120,7 @@ graph TD
 | `NotificationService` | `notification_service.py` | **[Async v4.1]** 非同步警報推送，具備 UUID 多通路映射能力。 |
 | `NotificationFilters` | `notification_filters.py` | 興趣導向通知過濾 — 依據使用者每通道訂閱的類別 (sentinel/report/approval) 決定是否推送。 |
 | `ReportingService` | `reporting_service.py` | Agent Markdown 報告轉換為專業機構級 HTML 格式 (Email/Web)。 |
-| `WebhookService` | `webhook_service.py` | 外部 Webhook 接收與解析 — 支援心跳檢查 (Heartbeat) 與異常警報 (Market-Alert) 觸發 Sentinel。 |
+| `WebhookService` | `webhook_service.py` | **[Secured v4.6]** 外部 Webhook 接收與解析。使用 SHA256 ID 生成；對接 `SettingsService` 獲取 Secrets；禁用敏感日誌。 |
 | `UserFocusService` | `user_focus_service.py` | 使用者投資焦點提取 — 從 eToro 觀察名單分析板塊/產業偏好。 |
 
 ### 3. 代理人執行引擎 (Agent Execution Engine)
