@@ -70,7 +70,10 @@
 ### 3.2 數據與 SQL 安全
 
 - **Safe-SQL-Only (Rule #10)**: 所有 Raw SQL 必須使用參數化查詢，嚴禁字串拼接。
-- **憑證管理**: 嚴禁硬編碼憑證，統一使用 `.env` 與隔離的 `secrets/` 目錄。
+- **憑證管理 (Rule #13)**: 嚴禁硬編碼憑證，統一使用 `.env`。**生產環境代碼嚴禁使用 `os.getenv` 直接讀取敏感資訊**，必須透過 `SettingsService` 讀取並支援遮蔽。
+- **加密規範 (Cryptographic Standards)**:
+  - 嚴禁使用 `MD5` 或 `SHA1` 進行任何具備安全性意涵的雜湊 (Hashing)。
+  - 所有信號 ID (Signal ID) 或 實體識別碼 (Entity IDs) 生成必須使用 **SHA256**。
 
 ---
 
