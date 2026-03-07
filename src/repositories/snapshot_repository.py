@@ -1,5 +1,6 @@
 from abc import ABC, abstractmethod
-from typing import Optional, List, Dict, Any, Union
+import typing
+from typing import List, Dict, Tuple, Any, Optional, Callable, Dict, List, Tuple, Any, Optional, Callable
 import pandas as pd
 from sqlalchemy import text
 from src.data.database import BaseRepository, get_db_engine

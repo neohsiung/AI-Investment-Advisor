@@ -1,7 +1,8 @@
 import os
 import requests
 import pandas as pd
-from typing import Dict, Any, List, Optional
+import typing
+from typing import List, Dict, Tuple, Any, Optional, Callable, Dict, Any, List, Optional
 from src.data.providers.base import MarketDataProvider
 from src.utils.logger import setup_logger
 from src.services.settings_service import SettingsService

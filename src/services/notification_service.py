@@ -2,7 +2,8 @@ from src.utils.logger import setup_logger
 logger = setup_logger("NotificationService")
 
 import os
-from typing import List, Dict, Any, Optional
+import typing
+from typing import List, Dict, Tuple, Any, Optional, Callable, Dict, List, Tuple, Any, Optional, Callable
 from src.domain.interfaces import IChannelAdapter, INotificationFilter
 
 class NotificationService:
@@ -81,7 +82,7 @@ class NotificationService:
         title: str, 
         content: str, 
         user_id: str = None, 
-        actions: List[Dict[str, str]] = None, 
+        actions: List[Dict[str, Any]] = None, 
         channels: List[str] = None,
         category: str = "sentinel",
         **kwargs

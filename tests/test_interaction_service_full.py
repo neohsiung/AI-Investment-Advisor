@@ -1,5 +1,7 @@
 import pytest
 from datetime import datetime, timedelta
+import typing
+from typing import List, Dict, Tuple, Any, Optional, Callable, Dict, List, Tuple, Any, Optional, Callable
 from unittest.mock import MagicMock, patch, AsyncMock
 from src.services.interaction_service import InteractionService
 from src.domain.interaction import InteractionRequest, InteractionType, InteractionStatus

@@ -1,5 +1,6 @@
 
-from typing import Dict, List, Any
+import typing
+from typing import List, Dict, Tuple, Any, Optional, Callable, Dict, List, Tuple, Any, Optional, Callable
 import logging
 from src.domain.trading import Position, Account
 from src.services.broker_factory import BrokerFactory

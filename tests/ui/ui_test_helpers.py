@@ -4,7 +4,8 @@ Streamlit 頁面測試工具。
 """
 import pytest
 from unittest.mock import MagicMock, patch
-from typing import Dict, Any
+import typing
+from typing import List, Dict, Tuple, Any, Optional, Callable, Dict, List, Tuple, Any, Optional, Callable
 
 
 class StreamlitMocker:

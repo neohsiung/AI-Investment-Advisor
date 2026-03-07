@@ -2,7 +2,8 @@ import redis
 import json
 import logging
 import os
-from typing import List
+import typing
+from typing import List, Dict, Tuple, Any, Optional, Callable, Dict, List, Tuple, Any, Optional, Callable
 from datetime import datetime
 from src.domain.interfaces import IMemoryRepository
 from src.domain.entities import ReportMemoryItem

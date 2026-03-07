@@ -1,7 +1,8 @@
 import os
 import asyncio
 import hashlib
-from typing import Dict, Any, List
+import typing
+from typing import List, Dict, Tuple, Any, Optional, Callable, Dict, List, Tuple, Any, Optional, Callable
 from fastapi import APIRouter, Request, HTTPException
 from src.utils.logger import setup_logger
 from src.config.rss_config import get_rss_sources
@@ -124,6 +125,7 @@ class WebhookService:
         self.sentinel_service = sentinel_service
 
     async def handle_generic_webhook(self, source: str, request: Request) -> Dict[str, str]:
+        logger.info(f"Generic webhook {source} headers: {dict(request.headers)}")
         webhook_secret = os.getenv("WEBHOOK_SECRET")
         if webhook_secret:
             request_secret = request.headers.get("X-Webhook-Secret")
@@ -152,11 +154,12 @@ class WebhookService:
             raise HTTPException(status_code=400, detail="Invalid payload")
 
     async def handle_finnhub_webhook(self, request: Request) -> Dict[str, str]:
+        logger.info(f"Finnhub webhook headers: {dict(request.headers)}")
         secret = os.getenv("FINNHUB_WEBHOOK_SECRET")
         if secret:
             req_secret = request.headers.get("X-Finnhub-Secret")
             if req_secret != secret:
-                 logger.warning("Unauthorized Finnhub webhook attempt")
+                 logger.warning(f"Unauthorized Finnhub webhook attempt. Received: {req_secret[:4] if req_secret else 'None'}...")
                  raise HTTPException(status_code=403, detail="Unauthorized")
         
         try:

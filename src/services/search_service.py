@@ -6,7 +6,8 @@ from __future__ import annotations
 import os
 import time
 import json
-from typing import List, Dict, Any, Optional, Tuple
+import typing
+from typing import List, Dict, Tuple, Any, Optional, Callable, Dict, List, Tuple, Any, Optional, Callable
 from src.utils.logger import setup_logger
 from src.services.settings_service import SettingsService
 from src.utils.cache import ResponseCache

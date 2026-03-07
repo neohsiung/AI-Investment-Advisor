@@ -1,5 +1,6 @@
 import json
-from typing import Dict, Any, Optional
+import typing
+from typing import List, Dict, Tuple, Any, Optional, Callable, Dict, List, Tuple, Any, Optional, Callable
 from sqlalchemy import text
 from src.utils.logger import setup_logger
 from src.repositories.sentinel_repository import ISentinelRepository, AlchemySentinelRepository

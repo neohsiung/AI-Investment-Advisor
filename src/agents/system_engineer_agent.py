@@ -1,7 +1,8 @@
 import logging
 import json
 import uuid
-from typing import Dict, Any
+import typing
+from typing import List, Dict, Tuple, Any, Optional, Callable, Dict, List, Tuple, Any, Optional, Callable
 
 from src.agents.base_agent import BaseAgent
 from src.repositories.settings_repository import AlchemySettingsRepository

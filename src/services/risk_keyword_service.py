@@ -14,7 +14,8 @@ import time
 import json
 import re
 from collections import Counter
-from typing import List, Optional, Tuple, Dict, Any
+import typing
+from typing import List, Dict, Tuple, Any, Optional, Callable, Dict, List, Tuple, Any, Optional, Callable
 
 from src.repositories.risk_keyword_repository import AlchemyRiskKeywordRepository
 from src.domain.entities import RiskKeyword

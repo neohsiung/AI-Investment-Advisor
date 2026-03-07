@@ -1,5 +1,6 @@
 import smtplib
-from typing import Dict, Any
+import typing
+from typing import List, Dict, Tuple, Any, Optional, Callable, Dict, Any
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 import os

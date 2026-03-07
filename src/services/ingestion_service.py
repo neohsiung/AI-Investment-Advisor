@@ -3,7 +3,8 @@ logger = setup_logger("IngestionService")
 
 import os
 import pandas as pd
-from typing import Any, Tuple
+import typing
+from typing import List, Dict, Tuple, Any, Optional, Callable, Dict, List, Tuple, Any, Optional, Callable
 
 from src.services.analytics_service import update_daily_snapshot
 from src.data.ingestors import IngestorFactory

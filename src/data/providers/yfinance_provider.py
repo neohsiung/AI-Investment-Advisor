@@ -1,6 +1,7 @@
 import yfinance as yf
 import pandas as pd
-from typing import Dict, Any, List
+import typing
+from typing import List, Dict, Tuple, Any, Optional, Callable, Dict, Any, List
 from src.data.providers.base import MarketDataProvider
 from src.utils.logger import setup_logger
 from src.utils.tracing import trace_external_call

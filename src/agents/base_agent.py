@@ -3,7 +3,8 @@ import json
 import requests
 import hashlib
 from abc import ABC, abstractmethod
-from typing import List, Dict, Optional
+import typing
+from typing import List, Dict, Tuple, Any, Optional, Callable, Dict, List, Tuple, Any, Optional, Callable
 from sqlalchemy import text
 from jinja2 import Template
 # from src.data.database import get_db_connection # Removed for DIP

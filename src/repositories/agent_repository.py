@@ -3,7 +3,8 @@ logger = setup_logger("AgentRepository")
 
 import time
 from abc import ABC, abstractmethod
-from typing import Dict, List, Optional, Any
+import typing
+from typing import List, Dict, Tuple, Any, Optional, Callable, Dict, List, Tuple, Any, Optional, Callable
 from sqlalchemy import text
 from datetime import datetime
 from src.data.database import BaseRepository, get_db_engine

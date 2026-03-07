@@ -3,6 +3,7 @@ from src.data.database import get_db_connection
 from sqlalchemy import text
 import uuid
 import datetime
+import typing
 import os
 
 class TradeIngestor:

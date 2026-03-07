@@ -1,5 +1,7 @@
 import pytest
 import asyncio
+import typing
+from typing import List, Dict, Tuple, Any, Optional, Callable, Dict, List, Tuple, Any, Optional, Callable
 from unittest.mock import MagicMock, patch
 from src.infrastructure.channels.channel_factory import ChannelFactory
 from src.infrastructure.channels.base_adapter import BaseChannelAdapter
@@ -53,7 +55,7 @@ class TestBaseChannelAdapter:
         adapter.register_text_callback(text_callback)
         assert adapter.text_callback == text_callback
 
-    def test_resolve_target_id(self):
+    def test_resolve_target_id(self) -> None:
         adapter = BaseChannelAdapter(default_target_id="default_id")
         
         assert adapter._resolve_target_id("user@test.com") == "default_id"

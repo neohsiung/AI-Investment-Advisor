@@ -2,7 +2,8 @@ import os
 import pandas as pd
 import fredapi
 import logging
-from typing import Dict, List, Any, Union
+import typing
+from typing import List, Dict, Tuple, Any, Optional, Callable, Dict, List, Tuple, Any, Optional, Callable
 from src.utils.logger import setup_logger
 
 from src.services.settings_service import SettingsService

@@ -1,5 +1,6 @@
 import pandas as pd
-from typing import Dict, Any, List, Optional
+import typing
+from typing import List, Dict, Tuple, Any, Optional, Callable, Dict, List, Tuple, Any, Optional, Callable
 from datetime import datetime, timedelta
 from src.repositories.transaction_repository import AlchemyTransactionRepository
 from src.repositories.settings_repository import AlchemySettingsRepository

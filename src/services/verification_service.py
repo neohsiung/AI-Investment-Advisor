@@ -2,8 +2,10 @@ from src.utils.logger import setup_logger
 logger = setup_logger("VerificationService")
 
 import datetime
+import typing
 import uuid
-from typing import Dict, Any, Tuple, Optional
+import typing
+from typing import List, Dict, Tuple, Any, Optional, Callable, Dict, List, Tuple, Any, Optional, Callable
 from src.repositories.verification_repository import AlchemyVerificationRepository
 from src.services.notification_service import NotificationService
 
@@ -76,7 +78,6 @@ class VerificationService:
         透過發送挑戰碼啟動管道驗證程序（非同步）。
         
         Returns:
-            Tuple[bool, str, str]: (Success status, response message, verification_id)
             Tuple[bool, str, str]: (成功狀態, 回應訊息, 驗證 ID)
         """
         # 1. Create Challenge
@@ -187,14 +188,18 @@ class VerificationService:
         Match a user reply against ANY pending verification challenge for that user asynchronously.
         """
         content = content.strip().upper()
-        # 1. Try finding by user_id (could be email or raw channel ID)
+        logger.info(f"verify_any_reply: Received '{content}' from User/ID '{user_id}'")
+        
+        # 1. Try finding by user_id
         pending = self.repo.get_any_pending_verification(user_id)
         
         if not pending:
+            logger.warning(f"No pending verification found for ID: {user_id}")
             return False
             
         expected_code = pending['code'].upper()
         channel = pending['channel']
+        logger.info(f"Found pending verification ID={pending['id']} for {channel}. Expected: '{expected_code}', Received: '{content}'")
         
         if content == expected_code:
             self.repo.update_status(pending['id'], "verified")

@@ -324,42 +324,39 @@ async def call_tool(tool_name: str, request: ToolCallRequest):
 from src.services.webhook_service import webhook_router
 
 app.include_router(webhook_router, prefix="/webhook")
-# --- LINE Bot Webhook Support ---
 # --- LINE Bot Webhook Support (via InteractionService) ---
 @app.post("/callback")
 async def callback(request: Request, x_line_signature: str = Header(None)):
     """
     LINE Messaging API Webhook Callback
     Routed to InteractionService -> LineBotAdapter
+    v4.5: Using raw bytes for signature verification to avoid encoding issues.
     """
     interaction_svc = services.get("interaction")
     if not interaction_svc:
-        # If service not ready, check if we can init it lazily or fail
         logger.warning("InteractionService not initialized yet.")
         raise HTTPException(status_code=503, detail="Service Unavailable")
 
-    body = await request.body()
-    body_str = body.decode('utf-8')
-    logger.info(f"LINE Webhook body: {body_str}")
+    # [CRITICAL] LINE verification MUST use raw request bytes
+    body_bytes = await request.body()
+    logger.info(f"LINE Webhook received {len(body_bytes)} bytes. Signature: {x_line_signature}")
 
     try:
         # Find LineBotAdapter
-        # We look for the adapter class name
         adapter = next((a for a in interaction_svc.adapters if "LineBotAdapter" in a.__class__.__name__), None)
         
         if adapter:
-            await adapter.handle_webhook(body_str, x_line_signature)
+            # We pass bytes now - the adapter must be updated to handle types correctly
+            await adapter.handle_webhook(body_bytes, x_line_signature)
         else:
             logger.warning("No LineBotAdapter found in InteractionService.")
             raise HTTPException(status_code=500, detail="Adapter Missing")
             
-    except ValueError:
-        logger.error("Invalid LINE signature")
+    except ValueError as ve:
+        logger.error(f"Invalid LINE signature: {ve}")
         raise HTTPException(status_code=400, detail="Invalid signature")
     except Exception as e:
-        logger.error(f"Error handling LINE webhook: {e}")
-        # Return OK to prevent LINE from retrying infinitely on logic errors
-        # unless it's a critical infrastructure failure
+        logger.error(f"Error handling LINE webhook: {e}", exc_info=True)
         return "OK"
 
     return "OK"

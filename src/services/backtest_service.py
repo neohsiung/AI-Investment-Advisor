@@ -1,6 +1,7 @@
 import pandas as pd
 import yfinance as yf
-from typing import Optional, Any
+import typing
+from typing import List, Dict, Tuple, Any, Optional, Callable, Dict, List, Tuple, Any, Optional, Callable
 from datetime import datetime, timedelta
 from src.utils.logger import setup_logger
 from src.agents.factory import AgentFactory

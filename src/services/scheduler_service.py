@@ -5,7 +5,8 @@ import subprocess
 from src.utils.logger import setup_logger
 logger = setup_logger("SchedulerService")
 
-from typing import Any, List, Dict, Optional
+import typing
+from typing import List, Dict, Tuple, Any, Optional, Callable, Dict, List, Tuple, Any, Optional, Callable
 import uuid
 import pytz
 from datetime import datetime

@@ -1,5 +1,6 @@
 import json
-from typing import Any
+import typing
+from typing import List, Dict, Tuple, Any, Optional, Callable, Any
 from src.utils.logger import setup_logger
 from src.agents.base_agent import BaseAgent
 from .role_swarm import RoleSwarm

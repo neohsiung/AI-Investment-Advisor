@@ -2,7 +2,8 @@ from src.utils.logger import setup_logger
 logger = setup_logger("ReportingService")
 
 import markdown
-from typing import Optional
+import typing
+from typing import List, Dict, Tuple, Any, Optional, Callable, Dict, List, Tuple, Any, Optional, Callable
 from datetime import datetime
 
 class ReportingService:

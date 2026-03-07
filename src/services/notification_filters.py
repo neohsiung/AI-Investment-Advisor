@@ -1,4 +1,5 @@
-from typing import Any
+import typing
+from typing import List, Dict, Tuple, Any, Optional, Callable, Dict, List, Tuple, Any, Optional, Callable
 from src.utils.logger import setup_logger
 from src.infrastructure.channels.base_adapter import IChannelAdapter
 from src.domain.interfaces import INotificationFilter

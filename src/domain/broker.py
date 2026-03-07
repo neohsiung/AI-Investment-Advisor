@@ -1,6 +1,7 @@
 
 from abc import ABC, abstractmethod
-from typing import List, Dict, Any, Optional
+import typing
+from typing import List, Dict, Tuple, Any, Optional, Callable, Dict, List, Tuple, Any, Optional, Callable
 from src.domain.trading import Order, Position, Account, BrokerType
 
 class IBroker(ABC):

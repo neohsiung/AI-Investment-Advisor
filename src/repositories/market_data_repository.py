@@ -1,7 +1,8 @@
 import yfinance as yf
 import pandas as pd
 from abc import ABC, abstractmethod
-from typing import Dict, Any, List, Optional
+import typing
+from typing import List, Dict, Tuple, Any, Optional, Callable, Dict, List, Tuple, Any, Optional, Callable
 from src.utils.logger import setup_logger
 
 class IMarketDataRepository(ABC):

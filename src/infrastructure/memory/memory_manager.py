@@ -1,6 +1,7 @@
 import logging
 import json
-from typing import List, Dict, Any, Optional
+import typing
+from typing import List, Dict, Tuple, Any, Optional, Callable, List, Dict, Any, Optional
 from datetime import datetime, timezone
 from sqlalchemy import text
 

@@ -2,7 +2,8 @@ from src.utils.logger import setup_logger
 logger = setup_logger("InteractionService")
 
 import time
-from typing import Dict, Optional, List, Any
+import typing
+from typing import List, Dict, Tuple, Any, Optional, Callable, Dict, List, Tuple, Any, Optional, Callable
 from datetime import datetime, timedelta
 
 from src.domain.interaction import InteractionRequest, InteractionType, InteractionStatus
@@ -53,7 +54,6 @@ class InteractionService:
     async def handle_text_response(self, adapter: IChannelAdapter, user_id: str, text: str) -> None:
         """
         Handle a natural language text response received from a user.
-        處理從使用者接收到的自然語言文字回覆。
         """
         logger.info(f"InteractionService: [INBOUND TEXT] Received from {adapter.__class__.__name__} ID: {user_id}, Text: '{text}'")
         
@@ -71,15 +71,20 @@ class InteractionService:
             ver_svc = VerificationService() 
             
             # verify_any_reply returns True if it was a verification message and handled it
-            if await ver_svc.verify_any_reply(user_id, text):
+            logger.debug(f"InteractionService: Delegation to VerificationService for user {user_id}")
+            result = await ver_svc.verify_any_reply(user_id, text)
+            logger.info(f"InteractionService: VerificationService result for {user_id}: {result}")
+            if result:
                 logger.info(f"InteractionService: Verification logic successfully handled reply for ID: {user_id}")
                 return # VerificationService sends its own confirmation message
+            else:
+                logger.debug(f"InteractionService: VerificationService did not match any pending verification for user {user_id}")
         except Exception as e:
-            logger.error(f"InteractionService: Verification check exception: {e}")
+            logger.error(f"InteractionService: Verification check exception: {e}", exc_info=True)
 
         # If still not resolved after verification attempt, it's truly unlinked
         if not resolved_user_id:
-             logger.warning(f"InteractionService: Unlinked user {user_id}. Sending acknowledgment.")
+             logger.warning(f"InteractionService: Unlinked user {user_id} and no pending verification found. Sending acknowledgment.")
              # [v3.5] Generic acknowledgment for unlinked users
              msg = "✅ 系統已收到您的訊息 (Message Received)！\n由於此 ID 尚未與帳號綁定，系統目前無法進行進一步處理。請至 Dashboard 完成驗證。"
              try:
@@ -128,7 +133,7 @@ class InteractionService:
                           content: str, 
                           context: Optional[Dict[str, Any]] = None, 
                           timeout_seconds: int = 300,
-                          user_id: Optional[str] = None) -> bool:
+                          user_id: Optional[str] = None) -> Any:
         """
         Synchronously request user approval and wait for a response or timeout.
         同步請求使用者審核，並等待回覆或逾時。

@@ -1,4 +1,5 @@
-from typing import Optional, Any, Dict, List, Tuple
+import typing
+from typing import List, Dict, Tuple, Any, Optional, Callable, Dict, List, Tuple, Any, Optional, Callable
 import requests
 import pandas as pd
 from src.repositories.settings_repository import AlchemySettingsRepository, ISettingsRepository

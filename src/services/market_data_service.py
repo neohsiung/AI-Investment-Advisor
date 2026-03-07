@@ -1,5 +1,6 @@
 import pandas as pd
-from typing import List, Dict, Any, Optional, Union
+import typing
+from typing import List, Dict, Tuple, Any, Optional, Callable, Dict, List, Tuple, Any, Optional, Callable
 from datetime import date
 from src.utils.logger import setup_logger
 

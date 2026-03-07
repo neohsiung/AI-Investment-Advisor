@@ -1,5 +1,6 @@
 
-from typing import Dict
+import typing
+from typing import List, Dict, Tuple, Any, Optional, Callable, Dict, List, Tuple, Any, Optional, Callable
 from src.domain.broker import IBroker
 from src.repositories.settings_repository import AlchemySettingsRepository
 from src.services.etoro_service import EtoroService

@@ -1,6 +1,7 @@
 import logging
 from datetime import datetime
-from typing import Any, Optional
+import typing
+from typing import List, Dict, Tuple, Any, Optional, Callable, Dict, List, Tuple, Any, Optional, Callable
 from src.agents.engineer import SystemEngineerAgent
 from src.services.performance_service import PerformanceService
 from src.services.notification_service import NotificationService

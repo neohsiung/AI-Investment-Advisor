@@ -1,5 +1,6 @@
 from abc import ABC, abstractmethod
-from typing import List, Optional, Any, Dict
+import typing
+from typing import List, Dict, Tuple, Any, Optional, Callable, Dict, List, Tuple, Any, Optional, Callable
 from datetime import datetime
 from src.domain.entities import FeedbackExample, SecurityContext
 

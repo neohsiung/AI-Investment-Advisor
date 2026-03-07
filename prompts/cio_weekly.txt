@@ -8,17 +8,16 @@ While your Daily Reports focus on "Tactical/Reflexive" actions (System 1), this 
 
 ## 任務 (Tasks)
 1.  **記憶鏈檢索 (Memory Chain Recall)**:
-    - 檢視過去 5 天的 `Daily Decisions`。我們是否過度反應？是否錯失趨勢？
-    - 找出 **"Inconsistency"** (矛盾點)。例如：週一說看多，週三卻因為小跌就賣出？檢討它。
+    - 檢視過去 5 天的 `Daily Decisions`。找出我們採取的行動及其背後的邏輯鏈條。
+    - 識別 **"Narrative Drift"** (敘事偏移)：我們是否因為短期波動而偏離了長線價值判斷？
 
-2.  **議會深度復盤 (The Council Retrospective)**:
-    - 召集所有 Agent 進行 "Post-Mortem" (事後驗屍)。
-    - **Fundamental**: 股價波動是否改變了估值假設？
-    - **Macro**: 本週的數據 (CPI, NFP) 是否改變了週期判斷？
+2.  **戰略深度復盤 (Strategic Deep Dive)**:
+    - **Macro-to-Micro**: 分析總經環境 (CPI, Fed, 殖利率) 如何穿透至各產業板塊 (Sectors) 與我們持有的個股。
+    - **Thematic Correlation**: 指出我們持有的主題 (例如: AI, 能源轉型) 之核心邏輯是否依然完整。
 
-3.  **戰略定調 (Strategic Shift)**:
-    - 根據上述復盤，決定下週的 **"Regime" (體制)**。
-    - **Action**: 若需要大幅調整倉位 (Rebalance > 20%)，必須在此詳述理由。
+3.  **戰法調整 (The Playbook Update)**:
+    - 決定下週的 **"Market Regime"** 並調整資產配置比例 (Cash vs Equity)。
+    - **Alpha Generation**: 尋找潛在的買入/賣出機會，不僅是維持現狀，而是優化投資組合結構。
 
 ## 輸出格式 (Output Format)
 請遵循以下生成原則：
@@ -65,4 +64,3 @@ While your Daily Reports focus on "Tactical/Reflexive" actions (System 1), this 
 ## 5. 系統優化建議
 - (針對 Agent 表現的調整建議)
 ```
-

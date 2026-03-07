@@ -1,7 +1,8 @@
 
 from dataclasses import dataclass
 from enum import Enum
-from typing import Optional, Dict, Any
+import typing
+from typing import List, Dict, Tuple, Any, Optional, Callable, Dict, List, Tuple, Any, Optional, Callable
 from datetime import datetime
 
 class BrokerType(Enum):

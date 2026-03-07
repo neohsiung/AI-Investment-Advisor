@@ -1,5 +1,6 @@
 import os
-from typing import Dict, List, Any
+import typing
+from typing import List, Dict, Tuple, Any, Optional, Callable, Dict, List, Any
 from src.utils.logger import setup_logger
 from src.infrastructure.channels.base_adapter import BaseChannelAdapter
 
@@ -11,12 +12,7 @@ try:
         ApiClient,
         MessagingApi,
     )
-    # SDK v3.22+ renamed TextMessageContent → TextMessage
-    try:
-        from linebot.v3.messaging import TextMessage as TextMessageContent
-    except ImportError:
-        from linebot.v3.messaging import TextMessageContent
-    from linebot.v3.webhooks import MessageEvent, PostbackEvent
+    from linebot.v3.webhooks import MessageEvent, PostbackEvent, TextMessageContent
     HAS_LINE_SDK = True
 except ImportError:
     HAS_LINE_SDK = False
@@ -269,8 +265,10 @@ class LineBotAdapter(BaseChannelAdapter):
         """
         Forward webhook to handler asynchronously.
         Matching IChannelAdapter interface.
+        v4.5: Robust bytes/str handling.
         """
         if not self.is_active:
+            logger.warning("LineBotAdapter: handle_webhook called but adapter is NOT active.")
             return
             
         signature = None
@@ -287,11 +285,19 @@ class LineBotAdapter(BaseChannelAdapter):
             return
 
         try:
-            body = payload # payload is the body string for LINE
-            events = self.handler.parser.parse(body, signature)
+            # v4.5: payload can be bytes (from FastAPI) or str
+            if isinstance(payload, bytes):
+                body_str = payload.decode('utf-8')
+            else:
+                body_str = str(payload)
+                
+            logger.info(f"LINE Webhook processing {len(body_str)} chars. Secret starts with: {self.channel_secret[:4]}...")
+            # Using the v3 handler's parser
+            events = self.handler.parser.parse(body_str, signature)
             
             for event in events:
                 user_id = event.source.user_id
+                logger.debug(f"Processing LINE event type: {event.type} from {user_id}")
                 
                 if isinstance(event, PostbackEvent):
                     # Handle Button Click
@@ -309,13 +315,18 @@ class LineBotAdapter(BaseChannelAdapter):
                     if req_id and action:
                         await self._trigger_callback(req_id, action)
 
-                elif isinstance(event, MessageEvent) and isinstance(event.message, TextMessageContent):
-                    # Handle Text Message
-                    text = event.message.text
-                    logger.info(f"LINE Text: {text} from {user_id}")
-                    await self._trigger_text_callback(user_id, text)
+                elif isinstance(event, MessageEvent):
+                    # Handle Message Type
+                    if event.message.type == "text":
+                        # We use duck typing or safe casting for text content
+                        text = getattr(event.message, 'text', '')
+                        logger.info(f"LINE Text Event: '{text}' from {user_id}. Triggering callback.")
+                        await self._trigger_text_callback(user_id, text)
+                    else:
+                        logger.debug(f"Received non-text message type: {event.message.type}")
                         
         except InvalidSignatureError:
+            logger.error("LINE Webhook: Invalid Signature.")
             raise ValueError("Invalid signature")
         except Exception as e:
-            logger.error(f"LINE Webhook Error: {e}")
+            logger.error(f"LINE Webhook Handler Error: {e}", exc_info=True)

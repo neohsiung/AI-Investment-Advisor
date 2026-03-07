@@ -1,6 +1,7 @@
 import os
 import requests
-from typing import Dict, List, Any, Optional
+import typing
+from typing import List, Dict, Tuple, Any, Optional, Callable, Dict, List, Tuple, Any, Optional, Callable
 from datetime import datetime
 from sqlalchemy import text
 from src.utils.logger import setup_logger

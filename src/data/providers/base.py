@@ -1,5 +1,6 @@
 from abc import ABC, abstractmethod
-from typing import Dict, Any, List, Optional
+import typing
+from typing import List, Dict, Tuple, Any, Optional, Callable, Dict, Any, List, Optional
 import pandas as pd
 
 class MarketDataProvider(ABC):

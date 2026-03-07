@@ -1,6 +1,7 @@
 import os
 import requests
-from typing import Dict, List, Any, Optional
+import typing
+from typing import List, Dict, Tuple, Any, Optional, Callable, Dict, List, Any, Optional
 from src.utils.logger import setup_logger
 from src.services.settings_service import SettingsService
 from src.utils.tracing import trace_external_call

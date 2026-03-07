@@ -1,6 +1,7 @@
 import streamlit as st
 import pandas as pd
-from typing import Dict, Any, List, Optional, Union
+import typing
+from typing import List, Dict, Tuple, Any, Optional, Callable, Dict, List, Tuple, Any, Optional, Callable
 from src.services.analytics_service import LeverageCalculator, ROIEngine, update_daily_snapshot, PnLCalculator
 from src.services.market_data_service import MarketDataService
 from src.services.transaction_service import TransactionService

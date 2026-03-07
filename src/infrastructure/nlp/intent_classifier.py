@@ -1,6 +1,7 @@
 import logging
 import json
-from typing import Optional
+import typing
+from typing import List, Dict, Tuple, Any, Optional, Callable, Optional
 from src.agents.factory import AgentFactory
 from src.domain.interfaces import IIntentClassifier
 

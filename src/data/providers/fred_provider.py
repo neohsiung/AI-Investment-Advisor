@@ -1,4 +1,5 @@
-from typing import Dict, List, Any, Optional
+import typing
+from typing import List, Dict, Tuple, Any, Optional, Callable, Dict, List, Any, Optional
 from datetime import datetime
 import pandas as pd
 from src.data.providers.base import MarketDataProvider

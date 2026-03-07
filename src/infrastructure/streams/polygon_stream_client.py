@@ -3,7 +3,8 @@ import asyncio
 import json
 import logging
 import websockets
-from typing import List, Callable, Dict, Any
+import typing
+from typing import List, Dict, Tuple, Any, Optional, Callable, List, Callable, Dict, Any
 from src.utils.logger import setup_logger
 from src.services.settings_service import SettingsService
 

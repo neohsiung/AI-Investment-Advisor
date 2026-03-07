@@ -3,7 +3,8 @@ import logging
 from pathlib import Path
 from sqlalchemy import create_engine, text, Engine
 from sqlalchemy.orm import sessionmaker, scoped_session
-from typing import List, Dict, Any, Optional
+import typing
+from typing import List, Dict, Tuple, Any, Optional, Callable, Dict, List, Tuple, Any, Optional, Callable
 from datetime import datetime, timezone
 
 logger = logging.getLogger(__name__)

@@ -2,7 +2,8 @@ import logging
 import json
 import uuid
 from abc import ABC, abstractmethod
-from typing import Dict, Optional, List, Any
+import typing
+from typing import List, Dict, Tuple, Any, Optional, Callable, Dict, List, Tuple, Any, Optional, Callable
 from datetime import datetime, timezone
 from sqlalchemy import text
 from src.data.database import BaseRepository, get_db_engine

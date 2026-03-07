@@ -2,7 +2,8 @@ from datetime import datetime
 import uuid
 import json
 from abc import ABC, abstractmethod
-from typing import List, Dict, Any, Optional
+import typing
+from typing import List, Dict, Tuple, Any, Optional, Callable, Dict, List, Tuple, Any, Optional, Callable
 from sqlalchemy import text
 from src.data.database import BaseRepository, get_db_engine, get_db_connection
 from src.domain.entities import FeedbackExample, SecurityContext, SignalType

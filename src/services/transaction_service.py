@@ -3,7 +3,8 @@ import uuid
 import json
 from datetime import datetime
 import pandas as pd
-from typing import List, Dict, Any, Optional, Tuple, Union
+import typing
+from typing import List, Dict, Tuple, Any, Optional, Callable, Dict, List, Tuple, Any, Optional, Callable
 # from src.ingestor import TradeIngestor # Removed for Clean Clean Architecture
 from src.services.analytics_service import update_daily_snapshot
 

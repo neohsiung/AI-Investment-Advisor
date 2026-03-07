@@ -25,7 +25,7 @@ def render_hr_protocol_tab(st):
             color = 'background-color: #fff9c4' # Yellow
         return color
 
-    st.dataframe(df.style.applymap(highlight_status, subset=['Status']), use_container_width=True)
+    st.dataframe(df.style.map(highlight_status, subset=['Status']), use_container_width=True)
     
     st.markdown("### 處置建議")
     zombies = df[df['Status'].str.contains("Zombie")]

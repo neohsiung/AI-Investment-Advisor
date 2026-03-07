@@ -107,7 +107,7 @@ async def _process_notification(req: NotificationRequest):
             capture_error=True
         )
 
-        logger.info("Notification process completed", extra={"results": results, "user_id": req.user_id})
+        logger.info("Notification process completed", extra={"results": str(results), "user_id": str(req.user_id)})
 
         # Here we could record OTel metrics based on the results to fulfill SLO tracking
         # e.g. success_count, failure_count for each channel

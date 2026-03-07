@@ -1,6 +1,7 @@
 import streamlit as st
 import pandas as pd
-from typing import Dict, Any, List, Optional
+import typing
+from typing import List, Dict, Tuple, Any, Optional, Callable, Dict, List, Tuple, Any, Optional, Callable
 from src.services.analytics_service import AnalyticsService
 from src.repositories.transaction_repository import AlchemyTransactionRepository
 from src.services.market_data_service import MarketDataService

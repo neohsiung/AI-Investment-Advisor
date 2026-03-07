@@ -1,6 +1,7 @@
 import pandas as pd
 import uuid
 import datetime
+import typing
 from sqlalchemy import text
 from src.data.database import get_db_connection
 from .base import BaseIngestor
