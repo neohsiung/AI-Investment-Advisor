@@ -2,6 +2,7 @@ import os
 import json
 import requests
 import hashlib
+import re
 from abc import ABC, abstractmethod
 import typing
 from typing import List, Dict, Tuple, Any, Optional, Callable, Dict, List, Tuple, Any, Optional, Callable
@@ -271,8 +272,10 @@ class BaseAgent(ABC):
             # 2. Write WAL to Workspace /STATE.md (Rule #1)
             if hasattr(self, 'workspace_path') and self.workspace_path:
                 state_path = os.path.join(self.workspace_path, "STATE.md")
+                # Redact any accidental secrets before writing to disk
+                safe_wal_state = self._redact_secrets(wal_state)
                 with open(state_path, "w", encoding="utf-8") as f:
-                    f.write(f"# Session Checkpoint: {datetime.now().isoformat()}\n\n{wal_state}")
+                    f.write(f"# Session Checkpoint: {datetime.now().isoformat()}\n\n{safe_wal_state}")
             
             # 3. Truncate History: Keep System Prompt, latest WAL state, and drop the middle
             if len(messages) > 3:
@@ -584,6 +587,46 @@ class BaseAgent(ABC):
 
         else:
             raise ValueError(f"Unsupported provider: {provider}")
+
+    def _redact_secrets(self, text_value):
+        """
+        Best-effort redaction of common secret patterns (API keys, bearer tokens)
+        before persisting content to disk or logging.
+        """
+        if not isinstance(text_value, str):
+            return text_value
+
+        redacted = text_value
+
+        # Redact obvious bearer tokens (e.g., "Authorization: Bearer <token>" or "Bearer <token>")
+        redacted = re.sub(
+            r"(Authorization:\s*Bearer\s+)[^\s\"']+",
+            r"\1[REDACTED]",
+            redacted,
+            flags=re.IGNORECASE,
+        )
+        redacted = re.sub(
+            r"(Bearer\s+)[^\s\"']+",
+            r"\1[REDACTED]",
+            redacted,
+            flags=re.IGNORECASE,
+        )
+
+        # Redact common api_key patterns in code / JSON / config-like text
+        redacted = re.sub(
+            r"([\"']?api_key[\"']?\s*[:=]\s*[\"'])[A-Za-z0-9_\-\.]+([\"'])",
+            r"\1[REDACTED]\2",
+            redacted,
+            flags=re.IGNORECASE,
+        )
+        redacted = re.sub(
+            r"([\"']?API_KEY[\"']?\s*[:=]\s*[\"'])[A-Za-z0-9_\-\.]+([\"'])",
+            r"\1[REDACTED]\2",
+            redacted,
+            flags=re.IGNORECASE,
+        )
+
+        return redacted
 
     def _compute_hash(self, data):
         """

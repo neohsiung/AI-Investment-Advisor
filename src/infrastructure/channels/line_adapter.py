@@ -291,7 +291,7 @@ class LineBotAdapter(BaseChannelAdapter):
             else:
                 body_str = str(payload)
                 
-            logger.info(f"LINE Webhook processing {len(body_str)} chars. Secret starts with: {self.channel_secret[:4]}...")
+            logger.info(f"LINE Webhook processing {len(body_str)} chars.")
             # Using the v3 handler's parser
             events = self.handler.parser.parse(body_str, signature)
             

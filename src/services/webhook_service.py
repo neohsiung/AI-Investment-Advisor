@@ -6,6 +6,7 @@ from typing import List, Dict, Tuple, Any, Optional, Callable, Dict, List, Tuple
 from fastapi import APIRouter, Request, HTTPException
 from src.utils.logger import setup_logger
 from src.config.rss_config import get_rss_sources
+from src.services.settings_service import SettingsService
 
 logger = setup_logger("WebhookService")
 
@@ -93,7 +94,7 @@ class N8nParser(BaseSourceParser):
         msg_url = data.get("link") or data.get("url")
         signal_id = data.get("event_id")
         if not signal_id and msg_url:
-            signal_id = f"rss_{hashlib.md5(msg_url.encode()).hexdigest()}"
+            signal_id = f"rss_{hashlib.sha256(msg_url.encode()).hexdigest()}"
             
         return {
             "type": data.get("event_type", "N8N_AUTOMATION"),
@@ -118,15 +119,16 @@ SOURCE_PARSERS = {
 }
 
 class WebhookService:
-    def __init__(self, sentinel_service=None):
+    def __init__(self, sentinel_service=None, settings_service=None):
         self.sentinel_service = sentinel_service
+        self.settings_service = settings_service or SettingsService()
         
     def set_sentinel_service(self, sentinel_service):
         self.sentinel_service = sentinel_service
 
     async def handle_generic_webhook(self, source: str, request: Request) -> Dict[str, str]:
         logger.info(f"Generic webhook {source} headers: {dict(request.headers)}")
-        webhook_secret = os.getenv("WEBHOOK_SECRET")
+        webhook_secret = self.settings_service.get_setting("WEBHOOK_SECRET")
         if webhook_secret:
             request_secret = request.headers.get("X-Webhook-Secret")
             if request_secret != webhook_secret:
@@ -155,11 +157,11 @@ class WebhookService:
 
     async def handle_finnhub_webhook(self, request: Request) -> Dict[str, str]:
         logger.info(f"Finnhub webhook headers: {dict(request.headers)}")
-        secret = os.getenv("FINNHUB_WEBHOOK_SECRET")
+        secret = self.settings_service.get_setting("FINNHUB_WEBHOOK_SECRET")
         if secret:
             req_secret = request.headers.get("X-Finnhub-Secret")
             if req_secret != secret:
-                 logger.warning(f"Unauthorized Finnhub webhook attempt. Received: {req_secret[:4] if req_secret else 'None'}...")
+                 logger.warning(f"Unauthorized Finnhub webhook attempt.")
                  raise HTTPException(status_code=403, detail="Unauthorized")
         
         try:
