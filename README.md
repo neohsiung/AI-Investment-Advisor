@@ -109,9 +109,9 @@ graph TD
     end
 
     subgraph "Data & Memory"
-        PG["(PostgreSQL + pgvector")]
-        RD["(Redis Cache")]
-        MEM[Adaptive Memory]
+        PG["PostgreSQL + pgvector"]
+        RD["Redis Cache"]
+        MEM["Adaptive Memory"]
     end
 
     WF --> CIO
