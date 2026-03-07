@@ -67,6 +67,10 @@ def pytest_configure(config):
     import os
     os.environ["DB_TYPE"] = "sqlite"
     os.environ["DB_URL"] = "sqlite:///:memory:"
+    # v4.2.1: Ensure we are recognized as a test environment even during collection
+    if "PYTEST_CURRENT_TEST" not in os.environ:
+        os.environ["PYTEST_CURRENT_TEST"] = "collection"
+        
     # Unset Postgres variables if they exist in .env to prevent leaky defaults
     for env_var in ["DB_HOST", "DB_USER", "DB_PASS", "DB_NAME"]:
         if env_var in os.environ:
