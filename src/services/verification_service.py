@@ -32,6 +32,14 @@ class VerificationService:
         
         # Store settings_service for later use
         self.settings_service = settings_service
+        
+        # 4. Register verification callback with all adapters
+        # This ensures incoming text messages are routed to self.verify_any_reply
+        if hasattr(self.notification_service, 'adapters'):
+            for adapter in self.notification_service.adapters:
+                if hasattr(adapter, 'register_text_callback'):
+                    adapter.register_text_callback(self.verify_any_reply)
+                    logger.debug(f"Registered verification callback for {adapter.__class__.__name__}")
 
     async def test_connectivity(self, user_id: str, channel: str) -> Tuple[bool, str]:
         """

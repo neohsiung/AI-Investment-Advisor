@@ -50,9 +50,9 @@ class BaseChannelAdapter(IChannelAdapter):
         if self.text_callback:
             import asyncio
             if asyncio.iscoroutinefunction(self.text_callback):
-                await self.text_callback(self, user_id, text)
+                await self.text_callback(user_id, text)
             else:
-                self.text_callback(self, user_id, text)
+                self.text_callback(user_id, text)
 
     # stubs for abstract methods
     async def send_message(self, user_id: str, message: Any, **kwargs) -> bool:
