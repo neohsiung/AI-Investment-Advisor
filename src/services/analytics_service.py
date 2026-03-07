@@ -1,6 +1,6 @@
 import pandas as pd
 import typing
-from typing import List, Dict, Tuple, Any, Optional, Callable, Dict, List, Tuple, Any, Optional, Callable
+from typing import List, Dict, Tuple, Any, Optional, Callable, Union
 from src.repositories.snapshot_repository import AlchemySnapshotRepository, ISnapshotRepository
 from src.repositories.transaction_repository import AlchemyTransactionRepository, ITransactionRepository
 from src.services.market_data_service import MarketDataService

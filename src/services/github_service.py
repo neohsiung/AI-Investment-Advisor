@@ -5,7 +5,7 @@ GitHub 服務：用於與 GitHub API 互動 (MCP 優化)
 from __future__ import annotations
 import os
 import typing
-from typing import List, Dict, Tuple, Any, Optional, Callable, Dict, List, Tuple, Any, Optional, Callable
+from typing import List, Dict, Tuple, Any, Optional, Callable, Union, Awaitable
 from github import Github, Auth
 from src.utils.logger import setup_logger
 from src.services.settings_service import SettingsService

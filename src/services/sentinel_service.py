@@ -4,7 +4,7 @@ logger = setup_logger("SentinelService")
 import asyncio
 import os
 import typing
-from typing import List, Dict, Tuple, Any, Optional, Callable, Dict, List, Tuple, Any, Optional, Callable
+from typing import List, Dict, Tuple, Any, Optional, Callable, Union, Awaitable
 from datetime import date
 import pandas as pd
 

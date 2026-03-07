@@ -42,10 +42,10 @@ class IntentClassifier(IIntentClassifier):
         
         try:
             # Direct keyword fallback for speed/reliability (Pre-check)
-            key_text = text.strip()
-            if "執行" in key_text and "不" not in key_text:
+            key_text = text.strip().upper()
+            if any(kw in key_text for kw in ["執行", "OK", "確定", "好", "可以", "批准", "YES", "APPROVE"]) and "不" not in key_text:
                 return "APPROVE"
-            if "不執行" in key_text or "取消" in key_text:
+            if any(kw in key_text for kw in ["不執行", "取消", "NO", "REJECT"]):
                 return "REJECT"
 
             # Run LLM

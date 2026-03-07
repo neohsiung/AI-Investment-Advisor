@@ -1,7 +1,7 @@
 from src.utils.logger import setup_logger
 from abc import ABC, abstractmethod
 import typing
-from typing import List, Dict, Tuple, Any, Optional, Callable, Dict, List, Tuple, Any, Optional, Callable
+from typing import List, Dict, Tuple, Any, Optional, Callable, Union, Awaitable
 import sys
 from datetime import datetime
 from src.utils.time_utils import get_current_time

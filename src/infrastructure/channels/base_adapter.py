@@ -74,7 +74,7 @@ class BaseChannelAdapter(IChannelAdapter):
     async def handle_webhook(self, payload: typing.Any, headers: typing.Dict[str, typing.Any] = None) -> typing.Any:
         return {"ok": True}
 
-    def verify_signature(self, payload: typing.Any, headers: dict[str, typing.Any] = None) -> bool:
+    def verify_signature(self, payload: typing.Any, headers: typing.Dict[str, typing.Any] = None) -> bool:
         """
         Verify the signature of an incoming webhook request.
         To be implemented by subclasses for specific platforms (Slack, LINE, Messenger).

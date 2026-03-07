@@ -1,6 +1,5 @@
-import requests
-from bs4 import BeautifulSoup
-from src.utils.logger import setup_logger
+import typing
+from typing import List, Dict, Tuple, Any, Optional
 
 class BrowserService:
     """
@@ -45,7 +44,7 @@ class BrowserService:
             self.logger.error(f"Error scraping {url}: {e}")
             return f"Error fetching content: {e}"
 
-    def google_search(self, query: str) -> list[dict[str, str]]:
+    def google_search(self, query: str) -> typing.List[typing.Dict[str, str]]:
         """
         Performs a Google search (currently a mock implementation).
         執行 Google 搜尋（目前為模擬實作）。

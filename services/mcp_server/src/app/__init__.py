@@ -7,7 +7,7 @@ from linebot.exceptions import InvalidSignatureError
 from linebot.models import MessageEvent, TextMessage, TextSendMessage
 from fastapi import FastAPI, HTTPException, Request, Header
 from pydantic import BaseModel
-from typing import Dict, List, Any, Optional
+from typing import Dict, List, Any, Optional, Union, Awaitable, Tuple, Callable
 from datetime import datetime
 import logging
 import os

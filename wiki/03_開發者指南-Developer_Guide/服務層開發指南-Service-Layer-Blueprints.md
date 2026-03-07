@@ -3,8 +3,10 @@
 > **[繁體中文 (Traditional Chinese)](#zh) | [English](#en)**
 
 ### 版本紀錄 (Version History)
+
 | Date | Version | Description | Author |
 | :--- | :--- | :--- | :--- |
+| 2026-03-07 | v4.5 | **Async Interaction Loop**: `InteractionService` 支援雙向委派至 `VerificationService`，實現全通路 "OK" 應答驗證。 | Antigravity |
 | 2026-03-05 | v4.4 | **Keyword Discovery Service**: 新增 `RiskKeywordService` 3源探索、DI 注入、MAX_KEYWORDS 動態上限。Repository 新增 3 方法。 | Antigravity |
 | 2026-02-28 | v4.3 | **Webhook Updates**: Added Heartbeat API and Market-Alert webhooks for Sentinel. | Antigravity |
 | 2026-02-18 | v4.1 | **Async & Multi-Identity**: Refactored Notification/Interaction services to be non-blocking. Unified user identity resolution. | Neo |
@@ -23,7 +25,9 @@
 本文件依據 [文件框架定義](文件框架定義-Document-Frameworks) 編寫，詳解 `src/services/` 下核心業務邏輯的實作規範。
 
 ### 1. 架構概覽 (Overview)
+
 服務層作為「領域邏輯」的承載者，負責協調 Repository 與外部 API。
+
 - **無狀態設計 (Stateless)**: 不持有用戶狀態，透過參數或 Repository 傳入。
 - **故障轉移 (Failover)**: `MarketDataService` 等核心服務具備多層級 Provider 退避策略。
 - **依賴注入 (DI)**: Service 接受 Repository 介面注入，Details 見 [DI Pattern](設計模式-依賴注入-DI-Pattern)。
@@ -41,6 +45,7 @@
 | `SupplyChainService` | `supply_chain_service.py` | 硬體瓶頸追蹤 (CoWoS/HBM)、MAG7 CaPex 供應鏈知識圖譜映射與短缺溢價估算。 |
 
 **退避策略 (Failover Strategy)**:
+
 ```mermaid
 graph TD
     Start[請求報價] --> P1{Polygon API}
@@ -80,7 +85,7 @@ graph TD
 | :--- | :--- | :--- |
 | `SentinelService` | `sentinel_service.py` | 7×24 市場事件監聽，**4 觸發維度**: VIX/持倉異動/加權新聞 (DB 關鍵字)/宏觀指標。 |
 | `CouncilService` | `council_service.py` | 碎形辯論 (Fractal Debate) — 對每檔持倉執行多角度質疑。 |
-| `VerificationService` | `verification_service.py` | 多通路連線性測試與身份驗證 (Challenge-Response)。 |
+| `VerificationService` | `verification_service.py` | 多通路連線性測試與身分驗證 (**Challenge-Response 應答流程**)。支援非同步驗證碼與全局回覆匹配。 |
 
 #### 2.5 持久化與記憶 (Persistence & Memory)
 
@@ -109,7 +114,7 @@ graph TD
 
 | 服務 | 檔案 | 核心職責 |
 | :--- | :--- | :--- |
-| `InteractionService` | `interaction_service.py` | **[Async v4.1]** 雙向互動 (Approvals) — 支援 LINE Webhook 非同步路由。 |
+| `InteractionService` | `interaction_service.py` | **[Async v4.5]** 雙向互動 (Approvals) — 支援 LINE/Telegram Webhook 路由；具備**未匹配訊息委派**機制 (委派至 VerificationService)。 |
 | `SchedulerService` | `scheduler_service.py` | Cron 排程 — 自動日報/週報生成。 |
 | `NotificationService` | `notification_service.py` | **[Async v4.1]** 非同步警報推送，具備 UUID 多通路映射能力。 |
 | `NotificationFilters` | `notification_filters.py` | 興趣導向通知過濾 — 依據使用者每通道訂閱的類別 (sentinel/report/approval) 決定是否推送。 |
@@ -120,18 +125,23 @@ graph TD
 ### 3. 代理人執行引擎 (Agent Execution Engine)
 
 #### 3.1 ReAct 思考機制 (Think-Act-Observe)
+
 實現於 `BaseAgent.run_tool_loop`：
-1.  **Regex 解析**: 解析 `CALL: tool_name({"arg": "val"})` 或 `SEARCH: "query"`。
-2.  **McpServer 調度**: 優先搜尋 Local Skills，無則調用 Remote MCP。
-3.  **上下文拼接**: 工具輸出封裝為 `System: [Tool Output]` 並重新注入 LLM 歷史。
+
+1. **Regex 解析**: 解析 `CALL: tool_name({"arg": "val"})` 或 `SEARCH: "query"`。
+2. **McpServer 調度**: 優先搜尋 Local Skills，無則調用 Remote MCP。
+3. **上下文拼接**: 工具輸出封裝為 `System: [Tool Output]` 並重新注入 LLM 歷史。
 
 #### 3.2 A2A 實體化路徑 (Agent Instantiation)
-1.  **Factory 介入**: `AgentFactory` 根據名稱動態建立 Agent (支援 `tier` 參數)。
-2.  **依賴注入**: 自動注入 `feedback_repo` 與 `market_tools`。
-3.  **同步執行**: 目前為同步阻塞調用，適合確定性研究路徑。
+
+1. **Factory 介入**: `AgentFactory` 根據名稱動態建立 Agent (支援 `tier` 參數)。
+2. **依賴注入**: 自動注入 `feedback_repo` 與 `market_tools`。
+3. **同步執行**: 目前為同步阻塞調用，適合確定性研究路徑。
 
 #### 3.3 任務規劃引擎 (Task Planning)
+
 *詳見: [任務規劃與執行引擎](任務規劃與執行引擎-Task-Planning-Engine)*
+
 - **核心**: Goal → DAG 分解 → Complexity Scoring → Model Tier Selection。
 - **模型路由**: Fast (Flash) / Smart (Pro) / Advanced (Thinking)。
 
@@ -151,6 +161,7 @@ graph TD
 ### 5. 資產快照流程 (Asset Snapshot Flow)
 
 位於 `AnalyticsService` -> `SnapshotRecorder`，由 `SchedulerService` 或 CLI 觸發：
+
 1. **數據獲取**: 從 `ITransactionRepository` 取得當前持倉與現金流。
 2. **行情刷新**: 透過 `MarketDataService` 獲取最新的標的價格。
 3. **指標計算**: 執行 `LeverageCalculator` 取得 NLV、TNV 與槓桿比率。
@@ -159,17 +170,20 @@ graph TD
 ### 6. 損益計算算法 (PnL Calculation Algorithm)
 
 位於 `AnalyticsService` -> `PnLCalculator`，採用 **加權平均成本法 (Weighted Average Cost)**：
+
 - **買入 (BUY)**: `new_avg_cost = ((old_qty * old_avg_cost) + (buy_qty * buy_price) + fees) / (old_qty + buy_qty)`
-- **賣出 (SELL)**: 
+- **賣出 (SELL)**:
   - `realized_pnl = (sell_price - avg_cost) * sell_qty - fees`
   - *Note*: 賣出不改變平均成本，僅減少庫存量。
 - **未實現損益 (Unrealized PnL)**: `(current_price - avg_cost) * current_qty`
 
 ### 5. NFR
+
 - **響應時間**: P95 本地延遲 < 500ms (不含 LLM)。
 - **並發**: `ThreadPoolExecutor` 支援 50+ 標的並行分析。
 
 ### 6. 預期效益與成果 (Expected Outcomes)
+
 - **商業價值 (Business Value)**: 將散亂的 API 邏輯收攏至統一的 38 個 Service 節點中，大幅提升了程式碼復用率。開發者可透過這份「功能型錄」在 1 天內即插即用完成新業務功能的組合。
 - **性能指標 (Performance Target)**: 確保 `AnalyticsService` 與 `MarketDataService` 等核心路徑 P95 響應延遲小於 500 毫秒，支撐多 Agent 併發讀取。
 
@@ -180,11 +194,13 @@ graph TD
 ## 🇺🇸 Service Layer Blueprints (v3.6)
 
 ### 1. Architecture
+
 - **Model-Service Decoupling**: Services interact with Pydantic models, never raw SQL.
 - **Provider Aggregation**: Multiple data sources under a single `MarketDataService`.
 - **Factory Pattern**: `BrokerFactory`, `MemoryFactory`, `AgentFactory` for runtime abstraction.
 
 ### 2. Service Categories (38 Services)
+
 - **Data & Market** (5): MarketData, Fred, Search, Browser, SupplyChain
 - **Multi-Broker & Trading** (6): BrokerFactory, Etoro, Futu, IBKR, PortfolioAggregator, AutomatedTrading
 - **Agent Engine** (8): Workflow, TaskPlanning, HR, Refinement, Evaluation, Attribution, ExperienceReplay, UserFocus
@@ -194,14 +210,17 @@ graph TD
 - **Interaction & Notifications** (5): Scheduler, Notification, NotificationFilters, Reporting, Webhook
 
 ### 3. Performance
+
 - **Local Latency**: < 500ms (P95).
 - **Throughput**: 50+ tickers in parallel.
 
 ### 4. Expected Outcomes
+
 - **Business Value**: Centralizes disparate APIs into 38 cohesive service nodes, maximizing code reusability. Developers can leverage this 'feature catalog' to compose new business functions rapidly.
 - **Performance Target**: Ensures P95 response latency under 500ms for core paths like `AnalyticsService` and `MarketDataService` to support high-concurrency Agent reads.
 
 ## 🔗 Bidirectional Links
+
 - **Architect View**: [System Landscape](系統全景圖-System-Landscape)
 - **Dev Guide**: [Local Dev Setup](環境設定與本地開發-Environment-Local-Dev)
 - **Patterns**: [Design Patterns Intro](設計模式導讀-Design-Patterns-Intro)
