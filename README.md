@@ -1,3 +1,5 @@
+| Date | Version | Summary | Author |
+| :--- | :--- | :--- | :--- |
 | 2026-03-08 | v1.6.0 | **Security Hardening & Centralized Redaction**: Upgraded `WebhookService` to SHA256 and centralized secret redaction in `BaseAgent` to protect state logs. Updated dependencies to latest secure versions. | Antigravity |
 | 2026-03-01 | v1.5.0 | **Tech Stack Modernization**: Upgraded OpenTelemetry to 1.39.1 and Protobuf to 5.x. Formally removed `futu-api` and refined Sentinel fallback logic for cleaner architecture. | Antigravity |
 | 2026-03-01 | v1.4.0 | **Data Source Centralization & Readwise Integration**: Refactored the Data Source Matrix into a unified registry for UI and Sentinel parity. Implemented Readwise API into the core tracking radar, and introduced the Architecture-First Preflight Check rule. | Antigravity |
@@ -48,9 +50,9 @@
 ```mermaid
 graph LR
     subgraph "AI Tiers"
-        A[Advanced 🚀] -->"|Deep Analysis| LLMA[GPT-4o / Claude 3.5]"
-        B[Smart 🧠] -->"|Debate & Logic| LLMB[Gemini 1.5 Pro]"
-        C[Fast ⚡] -->"|Formatting| LLMC[GPT-4o-mini]"
+        A["Advanced 🚀"] -->|Deep Analysis| LLMA["GPT-4o / Claude 3.5"]
+        B["Smart 🧠"] -->|Debate & Logic| LLMB["Gemini 1.5 Pro"]
+        C["Fast ⚡"] -->|Formatting| LLMC["GPT-4o-mini"]
     end
     
     subgraph "Data Tiers"
@@ -96,14 +98,14 @@ cp .env.example .env
 
 ```mermaid
 graph TD
-    User((User)) <-->"|Bilingual Chat| DASH[Streamlit Dashboard]"
-    DASH <-->"WF[WorkflowService]"
+    User((User)) <-->|Bilingual Chat| DASH["Streamlit Dashboard"]
+    DASH <--> WF["WorkflowService"]
     
     subgraph "Intelligent Core"
-        CIO[CIO Agent] <--> COUNCIL{Council}
-        CIO -->"|Decompose| SUB[7 Specialized Agents]"
-        SUB -->"|Feedback| ENG[Engineer Agent - Auto Optimize]"
-        S[🦅 Sentinel<br/>5D Tracker] --> COUNCIL
+        CIO["CIO Agent"] <--> COUNCIL{Council}
+        CIO -->|Decompose| SUB["7 Specialized Agents"]
+        SUB -->|Feedback| ENG["Engineer Agent - Auto Optimize"]
+        S["🦅 Sentinel<br/>5D Tracker"] --> COUNCIL
     end
 
     subgraph "Data & Memory"
@@ -113,7 +115,8 @@ graph TD
     end
 
     WF --> CIO
-    CIO <--> PG & RD
+    CIO <--> PG
+    CIO <--> RD
 ```
 
 ### ️ 治理與規範 (Governance & Standards)
@@ -159,9 +162,9 @@ This project employs a highly optimized layering strategy to balance cost and pe
 ```mermaid
 graph LR
     subgraph "AI Tiers"
-        A[Advanced 🚀] -->"|Deep Analysis| LLMA[GPT-4o / Claude 3.5]"
-        B[Smart 🧠] -->"|Debate & Logic| LLMB[Gemini 1.5 Pro]"
-        C[Fast ⚡] -->"|Formatting| LLMC[GPT-4o-mini]"
+        A["Advanced 🚀"] -->|Deep Analysis| LLMA["GPT-4o / Claude 3.5"]
+        B["Smart 🧠"] -->|Debate & Logic| LLMB["Gemini 1.5 Pro"]
+        C["Fast ⚡"] -->|Formatting| LLMC["GPT-4o-mini"]
     end
     
     subgraph "Data Tiers"
