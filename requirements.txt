@@ -24,7 +24,7 @@ google-auth-httplib2==0.1.1
 Jinja2==3.1.6
 fredapi==0.5.1
 beautifulsoup4==4.12.2
-markdown==3.5.1
+markdown==3.8.1
 extra-streamlit-components==0.1.70
 
 # Security Tools
@@ -38,7 +38,7 @@ duckduckgo-search==3.9.3
 tavily-python==0.5.0 # Upgraded from 0.2.7 to resolve tiktoken conflict with litellm
 line-bot-sdk==3.22.0
 PyGithub==2.8.1
-nltk==3.9.2
+nltk==3.9.3
 pytrends==4.9.2
 
 # MCP Microservice
@@ -67,17 +67,17 @@ ib_insync==0.9.86
 # Security Overrides (pip-audit / Dependabot fixes)
 protobuf>=5.29.0
 aiohttp==3.13.3
-authlib==1.6.4
-filelock==3.20.1
+authlib==1.6.7
+filelock==3.20.3
 marshmallow==3.26.2
 pillow==10.4.0 # Downgraded from 12.1.1 due to conflict with streamlit 1.37.0 (<11)
-starlette==0.47.2
+starlette==0.49.1
 tornado==6.5
-urllib3==2.6.0
+urllib3==2.6.3
 h2==4.3.0
 diskcache==5.6.3 # Latest. Pickle is inherent to diskcache. False positive for local cache.
 transformers==4.53.0
 litellm==1.61.15
 python-multipart==0.0.22
 sentencepiece==0.2.1
-gradio==5.31.0
+gradio==6.7.0
