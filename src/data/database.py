@@ -435,6 +435,7 @@ def init_db(db_path=None, force=False, engine=None):
         # v4.1.7: Post-deployment strict migrations (UUID focus)
         # Add Unique Index for UPSERT on daily_snapshots if missing
         if not is_sqlite:
+            try:
                 check_idx = text("SELECT indexname FROM pg_indexes WHERE tablename = 'daily_snapshots' AND indexdef LIKE '%(date, user_id, account_id)%'")
                 if not conn.execute(check_idx).fetchone():
                     # v5.1: Update Upsert index to include account_id for multi-account support
