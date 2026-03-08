@@ -70,7 +70,11 @@
 ### 3.2 數據與 SQL 安全
 
 - **Safe-SQL-Only (Rule #10)**: 所有 Raw SQL 必須使用參數化查詢，嚴禁字串拼接。
-- **憑證管理 (Rule #13)**: 嚴禁硬編碼憑證，統一使用 `.env`。**生產環境代碼嚴禁使用 `os.getenv` 直接讀取敏感資訊**，必須透過 `SettingsService` 讀取並支援遮蔽。
+- **憑證與參數命名規範 (Naming Standards for Keys & Settings)**:
+  - **數據源金鑰 (Data Source Keys)**: 統一使用 `source_{provider_id}_{field_name}` 格式 (Lowercase Snake Case)。例如：`source_polygon_api_key`, `source_fmp_api_key`。
+  - **一般應用設定 (General App Settings)**: 統一使用 `{feature_name}_{parameter_name}` 格式 (Lowercase Snake Case)。例如：`notification_line_token`, `ai_trade_threshold`。
+  - **嚴禁混用**: 嚴禁在資料庫設定區使用 `UPPERCASE_KEYS` 或 `camelCaseKeys`。
+- **憑證讀取原則 (Rule #13)**: 嚴禁硬編碼憑證。生產環境代碼必須優先透過 `SettingsService` 讀取上述標準化金鑰，並支援資料庫加密。
 - **加密規範 (Cryptographic Standards)**:
   - 嚴禁使用 `MD5` 或 `SHA1` 進行任何具備安全性意涵的雜湊 (Hashing)。
   - 所有信號 ID (Signal ID) 或 實體識別碼 (Entity IDs) 生成必須使用 **SHA256**。
@@ -94,3 +98,24 @@
   - `scripts/tmp_*`
   - `*_local.py`
 - **通性工具**: 具備通用性且需於團隊/CI 間共享的工具（如 `run_full_verification.sh`, `seed_data.py`）嚴禁使用上述個人命名模式，且必須由 Git 追蹤。
+
+---
+
+## 5. 數據源實作準則 (Data Source Guidelines)
+
+為了維護數據源矩陣 (Data Source Matrix) 的透明度與一致性，所有新數據源的開發必須遵循以下原則：
+
+### 5.1 配置透明化 (Configuration Transparency)
+
+- **強制連結**: 必須在 `src/config/data_source_matrix_config.py` 中註冊 `url` 欄位，指向官方 API 取 Key 頁面或文檔。
+- **中文描述**: `desc` 欄位必須以繁體中文說明該來源在系統中的具體「業務價值」(例如：用於內線交易異動監控)。
+
+### 5.2 實作封裝與隔離
+
+- **基底繼承**: 所有 Provider 必須繼承 `BaseDataProvider` 介面。
+- **敏感資訊處理**: 嚴禁使用 `os.getenv`。必須透過 `SettingsService` 讀取 API Key，確保在 Dashboard 中可動態配置且具備遮蔽能力。
+
+### 5.3 驗證要求
+
+- **關鍵路徑測試**: 必須包含網路異常、API 限流 (Rate Limit) 及無數據回傳等反向情境測試。
+- **文件同步**: 完成實作後，必須更新 Wiki 數據源矩陣文檔。
