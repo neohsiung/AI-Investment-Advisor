@@ -209,7 +209,7 @@ def render_trading_tab(st, user_id: str):
                     "enable_ibkr": enable_ibkr,
                     "ibkr_host": ibkr_host,
                     "ibkr_port": ibkr_port,
-                    "financialdata_api_key": financialdata_api_key,
+                    "FINANCIALDATA_API_KEY": financialdata_api_key,
                     "risk_profile": new_risk_profile,
                     "target_cash_ratio": new_target_cash
                 }

@@ -24,7 +24,7 @@ class FinancialDataProvider(MarketDataProvider):
         
         # Load API key from settings
         settings = self.settings_service.get_all_settings()
-        self.api_key = api_key or settings.get("financialdata_api_key")
+        self.api_key = api_key or settings.get("FINANCIALDATA_API_KEY")
         self.base_url = "https://financialdata.net/api/v1"
         
         if not self.api_key:

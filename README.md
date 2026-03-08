@@ -80,7 +80,7 @@ graph LR
 - **核心**: Python 3.10+ (Local), Python 3.11 (Docker) - Optimized for Async I/O
 - **智能體**: DSPy, OpenAI/Gemini/Claude Multi-Tier Routing
 - **基礎設施**: Docker Compose, PostgreSQL 16, Redis, SigNoz (Local APM 觀測平台)
-- **資料與遙測**: MCP (Model Context Protocol), **OpenTelemetry 1.39.1**, TAVILY, Polygon, FMP, Tiingo, Finnhub, AlphaVantage, FRED
+- **資料與遙測**: [MCP (Model Context Protocol)](https://modelcontextprotocol.io), **OpenTelemetry 1.39.1**, [TAVILY](https://tavily.com), [Polygon](https://polygon.io), [FMP](https://financialmodelingprep.com/developer/docs/), [Tiingo](https://api.tiingo.com), [Finnhub](https://finnhub.io/docs/api), [AlphaVantage](https://www.alphavantage.co/documentation/), [FinancialData.Net](https://financialdata.net/documentation), [FRED](https://fred.stlouisfed.org/docs/api/fred/)
 
 ### 📦 快速開始
 
@@ -196,7 +196,7 @@ graph LR
 - **Language**: Python 3.10+ (Local), Python 3.11 (Docker)
 - **AI Core**: Multi-LLM Tiered Routing (Advanced 🚀, Smart 🧠, Fast ⚡)
 - **Infrastructure**: Dockerized PostgreSQL 16, Redis semantic cache, SigNoz (Local APM Observability)
-- **Data & Telemetry**: MCP (Model Context Protocol), **OpenTelemetry 1.39.1**, TAVILY Search, Polygon, Tiingo, Finnhub, AlphaVantage, FMP, FRED
+- **Data & Telemetry**: [MCP (Model Context Protocol)](https://modelcontextprotocol.io), **OpenTelemetry 1.39.1**, [TAVILY Search](https://tavily.com), [Polygon](https://polygon.io), [Tiingo](https://api.tiingo.com), [Finnhub](https://finnhub.io/docs/api), [AlphaVantage](https://www.alphavantage.co/documentation/), [FMP](https://financialmodelingprep.com/developer/docs/), [FinancialData.Net](https://financialdata.net/documentation), [FRED](https://fred.stlouisfed.org/docs/api/fred/)
 
 ### 📦 Quick Start
 
