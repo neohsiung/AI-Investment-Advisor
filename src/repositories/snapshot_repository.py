@@ -65,11 +65,8 @@ class AlchemySnapshotRepository(BaseRepository, ISnapshotRepository):
         取得使用者的所有快照資料 (DataFrame)。
         """
         with self.engine.connect() as conn:
-            where_clause = "WHERE user_id = :uid"
+            query = text("SELECT * FROM daily_snapshots WHERE user_id = :uid AND account_id = :aid ORDER BY date ASC")
             params = {"uid": user_id, "aid": account_id or ""}
-            where_clause += " AND account_id = :aid"
-                
-            query = text(f"SELECT * FROM daily_snapshots {where_clause} ORDER BY date ASC")
             return pd.read_sql(query, conn, params=params)
 
     def get_latest_by_user(self, user_id: str, account_id: str = None) -> Optional[Union[pd.Series, Dict[str, Any]]]:
@@ -78,11 +75,8 @@ class AlchemySnapshotRepository(BaseRepository, ISnapshotRepository):
         取得使用者的最新快照。
         """
         with self.engine.connect() as conn:
-            where_clause = "WHERE user_id = :uid"
+            query = text("SELECT * FROM daily_snapshots WHERE user_id = :uid AND account_id = :aid ORDER BY date DESC LIMIT 1")
             params = {"uid": user_id, "aid": account_id or ""}
-            where_clause += " AND account_id = :aid"
-
-            query = text(f"SELECT * FROM daily_snapshots {where_clause} ORDER BY date DESC LIMIT 1")
             df = pd.read_sql(query, conn, params=params)
             if not df.empty:
                 return df.iloc[0]

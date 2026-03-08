@@ -70,34 +70,36 @@ class AlchemyTransactionRepository(BaseRepository, ITransactionRepository):
         with self.engine.connect() as conn:
             sql = "SELECT * FROM transactions WHERE user_id = :user_id"
             params = {"user_id": user_id}
-            if account_id:
-                sql += " AND source_file = :account_id"
-                params["account_id"] = account_id
-            sql += " ORDER BY trade_date DESC, action DESC"
-            return conn.execute(text(sql), params).fetchall()
+            query = text("""
+                SELECT * FROM transactions 
+                WHERE user_id = :user_id 
+                AND (:account_id IS NULL OR source_file = :account_id)
+                ORDER BY trade_date DESC, action DESC
+            """)
+            params = {"user_id": user_id, "account_id": account_id}
+            return conn.execute(query, params).fetchall()
 
     def get_all_by_user_df(self, user_id: str, account_id: str = None) -> pd.DataFrame:
         with self.engine.connect() as conn:
-            sql = "SELECT * FROM transactions WHERE user_id = :user_id"
-            params = {"user_id": user_id}
-            if account_id:
-                sql += " AND source_file = :account_id"
-                params["account_id"] = account_id
-            sql += " ORDER BY trade_date DESC, action DESC"
-            return pd.read_sql(text(sql), conn, params=params)
+            query = text("""
+                SELECT * FROM transactions 
+                WHERE user_id = :user_id 
+                AND (:account_id IS NULL OR source_file = :account_id)
+                ORDER BY trade_date DESC, action DESC
+            """)
+            params = {"user_id": user_id, "account_id": account_id}
+            return pd.read_sql(query, conn, params=params)
 
     def get_active_tickers(self, user_id: str, account_id: str = None) -> List[str]:
         with self.engine.connect() as conn:
-            acc_filter = " AND source_file = :account_id" if account_id else ""
-            query = text(f"""
+            query = text("""
                 SELECT ticker, SUM(CASE WHEN action='BUY' THEN quantity WHEN action='SELL' THEN -quantity ELSE 0 END) as net_qty
                 FROM transactions
-                WHERE user_id = :user_id {acc_filter}
+                WHERE user_id = :user_id AND (:account_id IS NULL OR source_file = :account_id)
                 GROUP BY ticker
                 HAVING SUM(CASE WHEN action='BUY' THEN quantity WHEN action='SELL' THEN -quantity ELSE 0 END) > 0.0001
             """)
-            params = {"user_id": user_id}
-            if account_id: params["account_id"] = account_id
+            params = {"user_id": user_id, "account_id": account_id}
             rows = conn.execute(query, params).fetchall()
             return [r[0] for r in rows]
 
@@ -124,15 +126,14 @@ class AlchemyTransactionRepository(BaseRepository, ITransactionRepository):
 
     def get_holdings_summary(self, user_id: str, account_id: str = None) -> List[tuple]:
         with self.engine.connect() as conn:
-            acc_filter = " AND source_file = :account_id" if account_id else ""
-            query = text(f"""
+            query = text("""
                 SELECT ticker, SUM(CASE WHEN action='BUY' THEN quantity WHEN action='SELL' THEN -quantity ELSE 0 END) as net_qty
-                FROM transactions WHERE user_id = :uid {acc_filter} 
+                FROM transactions 
+                WHERE user_id = :uid AND (:account_id IS NULL OR source_file = :account_id)
                 GROUP BY ticker 
                 HAVING SUM(CASE WHEN action='BUY' THEN quantity WHEN action='SELL' THEN -quantity ELSE 0 END) > 0.0001
             """)
-            params = {"uid": user_id}
-            if account_id: params["account_id"] = account_id
+            params = {"uid": user_id, "account_id": account_id}
             rows = conn.execute(query, params).fetchall()
             return [(row[0], float(row[1])) for row in rows]
 
@@ -147,16 +148,16 @@ class AlchemyTransactionRepository(BaseRepository, ITransactionRepository):
         Used for current cash balance.
         """
         with self.engine.connect() as conn:
-            acc_filter = " AND source_file = :account_id" if account_id else ""
-            query = text(f"""
+            query = text("""
                 SELECT SUM(CASE 
                     WHEN action = 'DEPOSIT' THEN amount 
                     WHEN action = 'WITHDRAWAL' THEN -amount 
                     ELSE 0 
-                END) FROM transactions WHERE user_id = :user_id {acc_filter}
+                END) FROM transactions 
+                WHERE user_id = :user_id 
+                AND (:account_id IS NULL OR source_file = :account_id)
             """)
-            params = {"user_id": user_id}
-            if account_id: params["account_id"] = account_id
+            params = {"user_id": user_id, "account_id": account_id}
             result = conn.execute(query, params).fetchone()
             return float(result[0]) if result and result[0] is not None else 0.0
 
@@ -166,27 +167,24 @@ class AlchemyTransactionRepository(BaseRepository, ITransactionRepository):
         Used for ROI and PnL metrics.
         """
         with self.engine.connect() as conn:
-            acc_filter = " AND source_file = :account_id" if account_id else ""
-            query = text(f"""
+            query = text("""
                 SELECT SUM(CASE 
                     WHEN action = 'DEPOSIT' THEN amount 
                     WHEN action = 'WITHDRAWAL' THEN -amount 
                     ELSE 0 
                 END) FROM transactions 
                 WHERE user_id = :user_id 
-                {acc_filter}
+                AND (:account_id IS NULL OR source_file = :account_id)
                 AND ticker NOT IN ('CASH', 'STABILIZE_CASH', 'STABILIZE_CAP', 'ETORO_SYNC')
             """)
-            params = {"user_id": user_id}
-            if account_id: params["account_id"] = account_id
+            params = {"user_id": user_id, "account_id": account_id}
             result = conn.execute(query, params).fetchone()
             return float(result[0]) if result and result[0] is not None else 0.0
 
     def get_cash_balance(self, user_id: str, account_id: str = None) -> float:
         with self.engine.connect() as conn:
             cash_flow_sum = self.get_cash_flow_sum(user_id, account_id)
-            acc_filter = " AND source_file = :account_id" if account_id else ""
-            query_actions = text(f"""
+            query_actions = text("""
                 SELECT SUM(CASE 
                     WHEN action = 'BUY' THEN -amount 
                     WHEN action = 'SELL' THEN amount 
@@ -196,10 +194,10 @@ class AlchemyTransactionRepository(BaseRepository, ITransactionRepository):
                     ELSE 0 
                 END) as impact
                 FROM transactions 
-                WHERE user_id = :user_id {acc_filter}
+                WHERE user_id = :user_id 
+                AND (:account_id IS NULL OR source_file = :account_id)
             """)
-            params = {"user_id": user_id}
-            if account_id: params["account_id"] = account_id
+            params = {"user_id": user_id, "account_id": account_id}
             impact = conn.execute(query_actions, params).scalar() or 0.0
             return float(cash_flow_sum + impact)
 
@@ -210,25 +208,22 @@ class AlchemyTransactionRepository(BaseRepository, ITransactionRepository):
 
     def get_holdings(self, user_id: str, account_id: str = None) -> List[Dict[str, Any]]:
         with self.engine.connect() as conn:
-            acc_filter = " AND source_file = :account_id" if account_id else ""
-            query = text(f"""
+            query = text("""
                 SELECT ticker, 
                        SUM(CASE WHEN action='BUY' THEN quantity WHEN action='SELL' THEN -quantity ELSE 0 END) as net_qty,
                        AVG(price) as avg_price
                 FROM transactions 
-                WHERE user_id = :uid {acc_filter}
+                WHERE user_id = :uid AND (:account_id IS NULL OR source_file = :account_id)
                 GROUP BY ticker 
                 HAVING SUM(CASE WHEN action='BUY' THEN quantity WHEN action='SELL' THEN -quantity ELSE 0 END) > 0.0001
             """)
-            params = {"uid": user_id}
-            if account_id: params["account_id"] = account_id
+            params = {"uid": user_id, "account_id": account_id}
             rows = conn.execute(query, params).fetchall()
             return [{"ticker": r[0], "quantity": float(r[1]), "avg_price": float(r[2])} for r in rows]
 
     def get_leverage_summary(self, user_id: str, account_id: str = None) -> List[tuple]:
         with self.engine.connect() as conn:
-            acc_filter = " AND source_file = :account_id" if account_id else ""
-            query = text(f"""
+            query = text("""
                 SELECT ticker, 
                        SUM(CASE WHEN action='BUY' THEN quantity WHEN action='SELL' THEN -quantity ELSE 0 END) as net_qty,
                        SUM(CASE 
@@ -237,12 +232,11 @@ class AlchemyTransactionRepository(BaseRepository, ITransactionRepository):
                          ELSE 0 END) / 
                        NULLIF(SUM(CASE WHEN action='BUY' THEN quantity WHEN action='SELL' THEN -quantity ELSE 0 END), 0) as avg_leverage
                 FROM transactions 
-                WHERE user_id = :uid {acc_filter}
+                WHERE user_id = :uid AND (:account_id IS NULL OR source_file = :account_id)
                 GROUP BY ticker
                 HAVING SUM(CASE WHEN action='BUY' THEN quantity WHEN action='SELL' THEN -quantity ELSE 0 END) > 0.0001
             """)
-            params = {"uid": user_id}
-            if account_id: params["account_id"] = account_id
+            params = {"uid": user_id, "account_id": account_id}
             rows = conn.execute(query, params).fetchall()
             return [(r[0], float(r[1]), float(r[2] or 1.0)) for r in rows]
 
