@@ -66,12 +66,8 @@ class AlchemySnapshotRepository(BaseRepository, ISnapshotRepository):
         """
         with self.engine.connect() as conn:
             where_clause = "WHERE user_id = :uid"
-            params = {"uid": user_id}
-            if account_id:
-                where_clause += " AND account_id = :aid"
-                params["aid"] = account_id
-            else:
-                where_clause += " AND account_id IS NULL"
+            params = {"uid": user_id, "aid": account_id or ""}
+            where_clause += " AND account_id = :aid"
                 
             query = text(f"SELECT * FROM daily_snapshots {where_clause} ORDER BY date ASC")
             return pd.read_sql(query, conn, params=params)
@@ -83,12 +79,8 @@ class AlchemySnapshotRepository(BaseRepository, ISnapshotRepository):
         """
         with self.engine.connect() as conn:
             where_clause = "WHERE user_id = :uid"
-            params = {"uid": user_id}
-            if account_id:
-                where_clause += " AND account_id = :aid"
-                params["aid"] = account_id
-            else:
-                where_clause += " AND account_id IS NULL"
+            params = {"uid": user_id, "aid": account_id or ""}
+            where_clause += " AND account_id = :aid"
 
             query = text(f"SELECT * FROM daily_snapshots {where_clause} ORDER BY date DESC LIMIT 1")
             df = pd.read_sql(query, conn, params=params)
