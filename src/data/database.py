@@ -162,11 +162,15 @@ def init_db(db_path=None, force=False, engine=None):
         db_name = os.getenv("DB_NAME", "portfolio")
         db_url = f"postgresql+psycopg2://{db_user}:{db_pass}@{db_host}:{db_port}/{db_name}"
 
-    if db_url in _db_initialized and not force:
-        return
-
     if engine is None:
         engine = get_db_engine(db_path)
+    
+    # v5.0.1: If engine is provided or it's an in-memory test DB,
+    # we should check initialization against the engine object itself or allow re-init.
+    db_url = str(engine.url) if engine else db_url
+    
+    if db_url in _db_initialized and not force and ":memory:" not in db_url:
+        return
     
     is_sqlite = engine.dialect.name == "sqlite"
     

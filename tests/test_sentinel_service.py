@@ -33,10 +33,13 @@ def mock_services():
     council = MagicMock()
     council.start_session = AsyncMock(return_value={"consensus": "Sell slightly"})
     settings = MagicMock()
-     # Patch the repository class so SentinelService() allows mocking init
-    with patch('src.services.sentinel_service.AlchemySentinelRepository') as MockRepo:
-         # Configure default mock behavior if needed
+     # Patch both repositories to prevent DB access during init
+    with patch('src.services.sentinel_service.AlchemySentinelRepository') as MockRepo, \
+         patch('src.services.sentinel_service.AlchemySnapshotRepository') as MockSnapRepo:
+         # Configure default mock behavior
          mock_repo_instance = MockRepo.return_value
+         mock_snap_instance = MockSnapRepo.return_value
+         
          mock_repo_instance.get_all_thresholds.return_value = {
             "vix_high": 25.0,
             "vix_extreme": 40.0,
@@ -46,6 +49,7 @@ def mock_services():
             "news_risk_score": 0.6,
          }
          mock_repo_instance.is_duplicate_alert.return_value = False
+         mock_snap_instance.get_latest_by_user.return_value = None
          
          yield {
             "market": market,
@@ -54,7 +58,8 @@ def mock_services():
             "council": council,
             "settings": settings,
             "repo_class": MockRepo,
-            "repo_instance": mock_repo_instance
+            "repo_instance": mock_repo_instance,
+            "snap_instance": mock_snap_instance
         }
 
 def _create_sentinel(mock_services):
@@ -165,6 +170,7 @@ class TestPositionMoves:
             mock_services["transaction"].get_user_tickers.return_value = ["AAPL"]
             
             # Mock internal user methods
+            sentinel.user_id = "user@test.com"
             with patch.object(sentinel, '_get_all_user_ids', return_value=["user@test.com"]):
                     await sentinel.process_tick()
                     await sentinel._flush_buffer(force=True)

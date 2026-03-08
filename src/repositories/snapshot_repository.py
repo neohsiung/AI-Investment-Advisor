@@ -149,7 +149,7 @@ class AlchemySnapshotRepository(BaseRepository, ISnapshotRepository):
                     conn.execute(insert_sql, params)
             except Exception as e:
                 print(f"\n[CRITICAL SQL ERROR] {e}")
-                logger.error(f"SQL Execution Error: {e}")
+                # self.logger.error if available, but for now standard print is used above
                 raise e
 
 # Legacy aliases removed in v4.1.7
