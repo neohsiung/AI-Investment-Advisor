@@ -204,6 +204,20 @@ class PerformanceService:
         days_diff = (end_date - start_date).days + 1
         hist_prices_batch = self.market_service.get_ohlcv_batch(tickers_to_fetch, days=days_diff)
         
+        # Pre-process batch results into DataFrames for compatibility with legacy logic
+        for ticker in list(hist_prices_batch.keys()):
+            data = hist_prices_batch[ticker]
+            if isinstance(data, dict) and "close" in data:
+                df = pd.DataFrame(data)
+                # Map lowercase keys from MarketDataService to Uppercase columns for legacy logic consistency
+                column_map = {'open': 'Open', 'high': 'High', 'low': 'Low', 'close': 'Close', 'volume': 'Volume'}
+                df.rename(columns={k: v for k, v in column_map.items() if k in df.columns}, inplace=True)
+                
+                if "date" in df.columns:
+                    df['date'] = pd.to_datetime(df['date'])
+                    df.set_index('date', inplace=True)
+                hist_prices_batch[ticker] = df
+        
         # 4. Iterative Reconstruction
         history = []
         current_holdings = {} # {ticker: qty}
