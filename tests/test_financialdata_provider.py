@@ -6,11 +6,18 @@ from src.services.settings_service import SettingsService
 @pytest.fixture
 def mock_settings():
     service = MagicMock(spec=SettingsService)
-    service.get_all_settings.return_value = {"financialdata_api_key": "test_key"}
+    service.get_all_settings.return_value = {"source_financialdata_api_key": "test_key"}
     return service
 
 def test_financialdata_init(mock_settings):
+    # Ensure the mock is configured correctly before passing
+    mock_settings.get_all_settings.return_value = {"source_financialdata_api_key": "test_key"}
+    
     provider = FinancialDataProvider(settings_service=mock_settings)
+    
+    # Verify settings were retrieved
+    mock_settings.get_all_settings.assert_called_once()
+    
     assert provider.api_key == "test_key"
     assert provider.base_url == "https://financialdata.net/api/v1"
 

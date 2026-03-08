@@ -13,6 +13,7 @@ def anyio_backend():
 @pytest.fixture
 def mock_repo():
     repo = MagicMock(spec=AlchemySentinelRepository)
+    repo.engine = MagicMock() # Fix AttributeError: engine
     repo.get_all_thresholds.return_value = {}
     repo.is_duplicate_alert.return_value = False
     return repo
@@ -26,13 +27,14 @@ def mock_council():
 @pytest.fixture
 def sentinel_service(mock_repo, mock_council):
     # Patch the internal repo creation
-    with patch("src.services.sentinel_service.AlchemySentinelRepository", return_value=mock_repo):
+    with patch("src.services.sentinel_service.AlchemySentinelRepository", return_value=mock_repo), \
+         patch("src.services.sentinel_service.AlchemySnapshotRepository", return_value=mock_repo): # Can use same mock if compatible
         service = SentinelService(
             council_service=mock_council,
-            settings_service=MagicMock()
+            settings_service=MagicMock(),
+            repo=mock_repo,
+            snapshot_repo=mock_repo
         )
-        # Force inject the mock repo if the init created a new one
-        service.repo = mock_repo
         return service
 
 @pytest.mark.anyio

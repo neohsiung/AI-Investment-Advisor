@@ -18,15 +18,29 @@ async def test_check_risk_consistency_balanced_high_leverage():
     }
     
     with patch("src.services.sentinel_service.SettingsService", return_value=mock_settings), \
-         patch("src.repositories.snapshot_repository.AlchemySnapshotRepository", return_value=mock_snapshot_repo), \
-         patch("src.services.fred_service.FredService") as mock_fred_class:
+         patch("src.services.sentinel_service.AlchemySnapshotRepository", return_value=mock_snapshot_repo), \
+         patch("src.services.sentinel_service.AlchemySentinelRepository") as mock_sentinel_repo_class, \
+         patch("src.services.fred_service.FredService") as mock_fred_class, \
+         patch("src.services.sentinel_service.InternetSearchService"), \
+         patch("src.services.sentinel_service.TransactionService"), \
+         patch("src.services.sentinel_service.CouncilService"):
         
+        # Mock Sentinel Repo to avoid DB hits in constructor
+        mock_sentinel_repo = MagicMock()
+        mock_sentinel_repo.engine = MagicMock()
+        mock_sentinel_repo.get_all_thresholds.return_value = {}
+        mock_sentinel_repo_class.return_value = mock_sentinel_repo
+
         # Mock FredService indicators
         mock_fred = MagicMock()
         mock_fred.get_macro_indicators.return_value = {"CPI": {"history": [110, 100]}}
         mock_fred_class.return_value = mock_fred
         
-        service = SentinelService(settings_service=mock_settings)
+        service = SentinelService(
+            settings_service=mock_settings,
+            repo=mock_sentinel_repo,
+            snapshot_repo=mock_snapshot_repo
+        )
         service._get_all_user_ids = MagicMock(return_value=["test_user"])
         
         triggers = await service._check_risk_consistency()
@@ -52,14 +66,27 @@ async def test_check_cash_ratio_low_alarm():
     }
     
     with patch("src.services.sentinel_service.SettingsService", return_value=mock_settings), \
-         patch("src.repositories.snapshot_repository.AlchemySnapshotRepository", return_value=mock_snapshot_repo), \
-         patch("src.services.fred_service.FredService") as mock_fred_class:
+         patch("src.services.sentinel_service.AlchemySnapshotRepository", return_value=mock_snapshot_repo), \
+         patch("src.services.sentinel_service.AlchemySentinelRepository") as mock_sentinel_repo_class, \
+         patch("src.services.fred_service.FredService") as mock_fred_class, \
+         patch("src.services.sentinel_service.InternetSearchService"), \
+         patch("src.services.sentinel_service.TransactionService"), \
+         patch("src.services.sentinel_service.CouncilService"):
         
+        mock_sentinel_repo = MagicMock()
+        mock_sentinel_repo.engine = MagicMock()
+        mock_sentinel_repo.get_all_thresholds.return_value = {}
+        mock_sentinel_repo_class.return_value = mock_sentinel_repo
+
         mock_fred = MagicMock()
         mock_fred.get_macro_indicators.return_value = {"CPI": {"history": [100, 100]}} # Zero inflation
         mock_fred_class.return_value = mock_fred
         
-        service = SentinelService(settings_service=mock_settings)
+        service = SentinelService(
+            settings_service=mock_settings,
+            repo=mock_sentinel_repo,
+            snapshot_repo=mock_snapshot_repo
+        )
         service._get_all_user_ids = MagicMock(return_value=["test_user"])
         service._check_vix_anomaly = MagicMock(return_value=[]) # Normal VIX
         

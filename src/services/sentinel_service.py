@@ -41,8 +41,10 @@ class SentinelService:
         settings_service: Optional[SettingsService] = None,
         keyword_service: Optional[RiskKeywordService] = None,
         user_id: str = None,
+        repo: Optional[AlchemySentinelRepository] = None,
+        snapshot_repo: Optional[AlchemySnapshotRepository] = None,
     ):
-        self.repo = AlchemySentinelRepository()
+        self.repo = repo or AlchemySentinelRepository()
         self.user_id = user_id
         self.settings_service = settings_service or SettingsService(user_id=self.user_id)
         
@@ -51,7 +53,7 @@ class SentinelService:
         self.transaction_service = transaction_service or TransactionService()
         self.council_service = council_service or CouncilService()
         self.keyword_service = keyword_service or RiskKeywordService()
-        self.snapshot_repo = AlchemySnapshotRepository(engine=self.repo.engine)
+        self.snapshot_repo = snapshot_repo or AlchemySnapshotRepository(engine=self.repo.engine)
         
         self.notification_api_url = os.getenv("NOTIFICATION_API_URL", "http://localhost:8001/api/v1/notify")
         

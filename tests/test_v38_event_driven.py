@@ -13,6 +13,7 @@ def mock_sentinel_repo():
     with patch('src.services.sentinel_service.AlchemySentinelRepository') as MockRepo:
         mock_instance = MagicMock(spec=AlchemySentinelRepository)
         # Mock initial calls in constructor
+        mock_instance.engine = MagicMock() # Fix AttributeError: engine
         mock_instance.get_all_thresholds.return_value = {
             "vix_high": 25.0,
             "vix_extreme": 40.0,
@@ -39,7 +40,9 @@ async def test_sentinel_process_event(mock_sentinel_repo):
         
         sentinel = SentinelService(
             council_service=mock_council,
-            user_id="test_user"
+            user_id="test_user",
+            repo=mock_sentinel_repo,
+            snapshot_repo=MagicMock() # Mock snapshot repo too
         )
         
         # Simulate an event
@@ -74,7 +77,12 @@ async def test_sentinel_vix_logic(mock_sentinel_repo):
          patch('src.services.sentinel_service.TransactionService'), \
          patch('src.services.sentinel_service.CouncilService'):
         
-        sentinel = SentinelService(market_service=mock_market, user_id="test_user")
+        sentinel = SentinelService(
+            market_service=mock_market, 
+            user_id="test_user",
+            repo=mock_sentinel_repo,
+            snapshot_repo=MagicMock()
+        )
         triggers = sentinel._check_vix_anomaly()
         
         assert any("VIX Spike" in t['text'] for t in triggers)
