@@ -11,7 +11,7 @@ class ISnapshotRepository(ABC):
     快照儲存庫介面。
     """
     @abstractmethod
-    def get_history_by_user(self, user_id: str) -> pd.DataFrame:
+    def get_history_by_user(self, user_id: str, account_id: str = None) -> pd.DataFrame:
         """
         Get all snapshots for a user as a DataFrame.
         取得使用者的所有快照資料 (DataFrame)。
@@ -19,7 +19,7 @@ class ISnapshotRepository(ABC):
         pass
 
     @abstractmethod
-    def get_latest_by_user(self, user_id: str) -> Optional[Union[pd.Series, Dict[str, Any]]]:
+    def get_latest_by_user(self, user_id: str, account_id: str = None) -> Optional[Union[pd.Series, Dict[str, Any]]]:
         """
         Get the latest snapshot for a user.
         取得使用者的最新快照。
@@ -38,7 +38,8 @@ class ISnapshotRepository(ABC):
         total_tnv: float, 
         leverage_ratio: float,
         conviction_level: float = 0.0,
-        time_horizon: Optional[str] = None
+        time_horizon: Optional[str] = None,
+        account_id: str = None
     ) -> None:
         """
         Save or update a daily snapshot.
@@ -58,23 +59,39 @@ class AlchemySnapshotRepository(BaseRepository, ISnapshotRepository):
         """
         BaseRepository.__init__(self, engine or get_db_engine(db_path))
 
-    def get_history_by_user(self, user_id: str) -> pd.DataFrame:
+    def get_history_by_user(self, user_id: str, account_id: str = None) -> pd.DataFrame:
         """
         Get all snapshots for a user as a DataFrame.
         取得使用者的所有快照資料 (DataFrame)。
         """
         with self.engine.connect() as conn:
-            query = text("SELECT * FROM daily_snapshots WHERE user_id = :uid ORDER BY date ASC")
-            return pd.read_sql(query, conn, params={"uid": user_id})
+            where_clause = "WHERE user_id = :uid"
+            params = {"uid": user_id}
+            if account_id:
+                where_clause += " AND account_id = :aid"
+                params["aid"] = account_id
+            else:
+                where_clause += " AND account_id IS NULL"
+                
+            query = text(f"SELECT * FROM daily_snapshots {where_clause} ORDER BY date ASC")
+            return pd.read_sql(query, conn, params=params)
 
-    def get_latest_by_user(self, user_id: str) -> Optional[Union[pd.Series, Dict[str, Any]]]:
+    def get_latest_by_user(self, user_id: str, account_id: str = None) -> Optional[Union[pd.Series, Dict[str, Any]]]:
         """
         Get the latest snapshot for a user.
         取得使用者的最新快照。
         """
         with self.engine.connect() as conn:
-            query = text("SELECT * FROM daily_snapshots WHERE user_id = :uid ORDER BY date DESC LIMIT 1")
-            df = pd.read_sql(query, conn, params={"uid": user_id})
+            where_clause = "WHERE user_id = :uid"
+            params = {"uid": user_id}
+            if account_id:
+                where_clause += " AND account_id = :aid"
+                params["aid"] = account_id
+            else:
+                where_clause += " AND account_id IS NULL"
+
+            query = text(f"SELECT * FROM daily_snapshots {where_clause} ORDER BY date DESC LIMIT 1")
+            df = pd.read_sql(query, conn, params=params)
             if not df.empty:
                 return df.iloc[0]
             return None
@@ -90,7 +107,8 @@ class AlchemySnapshotRepository(BaseRepository, ISnapshotRepository):
         total_tnv: float, 
         leverage_ratio: float,
         conviction_level: float = 0.0,
-        time_horizon: Optional[str] = None
+        time_horizon: Optional[str] = None,
+        account_id: str = None
     ) -> None:
         """
         Save or update a daily snapshot.
@@ -107,6 +125,7 @@ class AlchemySnapshotRepository(BaseRepository, ISnapshotRepository):
         params = {
             "date": date,
             "user_id": user_id,
+            "account_id": account_id,
             "nlv": sanitize(nlv),
             "cash_balance": sanitize(cash_balance),
             "invested_capital": sanitize(invested_capital),
@@ -130,7 +149,7 @@ class AlchemySnapshotRepository(BaseRepository, ISnapshotRepository):
                         leverage_ratio = :lev,
                         conviction_level = :conv,
                         time_horizon = :horizon
-                    WHERE date = :date AND user_id = :user_id
+                    WHERE date = :date AND user_id = :user_id AND (account_id = :account_id OR (account_id IS NULL AND :account_id IS NULL))
                 ''')
                 res = conn.execute(update_sql, params)
                 
@@ -138,11 +157,11 @@ class AlchemySnapshotRepository(BaseRepository, ISnapshotRepository):
                 if res.rowcount == 0:
                     insert_sql = text('''
                         INSERT INTO daily_snapshots (
-                            date, user_id, total_nlv, cash_balance, invested_capital, 
+                            date, user_id, account_id, total_nlv, cash_balance, invested_capital, 
                             pnl, total_tnv, leverage_ratio, conviction_level, time_horizon
                         )
                         VALUES (
-                            :date, :user_id, :nlv, :cash_balance, :invested_capital, 
+                            :date, :user_id, :account_id, :nlv, :cash_balance, :invested_capital, 
                             :pnl, :tnv, :lev, :conv, :horizon
                         )
                     ''')

@@ -313,11 +313,11 @@ def init_db(db_path=None, force=False, engine=None):
     );
     """)
 
-    # Support tables
     schema_commands.append(f"""
     CREATE TABLE IF NOT EXISTS daily_snapshots (
         date {date_type},
         user_id {fk_type},
+        account_id TEXT,
         total_nlv {numeric_type},
         cash_balance {numeric_type},
         invested_capital {numeric_type},
@@ -326,7 +326,7 @@ def init_db(db_path=None, force=False, engine=None):
         leverage_ratio {numeric_type} DEFAULT 0,
         conviction_level {numeric_type} DEFAULT 0,
         time_horizon TEXT,
-        PRIMARY KEY (date, user_id)
+        PRIMARY KEY (date, user_id, account_id)
     );
     """)
 
@@ -435,14 +435,17 @@ def init_db(db_path=None, force=False, engine=None):
         # v4.1.7: Post-deployment strict migrations (UUID focus)
         # Add Unique Index for UPSERT on daily_snapshots if missing
         if not is_sqlite:
-            try:
-                check_idx = text("SELECT indexname FROM pg_indexes WHERE tablename = 'daily_snapshots' AND indexdef LIKE '%(date, user_id)%'")
+                check_idx = text("SELECT indexname FROM pg_indexes WHERE tablename = 'daily_snapshots' AND indexdef LIKE '%(date, user_id, account_id)%'")
                 if not conn.execute(check_idx).fetchone():
-                    conn.execute(text("CREATE UNIQUE INDEX IF NOT EXISTS idx_daily_snapshots_upsert ON daily_snapshots(date, user_id)"))
+                    # v5.1: Update Upsert index to include account_id for multi-account support
+                    conn.execute(text("DROP INDEX IF EXISTS idx_daily_snapshots_upsert"))
+                    conn.execute(text("CREATE UNIQUE INDEX IF NOT EXISTS idx_daily_snapshots_upsert ON daily_snapshots(date, user_id, COALESCE(account_id, ''))"))
                 
-                # v5.0: Schema migration for Narrative Drift (conviction_level, time_horizon)
+                # v5.0: Schema migration for Narrative Drift and Multi-Account support
                 cols = conn.execute(text("SELECT column_name FROM information_schema.columns WHERE table_name = 'daily_snapshots'")).fetchall()
                 existing_cols = [c[0] for c in cols]
+                if 'account_id' not in existing_cols:
+                    conn.execute(text("ALTER TABLE daily_snapshots ADD COLUMN account_id TEXT"))
                 if 'conviction_level' not in existing_cols:
                     conn.execute(text(f"ALTER TABLE daily_snapshots ADD COLUMN conviction_level {numeric_type} DEFAULT 0"))
                 if 'time_horizon' not in existing_cols:
