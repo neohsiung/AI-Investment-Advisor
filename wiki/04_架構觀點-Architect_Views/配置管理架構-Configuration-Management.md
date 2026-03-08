@@ -8,6 +8,7 @@
 | 2026-02-19 | v1.1 | Enforced strict DB precedence for AI settings | Agent |
 | 2026-02-21 | v1.2 | **DB Migration**: Updated all references from SQLite to PostgreSQL to reflect production architecture. | Antigravity |
 | 2026-03-08 | v1.3 | **Risk Configs**: Added `risk_profile` and `target_cash_ratio` to DB settings. | Antigravity |
+| 2026-03-08 | v1.4 | **Standardization**: Enforced `source_{id}_{field}` naming convention for all data sources. | Antigravity |
 
 ---
 
@@ -61,12 +62,27 @@ Services prioritize DB settings upon initialization, falling back to Environment
 
 **Priority**: `DB Settings` > `Environment Variables` > `Hardcoded Defaults`
 
-```python
-# Pseudo-code Example
-api_key = settings_repo.get(uid, "API_KEY") or os.getenv("API_KEY")
-```
+## 3. 命名規範 (Naming Standards) [NEW v1.4]
 
-## 3. 安全性 (Security)
+為了確保系統的一致性與可自動化渲染，所有存入 `settings` 資料表的鍵名必須遵循以下蛇形命名 (snake_case) 規範：
+
+### 3.1 數據源金鑰 (Data Source Keys)
+
+格式為：`source_{provider_id}_{field_name}`
+
+* 範例：`source_polygon_api_key`
+* 範例：`source_financialdata_api_key`
+
+### 3.2 功能設定 (Feature Settings)
+
+格式為：`{feature_name}_{parameter_name}`
+
+* 範例：`notification_line_token`
+* 範例：`trading_risk_profile`
+
+**⚠️ 禁令**: 嚴禁在資料庫中使用 `UPPERCASE_KEYS` 或 `camelCaseKeys`。大寫僅允許用於 `.env` 本地開發環境。
+
+## 4. 安全性 (Security)
 
 * **API Key 加密**: 前端輸入框使用 `type="password"` 遮蔽。
 * **傳輸安全**: 建議在生產環境配合 HTTPS 使用。
@@ -80,10 +96,10 @@ api_key = settings_repo.get(uid, "API_KEY") or os.getenv("API_KEY")
 
 需遷移的變數：
 
-* `ETORO_API_KEY` / `ETORO_USER_KEY`
-* `OPENROUTER_API_KEY` / `GOOGLE_API_KEY`
-* `FUTU_HOST` / `IBKR_HOST`
-* `RISK_PROFILE` / `TARGET_CASH_RATIO` **[NEW v4.7]**
+* `source_etoro_api_key` (Legacy: `ETORO_API_KEY`)
+* `source_openrouter_api_key` (Legacy: `OPENROUTER_API_KEY`)
+* `trading_risk_profile` (Legacy: `RISK_PROFILE`) **[NEW v4.7]**
+* `source_financialdata_api_key` **[NEW v4.8]**
 
 ---
 

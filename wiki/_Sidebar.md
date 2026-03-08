@@ -2,6 +2,7 @@
 
 | Date | Version | Description | Author |
 | :--- | :--- | :--- | :--- |
+| 2026-03-08 | v5.5 | **Data Source Matrix v2.0**: Integrated FinancialData.Net, enforced standardized naming convention for settings keys, and synchronized architecture blueprints. | Antigravity |
 | 2026-03-07 | v5.4 | **Portfolio Alignment**: Added Data Alignment & Calibration pattern, Portfolio Data Verification skill, and Audit Workflow. | Antigravity |
 | 2026-02-21 | v5.3 | **Batch 4**: Added Tools Layer Guide, Utils Library Guide, Intent Classification NLP Engine, Agent Skills System. | Antigravity |
 | 2026-02-21 | v5.1 | **Sidebar Census**: Added 20 missing wiki pages across all sections. | Antigravity |
