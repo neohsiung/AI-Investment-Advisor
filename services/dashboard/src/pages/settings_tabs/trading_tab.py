@@ -70,7 +70,9 @@ def render_trading_tab(st, user_id: str):
             # FinancialData.Net Config
             with st.expander("🌐 FinancialData.Net (Backup Source)", expanded=False):
                 st.markdown("🔗 [官方文檔與設定 (Official Docs)](https://financialdata.net/documentation)")
-                    value=settings_repo.get(user_id, "source_financialdata_api_key") or "", 
+                st.text_input(
+                    "FinancialData API Key",
+                    value=settings_repo.get(user_id, "source_financialdata_api_key") or "",
                     type="password",
                     help="Free plan: 300 requests/day. Used for Insider Trading & Fallback quotes."
                 )

@@ -1,3 +1,4 @@
+| 2026-03-08 | v1.8.0 | **Data Source Standardization & FinancialData.Net**: Categorized FinancialData.Net as P1, established standardized key naming convention (`source_{id}_{field}`), and synchronized system-wide architecture blueprints. | Antigravity |
 | 2026-03-08 | v1.7.0 | **Dynamic Risk & Generalized Research**: Implemented Inflation-adjusted Cash Ratio, Risk Profile Consistency Check, and Generalized Ticker Comparative Analysis. | Antigravity |
 | 2026-03-08 | v1.6.0 | **Security Hardening & Centralized Redaction**: Upgraded `WebhookService` to SHA256 and centralized secret redaction in `BaseAgent` to protect state logs. Updated dependencies to latest secure versions. | Antigravity |
 | 2026-03-01 | v1.5.0 | **Tech Stack Modernization**: Upgraded OpenTelemetry to 1.39.1 and Protobuf to 5.x. Formally removed `futu-api` and refined Sentinel fallback logic for cleaner architecture. | Antigravity |
