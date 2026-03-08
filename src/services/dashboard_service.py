@@ -99,6 +99,9 @@ class DashboardService:
             metrics_derived = _self.calc.calculate_metrics(current_prices, user_id=user_id)
             pnl_data = _self.pnl_calc.calculate_breakdown(current_prices, user_id=user_id)
             
+            logger.info(f"Derived Metrics: {metrics_derived}")
+            logger.info(f"PnL Data: {pnl_data}")
+
             # Use derived metrics exclusively to ensure consistency with DB anchors
             metrics = metrics_derived
             
@@ -106,6 +109,8 @@ class DashboardService:
             metrics['invested_capital'] = _self.transaction_repo.calculate_net_invested_capital(user_id)
             metrics['unrealized_pnl'] = pnl_data.get('unrealized', 0)
             
+            logger.info(f"Invested Capital: {metrics['invested_capital']}")
+
             # Global Profit is anchored to NLV - Net Invested Capital
             pnl_data['total'] = metrics['nlv'] - metrics['invested_capital']
             pnl_data['realized'] = pnl_data['total'] - pnl_data['unrealized']
@@ -114,6 +119,7 @@ class DashboardService:
             metrics['gross_nlv'] = metrics_derived['tnv'] + metrics_derived['cash_balance']
 
             roi = _self.roi_engine.calculate_roi(metrics['nlv'], user_id=user_id)
+            logger.info(f"Final Dashboard Metrics for {user_id}: NLV={metrics['nlv']}, Cash={metrics['cash_balance']}, Total P/L={pnl_data['total']}")
         except Exception as e:
             st.error(f"指標計算錯誤: {e}")
             logger.error(f"Metric calculation failed: {e}")

@@ -44,7 +44,7 @@ class TestAnalyticsService:
         
         assert len(result) == 1
         assert result[0]["nlv"] == 10000
-        mock_snapshot_repo.get_history_by_user.assert_called_once_with("user_123")
+        mock_snapshot_repo.get_history_by_user.assert_called_once_with("user_123", None)
 
     def test_get_latest_performance(self, service, mock_snapshot_repo):
         """Test retrieving latest performance."""
@@ -53,7 +53,7 @@ class TestAnalyticsService:
         result = service.get_latest_performance()
         
         assert result["nlv"] == 10000
-        mock_snapshot_repo.get_latest_by_user.assert_called_once_with("user_123")
+        mock_snapshot_repo.get_latest_by_user.assert_called_once_with("user_123", None)
 
     def test_get_pnl_breakdown(self, service, mock_pnl_calculator):
         """Test converting pnl breakdown request."""
@@ -63,7 +63,7 @@ class TestAnalyticsService:
         result = service.get_pnl_breakdown(current_prices)
         
         assert result["total"] == 500
-        mock_pnl_calculator.calculate_breakdown.assert_called_once_with(current_prices, "user_123")
+        mock_pnl_calculator.calculate_breakdown.assert_called_once_with(current_prices, "user_123", None)
 
     def test_trigger_snapshot_update(self, service):
         """Test manual trigger of snapshot update."""

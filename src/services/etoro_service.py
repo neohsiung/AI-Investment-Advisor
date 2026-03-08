@@ -213,15 +213,28 @@ class EtoroService(IBroker):
                 # ID Resolution
                 # We prioritize the cached Ticker from watchlists, fallback to Instrument ID
                 inst_id = str(p.get('instrumentID', p.get('Instrument', '')))
-                symbol = self._id_to_symbol.get(inst_id, inst_id) or "UNKNOWN"
+                symbol = self._id_to_symbol.get(inst_id)
+                
+                if not symbol:
+                    # Try reverse resolution or hardcoded map
+                    resolved = self._resolve_id_to_symbol(inst_id)
+                    if resolved:
+                        symbol = resolved
+                        self._id_to_symbol[inst_id] = symbol
+                    else:
+                        symbol = f"ID_{inst_id}"
                 
                 # Normalize Symbol (Remove .RTH, .EXT, etc. if breaking yfinance)
                 if symbol.endswith('.RTH'):
                     symbol = symbol.replace('.RTH', '')
                 
+                quantity = float(p.get('units', p.get('Amount', p.get('quantity', 0))))
+                if quantity <= 0.0001:
+                    continue
+
                 pos = Position(
                     symbol=symbol,
-                    quantity=float(p.get('units', p.get('Amount', p.get('quantity', 0)))),
+                    quantity=quantity,
                     open_price=float(p.get('openRate', p.get('OpenRate', p.get('open_price', 0)))),
                     current_price=float(p.get('CurrentRate', 0)) or float(p.get('openRate', 0)),
                     market_value=float(p.get('unitsBaseValueDollars', p.get('CurrentAmount', 0))),
@@ -377,7 +390,6 @@ class EtoroService(IBroker):
     def _resolve_instrument_id(self, ticker: str) -> Optional[int]:
         """
         Resolve Ticker to eToro Instrument ID.
-        Uses simplistic caching.
         """
         if not hasattr(self, '_id_cache'):
             self._id_cache = {}
@@ -394,26 +406,38 @@ class EtoroService(IBroker):
             response.raise_for_status()
             data = response.json()
             
-            # Assuming resonse is list of matches or direct object
-            # Adjust based on actual API response structure for search
-            # If data is a list:
             if isinstance(data, list) and len(data) > 0:
                  inst_id = data[0].get('InstrumentID')
                  if inst_id:
                      self._id_cache[ticker] = inst_id
                      return inst_id
-            
-            # If data is a dict (single result)
-            if isinstance(data, dict):
-                 inst_id = data.get('InstrumentID')
-                 if inst_id:
-                     self._id_cache[ticker] = inst_id
-                     return inst_id
-                     
             return None
         except Exception as e:
             logger.error(f"Failed to resolve Instrument ID for {ticker}: {e}")
             return None
+
+    def _resolve_id_to_symbol(self, instrument_id: str) -> Optional[str]:
+        """
+        Resolve eToro Instrument ID to Ticker Symbol.
+        """
+        # Hardcoded common IDs for quick fix
+        hardcoded = {
+            "4300": "700.HK",   # Tencent (RTH)
+            "4309": "700.HK",   # Tencent
+            "8756": "9988.HK",  # Alibaba
+            "1": "AAPL",
+            "2": "AMZN",
+            "4": "GOOG",
+            "5": "MSFT",
+            "6": "META",
+            "7": "TSLA",
+            "100": "V"
+        }
+        if instrument_id in hardcoded:
+            return hardcoded[instrument_id]
+
+        # In future, we could query a metadata endpoint
+        return None
 
     def sync_history(self, user_id: str = "default_user", days: int = 30, initial_sync: bool = False) -> Dict[str, int]:
         """
@@ -468,7 +492,14 @@ class EtoroService(IBroker):
             # instrumentId, openTimestamp, closeTimestamp, isBuy, units, openRate, closeRate, fees, netProfit
             
             instrument_id = str(trade.get('instrumentId', ''))
-            ticker = self._id_to_symbol.get(instrument_id, f"ID_{instrument_id}")
+            ticker = self._id_to_symbol.get(instrument_id)
+            if not ticker:
+                resolved = self._resolve_id_to_symbol(instrument_id)
+                if resolved:
+                    ticker = resolved
+                    self._id_to_symbol[instrument_id] = ticker
+                else:
+                    ticker = f"ID_{instrument_id}"
             
             open_ts = trade.get('openTimestamp', '')
             close_ts = trade.get('closeTimestamp', '')
@@ -553,16 +584,26 @@ class EtoroService(IBroker):
         # Original code deleted them here, which caused frequent drift.
         pass
 
-        # 2. Recalculate local cash WITHOUT our own sync entries
-        local_cash = self.transaction_repo.get_cash_balance(user_id)
+        # 2. Check for existing sync entries on the same day to avoid duplication
+        # Get existing syncs for today
+        today_str = datetime.now().strftime('%Y-%m-%d')
+        with self.transaction_repo.engine.connect() as conn:
+            existing_today = conn.execute(
+                text("""
+                    SELECT amount, action FROM transactions 
+                    WHERE user_id = :uid AND ticker = 'CASH' 
+                    AND trade_date = :dt AND source_file = 'ETORO_SYNC'
+                """),
+                {"uid": user_id, "dt": today_str}
+            ).fetchall()
         
-        diff = broker_cash - local_cash
-        
-        # 3. Only adjust if difference is significant (> $0.50) and within safety cap
-        # Get dynamic thresholds (Rule 8 compliance)
-        SYNC_THRESHOLD = float(os.getenv("ETORO_CASH_SYNC_THRESHOLD", 0.50))
-        SAFETY_CAP = float(os.getenv("ETORO_CASH_SAFETY_CAP", 500.0))  # Reject corrections larger than cap — indicates deeper issue
-        
+        # If we already have a sync today that covers this diff (within threshold), skip
+        for ext_amount, ext_action in existing_today:
+            ext_diff = float(ext_amount) if ext_action == 'DEPOSIT' else -float(ext_amount)
+            if abs(diff - ext_diff) < SYNC_THRESHOLD:
+                logger.info(f"Skipping duplicate cash sync for today: Diff={diff:.2f} matches existing={ext_diff:.2f}")
+                return
+
         if abs(diff) > SYNC_THRESHOLD:
             if abs(diff) > SAFETY_CAP:
                 logger.warning(
@@ -577,18 +618,30 @@ class EtoroService(IBroker):
             
             with self.transaction_repo.engine.begin() as conn:
                 import uuid as _uuid
+                import json as _json
+                # [ENHANCED] Trace now includes context to avoid "unexplained" labels
+                trace = {
+                    "reason": "Automated Portfolio Alignment",
+                    "local_cash_at_sync": local_cash,
+                    "broker_cash_reference": broker_cash,
+                    "diff_to_align": diff,
+                    "source": "eToro_PnL_AvailableCash",
+                    "timestamp": datetime.now().isoformat()
+                }
+                
                 conn.execute(
                     text("""
-                        INSERT INTO transactions (id, user_id, ticker, trade_date, action, quantity, price, fees, amount, source_file)
-                        VALUES (:id, :uid, 'CASH', :dt, :action, 1, :price, 0, :amount, 'ETORO_SYNC')
+                        INSERT INTO transactions (id, user_id, ticker, trade_date, action, quantity, price, fees, amount, source_file, raw_data)
+                        VALUES (:id, :uid, 'CASH', :dt, :action, 1, :price, 0, :amount, 'ETORO_SYNC', :raw)
                     """),
                     {
                         "id": str(_uuid.uuid4()),
                         "uid": user_id,
-                        "dt": datetime.now().strftime('%Y-%m-%d'),
+                        "dt": today_str,
                         "action": action,
                         "price": abs(diff),
                         "amount": abs(diff),
+                        "raw": _json.dumps(trace)
                     }
                 )
 

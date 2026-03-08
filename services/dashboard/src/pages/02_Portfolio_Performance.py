@@ -19,8 +19,20 @@ class PortfolioPerformancePage(BasePage):
         
         self.perf_service = PerformanceService(db_path=db_path, user_id=user_id)
 
+        # --- Sidebar / Header Controls ---
+        from src.repositories.transaction_repository import AlchemyTransactionRepository
+        trans_repo = AlchemyTransactionRepository()
+        accounts = trans_repo.get_all_accounts(user_id)
+        
+        selected_account = None
+        if accounts:
+            account_options = ["所有帳號 (All Accounts)"] + accounts
+            choice = st.selectbox("選擇券商帳號 (Select Account)", options=account_options, index=0)
+            if choice != "所有帳號 (All Accounts)":
+                selected_account = choice
+
         with st.spinner("正在讀取市場數據 (Fetching performance data)..."):
-            data = self.perf_service.prepare_performance_data()
+            data = self.perf_service.prepare_performance_data(account_id=selected_account)
             pnl_data = data.get('pnl_data', {'realized': 0, 'unrealized': 0, 'total': 0})
             snapshots_df = data.get('history_df')
 
@@ -37,7 +49,7 @@ class PortfolioPerformancePage(BasePage):
             saas_metric("累積淨損益 (Total)", f"${pnl_data.get('total', 0):,.0f}", delta_color="normal", icon="💰",
                         help="帳戶自成立以來的所有獲利總額。")
         
-        # 顯示淨投入資本（從快照或計算）
+        # 顯示淨投入資本（從歷史數據或計算）
         with c4:
             if snapshots_df is not None and not snapshots_df.empty:
                 latest = snapshots_df.iloc[-1]
@@ -46,8 +58,8 @@ class PortfolioPerformancePage(BasePage):
                 # 如果沒有快照，嘗試從交易計算
                 from src.repositories.transaction_repository import AlchemyTransactionRepository
                 trans_repo = AlchemyTransactionRepository()
-                invested_capital = trans_repo.calculate_net_invested_capital(user_id)
-            saas_metric("持股現值 (Invested)", f"${invested_capital:,.0f}", icon="🏦",
+                invested_capital = trans_repo.calculate_net_invested_capital(user_id, account_id=selected_account)
+            saas_metric("淨投入資本 (Invested)", f"${invested_capital:,.0f}", icon="🏦",
                         help="所有交易、複製跟單及 Smart Portfolios 的當前投入資金淨額，不含未實現盈虧。")
 
         # --- Section 2: Trends & Charts ---
@@ -98,7 +110,7 @@ class PortfolioPerformancePage(BasePage):
                 from src.services.analytics_service import AnalyticsService
                 analytics = AnalyticsService(db_path=db_path, user_id=user_id)
                 with st.spinner("正在修復中..."):
-                    analytics.trigger_snapshot_update(force=True)
+                    analytics.trigger_snapshot_update(force=True, account_id=selected_account)
                 st.success("今日快照已更新！請重新整理頁面。")
                 st.rerun()
 

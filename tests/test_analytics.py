@@ -93,7 +93,7 @@ def test_update_daily_snapshot_integration():
         update_daily_snapshot("db.sqlite", "user1")
         
         # Verify
-        MockTransRepo.return_value.get_active_tickers.assert_called_with("user1")
+        MockTransRepo.return_value.get_active_tickers.assert_called_with("user1", None)
         MockMarket.return_value.get_current_prices.assert_called_with(["AAPL"])
         
         # Check if snapshot was saved

@@ -67,15 +67,6 @@ def render_trading_tab(st, user_id: str):
                 ibkr_host = st.text_input("IBKR Host", value=settings_repo.get(user_id, "ibkr_host") or "127.0.0.1")
                 ibkr_port = st.number_input("IBKR Port", value=int(settings_repo.get(user_id, "ibkr_port") or 7497))
 
-            # FinancialData.Net Config
-            with st.expander("🌐 FinancialData.Net (Backup Source)", expanded=False):
-                st.markdown("🔗 [官方文檔與設定 (Official Docs)](https://financialdata.net/documentation)")
-                st.text_input(
-                    "FinancialData API Key",
-                    value=settings_repo.get(user_id, "source_financialdata_api_key") or "",
-                    type="password",
-                    help="Free plan: 300 requests/day. Used for Insider Trading & Fallback quotes."
-                )
 
         with tab_config:
             st.write("##### 自動交易設定")
@@ -210,7 +201,6 @@ def render_trading_tab(st, user_id: str):
                     "enable_ibkr": enable_ibkr,
                     "ibkr_host": ibkr_host,
                     "ibkr_port": ibkr_port,
-                    "source_financialdata_api_key": financialdata_api_key,
                     "risk_profile": new_risk_profile,
                     "target_cash_ratio": new_target_cash
                 }

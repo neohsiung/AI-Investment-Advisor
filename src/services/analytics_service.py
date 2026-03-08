@@ -22,7 +22,7 @@ class LeverageCalculator:
         """
         self.repo = repository or AlchemyTransactionRepository()
 
-    def calculate_metrics(self, current_prices: Dict[str, float], user_id: str) -> Dict[str, float]:
+    def calculate_metrics(self, current_prices: Dict[str, float], user_id: str, account_id: str = None) -> Dict[str, float]:
         """
         Calculate weight-based and leverage metrics.
         計算基於權重與槓桿的指標。
@@ -32,7 +32,7 @@ class LeverageCalculator:
         # We need more than just ticker, qty - we need leverage per transaction (or average weighted leverage)
         # To keep it efficient, let's get weighted average leverage per ticker or sum of Nominal Values from DB.
         
-        holdings = self.repo.get_leverage_summary(user_id)
+        holdings = self.repo.get_leverage_summary(user_id, account_id)
 
         tnv = 0.0
         portfolio_value = 0.0
@@ -48,11 +48,15 @@ class LeverageCalculator:
             nominal_exposure = market_val * leverage
             
             tnv += abs(nominal_exposure)
-            portfolio_value += market_val # NLV is still based on Market Value (Equity)
+            
+            # [FIX] NLV should be based on Equity (Market Value / Leverage), not Nominal Value
+            # For 1x leverage, equity == market_val. For 5x, equity = market_val / 5.
+            equity = market_val / leverage
+            portfolio_value += equity 
 
         # 2. Calculate Net Liquidity Value (NLV)
         # 2. 計算淨清算價值 (NLV)
-        cash_balance = self.repo.get_cash_balance(user_id)
+        cash_balance = self.repo.get_cash_balance(user_id, account_id)
         nlv = cash_balance + portfolio_value
 
         # 3. Leverage Ratio
@@ -70,10 +74,10 @@ class LeverageCalculator:
             "leverage_ratio": leverage_ratio
         }
 
-    def _get_effective_price(self, ticker: str, current_prices: Dict[str, float], user_id: str) -> float:
+    def _get_effective_price(self, ticker: str, current_prices: Dict[str, float], user_id: str, account_id: str = None) -> float:
         """Helper to resolve price with static anchor support."""
         if ticker.startswith("__ANCHOR_") or ticker.startswith("NLV_") or ticker.startswith("STABILIZE_"):
-            holdings_detail = self.repo.get_holdings(user_id)
+            holdings_detail = self.repo.get_holdings(user_id, account_id)
             for h in holdings_detail:
                 if h['ticker'] == ticker:
                     return h['avg_price']
@@ -91,12 +95,12 @@ class ROIEngine:
         """
         self.repo = repository or AlchemyTransactionRepository()
 
-    def calculate_roi(self, nlv: float, user_id: str) -> float:
+    def calculate_roi(self, nlv: float, user_id: str, account_id: str = None) -> float:
         """
         Calculate simple ROI percentage.
         計算簡單 ROI 百分比。
         """
-        net_invested = self.repo.calculate_net_invested_capital(user_id)
+        net_invested = self.repo.calculate_net_invested_capital(user_id, account_id)
 
         if net_invested == 0:
             return 0.0
@@ -119,13 +123,13 @@ class SnapshotRecorder:
         self.repo = snapshot_repo or AlchemySnapshotRepository(db_path)
         self.trans_repo = trans_repo or AlchemyTransactionRepository()
 
-    def record_daily_snapshot(self, nlv: float, cash_balance: float, user_id: str, total_tnv: float = 0.0, leverage_ratio: float = 0.0) -> None:
+    def record_daily_snapshot(self, nlv: float, cash_balance: float, user_id: str, total_tnv: float = 0.0, leverage_ratio: float = 0.0, account_id: str = None) -> None:
         """
         Record a daily asset snapshot to the database.
         將每日資產快照記錄至資料庫。
         """
         
-        net_invested = self.trans_repo.calculate_net_invested_capital(user_id)
+        net_invested = self.trans_repo.calculate_net_invested_capital(user_id, account_id)
         pnl = nlv - net_invested
         date_str = get_current_date_str()
 
@@ -171,21 +175,21 @@ class PnLCalculator:
         """
         self.repo = repository or AlchemyTransactionRepository()
 
-    def _get_effective_price(self, ticker: str, current_prices: Dict[str, float], user_id: str) -> float:
+    def _get_effective_price(self, ticker: str, current_prices: Dict[str, float], user_id: str, account_id: str = None) -> float:
         """Helper to resolve price with static anchor support."""
         if ticker.startswith("__ANCHOR_") or ticker.startswith("NLV_") or ticker.startswith("STABILIZE_"):
-            holdings_detail = self.repo.get_holdings(user_id)
+            holdings_detail = self.repo.get_holdings(user_id, account_id)
             for h in holdings_detail:
                 if h['ticker'] == ticker:
                     return h['avg_price']
         return current_prices.get(ticker, 0.0)
 
-    def calculate_breakdown(self, current_prices: Dict[str, float], user_id: str) -> Dict[str, Any]:
+    def calculate_breakdown(self, current_prices: Dict[str, float], user_id: str, account_id: str = None) -> Dict[str, Any]:
         """
         Calculate realized and unrealized P&L breakdown for each ticker.
         計算每個標的的已實現與未實現損益細項。
         """
-        transactions = self.repo.get_all_by_user(user_id) 
+        transactions = self.repo.get_all_by_user(user_id, account_id) 
         # Note: interactions returns rows sorted by date DESC generally, checking repo implementation... 
         # Repo says "ORDER BY trade_date DESC".
         # PnL calc usually needs ASC order to calculate average cost correctly (FIFO/Weighted Avg).
@@ -258,7 +262,7 @@ class PnLCalculator:
 
         for ticker, pos in portfolio.items():
             if pos['qty'] > 0.0001: 
-                curr_price = self._get_effective_price(ticker, current_prices, user_id)
+                curr_price = self._get_effective_price(ticker, current_prices, user_id, account_id)
                 unrealized = (curr_price - pos['avg_cost']) * pos['qty']
                 total_unrealized_pnl += unrealized
 
@@ -291,7 +295,7 @@ class PnLCalculator:
             "details": breakdown
         }
 
-def update_daily_snapshot(db_path: str = None, user_id: str = None, force: bool = False, current_prices: Optional[Dict[str, float]] = None) -> None:
+def update_daily_snapshot(db_path: str = None, user_id: str = None, force: bool = False, current_prices: Optional[Dict[str, float]] = None, account_id: str = None) -> None:
     """
     Recalculate and update today's performance snapshot if not already present.
     重新計算並更新今日績效快照（若尚未存在）。
@@ -310,7 +314,7 @@ def update_daily_snapshot(db_path: str = None, user_id: str = None, force: bool 
         # Let's keep it daily for now to maximize speed.
         return
     trans_repo = AlchemyTransactionRepository()
-    active_tickers = trans_repo.get_active_tickers(user_id)
+    active_tickers = trans_repo.get_active_tickers(user_id, account_id)
 
     # 2. Fetch prices only if not provided
     if current_prices is None:
@@ -333,7 +337,8 @@ def update_daily_snapshot(db_path: str = None, user_id: str = None, force: bool 
         metrics['cash_balance'], 
         user_id,
         total_tnv=metrics.get('tnv', 0),
-        leverage_ratio=metrics.get('leverage_ratio', 0)
+        leverage_ratio=metrics.get('leverage_ratio', 0),
+        account_id=account_id
     )
 
 class AnalyticsService:
@@ -351,37 +356,37 @@ class AnalyticsService:
         self.snapshot_repo = repository or AlchemySnapshotRepository(db_path)
         self.pnl_calculator = pnl_calc or PnLCalculator(db_path=self.db_path)
 
-    def trigger_snapshot_update(self, force: bool = False, current_prices: Optional[Dict[str, float]] = None) -> None:
+    def trigger_snapshot_update(self, force: bool = False, current_prices: Optional[Dict[str, float]] = None, account_id: str = None) -> None:
         """
         Manually trigger a snapshot update for the user.
         手動觸發使用者的快照更新。
         """
         if self.user_id:
-            update_daily_snapshot(self.db_path, self.user_id, force=force, current_prices=current_prices)
+            update_daily_snapshot(self.db_path, self.user_id, force=force, current_prices=current_prices, account_id=account_id)
 
-    def get_pnl_breakdown(self, current_prices: Dict[str, float]) -> Optional[Dict[str, Any]]:
+    def get_pnl_breakdown(self, current_prices: Dict[str, float], account_id: str = None) -> Optional[Dict[str, Any]]:
         """
         Get P&L breakdown for the user's portfolio.
         取得使用者投資組合的損益細項。
         """
         if not self.user_id:
             return None
-        return self.pnl_calculator.calculate_breakdown(current_prices, self.user_id)
+        return self.pnl_calculator.calculate_breakdown(current_prices, self.user_id, account_id)
 
-    def get_performance_history(self) -> Optional[pd.DataFrame]:
+    def get_performance_history(self, account_id: str = None) -> Optional[pd.DataFrame]:
         """
         Get historical performance snapshots for the user.
         取得使用者的歷史績效快照。
         """
         if not self.user_id:
             return None
-        return self.snapshot_repo.get_history_by_user(self.user_id)
+        return self.snapshot_repo.get_history_by_user(self.user_id, account_id)
 
-    def get_latest_performance(self) -> Optional[Union[pd.Series, Dict[str, Any]]]:
+    def get_latest_performance(self, account_id: str = None) -> Optional[Union[pd.Series, Dict[str, Any]]]:
         """
         Get the latest available performance data for the user.
         取得使用者的最新績效數據。
         """
         if not self.user_id:
             return None
-        return self.snapshot_repo.get_latest_by_user(self.user_id)
+        return self.snapshot_repo.get_latest_by_user(self.user_id, account_id)
