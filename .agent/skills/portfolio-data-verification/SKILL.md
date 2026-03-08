@@ -5,61 +5,63 @@ description: Best practices for auditing and aligning portfolio metrics (NLV, Pr
 
 # Portfolio Data Verification Skill
 
-This skill defines the methodology for ensuring that the Investment Advisor dashboard accurately reflects the "Source of Truth" (transactons) while allowing for stable metric anchoring.
+This skill defines the methodology for ensuring data integrity and preventing "unexplained" historical noise in the transaction ledger.
 
-## 1. Metric Definitions & Formulas
+## 1. Metric Definitions & Formulas [v2.2]
 
-Standardize definitions across the system to avoid "vibe-based" discrepancies.
+- **資產淨值 (NLV)**: `Cash Balance + Total Portfolio Equity`.
+- **投資組合權益 (Portfolio Equity)**: `Sum( (Quantity * Current Price) / Leverage )`.
 
-- **資產淨值 (NLV)**: `Cash Balance + Total Market Value (Long + Short)`.
-- **獲利/虧損 (Profit)**: `NLV - Net Invested Capital`.
-- **浮動 (Floating)**: `Unrealized P/L` based on current position cost basis vs market price.
-- **總曝險 (Gross)**: `Uninvested Cash + Sum(abs(Nominal Value of each ticker * Leverage))`.
+## 2. History-Aware Sync Logic [NEW]
 
-## 2. Identifying Discrepancies
+To avoid duplicate adjustments (as seen in multiple $297.82 entries):
 
-When the Dashboard doesn't match the Broker (e.g., eToro):
+1. **Idempotency Rule**: The system must check for existing `ETORO_SYNC` entries for the same user, same day, and similar amount before inserting a new one.
+2. **Audit Trail Linkage**: All sync records must contain a `raw_data` trace linking the adjustment to the specific snapshot of `BrokerCash` and `LocalCash`.
 
-1. **Check for "Ghost Data"**: Look for numeric ID positions (e.g., `1234567`) that might be duplicates of named tickers.
-2. **Verify Cash Flow**: Compare `calculate_net_invested_capital` (Deposits - Withdrawals) against manual transfer logs.
-3. **Compare Calculations**: Verify if `DashboardService` is incorrectly using "Current Cost Basis" instead of "Net Invested Capital" for Profit metrics.
+## 3. eToro Inference & Management
 
-## 3. Calibration Techniques
+### Categorization (Inference Logic)
 
-If metrics are off due to historical data noise, use "Calibration Transactions":
+- **If Unexplained Movement exists**:
+  - Check `totalFees`: Represents dividends or overnight fees.
+  - Check `netProfit` from `Trade History`: Relates to closed positions.
+  - **Remainder**: Must be classified as `DEPOSIT` or `WITHDRAWAL`.
 
-- **CASH / ETORO_SYNC**: Use a `CASH` action transaction to adjust the local cash balance to match the broker.
-- **NLV_ADJUST / STABILIZE_CAP**: Use these tickers with `action='BUY'` to artificially anchor the Net Liquidity Value or Invested Capital.
-- **USD / STABILIZE_CASH**: Use to anchor cash specifically.
+### Data Cleanup Procedure
 
-## 4. Static Anchoring for Stability
-
-To prevent "drift" from market price fluctuations or missing API data:
-
-1. **Naming Convention**: Tickers starting with `__ANCHOR_`, `NLV_`, or `STABILIZE_` are treated as static.
-2. **Implementation**: In `AnalyticsService.calculate_metrics`, ignore real-time price lookups for these tickers. Use their **Average Cost** (from the DB) as the "Price".
-3. **Effect**: The metric stays fixed at the target anchor regardless of market volatility.
-
-## 5. Verification Snippets
-
-Always verify via `docker exec` to bypass caching layers:
-
-```python
-# Verify NLV and Profit Alignment
-from src.services.dashboard_service import DashboardService
-ds = DashboardService()
-data = ds.prepare_dashboard_data('USER_ID')
-metrics = data['metrics']
-pnl = data['pnl_data']
-print(f"NLV: {metrics['nlv']}, Profit: {pnl['total']}, Cash: {metrics['cash_balance']}")
-```
+If the `Audit Trail` contains redundant sync records (e.g., multiple entries for the same calibration), use the following SQL pattern to identify and prune:
 
 ```sql
--- Check for anchor transactions
-SELECT * FROM transactions WHERE ticker LIKE '%ANCHOR%' OR ticker LIKE 'NLV%' OR ticker LIKE 'STABILIZE%';
+-- Identify redundant syncs
+SELECT trade_date, amount, action, count(*) 
+FROM transactions 
+WHERE source_file = 'ETORO_SYNC' 
+GROUP BY trade_date, amount, action 
+HAVING count(*) > 1;
+
+-- Prune metadata-less duplicates
+DELETE FROM transactions 
+WHERE source_file = 'ETORO_SYNC' AND raw_data IS NULL;
 ```
 
-## 6. Security & Integrity
+## 4. Preventing "Phantom" Drift
 
-- **Parameterized Queries**: Always use `src.repositories.transaction_repository` to avoid SQL injection.
-- **No Hardcoded Values**: Anchors should be database records, not values in code.
+1. **Thresholds**: Small drifts (< $0.50) are suppressed.
+2. **Safety Caps**: Large drifts (> $500) trigger a manual review request instead of automatic sync.
+3. **Traceability**: If a sync occurs, the `raw_data` must explain **exactly** which component lacked history (e.g., "Missing Withdrawal Record").
+
+## 6. 多帳號隔離與歷史重建標準 [v2.3]
+
+### 多帳號治理 (Multi-Account Governance)
+
+1. **帳號標識**：所有交易必須帶有 `source_file` (Account ID)，嚴禁無主交易。
+2. **隔離計算**：`TransactionRepository` 與 `AnalyticsService` 必須強制支持按 `account_id` 過濾，避免 A 帳號的入金被計入 B 帳號的損益結構。
+
+### 歷史優先重建 (History-First Reconstruction)
+
+1. **單源真實性**：儀表板趨勢圖與投入資本指標必須優先從交易帳單（Ledger）重建，而非僅依賴每日快照（Snapshots）。
+2. **對帳標準**：
+   - `nlv_reconstructed = current_cash + Sum(qty * historical_price)`
+   - `invested_reconstructed = Sum(Deposits) - Sum(Withdrawals)`
+3. **驗證週期**：每次新增非標準化數據（如 CSV 匯入）後，必須觸發 `reconstruct_history` 以驗證資料一致性。
