@@ -13,6 +13,7 @@ from src.data.providers.yfinance_provider import YFinanceProvider
 from src.data.providers.fred_provider import FredProvider
 from src.data.providers.alpha_vantage_provider import AlphaVantageProvider
 from src.data.providers.finnhub_provider import FinnhubProvider
+from src.data.providers.financialdata_provider import FinancialDataProvider
 from src.services.fred_service import FredService
 from src.services.search_service import InternetSearchService
 from src.services.settings_service import SettingsService
@@ -46,6 +47,8 @@ class MarketDataService:
         self.alpha_vantage.id = "alpha_vantage"
         self.finnhub = FinnhubProvider(user_id=self.user_id)
         self.finnhub.id = "finnhub"
+        self.financialdata = FinancialDataProvider(settings_service=self.settings_service)
+        self.financialdata.id = "financialdata"
         
         # Initialize Search (Tavily Primary, DuckDuckGo Fallback)
         self.search_service = InternetSearchService(settings_service=self.settings_service)
@@ -88,8 +91,8 @@ class MarketDataService:
         all_prices = {}
         missing_tickers = list(tickers)
         
-        # Priority: Polygon (Unlimited) -> Tiingo (P1) -> FMP (300/min) -> YFinance (Free)
-        for provider in [self.polygon, self.tiingo, self.fmp, self.yfinance]:
+        # Priority: Polygon (Unlimited) -> Tiingo (P1) -> FMP (300/min) -> FinancialData (300/day) -> YFinance (Free)
+        for provider in [self.polygon, self.tiingo, self.fmp, self.financialdata, self.yfinance]:
             if not missing_tickers:
                 break
             if not self._is_provider_enabled(provider):
@@ -450,4 +453,22 @@ class MarketDataService:
          except Exception as e:
              self.logger.error(f"Yield curve error: {e}")
              return {}
+
+    def get_insider_trading(self, ticker: str, limit: int = 50) -> List[Dict[str, Any]]:
+        """
+        Fetch insider transactions from FinancialData.Net.
+        從 FinancialData.Net 獲取內線交易數據。
+        """
+        if self._is_provider_enabled(self.financialdata):
+            return self.financialdata.fetch_insider_trading(ticker, limit=limit)
+        return []
+
+    def get_etf_holdings(self, etf_ticker: str) -> List[Dict[str, Any]]:
+        """
+        Fetch ETF holdings from FinancialData.Net.
+        從 FinancialData.Net 獲取 ETF 持倉數據。
+        """
+        if self._is_provider_enabled(self.financialdata):
+            return self.financialdata.fetch_etf_holdings(etf_ticker)
+        return []
 
