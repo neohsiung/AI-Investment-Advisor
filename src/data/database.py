@@ -436,23 +436,30 @@ def init_db(db_path=None, force=False, engine=None):
         # Add Unique Index for UPSERT on daily_snapshots if missing
         if not is_sqlite:
             try:
-                check_idx = text("SELECT indexname FROM pg_indexes WHERE tablename = 'daily_snapshots' AND indexdef LIKE '%(date, user_id, account_id)%'")
-                if not conn.execute(check_idx).fetchone():
-                    # v5.1: Update Upsert index to include account_id for multi-account support
-                    conn.execute(text("DROP INDEX IF EXISTS idx_daily_snapshots_upsert"))
-                    conn.execute(text("CREATE UNIQUE INDEX IF NOT EXISTS idx_daily_snapshots_upsert ON daily_snapshots(date, user_id, COALESCE(account_id, ''))"))
+                # 1. Ensure Columns Exist
+                cols_res = conn.execute(text("SELECT column_name FROM information_schema.columns WHERE table_name = 'daily_snapshots'")).fetchall()
+                existing_cols = [c[0].lower() for c in cols_res]
                 
-                # v5.0: Schema migration for Narrative Drift and Multi-Account support
-                cols = conn.execute(text("SELECT column_name FROM information_schema.columns WHERE table_name = 'daily_snapshots'")).fetchall()
-                existing_cols = [c[0] for c in cols]
                 if 'account_id' not in existing_cols:
+                    logger.info("Migrating: Adding account_id to daily_snapshots")
                     conn.execute(text("ALTER TABLE daily_snapshots ADD COLUMN account_id TEXT"))
                 if 'conviction_level' not in existing_cols:
                     conn.execute(text(f"ALTER TABLE daily_snapshots ADD COLUMN conviction_level {numeric_type} DEFAULT 0"))
                 if 'time_horizon' not in existing_cols:
                     conn.execute(text("ALTER TABLE daily_snapshots ADD COLUMN time_horizon TEXT"))
+                
+                # 2. Update Primary Key/Unique Index for Multi-Account support
+                # First, ensure we don't have NULL account_ids before making it part of an index
+                conn.execute(text("UPDATE daily_snapshots SET account_id = '' WHERE account_id IS NULL"))
+                
+                # Update the UPSERT index
+                logger.info("Updating daily_snapshots_upsert index to include account_id")
+                conn.execute(text("DROP INDEX IF EXISTS idx_daily_snapshots_upsert"))
+                conn.execute(text("CREATE UNIQUE INDEX idx_daily_snapshots_upsert ON daily_snapshots(date, user_id, COALESCE(account_id, ''))"))
+                
             except Exception as e:
-                logger.warning(f"Failed to migrate daily_snapshots: {e}")
+                logger.error(f"Failed to migrate daily_snapshots: {e}")
+                # Don't raise here to allow boot, but log as error
 
         conn.commit()
     
