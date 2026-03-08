@@ -105,6 +105,10 @@ graph TD
 | 服務 | 檔案 | 核心職責 |
 | :--- | :--- | :--- |
 | `AnalyticsService` | `analytics_service.py` | NLV/Leverage/P&L 確定性計算 (0% 幻覺)。**[v3.6 New]** Leverage Engine. |
+
+- `calculate_breakdown(current_prices, account_id)` — 計算資產分布與損益結構，支援多帳號隔離。
+- `get_performance_history(account_id)` — 取得歷史績效趨勢 (DataFrame)。
+- `get_latest_performance(account_id)` — 取得最新快照數據。
 | `DashboardService` | `dashboard_service.py` | Dashboard 數據聚合與即時指標。 |
 | `PerformanceService` | `performance_service.py` | 歷史績效追蹤與趨勢分析。 |
 | `SettingsService` | `settings_service.py` | 系統設定 CRUD (Unified DB backed)。 |
