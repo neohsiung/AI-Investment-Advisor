@@ -35,6 +35,8 @@ def render_data_sources_tab(st, settings_service, user_id):
                 
                 with col2:
                     st.write(f"**{source['name']}**")
+                    if 'url' in source:
+                        st.markdown(f"🔗 [官方網站與設定 (Official Website)]({source['url']})")
                     st.caption(source['desc'])
                 
                 # If enabled, show config fields

@@ -12,6 +12,7 @@ DATA_SOURCE_GROUPS = {
             {
                 "id": "fred",
                 "name": "FRED (Federal Reserve)",
+                "url": "https://fred.stlouisfed.org/docs/api/api_key.html",
                 "desc": "聯準會官方經濟數據 (利率, CPI, 失業率)。系統監控宏觀體制的基石。",
                 "trigger_type": "polling",
                 "fields": {
@@ -21,6 +22,7 @@ DATA_SOURCE_GROUPS = {
             {
                 "id": "alpha_vantage",
                 "name": "Alpha Vantage",
+                "url": "https://www.alphavantage.co/support/#api-key",
                 "desc": "提供總經指標、外匯與情感分數。補足 MacroAgent 的多維度指標。",
                 "trigger_type": "polling",
                 "fields": {
@@ -35,6 +37,7 @@ DATA_SOURCE_GROUPS = {
             {
                 "id": "futu",
                 "name": "Futu OpenAPI (富途)",
+                "url": "https://www.futunn.com/hk/software-trading/open-api",
                 "desc": "專業港美股報價與實盤交易。需運行本地 OpenD 網關。",
                 "trigger_type": "live",
                 "fields": {
@@ -45,6 +48,7 @@ DATA_SOURCE_GROUPS = {
             {
                 "id": "polygon",
                 "name": "Polygon.io",
+                "url": "https://polygon.io/dashboard/api-keys",
                 "desc": "美股期權與盤中逐筆成交數據。適合 Sentinel 即時攔截。",
                 "trigger_type": "polling",
                 "fields": {
@@ -54,11 +58,22 @@ DATA_SOURCE_GROUPS = {
             {
                 "id": "alpaca",
                 "name": "Alpaca Markets",
+                "url": "https://app.alpaca.markets/paper/dashboard/overview",
                 "desc": "API-First 零佣金交易平台。適合自動化策略執行。",
                 "trigger_type": "live",
                 "fields": {
                     "key_id": {"label": "API Key ID", "type": "password"},
                     "secret_key": {"label": "Secret Key", "type": "password"}
+                }
+            },
+            {
+                "id": "financialdata",
+                "name": "FinancialData.Net (Unified Data)",
+                "url": "https://financialdata.net/documentation",
+                "desc": "全能型數據源 (報價, 內線交易, ETF 倉位)。作為 Polygon 與 FMP 的強力備援。",
+                "trigger_type": "polling",
+                "fields": {
+                    "api_key": {"label": "API Key", "type": "password", "help": "在 financialdata.net 獲取"}
                 }
             }
         ]
@@ -69,6 +84,7 @@ DATA_SOURCE_GROUPS = {
             {
                 "id": "fmp",
                 "name": "FMP (Financial Modeling Prep)",
+                "url": "https://site.financialmodelingprep.com/developer/docs/",
                 "desc": "高精度全球財報數據與 DCF 模型。Fundamental Swarm 的燃料。",
                 "trigger_type": "polling",
                 "fields": {
@@ -78,6 +94,7 @@ DATA_SOURCE_GROUPS = {
             {
                 "id": "yahoo_finance",
                 "name": "Yahoo Finance (yfinance)",
+                "url": "https://finance.yahoo.com/",
                 "desc": "穩定且免 Key 的歷史數據源。用於回測數據填充。",
                 "trigger_type": "polling",
                 "fields": {} 
@@ -90,6 +107,7 @@ DATA_SOURCE_GROUPS = {
             {
                 "id": "finnhub",
                 "name": "Finnhub",
+                "url": "https://finnhub.io/dashboard",
                 "desc": "AI 情緒分數與新聞聚合。Generous free tier。",
                 "trigger_type": "polling",
                 "fields": {
@@ -99,6 +117,7 @@ DATA_SOURCE_GROUPS = {
             {
                 "id": "tiingo",
                 "name": "Tiingo",
+                "url": "https://api.tiingo.com/",
                 "desc": "內容乾淨且具備標籤化 (Tagging) 的新聞流。",
                 "trigger_type": "polling",
                 "fields": {
@@ -108,6 +127,7 @@ DATA_SOURCE_GROUPS = {
             {
                 "id": "news_api",
                 "name": "NewsAPI.org",
+                "url": "https://newsapi.org/register",
                 "desc": "全球新聞廣度掃描。",
                 "trigger_type": "polling",
                 "fields": {
@@ -117,6 +137,7 @@ DATA_SOURCE_GROUPS = {
             {
                 "id": "tavily",
                 "name": "Tavily Search",
+                "url": "https://tavily.com/",
                 "desc": "專為 AI 設計的金融搜尋引擎。用於 Breaking News 趨勢掃描。",
                 "trigger_type": "polling",
                 "fields": {
@@ -126,6 +147,7 @@ DATA_SOURCE_GROUPS = {
             {
                 "id": "readwise",
                 "name": "Readwise Highlights",
+                "url": "https://readwise.io/access_token",
                 "desc": "自動同步並以 AI 篩選你畫線的投資筆記，匯入 Sentinel 監控迴圈。",
                 "trigger_type": "polling",
                 "fields": {
@@ -140,6 +162,7 @@ DATA_SOURCE_GROUPS = {
             {
                 "id": "cryptopanic",
                 "name": "CryptoPanic",
+                "url": "https://cryptopanic.com/developers/api/",
                 "desc": "幣圈情緒聚合指標。偵測市場爆發性事件。",
                 "trigger_type": "polling",
                 "fields": {
@@ -149,6 +172,7 @@ DATA_SOURCE_GROUPS = {
             {
                 "id": "whale_alert",
                 "name": "Whale Alert",
+                "url": "https://whale-alert.io/log-in",
                 "desc": "監控鏈上大鯨魚異動。預警拋售與風險。",
                 "trigger_type": "polling",
                 "fields": {
@@ -158,6 +182,7 @@ DATA_SOURCE_GROUPS = {
             {
                 "id": "glassnode",
                 "name": "Glassnode",
+                "url": "https://studio.glassnode.com/settings/api",
                 "desc": "鏈上宏觀指標。用於判斷牛熊週期。",
                 "trigger_type": "polling",
                 "fields": {
@@ -167,6 +192,7 @@ DATA_SOURCE_GROUPS = {
             {
                 "id": "alternative_me",
                 "name": "Fear & Greed Index",
+                "url": "https://alternative.me/crypto/fear-and-greed-index/",
                 "desc": "市場恐懼與貪婪指數。調節風險權重的關鍵訊號。",
                 "trigger_type": "polling",
                 "fields": {}
