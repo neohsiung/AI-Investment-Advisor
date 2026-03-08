@@ -145,7 +145,7 @@ def get_db_connection(db_path=None):
     engine = get_db_engine(db_path)
     return engine.connect()
 
-def init_db(db_path=None, force=False):
+def init_db(db_path=None, force=False, engine=None):
     """
     Initializes the database schema (v4.1.7 Optimized for Postgres).
     Strictly uses UUID, JSONB, NUMERIC, DATE, vector(1536).
@@ -165,7 +165,9 @@ def init_db(db_path=None, force=False):
     if db_url in _db_initialized and not force:
         return
 
-    engine = get_db_engine(db_path)
+    if engine is None:
+        engine = get_db_engine(db_path)
+    
     is_sqlite = engine.dialect.name == "sqlite"
     
     # Type mapping (v4.2.1: Optimized for Postgres with SQLite fallback for tests)
@@ -318,6 +320,8 @@ def init_db(db_path=None, force=False):
         pnl {numeric_type},
         total_tnv {numeric_type} DEFAULT 0,
         leverage_ratio {numeric_type} DEFAULT 0,
+        conviction_level {numeric_type} DEFAULT 0,
+        time_horizon TEXT,
         PRIMARY KEY (date, user_id)
     );
     """)
@@ -431,8 +435,16 @@ def init_db(db_path=None, force=False):
                 check_idx = text("SELECT indexname FROM pg_indexes WHERE tablename = 'daily_snapshots' AND indexdef LIKE '%(date, user_id)%'")
                 if not conn.execute(check_idx).fetchone():
                     conn.execute(text("CREATE UNIQUE INDEX IF NOT EXISTS idx_daily_snapshots_upsert ON daily_snapshots(date, user_id)"))
+                
+                # v5.0: Schema migration for Narrative Drift (conviction_level, time_horizon)
+                cols = conn.execute(text("SELECT column_name FROM information_schema.columns WHERE table_name = 'daily_snapshots'")).fetchall()
+                existing_cols = [c[0] for c in cols]
+                if 'conviction_level' not in existing_cols:
+                    conn.execute(text(f"ALTER TABLE daily_snapshots ADD COLUMN conviction_level {numeric_type} DEFAULT 0"))
+                if 'time_horizon' not in existing_cols:
+                    conn.execute(text("ALTER TABLE daily_snapshots ADD COLUMN time_horizon TEXT"))
             except Exception as e:
-                logger.warning(f"Failed to create unique index: {e}")
+                logger.warning(f"Failed to migrate daily_snapshots: {e}")
 
         conn.commit()
     

@@ -17,6 +17,8 @@ def render_trading_tab(st, user_id: str):
     cb_loss = settings_repo.get(user_id, "cb_loss_streak") or 3
     sector_limit = settings_repo.get(user_id, "risk_max_sector_exposure") or 0.30
     trading_enabled = settings_repo.get(user_id, "ai_trading_enabled") or "true"
+    risk_profile = settings_repo.get(user_id, "risk_profile") or "Balanced"
+    target_cash = settings_repo.get(user_id, "target_cash_ratio") or 0.1
     
     # [NEW] Confidence Thresholds (Milestone 13.2)
     auto_threshold = settings_repo.get(user_id, "auto_trade_threshold") or 9
@@ -129,6 +131,35 @@ def render_trading_tab(st, user_id: str):
                     min_value=1, max_value=10, value=int(cb_loss),
                     help="當帳戶發生連續 N 次虧損交易時，將自動關閉 AI 交易開關以暫停策略執行。"
                 )
+
+            st.write("---")
+            st.write("##### 🛡️ 進階風險屬性 (Risk Profile)")
+            col_rp1, col_rp2 = st.columns(2)
+            with col_rp1:
+                new_risk_profile = st.selectbox(
+                    "投資風險屬性",
+                    options=["Balanced", "Aggressive"],
+                    index=0 if risk_profile == "Balanced" else 1,
+                    help="Balanced: 槓桿上限 1.70x。Aggressive: 槓桿上限 2.5x。"
+                )
+            with col_rp2:
+                # Dynamic indicator from FRED if available
+                from src.services.fred_service import FredService
+                fred = FredService()
+                macro = fred.get_macro_indicators()
+                cpi = macro.get("CPI", {}).get("value", "N/A")
+                st.metric("當前通膨引導 (CPI)", f"{cpi}", delta="FRED Data", delta_color="off")
+
+            st.write("---")
+            st.write("##### 💵 現金比例管理 (Cash Management)")
+            st.info("💡 系統將根據『通膨率』與『市場波動』動態調整實際現金門檻。")
+            new_target_cash_pct = st.slider(
+                "目標基本現金比例 (%)",
+                min_value=0, max_value=50, value=int(float(target_cash) * 100),
+                format="%d%%",
+                help="手動設定的基本現金水位。哨兵將基於此數值進行動態校準。"
+            )
+            new_target_cash = new_target_cash_pct / 100.0
             
             st.write("---")
             st.write("##### 🚨 Sentinel 緊急事件評分")
@@ -168,7 +199,9 @@ def render_trading_tab(st, user_id: str):
                     "etoro_mode": "demo" if etoro_demo else "real",
                     "enable_ibkr": enable_ibkr,
                     "ibkr_host": ibkr_host,
-                    "ibkr_port": ibkr_port
+                    "ibkr_port": ibkr_port,
+                    "risk_profile": new_risk_profile,
+                    "target_cash_ratio": new_target_cash
                 }
                 # v4.1.1: Don't use str(v) for all values - it double-encodes strings
                 # v4.1.1: 不要對所有值使用 str(v) - 這會導致字串被雙重編碼

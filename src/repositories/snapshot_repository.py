@@ -36,7 +36,9 @@ class ISnapshotRepository(ABC):
         invested_capital: float, 
         pnl: float, 
         total_tnv: float, 
-        leverage_ratio: float
+        leverage_ratio: float,
+        conviction_level: float = 0.0,
+        time_horizon: Optional[str] = None
     ) -> None:
         """
         Save or update a daily snapshot.
@@ -86,42 +88,69 @@ class AlchemySnapshotRepository(BaseRepository, ISnapshotRepository):
         invested_capital: float, 
         pnl: float, 
         total_tnv: float, 
-        leverage_ratio: float
+        leverage_ratio: float,
+        conviction_level: float = 0.0,
+        time_horizon: Optional[str] = None
     ) -> None:
         """
         Save or update a daily snapshot.
         儲存或更新每日快照。
         """
-        with self.engine.begin() as conn:
-            sql = text('''
-                INSERT INTO daily_snapshots (date, user_id, total_nlv, cash_balance, invested_capital, pnl, total_tnv, leverage_ratio)
-                VALUES (:date, :user_id, :nlv, :cash_balance, :invested_capital, :pnl, :tnv, :lev)
-                ON CONFLICT (date, user_id) DO UPDATE SET
-                    total_nlv = EXCLUDED.total_nlv,
-                    cash_balance = EXCLUDED.cash_balance,
-                    invested_capital = EXCLUDED.invested_capital,
-                    pnl = EXCLUDED.pnl,
-                    total_tnv = EXCLUDED.total_tnv,
-                    leverage_ratio = EXCLUDED.leverage_ratio
-            ''')
-            
-            # v4.1.1 Patch: Sanitize inf/nan for Postgres NUMERIC compatibility
-            import math
-            def sanitize(v):
-                if v is None or math.isinf(v) or math.isnan(v):
-                    return 0.0
-                return v
+        # Prepare params
+        # v4.1.1 Patch: Sanitize inf/nan for Postgres NUMERIC compatibility
+        import math
+        def sanitize(v):
+            if v is None or (isinstance(v, float) and (math.isinf(v) or math.isnan(v))):
+                return 0.0
+            return v
 
-            conn.execute(sql, {
-                "date": date,
-                "user_id": user_id,
-                "nlv": sanitize(nlv),
-                "cash_balance": sanitize(cash_balance),
-                "invested_capital": sanitize(invested_capital),
-                "pnl": sanitize(pnl),
-                "tnv": sanitize(total_tnv),
-                "lev": sanitize(leverage_ratio)
-            })
+        params = {
+            "date": date,
+            "user_id": user_id,
+            "nlv": sanitize(nlv),
+            "cash_balance": sanitize(cash_balance),
+            "invested_capital": sanitize(invested_capital),
+            "pnl": sanitize(pnl),
+            "tnv": sanitize(total_tnv),
+            "lev": sanitize(leverage_ratio),
+            "conv": sanitize(conviction_level),
+            "horizon": time_horizon
+        }
+
+        with self.engine.begin() as conn:
+            try:
+                # 1. Try Update (Compatible with both SQLite and Postgres)
+                update_sql = text('''
+                    UPDATE daily_snapshots SET
+                        total_nlv = :nlv,
+                        cash_balance = :cash_balance,
+                        invested_capital = :invested_capital,
+                        pnl = :pnl,
+                        total_tnv = :tnv,
+                        leverage_ratio = :lev,
+                        conviction_level = :conv,
+                        time_horizon = :horizon
+                    WHERE date = :date AND user_id = :user_id
+                ''')
+                res = conn.execute(update_sql, params)
+                
+                # 2. If no rows updated, Insert
+                if res.rowcount == 0:
+                    insert_sql = text('''
+                        INSERT INTO daily_snapshots (
+                            date, user_id, total_nlv, cash_balance, invested_capital, 
+                            pnl, total_tnv, leverage_ratio, conviction_level, time_horizon
+                        )
+                        VALUES (
+                            :date, :user_id, :nlv, :cash_balance, :invested_capital, 
+                            :pnl, :tnv, :lev, :conv, :horizon
+                        )
+                    ''')
+                    conn.execute(insert_sql, params)
+            except Exception as e:
+                print(f"\n[CRITICAL SQL ERROR] {e}")
+                logger.error(f"SQL Execution Error: {e}")
+                raise e
 
 # Legacy aliases removed in v4.1.7
 # @deprecated: Use AlchemySnapshotRepository

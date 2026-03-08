@@ -136,6 +136,10 @@ class SentinelService:
             if datetime.now().minute % 30 == 0:
                 triggers += self._check_global_macro_events()
             
+            # Dimension 7: Risk Consistency & Dynamic Cash (每次 tick)
+            # v5.0: Ensure leverage and cash levels match risk profile
+            triggers += await self._check_risk_consistency()
+            
             # ACT: Summon Council + Notifications if triggered
             if triggers:
                 await self._escalate(triggers)
@@ -1257,3 +1261,77 @@ class SentinelService:
             loop.run_in_executor(None, thematic_agent.run, context)
         except Exception as e:
             logger.error(f"Failed to trigger thematic update for {theme_key}: {e}")
+
+    async def _check_risk_consistency(self) -> List[Dict[str, Any]]:
+        """
+        Dimension 7: Risk Profile Consistency Check & Dynamic Cash Management.
+        檢查槓桿率與產業集中度是否符合宣稱的風險屬性，並實施動態現金比例管理。
+        """
+        triggers = []
+        users = self._get_all_user_ids()
+        
+        # 0. Get Inflation Data via FredService (Optimized: fetch once per check)
+        from src.services.fred_service import FredService
+        fred = FredService()
+        macro_data = fred.get_macro_indicators()
+        cpi_data = macro_data.get("CPI", {})
+        inflation_rate = 0.03 # Default 3% if missing
+        
+        if cpi_data:
+            history = cpi_data.get("history", [])
+            if len(history) >= 12:
+                # Simple YoY approximation
+                inflation_rate = (history[0] - history[-1]) / history[-1]
+        
+        for uid in users:
+            # 1. Get Risk Profile from Settings
+            profile = self.settings_service.get_setting(uid, "risk_profile", "Balanced")
+            
+            # 2. Get Latest Snapshot
+            from src.repositories.snapshot_repository import AlchemySnapshotRepository
+            snap_repo = AlchemySnapshotRepository()
+            latest = snap_repo.get_latest_by_user(uid)
+            
+            if latest is not None:
+                latest_dict = latest if isinstance(latest, dict) else latest.to_dict()
+                lev = latest_dict.get("leverage_ratio", 0.0)
+                
+                # Check Balanced Profile vs 1.7x leverage
+                if profile == "Balanced" and lev > 1.70:
+                    triggers.append({
+                        "id": f"risk_consistency_{uid}",
+                        "text": f"⚠️ Risk Mapping Alert: User {uid} has 'Balanced' profile but leverage is {lev:.2f}x (Max Allowed: 1.70x).",
+                        "severity": "high",
+                        "type": "risk_consistency"
+                    })
+            
+            # 3. Dynamic Cash Ratio Check (v5.0)
+            target_cash_base = float(self.settings_service.get_setting(uid, "target_cash_ratio", 0.1))
+            inflation_mod = 1 + max(0, inflation_rate)
+            
+            vix_triggers = self._check_vix_anomaly()
+            vix_multiplier = 1.0
+            if any("VIX Spiked" in t.get("text", "") for t in vix_triggers):
+                vix_multiplier = 1.5
+            
+            final_target_cash = target_cash_base * inflation_mod * vix_multiplier
+            
+            actual_cash_ratio = 0.0
+            if latest is not None:
+                latest_dict = latest if isinstance(latest, dict) else latest.to_dict()
+                nlv = latest_dict.get("total_nlv", 0.0)
+                cash = latest_dict.get("cash_balance", 0.0)
+                if nlv > 0:
+                    actual_cash_ratio = cash / nlv
+            
+            if actual_cash_ratio < final_target_cash * 0.9:
+                triggers.append({
+                    "id": f"cash_ratio_low_{uid}",
+                    "text": (f"⚠️ Dynamic Cash Alert: Actual {actual_cash_ratio*100:.1f}% "
+                            f"vs Adjusted Target {final_target_cash*100:.1f}% "
+                            f"(Inf: {inflation_rate*100:.1f}%, VIX Mod: {vix_multiplier}x)."),
+                    "severity": "medium",
+                    "type": "cash_management"
+                })
+                
+        return triggers

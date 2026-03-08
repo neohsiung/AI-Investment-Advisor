@@ -100,6 +100,17 @@ class ExperienceReplayService:
                     if "Weekly Macro" in str(row['summary']):
                         past_consensus = row['content']
                         break
+            
+            # 1.5. Retrieve Conviction & Time Horizon History (v5.0)
+            from src.repositories.snapshot_repository import AlchemySnapshotRepository
+            snap_repo = AlchemySnapshotRepository()
+            history_df = snap_repo.get_history_by_user(user_id)
+            conviction_context = "No conviction history found."
+            if not history_df.empty:
+                # Get last 14 days to see the narrative evolution
+                tail = history_df.tail(14)
+                if 'conviction_level' in tail.columns and 'time_horizon' in tail.columns:
+                    conviction_context = tail[['date', 'conviction_level', 'time_horizon']].to_json(orient='records', force_ascii=False)
                 
             if not past_consensus:
                 logger.warning("No past weekly report found for narrative drift analysis.")
@@ -133,7 +144,12 @@ class ExperienceReplayService:
             with open(prompt_path, "r", encoding="utf-8") as f:
                 sys_prompt_template = f.read()
                 
-            system_prompt = sys_prompt_template.replace("{{past_consensus}}", past_consensus).replace("{{market_data}}", current_market_data)
+            system_prompt = (
+                sys_prompt_template
+                .replace("{{past_consensus}}", past_consensus)
+                .replace("{{market_data}}", current_market_data)
+                .replace("{{conviction_history}}", conviction_context)
+            )
             
             client = OpenRouterClient()
             response_str = client.generate(
@@ -153,3 +169,51 @@ class ExperienceReplayService:
         except Exception as e:
             logger.error(f"Narrative Drift Analysis failed: {e}")
             return {"accuracy_score": 10, "suggested_correction": f"分析失敗 (Analysis Failed): {e}"}
+
+    def optimize_cash_ratio(self, user_id: str) -> Dict[str, Any]:
+        """
+        v5.0: Dynamic Cash Ratio Optimization.
+        根據歷史回撤與通膨趨勢優化現金比例門檻。
+        """
+        try:
+            from src.repositories.snapshot_repository import AlchemySnapshotRepository
+            from src.services.fred_service import FredService
+            
+            snap_repo = AlchemySnapshotRepository()
+            history = snap_repo.get_history_by_user(user_id)
+            
+            if history.empty or len(history) < 10:
+                return {"status": "skipped", "reason": "Insufficient history"}
+            
+            # Calculate Drawdown
+            history['cummax'] = history['total_nlv'].cummax()
+            history['drawdown'] = (history['total_nlv'] - history['cummax']) / history['cummax']
+            max_dd = abs(history['drawdown'].min())
+            
+            # Get Inflation
+            fred = FredService()
+            macro = fred.get_macro_indicators()
+            cpi_val = macro.get("CPI", {}).get("value", 3.0) # Assume 3% if error
+            
+            from src.services.settings_service import SettingsService
+            settings = SettingsService(user_id=user_id)
+            current_target = float(settings.get_setting(user_id, "target_cash_ratio", 0.1))
+            
+            # Heuristic: If drawdown is high (>15%), increase cash buffer
+            # If inflation is very high (>5%), tilt towards assets, but maintain liquidity
+            new_target = current_target
+            if max_dd > 0.15:
+                new_target += 0.05
+            elif max_dd < 0.05:
+                new_target -= 0.02
+                
+            new_target = max(0.05, min(0.40, new_target))
+            
+            if abs(new_target - current_target) > 0.01:
+                settings.settings_repo.set(user_id, "target_cash_ratio", new_target)
+                return {"old": current_target, "new": new_target, "reason": f"MDD: {max_dd:.1%}, CPI: {cpi_val}"}
+            
+        except Exception as e:
+            logger.error(f"Cash ratio optimization failed: {e}")
+            
+        return {"status": "unchanged"}

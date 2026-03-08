@@ -26,11 +26,16 @@ class FundamentalAgent(BaseAgent):
             sc_info = sc_service.get_shortage_premium(ticker)
             shortage_narrative = sc_info.get("narrative", "")
             
+            # General Research Mandate (Ticker Research Generalization)
+            # 標的研究模式通用化：針對所有標的，強制分析其與 Tier-1 領先者 (如 NVDA) 的成長確定性差距。
+            research_mandate = f"Analyze {ticker}'s growth certainty compared to Tier-1 leaders (e.g., NVDA). Is the conviction justified vs industry standards?"
+            
             prompt_data = {
                 "ticker": ticker,
                 "financials": json.dumps(context.get("financials", {}), indent=2, ensure_ascii=False),
                 "news": json.dumps(context.get("news", []), indent=2, ensure_ascii=False),
-                "shortage_premium": shortage_narrative
+                "shortage_premium": shortage_narrative,
+                "research_mandate": research_mandate
             }
             return self.run_tool_loop(context=prompt_data)
         
@@ -71,11 +76,15 @@ class FundamentalAgent(BaseAgent):
             sc_info = sc_service.get_shortage_premium(t)
             shortage_narrative = sc_info.get("narrative", "")
             
+            # General Research Mandate (Ticker Research Generalization)
+            research_mandate = f"Analyze {t}'s growth certainty compared to Tier-1 leaders (e.g., NVDA). Is the conviction justified vs industry standards?"
+            
             prompt_data = {
                 "ticker": t,
                 "financials": json.dumps(fin, indent=2, ensure_ascii=False),
                 "news": json.dumps(news, indent=2, ensure_ascii=False),
-                "shortage_premium": shortage_narrative
+                "shortage_premium": shortage_narrative,
+                "research_mandate": research_mandate
             }
             
             try:

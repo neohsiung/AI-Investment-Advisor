@@ -12,6 +12,9 @@ Your job is to compare the **Past CIO Weekly Narrative** against the **Actual Ma
 **2. Actual Market Reality (本週實際行情)**:
 {{market_data}}
 
+**3. Conviction & Time Horizon History (信心與時間維度歷史)**:
+{{conviction_history}}
+
 ## Instructions
 1. **Identify the Core Thesis**: What was the main argument or prediction made last week? (e.g., "Inflation is cooling, we should pivot to Growth").
 2. **Evaluate against Reality**: Did the market data validate or invalidate this thesis? Look at the actual returns of mentioned tickers or macro indicators.
