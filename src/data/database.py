@@ -317,7 +317,7 @@ def init_db(db_path=None, force=False, engine=None):
     CREATE TABLE IF NOT EXISTS daily_snapshots (
         date {date_type},
         user_id {fk_type},
-        account_id TEXT,
+        account_id TEXT DEFAULT '',
         total_nlv {numeric_type},
         cash_balance {numeric_type},
         invested_capital {numeric_type},
@@ -449,13 +449,25 @@ def init_db(db_path=None, force=False, engine=None):
                     conn.execute(text("ALTER TABLE daily_snapshots ADD COLUMN time_horizon TEXT"))
                 
                 # 2. Update Primary Key/Unique Index for Multi-Account support
-                # First, ensure we don't have NULL account_ids before making it part of an index
+                # First, ensure we don't have NULL account_ids before making it part of an index/PK
                 conn.execute(text("UPDATE daily_snapshots SET account_id = '' WHERE account_id IS NULL"))
                 
+                # Update PK if necessary (Postgres specific)
+                pk_check = conn.execute(text("""
+                    SELECT count(*) FROM information_schema.key_column_usage 
+                    WHERE table_name = 'daily_snapshots' AND constraint_name LIKE '%pkey%' 
+                    AND column_name = 'account_id'
+                """)).scalar()
+                
+                if pk_check == 0:
+                    logger.info("Migrating: Updating daily_snapshots primary key to include account_id")
+                    conn.execute(text("ALTER TABLE daily_snapshots DROP CONSTRAINT IF EXISTS daily_snapshots_pkey"))
+                    conn.execute(text("ALTER TABLE daily_snapshots ADD PRIMARY KEY (date, user_id, account_id)"))
+
                 # Update the UPSERT index
                 logger.info("Updating daily_snapshots_upsert index to include account_id")
                 conn.execute(text("DROP INDEX IF EXISTS idx_daily_snapshots_upsert"))
-                conn.execute(text("CREATE UNIQUE INDEX idx_daily_snapshots_upsert ON daily_snapshots(date, user_id, COALESCE(account_id, ''))"))
+                conn.execute(text("CREATE UNIQUE INDEX idx_daily_snapshots_upsert ON daily_snapshots(date, user_id, account_id)"))
                 
             except Exception as e:
                 logger.error(f"Failed to migrate daily_snapshots: {e}")

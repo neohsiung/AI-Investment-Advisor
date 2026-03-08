@@ -125,7 +125,7 @@ class AlchemySnapshotRepository(BaseRepository, ISnapshotRepository):
         params = {
             "date": date,
             "user_id": user_id,
-            "account_id": account_id,
+            "account_id": account_id or "",  # Normalize None to empty string
             "nlv": sanitize(nlv),
             "cash_balance": sanitize(cash_balance),
             "invested_capital": sanitize(invested_capital),
@@ -149,7 +149,7 @@ class AlchemySnapshotRepository(BaseRepository, ISnapshotRepository):
                         leverage_ratio = :lev,
                         conviction_level = :conv,
                         time_horizon = :horizon
-                    WHERE date = :date AND user_id = :user_id AND (account_id = :account_id OR (account_id IS NULL AND :account_id IS NULL))
+                    WHERE date = :date AND user_id = :user_id AND account_id = :account_id
                 ''')
                 res = conn.execute(update_sql, params)
                 
