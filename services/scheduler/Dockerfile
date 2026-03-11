@@ -28,5 +28,5 @@ RUN mkdir -p /workspace/data /workspace/logs && \
 
 USER appuser
 
-ENV USER_ID=system
-CMD ["python", "services/scheduler/src/app.py", "--mode", "scheduler", "--user_id", "system"]
+# Removed hardcoded USER_ID=system to support multi-tenant isolation
+CMD ["python", "services/scheduler/src/app.py", "--mode", "scheduler"]

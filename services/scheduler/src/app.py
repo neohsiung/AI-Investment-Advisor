@@ -95,14 +95,14 @@ def main():
         
         # If no user_id provided in daemon mode, we need a default or to error out 
         # based on the new user-isolation policy.
-        if not args.user_id:
-             # In production, we'd iterate over all users, but here we require one or 
-             # use a management account if defined.
-             # For now, we enforce it to avoid logic errors.
-             logger.error("user_id is required to start the scheduler service configuration.")
+        # v4.3.4: Prioritize command line arg, fallback to env var, then error out
+        user_id = args.user_id or os.environ.get("USER_ID")
+        
+        if not user_id:
+             logger.error("user_id is required to start the scheduler service configuration. Set via --user_id or USER_ID env.")
              return
              
-        service = SchedulerService(user_id=args.user_id)
+        service = SchedulerService(user_id=user_id)
         
         if args.task:
             # Single task execution

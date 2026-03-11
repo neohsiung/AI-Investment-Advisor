@@ -210,7 +210,7 @@ class AlchemySettingsRepository(BaseRepository, ISettingsRepository):
             # We look for a specific key 'webhook_api_key'
             query = text("""
                 SELECT user_id FROM settings 
-                WHERE value = :val 
+                WHERE TRIM(BOTH '"' FROM value) = :val 
                 AND key = 'webhook_api_key'
                 LIMIT 1
             """)

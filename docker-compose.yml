@@ -1,6 +1,6 @@
 # version: "3.8" is obsolete, removed to prevent warnings
 include:
-  - infra/signoz/docker/docker-compose.yaml
+  - path: infra/signoz/docker/docker-compose.yaml
 
 services:
   dashboard:

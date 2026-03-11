@@ -54,7 +54,7 @@ class SentinelService:
         self.market_service = market_service or MarketDataService(settings_service=self.settings_service)
         self.search_service = search_service or InternetSearchService(settings_service=self.settings_service)
         self.transaction_service = transaction_service or TransactionService()
-        self.council_service = council_service or CouncilService()
+        self.council_service = council_service or CouncilService(user_id=self.user_id)
         self.keyword_service = keyword_service or RiskKeywordService()
         self.snapshot_repo = snapshot_repo or AlchemySnapshotRepository(engine=self.repo.engine)
         
