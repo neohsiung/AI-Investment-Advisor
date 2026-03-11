@@ -34,16 +34,19 @@ class SentinelService:
 
     def __init__(
         self,
+        user_id: str,
         market_service: Optional[MarketDataService] = None,
         search_service: Optional[InternetSearchService] = None,
         transaction_service: Optional[TransactionService] = None,
         council_service: Optional[CouncilService] = None,
         settings_service: Optional[SettingsService] = None,
         keyword_service: Optional[RiskKeywordService] = None,
-        user_id: str = None,
         repo: Optional[AlchemySentinelRepository] = None,
         snapshot_repo: Optional[AlchemySnapshotRepository] = None,
     ):
+        if not user_id:
+            raise ValueError("SentinelService: Mandatory user_id is required for strict isolation.")
+            
         self.repo = repo or AlchemySentinelRepository()
         self.user_id = user_id
         self.settings_service = settings_service or SettingsService(user_id=self.user_id)
@@ -102,16 +105,10 @@ class SentinelService:
         try:
             triggers: List[Dict[str, Any]] = []
             
-            # Dimension 0: Multi-User Ticker Aggregation (Optimization)
-            # Aggregate all unique tickers from all users once per tick
-            users = self._get_all_user_ids()
-            all_tickers = set()
-            for uid in users:
-                user_tickers = self.transaction_service.get_user_tickers(uid, only_active=True)
-                all_tickers.update(user_tickers)
-            
-            ticker_list = list(all_tickers)
-            logger.info(f"Sentinel: Monitoring {len(ticker_list)} unique tickers across {len(users)} users.")
+            # Dimension 0: User Context Resolution (v5.0: Strictly isolated)
+            active_tickers = self.transaction_service.get_user_tickers(self.user_id, only_active=True)
+            ticker_list = list(active_tickers)
+            logger.info(f"Sentinel: Monitoring {len(ticker_list)} tickers for user {self.user_id}.")
             
             # Dimension 1: VIX Regime (每次 tick)
             triggers += self._check_vix_anomaly()
@@ -340,11 +337,7 @@ class SentinelService:
 
     def _check_position_moves(self) -> List[Dict[str, Any]]:
         """Deprecated wrapper for backward compatibility."""
-        users = self._get_all_user_ids()
-        all_tickers = set()
-        for uid in users:
-            all_tickers.update(self.transaction_service.get_user_tickers(uid, only_active=True))
-        ticker_list = list(all_tickers)
+        ticker_list = self.transaction_service.get_user_tickers(self.user_id, only_active=True)
         current_prices = self.market_service.get_current_prices(ticker_list)
         return self._check_position_moves_v2(ticker_list, current_prices)
 
@@ -383,11 +376,8 @@ class SentinelService:
 
     def _check_breaking_news(self) -> List[Dict[str, Any]]:
         """Deprecated wrapper for backward compatibility."""
-        users = self._get_all_user_ids()
-        all_tickers = set()
-        for uid in users:
-            all_tickers.update(self.transaction_service.get_user_tickers(uid, only_active=True))
-        return self._check_breaking_news_v2(list(all_tickers))
+        ticker_list = self.transaction_service.get_user_tickers(self.user_id, only_active=True)
+        return self._check_breaking_news_v2(ticker_list)
 
     def _analyze_ticker_news(self, ticker: str, active_keywords: List[RiskKeyword]) -> Tuple[float, str]:
         """
@@ -1272,14 +1262,14 @@ class SentinelService:
     async def _check_risk_consistency(self) -> List[Dict[str, Any]]:
         """
         Dimension 7: Risk Profile Consistency Check & Dynamic Cash Management.
-        檢查槓桿率與產業集中度是否符合宣稱的風險屬性，並實施動態現金比例管理。
+        v5.0: Strictly isolated to self.user_id.
         """
         triggers = []
-        users = self._get_all_user_ids()
+        uid = self.user_id
         
         # 0. Get Inflation Data via FredService (Optimized: fetch once per check)
         from src.services.fred_service import FredService
-        fred = FredService()
+        fred = FredService(user_id=self.user_id)
         macro_data = fred.get_macro_indicators()
         cpi_data = macro_data.get("CPI", {})
         inflation_rate = 0.03 # Default 3% if missing
@@ -1290,53 +1280,52 @@ class SentinelService:
                 # Simple YoY approximation
                 inflation_rate = (history[0] - history[-1]) / history[-1]
         
-        for uid in users:
-            # 1. Get Risk Profile from Settings
-            profile = self.settings_service.get_setting(uid, "risk_profile", "Balanced")
+        # 1. Get Risk Profile
+        profile = self.settings_service.get_setting("risk_profile", "Balanced", user_id=uid)
+        
+        # 2. Get Latest Snapshot from persistent repo
+        latest = self.snapshot_repo.get_latest_by_user(uid)
+        
+        if latest is not None:
+            latest_dict = latest if isinstance(latest, dict) else latest.to_dict()
+            lev = latest_dict.get("leverage_ratio", 0.0)
             
-            # 2. Get Latest Snapshot from persistent repo
-            latest = self.snapshot_repo.get_latest_by_user(uid)
-            
-            if latest is not None:
-                latest_dict = latest if isinstance(latest, dict) else latest.to_dict()
-                lev = latest_dict.get("leverage_ratio", 0.0)
-                
-                # Check Balanced Profile vs 1.7x leverage
-                if profile == "Balanced" and lev > 1.70:
-                    triggers.append({
-                        "id": f"risk_consistency_{uid}",
-                        "text": f"⚠️ Risk Mapping Alert: User {uid} has 'Balanced' profile but leverage is {lev:.2f}x (Max Allowed: 1.70x).",
-                        "severity": "high",
-                        "type": "risk_consistency"
-                    })
-            
-            # 3. Dynamic Cash Ratio Check (v5.0)
-            target_cash_base = float(self.settings_service.get_setting(uid, "target_cash_ratio", 0.1))
-            inflation_mod = 1 + max(0, inflation_rate)
-            
-            vix_triggers = self._check_vix_anomaly()
-            vix_multiplier = 1.0
-            if any("VIX Spiked" in t.get("text", "") for t in vix_triggers):
-                vix_multiplier = 1.5
-            
-            final_target_cash = target_cash_base * inflation_mod * vix_multiplier
-            
-            actual_cash_ratio = 0.0
-            if latest is not None:
-                latest_dict = latest if isinstance(latest, dict) else latest.to_dict()
-                nlv = latest_dict.get("total_nlv", 0.0)
-                cash = latest_dict.get("cash_balance", 0.0)
-                if nlv > 0:
-                    actual_cash_ratio = cash / nlv
-            
-            if actual_cash_ratio < final_target_cash * 0.9:
+            # Check Balanced Profile vs 1.7x leverage
+            if profile == "Balanced" and lev > 1.70:
                 triggers.append({
-                    "id": f"cash_ratio_low_{uid}",
-                    "text": (f"⚠️ Dynamic Cash Alert: Actual {actual_cash_ratio*100:.1f}% "
-                            f"vs Adjusted Target {final_target_cash*100:.1f}% "
-                            f"(Inf: {inflation_rate*100:.1f}%, VIX Mod: {vix_multiplier}x)."),
-                    "severity": "medium",
-                    "type": "cash_management"
+                    "id": f"risk_consistency_{uid}",
+                    "text": f"⚠️ Risk Mapping Alert: Your 'Balanced' profile leverage is {lev:.2f}x (Max Allowed: 1.70x).",
+                    "severity": "high",
+                    "type": "risk_consistency"
                 })
+        
+        # 3. Dynamic Cash Ratio Check (v5.0)
+        target_cash_base = float(self.settings_service.get_setting("target_cash_ratio", 0.1, user_id=uid))
+        inflation_mod = 1 + max(0, inflation_rate)
+        
+        vix_triggers = self._check_vix_anomaly()
+        vix_multiplier = 1.0
+        if any("VIX Spiked" in t.get("text", "") for t in vix_triggers):
+            vix_multiplier = 1.5
+        
+        final_target_cash = target_cash_base * inflation_mod * vix_multiplier
+        
+        actual_cash_ratio = 0.0
+        if latest is not None:
+            latest_dict = latest if isinstance(latest, dict) else latest.to_dict()
+            nlv = latest_dict.get("total_nlv", 0.0)
+            cash = latest_dict.get("cash_balance", 0.0)
+            if nlv > 0:
+                actual_cash_ratio = cash / nlv
+        
+        if actual_cash_ratio < final_target_cash * 0.9:
+            triggers.append({
+                "id": f"cash_ratio_low_{uid}",
+                "text": (f"⚠️ Dynamic Cash Alert: Actual {actual_cash_ratio*100:.1f}% "
+                        f"vs Adjusted Target {final_target_cash*100:.1f}% "
+                        f"(Inf: {inflation_rate*100:.1f}%, VIX Mod: {vix_multiplier}x)."),
+                "severity": "medium",
+                "type": "cash_management"
+            })
                 
         return triggers

@@ -43,15 +43,7 @@ class ISettingsRepository(ABC):
         pass
 
     @abstractmethod
-    def get_global(self) -> List[Tuple[str, Any]]:
-        """
-        Get all global/system settings.
-        取得所有全域/系統設定。
-        """
-        pass
-
-    @abstractmethod
-    def get_by_prefix(self, prefix: str) -> List[Tuple[str, Any]]:
+    def get_by_prefix(self, prefix: str, user_id: Optional[str] = None) -> List[Tuple[str, Any]]:
         """
         Get settings starting with a specific prefix.
         取得以特定前綴開頭的設定。
@@ -63,6 +55,12 @@ class ISettingsRepository(ABC):
         """
         Find an internal user ID based on a channel-specific ID.
         根據管道 ID 尋找內部使用者 ID。
+        """
+    @abstractmethod
+    def find_user_by_webhook_secret(self, secret: str) -> Optional[str]:
+        """
+        Find an internal user ID based on a webhook secret / API key.
+        根據 Webhook 密鑰 / API Key 尋找內部使用者 ID。
         """
         pass
 
@@ -79,43 +77,42 @@ class AlchemySettingsRepository(BaseRepository, ISettingsRepository):
         BaseRepository.__init__(self, engine or get_db_engine())
 
     def _resolve_user(self, user_id: str) -> str:
-        """Helper to redirect systemic IDs to the primary human user."""
-        if user_id not in ('system', 'SYSTEM', 'None', '', None):
-            return user_id
-            
-        # For systemic IDs, find the first human user in DB
-        try:
-            # Avoid infinite recursion by using raw SQL to find a human user
-            query = text("SELECT DISTINCT user_id FROM settings WHERE user_id NOT IN ('system', 'SYSTEM', 'None', '') LIMIT 1")
-            with self.engine.connect() as conn:
-                res = conn.execute(query).fetchone()
-                if res:
-                    return res[0]
-        except Exception:
-            pass
+        """
+        v4.3.0: Enforce mandatory user isolation.
+        No more 'system' fallback. All settings must belong to a real user UUID.
+        """
+        if user_id in ('system', 'SYSTEM', 'None', '', None):
+             # 🚨 CRITICAL: In a strictly isolated system, passing 'system' is an error.
+             # We throw an error to force developer to fix the caller logic.
+             raise ValueError(f"Global 'system' user is retired. Settings must be assigned to a real User UUID. Received: {user_id}")
+        
         return user_id
 
     def get(self, user_id: str, key: str, default: Any = None) -> Any:
         """
         Get a specific setting value (ORM).
         """
-        user_id = self._resolve_user(user_id)
+    def get(self, user_id: str, key: str, default: Any = None) -> Any:
+        """
+        Get a specific setting value (ORM).
+        """
+        resolved_uid = self._resolve_user(user_id)
+        # 🚨 DIAGNOSTIC LOG
+        print(f"DEBUG [SettingsRepo]: GET key='{key}' for user_id='{user_id}' (resolved to '{resolved_uid}')")
+        
         try:
-            setting = self.session.query(Setting).filter_by(user_id=user_id, key=key).first()
+            setting = self.session.query(Setting).filter_by(user_id=resolved_uid, key=key).first()
             return setting.value if setting else default
         except Exception:
             return default
         finally:
             self.close_session()
 
-    def get_setting(self, key: str, default: Any = None) -> Any:
-        """Alias for get() starting from 'system' target."""
-        return self.get("system", key, default)
-
-    def save_setting(self, key: str, value: Any) -> Tuple[bool, str]:
-        """Alias for set() starting from 'system' target."""
+    def save_setting(self, key: str, value: Any, user_id: str) -> Tuple[bool, str]:
+        """Set or update a specific setting value (Alias for set). user_id is mandatory."""
         try:
-            self.set("system", key, value)
+            # v4.3.0: user_id is now mandatory. No defaults.
+            self.set(user_id, key, value)
             return True, "Success"
         except Exception as e:
             return False, str(e)
@@ -124,35 +121,34 @@ class AlchemySettingsRepository(BaseRepository, ISettingsRepository):
         """
         Set or update a specific setting value (Upsert via ORM).
         """
-        user_id = self._resolve_user(user_id)
+        resolved_uid = self._resolve_user(user_id)
+        # 🚨 DIAGNOSTIC LOG
+        print(f"DEBUG [SettingsRepo]: SET key='{key}' for user_id='{user_id}' (resolved to '{resolved_uid}')")
+        
         session = self.session
         try:
             # Ensure value is JSON-serializable
-            # SQLAlchemy JSON column will handle serialization, but we need to ensure the value is valid
             import json
             if isinstance(value, bool):
-                # Standardize boolean storage
                 store_value = value
             elif isinstance(value, str):
-                # For string values, store as-is (SQLAlchemy will wrap in JSON)
                 store_value = value
             elif isinstance(value, (dict, list, int, float)):
-                # For basic and complex types, let SQLAlchemy handle it
                 store_value = value
             else:
-                # For other types, convert to string
                 store_value = str(value)
             
-            setting = session.query(Setting).filter_by(user_id=user_id, key=key).first()
+            setting = session.query(Setting).filter_by(user_id=resolved_uid, key=key).first()
             if setting:
                 setting.value = store_value
             else:
-                setting = Setting(user_id=user_id, key=key, value=store_value)
+                setting = Setting(user_id=resolved_uid, key=key, value=store_value)
                 session.add(setting)
             session.commit()
+            print(f"DEBUG [SettingsRepo]: COMMIT success for key='{key}'")
         except Exception as e:
             session.rollback()
-            logger.error(f"Failed to set setting {key} for user {user_id}: {e}")
+            print(f"DEBUG [SettingsRepo]: COMMIT FAILED for key='{key}': {e}")
             raise
         finally:
             self.close_session()
@@ -168,27 +164,19 @@ class AlchemySettingsRepository(BaseRepository, ISettingsRepository):
         finally:
             self.close_session()
 
-    def get_global(self) -> List[Tuple[str, Any]]:
-        """
-        Get all global/system settings (ORM).
-        取得全域設定 (ORM)。
-        """
-        try:
-            # Logic: user_id is NULL or 'system'
-            rows = self.session.query(Setting).filter(
-                (Setting.user_id == None) | (Setting.user_id == 'system')
-            ).all()
-            return [(r.key, r.value) for r in rows]
-        finally:
-            self.close_session()
-
-    def get_by_prefix(self, prefix: str) -> List[Tuple[str, Any]]:
+    def get_by_prefix(self, prefix: str, user_id: Optional[str] = None) -> List[Tuple[str, Any]]:
         """
         Get settings starting with a specific prefix (ORM).
         依前綴取得設定 (ORM)。
         """
+        if user_id:
+            user_id = self._resolve_user(user_id)
+            
         try:
-            rows = self.session.query(Setting).filter(Setting.key.like(f"{prefix}%")).all()
+            query = self.session.query(Setting).filter(Setting.key.like(f"{prefix}%"))
+            if user_id:
+                query = query.filter(Setting.user_id == user_id)
+            rows = query.all()
             return [(r.key, r.value) for r in rows]
         finally:
             self.close_session()
@@ -210,6 +198,26 @@ class AlchemySettingsRepository(BaseRepository, ISettingsRepository):
             result = self.session.execute(query, {"val": channel_id}).fetchone()
             return result[0] if result else None
         except Exception as e:
+            return None
+        finally:
+            self.close_session()
+
+    def find_user_by_webhook_secret(self, secret: str) -> Optional[str]:
+        """
+        Find an internal user ID (email/UUID) based on a webhook secret / API key.
+        """
+        try:
+            # We look for a specific key 'webhook_api_key'
+            query = text("""
+                SELECT user_id FROM settings 
+                WHERE value = :val 
+                AND key = 'webhook_api_key'
+                LIMIT 1
+            """)
+            result = self.session.execute(query, {"val": secret}).fetchone()
+            return result[0] if result else None
+        except Exception as e:
+            print(f"DEBUG [SettingsRepo]: find_user_by_webhook_secret error: {e}")
             return None
         finally:
             self.close_session()

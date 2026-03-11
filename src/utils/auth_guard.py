@@ -70,8 +70,25 @@ def require_authentication():
         logger.info(f"Creating new user for {email}")
         new_uuid = user_repo.create_user(email, name=user.get('name'))
         user['id'] = new_uuid
+        
+        # v4.3.0: Automatically generate Webhook API Key for new accounts
+        import secrets
+        from src.services.settings_service import SettingsService
+        api_key = f"sk_{secrets.token_hex(20)}"
+        settings_service = SettingsService(user_id=new_uuid)
+        settings_service.save_setting("webhook_api_key", api_key)
+        logger.info(f"Generated webhook_api_key for {new_uuid}")
     else:
         user['id'] = user_record['id']
         logger.debug(f"Resolved user {email} to ID: {user['id']}")
+        
+        # v4.3.0: Legacy Transition - Ensure existing users also have a Webhook API Key
+        from src.services.settings_service import SettingsService
+        settings_service = SettingsService(user_id=user['id'])
+        if not settings_service.get_setting("webhook_api_key"):
+            import secrets
+            api_key = f"sk_{secrets.token_hex(20)}"
+            settings_service.save_setting("webhook_api_key", api_key)
+            logger.info(f"Generated missing webhook_api_key for existing user {user['id']}")
         
     return user

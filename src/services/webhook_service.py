@@ -11,6 +11,7 @@ from src.services.settings_service import SettingsService
 logger = setup_logger("WebhookService")
 
 webhook_router = APIRouter(tags=["Webhook"])
+from src.services.sentinel_service import SentinelService
 
 # Services instance from mcp_service to be injected or accessed
 # We will use a dependency or global reference. To avoid circular imports,
@@ -119,21 +120,29 @@ SOURCE_PARSERS = {
 }
 
 class WebhookService:
-    def __init__(self, sentinel_service=None, settings_service=None):
-        self.sentinel_service = sentinel_service
+    def __init__(self, settings_service: Optional[SettingsService] = None):
         self.settings_service = settings_service or SettingsService()
         
-    def set_sentinel_service(self, sentinel_service):
-        self.sentinel_service = sentinel_service
+    async def _resolve_user(self, request: Request) -> str:
+        """
+        Resolve user_id from API Key in request headers.
+        從請求標頭中的 API Key 解析 user_id。
+        """
+        api_key = request.headers.get("X-API-Key")
+        if not api_key:
+            logger.warning("Webhook attempt missing X-API-Key")
+            raise HTTPException(status_code=401, detail="Missing X-API-Key")
+            
+        user_id = self.settings_service.find_user_by_webhook_secret(api_key)
+        if not user_id:
+            logger.warning(f"Unauthorized API Key attempt: {api_key[:8]}...")
+            raise HTTPException(status_code=403, detail="Invalid API Key")
+            
+        return user_id
 
     async def handle_generic_webhook(self, source: str, request: Request) -> Dict[str, str]:
-        logger.info(f"Generic webhook {source} headers: {dict(request.headers)}")
-        webhook_secret = self.settings_service.get_setting("WEBHOOK_SECRET")
-        if webhook_secret:
-            request_secret = request.headers.get("X-Webhook-Secret")
-            if request_secret != webhook_secret:
-                logger.warning(f"Unauthorized webhook attempt from {source}")
-                raise HTTPException(status_code=403, detail="Unauthorized")
+        user_id = await self._resolve_user(request)
+        logger.info(f"Webhook {source} for user {user_id}")
 
         try:
             payload = await request.json()
@@ -142,43 +151,38 @@ class WebhookService:
             parser = SOURCE_PARSERS.get(source.lower(), BaseSourceParser)
             normalized_data = parser.parse(payload)
             
-            if self.sentinel_service:
-                asyncio.create_task(
-                    self.sentinel_service.process_event({
-                        "source": source,
-                        "data": normalized_data
-                    })
-                )
+            # Instantiate user-specific Sentinel and process
+            sentinel = SentinelService(user_id=user_id)
+            asyncio.create_task(
+                sentinel.process_event({
+                    "source": source,
+                    "data": normalized_data
+                })
+            )
             
-            return {"status": "accepted", "source": source}
+            return {"status": "accepted", "user_id": user_id, "source": source}
         except Exception as e:
             logger.error(f"Webhook error: {e}")
             raise HTTPException(status_code=400, detail="Invalid payload")
 
     async def handle_finnhub_webhook(self, request: Request) -> Dict[str, str]:
-        logger.info(f"Finnhub webhook headers: {dict(request.headers)}")
-        secret = self.settings_service.get_setting("FINNHUB_WEBHOOK_SECRET")
-        if secret:
-            req_secret = request.headers.get("X-Finnhub-Secret")
-            if req_secret != secret:
-                 logger.warning(f"Unauthorized Finnhub webhook attempt.")
-                 raise HTTPException(status_code=403, detail="Unauthorized")
+        user_id = await self._resolve_user(request)
         
         try:
             payload = await request.json()
-            logger.info(f"Received Finnhub webhook: {payload}")
+            logger.info(f"Received Finnhub webhook for user {user_id}: {payload}")
             
             normalized = FinnhubParser.parse(payload)
             
-            if self.sentinel_service:
-                 asyncio.create_task(
-                    self.sentinel_service.process_event({
-                        "source": "finnhub",
-                        "data": normalized
-                    })
-                 )
+            sentinel = SentinelService(user_id=user_id)
+            asyncio.create_task(
+                sentinel.process_event({
+                    "source": "finnhub",
+                    "data": normalized
+                })
+            )
             
-            return {"status": "accepted"}
+            return {"status": "accepted", "user_id": user_id}
         except Exception as e:
             logger.error(f"Finnhub webhook error: {e}")
             raise HTTPException(status_code=400, detail="Processing failed")
@@ -206,16 +210,18 @@ async def get_rss_sources_list():
 
 @webhook_router.get("/heartbeat")
 @webhook_router.post("/heartbeat")
-async def heartbeat_webhook():
+async def heartbeat_webhook(request: Request):
     """
     系統心跳端口 (Phase 3)
-    觸發 Sentinel 常規掃描或做為外部存活檢查 (Heartbeat API)。
+    v5.0: Requires X-API-Key to trigger user-specific sentinel tick.
     """
-    if webhook_service_instance.sentinel_service:
-        # Trigger an asynchronous tick
-        import asyncio
-        asyncio.create_task(webhook_service_instance.sentinel_service.process_tick())
-    return {"status": "alive", "message": "Heartbeat received. Sentinel tick triggered in background."}
+    svc = WebhookService()
+    user_id = await svc._resolve_user(request)
+    
+    sentinel = SentinelService(user_id=user_id)
+    asyncio.create_task(sentinel.process_tick())
+    
+    return {"status": "alive", "user_id": user_id, "message": "Sentinel tick triggered."}
 
 @webhook_router.post("/market-alert")
 async def market_alert_webhook(request: Request):

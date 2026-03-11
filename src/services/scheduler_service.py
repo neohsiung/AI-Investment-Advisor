@@ -28,12 +28,13 @@ class SchedulerService:
     Service for managing scheduled jobs and background tasks.
     排程服務：管理排程任務與背景作業。
     """
-    def __init__(self, db_engine: Any = None) -> None:
+    def __init__(self, user_id: str, db_engine: Any = None) -> None:
         """
         Initialize the scheduler service.
         初始化排程服務。
         """
-        self.engineer = SystemEngineerAgent()
+        self.user_id = user_id
+        self.engineer = SystemEngineerAgent(user_id=user_id)
         # db_engine unused if we use get_db_connection, but keeping for DI signature
         # 如果我們使用 get_db_connection，db_engine 未被使用，但保留用於依賴注入簽名
     
@@ -62,84 +63,57 @@ class SchedulerService:
         except Exception as e:
             logger.error(f"Error logging job: {e}")
 
-    def get_all_users(self):
-        try:
-            from sqlalchemy import text
-            from src.data.database import get_db_engine
-            
-            engine = get_db_engine()
-            with engine.connect() as conn:
-                rows = conn.execute(text("SELECT id, email FROM users")).fetchall()
-                valid_users = []
-                invalid_emails = ["admin@example.com", "your_email@gmail.com", "test@example.com"]
-                for row in rows:
-                    uid, email = row[0], row[1]
-                    if email and email not in invalid_emails and not email.endswith("@example.com"):
-                        valid_users.append(uid)
-                return valid_users
-        except Exception as e:
-            logger.error(f"Error fetching users: {e}")
-            return []
+    # get_all_users removed for strict single-user isolation (v5.0)
 
     def job_daily_check(self):
-        # Strict adherence to Scheduler: If this function is called, it means it was scheduled.
-        # We rely on reload_schedule to set the correct days.
-        # 嚴格遵守排程器：如果此函式被呼叫，表示它已被排程。
-        # 我們依賴 reload_schedule 來設定正確的日期。
-        logger.info("Starting Daily Check Job...")
+        """Execute daily check for the current user context."""
+        logger.info(f"Starting Daily Check Job for user {self.user_id}...")
         self.log_job_execution("Daily Check", "STARTED")
         
-        users = self.get_all_users()
-        if not users:
-            logger.warning("No users found.")
-            return
-
-        for user in users:
-            try:
-                # Use subprocess to isolate run context or use service?
-                # Using subprocess ensures clean memory state for heavy workflow
-                # But here we are refactoring, maybe we can run directly?
-                # Subprocess is safer for long running daemon.
-                # 使用 subprocess 來隔離執行上下文，還是直接使用 service？
-                # 使用 subprocess 可確保大型工作流的記憶體狀態乾淨，這對長期運行的守護程序較安全。
-                subprocess.run([sys.executable, "services/scheduler/src/app.py", "--mode", "daily", "--user_id", user], check=True) # nosec
-                self.log_job_execution(f"Daily Check ({user})", "COMPLETED")
-            except Exception as e:
-                logger.error(f"Daily Check failed for {user}: {e}")
-                self.log_job_execution(f"Daily Check ({user})", "FAILED", str(e))
+        try:
+            # Using subprocess ensures clean memory state for heavy workflow
+            subprocess.run([sys.executable, "services/scheduler/src/app.py", "--mode", "daily", "--user_id", self.user_id], check=True) # nosec
+            self.log_job_execution("Daily Check", "COMPLETED")
+        except Exception as e:
+            logger.error(f"Daily Check failed for {self.user_id}: {e}")
+            self.log_job_execution("Daily Check", "FAILED", str(e))
 
     def job_weekly_report(self):
-        logger.info("Starting Weekly Report Job...")
+        """Execute weekly report for the current user context."""
+        logger.info(f"Starting Weekly Report Job for user {self.user_id}...")
         self.log_job_execution("Weekly Report", "STARTED")
         
-        users = self.get_all_users()
-        for user in users:
-            try:
-                subprocess.run([sys.executable, "services/scheduler/src/app.py", "--mode", "weekly", "--user_id", user], check=True) # nosec
-                self.log_job_execution(f"Weekly Report ({user})", "COMPLETED")
-            except Exception as e:
-                logger.error(f"Weekly Report failed for {user}: {e}")
-                self.log_job_execution(f"Weekly Report ({user})", "FAILED", str(e))
+        try:
+            subprocess.run([sys.executable, "services/scheduler/src/app.py", "--mode", "weekly", "--user_id", self.user_id], check=True) # nosec
+            self.log_job_execution("Weekly Report", "COMPLETED")
+        except Exception as e:
+            logger.error(f"Weekly Report failed for {self.user_id}: {e}")
+            self.log_job_execution("Weekly Report", "FAILED", str(e))
 
     def job_weekly_validation(self):
         """
         Runs the Backtest Service to generate feedback examples from the past week.
-        This closes the loop by providing fresh data for the Optimizer.
+        v5.0: Isolated to self.user_id.
         """
-        logger.info("Starting Weekly Validation Job...")
+        logger.info(f"Starting Weekly Validation Job for user {self.user_id}...")
         self.log_job_execution("Weekly Validation", "STARTED")
         
         try:
-            # We need to target active tickers.
-            # Ideally, we query 'positions' or 'transactions' to get a set of relevant tickers.
-            # For now, we will pick a predetermined set or query specific users.
-            
-            # TODO: Get distinct tickers from all users' portfolios
-            # conn = get_db_connection()
-            # tickers = conn.execute(text("SELECT DISTINCT ticker FROM positions")).fetchall()
-            
-            # Simplified: Validation on major indices/stocks
+            # Validation on major indices/stocks
             tickers = ["AAPL", "TSLA", "NVDA", "SPY"]
+            
+            from src.services.backtest_service import BacktestService
+            service = BacktestService()
+            
+            for ticker in tickers:
+                logger.info(f"Validating {ticker}...")
+                service.run_simulation(ticker, days_back=7) # Review last week
+                
+            self.log_job_execution("Weekly Validation", "COMPLETED")
+            
+        except Exception as e:
+            logger.error(f"Weekly Validation failed: {e}")
+            self.log_job_execution("Weekly Validation", "FAILED", str(e))
             
             # Inline import to avoid circular dependency issues at module level
             from src.services.backtest_service import BacktestService
@@ -158,23 +132,20 @@ class SchedulerService:
     def job_experience_replay(self):
         """
         Runs the Experience Replay optimization to tune Sentinel thresholds based on history.
-        執行復盤優化任務，根據歷史數據調整哨兵閾值。
+        v5.0: Isolated to self.user_id.
         """
-        logger.info("Starting Experience Replay Optimization Job...")
+        logger.info(f"Starting Experience Replay Optimization for user {self.user_id}...")
         self.log_job_execution("Experience Replay", "STARTED")
         
         try:
             from src.services.experience_replay_service import ExperienceReplayService
             service = ExperienceReplayService()
             
-            users = self.get_all_users()
-            for user in users:
-                logger.info(f"Optimizing for {user}...")
-                results = service.optimize_thresholds(user)
-                if results:
-                    self.log_job_execution(f"Experience Replay ({user})", "COMPLETED", f"Optimized: {results}")
-                else:
-                    self.log_job_execution(f"Experience Replay ({user})", "COMPLETED", "No adjustments needed.")
+            results = service.optimize_thresholds(self.user_id)
+            if results:
+                self.log_job_execution("Experience Replay", "COMPLETED", f"Optimized: {results}")
+            else:
+                self.log_job_execution("Experience Replay", "COMPLETED", "No adjustments needed.")
                     
         except Exception as e:
             logger.error(f"Experience Replay failed: {e}")
@@ -190,27 +161,25 @@ class SchedulerService:
 
     def job_etoro_sync(self):
         """
-        Sync Broker trade history (Etoro/Futu/etc.) for all users.
+        Sync Broker trade history for the current user.
         """
-        logger.info("Starting Broker Sync Job...")
+        logger.info(f"Starting Broker Sync Job for user {self.user_id}...")
         self.log_job_execution("Broker Sync", "STARTED")
         
-        users = self.get_all_users()
         from src.services.broker_factory import BrokerFactory
         
-        for user in users:
-            try:
-                # Get preferred broker for user
-                broker = BrokerFactory.get_broker(user)
-                broker_name = broker.get_name()
-                
-                result = broker.sync_history(user)
-                msg = f"Synced {user} [{broker_name}]: +{result['added']} / skipped {result['skipped']}"
-                logger.info(msg)
-                self.log_job_execution(f"Broker Sync ({user})", "COMPLETED", msg)
-            except Exception as e:
-                logger.error(f"Broker Sync failed for {user}: {e}")
-                self.log_job_execution(f"Broker Sync ({user})", "FAILED", str(e))
+        try:
+            # Get preferred broker for user
+            broker = BrokerFactory.get_broker(self.user_id)
+            broker_name = broker.get_name()
+            
+            result = broker.sync_history(self.user_id)
+            msg = f"Synced [{broker_name}]: +{result['added']} / skipped {result['skipped']}"
+            logger.info(msg)
+            self.log_job_execution("Broker Sync", "COMPLETED", msg)
+        except Exception as e:
+            logger.error(f"Broker Sync failed for {self.user_id}: {e}")
+            self.log_job_execution("Broker Sync", "FAILED", str(e))
 
     def check_monthly_job(self) -> None:
         """
@@ -331,8 +300,8 @@ class SchedulerService:
             import asyncio
             
             # Run async sentinel logic in sync scheduler
-            # Note: SentinelService needs to be robust and stateless
-            sentinel = SentinelService()
+            # v5.0: Strictly isolated to current user_id
+            sentinel = SentinelService(user_id=self.user_id)
             
             # Check if there is an existing loop (unlikely in this thread, but safe check)
             try:
@@ -369,11 +338,17 @@ class SchedulerService:
             from src.repositories.settings_repository import AlchemySettingsRepository
             settings_repo = AlchemySettingsRepository()
             
-            val = settings_repo.get('SYSTEM', 'scheduler_reload_signal')
-            if val == 'true':
-                logger.info("Received reload signal!")
+            # v4.3.4: Use self.user_id instead of 'SYSTEM' for reload signal
+            val = settings_repo.get(self.user_id, 'scheduler_reload_signal')
+            
+            # Handle both boolean True and string "true" (str from DB, bool from ORM/v4)
+            is_reload = str(val).lower() == "true" if not isinstance(val, bool) else val
+            
+            if is_reload:
+                logger.info(f"Received reload signal for user {self.user_id}!")
                 self.reload_schedule()
-                settings_repo.set('SYSTEM', 'scheduler_reload_signal', 'false')
+                # Reset signal using real boolean False
+                settings_repo.set(self.user_id, 'scheduler_reload_signal', False)
                 
         except Exception as e:
             logger.error(f"Error checking reload signal: {e}")
