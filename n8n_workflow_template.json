@@ -1,0 +1,265 @@
+{
+    "name": "Investment Advisor - RSS Alert Bridge (v3 - Scalable)",
+    "nodes": [
+        {
+            "parameters": {
+                "rule": {
+                    "interval": [
+                        {
+                            "field": "minutes",
+                            "minutesInterval": 15
+                        }
+                    ]
+                }
+            },
+            "name": "Schedule Trigger",
+            "type": "n8n-nodes-base.scheduleTrigger",
+            "typeVersion": 1,
+            "position": [
+                -200,
+                300
+            ]
+        },
+        {
+            "parameters": {
+                "url": "http://investment_advisor_mcp:8000/webhook/rss-sources",
+                "sendHeaders": true,
+                "headerParameters": {
+                    "parameters": [
+                        {
+                            "name": "X-API-Key",
+                            "value": "your_api_key_here"
+                        }
+                    ]
+                },
+                "options": {
+                    "splitIntoItems": true
+                }
+            },
+            "name": "Fetch RSS Sources",
+            "type": "n8n-nodes-base.httpRequest",
+            "typeVersion": 3,
+            "position": [
+                20,
+                300
+            ]
+        },
+        {
+            "parameters": {
+                "url": "={{ $json.url }}",
+                "sendHeaders": true,
+                "headerParameters": {
+                    "parameters": [
+                        {
+                            "name": "User-Agent",
+                            "value": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
+                        }
+                    ]
+                },
+                "options": {},
+                "responseFormat": "string"
+            },
+            "name": "Fetch Feed",
+            "type": "n8n-nodes-base.httpRequest",
+            "typeVersion": 3,
+            "position": [
+                240,
+                300
+            ],
+            "onError": "continueErrorOutput"
+        },
+        {
+            "parameters": {
+                "jsCode": "// Some RSS feeds contain unescaped '&' characters (e.g. 'S&P 500' or in URLs)\n// which break standard XML parsers. This node sanitizes them.\nconst rawXml = $json.data;\nif (typeof rawXml !== 'string') return $json;\n\n// 1. Replace all '&' with '&amp;'\n// 2. Fix double-escaped standard XML entities (amp, lt, gt, quot, apos, and numerical ones)\nconst sanitized = rawXml\n  .replace(/&/g, '&amp;')\n  .replace(/&amp;(amp|lt|gt|quot|apos|#[0-9]+|#x[0-9a-f]+);/gi, '&$1;');\n\nreturn { data: sanitized };"
+            },
+            "name": "Sanitize XML",
+            "type": "n8n-nodes-base.code",
+            "typeVersion": 2,
+            "position": [
+                460,
+                300
+            ]
+        },
+        {
+            "parameters": {
+                "options": {}
+            },
+            "name": "Parse XML",
+            "type": "n8n-nodes-base.xml",
+            "typeVersion": 1,
+            "position": [
+                680,
+                300
+            ]
+        },
+        {
+            "parameters": {
+                "jsCode": "const xml = $json;\n\nconst ensureArray = (val) => {\n  if (!val) return [];\n  return Array.isArray(val) ? val : [val];\n};\n\nconst normalize = (item) => {\n  const res = { ...item };\n\n  // Flatten and normalize common fields (title, link, pubDate)\n  const flatten = (val) => {\n    if (Array.isArray(val)) val = val[0];\n    if (val && typeof val === 'object') {\n      // Check for xml2js attribute-style or content-style structures\n      if (val['$'] && val['$'].href) return val['$'].href;\n      if (val['_']) return val['_'];\n    }\n    return val;\n  };\n\n  res.title = flatten(item.title) || 'No Title';\n  res.link = flatten(item.link) || '';\n  // Atom uses 'published', RSS uses 'pubDate'\n  res.pubDate = flatten(item.pubDate || item.published) || new Date().toISOString();\n  \n  return { json: res };\n};\n\n// 1. Handle Standard RSS (rss.channel.item)\nif (xml.rss && xml.rss.channel) {\n  const rssChannel = ensureArray(xml.rss.channel)[0];\n  if (rssChannel && rssChannel.item) {\n    return ensureArray(rssChannel.item).map(normalize);\n  }\n}\n\n// 2. Handle Atom (feed.entry)\nif (xml.feed && xml.feed.entry) {\n  return ensureArray(xml.feed.entry).map(normalize);\n}\n\n// 3. Handle cases where the data is already an item or error\nreturn [];"
+            },
+            "name": "Iterate Items",
+            "type": "n8n-nodes-base.code",
+            "typeVersion": 2,
+            "position": [
+                900,
+                300
+            ]
+        },
+        {
+            "parameters": {
+                "method": "POST",
+                "url": "http://investment_advisor_mcp:8000/webhook/n8n",
+                "sendHeaders": true,
+                "headerParameters": {
+                    "parameters": [
+                        {
+                            "name": "X-API-Key",
+                            "value": "your_api_key_here"
+                        }
+                    ]
+                },
+                "sendBody": true,
+                "bodyParameters": {
+                    "parameters": [
+                        {
+                            "name": "event_type",
+                            "value": "NEWS_ALERT"
+                        },
+                        {
+                            "name": "ticker",
+                            "value": "GLOBAL"
+                        },
+                        {
+                            "name": "message",
+                            "value": "={{ $json.title }}"
+                        },
+                        {
+                            "name": "link",
+                            "value": "={{ $json.link }}"
+                        },
+                        {
+                            "name": "source_name",
+                            "value": "={{ $node[\"Fetch RSS Sources\"].json.name }}"
+                        }
+                    ]
+                },
+                "options": {}
+            },
+            "name": "Send to Advisor",
+            "type": "n8n-nodes-base.httpRequest",
+            "typeVersion": 3,
+            "position": [
+                1150,
+                300
+            ],
+            "onError": "continueErrorOutput"
+        },
+        {
+            "parameters": {
+                "options": {}
+            },
+            "name": "Error Trigger",
+            "type": "n8n-nodes-base.errorTrigger",
+            "typeVersion": 1,
+            "position": [
+                -200,
+                550
+            ]
+        },
+        {
+            "parameters": {
+                "method": "POST",
+                "url": "http://otel-collector:4318/v1/logs",
+                "sendBody": true,
+                "specifyBody": "json",
+                "jsonBody": "={\n  \"resourceLogs\": [\n    {\n      \"resource\": {\n        \"attributes\": [\n          { \"key\": \"service.name\", \"value\": { \"stringValue\": \"n8n-rss-bridge\" } },\n          { \"key\": \"deployment.environment\", \"value\": { \"stringValue\": \"production\" } }\n        ]\n      },\n      \"scopeLogs\": [\n        {\n          \"logRecords\": [\n            {\n              \"severityText\": \"ERROR\",\n              \"body\": { \"stringValue\": {{ JSON.stringify($json.execution.error.message) }} },\n              \"attributes\": [\n                { \"key\": \"error.node\", \"value\": { \"stringValue\": {{ JSON.stringify($json.execution.error.nodeName) }} } },\n                { \"key\": \"execution.id\", \"value\": { \"stringValue\": {{ JSON.stringify($json.execution.id) }} } },\n                { \"key\": \"workflow.name\", \"value\": { \"stringValue\": {{ JSON.stringify($workflow.name) }} } }\n              ]\n            }\n          ]\n        }\n      ]\n    }\n  ]\n}",
+                "options": {}
+            },
+            "name": "Report Error to OTel",
+            "type": "n8n-nodes-base.httpRequest",
+            "typeVersion": 3,
+            "position": [
+                50,
+                550
+            ]
+        }
+    ],
+    "connections": {
+        "Error Trigger": {
+            "main": [
+                [
+                    {
+                        "node": "Report Error to OTel",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        },
+        "Schedule Trigger": {
+            "main": [
+                [
+                    {
+                        "node": "Fetch RSS Sources",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        },
+        "Fetch RSS Sources": {
+            "main": [
+                [
+                    {
+                        "node": "Fetch Feed",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        },
+        "Fetch Feed": {
+            "main": [
+                [
+                    {
+                        "node": "Sanitize XML",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        },
+        "Sanitize XML": {
+            "main": [
+                [
+                    {
+                        "node": "Parse XML",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        },
+        "Parse XML": {
+            "main": [
+                [
+                    {
+                        "node": "Iterate Items",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        },
+        "Iterate Items": {
+            "main": [
+                [
+                    {
+                        "node": "Send to Advisor",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        }
+    }
+}
