@@ -115,6 +115,19 @@ class SettingsService:
         except Exception as e:
             return False, f"Error saving settings: {e}"
 
+    def delete_setting(self, key: str, user_id: str = None) -> Tuple[bool, str]:
+        """
+        Deletes a single setting from the database.
+        """
+        try:
+            target_uid = user_id or self._get_effective_uid()
+            success = self.settings_repo.delete(target_uid, key)
+            if success:
+                return True, "Setting deleted successfully."
+            return False, "Setting not found."
+        except Exception as e:
+            return False, str(e)
+
     def fetch_openrouter_models(self) -> List[str]:
         """
         Fetches the list of available models from the OpenRouter API.

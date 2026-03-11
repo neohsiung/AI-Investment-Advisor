@@ -64,6 +64,14 @@ class ISettingsRepository(ABC):
         """
         pass
 
+    @abstractmethod
+    def delete(self, user_id: str, key: str) -> bool:
+        """
+        Delete a specific setting.
+        刪除特定設定。
+        """
+        pass
+
 class AlchemySettingsRepository(BaseRepository, ISettingsRepository):
     """
     Implementation of ISettingsRepository using SQLAlchemy ORM.
@@ -149,6 +157,30 @@ class AlchemySettingsRepository(BaseRepository, ISettingsRepository):
         except Exception as e:
             session.rollback()
             print(f"DEBUG [SettingsRepo]: COMMIT FAILED for key='{key}': {e}")
+            raise
+        finally:
+            self.close_session()
+
+    def delete(self, user_id: str, key: str) -> bool:
+        """
+        Delete a specific setting for a user.
+        """
+        resolved_uid = self._resolve_user(user_id)
+        # 🚨 DIAGNOSTIC LOG
+        print(f"DEBUG [SettingsRepo]: DELETE key='{key}' for user_id='{user_id}' (resolved to '{resolved_uid}')")
+        
+        session = self.session
+        try:
+            setting = session.query(Setting).filter_by(user_id=resolved_uid, key=key).first()
+            if setting:
+                session.delete(setting)
+                session.commit()
+                print(f"DEBUG [SettingsRepo]: DELETE success for key='{key}'")
+                return True
+            return False
+        except Exception as e:
+            session.rollback()
+            print(f"DEBUG [SettingsRepo]: DELETE FAILED for key='{key}': {e}")
             raise
         finally:
             self.close_session()

@@ -137,8 +137,12 @@ def render_channel_tab(st, settings_service, user_id):
         }
     }
 
-    # Render Tabs for Personal vs Group
-    tab_personal, tab_group = st.tabs([":material/person: 個人通知", ":material/groups: 群組協作"])
+    # Render Tabs for Personal vs Group vs Webhooks
+    tab_personal, tab_group, tab_webhooks = st.tabs([
+        ":material/person: 個人通知", 
+        ":material/groups: 群組協作",
+        ":material/webhook: 外部串接"
+    ])
 
     def render_channels(container, channels, prompt_text):
         with container:
@@ -381,4 +385,89 @@ def render_channel_tab(st, settings_service, user_id):
     # Render
     render_channels(tab_personal, channel_groups["個人通知 (Personal Channels)"]["channels"], channel_groups["個人通知 (Personal Channels)"]["desc"])
     render_channels(tab_group, channel_groups["群組協作 (Group Collaboration)"]["channels"], channel_groups["群組協作 (Group Collaboration)"]["desc"])
+    _render_webhooks_tab(tab_webhooks, settings_service, user_id, settings)
+
+def _render_webhooks_tab(container, settings_service, user_id, settings):
+    """
+    Renders the Incoming Webhook management interface.
+    """
+    with container:
+        st.write("### 🪝 外部訊號串接 (Incoming Webhooks)")
+        st.caption("透過 API Key 從外部系統（如 TradingView, n8n）發送訊號至 Investment Advisor。")
+        
+        # 1. Base URL
+        # URL logic: Base URL of mcp_server. 
+        # In multi-tenant SaaS, this would typically be a specific per-user endpoint, 
+        # but in our architecture, we route via X-API-Key to a shared generic endpoint.
+        webhook_url = os.environ.get("WEBHOOK_BASE_URL", "http://localhost:8000/api/v1/webhook/generic")
+        st.info(f"**Webhook 接收網址 (Generic Endpoint)**: `{webhook_url}`")
+        
+        st.divider()
+        
+        # 2. API Key Management
+        api_key = settings.get("webhook_api_key", "")
+        
+        col1, col2 = st.columns([3, 1])
+        with col1:
+            if api_key:
+                st.write("**您的 API Key**")
+                # Masked display logic
+                display_key = api_key
+                if "show_webhook_key" not in st.session_state:
+                    st.session_state.show_webhook_key = False
+                
+                if not st.session_state.show_webhook_key:
+                    display_key = "•" * 24
+                
+                st.code(display_key, language="text")
+                st.checkbox("顯示原始金鑰 (Show raw key)", key="show_webhook_key")
+            else:
+                st.warning("⚠️ 尚未生成 API Key。請點擊「重新產生」以獲取新金鑰。")
+        
+        with col2:
+            st.write("**動作 (Actions)**")
+            # Rotate Button
+            if st.button("🔄 重新產生", help="產生新的金鑰，舊的金鑰將立即失效。", use_container_width=True):
+                with st.popover("⚠️ 確認重新產生？"):
+                    st.warning("這將立即中斷所有使用舊金鑰的外部整合。")
+                    if st.button("確認產生 (Rotate)", type="primary", key="confirm_rotate", use_container_width=True):
+                        import secrets
+                        new_key = f"sk_{secrets.token_hex(20)}"
+                        success, _ = settings_service.save_setting("webhook_api_key", new_key)
+                        if success:
+                            st.toast("✅ 已產生新金鑰！")
+                            st.rerun()
+
+            # Revoke Button
+            if api_key:
+                if st.button("🗑️ 撤銷金鑰", help="刪除目前的金鑰。", use_container_width=True):
+                    with st.popover("🚨 確認撤銷？"):
+                        st.error("撤銷後，所有 Webhook 訊號將被拒絕。")
+                        if st.button("確認撤銷 (Revoke)", type="primary", key="confirm_revoke", use_container_width=True):
+                            success, _ = settings_service.delete_setting("webhook_api_key")
+                            if success:
+                                st.toast("✅ 金鑰已撤銷。")
+                                st.rerun()
+
+        # 3. Usage Guide
+        if api_key:
+            st.divider()
+            st.write("### 💡 使用指南 (Usage Guide)")
+            st.markdown(f"""
+            請在您的 `POST` 請求 Header 中加入：
+            ```http
+            X-API-Key: {api_key}
+            Content-Type: application/json
+            ```
+            
+            **範例 (cURL):**
+            ```bash
+            curl -X POST {webhook_url} \\
+                 -H "X-API-Key: {api_key}" \\
+                 -H "Content-Type: application/json" \\
+                 -d '{{"type": "ticker_alert", "symbol": "BTC/USDT", "action": "buy"}}'
+            ```
+            """)
+        else:
+            st.info("若要啟動外部串接功能，請先重新產生 API Key。")
 
