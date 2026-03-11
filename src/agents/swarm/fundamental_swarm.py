@@ -23,7 +23,9 @@ class FundamentalSubAgent(BaseAgent):
 class FundamentalSwarm(RoleSwarm):
     def __init__(self, use_cache=True, ttl_hours=None, **kwargs):
         ttl = ttl_hours if ttl_hours is not None else 24
-        user_id = kwargs.pop("user_id", "system")
+        user_id = kwargs.pop("user_id", None)
+        if not user_id:
+            raise ValueError("FundamentalSwarm: user_id is required.")
         super().__init__(name="FundamentalSwarm", use_cache=use_cache, ttl_hours=ttl, user_id=user_id, **kwargs)
         
         self.revenue_extractor = FundamentalSubAgent(
@@ -63,7 +65,7 @@ class FundamentalSwarm(RoleSwarm):
             
         market_data = context.get("market_data", {})
         reports = []
-        sc_service = SupplyChainService()
+        sc_service = SupplyChainService(user_id=self.user_id)
         
         for t in tickers:
             t_data = market_data.get(t, {}) if market_data else context

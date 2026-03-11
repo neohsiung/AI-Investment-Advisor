@@ -102,6 +102,7 @@ services:
       - DB_HOST=postgres
       - DB_PORT=5432
       - DB_NAME=${DB_NAME}
+      - USER_ID=90693c07-6177-42df-97d9-915f3ce7c573
     extra_hosts:
       - "host.docker.internal:host-gateway"
     restart: unless-stopped

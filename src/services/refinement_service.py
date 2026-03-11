@@ -19,7 +19,7 @@ class RefinementService:
         """
         self.logger = setup_logger("RefinementService")
         self.user_id = user_id
-        self.perf_service = PerformanceService()
+        self.perf_service = PerformanceService(user_id=self.user_id)
         self.engineer = SystemEngineerAgent(user_id=self.user_id)
         
         # Create notification service with user_id

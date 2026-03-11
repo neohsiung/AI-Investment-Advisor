@@ -16,7 +16,7 @@ def mock_transaction_repo():
 @pytest.fixture
 def cio_agent(mock_transaction_repo):
     # Pass repo directly
-    agent = CIOAgent(use_cache=False, transaction_repo=mock_transaction_repo)
+    agent = CIOAgent(user_id="test_user", use_cache=False, transaction_repo=mock_transaction_repo)
     return agent
 
 def test_run_strategy_mode(cio_agent):

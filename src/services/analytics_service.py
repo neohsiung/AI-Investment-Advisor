@@ -15,11 +15,13 @@ class LeverageCalculator:
     Service for calculating portfolio leverage and nominal values.
     計算投資組合槓桿與名義價值的服務。
     """
-    def __init__(self, repository: Optional[ITransactionRepository] = None, db_path: Optional[str] = None):
+    def __init__(self, user_id: str, repository: Optional[ITransactionRepository] = None, db_path: Optional[str] = None):
         """
         Initialize the calculator.
         初始化計算器。
         """
+        self.user_id = user_id
+        self.db_path = db_path
         self.repo = repository or AlchemyTransactionRepository()
 
     def calculate_metrics(self, current_prices: Dict[str, float], user_id: str, account_id: str = None) -> Dict[str, float]:
@@ -42,6 +44,13 @@ class LeverageCalculator:
                 continue
 
             price = self._get_effective_price(ticker, current_prices, user_id)
+            # v4.3.2: Defensive: If price is 0, fallback to average cost to prevent NLV collapse
+            if price <= 0:
+                holdings_detail = self.repo.get_holdings(user_id, account_id)
+                avg_cost = next((h['avg_price'] for h in holdings_detail if h['ticker'] == ticker), 0.0)
+                price = avg_cost
+                logger.warning(f"LeverageCalc: Price for {ticker} is 0. Falling back to avg_cost: {price}")
+                
             market_val = qty * price
             
             # Nominal Exposure = Market Value * Leverage
@@ -88,11 +97,13 @@ class ROIEngine:
     Engine for calculating Return on Investment (ROI).
     計算投資報酬率 (ROI) 的引擎。
     """
-    def __init__(self, repository: Optional[ITransactionRepository] = None, db_path: Optional[str] = None):
+    def __init__(self, user_id: str, repository: Optional[ITransactionRepository] = None, db_path: Optional[str] = None):
         """
         Initialize the ROI engine.
         初始化 ROI 引擎。
         """
+        self.user_id = user_id
+        self.db_path = db_path
         self.repo = repository or AlchemyTransactionRepository()
 
     def calculate_roi(self, nlv: float, user_id: str, account_id: str = None) -> float:
@@ -168,11 +179,13 @@ class PnLCalculator:
     Calculator for profit and loss (P&L) breakdowns.
     損益 (P&L) 細項計算器。
     """
-    def __init__(self, repository: Optional[ITransactionRepository] = None, db_path: Optional[str] = None):
+    def __init__(self, user_id: str, repository: Optional[ITransactionRepository] = None, db_path: Optional[str] = None):
         """
         Initialize the calculator.
         初始化計算器。
         """
+        self.user_id = user_id
+        self.db_path = db_path
         self.repo = repository or AlchemyTransactionRepository()
 
     def _get_effective_price(self, ticker: str, current_prices: Dict[str, float], user_id: str, account_id: str = None) -> float:
@@ -263,6 +276,10 @@ class PnLCalculator:
         for ticker, pos in portfolio.items():
             if pos['qty'] > 0.0001: 
                 curr_price = self._get_effective_price(ticker, current_prices, user_id, account_id)
+                # v4.3.2: Defensive: If price is 0, fallback to average cost to prevent P/L crash
+                if curr_price <= 0:
+                    curr_price = pos['avg_cost']
+                    
                 unrealized = (curr_price - pos['avg_cost']) * pos['qty']
                 total_unrealized_pnl += unrealized
 
@@ -318,7 +335,7 @@ def update_daily_snapshot(db_path: str = None, user_id: str = None, force: bool 
 
     # 2. Fetch prices only if not provided
     if current_prices is None:
-        market_service = MarketDataService()
+        market_service = MarketDataService(user_id=user_id)
         current_prices = market_service.get_current_prices(active_tickers)
 
     # [NEW] v4.2.1: Snapshot Validation (防呆機制)
@@ -328,7 +345,7 @@ def update_daily_snapshot(db_path: str = None, user_id: str = None, force: bool 
         logger.warning(f"Snapshot Validation Failed: {len(zero_prices)}/{len(active_tickers)} tickers have zero prices. Skipping snapshot.")
         return
 
-    calc = LeverageCalculator(repository=trans_repo, db_path=db_path)
+    calc = LeverageCalculator(user_id=user_id, repository=trans_repo, db_path=db_path)
     metrics = calc.calculate_metrics(current_prices, user_id)
 
     recorder = SnapshotRecorder(db_path=db_path)
@@ -354,7 +371,7 @@ class AnalyticsService:
         self.db_path = db_path
         self.user_id = user_id
         self.snapshot_repo = repository or AlchemySnapshotRepository(db_path)
-        self.pnl_calculator = pnl_calc or PnLCalculator(db_path=self.db_path)
+        self.pnl_calculator = pnl_calc or PnLCalculator(user_id=user_id, db_path=self.db_path)
 
     def trigger_snapshot_update(self, force: bool = False, current_prices: Optional[Dict[str, float]] = None, account_id: str = None) -> None:
         """

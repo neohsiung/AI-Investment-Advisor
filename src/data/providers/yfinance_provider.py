@@ -14,12 +14,14 @@ class YFinanceProvider(MarketDataProvider):
     Acts as the legacy/backup solution.
     作為過往/備援解決方案。
     """
-    def __init__(self) -> None:
+    def __init__(self, user_id: str = None, settings_service: Any = None) -> None:
         """
         Initialize the YFinance provider.
         初始化 YFinance 提供者。
         """
         self.logger = setup_logger("YFinanceProvider")
+        from src.services.settings_service import SettingsService
+        self.settings_service = settings_service or SettingsService(user_id=user_id)
         # v4.2.3: Use a custom session with a browser-like User-Agent to avoid blocking
         import requests
         self.session = requests.Session()
@@ -41,8 +43,8 @@ class YFinanceProvider(MarketDataProvider):
         
         # 1. Try Bulk Download (Fastest)
         try:
-            # Setting threads=False often avoids "Exception('%ticker%')" thread-lock issues in yfinance
-            data = yf.download(tickers, period="1d", auto_adjust=True, progress=False, session=self.session, threads=False)
+            # v4.3.4: Use 5d period instead of 1d to avoid "No price data found" for delayed quotes
+            data = yf.download(tickers, period="5d", auto_adjust=True, progress=False, session=self.session, threads=False)
             
             if len(tickers) == 1:
                 ticker = tickers[0]

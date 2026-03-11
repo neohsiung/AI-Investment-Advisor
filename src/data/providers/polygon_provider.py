@@ -67,7 +67,11 @@ class PolygonProvider(MarketDataProvider):
                 
                 if prices:
                     self.logger.info(f"Polygon: Fetched {len(prices)} bulk prices via v3 snapshot.")
-                    return prices
+                    # Check if all tickers resolved
+                    if len(prices) == len(tickers):
+                        return prices
+            elif resp.status_code == 403:
+                self.logger.warning(f"Polygon v3 snapshot 403 (Forbidden). Plan may not support bulk snapshot.")
             else:
                 self.logger.warning(f"Polygon v3 snapshot failed (Status {resp.status_code}): {resp.text}")
         except Exception as e:
@@ -89,6 +93,12 @@ class PolygonProvider(MarketDataProvider):
                         val = t_data.get('prevDay', {}).get('c')
 
                     if val and val > 0:
+                        prices[ticker] = val
+                elif resp.status_code == 403:
+                    self.logger.warning(f"Polygon v2 snapshot 403 for {ticker}. Plan lacks real-time permissions.")
+                    # v4.3.2: Critical Fallback: Use prev close for ALL tickers that failed snapshots
+                    val = self._fetch_prev_close(ticker)
+                    if val > 0:
                         prices[ticker] = val
         except Exception as e:
             self.logger.error(f"Polygon v2 fallback error: {e}")

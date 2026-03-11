@@ -48,7 +48,7 @@ class DashboardPage(BasePage):
         if self.dashboard_service is None:
             # Use db_path from BasePage (None will use environment DB_URL or DB_TYPE)
             db_path = getattr(self, 'db_path', None)
-            self.dashboard_service = DashboardService(db_path=db_path)
+            self.dashboard_service = DashboardService(user_id=user_id, db_path=db_path)
 
         # High-level loading feedback for the entire Overview data preparation
         with st.spinner("總覽數據讀取中 (Overview Loading)..."):

@@ -21,7 +21,9 @@ class SentimentSubAgent(BaseAgent):
 
 class SentimentSwarm(RoleSwarm):
     def __init__(self, use_cache=True, ttl_hours=4, **kwargs):
-        user_id = kwargs.pop("user_id", "system")
+        user_id = kwargs.pop("user_id", None)
+        if not user_id:
+            raise ValueError("SentimentSwarm: user_id is required.")
         super().__init__(name="SentimentSwarm", use_cache=use_cache, ttl_hours=ttl_hours, user_id=user_id, **kwargs)
         
         self.news_scanner = SentimentSubAgent(

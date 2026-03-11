@@ -139,4 +139,17 @@
 5. **Phase 5: 全面切換與 C 端推廣 (Weeks 11+)**
    - 系統發布於 K8s 正式雲端環境，並推送 PWA 版本給 C端 使用者。
 
+## 九、 B2C SaaS 架構演進實踐 (User-Centric Architecture Evolution)
+
+系統已從「單體單使用者」正式演進為支援多租戶隔離的 B2C 架構。相關核心實作包括：
+
+1.  **使用者隔離 (User Isolation)**:
+    - 服務實體化（如 `SchedulerService` 與 `SentinelService`）現在強制綁定 `user_id`。
+    - 徹底移除全域遍歷使用者的過時模式，轉向基於使用者 ID 的按需處理模式。
+2.  **動態 Webhook 路由 (Dynamic Routing)**:
+    - `WebhookService` 從 `X-API-Key` 標頭中映射 `user_id`。
+    - 實現了「無狀態路由」，每個 Webhook 請求會動態啟動對應使用者的服務上下文。
+3.  **無痛過渡機制 (Seamless Transition)**:
+    - `AuthGuard` 支援 **Lazy Secret Initialization**。舊使用者登入時，若缺失 Webhook API Key，系統會自動補全並保存，確保舊有機制（如日報）不中斷。
+
 > 💡 **最終結論**: 本專案前端摒棄 Streamlit 改以 Next.js 構建強勁無狀態架構；後端 AI 引擎升級至平行協作的多智能體辯論系統。這是我們從「研發測試車」躍升為「千萬量產級 C 端金融 SaaS」唯一且具備高度防禦力的長遠路徑。

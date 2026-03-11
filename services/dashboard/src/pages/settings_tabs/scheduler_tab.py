@@ -18,15 +18,18 @@ def _clean_time_str(raw: str, default: str = "09:00") -> str:
     except (ValueError, TypeError):
         return default
 
-def render_scheduler_tab(st, db_path):
-    sys_settings_service = SettingsService(db_path, user_id='SYSTEM')
-    engineer = SystemEngineerAgent()
+def render_scheduler_tab(st, db_path, user_id):
+    # 🚨 DIAGNOSTIC LOG
+    print(f"DEBUG [SchedulerTab]: render_scheduler_tab for user_id='{user_id}' at {time.strftime('%H:%M:%S')}")
+    
+    settings_service = SettingsService(db_path, user_id=user_id)
+    engineer = SystemEngineerAgent(user_id=user_id)
     config = engineer.get_schedule_config()
     
     saas_card_start(title="Automation & Preferences", subtitle="統一配置系統時區與自動化分析排程", icon="⏱")
     
     # Common Timezones
-    current_tz = sys_settings_service.get_setting("DISPLAY_TIMEZONE", "Asia/Taipei")
+    current_tz = settings_service.get_setting("DISPLAY_TIMEZONE", "Asia/Taipei")
     common_timezones = ['Asia/Taipei', 'UTC', 'US/Eastern', 'US/Pacific', 'Europe/London', 'Asia/Tokyo']
     if current_tz not in common_timezones: common_timezones.append(current_tz)
     
@@ -80,7 +83,7 @@ def render_scheduler_tab(st, db_path):
             try:
                 # 1. Update Timezone
                 if new_tz != current_tz:
-                    sys_settings_service.save_setting('DISPLAY_TIMEZONE', new_tz)
+                    settings_service.save_setting('DISPLAY_TIMEZONE', new_tz)
                 
                 # 2. Update Schedule
                 selected_keys = [reverse_days_map[d] for d in daily_days_selected]
@@ -94,8 +97,8 @@ def render_scheduler_tab(st, db_path):
                     daily_days=selected_keys
                 )
                 
-                # Signal Reload
-                sys_settings_service.save_setting('scheduler_reload_signal', 'true')
+                # Signal Reload (Use real boolean True)
+                settings_service.save_setting('scheduler_reload_signal', True)
                 
                 st.success("設定已更新！")
                 time.sleep(1)
@@ -109,7 +112,7 @@ def render_scheduler_tab(st, db_path):
 
     # Scheduler logs via Service
     from src.services.scheduler_service import SchedulerService
-    scheduler_service = SchedulerService()
+    scheduler_service = SchedulerService(user_id=user_id)
     try:
         logs_df = scheduler_service.get_execution_logs(limit=50)
         

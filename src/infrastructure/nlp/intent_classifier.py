@@ -19,7 +19,7 @@ class IntentClassifier(IIntentClassifier):
         self.agent = AgentFactory.create_agent(
             "Sentiment", 
             tier="fast", 
-            user_id="system",
+            user_id=None,
             use_cache=True
         )
 

@@ -2,7 +2,7 @@ import json
 from .base_agent import BaseAgent
 
 class SentimentAgent(BaseAgent):
-    def __init__(self, use_cache=True, ttl_hours=4, user_id="system", **kwargs):
+    def __init__(self, user_id, use_cache=True, ttl_hours=4, **kwargs):
         # Default 4 hours for Sentiment (News changes fast)
         # Sentiment 預設為 4 小時 (新聞變化快速)
         # Ensure 'tier' is not in kwargs to avoid duplicate argument error

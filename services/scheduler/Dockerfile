@@ -28,4 +28,5 @@ RUN mkdir -p /workspace/data /workspace/logs && \
 
 USER appuser
 
-CMD ["python", "services/scheduler/src/app.py", "--mode", "scheduler"]
+ENV USER_ID=system
+CMD ["python", "services/scheduler/src/app.py", "--mode", "scheduler", "--user_id", "system"]

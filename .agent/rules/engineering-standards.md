@@ -4,11 +4,16 @@
 
 ---
 
-## 1. 代碼規範 (Coding Standards)
+## 1. 開發環境要求 (Environment Requirements)
+
+- **Python 版本**: 強制要求使用 **Python 3.10+**。所有新增代碼與依賴項必須與 3.10+ 兼容。
+- **依賴管理**: 建議使用 `uv` 或 `pip` 搭配 `requirements.txt` 並鎖定版本。
+
+## 2. 代碼品質規範 (Coding Standards)
 
 本專案遵循 **Google Python Style Guide**，並針對 AI Agent 與混合儲存場景進行擴充。
 
-### 1.1 基本格式 (Basics)
+### 2.1 基本格式 (Basics)
 
 - **縮進**: 統一使用 **4 個空格**。
 - **行寬**: Soft limit 100, Hard limit 120。
@@ -75,9 +80,17 @@
   - **一般應用設定 (General App Settings)**: 統一使用 `{feature_name}_{parameter_name}` 格式 (Lowercase Snake Case)。例如：`notification_line_token`, `ai_trade_threshold`。
   - **嚴禁混用**: 嚴禁在資料庫設定區使用 `UPPERCASE_KEYS` 或 `camelCaseKeys`。
 - **憑證讀取原則 (Rule #13)**: 嚴禁硬編碼憑證。生產環境代碼必須優先透過 `SettingsService` 讀取上述標準化金鑰，並支援資料庫加密。
-- **加密規範 (Cryptographic Standards)**:
-  - 嚴禁使用 `MD5` 或 `SHA1` 進行任何具備安全性意涵的雜湊 (Hashing)。
-  - 所有信號 ID (Signal ID) 或 實體識別碼 (Entity IDs) 生成必須使用 **SHA256**。
+
+### 3.3 布林值優先標準 (Boolean-First Standard)
+
+- **自動型別校驗 (Type-Safe Toggles)**: 針對所有「啟用類 (Enabled)」或「布林開關 (Toggles)」設定，資料庫 JSON 欄位必須儲存原生 **布林值 (`bool`)**，嚴禁使用 `str("true")` 或 `str("false")` 進行存儲。
+- **邊界防禦 (Boundary Defense)**: 在 `MarketDataService`、`SchedulerService` 與 `data_sources_tab.py` 等消費者端，必須使用 `is_enabled = str(val).lower() == "true" if not isinstance(val, bool) else val` 的相容判讀邏輯，以應對舊數據遷移，但寫回資料庫時必須強制轉為 `bool`。
+- **API Key 連動校驗**: 指導原則規定，若「資料源啟用 (Source Enabled)」為 `True` 但對應之「API Key」缺失，則消費端應主動將其視為 `False` 並跳過，而非崩潰，以確保系統穩定性。
+
+### 3.4 加密規範 (Cryptographic Standards)
+
+- 嚴禁使用 `MD5` 或 `SHA1` 進行任何具備安全性意涵的雜湊 (Hashing)。
+- 所有信號 ID (Signal ID) 或 實體識別碼 (Entity IDs) 生成必須使用 **SHA256**。
 
 ---
 

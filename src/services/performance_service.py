@@ -20,7 +20,7 @@ class PerformanceService:
         self.db_path = db_path
         self.user_id = user_id
         self.analytics_service = AnalyticsService(db_path=db_path, user_id=user_id)
-        self.market_service = MarketDataService()
+        self.market_service = MarketDataService(user_id=user_id)
         self.trans_repo = AlchemyTransactionRepository()
 
     @st.cache_data(ttl=300, show_spinner=False)

@@ -22,7 +22,7 @@ from datetime import datetime
 
 class BaseAgent(ABC):
 
-    def __init__(self, name, prompt_path, use_cache=True, ttl_hours=24, tier="smart", user_id="system", settings_repo=None, state_repo=None, feedback_repo=None, identity_file="IDENTITY.md", **kwargs):
+    def __init__(self, name, prompt_path, use_cache=True, ttl_hours=24, tier="smart", user_id=None, settings_repo=None, state_repo=None, feedback_repo=None, identity_file="IDENTITY.md", **kwargs):
         self.name = name
         self.logger = setup_logger(name)
         self.prompt_path = prompt_path
@@ -124,23 +124,18 @@ class BaseAgent(ABC):
     def _load_config_from_db(self):
         """
         Load API settings from database (Via Repository).
-        從資料庫載入 API 設定 (Via Repository)。
-        Load API settings from database via Repository.
         """
         settings = {}
+        if not self.user_id:
+            return settings
+            
         try:
-            global_rows = self.settings_repo.get_global()
-            for row in global_rows:
+            # v4.3.0: Only fetch settings specifically for this user. No global fallback.
+            user_rows = self.settings_repo.get_all(self.user_id)
+            for row in user_rows:
                  key = row._mapping['key'] if hasattr(row, '_mapping') else row[0]
                  val = row._mapping['value'] if hasattr(row, '_mapping') else row[1]
                  settings[key] = val
-            
-            if self.user_id:
-                user_rows = self.settings_repo.get_all(self.user_id)
-                for row in user_rows:
-                     key = row._mapping['key'] if hasattr(row, '_mapping') else row[0]
-                     val = row._mapping['value'] if hasattr(row, '_mapping') else row[1]
-                     settings[key] = val
         except Exception as e:
             # self.logger.warning(f"Failed to load settings from DB: {e}")
             pass
@@ -303,7 +298,7 @@ class BaseAgent(ABC):
         ]
 
         from src.services.search_service import InternetSearchService
-        search_service = InternetSearchService()
+        search_service = InternetSearchService(user_id=self.user_id)
 
         for turn in range(max_turns):
             # [Context Guard]

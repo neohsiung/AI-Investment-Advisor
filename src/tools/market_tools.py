@@ -41,9 +41,9 @@ class MarketTools:
             
         return self.service.get_current_prices(tickers)
 
-def create_market_server(market_service=None) -> McpServer:
+def create_market_server(user_id: Optional[str] = None, market_service: Optional[MarketDataService] = None) -> McpServer:
     server = McpServer(name="MarketData")
-    service = market_service or MarketDataService()
+    service = market_service or MarketDataService(user_id=user_id)
     market_tools = MarketTools(service)
     
     for tool in market_tools.get_tools():

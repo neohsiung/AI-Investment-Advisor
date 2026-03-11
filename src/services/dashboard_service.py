@@ -16,20 +16,21 @@ class DashboardService:
     協調儀表板數據獲取與計算的服務。
     """
     
-    def __init__(self, db_path: str = None):
+    def __init__(self, user_id: str, db_path: str = None):
         """
         Initialize the dashboard service.
         初始化儀表板服務。
         """
+        self.user_id = user_id
         self.db_path = db_path  # None will use environment DB_URL or DB_TYPE
         self.transaction_repo = AlchemyTransactionRepository()
         self.transaction_service = TransactionService(repository=self.transaction_repo)
-        self.market_service = MarketDataService()
+        self.market_service = MarketDataService(user_id=user_id)
         
         # Analytics Engines
-        self.calc = LeverageCalculator(db_path=self.db_path)
-        self.roi_engine = ROIEngine(db_path=self.db_path)
-        self.pnl_calc = PnLCalculator(db_path=self.db_path)
+        self.calc = LeverageCalculator(db_path=self.db_path, user_id=user_id)
+        self.roi_engine = ROIEngine(db_path=self.db_path, user_id=user_id)
+        self.pnl_calc = PnLCalculator(db_path=self.db_path, user_id=user_id)
 
     @st.cache_data(ttl=300, show_spinner=False)
     def _fetch_market_prices(_self, tickers: List[str], user_id: str = None) -> Dict[str, float]:

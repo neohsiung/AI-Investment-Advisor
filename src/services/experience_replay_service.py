@@ -191,7 +191,7 @@ class ExperienceReplayService:
             max_dd = abs(history['drawdown'].min())
             
             # Get Inflation
-            fred = FredService()
+            fred = FredService(user_id=self.user_id)
             macro = fred.get_macro_indicators()
             cpi_val = macro.get("CPI", {}).get("value", 3.0) # Assume 3% if error
             

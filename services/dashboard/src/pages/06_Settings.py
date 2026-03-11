@@ -1,4 +1,5 @@
 import streamlit as st
+import time
 from src.data.database import get_db_connection
 from src.services.settings_service import SettingsService
 from src.auth import auth_manager
@@ -27,17 +28,16 @@ class SettingsPage(BasePage):
     
     def render(self):
         """
-        Render settings content.
-        渲染設定內容。
+        Render settings content with robust navigation routing.
         """
-        # v4.1: Use UUID instead of email for user_id
-        # v4.1: 使用 UUID 而非 email 作為 user_id
-        # auth_guard already resolves email to UUID and adds 'id' to user object
+        # 🚨 DIAGNOSTIC LOG
+        print(f"DEBUG [SettingsPage]: render called at {time.strftime('%H:%M:%S')}")
+        
         user_id = self.user['id']
         db_path = self.db_path
 
-        # 1. Define Tabs (Reordered by Usage Frequency)
-        tab_names = [
+        # 1. Define Navigation Labels
+        nav_options = [
             ":material/forum: 互動通知",
             ":material/candlestick_chart: 交易風控",
             ":material/api: 數據源",
@@ -48,67 +48,61 @@ class SettingsPage(BasePage):
             ":material/settings: 系統",
         ]
         
-        tabs = st.tabs(tab_names)
-        
-        # Unpack Tabs
-        t_interaction = tabs[0]
-        t_trading = tabs[1]
-        t_data = tabs[2]
-        t_ai = tabs[3]
-        t_scheduler = tabs[4]
-        t_risk_kw = tabs[5]
-        t_playground = tabs[6]
-        t_system = tabs[7]
+        # 2. Persist Navigation State
+        if 'settings_nav' not in st.session_state:
+            st.session_state['settings_nav'] = nav_options[0]
 
+        # 3. Horizontal navigation bar
+        selected_nav = st.radio(
+            "設定導覽", 
+            options=nav_options, 
+            horizontal=True, 
+            label_visibility="collapsed",
+            key="settings_nav"
+        )
+        
+        st.markdown("---")
+        
+        # 🚨 DIAGNOSTIC LOG - Core User Tracking
+        print(f"DEBUG [SettingsPage]: Navigated to '{selected_nav}' for user_id='{user_id}'")
+        
         settings_service = SettingsService(db_path, user_id=user_id)
 
-        # --- Tab 1: Interaction & Channels ---
-        with t_interaction:
+        # 4. Content Content Routing (Explicit Isolation)
+        if selected_nav == nav_options[0]: # Interaction
             render_channel_tab(st, settings_service, user_id)
-
-        # --- Tab 2: Trading & Risk ---
-        with t_trading:
+        
+        elif selected_nav == nav_options[1]: # Trading
             render_trading_tab(st, user_id)
-
-        # --- Tab 3: Data Source Matrix ---
-        with t_data:
+            
+        elif selected_nav == nav_options[2]: # Data Sources
             render_data_sources_tab(st, settings_service, user_id)
-
-        # --- Tab 4: AI Configuration ---
-        with t_ai:
+            
+        elif selected_nav == nav_options[3]: # AI Model
             settings = settings_service.get_all_settings()
             render_api_settings(st, settings_service, settings)
-
-        # --- Tab 5: Scheduler ---
-        with t_scheduler:
-            render_scheduler_tab(st, db_path)
-
-        # --- Tab 6: Risk Keywords ---
-        with t_risk_kw:
+            
+        elif selected_nav == nav_options[4]: # Scheduler
+            render_scheduler_tab(st, db_path, user_id=user_id)
+            
+        elif selected_nav == nav_options[5]: # Risk Keywords
             render_risk_keywords_tab(st, db_path)
-
-        # --- Tab 7: Developer Playground (Merged) ---
-        with t_playground:
+            
+        elif selected_nav == nav_options[6]: # Science (Agent Playground)
             st.info("此區域包含開發與測試工具。")
-            sub_t1, sub_t2, sub_t3 = st.tabs([":material/smart_toy: Agent", ":material/draft: 試跑", ":material/auto_fix_high: Prompt"])
+            sub_tabs = st.tabs([":material/smart_toy: Agent", ":material/draft: 試跑", ":material/auto_fix_high: Prompt"])
+            with sub_tabs[0]: render_agent_playground_tab(st)
+            with sub_tabs[1]: render_report_dry_run_tab(st, user_id)
+            with sub_tabs[2]: render_optimization_history_tab(st, db_path, user_id)
             
-            with sub_t1:
-                render_agent_playground_tab(st)
-            with sub_t2:
-                render_report_dry_run_tab(st, user_id)
-            with sub_t3:
-                render_optimization_history_tab(st, db_path, user_id)
+        elif selected_nav == nav_options[7]: # System Core
+            sub_tabs = st.tabs([":material/palette: 外觀", ":material/monitor_heart: HR", ":material/storage: 存儲"])
+            with sub_tabs[0]: render_appearance_tab(st)
+            with sub_tabs[1]: render_hr_protocol_tab(st)
+            with sub_tabs[2]: render_storage_tab(st, db_path)
 
-        # --- Tab 8: System Core (Merged) ---
-        with t_system:
-            sub_t1, sub_t2, sub_t3 = st.tabs([":material/palette: 外觀", ":material/monitor_heart: HR", ":material/storage: 存儲"])
-            
-            with sub_t1:
-                render_appearance_tab(st)
-            with sub_t2:
-                render_hr_protocol_tab(st)
-            with sub_t3:
-                render_storage_tab(st, db_path)
+        # 🚨 DIAGNOSTIC LOG
+        print(f"DEBUG [SettingsPage]: render completed for {selected_nav}")
 
 if __name__ == "__main__":
     SettingsPage().run()

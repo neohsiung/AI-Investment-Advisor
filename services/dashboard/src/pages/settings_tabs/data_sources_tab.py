@@ -26,10 +26,14 @@ def render_data_sources_tab(st, settings_service, user_id):
                 
                 with col1:
                     # Toggle Enable/Disable
+                    # v4.3.4: Use real boolean values for DB best practice
+                    current_enabled = settings.get(f"source_{sid}_enabled", False)
+                    is_enabled_bool = str(current_enabled).lower() == "true" if not isinstance(current_enabled, bool) else current_enabled
+                    
                     is_enabled = st.toggle(
                         "啟用", 
                         key=f"enabled_{sid}", 
-                        value=settings.get(f"source_{sid}_enabled", "false") == "true",
+                        value=is_enabled_bool,
                         help=f"是否開啟 {source['name']} 的自動輪詢或監控"
                     )
                 
@@ -55,11 +59,14 @@ def render_data_sources_tab(st, settings_service, user_id):
                             
                             if new_val != val:
                                 settings_service.save_setting(key, new_val)
+                                # Signal Reload (Use real boolean True)
+                                settings_service.save_setting('scheduler_reload_signal', True)
                 
-                # Save toggle state if changed
-                toggle_str = "true" if is_enabled else "false"
-                if toggle_str != settings.get(f"source_{sid}_enabled", "false"):
-                    settings_service.save_setting(f"source_{sid}_enabled", toggle_str)
+                # Save toggle state if changed (Use real boolean)
+                if is_enabled != is_enabled_bool:
+                    settings_service.save_setting(f"source_{sid}_enabled", is_enabled)
+                    # Signal Reload (Use real boolean True)
+                    settings_service.save_setting('scheduler_reload_signal', True)
                 
                 st.divider()
 

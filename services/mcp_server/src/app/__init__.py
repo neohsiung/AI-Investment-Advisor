@@ -66,12 +66,13 @@ async def lifespan(app: FastAPI):
     
     try:
         # 1. Instantiate Services
-        services["market"] = MarketDataService()
-        services["search"] = InternetSearchService()
-        services["fred"] = FredService()
+        services["market"] = MarketDataService(user_id='system')
+        services["search"] = InternetSearchService(user_id='system')
+        services["fred"] = FredService(user_id='system')
         services["sentinel"] = SentinelService(
             market_service=services["market"],
-            search_service=services["search"]
+            search_service=services["search"],
+            user_id='system' # This is a system-wide sentinel instance for the MCP server
         )
         services["github"] = GitHubService()
         
@@ -83,7 +84,7 @@ async def lifespan(app: FastAPI):
         from src.infrastructure.channels.channel_factory import ChannelFactory
         from src.infrastructure.nlp.intent_classifier import IntentClassifier
         
-        settings_svc_global = SettingsService(db_path=None)  # Use environment DB_URL or DB_TYPE
+        settings_svc_global = SettingsService(db_path=None, user_id='system')  # Use environment DB_URL or DB_TYPE
         settings_global = settings_svc_global.get_all_settings()
         
         # Create Adapters via Factory

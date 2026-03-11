@@ -15,6 +15,7 @@ from src.infrastructure.lane_manager import LaneManager
 from src.utils.format_utils import format_agent_output
 
 from src.services.user_focus_service import UserFocusService
+from src.services.settings_service import SettingsService
 
 class CouncilService:
     """
@@ -25,13 +26,14 @@ class CouncilService:
     支援用於全投資組合分析的 Map-Reduce 與動態模型路由。
     """
 
-    def __init__(self):
+    def __init__(self, user_id: str, settings_service: Optional[SettingsService] = None):
+        self.user_id = user_id
+        self.settings_service = settings_service or SettingsService(user_id=user_id)
         self.router = DynamicModelRouter()
         self.vector_repo = AlchemyVectorRepository()
         self.lane_manager = LaneManager()
-        self.user_focus_service = UserFocusService()
 
-    async def start_session(self, topic: str, context_data: Dict[str, Any], scope: str = "single", market_volatility: float = 0.0, user_id: str = "system") -> Dict[str, Any]:
+    async def start_session(self, topic: str, context_data: Dict[str, Any], user_id: str, scope: str = "single", market_volatility: float = 0.0) -> Dict[str, Any]:
         """
         Starts a high-level Council Session.
         啟動高階委員會議程。
@@ -49,7 +51,7 @@ class CouncilService:
         # Default Single Topic Flow (Thread-blocking wrapper for async compatibility)
         return await self._run_standard_session(session_id, topic, context_data, market_volatility=market_volatility, user_id=user_id)
 
-    async def _run_map_reduce_portfolio(self, session_id: str, topic: str, context_data: Dict[str, Any], market_volatility: float = 0.0, user_id: str = "system") -> Dict[str, Any]:
+    async def _run_map_reduce_portfolio(self, session_id: str, topic: str, context_data: Dict[str, Any], user_id: str, market_volatility: float = 0.0) -> Dict[str, Any]:
         """
         Phase 4: Map-Reduce execution for full portfolio analysis.
         第四階段：針對全投資組合分析的 Map-Reduce 執行。
@@ -133,7 +135,7 @@ class CouncilService:
             "transcript": aggregated_summary
         }
 
-    async def _run_standard_session(self, session_id: str, topic: str, context_data: Dict[str, Any], market_volatility: float = 0.0, user_id: str = "system") -> Dict[str, Any]:
+    async def _run_standard_session(self, session_id: str, topic: str, context_data: Dict[str, Any], user_id: str, market_volatility: float = 0.0) -> Dict[str, Any]:
         """
         Standard single-topic Council session wrapped for asynchronous execution.
         為非同步執行封裝的標準單一主題委員會議程。
@@ -142,7 +144,7 @@ class CouncilService:
         loop = asyncio.get_running_loop()
         return await loop.run_in_executor(None, self._run_sync_logic, session_id, topic, context_data, market_volatility, user_id)
 
-    def _run_sync_logic(self, session_id: str, topic: str, context_data: Dict[str, Any], market_volatility: float = 0.0, user_id: str = "system") -> Dict[str, Any]:
+    def _run_sync_logic(self, session_id: str, topic: str, context_data: Dict[str, Any], user_id: str, market_volatility: float = 0.0) -> Dict[str, Any]:
         """
         Core synchronous logic for running an agent debate and capturing the transcript.
         執行 Agent 辯論並記錄逐字稿的核心同步邏輯。
@@ -178,7 +180,9 @@ class CouncilService:
         transcript = []
         
         # Inject Memory and User Focus
-        user_focus = self.user_focus_service.get_user_focus()
+        # v5.0: Instantiate UserFocusService with the correct user_id
+        uf_service = UserFocusService(user_id=user_id, settings_service=self.settings_service)
+        user_focus = uf_service.get_user_focus()
         debate_context = {
             **context_data, 
             "historical_context": past_wisdom, 

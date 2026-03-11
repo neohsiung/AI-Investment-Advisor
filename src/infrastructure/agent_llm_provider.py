@@ -14,7 +14,7 @@ class AgentLLMProvider(ILLMProvider):
     Uses 'Engineer' or 'CIO' agents for specific cognitive tasks.
     """
     
-    def __init__(self, user_id: str = "system"):
+    def __init__(self, user_id: str):
         self.user_id = user_id
         # We can use a generic agent for these tasks, e.g., Engineer or a new 'Utility' agent
         # Using 'Engineer' agent as it's typically for system tasks

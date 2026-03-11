@@ -34,7 +34,7 @@ class SystemEngineerAgent(BaseAgent):
     Milestone 5.3: Engineer Swarm & Alpha-Seeking
     Autonomous code generation and backtesting for alpha discovery.
     """
-    def __init__(self, user_id="system", **kwargs):
+    def __init__(self, user_id: str, **kwargs):
         # We use a completely new class name or alias to avoid conflict with `engineer.py`
         # Using suffix `Agent` but distinct file name `system_engineer_agent.py`
         super().__init__(

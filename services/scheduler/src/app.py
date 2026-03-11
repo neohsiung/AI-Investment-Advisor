@@ -92,7 +92,17 @@ def main():
     elif args.mode == 'scheduler':
         from src.services.scheduler_service import SchedulerService
         print(f"[{format_time()}] Starting Scheduler Service...")
-        service = SchedulerService()
+        
+        # If no user_id provided in daemon mode, we need a default or to error out 
+        # based on the new user-isolation policy.
+        if not args.user_id:
+             # In production, we'd iterate over all users, but here we require one or 
+             # use a management account if defined.
+             # For now, we enforce it to avoid logic errors.
+             logger.error("user_id is required to start the scheduler service configuration.")
+             return
+             
+        service = SchedulerService(user_id=args.user_id)
         
         if args.task:
             # Single task execution

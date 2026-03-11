@@ -4,7 +4,7 @@ from src.data.providers.fmp_provider import FMPProvider
 
 @pytest.fixture
 def fmp():
-    return FMPProvider(api_key="mock_key")
+    return FMPProvider(api_key="mock_key", user_id="test_user")
 
 def test_fetch_key_metrics(fmp):
     with patch('requests.get') as mock_get:
@@ -38,7 +38,7 @@ def test_fetch_key_metrics_fail(fmp):
         assert metrics == {}
 
 def test_fetch_financial_ratios_no_key():
-    fmp_no_key = FMPProvider(api_key=None)
+    fmp_no_key = FMPProvider(api_key=None, user_id="test_user")
     # Monkeypatch likely already handled by init logic to warn
     # FMPProvider usually requires key or env var.
     # If init with None and no env, it warns.

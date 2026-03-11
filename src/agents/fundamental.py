@@ -22,7 +22,7 @@ class FundamentalAgent(BaseAgent):
             ticker = context["ticker"]
             
             from src.services.supply_chain_service import SupplyChainService
-            sc_service = SupplyChainService()
+            sc_service = SupplyChainService(user_id=self.user_id)
             sc_info = sc_service.get_shortage_premium(ticker)
             shortage_narrative = sc_info.get("narrative", "")
             
@@ -72,7 +72,7 @@ class FundamentalAgent(BaseAgent):
             
             # Milestone 2.1: Supply Chain & Shortage Premium Integration
             from src.services.supply_chain_service import SupplyChainService
-            sc_service = SupplyChainService()
+            sc_service = SupplyChainService(user_id=self.user_id)
             sc_info = sc_service.get_shortage_premium(t)
             shortage_narrative = sc_info.get("narrative", "")
             

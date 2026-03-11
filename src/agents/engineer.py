@@ -10,10 +10,10 @@ from src.utils.time_utils import format_time
 from src.repositories.prompt_repository import AlchemyPromptRepository
 
 class SystemEngineerAgent(BaseAgent):
-    def __init__(self, use_cache=False, prompt_repo=None, **kwargs):
+    def __init__(self, user_id, use_cache=False, prompt_repo=None, **kwargs):
         # Engineer Agent usually does not cache because feedback varies every time.
         # Engineer Agent 通常不快取，因為每次回饋都不同。
-        super().__init__(name="Engineer", prompt_path="prompts/engineer_agent.txt", use_cache=use_cache, tier="smart", **kwargs)
+        super().__init__(name="Engineer", prompt_path="prompts/engineer_agent.txt", use_cache=use_cache, tier="smart", user_id=user_id, **kwargs)
         self.prompt_repo = prompt_repo or AlchemyPromptRepository()
 
     def analyze_optimization_needs(self, cio_report):
@@ -214,20 +214,20 @@ class SystemEngineerAgent(BaseAgent):
     # Dictionary-like access methods for schedule config (Phase 37)
     def get_schedule_config(self):
         """
-        Read schedule config from database (Via Settings Repo).
-        從資料庫讀取排程設定 (Via Settings Repo)。
+        Read schedule config from database (Via Settings Service).
         """
+        from src.services.settings_service import SettingsService
+        # Initialize SettingsService with established user context
+        settings_service = SettingsService(user_id=self.user_id, settings_repo=self.settings_repo)
+        
         config = {}
         try:
-            # key, value tuples or dict?
-            # Repo returns rows: [(key, val), ...]
-            rows = self.settings_repo.get_by_prefix("schedule_")
-            for row in rows:
-                key = row._mapping['key'] if hasattr(row, '_mapping') else row[0]
-                val = row._mapping['value'] if hasattr(row, '_mapping') else row[1]
-                config[key] = val
+            # v4.3.1: Use SettingsService to benefit from its auto-parsing/decoding features
+            # This avoids double-quoting issues and inconsistent parsing.
+            all_settings = settings_service.get_all_settings()
+            config = {k: v for k, v in all_settings.items() if k.startswith("schedule_")}
         except Exception as e:
-            self.logger.error(f"Error reading schedule config: {e}")
+            self.logger.error(f"Error reading schedule config via SettingsService: {e}")
         
         return config
 
@@ -251,8 +251,7 @@ class SystemEngineerAgent(BaseAgent):
                     updates["schedule_daily_days"] = str(daily_days)
 
             for key, value in updates.items():
-                # Use user_id context or system default?
-                # Assuming schedule is global, use self.user_id which defaults to "system"
+                # v4.3.0: All settings must belong to user_id.
                 self.settings_repo.set(self.user_id, key, value)
 
             self.logger.info("Schedule config updated via Engineer Agent.")

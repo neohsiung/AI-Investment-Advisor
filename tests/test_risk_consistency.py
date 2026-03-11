@@ -7,7 +7,7 @@ from datetime import date
 async def test_check_risk_consistency_balanced_high_leverage():
     # Mock services
     mock_settings = MagicMock()
-    mock_settings.get_setting.side_effect = lambda uid, key, default: "Balanced" if key == "risk_profile" else default
+    mock_settings.get_setting.side_effect = lambda key, default, user_id=None: "Balanced" if key == "risk_profile" else default
     
     mock_snapshot_repo = MagicMock()
     # Mock latest snapshot with 1.8x leverage
@@ -55,7 +55,7 @@ async def test_check_risk_consistency_balanced_high_leverage():
 async def test_check_cash_ratio_low_alarm():
     mock_settings = MagicMock()
     # Target cash 20%
-    mock_settings.get_setting.side_effect = lambda uid, key, default: 0.2 if key == "target_cash_ratio" else "Aggressive" if key == "risk_profile" else default
+    mock_settings.get_setting.side_effect = lambda key, default, user_id=None: 0.2 if key == "target_cash_ratio" else "Aggressive" if key == "risk_profile" else default
     
     mock_snapshot_repo = MagicMock()
     # Actual cash 5% (5000 / 100000)

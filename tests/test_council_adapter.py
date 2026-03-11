@@ -17,7 +17,7 @@ def test_council_adapter_run_sync_loop():
         mock_asyncio.get_event_loop.return_value = mock_loop
         # Support fallback to new_event_loop if get raises
         
-        adapter = CouncilAgentAdapter(scope="test", topic="Test Topic")
+        adapter = CouncilAgentAdapter(user_id="test_user", scope="test", topic="Test Topic")
         
         # run_until_complete needs to return what start_session returns (a coroutine object)
         mock_coro = MagicMock()
@@ -27,7 +27,7 @@ def test_council_adapter_run_sync_loop():
         result = adapter.run({})
         
         assert result["result"] == "success"
-        mock_instance.start_session.assert_called_with("Test Topic", {}, "test", user_id='system')
+        mock_instance.start_session.assert_called_with("Test Topic", {}, "test_user", "test")
         mock_loop.run_until_complete.assert_called_with(mock_coro)
 
 def test_council_adapter_run_async_loop_running():
@@ -43,7 +43,7 @@ def test_council_adapter_run_async_loop_running():
         mock_loop.is_running.return_value = True
         mock_asyncio.get_event_loop.return_value = mock_loop
         
-        adapter = CouncilAgentAdapter()
+        adapter = CouncilAgentAdapter(user_id="test_user")
         
         mock_executor_instance = MagicMock()
         MockExecutor.return_value.__enter__.return_value = mock_executor_instance

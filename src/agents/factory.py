@@ -54,18 +54,8 @@ class AgentFactory:
             try:
                 repo = AlchemySettingsRepository()
                 # 1. Try User Specific Key
-                if user_id and user_id != "system":
+                if user_id:
                     api_key = repo.get(user_id, "API_KEY") or repo.get(user_id, "LLM_API_KEY")
-                
-                # 2. Fallback to Global Key
-                if not api_key:
-                    rows = repo.get_global()
-                    for row in rows:
-                         k = row._mapping['key'] if hasattr(row, '_mapping') else row[0]
-                         v = row._mapping['value'] if hasattr(row, '_mapping') else row[1]
-                         if k in ["API_KEY", "LLM_API_KEY"] and v:
-                             api_key = v
-                             break
             except Exception as e:
                 logger.warning(f"Failed to load API_KEY from DB for DSPy: {e}")
 
@@ -91,7 +81,8 @@ class AgentFactory:
         if not hasattr(agent, 'feedback_repo') or agent.feedback_repo is None:
              agent.feedback_repo = AlchemyFeedbackRepository()
         
-        market_server = create_market_server()
+        user_id = getattr(agent, 'user_id', None)
+        market_server = create_market_server(user_id=user_id)
         for tool in market_server.list_tools():
             real_tool = market_server.tools.get(tool['name'])
             if real_tool:
@@ -100,7 +91,7 @@ class AgentFactory:
         return agent
 
     @staticmethod
-    def create_agent(agent_name, use_cache=True, user_id="system", **kwargs):
+    def create_agent(agent_name, use_cache=True, user_id=None, **kwargs):
         AgentFactory._configure_dspy(user_id=user_id)
         name_lower = agent_name.lower()
         
@@ -128,49 +119,49 @@ class AgentFactory:
         return AgentFactory._inject_dependencies(agent)
 
     @staticmethod
-    def create_thematic_agent(use_cache=True, user_id="system", **kwargs):
+    def create_thematic_agent(use_cache=True, user_id=None, **kwargs):
         AgentFactory._configure_dspy(user_id=user_id)
         from src.agents.thematic import ThematicAgent
         agent = ThematicAgent(use_cache=use_cache, user_id=user_id, **kwargs)
         return AgentFactory._inject_dependencies(agent)
 
     @staticmethod
-    def create_momentum_agent(use_cache=True, user_id="system", **kwargs):
+    def create_momentum_agent(use_cache=True, user_id=None, **kwargs):
         AgentFactory._configure_dspy(user_id=user_id)
         # tier = kwargs.pop('tier', 'fast') # Swarm manages tiers
         agent = MomentumSwarm(user_id=user_id, use_cache=use_cache, **kwargs)
         return AgentFactory._inject_dependencies(agent)
 
     @staticmethod
-    def create_fundamental_agent(use_cache=True, user_id="system", **kwargs):
+    def create_fundamental_agent(use_cache=True, user_id=None, **kwargs):
         AgentFactory._configure_dspy(user_id=user_id)
         # tier = kwargs.pop('tier', 'smart')
         agent = FundamentalSwarm(user_id=user_id, use_cache=use_cache, **kwargs)
         return AgentFactory._inject_dependencies(agent)
         
     @staticmethod
-    def create_macro_agent(use_cache=True, user_id="system", **kwargs):
+    def create_macro_agent(use_cache=True, user_id=None, **kwargs):
         AgentFactory._configure_dspy(user_id=user_id)
         tier = kwargs.pop('tier', 'smart')
         agent = MacroAgent(use_cache=use_cache, tier=tier, user_id=user_id, **kwargs)
         return AgentFactory._inject_dependencies(agent)
 
     @staticmethod
-    def create_sentiment_agent(use_cache=True, user_id="system", **kwargs):
+    def create_sentiment_agent(use_cache=True, user_id=None, **kwargs):
         AgentFactory._configure_dspy(user_id=user_id)
         # tier = kwargs.pop('tier', 'fast')
         agent = SentimentSwarm(user_id=user_id, use_cache=use_cache, **kwargs)
         return AgentFactory._inject_dependencies(agent)
 
     @staticmethod
-    def create_risk_agent(use_cache=True, user_id="system", **kwargs):
+    def create_risk_agent(use_cache=True, user_id=None, **kwargs):
         AgentFactory._configure_dspy(user_id=user_id)
         tier = kwargs.pop('tier', 'fast')
         agent = RiskAgent(use_cache=use_cache, tier=tier, user_id=user_id, **kwargs)
         return AgentFactory._inject_dependencies(agent)
 
     @staticmethod
-    def create_cio_agent(use_cache=True, transaction_repo=None, mode="weekly", tier="smart", user_id="system", **kwargs):
+    def create_cio_agent(use_cache=True, transaction_repo=None, mode="weekly", tier="smart", user_id=None, **kwargs):
         AgentFactory._configure_dspy(user_id=user_id)
         prompt_map = {
             "daily": "prompts/cio_daily.txt",

@@ -6,21 +6,15 @@ from src.utils.logger import setup_logger
 logger = setup_logger("SkillRegistry")
 
 # Lazy Loading to avoid circular imports or heavy init at module level
-_search_service = None
-_market_service = None
+# Removed global caching of services to enforce user isolation
 _tx_repo = None
 
-def get_search_service():
-    global _search_service
-    if not _search_service:
-        _search_service = InternetSearchService()
-    return _search_service
+def get_search_service(user_id: str):
+    # InternetSearchService might also benefit from user context in future
+    return InternetSearchService()
 
-def get_market_service():
-    global _market_service
-    if not _market_service:
-        _market_service = MarketDataService()
-    return _market_service
+def get_market_service(user_id: str):
+    return MarketDataService(user_id=user_id)
 
 def get_tx_repo():
     global _tx_repo
@@ -30,10 +24,10 @@ def get_tx_repo():
 
 # --- Implementations ---
 
-def search_web(query: str) -> str:
+def search_web(user_id: str, query: str) -> str:
     """Executes web search."""
     try:
-        svc = get_search_service()
+        svc = get_search_service(user_id)
         results = svc.search_financial_context(query, max_results=3)
         if not results:
             return "No results found."
@@ -47,10 +41,10 @@ def search_web(query: str) -> str:
         logger.error(f"Skill search_web failed: {e}")
         return f"Error: {e}"
 
-def get_market_data(ticker: str) -> str:
+def get_market_data(user_id: str, ticker: str) -> str:
     """Fetches market data."""
     try:
-        svc = get_market_service()
+        svc = get_market_service(user_id)
         # Use get_market_context which returns a dict keyed by ticker
         context = svc.get_market_context([ticker], enrich=False)
         if exclude_ticker := context.get(ticker):
@@ -95,7 +89,10 @@ def bind_skills_to_agent(agent):
         for name, skill_def in agent.skill_loader.skills.items():
             if name in SKILL_IMPLEMENTATIONS:
                 # Register
-                func = SKILL_IMPLEMENTATIONS[name]
+                # Register with partial to bind user_id
+                import functools
+                user_id = getattr(agent, 'user_id', None)
+                func = functools.partial(SKILL_IMPLEMENTATIONS[name], user_id)
                 tool = McpTool(name=name, func=func, description=skill_def.description)
                 agent.register_tool(tool)
                 agent.logger.info(f"SkillRegistry: Bound '{name}' to agent.")

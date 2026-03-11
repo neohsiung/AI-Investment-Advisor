@@ -12,9 +12,9 @@ class FredProvider(MarketDataProvider):
     Standard Provider Wrapper for FRED (Federal Reserve Economic Data).
     FRED Provider 包裝器，繼承自 MarketDataProvider 以符合系統標準。
     """
-    def __init__(self, user_id: str = "system"):
+    def __init__(self, user_id: str = "system", settings_service: Any = None):
         self.logger = setup_logger("FredProvider")
-        self.fred_service = FredService(user_id=user_id)
+        self.fred_service = FredService(user_id=user_id, settings_service=settings_service)
         self.name = "FRED"
 
     def fetch_current_prices(self, tickers: List[str]) -> Dict[str, float]:

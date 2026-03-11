@@ -12,7 +12,7 @@ class MomentumScanner(BaseAgent):
     Fast Tier Agent for Technical/Momentum Scanning.
     Analyzes price action and indicators for a single ticker.
     """
-    def __init__(self, user_id="system", **kwargs):
+    def __init__(self, user_id, **kwargs):
         kwargs.pop('tier', None)
         super().__init__(
             name="MomentumScanner", 
@@ -29,7 +29,9 @@ class MomentumSwarm(RoleSwarm):
     """
     Momentum Analysis Swarm.
     """
-    def __init__(self, user_id: str = "system", **kwargs):
+    def __init__(self, user_id: str = None, **kwargs):
+        if not user_id:
+            raise ValueError("MomentumSwarm: user_id is required.")
         super().__init__(name="MomentumSwarm", user_id=user_id, tier="fast", **kwargs)
         
         # Register default pool

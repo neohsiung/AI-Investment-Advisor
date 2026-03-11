@@ -1,7 +1,7 @@
 import streamlit as st
 import pandas as pd
 from src.utils.page_base import BasePage
-from src.utils.components import saas_section_header, saas_card_start, saas_card_end, saas_alert
+from src.utils.components import saas_section_header, saas_card_start, saas_card_end, saas_alert, saas_markdown
 
 
 class AnalysisReportsPage(BasePage):
@@ -50,7 +50,7 @@ class AnalysisReportsPage(BasePage):
                         # Adjust height dynamically - 800px is a good balance for full-page reports
                         components.html(report_content, height=800, scrolling=True)
                     else:
-                        st.markdown(report_content)
+                        saas_markdown(report_content)
                     saas_card_end()
                 else:
                     st.error("Selected date record not found.")

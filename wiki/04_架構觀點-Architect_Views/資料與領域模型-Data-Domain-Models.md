@@ -8,6 +8,7 @@
 
 > **[繁體中文 (Traditional Chinese)](#zh) | [English](#en)**
 
+| 2026-03-08 | v4.8 | **Schema Refinement**: `daily_snapshots` 主鍵更新為 `(date, user_id, account_id)` 以支援更精細的多帳號歷史追蹤。 | Antigravity |
 | 2026-03-08 | v4.7 | **Risk & Narrative Persistence**: Added `conviction_level` and `time_horizon` to `daily_snapshots` for narrative drift detection. | Antigravity |
 | 2026-02-27 | v4.6 | **NLV & Margin Tracker Fix**: Enforced precise `margin_invested` tracking across `TransactionRepository` and `PnLCalculator`, rectifying phantom cash drift in leveraged trades. | Neo |
 | 2026-02-20 | v4.5 | Document audit and history alignment | Neo |
@@ -144,7 +145,7 @@ classDiagram
 | `user_identities` | 多通路身分映射 | `id (TEXT)`, `user_id (TEXT)`, `provider (TEXT)`, `identifier (TEXT)` |
 | `transactions` | 原始交易日誌 | `id (TEXT)`, `quantity (NUMERIC)`, `price (NUMERIC)`, `raw_data (JSONB)` |
 | `positions` | 持倉快照 | `user_id (TEXT)`, `avg_cost (NUMERIC)`, `market_value (NUMERIC)` |
-| `daily_snapshots` | 績效歷史 | `user_id (TEXT)`, `total_nlv (NUMERIC)`, `leverage_ratio (NUMERIC)`, `conviction_level (NUMERIC)`, `time_horizon (TEXT)` |
+| `daily_snapshots` | 績效歷史 | `date (DATE)`, `user_id (TEXT)`, `account_id (TEXT)`, `total_nlv (NUMERIC)`, `leverage_ratio (NUMERIC)`. **PRI KEY: (date, user_id, account_id)**. |
 | `settings` | 系統設定 | `user_id (TEXT)`, `key (TEXT)`, `value (JSONB)` |
 | `memory_embeddings`| RAG 記憶 (pgvector) | `embedding (vector(1536))`, `metadata (JSONB)` |
 | `event_logs` | 審核日誌 | `id (TEXT)`, `event_type (TEXT)`, `meta (JSONB)` |
@@ -260,7 +261,7 @@ classDiagram
 | `users` | User metadata | `UUID`, `JSONB` |
 | `user_identities` | Multi-provider Map | `UUID`, `TEXT`, `TEXT` |
 | `transactions` | Event Log | `NUMERIC`, `JSONB` |
-| `daily_snapshots` | NLV History | `NUMERIC`, `DATE`, `NUMERIC (conviction)`, `TEXT (horizon)` |
+| `daily_snapshots` | NLV History | `DATE`, `UUID (user_id)`, `TEXT (account_id)`, `NUMERIC (nlv)`. **PK: (date, user_id, account_id)**. |
 | `memory_embeddings` | Semantic RAG | `vector(1536)` |
 | `event_logs` | Audit Trail | `JSONB`, `TIMESTAMPTZ` |
 | `risk_keywords` | Risk Keywords | `UUID`, `TEXT`, `NUMERIC` |

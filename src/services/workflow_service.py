@@ -45,7 +45,7 @@ class BaseWorkflow(ABC):
         # Dependency Injection
         self.transaction_repo = transaction_repo or AlchemyTransactionRepository()
         self.transaction_service = transaction_service or TransactionService(repository=self.transaction_repo)
-        self.market_service = market_service or MarketDataService()
+        self.market_service = market_service or MarketDataService(user_id=self.user_id)
         
         # Memory Service Injection
         self.memory_repo = AlchemyMemoryRepository()
@@ -58,7 +58,7 @@ class BaseWorkflow(ABC):
              transaction_repo=self.transaction_service.repository,
              user_id=self.user_id
         )
-        self.performance_service = PerformanceService()
+        self.performance_service = PerformanceService(user_id=self.user_id)
 
     async def run(self, dry_run: bool = False, force_refresh: bool = False) -> Any:
         """
@@ -908,9 +908,8 @@ class WeeklyWorkflow(BaseWorkflow):
             return AgentFactory.create_cio_agent(user_id=user_id, mode="sector_analysis", tier=tier) 
         elif "deep-dive" in name_lower or "supply chain" in name_lower:
             return AgentFactory.create_fundamental_agent(user_id=user_id, tier=tier)
-        elif "portfolio" in name_lower or "audit" in name_lower:
              # Use Map-Reduce Council for deep portfolio analysis
-             return CouncilAgentAdapter(scope="portfolio", topic=f"Weekly Portfolio Review ({name_lower})")
+             return CouncilAgentAdapter(user_id=user_id, scope="portfolio", topic=f"Weekly Portfolio Review ({name_lower})")
         elif "recommendation" in name_lower or "balancing" in name_lower or "alpha" in name_lower:
              return AgentFactory.create_cio_agent(user_id=user_id, mode="weekly", tier=tier)
         elif "synthesis" in name_lower:

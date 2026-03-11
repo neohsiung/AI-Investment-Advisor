@@ -192,7 +192,7 @@ class RiskManager:
         if limit_pct >= 1.0: return True
 
         from src.services.market_data_service import MarketDataService
-        mds = MarketDataService()
+        mds = MarketDataService(user_id=user_id)
         
         new_sector = self._get_sector(mds, new_ticker)
         if not new_sector: return True

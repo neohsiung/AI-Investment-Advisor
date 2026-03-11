@@ -39,13 +39,13 @@ class MarketDataService:
         self.tiingo.id = "tiingo"
         self.fmp = FMPProvider(settings_service=self.settings_service)
         self.fmp.id = "fmp"
-        self.yfinance = YFinanceProvider()
+        self.yfinance = YFinanceProvider(settings_service=self.settings_service)
         self.yfinance.id = "yahoo_finance"
-        self.fred = FredProvider(user_id=self.user_id)
+        self.fred = FredProvider(user_id=self.user_id, settings_service=self.settings_service)
         self.fred.id = "fred"
-        self.alpha_vantage = AlphaVantageProvider(user_id=self.user_id)
+        self.alpha_vantage = AlphaVantageProvider(user_id=self.user_id, settings_service=self.settings_service)
         self.alpha_vantage.id = "alpha_vantage"
-        self.finnhub = FinnhubProvider(user_id=self.user_id)
+        self.finnhub = FinnhubProvider(user_id=self.user_id, settings_service=self.settings_service)
         self.finnhub.id = "finnhub"
         self.financialdata = FinancialDataProvider(settings_service=self.settings_service)
         self.financialdata.id = "financialdata"
@@ -74,12 +74,36 @@ class MarketDataService:
     def _is_provider_enabled(self, provider: MarketDataProvider) -> bool:
         """
         Check if a provider is enabled in the current user's settings.
-        檢查提供者是否在當前用戶設定中啟用。
+        Also verifies if the required API key is present.
+        檢查提供者是否在當前用戶設定中啟用，並驗證所需的 API 金鑰是否存在。
         """
         if not hasattr(provider, "id"): return True
-        # YFinance is a free fallback, assume it's always enabled if no toggle exists
-        if provider.id == "yahoo_finance": return True
-        return self.settings_service.get_setting(f"source_{provider.id}_enabled", "true") == "true"
+        
+        # Yahoo Finance is a free fallback, always enabled if no toggle says otherwise
+        if provider.id == "yahoo_finance":
+            return True
+            
+        # Get toggle state (Handle both boolean and string "true"/"false")
+        enabled_setting = self.settings_service.get_setting(f"source_{provider.id}_enabled", True)
+        is_enabled = str(enabled_setting).lower() == "true" if not isinstance(enabled_setting, bool) else enabled_setting
+        
+        if not is_enabled:
+            return False
+            
+        # Feature: Ignore data sources that are enabled but lack API keys
+        # 功能：忽略已啟用但缺少 API 金鑰的數據源
+        api_key_keys = [f"source_{provider.id}_api_key", f"source_{provider.id}_api_token", f"source_{provider.id}_token"]
+        has_key = False
+        for k in api_key_keys:
+            if self.settings_service.get_setting(k):
+                has_key = True
+                break
+        
+        if not has_key:
+            self.logger.warning(f"Data source '{provider.id}' is enabled but has no API key. Skipping.")
+            return False
+            
+        return True
 
     def get_current_prices(self, tickers: List[str]) -> Dict[str, float]:
         """

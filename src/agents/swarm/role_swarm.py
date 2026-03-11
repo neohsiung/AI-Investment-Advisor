@@ -16,10 +16,12 @@ class RoleSwarm(BaseAgent):
     def __init__(
         self, 
         name: str, 
-        user_id: str = "system", 
+        user_id: str = None, 
         prompt_path: str = None, 
         **kwargs
     ):
+        if not user_id:
+            raise ValueError(f"RoleSwarm {name}: user_id is required.")
         super().__init__(name=name, user_id=user_id, prompt_path=prompt_path or "prompts/common/default_system.j2", **kwargs)
         
         self.orchestrator = SwarmOrchestrator()

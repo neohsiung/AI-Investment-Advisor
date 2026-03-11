@@ -128,3 +128,67 @@ def saas_section_header(title, subtitle=None, icon=None):
     </div>
     <div style="margin-bottom: var(--saas-spacing-sm);"></div>
     """)
+
+def saas_markdown(content: str):
+    """
+    Render markdown with enhanced SaaS typography and spacing optimized for readability.
+    提升 SaaS 報告閱讀體驗的 Markdown 渲染。
+    """
+    safe_html(f"""
+    <div class="saas-markdown-container">
+        {st.markdown(content, unsafe_allow_html=False)}
+    </div>
+    <style>
+        .saas-markdown-container div[data-testid="stMarkdownContainer"] p {{
+            font-size: 1.05rem !important;
+            line-height: 1.7 !important;
+            color: var(--saas-text-main) !important;
+            margin-bottom: 1.2rem !important;
+        }}
+        .saas-markdown-container div[data-testid="stMarkdownContainer"] h1,
+        .saas-markdown-container div[data-testid="stMarkdownContainer"] h2,
+        .saas-markdown-container div[data-testid="stMarkdownContainer"] h3 {{
+            margin-top: 2rem !important;
+            margin-bottom: 1rem !important;
+            font-family: 'Outfit', sans-serif !important;
+        }}
+        .saas-markdown-container div[data-testid="stMarkdownContainer"] li {{
+            font-size: 1.05rem !important;
+            line-height: 1.6 !important;
+            margin-bottom: 0.5rem !important;
+        }}
+        .saas-markdown-container div[data-testid="stMarkdownContainer"] code {{
+            background-color: var(--saas-hover-bg) !important;
+            padding: 0.2rem 0.4rem !important;
+            border-radius: 4px !important;
+            font-size: 0.9em !important;
+        }}
+    </style>
+    """)
+
+def saas_report_block(title, content, icon=None, block_type="neutral"):
+    """
+    Render a structured report block (Smart Block) for key insights or metrics.
+    渲染一個結構化的報告區塊（智慧區塊），用於呈現核心洞察或指標。
+    """
+    styles = {
+        "success": ("var(--saas-success)", "var(--saas-success-bg)"),
+        "warning": ("var(--saas-warning)", "var(--saas-warning-bg)"),
+        "danger": ("var(--saas-danger)", "var(--saas-danger-bg)"),
+        "info": ("var(--saas-info)", "var(--saas-info-bg)"),
+        "neutral": ("var(--saas-primary)", "var(--saas-card-bg)")
+    }
+    color, bg = styles.get(block_type, styles["neutral"])
+    resolved_icon = _resolve_icon(icon) if icon else ""
+    
+    safe_html(f"""
+    <div style="background: {bg}; border-left: 4px solid {color}; padding: 1.25rem; border-radius: 8px; margin: 1.5rem 0; box-shadow: 0 2px 5px rgba(0,0,0,0.05);">
+        <div style="display: flex; align-items: center; margin-bottom: 0.75rem;">
+            <span style="margin-right: 0.75rem; color: {color}; font-size: 1.25rem;">{resolved_icon}</span>
+            <span style="font-family: 'Outfit', sans-serif; font-weight: 700; color: var(--saas-text-main); font-size: 1rem;">{title}</span>
+        </div>
+        <div style="font-size: 1rem; line-height: 1.6; color: var(--saas-text-main);">
+            {content}
+        </div>
+    </div>
+    """)

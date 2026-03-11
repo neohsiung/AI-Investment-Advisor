@@ -22,7 +22,7 @@ def mock_prompt_content():
 @pytest.fixture
 def mock_settings_repo():
     repo = MagicMock(spec=ISettingsRepository)
-    repo.get_global.return_value = []
+    repo.get_all.return_value = []
     repo.get_all.return_value = []
     return repo
 
@@ -34,8 +34,11 @@ def mock_state_repo():
 
 def test_base_agent_init_and_config(mock_settings_repo, mock_state_repo, mock_prompt_content, tmp_path):
     # Setup Mock Repo responses
-    mock_settings_repo.get_global.return_value = [("AI_PROVIDER", "TestProvider")]
-    mock_settings_repo.get_all.return_value = []
+    # Mocking rows for BaseAgent._load_config_from_db
+    class MockRow:
+        def __init__(self, k, v):
+            self._mapping = {'key': k, 'value': v}
+    mock_settings_repo.get_all.return_value = [MockRow("AI_PROVIDER", "TestProvider")]
 
     # Create a dummy prompt file
     prompt_file = tmp_path / "dummy_prompt.txt"
@@ -43,13 +46,14 @@ def test_base_agent_init_and_config(mock_settings_repo, mock_state_repo, mock_pr
         f.write(mock_prompt_content)
 
     agent = ConcreteAgent(name="TEST", prompt_path=str(prompt_file), use_cache=False, 
+                          user_id="test_user",
                           settings_repo=mock_settings_repo, state_repo=mock_state_repo)
 
     assert agent.name == "TEST"
     assert agent.system_prompt == mock_prompt_content
     # Check loaded config
     assert agent.config['provider'] == "TestProvider"
-    mock_settings_repo.get_global.assert_called_once()
+    mock_settings_repo.get_all.assert_called_with("test_user")
 
 def test_base_agent_render_prompt(mock_settings_repo, mock_state_repo, tmp_path):
     prompt_file = tmp_path / "dummy_prompt.txt"
@@ -57,6 +61,7 @@ def test_base_agent_render_prompt(mock_settings_repo, mock_state_repo, tmp_path)
         f.write("Hello {{ name }}")
     
     agent = ConcreteAgent(name="TEST", prompt_path=str(prompt_file), use_cache=False,
+                          user_id="test_user",
                           settings_repo=mock_settings_repo, state_repo=mock_state_repo)
     rendered = agent.render_system_prompt({"name": "World"})
     assert "Hello World" in rendered
@@ -64,7 +69,7 @@ def test_base_agent_render_prompt(mock_settings_repo, mock_state_repo, tmp_path)
 def test_momentum_agent_run(mock_settings_repo, mock_state_repo):
     # Use _load_prompt patch to avoid builtins.open
     with patch('src.agents.base_agent.BaseAgent._load_prompt', return_value="Momentum System Prompt"):
-        agent = MomentumAgent(use_cache=False, settings_repo=mock_settings_repo, state_repo=mock_state_repo)
+        agent = MomentumAgent(user_id="test_user", use_cache=False, settings_repo=mock_settings_repo, state_repo=mock_state_repo)
 
         # Mock _mock_llm_call
         with patch.object(agent, '_mock_llm_call', return_value="BUY AAPL"):
@@ -78,7 +83,7 @@ def test_momentum_agent_run(mock_settings_repo, mock_state_repo):
 
 def test_fundamental_agent_run(mock_settings_repo, mock_state_repo):
     with patch('src.agents.base_agent.BaseAgent._load_prompt', return_value="Fundamental System Prompt"):
-        agent = FundamentalAgent(use_cache=False, settings_repo=mock_settings_repo, state_repo=mock_state_repo)
+        agent = FundamentalAgent(user_id="test_user", use_cache=False, settings_repo=mock_settings_repo, state_repo=mock_state_repo)
 
         with patch.object(agent, '_mock_llm_call', return_value="Strong Fundamentals"):
             context = {"ticker": "AAPL", "financials": {"pe": 15}, "news": []}
@@ -87,7 +92,7 @@ def test_fundamental_agent_run(mock_settings_repo, mock_state_repo):
 
 def test_macro_agent_run(mock_settings_repo, mock_state_repo):
     with patch('src.agents.base_agent.BaseAgent._load_prompt', return_value="Macro System Prompt"):
-        agent = MacroAgent(use_cache=False, settings_repo=mock_settings_repo, state_repo=mock_state_repo)
+        agent = MacroAgent(user_id="test_user", use_cache=False, settings_repo=mock_settings_repo, state_repo=mock_state_repo)
         with patch.object(agent, '_mock_llm_call', return_value="Risk Off"):
             context = {"macro_data": {"GDP": 2.5}}
             result = agent.run(context)
@@ -98,7 +103,7 @@ def test_cio_agent_run(mock_settings_repo, mock_state_repo):
     mock_trans_repo = MagicMock()
     
     with patch('src.agents.base_agent.BaseAgent._load_prompt', return_value="CIO System Prompt"):
-        agent = CIOAgent(use_cache=False, transaction_repo=mock_trans_repo, 
+        agent = CIOAgent(user_id="test_user", use_cache=False, transaction_repo=mock_trans_repo, 
                          settings_repo=mock_settings_repo, state_repo=mock_state_repo)
         
         # Mock _get_portfolio_context

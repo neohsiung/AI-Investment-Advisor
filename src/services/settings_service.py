@@ -24,53 +24,21 @@ class SettingsService:
 
     def _get_effective_uid(self) -> str:
         """
-        Determine the effective human user ID for settings retrieval.
-        Stricly avoids internal 'system' users in single-user setups.
+        Determine the effective user ID.
         """
-        # Internal known system IDs to be redirected
-        system_ids = ('SYSTEM', 'system', 'None', '', None)
-        
-        target_uid = self.user_id
-        if target_uid not in system_ids:
-            return target_uid
-             
-        # Resolve to the actual human user
-        try:
-            from sqlalchemy import text
-            engine = self.settings_repo.engine
-            with engine.connect() as conn:
-                # Find the primary human user
-                query = text("""
-                    SELECT user_id FROM settings 
-                    WHERE user_id NOT IN ('SYSTEM', 'system') 
-                    GROUP BY user_id 
-                    ORDER BY COUNT(*) DESC 
-                    LIMIT 1
-                """)
-                result = conn.execute(query).fetchone()
-                if result:
-                    return result[0]
-        except Exception:
-            pass
-             
-        return target_uid or 'SYSTEM' # Last resort if DB is empty
+        if not self.user_id:
+            raise ValueError("SettingsService: No user_id provided or initialized.")
+        return self.user_id
 
     def get_all_settings(self) -> Dict[str, str]:
         """
         Retrieves all settings from the database for the current user.
-        為目前使用者從資料庫檢索所有設定。
         """
         settings = {}
         target_uid = self._get_effective_uid()
         
         try:
-            # 1. Fetch SYSTEM fallback first (if we aren't already targeting SYSTEM)
-            if target_uid != 'SYSTEM':
-                system_rows = self.settings_repo.get_all('SYSTEM')
-                for key, value in system_rows:
-                    settings[key] = self._parse_setting_value(value)
-            
-            # 2. Fetch effective user (which might be the discovery human user)
+            # v4.3.0: Strictly fetch only current user settings. No SYSTEM fallback.
             rows = self.settings_repo.get_all(target_uid)
             
             for key, value in rows:
@@ -81,43 +49,55 @@ class SettingsService:
         return settings
 
     def _parse_setting_value(self, value: Any) -> Any:
-        # v4.1.1: Auto-decode JSON strings if they look like JSON
+        """
+        Parses a setting value from its raw database representation.
+        """
+        if value is None:
+            return None
+            
         import json
         if isinstance(value, str):
+            # v4.3.1: Special handling for double-quoted string literals in DB
+            if value.startswith('"') and value.endswith('"') and len(value) >= 2:
+                try:
+                    loaded = json.loads(value)
+                    if isinstance(loaded, str):
+                         return self._parse_setting_value(loaded) # Recurse once
+                    return loaded
+                except (json.JSONDecodeError, TypeError):
+                    pass
+                    
             if value.startswith(('{', '[')):
                 try:
                     return json.loads(value)
-                except json.JSONDecodeError:
+                except (json.JSONDecodeError, TypeError):
                     return value
-            else:
-                return value
+            
+            # Handle standard literals
+            if value.lower() == 'true': return True
+            if value.lower() == 'false': return False
+            if value.lower() == 'none': return None
+            
         return value
 
-    def get_setting(self, key: str, default: Any = None) -> Any:
+    def get_setting(self, key: str, default: Any = None, user_id: str = None) -> Any:
         """
         Retrieves a single setting value by its key.
-        根據鍵值檢索單一設定值。
+        v4.3.3: Strict DB-only retrieval per user policy.
         """
-        target_uid = self._get_effective_uid()
+        target_uid = user_id or self._get_effective_uid()
         try:
-            val = self.settings_repo.get(target_uid, key, None)
-            if val is None and target_uid != 'SYSTEM':
-                val = self.settings_repo.get('SYSTEM', key, None)
-            
-            if val is None:
-                return default
-                
+            val = self.settings_repo.get(target_uid, key, default)
             return self._parse_setting_value(val)
         except Exception:
             return default
 
-    def save_setting(self, key: str, value: Any) -> Tuple[bool, str]:
+    def save_setting(self, key: str, value: Any, user_id: str = None) -> Tuple[bool, str]:
         """
         Saves or updates a single setting in the database.
-        在資料庫中儲存或更新單一設定。
         """
         try:
-            target_uid = self.user_id or 'SYSTEM'
+            target_uid = user_id or self._get_effective_uid()
             self.settings_repo.set(target_uid, key, value)
             return True, "Success"
         except Exception as e:
@@ -126,10 +106,9 @@ class SettingsService:
     def save_settings_bulk(self, settings_dict: Dict[str, Any]) -> Tuple[bool, str]:
         """
         Saves or updates multiple settings in a single transaction.
-        在單一事務中儲存或更新多個設定。
         """
         try:
-            target_uid = self.user_id or 'SYSTEM'
+            target_uid = self._get_effective_uid()
             for key, value in settings_dict.items():
                 self.settings_repo.set(target_uid, key, value)
             return True, "Settings saved successfully."
@@ -172,4 +151,13 @@ class SettingsService:
             return self.settings_repo.find_user_by_channel_id(channel_id)
         except Exception as e:
             print(f"Error in find_user_by_channel_id: {e}")
+            return None
+    def find_user_by_webhook_secret(self, secret: str) -> Optional[str]:
+        """
+        Find an internal user ID (email/UUID) based on a webhook secret / API key.
+        """
+        try:
+            return self.settings_repo.find_user_by_webhook_secret(secret)
+        except Exception as e:
+            print(f"Error in find_user_by_webhook_secret: {e}")
             return None

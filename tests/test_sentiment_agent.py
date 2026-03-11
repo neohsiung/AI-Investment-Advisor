@@ -13,7 +13,7 @@ class TestSentimentAgent:
     @pytest.fixture
     def agent(self):
         """Create SentimentAgent instance"""
-        return SentimentAgent(use_cache=False)
+        return SentimentAgent(user_id="test_user", use_cache=False)
     
     def test_initialization(self, agent):
         """Test agent initializes correctly"""

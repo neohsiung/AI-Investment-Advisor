@@ -90,7 +90,8 @@ class TestPromptRepository:
                 reason="Performance improvement",
                 old_prompt="Old prompt",
                 new_prompt="New prompt",
-                diff="+ New prompt\n- Old prompt"
+                diff="+ New prompt\n- Old prompt",
+                user_id="test_user"
             )
             
             mock_conn.execute.assert_called_once()
@@ -111,7 +112,8 @@ class TestPromptRepository:
                 reason="Fix 'quote' handling",
                 old_prompt="Prompt with \"quotes\"",
                 new_prompt="New prompt with 'quotes'",
-                diff="Complex\ndiff\nwith\nspecial $ chars"
+                diff="Complex\ndiff\nwith\nspecial $ chars",
+                user_id="test_user"
             )
             
             mock_conn.execute.assert_called_once()
@@ -132,7 +134,8 @@ class TestPromptRepository:
                 reason="Test",
                 old_prompt="Old",
                 new_prompt="New",
-                diff="Diff"
+                diff="Diff",
+                user_id="test_user"
             )
     
     def test_log_change_generates_unique_ids(self):
@@ -144,8 +147,8 @@ class TestPromptRepository:
             repo = AlchemyPromptRepository()
             
             # Log two changes
-            repo.log_change("Agent1", "Reason1", "Old1", "New1", "Diff1")
-            repo.log_change("Agent2", "Reason2", "Old2", "New2", "Diff2")
+            repo.log_change("TestAgent", "Optimization", "Old prompt", "New prompt", "Diff", "test_user")
+            repo.log_change("Agent2", "Reason2", "Old2", "New2", "Diff2", "user2")
             
             # Should have called execute twice
             assert mock_conn.execute.call_count == 2

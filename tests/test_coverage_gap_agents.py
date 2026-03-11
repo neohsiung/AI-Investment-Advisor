@@ -178,7 +178,7 @@ class TestAgentLLMProviderCoverage:
         mock_agent.run.side_effect = Exception("LLM Error")
         mock_factory.create_agent.return_value = mock_agent
 
-        provider = AgentLLMProvider()
+        provider = AgentLLMProvider(user_id="test@user.com")
         result = provider.summarize("Long text" * 200)
         
         assert result.endswith("...")
@@ -192,7 +192,7 @@ class TestAgentLLMProviderCoverage:
         mock_agent.run.return_value = 'Here is the list: ["Contradiction 1"]'
         mock_factory.create_agent.return_value = mock_agent
 
-        provider = AgentLLMProvider()
+        provider = AgentLLMProvider(user_id="test@user.com")
         result = provider.check_contradictions("New text", "Old context")
         
         assert result == ["Contradiction 1"]
@@ -205,7 +205,7 @@ class TestAgentLLMProviderCoverage:
         mock_agent.run.side_effect = Exception("Fail")
         mock_factory.create_agent.return_value = mock_agent
 
-        provider = AgentLLMProvider()
+        provider = AgentLLMProvider(user_id="test@user.com")
         result = provider.check_contradictions("N", "O")
         
         assert result == []

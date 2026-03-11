@@ -41,11 +41,12 @@ def _migrate_env_to_settings(settings_service, settings):
 def render_channel_tab(st, settings_service, user_id):
     """
     Renders the Interaction & Channel Management tab.
-    互動與通知管理：設定 LINE/Slack/Telegram 及其互動參數。
-    分為「個人通知」與「群組協作」兩大類。
     """
-    st.header("多渠道矩陣 (Multi-Channel Matrix)")
-    st.markdown("---")
+    # 🚨 DIAGNOSTIC LOG
+    print(f"DEBUG [ChannelTab]: render_channel_tab for user_id='{user_id}' at {time.strftime('%H:%M:%S')}")
+    
+    # v4.2.1: Removed redundant header to prevent UI stacking/jump perception
+    # The tab already has a label "Interaction & Channels"
 
     # Load All Settings
     settings = settings_service.get_all_settings()
@@ -148,19 +149,23 @@ def render_channel_tab(st, settings_service, user_id):
                     col1, col2 = st.columns([1, 3])
                     
                     with col1:
+                        # [NEW] Robust boolean helper
+                        def to_bool(v):
+                            if isinstance(v, bool): return v
+                            return str(v).lower() == "true"
+
                         # Toggle Enable/Disable
                         is_enabled = st.toggle(
                             "啟用此渠道", 
                             key=f"channel_{cid}_enabled", 
-                            value=settings.get(f"channel_{cid}_enabled", "false") == "true"
+                            value=to_bool(settings.get(f"channel_{cid}_enabled", False))
                         )
                         
                         # Save enabled state to DB if changed
-                        db_enabled = settings.get(f"channel_{cid}_enabled", "false") == "true"
+                        db_enabled = to_bool(settings.get(f"channel_{cid}_enabled", False))
                         if is_enabled != db_enabled:
-                            new_val = "true" if is_enabled else "false"
-                            settings_service.save_setting(f"channel_{cid}_enabled", new_val)
-                            settings[f"channel_{cid}_enabled"] = new_val
+                            settings_service.save_setting(f"channel_{cid}_enabled", is_enabled)
+                            settings[f"channel_{cid}_enabled"] = is_enabled
                     
                     with col2:
                         st.write(channel['desc'])

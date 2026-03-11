@@ -13,12 +13,17 @@ class AlphaVantageProvider(MarketDataProvider):
     Alpha Vantage Provider for financial data and indicators.
     Alpha Vantage 數據提供者，支援行情與技術指標。
     """
-    def __init__(self, user_id: str = "system", settings_service: SettingsService = None):
+    def __init__(self, api_key: str = None, user_id: str = None, settings_service: SettingsService = None):
+        """
+        Initialize the AlphaVantage provider.
+        初始化 AlphaVantage 提供者。
+        """
         self.logger = setup_logger("AlphaVantageProvider")
-        self.user_id = user_id
+        
+        # Resolve Settings
         self.settings_service = settings_service or SettingsService(user_id=user_id)
+        self.api_key = api_key or self._get_api_key()
         self.base_url = "https://www.alphavantage.co/query"
-        self.api_key = self._get_api_key()
 
     def _get_api_key(self) -> str:
         settings = self.settings_service.get_all_settings()

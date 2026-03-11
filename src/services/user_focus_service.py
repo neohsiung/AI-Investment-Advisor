@@ -4,6 +4,7 @@ from typing import List, Dict, Tuple, Any, Optional, Callable, Dict, List, Tuple
 from collections import Counter
 from src.services.etoro_service import EtoroService
 from src.services.market_data_service import MarketDataService
+from src.services.settings_service import SettingsService
 
 logger = logging.getLogger(__name__)
 
@@ -13,13 +14,16 @@ class UserFocusService:
     使用者焦點服務：從 eToro 觀察名單中提取使用者的投資焦點（板塊/產業）。
     """
     
-    def __init__(self, etoro_service: Optional[EtoroService] = None, market_data_service: Optional[MarketDataService] = None) -> None:
+    def __init__(self, user_id: str, etoro_service: Optional[EtoroService] = None, 
+                 market_data_service: Optional[MarketDataService] = None,
+                 settings_service: Optional[SettingsService] = None) -> None:
         """
         Initialize the UserFocusService with optional service overrides.
-        初始化 UserFocusService，可選用自定義服務覆蓋。
         """
-        self.etoro = etoro_service or EtoroService()
-        self.market_data = market_data_service or MarketDataService()
+        self.user_id = user_id
+        self.settings_service = settings_service or SettingsService(user_id=user_id)
+        self.etoro = etoro_service or EtoroService(user_id=user_id)
+        self.market_data = market_data_service or MarketDataService(settings_service=self.settings_service)
         
     def get_user_focus(self, top_n: int = 3) -> Dict[str, Any]:
         """

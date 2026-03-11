@@ -7,7 +7,7 @@ class ThematicAgent(BaseAgent):
     Agent responsible for dynamically updating thematic stock lists and 
     supply chain graphs based on market events using the SettingsService.
     """
-    def __init__(self, use_cache=True, tier="smart", user_id="system", **kwargs):
+    def __init__(self, user_id, use_cache=True, tier="smart", **kwargs):
         super().__init__(
             name="Thematic Optimization", 
             prompt_path="prompts/thematic_agent.txt", 

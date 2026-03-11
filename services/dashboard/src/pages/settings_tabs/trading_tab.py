@@ -11,12 +11,16 @@ def render_trading_tab(st, user_id: str):
     
     saas_card_start(title="Trading & Risk Hub", subtitle="配置主要券商與風險控制參數 (Configure Broker & Risk Limits)", icon="📊")
     
+    def to_bool(v):
+        if isinstance(v, bool): return v
+        return str(v).lower() == "true"
+
     # Fetch current settings
     current_broker = settings_repo.get(user_id, "preferred_broker") or "etoro"
     max_daily = settings_repo.get(user_id, "ai_max_daily_trades") or 10
     cb_loss = settings_repo.get(user_id, "cb_loss_streak") or 3
     sector_limit = settings_repo.get(user_id, "risk_max_sector_exposure") or 0.30
-    trading_enabled = settings_repo.get(user_id, "ai_trading_enabled") or "true"
+    trading_enabled = to_bool(settings_repo.get(user_id, "ai_trading_enabled") or True)
     risk_profile = settings_repo.get(user_id, "risk_profile") or "Balanced"
     target_cash = settings_repo.get(user_id, "target_cash_ratio") or 0.1
     
@@ -30,19 +34,19 @@ def render_trading_tab(st, user_id: str):
     st.write("#### ⚠️ 緊急開關 (Kill Switch)")
     col_status, col_btn = st.columns([2, 1])
     with col_status:
-        if trading_enabled.lower() != "true":
+        if not trading_enabled:
             st.error("🔴 AI Trading is DISABLED")
         else:
             st.success("🟢 AI Trading is ENABLED")
     
     with col_btn:
-        if trading_enabled.lower() != "true":
+        if not trading_enabled:
             if st.button("🟢 Re-enable", use_container_width=True):
-                settings_repo.set(user_id, "ai_trading_enabled", "true")
+                settings_repo.set(user_id, "ai_trading_enabled", True)
                 st.rerun()
         else:
             if st.button("🔴 Emergency Stop", use_container_width=True):
-                settings_repo.set(user_id, "ai_trading_enabled", "false")
+                settings_repo.set(user_id, "ai_trading_enabled", False)
                 st.rerun()
 
     st.divider()
@@ -55,7 +59,7 @@ def render_trading_tab(st, user_id: str):
             st.write("##### 券商帳號設定")
             # Etoro Config
             with st.expander("🔹 eToro Settings", expanded=True):
-                enable_etoro = st.checkbox("啟用 eToro (Enable eToro)", value=(settings_repo.get(user_id, "enable_etoro") == "true"))
+                enable_etoro = st.checkbox("啟用 eToro (Enable eToro)", value=to_bool(settings_repo.get(user_id, "enable_etoro")))
                 etoro_api_key = st.text_input("eToro API Key", value=settings_repo.get(user_id, "etoro_api_key") or "", type="password")
                 etoro_user_key = st.text_input("eToro User Key", value=settings_repo.get(user_id, "etoro_user_key") or "", type="password")
                 etoro_demo = st.checkbox("Demo Mode", value=(settings_repo.get(user_id, "etoro_mode") == "demo"))
@@ -63,7 +67,7 @@ def render_trading_tab(st, user_id: str):
 
             # IBKR Config
             with st.expander("🔹 Interactive Brokers Settings", expanded=False):
-                enable_ibkr = st.checkbox("啟用 IBKR (Enable IBKR)", value=(settings_repo.get(user_id, "enable_ibkr") == "true"))
+                enable_ibkr = st.checkbox("啟用 IBKR (Enable IBKR)", value=to_bool(settings_repo.get(user_id, "enable_ibkr")))
                 ibkr_host = st.text_input("IBKR Host", value=settings_repo.get(user_id, "ibkr_host") or "127.0.0.1")
                 ibkr_port = st.number_input("IBKR Port", value=int(settings_repo.get(user_id, "ibkr_port") or 7497))
 
@@ -146,7 +150,7 @@ def render_trading_tab(st, user_id: str):
             with col_rp2:
                 # Dynamic indicator from FRED if available
                 from src.services.fred_service import FredService
-                fred = FredService()
+                fred = FredService(user_id=user_id)
                 macro = fred.get_macro_indicators()
                 cpi = macro.get("CPI", {}).get("value", "N/A")
                 st.metric("當前通膨引導 (CPI)", f"{cpi}", delta="FRED Data", delta_color="off")

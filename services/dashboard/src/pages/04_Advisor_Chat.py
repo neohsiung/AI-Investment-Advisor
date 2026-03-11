@@ -5,7 +5,7 @@ from src.agents.factory import AgentFactory
 from src.services.market_data_service import MarketDataService
 from src.utils.logger import setup_logger
 from src.utils.page_base import BasePage
-from src.utils.components import saas_alert
+from src.utils.components import saas_alert, saas_markdown
 
 logger = setup_logger("Page_Chat")
 
@@ -31,7 +31,10 @@ class AdvisorChatPage(BasePage):
         # Display chat history
         for message in st.session_state.messages:
             with st.chat_message(message["role"]):
-                st.markdown(message["content"])
+                if message["role"] == "assistant":
+                    saas_markdown(message["content"])
+                else:
+                    st.markdown(message["content"])
 
         # Chat input
         prompt = st.chat_input("請問關於投資的問題 (例如: AAPL 現在可以買嗎? / 分析 TSLA 基本面)", key=f"chat_input_{st.session_state.chat_input_key}")
@@ -50,7 +53,6 @@ class AdvisorChatPage(BasePage):
                 with st.status("正在調用 AI Agent...", expanded=True) as status:
                     try:
                         factory = AgentFactory()
-                        market_data_service = MarketDataService()
 
                         # Check for ticker
                         ticker_match = re.search(r'\\b([A-Z]{1,5})\\b', prompt)
@@ -88,7 +90,8 @@ class AdvisorChatPage(BasePage):
                         full_response = cio_agent.call_llm(messages=messages, temperature=0.7)
                         
                         status.update(label="分析完成!", state="complete", expanded=False)
-                        message_placeholder.markdown(full_response)
+                        with message_placeholder.container():
+                            saas_markdown(full_response)
 
                     except Exception as e:
                         logger.error(f"Chat error: {e}")

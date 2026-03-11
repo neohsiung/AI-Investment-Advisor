@@ -6,6 +6,8 @@
 
 | Date | Version | Description | Author |
 | :--- | :--- | :--- | :--- |
+| 2026-03-11 | v4.8 | **B2C SaaS Evolution**: `WebhookService` 支援 API Key 動態路由；`SchedulerService` 強化使用者隔離實例化。 | Antigravity |
+| 2026-03-08 | v4.7 | **Performance Resilience**: `PerformanceService` 支援字典格式行情資料與 `account_id` 多帳號隔離。 | Antigravity |
 | 2026-03-08 | v4.6 | **Security Hardening**: `WebhookService` upgraded to SHA256; `BaseAgent` state redaction implemented. | Antigravity |
 | 2026-03-07 | v4.5 | **Async Interaction Loop**: `InteractionService` 支援雙向委派至 `VerificationService`，實現全通路 "OK" 應答驗證。 | Antigravity |
 | 2026-03-05 | v4.4 | **Keyword Discovery Service**: 新增 `RiskKeywordService` 3源探索、DI 注入、MAX_KEYWORDS 動態上限。Repository 新增 3 方法。 | Antigravity |
@@ -110,7 +112,7 @@ graph TD
 - `get_performance_history(account_id)` — 取得歷史績效趨勢 (DataFrame)。
 - `get_latest_performance(account_id)` — 取得最新快照數據。
 | `DashboardService` | `dashboard_service.py` | Dashboard 數據聚合與即時指標。 |
-| `PerformanceService` | `performance_service.py` | 歷史績效追蹤與趨勢分析。 |
+| `PerformanceService` | `performance_service.py` | 歷史績效追蹤與趨勢分析。具備資料格式彈性，自動將 `MarketDataService` 的字典格式與 `DataFrame` 進行轉型與欄位校準 (`close` -> `Close`)；支援多帳號隔離。 |
 | `SettingsService` | `settings_service.py` | 系統設定 CRUD (Unified DB backed)。 |
 | `ThemeService` | `theme_service.py` | 統一主題系統 (22 Design Tokens)，支援 OS 自動偵測與 WCAG AA Dark Mode。 |
 | `BacktestService` | `backtest_service.py` | 策略回測引擎。 |
@@ -120,11 +122,11 @@ graph TD
 | 服務 | 檔案 | 核心職責 |
 | :--- | :--- | :--- |
 | `InteractionService` | `interaction_service.py` | **[Async v4.5]** 雙向互動 (Approvals) — 支援 LINE/Telegram Webhook 路由；具備**未匹配訊息委派**機制 (委派至 VerificationService)。 |
-| `SchedulerService` | `scheduler_service.py` | Cron 排程 — 自動日報/週報生成。 |
+| `SchedulerService` | `scheduler_service.py` | **[Isolated v4.8]** Cron 排程器 — 強制 `user_id` 實例化，每個實例僅處理單一使用者排程，符合 B2C SaaS 橫向擴展標準。 |
 | `NotificationService` | `notification_service.py` | **[Async v4.1]** 非同步警報推送，具備 UUID 多通路映射能力。 |
 | `NotificationFilters` | `notification_filters.py` | 興趣導向通知過濾 — 依據使用者每通道訂閱的類別 (sentinel/report/approval) 決定是否推送。 |
 | `ReportingService` | `reporting_service.py` | Agent Markdown 報告轉換為專業機構級 HTML 格式 (Email/Web)。 |
-| `WebhookService` | `webhook_service.py` | **[Secured v4.6]** 外部 Webhook 接收與解析。使用 SHA256 ID 生成；對接 `SettingsService` 獲取 Secrets；禁用敏感日誌。 |
+| `WebhookService` | `webhook_service.py` | **[Dynamic Routing v4.8]** 外部 Webhook 接收與動態路由。從 `X-API-Key` 映射 `user_id` 並動態啟動對應使用者的 `SentinelService` 上下文。 |
 | `UserFocusService` | `user_focus_service.py` | 使用者投資焦點提取 — 從 eToro 觀察名單分析板塊/產業偏好。 |
 
 ### 3. 代理人執行引擎 (Agent Execution Engine)

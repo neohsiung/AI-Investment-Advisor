@@ -29,7 +29,7 @@ def mock_deps():
 
 def test_start_session_map_reduce(mock_deps):
     async def run_test():
-        service = CouncilService()
+        service = CouncilService(user_id="test_user")
         
         # Mock output of Agents
         mock_deps['factory'].create_cio_agent.return_value.run.return_value = "Final Consensus Report"
@@ -48,6 +48,7 @@ def test_start_session_map_reduce(mock_deps):
         result = await service.start_session(
             topic="Portfolio Review",
             context_data=context,
+            user_id="test_user",
             scope="portfolio"
         )
         
@@ -71,7 +72,7 @@ def test_start_session_map_reduce(mock_deps):
 
 def test_start_session_standard(mock_deps):
     async def run_test():
-        service = CouncilService()
+        service = CouncilService(user_id="test_user")
         
         # Mock run_in_executor to execute the sync function immediately
         # We need to patch the loop in CouncilService
@@ -89,6 +90,7 @@ def test_start_session_standard(mock_deps):
             result = await service.start_session(
                 topic="Single Stock",
                 context_data=context,
+                user_id="test_user",
                 scope="single"
             )
             
@@ -110,7 +112,7 @@ def test_start_session_standard(mock_deps):
 
 def test_run_sync_logic_directly(mock_deps):
     """Test the synchronous logic underlying standard session."""
-    service = CouncilService()
+    service = CouncilService(user_id="test_user")
     
     # Mock Agents
     mock_agent = MagicMock()
@@ -129,7 +131,7 @@ def test_run_sync_logic_directly(mock_deps):
     mock_deps['router'].return_value.select_tier.return_value = "fast"
     
     context = {"market_data": {}}
-    result = service._run_sync_logic("sess_id", "Topic", context)
+    result = service._run_sync_logic("sess_id", "Topic", context, user_id="test_user")
     
     assert result["consensus"] == "Consensus"
     assert len(result["transcript"]) == 5 # 5 agents

@@ -39,14 +39,12 @@ def test_config_priority_db_over_env(mock_settings_repo):
             MockRow("AI_MODEL", "DBModel")
         ]
         
-        mock_settings_repo.get_global.return_value = mock_rows
-        mock_settings_repo.get_all.return_value = [] # No user specific overrides for now
-
-        mock_settings_repo.get_all.return_value = [] # No user specific overrides for now
+        mock_settings_repo.get_all.return_value = mock_rows
 
         # Initialize Agent
         with patch.object(BaseAgent, '_load_prompt', return_value="System Prompt"):
-             agent = ConcreteAgent(name="TestAgent", prompt_path="tests/fixtures/fake_prompt.txt", settings_repo=mock_settings_repo)
+             agent = ConcreteAgent(name="TestAgent", prompt_path="tests/fixtures/fake_prompt.txt", 
+                                   user_id="test_user", settings_repo=mock_settings_repo)
         
         # Verify Config
         
@@ -60,7 +58,6 @@ def test_config_fallback_to_env(mock_settings_repo):
     Test that if DB is empty, it falls back to Environment variables.
     """
     with patch.dict(os.environ, {"AI_PROVIDER": "EnvProvider", "API_KEY": "EnvKey"}):
-        mock_settings_repo.get_global.return_value = []
         mock_settings_repo.get_all.return_value = []
         
         # Create a dummy prompt file if needed or mock _load_prompt
@@ -78,10 +75,9 @@ def test_user_specific_override(mock_settings_repo):
         def __init__(self, k, v):
             self._mapping = {'key': k, 'value': v}
 
-    global_rows = [MockRow("AI_PROVIDER", "GlobalProvider")]
+    # In modern architecture, BaseAgent only calls get_all(user_id)
+    # Priority is Env < DB. 
     user_rows = [MockRow("AI_PROVIDER", "UserProvider")]
-    
-    mock_settings_repo.get_global.return_value = global_rows
     mock_settings_repo.get_all.return_value = user_rows
     
     with patch.object(BaseAgent, '_load_prompt', return_value="System Prompt"):

@@ -1,7 +1,7 @@
 import typing
 from typing import List, Dict, Tuple, Any, Optional, Callable, Dict, List, Tuple, Any, Optional, Callable
 from src.utils.logger import setup_logger
-from src.repositories.settings_repository import AlchemySettingsRepository as SettingsService
+from src.services.settings_service import SettingsService
 
 logger = setup_logger("SupplyChainService")
 
@@ -10,8 +10,9 @@ class SupplyChainService:
     Tracks specific hardware bottlenecks (CoWoS, HBM) and maps MAG7 CaPex
     to component suppliers to estimate shortage premiums.
     """
-    def __init__(self, settings_service: SettingsService = None):
-        self.settings_service = settings_service or SettingsService()
+    def __init__(self, user_id: str = None, settings_service: Any = None):
+        self.user_id = user_id
+        self.settings_service = settings_service or SettingsService(user_id=self.user_id)
         self.knowledge_graph = self._load_dynamic_graph()
 
     def _load_dynamic_graph(self) -> Dict[str, Any]:

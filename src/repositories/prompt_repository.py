@@ -12,7 +12,7 @@ class IPromptRepository(ABC):
     提示詞儲存庫介面。
     """
     @abstractmethod
-    def log_change(self, agent_name: str, reason: str, old_prompt: str, new_prompt: str, diff: str, user_id: str = "system") -> None:
+    def log_change(self, agent_name: str, reason: str, old_prompt: str, new_prompt: str, diff: str, user_id: str) -> None:
         """
         Log a change to an agent's prompt.
         記錄代理人提示詞的變更。
@@ -39,7 +39,7 @@ class AlchemyPromptRepository(BaseRepository, IPromptRepository):
         """
         BaseRepository.__init__(self, engine or get_db_engine())
 
-    def log_change(self, agent_name: str, reason: str, old_prompt: str, new_prompt: str, diff: str, user_id: str = "system") -> None:
+    def log_change(self, agent_name: str, reason: str, old_prompt: str, new_prompt: str, diff: str, user_id: str) -> None:
         """
         Log a change to an agent's prompt.
         記錄代理人提示詞的變更。
