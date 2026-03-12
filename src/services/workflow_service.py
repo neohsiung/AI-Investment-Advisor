@@ -908,12 +908,13 @@ class WeeklyWorkflow(BaseWorkflow):
             return AgentFactory.create_cio_agent(user_id=user_id, mode="sector_analysis", tier=tier) 
         elif "deep-dive" in name_lower or "supply chain" in name_lower:
             return AgentFactory.create_fundamental_agent(user_id=user_id, tier=tier)
-             # Use Map-Reduce Council for deep portfolio analysis
-             return CouncilAgentAdapter(user_id=user_id, scope="portfolio", topic=f"Weekly Portfolio Review ({name_lower})")
+        elif "portfolio analysis" in name_lower:
+            # Use Map-Reduce Council for deep portfolio analysis
+            return CouncilAgentAdapter(user_id=user_id, scope="portfolio", topic=f"Weekly Portfolio Review ({name_lower})")
         elif "recommendation" in name_lower or "balancing" in name_lower or "alpha" in name_lower:
-             return AgentFactory.create_cio_agent(user_id=user_id, mode="weekly", tier=tier)
+            return AgentFactory.create_cio_agent(user_id=user_id, mode="weekly", tier=tier)
         elif "synthesis" in name_lower:
-             return AgentFactory.create_cio_agent(user_id=user_id, mode="synthesis", tier=tier)
+            return AgentFactory.create_cio_agent(user_id=user_id, mode="synthesis", tier=tier)
 
     def _bridge_input_context(self, task, context):
         """

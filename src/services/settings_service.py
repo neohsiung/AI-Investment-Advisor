@@ -174,3 +174,24 @@ class SettingsService:
         except Exception as e:
             print(f"Error in find_user_by_webhook_secret: {e}")
             return None
+
+    def seed_sentinel_defaults(self, user_id: str = None) -> None:
+        """
+        Seed default priority handling times for the Sentinel system.
+        """
+        target_uid = user_id or self.user_id
+        if not target_uid:
+            return
+            
+        defaults = {
+            "sentinel_p1_limit_mins": 15,
+            "sentinel_p2_limit_mins": 60,
+            "sentinel_p3_limit_mins": 240,
+            "sentinel_p4_limit_mins": 720,
+            "sentinel_p5_limit_mins": 1440
+        }
+        
+        for key, val in defaults.items():
+            self.save_setting(key, val, user_id=target_uid)
+        
+        print(f"SettingsService: Seeded sentinel priority defaults for user {target_uid}")

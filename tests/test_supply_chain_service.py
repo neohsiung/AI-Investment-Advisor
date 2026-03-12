@@ -1,9 +1,14 @@
 import pytest
+from unittest.mock import MagicMock
 from src.services.supply_chain_service import SupplyChainService
 
 @pytest.fixture
 def service():
-    return SupplyChainService()
+    mock_settings = MagicMock()
+    mock_settings.user_id = "test_user"
+    mock_settings.get_setting.return_value = None  # triggers default knowledge graph
+    mock_settings.save_setting.return_value = (True, "ok")
+    return SupplyChainService(settings_service=mock_settings)
 
 def test_supply_chain_service_init(service):
     assert "NVDA" in service.knowledge_graph

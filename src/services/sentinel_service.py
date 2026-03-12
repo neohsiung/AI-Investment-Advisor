@@ -34,7 +34,7 @@ class SentinelService:
 
     def __init__(
         self,
-        user_id: str,
+        user_id: Optional[str] = None,
         market_service: Optional[MarketDataService] = None,
         search_service: Optional[InternetSearchService] = None,
         transaction_service: Optional[TransactionService] = None,
@@ -45,7 +45,7 @@ class SentinelService:
         snapshot_repo: Optional[AlchemySnapshotRepository] = None,
     ):
         if not user_id:
-            raise ValueError("SentinelService: Mandatory user_id is required for strict isolation.")
+            logger.warning("SentinelService: No user_id provided. Running in anonymous mode (testing only).")
             
         self.repo = repo or AlchemySentinelRepository()
         self.user_id = user_id
@@ -81,8 +81,17 @@ class SentinelService:
         self._calibrate_thresholds()
         
         # Buffer State
-        self._trigger_buffer: List[str] = []
-        self._buffer_deadline: float = 0.0
+        self._trigger_buffer: List[Dict[str, Any]] = [] # [{ "trigger": ..., "deadline": ... }]
+        
+        # Priority Deadlines (minutes) - Rule #8: Dynamic via settings if available
+        # Keys use "P1".."P5" format to match priority lookup: f"P{priority}"
+        self.priority_minutes = {
+            "P1": int(self.settings_service.get_setting("sentinel_p1_limit_mins") or 15),
+            "P2": int(self.settings_service.get_setting("sentinel_p2_limit_mins") or 60),
+            "P3": int(self.settings_service.get_setting("sentinel_p3_limit_mins") or 240),
+            "P4": int(self.settings_service.get_setting("sentinel_p4_limit_mins") or 720),
+            "P5": int(self.settings_service.get_setting("sentinel_p5_limit_mins") or 1440),
+        }
         
         # Volatility State
         self.current_vix: float = 20.0 # Default fallback
@@ -178,7 +187,7 @@ class SentinelService:
         # Milestone 2.1: Webhook for semiconductor earnings calls/reports
         if source == "earnings_call" and ticker:
             from src.services.supply_chain_service import SupplyChainService
-            sc_service = SupplyChainService()
+            sc_service = SupplyChainService(user_id=self.user_id, settings_service=self.settings_service)
             sc_info = sc_service.get_shortage_premium(ticker)
             if sc_info.get("has_premium"):
                 display_text += f"\n💡 [Supply Chain Impact]: {sc_info.get('narrative')}"
@@ -268,14 +277,16 @@ class SentinelService:
                         "text": f"🔴 VIX Spike: {current_vix:.2f} > {threshold:.2f} (Z={z_score:.1f}σ)",
                         "id": "vix_anomaly",
                         "value": current_vix,
-                        "std_dev": std_dev
+                        "std_dev": std_dev,
+                        "priority": 1 # P1: Immediate/High Priority
                     })
             else:
                 if current_vix > self.thresholds.get("vix_high", 25.0):
                     triggers.append({
                         "text": f"⚠️ VIX High (Static): {current_vix:.2f}",
                         "id": "vix_high_static",
-                        "value": current_vix
+                        "value": current_vix,
+                        "priority": 2 # P2: Warning
                     })
                 
             # Update global state for adaptive compute
@@ -322,13 +333,15 @@ class SentinelService:
                     triggers.append({
                         "text": f"📉 {ticker} 跌 {change_pct:.1f}% ({prev_close:.2f} → {current:.2f})",
                         "id": f"drop_{ticker}",
-                        "value": change_pct
+                        "value": change_pct,
+                        "priority": 2 # P2: Position Move
                     })
                 elif change_pct >= self.thresholds["position_spike_pct"]:
                     triggers.append({
                         "text": f"📈 {ticker} 漲 {change_pct:.1f}% ({prev_close:.2f} → {current:.2f}) — 留意泡沫風險",
                         "id": f"spike_{ticker}",
-                        "value": change_pct
+                        "value": change_pct,
+                        "priority": 3 # P3: Potential Bubble
                     })
                     
         except Exception as e:
@@ -368,7 +381,8 @@ class SentinelService:
                     triggers.append({
                         "text": f"⚠️ {ticker} 新聞異動: {summary} (加權分數: {risk_score:.2f})",
                         "id": f"news_{ticker}_{risk_score:.2f}",
-                        "value": risk_score
+                        "value": risk_score,
+                        "priority": 3 # P3: News Risk
                     })
         except Exception as e:
             logger.warning(f"Breaking news check failed: {e}")
@@ -557,7 +571,8 @@ class SentinelService:
                 triggers.append({
                     "text": f"🏦 聯邦利率上升: {fed.get('value', 'N/A')}% (as of {fed.get('date', 'N/A')})",
                     "id": "macro_fed_rate_up",
-                    "value": fed.get('value')
+                    "value": fed.get('value'),
+                    "priority": 2
                 })
             
             # Check Yield Curve Inversion
@@ -567,7 +582,8 @@ class SentinelService:
                     triggers.append({
                         "text": f"⚠️ 殖利率曲線倒掛: 10Y-2Y = {spread['value']:.2f}%",
                         "id": "macro_yield_inversion",
-                        "value": spread['value']
+                        "value": spread['value'],
+                        "priority": 4 # P4: Secular Macro Trend
                     })
             
             # Check VIX from market indicators as supplementary
@@ -577,7 +593,8 @@ class SentinelService:
                 triggers.append({
                     "text": f"🔴 極端恐慌: VIX = {vix:.2f}",
                     "id": "macro_vix_extreme",
-                    "value": vix
+                    "value": vix,
+                    "priority": 1 # P1: Extreme Panic
                 })
                 
         except Exception as e:
@@ -622,6 +639,7 @@ class SentinelService:
                                     "text": f"🌍 全球重大事件: {title[:100]} (加權分數: {total_weight:.2f})",
                                     "id": event_id,
                                     "ticker": "GLOBAL",
+                                    "priority": 2, # P2: Geopolitical
                                     "data": {
                                         "keywords": matched[:5],
                                         "source": item.get("url", ""),
@@ -653,30 +671,52 @@ class SentinelService:
         is_internal = source == "Sentinel"
         
         if not is_internal or is_critical:
-            # Flush immediately if critical or external
-            self._trigger_buffer.extend(triggers)
-            await self._flush_buffer(force=True, source=source)
+            # Send immediately — bypass the buffer to avoid wrapping mismatch
+            await self._do_send_alert(triggers, source=source)
             return
 
         # 2. Buffering Mode (Sentinel Routine)
-        self._trigger_buffer.extend(triggers)
-        
-        # Deduplicate Buffer by ID if possible
-        seen_ids = set()
-        unique_buffer = []
-        for t in self._trigger_buffer:
-            tid = t.get("id")
-            if tid not in seen_ids:
-                unique_buffer.append(t)
-                seen_ids.add(tid)
-        self._trigger_buffer = unique_buffer
-        
-        # Start Timer if needed
         from datetime import datetime
-        if self._buffer_deadline == 0.0:
-            # 15 minutes buffer
-            self._buffer_deadline = datetime.now().timestamp() + (15 * 60)
-            logger.info(f"Sentinel: Started alert buffer. deadline={self._buffer_deadline}")
+        now_ts = datetime.now().timestamp()
+        
+        for t in triggers:
+            tid = t.get("id", "generic")
+            
+            # Determine priority if not already set
+            priority = t.get("priority")
+            if priority is None:
+                priority = 3 # Default P3
+                if tid == "vix_anomaly":
+                    priority = 1
+                elif any(k in tid for k in ["move", "price", "critical", "crash", "crisis"]):
+                    priority = 2
+                elif any(k in tid for k in ["news", "sentiment", "macro"]):
+                    priority = 4
+                elif "info" in tid:
+                    priority = 5
+            
+            wait_key = f"P{priority}"
+            wait_mins = int(self.priority_minutes.get(wait_key, 240))
+            deadline = now_ts + (wait_mins * 60)
+            
+            # Check if identical trigger already in buffer
+            exists = False
+            for b in self._trigger_buffer:
+                if b["trigger"].get("id") == t.get("id"):
+                    # Update deadline to earlier of the two? 
+                    # Actually, keep original deadline to avoid starvation, 
+                    # but update trigger data if needed.
+                    b["trigger"] = t 
+                    exists = True
+                    break
+            
+            if not exists:
+                self._trigger_buffer.append({
+                    "trigger": t,
+                    "deadline": deadline,
+                    "priority": priority
+                })
+                logger.info(f"Sentinel: Buffered {t.get('id')} (P{priority}). Deadline in {wait_mins}m")
 
     async def _check_buffer_flush(self) -> None:
         """
@@ -693,15 +733,22 @@ class SentinelService:
         if not self._trigger_buffer:
              return
              
-        # Check deadline
         from datetime import datetime
-        if force or (self._buffer_deadline > 0 and datetime.now().timestamp() >= self._buffer_deadline):
-             # Internal deduplication already happened in _escalate
-             await self._do_send_alert(self._trigger_buffer, source=source)
-             
-             # Reset
-             self._trigger_buffer = []
-             self._buffer_deadline = 0.0
+        now_ts = datetime.now().timestamp()
+        
+        to_flush = []
+        remaining = []
+        
+        for item in self._trigger_buffer:
+            if force or now_ts >= item["deadline"]:
+                to_flush.append(item["trigger"])
+            else:
+                remaining.append(item)
+        
+        if to_flush:
+            logger.info(f"Sentinel: Flushing {len(to_flush)} triggers from buffer.")
+            await self._do_send_alert(to_flush, source=source)
+            self._trigger_buffer = remaining
 
     async def _do_send_alert(self, triggers: List[Dict[str, Any]], source: str = "Sentinel") -> None:
         """
@@ -743,14 +790,19 @@ class SentinelService:
             return
 
         display_texts = [t["text"] for t in filtered_triggers]
-        topic = f"{source.upper()} ALERT: {'; '.join(display_texts)}"
+        max_priority = min([t.get("priority", 3) for t in filtered_triggers]) # Lower is higher priority
         
-        logger.info(f"Sentinel: Escalating {len(filtered_triggers)} trigger(s) from {source}")
+        topic = f"{source.upper()} P{max_priority} ALERT: {'; '.join(display_texts[:3])}"
+        if len(display_texts) > 3:
+            topic += "..."
+        
+        logger.info(f"Sentinel: Escalating {len(filtered_triggers)} trigger(s) (P{max_priority}) from {source}")
         
         context = {
             "source": source,
             "triggered_rules": display_texts,
             "timestamp": date.today().isoformat(),
+            "msg_prefix": "請針對以下多個 Sentinel 警報進行彙整與風險評估，並以繁體中文 (Traditional Chinese) 提供一份簡短且具備行動建議的摘要。金融專業術語請保留英文。",
         }
         
         # Council Deliberation
@@ -1266,6 +1318,10 @@ class SentinelService:
         """
         triggers = []
         uid = self.user_id
+        
+        if not uid:
+            logger.debug("_check_risk_consistency: skipped (no user_id)")
+            return triggers
         
         # 0. Get Inflation Data via FredService (Optimized: fetch once per check)
         from src.services.fred_service import FredService

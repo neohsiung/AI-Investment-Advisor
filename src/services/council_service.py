@@ -142,7 +142,7 @@ class CouncilService:
         """
         # Run in thread to avoid blocking event loop
         loop = asyncio.get_running_loop()
-        return await loop.run_in_executor(None, self._run_sync_logic, session_id, topic, context_data, market_volatility, user_id)
+        return await loop.run_in_executor(None, self._run_sync_logic, session_id, topic, context_data, user_id, market_volatility)
 
     def _run_sync_logic(self, session_id: str, topic: str, context_data: Dict[str, Any], user_id: str, market_volatility: float = 0.0) -> Dict[str, Any]:
         """
