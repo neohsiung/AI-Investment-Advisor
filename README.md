@@ -1,5 +1,5 @@
+| 2026-03-14 | v5.6.0 | **Weekly Report Optimization & Progressive Debate** - 優化 WeeklyWorkflow，注入即時宏觀指標並實作多層次深度辯論 (Progressive Synthesis) 演算法。 | Antigravity |
 | 2026-03-14 | v5.5.0 | **Action Extraction Refinement & Bilingual Standardization** - 優化 ActionExtractor 提取邏輯與強韌性，並完成核心 Wiki 頁面之雙語標準化。 | Antigravity |
-| 2026-03-14 | v5.4.0 | **Universal Prioritization (UP)** - 所有事件強制通過 Sentinel Agent 判定。引入 **[CONVINCING_ACTION]** 結構化 JSON 與信心分數標準決策流程。 | Antigravity |
 | 2026-03-12 | v2.0.0 | **Sentinel Multi-Tier Buffering & CI Resilience**: Standardized `user_id` context for service initialization and resolved high-priority test regressions. | Antigravity |
 | 2026-03-08 | v1.9.0 | **Multi-Account isolation & Performance Resilience**: Implemented account-level data isolation across DB and Repository layers. Hardened `PerformanceService` to handle dynamic market data formats and column mappings. | Antigravity |
 | 2026-03-08 | v1.8.0 | **Data Source Standardization & FinancialData.Net**: Categorized FinancialData.Net as P1, established standardized key naming convention (`source_{id}_{field}`), and synchronized system-wide architecture blueprints. | Antigravity |

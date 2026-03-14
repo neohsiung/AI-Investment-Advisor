@@ -171,17 +171,18 @@ class BaseWorkflow(ABC):
         """
         import re
         
-        # 定義替換模式：尋找 ## 2. (Debate) 與 ## 3. (Synthesis) 之間的內容 (包含標題本身)
-        # Define replacement pattern: Find content starting from ## 2 up to ## 3
-        # Assuming the generated detailed content INCLUDES the header "## 2. ..."
-        pattern = r"(## 2\..*?)(?=## 3\.)"
+        # 定義替換模式：尋找 ## 3. (Debate) 與下一個 ## 標題之間的內容 (包含標題本身)
+        # Define replacement pattern: Find content starting from ## 3 up to ## 4 or EOF
+        # Assuming the generated detailed content INCLUDES the header "## 3. ..."
+        pattern = r"(## 3\..*?)(?=## \d\.|$)"
         
         # 若無詳細內容，提供預設訊息
         if not detailed_debate_content:
-             detailed_debate_content = "## 2. 議會焦點辯論 (The Great Debate)\n(No detailed transcript available / 暫無詳細辯論紀錄)"
+             detailed_debate_content = "## 3. 議會深度審議 (Council Deep Dive)\n(No detailed transcript available / 暫無詳細辯論紀錄)"
 
         # 執行替換
         # Execute Replacement
+        import re
         modified_report = re.sub(pattern, detailed_debate_content, cio_full_output, flags=re.DOTALL)
         
         final_report = modified_report
@@ -189,7 +190,7 @@ class BaseWorkflow(ABC):
         # 若替換未發生 (例如找不到標題)，則將詳細內容附加於後，並發出警告
         # If replacement failed (headers not found), append logic and warn
         if modified_report == cio_full_output:
-             self.logger.warning("Report Injection Failed: Header '## 2...' or '## 3...' not found. Appending transcript.")
+             self.logger.warning("Report Injection Failed: Header '## 3...' not found. Appending transcript.")
              # 嘗試簡單附加確保資訊不丟失
              final_report = f"{cio_full_output}\n\n{detailed_debate_content}"
         
@@ -829,6 +830,13 @@ class WeeklyWorkflow(BaseWorkflow):
             # 'execution_context' starts with global context (market data, etc)
             execution_context = {**self.context, **context_data, "portfolio": rich_portfolio} 
             
+            # Fetch real-time macro data
+            macro_data = self.market_service.get_macro_data()
+            vix = macro_data.get('market_indicators', {}).get('^VIX', macro_data.get('^VIX', 'N/A'))
+            spy = macro_data.get('market_indicators', {}).get('SPY', macro_data.get('SPY', 'N/A'))
+            spread = macro_data.get('economics', {}).get('10Y2Y_Spread', {}).get('value', 'N/A')
+            execution_context["macro_data_summary"] = f"- VIX: {vix}\n- SPY: {spy}\n- 10Y-2Y Spread: {spread}"
+            
             for task in plan.tasks:
                 logger.info(f"--- Executing Task: {task.name} ---")
                 
@@ -859,16 +867,27 @@ class WeeklyWorkflow(BaseWorkflow):
                     # Found the Council Output
                     portfolio_details = res_val["transcript"]
             
-            # B. Synthesis (CIO) - Focus on Strategy
-            # We explicitly ask CIO to synthesize the Strategy, not the Portfolio Details
+            # B. Progressive Debate & Synthesis (CIO)
+            # Instead of a single pass, we have CIO review the map-reduce output and explicitly summarize the debate
             synthesis_agent = self._select_agent_for_task("Report Synthesis", user_id)
             
-            # Construct Synthesis Context (Excluding giant transcript to avoid token waste/compression)
-            syn_context = {**execution_context}
-            # Remove the giant transcript from context passed to CIO to force it to focus on Strategy
-            # (or we pass it but instruct it to ignore?)
-            # Better: We rely on the "Report Synthesis" task instructions from Planner.
-            # But here we override to ensure "Append" behavior.
+            # Map Execution Context keys to CIO's specific prompt requirements
+            macro_report_combined = f"【即時宏觀指標】\n{execution_context.get('macro_data_summary', 'N/A')}\n\n【週期分析】\n{execution_context.get('RESULT_Market Cycle Analysis', 'N/A')}"
+            
+            syn_context = {
+                **execution_context,
+                "macro_report": macro_report_combined,
+                "sector_strategy": execution_context.get("RESULT_Sector Rotation & Swarm Insight", "N/A"),
+                "thematic_context": f"{self._fetch_base_thematic_context(user_id)}\n\n【供應鏈與產業深潛】\n{execution_context.get('RESULT_Supply Chain & Industry Deep-Dive', 'N/A')}"
+            }
+            
+            # Progressive Debate Loop Prompt Injection
+            debate_prompt = (
+                "Please review the provided analyses (Macro, Sector, Portfolio Deep-Dive, Supply Chain). "
+                "If you see divergent signals (e.g., strong fundamentals but weak momentum), explicitly debate them in the 'Council Deep Dive' section. "
+                "Synthesize a final consensus strategy. Output the final markdown report based on your template."
+            )
+            syn_context["task_instruction"] = debate_prompt
             
             syn_response = synthesis_agent.run(syn_context)
             
@@ -906,6 +925,26 @@ class WeeklyWorkflow(BaseWorkflow):
             # Legacy Fallback
             logger.warning("TaskPlanner not injected. Running legacy workflow.")
             return self._legacy_weekly_cycle(user_id)
+
+    def _fetch_base_thematic_context(self, user_id: str) -> str:
+        """Helper to get base thematic context for mapping."""
+        try:
+            from src.repositories.settings_repository import AlchemySettingsRepository
+            settings_repo = AlchemySettingsRepository()
+            physical_ai = settings_repo.get(user_id, "physical_ai_tickers")
+            ai_energy = settings_repo.get(user_id, "ai_energy_tickers")
+            supply_chain = settings_repo.get(user_id, "supply_chain_knowledge_graph")
+            
+            import json
+            ctx = "### 目前追蹤之核心主題與供應鏈 (Current Thematic & Supply Chain Tracks)\n"
+            if physical_ai: ctx += f"- **實體 AI (Physical AI)**: {physical_ai}\n"
+            if ai_energy: ctx += f"- **AI 能源護城河 (AI Energy Moat)**: {ai_energy}\n"
+            if supply_chain:
+                sc_str = json.dumps(supply_chain, ensure_ascii=False) if isinstance(supply_chain, dict) else str(supply_chain)
+                ctx += f"- **供應鏈瓶頸預測 (Supply Chain Bottlenecks)**: {sc_str}\n"
+            return ctx
+        except Exception:
+            return "無法取得基礎主題數據。"
 
     def _select_agent_for_task(self, task_name: str, user_id: str, tier: str = "smart"):
         """Map Task Name to Existing Agent implementations"""

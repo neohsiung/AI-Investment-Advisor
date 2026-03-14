@@ -68,6 +68,10 @@ class SchedulerService:
     def job_daily_check(self):
         """Execute daily check for the current user context."""
         logger.info(f"Starting Daily Check Job for user {self.user_id}...")
+        if get_current_time().weekday() >= 5: # Sat=5, Sun=6
+            logger.info("Skipping Daily Check on weekend.")
+            return
+
         self.log_job_execution("Daily Check", "STARTED")
         
         try:

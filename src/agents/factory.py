@@ -93,6 +93,7 @@ class AgentFactory:
 
     @staticmethod
     def create_agent(agent_name, use_cache=True, user_id=None, **kwargs):
+        user_id = user_id or "system"
         AgentFactory._configure_dspy(user_id=user_id)
         name_lower = agent_name.lower()
         
@@ -123,6 +124,7 @@ class AgentFactory:
 
     @staticmethod
     def create_thematic_agent(use_cache=True, user_id=None, **kwargs):
+        user_id = user_id or "system"
         AgentFactory._configure_dspy(user_id=user_id)
         from src.agents.thematic import ThematicAgent
         agent = ThematicAgent(use_cache=use_cache, user_id=user_id, **kwargs)
@@ -130,6 +132,7 @@ class AgentFactory:
 
     @staticmethod
     def create_momentum_agent(use_cache=True, user_id=None, **kwargs):
+        user_id = user_id or "system"
         AgentFactory._configure_dspy(user_id=user_id)
         # tier = kwargs.pop('tier', 'fast') # Swarm manages tiers
         agent = MomentumSwarm(user_id=user_id, use_cache=use_cache, **kwargs)
@@ -137,6 +140,7 @@ class AgentFactory:
 
     @staticmethod
     def create_fundamental_agent(use_cache=True, user_id=None, **kwargs):
+        user_id = user_id or "system"
         AgentFactory._configure_dspy(user_id=user_id)
         # tier = kwargs.pop('tier', 'smart')
         agent = FundamentalSwarm(user_id=user_id, use_cache=use_cache, **kwargs)
@@ -144,6 +148,7 @@ class AgentFactory:
         
     @staticmethod
     def create_macro_agent(use_cache=True, user_id=None, **kwargs):
+        user_id = user_id or "system"
         AgentFactory._configure_dspy(user_id=user_id)
         tier = kwargs.pop('tier', 'smart')
         agent = MacroAgent(use_cache=use_cache, tier=tier, user_id=user_id, **kwargs)
@@ -151,6 +156,7 @@ class AgentFactory:
 
     @staticmethod
     def create_sentiment_agent(use_cache=True, user_id=None, **kwargs):
+        user_id = user_id or "system"
         AgentFactory._configure_dspy(user_id=user_id)
         # tier = kwargs.pop('tier', 'fast')
         agent = SentimentSwarm(user_id=user_id, use_cache=use_cache, **kwargs)
@@ -158,6 +164,7 @@ class AgentFactory:
 
     @staticmethod
     def create_risk_agent(use_cache=True, user_id=None, **kwargs):
+        user_id = user_id or "system"
         AgentFactory._configure_dspy(user_id=user_id)
         tier = kwargs.pop('tier', 'fast')
         agent = RiskAgent(use_cache=use_cache, tier=tier, user_id=user_id, **kwargs)
@@ -165,6 +172,7 @@ class AgentFactory:
 
     @staticmethod
     def create_cio_agent(use_cache=True, transaction_repo=None, mode="weekly", tier="smart", user_id=None, **kwargs):
+        user_id = user_id or "system"
         AgentFactory._configure_dspy(user_id=user_id)
         prompt_map = {
             "daily": "prompts/cio_daily.txt",
@@ -176,12 +184,14 @@ class AgentFactory:
 
     @staticmethod
     def create_sentinel_agent(use_cache=True, user_id=None, **kwargs):
+        user_id = user_id or "system"
         AgentFactory._configure_dspy(user_id=user_id)
         agent = SentinelAgent(use_cache=use_cache, user_id=user_id, **kwargs)
         return AgentFactory._inject_dependencies(agent)
 
     @staticmethod
     def create_action_extractor_agent(use_cache=True, user_id=None, **kwargs):
+        user_id = user_id or "system"
         from src.agents.action_extractor import ActionExtractorAgent
         AgentFactory._configure_dspy(user_id=user_id)
         # Use fastest tier for extraction by default since it's just JSON formatting
