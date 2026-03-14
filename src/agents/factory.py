@@ -19,6 +19,7 @@ from src.agents.macro import MacroAgent
 from src.agents.cio import CIOAgent
 from src.agents.engineer import SystemEngineerAgent
 from src.agents.risk import RiskAgent
+from src.agents.sentinel import SentinelAgent
 from src.tools.market_tools import create_market_server
 
 logger = setup_logger("AgentFactory")
@@ -113,6 +114,8 @@ class AgentFactory:
         elif name_lower == 'thematic':
             from src.agents.thematic import ThematicAgent
             agent = ThematicAgent(use_cache=use_cache, user_id=user_id, **kwargs)
+        elif name_lower == 'sentinel':
+            agent = SentinelAgent(use_cache=use_cache, user_id=user_id, **kwargs)
         else:
             raise ValueError(f"Unknown agent type: {agent_name}")
             
@@ -169,4 +172,10 @@ class AgentFactory:
         }
         prompt_path = prompt_map.get(mode, "prompts/cio_weekly.txt")
         agent = CIOAgent(use_cache=use_cache, transaction_repo=transaction_repo, prompt_path=prompt_path, mode=mode, tier=tier, user_id=user_id, **kwargs)
+        return AgentFactory._inject_dependencies(agent)
+
+    @staticmethod
+    def create_sentinel_agent(use_cache=True, user_id=None, **kwargs):
+        AgentFactory._configure_dspy(user_id=user_id)
+        agent = SentinelAgent(use_cache=use_cache, user_id=user_id, **kwargs)
         return AgentFactory._inject_dependencies(agent)

@@ -666,35 +666,56 @@ class SentinelService:
         if not triggers:
              return
 
-        # 1. Immediate Mode for Webhooks or Critical
-        is_critical = any("🔴" in t.get("text", "") or "CRITICAL" in t.get("text", "") for t in triggers)
-        is_internal = source == "Sentinel"
-        
-        if not is_internal or is_critical:
-            # Send immediately — bypass the buffer to avoid wrapping mismatch
-            await self._do_send_alert(triggers, source=source)
-            return
-
-        # 2. Buffering Mode (Sentinel Routine)
+        # v2.1.0: Universal Prioritization via SentinelAgent
+        # ──────────────────────────────────────────────
         from datetime import datetime
         now_ts = datetime.now().timestamp()
         
+        from src.agents.factory import AgentFactory
+        
         for t in triggers:
-            tid = t.get("id", "generic")
-            
-            # Determine priority if not already set
-            priority = t.get("priority")
-            if priority is None:
-                priority = 3 # Default P3
-                if tid == "vix_anomaly":
-                    priority = 1
-                elif any(k in tid for k in ["move", "price", "critical", "crash", "crisis"]):
-                    priority = 2
-                elif any(k in tid for k in ["news", "sentiment", "macro"]):
-                    priority = 4
-                elif "info" in tid:
-                    priority = 5
-            
+            # 1. AI-Driven Priority & Routing
+            try:
+                sentinel_agent = AgentFactory.create_sentinel_agent(user_id=self.user_id)
+                event_data = {
+                    "text": t.get("text", ""),
+                    "id": t.get("id", ""),
+                    "data": t.get("data", {}),
+                    "source": source
+                }
+                
+                eval_res = sentinel_agent.run({
+                    "trigger_source": source,
+                    "event_data": event_data,
+                    "current_vix": self.current_vix
+                })
+                
+                p_str = eval_res.get("priority", "P3")
+                priority = int(p_str.replace("P", ""))
+                t["priority"] = priority
+                t["target_agent"] = eval_res.get("target_agent", "CIO")
+                t["rationale"] = eval_res.get("rationale", "")
+                
+                # Check for "Ultra-Critical" P0 or explicit critical flag
+                if p_str == "P0" or eval_res.get("is_critical", False):
+                     logger.warning(f"Sentinel: Systemic Criticality detected ({p_str}). Bypassing buffer for {t.get('id')}.")
+                     await self._do_send_alert([t], source=source)
+                     continue
+
+            except Exception as e:
+                logger.error(f"Sentinel: AI Priority evaluation failed for {t.get('id')}: {e}")
+                # Fallback to legacy heuristics
+                if t.get("priority") is None:
+                    tid = t.get("id", "generic")
+                    priority = 3
+                    if tid == "vix_anomaly": priority = 1
+                    elif any(k in tid for k in ["move", "price", "critical", "crash", "crisis"]): priority = 2
+                    elif any(k in tid for k in ["news", "sentiment", "macro"]): priority = 4
+                    elif "info" in tid: priority = 5
+                    t["priority"] = priority
+
+            # 2. Buffering Mode
+            priority = t.get("priority", 3)
             wait_key = f"P{priority}"
             wait_mins = int(self.priority_minutes.get(wait_key, 240))
             deadline = now_ts + (wait_mins * 60)
@@ -703,9 +724,6 @@ class SentinelService:
             exists = False
             for b in self._trigger_buffer:
                 if b["trigger"].get("id") == t.get("id"):
-                    # Update deadline to earlier of the two? 
-                    # Actually, keep original deadline to avoid starvation, 
-                    # but update trigger data if needed.
                     b["trigger"] = t 
                     exists = True
                     break
@@ -716,7 +734,7 @@ class SentinelService:
                     "deadline": deadline,
                     "priority": priority
                 })
-                logger.info(f"Sentinel: Buffered {t.get('id')} (P{priority}). Deadline in {wait_mins}m")
+                logger.info(f"Sentinel: Buffered {t.get('id')} (P{priority}). Source: {source}. Deadline in {wait_mins}m")
 
     async def _check_buffer_flush(self) -> None:
         """
@@ -798,11 +816,22 @@ class SentinelService:
         
         logger.info(f"Sentinel: Escalating {len(filtered_triggers)} trigger(s) (P{max_priority}) from {source}")
         
+        # v5.0: Contextual msg_prefix based on triggers
+        has_excess_cash = any("cash_ratio_high" in t.get("id", "") for t in filtered_triggers)
+        
+        msg_prefix = "請針對以下多個 Sentinel 警報進行彙整與風險評估，並以繁體中文 (Traditional Chinese) 提供一份簡短且具備行動建議的摘要。金融專業術語請保留英文。"
+        if has_excess_cash:
+            msg_prefix = (
+                "💰 **當前帳戶現金比例過高，請協助尋找新的投資機會。**\n"
+                "請根據市場現狀、總體經濟環境及技術面，推薦 3-5 個具備潛力的投資標的 (Ticker)，"
+                "並說明推薦理由與建議投入比例。請以繁體中文 (Traditional Chinese) 撰寫，專業術語保留英文。"
+            )
+
         context = {
             "source": source,
             "triggered_rules": display_texts,
             "timestamp": date.today().isoformat(),
-            "msg_prefix": "請針對以下多個 Sentinel 警報進行彙整與風險評估，並以繁體中文 (Traditional Chinese) 提供一份簡短且具備行動建議的摘要。金融專業術語請保留英文。",
+            "msg_prefix": msg_prefix,
         }
         
         # Council Deliberation
@@ -819,10 +848,10 @@ class SentinelService:
             )
             decision = result.get('consensus', 'No Consensus')
         except Exception as e:
-            logger.error(f"Council session failed: {e}")
+            logger.error(f"Council session failed for topic '{topic}': {e}", exc_info=True)
             decision = (
                 "⚠️ **系統運行於安全模式 (Fail-safe Mode)**\n\n"
-                "目前無法取得 AI 委員會的即時評估（可能是 API 連線問題）。\n"
+                "目前無法取得 AI 委員會的即時評估（可能是內部組件初始化失敗或 LLM API 連線問題）。\n"
                 "請根據下方原始觸發訊號進行判斷。"
             )
         
@@ -871,7 +900,7 @@ class SentinelService:
             "title": f"⚠️ {source} Alert",
             "content": alert_content,
             "actions": actions,
-            "channels": ["line", "telegram", "email", "discord", "slack"], # Will be filtered down by microservice depending on user settings
+            "channels": ["line", "telegram", "email", "discord", "slack"], 
             "category": "sentinel"
         }
         
@@ -903,9 +932,41 @@ class SentinelService:
         從委員會決策文字中提取可執行交易訊號。
         """
         import re
+        import json
         signals = []
 
-        # Strategy 1: Look for explicit action keywords with tickers
+        # Strategy 0: JSON block [CONVINCING_ACTION] (Priority v2.1.0)
+        # We look for the marker and attempt to parse the following JSON
+        if "[CONVINCING_ACTION]" in decision:
+            try:
+                # Extract JSON part
+                parts = decision.split("[CONVINCING_ACTION]", 1)
+                json_part = parts[1].strip()
+                # Clean up markdown code blocks if present
+                json_part = re.sub(r'^```json\s*', '', json_part)
+                json_part = re.sub(r'\s*```$', '', json_part)
+                json_part = json_part.strip()
+                
+                # Attempt to parse
+                data = json.loads(json_part)
+                actions = data.get("actions", [])
+                for act in actions:
+                    ticker = act.get('ticker', 'UNKNOWN').upper()
+                    signals.append({
+                        'ticker': ticker,
+                        'action': act.get('action', 'HOLD').upper(),
+                        'quantity': act.get('quantity_ratio', 1.0),
+                        'score': int(act.get('confidence', 7)),
+                        'reason': act.get('rationale', f"Council Decision: {ticker}")
+                    })
+                
+                if signals:
+                    logger.info(f"Sentinel: Extracted {len(signals)} signals from structured JSON block.")
+                    return signals
+            except Exception as e:
+                logger.error(f"Sentinel: Failed to parse [CONVINCING_ACTION] block: {e}")
+
+        # Strategy 1: Look for explicit action keywords with tickers (Fallback)
         # Pattern: BUY/SELL TICKER or 買入/賣出 TICKER
         patterns = [
             r'(?:BUY|ACCUMULATE|買入|加碼)\s+([A-Z]{1,5})',
@@ -931,7 +992,7 @@ class SentinelService:
                         'action': action,
                         'quantity': 1.0,
                         'score': 7,  # Council-recommended default confidence
-                        'reason': f"Sentinel Council 決策: {decision[:120]}..."
+                        'reason': f"Sentinel Council 決策 (提取): {decision[:120]}..."
                     })
 
         # Strategy 2: Use ticker from trigger context if Council is actionable but no ticker in text
@@ -1381,6 +1442,16 @@ class SentinelService:
                         f"vs Adjusted Target {final_target_cash*100:.1f}% "
                         f"(Inf: {inflation_rate*100:.1f}%, VIX Mod: {vix_multiplier}x)."),
                 "severity": "medium",
+                "type": "cash_management"
+            })
+        elif actual_cash_ratio > final_target_cash * 1.5:
+            # v5.0: New trigger for excess cash (Rule #8 & User Request)
+            triggers.append({
+                "id": f"cash_ratio_high_{uid}",
+                "text": (f"💰 Excess Cash Alert: Actual {actual_cash_ratio*100:.1f}% "
+                        f"vs Adjusted Target {final_target_cash*100:.1f}%. "
+                        f"Consider searching for new investment opportunities."),
+                "severity": "low", # Low severity as it's an opportunity, not a risk
                 "type": "cash_management"
             })
                 
