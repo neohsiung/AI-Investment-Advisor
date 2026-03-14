@@ -1,3 +1,6 @@
+| 2026-03-13 | v5.4.0 | **Universal Prioritization (UP)** - 所有事件強制通過 Sentinel Agent 判定。引入 **[CONVINCING_ACTION]** 結構化 JSON 與信心分數標準決策流程。 | Antigravity |
+| 2026-03-12 | v5.3.0 | **Priority-Based Buffering** - 由 15m 單一視窗轉為 P1-P5 多級緩衝。 | Antigravity |
+| 2026-03-12 | v2.0.0 | **Sentinel Multi-Tier Buffering & CI Resilience**: Standardized `user_id` context for service initialization and resolved high-priority test regressions. | Antigravity |
 | 2026-03-08 | v1.9.0 | **Multi-Account isolation & Performance Resilience**: Implemented account-level data isolation across DB and Repository layers. Hardened `PerformanceService` to handle dynamic market data formats and column mappings. | Antigravity |
 | 2026-03-08 | v1.8.0 | **Data Source Standardization & FinancialData.Net**: Categorized FinancialData.Net as P1, established standardized key naming convention (`source_{id}_{field}`), and synchronized system-wide architecture blueprints. | Antigravity |
 | 2026-03-08 | v1.7.0 | **Dynamic Risk & Generalized Research**: Implemented Inflation-adjusted Cash Ratio, Risk Profile Consistency Check, and Generalized Ticker Comparative Analysis. | Antigravity |
@@ -38,7 +41,7 @@
 
 - **🧠 獨立微型大腦演化 (OpenClaw Architecture)**: 九大 Agent 完全解除黑盒，獨立掛載個人專屬 Workspace (`IDENTITY.md`, `STATE.md`)。結合 **WAL (Write-Ahead Logging)** 協議與 Token 安全墊機制，終結高長度財報推論斷片現象，實現不掉幀的長文脈思考。
 - **🧠 智能進化集群 (Swarm Intelligence)**: 由 CIO Agent 領銜協同 Fundamental, Momentum 等專家智能體，消除單一模型幻覺 (Hallucinations)，提升決策勝率與可解釋性。
-- **⏱️ 毫秒級自動化防禦 (Auto-Defense via Dynamic Threshold)**: 內建 `AutomatedTradingService` 與 `SentinelService` (支援 VIX, 行情, 新聞, 總經, Readwise 等 5D 維度監控)。系統現在會根據您設定的**動態信心門檻 (1-10)** 自動下單。支援**雙軌心跳 Webhooks**，兼顧主動警報與被動排程的低成本運行。
+- **⏱️ 全域優先級與自動化防禦 (Universal Prioritization & Auto-Defense)**: 內建 `SentinelAgent` 實現全維度優先級判定。不論是 Webhook 或內部維度，皆強制通過 AI 評核並指定專家 Agent。系統基於 Council 產出的 **[CONVINCING_ACTION]** 結構化指令與**動態信心門檻 (1-10)**，自動執行持倉調整與現金管理，支援毫秒級的 Auto-Hedging 防禦。
 - **⚖️ 專業級風控與標的優化 (Institutional Risk & Ticker Optimization)**:
   - **動態現金比例 (Dynamic Cash Ratio)**: 基於通膨 (CPI) 與 VIX 波動度自動校準現金儲備，符合 Rule #8。
   - **風險屬性校準 (Risk Profile Sync)**: 自動檢查槓桿率是否符合「Balanced」或「Aggressive」標籤。
@@ -110,7 +113,8 @@ graph TD
         CIO["CIO Agent"] <--> COUNCIL{Council}
         CIO -->|Decompose| SUB["7 Specialized Agents"]
         SUB -->|Feedback| ENG["Engineer Agent - Auto Optimize"]
-        S["🦅 Sentinel<br/>5D Tracker"] --> COUNCIL
+        S["🦅 Sentinel<br/>5D Radar"] --> SA["Sentinel Agent<br/>Prioritizer"]
+        SA --> COUNCIL
     end
 
     subgraph "Data & Memory"

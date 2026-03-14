@@ -29,6 +29,7 @@ class Order:
     order_type: OrderType = OrderType.MARKET
     leverage: int = 1
     reason: str = ""
+    position_id: Optional[str] = None # For closing specific positions
 
 @dataclass
 class Position:
@@ -40,6 +41,7 @@ class Position:
     unrealized_pnl: float
     open_date: Optional[datetime] = None
     leverage: float = 1.0
+    position_id: Optional[str] = None # Added for eToro/IBKR specific closing
 
 @dataclass
 class Account:

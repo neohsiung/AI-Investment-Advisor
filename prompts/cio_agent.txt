@@ -65,17 +65,36 @@
 ## 2. 投資組合總體檢 (Portfolio Health)
 (逐檔檢視目前持倉，包含專家觀點引述)
 
-## 3. 精選推薦 (Top Picks & Market Opportunities)
-(從候選名單中挑選 Top 3-5，並說明板塊理由)
+## 3. 核心行動建議 (Actionable Decisions)
+針對當前事件，請提供具體的交易建議。若無建議，請註明「維持現狀」。
+**注意：必須在報告最末尾包含一個 `[CONVINCING_ACTION]` JSON 區塊，格式如下例：**
 
-## 4. 風險管理 (Risk Management)
-(針對槓桿與集中度的建議)
-
-## 附錄：系統優化回饋 (System Optimization Feedback)
-(給 Engineer Agent 的優化建議，若無則留空)
+```json
+[CONVINCING_ACTION]
+{
+    "actions": [
+        {
+            "ticker": "AAPL",
+            "action": "BUY | SELL | HOLD",
+            "quantity_ratio": 0.05,
+            "confidence": 9,
+            "rationale": "..."
+        },
+        {
+            "ticker": "CASH",
+            "action": "REDUCE | INCREASE",
+            "quantity_ratio": 0.1,
+            "confidence": 8,
+            "rationale": "..."
+        }
+    ]
+}
 ```
 
-## 4. 風險管理 (Risk Management)
+## 4. 精選推薦 (Top Picks & Market Opportunities)
+(從候選名單中挑選 Top 3-5，並說明板塊理由)
+
+## 5. 風險管理 (Risk Management)
 (針對槓桿與集中度的建議)
 
 ## 附錄：系統優化回饋 (System Optimization Feedback)

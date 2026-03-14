@@ -164,16 +164,26 @@ class CouncilService:
         # Determine Tier based on Topic Complexity or Market Regime
         tier = self.router.select_tier(topic, round_num=1, market_volatility=market_volatility)
         
-        # Instantiate Agents with retrieved context? 
-        # Actually, agents take context in .run(), so we just pass it there.
-        # [Fix] Pass user_id to ensure they get correct DB settings
-        members = [
-            AgentFactory.create_momentum_agent(tier=tier, user_id=user_id),
-            AgentFactory.create_fundamental_agent(tier=tier, user_id=user_id),
-            AgentFactory.create_risk_agent(tier=tier, user_id=user_id),
-            AgentFactory.create_sentiment_agent(tier=tier, user_id=user_id),
-            AgentFactory.create_macro_agent(tier=tier, user_id=user_id)
+        # Instantiate Agents with retrieved context
+        # [Fix] Wrap in try-except to prevent one agent failure from crashing the whole council
+        members = []
+        agent_factories = [
+            ("Momentum", AgentFactory.create_momentum_agent),
+            ("Fundamental", AgentFactory.create_fundamental_agent),
+            ("Risk", AgentFactory.create_risk_agent),
+            ("Sentiment", AgentFactory.create_sentiment_agent),
+            ("Macro", AgentFactory.create_macro_agent)
         ]
+        
+        for name, factory in agent_factories:
+            try:
+                agent = factory(tier=tier, user_id=user_id)
+                members.append(agent)
+            except Exception as e:
+                logger.error(f"Council: Failed to create {name} agent for user {user_id}: {e}")
+
+        if not members:
+            raise RuntimeError("Council: No agents could be instantiated. Aborting session.")
 
         # 3. Debate
         stances = []
@@ -198,11 +208,11 @@ class CouncilService:
                 stances.append(f"[{agent.name}]: {res}")
                 transcript.append(f"[{agent.name}]: {res}")
             except Exception as e:
-                logger.error(f"Agent {agent.name} failed: {e}")
+                logger.error(f"Agent {agent.name} failed during debate: {e}")
                 transcript.append(f"[{agent.name}]: Error - {e}")
 
         # 4. Consensus
-        cio = AgentFactory.create_cio_agent(tier=self.router.select_tier(topic, round_num=99), user_id=user_id)
+        consensus_tier = self.router.select_tier(topic, round_num=99)
         debates_text = "\n".join(stances)
         
         # Determine if Structural Cooling was detected by MacroAgent
@@ -219,7 +229,13 @@ class CouncilService:
             "fractal_debate_rules": fractal_debate_rules 
         }
         
-        decision = cio.run(final_context)
+        try:
+            cio = AgentFactory.create_cio_agent(tier=consensus_tier, user_id=user_id)
+            decision = cio.run(final_context)
+        except Exception as e:
+            logger.error(f"Council: CIO agent failed or could not be created: {e}")
+            decision = f"Consensus failed due to internal error: {e}. Please review transcripts below."
+        
         self._archive_minutes(user_id, session_id, topic, str(decision), "\n".join(transcript))
         
         return {

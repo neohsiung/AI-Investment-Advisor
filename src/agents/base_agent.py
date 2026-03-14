@@ -114,6 +114,10 @@ class BaseAgent(ABC):
             else:
                 config["model"] = "gemini-1.5-flash"
 
+        # [Robustness] Clean quotes if any (處理雙引號殘留問題)
+        if isinstance(config.get("model"), str):
+            config["model"] = config["model"].strip().strip('"').strip("'")
+
         # Explicit Warning for Env usage if DB is missing critical keys
         if not db_settings.get("API_KEY") and config["api_key"]:
              pass # Suppress for now, or log warning as requested: "Data should exist in DB"
@@ -542,7 +546,10 @@ class BaseAgent(ABC):
                 response.raise_for_status()
                 return response.json()['choices'][0]['message']['content']
             except Exception as e:
-                self.logger.error(f"OpenRouter Request failed: {e}")
+                if 'response' in locals() and response is not None:
+                    self.logger.error(f"OpenRouter Request failed: {e} | Body: {response.text}")
+                else:
+                    self.logger.error(f"OpenRouter Request failed: {e}")
                 raise e
 
         elif provider == "Google Gemini":

@@ -101,7 +101,13 @@ class BaseWorkflow(ABC):
                     f"REPORT TO TRANSLATE:\n{final_report}"
                 )
                 res = translator.run(prompt)
-                translated_report = str(res.get("content", res.get("output", res))) if isinstance(res, dict) else str(res)
+                self.logger.debug(f"Translation raw result type: {type(res)}")
+                
+                if isinstance(res, dict):
+                    # Robust dict access
+                    translated_report = res.get("content") or res.get("output") or str(res)
+                else:
+                    translated_report = str(res)
                 if translated_report.strip():
                     final_report = translated_report
                 self.logger.info("Translation successful.")
@@ -199,8 +205,10 @@ class BaseWorkflow(ABC):
         """Common data collection: Get active tickers."""
         # Filter for active positions only to avoid analyzing sold stocks
         user_tickers = self.transaction_service.get_user_tickers(self.user_id, only_active=True)
-        self.context['tickers'] = user_tickers
-        logger.info(f"Active tickers: {user_tickers}")
+        # Fix v4.1.8: De-duplicate tickers to avoid redundant agent analysis
+        unique_tickers = sorted(list(set(user_tickers)))
+        self.context['tickers'] = unique_tickers
+        logger.info(f"Unique active tickers to analyze: {unique_tickers}")
         
         # Prefetch Market Data (Technical + Fundamental)
         # Fixes missing financials/news for Agents

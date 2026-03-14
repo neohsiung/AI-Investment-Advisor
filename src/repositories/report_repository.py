@@ -49,5 +49,29 @@ class AlchemyReportRepository(BaseRepository, IReportRepository):
             """)
             return pd.read_sql(query, conn, params={"uid": target_uid, "limit": limit})
 
+    def save(self, user_id: str, report_type: str, summary: str, content: str, title: Optional[str] = None) -> bool:
+        """
+        Save a report to the database.
+        將報告存入資料庫。
+        """
+        from datetime import datetime
+        target_title = title or summary
+        
+        with self.engine.connect() as conn:
+            query = text("""
+                INSERT INTO reports (user_id, report_type, summary, content, title, created_at)
+                VALUES (:uid, :type, :summary, :content, :title, :created_at)
+            """)
+            conn.execute(query, {
+                "uid": user_id,
+                "type": report_type,
+                "summary": summary,
+                "content": content,
+                "title": target_title,
+                "created_at": datetime.now()
+            })
+            conn.commit()
+            return True
+
 # Legacy alias removed in v4.1.7
 # @deprecated: Use AlchemyReportRepository

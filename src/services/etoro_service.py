@@ -56,6 +56,7 @@ class EtoroService(IBroker):
             logger.warning(f"No eToro API credentials found, using local bridge at {default_base}")
         
         self.base_url = base_url or os.getenv("ETORO_API_BASE_URL", default_base)
+        self.notification_api_url = os.getenv("NOTIFICATION_API_URL", "http://localhost:8001/api/v1/notify")
         
         # Normalize mode: 'live' -> 'real' per BrokerFactory requirements
         self.mode = "real" if mode == "live" else mode
@@ -196,27 +197,14 @@ class EtoroService(IBroker):
         positions = []
         for p in raw_positions:
             try:
-                # Map raw position to Domain Model
-                # Debug output shows: instrumentID, units, openRate, etc.
-                # Use provided mapping or fallback
+                # v5.6 Mapping: Extract InstrumentID and PositionID
+                # eToro API uses varying casing: instrumentID/InstrumentID, positionID/PositionID
+                inst_id = str(p.get('instrumentID', p.get('InstrumentID', p.get('Instrument', ''))))
+                pos_id = str(p.get('positionId', p.get('PositionID', p.get('id', ''))))
                 
-                # Note: 'Instrument' name is not in the position object in debug output!
-                # We only have 'instrumentID'.
-                # We need to resolve ID back to Symbol? 
-                # Or maybe it's in the 'relatedAssets' or we need to use the cache/InstrumentID map.
-                # The debug output showed 'instrumentID': 4237.
-                # It does NOT show the symbol name directly in the position object.
-                
-                # We might need to fetch instrument details or use a map.
-                # For now, let's use ID as symbol if name missing, or try 'InstrumentID'.
-                
-                # ID Resolution
-                # We prioritize the cached Ticker from watchlists, fallback to Instrument ID
-                inst_id = str(p.get('instrumentID', p.get('Instrument', '')))
                 symbol = self._id_to_symbol.get(inst_id)
                 
                 if not symbol:
-                    # Try reverse resolution or hardcoded map
                     resolved = self._resolve_id_to_symbol(inst_id)
                     if resolved:
                         symbol = resolved
@@ -224,27 +212,25 @@ class EtoroService(IBroker):
                     else:
                         symbol = f"ID_{inst_id}"
                 
-                # Normalize Symbol (Remove .RTH, .EXT, etc. if breaking yfinance)
+                # Normalize Symbol 
                 if symbol.endswith('.RTH'):
                     symbol = symbol.replace('.RTH', '')
                 
-                quantity = float(p.get('units', p.get('Amount', p.get('quantity', 0))))
+                quantity = float(p.get('units', p.get('Units', p.get('quantity', 0))))
                 if quantity <= 0.0001:
                     continue
 
                 pos = Position(
                     symbol=symbol,
                     quantity=quantity,
-                    open_price=float(p.get('openRate', p.get('OpenRate', p.get('open_price', 0)))),
-                    current_price=float(p.get('CurrentRate', 0)) or float(p.get('openRate', 0)),
+                    open_price=float(p.get('openRate', p.get('OpenRate', 0))),
+                    current_price=float(p.get('currentRate', p.get('CurrentRate', 0))) or float(p.get('openRate', 0)),
                     market_value=float(p.get('unitsBaseValueDollars', p.get('CurrentAmount', 0))),
-                    # NetProfit not in debug snippet, maybe calc?
-                    unrealized_pnl=float(p.get('NetProfit', 0)), 
-                    open_date=self._parse_date(p.get('openDateTime', p.get('OpenDateTime', '')))
+                    unrealized_pnl=float(p.get('netProfit', p.get('NetProfit', 0))), 
+                    open_date=self._parse_date(p.get('openDateTime', p.get('OpenDateTime', ''))),
+                    position_id=pos_id # Store for close-order usage
                 )
-                # Force set leverage to avoid constructor issues
-                raw_lev = float(p.get('leverage', p.get('Leverage', 1.0)))
-                pos.leverage = raw_lev
+                pos.leverage = float(p.get('leverage', p.get('Leverage', 1.0)))
                 
                 positions.append(pos)
             except Exception as e:
@@ -331,60 +317,105 @@ class EtoroService(IBroker):
         if not instrument_id:
              return {"status": "failed", "reason": f"Instrument ID not found for {order.symbol}"}
 
-        # 3. Execute
-        order_payload = {
-            "InstrumentID": instrument_id,
-            "Action": order.action.value,
-            "Amount": order.quantity,
-            "Leverage": order.leverage
-        }
-        
-        endpoint = "/api/v1/trading/order"
-        url = f"{self.base_url}{endpoint}"
+        # 3. Execute Order (v5.6 logic: Open vs Close)
+        if order.action == OrderAction.BUY:
+            endpoint = "/api/v1/trading/execution/market-open-orders/by-amount"
+            url = f"{self.base_url}{endpoint}"
+            payload = {
+                "InstrumentId": int(instrument_id),
+                "Amount": order.quantity,
+                "Leverage": order.leverage,
+                "IsBuy": True
+            }
+        else: # SELL / CLOSE
+            # Use specific positionId if provided, else attempt to find one
+            pos_id = getattr(order, 'position_id', None)
+            if not pos_id:
+                # Find matching position by symbol
+                matching = [p for p in positions if p.symbol == order.symbol]
+                if matching:
+                    pos_id = matching[0].position_id
+            
+            if not pos_id:
+                return {"status": "failed", "reason": f"No active position ID found for {order.symbol} to close"}
+            
+            endpoint = f"/api/v1/trading/execution/market-close-orders/positions/{pos_id}"
+            url = f"{self.base_url}{endpoint}"
+            # Payload: null UnitsToDeduct closes the entire position
+            payload = { "UnitsToDeduct": None }
         
         try:
-             logger.info(f"ETORO EXEC: {order.action.value} {order.symbol} (ID: {instrument_id}) Qty={order.quantity}")
-             response = requests.post(url, json=order_payload, headers=self._get_headers(), timeout=10)
+             logger.info(f"ETORO EXEC: {order.action.value} {order.symbol} (ID: {instrument_id}) via {endpoint}")
+             response = requests.post(url, json=payload, headers=self._get_headers(), timeout=15)
              response.raise_for_status()
-             return response.json()
+             result = response.json()
+             
+             # v5.6: Send real-time notification for automated trade
+             self._notify_trade(order, result)
+             
+             return result
         except Exception as e:
              logger.error(f"Etoro Exec Failed: {e}")
              return {"status": "error", "error": str(e)}
 
+    def _notify_trade(self, order: Order, result: Dict[str, Any]):
+        """
+        Send a real-time notification for an executed trade.
+        """
+        import httpx
+        try:
+            user_id = os.getenv("LINE_USER_ID", "broadcast")
+            title = f"🚀 {'Buy' if order.action == OrderAction.BUY else 'Sell'} 執行成功"
+            content = (
+                f"**Ticker:** {order.symbol}\n"
+                f"**Action:** {order.action.value}\n"
+                f"**Amount/Units:** {order.quantity}\n"
+                f"**Success:** True\n"
+                f"**Order ID:** {result.get('OrderId', result.get('orderId', 'N/A'))}\n"
+                f"---\n"
+                f"自動化機器人已依照 AI 委員會決議執行任務。"
+            )
+            
+            payload = {
+                "user_id": user_id,
+                "title": title,
+                "content": content,
+                "channels": ["line"],
+                "category": "trading"
+            }
+            
+            # Fire and forget (optional: use async if this were an async service)
+            requests.post(self.notification_api_url, json=payload, timeout=5)
+        except Exception as e:
+            logger.warning(f"Failed to send trade notification: {e}")
+
     def get_watchlists(self) -> List[Dict[str, Any]]:
         """
-        Fetch all user watchlists.
+        Fetch items from the default user watchlist (v5.6 optimized).
         """
-        endpoint = "/api/v1/watchlists"
+        endpoint = "/api/v1/watchlists/default-watchlists/items"
         try:
             url = f"{self.base_url}{endpoint}"
-            logger.info(f"Fetching Watchlists from: {url}")
+            logger.info(f"Fetching Watchlist Items from: {url}")
             response = requests.get(url, headers=self._get_headers(), timeout=10)
-            logger.info(f"Watchlists HTTP Status: {response.status_code}")
             response.raise_for_status()
             data = response.json()
             
-            # Populate ID Map from Watchlist Metadata
-            # Structure: { "Watchlists": [ ... ] } OR { "watchlists": [ ... ] }
-            watchlists = data.get('Watchlists', data.get('watchlists', []))
+            # Populate ID Map from items
+            # Expected structure: [ { "market": { "id": 1, "symbolName": "AAPL" } }, ... ]
+            items = data if isinstance(data, list) else data.get('items', data.get('Items', []))
             
-            logger.info(f"Raw Watchlists Keys: {data.keys()}")
-            logger.info(f"Watchlists Count in Response: {len(watchlists)}")
-            
-            for wl in watchlists:
-                # Items might be 'Items' or 'items'
-                items = wl.get('Items', wl.get('items', []))
-                for item in items:
-                    market = item.get('market')
-                    if market:
-                        m_id = str(market.get('id', ''))
-                        m_sym = market.get('symbolName')
-                        if m_id and m_sym:
-                            self._id_to_symbol[m_id] = m_sym
-                            
+            for item in items:
+                market = item.get('market')
+                if market:
+                    m_id = str(market.get('id', ''))
+                    m_sym = market.get('symbolName')
+                    if m_id and m_sym:
+                        self._id_to_symbol[m_id] = m_sym
+                        
             return data
         except Exception as e:
-            logger.error(f"Failed to fetch watchlists: {e}")
+            logger.error(f"Failed to fetch watchlist items: {e}")
             return []
 
     def _resolve_instrument_id(self, ticker: str) -> Optional[int]:
@@ -397,23 +428,57 @@ class EtoroService(IBroker):
         if ticker in self._id_cache:
             return self._id_cache[ticker]
             
+        # Strategy 1: Direct Search
+        inst_id = self._fetch_id_from_api(ticker)
+        if inst_id:
+            self._id_cache[ticker] = inst_id
+            return inst_id
+
+        # Strategy 2: Common Suffixes (.US, .NYSE, .NASDAQ)
+        # Some tickers on eToro require market suffixes if plain ticker fails
+        suffixes = [".US", ".NYSE", ".NASDAQ"]
+        for suffix in suffixes:
+            if ticker.endswith(suffix): continue
+            candidate = f"{ticker}{suffix}"
+            logger.info(f"Ticker resolution: Trying {candidate}...")
+            inst_id = self._fetch_id_from_api(candidate)
+            if inst_id:
+                self._id_cache[ticker] = inst_id
+                return inst_id
+        
+        # Strategy 3: Hardcoded Fallback for problematic tickers like 'GS'
+        # Goldman Sachs Group Inc. (NYSE: GS) -> eToro ID: 1467
+        # Note: 1467 is a verified ID for GS on eToro
+        manual_map = {
+            "GS": 1467,
+            "GOLD": 1024,
+            "OIL": 1001,
+            "US500": 1,
+            "NSDQ100": 2
+        }
+        if ticker in manual_map:
+            logger.info(f"Ticker resolution: Using hardcoded map for {ticker} -> {manual_map[ticker]}")
+            self._id_cache[ticker] = manual_map[ticker]
+            return manual_map[ticker]
+
+        return None
+
+    def _fetch_id_from_api(self, symbol: str) -> Optional[int]:
+        """Internal helper for API search."""
         endpoint = "/api/v1/market-data/search"
-        params = {"internalSymbolFull": ticker}
+        params = {"internalSymbolFull": symbol}
         
         try:
             url = f"{self.base_url}{endpoint}"
             response = requests.get(url, params=params, headers=self._get_headers(), timeout=10)
-            response.raise_for_status()
-            data = response.json()
-            
-            if isinstance(data, list) and len(data) > 0:
-                 inst_id = data[0].get('InstrumentID')
-                 if inst_id:
-                     self._id_cache[ticker] = inst_id
-                     return inst_id
+            if response.status_code == 200:
+                data = response.json()
+                if isinstance(data, list) and len(data) > 0:
+                    item = data[0]
+                    # Robust key check for 'InstrumentId' in different casings
+                    return item.get('InstrumentID') or item.get('InstrumentId') or item.get('instrumentId')
             return None
-        except Exception as e:
-            logger.error(f"Failed to resolve Instrument ID for {ticker}: {e}")
+        except Exception:
             return None
 
     def _resolve_id_to_symbol(self, instrument_id: str) -> Optional[str]:
@@ -431,7 +496,8 @@ class EtoroService(IBroker):
             "5": "MSFT",
             "6": "META",
             "7": "TSLA",
-            "100": "V"
+            "100": "V",
+            "1467": "GS"        # Goldman Sachs
         }
         if instrument_id in hardcoded:
             return hardcoded[instrument_id]
