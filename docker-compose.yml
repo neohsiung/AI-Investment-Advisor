@@ -51,6 +51,7 @@ services:
       - ./src:/workspace/src
       - ./prompts:/workspace/prompts
       - ./services/mcp_server:/workspace/services/mcp_server
+      - ./secrets/client_secret.json:/workspace/client_secret.json:ro
     env_file:
       - .env
     environment:

@@ -32,18 +32,10 @@ def require_authentication():
         return
         
     elif auth_status == "UNAUTHENTICATED" or auth_status is False:
-        # User is in the middle of OAuth callback
-        if "code" in st.query_params:
-            st.info("🔄 正在驗證您的 Google 登入... (Verifying Google Login...)", icon="🔄")
-            auth_manager.login()  # Process the code
-            st.stop()
-            return
-            
-        # Not authenticated - show login UI
+        # User is not authenticated - show login UI
         st.warning("⚠️ 請先登入 (Please login first)")
-        auth_manager.login()  # Show the login button
+        auth_manager.login()  # Show the "Continue with Google" button
         st.stop()
-        return
     
     # Authenticated - return user object
     user = auth_manager.get_current_user()

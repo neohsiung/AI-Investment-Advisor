@@ -91,6 +91,11 @@
 
 - 嚴禁使用 `MD5` 或 `SHA1` 進行任何具備安全性意涵的雜湊 (Hashing)。
 - 所有信號 ID (Signal ID) 或 實體識別碼 (Entity IDs) 生成必須使用 **SHA256**。
+- **使用者認證架構 (FastAPI Auth Hub)**: 
+  - **原則**: 嚴禁在 Streamlit 異步渲染週期內直接進行 OAuth 回調處理或設置 Cookie (極度不穩定)。
+  - **實作**: 所有認證流程 (Login/Callback/Logout) 必須由 `mcp_server` (FastAPI) 處理。
+  - **狀態持久化**: 必須利用 FastAPI 的 `HTTP 302 Redirect` 搭配 `Set-Cookie` 標頭進行同步狀態寫入。
+  - **前端驗證**: Streamlit 端僅限使用 `st.context.cookies` 同步讀取 Cookie，並透過 `auth_guard` 進行頁面阻斷。
 
 ---
 

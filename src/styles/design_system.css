@@ -8,6 +8,9 @@
    This file defines only structural tokens and base rules.
 */
 
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700&display=swap');
+
 :root {
     /* Spacing & Radius - Global High Density */
     --saas-radius-sm: 0.25rem;
@@ -27,8 +30,6 @@
 }
 
 /* Typography */
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
-@import url('https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700&display=swap');
 
 .saas-font-main {
     font-family: 'Inter', sans-serif;

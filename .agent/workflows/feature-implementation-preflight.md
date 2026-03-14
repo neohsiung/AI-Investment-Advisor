@@ -19,14 +19,15 @@ description: 在開始開發新功能或串接服務前，強制執行的架構�
 ### 1. 閱讀架構文件 (Architecture Scan)
 
 Agent 必須先閱讀以下目錄中的相關文件：
-- `wiki/04_架構觀點-Architect_Views/` 
+- `wiki/04_架構觀點-Architect_Views/`
 - `wiki/05_工程手冊-Engineering_Handbook/`
 
-> **Check**: 該功能屬於現有哪一個模組的管轄範圍？是 Polling 還是 Webhook 觸發？
+> **Check**: 該功能屬於現有哪一個模組的管轄範圍？是 Polling 還是 Webhook 觸發？是否涉及使用者認證？(若涉及，必須遵循 FastAPI Auth Hub 模式)。
 
 ### 2. 檢視現有實作 (Pattern Matching)
 
 尋找系統內是否已經有類似的介面或類別。
+
 - 例如：資料源應繼承 `MarketDataProvider`。
 - 例如：新功能若需要設定，應整合到 `SettingsService`。
 

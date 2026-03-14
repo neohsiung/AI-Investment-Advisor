@@ -104,10 +104,10 @@ def render_api_settings(st, service: SettingsService, settings: dict):
         )
 
         submitted = st.form_submit_button("儲存設定 (Save Settings)")
-
+        
         if submitted:
             updates = {
-                "AI_PROVIDER": provider,
+                "AI_PROVIDER": provider_key,
                 "AI_MODEL": model_smart, 
                 "AI_MODEL_ADVANCED": model_advanced,
                 "AI_MODEL_SMART": model_smart,
@@ -117,7 +117,8 @@ def render_api_settings(st, service: SettingsService, settings: dict):
             }
             success, msg = service.save_settings_bulk(updates)
             if success:
-                st.success(msg)
+                st.success("✅ " + msg)
+                st.rerun()  # Rerun to reload the UI with the fresh settings dict
             else:
-                st.error(msg)
+                st.error("❌ " + msg)
     saas_card_end()

@@ -434,3 +434,79 @@ async def generic_channel_callback(channel_name: str, request: Request):
     except Exception as e:
         logger.error(f"Error handling {channel_name} callback: {e}")
         raise HTTPException(status_code=500, detail="Processing Failed")
+# --- Authentication Hub (New Phase 4) ---
+from src.utils.google_auth import GoogleAuth
+from fastapi.responses import RedirectResponse, HTMLResponse
+import urllib.parse
+import json
+
+# Initialize Auth with backend configuration
+# backend uses port 8000 for callback
+BACKEND_URL = os.getenv("BACKEND_URL", "http://localhost:8000")
+FRONTEND_URL = os.getenv("FRONTEND_URL", "http://localhost:8501")
+
+auth_hub = GoogleAuth(
+    secret_credentials_path=os.getenv('GOOGLE_CLIENT_SECRET_PATH', 'client_secret.json'),
+    redirect_uri=f"{BACKEND_URL}/api/auth/callback",
+    cookie_key=os.getenv('COOKIE_KEY', 'your_secret_cookie_key_should_be_long')
+)
+
+@app.get("/api/auth/login")
+async def auth_login():
+    """Start OAuth flow by redirecting to Google."""
+    try:
+        flow = auth_hub._get_flow()
+        authorization_url, state = flow.authorization_url(
+            access_type='offline',
+            include_granted_scopes='true'
+        )
+        return RedirectResponse(authorization_url)
+    except Exception as e:
+        logger.error(f"Auth login failed: {e}")
+        return HTMLResponse(content=f"Auth Error: {e}", status_code=500)
+
+@app.get("/api/auth/callback")
+async def auth_callback(code: str):
+    """Handle Google callback, set cookie, and redirect to Streamlit."""
+    try:
+        flow = auth_hub._get_flow()
+        flow.fetch_token(code=code)
+        credentials = flow.credentials
+        
+        # Verify ID Token
+        from google.oauth2 import id_token
+        from google.auth.transport import requests as google_requests
+        
+        id_info = id_token.verify_oauth2_token(
+            credentials.id_token, google_requests.Request(), flow.client_config['client_id']
+        )
+        
+        user_info = {
+            "email": id_info.get("email"),
+            "name": id_info.get("name"),
+            "picture": id_info.get("picture"),
+            "sub": id_info.get("sub")
+        }
+        
+        # Create Redirect Response back to Streamlit
+        response = RedirectResponse(url=FRONTEND_URL)
+        
+        # Set Authentication Cookie (7 days)
+        # We URL-encode the JSON to match standard practices
+        cookie_val = urllib.parse.quote(json.dumps(user_info))
+        response.set_cookie(
+            key=auth_hub.cookie_name,
+            value=cookie_val,
+            max_age=7*24*60*60,
+            path="/",
+            domain=None, # Same origin/localhost
+            httponly=False, # Must be readable by Streamlit/CookieManager if needed
+            samesite="lax"
+        )
+        
+        logger.info(f"User {user_info['email']} logged in via FastAPI Hub")
+        return response
+        
+    except Exception as e:
+        logger.error(f"Auth callback failed: {e}")
+        return RedirectResponse(url=f"{FRONTEND_URL}?error={urllib.parse.quote(str(e))}")
