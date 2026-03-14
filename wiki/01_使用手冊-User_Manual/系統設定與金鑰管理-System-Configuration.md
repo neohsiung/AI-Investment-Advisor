@@ -1,6 +1,6 @@
 # 系統設定與金鑰管理 (System Configuration & Key Management)
 
-### 版本紀錄 (Version History)
+## 版本紀錄 (Version History)
 | Date | Version | Description | Author |
 | :--- | :--- | :--- | :--- |
 | 2026-02-14 | v1.0 | Initial Release: Settings UI & Broker Config | Neo |
@@ -51,6 +51,11 @@ Go to the **Settings > AI Configuration** tab:
 
 *   **預設路徑**: `secrets/client_secret.json` (建議存放處) 或根目錄 `client_secret.json`。
 *   **環境變數**: 可透過 `GOOGLE_CLIENT_SECRET_PATH` 自定義路徑。
+*   **Google Console 設定**:
+    - **Authorized Javascript Origins**: `http://localhost:8501`, `http://localhost:8000`
+    - **Authorized Redirect URIs**:
+      - `http://localhost:8000/api/auth/callback`
+      - `http://127.0.0.1:8000/api/auth/callback`
 *   **注意**: 即使檔案不存在，系統也會嘗試讀取環境變數進行驗證，若兩者皆無則進入受限模式。
 
 ## 5. 可觀測性設定 (Observability - SigNoz)

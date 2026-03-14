@@ -1,9 +1,11 @@
 # 工具函式庫指南 (Utils Library Guide)
 
-### 版本紀錄 (Version History)
+## 版本紀錄 (Version History)
+
 | Date | Version | Description | Author |
 | :--- | :--- | :--- | :--- |
 | 2026-02-26 | v1.1 | **Theme System v4.3**: 更新 `ui.py` 主題系統說明 — OS 自動偵測、22 design tokens、手動切換優先 | Antigravity |
+| 2026-03-14 | v1.2 | **Auth v5.0**: 更新 `google_auth.py` 與 `auth_guard.py` 以支援 FastAPI Auth Hub (port 8000) | Antigravity |
 | 2026-02-21 | v1.0 | 初版：涵蓋 10 個工具模組的完整分類與 API 說明 | Antigravity |
 
 ---
@@ -68,24 +70,26 @@ graph LR
 
 提供 Streamlit 頁面的統一認證入口，防止未驗證時的 UI 閃爍問題。
 
-#### 核心函式
+#### `auth_guard.py` 核心函式
 
 | 函式 | 簽名 | 說明 |
 | :--- | :--- | :--- |
 | `require_authentication` | `() -> dict` | 統一認證閘道，回傳使用者資訊或中止執行 |
 
-#### 認證狀態流程
+#### `auth_guard.py` 認證狀態流程
 
 ```mermaid
 stateDiagram-v2
     [*] --> LOADING: 初始化
-    LOADING --> UNAUTHENTICATED: Cookie 同步完成
-    LOADING --> AUTHENTICATED: Session 有效
-    UNAUTHENTICATED --> OAuth_Callback: 有 code 參數
-    UNAUTHENTICATED --> Login_UI: 無 code 參數
-    OAuth_Callback --> AUTHENTICATED: 驗證成功
+    LOADING --> UNAUTHENTICATED: st.context.cookies 無 Token
+    LOADING --> AUTHENTICATED: st.context.cookies 有效
+    UNAUTHENTICATED --> Login_UI: 使用者點擊登入
+    Login_UI --> FastAPI_OAuth: 導向 port 8000
+    FastAPI_OAuth --> Google_Auth: 獲取授權
+    Google_Auth --> FastAPI_Callback: 獲取 Token & Set-Cookie
+    FastAPI_Callback --> AUTHENTICATED: 導向 port 8501
     AUTHENTICATED --> Resolve_UUID: 查詢/建立使用者
-    Resolve_UUID -->"[*]: 回傳 user dict"
+    Resolve_UUID --> "[*]: 回傳 user dict"
 ```
 
 #### 回傳值
@@ -103,22 +107,21 @@ stateDiagram-v2
 
 完整的 Google OpenID Connect 認證流程實作，支援 Cookie 持久化。
 
-#### 核心類別：`GoogleAuth`
+#### `google_auth.py` 核心類別：`GoogleAuth`
 
 | 方法 | 說明 |
 | :--- | :--- |
 | `__init__(secret_credentials_path, redirect_uri, cookie_key, ...)` | 初始化 OAuth 設定 |
-| `login()` | 顯示登入按鈕或處理 OAuth 回調 |
-| `check_authentification()` | 檢查 Session State 或 Cookie 持久化狀態 |
-| `logout()` | 清除 Session 與 Cookie |
-| `get_current_user()` | 取得目前已驗證的使用者資訊 |
+| `login()` | 渲染 `<a href='.../api/auth/login'>` 標籤以啟動後端認證流程 |
+| `check_authentification()` | 使用 `st.context.cookies` 同步檢查瀏覽器 Token |
+| `logout()` | 清除 Session 並導向後端 `api/auth/logout` 清除 Cookie |
+| `get_current_user()` | 從已驗證的 Token 解析使用者資訊 |
 
-#### 特性
+#### `google_auth.py` 特性
 
-- **Cookie 持久化**：使用 `extra_streamlit_components.CookieManager` 實現 7 天登入持久化
-- **防重複授權**：追蹤 `last_used_code` 防止 `invalid_grant` 錯誤
-- **錯誤處理**：自動偵測 Service Account Key 誤用並提示正確設定
-- **重試機制**：Cookie 讀取含最多 3 次重試邏輯
+- **FastAPI Auth Hub**: 認證邏輯完全移交給 `mcp_server` (port 8000)，解決 Streamlit iframe 沙盒限制。
+- **原生 Set-Cookie**: 利用 HTTP 層級的 `Set-Cookie` 標頭確保登入狀態的 7 天持久化。
+- **同步驗證**: 捨棄非同步的 React Component，改用 `st.context.cookies` 進行極速驗證。
 
 ---
 
@@ -258,7 +261,7 @@ sequenceDiagram
 
 #### 快取鍵生成
 
-```
+```bash
 cache:response:{agent_name}:{sha256(agent_name:prompt)}
 ```
 

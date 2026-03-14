@@ -1,10 +1,12 @@
 # Streamlit 驗證迴圈故障排除 (Streamlit Auth Loop Postmortem)
 
-### 版本紀錄 (Iteration Record)
+## 版本紀錄 (Iteration Record)
+
 | Date | Version | Description | Author |
 | :--- | :--- | :--- | :--- |
 | 2026-02-20 | v1.0 | Initial Release: Documented Auth State loss and Component Rendering fixes | AI Agent |
 | 2026-02-27 | v1.1 | Added Postmortem for OAuth Query Params Race Condition and `st.session_state` Login Loops | AI Agent |
+| 2026-03-14 | v1.2 | **The Ultimate Fix**: Migrated OAuth to FastAPI Auth Hub to bypass Streamlit iframe & re-render issues | AI Agent |
 
 ---
 
@@ -73,6 +75,15 @@ sequenceDiagram
     B->>C: Mount iframe & Run React JS
     C->>B: Read Cookie
     C->>S:"Send Cookie (Triggers auto re-run)"
+
+    Note over B, S: "🚀 Ultimate Fix: FastAPI Auth Hub (v1.2)"
+    B->>S: Click "Login with Google" (<a> tag)
+    S->>F: Redirect to FastAPI (port 8000)
+    F->>F: Complete Google OAuth Flow
+    F->>B: Set-Cookie (HTTP 302 Redirect)
+    B->>S: Back to Dashboard (port 8501)
+    S->>S: st.context.cookies.get() [Sync/Reliable]
+    S->>B: Render Dashboard
 ```
 
 ---
@@ -92,12 +103,10 @@ Caught and ignored Control Flow Exceptions explicitly.
 
 ## 4. 未來優化待辦事項 (Future Optimization / Action Items)
 
-- [ ] **導入 FastAPI Backend Session API Middleware**: Streamlit 處理第三方 Cookie 本質上過於脆弱（受限於 iframe 沙盒與 Component 掛載延遲）。未來應將 Authentication Token 的發放與驗證移交給原生的 FastAPI `/auth/login` 端點處理，並使用 HTTP-Only Secure Cookie 來守護狀態，再由 Streamlit 單純透過 Header / Cookie 確認即可。
-      **Introduce FastAPI Backend Session API Middleware**: Streamlit's handling of 3rd-party cookies is inherently too fragile (limited by iframe sandboxes and component mount delays). In the future, Authentication Token issuance and validation should be handed over to a native FastAPI `/auth/login` endpoint, using HTTP-Only Secure Cookies to safeguard state, while Streamlit simply verifies via Headers/Cookies.
+- [x] **導入 FastAPI Backend Session API Middleware**: **(已於 v1.2 達成)** 將 OAuth 回調移交給 `mcp_server` (FastAPI)，利用原生 HTTP Set-Cookie 確保狀態一致性。
 - [ ] **升級 Streamlit 內建 Cookie 功能**: 關注 Streamlit 官方對於原生 Cookie 支援的開發進度 (若有)，以徹底擺脫對 `extra_streamlit_components` 等脆弱的掛載依賴。
       **Upgrade to Streamlit Built-in Cookie Features**: Monitor Streamlit official updates for native Cookie support (if any) to completely eliminate fragile hook dependencies like `extra_streamlit_components`.
-- [ ] **實作 OAuth State 安全校驗**: 完善 Google OAuth 流程中的 `state` 參數驗證，防止 CSRF 攻擊，並加入對 Refresh Token 的妥善保管機制（設計 `user_sessions` DB Model）。
-      **Implement OAuth State Security Validation**: Perfect the `state` parameter validation in the Google OAuth flow to prevent CSRF attacks, and add proper safekeeping mechanisms for Refresh Tokens (design a `user_sessions` DB Model).
+- [x] **實作 OAuth State 安全校驗**: **(已於 v1.2 達成)** 在 `FastAPI` 中完善 `state` 生成與校驗。
 - [ ] **增設 Token 自動續期機制 (Refresh Workflow)**: 若使用者的登入 Session 逾期，可利用自動跳轉機制靜默更新 Token，減少使用者手動重新點擊登入的干擾。
       **Add Token Auto-Renewal Mechanism (Refresh Workflow)**: If a user's login Session expires, utilize automatic redirect mechanisms to silently renew Tokens, minimizing disruptions for users having to manually click login again.
 
