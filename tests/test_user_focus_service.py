@@ -8,7 +8,7 @@ def test_get_user_focus_empty():
     mock_etoro = MagicMock()
     mock_etoro.get_watchlists.return_value = []
     
-    service = UserFocusService(etoro_service=mock_etoro)
+    service = UserFocusService(user_id="test_user", etoro_service=mock_etoro)
     focus = service.get_user_focus()
     assert focus == {}
 
@@ -44,7 +44,7 @@ def test_get_user_focus_extraction():
         
     mock_data.get_financials.side_effect = get_financials_side_effect
     
-    service = UserFocusService(etoro_service=mock_etoro, market_data_service=mock_data)
+    service = UserFocusService(user_id="test_user", etoro_service=mock_etoro, market_data_service=mock_data)
     focus = service.get_user_focus(top_n=2)
     
     assert "Technology" in focus["top_sectors"]

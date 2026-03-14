@@ -11,10 +11,25 @@ def anyio_backend():
 
 @pytest.fixture
 def sentinel_setup():
-    with patch('src.services.sentinel_service.AlchemySentinelRepository') as mock_repo_cls:
+    with patch('src.services.sentinel_service.AlchemySentinelRepository') as mock_repo_cls, \
+         patch('src.services.sentinel_service.SentinelService._calibrate_thresholds'), \
+         patch('src.services.fred_service.FredService'), \
+         patch('src.services.supply_chain_service.SupplyChainService'), \
+         patch('src.agents.factory.AgentFactory', autospec=True) as MockFactory:
+ 
         mock_repo = mock_repo_cls.return_value
         mock_repo.is_duplicate_alert.return_value = False
         
+        # Configure ActionExtractor mock to avoid real LLM calls
+        mock_extractor = MagicMock()
+        mock_extractor.run.return_value = [] # No trade signals extracted
+        MockFactory.create_action_extractor_agent.return_value = mock_extractor
+
+        # Configure SentinelAgent mock too just in case
+        mock_sentinel_agent = MagicMock()
+        mock_sentinel_agent.run.return_value = {"priority": "P1", "target_agent": "CIO"}
+        MockFactory.create_sentinel_agent.return_value = mock_sentinel_agent
+
         mock_settings = MagicMock(spec=SettingsService)
         mock_settings.user_id = "test_user_123"
         
@@ -23,16 +38,19 @@ def sentinel_setup():
         mock_council.start_session = AsyncMock(return_value={"consensus": "Decision: SELL AAPL immediately."})
         
         sentinel = SentinelService(
+            user_id="test_user_123",
             settings_service=mock_settings,
             council_service=mock_council
         )
+
         
-        return {
+        yield {
             "sentinel": sentinel,
             "mock_repo": mock_repo,
             "mock_council": mock_council,
             "mock_settings": mock_settings
         }
+
 
 @pytest.mark.anyio
 async def test_alert_flow_and_format(sentinel_setup):

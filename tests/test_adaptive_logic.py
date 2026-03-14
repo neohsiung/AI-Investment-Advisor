@@ -20,7 +20,6 @@ class TestAdaptiveLogic(unittest.TestCase):
     def setUp(self):
         # Create Mock Repos
         self.mock_settings = MagicMock(spec=ISettingsRepository)
-        self.mock_settings.get_global.return_value = []
         self.mock_settings.get_all.return_value = []
         
         self.mock_state = MagicMock(spec=IAgentStateRepository)
@@ -28,7 +27,7 @@ class TestAdaptiveLogic(unittest.TestCase):
 
     def test_freshness_logic(self):
         """Test that identical input triggers skip"""
-        agent = MockAgent(name="TestFreshness", settings_repo=self.mock_settings, state_repo=self.mock_state)
+        agent = MockAgent(name="TestFreshness", user_id="test_user", settings_repo=self.mock_settings, state_repo=self.mock_state)
         data = {"key": "value"}
         
         # 1. First Run: State Repo returns None
@@ -56,7 +55,7 @@ class TestAdaptiveLogic(unittest.TestCase):
     def test_hr_protocol_parsing(self):
         """Test Engineer Agent parsing of [HR_REQUEST]"""
         # Pass Mocks
-        engineer = SystemEngineerAgent(settings_repo=self.mock_settings, state_repo=self.mock_state)
+        engineer = SystemEngineerAgent(user_id="test_user", settings_repo=self.mock_settings, state_repo=self.mock_state)
         
         cio_report = """
         Analysis...

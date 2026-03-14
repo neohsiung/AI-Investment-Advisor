@@ -43,6 +43,7 @@ async def test_do_send_alert_uses_internal_user_id():
         )
 
         sentinel = SentinelService(
+            user_id="alice@example.com",
             settings_service=mock_settings,
             council_service=mock_council,
         )

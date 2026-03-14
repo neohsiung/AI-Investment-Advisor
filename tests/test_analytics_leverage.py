@@ -17,7 +17,7 @@ def test_calculate_metrics_with_leverage():
     ]
     mock_repo.get_cash_balance.return_value = 100.0
     
-    calc = LeverageCalculator(mock_repo)
+    calc = LeverageCalculator(user_id='user_123', repository=mock_repo)
     prices = {'META': 100.0, 'GOOG': 100.0}
     
     metrics = calc.calculate_metrics(prices, 'user_123')
@@ -38,7 +38,7 @@ def test_calculate_metrics_zero_qty():
     mock_repo.get_leverage_summary.return_value = [('AAPL', 0.0, 1.0)]
     mock_repo.get_cash_balance.return_value = 50.0
     
-    calc = LeverageCalculator(mock_repo)
+    calc = LeverageCalculator(user_id='user_123', repository=mock_repo)
     metrics = calc.calculate_metrics({'AAPL': 150.0}, 'user_123')
     
     assert metrics['nlv'] == 50.0

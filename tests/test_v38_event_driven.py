@@ -10,7 +10,9 @@ def anyio_backend():
 
 @pytest.fixture
 def mock_sentinel_repo():
-    with patch('src.services.sentinel_service.AlchemySentinelRepository') as MockRepo:
+    with patch('src.services.sentinel_service.AlchemySentinelRepository') as MockRepo, \
+         patch('src.services.sentinel_service.SentinelService._calibrate_thresholds'):
+
         mock_instance = MagicMock(spec=AlchemySentinelRepository)
         # Mock initial calls in constructor
         mock_instance.engine = MagicMock() # Fix AttributeError: engine
@@ -36,14 +38,24 @@ async def test_sentinel_process_event(mock_sentinel_repo):
          patch('src.services.sentinel_service.MarketDataService'), \
          patch('src.services.sentinel_service.InternetSearchService'), \
          patch('src.services.sentinel_service.TransactionService'), \
+         patch('src.services.fred_service.FredService'), \
+         patch('src.services.supply_chain_service.SupplyChainService'), \
+         patch('src.services.readwise_service.ReadwiseService'), \
+         patch('src.agents.factory.AgentFactory', autospec=True) as MockFactory, \
          patch('httpx.AsyncClient.post', return_value=MagicMock(status_code=202)) as mock_post:
         
+        # Configure SentinelAgent mock
+        mock_sentinel_agent = MagicMock()
+        mock_sentinel_agent.run.return_value = {"priority": "P1", "target_agent": "CIO", "rationale": "High drop"}
+        MockFactory.create_sentinel_agent.return_value = mock_sentinel_agent
+
         sentinel = SentinelService(
             council_service=mock_council,
             user_id="test_user",
             repo=mock_sentinel_repo,
             snapshot_repo=MagicMock() # Mock snapshot repo too
         )
+
         
         # Simulate an event
         event = {
@@ -55,8 +67,10 @@ async def test_sentinel_process_event(mock_sentinel_repo):
             }
         }
         
-        # Process event (Webhooks flush immediately)
+        # Process event (Webhooks flush immediately in theory, but here we force it)
         await sentinel.process_event(event)
+        await sentinel._flush_buffer(force=True)
+
 
         # Verify notification was called through HTTP
         assert mock_post.called

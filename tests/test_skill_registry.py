@@ -14,7 +14,7 @@ def test_search_web(mock_get_svc):
         {"title": "Result 2", "snippet": "Snippet 2", "link": "http://example.com/2"}
     ]
     
-    result = search_web("query")
+    result = search_web("test_user", "query")
     
     assert "Result 1" in result
     assert "Snippet 1" in result
@@ -22,11 +22,11 @@ def test_search_web(mock_get_svc):
     
     # Test Empty
     mock_svc.search_financial_context.return_value = []
-    assert search_web("empty") == "No results found."
+    assert search_web("test_user", "empty") == "No results found."
     
     # Test Exception
     mock_svc.search_financial_context.side_effect = Exception("Search Failed")
-    assert "Error: Search Failed" in search_web("fail")
+    assert "Error: Search Failed" in search_web("test_user", "fail")
 
 @patch('src.agents.skills.registry.get_market_service')
 def test_get_market_data(mock_get_svc):
@@ -42,14 +42,14 @@ def test_get_market_data(mock_get_svc):
         }
     }
     
-    result = get_market_data("AAPL")
+    result = get_market_data("test_user", "AAPL")
     
     assert "Price: 150.0" in result
     assert "Indicators: {'RSI': 50}" in result
     
     # Test Missing
     mock_svc.get_market_context.return_value = {}
-    assert get_market_data("GOOG") == "No data found." # Based on code analysis, if key missing, it returns 'No data found.'? No, code says: if exclude_ticker := context.get(ticker): ... else: return None? No implicit None return usually.
+    assert get_market_data("test_user", "GOOG") == "No data found." # Based on code analysis, if key missing, it returns 'No data found.'? No, code says: if exclude_ticker := context.get(ticker): ... else: return None? No implicit None return usually.
     # Code:
     # context = svc.get_market_context([ticker], enrich=False)
     # if exclude_ticker := context.get(ticker):
@@ -59,7 +59,7 @@ def test_get_market_data(mock_get_svc):
     
     # Test Exception
     mock_svc.get_market_context.side_effect = Exception("API Error")
-    assert "Error: API Error" in get_market_data("ERR")
+    assert "Error: API Error" in get_market_data("test_user", "ERR")
 
 @patch('src.agents.skills.registry.get_tx_repo')
 def test_get_portfolio(mock_get_repo):
@@ -103,4 +103,6 @@ def test_bind_skills_to_agent():
     tool = args[0][0]
     assert tool.name == "search_web"
     assert tool.description == "Test Description"
-    assert tool.func == SKILL_IMPLEMENTATIONS["search_web"]
+    import functools
+    assert isinstance(tool.func, functools.partial)
+    assert tool.func.func == SKILL_IMPLEMENTATIONS["search_web"]

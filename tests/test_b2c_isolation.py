@@ -3,16 +3,19 @@ import uuid
 import sys
 from unittest.mock import MagicMock, patch, ANY, AsyncMock
 
-# Mock heavy services BEFORE they are imported via webhook_service
-# 在匯入 webhook_service 之前先 mock 掉重型服務
-sys.modules["src.services.sentinel_service"] = MagicMock()
-sys.modules["src.services.council_service"] = MagicMock()
-sys.modules["src.agents.factory"] = MagicMock()
-sys.modules["dspy"] = MagicMock()
+# v4.3.1: Moved global mocks to prevent environment poisoning
+# Instead of global sys.modules modification, we use it within the test or fixture as needed.
+@pytest.fixture(autouse=True, scope="module")
+def mock_heavy_dependencies():
+    with patch.dict("sys.modules", {
+        "src.services.sentinel_service": MagicMock(),
+        "src.services.council_service": MagicMock(),
+        "src.agents.factory": MagicMock(),
+        "dspy": MagicMock()
+    }):
+        yield
 
-from src.services.settings_service import SettingsService
-from src.services.webhook_service import WebhookService
-from src.utils.auth_guard import require_authentication
+# Removed top-level imports to allow mock_heavy_dependencies fixture to work correctly during test execution
 
 @pytest.fixture
 def mock_db_repo():
@@ -52,6 +55,7 @@ def test_auth_guard_lazy_key_generation(mock_user_repo, mock_db_repo):
             svc_inst.get_setting.return_value = None
             
             # import streamlit as st mock is needed since AuthGuard uses it
+            from src.utils.auth_guard import require_authentication
             with patch("src.utils.auth_guard.st"):
                 updated_user = require_authentication()
             
@@ -73,6 +77,7 @@ async def test_webhook_dynamic_routing(mock_db_repo):
     mock_request.headers = {"X-API-Key": api_key}
     mock_request.json = AsyncMock(return_value={"event": "test"})
     
+    from src.services.webhook_service import WebhookService
     svc = WebhookService()
     
     # Mock SentinelService via sys.modules mock we did at top
@@ -92,6 +97,7 @@ async def test_webhook_dynamic_routing(mock_db_repo):
 
 def test_settings_isolation_strict(mock_db_repo):
     """測試 SettingsService 是否嚴格執行隔離，移除 system 回退"""
+    from src.services.settings_service import SettingsService
     user_a = "user_a"
     service_a = SettingsService(user_id=user_a, settings_repo=mock_db_repo)
     
@@ -99,6 +105,7 @@ def test_settings_isolation_strict(mock_db_repo):
     mock_db_repo.get.assert_called_with(user_a, "test_key", None)
     
     # Ensure it raises error if no user_id is provided
+    from src.services.settings_service import SettingsService
     service_none = SettingsService(user_id=None, settings_repo=mock_db_repo)
     with pytest.raises(ValueError, match="No user_id provided"):
         service_none.get_all_settings()

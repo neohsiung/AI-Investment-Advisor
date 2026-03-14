@@ -22,7 +22,7 @@ def agent(mock_settings_repo, mock_prompt_repo):
          # Mock BaseAgent config load implicit in init
          with patch.object(SystemEngineerAgent, '_load_config', return_value={"provider": "OpenAI"}):
              mock_state = MagicMock()
-             return SystemEngineerAgent(settings_repo=mock_settings_repo, prompt_repo=mock_prompt_repo, state_repo=mock_state)
+             return SystemEngineerAgent(user_id="test_user", settings_repo=mock_settings_repo, prompt_repo=mock_prompt_repo, state_repo=mock_state)
 
 def test_analyze_optimization_needs_basic(agent):
     report = """
@@ -58,7 +58,7 @@ def test_get_schedule_config(agent, mock_settings_repo):
     row2 = MagicMock()
     row2._mapping = {'key': 'schedule_weekly', 'value': '10:00'}
 
-    mock_settings_repo.get_by_prefix.return_value = [row1, row2]
+    mock_settings_repo.get_all.return_value = [("schedule_daily", "09:00"), ("schedule_weekly", "10:00")]
     
     config = agent.get_schedule_config()
     assert config['schedule_daily'] == '09:00'

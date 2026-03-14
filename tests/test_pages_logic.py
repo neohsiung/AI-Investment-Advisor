@@ -47,7 +47,7 @@ class TestSettingsService:
         mock_repo = MagicMock()
         mock_repo.get_all.return_value = [("AI_PROVIDER", "Google Gemini"), ("AI_MODEL", "gemini-1.5-pro")]
 
-        service = SettingsService("dummy.db", settings_repo=mock_repo)
+        service = SettingsService("dummy.db", user_id="test_user", settings_repo=mock_repo)
         settings = service.get_all_settings()
 
         assert settings["AI_PROVIDER"] == "Google Gemini"
@@ -55,9 +55,10 @@ class TestSettingsService:
 
     def test_save_settings_bulk(self):
         mock_repo = MagicMock()
-        service = SettingsService("dummy.db", settings_repo=mock_repo)
+        service = SettingsService("dummy.db", user_id="test_user", settings_repo=mock_repo)
         updates = {"AI_PROVIDER": "OpenAI", "API_KEY": "sk-123"} # pragma: allowlist secret
 
+        mock_repo.set.return_value = True # Ensure success
         success, msg = service.save_settings_bulk(updates)
 
         assert success is True
@@ -70,7 +71,7 @@ class TestSettingsService:
                 "data": [{"id": "model A"}, {"id": "model B"}]
             }
 
-            service = SettingsService("dummy.db")
+            service = SettingsService("dummy.db", user_id="test_user")
             models = service.fetch_openrouter_models()
             assert "model A" in models
 
@@ -171,7 +172,7 @@ class TestSettingsRender:
              mock_time.hour = 10
              mock_st.time_input.return_value = mock_time
 
-             settings_mod.render_scheduler_tab(mock_st, "dummy.db")
+             settings_mod.render_scheduler_tab(mock_st, "dummy.db", user_id="test_user")
 
              # Updated labels in unified UX
              mock_st.time_input.assert_any_call("時間 (Weekly Time)", value=ANY, label_visibility='collapsed')

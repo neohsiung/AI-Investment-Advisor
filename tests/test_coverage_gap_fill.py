@@ -18,7 +18,6 @@ class MockAgent(BaseAgent):
 @pytest.fixture
 def mock_settings_repo():
     repo = MagicMock(spec=ISettingsRepository)
-    repo.get_global.return_value = []
     repo.get_all.return_value = []
     return repo
 
@@ -36,25 +35,26 @@ def mock_agent(mock_settings_repo, mock_state_repo):
             # BUT BaseAgent._load_config calls repo. If we want to mock what config ends up being,
             # we can patch _load_config OR populate mock_settings_repo.
             # Let's populate mock_settings_repo for better integration test
-            mock_settings_repo.get_global.return_value = []
+            # Correctly mock get_all instead of get_global
+            mock_settings_repo.get_all.return_value = []
             
             # Using _load_config patch as in original to force specific config structure for testing
             with patch.object(BaseAgent, '_load_config', return_value={
                 "provider": "Google Gemini", "model": "gemini-1.5-pro", "api_key": "test_key" # pragma: allowlist secret
             }):
-                agent = MockAgent("TestAgent", "prompt.txt", 
+                agent = MockAgent("TestAgent", "prompt.txt", user_id="test_user", 
                                   settings_repo=mock_settings_repo, state_repo=mock_state_repo)
                 return agent
 
 def test_base_agent_load_config_error(mock_settings_repo, mock_state_repo):
     # Simulate Repo Error
-    mock_settings_repo.get_global.side_effect = Exception("DB Error")
+    mock_settings_repo.get_all.side_effect = Exception("DB Error")
     
     with patch('builtins.open', mock_open(read_data="System Prompt")):
         with patch('os.path.exists', return_value=True):
             with patch.dict(os.environ, {"AI_PROVIDER": "Google Gemini"}):
                 # Should not raise, just log warning and return default
-                agent = MockAgent("TestAgent", "prompt.txt",
+                agent = MockAgent("TestAgent", "prompt.txt", user_id="test_user",
                                   settings_repo=mock_settings_repo, state_repo=mock_state_repo)
                 # Default fallback in BaseAgent is empty or checks os.environ
                 # BaseAgent._load_config sets defaults if not in DB

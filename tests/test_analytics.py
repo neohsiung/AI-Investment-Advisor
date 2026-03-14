@@ -34,7 +34,7 @@ def test_leverage_calculator_metrics():
     t1 = MagicMock(); t1.action = 'DEPOSIT'; t1.amount = 10000.0
     mock_repo.get_all_by_user.return_value = [t1]
 
-    calc = LeverageCalculator(repository=mock_repo)
+    calc = LeverageCalculator(user_id=user_id, repository=mock_repo)
     metrics = calc.calculate_metrics(current_prices, user_id)
 
     # Logic Check:
@@ -105,7 +105,7 @@ def test_roi_engine():
     mock_repo = MagicMock()
     mock_repo.calculate_net_invested_capital.return_value = 5000.0
     
-    engine = ROIEngine(repository=mock_repo)
+    engine = ROIEngine(user_id="user1", repository=mock_repo)
     roi = engine.calculate_roi(nlv=6000.0, user_id="user1")
     
     # ROI = (6000 - 5000) / 5000 = 0.20 = 20%
@@ -126,7 +126,7 @@ def test_pnl_calculator():
     # So we provide them in DESC date order (newest first)
     mock_repo.get_all_by_user.return_value = [t3, t2, t1]
     
-    calc = PnLCalculator(repository=mock_repo)
+    calc = PnLCalculator(user_id="user1", repository=mock_repo)
     current_prices = {"AAPL": 130.0, "GOOG": 210.0}
     
     breakdown = calc.calculate_breakdown(current_prices, "user1")

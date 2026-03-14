@@ -93,7 +93,7 @@ class TestCoverageFinalPush:
         t2 = MagicMock(ticker="AAPL", action="SELL", quantity=10, price=120.0, fees=0.0)
         mock_repo.get_all_by_user.return_value = [t2, t1] 
         
-        calc = PnLCalculator(repository=mock_repo)
+        calc = PnLCalculator(user_id="user1", repository=mock_repo)
         res = calc.calculate_breakdown({}, "user1")
         
         assert "AAPL" in res['details']

@@ -20,7 +20,7 @@ def sentinel_svc(mock_market_service):
          patch('src.services.sentinel_service.InternetSearchService'), \
          patch('src.services.sentinel_service.TransactionService'), \
          patch('src.services.sentinel_service.CouncilService'):
-        svc = SentinelService(market_service=mock_market_service)
+        svc = SentinelService(user_id="test_user", market_service=mock_market_service)
         return svc
 
 def test_calibrate_thresholds_logic(sentinel_svc, mock_market_service):

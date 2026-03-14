@@ -48,7 +48,7 @@ class TestDashboardAggregation(unittest.TestCase):
 
     def test_prepare_dashboard_data_uses_aggregator(self):
         # Initialize Service with mocked repos
-        service = DashboardService(db_path=":memory:")
+        service = DashboardService(user_id="user1", db_path=":memory:")
         service.transaction_service = self.mock_transaction_service
         service.market_service = self.mock_market_data
         service._fetch_market_prices = MagicMock(return_value={"AAPL": 150.0})

@@ -11,7 +11,6 @@ import os
 @pytest.fixture
 def mock_settings_repo():
     repo = MagicMock(spec=ISettingsRepository)
-    repo.get_global.return_value = []
     repo.get_all.return_value = []
     return repo
 
@@ -31,7 +30,7 @@ def test_cio_agent(mock_settings_repo, mock_state_repo):
 
     # Patch _load_prompt instead of open() to avoid side effects
     with patch('src.agents.base_agent.BaseAgent._load_prompt', return_value="CIO Prompt"):
-         agent = CIOAgent(use_cache=False, transaction_repo=mock_trans_repo, 
+         agent = CIOAgent(user_id="test_user", use_cache=False, transaction_repo=mock_trans_repo, 
                           settings_repo=mock_settings_repo, state_repo=mock_state_repo)
 
          with patch.object(agent, '_mock_llm_call', return_value="Mock response"):
@@ -41,7 +40,7 @@ def test_cio_agent(mock_settings_repo, mock_state_repo):
 
 def test_macro_agent(mock_settings_repo, mock_state_repo):
     with patch('src.agents.base_agent.BaseAgent._load_prompt', return_value="Macro Prompt"):
-        agent = MacroAgent(use_cache=False, settings_repo=mock_settings_repo, state_repo=mock_state_repo)
+        agent = MacroAgent(user_id="test_user", use_cache=False, settings_repo=mock_settings_repo, state_repo=mock_state_repo)
 
         with patch.object(agent, '_mock_llm_call', return_value="Test Result"):
             result = agent.run({"macro_data": {"ISM_Mfg_PMI": {"value": 45}, "ISM_Svc_PMI": {"value": 55}}})
@@ -53,7 +52,7 @@ def mock_prompt_repo():
 
 def test_engineer_agent(mock_settings_repo, mock_state_repo, mock_prompt_repo):
     with patch('src.agents.base_agent.BaseAgent._load_prompt', return_value="Engineer Prompt"):
-        agent = SystemEngineerAgent(use_cache=False, settings_repo=mock_settings_repo, 
+        agent = SystemEngineerAgent(user_id="test_user", use_cache=False, settings_repo=mock_settings_repo, 
                                     state_repo=mock_state_repo, prompt_repo=mock_prompt_repo)
 
         # Test analyze_optimization_needs

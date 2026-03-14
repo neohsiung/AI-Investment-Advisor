@@ -32,7 +32,7 @@ class TestSchedulerService:
     def test_scheduler_loop(self):
         from src.services.scheduler_service import SchedulerService
         
-        service = SchedulerService()
+        service = SchedulerService(user_id="test_user")
         assert hasattr(service, 'run_loop')
 
 class TestDashboardCoverage:

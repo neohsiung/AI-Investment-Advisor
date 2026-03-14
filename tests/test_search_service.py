@@ -13,7 +13,8 @@ class TestInternetSearchService(unittest.TestCase):
     def test_search_cache_hit(self):
         """Test that cache is used for repeated queries."""
         with patch.dict('os.environ', {'TAVILY_API_KEY': ''}):
-            service = InternetSearchService(cache_ttl=10)
+            with patch('src.services.search_service.SettingsService'):
+                service = InternetSearchService(user_id="test_user", cache_ttl=10)
             
             # Mock internal ddgs
             service.ddgs = MagicMock()
@@ -33,7 +34,8 @@ class TestInternetSearchService(unittest.TestCase):
     def test_search_cache_expiry(self):
         """Test that cache expires after TTL."""
         with patch.dict('os.environ', {'TAVILY_API_KEY': ''}):
-            service = InternetSearchService(cache_ttl=0.1)
+            with patch('src.services.search_service.SettingsService'):
+                service = InternetSearchService(user_id="test_user", cache_ttl=0.1)
             
             service.ddgs = MagicMock()
             service.ddgs.text.return_value = [{'title': 'A', 'body': 'B', 'href': 'C'}]
@@ -54,7 +56,8 @@ class TestInternetSearchService(unittest.TestCase):
     def test_get_ticker_moat(self):
         """Test convenience method for ticker moat search."""
         with patch.dict('os.environ', {'TAVILY_API_KEY': ''}):
-            service = InternetSearchService()
+            with patch('src.services.search_service.SettingsService'):
+                service = InternetSearchService(user_id="test_user")
             with patch.object(service, 'search_financial_context') as mock_search:
                 service.get_ticker_moat_and_catalyst("AAPL")
                 mock_search.assert_called_with("AAPL stock competitive advantage moat catalyst 2025 analysis", max_results=3)
@@ -62,7 +65,8 @@ class TestInternetSearchService(unittest.TestCase):
     def test_tavily_primary(self):
         """Test that Tavily is used when available."""
         with patch.dict('os.environ', {'TAVILY_API_KEY': 'test_key'}):
-            service = InternetSearchService()
+            with patch('src.services.search_service.SettingsService'):
+                service = InternetSearchService(user_id="test_user")
             
             # Mock the tavily client after initialization
             mock_client = MagicMock()

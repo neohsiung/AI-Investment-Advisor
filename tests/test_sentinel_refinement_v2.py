@@ -30,6 +30,7 @@ def sentinel_service(mock_repo, mock_council):
     with patch("src.services.sentinel_service.AlchemySentinelRepository", return_value=mock_repo), \
          patch("src.services.sentinel_service.AlchemySnapshotRepository", return_value=mock_repo): # Can use same mock if compatible
         service = SentinelService(
+            user_id="test_user",
             council_service=mock_council,
             settings_service=MagicMock(),
             repo=mock_repo,
@@ -48,6 +49,7 @@ async def test_escalate_deduplication(sentinel_service, mock_repo):
     # source="Test" makes it "external" which triggers immediate flush
     with patch('httpx.AsyncClient.post') as mock_post:
         await sentinel_service._escalate(triggers, source="Test")
+        await sentinel_service._flush_buffer(force=True, source="Test")
         
         # Assert: Should NOT notify or deliberate
         assert sentinel_service.council_service.start_session.call_count == 0
@@ -64,6 +66,7 @@ async def test_escalate_new_alert(sentinel_service, mock_repo):
     triggers = [{"text": "New Trigger", "id": "new_t"}]
     with patch('httpx.AsyncClient.post', return_value=MagicMock(status_code=202)) as mock_post:
         await sentinel_service._escalate(triggers, source="Test")
+        await sentinel_service._flush_buffer(force=True, source="Test")
         
         # Assert: Should notify and log
         assert mock_post.called
@@ -72,7 +75,7 @@ async def test_escalate_new_alert(sentinel_service, mock_repo):
     # Check arguments
     args, _ = mock_repo.log_alert.call_args
     # topic = f"{source.upper()} ALERT: {'; '.join(display_texts)}"
-    assert args[0] == "TEST ALERT: New Trigger"
+    assert args[0] == "TEST P2 ALERT: New Trigger"
     assert args[1] == "New Trigger"
 
 def test_notification_service_omni_channel_init():

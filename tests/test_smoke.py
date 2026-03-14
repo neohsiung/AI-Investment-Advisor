@@ -54,7 +54,7 @@ def test_cli_scheduler_mode():
         
         # Test: Scheduler Check (Daily)
         # Fix path to cli.py if needed, or use app.py directly
-        with patch.object(sys, 'argv', ["services/scheduler/src/app.py", "--mode", "scheduler", "--task", "daily"]):
+        with patch.object(sys, 'argv', ["services/scheduler/src/app.py", "--mode", "scheduler", "--task", "daily", "--user_id", "test_user"]):
             main()
             mock_instance.job_daily_check.assert_called()
 

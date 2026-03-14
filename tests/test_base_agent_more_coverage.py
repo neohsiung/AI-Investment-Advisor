@@ -32,30 +32,27 @@ class TestBaseAgentMoreCoverage:
 
     def test_load_config_db_priority(self, mock_settings_repo, mock_state_repo):
         # Setup DB mocks
-        mock_settings_repo.get_global.return_value = [("AI_PROVIDER", "DB_GEMINI")]
-        mock_settings_repo.get_all.return_value = []
+        mock_settings_repo.get_all.return_value = [("AI_PROVIDER", "DB_GEMINI")]
         
         with patch.object(BaseAgent, '_load_prompt', return_value=""):
              # We want to test the REAL _load_config
-             agent = ConcreteAgent("TestAgent", "path", settings_repo=mock_settings_repo, state_repo=mock_state_repo)
+             agent = ConcreteAgent("TestAgent", "path", user_id="test_user", settings_repo=mock_settings_repo, state_repo=mock_state_repo)
              # _load_config is called in __init__
              
              assert agent.config['provider'] == "DB_GEMINI"
 
     def test_load_config_tier_smart(self, mock_settings_repo, mock_state_repo):
-        mock_settings_repo.get_global.return_value = [("AI_MODEL_SMART", "gemini-ultra")]
-        mock_settings_repo.get_all.return_value = []
+        mock_settings_repo.get_all.return_value = [("AI_MODEL_SMART", "gemini-ultra")]
         
         with patch.object(BaseAgent, '_load_prompt', return_value=""):
-             agent = ConcreteAgent("TestAgent", "path", tier="smart", settings_repo=mock_settings_repo, state_repo=mock_state_repo)
+             agent = ConcreteAgent("TestAgent", "path", user_id="test_user", tier="smart", settings_repo=mock_settings_repo, state_repo=mock_state_repo)
              assert agent.config['model'] == "gemini-ultra"
 
     def test_load_config_tier_fast(self, mock_settings_repo, mock_state_repo):
-        mock_settings_repo.get_global.return_value = [("AI_MODEL_FAST", "gemini-flash")]
-        mock_settings_repo.get_all.return_value = []
+        mock_settings_repo.get_all.return_value = [("AI_MODEL_FAST", "gemini-flash")]
         
         with patch.object(BaseAgent, '_load_prompt', return_value=""):
-             agent = ConcreteAgent("TestAgent", "path", tier="fast", settings_repo=mock_settings_repo, state_repo=mock_state_repo)
+             agent = ConcreteAgent("TestAgent", "path", user_id="test_user", tier="fast", settings_repo=mock_settings_repo, state_repo=mock_state_repo)
              assert agent.config['model'] == "gemini-flash"
 
     def test_check_freshness_hash_match(self, agent):

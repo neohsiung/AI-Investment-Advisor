@@ -11,7 +11,7 @@ class DummyAgent(BaseAgent):
         if not os.path.exists(dummy_path):
             with open(dummy_path, "w") as f: f.write("dummy")
             
-        super().__init__(name=name, prompt_path=dummy_path, use_cache=False)
+        super().__init__(name=name, user_id="test_user", prompt_path=dummy_path, use_cache=False)
         self.delay = delay
         self.result_text = result_text
 
@@ -21,7 +21,7 @@ class DummyAgent(BaseAgent):
         return self.result_text
 
 def test_swarm_concurrency():
-    swarm = RoleSwarm(name="TestSwarm")
+    swarm = RoleSwarm(name="TestSwarm", user_id="test_user")
     
     # 1. Register Fast Tier (Takes 1 second)
     fast_agent = DummyAgent("FastRisk", delay=1.0, result_text="⚠️ SYSTEM PAUSE: Market Crash Detected!")
@@ -54,7 +54,7 @@ def test_swarm_concurrency():
     
     # --- Test 2: Full Concurrency ---
     print("Testing Full Parallel Concurrency (Expected ~5s)...")
-    swarm2 = RoleSwarm("TestSwarm2")
+    swarm2 = RoleSwarm("TestSwarm2", user_id="test_user")
     swarm2.register_agent("col_fast", DummyAgent("Fast1", delay=1.0, result_text="All clear."))
     swarm2.register_agent("col_smart", DummyAgent("Smart1", delay=3.0, result_text="Looks good."))
     swarm2.register_agent("col_adv", DummyAgent("Adv1", delay=5.0, result_text="Buy Signal."))

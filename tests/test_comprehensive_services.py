@@ -19,7 +19,7 @@ class TestAnalyticsService:
         """Test leverage calculation logic"""
         from src.services.analytics_service import LeverageCalculator
         
-        calc = LeverageCalculator()
+        calc = LeverageCalculator(user_id="test_user")
         
         # Mock data
         prices = {'AAPL': 100}
@@ -45,7 +45,7 @@ class TestAnalyticsService:
         """Test ROI calculation"""
         from src.services.analytics_service import ROIEngine
         
-        engine = ROIEngine()
+        engine = ROIEngine(user_id="test_user")
         
         # Since it calculates based on invested capital from repo, mock repo
         mock_repo = Mock()
@@ -68,7 +68,7 @@ class TestAnalyticsService:
             SimpleNamespace(action='SELL', ticker='AAPL', quantity=10, price=110, fees=0, date='2023-01-02', id='2')
         ]
         
-        calc = PnLCalculator(repository=mock_repo)
+        calc = PnLCalculator(user_id="test_user", repository=mock_repo)
         
         prices = {'AAPL': 110}
         

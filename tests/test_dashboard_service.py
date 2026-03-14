@@ -22,7 +22,7 @@ class TestDashboardService:
                             with patch('src.services.dashboard_service.PnLCalculator'):
                                 with patch('src.services.portfolio_aggregator_service.PortfolioAggregatorService') as mock_agg_cls:
                                     mock_agg_cls.return_value.get_aggregated_portfolio.return_value = {'total_equity': 0, 'positions': []}
-                                    yield DashboardService(db_path=mock_db_path)
+                                    yield DashboardService(user_id="test@example.com", db_path=mock_db_path)
     
     def test_init(self, service, mock_db_path):
         """Test service initialization"""

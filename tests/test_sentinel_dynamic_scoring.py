@@ -16,7 +16,7 @@ def mock_settings():
 @pytest.fixture
 def sentinel_svc(mock_settings):
     with patch('src.services.sentinel_service.SettingsService', return_value=mock_settings):
-        svc = SentinelService()
+        svc = SentinelService(user_id="test_user")
         svc.settings_service = mock_settings # Inject
         return svc
 
