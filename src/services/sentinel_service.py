@@ -674,36 +674,70 @@ class SentinelService:
         from src.agents.factory import AgentFactory
         
         for t in triggers:
-            # 1. AI-Driven Priority & Routing
-            try:
-                sentinel_agent = AgentFactory.create_sentinel_agent(user_id=self.user_id)
-                event_data = {
-                    "text": t.get("text", ""),
-                    "id": t.get("id", ""),
-                    "data": t.get("data", {}),
-                    "source": source
-                }
-                
-                eval_res = sentinel_agent.run({
-                    "trigger_source": source,
-                    "event_data": event_data,
-                    "current_vix": self.current_vix
-                })
-                
-                p_str = eval_res.get("priority", "P3")
-                priority = int(p_str.replace("P", ""))
-                t["priority"] = priority
-                t["target_agent"] = eval_res.get("target_agent", "CIO")
-                t["rationale"] = eval_res.get("rationale", "")
-                
-                # Check for "Ultra-Critical" P0 or explicit critical flag
-                if p_str == "P0" or eval_res.get("is_critical", False):
-                     logger.warning(f"Sentinel: Systemic Criticality detected ({p_str}). Bypassing buffer for {t.get('id')}.")
-                     await self._do_send_alert([t], source=source)
-                     continue
+            trigger_id = t.get("id", "")
+            
+            # v5.4.1 Cost Optimization: Semantic/Response Caching (Buffer Level)
+            # If this exact trigger ID is already in the buffer, skip LLM evaluation completely
+            already_buffered = next((b for b in self._trigger_buffer if b["trigger"].get("id") == trigger_id), None)
+            
+            if already_buffered:
+                t["priority"] = already_buffered["trigger"].get("priority", 3)
+                t["target_agent"] = already_buffered["trigger"].get("target_agent", "CIO")
+                t["rationale"] = already_buffered["trigger"].get("rationale", "Cached from previous evaluation")
+                logger.debug(f"Sentinel: Skipping LLM evaluation for cached trigger {trigger_id} (P{t['priority']})")
+            else:
+                # 1. AI-Driven Priority & Routing
+                # 1. AI 驅動的優先級與路讀路由
+                try:
+                    # v5.4.1 Cost Optimization: Force SentinelAgent to use the fastest model tier
+                    # v5.4.1 成本優化：強制 SentinelAgent 使用最快的模型等級
+                    sentinel_agent = AgentFactory.create_sentinel_agent(user_id=self.user_id, tier="fast")
+                    
+                    # Context Pruning: Truncate large payloads to prevent 400 Bad Request
+                    # 上下文修剪：截斷大型負載以防止 400 錯誤
+                    raw_text = t.get("text", "")
+                    text_snippet = raw_text[:2000] + ("..." if len(raw_text) > 2000 else "")
+                    
+                    raw_data = str(t.get("data", {}))
+                    data_snippet = raw_data[:2000] + ("..." if len(raw_data) > 2000 else "")
 
-            except Exception as e:
-                logger.error(f"Sentinel: AI Priority evaluation failed for {t.get('id')}: {e}")
+                    event_data = {
+                        "text": text_snippet,
+                        "id": trigger_id,
+                        "data": data_snippet,
+                        "source": source
+                    }
+                    
+                    # Round VIX to 1 decimal place to dramatically improve Redis Cache hit rates
+                    # 將 VIX 四捨五入至小數點第一位，大幅提升 Redis 快取命中率
+                    rounded_vix = round(self.current_vix, 1)
+
+                    eval_res = sentinel_agent.run({
+                        "trigger_source": source,
+                        "event_data": event_data,
+                        "current_vix": rounded_vix
+                    })
+                
+                    p_str = eval_res.get("priority", "P3")
+                    priority = int(p_str.replace("P", ""))
+                    t["priority"] = priority
+                    t["target_agent"] = eval_res.get("target_agent", "CIO")
+                    t["rationale"] = eval_res.get("rationale", "")
+                    
+                    # Check for "Ultra-Critical" P0 or explicit critical flag
+                    # 檢查是否為「極度緊急」P0 或明確的緊急標記
+                    if p_str == "P0" or eval_res.get("is_critical", False):
+                         logger.warning(f"Sentinel: Systemic Criticality detected ({p_str}). Bypassing buffer for {t.get('id')}.")
+                         await self._do_send_alert([t], source=source)
+                         continue
+
+                except Exception as e:
+                    logger.error(f"Sentinel: AI Priority evaluation failed for {t.get('id')}: {e}")
+                    # Fallback Priority (Rule #13.2)
+                    # 回退優先級
+                    t["priority"] = 2
+                    t["target_agent"] = "CIO"
+                    t["rationale"] = f"AI evaluation failed, falling back to P2 (Error: {str(e)[:50]})"
                 # Fallback to legacy heuristics
                 if t.get("priority") is None:
                     tid = t.get("id", "generic")
@@ -931,94 +965,37 @@ class SentinelService:
         Extract actionable trade signals from Council decision text.
         從委員會決策文字中提取可執行交易訊號。
         """
-        import re
-        import json
-        signals = []
-
-        # Strategy 0: JSON block [CONVINCING_ACTION] (Priority v2.1.0)
-        # We look for the marker and attempt to parse the following JSON
-        if "[CONVINCING_ACTION]" in decision:
-            try:
-                # Extract JSON part
-                parts = decision.split("[CONVINCING_ACTION]", 1)
-                json_part = parts[1].strip()
-                # Clean up markdown code blocks if present
-                json_part = re.sub(r'^```json\s*', '', json_part)
-                json_part = re.sub(r'\s*```$', '', json_part)
-                json_part = json_part.strip()
-                
-                # Attempt to parse
-                data = json.loads(json_part)
-                actions = data.get("actions", [])
-                for act in actions:
-                    ticker = act.get('ticker', 'UNKNOWN').upper()
+        logger.info("Sentinel: Extracting trade signals from Council decision using AI ActionExtractor...")
+        try:
+            from src.agents.factory import AgentFactory
+            target_user = self.settings_service.user_id or self.user_id or "broadcast"
+            extractor = AgentFactory.create_action_extractor_agent(user_id=target_user, tier="fast")
+            
+            raw_trades = extractor.run(decision)
+            signals = []
+            
+            for trade in raw_trades:
+                ticker = str(trade.get("ticker", "")).upper()
+                action = str(trade.get("action", "")).upper()
+                if ticker and action in ["BUY", "SELL"]:
                     signals.append({
-                        'ticker': ticker,
-                        'action': act.get('action', 'HOLD').upper(),
-                        'quantity': act.get('quantity_ratio', 1.0),
-                        'score': int(act.get('confidence', 7)),
-                        'reason': act.get('rationale', f"Council Decision: {ticker}")
+                        "ticker": ticker,
+                        "action": action,
+                        "quantity": float(trade.get("quantity", 1.0)),
+                        "score": int(trade.get("confidence", 7)),
+                        "reason": str(trade.get("reason", f"Sentinel Council: {decision[:120]}..."))
                     })
+                    
+            if signals:
+                logger.info(f"Sentinel: Extracted {len(signals)} AI trade signals from Council decision.")
+            else:
+                logger.info("Sentinel: No AI trade signals extracted from Council decision.")
                 
-                if signals:
-                    logger.info(f"Sentinel: Extracted {len(signals)} signals from structured JSON block.")
-                    return signals
-            except Exception as e:
-                logger.error(f"Sentinel: Failed to parse [CONVINCING_ACTION] block: {e}")
-
-        # Strategy 1: Look for explicit action keywords with tickers (Fallback)
-        # Pattern: BUY/SELL TICKER or 買入/賣出 TICKER
-        patterns = [
-            r'(?:BUY|ACCUMULATE|買入|加碼)\s+([A-Z]{1,5})',
-            r'(?:SELL|REDUCE|TRIM|賣出|減碼|出清)\s+([A-Z]{1,5})',
-            r'([A-Z]{1,5})\s*[：:]\s*(?:BUY|SELL|買入|賣出|加碼|減碼)',
-        ]
-
-        for pattern in patterns:
-            matches = re.finditer(pattern, decision, re.IGNORECASE)
-            for m in matches:
-                ticker = m.group(1).upper()
-                full_match = m.group(0).upper()
-
-                action = "HOLD"
-                if any(kw in full_match for kw in ["BUY", "ACCUMULATE", "加碼", "買"]):
-                    action = "BUY"
-                elif any(kw in full_match for kw in ["SELL", "REDUCE", "TRIM", "出清", "減碼", "賣"]):
-                    action = "SELL"
-
-                if action != "HOLD" and ticker not in [s['ticker'] for s in signals]:
-                    signals.append({
-                        'ticker': ticker,
-                        'action': action,
-                        'quantity': 1.0,
-                        'score': 7,  # Council-recommended default confidence
-                        'reason': f"Sentinel Council 決策 (提取): {decision[:120]}..."
-                    })
-
-        # Strategy 2: Use ticker from trigger context if Council is actionable but no ticker in text
-        if not signals:
-            for t in triggers:
-                ticker = t.get("ticker") or t.get("data", {}).get("ticker")
-                if ticker and ticker != "GLOBAL" and ticker != "UNKNOWN":
-                    d_lower = decision.lower()
-                    action = "HOLD"
-                    if any(kw in d_lower for kw in ["buy", "accumulate", "加碼", "買"]):
-                        action = "BUY"
-                    elif any(kw in d_lower for kw in ["sell", "reduce", "trim", "exit", "減碼", "賣"]):
-                        action = "SELL"
-
-                    if action != "HOLD":
-                        signals.append({
-                            'ticker': ticker.upper(),
-                            'action': action,
-                            'quantity': 1.0,
-                            'score': 7,
-                            'reason': f"Sentinel Council 決策: {decision[:120]}..."
-                        })
-
-        if signals:
-            logger.info(f"Sentinel: Extracted {len(signals)} trade signals from Council decision.")
-        return signals
+            return signals
+            
+        except Exception as e:
+            logger.error(f"Sentinel: AI Trade extraction failed: {e}")
+            return []
 
     async def _execute_trade_signals(self, user_id: str, signals: List[Dict[str, Any]], source: str) -> None:
         """

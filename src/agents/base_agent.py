@@ -509,7 +509,7 @@ class BaseAgent(ABC):
 
     def _call_real_llm(self, prompt, system_prompt):
         provider = self.config.get('provider')
-        model = self.config.get('model')
+        model = self.config.get('model', '').strip('"').strip("'")
         api_key = self.config.get('api_key')
         base_url = self.config.get('base_url')
 

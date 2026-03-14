@@ -179,3 +179,12 @@ class AgentFactory:
         AgentFactory._configure_dspy(user_id=user_id)
         agent = SentinelAgent(use_cache=use_cache, user_id=user_id, **kwargs)
         return AgentFactory._inject_dependencies(agent)
+
+    @staticmethod
+    def create_action_extractor_agent(use_cache=True, user_id=None, **kwargs):
+        from src.agents.action_extractor import ActionExtractorAgent
+        AgentFactory._configure_dspy(user_id=user_id)
+        # Use fastest tier for extraction by default since it's just JSON formatting
+        tier = kwargs.pop('tier', 'fast')
+        agent = ActionExtractorAgent(use_cache=use_cache, user_id=user_id, tier=tier, **kwargs)
+        return AgentFactory._inject_dependencies(agent)

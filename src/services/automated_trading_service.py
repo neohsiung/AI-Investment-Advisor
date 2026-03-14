@@ -213,3 +213,41 @@ class AutomatedTradingService:
                     )
         except Exception as e:
             logger.error(f"Failed to dispatch trade notification via API: {e}")
+    async def process_council_decision(self, user_id: str, decision_text: str) -> List[Dict[str, Any]]:
+        """
+        Extract trade recommendations from Council decisions and execute them based on confidence.
+        從評議會決策中提取交易建議，並根據信心分數執行。
+        """
+        from src.agents.factory import AgentFactory
+        
+        logger.info(f"AutomatedTradingService: Extracting actions from Council decision for user {user_id}")
+        extractor = AgentFactory.create_action_extractor_agent(user_id=user_id, tier="fast")
+        
+        trades = extractor.run(decision_text)
+        if not trades:
+            logger.info("AutomatedTradingService: No actionable trades found in Council decision.")
+            return []
+            
+        results = []
+        for trade in trades:
+            ticker = trade.get("ticker")
+            action = trade.get("action")
+            quantity = float(trade.get("quantity", 1.0))
+            confidence = int(trade.get("confidence", 5))
+            reason = trade.get("reason", "Council Recommendation")
+            
+            if ticker and action:
+                logger.info(f"AutomatedTradingService: Extracted trade -> {action} {quantity} {ticker} (Confidence: {confidence})")
+                res = await self.evaluate_and_execute_trade(
+                    user_id=user_id, 
+                    ticker=ticker, 
+                    action=action, 
+                    quantity=quantity, 
+                    confidence_score=confidence, 
+                    rationale=reason
+                )
+                results.append(res)
+            else:
+                logger.warning(f"AutomatedTradingService: Missing required fields in extracted trade: {trade}")
+                
+        return results

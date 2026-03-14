@@ -34,10 +34,10 @@ class SentinelAgent(BaseAgent):
             "current_vix": current_vix
         }
 
-        # 1. Initial Priority Assessment via Sentinel Prompt
-        response_str = self.run_tool_loop(context=prompt_data)
-        
         try:
+            # 1. Initial Priority Assessment via Sentinel Prompt
+            response_str = self.run_tool_loop(context=prompt_data)
+        
             # Clean up response if it contains markdown or thinking text
             # 精簡：尋找第一個 { 並從那裡開始解析，或使用正則提取
             if "{" in response_str:
