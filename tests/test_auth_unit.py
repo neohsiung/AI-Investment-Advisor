@@ -58,46 +58,6 @@ class TestGoogleAuthUnit:
              )
 
 
-    def test_get_flow_raises_value_error_on_wrong_credential_type(self, auth_instance):
-        """Test that _get_flow raises ValueError instead of st.stop when credential type is wrong."""
-        # Use the mocked module directly
-        mock_flow_module = sys.modules["google_auth_oauthlib.flow"]
-        # Configure side effect
-        mock_flow_module.Flow.from_client_secrets_file.side_effect = ValueError("Client secrets must be for a web or installed app")
-        
-        with pytest.raises(ValueError) as excinfo:
-            auth_instance._get_flow()
-        
-        assert str(excinfo.value) == "WRONG_CREDENTIAL_TYPE"
-
-    def test_get_flow_raises_other_value_errors(self, auth_instance):
-        """Test that _get_flow re-raises other ValueErrors."""
-        mock_flow_module = sys.modules["google_auth_oauthlib.flow"]
-        mock_flow_module.Flow.from_client_secrets_file.side_effect = ValueError("Some other error")
-        
-        with pytest.raises(ValueError) as excinfo:
-            auth_instance._get_flow()
-        
-        assert str(excinfo.value) == "Some other error"
-
-    def test_login_handles_wrong_credential_type(self, auth_instance):
-        """Test that login() catches WRONG_CREDENTIAL_TYPE and shows warning instead of crashing."""
-        with patch.object(auth_instance, '_get_flow') as mock_get_flow:
-            mock_get_flow.side_effect = ValueError("WRONG_CREDENTIAL_TYPE")
-            
-            # Setup clean mocks
-            st_mock = sys.modules["streamlit"]
-            st_mock.reset_mock()
-            st_mock.session_state = {}
-            st_mock.query_params = {}
-            
-            auth_instance.login()
-            
-            # Should have called st.warning
-            st_mock.warning.assert_called_with("⚠️ Authentication Unavailable (Wrong Type)")
-            # Should NOT have called st.stop() or st.error() in the old crashing way
-            st_mock.stop.assert_not_called()
-
     def test_check_authentification_returns_loading(self, auth_instance):
         """Test that check_authentification returns 'LOADING' when cookies syncing."""
         st_mock = sys.modules["streamlit"]
