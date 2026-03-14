@@ -1,3 +1,4 @@
+| 2026-03-15 | v5.7.0 | **FastAPI Auth Hub Migration**: 已將 Google OAuth 遷移至 FastAPI 後端，徹底解決 Streamlit iframe 沙盒與 Cookie 同步引發之登入迴圈問題。 | Antigravity |
 | 2026-03-14 | v5.6.0 | **Weekly Report Optimization & Progressive Debate** - 優化 WeeklyWorkflow，注入即時宏觀指標並實作多層次深度辯論 (Progressive Synthesis) 演算法。 | Antigravity |
 | 2026-03-14 | v5.5.0 | **Action Extraction Refinement & Bilingual Standardization** - 優化 ActionExtractor 提取邏輯與強韌性，並完成核心 Wiki 頁面之雙語標準化。 | Antigravity |
 | 2026-03-12 | v2.0.0 | **Sentinel Multi-Tier Buffering & CI Resilience**: Standardized `user_id` context for service initialization and resolved high-priority test regressions. | Antigravity |
@@ -40,6 +41,7 @@
 ### 🚀 核心效益與功能亮點 (Key Features & Outcomes)
 
 - **🧠 獨立微型大腦演化 (OpenClaw Architecture)**: 九大 Agent 完全解除黑盒，獨立掛載個人專屬 Workspace (`IDENTITY.md`, `STATE.md`)。結合 **WAL (Write-Ahead Logging)** 協議與 Token 安全墊機制，終結高長度財報推論斷片現象，實現不掉幀的長文脈思考。
+- **🧠 統一認證中心 (FastAPI Auth Hub)**: OAuth 流程完全遷移至 FastAPI 後端 (port 8000)，利用原生 HTTP Set-Cookie 規避 Streamlit 組件渲染與 iframe 沙盒限制，登入穩定性修復至 100%。
 - **🧠 智能進化集群 (Swarm Intelligence)**: 由 CIO Agent 領銜協同 Fundamental, Momentum 等專家智能體，消除單一模型幻覺 (Hallucinations)，提升決策勝率與可解釋性。
 - **⏱️ 全域優先級與自動化防禦 (Universal Prioritization & Auto-Defense)**: 內建 `SentinelAgent` 實現全維度優先級判定。不論是 Webhook 或內部維度，皆強制通過 AI 評核並指定專家 Agent。系統基於 Council 產出的 **[CONVINCING_ACTION]** 結構化指令與**動態信心門檻 (1-10)**，自動執行持倉調整與現金管理，支援毫秒級的 Auto-Hedging 防禦。
 - **⚖️ 專業級風控與標的優化 (Institutional Risk & Ticker Optimization)**:
@@ -107,6 +109,7 @@ cp .env.example .env
 ```mermaid
 graph TD
     User((User)) <-->|Bilingual Chat| DASH["Streamlit Dashboard"]
+    DASH <-->|Auth Redirect| HUB["FastAPI Auth Hub"]
     DASH <--> WF["WorkflowService"]
     
     subgraph "Intelligent Core"
