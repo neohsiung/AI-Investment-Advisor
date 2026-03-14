@@ -2,6 +2,7 @@
 
 | Date | Version | Description | Author |
 | :--- | :--- | :--- | :--- |
+| 2026-03-12 | v5.6 | **Universal Prioritization**: Integrated SentinelAgent for AI-driven classification of all triggers (incl. Webhooks), and structured [CONVINCING_ACTION] trade signal extraction. | Antigravity |
 | 2026-03-08 | v5.5 | **Data Source Matrix v2.0**: Integrated FinancialData.Net, enforced standardized naming convention for settings keys, and synchronized architecture blueprints. | Antigravity |
 | 2026-03-07 | v5.4 | **Portfolio Alignment**: Added Data Alignment & Calibration pattern, Portfolio Data Verification skill, and Audit Workflow. | Antigravity |
 | 2026-02-21 | v5.3 | **Batch 4**: Added Tools Layer Guide, Utils Library Guide, Intent Classification NLP Engine, Agent Skills System. | Antigravity |

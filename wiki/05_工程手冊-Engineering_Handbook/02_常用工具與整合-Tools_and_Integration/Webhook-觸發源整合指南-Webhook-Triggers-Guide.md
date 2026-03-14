@@ -4,6 +4,9 @@
 
 所有 Webhook 目標端點皆應設為 `https://<YOUR_ADVISOR_DOMAIN>/webhook/{source_id}`，並於 Header 中加入 `X-API-Key: <YOUR_API_KEY>`。
 
+> [!IMPORTANT]
+> **全域優先級評估 (Universal Prioritization)**: 透過 Webhook 傳入的事件不再預設 Bypass，而是強制經由 **Sentinel Agent** 進行優先級判定 (P0-P5)。除非判定為 **P0 (Critical)**，否則將根據優先級套用動態緩衝，以確保評議會 (Council) 具備足夠上下文進行高品質決策。
+
 ---
 
 ## 🟢 一、市場行情與技術面觸發 (Market & Technicals)

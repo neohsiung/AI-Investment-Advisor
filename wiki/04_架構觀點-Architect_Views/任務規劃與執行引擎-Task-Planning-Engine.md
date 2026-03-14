@@ -49,25 +49,32 @@
 sequenceDiagram
     participant Planner as TaskPlanningService
     participant Router as DynamicModelRouter
+    participant Workflow as WeeklyWorkflow
     participant Macro as Macro Agent
     participant Sector as "CIO (Sector Mode)"
     participant Council as "Council (Map-Reduce)"
+    participant Synthesis as "CIO (Report Synthesis)"
     
     Planner->>Router: 生成 ExecutionPlan & 複雜度評分
-    Router-->>Macro: 分配 Fast/Smart/Advanced 算力
+    Router-->>Macro: 分配 Fast/Smart 算力
+    Workflow->>Workflow: 取得即時宏觀指標 (Macro Data)
     Macro->>Sector: 傳遞週期配置
     Sector->>Council: 指定關注板塊
-    Council-->>Planner: 聚合個股掃描結論
+    Council-->>Workflow: 聚合個股掃描結論
+    Workflow->>Synthesis: 注入宏觀數據與初步分析
+    Synthesis->>Synthesis: 執行多層次深度辯論 (Progressive Debate)
+    Synthesis-->>Workflow: 產出帶有辯論紀錄的總結報告
 ```
 
 1.  **Plan Phase**:
     *   `WeeklyWorkflow` 調用 `TaskPlanningService` 生成標準化 `TaskPlan`。
 2.  **Execute Phase**:
+    *   **Context Prep**: `WeeklyWorkflow` 直接獲取即時宏觀指標 (VIX, 10Y-2Y Spread 等) 並注入執行上下文。
     *   **Macro Agent**: 分析市場週期。
     *   **CIO Agent (Sector Mode)**: 制定板塊輪動策略。
     *   **Council (Map-Reduce)**: 發動分散式 `Analysts` 對持倉與候選名單進行深度掃描。
-3.  **Synthesize Phase (Integrated Pattern)**:
-    *   **Assembly**: `BaseWorkflow._assemble_integrated_report` 負責將詳細的辯論過程 (Detailed Analysis) 注入報告。
+3.  **Synthesize Phase (Progressive Synthesis Pattern)**:
+    *   **Debate & Assembly**: `CIOAgent (Report Synthesis)` 接收所有 Map-Reduce 產出與即時宏觀數據，被指示尋找分歧訊號並產生**議會深度審議 (Council Deep Dive)** 辯論紀錄。`BaseWorkflow._assemble_integrated_report` 負責精確地將此詳細辯論紀錄注入最終報告板塊。
     *   **Refinement**: `CIOAgent.polish_report` 執行最終潤飾，確保行動指令表 (Actionable Orders) 的格式正確且包含持倉權重。
 
 ### 3. 關鍵機制 (Key Mechanisms)

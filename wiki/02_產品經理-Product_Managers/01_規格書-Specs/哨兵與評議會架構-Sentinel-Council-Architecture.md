@@ -1,21 +1,12 @@
 # 哨兵與評議會架構 (Sentinel & Council Architecture)
 
-> **[繁體中文 (Traditional Chinese)](#zh) | [English](#en)**
-> **最新版本 (Latest Version)**: 請參閱文件頂部的版本紀錄 (Iteration Record).
+> [!NOTE]
+> **[繁體中文 (Traditional Chinese)](#zh) | [English](#en)**  
+> **最新版本 (Latest Version)**: 請參閱版本資訊 (Version History).
 
-### 版本紀錄 (Version History)
-| Date | Version | Description | Author |
-| :--- | :--- | :--- | :--- |
-| 2026-03-05 | v5.2.0 | **Dynamic Keyword Discovery**: 3-source auto-expansion (Reports/LLM, Webhook/TF-IDF, Community Trends/ApeWisdom+Finnhub+pytrends) with max 1000 cap and auto-pruning. `RiskKeywordService` DI refactor. | Antigravity |
-| 2026-03-01 | v5.1.0 | **Readwise Integration**: Integrating Readwise API to auto-fetch highlights and funnel into Sentinel's event loop. | Antigravity |
-| 2026-02-27 | v5.0.0 | **Dynamic Scoring**: Emergency liquidation and auto-hedging scores are now retrieved from settings. | Antigravity |
-| 2026-02-22 | v3.9.0 | **Batch Logic Iteration**: Added Optimized Monitoring Flow (Batch Fetching) diagram and refined scalability descriptions. | Neo |
-| 2026-02-21 | v4.3.0 | **Scalability & Load Visibility**: Implemented Ticker Aggregation (Batch Fetching) and unique ticker logging for system load visibility. | Neo |
-| 2026-02-16 | v3.8.1 | Smart Alert Deduplication (Event Logs) & Omni-Channel Fixes | Neo |
-| 2026-02-16 | v3.8.2 | Smart Buffering (15m Aggregation Window) | Neo |
-| 2026-02-15 | v3.8 | Event-Driven (Webhooks) + Adaptive Compute | Neo |
-| 2026-02-14 | v3.5 | 4D Multi-Trigger + Weighted Risk Keywords | Neo |
-| 2026-02-07 | v3.4 | Standardized naming and structure | Neo |
+### 版本資訊 (Version History)
+
+| v3.8 | 2026-02-15 | 初始 | Event-Driven (Webhooks) + Adaptive Compute. |
 
 ---
 
@@ -28,11 +19,13 @@
 ### 1. 系統層級 (Cognitive Layers)
 
 #### System 1: 快思 (The Sentinel)
+
 - **角色**: 直覺、反射、模式識別。
 - **實作**: `SentinelService` + `Adaptive Thresholds`。
 - **特徵**: **Always-on**，成本極低，反應極快。它不進行深度推理，只負責「發現異常」(Pattern Matching) 並喚醒 System 2。
 
 #### System 2: 慢想 (The Council)
+
 - **角色**: 邏輯、運算、辯論、記憶檢索。
 - **實作**: `CouncilService` + `Agent Swarm`。
 - **算力分層 (Tiered Compute)**:
@@ -44,10 +37,12 @@
 ### 2. 組件設計 (Component Design)
 
 #### 2.1 哨兵服務 — 四維觸發 (Sentinel Service — 4D Multi-Trigger)
+
 位於 `src/services/sentinel_service.py`。
-*   **職責**: 環境感知器與直覺反應。負責監控市場數據流，當任一維度異常時喚醒 System 2。
-*   **介面**: `async def process_tick(self)`
-*   **觸發維度 (Trigger Dimensions)**:
+
+- **職責**: 環境感知器與直覺反應。負責監控市場數據流，當任一維度異常時喚醒 System 2。
+- **介面**: `async def process_tick(self)`
+- **觸發維度 (Trigger Dimensions)**:
 
 | 維度 | 方法 | 資料源 | 門檻 |
 | :--- | :--- | :--- | :--- |
@@ -73,8 +68,11 @@
         - 每次觸發前查詢 `event_logs` 資料表。
         - 若 24 小時內存在完全相同 (Title + Content Hash) 的警報，則自動抑制，避免疲勞轟炸。
 
-#### 2.1.1 加權風險關鍵字系統 (Weighted Risk Keyword System)
+## 一、哨兵服務 (Sentinel Service)
 
+### 1. 定義與職責
+- **持續掃描**: ...
+- **風險評估**: ...
 突發新聞維度 (Dimension 3) 使用 DB 驅動的加權關鍵字評分機制，取代硬編碼清單：
 
 *   **架構**: `RiskKeyword` 領域實體 → `risk_keywords` 資料表 → `RiskKeywordRepository` CRUD → `RiskKeywordService` (DI 注入至 SentinelService)。
@@ -121,16 +119,33 @@ graph LR
 *   **動態閾值**: 預設目標 200，可透過 `SettingsService` (`keyword_target_count`, `keyword_max_count`) 調整。
 *   **來源追蹤**: `source` 欄位記錄關鍵字來源 (`seed` / `report` / `webhook` / `trends`)。
 
-#### 2.1.2 智能緩衝機制 (Smart Buffering — v3.8.2)
-為了避免短時間內多維度觸發導致的通知轟炸 (Notification Fatigue)，系統引入了緩衝聚合機制：
-*   **緩衝視窗 (Aggregation Window)**: 15 分鐘。
-*   **運作邏輯**:
-    1.  首個非嚴重 (Non-Critical) 觸發啟動 Timer。
-    2.  後續 15 分鐘內的觸發事件 (如 VIX 波動、相關新聞) 會被暫存並去重。
-    3.  視窗結束時，將所有暫存事件聚合為 **單一通知** 發送。
-*   **嚴重略過 (Critical Bypass)**: 若偵測到嚴重風險 (e.g., VIX > 40, "CRITICAL" keyword)，則 **無視緩衝，立即發送**。
+#### 2.1.2 全域優先級評估 (Universal Prioritization — v5.4.0)
+為了確保系統決策的統一性，所有觸發事件（無論來源是否為外部 Webhook）皆不再提供「硬編碼即時 Bypass」，而是強制進入 **Sentinel Agent** 的優先級判定與議會整理流程：
 
-#### 2.1.3 終極防禦協議 (Auto-Hedging & Emergency Liquidation — v4.0)
+1.  **全來源覆蓋**: 系統內建維度 (VIX, News, Position) 與外部 Webhook (TradingView, MktRecap) 採一視同仁處理，徹底消除特定來源的特權路徑。
+2.  **判定與路由**: `SentinelAgent` 分析事件內容，判定優先級 (P0..P5) 並指定最適合的評議會專家 (Target Agent)。它具備調用「最相關專家 Agent」（如 MacroAgent 或 RiskAgent）進行初步優先級權核的能力。
+3.  **動態緩衝**: 
+    - **P0 / Systemic Critical**: AI 判定為系統性崩潰或核彈級警報，立即 Bypass 緩衝區發送。
+    - **P1 - P5**: 根據 AI 評定套用 15 分鐘至 24 小時的緩衝（見 v5.3.0 級距表）。
+4.  **專家驗證**: 對於 P1/P2 事件，`SentinelAgent` 會主動諮詢相關專門 Agent 進行權限加持與二度確認，確保警報具備足夠的專業深度。
+
+#### 2.1.3 結構化行動指令 (Actionable Council Results)
+The final decision of the Council is no longer just a plain text summary; it must be extracted through the **ActionExtractorAgent** into a structured `[CONVINCING_ACTION]` JSON block. This ensures unstructured discussion results are precisely converted into instructions readable by the trading system. / 評議會 (Council) 的最終決策不再僅是純文字摘要，而是必須透過 **ActionExtractorAgent** 提取出 `[CONVINCING_ACTION]` 結構化 JSON 區塊。這確保了非結構化的討論結果能精準轉化為交易系統可讀的指令。
+
+- **核心組件 (Core Component)**: `ActionExtractorAgent` (Located in `src/agents/action_extractor.py`). / `ActionExtractorAgent` (位於 `src/agents/action_extractor.py`)。
+- **流程 (Workflow)**:
+    1. **Text Parsing**: Reads the Council consensus text. / 讀取評議會共識文字。
+    2. **Entity Extraction**: Identifies Ticker, Action (BUY/SELL/HOLD), Quantity, Confidence. / 識別 Ticker, Action (BUY/SELL/HOLD), Quantity, Confidence。
+    3. **Schema Validation**: Ensures output matches the `AutomatedTradingService` JSON specification. / 確保輸出符合 `AutomatedTradingService` 的 JSON 規格。
+- **信心標準 (Confidence Standard)**:
+    - **Score 9-10**: Extremely high confidence. Based on the "Confidence Performance Standard," the system can automatically execute operations (requires Auto-Pilot enabled in Settings). / 信心極高。依據「信心把握度標準」，系統可自動執行操作（需 Settings 開啟 Auto-Pilot）。
+    - **Score 3-8**: Valuable. Sent to the client for one-click approval. / 具備價值。發送至用戶端等待一鍵核准執行。
+    - **Score 1-2**: Observational suggestions. Recorded only, doesn't trigger trade alerts. / 觀察性建議。僅記錄不觸發交易提示。
+- **涵蓋範圍 (Operation Scope)**:
+    - **持倉操作 (Positions)**: BUY, SELL, TRIM, or STOP-LOSS for specific Tickers. / 特定標的 (Ticker) 的買入、賣出、減碼或停損。
+    - **現金管理 (Portfolio/Cash)**: Increasing or decreasing overall cash levels (CASH), global hedging (SQQQ/VIX), or emergency liquidation. / 全局現金水位 (CASH) 的增加或減少（如升息預期導致的減碼）、全域對沖 (SQQQ/VIX) 或 緊急清償 (Liquidate)。
+
+#### 2.1.4 終極防禦協議 (Auto-Hedging & Emergency Liquidation — v4.0)
 結合 Webhook 與 `AutomatedTradingService`，實現無人值守的主動防禦。當市場崩潰時，哨兵不需等待評議會緩慢辯論。其觸發的執行評分 (Confidence Score) 現在已從硬編碼改為動態讀取使用者設定 (`emergency_liquidation_score` 與 `auto_hedge_score`)。
 
 ```mermaid
@@ -232,16 +247,15 @@ sequenceDiagram
 
 ```mermaid
 graph LR
-    S[""SentinelService.process_tick(")"] -->"D1[""VIX Check"]
-    S -->"D2[""Position Moves"]
-    S -->"D3[""Breaking News"]
-    S -->"D4[""Macro Shifts"]
-    S -->"D5[""Readwise Insights"]
-    D3 -->|"load active"| DB["("risk_keywords DB"")]
-    D3 -->|"record_hit()"| DB
-    D1 & D2 & D3 & D4 & D5 -->|"triggers"| AGG{"Aggregate"}
-    AGG -->|"≥1 trigger"| COUNCIL["CouncilService"]
-    COUNCIL -->|"decision"| LINE["LINE Push"]
+    S["SentinelService.process_tick()"] -->|"triggers"| SA["SentinelAgent (Priority & Routing)"]
+    SA -->|"P0/Critical"| SEND["_do_send_alert()"]
+    SA -->|"P1-P5"| BUFFER["_trigger_buffer"]
+    BUFFER -->|"deadline reached"| SEND
+    SEND -->|"Context"| COUNCIL["CouncilService"]
+    COUNCIL -->|"Unstructured Text"| ACT["ActionExtractorAgent"]
+    ACT -->|"JSON Orders + [CONVINCING_ACTION]"| ATS["AutomatedTradingService"]
+    ACT -->|"Report"| LINE["LINE Push"]
+    ATS -->|"Order"| BROKER["BrokerFactory"]
 ```
 
 1.  **多維偵測**: `SentinelService.process_tick()` 並行執行 5 維度檢測。
@@ -313,10 +327,8 @@ Inspired by Daniel Kahneman's *Thinking, Fast and Slow*, the system is divided i
 - **Characteristics**: On-Demand, high cost. Performs fractal debates on issues raised by Sentinel.
 
 ### 2. Sentinel Multi-Trigger Evolution
-- **Hybrid Entry**: Supports both polling (`process_tick`) and webhooks (`process_event`).
-- **External Sources**: MktRecap, TradingView, RSS-to-webhook bridges.
-- **Adaptive Compute**: VIX-based model routing (Flash vs. Pro).
-- **Smart Cool-down**: Automatically suppresses identical alerts within a **24-hour window** using `event_logs` history/hashing.
+- **Multi-Tier Buffering (v5.3.0)**: Replaced single window with P1-P5 tiers (15m to 24h).
+- **Immediate Path**: Webhooks and Critical alerts bypass all buffers.
 
 | Dimension | Method | Source | Threshold |
 | :--- | :--- | :--- | :--- |

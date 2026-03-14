@@ -3,6 +3,7 @@
 ### 版本紀錄 (Version History)
 | Date | Version | Description | Author |
 | :--- | :--- | :--- | :--- |
+| 2026-03-12 | v5.0 | **Universal Prioritization**: Integrated `SentinelAgent` as the entry gate for all triggers, enforcing AI-driven classification and priority assessment (P1-P5) before Council review. / **全域優先級評估**：整合 `SentinelAgent` 作為所有觸發器的入口閘道，在評議會審查前執行 AI 驅動的分類與優先級評估 (P1-P5)。 | Antigravity |
 | 2026-02-28 | v4.3 | **Context Safety & WAL Protocol**: Implemented `_check_context_window` and `_perform_silent_flush` into `BaseAgent` to handle extreme long-context overflow safely without memory loss. | Agent |
 | 2026-02-27 | v4.2 | **Graceful Degradation Fix**: Enforced strict `asyncio.Task.cancel()` and `await` on pre-empted Swift/Adv tier tasks to prevent orphaned event loops in non-async testing environments. | Neo |
 | 2026-02-21 | v4.1 | **Thematic & Narrative Drift Agents**: Added ThematicAgent at system level and Narrative Drift Agent (System 2 auditor for CIO narrative accuracy). | Neo |
@@ -23,7 +24,8 @@
 
 ```mermaid
 graph TD
-    user((User/Webhook)) -->"|Triggers| CIO[CIO Agent]"
+    user((User/Webhook)) -->"|Triggers| SENT[Sentinel Agent]"
+    SENT -->|Classification & Priority| CIO[CIO Agent]
     CIO -->|Broadcast| ORCH{Swarm Orchestrator}
     
     subgraph "Milestone 5: RoleSwarm Clusters"
@@ -67,7 +69,8 @@ graph TD
     
     ENG -->|Generate Alpha Code & Backtest| SETTINGS
     
-    CIO -->"|R.P.A.| DECISION[Final Decision]"
+    DECISION[Final Decision] -->|"Extract Trades"| ACT_EXT[ActionExtractor Agent]
+    ACT_EXT -->|"Structured Orders"| ATS[Automated Trading Service]
 ```
 
 ### 1. 代理人建構 (Agent Construction)
@@ -151,10 +154,17 @@ graph TD
 *   **觸發**: 每週報告生成前，作為 CIO 的前置審計步驟。
 *   **檔案**: Prompt: `prompts/narrative_drift_agent.txt`
 
-#### 2.10 評議會 (Council Agent Adapter)
+#### 2.11 動作提取代理 (ActionExtractor Agent)
+*   **認知授權 (Cognitive Mandate)**: 「結構化翻譯員 (Structured Translator)」
+*   **職責 (Responsibilities)**: Parses unstructured decision text from the Council or CIO to extract structured JSON and confidence scores matching trading system specs. / 解析評議會 (Council) 或 CIO 的非結構化決定文本，提取出符合交易系統規格的 JSON 格式及信心分數。
+*   **特性 (Characteristics)**: High efficiency, precision, and context selection capability to avoid parsing hallucinations. / 高效、精準、具備 Context 取捨能力，避免解析幻覺。
+*   **產出 (Output)**: Structured trade instruction list (Ticker, Action, Quantity, Confidence, Reason). / 結構化交易指令列表 (Ticker, Action, Quantity, Confidence, Reason)。
+*   **檔案 (File)**: `src/agents/action_extractor.py`
+
+#### 2.12 評議會 (Council Agent Adapter)
 *   **職責**: 對每檔持倉執行碎形辯論 (Fractal Debate)。
 *   **機制**: 多角度質疑 → 反駁 → 綜合裁決。
-*   **觸發**: Sentinel 偵測異常 或 CIO 深度評議時。
+*   **觸發**: Sentinel 偵測異常事件 或 Agent 意見分歧 > 閾值。
 *   **檔案**: `src/agents/council_adapter.py` (Adapter Pattern)
 
 ### 3. 技能系統與註冊表 (Agent Skills & Registry — v3.6)
@@ -251,6 +261,7 @@ sequenceDiagram
 | Thematic | Theme & Supply Chain Optimizer | `thematic.py` |
 | Narrative Drift | System 2 Auditor | `prompts/narrative_drift_agent.txt` |
 | Council | Fractal Debate Arbitrator | `council_adapter.py` |
+| ActionExtractor | Structured Translator | `action_extractor.py` |
 
 ### Agent Skills & Registry (v3.6)
 - **SkillLoader**: Parses `SKILL.md` specifications.

@@ -3,6 +3,7 @@
 ### 版本紀錄 (Version History)
 | Date | Version | Description | Author |
 | :--- | :--- | :--- | :--- |
+| 2026-03-13 | v5.6 | **Universal Prioritization Upgrade**: Integrated `SentinelAgent` for all-source event prioritization, introduced `[CONVINCING_ACTION]` structured decision triggers, and synchronized cross-wiki architecture blueprints. | Antigravity |
 | 2026-02-21 | v5.1 | **Stability & Accuracy Release (v1.2.0+)**: Refactored test suite to native `pytest-asyncio`, optimized Sentinel monitoring via batch fetching, and implemented real-time accuracy analytics based on `price_at_signal`. | Neo |
 | 2026-02-21 | v5.0 | **Microservices Monorepo & Observability**: Integrated SigNoz APM, OpenTelemetry, and Standalone Notification Service into the architecture. | Neo |
 | 2026-02-20 | v4.2 | **Production Standardization**: Standardized all internal links and file structures for Production v1.0.0 release. | Neo |
@@ -45,7 +46,7 @@ mindmap
 ### 👑 產品經理 (Product Manager - Vision)
 *聚焦於商業價值、產品演進軌跡與核心業務邏輯的定義，目標是最大化 Alpha 產出與風險防禦。*
 - **[產品演進藍圖](產品演進藍圖-Evolutionary-Roadmap)**: 了解專案從 v1 工具型應用，演化至 v4.0 Agent Swarm Economy 的戰略發展史。
-- **[核心系統規格 (v3.8)](核心系統規格-Core-System-Specs)**: 深入了解「哨兵防禦 (Sentinel)」與「評議會辯論 (Council)」的具體產品機制與邊界條件。
+- **[核心系統規格 (v5.4.0)](哨兵與評議會架構-Sentinel-Council-Architecture)**: 深入了解「全域優先級判定 (Universal Prioritization)」與「評議會辯論 (Council)」的具體產品機制與自動化交易觸發條件。
 - **[未來演進規格 (v4.0)](未來演進規格-Future-Roadmap-Specs)**: 探索下一階段「智慧管家」與「全通路 (Omni-channel)」落地的藍圖。
 
 ### 🛠️ 開發者 (Developer - Execution)

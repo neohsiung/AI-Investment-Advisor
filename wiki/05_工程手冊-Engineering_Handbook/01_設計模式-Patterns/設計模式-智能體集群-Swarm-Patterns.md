@@ -3,6 +3,7 @@
 ### 版本紀錄 (Version History)
 | Date | Version | Description | Author |
 | :--- | :--- | :--- | :--- |
+| 2026-03-12 | v4.6 | **Universal Prioritization**: Integrated `SentinelAgent` into Fast Tier as the entry guardian. | Antigravity |
 | 2026-02-20 | v4.5 | Document audit and history alignment | Neo |
 
 
@@ -30,7 +31,7 @@
 ### 3. 三階層並發架構 (3-Tier Concurrency Engine - v4.0)
 - **願景**: 打破循序執行瓶頸，針對危急訊號提供優雅降級 (Graceful Degradation)。
 - **機制**: 透過 `RoleSwarm` 與 `SwarmOrchestrator` 以 `asyncio.gather` 同時啟動三層 Agent。
-    - **Fast Tier (⚡ 哨兵/掃描)**: 1~2秒內回傳。若發現 `CRITICAL DANGER` 則立刻 preempt 中止其他層。
+    - **Fast Tier (⚡ 哨兵/掃描)**: 1~2秒內回傳。由 `SentinelAgent` 負責初步篩選與優先級判定。若發現 `CRITICAL DANGER` 則立刻 preempt 中止其他層。
     - **Smart Tier (🧠 邏輯/摘要)**: 常規運算，3~4秒回傳。
     - **Advanced Tier (🚀 深度模型)**: 複雜長篇距推論與估值，5+秒回傳。
 

@@ -38,12 +38,17 @@ class BaseWorkflow:
     def run(self):
         self.prepare()
         self.execute_specific() # 子類別實作
+        self.synthesize_results() # 子類別實作 (e.g. Progressive Debate)
         self.report()
+        
+    def _assemble_integrated_report(self, cio_output, debate_transcript, agent):
+        # 統一處理注入邏輯
+        pass
 ```
 <!-- slide -->
 > [!CAUTION]
 > **程式碼重用**: 
-> 任何新的工作流（如每月報告）必須繼承 `BaseWorkflow`，以確保日誌與錯誤處理的一致性。
+> 任何新的工作流（如每月報告）必須繼承 `BaseWorkflow`，以確保日誌與錯誤處理的一致性，並使用 `_assemble_integrated_report` 來植入詳細的 Map-Reduce 或辯論過程。
 ````
 
 ### 3. 非功能性要求 (Workflow NFR)
