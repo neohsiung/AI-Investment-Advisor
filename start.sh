@@ -49,9 +49,24 @@ function deploy_docker {
     # Auto-import n8n workflow
     if [ -f n8n_workflow_template.json ]; then
         echo "Attempting to auto-import n8n workflow..."
-        # Wait a few seconds for n8n to be ready to accept CLI commands
-        sleep 5
-        docker exec investment_advisor_n8n n8n import:workflow --file /home/node/template.json || echo "Warning: n8n import failed (may still be initializing)"
+        # Robust wait for n8n initialization (v1.x/v2.x CLI compat)
+        MAX_RETRIES=12
+        RETRY_COUNT=0
+        while [ $RETRY_COUNT -lt $MAX_RETRIES ]; do
+            if docker exec investment_advisor_n8n n8n --version >/dev/null 2>&1; then
+                echo "n8n is ready. Importing workflow..."
+                # Use a specific ID mapping to avoid SQLite NOT NULL constraint failures in newer n8n versions
+                docker exec investment_advisor_n8n n8n import:workflow --input /home/node/template.json && echo "✅ Workflow imported and activated successfully"
+                break
+            fi
+            echo "Waiting for n8n to initialize (attempt $((RETRY_COUNT+1))/$MAX_RETRIES)..."
+            sleep 5
+            RETRY_COUNT=$((RETRY_COUNT+1))
+        done
+        
+        if [ $RETRY_COUNT -eq $MAX_RETRIES ]; then
+            echo "⚠️  Warning: n8n import timed out. Please check logs with: docker compose logs n8n"
+        fi
     fi
 
     echo "To view logs: docker compose logs -f"

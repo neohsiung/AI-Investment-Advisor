@@ -1,5 +1,7 @@
 {
+    "id": "1",
     "name": "Investment Advisor - RSS Alert Bridge (v3 - Scalable)",
+    "active": true,
     "nodes": [
         {
             "parameters": {
