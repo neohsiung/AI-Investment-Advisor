@@ -16,17 +16,16 @@ def test_resolve_instrument_id_cache(mock_etoro_response):
     with patch('src.services.etoro_service.requests.get') as mock_get:
         service = EtoroService()
         mock_get.return_value.status_code = 200
-        # First call returns list
-        mock_get.return_value.json.return_value = [mock_etoro_response]
-        
-        # 1. First Call (Cache Miss)
-        id1 = service._resolve_instrument_id("AAPL")
-        assert id1 == 1001
+        mock_get.return_value.json.return_value = [{"instrumentId": 9999, "symbolName": "XYZZY"}]
+        # 1. First Call (Cache Miss) - Ensure we don't hit disk cache
+        service._id_cache.pop("XYZZY", None)
+        id1 = service._resolve_instrument_id("XYZZY")
+        assert id1 == 9999
         assert mock_get.call_count == 1
         
         # 2. Second Call (Cache Hit)
-        id2 = service._resolve_instrument_id("AAPL")
-        assert id2 == 1001
+        id2 = service._resolve_instrument_id("XYZZY")
+        assert id2 == 9999
         assert mock_get.call_count == 1  # Still 1 call
 
 def test_resolve_instrument_id_no_match():
@@ -64,3 +63,16 @@ def test_execute_order_uses_id():
         
         payload = execution_calls[0].kwargs['json']
         assert payload['InstrumentId'] == 555
+
+def test_resolve_instrument_id_dynamic_tsla():
+    """Verify TSLA now uses dynamic discovery (previously hardcoded)."""
+    with patch('src.services.etoro_service.requests.get') as mock_get:
+        service = EtoroService()
+        # Clear cache to force API call
+        service._id_cache.pop("TSLA", None)
+        mock_get.return_value.status_code = 200
+        mock_get.return_value.json.return_value = [{"instrumentId": 7, "internalSymbolFull": "TSLA"}]
+        
+        inst_id = service._resolve_instrument_id("TSLA")
+        assert inst_id == 7
+        assert mock_get.call_count == 1

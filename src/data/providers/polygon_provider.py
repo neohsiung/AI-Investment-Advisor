@@ -14,8 +14,8 @@ class PolygonProvider(MarketDataProvider):
     Polygon.io Data Provider for stock snapshots and historical data.
     Polygon.io 股票快照與歷史數據提供者。
     
-    Requires POLYGON_API_KEY env var or DB setting.
-    需要 POLYGON_API_KEY 環境變數或資料庫設定。
+    Requires DB setting (source_polygon_api_key).
+    需要資料庫設定 (source_polygon_api_key)。
     """
     def __init__(self, api_key: str = None, user_id: str = None, settings_service: SettingsService = None):
         """
@@ -33,7 +33,7 @@ class PolygonProvider(MarketDataProvider):
         self.base_url = "https://api.polygon.io"
         
         if not self.api_key:
-            self.logger.warning("POLYGON_API_KEY not found. Some features may fail.")
+            self.logger.warning("POLYGON_API_KEY not found in settings. Some features may fail.")
 
     @trace_external_call("polygon")
     def fetch_current_prices(self, tickers: List[str]) -> Dict[str, float]:

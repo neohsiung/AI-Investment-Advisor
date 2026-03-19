@@ -3,6 +3,7 @@
 ### 版本紀錄 (Version History)
 | Date | Version | Description | Author |
 | :--- | :--- | :--- | :--- |
+| 2026-03-19 | v5.2  | **Dynamic Discovery**: Removed hardcoded eToro Instrument IDs; implemented dynamic resolution. | Antigravity |
 | 2026-03-01 | v5.0  | **Tech Stack Modernization**: Removed `futu-api` to upgrade to OTel 1.39.1 & Protobuf 5.x. | Antigravity |
 | 2026-02-15 | v3.6  | **Milestone**: Unified `BrokerFactory` implementation & stable Multi-Broker routing. | Neo |
 | 2026-02-14 | v1.0  | Initial Release: Integrated Etoro, Futu, and IBKR guides | Neo |
@@ -35,6 +36,8 @@ This guide details how to integrate with the supported brokers via the unified *
         - 選擇 `Write` (若需 AI 自動執行對沖/交易)。
 4.  **安全驗證**: 完成彈出的 2FA 驗證。
 5.  **複製憑證**: 保存畫面上顯示的 `Public API Key` 與 `User Key`。
+    > [!TIP]
+    > **[NEW v5.2]** 系統現在支援 **動態標的解析 (Dynamic Resolution)**。您不再需要手動尋找或映射 Instrument ID。系統會自動透過標的代號 (e.g., `NVDA`, `COST`) 向 eToro 請求對應的內部 ID。
     > [!CAUTION]
     > 憑證僅顯示一次，請妥善保管。
 

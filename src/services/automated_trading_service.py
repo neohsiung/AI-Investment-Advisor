@@ -28,7 +28,7 @@ class AutomatedTradingService:
         self.settings_repo = settings_repo or AlchemySettingsRepository()
         self.interaction_service = interaction_service or InteractionService()
         self.notification_service = notification_service
-        self.notification_api_url = os.getenv("NOTIFICATION_API_URL", "http://localhost:8001/api/v1/notify")
+        self.notification_api_url = os.getenv("NOTIFICATION_API_URL", "http://notification:8001/api/v1/notify")
 
     async def evaluate_and_execute_trade(self, user_id: str, ticker: str, action: str, quantity: float, 
                                          confidence_score: int, rationale: str) -> Dict[str, Any]:

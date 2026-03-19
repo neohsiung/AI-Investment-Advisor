@@ -55,7 +55,6 @@ from src.services.search_service import InternetSearchService
 from src.services.fred_service import FredService
 from src.services.sentinel_service import SentinelService
 from src.services.interaction_service import InteractionService
-from src.services.github_service import GitHubService
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -65,26 +64,55 @@ async def lifespan(app: FastAPI):
     logger.info("Initializing MCP Services...")
     
     try:
+        # 0. Resolve Primary User UUID (Rule #4.3 - No 'system' user)
+        # 透過資料庫解析主要使用者 UUID，確保所有服務綁定至真實上下文。
+        from src.repositories.user_repository import AlchemyUserRepository
+        from sqlalchemy import text
+        user_repo = AlchemyUserRepository()
+        primary_user_id = None
+        
+        try:
+            with user_repo.engine.connect() as conn:
+                row = conn.execute(text("SELECT id FROM users ORDER BY created_at ASC LIMIT 1")).fetchone()
+                if row:
+                    primary_user_id = row[0]
+                    logger.info(f"✓ MCP Services binding to primary user: {primary_user_id}")
+                else:
+                    logger.warning("⚠️ No users found in database. Services may fail to initialize correctly.")
+        except Exception as e:
+            logger.error(f"Failed to resolve primary user from DB: {e}")
+
+        if not primary_user_id:
+            # Fallback for bootstrap/tests if DB is empty
+            primary_user_id = os.getenv("PRIMARY_USER_ID")
+            if primary_user_id:
+                logger.info(f"Using PRIMARY_USER_ID from environment: {primary_user_id}")
+            else:
+                 # Last resort fallback to prevent startup crash if absolutely necessary, 
+                 # but logged as ERROR as per user instruction.
+                 logger.error("CRITICAL: No user context found. SettingsService WILL fail.")
+
         # 1. Instantiate Services
-        services["market"] = MarketDataService(user_id='system')
-        services["search"] = InternetSearchService(user_id='system')
-        services["fred"] = FredService(user_id='system')
+        services["market"] = MarketDataService(user_id=primary_user_id)
+        services["search"] = InternetSearchService(user_id=primary_user_id)
+        services["fred"] = FredService(user_id=primary_user_id)
         services["sentinel"] = SentinelService(
             market_service=services["market"],
             search_service=services["search"],
-            user_id='system' # This is a system-wide sentinel instance for the MCP server
+            user_id=primary_user_id
         )
-        services["github"] = GitHubService()
+        # services["github"] = GitHubService() # REMOVED (Shift to text-based records)
         
         from src.services.webhook_service import webhook_service_instance
-        webhook_service_instance.set_sentinel_service(services["sentinel"])
+        # sentinel is now instantiated per-request in webhook_service
         
         # Initialize Settings Service for Adapter Configuration
         from src.services.settings_service import SettingsService
         from src.infrastructure.channels.channel_factory import ChannelFactory
         from src.infrastructure.nlp.intent_classifier import IntentClassifier
         
-        settings_svc_global = SettingsService(db_path=None, user_id='system')  # Use environment DB_URL or DB_TYPE
+        # v5.8.1: Global settings now bound to primary user context
+        settings_svc_global = SettingsService(db_path=None, user_id=primary_user_id)
         settings_global = settings_svc_global.get_all_settings()
         
         # Create Adapters via Factory
@@ -102,11 +130,20 @@ async def lifespan(app: FastAPI):
         # 2. Start Real-time Streaming (Polygon WebSocket)
         try:
             from src.infrastructure.streams.polygon_stream_client import PolygonStreamClient
-            stream_client = PolygonStreamClient()
+            # [Optimization] v1.2: Resolve active tickers from portfolio to filter stream
+            from src.services.transaction_service import TransactionService
+            tx_svc = TransactionService()
+            # Use correct method name: get_user_tickers with only_active=True
+            active_tickers = tx_svc.get_user_tickers(user_id=primary_user_id, only_active=True)
+            # Default fallback tickers if portfolio is empty
+            filter_tickers = active_tickers if active_tickers else ["AAPL", "TSLA", "MSFT", "NVDA", "GOOG"]
+            
+            stream_client = PolygonStreamClient(user_id=primary_user_id)
             stream_client.add_callback(services["sentinel"].on_realtime_event)
-            asyncio.create_task(stream_client.connect(tickers=["*"])) # Listen to all trades
+            # [Optimization] v1.2: Subscribe only to relevant tickers
+            asyncio.create_task(stream_client.connect(tickers=filter_tickers)) 
             services["polygon_stream"] = stream_client
-            logger.info("Polygon Real-time Stream Client started in background.")
+            logger.info(f"Polygon Real-time Stream Client started for {len(filter_tickers)} tickers: {filter_tickers}")
         except Exception as e:
             logger.error(f"Failed to start Polygon Stream client: {e}")
 
@@ -141,28 +178,6 @@ async def lifespan(app: FastAPI):
                 "name": "get_macro_indicators", 
                 "description": "取得總經指標 (Macro Data) - FRED", 
                 "parameters": {}
-            },
-            
-            # GitHub Operations
-            {
-                "name": "github_list_issues",
-                "description": "列出 GitHub Repository 中的 Issues",
-                "parameters": {"repo_full_name": "Repo完整名稱 (e.g., owner/repo)", "state": "狀態 (open/closed)"}
-            },
-            {
-                "name": "github_get_issue_detail",
-                "description": "取得 GitHub Issue 詳細內容與評論",
-                "parameters": {"repo_full_name": "Repo完整名稱", "issue_number": "Issue編號"}
-            },
-            {
-                "name": "github_create_issue_comment",
-                "description": "在 GitHub Issue 下方新增評論",
-                "parameters": {"repo_full_name": "Repo完整名稱", "issue_number": "Issue編號", "body": "評論內容"}
-            },
-            {
-                "name": "github_search_repos",
-                "description": "搜尋 GitHub 儲存庫",
-                "parameters": {"query": "搜尋關鍵字"}
             }
         ]
 
@@ -194,11 +209,6 @@ FastAPIInstrumentor.instrument_app(app)
 async def root():
     """健康檢查端點 (Root)"""
     return {"status": "ok", "service": "mcp_server", "version": "1.1.0"}
-
-@app.get("/health")
-async def health():
-    """健康檢查 (Health Check)"""
-    return {"status": "healthy"}
 
 @app.get("/health")
 async def health():
@@ -280,31 +290,6 @@ async def call_tool(tool_name: str, request: ToolCallRequest):
                 
         elif tool_name == "get_macro_indicators":
             result = services["market"].get_macro_data()
-            
-        # GitHub Dispatch
-        elif tool_name == "github_list_issues":
-            repo = args.get("repo_full_name")
-            state = args.get("state", "open")
-            if repo:
-                result = services["github"].list_issues(repo, state)
-                
-        elif tool_name == "github_get_issue_detail":
-            repo = args.get("repo_full_name")
-            num = args.get("issue_number")
-            if repo and num:
-                result = services["github"].get_issue_detail(repo, int(num))
-                
-        elif tool_name == "github_create_issue_comment":
-            repo = args.get("repo_full_name")
-            num = args.get("issue_number")
-            body = args.get("body")
-            if repo and num and body:
-                result = services["github"].create_issue_comment(repo, int(num), body)
-                
-        elif tool_name == "github_search_repos":
-            query = args.get("query")
-            if query:
-                result = services["github"].search_repos(query)
             
         else:
             result = "Tool implementation not found in dispatch logic."

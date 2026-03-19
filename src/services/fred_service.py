@@ -26,7 +26,7 @@ class FredService:
         fred_api_key = settings.get("source_fred_api_key")
         self.client = None
         if not fred_api_key:
-            self.logger.warning("FRED_API_KEY not found in environment or database.")
+            self.logger.warning("FRED_API_KEY not found in database settings.")
             self.client = None
             return
 

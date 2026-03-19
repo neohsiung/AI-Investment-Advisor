@@ -85,9 +85,17 @@ def get_db_engine(db_path=None) -> Engine:
     if not db_url:
         db_user = os.getenv("DB_USER", "postgres")
         db_pass = os.getenv("DB_PASS", "postgres")
-        db_host = os.getenv("DB_HOST", "localhost")
+        db_host = os.getenv("DB_HOST")
         db_port = os.getenv("DB_PORT", "5432")
         db_name = os.getenv("DB_NAME", "portfolio")
+        
+        if not db_host:
+            # v5.8.0: Default to 'postgres' for containerized environments, 
+            # fallback to 'localhost' for local dev with a warning.
+            db_host = "postgres"
+            if "PYTEST_CURRENT_TEST" not in os.environ:
+                 logger.warning(f"DB_HOST not set. Defaulting to '{db_host}'. (For local dev, set DB_HOST='localhost')")
+        
         db_url = f"postgresql+psycopg2://{db_user}:{db_pass}@{db_host}:{db_port}/{db_name}"
 
     # 3. Strictly disallow SQLite in production (default) paths
@@ -103,6 +111,7 @@ def get_db_engine(db_path=None) -> Engine:
     if db_url not in _db_engines:
         if "postgres" in db_url:
             # v4.2.5: Reduced from 50 to 10 to accommodate multi-service container architecture
+            print(f"DEBUG: Constructing PostgreSQL engine for host: {db_url.split('@')[-1].split(':')[0]}")
             engine = create_engine(db_url, pool_size=10, max_overflow=10)
             logger.info(f"Using PostgreSQL engine: {db_url.split('@')[-1]}")
         else:
@@ -157,7 +166,7 @@ def init_db(db_path=None, force=False, engine=None):
     elif not db_url:
         db_user = os.getenv("DB_USER", "postgres")
         db_pass = os.getenv("DB_PASS", "postgres")
-        db_host = os.getenv("DB_HOST", "localhost")
+        db_host = os.getenv("DB_HOST", "postgres")
         db_port = os.getenv("DB_PORT", "5432")
         db_name = os.getenv("DB_NAME", "portfolio")
         db_url = f"postgresql+psycopg2://{db_user}:{db_pass}@{db_host}:{db_port}/{db_name}"

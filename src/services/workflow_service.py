@@ -59,6 +59,101 @@ class BaseWorkflow(ABC):
              user_id=self.user_id
         )
         self.performance_service = PerformanceService(user_id=self.user_id)
+        self.logger = logger  # Use global logger for Base
+
+    def _parse_actionable_orders(self, final_report: str):
+        """
+        Parses the actionable orders table from the final report and populates the context.
+        Supports both Markdown pipe tables and HTML <table> formats.
+        """
+        try:
+            import re
+            rows = []
+
+            # --- Strategy 1: Markdown pipe table (preferred) ---
+            lines = final_report.split('\n')
+            for i, line in enumerate(lines):
+                if '|' in line and '---' in line:
+                    # Validate that this is likely the Actionable Orders table
+                    prev_line = lines[i-1].lower() if i > 0 else ""
+                    if any(x in prev_line for x in ["action", "動作", "代號", "ticker"]):
+                        for j in range(i + 1, len(lines)):
+                            row_line = lines[j].strip()
+                            if not row_line.startswith('|'):
+                                break
+                            cols = [c.strip() for c in row_line.split('|') if c.strip()]
+                            if len(cols) >= 4 and "---" not in row_line:
+                                rows.append(cols)
+                        break
+
+            # --- Strategy 2: HTML <table> fallback ---
+            if not rows:
+                # Find all <tr> blocks, skip header row
+                tr_blocks = re.findall(r'<tr[^>]*>(.*?)</tr>', final_report, re.DOTALL | re.IGNORECASE)
+                for tr in tr_blocks:
+                    if '<th' in tr.lower():
+                        continue
+                    tds = re.findall(r'<td[^>]*>(.*?)</td>', tr, re.DOTALL | re.IGNORECASE)
+                    cleaned = [re.sub(r'<[^>]+>', '', td).strip() for td in tds]
+                    if len(cleaned) >= 4:
+                        rows.append(cleaned)
+
+            if not rows:
+                self.logger.info("No Actionable Orders table found in CIO report.")
+                return
+
+            # --- Process parsed rows ---
+            for cols in rows:
+                ticker = cols[0].strip().upper()
+                action = cols[1]
+                quantity = cols[2]
+
+                try:
+                    score_raw = re.search(r"(\d+)", cols[3])
+                    score = int(score_raw.group(1)) if score_raw else 5
+                except (ValueError, IndexError):
+                    score = 5
+
+                u_act = action.upper()
+                cio_signal = "HOLD"
+                if any(x in u_act for x in ["BUY", "ACCUMULATE", "加碼", "買"]):
+                    cio_signal = "BUY"
+                elif any(x in u_act for x in ["SELL", "TRIM", "REDUCE", "LIQUIDATE", "減碼", "出清", "賣", "避險"]):
+                    cio_signal = "SELL"
+
+                if cio_signal != "HOLD":
+                    # Get price for performance tracing
+                    t_data = self.context.get('market_data', {}).get(ticker, {})
+                    t_price = 0
+                    if t_data:
+                         raw = t_data.get('price_data', {}).get('close', 0)
+                         if isinstance(raw, list) and raw: t_price = raw[-1]
+                         else: t_price = raw
+
+                    if self.performance_service:
+                        self.performance_service.record_recommendation(
+                            agent_name="CIO",
+                            ticker=ticker,
+                            signal=cio_signal,
+                            price=t_price
+                        )
+
+                    if 'actionable_orders' not in self.context:
+                        self.context['actionable_orders'] = []
+
+                    self.context['actionable_orders'].append({
+                        'ticker': ticker,
+                        'action': cio_signal,
+                        'quantity': quantity,
+                        'score': score,
+                        'reason': cols[4] if len(cols) >= 5 else f"CIO Signal ({cio_signal})"
+                    })
+
+            if self.context.get('actionable_orders'):
+                self.logger.info(f"Parsed {len(self.context['actionable_orders'])} actionable orders.")
+
+        except Exception as e:
+            self.logger.warning(f"Failed to parse Actionable Orders table: {e}")
 
     async def run(self, dry_run: bool = False, force_refresh: bool = False) -> Any:
         """
@@ -257,7 +352,7 @@ class BaseWorkflow(ABC):
         import os
         import httpx
         
-        notification_api_url = os.getenv("NOTIFICATION_API_URL", "http://localhost:8001/api/v1/notify")
+        notification_api_url = os.getenv("NOTIFICATION_API_URL", "http://notification:8001/api/v1/notify")
         subject = f"Investment Report ({self.__class__.__name__}) - {get_current_time().strftime('%Y-%m-%d')}"
         
         payload = {
@@ -693,101 +788,6 @@ class DailyWorkflow(BaseWorkflow):
 
         return final_report
 
-    def _parse_actionable_orders(self, final_report: str):
-        """
-        Parses the actionable orders table from the final report and populates the context.
-        Supports both Markdown pipe tables and HTML <table> formats.
-        解析最終報告中的可執行指令表格，支援 Markdown 與 HTML 格式。
-        """
-        try:
-            import re
-            rows = []
-
-            # --- Strategy 1: Markdown pipe table (preferred) ---
-            lines = final_report.split('\n')
-            for i, line in enumerate(lines):
-                if '|' in line and '---' in line:
-                    # Validate that this is likely the Actionable Orders table
-                    prev_line = lines[i-1].lower() if i > 0 else ""
-                    if "action" in prev_line or "動作" in prev_line or "代號" in prev_line or "ticker" in prev_line:
-                        for j in range(i + 1, len(lines)):
-                            row_line = lines[j].strip()
-                            if not row_line.startswith('|'):
-                                break
-                            cols = [c.strip() for c in row_line.split('|') if c.strip()]
-                            if len(cols) >= 4 and "---" not in row_line:
-                                rows.append(cols)
-                        break
-
-            # --- Strategy 2: HTML <table> fallback ---
-            if not rows:
-                # Find all <tr> blocks, skip header row
-                tr_blocks = re.findall(r'<tr[^>]*>(.*?)</tr>', final_report, re.DOTALL | re.IGNORECASE)
-                for tr in tr_blocks:
-                    # Skip header rows containing <th>
-                    if '<th' in tr.lower():
-                        continue
-                    tds = re.findall(r'<td[^>]*>(.*?)</td>', tr, re.DOTALL | re.IGNORECASE)
-                    cleaned = [re.sub(r'<[^>]+>', '', td).strip() for td in tds]
-                    if len(cleaned) >= 4:
-                        rows.append(cleaned)
-
-            if not rows:
-                logger.info("No Actionable Orders table found in CIO report.")
-                return
-
-            # --- Process parsed rows ---
-            for cols in rows:
-                ticker = cols[0].strip().upper()
-                action = cols[1]
-                quantity = cols[2]
-
-                try:
-                    score_raw = re.search(r"(\d+)", cols[3])
-                    score = int(score_raw.group(1)) if score_raw else 5
-                except (ValueError, IndexError):
-                    score = 5
-
-                u_act = action.upper()
-                cio_signal = "HOLD"
-                if any(x in u_act for x in ["BUY", "ACCUMULATE", "加碼", "買"]):
-                    cio_signal = "BUY"
-                elif any(x in u_act for x in ["SELL", "TRIM", "REDUCE", "LIQUIDATE", "減碼", "出清", "賣", "避險"]):
-                    cio_signal = "SELL"
-
-                if cio_signal != "HOLD":
-                    # Get price for performance tracing
-                    t_data = self.context.get('market_data', {}).get(ticker, {})
-                    t_price = 0
-                    if t_data:
-                         raw = t_data.get('price_data', {}).get('close', 0)
-                         if isinstance(raw, list) and raw: t_price = raw[-1]
-                         else: t_price = raw
-
-                    if self.performance_service:
-                        self.performance_service.record_recommendation(
-                            agent_name="CIO",
-                            ticker=ticker,
-                            signal=cio_signal,
-                            price=t_price
-                        )
-
-                    if 'actionable_orders' not in self.context:
-                        self.context['actionable_orders'] = []
-
-                    self.context['actionable_orders'].append({
-                        'ticker': ticker,
-                        'action': cio_signal,
-                        'quantity': quantity,
-                        'score': score,
-                        'reason': cols[4] if len(cols) >= 5 else f"CIO Daily Signal ({cio_signal})"
-                    })
-
-            if self.context.get('actionable_orders'):
-                logger.info(f"Parsed {len(self.context['actionable_orders'])} actionable orders from CIO report.")
-
-        except Exception as e:
-            logger.warning(f"Failed to parse Actionable Orders table: {e}")
 
 
 
@@ -1081,16 +1081,113 @@ class WeeklyWorkflow(BaseWorkflow):
         final_report = cio.run(cio_context)
         return final_report
 
-    # Required Abstract Method Stub - Not used in new Plan flow directly, but needed for BaseWorkflow
     def execute_analysis(self, force_refresh: bool) -> bool:
-        # OR put the logic inside `execute_analysis` and `synthesize_results`.
+        # Stub
+        return True
+
+
+class EventAnalysisWorkflow(BaseWorkflow):
+    """
+    Workflow for processing individual external signals (Webhooks).
+    事件分析工作流：處理單個外部信號（Webhooks）。
+    """
+    def __init__(self, user_id: str, event_source: str, event_data: Dict[str, Any], **kwargs):
+        super().__init__(user_id=user_id, **kwargs)
+        self.event_source = event_source
+        self.event_data = event_data
+        self.ticker = event_data.get("ticker", "GLOBAL")
+        self.target_action = event_data.get("signal")  # e.g., "BUY", "SELL"
+
+    async def run(self, dry_run: bool = False, force_refresh: bool = False) -> str:
+        """
+        Custom run logic for event-driven analysis.
+        """
+        self.logger.info(f"Starting EventAnalysisWorkflow for {self.ticker} from {self.event_source}")
         
-        # BETTER PLAN: Implement `execute_analysis` to run the tasks, store results in context.
-        # Implement `synthesize_results` to format the final report.
-        # But the Planner creates a holistic plan including synthesis.
-        
-        # I will stick to overriding `run` in WeeklyWorkflow to bypass the rigid BaseWorkflow template if needed.
-        # Or just have `run_weekly_cycle` be the main entry point if that's how it's called externally.
-        # Checking implementation_plan.md -> "Extends existing WorkflowService methods (run_weekly_report)".
-        # The file I edited calls it `WeeklyWorkflow`.
-        return True # Stub
+        try:
+            # 1. Collect Data (Specific to the ticker)
+            analysis_tickers = [self.ticker] if self.ticker != "GLOBAL" else []
+            if not analysis_tickers:
+                # If global, maybe look at macro or skip
+                return "SKIPPED: Global event without specific ticker not yet implemented."
+
+            # Fetch market data context
+            market_context = self.market_service.get_market_context(analysis_tickers, enrich=True)
+            self.context['market_data'] = market_context
+            
+            # 2. Execute Focused Analysis
+            # For events, we want fresh data (use_cache=False if force_refresh)
+            mom_agent = AgentFactory.create_momentum_agent(ttl_hours=1, use_cache=not force_refresh, user_id=self.user_id)
+            sent_agent = AgentFactory.create_sentiment_agent(ttl_hours=1, use_cache=not force_refresh, user_id=self.user_id)
+            
+            ticker_ctx = {
+                "ticker": self.ticker,
+                "price_data": market_context.get(self.ticker, {}).get("price_data", {}),
+                "indicators": market_context.get(self.ticker, {}).get("indicators", {}),
+                "news": self.market_service.get_news(self.ticker),
+                "event_context": self.event_data
+            }
+            
+            mom_res = mom_agent.run(ticker_ctx)
+            sent_res = sent_agent.run(ticker_ctx)
+            
+            # 3. Holding Reduction Analysis (If needed)
+            holding_info = ""
+            holdings = self.transaction_service.get_holdings_map(self.user_id)
+            qty = holdings.get(self.ticker, {}).get('quantity', 0)
+            
+            if qty > 0:
+                holding_info = f"\n現有持倉: {qty} 股。"
+                # If signal is to SELL/REDUCE or event is negative
+                is_negative = "SELL" in str(self.target_action).upper() or "NEGATIVE" in str(sent_res).upper()
+                if is_negative:
+                    self.logger.info(f"Performing reduction analysis for {self.ticker}")
+                    # Could run a specialized 'Risk' check or just let CIO decide
+            
+            # 4. CIO Synthesis
+            cio = AgentFactory.create_cio_agent(mode="daily", user_id=self.user_id)
+            cio_context = {
+                "macro_report": "Event-Driven Context",
+                "council_transcript": f"Ticker: {self.ticker}\n- Event Source: {self.event_source}\n- Event Detail: {self.event_data.get('msg')}\n- Momentum: {mom_res}\n- Sentiment: {sent_res}\n- Holdings: {holding_info}",
+                "portfolio": f"{self.ticker} ({qty})",
+                "user_id": self.user_id,
+                "report_focus": f"Event Analysis: {self.event_source}"
+            }
+            
+            cio_output = cio.run(cio_context)
+            
+            # Polish and translate if needed
+            final_report = cio_output # Simplified for event workflow
+            
+            # 5. Execute Action if actionable_orders table exists
+            self._parse_actionable_orders(final_report)
+            
+            if not dry_run:
+                # Distribute report (via Webhook/Notification)
+                await self.distribute_report(final_report)
+                
+                # Auto-execution logic (System 2)
+                actionable_orders = self.context.get('actionable_orders', [])
+                if actionable_orders:
+                    from src.services.automated_trading_service import AutomatedTradingService
+                    auto_trade_svc = AutomatedTradingService()
+                    for order_data in actionable_orders:
+                        await auto_trade_svc.evaluate_and_execute_trade(
+                            ticker=order_data['ticker'],
+                            action=order_data['action'],
+                            quantity=order_data['quantity'],
+                            confidence_score=order_data['score'],
+                            rationale=f"Webhook [{self.event_source}] Triggered: {order_data['reason']}",
+                            user_id=self.user_id
+                        )
+            
+            return final_report
+            
+        except Exception as e:
+            self.logger.error(f"EventAnalysisWorkflow failed: {e}")
+            raise e
+
+    # Stubs for base class compatibility
+    def collect_data(self): pass
+    def execute_analysis(self, force_refresh: bool) -> bool: return True
+    def synthesize_results(self) -> str: return ""

@@ -13,14 +13,14 @@ class PolygonStreamClient:
     WebSocket client for Polygon.io real-time market data.
     Polygon.io 即時市場數據 WebSocket 客戶端。
     """
-    def __init__(self, api_key: str = None, user_id: str = "system"):
+    def __init__(self, api_key: str = None, user_id: str = None):
         self.logger = setup_logger("PolygonStreamClient")
         self.user_id = user_id
         
         # Resolve Settings
         self.settings_service = SettingsService(user_id=user_id)
         settings = self.settings_service.get_all_settings()
-        self.api_key = api_key or settings.get("source_polygon_api_key") or os.getenv("POLYGON_API_KEY")
+        self.api_key = api_key or settings.get("source_polygon_api_key")
         
         self.ws_url = "wss://delayed.polygon.io/stocks" # Use delayed for free tier unless specified
         self.uri = f"{self.ws_url}"

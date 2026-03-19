@@ -4,10 +4,12 @@ from src.services.workflow_service import DailyWorkflow
 
 @pytest.fixture
 def daily_workflow():
-    # Patch only what's needed for initialization
-    with patch('src.services.workflow_service.BaseWorkflow.__init__', return_value=None):
+    # Mock repositories and services to avoid DB/API calls during init
+    with patch('src.services.workflow_service.AlchemyTransactionRepository', return_value=MagicMock()), \
+         patch('src.services.workflow_service.AlchemyMemoryRepository', return_value=MagicMock()), \
+         patch('src.services.workflow_service.AgentLLMProvider', return_value=MagicMock()), \
+         patch('src.services.workflow_service.PerformanceService', return_value=MagicMock()):
         workflow = DailyWorkflow(user_id="test_user")
-        workflow.user_id = "test_user"
         workflow.context = {
             'market_data': {
                 'AAPL': {'price_data': {'close': 150.0}},
@@ -15,7 +17,6 @@ def daily_workflow():
                 'SPY': {'price_data': {'close': 400.0}}
             }
         }
-        workflow.performance_service = MagicMock()
         return workflow
 
 def test_parse_actionable_orders_table(daily_workflow):

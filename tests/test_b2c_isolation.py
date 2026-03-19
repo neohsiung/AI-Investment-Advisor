@@ -80,20 +80,25 @@ async def test_webhook_dynamic_routing(mock_db_repo):
     from src.services.webhook_service import WebhookService
     svc = WebhookService()
     
-    # Mock SentinelService via sys.modules mock we did at top
-    with patch("src.services.webhook_service.SentinelService") as MockSentinel:
-        sentinel_inst = MockSentinel.return_value
-        # Ensure process_event returns a real coroutine so asyncio.create_task doesn't fail
-        async def mock_coro(*args, **kwargs): pass
-        sentinel_inst.process_event.side_effect = mock_coro
+    # Patch EventAnalysisWorkflow where it is imported FROM (workflow_service)
+    # Since handle_generic_webhook does 'from src.services.workflow_service import ...'
+    with patch("src.services.workflow_service.EventAnalysisWorkflow") as MockWorkflow:
+        workflow_inst = MockWorkflow.return_value
+        # Ensure run returns a real coroutine
+        async def mock_run(*args, **kwargs): return "COMPLETED"
+        workflow_inst.run.side_effect = mock_run
         
         response = await svc.handle_generic_webhook("test_source", mock_request)
         
     assert response["status"] == "accepted"
     assert response["user_id"] == user_id
     
-    # Verify Sentinel was instantiated with correct user_id
-    MockSentinel.assert_called_with(user_id=user_id)
+    # Verify Workflow was instantiated with correct user_id
+    MockWorkflow.assert_called_with(
+        user_id=user_id,
+        event_source="test_source",
+        event_data=ANY
+    )
 
 def test_settings_isolation_strict(mock_db_repo):
     """測試 SettingsService 是否嚴格執行隔離，移除 system 回退"""

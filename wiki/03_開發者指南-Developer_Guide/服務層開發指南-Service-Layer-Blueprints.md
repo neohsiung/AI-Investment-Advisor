@@ -6,6 +6,7 @@
 
 | Date | Version | Description | Author |
 | :--- | :--- | :--- | :--- |
+| 2026-03-19 | v5.2 | **Dynamic Architect**: `EtoroService` 實現動態標的解析；`BaseWorkflow` 統一 `_parse_actionable_orders` 邏輯。 | Antigravity |
 | 2026-03-11 | v4.8 | **B2C SaaS Evolution**: `WebhookService` 支援 API Key 動態路由；`SchedulerService` 強化使用者隔離實例化。 | Antigravity |
 | 2026-03-08 | v4.7 | **Performance Resilience**: `PerformanceService` 支援字典格式行情資料與 `account_id` 多帳號隔離。 | Antigravity |
 | 2026-03-08 | v4.6 | **Security Hardening**: `WebhookService` upgraded to SHA256; `BaseAgent` state redaction implemented. | Antigravity |
@@ -126,7 +127,7 @@ graph TD
 | `NotificationService` | `notification_service.py` | **[Async v4.1]** 非同步警報推送，具備 UUID 多通路映射能力。 |
 | `NotificationFilters` | `notification_filters.py` | 興趣導向通知過濾 — 依據使用者每通道訂閱的類別 (sentinel/report/approval) 決定是否推送。 |
 | `ReportingService` | `reporting_service.py` | Agent Markdown 報告轉換為專業機構級 HTML 格式 (Email/Web)。 |
-| `WebhookService` | `webhook_service.py` | **[Dynamic Routing v4.8]** 外部 Webhook 接收與動態路由。從 `X-API-Key` 映射 `user_id` 並動態啟動對應使用者的 `SentinelService` 上下文。 |
+| `WebhookService` | `webhook_service.py` | **[Dynamic Routing v4.8]** 外部 Webhook 接收與動態路由。從 `X-API-Key` 映射 `user_id` 並動態啟動對應使用者的 `EventAnalysisWorkflow` (v6.0) 或 `SentinelService` 上下文。 |
 | `UserFocusService` | `user_focus_service.py` | 使用者投資焦點提取 — 從 eToro 觀察名單分析板塊/產業偏好。 |
 
 ### 3. 代理人執行引擎 (Agent Execution Engine)

@@ -151,14 +151,19 @@ class WebhookService:
             parser = SOURCE_PARSERS.get(source.lower(), BaseSourceParser)
             normalized_data = parser.parse(payload)
             
-            # Instantiate user-specific Sentinel and process
-            sentinel = SentinelService(user_id=user_id)
-            asyncio.create_task(
-                sentinel.process_event({
-                    "source": source,
-                    "data": normalized_data
-                })
+            # [Refactor] Independent Event Analysis Workflow (v6.0)
+            # Instead of just Sentinel, we trigger a full Agent-driven Workflow.
+            from src.services.workflow_service import EventAnalysisWorkflow
+            event_workflow = EventAnalysisWorkflow(
+                user_id=user_id,
+                event_source=source,
+                event_data=normalized_data
             )
+            asyncio.create_task(event_workflow.run())
+            
+            # Keep Sentinel for background/secondary monitoring if needed
+            # For now, we prefer the deterministic EventAnalysisWorkflow for external signals.
+            # (Optional: sentinel = SentinelService(user_id=user_id); asyncio.create_task(sentinel.process_event(...)))
             
             return {"status": "accepted", "user_id": user_id, "source": source}
         except Exception as e:
@@ -174,13 +179,14 @@ class WebhookService:
             
             normalized = FinnhubParser.parse(payload)
             
-            sentinel = SentinelService(user_id=user_id)
-            asyncio.create_task(
-                sentinel.process_event({
-                    "source": "finnhub",
-                    "data": normalized
-                })
+            # [Refactor] Independent Event Analysis Workflow (v6.0)
+            from src.services.workflow_service import EventAnalysisWorkflow
+            event_workflow = EventAnalysisWorkflow(
+                user_id=user_id,
+                event_source="finnhub",
+                event_data=normalized
             )
+            asyncio.create_task(event_workflow.run())
             
             return {"status": "accepted", "user_id": user_id}
         except Exception as e:

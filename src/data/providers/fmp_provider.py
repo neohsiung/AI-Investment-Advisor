@@ -14,8 +14,8 @@ class FMPProvider(MarketDataProvider):
     Financial Modeling Prep Data Provider.
     Financial Modeling Prep 數據提供者。
     
-    Requires FMP_API_KEY env var or DB setting.
-    需要 FMP_API_KEY 環境變數或資料庫設定。
+    Requires DB setting (source_fmp_api_key).
+    需要資料庫設定 (source_fmp_api_key)。
     """
     def __init__(self, api_key: str = None, user_id: str = None, settings_service: SettingsService = None):
         """
@@ -33,7 +33,7 @@ class FMPProvider(MarketDataProvider):
         self.base_url = "https://financialmodelingprep.com/stable"
         
         if not self.api_key:
-            self.logger.warning("FMP_API_KEY not found.")
+            self.logger.warning("FMP_API_KEY not found in settings.")
 
     @trace_external_call("fmp")
     def fetch_current_prices(self, tickers: List[str]) -> Dict[str, float]:

@@ -5,6 +5,7 @@
 ### 版本紀錄 (Version History)
 | Date | Version | Description | Author |
 | :--- | :--- | :--- | :--- |
+| 2026-03-19 | v5.2 | **Regression Fixed**: Restored CI stability after eToro dynamic discovery refactor. Coverage: 71%. | Antigravity |
 | 2026-03-05 | v5.1 | **Rule #5 & #11 Compliance**: Removed Futu tests/mocks. Pinned all dependencies. | Antigravity |
 | 2026-03-01 | v5.0 | **Tech Stack Modernization**: Upgraded OTel to 1.39.1, Protobuf to 5.x, and removed `futu-api`. | Antigravity |
 | 2026-02-27 | v3.8 | **Observability Expansion**: Integrated SigNoz OTel tracing for n8n and fixed OTLP gRPC dependencies. | Neo |
@@ -47,7 +48,7 @@
 3. **隔離性排除**: 檢查是否為全局狀態 (sys.modules, singleton) 污染。
 
 #### 1.3 成功指標 (Success Metrics)
-- **覆蓋率狀態**: **75%** ✅ (2026-03-05 達成，689 tests collected)
+- **覆蓋率狀態**: **71%** ✅ (2026-03-19 達成，706 tests collected)
 - **CI 目標**: > 65% (Required) / 70% (Internal target)
 - **非同步測試標竿**: 統一使用 `pytest-asyncio` 直播模式，嚴格要求 `await` 所有非同步 Mock 以維護日誌整潔。
 - **CI 通過率**: 100% (GitHub Actions)。

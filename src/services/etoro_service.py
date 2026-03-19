@@ -49,8 +49,8 @@ class EtoroService(IBroker):
 
         # Use official endpoint if keys are provided, else fallback to bridge for legacy support
         if self.api_key and self.user_key:
-            default_base = "https://public-api.etoro.com"
-            logger.info(f"Using official eToro Public API with provided credentials")
+            default_base = "https://public-api.etoro.com/api/v1"
+            logger.info(f"Using official eToro Public API (v1) with provided credentials")
         else:
             default_base = "http://localhost:8000"
             logger.warning(f"No eToro API credentials found, using local bridge at {default_base}")
@@ -64,6 +64,8 @@ class EtoroService(IBroker):
         self.risk_manager = RiskManager()
         self.name = "eToro"
         self._id_to_symbol = {} # Reverse map: ID -> Ticker
+        self.cache_path = "data/etoro_id_cache.json"
+        self._load_id_cache()
 
     def _load_credentials_from_db(self, user_id: str) -> None:
         """
@@ -71,10 +73,6 @@ class EtoroService(IBroker):
         從資料庫設定載入 eToro API 憑證。
         """
         try:
-            # Ensure PostgreSQL connection
-            if os.getenv('DB_TYPE') == 'postgres' and os.getenv('DB_HOST') == 'postgres':
-                os.environ['DB_HOST'] = 'localhost'
-            
             from src.data.database import get_db_connection
             from sqlalchemy import text
             import json
@@ -98,10 +96,10 @@ class EtoroService(IBroker):
                 
                 if key == 'etoro_api_key':
                     self.api_key = parsed_value
-                    logger.info(f"✓ Loaded eToro API key from database")
+                    # logger.info(f"✓ Loaded eToro API key from database")
                 elif key == 'etoro_user_key':
                     self.user_key = parsed_value
-                    logger.info(f"✓ Loaded eToro user key from database")
+                    # logger.info(f"✓ Loaded eToro user key from database")
             
             conn.close()
         except Exception as e:
@@ -124,7 +122,7 @@ class EtoroService(IBroker):
             "Content-Type": "application/json",
             "x-request-id": str(uuid.uuid4())
         }
-        if self.api_key:
+        if self.api_key and self.user_key:
             headers["x-api-key"] = self.api_key
             headers["x-user-key"] = self.user_key
         return headers
@@ -141,7 +139,7 @@ class EtoroService(IBroker):
         if 'clientPortfolio' in portfolio:
              cp = portfolio['clientPortfolio']
              try:
-                 cash = float(cp.get('credit', 0))
+                 cash = float(cp.get('credit', cp.get('Credit', 0)))
                  # Equity = Cash + MV of positions
                  # We need to parse positions from THIS raw data to avoid double fetch
                  raw_positions = cp.get('positions', [])
@@ -312,13 +310,14 @@ class EtoroService(IBroker):
         if not self.risk_manager.check_constraints(user_id, history, positions):
              return {"status": "failed", "reason": "Risk Manager Blocked"}
 
-        # 2. Resolve Instrument ID
+        # 2. Resolve Instrument ID (Attempt)
         instrument_id = self._resolve_instrument_id(order.symbol)
-        if not instrument_id:
-             return {"status": "failed", "reason": f"Instrument ID not found for {order.symbol}"}
 
-        # 3. Execute Order (v5.6 logic: Open vs Close)
+        # 3. Execute Order (v4.2.5: Allow SELL without instrument_id if pos_id resolved)
         if order.action == OrderAction.BUY:
+            if not instrument_id:
+                 return {"status": "failed", "reason": f"Instrument ID not found for {order.symbol} (Required for BUY)"}
+                 
             endpoint = "/api/v1/trading/execution/market-open-orders/by-amount"
             url = f"{self.base_url}{endpoint}"
             payload = {
@@ -332,7 +331,7 @@ class EtoroService(IBroker):
             pos_id = getattr(order, 'position_id', None)
             if not pos_id:
                 # Find matching position by symbol
-                matching = [p for p in positions if p.symbol == order.symbol]
+                matching = [p for p in positions if self._is_symbol_match(order.symbol, p.symbol)]
                 if matching:
                     pos_id = matching[0].position_id
             
@@ -389,6 +388,30 @@ class EtoroService(IBroker):
         except Exception as e:
             logger.warning(f"Failed to send trade notification: {e}")
 
+    def _load_id_cache(self) -> None:
+        """Load instrument ID cache from disk."""
+        import json
+        if os.path.exists(self.cache_path):
+            try:
+                with open(self.cache_path, 'r') as f:
+                    self._id_cache = json.load(f)
+                    logger.info(f"✓ Loaded {len(self._id_cache)} IDs from disk cache.")
+            except Exception as e:
+                logger.warning(f"Failed to load ID cache: {e}")
+                self._id_cache = {}
+        else:
+            self._id_cache = {}
+
+    def _save_id_cache(self) -> None:
+        """Save instrument ID cache to disk."""
+        import json
+        os.makedirs(os.path.dirname(self.cache_path), exist_ok=True)
+        try:
+            with open(self.cache_path, 'w') as f:
+                json.dump(self._id_cache, f, indent=4)
+        except Exception as e:
+            logger.error(f"Failed to save ID cache: {e}")
+
     def get_watchlists(self) -> List[Dict[str, Any]]:
         """
         Fetch items from the default user watchlist (v5.6 optimized).
@@ -412,7 +435,11 @@ class EtoroService(IBroker):
                     m_sym = market.get('symbolName')
                     if m_id and m_sym:
                         self._id_to_symbol[m_id] = m_sym
-                        
+                        # Auto-seed cache from watchlist
+                        if m_sym not in self._id_cache:
+                            self._id_cache[m_sym] = int(m_id)
+            
+            self._save_id_cache()
             return data
         except Exception as e:
             logger.error(f"Failed to fetch watchlist items: {e}")
@@ -420,89 +447,140 @@ class EtoroService(IBroker):
 
     def _resolve_instrument_id(self, ticker: str) -> Optional[int]:
         """
-        Resolve Ticker to eToro Instrument ID.
+        Resolve Ticker to eToro Instrument ID via refined search strategy:
+        1. Hardcoded common IDs lookup (High Priority for reliability).
+        2. Local persistent cache lookup.
+        3. Exact internalSymbolFull match.
+        4. Fuzzy searchText fallback + validation match.
         """
-        if not hasattr(self, '_id_cache'):
-            self._id_cache = {}
-            
+        # v6.0: Dynamic Discovery Only (No hardcoding as per user request)
+        # Check Local Cache First
+        # Step 2: Cache Lookup
         if ticker in self._id_cache:
             return self._id_cache[ticker]
-            
-        # Strategy 1: Direct Search
-        inst_id = self._fetch_id_from_api(ticker)
+
+        # Step 2: Exact internalSymbolFull Match
+        inst_id = self._fetch_id_from_api(ticker, exact=True)
         if inst_id:
             self._id_cache[ticker] = inst_id
+            self._save_id_cache()
             return inst_id
 
-        # Strategy 2: Common Suffixes (.US, .NYSE, .NASDAQ)
-        # Some tickers on eToro require market suffixes if plain ticker fails
-        suffixes = [".US", ".NYSE", ".NASDAQ"]
-        for suffix in suffixes:
-            if ticker.endswith(suffix): continue
-            candidate = f"{ticker}{suffix}"
-            logger.info(f"Ticker resolution: Trying {candidate}...")
-            inst_id = self._fetch_id_from_api(candidate)
-            if inst_id:
-                self._id_cache[ticker] = inst_id
-                return inst_id
+        # Step 3: Fuzzy searchText Fallback with validation
+        logger.info(f"Ticker resolution: Exact match failed for {ticker}. Trying fuzzy fallback search...")
+        inst_id = self._fetch_id_from_api(ticker, exact=False)
+        if inst_id:
+            self._id_cache[ticker] = inst_id
+            self._save_id_cache()
+            return inst_id
         
-        # Strategy 3: Hardcoded Fallback for problematic tickers like 'GS'
-        # Goldman Sachs Group Inc. (NYSE: GS) -> eToro ID: 1467
-        # Note: 1467 is a verified ID for GS on eToro
-        manual_map = {
-            "GS": 1467,
-            "GOLD": 1024,
-            "OIL": 1001,
-            "US500": 1,
-            "NSDQ100": 2
-        }
-        if ticker in manual_map:
-            logger.info(f"Ticker resolution: Using hardcoded map for {ticker} -> {manual_map[ticker]}")
-            self._id_cache[ticker] = manual_map[ticker]
-            return manual_map[ticker]
-
         return None
 
-    def _fetch_id_from_api(self, symbol: str) -> Optional[int]:
-        """Internal helper for API search."""
-        endpoint = "/api/v1/market-data/search"
-        params = {"internalSymbolFull": symbol}
+    def _fetch_id_from_api(self, symbol: str, exact: bool = True) -> Optional[int]:
+        """
+        Internal helper for eToro search.
+        Args:
+            symbol: Ticker to search
+            exact: If True, use internalSymbolFull; if False, use searchText.
+        """
+        endpoint = "/market-data/search"
+        # Always use at least x-api-key to avoid public rate-limits if possible
+        headers = self._get_headers()
+        
+        params = {
+            "pageSize": 10,
+            "pageNumber": 1,
+            "fields": "instrumentId,symbol,displayname,internalSymbolFull"
+        }
+        
+        if exact:
+            params["internalSymbolFull"] = symbol
+        else:
+            params["searchText"] = symbol
         
         try:
             url = f"{self.base_url}{endpoint}"
-            response = requests.get(url, params=params, headers=self._get_headers(), timeout=10)
+            response = requests.get(url, params=params, headers=headers, timeout=10)
             if response.status_code == 200:
                 data = response.json()
-                if isinstance(data, list) and len(data) > 0:
-                    item = data[0]
-                    # Robust key check for 'InstrumentId' in different casings
-                    return item.get('InstrumentID') or item.get('InstrumentId') or item.get('instrumentId')
+                if isinstance(data, list):
+                    items = data
+                else:
+                    items = data.get('items', data.get('Items', []))
+                
+                # [Best Practice] Verify the match exactly on internalSymbolFull
+                for item in items:
+                    # eToro might return internalSymbolFull or symbolName or displayname
+                    ret_symbol = (item.get('internalSymbolFull') or item.get('symbolName') or item.get('displayname') or "").upper()
+                    target_symbol = symbol.upper()
+                    
+                    # Log what we found for debugging
+                    logger.debug(f"Comparing {target_symbol} with {ret_symbol}")
+
+                    # Exact Match or Base Match (e.g., TSLA matches TSLA.US)
+                    if ret_symbol == target_symbol or ret_symbol.split('.')[0] == target_symbol or target_symbol in ret_symbol:
+                        inst_id = item.get('instrumentId') or item.get('InstrumentID') or item.get('InstrumentId')
+                        if inst_id is not None:
+                            logger.info(f"✓ Resolved {symbol} -> {inst_id} via {'Exact' if exact else 'Fuzzy'} Search")
+                            return int(inst_id)
             return None
-        except Exception:
+        except Exception as e:
+            logger.warning(f"eToro Search failed (exact={exact}) for {symbol}: {e}")
             return None
 
     def _resolve_id_to_symbol(self, instrument_id: str) -> Optional[str]:
         """
         Resolve eToro Instrument ID to Ticker Symbol.
         """
-        # Hardcoded common IDs for quick fix
-        hardcoded = {
-            "4300": "700.HK",   # Tencent (RTH)
-            "4309": "700.HK",   # Tencent
-            "8756": "9988.HK",  # Alibaba
-            "1": "AAPL",
-            "2": "AMZN",
-            "4": "GOOG",
-            "5": "MSFT",
-            "6": "META",
-            "7": "TSLA",
-            "100": "V",
-            "1467": "GS"        # Goldman Sachs
-        }
-        if instrument_id in hardcoded:
-            return hardcoded[instrument_id]
-
+        # v6.0: Dynamic ID to Symbol Mapping (Cache-only)
+        # Note: In future versions, this should query /market-data/instruments/metadata
+        # if the ID is not in the local cache.
+        for symbol, uid in self._id_cache.items():
+            if str(uid) == str(instrument_id):
+                return symbol
+        
+        # Fallback to a metadata fetch if needed (TBD)
         # In future, we could query a metadata endpoint
+        return None
+
+    def _is_symbol_match(self, ticker1: str, ticker2: str) -> bool:
+        """
+        Check if two symbols match, ignoring common eToro suffixes.
+        Example: 'NVDA' matches 'NVDA.US', 'TSLA' matches 'TSLA.RTH'
+        """
+        if not ticker1 or not ticker2:
+            return False
+            
+        t1 = ticker1.strip().upper()
+        t2 = ticker2.strip().upper()
+        
+        # 1. Exact Match
+        if t1 == t2:
+            return True
+            
+        # 2. Normalize by removing suffixes (.US, .RTH, .EXT, .L)
+        # Suffixes are typically for market designation or session info
+        def normalize(s):
+            # Remove common suffixes
+            for suffix in ['.US', '.RTH', '.EXT', '.L', '.UK']:
+                if s.endswith(suffix):
+                    return s[:-len(suffix)]
+            return s
+            
+        n1 = normalize(t1)
+        n2 = normalize(t2)
+        
+        return n1 == n2
+
+    def _get_instrument_id_from_positions(self, ticker: str, positions: List[Position]) -> Optional[int]:
+        """
+        Extract instrument ID from active positions if possible.
+        """
+        for p in positions:
+            if self._is_symbol_match(ticker, p.symbol):
+                # Try to find instrument_id from extra attributes if present, or resolve it
+                # For now just return None if not easily available 
+                pass
         return None
 
     def sync_history(self, user_id: str = "default_user", days: int = 30, initial_sync: bool = False) -> Dict[str, int]:

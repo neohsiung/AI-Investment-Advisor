@@ -16,6 +16,7 @@ from src.utils.format_utils import format_agent_output
 
 from src.services.user_focus_service import UserFocusService
 from src.services.settings_service import SettingsService
+from src.services.competitor_service import CompetitorService
 
 class CouncilService:
     """
@@ -32,6 +33,7 @@ class CouncilService:
         self.router = DynamicModelRouter()
         self.vector_repo = AlchemyVectorRepository()
         self.lane_manager = LaneManager()
+        self.competitor_service = CompetitorService(user_id=user_id)
 
     async def start_session(self, topic: str, context_data: Dict[str, Any], user_id: str, scope: str = "single", market_volatility: float = 0.0) -> Dict[str, Any]:
         """
@@ -193,11 +195,23 @@ class CouncilService:
         # v5.0: Instantiate UserFocusService with the correct user_id
         uf_service = UserFocusService(user_id=user_id, settings_service=self.settings_service)
         user_focus = uf_service.get_user_focus()
+        
+        # [NEW] v4.5.1: Competitor Penetration check for leaders
+        competitor_analysis = None
+        # Extract ticker from topic (assuming topic like "Analysis of TSLA")
+        # Simplified: Check if any peer group leader is in the topic
+        for leader in self.competitor_service.PEER_GROUPS.keys():
+            if leader in topic.upper():
+                competitor_analysis = self.competitor_service.analyze_penetration(leader)
+                logger.info(f"Council: Injected competitor analysis for {leader}")
+                break
+
         debate_context = {
             **context_data, 
             "historical_context": past_wisdom, 
             "topic": topic,
-            "user_focus": user_focus
+            "user_focus": user_focus,
+            "competitor_analysis": competitor_analysis
         }
         
         for agent in members:
@@ -226,7 +240,8 @@ class CouncilService:
             "memory_chain": past_wisdom,
             "current_date": datetime.now().strftime("%Y-%m-%d"),
             "market_data": context_data.get("market_data"),
-            "fractal_debate_rules": fractal_debate_rules 
+            "fractal_debate_rules": fractal_debate_rules,
+            "competitor_analysis": competitor_analysis
         }
         
         try:

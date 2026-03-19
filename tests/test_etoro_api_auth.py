@@ -34,7 +34,7 @@ def test_etoro_base_url_logic():
     # 1. Official
     with patch.dict(os.environ, {"ETORO_API_KEY": "some_key", "ETORO_USER_KEY": "some_user_key"}):
         service = EtoroService()
-        assert service.base_url == "https://public-api.etoro.com"
+        assert service.base_url == "https://public-api.etoro.com/api/v1"
         
     # 2. Local Bridge
     with patch.dict(os.environ, {}, clear=True):

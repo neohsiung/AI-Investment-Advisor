@@ -58,7 +58,7 @@ class SentinelService:
         self.keyword_service = keyword_service or RiskKeywordService()
         self.snapshot_repo = snapshot_repo or AlchemySnapshotRepository(engine=self.repo.engine)
         
-        self.notification_api_url = os.getenv("NOTIFICATION_API_URL", "http://localhost:8001/api/v1/notify")
+        self.notification_api_url = os.getenv("NOTIFICATION_API_URL", "http://notification:8001/api/v1/notify")
         
         # Thresholds (v3.5 - Defaults seeded to DB)
         self.default_thresholds = {
@@ -689,6 +689,7 @@ class SentinelService:
                 # 1. AI-Driven Priority & Routing
                 # 1. AI 驅動的優先級與路讀路由
                 try:
+                    # [Optimization] v1.2: Run LLM evaluation in thread pool to prevent blocking FastAPI event loop
                     # v5.4.1 Cost Optimization: Force SentinelAgent to use the fastest model tier
                     # v5.4.1 成本優化：強制 SentinelAgent 使用最快的模型等級
                     sentinel_agent = AgentFactory.create_sentinel_agent(user_id=self.user_id, tier="fast")
@@ -712,11 +713,15 @@ class SentinelService:
                     # 將 VIX 四捨五入至小數點第一位，大幅提升 Redis 快取命中率
                     rounded_vix = round(self.current_vix, 1)
 
-                    eval_res = sentinel_agent.run({
-                        "trigger_source": source,
-                        "event_data": event_data,
-                        "current_vix": rounded_vix
-                    })
+                    # Offload to thread pool
+                    eval_res = await asyncio.to_thread(
+                        sentinel_agent.run,
+                        {
+                            "trigger_source": source,
+                            "event_data": event_data,
+                            "current_vix": rounded_vix
+                        }
+                    )
                 
                     p_str = eval_res.get("priority", "P3")
                     priority = int(p_str.replace("P", ""))
