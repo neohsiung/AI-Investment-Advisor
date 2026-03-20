@@ -1,3 +1,4 @@
+| 2026-03-20 | v6.0.0 | **eToro Auth & ID Resolution Final Fix**: Resolved "InvalidKey" and "Instrument ID not found" errors by stripping double-quoted credentials and adding mandatory search fields. | Antigravity |
 | 2026-03-20 | v5.9.0 | **Robust eToro Execution & Metadata Recovery**: Implemented Metadata Reverse Lookup & Re-fetch Retry for unknown IDs (VTI Fix). Coverage: 72%. | Antigravity |
 | 2026-03-19 | v5.8.0 | **Dynamic eToro Discovery & CI Resilience**: Removed hardcoded instrument IDs; implemented dynamic resolution; resolved `DailyWorkflow` test regressions. | Antigravity |
 | 2026-03-15 | v5.7.0 | **FastAPI Auth Hub Migration**: 已將 Google OAuth 遷移至 FastAPI 後端，徹底解決 Streamlit iframe 沙盒與 Cookie 同步引發之登入迴圈問題。 | Antigravity |
