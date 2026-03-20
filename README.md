@@ -1,3 +1,4 @@
+| 2026-03-20 | v5.9.0 | **Robust eToro Execution & Metadata Recovery**: Implemented Metadata Reverse Lookup & Re-fetch Retry for unknown IDs (VTI Fix). Coverage: 72%. | Antigravity |
 | 2026-03-19 | v5.8.0 | **Dynamic eToro Discovery & CI Resilience**: Removed hardcoded instrument IDs; implemented dynamic resolution; resolved `DailyWorkflow` test regressions. | Antigravity |
 | 2026-03-15 | v5.7.0 | **FastAPI Auth Hub Migration**: 已將 Google OAuth 遷移至 FastAPI 後端，徹底解決 Streamlit iframe 沙盒與 Cookie 同步引發之登入迴圈問題。 | Antigravity |
 | 2026-03-14 | v5.6.0 | **Weekly Report Optimization & Progressive Debate** - 優化 WeeklyWorkflow，注入即時宏觀指標並實作多層次深度辯論 (Progressive Synthesis) 演算法。 | Antigravity |
@@ -23,7 +24,7 @@
   <img src="https://img.shields.io/badge/Docker-Enabled-2496ED.svg?style=for-the-badge&logo=docker&logoColor=white" alt="Docker">
   <img src="https://img.shields.io/badge/PostgreSQL-15+-336791.svg?style=for-the-badge&logo=postgresql&logoColor=white" alt="PostgreSQL">
   <img src="https://img.shields.io/badge/pgvector-Semantic-FF6F61.svg?style=for-the-badge" alt="pgvector">
-  <img src="https://img.shields.io/badge/Coverage-71%25-green.svg?style=for-the-badge" alt="Coverage">
+  <img src="https://img.shields.io/badge/Coverage-72%25-green.svg?style=for-the-badge" alt="Coverage">
 </p>
 
 ---
