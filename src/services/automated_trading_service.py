@@ -73,6 +73,45 @@ class AutomatedTradingService:
         
         # Prepare Order object
         order_action = OrderAction.BUY if action.upper() == "BUY" else OrderAction.SELL
+        
+        # v6.0: Position Sizing Guard (現金水位與持倉比例守衛)
+        # ─────────────────────────────────────────────────
+        if order_action == OrderAction.BUY:
+            try:
+                broker = BrokerFactory.get_broker(user_id)
+                if broker:
+                    account = broker.get_account()
+                    if account and account.total_equity > 0:
+                        nlv = account.total_equity
+                        cash = account.available_cash
+                        
+                        # Dynamic settings (Rule #8: no hardcoded thresholds)
+                        max_pct = float(self.settings_repo.get(user_id, "max_single_position_pct") or 0.10)
+                        min_amount = float(self.settings_repo.get(user_id, "min_trade_amount") or 10.0)
+                        
+                        max_amount = nlv * max_pct
+                        original_qty = quantity
+                        
+                        # Clamp to available cash
+                        if quantity > cash:
+                            logger.warning(f"Position Sizing: Clamped ${quantity:.2f} → ${cash:.2f} (available cash)")
+                            quantity = cash
+                        
+                        # Clamp to max position percentage
+                        if quantity > max_amount:
+                            logger.warning(f"Position Sizing: Clamped ${quantity:.2f} → ${max_amount:.2f} ({max_pct*100:.0f}% of NLV ${nlv:.2f})")
+                            quantity = max_amount
+                        
+                        # Check minimum
+                        if quantity < min_amount:
+                            logger.info(f"Position Sizing: Amount ${quantity:.2f} below minimum ${min_amount:.2f}. Skipping.")
+                            return {"status": "skipped", "reason": f"Amount ${quantity:.2f} below minimum (${min_amount:.2f})"}
+                        
+                        if quantity != original_qty:
+                            logger.info(f"Position Sizing: Adjusted {ticker} amount ${original_qty:.2f} → ${quantity:.2f} (NLV: ${nlv:.2f}, Cash: ${cash:.2f})")
+            except Exception as e:
+                logger.warning(f"Position Sizing check failed (non-blocking): {e}")
+        
         order = Order(
             symbol=ticker,
             action=order_action,
@@ -157,6 +196,14 @@ class AutomatedTradingService:
         try:
             # Order execution is synchronous in current design
             result = broker.execute_order(order)
+            
+            # v6.0: Post-Trade Sync (交易後紀錄同步)
+            if result.get("status") not in ["failed", "error"] and not result.get("error"):
+                try:
+                    broker.sync_history(user_id)
+                    logger.info("Post-trade sync completed.")
+                except Exception as sync_e:
+                    logger.warning(f"Post-trade sync failed (non-blocking): {sync_e}")
             
             # Send Notification
             title = f"✅ 交易執行成功 (Trade Executed) - {order.symbol}"

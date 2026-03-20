@@ -862,8 +862,13 @@ class SentinelService:
         if has_excess_cash:
             msg_prefix = (
                 "💰 **當前帳戶現金比例過高，請協助尋找新的投資機會。**\n"
-                "請根據市場現狀、總體經濟環境及技術面，推薦 3-5 個具備潛力的投資標的 (Ticker)，"
-                "並說明推薦理由與建議投入比例。請以繁體中文 (Traditional Chinese) 撰寫，專業術語保留英文。"
+                "請根據市場現狀、總體經濟環境及技術面，推薦 3-5 個具備潛力的投資標的 (Ticker)。\n"
+                "**必須**在報告最後輸出以下格式的行動指令表（Actionable Orders），以便系統自動解析執行：\n\n"
+                "| Ticker | Action | Amount (USD) | Confidence (1-10) | Reason |\n"
+                "|--------|--------|-------------|-------------------|---------|\n"
+                "| AAPL   | BUY    | 50          | 7                 | 理由... |\n\n"
+                "⚠️ Amount 請以 USD 金額為單位，非股數。Confidence 分數將決定是否自動執行。\n"
+                "請以繁體中文 (Traditional Chinese) 撰寫，專業術語保留英文。"
             )
 
         context = {

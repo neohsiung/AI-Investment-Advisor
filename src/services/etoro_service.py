@@ -140,13 +140,43 @@ class EtoroService(IBroker):
              cp = portfolio['clientPortfolio']
              try:
                  cash = float(cp.get('credit', cp.get('Credit', 0)))
-                 # Equity = Cash + MV of positions
-                 # We need to parse positions from THIS raw data to avoid double fetch
                  raw_positions = cp.get('positions', [])
-                 mv_sum = 0.0
+                 
+                 # v6.0: Compute real NLV using current market prices
+                 # Ensure symbol mapping is available
+                 if not self._id_to_symbol:
+                     self.get_watchlists()
+                     unknown_ids = [str(p.get('instrumentID', '')) for p in raw_positions
+                                    if str(p.get('instrumentID', '')) not in self._id_to_symbol]
+                     if unknown_ids:
+                         self._fetch_metadata_by_ids(unknown_ids)
+                 
+                 # Collect position data with symbols
+                 position_data = []
                  for p in raw_positions:
-                     val = float(p.get('unitsBaseValueDollars', p.get('CurrentAmount', 0)))
-                     mv_sum += val
+                     inst_id = str(p.get('instrumentID', p.get('InstrumentID', '')))
+                     symbol = self._id_to_symbol.get(inst_id) or self._resolve_id_to_symbol(inst_id) or f"ID_{inst_id}"
+                     # Normalize
+                     if symbol.endswith('.RTH'):
+                         symbol = symbol.replace('.RTH', '')
+                     units = float(p.get('units', p.get('lotCount', 0)))
+                     initial_amount = float(p.get('unitsBaseValueDollars', p.get('amount', 0)))
+                     position_data.append({
+                         'symbol': symbol, 'units': units, 'initial_amount': initial_amount,
+                     })
+                 
+                 # Fetch current prices
+                 symbols = [pd['symbol'] for pd in position_data if pd['symbol'] and not pd['symbol'].startswith('ID_')]
+                 current_prices = self._fetch_current_prices(symbols) if symbols else {}
+                 
+                 # Calculate real market value
+                 mv_sum = 0.0
+                 for pd in position_data:
+                     price = current_prices.get(pd['symbol'], 0)
+                     if price > 0 and pd['units'] > 0:
+                         mv_sum += pd['units'] * price
+                     else:
+                         mv_sum += pd['initial_amount']  # Fallback
                  
                  equity = cash + mv_sum
              except Exception as e:
@@ -175,40 +205,38 @@ class EtoroService(IBroker):
             logger.warning("Portfolio response is empty.")
             return []
             
-        # Inspect Map - Lazy Load if empty and we have raw numeric IDs?
-        # Actually, just check if we have the map.
         if not self._id_to_symbol:
             logger.info("ID Map empty, fetching watchlists to populate...")
             self.get_watchlists()
             
-        logger.info(f"Raw Portfolio Keys: {portfolio.keys()}")
-            
-        # Handle API response nesting: { "AggregatedMirror": { "positions": [...] } }
-        # Or { "clientPortfolio": { "positions": [...] } }
+        # Handle API response nesting
         data_source = portfolio.get('AggregatedMirror', portfolio.get('clientPortfolio', portfolio))
-        
-        if isinstance(data_source, dict):
-             logger.info(f"DataSource Keys: {data_source.keys()}")
-        
         raw_positions = data_source.get('Positions', data_source.get('positions', []))
+        
+        # v5.2: Proactively identify unknown instrument IDs for reverse resolution
+        unknown_ids = []
+        for p in raw_positions:
+            inst_id = str(p.get('instrumentID', p.get('InstrumentID', p.get('Instrument', ''))))
+            if inst_id and inst_id not in self._id_to_symbol:
+                # Check if it's in persistent cache
+                symbol = self._resolve_id_to_symbol(inst_id)
+                if not symbol:
+                    unknown_ids.append(inst_id)
+        
+        if unknown_ids:
+            logger.info(f"Found {len(unknown_ids)} unknown instrument IDs in portfolio. Resolving via metadata API...")
+            self._fetch_metadata_by_ids(unknown_ids)
         
         positions = []
         for p in raw_positions:
             try:
-                # v5.6 Mapping: Extract InstrumentID and PositionID
-                # eToro API uses varying casing: instrumentID/InstrumentID, positionID/PositionID
                 inst_id = str(p.get('instrumentID', p.get('InstrumentID', p.get('Instrument', ''))))
-                pos_id = str(p.get('positionId', p.get('PositionID', p.get('id', ''))))
+                pos_id = str(p.get('positionID', p.get('positionId', p.get('PositionID', p.get('id', '')))))
                 
-                symbol = self._id_to_symbol.get(inst_id)
+                symbol = self._id_to_symbol.get(inst_id) or self._resolve_id_to_symbol(inst_id)
                 
                 if not symbol:
-                    resolved = self._resolve_id_to_symbol(inst_id)
-                    if resolved:
-                        symbol = resolved
-                        self._id_to_symbol[inst_id] = symbol
-                    else:
-                        symbol = f"ID_{inst_id}"
+                    symbol = f"ID_{inst_id}"
                 
                 # Normalize Symbol 
                 if symbol.endswith('.RTH'):
@@ -226,7 +254,7 @@ class EtoroService(IBroker):
                     market_value=float(p.get('unitsBaseValueDollars', p.get('CurrentAmount', 0))),
                     unrealized_pnl=float(p.get('netProfit', p.get('NetProfit', 0))), 
                     open_date=self._parse_date(p.get('openDateTime', p.get('OpenDateTime', ''))),
-                    position_id=pos_id # Store for close-order usage
+                    position_id=pos_id
                 )
                 pos.leverage = float(p.get('leverage', p.get('Leverage', 1.0)))
                 
@@ -234,6 +262,19 @@ class EtoroService(IBroker):
             except Exception as e:
                 logger.warning(f"Failed to map position: {e}")
                 continue
+        
+        # v6.0: Enrich positions with current market prices
+        symbols = [p.symbol for p in positions if p.symbol and not p.symbol.startswith('ID_')]
+        if symbols:
+            current_prices = self._fetch_current_prices(list(set(symbols)))
+            for pos in positions:
+                price = current_prices.get(pos.symbol, 0)
+                if price > 0:
+                    pos.current_price = price
+                    pos.market_value = pos.quantity * price
+                    initial_amount = pos.quantity * pos.open_price
+                    pos.unrealized_pnl = pos.market_value - initial_amount
+        
         return positions
 
     def get_history(self, days: int = 30) -> List[Dict[str, Any]]:
@@ -258,9 +299,9 @@ class EtoroService(IBroker):
         """
         # Official eToro API endpoint for trading history
         # 官方 eToro API 交易歷史端點
-        endpoint = "/api/v1/trading/info/trade/history"
+        endpoint = "/trading/info/trade/history"
         if self.mode == "demo":
-            endpoint = "/api/v1/trading/info/demo/trade/history"
+            endpoint = "/trading/info/demo/trade/history"
         
         try:
             url = f"{self.base_url}{endpoint}"
@@ -318,30 +359,57 @@ class EtoroService(IBroker):
             if not instrument_id:
                  return {"status": "failed", "reason": f"Instrument ID not found for {order.symbol} (Required for BUY)"}
                  
-            endpoint = "/api/v1/trading/execution/market-open-orders/by-amount"
+            endpoint = "/trading/execution/market-open-orders/by-amount"
             url = f"{self.base_url}{endpoint}"
+            # eToro API: PascalCase body, Amount in USD (not shares)
             payload = {
-                "InstrumentId": int(instrument_id),
-                "Amount": order.quantity,
-                "Leverage": order.leverage,
-                "IsBuy": True
+                "InstrumentID": int(instrument_id),
+                "Amount": order.quantity,  # Dollar amount (USD)
+                "IsBuy": True,
             }
+            # Only include Leverage if non-default (eToro skill: "Use Defaults")
+            if order.leverage and order.leverage != 1:
+                payload["Leverage"] = order.leverage
         else: # SELL / CLOSE
             # Use specific positionId if provided, else attempt to find one
             pos_id = getattr(order, 'position_id', None)
             if not pos_id:
                 # Find matching position by symbol
+                logger.info(f"ETORO EXEC: Searching for position matching symbol '{order.symbol}'...")
                 matching = [p for p in positions if self._is_symbol_match(order.symbol, p.symbol)]
+                
+                # Rule 14 / User Suggestion: If not found, try to re-fetch positions 
+                # (This triggers metadata resolution for unknown IDs)
+                if not matching:
+                    logger.info(f"ETORO EXEC: No immediate match for {order.symbol}. Retrying with fresh position scan...")
+                    positions = self.get_positions()
+                    matching = [p for p in positions if self._is_symbol_match(order.symbol, p.symbol)]
+                
                 if matching:
                     pos_id = matching[0].position_id
+                    # Also extract instrument_id from the matched position for close body
+                    if not instrument_id:
+                        matched_inst = self._id_cache.get(matching[0].symbol)
+                        if matched_inst:
+                            instrument_id = matched_inst
+                    logger.info(f"ETORO EXEC: Found matching position {pos_id} for {order.symbol}")
+                else:
+                    symbols_found = [p.symbol for p in positions]
+                    logger.warning(f"ETORO EXEC: No match for {order.symbol} even after retry. Current positions: {symbols_found}")
             
             if not pos_id:
                 return {"status": "failed", "reason": f"No active position ID found for {order.symbol} to close"}
             
-            endpoint = f"/api/v1/trading/execution/market-close-orders/positions/{pos_id}"
+            endpoint = f"/trading/execution/market-close-orders/positions/{pos_id}"
             url = f"{self.base_url}{endpoint}"
-            # Payload: null UnitsToDeduct closes the entire position
-            payload = { "UnitsToDeduct": None }
+            # eToro API: InstrumentId is REQUIRED in close body (lowercase 'd')
+            # UnitsToDeduct: null = full close, number = partial close
+            close_payload: Dict[str, Any] = {}
+            if instrument_id:
+                close_payload["InstrumentId"] = int(instrument_id)
+            if order.quantity and order.quantity > 0:
+                close_payload["UnitsToDeduct"] = order.quantity
+            payload = close_payload
         
         try:
              logger.info(f"ETORO EXEC: {order.action.value} {order.symbol} (ID: {instrument_id}) via {endpoint}")
@@ -416,7 +484,7 @@ class EtoroService(IBroker):
         """
         Fetch items from the default user watchlist (v5.6 optimized).
         """
-        endpoint = "/api/v1/watchlists/default-watchlists/items"
+        endpoint = "/watchlists/default-watchlists/items"
         try:
             url = f"{self.base_url}{endpoint}"
             logger.info(f"Fetching Watchlist Items from: {url}")
@@ -479,18 +547,20 @@ class EtoroService(IBroker):
     def _fetch_id_from_api(self, symbol: str, exact: bool = True) -> Optional[int]:
         """
         Internal helper for eToro search.
+        從 eToro 搜尋 API 解析標的 Instrument ID。
+
         Args:
             symbol: Ticker to search
             exact: If True, use internalSymbolFull; if False, use searchText.
         """
         endpoint = "/market-data/search"
-        # Always use at least x-api-key to avoid public rate-limits if possible
         headers = self._get_headers()
         
+        # NOTE: Do NOT specify 'fields' param — it restricts response to only
+        # the listed fields, suppressing critical data like internalSymbolFull.
         params = {
             "pageSize": 10,
             "pageNumber": 1,
-            "fields": "instrumentId,symbol,displayname,internalSymbolFull"
         }
         
         if exact:
@@ -508,21 +578,54 @@ class EtoroService(IBroker):
                 else:
                     items = data.get('items', data.get('Items', []))
                 
-                # [Best Practice] Verify the match exactly on internalSymbolFull
+                logger.debug(f"Search results for {symbol} (exact={exact}): {len(items)} items found.")
+                
+                # Two-pass strategy: first collect all matches, then prefer tradable ones
+                exact_matches = []  # (inst_id, is_tradable)
+                partial_matches = []
+                
                 for item in items:
-                    # eToro might return internalSymbolFull or symbolName or displayname
-                    ret_symbol = (item.get('internalSymbolFull') or item.get('symbolName') or item.get('displayname') or "").upper()
-                    target_symbol = symbol.upper()
+                    inst_id = str(item.get('instrumentId') or item.get('InstrumentID') or item.get('InstrumentId') or '')
+                    if not inst_id:
+                        continue
                     
-                    # Log what we found for debugging
-                    logger.debug(f"Comparing {target_symbol} with {ret_symbol}")
+                    ret_symbol = (item.get('internalSymbolFull') or item.get('symbolName') or item.get('displayname') or item.get('symbol') or "").upper()
+                    target_symbol = symbol.upper()
+                    is_tradable = bool(item.get('isCurrentlyTradable', False))
+                    is_active = bool(item.get('isActiveInPlatform', False))
+                    
+                    if ret_symbol == target_symbol:
+                        exact_matches.append((inst_id, is_tradable and is_active))
+                    elif ret_symbol and (ret_symbol.split('.')[0] == target_symbol or target_symbol in ret_symbol):
+                        partial_matches.append((inst_id, is_tradable and is_active))
+                
+                # Prefer tradable exact match, then any exact match, then tradable partial
+                for matches, label in [(exact_matches, "Exact"), (partial_matches, "Partial")]:
+                    # Prioritize tradable instruments
+                    tradable = [m for m in matches if m[1]]
+                    if tradable:
+                        chosen_id = tradable[0][0]
+                        logger.info(f"✓ Resolved {symbol} -> {chosen_id} via {label} Match (Tradable)")
+                        return int(chosen_id)
+                    if matches:
+                        chosen_id = matches[0][0]
+                        logger.info(f"✓ Resolved {symbol} -> {chosen_id} via {label} Match")
+                        return int(chosen_id)
+                
+                # Fallback: resolve via metadata if no symbol info was present in search
+                found_ids = [str(item.get('instrumentId', '')) for item in items if item.get('instrumentId')]
+                if found_ids:
+                    logger.info(f"Search found {len(found_ids)} candidate IDs for {symbol} but no symbol match. Resolving metadata...")
+                    self._fetch_metadata_by_ids(found_ids[:5])
+                    
+                    for fid in found_ids[:5]:
+                        cached_sym = self._id_to_symbol.get(fid) or self._resolve_id_to_symbol(fid)
+                        if cached_sym and (cached_sym.upper() == symbol.upper() or cached_sym.upper().split('.')[0] == symbol.upper() or symbol.upper() in cached_sym.upper()):
+                            logger.info(f"✓ Resolved {symbol} -> {fid} via Search + Metadata Resolution")
+                            return int(fid)
 
-                    # Exact Match or Base Match (e.g., TSLA matches TSLA.US)
-                    if ret_symbol == target_symbol or ret_symbol.split('.')[0] == target_symbol or target_symbol in ret_symbol:
-                        inst_id = item.get('instrumentId') or item.get('InstrumentID') or item.get('InstrumentId')
-                        if inst_id is not None:
-                            logger.info(f"✓ Resolved {symbol} -> {inst_id} via {'Exact' if exact else 'Fuzzy'} Search")
-                            return int(inst_id)
+            else:
+                logger.warning(f"eToro Search failed: {response.status_code} - {response.text}")
             return None
         except Exception as e:
             logger.warning(f"eToro Search failed (exact={exact}) for {symbol}: {e}")
@@ -532,16 +635,77 @@ class EtoroService(IBroker):
         """
         Resolve eToro Instrument ID to Ticker Symbol.
         """
-        # v6.0: Dynamic ID to Symbol Mapping (Cache-only)
-        # Note: In future versions, this should query /market-data/instruments/metadata
-        # if the ID is not in the local cache.
+        # 1. Reverse map: ID -> Ticker (popluated from watchlist)
+        for mid, symbol in self._id_to_symbol.items():
+            if str(mid) == str(instrument_id):
+                return symbol
+
+        # 2. Check Local Cache (Ticker -> ID)
         for symbol, uid in self._id_cache.items():
             if str(uid) == str(instrument_id):
                 return symbol
         
-        # Fallback to a metadata fetch if needed (TBD)
-        # In future, we could query a metadata endpoint
         return None
+
+    def _fetch_metadata_by_ids(self, ids: List[str]) -> None:
+        """
+        Fetch instrument metadata by IDs.
+        批量取得標的 metadata，batch 失敗時 fallback 逐一查詢。
+        Reference: https://public-api.etoro.com/api/v1/market-data/instruments
+        """
+        if not ids:
+            return
+            
+        endpoint = "/market-data/instruments"
+        url = f"{self.base_url}{endpoint}"
+        headers = self._get_headers()
+        
+        # Try batch first
+        try:
+            params = {"instrumentIds": ",".join(ids)}
+            response = requests.get(url, params=params, headers=headers, timeout=10)
+            if response.status_code == 200:
+                self._process_metadata_response(response.json())
+                return
+            else:
+                logger.warning(f"Metadata batch lookup failed: {response.status_code}. Falling back to individual lookups...")
+        except Exception as e:
+            logger.warning(f"Metadata batch failed: {e}. Falling back to individual lookups...")
+        
+        # Fallback: individual lookups
+        resolved_count = 0
+        for inst_id in ids:
+            try:
+                resp = requests.get(url, params={"instrumentIds": inst_id}, headers=self._get_headers(), timeout=10)
+                if resp.status_code == 200:
+                    self._process_metadata_response(resp.json())
+                    resolved_count += 1
+            except Exception:
+                continue
+        
+        if resolved_count > 0:
+            self._save_id_cache()
+            logger.info(f"✓ Resolved {resolved_count}/{len(ids)} metadata records via individual lookups.")
+
+    def _process_metadata_response(self, data: Dict[str, Any]) -> None:
+        """Process metadata API response and update caches."""
+        records = data.get('instrumentDisplayDatas', [])
+        for rec in records:
+            m_id = str(rec.get('instrumentID', ''))
+            m_sym = rec.get('symbolFull') or rec.get('instrumentDisplayName')
+            
+            if m_id and m_sym:
+                # Normalize symbol for cache
+                clean_sym = m_sym.replace(".US", "").replace(".UK", "").replace(".L", "").replace(".RTH", "")
+                
+                # Store original in _id_to_symbol for full match, and clean in cache for fuzzy match
+                self._id_to_symbol[m_id] = m_sym
+                if clean_sym not in self._id_cache:
+                    self._id_cache[clean_sym] = int(m_id)
+        
+        if records:
+            self._save_id_cache()
+            logger.info(f"✓ Resolved {len(records)} metadata records.")
 
     def _is_symbol_match(self, ticker1: str, ticker2: str) -> bool:
         """
@@ -819,6 +983,58 @@ class EtoroService(IBroker):
                 )
 
     # --- Helpers ---
+    def _fetch_current_prices(self, symbols: List[str]) -> Dict[str, float]:
+        """
+        Fetch current market prices via yfinance Ticker.history().
+        使用 yfinance history() 獲取最近收盤價（含超時保護與多策略 fallback）。
+        
+        Returns: {symbol: current_price}
+        """
+        prices = {}
+        if not symbols:
+            return prices
+        
+        def _get_price(sym: str) -> Tuple[str, float]:
+            """Fetch price for a single symbol with multi-strategy fallback."""
+            try:
+                import yfinance as yf
+                ticker = yf.Ticker(sym)
+                # Strategy 1: history() — most reliable, returns OHLCV DataFrame
+                hist = ticker.history(period='5d')
+                if hist is not None and not hist.empty:
+                    close = hist['Close'].dropna()
+                    if not close.empty:
+                        return (sym, float(close.iloc[-1]))
+            except Exception:
+                pass
+            return (sym, 0.0)
+        
+        try:
+            from concurrent.futures import ThreadPoolExecutor, TimeoutError as FuturesTimeoutError
+            unique_symbols = list(set(symbols))
+            
+            with ThreadPoolExecutor(max_workers=min(5, len(unique_symbols))) as executor:
+                futures = {executor.submit(_get_price, sym): sym for sym in unique_symbols}
+                
+                for future in futures:
+                    try:
+                        sym, price = future.result(timeout=10)
+                        if price > 0:
+                            prices[sym] = price
+                    except FuturesTimeoutError:
+                        logger.debug(f"Price fetch timed out for {futures[future]}")
+                    except Exception:
+                        pass
+            
+            if prices:
+                logger.info(f"Fetched {len(prices)}/{len(unique_symbols)} current prices.")
+            elif unique_symbols:
+                logger.warning(f"Could not fetch any current prices for {len(unique_symbols)} symbols. NLV will use initial investment values.")
+        except Exception as e:
+            logger.warning(f"Failed to fetch current prices: {e}")
+        
+        return prices
+
     def _fetch_portfolio_raw(self) -> Dict[str, Any]:
         """
         Raw API Call to fetch portfolio.
@@ -826,9 +1042,9 @@ class EtoroService(IBroker):
         """
         # Official API endpoint (confirmed working: /api/v1/trading/info/portfolio)
         # 官方 API 端點（已確認可用：/api/v1/trading/info/portfolio）
-        endpoint = "/api/v1/trading/info/portfolio"
+        endpoint = "/trading/info/portfolio"
         if self.mode == "demo":
-            endpoint = "/api/v1/trading/info/demo/portfolio"
+            endpoint = "/trading/info/demo/portfolio"
              
         try:
             url = f"{self.base_url}{endpoint}"
