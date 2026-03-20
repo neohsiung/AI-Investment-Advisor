@@ -3,6 +3,8 @@
 ### 版本紀錄 (Version History)
 | Date | Version | Description | Author |
 | :--- | :--- | :--- | :--- |
+| 2026-03-20 | v6.0  | **NLV Accuracy Fix**: Enriched `get_account()` & `get_positions()` with yfinance current prices; eToro API only returns initial investment amounts. | Antigravity |
+| 2026-03-20 | v5.3  | **Robust Position Mapping**: Added Metadata Reverse Lookup & Re-fetch Retry (VTI Fix). | Antigravity |
 | 2026-03-19 | v5.2  | **Dynamic Discovery**: Removed hardcoded eToro Instrument IDs; implemented dynamic resolution. | Antigravity |
 | 2026-03-01 | v5.0  | **Tech Stack Modernization**: Removed `futu-api` to upgrade to OTel 1.39.1 & Protobuf 5.x. | Antigravity |
 | 2026-02-15 | v3.6  | **Milestone**: Unified `BrokerFactory` implementation & stable Multi-Broker routing. | Neo |
@@ -37,7 +39,14 @@ This guide details how to integrate with the supported brokers via the unified *
 4.  **安全驗證**: 完成彈出的 2FA 驗證。
 5.  **複製憑證**: 保存畫面上顯示的 `Public API Key` 與 `User Key`。
     > [!TIP]
-    > **[NEW v5.2]** 系統現在支援 **動態標的解析 (Dynamic Resolution)**。您不再需要手動尋找或映射 Instrument ID。系統會自動透過標的代號 (e.g., `NVDA`, `COST`) 向 eToro 請求對應的內部 ID。
+    > **[NEW v5.3]** **健壯持倉映射 (Robust Position Mapping)**：
+    > - **元數據逆向解析 (Metadata Reverse Lookup)**：若持倉中出現未知 ID (如 VTI, NVDA)，系統會自動呼叫 eToro Metadata API 批量解析標的名稱。
+    > - **持倉重掃描重試 (Re-fetch Retry)**：在執行關閉訂單時若找不到匹配持倉，系統會自動重新抓取最新的持倉清單，確保交易成功。
+
+    > [!IMPORTANT]
+    > **[NEW v6.0]** **NLV 精準化 (NLV Accuracy Fix)**：
+    > eToro Portfolio API 僅回傳初始投資金額 (`unitsBaseValueDollars`)，不包含即時價格與未實現 P/L。系統透過 `_fetch_current_prices()` (yfinance) 獲取當前市價，計算 `units × currentPrice` 以呈現正確 NLV。若價格源不可用，自動 fallback 至初始投資金額。
+
     > [!CAUTION]
     > 憑證僅顯示一次，請妥善保管。
 

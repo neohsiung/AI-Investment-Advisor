@@ -85,21 +85,23 @@ class EtoroService(IBroker):
             for row in result:
                 key, value = row[0], row[1]
                 # Parse JSON value if it's a JSON string
+                # Settings UI may wrap values in extra double quotes:
+                #   DB stores: '"eyJja...ifQ__"' instead of 'eyJja...ifQ__'
                 try:
-                    # Check if value starts with quote (JSON encoded string)
                     if isinstance(value, str) and value.startswith('"') and value.endswith('"'):
                         parsed_value = json.loads(value)
                     else:
                         parsed_value = value
                 except json.JSONDecodeError:
-                    parsed_value = value
+                    # Fallback: strip quotes directly
+                    parsed_value = value.strip('"') if isinstance(value, str) else value
                 
                 if key == 'etoro_api_key':
                     self.api_key = parsed_value
-                    # logger.info(f"✓ Loaded eToro API key from database")
+                    logger.info(f"✓ Loaded eToro API key from database (len={len(parsed_value)})")
                 elif key == 'etoro_user_key':
                     self.user_key = parsed_value
-                    # logger.info(f"✓ Loaded eToro user key from database")
+                    logger.info(f"✓ Loaded eToro user key from database (len={len(parsed_value)})")
             
             conn.close()
         except Exception as e:
@@ -123,8 +125,9 @@ class EtoroService(IBroker):
             "x-request-id": str(uuid.uuid4())
         }
         if self.api_key and self.user_key:
-            headers["x-api-key"] = self.api_key
-            headers["x-user-key"] = self.user_key
+            # Defensive: strip surrounding quotes that may leak from DB storage
+            headers["x-api-key"] = self.api_key.strip('"') if isinstance(self.api_key, str) else self.api_key
+            headers["x-user-key"] = self.user_key.strip('"') if isinstance(self.user_key, str) else self.user_key
         return headers
 
     def get_account(self) -> Optional[Account]:
@@ -203,6 +206,13 @@ class EtoroService(IBroker):
         portfolio = self._fetch_portfolio_raw()
         if not portfolio:
             logger.warning("Portfolio response is empty.")
+            return []
+        
+        # Detect API auth errors returned as JSON error objects
+        if 'errorCode' in portfolio:
+            error_code = portfolio.get('errorCode', 'Unknown')
+            error_msg = portfolio.get('errorMessage', 'Unknown error')
+            logger.error(f"eToro API Auth Error in get_positions: {error_code} - {error_msg}")
             return []
             
         if not self._id_to_symbol:
@@ -343,6 +353,14 @@ class EtoroService(IBroker):
         執行帶有風險管理檢查的訂單。
         """
         user_id = "default_user" 
+        
+        # 0. Pre-flight: Verify API credentials are valid
+        preflight = self._fetch_portfolio_raw()
+        if preflight and 'errorCode' in preflight:
+            error_code = preflight.get('errorCode', 'Unknown')
+            error_msg = preflight.get('errorMessage', 'Unknown')
+            logger.error(f"eToro API credentials invalid: {error_code} - {error_msg}")
+            return {"status": "failed", "reason": f"eToro API Auth Failed: {error_code} - {error_msg}. Please refresh your API credentials."}
         
         # 1. Risk Check
         history = self.get_history()
@@ -556,11 +574,11 @@ class EtoroService(IBroker):
         endpoint = "/market-data/search"
         headers = self._get_headers()
         
-        # NOTE: Do NOT specify 'fields' param — it restricts response to only
-        # the listed fields, suppressing critical data like internalSymbolFull.
+        # Include fields to ensure symbol data is returned in response
         params = {
             "pageSize": 10,
             "pageNumber": 1,
+            "fields": "displayname,internalSymbolFull,symbolName,instrumentId,isCurrentlyTradable,isActiveInPlatform",
         }
         
         if exact:
@@ -665,8 +683,16 @@ class EtoroService(IBroker):
             params = {"instrumentIds": ",".join(ids)}
             response = requests.get(url, params=params, headers=headers, timeout=10)
             if response.status_code == 200:
-                self._process_metadata_response(response.json())
-                return
+                data = response.json()
+                # Check for auth error in JSON response body
+                if isinstance(data, dict) and 'errorCode' in data:
+                    logger.warning(f"Metadata API auth error: {data.get('errorCode')} - {data.get('errorMessage')}")
+                else:
+                    self._process_metadata_response(data)
+                    return
+            elif response.status_code == 401:
+                logger.error(f"Metadata API: Unauthorized. eToro credentials may be expired.")
+                return  # Don't fallback with invalid credentials
             else:
                 logger.warning(f"Metadata batch lookup failed: {response.status_code}. Falling back to individual lookups...")
         except Exception as e:
@@ -1050,8 +1076,25 @@ class EtoroService(IBroker):
             url = f"{self.base_url}{endpoint}"
             logger.info(f"Fetching portfolio from: {url}")
             response = requests.get(url, headers=self._get_headers(), timeout=10)
+            
+            # Parse response regardless of status code to capture error details
+            try:
+                data = response.json()
+            except Exception:
+                data = {}
+            
+            # Detect auth errors from response body (eToro returns JSON error objects)
+            if isinstance(data, dict) and 'errorCode' in data:
+                error_code = data.get('errorCode', 'Unknown')
+                error_msg = data.get('errorMessage', 'Unknown')
+                logger.error(f"eToro Portfolio API Error: {error_code} - {error_msg}")
+                return data  # Return the error object so callers can detect it
+            
             response.raise_for_status()
-            return response.json()
+            return data
+        except requests.exceptions.HTTPError as e:
+            logger.error(f"eToro Portfolio HTTP Error: {e} (status={response.status_code})")
+            return {}
         except Exception as e:
             logger.error(f"Etoro Portfolio Error: {e}")
             return {}

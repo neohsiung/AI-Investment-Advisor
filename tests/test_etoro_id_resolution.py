@@ -41,7 +41,8 @@ def test_resolve_instrument_id_no_match():
 def test_execute_order_uses_id():
     """Verify execute_order calls resolve_id and uses it in payload."""
     with patch('src.services.etoro_service.requests.post') as mock_post, \
-         patch.object(EtoroService, '_resolve_instrument_id', return_value=555):
+         patch.object(EtoroService, '_resolve_instrument_id', return_value=555), \
+         patch.object(EtoroService, '_fetch_portfolio_raw', return_value={'clientPortfolio': {'positions': []}}):
         
         service = EtoroService()
         # Mock Risk Check pass
@@ -103,7 +104,8 @@ def test_execute_sell_includes_instrument_id():
     """Verify SELL close body includes required InstrumentId."""
     with patch('src.services.etoro_service.requests.post') as mock_post, \
          patch.object(EtoroService, '_resolve_instrument_id', return_value=5506), \
-         patch.object(EtoroService, 'get_history', return_value=[]):
+         patch.object(EtoroService, 'get_history', return_value=[]), \
+         patch.object(EtoroService, '_fetch_portfolio_raw', return_value={'clientPortfolio': {'positions': []}}):
         
         service = EtoroService()
         service.risk_manager.check_constraints = MagicMock(return_value=True)
@@ -137,3 +139,22 @@ def test_execute_sell_includes_instrument_id():
         close_payload = close_calls[0].kwargs.get('json', {})
         assert 'InstrumentId' in close_payload, f"InstrumentId missing from close body: {close_payload}"
         assert close_payload['InstrumentId'] == 5506
+
+
+def test_execute_order_auth_failure_returns_clear_error():
+    """Verify execute_order returns clear auth error instead of 'No active position'."""
+    with patch.object(EtoroService, '_fetch_portfolio_raw',
+                      return_value={'errorCode': 'Unauthorized', 'errorMessage': 'Unauthorized'}):
+        
+        service = EtoroService()
+        
+        from src.domain.trading import Order, OrderAction
+        order = Order(symbol="TSLA", action=OrderAction.SELL, quantity=1.0)
+        
+        result = service.execute_order(order)
+        
+        assert result['status'] == 'failed'
+        assert 'Auth Failed' in result['reason']
+        assert 'Unauthorized' in result['reason']
+        # Must NOT show the misleading 'No active position' error
+        assert 'No active position' not in result['reason']

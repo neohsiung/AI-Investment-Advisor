@@ -5,6 +5,7 @@
 ### 版本紀錄 (Version History)
 | Date | Version | Description | Author |
 | :--- | :--- | :--- | :--- |
+| 2026-03-20 | v5.3 | **Robust Discovery Tests**: Added `test_etoro_reverse_resolution.py` for unknown IDs. Coverage: 72%. | Antigravity |
 | 2026-03-19 | v5.2 | **Regression Fixed**: Restored CI stability after eToro dynamic discovery refactor. Coverage: 71%. | Antigravity |
 | 2026-03-05 | v5.1 | **Rule #5 & #11 Compliance**: Removed Futu tests/mocks. Pinned all dependencies. | Antigravity |
 | 2026-03-01 | v5.0 | **Tech Stack Modernization**: Upgraded OTel to 1.39.1, Protobuf to 5.x, and removed `futu-api`. | Antigravity |
