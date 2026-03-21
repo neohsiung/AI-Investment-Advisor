@@ -106,6 +106,20 @@ class N8nParser(BaseSourceParser):
             "signal_id": signal_id
         }
 
+class SkillLearningParser(BaseSourceParser):
+    """Parser for investment skill learning events (articles, podcast transcripts)."""
+    @staticmethod
+    def parse(payload: Dict[str, Any]) -> Dict[str, Any]:
+        data = payload.get("body", payload) if isinstance(payload.get("body"), dict) else payload
+        return {
+            "type": data.get("event_type", "SKILL_LEARNING"),
+            "content": data.get("transcript") or data.get("article_text") or data.get("content") or "",
+            "source_url": data.get("article_url") or data.get("source_url") or data.get("url") or "",
+            "source_type": data.get("source_type", "article"),
+            "source_name": data.get("source_name", ""),
+            "msg": data.get("message") or f"Skill learning: {data.get('source_type', 'article')}",
+        }
+
 SOURCE_PARSERS = {
     "mktrecap": MktRecapParser,
     "tradingview": TradingViewParser,
@@ -116,7 +130,9 @@ SOURCE_PARSERS = {
     "finnhub": FinnhubParser,
     "n8n": N8nParser,
     "make": N8nParser,       # Make.com follows similar logic
-    "pipedream": N8nParser   # Pipedream follows similar logic
+    "pipedream": N8nParser,  # Pipedream follows similar logic
+    "skill_learning": SkillLearningParser,
+    "skill-learning": SkillLearningParser,
 }
 
 class WebhookService:
@@ -150,6 +166,22 @@ class WebhookService:
             
             parser = SOURCE_PARSERS.get(source.lower(), BaseSourceParser)
             normalized_data = parser.parse(payload)
+            
+            # Route skill-learning events to InvestmentSkillLearningService
+            if source.lower() in ("skill-learning", "skill_learning"):
+                from src.services.investment_skill_learning_service import (
+                    InvestmentSkillLearningService,
+                )
+                svc = InvestmentSkillLearningService(user_id=user_id)
+                asyncio.create_task(
+                    asyncio.to_thread(
+                        svc.run_daily_learning,
+                        content=normalized_data.get("content", ""),
+                        source_url=normalized_data.get("source_url", ""),
+                        source_type=normalized_data.get("source_type", "article"),
+                    )
+                )
+                return {"status": "accepted", "user_id": user_id, "source": source, "workflow": "skill_learning"}
             
             # [Refactor] Independent Event Analysis Workflow (v6.0)
             # Instead of just Sentinel, we trigger a full Agent-driven Workflow.

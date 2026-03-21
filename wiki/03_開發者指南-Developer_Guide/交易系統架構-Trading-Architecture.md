@@ -3,6 +3,7 @@
 ### 版本紀錄 (Version History)
 | Date | Version | Description | Author |
 | :--- | :--- | :--- | :--- |
+| 2026-03-21 | v7.0 | Added: SELL Position Sizing Guard, `position_sizing` Runtime Skill, Deliberation reasoning in trade notifications, WeeklyWorkflow actionable orders execution | Antigravity |
 | 2026-03-20 | v6.0 | Added: Position Sizing Guard (NLV% + Cash clamp), Post-Trade DB Sync, Cash-High structured prompt | Antigravity |
 | 2026-02-27 | v3.0 | Added: Dynamic Confidence Threshold, Interactive Approval Request (Option A), Sentinel scoring refactoring | Antigravity |
 | 2026-02-21 | v2.0 | Updated: eToro Official API migration, IBKR skeleton, BrokerType enum expansion | Neo |
@@ -81,11 +82,14 @@ Centralized risk control enforcing:
 1. **信心閾值判斷 (Confidence Threshold)**: 系統從 `SettingsService` 動態讀取 `auto_trade_threshold` (1-10)。若 Agent 的交易提案 `confidence_score` **大於** 該閾值，則**免審批全自動下單**。
 2. **互動式審核 (Approval Request)**: 若分數未達門檻，系統會透過全通路 (LINE/Email) 發送帶有 **[Approve/Reject] 互動式按鈕** 的審核請求通知。使用者可在 5 分鐘內手動批准執行，否則逾期失效。
 3. **動態風險指標**: Sentinel 事件的緊急操作（如緊急清倉、避險）現在同樣使用設定檔中的動態分數，而非寫死的定值。
-4. **[NEW v6.0] 持倉比例守衛 (Position Sizing Guard)**: BUY 訂單執行前，自動檢查：
+4. **[NEW v6.0] 持倉比例守衛 (BUY Position Sizing Guard)**: BUY 訂單執行前，自動檢查：
     - 金額 ≤ `available_cash` (現金上限)
     - 金額 ≤ `NLV × max_single_position_pct` (預設 10%)
     - 金額 ≥ `min_trade_amount` (預設 $10 USD)
-5. **[NEW v6.0] 交易後紀錄同步 (Post-Trade Sync)**: 成功交易後自動呼叫 `broker.sync_history()`，確保 DB 紀錄即時更新。
+5. **[NEW v7.0] SELL 持倉守衛 (SELL Position Sizing Guard)**: SELL 訂單執行前，查詢 Broker 實際持倉量，將 SELL 數量 clamp 至實際持有量，若持倉為 0 則跳過交易。
+6. **[NEW v7.0] `position_sizing` Skill**: Agent 可直接呼叫的 Runtime Skill，計算 Portfolio-Aware 安全交易量，支援 `full_close`/`partial_reduce`/`auto` intent。
+7. **[NEW v7.0] 議會思辮注入通知 (Deliberation Reasoning)**: 所有 Workflow 觸發的再平衡交易通知現在包含 Council 思辮摘要，提供透明的決策邏輯。
+8. **[NEW v6.0] 交易後紀錄同步 (Post-Trade Sync)**: 成功交易後自動呼叫 `broker.sync_history()`，確保 DB 紀錄即時更新。
 
 ### 券商實作狀態 (Broker Implementation Status)
 
@@ -121,6 +125,7 @@ Users can configure settings via the Dashboard's **"⚙️ Trading Configuration
 3.  **[NEW v6.0] Position Sizing Settings**:
     *   `max_single_position_pct` — 單一標的最大持倉佔淨值比例 (預設 `0.10` = 10%).
     *   `min_trade_amount` — 最低交易金額 (預設 `10.0` USD).
+    *   `target_cash_ratio` — 目標現金比例 (預設 `0.10` = 10%)，由 ExperienceReplay 動態調整。
 
 ## 4. 貢獻與合規 (Contribution & Compliance)
 

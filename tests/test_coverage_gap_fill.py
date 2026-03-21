@@ -67,38 +67,42 @@ def test_base_agent_load_prompt_error(mock_settings_repo, mock_state_repo):
                       settings_repo=mock_settings_repo, state_repo=mock_state_repo)
 
 def test_base_agent_real_llm_openrouter(mock_agent):
+    """Test _call_real_llm delegates through gateway."""
     mock_agent.config["provider"] = "OpenRouter"
-    with patch('requests.post') as mock_post:
-        mock_post.return_value.status_code = 200
-        mock_post.return_value.json.return_value = {
-            "choices": [{"message": {"content": "OpenRouter Response"}}]
-        }
-        resp = mock_agent._call_real_llm("prompt", "system")
-        assert resp == "OpenRouter Response"
+    mock_gw = MagicMock()
+    mock_gw.chat.return_value = "OpenRouter Response"
+    mock_agent._llm_gateway = mock_gw
+    resp = mock_agent._call_real_llm("prompt", "system")
+    assert resp == "OpenRouter Response"
 
 def test_base_agent_real_llm_openai(mock_agent):
+    """Test _call_real_llm delegates through gateway."""
     mock_agent.config["provider"] = "OpenAI"
-    with patch('requests.post') as mock_post:
-        mock_post.return_value.status_code = 200
-        mock_post.return_value.json.return_value = {
-            "choices": [{"message": {"content": "OpenAI Response"}}]
-        }
-        resp = mock_agent._call_real_llm("prompt", "system")
-        assert resp == "OpenAI Response"
+    mock_gw = MagicMock()
+    mock_gw.chat.return_value = "OpenAI Response"
+    mock_agent._llm_gateway = mock_gw
+    resp = mock_agent._call_real_llm("prompt", "system")
+    assert resp == "OpenAI Response"
 
 def test_base_agent_real_llm_error_handling(mock_agent):
+    """Test error propagation through gateway."""
     mock_agent.config["provider"] = "Google Gemini"
-    with patch('requests.post') as mock_post:
-        mock_post.side_effect = requests.exceptions.RequestException("API Fail")
-        with pytest.raises(requests.exceptions.RequestException):
-            mock_agent._call_real_llm("prompt", "system")
+    mock_gw = MagicMock()
+    mock_gw.chat.side_effect = requests.exceptions.RequestException("API Fail")
+    mock_agent._llm_gateway = mock_gw
+    with pytest.raises(requests.exceptions.RequestException):
+        mock_agent._call_real_llm("prompt", "system")
 
 def test_base_agent_mock_fallback(mock_agent):
+    """Test that gateway errors propagate through _mock_llm_call."""
     mock_agent.config['api_key'] = 'valid_key' # pragma: allowlist secret
-    with patch.object(mock_agent, '_call_real_llm', side_effect=Exception("Major Fail")):
-        # fallback to mock
-        resp = mock_agent._mock_llm_call("prompt", "system")
-        assert "Simulation Mode" in resp or "TestAgent" in resp
+    mock_gw = MagicMock()
+    mock_gw.chat.side_effect = Exception("Major Fail")
+    mock_agent._llm_gateway = mock_gw
+    # With gateway, _mock_llm_call now delegates to call_llm -> gateway
+    # Gateway error should propagate
+    with pytest.raises(Exception):
+        mock_agent._mock_llm_call("prompt", "system")
 
 # --- Market Data Tests ---
 

@@ -3,13 +3,14 @@
 ### 版本紀錄 (Version History)
 | Date | Version | Description | Author |
 | :--- | :--- | :--- | :--- |
+| 2026-03-20 | v5.0 | **Phase 5 重構**：三層記憶介面 (`IWorkingMemory`/`ISessionStorage`/`ILongTermMemory`) + `ThreeTierMemory` 組合門面 + `HybridMemoryAdapter` 轉接器 | Antigravity |
 | 2026-02-21 | v4.6 | Unified version, confirmed PostgreSQL primary & AgentLLMProvider integration | Neo |
 | 2026-02-20 | v4.5 | Document audit and history alignment | Neo |
 | 2026-02-19 | v4.2 | Three-tier memory architecture (Hot/Warm/Cold) established | Neo |
 
-> **版本 (Version):** v4.6
-> **更新日期 (Last Updated):** 2026-02-21
-> **狀態 (Status):** Production Optimized
+> **版本 (Version):** v5.0
+> **更新日期 (Last Updated):** 2026-03-20
+> **狀態 (Status):** Production Optimized + Interface-Driven
 
 > **[繁體中文 (Traditional Chinese)](#zh) | [English](#en)**
 

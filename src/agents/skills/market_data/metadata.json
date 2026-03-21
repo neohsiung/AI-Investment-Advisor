@@ -1,0 +1,20 @@
+{
+  "name": "get_market_data",
+  "version": "1.0.0",
+  "description": "Fetch quantitative market data for a ticker (Price, Volume, RSI, MACD).",
+  "category": "market",
+  "tier": "fast",
+  "input_schema": {
+    "type": "object",
+    "properties": {
+      "ticker": {"type": "string", "description": "Stock ticker symbol"}
+    },
+    "required": ["ticker"]
+  },
+  "output_schema": {
+    "type": "string",
+    "description": "Formatted price and indicator data"
+  },
+  "platform": ["linux", "darwin"],
+  "tags": ["market", "price", "technical"]
+}

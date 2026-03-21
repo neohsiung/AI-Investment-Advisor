@@ -1,4 +1,5 @@
 ---
+name: environment-doctor
 description: Diagnose local development environment issues (Python version, ABI compatibility)
 ---
 
@@ -11,7 +12,7 @@ This skill helps diagnose common issues in the local development environment, sp
 Run the following script to check your environment health:
 
 ```bash
-python3 skills/environment-doctor/check_env.py
+python3 .agent/skills/environment-doctor/check_env.py
 ```
 
 ## Checks Performed

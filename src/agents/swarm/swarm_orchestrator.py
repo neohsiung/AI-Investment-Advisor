@@ -5,6 +5,10 @@ import asyncio
 from src.utils.logger import setup_logger
 from src.agents.base_agent import BaseAgent
 from src.repositories.agent_repository import AlchemyAgentRepository
+from src.agents.swarm.strategies import (
+    AggregationStrategy, ConcatStrategy, MajorityVoteStrategy,
+    WeightedVoteStrategy, DegradationChain, VoteResult, get_strategy,
+)
 
 logger = setup_logger("SwarmOrchestrator")
 
@@ -20,8 +24,10 @@ class SwarmOrchestrator:
     4. [New] Adaptive Evolution (Reward/Penalty)
     """
 
-    def __init__(self, timeout_seconds: int = 60):
+    def __init__(self, timeout_seconds: int = 60, reward_delta: float = 0.01, penalty_delta: float = -0.1):
         self.timeout_seconds = timeout_seconds
+        self.reward_delta = reward_delta
+        self.penalty_delta = penalty_delta
         self.agent_repo = AlchemyAgentRepository()
 
     async def broadcast(self, agents: List[BaseAgent], task: str, context: Dict[str, Any] = None) -> Dict[str, str]:
@@ -57,10 +63,10 @@ class SwarmOrchestrator:
             if isinstance(res, Exception):
                 logger.error(f"SwarmOrchestrator: Agent {agent.name} failed: {res}")
                 output[agent.name] = f"Error: {str(res)}"
-                self.agent_repo.update_performance(agent.name, "unknown", success=False, latency=latency, weight_delta=-0.1)
+                self.agent_repo.update_performance(agent.name, "unknown", success=False, latency=latency, weight_delta=self.penalty_delta)
             else:
                 output[agent.name] = res
-                self.agent_repo.update_performance(agent.name, "unknown", success=True, latency=latency, weight_delta=0.01)
+                self.agent_repo.update_performance(agent.name, "unknown", success=True, latency=latency, weight_delta=self.reward_delta)
         
         return output
 
@@ -90,10 +96,10 @@ class SwarmOrchestrator:
              latency = time.time() - start_time
              if isinstance(res, Exception):
                  output[agent.name] = f"Error: {str(res)}"
-                 self.agent_repo.update_performance(agent.name, "unknown", success=False, latency=latency, weight_delta=-0.1)
+                 self.agent_repo.update_performance(agent.name, "unknown", success=False, latency=latency, weight_delta=self.penalty_delta)
              else:
                  output[agent.name] = res
-                 self.agent_repo.update_performance(agent.name, "unknown", success=True, latency=latency, weight_delta=0.01)
+                 self.agent_repo.update_performance(agent.name, "unknown", success=True, latency=latency, weight_delta=self.reward_delta)
         return output
 
     async def run_agent(self, agent: BaseAgent, task: str, context: Dict[str, Any]) -> str:
@@ -105,18 +111,30 @@ class SwarmOrchestrator:
         ctx["user_request"] = task
         return await loop.run_in_executor(None, agent.run, ctx)
 
-    def aggregate_results(self, results: Dict[str, str], strategy: str = "concat") -> str:
+    def aggregate_results(self, results: Dict[str, str], strategy: str = "concat", weights: Optional[Dict[str, float]] = None) -> str:
         """
-        Simple aggregation.
+        Aggregate results using pluggable strategy.
+        使用可插拔策略聚合結果。
+
+        Args:
+            results: Agent name → response text
+            strategy: Strategy name ('concat', 'majority_vote', 'weighted_vote')
+            weights: Optional agent weights
         """
-        if strategy == "concat":
-            summary = "### Swarm Results\n"
-            for name, res in results.items():
-                summary += f"#### {name}\n{res}\n\n"
-            return summary
-        else:
-            raise NotImplementedError(f"Strategy {strategy} not implemented")
-            
+        kwargs = {}
+        if strategy == "weighted_vote":
+            kwargs["agent_repo"] = self.agent_repo
+        strat = get_strategy(strategy, **kwargs)
+        return strat.aggregate(results, weights)
+
+    def run_consensus(self, results: Dict[str, str], weights: Optional[Dict[str, float]] = None) -> VoteResult:
+        """
+        Run council consensus vote and return structured result.
+        執行委員會共識投票並回傳結構化結果。
+        """
+        strat = MajorityVoteStrategy()
+        return strat.vote(results, weights)
+
     def evaluate_outcome(self, agent_name: str, score: float, tier: str = "unknown"):
         """
         Manual evaluation from higher-level logic.

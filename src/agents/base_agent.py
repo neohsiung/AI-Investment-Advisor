@@ -17,12 +17,16 @@ from src.repositories.feedback_repository import AlchemyFeedbackRepository
 from src.tools.mcp_server import McpServer, McpTool
 from src.infrastructure.memory.memory_manager import HybridMemory
 from src.agents.skills.skill_loader import SkillLoader
+from src.domain.interfaces import ILLMGateway, Message, LLMConfig
+from src.agents.context import ContextAssembler
+from src.agents.wal_protocol import WalProtocol
+from src.agents.agent_loop import AgentLoop
 import uuid
 from datetime import datetime
 
 class BaseAgent(ABC):
 
-    def __init__(self, name, prompt_path, use_cache=True, ttl_hours=24, tier="smart", user_id=None, settings_repo=None, state_repo=None, feedback_repo=None, identity_file="IDENTITY.md", **kwargs):
+    def __init__(self, name, prompt_path, use_cache=True, ttl_hours=24, tier="smart", user_id=None, settings_repo=None, state_repo=None, feedback_repo=None, identity_file="IDENTITY.md", llm_gateway: Optional[ILLMGateway] = None, **kwargs):
         self.name = name
         self.logger = setup_logger(name)
         self.prompt_path = prompt_path
@@ -60,6 +64,10 @@ class BaseAgent(ABC):
         self.config = self._load_config()
         self.cache = ResponseCache(ttl_hours=ttl_hours) if use_cache else None
         
+        # [Phase 1] LLM Gateway — Model Layer Injection (Model > Agent > Skill)
+        # 注入 ILLMGateway 實作，實現 Model 層完全解耦
+        self._llm_gateway = llm_gateway or self._create_default_gateway()
+        
         # Set up Tool Server
         self.toold = McpServer(name=f"{self.name}_Tools")
         
@@ -67,6 +75,21 @@ class BaseAgent(ABC):
         from src.agents.skills.registry import bind_skills_to_agent
         bind_skills_to_agent(self)
         
+        # [Phase 2] Composition: ContextAssembler, WalProtocol, AgentLoop
+        self._context_assembler = ContextAssembler(
+            skill_loader=self.skill_loader,
+            memory=self.memory,
+            toold=self.toold,
+        )
+        self._wal_protocol = WalProtocol(
+            workspace_path=self.workspace_path,
+            agent_name=self.name,
+            redact_fn=self._redact_secrets,
+        )
+        self._agent_loop = AgentLoop(
+            agent_name=self.name,
+            toold=self.toold,
+        )
     def register_tool(self, tool: McpTool):
         """
         Register a tool for the agent to use.
@@ -177,51 +200,10 @@ class BaseAgent(ABC):
 
     def render_system_prompt(self, context):
         """
-        Render System Prompt using Jinja2.
-        使用 Jinja2 渲染系統提示詞。
+        Render System Prompt using Jinja2 — delegates to ContextAssembler.
+        使用 Jinja2 渲染系統提示詞 — 委派至 ContextAssembler。
         """
-        try:
-            # 1. Inject Time Context
-            current_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-            
-            # 2. Inject Tool Definitions (Prioritize Skills XML + MCP JSON)
-            # Legacy MCP Tools
-            mcp_tools_json = json.dumps(self.toold.list_tools(), indent=2)
-            # New Skills XML
-            skills_xml = self.skill_loader.get_skill_registry_xml()
-            
-            # 3. Inject Dynamic Memory (Contextual)
-            # If context has 'query' or 'topic', try to fetch memory
-            memory_context_str = ""
-            # Ensure context is dict
-            context_dict = context if isinstance(context, dict) else {}
-            
-            # Explicit Historical Context (from CouncilService)
-            if "historical_context" in context_dict:
-                 memory_context_str += f"\n[Historical Context]:\n{context_dict['historical_context']}\n"
-
-            topic = context_dict.get("topic")
-            if topic and not "historical_context" in context_dict: # Avoid Double Injection
-                # Retrieve relevant memories
-                # We need an embedding for the topic. 
-                # For now, we will just use Keyword Search or rely on hybrid if we had an embedder here.
-                # Since BaseAgent doesn't have an embedder yet, we skip vector part or pass dummy.
-                # In full implementation, we'd call self.llm_provider.embed(topic).
-                memories = self.memory.search(topic, query_vector=None, limit=3)
-                if memories:
-                    memory_context_str += "\n".join([f"- {m['content']} (Score: {m['score']:.2f})" for m in memories])
-
-            context_with_tools = context_dict.copy()
-            context_with_tools["tools"] = mcp_tools_json # Keep for backward compatibility in templates
-            context_with_tools["skills_xml"] = skills_xml
-            context_with_tools["current_time"] = current_time
-            context_with_tools["memory_context"] = memory_context_str
-            
-            template = Template(self.system_prompt)
-            return template.render(**context_with_tools)
-        except Exception as e:
-            self.logger.error(f"Error rendering system prompt: {e}")
-            return self.system_prompt
+        return self._context_assembler.render(self.system_prompt, context)
 
 
     @abstractmethod
@@ -233,126 +215,41 @@ class BaseAgent(ABC):
         pass
 
     def _estimate_tokens(self, text: str) -> int:
-        """
-        Estimate token count (approx. 4 chars per token).
-        """
-        return len(text) // 4
+        """Estimate token count — delegates to WalProtocol."""
+        return WalProtocol.estimate_tokens(text)
 
     def _check_context_window(self, messages: List[Dict[str, str]], reserve_floor: int = 4000, max_tokens: int = 32000) -> bool:
-        """
-        Check if the current context approaches the token limit.
-        如果上下文超過安全線，提早觸發 Flush 訊號。
-        """
-        total_tokens = sum(self._estimate_tokens(msg.get("content", "")) for msg in messages)
-        if total_tokens > (max_tokens - reserve_floor):
-            self.logger.warning(f"Context Window approaching limit! Tokens: {total_tokens} (Reserve: {reserve_floor})")
-            return True
-        return False
+        """Check context window — delegates to WalProtocol."""
+        return self._wal_protocol.check_context_window(messages, reserve_floor, max_tokens)
 
     def _perform_silent_flush(self, messages: List[Dict[str, str]]):
-        """
-        WAL Protocol: Write state context out and truncate history to preserve trajectory.
-        將當前思考軌跡壓縮，寫入狀態日誌，避免斷片。
-        """
-        self.logger.info(f"[{self.name}] Initiating Silent Pre-Compaction Flush & WAL")
-        
-        # 1. Ask LLM to summarize and generate a WAL checkpoint
-        flush_prompt = (
-            "SYSTEM SILENT COMMAND: The context window is almost full. "
-            "Please summarize your current reasoning state, memory trajectory, and any pending tool calls. "
-            "Output MUST be in markdown format prefixed with 'WAL_CHECKPOINT:' so I can restore this session."
-        )
-        temp_messages = messages + [{"role": "user", "content": flush_prompt}]
-        
-        try:
-            # Simple sync call for the summary
-            wal_state = self.call_llm(temp_messages, temperature=0.1)
-            
-            # 2. Write WAL to Workspace /STATE.md (Rule #1)
-            if hasattr(self, 'workspace_path') and self.workspace_path:
-                state_path = os.path.join(self.workspace_path, "STATE.md")
-                # Redact any accidental secrets before writing to disk
-                safe_wal_state = self._redact_secrets(wal_state)
-                with open(state_path, "w", encoding="utf-8") as f:
-                    f.write(f"# Session Checkpoint: {datetime.now().isoformat()}\n\n{safe_wal_state}")
-            
-            # 3. Truncate History: Keep System Prompt, latest WAL state, and drop the middle
-            if len(messages) > 3:
-                system_msg = messages[0]
-                messages.clear()
-                messages.append(system_msg)
-                messages.append({"role": "user", "content": f"Session Restored from Checkpoint:\n\n{wal_state}\n\nPlease continue where you left off."})
-                self.logger.info("Context truncated via WAL.")
-        except Exception as e:
-            self.logger.error(f"Silent flush failed: {e}")
+        """WAL Protocol flush — delegates to WalProtocol."""
+        self._wal_protocol.perform_silent_flush(messages, self.call_llm)
 
     def run_tool_loop(self, context, max_turns=3, thought_chain=False):
         """
-        Executes a ReAct-style loop where the agent can request generic tools via MCP.
-        執行 ReAct 風格的迴圈，Agent 可以透過 MCP 請求使用通用工具。
+        ReAct-style loop — delegates to AgentLoop.
         """
-        # Inject Thought Chain context if enabled
         if thought_chain:
             context = context.copy() if isinstance(context, dict) else {}
             context["thought_chain_mode"] = True
-            
+
         messages = [
             {"role": "system", "content": self.render_system_prompt(context)},
             {"role": "user", "content": self._render_user_context(context)}
         ]
 
+        # Lazy-init search service for legacy SEARCH handler
         from src.services.search_service import InternetSearchService
-        search_service = InternetSearchService(user_id=self.user_id)
+        self._agent_loop._search_service = InternetSearchService(user_id=self.user_id)
 
-        for turn in range(max_turns):
-            # [Context Guard]
-            if self._check_context_window(messages):
-                self._perform_silent_flush(messages)
-
-            response_text = self.call_llm(messages)
-            
-            # [NEW] Generic Tool Parsing (通用工具解析)
-            tool_call = self._parse_tool_call(response_text)
-            
-            if tool_call:
-                name, args = tool_call
-                self.logger.info(f"Agent requested tool: {name} with {args}")
-                messages.append({"role": "assistant", "content": response_text})
-                
-                try:
-                    result = ""
-                    if name == "SEARCH": # Legacy Handler (舊版處理器)
-                         # Search usually returns list of dicts
-                         q = args.get("query", str(args))
-                         res_list = search_service.search_financial_context(q, max_results=3)
-                         
-                         if res_list:
-                            for r in res_list:
-                                result += f"- {r.get('title')}: {r.get('snippet')} ({r.get('link')})\n"
-                         else:
-                            result = "No results found."
-                         
-                    else:
-                        # MCP Tool Call (MCP 工具調用)
-                        if name in self.toold.tools:
-                            raw_res = self.toold.call_tool(name, args)
-                            result = json.dumps(raw_res, ensure_ascii=False)
-                        else:
-                            # Try binding mapping just in case text differs from mapped name
-                            result = f"Error: Tool '{name}' not found."
-                    
-                    observation = f"System: [Tool '{name}' Output]\n{result}\n"
-                
-                except Exception as e:
-                    self.logger.error(f"Tool execution failed: {e}")
-                    observation = f"System: [Tool Error] {e}\n"
-                
-                messages.append({"role": "user", "content": observation})
-                # Loop continues
-            else:
-                return response_text
-
-        return response_text 
+        return self._agent_loop.execute(
+            messages=messages,
+            call_llm_fn=self.call_llm,
+            check_context_fn=lambda m: self._wal_protocol.check_context_window(m),
+            flush_fn=lambda m: self._wal_protocol.perform_silent_flush(m, self.call_llm),
+            max_turns=max_turns,
+        )
 
     # --- Context Guard ---
 
@@ -375,33 +272,8 @@ class BaseAgent(ABC):
         return results
 
     def _parse_tool_call(self, text):
-        """
-        Heuristic parsing for tool calls.
-        啟發式工具調用解析。
-        Supported formats (支援格式):
-        1. SEARCH: "query"
-        2. CALL: tool_name({"arg": "val"})
-        """
-        for line in text.splitlines():
-            if "SEARCH:" in line:
-                # Legacy strict format often found in prompts
-                parts = line.split("SEARCH:", 1)
-                if len(parts) > 1:
-                    query = parts[1].strip().strip('"').strip("'")
-                    return ("SEARCH", {"query": query})
-            
-            if line.strip().startswith("CALL:"):
-                # CALL: get_price({"ticker": "AAPL"})
-                content = line.strip().replace("CALL:", "").strip()
-                if "(" in content and content.endswith(")"):
-                    name = content.split("(", 1)[0].strip()
-                    args_str = content.split("(", 1)[1][:-1]
-                    try:
-                        args = json.loads(args_str)
-                        return (name, args)
-                    except json.JSONDecodeError:
-                        return (name, {"arg": args_str})
-        return None
+        """Parse tool calls — delegates to AgentLoop."""
+        return AgentLoop.parse_tool_call(text)
 
     def call_agent(self, agent_name: str, message: str, context: dict = None):
         """
@@ -450,14 +322,53 @@ class BaseAgent(ABC):
             self.logger.error(f"Failed to record feedback: {e}")
 
     def _render_user_context(self, context):
-        if isinstance(context, str):
-            return context
-        return json.dumps(context, indent=2, ensure_ascii=False)
+        """Render user context — delegates to ContextAssembler."""
+        return ContextAssembler.render_user_context(context)
+
+    # ================================================================
+    # LLM Gateway Factory & Delegation (Model > Agent > Skill)
+    # ================================================================
+
+    def _create_default_gateway(self) -> ILLMGateway:
+        """
+        Create default LLM Gateway based on config.
+        基於當前配置建立預設 LLM 閘道。
+        """
+        provider = self.config.get('provider', '')
+        api_key = self.config.get('api_key', '')
+
+        if not api_key:
+            from src.infrastructure.llm.llm_gateway import MockLLMGateway
+            return MockLLMGateway()
+
+        try:
+            from src.infrastructure.llm.llm_gateway import LLMGatewayFactory, RetryLLMGateway
+            inner = LLMGatewayFactory.create(provider)
+            max_retries = self.config.get('max_retries', 3)
+            return RetryLLMGateway(inner, max_retries=max_retries)
+        except ValueError:
+            self.logger.warning(f"Unsupported provider '{provider}', falling back to Mock.")
+            from src.infrastructure.llm.llm_gateway import MockLLMGateway
+            return MockLLMGateway()
+
+    def _build_llm_config(self, temperature: float = 0.7) -> LLMConfig:
+        """
+        Build LLMConfig value object from agent config dict.
+        """
+        return LLMConfig(
+            provider=self.config.get('provider', ''),
+            model=self.config.get('model', '').strip('"').strip("'"),
+            api_key=self.config.get('api_key', ''),
+            base_url=self.config.get('base_url', ''),
+            temperature=temperature,
+            max_retries=self.config.get('max_retries', 3),
+            timeout_seconds=30,
+        )
 
     def call_llm(self, messages, temperature=0.7, response_format=None):
         """
-        Unified method to call LLM.
-        統一的 LLM 調用方法。
+        Unified method to call LLM — delegates to ILLMGateway.
+        統一的 LLM 調用方法 — 委派至 ILLMGateway。
         """
         system_prompt = ""
         user_prompt = ""
@@ -469,126 +380,36 @@ class BaseAgent(ABC):
         system_prompt = system_prompt.strip()
         user_prompt = user_prompt.strip()
 
-        return self._mock_llm_call(user_prompt, system_prompt)
-
-    def _mock_llm_call(self, prompt, system_prompt):
-        import time
-        max_retries = self.config.get('max_retries', 3)
-        
-        for attempt in range(max_retries):
-            if self.config.get('api_key'):
-                try:
-                    return self._call_real_llm(prompt, system_prompt)
-                except Exception as e:
-                    self.logger.error(f"Error calling real LLM (Attempt {attempt+1}/{max_retries}): {e}")
-                    time.sleep(2 ** (attempt + 1))
-            else:
-                break
-        
-        provider = self.config.get('provider')
-        model = self.config.get('model')
-        self.logger.info(f"Falling back to Mock LLM ({provider} - {model})...")
-
-        simulated_response = f"""
-### ⚠️ Simulation Mode (Missing API Key)
-
-**Agent**: {self.name}
-
-#### Analysis
-- **Trend**: Neutral/Simulated.
-- **Signal**: HOLD.
-- **Reasoning**: System is running in simulation mode because valid API keys were not found.
-
-#### Recommendations
-- Validate your `.env` configuration.
-- Add `API_KEY` for {provider}.
-
-(Context received: {len(str(prompt))} chars)
-"""
-        return simulated_response.strip()
-
-    def _call_real_llm(self, prompt, system_prompt):
-        provider = self.config.get('provider')
-        model = self.config.get('model', '').strip('"').strip("'")
-        api_key = self.config.get('api_key')
-        base_url = self.config.get('base_url')
-
-        prompt_snippet = prompt[:50].replace('\n', ' ') + "..."
-
+        # Cache check
         if self.cache:
-            cached_response = self.cache.get(self.name, prompt)
+            cached_response = self.cache.get(self.name, user_prompt)
             if cached_response:
                 self.logger.info(f"Using Cached Response for {self.name}")
                 return cached_response
 
-        self.logger.info(f"Calling Real LLM ({provider} - {model}) | Prompt: {prompt_snippet}")
+        prompt_snippet = user_prompt[:50].replace('\n', ' ') + "..."
+        self.logger.info(f"Calling LLM via Gateway | Prompt: {prompt_snippet}")
 
-        if not api_key:
-            raise ValueError("API Key not found in settings")
+        # Delegate to ILLMGateway
+        config = self._build_llm_config(temperature=temperature)
+        gateway_messages = [
+            Message(role="system", content=system_prompt),
+            Message(role="user", content=user_prompt),
+        ]
+        return self._llm_gateway.chat(gateway_messages, config)
 
-        if provider == "OpenRouter":
-            url = "https://openrouter.ai/api/v1/chat/completions"
-            headers = {
-                "Authorization": f"Bearer {api_key}",
-                "Content-Type": "application/json",
-                "HTTP-Referer": "http://localhost:8501", 
-                "X-Title": "AI Investment Advisor"
-            }
-            data = {
-                "model": model,
-                "messages": [
-                    {"role": "system", "content": system_prompt},
-                    {"role": "user", "content": prompt}
-                ]
-            }
-            try:
-                response = requests.post(url, headers=headers, json=data, timeout=30)
-                response.raise_for_status()
-                return response.json()['choices'][0]['message']['content']
-            except Exception as e:
-                if 'response' in locals() and response is not None:
-                    self.logger.error(f"OpenRouter Request failed: {e} | Body: {response.text}")
-                else:
-                    self.logger.error(f"OpenRouter Request failed: {e}")
-                raise e
+    # Legacy aliases for backward compatibility (deprecated — will be removed)
+    def _mock_llm_call(self, prompt, system_prompt):
+        """Legacy bridge: delegates to call_llm via gateway."""
+        messages = [
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": prompt},
+        ]
+        return self.call_llm(messages)
 
-        elif provider == "Google Gemini":
-            model_id = model if model.startswith("models/") else f"models/{model}"
-            url = f"https://generativelanguage.googleapis.com/v1beta/{model_id}:generateContent?key={api_key}"
-            headers = {"Content-Type": "application/json"}
-            data = {"contents": [{"parts": [{"text": f"{system_prompt}\n\n{prompt}"}]}]}
-
-            try:
-                response = requests.post(url, headers=headers, json=data, timeout=30)
-                response.raise_for_status()
-                return response.json()['candidates'][0]['content']['parts'][0]['text']
-            except Exception as e:
-                self.logger.error(f"Gemini Request failed: {e}")
-                raise e
-
-        elif provider == "OpenAI":
-            url = base_url if base_url else "https://api.openai.com/v1/chat/completions"
-            headers = {
-                "Authorization": f"Bearer {api_key}",
-                "Content-Type": "application/json"
-            }
-            data = {
-                "model": model,
-                "messages": [
-                    {"role": "system", "content": system_prompt},
-                    {"role": "user", "content": prompt}
-                ]
-            }
-            try:
-                response = requests.post(url, headers=headers, json=data, timeout=30)
-                response.raise_for_status()
-                return response.json()['choices'][0]['message']['content']
-            except Exception as e:
-                self.logger.error(f"OpenAI Request failed: {e}")
-                raise e
-
-        else:
-            raise ValueError(f"Unsupported provider: {provider}")
+    def _call_real_llm(self, prompt, system_prompt):
+        """Legacy bridge: delegates to call_llm via gateway."""
+        return self._mock_llm_call(prompt, system_prompt)
 
     def _redact_secrets(self, text_value):
         """

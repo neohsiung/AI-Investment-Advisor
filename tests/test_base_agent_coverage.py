@@ -104,32 +104,22 @@ class TestBaseAgentCoverage:
             mock_svc.search_financial_context.assert_called_with("AAPL", max_results=3)
 
     def test_call_real_llm(self, agent):
-        # Test _call_real_llm by mocking requests
-        # We need to set api_key in config to trigger real call logic if we weren't mocking call_llm wrapper.
-        # But here we call _call_real_llm DIRECTLY or via call_llm with key.
+        """Test _call_real_llm delegates through gateway (via call_llm)."""
         agent.config['api_key'] = 'secret'
         agent.config['provider'] = 'OpenRouter'
         agent.config['model'] = 'model-x'
         
-        with patch('src.agents.base_agent.requests.post') as mock_post:
-            mock_resp = MagicMock()
-            mock_resp.status_code = 200
-            mock_resp.json.return_value = {
-                'choices': [{'message': {'content': 'Real Logic Output'}}]
-            }
-            mock_post.return_value = mock_resp
-            
-            # We call the method directly to ensure we hit it even if _mock_llm_call has bypass logic
-            # Actually BaseAgent.call_llm calls _mock_llm_call which calls _call_real_llm if api_key exists.
-            
-            # Ensure _call_real_llm is reachable
-            res = agent._call_real_llm("prompt", "sys")
-            assert res == "Real Logic Output"
-            
-            # Test Google Gemini path
-            agent.config['provider'] = 'Google Gemini'
-            mock_resp.json.return_value = {
-                'candidates': [{'content': {'parts': [{'text': 'Gemini Output'}]}}]
-            }
-            res = agent._call_real_llm("prompt", "sys")
-            assert res == "Gemini Output"
+        # Patch the gateway directly since _call_real_llm now bridges to call_llm -> gateway
+        mock_gw = MagicMock()
+        mock_gw.chat.return_value = "Real Logic Output"
+        agent._llm_gateway = mock_gw
+        
+        res = agent._call_real_llm("prompt", "sys")
+        assert res == "Real Logic Output"
+        
+        # Test Google Gemini path (same gateway, different config)
+        agent.config['provider'] = 'Google Gemini'
+        mock_gw.chat.return_value = "Gemini Output"
+        
+        res = agent._call_real_llm("prompt", "sys")
+        assert res == "Gemini Output"

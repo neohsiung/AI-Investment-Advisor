@@ -4,6 +4,7 @@ from typing import List, Dict, Tuple, Any, Optional, Callable, Any, Dict, List
 from src.utils.logger import setup_logger
 from src.agents.base_agent import BaseAgent
 from .swarm_orchestrator import SwarmOrchestrator
+from .strategies import DegradationChain
 
 logger = setup_logger("RoleSwarm")
 
@@ -77,7 +78,7 @@ class RoleSwarm(BaseAgent):
         fast_summary = self.orchestrator.aggregate_results(fast_results, strategy="concat")
         
         fast_summary_upper = fast_summary.upper()
-        if "CRITICAL DANGER" in fast_summary_upper or "EMERGENCY STOP" in fast_summary_upper or "SYSTEM PAUSE" in fast_summary_upper:
+        if DegradationChain.check(fast_summary):
             logger.warning(f"RoleSwarm {self.name}: 🚨 Fast Tier triggered GRACEFUL DEGRADATION. Preempting.")
             smart_task.cancel()
             adv_task.cancel()
@@ -85,7 +86,7 @@ class RoleSwarm(BaseAgent):
             import contextlib
             with contextlib.suppress(asyncio.CancelledError):
                 await asyncio.gather(smart_task, adv_task)
-            return f"🚨 **EMERGENCY STOP TRIGGERED BY FAST TIER**:\n\n{fast_summary}"
+            return DegradationChain.format_emergency("Fast", fast_summary)
             
         results = await asyncio.gather(smart_task, adv_task, return_exceptions=True)
         smart_results = results[0] if not isinstance(results[0], Exception) else {}

@@ -71,32 +71,45 @@ def test_momentum_agent_run(mock_settings_repo, mock_state_repo):
     with patch('src.agents.base_agent.BaseAgent._load_prompt', return_value="Momentum System Prompt"):
         agent = MomentumAgent(user_id="test_user", use_cache=False, settings_repo=mock_settings_repo, state_repo=mock_state_repo)
 
-        # Mock _mock_llm_call
-        with patch.object(agent, '_mock_llm_call', return_value="BUY AAPL"):
-            context = {
-                "ticker": "AAPL", 
-                "price_data": {"current_price": 150}, 
-                "indicators": {"rsi": 30}
-            }
-            result = agent.run(context)
-            assert result == "BUY AAPL"
+        # Inject gateway mock for LLM call
+        from unittest.mock import MagicMock
+        mock_gw = MagicMock()
+        mock_gw.chat.return_value = "BUY AAPL"
+        agent._llm_gateway = mock_gw
+
+        context = {
+            "ticker": "AAPL", 
+            "price_data": {"current_price": 150}, 
+            "indicators": {"rsi": 30}
+        }
+        result = agent.run(context)
+        assert result == "BUY AAPL"
 
 def test_fundamental_agent_run(mock_settings_repo, mock_state_repo):
     with patch('src.agents.base_agent.BaseAgent._load_prompt', return_value="Fundamental System Prompt"):
         agent = FundamentalAgent(user_id="test_user", use_cache=False, settings_repo=mock_settings_repo, state_repo=mock_state_repo)
 
-        with patch.object(agent, '_mock_llm_call', return_value="Strong Fundamentals"):
-            context = {"ticker": "AAPL", "financials": {"pe": 15}, "news": []}
-            result = agent.run(context)
-            assert result == "Strong Fundamentals"
+        from unittest.mock import MagicMock
+        mock_gw = MagicMock()
+        mock_gw.chat.return_value = "Strong Fundamentals"
+        agent._llm_gateway = mock_gw
+
+        context = {"ticker": "AAPL", "financials": {"pe": 15}, "news": []}
+        result = agent.run(context)
+        assert result == "Strong Fundamentals"
 
 def test_macro_agent_run(mock_settings_repo, mock_state_repo):
     with patch('src.agents.base_agent.BaseAgent._load_prompt', return_value="Macro System Prompt"):
         agent = MacroAgent(user_id="test_user", use_cache=False, settings_repo=mock_settings_repo, state_repo=mock_state_repo)
-        with patch.object(agent, '_mock_llm_call', return_value="Risk Off"):
-            context = {"macro_data": {"GDP": 2.5}}
-            result = agent.run(context)
-            assert result == "Risk Off"
+
+        from unittest.mock import MagicMock
+        mock_gw = MagicMock()
+        mock_gw.chat.return_value = "Risk Off"
+        agent._llm_gateway = mock_gw
+
+        context = {"macro_data": {"GDP": 2.5}}
+        result = agent.run(context)
+        assert result == "Risk Off"
 
 def test_cio_agent_run(mock_settings_repo, mock_state_repo):
     # Mock Transaction Repo needed for CIO
@@ -106,14 +119,18 @@ def test_cio_agent_run(mock_settings_repo, mock_state_repo):
         agent = CIOAgent(user_id="test_user", use_cache=False, transaction_repo=mock_trans_repo, 
                          settings_repo=mock_settings_repo, state_repo=mock_state_repo)
         
+        # Inject gateway mock for LLM call
+        mock_gw = MagicMock()
+        mock_gw.chat.return_value = "Final Decision"
+        agent._llm_gateway = mock_gw
+
         # Mock _get_portfolio_context
         with patch.object(agent, '_get_portfolio_context', return_value=(1.1, "AAPL (10)")):
-            with patch.object(agent, '_mock_llm_call', return_value="Final Decision"):
-                context = {
-                    "user_id": "test_user",
-                    "momentum_reports": "Mom says Buy",
-                    "fundamental_reports": "Fund says Hold",
-                    "macro_report": "Macro says Down"
-                }
-                result = agent.run(context)
-                assert result == "Final Decision"
+            context = {
+                "user_id": "test_user",
+                "momentum_reports": "Mom says Buy",
+                "fundamental_reports": "Fund says Hold",
+                "macro_report": "Macro says Down"
+            }
+            result = agent.run(context)
+            assert result == "Final Decision"

@@ -69,7 +69,7 @@ python scripts/check_standards.py
 **執行的檢查項目**：
 1. **Unit Tests** — `pytest --cov=src --cov-report=term-missing tests/`
 2. **Security Scan** — `python3 -m bandit -r src/ -ll`
-3. **Wiki Integrity** — `python3 skills/wiki-maintainer/scripts/verify_wiki_links.py`
+3. **Wiki Integrity** — `python3 .agent/skills/wiki-maintainer/scripts/verify_wiki_links.py`
 
 **退出碼**：`0` = 全部通過，`1` = 有檢查失敗
 

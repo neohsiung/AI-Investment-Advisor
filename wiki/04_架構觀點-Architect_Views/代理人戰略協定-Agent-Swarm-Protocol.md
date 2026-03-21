@@ -3,6 +3,7 @@
 ### 版本紀錄 (Version History)
 | Date | Version | Description | Author |
 | :--- | :--- | :--- | :--- |
+| 2026-03-20 | v5.1 | **Phase 4 重構**：可插拔聚合策略 (`ConcatStrategy`/`MajorityVoteStrategy`/`WeightedVoteStrategy`)、`DegradationChain` 緊急降級、`run_consensus()` 共識投票 API、動態 `reward_delta`/`penalty_delta` | Antigravity |
 | 2026-03-12 | v5.0 | **Universal Prioritization**: Integrated `SentinelAgent` as the entry gate for all triggers, enforcing AI-driven classification and priority assessment (P1-P5) before Council review. / **全域優先級評估**：整合 `SentinelAgent` 作為所有觸發器的入口閘道，在評議會審查前執行 AI 驅動的分類與優先級評估 (P1-P5)。 | Antigravity |
 | 2026-02-28 | v4.3 | **Context Safety & WAL Protocol**: Implemented `_check_context_window` and `_perform_silent_flush` into `BaseAgent` to handle extreme long-context overflow safely without memory loss. | Agent |
 | 2026-02-27 | v4.2 | **Graceful Degradation Fix**: Enforced strict `asyncio.Task.cancel()` and `await` on pre-empted Swift/Adv tier tasks to prevent orphaned event loops in non-async testing environments. | Neo |

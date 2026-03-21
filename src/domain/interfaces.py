@@ -1,8 +1,66 @@
 from abc import ABC, abstractmethod
 import typing
 from typing import List, Dict, Tuple, Any, Optional, Callable, Dict, List, Tuple, Any, Optional, Callable
+from dataclasses import dataclass, field
 from datetime import datetime
 from src.domain.entities import FeedbackExample, SecurityContext
+
+
+# ============================================================
+# Model Layer Abstractions (Model > Agent > Skill Philosophy)
+# 模型層抽象 — CPU 角色
+# ============================================================
+
+@dataclass(frozen=True)
+class Message:
+    """
+    Immutable value object representing a single LLM message.
+    不可變值物件，代表單一 LLM 訊息。
+    """
+    role: str   # "system" | "user" | "assistant"
+    content: str
+
+
+@dataclass(frozen=True)
+class LLMConfig:
+    """
+    Immutable value object for LLM invocation configuration.
+    不可變值物件，LLM 調用配置。
+    """
+    provider: str
+    model: str
+    api_key: str = ""
+    base_url: str = ""
+    temperature: float = 0.7
+    max_tokens: Optional[int] = None
+    max_retries: int = 3
+    timeout_seconds: int = 30
+
+
+class ILLMGateway(ABC):
+    """
+    Interface for LLM Provider Gateway (Model Layer).
+    模型層閘道介面 — 隔離所有 LLM 供應商的具體 HTTP 呼叫。
+
+    Clean Architecture: 此介面定義於 Domain 層，
+    具體實作 (OpenRouter/Gemini/OpenAI) 位於 Infrastructure 層。
+    """
+
+    @abstractmethod
+    def chat(self, messages: List[Message], config: LLMConfig) -> str:
+        """
+        Send messages to LLM and return generated text.
+        向 LLM 發送訊息並回傳生成的文本。
+        """
+        pass
+
+    @abstractmethod
+    def embed(self, text: str, config: LLMConfig) -> List[float]:
+        """
+        Generate embedding vector for the given text.
+        為給定文本生成嵌入向量。
+        """
+        pass
 
 class FeedbackRepository(ABC):
     """

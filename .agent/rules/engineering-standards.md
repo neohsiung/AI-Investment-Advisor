@@ -91,11 +91,10 @@
 
 - 嚴禁使用 `MD5` 或 `SHA1` 進行任何具備安全性意涵的雜湊 (Hashing)。
 - 所有信號 ID (Signal ID) 或 實體識別碼 (Entity IDs) 生成必須使用 **SHA256**。
-- **使用者認證架構 (FastAPI Auth Hub)**: 
+- **使用者認證架構 (FastAPI Auth Hub)**:
   - **原則**: 嚴禁在 Streamlit 異步渲染週期內直接進行 OAuth 回調處理或設置 Cookie (極度不穩定)。
-  - **實作**: 所有認證流程 (Login/Callback/Logout) 必須由 `mcp_server` (FastAPI) 處理。
-  - **狀態持久化**: 必須利用 FastAPI 的 `HTTP 302 Redirect` 搭配 `Set-Cookie` 標頭進行同步狀態寫入。
-  - **前端驗證**: Streamlit 端僅限使用 `st.context.cookies` 同步讀取 Cookie，並透過 `auth_guard` 進行頁面阻斷。
+  - **流程**: Streamlit (`<a>` tag) → `FastAPI /api/auth/login` → Google OAuth → `FastAPI /api/auth/callback` → `HTTP 302 Redirect` → Streamlit。
+  - **前端驗證**: 使用 `st.context.cookies.get(cookie_name)` 同步讀取，透過 `auth_guard` 進行頁面阻斷。Cookie 屬性需設定 `samesite="lax"`。
 
 ---
 
@@ -137,3 +136,11 @@
 
 - **關鍵路徑測試**: 必須包含網路異常、API 限流 (Rate Limit) 及無數據回傳等反向情境測試。
 - **文件同步**: 完成實作後，必須更新 Wiki 數據源矩陣文檔。
+
+---
+
+## 6. DB 集中管理與 UI 操作原則 (DB-Managed Settings)
+
+- **DB 優先**: 所有可啟用的功能、系統閾值、API 金鑰或管道配置，應優先存放於資料庫（`settings` 表）中，而非寫死在代碼或全域環境變數中。
+- **UI 管理**: 所有存放於 DB 的設定，必須在 Dashboard 中提供對應的介面進行操作（如 `SettingsService` 整合），確保非開發人員亦可安全調整系統行為。
+- **動態載入**: 系統在啟動或執行期應透過 `SettingsService` 動態獲取配置，確保變更能即時生效（或僅需服務重啟）。

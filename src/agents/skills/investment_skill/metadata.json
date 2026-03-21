@@ -1,0 +1,22 @@
+{
+  "name": "investment_skill",
+  "version": "1.0.0",
+  "description": "根據當前市場環境、時間框架與產業，查詢並推薦最適用的投資技能",
+  "category": "analysis",
+  "tier": "smart",
+  "input_schema": {
+    "type": "object",
+    "properties": {
+      "timeframe": {"type": "string", "description": "時間框架: short_term, medium_term, long_term"},
+      "market_regime": {"type": "string", "description": "市場環境: bull, bear, sideways, volatile"},
+      "industry": {"type": "string", "description": "產業: tech, healthcare, financials, energy 等"},
+      "technique": {"type": "string", "description": "投資技術: momentum, fundamental, macro, quantitative, sentiment, event_driven, value, growth, income, contrarian"}
+    }
+  },
+  "output_schema": {
+    "type": "string",
+    "description": "適用的投資技能清單與說明"
+  },
+  "platform": ["linux", "darwin"],
+  "tags": ["investment", "strategy", "skill", "learning"]
+}

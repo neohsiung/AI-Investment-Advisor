@@ -4,15 +4,16 @@ from src.agents.fundamental import FundamentalAgent
 
 @pytest.fixture
 def mock_agent_deps():
-    # BaseAgent does not use AgentLLMProvider, it uses _call_real_llm
-    # We must ensure API_KEY is present to trigger _call_real_llm
-    with patch.dict('os.environ', {'API_KEY': 'test_key'}), \
-         patch('src.agents.fundamental.FundamentalAgent._call_real_llm') as mock_llm:
-        mock_llm.return_value = "Fundamental Analysis Report"
-        yield mock_llm
+    """Fixture that creates a FundamentalAgent with a mocked LLM gateway."""
+    with patch.dict('os.environ', {'API_KEY': 'test_key'}):
+        agent = FundamentalAgent(user_id="test_user")
+        mock_gw = MagicMock()
+        mock_gw.chat.return_value = "Fundamental Analysis Report"
+        agent._llm_gateway = mock_gw
+        yield agent, mock_gw
 
 def test_fundamental_agent_run(mock_agent_deps):
-    agent = FundamentalAgent(user_id="test_user")
+    agent, mock_gw = mock_agent_deps
     
     context = {
         "ticker": "AAPL",
@@ -23,10 +24,10 @@ def test_fundamental_agent_run(mock_agent_deps):
     result = agent.run(context)
     
     assert "Fundamental Analysis Report" in result
-    mock_agent_deps.assert_called_once()
+    mock_gw.chat.assert_called_once()
     
-    # Check prompt construction (indirectly)
-    call_args = mock_agent_deps.call_args
+    # Check prompt construction (indirectly via gateway messages)
+    call_args = mock_gw.chat.call_args
     assert "AAPL" in str(call_args)
 
 def test_fundamental_agent_run_empty_context():
@@ -37,7 +38,7 @@ def test_fundamental_agent_run_empty_context():
 
 def test_fundamental_agent_batch_mode(mock_agent_deps):
     """Test batch processing of multiple tickers."""
-    agent = FundamentalAgent(user_id="test_user")
+    agent, mock_gw = mock_agent_deps
     
     context = {
         "tickers": ["AAPL", "GOOG"],
@@ -47,9 +48,7 @@ def test_fundamental_agent_batch_mode(mock_agent_deps):
         }
     }
     
-    # Mock return value changes per call? Or just static.
-    # mock_agent_deps is the mock_llm function.
-    mock_agent_deps.side_effect = ["Analysis of AAPL", "Analysis of GOOG"]
+    mock_gw.chat.side_effect = ["Analysis of AAPL", "Analysis of GOOG"]
     
     result = agent.run(context)
     
@@ -58,4 +57,4 @@ def test_fundamental_agent_batch_mode(mock_agent_deps):
     assert "### GOOG Analysis" in result
     assert "Analysis of GOOG" in result
     
-    assert mock_agent_deps.call_count == 2
+    assert mock_gw.chat.call_count == 2

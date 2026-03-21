@@ -83,49 +83,44 @@ class TestBaseAgentMoreCoverage:
         agent.state_repo.save_state.assert_called_with("TestAgent_key", "TestAgent", "hash123", "Output")
 
     def test_call_real_llm_openrouter(self, agent):
+        """Test _call_real_llm delegates through gateway (via call_llm)."""
         agent.config = {"provider": "OpenRouter", "api_key": "sk-123", "model": "gpt-4"}
-        
-        with patch('src.agents.base_agent.requests.post') as mock_post:
-            mock_post.return_value.status_code = 200
-            mock_post.return_value.json.return_value = {
-                "choices": [{"message": {"content": "Hello OpenRouter"}}]
-            }
+        # Patch the gateway directly since _call_real_llm now bridges to call_llm -> gateway
+        mock_gw = MagicMock()
+        mock_gw.chat.return_value = "Hello OpenRouter"
+        agent._llm_gateway = mock_gw
             
-            resp = agent._call_real_llm("hi", "sys")
-            assert resp == "Hello OpenRouter"
+        resp = agent._call_real_llm("hi", "sys")
+        assert resp == "Hello OpenRouter"
             
     def test_call_real_llm_gemini(self, agent):
+        """Test _call_real_llm delegates through gateway (via call_llm)."""
         agent.config = {"provider": "Google Gemini", "api_key": "sk-123", "model": "gemini-pro"}
-        
-        with patch('src.agents.base_agent.requests.post') as mock_post:
-            mock_post.return_value.status_code = 200
-            # Gemini response structure
-            # candidates[0].content.parts[0].text
-            mock_post.return_value.json.return_value = {
-                "candidates": [{"content": {"parts": [{"text": "Hello Gemini"}]}}]
-            }
+        mock_gw = MagicMock()
+        mock_gw.chat.return_value = "Hello Gemini"
+        agent._llm_gateway = mock_gw
             
-            resp = agent._call_real_llm("hi", "sys")
-            assert resp == "Hello Gemini"
+        resp = agent._call_real_llm("hi", "sys")
+        assert resp == "Hello Gemini"
 
     def test_call_real_llm_openai(self, agent):
+        """Test _call_real_llm delegates through gateway (via call_llm)."""
         agent.config = {"provider": "OpenAI", "api_key": "sk-123", "model": "gpt-4"}
-        
-        with patch('src.agents.base_agent.requests.post') as mock_post:
-            mock_post.return_value.status_code = 200
-            mock_post.return_value.json.return_value = {
-                "choices": [{"message": {"content": "Hello OpenAI"}}]
-            }
+        mock_gw = MagicMock()
+        mock_gw.chat.return_value = "Hello OpenAI"
+        agent._llm_gateway = mock_gw
             
-            resp = agent._call_real_llm("hi", "sys")
-            assert resp == "Hello OpenAI"
+        resp = agent._call_real_llm("hi", "sys")
+        assert resp == "Hello OpenAI"
 
     def test_call_real_llm_fail(self, agent):
-        agent.config = {"provider": "Google Gemini", "api_key": "sk-123"}
-        with patch('src.agents.base_agent.requests.post') as mock_post:
-            mock_post.side_effect = Exception("Net Error")
-            with pytest.raises(Exception):
-                 agent._call_real_llm("hi", "sys")
+        """Test _call_real_llm propagates gateway errors."""
+        agent.config = {"provider": "Google Gemini", "api_key": "sk-123", "model": "gemini-pro"}
+        mock_gw = MagicMock()
+        mock_gw.chat.side_effect = Exception("Net Error")
+        agent._llm_gateway = mock_gw
+        with pytest.raises(Exception):
+             agent._call_real_llm("hi", "sys")
 
     def test_render_user_context_json(self, agent):
         ctx = {"a": 1}

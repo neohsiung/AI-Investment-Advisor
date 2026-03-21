@@ -25,10 +25,10 @@ description: 專指用於 Wiki 文檔維護、連結標準化與架構一致性�
 
 ```bash
 # 標準化所有 Wiki 連結
-python skills/wiki-maintainer/scripts/standardize_wiki_links.py
+python .agent/skills/wiki-maintainer/scripts/standardize_wiki_links.py
 
 # 驗證連結完整性
-python skills/wiki-maintainer/scripts/verify_wiki_links.py
+python .agent/skills/wiki-maintainer/scripts/verify_wiki_links.py
 ```
 
 ## 注意事項 (Precautions)

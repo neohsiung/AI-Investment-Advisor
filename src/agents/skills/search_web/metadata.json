@@ -1,0 +1,20 @@
+{
+  "name": "search_web",
+  "version": "1.0.0",
+  "description": "Search the internet for financial news, reports, and data.",
+  "category": "research",
+  "tier": "fast",
+  "input_schema": {
+    "type": "object",
+    "properties": {
+      "query": {"type": "string", "description": "Search query string"}
+    },
+    "required": ["query"]
+  },
+  "output_schema": {
+    "type": "string",
+    "description": "Formatted search results"
+  },
+  "platform": ["linux", "darwin"],
+  "tags": ["search", "news", "research"]
+}

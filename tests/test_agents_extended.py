@@ -33,18 +33,26 @@ def test_cio_agent(mock_settings_repo, mock_state_repo):
          agent = CIOAgent(user_id="test_user", use_cache=False, transaction_repo=mock_trans_repo, 
                           settings_repo=mock_settings_repo, state_repo=mock_state_repo)
 
-         with patch.object(agent, '_mock_llm_call', return_value="Mock response"):
-             context = {"user_id": "test_user", "leverage_ratio": 1.2, "macro_report": "Good"}
-             result = agent.run(context)
-             assert "Mock" in result
+         # Inject gateway mock for LLM call
+         mock_gw = MagicMock()
+         mock_gw.chat.return_value = "Mock response"
+         agent._llm_gateway = mock_gw
+
+         context = {"user_id": "test_user", "leverage_ratio": 1.2, "macro_report": "Good"}
+         result = agent.run(context)
+         assert "Mock" in result
 
 def test_macro_agent(mock_settings_repo, mock_state_repo):
     with patch('src.agents.base_agent.BaseAgent._load_prompt', return_value="Macro Prompt"):
         agent = MacroAgent(user_id="test_user", use_cache=False, settings_repo=mock_settings_repo, state_repo=mock_state_repo)
 
-        with patch.object(agent, '_mock_llm_call', return_value="Test Result"):
-            result = agent.run({"macro_data": {"ISM_Mfg_PMI": {"value": 45}, "ISM_Svc_PMI": {"value": 55}}})
-            assert "Test Result" in result
+        # Inject gateway mock for LLM call
+        mock_gw = MagicMock()
+        mock_gw.chat.return_value = "Test Result"
+        agent._llm_gateway = mock_gw
+
+        result = agent.run({"macro_data": {"ISM_Mfg_PMI": {"value": 45}, "ISM_Svc_PMI": {"value": 55}}})
+        assert "Test Result" in result
 
 @pytest.fixture
 def mock_prompt_repo():

@@ -11,14 +11,14 @@ description: 自動化 Wiki 連結標準化流程 (Standardize Wiki internal lin
    - 確認 `wiki/` 目錄已完全暫存或處於乾淨狀態。
 
 2. **連結識別與標準化 (Identify & Standardize)**
-   - 執行標準化腳本：`python skills/wiki-maintainer/scripts/standardize_wiki_links.py`
+   - 執行標準化腳本：`python .agent/skills/wiki-maintainer/scripts/standardize_wiki_links.py`
    - 此腳本將：
      - 去除所有連結中的資料夾路徑。
      - 去除 `.md` 副檔名。
      - 嘗試修復名稱不匹配的連結。
 
 3. **完整性驗證 (Integrity Check)**
-   - 執行驗證腳本：`python skills/wiki-maintainer/scripts/verify_wiki_links.py`
+   - 執行驗證腳本：`python .agent/skills/wiki-maintainer/scripts/verify_wiki_links.py`
    - 檢查是否仍存在斷開的內部連結。
 
 4. **原子提交 (Atomic Commit)**

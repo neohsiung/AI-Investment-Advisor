@@ -433,6 +433,43 @@ def init_db(db_path=None, force=False, engine=None):
     );
     """)
 
+    # 14. Investment Skills table (Daily Skill Learning System)
+    schema_commands.append(f"""
+    CREATE TABLE IF NOT EXISTS investment_skills (
+        id {pk_type},
+        user_id {fk_type} NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        name TEXT NOT NULL,
+        description TEXT,
+        timeframe TEXT,
+        environment {json_type} DEFAULT '{{}}',
+        industry {json_type} DEFAULT '[]',
+        technique TEXT,
+        conditions {json_type} DEFAULT '{{}}',
+        source_article TEXT,
+        source_type TEXT DEFAULT 'article',
+        source_highlight_id TEXT,
+        merged_from {json_type} DEFAULT '[]',
+        usage_count INTEGER DEFAULT 0,
+        last_used_at {timestamp_type},
+        is_active INTEGER DEFAULT 1,
+        version INTEGER DEFAULT 1,
+        created_at {timestamp_type} DEFAULT CURRENT_TIMESTAMP,
+        updated_at {timestamp_type} DEFAULT CURRENT_TIMESTAMP
+    );
+    """)
+
+    # 15. Skill Learning Config table (Dynamic Merge Threshold)
+    schema_commands.append(f"""
+    CREATE TABLE IF NOT EXISTS skill_learning_config (
+        user_id {fk_type} PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+        merge_threshold {numeric_type} DEFAULT 0.70,
+        max_token_budget INTEGER DEFAULT 2000,
+        last_token_usage INTEGER DEFAULT 0,
+        total_skills_count INTEGER DEFAULT 0,
+        updated_at {timestamp_type} DEFAULT CURRENT_TIMESTAMP
+    );
+    """)
+
     with engine.connect() as conn:
         for cmd in schema_commands:
             try:

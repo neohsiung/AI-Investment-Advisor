@@ -3,26 +3,29 @@
 ### 版本紀錄 (Version History)
 | Date | Version | Description | Author |
 | :--- | :--- | :--- | :--- |
+| 2026-03-21 | v2.1 | 新增 `position_sizing` Runtime Skill：Portfolio-Aware 交易量計算 | Antigravity |
+| 2026-03-20 | v2.0 | Phase 3 重構：3-Tier Progressive Disclosure SkillLoader、動態 SkillRegistry 類別、metadata.json 標準 | Antigravity |
 | 2026-02-21 | v1.0 | 初版：涵蓋 SkillLoader、Registry、SKILL.md 規範與自定義 Skill 指南 | Antigravity |
 
 ---
 
 ## 🇹🇼 概述
 
-Agent 技能系統（OpenClaw Skill System）是一套**宣告式的工具擴展框架**，允許開發者透過撰寫 `SKILL.md` 檔案來定義新的 Agent 能力，而無需修改核心 Agent 程式碼。系統由三個核心元件組成：
+Agent 技能系統（OpenClaw Skill System）是一套**宣告式的工具擴展框架**，允許開發者透過撰寫 `SKILL.md` 與 `metadata.json` 檔案來定義新的 Agent 能力，而無需修改核心 Agent 程式碼。系統由四個核心元件組成：
 
 | 元件 | 檔案 | 職責 |
 | :--- | :--- | :--- |
-| **SkillLoader** | `src/agents/skills/skill_loader.py` | 掃描並解析 `SKILL.md` 檔案 |
-| **SkillRegistry** | `src/agents/skills/registry.py` | 將 Skill 定義綁定到實際函式並註冊到 Agent |
-| **SKILL.md** | 各 Skill 目錄下 | 宣告式的 Skill 定義檔（YAML Frontmatter + Markdown） |
+| **SkillLoader** | `src/agents/skills/skill_loader.py` | **3-Tier 漸進式載入**：Layer 1 (metadata.json) → Layer 2 (SKILL.md frontmatter) → Layer 3 (SKILL.md body) |
+| **SkillRegistry** | `src/agents/skills/registry.py` | **動態插件系統**：register/unregister 熱插拔，lazy builtin 延遲載入 |
+| **metadata.json** | 各 Skill 目錄下 | Layer 1 輕量元資料：name、version、input/output schema、category、tier、tags |
+| **SKILL.md** | 各 Skill 目錄下 | Layer 2+3 宣告式 Skill 定義檔（YAML Frontmatter + Markdown） |
 
 ### 設計理念
 
-1. **宣告式定義**：Skill 的名稱、描述、元資料透過 YAML Frontmatter 宣告，指令透過 Markdown 撰寫。
-2. **自動發現**：`SkillLoader` 遞迴掃描目錄，自動載入所有 `SKILL.md`。
-3. **關注點分離**：Skill 定義（SKILL.md）與實作（Registry）分離，便於獨立維護。
-4. **OS 感知**：支援依作業系統過濾 Skill（如僅限 Linux/macOS）。
+1. **三層漸進式揭露 (Progressive Disclosure)**：`discover_skills()` 僅讀取 metadata.json 提供輕量發現；`load_skills()` 完整載入 SKILL.md。
+2. **動態插件 (Hot-plug)**：`SkillRegistry` 支援 `register()`/`unregister()` 運行時增減技能。
+3. **關注點分離**：Skill 定義（SKILL.md + metadata.json）與實作（Registry）分離。
+4. **OS 感知 + Category/Tier/Tag 查詢 API**：支援 `get_skills_by_category()`、`get_skills_by_tier()`、`get_skills_by_tag()` 過濾。
 
 ---
 
@@ -34,6 +37,7 @@ graph TB
         SM1[market_data/SKILL.md]
         SM2[search_web/SKILL.md]
         SM3[portfolio/SKILL.md]
+        SM4[position_sizing/SKILL.md]
     end
 
     subgraph Skill System
@@ -57,6 +61,7 @@ graph TB
     SM1 --> SL
     SM2 --> SL
     SM3 --> SL
+    SM4 --> SL
     SL -->|parse| SR
     SR -->|lookup| SI
     SI --> SS
@@ -131,6 +136,7 @@ flowchart TD
 | `search_web` | `search_web(query)` | `InternetSearchService` | 執行網路搜尋，回傳前 3 筆結果 |
 | `get_market_data` | `get_market_data(ticker)` | `MarketDataService` | 取得股票價格與技術指標 |
 | `get_portfolio` | `get_portfolio(user_id)` | `AlchemyTransactionRepository` | 取得使用者持倉與槓桿率 |
+| `position_sizing` | `_position_sizing(user_id, ticker, action, intent)` | `BrokerFactory`, `AlchemySettingsRepository` | 計算 Portfolio-Aware 安全交易量（BUY/SELL） |
 
 #### 服務懶載入
 
@@ -240,6 +246,16 @@ Assistant: <tool_code>tool_name(param="value")</tool_code>
 | **參數** | `user_id: str` |
 | **回傳** | 槓桿率與持倉摘要 |
 
+### `position_sizing` — 交易量計算
+
+| 屬性 | 值 |
+| :--- | :--- |
+| **目錄** | `src/agents/skills/position_sizing/` |
+| **描述** | Calculate portfolio-aware trade quantity considering holdings, cash ratio, and risk thresholds |
+| **OS 限制** | Linux, macOS |
+| **參數** | `user_id: str`, `ticker: str`, `action: BUY/SELL`, `intent: full_close/partial_reduce/auto` |
+| **回傳** | JSON: `recommended_quantity`, `actual_holding`, `cash_ratio_before`, `reason` |
+
 ---
 
 ## 如何新增自定義 Skill
@@ -342,9 +358,101 @@ The **Agent Skills System** (OpenClaw Skill System) is a declarative tool extens
 - **SkillRegistry** (`registry.py`): Maps skill definitions to Python implementations using lazy-loaded services (`InternetSearchService`, `MarketDataService`, `AlchemyTransactionRepository`) and binds them as `McpTool` instances to Agent `McpServer`.
 - **SKILL.md**: Declarative skill definition files with YAML frontmatter (`name`, `description`, `metadata`) and Markdown instructions injected into Agent System Prompts as XML.
 
-**Current Skills**: `search_web` (internet search), `get_market_data` (price & indicators), `get_portfolio` (holdings & leverage).
+**Current Skills**: `search_web` (internet search), `get_market_data` (price & indicators), `get_portfolio` (holdings & leverage), `position_sizing` (portfolio-aware trade quantity calculation).
 
-To add a custom skill: create a directory, write a `SKILL.md`, implement the function in `registry.py`, and register it in `SKILL_IMPLEMENTATIONS`.
+## 如何新增自訂 Skill (How to Add a Custom Skill)
+
+> 詳細 Agent 開發技能參見 `.agent/skills/skill-scaffolding/SKILL.md`
+
+### 流程圖
+
+```mermaid
+flowchart TD
+    A["1. mkdir src/agents/skills/my_skill/"] --> B["2. 撰寫 metadata.json"]
+    B --> C["3. 撰寫 SKILL.md"]
+    C --> D["4. registry.py 新增 impl + register"]
+    D --> E["5. SkillLoader 驗證"]
+    E --> F["6. 寫測試 + pytest"]
+```
+
+### Step 1: 建立目錄
+
+```bash
+mkdir -p src/agents/skills/<skill_name>
+```
+
+### Step 2: metadata.json (Layer 1)
+
+```json
+{
+  "name": "<skill_name>",
+  "version": "1.0.0",
+  "description": "Skill 用途描述",
+  "category": "research|market|portfolio|analysis",
+  "tier": "fast|smart|advanced",
+  "input_schema": {
+    "type": "object",
+    "properties": {
+      "param1": {"type": "string", "description": "說明"}
+    },
+    "required": ["param1"]
+  },
+  "output_schema": {"type": "string", "description": "回傳說明"},
+  "platform": ["linux", "darwin"],
+  "tags": ["tag1"]
+}
+```
+
+### Step 3: SKILL.md (Layer 2+3)
+
+```markdown
+---
+name: <skill_name>
+description: 與 metadata.json 一致
+metadata:
+  openclaw:
+    os: [linux, darwin]
+---
+## Instruction
+說明 Agent 何時使用、怎麼使用
+
+### Examples
+User: 問句範例
+Assistant: <tool_code><skill_name>(param1="value")</tool_code>
+```
+
+### Step 4: registry.py 註冊
+
+```python
+# 在 registry.py 新增
+def _<skill_name>(user_id: str, param1: str) -> str:
+    try:
+        from src.services.<module> import <Service>
+        svc = <Service>(user_id=user_id)
+        return str(svc.<method>(param1))
+    except Exception as e:
+        logger.error(f"Skill <skill_name> failed: {e}")
+        return f"Error: {e}"
+
+# 在 _ensure_builtins() 中加入
+self.register("<skill_name>", _<skill_name>)
+```
+
+### Step 5: 驗證
+
+```bash
+python -c "from src.agents.skills.skill_loader import SkillLoader; l=SkillLoader(); print(l.load_skills().keys())"
+python -m pytest tests/ --tb=short
+```
+
+### Skill 分類原則
+
+| 類別 | 存放位置 | 說明 |
+|------|----------|------|
+| **Runtime Skill** | `src/agents/skills/` | Agent 運行時可呼叫的 MCP Tool |
+| **Agent Dev Skill (框架通用)** | `.agent/skills/` | 跨專案使用的開發規範 |
+| **Agent Dev Skill (專案專屬)** | `.agent/skills/` | 僅限本專案的最佳實踐 |
+
 
 ## 🔗 Bidirectional Links
 - **Agent Protocol**: [[代理人戰略協定-Agent-Swarm-Protocol]]
