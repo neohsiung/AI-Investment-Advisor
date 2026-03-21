@@ -79,6 +79,9 @@ class SkillRegistry:
         self.register("position_sizing", _position_sizing)
         self.register("auto_discover_learning", _auto_discover_learning)
         self.register("get_historical_report", _get_historical_report)
+        self.register("strategic_envisioning", _strategic_envisioning)
+        self.register("attacker_lens_validation", _attacker_lens_validation)
+        self.register("alpha_judgment_synthesis", _alpha_judgment_synthesis)
 
     def bind_to_agent(self, agent) -> None:
         """
@@ -380,4 +383,37 @@ def _get_historical_report(user_id: str, report_type: str = "WeeklyWorkflow", we
     except Exception as e:
         logger.error(f"Skill get_historical_report failed: {e}")
         return json.dumps({"error": str(e)})
+
+
+def _strategic_envisioning(user_id: str) -> str:
+    """Returns the Strategic Envisioning analytical framework instructions."""
+    import pathlib
+    try:
+        path = pathlib.Path(__file__).parent / "strategic_envisioning" / "SKILL.md"
+        return path.read_text(encoding="utf-8")
+    except Exception as e:
+        logger.error(f"Skill strategic_envisioning failed: {e}")
+        return f"Error: {e}"
+
+
+def _attacker_lens_validation(user_id: str) -> str:
+    """Returns the Attacker's Lens Validation analytical framework instructions."""
+    import pathlib
+    try:
+        path = pathlib.Path(__file__).parent / "attacker_lens_validation" / "SKILL.md"
+        return path.read_text(encoding="utf-8")
+    except Exception as e:
+        logger.error(f"Skill attacker_lens_validation failed: {e}")
+        return f"Error: {e}"
+
+
+def _alpha_judgment_synthesis(user_id: str) -> str:
+    """Returns the Alpha Judgment & Synthesis analytical framework instructions."""
+    import pathlib
+    try:
+        path = pathlib.Path(__file__).parent / "alpha_judgment_synthesis" / "SKILL.md"
+        return path.read_text(encoding="utf-8")
+    except Exception as e:
+        logger.error(f"Skill alpha_judgment_synthesis failed: {e}")
+        return f"Error: {e}"
 
