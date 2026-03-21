@@ -90,7 +90,7 @@ jobs:
 
       - name: Wiki Integrity Check (Flat-Linking)
         run: |
-          python skills/wiki-maintainer/scripts/verify_wiki_links.py
+          python .agent/skills/wiki-maintainer/scripts/verify_wiki_links.py
 
       - name: License Compliance Check
         run: |
