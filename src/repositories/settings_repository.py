@@ -105,8 +105,6 @@ class AlchemySettingsRepository(BaseRepository, ISettingsRepository):
         Get a specific setting value (ORM).
         """
         resolved_uid = self._resolve_user(user_id)
-        # 🚨 DIAGNOSTIC LOG
-        print(f"DEBUG [SettingsRepo]: GET key='{key}' for user_id='{user_id}' (resolved to '{resolved_uid}')")
         
         try:
             setting = self.session.query(Setting).filter_by(user_id=resolved_uid, key=key).first()
@@ -130,8 +128,6 @@ class AlchemySettingsRepository(BaseRepository, ISettingsRepository):
         Set or update a specific setting value (Upsert via ORM).
         """
         resolved_uid = self._resolve_user(user_id)
-        # 🚨 DIAGNOSTIC LOG
-        print(f"DEBUG [SettingsRepo]: SET key='{key}' for user_id='{user_id}' (resolved to '{resolved_uid}')")
         
         session = self.session
         try:
@@ -153,10 +149,8 @@ class AlchemySettingsRepository(BaseRepository, ISettingsRepository):
                 setting = Setting(user_id=resolved_uid, key=key, value=store_value)
                 session.add(setting)
             session.commit()
-            print(f"DEBUG [SettingsRepo]: COMMIT success for key='{key}'")
         except Exception as e:
             session.rollback()
-            print(f"DEBUG [SettingsRepo]: COMMIT FAILED for key='{key}': {e}")
             raise
         finally:
             self.close_session()
@@ -166,8 +160,6 @@ class AlchemySettingsRepository(BaseRepository, ISettingsRepository):
         Delete a specific setting for a user.
         """
         resolved_uid = self._resolve_user(user_id)
-        # 🚨 DIAGNOSTIC LOG
-        print(f"DEBUG [SettingsRepo]: DELETE key='{key}' for user_id='{user_id}' (resolved to '{resolved_uid}')")
         
         session = self.session
         try:
@@ -175,12 +167,10 @@ class AlchemySettingsRepository(BaseRepository, ISettingsRepository):
             if setting:
                 session.delete(setting)
                 session.commit()
-                print(f"DEBUG [SettingsRepo]: DELETE success for key='{key}'")
                 return True
             return False
         except Exception as e:
             session.rollback()
-            print(f"DEBUG [SettingsRepo]: DELETE FAILED for key='{key}': {e}")
             raise
         finally:
             self.close_session()
@@ -248,8 +238,7 @@ class AlchemySettingsRepository(BaseRepository, ISettingsRepository):
             """)
             result = self.session.execute(query, {"val": secret}).fetchone()
             return result[0] if result else None
-        except Exception as e:
-            print(f"DEBUG [SettingsRepo]: find_user_by_webhook_secret error: {e}")
+        except Exception:
             return None
         finally:
             self.close_session()

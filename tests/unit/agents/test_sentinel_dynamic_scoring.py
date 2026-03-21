@@ -14,18 +14,23 @@ def mock_settings():
     return svc
 
 @pytest.fixture
+def anyio_backend():
+    return 'asyncio'
+
+@pytest.fixture
 def sentinel_svc(mock_settings):
     with patch('src.services.sentinel_service.SettingsService', return_value=mock_settings):
         svc = SentinelService(user_id="test_user")
         svc.settings_service = mock_settings # Inject
         return svc
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_sentinel_uses_dynamic_scores(sentinel_svc):
     # Mock necessary dependencies
     mock_auto_trade = AsyncMock()
     mock_tx_service = MagicMock()
     mock_tx_service.get_user_tickers.return_value = ["AAPL"]
+    mock_tx_service.get_holdings_map.return_value = {"AAPL": {"quantity": 10}}
     
     with patch('src.services.automated_trading_service.AutomatedTradingService', return_value=mock_auto_trade):
         with patch('src.services.transaction_service.TransactionService', return_value=mock_tx_service):

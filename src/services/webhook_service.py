@@ -151,7 +151,7 @@ class WebhookService:
             
         user_id = self.settings_service.find_user_by_webhook_secret(api_key)
         if not user_id:
-            logger.warning(f"Unauthorized API Key attempt: {api_key[:8]}...")
+            logger.warning("Unauthorized API Key attempt")
             raise HTTPException(status_code=403, detail="Invalid API Key")
             
         return user_id

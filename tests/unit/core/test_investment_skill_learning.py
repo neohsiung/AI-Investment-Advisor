@@ -90,7 +90,7 @@ MOCK_CREATE_RESPONSE = json.dumps({
 
 def test_extract_skill_from_article(service):
     """Test that extract_skill_from_content returns correct structure from article."""
-    service._mock_agent.run.return_value = MOCK_EXTRACTION_RESPONSE
+    service._mock_agent._call_real_llm.return_value = MOCK_EXTRACTION_RESPONSE
 
     result = service.extract_skill_from_content(
         content="When a stock breaks above its 20-day high with above-average volume...",
@@ -108,7 +108,7 @@ def test_extract_skill_from_article(service):
 
 def test_extract_skill_from_podcast(service):
     """Test skill extraction from podcast transcript."""
-    service._mock_agent.run.return_value = MOCK_EXTRACTION_RESPONSE
+    service._mock_agent._call_real_llm.return_value = MOCK_EXTRACTION_RESPONSE
 
     result = service.extract_skill_from_content(
         content="Transcript of investment podcast discussing breakout patterns...",
@@ -122,7 +122,7 @@ def test_extract_skill_from_podcast(service):
 
 def test_extract_invalid_content(service):
     """Test that non-investment content returns None."""
-    service._mock_agent.run.return_value = MOCK_INVALID_EXTRACTION
+    service._mock_agent._call_real_llm.return_value = MOCK_INVALID_EXTRACTION
 
     result = service.extract_skill_from_content(
         content="Today we will discuss how to make spaghetti carbonara...",
@@ -145,7 +145,7 @@ def test_merge_with_existing_skill(service, mock_engine):
             "VALUES ('existing_id_1', 'test_user', 'Basic Momentum', 'Simple momentum', 'momentum', 'short_term', 1)"
         ))
 
-    service._mock_agent.run.return_value = MOCK_MERGE_RESPONSE
+    service._mock_agent._call_real_llm.return_value = MOCK_MERGE_RESPONSE
 
     new_skill = {
         "name": "Advanced Momentum",
@@ -337,7 +337,7 @@ def test_daily_learning_full_flow(service, mock_engine):
             "INSERT OR REPLACE INTO skill_learning_config (user_id) VALUES ('test_user')"
         ))
 
-    service._mock_agent.run.side_effect = [
+    service._mock_agent._call_real_llm.side_effect = [
         MOCK_EXTRACTION_RESPONSE,  # extract_skill_from_content
     ]
 

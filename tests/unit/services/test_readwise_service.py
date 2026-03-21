@@ -16,7 +16,7 @@ def mock_agent_factory():
         agent_instance = MagicMock()
         mock.create_agent.return_value = agent_instance
         # Mock LLM response
-        agent_instance.run.return_value = '{"is_investment_related": true, "requires_action": true, "reasoning": "This is about AAPL stock.", "suggested_action": "Buy AAPL"}'
+        agent_instance._call_real_llm.return_value = '{"is_investment_related": true, "requires_action": true, "reasoning": "This is about AAPL stock.", "suggested_action": "Buy AAPL"}'
         yield mock
 
 def test_readwise_provider_fetch(mock_settings_service):
@@ -66,6 +66,6 @@ def test_readwise_service_analyze(mock_settings_service, mock_agent_factory):
         assert analyzed[0]["book_id"] == 999
         
         agent_instance = mock_agent_factory.create_agent.return_value
-        agent_instance.run.assert_called_once()
-        call_arg = agent_instance.run.call_args[0][0]
+        agent_instance._call_real_llm.assert_called_once()
+        call_arg = agent_instance._call_real_llm.call_args[0][0]
         assert "Always buy low." in call_arg

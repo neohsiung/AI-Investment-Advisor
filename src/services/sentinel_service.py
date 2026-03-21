@@ -684,7 +684,7 @@ class SentinelService:
                 t["priority"] = already_buffered["trigger"].get("priority", 3)
                 t["target_agent"] = already_buffered["trigger"].get("target_agent", "CIO")
                 t["rationale"] = already_buffered["trigger"].get("rationale", "Cached from previous evaluation")
-                logger.debug(f"Sentinel: Skipping LLM evaluation for cached trigger {trigger_id} (P{t['priority']})")
+                logger.debug(f"Sentinel: Skipping LLM evaluation for cached trigger (P{t['priority']})")
             else:
                 # 1. AI-Driven Priority & Routing
                 # 1. AI 驅動的優先級與路讀路由
@@ -732,12 +732,12 @@ class SentinelService:
                     # Check for "Ultra-Critical" P0 or explicit critical flag
                     # 檢查是否為「極度緊急」P0 或明確的緊急標記
                     if p_str == "P0" or eval_res.get("is_critical", False):
-                         logger.warning(f"Sentinel: Systemic Criticality detected ({p_str}). Bypassing buffer for {t.get('id')}.")
+                         logger.warning(f"Sentinel: Systemic Criticality detected ({p_str}). Bypassing buffer.")
                          await self._do_send_alert([t], source=source)
                          continue
 
                 except Exception as e:
-                    logger.error(f"Sentinel: AI Priority evaluation failed for {t.get('id')}: {e}")
+                    logger.error(f"Sentinel: AI Priority evaluation failed: {e}")
                     # Fallback Priority (Rule #13.2)
                     # 回退優先級
                     t["priority"] = 2
@@ -773,7 +773,7 @@ class SentinelService:
                     "deadline": deadline,
                     "priority": priority
                 })
-                logger.info(f"Sentinel: Buffered {t.get('id')} (P{priority}). Source: {source}. Deadline in {wait_mins}m")
+                logger.info(f"Sentinel: Buffered trigger (P{priority}). Source: {source}. Deadline in {wait_mins}m")
 
     async def _check_buffer_flush(self) -> None:
         """
@@ -838,7 +838,7 @@ class SentinelService:
                         )
                         continue
                 else:
-                    logger.info(f"Sentinel: Suppressing duplicate signal: {tid}")
+                    logger.info("Sentinel: Suppressing duplicate signal")
                     continue
             
             filtered_triggers.append(t)
@@ -893,7 +893,7 @@ class SentinelService:
             )
             decision = result.get('consensus', 'No Consensus')
         except Exception as e:
-            logger.error(f"Council session failed for topic '{topic}': {e}", exc_info=True)
+            logger.error(f"Council session failed: {e}", exc_info=True)
             decision = (
                 "⚠️ **系統運行於安全模式 (Fail-safe Mode)**\n\n"
                 "目前無法取得 AI 委員會的即時評估（可能是內部組件初始化失敗或 LLM API 連線問題）。\n"
@@ -933,7 +933,7 @@ class SentinelService:
         is_significant = is_actionable or is_extreme or "⚠️" in decision or "danger" in decision.lower()
         
         if not is_significant and "hold" in decision.lower():
-            logger.info(f"Sentinel: Significance Filter suppressed notification for '{topic}' (Council: {decision[:50]}...)")
+            logger.info("Sentinel: Significance Filter suppressed notification")
             return
 
         if is_actionable:
