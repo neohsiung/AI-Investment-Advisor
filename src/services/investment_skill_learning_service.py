@@ -116,10 +116,11 @@ class InvestmentSkillLearningService:
         )
 
         try:
-            response = self.agent.run(prompt)
+            response = self.agent._call_real_llm(prompt, self.agent.system_prompt or "You are an investment skill extraction assistant.")
+            self.logger.info(f"Agent response type: {type(response).__name__}, len: {len(str(response)[:200])}")
             parsed = self._parse_json_response(response)
 
-            if not parsed or not parsed.get("is_valid_skill"):
+            if not parsed or not isinstance(parsed, dict) or not parsed.get("is_valid_skill"):
                 self.logger.info("Content does not contain a valid investment skill.")
                 return None
 
@@ -128,7 +129,8 @@ class InvestmentSkillLearningService:
             return parsed
 
         except Exception as e:
-            self.logger.error(f"Skill extraction failed: {e}")
+            import traceback
+            self.logger.error(f"Skill extraction failed: {e}\n{traceback.format_exc()}")
             return None
 
     # ── Core: Find Similar Skills ───────────────────────────
@@ -210,7 +212,7 @@ class InvestmentSkillLearningService:
         )
 
         try:
-            response = self.agent.run(prompt)
+            response = self.agent._call_real_llm(prompt, self.agent.system_prompt or "You are an investment skill management assistant.")
             decision = self._parse_json_response(response)
 
             if not decision:
@@ -389,6 +391,7 @@ class InvestmentSkillLearningService:
         content: str = "",
         source_url: str = "",
         source_type: str = "article",
+        source_name: str = "",
     ) -> Dict[str, Any]:
         """
         Main daily learning flow.
@@ -815,7 +818,11 @@ class InvestmentSkillLearningService:
         match = re.search(r"\{.*\}", response_str, re.DOTALL)
         if match:
             try:
-                return json.loads(match.group(0))
+                result = json.loads(match.group(0))
+                if isinstance(result, dict):
+                    return result
+                self.logger.warning(f"JSON parsed but not a dict: {type(result)}")
+                return None
             except json.JSONDecodeError:
                 self.logger.warning("Failed to parse JSON from LLM response.")
                 return None
