@@ -39,6 +39,12 @@ description: 開發指導準則：指導 Agent 遵循 Trunk-based Development �
 - 絕對不要把「修復 A 模組的 Bug」和「新增 B 模組的功能」混在同一個 commit 裡。
 - 每個 commit 解決一個單位的問題，落實真正的隔離與原子化提交。
 
+### 5. 雙 Repo 規範與 Wiki 提交 (Dual-Repo & Wiki Commits)
+本專案的 `wiki/` 目錄為獨立或視為 Submodule 管理的 Repository。因此：
+- **主專案提交**：在專案根目錄執行常規的 `git commit` 時，將不會（也不應）包含 `wiki/` 目錄的變更。
+- **Wiki 提交**：任何針對 `wiki/` 內實體文件的修改，**必須強制定向至 Wiki Repo**，使用 `git -C wiki add` 與 `git -C wiki commit` 獨立提交。
+- 若一項任務同時包辦了程式碼修改與 Wiki 文件更新，這必須被切分為**兩個完全獨立的原子化提交**（分別在主 Repo 執行 `feat` 等變更，在 Wiki Repo 執行 `docs(wiki)` 變更）。
+
 ---
 
 ## Agent 執行範例
