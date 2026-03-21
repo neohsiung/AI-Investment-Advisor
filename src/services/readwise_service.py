@@ -101,7 +101,11 @@ class ReadwiseService:
             
         response_str = ""
         if isinstance(response, dict):
-             response_str = str(response.get("content", "")) or str(response.get("output", "")) or str(response)
+             response_str = (
+                 str(response.get("content", "")) 
+                 or str(response.get("output", "")) 
+                 or str(response)
+             )
         else:
              response_str = str(response)
              

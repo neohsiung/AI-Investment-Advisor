@@ -153,6 +153,16 @@ DATA_SOURCE_GROUPS = {
                 "fields": {
                     "api_key": {"label": "API Key", "type": "password", "help": "可在 readwise.io/access_token 取得"}
                 }
+            },
+            {
+                "id": "groq",
+                "name": "Groq Whisper (Podcast 轉錄)",
+                "url": "https://console.groq.com/keys",
+                "desc": "免費語音轉錄 API。用於 Podcast 音檔轉文字後萃取投資技能。",
+                "trigger_type": "polling",
+                "fields": {
+                    "api_key": {"label": "API Key", "type": "password", "help": "可在 console.groq.com/keys 取得"}
+                }
             }
         ]
     },

@@ -414,10 +414,19 @@ class InvestmentSkillLearningService:
                 content = self._fetch_readwise_content()
                 source_type = "highlight"
                 if not content:
-                    result["status"] = "skipped"
-                    result["details"]["reason"] = "No new content available"
-                    self.logger.info("No new content for skill learning.")
-                    return result
+                    # Step 1b: Auto-Discovery fallback — search the web
+                    self.logger.info("No Readwise content. Attempting auto-discovery...")
+                    discovered = self._auto_discover_content()
+                    if discovered:
+                        content = discovered.get("content", "")
+                        source_url = discovered.get("url", "")
+                        source_type = "auto_discovery"
+                        self.logger.info(f"Auto-discovered content from: {source_url}")
+                    else:
+                        result["status"] = "skipped"
+                        result["details"]["reason"] = "No new content available (Readwise + Auto-Discovery exhausted)"
+                        self.logger.info("No content from any source for skill learning.")
+                        return result
 
             # Step 2: Extract skill
             skill = self.extract_skill_from_content(content, source_url, source_type)
@@ -705,6 +714,61 @@ class InvestmentSkillLearningService:
         except Exception as e:
             self.logger.error(f"Readwise fetch failed: {e}")
             return ""
+
+    def _auto_discover_content(self) -> Optional[Dict[str, str]]:
+        """
+        Auto-discover investment content from the web using SearchService (Tavily).
+        自動從網路搜尋最佳投資策略文章作為學習素材。
+        """
+        try:
+            from src.services.search_service import SearchService
+
+            search_svc = SearchService(user_id=self.user_id)
+
+            # Rotate search queries for diversity
+            import random
+            queries = [
+                "best investment strategy article this week",
+                "top hedge fund investment technique explained",
+                "value investing strategy analysis 2026",
+                "momentum trading strategy breakdown",
+                "macro investing approach current market",
+                "portfolio risk management technique",
+                "contrarian investing strategy guide",
+                "growth investing in AI and technology sector",
+            ]
+            query = random.choice(queries)
+            self.logger.info(f"Auto-discovery search: '{query}'")
+
+            results = search_svc.search(query, max_results=3)
+
+            if not results:
+                self.logger.info("Auto-discovery: No search results found.")
+                return None
+
+            # Pick the best result (first one with substantial content)
+            for r in results:
+                content = r.get("content", "") or r.get("snippet", "")
+                url = r.get("url", "") or r.get("link", "")
+                title = r.get("title", "")
+
+                if content and len(content) > 200:
+                    self.logger.info(f"Auto-discovered article: {title}")
+                    return {"content": f"Title: {title}\n\n{content}", "url": url}
+
+            # Fallback: use the first result even if short
+            first = results[0]
+            content = first.get("content", "") or first.get("snippet", "")
+            url = first.get("url", "") or first.get("link", "")
+            title = first.get("title", "")
+            if content:
+                return {"content": f"Title: {title}\n\n{content}", "url": url}
+
+            return None
+
+        except Exception as e:
+            self.logger.error(f"Auto-discovery failed: {e}")
+            return None
 
     def _match_environment(
         self, env_data: Any, market_regime: str

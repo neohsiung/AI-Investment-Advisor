@@ -261,6 +261,43 @@ async def heartbeat_webhook(request: Request):
     
     return {"status": "alive", "user_id": user_id, "message": "Sentinel tick triggered."}
 
+@webhook_router.post("/podcast-extract")
+async def podcast_extract_webhook(request: Request):
+    """
+    音檔轉錄與技能學習 Webhook (解決 n8n 413 錯誤)。
+    """
+    svc = WebhookService()
+    user_id = await svc._resolve_user(request)
+    payload = await request.json()
+    
+    audio_url = payload.get("audioUrl")
+    podcast_name = payload.get("podcastName", "Podcast")
+    
+    from src.services.transcription_service import TranscriptionService
+    from src.services.investment_skill_learning_service import InvestmentSkillLearningService
+    
+    transcriber = TranscriptionService(user_id=user_id)
+    skill_svc = InvestmentSkillLearningService(user_id=user_id)
+    
+    async def process_task():
+        try:
+            transcript = await transcriber.transcribe_url(audio_url)
+            if transcript and not transcript.startswith("Error:"):
+                # Run learning in a thread as it might be synchronous or heavy
+                await asyncio.to_thread(
+                    skill_svc.run_daily_learning,
+                    content=transcript,
+                    source_url=audio_url,
+                    source_type="podcast",
+                    source_name=podcast_name
+                )
+                logger.info(f"Successfully processed podcast: {podcast_name}")
+        except Exception as e:
+            logger.error(f"Error processing podcast extract: {e}")
+
+    asyncio.create_task(process_task())
+    return {"status": "accepted", "message": "Podcast transcription process initiated."}
+
 @webhook_router.post("/market-alert")
 async def market_alert_webhook(request: Request):
     """

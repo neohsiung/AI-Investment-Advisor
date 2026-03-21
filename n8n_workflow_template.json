@@ -29,6 +29,10 @@
                 "headerParameters": {
                     "parameters": [
                         {
+                            "name": "User-Agent",
+                            "value": "Mozilla/5.0 InvestmentAdvisor/1.0"
+                        },
+                        {
                             "name": "X-API-Key",
                             "value": "your_api_key_here"
                         }
@@ -182,7 +186,7 @@
         },
         {
             "parameters": {
-                "jsCode": "// ═══════════════════════════════════════════════\n// 📻 Podcast RSS Feed Configuration\n// 在此處取消註解或新增 Podcast RSS feeds\n// ═══════════════════════════════════════════════\nconst PODCAST_FEEDS = [\n  // { name: 'All-In Podcast',        url: 'https://feeds.megaphone.fm/all-in' },\n  // { name: 'Invest Like the Best',  url: 'https://feeds.simplecast.com/JGE3yC0V' },\n  // { name: 'Odd Lots (Bloomberg)',   url: 'https://feeds.bloomberg.com/podcasts/etf_odd_lots.xml' },\n  // { name: 'Masters in Business',    url: 'https://feeds.bloomberg.com/podcasts/masters_in_business.xml' },\n  // { name: 'The Prof G Pod',         url: 'https://feeds.megaphone.fm/WWO3519750118' },\n];\nif (PODCAST_FEEDS.length === 0) return [];\nreturn PODCAST_FEEDS.map(f => ({ json: f }));"
+                "jsCode": "// ═══════════════════════════════════════════════\n// 📻 Podcast RSS Feed Configuration\n// 在此處取消註解或新增 Podcast RSS feeds\n// ═══════════════════════════════════════════════\nconst PODCAST_FEEDS = [\n  { name: 'All-In Podcast',        url: 'https://allinchamathjason.libsyn.com/rss' },\n  // { name: 'Invest Like the Best',  url: 'https://feeds.simplecast.com/JGE3yC0V' },\n  // { name: 'Odd Lots (Bloomberg)',   url: 'https://feeds.bloomberg.com/podcasts/etf_odd_lots.xml' },\n  // { name: 'Masters in Business',    url: 'https://feeds.bloomberg.com/podcasts/masters_in_business.xml' },\n  // { name: 'The Prof G Pod',         url: 'https://feeds.megaphone.fm/WWO3519750118' },\n];\nif (PODCAST_FEEDS.length === 0) return [];\nreturn PODCAST_FEEDS.map(f => ({ json: f }));"
             },
             "name": "Podcast Feed List",
             "type": "n8n-nodes-base.code",
@@ -195,9 +199,17 @@
                 "url": "={{ $json.url }}",
                 "sendHeaders": true,
                 "headerParameters": {
-                    "parameters": [{"name": "User-Agent", "value": "Mozilla/5.0 InvestmentAdvisor/1.0"}]
+                    "parameters": [
+                        { "name": "User-Agent", "value": "Mozilla/5.0 InvestmentAdvisor/1.0" }
+                    ]
                 },
-                "options": {},
+                "options": {
+                    "redirect": {
+                        "redirect": {
+                            "followRedirects": true
+                        }
+                    }
+                },
                 "responseFormat": "string"
             },
             "name": "Fetch Podcast Feed",
@@ -217,59 +229,25 @@
         },
         {
             "parameters": {
-                "url": "={{ $json.audioUrl }}",
-                "options": {"response": {"response": {"responseFormat": "file"}}}
-            },
-            "name": "Download Audio",
-            "type": "n8n-nodes-base.httpRequest",
-            "typeVersion": 3,
-            "position": [680, 1100],
-            "onError": "continueErrorOutput"
-        },
-        {
-            "parameters": {
                 "method": "POST",
-                "url": "https://api.groq.com/openai/v1/audio/transcriptions",
+                "url": "http://investment_advisor_mcp:8000/webhook/podcast-extract",
                 "sendHeaders": true,
                 "headerParameters": {
-                    "parameters": [{"name": "Authorization", "value": "=Bearer {{ $env.GROQ_API_KEY }}"}]
-                },
-                "sendBody": true,
-                "contentType": "multipart-form-data",
-                "bodyParameters": {
                     "parameters": [
-                        {"parameterType": "formBinaryData", "name": "file", "inputDataFieldName": "data"},
-                        {"name": "model", "value": "whisper-large-v3"},
-                        {"name": "language", "value": "en"}
+                        { "name": "X-API-Key", "value": "your_api_key_here" }
                     ]
-                },
-                "options": {}
-            },
-            "name": "Groq Whisper Transcribe",
-            "type": "n8n-nodes-base.httpRequest",
-            "typeVersion": 3,
-            "position": [900, 1100],
-            "onError": "continueErrorOutput",
-            "notes": "Groq Whisper 免費層 (需設定 GROQ_API_KEY)"
-        },
-        {
-            "parameters": {
-                "method": "POST",
-                "url": "http://investment_advisor_mcp:8000/webhook/skill-learning",
-                "sendHeaders": true,
-                "headerParameters": {
-                    "parameters": [{"name": "X-API-Key", "value": "your_api_key_here"}]
                 },
                 "sendBody": true,
                 "specifyBody": "json",
-                "jsonBody": "={\n  \"event_type\": \"PODCAST_SKILL_LEARNING\",\n  \"source_type\": \"podcast\",\n  \"transcript\": {{ JSON.stringify($json.text || '') }},\n  \"source_url\": {{ JSON.stringify($('Extract Latest Episode').item.json.link || '') }},\n  \"source_name\": {{ JSON.stringify($('Extract Latest Episode').item.json.podcastName || 'Podcast') }}\n}",
+                "jsonBody": "={\n  \"audioUrl\": \"{{ $json.audioUrl }}\",\n  \"podcastName\": \"{{ $json.podcastName }}\"\n}",
                 "options": {}
             },
-            "name": "Send Transcript to Skill Learning",
+            "name": "Extract Podcast via Advisor",
             "type": "n8n-nodes-base.httpRequest",
             "typeVersion": 3,
-            "position": [1150, 1100],
-            "onError": "continueErrorOutput"
+            "position": [700, 1100],
+            "onError": "continueErrorOutput",
+            "notes": "Handles transcription and skill learning internally (with chunking support)."
         }
     ],
     "connections": {
@@ -307,13 +285,7 @@
             "main": [[{"node": "Extract Latest Episode", "type": "main", "index": 0}]]
         },
         "Extract Latest Episode": {
-            "main": [[{"node": "Download Audio", "type": "main", "index": 0}]]
-        },
-        "Download Audio": {
-            "main": [[{"node": "Groq Whisper Transcribe", "type": "main", "index": 0}]]
-        },
-        "Groq Whisper Transcribe": {
-            "main": [[{"node": "Send Transcript to Skill Learning", "type": "main", "index": 0}]]
+            "main": [[{"node": "Extract Podcast via Advisor", "type": "main", "index": 0}]]
         }
     }
 }

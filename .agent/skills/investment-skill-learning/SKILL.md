@@ -23,6 +23,7 @@ n8n Schedule/RSS Trigger
     └─► POST /webhook/skill-learning
         └─► InvestmentSkillLearningService.run_daily_learning()
             ├── 1. 擷取內容 (Readwise / Podcast / 手動)
+            ├── 1b. Auto-Discovery fallback (Tavily 搜尋)
             ├── 2. LLM 萃取結構化技能
             ├── 3. 比對相似技能
             ├── 4. 合併或新增 (動態閾值)
@@ -35,8 +36,9 @@ n8n Schedule/RSS Trigger
 | 來源 | source_type | 觸發方式 |
 |------|-------------|----------|
 | Readwise | `highlight` | 每日排程自動 |
-| Podcast | `podcast` | n8n RSS 監聽 → Groq Whisper |
+| Podcast | `podcast` | n8n RSS → Server-side 轉錄 |
 | 文章 URL | `article` | 手動 webhook |
+| **自主搜尋** | `auto_discovery` | **Tavily 自動搜尋 (新增)** |
 
 ## 動態合併閾值
 

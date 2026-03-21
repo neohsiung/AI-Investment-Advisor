@@ -1,0 +1,8 @@
+{
+    "name": "auto_discover_learning",
+    "description": "自動從網路搜尋最佳投資策略文章並萃取為投資技能。當沒有 Readwise 畫線或 Podcast 來源時，Agent 可主動調用此技能進行自主學習。",
+    "version": "1.0.0",
+    "tags": ["learning", "discovery", "search", "skill-extraction"],
+    "trigger": "on_demand",
+    "dependencies": ["search_service", "investment_skill_learning_service"]
+}

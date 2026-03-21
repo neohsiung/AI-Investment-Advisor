@@ -15,6 +15,7 @@ plugin system that discovers implementations via convention:
 
 import importlib
 import functools
+import json
 import logging
 import os
 from typing import Dict, Callable, Optional, Any
@@ -76,6 +77,7 @@ class SkillRegistry:
         self.register("get_portfolio", _get_portfolio)
         self.register("investment_skill", _investment_skill)
         self.register("position_sizing", _position_sizing)
+        self.register("auto_discover_learning", _auto_discover_learning)
 
     def bind_to_agent(self, agent) -> None:
         """
@@ -327,3 +329,19 @@ def _is_ticker_match(t1: str, t2: str) -> bool:
         return s
     return normalize(t1) == normalize(t2)
 
+
+def _auto_discover_learning(user_id: str) -> str:
+    """
+    Trigger auto-discovery investment skill learning.
+    自動搜尋最佳投資文章並萃取為技能。
+    """
+    try:
+        from src.services.investment_skill_learning_service import (
+            InvestmentSkillLearningService,
+        )
+
+        svc = InvestmentSkillLearningService(user_id=user_id)
+        result = svc.run_daily_learning()  # No content = triggers auto-discovery
+        return json.dumps(result, ensure_ascii=False, indent=2)
+    except Exception as e:
+        return json.dumps({"error": str(e)})
