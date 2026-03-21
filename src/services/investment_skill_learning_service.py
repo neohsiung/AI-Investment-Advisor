@@ -334,14 +334,15 @@ class InvestmentSkillLearningService:
 
             engine = get_db_engine()
             with engine.connect() as conn:
+                query = (
+                    f"SELECT id, name, description, timeframe, technique, "  # nosec B608
+                    f"environment, industry, conditions, usage_count "
+                    f"FROM investment_skills "
+                    f"WHERE {where_clause} "
+                    f"ORDER BY usage_count DESC LIMIT 10"
+                )
                 result = conn.execute(
-                    text(
-                        f"SELECT id, name, description, timeframe, technique, "
-                        f"environment, industry, conditions, usage_count "
-                        f"FROM investment_skills "
-                        f"WHERE {where_clause} "
-                        f"ORDER BY usage_count DESC LIMIT 10"
-                    ),
+                    text(query),
                     params,
                 )
                 rows = result.fetchall()
@@ -574,11 +575,12 @@ class InvestmentSkillLearningService:
                         merged_conditions, ensure_ascii=False
                     )
 
+                query = (
+                    f"UPDATE investment_skills SET {', '.join(set_clauses)} "  # nosec B608
+                    f"WHERE id = :id"
+                )
                 conn.execute(
-                    text(
-                        f"UPDATE investment_skills SET {', '.join(set_clauses)} "
-                        f"WHERE id = :id"
-                    ),
+                    text(query),
                     update_fields,
                 )
 
@@ -667,12 +669,13 @@ class InvestmentSkillLearningService:
 
             engine = get_db_engine()
             with engine.begin() as conn:
+                query = (
+                    f"UPDATE skill_learning_config "  # nosec B608
+                    f"SET {', '.join(set_clauses)} "
+                    f"WHERE user_id = :user_id"
+                )
                 conn.execute(
-                    text(
-                        f"UPDATE skill_learning_config "
-                        f"SET {', '.join(set_clauses)} "
-                        f"WHERE user_id = :user_id"
-                    ),
+                    text(query),
                     params,
                 )
 
