@@ -721,9 +721,9 @@ class InvestmentSkillLearningService:
         自動從網路搜尋最佳投資策略文章作為學習素材。
         """
         try:
-            from src.services.search_service import SearchService
+            from src.services.search_service import InternetSearchService
 
-            search_svc = SearchService(user_id=self.user_id)
+            search_svc = InternetSearchService(user_id=self.user_id)
 
             # Rotate search queries for diversity
             import random
@@ -740,7 +740,7 @@ class InvestmentSkillLearningService:
             query = random.choice(queries)
             self.logger.info(f"Auto-discovery search: '{query}'")
 
-            results = search_svc.search(query, max_results=3)
+            results = search_svc.search_financial_context(query, max_results=3)
 
             if not results:
                 self.logger.info("Auto-discovery: No search results found.")
