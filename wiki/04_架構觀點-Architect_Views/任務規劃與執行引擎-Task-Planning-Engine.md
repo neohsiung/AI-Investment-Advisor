@@ -6,6 +6,7 @@
 ### 版本紀錄 (Version History)
 | Date | Version | Description | Author |
 | :--- | :--- | :--- | :--- |
+| 2026-03-21 | v4.2 | **Strategic Depth Enhancement**: Integrated `get_historical_report` skill to force Macro & CIO Agents to compare rationale with previous weeks. | Antigravity |
 | 2026-02-21 | v4.1 | **DynamicModelRouter refactor**: Replaced LiteLLM references with rule-based `DynamicModelRouter`, updated tier definitions and task plan structure | Neo |
 | 2026-02-07 | v3.3 | Updated Report Synthesis Logic (Integrated Pattern) | Neo |
 | 2026-01-14 | v3.2 | Initial Release with TaskPlanningService | Neo |
@@ -74,8 +75,9 @@ sequenceDiagram
     *   **CIO Agent (Sector Mode)**: 制定板塊輪動策略。
     *   **Council (Map-Reduce)**: 發動分散式 `Analysts` 對持倉與候選名單進行深度掃描。
 3.  **Synthesize Phase (Progressive Synthesis Pattern)**:
-    *   **Debate & Assembly**: `CIOAgent (Report Synthesis)` 接收所有 Map-Reduce 產出與即時宏觀數據，被指示尋找分歧訊號並產生**議會深度審議 (Council Deep Dive)** 辯論紀錄。`BaseWorkflow._assemble_integrated_report` 負責精確地將此詳細辯論紀錄注入最終報告板塊。
-    *   **Refinement**: `CIOAgent.polish_report` 執行最終潤飾，確保行動指令表 (Actionable Orders) 的格式正確且包含持倉權重。
+    *   **Historical Comparison**: `Macro Agent` 與 `CIOAgent (Report Synthesis)` 強制調用 `get_historical_report` 技能獲取上週報告，比對敘事變化 (Narrative Drift) 並產生深度戰略解釋。
+    *   **Debate & Assembly**: `CIOAgent (Report Synthesis)` 接收所有 Map-Reduce 產出與歷史基準，產生**議會深度審議 (Council Deep Dive)** 辯論紀錄與戰略調整原因。`BaseWorkflow._assemble_integrated_report` 負責精確地將此詳細辯論紀錄注入最終報告板塊。
+    *   **Refinement**: `CIOAgent.polish_report` 執行最終潤飾，確保行動指令表 (Actionable Orders) 的格式正確且包含持倉權重。總結產出 Email 友善的 Professional HTML 報告。
 
 ### 3. 關鍵機制 (Key Mechanisms)
 
@@ -109,8 +111,9 @@ The Task Planning & Execution Engine decouples "Goal Setting" from "Task Executi
 1.  **Plan Phase**: Generate `TaskPlan`.
 2.  **Execute Phase**: Macro Analysis -> Sector Rotation -> Council Analysis (Map-Reduce).
 3.  **Synthesize Phase (Integrated Pattern)**:
+    *   **Historical Comparison**: Agents utilize `get_historical_report` skill to compare explicit strategic shifts and justify adjustments.
     *   **Assembly**: Injects detailed transcripts into the final report via `_assemble_integrated_report`.
-    *   **Refinement**: CIO applies `polish_report` for formatting and readability (Editor Mode).
+    *   **Refinement**: CIO applies `polish_report` for formatting and readability (Editor Mode), converting Markdown into Email-friendly robust HTML.
 
 ### 4. Key Mechanisms
 *   **Gap Filling**: Triggered when active holdings < 15.

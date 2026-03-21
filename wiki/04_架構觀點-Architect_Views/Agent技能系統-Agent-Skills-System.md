@@ -3,6 +3,7 @@
 ### 版本紀錄 (Version History)
 | Date | Version | Description | Author |
 | :--- | :--- | :--- | :--- |
+| 2026-03-21 | v2.2 | 新增 `get_historical_report` Runtime Skill：以支援更深度的戰略回顧分析 | Antigravity |
 | 2026-03-21 | v2.1 | 新增 `position_sizing` Runtime Skill：Portfolio-Aware 交易量計算 | Antigravity |
 | 2026-03-20 | v2.0 | Phase 3 重構：3-Tier Progressive Disclosure SkillLoader、動態 SkillRegistry 類別、metadata.json 標準 | Antigravity |
 | 2026-02-21 | v1.0 | 初版：涵蓋 SkillLoader、Registry、SKILL.md 規範與自定義 Skill 指南 | Antigravity |
@@ -137,6 +138,7 @@ flowchart TD
 | `get_market_data` | `get_market_data(ticker)` | `MarketDataService` | 取得股票價格與技術指標 |
 | `get_portfolio` | `get_portfolio(user_id)` | `AlchemyTransactionRepository` | 取得使用者持倉與槓桿率 |
 | `position_sizing` | `_position_sizing(user_id, ticker, action, intent)` | `BrokerFactory`, `AlchemySettingsRepository` | 計算 Portfolio-Aware 安全交易量（BUY/SELL） |
+| `get_historical_report` | `_get_historical_report(user_id, report_type, weeks_ago)` | `AlchemyReportRepository` | 抓取過去一週/多週的特定類型投資報告，用於戰略與敘事回顧對比 |
 
 #### 服務懶載入
 
@@ -256,6 +258,16 @@ Assistant: <tool_code>tool_name(param="value")</tool_code>
 | **參數** | `user_id: str`, `ticker: str`, `action: BUY/SELL`, `intent: full_close/partial_reduce/auto` |
 | **回傳** | JSON: `recommended_quantity`, `actual_holding`, `cash_ratio_before`, `reason` |
 
+### `get_historical_report` — 歷史報告檢索
+
+| 屬性 | 值 |
+| :--- | :--- |
+| **目錄** | `src/agents/skills/historical_report/` |
+| **描述** | Fetch a historical investment report (e.g., last week's WeeklyWorkflow) to compare current signals and justify strategy adjustments. |
+| **OS 限制** | Linux, macOS |
+| **參數** | `user_id: str`, `report_type: str`, `weeks_ago: int` |
+| **回傳** | 過去特定週數的投資報告文字內容 |
+
 ---
 
 ## 如何新增自定義 Skill
@@ -358,7 +370,7 @@ The **Agent Skills System** (OpenClaw Skill System) is a declarative tool extens
 - **SkillRegistry** (`registry.py`): Maps skill definitions to Python implementations using lazy-loaded services (`InternetSearchService`, `MarketDataService`, `AlchemyTransactionRepository`) and binds them as `McpTool` instances to Agent `McpServer`.
 - **SKILL.md**: Declarative skill definition files with YAML frontmatter (`name`, `description`, `metadata`) and Markdown instructions injected into Agent System Prompts as XML.
 
-**Current Skills**: `search_web` (internet search), `get_market_data` (price & indicators), `get_portfolio` (holdings & leverage), `position_sizing` (portfolio-aware trade quantity calculation).
+**Current Skills**: `search_web` (internet search), `get_market_data` (price & indicators), `get_portfolio` (holdings & leverage), `position_sizing` (portfolio-aware trade quantity calculation), `get_historical_report` (historic strategic review).
 
 ## 如何新增自訂 Skill (How to Add a Custom Skill)
 

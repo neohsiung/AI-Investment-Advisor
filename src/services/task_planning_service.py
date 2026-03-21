@@ -76,7 +76,7 @@ class TaskPlanningService:
         tasks = [
             Task(
                 name="Market Cycle Analysis",
-                description="Analyze current Market Cycle (Early/Mid/Late/Recession). Focus on Liquidity (Fed), Rates (Yield Curve), and Growth (GDP). Output current 'Market_Phase' and 'Macro_Outlook'.",
+                description="Analyze current Market Cycle (Early/Mid/Late/Recession). Focus on Liquidity (Fed), Rates (Yield Curve), and Growth (GDP). MUST execute 'get_historical_report' to compare with last week's Macro Outlook and clearly explain any narrative shifts or structural changes. Output current 'Market_Phase' and 'Macro_Outlook'.",
                 complexity=8,
                 model_tier="advanced",
                 input_keys=[], 
@@ -121,7 +121,7 @@ class TaskPlanningService:
             ),
             Task(
                 name="Report Synthesis",
-                description="Synthesize all findings into a professional 'Macro-to-Micro' Investment Report (>10 mins read). explicit sections for 'Swarm Multi-Dim Insights' and 'Deep Portfolio Diagnosis'.",
+                description="Synthesize all findings into a professional 'Macro-to-Micro' Investment Report (>10 mins read). MUST execute 'get_historical_report' to deeply analyze WHY portfolio adjustments were made compared to last week. Explore strategic reasons behind the changes (e.g. narrative drift, cyclical rotation). Include explicit sections for 'Strategic Adjustments vs Last Week', 'Swarm Multi-Dim Insights' and 'Deep Portfolio Diagnosis'.",
                 complexity=6,
                 model_tier="smart",
                 input_keys=["ALL"], 

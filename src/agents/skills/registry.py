@@ -78,6 +78,7 @@ class SkillRegistry:
         self.register("investment_skill", _investment_skill)
         self.register("position_sizing", _position_sizing)
         self.register("auto_discover_learning", _auto_discover_learning)
+        self.register("get_historical_report", _get_historical_report)
 
     def bind_to_agent(self, agent) -> None:
         """
@@ -345,3 +346,38 @@ def _auto_discover_learning(user_id: str) -> str:
         return json.dumps(result, ensure_ascii=False, indent=2)
     except Exception as e:
         return json.dumps({"error": str(e)})
+
+
+def _get_historical_report(user_id: str, report_type: str = "WeeklyWorkflow", weeks_ago: int = 1) -> str:
+    """
+    Fetches the historical investment report for the given report type.
+    """
+    import json
+    try:
+        from src.data.database import get_db_engine
+        from sqlalchemy import text
+        import pandas as pd
+        
+        offset = max(0, weeks_ago - 1)
+        engine = get_db_engine()
+        with engine.connect() as conn:
+            query = text("""
+                SELECT created_at, content 
+                FROM reports 
+                WHERE user_id = :uid AND report_type = :rtype
+                ORDER BY created_at DESC 
+                LIMIT 1 OFFSET :offset
+            """)
+            df = pd.read_sql(query, conn, params={"uid": user_id, "rtype": report_type, "offset": offset})
+            
+            if df.empty:
+                return f"No historical ({report_type}) report found from {weeks_ago} weeks ago."
+                
+            record = df.iloc[0]
+            date_str = str(record['created_at'])
+            content = str(record['content'])
+            return f"Report Date: {date_str}\\n\\nContent:\\n{content}"
+    except Exception as e:
+        logger.error(f"Skill get_historical_report failed: {e}")
+        return json.dumps({"error": str(e)})
+
