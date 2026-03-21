@@ -448,7 +448,7 @@ async def auth_login():
         return RedirectResponse(authorization_url)
     except Exception as e:
         logger.error(f"Auth login failed: {e}")
-        return HTMLResponse(content=f"Auth Error: {e}", status_code=500)
+        return HTMLResponse(content="Auth Error: Initialization failed", status_code=500)
 
 @app.get("/api/auth/callback")
 async def auth_callback(code: str):
@@ -494,4 +494,4 @@ async def auth_callback(code: str):
         
     except Exception as e:
         logger.error(f"Auth callback failed: {e}")
-        return RedirectResponse(url=f"{FRONTEND_URL}?error={urllib.parse.quote(str(e))}")
+        return RedirectResponse(url=f"{FRONTEND_URL}?error=Authentication%20Failed")

@@ -144,6 +144,7 @@ class TestSettingsRender:
             del sys.modules['services.dashboard.src.pages.settings_tabs.scheduler_tab']
             
         with patch('src.agents.engineer.SystemEngineerAgent') as mock_agent_cls, \
+             patch('src.data.database.get_db_engine') as mock_get_db_engine, \
              patch('sqlalchemy.create_engine'), \
              patch('sqlalchemy.event.listen'), \
              patch('services.dashboard.src.pages.settings_tabs.scheduler_tab.SettingsService') as mock_service_cls, \
@@ -172,7 +173,7 @@ class TestSettingsRender:
              mock_time.hour = 10
              mock_st.time_input.return_value = mock_time
 
-             settings_mod.render_scheduler_tab(mock_st, "dummy.db", user_id="test_user")
+             scheduler_tab_module.render_scheduler_tab(mock_st, "dummy.db", user_id="test_user")
 
              # Updated labels in unified UX
              mock_st.time_input.assert_any_call("時間 (Weekly Time)", value=ANY, label_visibility='collapsed')
@@ -191,33 +192,34 @@ class TestSettingsRender:
 
         mock_st.session_state = {'dry_run_pid': None}
 
-        # Patch in the actual tab module where os and subprocess are imported
-        with patch('services.dashboard.src.pages.settings_tabs.report_dry_run_tab.os') as mock_os, \
-             patch('services.dashboard.src.pages.settings_tabs.report_dry_run_tab.subprocess') as mock_subprocess, \
+        # Patch globally instead of local alias to avoid test pollution
+        with patch('os.path.exists') as mock_exists, \
+             patch('os.makedirs') as mock_makedirs, \
+             patch('os.setsid', create=True) as mock_setsid, \
+             patch('subprocess.Popen') as mock_popen, \
              patch('builtins.open', mock_open()):
 
-            mock_os.path.exists.return_value = True
-            mock_os.makedirs.return_value = None
-            mock_os.setsid = MagicMock()  # Mock the setsid function
+            mock_exists.return_value = True
+            mock_makedirs.return_value = None
 
             # Setup button mock: first call returns True (start button clicked), others False
             mock_st.button.side_effect = [True, False, False]  # Multiple button calls in the function
 
             mock_process = MagicMock()
             mock_process.pid = 12345
-            mock_subprocess.Popen.return_value = mock_process
-            mock_subprocess.STDOUT =  MagicMock()  # Mock STDOUT constant
+            mock_popen.return_value = mock_process
+            
+            with patch('subprocess.STDOUT', -2):
+                # Mock rerun to prevent actual rerun
+                mock_st.rerun = MagicMock()
 
-            # Mock rerun to prevent actual rerun
-            mock_st.rerun = MagicMock()
+                # Import the function from the tab module
+                from services.dashboard.src.pages.settings_tabs.report_dry_run_tab import render_report_dry_run_tab
+                render_report_dry_run_tab(mock_st, user_id="test_user")
 
-            # Import the function from the tab module
-            from services.dashboard.src.pages.settings_tabs.report_dry_run_tab import render_report_dry_run_tab
-            render_report_dry_run_tab(mock_st, user_id="test_user")
-
-            # Assert Popen called
-            mock_subprocess.Popen.assert_called_once()
-            assert mock_st.session_state['dry_run_pid'] == 12345
+                # Assert Popen called
+                mock_popen.assert_called_once()
+                assert mock_st.session_state['dry_run_pid'] == 12345
 
 
     def test_render_agent_playground_tab(self):
