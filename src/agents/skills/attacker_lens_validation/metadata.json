@@ -1,0 +1,17 @@
+{
+  "name": "attacker_lens_validation",
+  "version": "1.0.0",
+  "description": "獲取攻擊者視角與極端防禦框架，專門尋找現有論述漏洞、檢測泡沫與評估極端風險時使用",
+  "category": "analysis",
+  "tier": "advanced",
+  "input_schema": {
+    "type": "object",
+    "properties": {}
+  },
+  "output_schema": {
+    "type": "string",
+    "description": "攻擊者視角分析框架指引"
+  },
+  "platform": ["linux", "darwin"],
+  "tags": ["risk", "validation", "analysis"]
+}
