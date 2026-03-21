@@ -221,6 +221,12 @@ class BaseWorkflow(ABC):
                     from src.services.automated_trading_service import AutomatedTradingService
                     auto_trade_svc = AutomatedTradingService()
                     
+                    # v7.0: Build deliberation context for enriched notifications
+                    debate_snippet = ""
+                    deliberation = self.context.get('deliberation_context', '')
+                    if deliberation:
+                        debate_snippet = f"\n\n📋 **議會思辨摘要 (Council Deliberation)**:\n{str(deliberation)[:500]}..."
+                    
                     for order_data in actionable_orders:
                         try:
                             # Parse quantity to float safely
@@ -228,6 +234,11 @@ class BaseWorkflow(ABC):
                                 qty_val = float(str(order_data['quantity']).replace('%', ''))
                             except (ValueError, TypeError):
                                 qty_val = 100.0 # Default fallback amount
+                            
+                            # Enrich rationale with deliberation reasoning
+                            enriched_rationale = str(order_data.get('reason', 'CIO Signal'))
+                            if debate_snippet:
+                                enriched_rationale += debate_snippet
                                 
                             # This handles threshold check, auto-exec, and notification/approval requests (Option A)
                             await auto_trade_svc.evaluate_and_execute_trade(
@@ -235,7 +246,7 @@ class BaseWorkflow(ABC):
                                 action=order_data['action'],
                                 quantity=qty_val,
                                 confidence_score=order_data['score'],
-                                rationale=order_data['reason'], # Passing our internal 'reason' as 'rationale'
+                                rationale=enriched_rationale,
                                 user_id=self.user_id
                             )
                         except Exception as e:
@@ -703,6 +714,9 @@ class DailyWorkflow(BaseWorkflow):
         
         # --- Final Assembly (Integrated Pattern) ---
         # 組合最終報告 (集成模式)
+        # v7.0: Store deliberation context for trade notification enrichment
+        self.context['deliberation_context'] = detailed_debate_section
+        
         final_report = self._assemble_integrated_report(
             cio_full_output=cio_output,
             detailed_debate_content=detailed_debate_section,
@@ -909,6 +923,46 @@ class WeeklyWorkflow(BaseWorkflow):
                 detailed_debate_content=portfolio_details,
                 agent_for_polish=synthesis_agent
             )
+            
+            # D. Parse & Execute Actionable Orders (v7.0: consistent with DailyWorkflow)
+            # ─────────────────────────────────────────────────────────
+            self._parse_actionable_orders(str(final_report))
+            actionable_orders = self.context.get('actionable_orders', [])
+            if actionable_orders:
+                logger.info(f"WeeklyWorkflow: Processing {len(actionable_orders)} actionable orders via AutomatedTradingService.")
+                from src.services.automated_trading_service import AutomatedTradingService
+                auto_trade_svc = AutomatedTradingService()
+                
+                # Build deliberation context snippet for trade notifications
+                debate_snippet = ""
+                if portfolio_details:
+                    # Truncate to first 500 chars for notification readability
+                    debate_snippet = f"\n\n📋 **議會思辨摘要 (Council Deliberation)**:\n{portfolio_details[:500]}..."
+                
+                import asyncio
+                for order_data in actionable_orders:
+                    try:
+                        try:
+                            qty_val = float(str(order_data['quantity']).replace('%', ''))
+                        except (ValueError, TypeError):
+                            qty_val = 100.0
+                        
+                        # Enrich rationale with deliberation reasoning
+                        enriched_rationale = str(order_data.get('reason', 'Weekly CIO Signal'))
+                        if debate_snippet:
+                            enriched_rationale += debate_snippet
+                        
+                        # Schedule async trade execution (sync context → event loop)
+                        asyncio.create_task(auto_trade_svc.evaluate_and_execute_trade(
+                            ticker=order_data['ticker'],
+                            action=order_data['action'],
+                            quantity=qty_val,
+                            confidence_score=order_data['score'],
+                            rationale=enriched_rationale,
+                            user_id=user_id
+                        ))
+                    except Exception as e:
+                        logger.error(f"WeeklyWorkflow: Failed to execute trade for {order_data['ticker']}: {e}")
             
             # 4. Memory Storage
             if self.memory_service:
@@ -1158,6 +1212,9 @@ class EventAnalysisWorkflow(BaseWorkflow):
             
             # Polish and translate if needed
             final_report = cio_output # Simplified for event workflow
+            
+            # v7.0: Store deliberation context for trade notification enrichment
+            self.context['deliberation_context'] = cio_context.get('council_transcript', '')
             
             # 5. Execute Action if actionable_orders table exists
             self._parse_actionable_orders(final_report)

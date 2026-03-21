@@ -172,3 +172,75 @@ async def test_notify_via_api_sends_http_post(test_svc):
         assert payload["user_id"] == "test_user"
         assert "line" in payload["channels"]
         assert payload["category"] == "approval"
+
+# ──────────────────────────────────────────
+# SELL Position Sizing Guard Tests (v7.0)
+# ──────────────────────────────────────────
+
+@pytest.fixture
+def mock_position():
+    """Create a mock position with symbol and quantity attributes."""
+    pos = MagicMock()
+    pos.symbol = "TSLA"
+    pos.quantity = 0.5
+    return pos
+
+@pytest.fixture
+def mock_broker_with_positions(mock_position):
+    broker = MagicMock()
+    broker.get_name.return_value = "MockBroker"
+    broker.execute_order.return_value = {"status": "success", "order_id": "456"}
+    broker.get_positions.return_value = [mock_position]
+    return broker
+
+@pytest.mark.asyncio
+async def test_sell_guard_clamps_quantity_to_actual_holding(test_svc, mock_broker_with_positions):
+    """SELL quantity > actual holding → quantity clamped to actual holding (0.5)."""
+    user_id = "test_user"
+    
+    with patch('src.services.automated_trading_service.BrokerFactory.get_broker', return_value=mock_broker_with_positions), \
+         patch.object(test_svc, '_notify_via_api', new_callable=AsyncMock):
+        res = await test_svc.evaluate_and_execute_trade(
+            user_id, "TSLA", "sell", 1.0, 9, "Reduce TSLA exposure"
+        )
+    
+    assert res["status"] == "success"
+    # Verify the order was executed with clamped quantity (0.5, not 1.0)
+    call_args = mock_broker_with_positions.execute_order.call_args
+    order = call_args[0][0] if call_args[0] else call_args[1].get('order')
+    assert order.quantity == 0.5
+
+@pytest.mark.asyncio
+async def test_sell_guard_skips_when_no_holding(test_svc):
+    """SELL with 0 actual holding → skip trade entirely."""
+    user_id = "test_user"
+    
+    broker = MagicMock()
+    broker.get_name.return_value = "MockBroker"
+    broker.get_positions.return_value = []  # No positions
+    
+    with patch('src.services.automated_trading_service.BrokerFactory.get_broker', return_value=broker):
+        res = await test_svc.evaluate_and_execute_trade(
+            user_id, "TSLA", "sell", 1.0, 9, "Exit TSLA"
+        )
+    
+    assert res["status"] == "skipped"
+    assert "No active position" in res["reason"]
+    broker.execute_order.assert_not_called()
+
+@pytest.mark.asyncio
+async def test_sell_guard_passthrough_when_within_holding(test_svc, mock_broker_with_positions):
+    """SELL quantity <= actual holding → no clamping needed."""
+    user_id = "test_user"
+    
+    with patch('src.services.automated_trading_service.BrokerFactory.get_broker', return_value=mock_broker_with_positions), \
+         patch.object(test_svc, '_notify_via_api', new_callable=AsyncMock):
+        res = await test_svc.evaluate_and_execute_trade(
+            user_id, "TSLA", "sell", 0.3, 9, "Partial reduce"
+        )
+    
+    assert res["status"] == "success"
+    call_args = mock_broker_with_positions.execute_order.call_args
+    order = call_args[0][0] if call_args[0] else call_args[1].get('order')
+    assert order.quantity == 0.3
+

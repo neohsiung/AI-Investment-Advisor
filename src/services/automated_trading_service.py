@@ -112,6 +112,39 @@ class AutomatedTradingService:
             except Exception as e:
                 logger.warning(f"Position Sizing check failed (non-blocking): {e}")
         
+        # v7.0: SELL Position Sizing Guard (持倉守衛 — 最後防線)
+        # ─────────────────────────────────────────────────
+        if order_action == OrderAction.SELL:
+            try:
+                broker = BrokerFactory.get_broker(user_id)
+                if broker:
+                    positions = broker.get_positions()
+                    actual_holding = 0.0
+                    for p in positions:
+                        p_sym = str(getattr(p, 'symbol', '')).strip().upper()
+                        t_sym = ticker.strip().upper()
+                        # Normalize eToro suffixes
+                        for suffix in [".US", ".RTH", ".EXT"]:
+                            if p_sym.endswith(suffix):
+                                p_sym = p_sym[:-len(suffix)]
+                        if p_sym == t_sym:
+                            actual_holding += getattr(p, 'quantity', 0)
+                    
+                    original_qty = quantity
+                    
+                    if actual_holding <= 0:
+                        logger.info(f"SELL Guard: No active position for {ticker}. Skipping trade.")
+                        return {"status": "skipped", "reason": f"No active position for {ticker}"}
+                    
+                    if quantity > actual_holding:
+                        logger.warning(f"SELL Guard: Clamped {ticker} from {quantity} → {actual_holding} (actual holding)")
+                        quantity = actual_holding
+                    
+                    if quantity != original_qty:
+                        logger.info(f"SELL Guard: Adjusted {ticker} qty {original_qty} → {quantity} (holding: {actual_holding})")
+            except Exception as e:
+                logger.warning(f"SELL Position Sizing check failed (non-blocking): {e}")
+        
         order = Order(
             symbol=ticker,
             action=order_action,

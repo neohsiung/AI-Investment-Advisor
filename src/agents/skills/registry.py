@@ -1,38 +1,139 @@
-from src.services.search_service import InternetSearchService
-from src.services.market_data_service import MarketDataService
-from src.repositories.transaction_repository import AlchemyTransactionRepository
+"""
+Skill Registry — Dynamic Plugin Discovery.
+技能註冊表 — 動態插件發現。
+
+Replaces the hardcoded SKILL_IMPLEMENTATIONS dict with a dynamic
+plugin system that discovers implementations via convention:
+  - Each skill folder can contain an `impl.py` file
+  - Or implementations are registered programmatically
+
+遵循規範:
+  - 規範四 (模組化設計): 插件化，獨立可單元測試
+  - 規範八 (動態指標原則): 動態發現取代硬編碼
+  - 規範十五 (AI-Support First): 聲明式結構化
+"""
+
+import importlib
+import functools
+import logging
+import os
+from typing import Dict, Callable, Optional, Any
+
 from src.utils.logger import setup_logger
 
 logger = setup_logger("SkillRegistry")
 
-# Lazy Loading to avoid circular imports or heavy init at module level
-# Removed global caching of services to enforce user isolation
-_tx_repo = None
 
-def get_search_service(user_id: str):
-    # InternetSearchService might also benefit from user context in future
-    return InternetSearchService()
+class SkillRegistry:
+    """
+    Dynamic Skill Registry with plugin discovery.
+    具動態插件發現功能的技能註冊表。
+    """
 
-def get_market_service(user_id: str):
-    return MarketDataService(user_id=user_id)
+    def __init__(self):
+        self._implementations: Dict[str, Callable] = {}
+        self._builtin_registered = False
 
-def get_tx_repo():
-    global _tx_repo
-    if not _tx_repo:
-        _tx_repo = AlchemyTransactionRepository()
-    return _tx_repo
+    def register(self, name: str, func: Callable) -> None:
+        """
+        Register a skill implementation by name.
+        以名稱註冊技能實作。
+        """
+        self._implementations[name] = func
+        logger.debug(f"SkillRegistry: Registered '{name}'")
 
-# --- Implementations ---
+    def unregister(self, name: str) -> None:
+        """
+        Remove a skill implementation (hot-unplug).
+        移除技能實作（熱拔除）。
+        """
+        self._implementations.pop(name, None)
 
-def search_web(user_id: str, query: str) -> str:
+    def get(self, name: str) -> Optional[Callable]:
+        """Get a registered skill implementation."""
+        return self._implementations.get(name)
+
+    def list_registered(self) -> list:
+        """List all registered skill names."""
+        return list(self._implementations.keys())
+
+    def has(self, name: str) -> bool:
+        """Check if a skill is registered."""
+        return name in self._implementations
+
+    def _ensure_builtins(self) -> None:
+        """
+        Lazy-load built-in skill implementations when first needed.
+        在第一次需要時延遲載入內建技能實作。
+        """
+        if self._builtin_registered:
+            return
+        self._builtin_registered = True
+
+        # Register built-in skills
+        self.register("search_web", _search_web)
+        self.register("get_market_data", _get_market_data)
+        self.register("get_portfolio", _get_portfolio)
+        self.register("investment_skill", _investment_skill)
+        self.register("position_sizing", _position_sizing)
+
+    def bind_to_agent(self, agent) -> None:
+        """
+        Bind matching skill implementations to an agent's McpServer.
+        將匹配的技能實作綁定到 Agent 的 McpServer。
+        """
+        from src.tools.mcp_server import McpTool
+
+        self._ensure_builtins()
+
+        if not hasattr(agent, "skill_loader") or not agent.skill_loader.skills:
+            return
+
+        user_id = getattr(agent, "user_id", None)
+
+        for name, skill_def in agent.skill_loader.skills.items():
+            impl = self._implementations.get(name)
+            if impl:
+                # Bind user_id via partial
+                func = functools.partial(impl, user_id)
+                tool = McpTool(
+                    name=name, func=func, description=skill_def.description
+                )
+                agent.register_tool(tool)
+                agent.logger.info(f"SkillRegistry: Bound '{name}' to agent.")
+
+
+# ── Singleton Instance ───────────────────────────────────────
+
+_default_registry = SkillRegistry()
+
+
+def get_default_registry() -> SkillRegistry:
+    """Get the module-level default registry singleton."""
+    return _default_registry
+
+
+# ── Backward Compatible Module-Level Function ────────────────
+
+def bind_skills_to_agent(agent) -> None:
+    """
+    Backward-compatible entry point (used by BaseAgent.__init__).
+    向後兼容的入口（BaseAgent.__init__ 使用）。
+    """
+    _default_registry.bind_to_agent(agent)
+
+
+# ── Built-in Skill Implementations ──────────────────────────
+
+def _search_web(user_id: str, query: str) -> str:
     """Executes web search."""
     try:
-        svc = get_search_service(user_id)
+        from src.services.search_service import InternetSearchService
+
+        svc = InternetSearchService()
         results = svc.search_financial_context(query, max_results=3)
         if not results:
             return "No results found."
-        
-        # Format as string
         out = ""
         for r in results:
             out += f"- {r.get('title')}: {r.get('snippet')} ({r.get('link')})\n"
@@ -41,28 +142,32 @@ def search_web(user_id: str, query: str) -> str:
         logger.error(f"Skill search_web failed: {e}")
         return f"Error: {e}"
 
-def get_market_data(user_id: str, ticker: str) -> str:
+
+def _get_market_data(user_id: str, ticker: str) -> str:
     """Fetches market data."""
     try:
-        svc = get_market_service(user_id)
-        # Use get_market_context which returns a dict keyed by ticker
+        from src.services.market_data_service import MarketDataService
+
+        svc = MarketDataService(user_id=user_id)
         context = svc.get_market_context([ticker], enrich=False)
-        if exclude_ticker := context.get(ticker):
-            # Basic formatting
-            price_data = exclude_ticker.get("price_data", {})
+        if ticker_data := context.get(ticker):
+            price_data = ticker_data.get("price_data", {})
             close_prices = price_data.get("close", [])
             price = close_prices[-1] if close_prices else "N/A"
-            indicators = exclude_ticker.get("indicators", {})
+            indicators = ticker_data.get("indicators", {})
             return f"Price: {price}\nIndicators: {indicators}"
         return "No data found."
     except Exception as e:
         logger.error(f"Skill get_market_data failed: {e}")
         return f"Error: {e}"
 
-def get_portfolio(user_id: str) -> str:
+
+def _get_portfolio(user_id: str) -> str:
     """Fetches portfolio summary."""
     try:
-        repo = get_tx_repo()
+        from src.repositories.transaction_repository import AlchemyTransactionRepository
+
+        repo = AlchemyTransactionRepository()
         summary = repo.get_holdings_summary(user_id)
         leverage = repo.get_latest_leverage(user_id)
         return f"Leverage: {leverage:.2f}\nHoldings: {summary}"
@@ -70,29 +175,155 @@ def get_portfolio(user_id: str) -> str:
         logger.error(f"Skill get_portfolio failed: {e}")
         return f"Error: {e}"
 
-# --- Registry ---
 
-SKILL_IMPLEMENTATIONS = {
-    "search_web": search_web,
-    "get_market_data": get_market_data,
-    "get_portfolio": get_portfolio
-}
+def _investment_skill(
+    user_id: str,
+    timeframe: str = "",
+    market_regime: str = "",
+    industry: str = "",
+    technique: str = "",
+) -> str:
+    """Queries applicable investment skills based on current context."""
+    try:
+        from src.services.investment_skill_learning_service import (
+            InvestmentSkillLearningService,
+        )
 
-def bind_skills_to_agent(agent):
-    """
-    Binds implemented skills to the agent's McpServer.
-    """
-    from src.tools.mcp_server import McpTool
-    
-    # Check loaded skills in agent
-    if hasattr(agent, 'skill_loader') and agent.skill_loader.skills:
-        for name, skill_def in agent.skill_loader.skills.items():
-            if name in SKILL_IMPLEMENTATIONS:
-                # Register
-                # Register with partial to bind user_id
-                import functools
-                user_id = getattr(agent, 'user_id', None)
-                func = functools.partial(SKILL_IMPLEMENTATIONS[name], user_id)
-                tool = McpTool(name=name, func=func, description=skill_def.description)
-                agent.register_tool(tool)
-                agent.logger.info(f"SkillRegistry: Bound '{name}' to agent.")
+        svc = InvestmentSkillLearningService(user_id=user_id)
+        skills = svc.get_applicable_skills(
+            timeframe=timeframe,
+            market_regime=market_regime,
+            industry=industry,
+            technique=technique,
+        )
+
+        if not skills:
+            return "No applicable investment skills found for the given context."
+
+        out = f"Found {len(skills)} applicable investment skills:\n\n"
+        for s in skills:
+            out += f"### {s.get('name', 'Unnamed')}\n"
+            out += f"- **Technique**: {s.get('technique', 'N/A')}\n"
+            out += f"- **Timeframe**: {s.get('timeframe', 'N/A')}\n"
+            out += f"- **Description**: {s.get('description', 'N/A')}\n"
+            out += f"- **Usage Count**: {s.get('usage_count', 0)}\n\n"
+        return out
+
+    except Exception as e:
+        logger.error(f"Skill investment_skill failed: {e}")
+        return f"Error: {e}"
+
+
+def _position_sizing(
+    user_id: str,
+    ticker: str,
+    action: str,
+    desired_quantity: float = 0.0,
+    intent: str = "auto",
+) -> str:
+    """Calculates appropriate trade quantity considering holdings, cash ratio, and risk thresholds."""
+    import json
+    try:
+        from src.services.broker_factory import BrokerFactory
+        from src.repositories.settings_repository import AlchemySettingsRepository
+
+        broker = BrokerFactory.get_broker(user_id)
+        if not broker:
+            return json.dumps({"recommended_quantity": 0, "reason": "No broker configured"})
+
+        account = broker.get_account()
+        positions = broker.get_positions()
+
+        nlv = account.total_equity if account else 0
+        cash = account.available_cash if account else 0
+        cash_ratio_before = (cash / nlv) if nlv > 0 else 0
+
+        # Find actual holding for this ticker
+        actual_holding = 0.0
+        for p in positions:
+            if _is_ticker_match(ticker, p.symbol):
+                actual_holding += p.quantity
+
+        settings = AlchemySettingsRepository()
+        max_pct = float(settings.get(user_id, "max_single_position_pct") or 0.10)
+        min_amount = float(settings.get(user_id, "min_trade_amount") or 10.0)
+
+        action_upper = action.upper()
+        reason = ""
+
+        if action_upper == "SELL":
+            if actual_holding <= 0:
+                return json.dumps({
+                    "recommended_quantity": 0,
+                    "actual_holding": 0,
+                    "cash_ratio_before": round(cash_ratio_before, 4),
+                    "reason": f"No active position found for {ticker}. Cannot sell.",
+                })
+
+            if intent == "full_close":
+                recommended = actual_holding
+                reason = f"Full close of {ticker} position ({actual_holding} units)"
+            elif intent == "partial_reduce":
+                recommended = min(desired_quantity, actual_holding) if desired_quantity > 0 else actual_holding * 0.5
+                reason = f"Partial reduce: {recommended} of {actual_holding} units"
+            else:  # auto
+                if desired_quantity > 0:
+                    recommended = min(desired_quantity, actual_holding)
+                    if desired_quantity > actual_holding:
+                        reason = f"Clamped SELL from {desired_quantity} to {actual_holding} (actual holding)"
+                    else:
+                        reason = f"SELL {recommended} of {actual_holding} units"
+                else:
+                    recommended = actual_holding
+                    reason = f"No quantity specified, defaulting to full close ({actual_holding} units)"
+
+        elif action_upper == "BUY":
+            max_amount = nlv * max_pct if nlv > 0 else 0
+            recommended = desired_quantity if desired_quantity > 0 else min_amount
+
+            if recommended > cash:
+                reason += f"Clamped from ${recommended:.2f} to ${cash:.2f} (available cash). "
+                recommended = cash
+            if recommended > max_amount and max_amount > 0:
+                reason += f"Clamped to ${max_amount:.2f} ({max_pct*100:.0f}% of NLV ${nlv:.2f}). "
+                recommended = max_amount
+            if recommended < min_amount:
+                reason += f"Below minimum ${min_amount:.2f}. "
+                recommended = 0
+            if not reason:
+                reason = f"Within limits (max position {max_pct*100:.0f}% of NLV)"
+        else:
+            return json.dumps({"recommended_quantity": 0, "reason": f"Unknown action: {action}"})
+
+        # Estimate post-trade cash ratio
+        cash_after = cash
+        if action_upper == "BUY":
+            cash_after = cash - recommended
+        # For SELL, we don't know the price precisely, so skip estimate
+        cash_ratio_after = (cash_after / nlv) if nlv > 0 else 0
+
+        return json.dumps({
+            "recommended_quantity": round(recommended, 4),
+            "actual_holding": round(actual_holding, 4),
+            "cash_ratio_before": round(cash_ratio_before, 4),
+            "cash_ratio_after_estimate": round(cash_ratio_after, 4),
+            "reason": reason.strip(),
+        })
+
+    except Exception as e:
+        logger.error(f"Skill position_sizing failed: {e}")
+        return json.dumps({"recommended_quantity": 0, "reason": f"Error: {e}"})
+
+
+def _is_ticker_match(t1: str, t2: str) -> bool:
+    """Check if two ticker symbols match, ignoring eToro suffixes."""
+    if not t1 or not t2:
+        return False
+    def normalize(s):
+        s = s.strip().upper()
+        for suffix in [".US", ".RTH", ".EXT", ".L", ".UK"]:
+            if s.endswith(suffix):
+                return s[: -len(suffix)]
+        return s
+    return normalize(t1) == normalize(t2)
+

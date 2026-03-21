@@ -29,33 +29,62 @@ class ActionExtractorAgent(BaseAgent):
         Extract structured trades from free-form AI text.
         從非結構化 AI 文字中提取結構化交易指令。
 
-        context is expected to be a string (the CIO decision).
-        context 預期為字串（CIO 決策文字）。
+        context: str (legacy) or dict with keys:
+          - decision_text: str — the CIO/Council decision text
+          - portfolio: str — portfolio holdings summary (e.g. "TSLA(0.5), NVDA(10), Cash: $2,500")
 
-        Returns a list of dicts: [{"ticker": "AAPL", "action": "BUY", "quantity": 10, "confidence": 8, "reason": "..."}].
-        回傳字典列表：[{"ticker": "AAPL", "action": "BUY", "quantity": 10, "confidence": 8, "reason": "..."}]。
+        Returns a list of dicts:
+        [{"ticker": "AAPL", "action": "BUY", "quantity": 10, "confidence": 8,
+          "intent": "partial_reduce", "reason": "..."}]
         """
-        if not context or not isinstance(context, str):
+        if not context:
             return []
-            
+
+        # Support both dict and legacy string input
+        if isinstance(context, dict):
+            decision_text = context.get("decision_text", "")
+            portfolio_context = context.get("portfolio", "")
+        elif isinstance(context, str):
+            decision_text = context
+            portfolio_context = ""
+        else:
+            return []
+
+        if not decision_text:
+            return []
+
+        # Build portfolio instruction block
+        portfolio_block = ""
+        if portfolio_context:
+            portfolio_block = f"""
+        
+        PORTFOLIO HOLDINGS (Current):
+        {portfolio_context}
+        
+        ⚠️ CRITICAL: Use the above holdings to determine quantity. 
+        For SELL: quantity MUST NOT exceed the actual holding shown above.
+        For BUY: quantity is in USD amount."""
+
         prompt = f"""
         You are an Action Extraction AI.
         Analyze the following investment council decision and extract any explicit trade recommendations or portfolio allocation changes.
+        {portfolio_block}
         
         Rules:
         1. Only extract explicit trade recommendations (buying, selling, trimming, adding).
         2. 'action' must be exactly "BUY" or "SELL".
-        3. 'quantity' should be a numeric float/int representing shares or contract amount (default to 1 if unspecified). Do not use percentages.
+        3. 'quantity' should be a numeric float/int. For SELL it represents units/shares; for BUY it represents USD amount. Infer from the portfolio context above — do NOT blindly default to 1.
         4. 'confidence' must be an integer between 1 and 10, where 10 is highest conviction. Infer based on the language (e.g. "strong conviction" = 9, "consider trimming" = 5).
-        5. Output ONLY a valid JSON array of objects, with NO surrounding markdown block quotes. If no explicit trades are found, output an empty array [].
+        5. 'intent' must be one of: "full_close" (sell all shares), "partial_reduce" (sell some shares), or omitted for BUY. If the decision says "exit", "liquidate", or "clear", use "full_close". If it says "trim", "reduce", use "partial_reduce".
+        6. Output ONLY a valid JSON array of objects, with NO surrounding markdown block quotes. If no explicit trades are found, output an empty array [].
         
         Example Output:
         [
-            {{"ticker": "NVDA", "action": "SELL", "quantity": 10, "confidence": 8, "reason": "AI council recommends taking profit due to systemic risks."}}
+            {{"ticker": "NVDA", "action": "SELL", "quantity": 5, "confidence": 8, "intent": "partial_reduce", "reason": "AI council recommends trimming due to systemic risks."}}
         ]
         
         Decision Text:
-        {context}
+        {decision_text}
         """
         try:
             response = self.run_tool_loop(prompt)

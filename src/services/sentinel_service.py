@@ -978,10 +978,25 @@ class SentinelService:
         logger.info("Sentinel: Extracting trade signals from Council decision using AI ActionExtractor...")
         try:
             from src.agents.factory import AgentFactory
+            from src.services.transaction_service import TransactionService
             target_user = self.settings_service.user_id or self.user_id or "broadcast"
             extractor = AgentFactory.create_action_extractor_agent(user_id=target_user, tier="fast")
             
-            raw_trades = extractor.run(decision)
+            # Build portfolio context for ActionExtractor (Skill-First: portfolio-aware sizing)
+            portfolio_str = ""
+            try:
+                tx_svc = TransactionService()
+                holdings = tx_svc.get_holdings_map(target_user)
+                if holdings:
+                    portfolio_str = ", ".join([f"{t}({d.get('quantity', 0)})" for t, d in holdings.items()])
+            except Exception as he:
+                logger.warning(f"Failed to get portfolio context for ActionExtractor: {he}")
+            
+            # Pass as dict with portfolio context (enhanced ActionExtractor)
+            raw_trades = extractor.run({
+                "decision_text": decision,
+                "portfolio": portfolio_str
+            })
             signals = []
             
             for trade in raw_trades:
@@ -993,6 +1008,7 @@ class SentinelService:
                         "action": action,
                         "quantity": float(trade.get("quantity", 1.0)),
                         "score": int(trade.get("confidence", 7)),
+                        "intent": str(trade.get("intent", "auto")),
                         "reason": str(trade.get("reason", f"Sentinel Council: {decision[:120]}..."))
                     })
                     
@@ -1057,24 +1073,35 @@ class SentinelService:
                 active_tickers = tx_service.get_user_tickers(user_id=uid, only_active=True)
                 if not active_tickers:
                      continue
+                
+                # Dynamic quantity: query actual holdings per ticker
+                holdings_map = tx_service.get_holdings_map(uid)
                      
                 for ticker in active_tickers:
-                    # 發送清倉建議
+                    # Get actual holding quantity for this ticker
+                    holding_qty = holdings_map.get(ticker, {}).get('quantity', 0)
+                    if holding_qty <= 0:
+                        logger.info(f"Emergency: Skipping {ticker} for {uid}, no active holdings.")
+                        continue
+                    
+                    # 發送清倉建議 (使用實際持倉量)
                     await auto_trade_svc.evaluate_and_execute_trade(
                         user_id=uid,
                         ticker=ticker,
                         action="SELL",
-                        quantity=1.0, # 此處在正式上線應根據倉位動態計算
+                        quantity=holding_qty,  # 動態計算：使用實際持倉量
                         confidence_score=emergency_score, 
                         rationale=f"🚨 Sentinel 緊急防禦機制啟動 (Emergency Liquidation)。\n判定: {rationale[:100]}..."
                     )
                     
                 # 附帶建議：自動對沖 (Buy SQQQ for Nasdaq hedge)
+                # Use position_sizing skill logic for hedge amount
+                hedge_amount = float(self.settings_service.get(uid, "emergency_hedge_amount") or 50.0)
                 await auto_trade_svc.evaluate_and_execute_trade(
                     user_id=uid,
                     ticker="SQQQ",
                     action="BUY",
-                    quantity=1.0,
+                    quantity=hedge_amount,
                     confidence_score=hedge_score, 
                     rationale=f"🚨 Sentinel 自動對沖機制啟動 (Auto-Hedging)。建議建立 SQQQ 避險。"
                 )
