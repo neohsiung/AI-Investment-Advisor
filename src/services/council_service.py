@@ -35,7 +35,7 @@ class CouncilService:
         self.lane_manager = LaneManager()
         self.competitor_service = CompetitorService(user_id=user_id)
 
-    async def start_session(self, topic: str, context_data: Dict[str, Any], user_id: str, scope: str = "single", market_volatility: float = 0.0) -> Dict[str, Any]:
+    async def start_session(self, topic: str, context_data: Dict[str, Any], user_id: str, scope: str = "single", market_volatility: float = 0.0, mode: str = "weekly") -> Dict[str, Any]:
         """
         Starts a high-level Council Session.
         啟動高階委員會議程。
@@ -48,12 +48,12 @@ class CouncilService:
         
         # 0. Check Scope for Map-Reduce
         if scope == "portfolio":
-            return await self._run_map_reduce_portfolio(session_id, topic, context_data, market_volatility=market_volatility, user_id=user_id)
+            return await self._run_map_reduce_portfolio(session_id, topic, context_data, market_volatility=market_volatility, user_id=user_id, mode=mode)
         
         # Default Single Topic Flow (Thread-blocking wrapper for async compatibility)
-        return await self._run_standard_session(session_id, topic, context_data, market_volatility=market_volatility, user_id=user_id)
+        return await self._run_standard_session(session_id, topic, context_data, market_volatility=market_volatility, user_id=user_id, mode=mode)
 
-    async def _run_map_reduce_portfolio(self, session_id: str, topic: str, context_data: Dict[str, Any], user_id: str, market_volatility: float = 0.0) -> Dict[str, Any]:
+    async def _run_map_reduce_portfolio(self, session_id: str, topic: str, context_data: Dict[str, Any], user_id: str, market_volatility: float = 0.0, mode: str = "weekly") -> Dict[str, Any]:
         """
         Phase 4: Map-Reduce execution for full portfolio analysis.
         第四階段：針對全投資組合分析的 Map-Reduce 執行。
@@ -112,7 +112,7 @@ class CouncilService:
 
         # --- Phase 3: Synthesis (CIO) ---
         consensus_tier = self.router.select_tier(topic, round_num=99, market_volatility=market_volatility)
-        cio = AgentFactory.create_cio_agent(tier=consensus_tier, user_id=user_id)
+        cio = AgentFactory.create_cio_agent(tier=consensus_tier, user_id=user_id, mode=mode)
         
         final_context = {
             "topic": topic,
@@ -137,16 +137,16 @@ class CouncilService:
             "transcript": aggregated_summary
         }
 
-    async def _run_standard_session(self, session_id: str, topic: str, context_data: Dict[str, Any], user_id: str, market_volatility: float = 0.0) -> Dict[str, Any]:
+    async def _run_standard_session(self, session_id: str, topic: str, context_data: Dict[str, Any], user_id: str, market_volatility: float = 0.0, mode: str = "weekly") -> Dict[str, Any]:
         """
         Standard single-topic Council session wrapped for asynchronous execution.
         為非同步執行封裝的標準單一主題委員會議程。
         """
         # Run in thread to avoid blocking event loop
         loop = asyncio.get_running_loop()
-        return await loop.run_in_executor(None, self._run_sync_logic, session_id, topic, context_data, user_id, market_volatility)
+        return await loop.run_in_executor(None, self._run_sync_logic, session_id, topic, context_data, user_id, market_volatility, mode)
 
-    def _run_sync_logic(self, session_id: str, topic: str, context_data: Dict[str, Any], user_id: str, market_volatility: float = 0.0) -> Dict[str, Any]:
+    def _run_sync_logic(self, session_id: str, topic: str, context_data: Dict[str, Any], user_id: str, market_volatility: float = 0.0, mode: str = "weekly") -> Dict[str, Any]:
         """
         Core synchronous logic for running an agent debate and capturing the transcript.
         執行 Agent 辯論並記錄逐字稿的核心同步邏輯。
@@ -245,7 +245,7 @@ class CouncilService:
         }
         
         try:
-            cio = AgentFactory.create_cio_agent(tier=consensus_tier, user_id=user_id)
+            cio = AgentFactory.create_cio_agent(tier=consensus_tier, user_id=user_id, mode=mode)
             decision = cio.run(final_context)
         except Exception as e:
             logger.error(f"Council: CIO agent failed or could not be created: {e}")

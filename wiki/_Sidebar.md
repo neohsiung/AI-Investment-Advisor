@@ -69,15 +69,9 @@
   * [Agent 技能系統 (Agent Skills System)](Agent技能系統-Agent-Skills-System)
 * **05. 工程手冊 (Engineering Handbook)**
   * [故障排除與驗證迴圈 (Auth Loop Postmortem)](故障排除與驗證迴圈-Streamlit-Auth-Loop-Postmortem)
-  * **01_設計模式 (Patterns)**
-    * [設計模式導讀 (Pattern Intro)](設計模式導讀-Design-Patterns-Intro)
+  * **01_設計模式與儲存策略 (Patterns & Persistence)**
     * [智能體集群模式 (Swarm Patterns)](設計模式-智能體集群-Swarm-Patterns)
-    * [依賴注入 (DI Pattern)](設計模式-依賴注入-DI-Pattern)
-    * [存儲庫模式 (Repository Pattern)](設計模式-存儲庫-Repository-Pattern)
-    * [工廠模式 (Factory Pattern)](設計模式-工廠-Factory-Pattern)
-    * [策略模式 (Strategy Pattern)](設計模式-策略-Strategy-Pattern)
-    * [樣板方法 (Template Method)](設計模式-樣板方法-Template-Method)
-    * [適配器模式 (Adapter Pattern)](設計模式-適配器-Adapter-Pattern)
+    * 設計與核心模式全集 (Core Design Patterns: DI / Factory / Strategy / Adapter)
     * [混合儲存架構 (Hybrid Storage)](混合儲存架構-Hybrid-Storage-Architecture)
     * [數據源架構一致性審查 (Data Source Review)](數據源架構一致性審查-Data-Source-Architecture-Review)
     * [數據對齊與校準模式 (Data Alignment)](數據對齊與校準模式-Data-Alignment-and-Calibration)

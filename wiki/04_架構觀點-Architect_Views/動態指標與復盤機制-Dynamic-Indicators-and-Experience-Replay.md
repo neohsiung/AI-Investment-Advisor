@@ -28,6 +28,23 @@
 
 `ExperienceReplayService` 負責「閉環優化」(Closed-loop Optimization)：
 
+```mermaid
+graph TD
+    A(Agent 發出訊號) --> B{PerformanceService<br/>即時準確度分析}
+    B -->|記錄價格與ROI| C[(recommendations)]
+    
+    D(SentinelService) -->|記錄觸發事件| E[(event_logs)]
+    
+    C --> F(ExperienceReplayService<br/>每週復盤優化)
+    E --> F
+    
+    F -->|敘事漂移偵測| G[核對 Conviction 與 Horizon]
+    F -->|噪訊抑制| H[自動調高高頻觸發門檻]
+    F -->|現金優化| I[微調動態現金比例]
+    
+    H --> J[(sentinel_thresholds)]
+```
+
 - **敘事漂移偵測 (Narrative Drift Detection)**: 比對每日記錄的 `conviction_level` (信心) 與 `time_horizon` (持有期限)，偵測 System 1 (情動) 是否偏離了初始的投資主題 (Signal)。
 - **現金優化 (Cash Optimization)**: 透過 `optimize_cash_ratio()` 根據歷史回撤與獲利能力動態微調目標水位。
 - **噪訊抑制 (Noise Suppression)**: 若某個指標在 7 天內觸發超過 10 次，系統會判定為噪訊過大，自動調高 (例如 +5%) 該閾值。

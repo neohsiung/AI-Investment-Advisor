@@ -68,12 +68,9 @@
         - 每次觸發前查詢 `event_logs` 資料表。
         - 若 24 小時內存在完全相同 (Title + Content Hash) 的警報，則自動抑制，避免疲勞轟炸。
 
-## 一、哨兵服務 (Sentinel Service)
+#### 2.1.1 突發新聞加權與風險關鍵字機制 (Dimension 3)
 
-### 1. 定義與職責
-- **持續掃描**: ...
-- **風險評估**: ...
-突發新聞維度 (Dimension 3) 使用 DB 驅動的加權關鍵字評分機制，取代硬編碼清單：
+突發新聞維度使用 DB 驅動的加權關鍵字評分機制，取代硬編碼清單：
 
 *   **架構**: `RiskKeyword` 領域實體 → `risk_keywords` 資料表 → `RiskKeywordRepository` CRUD → `RiskKeywordService` (DI 注入至 SentinelService)。
 *   **評分算法**: 每篇搜尋結果匹配所有 active 關鍵字 → 加總 `weight` → 若 `total_score ≥ 0.6` 則觸發警報。
@@ -170,7 +167,7 @@ flowchart TD
     ATS -->"Notify[Omni-Channel Alert: Emergency Liquidation]"
 ```
 
-#### 2.1.4 擴展性與負載監控 (Scalability & Load Monitoring — v4.3.0)
+##### 2.1.4 擴展性與負載監控 (Scalability & Load Monitoring — v4.3.0)
 隨著監控持倉數量的增加，系統採用了 **Ticker 聚合 (Aggregation)** 與 **批量數據擷取 (Batch Fetching)** 策略，顯著提升了在高頻與大規模監控下的性能表現。
 
 ##### 監控流程迭代設計 (Iterative Monitoring Flow)

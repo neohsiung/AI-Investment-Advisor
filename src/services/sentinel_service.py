@@ -888,7 +888,8 @@ class SentinelService:
                 topic, 
                 context, 
                 market_volatility=self.current_vix,
-                user_id=user_id
+                user_id=user_id,
+                mode="sentinel"
             )
             decision = result.get('consensus', 'No Consensus')
         except Exception as e:

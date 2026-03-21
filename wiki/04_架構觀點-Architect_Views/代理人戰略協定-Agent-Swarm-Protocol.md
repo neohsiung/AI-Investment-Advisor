@@ -83,90 +83,22 @@ graph TD
 
 ### 2. 蜂群角色 (Agent Swarm Roles)
 
-#### 2.1 首席投資官 (CIO Agent)
-*   **認知授權**: 「綜合者與仲裁者 (Synthesizer & Arbitrator)」
-*   **職責**:
-    *   整合多模態輸入 (宏觀、基本面、動量、情緒)。
-    *   使用 **衝突解決矩陣** 解決分歧，參考 Council 碎形辯論結果。
-    *   管理投資組合風險與最終決策。
-    *   **Safety Fallback**: 績效服務失效 → 等權重裁決 + Max Leverage 0.95x。
-*   **產出**: 最終投資報告與再平衡指令。
-*   **檔案**: `src/agents/cio.py`
+> [!TIP]
+> 蜂群生態系將專才 Agent 視為微服務節點，各司其職並由 CIO 或 Council 統一整合。
 
-#### 2.2 宏觀策略師 (Macro Strategist)
-*   **認知授權**: 「週期架構師 (Cycle Architect)」
-*   **職責**: 識別市場週期、分析利率/通膨/地緣政治。
-*   **產出**: Risk-On vs. Risk-Off 資產配置觀點。
-*   **工具**: `get_macro_indicators` (FRED)。
-*   **檔案**: `src/agents/macro.py`
-
-#### 2.3 基本面分析師 (Fundamental Analyst)
-*   **認知授權**: 「由下而上偵探 (Bottom-Up Detective)」
-*   **職責**: 財報分析、估值建模 (DCF/PE)、護城河評估。
-*   **產出**: 個股投資論述 (BUY/SELL/HOLD)。
-*   **工具**: `get_valuation`, `get_company_profile` (FMP)。
-*   **檔案**: `src/agents/fundamental.py`
-
-#### 2.4 動量分析師 (Momentum Analyst)
-*   **認知授權**: 「趨勢獵人 (Trend Hunter)」
-*   **職責**: 技術指標分析 (RSI/MACD/均線)、趨勢與型態辨識。
-*   **產出**: 技術面訊號與進出場時機。
-*   **工具**: `get_current_price`, `get_ohlcv` (Polygon/FMP)。
-*   **檔案**: `src/agents/momentum.py`
-
-#### 2.5 情緒分析師 (Sentiment Analyst)
-*   **認知授權**: 「行為計量分析師 (Behavioral Quant)」
-*   **職責**: 新聞情緒、社群輿情、反向訊號偵測。
-*   **產出**: 情緒分數與行為警示。
-*   **工具**: `web_search` (Tavily)。
-*   **檔案**: `src/agents/sentiment.py`
-
-#### 2.6 風險代理 (Risk Agent)
-*   **認知授權**: 「風控守門人 (Risk Gatekeeper)」
-*   **職責**: 持倉風險評估、相關性監控、板塊曝險檢查。
-*   **產出**: Risk Score、曝險警報、Rebalance 建議。
-*   **觸發**: CIO 裁決前必經 Risk 驗證。
-*   **檔案**: `src/agents/risk.py`
-
-#### 2.7 系統工程師 (System Engineer Agent)
-*   **認知授權**: 「自我進化工程師 (Self-Evolution Engineer & Alpha Seeker)」
-*   **職責**: 分析 Agent 績效、自動生成 Alpha 量化因子代碼並執行基因演算法迴圈回測。
-*   **產出**: 經回測驗證 (最佳 Sharpe Ratio) 的量化策略代碼 (儲存於 Repo)。
-*   **觸發**: 獨立的演化排程或低績效觸發。
-*   **檔案**: `src/agents/system_engineer_agent.py`與`src/agents/engineer.py`
-
-#### 2.8 主題優化代理 (Thematic Agent)
-*   **認知授權**: 「主題與供應鏈優化師 (Theme & Supply Chain Optimizer)」
-*   **職責**: 根據市場事件動態更新主題股票清單 (如 Physical AI、AI Energy) 與供應鏈知識圖譜。
-*   **機制**: 接收事件文本 (`event_text`) 與主題鍵 (`theme_key`)，透過 LLM 評估事件影響並輸出更新後的 JSON 結構。
-*   **產出**: 更新後的主題股票清單 (`updated_tickers`) 或供應鏈圖譜 (`updated_graph`)，自動寫入 `SettingsService`。
-*   **觸發**: 重大市場事件或定期主題審查。
-*   **檔案**: `src/agents/thematic.py`，Prompt: `prompts/thematic_agent.txt`
-
-#### 2.9 敘事偏離代理 (Narrative Drift Agent)
-*   **認知授權**: 「System 2 審計師 (System 2 Auditor)」
-*   **職責**: 比較上週 CIO 週報敘事 (`past_consensus`) 與本週實際市場行情 (`market_data`)，識別「敘事偏離 (Narrative Drift)」或重大誤判。
-*   **機制**:
-    1.  識別核心論點 (Core Thesis)。
-    2.  對照實際市場數據驗證論點。
-    3.  計算敘事偏離度 (Accuracy Score, 1-10)。
-    4.  若分數低於 7，提供具體可行的修正建議。
-*   **產出**: JSON 結構包含 `core_thesis`、`reality_check`、`accuracy_score`、`narrative_delta_rationale`、`suggested_correction`。
-*   **觸發**: 每週報告生成前，作為 CIO 的前置審計步驟。
-*   **檔案**: Prompt: `prompts/narrative_drift_agent.txt`
-
-#### 2.11 動作提取代理 (ActionExtractor Agent)
-*   **認知授權 (Cognitive Mandate)**: 「結構化翻譯員 (Structured Translator)」
-*   **職責 (Responsibilities)**: Parses unstructured decision text from the Council or CIO to extract structured JSON and confidence scores matching trading system specs. / 解析評議會 (Council) 或 CIO 的非結構化決定文本，提取出符合交易系統規格的 JSON 格式及信心分數。
-*   **特性 (Characteristics)**: High efficiency, precision, and context selection capability to avoid parsing hallucinations. / 高效、精準、具備 Context 取捨能力，避免解析幻覺。
-*   **產出 (Output)**: Structured trade instruction list (Ticker, Action, Quantity, Confidence, Reason). / 結構化交易指令列表 (Ticker, Action, Quantity, Confidence, Reason)。
-*   **檔案 (File)**: `src/agents/action_extractor.py`
-
-#### 2.12 評議會 (Council Agent Adapter)
-*   **職責**: 對每檔持倉執行碎形辯論 (Fractal Debate)。
-*   **機制**: 多角度質疑 → 反駁 → 綜合裁決。
-*   **觸發**: Sentinel 偵測異常事件 或 Agent 意見分歧 > 閾值。
-*   **檔案**: `src/agents/council_adapter.py` (Adapter Pattern)
+| 角色 (Role) | 認知授權 (Mandate) | 核心職責 (Responsibilities) | 產出 (Outputs) | 核心工具 / 檔案 |
+| :--- | :--- | :--- | :--- | :--- |
+| **CIO** | 綜合者與仲裁者 | 整合多模態輸入，使用衝突解決矩陣解決分歧，管理組合風險。 | 最終投資報告、再平衡指令 | `cio.py` |
+| **Macro** | 週期架構師 | 識別市場週期、分析利率/通膨/地緣政治。 | Risk-On/Off 資產配置觀點 | `get_macro...`, `macro.py` |
+| **Fundamental** | 由下而上偵探 | 財報分析、估值建模 (DCF/PE)、護城河評估。 | 個股投資論述 (B/S/H) | `get_val...`, `fundamental.py` |
+| **Momentum** | 趨勢獵人 | 技術指標分析 (RSI/MACD)、趨勢與型態辨識。 | 技術面訊號與進出場時機 | `get_ohlcv`, `momentum.py` |
+| **Sentiment** | 行為計量分析師 | 新聞情緒、社群輿情、反向訊號偵測。 | 情緒分數與行為警示 | `web_search`, `sentiment.py` |
+| **Risk** | 風控守門人 | 持倉風險評估、相關性監控、板塊曝險檢查。 | Risk Score、曝險警報 | `risk.py` |
+| **Engineer** | 自我進化工程師 | 分析 Agent 績效、自動生成 Alpha 因子代碼並執行基因演算法。 | 量化策略代碼 (高 Sharpe) | `system_engineer_agent.py` |
+| **Thematic** | 供應鏈優化師 | 動態更新主題股票清單 (如 AI Energy) 與供應鏈知識圖譜。 | 主題清單 (`updated_tickers`) | `thematic.py` |
+| **Narrative Drift** | System 2 審計師 | 識別上週敘事與本週實際行情的「敘事偏離」，提供修正建議。 | Accuracy Score、修正建議 | `prompts/narrative_drift...` |
+| **ActionExtractor**| 結構化翻譯員 | 解析非結構化評議文本，提取符合交易系統規格的 JSON。 | 結構化交易指令 | `action_extractor.py` |
+| **Council** | 評議會仲裁 | 對每檔持倉執行碎形辯論 (多角度質疑 → 反駁 → 裁決)。 | 加權辯論結論 | `council_adapter.py` |
 
 ### 3. 技能系統與註冊表 (Agent Skills & Registry — v3.6)
 為了提升 Agent 的執行效能，系統將通用功能封裝為 **本地技能 (Local Skills)**，避免過度的 LLM 推理。

@@ -25,11 +25,11 @@
 - **迭代紀錄 (Version History)**: 位於文件頂部，記錄最近 5 次重大變動（Date, Version, Description, Author）。
 - ** additive 原則**: 除非結構崩壞，否則更新應視為疊加與增量，嚴禁隨意重寫以保留歷史背景。
 
-### 1.3 迴圈式填補迭代 (Iterative Patching Loop) - **核心規則**
-- **視覺化指導原則 (Visual Documentation Rule)**: 新增技術設計或操作說明時，必須 **加上流程圖 (Flowcharts)、循序圖 (Sequence Diagrams)、架構圖 (Architecture Diagrams)** 等 Mermaid 圖表來展示邏輯。在將圖表加入 Wiki 之前，Agent 必須驗證語法與雙向結構正確無誤，確保圖表能被 UI 渲染。
-- **微調而非重寫**: 更新單一文件時，應以「迴圈 (Loop)」形式針對每一個段落進行填補與調整，而非一次性大範圍覆蓋。
-- **段落校對**: 每次技術迭代後，需對應 Wiki 中所有相關文件的段落進行掃描，確保新舊資訊邏輯自洽，達成精確的「手術式增補」。
-- **Surgical Additions**: When updating documents, use a loop-based approach to patch individual sections or paragraphs specifically, rather than performing wholesale rewrites. Scan all affected sections after each technical iteration to ensure contextual consistency.
+### 1.3 視覺化與精簡原則 (Visual & Concise Rule) - **核心規則**
+- **Mermaid 優先 (Mermaid First)**: 若有方便說明的架構、狀態轉換、操作流程或組件關聯，**必須優先採用 Mermaid 圖表** (如 `graph TD`, `sequenceDiagram`, `classDiagram`) 進行表達。
+- **文字極簡化 (Text Minimalism)**: 文字應僅用於「小結 (Summaries)」與「關注重點 (Key Highlights)」。絕對避免長篇大論的文字堆砌 (Walls of Text)。
+- **現代化 Markdown 排版**: 盡可能善用 Markdown 的列表、GitHub-flavored alerts (`> [!NOTE]`, `> [!IMPORTANT]`) 與粗體標示，參考業界 Best Practice 進行排版以提升閱讀體驗。
+- **Surgical Additions**: 更新文件時請以局部填補取代全盤覆蓋，確保上下文一致性。
 
 ### 1.5 本地專屬文件標準 (Local-Only Document Standard)
 - 當使用者要求「產出文檔但不要放到 GitHub 上」或標記為「Local-Only」時：

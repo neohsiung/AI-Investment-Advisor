@@ -1,3 +1,10 @@
+# AI Investment Advisor
+
+<details>
+<summary><b>📜 版本紀錄 (Version History)</b></summary>
+
+| Date | Version | Description | Author |
+| :--- | :--- | :--- | :--- |
 | 2026-03-20 | v6.0.0 | **eToro Auth & ID Resolution Final Fix**: Resolved "InvalidKey" and "Instrument ID not found" errors by stripping double-quoted credentials and adding mandatory search fields. | Antigravity |
 | 2026-03-20 | v5.9.0 | **Robust eToro Execution & Metadata Recovery**: Implemented Metadata Reverse Lookup & Re-fetch Retry for unknown IDs (VTI Fix). Coverage: 72%. | Antigravity |
 | 2026-03-19 | v5.8.0 | **Dynamic eToro Discovery & CI Resilience**: Removed hardcoded instrument IDs; implemented dynamic resolution; resolved `DailyWorkflow` test regressions. | Antigravity |
@@ -19,6 +26,8 @@
 | 2026-02-20 | v1.0.0 | **Production Release**: Officially transitioned to production. Standardized all documentation and architectural tiers. | Neo |
 | 2026-02-17 | v4.0.0-rc | **Premium Governance Sync**: Unified single-source README distilled from Wiki. Implemented Atomic Sync (Rule #12). | Neo |
 | 2026-02-16 | v3.9.0-rc | **Security Hardening**: Hardened Base Images (Rule #11) & Secrets Isolation. | Neo |
+
+</details>
 
 <p align="center">
   <img src="https://img.shields.io/badge/Python-3.11+-blue.svg?style=for-the-badge&logo=python&logoColor=white" alt="Python">
@@ -43,18 +52,38 @@
 
 ### 🚀 核心效益與功能亮點 (Key Features & Outcomes)
 
-- **🧠 獨立微型大腦演化 (OpenClaw Architecture)**: 九大 Agent 完全解除黑盒，獨立掛載個人專屬 Workspace (`IDENTITY.md`, `STATE.md`)。結合 **WAL (Write-Ahead Logging)** 協議與 Token 安全墊機制，終結高長度財報推論斷片現象，實現不掉幀的長文脈思考。
-- **🧠 統一認證中心 (FastAPI Auth Hub)**: OAuth 流程完全遷移至 FastAPI 後端 (port 8000)，利用原生 HTTP Set-Cookie 規避 Streamlit 組件渲染與 iframe 沙盒限制，登入穩定性修復至 100%。
-- **🧠 智能進化集群 (Swarm Intelligence)**: 由 CIO Agent 領銜協同 Fundamental, Momentum 等專家智能體，消除單一模型幻覺 (Hallucinations)，提升決策勝率與可解釋性。
-- **⏱️ 全域優先級與自動化防禦 (Universal Prioritization & Auto-Defense)**: 內建 `SentinelAgent` 實現全維度優先級判定。不論是 Webhook 或內部維度，皆強制通過 AI 評核並指定專家 Agent。系統基於 Council 產出的 **[CONVINCING_ACTION]** 結構化指令與**動態信心門檻 (1-10)**，自動執行持倉調整與現金管理，支援毫秒級的 Auto-Hedging 防禦。
-- **⚖️ 專業級風控與標的優化 (Institutional Risk & Ticker Optimization)**:
-  - **動態現金比例 (Dynamic Cash Ratio)**: 基於通膨 (CPI) 與 VIX 波動度自動校準現金儲備，符合 Rule #8。
-  - **風險屬性校準 (Risk Profile Sync)**: 自動檢查槓桿率是否符合「Balanced」或「Aggressive」標籤。
-  - **通用化對比研究**: 基本面分析現在強制對比行業領先者 (如 NVDA)，論證所有標的的成長確定性。
-- **🧠 敘事漂移偵測 (Narrative Drift Detection)**: 每日追踪投資信心 (Conviction) 與持有期限 (Horizon)，利用復盤機制偵測 System 1 (情動) 噪訊，防止偏離 AI 原始主題。
-- **🗄️ QMD 混合檢索架構 (QMD Hybrid Retrieval)**: 以 PostgreSQL 作為結構化核心，輔以 pgvector 實現語義記憶 RAG，並升級 **BM25 全文檢索** 與 **Temporal Decay (時間衰減)**，確保 AI 決策具備深度的歷史復盤脈絡與時間敏感度。
-- **🔬 自導演算法與多語系生成 (Code-Level Alpha & Translated Reporting)**: 內置 `SystemEngineerAgent`，能運用遺傳演算法自行撰寫、回測並迭代因子程式碼。同時負責將複雜量化報告無損格式轉換為繁體中文，實現母語級別的專業財報輸出。
-- **📊 強化觀測性 (Enhanced Observability)**: 預配置 SigNoz APM。在 Mac 執行時透過 `host.docker.internal` 提供高可靠性的遙測橋接，確保追蹤與日誌零失誤。
+> [!NOTE]
+> 透過事件驅動與多模型分層調度，我們確保在極端市場波動下，系統能具備高穩定性的毫秒級應變能力。
+
+```mermaid
+graph TD
+    A[AI Investment Advisor] --> B(OpenClaw 架構)
+    A --> C(Swarm 智能集群)
+    A --> D(全域優先級防禦)
+    A --> E(機構級風控)
+    A --> F(混合記憶與演化)
+    
+    B -.-> B1[獨立 Workspace & WAL]
+    B -.-> B2[FastAPI Auth Hub]
+    
+    C -.-> C1[7 智能體碎形辯論]
+    C -.-> C2[消除模型幻覺]
+    
+    D -.-> D1[毫秒級自動對沖]
+    D -.-> D2[動態信心閾值]
+    
+    E -.-> E1[動態現金準備]
+    E -.-> E2[強迫領先對比分析]
+    
+    F -.-> F1[pgvector + Redis RAG]
+    F -.-> F2[工程師代理遺傳演化]
+```
+
+- **微型大腦演化 (OpenClaw)**: 九大 Agent 具備專屬 Workspace 與 WAL 協議，終結高長度財報推論斷片現象。
+- **智能進化集群 (Swarm Intelligence)**: CIO 領銜多代理人碎形辯論，消除模型幻覺，提升決策可解釋性。
+- **全域自動防禦 (Auto-Defense)**: Sentinel 全維度掃描，觸發結構化 `[CONVINCING_ACTION]`，支援毫秒級快速避險。
+- **機構級風控 (Institutional Risk)**: 整合通膨與 VIX 的動態現金比例，並強制執行標的成長領先對比分析。
+- **QMD 混合檢索 (Hybrid Retrieval)**: 結合 BM25 與時間衰減的 PostgreSQL/Redis 架構，確保決策具備深度的歷史脈絡。
 
 ### 📐 策略性分層架構 (Strategic Tiered Architecture)
 
@@ -162,17 +191,29 @@ graph TD
 
 ### 🚀 Key Capabilities & Outcomes
 
-- **🧠 Independent Micro-Brains (OpenClaw Architecture)**: De-coupled the 9 Agent collective, providing independent structural Workspaces (`IDENTITY.md`, `STATE.md`). Empowered with the **WAL (Write-Ahead Logging)** Protocol and Token Safety Pads, eliminating context overflow amnesia.
-- **🧠 Swarm Intelligence (v1.0)**: A CIO-led cluster coordinating domain experts (Fundamental, Momentum, Macro) via Fractal Debate, eliminating single-model hallucinations and boosting decision win rates and explainability.
-- **⏱️ Automated Millisecond Defense (Dynamic Threshold Logic)**: Integrated `AutomatedTradingService` and `Sentinel` (5D radar tracking VIX, Price, News, Macro, and Readwise API) autonomously execute trades based on **Dynamic Confidence Thresholds (1-10)**. Enhanced by **Dual-Track Webhooks** balancing proactive market-watching and passive payload triggers at zero blind API costs.
-- **⚖️ Institutional Risk & Ticker Optimization (Precision Risk & Research)**:
-  - **Dynamic Cash Ratio**: Inflation-adjusted (CPI) and VIX-aware cash reserves.
-  - **Risk Profile Consistency**: Automated alignment between leverage and risk labels.
-  - **Generalized Research**: Mandatory comparative analysis against industry leaders for all assets.
-- **🧠 Narrative Drift Detection**: Daily tracking of conviction and horizon to filter System 1 noise and prevent theme deviation via Experience Replay.
-- **🗄️ QMD Hybrid Retrieval (QMD Architecture)**: Employs PostgreSQL as the structured backbone alongside pgvector. Features **BM25 Text Rank** combined with **Temporal Decay** to synthesize both exact matches and historically-weighted contextual decisions.
-- **🔬 Autonomous Quant Engineer & Bilingual AI**: The integrated `SystemEngineerAgent` utilizes genetic algorithms to write, backtest, and iterate Alpha creation scripts, ensuring the trading logic continually evolves without manual intervention. It also serves as a localization engine, perfectly translating professional markdown reports into native Traditional Chinese while preserving financial vernacular.
-- **📊 Robust Observability**: Pre-configured SigNoz APM with specialized `host.docker.internal` bridging for high-reliability telemetry on macOS, ensuring seamless tracing and logging.
+> [!NOTE]
+> The platform leverages an event-driven framework and Tiered orchestration to guarantee zero blind spots during high-volatility market events.
+
+```mermaid
+graph TD
+    A[AI Investment Advisor] --> B(OpenClaw Architecture)
+    A --> C(Swarm Intelligence)
+    A --> D(Millisecond Defense)
+    A --> E(Institutional Risk)
+    A --> F(Hybrid Memory)
+    
+    B -.-> B1[Isolated Workspaces & WAL]
+    C -.-> C1[7 Agent Fractal Debate]
+    D -.-> D1[Dynamic Confidence Hedging]
+    E -.-> E1[VIX-Aware Cash Ratios]
+    F -.-> F1[pgvector + Temporal Decay]
+```
+
+- **OpenClaw Architecture**: Agents hold independent structural states (WAL Protocol) to eliminate context overflow amnesia.
+- **Swarm Intelligence**: Multi-agent fractal debate coordinates domain experts, eliminating single-model hallucinations.
+- **Millisecond Defense**: `AutomatedTradingService` executes via dynamic thresholds and dual-track webhooks for rapid auto-hedging.
+- **Institutional Risk**: Enforces Risk Profile Consistency, drift detection, and generalized comparative analysis.
+- **QMD Hybrid Retrieval**: Synthesizes exact BM25 text rank with historically-weighted semantic decisions using Postgres and Redis.
 
 ### 📐 Strategic Tiered Architecture
 

@@ -1,6 +1,6 @@
 # 數據攝取架構 (Data Ingestion Architecture)
 
-### 版本紀錄 (Version History)
+## 版本紀錄 (Version History)
 
 | Date | Version | Description | Author |
 | :--- | :--- | :--- | :--- |
@@ -278,6 +278,17 @@ class MarketDataProvider(ABC):
 ### 5.3 自動跳轉與備援機制 (Failover Strategy)
 
 系統採用 **MarketDataService** 作為統一入口，當主數據源失效或限額時，會依序自動降級：
+
+```mermaid
+graph TD
+    S[MarketDataService] --> P1(1. Polygon.io<br/>高精度即時)
+    P1 -.Failover.-> P2(2. Tiingo<br/>精確低延遲)
+    P2 -.Failover.-> P3(3. Finnhub<br/>即時)
+    P3 -.Failover.-> P4(4. FMP<br/>穩定備援)
+    P4 -.Failover.-> P5(5. AlphaVantage<br/>豐富指標)
+    P5 -.Failover.-> P6(6. YFinance<br/>免費源)
+    P6 -.Failover.-> P7(7. Web Search<br/>終極備援)
+```
 
 1. **Tier 1: Polygon.io** (高精度、即時)
 2. **Tier 2: Tiingo** (精確資料、低延遲)

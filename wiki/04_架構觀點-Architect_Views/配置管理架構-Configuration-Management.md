@@ -1,6 +1,6 @@
 # 配置管理架構 (Configuration Management Architecture)
 
-### 版本紀錄 (Version History)
+## 版本紀錄 (Version History)
 
 | Date | Version | Description | Author |
 | :--- | :--- | :--- | :--- |
@@ -59,6 +59,16 @@ class SettingsRepository:
 服務 (Service) 初始化時，優先從資料庫讀取設定，若無則回退至環境變數 (Env Var Fallback)。
 
 Services prioritize DB settings upon initialization, falling back to Environment Variables if DB settings are missing.
+
+```mermaid
+graph LR
+    A(Service Init) --> B{DB Settings}
+    B -- Found --> E(Apply Config)
+    B -- Not Found --> C{Environment Variables}
+    C -- Found --> E
+    C -- Not Found --> D[Hardcoded Defaults]
+    D --> E
+```
 
 **Priority**: `DB Settings` > `Environment Variables` > `Hardcoded Defaults`
 

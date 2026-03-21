@@ -1,6 +1,6 @@
 # 快速啟動與操作指南 (Quickstart & User Guide)
 
-### 版本紀錄 (Version History)
+## 版本紀錄 (Version History)
 | Date | Version | Description | Author |
 | :--- | :--- | :--- | :--- |
 | 2026-02-20 | v3.5 | **Production Ready**: Standardized all internal links and verified formatting. | Neo |
@@ -18,9 +18,9 @@
 
 本文件依據 [文件框架定義](文件框架定義-Document-Frameworks) 編寫，引導一般使用者從零開始掌握 AI 投資顧問的各項功能。
 
-### 1. 核心功能與流程 (Features & Flows)
+## 1. 核心功能與流程 (Features & Flows)
 
-#### 1.1 資料攝取與管理流程 (Data Flow & Swarm Execution)
+### 1.1 資料攝取與管理流程 (Data Flow & Swarm Execution)
 系統支持手動輸入、CSV 匯入與 API 自動同步，並交由 Agent Swarm 進行決策與代碼演化。
 ```mermaid
 graph LR
@@ -36,12 +36,12 @@ graph LR
     end
 ```
 
-#### 1.2 顧問互動流程 (Advisor Interaction)
+### 1.2 顧問互動流程 (Advisor Interaction)
 - **問題輸入**: 使用者在 [AI 投資顧問](前端架構與UX層-Frontend-UX-Layer) 提問。
 - **指標分析**: [CIO Agent](服務層開發指南-Service-Layer-Blueprints) 調用專家代理進行多維度審查。
 - **績效反饋**: [Engineer Agent](服務層開發指南-Service-Layer-Blueprints) 追蹤回報品質。
 
-### 2. 操作欄位定義 (Operational Glossary)
+## 2. 操作欄位定義 (Operational Glossary)
 
 | 欄位 | 說明 | 填寫建議 |
 | :--- | :--- | :--- |
@@ -50,43 +50,43 @@ graph LR
 | **數量 (Quantity)** | 交易股數。 | 支援 4 位小數。 |
 | **槓桿比例** | 針對該筆交易的預期槓桿。 | 系統自動計算槓桿，細節見 [系統全景圖](系統全景圖-System-Landscape)。 |
 
-### 📖 使用者操作詳解 (User Operation Details)
+## 3. 使用者操作詳解 (User Operation Details)
 
-### 1. 儀表板觀測 (Dashboard)
+### 3.1 儀表板觀測 (Dashboard)
 - **視覺化指標**: 顯示 NLV、現金比例、總報酬率與目前槓桿比率。
 - **風險預警**: 槓桿比率超過 1.5x 顯示黃色警告，超過 2.0x 觸發紅色危險警報，提醒補足保證金。
 
-### 2. 資料管理 (Data Management)
+### 3.2 資料管理 (Data Management)
 本模組負責系統的確定的性數據來源，支援以下操作：
 
-#### 2.1 手動輸入 (Manual Entry)
+#### 3.2.1 手動輸入 (Manual Entry)
 - **交易模式**:
     - **依數量 (By Quantity)**: 輸入具體股數與單價。
     - **依槓桿 (By Leverage)**: 輸入「本金」與「槓桿倍數」(e.g., $X,XXX, 3x)，系統自動換算購買力與股數。
 - **交易類型**: 支援 `BUY` (買入), `SELL` (賣出), `DIVIDEND` (股息), `DEPOSIT` (入金) 與 `WITHDRAW` (出金)。
 
-#### 2.2 批次匯入 (CSV Import)
+#### 3.2.2 批次匯入 (CSV Import)
 - **支援格式**: Robinhood, IBKR, Simple。
 - **操作**: 選擇格式、上傳檔案並點擊「開始匯入」。系統執行原子化寫入，確保數據一致性。
 
-### 3. AI 投資顧問 (Advisor Chat)
+### 3.3 AI 投資顧問 (Advisor Chat)
 - **意圖偵測**: 輸入包含股票代碼 (如: AAPL) 的問題，系統自動調用 **Stock Analyst Agent** 進行基本面分析。
 - **宏觀諮詢**: 一般性問題將調用 **CIO Agent**，綜合總經環境給予建議。
 - **注意**: 此對話為即時諮詢，不影響正式報告數據。
 
-### 4. 深度研究週報 (Deep Research Weekly Report) - v3.3
+### 3.4 深度研究週報 (Deep Research Weekly Report) - v3.3
 - **結構化數據**: 透過 Markdown Table 呈現「蜂群洞察」(Swarm Insights) 與「市場焦點數據」(Market Focus Data)。
 - **精準引用**: 所有事實陳述皆附帶 `[來源名稱] (URL)` 引用，確保資訊可信度。
 - **IC 決策**: 包含 Thesis (戰略主軸), Anti-Thesis (反論) 與 Synthesis (關鍵仲裁) 的完整論述。
 
-#### 4.1 手動觸發進階報告 (Advanced Report Trigger)
+#### 3.4.1 手動觸發進階報告 (Advanced Report Trigger)
 若需立即生成包含 **Task Planner** 與 **Memory** 整合的完整週報（非 Scheduler 排程），請執行專用生產腳本：
 ```bash
 python run_production_report.py
 ```
 > **注意**: 此腳本會強制啟用 Advanced Tier 模型進行深度推論，並將結果存入 Redis Memory。
 
-### 5. 系統設定 (System Settings)
+### 3.5 系統設定 (System Settings)
 這是系統的核心控制面板：
 
 - **交易配置 (Trading Setup)**:
@@ -98,10 +98,10 @@ python run_production_report.py
 - **排程管理**: 設定 Daily Check、Weekly Report 以及 Engineer Alpha-Seeking 演化的執行時間。
 - **HR 協議**: 監視 Agent 活躍度。若 Agent 超過 7 天無活動，狀態將轉為 **Zombie**，需檢查 API 配置。
 
-### 6. 整合通知設定 (Omni-Channel Setup) - v3.4
+### 3.6 整合通知設定 (Omni-Channel Setup) - v3.4
 本版本新增 LINE Bot 即時推播功能：
 
-#### 6.1 LINE Bot 設定
+#### 3.6.1 LINE Bot 設定
 1.  **取得 Channel Token:**
     *   登入 [LINE Developers Console](https://developers.line.biz/)。
     *   建立新 Channel (Create a new channel)，**務必選擇 'Messaging API' 類型** (不要選擇 LINE Login)。
@@ -113,7 +113,7 @@ python run_production_report.py
     *   切換至 **Basic settings** 分頁，捲動至下方找到 **Channel secret**。
     *   切換至 **Basic settings** 分頁，捲動至下方找到 **Channel secret**。
 
-#### 6.2 本地開發 Webhook 設定 (Local Ngrok Setup)
+#### 3.6.2 本地開發 Webhook 設定 (Local Ngrok Setup)
 如果您在本地開發環境測試 LINE Bot，必須使用 `ngrok` 將本地伺服器暴露到公網，才能讓 LINE Platform 傳送 Webhook 驗證。
 
 **方式一：使用 Docker 微服務 (推薦)**
@@ -140,7 +140,7 @@ python run_production_report.py
 *   開啟 **Use webhook** 開關。
 *   點擊 **Verify** 測試連線 (若顯示 Success 即代表連線成功)。
 
-#### 6.3 取得您的 User ID 與加入好友 (Friend & User ID)
+#### 3.6.3 取得您的 User ID 與加入好友 (Friend & User ID)
 **注意**：`LINE_USER_ID` 是指**您的個人 ID** (機器人需要知道發訊息給誰)，而不是機器人的 ID。
 
 1.  **將機器人加入好友**:
@@ -162,17 +162,17 @@ python run_production_report.py
     LINE_USER_ID=Uxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
     ```
 
-#### 6.4 哨兵監控 (Sentinel Monitor)
+#### 3.6.4 哨兵監控 (Sentinel Monitor)
 系統內建「自適應哨兵 (Adaptive Sentinel)」，自動監控市場異常。
 - **觸發機制**: 不再依賴固定數值。系統依據過去 30 天的波動率 (MA + Sigma) 判斷「當前是否異常」。
 - **智能冷卻 (Smart Cool-down)**: 為避免警報疲勞，系統會自動抑制 24 小時內重複的警報內容。
 - **通知形式**: LINE Flex Message (圖文卡片) 或其他已啟用頻道 (Slack/Telegram)。
 - **操作**: 點擊卡片上的 **[前往 eToro 下單]** 按鈕，即可快速進行避險操作。
 
-### 7. 外部訊號 Webhook 設定 (Inbound Webhook Setup) - v3.5+
+### 3.7 外部訊號 Webhook 設定 (Inbound Webhook Setup) - v3.5+
 系統支援透過 FastAPI 接收來自外部 (例如 TradingView, 財經日曆) 的 Webhook 警報，並自動觸發 Sentinel 防禦或智能體分析。
 
-#### 7.1 Webhook 觸發與演化流程
+#### 3.7.1 Webhook 觸發與演化流程
 ```mermaid
 sequenceDiagram
     participant TV as TradingView
@@ -194,7 +194,7 @@ sequenceDiagram
     end
 ```
 
-#### 7.2 Webhook 啟用步驟
+#### 3.7.2 Webhook 啟用步驟
 1. **設定安全金鑰**:
    在 `.env` 中設定 Webhook 認證金鑰，以防惡意請求：
    ```env
@@ -219,7 +219,7 @@ sequenceDiagram
 
 ---
 
-## ❓ 常見問題與故障排除 (FAQ & Troubleshooting)
+## 4. 常見問題與故障排除 (FAQ & Troubleshooting)
 
 **Q: 為什麼槓桿比率顯示不正確？**
 A: 請確保「資料管理」中的現金出入金（Deposit/Withdraw）已正確記錄，且已獲取最新股價。
@@ -230,12 +230,12 @@ A: 請至「系統設定 -> AI 配置」檢查 API Key 是否有效。
 **Q: 報告沒有按時發送？**
 A: 檢查「系統設定 -> 排程管理」中的時區設定是否與您的本地預期一致。
 
-### 6. 個人成效指標 (Success Metrics for Users)
+## 5. 個人成效指標 (Success Metrics for Users)
 - **Alpha**: 超額回報（相對於標普 500）。
 - **最大回撤 (Max Drawdown)**: 投資組合從峰值回落的最大幅度。目標 < 15%。
 - **夏普比率 (Sharpe Ratio)**: 每單位風險的超額回報。目標 > 1.2。
 
-### 7. 疑難排解 (Support & Troubleshooting)
+### 4.1 疑難排解 (Support & Troubleshooting)
 
 | 問題 | 可能原因 | 解決方案 |
 | :--- | :--- | :--- |
@@ -249,35 +249,35 @@ A: 檢查「系統設定 -> 排程管理」中的時區設定是否與您的本�
 
 ## 🇺🇸 Quickstart & User Guide
 
-### 1. User Flows
+## 1. User Flows
 - **Dashboard View**: Real-time NLV, P&L, and Leverage monitoring.
 - **Manual Trade**: Single-entry interface for immediate portfolio updates.
 - **AI Reports**: Subscription-based daily/weekly PDF notifications via email.
 
-### 2. Glossary
+## 2. Glossary
 - **Action**: Use `DIVIDEND` for cash payouts; use `BUY` with price `$0` for stock splits.
 - **Leverage**: Visual warnings trigger when the portfolio leverage exceeds **1.5x**.
 
-## 🇺🇸 User Operation Details (English)
+## 3. User Operation Details
 
-### 1. Dashboard
+### 3.1 Dashboard
 - **Risk Alerts**: Leverage ratio > 1.5x triggers a Yellow Warning; > 2.0x triggers a Red Margin Call alert.
 
-### 2. Data Management
+### 3.2 Data Management
 - **Manual Entry**: Choose "By Quantity" or "By Leverage" (auto-calculates buying power).
 - **Import**: Supports Robinhood, IBKR, and Simple CSV formats with atomic verification.
 
-### 3. Advisor Chat
+### 3.3 Advisor Chat
 - **Ticker Detection**: Mentioning a symbol (e.g., "TSLA") triggers a deep fundamental dive by specialized agents.
 
-### 4. System Settings
+### 3.4 System Settings
 - **Model Tiering**: Configure separate models for "Smart Tasks" vs "Fast Scans" for cost efficiency.
 - **HR Protocol**: Monitors agent "heartbeats". Active agents are green; "Zombie" agents require maintenance.
 
-### 5. Notification Setup (LINE Bot)
+### 3.5 Notification Setup (LINE Bot)
 v3.4 introduces real-time alerts via LINE:
 
-#### 5.1 LINE Configuration
+#### 3.5.1 LINE Configuration
 1.  Create a Messaging API Channel on [LINE Developers Console](https://developers.line.biz/).
 2.  Get `Channel access token` and `Channel secret`.
 3.  Add to `.env`:
@@ -286,16 +286,16 @@ v3.4 introduces real-time alerts via LINE:
     LINE_CHANNEL_SECRET=your_secret
     ```
 
-#### 5.2 Sentinel Alerts
+#### 3.5.2 Sentinel Alerts
 - **Adaptive Logic**: Alerts are triggered based on dynamic market regimes (30-day MA + Sigma), not static numbers.
 - **Smart Cool-down**: Automatically suppresses identical alerts within 24 hours to prevent fatigue.
 - **Action**: Click **[Trade on eToro]** in the notification to execute hedging strategies immediately.
 
-### 3. Troubleshooting
+## 4. Troubleshooting
 - **Zero Balance**: Ensure initial `DEPOSIT` or `BUY` events are recorded.
 - **Agent Errors**: Check internet connectivity or API quotas in [Testing & Services](測試與外部服務整合-Testing-External-Services).
 
-### 6. Inbound Webhook Setup (External Signals)
+### 3.6 Inbound Webhook Setup (External Signals)
 - **Architecture**: External services (e.g. TradingView) send standard POST requests to `https://<YOUR_DOMAIN>/webhook/tradingview`.
 - **Security**: All requests must include the `x-webhook-secret` header matching your `.env` configuration.
 - **Auto-Defense**: Severe "SELL" signals marked as extreme will immediately trigger the `AutomatedTradingService` to propose position liquidation and hedging.

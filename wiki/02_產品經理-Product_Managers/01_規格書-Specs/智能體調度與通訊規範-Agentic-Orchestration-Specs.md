@@ -35,15 +35,33 @@
 
 ### 2. 通訊協議與執行模型 (Agent Mesh & Execution)
 
-#### 2.1 ReAct 執行模型
-Agent 遵循 **Think-Act-Observe** 模式。
-1. **Think**: 判斷是否需要外部工具。
-2. **Act**: 輸出調用指令 `CALL: tool_name(args)`。
-3. **Observe**: 系統執行工具並將 JSON 結果回傳。
+> [!NOTE]
+> 系統整合 ReAct (Think-Act-Observe) 模式與混合工具架構，動態路由提昇請求效率。
 
-#### 2.2 混合工具架構 (Hybrid Tool Architecture)
-- **本地技能 (Local Skills)**: 透過 `SkillRegistry` 綁定 Python 實作，**本地執行**，速度最快。
-- **遠端 MCP (Remote MCP)**: 透過 `mcp_service` 跨容器調用，適合外部 API 整合。
+```mermaid
+sequenceDiagram
+    participant A as Agent
+    participant R as ReAct Loop
+    participant H as Hybrid Tool Router
+    participant L as Local (SkillRegistry)
+    participant M as Remote (mcp_service)
+    
+    A->>R: Goal / Prompt
+    loop Think-Act-Observe
+        R->>R: Think (Evaluate needed tools)
+        R->>H: Act (Dispatch CALL instruction)
+        
+        alt is Local Skill
+            H->>L: Execute Python Logic directly
+            L-->>R: Return JSON result (Fast)
+        else is Remote MCP
+            H->>M: Send JSON-RPC over stdio
+            M-->>R: Return Provider Data
+        end
+        
+        R->>A: Observe (Analyze and synthesize result)
+    end
+```
 
 #### 2.3 [v4.1.8] 穩定性與魯棒性 (Resilience Updates)
 - **延遲資源加載 (Lazy Initialization)**: `ResponseCache` 與資料庫連線改為首次調用時初始化，避免 Agent 大規模啟動時併發衝擊連線池。

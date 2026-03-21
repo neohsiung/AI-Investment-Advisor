@@ -84,6 +84,19 @@ graph TD
 
 系統採用六層垂直抽象架構，確保從用戶指令到資產執行的高可靠度與確定性。
 
+```mermaid
+graph TD
+    L1(L1: 存取層 Access<br/>ChannelAdapter) --> L2
+    L2(L2: 控制層 Control<br/>LaneManager) --> L3
+    L3(L3: 認知層 Cognitive<br/>AgentRuntime) --> L4
+    L4(L4: 記憶層 Memory<br/>VectorRepository) --> L5
+    L5(L5: 互動層 Interactive<br/>A2A Protocol) --> L6
+    L6(L6: 策略層 Strategic<br/>StrategyEngine)
+    
+    style L1 fill:#f9f,stroke:#333
+    style L6 fill:#bbf,stroke:#333
+```
+
 | 層次 (Layer) | 角色 (Role) | 核心組件 (Component) | 邏輯說明 (Logic) |
 | :--- | :--- | :--- | :--- |
 | **L1: 存取層** | 正規化 I/O | `ChannelAdapter` | **[v5.0 Async]** 將入口 (LINE/Web) 封裝為標準化的 `Event`。整合 `UserRepository` 進行多身分轉 UUID 映射。 |

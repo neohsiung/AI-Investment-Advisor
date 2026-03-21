@@ -18,7 +18,7 @@ description: 每日投資技能學習系統的使用指南。指導 Agent 如何
 
 ## 系統架構
 
-```
+```text
 n8n Schedule/RSS Trigger
     └─► POST /webhook/skill-learning
         └─► InvestmentSkillLearningService.run_daily_learning()
@@ -34,7 +34,7 @@ n8n Schedule/RSS Trigger
 ## 來源類型
 
 | 來源 | source_type | 觸發方式 |
-|------|-------------|----------|
+| --- | --- | --- |
 | Readwise | `highlight` | 每日排程自動 |
 | Podcast | `podcast` | n8n RSS → Server-side 轉錄 |
 | 文章 URL | `article` | 手動 webhook |

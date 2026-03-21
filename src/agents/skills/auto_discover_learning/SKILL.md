@@ -15,7 +15,7 @@ description: 自動搜尋網路上最佳投資策略文章，萃取為結構化�
 
 ## 運作流程
 
-```
+```text
 觸發 (n8n 排程 or Agent 主動)
     └─► InvestmentSkillLearningService.run_daily_learning()
         ├── 1. 檢查外部 content
@@ -30,7 +30,7 @@ description: 自動搜尋網路上最佳投資策略文章，萃取為結構化�
 ## 搜尋關鍵字池 (自動輪換)
 
 | 類別 | 範例查詢 |
-|------|---------|
+| --- | --- |
 | 價值投資 | `value investing strategy analysis` |
 | 動量交易 | `momentum trading strategy breakdown` |
 | 宏觀策略 | `macro investing approach current market` |

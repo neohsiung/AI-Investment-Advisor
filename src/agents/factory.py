@@ -176,7 +176,8 @@ class AgentFactory:
         AgentFactory._configure_dspy(user_id=user_id)
         prompt_map = {
             "daily": "prompts/cio_daily.txt",
-            "weekly": "prompts/cio_weekly.txt"
+            "weekly": "prompts/cio_weekly.txt",
+            "sentinel": "prompts/cio_sentinel.txt"
         }
         prompt_path = prompt_map.get(mode, "prompts/cio_weekly.txt")
         agent = CIOAgent(use_cache=use_cache, transaction_repo=transaction_repo, prompt_path=prompt_path, mode=mode, tier=tier, user_id=user_id, **kwargs)

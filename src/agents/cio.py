@@ -118,7 +118,9 @@ class CIOAgent(BaseAgent):
             "thematic_context": thematic_context, 
             "narrative_drift_context": narrative_drift_context, # [NEW] Milestone 3.2 Context
             "sector_strategy": context.get("sector_strategy", "無 (None)"),
-            "report_focus": context.get("task_instruction") or context.get("report_focus", "Weekly Strategic")
+            "report_focus": context.get("task_instruction") or context.get("report_focus", "Weekly Strategic"),
+            "topic": context.get("topic", "未指定 (Not Specified)"),
+            "memory_chain": context.get("memory_chain", "無相關歷史記憶 (No existing memory)")
         }
 
         # 6. Call Agent Tool Loop with Thought Chain (IC Protocol Enforcement)

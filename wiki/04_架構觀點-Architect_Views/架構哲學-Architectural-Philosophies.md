@@ -10,13 +10,49 @@
 本專案不僅是一個 AI 投資助理，更是一個展示 **Clean Architecture**、**DDD** 與 **Spec-Driven Design** 整合實踐的技術範本。
 
 ### 1. 整潔架構 (Clean Architecture)
-本專案嚴格遵守依賴規則：**源代碼依賴必須僅指向內部（Domain 層）**。
 
-#### 1.1 分層結構 (Layering)
-- **領域層 (Domain Layer)**: `src/domain/`。包含純業務實體（Dataclasses），不依賴任何外部框架或資料庫。
-- **應用服務層 (Application/Service Layer)**: `src/services/`。負責協調領域模型與執行業務案例（UseCase），如 `WorkflowService`。
-- **基礎設施層 (Infrastructure Layer)**: `src/data/` 與 `src/repositories/`。實作資料庫持久化、外部 API 橋接（Providers）等細節。
-- **介面適配層 (Interface/Adapter Layer)**: `src/dashboard.py` 與 `src/mcp_service/`。處理與外部世界的互動（UI、API 入口）。
+> [!IMPORTANT]
+> 嚴格遵守依賴規則：**源代碼依賴必須僅指向內部（Domain 層）**。框架與資料庫皆為可插拔的外部細節。
+
+```mermaid
+graph TD
+    subgraph 外部機制 (External Details)
+        UI[UI / Dashboard]
+        DB[(PostgreSQL / Redis)]
+        API[External APIs]
+    end
+    
+    subgraph 介面適配層 (Adapter Layer)
+        Streamlit[dashboard.py]
+        Webhook[mcp_service / Webhooks]
+        RepoImpl[Data Providers]
+    end
+    
+    subgraph 應用服務層 (Service Layer)
+        WF[WorkflowService]
+        Sen[SentinelService]
+    end
+    
+    subgraph 領域層 (Domain Layer)
+        Entity[Position / Portfolio]
+        Interfaces[ILLMGateway / Repositories]
+    end
+
+    UI --> Streamlit
+    DB -.-> RepoImpl
+    API -.-> RepoImpl
+    
+    Streamlit --> WF
+    Webhook --> Sen
+    RepoImpl -.-> Interfaces
+    
+    WF --> Entity
+    Sen --> Entity
+```
+
+- **領域層 (Domain)**: `src/domain/`。純業務實體（Dataclasses），零外部依賴。
+- **應用服務層 (Application)**: `src/services/`。協調領域模型執行 UseCase。
+- **基礎設施與適配層 (Infrastructure/Adapters)**: `src/data/` 與 `src/mcp_service/`。實作持久化與 API 橋接。
 
 ### 2. 領域驅動設計 (Domain-Driven Design)
 我們以「投資領域」為核心進行建模，確保代碼語言與業務專家（PM/投資者）一致。
@@ -35,13 +71,36 @@
     4. 更新 Wiki 反映實作中的優化點。
 
 ### 4. 智能分層與演化 (Intelligence Layering & Multi-Tier Architecture)
-**理論**: 模仿 Kimi K2.5 的混合控制架構 + **Role × Multi-Tier Agents** 並行執行。
-- **編排層 (Stateful Orchestrator)**: `CIOAgent` 負責任務拆解與資源調配，具備狀態記憶。
-- **執行層 (Multi-Tier Sub-agents)**: 每個專責領域的 Sub-Agent 有 **3 個層級**，並行執行：
-  - 🚀 **Advanced**: 關鍵決策、深度分析 (Claude Opus, Gemini Pro) - 高成本高質量
-  - 🧠 **Smart**: 日常分析、平衡質量與速度 (GPT-4, Gemini Pro) - 中等成本
-  - ⚡ **Fast**: 快速初篩、低風險探索 (Gemini Flash, GPT-3.5) - 低成本高速度
-- **策略**: Fast tier 先行輸出初步結果，並行等待 Advanced tier 補充深度洞察，通過 voting/fusion 機制整合最終輸出。
+
+> [!NOTE]
+> 採用 **Role × Multi-Tier Agents** 並行執行策略，平衡成本、速度與推論深度。
+
+```mermaid
+graph LR
+    CIO[CIO Agent<br/>Stateful Orchestrator]
+    
+    subgraph 3-Tier Execution
+        F(⚡ Fast Tier<br/>Gemini Flash)
+        S(🧠 Smart Tier<br/>GPT-4o)
+        A(🚀 Advanced Tier<br/>Claude Sonnet)
+    end
+    
+    CIO -->|Task Delgation| F
+    CIO -->|Task Delgation| S
+    CIO -->|Task Delgation| A
+    
+    F -->|Quick Initial Result| Vote{Fusion Engine}
+    S -->|Logic Debate| Vote
+    A -->|Deep Insight| Vote
+    
+    Vote --> Result((Final Decision))
+```
+
+- **編排層 (Orchestrator)**: `CIOAgent` 負責任務拆解與資源調配，具備狀態記憶。
+- **執行層 (Sub-agents)**: 並行執行三個級別：
+  - 🚀 **Advanced**: 關鍵決策、深度分析 (高成本/高品質)
+  - 🧠 **Smart**: 邏輯辯論與日常分析 (中等成本)
+  - ⚡ **Fast**: 快速初篩、低風險探索 (極速/低成本)
 
 ### 5. 事件驅動演進 (Event-Driven Evolution)
 - **主動監控**: 從「被動拉取 (Pull)」轉向「主動推送 (Push)」。`SentinelService` 實作了主動事件監聽，當 VIX 或持倉發生偏移時，主動喚醒慢想系統 (Council)。

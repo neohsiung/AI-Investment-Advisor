@@ -1,6 +1,6 @@
 # GCP Cloud Run Deployment Guide
 
-### 版本紀錄 (Version History)
+## 版本紀錄 (Version History)
 | Date | Version | Description | Author |
 | :--- | :--- | :--- | :--- |
 | 2026-02-20 | v4.5 | Document audit and history alignment | Neo |
@@ -14,6 +14,19 @@
 
 ### Goal
 Deploy the system to Google Cloud Platform (GCP) Cloud Run for a highly available, auto-scaling, secure Serverless environment.
+
+```mermaid
+graph LR
+    subgraph GitHub
+        Code[Source Code] -->|Manual Trigger| Actions(GitHub Actions)
+        Secrets[(Secrets)] -.-> Actions
+    end
+
+    subgraph GCP Environment
+        Actions -->|Deploy| CR(Cloud Run Apps)
+        CR -->|Connects to| SQL[(Cloud SQL pgvector)]
+    end
+```
 
 ### Why
 - **NoOps**: No server/cluster management.
@@ -78,6 +91,19 @@ The following secrets are automatically injected into Cloud Run by `ci-cd.yml`. 
 
 ### 目標 (Goal)
 將系統部署至 Google Cloud Platform (GCP) 的 Cloud Run 服務，實現高可用、自動擴展且安全的 Serverless 運作環境。
+
+```mermaid
+graph LR
+    subgraph GitHub
+        Code[Source Code] -->|Manual Trigger| Actions(GitHub Actions)
+        Secrets[(Secrets)] -.-> Actions
+    end
+
+    subgraph GCP Environment
+        Actions -->|Deploy| CR(Cloud Run Apps)
+        CR -->|Connects to| SQL[(Cloud SQL pgvector)]
+    end
+```
 
 ### 為什麼 (Why)
 - **免維運 (NoOps)**: 無需管理伺服器 (VM) 或 Kubernetes Cluster。

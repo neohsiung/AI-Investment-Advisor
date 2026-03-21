@@ -21,6 +21,18 @@
 系統採用 **PostgreSQL** 作為核心存儲，支援高精度計算與向量檢索。
 
 #### 1.1 核心實體 (Core Entities)
+
+```mermaid
+graph LR
+    U[User Identity</br>LINE/Email] --> P(Portfolio)
+    P --> |aggregates| POS(Positions)
+    P --> |logs| TX(Transactions)
+    TX -.-> |Single Source of Truth| POS
+    
+    SC[Security Context</br>Market/Tech/News] --> A{Agent Inference}
+    POS --> A
+```
+
 - **User / UserIdentity**: 支援多通路 (LINE, Email) 映射至唯一 UUID。
 - **Portfolio / Position**: 持倉實體，具備內生 `unrealized_pnl` 計算。
 - **Transaction**: 原始交易日誌，所有數據的真實來源 (Single Source of Truth)。
@@ -36,6 +48,14 @@
 ### 2. 混合記憶系統 (Hybrid Memory System)
 
 系統將記憶分為短期的行為上下文與長期的經驗知識。
+
+```mermaid
+graph TD
+    M(Memory Request) -->|High Freq Context| H[(Short-term<br/>Redis Hot Cache)]
+    M -->|Archive / Semantic| C[(Long-term<br/>PostgreSQL pgvector)]
+    
+    C -.Conflict Detection.-> H
+```
 
 | 層級 (Tier) | 存儲 (Storage) | 說明 |
 | :--- | :--- | :--- |

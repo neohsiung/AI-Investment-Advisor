@@ -2,6 +2,12 @@ import sys
 from unittest.mock import MagicMock
 import pytest
 
+# Import common shared fixtures to make them available globally
+pytest_plugins = [
+    "tests.fixtures.common_services",
+    "tests.fixtures.sentinel_fixtures"
+]
+
 # Centralized Mocking to prevent decorator pollution and Protobuf conflicts
 def pytest_configure(config):
     # This runs before any tests are collected or imported

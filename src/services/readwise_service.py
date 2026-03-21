@@ -84,7 +84,8 @@ class ReadwiseService:
         """
         
         try:
-            response = self.agent.run(prompt)
+            # v7.0: SystemEngineerAgent.run expects dict, use _call_real_llm for raw string prompts
+            response = self.agent._call_real_llm(prompt, self.agent.system_prompt or "You are an investment highlight analyzer.")
             return self._parse_json_response(response)
         except Exception as e:
             self.logger.error(f"Highlight analysis failed: {e}")
