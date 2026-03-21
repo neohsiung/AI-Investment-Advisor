@@ -40,7 +40,7 @@ class InternetSearchService:
         self.tavily_client = None
         # Priority: DB
         tavily_api_key = settings.get("source_tavily_api_key")
-        tavily_enabled = settings.get("source_tavily_enabled", "true") == "true"
+        tavily_enabled = str(settings.get("source_tavily_enabled", "true")).lower() == "true"
         
         if tavily_api_key and tavily_enabled:
             try:
