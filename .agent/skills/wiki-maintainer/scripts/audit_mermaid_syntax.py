@@ -30,86 +30,66 @@ def audit_mermaid_in_file(filepath, fix=False):
         
         modified_block = block_content
         
-        # 1. Fix extra trailing quotes in lines
-        # e.g., A-->>B: Text" -> A-->>B: Text
-        new_block = re.sub(r'(: .*?)"($|\n)', r'\1\2', modified_block)
-        # 1. Fix unbalanced quotes in lines
-        # If a line in the block has an odd number of quotes, it's malformed.
-        # We'll try to add a closing quote if it seems to be at the end of a label or message.
-        def fix_unbalanced_quotes(block):
+        # 1. First Pass: Resolve misplaced quotes like ["Label (text")] or ["Label]"]
+        def fix_node_quoting(block):
+            # Move quotes outside of labels correctly
+            # Fix ["Label (text")] -> ["Label (text)"]
+            # Matches ID["Label (text")] where ] is misplaced relative to "
+            # Uses backrefs to ensure matching bracket pairs
+            patterns = [
+                (r'(\w+)\["(.*?)(")(\])', r'\1["\2\4"]'),
+                (r'(\w+)\("(.*?)(")(\))', r'\1("\2\4")'),
+                (r'(\w+)\{"(.*?)(")(\})', r'\1{"\2\4"}'),
+            ]
+            for pat, repl in patterns:
+                block = re.sub(pat, repl, block)
+            
+            # Clean up accidental double quotes and fix dangling quotes at ends of lines
             lines = block.split('\n')
             fixed_lines = []
             for line in lines:
                 if line.count('"') % 2 != 0:
-                    # Common case: Missing closing quote at the end of a line
-                    if line.strip().endswith(']') or line.strip().endswith(')') or line.strip().endswith('}'):
-                        # If it's a node like ID["Label], fix it
-                        line = re.sub(r'(\w+[\[\(\{])"([^"]+)$', r'\1"\2"', line)
-                    else:
-                        # General case: just append a quote or fix trailing quote
-                        line = line.strip() + '"'
+                    # If line has odd quotes and ends with a node closer, it's missing a quote before the closer
+                    line = re.sub(r'(\[|\{|\()([^"\]\}\)]+)(\]|\}|\))$', r'\1"\2"\3', line)
                 fixed_lines.append(line)
-            return '\n'.join(fixed_lines)
+            return '\n'.join(fixed_lines).replace('""', '"')
 
-        # 2. Ensure labels with special characters ARE quoted
-        # Special characters: ( ) [ ] & : | < >
-        def ensure_quotes_for_special_chars(m):
-            node_id = m.group(1)
-            bracket_open = m.group(2)
-            label = m.group(3)
-            bracket_close = m.group(4)
-            if '"' in label: # Already has quotes?
+        # 2. Second Pass: Ensure special chars are quoted
+        def ensure_quotes(block):
+            def replacer(m):
+                node_id, b_open, label, b_close = m.groups()
+                # Skip if already quoted correctly
+                if label.startswith('"') and label.endswith('"'):
+                    return m.group(0)
+                # If contains special chars, wrap the WHOLE label in quotes
+                if any(c in label for c in '()[]&:|<>'):
+                    return f'{node_id}{b_open}"{label}"{b_close}'
                 return m.group(0)
-            # If contains any special char, quote it
-            if any(c in label for c in '()[]&:|<>'):
-                return f'{node_id}{bracket_open}"{label}"{bracket_close}'
-            return m.group(0)
+            
+            # Match ID[Label]
+            block = re.sub(r'(\w+)([\[\(\{])([^"\[\(\{\]\}\)\n]+)([\]\)\}])', replacer, block)
+            return block
 
-        # 3. Sequence diagram message quoting
-        # Example: A->>B: Message (with parens)
-        def fix_sequence_messages(block):
-            # Matches participants or messages in sequence diagrams
-            if 'sequenceDiagram' not in block:
-                return block
-            # Ensure messages with special chars are quoted if they aren't
-            lines = block.split('\n')
-            fixed_lines = []
-            for line in lines:
-                # Matches A->>B: Message
-                msg_match = re.search(r'^(\s*[\w\s]+[-]+>>?[\w\s]+:\s*)([^"].*)$', line)
-                if msg_match:
-                    prefix = msg_match.group(1)
-                    message = msg_match.group(2)
-                    if any(c in message for c in '()[]&:|<>'):
-                        line = f'{prefix}"{message}"'
-                fixed_lines.append(line)
-            return '\n'.join(fixed_lines)
-
-        # Apply fixes sequentially
+        # Apply fixes
         temp_block = modified_block
-        temp_block = fix_unbalanced_quotes(temp_block)
-        temp_block = re.sub(r'(\w+)([\[\(\{])([^"\[\]\n]+?)([\]\)\}])', ensure_quotes_for_special_chars, temp_block)
-        temp_block = fix_sequence_messages(temp_block)
-
-        # 4. Clean up redundant quotes for TRULY safe labels
-        def fix_node_labels(m):
-            node_id = m.group(1)
-            bracket_open = m.group(2)
-            label = m.group(3)
-            bracket_close = m.group(4)
-            # If label contains any special char, it MUST be quoted
-            if any(c in label for c in '()[]&:|<>'):
-                return m.group(0) # Keep as is (already handled)
-            # If label only contains simple text, remove quotes
-            if re.match(r'^[\w\s\u4e00-\u9fa5\-\.,]+$', label):
-                return f"{node_id}{bracket_open}{label}{bracket_close}"
-            return m.group(0)
-
-        temp_block = re.sub(r'(\w+)([\[\(\{])"(.*?)"([\]\)\}])', fix_node_labels, temp_block)
+        temp_block = fix_node_quoting(temp_block)
+        temp_block = ensure_quotes(temp_block)
         
-        if temp_block != modified_block:
-            print(f"[{filepath}] Optimized Mermaid syntax.")
+        # 3. Clean up TRULY safe labels
+        def clean_safe_labels(block):
+            def replacer(m):
+                node_id, b_open, label, b_close = m.groups()
+                # If ONLY safe chars, remove quotes
+                if re.match(r'^[\w\s\u4e00-\u9fa5\-\.,]+$', label):
+                    return f"{node_id}{b_open}{label}{b_close}"
+                return m.group(0)
+            return re.sub(r'(\w+)([\[\(\{])"(.*?)"([\]\)\}])', replacer, block)
+
+        temp_block = clean_safe_labels(temp_block)
+        
+        if temp_block != block_content:
             modified_block = temp_block
+            print(f"[{filepath}] Refined Mermaid syntax.")
             warnings += 1
 
         # 3. Special case: BF[BrokerFactory] -->"ET[Etoro] & IK[IBKR]"
