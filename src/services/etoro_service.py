@@ -871,7 +871,7 @@ class EtoroService(IBroker):
         existing_sigs = set()
         for tx in existing_txs:
             try:
-                sig = f"{tx.ticker}_{tx.trade_date}_{tx.action}_{float(tx.quantity):.4f}_{float(tx.price):.4f}"
+                sig = f"{tx.trade_date}_{tx.action}_{float(tx.quantity):.4f}_{float(tx.price):.4f}"
                 existing_sigs.add(sig)
             except (ValueError, TypeError, AttributeError): continue
 
@@ -901,7 +901,7 @@ class EtoroService(IBroker):
             
             # 1. Opening Leg
             open_date_str = open_ts[:10] if open_ts else datetime.now().strftime('%Y-%m-%d')
-            open_sig = f"{ticker}_{open_date_str}_{open_action}_{quantity:.4f}_{open_price:.4f}"
+            open_sig = f"{open_date_str}_{open_action}_{quantity:.4f}_{open_price:.4f}"
             
             if open_sig not in existing_sigs:
                 self.transaction_repo.add(
@@ -923,7 +923,7 @@ class EtoroService(IBroker):
                 close_action = 'SELL' if open_action == 'BUY' else 'BUY'
                 close_price = float(trade.get('closeRate', 0))
                 close_date_str = close_ts[:10]
-                close_sig = f"{ticker}_{close_date_str}_{close_action}_{quantity:.4f}_{close_price:.4f}"
+                close_sig = f"{close_date_str}_{close_action}_{quantity:.4f}_{close_price:.4f}"
                 
                 if close_sig not in existing_sigs:
                     self.transaction_repo.add(
@@ -969,7 +969,11 @@ class EtoroService(IBroker):
         # 1. We no longer blindly delete existing 'ETORO_SYNC' CASH entries.
         # Instead, we recalculate based on the current state and only add a delta if needed.
         # Original code deleted them here, which caused frequent drift.
-        pass
+        local_cash = self.transaction_repo.get_cash_balance(user_id)
+        diff = broker_cash - local_cash
+        
+        SYNC_THRESHOLD = 0.05
+        SAFETY_CAP = 5000.0
 
         # 2. Check for existing sync entries on the same day to avoid duplication
         # Get existing syncs for today
