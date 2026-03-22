@@ -9,6 +9,12 @@ from src.services.broker_factory import BrokerFactory
 
 class TestBrokerFactory:
     
+    def setup_method(self):
+        """Clear BrokerFactory instances before each test."""
+        BrokerFactory._instances.clear()
+    
+
+    
     def test_get_broker_etoro(self):
         """Test getting eToro broker instance."""
         with patch('src.services.broker_factory.AlchemySettingsRepository') as MockRepo, \
@@ -53,9 +59,8 @@ class TestBrokerFactory:
             mock_broker = MagicMock()
             MockEtoro.return_value = mock_broker
             
-            BrokerFactory._instances.clear()
-            
             broker = BrokerFactory.get_broker("test_user", broker_type="ETORO")
+
             
             assert broker is not None
             # BrokerFactory converts to lowercase and caches as "etoro"
@@ -74,10 +79,8 @@ class TestBrokerFactory:
             mock_broker = MagicMock()
             MockEtoro.return_value = mock_broker
             
-            # Clear cache first
-            BrokerFactory._instances.clear()
-            
             broker1 = BrokerFactory.get_broker("test_user", broker_type="etoro")
+
             broker2 = BrokerFactory.get_broker("test_user", broker_type="etoro")
             
             # Should only call constructor once due to caching
@@ -95,9 +98,8 @@ class TestBrokerFactory:
             }.get(key)
             MockRepo.return_value = mock_repo_instance
             
-            BrokerFactory._instances.clear()
-            
             brokers = BrokerFactory.get_enabled_brokers("test_user")
+
             
             assert "etoro" in brokers
             MockEtoro.assert_called()
@@ -111,9 +113,8 @@ class TestBrokerFactory:
             mock_repo_instance.get.return_value = None
             MockRepo.return_value = mock_repo_instance
             
-            BrokerFactory._instances.clear()
-            
             brokers = BrokerFactory.get_enabled_brokers("test_user")
+
             
             # Should have at least eToro as fallback
             assert len(brokers) > 0
@@ -131,9 +132,8 @@ class TestBrokerFactory:
             }.get(key)
             MockRepo.return_value = mock_repo_instance
             
-            BrokerFactory._instances.clear()
-            
             broker = BrokerFactory.get_broker("test_user", broker_type="etoro")
+
             
             # Check that EtoroService was called with DB settings
             call_kwargs = MockEtoro.call_args[1]
