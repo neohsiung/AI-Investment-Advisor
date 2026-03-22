@@ -65,3 +65,26 @@ WHERE source_file = 'ETORO_SYNC' AND raw_data IS NULL;
    - `nlv_reconstructed = current_cash + Sum(qty * historical_price)`
    - `invested_reconstructed = Sum(Deposits) - Sum(Withdrawals)`
 3. **驗證週期**：每次新增非標準化數據（如 CSV 匯入）後，必須觸發 `reconstruct_history` 以驗證資料一致性。
+
+## 7. Audit & Alignment Workflow
+
+Use this workflow to align data when users report discrepancies:
+
+### Quantitative Verification
+
+1. Command to get current dashboard state:
+   `docker exec -i investment_advisor_dashboard /usr/local/bin/python -c "from src.services.dashboard_service import DashboardService; data = DashboardService().prepare_dashboard_data('USER_ID'); print(data['metrics'])"`
+2. Identify the target values (NLV, Profit, Cash) from the broker API.
+3. Check internal drift or incorrect historical entries in the `transactions` table.
+
+### Data Alignment
+
+1. **Cash Balance**: Add `CASH` action transaction with ticker `USD` or `ETORO_SYNC` to match.
+2. **NLV/Profit**: Calibrate and add `NLV_ADJUST` or `STABILIZE_CAP` transactions to reflect actual user ROI versus standard calculation.
+3. **Static Anchors**: Ensure `__ANCHOR_` or `STABILIZE_` are present for fixed baselines.
+
+### UI/UX & Final Checks
+
+1. Tooltips Verification: Check `.saas-tooltip` styling.
+2. Ensure `Standardize Profit` logic applies via `DashboardService`.
+3. Present table comparing `Current` vs `Target` to the user before finalizing updates.

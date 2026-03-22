@@ -31,6 +31,17 @@ python .agent/skills/wiki-maintainer/scripts/standardize_wiki_links.py
 python .agent/skills/wiki-maintainer/scripts/verify_wiki_links.py
 ```
 
+## 連結標準化流程 (Standardization Workflow)
+
+1. **連結識別與修復**: 執行上述腳本後，確認斷開連結已修復或已被標準化為 `{basename}`。
+2. **原子提交 (Atomic Commit)**: 根據 `git-commit-format.md` 執行 Wiki Repo 的原子提交 (type: `docs(wiki)`)。
+
+## 檢查清單 (Quality Checklist)
+
+- [ ] 所有內部連結是否皆不包含路徑與 `.md` 副檔名？
+- [ ] `verify_wiki_links.py` 是否回報 0 錯誤？
+- [ ] 提交訊息是否符合雙語與 Repo 分離規範？
+
 ## 注意事項 (Precautions)
 
 - 腳本執行前，請確保工作區處於 `git clean` 狀態。
