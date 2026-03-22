@@ -222,6 +222,7 @@ class PerformanceService:
         history = []
         current_holdings = {} # {ticker: qty}
         current_costs = {}    # {ticker: total_cost}
+        current_lev_qty = {}  # {ticker: qty * leverage} for weighted average leverage
         current_cash = 0.0
         current_invested = 0.0
         
@@ -246,19 +247,21 @@ class PerformanceService:
                     if action == 'BUY':
                         current_holdings[ticker] = current_holdings.get(ticker, 0.0) + qty
                         current_costs[ticker] = current_costs.get(ticker, 0.0) + (qty * price) + fees
+                        current_lev_qty[ticker] = current_lev_qty.get(ticker, 0.0) + (qty * leverage)
                         current_cash -= ((qty * price) / leverage) + fees
                     elif action == 'SELL':
                         if ticker in current_holdings and current_holdings[ticker] > 0:
                             ratio = qty / current_holdings[ticker]
                             current_costs[ticker] *= (1 - ratio)
+                            current_lev_qty[ticker] *= (1 - ratio)
                             current_holdings[ticker] -= qty
                         current_cash += amount
                     elif action == 'DEPOSIT':
-                        if ticker not in ['STABILIZE_CASH', 'STABILIZE_CAP', 'ETORO_SYNC']:
+                        if ticker not in ['CASH', 'STABILIZE_CASH', 'STABILIZE_CAP', 'ETORO_SYNC']:
                             current_invested += amount
                         current_cash += amount
                     elif action == 'WITHDRAWAL':
-                        if ticker not in ['STABILIZE_CASH', 'STABILIZE_CAP', 'ETORO_SYNC']:
+                        if ticker not in ['CASH', 'STABILIZE_CASH', 'STABILIZE_CAP', 'ETORO_SYNC']:
                             current_invested -= amount
                         current_cash -= amount
                     elif action == 'DIVIDEND':
@@ -288,10 +291,14 @@ class PerformanceService:
                 if price == 0 and ticker in current_costs:
                     price = current_costs[ticker] / current_holdings[ticker] if current_holdings[ticker] > 0 else 0
                 
-                # Note: This NLV reconstruction currently assumes 1x leverage for simplicity in historical daily dots
-                # if we don't store daily leverage explicitly. 
-                # Improving this would involve tracking leverage per ticker in the current_holdings state.
-                portfolio_val += (qty * price)
+                # [FIX] Account for leverage in NLV (Equity = Nominal / Leverage)
+                # Weighted Average Leverage = current_lev_qty / current_holdings
+                ticker_lev = 1.0
+                if ticker in current_lev_qty and qty > 0:
+                    ticker_lev = current_lev_qty[ticker] / qty
+                
+                equity = (qty * price) / ticker_lev
+                portfolio_val += equity
             
             nlv = current_cash + portfolio_val
             pnl = nlv - current_invested
