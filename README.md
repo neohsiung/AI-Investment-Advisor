@@ -5,6 +5,7 @@
 
 | Date | Version | Description | Author |
 | :--- | :--- | :--- | :--- |
+| 2026-03-22 | v6.3.1 | **CI-Test Optimization**: Implemented Incremental Testing and Bandit scoping, reducing pre-commit check time from 10m+ to <30s. | Antigravity |
 | 2026-03-22 | v6.3.0 | **CI-Test Skill Integration**: Added `ci-test` Agent Dev Skill for comprehensive pre-commit quality and security checks. | Antigravity |
 | 2026-03-22 | v6.2.0 | **Pending Orders Guard & Notification Preprocessing**: Pre-checks Pending Orders to save Council processing, enhances High Cash Ratio handling for Aggressive profiles, and optimizes Markdown notifications for LINE and Telegram. | Antigravity |
 
