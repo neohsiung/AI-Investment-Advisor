@@ -12,12 +12,14 @@ description: 專指用於 Wiki 文檔維護、連結標準化與架構一致性�
 1. **連結標準化 (Standardization)**: 將包含路徑或副檔名的內部連結轉換為 `{basename}` 格式。
 2. **完整性驗證 (Integrity Check)**: 遞迴掃描所有 Markdown 文件，識別斷開的內部連結。
 3. **模糊匹配 (Fuzzy Mapping)**: 當連結文字與檔名不完全一致時（例如只有英文名），自動匹配至正確的 `{繁中}-{英文}` 檔名。
+4. **Mermaid 語法審查 (Mermaid Syntax Audit)**: 自動識別並修復 Markdown 中的 Mermaid 語法錯誤（如多餘引號、無效標記）。
 
 ## 目錄結構 (Directory Structure)
 
 - `SKILL.md`: 技能說明指南。
 - `scripts/standardize_wiki_links.py`: 核心標準化邏輯。
 - `scripts/verify_wiki_links.py`: 連結健康檢查工具。
+- `scripts/audit_mermaid_syntax.py`: Mermaid 語法自動審查與修復工具。
 
 ## 使用指南 (Usage Guide)
 
@@ -29,6 +31,9 @@ python .agent/skills/wiki-maintainer/scripts/standardize_wiki_links.py
 
 # 驗證連結完整性
 python .agent/skills/wiki-maintainer/scripts/verify_wiki_links.py
+
+# 審查並修復 Mermaid 語法
+python .agent/skills/wiki-maintainer/scripts/audit_mermaid_syntax.py wiki/ --fix
 ```
 
 ## 連結標準化流程 (Standardization Workflow)
@@ -40,6 +45,7 @@ python .agent/skills/wiki-maintainer/scripts/verify_wiki_links.py
 
 - [ ] 所有內部連結是否皆不包含路徑與 `.md` 副檔名？
 - [ ] `verify_wiki_links.py` 是否回報 0 錯誤？
+- [ ] `audit_mermaid_syntax.py` 是否已執行且修正語法？
 - [ ] 提交訊息是否符合雙語與 Repo 分離規範？
 
 ## 注意事項 (Precautions)
