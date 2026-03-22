@@ -3,6 +3,7 @@
 ### 版本紀錄 (Version History)
 | Date | Version | Description | Author |
 | :--- | :--- | :--- | :--- |
+| 2026-03-22 | v6.1  | **Pending Orders**: 新增 `get_pending_orders()` 介面，供 Sentinel 攔截重覆訊號。 | Antigravity |
 | 2026-03-20 | v6.0  | **NLV Accuracy Fix**: Enriched `get_account()` & `get_positions()` with yfinance current prices; eToro API only returns initial investment amounts. | Antigravity |
 | 2026-03-20 | v5.3  | **Robust Position Mapping**: Added Metadata Reverse Lookup & Re-fetch Retry (VTI Fix). | Antigravity |
 | 2026-03-19 | v5.2  | **Dynamic Discovery**: Removed hardcoded eToro Instrument IDs; implemented dynamic resolution. | Antigravity |
@@ -123,7 +124,10 @@ python3 tests/test_ibkr_connection.py
 
 若觸發熔斷，交易將被拒絕並回傳 `status: failed`。
 
-### 5.2 全域緊急開關 (Kill Switch)
+### 5.2 預約單防禦 (Pending Orders Guard)
+券商實作 (e.g., `EtoroBroker`) 必須提供 `get_pending_orders()` 方法。SentinelService 會在觸發警報前呼叫此方法，若目標 Ticker 已經存在待結算的預約單，將會直接丟棄該觸發訊號，確保資金不會被重覆佔用且節省系統效能。
+
+### 5.3 全域緊急開關 (Kill Switch)
 若發生異常，可於 Dashboard 設定頁面點擊 **"🔴 Emergency Stop"**，此變更對所有券商同時生效。
 
 ---

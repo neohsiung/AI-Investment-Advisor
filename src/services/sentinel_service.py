@@ -812,11 +812,36 @@ class SentinelService:
         Final execution logic for sending alerts, including Council deliberation and multi-channel notification.
         發送警報的最終執行邏輯，包含委員會研議與多管道通知。
         """
+        # 0. Fetch pending orders to filter duplicate evaluation
+        user_id = self.settings_service.user_id or self.user_id
+        pending_symbols = set()
+        if user_id:
+            try:
+                from src.services.broker_factory import BrokerFactory
+                _brk = BrokerFactory.get_broker(user_id)
+                if hasattr(_brk, 'get_pending_orders'):
+                    _p_orders = _brk.get_pending_orders()
+                    for o in _p_orders:
+                        pending_symbols.add(o.get('symbol', ''))
+            except Exception as e:
+                logger.warning(f"Sentinel: Failed to fetch pending orders for guard: {e}")
+
         # 1. Filter Triggers based on stable ID deduplication
         filtered_triggers = []
         for t in triggers:
             tid = t.get("id", "generic")
             display_text = t.get("text", "Unknown signal")
+            
+            # v6.1 Pending Order Guard: Suppress trigger if a pending order exists for this ticker
+            ticker = t.get("ticker")
+            if not ticker and "_" in tid:
+                 parts = tid.split("_")
+                 if len(parts) >= 2 and parts[1].isupper():
+                     ticker = parts[1]
+                     
+            if ticker and ticker in pending_symbols:
+                logger.info(f"Sentinel: Suppressing trigger {tid} because {ticker} already has a pending order.")
+                continue
             
             # Use signal_id for 24h suppression
             if self.repo.is_duplicate_alert(title="", content="", hours=24, signal_id=tid):
@@ -860,9 +885,32 @@ class SentinelService:
         
         msg_prefix = "請針對以下多個 Sentinel 警報進行彙整與風險評估，並以繁體中文 (Traditional Chinese) 提供一份簡短且具備行動建議的摘要。金融專業術語請保留英文。"
         if has_excess_cash:
+            wishlist_str = ""
+            user_id = self.settings_service.user_id or self.user_id
+            if user_id:
+                try:
+                    from src.services.broker_factory import BrokerFactory
+                    _b = BrokerFactory.get_broker(user_id)
+                    if hasattr(_b, 'get_watchlists'):
+                        wl = _b.get_watchlists()
+                        symbols = []
+                        _items = wl if isinstance(wl, list) else wl.get('items', wl.get('Items', []))
+                        for i in _items:
+                            sym = i.get('market', {}).get('symbolName')
+                            if sym: symbols.append(sym)
+                        if symbols:
+                            wishlist_str = ", ".join(symbols[:15])
+                except Exception as e:
+                    logger.warning(f"Failed to fetch wishlist for prompt: {e}")
+
+            priorities_text = (
+                f"1. 第一優先序從用戶的 Wishlist 尋找合適標的 (候選: {wishlist_str if wishlist_str else '無'})。\n"
+                "2. 第二優先序從具潛力的板塊（如 AI Energy, Physical AI）尋找標的。\n"
+            )
+            
             msg_prefix = (
                 "💰 **當前帳戶現金比例過高，請協助尋找新的投資機會。**\n"
-                "請根據市場現狀、總體經濟環境及技術面，推薦 3-5 個具備潛力的投資標的 (Ticker)。\n"
+                f"請強制作出買入行動。尋找標的時：\n{priorities_text}"
                 "**必須**在報告最後輸出以下格式的行動指令表（Actionable Orders），以便系統自動解析執行：\n\n"
                 "| Ticker | Action | Amount (USD) | Confidence (1-10) | Reason |\n"
                 "|--------|--------|-------------|-------------------|---------|\n"
@@ -1461,12 +1509,17 @@ class SentinelService:
             })
         elif actual_cash_ratio > final_target_cash * 1.5:
             # v5.0: New trigger for excess cash (Rule #8 & User Request)
+            is_aggressive = profile == "Aggressive"
+            severity = "high" if is_aggressive else "low"
+            priority = 1 if is_aggressive else 3
+            
             triggers.append({
                 "id": f"cash_ratio_high_{uid}",
                 "text": (f"💰 Excess Cash Alert: Actual {actual_cash_ratio*100:.1f}% "
                         f"vs Adjusted Target {final_target_cash*100:.1f}%. "
                         f"Consider searching for new investment opportunities."),
-                "severity": "low", # Low severity as it's an opportunity, not a risk
+                "severity": severity, 
+                "priority": priority,
                 "type": "cash_management"
             })
                 

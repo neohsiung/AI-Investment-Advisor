@@ -39,3 +39,8 @@ class IBroker(ABC):
     def sync_history(self) -> Dict[str, int]:
         """Sync external history to local DB."""
         pass
+
+    @abstractmethod
+    def get_pending_orders(self) -> List[Dict[str, Any]]:
+        """Get pending (scheduled) orders."""
+        pass

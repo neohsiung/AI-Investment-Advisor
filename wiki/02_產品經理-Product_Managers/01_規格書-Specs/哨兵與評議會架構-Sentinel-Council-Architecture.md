@@ -6,6 +6,7 @@
 
 ### 版本資訊 (Version History)
 
+| v6.1 | 2026-03-22 | 升級 | Pending Orders 攔截、Aggressive 現金管理優化。 |
 | v3.8 | 2026-02-15 | 初始 | Event-Driven (Webhooks) + Adaptive Compute. |
 
 ---
@@ -52,6 +53,12 @@
 | 🏦 宏觀異動 | `_check_macro_shifts()` | FRED (FredService) | 利率上升趨勢 / 殖利率曲線倒掛 |
 | 💡 知識提煉 | `_poll_single_source("readwise")` | ReadwiseHighlights | `requires_action=True` |
 | ⚡ 外部事件 | `process_event()` | Webhooks (MktRecap/TV) | **即時觸發** |
+
+#### 2.1.0a 預約單防禦機制 (Pending Order Guard — v6.1)
+
+為了避免對同一標的反覆下單並節省評議會 (Council) 的 LLM 運算效能，Sentinel 在收集所有維度的觸發訊號並準備呈報 (Escalation) 之前，會啟動預約單防禦機制：
+1. **主動查詢 (Proactive Fetching)**: 透過 `BrokerFactory` 調用券商的 `get_pending_orders()` 取得當前未結算的預約單。
+2. **自動剔除 (Auto-Suppression)**: 若觸發訊號對應的 Ticker (如 TSLA) 已存在於預約單列表中，Sentinel 會直接丟棄該訊號，完全不喚醒 System 2。
 
 *   **2.1.0 事件驅動演進 (Event-Driven Evolution — v3.8)**:
     除了定時輪詢外，系統現在支援 **Inbound Webhooks**。
@@ -141,6 +148,15 @@ The final decision of the Council is no longer just a plain text summary; it mus
 - **涵蓋範圍 (Operation Scope)**:
     - **持倉操作 (Positions)**: BUY, SELL, TRIM, or STOP-LOSS for specific Tickers. / 特定標的 (Ticker) 的買入、賣出、減碼或停損。
     - **現金管理 (Portfolio/Cash)**: Increasing or decreasing overall cash levels (CASH), global hedging (SQQQ/VIX), or emergency liquidation. / 全局現金水位 (CASH) 的增加或減少（如升息預期導致的減碼）、全域對沖 (SQQQ/VIX) 或 緊急清償 (Liquidate)。
+
+#### 2.1.3a 積極型現金水位管理 (Aggressive Cash Management — v6.1)
+
+當帳戶現金水位過高 (`cash_ratio_high`) 時，Sentinel 會根據用戶的風險屬性 (`risk_profile`) 動態調整策略：
+- **Aggressive (積極型)**:
+  - 將警報提升為最高優先級 (High Severity / Priority 1)。
+  - 動態抓取用戶在 eToro 的 **Watchlist / Wishlist** (最多 15 檔)。
+  - 強制覆寫 `msg_prefix`，指示評議會必須產出 **Actionable Orders**，且第一優先從 Wishlist 挑選標的，第二優先從高潛力板塊（如 AI Energy, Physical AI）尋找。
+- **Balanced/Conservative**: 僅作一般狀態回報 (Low Severity)。
 
 #### 2.1.4 終極防禦協議 (Auto-Hedging & Emergency Liquidation — v4.0)
 結合 Webhook 與 `AutomatedTradingService`，實現無人值守的主動防禦。當市場崩潰時，哨兵不需等待評議會緩慢辯論。其觸發的執行評分 (Confidence Score) 現在已從硬編碼改為動態讀取使用者設定 (`emergency_liquidation_score` 與 `auto_hedge_score`)。

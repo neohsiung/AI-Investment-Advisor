@@ -287,6 +287,59 @@ class EtoroService(IBroker):
         
         return positions
 
+    def get_pending_orders(self) -> List[Dict[str, Any]]:
+        """
+        Fetch pending (scheduled) orders.
+        獲取尚未成交的預約單（Pending Orders）。
+        """
+        endpoint = "/trading/info/orders"
+        if self.mode == "demo":
+            endpoint = "/trading/info/demo/orders"
+            
+        try:
+            url = f"{self.base_url}{endpoint}"
+            headers = self._get_headers()
+            response = requests.get(url, headers=headers, timeout=10)
+            
+            if response.status_code == 200:
+                data = response.json()
+                orders = []
+                
+                # Handle possible API wrapper structures
+                raw_orders = data if isinstance(data, list) else data.get('items', data.get('orders', data.get('Orders', data.get('positions', []))))
+                
+                # Fetch watchlists if maps are empty
+                if not self._id_to_symbol and raw_orders:
+                    self.get_watchlists()
+                
+                for o in raw_orders:
+                    # Safely handle missing ID
+                    inst_id = str(o.get('instrumentId', o.get('InstrumentID', o.get('InstrumentId', o.get('Instrument', '')))))
+                    if not inst_id:
+                        continue
+                        
+                    symbol = self._id_to_symbol.get(inst_id) or self._resolve_id_to_symbol(inst_id) or f"ID_{inst_id}"
+                    
+                    is_buy = o.get('isBuy', o.get('IsBuy', True))
+                    action = "BUY" if is_buy else "SELL"
+                    
+                    orders.append({
+                        "order_id": str(o.get('orderId', o.get('OrderId', o.get('id', '')))),
+                        "symbol": symbol,
+                        "action": action,
+                        "amount": float(o.get('amount', o.get('Amount', o.get('amountBaseValueDollars', 0)))),
+                        "raw_status": o.get('status', o.get('Status', ''))
+                    })
+                
+                logger.info(f"ETORO ORDERS: Retrieved {len(orders)} pending orders")
+                return orders
+            else:
+                logger.warning(f"ETORO ORDERS: Failed to fetch pending orders: {response.status_code}")
+                return []
+        except Exception as e:
+            logger.error(f"ETORO ORDERS: Error fetching pending orders: {e}")
+            return []
+
     def get_history(self, days: int = 30) -> List[Dict[str, Any]]:
         """
         Fetch Trade History.

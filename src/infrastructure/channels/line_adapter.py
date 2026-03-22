@@ -172,6 +172,14 @@ class LineBotAdapter(BaseChannelAdapter):
             logger.info(f"[MOCK LINE] Sending User {target_to or user_id}: {title} - {content}")
             return True
 
+        # Strip markdown syntax for LINE Flex Message which only supports literal text
+        import re
+        clean_content = content
+        clean_content = re.sub(r'\*\*(.+?)\*\*', r'\1', clean_content) # bold
+        clean_content = re.sub(r'__(.+?)__', r'\1', clean_content) # underline/italic
+        clean_content = re.sub(r'(?<!\*)\*(?!\*)(.+?)(?<!\*)\*(?!\*)', r'\1', clean_content) # italic
+        clean_content = re.sub(r'#+ ', '', clean_content) # headers
+
         try:
             # Construct Flex Bubble
             bubble_json = {
@@ -196,7 +204,7 @@ class LineBotAdapter(BaseChannelAdapter):
                     "contents": [
                         {
                             "type": "text",
-                            "text": content,
+                            "text": clean_content,
                             "wrap": True,
                             "color": "#333333"
                         }

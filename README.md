@@ -5,6 +5,7 @@
 
 | Date | Version | Description | Author |
 | :--- | :--- | :--- | :--- |
+| 2026-03-22 | v6.2.0 | **Pending Orders Guard & Notification Preprocessing**: Pre-checks Pending Orders to save Council processing, enhances High Cash Ratio handling for Aggressive profiles, and optimizes Markdown notifications for LINE and Telegram. | Antigravity |
 | 2026-03-21 | v6.1.0 | **Investment Validation Frameworks & Commits**: Enforced Trunk-Based Development commit rules and integrated three specialized AI runtimes (Envisioning, Attacker's Lens, Alpha Synthesis). | Antigravity |
 | 2026-03-20 | v6.0.0 | **eToro Auth & ID Resolution Final Fix**: Resolved "InvalidKey" and "Instrument ID not found" errors by stripping double-quoted credentials and adding mandatory search fields. | Antigravity |
 | 2026-03-20 | v5.9.0 | **Robust eToro Execution & Metadata Recovery**: Implemented Metadata Reverse Lookup & Re-fetch Retry for unknown IDs (VTI Fix). Coverage: 72%. | Antigravity |

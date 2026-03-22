@@ -4,6 +4,7 @@
 
 | Date | Version | Description | Author |
 | :--- | :--- | :--- | :--- |
+| 2026-03-22 | v1.2 | **Formatting Rules**: 新增 LINE 與 Telegram 的 Markdown 預處理邏輯，提升手機端可讀性。 | Antigravity |
 | 2026-03-07 | v1.1 | **Verification Loop**: 建立 VerificationService 挑戰應答流程，更新 InteractionService 路由邏輯。 | Antigravity |
 | 2026-02-21 | v1.0 | 初版：完整記錄通知微服務架構、API 端點、過濾邏輯與通訊方式 | Antigravity |
 
@@ -269,6 +270,14 @@ def create_with_settings(settings_service, user_id=None):
 | 寄件者 | `SMTP_USER` | — |
 | 密碼 | `SMTP_PASSWORD` | — |
 | 收件者 | `EMAIL_RECIPIENT` | — |
+
+---
+
+### 管道適配器預處理 (Channel Adapter Preprocessing)
+
+為了確保在手機端與不同通訊軟體的最佳閱讀體驗，各適配器在發送訊息前會進行針對性的格式轉換：
+- **LINE Adapter (`line_adapter.py`)**: 由於 Flex Message 不支援 Markdown，會在發送前剝除 (Strip) 所有粗體 `**`、斜體 `__` 等 Markdown 標記，維持乾淨的純文字與 Emoji。
+- **Telegram Adapter (`telegram_adapter.py`)**: 將解析模式設為更穩定的 `HTML`，並將輸入文字中的 `**text**` 轉換為 `<b>text</b>`，避免 Markdown 解析因特殊符號中斷報錯。
 
 ---
 

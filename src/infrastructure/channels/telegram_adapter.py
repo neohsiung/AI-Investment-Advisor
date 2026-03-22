@@ -65,12 +65,29 @@ class TelegramAdapter(BaseChannelAdapter):
             return False
 
         url = f"{self.base_url}/sendMessage"
-        text_body = f"*{title}*\n\n{content}"
+        
+        import html
+        import re
+        
+        # Escape HTML entities in title
+        safe_title = html.escape(title)
+        
+        # Convert simple markdown to HTML and escape the rest
+        # First, temporarily replace markdown asterisks with a placeholder to avoid escaping them
+        # Note: A real implementation might use a proper parsing library, but this basic replacement works for our alerts
+        clean_content = content
+        clean_content = html.escape(clean_content)
+        
+        # Convert HTML-escaped markdown hooks back to HTML tags
+        clean_content = re.sub(r'\*\*(.+?)\*\*', r'<b>\1</b>', clean_content)
+        clean_content = re.sub(r'__(.+?)__', r'<i>\1</i>', clean_content)
+        
+        text_body = f"<b>{safe_title}</b>\n\n{clean_content}"
         
         payload = {
             "chat_id": target_chat_id,
             "text": text_body,
-            "parse_mode": "Markdown"
+            "parse_mode": "HTML"
         }
 
         if actions:
