@@ -6,6 +6,7 @@
 
 ### 版本資訊 (Version History)
 
+| v6.2 | 2026-03-22 | 獲取 | 實作日誌脫敏 (Redaction) 以防 Trace ID 洩漏；更新依賴項資安。 |
 | v6.1 | 2026-03-22 | 升級 | Pending Orders 攔截、Aggressive 現金管理優化。 |
 | v3.8 | 2026-02-15 | 初始 | Event-Driven (Webhooks) + Adaptive Compute. |
 
@@ -69,11 +70,11 @@
         - **RSS Bridge**: 處理來自 IFTTT 或 RSS.app 的財經新聞。
     - **機制**: Webhook 接收後 normalized 為 `SentinelEvent` 並透過 `asyncio.create_task` 進行非同步處理，確保高吞吐。
 
-*   **每維度錯誤隔離 (Per-Dimension Error Isolation)**: 任一維度失敗不影響其他維度。
-    2.  **GCP (Cloud Run)**: 透過 `Cloud Scheduler` 每分鐘發送 HTTP Request 觸發 API Endpoint。
-    3.  **智能冷卻 (Smart Cool-down)**: 
-        - 每次觸發前查詢 `event_logs` 資料表。
-        - 若 24 小時內存在完全相同 (Title + Content Hash) 的警報，則自動抑制，避免疲勞轟炸。
+* **每維度錯誤隔離 (Per-Dimension Error Isolation)**: 任一維度失敗不影響其他維度。
+  1. **GCP (Cloud Run)**: 透過 `Cloud Scheduler` 每分鐘發送 HTTP Request 觸發 API Endpoint。
+  2. **智能冷卻 (Smart Cool-down)**: 
+    - 每次觸發前查詢 `event_logs` 資料表。
+    - 若 24 小時內存在完全相同 (Title + Content Hash) 的警報，則自動抑制，避免疲勞轟炸。
 
 #### 2.1.1 突發新聞加權與風險關鍵字機制 (Dimension 3)
 
@@ -213,6 +214,7 @@ sequenceDiagram
 ```
 
 *   **負載可見性 (Load Visibility)**: `SentinelService` 現在會記錄「監控代碼總數」與「批量擷取延遲」，這些指標已整合至 SigNoz 觀測面板，供 SRE 團隊監控 API 限制風險。
+*   **日誌脫敏 (Tracing Security — v6.2)**: 哨兵的所有日誌輸出（包含 Trace ID、標的與錯誤訊息）均經過 `src/utils/security.py` 脫敏處理，確保開發者日誌不洩露用戶交易細節。
 
 #### 2.2 評議會核心 (The Council Core)
 位於 `src/services/council_service.py`。

@@ -6,6 +6,7 @@
 
 | Date | Version | Description | Author |
 | :--- | :--- | :--- | :--- |
+| 2026-03-22 | v5.3 | **Security Hardening**: `SentinelService` 導入 `redact_secrets` 加固日誌輸出安全。 | Antigravity |
 | 2026-03-19 | v5.2 | **Dynamic Architect**: `EtoroService` 實現動態標的解析；`BaseWorkflow` 統一 `_parse_actionable_orders` 邏輯。 | Antigravity |
 | 2026-03-11 | v4.8 | **B2C SaaS Evolution**: `WebhookService` 支援 API Key 動態路由；`SchedulerService` 強化使用者隔離實例化。 | Antigravity |
 | 2026-03-08 | v4.7 | **Performance Resilience**: `PerformanceService` 支援字典格式行情資料與 `account_id` 多帳號隔離。 | Antigravity |
@@ -87,7 +88,7 @@ graph TD
 
 | 服務 | 檔案 | 核心職責 |
 | :--- | :--- | :--- |
-| `SentinelService` | `sentinel_service.py` | 7×24 市場事件監聽，**4 觸發維度**: VIX/持倉異動/加權新聞 (DB 關鍵字)/宏觀指標。 |
+| `SentinelService` | `sentinel_service.py` | 7×24 市場事件監聽。**[v5.3 Security]** 導入日誌脫敏，自動遮罩 Trace ID 與敏感 Tickers。 |
 | `CouncilService` | `council_service.py` | 碎形辯論 (Fractal Debate) — 對每檔持倉執行多角度質疑。 |
 | `VerificationService` | `verification_service.py` | 多通路連線性測試與身分驗證 (**Challenge-Response 應答流程**)。支援非同步驗證碼與全局回覆匹配。 |
 

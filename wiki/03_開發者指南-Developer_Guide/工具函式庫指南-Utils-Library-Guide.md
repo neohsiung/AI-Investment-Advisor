@@ -5,6 +5,7 @@
 | Date | Version | Description | Author |
 | :--- | :--- | :--- | :--- |
 | 2026-02-26 | v1.1 | **Theme System v4.3**: 更新 `ui.py` 主題系統說明 — OS 自動偵測、22 design tokens、手動切換優先 | Antigravity |
+| 2026-03-22 | v1.3 | **Security v1.0**: 新增 `security.py` 提供集中化脫敏與資安工具。 | Antigravity |
 | 2026-03-14 | v1.2 | **Auth v5.0**: 更新 `google_auth.py` 與 `auth_guard.py` 以支援 FastAPI Auth Hub (port 8000) | Antigravity |
 | 2026-02-21 | v1.0 | 初版：涵蓋 10 個工具模組的完整分類與 API 說明 | Antigravity |
 
@@ -22,6 +23,7 @@
 | 💾 快取類 | `cache.py` | Redis 回應快取 |
 | ⏰ 時間類 | `time_utils.py` | 時區管理與時間轉換 |
 | 📊 日誌類 | `logger.py` | 結構化 JSON 日誌與 OpenTelemetry 整合 |
+| 🛡️ 脫敏類 | `security.py` | 集中化秘密遮蔽與敏感資訊處理 |
 
 ---
 
@@ -40,6 +42,7 @@ graph LR
         CACHE[cache.py]
         TIME[time_utils.py]
         LOG[logger.py]
+        SEC[security.py]
     end
 
     subgraph Consumers
@@ -60,6 +63,8 @@ graph LR
     SERVICES --> LOG
     SERVICES --> TIME
     SERVICES --> CACHE
+    AGENTS --> SEC
+    SERVICES --> SEC
 ```
 
 ---
@@ -148,12 +153,12 @@ stateDiagram-v2
 
 ```mermaid
 flowchart LR
-    A["OS prefers-color-scheme"] -->"|JS| B[""localStorage"]
-    B -->"C[""session_state"]
+    A["OS prefers-color-scheme"] -->|JS| B["localStorage"]
+    B --> C["session_state"]
     D["Manual Toggle"] -->|priority| C
-    C -->"E[""ThemeService"]
+    C --> E["ThemeService"]
     F["light.json / dark.json"] --> E
-    E -->"G["":root CSS vars"]
+    E --> G[":root CSS vars"]
 ```
 
 - 22 個 Design Tokens：語意色彩（success/warning/danger/info + bg 變體）、陰影、漸層
@@ -294,6 +299,28 @@ graph LR
     DB[資料庫 Settings] -->"|優先| ENV[環境變數 TIMEZONE]"
     ENV -->"|備援| DEFAULT["""Asia/Taipei (預設")"]
 ```
+
+---
+
+---
+
+## 🛡️ 脫敏與資安 (Security & Redaction)
+
+### `security.py` — 集中化秘密遮蔽工具
+
+提供全域統一的敏感資訊遮蔽邏輯，防止敏感資訊洩漏至日誌或持久化儲存。
+
+#### `security.py` 核心函式
+
+| 函式 | 簽名 | 說明 |
+| :--- | :--- | :--- |
+| `redact_secrets` | `(text) -> str` | 使用正則表達式識別並遮蔽 API Key、Bearer Token 與 UUID 等敏感字串 |
+
+#### 遮蔽範例
+
+- **API Key**: `sk-1234...` → `[REDACTED]`
+- **Bearer Token**: `Bearer abc123...` → `Bearer [REDACTED]`
+- **UUID**: `550e8400-e29b-41d4-a716-446655440000` → `550e****-****-****-****-********0000`
 
 ---
 

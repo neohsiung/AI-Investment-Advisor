@@ -1,9 +1,10 @@
 # 資安管理與基礎映像檔規範 (Security and Base Image Standard)
 
-### 版本紀錄 (Iteration Record)
+## 版本紀錄 (Iteration Record)
 
 | Date | Version | Description | Author |
 | :--- | :--- | :--- | :--- |
+| 2026-03-22 | v1.2 | 實作集中化及脫敏工具 (`src/utils/security.py`) 並加固日誌安全。 | Antigravity |
 | 2026-03-08 | v1.1 | 新增密碼雜湊規範 (SHA256) 與全域秘密遮蔽機制 (BaseAgent Redaction)。 | Antigravity |
 | 2026-02-17 | v1.0 | 初始規範建立，採用 Rule #11 標準。 (Initial Release, following Rule #11) | Antigravity |
 
@@ -60,6 +61,7 @@ graph TD
 ### 4. 秘密遮蔽與日誌安全 (Secret Redaction & Logging)
 
 - **全域遮蔽**: 所有繼承自 `BaseAgent` 的實例必須調用 `_redact_secrets()` 進行狀態持久化前的資料清理。
+- **集中化脫敏工具 (v1.2)**: 強制使用 `src/utils/security.py` 中的 `redact_secrets()` 處理任何可能包含敏感資訊（如 API Key, Trace ID, Ticker）的日誌輸出。
 - **日誌敏感資訊**: 嚴禁在日誌中記錄 API Key、Bearer Token 或 Webhook Secret 的任何部分。日誌應僅記錄請求的大小或不具辨識性的 Meta 資訊。
 
 ## 定期維護流程
