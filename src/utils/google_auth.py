@@ -34,6 +34,21 @@ class GoogleAuth:
             st.session_state["auth_cookie_manager"] = stx.CookieManager(key="auth_cookie_manager_stable")
         return st.session_state["auth_cookie_manager"]
 
+    def _get_flow(self):
+        """Initialize Flow from client configuration or secret file."""
+        if self.client_config:
+            flow = google_auth_oauthlib.flow.Flow.from_client_config(
+                self.client_config,
+                scopes=self.scopes
+            )
+        else:
+            flow = google_auth_oauthlib.flow.Flow.from_client_secrets_file(
+                self.client_secret_path,
+                scopes=self.scopes
+            )
+        flow.redirect_uri = self.redirect_uri
+        return flow
+
     def login(self):
         """
         Redirects the user to the FastAPI Auth Hub.
