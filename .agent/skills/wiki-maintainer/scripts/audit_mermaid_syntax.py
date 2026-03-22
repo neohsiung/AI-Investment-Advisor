@@ -38,23 +38,41 @@ def audit_mermaid_in_file(filepath, fix=False):
             modified_block = new_block
             warnings += 1
 
-        # 2. Redundant quotes in node IDs with labels
-        # e.g., ID["Plain Label"] -> ID[Plain Label]
-        # Only if label is alphanumeric + space + some safe chars
+        # 1. Ensure labels with parentheses ARE quoted
+        # This matches nodes like ID[Label (with parens)] and adds quotes.
+        # It avoids matching across lines or other nodes.
+        def ensure_quotes_for_parens(m):
+            node_id = m.group(1)
+            bracket_open = m.group(2)
+            label = m.group(3)
+            bracket_close = m.group(4)
+            if '"' in label: # Already has quotes?
+                return m.group(0)
+            return f'{node_id}{bracket_open}"{label}"{bracket_close}'
+
+        new_block = re.sub(r'(\w+)([\[\(\{])([^"\[\]\n]*?[\(\)][^"\[\]\n]*?)([\]\)\}])', ensure_quotes_for_parens, modified_block)
+        
+        # 2. Clean up redundant quotes for TRULY safe labels (no parens)
         def fix_node_labels(m):
             node_id = m.group(1)
             bracket_open = m.group(2)
             label = m.group(3)
             bracket_close = m.group(4)
             
-            # If label only contains simple text, remove quotes
-            if re.match(r'^[\w\s\u4e00-\u9fa5\-\(\)\.,]+$', label):
+            # If label contains parentheses, it MUST be quoted
+            if '(' in label or ')' in label:
+                return f'{node_id}{bracket_open}"{label}"{bracket_close}'
+            
+            # If label only contains simple text (no parens, no special punctuation), remove quotes
+            if re.match(r'^[\w\s\u4e00-\u9fa5\-\.,]+$', label):
                 return f"{node_id}{bracket_open}{label}{bracket_close}"
+            
+            # Otherwise, keep as is
             return m.group(0)
 
-        new_block = re.sub(r'(\w+)([\[\(\{])"(.*?)"([\]\)\}])', fix_node_labels, modified_block)
+        new_block = re.sub(r'(\w+)([\[\(\{])"(.*?)"([\]\)\}])', fix_node_labels, new_block)
         if new_block != modified_block:
-            print(f"[{filepath}] Removed redundant quotes from node labels.")
+            print(f"[{filepath}] Optimized node labels and quoting.")
             modified_block = new_block
             warnings += 1
 
