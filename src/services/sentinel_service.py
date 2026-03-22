@@ -12,6 +12,7 @@ from src.services.market_data_service import MarketDataService
 from src.services.search_service import InternetSearchService
 from src.services.council_service import CouncilService
 from src.services.transaction_service import TransactionService
+from src.utils.security import redact_secrets
 import httpx
 
 from src.repositories.sentinel_repository import AlchemySentinelRepository
@@ -684,7 +685,7 @@ class SentinelService:
                 t["priority"] = already_buffered["trigger"].get("priority", 3)
                 t["target_agent"] = already_buffered["trigger"].get("target_agent", "CIO")
                 t["rationale"] = already_buffered["trigger"].get("rationale", "Cached from previous evaluation")
-                logger.debug(f"Sentinel: Skipping LLM evaluation for cached trigger (P{t['priority']})")
+                logger.debug(f"Sentinel: Skipping LLM evaluation for cached trigger (P{redact_secrets(t['priority'])})")
             else:
                 # 1. AI-Driven Priority & Routing
                 # 1. AI 驅動的優先級與路讀路由
@@ -773,7 +774,7 @@ class SentinelService:
                     "deadline": deadline,
                     "priority": priority
                 })
-                logger.info(f"Sentinel: Buffered trigger (P{priority}). Source: {source}. Deadline in {wait_mins}m")
+                logger.info(f"Sentinel: Buffered trigger (P{redact_secrets(priority)}). Source: {redact_secrets(source)}. Deadline in {redact_secrets(wait_mins)}m")
 
     async def _check_buffer_flush(self) -> None:
         """
@@ -840,7 +841,7 @@ class SentinelService:
                      ticker = parts[1]
                      
             if ticker and ticker in pending_symbols:
-                logger.info(f"Sentinel: Suppressing trigger {tid} because {ticker} already has a pending order.")
+                logger.info(f"Sentinel: Suppressing trigger {redact_secrets(tid)} because {redact_secrets(ticker)} already has a pending order.")
                 continue
             
             # Use signal_id for 24h suppression
@@ -857,9 +858,9 @@ class SentinelService:
                     
                     if abs(current_vix - last_vix) < dynamic_gap:
                         logger.info(
-                            f"Sentinel: Suppressing VIX alert (Dynamic Gap: {dynamic_gap:.2f} "
-                            f"derived from σ={std_dev:.2f} * m={multiplier:.1f}. "
-                            f"Move was {abs(current_vix - last_vix):.2f})"
+                            f"Sentinel: Suppressing VIX alert (Dynamic Gap: {redact_secrets(dynamic_gap):.2f} "
+                            f"derived from σ={redact_secrets(std_dev):.2f} * m={redact_secrets(multiplier):.1f}. "
+                            f"Move was {redact_secrets(abs(current_vix - last_vix)):.2f})"
                         )
                         continue
                 else:
