@@ -1,6 +1,6 @@
 # 資料與領域模型 (Data & Domain Models)
 
-### 版本紀錄 (Version History)
+## 版本紀錄 (Version History)
 
 | Date | Version | Description | Author |
 | :--- | :--- | :--- | :--- |
@@ -8,8 +8,8 @@
 
 > **[繁體中文 (Traditional Chinese)](#zh) | [English](#en)**
 
+| 2026-03-22 | v4.9 | **Performance Alignment**: Synchronized `PerformanceService.reconstruct_history` with Dashboard logic by enforcing weighted average leverage tracking and precise Net Equity (NLV) calculations. | Antigravity |
 | 2026-03-08 | v4.8 | **Schema Refinement**: `daily_snapshots` 主鍵更新為 `(date, user_id, account_id)` 以支援更精細的多帳號歷史追蹤。 | Antigravity |
-| 2026-03-08 | v4.7 | **Risk & Narrative Persistence**: Added `conviction_level` and `time_horizon` to `daily_snapshots` for narrative drift detection. | Antigravity |
 | 2026-02-27 | v4.6 | **NLV & Margin Tracker Fix**: Enforced precise `margin_invested` tracking across `TransactionRepository` and `PnLCalculator`, rectifying phantom cash drift in leveraged trades. | Neo |
 | 2026-02-20 | v4.5 | Document audit and history alignment | Neo |
 | 2026-02-19 | v4.2 | **Purge SQLite & Three-Tier Architecture**: Removed all SQLite dependencies. Enforced PostgreSQL for persistent storage and Redis for caching. Formalized Three-Tier data strategy. | Neo |
@@ -20,9 +20,7 @@
 
 ---
 
-<a id="zh"></a>
-
-## 🇹🇼 資料與領域模型 (v4.2)
+## 🇹🇼 資料與領域模型 (v4.2) {#zh}
 
 本文件定義系統的核心實體、資料庫架構與數據流動路徑。v4.2 正式移除 SQLite 支援，全面轉向 **PostgreSQL (Warm Tier)** + **Redis (Hot Tier)** + **CSV/Files (Cold Tier)** 的三層式儲存架構。
 
@@ -147,7 +145,7 @@ classDiagram
 | `positions` | 持倉快照 | `user_id (TEXT)`, `avg_cost (NUMERIC)`, `market_value (NUMERIC)` |
 | `daily_snapshots` | 績效歷史 | `date (DATE)`, `user_id (TEXT)`, `account_id (TEXT)`, `total_nlv (NUMERIC)`, `leverage_ratio (NUMERIC)`. **PRI KEY: (date, user_id, account_id)**. |
 | `settings` | 系統設定 | `user_id (TEXT)`, `key (TEXT)`, `value (JSONB)` |
-| `memory_embeddings`| RAG 記憶 (pgvector) | `embedding (vector(1536))`, `metadata (JSONB)` |
+| `memory_embeddings` | RAG 記憶 (pgvector) | `embedding (vector(1536))`, `metadata (JSONB)` |
 | `event_logs` | 審核日誌 | `id (TEXT)`, `event_type (TEXT)`, `meta (JSONB)` |
 | `risk_keywords` | 風險關鍵字 (Sentinel) | `id (TEXT)`, `weight (NUMERIC)`, `category (TEXT)` |
 | `reports` | 歷史分析報告 | `id (TEXT)`, `content (TEXT)`, `summary (TEXT)` |
@@ -163,7 +161,7 @@ classDiagram
 | `SettingsRepository` | `settings_repository.py` | KV 設定 (**SQLAlchemy ORM**) |
 | `HybridMemory` | `memory_manager.py` | 向量嵌入 (pgvector / Raw SQL) |
 | `RiskKeywordRepository` | `risk_keyword_repository.py` | 風險關鍵字 (**SQLAlchemy ORM**) |
-| `VerificationRepository`| `verification_repository.py` | 驗證碼流程 (**SQLAlchemy ORM**) |
+| `VerificationRepository` | `verification_repository.py` | 驗證碼流程 (**SQLAlchemy ORM**) |
 | `FeedbackRepository` | `feedback_repository.py` | Agent 自我學習回饋記錄。 |
 | `MarketDataRepository` | `market_data_repository.py` | OHLCV 與市場指標快取。 |
 | `SnapshotRepository` | `snapshot_repository.py` | 績效快照序列化。 |
@@ -209,9 +207,7 @@ classDiagram
 
 ---
 
-<a id="en"></a>
-
-## 🇺🇸 Data & Domain Models (v4.2)
+## 🇺🇸 Data & Domain Models (v4.2) {#en}
 
 This document defines core entities and DB architecture, establishing the strictly PostgreSQL (Warm Tier) + Redis (Hot Tier) + Files (Cold Tier) backbone. Version 4.2 formally removes all SQLite fallbacks.
 
@@ -284,7 +280,7 @@ classDiagram
 | `AgentStateRepository` | Agent State Persistence | Database |
 | `PromptRepository` | Prompt Template Versioning | Database |
 | `ReportRepository` | Analysis Report Management | Database |
-| `IngestorFactory` | Broker-specific Ingestion Strategies| Ingestor Layer |
+| `IngestorFactory` | Broker-specific Ingestion Strategies | Ingestor Layer |
 
 ### 4. Three-Tier Storage Strategy (v4.2)
 

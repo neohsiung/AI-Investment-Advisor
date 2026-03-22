@@ -6,9 +6,9 @@
 
 | Date | Version | Description | Author |
 | :--- | :--- | :--- | :--- |
+| 2026-03-22 | v5.5 | **CI Optimization**: Implemented Incremental Testing and Bandit scoping, reducing check time to <30s. | Antigravity |
 | 2026-03-22 | v5.4 | **CI-Test Skill**: Added `ci-test` Agent Dev Skill for pre-commit quality checks. | Antigravity |
 | 2026-03-20 | v5.3 | **Robust Discovery Tests**: Added `test_etoro_reverse_resolution.py` for unknown IDs. Coverage: 72%. | Antigravity |
-| 2026-03-19 | v5.2 | **Regression Fixed**: Restored CI stability after eToro dynamic discovery refactor. Coverage: 71%. | Antigravity |
 | 2026-03-01 | v5.0 | **Tech Stack Modernization**: Upgraded OTel to 1.39.1, Protobuf to 5.x, and removed `futu-api`. | Antigravity |
 | 2026-02-27 | v3.8 | **Observability Expansion**: Integrated SigNoz OTel tracing for n8n and fixed OTLP gRPC dependencies. | Neo |
 | 2026-02-21 | v3.7 | **v1.2.0+ Stability Fix**: Transitioned to native `pytest-asyncio` standards and resolved coroutine warnings. | Neo |
@@ -54,7 +54,9 @@
 #### 1.4 預提交檢查 (Pre-Commit Check - Agent Dev Skill)
 為確保主幹穩定，Agent 在 commit 前應執行一鍵檢查：
 - **工具**: `.agent/skills/ci-test/scripts/ci_test.py`
-- **項目**: 單元測試(含覆蓋率)、安全掃描(Bandit)、Wiki 連結驗證、授權合規檢查。
+- **項目**: 單元測試、安全掃描(Bandit)、Wiki 連結驗證、授權合規檢查。
+- **增量模式**: 預設僅針對變更檔案執行測試與掃描，推動高頻原子提交 (<30s)。
+- **完整模式**: 使用 `--full` 參數執行全量驗證與覆蓋率報告。
 - **規範**: 任何項目失敗時，必須修正後方可提交。
 
 - **覆蓋率狀態**: **71%** ✅ (2026-03-19 達成，706 tests collected)
