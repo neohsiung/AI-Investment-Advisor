@@ -2,17 +2,20 @@
 
 > **[繁體中文 (Traditional Chinese)](#zh) | [English](#en)**
 
-### 版本紀錄 (Version History)
+## 版本紀錄 (Version History)
+
 | Date | Version | Description | Author |
 | :--- | :--- | :--- | :--- |
+| 2026-03-22 | v5.4 | **CI-Test Skill**: Added `ci-test` Agent Dev Skill for pre-commit quality checks. | Antigravity |
 | 2026-03-20 | v5.3 | **Robust Discovery Tests**: Added `test_etoro_reverse_resolution.py` for unknown IDs. Coverage: 72%. | Antigravity |
 | 2026-03-19 | v5.2 | **Regression Fixed**: Restored CI stability after eToro dynamic discovery refactor. Coverage: 71%. | Antigravity |
-| 2026-03-05 | v5.1 | **Rule #5 & #11 Compliance**: Removed Futu tests/mocks. Pinned all dependencies. | Antigravity |
 | 2026-03-01 | v5.0 | **Tech Stack Modernization**: Upgraded OTel to 1.39.1, Protobuf to 5.x, and removed `futu-api`. | Antigravity |
 | 2026-02-27 | v3.8 | **Observability Expansion**: Integrated SigNoz OTel tracing for n8n and fixed OTLP gRPC dependencies. | Neo |
 | 2026-02-21 | v3.7 | **v1.2.0+ Stability Fix**: Transitioned to native `pytest-asyncio` standards and resolved coroutine warnings. | Neo |
 | 2026-02-14 | v3.5 | Added Multi-Broker, LINE, Memory, DSPy external services | Neo |
 | 2024-01-04 | v1.0 | Initial Release | Neo |
+
+
 
 ---
 
@@ -48,7 +51,12 @@
 2. **契約驗證**: 檢查 Mock 是否符合最新的介面契約。
 3. **隔離性排除**: 檢查是否為全局狀態 (sys.modules, singleton) 污染。
 
-#### 1.3 成功指標 (Success Metrics)
+#### 1.4 預提交檢查 (Pre-Commit Check - Agent Dev Skill)
+為確保主幹穩定，Agent 在 commit 前應執行一鍵檢查：
+- **工具**: `.agent/skills/ci-test/scripts/ci_test.py`
+- **項目**: 單元測試(含覆蓋率)、安全掃描(Bandit)、Wiki 連結驗證、授權合規檢查。
+- **規範**: 任何項目失敗時，必須修正後方可提交。
+
 - **覆蓋率狀態**: **71%** ✅ (2026-03-19 達成，706 tests collected)
 - **CI 目標**: > 65% (Required) / 70% (Internal target)
 - **非同步測試標竿**: 統一使用 `pytest-asyncio` 直播模式，嚴格要求 `await` 所有非同步 Mock 以維護日誌整潔。
@@ -98,9 +106,13 @@ All development must adhere to the **Testing Pyramid** strategy:
 - **Broker Compliance**: Dedicated test suite for `IBroker` implementations.
 - **Memory**: SQLite fallback tested in CI, Redis integration tested separately.
 - **Coverage Status**: **75%** ✅ (Achieved 2026-02-15, 513+ tests, 6995 stmts)
+
 - **CI Target**: > 70%
 
+- **Pre-Commit Check**: Use `ci-test` Agent Dev Skill (`ci_test.py`) to verify tests, security, wiki integrity, and licenses before every commit.
+
 ### 2. External Services (12 active integrations)
+
 Polygon, FMP, FRED, Tavily, DuckDuckGo, OpenRouter, Etoro Bridge, ib_insync, LINE Messaging, Redis, DSPy, Google OAuth.
 
 ### 3. Observability (Modernized)
