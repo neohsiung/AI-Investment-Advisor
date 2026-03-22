@@ -5,7 +5,9 @@
 
 | Date | Version | Description | Author |
 | :--- | :--- | :--- | :--- |
+| 2026-03-22 | v6.3.0 | **CI-Test Skill Integration**: Added `ci-test` Agent Dev Skill for comprehensive pre-commit quality and security checks. | Antigravity |
 | 2026-03-22 | v6.2.0 | **Pending Orders Guard & Notification Preprocessing**: Pre-checks Pending Orders to save Council processing, enhances High Cash Ratio handling for Aggressive profiles, and optimizes Markdown notifications for LINE and Telegram. | Antigravity |
+
 | 2026-03-21 | v6.1.0 | **Investment Validation Frameworks & Commits**: Enforced Trunk-Based Development commit rules and integrated three specialized AI runtimes (Envisioning, Attacker's Lens, Alpha Synthesis). | Antigravity |
 | 2026-03-20 | v6.0.0 | **eToro Auth & ID Resolution Final Fix**: Resolved "InvalidKey" and "Instrument ID not found" errors by stripping double-quoted credentials and adding mandatory search fields. | Antigravity |
 | 2026-03-20 | v5.9.0 | **Robust eToro Execution & Metadata Recovery**: Implemented Metadata Reverse Lookup & Re-fetch Retry for unknown IDs (VTI Fix). Coverage: 72%. | Antigravity |
@@ -170,8 +172,9 @@ graph TD
 為了確保 AI 協作的高一致性，本專案實施嚴格的治理規範：
 
 - **[文件維護標準](documentation-standards)**: 規範 Wiki 扁平化連結與雙語排版。
-- **[設計與代碼規範](engineering-standards)**: 強制測試隔離與 Clean Architecture。
+- **[設計與代碼規範](engineering-standards)**: 強制測試隔離與 Clean Architecture，搭配 `ci-test` 技能執行預提交檢查。
 - **[原子提交規範](git-commit-format)**: 確保開發軌跡清晰且具備雙語描述。
+
 
 ### 📚 文檔索引
 
@@ -266,8 +269,9 @@ graph LR
 To ensure high-fidelity AI collaboration, the project enforces strict governance:
 
 - **[Documentation Standards](documentation-standards)**: Enforces flat-linking and bilingual formatting for the Wiki.
-- **[Engineering Standards](engineering-standards)**: Mandates test isolation and Clean Architecture.
+- **[Engineering Standards](engineering-standards)**: Mandates test isolation and Clean Architecture, enforced via `ci-test` pre-commit checks.
 - **[Git Commit Standards](git-commit-format)**: Ensures atomic commits with professional bilingual summaries.
+
 
 ### �📚 Deep Dives
 
