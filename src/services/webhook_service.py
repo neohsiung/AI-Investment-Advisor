@@ -2,9 +2,10 @@ import os
 import asyncio
 import hashlib
 import typing
-from typing import List, Dict, Tuple, Any, Optional, Callable, Dict, List, Tuple, Any, Optional, Callable
+from typing import List, Dict, Tuple, Any, Optional, Callable
 from fastapi import APIRouter, Request, HTTPException
 from src.utils.logger import setup_logger
+from src.utils.async_utils import to_thread
 from src.config.rss_config import get_rss_sources
 from src.services.settings_service import SettingsService
 
@@ -174,7 +175,7 @@ class WebhookService:
                 )
                 svc = InvestmentSkillLearningService(user_id=user_id)
                 asyncio.create_task(
-                    asyncio.to_thread(
+                    to_thread(
                         svc.run_daily_learning,
                         content=normalized_data.get("content", ""),
                         source_url=normalized_data.get("source_url", ""),
@@ -284,7 +285,7 @@ async def podcast_extract_webhook(request: Request):
             transcript = await transcriber.transcribe_url(audio_url)
             if transcript and not transcript.startswith("Error:"):
                 # Run learning in a thread as it might be synchronous or heavy
-                await asyncio.to_thread(
+                await to_thread(
                     skill_svc.run_daily_learning,
                     content=transcript,
                     source_url=audio_url,

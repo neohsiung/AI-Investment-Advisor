@@ -54,12 +54,21 @@ class AutomatedTradingService:
         raw_threshold = self.settings_repo.get(user_id, "auto_trade_threshold")
         threshold = int(raw_threshold) if raw_threshold is not None else 9
         
+        # v8.1: Dynamic threshold for Excess Cash Reinvestment
+        # 如果是旨在解決現金過高的交易，放寬門檻至設定值（預設 7 分）
+        is_excess_cash = "現金比例過高" in rationale or "Excess Cash" in rationale
+        if is_excess_cash:
+            reinvest_threshold = int(self.settings_repo.get(user_id, "auto_reinvest_threshold") or 7)
+            if threshold > reinvest_threshold:
+                logger.info(f"Excess Cash Reinvestment: Lowering threshold {threshold} -> {reinvest_threshold} for {ticker}")
+                threshold = reinvest_threshold
+        
         raw_min_threshold = self.settings_repo.get(user_id, "auto_trade_min_threshold")
         min_threshold = int(raw_min_threshold) if raw_min_threshold is not None else 3
         
         logger.info(
             f"evaluating trade for {ticker}. Score: {confidence_score}, "
-            f"Min: {min_threshold}, Threshold: {threshold}"
+            f"Min: {min_threshold}, Threshold: {threshold} (ExcessCash={is_excess_cash})"
         )
         
         # 3. Decision Logic (三段式閥值)

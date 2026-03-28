@@ -224,8 +224,8 @@ class InteractionService:
         except Exception as e:
             logger.error(f"Council session failed: {e}")
             decision = (
-                "⚠️ **系統運行於安全模式 (Fail-safe Mode)**\n\n"
-                "目前無法取得 AI 委員會的即時評估（可能是 API 連線問題）。\n"
+                f"⚠️ **系統運行於安全模式 (Fail-safe Mode: {type(e).__name__})**\n\n"
+                f"目前無法取得 AI 委員會的即時評估（可能是 {str(e)} 或 API 連線問題）。\n"
                 "請根據下方原始觸發訊號進行判斷。"
             )
         

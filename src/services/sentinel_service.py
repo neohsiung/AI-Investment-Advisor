@@ -5,6 +5,7 @@ import asyncio
 import os
 import typing
 from typing import List, Dict, Tuple, Any, Optional, Callable, Union, Awaitable
+from src.utils.async_utils import to_thread
 from datetime import date
 import pandas as pd
 
@@ -350,6 +351,36 @@ class SentinelService:
         return triggers
 
     def _check_position_moves(self) -> List[Dict[str, Any]]:
+        """Deprecated wrapper for backward compatibility."""
+        ticker_list = self.transaction_service.get_user_tickers(self.user_id, only_active=True)
+        current_prices = self.market_service.get_current_prices(ticker_list)
+        return self._check_position_moves_v2(ticker_list, current_prices)
+
+    def _get_market_trend(self, benchmark: str = "SPY") -> str:
+        """
+        Detects major market trend using SMA and MACD.
+        Returns: 'Bullish', 'Bearish', or 'Neutral'
+        """
+        try:
+            indicators = self.market_service.get_technical_indicators(benchmark)
+            sma = indicators.get("sma", {})
+            sma_200 = sma.get("sma_200", 0)
+            
+            # Simple Trend Rule: Price > SMA200 for long-term bull
+            # We don't have current price here directly, let's fetch it
+            prices = self.market_service.get_current_prices([benchmark])
+            current_price = prices.get(benchmark, 0)
+            
+            if current_price > sma_200 and sma_200 > 0:
+                return "Bullish"
+            elif current_price < sma_200 and sma_200 > 0:
+                return "Bearish"
+            return "Neutral"
+        except Exception as e:
+            self.logger.warning(f"Trend detection failed for {benchmark}: {e}")
+            return "Neutral"
+
+    async def _check_risk_consistency(self) -> List[Dict[str, Any]]:
         """Deprecated wrapper for backward compatibility."""
         ticker_list = self.transaction_service.get_user_tickers(self.user_id, only_active=True)
         current_prices = self.market_service.get_current_prices(ticker_list)
@@ -715,7 +746,7 @@ class SentinelService:
                     rounded_vix = round(self.current_vix, 1)
 
                     # Offload to thread pool
-                    eval_res = await asyncio.to_thread(
+                    eval_res = await to_thread(
                         sentinel_agent.run,
                         {
                             "trigger_source": source,
@@ -882,7 +913,7 @@ class SentinelService:
         logger.info(f"Sentinel: Escalating {len(filtered_triggers)} trigger(s) (P{max_priority}) from {source}")
         
         # v5.0: Contextual msg_prefix based on triggers
-        has_excess_cash = any("cash_ratio_high" in t.get("id", "") for t in filtered_triggers)
+        has_excess_cash = any("cash_ratio_high" in t.get("id", "") for t in filtered_triggers) or source == "Excess Cash"
         
         msg_prefix = "請針對以下多個 Sentinel 警報進行彙整與風險評估，並以繁體中文 (Traditional Chinese) 提供一份簡短且具備行動建議的摘要。金融專業術語請保留英文。"
         if has_excess_cash:
@@ -909,14 +940,28 @@ class SentinelService:
                 "2. 第二優先序從具潛力的板塊（如 AI Energy, Physical AI）尋找標的。\n"
             )
             
+            # v8.5: Contrarian Greed Philosophy
+            # 偵測極度恐懼 (VIX > 30)
+            vix_data = self.market_service.get_macro_data().get("market_indicators", {})
+            vix = vix_data.get("^VIX", 20.0)
+            contrarian_note = ""
+            if vix > 30:
+                contrarian_note = (
+                    "🔥 **【逆勢貪婪】目前市場處於極度恐懼 (VIX > 30)。**"
+                    "根據『別人恐懼我貪婪』原則，請優先尋找因市場恐慌而被過度拋售、基本面優良的長線標的。此時可接受較高的波動以換取入場機會。"
+                )
+
             msg_prefix = (
                 "💰 **當前帳戶現金比例過高，請協助尋找新的投資機會。**\n"
+                f"{contrarian_note}\n"
                 f"請強制作出買入行動。尋找標的時：\n{priorities_text}"
+                "3. **資本效率優先**：槓桿過高與風險控制並非對立。若當前槓桿偏高，請優先考慮『換庫』策略：賣出低效益/低信心度部位（降槓桿），並將資金投回更優質或防禦型標的，以在控制風險的同時最大化資金利用效益。\n"
+                "4. 若目前處於牛市趨勢且風險穩定，歡迎適度利用槓桿擴大收益。若市場風險極高，則請優先選擇防禦性價值股或避險標的。\n\n"
                 "**必須**在報告最後輸出以下格式的行動指令表（Actionable Orders），以便系統自動解析執行：\n\n"
                 "| Ticker | Action | Amount (USD) | Confidence (1-10) | Reason |\n"
                 "|--------|--------|-------------|-------------------|---------|\n"
                 "| AAPL   | BUY    | 50          | 7                 | 理由... |\n\n"
-                "⚠️ Amount 請以 USD 金額為單位，非股數。Confidence 分數將決定是否自動執行。\n"
+                "⚠️ **重要：Ticker 欄位必須是券商可交易代號。** 嚴禁建議買入 'Cash' 或 'T-Bills'。Confidence 分數將決定是否自動執行。\n"
                 "請以繁體中文 (Traditional Chinese) 撰寫，專業術語保留英文。"
             )
 
@@ -933,18 +978,19 @@ class SentinelService:
             if not user_id:
                 logger.warning("No user_id available for council session")
                 return None
-            result = await self.council_service.start_session(
+            summary = await self.council_service.start_session(
                 topic, 
                 context, 
                 market_volatility=self.current_vix,
                 user_id=user_id,
                 mode="sentinel"
             )
-            decision = result.get('consensus', 'No Consensus')
+            decision = summary.get('consensus', 'No Consensus')
         except Exception as e:
             logger.error(f"Council session failed: {e}", exc_info=True)
+            err_type = type(e).__name__
             decision = (
-                "⚠️ **系統運行於安全模式 (Fail-safe Mode)**\n\n"
+                f"⚠️ **系統運行於安全模式 (Fail-safe Mode: {err_type})**\n\n"
                 "目前無法取得 AI 委員會的即時評估（可能是內部組件初始化失敗或 LLM API 連線問題）。\n"
                 "請根據下方原始觸發訊號進行判斷。"
             )
@@ -1471,14 +1517,40 @@ class SentinelService:
             latest_dict = latest if isinstance(latest, dict) else latest.to_dict()
             lev = latest_dict.get("leverage_ratio", 0.0)
             
-            # Check Balanced Profile vs 1.7x leverage
-            if profile == "Balanced" and lev > 1.70:
-                triggers.append({
-                    "id": f"risk_consistency_{uid}",
-                    "text": f"⚠️ Risk Mapping Alert: Your 'Balanced' profile leverage is {lev:.2f}x (Max Allowed: 1.70x).",
-                    "severity": "high",
-                    "type": "risk_consistency"
-                })
+            # Check Balanced Profile vs 1.8x leverage (v5.1: Increased from 1.7x)
+            threshold = 1.80
+            if profile == "Balanced":
+                # v8.4: Bullish Flexibility - Allow up to 2.0x if trend is good
+                trend = self._get_market_trend("SPY")
+                vix_data = self.market_service.get_macro_data().get("market_indicators", {})
+                vix = vix_data.get("^VIX", 20.0) 
+                
+                if trend == "Bullish" and vix < 22:
+                    threshold = 2.00
+                    # Additional text for expansion
+                    alert_suffix = f" [Bullish Expansion]: Trend is positive and VIX ({vix:.1f}) is stable. Leverage limit boosted to {threshold}x."
+                else:
+                    threshold = 1.80
+                    alert_suffix = ""
+
+                if lev > threshold:
+                    # v8.2: Nuanced leverage alert if cash is also high
+                    is_cash_high = False
+                    if latest_dict.get("total_nlv", 0) > 0:
+                        cash_ratio = latest_dict.get("cash_balance", 0) / latest_dict.get("total_nlv", 1)
+                        if cash_ratio > 0.15: # Threshold for 'high cash'
+                            is_cash_high = True
+
+                    alert_text = f"⚠️ Risk Mapping Alert: Your 'Balanced' profile leverage is {lev:.2f}x (Max Allowed: {threshold:.2f}x).{alert_suffix}"
+                    if is_cash_high:
+                        alert_text += " [Efficiency Advice]: High leverage detected while holding excess cash. Consider 'Rolling' positions: reduce lower-confidence leverage to reinvest in higher-quality or defensive assets to maintain exposure safely."
+                    
+                    triggers.append({
+                        "id": f"risk_consistency_{uid}",
+                        "text": alert_text,
+                        "severity": "high",
+                        "type": "risk_consistency"
+                    })
         
         # 3. Dynamic Cash Ratio Check (v5.0)
         target_cash_base = float(self.settings_service.get_setting("target_cash_ratio", 0.1, user_id=uid))
