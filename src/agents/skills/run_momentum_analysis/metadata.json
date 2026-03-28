@@ -1,0 +1,27 @@
+{
+  "name": "run_momentum_analysis",
+  "version": "1.0.0",
+  "description": "對指定標的執行動能分析 (RSI, MACD, Volume) (Run momentum analysis on specified tickers)",
+  "category": "analysis",
+  "tier": "smart",
+  "input_schema": {
+    "type": "object",
+    "properties": {
+      "user_id": {
+        "type": "string",
+        "description": "User ID for context"
+      },
+      "tickers": {
+        "type": "array",
+        "items": {"type": "string"},
+        "description": "List of ticker symbols to analyze. If empty, analyzes user's holdings."
+      }
+    },
+    "required": ["user_id"]
+  },
+  "output_schema": {
+    "type": "string",
+    "description": "Momentum analysis report"
+  },
+  "tags": ["analysis", "momentum", "technical", "reusable"]
+}

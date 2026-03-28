@@ -62,6 +62,62 @@ class SkillRegistry:
         """Check if a skill is registered."""
         return name in self._implementations
 
+    def auto_discover_from_impl(self, skills_dir: str = None) -> int:
+        """
+        Auto-discover skill implementations from impl.py files.
+        自動發現 impl.py 檔案中的技能實作。
+
+        Scans all subdirectories of skills_dir for impl.py files.
+        For each impl.py, imports the module and registers the function
+        whose name matches the directory name.
+
+        Returns count of newly discovered skills.
+        """
+        if skills_dir is None:
+            skills_dir = os.path.dirname(os.path.abspath(__file__))
+
+        discovered = 0
+        for entry in os.scandir(skills_dir):
+            if not entry.is_dir() or entry.name.startswith("_"):
+                continue
+
+            impl_path = os.path.join(entry.path, "impl.py")
+            if not os.path.isfile(impl_path):
+                continue
+
+            skill_name = entry.name
+            if self.has(skill_name):
+                continue  # Already registered manually
+
+            try:
+                module = importlib.import_module(
+                    f"src.agents.skills.{skill_name}.impl"
+                )
+                # Look for a function matching the skill name
+                func = getattr(module, skill_name, None)
+                if func and callable(func):
+                    self.register(skill_name, func)
+                    discovered += 1
+                    logger.info(
+                        f"SkillRegistry: Auto-discovered '{skill_name}' "
+                        f"from impl.py"
+                    )
+                else:
+                    logger.debug(
+                        f"SkillRegistry: impl.py found for '{skill_name}' "
+                        f"but no matching function"
+                    )
+            except Exception as e:
+                logger.error(
+                    f"SkillRegistry: Failed to import '{skill_name}': {e}"
+                )
+
+        if discovered:
+            logger.info(
+                f"SkillRegistry: Auto-discovered {discovered} new skills"
+            )
+        return discovered
+
     def _ensure_builtins(self) -> None:
         """
         Lazy-load built-in skill implementations when first needed.
@@ -82,6 +138,9 @@ class SkillRegistry:
         self.register("strategic_envisioning", _strategic_envisioning)
         self.register("attacker_lens_validation", _attacker_lens_validation)
         self.register("alpha_judgment_synthesis", _alpha_judgment_synthesis)
+
+        # [Phase 4] Auto-discover new impl.py-based skills
+        self.auto_discover_from_impl()
 
     def bind_to_agent(self, agent) -> None:
         """

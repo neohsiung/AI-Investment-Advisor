@@ -1,0 +1,22 @@
+{
+  "name": "get_user_holdings",
+  "version": "1.0.0",
+  "description": "取得使用者目前持股清單與數量 (Get user's current holdings and quantities)",
+  "category": "portfolio",
+  "tier": "fast",
+  "input_schema": {
+    "type": "object",
+    "properties": {
+      "user_id": {
+        "type": "string",
+        "description": "User ID to fetch holdings for"
+      }
+    },
+    "required": ["user_id"]
+  },
+  "output_schema": {
+    "type": "string",
+    "description": "Formatted holdings list"
+  },
+  "tags": ["portfolio", "holdings", "reusable", "channel"]
+}

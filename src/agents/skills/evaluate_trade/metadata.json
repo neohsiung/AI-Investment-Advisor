@@ -1,0 +1,43 @@
+{
+  "name": "evaluate_trade",
+  "version": "1.0.0",
+  "description": "評估並執行交易指令 (Evaluate and execute a trade order with risk checks)",
+  "category": "trading",
+  "tier": "smart",
+  "input_schema": {
+    "type": "object",
+    "properties": {
+      "user_id": {
+        "type": "string",
+        "description": "User ID for trade execution context"
+      },
+      "ticker": {
+        "type": "string",
+        "description": "Ticker symbol to trade"
+      },
+      "action": {
+        "type": "string",
+        "enum": ["BUY", "SELL", "HOLD"],
+        "description": "Trade action"
+      },
+      "quantity": {
+        "type": "number",
+        "description": "Number of shares"
+      },
+      "confidence_score": {
+        "type": "number",
+        "description": "Confidence score (0-100)"
+      },
+      "rationale": {
+        "type": "string",
+        "description": "Reason for the trade"
+      }
+    },
+    "required": ["user_id", "ticker", "action", "quantity"]
+  },
+  "output_schema": {
+    "type": "string",
+    "description": "Trade evaluation and execution result"
+  },
+  "tags": ["trading", "execution", "reusable"]
+}

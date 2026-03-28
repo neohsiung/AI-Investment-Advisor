@@ -1,0 +1,22 @@
+{
+  "name": "get_macro_summary",
+  "version": "1.0.0",
+  "description": "取得即時宏觀經濟指標摘要 (VIX, SPY, Yield Spread, Fed Rate)",
+  "category": "market_data",
+  "tier": "fast",
+  "input_schema": {
+    "type": "object",
+    "properties": {
+      "user_id": {
+        "type": "string",
+        "description": "User ID for context-aware data retrieval"
+      }
+    },
+    "required": ["user_id"]
+  },
+  "output_schema": {
+    "type": "string",
+    "description": "Formatted macro summary text"
+  },
+  "tags": ["macro", "market", "reusable", "channel"]
+}

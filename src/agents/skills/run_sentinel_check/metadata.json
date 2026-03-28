@@ -1,0 +1,22 @@
+{
+  "name": "run_sentinel_check",
+  "version": "1.0.0",
+  "description": "執行 Sentinel 即時市場巡邏與風險掃描 (Run Sentinel real-time market patrol and risk scan)",
+  "category": "monitoring",
+  "tier": "fast",
+  "input_schema": {
+    "type": "object",
+    "properties": {
+      "user_id": {
+        "type": "string",
+        "description": "User ID for portfolio-aware risk scan"
+      }
+    },
+    "required": ["user_id"]
+  },
+  "output_schema": {
+    "type": "string",
+    "description": "Sentinel scan result"
+  },
+  "tags": ["sentinel", "risk", "monitoring", "reusable", "channel"]
+}
