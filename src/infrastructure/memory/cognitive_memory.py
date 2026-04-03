@@ -152,7 +152,7 @@ class CognitiveMemoryManager:
             from src.agents.factory import AgentFactory
 
             agent = AgentFactory.create_agent(
-                "Sentiment", tier="fast", user_id=None, use_cache=True
+                "Sentiment", tier="nano", user_id=None, use_cache=True
             )
 
             prompt = (

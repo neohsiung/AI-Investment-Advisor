@@ -310,7 +310,7 @@ class AutomatedTradingService:
         from src.agents.factory import AgentFactory
         
         logger.info(f"AutomatedTradingService: Extracting actions from Council decision for user {user_id}")
-        extractor = AgentFactory.create_action_extractor_agent(user_id=user_id, tier="fast")
+        extractor = AgentFactory.create_action_extractor_agent(user_id=user_id, tier="nano")
         
         trades = extractor.run(decision_text)
         if not trades:

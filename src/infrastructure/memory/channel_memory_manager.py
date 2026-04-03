@@ -438,7 +438,7 @@ class ChannelMemoryManager:
 
             summarizer = AgentFactory.create_agent(
                 "Sentiment",
-                tier="fast",
+                tier="nano",
                 user_id=None,
                 use_cache=True,
             )

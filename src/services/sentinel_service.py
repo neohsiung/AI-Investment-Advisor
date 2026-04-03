@@ -1080,7 +1080,7 @@ class SentinelService:
             from src.agents.factory import AgentFactory
             from src.services.transaction_service import TransactionService
             target_user = self.settings_service.user_id or self.user_id or "broadcast"
-            extractor = AgentFactory.create_action_extractor_agent(user_id=target_user, tier="fast")
+            extractor = AgentFactory.create_action_extractor_agent(user_id=target_user, tier="nano")
             
             # Build portfolio context for ActionExtractor (Skill-First: portfolio-aware sizing)
             portfolio_str = ""

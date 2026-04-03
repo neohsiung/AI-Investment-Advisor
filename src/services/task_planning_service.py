@@ -96,7 +96,7 @@ class TaskPlanningService:
                 name="Supply Chain & Industry Deep-Dive",
                 description="For 'Target_Sectors': Analyze Upstream (Suppliers) and Downstream (Customers) logic. Review recent Vendor financial guidance to confirm trends. Output 'Supply_Chain_Trends'.",
                 complexity=9,
-                model_tier="advanced",
+                model_tier="smart",
                 input_keys=["Target_Sectors", "Sector_Themes"],
                 output_keys=["Supply_Chain_Trends", "Industry_Outlook"],
                 estimated_tokens=10000

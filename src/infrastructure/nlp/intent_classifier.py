@@ -18,7 +18,7 @@ class IntentClassifier(IIntentClassifier):
         # whereas Engineer agent might default to 'smart'.
         self.agent = AgentFactory.create_agent(
             "Sentiment", 
-            tier="fast", 
+            tier="nano", 
             user_id=None,
             use_cache=True
         )
