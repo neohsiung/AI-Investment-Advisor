@@ -127,19 +127,32 @@ class TokenLoggerService(BaseRepository):
         
         try:
              from sqlalchemy import text
-             # Fix: Use interval calculation that supports parameterization correctly in Postgres
-             # CASTing :days to INTEGER to ensure compatibility
-             query = text("""
-                 SELECT 
-                     SUM(total_cost_usd) as total_cost,
-                     SUM(prompt_tokens + completion_tokens) as total_tokens,
-                     tier,
-                     COUNT(*) as call_count
-                 FROM llm_usage_logs
-                 WHERE user_id = :user_id 
-                   AND timestamp >= NOW() - (CAST(:days AS INTEGER) * INTERVAL '1 day')
-                 GROUP BY tier
-             """)
+             # Check dialect for interval syntax
+             if self.engine.name == 'sqlite':
+                 query = text("""
+                     SELECT 
+                         SUM(total_cost_usd) as total_cost,
+                         SUM(prompt_tokens + completion_tokens) as total_tokens,
+                         tier,
+                         COUNT(*) as call_count
+                     FROM llm_usage_logs
+                     WHERE user_id = :user_id 
+                       AND timestamp >= datetime('now', '-' || :days || ' days')
+                     GROUP BY tier
+                 """)
+             else:
+                 # Default to Postgres syntax
+                 query = text("""
+                     SELECT 
+                         SUM(total_cost_usd) as total_cost,
+                         SUM(prompt_tokens + completion_tokens) as total_tokens,
+                         tier,
+                         COUNT(*) as call_count
+                     FROM llm_usage_logs
+                     WHERE user_id = :user_id 
+                       AND timestamp >= NOW() - (CAST(:days AS INTEGER) * INTERVAL '1 day')
+                     GROUP BY tier
+                 """)
              
              with self.engine.connect() as conn:
                  result = conn.execute(query, {"user_id": user_id, "days": days})

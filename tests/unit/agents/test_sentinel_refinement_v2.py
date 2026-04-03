@@ -74,8 +74,8 @@ async def test_escalate_new_alert(sentinel_service, mock_repo):
     
     # Check arguments
     args, _ = mock_repo.log_alert.call_args
-    # topic = f"{source.upper()} ALERT: {'; '.join(display_texts)}"
-    assert args[0] == "TEST P3 ALERT: New Trigger"
+    # topic = f"{source.upper()} P{max_priority} ALERT: {'; '.join(display_texts)}"
+    assert args[0] == "TEST P2 ALERT: New Trigger"
     assert args[1] == "New Trigger"
 
 def test_notification_service_omni_channel_init():

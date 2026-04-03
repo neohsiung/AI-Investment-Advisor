@@ -12,7 +12,7 @@ async def test_check_risk_consistency_balanced_high_leverage():
     mock_snapshot_repo = MagicMock()
     # Mock latest snapshot with 1.8x leverage
     mock_snapshot_repo.get_latest_by_user.return_value = {
-        "leverage_ratio": 1.8,
+        "leverage_ratio": 1.9,
         "total_nlv": 100000,
         "cash_balance": 20000
     }
@@ -23,7 +23,16 @@ async def test_check_risk_consistency_balanced_high_leverage():
          patch("src.services.fred_service.FredService") as mock_fred_class, \
          patch("src.services.sentinel_service.InternetSearchService"), \
          patch("src.services.sentinel_service.TransactionService"), \
+         patch("src.services.sentinel_service.MarketDataService") as mock_market_class, \
          patch("src.services.sentinel_service.CouncilService"):
+        
+        # Mock Market Data
+        mock_market = MagicMock()
+        mock_market.get_macro_data.return_value = {"market_indicators": {"^VIX": 20.0}}
+        mock_market.get_current_prices.return_value = {"SPY": 500.0}
+        import pandas as pd
+        mock_market.get_historical_data.return_value = pd.DataFrame({"Close": [400.0] * 200})
+        mock_market_class.return_value = mock_market
         
         # Mock Sentinel Repo to avoid DB hits in constructor
         mock_sentinel_repo = MagicMock()
@@ -42,6 +51,8 @@ async def test_check_risk_consistency_balanced_high_leverage():
             snapshot_repo=mock_snapshot_repo
         )
         service._get_all_user_ids = MagicMock(return_value=["test_user"])
+        service._get_market_trend = MagicMock(return_value="Neutral")
+        service.current_vix = 20.0
         
         triggers = await service._check_risk_consistency()
         
@@ -71,7 +82,16 @@ async def test_check_cash_ratio_low_alarm():
          patch("src.services.fred_service.FredService") as mock_fred_class, \
          patch("src.services.sentinel_service.InternetSearchService"), \
          patch("src.services.sentinel_service.TransactionService"), \
+         patch("src.services.sentinel_service.MarketDataService") as mock_market_class, \
          patch("src.services.sentinel_service.CouncilService"):
+        
+        # Mock Market Data
+        mock_market = MagicMock()
+        mock_market.get_macro_data.return_value = {"market_indicators": {"^VIX": 20.0}}
+        mock_market.get_current_prices.return_value = {"SPY": 500.0}
+        import pandas as pd
+        mock_market.get_historical_data.return_value = pd.DataFrame({"Close": [400.0] * 200})
+        mock_market_class.return_value = mock_market
         
         mock_sentinel_repo = MagicMock()
         mock_sentinel_repo.engine = MagicMock()

@@ -43,6 +43,15 @@ class SentinelAgent(BaseAgent):
             if "{" in response_str:
                 json_part = response_str[response_str.find("{"):response_str.rfind("}")+1]
                 result_data = json.loads(json_part)
+            elif "Simulation Mode" in response_str:
+                # Simulation Mode fallback for local testing without API keys
+                self.logger.info("Sentinel: Simulation Mode detected in LLM response. Returning default P2 priority.")
+                return {
+                    "priority": "P2",
+                    "target_agent": "CIO",
+                    "rationale": "System running in simulation mode (Missing API key). Defaulting to P2 for safety.",
+                    "is_simulated": True
+                }
             else:
                 raise ValueError("No JSON object found in response")
             

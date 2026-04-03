@@ -82,6 +82,14 @@ def pytest_configure(config):
         if env_var in os.environ:
             del os.environ[env_var]
 
+    # v4.2.1: Ensure Database Schema is initialized for in-memory SQLite tests
+    try:
+        from src.data.database import init_db, get_db_engine
+        engine = get_db_engine()
+        init_db(engine=engine, force=True)
+    except Exception as e:
+        print(f"DEBUG: Failed to initialize in-memory DB during collection: {e}")
+
 @pytest.fixture
 def mock_streamlit_module():
     """Fixture to provide access to the centralized Streamlit mock."""

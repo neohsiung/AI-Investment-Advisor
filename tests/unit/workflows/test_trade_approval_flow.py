@@ -36,10 +36,22 @@ async def test_trade_approval_with_ok_reply(anyio_backend):
     mock_broker.execute_order.return_value = {"status": "success", "order_id": "12345"}
     
     # 2. Setup Services
-    # We need a real InteractionService to handle the text response logic
-    # but with mocked adapters and classifier
-    mock_adapter = AsyncMock()
+    # Use MagicMock for registration (sync) but maintain async for messaging
+    mock_adapter = MagicMock()
+    mock_adapter.send_message = AsyncMock()
+    mock_adapter.send_alert = AsyncMock()
     mock_adapter.__class__.__name__ = "MockAdapter"
+    
+    # Store callbacks manually to simulate BaseChannelAdapter behavior
+    mock_adapter.callback = None
+    mock_adapter.text_callback = None
+    mock_adapter.register_callback.side_effect = lambda cb: setattr(mock_adapter, 'callback', cb)
+    mock_adapter.register_text_callback.side_effect = lambda cb: setattr(mock_adapter, 'text_callback', cb)
+    
+    async def mock_trigger(rid, act):
+        if mock_adapter.callback:
+            await mock_adapter.callback(rid, act)
+    mock_adapter._trigger_callback = AsyncMock(side_effect=mock_trigger)
     
     # We will mock AgentFactory to avoid real LLM calls during test
     with patch("src.agents.factory.AgentFactory.create_agent") as mock_create:

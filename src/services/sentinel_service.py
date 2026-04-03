@@ -381,7 +381,7 @@ class SentinelService:
                 return "Bearish"
             return "Neutral"
         except Exception as e:
-            self.logger.warning(f"Trend detection failed for {benchmark}: {e}")
+            logger.warning(f"Trend detection failed for {benchmark}: {e}")
             return "Neutral"
 
     async def _check_risk_consistency(self) -> List[Dict[str, Any]]:

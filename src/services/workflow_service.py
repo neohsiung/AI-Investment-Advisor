@@ -1171,6 +1171,20 @@ class EventAnalysisWorkflow(BaseWorkflow):
         self.ticker = event_data.get("ticker", "GLOBAL")
         self.target_action = event_data.get("signal")  # e.g., "BUY", "SELL"
 
+    def execute_analysis(self, force_refresh: bool) -> bool:
+        """
+        Satisfies BaseWorkflow abstract method.
+        EventAnalysisWorkflow uses its own 'run' logic but still needs concrete implementation.
+        """
+        return True
+
+    def synthesize_results(self) -> str:
+        """
+        Satisfies BaseWorkflow abstract method.
+        Returns empty since logic is handled in custom 'run'.
+        """
+        return ""
+
     async def run(self, dry_run: bool = False, force_refresh: bool = False) -> str:
         """
         Custom run logic for event-driven analysis.
