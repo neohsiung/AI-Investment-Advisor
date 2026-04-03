@@ -9,7 +9,7 @@ from src.repositories.sentinel_repository import ISentinelRepository, AlchemySen
 from src.repositories.transaction_repository import ITransactionRepository, AlchemyTransactionRepository
 from src.infrastructure.memory.wisdom_vault import WisdomVault
 from src.domain.interfaces import LLMConfig, Message
-from src.services.budget_aware_model_router import BudgetAwareModelRouter
+from src.infrastructure.llm import BudgetAwareModelRouter
 from src.services.settings_service import SettingsService
 from src.services.token_logger_service import TokenLoggerService
 

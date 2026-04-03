@@ -9,7 +9,6 @@ from src.domain.interfaces import Message, LLMConfig
 from src.infrastructure.llm.llm_gateway import LLMGatewayFactory
 from src.utils.async_utils import to_thread
 from src.prompts.reflection_prompt import ReflectionPrompt
-from src.services.budget_aware_model_router import BudgetAwareModelRouter
 from src.services.settings_service import SettingsService
 from src.services.token_logger_service import TokenLoggerService
 from src.services.evolution_metrics import EvolutionMetrics

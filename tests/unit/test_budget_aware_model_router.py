@@ -1,6 +1,6 @@
 import pytest
 from unittest.mock import MagicMock
-from src.services.budget_aware_model_router import BudgetAwareModelRouter
+from src.infrastructure.llm import BudgetAwareModelRouter
 from src.domain.interfaces import LLMConfig
 
 @pytest.fixture

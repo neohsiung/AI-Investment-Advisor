@@ -24,7 +24,7 @@ from src.domain.interfaces import ILLMGateway, Message, LLMConfig
 from src.agents.context import ContextAssembler
 from src.agents.wal_protocol import WalProtocol
 from src.agents.agent_loop import AgentLoop
-from src.services.budget_aware_model_router import BudgetAwareModelRouter
+from src.infrastructure.llm import BudgetAwareModelRouter
 from src.services.token_logger_service import TokenLoggerService
 from src.services.settings_service import SettingsService
 import uuid
@@ -150,13 +150,14 @@ class BaseAgent(ABC):
             db_settings = {}
             
         tier_cfg = TierConfig()
-        default_model = tier_cfg.resolve(self.tier, db_settings)
-        provider = db_settings.get("ai_provider", os.getenv("AI_PROVIDER", "Google Gemini"))
+        # Priority: DB AI_MODEL > Tier Resolution
+        default_model = db_settings.get("AI_MODEL", db_settings.get("ai_model", tier_cfg.resolve(self.tier, db_settings)))
+        provider = db_settings.get("AI_PROVIDER", db_settings.get("ai_provider", os.getenv("AI_PROVIDER", "Google Gemini")))
         
         config = {
             "provider": provider,
             "model": default_model,
-            "api_key": db_settings.get("api_key", os.getenv("API_KEY", "")),
+            "api_key": db_settings.get("API_KEY", db_settings.get("api_key", os.getenv("API_KEY", ""))),
             "base_url": db_settings.get("api_base_url", os.getenv("BASE_URL", "")),
             "temperature": float(db_settings.get("ai_temperature", 0.7)),
             "max_tokens": int(db_settings.get("ai_max_tokens", 4096)),
