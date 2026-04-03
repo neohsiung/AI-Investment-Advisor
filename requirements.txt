@@ -1,7 +1,7 @@
 pandas==2.3.3
 numpy==1.26.4
 pytest==7.4.3
-streamlit==1.55.0
+streamlit==1.50.0
 plotly==5.18.0
 schedule==1.2.1
 python-dotenv==1.0.0
@@ -29,7 +29,7 @@ extra-streamlit-components==0.1.70
 
 # Security Tools
 safety==3.7.0
-pip-audit==2.10.0
+pip-audit==2.9.0
 
 # v3.0 Dependencies
 dspy==3.0.4b1
@@ -70,7 +70,7 @@ aiohttp==3.13.3
 authlib==1.6.9
 filelock==3.20.3
 marshmallow==3.26.2
-pillow==12.1.1
+pillow==11.1.0
 starlette==0.49.1
 tornado==6.5.5
 urllib3==2.6.3
