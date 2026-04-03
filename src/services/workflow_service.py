@@ -648,6 +648,15 @@ class DailyWorkflow(BaseWorkflow):
             broker_connected = True
         except Exception as e:
             logger.warning(f"Broker ({broker.get_name()}) Service not available: {e}")
+
+        # --- [NEW] Section 3: Capital Deployment Context (Sentinel Triggered) ---
+        cash_deployment_context = ""
+        if self.memory_service:
+            # Query memory for recent 'cash_deployment' analysis (Sentinel triggered)
+            deployment_mem = self.memory_service.get_context(self.user_id, "cash_deployment")
+            if deployment_mem and deployment_mem.recent_items:
+                latest = deployment_mem.recent_items[0]
+                cash_deployment_context = f"\n\n[CAPITAL DEPLOYMENT OPPORTUNITY DETECTED ({latest.report_date})]:\n{latest.compressed_summary or latest.full_content[:2000]}"
             broker_status_msg = f"⚠️ **Connection Alert**: {broker.get_name()} Bridge Offline."
 
         detailed_debate_section = "## 2. 議會焦點辯論 (The Great Debate & Detailed Analysis)\n\n"
@@ -1125,11 +1134,20 @@ class WeeklyWorkflow(BaseWorkflow):
         # Fix: Ensure macro_report exists
         macro_report = self.context.get('macro_report', "N/A (Macro Data Missing)")
         
+        # --- [NEW] Capital Deployment Context ---
+        cash_deployment_context = ""
+        if self.memory_service:
+            deployment_mem = self.memory_service.get_context(self.user_id, "cash_deployment")
+            if deployment_mem and deployment_mem.recent_items:
+                latest = deployment_mem.recent_items[0]
+                cash_deployment_context = f"\n\n[WEEKLY CAPITAL UTILIZATION REVIEW]:\n{latest.compressed_summary or latest.full_content[:2000]}"
+
         cio_context = {
             "macro_report": macro_report,
             "ticker_data": self.context.get('ticker_reports', {}),
             "portfolio": portfolio_str,
             "engineer_report": engineer_report, # Pass integration context
+            "cash_deployment_context": cash_deployment_context, # Inject deployment insight
             "user_id": self.user_id
         }
         
@@ -1248,4 +1266,42 @@ class EventAnalysisWorkflow(BaseWorkflow):
     # Stubs for base class compatibility
     def collect_data(self): pass
     def execute_analysis(self, force_refresh: bool) -> bool: return True
-    def synthesize_results(self) -> str: return ""
+    def synthesise_results(self) -> str: return ""
+
+
+class WorkflowService:
+    """
+    Coordinator service for all investment workflows.
+    投資工作流協調服務。
+    """
+    def __init__(self, user_id: str):
+        self.user_id = user_id
+        self.logger = setup_logger("WorkflowService")
+
+    async def trigger_capital_deployment_workflow(self, analysis_result: str):
+        """
+        Processes a capital deployment trigger from Sentinel.
+        處理來自哨兵的資金部署觸發。
+        """
+        self.logger.info(f"Triggering Capital Deployment Workflow for {self.user_id}")
+        
+        # 1. Store the analysis in Memory (so Daily/Weekly reports pick it up)
+        from src.services.memory_service import MemoryService
+        from src.repositories.memory_repository import AlchemyMemoryRepository
+        from src.infrastructure.agent_llm_provider import AgentLLMProvider
+        
+        repo = AlchemyMemoryRepository()
+        llm_provider = AgentLLMProvider(user_id=self.user_id)
+        memory_service = MemoryService(repository=repo, llm_provider=llm_provider)
+        
+        date_str = get_current_time().strftime("%Y-%m-%d %H:%M:%S")
+        memory_service.store_report(
+            user_id=self.user_id,
+            report_type="cash_deployment",
+            date=date_str,
+            content=analysis_result
+        )
+        
+        # 2. Optionally: Trigger an EventAnalysisWorkflow if immediate action is desired
+        # For now, we rely on the next scheduled report as per Phase 1 mandate.
+        self.logger.info("Capital deployment analysis stored in memory for next report generation.")

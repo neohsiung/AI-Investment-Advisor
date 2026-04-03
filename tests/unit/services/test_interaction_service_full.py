@@ -16,6 +16,7 @@ def mock_adapters():
     a1.register_callback = MagicMock()
     a1.send_alert = AsyncMock(return_value=True)
     a1.send_message = AsyncMock(return_value=True)
+    a1._trigger_callback = AsyncMock(return_value=True)
     return [a1]
 
 @pytest.fixture
@@ -75,8 +76,15 @@ async def test_interaction_service_handle_text(mock_adapters, mock_classifier, m
     request_id = req.request_id
     service._pending_requests[request_id] = req
     
-    # Simulate text from user
-    await service.handle_text_response(mock_adapters[0], "u1", "Yes please")
+    # Mock trigger_callback to simulate what a real adapter does
+    async def mock_trigger(req_id, intent_type):
+        await service.handle_response(req_id, intent_type)
+    mock_adapters[0]._trigger_callback = AsyncMock(side_effect=mock_trigger)
+    
+    # Simulate text from user with VerificationService patched
+    with patch('src.services.verification_service.VerificationService') as mock_vs:
+        mock_vs.return_value.verify_any_reply = AsyncMock(return_value=False)
+        await service.handle_text_response(mock_adapters[0], "u1", "Yes please")
     
     # Classifier should be invoked
     mock_classifier.classify.assert_called_with("Yes please")
@@ -171,7 +179,14 @@ async def test_interaction_service_handle_text_response_intent(mock_adapters, mo
     service._pending_requests[req.request_id] = req
     
     mock_classifier.classify.return_value = "APPROVE"
-    await service.handle_text_response(mock_adapters[0], "u1", "Yes")
+    
+    async def mock_trigger(req_id, intent_type):
+        await service.handle_response(req_id, intent_type)
+    mock_adapters[0]._trigger_callback = AsyncMock(side_effect=mock_trigger)
+    
+    with patch('src.services.verification_service.VerificationService') as mock_vs:
+        mock_vs.return_value.verify_any_reply = AsyncMock(return_value=False)
+        await service.handle_text_response(mock_adapters[0], "u1", "Yes")
     
     assert req.status == InteractionStatus.APPROVED
 

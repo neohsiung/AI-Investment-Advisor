@@ -28,6 +28,7 @@ async def test_sentinel_failsafe_message():
             mock_repo_instance = MagicMock(spec=AlchemySentinelRepository)
             mock_repo_instance.engine = MagicMock()
             mock_repo_instance.get_all_thresholds.return_value = {"news_risk_score": 0.6}
+            mock_repo_instance.is_duplicate_alert.return_value = False
             MockRepo.return_value = mock_repo_instance
 
             sentinel = SentinelService(

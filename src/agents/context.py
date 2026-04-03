@@ -31,16 +31,20 @@ class ContextAssembler:
     從模板、工具、技能與記憶組裝最終系統提示詞。
     """
 
-    def __init__(self, skill_loader=None, memory=None, toold=None):
+    def __init__(self, skill_loader=None, memory=None, cognitive_memory=None, toold=None, persona=None):
         """
         Args:
             skill_loader: SkillLoader instance for skill XML generation
             memory: HybridMemory instance for contextual retrieval
+            cognitive_memory: CognitiveMemoryManager instance for medium-term insights
             toold: McpServer instance for MCP tool definitions
+            persona: AgentPersona instance for personality injection
         """
         self._skill_loader = skill_loader
         self._memory = memory
+        self._cognitive_memory = cognitive_memory
         self._toold = toold
+        self._persona = persona
 
     def render(self, system_prompt: str, context: Any) -> str:
         """
@@ -70,20 +74,50 @@ class ContextAssembler:
 
             # 3. Inject Dynamic Memory
             memory_context_str = self._build_memory_context(context)
+            cognitive_context_str = self._build_cognitive_context()
 
-            # 4. Merge into template variables
+            # 4. Build persona context
+            persona_context = ""
+            if self._persona:
+                persona_context = (
+                    f"Agent: {self._persona.display_name} | "
+                    f"Tone: {self._persona.tone} | "
+                    f"Lang: {self._persona.language_preference}"
+                )
+
+            # 5. Merge into template variables
             context_dict = context if isinstance(context, dict) else {}
             context_with_tools = context_dict.copy()
             context_with_tools["tools"] = mcp_tools_json
             context_with_tools["skills_xml"] = skills_xml
             context_with_tools["current_time"] = current_time
             context_with_tools["memory_context"] = memory_context_str
+            context_with_tools["cognitive_context"] = cognitive_context_str
+            context_with_tools["persona_context"] = persona_context
 
             template = Template(system_prompt)
             return template.render(**context_with_tools)
         except Exception as e:
             logger.error(f"Error rendering system prompt: {e}")
             return system_prompt
+
+    def _build_cognitive_context(self) -> str:
+        """
+        Fetch distilled insights from Medium-Term memory (CognitiveMemoryManager).
+        """
+        if not self._cognitive_memory:
+            return ""
+            
+        memories = self._cognitive_memory.get_recent_memories(limit=10)
+        if not memories:
+            return ""
+
+        output = ["<cognitive_memory_highlights>"]
+        for m in memories:
+            summary = m["content"].get("summary", "No summary")
+            output.append(f"- [{m['created_at']}] {summary}")
+        output.append("</cognitive_memory_highlights>")
+        return "\n".join(output)
 
     def _build_memory_context(self, context: Any) -> str:
         """

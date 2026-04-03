@@ -5,7 +5,7 @@ Model Context Protocol Service - FastAPI Microservice Entry Point
 from linebot import LineBotApi, WebhookHandler
 from linebot.exceptions import InvalidSignatureError
 from linebot.models import MessageEvent, TextMessage, TextSendMessage
-from fastapi import FastAPI, HTTPException, Request, Header
+from fastapi import FastAPI, HTTPException, Request, Header, WebSocket, WebSocketDisconnect, Depends, Cookie
 from pydantic import BaseModel
 from typing import Dict, List, Any, Optional, Union, Awaitable, Tuple, Callable
 from datetime import datetime
@@ -47,8 +47,8 @@ class AgentMessage(BaseModel):
 # 工具註冊表
 registered_tools: Dict[str, Dict] = {}
 
-# Services Global Instance
-services: Dict[str, Any] = {}
+# Services Global Instance (Moved to .state to avoid circular imports)
+from .state import services
 
 from src.services.market_data_service import MarketDataService
 from src.services.search_service import InternetSearchService
@@ -56,12 +56,45 @@ from src.services.fred_service import FredService
 from src.services.sentinel_service import SentinelService
 from src.services.interaction_service import InteractionService
 
+from src.services.socket_manager import socket_manager
+from src.utils.jwt_utils import decode_token
+
+async def websocket_broadcast_loop():
+    """定期為所有活躍連線推送數據更新 (每 5 秒)"""
+    from src.services.dashboard_service import DashboardService
+    logger.info("✓ Starting WebSocket Broadcast Loop...")
+    while True:
+        try:
+            active_users = list(socket_manager.active_connections.keys())
+            for user_id in active_users:
+                # 獲取該使用者的最新數據 (DashboardService 內部有快取，因此 5s 頻率是安全的)
+                service = DashboardService(user_id=user_id)
+                data = service.prepare_dashboard_data(user_id=user_id)
+                
+                # 廣播更新
+                await socket_manager.broadcast_to_user(user_id, {
+                    "type": "PORTFOLIO_UPDATE",
+                    "payload": {
+                        "summary": data.get('metrics', {}),
+                        "positions": data.get('positions_df', {}).to_dict('records') if hasattr(data.get('positions_df'), 'to_dict') else [],
+                        "timestamp": datetime.now().isoformat()
+                    }
+                })
+            
+            await asyncio.sleep(5)
+        except Exception as e:
+            logger.error(f"WebSocket broadcast loop error: {e}")
+            await asyncio.sleep(10)
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """
     (Lifespan) Initialize all services and tools.
     """
     logger.info("Initializing MCP Services...")
+    
+    # 啟動 WebSocket 廣播任務
+    broadcast_task = asyncio.create_task(websocket_broadcast_loop())
     
     try:
         # 0. Resolve Primary User UUID (Rule #4.3 - No 'system' user)
@@ -126,6 +159,13 @@ async def lifespan(app: FastAPI):
             intent_classifier=intent_classifier,
             settings_service=settings_svc_global
         )
+        # Phase 5: Register InteractionService in socket_manager for bidirectional updates
+        from src.services.socket_manager import socket_manager
+        socket_manager.set_interaction_service(services["interaction"])
+
+        
+        from src.services.dashboard_service import DashboardService
+        services["dashboard"] = DashboardService(user_id=primary_user_id)
         
         # 2. Start Real-time Streaming (Polygon WebSocket)
         try:
@@ -200,6 +240,16 @@ app = FastAPI(
     description="Model Context Protocol 工具伺服器 | Tool Server for Agent Mesh",
     version="1.1.0",
     lifespan=lifespan
+)
+
+# --- CORS Middleware (New Phase 2) ---
+from fastapi.middleware.cors import CORSMiddleware
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["http://localhost:3000", "http://127.0.0.1:3000"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
 )
 
 # Instrument the FastAPI app for OTel
@@ -305,6 +355,10 @@ async def call_tool(tool_name: str, request: ToolCallRequest):
     except Exception as e:
         logger.error(f"Tool execution failed: {e}")
         raise HTTPException(status_code=500, detail=str(e))
+
+# --- Dashboard Router (New Phase 2) ---
+from src.services.dashboard_router import dashboard_router
+app.include_router(dashboard_router, prefix="/api/dashboard")
 
 # --- Webhook Router & Inbound Adapters ---
 from src.services.webhook_service import webhook_router
@@ -428,7 +482,7 @@ import json
 # Initialize Auth with backend configuration
 # backend uses port 8000 for callback
 BACKEND_URL = os.getenv("BACKEND_URL", "http://localhost:8000")
-FRONTEND_URL = os.getenv("FRONTEND_URL", "http://localhost:8501")
+FRONTEND_URL = os.getenv("FRONTEND_URL", "http://localhost:3000")
 
 auth_hub = GoogleAuth(
     secret_credentials_path=os.getenv('GOOGLE_CLIENT_SECRET_PATH', 'client_secret.json'),
@@ -452,7 +506,7 @@ async def auth_login():
 
 @app.get("/api/auth/callback")
 async def auth_callback(code: str):
-    """Handle Google callback, set cookie, and redirect to Streamlit."""
+    """Handle Google callback, set HTTPOnly tokens, and redirect to Next.js."""
     try:
         flow = auth_hub._get_flow()
         flow.fetch_token(code=code)
@@ -461,37 +515,167 @@ async def auth_callback(code: str):
         # Verify ID Token
         from google.oauth2 import id_token
         from google.auth.transport import requests as google_requests
+        from src.utils.jwt_utils import create_access_token, create_refresh_token
         
         id_info = id_token.verify_oauth2_token(
             credentials.id_token, google_requests.Request(), flow.client_config['client_id']
         )
         
-        user_info = {
-            "email": id_info.get("email"),
-            "name": id_info.get("name"),
-            "picture": id_info.get("picture"),
-            "sub": id_info.get("sub")
-        }
+        user_id = id_info.get("sub")
+        user_email = id_info.get("email")
         
-        # Create Redirect Response back to Streamlit
-        response = RedirectResponse(url=FRONTEND_URL)
+        # Create Stateless JWT Tokens
+        token_data = {"sub": user_id, "email": user_email}
+        access_token = create_access_token(token_data)
+        refresh_token = create_refresh_token(token_data)
         
-        # Set Authentication Cookie (7 days)
-        # We URL-encode the JSON to match standard practices
-        cookie_val = urllib.parse.quote(json.dumps(user_info))
+        # Redirect back to Next.js
+        response = RedirectResponse(url=f"{FRONTEND_URL}/auth/callback")
+        
+        # 1. Set Access Token (1 HR)
         response.set_cookie(
-            key=auth_hub.cookie_name,
-            value=cookie_val,
-            max_age=7*24*60*60,
-            path="/",
-            domain=None, # Same origin/localhost
-            httponly=False, # Must be readable by Streamlit/CookieManager if needed
-            samesite="lax"
+            key="access_token",
+            value=access_token,
+            max_age=3600,
+            httponly=True,
+            samesite="lax",
+            secure=False # Set to True in production
         )
         
-        logger.info(f"User {user_info['email']} logged in via FastAPI Hub")
+        # 2. Set Refresh Token (7 DAYS)
+        response.set_cookie(
+            key="refresh_token",
+            value=refresh_token,
+            max_age=7*24*60*60,
+            httponly=True,
+            samesite="lax",
+            secure=False
+        )
+        
+        logger.info(f"User {user_email} authenticated. JWT tokens issued.")
         return response
         
     except Exception as e:
         logger.error(f"Auth callback failed: {e}")
-        return RedirectResponse(url=f"{FRONTEND_URL}?error=Authentication%20Failed")
+        return RedirectResponse(url=f"{FRONTEND_URL}/auth/login?error=Authentication%20Failed")
+
+@app.post("/api/auth/refresh")
+async def auth_refresh(request: Request):
+    """Exchange refresh token for a new access token."""
+    from src.utils.jwt_utils import decode_token, create_access_token
+    refresh_token = request.cookies.get("refresh_token")
+    
+    if not refresh_token:
+        raise HTTPException(status_code=401, detail="Refresh token missing")
+        
+    payload = decode_token(refresh_token)
+    if not payload or payload.get("type") != "refresh":
+        raise HTTPException(status_code=401, detail="Invalid refresh token")
+        
+    # Create new access token
+    new_data = {"sub": payload.get("sub"), "email": payload.get("email")}
+    new_access_token = create_access_token(new_data)
+    
+    response = JSONResponse(content={"status": "refreshed"})
+    response.set_cookie(
+        key="access_token",
+        value=new_access_token,
+        max_age=3600,
+        httponly=True,
+        samesite="lax",
+        secure=False
+    )
+    return response
+
+async def get_current_user(access_token: Optional[str] = Cookie(None)):
+    """依據 Cookie 中的 JWT token 驗證使用者身份"""
+    if not access_token:
+        raise HTTPException(status_code=401, detail="Not authenticated")
+    
+    payload = decode_token(access_token)
+    if not payload:
+        raise HTTPException(status_code=401, detail="Invalid or expired token")
+        
+    return payload
+
+@app.get("/api/auth/me")
+async def auth_me(user: Dict[str, Any] = Depends(get_current_user)):
+    """獲取當前登入的使用者資訊"""
+    return {
+        "status": "success",
+        "data": {
+            "user_id": user.get("sub"),
+            "email": user.get("email"),
+            "is_authenticated": True
+        }
+    }
+
+@app.post("/api/auth/logout")
+async def auth_logout():
+    """Clear all auth cookies."""
+    response = JSONResponse(content={"status": "logged_out"})
+    response.delete_cookie("access_token")
+    response.delete_cookie("refresh_token")
+    return response
+
+# --- WebSocket Endpoint ---
+
+@app.websocket("/api/dashboard/ws")
+async def dashboard_websocket(
+    websocket: WebSocket,
+    access_token: Optional[str] = Cookie(None)
+):
+    """
+    WebSocket endpoint for real-time dashboard updates.
+    使用 HTTPOnly Cookie 中的 access_token 進行握手認證。
+    """
+    if not access_token:
+        logger.warning("WebSocket attempt without access_token cookie.")
+        await websocket.close(code=1008)  # Policy Violation
+        return
+
+    try:
+        # 驗證 Token
+        payload = decode_token(access_token)
+        if not payload:
+            logger.warning("Invalid WebSocket token.")
+            await websocket.close(code=1008)
+            return
+
+        user_id = payload.get("sub")
+        if not user_id:
+            logger.warning("WebSocket token missing user_id.")
+            await websocket.close(code=1008)
+            return
+
+        # 註冊連線
+        await socket_manager.connect(websocket, user_id)
+        
+        try:
+            # 保持連線開啟並處理來自客戶端的消息
+            while True:
+                data = await websocket.receive_text()
+                
+                # 處理心跳 (Ping-Pong)
+                if data == "ping":
+                    await websocket.send_text("pong")
+                    continue
+                
+                # 處理 JSON 指令 (Phase 5)
+                try:
+                    command_data = json.loads(data)
+                    await socket_manager.handle_command(user_id, command_data)
+                except json.JSONDecodeError:
+                    logger.warning(f"Received non-JSON data from user {user_id}: {data}")
+                except Exception as cmd_e:
+                    logger.error(f"Error handling WebSocket command for user {user_id}: {cmd_e}")
+
+        except WebSocketDisconnect:
+            socket_manager.disconnect(websocket, user_id)
+            logger.info(f"WebSocket disconnected for user {user_id}")
+    except Exception as e:
+        logger.error(f"WebSocket handling error: {e}")
+        try:
+            await websocket.close(code=1011) # Internal Error
+        except:
+            pass

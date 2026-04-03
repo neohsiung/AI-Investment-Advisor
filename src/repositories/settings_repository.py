@@ -56,6 +56,14 @@ class ISettingsRepository(ABC):
         Find an internal user ID based on a channel-specific ID.
         根據管道 ID 尋找內部使用者 ID。
         """
+        
+    @abstractmethod
+    def get_channel_ids_for_user(self, user_id: str) -> Dict[str, str]:
+        """
+        Get all channel IDs mapped to an internal user.
+        回傳所有綁定到該內部使用者的通道 ID (例如: {"telegram": "123", "line": "U456"}).
+        """
+
     @abstractmethod
     def find_user_by_webhook_secret(self, secret: str) -> Optional[str]:
         """
@@ -221,6 +229,38 @@ class AlchemySettingsRepository(BaseRepository, ISettingsRepository):
             return result[0] if result else None
         except Exception as e:
             return None
+        finally:
+            self.close_session()
+
+    def get_channel_ids_for_user(self, user_id: str) -> Dict[str, str]:
+        """
+        Get all channel IDs (e.g., Telegram, LINE) mapped to an internal user.
+        """
+        resolved_uid = self._resolve_user(user_id)
+        channel_ids = {}
+        try:
+            from sqlalchemy import text
+            query = text("""
+                SELECT key, value FROM settings 
+                WHERE user_id = :uid 
+                AND (key LIKE '%user_id' OR key LIKE '%chat_id')
+                AND value IS NOT NULL AND value != ''
+            """)
+            result = self.session.execute(query, {"uid": resolved_uid}).fetchall()
+            
+            for key, val in result:
+                # Convert raw setting keys to a clean channel identifier
+                val_str = str(val).strip('"').strip("'")
+                if "telegram" in key.lower():
+                    channel_ids["telegram"] = val_str
+                elif "line" in key.lower():
+                    channel_ids["line"] = val_str
+                else:
+                    channel_ids[key] = val_str
+                    
+            return channel_ids
+        except Exception as e:
+            return {}
         finally:
             self.close_session()
 

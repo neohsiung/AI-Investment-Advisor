@@ -56,6 +56,13 @@
 - **核心邏輯 (Services)**: 必須 > 80%。
 - **錯誤處理**: 必須達到 100% 覆蓋。
 
+### 2.3 語義測試與 Prompt 版本控管法 (Semantic Testing & Versioning - Phase 6)
+
+隨著 Agent 生成內容不可預測性增加，傳統的字串精確比對會導致測試極度脆弱。
+
+- **語義測試標準 (Semantic Evaluation)**: 針對 Agent 生成的自然語言或投資策略，必須優先使用 `tests/utils/semantic_judge.py` 中的 `assert_semantic_match` 方法。該方法透過 Fast Model 判斷生成內容是否符合預期意圖，而非字面匹配。
+- **提示詞版本控管 (Prompt Versioning)**: 所有用於 `ConversationAgent` 的核心 Prompt Template 必須存放於 `src/prompts/` 目錄下，嚴禁硬編碼 (Hard-coded) 於類別方法中。每個 Prompt 應具備版本標籤 (如 `v1.0`) 並記錄於 `WISDOM_VAULT` 的 `meta` 欄位中，以便追蹤對應 LLM 表現的演進。
+
 ### 2.5 偵錯與日誌原則 (Debugging & Logging Principle)
 
 - **Log First, Code Second**: 當遇到無法確定根源的問題 (Undefined Behavior, Auth Loops, Unexpected Crashes) 時，**嚴禁盲目猜測或直接改動業務邏輯進行檢核**。

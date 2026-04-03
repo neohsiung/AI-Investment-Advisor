@@ -261,11 +261,15 @@ class ThreeTierMemory:
         working: Optional[IWorkingMemory] = None,
         session: Optional[ISessionStorage] = None,
         longterm: Optional[ILongTermMemory] = None,
+        wisdom=None,
         workspace_path: str = "",
     ):
         self.working: IWorkingMemory = working or InMemoryWorkingMemory()
         self.session: ISessionStorage = session or FileSessionStorage(workspace_path)
         self.longterm: ILongTermMemory = longterm or HybridMemoryAdapter()
+        # Tier 3+: Wisdom Vault (file-based cold storage)
+        # 第三層+: 智慧金庫（基於檔案的冷存儲）
+        self.wisdom = wisdom  # WisdomVault instance or None
 
     def flush_working_to_session(self, agent_name: str, wal_state: str) -> None:
         """
@@ -286,3 +290,18 @@ class ThreeTierMemory:
             self.working.truncate_to_checkpoint(system_msg, wal)
             return True
         return False
+
+    def prime_context(self, user_id: str) -> str:
+        """
+        Load wisdom principles for context priming at startup.
+        啟動時載入智慧原則用於上下文注入。
+
+        This mimics how human semantic memory automatically
+        primes working memory with relevant long-term knowledge.
+        """
+        if self.wisdom and hasattr(self.wisdom, 'get_wisdom_summary'):
+            try:
+                return self.wisdom.get_wisdom_summary(user_id)
+            except Exception as e:
+                logger.error(f"ThreeTierMemory: Wisdom priming failed: {e}")
+        return ""

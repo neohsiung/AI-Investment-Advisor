@@ -58,6 +58,9 @@ class OpenRouterGateway(ILLMGateway):
     OpenRouter API 的 LLM 閘道實作。
     """
 
+    def __init__(self):
+        self._last_usage: Optional[dict] = None
+
     def chat(self, messages: List[Message], config: LLMConfig) -> str:
         url = config.base_url or "https://openrouter.ai/api/v1/chat/completions"
         headers = {
@@ -78,7 +81,9 @@ class OpenRouterGateway(ILLMGateway):
             timeout=config.timeout_seconds,
         )
         response.raise_for_status()
-        return response.json()["choices"][0]["message"]["content"]
+        resp_json = response.json()
+        self._last_usage = resp_json.get("usage")
+        return resp_json["choices"][0]["message"]["content"]
 
     def embed(self, text: str, config: LLMConfig) -> List[float]:
         """OpenRouter embedding (uses /embeddings endpoint)."""
@@ -105,6 +110,9 @@ class GeminiGateway(ILLMGateway):
     Google Gemini API 的 LLM 閘道實作。
     """
 
+    def __init__(self):
+        self._last_usage: Optional[dict] = None
+
     def chat(self, messages: List[Message], config: LLMConfig) -> str:
         model_id = config.model if config.model.startswith("models/") else f"models/{config.model}"
         url = f"https://generativelanguage.googleapis.com/v1beta/{model_id}:generateContent?key={config.api_key}"
@@ -127,7 +135,18 @@ class GeminiGateway(ILLMGateway):
             timeout=config.timeout_seconds,
         )
         response.raise_for_status()
-        return response.json()["candidates"][0]["content"]["parts"][0]["text"]
+        resp_json = response.json()
+
+        # Gemini usage format: {"usageMetadata": {"promptTokenCount": N, "candidatesTokenCount": M, "totalTokenCount": K}}
+        usage = resp_json.get("usageMetadata")
+        if usage:
+            self._last_usage = {
+                "prompt_tokens": usage.get("promptTokenCount", 0),
+                "completion_tokens": usage.get("candidatesTokenCount", 0),
+                "total_tokens": usage.get("totalTokenCount", 0)
+            }
+        
+        return resp_json["candidates"][0]["content"]["parts"][0]["text"]
 
     def embed(self, text: str, config: LLMConfig) -> List[float]:
         """Gemini embedding via embedContent API."""
@@ -150,6 +169,9 @@ class OpenAIGateway(ILLMGateway):
     OpenAI 相容 API 的 LLM 閘道實作。
     """
 
+    def __init__(self):
+        self._last_usage: Optional[dict] = None
+
     def chat(self, messages: List[Message], config: LLMConfig) -> str:
         url = config.base_url or "https://api.openai.com/v1/chat/completions"
         headers = {
@@ -168,7 +190,9 @@ class OpenAIGateway(ILLMGateway):
             timeout=config.timeout_seconds,
         )
         response.raise_for_status()
-        return response.json()["choices"][0]["message"]["content"]
+        resp_json = response.json()
+        self._last_usage = resp_json.get("usage")
+        return resp_json["choices"][0]["message"]["content"]
 
     def embed(self, text: str, config: LLMConfig) -> List[float]:
         """OpenAI embedding via /v1/embeddings."""
@@ -254,6 +278,10 @@ class RetryLLMGateway(ILLMGateway):
         self._inner = inner
         self._max_retries = max_retries
 
+    @property
+    def _last_usage(self) -> Optional[dict]:
+        return getattr(self._inner, "_last_usage", None)
+
     def chat(self, messages: List[Message], config: LLMConfig) -> str:
         last_error = None
         for attempt in range(self._max_retries):
@@ -283,6 +311,59 @@ class RetryLLMGateway(ILLMGateway):
                 )
                 time.sleep(wait)
         raise last_error  # type: ignore[misc]
+
+
+class LoggingLLMGateway(ILLMGateway):
+    """
+    Decorator Gateway that logs LLM usage and costs to a central service.
+    裝飾器閘道，將 LLM 使用量與成本記錄至中央服務。
+
+    遵循規範十五 (AI-Support First): 結構化日誌
+    """
+
+    def __init__(
+        self,
+        inner: ILLMGateway,
+        agent_name: str,
+        tier: str,
+        user_id: str,
+        metadata: dict = None,
+    ):
+        self._inner = inner
+        self._agent_name = agent_name
+        self._tier = tier
+        self._user_id = user_id
+        self._metadata = metadata or {}
+
+    def chat(self, messages: List[Message], config: LLMConfig) -> str:
+        content = self._inner.chat(messages, config)
+        
+        # Try to log usage if available
+        usage = getattr(self._inner, "_last_usage", None)
+        if usage:
+            try:
+                from src.services.token_logger_service import TokenLoggerService
+                # Note: TokenLoggerService will be implemented in T04
+                logger_svc = TokenLoggerService()
+                logger_svc.log_usage(
+                    user_id=self._user_id,
+                    agent_name=self._agent_name,
+                    tier=self._tier,
+                    model=config.model,
+                    provider=config.provider,
+                    prompt_tokens=usage.get("prompt_tokens", 0),
+                    completion_tokens=usage.get("completion_tokens", 0),
+                    metadata=self._metadata,
+                )
+            except Exception as e:
+                # Logging failure should not break the agent's main flow
+                logger.debug(f"LoggingLLMGateway: Failed to log usage: {e}")
+
+        return content
+
+    def embed(self, text: str, config: LLMConfig) -> List[float]:
+        # Usage tracking for embeddings is less critical but could be added similarly
+        return self._inner.embed(text, config)
 
 
 class MockLLMGateway(ILLMGateway):

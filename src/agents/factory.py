@@ -117,6 +117,9 @@ class AgentFactory:
             agent = ThematicAgent(use_cache=use_cache, user_id=user_id, **kwargs)
         elif name_lower == 'sentinel':
             agent = SentinelAgent(use_cache=use_cache, user_id=user_id, **kwargs)
+        elif name_lower == 'conversation':
+            # Support conversation role (uses CIO agent logic for general interaction)
+            agent = CIOAgent(use_cache=use_cache, user_id=user_id, mode="daily", **kwargs)
         else:
             raise ValueError(f"Unknown agent type: {agent_name}")
             

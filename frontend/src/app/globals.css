@@ -1,0 +1,170 @@
+@import "tailwindcss";
+
+@theme {
+  /* Font Families */
+  --font-headline: var(--font-inter), ui-sans-serif, system-ui;
+  --font-body: var(--font-inter), ui-sans-serif, system-ui;
+  --font-label: var(--font-space-grotesk), ui-monospace, SFMono-Regular;
+
+  /* Color Mapping - Using Provided Tokens */
+  --color-primary: var(--primary);
+  --color-on-primary: var(--on-primary);
+  --color-primary-container: var(--primary-container);
+  --color-on-primary-container: var(--on-primary-container);
+  
+  --color-secondary: var(--secondary);
+  --color-on-secondary: var(--on-secondary);
+  --color-secondary-container: var(--secondary-container);
+  --color-on-secondary-container: var(--on-secondary-container);
+
+  --color-tertiary: var(--tertiary);
+  --color-on-tertiary: var(--on-tertiary);
+  --color-tertiary-container: var(--tertiary-container);
+  --color-on-tertiary-container: var(--on-tertiary-container);
+
+  --color-error: var(--error);
+  --color-on-error: var(--on-error);
+  --color-error-container: var(--error-container);
+  --color-on-error-container: var(--on-error-container);
+
+  --color-surface: var(--surface);
+  --color-on-surface: var(--on-surface);
+  --color-surface-variant: var(--surface-variant);
+  --color-on-surface-variant: var(--on-surface-variant);
+  
+  --color-outline: var(--outline);
+  --color-outline-variant: var(--outline-variant);
+
+  --color-background: var(--background);
+  --color-on-background: var(--on-background);
+
+  /* Surface Containers */
+  --color-surface-container-lowest: var(--surface-container-lowest);
+  --color-surface-container-low: var(--surface-container-low);
+  --color-surface-container: var(--surface-container);
+  --color-surface-container-high: var(--surface-container-high);
+  --color-surface-container-highest: var(--surface-container-highest);
+
+  /* Border Radius */
+  --radius-DEFAULT: 0.125rem;
+  --radius-lg: 0.25rem;
+  --radius-xl: 0.5rem;
+  --radius-full: 0.75rem;
+
+  /* Custom Animations */
+  @keyframes pulse-glow {
+    0%, 100% { box-shadow: 0 0 12px rgba(129, 219, 128, 0.4); }
+    50% { box-shadow: 0 0 20px rgba(129, 219, 128, 0.6); }
+  }
+}
+
+:root {
+  /* LIGHT THEME (Intelligence Briefing) Tokens */
+  --primary: #004fa8;
+  --on-primary: #ffffff;
+  --primary-container: #0366d6;
+  --on-primary-container: #e5ebff;
+
+  --secondary: #525f73;
+  --on-secondary: #ffffff;
+  --secondary-container: #d6e3fb;
+  --on-secondary-container: #586579;
+
+  --tertiary: #8e3700;
+  --on-tertiary: #ffffff;
+  --tertiary-container: #b54800;
+  --on-tertiary-container: #ffe7dd;
+
+  --error: #ba1a1a;
+  --on-error: #ffffff;
+  --error-container: #ffdad6;
+  --on-error-container: #93000a;
+
+  --background: #f8f9fa;
+  --on-background: #191c1d;
+  --surface: #f8f9fa;
+  --on-surface: #191c1d;
+  --surface-variant: #e1e3e4;
+  --on-surface-variant: #424753;
+
+  --outline: #727785;
+  --outline-variant: #c2c6d6;
+
+  --surface-container-lowest: #ffffff;
+  --surface-container-low: #f3f4f5;
+  --surface-container: #edeeef;
+  --surface-container-high: #e7e8e9;
+  --surface-container-highest: #e1e3e4;
+}
+
+.dark {
+  /* DARK THEME (Quantum Sentinel) Tokens */
+  --primary: #adc6ff;
+  --on-primary: #002e69;
+  --primary-container: #0366d6;
+  --on-primary-container: #e5ebff;
+
+  --secondary: #81db80;
+  --on-secondary: #00390c;
+  --secondary-container: #00681d;
+  --on-secondary-container: #8be68a;
+
+  --tertiary: #ffba43;
+  --on-tertiary: #432c00;
+  --tertiary-container: #8f6100;
+  --on-tertiary-container: #ffe8ca;
+
+  --error: #ffb4ab;
+  --on-error: #690005;
+  --error-container: #93000a;
+  --on-error-container: #ffdad6;
+
+  --background: #0f1419;
+  --on-background: #dee3eb;
+  --surface: #0f1419;
+  --on-surface: #dee3eb;
+  --surface-variant: #30353b;
+  --on-surface-variant: #c2c6d6;
+
+  --outline: #8c909f;
+  --outline-variant: #424753;
+
+  --surface-container-lowest: #0a0f14;
+  --surface-container-low: #171c22;
+  --surface-container: #1b2026;
+  --surface-container-high: #252a30;
+  --surface-container-highest: #30353b;
+}
+
+/* Custom Base Styles */
+body {
+  background-color: var(--background);
+  color: var(--on-background);
+  font-family: var(--font-body);
+}
+
+.material-symbols-outlined {
+  font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+}
+
+.glass-panel {
+  background: rgba(48, 53, 59, 0.6);
+  backdrop-filter: blur(20px);
+}
+
+.pulse-glow {
+  box-shadow: 0 0 12px rgba(129, 219, 128, 0.4);
+  animation: pulse-glow 2s infinite ease-in-out;
+}
+
+/* Minimalist Scrollbar */
+::-webkit-scrollbar {
+  width: 4px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: var(--outline-variant);
+  border-radius: 10px;
+}

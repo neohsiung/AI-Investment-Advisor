@@ -152,6 +152,10 @@ class SentinelService:
             # v5.0: Ensure leverage and cash levels match risk profile
             triggers += await self._check_risk_consistency()
             
+            # Dimension 8: Capital Deployment (v9.0 Add-on)
+            # Check for excess cash and trigger deployment logic if allowed
+            await self._handle_cash_deployment_logic(triggers)
+            
             # ACT: Summon Council + Notifications if triggered
             if triggers:
                 await self._escalate(triggers)
@@ -1597,3 +1601,38 @@ class SentinelService:
             })
                 
         return triggers
+
+    async def _handle_cash_deployment_logic(self, triggers: List[Dict[str, Any]]) -> None:
+        """
+        Intersects triggers for 'cash_ratio_high' and initiates the capital deployment skill/workflow.
+        攔截 'cash_ratio_high' 觸發訊號並啟動資本部署技能/工作流。
+        """
+        cash_trigger = next((t for t in triggers if t.get("id") == f"cash_ratio_high_{self.user_id}"), None)
+        if not cash_trigger:
+            return
+
+        logger.info(f"Sentinel: Excess Cash Detected for {redact_secrets(self.user_id)}. Initiating deployment flow.")
+        
+        try:
+            # 1. Invoke cash_deployment skill directly for immediate analysis
+            from src.agents.skill_factory import SkillFactory
+            skill = SkillFactory.get_skill("cash_deployment")
+            
+            if skill:
+                result = await skill.run(user_id=self.user_id)
+                logger.info(f"Sentinel: Cash Deployment Analysis: {result.get('message')}")
+                
+                # 2. If excess cash is confirmed and tickers discovered, trigger the CIO Workflow
+                if result.get("excess_cash", 0) > 0 and result.get("candidates"):
+                             from src.services.workflow_service import WorkflowService
+                             ws = WorkflowService(user_id=self.user_id)
+                             # Task 1.5/1.6: This method will be implemented in WorkflowService
+                             if hasattr(ws, "trigger_capital_deployment_workflow"):
+                                 await ws.trigger_capital_deployment_workflow(result)
+                             else:
+                                 logger.warning("Sentinel: WorkflowService.trigger_capital_deployment_workflow not yet implemented.")
+            else:
+                logger.error("Sentinel: 'cash_deployment' skill not found in SkillFactory.")
+                
+        except Exception as e:
+            logger.error(f"Sentinel: Error in cash deployment logic: {e}", exc_info=True)

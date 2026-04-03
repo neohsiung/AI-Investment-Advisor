@@ -165,6 +165,17 @@ class SettingsService:
         except Exception as e:
             print(f"Error in find_user_by_channel_id: {e}")
             return None
+
+    def get_channel_ids_for_user(self, user_id: str) -> Dict[str, str]:
+        """
+        Get all channel IDs mapped to an internal user.
+        """
+        try:
+            return self.settings_repo.get_channel_ids_for_user(user_id)
+        except Exception as e:
+            print(f"Error in get_channel_ids_for_user: {e}")
+            return {}
+
     def find_user_by_webhook_secret(self, secret: str) -> Optional[str]:
         """
         Find an internal user ID (email/UUID) based on a webhook secret / API key.

@@ -1,0 +1,22 @@
+{
+  "name": "ticker_discovery",
+  "description": "Scans the internet for high-potential ticker candidates based on a specific strategy or sector focus. Useful for autonomous capital deployment (Ticker Discovery).",
+  "version": "1.0.0",
+  "inputs": {
+    "strategy": {
+      "type": "string",
+      "description": "Investment strategy (e.g., 'growth', 'value', 'dividend', 'momentum'). Default is 'growth'.",
+      "required": false
+    },
+    "sectors": {
+      "type": "array",
+      "items": { "type": "string" },
+      "description": "Target sectors (e.g., ['technology', 'energy', 'healthcare']).",
+      "required": false
+    }
+  },
+  "output": {
+    "type": "string",
+    "description": "JSON string containing a list of discovered tickers with reasoning snippets."
+  }
+}

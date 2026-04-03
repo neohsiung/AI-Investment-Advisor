@@ -37,7 +37,11 @@ def test_base_agent_init_and_config(mock_settings_repo, mock_state_repo, mock_pr
     # Mocking rows for BaseAgent._load_config_from_db
     class MockRow:
         def __init__(self, k, v):
+            self.k = k
+            self.v = v
             self._mapping = {'key': k, 'value': v}
+        def __getitem__(self, idx):
+            return [self.k, self.v][idx]
     mock_settings_repo.get_all.return_value = [MockRow("AI_PROVIDER", "TestProvider")]
 
     # Create a dummy prompt file
@@ -45,9 +49,11 @@ def test_base_agent_init_and_config(mock_settings_repo, mock_state_repo, mock_pr
     with open(prompt_file, 'w') as f:
         f.write(mock_prompt_content)
 
-    agent = ConcreteAgent(name="TEST", prompt_path=str(prompt_file), use_cache=False, 
-                          user_id="test_user",
-                          settings_repo=mock_settings_repo, state_repo=mock_state_repo)
+    with patch("src.agents.base_agent.BudgetAwareModelRouter") as mock_router:
+        mock_router.side_effect = Exception("Router Disabled for Test")
+        agent = ConcreteAgent(name="TEST", prompt_path=str(prompt_file), use_cache=False, 
+                              user_id="test_user",
+                              settings_repo=mock_settings_repo, state_repo=mock_state_repo)
 
     assert agent.name == "TEST"
     assert agent.system_prompt == mock_prompt_content

@@ -13,9 +13,18 @@ Extracted from BaseAgent.run_tool_loop / _parse_tool_call (Phase 2).
   - 規範四 (模組化設計): 獨立可單元測試
 """
 
+from typing import List, Dict, Any, Tuple, Optional, Callable
 import json
 import logging
-from typing import List, Dict, Any, Tuple, Optional, Callable
+from datetime import datetime
+from dataclasses import replace
+from src.domain.interfaces import Message
+from src.prompts.reflection_prompt import ReflectionPrompt
+from src.services.budget_aware_model_router import BudgetAwareModelRouter
+from src.services.settings_service import SettingsService
+from src.services.token_logger_service import TokenLoggerService
+from src.services.evolution_metrics import EvolutionMetrics
+from src.services.reflection_manager import ReflectionManager
 
 logger = logging.getLogger(__name__)
 
@@ -31,16 +40,19 @@ class AgentLoop:
         agent_name: str = "Agent",
         toold=None,
         search_service=None,
+        user_id: str = "system"
     ):
         """
         Args:
             agent_name: Agent name for logging
             toold: McpServer instance for registered tools
             search_service: InternetSearchService for legacy SEARCH handler
+            user_id: For budget-aware reflection
         """
         self._agent_name = agent_name
         self._toold = toold
         self._search_service = search_service
+        self._user_id = user_id
 
     def execute(
         self,
@@ -93,24 +105,57 @@ class AgentLoop:
     def _execute_tool(self, name: str, args: Dict[str, Any]) -> str:
         """
         Execute a single tool call and return the observation string.
-        執行單一工具調用並回傳觀察字串。
+        [Phase 6] Self-healing skill execution with reflection.
         """
         try:
-            result = ""
-            if name == "SEARCH":
-                # Legacy Search Handler
-                result = self._execute_search(args)
-            elif self._toold and name in self._toold.tools:
-                # MCP Tool Call
-                raw_res = self._toold.call_tool(name, args)
-                result = json.dumps(raw_res, ensure_ascii=False)
-            else:
-                result = f"Error: Tool '{name}' not found."
-
-            return f"System: [Tool '{name}' Output]\n{result}\n"
+            return self._run_tool_logic(name, args)
         except Exception as e:
-            logger.error(f"Tool execution failed: {e}")
-            return f"System: [Tool Error] {e}\n"
+            logger.warning(f"AgentLoop: Primary execution failed for tool '{name}': {e}. Starting Reflection.")
+            
+            # 1. Reflect on the failure
+            reflection = self._reflect_on_error(name, args, str(e))
+            
+            # 2. Act based on reflection
+            if reflection and reflection.get("recommended_action") == "retry":
+                corrected_args = reflection.get("corrected_args", {})
+                logger.info(f"AgentLoop: Reflection suggested RETRY for tool '{name}' with args: {corrected_args}")
+                try:
+                    return self._run_tool_logic(name, corrected_args)
+                except Exception as retry_e:
+                    logger.error(f"AgentLoop: Retry failed for tool '{name}': {retry_e}")
+                    return f"System: [Tool '{name}' Reflection Retry Failed] {retry_e}\n"
+            
+            # Cannot self-heal or reflection suggests failing
+            logger.error(f"AgentLoop: Tool '{name}' failed and reflection could not recover: {e}")
+            return f"System: [Tool '{name}' Error] {e}\n"
+
+    def _run_tool_logic(self, name: str, args: Dict[str, Any]) -> str:
+        """Core tool invocation logic."""
+        result = ""
+        if name == "SEARCH":
+            # Legacy Search Handler
+            result = self._execute_search(args)
+        elif self._toold and name in self._toold.tools:
+            # MCP Tool Call
+            raw_res = self._toold.call_tool(name, args)
+            result = json.dumps(raw_res, ensure_ascii=False)
+        else:
+            result = f"Error: Tool '{name}' not found."
+
+        return f"System: [Tool '{name}' Output]\n{result}\n"
+
+    def _reflect_on_error(self, tool_name: str, args: Any, error: str) -> Optional[Dict[str, Any]]:
+        """
+        Synchronous reflection call with budget awareness and observability. [Phase 7]
+        Delegates to ReflectionManager to avoid code duplication.
+        """
+        manager = ReflectionManager(user_id=self._user_id)
+        return manager.reflect_on_error(
+            tool_name=tool_name,
+            args=args,
+            error=str(error),
+            agent_name=self._agent_name
+        )
 
     def _execute_search(self, args: Dict[str, Any]) -> str:
         """

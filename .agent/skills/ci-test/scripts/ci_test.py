@@ -81,8 +81,8 @@ def main():
     parser.add_argument("--full", action="store_true", help="Run full suite instead of incremental")
     args = parser.parse_args()
 
-    # Use python3.10 to match project requirements
-    python_cmd = "python3.10"
+    # Use current python executable
+    python_cmd = sys.executable
     
     changed_files = get_changed_files()
     relevant_tests, force_full = map_files_to_tests(changed_files)

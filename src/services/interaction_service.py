@@ -9,6 +9,7 @@ from datetime import datetime, timedelta
 from src.domain.interaction import InteractionRequest, InteractionType, InteractionStatus
 from src.domain.interfaces import IChannelAdapter
 from src.infrastructure.channels.line_adapter import LineBotAdapter
+from src.services.conversation_router import ConversationRouter
 
 class InteractionService:
     """
@@ -41,8 +42,12 @@ class InteractionService:
         self.settings_service = settings_service
         self._pending_requests: Dict[str, InteractionRequest] = {} 
         
-        # v4.2.3: We will resolve adapters dynamically in _send_approval_request if needed
-        # to ensure user-specific settings are honored.
+        # [Phase 1] ConversationRouter for free-form Q&A
+        # 對話路由器：處理自由形式問答
+        self.conversation_router = ConversationRouter(
+            intent_classifier=self.intent_classifier,
+            conversation_agent_factory=self._create_conversation_agent,
+        )
         
         # 3. Register Callbacks for static adapters
         for adapter in self.adapters:
@@ -68,7 +73,7 @@ class InteractionService:
         # 2. Check Verification FIRST
         try:
             from src.services.verification_service import VerificationService
-            ver_svc = VerificationService() 
+            ver_svc = VerificationService(user_id=user_id) 
             
             # verify_any_reply returns True if it was a verification message and handled it
             logger.debug(f"InteractionService: Delegation to VerificationService for user {user_id}")
@@ -93,40 +98,87 @@ class InteractionService:
                  logger.error(f"InteractionService: Failed to send unlinked ack: {e}")
              return
 
-        # 3. Process Intents for Linked Users
-        if not self.intent_classifier:
-            logger.warning("InteractionService: No IntentClassifier configured. Ignoring further text analysis.")
-            return
-
-        # 3.1 Find latest pending request for this user (or broadcast)
+        # 3. Route through ConversationRouter (Verification > Approval > Conversation)
+        # 通過對話路由器處理（驗證 > 審核 > 對話）
         pending_reqs = [
-            r for r in self._pending_requests.values() 
+            {"id": r.request_id, "title": r.title, "user_id": r.user_id}
+            for r in self._pending_requests.values() 
             if r.is_pending() and (r.user_id == resolved_user_id or not r.user_id)
         ]
-        
-        if not pending_reqs:
-            logger.info(f"InteractionService: No pending requests for {resolved_user_id}. Acknowledging.")
-            msg = f"✅ 系統已收到您的回覆：'{text}'\n目前無待處理的審核請求 (No pending requests)."
-            await adapter.send_message(user_id, msg)
-            return
-            
-        # Sort by creation time desc
-        latest_req = sorted(pending_reqs, key=lambda r: r.created_at, reverse=True)[0]
-        
-        # 3.2 Classify Intent
-        try:
-            intent = self.intent_classifier.classify(text)
-            logger.info(f"InteractionService: Intent for '{text}': {intent}")
-            
-            if intent in ["APPROVE", "REJECT"]:
-                # Trigger standard handler
-                await self.handle_response(latest_req.request_id, intent.lower())
-            else:
-                # Generic acknowledgment for other text
-                msg = f"✅ 系統已收到您的訊息：'{text}'\n正在交由 AI 分析中 (Processing...)"
-                await adapter.send_message(user_id, msg)
-        except Exception as e:
-            logger.error(f"InteractionService: Text processing error: {e}")
+
+        # Detect channel type from adapter class
+        channel_type = self._detect_channel_type(adapter)
+
+        response = await self.conversation_router.route(
+            adapter=adapter,
+            channel_user_id=user_id,
+            text=text,
+            resolved_user_id=resolved_user_id,
+            pending_requests=pending_reqs,
+            channel_type=channel_type,
+        )
+
+        if response:
+            try:
+                await adapter.send_message(user_id, response)
+            except Exception as e:
+                logger.error(f"InteractionService: Failed to send response: {e}")
+
+    @staticmethod
+    def _detect_channel_type(adapter: IChannelAdapter) -> str:
+        """Detect channel type from adapter class name."""
+        class_name = adapter.__class__.__name__.lower()
+        if "telegram" in class_name:
+            return "telegram"
+        elif "line" in class_name:
+            return "line"
+        elif "slack" in class_name:
+            return "slack"
+        return "unknown"
+
+    @staticmethod
+    def _create_conversation_agent(user_id: str, channel_type: str, channel_id: str):
+        """
+        Factory for creating ConversationAgent instances.
+        建立 ConversationAgent 實例的工廠方法。
+
+        Wires up the full cognitive memory architecture:
+          STM (Redis) → Episodic (PG) → Wisdom (Volume)
+        """
+        from src.agents.conversation_agent import ConversationAgent
+        from src.agents.persona.persona_provider import get_default_persona_provider
+        from src.infrastructure.memory.channel_memory_manager import ChannelMemoryManager
+        from src.infrastructure.memory.wisdom_vault import WisdomVault
+        from src.infrastructure.memory.cognitive_memory import CognitiveMemoryManager
+        from src.infrastructure.memory.channel_memory_manager import RedisSTMStore
+
+        persona_provider = get_default_persona_provider()
+
+        # Initialize Tier 3: Wisdom Vault (file-based cold storage)
+        wisdom_vault = WisdomVault()
+
+        # Initialize DIKW Distillation Engine
+        stm_store = RedisSTMStore()
+        cognitive_engine = CognitiveMemoryManager(
+            stm=stm_store,
+            episodic=None,  # Will use HybridMemory if available
+            wisdom=wisdom_vault,
+        )
+
+        # Initialize Channel Memory with Cognitive engine
+        channel_memory = ChannelMemoryManager(
+            stm_store=stm_store,
+            cognitive_engine=cognitive_engine,
+        )
+
+        return ConversationAgent(
+            user_id=user_id,
+            channel_type=channel_type,
+            channel_id=channel_id,
+            persona_provider=persona_provider,
+            channel_memory=channel_memory,
+            tier="smart",
+        )
 
     async def request_approval(self, 
                           title: str, 
@@ -229,11 +281,6 @@ class InteractionService:
                 "請根據下方原始觸發訊號進行判斷。"
             )
         
-        # Format Notification (Improved UX)
-        formatted_triggers = ""
-        if filtered_triggers:
-            for i, t in enumerate(filtered_triggers, 1):
-                formatted_triggers += f"• {t.get('text', '未知觸發')}\n"
         alert_content = (
             f"### 🛡️ Sentinel 監控警報 (Sentinel Alert)\n\n"
             f"**偵測到以下重要訊號 ({len(filtered_triggers)}):**\n"
@@ -245,8 +292,22 @@ class InteractionService:
             f"**原始請求內容 (Original Request):**\n"
             f"{req.content}"
         ) if filtered_triggers else req.content
+
+        # Phase 5: Broadcast to WebSocket for Dashboard Interaction
+        from src.services.socket_manager import socket_manager
+        await socket_manager.broadcast_to_user(req.user_id, {
+            "type": "INTERACTION_REQUIRED",
+            "payload": {
+                "request_id": req.request_id,
+                "type": req.type.value,
+                "title": req.title,
+                "content": alert_content,
+                "actions": actions
+            }
+        })
         
         for adapter in target_adapters:
+
             try:
                 # Use adapters that support interaction
                 # For now using send_alert mechanism but with actions

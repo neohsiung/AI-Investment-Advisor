@@ -13,12 +13,13 @@ import logging
 import time
 import json
 import re
+import os
 from collections import Counter
-import typing
-from typing import List, Dict, Tuple, Any, Optional, Callable, Dict, List, Tuple, Any, Optional, Callable
+from typing import List, Dict, Tuple, Any, Optional, Callable
 
 from src.repositories.risk_keyword_repository import AlchemyRiskKeywordRepository
 from src.domain.entities import RiskKeyword
+from src.infrastructure.llm.llm_gateway import ILLMGateway
 
 logger = logging.getLogger(__name__)
 
@@ -65,10 +66,38 @@ class RiskKeywordService:
     MAX_KEYWORDS = 1000       # Hard cap (overridable via Settings: keyword_max_count)
     DEFAULT_TARGET = 200      # Dynamic threshold (configurable via Settings: keyword_target_count)
 
-    def __init__(self, repository: Optional[AlchemyRiskKeywordRepository] = None):
+    def __init__(
+        self,
+        repository: Optional[AlchemyRiskKeywordRepository] = None,
+        llm_gateway: Optional[ILLMGateway] = None,
+        agent_name: str = "RiskKeywordService",
+        user_id: str = "system",
+        tier: str = "fast"
+    ):
         self._repo = repository or AlchemyRiskKeywordRepository()
         self._cache: List[RiskKeyword] = []
         self._cache_timestamp: float = 0.0
+        
+        self.agent_name = agent_name
+        self.user_id = user_id
+        self.tier = tier
+        
+        # [Rule #14] Model Tiering Injection
+        if llm_gateway:
+            self._llm_gateway = llm_gateway
+        else:
+            # Fallback to creating a gateway if not injected 
+            # (e.g. legacy instantiation in SentinelService)
+            from src.infrastructure.llm.llm_gateway import LLMGatewayFactory, LoggingLLMGateway
+            provider = os.getenv("AI_PROVIDER", "Google Gemini")
+            inner = LLMGatewayFactory.create(provider)
+            # Wrap with Logging for budget tracking
+            self._llm_gateway = LoggingLLMGateway(
+                inner=inner,
+                agent_name=self.agent_name,
+                tier=self.tier,
+                user_id=self.user_id
+            )
 
     # ──────────────────────────────────────────
     # Cached Access
@@ -306,7 +335,6 @@ class RiskKeywordService:
 
         Returns list of (keyword, weight, category, source).
         """
-        import litellm
 
         prompt = """You are a financial risk keyword extractor. 
 From the following financial reports/news text, extract 10-30 important risk/investment keywords.
@@ -324,14 +352,20 @@ Output format:
 Text:
 """
         try:
-            response = litellm.completion(
-                model="gpt-4o-mini",
-                messages=[{"role": "user", "content": prompt + text_block}],
+            from src.domain.interfaces import LLMConfig, Message
+            
+            # Use gateway instead of direct litellm call (Budget Tracking)
+            config = LLMConfig(
+                provider=os.getenv("AI_PROVIDER", "Google Gemini"),
+                model=os.getenv("AI_MODEL_FAST", "gemini-1.5-flash"), # Default to fast tier
+                api_key=os.getenv("API_KEY", ""),
                 temperature=0.3,
-                max_tokens=800,
-                response_format={"type": "json_object"},
+                max_tokens=800
             )
-            content = response.choices[0].message.content
+            
+            messages = [Message(role="user", content=prompt + text_block)]
+            
+            content = self._llm_gateway.call_llm(messages, config)
             data = json.loads(content)
 
             # Handle both {"keywords": [...]} and [...] formats

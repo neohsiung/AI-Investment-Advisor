@@ -38,7 +38,7 @@ async def test_sentinel_failsafe_msg_with_error_type():
         # Manually call the internal decision logic if possible, 
         # but _do_send_alert is where the catch block is.
         # We'll call _do_send_alert directly for testing.
-        await service._do_send_alert(triggers, user_id="test_user")
+        await service._do_send_alert(triggers)
         
         # Now we need to see what was sent to the notification service
         # Since we use httpx.AsyncClient().post in distribute_report (called by _do_send_alert via _escalate?)

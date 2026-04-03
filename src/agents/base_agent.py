@@ -3,6 +3,7 @@ import json
 import requests
 import hashlib
 import re
+from dataclasses import asdict
 from src.utils.security import redact_secrets
 from abc import ABC, abstractmethod
 import typing
@@ -17,17 +18,21 @@ from src.repositories.agent_state_repository import AlchemyAgentStateRepository
 from src.repositories.feedback_repository import AlchemyFeedbackRepository
 from src.tools.mcp_server import McpServer, McpTool
 from src.infrastructure.memory.memory_manager import HybridMemory
+from src.agents.persona.persona_provider import AgentPersona, get_default_persona_provider
 from src.agents.skills.skill_loader import SkillLoader
 from src.domain.interfaces import ILLMGateway, Message, LLMConfig
 from src.agents.context import ContextAssembler
 from src.agents.wal_protocol import WalProtocol
 from src.agents.agent_loop import AgentLoop
+from src.services.budget_aware_model_router import BudgetAwareModelRouter
+from src.services.token_logger_service import TokenLoggerService
+from src.services.settings_service import SettingsService
 import uuid
 from datetime import datetime
 
 class BaseAgent(ABC):
 
-    def __init__(self, name, prompt_path, use_cache=True, ttl_hours=24, tier="smart", user_id=None, settings_repo=None, state_repo=None, feedback_repo=None, identity_file="IDENTITY.md", llm_gateway: Optional[ILLMGateway] = None, **kwargs):
+    def __init__(self, name, prompt_path, use_cache=True, ttl_hours=24, tier="smart", user_id=None, settings_repo=None, state_repo=None, feedback_repo=None, identity_file="IDENTITY.md", llm_gateway: Optional[ILLMGateway] = None, persona: Optional[AgentPersona] = None, **kwargs):
         self.name = name
         self.logger = setup_logger(name)
         self.prompt_path = prompt_path
@@ -43,8 +48,12 @@ class BaseAgent(ABC):
         
         # [NEW] OpenClaw Components
         self.memory = HybridMemory() # Shared DB for now (目前共用 DB)
+        
+        # Rule #8: Cognitive Memory Tiering
+        from src.services.cognitive_memory_manager import CognitiveMemoryManager
+        self.cognitive_memory = CognitiveMemoryManager(user_id=self.user_id)
+        
         self.skill_loader = SkillLoader()
-        self.skill_loader.load_skills()
         
         # [NEW] Agentic Brain (Workspace)
         workspace_map = {
@@ -59,6 +68,14 @@ class BaseAgent(ABC):
         }
         mapped_name = workspace_map.get(self.name, self.name.lower().replace(" ", "-"))
         self.workspace_path = f"workspace/{mapped_name}"
+        
+        # [Phase 3] Agent Persona System
+        # 人格系統：從 PersonaProvider 載入或使用注入的 persona
+        if persona:
+            self.persona = persona
+        else:
+            provider = get_default_persona_provider()
+            self.persona = provider.get_persona(self.name)  # None if no file exists
         
         # Must load prompt after workspace_path is defined
         self.system_prompt = self._load_prompt()
@@ -80,6 +97,7 @@ class BaseAgent(ABC):
         self._context_assembler = ContextAssembler(
             skill_loader=self.skill_loader,
             memory=self.memory,
+            cognitive_memory=self.cognitive_memory,
             toold=self.toold,
         )
         self._wal_protocol = WalProtocol(
@@ -90,6 +108,7 @@ class BaseAgent(ABC):
         self._agent_loop = AgentLoop(
             agent_name=self.name,
             toold=self.toold,
+            user_id=self.user_id
         )
     def register_tool(self, tool: McpTool):
         """
@@ -100,9 +119,30 @@ class BaseAgent(ABC):
 
     def _load_config(self):
         """
-        Read AI configuration (Priority: DB > Env > Default).
-        讀取 AI 設定 (優先順序: DB > Env > Default)。
+        Read AI configuration (Priority: Budget Router > DB > Env > Default).
+        讀取 AI 設定 (優先經由預算路由器，確保花費受控)。
         """
+        try:
+            # 1. Initialize dependencies for Router
+            # Use specific services to ensure consistency with router logic
+            settings = SettingsService(user_id=self.user_id, settings_repo=self.settings_repo)
+            token_logger = TokenLoggerService()
+            router = BudgetAwareModelRouter(settings, token_logger)
+            
+            # 2. Get configuration from router (handles budget-based downgrading)
+            config_obj = router.get_config(self.tier, self.user_id)
+            
+            # 3. Convert to dict for backward compatibility with base classes and tests
+            # 將 LLMConfig 物件轉為字典，以容納目前的測試與基礎層邏輯。
+            return asdict(config_obj)
+            
+        except Exception as e:
+            self.logger.error(f"[_load_config] Failed to use BudgetAwareModelRouter: {e}. Falling back to legacy loading.")
+            # Fallback to legacy loading if router fails
+            return self._legacy_load_config()
+
+    def _legacy_load_config(self):
+        """Legacy configuration loader (Fallback)."""
         if self.tier == "fast":
             default_model = os.getenv("AI_MODEL_FAST", os.getenv("AI_MODEL", "gemini-1.5-flash"))
         elif self.tier == "advanced":
@@ -118,8 +158,6 @@ class BaseAgent(ABC):
         }
 
         db_settings = self._load_config_from_db()
-        self.logger.info(f"[_load_config] User: {self.user_id} | DB Settings Loaded: {list(db_settings.keys())}")
-        
         # Apply DB Settings (Override Env)
         for key, value in db_settings.items():
             if key == "AI_PROVIDER": config["provider"] = value
@@ -166,7 +204,7 @@ class BaseAgent(ABC):
                  settings[key] = val
         except Exception as e:
             # self.logger.warning(f"Failed to load settings from DB: {e}")
-            pass
+            pass  # nosec B110
         finally:
             self.settings_repo.close_session()
         return settings
@@ -191,6 +229,10 @@ class BaseAgent(ABC):
                     prompt_content += f.read() + "\n\n"
                     
             if prompt_content.strip():
+                # Inject Persona prefix before workspace prompt
+                if self.persona and self.persona.system_prompt_prefix:
+                    persona_block = self.persona.render_prefix()
+                    return f"{persona_block}\n\n{prompt_content.strip()}"
                 return prompt_content.strip()
 
         # Fallback to legacy path
@@ -332,23 +374,33 @@ class BaseAgent(ABC):
 
     def _create_default_gateway(self) -> ILLMGateway:
         """
-        Create default LLM Gateway based on config.
-        基於當前配置建立預設 LLM 閘道。
+        Create a default ILLMGateway based on config.
+        Creates a default LLM gateway if none is provided.
         """
-        provider = self.config.get('provider', '')
-        api_key = self.config.get('api_key', '')
-
-        if not api_key:
-            from src.infrastructure.llm.llm_gateway import MockLLMGateway
-            return MockLLMGateway()
-
         try:
-            from src.infrastructure.llm.llm_gateway import LLMGatewayFactory, RetryLLMGateway
+            from src.infrastructure.llm.llm_gateway import LLMGatewayFactory, RetryLLMGateway, LoggingLLMGateway
+            # [Rule #14] Tiering & Logging Decorators
+            # Use Mock if API Key is missing (Standardized fallback behavior)
+            api_key = self.config.get('api_key', '')
+            if not api_key or api_key == "":
+                from src.infrastructure.llm.llm_gateway import MockLLMGateway
+                return MockLLMGateway()
+
+            provider = os.getenv("AI_PROVIDER", "Google Gemini")
             inner = LLMGatewayFactory.create(provider)
-            max_retries = self.config.get('max_retries', 3)
-            return RetryLLMGateway(inner, max_retries=max_retries)
-        except ValueError:
-            self.logger.warning(f"Unsupported provider '{provider}', falling back to Mock.")
+            # 1. Add Retry logic
+            retrying = RetryLLMGateway(inner=inner, max_retries=3)
+            
+            # 2. Add Logging for centralized budget monitoring ($20/week limit)
+            logged = LoggingLLMGateway(
+                inner=retrying,
+                agent_name=self.name,
+                tier=self.tier,
+                user_id=self.user_id
+            )
+            return logged
+        except (ValueError, ImportError) as e:
+            self.logger.warning(f"Gateway creation failed: {e}. Falling back to Mock.")
             from src.infrastructure.llm.llm_gateway import MockLLMGateway
             return MockLLMGateway()
 

@@ -470,6 +470,42 @@ def init_db(db_path=None, force=False, engine=None):
     );
     """)
 
+    # 16. LLM Usage Logs table (Rule #8: Cognitive Memory Tiering)
+    schema_commands.append(f"""
+    CREATE TABLE IF NOT EXISTS llm_usage_logs (
+        id {pk_type},
+        timestamp {timestamp_type} DEFAULT CURRENT_TIMESTAMP,
+        user_id {fk_type} NOT NULL,
+        agent_name TEXT NOT NULL,
+        provider TEXT NOT NULL,
+        model TEXT NOT NULL,
+        tier TEXT NOT NULL,
+        prompt_tokens INTEGER DEFAULT 0,
+        completion_tokens INTEGER DEFAULT 0,
+        total_cost_usd {numeric_type} DEFAULT 0,
+        metadata {json_type} DEFAULT '{{}}'
+    );
+    """)
+
+    # 17. Cognitive Memories table (Rule #8: Medium-Term Structured Storage)
+    schema_commands.append(f"""
+    CREATE TABLE IF NOT EXISTS cognitive_memories (
+        id {pk_type},
+        user_id {fk_type} NOT NULL {"REFERENCES users(id) ON DELETE CASCADE" if not is_sqlite else ""},
+        agent_name TEXT NOT NULL,
+        memory_type TEXT NOT NULL, -- 'insight', 'conviction', 'lesson', 'summary'
+        content {json_type} NOT NULL,
+        importance {numeric_type} DEFAULT 0.5,
+        source_id TEXT, -- Original event_id or signal_id
+        created_at {timestamp_type} DEFAULT CURRENT_TIMESTAMP,
+        updated_at {timestamp_type} DEFAULT CURRENT_TIMESTAMP
+    );
+    """)
+
+    if not is_sqlite:
+        schema_commands.append("CREATE INDEX IF NOT EXISTS idx_llm_usage_user_ts ON llm_usage_logs(user_id, timestamp DESC);")
+        schema_commands.append("CREATE INDEX IF NOT EXISTS idx_cog_mem_user_type ON cognitive_memories(user_id, memory_type);")
+
     with engine.connect() as conn:
         for cmd in schema_commands:
             try:

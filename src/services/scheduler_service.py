@@ -1,7 +1,7 @@
 import schedule
 import time
 import sys
-import subprocess
+import subprocess  # nosec B404
 from src.utils.logger import setup_logger
 logger = setup_logger("SchedulerService")
 
@@ -163,6 +163,22 @@ class SchedulerService:
         except Exception as e:
             self.log_job_execution("Monthly Refinement", "FAILED", str(e))
 
+    def job_memory_distillation(self):
+        """
+        Rule #8: Cognitive Memory Distillation.
+        Daily task to distill event logs into medium-term insights.
+        """
+        logger.info(f"Starting Memory Distillation for user {self.user_id}...")
+        self.log_job_execution("Memory Distillation", "STARTED")
+        try:
+            from src.services.memory_distillation_service import MemoryDistillationService
+            service = MemoryDistillationService(user_id=self.user_id)
+            service.distill_daily_memory()
+            self.log_job_execution("Memory Distillation", "COMPLETED")
+        except Exception as e:
+            logger.error(f"Memory Distillation failed for {self.user_id}: {e}")
+            self.log_job_execution("Memory Distillation", "FAILED", str(e))
+
     def job_etoro_sync(self):
         """
         Sync Broker trade history for the current user.
@@ -285,6 +301,10 @@ class SchedulerService:
         # Monthly Check (UTC 00:00)
         # 每月檢查 (UTC 00:00)
         schedule.every().day.at("00:00").do(self.check_monthly_job)
+        
+        # Rule #8: Memory Distillation (UTC 00:05)
+        # 每日記憶提煉 (UTC 00:05)
+        schedule.every().day.at("00:05").do(self.job_memory_distillation)
 
         # Sentinel Tick (Every Minute) - The Heartbeat of Agent Council
         # 哨兵心跳 (每分鐘)

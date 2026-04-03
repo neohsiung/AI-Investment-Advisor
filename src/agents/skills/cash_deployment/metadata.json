@@ -1,0 +1,22 @@
+{
+  "name": "cash_deployment",
+  "version": "1.0.0",
+  "description": "分析閒置現金並提供部署建議 (Analyze idle cash and provide deployment suggestions)",
+  "category": "portfolio",
+  "tier": "smart",
+  "input_schema": {
+    "type": "object",
+    "properties": {
+      "user_id": {
+        "type": "string",
+        "description": "User ID to analyze account cash"
+      }
+    },
+    "required": ["user_id"]
+  },
+  "output_schema": {
+    "type": "string",
+    "description": "JSON string containing excess_cash, cash_ratio, and potential candidates"
+  },
+  "tags": ["cash", "deployment", "buying", "reusable"]
+}

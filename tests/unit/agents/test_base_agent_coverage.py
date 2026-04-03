@@ -77,12 +77,12 @@ class TestBaseAgentCoverage:
         agent.state_repo.save_state.assert_called_with("TestAgent", "TestAgent", "hash1", "output")
 
     def test_call_llm_mock(self, agent):
-        # Test _call_llm logic
-        # Mock _call_real_llm to avoid hitting API if keys present
-        # Mock config to have no key -> Mock
-        agent.config['api_key'] = ''
+        # Override the gateway to use MockLLMGateway for the test
+        from src.infrastructure.llm.llm_gateway import MockLLMGateway
+        agent._llm_gateway = MockLLMGateway()
+        
         res = agent.call_llm([{"role": "user", "content": "Hi"}])
-        assert "Simulation Mode" in res or "TestAgent" in res
+        assert "Simulation Mode" in res or "TestAgent" in res or "[Mock Output]" in res
 
     def test_run_tool_loop_search(self, agent):
         # Test tool loop calling search

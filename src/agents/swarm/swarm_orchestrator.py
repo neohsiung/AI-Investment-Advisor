@@ -1,7 +1,7 @@
-import typing
-from typing import List, Dict, Tuple, Any, Optional, Callable, List, Dict, Any
 import time
 import asyncio
+import logging
+from typing import List, Dict, Any, Optional, Set
 from src.utils.logger import setup_logger
 from src.agents.base_agent import BaseAgent
 from src.repositories.agent_repository import AlchemyAgentRepository
@@ -146,3 +146,72 @@ class SwarmOrchestrator:
             success=(score > 0), 
             weight_delta=score * 0.1
         )
+    async def run_subtasks(
+        self, 
+        sub_tasks: List[Any], 
+        user_context: Dict[str, Any] = None
+    ) -> Dict[str, str]:
+        """
+        Execute a set of SubTasks, respecting dependencies.
+        執行一組 SubTask，並遵守其依賴關係。
+        """
+        if not sub_tasks:
+            return {}
+
+        from src.agents.factory import AgentFactory
+        
+        results = {}
+        pending = {t.id: t for t in sub_tasks}
+        completed: Set[str] = set()
+        
+        # Simple topological sort/execution loop
+        while pending:
+            # 1. Identity tasks ready to run (no dependencies or all deps completed)
+            ready_to_run = [
+                t for tid, t in pending.items() 
+                if not t.depends_on or all(d in completed for d in t.depends_on)
+            ]
+            
+            if not ready_to_run:
+                logger.error(f"SwarmOrchestrator: Circular dependency or missing task detected in {pending.keys()}")
+                break
+            
+            # 2. Run ready tasks in parallel
+            logger.info(f"SwarmOrchestrator: Running batch of {len(ready_to_run)} sub-tasks")
+            
+            async_tasks = []
+            task_ids = []
+            for t in ready_to_run:
+                # Create agent dynamically for the role
+                try:
+                    agent = AgentFactory.create_agent(t.agent_role, user_id=self.user_id)
+                    # Inject results of dependencies into context
+                    dep_results = {d: results.get(d, "") for d in t.depends_on}
+                    ctx = (user_context or {}).copy()
+                    ctx["dependency_results"] = dep_results
+                    
+                    async_tasks.append(self.run_agent(agent, t.task_description, ctx))
+                    task_ids.append(t.id)
+                except Exception as e:
+                    logger.error(f"SwarmOrchestrator: Failed to create agent for role {t.agent_role}: {e}")
+                    results[t.id] = f"Error: Failed to initialize agent role {t.agent_role}"
+                    completed.add(t.id)
+                    del pending[t.id]
+
+            if async_tasks:
+                batch_results = await asyncio.gather(*async_tasks, return_exceptions=True)
+                
+                for tid, res in zip(task_ids, batch_results):
+                    if isinstance(res, Exception):
+                        results[tid] = f"Error: {str(res)}"
+                    else:
+                        results[tid] = res
+                    
+                    completed.add(tid)
+                    del pending[tid]
+        
+        return results
+
+    def _get_user_id(self) -> str:
+        # Helper to get user_id if needed, though usually passed to constructor
+        return getattr(self, 'user_id', 'system')

@@ -55,8 +55,7 @@ class TestDiscoverFromReports:
     """Tests for _discover_from_reports."""
 
     @patch("src.repositories.data_repository.AlchemyDataRepository")
-    @patch("litellm.completion")
-    def test_extracts_keywords_from_reports(self, mock_llm, mock_data_repo, service):
+    def test_extracts_keywords_from_reports(self, mock_data_repo, service):
         """Should extract keywords from DB reports via LLM."""
         mock_repo_instance = MagicMock()
         mock_repo_instance.get_recent_aggregated_reports.return_value = [
@@ -66,16 +65,15 @@ class TestDiscoverFromReports:
         mock_data_repo.return_value = mock_repo_instance
 
         # Mock LLM response
-        mock_llm.return_value = MagicMock(
-            choices=[MagicMock(message=MagicMock(content='{"keywords": [{"keyword": "rate hike", "weight": 0.7, "category": "macro"}, {"keyword": "ai chip", "weight": 0.6, "category": "sector"}]}'))]
-        )
+        service._llm_gateway = MagicMock()
+        service._llm_gateway.call_llm.return_value = '{"keywords": [{"keyword": "rate hike", "weight": 0.7, "category": "macro"}, {"keyword": "ai chip", "weight": 0.6, "category": "sector"}]}'
 
         result = service._discover_from_reports()
 
         assert len(result) == 2
         assert result[0][0] == "rate hike"
         assert result[0][3] == "report"  # source
-        mock_llm.assert_called_once()
+        service._llm_gateway.call_llm.assert_called_once()
 
     @patch("src.repositories.data_repository.AlchemyDataRepository")
     def test_no_reports_returns_empty(self, mock_data_repo, service):
@@ -88,15 +86,15 @@ class TestDiscoverFromReports:
         assert result == []
 
     @patch("src.repositories.data_repository.AlchemyDataRepository")
-    @patch("litellm.completion")
-    def test_llm_failure_returns_empty(self, mock_llm, mock_data_repo, service):
+    def test_llm_failure_returns_empty(self, mock_data_repo, service):
         """Should gracefully return empty on LLM failure."""
         mock_repo_instance = MagicMock()
         mock_repo_instance.get_recent_aggregated_reports.return_value = [
             ("Some report content",),
         ]
         mock_data_repo.return_value = mock_repo_instance
-        mock_llm.side_effect = Exception("LLM API error")
+        service._llm_gateway = MagicMock()
+        service._llm_gateway.call_llm.side_effect = Exception("LLM API error")
 
         result = service._discover_from_reports()
         assert result == []

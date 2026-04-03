@@ -118,6 +118,24 @@ class SkillRegistry:
             )
         return discovered
 
+    def hot_reload(self, skills_dir: str = None) -> list:
+        """
+        [Phase 4] Differential hot-reload: rescan directories, only load NEW skills.
+        差分熱載入：重新掃描目錄，只載入新增的 Skill。
+
+        Returns:
+            List of newly discovered skill names.
+        """
+        before = set(self._implementations.keys())
+        self.auto_discover_from_impl(skills_dir)
+        after = set(self._implementations.keys())
+        new_skills = list(after - before)
+        if new_skills:
+            logger.info(
+                f"SkillRegistry: Hot-reloaded {len(new_skills)} new skills: {new_skills}"
+            )
+        return new_skills
+
     def _ensure_builtins(self) -> None:
         """
         Lazy-load built-in skill implementations when first needed.

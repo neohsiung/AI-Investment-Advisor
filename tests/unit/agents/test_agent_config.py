@@ -31,7 +31,11 @@ def test_config_priority_db_over_env(mock_settings_repo):
         # Let's use simple named tuples or objects for rows
         class MockRow:
             def __init__(self, k, v):
+                self.k = k
+                self.v = v
                 self._mapping = {'key': k, 'value': v}
+            def __getitem__(self, idx):
+                return [self.k, self.v][idx]
         
         mock_rows = [
             MockRow("AI_PROVIDER", "DBProvider"),
@@ -41,17 +45,19 @@ def test_config_priority_db_over_env(mock_settings_repo):
         
         mock_settings_repo.get_all.return_value = mock_rows
 
-        # Initialize Agent
-        with patch.object(BaseAgent, '_load_prompt', return_value="System Prompt"):
-             agent = ConcreteAgent(name="TestAgent", prompt_path="tests/fixtures/fake_prompt.txt", 
-                                   user_id="test_user", settings_repo=mock_settings_repo)
+    # Initialize Agent
+    with patch.object(BaseAgent, '_load_prompt', return_value="System Prompt"), \
+         patch("src.agents.base_agent.BudgetAwareModelRouter") as mock_router:
+         # Force fallback to legacy loading by making router fail
+         mock_router.side_effect = Exception("Router Disabled for Test")
+         
+         agent = ConcreteAgent(name="TestAgent", prompt_path="tests/fixtures/fake_prompt.txt", 
+                               user_id="test_user", settings_repo=mock_settings_repo)
         
-        # Verify Config
-        
-        # Verify Config
-        assert agent.config["provider"] == "DBProvider"
-        assert agent.config["api_key"] == "DBKey"
-        assert agent.config["model"] == "DBModel"
+         # Verify Config
+         assert agent.config["provider"] == "DBProvider"
+         assert agent.config["api_key"] == "DBKey"
+         assert agent.config["model"] == "DBModel"
 
 def test_config_fallback_to_env(mock_settings_repo):
     """
@@ -61,11 +67,14 @@ def test_config_fallback_to_env(mock_settings_repo):
         mock_settings_repo.get_all.return_value = []
         
         # Create a dummy prompt file if needed or mock _load_prompt
-        with patch.object(BaseAgent, '_load_prompt', return_value="System Prompt"):
+        with patch.object(BaseAgent, '_load_prompt', return_value="System Prompt"), \
+             patch("src.agents.base_agent.BudgetAwareModelRouter") as mock_router:
+             mock_router.side_effect = Exception("Router Disabled for Test")
+             
              agent = ConcreteAgent(name="TestAgent", prompt_path="dummy", settings_repo=mock_settings_repo)
 
-        assert agent.config["provider"] == "EnvProvider"
-        assert agent.config["api_key"] == "EnvKey"
+             assert agent.config["provider"] == "EnvProvider"
+             assert agent.config["api_key"] == "EnvKey"
 
 def test_user_specific_override(mock_settings_repo):
     """
@@ -73,14 +82,21 @@ def test_user_specific_override(mock_settings_repo):
     """
     class MockRow:
         def __init__(self, k, v):
+            self.k = k
+            self.v = v
             self._mapping = {'key': k, 'value': v}
+        def __getitem__(self, idx):
+            return [self.k, self.v][idx]
 
     # In modern architecture, BaseAgent only calls get_all(user_id)
     # Priority is Env < DB. 
     user_rows = [MockRow("AI_PROVIDER", "UserProvider")]
     mock_settings_repo.get_all.return_value = user_rows
     
-    with patch.object(BaseAgent, '_load_prompt', return_value="System Prompt"):
+    with patch.object(BaseAgent, '_load_prompt', return_value="System Prompt"), \
+         patch("src.agents.base_agent.BudgetAwareModelRouter") as mock_router:
+        mock_router.side_effect = Exception("Router Disabled for Test")
+        
         agent = ConcreteAgent(name="TestAgent", prompt_path="dummy", user_id="test_user", settings_repo=mock_settings_repo)
     
-    assert agent.config["provider"] == "UserProvider"
+        assert agent.config["provider"] == "UserProvider"

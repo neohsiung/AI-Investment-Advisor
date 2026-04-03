@@ -1,10 +1,17 @@
 import json
 import typing
-from typing import List, Dict, Tuple, Any, Optional, Callable, Dict, List, Tuple, Any, Optional, Callable
+import os
+from dataclasses import replace
+from typing import List, Dict, Tuple, Any, Optional, Callable
 from sqlalchemy import text
 from src.utils.logger import setup_logger
 from src.repositories.sentinel_repository import ISentinelRepository, AlchemySentinelRepository
 from src.repositories.transaction_repository import ITransactionRepository, AlchemyTransactionRepository
+from src.infrastructure.memory.wisdom_vault import WisdomVault
+from src.domain.interfaces import LLMConfig, Message
+from src.services.budget_aware_model_router import BudgetAwareModelRouter
+from src.services.settings_service import SettingsService
+from src.services.token_logger_service import TokenLoggerService
 
 logger = setup_logger("ExperienceReplay")
 
@@ -21,10 +28,41 @@ class ExperienceReplayService:
     def __init__(
         self, 
         sentinel_repo: ISentinelRepository = None,
-        trans_repo: ITransactionRepository = None
+        trans_repo: ITransactionRepository = None,
+        llm_gateway: Optional[typing.Any] = None, # Using Any to avoid circular import if needed
+        agent_name: str = "ExperienceReplayService",
+        user_id: str = "system",
+        tier: str = "fast",
+        wisdom_vault: Optional[WisdomVault] = None
     ):
         self.sentinel_repo = sentinel_repo or AlchemySentinelRepository()
         self.trans_repo = trans_repo or AlchemyTransactionRepository()
+        self._wisdom_vault = wisdom_vault or WisdomVault()
+        
+        self.agent_name = agent_name
+        self.user_id = user_id
+        self.tier = tier
+        
+        # [Rule #14] Budget-Aware Model Routing
+        settings = SettingsService(user_id=self.user_id)
+        token_logger = TokenLoggerService()
+        self._router = BudgetAwareModelRouter(settings, token_logger)
+        
+        if llm_gateway:
+            self._llm_gateway = llm_gateway
+        else:
+            # Fallback to creating a bridge gateway
+            from src.infrastructure.llm.llm_gateway import LLMGatewayFactory, LoggingLLMGateway
+            # Resolve provider from settings or default
+            provider = settings.get_setting("ai_provider", "OpenRouter")
+            inner = LLMGatewayFactory.create(provider)
+            # Wrap with Logging for token/cost tracking
+            self._llm_gateway = LoggingLLMGateway(
+                inner=inner,
+                agent_name=self.agent_name,
+                tier=self.tier,
+                user_id=self.user_id
+            )
 
     def optimize_thresholds(self, user_id: str) -> Dict[str, Any]:
         """
@@ -73,13 +111,114 @@ class ExperienceReplayService:
             logger.error(f"VIX optimization failed: {e}")
         return None
 
-    def record_feedback(self, signal_id: str, success: bool, roi_hint: float = 0.0) -> None:
+    def record_feedback(
+        self, 
+        user_id: str, 
+        category: str, 
+        principle: str, 
+        confidence: float,
+        conflicts_with: Optional[str] = None
+    ) -> None:
         """
-        Manual or semi-automated feedback loop for specific signals.
-        針對特定訊號的手動或半自動回饋迴圈。
+        Record wisdom feedback into WisdomVault.
+        將回饋記錄至智慧金庫。
         """
-        # Future enhancement: correlate signal with 30d forward returns
-        pass
+        if conflicts_with:
+            # Handle conflict resolution: supersede old principle
+            self._wisdom_vault.supersede_wisdom(
+                user_id=user_id,
+                category=category,
+                old_principle=conflicts_with,
+                new_principle=principle,
+                confidence=confidence
+            )
+            logger.info(f"ExperienceReplay: Recorded feedback (superseded) for {user_id}/{category}")
+        else:
+            # Store new principle
+            self._wisdom_vault.store_wisdom(
+                user_id=user_id,
+                category=category,
+                principle=principle,
+                confidence=confidence
+            )
+            logger.info(f"ExperienceReplay: Recorded feedback for {user_id}/{category}")
+
+    async def distill_feedback(
+        self, user_message: str, last_ai_response: str, user_id: str
+    ) -> Optional[Dict[str, Any]]:
+        """
+        [Phase 3] Distill behavioral feedback from user message using LLM self-assessment.
+        從使用者訊息中提煉行為回饋。
+        """
+        # [Fix 3X-6] Fast cognitive filtering for noise/short messages
+        SKIP_PATTERNS = ["好", "嗯", "謝謝", "OK", "了解", "收到", "yes", "no", "對", "錯"]
+        if user_message.strip().lower() in SKIP_PATTERNS or len(user_message.strip()) < 4:
+            return None
+
+        try:
+            # 1. Load existing wisdom as context for conflict detection
+            existing_summary = self._wisdom_vault.get_wisdom_summary(user_id)
+            
+            # 2. Load prompt template
+            current_dir = os.path.dirname(os.path.abspath(__file__))
+            prompt_path = os.path.abspath(os.path.join(current_dir, "../../prompts/feedback_distiller.txt"))
+            
+            if not os.path.exists(prompt_path):
+                logger.error(f"Distill feedback failed: Prompt file not found at {prompt_path}")
+                return None
+                
+            with open(prompt_path, "r", encoding="utf-8") as f:
+                template = f.read()
+
+            system_prompt = (
+                template
+                .replace("{{existing_wisdom}}", existing_summary or "None")
+                .replace("{{user_message}}", user_message)
+                .replace("{{last_ai_response}}", last_ai_response)
+            )
+
+            # 3. Call LLM (Get budget-aware config from router)
+            config = self._router.get_config("fast", user_id)
+            config = replace(config, temperature=0.1, max_tokens=500) # Overwrite for distillation
+            
+            messages = [
+                Message(role="system", content="You are a JSON-only response agent."),
+                Message(role="user", content=system_prompt)
+            ]
+            
+            response_str = self._llm_gateway.chat(messages, config)
+            
+            # 4. Parse & Validate JSON
+            cleaned = response_str.replace("```json", "").replace("```", "").strip()
+            # Handle case where LLM yields non-JSON start
+            if not cleaned.startswith("{"):
+                start_idx = cleaned.find("{")
+                if start_idx != -1:
+                    cleaned = cleaned[start_idx:]
+            
+            data = json.loads(cleaned)
+            
+            # Confidence/Action Validation
+            action = data.get("action", "none")
+            confidence = data.get("confidence", 0.0)
+            
+            # Self-assessment Routing
+            if action == "store" and confidence >= 0.7:
+                # High confidence, ready to store
+                logger.info(f"ExperienceReplay: High confidence feedback detected ({confidence})")
+                return data
+            elif action == "clarify" or (confidence >= 0.4 and confidence < 0.7):
+                # Medium confidence, need clarification
+                logger.info(f"ExperienceReplay: Medium confidence feedback detected ({confidence}), suggesting clarification")
+                data["action"] = "clarify"
+                return data
+            else:
+                # Low confidence or no feedback
+                return None
+
+        except Exception as e:
+            logger.error(f"Distill feedback failed: {e}")
+            return None
 
     def analyze_narrative_drift(self, user_id: str, current_market_data: str) -> Dict[str, Any]:
         """
@@ -151,14 +290,15 @@ class ExperienceReplayService:
                 .replace("{{conviction_history}}", conviction_context)
             )
             
-            client = OpenRouterClient()
-            response_str = client.generate(
-                system_prompt=system_prompt,
-                user_prompt="Analyze the narrative drift and output JSON only.",
-                model=model_id,
-                api_key=api_key,
-                temperature=0.3
-            )
+            from src.domain.interfaces import LLMConfig, Message
+            
+            # Use gateway with budget-aware configuration
+            config = self._router.get_config("fast", user_id)
+            config = replace(config, temperature=0.3, max_tokens=2000)
+            
+            messages = [Message(role="user", content=system_prompt + "\n\n" + "Analyze the narrative drift and output JSON only.")]
+            
+            response_str = self._llm_gateway.chat(messages, config)
             
             # Clean and Parse JSON
             cleaned = response_str.replace("```json", "").replace("```", "").strip()
