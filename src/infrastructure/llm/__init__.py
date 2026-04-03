@@ -8,6 +8,7 @@ from src.infrastructure.llm.llm_gateway import (
 )
 from src.infrastructure.llm.tier_config import TierConfig, TierSpec
 from src.infrastructure.llm.council_tier_router import CouncilTierRouter
+from src.infrastructure.llm.budget_aware_model_router import BudgetAwareModelRouter
 
 __all__ = [
     "OpenRouterGateway",
@@ -17,4 +18,5 @@ __all__ = [
     "TierConfig",
     "TierSpec",
     "CouncilTierRouter",
+    "BudgetAwareModelRouter",
 ]
