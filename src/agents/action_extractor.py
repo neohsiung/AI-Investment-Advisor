@@ -6,8 +6,11 @@ class ActionExtractorAgent(BaseAgent):
     """
     Extract structured trades from free-form AI text decisions.
     從非結構化 AI 委員會決策文字中提取結構化交易指令。
+
+    Default tier: nano (Reflex level for simple extraction task)
+    預設層級：nano（反射層，適用於簡易萃取任務）
     """
-    def __init__(self, use_cache=True, user_id=None, tier="fast", **kwargs):
+    def __init__(self, use_cache=True, user_id=None, tier="nano", **kwargs):
         # We don't need a specific identity or prompt file for this simple NLP task.
         # But BaseAgent requires a prompt_path. (但 BaseAgent 需要 prompt_path。)
         super().__init__(

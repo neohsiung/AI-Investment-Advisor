@@ -5,6 +5,9 @@ class SentinelAgent(BaseAgent):
     """
     Sentinel Agent: Specialized coordinator for classifying and prioritizing incoming triggers.
     哨兵智能體：專門負責對傳入的觸發事件進行分類與優先級評定的協調者。
+
+    Tier: smart (Requires System 2 reasoning for high reliability and robust routing)
+    層級：smart（需要 System 2 推理以確保高可靠性與強健路由）
     """
     def __init__(self, use_cache=True, tier="smart", **kwargs):
         super().__init__(

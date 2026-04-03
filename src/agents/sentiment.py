@@ -2,6 +2,13 @@ import json
 from .base_agent import BaseAgent
 
 class SentimentAgent(BaseAgent):
+    """
+    Sentiment Agent: News and social sentiment analysis for ticker triggers.
+    情緒分析智能體：分析個股觸發事件的新聞與社群情緒。
+
+    Tier: fast (Primarily for summarization and tone extraction)
+    層級：fast（主要用於摘要與語氣萃取）
+    """
     def __init__(self, user_id, use_cache=True, ttl_hours=4, **kwargs):
         # Default 4 hours for Sentiment (News changes fast)
         # Sentiment 預設為 4 小時 (新聞變化快速)
