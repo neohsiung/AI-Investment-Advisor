@@ -6,10 +6,15 @@ from src.infrastructure.llm.llm_gateway import (
     OpenAIGateway,
     LLMGatewayFactory,
 )
+from src.infrastructure.llm.tier_config import TierConfig, TierSpec
+from src.infrastructure.llm.council_tier_router import CouncilTierRouter
 
 __all__ = [
     "OpenRouterGateway",
     "GeminiGateway",
     "OpenAIGateway",
     "LLMGatewayFactory",
+    "TierConfig",
+    "TierSpec",
+    "CouncilTierRouter",
 ]

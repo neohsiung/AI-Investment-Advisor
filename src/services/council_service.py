@@ -9,7 +9,8 @@ from typing import List, Dict, Tuple, Any, Optional, Callable, Union, Awaitable
 from datetime import datetime
 
 from src.agents.factory import AgentFactory
-from src.infrastructure.llm_router import DynamicModelRouter
+from src.infrastructure.llm.tier_router_base import ITierRouter, RoutingContext
+from src.infrastructure.llm.council_tier_router import CouncilTierRouter
 from src.repositories.vector_repository import AlchemyVectorRepository
 from src.infrastructure.lane_manager import LaneManager
 from src.utils.format_utils import format_agent_output
@@ -27,10 +28,14 @@ class CouncilService:
     支援用於全投資組合分析的 Map-Reduce 與動態模型路由。
     """
 
-    def __init__(self, user_id: str, settings_service: Optional[SettingsService] = None):
+    def __init__(self, user_id: str, settings_service: Optional["SettingsService"] = None,
+        tier_router: Optional[ITierRouter] = None,
+    ):
         self.user_id = user_id
+        # Delayed import to avoid circular dependency
+        from src.services.settings_service import SettingsService
         self.settings_service = settings_service or SettingsService(user_id=user_id)
-        self.router = DynamicModelRouter()
+        self.router: ITierRouter = tier_router or CouncilTierRouter()
         self.vector_repo = AlchemyVectorRepository()
         self.lane_manager = LaneManager()
         self.competitor_service = CompetitorService(user_id=user_id)
@@ -111,7 +116,10 @@ class CouncilService:
                 aggregated_summary += f"- Error in analysis: {res}\n"
 
         # --- Phase 3: Synthesis (CIO) ---
-        consensus_tier = self.router.select_tier(topic, round_num=99, market_volatility=market_volatility)
+        # Level 1-2 Consensus
+        consensus_tier = self.router.select_tier(
+            RoutingContext(topic=topic, round_num=99, market_volatility=market_volatility, user_id=self.user_id)
+        )
         cio = AgentFactory.create_cio_agent(tier=consensus_tier, user_id=user_id, mode=mode)
         
         final_context = {
@@ -163,8 +171,10 @@ class CouncilService:
             logger.warning(f"Council: Memory recall failed: {e}")
 
         # 2. Members
-        # Determine Tier based on Topic Complexity or Market Regime
-        tier = self.router.select_tier(topic, round_num=1, market_volatility=market_volatility)
+        # 1. Start Initial Debate
+        tier = self.router.select_tier(
+            RoutingContext(topic=topic, round_num=1, market_volatility=market_volatility, user_id=self.user_id)
+        )
         
         # Instantiate Agents with retrieved context
         # [Fix] Wrap in try-except to prevent one agent failure from crashing the whole council
@@ -225,8 +235,10 @@ class CouncilService:
                 logger.error(f"Agent {agent.name} failed during debate: {e}")
                 transcript.append(f"[{agent.name}]: Error - {e}")
 
-        # 4. Consensus
-        consensus_tier = self.router.select_tier(topic, round_num=99)
+        # 4. Final CIO Consensus
+        consensus_tier = self.router.select_tier(
+            RoutingContext(topic=topic, round_num=99, user_id=self.user_id)
+        )
         debates_text = "\n".join(stances)
         
         # Determine if Structural Cooling was detected by MacroAgent
