@@ -74,3 +74,36 @@ def test_get_user_spending_error(token_logger_service, mock_engine):
     # Safe implementation should return zero cost summary on error
     assert summary["total_cost"] == 0.0
     assert summary["total_tokens"] == 0
+
+def test_log_usage_unknown_tier_does_not_raise(token_logger_service, mock_engine):
+    """未知 tier 不應拋出異常，cost 應為 0.0"""
+    mock_conn = mock_engine.connect.return_value.__enter__.return_value
+
+    result = token_logger_service.log_usage(
+        user_id="user@example.com",
+        agent_name="TestAgent",
+        tier="unknown_tier",   # 不存在的 tier
+        model="some-model",
+        provider="OpenRouter",
+        prompt_tokens=1000,
+        completion_tokens=500
+    )
+    assert result is True
+    # 驗證 total_cost 為 0.0
+    args, _ = mock_conn.execute.call_args
+    assert args[1]["total_cost"] == 0.0
+
+def test_log_usage_db_failure_returns_false(token_logger_service, mock_engine):
+    """DB 連線失敗時 log_usage() 應回傳 False，不拋例外"""
+    mock_engine.connect.side_effect = Exception("Connection refused")
+
+    result = token_logger_service.log_usage(
+        user_id="user@example.com",
+        agent_name="TestAgent",
+        tier="fast",
+        model="gpt-4o",
+        provider="OpenRouter",
+        prompt_tokens=100,
+        completion_tokens=50
+    )
+    assert result is False

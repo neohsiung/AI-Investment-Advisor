@@ -1,83 +1,81 @@
-import unittest
+"""
+Unit tests for LoggingLLMGateway.
+ILLMGateway Decorator 的單元測試。
+"""
+import pytest
 from unittest.mock import MagicMock, patch
-from src.infrastructure.llm.llm_gateway import LoggingLLMGateway, OpenRouterGateway
+from src.infrastructure.llm.llm_gateway import LoggingLLMGateway
 from src.domain.interfaces import Message, LLMConfig
 
+@pytest.fixture
+def mock_inner():
+    inner = MagicMock()
+    inner.chat.return_value = "test response"
+    inner._last_usage = {"prompt_tokens": 100, "completion_tokens": 50}
+    return inner
 
-class TestLoggingLLMGateway(unittest.TestCase):
-    def setUp(self):
-        self.mock_inner = MagicMock()
-        self.gateway = LoggingLLMGateway(
-            inner=self.mock_inner,
-            agent_name="TestAgent",
-            tier="fast",
-            user_id="user@example.com"
-        )
-        self.messages = [Message(role="user", content="Hello")]
-        self.config = LLMConfig(provider="OpenRouter", model="gpt-4o-mini", api_key="sk-123")
+@pytest.fixture
+def logging_gateway(mock_inner):
+    return LoggingLLMGateway(
+        inner=mock_inner,
+        agent_name="TestAgent",
+        tier="fast",
+        user_id="test@example.com",
+    )
 
-    @patch("src.services.token_logger_service.TokenLoggerService")
-    def test_chat_logs_usage(self, mock_logger_class):
-        # 1. Setup mock inner gateway to return content and set _last_usage
-        self.mock_inner.chat.return_value = "World"
-        self.mock_inner._last_usage = {
-            "prompt_tokens": 10,
-            "completion_tokens": 5,
-            "total_tokens": 15
-        }
-        
-        mock_logger_inst = mock_logger_class.return_value
-        
-        # 2. Call chat
-        result = self.gateway.chat(self.messages, self.config)
-        
-        # 3. Verify
-        self.assertEqual(result, "World")
-        self.mock_inner.chat.assert_called_once_with(self.messages, self.config)
-        
-        # 4. Verify logging service was called correctly
-        mock_logger_inst.log_usage.assert_called_once_with(
-            user_id="user@example.com",
-            agent_name="TestAgent",
-            tier="fast",
-            model="gpt-4o-mini",
-            provider="OpenRouter",
-            prompt_tokens=10,
-            completion_tokens=5,
-            metadata={}
-        )
+class TestLoggingLLMGateway:
+    def test_returns_inner_chat_content(self, logging_gateway, mock_inner):
+        """回傳值應等於 inner.chat() 的回傳值"""
+        messages = [Message(role="user", content="test")]
+        config = LLMConfig(provider="OpenRouter", model="gpt-4o", api_key="sk-123")
+        result = logging_gateway.chat(messages, config)
+        assert result == "test response"
 
-    @patch("src.services.token_logger_service.TokenLoggerService")
-    def test_chat_no_usage_metadata(self, mock_logger_class):
-        # 1. Setup mock inner gateway without _last_usage
-        self.mock_inner.chat.return_value = "World"
-        if hasattr(self.mock_inner, "_last_usage"):
-            delattr(self.mock_inner, "_last_usage")
-        
-        mock_logger_inst = mock_logger_class.return_value
-        
-        # 2. Call chat
-        result = self.gateway.chat(self.messages, self.config)
-        
-        # 3. Verify logging was NOT called
-        self.assertEqual(result, "World")
-        mock_logger_inst.log_usage.assert_not_called()
+    def test_logs_usage_after_chat(self, logging_gateway, mock_inner):
+        """chat() 後 TokenLoggerService.log_usage() 應被呼叫"""
+        messages = [Message(role="user", content="test")]
+        config = LLMConfig(provider="OpenRouter", model="gpt-4o", api_key="sk-123")
 
-    @patch("src.services.token_logger_service.TokenLoggerService")
-    def test_logging_failure_does_not_break_flow(self, mock_logger_class):
-        # 1. Setup logging service to raise exception
-        self.mock_inner.chat.return_value = "World"
-        self.mock_inner._last_usage = {"prompt_tokens": 1, "completion_tokens": 1}
-        
-        mock_logger_inst = mock_logger_class.return_value
-        mock_logger_inst.log_usage.side_effect = Exception("DB Down")
-        
-        # 2. Call chat (should not raise)
-        result = self.gateway.chat(self.messages, self.config)
-        
-        # 3. Verify result is still returned
-        self.assertEqual(result, "World")
+        with patch("src.services.token_logger_service.TokenLoggerService.log_usage") as mock_log:
+            logging_gateway.chat(messages, config)
+            mock_log.assert_called_once_with(
+                user_id="test@example.com",
+                agent_name="TestAgent",
+                tier="fast",
+                model="gpt-4o",
+                provider="OpenRouter",
+                prompt_tokens=100,
+                completion_tokens=50,
+                metadata={}
+            )
 
+    def test_no_usage_metadata_skips_logging(self, logging_gateway, mock_inner):
+        """若 inner 沒有 _last_usage，不呼叫 logger"""
+        if hasattr(mock_inner, "_last_usage"):
+            delattr(mock_inner, "_last_usage")
+        
+        messages = [Message(role="user", content="test")]
+        config = LLMConfig(provider="OpenRouter", model="gpt-4o", api_key="sk-123")
 
-if __name__ == "__main__":
-    unittest.main()
+        with patch("src.services.token_logger_service.TokenLoggerService.log_usage") as mock_log:
+            logging_gateway.chat(messages, config)
+            mock_log.assert_not_called()
+
+    def test_logging_failure_does_not_raise(self, logging_gateway, mock_inner):
+        """Token Logger 失敗時，主流程不中斷"""
+        messages = [Message(role="user", content="test")]
+        config = LLMConfig(provider="OpenRouter", model="gpt-4o", api_key="sk-123")
+
+        with patch("src.services.token_logger_service.TokenLoggerService.log_usage") as mock_log:
+            mock_log.side_effect = Exception("DB down")
+            # Should NOT raise
+            result = logging_gateway.chat(messages, config)
+            assert result == "test response"
+
+    def test_embed_passes_through(self, logging_gateway, mock_inner):
+        """embed() 應直接轉發給 inner，不影響 usage logger"""
+        mock_inner.embed.return_value = [0.1, 0.2, 0.3]
+        config = LLMConfig(provider="OpenRouter", model="gpt-4o", api_key="sk-123")
+        result = logging_gateway.embed("some text", config)
+        assert result == [0.1, 0.2, 0.3]
+        mock_inner.embed.assert_called_once()
