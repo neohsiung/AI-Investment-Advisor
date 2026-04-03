@@ -256,29 +256,6 @@ class ExperienceReplayService:
                 return {"accuracy_score": 10, "suggested_correction": "無歷史參考資料 (No historical data)."}
             
             # 2. Call LLM directly to analyze the drift
-            from src.infrastructure.llm_router import DynamicModelRouter
-            from src.utils.llm_clients.openrouter_client import OpenRouterClient
-            import os
-            
-            router = DynamicModelRouter()
-            tier = router.select_tier("Narrative Drift Analysis", round_num=99)
-            
-            # Retrieve Model config
-            from src.repositories.settings_repository import AlchemySettingsRepository
-            settings_repo = AlchemySettingsRepository()
-            config_res_val = settings_repo.get(user_id, 'ai_models_config')
-                
-            provider = "openrouter"
-            model_id = "openai/gpt-4o-mini" # Default fallback
-            api_key = os.environ.get("OPENROUTER_API_KEY", "")
-            
-            if config_res_val:
-                config = json.loads(config_res_val) if isinstance(config_res_val, str) else config_res_val
-                model_info = config.get(tier, {})
-                provider = model_id.split('/')[0] if '/' in model_info.get("model", "") else "openrouter"
-                model_id = model_info.get("model", model_id)
-                api_key = config.get("api_keys", {}).get(provider, api_key)
-            
             prompt_path = "prompts/narrative_drift_agent.txt"
             with open(prompt_path, "r", encoding="utf-8") as f:
                 sys_prompt_template = f.read()
@@ -292,8 +269,8 @@ class ExperienceReplayService:
             
             from src.domain.interfaces import LLMConfig, Message
             
-            # Use gateway with budget-aware configuration
-            config = self._router.get_config("fast", user_id)
+            # Use gateway with budget-aware configuration (Smart tier for analysis)
+            config = self._router.get_config("smart", user_id)
             config = replace(config, temperature=0.3, max_tokens=2000)
             
             messages = [Message(role="user", content=system_prompt + "\n\n" + "Analyze the narrative drift and output JSON only.")]

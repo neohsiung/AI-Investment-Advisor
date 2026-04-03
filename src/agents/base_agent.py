@@ -142,49 +142,30 @@ class BaseAgent(ABC):
             return self._legacy_load_config()
 
     def _legacy_load_config(self):
-        """Legacy configuration loader (Fallback)."""
-        if self.tier == "fast":
-            default_model = os.getenv("AI_MODEL_FAST", os.getenv("AI_MODEL", "gemini-1.5-flash"))
-        elif self.tier == "advanced":
-            default_model = os.getenv("AI_MODEL_ADVANCED", os.getenv("AI_MODEL_SMART", "claude-3-5-sonnet-20240620"))
-        else:
-            default_model = os.getenv("AI_MODEL_SMART", os.getenv("AI_MODEL", "gemini-1.5-pro"))
-
+        """Legacy configuration loader (Fallback using TierConfig)."""
+        from src.infrastructure.llm.tier_config import TierConfig
+        try:
+            db_settings = self._load_config_from_db()
+        except Exception:
+            db_settings = {}
+            
+        tier_cfg = TierConfig()
+        default_model = tier_cfg.resolve(self.tier, db_settings)
+        provider = db_settings.get("ai_provider", os.getenv("AI_PROVIDER", "Google Gemini"))
+        
         config = {
-            "provider": os.getenv("AI_PROVIDER", "Google Gemini"),
+            "provider": provider,
             "model": default_model,
-            "api_key": os.getenv("API_KEY", ""),
-            "base_url": os.getenv("BASE_URL", "")
+            "api_key": db_settings.get("api_key", os.getenv("API_KEY", "")),
+            "base_url": db_settings.get("api_base_url", os.getenv("BASE_URL", "")),
+            "temperature": float(db_settings.get("ai_temperature", 0.7)),
+            "max_tokens": int(db_settings.get("ai_max_tokens", 4096)),
+            "timeout_seconds": int(db_settings.get("ai_timeout", 60)),
         }
 
-        db_settings = self._load_config_from_db()
-        # Apply DB Settings (Override Env)
-        for key, value in db_settings.items():
-            if key == "AI_PROVIDER": config["provider"] = value
-            elif key == "AI_MODEL_ADVANCED" and self.tier == "advanced": config["model"] = value
-            elif key == "AI_MODEL_SMART" and self.tier == "smart": config["model"] = value
-            elif key == "AI_MODEL_FAST" and self.tier == "fast": config["model"] = value
-            elif key == "AI_MODEL": config["model"] = value # DB AI_MODEL always overrides if specific tier key didn't already
-            elif key == "API_KEY": config["api_key"] = value
-            elif key == "BASE_URL": config["base_url"] = value
-        
-        if not config["model"]:
-            if self.tier == "advanced":
-                config["model"] = "claude-3-5-sonnet-20240620"
-            elif self.tier == "smart":
-                config["model"] = "gemini-1.5-pro"
-            else:
-                config["model"] = "gemini-1.5-flash"
-
-        # [Robustness] Clean quotes if any (處理雙引號殘留問題)
+        # [Robustness] Clean quotes if any
         if isinstance(config.get("model"), str):
             config["model"] = config["model"].strip().strip('"').strip("'")
-
-        # Explicit Warning for Env usage if DB is missing critical keys
-        if not db_settings.get("API_KEY") and config["api_key"]:
-             pass # Suppress for now, or log warning as requested: "Data should exist in DB"
-             # self.logger.warning("Using API_KEY from Environment. Recommendation: Move to DB settings.")
-
         return config
 
     def _load_config_from_db(self):
