@@ -93,7 +93,7 @@ class InteractionService:
              # [v3.5] Generic acknowledgment for unlinked users
              msg = "✅ 系統已收到您的訊息 (Message Received)！\n由於此 ID 尚未與帳號綁定，系統目前無法進行進一步處理。請至 Dashboard 完成驗證。"
              try:
-                 adapter.send_message(user_id, msg) # Use send_message for text-only (more reliable)
+                 await adapter.send_message(user_id, msg) # Use send_message for text-only (more reliable)
              except Exception as e:
                  logger.error(f"InteractionService: Failed to send unlinked ack: {e}")
              return
@@ -281,6 +281,11 @@ class InteractionService:
                 "請根據下方原始觸發訊號進行判斷。"
             )
         
+        # Format triggers for display
+        formatted_triggers = "\n".join(
+            f"  • {t}" for t in filtered_triggers
+        ) if filtered_triggers else "(無觸發訊號)"
+
         alert_content = (
             f"### 🛡️ Sentinel 監控警報 (Sentinel Alert)\n\n"
             f"**偵測到以下重要訊號 ({len(filtered_triggers)}):**\n"

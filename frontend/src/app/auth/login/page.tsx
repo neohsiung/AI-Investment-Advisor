@@ -4,7 +4,9 @@ import { Globe, ShieldCheck, Zap, Globe as GlobeIcon } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 export default function LoginPage() {
-  const BACKEND_LOGIN_URL = "http://localhost:8000/api/auth/login";
+  // Use relative URL - Next.js proxy rewrites /api/* to http://mcp_server:8000/api/*
+  // This ensures it works in Docker, local dev, and production.
+  const BACKEND_LOGIN_URL = "/api/auth/login";
 
   return (
     <div className="flex flex-col items-center justify-center min-h-screen bg-surface-container-lowest text-on-surface p-6">

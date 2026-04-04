@@ -40,10 +40,11 @@ function deploy_docker {
     echo ""
     echo "✅ Deployment Complete"
     echo "----------------------"
-    echo "📊 Dashboard: http://localhost:8501"
-    echo "🩺 APM/Traces: http://localhost:8080 (SigNoz)"
-    echo "🗄️  Database:  localhost:5432"
-    echo "🔗 n8n:       http://localhost:5678"
+    echo "📊 Dashboard (Next.js): http://localhost:3000"
+    echo "🧠 Legacy (Streamlit):   http://localhost:8501"
+    echo "🩺 APM/Traces (SigNoz):  http://localhost:8080"
+    echo "🗄️  Database:           localhost:5432"
+    echo "🔗 n8n:                 http://localhost:5678"
     echo ""
     
     # Auto-import n8n workflow with API key injection

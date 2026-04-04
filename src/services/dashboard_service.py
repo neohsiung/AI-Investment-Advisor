@@ -1,4 +1,3 @@
-import streamlit as st
 import pandas as pd
 import typing
 from typing import List, Dict, Tuple, Any, Optional, Callable, Dict, List, Tuple, Any, Optional, Callable
@@ -32,8 +31,7 @@ class DashboardService:
         self.roi_engine = ROIEngine(db_path=self.db_path, user_id=user_id)
         self.pnl_calc = PnLCalculator(db_path=self.db_path, user_id=user_id)
 
-    @st.cache_data(ttl=300, show_spinner=False)
-    def _fetch_market_prices(_self, tickers: List[str], user_id: str = None) -> Dict[str, float]:
+    def _fetch_market_prices(self, tickers: List[str], user_id: str = None) -> Dict[str, float]:
         """
         Internal helper to fetch market prices with caching.
         內部輔助方法：獲取帶快取的市場價格。
@@ -47,8 +45,7 @@ class DashboardService:
             
         return prices
 
-    @st.cache_data(ttl=60, show_spinner=False)
-    def prepare_dashboard_data(_self, user_id: str) -> Dict[str, Any]:
+    def prepare_dashboard_data(self, user_id: str) -> Dict[str, Any]:
         """
         Fetch transactions, prices, and calculate all dashboard metrics for the user.
         獲取交易、價格並為使用者計算所有儀表板指標。
@@ -65,7 +62,7 @@ class DashboardService:
             active_tickers = [p.symbol for p in live_positions]
         else:
             # Fallback to transactions if no live positions
-            transactions_df = _self.transaction_service.get_transactions(user_id)
+            transactions_df = self.transaction_service.get_transactions(user_id)
             if not transactions_df.empty:
                 holdings = transactions_df.copy()
                 holdings['qty_signed'] = holdings.apply(lambda x: x['quantity'] if x['action'] == 'BUY' else -x['quantity'], axis=1)
@@ -75,7 +72,7 @@ class DashboardService:
         # 2. Fetch Prices ONCE
         current_prices = {}
         if active_tickers:
-            current_prices = _self._fetch_market_prices(active_tickers, user_id=user_id)
+            current_prices = self._fetch_market_prices(active_tickers, user_id=user_id)
             
             # price resilience fix
             if live_positions:
@@ -85,10 +82,10 @@ class DashboardService:
                         current_prices[ticker] = getattr(p, 'current_price', 0)
 
         # 3. Update snapshot WITH pre-fetched prices (Eliminates redundant fetch inside update_daily_snapshot)
-        update_daily_snapshot(_self.db_path, user_id=user_id, current_prices=current_prices)
+        update_daily_snapshot(self.db_path, user_id=user_id, current_prices=current_prices)
 
         # 4. Fetch Transactions for other UI needs
-        transactions_df = _self.transaction_service.get_transactions(user_id)
+        transactions_df = self.transaction_service.get_transactions(user_id)
 
         # 5. Calculate Core Metrics using the same prices
         metrics = {'nlv': 0, 'leveraged_value': 0, 'cash': 0, 'leverage_ratio': 0, 'cash_balance': 0}
@@ -97,8 +94,8 @@ class DashboardService:
 
         try:
             # Calculate all metrics based on DB positions + Real-time Market Prices
-            metrics_derived = _self.calc.calculate_metrics(current_prices, user_id=user_id)
-            pnl_data = _self.pnl_calc.calculate_breakdown(current_prices, user_id=user_id)
+            metrics_derived = self.calc.calculate_metrics(current_prices, user_id=user_id)
+            pnl_data = self.pnl_calc.calculate_breakdown(current_prices, user_id=user_id)
             
             logger.info(f"Derived Metrics: {metrics_derived}")
             logger.info(f"PnL Data: {pnl_data}")
@@ -107,7 +104,7 @@ class DashboardService:
             metrics = metrics_derived
             
             # v4.2.3: Use the repository's authoritative "Net Invested Capital" (Deposits - Withdrawals)
-            metrics['invested_capital'] = _self.transaction_repo.calculate_net_invested_capital(user_id)
+            metrics['invested_capital'] = self.transaction_repo.calculate_net_invested_capital(user_id)
             metrics['unrealized_pnl'] = pnl_data.get('unrealized', 0)
             
             logger.info(f"Invested Capital: {metrics['invested_capital']}")
@@ -119,10 +116,10 @@ class DashboardService:
             # Gross Exposure = Total Nominal Assets + Uninvested Cash
             metrics['gross_nlv'] = metrics_derived['tnv'] + metrics_derived['cash_balance']
 
-            roi = _self.roi_engine.calculate_roi(metrics['nlv'], user_id=user_id)
+            roi = self.roi_engine.calculate_roi(metrics['nlv'], user_id=user_id)
             logger.info(f"Final Dashboard Metrics for {user_id}: NLV={metrics['nlv']}, Cash={metrics['cash_balance']}, Total P/L={pnl_data['total']}")
         except Exception as e:
-            st.error(f"指標計算錯誤: {e}")
+            logger.error(f"指標計算錯誤: {e}")
             logger.error(f"Metric calculation failed: {e}")
 
         # 6. Prepare Positions DataFrame

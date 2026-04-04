@@ -8,7 +8,7 @@ def mock_deps():
     with patch('src.services.council_service.AgentFactory') as mock_factory, \
          patch('src.services.council_service.AlchemyVectorRepository') as mock_vector, \
          patch('src.services.council_service.LaneManager') as mock_lane_cls, \
-         patch('src.services.council_service.DynamicModelRouter') as mock_router:
+         patch('src.services.council_service.CouncilTierRouter') as mock_router:
         
         # Setup LaneManager instance mock
         mock_lane_instance = MagicMock()

@@ -58,12 +58,25 @@ export function useIntelligenceBriefing() {
   };
 }
 
+export function useAlerts() {
+  const { data, error, isLoading, mutate } = useSWR("/api/dashboard/alerts", fetcher, {
+    refreshInterval: 60000, // 每分鐘更新一次
+  });
+
+  return {
+    alerts: data?.data || [],
+    isLoading,
+    isError: error,
+    mutate,
+  };
+}
+
 /**
  * WebSocket 數據同步 Hook
  * 監聽後端推送並即時更新 SWR 快取
  */
 export function useDashboardSocket() {
-  const { lastMessage, status } = useWebSocket();
+  const { lastMessage, status, stableStatus } = useWebSocket();
 
   useEffect(() => {
     if (lastMessage && lastMessage.type === "PORTFOLIO_UPDATE") {
@@ -79,5 +92,5 @@ export function useDashboardSocket() {
     }
   }, [lastMessage]);
 
-  return { status };
+  return { status, stableStatus };
 }

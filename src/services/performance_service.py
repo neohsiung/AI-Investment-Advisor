@@ -1,4 +1,3 @@
-import streamlit as st
 import pandas as pd
 import typing
 from typing import List, Dict, Tuple, Any, Optional, Callable, Dict, List, Tuple, Any, Optional, Callable
@@ -23,29 +22,27 @@ class PerformanceService:
         self.market_service = MarketDataService(user_id=user_id)
         self.trans_repo = AlchemyTransactionRepository()
 
-    @st.cache_data(ttl=300, show_spinner=False)
-    def _fetch_prices(_self, tickers: List[str]) -> Dict[str, float]:
+    def _fetch_prices(self, tickers: List[str]) -> Dict[str, float]:
         """
         Internal helper to fetch market prices with caching.
         內部輔助方法：獲取帶快取的市場價格。
         """
         return _self.market_service.get_current_prices(tickers)
 
-    @st.cache_data(ttl=60, show_spinner=False)
-    def prepare_performance_data(_self, account_id: str = None) -> Dict[str, Any]:
+    def prepare_performance_data(self, account_id: str = None) -> Dict[str, Any]:
         """
         Fetch all data needed for the performance page.
         獲取績效頁面所需的所有數據。
         """
         # 1. Fetch active tickers and prices
-        active_tickers = _self.trans_repo.get_active_tickers(_self.user_id, account_id)
-        current_prices = _self._fetch_prices(active_tickers) if active_tickers else {}
+        active_tickers = self.trans_repo.get_active_tickers(self.user_id, account_id)
+        current_prices = self._fetch_prices(active_tickers) if active_tickers else {}
 
         # 2. Trigger snapshot update with pre-fetched prices (Aggregated or Specific)
         # Note: update_daily_snapshot might need refinement to support per-account storage if we want persistent per-account records.
         # For now, we mainly rely on history reconstruction for accuracy.
-        _self.analytics_service.trigger_snapshot_update(current_prices=current_prices, account_id=account_id)
-        pnl_data = _self.analytics_service.get_pnl_breakdown(current_prices, account_id)
+        self.analytics_service.trigger_snapshot_update(current_prices=current_prices, account_id=account_id)
+        pnl_data = self.analytics_service.get_pnl_breakdown(current_prices, account_id)
         
         # 確保 pnl_data 不為 None
         if pnl_data is None:

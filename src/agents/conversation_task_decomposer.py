@@ -75,22 +75,34 @@ Return ONLY the JSON list.
         self.user_id = user_id
         self.tier = tier
         self._llm = None
+        self._config = None
+
+    def _get_config(self):
+        if self._config is None:
+            try:
+                from src.services.settings_service import SettingsService
+                from src.services.token_logger_service import TokenLoggerService
+                from src.infrastructure.llm.budget_aware_model_router import BudgetAwareModelRouter
+                svc = SettingsService(user_id=self.user_id)
+                router = BudgetAwareModelRouter(svc, TokenLoggerService())
+                self._config = router.get_config(self.tier, self.user_id)
+            except Exception as e:
+                logger.warning(f"Decomposer: Failed to load config from DB: {e}. Using env fallback.")
+                from src.domain.interfaces import LLMConfig
+                self._config = LLMConfig(
+                    provider=os.getenv("AI_PROVIDER", "OpenRouter"),
+                    model=os.getenv("AI_MODEL_SMART", "google/gemini-2.5-pro"),
+                    api_key=os.getenv("API_KEY", ""),
+                    base_url=os.getenv("BASE_URL", ""),
+                    temperature=0.1,
+                )
+        return self._config
 
     def _get_llm(self):
         if self._llm is None:
-            provider = os.getenv("AI_PROVIDER", "Google Gemini")
-            self._llm = LLMGatewayFactory.create(provider)
+            config = self._get_config()
+            self._llm = LLMGatewayFactory.create(config.provider)
         return self._llm
-
-    def _get_config(self) -> LLMConfig:
-        model = os.getenv("AI_MODEL_SMART", "gemini-1.5-pro")
-        return LLMConfig(
-            provider=os.getenv("AI_PROVIDER", "Google Gemini"),
-            model=model,
-            api_key=os.getenv("API_KEY", ""),
-            base_url=os.getenv("BASE_URL", ""),
-            temperature=0.1,
-        )
 
     async def decompose(self, user_message: str, history: str = "") -> List[SubTask]:
         """

@@ -43,6 +43,31 @@ services:
       otel-collector:
         condition: service_started
 
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+      args:
+        - BACKEND_URL=http://mcp_server:8000
+    container_name: investment_advisor_frontend
+    ports:
+      - "3000:3000"
+    environment:
+      - NODE_ENV=production
+      - NEXT_TELEMETRY_DISABLED=1
+      - BACKEND_URL=http://mcp_server:8000
+      - NEXT_PUBLIC_API_URL=http://localhost:8000
+      - OTEL_SERVICE_NAME=nextjs_frontend
+      - OTEL_EXPORTER_OTLP_ENDPOINT=http://otel-collector:4318
+    networks:
+      - advisor-net
+    depends_on:
+      mcp_server:
+        condition: service_healthy
+      otel-collector:
+        condition: service_started
+    restart: unless-stopped
+
   mcp_server:
     build:
       context: .

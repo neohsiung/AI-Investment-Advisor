@@ -1,4 +1,7 @@
 import pytest
+pytestmark = pytest.mark.integration
+
+import pytest
 from fastapi.testclient import TestClient
 from unittest.mock import MagicMock, patch
 from services.mcp_server.src.app import app, services

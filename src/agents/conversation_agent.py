@@ -290,7 +290,7 @@ class ConversationAgent:
             return result
 
         except Exception as e:
-            logger.error(f"ConversationAgent.respond error: {e}")
+            logger.error(f"ConversationAgent.respond error: {e}", exc_info=True)
             return f"⚠️ 抱歉，處理您的訊息時發生錯誤。請稍後再試。"
 
     # ── Phase 4: Gap Detection Handlers ──────────────────────

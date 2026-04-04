@@ -58,7 +58,8 @@ class TierSpec:
         db_settings = db_settings or {}
         # DB override
         if self.env_key in db_settings:
-            return db_settings[self.env_key]
+            val = db_settings[self.env_key]
+            return val.strip().strip('"').strip("'") if isinstance(val, str) else val
         # Env override
         env_model = os.getenv(self.env_key)
         if env_model:

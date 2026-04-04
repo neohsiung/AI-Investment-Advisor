@@ -368,7 +368,7 @@ class BaseAgent(ABC):
                 from src.infrastructure.llm.llm_gateway import MockLLMGateway
                 return MockLLMGateway()
 
-            provider = os.getenv("AI_PROVIDER", "Google Gemini")
+            provider = self.config.get('provider', os.getenv("AI_PROVIDER", "Google Gemini"))
             inner = LLMGatewayFactory.create(provider)
             # 1. Add Retry logic
             retrying = RetryLLMGateway(inner=inner, max_retries=3)

@@ -3,6 +3,13 @@ from unittest.mock import MagicMock
 from src.infrastructure.llm import BudgetAwareModelRouter
 from src.domain.interfaces import LLMConfig
 
+@pytest.fixture(autouse=True)
+def env_reset(monkeypatch):
+    """Ensure environment variables don't pollute TierSpec resolution."""
+    for key in ["AI_MODEL_NANO", "AI_MODEL_FAST", "AI_MODEL_SMART", "AI_MODEL_ADVANCED"]:
+        monkeypatch.delenv(key, raising=False)
+    yield
+
 @pytest.fixture
 def mock_settings():
     svc = MagicMock()

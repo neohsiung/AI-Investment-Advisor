@@ -1,4 +1,5 @@
 import pytest
+pytestmark = pytest.mark.integration
 from unittest.mock import patch, MagicMock, AsyncMock
 from services.scheduler.src.app import run_workflow
 

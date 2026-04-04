@@ -7,6 +7,7 @@ type ConnectionStatus = "CONNECTING" | "CONNECTED" | "DISCONNECTED" | "ERROR";
 
 interface WebSocketContextType {
   status: ConnectionStatus;
+  stableStatus: "LIVE" | "POLLING"; // Debounced status for UI display
   lastMessage: any;
   sendMessage: (msg: string) => void;
 }
@@ -14,11 +15,13 @@ interface WebSocketContextType {
 const WebSocketContext = createContext<WebSocketContextType | undefined>(undefined);
 
 export const WebSocketProvider = ({ children }: { children: ReactNode }) => {
-  const { user } = useAuth();
+  const { user, isLoading: authLoading } = useAuth();
   const [status, setStatus] = useState<ConnectionStatus>("DISCONNECTED");
+  const [stableStatus, setStableStatus] = useState<"LIVE" | "POLLING">("POLLING");
   const [lastMessage, setLastMessage] = useState<any>(null);
   const socketRef = useRef<WebSocket | null>(null);
   const reconnectTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const stabilizeTimerRef = useRef<NodeJS.Timeout | null>(null);
 
   const connect = () => {
     if (!user) return;
@@ -72,12 +75,16 @@ export const WebSocketProvider = ({ children }: { children: ReactNode }) => {
   };
 
   useEffect(() => {
+    // Only attempt websocket after auth has resolved + user is logged in
+    if (authLoading) return;
+    
     if (user) {
       connect();
     } else {
       if (socketRef.current) {
         socketRef.current.close(1000); // Normal closure
       }
+      setStatus("DISCONNECTED");
     }
 
     return () => {
@@ -87,8 +94,26 @@ export const WebSocketProvider = ({ children }: { children: ReactNode }) => {
       if (reconnectTimeoutRef.current) {
         clearTimeout(reconnectTimeoutRef.current);
       }
+      if (stabilizeTimerRef.current) {
+        clearTimeout(stabilizeTimerRef.current);
+      }
     };
-  }, [user]);
+  }, [user, authLoading]);
+
+  // Debounce stableStatus: only flip to POLLING after 2s of non-CONNECTED state
+  // This prevents flickering during brief reconnects
+  useEffect(() => {
+    if (stabilizeTimerRef.current) {
+      clearTimeout(stabilizeTimerRef.current);
+    }
+    if (status === "CONNECTED") {
+      setStableStatus("LIVE");
+    } else {
+      stabilizeTimerRef.current = setTimeout(() => {
+        setStableStatus("POLLING");
+      }, 2000); // 2s grace period before showing POLLING
+    }
+  }, [status]);
 
   const sendMessage = (msg: string) => {
     if (socketRef.current && socketRef.current.readyState === WebSocket.OPEN) {
@@ -97,7 +122,7 @@ export const WebSocketProvider = ({ children }: { children: ReactNode }) => {
   };
 
   return (
-    <WebSocketContext.Provider value={{ status, lastMessage, sendMessage }}>
+    <WebSocketContext.Provider value={{ status, stableStatus, lastMessage, sendMessage }}>
       {children}
     </WebSocketContext.Provider>
   );

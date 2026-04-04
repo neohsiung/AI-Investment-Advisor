@@ -10,6 +10,7 @@ costs based on TierConfig, and persists records to PostgreSQL.
 """
 
 import logging
+import uuid
 from datetime import datetime
 from typing import Dict, Any, Optional
 
@@ -74,10 +75,10 @@ class TokenLoggerService(BaseRepository):
             
             query = text("""
                 INSERT INTO llm_usage_logs (
-                    user_id, agent_name, provider, model, tier, 
+                    id, user_id, agent_name, provider, model, tier, 
                     prompt_tokens, completion_tokens, total_cost_usd, metadata
                 ) VALUES (
-                    :user_id, :agent_name, :provider, :model, :tier,
+                    :id, :user_id, :agent_name, :provider, :model, :tier,
                     :prompt_tokens, :completion_tokens, :total_cost, :metadata
                 )
             """)
@@ -88,6 +89,7 @@ class TokenLoggerService(BaseRepository):
             
             with self.engine.connect() as conn:
                 conn.execute(query, {
+                    "id": str(uuid.uuid4()),
                     "user_id": user_id,
                     "agent_name": agent_name,
                     "provider": provider,

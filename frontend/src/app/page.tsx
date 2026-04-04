@@ -3,7 +3,7 @@
 import React from "react";
 import TacticalCard from "@/components/ui/TacticalCard";
 import Terminal from "@/components/dashboard/Terminal";
-import { usePortfolioSummary, useAgentsStatus, usePositions, useDashboardSocket } from "@/hooks/useDashboard";
+import { usePortfolioSummary, useAgentsStatus, usePositions, useDashboardSocket, useAlerts } from "@/hooks/useDashboard";
 
 
 import { useRequireAuth } from "@/hooks/useAuth";
@@ -16,6 +16,7 @@ export default function CommandCenter() {
   const { positions, isLoading: isPositionsLoading } = usePositions();
   const { status: socketStatus } = useDashboardSocket();
   const { isLoading: isAuthLoading } = useRequireAuth();
+  const { alerts, isLoading: isAlertsLoading } = useAlerts();
 
   if (isAuthLoading || isSummaryLoading || isAgentsLoading || isPositionsLoading) {
 
@@ -38,20 +39,32 @@ export default function CommandCenter() {
             </div>
           </div>
 
-          <div className="flex items-center gap-6">
+          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-6">
             <div>
-              <p className="font-label text-[10px] uppercase tracking-[0.2em] text-on-surface-variant mb-1">總資產估值 (USD)</p>
-              <p className="text-2xl font-bold font-headline tracking-tight">{formatCurrency(summary.total_valuation || 0)}</p>
+              <p className="font-label text-[10px] uppercase tracking-[0.2em] text-on-surface-variant mb-1">資產淨值 (NLV)</p>
+              <p className="text-xl font-bold font-headline tracking-tight">{formatCurrency(summary.total_valuation || 0)}</p>
             </div>
-            <div className="h-10 w-px bg-outline-variant/20"></div>
             <div>
-              <p className="font-label text-[10px] uppercase tracking-[0.2em] text-on-surface-variant mb-1">執行中代理人</p>
-              <p className="text-2xl font-bold font-headline tracking-tight text-primary">{summary.active_agents || 0} <span className="text-xs text-on-surface-variant font-normal">個</span></p>
+              <p className="font-label text-[10px] uppercase tracking-[0.2em] text-on-surface-variant mb-1">可用現金 (Cash)</p>
+              <p className="text-xl font-bold font-headline tracking-tight">{formatCurrency(summary.uninvested_cash || 0)}</p>
             </div>
-            <div className="h-10 w-px bg-outline-variant/20"></div>
             <div>
-              <p className="font-label text-[10px] uppercase tracking-[0.2em] text-on-surface-variant mb-1">風險風險敞口</p>
-              <p className="text-2xl font-bold font-headline tracking-tight text-tertiary uppercase">{summary.risk_exposure || "未知"}</p>
+              <p className="font-label text-[10px] uppercase tracking-[0.2em] text-on-surface-variant mb-1">槓桿比率 (Lev)</p>
+              <p className="text-xl font-bold font-headline tracking-tight text-secondary">{(summary.leverage_ratio || 0).toFixed(2)}x</p>
+            </div>
+            <div>
+              <p className="font-label text-[10px] uppercase tracking-[0.2em] text-on-surface-variant mb-1">總投報率 (ROI)</p>
+              <p className="text-xl font-bold font-headline tracking-tight text-primary">{(summary.roi_percentage || 0).toFixed(2)}%</p>
+            </div>
+            <div>
+              <p className="font-label text-[10px] uppercase tracking-[0.2em] text-on-surface-variant mb-1">總損益 (P/L)</p>
+              <p className={cn("text-xl font-bold font-headline tracking-tight", (summary.total_pnl || 0) >= 0 ? "text-secondary" : "text-error")}>
+                {formatCurrency(summary.total_pnl || 0)}
+              </p>
+            </div>
+            <div>
+              <p className="font-label text-[10px] uppercase tracking-[0.2em] text-on-surface-variant mb-1">風險敞口</p>
+              <p className="text-xl font-bold font-headline tracking-tight text-tertiary uppercase">{summary.risk_exposure || "MODERATE"}</p>
             </div>
           </div>
 
@@ -157,6 +170,7 @@ export default function CommandCenter() {
             </div>
           </TacticalCard>
         </div>
+      </div>
 
       {/* Phase 5: Interactive Command Mesh & Agent Status */}
       <div className="grid grid-cols-12 gap-6">
@@ -171,11 +185,12 @@ export default function CommandCenter() {
                 <thead>
                   <tr className="bg-surface-container-highest/30">
                     <th className="py-3 px-4 font-label text-[10px] uppercase tracking-widest text-on-surface-variant font-bold">資產 (Ticker)</th>
-                    <th className="py-3 px-4 font-label text-[10px] uppercase tracking-widest text-on-surface-variant font-bold">持倉 (Pos)</th>
-                    <th className="py-3 px-4 font-label text-[10px] uppercase tracking-widest text-on-surface-variant font-bold">價格 (Price)</th>
-                    <th className="py-3 px-4 font-label text-[10px] uppercase tracking-widest text-on-surface-variant font-bold">目標 (Target)</th>
-                    <th className="py-3 px-4 font-label text-[10px] uppercase tracking-widest text-on-surface-variant font-bold">差值 (Diff)</th>
-                    <th className="py-3 px-4 font-label text-[10px] uppercase tracking-widest text-on-surface-variant font-bold text-center">行動 (Action)</th>
+                    <th className="py-3 px-4 font-label text-[10px] uppercase tracking-widest text-on-surface-variant font-bold">數量 (Qty)</th>
+                    <th className="py-3 px-4 font-label text-[10px] uppercase tracking-widest text-on-surface-variant font-bold">市價 (Price)</th>
+                    <th className="py-3 px-4 font-label text-[10px] uppercase tracking-widest text-on-surface-variant font-bold">槓桿 (Lev)</th>
+                    <th className="py-3 px-4 font-label text-[10px] uppercase tracking-widest text-on-surface-variant font-bold">總價值 (Gross)</th>
+                    <th className="py-3 px-4 font-label text-[10px] uppercase tracking-widest text-on-surface-variant font-bold">淨權益 (Equity)</th>
+                    <th className="py-3 px-4 font-label text-[10px] uppercase tracking-widest text-on-surface-variant font-bold text-center">損益 (P/L)</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-outline-variant/10 text-sm">
@@ -183,29 +198,24 @@ export default function CommandCenter() {
                     positions.map((pos: any) => (
                       <tr key={pos.ticker} className="hover:bg-surface-bright/50 transition-colors">
                         <td className="py-4 px-4 font-bold font-mono tracking-tight">{pos.ticker}</td>
-                        <td className="py-4 px-4 font-mono">{pos.position}</td>
-                        <td className="py-4 px-4 font-mono">{formatCurrency(pos.price)}</td>
-                        <td className="py-4 px-4 font-mono">{pos.target}</td>
-                        <td className="py-4 px-4 font-mono">
-                          <span className={pos.diff.startsWith('+') ? 'text-secondary' : 'text-error'}>
-                            {pos.diff}
-                          </span>
-                        </td>
+                        <td className="py-4 px-4 font-mono">{pos.quantity?.toFixed(4)}</td>
+                        <td className="py-4 px-4 font-mono">{formatCurrency(pos.current_price)}</td>
+                        <td className="py-4 px-4 font-mono">{pos.leverage?.toFixed(1)}x</td>
+                        <td className="py-4 px-4 font-mono">{formatCurrency(pos.gross_mv)}</td>
+                        <td className="py-4 px-4 font-mono">{formatCurrency(pos.net_equity)}</td>
                         <td className="py-4 px-4 text-center">
                           <span className={cn(
                             "px-3 py-1 rounded-full text-[10px] font-bold font-label uppercase tracking-wider shadow-sm border",
-                            pos.action === 'HOLD' ? 'bg-surface-container text-on-surface-variant border-outline-variant' :
-                            pos.action === 'BUY' ? 'bg-secondary/10 text-secondary border-secondary/20' : 
-                            'bg-error/10 text-error border-error/20'
+                            (pos.unrealized_pnl || 0) >= 0 ? 'bg-secondary/10 text-secondary border-secondary/20' : 'bg-error/10 text-error border-error/20'
                           )}>
-                            {pos.action}
+                            {formatCurrency(pos.unrealized_pnl || 0)}
                           </span>
                         </td>
                       </tr>
                     ))
                   ) : (
                     <tr>
-                      <td colSpan={6} className="py-12 text-center text-on-surface-variant font-label text-[10px] uppercase tracking-widest opacity-50 italic">
+                      <td colSpan={7} className="py-12 text-center text-on-surface-variant font-label text-[10px] uppercase tracking-widest opacity-50 italic">
                         等待數據源掃描中...
                       </td>
                     </tr>
@@ -263,19 +273,19 @@ export default function CommandCenter() {
         <div className="col-span-12 lg:col-span-4">
           <TacticalCard title="系統即時通知" accentColor="var(--tertiary)">
             <div className="space-y-4">
-              {[
-                { type: "市場異常", color: "text-tertiary", border: "border-tertiary", msg: "在 Sector 7G 偵測到流動性下降。已觸發自動再平衡。", time: "2分鐘前" },
-                { type: "策略更新", color: "text-primary", border: "border-primary", msg: "Archon-01 已更新 BTC-ETH 相對強弱指標的神經權重。", time: "14分鐘前" },
-                { type: "獲利結清", color: "text-secondary", border: "border-secondary", msg: "部位已退出：去中心化基礎設施資產獲利 +4.2%。", time: "1小時前" },
-              ].map((alert, i) => (
-                <div key={i} className={`p-4 bg-surface-container-low rounded-md border-l-2 ${alert.border}`}>
+              {alerts.length > 0 ? alerts.map((alert: any, i: number) => (
+                <div key={i} className={`p-4 bg-surface-container-low rounded-md border-l-2 border-primary`}>
                   <div className="flex justify-between items-start mb-1">
-                    <p className={`text-[10px] font-label uppercase tracking-widest ${alert.color} font-bold`}>{alert.type}</p>
-                    <span className="text-[10px] text-on-surface-variant">{alert.time}</span>
+                    <p className="text-[10px] font-label uppercase tracking-widest text-primary font-bold">{alert.type}</p>
+                    <span className="text-[10px] text-on-surface-variant font-mono">{alert.time}</span>
                   </div>
                   <p className="text-xs text-on-surface leading-snug">{alert.msg}</p>
                 </div>
-              ))}
+              )) : (
+                <div className="py-12 text-center opacity-20 italic">
+                   <p className="text-[10px] font-label uppercase tracking-widest">暫無系統事件</p>
+                </div>
+              )}
             </div>
             <button className="w-full mt-6 py-3 font-label text-[10px] uppercase tracking-[0.2em] text-on-surface-variant hover:text-on-surface transition-all">
               封存所有通知
@@ -286,4 +296,3 @@ export default function CommandCenter() {
     </div>
   );
 }
-

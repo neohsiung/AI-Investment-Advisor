@@ -1,10 +1,12 @@
 "use client";
 
 import React from "react";
+import useSWR, { mutate } from "swr";
 import BriefingCard from "@/components/ui/BriefingCard";
 import { useIntelligenceBriefing } from "@/hooks/useDashboard";
 import { useRequireAuth } from "@/hooks/useAuth";
-import { Loader2 } from "lucide-react";
+import { Loader2, RefreshCw, Zap } from "lucide-react";
+import { cn, formatCurrency } from "@/lib/utils";
 
 export default function IntelligenceBriefing() {
   const { briefing, isLoading } = useIntelligenceBriefing();
@@ -24,14 +26,23 @@ export default function IntelligenceBriefing() {
       <div className="border-b border-outline-variant/10 pb-8 flex justify-between items-end">
         <div>
           <p className="text-secondary font-bold font-label text-xs uppercase tracking-[0.3em] mb-2">Alpha Intelligence Report</p>
-          <h1 className="text-5xl font-black font-headline tracking-tighter text-on-surface">Intelligence Briefing</h1>
+          <h1 className="text-5xl font-black font-headline tracking-tighter text-on-surface">市場情報簡報</h1>
           <p className="mt-4 text-on-surface-variant font-light text-lg max-w-2xl leading-relaxed">
-            Market-wide sentiment synthesis and strategic positioning for institutional-grade portfolio management.
+            整合即時市場數據與 AI 分析的機構級投資情報，為您的資產配置提供戰略指引。
           </p>
         </div>
-        <div className="text-right">
-          <p className="font-label text-[10px] uppercase font-bold text-on-surface-variant mb-1">Observation Window</p>
-          <p className="font-headline font-bold text-xl">{briefing.observation_window || "ACTIVE SESSION"}</p>
+        <div className="text-right flex flex-col items-end gap-3">
+          <button 
+            onClick={() => mutate("/api/dashboard/intelligence")}
+            className="flex items-center gap-2 px-4 py-2 bg-surface-container-high rounded-lg text-[10px] font-black uppercase hover:bg-primary hover:text-on-primary transition-all group"
+          >
+            <RefreshCw size={12} className="group-active:rotate-180 transition-transform" />
+            重新生成情報
+          </button>
+          <div>
+            <p className="font-label text-[10px] uppercase font-bold text-on-surface-variant mb-1">觀測狀態</p>
+            <p className="font-headline font-bold text-xl text-primary">{briefing.observation_window || "ACTIVE SESSION"}</p>
+          </div>
         </div>
       </div>
 
@@ -39,15 +50,18 @@ export default function IntelligenceBriefing() {
       <div className="grid grid-cols-12 gap-8">
         <div className="col-span-12 lg:col-span-8">
           <BriefingCard 
-            title="Executive Summary: Tactical Pivot"
-            tags={["High Priority", "Strategic"]}
+            title="核心摘要：戰略判斷與市場解構"
+            tags={["High Priority", "Strategic Intelligence"]}
           >
             <div className="prose prose-sm max-w-none text-on-surface leading-loose">
-              <p>{briefing.executive_summary}</p>
+              <p className="text-lg font-light">{briefing.executive_summary}</p>
               
-              <div className="mt-8 p-6 bg-primary-container/10 rounded-lg border-l-4 border-primary">
-                <h4 className="font-bold font-label text-[10px] uppercase tracking-widest text-primary mb-2 italic">Recommendation</h4>
-                <p className="font-headline font-bold text-lg text-primary-container">
+              <div className="mt-8 p-8 bg-primary/5 rounded-[2rem] border-l-4 border-primary shadow-sm">
+                <div className="flex items-center gap-2 mb-4">
+                  <Zap size={18} className="text-primary" />
+                  <h4 className="font-black font-label text-[10px] uppercase tracking-widest text-primary italic">CIO 行動指引 (Actionable Recommendation)</h4>
+                </div>
+                <p className="font-headline font-bold text-xl text-on-surface leading-snug">
                   {briefing.recommendation}
                 </p>
               </div>
@@ -56,29 +70,31 @@ export default function IntelligenceBriefing() {
         </div>
 
         <div className="col-span-12 lg:col-span-4 space-y-8">
-          <BriefingCard title="Strategic Sentiment">
+          <BriefingCard title="市場情緒動能 (Sentiment)">
             <div className="space-y-6">
-              {(briefing.sentiment_metrics || []).map((item: any) => (
+              {briefing.sentiment_metrics && briefing.sentiment_metrics.length > 0 ? briefing.sentiment_metrics.map((item: any) => (
                 <div key={item.label}>
                   <div className="flex justify-between items-center mb-1">
-                    <span className="text-[10px] font-label uppercase font-bold text-on-surface-variant">{item.label}</span>
+                    <span className="text-[10px] font-label uppercase font-bold text-on-surface-variant tracking-widest">{item.label}</span>
                     <span className="text-sm font-bold text-on-surface">{item.value}%</span>
                   </div>
-                  <div className="h-1.5 w-full bg-outline-variant/10 rounded-full overflow-hidden">
-                    <div className={cn("h-full", item.color)} style={{ width: `${item.value}%` }}></div>
+                  <div className="h-2 w-full bg-surface-container-highest rounded-full overflow-hidden">
+                    <div className={cn("h-full transition-all duration-1000", item.color)} style={{ width: `${item.value}%` }}></div>
                    </div>
                 </div>
-              ))}
+              )) : (
+                <p className="text-[10px] text-center opacity-30 py-8">正在生成情緒指標...</p>
+              )}
             </div>
           </BriefingCard>
 
-          <div className="p-6 bg-surface-container-high rounded-xl border border-outline-variant/10 relative group hover:shadow-lg transition-all">
-            <span className="material-symbols-outlined absolute right-6 top-6 text-primary/30 text-4xl transform group-hover:rotate-12 transition-transform">
-              auto_awesome
+          <div className="p-8 bg-surface-container-high rounded-[2rem] border border-outline-variant/10 relative group hover:shadow-lg transition-all">
+            <span className="material-symbols-outlined absolute right-8 top-8 text-primary/20 text-5xl transform group-hover:rotate-12 transition-transform">
+              psychology
             </span>
-            <p className="font-label text-[10px] uppercase font-black tracking-widest text-primary mb-2">Alpha AI Note</p>
-            <p className="text-sm text-on-surface font-light leading-relaxed">
-              {briefing.ai_note}
+            <p className="font-label text-[10px] uppercase font-black tracking-[0.2em] text-primary mb-4">Alpha AI 觀察筆記</p>
+            <p className="text-sm text-on-surface font-light leading-relaxed italic">
+              「{briefing.ai_note}」
             </p>
           </div>
         </div>
@@ -111,9 +127,4 @@ export default function IntelligenceBriefing() {
       </div>
     </div>
   );
-}
-
-// Helper function for conditional classes if not imported
-function cn(...classes: any[]) {
-  return classes.filter(Boolean).join(" ");
 }

@@ -1,10 +1,3 @@
-"""
-MCP Service - FastAPI 微服務入口點
-Model Context Protocol Service - FastAPI Microservice Entry Point
-"""
-from linebot import LineBotApi, WebhookHandler
-from linebot.exceptions import InvalidSignatureError
-from linebot.models import MessageEvent, TextMessage, TextSendMessage
 from fastapi import FastAPI, HTTPException, Request, Header, WebSocket, WebSocketDisconnect, Depends, Cookie
 from pydantic import BaseModel
 from typing import Dict, List, Any, Optional, Union, Awaitable, Tuple, Callable
@@ -150,6 +143,11 @@ async def lifespan(app: FastAPI):
         
         # Create Adapters via Factory
         adapters = ChannelFactory.create_adapters(settings_global)
+        for adapter in adapters:
+            logger.info(
+                f"Channel Adapter: {adapter.__class__.__name__}, "
+                f"is_active={getattr(adapter, 'is_active', 'N/A')}"
+            )
         
         # Create Intent Classifier
         intent_classifier = IntentClassifier()
@@ -521,38 +519,44 @@ async def auth_callback(code: str):
             credentials.id_token, google_requests.Request(), flow.client_config['client_id']
         )
         
-        user_id = id_info.get("sub")
         user_email = id_info.get("email")
+        google_sub = id_info.get("sub")
         
-        # Create Stateless JWT Tokens
-        token_data = {"sub": user_id, "email": user_email}
+        # 0. Core ID Mapping - Align Google sub/email to DB UUID
+        from src.repositories.user_repository import AlchemyUserRepository
+        user_repo = AlchemyUserRepository()
+        
+        # Check if user exists by email identity
+        # AlchemyUserRepository uses get_by_identity(provider, identifier) pattern
+        existing_user = user_repo.get_by_identity("email", user_email) if user_email else None
+        
+        if existing_user:
+            resolved_user_id = existing_user["id"]
+            logger.info(f"Mapping Google user {user_email} to existing UUID {resolved_user_id}")
+        else:
+            # Auto-register new user — create_user() also creates the email identity record
+            resolved_user_id = user_repo.create_user(email=user_email)
+            logger.info(f"Auto-registered new user {user_email} with UUID {resolved_user_id}")
+
+            
+        # Create Stateless JWT Tokens using resolved UUID
+        token_data = {"sub": resolved_user_id, "email": user_email}
         access_token = create_access_token(token_data)
         refresh_token = create_refresh_token(token_data)
         
-        # Redirect back to Next.js
-        response = RedirectResponse(url=f"{FRONTEND_URL}/auth/callback")
+        # Best Practice for cross-origin cookie:
+        # Pass tokens to the frontend via URL params.
+        # The Next.js /auth/callback page will then call a server-side API route
+        # to set cookies on its own origin (localhost:3000), avoiding the
+        # cross-port cookie rejection issue (localhost:8000 != localhost:3000).
+        import urllib.parse
+        params = urllib.parse.urlencode({
+            "access_token": access_token,
+            "refresh_token": refresh_token
+        })
+        response = RedirectResponse(url=f"{FRONTEND_URL}/auth/callback?{params}")
         
-        # 1. Set Access Token (1 HR)
-        response.set_cookie(
-            key="access_token",
-            value=access_token,
-            max_age=3600,
-            httponly=True,
-            samesite="lax",
-            secure=False # Set to True in production
-        )
-        
-        # 2. Set Refresh Token (7 DAYS)
-        response.set_cookie(
-            key="refresh_token",
-            value=refresh_token,
-            max_age=7*24*60*60,
-            httponly=True,
-            samesite="lax",
-            secure=False
-        )
-        
-        logger.info(f"User {user_email} authenticated. JWT tokens issued.")
+        logger.info(f"User {user_email} authenticated. Redirecting to frontend with tokens.")
         return response
         
     except Exception as e:

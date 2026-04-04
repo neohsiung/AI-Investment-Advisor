@@ -11,14 +11,16 @@ import { cn } from "@/lib/utils";
 
 export default function TopBar() {
   const { user, logout, isLoading: authLoading } = useAuth();
-  const { status: socketStatus } = useDashboardSocket();
+  const { stableStatus } = useDashboardSocket();
   const pathname = usePathname();
 
   const navLinks = [
-    { href: "/", label: "Portfolio" },
-    { href: "/agents", label: "Agents" },
-    { href: "/strategy", label: "Strategy" },
-    { href: "/intelligence", label: "Intelligence" },
+    { href: "/", label: "總覽" },
+    { href: "/performance", label: "績效" },
+    { href: "/reports", label: "報告" },
+    { href: "/chat", label: "對話" },
+    { href: "/data", label: "數據" },
+    { href: "/settings", label: "設定" },
   ];
 
   return (
@@ -65,20 +67,22 @@ export default function TopBar() {
           
           <div className="h-4 w-px bg-outline-variant/20 mx-1" />
 
-          {/* WebSocket Status Indicator */}
-          <div className="flex items-center gap-1.5 px-2 py-1 rounded-md bg-surface-container-highest/50 border border-outline-variant/10">
-            {socketStatus === "CONNECTED" ? (
-              <>
-                <Zap className="h-3 w-3 text-secondary fill-secondary animate-pulse" />
-                <span className="text-[9px] font-black uppercase text-secondary tracking-widest">Live</span>
-              </>
-            ) : (
-              <>
-                <ZapOff className="h-3 w-3 text-on-surface-variant/40" />
-                <span className="text-[9px] font-black uppercase text-on-surface-variant/40 tracking-widest">Polling</span>
-              </>
-            )}
-          </div>
+          {/* WebSocket Status Indicator - only show when authenticated */}
+          {user && (
+            <div className="flex items-center gap-1.5 px-2 py-1 rounded-md bg-surface-container-highest/50 border border-outline-variant/10">
+              {stableStatus === "LIVE" ? (
+                <>
+                  <Zap className="h-3 w-3 text-secondary fill-secondary animate-pulse" />
+                  <span className="text-[9px] font-black uppercase text-secondary tracking-widest">Live</span>
+                </>
+              ) : (
+                <>
+                  <ZapOff className="h-3 w-3 text-on-surface-variant/40" />
+                  <span className="text-[9px] font-black uppercase text-on-surface-variant/40 tracking-widest">Polling</span>
+                </>
+              )}
+            </div>
+          )}
           
           <div className="flex items-center gap-3 ml-4 bg-surface-container-high px-3 py-1.5 rounded-full border border-outline-variant/10 group">
             {authLoading ? (

@@ -3,17 +3,21 @@
 import React from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { useAuth } from "@/hooks/useAuth";
 
 const navItems = [
   { id: "command", label: "Command Center", icon: "terminal", href: "/" },
-  { id: "agents", label: "Agent Status", icon: "memory", href: "/agents" },
-  { id: "market", label: "Market Analysis", icon: "monitoring", href: "/market" },
-  { id: "risk", label: "Risk Profile", icon: "security", href: "/risk" },
+  { id: "performance", label: "績效分析", icon: "monitoring", href: "/performance" },
+  { id: "reports", label: "報告", icon: "description", href: "/reports" },
+  { id: "chat", label: "AI 對話", icon: "smart_toy", href: "/chat" },
+  { id: "data", label: "數據", icon: "table_chart", href: "/data" },
+  { id: "intelligence", label: "市場情報", icon: "crisis_alert", href: "/intelligence" },
   { id: "settings", label: "Settings", icon: "tune", href: "/settings" },
 ];
 
 export default function Sidebar() {
   const pathname = usePathname();
+  const { logout } = useAuth();
 
   return (
     <aside className="fixed left-0 top-0 h-full w-64 bg-surface-container-low border-r border-outline-variant/15 flex flex-col shadow-[20px_0_40px_rgba(0,0,0,0.4)] z-[60]">
@@ -64,7 +68,10 @@ export default function Sidebar() {
             <span className="material-symbols-outlined text-sm">help_outline</span>
             <span className="font-label text-xs uppercase tracking-widest">Help</span>
           </div>
-          <div className="flex items-center gap-3 px-2 py-2 text-error hover:opacity-80 cursor-pointer transition-all hover:bg-error-container/10 rounded-md">
+          <div 
+            onClick={logout}
+            className="flex items-center gap-3 px-2 py-2 text-error hover:opacity-80 cursor-pointer transition-all hover:bg-error-container/10 rounded-md"
+          >
             <span className="material-symbols-outlined text-sm">logout</span>
             <span className="font-label text-xs uppercase tracking-widest">Logout</span>
           </div>

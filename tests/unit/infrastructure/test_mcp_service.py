@@ -3,6 +3,7 @@ Tests for MCP Microservice.
 測試 MCP 微服務。
 """
 import pytest
+pytestmark = pytest.mark.integration
 from fastapi.testclient import TestClient
 from services.mcp_server.src.app import app, services, registered_tools
 from unittest.mock import MagicMock, patch

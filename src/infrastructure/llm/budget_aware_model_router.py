@@ -9,8 +9,6 @@ Implements tiered model routing with automatic fallback based on weekly spend.
 import logging
 from typing import Dict, Any, Optional
 from src.domain.interfaces import LLMConfig
-from src.services.settings_service import SettingsService
-from src.services.token_logger_service import TokenLoggerService
 from src.infrastructure.llm.tier_config import TierConfig
 
 logger = logging.getLogger(__name__)
@@ -24,8 +22,11 @@ class BudgetAwareModelRouter:
     BUDGET_SOFT_LIMIT = 16.0  # 80% (Warn / Partial Downgrade)
     BUDGET_HARD_LIMIT = 20.0  # 100% (Emergency / Full Downgrade)
 
-    def __init__(self, settings_service: SettingsService, 
-                 token_logger: TokenLoggerService):
+    def __init__(self, settings_service, 
+                 token_logger):
+        # Lazy imports to avoid circular dependency with TokenLoggerService/SettingsService
+        from src.services.settings_service import SettingsService
+        from src.services.token_logger_service import TokenLoggerService
         self.settings = settings_service
         self.token_logger = token_logger
         self.tier_cfg = TierConfig()
@@ -100,6 +101,9 @@ class BudgetAwareModelRouter:
         
         # Resolve model name (DB -> Env -> Default)
         model_name = self.tier_cfg.resolve(tier_name, db_settings)
+        if isinstance(model_name, str):
+            model_name = model_name.strip().strip('"').strip("'")
+            
         spec = self.tier_cfg.get_spec(tier_name)
         
         # Provider resolution (Check AI_PROVIDER first for standards compliance)
@@ -108,7 +112,8 @@ class BudgetAwareModelRouter:
         # API Key Mapping (source_{provider}_api_key or legacy API_KEY)
         api_key_field = f"source_{provider.lower()}_api_key"
         # Support fallback to legacy "API_KEY"
-        api_key = db_settings.get(api_key_field, db_settings.get("API_KEY", "")) if user_id else ""
+        raw_key = db_settings.get(api_key_field, db_settings.get("API_KEY", "")) if user_id else ""
+        api_key = raw_key.strip().strip('"').strip("'") if isinstance(raw_key, str) else raw_key
         
         return LLMConfig(
             provider=provider,

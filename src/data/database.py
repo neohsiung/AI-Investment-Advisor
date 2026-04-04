@@ -473,7 +473,7 @@ def init_db(db_path=None, force=False, engine=None):
     # 16. LLM Usage Logs table (Rule #8: Cognitive Memory Tiering)
     schema_commands.append(f"""
     CREATE TABLE IF NOT EXISTS llm_usage_logs (
-        id {pk_type},
+        id TEXT NOT NULL DEFAULT gen_random_uuid()::text PRIMARY KEY,
         timestamp {timestamp_type} DEFAULT CURRENT_TIMESTAMP,
         user_id {fk_type} NOT NULL,
         agent_name TEXT NOT NULL,
@@ -550,6 +550,15 @@ def init_db(db_path=None, force=False, engine=None):
                 logger.info("Updating daily_snapshots_upsert index to include account_id")
                 conn.execute(text("DROP INDEX IF EXISTS idx_daily_snapshots_upsert"))
                 conn.execute(text("CREATE UNIQUE INDEX idx_daily_snapshots_upsert ON daily_snapshots(date, user_id, account_id)"))
+
+                # Ensure llm_usage_logs.id has a DEFAULT (migration for existing deployments)
+                try:
+                    conn.execute(text(
+                        "ALTER TABLE llm_usage_logs ALTER COLUMN id SET DEFAULT gen_random_uuid()::text"
+                    ))
+                    logger.info("Migration: Added DEFAULT gen_random_uuid() to llm_usage_logs.id")
+                except Exception:
+                    pass  # Already has a DEFAULT — ignore
                 
             except Exception as e:
                 logger.error(f"Failed to migrate daily_snapshots: {e}")
