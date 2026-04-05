@@ -12,6 +12,7 @@ All HTTP-level details are isolated here, keeping BaseAgent and Domain layers pu
 """
 
 import httpx
+import requests
 import asyncio
 import logging
 import typing
@@ -36,7 +37,6 @@ class OpenRouterGateway(ILLMGateway):
         self._last_usage: Optional[dict] = None
 
     async def chat(self, messages: List[Message], config: LLMConfig) -> str:
-        import requests
         def _sync_call():
             url = config.base_url or "https://openrouter.ai/api/v1/chat/completions"
             headers = {
@@ -64,7 +64,6 @@ class OpenRouterGateway(ILLMGateway):
         return await asyncio.to_thread(_sync_call)
 
     async def stream_chat(self, messages: List[Message], config: LLMConfig) -> typing.AsyncGenerator[str, None]:
-        import requests
         url = config.base_url or "https://openrouter.ai/api/v1/chat/completions"
         headers = {
             "Authorization": f"Bearer {config.api_key}",

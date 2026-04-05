@@ -130,7 +130,17 @@ class MemoryDistillationService:
             )
             
             messages = [Message(role="user", content=full_prompt)]
-            content = self._llm_gateway.chat(messages, config)
+            import asyncio
+            try:
+                loop = asyncio.get_running_loop()
+                # If we're already in an async context, schedule the coroutine
+                import concurrent.futures
+                with concurrent.futures.ThreadPoolExecutor() as pool:
+                    future = pool.submit(asyncio.run, self._llm_gateway.chat(messages, config))
+                    content = future.result()
+            except RuntimeError:
+                # No running loop — safe to use asyncio.run
+                content = asyncio.run(self._llm_gateway.chat(messages, config))
             
             # Parse JSON
             cleaned = content.replace("```json", "").replace("```", "").strip()

@@ -1,15 +1,14 @@
 
-import unittest
-from unittest.mock import MagicMock, patch
-import sys
+import pytest
+from unittest.mock import MagicMock, patch, AsyncMock
 from src.agents.factory import AgentFactory
 from src.agents.base_agent import BaseAgent
 
 class MockAgent(BaseAgent):
-    def run(self, context):
-        return self.run_tool_loop(context)
+    async def run(self, context):
+        return await self.run_tool_loop(context)
 
-class TestAgentFactoryAndTools(unittest.TestCase):
+class TestAgentFactoryAndTools:
     
     def test_factory_tiers(self):
         # Verify Tier Enforcement
@@ -18,16 +17,17 @@ class TestAgentFactoryAndTools(unittest.TestCase):
             # Also patch BaseAgent load config to avoid DB
             with patch('src.agents.base_agent.BaseAgent._load_config', return_value={"model": "test", "provider": "test"}):
                 mom_agent = AgentFactory.create_momentum_agent(use_cache=False)
-                self.assertEqual(mom_agent.tier, "fast")
+                assert mom_agent.tier == "fast"
                 
                 fund_agent = AgentFactory.create_fundamental_agent(use_cache=False)
-                self.assertEqual(fund_agent.tier, "smart")
+                assert fund_agent.tier == "smart"
                 
                 cio_agent = AgentFactory.create_cio_agent(use_cache=False)
-                self.assertEqual(cio_agent.tier, "smart")
+                assert cio_agent.tier == "smart"
 
-    @patch('src.agents.base_agent.BaseAgent.call_llm')
-    def test_run_tool_loop(self, MockCallLLM):
+    @pytest.mark.asyncio
+    @patch('src.agents.base_agent.BaseAgent.call_llm', new_callable=AsyncMock)
+    async def test_run_tool_loop(self, MockCallLLM):
         # We need to patch the InternetSearchService CLASS that BaseAgent imports.
         # Since it is imported inside the method 'run_tool_loop' as:
         # from src.services.search_service import InternetSearchService
@@ -43,14 +43,17 @@ class TestAgentFactoryAndTools(unittest.TestCase):
                 'Final Answer'           # Turn 2: Final Response
             ]
             
-            agent = MockAgent(name="Test", prompt_path="prompts/cio_weekly.txt", use_cache=False)
-            response = agent.run({"data": "test"})
-            
-            self.assertIn("Final Answer", response)
-            self.assertEqual(MockCallLLM.call_count, 2)
-            
-            # Verify Search called
-            mock_instance.search_financial_context.assert_called_with("query", max_results=3)
+            # Patch _load_prompt and _load_config to avoid external dependencies
+            with patch('src.agents.base_agent.BaseAgent._load_prompt', return_value="Test Prompt"):
+                with patch('src.agents.base_agent.BaseAgent._load_config', return_value={"model": "test", "provider": "test"}):
+                    agent = MockAgent(name="Test", prompt_path="prompts/cio_weekly.txt", use_cache=False)
+                    response = await agent.run({"data": "test"})
+                    
+                    assert "Final Answer" in response
+                    assert MockCallLLM.call_count == 2
+                    
+                    # Verify Search called (agent_loop passes only query, no max_results kwarg)
+                    mock_instance.search_financial_context.assert_called_with("query")
 
 if __name__ == '__main__':
-    unittest.main()
+    pytest.main([__file__])

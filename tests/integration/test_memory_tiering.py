@@ -1,7 +1,7 @@
 import os
 import json
 import pytest
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock, patch, AsyncMock
 from datetime import datetime, timedelta
 from pathlib import Path
 
@@ -60,7 +60,8 @@ def test_full_cognitive_memory_pipeline(db_setup):
     
     with patch("src.infrastructure.llm.llm_gateway.LLMGatewayFactory.create") as mock_factory:
         mock_gateway = MagicMock()
-        mock_gateway.chat.return_value = json.dumps(mock_distilled_json)
+        # LoggingLLMGateway awaits inner.chat, so inner.chat must be an AsyncMock
+        mock_gateway.chat = AsyncMock(return_value=json.dumps(mock_distilled_json))
         mock_factory.return_value = mock_gateway
         
         # 3. Run Distillation Service

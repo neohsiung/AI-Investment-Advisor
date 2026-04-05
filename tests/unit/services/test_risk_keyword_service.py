@@ -11,7 +11,7 @@ Covers:
 - max_keywords cap enforcement
 """
 import pytest
-from unittest.mock import patch, MagicMock, PropertyMock
+from unittest.mock import patch, MagicMock, PropertyMock, AsyncMock
 from collections import namedtuple
 
 from src.services.risk_keyword_service import RiskKeywordService, _STOPWORDS
@@ -64,16 +64,16 @@ class TestDiscoverFromReports:
         ]
         mock_data_repo.return_value = mock_repo_instance
 
-        # Mock LLM response
+        # Mock LLM response — must be AsyncMock since _llm_gateway.chat is async
         service._llm_gateway = MagicMock()
-        service._llm_gateway.call_llm.return_value = '{"keywords": [{"keyword": "rate hike", "weight": 0.7, "category": "macro"}, {"keyword": "ai chip", "weight": 0.6, "category": "sector"}]}'
+        service._llm_gateway.chat = AsyncMock(return_value='{"keywords": [{"keyword": "rate hike", "weight": 0.7, "category": "macro"}, {"keyword": "ai chip", "weight": 0.6, "category": "sector"}]}')
 
         result = service._discover_from_reports()
 
         assert len(result) == 2
         assert result[0][0] == "rate hike"
         assert result[0][3] == "report"  # source
-        service._llm_gateway.call_llm.assert_called_once()
+        service._llm_gateway.chat.assert_called_once()
 
     @patch("src.repositories.data_repository.AlchemyDataRepository")
     def test_no_reports_returns_empty(self, mock_data_repo, service):
@@ -94,7 +94,7 @@ class TestDiscoverFromReports:
         ]
         mock_data_repo.return_value = mock_repo_instance
         service._llm_gateway = MagicMock()
-        service._llm_gateway.call_llm.side_effect = Exception("LLM API error")
+        service._llm_gateway.chat = AsyncMock(side_effect=Exception("LLM API error"))
 
         result = service._discover_from_reports()
         assert result == []

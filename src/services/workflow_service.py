@@ -191,7 +191,7 @@ class BaseWorkflow(ABC):
                     f"REPORT TO TRANSLATE:\n{final_report}"
                 )
                 # v7.0: SystemEngineerAgent.run expects dict, use _call_real_llm for raw string prompts
-                res = translator._call_real_llm(prompt, translator.system_prompt or "You are a professional investment report translator.")
+                res = await translator._call_real_llm(prompt, translator.system_prompt or "You are a professional investment report translator.")
                 self.logger.debug(f"Translation raw result type: {type(res)}")
                 
                 if isinstance(res, dict):

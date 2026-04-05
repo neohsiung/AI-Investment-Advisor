@@ -11,7 +11,7 @@ Tests:
 """
 
 import pytest
-from unittest.mock import MagicMock, patch, Mock
+from unittest.mock import MagicMock, patch, Mock, AsyncMock
 from src.domain.interfaces import ILLMGateway, Message, LLMConfig
 from src.infrastructure.llm.llm_gateway import (
     OpenRouterGateway,
@@ -81,8 +81,9 @@ def sample_config():
 
 
 class TestOpenRouterGateway:
+    @pytest.mark.asyncio
     @patch("src.infrastructure.llm.llm_gateway.requests.post")
-    def test_chat_success(self, mock_post, sample_messages, sample_config):
+    async def test_chat_success(self, mock_post, sample_messages, sample_config):
         mock_response = Mock()
         mock_response.json.return_value = {
             "choices": [{"message": {"content": "4"}}]
@@ -91,7 +92,7 @@ class TestOpenRouterGateway:
         mock_post.return_value = mock_response
 
         gateway = OpenRouterGateway()
-        result = gateway.chat(sample_messages, sample_config)
+        result = await gateway.chat(sample_messages, sample_config)
 
         assert result == "4"
         mock_post.assert_called_once()
@@ -99,23 +100,25 @@ class TestOpenRouterGateway:
         assert call_args[1]["json"]["model"] == "test-model"
         assert len(call_args[1]["json"]["messages"]) == 2
 
+    @pytest.mark.asyncio
     @patch("src.infrastructure.llm.llm_gateway.requests.post")
-    def test_chat_auth_header(self, mock_post, sample_messages, sample_config):
+    async def test_chat_auth_header(self, mock_post, sample_messages, sample_config):
         mock_response = Mock()
         mock_response.json.return_value = {"choices": [{"message": {"content": "ok"}}]}
         mock_response.raise_for_status = Mock()
         mock_post.return_value = mock_response
 
         gateway = OpenRouterGateway()
-        gateway.chat(sample_messages, sample_config)
+        await gateway.chat(sample_messages, sample_config)
 
         headers = mock_post.call_args[1]["headers"]
         assert "Bearer test-key" in headers["Authorization"]
 
 
 class TestGeminiGateway:
+    @pytest.mark.asyncio
     @patch("src.infrastructure.llm.llm_gateway.requests.post")
-    def test_chat_success(self, mock_post, sample_messages):
+    async def test_chat_success(self, mock_post, sample_messages):
         config = LLMConfig(provider="Google Gemini", model="gemini-1.5-pro", api_key="gem-key")
         mock_response = Mock()
         mock_response.json.return_value = {
@@ -125,15 +128,16 @@ class TestGeminiGateway:
         mock_post.return_value = mock_response
 
         gateway = GeminiGateway()
-        result = gateway.chat(sample_messages, config)
+        result = await gateway.chat(sample_messages, config)
 
         assert result == "Hello from Gemini"
         # Verify model prefix
         call_url = mock_post.call_args[0][0]
         assert "models/gemini-1.5-pro" in call_url
 
+    @pytest.mark.asyncio
     @patch("src.infrastructure.llm.llm_gateway.requests.post")
-    def test_chat_with_models_prefix(self, mock_post, sample_messages):
+    async def test_chat_with_models_prefix(self, mock_post, sample_messages):
         config = LLMConfig(provider="Google Gemini", model="models/gemini-flash", api_key="key")
         mock_response = Mock()
         mock_response.json.return_value = {
@@ -143,15 +147,16 @@ class TestGeminiGateway:
         mock_post.return_value = mock_response
 
         gateway = GeminiGateway()
-        gateway.chat(sample_messages, config)
+        await gateway.chat(sample_messages, config)
 
         call_url = mock_post.call_args[0][0]
         assert "models/models/" not in call_url  # No double prefix
 
 
 class TestOpenAIGateway:
+    @pytest.mark.asyncio
     @patch("src.infrastructure.llm.llm_gateway.requests.post")
-    def test_chat_success(self, mock_post, sample_messages):
+    async def test_chat_success(self, mock_post, sample_messages):
         config = LLMConfig(provider="OpenAI", model="gpt-4", api_key="sk-test")
         mock_response = Mock()
         mock_response.json.return_value = {
@@ -161,7 +166,7 @@ class TestOpenAIGateway:
         mock_post.return_value = mock_response
 
         gateway = OpenAIGateway()
-        result = gateway.chat(sample_messages, config)
+        result = await gateway.chat(sample_messages, config)
 
         assert result == "OpenAI response"
 
@@ -209,25 +214,27 @@ class TestLLMGatewayFactory:
 # ============================================================
 
 class TestRetryLLMGateway:
-    def test_retry_success_after_failure(self):
-        inner = MagicMock(spec=ILLMGateway)
+    @pytest.mark.asyncio
+    async def test_retry_success_after_failure(self):
+        inner = AsyncMock(spec=ILLMGateway)
         inner.chat.side_effect = [Exception("fail"), "success"]
 
         gateway = RetryLLMGateway(inner, max_retries=3)
-        with patch("src.infrastructure.llm.llm_gateway.time.sleep"):
-            result = gateway.chat([], LLMConfig(provider="x", model="y"))
+        with patch("src.infrastructure.llm.llm_gateway.asyncio.sleep"):
+            result = await gateway.chat([], LLMConfig(provider="x", model="y"))
 
         assert result == "success"
         assert inner.chat.call_count == 2
 
-    def test_retry_exhausted_raises(self):
-        inner = MagicMock(spec=ILLMGateway)
+    @pytest.mark.asyncio
+    async def test_retry_exhausted_raises(self):
+        inner = AsyncMock(spec=ILLMGateway)
         inner.chat.side_effect = Exception("persistent failure")
 
         gateway = RetryLLMGateway(inner, max_retries=2)
-        with patch("src.infrastructure.llm.llm_gateway.time.sleep"):
+        with patch("src.infrastructure.llm.llm_gateway.asyncio.sleep"):
             with pytest.raises(Exception, match="persistent failure"):
-                gateway.chat([], LLMConfig(provider="x", model="y"))
+                await gateway.chat([], LLMConfig(provider="x", model="y"))
 
         assert inner.chat.call_count == 2
 
@@ -237,24 +244,27 @@ class TestRetryLLMGateway:
 # ============================================================
 
 class TestMockLLMGateway:
-    def test_default_response(self):
+    @pytest.mark.asyncio
+    async def test_default_response(self):
         config = LLMConfig(provider="Test", model="test-model")
         msgs = [Message(role="user", content="hi")]
 
         gw = MockLLMGateway()
-        result = gw.chat(msgs, config)
+        result = await gw.chat(msgs, config)
 
         assert "Simulation Mode" in result
         assert "test-model" in result
 
-    def test_custom_response(self):
+    @pytest.mark.asyncio
+    async def test_custom_response(self):
         gw = MockLLMGateway(default_response="custom output")
-        result = gw.chat([], LLMConfig(provider="x", model="y"))
+        result = await gw.chat([], LLMConfig(provider="x", model="y"))
         assert result == "custom output"
 
-    def test_embed_returns_zero_vector(self):
+    @pytest.mark.asyncio
+    async def test_embed_returns_zero_vector(self):
         gw = MockLLMGateway()
-        vec = gw.embed("test", LLMConfig(provider="x", model="y"))
+        vec = await gw.embed("test", LLMConfig(provider="x", model="y"))
         assert len(vec) == 1536
         assert all(v == 0.0 for v in vec)
 
@@ -266,15 +276,16 @@ class TestMockLLMGateway:
 class TestBaseAgentGatewayDI:
     """Test that BaseAgent correctly uses injected ILLMGateway."""
 
+    @pytest.mark.asyncio
     @patch('src.agents.base_agent.BaseAgent._load_prompt', return_value="Test Prompt")
-    def test_injected_gateway_is_used(self, _):
+    async def test_injected_gateway_is_used(self, _):
         from src.agents.base_agent import BaseAgent
 
         class TestAgent(BaseAgent):
             def run(self, context, mode=None):
                 return "test"
 
-        mock_gateway = MagicMock(spec=ILLMGateway)
+        mock_gateway = AsyncMock(spec=ILLMGateway)
         mock_gateway.chat.return_value = "Gateway Response"
 
         mock_settings = MagicMock()
@@ -293,7 +304,7 @@ class TestBaseAgentGatewayDI:
             {"role": "system", "content": "sys"},
             {"role": "user", "content": "hello"},
         ]
-        result = agent.call_llm(messages)
+        result = await agent.call_llm(messages)
 
         assert result == "Gateway Response"
         mock_gateway.chat.assert_called_once()
@@ -321,8 +332,9 @@ class TestBaseAgentGatewayDI:
         # Should have a MockLLMGateway since no API key
         assert isinstance(agent._llm_gateway, MockLLMGateway)
 
+    @pytest.mark.asyncio
     @patch('src.agents.base_agent.BaseAgent._load_prompt', return_value="Test Prompt")
-    def test_legacy_mock_llm_call_bridges(self, _):
+    async def test_legacy_mock_llm_call_bridges(self, _):
         """Verify _mock_llm_call bridges to call_llm -> gateway."""
         from src.agents.base_agent import BaseAgent
 
@@ -330,7 +342,7 @@ class TestBaseAgentGatewayDI:
             def run(self, context, mode=None):
                 return "test"
 
-        mock_gateway = MagicMock(spec=ILLMGateway)
+        mock_gateway = AsyncMock(spec=ILLMGateway)
         mock_gateway.chat.return_value = "Bridge Response"
 
         mock_settings = MagicMock()
@@ -345,6 +357,6 @@ class TestBaseAgentGatewayDI:
             llm_gateway=mock_gateway,
         )
 
-        result = agent._mock_llm_call("user prompt", "system prompt")
+        result = await agent._mock_llm_call("user prompt", "system prompt")
         assert result == "Bridge Response"
         mock_gateway.chat.assert_called_once()
