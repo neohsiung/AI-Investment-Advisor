@@ -84,12 +84,10 @@ class CouncilService:
                 "market_data": context_data.get("market_data")
             }
             
-            # Parallel Run within Sub-Council
-            loop = asyncio.get_running_loop()
-            t1 = loop.run_in_executor(None, mom_agent.run, sub_context)
-            t2 = loop.run_in_executor(None, fun_agent.run, sub_context)
-            
-            res_mom, res_fun = await asyncio.gather(t1, t2)
+            res_mom, res_fun = await asyncio.gather(
+                mom_agent.run(sub_context),
+                fun_agent.run(sub_context)
+            )
             
             return {
                 "ticker": ticker,
@@ -131,9 +129,8 @@ class CouncilService:
             "portfolio_summary": "Full Portfolio Analysis"
         }
         
-        # Run CIO (Sync wrapped)
-        loop = asyncio.get_running_loop()
-        final_report = await loop.run_in_executor(None, cio.run, final_context)
+        # Run CIO
+        final_report = await cio.run(final_context)
         
         # Archive (Simple)
         self._archive_minutes(user_id, session_id, topic, str(final_report), aggregated_summary)
@@ -150,14 +147,12 @@ class CouncilService:
         Standard single-topic Council session wrapped for asynchronous execution.
         為非同步執行封裝的標準單一主題委員會議程。
         """
-        # Run in thread to avoid blocking event loop
-        loop = asyncio.get_running_loop()
-        return await loop.run_in_executor(None, self._run_sync_logic, session_id, topic, context_data, user_id, market_volatility, mode)
+        return await self._run_async_logic(session_id, topic, context_data, user_id, market_volatility, mode)
 
-    def _run_sync_logic(self, session_id: str, topic: str, context_data: Dict[str, Any], user_id: str, market_volatility: float = 0.0, mode: str = "weekly") -> Dict[str, Any]:
+    async def _run_async_logic(self, session_id: str, topic: str, context_data: Dict[str, Any], user_id: str, market_volatility: float = 0.0, mode: str = "weekly") -> Dict[str, Any]:
         """
-        Core synchronous logic for running an agent debate and capturing the transcript.
-        執行 Agent 辯論並記錄逐字稿的核心同步邏輯。
+        Core asynchronous logic for running an agent debate and capturing the transcript.
+        執行 Agent 辯論並記錄逐字稿的核心非同步邏輯。
         """
         
         # 1. Experience Replay
@@ -226,9 +221,9 @@ class CouncilService:
         
         for agent in members:
             try:
-                # Agents expect a single dict or string.
+                # Agents are now async.
                 logger.debug(f"Council: Running agent {agent.name}...")
-                res = agent.run(debate_context)
+                res = await agent.run(debate_context)
                 stances.append(f"[{agent.name}]: {res}")
                 transcript.append(f"[{agent.name}]: {res}")
             except Exception as e:
@@ -258,7 +253,7 @@ class CouncilService:
         
         try:
             cio = AgentFactory.create_cio_agent(tier=consensus_tier, user_id=user_id, mode=mode)
-            decision = cio.run(final_context)
+            decision = await cio.run(final_context)
         except Exception as e:
             logger.error(f"Council: CIO agent failed or could not be created: {e}")
             decision = f"Consensus failed due to internal error: {e}. Please review transcripts below."

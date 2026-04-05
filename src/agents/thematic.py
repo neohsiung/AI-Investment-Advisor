@@ -19,7 +19,7 @@ class ThematicAgent(BaseAgent):
         )
         self.settings_service = SettingsService(user_id=self.user_id)
 
-    def run(self, context):
+    async def run(self, context):
         """
         Evaluate an event and update thematic settings.
         context expects:

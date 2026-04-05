@@ -49,34 +49,22 @@ class SentimentAgent(BaseAgent):
             "price_change_percent": context.get("price_change_percent", "N/A")
         }
         
-        return await self.run_tool_loop(context=prompt_data)
-        user_prompt = f"Analyze sentiment for {ticker}."
+        response = await self.run_tool_loop(context=prompt_data)
         
-        # Use JSON mode if supported by provider, but prompt asks for raw JSON.
-        # 如果提供者支援，使用 JSON 模式，但 Prompt 要求原始 JSON。
-        response_str = self.call_llm(
-             messages=[
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": user_prompt}
-            ],
-            temperature=0.2
-        )
-        
-        # Parse JSON
-        # 解析 JSON
+        # [Phase 4] JSON Parse result for structured integration
         try:
-            cleaned = response_str.replace("```json", "").replace("```", "").strip()
-            # Robust extraction
-            # 穩健提取
+            # Clean up response if it contains markdown
+            cleaned = response.replace("```json", "").replace("```", "").strip()
+            # Robust extraction of the first '{' to last '}'
             start = cleaned.find("{")
             end = cleaned.rfind("}")
             if start != -1 and end != -1:
                 cleaned = cleaned[start:end+1]
             return json.loads(cleaned)
         except json.JSONDecodeError:
-            self.logger.warning(f"Failed to parse sentiment JSON for {ticker}: {response_str}")
+            self.logger.warning(f"SentimentAgent: Failed to parse JSON for {ticker}. Returning fallback.")
             return {
                 "sentiment": "Unknown",
-                "narrative": response_str[:50] + "...",
+                "narrative": response[:100] + "...",
                 "score": 0.0
             }

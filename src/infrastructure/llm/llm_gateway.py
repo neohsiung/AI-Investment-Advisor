@@ -296,6 +296,38 @@ class OpenAIGateway(ILLMGateway):
         return response.json()["data"][0]["embedding"]
 
 
+class MockLLMGateway(ILLMGateway):
+    """
+    Mock Gateway for testing and simulation mode.
+    """
+
+    def __init__(self, default_response: str = None):
+        self._default_response = default_response
+
+    def chat(self, messages: List[Message], config: LLMConfig) -> str:
+        if self._default_response:
+            return self._default_response
+
+        prompt_len = sum(len(m.content) for m in messages)
+        return (
+            f"### ⚠️ Simulation Mode (Missing API Key)\n\n"
+            f"**Provider**: {config.provider}\n"
+            f"**Model**: {config.model}\n\n"
+            f"- **Trend**: Neutral.\n"
+            f"- **Signal**: HOLD.\n"
+            f"(Context size: {prompt_len} chars)"
+        )
+
+    def stream_chat(self, messages: List[Message], config: LLMConfig) -> Generator[str, None, None]:
+        resp = self.chat(messages, config)
+        for word in resp.split(" "):
+            yield word + " "
+            time.sleep(0.02)
+
+    def embed(self, text: str, config: LLMConfig) -> List[float]:
+        return [0.0] * 1536
+
+
 class LLMGatewayFactory:
     """
     Factory for creating ILLMGateway instances based on provider name.
@@ -309,6 +341,7 @@ class LLMGatewayFactory:
         "gemini": GeminiGateway,
         "OpenAI": OpenAIGateway,
         "openai": OpenAIGateway,
+        "mock": MockLLMGateway,
     }
 
     @classmethod
@@ -519,34 +552,3 @@ class LoggingLLMGateway(ILLMGateway):
             # T11.4: PII Redaction for embedding
             return self._inner.embed(_redact_pii(text), config)
 
-
-class MockLLMGateway(ILLMGateway):
-    """
-    Mock Gateway for testing and simulation mode.
-    """
-
-    def __init__(self, default_response: str = None):
-        self._default_response = default_response
-
-    def chat(self, messages: List[Message], config: LLMConfig) -> str:
-        if self._default_response:
-            return self._default_response
-
-        prompt_len = sum(len(m.content) for m in messages)
-        return (
-            f"### ⚠️ Simulation Mode (Missing API Key)\n\n"
-            f"**Provider**: {config.provider}\n"
-            f"**Model**: {config.model}\n\n"
-            f"- **Trend**: Neutral.\n"
-            f"- **Signal**: HOLD.\n"
-            f"(Context size: {prompt_len} chars)"
-        )
-
-    def stream_chat(self, messages: List[Message], config: LLMConfig) -> Generator[str, None, None]:
-        resp = self.chat(messages, config)
-        for word in resp.split(" "):
-            yield word + " "
-            time.sleep(0.02)
-
-    def embed(self, text: str, config: LLMConfig) -> List[float]:
-        return [0.0] * 1536

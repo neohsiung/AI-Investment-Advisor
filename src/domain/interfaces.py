@@ -205,9 +205,9 @@ class ILLMProvider(ABC):
     MemoryService 所需的 LLM 操作介面。
     """
     @abstractmethod
-    def summarize(self, text: str) -> str:
+    async def summarize(self, text: str) -> str:
         pass
 
     @abstractmethod
-    def check_contradictions(self, new_text: str, context_text: str) -> List[str]:
+    async def check_contradictions(self, new_text: str, context_text: str) -> List[str]:
         pass

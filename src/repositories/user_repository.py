@@ -98,6 +98,27 @@ class AlchemyUserRepository(BaseRepository, IUserRepository):
             })
             return True
 
+    def create_user(self, email: str, name: str = None) -> str:
+        user_uuid = str(uuid.uuid4())
+        with self.engine.begin() as conn:
+            # 1. Create User
+            conn.execute(
+                text("INSERT INTO users (id, email, name) VALUES (:id, :email, :name)"),
+                {"id": user_uuid, "email": email, "name": name or email}
+            )
+            
+            # 2. Link primary email identity
+            conn.execute(text("""
+                INSERT INTO user_identities (id, user_id, provider, identifier, is_primary)
+                VALUES (:id, :user_id, 'email', :identifier, 1)
+            """), {
+                "id": str(uuid.uuid4()),
+                "user_id": user_uuid,
+                "identifier": email
+            })
+            
+        return user_uuid
+
     def get_identities(self, user_id: str) -> List[Dict[str, Any]]:
         with self.engine.connect() as conn:
             query = text("SELECT * FROM user_identities WHERE user_id = :uid")

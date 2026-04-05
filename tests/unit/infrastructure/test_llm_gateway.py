@@ -194,6 +194,7 @@ class TestLLMGatewayFactory:
     def test_register_custom_provider(self):
         class CustomGateway(ILLMGateway):
             def chat(self, messages, config): return "custom"
+            def stream_chat(self, messages, config): yield "custom"
             def embed(self, text, config): return [1.0]
 
         LLMGatewayFactory.register("CustomTest", CustomGateway)

@@ -370,7 +370,7 @@ class BaseAgent(ABC):
 
     def rate_request(self, sender: str, score: int, comment: str, context_hash: str = None):
         # HR Protocol: Rate an incoming request from another agent.
-        # HR 協議：對來自其他 Agent 的請求進行評分
+        # HR 協議: 對來自其他 Agent 的請求進行評分
         try:
             self.feedback_repo.add_review(
                 reviewer=self.name,
