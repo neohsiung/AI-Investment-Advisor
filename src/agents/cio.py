@@ -27,9 +27,9 @@ class CIOAgent(BaseAgent):
             "XLP", "XLY", "XLI", "XLU", "XLB", "XLRE"
         }
 
-    def run(self, context, mode=None):
+    async def run(self, context, mode=None):
         """
-        Run the CIO Agent.
+        Run the CIO Agent (Async).
         mode: 'report' (Final Report) or 'strategy' (Sector Strategy & Screening)
         """
         # Determine effective mode
@@ -39,12 +39,12 @@ class CIOAgent(BaseAgent):
             return self._run_strategy(context)
         
         # Report Mode (Default)
-        return self._run_report(context)
+        return await self._run_report(context)
 
-    def _run_report(self, context):
+    async def _run_report(self, context):
         """
-        Generates the final investment report using Swarm Intelligence & IC Protocol.
-        使用蜂群智慧與投資委員會協議生成最終投資報告。
+        Generates the final investment report using Swarm Intelligence & IC Protocol (Async).
+        使用蜂群智慧與投資委員會協議生成最終投資報告 (非同步)。
         """
         user_id = context.get("user_id") or self.user_id
         
@@ -124,11 +124,38 @@ class CIOAgent(BaseAgent):
         }
 
         # 6. Call Agent Tool Loop with Thought Chain (IC Protocol Enforcement)
-        response = self.run_tool_loop(
+        response = await self.run_tool_loop(
             context=prompt_data, 
             max_turns=3,
             thought_chain=True # [NEW] Enable R.P.A. Loop
         )
+        
+        # 7. Task 15.2: Post-Processing - Compliance Check (Evaluator) [Phase 15]
+        try:
+            from .evaluator_agent import EvaluatorAgent
+            evaluator = EvaluatorAgent(user_id=user_id)
+            eval_res_str = await evaluator.run({"report_content": response})
+            eval_res = json.loads(eval_res_str)
+            
+            if eval_res.get("is_compliant") is False:
+                violation = eval_res.get("violation_reason", "Unknown Violation")
+                self.logger.warning(f"CIOAgent: Compliance violation detected: {violation}")
+                warning_prefix = (
+                    "### 🛑 系統風險與合規性警告 (System Risk & Compliance Warning)\n"
+                    f"**本報告經評估後可能違反投資規範**：{violation}\n"
+                    "請使用者謹慎評估，僅供參考，不構成投資建議。\n\n---\n\n"
+                )
+                response = warning_prefix + response
+        except Exception as e:
+            self.logger.error(f"CIOAgent: Compliance check failed to execute: {e}")
+
+        # 8. Task 15.3: Deterministic Rule Enforcement - Position Guard [Phase 15]
+        from src.domain.portfolio_guard import enforce_position_limits
+        try:
+            response = enforce_position_limits(response, max_weight=0.2)
+        except Exception as e:
+            self.logger.error(f"CIOAgent: Portfolio guard failed: {e}")
+
         return response
 
     def _run_strategy(self, context):

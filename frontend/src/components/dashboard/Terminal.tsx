@@ -55,6 +55,13 @@ export default function Terminal() {
           message: `[代理人]: ${lastMessage.payload.thought}`
 
         };
+      } else if (lastMessage.type === "AGENT_STATUS") {
+        newLog = {
+          id: Math.random().toString(36).substr(2, 9),
+          timestamp: new Date().toLocaleTimeString(),
+          type: "system",
+          message: `[狀態] ${lastMessage.payload.agent}: ${lastMessage.payload.message}`
+        };
       }
 
       if (newLog) {

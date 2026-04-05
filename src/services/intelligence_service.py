@@ -10,20 +10,41 @@ from src.utils.logger import setup_logger
 logger = setup_logger("IntelligenceService")
 
 class IntelligenceService:
-    def __init__(self, user_id: str):
-        self.user_id = user_id
-        # Use simple dictionary if repository access failed, but we assume it works
-        try:
-            self.settings = SettingsService(user_id=user_id)
-        except Exception as e:
-            logger.error(f"Failed to initialize SettingsService: {e}")
-            self.settings = None
+    def __init__(self, settings_service: Optional[SettingsService] = None, user_id: str = None):
+        self.user_id = user_id or "system"
+        self.settings = settings_service or SettingsService(user_id=self.user_id)
 
-    async def generate_briefing(self) -> dict:
-        """主入口：搜尋、整合、生成情報"""
-        if not self.settings:
-            return self._fallback_error("系統設定讀取失敗")
+    async def get_latest_briefing(self) -> dict:
+        """從快取讀取最新情報 (毫秒級)"""
+        # Step 1: 從 Settings 讀取快取 JSON
+        cached = self.settings.get_setting("cached_intelligence_briefing")
+        timestamp = self.settings.get_setting("last_intelligence_timestamp")
+        
+        if cached:
+            # v2.2: Ensure the UI knows how fresh this data is
+            if isinstance(cached, str):
+                try:
+                    cached = json.loads(cached)
+                except:
+                    pass
+            
+            if timestamp:
+                cached["observation_window"] = f"UPDATED: {timestamp}"
+            return cached
+            
+        # Step 2: Fallback - 如果沒快取，則發送一個「生成中」的提示
+        return {
+            "executive_summary": "市場情報正在背景生成中，請稍候再試...",
+            "recommendation": "系統初次啟動或正在更新數據。",
+            "ai_note": "BACKGROUND_SYNC_PENDING",
+            "observation_window": "INITIALIZING",
+            "sentiment_metrics": [
+                {"label": "處理進度", "value": 50, "color": "bg-secondary"}
+            ]
+        }
 
+    async def compute_briefing(self) -> dict:
+        """核心運算邏輯：真正執行 Tavily 搜尋與 LLM 生成 (耗時數十秒)"""
         tavily_key = self.settings.get_setting("source_tavily_api_key")
         api_key = self.settings.get_setting("API_KEY")
         model = self.settings.get_setting("AI_MODEL_SMART", "google/gemini-2.0-pro")

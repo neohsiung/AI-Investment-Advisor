@@ -26,6 +26,7 @@ description: 開發指導準則：指導 Agent 遵循 Trunk-based Development �
 
 - **單點突破，立即提交**：每當成功寫好一個 Function、修正好一個 Bug、或是建立好一個模組且確認語法無誤後，就要執行 `git commit`。
 - **確保主幹不被破壞 (Don't Break the Trunk)**：每次 Commit 的段落至少不能引發 Syntax Error 或導致專案無法編譯/啟動測試。就算新功能尚未上線，也可先以 Dead Code 形式推入主幹。
+- **資料庫向下相容性 (Backward Compatibility)**：若本次提交涉及 DB Schema 或 `models.py` 的異動，**必須確保向下相容**。系統已有多個租戶，新增欄位應有 default 值，並同步更新 `schema_version` 及對應的資料庫建立文件 (`database.py`)。
 
 ### 3. Commit Message 命名規範 (Conventional Commits & Bilingual Detailed Format)
 

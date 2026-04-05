@@ -61,6 +61,13 @@ opentelemetry-instrumentation-requests==0.60b1
 opentelemetry-instrumentation-urllib3==0.60b1
 opentelemetry-instrumentation-psycopg2==0.60b1
 
+# v8.0 Advanced Ecosystem Dependencies
+asyncpg==0.29.0
+aiosqlite==0.19.0
+slowapi==0.1.9
+playwright==1.41.2
+qdrant-client==1.7.3
+
 # Broker APIs
 ib_insync==0.9.86
 
@@ -83,3 +90,6 @@ sentencepiece==0.2.1
 gradio==6.7.0
 pydub==0.25.1
 ffmpy==0.5.0
+celery[redis]==5.4.0
+pandas_market_calendars==4.4.1
+cryptography==42.0.5

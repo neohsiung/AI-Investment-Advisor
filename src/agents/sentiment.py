@@ -18,7 +18,7 @@ class SentimentAgent(BaseAgent):
         super().__init__(name="Sentiment", prompt_path="prompts/sentiment_agent.txt", use_cache=use_cache, ttl_hours=ttl_hours, tier="fast", user_id=user_id, **kwargs)
 
 
-    def run(self, context):
+    async def run(self, context):
         """
         Run Sentiment Analysis.
         執行情緒分析。
@@ -49,7 +49,7 @@ class SentimentAgent(BaseAgent):
             "price_change_percent": context.get("price_change_percent", "N/A")
         }
         
-        system_prompt = self.render_system_prompt(prompt_data)
+        return await self.run_tool_loop(context=prompt_data)
         user_prompt = f"Analyze sentiment for {ticker}."
         
         # Use JSON mode if supported by provider, but prompt asks for raw JSON.

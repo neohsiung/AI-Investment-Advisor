@@ -156,6 +156,9 @@ class SentinelService:
             # Check for excess cash and trigger deployment logic if allowed
             await self._handle_cash_deployment_logic(triggers)
             
+            # Dimension 9: Infrastructure Health / Self-Healing (Phase 9)
+            triggers += await self._check_infrastructure_health()
+            
             # ACT: Summon Council + Notifications if triggered
             if triggers:
                 await self._escalate(triggers)
@@ -1636,3 +1639,61 @@ class SentinelService:
                 
         except Exception as e:
             logger.error(f"Sentinel: Error in cash deployment logic: {e}", exc_info=True)
+
+    async def _check_infrastructure_health(self) -> List[Dict[str, Any]]:
+        """
+        [Phase 9] Dimension 9: Infrastructure Health Watchdog.
+        Monitors database and background worker health. If pressure is too high, 
+        attempts self-healing or raises an alert.
+        """
+        triggers = []
+        try:
+            # 1. DB Health
+            from src.data.database import get_db_engine
+            from sqlalchemy import text
+            engine = get_db_engine()
+            db_status = "ok"
+            try:
+                with engine.connect() as conn:
+                    conn.execute(text("SELECT 1"))
+            except Exception as e:
+                db_status = "degraded"
+                logger.error(f"Sentinel DB Health Check Failed: {e}")
+                triggers.append({
+                    "id": "health_db_critical",
+                    "text": "🚨 Critical System Alert: Database connection degraded or offline.",
+                    "severity": "critical",
+                    "priority": 0,
+                    "type": "infrastructure"
+                })
+
+            # 2. Celery Worker Queue Depth
+            from src.infrastructure.tasks import celery_app
+            import redis
+            
+            # Use redis directly if configured
+            redis_url = os.getenv("CELERY_BROKER_URL", "redis://redis:6379/0")
+            try:
+                r = redis.from_url(redis_url)
+                # Celery default queue name is 'celery'
+                queue_depth = r.llen("celery")
+                
+                if queue_depth > 50:
+                    logger.warning(f"Sentinel: High queue depth detected ({queue_depth} pending). Initiating Self-Healing.")
+                    # Self-Healing Action: Accelerate workers or alert
+                    triggers.append({
+                        "id": "health_queue_pressure",
+                        "text": f"⚠️ System Pressure Alert: High background task queue depth ({queue_depth}). Initiating worker soft-reload/scaling.",
+                        "severity": "high",
+                        "priority": 1,
+                        "type": "infrastructure"
+                    })
+                    # Worker Pool expansion attempt
+                    celery_app.control.broadcast('pool_grow', n=1)
+            except Exception as redis_e:
+                 logger.debug(f"Sentinel could not check redis queue size directly: {redis_e}")
+
+        except Exception as e:
+            logger.error(f"Infrastructure Health Check Failed: {e}")
+            
+        return triggers

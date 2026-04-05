@@ -3,11 +3,15 @@ import logging
 from pathlib import Path
 from sqlalchemy import create_engine, text, Engine
 from sqlalchemy.orm import sessionmaker, scoped_session
+from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sessionmaker, AsyncEngine
 import typing
 from typing import List, Dict, Tuple, Any, Optional, Callable, Dict, List, Tuple, Any, Optional, Callable
 from datetime import datetime, timezone
 
 logger = logging.getLogger(__name__)
+
+# v8.0 Global Async Engine Cache
+_async_db_engines: Dict[str, AsyncEngine] = {}
 
 # Global Engine Cache
 _db_engines: Dict[str, Engine] = {}
@@ -67,12 +71,16 @@ class BaseRepository:
         """
         return vector
 
-def get_db_engine(db_path=None) -> Engine:
+def get_db_engine(db_path: str = None, use_null_pool: bool = False) -> Engine:
     """
-    Returns a SQLAlchemy Engine.
-    Strictly uses PostgreSQL. SQLite is disabled.
+    Returns a SQLAlchemy Engine with optimized pooling.
+    v7.3: Added use_null_pool support for multi-process isolation (Celery).
     """
     global _db_engines
+
+    # v7.3: Detect if we are running inside a Celery worker to enforce safe pooling
+    is_celery = os.getenv("IS_CELERY_WORKER", "false").lower() == "true"
+    should_use_null_pool = use_null_pool or is_celery
 
     # 1. Check for explicit DB_URL
     db_url = os.getenv("DB_URL")
@@ -90,30 +98,31 @@ def get_db_engine(db_path=None) -> Engine:
         db_name = os.getenv("DB_NAME", "portfolio")
         
         if not db_host:
-            # v5.8.0: Default to 'postgres' for containerized environments, 
-            # fallback to 'localhost' for local dev with a warning.
             db_host = "postgres"
             if "PYTEST_CURRENT_TEST" not in os.environ:
-                 logger.warning(f"DB_HOST not set. Defaulting to '{db_host}'. (For local dev, set DB_HOST='localhost')")
+                 logger.warning(f"DB_HOST not set. Defaulting to '{db_host}'.")
         
         db_url = f"postgresql+psycopg2://{db_user}:{db_pass}@{db_host}:{db_port}/{db_name}"
 
-    # 3. Strictly disallow SQLite in production (default) paths
-    # v4.2.1: Allow SQLite if it's a test environment or db_path is provided
-    if not db_path and "sqlite" in db_url.lower() and "PYTEST_CURRENT_TEST" not in os.environ:
-        raise ConnectionError("SQLite is disabled for production. Please configure PostgreSQL via DB_URL or DB_USER/PASS/HOST/PORT/NAME.")
+    # Cache key includes pool type to prevent sharing incompatible engines
+    cache_key = f"{db_url}_nullpool_{should_use_null_pool}"
 
-    # 4. Create directory for SQLite if it doesn't exist
-    if "sqlite" in db_url.lower() and not db_url.startswith("sqlite:///:memory:"):
-        db_file_path = db_url.replace("sqlite:///", "")
-        os.makedirs(os.path.dirname(os.path.abspath(db_file_path)), exist_ok=True)
-
-    if db_url not in _db_engines:
+    if cache_key not in _db_engines:
         if "postgres" in db_url:
-            # v4.2.5: Reduced from 50 to 10 to accommodate multi-service container architecture
-            print(f"DEBUG: Constructing PostgreSQL engine for host: {db_url.split('@')[-1].split(':')[0]}")
-            engine = create_engine(db_url, pool_size=10, max_overflow=10)
-            logger.info(f"Using PostgreSQL engine: {db_url.split('@')[-1]}")
+            from sqlalchemy.pool import NullPool
+            if should_use_null_pool:
+                logger.info(f"Using PostgreSQL engine with NullPool for process isolation.")
+                engine = create_engine(db_url, poolclass=NullPool)
+            else:
+                # v19.1: Increased pooling for high-concurrency [Phase 19]
+                engine = create_engine(
+                    db_url, 
+                    pool_size=20, 
+                    max_overflow=50,
+                    pool_timeout=30,
+                    pool_recycle=3600
+                )
+                logger.info(f"Using PostgreSQL engine with QueuePool (size=20, overflow=50).")
         else:
             from sqlalchemy.pool import StaticPool
             if "memory" in db_url.lower():
@@ -122,30 +131,80 @@ def get_db_engine(db_path=None) -> Engine:
                     poolclass=StaticPool, 
                     connect_args={'check_same_thread': False}
                 )
-                logger.info(f"Using SQLite in-memory engine with StaticPool.")
             else:
                 engine = create_engine(db_url)
-                logger.warning(f"Using fallback engine (likely SQLite): {db_url}")
             
         # Optional: Instrument the engine for OpenTelemetry
         try:
             from opentelemetry.instrumentation.sqlalchemy import SQLAlchemyInstrumentor
-            from opentelemetry import trace
-            
-            # Add dynamic attributes to current span if exists
-            span = trace.get_current_span()
-            if span:
-                span.set_attribute("db.system", "postgresql" if "postgres" in db_url else "sqlite")
-                span.set_attribute("db.url.masked", db_url.split('@')[-1] if "@" in db_url else "sqlite")
-
             SQLAlchemyInstrumentor().instrument(engine=engine)
-            logger.info("SQLAlchemy OpenTelemetry Instrumentation enabled.")
-        except ImportError:
+        except (ImportError, Exception):
             pass
             
-        _db_engines[db_url] = engine
+        _db_engines[cache_key] = engine
 
-    return _db_engines[db_url]
+    return _db_engines[cache_key]
+
+def get_async_db_engine(db_path: str = None) -> AsyncEngine:
+    """
+    Returns a SQLAlchemy AsyncEngine with optimized settings.
+    v8.0: Initial implementation for high-concurrency async I/O.
+    """
+    global _async_db_engines
+
+    # 1. Resolve DB URL
+    db_url = os.getenv("DB_URL")
+    if db_path:
+        db_url = f"sqlite+aiosqlite:///{db_path}"
+    
+    if not db_url:
+        db_user = os.getenv("DB_USER", "postgres")
+        db_pass = os.getenv("DB_PASS", "postgres")
+        db_host = os.getenv("DB_HOST", "postgres")
+        db_port = os.getenv("DB_PORT", "5432")
+        db_name = os.getenv("DB_NAME", "portfolio")
+        db_url = f"postgresql+asyncpg://{db_user}:{db_pass}@{db_host}:{db_port}/{db_name}"
+    else:
+        # v8.0: Swap driver for async compatibility
+        if "postgresql+psycopg2" in db_url:
+            db_url = db_url.replace("postgresql+psycopg2", "postgresql+asyncpg")
+        elif "sqlite" in db_url and "aiosqlite" not in db_url:
+            db_url = db_url.replace("sqlite:///", "sqlite+aiosqlite:///")
+
+    if db_url not in _async_db_engines:
+        if "postgresql" in db_url:
+            # v19.1: Increased async pooling for high-concurrency [Phase 19]
+            engine = create_async_engine(
+                db_url,
+                pool_size=20,
+                max_overflow=50,
+                pool_recycle=3600,
+                pool_timeout=30
+            )
+            logger.info(f"Using PostgreSQL AsyncEngine: {db_url.split('@')[-1]}")
+        else:
+            engine = create_async_engine(db_url)
+            
+        _async_db_engines[db_url] = engine
+
+    return _async_db_engines[db_url]
+
+class AsyncBaseRepository:
+    """
+    Base class for repositories using non-blocking async DB operations.
+    v8.0: Core component for Phase 8 performance upgrade.
+    """
+    def __init__(self, engine: Optional[AsyncEngine] = None):
+        self.engine = engine or get_async_db_engine()
+        self.session_factory = async_sessionmaker(
+            bind=self.engine, 
+            expire_on_commit=False,
+            class_=AsyncSession
+        )
+
+    async def get_session(self) -> AsyncSession:
+        """Returns a new async session."""
+        return self.session_factory()
 
 def get_db_connection(db_path=None):
     """
@@ -380,6 +439,17 @@ def init_db(db_path=None, force=False, engine=None):
     );
     """)
 
+    # 10. Web Push Subscriptions table [Phase 20]
+    schema_commands.append(f"""
+    CREATE TABLE IF NOT EXISTS web_push_subscriptions (
+        id {pk_type},
+        user_id {fk_type} NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        subscription_json {json_type} NOT NULL,
+        device_info {json_type} DEFAULT '{{}}',
+        created_at {timestamp_type} DEFAULT CURRENT_TIMESTAMP
+    );
+    """)
+
     # 10. Agent Feedback (Experience Training)
     schema_commands.append(f"""
     CREATE TABLE IF NOT EXISTS agent_feedback (
@@ -473,7 +543,7 @@ def init_db(db_path=None, force=False, engine=None):
     # 16. LLM Usage Logs table (Rule #8: Cognitive Memory Tiering)
     schema_commands.append(f"""
     CREATE TABLE IF NOT EXISTS llm_usage_logs (
-        id TEXT NOT NULL DEFAULT gen_random_uuid()::text PRIMARY KEY,
+        id {pk_type},
         timestamp {timestamp_type} DEFAULT CURRENT_TIMESTAMP,
         user_id {fk_type} NOT NULL,
         agent_name TEXT NOT NULL,
@@ -552,13 +622,14 @@ def init_db(db_path=None, force=False, engine=None):
                 conn.execute(text("CREATE UNIQUE INDEX idx_daily_snapshots_upsert ON daily_snapshots(date, user_id, account_id)"))
 
                 # Ensure llm_usage_logs.id has a DEFAULT (migration for existing deployments)
-                try:
-                    conn.execute(text(
-                        "ALTER TABLE llm_usage_logs ALTER COLUMN id SET DEFAULT gen_random_uuid()::text"
-                    ))
-                    logger.info("Migration: Added DEFAULT gen_random_uuid() to llm_usage_logs.id")
-                except Exception:
-                    pass  # Already has a DEFAULT — ignore
+                if not is_sqlite:
+                    try:
+                        conn.execute(text(
+                            "ALTER TABLE llm_usage_logs ALTER COLUMN id SET DEFAULT gen_random_uuid()::text"
+                        ))
+                        logger.info("Migration: Added DEFAULT gen_random_uuid() to llm_usage_logs.id")
+                    except Exception:
+                        pass  # Already has a DEFAULT — ignore
                 
             except Exception as e:
                 logger.error(f"Failed to migrate daily_snapshots: {e}")

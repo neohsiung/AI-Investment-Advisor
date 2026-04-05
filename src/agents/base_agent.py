@@ -7,7 +7,7 @@ from dataclasses import asdict
 from src.utils.security import redact_secrets
 from abc import ABC, abstractmethod
 import typing
-from typing import List, Dict, Tuple, Any, Optional, Callable, Dict, List, Tuple, Any, Optional, Callable
+from typing import List, Dict, Tuple, Any, Optional, Callable, Generator
 from sqlalchemy import text
 from jinja2 import Template
 # from src.data.database import get_db_connection # Removed for DIP
@@ -82,7 +82,7 @@ class BaseAgent(ABC):
         self.config = self._load_config()
         self.cache = ResponseCache(ttl_hours=ttl_hours) if use_cache else None
         
-        # [Phase 1] LLM Gateway — Model Layer Injection (Model > Agent > Skill)
+        # [Phase 1] LLM Gateway - Model Layer Injection (Model > Agent > Skill)
         # 注入 ILLMGateway 實作，實現 Model 層完全解耦
         self._llm_gateway = llm_gateway or self._create_default_gateway()
         
@@ -113,14 +113,14 @@ class BaseAgent(ABC):
     def register_tool(self, tool: McpTool):
         """
         Register a tool for the agent to use.
-        註冊一個工具供 Agent 使用。
+        註冊一個工具供 Agent 使用
         """
         self.toold.register_tool(tool)
 
     def _load_config(self):
         """
         Read AI configuration (Priority: Budget Router > DB > Env > Default).
-        讀取 AI 設定 (優先經由預算路由器，確保花費受控)。
+        讀取 AI 設定 (優先經由預算路由器，確保花費受控)
         """
         try:
             # 1. Initialize dependencies for Router
@@ -133,7 +133,7 @@ class BaseAgent(ABC):
             config_obj = router.get_config(self.tier, self.user_id)
             
             # 3. Convert to dict for backward compatibility with base classes and tests
-            # 將 LLMConfig 物件轉為字典，以容納目前的測試與基礎層邏輯。
+            # 將 LLMConfig 物件轉為字典，以容納目前的測試與基礎層邏輯
             return asdict(config_obj)
             
         except Exception as e:
@@ -193,9 +193,27 @@ class BaseAgent(ABC):
 
     def _load_prompt(self):
         """
-        Load system prompt from workspace if available, else fallback to prompt_path file.
-        從檔案或獨立大腦載入系統提示詞。
-        """
+        # [Phase 18] Dynamic Personalization - Check for user-specific prompt overrides
+        # This allows RLHF-optimized prompts to override static files.
+        try:
+            from sqlalchemy.orm import sessionmaker
+            from src.data.database import get_db_engine
+            from src.data.models import UserCustomPrompt
+            
+            Session = sessionmaker(bind=get_db_engine())
+            session = Session()
+            custom = session.query(UserCustomPrompt).filter_by(
+                user_id=self.user_id, 
+                agent_name=self.name
+            ).first()
+            
+            if custom and custom.custom_prompt:
+                self.logger.info(f"✨ Using dynamically optimized prompt for user {self.user_id} (Agent: {self.name})")
+                return custom.custom_prompt
+            session.close()
+        except Exception as e:
+            self.logger.warning(f"Dynamic prompt check bypassed due to error: {e}")
+
         # [Phase 1] Attempt to load from new Workspace directories first
         prompt_content = ""
         if hasattr(self, 'workspace_path') and self.workspace_path and os.path.exists(self.workspace_path):
@@ -225,35 +243,35 @@ class BaseAgent(ABC):
 
     def render_system_prompt(self, context):
         """
-        Render System Prompt using Jinja2 — delegates to ContextAssembler.
-        使用 Jinja2 渲染系統提示詞 — 委派至 ContextAssembler。
+        Render System Prompt using Jinja2 - delegates to ContextAssembler.
+        使用 Jinja2 渲染系統提示詞 - 委派至 ContextAssembler
         """
         return self._context_assembler.render(self.system_prompt, context)
 
 
     @abstractmethod
-    def run(self, context):
+    async def run(self, context):
         """
-        Execute Agent Task.
-        執行 Agent 任務。
+        Execute Agent Task (Async).
+        執行 Agent 任務 (同步)
         """
         pass
 
     def _estimate_tokens(self, text: str) -> int:
-        """Estimate token count — delegates to WalProtocol."""
+        """Estimate token count - delegates to WalProtocol."""
         return WalProtocol.estimate_tokens(text)
 
     def _check_context_window(self, messages: List[Dict[str, str]], reserve_floor: int = 4000, max_tokens: int = 32000) -> bool:
-        """Check context window — delegates to WalProtocol."""
+        """Check context window - delegates to WalProtocol."""
         return self._wal_protocol.check_context_window(messages, reserve_floor, max_tokens)
 
     def _perform_silent_flush(self, messages: List[Dict[str, str]]):
-        """WAL Protocol flush — delegates to WalProtocol."""
+        """WAL Protocol flush - delegates to WalProtocol."""
         self._wal_protocol.perform_silent_flush(messages, self.call_llm)
 
-    def run_tool_loop(self, context, max_turns=3, thought_chain=False):
+    async def run_tool_loop(self, context, max_turns=3, thought_chain=False):
         """
-        ReAct-style loop — delegates to AgentLoop.
+        ReAct-style loop - delegates to AgentLoop.
         """
         if thought_chain:
             context = context.copy() if isinstance(context, dict) else {}
@@ -268,44 +286,64 @@ class BaseAgent(ABC):
         from src.services.search_service import InternetSearchService
         self._agent_loop._search_service = InternetSearchService(user_id=self.user_id)
 
-        return self._agent_loop.execute(
+        response = await self._agent_loop.execute(
             messages=messages,
             call_llm_fn=self.call_llm,
             check_context_fn=lambda m: self._wal_protocol.check_context_window(m),
             flush_fn=lambda m: self._wal_protocol.perform_silent_flush(m, self.call_llm),
             max_turns=max_turns,
         )
+        
+        # [Phase 9] Auto-save insights to Knowledge Vault
+        if thought_chain and response:
+            from src.utils.async_utils import to_thread
+            import asyncio
+            
+            # Fire and forget extraction to not block the main flow
+            try:
+                loop = asyncio.get_running_loop()
+                loop.create_task(to_thread(self._extract_and_save_takeaways, response))
+            except RuntimeError:
+                # Fallback if no event loop running
+                self._extract_and_save_takeaways(response)
+
+        return response
 
     # --- Context Guard ---
 
 
 
-    def call_swarm(self, agents: list, message: str, context: dict = None) -> dict:
+    async def call_swarm(self, agents: list, message: str, context: dict = None) -> dict:
         """
-        Broadcasts a message to a swarm of agents effectively in parallel.
-        向 Agent Swarm 廣播訊息。
+        Broadcasts a message to a swarm of agents effectively in parallel. [Phase 12]
+        向 Agent Swarm 廣播訊息
         """
+        self.logger.info(f"Swarm Broadcast Initiated: {self.name} -> {agents}")
+        
+        # Parallel Execution [Phase 12]
+        tasks = [self.call_agent(agent_name, message, context) for agent_name in agents]
+        responses = await asyncio.gather(*tasks, return_exceptions=True)
+        
         results = {}
-        for agent_name in agents:
-            try:
-                self.logger.info(f"Swarm Broadcast: {self.name} -> {agent_name}")
-                response = self.call_agent(agent_name, message, context)
+        for agent_name, response in zip(agents, responses):
+            if isinstance(response, Exception):
+                self.logger.error(f"Swarm Broadcast Failed for {agent_name}: {response}")
+                results[agent_name] = f"Error: {response}"
+            else:
                 results[agent_name] = response
-            except Exception as e:
-                self.logger.error(f"Swarm Broadcast Failed for {agent_name}: {e}")
-                results[agent_name] = f"Error: {e}"
+                
         return results
 
     def _parse_tool_call(self, text):
-        """Parse tool calls — delegates to AgentLoop."""
+        """Parse tool calls - delegates to AgentLoop."""
         return AgentLoop.parse_tool_call(text)
 
-    def call_agent(self, agent_name: str, message: str, context: dict = None):
+    async def call_agent(self, agent_name: str, message: str, context: dict = None):
         """
-        Agent-to-Agent Communication (Agent Mesh).
+        Agent-to-Agent Communication (Agent Mesh) - Async.
         Sends a message/task to another agent.
-        Agent 對 Agent 通訊 (Agent Mesh)。
-        發送訊息/任務給另一個 Agent。
+        Agent 對 Agent 通訊 (Agent Mesh) - 非同步
+        發送訊息/任務給另一個 Agent
         """
         self.logger.info(f"Calling Agent {agent_name} with message: {message[:50]}...")
         
@@ -324,7 +362,7 @@ class BaseAgent(ABC):
         if target_agent:
             call_context = context or {}
             call_context["user_request"] = message
-            response = target_agent.run(call_context)
+            response = await target_agent.run(call_context)
             return response
         
         return f"Error: Agent {agent_name} not found."
@@ -332,7 +370,7 @@ class BaseAgent(ABC):
     def rate_request(self, sender: str, score: int, comment: str, context_hash: str = None):
         """
         HR Protocol: Rate an incoming request from another agent.
-        HR 協議：對來自其他 Agent 的請求進行評分。
+        HR 協議：對來自其他 Agent 的請求進行評分
         """
         try:
             self.feedback_repo.add_review(
@@ -347,8 +385,44 @@ class BaseAgent(ABC):
             self.logger.error(f"Failed to record feedback: {e}")
 
     def _render_user_context(self, context):
-        """Render user context — delegates to ContextAssembler."""
+        """Render user context - delegates to ContextAssembler."""
         return ContextAssembler.render_user_context(context)
+
+    def _extract_and_save_takeaways(self, agent_response: str) -> None:
+        """
+        [Phase 9] Extracts key takeaways from the agent's response and saves them to the Knowledge Vault.
+        Uses a fast LLM model to distill the context.
+        """
+        if len(agent_response) < 100:
+            return  # Too short to contain meaningful long-term takeaways
+            
+        try:
+            from src.agents.factory import AgentFactory
+            extractor = AgentFactory.create_sentinel_agent(user_id=self.user_id, tier="fast")
+            
+            prompt = (
+                "Extract 1-3 highly significant, long-term 'Key Takeaways' or 'Regime Shifts' from the following analysis. "
+                "Only extract information that would be valuable for future investment decisions across different sessions. "
+                "If there is nothing of long-term value, output 'NONE'. "
+                "Return the takeaways as a concise bulleted list in Traditional Chinese.\n\n"
+                f"Agent Name: {self.name}\n"
+                f"Analysis:\n{agent_response[:2500]}"
+            )
+            
+            result = extractor.call_llm([{"role": "user", "content": prompt}], temperature=0.1)
+            
+            if result and "NONE" not in result.upper() and len(result.strip()) > 10:
+                self.logger.info(f"Saving extracted takeaways to Knowledge Vault for {self.name}")
+                from src.infrastructure.memory.memory_manager import HybridMemory
+                memory = HybridMemory()
+                memory.add_memory(
+                    user_id=self.user_id,
+                    content=result,
+                    category=f"{self.name.lower()}_takeaways",
+                    metadata={"source": "auto_extraction", "agent": self.name}
+                )
+        except Exception as e:
+            self.logger.warning(f"Failed to auto-extract takeaways: {e}")
 
     # ================================================================
     # LLM Gateway Factory & Delegation (Model > Agent > Skill)
@@ -402,8 +476,8 @@ class BaseAgent(ABC):
 
     def call_llm(self, messages, temperature=0.7, response_format=None):
         """
-        Unified method to call LLM — delegates to ILLMGateway.
-        統一的 LLM 調用方法 — 委派至 ILLMGateway。
+        Unified method to call LLM - delegates to ILLMGateway.
+        統一的 LLM 調用方法 - 委派至 ILLMGateway
         """
         system_prompt = ""
         user_prompt = ""
@@ -433,7 +507,32 @@ class BaseAgent(ABC):
         ]
         return self._llm_gateway.chat(gateway_messages, config)
 
-    # Legacy aliases for backward compatibility (deprecated — will be removed)
+    def stream_llm(self, messages, temperature=0.7) -> Generator[str, None, None]:
+        """
+        Unified method to stream LLM response - delegates to ILLMGateway.
+        統一的 LLM 串流調用方法 - 委派至 ILLMGateway
+        """
+        system_prompt = ""
+        user_prompt = ""
+        for m in messages:
+            if m['role'] == 'system': system_prompt += m['content'] + "\n"
+            elif m['role'] == 'user': user_prompt += m['content'] + "\n"
+            elif m['role'] == 'assistant': user_prompt += f"\n[Previous Output]: {m['content']}\n"
+
+        system_prompt = system_prompt.strip()
+        user_prompt = user_prompt.strip()
+
+        self.logger.info(f"Streaming LLM via Gateway for {self.name}...")
+
+        # Delegate to ILLMGateway
+        config = self._build_llm_config(temperature=temperature)
+        gateway_messages = [
+            Message(role="system", content=system_prompt),
+            Message(role="user", content=user_prompt),
+        ]
+        return self._llm_gateway.stream_chat(gateway_messages, config)
+
+    # Legacy aliases for backward compatibility (deprecated - will be removed)
     def _mock_llm_call(self, prompt, system_prompt):
         """Legacy bridge: delegates to call_llm via gateway."""
         messages = [
@@ -457,7 +556,7 @@ class BaseAgent(ABC):
     def _compute_hash(self, data):
         """
         Compute SHA256 hash of the input data.
-        計算輸入資料的 SHA256 雜湊值。
+        計算輸入資料的 SHA256 雜湊值
         """
         try:
             if isinstance(data, dict):
@@ -472,7 +571,7 @@ class BaseAgent(ABC):
     def check_freshness(self, context, state_key=None):
         """
         Check if the input context is different from the last run.
-        檢查輸入的 Context 是否與上次執行不同 (避免重複執行)。
+        檢查輸入的 Context 是否與上次執行不同 (避免重複執行)
         """
         current_hash = self._compute_hash(context)
         if not current_hash:
@@ -495,7 +594,7 @@ class BaseAgent(ABC):
     def update_state(self, current_hash, output_content, state_key=None):
         """
         Update the agent_state table with new hash, time, and output.
-        更新 agent_state 資料表，記錄新的雜湊值、時間與輸出。
+        更新 agent_state 資料表，記錄新的雜湊值、時間與輸出
         """
         try:
             db_id = f"{self.name}_{state_key}" if state_key else self.name

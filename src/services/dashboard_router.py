@@ -1,4 +1,5 @@
-from fastapi import APIRouter, HTTPException, Depends, Request, Body, UploadFile, File
+from fastapi import APIRouter, HTTPException, Depends, Request, Body, UploadFile, File, BackgroundTasks
+from fastapi.responses import StreamingResponse
 from sqlalchemy import text
 from typing import Dict, Any, List
 import pandas as pd
@@ -10,8 +11,11 @@ from src.services.dashboard_service import DashboardService
 from src.utils.logger import setup_logger
 from src.utils.jwt_utils import decode_token
 from src.services.performance_service import PerformanceService
-from src.repositories.report_repository import AlchemyReportRepository
+from src.repositories.report_repository import AsyncAlchemyReportRepository
 from src.agents.factory import AgentFactory
+from src.utils.rate_limit import limiter
+import json
+import asyncio
 from src.services.transaction_service import TransactionService
 from src.services.settings_service import SettingsService
 from src.services.intelligence_service import IntelligenceService
@@ -55,22 +59,82 @@ def get_performance_service(user: Dict[str, Any] = Depends(get_current_user)) ->
     user_id = user.get("sub")
     return PerformanceService(user_id=user_id)
 
-def get_reports_repository(user: Dict[str, Any] = Depends(get_current_user)) -> AlchemyReportRepository:
-    """獲取 AlchemyReportRepository 實例"""
-    return AlchemyReportRepository()
+def get_reports_repository(user: Dict[str, Any] = Depends(get_current_user)) -> AsyncAlchemyReportRepository:
+    """獲取 AsyncAlchemyReportRepository 實例"""
+    return AsyncAlchemyReportRepository()
+
+@dashboard_router.get("/health")
+async def health_check():
+    """系統健康檢查 (DB, Redis, Celery)"""
+    health = {"status": "healthy", "components": {}}
+    
+    # 1. Check DB
+    try:
+        from src.data.database import get_db_engine
+        engine = get_db_engine()
+        with engine.connect() as conn:
+            conn.execute(text("SELECT 1"))
+        health["components"]["database"] = "ok"
+    except Exception as e:
+        health["status"] = "degraded"
+        health["components"]["database"] = f"error: {str(e)}"
+
+    # 2. Check Redis/Celery
+    try:
+        from src.infrastructure.tasks import celery_app
+        # Ping returns 'pong' if connection is alive
+        ping = celery_app.control.ping(timeout=1.0)
+        if ping:
+            health["components"]["celery_workers"] = f"active ({len(ping)})"
+        else:
+            health["components"]["celery_workers"] = "no active workers"
+            health["status"] = "degraded"
+    except Exception as e:
+        health["components"]["celery_workers"] = f"error: {str(e)}"
+        health["status"] = "degraded"
+
+    if health["status"] == "healthy":
+        return health
+    else:
+        raise HTTPException(status_code=503, detail=health)
 
 @dashboard_router.get("/reports")
-async def get_reports(repo: AlchemyReportRepository = Depends(get_reports_repository), user: Dict[str, Any] = Depends(get_current_user)):
-    """獲取最新的投資分析報告"""
+async def get_reports(repo: AsyncAlchemyReportRepository = Depends(get_reports_repository), user: Dict[str, Any] = Depends(get_current_user)):
+    """獲獲取最新的投資分析報告 (Async)"""
     try:
         user_id = user.get("sub", "demo_user")
-        reports_df = repo.get_latest_reports(user_id=user_id)
+        reports = await repo.get_latest_reports(user_id=user_id)
         return {
             "status": "success",
-            "data": reports_df.to_dict(orient='records')
+            "data": reports
         }
     except Exception as e:
         logger.error(f"Error fetching reports: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@dashboard_router.post("/rebalance")
+@limiter.limit("1/5minute")
+async def trigger_rebalance(
+    request: Request,
+    background_tasks: BackgroundTasks,
+    user: Dict[str, Any] = Depends(get_current_user)
+):
+    """手動觸發投資組合再平衡 (非同步背景執行)"""
+    try:
+        user_id = user.get("sub")
+        from src.infrastructure.tasks import trigger_portfolio_rebalance
+        
+        # v6.3: Dispatch to Celery if available, or fallback to BackgroundTasks
+        # For simplicity in local dev, we call the task function via Celery .delay()
+        # if Celery is not running, researchers can use background_tasks.add_task
+        trigger_portfolio_rebalance.delay(user_id=user_id)
+        
+        return {
+            "status": "success",
+            "message": "再平衡指令已發送至哨兵監控系統，正在進行資產評估。"
+        }
+    except Exception as e:
+        logger.error(f"Error triggering rebalance: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 
@@ -98,18 +162,20 @@ async def get_all_settings(service: SettingsService = Depends(get_settings_servi
         raise HTTPException(status_code=500, detail=str(e))
 
 @dashboard_router.post("/settings")
+@limiter.limit("10/minute")
 async def save_settings(
+    request: Request,
+    background_tasks: BackgroundTasks,
     payload: Dict[str, Any] = Body(...),
-    service: SettingsService = Depends(get_settings_service)
+    service: SettingsService = Depends(get_settings_service),
 ):
-    """批次儲存系統設定"""
+    """批次儲存系統設定 (非同步處理耗時重啟)"""
     try:
-        success, msg = service.save_settings_bulk(payload)
-        if not success:
-            raise HTTPException(status_code=400, detail=msg)
-        return {"status": "success", "message": msg}
+        # v1.2: 即刻返回，背景執行耗時的 DB 寫入與可能的 Agent 重啟
+        background_tasks.add_task(service.save_settings_bulk, payload)
+        return {"status": "success", "message": "設定已收悉，系統正在背景更新中。"}
     except Exception as e:
-        logger.error(f"Error saving settings: {e}")
+        logger.error(f"Error initiating background settings save: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 @dashboard_router.post("/settings/test-notification")
@@ -218,7 +284,9 @@ async def delete_transaction(
 
 
 @dashboard_router.post("/chat")
+@limiter.limit("5/minute")
 async def advisor_chat(
+    request: Request,
     payload: Dict[str, Any] = Body(...),
     user: Dict[str, Any] = Depends(get_current_user)
 ):
@@ -268,6 +336,103 @@ async def advisor_chat(
         }
     except Exception as e:
         logger.error(f"Chat error: {e}")
+@dashboard_router.post("/chat/stream")
+@limiter.limit("5/minute")
+async def advisor_chat_stream(
+    request: Request,
+    payload: Dict[str, Any] = Body(...),
+    user: Dict[str, Any] = Depends(get_current_user)
+):
+    """AI 投資顧問對話介面 (串流模式)"""
+    try:
+        user_id = user.get("sub", "demo_user")
+        prompt = payload.get("message", "")
+        history = payload.get("history", [])
+
+        if not prompt:
+            raise HTTPException(status_code=400, detail="Message is required")
+
+        factory = AgentFactory()
+        cio_agent = factory.create_cio_agent(user_id=user_id)
+
+        # 檢測 Ticker 標的
+        ticker_match = re.search(r'\b([A-Z]{1,5})\b', prompt)
+        ticker = ticker_match.group(1) if ticker_match else None
+
+        system_prompt = (
+            "You are a professional AI Investment Advisor. "
+            "Your goal is to answer the user's financial questions concisely and directly. "
+            "Provide actionable and data-driven responses. "
+            "Use traditional Chinese (繁體中文)."
+        )
+        if ticker:
+            system_prompt += f"\n\nThe user is asking about the ticker: {ticker}."
+
+        messages = [{"role": "system", "content": system_prompt}]
+        for msg in history[-10:]:
+            messages.append(msg)
+        messages.append({"role": "user", "content": prompt})
+
+        # 定義串流產生器
+        async def event_generator():
+            try:
+                from src.repositories.pulse_repository import AsyncPulseRepository
+                from src.utils.async_utils import to_thread
+                pulse_repo = AsyncPulseRepository()
+                
+                # Context dict for run_tool_loop
+                prompt_data = {
+                    "user_id": user_id,
+                    "task_instruction": prompt,
+                    "topic": ticker or "General",
+                }
+                
+                # Initialize pulse to avoid missing the first state
+                await pulse_repo.update_pulse(cio_agent.name, "Initializing Agent...")
+                
+                # Run the actual Agent loop in a background thread to allow tool calls
+                # Phase 12: Run the Agent loop directly as it is now async-first
+                # No more to_thread needed for the loop itself
+                task = loop.create_task(cio_agent.run_tool_loop(
+                    context=prompt_data, 
+                    max_turns=3, 
+                    thought_chain=True
+                ))
+                
+                last_task_state = None
+                
+                # Poll pulse until task is done
+                while not task.done():
+                    current_pulse = await pulse_repo.get_pulse(cio_agent.name)
+                    if current_pulse:
+                        current_state = current_pulse.get("task")
+                        if current_state and current_state != last_task_state:
+                            # Send tool metadata to frontend
+                            yield f"data: {json.dumps({'metadata': {'type': 'tool_call', 'name': current_state}})}\n\n"
+                            last_task_state = current_state
+                    
+                    await asyncio.sleep(0.5)
+                
+                # Task completed, get the result
+                final_response = task.result()
+                
+                # Yield the final response in chunks to simulate typewriter effect
+                # Split roughly by words to simulate LLM stream
+                import re
+                chunks = re.findall(r'\\S+|\\n|\\s+', final_response)
+                for c in chunks:
+                    yield f"data: {json.dumps({'chunk': c})}\n\n"
+                    await asyncio.sleep(0.01)
+                    
+                yield "data: [DONE]\n\n"
+            except Exception as e:
+                logger.error(f"Streaming error in generator: {e}")
+                yield f"data: {json.dumps({'error': str(e)})}\n\n"
+
+        return StreamingResponse(event_generator(), media_type="text/event-stream")
+
+    except Exception as e:
+        logger.error(f"Stream Chat error: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 @dashboard_router.get("/summary")
@@ -332,28 +497,26 @@ async def get_positions(service: DashboardService = Depends(get_dashboard_servic
 
 @dashboard_router.get("/intelligence")
 async def get_intelligence(user: Dict[str, Any] = Depends(get_current_user)):
-    """獲取 AI 生成的市場分析與情緒報告 (繁體中文)"""
+    """獲取最新的市場情報簡報 (優先從快取讀取)"""
     try:
-        user_id = user.get("sub") or "default_user"
-        intel_service = IntelligenceService(user_id=user_id)
-        report = await intel_service.generate_briefing()
-        return {
-            "status": "success",
-            "data": report
-        }
+         user_id = user.get("sub") or "default_user"
+         service = IntelligenceService(user_id=user_id)
+         # v2.2: 優先讀取背景快取資料
+         briefing = await service.get_latest_briefing()
+         return {"status": "success", "data": briefing}
     except Exception as e:
-        logger.error(f"Intelligence generation error: {e}")
-        # Return fallback data instead of 500 to keep UI stable
-        return {
-            "status": "success", 
-            "data": {
-                "executive_summary": "市場情報生成中，請稍候再試或檢查 API 金鑰配置。",
-                "recommendation": "系統整合中",
-                "ai_note": "ERROR_LOGGED",
-                "observation_window": "OFFLINE",
-                "sentiment_metrics": []
-            }
-        }
+         logger.error(f"Error fetching intelligence: {e}")
+         # 回傳降級資料以防前端崩潰
+         return {
+             "status": "success",
+             "data": {
+                 "executive_summary": "市場情報獲取失敗，背景任務可能正在執行中。",
+                 "recommendation": "請稍後再試",
+                 "ai_note": "ERROR_REPORTED",
+                 "observation_window": "OFFLINE",
+                 "sentiment_metrics": []
+             }
+         }
 
 
 @dashboard_router.get("/performance/history")
@@ -428,6 +591,28 @@ async def get_recent_alerts(user: Dict[str, Any] = Depends(get_current_user)):
     except Exception as e:
         logger.error(f"Error fetching recent alerts: {e}")
         return {"status": "success", "data": []}
+
+@dashboard_router.delete("/alerts")
+async def clear_recent_alerts(user: Dict[str, Any] = Depends(get_current_user)):
+    """清空/封存所有系統事件"""
+    try:
+        from src.data.database import get_db_engine
+        engine = get_db_engine()
+        user_id = user.get("sub")
+        
+        with engine.begin() as conn:
+            if user_id:
+                conn.execute(
+                    text("DELETE FROM event_logs WHERE user_id = :uid"),
+                    {"uid": user_id}
+                )
+            else:
+                conn.execute(text("DELETE FROM event_logs"))
+                
+        return {"status": "success", "message": "所有通知已封存"}
+    except Exception as e:
+        logger.error(f"Error clearing alerts: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
 
 @dashboard_router.post("/data/upload-csv")
 async def upload_csv(

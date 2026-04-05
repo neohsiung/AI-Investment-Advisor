@@ -33,6 +33,11 @@ services:
     extra_hosts:
       - "host.docker.internal:host-gateway"
     restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8501/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
     networks:
       - advisor-net
     depends_on:
@@ -67,6 +72,11 @@ services:
       otel-collector:
         condition: service_started
     restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3000"]
+      interval: 60s
+      timeout: 10s
+      retries: 3
 
   mcp_server:
     build:
@@ -141,6 +151,11 @@ services:
     extra_hosts:
       - "host.docker.internal:host-gateway"
     restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pgrep -f 'python3 src/cron/scheduler.py' || exit 1"]
+      interval: 60s
+      timeout: 10s
+      retries: 3
     networks:
       - advisor-net
     depends_on:
@@ -178,6 +193,11 @@ services:
     extra_hosts:
       - "host.docker.internal:host-gateway"
     restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8001/health"]
+      interval: 60s
+      timeout: 10s
+      retries: 3
     networks:
       - advisor-net
     depends_on:
@@ -187,6 +207,64 @@ services:
         condition: service_healthy
       otel-collector:
         condition: service_started
+
+  celery_worker:
+    build:
+      context: .
+      dockerfile: services/mcp_server/Dockerfile
+    container_name: investment_advisor_worker
+    command: celery -A src.infrastructure.celery_app worker --loglevel=info
+    volumes:
+      - ./data:/workspace/data
+      - ./src:/workspace/src
+      - ./prompts:/workspace/prompts
+    env_file:
+      - .env
+    environment:
+      - REDIS_URL=redis://redis:6379/0
+      - DB_HOST=postgres
+      - OTEL_SERVICE_NAME=celery_worker
+    healthcheck:
+      test: ["CMD-SHELL", "celery -A src.infrastructure.celery_app inspect ping -d celery@investment_advisor_worker"]
+      interval: 60s
+      timeout: 30s
+      retries: 3
+    networks:
+      - advisor-net
+    depends_on:
+      redis:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+
+  celery_beat:
+    build:
+      context: .
+      dockerfile: services/mcp_server/Dockerfile
+    container_name: investment_advisor_beat
+    command: celery -A src.infrastructure.celery_app beat --loglevel=info
+    volumes:
+      - ./data:/workspace/data
+      - ./src:/workspace/src
+      - ./prompts:/workspace/prompts
+    env_file:
+      - .env
+    environment:
+      - REDIS_URL=redis://redis:6379/0
+      - DB_HOST=postgres
+      - OTEL_SERVICE_NAME=celery_beat
+    healthcheck:
+      test: ["CMD-SHELL", "ps aux | grep '[c]elery .* beat' || exit 1"]
+      interval: 60s
+      timeout: 10s
+      retries: 3
+    networks:
+      - advisor-net
+    depends_on:
+      redis:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
 
   postgres:
     image: ankane/pgvector:v0.5.1
