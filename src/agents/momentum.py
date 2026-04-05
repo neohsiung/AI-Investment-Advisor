@@ -20,8 +20,9 @@ class MomentumAgent(BaseAgent):
             # 若真實 DSPy 存在，則初始化 DSPy 模組
             self.dspy_module = dspy.ChainOfThought(MomentumSignature)
 
-    def run(self, context):
+    async def run(self, context):
         """
+        Runs momentum analysis for one or multiple tickers.
         context: {
             "ticker": "AAPL",
             "price_data": {...},
@@ -69,7 +70,7 @@ class MomentumAgent(BaseAgent):
         }
         
 
-        response = self.run_tool_loop(context=prompt_data)
+        response = await self.run_tool_loop(context=prompt_data)
         
         if "Mock response" in response:
             return f"""

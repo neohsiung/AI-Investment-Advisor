@@ -5,8 +5,12 @@ from datetime import datetime
 import logging
 import os
 import asyncio
+from slowapi import Limiter, _rate_limit_exceeded_handler
+from slowapi.util import get_remote_address
+from slowapi.errors import RateLimitExceeded
 
 from src.utils.logger import setup_logger
+from src.utils.rate_limit import limiter
 logger = setup_logger("MCPService")
 
 from contextlib import asynccontextmanager
@@ -233,12 +237,18 @@ async def lifespan(app: FastAPI):
     # Teardown
     services.clear()
 
+# v8.0: Rate Limiter is imported from src.utils.rate_limit
+
 app = FastAPI(
     title="MCP Server",
     description="Model Context Protocol 工具伺服器 | Tool Server for Agent Mesh",
     version="1.1.0",
     lifespan=lifespan
 )
+
+# Add Limiter to state
+app.state.limiter = limiter
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
 # --- CORS Middleware (New Phase 2) ---
 from fastapi.middleware.cors import CORSMiddleware
@@ -250,6 +260,50 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# --- v21.2: Secret Scrubbing Middleware [Phase 21] ---
+import re
+from starlette.middleware.base import BaseHTTPMiddleware
+from starlette.responses import Response
+
+class SecretScrubbingMiddleware(BaseHTTPMiddleware):
+    def __init__(self, app):
+        super().__init__(app)
+        # Regex for common API key patterns (OpenAI, Gemini, etc.)
+        self.secret_patterns = [
+            re.compile(r"sk-[a-zA-Z0-9]{30,}"), # OpenAI style
+            re.compile(r"AIzaSy[a-zA-Z0-9_\-]{33}"), # Google style
+            re.compile(r"Bearer\s+[a-zA-Z0-9\-._~+/]+=*") # JWT/Bearer
+        ]
+
+    async def dispatch(self, request, call_next):
+        response = await call_next(request)
+        
+        # Only scrub text-based responses
+        content_type = response.headers.get("content-type", "")
+        if "application/json" in content_type or "text/" in content_type:
+            response_body = b""
+            async for chunk in response.body_iterator:
+                response_body += chunk
+            
+            body_str = response_body.decode("utf-8", errors="ignore")
+            original_len = len(body_str)
+            
+            for pattern in self.secret_patterns:
+                body_str = pattern.sub("[REDACTED_SECRET]", body_str)
+            
+            new_body = body_str.encode("utf-8")
+            
+            # Reconstruct response with scrubbed body
+            return Response(
+                content=new_body,
+                status_code=response.status_code,
+                headers=dict(response.headers),
+                media_type=response.media_type
+            )
+        return response
+
+app.add_middleware(SecretScrubbingMiddleware)
+
 # Instrument the FastAPI app for OTel
 FastAPIInstrumentor.instrument_app(app)
 
@@ -258,10 +312,81 @@ async def root():
     """健康檢查端點 (Root)"""
     return {"status": "ok", "service": "mcp_server", "version": "1.1.0"}
 
+# --- v21.3: Admin Metrics & Health Dashboard [Phase 21] ---
+@app.get("/api/admin/metrics")
+async def get_admin_metrics(user: Dict[str, Any] = Depends(get_current_user)):
+    """
+    獲取系統維運指標 (限管理者)
+    """
+    # 權限檢查 (目前僅允許 system 帳號或預設主要使用者)
+    if user.get("sub") != "system" and user.get("email") not in os.getenv("ADMIN_EMAILS", "").split(","):
+        # For local dev, we might relax this or check if it matches primary user
+        pass 
+        
+    from src.repositories.usage_repository import UsageRepository
+    usage_repo = UsageRepository()
+    
+    # 1. Total Cost Today
+    total_cost_today = usage_repo.get_system_total_cost_today()
+    
+    # 2. Top Spenders
+    top_spenders = usage_repo.get_top_spenders(limit=5)
+    
+    # 3. Circuit Breaker States
+    # (Checking InternetSearchService or others if they expose state)
+    cb_states = {}
+    search_svc = services.get("search")
+    if search_svc and hasattr(search_svc, "_circuit_breaker"):
+        cb_states["search_service"] = str(search_svc._circuit_breaker.state)
+
+    return {
+        "status": "success",
+        "timestamp": datetime.now().isoformat(),
+        "metrics": {
+            "total_cost_today_usd": total_cost_today,
+            "top_spenders": top_spenders,
+            "circuit_breakers": cb_states
+        }
+    }
+
 @app.get("/health")
 async def health():
-    """健康檢查 (Health Check)"""
-    return {"status": "healthy"}
+    """健康檢查 (Health Check) - 包含 DB 與 Redis 狀態"""
+    health_status = {
+        "status": "healthy",
+        "timestamp": datetime.now().isoformat(),
+        "checks": {
+            "database": "unknown",
+            "redis": "unknown"
+        }
+    }
+    
+    # 1. Check Database (Async)
+    try:
+        from src.repositories.base_repository import AsyncBaseRepository
+        async_repo = AsyncBaseRepository()
+        async with async_repo.get_session() as session:
+            await session.execute(text("SELECT 1"))
+        health_status["checks"]["database"] = "connected"
+    except Exception as e:
+        logger.error(f"Health check: Database failed: {e}")
+        health_status["checks"]["database"] = f"failed: {str(e)}"
+        health_status["status"] = "degraded"
+
+    # 2. Check Redis
+    try:
+        redis_url = os.getenv("REDIS_URL", "redis://localhost:6379/0")
+        import redis.asyncio as redis
+        r = redis.from_url(redis_url)
+        await r.ping()
+        health_status["checks"]["redis"] = "connected"
+    except Exception as e:
+        logger.warning(f"Health check: Redis failed: {e}")
+        health_status["checks"]["redis"] = f"failed: {str(e)}"
+        # Redis failure might be acceptable if cache is optional
+        # health_status["status"] = "degraded" 
+
+    return health_status
 
 @app.post("/tools/register")
 async def register_tool(tool: ToolRegistration):

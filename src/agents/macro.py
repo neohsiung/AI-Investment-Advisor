@@ -7,7 +7,7 @@ class MacroAgent(BaseAgent):
         tier = kwargs.pop('tier', 'smart')
         super().__init__(name="Macro", prompt_path="prompts/macro_agent.txt", use_cache=use_cache, ttl_hours=ttl, tier=tier, **kwargs)
 
-    def run(self, context):
+    async def run(self, context):
         """
         context: {
             "macro_data": {...}
@@ -68,7 +68,7 @@ class MacroAgent(BaseAgent):
         )
         prompt_data["macro_indicator_summary"] = macro_summary
 
-        response = self.run_tool_loop(context=prompt_data)
+        return await self.run_tool_loop(context=prompt_data)
 
         if "Mock response" in response:
             return f"""

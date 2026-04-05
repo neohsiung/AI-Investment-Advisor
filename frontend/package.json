@@ -6,13 +6,15 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "typecheck": "tsc --noEmit"
   },
   "dependencies": {
     "next": "16.2.1",
     "react": "19.2.4",
     "react-dom": "19.2.4",
     "lucide-react": "^0.474.0",
+    "next-pwa": "^5.6.0",
     "axios": "^1.7.9",
     "swr": "^2.3.0",
     "recharts": "^2.15.0",

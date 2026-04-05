@@ -55,6 +55,14 @@ class ILLMGateway(ABC):
         pass
 
     @abstractmethod
+    def stream_chat(self, messages: List[Message], config: LLMConfig) -> typing.Generator[str, None, None]:
+        """
+        Send messages to LLM and yield generated text chunks.
+        向 LLM 發送訊息並以 Generator 形式回傳生成的文本片段。
+        """
+        pass
+
+    @abstractmethod
     def embed(self, text: str, config: LLMConfig) -> List[float]:
         """
         Generate embedding vector for the given text.

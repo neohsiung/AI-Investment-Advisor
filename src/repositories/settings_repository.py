@@ -1,6 +1,8 @@
+import json
+import os
+from typing import List, Dict, Tuple, Any, Optional, Callable
 from abc import ABC, abstractmethod
-import typing
-from typing import List, Dict, Tuple, Any, Optional, Callable, Dict, List, Tuple, Any, Optional, Callable
+from cryptography.fernet import Fernet
 from sqlalchemy import text
 from src.data.database import BaseRepository, get_db_engine
 from src.data.models import Setting
@@ -87,10 +89,47 @@ class AlchemySettingsRepository(BaseRepository, ISettingsRepository):
     """
     def __init__(self, engine: Any = None):
         """
-        Initialize the repository.
-        初始化儲存庫。
+        Initialize the repository with optional encryption support.
         """
         BaseRepository.__init__(self, engine or get_db_engine())
+        
+        # v11.1: Initialize encryption cipher if secret key exists
+        self.secret_key = os.getenv("APP_SECRET_KEY")
+        self.cipher = Fernet(self.secret_key.encode()) if self.secret_key else None
+        self.sensitive_patterns = ["api_key", "token", "secret", "password", "private_key"]
+
+    def _should_encrypt(self, key: str) -> bool:
+        """Determines if a key contains sensitive information that should be encrypted."""
+        return any(pattern in key.lower() for pattern in self.sensitive_patterns)
+
+    def _encrypt(self, value: Any) -> str:
+        """Encrypts the value if the cipher is available."""
+        if not self.cipher or value is None:
+            return value
+        
+        # Ensure it is a string for encryption
+        str_val = json.dumps(value) if not isinstance(value, str) else value
+        encrypted_bytes = self.cipher.encrypt(str_val.encode())
+        return f"ENC:{encrypted_bytes.decode()}"
+
+    def _decrypt(self, value: Any) -> Any:
+        """Decrypts the value if it looks encrypted and the cipher is available."""
+        if not self.cipher or not isinstance(value, str) or not value.startswith("ENC:"):
+            return value
+        
+        try:
+            encrypted_data = value[4:].encode()
+            decrypted_bytes = self.cipher.decrypt(encrypted_data)
+            decrypted_str = decrypted_bytes.decode()
+            
+            # Try to parse as JSON if it was serialized
+            try:
+                return json.loads(decrypted_str)
+            except json.JSONDecodeError:
+                return decrypted_str
+        except Exception as e:
+            # Fallback to original value if decryption fails (might be malformed or wrong key)
+            return value
 
     def _resolve_user(self, user_id: str) -> str:
         """
@@ -110,13 +149,20 @@ class AlchemySettingsRepository(BaseRepository, ISettingsRepository):
         """
     def get(self, user_id: str, key: str, default: Any = None) -> Any:
         """
-        Get a specific setting value (ORM).
+        Get a specific setting value (ORM) with transparent decryption.
         """
         resolved_uid = self._resolve_user(user_id)
         
         try:
             setting = self.session.query(Setting).filter_by(user_id=resolved_uid, key=key).first()
-            return setting.value if setting else default
+            if not setting:
+                return default
+                
+            raw_value = setting.value
+            # v11.1: Transparently decrypt sensitive data
+            if self._should_encrypt(key):
+                return self._decrypt(raw_value)
+            return raw_value
         except Exception:
             return default
         finally:
@@ -133,22 +179,21 @@ class AlchemySettingsRepository(BaseRepository, ISettingsRepository):
 
     def set(self, user_id: str, key: str, value: Any) -> None:
         """
-        Set or update a specific setting value (Upsert via ORM).
+        Set or update a specific setting value (Upsert via ORM) with transparent encryption.
         """
         resolved_uid = self._resolve_user(user_id)
         
         session = self.session
         try:
-            # Ensure value is JSON-serializable
-            import json
-            if isinstance(value, bool):
-                store_value = value
-            elif isinstance(value, str):
-                store_value = value
-            elif isinstance(value, (dict, list, int, float)):
-                store_value = value
+            # Ensure value is JSON-serializable if not basic type
+            if isinstance(value, (dict, list)):
+                store_value = value # SQLAlchemy handles JSON for us if the model type is right, but here it's likely a generic 'JSON' column or string
             else:
-                store_value = str(value)
+                store_value = value
+            
+            # v11.1: Transparently encrypt sensitive data
+            if self._should_encrypt(key):
+                store_value = self._encrypt(value)
             
             setting = session.query(Setting).filter_by(user_id=resolved_uid, key=key).first()
             if setting:

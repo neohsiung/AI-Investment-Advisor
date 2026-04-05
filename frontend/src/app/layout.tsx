@@ -18,6 +18,14 @@ const spaceGrotesk = Space_Grotesk({
 export const metadata: Metadata = {
   title: "Quantum AI | Command Center",
   description: "Advanced AI Investment Advisory Platform",
+  manifest: "/manifest.json",
+  themeColor: "#0a0a0a",
+  viewport: "width=device-width, initial-scale=1, maximum-scale=1, user-scalable=0",
+  appleWebApp: {
+    capable: true,
+    title: "Quantum AI",
+    statusBarStyle: "black-translucent",
+  }
 };
 
 export default function RootLayout({
@@ -28,7 +36,7 @@ export default function RootLayout({
   return (
     <html
       lang="en"
-      className={`${inter.variable} ${spaceGrotesk.variable} h-full antialiased dark`}
+      className={`${inter.variable} ${spaceGrotesk.variable} h-full antialiased`}
       suppressHydrationWarning
     >
       <head>

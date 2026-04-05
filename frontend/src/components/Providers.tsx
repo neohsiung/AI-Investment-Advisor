@@ -2,11 +2,14 @@
 
 import { ReactNode } from "react";
 import { WebSocketProvider } from "@/context/WebSocketContext";
+import { ThemeProvider } from "@/context/ThemeContext";
 
 export function Providers({ children }: { children: ReactNode }) {
   return (
-    <WebSocketProvider>
-      {children}
-    </WebSocketProvider>
+    <ThemeProvider>
+      <WebSocketProvider>
+        {children}
+      </WebSocketProvider>
+    </ThemeProvider>
   );
 }

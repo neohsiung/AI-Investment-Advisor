@@ -11,6 +11,7 @@ from typing import List, Dict, Tuple, Any, Optional, Callable, Dict, List, Tuple
 from src.utils.logger import setup_logger
 from src.services.settings_service import SettingsService
 from src.utils.cache import ResponseCache
+from src.utils.circuit_breaker import circuit_breaker
 
 class InternetSearchService:
     """
@@ -64,6 +65,7 @@ class InternetSearchService:
         except Exception as e:
             self.logger.warning(f"Failed to initialize DuckDuckGo: {e}")
 
+    @circuit_breaker(name="InternetSearch", failure_threshold=3, recovery_timeout=60)
     def search_financial_context(self, query: str, max_results: int = 3) -> List[Dict[str, str]]:
         """
         Search for financial context. Tries Tavily first, then DuckDuckGo.

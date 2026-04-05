@@ -11,45 +11,18 @@ All HTTP-level details are isolated here, keeping BaseAgent and Domain layers pu
   - 規範十三 (Atomic Workflows): 原子化 LLM 調用
 """
 
-import re
 import time
+import json
 import logging
 import requests
-from typing import List, Optional
+import typing
+from typing import List, Optional, Generator
 
 from src.domain.interfaces import ILLMGateway, Message, LLMConfig
+from src.utils.security import redact_secrets as _redact_secrets, redact_pii as _redact_pii
+from src.utils.tracing import trace_external_call
 
 logger = logging.getLogger(__name__)
-
-
-def _redact_secrets(text_value: str) -> str:
-    """
-    Best-effort redaction of common secret patterns before logging.
-    規範十三: 敏感資訊零容忍 (No-Hardcoded-Secrets)
-    """
-    if not isinstance(text_value, str):
-        return text_value
-
-    redacted = text_value
-    redacted = re.sub(
-        r"(Authorization:\s*Bearer\s+)[^\s\"']+",
-        r"\1[REDACTED]",
-        redacted,
-        flags=re.IGNORECASE,
-    )
-    redacted = re.sub(
-        r"(Bearer\s+)[^\s\"']+",
-        r"\1[REDACTED]",
-        redacted,
-        flags=re.IGNORECASE,
-    )
-    redacted = re.sub(
-        r"([\"']?api_key[\"']?\s*[:=]\s*[\"'])[A-Za-z0-9_\-\.]+([\"'])",
-        r"\1[REDACTED]\2",
-        redacted,
-        flags=re.IGNORECASE,
-    )
-    return redacted
 
 
 class OpenRouterGateway(ILLMGateway):
@@ -85,6 +58,46 @@ class OpenRouterGateway(ILLMGateway):
         self._last_usage = resp_json.get("usage")
         return resp_json["choices"][0]["message"]["content"]
 
+    def stream_chat(self, messages: List[Message], config: LLMConfig) -> Generator[str, None, None]:
+        url = config.base_url or "https://openrouter.ai/api/v1/chat/completions"
+        headers = {
+            "Authorization": f"Bearer {config.api_key}",
+            "Content-Type": "application/json",
+            "HTTP-Referer": "http://localhost:8501",
+            "X-Title": "AI Investment Advisor",
+        }
+        data = {
+            "model": config.model,
+            "messages": [{"role": m.role, "content": m.content} for m in messages],
+            "stream": True,
+        }
+        if config.temperature is not None:
+            data["temperature"] = config.temperature
+
+        response = requests.post(
+            url, headers=headers, json=data,
+            timeout=config.timeout_seconds,
+            stream=True
+        )
+        response.raise_for_status()
+
+        for line in response.iter_lines():
+            if line:
+                decoded_line = line.decode('utf-8')
+                if decoded_line.startswith("data: "):
+                    data_str = decoded_line[6:]
+                    if data_str == "[DONE]":
+                        break
+                    try:
+                        chunk = json.loads(data_str)
+                        if "choices" in chunk and chunk["choices"]:
+                            delta = chunk["choices"][0].get("delta", {})
+                            content = delta.get("content", "")
+                            if content:
+                                yield content
+                    except json.JSONDecodeError:
+                        continue
+
     def embed(self, text: str, config: LLMConfig) -> List[float]:
         """OpenRouter embedding (uses /embeddings endpoint)."""
         url = config.base_url or "https://openrouter.ai/api/v1/embeddings"
@@ -118,8 +131,6 @@ class GeminiGateway(ILLMGateway):
         url = f"https://generativelanguage.googleapis.com/v1beta/{model_id}:generateContent?key={config.api_key}"
         headers = {"Content-Type": "application/json"}
 
-        # Gemini uses a flat content structure:
-        # Combine system + user messages into a single prompt
         combined_text = ""
         for m in messages:
             combined_text += m.content + "\n\n"
@@ -137,7 +148,6 @@ class GeminiGateway(ILLMGateway):
         response.raise_for_status()
         resp_json = response.json()
 
-        # Gemini usage format: {"usageMetadata": {"promptTokenCount": N, "candidatesTokenCount": M, "totalTokenCount": K}}
         usage = resp_json.get("usageMetadata")
         if usage:
             self._last_usage = {
@@ -147,6 +157,41 @@ class GeminiGateway(ILLMGateway):
             }
         
         return resp_json["candidates"][0]["content"]["parts"][0]["text"]
+
+    def stream_chat(self, messages: List[Message], config: LLMConfig) -> Generator[str, None, None]:
+        model_id = config.model if config.model.startswith("models/") else f"models/{config.model}"
+        url = f"https://generativelanguage.googleapis.com/v1beta/{model_id}:streamGenerateContent?alt=sse&key={config.api_key}"
+        headers = {"Content-Type": "application/json"}
+
+        combined_text = ""
+        for m in messages:
+            combined_text += m.content + "\n\n"
+
+        data = {
+            "contents": [{"parts": [{"text": combined_text.strip()}]}],
+        }
+        if config.temperature is not None:
+            data["generationConfig"] = {"temperature": config.temperature}
+
+        response = requests.post(
+            url, headers=headers, json=data,
+            timeout=config.timeout_seconds,
+            stream=True
+        )
+        response.raise_for_status()
+
+        for line in response.iter_lines():
+            if line:
+                decoded_line = line.decode('utf-8')
+                if decoded_line.startswith("data: "):
+                    try:
+                        chunk = json.loads(decoded_line[6:])
+                        if "candidates" in chunk and chunk["candidates"]:
+                            parts = chunk["candidates"][0].get("content", {}).get("parts", [])
+                            for p in parts:
+                                yield p.get("text", "")
+                    except (json.JSONDecodeError, KeyError):
+                        continue
 
     def embed(self, text: str, config: LLMConfig) -> List[float]:
         """Gemini embedding via embedContent API."""
@@ -194,6 +239,44 @@ class OpenAIGateway(ILLMGateway):
         self._last_usage = resp_json.get("usage")
         return resp_json["choices"][0]["message"]["content"]
 
+    def stream_chat(self, messages: List[Message], config: LLMConfig) -> Generator[str, None, None]:
+        url = config.base_url or "https://api.openai.com/v1/chat/completions"
+        headers = {
+            "Authorization": f"Bearer {config.api_key}",
+            "Content-Type": "application/json",
+        }
+        data = {
+            "model": config.model,
+            "messages": [{"role": m.role, "content": m.content} for m in messages],
+            "stream": True,
+        }
+        if config.temperature is not None:
+            data["temperature"] = config.temperature
+
+        response = requests.post(
+            url, headers=headers, json=data,
+            timeout=config.timeout_seconds,
+            stream=True
+        )
+        response.raise_for_status()
+
+        for line in response.iter_lines():
+            if line:
+                decoded_line = line.decode('utf-8')
+                if decoded_line.startswith("data: "):
+                    data_str = decoded_line[6:]
+                    if data_str == "[DONE]":
+                        break
+                    try:
+                        chunk = json.loads(data_str)
+                        if "choices" in chunk and chunk["choices"]:
+                            delta = chunk["choices"][0].get("delta", {})
+                            content = delta.get("content", "")
+                            if content:
+                                yield content
+                    except json.JSONDecodeError:
+                        continue
+
     def embed(self, text: str, config: LLMConfig) -> List[float]:
         """OpenAI embedding via /v1/embeddings."""
         url = config.base_url.rstrip("/").replace("/chat/completions", "") + "/embeddings" if config.base_url else "https://api.openai.com/v1/embeddings"
@@ -216,10 +299,6 @@ class OpenAIGateway(ILLMGateway):
 class LLMGatewayFactory:
     """
     Factory for creating ILLMGateway instances based on provider name.
-    基於供應商名稱建立 ILLMGateway 實例的工廠。
-
-    遵循規範二 (DDD): 使用業務語言命名 (Gateway, Factory)
-    遵循規範一 (Clean Architecture): 控制反轉，由 Factory 決定實作
     """
 
     _REGISTRY = {
@@ -234,19 +313,6 @@ class LLMGatewayFactory:
 
     @classmethod
     def create(cls, provider: str) -> ILLMGateway:
-        """
-        Create an ILLMGateway for the given provider.
-        為指定供應商建立 ILLMGateway。
-
-        Args:
-            provider: Provider name (e.g., "OpenRouter", "Google Gemini", "OpenAI")
-
-        Returns:
-            ILLMGateway implementation
-
-        Raises:
-            ValueError: If provider is not supported
-        """
         gateway_cls = cls._REGISTRY.get(provider)
         if gateway_cls is None:
             supported = sorted(set(cls._REGISTRY.values()), key=lambda c: c.__name__)
@@ -259,19 +325,12 @@ class LLMGatewayFactory:
 
     @classmethod
     def register(cls, provider_name: str, gateway_cls: type) -> None:
-        """
-        Register a custom provider gateway (for extension/testing).
-        註冊自訂供應商閘道（用於擴展/測試）。
-        """
         cls._REGISTRY[provider_name] = gateway_cls
 
 
 class RetryLLMGateway(ILLMGateway):
     """
-    Decorator Gateway that adds retry logic with exponential backoff.
-    裝飾器閘道，新增指數退避重試邏輯。
-
-    遵循規範七 (Graceful Degradation): 回退鏈模式
+    Decorator Gateway that adds retry logic.
     """
 
     def __init__(self, inner: ILLMGateway, max_retries: int = 3):
@@ -295,7 +354,11 @@ class RetryLLMGateway(ILLMGateway):
                     f"{_redact_secrets(str(e))}. Retrying in {wait}s..."
                 )
                 time.sleep(wait)
-        raise last_error  # type: ignore[misc]
+        raise last_error
+
+    def stream_chat(self, messages: List[Message], config: LLMConfig) -> Generator[str, None, None]:
+        # Retry logic for streaming is simplified (no backoff between chunks)
+        return self._inner.stream_chat(messages, config)
 
     def embed(self, text: str, config: LLMConfig) -> List[float]:
         last_error = None
@@ -310,15 +373,12 @@ class RetryLLMGateway(ILLMGateway):
                     f"{_redact_secrets(str(e))}. Retrying in {wait}s..."
                 )
                 time.sleep(wait)
-        raise last_error  # type: ignore[misc]
+        raise last_error
 
 
 class LoggingLLMGateway(ILLMGateway):
     """
     Decorator Gateway that logs LLM usage and costs to a central service.
-    裝飾器閘道，將 LLM 使用量與成本記錄至中央服務。
-
-    遵循規範十五 (AI-Support First): 結構化日誌
     """
 
     def __init__(
@@ -336,40 +396,133 @@ class LoggingLLMGateway(ILLMGateway):
         self._metadata = metadata or {}
 
     def chat(self, messages: List[Message], config: LLMConfig) -> str:
-        content = self._inner.chat(messages, config)
+        from opentelemetry import trace
+        tracer = trace.get_tracer(__name__)
         
-        # Try to log usage if available
-        usage = getattr(self._inner, "_last_usage", None)
-        if usage:
+        with tracer.start_as_current_span(f"LLM.{self._agent_name}.chat") as span:
+            span.set_attribute("llm.model", config.model)
+            span.set_attribute("agent.name", self._agent_name)
+            
+            # T16.3: SaaS Quota and Tier Access Enforcement [Phase 16]
             try:
-                from src.services.token_logger_service import TokenLoggerService
-                # Note: TokenLoggerService will be implemented in T04
-                logger_svc = TokenLoggerService()
-                logger_svc.log_usage(
-                    user_id=self._user_id,
-                    agent_name=self._agent_name,
-                    tier=self._tier,
-                    model=config.model,
-                    provider=config.provider,
-                    prompt_tokens=usage.get("prompt_tokens", 0),
-                    completion_tokens=usage.get("completion_tokens", 0),
-                    metadata=self._metadata,
-                )
+                from src.services.billing_service import BillingService
+                billing = BillingService(user_id=self._user_id)
+                billing.check_quota(requested_tier=self._tier)
             except Exception as e:
-                # Logging failure should not break the agent's main flow
-                logger.debug(f"LoggingLLMGateway: Failed to log usage: {e}")
+                # If QuotaExceeded or TierAccessDenied, we re-raise to block execution
+                self.logger.error(f"LLM Gateway: Request blocked by billing policy: {e}")
+                raise e
+            
+            # T13.1: Semantic Cache lookup
+            try:
+                from src.repositories.vector_cache_repository import VectorCacheRepository
+                cache_repo = VectorCacheRepository()
+                # Use a combined prompt string for caching
+                prompt_text = "\n".join([f"{m.role}: {m.content}" for m in messages])
+                
+                # We need the embedding for semantic search
+                # We reuse the gateway's embed function
+                # v13.1: Only cache for 'smart' or 'advanced' tiers where cost is higher
+                if self._tier in ('smart', 'advanced'):
+                    prompt_embedding = self.embed(prompt_text, config)
+                    cached_res = cache_repo.get_cached_response(self._user_id, prompt_text, prompt_embedding)
+                    if cached_res:
+                        span.set_attribute("cache.hit", True)
+                        return cached_res
+            except Exception as e:
+                logger.warning(f"Cache lookup bypassed due to error: {e}")
+                prompt_embedding = None
+            else:
+                prompt_embedding = None
+            
+            # T11.4: PII Redaction before sending to external API
+            redacted_messages = [
+                Message(role=m.role, content=_redact_pii(m.content)) for m in messages
+            ]
+            
+            try:
+                # v19.3: AI Model Automatic Fallback on Rate Limit [Phase 19]
+                content = self._inner.chat(redacted_messages, config)
+            except Exception as e:
+                # Common rate limit strings in error messages
+                is_rate_limit = any(s in str(e).lower() for s in ("429", "rate limit", "quota exceeded"))
+                
+                # Only fallback if it's a rate limit and we are using a premium tier
+                if is_rate_limit and self._tier in ('smart', 'advanced'):
+                    self.logger.warning(f"LLM Gateway: [{self._agent_name}] '{self._tier}' limit hit. Falling back to 'fast' tier.")
+                    from src.infrastructure.llm.tier_config import TierConfig
+                    fallback_config = TierConfig().resolve('fast') # Resolve a fast model
+                    
+                    # Create a new config for the fallback
+                    new_cfg = LLMConfig(
+                        provider=config.provider, 
+                        model=fallback_config, 
+                        api_key=config.api_key,
+                        temperature=config.temperature
+                    )
+                    content = self._inner.chat(redacted_messages, new_cfg)
+                    content = "*(注意：由於高階模型目前載載過高，本分析由高速模型生成備援)*\n\n" + content
+                else:
+                    raise e
+            
+            # T14.1: Log usage for observability and cost tracking
+            usage = getattr(self._inner, "_last_usage", None)
+            if usage:
+                try:
+                    from src.repositories.usage_repository import UsageRepository
+                    usage_repo = UsageRepository()
+                    # Execute logging in background to avoid blocking
+                    asyncio.create_task(asyncio.to_thread(
+                        usage_repo.log_usage,
+                        user_id=self._user_id,
+                        agent_name=self._agent_name,
+                        tier=self._tier,
+                        model=config.model,
+                        provider=config.provider or "unknown",
+                        prompt_tokens=usage.get("prompt_tokens", 0),
+                        completion_tokens=usage.get("completion_tokens", 0),
+                        metadata=self._metadata
+                    ))
+                except Exception as e:
+                    logger.warning(f"Failed to log LLM usage: {e}")
 
-        return content
+            # T13.1: Save result to semantic cache if it was a miss
+            if self._tier in ('smart', 'advanced') and prompt_embedding:
+                 try:
+                     cache_repo.save_cache(self._user_id, prompt_text, prompt_embedding, content)
+                 except Exception:
+                     pass
+
+            return content
+
+    def stream_chat(self, messages: List[Message], config: LLMConfig) -> Generator[str, None, None]:
+        from opentelemetry import trace
+        tracer = trace.get_tracer(__name__)
+        
+        with tracer.start_as_current_span(f"LLM.{self._agent_name}.stream") as span:
+            span.set_attribute("llm.model", config.model)
+            span.set_attribute("agent.name", self._agent_name)
+            # T11.4: PII Redaction for streaming
+            redacted_messages = [
+                Message(role=m.role, content=_redact_pii(m.content)) for m in messages
+            ]
+            for chunk in self._inner.stream_chat(redacted_messages, config):
+                yield chunk
 
     def embed(self, text: str, config: LLMConfig) -> List[float]:
-        # Usage tracking for embeddings is less critical but could be added similarly
-        return self._inner.embed(text, config)
+        from opentelemetry import trace
+        tracer = trace.get_tracer(__name__)
+        
+        with tracer.start_as_current_span(f"LLM.{self._agent_name}.embed") as span:
+            span.set_attribute("llm.model", config.model)
+            span.set_attribute("agent.name", self._agent_name)
+            # T11.4: PII Redaction for embedding
+            return self._inner.embed(_redact_pii(text), config)
 
 
 class MockLLMGateway(ILLMGateway):
     """
-    Mock Gateway for testing and simulation mode (no API key).
-    測試與模擬模式的 Mock 閘道（無 API 金鑰時使用）。
+    Mock Gateway for testing and simulation mode.
     """
 
     def __init__(self, default_response: str = None):
@@ -384,13 +537,16 @@ class MockLLMGateway(ILLMGateway):
             f"### ⚠️ Simulation Mode (Missing API Key)\n\n"
             f"**Provider**: {config.provider}\n"
             f"**Model**: {config.model}\n\n"
-            f"#### Analysis\n"
-            f"- **Trend**: Neutral/Simulated.\n"
+            f"- **Trend**: Neutral.\n"
             f"- **Signal**: HOLD.\n"
-            f"- **Reasoning**: System is running in simulation mode.\n\n"
-            f"(Context received: {prompt_len} chars)"
+            f"(Context size: {prompt_len} chars)"
         )
 
+    def stream_chat(self, messages: List[Message], config: LLMConfig) -> Generator[str, None, None]:
+        resp = self.chat(messages, config)
+        for word in resp.split(" "):
+            yield word + " "
+            time.sleep(0.02)
+
     def embed(self, text: str, config: LLMConfig) -> List[float]:
-        """Returns zero vector for mock embedding."""
         return [0.0] * 1536
