@@ -4,6 +4,7 @@ IntelligenceService — 使用 Tavily + LLM 生成繁體中文市場情報
 import asyncio
 import httpx
 import json
+from typing import Optional, Dict, Any, List
 from src.services.settings_service import SettingsService
 from src.utils.logger import setup_logger
 

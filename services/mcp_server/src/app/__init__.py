@@ -8,6 +8,7 @@ import asyncio
 from slowapi import Limiter, _rate_limit_exceeded_handler
 from slowapi.util import get_remote_address
 from slowapi.errors import RateLimitExceeded
+from sqlalchemy import text
 
 from src.utils.logger import setup_logger
 from src.utils.rate_limit import limiter
@@ -55,6 +56,29 @@ from src.services.interaction_service import InteractionService
 
 from src.services.socket_manager import socket_manager
 from src.utils.jwt_utils import decode_token
+
+def get_current_user(request: Request) -> Dict[str, Any]:
+    """從 Cookie 或 Authorization Header 獲取並驗證使用者資訊 [v8.1 MCP Auth Fix]"""
+    # 1. 優先從 Authorization Header 獲取 (Bearer Token)
+    auth_header = request.headers.get("Authorization")
+    token = None
+    if auth_header and auth_header.startswith("Bearer "):
+        token = auth_header.split(" ")[1]
+    
+    # 2. 次之從 Cookie 獲取
+    if not token:
+        token = request.cookies.get("access_token")
+        
+    if not token:
+        logger.warning("Missing authentication token")
+        raise HTTPException(status_code=401, detail="Not authenticated")
+        
+    payload = decode_token(token)
+    if not payload or payload.get("type") != "access":
+        logger.warning("Invalid or expired token")
+        raise HTTPException(status_code=401, detail="Invalid token")
+        
+    return payload
 
 async def websocket_broadcast_loop():
     """定期為所有活躍連線推送數據更新 (每 5 秒)"""
@@ -363,9 +387,9 @@ async def health():
     
     # 1. Check Database (Async)
     try:
-        from src.repositories.base_repository import AsyncBaseRepository
+        from src.data.database import AsyncBaseRepository
         async_repo = AsyncBaseRepository()
-        async with async_repo.get_session() as session:
+        async with await async_repo.get_session() as session:
             await session.execute(text("SELECT 1"))
         health_status["checks"]["database"] = "connected"
     except Exception as e:
