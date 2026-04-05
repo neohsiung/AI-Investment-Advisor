@@ -36,7 +36,7 @@ class CIOAgent(BaseAgent):
         effective_mode = mode or self.mode
         
         if effective_mode == 'strategy' or effective_mode == 'sector_analysis':
-            return self._run_strategy(context)
+            return await self._run_strategy(context)
         
         # Report Mode (Default)
         return await self._run_report(context)
@@ -158,7 +158,7 @@ class CIOAgent(BaseAgent):
 
         return response
 
-    def _run_strategy(self, context):
+    async def _run_strategy(self, context):
         """Generates Sector Strategy & Candidates (JSON)."""
         
         # Load Strategy Prompt (Ideally use _load_prompt but different path)
@@ -202,7 +202,7 @@ class CIOAgent(BaseAgent):
         # Here we manually render a DIFFERENT template. run_tool_loop uses self.system_prompt.
         # So we stick to call_llm for this specific sub-task or trick it.
         # Let's keep call_llm for strategy to minimize risk of breaking JSON generation.
-        response_str = self.call_llm(
+        response_str = await self.call_llm(
             messages=[
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": user_prompt}
@@ -223,7 +223,7 @@ class CIOAgent(BaseAgent):
                 "candidates": []
             }
 
-    def polish_report(self, report_content: str) -> str:
+    async def polish_report(self, report_content: str) -> str:
         """
         Refines the final report for readability and tone. 
         Ensures Actionable Orders table includes holdings context if available in text.
@@ -247,7 +247,7 @@ class CIOAgent(BaseAgent):
         user_prompt = f"Please polish this report:\n\n{report_content}"
         
         try:
-            response = self.call_llm(
+            response = await self.call_llm(
                 messages=[
                     {"role": "system", "content": system_prompt},
                     {"role": "user", "content": user_prompt}

@@ -38,13 +38,12 @@ class ReflectionManager:
         self.router = BudgetAwareModelRouter(self.settings, self.token_logger)
         self.metrics = EvolutionMetrics()
 
-    def reflect_on_error(
+    async def reflect_on_error(
         self, 
         tool_name: str, 
         args: Any, 
         error: str, 
         agent_name: str = "Agent",
-        is_async: bool = False
     ) -> Optional[Dict[str, Any]]:
         """
         Synchronous reflection call with budget awareness and observability.
@@ -91,10 +90,8 @@ class ReflectionManager:
             
             messages = [Message(role="user", content=prompt)]
             
-            # 4. LLM Call (Synchronous)
-            # Since this is a sync method, we expect the gateway to handle sync calls.
-            # If the caller is async (like SkillRouter), they should wrap this call in to_thread.
-            response = llm.chat(messages, config)
+            # 4. LLM Call (Asynchronous) [Phase 1.2 Fix]
+            response = await llm.chat(messages, config)
             
             # 5. Parse JSON response
             cleaned = response.replace("```json", "").replace("```", "").strip()

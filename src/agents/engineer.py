@@ -158,8 +158,8 @@ class SystemEngineerAgent(BaseAgent):
 
         # 4. Call LLM
         # 4. 呼叫 LLM
-        # Use call_llm directly (Sync is OK since it's the gateway)
-        response_str = self.call_llm([
+        # Use call_llm directly
+        response_str = await self.call_llm([
             {"role": "system", "content": sys_prompt},
             {"role": "user", "content": user_prompt}
         ])

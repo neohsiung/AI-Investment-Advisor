@@ -11,12 +11,13 @@ All HTTP-level details are isolated here, keeping BaseAgent and Domain layers pu
   - 規範十三 (Atomic Workflows): 原子化 LLM 調用
 """
 
-import time
-import json
+import httpx
+import asyncio
 import logging
-import requests
 import typing
-from typing import List, Optional, Generator
+from typing import List, Dict, Any, Optional
+
+logger = logging.getLogger(__name__)
 
 from src.domain.interfaces import ILLMGateway, Message, LLMConfig
 from src.utils.security import redact_secrets as _redact_secrets, redact_pii as _redact_pii
@@ -34,31 +35,36 @@ class OpenRouterGateway(ILLMGateway):
     def __init__(self):
         self._last_usage: Optional[dict] = None
 
-    def chat(self, messages: List[Message], config: LLMConfig) -> str:
-        url = config.base_url or "https://openrouter.ai/api/v1/chat/completions"
-        headers = {
-            "Authorization": f"Bearer {config.api_key}",
-            "Content-Type": "application/json",
-            "HTTP-Referer": "http://localhost:8501",
-            "X-Title": "AI Investment Advisor",
-        }
-        data = {
-            "model": config.model,
-            "messages": [{"role": m.role, "content": m.content} for m in messages],
-        }
-        if config.temperature is not None:
-            data["temperature"] = config.temperature
+    async def chat(self, messages: List[Message], config: LLMConfig) -> str:
+        import requests
+        def _sync_call():
+            url = config.base_url or "https://openrouter.ai/api/v1/chat/completions"
+            headers = {
+                "Authorization": f"Bearer {config.api_key}",
+                "Content-Type": "application/json",
+                "HTTP-Referer": "http://localhost:8501",
+                "X-Title": "AI Investment Advisor",
+            }
+            data = {
+                "model": config.model,
+                "messages": [{"role": m.role, "content": m.content} for m in messages],
+            }
+            if config.temperature is not None:
+                data["temperature"] = config.temperature
 
-        response = requests.post(
-            url, headers=headers, json=data,
-            timeout=config.timeout_seconds,
-        )
-        response.raise_for_status()
-        resp_json = response.json()
-        self._last_usage = resp_json.get("usage")
-        return resp_json["choices"][0]["message"]["content"]
+            response = requests.post(
+                url, headers=headers, json=data,
+                timeout=config.timeout_seconds,
+            )
+            response.raise_for_status()
+            resp_json = response.json()
+            self._last_usage = resp_json.get("usage")
+            return resp_json["choices"][0]["message"]["content"]
+            
+        return await asyncio.to_thread(_sync_call)
 
-    def stream_chat(self, messages: List[Message], config: LLMConfig) -> Generator[str, None, None]:
+    async def stream_chat(self, messages: List[Message], config: LLMConfig) -> typing.AsyncGenerator[str, None]:
+        import requests
         url = config.base_url or "https://openrouter.ai/api/v1/chat/completions"
         headers = {
             "Authorization": f"Bearer {config.api_key}",
@@ -74,11 +80,14 @@ class OpenRouterGateway(ILLMGateway):
         if config.temperature is not None:
             data["temperature"] = config.temperature
 
-        response = requests.post(
-            url, headers=headers, json=data,
-            timeout=config.timeout_seconds,
-            stream=True
-        )
+        def _sync_stream():
+            return requests.post(
+                url, headers=headers, json=data,
+                timeout=config.timeout_seconds,
+                stream=True
+            )
+
+        response = await asyncio.to_thread(_sync_stream)
         response.raise_for_status()
 
         for line in response.iter_lines():
@@ -97,24 +106,29 @@ class OpenRouterGateway(ILLMGateway):
                                 yield content
                     except json.JSONDecodeError:
                         continue
+            await asyncio.sleep(0) # Yield control
 
-    def embed(self, text: str, config: LLMConfig) -> List[float]:
+    async def embed(self, text: str, config: LLMConfig) -> List[float]:
         """OpenRouter embedding (uses /embeddings endpoint)."""
-        url = config.base_url or "https://openrouter.ai/api/v1/embeddings"
-        headers = {
-            "Authorization": f"Bearer {config.api_key}",
-            "Content-Type": "application/json",
-        }
-        data = {
-            "model": config.model,
-            "input": text,
-        }
-        response = requests.post(
-            url, headers=headers, json=data,
-            timeout=config.timeout_seconds,
-        )
-        response.raise_for_status()
-        return response.json()["data"][0]["embedding"]
+        import requests
+        def _sync_embed():
+            url = config.base_url or "https://openrouter.ai/api/v1/embeddings"
+            headers = {
+                "Authorization": f"Bearer {config.api_key}",
+                "Content-Type": "application/json",
+            }
+            data = {
+                "model": config.model,
+                "input": text,
+            }
+            response = requests.post(
+                url, headers=headers, json=data,
+                timeout=config.timeout_seconds,
+            )
+            response.raise_for_status()
+            return response.json()["data"][0]["embedding"]
+            
+        return await asyncio.to_thread(_sync_embed)
 
 
 class GeminiGateway(ILLMGateway):
@@ -126,39 +140,44 @@ class GeminiGateway(ILLMGateway):
     def __init__(self):
         self._last_usage: Optional[dict] = None
 
-    def chat(self, messages: List[Message], config: LLMConfig) -> str:
-        model_id = config.model if config.model.startswith("models/") else f"models/{config.model}"
-        url = f"https://generativelanguage.googleapis.com/v1beta/{model_id}:generateContent?key={config.api_key}"
-        headers = {"Content-Type": "application/json"}
+    async def chat(self, messages: List[Message], config: LLMConfig) -> str:
+        import requests
+        def _sync_call():
+            model_id = config.model if config.model.startswith("models/") else f"models/{config.model}"
+            url = f"https://generativelanguage.googleapis.com/v1beta/{model_id}:generateContent?key={config.api_key}"
+            headers = {"Content-Type": "application/json"}
 
-        combined_text = ""
-        for m in messages:
-            combined_text += m.content + "\n\n"
+            combined_text = ""
+            for m in messages:
+                combined_text += m.content + "\n\n"
 
-        data = {
-            "contents": [{"parts": [{"text": combined_text.strip()}]}],
-        }
-        if config.temperature is not None:
-            data["generationConfig"] = {"temperature": config.temperature}
-
-        response = requests.post(
-            url, headers=headers, json=data,
-            timeout=config.timeout_seconds,
-        )
-        response.raise_for_status()
-        resp_json = response.json()
-
-        usage = resp_json.get("usageMetadata")
-        if usage:
-            self._last_usage = {
-                "prompt_tokens": usage.get("promptTokenCount", 0),
-                "completion_tokens": usage.get("candidatesTokenCount", 0),
-                "total_tokens": usage.get("totalTokenCount", 0)
+            data = {
+                "contents": [{"parts": [{"text": combined_text.strip()}]}],
             }
-        
-        return resp_json["candidates"][0]["content"]["parts"][0]["text"]
+            if config.temperature is not None:
+                data["generationConfig"] = {"temperature": config.temperature}
 
-    def stream_chat(self, messages: List[Message], config: LLMConfig) -> Generator[str, None, None]:
+            response = requests.post(
+                url, headers=headers, json=data,
+                timeout=config.timeout_seconds,
+            )
+            response.raise_for_status()
+            resp_json = response.json()
+
+            usage = resp_json.get("usageMetadata")
+            if usage:
+                self._last_usage = {
+                    "prompt_tokens": usage.get("promptTokenCount", 0),
+                    "completion_tokens": usage.get("candidatesTokenCount", 0),
+                    "total_tokens": usage.get("totalTokenCount", 0)
+                }
+            
+            return resp_json["candidates"][0]["content"]["parts"][0]["text"]
+            
+        return await asyncio.to_thread(_sync_call)
+
+    async def stream_chat(self, messages: List[Message], config: LLMConfig) -> typing.AsyncGenerator[str, None]:
+        import requests
         model_id = config.model if config.model.startswith("models/") else f"models/{config.model}"
         url = f"https://generativelanguage.googleapis.com/v1beta/{model_id}:streamGenerateContent?alt=sse&key={config.api_key}"
         headers = {"Content-Type": "application/json"}
@@ -173,11 +192,14 @@ class GeminiGateway(ILLMGateway):
         if config.temperature is not None:
             data["generationConfig"] = {"temperature": config.temperature}
 
-        response = requests.post(
-            url, headers=headers, json=data,
-            timeout=config.timeout_seconds,
-            stream=True
-        )
+        def _sync_stream():
+            return requests.post(
+                url, headers=headers, json=data,
+                timeout=config.timeout_seconds,
+                stream=True
+            )
+
+        response = await asyncio.to_thread(_sync_stream)
         response.raise_for_status()
 
         for line in response.iter_lines():
@@ -192,20 +214,25 @@ class GeminiGateway(ILLMGateway):
                                 yield p.get("text", "")
                     except (json.JSONDecodeError, KeyError):
                         continue
+            await asyncio.sleep(0)
 
-    def embed(self, text: str, config: LLMConfig) -> List[float]:
+    async def embed(self, text: str, config: LLMConfig) -> List[float]:
         """Gemini embedding via embedContent API."""
-        model_id = config.model if config.model.startswith("models/") else f"models/{config.model}"
-        url = f"https://generativelanguage.googleapis.com/v1beta/{model_id}:embedContent?key={config.api_key}"
-        headers = {"Content-Type": "application/json"}
-        data = {"content": {"parts": [{"text": text}]}}
+        import requests
+        def _sync_embed():
+            model_id = config.model if config.model.startswith("models/") else f"models/{config.model}"
+            url = f"https://generativelanguage.googleapis.com/v1beta/{model_id}:embedContent?key={config.api_key}"
+            headers = {"Content-Type": "application/json"}
+            data = {"content": {"parts": [{"text": text}]}}
 
-        response = requests.post(
-            url, headers=headers, json=data,
-            timeout=config.timeout_seconds,
-        )
-        response.raise_for_status()
-        return response.json()["embedding"]["values"]
+            response = requests.post(
+                url, headers=headers, json=data,
+                timeout=config.timeout_seconds,
+            )
+            response.raise_for_status()
+            return response.json()["embedding"]["values"]
+            
+        return await asyncio.to_thread(_sync_embed)
 
 
 class OpenAIGateway(ILLMGateway):
@@ -217,29 +244,34 @@ class OpenAIGateway(ILLMGateway):
     def __init__(self):
         self._last_usage: Optional[dict] = None
 
-    def chat(self, messages: List[Message], config: LLMConfig) -> str:
-        url = config.base_url or "https://api.openai.com/v1/chat/completions"
-        headers = {
-            "Authorization": f"Bearer {config.api_key}",
-            "Content-Type": "application/json",
-        }
-        data = {
-            "model": config.model,
-            "messages": [{"role": m.role, "content": m.content} for m in messages],
-        }
-        if config.temperature is not None:
-            data["temperature"] = config.temperature
+    async def chat(self, messages: List[Message], config: LLMConfig) -> str:
+        import requests
+        def _sync_call():
+            url = config.base_url or "https://api.openai.com/v1/chat/completions"
+            headers = {
+                "Authorization": f"Bearer {config.api_key}",
+                "Content-Type": "application/json",
+            }
+            data = {
+                "model": config.model,
+                "messages": [{"role": m.role, "content": m.content} for m in messages],
+            }
+            if config.temperature is not None:
+                data["temperature"] = config.temperature
 
-        response = requests.post(
-            url, headers=headers, json=data,
-            timeout=config.timeout_seconds,
-        )
-        response.raise_for_status()
-        resp_json = response.json()
-        self._last_usage = resp_json.get("usage")
-        return resp_json["choices"][0]["message"]["content"]
+            response = requests.post(
+                url, headers=headers, json=data,
+                timeout=config.timeout_seconds,
+            )
+            response.raise_for_status()
+            resp_json = response.json()
+            self._last_usage = resp_json.get("usage")
+            return resp_json["choices"][0]["message"]["content"]
+            
+        return await asyncio.to_thread(_sync_call)
 
-    def stream_chat(self, messages: List[Message], config: LLMConfig) -> Generator[str, None, None]:
+    async def stream_chat(self, messages: List[Message], config: LLMConfig) -> typing.AsyncGenerator[str, None]:
+        import requests
         url = config.base_url or "https://api.openai.com/v1/chat/completions"
         headers = {
             "Authorization": f"Bearer {config.api_key}",
@@ -253,11 +285,14 @@ class OpenAIGateway(ILLMGateway):
         if config.temperature is not None:
             data["temperature"] = config.temperature
 
-        response = requests.post(
-            url, headers=headers, json=data,
-            timeout=config.timeout_seconds,
-            stream=True
-        )
+        def _sync_stream():
+            return requests.post(
+                url, headers=headers, json=data,
+                timeout=config.timeout_seconds,
+                stream=True
+            )
+
+        response = await asyncio.to_thread(_sync_stream)
         response.raise_for_status()
 
         for line in response.iter_lines():
@@ -276,24 +311,29 @@ class OpenAIGateway(ILLMGateway):
                                 yield content
                     except json.JSONDecodeError:
                         continue
+            await asyncio.sleep(0)
 
-    def embed(self, text: str, config: LLMConfig) -> List[float]:
+    async def embed(self, text: str, config: LLMConfig) -> List[float]:
         """OpenAI embedding via /v1/embeddings."""
-        url = config.base_url.rstrip("/").replace("/chat/completions", "") + "/embeddings" if config.base_url else "https://api.openai.com/v1/embeddings"
-        headers = {
-            "Authorization": f"Bearer {config.api_key}",
-            "Content-Type": "application/json",
-        }
-        data = {
-            "model": config.model,
-            "input": text,
-        }
-        response = requests.post(
-            url, headers=headers, json=data,
-            timeout=config.timeout_seconds,
-        )
-        response.raise_for_status()
-        return response.json()["data"][0]["embedding"]
+        import requests
+        def _sync_embed():
+            url = config.base_url.rstrip("/").replace("/chat/completions", "") + "/embeddings" if config.base_url else "https://api.openai.com/v1/embeddings"
+            headers = {
+                "Authorization": f"Bearer {config.api_key}",
+                "Content-Type": "application/json",
+            }
+            data = {
+                "model": config.model,
+                "input": text,
+            }
+            response = requests.post(
+                url, headers=headers, json=data,
+                timeout=config.timeout_seconds,
+            )
+            response.raise_for_status()
+            return response.json()["data"][0]["embedding"]
+            
+        return await asyncio.to_thread(_sync_embed)
 
 
 class MockLLMGateway(ILLMGateway):
@@ -304,7 +344,7 @@ class MockLLMGateway(ILLMGateway):
     def __init__(self, default_response: str = None):
         self._default_response = default_response
 
-    def chat(self, messages: List[Message], config: LLMConfig) -> str:
+    async def chat(self, messages: List[Message], config: LLMConfig) -> str:
         if self._default_response:
             return self._default_response
 
@@ -318,13 +358,13 @@ class MockLLMGateway(ILLMGateway):
             f"(Context size: {prompt_len} chars)"
         )
 
-    def stream_chat(self, messages: List[Message], config: LLMConfig) -> Generator[str, None, None]:
-        resp = self.chat(messages, config)
+    async def stream_chat(self, messages: List[Message], config: LLMConfig) -> typing.AsyncGenerator[str, None]:
+        resp = await self.chat(messages, config)
         for word in resp.split(" "):
             yield word + " "
-            time.sleep(0.02)
+            await asyncio.sleep(0.02)
 
-    def embed(self, text: str, config: LLMConfig) -> List[float]:
+    async def embed(self, text: str, config: LLMConfig) -> List[float]:
         return [0.0] * 1536
 
 
@@ -374,11 +414,11 @@ class RetryLLMGateway(ILLMGateway):
     def _last_usage(self) -> Optional[dict]:
         return getattr(self._inner, "_last_usage", None)
 
-    def chat(self, messages: List[Message], config: LLMConfig) -> str:
+    async def chat(self, messages: List[Message], config: LLMConfig) -> str:
         last_error = None
         for attempt in range(self._max_retries):
             try:
-                return self._inner.chat(messages, config)
+                return await self._inner.chat(messages, config)
             except Exception as e:
                 last_error = e
                 wait = 2 ** (attempt + 1)
@@ -386,18 +426,19 @@ class RetryLLMGateway(ILLMGateway):
                     f"LLM chat attempt {attempt + 1}/{self._max_retries} failed: "
                     f"{_redact_secrets(str(e))}. Retrying in {wait}s..."
                 )
-                time.sleep(wait)
+                await asyncio.sleep(wait)
         raise last_error
 
-    def stream_chat(self, messages: List[Message], config: LLMConfig) -> Generator[str, None, None]:
+    async def stream_chat(self, messages: List[Message], config: LLMConfig) -> typing.AsyncGenerator[str, None]:
         # Retry logic for streaming is simplified (no backoff between chunks)
-        return self._inner.stream_chat(messages, config)
+        async for chunk in self._inner.stream_chat(messages, config):
+            yield chunk
 
-    def embed(self, text: str, config: LLMConfig) -> List[float]:
+    async def embed(self, text: str, config: LLMConfig) -> List[float]:
         last_error = None
         for attempt in range(self._max_retries):
             try:
-                return self._inner.embed(text, config)
+                return await self._inner.embed(text, config)
             except Exception as e:
                 last_error = e
                 wait = 2 ** (attempt + 1)
@@ -405,7 +446,7 @@ class RetryLLMGateway(ILLMGateway):
                     f"LLM embed attempt {attempt + 1}/{self._max_retries} failed: "
                     f"{_redact_secrets(str(e))}. Retrying in {wait}s..."
                 )
-                time.sleep(wait)
+                await asyncio.sleep(wait)
         raise last_error
 
 
@@ -428,7 +469,7 @@ class LoggingLLMGateway(ILLMGateway):
         self._user_id = user_id
         self._metadata = metadata or {}
 
-    def chat(self, messages: List[Message], config: LLMConfig) -> str:
+    async def chat(self, messages: List[Message], config: LLMConfig) -> str:
         from opentelemetry import trace
         tracer = trace.get_tracer(__name__)
         
@@ -443,7 +484,7 @@ class LoggingLLMGateway(ILLMGateway):
                 billing.check_quota(requested_tier=self._tier)
             except Exception as e:
                 # If QuotaExceeded or TierAccessDenied, we re-raise to block execution
-                self.logger.error(f"LLM Gateway: Request blocked by billing policy: {e}")
+                logger.error(f"LLM Gateway: Request blocked by billing policy: {e}")
                 raise e
             
             # T13.1: Semantic Cache lookup
@@ -457,7 +498,7 @@ class LoggingLLMGateway(ILLMGateway):
                 # We reuse the gateway's embed function
                 # v13.1: Only cache for 'smart' or 'advanced' tiers where cost is higher
                 if self._tier in ('smart', 'advanced'):
-                    prompt_embedding = self.embed(prompt_text, config)
+                    prompt_embedding = await self.embed(prompt_text, config)
                     cached_res = cache_repo.get_cached_response(self._user_id, prompt_text, prompt_embedding)
                     if cached_res:
                         span.set_attribute("cache.hit", True)
@@ -475,14 +516,14 @@ class LoggingLLMGateway(ILLMGateway):
             
             try:
                 # v19.3: AI Model Automatic Fallback on Rate Limit [Phase 19]
-                content = self._inner.chat(redacted_messages, config)
+                content = await self._inner.chat(redacted_messages, config)
             except Exception as e:
                 # Common rate limit strings in error messages
                 is_rate_limit = any(s in str(e).lower() for s in ("429", "rate limit", "quota exceeded"))
                 
                 # Only fallback if it's a rate limit and we are using a premium tier
                 if is_rate_limit and self._tier in ('smart', 'advanced'):
-                    self.logger.warning(f"LLM Gateway: [{self._agent_name}] '{self._tier}' limit hit. Falling back to 'fast' tier.")
+                    logger.warning(f"LLM Gateway: [{self._agent_name}] '{self._tier}' limit hit. Falling back to 'fast' tier.")
                     from src.infrastructure.llm.tier_config import TierConfig
                     fallback_config = TierConfig().resolve('fast') # Resolve a fast model
                     
@@ -493,7 +534,7 @@ class LoggingLLMGateway(ILLMGateway):
                         api_key=config.api_key,
                         temperature=config.temperature
                     )
-                    content = self._inner.chat(redacted_messages, new_cfg)
+                    content = await self._inner.chat(redacted_messages, new_cfg)
                     content = "*(注意：由於高階模型目前載載過高，本分析由高速模型生成備援)*\n\n" + content
                 else:
                     raise e
@@ -528,7 +569,7 @@ class LoggingLLMGateway(ILLMGateway):
 
             return content
 
-    def stream_chat(self, messages: List[Message], config: LLMConfig) -> Generator[str, None, None]:
+    async def stream_chat(self, messages: List[Message], config: LLMConfig) -> typing.AsyncGenerator[str, None]:
         from opentelemetry import trace
         tracer = trace.get_tracer(__name__)
         
@@ -539,10 +580,10 @@ class LoggingLLMGateway(ILLMGateway):
             redacted_messages = [
                 Message(role=m.role, content=_redact_pii(m.content)) for m in messages
             ]
-            for chunk in self._inner.stream_chat(redacted_messages, config):
+            async for chunk in self._inner.stream_chat(redacted_messages, config):
                 yield chunk
 
-    def embed(self, text: str, config: LLMConfig) -> List[float]:
+    async def embed(self, text: str, config: LLMConfig) -> List[float]:
         from opentelemetry import trace
         tracer = trace.get_tracer(__name__)
         
@@ -550,5 +591,4 @@ class LoggingLLMGateway(ILLMGateway):
             span.set_attribute("llm.model", config.model)
             span.set_attribute("agent.name", self._agent_name)
             # T11.4: PII Redaction for embedding
-            return self._inner.embed(_redact_pii(text), config)
-
+            return await self._inner.embed(_redact_pii(text), config)

@@ -107,7 +107,9 @@ class BudgetAwareModelRouter:
         spec = self.tier_cfg.get_spec(tier_name)
         
         # Provider resolution (Check AI_PROVIDER first for standards compliance)
-        provider = db_settings.get("AI_PROVIDER", db_settings.get("ai_provider", "OpenRouter")) if user_id else "OpenRouter"
+        import os
+        env_provider = os.getenv("AI_PROVIDER", "OpenRouter")
+        provider = db_settings.get("AI_PROVIDER", db_settings.get("ai_provider", env_provider)) if user_id else env_provider
         
         # API Key Mapping (source_{provider}_api_key or legacy API_KEY)
         api_key_field = f"source_{provider.lower()}_api_key"

@@ -1,5 +1,7 @@
 import os
 import json
+import asyncio
+import logging
 import requests
 import hashlib
 import re
@@ -297,16 +299,11 @@ class BaseAgent(ABC):
         
         # [Phase 9] Auto-save insights to Knowledge Vault
         if thought_chain and response:
-            from src.utils.async_utils import to_thread
-            import asyncio
-            
-            # Fire and forget extraction to not block the main flow
             try:
-                loop = asyncio.get_running_loop()
-                loop.create_task(to_thread(self._extract_and_save_takeaways, response))
-            except RuntimeError:
-                # Fallback if no event loop running
-                self._extract_and_save_takeaways(response)
+                # Fire and forget async task
+                asyncio.create_task(self._extract_and_save_takeaways(response))
+            except Exception as e:
+                self.logger.warning(f"Failed to trigger takeaway extraction: {e}")
 
         return response
 
@@ -387,7 +384,7 @@ class BaseAgent(ABC):
         """Render user context - delegates to ContextAssembler."""
         return ContextAssembler.render_user_context(context)
 
-    def _extract_and_save_takeaways(self, agent_response: str) -> None:
+    async def _extract_and_save_takeaways(self, agent_response: str) -> None:
         # [Phase 9] Extracts key takeaways from the agent's response and saves them to the Knowledge Vault.
         # Uses a fast LLM model to distill the context.
         if len(agent_response) < 100:
@@ -406,7 +403,7 @@ class BaseAgent(ABC):
                 f"Analysis:\n{agent_response[:2500]}"
             )
             
-            result = extractor.call_llm([{"role": "user", "content": prompt}], temperature=0.1)
+            result = await extractor.call_llm([{"role": "user", "content": prompt}], temperature=0.1)
             
             if result and "NONE" not in result.upper() and len(result.strip()) > 10:
                 self.logger.info(f"Saving extracted takeaways to Knowledge Vault for {self.name}")
@@ -471,7 +468,7 @@ class BaseAgent(ABC):
             timeout_seconds=30,
         )
 
-    def call_llm(self, messages, temperature=0.7, response_format=None):
+    async def call_llm(self, messages, temperature=0.7, response_format=None):
         """
         Unified method to call LLM - delegates to ILLMGateway.
         統一的 LLM 調用方法 - 委派至 ILLMGateway
@@ -502,9 +499,9 @@ class BaseAgent(ABC):
             Message(role="system", content=system_prompt),
             Message(role="user", content=user_prompt),
         ]
-        return self._llm_gateway.chat(gateway_messages, config)
+        return await self._llm_gateway.chat(gateway_messages, config)
 
-    def stream_llm(self, messages, temperature=0.7) -> Generator[str, None, None]:
+    async def stream_llm(self, messages, temperature=0.7) -> typing.AsyncGenerator[str, None]:
         """
         Unified method to stream LLM response - delegates to ILLMGateway.
         統一的 LLM 串流調用方法 - 委派至 ILLMGateway
@@ -527,20 +524,21 @@ class BaseAgent(ABC):
             Message(role="system", content=system_prompt),
             Message(role="user", content=user_prompt),
         ]
-        return self._llm_gateway.stream_chat(gateway_messages, config)
+        async for chunk in self._llm_gateway.stream_chat(gateway_messages, config):
+            yield chunk
 
     # Legacy aliases for backward compatibility (deprecated - will be removed)
-    def _mock_llm_call(self, prompt, system_prompt):
+    async def _mock_llm_call(self, prompt, system_prompt):
         """Legacy bridge: delegates to call_llm via gateway."""
         messages = [
             {"role": "system", "content": system_prompt},
             {"role": "user", "content": prompt},
         ]
-        return self.call_llm(messages)
+        return await self.call_llm(messages)
 
-    def _call_real_llm(self, prompt, system_prompt):
+    async def _call_real_llm(self, prompt, system_prompt):
         """Legacy bridge: delegates to call_llm via gateway."""
-        return self._mock_llm_call(prompt, system_prompt)
+        return await self._mock_llm_call(prompt, system_prompt)
 
     def _redact_secrets(self, text_value):
         """

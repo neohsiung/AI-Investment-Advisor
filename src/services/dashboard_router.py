@@ -325,7 +325,7 @@ async def advisor_chat(
         messages.append({"role": "user", "content": prompt})
 
         # 調用 LLM
-        response = cio_agent.call_llm(messages=messages, temperature=0.7)
+        response = await cio_agent.call_llm(messages=messages, temperature=0.7)
 
         return {
             "status": "success",
@@ -390,10 +390,9 @@ async def advisor_chat_stream(
                 # Initialize pulse to avoid missing the first state
                 await pulse_repo.update_pulse(cio_agent.name, "Initializing Agent...")
                 
-                # Run the actual Agent loop in a background thread to allow tool calls
-                # Phase 12: Run the Agent loop directly as it is now async-first
+                # Run the actual Agent loop directly as it is now async-native
                 # No more to_thread needed for the loop itself
-                task = loop.create_task(cio_agent.run_tool_loop(
+                task = asyncio.create_task(cio_agent.run_tool_loop(
                     context=prompt_data, 
                     max_turns=3, 
                     thought_chain=True
