@@ -39,22 +39,8 @@ class RoleSwarm(BaseAgent):
         else:
             logger.warning(f"RoleSwarm {self.name}: Invalid tier {tier}")
 
-    def run(self, context: Any) -> str:
-        try:
-            loop = asyncio.get_event_loop()
-            if loop.is_closed():
-                loop = asyncio.new_event_loop()
-                asyncio.set_event_loop(loop)
-        except RuntimeError:
-            loop = asyncio.new_event_loop()
-            asyncio.set_event_loop(loop)
-            
-        if loop.is_running():
-            import nest_asyncio
-            nest_asyncio.apply()
-            return loop.run_until_complete(self._run_async(context))
-        else:
-            return loop.run_until_complete(self._run_async(context))
+    async def run(self, context: Any) -> str:
+        return await self._run_async(context)
 
     async def _run_async(self, context: Any) -> str:
         task = context.get("user_request", "")

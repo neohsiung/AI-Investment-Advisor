@@ -22,8 +22,8 @@ class MomentumScanner(BaseAgent):
             **kwargs
         )
         
-    def run(self, context):
-        return self.run_tool_loop(context)
+    async def run(self, context):
+        return await self.run_tool_loop(context)
 
 class MomentumSwarm(RoleSwarm):
     """

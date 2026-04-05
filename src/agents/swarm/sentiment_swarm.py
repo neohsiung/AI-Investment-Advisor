@@ -12,12 +12,12 @@ class SentimentSubAgent(BaseAgent):
         super().__init__(name=name, prompt_path="prompts/common/default_system.j2", tier=tier, **kwargs)
         self.instruction = instruction
 
-    def run(self, context: Any) -> str:
+    async def run(self, context: Any) -> str:
         ctx_dump = json.dumps(context, indent=2, ensure_ascii=False) if isinstance(context, dict) else str(context)
         prompt_data = {
             "user_request": f"{self.instruction}\n\nData Context:\n{ctx_dump}"
         }
-        return self.run_tool_loop(context=prompt_data)
+        return await self.run_tool_loop(context=prompt_data)
 
 class SentimentSwarm(RoleSwarm):
     def __init__(self, use_cache=True, ttl_hours=4, **kwargs):
@@ -46,7 +46,7 @@ class SentimentSwarm(RoleSwarm):
         self.register_agent("col_fast", self.news_scanner)
         self.register_agent("col_adv", self.social_pulse)
         
-    def run(self, context: Any) -> str:
+    async def run(self, context: Any) -> str:
         tickers = context.get("tickers", [])
         single_ticker = context.get("ticker", "UNKNOWN")
         if not tickers and single_ticker != "UNKNOWN":
@@ -71,7 +71,7 @@ class SentimentSwarm(RoleSwarm):
                 "data": prompt_data
             }
             try:
-                res = super().run(wrapped_ctx)
+                res = await super().run(wrapped_ctx)
                 reports.append(f"### {t} Sentiment Swarm Analysis\n{res}")
             except Exception as e:
                 logger.error(f"SentimentSwarm failed for {t}: {e}")
