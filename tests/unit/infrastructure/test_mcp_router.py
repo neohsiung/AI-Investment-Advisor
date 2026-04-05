@@ -3,6 +3,7 @@ pytestmark = pytest.mark.integration
 
 import pytest
 from fastapi.testclient import TestClient
+from typing import Dict, Any, List, Optional
 from services.mcp_server.src.app import app, services, registered_tools
 from unittest.mock import MagicMock, patch
 
