@@ -1,5 +1,5 @@
 import pytest
-from unittest.mock import MagicMock, patch, mock_open
+from unittest.mock import MagicMock, patch, mock_open, AsyncMock
 from src.agents.engineer import SystemEngineerAgent
 from src.repositories.settings_repository import ISettingsRepository
 from src.repositories.prompt_repository import IPromptRepository
@@ -18,11 +18,8 @@ def mock_prompt_repo():
 
 @pytest.fixture
 def agent(mock_settings_repo, mock_prompt_repo):
-    with patch('src.agents.base_agent.BaseAgent._load_prompt', return_value="Engineer Prompt"):
-         # Mock BaseAgent config load implicit in init
-         with patch.object(SystemEngineerAgent, '_load_config', return_value={"provider": "OpenAI"}):
-             mock_state = MagicMock()
-             return SystemEngineerAgent(user_id="test_user", settings_repo=mock_settings_repo, prompt_repo=mock_prompt_repo, state_repo=mock_state)
+    mock_state = MagicMock()
+    return SystemEngineerAgent(user_id="test_user", settings_repo=mock_settings_repo, prompt_repo=mock_prompt_repo, state_repo=mock_state)
 
 def test_analyze_optimization_needs_basic(agent):
     report = """
@@ -73,7 +70,9 @@ def test_set_schedule_config(agent, mock_settings_repo):
 async def test_run_with_optimization(agent, mock_prompt_repo):
     context = {"cio_report": "## System Optimization Feedback\nFix Momentum."}
     
-    with patch.object(agent, '_call_real_llm', return_value='{"optimized_prompt": "New Prompt", "diff_explanation": "Improved stability"}'):
+    # call_llm is now an AsyncMock
+    with patch.object(agent, 'call_llm', new_callable=AsyncMock) as mock_llm:
+        mock_llm.return_value = '{"optimized_prompt": "New Prompt", "diff_explanation": "Improved stability"}'
         with patch.object(agent, '_read_prompt', return_value="Original Prompt"):
             with patch.object(agent, '_save_prompt'):
                 result = await agent.run(context)

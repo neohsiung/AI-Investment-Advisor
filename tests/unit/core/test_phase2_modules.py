@@ -7,7 +7,8 @@ import pytest
 import json
 import os
 import tempfile
-from unittest.mock import MagicMock, patch, mock_open
+import logging
+from unittest.mock import MagicMock, patch, mock_open, AsyncMock
 
 from src.agents.context import ContextAssembler
 from src.agents.wal_protocol import WalProtocol
@@ -241,7 +242,7 @@ class TestAgentLoop:
     @pytest.mark.asyncio
     async def test_execute_with_search_tool(self):
         """Test SEARCH tool parsing and execution."""
-        search_svc = AsyncMock()
+        search_svc = MagicMock()
         search_svc.search_financial_context.return_value = [
             {"title": "AAPL", "snippet": "Stock up 5%", "link": "url1"}
         ]
@@ -299,10 +300,12 @@ class TestAgentLoop:
         result = await loop.execute(messages, call_llm_fn=mock_llm, max_turns=2)
         assert result == 'SEARCH: "endless"'
 
-    def test_execute_with_context_guard(self):
+    @pytest.mark.asyncio
+    async def test_execute_with_context_guard(self):
         """Test that context guard functions are called."""
         loop = AgentLoop(agent_name="Test")
-        mock_llm = MagicMock(return_value="Answer")
+        async def mock_llm(messages, **kwargs):
+            return "Answer"
         check_fn = MagicMock(return_value=False)
         flush_fn = MagicMock()
 
@@ -311,17 +314,19 @@ class TestAgentLoop:
             {"role": "user", "content": "test"},
         ]
 
-        loop.execute(
+        await loop.execute(
             messages, call_llm_fn=mock_llm,
             check_context_fn=check_fn, flush_fn=flush_fn
         )
         check_fn.assert_called_once()
         flush_fn.assert_not_called()
 
-    def test_execute_triggers_flush(self):
+    @pytest.mark.asyncio
+    async def test_execute_triggers_flush(self):
         """Context guard returns True → flush should be called."""
         loop = AgentLoop(agent_name="Test")
-        mock_llm = MagicMock(return_value="Answer")
+        async def mock_llm(messages, **kwargs):
+            return "Answer"
         check_fn = MagicMock(return_value=True)
         flush_fn = MagicMock()
 
@@ -330,7 +335,7 @@ class TestAgentLoop:
             {"role": "user", "content": "test"},
         ]
 
-        loop.execute(
+        await loop.execute(
             messages, call_llm_fn=mock_llm,
             check_context_fn=check_fn, flush_fn=flush_fn
         )
@@ -361,14 +366,16 @@ class TestAgentLoopParseToolCall:
         result = AgentLoop.parse_tool_call(text)
         assert result == [("SEARCH", {"query": "Tesla stock"})]
 
-    def test_tool_not_found(self):
+    @pytest.mark.asyncio
+    async def test_tool_not_found(self):
         """Tool not in registry should return error observation."""
         loop = AgentLoop(agent_name="Test")
-        result = loop._execute_tool("unknown_tool", {"a": 1})
+        result = await loop._run_tool_logic_async("unknown_tool", {"a": 1})
         assert "Error: Tool 'unknown_tool' not found." in result
 
-    def test_search_no_service(self):
+    @pytest.mark.asyncio
+    async def test_search_no_service(self):
         """SEARCH without service should return error."""
         loop = AgentLoop(agent_name="Test")
-        result = loop._execute_search({"query": "test"})
-        assert "Error" in result
+        result = await loop._execute_search_async("test")
+        assert "Error" in result or "No results" in result

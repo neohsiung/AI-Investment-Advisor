@@ -4,7 +4,7 @@ These agents have low coverage because their init/run paths
 are not exercised by the main workflow tests.
 """
 import pytest
-from unittest.mock import MagicMock, patch, Mock
+from unittest.mock import MagicMock, patch, Mock, AsyncMock
 import json
 
 
@@ -30,7 +30,7 @@ class TestMomentumAgentCoverage:
         agent.name = "Momentum"
         # Since MomentumAgent is a ConcreteAgent (from test_agents.py logic), 
         # it now uses async run.
-        agent.run_tool_loop = MagicMock(return_value="Mock response for TSLA")
+        agent.run_tool_loop = AsyncMock(return_value="Mock response for TSLA")
 
         context = {
             "ticker": "TSLA",
@@ -50,7 +50,7 @@ class TestMomentumAgentCoverage:
         agent = MomentumAgent.__new__(MomentumAgent)
         agent.dspy_module = None
         agent.name = "Momentum"
-        agent.run_tool_loop = MagicMock(return_value="## NVDA Momentum Analysis\nBullish trend")
+        agent.run_tool_loop = AsyncMock(return_value="## NVDA Momentum Analysis\nBullish trend")
 
         context = {"ticker": "NVDA", "price_data": {}, "indicators": {}}
         result = await agent.run(context)
@@ -67,8 +67,8 @@ class TestRiskAgentCoverage:
         from src.agents.risk import RiskAgent
         agent = RiskAgent.__new__(RiskAgent)
         agent.name = "Risk"
-        # RiskAgent.run is async and calls run_tool_loop which is sync in this mock
-        agent.run_tool_loop = MagicMock(return_value="Risk analysis complete")
+        # RiskAgent.run is async and calls run_tool_loop which is now async
+        agent.run_tool_loop = AsyncMock(return_value="Risk analysis complete")
 
         context = {
             "ticker": "SPY",
@@ -210,15 +210,16 @@ class TestAgentLLMProviderCoverage:
         
         assert result == ["Contradiction 1"]
 
+    @pytest.mark.asyncio
     @patch('src.infrastructure.agent_llm_provider.AgentFactory')
-    def test_check_contradictions_failure(self, mock_factory):
+    async def test_check_contradictions_failure(self, mock_factory):
         """check_contradictions returns empty list on error."""
         from src.infrastructure.agent_llm_provider import AgentLLMProvider
         mock_agent = MagicMock()
-        mock_agent.run.side_effect = Exception("Fail")
+        mock_agent.run = AsyncMock(side_effect=Exception("Fail"))
         mock_factory.create_agent.return_value = mock_agent
 
         provider = AgentLLMProvider(user_id="test@user.com")
-        result = provider.check_contradictions("N", "O")
+        result = await provider.check_contradictions("N", "O")
         
         assert result == []

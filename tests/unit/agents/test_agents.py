@@ -1,6 +1,6 @@
 
 import pytest
-from unittest.mock import MagicMock, patch, mock_open
+from unittest.mock import MagicMock, patch, mock_open, AsyncMock
 from src.agents.momentum import MomentumAgent
 from src.agents.fundamental import FundamentalAgent
 from src.agents.macro import MacroAgent
@@ -51,9 +51,10 @@ def test_base_agent_init_and_config(mock_settings_repo, mock_state_repo, mock_pr
 
     with patch("src.agents.base_agent.BudgetAwareModelRouter") as mock_router:
         mock_router.side_effect = Exception("Router Disabled for Test")
-        agent = ConcreteAgent(name="TEST", prompt_path=str(prompt_file), use_cache=False, 
-                              user_id="test_user",
-                              settings_repo=mock_settings_repo, state_repo=mock_state_repo)
+        with patch('src.agents.base_agent.HybridMemory', return_value=MagicMock()):
+            agent = ConcreteAgent(name="TEST", prompt_path=str(prompt_file), use_cache=False, 
+                                  user_id="test_user",
+                                  settings_repo=mock_settings_repo, state_repo=mock_state_repo)
 
     assert agent.name == "TEST"
     assert agent.system_prompt == mock_prompt_content
@@ -66,9 +67,10 @@ def test_base_agent_render_prompt(mock_settings_repo, mock_state_repo, tmp_path)
     with open(prompt_file, 'w') as f:
         f.write("Hello {{ name }}")
     
-    agent = ConcreteAgent(name="TEST", prompt_path=str(prompt_file), use_cache=False,
-                          user_id="test_user",
-                          settings_repo=mock_settings_repo, state_repo=mock_state_repo)
+    with patch('src.agents.base_agent.HybridMemory', return_value=MagicMock()):
+        agent = ConcreteAgent(name="TEST", prompt_path=str(prompt_file), use_cache=False,
+                              user_id="test_user",
+                              settings_repo=mock_settings_repo, state_repo=mock_state_repo)
     rendered = agent.render_system_prompt({"name": "World"})
     assert "Hello World" in rendered
 
@@ -80,7 +82,7 @@ async def test_momentum_agent_run(mock_settings_repo, mock_state_repo):
 
         # Inject gateway mock for LLM call
         from unittest.mock import MagicMock
-        mock_gw = MagicMock()
+        mock_gw = AsyncMock()
         mock_gw.chat.return_value = "BUY AAPL"
         agent._llm_gateway = mock_gw
 
@@ -98,7 +100,7 @@ async def test_fundamental_agent_run(mock_settings_repo, mock_state_repo):
         agent = FundamentalAgent(user_id="test_user", use_cache=False, settings_repo=mock_settings_repo, state_repo=mock_state_repo)
 
         from unittest.mock import MagicMock
-        mock_gw = MagicMock()
+        mock_gw = AsyncMock()
         mock_gw.chat.return_value = "Strong Fundamentals"
         agent._llm_gateway = mock_gw
 
@@ -112,7 +114,7 @@ async def test_macro_agent_run(mock_settings_repo, mock_state_repo):
         agent = MacroAgent(user_id="test_user", use_cache=False, settings_repo=mock_settings_repo, state_repo=mock_state_repo)
 
         from unittest.mock import MagicMock
-        mock_gw = MagicMock()
+        mock_gw = AsyncMock()
         mock_gw.chat.return_value = "Risk Off"
         agent._llm_gateway = mock_gw
 
@@ -130,7 +132,7 @@ async def test_cio_agent_run(mock_settings_repo, mock_state_repo):
                          settings_repo=mock_settings_repo, state_repo=mock_state_repo)
         
         # Inject gateway mock for LLM call
-        mock_gw = MagicMock()
+        mock_gw = AsyncMock()
         mock_gw.chat.return_value = "Final Decision"
         agent._llm_gateway = mock_gw
 

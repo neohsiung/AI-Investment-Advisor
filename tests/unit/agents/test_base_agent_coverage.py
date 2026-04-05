@@ -1,9 +1,9 @@
 import pytest
-from unittest.mock import MagicMock, patch, ANY, mock_open
+from unittest.mock import MagicMock, patch, ANY, mock_open, AsyncMock
 from src.agents.base_agent import BaseAgent
 
 class ConcreteAgent(BaseAgent):
-    def run(self, context):
+    async def run(self, context):
         return "Run Output"
 
 class TestBaseAgentCoverage:
@@ -76,50 +76,58 @@ class TestBaseAgentCoverage:
         agent.update_state("hash1", "output")
         agent.state_repo.save_state.assert_called_with("TestAgent", "TestAgent", "hash1", "output")
 
-    def test_call_llm_mock(self, agent):
+    @pytest.mark.asyncio
+    async def test_call_llm_mock(self, agent):
         # Override the gateway to use MockLLMGateway for the test
         from src.infrastructure.llm.llm_gateway import MockLLMGateway
         agent._llm_gateway = MockLLMGateway()
         
-        res = agent.call_llm([{"role": "user", "content": "Hi"}])
+        res = await agent.call_llm([{"role": "user", "content": "Hi"}])
         assert "Simulation Mode" in res or "TestAgent" in res or "[Mock Output]" in res
 
-    def test_run_tool_loop_search(self, agent):
+    @pytest.mark.asyncio
+    async def test_run_tool_loop_search(self, agent):
         # Test tool loop calling search
         context = {}
         
         # Mock call_llm to return SEARCH then answer
-        agent.call_llm = MagicMock(side_effect=[
+        # Must be AsyncMock because it's awaited
+        agent.call_llm = AsyncMock(side_effect=[
             'SEARCH: "AAPL"',
             'Analysis of AAPL'
         ])
         
         # Mock search service import inside method
         with patch('src.services.search_service.InternetSearchService') as mock_search_cls:
-            mock_svc = mock_search_cls.return_value
+            mock_svc = MagicMock()
+            mock_search_cls.return_value = mock_svc
             mock_svc.search_financial_context.return_value = [{'title': 'AAPL', 'snippet': '150', 'link': 'url'}]
             
-            res = agent.run_tool_loop(context)
+            # Since AgentLoop now uses to_thread for SEARCH, search_svc must be sync-capable
+            agent._search_service = mock_svc
             
-            mock_svc.search_financial_context.assert_called_with("AAPL", max_results=3)
+            res = await agent.run_tool_loop(context)
+            
+            mock_svc.search_financial_context.assert_called_once_with("AAPL")
 
-    def test_call_real_llm(self, agent):
+    @pytest.mark.asyncio
+    async def test_call_real_llm(self, agent):
         """Test _call_real_llm delegates through gateway (via call_llm)."""
         agent.config['api_key'] = 'secret'
         agent.config['provider'] = 'OpenRouter'
         agent.config['model'] = 'model-x'
         
         # Patch the gateway directly since _call_real_llm now bridges to call_llm -> gateway
-        mock_gw = MagicMock()
+        mock_gw = AsyncMock()
         mock_gw.chat.return_value = "Real Logic Output"
         agent._llm_gateway = mock_gw
         
-        res = agent._call_real_llm("prompt", "sys")
+        res = await agent._call_real_llm("prompt", "sys")
         assert res == "Real Logic Output"
         
         # Test Google Gemini path (same gateway, different config)
         agent.config['provider'] = 'Google Gemini'
         mock_gw.chat.return_value = "Gemini Output"
         
-        res = agent._call_real_llm("prompt", "sys")
+        res = await agent._call_real_llm("prompt", "sys")
         assert res == "Gemini Output"
