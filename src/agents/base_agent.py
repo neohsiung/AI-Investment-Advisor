@@ -193,8 +193,9 @@ class BaseAgent(ABC):
 
     def _load_prompt(self):
         """
-        # [Phase 18] Dynamic Personalization - Check for user-specific prompt overrides
-        # This allows RLHF-optimized prompts to override static files.
+        [Phase 18] Dynamic Personalization - Check for user-specific prompt overrides
+        This allows RLHF-optimized prompts to override static files.
+        """
         try:
             from sqlalchemy.orm import sessionmaker
             from src.data.database import get_db_engine
@@ -368,10 +369,8 @@ class BaseAgent(ABC):
         return f"Error: Agent {agent_name} not found."
 
     def rate_request(self, sender: str, score: int, comment: str, context_hash: str = None):
-        """
-        HR Protocol: Rate an incoming request from another agent.
-        HR 協議：對來自其他 Agent 的請求進行評分
-        """
+        # HR Protocol: Rate an incoming request from another agent.
+        # HR 協議：對來自其他 Agent 的請求進行評分
         try:
             self.feedback_repo.add_review(
                 reviewer=self.name,
@@ -389,10 +388,8 @@ class BaseAgent(ABC):
         return ContextAssembler.render_user_context(context)
 
     def _extract_and_save_takeaways(self, agent_response: str) -> None:
-        """
-        [Phase 9] Extracts key takeaways from the agent's response and saves them to the Knowledge Vault.
-        Uses a fast LLM model to distill the context.
-        """
+        # [Phase 9] Extracts key takeaways from the agent's response and saves them to the Knowledge Vault.
+        # Uses a fast LLM model to distill the context.
         if len(agent_response) < 100:
             return  # Too short to contain meaningful long-term takeaways
             

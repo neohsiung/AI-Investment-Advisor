@@ -7,7 +7,7 @@ import json
 # Phase 8: E2E Verification Script
 # This test verifies the new Streaming and Health endpoints.
 
-@pytest.mark.async_api
+@pytest.mark.asyncio
 async def test_dashboard_health_and_streaming():
     async with async_playwright() as p:
         browser = await p.chromium.launch()

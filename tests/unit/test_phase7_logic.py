@@ -3,7 +3,7 @@ import os
 import json
 from unittest.mock import MagicMock, patch
 from src.prompts.reflection_prompt import ReflectionPrompt
-from src.services.budget_aware_model_router import BudgetAwareModelRouter
+from src.infrastructure.llm import BudgetAwareModelRouter
 from src.services.evolution_metrics import EvolutionMetrics
 
 def test_reflection_prompt_compressed_efficiency():
