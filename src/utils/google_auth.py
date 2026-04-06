@@ -4,7 +4,7 @@ import os
 # 允許本地開發使用 HTTP 進行 OAuth 驗證
 os.environ['OAUTHLIB_INSECURE_TRANSPORT'] = '1'
 
-import google_auth_oauthlib.flow
+
 from google.auth.transport import requests
 import json
 import base64
@@ -35,7 +35,13 @@ class GoogleAuth:
         return st.session_state["auth_cookie_manager"]
 
     def _get_flow(self):
-        """Initialize Flow from client configuration or secret file."""
+        """Initialize Flow from client configuration or secret file.
+        
+        NOTE: This method is a stub for future OAuth flow support.
+        Current auth is handled by FastAPI backend (login() redirects to /api/auth/login).
+        Requires google-auth-oauthlib to be installed if this is ever activated.
+        """
+        import google_auth_oauthlib.flow  # Lazy import: only needed if OAuth flow is reactivated
         if self.client_config:
             flow = google_auth_oauthlib.flow.Flow.from_client_config(
                 self.client_config,
