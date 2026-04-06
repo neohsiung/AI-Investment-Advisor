@@ -43,9 +43,13 @@ async def verify_streaming():
     from src.infrastructure.llm.llm_gateway import MockLLMGateway
     agent._llm_gateway = MockLLMGateway()
     
-    # Extract non-sensitive config fields explicitly to break CodeQL taint path (#59)
-    _provider = str(agent.config.get('provider', 'unknown'))
-    _model = str(agent.config.get('model', 'unknown'))
+    # Allowlist-validate config fields before logging to break CodeQL taint path (#59)
+    _KNOWN_PROVIDERS = {'openai', 'anthropic', 'gemini', 'groq', 'azure', 'mock'}
+    _raw_provider = str(agent.config.get('provider', ''))
+    _provider = _raw_provider if _raw_provider in _KNOWN_PROVIDERS else 'unknown'
+    _raw_model = str(agent.config.get('model', ''))
+    import re as _re
+    _model = _raw_model if _re.match(r'^[a-zA-Z0-9._-]{1,60}$', _raw_model) else 'unknown'
     print(f"--- Testing LLM Gateway: {_provider} ({_model}) ---")
     
     messages = [
