@@ -44,7 +44,7 @@ pytrends==4.9.2
 # MCP Microservice
 fastapi==0.124.4
 uvicorn[standard]==0.24.0.post1
-httpx==0.25.1
+httpx==0.28.1
 redis==5.0.1
 aiosmtplib==3.0.1
 
