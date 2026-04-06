@@ -167,19 +167,14 @@ class BaseWorkflow(ABC):
             self.collect_data()
             
             # Step 2: Strategy/Analysis
-            should_proceed = self.execute_analysis(force_refresh)
+            should_proceed = await self.execute_analysis(force_refresh)
             
             if not should_proceed:
                 self.logger.info("Analysis determined no further action needed.")
                 return "SKIPPED"
 
             # Step 3: Synthesis & Decision
-            # [Optimization] If synthesize_results is sync, it runs normally. 
-            # If we make it async, we must await it.
-            if hasattr(self, 'synthesize_results_async'):
-                final_report = await self.synthesize_results_async()
-            else:
-                final_report = self.synthesize_results()
+            final_report = await self.synthesize_results()
             
             # --- Translate to Traditional Chinese ---
             self.logger.info("Translating final report to Traditional Chinese...")
@@ -196,7 +191,7 @@ class BaseWorkflow(ABC):
                     f"REPORT TO TRANSLATE:\n{final_report}"
                 )
                 # v7.0: SystemEngineerAgent.run expects dict, use _call_real_llm for raw string prompts
-                res = translator._call_real_llm(prompt, translator.system_prompt or "You are a professional investment report translator.")
+                res = await translator._call_real_llm(prompt, translator.system_prompt or "You are a professional investment report translator.")
                 self.logger.debug(f"Translation raw result type: {type(res)}")
                 
                 if isinstance(res, dict):
@@ -323,12 +318,12 @@ class BaseWorkflow(ABC):
         self.context['market_data'] = self.market_service.get_market_context(user_tickers, enrich=True)
 
     @abstractmethod
-    def execute_analysis(self, force_refresh: bool) -> bool:
+    async def execute_analysis(self, force_refresh: bool) -> bool:
         """Execute specific analysis steps. Returns True if reporting is needed."""
         pass
 
     @abstractmethod
-    def synthesize_results(self) -> str:
+    async def synthesize_results(self) -> str:
         """Combine analysis results into a final report."""
         pass
 
@@ -414,7 +409,7 @@ class DailyWorkflow(BaseWorkflow):
     Workflow for daily market checks and brief reporting.
     每日工作流：負責每日市場檢查與簡要報告。
     """
-    def execute_analysis(self, force_refresh: bool) -> bool:
+    async def execute_analysis(self, force_refresh: bool) -> bool:
         """
         Daily: Only check Momentum/News. If no major signal, skip.
         每日執行: 僅檢查動能訊號與新聞。若無重大訊號，則跳過。
@@ -425,22 +420,16 @@ class DailyWorkflow(BaseWorkflow):
 
         # Lightweight analysis (e.g. Momentum only)
         # For simplicity, we assume we check all but filter in CIO
-        # Real implementation: Check specific alerts?
         
         # Here we run Momentum Agent & Sentiment Agent
-        # Daily: Short TTL (1hr), assume force_refresh implies bypassing cache
         mom_agent = AgentFactory.create_momentum_agent(ttl_hours=1, use_cache=not force_refresh, user_id=self.user_id)
         sent_agent = AgentFactory.create_sentiment_agent(ttl_hours=4, use_cache=not force_refresh, user_id=self.user_id)
         
         results = []
-        has_significant_change = False
-        
         ticker_reports = {}
         for ticker in self.context['tickers']:
-            # Short TTL for daily
             data = self.context['market_data'].get(ticker, {})
             
-            # Prepare Context for Agent
             ticker_ctx = {
                 "ticker": ticker,
                 "price_data": data.get("price_data", {}),
@@ -451,21 +440,14 @@ class DailyWorkflow(BaseWorkflow):
                 "yield_curve": self.context['market_data'].get('yield_curve', {}) 
             }
 
-            res = mom_agent.run(ticker_ctx)
-            results.append(res) # Keep for legacy check
+            res = await mom_agent.run(ticker_ctx)
+            results.append(res) 
             
-            # Sentiment Analysis
-            sent_res = sent_agent.run(ticker_ctx)
+            sent_res = await sent_agent.run(ticker_ctx)
             
-            # Fundamental Analysis (Cached Reference)
             f_agent = AgentFactory.create_fundamental_agent(ttl_hours=168, use_cache=True, user_id=self.user_id) 
-            # Note: We rely on cache. If miss, it runs.
-            # We need to fetch financials/news for it if not cached? 
-            # BaseAgent handles calls. We should construct context.
-            # Ideally FundamentalAgent runs on same context logic as Weekly.
-            f_res = f_agent.run(ticker_ctx)
+            f_res = await f_agent.run(ticker_ctx)
 
-            # Format for CIO: Daily has Momentum, Sentiment, and Fundamental (Context)
             ticker_reports[ticker] = {
                 "momentum": res,
                 "sentiment": sent_res,
@@ -540,7 +522,7 @@ class DailyWorkflow(BaseWorkflow):
         # Or if we want to be strict about signals. For now let's return True to generate the CIO report.
         return True
 
-    def synthesize_results(self) -> str:
+    async def synthesize_results(self) -> str:
         """
         Combine analysis results into a final report.
         將分析結果綜合成最終報告。
@@ -578,7 +560,7 @@ class DailyWorkflow(BaseWorkflow):
 
         # Run Cached Macro Agent for Context
         macro_agent = AgentFactory.create_macro_agent(ttl_hours=24, use_cache=True, user_id=self.user_id)
-        macro_deep = macro_agent.run({})
+        macro_deep = await macro_agent.run({})
         
         combined_macro = f"Daily Market Check (v3.2 Data):\n{macro_summary_line}\n\n[Reference Weekly Macro Context]:\n{macro_deep}"
         
@@ -598,7 +580,7 @@ class DailyWorkflow(BaseWorkflow):
             current_view_summary = f"Macro: {combined_macro[:200]}\nSignals: {'; '.join(current_signals)}"
             
             # 3. Detect Contradictions
-            conflicts = self.memory_service.detect_conflicts(current_view_summary, mem_ctx)
+            conflicts = await self.memory_service.detect_conflicts(current_view_summary, mem_ctx)
             
             if conflicts:
                 logger.warning(f"Contradictions Detected: {conflicts}")
@@ -720,7 +702,7 @@ class DailyWorkflow(BaseWorkflow):
         # Ideally, we want CIO to output 'Market Sentiment', 'CIO Synthesis', 'Actionable Orders'.
         # And we inject 'The Great Debate' in between.
         
-        cio_output = cio.run(cio_context)
+        cio_output = await cio.run(cio_context)
         
         # --- Final Assembly (Integrated Pattern) ---
         # 組合最終報告 (集成模式)
@@ -733,14 +715,16 @@ class DailyWorkflow(BaseWorkflow):
             agent_for_polish=cio
         )
 
-        # Store in Memory
-        if self.memory_service:
-            self.memory_service.store_report(
+        # Sync memory store (Local filesystem/Vector store)
+        try:
+            await self.memory_service.store_report(
                 user_id=self.user_id,
                 report_type="daily",
                 date=datetime.now().strftime("%Y-%m-%d"),
                 content=final_report
             )
+        except Exception as e:
+            logger.error(f"Failed to store report in memory: {e}")
 
         # Post-Process: Record Macro & CIO Signals
         # ... (rest of signal recording logic)
@@ -820,7 +804,7 @@ class WeeklyWorkflow(BaseWorkflow):
     Workflow for comprehensive weekly analysis and strategy refinement.
     每週工作流：負責全面的每週分析與策略調整。
     """
-    def run_weekly_cycle(self, user_id: str, context_data: dict = None) -> str:
+    async def run_weekly_cycle(self, user_id: str, context_data: dict = None) -> str:
         """
         Enhanced Weekly Workflow using Antigravity Planning + Existing Agents.
         Implementation of the 'Plan -> Execute' pattern.
@@ -871,7 +855,7 @@ class WeeklyWorkflow(BaseWorkflow):
                 
                 # 2.3 Run Agent
                 try:
-                    response = agent.run(agent_input)
+                    response = await agent.run(agent_input)
                     # 2.4 Capture Output
                     task_results[task.name] = response
                     execution_context[f"RESULT_{task.name}"] = response
@@ -913,7 +897,7 @@ class WeeklyWorkflow(BaseWorkflow):
             )
             syn_context["task_instruction"] = debate_prompt
             
-            syn_response = synthesis_agent.run(syn_context)
+            syn_response = await synthesis_agent.run(syn_context)
             
             # C. Assemble Final Report (Integrated Pattern)
             
@@ -976,7 +960,7 @@ class WeeklyWorkflow(BaseWorkflow):
             
             # 4. Memory Storage
             if self.memory_service:
-                self.memory_service.store_report(
+                await self.memory_service.store_report(
                     user_id=user_id, 
                     report_type="weekly", 
                     date=datetime.now().strftime("%Y-%m-%d"), 
@@ -988,7 +972,7 @@ class WeeklyWorkflow(BaseWorkflow):
         else:
             # Legacy Fallback
             logger.warning("TaskPlanner not injected. Running legacy workflow.")
-            return self._legacy_weekly_cycle(user_id)
+            return await self._legacy_weekly_cycle(user_id)
 
     def _fetch_base_thematic_context(self, user_id: str) -> str:
         """Helper to get base thematic context for mapping."""
@@ -1060,7 +1044,7 @@ class WeeklyWorkflow(BaseWorkflow):
             
         return agent_ctx
 
-    def _legacy_weekly_cycle(self, user_id: str) -> str:
+    async def _legacy_weekly_cycle(self, user_id: str) -> str:
         """
         Legacy logic is deprecated. 
         If TaskPlanner is not injected, we raise an error or return a basic message 
@@ -1072,16 +1056,16 @@ class WeeklyWorkflow(BaseWorkflow):
              # Basic Data Collection is done.
              # 1. Macro Analysis
              macro_agent = AgentFactory.create_macro_agent(user_id=user_id)
-             macro_report = macro_agent.run({})
+             macro_report = await macro_agent.run({})
              self.context['macro_report'] = macro_report
              
              # 2. Synthesis
-             return self.synthesize_results()
+             return await self.synthesize_results()
         except Exception as e:
              logger.error(f"Legacy fallback failed: {e}")
              return f"Error: {e}"
 
-    def synthesize_results(self) -> str:
+    async def synthesize_results(self) -> str:
         # Optimization Loop (System Engineer)
         # Move Engineer to BEFORE CIO to integrate feedback
         engineer_report = "無 (No recent optimizations)"
@@ -1098,7 +1082,7 @@ class WeeklyWorkflow(BaseWorkflow):
                 "performance_stats": perf_stats
             }
             
-            opt_result = engineer.run(eng_context)
+            opt_result = await engineer.run(eng_context)
             logger.info(f"Engineer Optimization Result: {opt_result}")
             
             # Format for CIO Context
@@ -1151,10 +1135,10 @@ class WeeklyWorkflow(BaseWorkflow):
             "user_id": self.user_id
         }
         
-        final_report = cio.run(cio_context)
+        final_report = await cio.run(cio_context)
         return final_report
 
-    def execute_analysis(self, force_refresh: bool) -> bool:
+    async def execute_analysis(self, force_refresh: bool) -> bool:
         # Stub
         return True
 
@@ -1171,14 +1155,14 @@ class EventAnalysisWorkflow(BaseWorkflow):
         self.ticker = event_data.get("ticker", "GLOBAL")
         self.target_action = event_data.get("signal")  # e.g., "BUY", "SELL"
 
-    def execute_analysis(self, force_refresh: bool) -> bool:
+    async def execute_analysis(self, force_refresh: bool) -> bool:
         """
         Satisfies BaseWorkflow abstract method.
         EventAnalysisWorkflow uses its own 'run' logic but still needs concrete implementation.
         """
         return True
 
-    def synthesize_results(self) -> str:
+    async def synthesize_results(self) -> str:
         """
         Satisfies BaseWorkflow abstract method.
         Returns empty since logic is handled in custom 'run'.
@@ -1215,8 +1199,8 @@ class EventAnalysisWorkflow(BaseWorkflow):
                 "event_context": self.event_data
             }
             
-            mom_res = mom_agent.run(ticker_ctx)
-            sent_res = sent_agent.run(ticker_ctx)
+            mom_res = await mom_agent.run(ticker_ctx)
+            sent_res = await sent_agent.run(ticker_ctx)
             
             # 3. Holding Reduction Analysis (If needed)
             holding_info = ""
@@ -1241,7 +1225,7 @@ class EventAnalysisWorkflow(BaseWorkflow):
                 "report_focus": f"Event Analysis: {self.event_source}"
             }
             
-            cio_output = cio.run(cio_context)
+            cio_output = await cio.run(cio_context)
             
             # Polish and translate if needed
             final_report = cio_output # Simplified for event workflow
@@ -1279,8 +1263,6 @@ class EventAnalysisWorkflow(BaseWorkflow):
 
     # Stubs for base class compatibility
     def collect_data(self): pass
-    def execute_analysis(self, force_refresh: bool) -> bool: return True
-    def synthesise_results(self) -> str: return ""
 
 
 class WorkflowService:
@@ -1309,7 +1291,7 @@ class WorkflowService:
         memory_service = MemoryService(repository=repo, llm_provider=llm_provider)
         
         date_str = get_current_time().strftime("%Y-%m-%d %H:%M:%S")
-        memory_service.store_report(
+        await memory_service.store_report(
             user_id=self.user_id,
             report_type="cash_deployment",
             date=date_str,

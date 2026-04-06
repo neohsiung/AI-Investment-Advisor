@@ -20,7 +20,7 @@ class AgentLLMProvider(ILLMProvider):
         # Using 'Engineer' agent as it's typically for system tasks
         self.agent = AgentFactory.create_agent("Engineer", use_cache=True, user_id=user_id)
 
-    def summarize(self, text: str) -> str:
+    async def summarize(self, text: str) -> str:
         """
         Summarize report content using the agent.
         """
@@ -33,7 +33,7 @@ class AgentLLMProvider(ILLMProvider):
         """
         try:
             # The agent might return a dict or string
-            response = self.agent.run(prompt)
+            response = await self.agent.run(prompt)
             if isinstance(response, dict):
                 return str(response.get("content") or response.get("output") or response)
             return str(response)
@@ -41,7 +41,7 @@ class AgentLLMProvider(ILLMProvider):
             logger.error(f"Summarization failed: {e}")
             return text[:1000] + "..." # Fallback
 
-    def check_contradictions(self, new_text: str, context_text: str) -> List[str]:
+    async def check_contradictions(self, new_text: str, context_text: str) -> List[str]:
         """
         Check for contradictions.
         """
@@ -56,7 +56,7 @@ class AgentLLMProvider(ILLMProvider):
         {new_text}
         """
         try:
-            response = self.agent.run(prompt)
+            response = await self.agent.run(prompt)
             # Normalize to string safely
             if isinstance(response, dict):
                 # Try common keys

@@ -19,7 +19,7 @@ class ThematicAgent(BaseAgent):
         )
         self.settings_service = SettingsService(user_id=self.user_id)
 
-    def run(self, context):
+    async def run(self, context):
         """
         Evaluate an event and update thematic settings.
         context expects:
@@ -48,7 +48,7 @@ class ThematicAgent(BaseAgent):
             {"role": "user", "content": user_prompt}
         ]
 
-        response_str = self.call_llm(messages, temperature=0.2, response_format={"type": "json_object"})
+        response_str = await self.call_llm(messages, temperature=0.2, response_format={"type": "json_object"})
         
         try:
             # Clean up response if it contains markdown

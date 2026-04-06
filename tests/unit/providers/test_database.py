@@ -31,8 +31,9 @@ def test_init_db(tmp_path):
 def test_get_db_connection(tmp_path):
     db_path = tmp_path / "test_conn.db"
 
-    # Should create parent dir if not exists
+    # Create parent dir explicitly — SQLite cannot create intermediate directories
     nested_path = db_path / "nested" / "db.sqlite"
+    nested_path.parent.mkdir(parents=True, exist_ok=True)
 
     conn = get_db_connection(nested_path)
     assert nested_path.exists()

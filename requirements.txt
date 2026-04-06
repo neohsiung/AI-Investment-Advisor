@@ -65,7 +65,7 @@ opentelemetry-instrumentation-psycopg2==0.60b1
 asyncpg==0.29.0
 aiosqlite==0.19.0
 slowapi==0.1.9
-playwright==1.41.2
+playwright==1.49.1
 qdrant-client==1.7.3
 
 # Broker APIs

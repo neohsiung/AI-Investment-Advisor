@@ -1,6 +1,6 @@
 
 import pytest
-from unittest.mock import MagicMock, patch, mock_open
+from unittest.mock import MagicMock, patch, mock_open, AsyncMock
 from src.agents.momentum import MomentumAgent
 from src.agents.fundamental import FundamentalAgent
 from src.agents.macro import MacroAgent
@@ -12,7 +12,7 @@ import json
 
 # Define a concrete implementation of BaseAgent for testing
 class ConcreteAgent(BaseAgent):
-    def run(self, context, mode=None):
+    async def run(self, context, mode=None):
         return "Concrete Result"
 
 @pytest.fixture
@@ -51,9 +51,10 @@ def test_base_agent_init_and_config(mock_settings_repo, mock_state_repo, mock_pr
 
     with patch("src.agents.base_agent.BudgetAwareModelRouter") as mock_router:
         mock_router.side_effect = Exception("Router Disabled for Test")
-        agent = ConcreteAgent(name="TEST", prompt_path=str(prompt_file), use_cache=False, 
-                              user_id="test_user",
-                              settings_repo=mock_settings_repo, state_repo=mock_state_repo)
+        with patch('src.agents.base_agent.HybridMemory', return_value=MagicMock()):
+            agent = ConcreteAgent(name="TEST", prompt_path=str(prompt_file), use_cache=False, 
+                                  user_id="test_user",
+                                  settings_repo=mock_settings_repo, state_repo=mock_state_repo)
 
     assert agent.name == "TEST"
     assert agent.system_prompt == mock_prompt_content
@@ -66,20 +67,22 @@ def test_base_agent_render_prompt(mock_settings_repo, mock_state_repo, tmp_path)
     with open(prompt_file, 'w') as f:
         f.write("Hello {{ name }}")
     
-    agent = ConcreteAgent(name="TEST", prompt_path=str(prompt_file), use_cache=False,
-                          user_id="test_user",
-                          settings_repo=mock_settings_repo, state_repo=mock_state_repo)
+    with patch('src.agents.base_agent.HybridMemory', return_value=MagicMock()):
+        agent = ConcreteAgent(name="TEST", prompt_path=str(prompt_file), use_cache=False,
+                              user_id="test_user",
+                              settings_repo=mock_settings_repo, state_repo=mock_state_repo)
     rendered = agent.render_system_prompt({"name": "World"})
     assert "Hello World" in rendered
 
-def test_momentum_agent_run(mock_settings_repo, mock_state_repo):
+@pytest.mark.asyncio
+async def test_momentum_agent_run(mock_settings_repo, mock_state_repo):
     # Use _load_prompt patch to avoid builtins.open
     with patch('src.agents.base_agent.BaseAgent._load_prompt', return_value="Momentum System Prompt"):
         agent = MomentumAgent(user_id="test_user", use_cache=False, settings_repo=mock_settings_repo, state_repo=mock_state_repo)
 
         # Inject gateway mock for LLM call
         from unittest.mock import MagicMock
-        mock_gw = MagicMock()
+        mock_gw = AsyncMock()
         mock_gw.chat.return_value = "BUY AAPL"
         agent._llm_gateway = mock_gw
 
@@ -88,36 +91,39 @@ def test_momentum_agent_run(mock_settings_repo, mock_state_repo):
             "price_data": {"current_price": 150}, 
             "indicators": {"rsi": 30}
         }
-        result = agent.run(context)
+        result = await agent.run(context)
         assert result == "BUY AAPL"
 
-def test_fundamental_agent_run(mock_settings_repo, mock_state_repo):
+@pytest.mark.asyncio
+async def test_fundamental_agent_run(mock_settings_repo, mock_state_repo):
     with patch('src.agents.base_agent.BaseAgent._load_prompt', return_value="Fundamental System Prompt"):
         agent = FundamentalAgent(user_id="test_user", use_cache=False, settings_repo=mock_settings_repo, state_repo=mock_state_repo)
 
         from unittest.mock import MagicMock
-        mock_gw = MagicMock()
+        mock_gw = AsyncMock()
         mock_gw.chat.return_value = "Strong Fundamentals"
         agent._llm_gateway = mock_gw
 
         context = {"ticker": "AAPL", "financials": {"pe": 15}, "news": []}
-        result = agent.run(context)
+        result = await agent.run(context)
         assert result == "Strong Fundamentals"
 
-def test_macro_agent_run(mock_settings_repo, mock_state_repo):
+@pytest.mark.asyncio
+async def test_macro_agent_run(mock_settings_repo, mock_state_repo):
     with patch('src.agents.base_agent.BaseAgent._load_prompt', return_value="Macro System Prompt"):
         agent = MacroAgent(user_id="test_user", use_cache=False, settings_repo=mock_settings_repo, state_repo=mock_state_repo)
 
         from unittest.mock import MagicMock
-        mock_gw = MagicMock()
+        mock_gw = AsyncMock()
         mock_gw.chat.return_value = "Risk Off"
         agent._llm_gateway = mock_gw
 
         context = {"macro_data": {"GDP": 2.5}}
-        result = agent.run(context)
+        result = await agent.run(context)
         assert result == "Risk Off"
 
-def test_cio_agent_run(mock_settings_repo, mock_state_repo):
+@pytest.mark.asyncio
+async def test_cio_agent_run(mock_settings_repo, mock_state_repo):
     # Mock Transaction Repo needed for CIO
     mock_trans_repo = MagicMock()
     
@@ -126,7 +132,7 @@ def test_cio_agent_run(mock_settings_repo, mock_state_repo):
                          settings_repo=mock_settings_repo, state_repo=mock_state_repo)
         
         # Inject gateway mock for LLM call
-        mock_gw = MagicMock()
+        mock_gw = AsyncMock()
         mock_gw.chat.return_value = "Final Decision"
         agent._llm_gateway = mock_gw
 
@@ -138,5 +144,5 @@ def test_cio_agent_run(mock_settings_repo, mock_state_repo):
                 "fundamental_reports": "Fund says Hold",
                 "macro_report": "Macro says Down"
             }
-            result = agent.run(context)
+            result = await agent.run(context)
             assert result == "Final Decision"

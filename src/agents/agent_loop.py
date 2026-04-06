@@ -88,7 +88,7 @@ class AgentLoop:
                 if flush_fn:
                     flush_fn(messages)
 
-            response_text = call_llm_fn(messages)
+            response_text = await call_llm_fn(messages)
 
             # Tool Parsing - Now supports multiple [Phase 12]
             tool_calls = self.parse_tool_call(response_text)
@@ -132,8 +132,8 @@ class AgentLoop:
                 span.record_exception(e)
                 logger.warning(f"AgentLoop: Primary execution failed for tool '{name}': {e}. Starting Reflection.")
                 
-                # 1. Reflect on the failure (kept sync for now as it's pure logic)
-                reflection = self._reflect_on_error(name, args, str(e))
+                # 1. Reflect on the failure (Asynchronous) [Phase 1.2 Fix]
+                reflection = await self._reflect_on_error_async(name, args, str(e))
                 
                 # 2. Act based on reflection
                 if reflection and reflection.get("recommended_action") == "retry":
@@ -157,7 +157,7 @@ class AgentLoop:
         try:
             from src.repositories.pulse_repository import AsyncPulseRepository
             pulse_repo = AsyncPulseRepository()
-            await pulse_repo.log_pulse(self._user_id, self._agent_name, name, args)
+            await pulse_repo.update_pulse(self._agent_name, task=f"Tool:{name}", metadata=args)
         except Exception as e:
             logger.warning(f"AgentLoop: Failed to log pulse: {e}")
 
@@ -177,14 +177,16 @@ class AgentLoop:
         
         return f"Error: Tool '{name}' not found."
 
-    def _reflect_on_error(self, tool_name: str, args: Dict[str, Any], error: str) -> Dict[str, Any]:
-        """Synchronous reflection logic (Task 12.2)."""
-        manager = ReflectionManager()
-        return manager.reflect(self._agent_name, tool_name, args, error)
+    async def _reflect_on_error_async(self, tool_name: str, args: Dict[str, Any], error: str) -> Dict[str, Any]:
+        """Asynchronous reflection logic (Task 12.2). [Phase 1.2 Fix]"""
+        manager = ReflectionManager(user_id=self._user_id)
+        return await manager.reflect_on_error(tool_name, args, error, agent_name=self._agent_name)
 
     async def _execute_search_async(self, query: str) -> str:
-        """Helper to run search asynchronously."""
-        res_list = await self._search_service.search_financial_context(query)
+        """Helper to run search asynchronously using to_thread for the sync service."""
+        if not self._search_service:
+            return "Error: Search service not initialized."
+        res_list = await asyncio.to_thread(self._search_service.search_financial_context, query)
         if res_list:
             result = ""
             for r in res_list:

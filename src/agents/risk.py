@@ -12,7 +12,7 @@ class RiskAgent(BaseAgent):
         tier = kwargs.pop('tier', 'fast')
         super().__init__(name="Risk", prompt_path="prompts/risk_agent.txt", use_cache=use_cache, ttl_hours=ttl, tier=tier, **kwargs)
 
-    def run(self, context):
+    async def run(self, context):
         """
         context: {
             "ticker": "SPY",
@@ -24,6 +24,6 @@ class RiskAgent(BaseAgent):
         # We assume context is a dict that can be passed to prompt renderer
         # 準備 Prompt 資料
         # 我們假設 context 是一個字典，可直接傳遞給 Prompt 生成器
-        response = self.run_tool_loop(context=context)
+        response = await self.run_tool_loop(context=context)
         
         return response

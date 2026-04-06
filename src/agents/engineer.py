@@ -76,7 +76,7 @@ class SystemEngineerAgent(BaseAgent):
         except Exception as e:
             self.logger.error(f"Error logging prompt change: {e}")
 
-    def run(self, context):
+    async def run(self, context):
         """
         context: {
             "cio_report": "...",
@@ -158,7 +158,11 @@ class SystemEngineerAgent(BaseAgent):
 
         # 4. Call LLM
         # 4. 呼叫 LLM
-        response_str = self._call_real_llm(user_prompt, sys_prompt)
+        # Use call_llm directly
+        response_str = await self.call_llm([
+            {"role": "system", "content": sys_prompt},
+            {"role": "user", "content": user_prompt}
+        ])
 
         # Parse JSON output (Need to handle potential Markdown code block)
         # 解析 JSON 輸出 (需處理可能 Markdown code block)

@@ -17,16 +17,27 @@ description: 開發指導準則：指導 Agent 遵循 Trunk-based Development �
 
 ## 核心行為規範 (Core Behaviors)
 
-### 1. 嚴格的主幹開發 (Strict Trunk-Based Development)
+### 1. 擴展型主幹開發 (Scaled Trunk-Based Development)
 
-- **直接推進主幹**：除非使用者特別要求開啟 Feature Branch 或提出 PR，否則所有變更應**直接 commit 到開發主幹**。
-- **避免長時間未提交 (No Long-Lived Uncommitted State)**：Agent 在執行任務時，**絕對不要**等到整個跨越多個檔案的巨大功能做完才做一次巨大的 commit。
+- **嚴禁直接推送主幹 (No Direct Commits to Main)**：除非是極微小的熱修復 (Hotfix) 或使用者明確授權，否則**禁止直接 commit 到 `main` 或 `master` 分支**。
+- **短期特性分支 (Short-Lived Feature Branches)**：所有變更應在從主幹切出的短期分支中執行（分支壽命不應超過 1-2 天）。
+- **分支命名規範**：
+  - `feat/<task-description>`：新功能開發。
+  - `fix/<task-description>`：錯誤修復。
+  - `docs/<task-description>`：文件更新。
+  - `refactor/<task-description>`：代碼重構。
 
-### 2. 高頻次、原子化的提交 (High-Frequency Atomic Commits)
+### 2. 高頻次提交與自動化 Pull Request (PR Workflow)
 
-- **單點突破，立即提交**：每當成功寫好一個 Function、修正好一個 Bug、或是建立好一個模組且確認語法無誤後，就要執行 `git commit`。
-- **確保主幹不被破壞 (Don't Break the Trunk)**：每次 Commit 的段落至少不能引發 Syntax Error 或導致專案無法編譯/啟動測試。就算新功能尚未上線，也可先以 Dead Code 形式推入主幹。
-- **資料庫向下相容性 (Backward Compatibility)**：若本次提交涉及 DB Schema 或 `models.py` 的異動，**必須確保向下相容**。系統已有多個租戶，新增欄位應有 default 值，並同步更新 `schema_version` 及對應的資料庫建立文件 (`database.py`)。
+- **自動化分支流程**：在任務核准後，Agent **必須自動執行** `git checkout -b <branch_name>`。
+- **原子化提交 (Atomic Commits)**：在 Feature Branch 上保持高頻次提交，每完成一個邏輯單元即 commit 一次（遵循 `.agent/rules/git-commit-format.md`）。
+- **強制自動建立 PR (Automated PR Creation)**：Task 內容開發與測試完成後，Agent **必須主動推送分支並建立 PR**：
+    - 使用 **GitHub MCP** (`create_pull_request`) 或 **GitKraken MCP** (`pull_request_create`)。
+    - **PR 標題**：與 Commit Message 第一行保持一致。
+    - **PR 內容**：從 `walkthrough.md` 提取摘要，並列出核心變更。
+- **嚴禁直接 Merge**：PR 建立後， Agent 不得自行合入 `main`，必須等待使用者審核或 CI 通過。
+- **確保主幹不被破壞 (Don't Break the Trunk)**：在推 PR 前，Agent 必須至少執行過一次 `py_compile` 或相關的核心單元測試，確保語法與基本邏輯正確。
+- **資料庫向下相容性 (Backward Compatibility)**：若涉及 DB Schema 異動，PR 必須清楚說明相容性處理。系統已有多個租戶，新增欄位應有 default 值。
 
 ### 3. Commit Message 命名規範 (Conventional Commits & Bilingual Detailed Format)
 

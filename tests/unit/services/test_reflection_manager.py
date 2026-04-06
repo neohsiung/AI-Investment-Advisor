@@ -1,6 +1,6 @@
 import pytest
 import json
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock, patch, AsyncMock
 from src.services.reflection_manager import ReflectionManager
 from src.domain.interfaces import LLMConfig
 
@@ -14,6 +14,9 @@ class TestReflectionManager:
              patch("src.services.reflection_manager.LLMGatewayFactory") as m_factory, \
              patch("src.services.reflection_manager.LoggingLLMGateway") as m_logging_gw:
             
+            # Make the chat method async
+            m_logging_gw.return_value.chat = AsyncMock()
+            
             yield {
                 "settings": m_settings.return_value,
                 "tokens": m_tokens.return_value,
@@ -23,7 +26,8 @@ class TestReflectionManager:
                 "logging_gw": m_logging_gw
             }
 
-    def test_reflect_normal_budget(self, mock_deps):
+    @pytest.mark.asyncio
+    async def test_reflect_normal_budget(self, mock_deps):
         # Setup
         mock_deps["router"].is_budget_critical.return_value = False
         mock_deps["router"].get_config.return_value = LLMConfig(provider="OpenRouter", model="gpt-4o-mini")
@@ -39,7 +43,7 @@ class TestReflectionManager:
         })
         
         manager = ReflectionManager(user_id="test_user")
-        result = manager.reflect_on_error("SEARCH", {"query": "bad"}, "Error 404")
+        result = await manager.reflect_on_error("SEARCH", {"query": "bad"}, "Error 404")
         
         assert result["recommended_action"] == "retry"
         assert result["corrected_args"]["query"] == "fixed"
@@ -50,7 +54,8 @@ class TestReflectionManager:
         assert kwargs["success"] is True
         assert kwargs["action"] == "retry"
 
-    def test_reflect_critical_budget(self, mock_deps):
+    @pytest.mark.asyncio
+    async def test_reflect_critical_budget(self, mock_deps):
         # Setup
         mock_deps["router"].is_budget_critical.return_value = True
         mock_deps["router"].get_config.return_value = LLMConfig(provider="OpenRouter", model="gpt-4o-mini")
@@ -64,12 +69,13 @@ class TestReflectionManager:
         
         with patch("src.services.reflection_manager.ReflectionPrompt.build_compressed") as m_compressed:
             m_compressed.return_value = "Compressed Prompt"
-            result = manager.reflect_on_error("SEARCH", {}, "Error")
+            result = await manager.reflect_on_error("SEARCH", {}, "Error")
             
             m_compressed.assert_called_once()
             assert result["recommended_action"] == "fail"
 
-    def test_reflect_llm_failure(self, mock_deps):
+    @pytest.mark.asyncio
+    async def test_reflect_llm_failure(self, mock_deps):
         # Setup
         mock_deps["router"].is_budget_critical.return_value = False
         mock_deps["router"].get_config.return_value = LLMConfig(provider="OpenRouter", model="gpt-4o-mini")
@@ -78,7 +84,7 @@ class TestReflectionManager:
         mock_deps["logging_gw"].return_value.chat.side_effect = Exception("LLM Down")
         
         manager = ReflectionManager(user_id="test_user")
-        result = manager.reflect_on_error("SEARCH", {}, "Error")
+        result = await manager.reflect_on_error("SEARCH", {}, "Error")
         
         assert result is None
         

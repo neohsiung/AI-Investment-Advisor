@@ -2,7 +2,7 @@
 Comprehensive test coverage for Dashboard and Analytics Services (Fixed Imports)
 """
 import pytest
-from unittest.mock import Mock, patch, MagicMock
+from unittest.mock import Mock, patch, MagicMock, AsyncMock
 import pandas as pd
 from datetime import datetime
 import sys
@@ -200,12 +200,11 @@ class TestWorkflowFiles:
                   
                   # Avoid AgentFactory creating agents that hit DB?
                   # execute_analysis creates Mom/Sent agents using Factory.
-                  # These agents might use DB?
-                  # MomentumAgent uses market data.
-                  # Check if we need to mock Factory.
-                  # For now, let's assume Agents don't hit Transaction DB directly in run()
-                  # But wait, logic earlier said they do?
-                  # "Record Recommendations for Performance Tracking" -> uses wf.performance_service.
-                  # We mocked wf.performance_service.
+                  # Mock AgentFactory's agent to use AsyncMock for run()
+                  mock_agent = MagicMock()
+                  mock_agent.run = AsyncMock(return_value="Mock Analysis")
+                  mock_factory.create_momentum_agent.return_value = mock_agent
+                  mock_factory.create_sentiment_agent.return_value = mock_agent
+                  mock_factory.create_fundamental_agent.return_value = mock_agent
                   
                   await wf.run(dry_run=True)

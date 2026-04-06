@@ -27,7 +27,7 @@ class ActionExtractorAgent(BaseAgent):
         """Override to skip loading from file since it's hardcoded in run()."""
         return "Action Extraction Intelligence"
 
-    def run(self, context) -> list:
+    async def run(self, context) -> list:
         """
         Extract structured trades from free-form AI text.
         從非結構化 AI 文字中提取結構化交易指令。
@@ -90,7 +90,7 @@ class ActionExtractorAgent(BaseAgent):
         {decision_text}
         """
         try:
-            response = self.run_tool_loop(prompt)
+            response = await self.run_tool_loop(prompt)
             # clean up markdown and surrounding text if any
             # 優先搜尋符合 JSON 陣列特徵的區塊
             response_clean = response.strip()

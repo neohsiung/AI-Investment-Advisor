@@ -365,7 +365,15 @@ Text:
             
             messages = [Message(role="user", content=prompt + text_block)]
             
-            content = self._llm_gateway.chat(messages, config)
+            import asyncio as _asyncio
+            try:
+                _asyncio.get_running_loop()
+                import concurrent.futures
+                with concurrent.futures.ThreadPoolExecutor() as pool:
+                    future = pool.submit(_asyncio.run, self._llm_gateway.chat(messages, config))
+                    content = future.result()
+            except RuntimeError:
+                content = _asyncio.run(self._llm_gateway.chat(messages, config))
             data = json.loads(content)
 
             # Handle both {"keywords": [...]} and [...] formats

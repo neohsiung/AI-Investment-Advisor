@@ -1,6 +1,6 @@
 
 import pytest
-from unittest.mock import MagicMock, patch, mock_open
+from unittest.mock import MagicMock, patch, mock_open, AsyncMock
 import sys
 import os
 import requests
@@ -12,7 +12,7 @@ from src.repositories.agent_state_repository import IAgentStateRepository
 # --- Base Agent Tests ---
 
 class MockAgent(BaseAgent):
-    def run(self, context):
+    async def run(self, context):
         return "Test Run"
 
 @pytest.fixture
@@ -31,20 +31,15 @@ def mock_state_repo():
 def mock_agent(mock_settings_repo, mock_state_repo):
     with patch('builtins.open', mock_open(read_data="System Prompt")):
         with patch('os.path.exists', return_value=True):
-            # We mock _load_config implicitly by ensuring settings_repo returns something empty or valid,
-            # BUT BaseAgent._load_config calls repo. If we want to mock what config ends up being,
-            # we can patch _load_config OR populate mock_settings_repo.
-            # Let's populate mock_settings_repo for better integration test
-            # Correctly mock get_all instead of get_global
-            mock_settings_repo.get_all.return_value = []
-            
-            # Using _load_config patch as in original to force specific config structure for testing
-            with patch.object(BaseAgent, '_load_config', return_value={
-                "provider": "Google Gemini", "model": "gemini-1.5-pro", "api_key": "test_key" # pragma: allowlist secret
-            }):
-                agent = MockAgent("TestAgent", "prompt.txt", user_id="test_user", 
-                                  settings_repo=mock_settings_repo, state_repo=mock_state_repo)
-                return agent
+            # Patch HybridMemory to avoid DB connection during construction
+            with patch('src.agents.base_agent.HybridMemory', return_value=MagicMock()):
+                # Using _load_config patch as in original
+                with patch.object(BaseAgent, '_load_config', return_value={
+                    "provider": "Google Gemini", "model": "gemini-1.5-pro", "api_key": "test_key"
+                }):
+                    agent = MockAgent("TestAgent", "prompt.txt", user_id="test_user", 
+                                      settings_repo=mock_settings_repo, state_repo=mock_state_repo)
+                    return agent
 
 def test_base_agent_load_config_error(mock_settings_repo, mock_state_repo):
     # Simulate Repo Error
@@ -52,13 +47,12 @@ def test_base_agent_load_config_error(mock_settings_repo, mock_state_repo):
     
     with patch('builtins.open', mock_open(read_data="System Prompt")):
         with patch('os.path.exists', return_value=True):
-            with patch.dict(os.environ, {"AI_PROVIDER": "Google Gemini"}):
-                # Should not raise, just log warning and return default
-                agent = MockAgent("TestAgent", "prompt.txt", user_id="test_user",
-                                  settings_repo=mock_settings_repo, state_repo=mock_state_repo)
-                # Default fallback in BaseAgent is empty or checks os.environ
-                # BaseAgent._load_config sets defaults if not in DB
-                assert agent.config["provider"] == "Google Gemini" # Default
+            with patch('src.agents.base_agent.HybridMemory', return_value=MagicMock()):
+                with patch.dict(os.environ, {"AI_PROVIDER": "Google Gemini"}, clear=True):
+                    # Should not raise, just log warning and return default
+                    agent = MockAgent("TestAgent", "prompt.txt", user_id="test_user",
+                                      settings_repo=mock_settings_repo, state_repo=mock_state_repo)
+                    assert agent.config["provider"] == "Google Gemini"
 
 def test_base_agent_load_prompt_error(mock_settings_repo, mock_state_repo):
     with patch('os.path.exists', return_value=False):
@@ -66,43 +60,47 @@ def test_base_agent_load_prompt_error(mock_settings_repo, mock_state_repo):
             MockAgent("TestAgent", "missing.txt", 
                       settings_repo=mock_settings_repo, state_repo=mock_state_repo)
 
-def test_base_agent_real_llm_openrouter(mock_agent):
+@pytest.mark.asyncio
+async def test_base_agent_real_llm_openrouter(mock_agent):
     """Test _call_real_llm delegates through gateway."""
     mock_agent.config["provider"] = "OpenRouter"
-    mock_gw = MagicMock()
+    mock_gw = AsyncMock()
     mock_gw.chat.return_value = "OpenRouter Response"
     mock_agent._llm_gateway = mock_gw
-    resp = mock_agent._call_real_llm("prompt", "system")
+    resp = await mock_agent._call_real_llm("prompt", "system")
     assert resp == "OpenRouter Response"
 
-def test_base_agent_real_llm_openai(mock_agent):
+@pytest.mark.asyncio
+async def test_base_agent_real_llm_openai(mock_agent):
     """Test _call_real_llm delegates through gateway."""
     mock_agent.config["provider"] = "OpenAI"
-    mock_gw = MagicMock()
+    mock_gw = AsyncMock()
     mock_gw.chat.return_value = "OpenAI Response"
     mock_agent._llm_gateway = mock_gw
-    resp = mock_agent._call_real_llm("prompt", "system")
+    resp = await mock_agent._call_real_llm("prompt", "system")
     assert resp == "OpenAI Response"
 
-def test_base_agent_real_llm_error_handling(mock_agent):
+@pytest.mark.asyncio
+async def test_base_agent_real_llm_error_handling(mock_agent):
     """Test error propagation through gateway."""
     mock_agent.config["provider"] = "Google Gemini"
-    mock_gw = MagicMock()
+    mock_gw = AsyncMock()
     mock_gw.chat.side_effect = requests.exceptions.RequestException("API Fail")
     mock_agent._llm_gateway = mock_gw
     with pytest.raises(requests.exceptions.RequestException):
-        mock_agent._call_real_llm("prompt", "system")
+        await mock_agent._call_real_llm("prompt", "system")
 
-def test_base_agent_mock_fallback(mock_agent):
+@pytest.mark.asyncio
+async def test_base_agent_mock_fallback(mock_agent):
     """Test that gateway errors propagate through _mock_llm_call."""
     mock_agent.config['api_key'] = 'valid_key' # pragma: allowlist secret
-    mock_gw = MagicMock()
+    mock_gw = AsyncMock()
     mock_gw.chat.side_effect = Exception("Major Fail")
     mock_agent._llm_gateway = mock_gw
     # With gateway, _mock_llm_call now delegates to call_llm -> gateway
     # Gateway error should propagate
     with pytest.raises(Exception):
-        mock_agent._mock_llm_call("prompt", "system")
+        await mock_agent._mock_llm_call("prompt", "system")
 
 # --- Market Data Tests ---
 
