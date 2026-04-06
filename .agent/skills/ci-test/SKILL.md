@@ -15,7 +15,9 @@ description: |
 ## 適用時機 (When to Use)
 
 - **在任何 `git commit` 前**：確保本次變更沒有破壞現有測試、引入安全漏洞或破壞 Wiki 連結。
-- 當 Agent 完成一個階段性的功能開發或重構時。
+- **當 Agent 完成一個階段性的功能開發或重構時**。
+- **CodeQL / Dependabot 回報新警告時**：選取相關廢棄的 `src/` 路徑，執行全面 taint 掃描（參考 `agent-secret-redaction` 技能）再 commit 修復。
+- **Health check 測試失敗**：若 CI 回報 `/health` endpoint 狀態不是 `healthy`，必須檢查該測試是否有 mock DB（詳見下方）。
 
 ## 核心測試項目 (Core Test Items)
 
@@ -100,3 +102,23 @@ pip-licenses
 - 若任何一項檢查失敗，**嚴禁執行 commit**，必須先修復問題。
 - 對於 Bandit 的警告，若確認為 False Positive，應使用 `# nosec` 標註而非直接忽略。
 - Wiki 連結若失效，應參考 `wiki-maintainer` 技能進行修復。
+
+## Health Check 測試與 CI 隱離 (Health Check Test & CI DB Isolation)
+
+> CI 環境無實題 DB，若 `/health` endpoint 內部是這樣的模式：
+> `status = 'healthy' if db.ping() else 'degraded'`
+> 則測試必須 mock `db.ping()` ，否則 CI 永遠回報 `degraded`。
+
+```python
+# 測試檔式範例：health check endpoint 必須 mock DB 依賴
+@pytest.mark.asyncio
+async def test_health():
+    with patch("services.mcp_server.src.app.asyncpg.connect", new_callable=AsyncMock) as mock_conn:
+        mock_conn.return_value.__aenter__ = AsyncMock(return_value=AsyncMock())
+        mock_conn.return_value.__aexit__ = AsyncMock(return_value=False)
+        async with AsyncClient(app=app, base_url="http://test") as ac:
+            resp = await ac.get("/health")
+        assert resp.json()["status"] == "healthy"
+```
+
+**判斷準則**：若 health 測試失敗且錯誤為 `assert 'degraded' == 'healthy'`，佄必是 DB mock 缺失，而非业務邏輯錯誤。

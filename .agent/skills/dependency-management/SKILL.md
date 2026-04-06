@@ -6,6 +6,7 @@ description: |
   (2) 從 requirements.txt 移除任何套件前
   (3) 遭遇 ResolutionImpossible / pip-compile 衝突時
   (4) Dependabot / pip-audit 回報安全漏洞，需要升級依賴版本時
+  (5) 新增含外部服務整合的模組（如 OAuth、LLM gateway），需確認配套套件完整
 ---
 
 # Dependency Management Skill
@@ -80,3 +81,39 @@ python3 -m pytest --collect-only -q 2>&1 | grep -E "ERROR|ImportError|ModuleNotF
 - **原子提交**: 每個依賴項的重大版本更新建議獨立 commit。
 - **升級前預掃描**: 核心套件升級必須先執行 `pip-compile --dry-run`，不在 CI 上調試衝突。
 - **移除前三步驟**: 移除套件必須完成全域掃描 → Required-by 確認 → collection dry-run。
+
+## ⚠️ 配套套件檢查清單 (Paired Package Checklist)
+
+> **適用時機**：新增具外部服務整合的功能模組時
+
+某些套件存在「主套件 + 配套擴充」結構，只裝一半會在 **runtime** 才出現 `ModuleNotFoundError`（不在 pip install 階段報錯）：
+
+| 主套件 | 必須配套 | 常見疏漏場景 |
+|---|---|---|
+| `google-auth` | `google-auth-oauthlib` | OAuth flow `_get_flow()` 發出 `No module named google_auth_oauthlib` |
+| `litellm` | `openai`、`anthropic` | LLM gateway 初始化失敗 |
+| `asyncpg` | `psycopg2-binary` | DB 連接失敗（async vs sync driver 混用）|
+
+```bash
+# 新增套件後，確認其 Requires 是否有尚未安裝的配套
+pip show <new-package> | grep Requires
+# 逐一確認 Requires 清單中的套件是否在 requirements.txt 中
+```
+
+## ⚠️ npm / Frontend 套件安全 (Frontend Package Security)
+
+> **適用時機**：Dependabot 對 `frontend/package-lock.json` 回報 CVE，或新增/變更 Next.js plugin 時
+
+```bash
+# 找出傳遞依賴 CVE 的根源套件
+npm ls <vulnerable-package>
+# 若根源是某個 plugin（如 next-pwa），優先考慮「移除 plugin」而非加 overrides
+
+# 確認修復後零暴露
+npm ls <vulnerable-package>  # 必須零輸出才算修復
+```
+
+**原則**：
+- `npm overrides` 屬於治標不治本，優先確認能否移除根源套件
+- 任何使用 `withXxx()` 包裝 `next.config` 的 plugin，必須先確認支援 Turbopack（Next.js 16+）
+- 移除 plugin 後必須同步清除 `package.json` 中的對應 `overrides` 段落
