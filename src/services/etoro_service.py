@@ -948,6 +948,14 @@ class EtoroService(IBroker):
         except Exception as e:
             logger.error(f"Post-sync logic failed: {e}")
 
+        # [NEW] v5.0: Incrementally maintain position_lots for newly added transactions
+        # Only update lots for trades that were actually new (not skipped)
+        if added_count > 0:
+            try:
+                self._sync_position_lots(user_id)
+            except Exception as e:
+                logger.warning(f"position_lots sync failed (non-critical): {e}")
+
         logger.info(f"Etoro Sync: Added {added_count}, Skipped {skipped_count}")
         return {"added": added_count, "skipped": skipped_count}
 
@@ -1045,15 +1053,11 @@ class EtoroService(IBroker):
         active_tickers = self.transaction_repo.get_active_tickers(user_id)
         
         for pos in positions:
-            # Avoid numeric IDs if we already have the named ticker
             if pos.symbol.isdigit():
-                 # Look if we have a named ticker that might match this qty (approximate)
-                 # Or just skip numeric IDs if we want to be safe, as named ones come from sync_history
                  continue
 
             if pos.symbol not in active_tickers:
                 logger.info(f"Backfilling Position: Missing BUY for {pos.symbol}, Leverage={getattr(pos, 'leverage', 1.0)}")
-                # Create synthetic BUY record
                 self.transaction_repo.add(
                     user_id=user_id,
                     ticker=pos.symbol,
@@ -1062,8 +1066,26 @@ class EtoroService(IBroker):
                     quantity=pos.quantity,
                     price=pos.open_price,
                     fees=0.0,
-                    leverage=getattr(pos, 'leverage', 1.0)
+                    leverage=getattr(pos, 'leverage', 1.0),
+                    entry_category="trade",  # Backfilled synthetic BUY = regular trade
                 )
+
+    def _sync_position_lots(self, user_id: str) -> None:
+        """
+        Incrementally sync position_lots after new transactions are added.
+        Performs a full FIFO re-seed (idempotent) — fast enough for sub-500 transaction portfolios.
+        For larger portfolios, replace with incremental lot update logic.
+
+        在套加新交易後增量同步 position_lots。
+        目前執行全量 FIFO 重播（冪等），對不足 500 筆交易的組合夠快。
+        """
+        try:
+            from src.repositories.position_lot_repository import AlchemyPositionLotRepository
+            lot_repo = AlchemyPositionLotRepository(self.transaction_repo.engine)
+            count = lot_repo.backfill_from_transactions(user_id)
+            logger.info(f"position_lots sync complete: {count} open lots for user={user_id}")
+        except Exception as e:
+            raise RuntimeError(f"_sync_position_lots failed: {e}") from e
 
     # --- Helpers ---
     def _fetch_current_prices(self, symbols: List[str]) -> Dict[str, float]:

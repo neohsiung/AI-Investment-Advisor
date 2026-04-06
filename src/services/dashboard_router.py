@@ -436,28 +436,50 @@ async def advisor_chat_stream(
 
 @dashboard_router.get("/summary")
 async def get_summary(service: DashboardService = Depends(get_dashboard_service)):
-    """獲取投資概覽數據 (NLV, Cash, PnL, ROI)"""
+    """獲取投資概覽數據 (NLV, Cash, PnL, ROI) — Redis cached (120s TTL)"""
+    import redis as _redis
+    cache_key = f"dashboard:summary:{service.user_id}"
+    _r = None
+
+    # Fast path: return cached result if available
+    try:
+        _r = _redis.from_url(os.getenv("REDIS_URL", "redis://redis:6379/0"), decode_responses=True)
+        cached = _r.get(cache_key)
+        if cached:
+            return json.loads(cached)
+    except Exception:
+        pass
+
     try:
         data = service.prepare_dashboard_data(service.user_id)
         metrics = data.get('metrics', {})
         pnl = data.get('pnl_data', {})
-        
-        return {
+
+        result = {
             "status": "success",
             "data": {
                 "total_valuation": metrics.get('nlv', 0),
                 "uninvested_cash": metrics.get('cash_balance', 0),
                 "gross_exposure": metrics.get('gross_nlv', 0),
                 "leverage_ratio": metrics.get('leverage_ratio', 0),
-                "active_agents": metrics.get('active_agents', 7), 
+                "active_agents": metrics.get('active_agents', 7),
                 "risk_exposure": metrics.get('risk_level', "MODERATE"),
                 "total_pnl": pnl.get('total', 0),
                 "unrealized_pnl": pnl.get('unrealized', 0),
                 "realized_pnl": pnl.get('realized', 0),
                 "roi_percentage": data.get('roi', 0),
-                "performance_change": "+1.2%" # 暫時模擬，未來可從歷史數據計算
+                "performance_change": "+1.2%"
             }
         }
+
+        # Cache the result for 120 seconds
+        try:
+            if _r:
+                _r.setex(cache_key, 120, json.dumps(result))
+        except Exception:
+            pass
+
+        return result
     except Exception as e:
         logger.error(f"Error fetching dashboard summary: {e}")
         raise HTTPException(status_code=500, detail=str(e))
