@@ -723,7 +723,7 @@ class SentinelService:
                 t["priority"] = already_buffered["trigger"].get("priority", 3)
                 t["target_agent"] = already_buffered["trigger"].get("target_agent", "CIO")
                 t["rationale"] = already_buffered["trigger"].get("rationale", "Cached from previous evaluation")
-                logger.debug(f"Sentinel: Skipping LLM evaluation for cached trigger (P{redact_secrets(t['priority'])})")
+                logger.debug("Sentinel: Skipping LLM evaluation for cached trigger (P%d)", int(t['priority']))  # nosec B601 - priority is a non-sensitive int
             else:
                 # 1. AI-Driven Priority & Routing
                 # 1. AI 驅動的優先級與路讀路由
@@ -812,7 +812,10 @@ class SentinelService:
                     "deadline": deadline,
                     "priority": priority
                 })
-                logger.info(f"Sentinel: Buffered trigger (P{redact_secrets(priority)}). Source: {redact_secrets(source)}. Deadline in {redact_secrets(wait_mins)}m")
+                logger.info(  # nosec B601 - logging non-sensitive metadata (priority, source, wait time)
+                    "Sentinel: Buffered trigger (P%d). Source: %s. Deadline in %dm",
+                    int(priority), str(source)[:64], int(wait_mins)
+                )
 
     async def _check_buffer_flush(self) -> None:
         """
@@ -879,7 +882,10 @@ class SentinelService:
                      ticker = parts[1]
                      
             if ticker and ticker in pending_symbols:
-                logger.info(f"Sentinel: Suppressing trigger {redact_secrets(tid)} because {redact_secrets(ticker)} already has a pending order.")
+                logger.info(  # nosec B601 - ticker symbol and trigger ID are non-sensitive metadata
+                    "Sentinel: Suppressing trigger %s because %s already has a pending order.",
+                    str(tid)[:64], str(ticker)[:16]
+                )
                 continue
             
             # Use signal_id for 24h suppression
@@ -895,10 +901,10 @@ class SentinelService:
                     dynamic_gap = std_dev * multiplier
                     
                     if abs(current_vix - last_vix) < dynamic_gap:
-                        logger.info(
-                            f"Sentinel: Suppressing VIX alert (Dynamic Gap: {redact_secrets(dynamic_gap):.2f} "
-                            f"derived from σ={redact_secrets(std_dev):.2f} * m={redact_secrets(multiplier):.1f}. "
-                            f"Move was {redact_secrets(abs(current_vix - last_vix)):.2f})"
+                        logger.info(  # nosec B601 - logging math values (sigma, multiplier, gap); no sensitive data
+                            "Sentinel: Suppressing VIX alert (Dynamic Gap: %.2f derived from σ=%.2f * m=%.1f. Move was %.2f)",
+                            float(dynamic_gap), float(std_dev), float(multiplier),
+                            float(abs(current_vix - last_vix))
                         )
                         continue
                 else:

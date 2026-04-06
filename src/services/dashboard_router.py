@@ -263,8 +263,8 @@ async def add_transaction(
             
         return {"status": "success", "message": msg}
     except Exception as e:
-        logger.error(f"Error adding transaction: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.error(f"Error adding transaction: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail="An internal error occurred while adding the transaction.")
 
 @dashboard_router.delete("/data/transactions/{transaction_id}")
 async def delete_transaction(
@@ -279,8 +279,8 @@ async def delete_transaction(
             
         return {"status": "success", "message": msg}
     except Exception as e:
-        logger.error(f"Error deleting transaction: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.error(f"Error deleting transaction: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail="An internal error occurred while deleting the transaction.")
 
 
 @dashboard_router.post("/chat")
@@ -431,8 +431,8 @@ async def advisor_chat_stream(
         return StreamingResponse(event_generator(), media_type="text/event-stream")
 
     except Exception as e:
-        logger.error(f"Stream Chat error: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.error(f"Stream Chat error: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail="An internal error occurred during the streaming response.")
 
 @dashboard_router.get("/summary")
 async def get_summary(service: DashboardService = Depends(get_dashboard_service)):

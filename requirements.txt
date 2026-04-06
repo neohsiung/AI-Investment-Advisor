@@ -1,10 +1,10 @@
 pandas==2.3.3
 numpy==1.26.4
 pytest==7.4.3
-streamlit==1.50.0
+streamlit==1.56.0
 plotly==5.18.0
 schedule==1.2.1
-python-dotenv==1.0.0
+python-dotenv==1.0.1
 requests==2.32.5
 yfinance==0.2.31
 pytz==2023.3.post1
@@ -14,13 +14,9 @@ pytest-asyncio==0.21.1
 freezegun==1.2.2
 SQLAlchemy==2.0.23
 psycopg2-binary==2.9.9
-multitasking==0.0.11
-pbr==5.11.1
 bandit>=1.7.7
 pip-licenses==4.3.3
 google-auth==2.23.4
-google-auth-oauthlib==1.1.0
-google-auth-httplib2==0.1.1
 Jinja2==3.1.6
 fredapi==0.5.1
 beautifulsoup4==4.12.2
@@ -44,7 +40,7 @@ pytrends==4.9.2
 # MCP Microservice
 fastapi==0.124.4
 uvicorn[standard]==0.24.0.post1
-httpx==0.25.1
+httpx==0.28.1
 redis==5.0.1
 aiosmtplib==3.0.1
 
@@ -62,34 +58,28 @@ opentelemetry-instrumentation-urllib3==0.60b1
 opentelemetry-instrumentation-psycopg2==0.60b1
 
 # v8.0 Advanced Ecosystem Dependencies
-asyncpg==0.29.0
-aiosqlite==0.19.0
 slowapi==0.1.9
 playwright==1.49.1
-qdrant-client==1.7.3
+qdrant-client==1.9.2
 
 # Broker APIs
-ib_insync==0.9.86
+ib_insync==0.9.86  # FUTURE: IBKR broker integration (skeleton, not yet active)
 
 # Security Overrides (pip-audit / Dependabot fixes)
 protobuf>=5.29.0
-aiohttp==3.13.3
+aiohttp==3.13.5
 authlib==1.6.9
 filelock==3.20.3
 marshmallow==3.26.2
-pillow==11.1.0
+pillow==12.2.0
 starlette==0.49.1
 tornado==6.5.5
 urllib3==2.6.3
 h2==4.3.0
 diskcache==5.6.3 # Latest. Pickle is inherent to diskcache. False positive for local cache.
-transformers==4.53.0
-litellm==1.82.0
+litellm==1.83.3
 python-multipart==0.0.22
-sentencepiece==0.2.1
-gradio==6.7.0
-pydub==0.25.1
-ffmpy==0.5.0
+pydub==0.25.1  # Used by transcription_service for Groq Whisper audio chunking
 celery[redis]==5.4.0
 pandas_market_calendars==4.4.1
-cryptography==42.0.5
+cryptography==46.0.6
