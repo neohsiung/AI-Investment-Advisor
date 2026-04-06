@@ -1,4 +1,5 @@
 import os
+import re
 import json
 import logging
 from pathlib import Path
@@ -24,7 +25,9 @@ class CognitiveMemoryManager:
     def __init__(self, user_id: str):
         self.user_id = user_id
         self.engine = get_db_engine()
-        self.long_term_path = Path("data/memory/long_term") / str(user_id or "default")
+        # Sanitize user_id: only allow UUID-safe chars to prevent path traversal (#55)
+        _safe_user_id = re.sub(r'[^a-zA-Z0-9\-_]', '_', str(user_id or "default"))
+        self.long_term_path = Path("data/memory/long_term") / _safe_user_id
         self.long_term_path.mkdir(parents=True, exist_ok=True)
 
     # ──────────────────────────────────────────
