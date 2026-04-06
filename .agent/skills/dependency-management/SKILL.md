@@ -1,6 +1,11 @@
 ---
 name: dependency-management
-description: 自動更新並審計專案依賴項 (Automatically update and audit project dependencies)
+description: |
+  自動更新並審計專案依賴項。
+  觸發時機：(1) 升級任何 pip 套件前（尤其是 litellm / streamlit / qdrant-client / openai 等核心套件）
+  (2) 從 requirements.txt 移除任何套件前
+  (3) 遭遇 ResolutionImpossible / pip-compile 衝突時
+  (4) Dependabot / pip-audit 回報安全漏洞，需要升級依賴版本時
 ---
 
 # Dependency Management Skill

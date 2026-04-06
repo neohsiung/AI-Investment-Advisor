@@ -5,7 +5,20 @@ import pytest
 from fastapi.testclient import TestClient
 from typing import Dict, Any, List, Optional
 from services.mcp_server.src.app import app, services, registered_tools
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock, patch, AsyncMock
+
+@pytest.fixture(autouse=True)
+def mock_db_health_check():
+    """Mock AsyncBaseRepository to prevent real DB connection in /health endpoint.
+    Without this, health check returns 'degraded' in CI where no DB is available.
+    """
+    mock_session = MagicMock()
+    mock_session.__aenter__ = AsyncMock(return_value=mock_session)
+    mock_session.__aexit__ = AsyncMock(return_value=False)
+    mock_session.execute = AsyncMock(return_value=None)
+    with patch("src.data.database.AsyncBaseRepository") as MockAsyncRepo:
+        MockAsyncRepo.return_value.get_session = AsyncMock(return_value=mock_session)
+        yield
 
 def test_mcp_health_and_root():
     with TestClient(app) as client:

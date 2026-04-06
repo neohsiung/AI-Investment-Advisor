@@ -1,6 +1,11 @@
 ---
 name: ci-test
-description: 預提交檢查工具，包含測試覆蓋率、安全掃描、Wiki 完整性與授權合規性。
+description: |
+  預提交檢查工具，包含測試覆蓋率、安全掃描、Wiki 完整性與授權合規性。
+  觸發時機：(1) 任何 git commit 前
+  (2) 移除任何 pip 套件（requirements.txt）後
+  (3) 重構任何 import 路徑或模組結構後
+  (4) CI 回報 coverage 低於門檻或 collection error 時
 ---
 
 # CI Test (Pre-Commit Check)
