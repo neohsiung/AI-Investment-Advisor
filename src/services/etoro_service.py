@@ -1022,8 +1022,8 @@ class EtoroService(IBroker):
                 
                 conn.execute(
                     text("""
-                        INSERT INTO transactions (id, user_id, ticker, trade_date, action, quantity, price, fees, amount, source_file, raw_data)
-                        VALUES (:id, :uid, 'CASH', :dt, :action, 1, :price, 0, :amount, 'ETORO_SYNC', :raw)
+                        INSERT INTO transactions (id, user_id, ticker, trade_date, action, quantity, price, fees, amount, source_file, entry_category, raw_data)
+                        VALUES (:id, :uid, 'CASH', :dt, :action, 1, :price, 0, :amount, 'ETORO_SYNC', 'sync_adjustment', :raw)
                     """),
                     {
                         "id": str(_uuid.uuid4()),
