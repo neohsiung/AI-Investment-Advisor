@@ -11,6 +11,19 @@ ENTRY_CATEGORY_TRADE = "trade"
 ENTRY_CATEGORY_CAPITAL_FLOW = "capital_flow"
 ENTRY_CATEGORY_SYNC_ADJUSTMENT = "sync_adjustment"
 
+# Immutable sets used for write-time validation.
+VALID_ENTRY_CATEGORIES: frozenset = frozenset({
+    ENTRY_CATEGORY_TRADE,
+    ENTRY_CATEGORY_CAPITAL_FLOW,
+    ENTRY_CATEGORY_SYNC_ADJUSTMENT,
+})
+
+# Actions that represent real asset transactions (must have a non-empty ticker).
+TRADE_ACTIONS: frozenset = frozenset({"BUY", "SELL"})
+
+# Actions that represent capital movements (must have amount > 0).
+CAPITAL_ACTIONS: frozenset = frozenset({"DEPOSIT", "WITHDRAWAL"})
+
 class ITransactionRepository(ABC):
     """
     Interface for Transaction Repository.
@@ -37,6 +50,7 @@ class ITransactionRepository(ABC):
         leverage: float = 1.0,
         source_file: str = None,
         entry_category: str = ENTRY_CATEGORY_TRADE,
+        amount: Optional[float] = None,
     ) -> None:
         pass
 
@@ -132,8 +146,52 @@ class AlchemyTransactionRepository(BaseRepository, ITransactionRepository):
         leverage: float = 1.0,
         source_file: str = None,
         entry_category: str = ENTRY_CATEGORY_TRADE,
+        amount: Optional[float] = None,
     ) -> None:
-        amount = (price * quantity) / leverage if leverage and leverage > 0 else (price * quantity)
+        """
+        Insert a transaction record with write-time validation.
+        寫入交易記錄，包含寫入時驗證防止非法資料進入資料庫。
+
+        Validation rules:
+          1. entry_category must be one of VALID_ENTRY_CATEGORIES.
+          2. BUY / SELL actions must have a non-empty ticker.
+          3. capital_flow entries must have action in CAPITAL_ACTIONS and amount > 0.
+        """
+        # Guard 1: entry_category must be a known value
+        if entry_category not in VALID_ENTRY_CATEGORIES:
+            raise ValueError(
+                f"Invalid entry_category='{entry_category}'. "
+                f"Must be one of {sorted(VALID_ENTRY_CATEGORIES)}. "
+                f"Use constants: ENTRY_CATEGORY_TRADE, ENTRY_CATEGORY_CAPITAL_FLOW, "
+                f"ENTRY_CATEGORY_SYNC_ADJUSTMENT."
+            )
+
+        # Guard 2: BUY/SELL must have a real ticker (prevents ghost trades)
+        action_upper = action.upper()
+        if action_upper in TRADE_ACTIONS and (not ticker or not ticker.strip()):
+            raise ValueError(
+                f"{action_upper} transaction requires a non-empty ticker, got: {ticker!r}. "
+                f"Synthetic cash flows should use action='DEPOSIT'/'WITHDRAWAL'."
+            )
+
+        # Guard 3: capital_flow must use DEPOSIT/WITHDRAWAL with a positive amount
+        if entry_category == ENTRY_CATEGORY_CAPITAL_FLOW:
+            if action_upper not in CAPITAL_ACTIONS:
+                raise ValueError(
+                    f"capital_flow entry must use action DEPOSIT or WITHDRAWAL, "
+                    f"got: '{action_upper}'. Trade entries should use entry_category='trade'."
+                )
+
+        # Compute amount: explicit override > derived from price * qty / leverage
+        if amount is None:
+            amount = (price * quantity) / leverage if leverage and leverage > 0 else (price * quantity)
+
+        if entry_category == ENTRY_CATEGORY_CAPITAL_FLOW and amount <= 0:
+            raise ValueError(
+                f"capital_flow transaction must have amount > 0, got: {amount}. "
+                f"Check price ({price}) and quantity ({quantity})."
+            )
+
         with self.engine.begin() as conn:
             query_trans = text("""
                 INSERT INTO transactions
@@ -148,7 +206,7 @@ class AlchemyTransactionRepository(BaseRepository, ITransactionRepository):
                 "user_id": user_id,
                 "ticker": ticker,
                 "trade_date": date,
-                "action": action.upper(),
+                "action": action_upper,
                 "quantity": quantity,
                 "price": price,
                 "fees": fees,
