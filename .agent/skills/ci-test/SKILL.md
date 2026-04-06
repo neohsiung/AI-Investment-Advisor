@@ -14,13 +14,25 @@ description: 預提交檢查工具，包含測試覆蓋率、安全掃描、Wiki
 
 ## 核心測試項目 (Core Test Items)
 
-1. **Run tests with coverage**: 執行 `pytest --cov=src`，確保新代碼有足夠的測試覆蓋。
+1. **Test Collection Dry-Run（必做，優先於所有其他步驟）**：確認所有測試可被正確 import，無 `ImportError` / `ModuleNotFoundError`。
+   ```bash
+   python3 -m pytest --collect-only -q 2>&1 | grep -E "ERROR|ImportError|ModuleNotFoundError"
+   # 必須零輸出，否則禁止 commit
+   ```
+   > ⚠️ 特別注意：在移除任何套件或重構 import 路徑後，**必須**執行此步驟。
+
+2. **Run tests with coverage**: 執行 `pytest --cov=src`，確保新代碼有足夠的測試覆蓋。
    - **增量模式 (Default)**: 僅執行與變更檔案相關的單元測試，不生成全量覆蓋率。
    - **完整模式 (--full)**: 執行全量測試與覆蓋率報告。
-   - **目標**: 總覆蓋率 > 75% | Services 層 > 80% | Error handling = 100% | CI 門檻 (fail_under = 70)
-2. **Security Scan (Bandit & Grep Checks)**: 執行 `bandit` 掃描，增量模式僅掃描變更檔案。
-3. **Wiki Integrity Check (Flat-Linking)**: 驗證 Wiki 內部連結的有效性，確保遵循扁平化連結規範。
-4. **License Compliance Check**: 檢查第三方套件的授權合規性。
+   - **CI 門檻（動態讀取，勿 hardcode）**：
+     ```bash
+     CI_THRESHOLD=$(grep "cov-fail-under" .github/workflows/*.yml | grep -oP '\d+' | head -1)
+     echo "CI coverage threshold: ${CI_THRESHOLD}%"
+     pytest --cov=src --cov-fail-under=${CI_THRESHOLD} tests/unit/
+     ```
+3. **Security Scan (Bandit & Grep Checks)**: 執行 `bandit` 掃描，增量模式僅掃描變更檔案。
+4. **Wiki Integrity Check (Flat-Linking)**: 驗證 Wiki 內部連結的有效性，確保遵循扁平化連結規範。
+5. **License Compliance Check**: 檢查第三方套件的授權合規性。
 
 ## 使用指南 (Usage Guide)
 
