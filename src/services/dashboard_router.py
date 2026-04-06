@@ -425,8 +425,8 @@ async def advisor_chat_stream(
                     
                 yield "data: [DONE]\n\n"
             except Exception as e:
-                logger.error(f"Streaming error in generator: {e}")
-                yield f"data: {json.dumps({'error': str(e)})}\n\n"
+                logger.error("Streaming error in generator: %s", str(e)[:200])
+                yield f"data: {json.dumps({'error': 'An internal streaming error occurred.'})}\n\n"
 
         return StreamingResponse(event_generator(), media_type="text/event-stream")
 
