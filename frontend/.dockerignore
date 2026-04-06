@@ -1,0 +1,24 @@
+# Build artifacts - rebuilt by npm run build in Docker
+.next
+out
+
+# Dependencies - installed by npm ci in Docker deps stage
+node_modules
+
+# Development & testing files
+*.test.ts
+*.test.tsx
+*.spec.ts
+*.spec.tsx
+__tests__
+
+# Local env files
+.env
+.env.local
+.env.*.local
+
+# Debug logs
+npm-debug.log*
+
+# Cache
+.cache
