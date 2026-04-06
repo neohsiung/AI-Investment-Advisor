@@ -89,12 +89,23 @@ export default function CommandCenter() {
         <div className="col-span-12 lg:col-span-3">
           <ErrorBoundary fallback={<ComponentFallback name="市場情報" />}>
             <BriefingCard 
-              summary={briefing?.executive_summary || "正在準備市場摘要..."}
-              recommendation={briefing?.recommendation || "分析中"}
-              note={briefing?.ai_note || "系統同步中"}
-              status={briefing?.observation_window || "INITIALIZING"}
-              metrics={briefing?.sentiment_metrics || []}
-            />
+              title={briefing?.observation_window || "MARKET BRIEFING"}
+              tags={["AI Intelligence"]}
+            >
+              <div className="space-y-4 text-sm">
+                <p className="text-on-surface font-light leading-relaxed">
+                  {briefing?.executive_summary || "正在準備市場摘要..."}
+                </p>
+                <div className="pt-3 border-t border-outline-variant/10">
+                  <p className="text-[10px] font-black uppercase tracking-widest text-primary mb-1">操作建議</p>
+                  <p className="font-bold text-on-surface">{briefing?.recommendation || "分析中"}</p>
+                </div>
+                <p className="text-[10px] italic text-on-surface-variant leading-relaxed">
+                  <span className="font-bold uppercase not-italic mr-1 text-secondary">AI NOTE:</span>
+                  {briefing?.ai_note || "系統同步中"}
+                </p>
+              </div>
+            </BriefingCard>
           </ErrorBoundary>
         </div>
       </div>
