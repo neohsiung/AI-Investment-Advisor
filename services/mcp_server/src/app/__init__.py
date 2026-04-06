@@ -80,32 +80,64 @@ def get_current_user(request: Request) -> Dict[str, Any]:
         
     return payload
 
+_ws_data_cache: Dict[str, Any] = {}
+_ws_last_fetch: Dict[str, float] = {}
+WS_CACHE_TTL = 60  # seconds between full data refreshes
+
 async def websocket_broadcast_loop():
-    """定期為所有活躍連線推送數據更新 (每 5 秒)"""
+    """定期為所有活躍連線推送數據更新 (每 30 秒廣播，每 60 秒重新計算)"""
     from src.services.dashboard_service import DashboardService
+    import time
     logger.info("✓ Starting WebSocket Broadcast Loop...")
     while True:
         try:
             active_users = list(socket_manager.active_connections.keys())
             for user_id in active_users:
-                # 獲取該使用者的最新數據 (DashboardService 內部有快取，因此 5s 頻率是安全的)
-                service = DashboardService(user_id=user_id)
-                data = service.prepare_dashboard_data(user_id=user_id)
-                
-                # 廣播更新
+                now = time.monotonic()
+                # Only recompute when cache is stale
+                if user_id not in _ws_data_cache or (now - _ws_last_fetch.get(user_id, 0)) > WS_CACHE_TTL:
+                    service = DashboardService(user_id=user_id)
+                    data = service.prepare_dashboard_data(user_id=user_id)
+                    _ws_data_cache[user_id] = data
+                    _ws_last_fetch[user_id] = now
+                else:
+                    data = _ws_data_cache[user_id]
+
+                metrics = data.get('metrics', {})
+                pnl = data.get('pnl_data', {})
+                roi = data.get('roi', 0)
+
+                # Build summary with the same field names as the REST /summary endpoint
+                summary = {
+                    "total_valuation": metrics.get('nlv', 0),
+                    "uninvested_cash": metrics.get('cash_balance', 0),
+                    "gross_exposure": metrics.get('gross_nlv', 0),
+                    "leverage_ratio": metrics.get('leverage_ratio', 0),
+                    "active_agents": metrics.get('active_agents', 7),
+                    "risk_exposure": metrics.get('risk_level', "MODERATE"),
+                    "total_pnl": pnl.get('total', 0),
+                    "unrealized_pnl": pnl.get('unrealized', 0),
+                    "realized_pnl": pnl.get('realized', 0),
+                    "roi_percentage": roi,
+                    "performance_change": "+0.0%"
+                }
+
+                positions_df = data.get('positions_df')
+                positions = positions_df.to_dict('records') if hasattr(positions_df, 'to_dict') and not positions_df.empty else []
+
                 await socket_manager.broadcast_to_user(user_id, {
                     "type": "PORTFOLIO_UPDATE",
                     "payload": {
-                        "summary": data.get('metrics', {}),
-                        "positions": data.get('positions_df', {}).to_dict('records') if hasattr(data.get('positions_df'), 'to_dict') else [],
+                        "summary": summary,
+                        "positions": positions,
                         "timestamp": datetime.now().isoformat()
                     }
                 })
-            
-            await asyncio.sleep(5)
+
+            await asyncio.sleep(30)
         except Exception as e:
             logger.error(f"WebSocket broadcast loop error: {e}")
-            await asyncio.sleep(10)
+            await asyncio.sleep(30)
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):

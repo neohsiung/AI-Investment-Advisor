@@ -453,7 +453,8 @@ async def get_summary(service: DashboardService = Depends(get_dashboard_service)
                 "risk_exposure": metrics.get('risk_level', "MODERATE"),
                 "total_pnl": pnl.get('total', 0),
                 "unrealized_pnl": pnl.get('unrealized', 0),
-                "roi_percentage": data.get('roi', 0) * 100,
+                "realized_pnl": pnl.get('realized', 0),
+                "roi_percentage": data.get('roi', 0),
                 "performance_change": "+1.2%" # 暫時模擬，未來可從歷史數據計算
             }
         }

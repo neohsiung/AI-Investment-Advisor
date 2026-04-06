@@ -98,19 +98,21 @@ class DashboardService:
 
             try:
                 metrics_derived = self.calc.calculate_metrics(current_prices, user_id=user_id)
-                pnl_data = self.pnl_calc.calculate_breakdown(current_prices, user_id=user_id)
-                
+                # Assign immediately so NLV/leverage are available even if pnl_calc fails
                 metrics = metrics_derived
+                metrics['gross_nlv'] = metrics_derived['tnv'] + metrics_derived['cash_balance']
+            except Exception as e:
+                logger.error(f"Metric calculation (LeverageCalc) failed: {e}", exc_info=True)
+
+            try:
+                pnl_data = self.pnl_calc.calculate_breakdown(current_prices, user_id=user_id)
                 metrics['invested_capital'] = self.transaction_repo.calculate_net_invested_capital(user_id)
                 metrics['unrealized_pnl'] = pnl_data.get('unrealized', 0)
-                
                 pnl_data['total'] = metrics['nlv'] - metrics['invested_capital']
                 pnl_data['realized'] = pnl_data['total'] - pnl_data['unrealized']
-                metrics['gross_nlv'] = metrics_derived['tnv'] + metrics_derived['cash_balance']
-
                 roi = self.roi_engine.calculate_roi(metrics['nlv'], user_id=user_id)
             except Exception as e:
-                logger.error(f"Metric calculation failed: {e}")
+                logger.error(f"Metric calculation (PnL/ROI) failed: {e}", exc_info=True)
 
             # 6. Prepare Positions DataFrame
             positions_df = pd.DataFrame()

@@ -1,0 +1,8 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(docker compose:*)",
+      "Bash(docker exec investment_advisor_mcp python3 -c ':*)"
+    ]
+  }
+}
