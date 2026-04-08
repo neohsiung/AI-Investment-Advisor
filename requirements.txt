@@ -83,4 +83,4 @@ python-multipart==0.0.22
 pydub==0.25.1  # Used by transcription_service for Groq Whisper audio chunking
 celery[redis]==5.4.0
 pandas_market_calendars==4.4.1
-cryptography==46.0.6
+cryptography==46.0.7
