@@ -1,9 +1,11 @@
 name: CI/CD Pipeline
 
 on:
+  push:
+    branches-ignore:
+      - main
   pull_request:
     branches: [main]
-    types: [opened, synchronize, reopened]
   workflow_dispatch:
     inputs:
       deploy_to_gcp:
