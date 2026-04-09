@@ -52,7 +52,7 @@ class RefinementService:
                 "performance_stats": merged_stats,
                 "task": "Generate Monthly System Evolution Report"
             }
-            optimizations = self.engineer.run(hr_context)
+            optimizations = await self.engineer.run(hr_context)
             
             # 4. Generate Report
             report_content = self._generate_report(merged_stats, optimizations, target_agents)
