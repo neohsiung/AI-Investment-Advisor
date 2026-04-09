@@ -192,7 +192,7 @@ class BaseAgent(ABC):
         return settings
 
     def _load_prompt(self):
-        """
+        """Load the system prompt for the agent."""
         # [Phase 18] Dynamic Personalization - Check for user-specific prompt overrides
         # This allows RLHF-optimized prompts to override static files.
         try:
