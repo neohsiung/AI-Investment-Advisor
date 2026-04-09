@@ -618,9 +618,8 @@ class ConversationAgent:
         from src.agents.factory import AgentFactory
         cio = AgentFactory.create_cio_agent(mode="daily", user_id=self.user_id)
         
-        # Wrap sync run in to_thread
-        from src.utils.async_utils import to_thread
-        result = await to_thread(cio.run, synthesis_context)
+        # cio.run() is natively async, call directly
+        result = await cio.run(synthesis_context)
         
         return str(result)
 
@@ -672,13 +671,11 @@ class ConversationAgent:
 
     async def _run_agent_async(self, context: Dict[str, Any]) -> str:
         """
-        Run the underlying BaseAgent in async context.
-        在異步上下文中執行底層 BaseAgent。
+        Run the underlying BaseAgent.
+        執行底層 BaseAgent（現已為全面非同步架構）。
         """
-        from src.utils.async_utils import to_thread
-
-        # BaseAgent.run() is synchronous — wrap in thread
-        result = await to_thread(self._agent.run, context)
+        # BaseAgent.run() is natively async
+        result = await self._agent.run(context)
 
         if isinstance(result, dict):
             return str(
