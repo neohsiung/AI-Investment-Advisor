@@ -1,34 +1,46 @@
-FROM python:3.11-slim-bookworm
+# Builder Stage
+FROM python:3.10-slim-bookworm as builder
 
+COPY --from=ghcr.io/astral-sh/uv:latest /uv /bin/uv
 WORKDIR /workspace
 
-ENV PIP_ROOT_USER_ACTION=ignore
+# Install exact build deps required for underlying C-extensions
+RUN apt-get update && apt-get install -y build-essential curl && rm -rf /var/lib/apt/lists/*
+
+ENV UV_COMPILE_BYTECODE=1
+
+# Copy dependency files
+COPY pyproject.toml uv.lock ./
+
+# Create venv and install dependencies into it at /opt/venv
+RUN uv venv /opt/venv && \
+    uv pip install --python /opt/venv --no-cache -r pyproject.toml
+
+# Runner Stage
+FROM python:3.10-slim-bookworm
 ENV PYTHONUNBUFFERED=1
 ENV PYTHONPATH=/workspace
+ENV PATH="/opt/venv/bin:$PATH"
+WORKDIR /workspace
 
-# Install system dependencies
-RUN apt-get update && apt-get install -y \
-    build-essential \
-    curl \
-    ffmpeg \
-    && rm -rf /var/lib/apt/lists/*
+# Install runtime dependencies (e.g., ffmpeg for pydub/ffmpy)
+RUN apt-get update && apt-get install -y ffmpeg && rm -rf /var/lib/apt/lists/*
 
 RUN addgroup --system appgroup && \
     adduser --system --group --home /home/appuser appuser
 
 ENV HOME=/home/appuser
 
-# Copy requirements
-COPY requirements.txt .
-RUN pip install --upgrade pip && pip install --no-cache-dir -r requirements.txt
+# Copy virtual env from builder
+COPY --from=builder /opt/venv /opt/venv
 
-# Copy service code & core packages
+# Copy application code
 COPY ./services/mcp_server /workspace/services/mcp_server
 COPY ./src /workspace/src
 
+USER root
 RUN mkdir -p /workspace/data /workspace/logs && \
     chown -R appuser:appgroup /workspace /home/appuser
-
 USER appuser
 
 EXPOSE 8000

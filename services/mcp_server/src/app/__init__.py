@@ -8,9 +8,11 @@ import asyncio
 from slowapi import Limiter, _rate_limit_exceeded_handler
 from slowapi.util import get_remote_address
 from slowapi.errors import RateLimitExceeded
+from sqlalchemy import text
 
 from src.utils.logger import setup_logger
 from src.utils.rate_limit import limiter
+from src.services.dashboard_router import get_current_user
 logger = setup_logger("MCPService")
 
 from contextlib import asynccontextmanager
@@ -33,6 +35,7 @@ class ToolRegistration(BaseModel):
 class ToolCallRequest(BaseModel):
     """工具調用請求"""
     arguments: Dict[str, Any] = {}
+    context: Optional[Dict[str, Any]] = None
 
 class AgentMessage(BaseModel):
     """Agent 間訊息"""
@@ -97,7 +100,7 @@ async def lifespan(app: FastAPI):
         # 0. Resolve Primary User UUID (Rule #4.3 - No 'system' user)
         # 透過資料庫解析主要使用者 UUID，確保所有服務綁定至真實上下文。
         from src.repositories.user_repository import AlchemyUserRepository
-        from sqlalchemy import text
+        # from sqlalchemy import text (Moved to top)
         user_repo = AlchemyUserRepository()
         primary_user_id = None
         
@@ -122,16 +125,16 @@ async def lifespan(app: FastAPI):
                  # but logged as ERROR as per user instruction.
                  logger.error("CRITICAL: No user context found. SettingsService WILL fail.")
 
-        # 1. Instantiate Services
-        services["market"] = MarketDataService(user_id=primary_user_id)
-        services["search"] = InternetSearchService(user_id=primary_user_id)
-        services["fred"] = FredService(user_id=primary_user_id)
+        # 1. Background Services for stream evaluation
+        # Background sentinel gets its own local instances instead of polluting the global dictionary
+        bg_market = MarketDataService(user_id=primary_user_id)
+        bg_search = InternetSearchService(user_id=primary_user_id)
         services["sentinel"] = SentinelService(
-            market_service=services["market"],
-            search_service=services["search"],
+            market_service=bg_market,
+            search_service=bg_search,
             user_id=primary_user_id
         )
-        # services["github"] = GitHubService() # REMOVED (Shift to text-based records)
+
         
         from src.services.webhook_service import webhook_service_instance
         # sentinel is now instantiated per-request in webhook_service
@@ -145,13 +148,23 @@ async def lifespan(app: FastAPI):
         settings_svc_global = SettingsService(db_path=None, user_id=primary_user_id)
         settings_global = settings_svc_global.get_all_settings()
         
-        # Create Adapters via Factory
+        # 2. Create Adapters via Factory
         adapters = ChannelFactory.create_adapters(settings_global)
-        for adapter in adapters:
-            logger.info(
-                f"Channel Adapter: {adapter.__class__.__name__}, "
-                f"is_active={getattr(adapter, 'is_active', 'N/A')}"
-            )
+        
+        # 3. Initialize NotificationService
+        from src.services.notification_filters import InterestBasedFilter
+        from src.services.notification_service import NotificationService
+        noti_filter = InterestBasedFilter(settings_svc_global)
+        notification_service = NotificationService(adapters=adapters, notification_filter=noti_filter)
+        services["notification"] = notification_service
+
+        # 4. Initialize ChannelGateway [Phase 7]
+        from src.infrastructure.memory.channel_memory_manager import ChannelMemoryManager
+        from src.infrastructure.messaging.channel_gateway import get_gateway
+        memory_manager = ChannelMemoryManager()
+        services["channel_gateway"] = get_gateway(notification_service, memory_manager)
+        
+        logger.info("✓ ChannelGateway initialized and registered.")
         
         # Create Intent Classifier
         intent_classifier = IntentClassifier()
@@ -166,8 +179,7 @@ async def lifespan(app: FastAPI):
         socket_manager.set_interaction_service(services["interaction"])
 
         
-        from src.services.dashboard_service import DashboardService
-        services["dashboard"] = DashboardService(user_id=primary_user_id)
+        # 1.5 Note: DashboardService has been removed from global state. It will be dynamically instantiated.
         
         # 2. Start Real-time Streaming (Polygon WebSocket)
         try:
@@ -363,9 +375,10 @@ async def health():
     
     # 1. Check Database (Async)
     try:
-        from src.repositories.base_repository import AsyncBaseRepository
+        from src.data.database import AsyncBaseRepository
         async_repo = AsyncBaseRepository()
-        async with async_repo.get_session() as session:
+        session = await async_repo.get_session()
+        async with session:
             await session.execute(text("SELECT 1"))
         health_status["checks"]["database"] = "connected"
     except Exception as e:
@@ -439,30 +452,38 @@ async def call_tool(tool_name: str, request: ToolCallRequest):
     result = None
     
     try:
+        user_id = request.context.get("user_id") if request.context else None
+        
+        # 動態實例化 Service (User Isolation)
+        if tool_name in ["get_current_price", "get_valuation", "get_company_profile", "get_macro_indicators"]:
+            market_service = MarketDataService(user_id=user_id)
+        if tool_name == "web_search":
+            search_service = InternetSearchService(user_id=user_id)
+
         # Dispatch Logic
         if tool_name == "get_current_price":
             ticker = args.get("ticker")
             if ticker:
-                prices = services["market"].get_current_prices([ticker])
+                prices = market_service.get_current_prices([ticker])
                 result = prices.get(ticker)
                 
         elif tool_name == "get_valuation":
             ticker = args.get("ticker")
             if ticker:
-                result = services["market"].get_valuation_metrics(ticker)
+                result = market_service.get_valuation_metrics(ticker)
                 
         elif tool_name == "get_company_profile":
              ticker = args.get("ticker")
              if ticker:
-                 result = services["market"].get_financials(ticker)
+                 result = market_service.get_financials(ticker)
                  
         elif tool_name == "web_search":
             query = args.get("query")
             if query:
-                result = services["search"].search_financial_context(query)
+                result = search_service.search_financial_context(query)
                 
         elif tool_name == "get_macro_indicators":
-            result = services["market"].get_macro_data()
+            result = market_service.get_macro_data()
             
         else:
             result = "Tool implementation not found in dispatch logic."
@@ -482,6 +503,10 @@ async def call_tool(tool_name: str, request: ToolCallRequest):
 # --- Dashboard Router (New Phase 2) ---
 from src.services.dashboard_router import dashboard_router
 app.include_router(dashboard_router, prefix="/api/dashboard")
+
+# --- v6.1: MCP Standard Protocol [Phase 6] ---
+from src.tools.mcp_sse_router import mcp_sub_app
+app.mount("/mcp", mcp_sub_app)
 
 # --- Webhook Router & Inbound Adapters ---
 from src.services.webhook_service import webhook_router

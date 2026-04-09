@@ -20,7 +20,6 @@ from src.agents.cio import CIOAgent
 from src.agents.engineer import SystemEngineerAgent
 from src.agents.risk import RiskAgent
 from src.agents.sentinel import SentinelAgent
-from src.tools.market_tools import create_market_server
 
 logger = setup_logger("AgentFactory")
 
@@ -193,12 +192,3 @@ class AgentFactory:
         agent = SentinelAgent(use_cache=use_cache, user_id=user_id, **kwargs)
         return AgentFactory._inject_dependencies(agent)
 
-    @staticmethod
-    def create_action_extractor_agent(use_cache=True, user_id=None, **kwargs):
-        user_id = user_id or "system"
-        from src.agents.action_extractor import ActionExtractorAgent
-        AgentFactory._configure_dspy(user_id=user_id)
-        # Use fastest tier for extraction by default since it's just JSON formatting
-        tier = kwargs.pop('tier', 'fast')
-        agent = ActionExtractorAgent(use_cache=use_cache, user_id=user_id, tier=tier, **kwargs)
-        return AgentFactory._inject_dependencies(agent)

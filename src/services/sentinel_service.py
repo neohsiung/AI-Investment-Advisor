@@ -1067,24 +1067,26 @@ class SentinelService:
         # 📊 Actionable Trade Signals → evaluate_and_execute_trade (Milestone 13.2)
         # All trade signals go through the unified confidence threshold logic
         elif is_actionable:
-            trade_signals = self._extract_trade_signals_from_decision(decision, filtered_triggers)
+            trade_signals = await self._extract_trade_signals_from_decision(decision, filtered_triggers)
             if trade_signals:
                 import asyncio
                 asyncio.create_task(self._execute_trade_signals(target_user, trade_signals, source))
 
-    def _extract_trade_signals_from_decision(self, decision: str, triggers: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    async def _extract_trade_signals_from_decision(self, decision: str, triggers: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
         """
         Extract actionable trade signals from Council decision text.
         從委員會決策文字中提取可執行交易訊號。
         """
         logger.info("Sentinel: Extracting trade signals from Council decision using AI ActionExtractor...")
         try:
-            from src.agents.factory import AgentFactory
+            from src.agents.skills.skill_loader import SkillLoader
             from src.services.transaction_service import TransactionService
-            target_user = self.settings_service.user_id or self.user_id or "broadcast"
-            extractor = AgentFactory.create_action_extractor_agent(user_id=target_user, tier="nano")
+            import json
             
-            # Build portfolio context for ActionExtractor (Skill-First: portfolio-aware sizing)
+            target_user = self.settings_service.user_id or self.user_id or "broadcast"
+            loader = SkillLoader(user_id=target_user)
+            
+            # Build portfolio context for ActionExtractor
             portfolio_str = ""
             try:
                 tx_svc = TransactionService()
@@ -1094,11 +1096,14 @@ class SentinelService:
             except Exception as he:
                 logger.warning(f"Failed to get portfolio context for ActionExtractor: {he}")
             
-            # Pass as dict with portfolio context (enhanced ActionExtractor)
-            raw_trades = extractor.run({
-                "decision_text": decision,
-                "portfolio": portfolio_str
-            })
+            # Skillified: Pass as arguments to the skill
+            trades_json = await loader.run_skill(
+                "extract_actions", 
+                user_id=target_user,
+                decision_text=decision,
+                portfolio=portfolio_str
+            )
+            raw_trades = json.loads(trades_json)
             signals = []
             
             for trade in raw_trades:

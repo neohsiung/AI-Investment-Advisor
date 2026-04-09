@@ -38,21 +38,13 @@ def get_current_user(request: Request) -> Dict[str, Any]:
     return payload
 
 def get_dashboard_service(user: Dict[str, Any] = Depends(get_current_user)) -> DashboardService:
-    """獲取 DashboardService 實例，綁定當前使用者"""
+    """獲取 DashboardService 實例，嚴格綁定當前使用者 (User Isolation)"""
     user_id = user.get("sub")
-    from services.mcp_server.src.app.state import services
+    if not user_id:
+        raise HTTPException(status_code=401, detail="User ID not found in token")
     
-    # 注意：在真實多租戶環境，這裡應該按需創建服務或從池中獲取
-    # 目前專案結構偏向單一 User 實例，我們檢查 services 中是否已有
-    if "dashboard" in services and services["dashboard"].user_id == user_id:
-        return services["dashboard"]
-    
-    # 若不匹配或未初始化，建立新實例 (或報錯)
-    # 這裡為求穩定，我們先嘗試返回全域單例，若 user_id 不匹配則警告
-    if "dashboard" in services:
-        return services["dashboard"]
-        
-    raise HTTPException(status_code=503, detail="Dashboard service not ready")
+    # 動態實例化並返回綁定該 User ID 的 Service
+    return DashboardService(user_id=user_id)
 
 def get_performance_service(user: Dict[str, Any] = Depends(get_current_user)) -> PerformanceService:
     """獲取 PerformanceService 實例"""
@@ -551,7 +543,7 @@ async def get_agent_performance_stats(service: PerformanceService = Depends(get_
 async def get_agent_status_list(user: Dict[str, Any] = Depends(get_current_user)):
     """獲取 Agent 運行狀態列表（從 agent_performance 表）"""
     try:
-        from src.repositories.postgres_repositories import AlchemyAgentRepository
+        from src.repositories.agent_repository import AlchemyAgentRepository
         repo = AlchemyAgentRepository()
         # Direct execution since we need specific columns
         rows = repo.db.execute(
@@ -582,10 +574,12 @@ async def get_agent_status_list(user: Dict[str, Any] = Depends(get_current_user)
 async def get_recent_alerts(user: Dict[str, Any] = Depends(get_current_user)):
     """獲取最新系統事件（用於 Dashboard 通知面板）"""
     try:
-        from src.database import db
-        rows = db.session.execute(
-            text("SELECT event_type, message, created_at FROM event_logs ORDER BY created_at DESC LIMIT 5")
-        ).fetchall()
+        from src.data.database import get_db_engine
+        engine = get_db_engine()
+        with engine.connect() as conn:
+            rows = conn.execute(
+                text("SELECT event_type, message, created_at FROM event_logs ORDER BY created_at DESC LIMIT 5")
+            ).fetchall()
         alerts = [{"type": r.event_type, "msg": r.message, "time": str(r.created_at)[:16]} for r in rows]
         return {"status": "success", "data": alerts or []}
     except Exception as e:
