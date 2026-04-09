@@ -53,7 +53,7 @@ async def test_sentinel_failsafe_msg_with_error_type():
 async def test_sentinel_escalate_no_to_thread_error():
     """Verify that _escalate uses our backport and doesn't hit AttributeError."""
     mock_sentinel_agent = MagicMock()
-    mock_sentinel_agent.run = MagicMock(return_value={"priority": "P1", "target_agent": "CIO"})
+    mock_sentinel_agent.run = AsyncMock(return_value={"priority": "P1", "target_agent": "CIO"})
     
     service = SentinelService(user_id="test_user")
     

@@ -92,7 +92,8 @@ class TestDashboardService:
         assert not result['transactions_df'].empty
         assert len(result['current_prices']) == 2
         assert result['metrics']['nlv'] == 100000
-        assert result['pnl_data']['total'] == 1500
+        # Since pnl_data['total'] = nlv - invested_capital, it's 100000 - 98500.0 = 1500.0
+        assert result['pnl_data']['total'] == 1500.0
         assert result['roi'] == 15.5
         assert not result['positions_df'].empty
     
@@ -117,7 +118,7 @@ class TestDashboardService:
         
         result = service.prepare_dashboard_data("test@example.com")
         
-        # Should return default values
+        # Should return default values (exception occurred before updating)
         assert result['metrics']['nlv'] == 0
         assert result['pnl_data']['total'] == 0
-        assert result['roi'] == 0
+        assert result['roi'] == 0.0

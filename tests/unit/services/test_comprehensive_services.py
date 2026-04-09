@@ -30,6 +30,8 @@ class TestAnalyticsService:
         mock_repo.get_leverage_summary.return_value = [('AAPL', 12, 1.0)]
         # get_cash_balance returns total cash
         mock_repo.get_cash_balance.return_value = 10000
+        # get_holdings returns empty list for fallback pricing logic
+        mock_repo.get_holdings.return_value = []
     
         calc.repo = mock_repo
     

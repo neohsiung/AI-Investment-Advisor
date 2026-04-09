@@ -60,7 +60,8 @@ class TestDashboardAggregation(unittest.TestCase):
         service.calc.calculate_metrics.return_value = {
             'nlv': 21500.0, 
             'cash_balance': 20000.0, 
-            'leverage_ratio': 1.0
+            'leverage_ratio': 1.0,
+            'tnv': 1500.0
         }
         service.pnl_calc = MagicMock()
         service.pnl_calc.calculate_breakdown.return_value = {
