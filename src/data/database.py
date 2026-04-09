@@ -265,6 +265,8 @@ def init_db(db_path=None, force=False, engine=None):
         name TEXT,
         preferences {json_type} DEFAULT '{{}}',
         metadata {json_type} DEFAULT '{{}}',
+        subscription_id TEXT,
+        current_billing_cycle_start {timestamp_type},
         created_at {timestamp_type} DEFAULT CURRENT_TIMESTAMP,
         last_login {timestamp_type}
     );

@@ -1,12 +1,4 @@
 import type { NextConfig } from "next";
-import withPWAInit from "next-pwa";
-
-const withPWA = withPWAInit({
-  dest: "public",
-  register: true,
-  skipWaiting: true,
-  disable: process.env.NODE_ENV === "development",
-});
 
 // BACKEND_URL must be available at build time for rewrites().
 // In Docker: set via build arg BACKEND_URL=http://mcp_server:8000
@@ -34,4 +26,4 @@ const nextConfig: NextConfig = {
   },
 };
 
-export default withPWA(nextConfig);
+export default nextConfig;

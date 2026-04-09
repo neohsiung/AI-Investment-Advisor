@@ -26,89 +26,325 @@ class CognitiveMemoryManager:
         self.engine = get_db_engine()
         self.long_term_path = Path("data/memory/long_term") / str(user_id or "default")
         self.long_term_path.mkdir(parents=True, exist_ok=True)
+        
+        # [Task 8.3] Runtime DB Resilience
+        self._db_available = self._check_db_health()
+        if not self._db_available:
+            logger.warning(f"CognitiveMemoryManager ({user_id}): PostgreSQL unavailable. Falling back to local storage.")
+            self.fallback_path = Path("data/memory/medium_term_fallback") / str(user_id or "default")
+            self.fallback_path.mkdir(parents=True, exist_ok=True)
+
+    def _check_db_health(self) -> bool:
+        """Checks if the database is reachable."""
+        try:
+            with self.engine.connect() as conn:
+                conn.execute(text("SELECT 1"))
+                return True
+        except Exception:
+            return False
 
     # ──────────────────────────────────────────
-    # Medium-Term Storage (SQL)
+    # Storage API (with SQL -> File Fallback)
     # ──────────────────────────────────────────
 
     def store_insight(self, agent_name: str, memory_type: str, content: Dict[str, Any], importance: float = 0.5, source_id: str = None):
         """
-        Stores a distilled insight into the medium-term memory (PostgreSQL).
-        將提煉出的見解儲存至中階記憶體 (SQL)。
+        Stores a distilled insight. Falls back to local JSON if DB is offline.
         """
-        sql = """
-        INSERT INTO cognitive_memories (user_id, agent_name, memory_type, content, importance, source_id)
-        VALUES (:user_id, :agent_name, :memory_type, :content, :importance, :source_id)
-        """
+        if self._db_available:
+            sql = """
+            INSERT INTO cognitive_memories (user_id, agent_name, memory_type, content, importance, source_id)
+            VALUES (:user_id, :agent_name, :memory_type, :content, :importance, :source_id)
+            """
+            try:
+                with self.engine.begin() as conn:
+                    conn.execute(text(sql), {
+                        "user_id": self.user_id,
+                        "agent_name": agent_name,
+                        "memory_type": memory_type,
+                        "content": json.dumps(content, ensure_ascii=False),
+                        "importance": importance,
+                        "source_id": source_id
+                    })
+                logger.info(f"Stored {memory_type} memory for agent {agent_name} to DB.")
+                return
+            except Exception as e:
+                logger.error(f"Failed to store memory to DB, trying fallback: {e}")
+                self._db_available = False # Mark as unavailable for this session
+
+        # Fallback to Local File
         try:
-            with self.engine.begin() as conn:
-                conn.execute(text(sql), {
-                    "user_id": self.user_id,
-                    "agent_name": agent_name,
-                    "memory_type": memory_type,
-                    "content": json.dumps(content),
-                    "importance": importance,
-                    "source_id": source_id
-                })
-            logger.info(f"Stored {memory_type} memory for agent {agent_name} (User: {self.user_id})")
+            filename = f"{memory_type}_{datetime.now().timestamp()}.json"
+            filepath = self.fallback_path / filename
+            memory_data = {
+                "user_id": self.user_id,
+                "agent_name": agent_name,
+                "memory_type": memory_type,
+                "content": content,
+                "importance": importance,
+                "source_id": source_id,
+                "created_at": datetime.now().isoformat()
+            }
+            with open(filepath, 'w', encoding='utf-8') as f:
+                json.dump(memory_data, f, ensure_ascii=False, indent=2)
+            logger.info(f"Stored {memory_type} memory to local fallback: {filepath}")
         except Exception as e:
-            logger.error(f"Failed to store cognitive memory: {e}")
+            logger.error(f"CRITICAL: Resource exhausted - Fallback storage also failed: {e}")
 
     def get_recent_memories(self, limit: int = 10, memory_type: Optional[str] = None) -> List[Dict[str, Any]]:
         """
-        Retrieves recent distilled memories.
-        讀取近期提煉出的記憶。
+        Retrieves recent distilled memories. Falls back to local storage if DB is offline.
         """
-        sql = """
-        SELECT agent_name, memory_type, content, importance, created_at 
-        FROM cognitive_memories 
-        WHERE user_id = :user_id
-        """
-        params = {"user_id": self.user_id, "limit": limit}
-        if memory_type:
-            sql += " AND memory_type = :memory_type"
-            params["memory_type"] = memory_type
-        
-        sql += " ORDER BY created_at DESC LIMIT :limit"
-        
+        if self._db_available:
+            sql = """
+            SELECT agent_name, memory_type, content, importance, created_at 
+            FROM cognitive_memories 
+            WHERE user_id = :user_id
+            """
+            params = {"user_id": self.user_id, "limit": limit}
+            if memory_type:
+                sql += " AND memory_type = :memory_type"
+                params["memory_type"] = memory_type
+            
+            sql += " ORDER BY created_at DESC LIMIT :limit"
+            
+            try:
+                with self.engine.connect() as conn:
+                    result = conn.execute(text(sql), params).fetchall()
+                    return [
+                        {
+                            "agent_name": row[0],
+                            "memory_type": row[1],
+                            "content": json.loads(row[2]) if isinstance(row[2], str) else row[2],
+                            "importance": float(row[3]),
+                            "created_at": row[4].isoformat() if hasattr(row[4], 'isoformat') else str(row[4])
+                        }
+                        for row in result
+                    ]
+            except Exception as e:
+                logger.error(f"Failed to retrieve from DB, trying fallback: {e}")
+                self._db_available = False
+
+        # Fallback: Scrape local files
         try:
-            with self.engine.connect() as conn:
-                result = conn.execute(text(sql), params).fetchall()
-                return [
-                    {
-                        "agent_name": row[0],
-                        "memory_type": row[1],
-                        "content": json.loads(row[2]) if isinstance(row[2], str) else row[2],
-                        "importance": float(row[3]),
-                        "created_at": row[4].isoformat() if hasattr(row[4], 'isoformat') else str(row[4])
-                    }
-                    for row in result
-                ]
+            memories = []
+            if not self.fallback_path.exists():
+                return []
+                
+            for file in sorted(self.fallback_path.glob("*.json"), key=os.path.getmtime, reverse=True):
+                with open(file, 'r', encoding='utf-8') as f:
+                    data = json.load(f)
+                    if memory_type and data.get("memory_type") != memory_type:
+                        continue
+                    memories.append(data)
+                if len(memories) >= limit:
+                    break
+            return memories
         except Exception as e:
-            logger.error(f"Failed to retrieve cognitive memories: {e}")
+            logger.error(f"Fallback retrieval failed: {e}")
             return []
 
     # ──────────────────────────────────────────
     # Long-Term Storage (Files)
     # ──────────────────────────────────────────
 
-    def archive_to_long_term(self, month: str = None):
+    def archive_to_long_term(self, days_old: int = 30) -> int:
         """
-        Archives old medium-term memories to long-term storage (JSON files).
-        將舊的中階記憶歸檔至長階儲存 (JSON 檔案)。
+        Archives old medium-term memories to long-term storage (Vector DB).
+        將舊的中階記憶歸檔至長階向量儲存 (pgvector)。
         """
-        if not month:
-            # Default to last month
-            last_month = datetime.now() - timedelta(days=30)
-            month = last_month.strftime("%Y-%m")
+        if not self._db_available:
+            logger.warning("CognitiveMemoryManager: DB unavailable, skipping archival.")
+            return 0
+            
+        from src.infrastructure.llm.llm_gateway import LLMGatewayFactory
+        from src.services.settings_service import SettingsService
+        from src.domain.interfaces import LLMConfig
+        from src.repositories.vector_repository import AlchemyVectorRepository
         
-        # Implement background compression/archiving logic here
-        pass
+        try:
+            cutoff = datetime.now() - timedelta(days=days_old)
+            with self.engine.begin() as conn:
+                # 1. Query old records
+                query = text("""
+                    SELECT id, agent_name, memory_type, content, importance, source_id, created_at
+                    FROM cognitive_memories
+                    WHERE user_id = :uid AND created_at < :cutoff
+                """)
+                rows = conn.execute(query, {"uid": self.user_id, "cutoff": cutoff}).fetchall()
+                
+            if not rows:
+                logger.info(f"CognitiveMemoryManager: No memories older than {days_old} days to archive.")
+                return 0
+
+            # 2. Get LLM Settings for Embeddings
+            settings = SettingsService(user_id=self.user_id).get_all_settings()
+            provider = settings.get("AI_PROVIDER", "Google Gemini")
+            model = settings.get("AI_MODEL_SMART", "gemini-1.5-pro")
+            api_key = settings.get("API_KEY", "")
+            
+            if provider.lower() == "openai":
+                model = "text-embedding-3-small"
+                
+            llm_config = LLMConfig(provider=provider, model=model, api_key=api_key)
+            gateway = LLMGatewayFactory.create(provider)
+            vector_repo = AlchemyVectorRepository(engine=self.engine)
+            
+            archived_count = 0
+            to_delete_ids = []
+            
+            for row in rows:
+                try:
+                    content_dict = json.loads(row.content) if isinstance(row.content, str) else row.content
+                    text_to_embed = f"[{row.memory_type}] {row.agent_name}: {json.dumps(content_dict, ensure_ascii=False)}"
+                    
+                    # 3. Generate Embedding (Use fallback zero vector if API fails)
+                    try:
+                        embedding = gateway.embed(text_to_embed, llm_config)
+                    except Exception as e:
+                        logger.warning(f"Embedding failed, using zero vector: {e}")
+                        embedding = [0.0] * 1536
+                    
+                    # 4. Store in Vector DB
+                    metadata = {"agent_name": row.agent_name, "memory_type": row.memory_type, "importance": row.importance, "source_id": row.source_id, "archived_from": str(row.created_at)}
+                    vector_repo.add_memory(self.user_id, "archive", text_to_embed, embedding, metadata)
+                    
+                    to_delete_ids.append(row.id)
+                    archived_count += 1
+                except Exception as e:
+                    logger.error(f"Error archiving memory ID {row.id}: {e}")
+                    
+            # 5. Purge archived records
+            if to_delete_ids:
+                with self.engine.begin() as conn:
+                    delete_query = text("DELETE FROM cognitive_memories WHERE id IN :ids")
+                    conn.execute(delete_query, {"ids": tuple(to_delete_ids)})
+                    
+            logger.info(f"CognitiveMemoryManager: Successfully archived {archived_count} old memories to Vector DB.")
+            return archived_count
+            
+        except Exception as e:
+            logger.error(f"archive_to_long_term failed: {e}")
+            return 0
+
+    async def distill_conversation(self, channel_id: str) -> str:
+        """
+        Distills short-term conversation into structured knowledge (DIKW Phase 2).
+        將短期對話蒸餾為結構化知識。
+        """
+        from src.infrastructure.memory.channel_memory_manager import ChannelMemoryManager
+        from src.services.settings_service import SettingsService
+        from src.infrastructure.llm.llm_gateway import LLMGatewayFactory
+        from src.domain.interfaces import Message, LLMConfig
+        from src.utils.async_utils import to_thread
+
+        # 1. Fetch STM
+        memory = ChannelMemoryManager()
+        history = memory.get_short_term_as_messages(channel_id, limit=50)
+        if len(history) < 5:
+            return "Too short for significant distillation."
+
+        # 2. Prepare Distillation Prompt
+        history_text = "\n".join([f"{m['role']}: {m['content']}" for m in history])
+        prompt = f"""Summarize the following investment conversation into a concise knowledge entry.
+         Focus on:
+         - User preferences / risk tolerance
+         - Symbols of interest
+         - Key decisions or conclusions
+         
+         Conversation:
+         {history_text}
+         
+         Output format: Brief, bulleted summary only."""
+
+        # 3. Call Smart Model
+        settings = SettingsService(user_id=self.user_id)
+        config_data = settings.get_all_settings()
+        
+        provider = config_data.get("AI_PROVIDER", "Google Gemini")
+        model = config_data.get("AI_MODEL_SMART", "gemini-1.5-pro")
+        api_key = config_data.get("API_KEY", "")
+
+        gateway = LLMGatewayFactory.create(provider)
+        llm_config = LLMConfig(
+            provider=provider, model=model, api_key=api_key, 
+            temperature=0.3, max_tokens=1000
+        )
+        messages = [
+            Message(role="system", content="You are a context distillation specialist."),
+            Message(role="user", content=prompt)
+        ]
+
+        try:
+            summary = await to_thread(gateway.chat, messages, llm_config)
+            
+            # 4. Store as Knowledge (Medium-Term)
+            self.store_insight(
+                agent_name="CognitiveMemoryManager",
+                memory_type="distilled_conversation",
+                content={"summary": summary, "channel_id": channel_id},
+                importance=0.7,
+                source_id=channel_id
+            )
+            
+            # 5. Clear STM (Keep last 3 messages for immediate continuity)
+            # memory.prune_short_term(channel_id, keep_last=3)
+            # For now, we'll just log it. PRUNING logic needs to be safe.
+            logger.info(f"Distilled conversation for {channel_id} into knowledge.")
+            
+            return summary
+        except Exception as e:
+            logger.error(f"Distillation error: {e}")
+            return f"Error during distillation: {e}"
+
+    def search_historical_context(self, query: str, limit: int = 3) -> List[Dict[str, Any]]:
+        """
+        Pillar 3: Active RAG Retrieval
+        主動檢索長階記憶庫中的相關脈絡。
+        """
+        if not self._db_available:
+            return []
+            
+        from src.infrastructure.llm.llm_gateway import LLMGatewayFactory
+        from src.services.settings_service import SettingsService
+        from src.domain.interfaces import LLMConfig
+        from src.repositories.vector_repository import AlchemyVectorRepository
+        
+        settings = SettingsService(user_id=self.user_id).get_all_settings()
+        provider = settings.get("AI_PROVIDER", "Google Gemini")
+        model = settings.get("AI_MODEL_SMART", "gemini-1.5-pro")
+        api_key = settings.get("API_KEY", "")
+        if provider.lower() == "openai":
+            model = "text-embedding-3-small"
+            
+        llm_config = LLMConfig(provider=provider, model=model, api_key=api_key)
+        gateway = LLMGatewayFactory.create(provider)
+        vector_repo = AlchemyVectorRepository(engine=self.engine)
+        
+        try:
+            # Generate query embedding
+            embedding = gateway.embed(query, llm_config)
+            
+            # Search PGVector
+            results = vector_repo.search_memory(self.user_id, embedding=embedding, query_text=query, top_k=limit)
+            return results
+        except Exception as e:
+            logger.error(f"search_historical_context failed: {e}")
+            return []
 
     def search(self, query: str) -> List[Dict[str, Any]]:
         """
-        Semantic search across tiers (Future optimization).
-        跨層級語義搜索（未來優化）。
+        Semantic search across tiers. Combines Medium and Long-term search.
+        跨層級語義搜索。整合中短期與長期語義檢索。
         """
-        # For now, just return SQL matches
-        return self.get_recent_memories(limit=5)
+        recent = self.get_recent_memories(limit=3)
+        historical = self.search_historical_context(query, limit=2)
+        
+        combined = []
+        for r in recent:
+            combined.append({"source": "Medium-Term", "content": r["content"], "date": r["created_at"], "agent": r.get("agent_name")})
+            
+        for h in historical:
+            combined.append({"source": "Long-Term", "content": h["content"], "score": h.get("final_score")})
+            
+        return combined

@@ -1,0 +1,47 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: advisor-frontend
+  namespace: default
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: advisor-frontend
+  template:
+    metadata:
+      labels:
+        app: advisor-frontend
+    spec:
+      containers:
+      - name: frontend
+        image: gcr.io/YOUR_GCP_PROJECT_ID/investment-advisor-frontend:latest
+        imagePullPolicy: Always
+        ports:
+        - containerPort: 3000
+        env:
+        - name: NODE_ENV
+          value: "production"
+        - name: BACKEND_URL
+          value: "http://mcp-server-service:8000"
+        - name: NEXT_PUBLIC_API_URL
+          value: "https://api.yourdomain.com"
+        livenessProbe:
+          httpGet:
+            path: /
+            port: 3000
+          initialDelaySeconds: 20
+          periodSeconds: 20
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: frontend-service
+spec:
+  type: NodePort
+  ports:
+  - port: 3000
+    targetPort: 3000
+  selector:
+    app: advisor-frontend

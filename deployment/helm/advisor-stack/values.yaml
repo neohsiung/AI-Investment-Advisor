@@ -1,0 +1,83 @@
+# Global settings
+global:
+  domain: advisor.ai
+  storageClass: "standard"
+
+# Infrastructure Services (Enabled by default)
+postgresql:
+  enabled: true
+  auth:
+    database: portfolio
+  primary:
+    extendedConfiguration: |
+      shared_preload_libraries = 'pgvector'
+
+redis:
+  enabled: true
+  architecture: standalone
+
+# Application Services
+services:
+  mcp_server:
+    replicaCount: 2
+    image:
+      repository: advisor-mcp-server
+      tag: latest
+    service:
+      type: ClusterIP
+      port: 8000
+    resources:
+      limits:
+        cpu: 500m
+        memory: 1Gi
+    env:
+      MEMORY_BACKEND: redis
+      DB_HOST: advisor-stack-postgresql
+
+  notification:
+    replicaCount: 1
+    image:
+      repository: advisor-notification
+      tag: latest
+    service:
+      port: 8001
+
+  dashboard:
+    replicaCount: 1
+    image:
+      repository: advisor-dashboard
+      tag: latest
+    service:
+      port: 8501
+
+  frontend:
+    replicaCount: 2
+    image:
+      repository: advisor-frontend
+      tag: latest
+    service:
+      port: 3000
+
+# Worker Services
+workers:
+  celery:
+    replicaCount: 2
+  scheduler:
+    replicaCount: 1
+    singleton: true # Important for cron-like tasks
+
+# Ingress Configuration
+ingress:
+  enabled: true
+  className: nginx
+  annotations:
+    cert-manager.io/cluster-issuer: letsencrypt-prod
+  hosts:
+    - host: api.advisor.ai
+      paths:
+        - path: /
+          serviceName: mcp-server
+    - host: app.advisor.ai
+      paths:
+        - path: /
+          serviceName: frontend

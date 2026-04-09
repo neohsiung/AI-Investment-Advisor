@@ -132,7 +132,8 @@ class TestBaseAgentMoreCoverage:
         res = agent.render_system_prompt({"name": "World"})
         assert res == "Hello World"
 
-    def test_run_tool_loop_search(self, agent):
+    @pytest.mark.asyncio
+    async def test_run_tool_loop_search(self, agent):
         # Mock Search Service import
         with patch('src.services.search_service.InternetSearchService') as MockSearch:
              mock_search_instance = MockSearch.return_value
@@ -144,7 +145,10 @@ class TestBaseAgentMoreCoverage:
                  'Final Answer: Apple is up.'
              ])
              
-             resp = agent.run_tool_loop({})
+             from unittest.mock import AsyncMock
+             mock_search_instance.search_financial_context = AsyncMock(return_value=[{"title": "T", "snippet": "S", "link": "L"}])
+             
+             resp = await agent.run_tool_loop({})
              
              assert resp == 'Final Answer: Apple is up.'
              assert agent.call_llm.call_count == 2

@@ -20,9 +20,12 @@ class EvaluatorAgent(BaseAgent):
     def __init__(self, **kwargs):
         # We use 'fast' tier for low latency guardrail checks
         tier = kwargs.pop('tier', 'fast')
+        # name matches workspace/evaluator-judge mapping if we add it to BaseAgent
+        # or we can pass workspace_path explicitly if needed.
+        # Here we follow the granular plan: remove prompt_path, set name.
         super().__init__(
-            name="Evaluator",
-            prompt_path="prompts/evaluator_agent.txt", 
+            name="Evaluator Judge",
+            prompt_path="", 
             use_cache=False, 
             tier=tier,
             **kwargs
@@ -37,27 +40,19 @@ class EvaluatorAgent(BaseAgent):
         if not report_text:
             return json.dumps({"is_compliant": True, "violation_reason": "No content to evaluate."})
 
-        # Simple prompt for the judge
-        # In a real scenario, this would load from a prompt file.
-        # For this implementation, we define the base logic.
-        system_prompt = (
-            "You are the Investment Compliance Officer. "
-            "Your task is to review the FOLLOWING report for violations of these rules:\n"
-            "1. NO SHORT SELLING recommendations.\n"
-            "2. NO CRYPTOCURRENCY recommendations unless specifically requested.\n"
-            "3. NO OFFENSIVE or unprofessional language.\n"
-            "Output strictly valid JSON: {\"is_compliant\": bool, \"violation_reason\": \"string\"}"
-        )
+        # Render system prompt via ContextAssembler (delegated to by BaseAgent)
+        system_prompt = self.render_system_prompt(context)
         
         user_prompt = f"Please evaluate this report for compliance:\n\n{report_text}"
         
         try:
-            # We use call_llm directly to ensure JSON response format if supported
+            # Consistent with BaseAgent.call_llm which takes messages
+            messages = [
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user_prompt}
+            ]
             response = self.call_llm(
-                messages=[
-                    {"role": "system", "content": system_prompt},
-                    {"role": "user", "content": user_prompt}
-                ],
+                messages=messages,
                 temperature=0.1,
                 response_format={"type": "json_object"}
             )

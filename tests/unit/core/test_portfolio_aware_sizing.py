@@ -1,97 +1,10 @@
 """
-Tests for ActionExtractorAgent with portfolio context support.
+Tests for Position Sizing Skills.
 """
 import pytest
+import unittest
 from unittest.mock import MagicMock, patch
-from src.agents.action_extractor import ActionExtractorAgent
 
-
-@pytest.fixture
-def extractor_agent():
-    """Create an ActionExtractorAgent with mocked LLM."""
-    with patch.object(ActionExtractorAgent, '_load_prompt', return_value="Test"):
-        agent = ActionExtractorAgent(use_cache=False, user_id="test_user", tier="fast")
-    return agent
-
-
-class TestActionExtractorDictContext:
-    """Test that ActionExtractor correctly handles dict context with portfolio."""
-
-    def test_accepts_dict_context(self, extractor_agent):
-        """Should accept dict with decision_text and portfolio keys."""
-        mock_response = '[{"ticker": "TSLA", "action": "SELL", "quantity": 0.5, "confidence": 8, "intent": "full_close", "reason": "Exit position"}]'
-        
-        with patch.object(extractor_agent, 'run_tool_loop', return_value=mock_response):
-            result = extractor_agent.run({
-                "decision_text": "We should exit TSLA entirely",
-                "portfolio": "TSLA(0.5), NVDA(10)"
-            })
-        
-        assert len(result) == 1
-        assert result[0]["ticker"] == "TSLA"
-        assert result[0]["action"] == "SELL"
-        assert result[0]["quantity"] == 0.5
-        assert result[0].get("intent") == "full_close"
-
-    def test_accepts_legacy_string_context(self, extractor_agent):
-        """Should accept a plain string (backward compatible)."""
-        mock_response = '[{"ticker": "AAPL", "action": "BUY", "quantity": 100, "confidence": 7, "reason": "Good value"}]'
-        
-        with patch.object(extractor_agent, 'run_tool_loop', return_value=mock_response):
-            result = extractor_agent.run("We should buy AAPL at current levels")
-        
-        assert len(result) == 1
-        assert result[0]["ticker"] == "AAPL"
-        assert result[0]["action"] == "BUY"
-
-    def test_empty_context_returns_empty(self, extractor_agent):
-        """Empty or None context should return empty list."""
-        assert extractor_agent.run(None) == []
-        assert extractor_agent.run("") == []
-        assert extractor_agent.run({}) == []
-        assert extractor_agent.run({"decision_text": ""}) == []
-
-    def test_portfolio_injected_into_prompt(self, extractor_agent):
-        """When portfolio is provided, it should appear in the prompt sent to LLM."""
-        captured_prompt = None
-        
-        def capture_prompt(prompt):
-            nonlocal captured_prompt
-            captured_prompt = prompt
-            return '[]'
-        
-        with patch.object(extractor_agent, 'run_tool_loop', side_effect=capture_prompt):
-            extractor_agent.run({
-                "decision_text": "Hold all positions",
-                "portfolio": "TSLA(0.5), NVDA(10), Cash: $2,500"
-            })
-        
-        assert captured_prompt is not None
-        assert "TSLA(0.5)" in captured_prompt
-        assert "NVDA(10)" in captured_prompt
-        assert "PORTFOLIO HOLDINGS" in captured_prompt
-
-    def test_no_portfolio_no_holdings_block(self, extractor_agent):
-        """When no portfolio is provided, PORTFOLIO HOLDINGS block should not appear."""
-        captured_prompt = None
-        
-        def capture_prompt(prompt):
-            nonlocal captured_prompt
-            captured_prompt = prompt
-            return '[]'
-        
-        with patch.object(extractor_agent, 'run_tool_loop', side_effect=capture_prompt):
-            extractor_agent.run("Just a simple decision text")
-        
-        assert captured_prompt is not None
-        assert "PORTFOLIO HOLDINGS" not in captured_prompt
-
-    def test_invalid_json_returns_empty(self, extractor_agent):
-        """Invalid LLM JSON response should return empty list, not crash."""
-        with patch.object(extractor_agent, 'run_tool_loop', return_value="This is not JSON"):
-            result = extractor_agent.run("Some decision text")
-        
-        assert result == []
 
 
 class TestPositionSizingSkill:

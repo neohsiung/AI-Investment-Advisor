@@ -15,9 +15,10 @@ Extracted from BaseAgent.run_tool_loop / _parse_tool_call (Phase 2).
 
 import json
 import logging
+import time
 import asyncio
 import re
-from typing import List, Dict, Any, Tuple, Optional, Callable
+from typing import List, Dict, Any, Tuple, Optional, Callable, AsyncGenerator
 from datetime import datetime
 from dataclasses import replace
 from src.domain.interfaces import Message
@@ -86,9 +87,9 @@ class AgentLoop:
             # [Context Guard]
             if check_context_fn and check_context_fn(messages):
                 if flush_fn:
-                    flush_fn(messages)
+                    await flush_fn(messages)
 
-            response_text = call_llm_fn(messages)
+            response_text = await call_llm_fn(messages)
 
             # Tool Parsing - Now supports multiple [Phase 12]
             tool_calls = self.parse_tool_call(response_text)
@@ -157,7 +158,7 @@ class AgentLoop:
         try:
             from src.repositories.pulse_repository import AsyncPulseRepository
             pulse_repo = AsyncPulseRepository()
-            await pulse_repo.log_pulse(self._user_id, self._agent_name, name, args)
+            await pulse_repo.update_pulse(self._agent_name, task=name, metadata=args)
         except Exception as e:
             logger.warning(f"AgentLoop: Failed to log pulse: {e}")
 
@@ -184,7 +185,7 @@ class AgentLoop:
 
     async def _execute_search_async(self, query: str) -> str:
         """Helper to run search asynchronously."""
-        res_list = await self._search_service.search_financial_context(query)
+        res_list = await self._search_service.search_financial_context(query, max_results=3)
         if res_list:
             result = ""
             for r in res_list:

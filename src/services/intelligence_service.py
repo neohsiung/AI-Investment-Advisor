@@ -4,6 +4,7 @@ IntelligenceService — 使用 Tavily + LLM 生成繁體中文市場情報
 import asyncio
 import httpx
 import json
+from typing import Optional
 from src.services.settings_service import SettingsService
 from src.utils.logger import setup_logger
 
@@ -92,9 +93,9 @@ class IntelligenceService:
     def _get_positions_summary(self) -> str:
         """從 DB 取得當前持倉摘要"""
         try:
-            from src.repositories.postgres_repositories import AlchemyTransactionRepository
-            repo = AlchemyTransactionRepository(user_id=self.user_id)
-            transactions = repo.get_all()
+            from src.repositories.transaction_repository import AlchemyTransactionRepository
+            repo = AlchemyTransactionRepository()
+            transactions = repo.get_all_by_user(self.user_id)
             if not transactions:
                 return "當前尚未有任何持倉數據。"
             tickers = list(set([t.ticker for t in transactions]))

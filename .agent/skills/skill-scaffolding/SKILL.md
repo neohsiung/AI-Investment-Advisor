@@ -54,7 +54,8 @@ mkdir -p src/agents/skills/<skill_name>
 ```
 src/agents/skills/<skill_name>/
 ├── metadata.json    # Layer 1: 輕量發現 (必要)
-└── SKILL.md         # Layer 2+3: 完整定義 (必要)
+├── SKILL.md         # Layer 2+3: 完整定義 (必要)
+└── impl.py          # Layer 4: 執行實作 (必要 - 用於熱插拔自動發現)
 ```
 
 ---
@@ -126,47 +127,42 @@ Assistant: <tool_code><skill_name>(param1="value")</tool_code>
 
 ---
 
-## Step 4: 在 `registry.py` 註冊實作
+## Step 4: 撰寫 `impl.py` (實作層)
 
-在 `src/agents/skills/registry.py` 中：
-
-### 4.1 新增 Implementation 函式
+為了支援 **「熱插拔」** 與 **「第三方下載即用」**，嚴格禁止修改 `src/agents/skills/registry.py`。所有的程式碼實作必須放在該 Skill 目錄下的 `impl.py` 中。
 
 ```python
-def _<skill_name>(user_id: str, param1: str) -> str:
-    """簡述功能。"""
-    try:
-        from src.services.<service_module> import <ServiceClass>
+import logging
+import functools
+from src.utils.logger import setup_logger
 
+logger = setup_logger("<skill_name>")
+
+def <skill_name>(user_id: str, **kwargs) -> str:
+    """
+    Skill 進入點函數。
+    名稱必須與目錄名一致。
+    第一個參數必須是 user_id。
+    """
+    try:
+        # ⚠️ 延遲載入 Service 避免循環依賴
+        from src.services.<service_module> import <ServiceClass>
+        
         svc = <ServiceClass>(user_id=user_id)
-        result = svc.<method>(param1)
-        return str(result)
+        # 執行逻辑...
+        return "執行結果"
     except Exception as e:
         logger.error(f"Skill <skill_name> failed: {e}")
         return f"Error: {e}"
 ```
 
-### 4.2 在 `_ensure_builtins()` 中註冊
+### 實作規範 (Implementation Rules)
 
-```python
-def _ensure_builtins(self) -> None:
-    if self._builtin_registered:
-        return
-    self._builtin_registered = True
-
-    self.register("search_web", _search_web)
-    self.register("get_market_data", _get_market_data)
-    self.register("get_portfolio", _get_portfolio)
-    self.register("<skill_name>", _<skill_name>)  # ← 新增
-```
-
-### 實作規範
-
-- ⚠️ **Service import 必須在函式內** (lazy import，避免 circular dependency)
-- ⚠️ **第一個參數必須是 `user_id: str`** (由 `functools.partial` 自動注入)
-- ⚠️ **必須包含 `try-except` 錯誤處理**
-- ⚠️ **使用 Raw SQL 時必須參數化查詢** (規範十: Safe-SQL-Only)
-- ⚠️ **嚴禁硬編碼 API Key 或密碼** (規範十三: No-Hardcoded-Secrets)
+- ⚠️ **禁止修改 `registry.py`**: 系統會自動掃描目錄並掛載 `impl.py`。
+- ⚠️ **函數命名**: 必須與資料夾名稱完全一致。
+- ⚠️ **參數注入**: 第一個參數固定為 `user_id: str`。
+- ⚠️ **資通安全**: 網路下載的 Skill 必須通過 `MCPBackgroundCheckService` 靜態掃描，否則會被攔截。
+- ⚠️ **循環依賴**: 永遠在函數內部 import `src.services`。
 
 ---
 
@@ -218,7 +214,7 @@ python -m pytest tests/ --tb=short
 
 - [ ] `src/agents/skills/<name>/metadata.json` 已建立且欄位完整
 - [ ] `src/agents/skills/<name>/SKILL.md` 已建立且有 Examples
-- [ ] `registry.py` 已新增 impl function + 在 `_ensure_builtins()` 註冊
+- [ ] `src/agents/skills/<name>/impl.py` 已建立且函數命名正確
 - [ ] `SkillLoader.discover_skills()` 可發現
 - [ ] `SkillLoader.load_skills()` 可載入
 - [ ] 測試已寫且通過

@@ -83,7 +83,7 @@ class WalProtocol:
             return True
         return False
 
-    def perform_silent_flush(
+    async def perform_silent_flush(
         self,
         messages: List[Dict[str, str]],
         call_llm_fn: Callable,
@@ -109,8 +109,8 @@ class WalProtocol:
         temp_messages = messages + [{"role": "user", "content": flush_prompt}]
 
         try:
-            # Sync call for the summary
-            wal_state = call_llm_fn(temp_messages, temperature=0.1)
+            # Async call for the summary
+            wal_state = await call_llm_fn(temp_messages, temperature=0.1)
 
             # 2. Write WAL to Workspace /STATE.md
             if self._workspace_path:

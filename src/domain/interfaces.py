@@ -47,7 +47,7 @@ class ILLMGateway(ABC):
     """
 
     @abstractmethod
-    def chat(self, messages: List[Message], config: LLMConfig) -> str:
+    async def chat(self, messages: List[Message], config: LLMConfig) -> str:
         """
         Send messages to LLM and return generated text.
         向 LLM 發送訊息並回傳生成的文本。
@@ -55,15 +55,15 @@ class ILLMGateway(ABC):
         pass
 
     @abstractmethod
-    def stream_chat(self, messages: List[Message], config: LLMConfig) -> typing.Generator[str, None, None]:
+    def stream_chat(self, messages: List[Message], config: LLMConfig) -> typing.AsyncGenerator[str, None]:
         """
         Send messages to LLM and yield generated text chunks.
-        向 LLM 發送訊息並以 Generator 形式回傳生成的文本片段。
+        向 LLM 發送訊息並以 AsyncGenerator 形式回傳生成的文本片段。
         """
         pass
 
     @abstractmethod
-    def embed(self, text: str, config: LLMConfig) -> List[float]:
+    async def embed(self, text: str, config: LLMConfig) -> List[float]:
         """
         Generate embedding vector for the given text.
         為給定文本生成嵌入向量。
@@ -205,9 +205,9 @@ class ILLMProvider(ABC):
     MemoryService 所需的 LLM 操作介面。
     """
     @abstractmethod
-    def summarize(self, text: str) -> str:
+    async def summarize(self, text: str) -> str:
         pass
 
     @abstractmethod
-    def check_contradictions(self, new_text: str, context_text: str) -> List[str]:
+    async def check_contradictions(self, new_text: str, context_text: str) -> List[str]:
         pass

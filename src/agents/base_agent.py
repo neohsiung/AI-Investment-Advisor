@@ -3,11 +3,13 @@ import json
 import requests
 import hashlib
 import re
+import subprocess
+import pathlib
 from dataclasses import asdict
 from src.utils.security import redact_secrets
 from abc import ABC, abstractmethod
 import typing
-from typing import List, Dict, Tuple, Any, Optional, Callable, Generator
+from typing import List, Dict, Tuple, Any, Optional, Callable, Generator, AsyncGenerator
 from sqlalchemy import text
 from jinja2 import Template
 # from src.data.database import get_db_connection # Removed for DIP
@@ -64,7 +66,9 @@ class BaseAgent(ABC):
             "Momentum": "market-scanner",
             "Fundamental": "data-prep",
             "Thematic": "portfolio-manager",
-            "Engineer": "system-engineer"
+            "Engineer": "system-engineer",
+            "Evaluator Judge": "evaluator-judge",
+            "Sensory Watchdog": "sensory-watchdog"
         }
         mapped_name = workspace_map.get(self.name, self.name.lower().replace(" ", "-"))
         self.workspace_path = f"workspace/{mapped_name}"
@@ -89,10 +93,6 @@ class BaseAgent(ABC):
         # Set up Tool Server
         self.toold = McpServer(name=f"{self.name}_Tools")
         
-        # Bind implementations
-        from src.agents.skills.registry import bind_skills_to_agent
-        bind_skills_to_agent(self)
-        
         # [Phase 2] Composition: ContextAssembler, WalProtocol, AgentLoop
         self._context_assembler = ContextAssembler(
             skill_loader=self.skill_loader,
@@ -110,6 +110,70 @@ class BaseAgent(ABC):
             toold=self.toold,
             user_id=self.user_id
         )
+        
+        # [Task 1.1] Register run_script as a built-in generic tool
+        self._register_builtin_tools()
+
+    def _register_builtin_tools(self):
+        """Register generic tools available to all agents."""
+        run_script_tool = McpTool(
+            name="run_script",
+            description="Execute a local python script (cli.py) from a skill directory. Use this to perform data retrieval or analysis tasks.",
+            func=self.run_script
+        )
+        self.register_tool(run_script_tool)
+
+    async def run_script(self, skill_name: str, args: List[str] = None) -> str:
+        """
+        Execute a local python script (cli.py) from a skill directory.
+        安全限制：只能執行 .agent/skills/ 或 src/agents/skills/ 下的 cli.py
+        """
+        if args is None:
+            args = []
+            
+        # [Security] Path validation
+        # Only allow alphanumeric and underscore for skill_name to prevent path traversal
+        if not re.match(r"^[a-zA-Z0-9_\-]+$", skill_name):
+            return "Error: Invalid skill_name format."
+
+        # Search in both locations
+        potential_paths = [
+            pathlib.Path(f"src/agents/skills/{skill_name}/cli.py"),
+            pathlib.Path(f".agent/skills/{skill_name}/cli.py"),
+            pathlib.Path(f"src/agents/skills/{skill_name}/main.py") # Fallback to main.py
+        ]
+        
+        script_path = None
+        for p in potential_paths:
+            if p.exists():
+                script_path = p
+                break
+        
+        if not script_path:
+            return f"Error: Skill '{skill_name}' does not have a cli.py implementation."
+
+        try:
+            # Execute the script
+            # Note: We use the current venv's python if possible or just "python"
+            cmd = ["python", str(script_path)] + args
+            self.logger.info(f"Executing: {' '.join(cmd)}")
+            
+            # Use run with timeout for safety
+            result = subprocess.run(
+                cmd,
+                capture_output=True,
+                text=True,
+                timeout=30 # 30 seconds limit
+            )
+            
+            if result.returncode != 0:
+                return f"Error (Code {result.returncode}):\nSTDOUT: {result.stdout}\nSTDERR: {result.stderr}"
+            
+            return result.stdout
+        except subprocess.TimeoutExpired:
+            return "Error: Script execution timed out."
+        except Exception as e:
+            return f"Error executing script: {str(e)}"
     def register_tool(self, tool: McpTool):
         """
         Register a tool for the agent to use.
@@ -265,9 +329,9 @@ class BaseAgent(ABC):
         """Check context window - delegates to WalProtocol."""
         return self._wal_protocol.check_context_window(messages, reserve_floor, max_tokens)
 
-    def _perform_silent_flush(self, messages: List[Dict[str, str]]):
+    async def _perform_silent_flush(self, messages: List[Dict[str, str]]):
         """WAL Protocol flush - delegates to WalProtocol."""
-        self._wal_protocol.perform_silent_flush(messages, self.call_llm)
+        await self._wal_protocol.perform_silent_flush(messages, self.call_llm)
 
     async def run_tool_loop(self, context, max_turns=3, thought_chain=False):
         """
@@ -474,7 +538,7 @@ class BaseAgent(ABC):
             timeout_seconds=30,
         )
 
-    def call_llm(self, messages, temperature=0.7, response_format=None):
+    async def call_llm(self, messages, temperature=0.7, response_format=None):
         """
         Unified method to call LLM - delegates to ILLMGateway.
         統一的 LLM 調用方法 - 委派至 ILLMGateway
@@ -505,9 +569,9 @@ class BaseAgent(ABC):
             Message(role="system", content=system_prompt),
             Message(role="user", content=user_prompt),
         ]
-        return self._llm_gateway.chat(gateway_messages, config)
+        return await self._llm_gateway.chat(gateway_messages, config)
 
-    def stream_llm(self, messages, temperature=0.7) -> Generator[str, None, None]:
+    async def stream_llm(self, messages, temperature=0.7) -> AsyncGenerator[str, None]:
         """
         Unified method to stream LLM response - delegates to ILLMGateway.
         統一的 LLM 串流調用方法 - 委派至 ILLMGateway
@@ -530,20 +594,21 @@ class BaseAgent(ABC):
             Message(role="system", content=system_prompt),
             Message(role="user", content=user_prompt),
         ]
-        return self._llm_gateway.stream_chat(gateway_messages, config)
+        async for chunk in self._llm_gateway.stream_chat(gateway_messages, config):
+            yield chunk
 
     # Legacy aliases for backward compatibility (deprecated - will be removed)
-    def _mock_llm_call(self, prompt, system_prompt):
+    async def _mock_llm_call(self, prompt, system_prompt):
         """Legacy bridge: delegates to call_llm via gateway."""
         messages = [
             {"role": "system", "content": system_prompt},
             {"role": "user", "content": prompt},
         ]
-        return self.call_llm(messages)
+        return await self.call_llm(messages)
 
-    def _call_real_llm(self, prompt, system_prompt):
+    async def _call_real_llm(self, prompt, system_prompt):
         """Legacy bridge: delegates to call_llm via gateway."""
-        return self._mock_llm_call(prompt, system_prompt)
+        return await self._mock_llm_call(prompt, system_prompt)
 
     def _redact_secrets(self, text_value):
         """

@@ -20,12 +20,14 @@ RUN addgroup --system appgroup && \
 
 ENV HOME=/home/appuser
 
-# Copy requirements
-COPY requirements.txt .
-RUN pip install --upgrade pip && pip install --no-cache-dir -r requirements.txt
+# Copy dependency files
+COPY pyproject.toml uv.lock ./
+RUN pip install --no-cache-dir uv && \
+    uv pip install --system --no-cache -r pyproject.toml
 
-# Copy service code
+# Copy service code & core packages
 COPY ./services/notification /workspace/services/notification
+COPY ./src /workspace/src
 
 # Create data directories
 RUN mkdir -p /workspace/data /workspace/logs && \

@@ -6,8 +6,8 @@ from __future__ import annotations
 import os
 import time
 import json
-import typing
-from typing import List, Dict, Tuple, Any, Optional, Callable, Dict, List, Tuple, Any, Optional, Callable
+import asyncio
+from typing import List, Dict, Tuple, Any, Optional, Callable
 from src.utils.logger import setup_logger
 from src.services.settings_service import SettingsService
 from src.utils.cache import ResponseCache
@@ -66,7 +66,7 @@ class InternetSearchService:
             self.logger.warning(f"Failed to initialize DuckDuckGo: {e}")
 
     @circuit_breaker(name="InternetSearch", failure_threshold=3, recovery_timeout=60)
-    def search_financial_context(self, query: str, max_results: int = 3) -> List[Dict[str, str]]:
+    async def search_financial_context(self, query: str, max_results: int = 3) -> List[Dict[str, str]]:
         """
         Search for financial context. Tries Tavily first, then DuckDuckGo.
         搜尋財經相關資訊。優先使用 Tavily，若失敗則使用 DuckDuckGo。
@@ -117,7 +117,7 @@ class InternetSearchService:
 
         # Fallback to DuckDuckGo
         if self.ddgs:
-            results = self._search_duckduckgo(query, max_results)
+            results = await self._search_duckduckgo(query, max_results)
         
         if results:
             self.cache[query] = (time.time(), results)
@@ -128,7 +128,7 @@ class InternetSearchService:
                     pass
         return results
 
-    def _search_duckduckgo(self, query: str, max_results: int) -> List[Dict[str, str]]:
+    async def _search_duckduckgo(self, query: str, max_results: int) -> List[Dict[str, str]]:
         """
         DuckDuckGo fallback search with retry logic.
         DuckDuckGo 備援搜尋，降低重試次數避免阻塞 Dashboard。
@@ -155,9 +155,9 @@ class InternetSearchService:
                 # 取得更詳細的錯誤名稱以防 str(e) 為空
                 self.logger.warning(f"DuckDuckGo attempt {attempt+1} failed: {type(e).__name__} - {e}")
                 
-                 # 若已達最後一次重試，不需要再 sleep
+                # 若已達最後一次重試，不需要再 sleep
                 if attempt < retries:
-                    time.sleep(1) # 縮短等待時間 (Shorten wait time)
+                    await asyncio.sleep(1) # 縮短等待時間 (Shorten wait time)
 
         if not results:
             self.logger.warning(f"DuckDuckGo search failed after retries. Last Error: {type(last_error).__name__} - {last_error}")

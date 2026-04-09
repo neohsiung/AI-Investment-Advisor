@@ -104,6 +104,24 @@ class AlchemyUserRepository(BaseRepository, IUserRepository):
             rows = conn.execute(query, {"uid": user_id}).fetchall()
             return [dict(r._mapping) for r in rows]
 
+    def create_user(self, email: str, name: str = None) -> str:
+        user_uuid = str(uuid.uuid4())
+        with self.engine.begin() as conn:
+            # 1. Create User
+            conn.execute(
+                text("INSERT INTO users (id, email, name) VALUES (:id, :email, :name)"),
+                {"id": user_uuid, "email": email, "name": name or email}
+            )
+            
+            # 2. Link primary email identity
+            conn.execute(text("""
+                INSERT INTO user_identities (id, user_id, provider, identifier, is_primary)
+                VALUES (:id, :user_id, 'email', :identifier, 1)
+            """), {
+                "id": str(uuid.uuid4()),
+                "user_id": user_uuid,
+                "identifier": email
+            })
         return user_uuid
 
 class AsyncAlchemyUserRepository(AsyncBaseRepository, IAsyncUserRepository):

@@ -16,8 +16,10 @@ RUN addgroup --system appgroup && \
 
 ENV HOME=/home/appuser
 
-COPY requirements.txt .
-RUN pip install --upgrade pip && pip install --no-cache-dir -r requirements.txt
+# Copy dependency files
+COPY pyproject.toml uv.lock ./
+RUN pip install --no-cache-dir uv && \
+    uv pip install --system --no-cache -r pyproject.toml
 
 # Copy service and core
 COPY ./services/scheduler /workspace/services/scheduler

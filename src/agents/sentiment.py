@@ -49,18 +49,8 @@ class SentimentAgent(BaseAgent):
             "price_change_percent": context.get("price_change_percent", "N/A")
         }
         
-        return await self.run_tool_loop(context=prompt_data)
-        user_prompt = f"Analyze sentiment for {ticker}."
-        
-        # Use JSON mode if supported by provider, but prompt asks for raw JSON.
-        # 如果提供者支援，使用 JSON 模式，但 Prompt 要求原始 JSON。
-        response_str = self.call_llm(
-             messages=[
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": user_prompt}
-            ],
-            temperature=0.2
-        )
+        # v9.0 Async / RAG pipeline compat
+        response_str = await self.run_tool_loop(context=prompt_data)
         
         # Parse JSON
         # 解析 JSON

@@ -1,0 +1,42 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: advisor-ingress
+  namespace: default
+  annotations:
+    kubernetes.io/ingress.class: "gce"
+    # To enable HTTPS, setup a ManagedCertificate and link it here
+    # networking.gke.io/managed-certificates: "advisor-certificate"
+    # networking.gke.io/v1beta1.FrontendConfig: "advisor-frontend-config" # for HTTP->HTTPS redirect
+spec:
+  rules:
+  - host: www.yourdomain.com
+    http:
+      paths:
+      - path: /*
+        pathType: ImplementationSpecific
+        backend:
+          service:
+            name: frontend-service
+            port:
+              number: 3000
+  - host: api.yourdomain.com
+    http:
+      paths:
+      - path: /*
+        pathType: ImplementationSpecific
+        backend:
+          service:
+            name: mcp-server-service
+            port:
+              number: 8000
+  - host: admin.yourdomain.com
+    http:
+      paths:
+      - path: /*
+        pathType: ImplementationSpecific
+        backend:
+          service:
+            name: dashboard-service
+            port:
+              number: 8501

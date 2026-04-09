@@ -1,12 +1,20 @@
 import React from "react";
+import { cn } from "@/lib/utils";
 import { ISentimentMetric } from "@/features/intelligence/domain/types";
 
 interface BriefingCardProps {
-  summary: string;
-  recommendation: string;
-  note: string;
-  status: string;
-  metrics: ISentimentMetric[];
+  // Legacy Data-driven props
+  summary?: string;
+  recommendation?: string;
+  note?: string;
+  status?: string;
+  metrics?: ISentimentMetric[];
+  
+  // New Layout-driven props
+  title?: string;
+  tags?: string[];
+  children?: React.ReactNode;
+  
   className?: string;
 }
 
@@ -16,10 +24,45 @@ export default function BriefingCard({
   note, 
   status, 
   metrics,
+  title,
+  tags = [],
+  children,
   className = "" 
 }: BriefingCardProps) {
+  // If children or title is provided, use the layout-driven rendering
+  if (children || title) {
+    return (
+      <div className={cn("bg-surface-container-low rounded-[2rem] shadow-lg border border-outline-variant/10 overflow-hidden flex flex-col transition-all hover:shadow-xl", className)}>
+        <div className="p-8 border-b border-outline-variant/10 flex justify-between items-center bg-surface-container">
+          <div className="flex flex-col gap-2">
+            {tags.length > 0 && (
+              <div className="flex gap-2">
+                {tags.map(tag => (
+                  <span key={tag} className="text-[10px] font-mono text-primary bg-primary/10 px-2 py-0.5 rounded-full uppercase tracking-widest font-black">
+                    {tag}
+                  </span>
+                ))}
+              </div>
+            )}
+            <h3 className="text-2xl font-black font-headline text-on-surface tracking-tighter">
+              {title}
+            </h3>
+          </div>
+          <div className="h-10 w-10 rounded-full bg-primary/10 flex items-center justify-center">
+             <span className="material-symbols-outlined text-primary">analytics</span>
+          </div>
+        </div>
+        
+        <div className="p-8">
+          {children}
+        </div>
+      </div>
+    );
+  }
+
+  // Otherwise, fallback to the legacy data-driven rendering
   return (
-    <div className={`bg-surface-container-low rounded-xl shadow-lg border border-outline-variant/10 overflow-hidden flex flex-col transition-all hover:shadow-xl ${className}`}>
+    <div className={cn("bg-surface-container-low rounded-xl shadow-lg border border-outline-variant/10 overflow-hidden flex flex-col transition-all hover:shadow-xl", className)}>
       <div className="p-6 border-b border-outline-variant/10 flex justify-between items-center bg-surface-container">
         <div className="flex flex-col">
           <h3 className="text-lg font-black font-headline text-on-surface tracking-tighter uppercase">
@@ -56,23 +99,25 @@ export default function BriefingCard({
           </div>
         </div>
 
-        <div className="space-y-4">
-          <h4 className="text-[10px] font-label font-black uppercase tracking-[0.2em] text-on-surface-variant">情緒多維度指標 (Sentiment)</h4>
-          {metrics.map((metric, i) => (
-            <div key={i} className="space-y-1.5">
-              <div className="flex justify-between text-[10px] font-bold uppercase tracking-widest">
-                <span className="text-on-surface-variant">{metric.label}</span>
-                <span className="text-on-surface">{metric.value}%</span>
+        {metrics && metrics.length > 0 && (
+          <div className="space-y-4">
+            <h4 className="text-[10px] font-label font-black uppercase tracking-[0.2em] text-on-surface-variant">情緒多維度指標 (Sentiment)</h4>
+            {metrics.map((metric, i) => (
+              <div key={i} className="space-y-1.5">
+                <div className="flex justify-between text-[10px] font-bold uppercase tracking-widest">
+                  <span className="text-on-surface-variant">{metric.label}</span>
+                  <span className="text-on-surface">{metric.value}%</span>
+                </div>
+                <div className="h-1.5 w-full bg-surface-container-highest rounded-full overflow-hidden">
+                  <div 
+                    className={`h-full ${metric.color} transition-all duration-1000 ease-out`}
+                    style={{ width: `${metric.value}%` }}
+                  ></div>
+                </div>
               </div>
-              <div className="h-1.5 w-full bg-surface-container-highest rounded-full overflow-hidden">
-                <div 
-                  className={`h-full ${metric.color} transition-all duration-1000 ease-out`}
-                  style={{ width: `${metric.value}%` }}
-                ></div>
-              </div>
-            </div>
-          ))}
-        </div>
+            ))}
+          </div>
+        )}
       </div>
     </div>
   );

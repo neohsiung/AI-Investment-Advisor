@@ -19,24 +19,26 @@ def cio_agent(mock_transaction_repo):
     agent = CIOAgent(user_id="test_user", use_cache=False, transaction_repo=mock_transaction_repo)
     return agent
 
-def test_run_strategy_mode(cio_agent):
+@pytest.mark.asyncio
+async def test_run_strategy_mode(cio_agent):
     context = {"user_id": "test_user", "macro_report": "Bullish"}
     
     # Mock internal methods used in strategy
     with patch.object(cio_agent, 'call_llm', return_value='{"sector_strategy": {}, "candidates": []}'):
         # We don't verify portfolio context details here, just that it runs
-        result = cio_agent.run(context, mode='strategy')
+        result = await cio_agent.run(context, mode='strategy')
         
         assert isinstance(result, dict)
         assert "sector_strategy" in result
         assert "candidates" in result
 
-def test_run_report_mode(cio_agent):
+@pytest.mark.asyncio
+async def test_run_report_mode(cio_agent):
     context = {"user_id": "test_user", "macro_report": "Bullish"}
     
     # Mock run_tool_loop since report mode uses it
     with patch.object(cio_agent, 'run_tool_loop', return_value='Markdown Report'):
-        result = cio_agent.run(context, mode='report')
+        result = await cio_agent.run(context, mode='report')
         assert result == "Markdown Report"
 
 def test_get_portfolio_context_success(cio_agent, mock_transaction_repo):

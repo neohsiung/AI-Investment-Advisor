@@ -1,0 +1,25 @@
+{
+  "name": "extract_actions",
+  "description": "Extract structured trade orders (BUY/SELL) from AI decision text.",
+  "version": "1.0.0",
+  "category": "Trading",
+  "parameters": {
+    "user_id": {
+      "type": "string",
+      "description": "User identifier for context and settings."
+    },
+    "decision_text": {
+      "type": "string",
+      "description": "The free-form text containing investment decisions."
+    },
+    "portfolio": {
+      "type": "string",
+      "description": "Optional summary of current holdings to validate quantities.",
+      "default": ""
+    }
+  },
+  "returns": {
+    "type": "string",
+    "description": "A JSON string representation of a list of trade objects."
+  }
+}

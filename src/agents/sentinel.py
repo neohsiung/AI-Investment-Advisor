@@ -19,7 +19,7 @@ class SentinelAgent(BaseAgent):
             **kwargs
         )
 
-    def run(self, context):
+    async def run(self, context):
         """
         Evaluate priority for a trigger.
         context expects:
@@ -39,7 +39,7 @@ class SentinelAgent(BaseAgent):
 
         try:
             # 1. Initial Priority Assessment via Sentinel Prompt
-            response_str = self.run_tool_loop(context=prompt_data)
+            response_str = await self.run_tool_loop(context=prompt_data)
         
             # Clean up response if it contains markdown or thinking text
             # 精簡：尋找第一個 { 並從那裡開始解析，或使用正則提取
@@ -65,7 +65,7 @@ class SentinelAgent(BaseAgent):
                 self.logger.info(f"Sentinel consulting {target_agent} for deeper priority validation.")
                 
                 consult_msg = f"Please confirm if the following event deserves {result_data['priority']} attention: {prompt_data['event_data']}"
-                consult_res = self.call_agent(target_agent, consult_msg)
+                consult_res = await self.call_agent(target_agent, consult_msg)
                 
                 # If sub-agent explicitly downgrades or provides critical insights, we could update rationale.
                 # For now, we just log and append info to the rationale.

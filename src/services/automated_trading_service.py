@@ -307,12 +307,16 @@ class AutomatedTradingService:
         Extract trade recommendations from Council decisions and execute them based on confidence.
         從評議會決策中提取交易建議，並根據信心分數執行。
         """
-        from src.agents.factory import AgentFactory
+        from src.agents.skills.skill_loader import SkillLoader
+        import json
         
         logger.info(f"AutomatedTradingService: Extracting actions from Council decision for user {user_id}")
-        extractor = AgentFactory.create_action_extractor_agent(user_id=user_id, tier="nano")
+        loader = SkillLoader(user_id=user_id)
         
-        trades = extractor.run(decision_text)
+        # Skillified: Use extract_actions skill instead of dedicated agent
+        trades_json = await loader.run_skill("extract_actions", user_id=user_id, decision_text=decision_text)
+        trades = json.loads(trades_json)
+
         if not trades:
             logger.info("AutomatedTradingService: No actionable trades found in Council decision.")
             return []
