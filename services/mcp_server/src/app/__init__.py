@@ -324,42 +324,6 @@ async def root():
     """健康檢查端點 (Root)"""
     return {"status": "ok", "service": "mcp_server", "version": "1.1.0"}
 
-# --- v21.3: Admin Metrics & Health Dashboard [Phase 21] ---
-@app.get("/api/admin/metrics")
-async def get_admin_metrics(user: Dict[str, Any] = Depends(get_current_user)):
-    """
-    獲取系統維運指標 (限管理者)
-    """
-    # 權限檢查 (目前僅允許 system 帳號或預設主要使用者)
-    if user.get("sub") != "system" and user.get("email") not in os.getenv("ADMIN_EMAILS", "").split(","):
-        # For local dev, we might relax this or check if it matches primary user
-        pass 
-        
-    from src.repositories.usage_repository import UsageRepository
-    usage_repo = UsageRepository()
-    
-    # 1. Total Cost Today
-    total_cost_today = usage_repo.get_system_total_cost_today()
-    
-    # 2. Top Spenders
-    top_spenders = usage_repo.get_top_spenders(limit=5)
-    
-    # 3. Circuit Breaker States
-    # (Checking InternetSearchService or others if they expose state)
-    cb_states = {}
-    search_svc = services.get("search")
-    if search_svc and hasattr(search_svc, "_circuit_breaker"):
-        cb_states["search_service"] = str(search_svc._circuit_breaker.state)
-
-    return {
-        "status": "success",
-        "timestamp": datetime.now().isoformat(),
-        "metrics": {
-            "total_cost_today_usd": total_cost_today,
-            "top_spenders": top_spenders,
-            "circuit_breakers": cb_states
-        }
-    }
 
 @app.get("/health")
 async def health():
@@ -771,6 +735,43 @@ async def auth_logout():
     response.delete_cookie("access_token")
     response.delete_cookie("refresh_token")
     return response
+
+# --- v21.3: Admin Metrics & Health Dashboard [Phase 21] ---
+@app.get("/api/admin/metrics")
+async def get_admin_metrics(user: Dict[str, Any] = Depends(get_current_user)):
+    """
+    獲取系統維運指標 (限管理者)
+    """
+    # 權限檢查 (目前僅允許 system 帳號或預設主要使用者)
+    if user.get("sub") != "system" and user.get("email") not in os.getenv("ADMIN_EMAILS", "").split(","):
+        # For local dev, we might relax this or check if it matches primary user
+        pass 
+        
+    from src.repositories.usage_repository import UsageRepository
+    usage_repo = UsageRepository()
+    
+    # 1. Total Cost Today
+    total_cost_today = usage_repo.get_system_total_cost_today()
+    
+    # 2. Top Spenders
+    top_spenders = usage_repo.get_top_spenders(limit=5)
+    
+    # 3. Circuit Breaker States
+    # (Checking InternetSearchService or others if they expose state)
+    cb_states = {}
+    search_svc = services.get("search")
+    if search_svc and hasattr(search_svc, "_circuit_breaker"):
+        cb_states["search_service"] = str(search_svc._circuit_breaker.state)
+
+    return {
+        "status": "success",
+        "timestamp": datetime.now().isoformat(),
+        "metrics": {
+            "total_cost_today_usd": total_cost_today,
+            "top_spenders": top_spenders,
+            "circuit_breakers": cb_states
+        }
+    }
 
 # --- WebSocket Endpoint ---
 

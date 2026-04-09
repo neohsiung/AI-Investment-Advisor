@@ -35,6 +35,7 @@ class LeverageCalculator:
         # To keep it efficient, let's get weighted average leverage per ticker or sum of Nominal Values from DB.
         
         holdings = self.repo.get_leverage_summary(user_id, account_id)
+        holdings_detail = self.repo.get_holdings(user_id, account_id)
 
         tnv = 0.0
         portfolio_value = 0.0
@@ -44,10 +45,10 @@ class LeverageCalculator:
                 continue
 
             price = self._get_effective_price(ticker, current_prices, user_id)
+            avg_cost = next((h['avg_price'] for h in holdings_detail if h['ticker'] == ticker), 0.0)
+            
             # v4.3.2: Defensive: If price is 0, fallback to average cost to prevent NLV collapse
             if price <= 0:
-                holdings_detail = self.repo.get_holdings(user_id, account_id)
-                avg_cost = next((h['avg_price'] for h in holdings_detail if h['ticker'] == ticker), 0.0)
                 price = avg_cost
                 logger.warning(f"LeverageCalc: Price for {ticker} is 0. Falling back to avg_cost: {price}")
                 
@@ -58,9 +59,13 @@ class LeverageCalculator:
             
             tnv += abs(nominal_exposure)
             
-            # [FIX] NLV should be based on Equity (Market Value / Leverage), not Nominal Value
-            # For 1x leverage, equity == market_val. For 5x, equity = market_val / 5.
-            equity = market_val / leverage
+            # [FIX] NLV should be based on Equity (Method B from specs)
+            # equity = margin_invested + unrealized_pnl = (qty * open_price / lev) + qty * (price - open_price)
+            eff_leverage = leverage if leverage > 0 else 1.0
+            margin_invested = (qty * avg_cost) / eff_leverage
+            unrealized_pnl = qty * (price - avg_cost)
+            equity = margin_invested + unrealized_pnl
+            
             portfolio_value += equity 
 
         # 2. Calculate Net Liquidity Value (NLV)

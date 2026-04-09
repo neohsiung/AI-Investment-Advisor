@@ -101,14 +101,15 @@ class DashboardService:
                 pnl_data = self.pnl_calc.calculate_breakdown(current_prices, user_id=user_id)
                 
                 metrics = metrics_derived
-                metrics['invested_capital'] = self.transaction_repo.calculate_net_invested_capital(user_id)
+                metrics['invested_capital'] = pnl_data.get('invested_capital', 0)
                 metrics['unrealized_pnl'] = pnl_data.get('unrealized', 0)
                 
                 pnl_data['total'] = metrics['nlv'] - metrics['invested_capital']
                 pnl_data['realized'] = pnl_data['total'] - pnl_data['unrealized']
                 metrics['gross_nlv'] = metrics_derived['tnv'] + metrics_derived['cash_balance']
 
-                roi = self.roi_engine.calculate_roi(metrics['nlv'], user_id=user_id)
+                invested = metrics['invested_capital']
+                roi = ((metrics['nlv'] - invested) / invested) * 100 if invested > 0 else 0.0
             except Exception as e:
                 logger.error(f"Metric calculation failed: {e}")
 

@@ -192,7 +192,8 @@ class TelegramAdapter(BaseChannelAdapter):
             if chat and text:
                 chat_id = str(chat.get("id"))
                 logger.info(f"Telegram Text: {text} from {chat_id}")
-                await self._trigger_text_callback(chat_id, text)
+                import asyncio
+                asyncio.create_task(self._trigger_text_callback(chat_id, text))
         
         return {"ok": True}
         
