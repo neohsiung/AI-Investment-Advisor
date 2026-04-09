@@ -202,11 +202,11 @@ export default function PerformancePage() {
           <div className="grid grid-cols-2 gap-4 h-[200px]">
             <div className="bg-surface-container px-4 py-8 rounded-2xl flex flex-col justify-center items-center">
                 <p className="text-[10px] font-black uppercase text-on-surface-variant tracking-widest mb-2">已實現損益</p>
-                <p className="text-xl font-bold font-mono text-secondary">{formatCurrency(summary.unrealized_pnl || 0)}</p>
+                <p className="text-xl font-bold font-mono text-secondary">{formatCurrency(summary.realized_pnl || 0)}</p>
              </div>
              <div className="bg-surface-container px-4 py-8 rounded-2xl flex flex-col justify-center items-center">
                 <p className="text-[10px] font-black uppercase text-on-surface-variant tracking-widest mb-2">未實現損益</p>
-                <p className="text-xl font-bold font-mono text-primary">{formatCurrency(summary.total_pnl || 0)}</p>
+                <p className="text-xl font-bold font-mono text-primary">{formatCurrency(summary.unrealized_pnl || 0)}</p>
              </div>
           </div>
         </div>

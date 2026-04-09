@@ -301,7 +301,25 @@ class AutomatedTradingService:
                         f"Notification API returned {response.status_code}: {response.text}"
                     )
         except Exception as e:
-            logger.error(f"Failed to dispatch trade notification via API: {e}")
+            logger.error(f"Failed to dispatch trade notification via API: {e}. Attempting direct fallback.")
+            # v8.2: Fallback to direct NotificationService if API is down
+            try:
+                if not self.notification_service:
+                    from src.services.settings_service import SettingsService
+                    from src.services.notification_service import NotificationService
+                    settings_svc = SettingsService(user_id=user_id)
+                    self.notification_service = NotificationService.create_with_settings(settings_service=settings_svc, user_id=user_id)
+                
+                await self.notification_service.notify_all(
+                    title=title,
+                    content=content,
+                    user_id=user_id,
+                    channels=["line", "telegram", "email", "discord", "slack"],
+                    category=category
+                )
+                logger.info("Fallback direct notification successful.")
+            except Exception as fallback_e:
+                logger.error(f"Fallback direct notification failed: {fallback_e}")
     async def process_council_decision(self, user_id: str, decision_text: str) -> List[Dict[str, Any]]:
         """
         Extract trade recommendations from Council decisions and execute them based on confidence.

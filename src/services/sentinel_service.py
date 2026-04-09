@@ -752,9 +752,8 @@ class SentinelService:
                     # 將 VIX 四捨五入至小數點第一位，大幅提升 Redis 快取命中率
                     rounded_vix = round(self.current_vix, 1)
 
-                    # Offload to thread pool
-                    eval_res = await to_thread(
-                        sentinel_agent.run,
+                    # Offload to thread pool (NOT needed anymore as agent.run is async)
+                    eval_res = await sentinel_agent.run(
                         {
                             "trigger_source": source,
                             "event_data": event_data,
@@ -1626,11 +1625,13 @@ class SentinelService:
         
         try:
             # 1. Invoke cash_deployment skill directly for immediate analysis
-            from src.agents.skill_factory import SkillFactory
-            skill = SkillFactory.get_skill("cash_deployment")
+            from src.agents.skills.registry import get_default_registry
+            skill_func = get_default_registry().get("cash_deployment")
             
-            if skill:
-                result = await skill.run(user_id=self.user_id)
+            if skill_func:
+                # Skills are now direct async functions
+                res_json = await skill_func(user_id=self.user_id)
+                result = json.loads(res_json)
                 logger.info(f"Sentinel: Cash Deployment Analysis: {result.get('message')}")
                 
                 # 2. If excess cash is confirmed and tickers discovered, trigger the CIO Workflow

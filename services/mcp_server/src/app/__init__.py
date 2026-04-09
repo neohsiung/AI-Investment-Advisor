@@ -80,32 +80,77 @@ def get_current_user(request: Request) -> Dict[str, Any]:
         
     return payload
 
+_ws_data_cache: Dict[str, Any] = {}
+_ws_last_fetch: Dict[str, float] = {}
+WS_CACHE_TTL = 60  # seconds between full data refreshes
+
+async def _warm_redis_cache(user_id: str, summary: dict) -> None:
+    """Write the latest summary to Redis so REST /summary can respond instantly."""
+    try:
+        import redis as _redis, json as _json, os as _os
+        r = _redis.from_url(_os.getenv("REDIS_URL", "redis://redis:6379/0"), decode_responses=True)
+        payload = _json.dumps({"status": "success", "data": summary})
+        r.setex(f"dashboard:summary:{user_id}", 120, payload)
+    except Exception:
+        pass  # Redis unavailable — REST endpoint will fall through to full compute
+
 async def websocket_broadcast_loop():
-    """定期為所有活躍連線推送數據更新 (每 5 秒)"""
+    """定期為所有活躍連線推送數據更新 (每 30 秒廣播，每 60 秒重新計算)"""
     from src.services.dashboard_service import DashboardService
+    import time
     logger.info("✓ Starting WebSocket Broadcast Loop...")
     while True:
         try:
             active_users = list(socket_manager.active_connections.keys())
             for user_id in active_users:
-                # 獲取該使用者的最新數據 (DashboardService 內部有快取，因此 5s 頻率是安全的)
-                service = DashboardService(user_id=user_id)
-                data = service.prepare_dashboard_data(user_id=user_id)
-                
-                # 廣播更新
+                now = time.monotonic()
+                # Only recompute when cache is stale
+                if user_id not in _ws_data_cache or (now - _ws_last_fetch.get(user_id, 0)) > WS_CACHE_TTL:
+                    service = DashboardService(user_id=user_id)
+                    data = service.prepare_dashboard_data(user_id=user_id)
+                    _ws_data_cache[user_id] = data
+                    _ws_last_fetch[user_id] = now
+                else:
+                    data = _ws_data_cache[user_id]
+
+                metrics = data.get('metrics', {})
+                pnl = data.get('pnl_data', {})
+                roi = data.get('roi', 0)
+
+                # Build summary with the same field names as the REST /summary endpoint
+                summary = {
+                    "total_valuation": metrics.get('nlv', 0),
+                    "uninvested_cash": metrics.get('cash_balance', 0),
+                    "gross_exposure": metrics.get('gross_nlv', 0),
+                    "leverage_ratio": metrics.get('leverage_ratio', 0),
+                    "active_agents": metrics.get('active_agents', 7),
+                    "risk_exposure": metrics.get('risk_level', "MODERATE"),
+                    "total_pnl": pnl.get('total', 0),
+                    "unrealized_pnl": pnl.get('unrealized', 0),
+                    "realized_pnl": pnl.get('realized', 0),
+                    "roi_percentage": roi,
+                    "performance_change": "+0.0%"
+                }
+
+                positions_df = data.get('positions_df')
+                positions = positions_df.to_dict('records') if hasattr(positions_df, 'to_dict') and not positions_df.empty else []
+
+                # Write-through to Redis so REST /summary returns instantly on next request
+                await _warm_redis_cache(user_id, summary)
+
                 await socket_manager.broadcast_to_user(user_id, {
                     "type": "PORTFOLIO_UPDATE",
                     "payload": {
-                        "summary": data.get('metrics', {}),
-                        "positions": data.get('positions_df', {}).to_dict('records') if hasattr(data.get('positions_df'), 'to_dict') else [],
+                        "summary": summary,
+                        "positions": positions,
                         "timestamp": datetime.now().isoformat()
                     }
                 })
-            
-            await asyncio.sleep(5)
+
+            await asyncio.sleep(30)
         except Exception as e:
             logger.error(f"WebSocket broadcast loop error: {e}")
-            await asyncio.sleep(10)
+            await asyncio.sleep(30)
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -192,7 +237,33 @@ async def lifespan(app: FastAPI):
         
         from src.services.dashboard_service import DashboardService
         services["dashboard"] = DashboardService(user_id=primary_user_id)
-        
+
+        # Warm Redis summary cache in the background so the first page load is fast
+        async def _startup_cache_warm():
+            try:
+                svc = DashboardService(user_id=primary_user_id)
+                data = svc.prepare_dashboard_data(user_id=primary_user_id)
+                metrics = data.get('metrics', {})
+                pnl = data.get('pnl_data', {})
+                summary = {
+                    "total_valuation": metrics.get('nlv', 0),
+                    "uninvested_cash": metrics.get('cash_balance', 0),
+                    "gross_exposure": metrics.get('gross_nlv', 0),
+                    "leverage_ratio": metrics.get('leverage_ratio', 0),
+                    "active_agents": metrics.get('active_agents', 7),
+                    "risk_exposure": metrics.get('risk_level', "MODERATE"),
+                    "total_pnl": pnl.get('total', 0),
+                    "unrealized_pnl": pnl.get('unrealized', 0),
+                    "realized_pnl": pnl.get('realized', 0),
+                    "roi_percentage": data.get('roi', 0),
+                    "performance_change": "+0.0%"
+                }
+                await _warm_redis_cache(primary_user_id, summary)
+                logger.info(f"✓ Summary cache warmed for user {primary_user_id}: NLV={summary['total_valuation']:.2f}")
+            except Exception as e:
+                logger.warning(f"Startup cache warm failed (non-fatal): {e}")
+        asyncio.create_task(_startup_cache_warm())
+
         # 2. Start Real-time Streaming (Polygon WebSocket)
         try:
             from src.infrastructure.streams.polygon_stream_client import PolygonStreamClient
@@ -411,6 +482,66 @@ async def health():
         # health_status["status"] = "degraded" 
 
     return health_status
+
+@app.get("/health/lots-integrity")
+async def health_lots_integrity(user: Dict[str, Any] = Depends(get_current_user)):
+    """
+    Position lots integrity check — verify that position_lots qty matches
+    the net qty calculated directly from the transactions ledger.
+    持倉批次完整性檢查—驗證 position_lots 與 transactions 的淨持倉一致性。
+    """
+    user_id = user.get("sub")
+    if not user_id:
+        raise HTTPException(status_code=401, detail="User not found in token")
+
+    from src.repositories.position_lot_repository import AlchemyPositionLotRepository
+    from src.repositories.transaction_repository import AlchemyTransactionRepository
+    from src.data.database import get_db_engine
+
+    engine = get_db_engine()
+    lot_repo = AlchemyPositionLotRepository(engine)
+    tx_repo = AlchemyTransactionRepository(engine)
+
+    # 1. Get avg_cost from lots
+    lot_avg = lot_repo.get_avg_cost_map(user_id)
+
+    # 2. Get net qty from transactions (all BUY - SELL)
+    holdings = tx_repo.get_holdings(user_id)
+    tx_qty_map = {h["ticker"]: h["quantity"] for h in holdings}
+
+    # 3. Get lot qty per ticker
+    lots = lot_repo.get_open_lots(user_id)
+    lot_qty_map: Dict[str, float] = {}
+    for lot in lots:
+        t = lot["ticker"]
+        lot_qty_map[t] = lot_qty_map.get(t, 0.0) + lot["quantity"]
+
+    # 4. Compare
+    all_tickers = set(tx_qty_map) | set(lot_qty_map)
+    discrepancies = []
+    for ticker in sorted(all_tickers):
+        tx_q = tx_qty_map.get(ticker, 0.0)
+        lot_q = lot_qty_map.get(ticker, 0.0)
+        diff = abs(tx_q - lot_q)
+        status = "ok" if diff < 0.001 else "MISMATCH"
+        if status == "MISMATCH":
+            discrepancies.append({
+                "ticker": ticker,
+                "tx_qty": round(tx_q, 6),
+                "lot_qty": round(lot_q, 6),
+                "diff": round(diff, 6),
+            })
+
+    is_healthy = len(discrepancies) == 0
+    return {
+        "status": "healthy" if is_healthy else "degraded",
+        "lots_seeded": lot_repo.has_lots_for_user(user_id),
+        "positions_checked": len(all_tickers),
+        "discrepancies": discrepancies,
+        "avg_cost_map": {t: round(v, 4) for t, v in lot_avg.items()},
+        "timestamp": datetime.now().isoformat(),
+    }
+
 
 @app.post("/tools/register")
 async def register_tool(tool: ToolRegistration):

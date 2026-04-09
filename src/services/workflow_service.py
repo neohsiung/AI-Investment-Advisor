@@ -180,7 +180,15 @@ class BaseWorkflow(ABC):
             self.logger.info("Translating final report to Traditional Chinese...")
             try:
                 from src.agents.factory import AgentFactory
-                translator = AgentFactory.create_agent("Engineer", use_cache=True, user_id=self.user_id)
+                # Use 'Conversation' role which is a neutral CIO-based agent for general tasks
+                translator = AgentFactory.create_agent("Conversation", use_cache=True, user_id=self.user_id)
+                
+                translation_system_prompt = (
+                    "You are a professional financial translator specializing in investment reports. "
+                    "Your goal is to provide accurate, professional Traditional Chinese (zh-TW) translations while "
+                    "retaining technical English terms as instructed."
+                )
+                
                 prompt = (
                     "TASK: Please translate the following investment report into Traditional Chinese (zh-TW).\n"
                     "RULES:\n"
@@ -190,8 +198,8 @@ class BaseWorkflow(ABC):
                     "4. Output ONLY the translated text, no conversational filler.\n\n"
                     f"REPORT TO TRANSLATE:\n{final_report}"
                 )
-                # v7.0: SystemEngineerAgent.run expects dict, use _call_real_llm for raw string prompts
-                res = await translator._call_real_llm(prompt, translator.system_prompt or "You are a professional investment report translator.")
+                # v7.1: Explicitly pass translation_system_prompt to avoid persona hijacking
+                res = await translator._call_real_llm(prompt, translation_system_prompt)
                 self.logger.debug(f"Translation raw result type: {type(res)}")
                 
                 if isinstance(res, dict):

@@ -405,10 +405,15 @@ function NotifyPanel({ settings, update, toggle, secrets }: any) {
                />
             </div>
           </div>
-          <div className="grid grid-cols-2 gap-6">
+          <div className="grid grid-cols-2 gap-6 mb-6">
              <SecretInput label="Bot Token" id="tg_token" value={settings.channel_telegram_bot_token || ""} toggle={toggle} show={secrets.tg_token} onChange={(v: string) => update("channel_telegram_bot_token", v)} />
              <LabeledInput label="Chat ID" value={settings.channel_telegram_chat_id || ""} onChange={(v: string) => update("channel_telegram_chat_id", v)} />
           </div>
+          <InterestSelector 
+            label="通知內容偏好 (Interests)"
+            value={settings.channel_telegram_interests || ""}
+            onChange={(v: string) => update("channel_telegram_interests", v)}
+          />
         </div>
 
         {/* LINE Notify */}
@@ -437,11 +442,16 @@ function NotifyPanel({ settings, update, toggle, secrets }: any) {
                />
             </div>
           </div>
-          <div className="grid grid-cols-3 gap-6">
+          <div className="grid grid-cols-3 gap-6 mb-6">
              <SecretInput label="Access Token" id="line_token" value={settings.channel_line_access_token || ""} toggle={toggle} show={secrets.line_token} onChange={(v: string) => update("channel_line_access_token", v)} />
              <SecretInput label="Channel Secret" id="line_sec" value={settings.channel_line_secret || ""} toggle={toggle} show={secrets.line_sec} onChange={(v: string) => update("channel_line_secret", v)} />
              <LabeledInput label="User ID (推播對象)" value={settings.channel_line_user_id || ""} onChange={(v: string) => update("channel_line_user_id", v)} />
           </div>
+          <InterestSelector 
+            label="通知內容偏好 (Interests)"
+            value={settings.channel_line_interests || ""}
+            onChange={(v: string) => update("channel_line_interests", v)}
+          />
         </div>
 
         {/* Email SMTP */}
@@ -461,7 +471,7 @@ function NotifyPanel({ settings, update, toggle, secrets }: any) {
               onChange={(v: boolean) => update("channel_email_enabled", v)} 
             />
           </div>
-          <div className="grid grid-cols-4 gap-6">
+          <div className="grid grid-cols-4 gap-6 mb-6">
              <div className="col-span-2">
                <LabeledInput label="SMTP Server" value={settings.channel_email_smtp_server || ""} onChange={(v: string) => update("channel_email_smtp_server", v)} placeholder="smtp.gmail.com" />
              </div>
@@ -474,6 +484,11 @@ function NotifyPanel({ settings, update, toggle, secrets }: any) {
                <SecretInput label="SMTP Password" id="smtp_pass" value={settings.channel_email_smtp_pass || ""} toggle={toggle} show={secrets.smtp_pass} onChange={(v: string) => update("channel_email_smtp_pass", v)} />
              </div>
           </div>
+          <InterestSelector 
+            label="通知內容偏好 (Interests)"
+            value={settings.channel_email_interests || ""}
+            onChange={(v: string) => update("channel_email_interests", v)}
+          />
         </div>
       </div>
     </div>
@@ -804,6 +819,58 @@ function SecretInput({ label, value, id, toggle, show, onChange }: {
         >
           {show ? <EyeOff size={16} /> : <Eye size={16} />}
         </button>
+      </div>
+    </div>
+  );
+}
+
+function InterestSelector({ label, value, onChange }: { label: string, value: string, onChange: (v: string) => void }) {
+  const options = [
+    { id: 'sentinel', label: '🛡️ Sentinel 警報' },
+    { id: 'report',   label: '📊 投資報告' },
+    { id: 'approval', label: '✅ 交易審核' },
+    { id: 'trading',  label: '💸 交易執行' },
+  ];
+
+  const currentInterests = value ? value.split(',').map(s => s.trim()) : [];
+
+  const toggleInterest = (id: string) => {
+    let next;
+    if (currentInterests.includes(id)) {
+      next = currentInterests.filter(i => i !== id);
+    } else {
+      next = [...currentInterests, id];
+    }
+    onChange(next.join(','));
+  };
+
+  return (
+    <div className="space-y-2">
+      <label className="block text-[10px] font-black uppercase text-on-surface-variant tracking-widest pl-1 mb-3">
+        {label}
+      </label>
+      <div className="flex flex-wrap gap-2">
+        {options.map(opt => {
+          const isActive = currentInterests.includes(opt.id);
+          return (
+            <button
+              key={opt.id}
+              onClick={() => toggleInterest(opt.id)}
+              className={cn(
+                "px-4 py-2 rounded-xl text-xs font-bold border transition-all flex items-center gap-2",
+                isActive 
+                  ? "bg-primary/10 border-primary/30 text-primary shadow-sm" 
+                  : "bg-background/40 border-outline-variant/20 text-on-surface-variant/70 hover:border-outline-variant/40"
+              )}
+            >
+              <div className={cn(
+                "w-3 h-3 rounded-full border-2 transition-all",
+                isActive ? "bg-primary border-primary scale-110" : "border-outline-variant/40"
+              )} />
+              {opt.label}
+            </button>
+          );
+        })}
       </div>
     </div>
   );
