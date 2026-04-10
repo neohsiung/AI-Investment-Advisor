@@ -163,10 +163,10 @@ class InternetSearchService:
             self.logger.warning(f"DuckDuckGo search failed after retries. Last Error: {type(last_error).__name__} - {last_error}")
         return results
 
-    def get_ticker_moat_and_catalyst(self, ticker: str) -> List[Dict[str, str]]:
+    async def get_ticker_moat_and_catalyst(self, ticker: str) -> List[Dict[str, str]]:
         """
         Convenience method to fetch Moat and Catalyst info for a ticker.
         快速取得特定股票的競爭優勢與催化劑資訊。
         """
         query = f"{ticker} stock competitive advantage moat catalyst 2025 analysis"
-        return self.search_financial_context(query, max_results=3)
+        return await self.search_financial_context(query, max_results=3)
