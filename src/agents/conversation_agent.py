@@ -419,7 +419,6 @@ class ConversationAgent:
 
             # Activate and hot-reload
             self._skill_scaffolder.approve_and_activate(gap.suggested_skill_name)
-                        new_skills =             
             self._evolution_metrics.record_event("skill_hot_reloaded", {"skill": gap.suggested_skill_name})
 
             # Clear pending

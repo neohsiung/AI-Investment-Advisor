@@ -1,7 +1,7 @@
 import pytest
 import json
 from unittest.mock import MagicMock, patch
-from src.agents.skills.cash_deployment.impl import cash_deployment
+from src.agents.skills.cash_deployment.cli import cash_deployment
 from src.domain.trading import Account, BrokerType
 
 @pytest.mark.asyncio
@@ -25,8 +25,8 @@ async def test_cash_deployment_balanced():
     )
     mock_broker.get_account.return_value = mock_account
     
-    with patch("src.agents.skills.cash_deployment.impl.AlchemySettingsRepository", return_value=mock_settings), \
-         patch("src.agents.skills.cash_deployment.impl.BrokerFactory.get_broker", return_value=mock_broker):
+    with patch("src.agents.skills.cash_deployment.cli.AlchemySettingsRepository", return_value=mock_settings), \
+         patch("src.agents.skills.cash_deployment.cli.BrokerFactory.get_broker", return_value=mock_broker):
         
         result_json = await cash_deployment(user_id)
         result = json.loads(result_json)
@@ -57,8 +57,8 @@ async def test_cash_deployment_overweight():
     )
     mock_broker.get_account.return_value = mock_account
     
-    with patch("src.agents.skills.cash_deployment.impl.AlchemySettingsRepository", return_value=mock_settings), \
-         patch("src.agents.skills.cash_deployment.impl.BrokerFactory.get_broker", return_value=mock_broker):
+    with patch("src.agents.skills.cash_deployment.cli.AlchemySettingsRepository", return_value=mock_settings), \
+         patch("src.agents.skills.cash_deployment.cli.BrokerFactory.get_broker", return_value=mock_broker):
         
         result_json = await cash_deployment(user_id)
         result = json.loads(result_json)
@@ -76,7 +76,7 @@ async def test_cash_deployment_no_broker():
     """Test error handling when no broker exists for current context."""
     user_id = "test_user_123"
     
-    with patch("src.agents.skills.cash_deployment.impl.BrokerFactory.get_broker", return_value=None):
+    with patch("src.agents.skills.cash_deployment.cli.BrokerFactory.get_broker", return_value=None):
         result_json = await cash_deployment(user_id)
         result = json.loads(result_json)
         
@@ -101,8 +101,8 @@ async def test_cash_deployment_invalid_settings():
     )
     mock_broker.get_account.return_value = mock_account
     
-    with patch("src.agents.skills.cash_deployment.impl.AlchemySettingsRepository", return_value=mock_settings), \
-         patch("src.agents.skills.cash_deployment.impl.BrokerFactory.get_broker", return_value=mock_broker):
+    with patch("src.agents.skills.cash_deployment.cli.AlchemySettingsRepository", return_value=mock_settings), \
+         patch("src.agents.skills.cash_deployment.cli.BrokerFactory.get_broker", return_value=mock_broker):
         
         result_json = await cash_deployment(user_id)
         result = json.loads(result_json)

@@ -1636,7 +1636,7 @@ class SentinelService:
 
         logger.info(f"Sentinel: Excess Cash Detected for {redact_secrets(self.user_id)}. Initiating deployment flow.")
         
-                try:
+        try:
             # v9.0 Clean Architecture: Invoke cash_deployment skill via standalone CLI (Phase 4)
             import subprocess
             cmd = ["venv/bin/python", "src/agents/skills/cash_deployment/cli.py", "--user_id", self.user_id]
@@ -1647,7 +1647,6 @@ class SentinelService:
                 logger.error(f"Sentinel: Failed to trigger cash_deployment CLI: {e}")
         except Exception as e:
             logger.error(f"Sentinel: Error in capital deployment logic: {e}")
-                
         except Exception as e:
             logger.error(f"Sentinel: Error in cash deployment logic: {e}", exc_info=True)
 

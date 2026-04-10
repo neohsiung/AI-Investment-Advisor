@@ -50,14 +50,14 @@ def test_mcp_call_tool_not_found():
         assert response.status_code == 404
 
 def test_mcp_call_tool_success():
-    with TestClient(app) as client:
-        # Mock a service
+    with patch("services.mcp_server.src.app.MarketDataService") as mock_mds_class:
         mock_market = MagicMock()
         mock_market.get_current_prices.return_value = {"AAPL": 150.0}
-        services["market"] = mock_market
+        mock_mds_class.return_value = mock_market
         
-        registered_tools["get_current_price"] = {"name": "get_current_price"}
-        
-        response = client.post("/tools/call/get_current_price", json={"arguments": {"ticker": "AAPL"}})
-        assert response.status_code == 200
-        assert response.json()["result"] == 150.0
+        with TestClient(app) as client:
+            registered_tools["get_current_price"] = {"name": "get_current_price"}
+            
+            response = client.post("/tools/call/get_current_price", json={"arguments": {"ticker": "AAPL"}, "context": {"user_id": "test_user"}})
+            assert response.status_code == 200
+            assert response.json()["result"] == 150.0
