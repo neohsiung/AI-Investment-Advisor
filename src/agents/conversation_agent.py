@@ -138,13 +138,11 @@ class ConversationAgent:
         Register MCP skills and external MCP tools relevant to channel conversations dynamically.
         v8.2: Added B2C user-isolated external MCP discovery.
         """
-        from src.agents.skills.registry import get_default_registry
         
-        registry = get_default_registry()
         
+                
         # 1. Bind local skills (Registry-based)
-        registry.bind_to_agent(self._agent)
-        
+                
         # 2. [Task 8.2] Discover and bind External MCP Servers (Per-user settings)
         try:
             # We use the already initialized SettingsService
@@ -370,7 +368,7 @@ class ConversationAgent:
     async def _execute_gap_confirmation(self, pending):
         """Execute gap scaffold after user confirmation."""
         from src.agents.skills.gap_detector import GapReport
-        from src.agents.skills.registry import get_default_registry
+        
 
         if pending == "rejected":
             self._evolution_metrics.record_event("user_rejected_scaffold", {})
@@ -421,9 +419,7 @@ class ConversationAgent:
 
             # Activate and hot-reload
             self._skill_scaffolder.approve_and_activate(gap.suggested_skill_name)
-            registry = get_default_registry()
-            new_skills = registry.hot_reload()
-            
+                        new_skills =             
             self._evolution_metrics.record_event("skill_hot_reloaded", {"skill": gap.suggested_skill_name})
 
             # Clear pending
@@ -432,7 +428,7 @@ class ConversationAgent:
 
             logger.info(
                 f"ConversationAgent: Skill '{gap.suggested_skill_name}' "
-                f"auto-generated and activated. Hot-reloaded: {new_skills}"
+                f"auto-generated and activated."
             )
 
             result = (

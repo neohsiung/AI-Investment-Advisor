@@ -82,45 +82,53 @@ class TestBaseAgentMoreCoverage:
         agent.update_state("hash123", "Output", "key")
         agent.state_repo.save_state.assert_called_with("TestAgent_key", "TestAgent", "hash123", "Output")
 
-    def test_call_real_llm_openrouter(self, agent):
+    @pytest.mark.asyncio
+    async def test_call_real_llm_openrouter(self, agent):
         """Test _call_real_llm delegates through gateway (via call_llm)."""
         agent.config = {"provider": "OpenRouter", "api_key": "sk-123", "model": "gpt-4"}
         # Patch the gateway directly since _call_real_llm now bridges to call_llm -> gateway
+        from unittest.mock import AsyncMock
         mock_gw = MagicMock()
-        mock_gw.chat.return_value = "Hello OpenRouter"
+        mock_gw.chat = AsyncMock(return_value="Hello OpenRouter")
         agent._llm_gateway = mock_gw
             
-        resp = agent._call_real_llm("hi", "sys")
+        resp = await agent._call_real_llm("hi", "sys")
         assert resp == "Hello OpenRouter"
             
-    def test_call_real_llm_gemini(self, agent):
+    @pytest.mark.asyncio
+    async def test_call_real_llm_gemini(self, agent):
         """Test _call_real_llm delegates through gateway (via call_llm)."""
         agent.config = {"provider": "Google Gemini", "api_key": "sk-123", "model": "gemini-pro"}
+        from unittest.mock import AsyncMock
         mock_gw = MagicMock()
-        mock_gw.chat.return_value = "Hello Gemini"
+        mock_gw.chat = AsyncMock(return_value="Hello Gemini")
         agent._llm_gateway = mock_gw
             
-        resp = agent._call_real_llm("hi", "sys")
+        resp = await agent._call_real_llm("hi", "sys")
         assert resp == "Hello Gemini"
 
-    def test_call_real_llm_openai(self, agent):
+    @pytest.mark.asyncio
+    async def test_call_real_llm_openai(self, agent):
         """Test _call_real_llm delegates through gateway (via call_llm)."""
         agent.config = {"provider": "OpenAI", "api_key": "sk-123", "model": "gpt-4"}
+        from unittest.mock import AsyncMock
         mock_gw = MagicMock()
-        mock_gw.chat.return_value = "Hello OpenAI"
+        mock_gw.chat = AsyncMock(return_value="Hello OpenAI")
         agent._llm_gateway = mock_gw
             
-        resp = agent._call_real_llm("hi", "sys")
+        resp = await agent._call_real_llm("hi", "sys")
         assert resp == "Hello OpenAI"
 
-    def test_call_real_llm_fail(self, agent):
+    @pytest.mark.asyncio
+    async def test_call_real_llm_fail(self, agent):
         """Test _call_real_llm propagates gateway errors."""
         agent.config = {"provider": "Google Gemini", "api_key": "sk-123", "model": "gemini-pro"}
+        from unittest.mock import AsyncMock
         mock_gw = MagicMock()
-        mock_gw.chat.side_effect = Exception("Net Error")
+        mock_gw.chat = AsyncMock(side_effect=Exception("Net Error"))
         agent._llm_gateway = mock_gw
         with pytest.raises(Exception):
-             agent._call_real_llm("hi", "sys")
+             await agent._call_real_llm("hi", "sys")
 
     def test_render_user_context_json(self, agent):
         ctx = {"a": 1}
@@ -140,7 +148,8 @@ class TestBaseAgentMoreCoverage:
              mock_search_instance.search_financial_context.return_value = [{"title": "T", "snippet": "S", "link": "L"}]
              
              # Mock call_llm to first return SEARCH command, then Final Answer
-             agent.call_llm = Mock(side_effect=[
+             from unittest.mock import AsyncMock
+             agent.call_llm = AsyncMock(side_effect=[
                  'SEARCH: "Apple Stock"',
                  'Final Answer: Apple is up.'
              ])

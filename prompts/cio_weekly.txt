@@ -60,6 +60,7 @@ While your Daily Reports focus on "Tactical/Reflexive" actions (System 1), this 
 - **Asset Allocation**:
   - Cash: %
   - Equity: %
+{{cash_deployment_context}}
 
 ## 4. 執行指令 (Actionable Orders)
 | 代號 | 動作 | 數量/比例 | 信心分數 (1-10) | 原因簡述 |

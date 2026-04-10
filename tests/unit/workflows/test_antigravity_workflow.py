@@ -1,5 +1,5 @@
 import pytest
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock, patch, AsyncMock
 from datetime import datetime
 import json
 
@@ -39,24 +39,27 @@ def mock_workflow_deps():
     # Mock Memory Service
     mem_repo = MagicMock()
     agent_provider = MagicMock()
+    agent_provider.summarize = AsyncMock(return_value="Mocked Summary")
     memory_service = MemoryService(repository=mem_repo, llm_provider=agent_provider)
     
     return planner, memory_service
 
+@pytest.mark.asyncio
 @patch('src.agents.factory.AgentFactory.create_macro_agent')
 @patch('src.agents.factory.AgentFactory.create_cio_agent')
 @patch('src.agents.factory.AgentFactory.create_fundamental_agent')
-def test_weekly_workflow_execution(mock_fund, mock_cio, mock_macro, mock_workflow_deps):
+async def test_weekly_workflow_execution(mock_fund, mock_cio, mock_macro, mock_workflow_deps):
     """Test full Weekly Workflow execution with mocked agents."""
     planner, memory_service = mock_workflow_deps
     
     # Setup Mock Agent Responses
-    mock_macro.return_value.run.return_value = "Macro: Growth"
-    mock_cio.return_value.run.return_value = "CIO: Buy Tech"
+    mock_macro.return_value.run = AsyncMock(return_value="Macro: Growth")
+    mock_cio.return_value.run = AsyncMock(return_value="CIO: Buy Tech")
     # Mock polish_report
-    mock_cio.return_value.polish_report.side_effect = lambda x: x
+    async def _ret_x(x): return x
+    mock_cio.return_value.polish_report = AsyncMock(side_effect=_ret_x)
     
-    mock_fund.return_value.run.return_value = "Fund: Strong Cashflow"
+    mock_fund.return_value.run = AsyncMock(return_value="Fund: Strong Cashflow")
     
     workflow = WeeklyWorkflow(user_id="test_user")
     workflow.task_planner = planner
@@ -70,7 +73,7 @@ def test_weekly_workflow_execution(mock_fund, mock_cio, mock_macro, mock_workflo
     workflow.performance_service = MagicMock()
     
     # Run
-    report = workflow.run_weekly_cycle(user_id="test_user")
+    report = await workflow.run_weekly_cycle(user_id="test_user")
     
     # Assertions
     assert "CIO: Buy Tech" in report or "Macro: Growth" in report or "Fund" in report
@@ -84,6 +87,7 @@ def test_weekly_workflow_execution(mock_fund, mock_cio, mock_macro, mock_workflo
 
 # --- Memory Consistency Tests ---
 
+@pytest.mark.asyncio
 @patch('src.services.workflow_service.AgentLLMProvider')
 @patch('src.services.workflow_service.AlchemyMemoryRepository')
 @patch('src.services.workflow_service.AlchemyTransactionRepository')
@@ -95,10 +99,11 @@ def test_weekly_workflow_execution(mock_fund, mock_cio, mock_macro, mock_workflo
 @patch('src.infrastructure.risk_manager.RiskManager')
 @patch('src.infrastructure.risk_manager.AlchemySettingsRepository')
 @patch('src.services.workflow_service.PerformanceService')
-def test_daily_consistency_warning(MockPerformanceService, MockRiskSettings, MockRiskManager, MockBrokerFactory, MockMacro, MockCIO, MockMarket, MockTransService, MockTransRepo, MockMemRepo, MockLLMProvider):
+async def test_daily_consistency_warning(MockPerformanceService, MockRiskSettings, MockRiskManager, MockBrokerFactory, MockMacro, MockCIO, MockMarket, MockTransService, MockTransRepo, MockMemRepo, MockLLMProvider):
     """Test that contradictory views trigger a warning."""
     mem_repo = MagicMock()
     agent_provider = MagicMock()
+    agent_provider.summarize = AsyncMock(return_value="Mocked Summary")
     
     # Mock Repository to return prior reports
     from src.services.memory_service import ReportMemoryItem
@@ -113,13 +118,14 @@ def test_daily_consistency_warning(MockPerformanceService, MockRiskSettings, Moc
     ]
     
     # Mock Agent Provider
-    agent_provider.check_contradictions.return_value = ["Contradiction: Bull vs Bear"]
+    agent_provider.check_contradictions = AsyncMock(return_value=["Contradiction: Bull vs Bear"])
     
     memory_service = MemoryService(mem_repo, agent_provider)
     
     # Validate Mocks Setup
-    MockMacro.return_value.run.return_value = "Old Macro"
-    MockCIO.return_value.run.return_value = "Final Report with Warning"
+    MockMacro.return_value.run = AsyncMock(return_value="Old Macro")
+    MockCIO.return_value.run = AsyncMock(return_value="Final Report with Warning")
+    MockCIO.return_value.polish_report = AsyncMock(return_value="Final Polished Report")
     
     mock_broker = MagicMock()
     mock_broker.get_name.return_value = "MockBroker"
@@ -140,7 +146,7 @@ def test_daily_consistency_warning(MockPerformanceService, MockRiskSettings, Moc
     # Ensure Market/Transaction services are mocks (already patched in class but assigned in init)
     # workflow.market_service is MockMarket()
     
-    workflow.synthesize_results()
+    await workflow.synthesize_results()
     
     # Check that check_contradictions was called
     agent_provider.check_contradictions.assert_called()

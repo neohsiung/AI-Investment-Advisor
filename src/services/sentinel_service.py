@@ -3,6 +3,7 @@ logger = setup_logger("SentinelService")
 
 import asyncio
 import os
+import json
 import typing
 from typing import List, Dict, Tuple, Any, Optional, Callable, Union, Awaitable
 from src.utils.async_utils import to_thread
@@ -150,7 +151,9 @@ class SentinelService:
             
             # Dimension 7: Risk Consistency & Dynamic Cash (每次 tick)
             # v5.0: Ensure leverage and cash levels match risk profile
-            triggers += await self._check_risk_consistency()
+            new_triggers = await self._check_risk_consistency()
+            triggers.extend(new_triggers)
+            logger.info(f"DEBUG process_tick length of triggers after risk check: {len(triggers)}")
             
             # Dimension 8: Capital Deployment (v9.0 Add-on)
             # Check for excess cash and trigger deployment logic if allowed
@@ -1591,14 +1594,20 @@ class SentinelService:
                 "severity": "medium",
                 "type": "cash_management"
             })
-        elif actual_cash_ratio > final_target_cash * 1.5:
+        
+        logger.info(f"DEBUG actual_cash_ratio={actual_cash_ratio:.4f}, final_target_cash={final_target_cash:.4f}")
+        if actual_cash_ratio > final_target_cash * 1.5:
             # v5.0: New trigger for excess cash (Rule #8 & User Request)
             is_aggressive = profile == "Aggressive"
             severity = "high" if is_aggressive else "low"
             priority = 1 if is_aggressive else 3
             
+            logger.info(f"DEBUG actual_cash_ratio={actual_cash_ratio:.4f}, final_target_cash={final_target_cash:.4f}, nlv={nlv}, cash={cash}")
+            trigger_id = f"cash_ratio_high_{uid}"
+            logger.info(f"Sentinel: Generating {trigger_id} trigger. Ratio: {actual_cash_ratio:.4f}, Target: {final_target_cash:.4f}")
+            
             triggers.append({
-                "id": f"cash_ratio_high_{uid}",
+                "id": trigger_id,
                 "text": (f"💰 Excess Cash Alert: Actual {actual_cash_ratio*100:.1f}% "
                         f"vs Adjusted Target {final_target_cash*100:.1f}%. "
                         f"Consider searching for new investment opportunities."),
@@ -1607,6 +1616,7 @@ class SentinelService:
                 "type": "cash_management"
             })
                 
+        logger.info(f"DEBUG _check_risk_consistency returning {len(triggers)} triggers.")
         return triggers
 
     async def _handle_cash_deployment_logic(self, triggers: List[Dict[str, Any]]) -> None:
@@ -1614,32 +1624,29 @@ class SentinelService:
         Intersects triggers for 'cash_ratio_high' and initiates the capital deployment skill/workflow.
         攔截 'cash_ratio_high' 觸發訊號並啟動資本部署技能/工作流。
         """
-        cash_trigger = next((t for t in triggers if t.get("id") == f"cash_ratio_high_{self.user_id}"), None)
+        trigger_id = f"cash_ratio_high_{self.user_id}"
+        logger.info(f"DEBUG _handle_cash_deployment_logic received {len(triggers)} triggers. Looking for {trigger_id}")
+        for t in triggers:
+            logger.info(f"  - Trigger ID present: {t.get('id')}")
+            
+        cash_trigger = next((t for t in triggers if t.get("id") == trigger_id), None)
         if not cash_trigger:
+            logger.info(f"Sentinel: No {trigger_id} trigger found in {len(triggers)} total triggers.")
             return
 
         logger.info(f"Sentinel: Excess Cash Detected for {redact_secrets(self.user_id)}. Initiating deployment flow.")
         
-        try:
-            # 1. Invoke cash_deployment skill directly for immediate analysis
-            from src.agents.skill_factory import SkillFactory
-            skill = SkillFactory.get_skill("cash_deployment")
-            
-            if skill:
-                result = await skill.run(user_id=self.user_id)
-                logger.info(f"Sentinel: Cash Deployment Analysis: {result.get('message')}")
-                
-                # 2. If excess cash is confirmed and tickers discovered, trigger the CIO Workflow
-                if result.get("excess_cash", 0) > 0 and result.get("candidates"):
-                             from src.services.workflow_service import WorkflowService
-                             ws = WorkflowService(user_id=self.user_id)
-                             # Task 1.5/1.6: This method will be implemented in WorkflowService
-                             if hasattr(ws, "trigger_capital_deployment_workflow"):
-                                 await ws.trigger_capital_deployment_workflow(result)
-                             else:
-                                 logger.warning("Sentinel: WorkflowService.trigger_capital_deployment_workflow not yet implemented.")
-            else:
-                logger.error("Sentinel: 'cash_deployment' skill not found in SkillFactory.")
+                try:
+            # v9.0 Clean Architecture: Invoke cash_deployment skill via standalone CLI (Phase 4)
+            import subprocess
+            cmd = ["venv/bin/python", "src/agents/skills/cash_deployment/cli.py", "--user_id", self.user_id]
+            try:
+                subprocess.Popen(cmd) # Background execution
+                logger.info("Sentinel: Triggered cash_deployment skill via standalone CLI.")
+            except Exception as e:
+                logger.error(f"Sentinel: Failed to trigger cash_deployment CLI: {e}")
+        except Exception as e:
+            logger.error(f"Sentinel: Error in capital deployment logic: {e}")
                 
         except Exception as e:
             logger.error(f"Sentinel: Error in cash deployment logic: {e}", exc_info=True)

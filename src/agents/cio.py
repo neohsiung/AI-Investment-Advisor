@@ -118,6 +118,7 @@ class CIOAgent(BaseAgent):
             "thematic_context": thematic_context, 
             "narrative_drift_context": narrative_drift_context, # [NEW] Milestone 3.2 Context
             "sector_strategy": context.get("sector_strategy", "無 (None)"),
+            "cash_deployment_context": context.get("cash_deployment_context", ""), # [NEW] Milestone 3.3 Context
             "report_focus": context.get("task_instruction") or context.get("report_focus", "Weekly Strategic"),
             "topic": context.get("topic", "未指定 (Not Specified)"),
             "memory_chain": context.get("memory_chain", "無相關歷史記憶 (No existing memory)")
@@ -223,7 +224,7 @@ class CIOAgent(BaseAgent):
                 "candidates": []
             }
 
-    def polish_report(self, report_content: str) -> str:
+    async def polish_report(self, report_content: str) -> str:
         """
         Refines the final report for readability and tone. 
         Ensures Actionable Orders table includes holdings context if available in text.
@@ -245,7 +246,7 @@ class CIOAgent(BaseAgent):
         user_prompt = f"Please polish this report:\n\n{report_content}"
         
         try:
-            response = self.call_llm(
+            response = await self.call_llm(
                 messages=[
                     {"role": "system", "content": system_prompt},
                     {"role": "user", "content": user_prompt}

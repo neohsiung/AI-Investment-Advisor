@@ -13,7 +13,6 @@ async def test_factory_tiers():
     # Verify Tier Enforcement
     # v11.5: Patching sub-agents and repositories to prevent side-effects during swarm init
     with patch('src.agents.factory.AgentFactory._configure_dspy'), \
-         patch('src.agents.factory.create_market_server') as mock_market_server, \
          patch('src.agents.swarm.momentum_swarm.MomentumScanner'), \
          patch('src.agents.swarm.fundamental_swarm.FundamentalSubAgent'), \
          patch('src.agents.base_agent.BaseAgent._load_config', return_value={"model": "test", "provider": "test"}), \
@@ -24,9 +23,6 @@ async def test_factory_tiers():
          patch('src.services.cognitive_memory_manager.CognitiveMemoryManager'), \
          patch('src.agents.base_agent.SkillLoader'), \
          patch('src.repositories.prompt_repository.AlchemyPromptRepository'):
-        
-        # Setup mock market server
-        mock_market_server.return_value.list_tools.return_value = []
         
         mom_agent = AgentFactory.create_momentum_agent(use_cache=False, user_id="test-user")
         assert mom_agent.tier == "fast"

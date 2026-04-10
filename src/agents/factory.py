@@ -81,13 +81,6 @@ class AgentFactory:
         if not hasattr(agent, 'feedback_repo') or agent.feedback_repo is None:
              agent.feedback_repo = AlchemyFeedbackRepository()
         
-        user_id = getattr(agent, 'user_id', None)
-        market_server = create_market_server(user_id=user_id)
-        for tool in market_server.list_tools():
-            real_tool = market_server.tools.get(tool['name'])
-            if real_tool:
-                agent.register_tool(real_tool)
-        
         return agent
 
     @staticmethod

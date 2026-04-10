@@ -41,19 +41,19 @@ async def test_daily_workflow_execution(mock_deps):
 
         # Mock Agents
         mock_mom = MagicMock()
-        mock_mom.run.return_value = "STRONG BUY"
+        mock_mom.run = AsyncMock(return_value="STRONG BUY")
         MockFactory.create_momentum_agent.return_value = mock_mom
 
         mock_sent = MagicMock()
-        mock_sent.run.return_value = {"sentiment": "Bullish", "score": 0.8, "narrative": "Good news found."}
+        mock_sent.run = AsyncMock(return_value={"sentiment": "Bullish", "score": 0.8, "narrative": "Good news found."})
         MockFactory.create_sentiment_agent.return_value = mock_sent
 
         mock_fund = MagicMock()
-        mock_fund.run.return_value = "Solid"
+        mock_fund.run = AsyncMock(return_value="Solid")
         MockFactory.create_fundamental_agent.return_value = mock_fund
         
         mock_macro = MagicMock()
-        mock_macro.run.return_value = "Macro Context"
+        mock_macro.run = AsyncMock(return_value="Macro Context")
         MockFactory.create_macro_agent.return_value = mock_macro
 
         mock_cio = MagicMock()
@@ -64,7 +64,7 @@ async def test_daily_workflow_execution(mock_deps):
 ### TSM (0.5)
 - **Action**: **HOLD**
 """
-        mock_cio.run.return_value = report_content
+        mock_cio.run = AsyncMock(return_value=report_content)
         mock_cio.polish_report.side_effect = lambda x: x # Identity function
         MockFactory.create_cio_agent.return_value = mock_cio
         
@@ -118,7 +118,7 @@ async def test_report_distribution(mock_deps):
         MockBrokerFactory.get_broker.return_value = mock_broker
 
         mock_mom = MagicMock()
-        mock_mom.run.return_value = "STRONG BUY"
+        mock_mom.run = AsyncMock(return_value="STRONG BUY")
         MockFactory.create_momentum_agent.return_value = mock_mom
         
         # Mock other agents
@@ -127,7 +127,7 @@ async def test_report_distribution(mock_deps):
         MockFactory.create_macro_agent.return_value = MagicMock()
         
         mock_cio = MagicMock()
-        mock_cio.run.return_value = "Report"
+        mock_cio.run = AsyncMock(return_value="Report")
         mock_cio.polish_report.side_effect = lambda x: f"<html>{x}</html>"
         MockFactory.create_cio_agent.return_value = mock_cio
 

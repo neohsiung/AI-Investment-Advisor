@@ -1,7 +1,7 @@
 import pytest
 import typing
 from typing import List, Dict, Tuple, Any, Optional, Callable, Dict, Any, List
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock, patch, AsyncMock
 from datetime import datetime
 import pandas as pd
 from src.services.backtest_service import BacktestService
@@ -23,7 +23,7 @@ def test_backtest_simulation_flow(mock_feedback_repo, mock_yf_data):
         # Mock Agent
         with patch("src.services.backtest_service.AgentFactory.create_agent") as mock_factory:
             mock_agent = MagicMock()
-            mock_agent.run.return_value = "This looks promising. BUY AAPL."
+            mock_agent.run = AsyncMock(return_value="This looks promising. BUY AAPL.")
             mock_factory.return_value = mock_agent
 
             service = BacktestService(feedback_repo=mock_feedback_repo)

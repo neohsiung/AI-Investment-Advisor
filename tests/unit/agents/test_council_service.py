@@ -32,7 +32,7 @@ def test_start_session_map_reduce(mock_deps):
         service = CouncilService(user_id="test_user")
         
         # Mock output of Agents
-        mock_deps['factory'].create_cio_agent.return_value.run.return_value = "Final Consensus Report"
+        mock_deps['factory'].create_cio_agent.return_value.run = AsyncMock(return_value="Final Consensus Report")
         
         context = {
             "portfolio": [
@@ -116,7 +116,7 @@ def test_run_sync_logic_directly(mock_deps):
     
     # Mock Agents
     mock_agent = MagicMock()
-    mock_agent.run.return_value = "Analysis Result"
+    mock_agent.run = AsyncMock(return_value="Analysis Result")
     mock_agent.name = "TestAgent"
     
     # Mock Factory to return agents
@@ -125,7 +125,7 @@ def test_run_sync_logic_directly(mock_deps):
     mock_deps['factory'].create_risk_agent.return_value = mock_agent
     mock_deps['factory'].create_sentiment_agent.return_value = mock_agent
     mock_deps['factory'].create_macro_agent.return_value = mock_agent
-    mock_deps['factory'].create_cio_agent.return_value.run.return_value = "Consensus"
+    mock_deps['factory'].create_cio_agent.return_value.run = AsyncMock(return_value="Consensus")
 
     # Mock Router
     mock_deps['router'].return_value.select_tier.return_value = "fast"

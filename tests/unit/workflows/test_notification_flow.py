@@ -20,14 +20,11 @@ def sentinel_setup():
         mock_repo = mock_repo_cls.return_value
         mock_repo.is_duplicate_alert.return_value = False
         
-        # Configure ActionExtractor mock to avoid real LLM calls
-        mock_extractor = MagicMock()
-        mock_extractor.run.return_value = [] # No trade signals extracted
-        MockFactory.create_action_extractor_agent.return_value = mock_extractor
+
 
         # Configure SentinelAgent mock too just in case
         mock_sentinel_agent = MagicMock()
-        mock_sentinel_agent.run.return_value = {"priority": "P1", "target_agent": "CIO"}
+        mock_sentinel_agent.run = AsyncMock(return_value={"priority": "P1", "target_agent": "CIO"})
         MockFactory.create_sentinel_agent.return_value = mock_sentinel_agent
 
         mock_settings = MagicMock(spec=SettingsService)

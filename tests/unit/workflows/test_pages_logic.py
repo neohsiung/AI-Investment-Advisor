@@ -1,6 +1,6 @@
 import pytest
 import sys
-from unittest.mock import MagicMock, patch, mock_open, ANY
+from unittest.mock import MagicMock, patch, mock_open, ANY, AsyncMock
 # Helper to load modules with special names
 import importlib.util
 from pathlib import Path
@@ -231,7 +231,7 @@ class TestSettingsRender:
         # Test successful execution
         with patch('src.agents.momentum.MomentumAgent') as mock_agent_cls:
             mock_agent_instance = mock_agent_cls.return_value
-            mock_agent_instance.run.return_value = "Agent Output"
+            mock_agent_instance.run = AsyncMock(return_value="Agent Output")
 
             settings_mod.render_agent_playground_tab(mock_st)
 

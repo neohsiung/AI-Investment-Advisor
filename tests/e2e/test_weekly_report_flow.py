@@ -1,5 +1,5 @@
 import pytest
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock, patch, AsyncMock
 from src.services.workflow_service import WeeklyWorkflow
 from src.services.task_planning_service import Task, ExecutionPlan
 
@@ -31,15 +31,15 @@ def mock_agent_factory():
     with patch("src.services.workflow_service.AgentFactory") as factory:
         # Mock agents
         mock_macro = MagicMock()
-        mock_macro.run.return_value = "Bullish Macro View"
+        mock_macro.run = AsyncMock(return_value="Bullish Macro View")
         
         mock_cio = MagicMock()
-        mock_cio.run.return_value = "Final Weekly Report Content"
+        mock_cio.run = AsyncMock(return_value="Final Weekly Report Content")
         
         factory.create_macro_agent.return_value = mock_macro
         
         # Mock polish_report to return the same content or decorated content
-        mock_cio.polish_report.return_value = "Final Weekly Report Content"
+        mock_cio.polish_report = AsyncMock(return_value="Final Weekly Report Content")
         factory.create_cio_agent.return_value = mock_cio
         factory.create_fundamental_agent.return_value = MagicMock(run=lambda x: "Fundamental Data")
         
@@ -56,16 +56,18 @@ def workflow(mock_transaction_service, mock_market_service, mock_planner):
     wf.task_planner = mock_planner
     # Inject No-op Memory Service to avoid Redis calls
     wf.memory_service = MagicMock()
+    wf.memory_service.store_report = AsyncMock()
     return wf
 
-def test_weekly_cycle_flow(workflow, mock_transaction_service, mock_market_service, mock_planner, mock_agent_factory):
+@pytest.mark.asyncio
+async def test_weekly_cycle_flow(workflow, mock_transaction_service, mock_market_service, mock_planner, mock_agent_factory):
     """
     E2E-like test for the weekly report flow.
     Verifies that the workflow orchestrates the Planner and Agents correctly.
     """
     
     # Run the workflow
-    report = workflow.run_weekly_cycle(user_id="test_user")
+    report = await workflow.run_weekly_cycle(user_id="test_user")
     
     # Assertions
     # 1. Data Collection
@@ -73,7 +75,7 @@ def test_weekly_cycle_flow(workflow, mock_transaction_service, mock_market_servi
     mock_market_service.get_market_context.assert_called()
     
     # 2. Planning
-    from unittest.mock import ANY
+    from unittest.mock import ANY, AsyncMock
     mock_planner.decompose_goal.assert_called_with("Generate Weekly Report", ANY)
     
     # 3. Agent Execution
@@ -95,14 +97,15 @@ def test_weekly_cycle_flow(workflow, mock_transaction_service, mock_market_servi
         content=str(report)
     )
 
-def test_weekly_cycle_flow_legacy_fallback(workflow, mock_transaction_service, mock_agent_factory):
+@pytest.mark.asyncio
+async def test_weekly_cycle_flow_legacy_fallback(workflow, mock_transaction_service, mock_agent_factory):
     """Test fallback if Planner is missing."""
     workflow.task_planner = None
     
     # It should now try to run the legacy flow. 
     # With mock_agent_factory, it should succeed and return the synthesized report.
     
-    report = workflow.run_weekly_cycle(user_id="test_user")
+    report = await workflow.run_weekly_cycle(user_id="test_user")
     
     # It should NOT return the old error message. 
     # It should return the result from "mock_cio.run" which is "Final Weekly Report Content" (via synthesize_results)

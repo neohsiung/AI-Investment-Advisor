@@ -101,7 +101,9 @@ class DashboardService:
                 pnl_data = self.pnl_calc.calculate_breakdown(current_prices, user_id=user_id)
                 
                 metrics = metrics_derived
-                metrics['invested_capital'] = pnl_data.get('invested_capital', 0)
+                # [FIX] Invested Capital must be derived from Net Cash Flow (Deposits - Withdrawals)
+                # to prevent uninvested cash from being counted as 'Profit'.
+                metrics['invested_capital'] = self.transaction_repo.calculate_net_invested_capital(user_id)
                 metrics['unrealized_pnl'] = pnl_data.get('unrealized', 0)
                 
                 pnl_data['total'] = metrics['nlv'] - metrics['invested_capital']
@@ -137,6 +139,10 @@ class DashboardService:
                      })
                  positions_df = pd.DataFrame(data)
             elif not transactions_df.empty:
+                # [FIX] Account for leverage in fallback (offline) mode
+                leverage_summary = self.transaction_repo.get_leverage_summary(user_id)
+                lev_map = {row[0]: row[2] for row in leverage_summary}
+
                 positions_raw = transactions_df.copy()
                 positions_raw['qty_signed'] = positions_raw.apply(lambda x: x['quantity'] if x['action'] == 'BUY' else -x['quantity'], axis=1)
                 positions_grouped = positions_raw.groupby('ticker')['qty_signed'].sum().reset_index()
@@ -144,10 +150,12 @@ class DashboardService:
 
                 if not positions_df.empty:
                     positions_df['current_price'] = positions_df['ticker'].map(current_prices).fillna(0)
+                    positions_df['leverage'] = positions_df['ticker'].map(lev_map).fillna(1.0)
                     positions_df['gross_mv'] = positions_df['quantity'] * positions_df['current_price']
-                    positions_df['loan'] = 0.0
-                    positions_df['net_equity'] = positions_df['gross_mv']
-                    positions_df['leverage'] = 1.0
+                    
+                    # [V6.1] Correct Loan calculation: Borrowed = Nominal - Equity
+                    positions_df['loan'] = positions_df['gross_mv'] * (1 - 1/positions_df['leverage'])
+                    positions_df['net_equity'] = positions_df['gross_mv'] - positions_df['loan']
 
             return {
                 'transactions_df': transactions_df,

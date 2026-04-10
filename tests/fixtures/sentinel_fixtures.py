@@ -39,10 +39,7 @@ def mock_services():
          mock_sentinel_agent.run.return_value = {"priority": "P1", "target_agent": "CIO", "rationale": "Test Risk"}
          MockFactory.create_sentinel_agent.return_value = mock_sentinel_agent
 
-         # Configure ActionExtractor mock
-         mock_extractor = MagicMock()
-         mock_extractor.run.return_value = []
-         MockFactory.create_action_extractor_agent.return_value = mock_extractor
+
 
          
          mock_repo_instance.get_all_thresholds.return_value = {

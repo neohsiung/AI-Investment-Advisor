@@ -1,3 +1,15 @@
+---
+name: extract_actions
+description: Modular extraction of structured trade orders from investment council decisions.
+category: general
+tier: fast
+input_schema: {}
+output_schema: {}
+metadata:
+  openclaw:
+    os: ["linux", "darwin"]
+---
+
 # Skill: extract_actions
 
 Modular extraction of structured trade orders from investment council decisions.

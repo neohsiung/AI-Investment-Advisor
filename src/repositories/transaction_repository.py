@@ -175,7 +175,7 @@ class AlchemyTransactionRepository(BaseRepository, ITransactionRepository):
                 END) FROM transactions 
                 WHERE user_id = :user_id 
                 AND (:account_id IS NULL OR source_file = :account_id)
-                AND ticker NOT IN ('CASH', 'STABILIZE_CASH', 'STABILIZE_CAP', 'ETORO_SYNC')
+                AND ticker NOT IN ('STABILIZE_CASH', 'STABILIZE_CAP', 'ETORO_SYNC')
             """)
             params = {"user_id": user_id, "account_id": account_id}
             result = conn.execute(query, params).fetchone()

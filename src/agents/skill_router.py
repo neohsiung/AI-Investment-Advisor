@@ -116,10 +116,8 @@ Return ONLY the category name.
 
         # 3. Execute the matched skill
         try:
-            from src.agents.skills.registry import get_default_registry
-            registry = get_default_registry()
-            registry._ensure_builtins()
             
+                                    
             # Simple keyword extraction for ticker if it's price/momentum
             import re
             ticker_match = re.search(r'\b([A-Z]{2,5})\b', user_message.upper())
@@ -131,19 +129,19 @@ Return ONLY the category name.
             
             logger.info(f"SkillRouter: Directly executing skill {matched_skill} for ticker {ticker}")
             
-            return await self._execute_skill(registry, matched_skill, skill_kwargs)
+            return await self._run_skill_via_loader(matched_skill, skill_kwargs)
             
         except Exception as e:
             logger.error(f"SkillRouter: Execution failed for {matched_skill}: {e}")
             return None
 
-    async def _execute_skill(self, registry, skill_name: str, kwargs: Dict[str, Any]) -> Optional[str]:
+    async def _run_skill_via_loader(self, skill_name: str, kwargs: Dict[str, Any]) -> Optional[str]:
         """
         [Phase 6] Self-healing skill execution with reflection.
         具備自我修復（反思）機制的技能執行。
         """
         try:
-            return await self._run_skill_direct(registry, skill_name, kwargs)
+            return await self._agent.run_script(skill_name, **kwargs)
         except Exception as e:
             logger.warning(f"SkillRouter: Primary execution failed for '{skill_name}': {e}. Starting Reflection.")
             
@@ -155,7 +153,7 @@ Return ONLY the category name.
                 corrected_args = reflection.get("corrected_args", {})
                 logger.info(f"SkillRouter: Reflection suggested RETRY with args: {corrected_args}")
                 try:
-                    return await self._run_skill_direct(registry, skill_name, corrected_args)
+                    return await self._agent.run_script(skill_name, **corrected_args)
                 except Exception as retry_e:
                     logger.error(f"SkillRouter: Retry failed for '{skill_name}': {retry_e}")
                     return f"System: [Reflection Retry Failed] {retry_e}"
@@ -164,18 +162,7 @@ Return ONLY the category name.
             logger.error(f"SkillRouter: Tool failed and reflection could not recover: {e}")
             return f"System: [Tool Error] {e}"
 
-    async def _run_skill_direct(self, registry, skill_name: str, kwargs: Dict[str, Any]) -> Optional[str]:
-        """Core skill invocation logic."""
-        import functools
-        impl = registry.get(skill_name)
-        if not impl:
-            logger.warning(f"SkillRouter: No implementation for '{skill_name}' in registry")
-            return None
-            
-        # Registry implementations expect user_id as first arg (per standards)
-        bound = functools.partial(impl, self.user_id)
-        result = await to_thread(bound, **kwargs)
-        return str(result) if result else None
+    
 
     async def _reflect_on_error(self, tool_name: str, args: Any, error: str) -> Optional[Dict[str, Any]]:
         """

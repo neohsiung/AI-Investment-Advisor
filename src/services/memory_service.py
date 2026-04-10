@@ -92,13 +92,13 @@ class MemoryService:
             recent_items=final_items
         )
 
-    def store_report(self, user_id: str, report_type: str, date: str, content: str) -> None:
+    async def store_report(self, user_id: str, report_type: str, date: str, content: str) -> None:
         """
         Compress and store a report in the memory repository.
         壓縮並將報告儲存在記憶儲存庫中。
         """
         # 1. Generate Summary (Compressed) for long-term storage
-        summary = self.llm.summarize(content)
+        summary = await self.llm.summarize(content)
         
         item = ReportMemoryItem(
             user_id=user_id,
@@ -110,7 +110,7 @@ class MemoryService:
         self.repo.save_report(item)
         logger.info(f"Stored {report_type} memory for {user_id}")
 
-    def detect_conflicts(self, current_analysis: str, context: MemoryContext) -> List[str]:
+    async def detect_conflicts(self, current_analysis: str, context: MemoryContext) -> List[str]:
         """
         Detect contradictions between current analysis and historical memory context.
         檢測目前分析與歷史記憶內容之間的矛盾。
@@ -118,4 +118,4 @@ class MemoryService:
         if not context.recent_items:
             return []
         context_str = context.get_compressed_context()
-        return self.llm.check_contradictions(current_analysis, context_str)
+        return await self.llm.check_contradictions(current_analysis, context_str)

@@ -49,7 +49,8 @@ class BaseAgent(ABC):
         self.feedback_repo = feedback_repo or AlchemyFeedbackRepository()
         
         # [NEW] OpenClaw Components
-        self.memory = HybridMemory() # Shared DB for now (目前共用 DB)
+        # [NEW] OpenClaw Components
+        self.memory = None # DIP: Don't instantiate HybridMemory directly
         
         # Rule #8: Cognitive Memory Tiering
         from src.services.cognitive_memory_manager import CognitiveMemoryManager
@@ -136,11 +137,10 @@ class BaseAgent(ABC):
         if not re.match(r"^[a-zA-Z0-9_\-]+$", skill_name):
             return "Error: Invalid skill_name format."
 
-        # Search in both locations
+        # Search exclusively in src/agents/skills/ for business logic
         potential_paths = [
             pathlib.Path(f"src/agents/skills/{skill_name}/cli.py"),
-            pathlib.Path(f".agent/skills/{skill_name}/cli.py"),
-            pathlib.Path(f"src/agents/skills/{skill_name}/main.py") # Fallback to main.py
+            pathlib.Path(f"src/agents/skills/{skill_name}/main.py")
         ]
         
         script_path = None
@@ -150,7 +150,7 @@ class BaseAgent(ABC):
                 break
         
         if not script_path:
-            return f"Error: Skill '{skill_name}' does not have a cli.py implementation."
+            return f"Error: Skill '{skill_name}' not found in runtime registry. Access to .agent/ is restricted."
 
         try:
             # Execute the script
@@ -366,10 +366,10 @@ class BaseAgent(ABC):
             # Fire and forget extraction to not block the main flow
             try:
                 loop = asyncio.get_running_loop()
-                loop.create_task(to_thread(self._extract_and_save_takeaways, response))
+                loop.create_task(self._extract_and_save_takeaways(response))
             except RuntimeError:
                 # Fallback if no event loop running
-                self._extract_and_save_takeaways(response)
+                asyncio.run(self._extract_and_save_takeaways(response))
 
         return response
 
@@ -452,7 +452,7 @@ class BaseAgent(ABC):
         """Render user context - delegates to ContextAssembler."""
         return ContextAssembler.render_user_context(context)
 
-    def _extract_and_save_takeaways(self, agent_response: str) -> None:
+    async def _extract_and_save_takeaways(self, agent_response: str) -> None:
         """
         [Phase 9] Extracts key takeaways from the agent's response and saves them to the Knowledge Vault.
         Uses a fast LLM model to distill the context.
@@ -473,14 +473,15 @@ class BaseAgent(ABC):
                 f"Analysis:\n{agent_response[:2500]}"
             )
             
-            result = extractor.call_llm([{"role": "user", "content": prompt}], temperature=0.1)
+            result = await extractor.call_llm([{"role": "user", "content": prompt}], temperature=0.1)
             
             if result and "NONE" not in result.upper() and len(result.strip()) > 10:
                 self.logger.info(f"Saving extracted takeaways to Knowledge Vault for {self.name}")
-                from src.infrastructure.memory.memory_manager import HybridMemory
-                memory = HybridMemory()
-                memory.add_memory(
-                    user_id=self.user_id,
+            if result and "NONE" not in result.upper() and len(result.strip()) > 10:
+                self.logger.info(f"Saving extracted takeaways to Knowledge Vault for {self.name}")
+                from src.services.cognitive_memory_manager import CognitiveMemoryManager
+                memory_mgr = CognitiveMemoryManager(user_id=self.user_id)
+                await memory_mgr.add_memory(
                     content=result,
                     category=f"{self.name.lower()}_takeaways",
                     metadata={"source": "auto_extraction", "agent": self.name}

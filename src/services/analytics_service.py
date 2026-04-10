@@ -312,7 +312,7 @@ class PnLCalculator:
             "realized": total_realized_pnl,
             "unrealized": total_unrealized_pnl,
             "total": total_realized_pnl + total_unrealized_pnl,
-            "invested_capital": sum(pos['avg_cost'] * pos['qty'] for pos in portfolio.values() if pos['qty'] > 0),
+            "invested_capital": self.repo.calculate_net_invested_capital(user_id, account_id),
             "margin_invested": sum(pos['margin_invested'] for pos in portfolio.values() if pos['qty'] > 0),
             "details": breakdown
         }

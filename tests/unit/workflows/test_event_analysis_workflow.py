@@ -1,6 +1,6 @@
 import pytest
 import asyncio
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock, patch, AsyncMock
 from src.services.workflow_service import EventAnalysisWorkflow
 
 def test_event_analysis_workflow_basic():
@@ -31,11 +31,11 @@ def test_event_analysis_workflow_basic():
             
             # Mock Agents
             mock_mom = MagicMock()
-            mock_mom.run.return_value = "STRONG BUY"
+            mock_mom.run = AsyncMock(return_value="STRONG BUY")
             mock_sent = MagicMock()
-            mock_sent.run.return_value = "POSITIVE"
+            mock_sent.run = AsyncMock(return_value="POSITIVE")
             mock_cio = MagicMock()
-            mock_cio.run.return_value = "### AAPL\n**Action**: **BUY**\n**Reason**: Technical breakout"
+            mock_cio.run = AsyncMock(return_value="### AAPL\n**Action**: **BUY**\n**Reason**: Technical breakout")
             
             mock_factory.create_momentum_agent.return_value = mock_mom
             mock_factory.create_sentiment_agent.return_value = mock_sent
