@@ -54,9 +54,17 @@ class AutomatedTradingService:
         raw_threshold = self.settings_repo.get(user_id, "auto_trade_threshold")
         threshold = int(raw_threshold) if raw_threshold is not None else 9
         
-        # v8.1: Dynamic threshold for Excess Cash Reinvestment
-        # 如果是旨在解決現金過高的交易，放寬門檻至設定值（預設 7 分）
-        is_excess_cash = "現金比例過高" in rationale or "Excess Cash" in rationale
+        # v8.2: Enhanced Excess Cash Detection with multiple trigger patterns
+        # 增強現金過高檢測，支援多種觸發模式
+        is_excess_cash = (
+            "現金比例過高" in rationale or 
+            "現金水位過高" in rationale or
+            "現金水位明顯過高" in rationale or
+            "現金再投資" in rationale or
+            "Excess Cash" in rationale or 
+            "High Cash" in rationale or
+            "cash_ratio >" in rationale  # Quantitative pattern
+        )
         if is_excess_cash:
             reinvest_threshold = int(self.settings_repo.get(user_id, "auto_reinvest_threshold") or 7)
             if threshold > reinvest_threshold:

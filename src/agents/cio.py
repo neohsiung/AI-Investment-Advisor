@@ -36,7 +36,7 @@ class CIOAgent(BaseAgent):
         effective_mode = mode or self.mode
         
         if effective_mode == 'strategy' or effective_mode == 'sector_analysis':
-            return self._run_strategy(context)
+            return await self._run_strategy(context)
         
         # Report Mode (Default)
         return await self._run_report(context)
@@ -106,7 +106,14 @@ class CIOAgent(BaseAgent):
             self.logger.error(f"Failed to load narrative drift: {e}")
             narrative_drift_context = "無敘事偏離數據 (No narrative drift data)."
 
-        # 5. Prepare Data for Prompt Template
+        # 5. Get Cash Deployment Context (Dynamic Calculation)
+        # 5. 取得現金部署上下文 (動態計算)
+        if "cash_deployment_context" not in context or not context.get("cash_deployment_context"):
+            cash_deployment_context = self._get_cash_deployment_context(user_id)
+        else:
+            cash_deployment_context = context.get("cash_deployment_context", "")
+
+        # 6. Prepare Data for Prompt Template
         prompt_data = {
             "current_date": format_time(fmt="%Y-%m-%d"),
             "leverage_ratio": f"{leverage_ratio:.2f}",
@@ -118,7 +125,7 @@ class CIOAgent(BaseAgent):
             "thematic_context": thematic_context, 
             "narrative_drift_context": narrative_drift_context, # [NEW] Milestone 3.2 Context
             "sector_strategy": context.get("sector_strategy", "無 (None)"),
-            "cash_deployment_context": context.get("cash_deployment_context", ""), # [NEW] Milestone 3.3 Context
+            "cash_deployment_context": cash_deployment_context, # [FIX] Dynamic cash level calculation
             "report_focus": context.get("task_instruction") or context.get("report_focus", "Weekly Strategic"),
             "topic": context.get("topic", "未指定 (Not Specified)"),
             "memory_chain": context.get("memory_chain", "無相關歷史記憶 (No existing memory)")
@@ -159,8 +166,8 @@ class CIOAgent(BaseAgent):
 
         return response
 
-    def _run_strategy(self, context):
-        """Generates Sector Strategy & Candidates (JSON)."""
+    async def _run_strategy(self, context):
+        """Generates Sector Strategy & Candidates (JSON) (Async)."""
         
         # Load Strategy Prompt (Ideally use _load_prompt but different path)
         strategy_prompt_template = ""
@@ -203,7 +210,7 @@ class CIOAgent(BaseAgent):
         # Here we manually render a DIFFERENT template. run_tool_loop uses self.system_prompt.
         # So we stick to call_llm for this specific sub-task or trick it.
         # Let's keep call_llm for strategy to minimize risk of breaking JSON generation.
-        response_str = self.call_llm(
+        response_str = await self.call_llm(
             messages=[
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": user_prompt}
@@ -297,3 +304,79 @@ class CIOAgent(BaseAgent):
         except Exception as e:
             self.logger.error(f"Error calculating portfolio context: {e}")
             return 1.0, "Error retrieving data."
+
+    def _get_cash_deployment_context(self, user_id):
+        """
+        計算並返回現金部署上下文 (Dynamic Cash Deployment Context).
+        基於帳戶現金水位提出建議。
+        """
+        if not user_id:
+            return "無法取得用戶 ID (No user ID)."
+        
+        try:
+            # Get account cash position
+            # 取得帳戶現金部位
+            from src.repositories.broker_account_repository import AlchemyBrokerAccountRepository
+            from src.repositories.holdings_repository import AlchemyHoldingsRepository
+            
+            account_repo = AlchemyBrokerAccountRepository()
+            holdings_repo = AlchemyHoldingsRepository()
+            
+            # Get latest account snapshot
+            account = account_repo.get_latest_by_user(user_id)
+            if not account:
+                return "無法取得帳戶信息 (No broker account info)."
+            
+            nlv = account.nlv if hasattr(account, 'nlv') else account.total_equity
+            cash = account.cash if hasattr(account, 'cash') else account.available_cash
+            
+            if nlv <= 0:
+                return "帳戶尚未初始化 (Account not initialized)."
+            
+            cash_ratio = (cash / nlv * 100)
+            
+            # Dynamic assessment based on cash ratio
+            # 基於現金比例的動態評估
+            if cash_ratio > 30:
+                status = "🔴 **現金水位明顯過高** (Excess Cash >30%)"
+                signal = "URGENT: 現金再投資"
+                recommendation = f"建議立即啟動「現金再投資」模組。目標: 將現金比例從 {cash_ratio:.1f}% 降至 15-20%。"
+            elif cash_ratio > 25:
+                status = "🔴 **現金水位過高** (High Cash 25-30%)"
+                signal = "HIGH: 現金再投資"
+                recommendation = f"建議在下一個交易機會啟動現金佈局。目標比例: 15-20%。"
+            elif cash_ratio > 15:
+                status = "🟡 **現金水位略高** (Moderate {cash_ratio:.1f}%)"
+                signal = "NORMAL: 分期佈局"
+                recommendation = "可考慮分期逢低吸納，但無急迫性。"
+            elif cash_ratio > 10:
+                status = "🟢 **現金水位正常** (Optimal {cash_ratio:.1f}%)"
+                signal = "HOLD: 保持策略"
+                recommendation = "現金配置合理，繼續按計劃投資。"
+            else:
+                status = "🔵 **現金水位低** (Low <10%)"
+                signal = "CAUTION: 保持流動性"
+                recommendation = "現金不足，應在下一輪獲利回吐時補充現金儲備。"
+            
+            # Build context string
+            context_str = f"""
+### 現金部署戰略 (Cash Deployment Strategy)
+{status}
+
+**帳戶快照 (Account Snapshot)**:
+- 淨資產值 (NLV): ${nlv:,.2f}
+- 可用現金: ${cash:,.2f}
+- 現金比例: {cash_ratio:.1f}%
+
+**信號 (Signal)**: {signal}
+
+**建議 (Recommendation)**: {recommendation}
+"""
+            
+            self.logger.info(f"Cash deployment context: {status} ({cash_ratio:.1f}%)")
+            return context_str
+            
+        except Exception as e:
+            self.logger.error(f"Failed to calculate cash deployment context: {e}")
+            return "無法計算現金水位 (Unable to calculate cash position)."
+
