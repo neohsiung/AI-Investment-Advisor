@@ -261,6 +261,7 @@ class BaseAgent(ABC):
         # This allows RLHF-optimized prompts to override static files.
         try:
             from sqlalchemy.orm import sessionmaker
+            from sqlalchemy.exc import OperationalError, ProgrammingError
             from src.data.database import get_db_engine
             from src.data.models import UserCustomPrompt
             
@@ -275,8 +276,11 @@ class BaseAgent(ABC):
                 self.logger.info(f"✨ Using dynamically optimized prompt for user {self.user_id} (Agent: {self.name})")
                 return custom.custom_prompt
             session.close()
+        except (OperationalError, ProgrammingError) as db_error:
+            # Table or column doesn't exist yet — safe to skip (likely pre-migration or schema mismatch)
+            self.logger.debug(f"Dynamic prompt table unavailable (pre-migration): {type(db_error).__name__}")
         except Exception as e:
-            self.logger.warning(f"Dynamic prompt check bypassed due to error: {e}")
+            self.logger.debug(f"Dynamic prompt check skipped: {type(e).__name__}: {str(e)[:100]}")
 
         # [Phase 1] Attempt to load from new Workspace directories first
         prompt_content = ""

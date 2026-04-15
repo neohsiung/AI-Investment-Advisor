@@ -48,7 +48,7 @@ export default function ChatPage() {
     };
 
     try {
-      const response = await fetch("/api/dashboard/chat/stream", {
+      const response = await fetch("/api/v1/chat/stream", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({

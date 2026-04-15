@@ -13,6 +13,7 @@ from sqlalchemy import text
 from src.utils.logger import setup_logger
 from src.utils.rate_limit import limiter
 from src.services.dashboard_router import get_current_user
+from src.api.v1.router import api_v1_router
 logger = setup_logger("MCPService")
 
 from contextlib import asynccontextmanager
@@ -69,7 +70,7 @@ async def websocket_broadcast_loop():
             for user_id in active_users:
                 # 獲取該使用者的最新數據 (DashboardService 內部有快取，因此 5s 頻率是安全的)
                 service = DashboardService(user_id=user_id)
-                data = service.prepare_dashboard_data(user_id=user_id)
+                data = await service.prepare_dashboard_data(user_id=user_id)
                 
                 # 廣播更新
                 await socket_manager.broadcast_to_user(user_id, {
@@ -167,7 +168,7 @@ async def lifespan(app: FastAPI):
         logger.info("✓ ChannelGateway initialized and registered.")
         
         # Create Intent Classifier
-        intent_classifier = IntentClassifier()
+        intent_classifier = IntentClassifier(user_id=primary_user_id)
         
         services["interaction"] = InteractionService(
             adapters=adapters,
@@ -262,11 +263,22 @@ app = FastAPI(
 app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
+# --- Session Middleware for Auth ---
+from starlette.middleware.sessions import SessionMiddleware
+app.add_middleware(
+    SessionMiddleware, 
+    secret_key=os.environ.get("JWT_SECRET", "fallback_insecure_secret_for_auth_sessions")
+)
+
 # --- CORS Middleware (New Phase 2) ---
 from fastapi.middleware.cors import CORSMiddleware
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000", "http://127.0.0.1:3000"],
+    allow_origins=[
+        "http://localhost:3000", 
+        "http://127.0.0.1:3000",
+        "https://chummy-nonpathologically-lilla.ngrok-free.dev" # Based on n8n config
+    ],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -305,11 +317,14 @@ class SecretScrubbingMiddleware(BaseHTTPMiddleware):
             
             new_body = body_str.encode("utf-8")
             
+            headers_dict = dict(response.headers)
+            headers_dict.pop("content-length", None)
+            
             # Reconstruct response with scrubbed body
             return Response(
                 content=new_body,
                 status_code=response.status_code,
-                headers=dict(response.headers),
+                headers=headers_dict,
                 media_type=response.media_type
             )
         return response
@@ -444,7 +459,7 @@ async def call_tool(tool_name: str, request: ToolCallRequest):
         elif tool_name == "web_search":
             query = args.get("query")
             if query:
-                result = search_service.search_financial_context(query)
+                result = search_service.search_financial_context(query, max_results=3)
                 
         elif tool_name == "get_macro_indicators":
             result = market_service.get_macro_data()
@@ -464,7 +479,10 @@ async def call_tool(tool_name: str, request: ToolCallRequest):
         logger.error(f"Tool execution failed: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
-# --- Dashboard Router (New Phase 2) ---
+# --- v1 API Entrypoint (Sprint 2 Transition) ---
+app.include_router(api_v1_router, prefix="/api/v1")
+
+# --- Legacy Dashboard Router (Deprecating) ---
 from src.services.dashboard_router import dashboard_router
 app.include_router(dashboard_router, prefix="/api/dashboard")
 
@@ -775,17 +793,17 @@ async def get_admin_metrics(user: Dict[str, Any] = Depends(get_current_user)):
 
 # --- WebSocket Endpoint ---
 
-@app.websocket("/api/dashboard/ws")
+@app.websocket("/api/v1/dashboard/ws")
 async def dashboard_websocket(
     websocket: WebSocket,
-    access_token: Optional[str] = Cookie(None)
+    access_token: Optional[str] = None
 ):
     """
     WebSocket endpoint for real-time dashboard updates.
-    使用 HTTPOnly Cookie 中的 access_token 進行握手認證。
+    從 Query 參數中取得 access_token 進行握手認證。
     """
     if not access_token:
-        logger.warning("WebSocket attempt without access_token cookie.")
+        logger.warning("WebSocket attempt without access_token query param.")
         await websocket.close(code=1008)  # Policy Violation
         return
 

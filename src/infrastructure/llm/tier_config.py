@@ -241,3 +241,58 @@ class TierConfig:
         lines.append(f"\n> Weekly budget: $20.00 | Estimated: ${daily_total * 7:.2f}")
 
         return "\n".join(lines)
+
+
+class SettingsAwareModelRouter:
+    """
+    User-aware model router that fetches models from database settings.
+    用戶感知的模型路由器，從資料庫設定中取得模型。
+    
+    Usage:
+        router = SettingsAwareModelRouter(settings_repo)
+        model = router.get_model(user_id, "fast")
+        models = router.get_all_models(user_id)
+    """
+    
+    def __init__(self, settings_repo=None):
+        self.settings_repo = settings_repo
+        self.tier_config = TierConfig()
+    
+    def get_model(self, user_id: str, tier: str) -> str:
+        """
+        Get the model for a specific tier and user.
+        Priority: DB setting > Tier default
+        """
+        if not user_id:
+            logger.warning("SettingsAwareModelRouter.get_model: user_id is empty")
+            return self.tier_config.resolve(tier)
+        
+        try:
+            if self.settings_repo:
+                tier_key_map = {
+                    "nano": "AI_MODEL_NANO",
+                    "fast": "AI_MODEL_FAST",
+                    "smart": "AI_MODEL_SMART",
+                    "advanced": "AI_MODEL_ADVANCED"
+                }
+                db_key = tier_key_map.get(tier)
+                if db_key:
+                    db_model = self.settings_repo.get_setting(user_id, db_key)
+                    if db_model:
+                        if isinstance(db_model, str):
+                            db_model = db_model.strip().strip('"').strip("'")
+                        logger.info(f"ModelRouter: {user_id} {tier} -> {db_model} (DB)")
+                        return db_model
+        except Exception as e:
+            logger.warning(f"ModelRouter: Failed DB lookup {user_id}/{tier}: {e}")
+        
+        default_model = self.tier_config.resolve(tier)
+        logger.info(f"ModelRouter: {user_id} {tier} -> {default_model} (default)")
+        return default_model
+    
+    def get_all_models(self, user_id: str) -> Dict[str, str]:
+        """Get all models for a user across all tiers."""
+        return {
+            tier: self.get_model(user_id, tier)
+            for tier in ["nano", "fast", "smart", "advanced"]
+        }

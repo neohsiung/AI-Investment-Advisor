@@ -65,7 +65,7 @@ async def test_daily_workflow_execution(mock_deps):
 - **Action**: **HOLD**
 """
         mock_cio.run = AsyncMock(return_value=report_content)
-        mock_cio.polish_report.side_effect = lambda x: x # Identity function
+        mock_cio.polish_report = AsyncMock(side_effect=lambda x: x) # Identity function
         MockFactory.create_cio_agent.return_value = mock_cio
         
         # Instantiate inside structure where Factory is active
@@ -73,8 +73,9 @@ async def test_daily_workflow_execution(mock_deps):
         
         # Mock Memory Service to avoid AttributeErrors or logic errors
         workflow.memory_service = MagicMock()
-        workflow.memory_service.detect_conflicts.return_value = []
+        workflow.memory_service.detect_conflicts = AsyncMock(return_value=[])
         workflow.memory_service.get_context.return_value.recent_items = []
+        workflow.memory_service.store_report = AsyncMock()
         
         # Mock context setup usually done in collect_data
         workflow.context['tickers'] = ["NVDA", "TSM"]
@@ -98,6 +99,7 @@ async def test_daily_workflow_skip_empty_portfolio(mock_deps):
     with patch('src.services.workflow_service.AgentFactory') as MockFactory:
         workflow = DailyWorkflow(user_id, transaction_repo=mock_deps['repo'], transaction_service=mock_deps['trans'], market_service=mock_deps['market'])
         workflow.memory_service = MagicMock() # FIX
+        workflow.memory_service.detect_conflicts = AsyncMock(return_value=[])
         result = await workflow.run()
         assert result == "SKIPPED"
 
@@ -122,18 +124,21 @@ async def test_report_distribution(mock_deps):
         MockFactory.create_momentum_agent.return_value = mock_mom
         
         # Mock other agents
-        MockFactory.create_sentiment_agent.return_value = MagicMock()
-        MockFactory.create_fundamental_agent.return_value = MagicMock()
-        MockFactory.create_macro_agent.return_value = MagicMock()
+        # Mock other agents with AsyncMock runs
+        MockFactory.create_sentiment_agent.return_value.run = AsyncMock(return_value={"score": 0.5})
+        MockFactory.create_fundamental_agent.return_value.run = AsyncMock(return_value="Cached Fundamental")
+        MockFactory.create_macro_agent.return_value.run = AsyncMock(return_value="Macro Context")
         
         mock_cio = MagicMock()
         mock_cio.run = AsyncMock(return_value="Report")
-        mock_cio.polish_report.side_effect = lambda x: f"<html>{x}</html>"
+        mock_cio.polish_report = AsyncMock(side_effect=lambda x: f"<html>{x}</html>")
         MockFactory.create_cio_agent.return_value = mock_cio
 
         workflow = DailyWorkflow(user_id, transaction_repo=mock_deps['repo'], transaction_service=mock_deps['trans'], market_service=mock_deps['market'])
         workflow.memory_service = MagicMock() # FIX: Ensure memory service is mocked
+        workflow.memory_service.detect_conflicts = AsyncMock(return_value=[])
         workflow.memory_service.get_context.return_value.recent_items = []
+        workflow.memory_service.store_report = AsyncMock()
 
         mock_repo_instance = MagicMock()
         MockRepo.return_value = mock_repo_instance

@@ -22,10 +22,10 @@ class TestInternetSearchService(unittest.IsolatedAsyncioTestCase):
             service.tavily_client = None  # Force DuckDuckGo path
             
             # 1. First Call
-            res1 = await service.search_financial_context("query")
+            res1 = await service.search_financial_context("query", max_results=3)
             
             # 2. Second Call (Immediate)
-            res2 = await service.search_financial_context("query")
+            res2 = await service.search_financial_context("query", max_results=3)
             
             self.assertEqual(res1, res2)
             # Should be called once (second is cached)
@@ -42,13 +42,13 @@ class TestInternetSearchService(unittest.IsolatedAsyncioTestCase):
             service.tavily_client = None
             
             # 1. First Call
-            await service.search_financial_context("query")
+            await service.search_financial_context("query", max_results=3)
             
             # Wait for expiry
             time.sleep(0.2)
             
             # 2. Second Call
-            await service.search_financial_context("query")
+            await service.search_financial_context("query", max_results=3)
             
             # Should be called twice (cache expired)
             self.assertEqual(service.ddgs.text.call_count, 2)

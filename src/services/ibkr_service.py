@@ -49,7 +49,7 @@ class IBKRService(IBroker):
         except Exception as e:
             logger.error(f"IBKR Connection Failed: {e}")
 
-    def get_account(self) -> Optional[Account]:
+    async def get_account(self) -> Optional[Account]:
         # Implementation via IBKR API
         # account = self.ib.accountSummary()
         return Account(
@@ -60,16 +60,16 @@ class IBKRService(IBroker):
             currency="USD"
         )
 
-    def get_positions(self) -> List[Position]:
+    async def get_positions(self) -> List[Position]:
         # Implementation via IBKR API
         # positions = self.ib.positions()
         return []
 
-    def get_history(self, days: int = 30) -> List[Dict[str, Any]]:
+    async def get_history(self, days: int = 30) -> List[Dict[str, Any]]:
         # Implementation via IBKR API (reqExecutions)
         return []
 
-    def execute_order(self, order: Order) -> Dict[str, Any]:
+    async def execute_order(self, order: Order) -> Dict[str, Any]:
         """
         Execute IBKR Order.
         """
@@ -80,5 +80,9 @@ class IBKRService(IBroker):
         logger.info(f"IBKR EXEC: {order.action.value} {order.symbol}")
         return {"status": "executed", "order_id": "mock_ibkr_1"}
     
-    def sync_history(self, user_id: str = "default_user") -> Dict[str, int]:
+    async def sync_history(self, user_id: str = "default_user") -> Dict[str, int]:
         return {"added": 0, "skipped": 0}
+
+    async def get_pending_orders(self) -> List[Dict[str, Any]]:
+        """Get pending (scheduled) orders."""
+        return []

@@ -74,17 +74,9 @@ def test_start_session_standard(mock_deps):
     async def run_test():
         service = CouncilService(user_id="test_user")
         
-        # Mock run_in_executor to execute the sync function immediately
-        # We need to patch the loop in CouncilService
-        with patch('src.services.council_service.asyncio.get_running_loop') as mock_loop_getter:
-            mock_loop = MagicMock()
-            
-            # Mock Future for run_in_executor
-            f = asyncio.Future()
-            f.set_result({"session_id": "123", "consensus": "Standard Decision", "transcript": []})
-            mock_loop.run_in_executor.return_value = f
-            
-            mock_loop_getter.return_value = mock_loop
+        # Mock _run_debate_logic to avoid deep agent logic
+        with patch.object(service, '_run_debate_logic', new_callable=AsyncMock) as mock_debate:
+            mock_debate.return_value = {"session_id": "123", "consensus": "Standard Decision", "transcript": []}
             
             context = {"market_data": {}}
             result = await service.start_session(
@@ -95,13 +87,7 @@ def test_start_session_standard(mock_deps):
             )
             
             assert result["consensus"] == "Standard Decision"
-            
-            # Verify run_in_executor called with correct target
-            # args[0] is None (executor), args[1] is func
-            # args = mock_loop.run_in_executor.call_args
-            # assert args[0][1] == service._run_sync_logic
-            # (call_args might be simpler)
-            mock_loop.run_in_executor.assert_called()
+            mock_debate.assert_called_once()
 
     loop = asyncio.new_event_loop()
     asyncio.set_event_loop(loop)
@@ -110,12 +96,14 @@ def test_start_session_standard(mock_deps):
     finally:
         loop.close()
 
-def test_run_sync_logic_directly(mock_deps):
-    """Test the synchronous logic underlying standard session."""
+@pytest.mark.asyncio
+async def test_run_debate_logic_directly(mock_deps):
+    """Test the asynchronous logic underlying standard session."""
     service = CouncilService(user_id="test_user")
     
     # Mock Agents
     mock_agent = MagicMock()
+    # Agent.run is async
     mock_agent.run = AsyncMock(return_value="Analysis Result")
     mock_agent.name = "TestAgent"
     
@@ -125,13 +113,17 @@ def test_run_sync_logic_directly(mock_deps):
     mock_deps['factory'].create_risk_agent.return_value = mock_agent
     mock_deps['factory'].create_sentiment_agent.return_value = mock_agent
     mock_deps['factory'].create_macro_agent.return_value = mock_agent
-    mock_deps['factory'].create_cio_agent.return_value.run = AsyncMock(return_value="Consensus")
+    
+    # CIO run is also async
+    mock_cio = MagicMock()
+    mock_cio.run = AsyncMock(return_value="Consensus")
+    mock_deps['factory'].create_cio_agent.return_value = mock_cio
 
     # Mock Router
     mock_deps['router'].return_value.select_tier.return_value = "fast"
     
     context = {"market_data": {}}
-    result = service._run_sync_logic("sess_id", "Topic", context, user_id="test_user")
+    result = await service._run_debate_logic("sess_id", "Topic", context, user_id="test_user")
     
     assert result["consensus"] == "Consensus"
     assert len(result["transcript"]) == 5 # 5 agents

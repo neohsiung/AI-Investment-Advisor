@@ -11,6 +11,17 @@ const api = axios.create({
   },
 });
 
+// 請求攔截器：統一加上 Bearer Token (相容 Sprint 3 localStorage 機制)
+api.interceptors.request.use((config) => {
+  if (typeof window !== "undefined") {
+    const token = localStorage.getItem("access_token");
+    if (token) {
+      config.headers.Authorization = `Bearer ${token}`;
+    }
+  }
+  return config;
+});
+
 // 響應攔截器：處理 Token 過期與自動刷新
 api.interceptors.response.use(
   (response) => response,
@@ -26,7 +37,15 @@ api.interceptors.response.use(
       originalRequest._retry = true;
 
       try {
-        await axios.post(`/api/auth/refresh`, {}, { withCredentials: true });
+        const refreshToken = localStorage.getItem("refresh_token");
+        const res = await axios.post(`/api/v1/auth/refresh`, { refresh_token: refreshToken }, { withCredentials: true });
+        
+        if (res.data?.access_token) {
+          localStorage.setItem("access_token", res.data.access_token);
+          if (originalRequest.headers) {
+             originalRequest.headers.Authorization = `Bearer ${res.data.access_token}`;
+          }
+        }
         return api(originalRequest);
       } catch (refreshError) {
         // Refresh failed — redirect to login only if not already there

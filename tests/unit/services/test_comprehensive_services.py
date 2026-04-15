@@ -2,7 +2,7 @@
 Comprehensive test coverage for Dashboard and Analytics Services (Fixed Imports)
 """
 import pytest
-from unittest.mock import Mock, patch, MagicMock
+from unittest.mock import Mock, patch, MagicMock, AsyncMock
 import pandas as pd
 from datetime import datetime
 import sys
@@ -178,36 +178,35 @@ class TestWorkflowFiles:
         """Test DailyWorkflow execution logic (Dry Run)"""
         from src.services.workflow_service import DailyWorkflow
         
-        # Mock AlchemyTransactionRepository WHERE IT IS USED
-        # DailyWorkflow is in src.services.workflow_service
-        # It imports AlchemyTransactionRepository.
-        # So we must patch src.services.workflow_service.AlchemyTransactionRepository
+        # Setup mock agents with AsyncMock
+        mock_mom = MagicMock()
+        mock_mom.run = AsyncMock(return_value="BUY")
+        mock_sent = MagicMock()
+        mock_sent.run = AsyncMock(return_value="LOW")
+        mock_fund = MagicMock()
+        mock_fund.run = AsyncMock(return_value="STABLE")
+        
+        # Mock specific factory methods called in WorkflowService
+        mock_factory.create_momentum_agent.return_value = mock_mom
+        mock_factory.create_sentiment_agent.return_value = mock_sent
+        mock_factory.create_fundamental_agent.return_value = mock_fund
+
         with patch('src.services.workflow_service.AlchemyTransactionRepository') as MockRepo:
              MockRepo.return_value.get_active_tickers.return_value = ['AAPL']
              
-             # Instantiate INSIDE the patch so it uses the mock
              wf = DailyWorkflow(user_id="test")
 
-             # Mock dependencies on the instance (if not passed in init or set later)
-             wf.market_service = Mock()
+             wf.market_service = MagicMock()
              wf.market_service.get_yield_curve_inversion.return_value = {'inverted': False}
-             wf.context['tickers'] = ['AAPL'] # Ensure we have tickers to avoid early return
+             wf.context['tickers'] = ['AAPL']
 
-             # Run dry run
-             # synthesize_results creates Agents which create NEW Repos. 
-             # We should patch synthesize_results to avoid that.
-             with patch.object(wf, 'synthesize_results'):
-                  # Also avoid PerformanceService DB hits in execute_analysis
-                  wf.performance_service = Mock()
-                  
-                  # Avoid AgentFactory creating agents that hit DB?
-                  # execute_analysis creates Mom/Sent agents using Factory.
-                  # These agents might use DB?
-                  # MomentumAgent uses market data.
-                  # Check if we need to mock Factory.
-                  # For now, let's assume Agents don't hit Transaction DB directly in run()
-                  # But wait, logic earlier said they do?
-                  # "Record Recommendations for Performance Tracking" -> uses wf.performance_service.
-                  # We mocked wf.performance_service.
+             with patch.object(wf, 'synthesize_results', new_callable=AsyncMock):
+                  wf.performance_service = MagicMock()
+                  wf.performance_service.record_recommendation = MagicMock()
                   
                   await wf.run(dry_run=True)
+
+                  # Verification
+                  assert mock_factory.create_momentum_agent.called
+                  assert mock_factory.create_sentiment_agent.called
+                  assert wf.synthesize_results.called

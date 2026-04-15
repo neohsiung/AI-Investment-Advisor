@@ -91,30 +91,44 @@ def main():
             
     elif args.mode == 'scheduler':
         from src.services.scheduler_service import SchedulerService
-        print(f"[{format_time()}] Starting Scheduler Service...")
+        from src.repositories.user_repository import AlchemyUserRepository
+        print(f"[{format_time()}] Starting B2C Multi-Tenant Scheduler Service...")
         
-        # If no user_id provided in daemon mode, we need a default or to error out 
-        # based on the new user-isolation policy.
-        # v4.3.4: Prioritize command line arg, fallback to env var, then error out
-        user_id = args.user_id or os.environ.get("USER_ID")
+        # v5.0: Dynamic user discovery for B2C SaaS
+        user_repo = AlchemyUserRepository()
+        user_ids = [args.user_id] if args.user_id else user_repo.get_all_active_users()
         
-        if not user_id:
-             logger.error("user_id is required to start the scheduler service configuration. Set via --user_id or USER_ID env.")
+        if not user_ids:
+             logger.error("No active users found in DB. Cannot start scheduler.")
              return
              
-        service = SchedulerService(user_id=user_id)
+        logger.info(f"Initializing scheduler for {len(user_ids)} users: {user_ids}")
+        services = [SchedulerService(user_id=uid) for uid in user_ids]
         
         if args.task:
-            # Single task execution
-            if args.task == 'daily':
-                service.job_daily_check()
-            elif args.task == 'weekly':
-                service.job_weekly_report()
-            elif args.task == 'monthly':
-                service.job_monthly_refinement()
+            # Single task execution for specific users
+            for service in services:
+                if args.task == 'daily':
+                    service.job_daily_check()
+                elif args.task == 'weekly':
+                    service.job_weekly_report()
+                elif args.task == 'monthly':
+                    service.job_monthly_refinement()
         else:
-            # Daemon loop
-            service.run_loop()
+            # Daemon loop for all users
+            for service in services:
+                service.reload_schedule()
+            
+            logger.info("Multi-tenant scheduler loop started.")
+            while True:
+                for service in services:
+                    service.scheduler.run_pending()
+                    # Optional: periodically check for reload signal per user
+                    if int(asyncio.get_event_loop().time()) % 10 == 0:
+                        service._check_reload_signal()
+                
+                import time
+                time.sleep(1)
             
     else:
         asyncio.run(run_workflow(mode=args.mode, dry_run=args.dry_run, user_id=args.user_id, force_report=args.force_report))

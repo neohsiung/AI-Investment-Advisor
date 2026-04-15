@@ -24,6 +24,9 @@ RUN pip install --no-cache-dir uv && \
 # Copy service and core
 COPY ./services/scheduler /workspace/services/scheduler
 COPY ./src /workspace/src
+COPY ./prompts /workspace/prompts
+COPY ./config /workspace/config
+COPY ./workspace /workspace/workspace
 
 RUN mkdir -p /workspace/data /workspace/logs && \
     chown -R appuser:appgroup /workspace /home/appuser

@@ -28,13 +28,55 @@ export const WebSocketProvider = ({ children }: { children: ReactNode }) => {
   const stabilizeTimerRef = useRef<any>(null);
   const lastTimestampRef = useRef<string | null>(null); // v7.2: Persistent last received timestamp
 
-  const connect = (isRetry = false) => {
+  // v4.5: Helper to proactively refresh token before WS connection
+  const refreshTokenIfNeeded = async (): Promise<string | null> => {
+    const token = localStorage.getItem("access_token");
+    if (!token) return null;
+
+    // Decode expiry without library: JWT payload is base64url part 2
+    try {
+      const payload = JSON.parse(atob(token.split('.')[1]));
+      const expiresAt = payload.exp * 1000; // ms
+      const nowMs = Date.now();
+
+      // If token expires within 5 minutes, proactively refresh
+      if (expiresAt - nowMs < 5 * 60 * 1000) {
+        const refreshToken = localStorage.getItem("refresh_token");
+        if (!refreshToken) return token; // Can't refresh, use as-is
+
+        const res = await fetch("/api/v1/auth/refresh", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ refresh_token: refreshToken }),
+        });
+
+        if (res.ok) {
+          const data = await res.json();
+          if (data.access_token) {
+            localStorage.setItem("access_token", data.access_token);
+            console.log("[WS] Token refreshed proactively.");
+            return data.access_token;
+          }
+        }
+        console.warn("[WS] Proactive token refresh failed, using old token.");
+      }
+    } catch (e) {
+      console.warn("[WS] Could not parse token expiry, proceeding.");
+    }
+    return token;
+  };
+
+  const connect = async (isRetry = false) => {
     if (!user) return;
-    
+
+    // Ensure fresh token before connecting
+    const freshToken = await refreshTokenIfNeeded();
+
+
     // Using relative URL for proxy support or absolute for dev
     const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
     const host = window.location.hostname === "localhost" ? "localhost:8000" : window.location.host;
-    const wsUrl = `${protocol}//${host}/api/dashboard/ws`;
+    const wsUrl = `${protocol}//${host}/api/v1/dashboard/ws${freshToken ? `?access_token=${freshToken}` : ''}`;
 
     console.log(`[WS] Connecting to ${wsUrl} (Attempt ${reconnectCount + 1})...`);
     setStatus("CONNECTING");

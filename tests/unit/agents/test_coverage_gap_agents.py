@@ -176,7 +176,9 @@ class TestAgentLLMProviderCoverage:
         
         assert result == "Summary of report"
         mock_agent.run.assert_called_once()
-        assert "TASK: Summarize" in mock_agent.run.call_args[0][0]
+        # call_args[0][0] is the context dict
+        call_context = mock_agent.run.call_args[0][0]
+        assert "TASK: Summarize" in call_context.get("task_instruction", "")
 
     @patch('src.infrastructure.agent_llm_provider.AgentFactory')
     @pytest.mark.asyncio

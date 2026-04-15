@@ -26,12 +26,16 @@ class IntelligenceService:
             if isinstance(cached, str):
                 try:
                     cached = json.loads(cached)
-                except:
-                    pass
+                except Exception as e:
+                    logger.warning(f"Failed to parse cached intelligence: {e}")
             
-            if timestamp:
-                cached["observation_window"] = f"UPDATED: {timestamp}"
-            return cached
+            if isinstance(cached, dict):
+                if timestamp:
+                    cached["observation_window"] = f"UPDATED: {timestamp}"
+                return cached
+            
+            # If we reach here, it was either non-JSON string or non-dict
+            logger.warning("Cached intelligence is invalid format. Falling back.")
             
         # Step 2: Fallback - 如果沒快取，則發送一個「生成中」的提示
         return {
@@ -40,7 +44,7 @@ class IntelligenceService:
             "ai_note": "BACKGROUND_SYNC_PENDING",
             "observation_window": "INITIALIZING",
             "sentiment_metrics": [
-                {"label": "處理進度", "value": 50, "color": "bg-secondary"}
+                {"label": "處理進度", "score": 50.0, "trend": "stable"}
             ]
         }
 
@@ -98,7 +102,8 @@ class IntelligenceService:
             transactions = repo.get_all_by_user(self.user_id)
             if not transactions:
                 return "當前尚未有任何持倉數據。"
-            tickers = list(set([t.ticker for t in transactions]))
+            import re
+            tickers = list(set([re.sub(r'[*_]', '', t.ticker) for t in transactions]))
             return f"當前關鍵持倉標的包括：{', '.join(tickers[:15])}。請針對這些標的與目前市場情緒進行關聯分析。"
         except Exception as e:
             logger.warning(f"Failed to fetch transactions for intelligence: {e}")
@@ -133,9 +138,9 @@ class IntelligenceService:
   "ai_note": "觀察到...",
   "observation_window": "ACTIVE SESSION",
   "sentiment_metrics": [
-    {{"label": "市場多頭動能", "value": 65, "color": "bg-secondary"}},
-    {{"label": "避險需求", "value": 30, "color": "bg-tertiary"}},
-    {{"label": "波動風險", "value": 45, "color": "bg-error"}}
+    {{"label": "市場多頭動能", "score": 65, "trend": "up"}},
+    {{"label": "避險需求", "score": 30, "trend": "stable"}},
+    {{"label": "波動風險", "score": 45, "trend": "down"}}
   ]
 }}
 """
@@ -195,6 +200,6 @@ class IntelligenceService:
             "ai_note": "ERROR_LOGGED",
             "observation_window": "OFFLINE",
             "sentiment_metrics": [
-                {"label": "系統狀態", "value": 0, "color": "bg-error"}
+                {"label": "系統狀態", "score": 0, "trend": "stable"}
             ]
         }

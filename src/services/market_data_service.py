@@ -105,7 +105,7 @@ class MarketDataService:
             
         return True
 
-    def get_current_prices(self, tickers: List[str]) -> Dict[str, float]:
+    async def get_current_prices(self, tickers: List[str]) -> Dict[str, float]:
         """
         Get current prices with failover and merging. Iterates providers until all tickers are resolved.
         獲取目前價格（含備援與合併）。遍歷提供者直到所有代號都解析完畢。
@@ -144,13 +144,13 @@ class MarketDataService:
         if missing_tickers:
              self.logger.info(f"Final Fallback: Searching web for {missing_tickers}")
              for ticker in missing_tickers:
-                 price = self.get_price_from_search(ticker)
+                 price = await self.get_price_from_search(ticker)
                  if price > 0:
                      all_prices[ticker] = price
         
         return all_prices
 
-    def get_price_from_search(self, ticker: str) -> float:
+    async def get_price_from_search(self, ticker: str) -> float:
         """
         Last-resort method to extract price from internet search results.
         最後的備援方法：從網路搜尋結果中提取價格。
@@ -158,7 +158,7 @@ class MarketDataService:
         import re
         query = f"{ticker} stock current price USD"
         try:
-            results = self.search_service.search_financial_context(query, max_results=2)
+            results = await self.search_service.search_financial_context(query, max_results=2)
             for res in results:
                 snippet = res.get('snippet', '') + " " + res.get('title', '')
                 # Look for patterns like $123.45 or 123.45 USD

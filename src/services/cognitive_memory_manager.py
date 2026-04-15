@@ -276,7 +276,7 @@ class CognitiveMemoryManager:
         ]
 
         try:
-            summary = await to_thread(gateway.chat, messages, llm_config)
+            summary = await gateway.chat(messages, llm_config)
             
             # 4. Store as Knowledge (Medium-Term)
             self.store_insight(

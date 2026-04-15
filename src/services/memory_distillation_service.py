@@ -39,7 +39,7 @@ class MemoryDistillationService:
             user_id=self.user_id
         )
 
-    def distill_daily_memory(self):
+    async def distill_daily_memory(self):
         """
         Main job to distill the last 24 hours of activity into a single memory entry.
         """
@@ -52,7 +52,7 @@ class MemoryDistillationService:
             return
             
         # 2. Distill via LLM
-        distilled_data = self._call_distillation_llm(raw_logs_text)
+        distilled_data = await self._call_distillation_llm(raw_logs_text)
         if not distilled_data:
             logger.error("Distillation failed to return valid data.")
             return
@@ -109,7 +109,7 @@ class MemoryDistillationService:
             logger.error(f"Failed to fetch recent activity: {e}")
             return ""
 
-    def _call_distillation_llm(self, raw_logs: str) -> Optional[Dict[str, Any]]:
+    async def _call_distillation_llm(self, raw_logs: str) -> Optional[Dict[str, Any]]:
         """
         Calls the LLM to perform structural distillation.
         """
@@ -121,16 +121,25 @@ class MemoryDistillationService:
             
             full_prompt = template.replace("{{raw_logs}}", raw_logs[:8000]) # Cap input
             
+            from src.infrastructure.llm.tier_config import SettingsAwareModelRouter
+            try:
+                from src.repositories.settings_repository import AlchemySettingsRepository
+                settings_repo = AlchemySettingsRepository()
+                model_router = SettingsAwareModelRouter(settings_repo)
+                model = model_router.get_model(self.user_id, "nano")
+            except:
+                model = os.getenv("AI_MODEL_NANO", "google/gemini-2.0-flash-001")
+            
             config = LLMConfig(
-                provider=os.getenv("AI_PROVIDER", "Google Gemini"),
-                model=os.getenv("AI_MODEL_NANO", "gemini-1.5-flash"), # nano tier
+                provider=os.getenv("AI_PROVIDER", "OpenRouter"),
+                model=model,
                 api_key=os.getenv("API_KEY", ""),
                 temperature=0.2,
                 max_tokens=1000
             )
             
             messages = [Message(role="user", content=full_prompt)]
-            content = self._llm_gateway.chat(messages, config)
+            content = await self._llm_gateway.chat(messages, config)
             
             # Parse JSON
             cleaned = content.replace("```json", "").replace("```", "").strip()

@@ -10,7 +10,7 @@ from httpx import AsyncClient, ASGITransport
 from httpx_sse import aconnect_sse
 import json
 
-from src.tools.mcp_sse_router import mcp_sub_app
+from src.tools.mcp_sse_router import mcp_sub_app, HAS_FASTMCP
 
 @pytest.fixture
 async def app():
@@ -18,6 +18,7 @@ async def app():
     _app.mount("/mcp", mcp_sub_app)
     return _app
 
+@pytest.mark.skipif(not HAS_FASTMCP, reason="FastMCP not installed or compatible")
 @pytest.mark.asyncio
 async def test_mcp_sse_handshake(app):
     """
@@ -32,7 +33,7 @@ async def test_mcp_sse_handshake(app):
         async with aconnect_sse(client, "GET", "/mcp/sse") as event_source:
             # 1. Read first event (endpoint)
             # Use an iterator directly to avoid blocking forever
-            it = aiter(event_source.iter_sse())
+            it = event_source.aiter_sse()
             event = await anext(it)
             
             assert event.event == "endpoint"

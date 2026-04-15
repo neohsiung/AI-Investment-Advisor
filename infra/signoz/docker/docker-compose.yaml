@@ -196,7 +196,10 @@ services:
 volumes:
   clickhouse:
     name: signoz-clickhouse
+    external: true
   sqlite:
     name: signoz-sqlite
+    external: true
   zookeeper-1:
     name: signoz-zookeeper-1
+    external: true

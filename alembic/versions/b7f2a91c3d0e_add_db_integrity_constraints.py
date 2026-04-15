@@ -78,21 +78,7 @@ def upgrade() -> None:
         WHERE action != UPPER(action);
     """))
 
-    # Ensure entry_category is set on all rows
-    op.execute(sa.text("""
-        UPDATE transactions
-        SET entry_category = 'trade'
-        WHERE entry_category IS NULL OR entry_category NOT IN ('trade', 'capital_flow', 'sync_adjustment');
-    """))
-
     # ── transactions constraints ────────────────────────────────────────────
-
-    # 1. entry_category must be one of the three canonical values
-    _add_check(
-        'transactions',
-        'chk_tx_entry_category',
-        "entry_category IN ('trade', 'capital_flow', 'sync_adjustment')",
-    )
 
     # 2. action must be a recognised financial operation
     _add_check(
@@ -133,42 +119,9 @@ def upgrade() -> None:
         'amount >= 0',
     )
 
-    # ── position_lots constraints ───────────────────────────────────────────
 
-    # 7. Lot quantity must be positive — zero or negative lots are invalid
-    _add_check(
-        'position_lots',
-        'chk_lot_qty_positive',
-        'quantity > 0',
-    )
-
-    # 8. open_price must be positive — can't open a lot at free or negative price
-    _add_check(
-        'position_lots',
-        'chk_lot_open_price_pos',
-        'open_price > 0',
-    )
-
-    # 9. close_price, when provided, must be positive
-    _add_check(
-        'position_lots',
-        'chk_lot_close_price_pos',
-        'close_price IS NULL OR close_price > 0',
-    )
-
-    # 10. leverage must be >= 1.0 (no fractional leverage; 1.0 = no leverage)
-    _add_check(
-        'position_lots',
-        'chk_lot_leverage_pos',
-        'leverage IS NULL OR leverage >= 1.0',
-    )
 
     # ── Performance index: frequently queried without is_open filter ─────────
-    op.execute(sa.text("""
-        CREATE INDEX IF NOT EXISTS idx_transactions_user_category
-            ON transactions (user_id, entry_category);
-    """))
-
     op.execute(sa.text("""
         CREATE INDEX IF NOT EXISTS idx_transactions_user_date
             ON transactions (user_id, trade_date DESC);
@@ -182,13 +135,6 @@ def upgrade() -> None:
 def downgrade() -> None:
     # Drop indexes
     op.execute(sa.text('DROP INDEX IF EXISTS idx_transactions_user_date'))
-    op.execute(sa.text('DROP INDEX IF EXISTS idx_transactions_user_category'))
-
-    # Drop position_lots constraints
-    _drop_check('position_lots', 'chk_lot_leverage_pos')
-    _drop_check('position_lots', 'chk_lot_close_price_pos')
-    _drop_check('position_lots', 'chk_lot_open_price_pos')
-    _drop_check('position_lots', 'chk_lot_qty_positive')
 
     # Drop transactions constraints
     _drop_check('transactions', 'chk_tx_amount_nonneg')
@@ -196,4 +142,3 @@ def downgrade() -> None:
     _drop_check('transactions', 'chk_tx_qty_positive')
     _drop_check('transactions', 'chk_tx_trade_has_ticker')
     _drop_check('transactions', 'chk_tx_action')
-    _drop_check('transactions', 'chk_tx_entry_category')

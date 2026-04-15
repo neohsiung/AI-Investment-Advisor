@@ -1,0 +1,201 @@
+# INVESTIGATION SUMMARY: test_run_tool_loop_search
+
+## Quick Reference
+
+| Item | Status | Details |
+|------|--------|---------|
+| Test Status | ✅ PASSING | All 8 tests in test_base_agent_coverage.py pass |
+| Target Test | ✅ PASSING | test_run_tool_loop_search passes consistently |
+| Max Results Parameter | ✅ CORRECT | Passed at line 188 of agent_loop.py |
+| Mock Setup | ✅ CORRECT | Properly configured and working |
+| Investigation | ✅ COMPLETE | Phase 1-2 analysis done |
+
+---
+
+## Problem Statement (Original)
+- Test expects: `mock_svc.search_financial_context("AAPL", max_results=3)`
+- Alleged actual call: `mock_svc.search_financial_context("AAPL")`
+- Status: **RESOLVED** - No issue found; test passes correctly
+
+---
+
+## Investigation Timeline
+
+### Phase 1: Problem Identification
+- Located test file: `tests/unit/agents/test_base_agent_coverage.py`
+- Test name: `test_run_tool_loop_search`
+- Test assertion (line 108): `assert_called_with("AAPL", max_results=3)`
+
+### Phase 2: Root Cause Analysis
+- Traced call chain through entire execution path
+- Found critical code: `agent_loop.py` line 188
+- Verified parameter passing at each layer
+- Confirmed test passes
+
+---
+
+## The Critical Line
+
+**File**: `src/agents/agent_loop.py`  
+**Method**: `_execute_search_async()`  
+**Line**: 188
+
+```python
+async def _execute_search_async(self, query: str) -> str:
+    """Helper to run search asynchronously."""
+    res_list = await self._search_service.search_financial_context(
+        query,
+        max_results=3  # ← THIS IS WHERE max_results=3 IS PASSED
+    )
+```
+
+**Impact**: This ensures EVERY search operation through the agent tool loop receives exactly 3 results, providing:
+- Consistent behavior
+- Optimal performance
+- Controlled API quota usage
+
+---
+
+## Call Stack Summary
+
+```
+BaseAgent.run_tool_loop()
+    ↓
+self._agent_loop.execute()
+    ↓
+AgentLoop.execute() [line 92: call LLM]
+    ↓
+parse_tool_call() [line 95: extract "SEARCH"]
+    ↓
+_execute_tool_async("SEARCH", {"query": "AAPL"})
+    ↓
+_run_tool_logic_async("SEARCH", args_dict)
+    ↓
+_execute_search_async("AAPL")
+    ↓
+*** search_financial_context("AAPL", max_results=3) ***
+```
+
+---
+
+## Test Validation
+
+```bash
+$ python -m pytest tests/unit/agents/test_base_agent_coverage.py::TestBaseAgentCoverage::test_run_tool_loop_search -v
+
+Result: PASSED [100%]
+Execution time: 2.94 seconds
+```
+
+### Full Test Suite Results
+```bash
+$ python -m pytest tests/unit/agents/test_base_agent_coverage.py -v
+
+TestBaseAgentCoverage::test_init_defaults          ✅ PASSED
+TestBaseAgentCoverage::test_load_config_priority   ✅ PASSED
+TestBaseAgentCoverage::test_render_system_prompt   ✅ PASSED
+TestBaseAgentCoverage::test_check_freshness        ✅ PASSED
+TestBaseAgentCoverage::test_update_state           ✅ PASSED
+TestBaseAgentCoverage::test_call_llm_mock          ✅ PASSED
+TestBaseAgentCoverage::test_run_tool_loop_search   ✅ PASSED ← TARGET
+TestBaseAgentCoverage::test_call_real_llm          ✅ PASSED
+
+Total: 8 passed in 2.39s
+```
+
+---
+
+## Why The Test Passes (Technical Explanation)
+
+### 1. Mock Interception
+The test patches at the import point:
+```python
+with patch('src.services.search_service.InternetSearchService') as mock_search_cls:
+```
+
+This intercepts the constructor call in `base_agent.py` line 351:
+```python
+self._agent_loop._search_service = InternetSearchService(user_id=self.user_id)
+```
+
+### 2. Mock Instance Receives Method
+```python
+mock_svc = mock_search_cls.return_value
+mock_svc.search_financial_context = AsyncMock(...)
+```
+
+The mocked instance has the method ready to capture calls.
+
+### 3. Real Call Path Reaches Mock
+When `_execute_search_async` runs:
+```python
+res_list = await self._search_service.search_financial_context(
+    query,
+    max_results=3
+)
+```
+
+It calls the mocked method with BOTH arguments.
+
+### 4. Assertion Validates
+```python
+mock_svc.search_financial_context.assert_called_with("AAPL", max_results=3)
+```
+
+The AsyncMock verifies the call was made with expected arguments. ✅ PASSES
+
+---
+
+## Architecture Insight
+
+The design uses a **parameter injection pattern** at the tool execution layer:
+
+```
+Generic Tool Layer
+  (doesn't know about max_results)
+         ↓
+Tool-Specific Helper
+  (injects max_results=3)  ← _execute_search_async
+         ↓
+Service Implementation
+  (accepts max_results parameter)
+```
+
+This pattern ensures:
+- Generic tool dispatch doesn't require parameter knowledge
+- Tool-specific logic handles parameter defaults
+- Service layer receives correct configuration
+
+---
+
+## Conclusion
+
+**Status**: ✅ **NO ISSUES FOUND**
+
+The implementation is correct and working as designed. The `max_results=3` parameter is:
+1. **Explicitly passed** at line 188 of agent_loop.py
+2. **Correctly received** by the search service
+3. **Properly validated** by the test assertion
+4. **Consistently applied** to all search operations
+
+---
+
+## Files Examined
+
+1. `tests/unit/agents/test_base_agent_coverage.py` - Test specification
+2. `src/agents/base_agent.py` - Agent initialization and tool loop delegation
+3. `src/agents/agent_loop.py` - Tool execution routing (CRITICAL)
+4. `src/services/search_service.py` - Search service implementation
+
+---
+
+## Artifacts Created
+
+1. `DEBUG_INVESTIGATION.md` - Detailed execution trace
+2. `PHASE1_PHASE2_ANALYSIS.md` - Full code analysis
+3. `TEST_FINDINGS.txt` - This summary document
+
+---
+
+**Investigation Date**: April 13, 2026  
+**Status**: ✅ COMPLETE AND VERIFIED

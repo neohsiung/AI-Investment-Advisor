@@ -37,68 +37,108 @@ class OpenRouterGateway(ILLMGateway):
 
     async def chat(self, messages: List[Message], config: LLMConfig) -> str:
         url = config.base_url or "https://openrouter.ai/api/v1/chat/completions"
+        
+        # Validate API key
+        if not config.api_key or config.api_key.strip() == "":
+            raise ValueError("OpenRouter API key is missing or empty. Cannot proceed with LLM request.")
+        
         headers = {
             "Authorization": f"Bearer {config.api_key}",
             "Content-Type": "application/json",
             "HTTP-Referer": "http://localhost:8501",
             "X-Title": "AI Investment Advisor",
         }
+        
+        # Build request data with all required fields
         data = {
             "model": config.model,
             "messages": [{"role": m.role, "content": m.content} for m in messages],
+            "max_tokens": config.max_tokens or 2048,
         }
+        
         if config.temperature is not None:
             data["temperature"] = config.temperature
 
-        async with httpx.AsyncClient() as client:
-            response = await client.post(
-                url, headers=headers, json=data,
-                timeout=config.timeout_seconds,
-            )
-        response.raise_for_status()
+        try:
+            async with httpx.AsyncClient() as client:
+                response = await client.post(
+                    url, headers=headers, json=data,
+                    timeout=config.timeout_seconds,
+                )
+            response.raise_for_status()
+        except httpx.HTTPError as e:
+            # Log detailed error info for debugging
+            error_msg = f"OpenRouter API error: {e}"
+            if hasattr(response, 'text'):
+                error_msg += f"\nResponse body: {response.text}"
+            import logging
+            logging.error(error_msg)
+            raise
+        
         resp_json = response.json()
         self._last_usage = resp_json.get("usage")
         return resp_json["choices"][0]["message"]["content"]
 
     async def stream_chat(self, messages: List[Message], config: LLMConfig) -> AsyncGenerator[str, None]:
         url = config.base_url or "https://openrouter.ai/api/v1/chat/completions"
+        
+        # Validate API key
+        if not config.api_key or config.api_key.strip() == "":
+            raise ValueError("OpenRouter API key is missing or empty. Cannot proceed with LLM request.")
+        
         headers = {
             "Authorization": f"Bearer {config.api_key}",
             "Content-Type": "application/json",
             "HTTP-Referer": "http://localhost:8501",
             "X-Title": "AI Investment Advisor",
         }
+        
+        # Build request data with all required fields
         data = {
             "model": config.model,
             "messages": [{"role": m.role, "content": m.content} for m in messages],
             "stream": True,
+            "max_tokens": config.max_tokens or 2048,
         }
+        
         if config.temperature is not None:
             data["temperature"] = config.temperature
 
-        async with httpx.AsyncClient() as client:
-            async with client.stream("POST", url, headers=headers, json=data, timeout=config.timeout_seconds) as response:
-                response.raise_for_status()
+        try:
+            async with httpx.AsyncClient() as client:
+                async with client.stream("POST", url, headers=headers, json=data, timeout=config.timeout_seconds) as response:
+                    response.raise_for_status()
 
-                async for line in response.aiter_lines():
-                    if line:
-                        if line.startswith("data: "):
-                            data_str = line[6:]
-                            if data_str == "[DONE]":
-                                break
-                            try:
-                                chunk = json.loads(data_str)
-                                if "choices" in chunk and chunk["choices"]:
-                                    delta = chunk["choices"][0].get("delta", {})
-                                    content = delta.get("content", "")
-                                    if content:
-                                        yield content
-                            except json.JSONDecodeError:
-                                continue
+                    async for line in response.aiter_lines():
+                        if line:
+                            if line.startswith("data: "):
+                                data_str = line[6:]
+                                if data_str == "[DONE]":
+                                    break
+                                try:
+                                    chunk = json.loads(data_str)
+                                    if "choices" in chunk and chunk["choices"]:
+                                        delta = chunk["choices"][0].get("delta", {})
+                                        content = delta.get("content", "")
+                                        if content:
+                                            yield content
+                                except json.JSONDecodeError:
+                                    continue
+        except httpx.HTTPError as e:
+            # Log detailed error info for debugging
+            error_msg = f"OpenRouter API error in stream: {e}"
+            import logging
+            logging.error(error_msg)
+            raise
 
     async def embed(self, text: str, config: LLMConfig) -> List[float]:
         """OpenRouter embedding (uses /embeddings endpoint)."""
         url = config.base_url or "https://openrouter.ai/api/v1/embeddings"
+        
+        # Validate API key
+        if not config.api_key or config.api_key.strip() == "":
+            raise ValueError("OpenRouter API key is missing or empty. Cannot proceed with embedding request.")
+        
         headers = {
             "Authorization": f"Bearer {config.api_key}",
             "Content-Type": "application/json",
@@ -107,12 +147,23 @@ class OpenRouterGateway(ILLMGateway):
             "model": config.model,
             "input": text,
         }
-        async with httpx.AsyncClient() as client:
-            response = await client.post(
-                url, headers=headers, json=data,
-                timeout=config.timeout_seconds,
-            )
-        response.raise_for_status()
+        
+        try:
+            async with httpx.AsyncClient() as client:
+                response = await client.post(
+                    url, headers=headers, json=data,
+                    timeout=config.timeout_seconds,
+                )
+            response.raise_for_status()
+        except httpx.HTTPError as e:
+            # Log detailed error info for debugging
+            error_msg = f"OpenRouter embedding API error: {e}"
+            if hasattr(response, 'text'):
+                error_msg += f"\nResponse body: {response.text}"
+            import logging
+            logging.error(error_msg)
+            raise
+        
         return response.json()["data"][0]["embedding"]
 
 

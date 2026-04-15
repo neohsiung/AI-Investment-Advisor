@@ -9,7 +9,9 @@ function show_help {
     echo "Usage: ./start.sh [mode]"
     echo ""
     echo "Modes:"
-    echo "  --docker    Deploy using Docker Compose (Default - Recommended for Local)"
+    echo "  --docker    Deploy using Docker Compose (Default - Dev Mode)"
+    echo "  --prod      Deploy focused Production cluster (Hardened - B2C SaaS)"
+    echo "  --patch     Hot-patch Production (Rebuilds UI/API without downtime)"
     echo "  --k8s       Deploy to Kubernetes (Minikube/Cloud - requires kubectl)"
     echo "  --clean     Stop containers and remove K8s resources"
     echo "  --help      Show this help message"
@@ -28,6 +30,16 @@ function check_env {
         echo "WARNING: Created default .env. Please edit it with your API keys immediately!"
         read -p "Press Enter to continue (or Ctrl+C to edit .env first)..."
     fi
+}
+
+function patch_prod {
+    echo "=== Mode: Hot-Patching Production Cluster ==="
+    check_env
+    echo "Rebuilding Frontend and MCP Server..."
+    docker compose -f docker-compose.prod.yml build frontend mcp_server
+    echo "Applying patches (no-deps restart)..."
+    docker compose -f docker-compose.prod.yml up -d --no-deps frontend mcp_server
+    echo "✅ Patch Applied Successfully"
 }
 
 function deploy_docker {
@@ -83,6 +95,24 @@ function deploy_docker {
     fi
 
     echo "To view logs: docker compose logs -f"
+}
+
+function deploy_prod {
+    echo "=== Starting Mode: Production Cluster (Hardened) ==="
+    check_env
+    
+    echo "Building and starting production containers..."
+    docker compose -f docker-compose.prod.yml up --build -d
+    
+    echo ""
+    echo "✅ PRODUCTION Deployment Complete"
+    echo "----------------------"
+    echo "📊 Dashboard:       http://localhost:3000"
+    echo "🛡️  Auth Gateway:   http://localhost:8000/api/v1/auth"
+    echo "🩺 APM/Monitoring: http://localhost:8080 (SigNoz)"
+    echo "🔗 Automation:     http://localhost:5678 (n8n)"
+    echo ""
+    echo "To view production logs: docker compose -f docker-compose.prod.yml logs -f"
 }
 
 function deploy_k8s {
@@ -143,8 +173,12 @@ function cleanup {
     
     # Docker
     if [ -f docker-compose.yml ]; then
-        echo "Stopping Docker Compose..."
+        echo "Stopping Docker Compose (Dev)..."
         docker compose down
+    fi
+    if [ -f docker-compose.prod.yml ]; then
+        echo "Stopping Docker Compose (Prod)..."
+        docker compose -f docker-compose.prod.yml down
     fi
 
     # K8s
@@ -163,6 +197,12 @@ function cleanup {
 case "$1" in
     --docker)
         deploy_docker
+        ;;
+    --prod)
+        deploy_prod
+        ;;
+    --patch)
+        patch_prod
         ;;
     --k8s)
         deploy_k8s

@@ -24,7 +24,7 @@ const TABS = [
 ];
 
 export default function SettingsPage() {
-  const { data: settingsData, isLoading: settingsLoading } = useSWR("/api/dashboard/settings", fetcher);
+  const { data: settingsData, isLoading: settingsLoading } = useSWR("/api/v1/settings", fetcher);
   
   const [activeTab, setActiveTab] = useState("ai");
   const [localSettings, setLocalSettings] = useState<Record<string, any>>({});
@@ -42,9 +42,9 @@ export default function SettingsPage() {
     setIsSaving(true);
     setFeedback(null);
     try {
-      await axios.post("/api/dashboard/settings", localSettings);
+      await axios.post("/api/v1/settings", localSettings);
       setFeedback({ type: 'success', msg: "設定已成功儲存並生效" });
-      mutate("/api/dashboard/settings");
+      mutate("/api/v1/settings");
     } catch (err: any) {
       setFeedback({ type: 'error', msg: err.response?.data?.detail || "儲存失敗" });
     } finally {
@@ -365,7 +365,7 @@ function NotifyPanel({ settings, update, toggle, secrets }: any) {
   const handleTest = async (channel: string) => {
     setIsTesting(channel);
     try {
-      await axios.post("/api/dashboard/settings/test-notification", { channels: [channel] });
+      await axios.post("/api/v1/settings/test-notification", { channels: [channel] });
       alert(`${channel.toUpperCase()} 測試通知已發送，請檢查您的裝置。`);
     } catch (err: any) {
       alert(`測試失敗: ${err.response?.data?.detail || err.message}`);

@@ -24,10 +24,20 @@ logger = setup_logger("DashboardRouter")
 dashboard_router = APIRouter(tags=["Dashboard"])
 
 def get_current_user(request: Request) -> Dict[str, Any]:
-    """從 Cookie 驗證 JWT 並獲取使用者資訊"""
-    token = request.cookies.get("access_token")
+    """從 Header 或 Cookie 驗證 JWT 並獲取使用者資訊"""
+    token = None
+    
+    # 1. 優先檢查 Authorization Header (Sprint 3 localStorage 機制)
+    auth_header = request.headers.get("Authorization")
+    if auth_header and auth_header.startswith("Bearer "):
+        token = auth_header.split(" ")[1]
+        
+    # 2. 回退檢查 Cookie (舊版機制)
     if not token:
-        logger.warning("Missing access_token in cookies")
+        token = request.cookies.get("access_token")
+        
+    if not token:
+        logger.warning("Missing access_token in Authorization header and cookies")
         raise HTTPException(status_code=401, detail="Not authenticated")
         
     payload = decode_token(token)
@@ -434,9 +444,10 @@ async def get_summary(service: DashboardService = Depends(get_dashboard_service)
         data = service.prepare_dashboard_data(service.user_id)
         metrics = data.get('metrics', {})
         pnl = data.get('pnl_data', {})
+        warnings = data.get('warnings', [])
         
         return {
-            "status": "success",
+            "status": "success" if not warnings else "partial",
             "data": {
                 "total_valuation": metrics.get('nlv', 0),
                 "uninvested_cash": metrics.get('cash_balance', 0),
@@ -448,11 +459,12 @@ async def get_summary(service: DashboardService = Depends(get_dashboard_service)
                 "unrealized_pnl": pnl.get('unrealized', 0),
                 "roi_percentage": data.get('roi', 0) * 100,
                 "performance_change": "+1.2%" # 暫時模擬，未來可從歷史數據計算
-            }
+            },
+            "system_warnings": warnings
         }
     except Exception as e:
-        logger.error(f"Error fetching dashboard summary: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.exception(f"Error fetching dashboard summary: {e}")
+        raise HTTPException(status_code=500, detail="Internal server error during dashboard summary calculation")
 
 @dashboard_router.get("/positions")
 async def get_positions(service: DashboardService = Depends(get_dashboard_service)):
@@ -460,17 +472,16 @@ async def get_positions(service: DashboardService = Depends(get_dashboard_servic
     try:
         data = service.prepare_dashboard_data(service.user_id)
         positions_df = data.get('positions_df', pd.DataFrame())
+        warnings = data.get('warnings', [])
         
-        if positions_df.empty:
-            return {"status": "success", "data": []}
-            
         return {
-            "status": "success",
-            "data": positions_df.to_dict(orient='records')
+            "status": "success" if not warnings else "partial",
+            "data": positions_df.to_dict(orient='records') if not positions_df.empty else [],
+            "system_warnings": warnings
         }
     except Exception as e:
-        logger.error(f"Error fetching positions: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.exception(f"Error fetching positions: {e}")
+        raise HTTPException(status_code=500, detail="Internal server error during positions aggregation")
 
     # 這裡未來應從 SentinelService 獲取真實狀態
     # 目前返回符合 7 Agent Swarm 架構的預設列表
@@ -578,9 +589,9 @@ async def get_recent_alerts(user: Dict[str, Any] = Depends(get_current_user)):
         engine = get_db_engine()
         with engine.connect() as conn:
             rows = conn.execute(
-                text("SELECT event_type, message, created_at FROM event_logs ORDER BY created_at DESC LIMIT 5")
+                text("SELECT event_type, content, created_at FROM event_logs ORDER BY created_at DESC LIMIT 5")
             ).fetchall()
-        alerts = [{"type": r.event_type, "msg": r.message, "time": str(r.created_at)[:16]} for r in rows]
+        alerts = [{"type": r.event_type, "msg": r.content, "time": str(r.created_at)[:16]} for r in rows]
         return {"status": "success", "data": alerts or []}
     except Exception as e:
         logger.error(f"Error fetching recent alerts: {e}")

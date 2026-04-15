@@ -59,10 +59,17 @@ export default function CommandCenter() {
     }
   };
 
-  if (isAuthLoading || isSummaryLoading || isAgentsLoading || isPositionsLoading || isIntelLoading) {
+  const isGlobalLoading = isAuthLoading || isSummaryLoading;
+
+  if (isGlobalLoading) {
     return (
       <div className="flex items-center justify-center min-h-[60vh]">
-        <Loader2 className="h-10 w-10 text-primary animate-spin" />
+        <div className="flex flex-col items-center gap-4">
+          <Loader2 className="h-10 w-10 text-primary animate-spin" />
+          <p className="text-xs font-label uppercase tracking-widest text-on-surface-variant opacity-60">
+            資產中心初始化中...
+          </p>
+        </div>
       </div>
     );
   }
@@ -94,6 +101,7 @@ export default function CommandCenter() {
               note={briefing?.ai_note || "系統同步中"}
               status={briefing?.observation_window || "INITIALIZING"}
               metrics={briefing?.sentiment_metrics || []}
+              isLoading={isIntelLoading}
             />
           </ErrorBoundary>
         </div>

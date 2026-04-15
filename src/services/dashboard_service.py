@@ -33,13 +33,13 @@ class DashboardService:
         self.roi_engine = ROIEngine(db_path=self.db_path, user_id=user_id)
         self.pnl_calc = PnLCalculator(db_path=self.db_path, user_id=user_id)
 
-    def _fetch_market_prices(self, tickers: List[str], user_id: str = None) -> Dict[str, float]:
+    async def _fetch_market_prices(self, tickers: List[str], user_id: str = None) -> Dict[str, float]:
         """
         Internal helper to fetch market prices with caching.
         內部輔助方法：獲取帶快取的市場價格。
         """
         service = MarketDataService(user_id=user_id)
-        prices = service.get_current_prices(tickers)
+        prices = await service.get_current_prices(tickers)
         
         # Hardcode USD if present (Cash/Currency)
         if "USD" in tickers:
@@ -47,7 +47,7 @@ class DashboardService:
             
         return prices
 
-    def prepare_dashboard_data(self, user_id: str) -> Dict[str, Any]:
+    async def prepare_dashboard_data(self, user_id: str) -> Dict[str, Any]:
         """
         Fetch transactions, prices, and calculate all dashboard metrics for the user.
         """
@@ -56,8 +56,8 @@ class DashboardService:
             
             # 1. Identify Active Tickers First
             from src.services.portfolio_aggregator_service import PortfolioAggregatorService
-            aggregator = PortfolioAggregatorService(user_id)
-            live_portfolio = aggregator.get_aggregated_portfolio()
+            aggregator = PortfolioAggregatorService(user_id=user_id)
+            live_portfolio = await aggregator.get_aggregated_portfolio()
             
             active_tickers = []
             live_positions = live_portfolio.get('positions', [])
@@ -76,7 +76,7 @@ class DashboardService:
             # 2. Fetch Prices ONCE
             current_prices = {}
             if active_tickers:
-                current_prices = self._fetch_market_prices(active_tickers, user_id=user_id)
+                current_prices = await self._fetch_market_prices(active_tickers, user_id=user_id)
                 
                 # price resilience fix
                 if live_positions:
@@ -86,7 +86,8 @@ class DashboardService:
                             current_prices[ticker] = getattr(p, 'current_price', 0)
 
             # 3. Update snapshot WITH pre-fetched prices
-            update_daily_snapshot(self.db_path, user_id=user_id, current_prices=current_prices)
+            from src.services.analytics_service import update_daily_snapshot
+            await update_daily_snapshot(self.db_path, user_id=user_id, current_prices=current_prices)
 
             # 4. Fetch Transactions for other UI needs
             transactions_df = self.transaction_service.get_transactions(user_id)
@@ -97,23 +98,56 @@ class DashboardService:
             roi = 0.0
 
             try:
-                metrics_derived = self.calc.calculate_metrics(current_prices, user_id=user_id)
-                pnl_data = self.pnl_calc.calculate_breakdown(current_prices, user_id=user_id)
+                # [FIX Issue #4] Use eToro's account.total_equity as the authoritative NLV source
+                # Don't use local calculations which can diverge from broker
+                nlv_from_broker = 0.0
+                total_pnl_from_positions = 0.0
                 
-                metrics = metrics_derived
-                # [FIX] Invested Capital must be derived from Net Cash Flow (Deposits - Withdrawals)
-                # to prevent uninvested cash from being counted as 'Profit'.
-                metrics['invested_capital'] = self.transaction_repo.calculate_net_invested_capital(user_id)
-                metrics['unrealized_pnl'] = pnl_data.get('unrealized', 0)
+                # Get NLV from broker account (eToro is authoritative)
+                broker_accounts = live_portfolio.get('broker_breakdown', {})
+                for broker_name, account in broker_accounts.items():
+                    nlv_from_broker += account.total_equity
+                    
+                # Calculate total P&L from position unrealized_pnl (sum of position PnL)
+                if live_positions:
+                    total_pnl_from_positions = sum(getattr(p, 'unrealized_pnl', 0) for p in live_positions)
                 
-                pnl_data['total'] = metrics['nlv'] - metrics['invested_capital']
+                # Calculate invested capital from net cash flow
+                invested_capital = self.transaction_repo.calculate_net_invested_capital(user_id)
+                
+                # Set metrics with broker values
+                metrics['nlv'] = nlv_from_broker if nlv_from_broker > 0 else 0
+                metrics['cash_balance'] = sum(acc.available_cash for acc in broker_accounts.values())
+                metrics['invested_capital'] = invested_capital
+                metrics['unrealized_pnl'] = total_pnl_from_positions
+                
+                # P&L calculation
+                pnl_data['unrealized'] = total_pnl_from_positions
+                pnl_data['total'] = total_pnl_from_positions  # Match eToro: sum of position PnL
                 pnl_data['realized'] = pnl_data['total'] - pnl_data['unrealized']
-                metrics['gross_nlv'] = metrics_derived['tnv'] + metrics_derived['cash_balance']
-
-                invested = metrics['invested_capital']
-                roi = ((metrics['nlv'] - invested) / invested) * 100 if invested > 0 else 0.0
+                
+                # ROI based on broker NLV
+                roi = ((metrics['nlv'] - invested_capital) / invested_capital) * 100 if invested_capital > 0 else 0.0
+                
+                # Fallback to local calculation if broker doesn't provide NLV
+                if metrics['nlv'] == 0:
+                    metrics_derived = self.calc.calculate_metrics(current_prices, user_id=user_id)
+                    metrics['nlv'] = metrics_derived['nlv']
+                    metrics['cash_balance'] = metrics_derived['cash_balance']
+                    metrics['gross_nlv'] = metrics_derived['tnv'] + metrics_derived['cash_balance']
+                    
             except Exception as e:
                 logger.error(f"Metric calculation failed: {e}")
+                # Fallback to local calculation on error
+                try:
+                    metrics_derived = self.calc.calculate_metrics(current_prices, user_id=user_id)
+                    metrics = metrics_derived
+                    metrics['invested_capital'] = self.transaction_repo.calculate_net_invested_capital(user_id)
+                    metrics['unrealized_pnl'] = pnl_data.get('unrealized', 0)
+                    pnl_data['total'] = metrics['nlv'] - metrics['invested_capital']
+                    pnl_data['realized'] = pnl_data['total'] - pnl_data['unrealized']
+                except Exception as e2:
+                    logger.error(f"Fallback metric calculation also failed: {e2}")
 
             # 6. Prepare Positions DataFrame
             positions_df = pd.DataFrame()
@@ -164,5 +198,6 @@ class DashboardService:
                 'pnl_data': pnl_data,
                 'roi': roi,
                 'positions_df': positions_df,
-                'broker_breakdown': live_portfolio.get('broker_breakdown', {})
+                'broker_breakdown': live_portfolio.get('broker_breakdown', {}),
+                'warnings': live_portfolio.get('warnings', [])
             }

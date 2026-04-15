@@ -128,18 +128,18 @@ class SentinelService:
             # Dimension 2: Position Price Moves (每次 tick)
             # Pass aggregated data to avoid redundant fetches
             if ticker_list:
-                current_prices = self.market_service.get_current_prices(ticker_list)
-                triggers += self._check_position_moves_v2(ticker_list, current_prices)
+                current_prices = await self.market_service.get_current_prices(ticker_list)
+                triggers += await self._check_position_moves_v2(ticker_list, current_prices)
             
             # Dimension 3: Breaking News (每 10 分鐘, 節省 Tavily credits)
             from datetime import datetime
             if datetime.now().minute % 10 == 0:
                 if ticker_list:
-                    triggers += self._check_breaking_news_v2(ticker_list)
+                    triggers += await self._check_breaking_news_v2(ticker_list)
             
             # Dimension 4: Macro Shifts (每小時, FRED 數據更新頻率低)
             if datetime.now().minute == 0:
-                triggers += self._check_macro_shifts()
+                triggers += await self._check_macro_shifts()
             
             # Dimension 5: Active Polling
             triggers += await self._check_active_sources()
@@ -147,7 +147,7 @@ class SentinelService:
             # Dimension 6: Global Macro / Geopolitical Events (每 30 分鐘)
             # 持倉數量無關的全球重大事件掃描
             if datetime.now().minute % 30 == 0:
-                triggers += self._check_global_macro_events()
+                triggers += await self._check_global_macro_events()
             
             # Dimension 7: Risk Consistency & Dynamic Cash (每次 tick)
             # v5.0: Ensure leverage and cash levels match risk profile
@@ -308,11 +308,11 @@ class SentinelService:
             logger.warning(f"VIX check failed: {e}")
         return triggers
 
-    # ──────────────────────────────────────────
     # Dimension 2: Position Price Moves
     # ──────────────────────────────────────────
 
-    def _check_position_moves_v2(self, all_tickers: List[str], current_prices: Dict[str, float]) -> List[Dict[str, Any]]:
+
+    async def _check_position_moves_v2(self, all_tickers: List[str], current_prices: Dict[str, float]) -> List[Dict[str, Any]]:
         """
         Monitor aggregated tickers for significant intraday price moves.
         Optimized to use pre-fetched current prices and batch OHLCV.
@@ -360,13 +360,13 @@ class SentinelService:
             logger.warning(f"Position move check failed for {all_tickers}: {e}")
         return triggers
 
-    def _check_position_moves(self) -> List[Dict[str, Any]]:
+    async def _check_position_moves(self) -> List[Dict[str, Any]]:
         """Deprecated wrapper for backward compatibility."""
         ticker_list = self.transaction_service.get_user_tickers(self.user_id, only_active=True)
-        current_prices = self.market_service.get_current_prices(ticker_list)
-        return self._check_position_moves_v2(ticker_list, current_prices)
+        current_prices = await self.market_service.get_current_prices(ticker_list)
+        return await self._check_position_moves_v2(ticker_list, current_prices)
 
-    def _get_market_trend(self, benchmark: str = "SPY") -> str:
+    async def _get_market_trend(self, benchmark: str = "SPY") -> str:
         """
         Detects major market trend using SMA and MACD.
         Returns: 'Bullish', 'Bearish', or 'Neutral'
@@ -378,7 +378,7 @@ class SentinelService:
             
             # Simple Trend Rule: Price > SMA200 for long-term bull
             # We don't have current price here directly, let's fetch it
-            prices = self.market_service.get_current_prices([benchmark])
+            prices = await self.market_service.get_current_prices([benchmark])
             current_price = prices.get(benchmark, 0)
             
             if current_price > sma_200 and sma_200 > 0:
@@ -393,14 +393,14 @@ class SentinelService:
     async def _check_risk_consistency(self) -> List[Dict[str, Any]]:
         """Deprecated wrapper for backward compatibility."""
         ticker_list = self.transaction_service.get_user_tickers(self.user_id, only_active=True)
-        current_prices = self.market_service.get_current_prices(ticker_list)
-        return self._check_position_moves_v2(ticker_list, current_prices)
+        current_prices = await self.market_service.get_current_prices(ticker_list)
+        return await self._check_position_moves_v2(ticker_list, current_prices)
 
     # ──────────────────────────────────────────
     # Dimension 3: Breaking News (Tavily)
     # ──────────────────────────────────────────
     
-    def _check_breaking_news_v2(self, all_tickers: List[str]) -> List[Dict[str, Any]]:
+    async def _check_breaking_news_v2(self, all_tickers: List[str]) -> List[Dict[str, Any]]:
         """
         Search for risk-relevant breaking news for aggregated tickers.
         """
@@ -418,7 +418,7 @@ class SentinelService:
             risk_threshold = self.thresholds.get("news_risk_score", 0.6)
             
             for ticker in all_tickers:
-                risk_score, summary = self._analyze_ticker_news(ticker, active_keywords)
+                risk_score, summary = await self._analyze_ticker_news(ticker, active_keywords)
                 if risk_score >= risk_threshold:
                     triggers.append({
                         "text": f"⚠️ {ticker} 新聞異動: {summary} (加權分數: {risk_score:.2f})",
@@ -430,12 +430,12 @@ class SentinelService:
             logger.warning(f"Breaking news check failed: {e}")
         return triggers
 
-    def _check_breaking_news(self) -> List[Dict[str, Any]]:
+    async def _check_breaking_news(self) -> List[Dict[str, Any]]:
         """Deprecated wrapper for backward compatibility."""
         ticker_list = self.transaction_service.get_user_tickers(self.user_id, only_active=True)
-        return self._check_breaking_news_v2(ticker_list)
+        return await self._check_breaking_news_v2(ticker_list)
 
-    def _analyze_ticker_news(self, ticker: str, active_keywords: List[RiskKeyword]) -> Tuple[float, str]:
+    async def _analyze_ticker_news(self, ticker: str, active_keywords: List[RiskKeyword]) -> Tuple[float, str]:
         """
         Analyzes news for a given ticker against active risk keywords and returns a risk score and summary.
         v5.0 Optimization: Prioritize Tiingo/FMP over Tavily Search to save credits.
@@ -448,7 +448,7 @@ class SentinelService:
         # Fallback: search if NO news from primary providers
         if not results:
              query = f"{ticker} latest news investment impact"
-             results = self.search_service.search_financial_context(query, max_results=3)
+             results = await self.search_service.search_financial_context(query, max_results=3)
              
         if not results:
              return 0.0, "No recent news captured by primary providers or search."
@@ -598,7 +598,7 @@ class SentinelService:
     # Dimension 4: Macro Shifts (FRED)
     # ──────────────────────────────────────────
 
-    def _check_macro_shifts(self) -> List[Dict[str, Any]]:
+    async def _check_macro_shifts(self) -> List[Dict[str, Any]]:
         """
         Check for significant macro indicator changes via FRED.
         """
@@ -643,7 +643,7 @@ class SentinelService:
             logger.warning(f"Macro shift check failed: {e}")
         return triggers
 
-    def _check_global_macro_events(self) -> List[Dict[str, Any]]:
+    async def _check_global_macro_events(self) -> List[Dict[str, Any]]:
         """
         Dimension 6: Scan for major global/geopolitical events independent of user positions.
         持倉無關的全球重大事件掃描（戰爭、制裁、疫情、金融危機等）。
@@ -661,7 +661,7 @@ class SentinelService:
             seen_ids = set()
             for query in queries:
                 try:
-                    results = self.search_service.search(query, max_results=3)
+                    results = await self.search_service.search_financial_context(query, max_results=3)
                     if not results:
                         continue
 
@@ -1639,7 +1639,9 @@ class SentinelService:
         try:
             # v9.0 Clean Architecture: Invoke cash_deployment skill via standalone CLI (Phase 4)
             import subprocess
-            cmd = ["venv/bin/python", "src/agents/skills/cash_deployment/cli.py", "--user_id", self.user_id]
+            import sys
+            # Use sys.executable instead of hardcoded venv path for Docker compatibility
+            cmd = [sys.executable, "src/agents/skills/cash_deployment/cli.py", "--user_id", self.user_id]
             try:
                 subprocess.Popen(cmd) # Background execution
                 logger.info("Sentinel: Triggered cash_deployment skill via standalone CLI.")
@@ -1678,7 +1680,7 @@ class SentinelService:
                 })
 
             # 2. Celery Worker Queue Depth
-            from src.infrastructure.tasks import celery_app
+            from src.infrastructure.celery_app import app as celery_app
             import redis
             
             # Use redis directly if configured

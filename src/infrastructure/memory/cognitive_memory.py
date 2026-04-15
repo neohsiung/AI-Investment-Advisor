@@ -108,7 +108,7 @@ class CognitiveMemoryManager:
         )
 
         # Use LLM to extract structured episode
-        episode = await self._extract_episode(transcript)
+        episode = await self._extract_episode(transcript, user_id=user_id)
 
         # Store in PostgreSQL
         memory_id = str(uuid.uuid4())
@@ -143,7 +143,7 @@ class CognitiveMemoryManager:
             logger.error(f"CognitiveMemory: D→I storage failed: {e}")
             return None
 
-    async def _extract_episode(self, transcript: str) -> Dict[str, Any]:
+    async def _extract_episode(self, transcript: str, user_id: str = None) -> Dict[str, Any]:
         """
         Use LLM (fast tier) to extract structured episode from transcript.
         使用快速 LLM 從對話記錄中萃取結構化情節。
@@ -152,7 +152,7 @@ class CognitiveMemoryManager:
             from src.agents.factory import AgentFactory
 
             agent = AgentFactory.create_agent(
-                "Sentiment", tier="nano", user_id=None, use_cache=True
+                "Sentiment", tier="nano", user_id=user_id, use_cache=True
             )
 
             prompt = (

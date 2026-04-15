@@ -50,9 +50,18 @@ class SkillRouter:
             except Exception as e:
                 logger.warning(f"SkillRouter: Failed to load config from DB: {e}. Using env fallback.")
                 from src.domain.interfaces import LLMConfig
+                from src.infrastructure.llm.tier_config import SettingsAwareModelRouter
+                try:
+                    from src.repositories.settings_repository import AlchemySettingsRepository
+                    settings_repo = AlchemySettingsRepository()
+                    model_router = SettingsAwareModelRouter(settings_repo)
+                    model = model_router.get_model(self.user_id, self.tier)
+                except:
+                    model = os.getenv("AI_MODEL_FAST", "google/gemini-2.0-flash-001")
+                
                 self._config = LLMConfig(
                     provider=os.getenv("AI_PROVIDER", "OpenRouter"),
-                    model=os.getenv("AI_MODEL_FAST", "google/gemini-2.5-flash"),
+                    model=model,
                     api_key=os.getenv("API_KEY", ""),
                     base_url=os.getenv("BASE_URL", ""),
                     temperature=0.0,
@@ -94,12 +103,13 @@ Return ONLY the category name.
 """
             try:
                 llm = self._get_llm()
+                config = self._get_config()
                 
-                category = await to_thread(
-                    llm.chat,
-                    messages=[Message(role="user", content=classification_prompt)],
-                    config=self._get_config()
-                )
+                messages = [
+                    Message(role="system", content="You are a tool-routing specialist. Output JSON only."),
+                    Message(role="user", content=classification_prompt),
+                ]
+                category = await llm.chat(messages=messages, config=config)
                 category = category.strip().upper()
                 
                 if "PRICE_CHECK" in category:
@@ -129,21 +139,28 @@ Return ONLY the category name.
             
             logger.info(f"SkillRouter: Directly executing skill {matched_skill} for ticker {ticker}")
             
-            return await self._run_skill_via_loader(matched_skill, skill_kwargs)
+            return await self._run_skill_via_loader(matched_skill, skill_kwargs, user_message)
             
         except Exception as e:
             logger.error(f"SkillRouter: Execution failed for {matched_skill}: {e}")
             return None
 
-    async def _run_skill_via_loader(self, skill_name: str, kwargs: Dict[str, Any]) -> Optional[str]:
+    async def _run_skill_via_loader(self, skill_name: str, kwargs: Dict[str, Any], user_message: str) -> Optional[str]:
         """
         [Phase 6] Self-healing skill execution with reflection.
         具備自我修復（反思）機制的技能執行。
         """
+        manager = ReflectionManager(user_id=self.user_id)
         try:
             return await self._agent.run_script(skill_name, **kwargs)
         except Exception as e:
-            logger.warning(f"SkillRouter: Primary execution failed for '{skill_name}': {e}. Starting Reflection.")
+            logger.warning(f"Skill routing failed locally: {e}. Attempting self-correction.")
+            # [Task 6.1] Event-driven Self-Correction (Sentinel)
+            await manager.reflect_on_error(
+                error_context=str(e),
+                failed_intent=user_message,
+                user_id=self.user_id
+            )
             
             # 1. Reflect on the failure
             reflection = await self._reflect_on_error(skill_name, kwargs, str(e))
@@ -167,11 +184,10 @@ Return ONLY the category name.
     async def _reflect_on_error(self, tool_name: str, args: Any, error: str) -> Optional[Dict[str, Any]]:
         """
         Invokes a Smart model to analyze and fix the tool call. [Phase 7]
-        Delegates to ReflectionManager via to_thread to avoid code duplication.
+        Delegates to ReflectionManager.
         """
         manager = ReflectionManager(user_id=self.user_id)
-        return await to_thread(
-            manager.reflect_on_error,
+        return await manager.reflect_on_error(
             tool_name=tool_name,
             args=args,
             error=str(error),

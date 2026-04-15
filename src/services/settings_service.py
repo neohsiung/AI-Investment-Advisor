@@ -30,12 +30,12 @@ class SettingsService:
             raise ValueError("SettingsService: No user_id provided or initialized.")
         return self.user_id
 
-    def get_all_settings(self) -> Dict[str, str]:
+    def get_all_settings(self, user_id: str = None) -> Dict[str, Any]:
         """
         Retrieves all settings from the database for the current user.
         """
         settings = {}
-        target_uid = self._get_effective_uid()
+        target_uid = user_id or self._get_effective_uid()
         
         try:
             # v4.3.0: Strictly fetch only current user settings. No SYSTEM fallback.
@@ -206,3 +206,84 @@ class SettingsService:
             self.save_setting(key, val, user_id=target_uid)
         
         print(f"SettingsService: Seeded sentinel priority defaults for user {target_uid}")
+
+    def initialize_user_settings(self, user_id: str = None) -> bool:
+        """
+        Ensures a user has at least default settings. 
+        If no settings exist, it attempts to migrate from SYSTEM and seeds defaults.
+        針對新用戶或遺失設定的用戶進行初始化。優先從 SYSTEM 遷移，否則給予軟代碼預設值。
+        """
+        target_uid = user_id or self.user_id
+        if not target_uid:
+            return False
+            
+        # B2C Safety Check: Ensure user exists in users table before creating settings
+        # to avoid Foreign Key violations.
+        from sqlalchemy import text
+        try:
+            with self.settings_repo.engine.connect() as conn:
+                exists = conn.execute(
+                    text("SELECT 1 FROM users WHERE id = :uid"), {"uid": target_uid}
+                ).first()
+            if not exists:
+                import logging
+                logging.getLogger("SettingsService").error(
+                    f"Initialization aborted: User {target_uid!r} not found in users table."
+                )
+                return False
+        except Exception as e:
+            import logging
+            logging.getLogger("SettingsService").error(f"Error checking user existence: {e}")
+            return False
+            
+        # 1. 檢查是否已經「完全」初始化
+        # 若已有關鍵設定，則視為已完全初始化
+        existing = self.get_all_settings(user_id=target_uid)
+        if "AI_MODEL" in existing and "auto_trade_threshold" in existing:
+            return False # Core keys exist, no need to seed again
+            
+        # 2. 嘗試從 SYSTEM 帳號遷移舊有設定 (無縫升級)
+        system_settings_found = False
+        try:
+            # Note: AlchemySettingsRepository.get_all 繞過了 _resolve_user 的 ValueError 檢查
+            rows = self.settings_repo.get_all("SYSTEM")
+            if not rows:
+                 rows = self.settings_repo.get_all("system")
+            
+            if rows:
+                for key, val in rows:
+                    # 進行透明遷移
+                    self.save_setting(key, val, user_id=target_uid)
+                system_settings_found = True
+                print(f"SettingsService: Migrated {len(rows)} settings from SYSTEM to {target_uid}")
+        except Exception as e:
+            print(f"SettingsService: Migration from SYSTEM failed: {e}")
+
+        # 3. 填補基礎 UX 必備預設值 (若遷移後仍缺少的關鍵欄位)
+        defaults = {
+            "auto_trade_threshold": 75,
+            "auto_trade_min_threshold": 30,
+            "risk_profile": "Aggressive",
+            "target_cash_ratio": 0.2,
+            "AI_PROVIDER": "OpenRouter",
+            "AI_MODEL": "google/gemini-2.5-pro",
+            "AI_MODEL_ADVANCED": "google/gemini-3.1-pro-preview",
+            "AI_MODEL_SMART": "google/gemini-2.5-pro",
+            "AI_MODEL_FAST": "gemini-2.0-flash",
+            "DISPLAY_TIMEZONE": "Asia/Taipei",
+            "enable_etoro": False,
+            "etoro_mode": "demo"
+        }
+        
+        # 重新整理遷移後的現況
+        updated_settings = self.get_all_settings(user_id=target_uid)
+        
+        for key, val in defaults.items():
+            if key not in updated_settings:
+                self.save_setting(key, val, user_id=target_uid)
+        
+        # 4. 賦予 Sentinel 系統預設頻率
+        self.seed_sentinel_defaults(user_id=target_uid)
+        
+        print(f"SettingsService: User {target_uid} initialization complete.")
+        return True

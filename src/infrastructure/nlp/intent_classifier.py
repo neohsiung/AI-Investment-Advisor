@@ -12,14 +12,14 @@ class IntentClassifier(IIntentClassifier):
     Classifies user text into intents (APPROVE, REJECT, UNKNOWN) using a lightweight LLM.
     Uses 'fast' tier model (SentimentAgent) as configured in settings.
     """
-    def __init__(self):
+    def __init__(self, user_id: Optional[str] = None):
         # Use AgentFactory to create a 'fast' tier agent.
         # We use 'Sentiment' agent because it supports explicit tier='fast' configuration
         # whereas Engineer agent might default to 'smart'.
         self.agent = AgentFactory.create_agent(
             "Sentiment", 
             tier="nano", 
-            user_id=None,
+            user_id=user_id,
             use_cache=True
         )
 

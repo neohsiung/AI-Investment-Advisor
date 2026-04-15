@@ -33,7 +33,7 @@ async def cash_deployment(user_id: str) -> str:
             })
 
         # 2. Retrieve account data
-        account = broker.get_account()
+        account = await broker.get_account()
         if not account or account.total_equity <= 0:
             logger.error(f"Failed to retrieve account data for user {user_id}")
             return json.dumps({

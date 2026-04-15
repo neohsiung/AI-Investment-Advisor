@@ -1,7 +1,7 @@
 import os
 import json
 import pytest
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock, patch, AsyncMock
 from datetime import datetime, timedelta
 from pathlib import Path
 
@@ -27,7 +27,8 @@ def db_setup():
     init_db()
     return engine
 
-def test_full_cognitive_memory_pipeline(db_setup):
+@pytest.mark.asyncio
+async def test_full_cognitive_memory_pipeline(db_setup):
     user_id = "test_user_123"
     engine = db_setup
     
@@ -60,12 +61,12 @@ def test_full_cognitive_memory_pipeline(db_setup):
     
     with patch("src.infrastructure.llm.llm_gateway.LLMGatewayFactory.create") as mock_factory:
         mock_gateway = MagicMock()
-        mock_gateway.chat.return_value = json.dumps(mock_distilled_json)
+        mock_gateway.chat = AsyncMock(return_value=json.dumps(mock_distilled_json))
         mock_factory.return_value = mock_gateway
         
         # 3. Run Distillation Service
         service = MemoryDistillationService(user_id=user_id)
-        service.distill_daily_memory()
+        await service.distill_daily_memory()
         
     # 4. Verify memory storage
     manager = CognitiveMemoryManager(user_id=user_id)
@@ -89,8 +90,8 @@ def test_full_cognitive_memory_pipeline(db_setup):
     )
     
     # Mocking call_llm to capture the system prompt
-    with patch.object(BaseAgent, "call_llm") as mock_call:
-        agent.run({"input": "What happened?"})
+    with patch.object(BaseAgent, "call_llm", new_callable=AsyncMock) as mock_call:
+        await agent.run({"input": "What happened?"})
         
         # Check system prompt contents
         args, _ = mock_call.call_args

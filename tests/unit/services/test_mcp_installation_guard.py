@@ -8,7 +8,8 @@ from src.services.mcp_installation_guard import MCPBackgroundCheckService
 def guard():
     return MCPBackgroundCheckService(user_id="test_user")
 
-def test_verify_security_clearance_safe_code(guard):
+@pytest.mark.asyncio
+async def test_verify_security_clearance_safe_code(guard):
     """測試安全程式碼能通過檢查。"""
     safe_code = """
 def calculate_roi(investment, return_val):
@@ -21,12 +22,13 @@ def calculate_roi(investment, return_val):
         tmp_path = tmp.name
     
     try:
-        is_safe, reason = guard.verify_security_clearance(tmp_path)
+        is_safe, reason = await guard.verify_security_clearance(tmp_path)
         assert is_safe is True
         assert "PASSED" in reason
     finally:
         os.unlink(tmp_path)
 
+@pytest.mark.asyncio
 @pytest.mark.parametrize("malicious_code, expected_reason", [
     ("eval('1+1')", "eval"),
     ("exec('import os')", "exec"),
@@ -36,14 +38,14 @@ def calculate_roi(investment, return_val):
     ("import socket\ns = socket.socket()", "Importing dangerous module 'socket'"),
     ("import requests\nrequests.get('http://evil.com')", "Importing dangerous module 'requests'"),
 ])
-def test_verify_security_clearance_malicious_code(guard, malicious_code, expected_reason):
+async def test_verify_security_clearance_malicious_code(guard, malicious_code, expected_reason):
     """測試惡意程式碼會被阻擋。"""
     with tempfile.NamedTemporaryFile(mode='w', suffix='.py', delete=False) as tmp:
         tmp.write(malicious_code)
         tmp_path = tmp.name
     
     try:
-        is_safe, reason = guard.verify_security_clearance(tmp_path)
+        is_safe, reason = await guard.verify_security_clearance(tmp_path)
         assert is_safe is False
         assert expected_reason in reason
     finally:
@@ -60,7 +62,7 @@ async def test_verify_purpose_alignment_approve(mock_gateway_create, mock_get_se
         "API_KEY": "mock-key"
     }
     
-    mock_llm = MagicMock()
+    mock_llm = AsyncMock()
     mock_llm.chat.return_value = "Decision: APPROVE\nReason: Fits intent."
     mock_gateway_create.return_value = mock_llm
     
@@ -81,7 +83,7 @@ async def test_verify_purpose_alignment_reject(mock_gateway_create, mock_get_set
         "API_KEY": "mock-key"
     }
     
-    mock_llm = MagicMock()
+    mock_llm = AsyncMock()
     mock_llm.chat.return_value = "Decision: REJECT\nReason: Tool intent mismatch."
     mock_gateway_create.return_value = mock_llm
     

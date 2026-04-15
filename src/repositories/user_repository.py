@@ -38,6 +38,13 @@ class IUserRepository(ABC):
         """
         pass
 
+    @abstractmethod
+    def get_all_active_users(self) -> List[str]:
+        """
+        Returns all real user IDs (excludes test/default accounts).
+        """
+        pass
+
 class IAsyncUserRepository(ABC):
     """
     Async interface for User and Identity management.
@@ -52,6 +59,10 @@ class IAsyncUserRepository(ABC):
 
     @abstractmethod
     async def create_user(self, email: str, name: str = None) -> str:
+        pass
+
+    @abstractmethod
+    async def get_all_active_users(self) -> List[str]:
         pass
 
 class AlchemyUserRepository(BaseRepository, IUserRepository):
@@ -124,6 +135,21 @@ class AlchemyUserRepository(BaseRepository, IUserRepository):
             })
         return user_uuid
 
+    def get_all_active_users(self) -> List[str]:
+        """
+        Returns all real user IDs (excludes test/default accounts).
+        B2C 多租戶排程器使用，不依賴 ENV。
+        """
+        with self.engine.connect() as conn:
+            rows = conn.execute(text(
+                "SELECT id FROM users "
+                "WHERE email NOT LIKE 'test%' "
+                "AND email NOT LIKE '%@example.com' "
+                "AND id != 'default' "
+                "ORDER BY created_at ASC"
+            )).fetchall()
+        return [row[0] for row in rows]
+
 class AsyncAlchemyUserRepository(AsyncBaseRepository, IAsyncUserRepository):
     """
     Async SQLAlchemy implementation of IUserRepository.
@@ -171,3 +197,17 @@ class AsyncAlchemyUserRepository(AsyncBaseRepository, IAsyncUserRepository):
             await session.commit()
             
         return user_uuid
+
+    async def get_all_active_users(self) -> List[str]:
+        """
+        Async version of get_all_active_users.
+        """
+        async with await self.get_session() as session:
+            result = await session.execute(text(
+                "SELECT id FROM users "
+                "WHERE email NOT LIKE 'test%' "
+                "AND email NOT LIKE '%@example.com' "
+                "AND id != 'default'"
+            ))
+            rows = result.fetchall()
+            return [row[0] for row in rows]

@@ -175,8 +175,7 @@ class WebhookService:
                 )
                 svc = InvestmentSkillLearningService(user_id=user_id)
                 asyncio.create_task(
-                    to_thread(
-                        svc.run_daily_learning,
+                    svc.run_daily_learning(
                         content=normalized_data.get("content", ""),
                         source_url=normalized_data.get("source_url", ""),
                         source_type=normalized_data.get("source_type", "article"),
@@ -285,8 +284,7 @@ async def podcast_extract_webhook(request: Request):
             transcript = await transcriber.transcribe_url(audio_url)
             if transcript and not transcript.startswith("Error:"):
                 # Run learning in a thread as it might be synchronous or heavy
-                await to_thread(
-                    skill_svc.run_daily_learning,
+                await skill_svc.run_daily_learning(
                     content=transcript,
                     source_url=audio_url,
                     source_type="podcast",

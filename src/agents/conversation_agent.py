@@ -398,7 +398,7 @@ class ConversationAgent:
             # [Phase 3] 2. Verify Security Clearance of generated code
             # Use the actual path returned by scaffold (usually in _pending/)
             impl_path = os.path.join(path, "impl.py")
-            is_safe, sec_reason = guard.verify_security_clearance(impl_path)
+            is_safe, sec_reason = await guard.verify_security_clearance(impl_path)
             if not is_safe:
                 logger.error(f"ConversationAgent: Security breach in generated code: {sec_reason}")
                 # [Phase 4] Cleanup malicious directory
@@ -452,7 +452,6 @@ class ConversationAgent:
             import os
             from src.domain.interfaces import Message, LLMConfig
             from src.infrastructure.llm.llm_gateway import LLMGatewayFactory
-            from src.utils.async_utils import to_thread
 
             prompt = f"""Generate a Python skill implementation for an investment analysis agent.
 
@@ -473,8 +472,13 @@ Return ONLY the Python code, no explanations."""
 
             # [Phase 4] Multi-tenant isolation: Load credentials from SettingsService
             llm_settings = self._settings_service.get_all_settings()
-            provider = llm_settings.get("AI_PROVIDER", os.getenv("AI_PROVIDER", "Google Gemini"))
-            model = llm_settings.get("AI_MODEL_FAST", os.getenv("AI_MODEL_FAST", "gemini-1.5-flash"))
+            
+            # Use tier-aware model routing
+            from src.infrastructure.llm.tier_config import SettingsAwareModelRouter
+            model_router = SettingsAwareModelRouter()
+            
+            provider = llm_settings.get("AI_PROVIDER", os.getenv("AI_PROVIDER", "OpenRouter"))
+            model = model_router.get_model(self.user_id, "fast") if self.user_id else llm_settings.get("AI_MODEL_FAST", os.getenv("AI_MODEL_FAST", "google/gemini-2.0-flash-001"))
             api_key = llm_settings.get("API_KEY", os.getenv("API_KEY", ""))
 
             gateway = LLMGatewayFactory.create(provider)
@@ -489,7 +493,7 @@ Return ONLY the Python code, no explanations."""
                 Message(role="system", content="You are a Python code generator. Output only valid Python code."),
                 Message(role="user", content=prompt),
             ]
-            code = await to_thread(gateway.chat, messages, config)
+            code = await gateway.chat(messages, config)
             # Strip markdown code fences
             code = code.replace("```python", "").replace("```", "").strip()
             return code
@@ -519,12 +523,16 @@ Check for:
 3. Logic correctness
 4. Error handling completeness
 
-Respond in ONE sentence: either "PASS: looks good" or "WARN: <specific issue>".
-"""
+Respond in ONE sentence: either "PASS: looks good" or "WARN: <specific issue>"."""
             # [Phase 4] Multi-tenant isolation: Load credentials from SettingsService
             llm_settings = self._settings_service.get_all_settings()
-            provider = llm_settings.get("AI_PROVIDER", os.getenv("AI_PROVIDER", "Google Gemini"))
-            model = llm_settings.get("AI_MODEL_SMART", os.getenv("AI_MODEL_SMART", "gemini-1.5-pro"))
+            
+            # Use tier-aware model routing
+            from src.infrastructure.llm.tier_config import SettingsAwareModelRouter
+            model_router = SettingsAwareModelRouter()
+            
+            provider = llm_settings.get("AI_PROVIDER", os.getenv("AI_PROVIDER", "OpenRouter"))
+            model = model_router.get_model(self.user_id, "smart") if self.user_id else llm_settings.get("AI_MODEL_SMART", os.getenv("AI_MODEL_SMART", "google/gemini-2.5-pro"))
             api_key = llm_settings.get("API_KEY", os.getenv("API_KEY", ""))
 
             gateway = LLMGatewayFactory.create(provider)

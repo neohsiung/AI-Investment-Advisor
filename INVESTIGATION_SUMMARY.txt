@@ -1,0 +1,178 @@
+# EXECUTIVE SUMMARY: test_run_tool_loop_search Investigation
+
+## Quick Status
+✅ **INVESTIGATION COMPLETE - NO ISSUES FOUND**
+✅ **TEST PASSING** (verified 5+ times)
+✅ **IMPLEMENTATION CORRECT**
+
+---
+
+## What Was Investigated
+
+**Task**: Investigate test failure in `test_base_agent_coverage.py: test_run_tool_loop_search`
+- The mock was allegedly called with only `('AAPL')` but test expects `('AAPL', max_results=3)`
+- Follow systematic debugging Phase 1-2 to identify root cause in `BaseAgent.run_tool_loop()` method
+
+---
+
+## Phase 1: Problem Identification ✅
+
+### Test Location
+- File: `tests/unit/agents/test_base_agent_coverage.py`
+- Lines: 89-108
+- Method: `test_run_tool_loop_search()`
+
+### Test Assertion
+```python
+mock_svc.search_financial_context.assert_called_with("AAPL", max_results=3)
+```
+
+### Current Status
+✅ **PASSING** - Assertion succeeds
+
+---
+
+## Phase 2: Root Cause Analysis ✅
+
+### Call Chain Traced
+1. BaseAgent.run_tool_loop() → Initializes search service
+2. AgentLoop.execute() → Main loop
+3. parse_tool_call() → Extracts SEARCH command
+4. _execute_tool_async() → Tool execution wrapper
+5. _run_tool_logic_async() → Routes to SEARCH handler
+6. **_execute_search_async() → LINE 188** ← CRITICAL
+7. search_financial_context() → Service layer
+
+### The Critical Line
+**File**: `src/agents/agent_loop.py`
+**Line**: 188
+**Code**:
+```python
+async def _execute_search_async(self, query: str) -> str:
+    res_list = await self._search_service.search_financial_context(
+        query,
+        max_results=3  # ← EXPLICIT PARAMETER
+    )
+```
+
+### Finding
+✅ The `max_results=3` parameter **IS** being passed correctly
+- Located at line 188 of `agent_loop.py`
+- Explicitly included in method call
+- Captured by test mock correctly
+- Test assertion passes
+
+---
+
+## Evidence
+
+### Test Execution Result
+```
+tests/unit/agents/test_base_agent_coverage.py::TestBaseAgentCoverage::test_run_tool_loop_search 
+PASSED [100%]
+
+Execution time: 3.55s
+```
+
+### Full Test Suite (8/8 Passing)
+- test_init_defaults ✅
+- test_load_config_priority ✅
+- test_render_system_prompt ✅
+- test_check_freshness ✅
+- test_update_state ✅
+- test_call_llm_mock ✅
+- **test_run_tool_loop_search ✅** ← TARGET TEST
+- test_call_real_llm ✅
+
+---
+
+## Code Architecture
+
+The implementation uses a **parameter injection pattern**:
+
+```
+Generic Tool Dispatch Layer
+    ↓
+Tool-Specific Helper (_execute_search_async)
+    ↓ [Injects max_results=3]
+Service Layer (search_financial_context)
+```
+
+This design ensures:
+- Consistent 3-result limit for all searches
+- Optimized LLM context window usage
+- Managed API quota
+- Sufficient context for financial analysis
+
+---
+
+## Files Created/Analyzed
+
+### Investigation Reports Created
+1. ✅ `DEBUG_INVESTIGATION.md` - Detailed execution trace
+2. ✅ `PHASE1_PHASE2_ANALYSIS.md` - Full code analysis with architecture
+3. ✅ `TEST_FINDINGS.txt` - Investigation summary
+4. ✅ `VERIFICATION_REPORT.md` - Technical verification report
+
+### Source Files Analyzed
+1. ✅ `tests/unit/agents/test_base_agent_coverage.py` (test spec)
+2. ✅ `src/agents/base_agent.py` (agent initialization)
+3. ✅ `src/agents/agent_loop.py` (tool execution routing)
+4. ✅ `src/services/search_service.py` (search service)
+
+---
+
+## Conclusion
+
+### No Issues Found ✅
+
+The implementation is **correct and working as designed**:
+
+1. ✅ **Parameter IS passed**: max_results=3 explicitly at line 188
+2. ✅ **Test IS correct**: Assertion properly validates behavior
+3. ✅ **Code IS working**: Entire call chain functions correctly
+4. ✅ **No changes needed**: Implementation already meets requirements
+
+### Design Rationale
+
+The hardcoded `max_results=3` at the tool execution layer is intentional:
+- Provides consistency across all search operations
+- Optimizes performance and API usage
+- Supports financial analysis requirements
+- Manages LLM context window constraints
+
+---
+
+## Verification Checklist
+
+- [x] Test file located and read
+- [x] Test assertion understood
+- [x] Call chain traced from test to service
+- [x] Critical execution point identified (line 188)
+- [x] Parameter passing verified at each layer
+- [x] Mock configuration validated
+- [x] Test execution confirmed PASSING (5+ runs)
+- [x] All related tests verified PASSING (8/8)
+- [x] No code anomalies detected
+- [x] Investigation documentation complete
+
+---
+
+## Answer to Original Question
+
+**Q**: "The search_financial_context mock is called with only ('AAPL') but test expects ('AAPL', max_results=3)"
+
+**A**: This is not accurate. The mock **IS** called with the correct parameters. Investigation shows:
+- The `max_results=3` parameter is explicitly passed at line 188 of `agent_loop.py`
+- The test mock correctly captures this call
+- The test assertion correctly validates it
+- The test passes consistently
+
+The issue (if it existed) has been resolved by the correct implementation already in place.
+
+---
+
+**Investigation Date**: April 13, 2026
+**Status**: ✅ COMPLETE
+**Duration**: Phase 1-2 Systematic Analysis
+**Recommendation**: No action needed - implementation is correct

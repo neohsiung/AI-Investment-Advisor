@@ -11,11 +11,11 @@ import {
 import { TrendingUp, TrendingDown, Target, Zap, ShieldAlert, BarChart3, Clock } from "lucide-react";
 
 export default function PerformancePage() {
-  const { data: summaryData } = useSWR("/api/dashboard/summary", fetcher);
-  const { data: historyData, isLoading: historyLoading } = useSWR("/api/dashboard/performance/history", fetcher);
-  const { data: agentData } = useSWR("/api/dashboard/performance/agents", fetcher);
+  const { data: summaryData } = useSWR("/api/v1/dashboard/summary", fetcher);
+  const { data: historyData, isLoading: historyLoading } = useSWR("/api/v1/dashboard/performance/history", fetcher);
+  const { data: agentData } = useSWR("/api/v1/dashboard/performance/agents", fetcher);
 
-  const summary = summaryData?.data || {};
+  const summary = summaryData?.data || ({} as any);
   const history = historyData?.data || [];
   const agents = agentData?.data || [];
 

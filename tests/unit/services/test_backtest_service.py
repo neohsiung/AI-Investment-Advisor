@@ -17,7 +17,8 @@ def mock_yf_data():
     data = {"Close": [150.0 + i for i in range(60)]}
     return pd.DataFrame(data, index=dates)
 
-def test_backtest_simulation_flow(mock_feedback_repo, mock_yf_data):
+@pytest.mark.asyncio
+async def test_backtest_simulation_flow(mock_feedback_repo, mock_yf_data):
     # Mock yfinance
     with patch("src.services.backtest_service.yf.download", return_value=mock_yf_data) as mock_yf:
         # Mock Agent
@@ -27,7 +28,7 @@ def test_backtest_simulation_flow(mock_feedback_repo, mock_yf_data):
             mock_factory.return_value = mock_agent
 
             service = BacktestService(feedback_repo=mock_feedback_repo)
-            service.run_simulation("AAPL", days_back=10)
+            await service.run_simulation("AAPL", days_back=10)
             
             # Checks
             assert mock_yf.called

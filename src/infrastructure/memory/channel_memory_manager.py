@@ -400,7 +400,7 @@ class ChannelMemoryManager:
         )
 
         # Summarize using LLM (lazy import to avoid circular deps)
-        summary = await self._summarize_conversation(transcript)
+        summary = await self._summarize_conversation(transcript, user_id=user_id)
 
         # Store in LTM
         memory_id = str(uuid.uuid4())
@@ -428,7 +428,7 @@ class ChannelMemoryManager:
             )
             return None
 
-    async def _summarize_conversation(self, transcript: str) -> str:
+    async def _summarize_conversation(self, transcript: str, user_id: str = None) -> str:
         """
         Use a fast-tier LLM to summarize conversation transcript.
         使用快速 LLM 摘要對話記錄。
@@ -439,7 +439,7 @@ class ChannelMemoryManager:
             summarizer = AgentFactory.create_agent(
                 "Sentiment",
                 tier="nano",
-                user_id=None,
+                user_id=user_id,
                 use_cache=True,
             )
 

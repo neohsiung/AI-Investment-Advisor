@@ -33,7 +33,7 @@ export default function IntelligenceBriefing() {
         </div>
         <div className="text-right flex flex-col items-end gap-3">
           <button 
-            onClick={() => mutate("/api/dashboard/intelligence")}
+            onClick={() => mutate("/api/v1/dashboard/intelligence")}
             className="flex items-center gap-2 px-4 py-2 bg-surface-container-high rounded-lg text-[10px] font-black uppercase hover:bg-primary hover:text-on-primary transition-all group"
           >
             <RefreshCw size={12} className="group-active:rotate-180 transition-transform" />

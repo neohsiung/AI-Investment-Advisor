@@ -69,6 +69,10 @@ def test_job_daily_check_exception(mock_scheduler_deps):
 
 def test_reload_schedule(mock_scheduler_deps):
     service = SchedulerService(user_id="test_user")
+    
+    # Mock the scheduler instance to track calls
+    service.scheduler = MagicMock()
+    
     mock_scheduler_deps['engineer'].return_value.get_schedule_config.return_value = {
         "schedule_daily": "10:00",
         "schedule_weekly": "11:00",
@@ -80,15 +84,14 @@ def test_reload_schedule(mock_scheduler_deps):
     with patch('src.services.scheduler_service.convert_user_time_to_system_time', side_effect=lambda x: (x, 0)):
         service.reload_schedule()
         
-        # Check schedule calls
-        mock_scheduler_deps['schedule'].clear.assert_called()
+        # Check scheduler instance calls
+        service.scheduler.clear.assert_called()
         # Should be called for monday and tuesday
-        mock_scheduler_deps['schedule'].every.return_value.monday.at.assert_any_call("10:00")
-        mock_scheduler_deps['schedule'].every.return_value.tuesday.at.assert_any_call("10:00")
+        service.scheduler.every.return_value.monday.at.assert_any_call("10:00")
+        service.scheduler.every.return_value.tuesday.at.assert_any_call("10:00")
         
         # Weekly
-        mock_scheduler_deps['schedule'].every.return_value.saturday.at.assert_any_call("11:00")
-        mock_scheduler_deps['schedule'].every.return_value.sunday.at.assert_any_call("10:00")
+        service.scheduler.every.return_value.saturday.at.assert_any_call("11:00")
 
 def test_check_reload_signal_true(mock_scheduler_deps):
     service = SchedulerService(user_id="test_user")

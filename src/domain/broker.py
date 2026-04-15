@@ -16,31 +16,31 @@ class IBroker(ABC):
         pass
 
     @abstractmethod
-    def get_account(self) -> Optional[Account]:
+    async def get_account(self) -> Optional[Account]:
         """Get account summary (Equity, Cash, etc)."""
         pass
 
     @abstractmethod
-    def get_positions(self) -> List[Position]:
+    async def get_positions(self) -> List[Position]:
         """Get current open positions."""
         pass
 
     @abstractmethod
-    def get_history(self, days: int = 30) -> List[Dict[str, Any]]:
+    async def get_history(self, days: int = 30) -> List[Dict[str, Any]]:
         """Get trade history (normalized format preferred)."""
         pass
 
     @abstractmethod
-    def execute_order(self, order: Order) -> Dict[str, Any]:
+    async def execute_order(self, order: Order) -> Dict[str, Any]:
         """Execute a trade order."""
         pass
     
     @abstractmethod
-    def sync_history(self) -> Dict[str, int]:
+    async def sync_history(self) -> Dict[str, int]:
         """Sync external history to local DB."""
         pass
 
     @abstractmethod
-    def get_pending_orders(self) -> List[Dict[str, Any]]:
+    async def get_pending_orders(self) -> List[Dict[str, Any]]:
         """Get pending (scheduled) orders."""
         pass

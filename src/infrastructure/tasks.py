@@ -24,7 +24,7 @@ def generate_market_intelligence(user_id: str = None):
     if not is_market_open_today():
         return "Skipped"
 
-    user_id = user_id or os.getenv("USER_ID", "90693c07-6177-42df-97d9-915f3ce7c573")
+    user_id = user_id or os.getenv("PRIMARY_USER_ID") or os.getenv("USER_ID")
     try:
         settings_svc = SettingsService(user_id=user_id)
         intel_svc = IntelligenceService(settings_service=settings_svc, user_id=user_id)
@@ -47,7 +47,7 @@ def trigger_portfolio_rebalance(user_id: str = None):
     """
     Executes a high-priority rebalance check via SentinelService.
     """
-    user_id = user_id or os.getenv("USER_ID", "90693c07-6177-42df-97d9-915f3ce7c573")
+    user_id = user_id or os.getenv("PRIMARY_USER_ID") or os.getenv("USER_ID")
     try:
         from src.services.sentinel_service import SentinelService
         sentinel = SentinelService(user_id=user_id)

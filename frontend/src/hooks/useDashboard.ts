@@ -1,18 +1,24 @@
 import useSWR, { mutate } from "swr";
-import { fetcher } from "@/lib/api";
+import { apiClient } from "@/lib/api-client";
 import { useWebSocket } from "@/context/WebSocketContext";
 import { useEffect } from "react";
+import { 
+  DashboardMetrics, PositionItem, IntelligenceBriefing, AgentStatus, ApiResponse
+} from "@/types/unified";
+
+// Generic v1 fetcher for SWR
+const v1Fetcher = (url: string) => apiClient.get<any>(url);
 
 // 使用者要求的更新頻率：10 分鐘 (600,000 毫秒)
 const REFRESH_INTERVAL = 600000;
 
 export function usePortfolioSummary() {
-  const { data, error, isLoading, mutate } = useSWR("/api/dashboard/summary", fetcher, {
+  const { data, error, isLoading, mutate } = useSWR<ApiResponse<DashboardMetrics>>("/api/v1/dashboard/summary", v1Fetcher, {
     refreshInterval: REFRESH_INTERVAL,
   });
 
   return {
-    summary: data?.data || {},
+    summary: data?.data || ({} as DashboardMetrics),
     isLoading,
     isError: error,
     mutate,
@@ -20,7 +26,7 @@ export function usePortfolioSummary() {
 }
 
 export function usePositions() {
-  const { data, error, isLoading, mutate } = useSWR("/api/dashboard/positions", fetcher, {
+  const { data, error, isLoading, mutate } = useSWR<ApiResponse<PositionItem[]>>("/api/v1/dashboard/positions", v1Fetcher, {
     refreshInterval: REFRESH_INTERVAL,
   });
 
@@ -33,7 +39,7 @@ export function usePositions() {
 }
 
 export function useAgentsStatus() {
-  const { data, error, isLoading, mutate } = useSWR("/api/dashboard/agents", fetcher, {
+  const { data, error, isLoading, mutate } = useSWR<ApiResponse<AgentStatus[]>>("/api/v1/dashboard/agents", v1Fetcher, {
     refreshInterval: REFRESH_INTERVAL,
   });
 
@@ -46,12 +52,12 @@ export function useAgentsStatus() {
 }
 
 export function useIntelligenceBriefing() {
-  const { data, error, isLoading, mutate } = useSWR("/api/dashboard/intelligence", fetcher, {
+  const { data, error, isLoading, mutate } = useSWR<ApiResponse<IntelligenceBriefing>>("/api/v1/dashboard/intelligence", v1Fetcher, {
     refreshInterval: REFRESH_INTERVAL,
   });
 
   return {
-    briefing: data?.data || {},
+    briefing: data?.data || ({} as IntelligenceBriefing),
     isLoading,
     isError: error,
     mutate,
@@ -59,8 +65,8 @@ export function useIntelligenceBriefing() {
 }
 
 export function useAlerts() {
-  const { data, error, isLoading, mutate } = useSWR("/api/dashboard/alerts", fetcher, {
-    refreshInterval: 60000, // 每分鐘更新一次
+  const { data, error, isLoading, mutate } = useSWR<ApiResponse<any[]>>("/dashboard/alerts", v1Fetcher, {
+    refreshInterval: 60000, 
   });
 
   return {
@@ -84,7 +90,7 @@ export function useDashboardSocket() {
       console.log(`[Reconciliation] Processing ${missedMessages.length} missed events.`);
       
       // Update alerts cache with missed events
-      mutate("/api/dashboard/alerts", (current: any) => {
+      mutate("/dashboard/alerts", (current: any) => {
         const existing = current?.data || [];
         // Extract only the payload (the actual alert)
         const newAlerts = missedMessages
@@ -105,25 +111,23 @@ export function useDashboardSocket() {
     if (lastMessage.type === "PORTFOLIO_UPDATE") {
       const { payload } = lastMessage;
       if (payload.summary) {
-        mutate("/api/dashboard/summary", { status: "success", data: payload.summary }, false);
+        mutate("/dashboard/summary", { status: 'success', data: payload.summary }, false);
       }
       if (payload.positions) {
-        mutate("/api/dashboard/positions", { status: "success", data: payload.positions }, false);
+        mutate("/dashboard/positions", { status: 'success', data: payload.positions }, false);
       }
     }
 
     if (lastMessage.type === "SYSTEM_ALERT") {
-      mutate("/api/dashboard/alerts", (current: any) => {
+      mutate("/dashboard/alerts", (current: any) => {
         const existing = current?.data || [];
-        return { 
-          ...current, 
-          data: [lastMessage.payload, ...existing].slice(0, 50) 
-        };
+        const newData = [lastMessage.payload, ...existing].slice(0, 50);
+        return { ...current, status: 'success', data: newData };
       }, false);
     }
 
     if (lastMessage.type === "AGENT_STATUS") {
-      mutate("/api/dashboard/agents", (current: any) => {
+      mutate("/dashboard/agents", (current: any) => {
         const existing = current?.data || [];
         const payload = lastMessage.payload;
         let newAgents = [...existing];
@@ -131,9 +135,9 @@ export function useDashboardSocket() {
         if (idx >= 0) {
           newAgents[idx] = { ...newAgents[idx], current_task: payload.message, last_active: payload.timestamp };
         } else {
-          newAgents.push({ name: payload.agent, current_task: payload.message, last_active: payload.timestamp, role: "Active Agent", status: "active" });
+          newAgents.push({ name: payload.agent, current_task: payload.message, last_active: payload.timestamp, strategy: "Active Agent" });
         }
-        return { ...current, data: newAgents };
+        return { ...current, status: 'success', data: newAgents };
       }, false);
     }
   }, [lastMessage]);

@@ -40,7 +40,7 @@ async def test_mcp_client_observability(mock_session, mock_guard):
         mock_span = MagicMock()
         mock_tracer.start_as_current_span.return_value.__enter__.return_value = mock_span
          
-        client = MCPClientAdapter("http://mock-server/sse", user_id="test_user")
+        client = MCPClientAdapter(user_id="test_user", sse_url="http://mock-server/sse")
         
         # Call connect directly, bypassing actual file/network setup for exit stack
         client._session = mock_session
@@ -63,7 +63,7 @@ async def test_mcp_client_latency_warning(mock_session, mock_guard):
     """
     Test that a slow tool call triggers a logger warning.
     """
-    client = MCPClientAdapter("http://mock-server/sse", user_id="test_user_slow")
+    client = MCPClientAdapter(user_id="test_user_slow", sse_url="http://mock-server/sse")
     client._session = mock_session
     client._tools = {"slow_tool": Tool(name="slow_tool", description="", inputSchema={})}
     client._guard = mock_guard

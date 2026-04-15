@@ -16,6 +16,7 @@ interface BriefingCardProps {
   children?: React.ReactNode;
   
   className?: string;
+  isLoading?: boolean;
 }
 
 export default function BriefingCard({ 
@@ -27,8 +28,21 @@ export default function BriefingCard({
   title,
   tags = [],
   children,
-  className = "" 
+  className = "",
+  isLoading = false
 }: BriefingCardProps) {
+  if (isLoading) {
+    return (
+      <div className={cn("bg-surface-container-low rounded-xl shadow-lg border border-outline-variant/10 p-12 flex flex-col items-center justify-center min-h-[400px]", className)}>
+        <div className="h-12 w-12 rounded-full bg-primary/10 flex items-center justify-center mb-4">
+           <span className="material-symbols-outlined text-primary animate-spin">sync</span>
+        </div>
+        <p className="text-xs font-label uppercase tracking-widest text-on-surface-variant animate-pulse font-black">
+          正在解構市場情報...
+        </p>
+      </div>
+    );
+  }
   // If children or title is provided, use the layout-driven rendering
   if (children || title) {
     return (

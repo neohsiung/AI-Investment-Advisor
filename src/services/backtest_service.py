@@ -30,7 +30,7 @@ class BacktestService:
         from src.repositories.feedback_repository import AlchemyFeedbackRepository
         self.feedback_repo = feedback_repo if feedback_repo else AlchemyFeedbackRepository()
 
-    def run_simulation(self, ticker: str, days_back: int = 30) -> None:
+    async def run_simulation(self, ticker: str, days_back: int = 30) -> None:
         """
         Execute a day-by-day simulation for a specific ticker.
         針對特定標的執行逐日模擬。
@@ -98,7 +98,7 @@ class BacktestService:
                 )
                 
                 # 5. 執行 Agent (Execute Agent)
-                response = agent.run(context)
+                response = await agent.run(context)
                 
                 # 6. 評估結果 (Evaluate Outcome)
                 future_val = df.iloc[current_date_idx + 5]['Close']

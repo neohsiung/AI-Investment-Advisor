@@ -12,7 +12,7 @@ import {
 
 export default function DataManagementPage() {
   const [activeTab, setActiveTab] = useState("manual");
-  const { data: transData, isLoading: transLoading } = useSWR("/api/dashboard/data/transactions", fetcher);
+  const { data: transData, isLoading: transLoading } = useSWR("/api/v1/transactions", fetcher);
   
   const transactions = transData?.data || [];
 
@@ -42,9 +42,9 @@ export default function DataManagementPage() {
     formData.append("file", file);
 
     try {
-      const res = await axios.post("/api/dashboard/data/upload-csv", formData);
+      const res = await axios.post("/api/v1/transactions/upload-csv", formData);
       setFeedback({ type: 'success', msg: res.data.message });
-      mutate("/api/dashboard/data/transactions");
+      mutate("/api/v1/transactions");
     } catch (err: any) {
       setFeedback({ type: 'error', msg: err.response?.data?.detail || "上傳失敗" });
     } finally {
@@ -63,7 +63,7 @@ export default function DataManagementPage() {
         finalQty = (form.principal * form.leverage) / form.price;
       }
 
-      await axios.post("/api/dashboard/data/transactions", {
+      await axios.post("/api/v1/transactions", {
         ticker: form.ticker,
         action: form.action,
         quantity: finalQty,
@@ -73,7 +73,7 @@ export default function DataManagementPage() {
       });
 
       setFeedback({ type: 'success', msg: "交易已成功記錄" });
-      mutate("/api/dashboard/data/transactions");
+      mutate("/api/v1/transactions");
     } catch (err: any) {
       setFeedback({ type: 'error', msg: err.response?.data?.detail || "新增失敗" });
     } finally {
@@ -85,8 +85,8 @@ export default function DataManagementPage() {
     if (!window.confirm("確定要刪除此筆交易？這將會影響資產清算與績效統計。")) return;
 
     try {
-      await axios.delete(`/api/dashboard/data/transactions/${id}`);
-      mutate("/api/dashboard/data/transactions");
+      await axios.delete(`/api/v1/transactions/${id}`);
+      mutate("/api/v1/transactions");
     } catch (err) {
       alert("刪除失敗");
     }

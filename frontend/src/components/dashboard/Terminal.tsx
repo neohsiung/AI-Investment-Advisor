@@ -1,16 +1,16 @@
-"use client";
-
 import React, { useState, useEffect, useRef } from "react";
 import { useWebSocket } from "@/context/WebSocketContext";
+import { apiClient } from "@/lib/api-client";
 import { cn, formatCurrency } from "@/lib/utils";
-import { Terminal as TerminalIcon, Send, ShieldAlert, Cpu, ChevronRight, X } from "lucide-react";
+import { Terminal as TerminalIcon, Send, ShieldAlert, Cpu, ChevronRight, X, Sparkles, Loader2 } from "lucide-react";
 
 interface LogEntry {
   id: string;
   timestamp: string;
-  type: "system" | "agent" | "trade" | "error";
+  type: "system" | "agent" | "trade" | "error" | "ai_advisor";
   message: string;
   payload?: any;
+  isStreaming?: boolean;
 }
 
 export default function Terminal() {
@@ -26,11 +26,14 @@ export default function Terminal() {
   const [autoScroll, setAutoScroll] = useState(true);
   const logEndRef = useRef<HTMLDivElement>(null);
   
-  // Trade Form State
-  const [ticker, setTicker] = useState("");
-  const [action, setAction] = useState<"BUY" | "SELL">("BUY");
-  const [quantity, setQuantity] = useState("");
+  // Chat & Stream State
+  const [inputMessage, setInputMessage] = useState("");
+  const [isAiLoading, setIsAiLoading] = useState(false);
+  const [activeTool, setActiveTool] = useState<string | null>(null);
   const [isExecuting, setIsExecuting] = useState(false);
+  const [ticker, setTicker] = useState("");
+  const [quantity, setQuantity] = useState("");
+  const [action, setAction] = useState<"BUY" | "SELL">("BUY");
 
   // Handle incoming messages
   useEffect(() => {
@@ -76,28 +79,112 @@ export default function Terminal() {
     }
   }, [logs, autoScroll]);
 
-  const handleExecute = () => {
+  const handleSendChat = async () => {
+    if (!inputMessage.trim() || isAiLoading) return;
+
+    const userMsg: LogEntry = {
+      id: Date.now().toString(),
+      timestamp: new Date().toLocaleTimeString(),
+      type: "system",
+      message: `User: ${inputMessage}`
+    };
+    
+    setLogs(prev => [...prev.slice(-49), userMsg]);
+    const currentInput = inputMessage;
+    setInputMessage("");
+    setIsAiLoading(true);
+    setActiveTool(null);
+
+    // Initial placeholder for assistant response
+    const assistantId = "ai-" + Date.now();
+    let accumulatedResponse = "";
+
+    apiClient.subscribeToStream(
+      "/chat/stream",
+      { message: currentInput, history: [] },
+      (data) => {
+        if (data.metadata?.type === "tool_call") {
+          setActiveTool(data.metadata.name);
+          setLogs(prev => {
+             const existing = prev.find(l => l.id === assistantId);
+             if (!existing) {
+                return [...prev, {
+                   id: assistantId,
+                   timestamp: new Date().toLocaleTimeString(),
+                   type: "ai_advisor",
+                   message: `[Thinking: ${data.metadata.name}]...`,
+                   isStreaming: true
+                }];
+             }
+             return prev.map(l => l.id === assistantId ? { ...l, message: `[Thinking: ${data.metadata.name}]...` } : l);
+          });
+        }
+
+        if (data.chunk) {
+          setActiveTool(null);
+          accumulatedResponse += data.chunk;
+          setLogs(prev => {
+             const existing = prev.find(l => l.id === assistantId);
+             if (!existing) {
+                return [...prev, {
+                   id: assistantId,
+                   timestamp: new Date().toLocaleTimeString(),
+                   type: "ai_advisor",
+                   message: accumulatedResponse,
+                   isStreaming: true
+                }];
+             }
+             return prev.map(l => l.id === assistantId ? { ...l, message: accumulatedResponse } : l);
+          });
+        }
+      },
+      (err) => {
+        console.error("Chat Stream error", err);
+        setIsAiLoading(false);
+        setActiveTool(null);
+        setLogs(prev => [...prev, {
+          id: "err-" + Date.now(),
+          timestamp: new Date().toLocaleTimeString(),
+          type: "error",
+          message: "無法與 AI 顧問建立連線。"
+        }]);
+      }
+    );
+    
+    // Note: We don't await because it's a stream handler
+    setIsAiLoading(false);
+  };
+
+  const handleExecute = async () => {
     if (!ticker || !quantity || isExecuting) return;
 
     setIsExecuting(true);
-    const command = {
-      type: "EXECUTE_ORDER",
-      payload: {
+    try {
+      const response = await apiClient.post<any>("/transactions", {
         ticker: ticker.trim().toUpperCase(),
         action,
-        quantity: parseFloat(quantity)
-      }
-    };
-
-    sendMessage(JSON.stringify(command));
-    
-    setLogs(prev => [...prev.slice(-49), {
-      id: Math.random().toString(36).substr(2, 9),
-      timestamp: new Date().toLocaleTimeString(),
-      type: "system",
-      message: `指令已發送：執行訂單 ${action === 'BUY' ? '買入' : '賣出'} ${quantity} 單位 ${ticker.toUpperCase()}`
-
-    }]);
+        quantity: parseFloat(quantity),
+        price: 0, // Market price
+        fees: 0,
+        date: new Date().toISOString()
+      });
+      
+      setLogs(prev => [...prev.slice(-49), {
+        id: Math.random().toString(36).substr(2, 9),
+        timestamp: new Date().toLocaleTimeString(),
+        type: "trade",
+        message: `交易指令成功：${response.message || "已送入隊列"}`
+      }]);
+    } catch (e: any) {
+      setLogs(prev => [...prev.slice(-49), {
+        id: Math.random().toString(36).substr(2, 9),
+        timestamp: new Date().toLocaleTimeString(),
+        type: "error",
+        message: `交易執行失敗：${e.message}`
+      }]);
+    } finally {
+      setIsExecuting(false);
+    }
   };
 
   return (
@@ -125,23 +212,58 @@ export default function Terminal() {
 
       <div className="flex flex-1 overflow-hidden">
         {/* Logs Area */}
-        <div className="flex-1 overflow-y-auto p-4 font-mono text-[11px] space-y-1.5 scrollbar-hide bg-black/40">
+        <div className="flex-1 overflow-y-auto p-4 font-mono text-[11px] space-y-2 scrollbar-hide bg-black/60 relative">
+          <div className="absolute inset-0 pointer-events-none bg-[radial-gradient(circle_at_center,rgba(0,102,214,0.05)_0%,transparent_70%)]" />
           {logs.map((log) => (
             <div key={log.id} className={cn(
-              "flex gap-3 animate-in slide-in-from-left-2 duration-300",
-              log.type === "error" ? "text-error" : 
-              log.type === "trade" ? "text-secondary" : 
-              log.type === "agent" ? "text-tertiary" : "text-on-surface-variant"
+               "flex gap-3 animate-in fade-in slide-in-from-left-2 duration-500",
+               log.type === "error" ? "text-error drop-shadow-[0_0_8px_rgba(255,180,171,0.3)]" : 
+               log.type === "trade" ? "text-secondary font-bold" : 
+               log.type === "agent" ? "text-tertiary" : 
+               log.type === "ai_advisor" ? "text-primary brightness-150 leading-relaxed" : "text-on-surface-variant opacity-80"
             )}>
-              <span className="opacity-40 shrink-0">{log.timestamp}</span>
+              <span className="opacity-30 shrink-0 select-none">[{log.timestamp}]</span>
               <span className="flex-1 break-all select-all">
-                {log.type === "system" && <span className="text-primary mr-2">»</span>}
+                {log.type === "system" && <span className="text-primary mr-2 font-black">»</span>}
                 {log.type === "agent" && <Cpu className="inline w-3 h-3 mr-2 -mt-0.5" />}
+                {log.type === "ai_advisor" && <Sparkles className="inline w-3 h-3 mr-2 -mt-0.5 text-primary animate-pulse" />}
                 {log.message}
+                {log.isStreaming && <span className="inline-block w-1.5 h-3.5 bg-primary ml-1.5 animate-pulse shadow-[0_0_10px_var(--primary)]" />}
               </span>
             </div>
           ))}
+          {activeTool && (
+            <div className="flex gap-3 text-tertiary/70 animate-pulse">
+               <span className="opacity-40 shrink-0">--:--:--</span>
+               <span className="flex-1 italic">
+                 <Loader2 className="inline w-3 h-3 mr-2 animate-spin" />
+                 Sentinel 正在執行工具: {activeTool}...
+               </span>
+            </div>
+          )}
           <div ref={logEndRef} />
+        </div>
+
+        <div className="absolute bottom-6 left-6 right-80">
+           <div className="relative flex items-center group">
+              <div className="absolute -inset-0.5 bg-gradient-to-r from-primary/20 to-secondary/20 rounded-full blur opacity-30 group-focus-within:opacity-100 transition duration-1000 group-hover:duration-200"></div>
+              <ChevronRight className="absolute left-4 w-4 h-4 text-primary z-10" />
+              <input 
+                 type="text"
+                 value={inputMessage}
+                 onChange={(e) => setInputMessage(e.target.value)}
+                 onKeyDown={(e) => e.key === "Enter" && handleSendChat()}
+                 placeholder="COMMAND INPUT > DISPATCH REQUEST TO SENTINEL..."
+                 className="relative w-full bg-surface-container-low/40 backdrop-blur-2xl border border-outline-variant/30 rounded-full py-3.5 pl-11 pr-14 text-[11px] font-mono tracking-wider focus:border-primary/50 focus:bg-surface-container-low/60 outline-none transition-all shadow-2xl placeholder:opacity-30"
+              />
+              <button 
+                 onClick={handleSendChat}
+                 disabled={isAiLoading || !inputMessage.trim()}
+                 className="absolute right-2 p-2 bg-primary text-on-primary rounded-full hover:scale-105 active:scale-95 transition-all disabled:opacity-30 shadow-lg shadow-primary/20 z-10"
+              >
+                 {isAiLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
+              </button>
+           </div>
         </div>
 
         {/* Quick Actions Sidebar */}

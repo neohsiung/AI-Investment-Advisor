@@ -9,7 +9,7 @@ import { format } from "date-fns";
 import { cn } from "@/lib/utils";
 
 export default function ReportsPage() {
-  const { data: reportsData, isLoading } = useSWR("/api/dashboard/reports", fetcher);
+  const { data: reportsData, isLoading } = useSWR("/api/v1/dashboard/reports", fetcher);
   const [selectedReport, setSelectedReport] = useState<any>(null);
   const [searchQuery, setSearchQuery] = useState("");
 

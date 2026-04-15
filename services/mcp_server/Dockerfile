@@ -24,7 +24,7 @@ ENV PATH="/opt/venv/bin:$PATH"
 WORKDIR /workspace
 
 # Install runtime dependencies (e.g., ffmpeg for pydub/ffmpy)
-RUN apt-get update && apt-get install -y ffmpeg && rm -rf /var/lib/apt/lists/*
+RUN apt-get update && apt-get install -y ffmpeg curl && rm -rf /var/lib/apt/lists/*
 
 RUN addgroup --system appgroup && \
     adduser --system --group --home /home/appuser appuser
@@ -37,6 +37,11 @@ COPY --from=builder /opt/venv /opt/venv
 # Copy application code
 COPY ./services/mcp_server /workspace/services/mcp_server
 COPY ./src /workspace/src
+COPY ./prompts /workspace/prompts
+COPY ./config /workspace/config
+COPY ./workspace /workspace/workspace
+COPY ./alembic.ini /workspace/alembic.ini
+COPY ./alembic /workspace/alembic
 
 USER root
 RUN mkdir -p /workspace/data /workspace/logs && \
@@ -45,4 +50,4 @@ USER appuser
 
 EXPOSE 8000
 
-CMD ["uvicorn", "services.mcp_server.src.app.main:app", "--host", "0.0.0.0", "--port", "8000"]
+CMD ["sh", "-c", "alembic upgrade head && uvicorn services.mcp_server.src.app.main:app --host 0.0.0.0 --port 8000"]
