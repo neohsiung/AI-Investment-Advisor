@@ -1,0 +1,5 @@
+name: distill_insight
+description: "萃取 alert/報告的核心洞察並寫入 cognitive_memories 記憶系統"
+categories: [memory, learning]
+version: "1.0.0"
+async: true

@@ -322,8 +322,22 @@ class CognitiveMemoryManager:
         vector_repo = AlchemyVectorRepository(engine=self.engine)
         
         try:
-            # Generate query embedding
-            embedding = gateway.embed(query, llm_config)
+            # Generate query embedding — gateway.embed is async, run it safely from sync context
+            import asyncio
+            async def _do_embed():
+                return await gateway.embed(query, llm_config)
+            try:
+                loop = asyncio.get_event_loop()
+                if loop.is_closed():
+                    loop = asyncio.new_event_loop()
+                    asyncio.set_event_loop(loop)
+            except RuntimeError:
+                loop = asyncio.new_event_loop()
+                asyncio.set_event_loop(loop)
+            if loop.is_running():
+                import nest_asyncio
+                nest_asyncio.apply()
+            embedding = loop.run_until_complete(_do_embed())
             
             # Search PGVector
             results = vector_repo.search_memory(self.user_id, embedding=embedding, query_text=query, top_k=limit)

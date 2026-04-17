@@ -773,12 +773,6 @@ class SentinelService:
                         else:
                             eval_res = {}
 
-                    p_str = eval_res.get("priority", "P3")
-                    priority = int(p_str.replace("P", ""))
-                    t["priority"] = priority
-                    t["target_agent"] = eval_res.get("target_agent", "CIO")
-                    t["rationale"] = eval_res.get("rationale", "")
-
                     # Detect internal agent failure (sentinel.run() catches exceptions and returns {'error': ...})
                     if "error" in eval_res:
                         err_msg = eval_res.get("error", "unknown")
@@ -787,6 +781,14 @@ class SentinelService:
                         logger.warning(f"Sentinel: Sending alert immediately due to internal AI failure for trigger: {t.get('id', 'unknown')}")
                         await self._do_send_alert([t], source=source)
                         continue
+
+                    p_str = eval_res.get("priority", "P3")
+                    priority = int(p_str.replace("P", ""))
+                    t["priority"] = priority
+                    t["target_agent"] = eval_res.get("target_agent", "CIO")
+                    t["trigger_type"] = eval_res.get("trigger_type", "generic")
+                    t["affected_tickers"] = eval_res.get("affected_tickers", [])
+                    t["rationale"] = eval_res.get("rationale", "")
 
                     # P0 bypass buffer immediately
                     if p_str == "P0" or eval_res.get("is_critical", False):
@@ -928,10 +930,12 @@ class SentinelService:
         # v9.1: Trigger-Aware Council Prompt
         # Each trigger type gets a focused prompt instead of a generic evaluation request.
         # This prevents Council from producing off-topic weekly reports for specific alerts.
-        has_excess_cash   = any("cash_ratio_high" in t.get("id", "") for t in filtered_triggers) or source == "Excess Cash"
-        has_news_trigger  = any(t.get("type", "") in ["news", "breaking_news"] or "news" in t.get("id", "") for t in filtered_triggers)
-        has_price_trigger = any(t.get("type", "") == "price_move" or "move" in t.get("id", "") for t in filtered_triggers)
-        has_risk_trigger  = any(t.get("type", "") in ["risk_consistency", "cash_management"] for t in filtered_triggers)
+        trigger_types = set(t.get("trigger_type", "generic") for t in filtered_triggers)
+        
+        has_excess_cash   = any("cash_ratio_high" in t.get("id", "") for t in filtered_triggers) or source == "Excess Cash" or "cash" in trigger_types
+        has_news_trigger  = "news" in trigger_types
+        has_price_trigger = "price_move" in trigger_types
+        has_risk_trigger  = "risk" in trigger_types
         
         msg_prefix = "請針對以下多個 Sentinel 警報進行彙整與風險評估，並以繁體中文 (Traditional Chinese) 提供一份簡短且具備行動建議的摘要。金融專業術語請保留英文。"
         
@@ -1124,21 +1128,49 @@ class SentinelService:
         # we still: (A) spawn a research task for news triggers and (B) store an insight to memory.
         else:
             import asyncio
+            from src.agents.skills.skill_loader import SkillLoader
+            loader = SkillLoader()
+            
             trigger_types_set = set(t.get('type', '') for t in filtered_triggers)
             has_any_news = any('news' in tt or 'breaking' in tt for tt in trigger_types_set) or \
                            any('news' in t.get('id', '') for t in filtered_triggers)
             
             if has_any_news:
                 # Spawn background EventAnalysis research for each news ticker
-                asyncio.create_task(
-                    self._spawn_research_task(target_user, filtered_triggers, decision)
-                )
+                for t in filtered_triggers:
+                    ticker = t.get('ticker')
+                    if not ticker:
+                        tid = t.get('id', '')
+                        parts = [p for p in tid.split('_') if p.isupper() and 1 < len(p) <= 6]
+                        if parts:
+                            ticker = parts[0]
+                    if ticker:
+                        asyncio.create_task(
+                            loader.run_skill(
+                                "event_research",
+                                user_id=target_user,
+                                ticker=ticker,
+                                event_source=t.get("type", "news"),
+                                event_text=t.get("text", ""),
+                                council_summary=decision[:500],
+                            )
+                        )
         
         # Always store alert insight to cognitive_memories (independent of action path)
         # This ensures every alert outcome is captured for future reflection
         import asyncio
+        from src.agents.skills.skill_loader import SkillLoader
+        import json
+        loader = SkillLoader()
+        
         asyncio.create_task(
-            self._store_alert_insight(target_user, filtered_triggers, decision)
+            loader.run_skill(
+                "distill_insight",
+                user_id=target_user,
+                source_texts=json.dumps([t.get("text","") for t in filtered_triggers[:3]], ensure_ascii=False),
+                council_text=decision[:600],
+                agent_name="SentinelService"
+            )
         )
 
     async def _extract_trade_signals_from_decision(self, decision: str, triggers: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
@@ -1219,130 +1251,6 @@ class SentinelService:
                 )
         except Exception as e:
             logger.error(f"Sentinel trade signal execution failed: {e}")
-
-    async def _spawn_research_task(self, user_id: str, triggers: List[Dict[str, Any]], council_decision: str) -> None:
-        """
-        v9.1: Spawn background EventAnalysisWorkflow for news-triggered alerts.
-        For each trigger that mentions a ticker, run a targeted fundamental analysis.
-        Ensures news signals always lead to a research artifact, not just a notification.
-        
-        新聞觸發後自動啟動 EventAnalysisWorkflow，
-        確保每個 alert 都有對應的深度研究輸出，而不只是通知。
-        """
-        logger.info(f"Sentinel: Spawning research tasks for {len(triggers)} news trigger(s)")
-        
-        for t in triggers:
-            # Extract ticker from trigger metadata or text
-            ticker = t.get('ticker')
-            if not ticker:
-                # Try to parse from trigger ID (format: gs_news_{TICKER}_{hash} or news_{TICKER})
-                tid = t.get('id', '')
-                parts = [p for p in tid.split('_') if p.isupper() and 1 < len(p) <= 6]
-                if parts:
-                    ticker = parts[0]
-            
-            if not ticker:
-                logger.debug(f"Sentinel: Skipping research task — no ticker found in trigger {t.get('id', '?')}")
-                continue
-
-            try:
-                from src.services.workflow_service import EventAnalysisWorkflow
-                wf = EventAnalysisWorkflow(
-                    user_id=user_id,
-                    ticker=ticker,
-                    event_source=t.get('type', 'news'),
-                    event_data={
-                        'msg': t.get('text', ''),
-                        'council_summary': council_decision[:500] if council_decision else '',
-                        'trigger_id': t.get('id', ''),
-                    },
-                    target_action='RESEARCH',
-                )
-                result = await wf.synthesize_results()
-                logger.info(f"Sentinel: Research task completed for ticker={ticker}")
-            except Exception as e:
-                logger.warning(f"Sentinel: Research task failed for ticker={ticker}: {e}")
-
-    async def _store_alert_insight(self, user_id: str, triggers: List[Dict[str, Any]], council_decision: str) -> None:
-        """
-        v9.1: Store a distilled insight from every non-suppressed alert to cognitive_memories.
-        Uses a lightweight LLM call to extract a 1-2 sentence key takeaway.
-        Ensures every alert produces a persistent audit trail for future reflection.
-        
-        將每次 Sentinel 警報的要點萃取後寫入 cognitive_memories，
-        確保每次警報都在記憶系統留下痕跡，供未來回顧使用。
-        """
-        try:
-            from src.data.database import get_db_connection
-            from src.infrastructure.llm.llm_gateway import LLMGatewayFactory, Message, LLMConfig, RetryLLMGateway
-            from src.services.settings_service import SettingsService
-            from sqlalchemy import text
-            import uuid, json
-            from datetime import datetime, timezone
-
-            trigger_texts = [t.get('text', '') for t in triggers]
-            trigger_types = list(set(t.get('type', 'sentinel') for t in triggers))
-
-            # Build a brief summary to store — avoid saving the full Council markdown
-            # Use a fast, cheap LLM call to distill the key insight
-            distilled = ""
-            try:
-                ss = SettingsService(user_id=user_id)
-                provider = ss.get_setting("AI_PROVIDER", "OpenRouter") or "OpenRouter"
-                model    = ss.get_setting("AI_MODEL_FAST", "google/gemini-2.0-flash") or "google/gemini-2.0-flash"
-                api_key  = ss.get_setting("OPENROUTER_API_KEY") or ss.get_setting("AI_API_KEY", "")
-                base_url = ss.get_setting("OPENROUTER_BASE_URL", "https://openrouter.ai/api/v1")
-
-                gateway = RetryLLMGateway(inner=LLMGatewayFactory.create(provider), max_retries=1)
-                distill_cfg = LLMConfig(
-                    provider=provider, model=model, api_key=api_key, base_url=base_url,
-                    temperature=0.2, max_retries=1, timeout_seconds=20
-                )
-                distill_msgs = [
-                    Message(role="system", content=(
-                        "You are a financial memory distiller. Extract the single most important insight "
-                        "from the following Sentinel alert + Council assessment. "
-                        "Output exactly 1-2 sentences in Traditional Chinese. "
-                        "Focus on: what signal fired, what the AI concluded, and any ticker mentioned."
-                    )),
-                    Message(role="user", content=(
-                        f"Triggers: {'; '.join(trigger_texts[:3])}\n\n"
-                        f"Council Assessment (first 600 chars): {council_decision[:600]}"
-                    )),
-                ]
-                distilled = await gateway.chat(distill_msgs, distill_cfg)
-                distilled = distilled.strip()
-            except Exception as llm_e:
-                logger.warning(f"Sentinel: Insight distillation LLM call failed: {llm_e}")
-                # Fallback: use raw trigger text
-                distilled = f"[Sentinel Alert] {'; '.join(trigger_texts[:2])[:200]}"
-
-            # Write to cognitive_memories using actual schema
-            with get_db_connection() as conn:
-                content_jsonb = {
-                    "insight": distilled,
-                    "trigger_types": trigger_types,
-                    "trigger_count": len(triggers),
-                    "council_excerpt": council_decision[:400] if council_decision else "",
-                }
-                conn.execute(text("""
-                    INSERT INTO cognitive_memories 
-                    (id, user_id, agent_name, memory_type, content, importance, source_id, created_at, updated_at)
-                    VALUES (:id, :uid, :agent, :mtype, :content::jsonb, :importance, :src_id, :ts, :ts)
-                """), {
-                    "id":         str(uuid.uuid4()),
-                    "uid":        user_id,
-                    "agent":      "SentinelService",
-                    "mtype":      "alert_insight",
-                    "content":    json.dumps(content_jsonb, ensure_ascii=False),
-                    "importance": 0.6,
-                    "src_id":     f"sentinel_{triggers[0].get('id', 'unknown')[:40]}",
-                    "ts":         datetime.now(timezone.utc),
-                })
-            logger.info(f"Sentinel: Alert insight distilled and stored to cognitive_memories")
-
-        except Exception as e:
-            logger.error(f"Sentinel: Failed to store alert insight: {e}")
 
     async def _trigger_emergency_protocol(self, user_id: str, rationale: str) -> None:
         """

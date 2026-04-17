@@ -67,8 +67,10 @@ class BillingService:
             # 1. Fetch Subscription Plan
             plan = self.get_user_subscription()
             if not plan:
-                logger.warning(f"No subscription plan found for user {self._user_id}. Blocking.")
-                raise TierAccessDeniedError("No subscription plan active.")
+                # Fallback: allow with unlimited access instead of blocking.
+                # This handles local/owner deployments where billing tables may not be seeded.
+                logger.warning(f"No subscription plan found for user {self._user_id}. Defaulting to unlimited access.")
+                return True
 
             # 2. Check Tier Access
             allowed_tiers = plan.allowed_tiers or ["nano", "fast"]

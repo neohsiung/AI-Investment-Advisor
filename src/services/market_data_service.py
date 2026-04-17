@@ -216,11 +216,26 @@ class MarketDataService:
         
         results = []
         try:
-            # We fetch 4 results to compensate for the single query, 
-            # still saving credits compared to 2 queries * 3 results.
-            search_results = self.search_service.search_financial_context(
-                query, max_results=4
-            )
+            import asyncio
+            try:
+                loop = asyncio.get_event_loop()
+                if loop.is_closed():
+                    loop = asyncio.new_event_loop()
+                    asyncio.set_event_loop(loop)
+            except RuntimeError:
+                loop = asyncio.new_event_loop()
+                asyncio.set_event_loop(loop)
+                
+            async def do_search():
+                return await self.search_service.search_financial_context(query, max_results=4)
+                
+            if loop.is_running():
+                import nest_asyncio
+                nest_asyncio.apply()
+                search_results = loop.run_until_complete(do_search())
+            else:
+                search_results = loop.run_until_complete(do_search())
+                
             results.extend(search_results)
         except Exception as e:
             self.logger.warning(f"Web intelligence search failed for '{query}': {e}")

@@ -245,6 +245,7 @@ class CouncilService:
         final_context = {
             "topic": topic,
             "council_transcript": debates_text,
+            "council_directive": context_data.get("msg_prefix", ""),
             "memory_chain": past_wisdom,
             "current_date": datetime.now().strftime("%Y-%m-%d"),
             "market_data": context_data.get("market_data"),

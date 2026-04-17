@@ -562,11 +562,22 @@ class LoggingLLMGateway(ILLMGateway):
         from opentelemetry import trace
         tracer = trace.get_tracer(__name__)
         
+        # Force a dedicated embedding model, avoiding Text Generation models
+        import dataclasses
+        embed_config = dataclasses.replace(config)
+        provider = (config.provider or "").lower()
+        if "openrouter" in provider:
+            embed_config.model = "text-embedding-3-small" # OpenRouter resolves this to OpenAI
+        elif "gemini" in provider:
+            embed_config.model = "text-embedding-004"
+        elif "openai" in provider:
+            embed_config.model = "text-embedding-3-small"
+        
         with tracer.start_as_current_span(f"LLM.{self._agent_name}.embed") as span:
-            span.set_attribute("llm.model", config.model)
+            span.set_attribute("llm.model", embed_config.model)
             span.set_attribute("agent.name", self._agent_name)
             # T11.4: PII Redaction for embedding
-            return await self._inner.embed(_redact_pii(text), config)
+            return await self._inner.embed(_redact_pii(text), embed_config)
 
 
 class MockLLMGateway(ILLMGateway):
