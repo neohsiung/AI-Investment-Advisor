@@ -729,18 +729,11 @@ class SentinelService:
                 logger.debug(f"Sentinel: Skipping LLM evaluation for cached trigger (P{redact_secrets(t['priority'])})")
             else:
                 # 1. AI-Driven Priority & Routing
-                # 1. AI 驅動的優先級與路讀路由
                 try:
-                    # [Optimization] v1.2: Run LLM evaluation in thread pool to prevent blocking FastAPI event loop
-                    # v5.4.1 Cost Optimization: Force SentinelAgent to use the fastest model tier
-                    # v5.4.1 成本優化：強制 SentinelAgent 使用最快的模型等級
                     sentinel_agent = AgentFactory.create_sentinel_agent(user_id=self.user_id, tier="fast")
-                    
-                    # Context Pruning: Truncate large payloads to prevent 400 Bad Request
-                    # 上下文修剪：截斷大型負載以防止 400 錯誤
+
                     raw_text = t.get("text", "")
                     text_snippet = raw_text[:2000] + ("..." if len(raw_text) > 2000 else "")
-                    
                     raw_data = str(t.get("data", {}))
                     data_snippet = raw_data[:2000] + ("..." if len(raw_data) > 2000 else "")
 
@@ -750,41 +743,66 @@ class SentinelService:
                         "data": data_snippet,
                         "source": source
                     }
-                    
-                    # Round VIX to 1 decimal place to dramatically improve Redis Cache hit rates
-                    # 將 VIX 四捨五入至小數點第一位，大幅提升 Redis 快取命中率
+
                     rounded_vix = round(self.current_vix, 1)
 
-                    # Native async evaluation
-                    eval_res = await sentinel_agent.run(
+                    # Safely await — handle both coroutine and sync return
+                    import inspect
+                    _raw_eval = sentinel_agent.run(
                         {
                             "trigger_source": source,
                             "event_data": event_data,
                             "current_vix": rounded_vix
                         }
                     )
-                
+                    if inspect.isawaitable(_raw_eval):
+                        eval_res = await _raw_eval
+                    else:
+                        eval_res = _raw_eval
+
+                    # Ensure eval_res is a dict
+                    if not isinstance(eval_res, dict):
+                        if isinstance(eval_res, str):
+                            import json as _json
+                            try:
+                                eval_res = _json.loads(eval_res)
+                            except Exception:
+                                eval_res = {}
+                        else:
+                            eval_res = {}
+
                     p_str = eval_res.get("priority", "P3")
                     priority = int(p_str.replace("P", ""))
                     t["priority"] = priority
                     t["target_agent"] = eval_res.get("target_agent", "CIO")
                     t["rationale"] = eval_res.get("rationale", "")
-                    
-                    # Check for "Ultra-Critical" P0 or explicit critical flag
-                    # 檢查是否為「極度緊急」P0 或明確的緊急標記
+
+                    # Detect internal agent failure (sentinel.run() catches exceptions and returns {'error': ...})
+                    if "error" in eval_res:
+                        err_msg = eval_res.get("error", "unknown")
+                        logger.error(f"Sentinel: AI agent returned internal error: {err_msg}")
+                        t["rationale"] = f"AI eval failed internally ({err_msg[:80]}), sending immediately"
+                        logger.warning(f"Sentinel: Sending alert immediately due to internal AI failure for trigger: {t.get('id', 'unknown')}")
+                        await self._do_send_alert([t], source=source)
+                        continue
+
+                    # P0 bypass buffer immediately
                     if p_str == "P0" or eval_res.get("is_critical", False):
-                         logger.warning(f"Sentinel: Systemic Criticality detected ({p_str}). Bypassing buffer.")
-                         await self._do_send_alert([t], source=source)
-                         continue
+                        logger.warning(f"Sentinel: Systemic Criticality detected ({p_str}). Bypassing buffer.")
+                        await self._do_send_alert([t], source=source)
+                        continue
 
                 except Exception as e:
                     logger.error(f"Sentinel: AI Priority evaluation failed: {e}")
-                    # Fallback Priority (Rule #13.2)
-                    # 回退優先級
+                    # Fallback: send immediately — buffer is lost on container restart
                     t["priority"] = 2
                     t["target_agent"] = "CIO"
-                    t["rationale"] = f"AI evaluation failed, falling back to P2 (Error: {str(e)[:50]})"
-                # Fallback to legacy heuristics
+                    t["rationale"] = f"AI eval failed, sending immediately (Error: {str(e)[:50]})"
+                    logger.warning(f"Sentinel: Sending alert immediately due to AI eval failure for trigger: {t.get('id', 'unknown')}")
+                    await self._do_send_alert([t], source=source)
+                    continue
+
+                # Fallback to legacy heuristics if priority still None
                 if t.get("priority") is None:
                     tid = t.get("id", "generic")
                     priority = 3

@@ -337,11 +337,11 @@ function TradingRiskPanel({ settings, update }: any) {
         </SettingCard>
 
         <SettingCard title="資產比例與曝險控管" icon={<Database size={20} />} desc="限制單一持有與目標現金比例。">
-           <div className="space-y-4 mt-2">
-             <LabeledInput label="目標現金比例 (Target Cash Ratio)" value={settings.target_cash_ratio || 0.2} onChange={(v: string) => update("target_cash_ratio", parseFloat(v))} />
-             <LabeledInput label="單一板塊曝險上限 (Sector Limit)" value={settings.risk_max_sector_exposure || 0.35} onChange={(v: string) => update("risk_max_sector_exposure", parseFloat(v))} />
+        <div className="space-y-4 mt-2">
+        <LabeledInput label="目標現金比例 (Target Cash Ratio)" value={settings.target_cash_ratio || 0.2} onChange={(v: string) => update("target_cash_ratio", parseFloat(v))} />
+                   <LabeledInput label="單一板塊曝險上限 (Sector Limit)" value={settings.risk_max_sector_exposure || 0.35} onChange={(v: string) => update("risk_max_sector_exposure", parseFloat(v))} />
              <div className="flex justify-between items-center px-2">
-                <span className="text-[10px] font-bold text-on-surface-variant uppercase tracking-widest">風險偏好級別</span>
+                      <span className="text-[10px] font-bold text-on-surface-variant uppercase tracking-widest">風險偏好級別</span>
                 <select 
                   value={settings.risk_profile || "Aggressive"}
                   onChange={(e: React.ChangeEvent<HTMLSelectElement>) => update("risk_profile", e.target.value)}
@@ -362,6 +362,28 @@ function TradingRiskPanel({ settings, update }: any) {
 function NotifyPanel({ settings, update, toggle, secrets }: any) {
   const [isTesting, setIsTesting] = useState<string | null>(null);
 
+  const CATEGORIES = [
+    { id: "report",   label: "📊 每日報告",  desc: "每日 CIO 投資報告" },
+    { id: "sentinel", label: "⚠️ 市場警報",  desc: "Sentinel 即時觸發警示" },
+    { id: "approval", label: "✅ 交易審批",  desc: "待確認下單通知" },
+    { id: "trading",  label: "💸 交易執行",  desc: "自動下單確認回報" },
+  ];
+
+  const getInterests = (channelKey: string): string[] => {
+    const raw = settings[`channel_${channelKey}_interests`] || "";
+    // Strip surrounding quotes if present
+    const cleaned = raw.replace(/^"|"$/g, "").trim();
+    return cleaned ? cleaned.split(",").map((s: string) => s.trim()).filter(Boolean) : [];
+  };
+
+  const toggleInterest = (channelKey: string, catId: string) => {
+    const current = getInterests(channelKey);
+    const next = current.includes(catId)
+      ? current.filter((x: string) => x !== catId)
+      : [...current, catId];
+    update(`channel_${channelKey}_interests`, next.join(","));
+  };
+
   const handleTest = async (channel: string) => {
     setIsTesting(channel);
     try {
@@ -374,9 +396,43 @@ function NotifyPanel({ settings, update, toggle, secrets }: any) {
     }
   };
 
+  const ChannelInterests = ({ channelKey }: { channelKey: string }) => {
+    const interests = getInterests(channelKey);
+    return (
+      <div className="mt-6 pt-6 border-t border-outline-variant/10">
+        <p className="text-[10px] font-black uppercase text-on-surface-variant tracking-widest mb-3">
+          通知類別訂閱
+        </p>
+        <div className="flex flex-wrap gap-2">
+          {CATEGORIES.map(cat => {
+            const active = interests.includes(cat.id);
+            return (
+              <button
+                key={cat.id}
+                onClick={() => toggleInterest(channelKey, cat.id)}
+                title={cat.desc}
+                className={cn(
+                  "px-3 py-1.5 rounded-xl text-[10px] font-bold border transition-all",
+                  active
+                    ? "bg-primary border-primary text-on-primary shadow-sm shadow-primary/20"
+                    : "border-outline-variant/30 text-on-surface-variant hover:border-primary/40 hover:text-primary"
+                )}
+              >
+                {cat.label}
+              </button>
+            );
+          })}
+        </div>
+        {interests.length === 0 && (
+          <p className="text-[9px] text-error/60 mt-2">⚠️ 未選擇任何類別，此渠道將不接收任何通知。</p>
+        )}
+      </div>
+    );
+  };
+
   return (
     <div className="space-y-12">
-      <SectionHead title="多渠道通知設定" desc="配置系統警報、交易執行與週報的發送管道。" />
+      <SectionHead title="多渠道通知設定" desc="配置系統警報、交易執行與週報的發送管道。每個渠道可分別訂閱不同的通知類別。" />
 
       <div className="grid grid-cols-1 gap-8">
         {/* Telegram */}
@@ -388,7 +444,7 @@ function NotifyPanel({ settings, update, toggle, secrets }: any) {
               </div>
               <div>
                 <h3 className="font-bold text-lg tracking-tight">Telegram Bot</h3>
-                <p className="text-[10px] uppercase font-black text-on-surface-variant tracking-widest mt-1">即時推送 & 指令互動</p>
+                <p className="text-[10px] uppercase font-black text-on-surface-variant tracking-widest mt-1">即時推送 &amp; 指令互動</p>
               </div>
             </div>
             <div className="flex items-center gap-4">
@@ -409,6 +465,7 @@ function NotifyPanel({ settings, update, toggle, secrets }: any) {
              <SecretInput label="Bot Token" id="tg_token" value={settings.channel_telegram_bot_token || ""} toggle={toggle} show={secrets.tg_token} onChange={(v: string) => update("channel_telegram_bot_token", v)} />
              <LabeledInput label="Chat ID" value={settings.channel_telegram_chat_id || ""} onChange={(v: string) => update("channel_telegram_chat_id", v)} />
           </div>
+          <ChannelInterests channelKey="telegram" />
         </div>
 
         {/* LINE Notify */}
@@ -442,6 +499,7 @@ function NotifyPanel({ settings, update, toggle, secrets }: any) {
              <SecretInput label="Channel Secret" id="line_sec" value={settings.channel_line_secret || ""} toggle={toggle} show={secrets.line_sec} onChange={(v: string) => update("channel_line_secret", v)} />
              <LabeledInput label="User ID (推播對象)" value={settings.channel_line_user_id || ""} onChange={(v: string) => update("channel_line_user_id", v)} />
           </div>
+          <ChannelInterests channelKey="line" />
         </div>
 
         {/* Email SMTP */}
@@ -474,6 +532,7 @@ function NotifyPanel({ settings, update, toggle, secrets }: any) {
                <SecretInput label="SMTP Password" id="smtp_pass" value={settings.channel_email_smtp_pass || ""} toggle={toggle} show={secrets.smtp_pass} onChange={(v: string) => update("channel_email_smtp_pass", v)} />
              </div>
           </div>
+          <ChannelInterests channelKey="email" />
         </div>
       </div>
     </div>

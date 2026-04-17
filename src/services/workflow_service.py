@@ -18,6 +18,14 @@ from src.agents.council_adapter import CouncilAgentAdapter
 from src.services.performance_service import PerformanceService
 from src.utils.time_utils import get_current_utc_time
 import re
+import inspect
+
+async def safe_run(agent, ctx):
+    """Helper to handle both async and sync agent run methods."""
+    res = agent.run(ctx)
+    if inspect.isawaitable(res):
+        return await res
+    return res
 
 logger = setup_logger("WorkflowService")
 
@@ -374,7 +382,7 @@ class BaseWorkflow(ABC):
             "user_id": self.user_id,
             "title": subject,
             "content": html_content,
-            "channels": ["email", "web"], # Explicitly target Email and Web for reports
+            "channels": ["email", "telegram", "web"],
             "category": "report"
         }
         
@@ -404,7 +412,7 @@ class BaseWorkflow(ABC):
                 title=title,
                 content=html_content,
                 user_id=self.user_id,
-                channels=["email", "web"],
+                channels=["email", "telegram", "web"],
                 category="report"
             )
             logger.info("Fallback direct notification successful.")
@@ -454,19 +462,15 @@ class DailyWorkflow(BaseWorkflow):
                 "yield_curve": self.context['market_data'].get('yield_curve', {}) 
             }
 
-            res = await mom_agent.run(ticker_ctx)
+            res = await safe_run(mom_agent, ticker_ctx)
             results.append(res) # Keep for legacy check
             
             # Sentiment Analysis
-            sent_res = await sent_agent.run(ticker_ctx)
+            sent_res = await safe_run(sent_agent, ticker_ctx)
             
             # Fundamental Analysis (Cached Reference)
             f_agent = AgentFactory.create_fundamental_agent(ttl_hours=168, use_cache=True, user_id=self.user_id) 
-            # Note: We rely on cache. If miss, it runs.
-            # We need to fetch financials/news for it if not cached? 
-            # BaseAgent handles calls. We should construct context.
-            # Ideally FundamentalAgent runs on same context logic as Weekly.
-            f_res = await f_agent.run(ticker_ctx)
+            f_res = await safe_run(f_agent, ticker_ctx)
 
             # Format for CIO: Daily has Momentum, Sentiment, and Fundamental (Context)
             ticker_reports[ticker] = {
@@ -884,7 +888,7 @@ class WeeklyWorkflow(BaseWorkflow):
                 
                 # 2.3 Run Agent
                 try:
-                    response = await agent.run(agent_input)
+                    response = await safe_run(agent, agent_input)
                     # 2.4 Capture Output
                     task_results[task.name] = response
                     execution_context[f"RESULT_{task.name}"] = response
@@ -926,7 +930,7 @@ class WeeklyWorkflow(BaseWorkflow):
             )
             syn_context["task_instruction"] = debate_prompt
             
-            syn_response = await synthesis_agent.run(syn_context)
+            syn_response = await safe_run(synthesis_agent, syn_context)
             
             # C. Assemble Final Report (Integrated Pattern)
             
@@ -1085,7 +1089,7 @@ class WeeklyWorkflow(BaseWorkflow):
              # Basic Data Collection is done.
              # 1. Macro Analysis
              macro_agent = AgentFactory.create_macro_agent(user_id=user_id)
-             macro_report = await macro_agent.run({})
+             macro_report = await safe_run(macro_agent, {})
              self.context['macro_report'] = macro_report
              
              # 2. Synthesis
@@ -1111,7 +1115,7 @@ class WeeklyWorkflow(BaseWorkflow):
                 "performance_stats": perf_stats
             }
             
-            opt_result = await engineer.run(eng_context)
+            opt_result = await safe_run(engineer, eng_context)
             logger.info(f"Engineer Optimization Result: {opt_result}")
             
             # Format for CIO Context
@@ -1164,7 +1168,7 @@ class WeeklyWorkflow(BaseWorkflow):
             "user_id": self.user_id
         }
         
-        final_report = await cio.run(cio_context)
+        final_report = await safe_run(cio, cio_context)
         return final_report
 
     async def execute_analysis(self, force_refresh: bool) -> bool:
@@ -1228,8 +1232,8 @@ class EventAnalysisWorkflow(BaseWorkflow):
                 "event_context": self.event_data
             }
             
-            mom_res = await mom_agent.run(ticker_ctx)
-            sent_res = await sent_agent.run(ticker_ctx)
+            mom_res = await safe_run(mom_agent, ticker_ctx)
+            sent_res = await safe_run(sent_agent, ticker_ctx)
             
             # 3. Holding Reduction Analysis (If needed)
             holding_info = ""
@@ -1254,7 +1258,7 @@ class EventAnalysisWorkflow(BaseWorkflow):
                 "report_focus": f"Event Analysis: {self.event_source}"
             }
             
-            cio_output = await cio.run(cio_context)
+            cio_output = await safe_run(cio, cio_context)
             
             # Polish and translate if needed
             final_report = cio_output # Simplified for event workflow
