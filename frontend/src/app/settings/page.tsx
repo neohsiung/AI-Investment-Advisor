@@ -396,39 +396,104 @@ function NotifyPanel({ settings, update, toggle, secrets }: any) {
     }
   };
 
+  // --- JSONB-based notification_routing helpers ---
+  const getRouting = (): Record<string, any> => {
+    const raw = settings["notification_routing"];
+    if (!raw) return {};
+    try { return typeof raw === "string" ? JSON.parse(raw) : raw; }
+    catch { return {}; }
+  };
+
+  const getRecipientOverride = (channelKey: string, catId: string): string => {
+    const routing = getRouting();
+    const fieldMap: Record<string, string> = { telegram: "chat_id", email: "to", line: "user_id" };
+    return routing?.[channelKey]?.[catId]?.[fieldMap[channelKey] || "chat_id"] || "";
+  };
+
+  const setRecipientOverride = (channelKey: string, catId: string, value: string) => {
+    const routing = getRouting();
+    const fieldMap: Record<string, string> = { telegram: "chat_id", email: "to", line: "user_id" };
+    const field = fieldMap[channelKey] || "chat_id";
+    if (!routing[channelKey]) routing[channelKey] = {};
+    if (!routing[channelKey][catId]) routing[channelKey][catId] = {};
+    routing[channelKey][catId][field] = value;
+    update("notification_routing", JSON.stringify(routing));
+  };
+
+  const recipientLabel: Record<string, Record<string, string>> = {
+    telegram: { chat_id: "Chat ID 覆蓋（個人或群組）" },
+    email:    { to: "寄送至 (Override Email)" },
+    line:     { user_id: "LINE User ID 覆蓋" },
+  };
+
   const ChannelInterests = ({ channelKey }: { channelKey: string }) => {
     const interests = getInterests(channelKey);
+    const [expanded, setExpanded] = useState<string | null>(null);
+    const fieldMap: Record<string, string> = { telegram: "chat_id", email: "to", line: "user_id" };
+    const field = fieldMap[channelKey] || "chat_id";
+    const rLabel = recipientLabel[channelKey]?.[field] || "接收人 Override";
     return (
       <div className="mt-6 pt-6 border-t border-outline-variant/10">
         <p className="text-[10px] font-black uppercase text-on-surface-variant tracking-widest mb-3">
-          通知類別訂閱
+          通知類別 &amp; 接收人設定
         </p>
         <div className="flex flex-wrap gap-2">
           {CATEGORIES.map(cat => {
             const active = interests.includes(cat.id);
+            const override = getRecipientOverride(channelKey, cat.id);
+            const isExpanded = expanded === cat.id;
             return (
-              <button
-                key={cat.id}
-                onClick={() => toggleInterest(channelKey, cat.id)}
-                title={cat.desc}
-                className={cn(
-                  "px-3 py-1.5 rounded-xl text-[10px] font-bold border transition-all",
-                  active
-                    ? "bg-primary border-primary text-on-primary shadow-sm shadow-primary/20"
-                    : "border-outline-variant/30 text-on-surface-variant hover:border-primary/40 hover:text-primary"
+              <div key={cat.id} className="flex flex-col gap-1">
+                <div className="flex items-center gap-1">
+                  <button
+                    onClick={() => toggleInterest(channelKey, cat.id)}
+                    title={cat.desc}
+                    className={cn(
+                      "px-3 py-1.5 rounded-xl text-[10px] font-bold border transition-all",
+                      active
+                        ? "bg-primary border-primary text-on-primary shadow-sm shadow-primary/20"
+                        : "border-outline-variant/30 text-on-surface-variant hover:border-primary/40 hover:text-primary"
+                    )}
+                  >
+                    {cat.label}
+                  </button>
+                  {/* Toggle override recipient input */}
+                  <button
+                    onClick={() => setExpanded(isExpanded ? null : cat.id)}
+                    title={override ? `Override: ${override}` : "設定此類別的接收人"}
+                    className={cn(
+                      "w-5 h-5 rounded-full text-[9px] font-black border flex items-center justify-center transition-all",
+                      override
+                        ? "bg-secondary/20 border-secondary text-secondary"
+                        : "border-outline-variant/30 text-on-surface-variant hover:border-primary/40"
+                    )}
+                  >
+                    {override ? "✓" : "+"}
+                  </button>
+                </div>
+                {isExpanded && (
+                  <input
+                    type="text"
+                    value={override}
+                    onChange={(e) => setRecipientOverride(channelKey, cat.id, e.target.value)}
+                    placeholder={`${rLabel}（留空使用預設）`}
+                    className="text-[9px] px-2 py-1 bg-surface-container rounded-lg border border-outline-variant/20 text-on-surface placeholder:text-on-surface-variant focus:outline-none focus:border-primary/40 w-48"
+                  />
                 )}
-              >
-                {cat.label}
-              </button>
+              </div>
             );
           })}
         </div>
         {interests.length === 0 && (
           <p className="text-[9px] text-error/60 mt-2">⚠️ 未選擇任何類別，此渠道將不接收任何通知。</p>
         )}
+        <p className="text-[9px] text-on-surface-variant/50 mt-3">
+          💡 點擊 <span className="font-bold">+</span> 可為每個類別設定不同接收人（如 Telegram 群組 Chat ID），留空則使用渠道預設。
+        </p>
       </div>
     );
   };
+
 
   return (
     <div className="space-y-12">
