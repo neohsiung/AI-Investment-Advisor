@@ -193,33 +193,60 @@ class BaseWorkflow(ABC):
                     final_report = await final_report
             
             # --- Translate to Traditional Chinese ---
+            # v7.1 Fix: Use LLMGatewayFactory directly (NOT EngineerAgent which is a prompt optimizer and rejects translation tasks).
+            #           Direct gateway call returns a clean string — no JSON wrapping.
             self.logger.info("Translating final report to Traditional Chinese...")
             try:
-                from src.agents.factory import AgentFactory
-                translator = AgentFactory.create_agent("Engineer", use_cache=True, user_id=self.user_id)
-                prompt = (
-                    "TASK: Please translate the following investment report into Traditional Chinese (zh-TW).\n"
-                    "RULES:\n"
-                    "1. Keep all financial domain terms (like 'Momentum', 'Fundamental', 'Sentiment', ticker symbols, etc.) in English.\n"
-                    "2. Do NOT translate proper nouns (company names, asset classes if better known in English).\n"
-                    "3. Keep ALL formatting strictly intact (Markdown, HTML, brackets, tables).\n"
-                    "4. Output ONLY the translated text, no conversational filler.\n\n"
-                    f"REPORT TO TRANSLATE:\n{final_report}"
+                from src.infrastructure.llm.llm_gateway import LLMGatewayFactory, Message, LLMConfig, RetryLLMGateway
+                from src.services.settings_service import SettingsService
+                ss = SettingsService(user_id=self.user_id)
+                provider = ss.get_setting("AI_PROVIDER", "OpenRouter") or "OpenRouter"
+                model    = ss.get_setting("AI_MODEL_FAST", "google/gemini-2.0-flash") or "google/gemini-2.0-flash"
+                api_key  = ss.get_setting("OPENROUTER_API_KEY") or ss.get_setting("AI_API_KEY", "")
+
+                inner_gateway = LLMGatewayFactory.create(provider)
+                gateway = RetryLLMGateway(inner=inner_gateway, max_retries=2)
+
+                translation_system = (
+                    "You are a professional bilingual investment report translator specializing in Traditional Chinese (zh-TW). "
+                    "Your ONLY job is to translate the provided report. "
+                    "Rules (non-negotiable):\n"
+                    "1. Keep ALL financial terms in English: Momentum, Fundamental, Sentiment, VIX, Macro, ETF, P/E, EPS, etc.\n"
+                    "2. Keep proper nouns unchanged: company names, ticker symbols (AAPL, NVDA, TSM, SPY), product names.\n"
+                    "3. Preserve ALL formatting with 100% fidelity: Markdown headers (#), bold (**), italics (*), lists (-), tables, HTML.\n"
+                    "4. If the report is already in Traditional Chinese, output it verbatim.\n"
+                    "5. Output ONLY the translated text. NO preamble, NO JSON, NO commentary."
                 )
-                # v7.0: SystemEngineerAgent.run expects dict, use _call_real_llm for raw string prompts
-                res = await translator._call_real_llm(prompt, translator.system_prompt or "You are a professional investment report translator.")
-                self.logger.debug(f"Translation raw result type: {type(res)}")
-                
-                if isinstance(res, dict):
-                    # Robust dict access
-                    translated_report = res.get("content") or res.get("output") or str(res)
+                translation_user = (
+                    "Translate the following investment report to Traditional Chinese (zh-TW). "
+                    "Remember: output ONLY the translated text, nothing else.\n\n"
+                    f"REPORT:\n{final_report}"
+                )
+
+                llm_config = LLMConfig(
+                    provider=provider,
+                    model=model,
+                    api_key=api_key,
+                    base_url=ss.get_setting("OPENROUTER_BASE_URL", "https://openrouter.ai/api/v1"),
+                    temperature=0.3,
+                    max_retries=2,
+                    timeout_seconds=60,
+                )
+                messages = [
+                    Message(role="system", content=translation_system),
+                    Message(role="user",   content=translation_user),
+                ]
+                translated_report = await gateway.chat(messages, llm_config)
+
+                # gateway.chat returns a raw string — no dict parsing needed
+                if translated_report and isinstance(translated_report, str) and translated_report.strip():
+                    final_report = translated_report.strip()
+                    self.logger.info(f"Translation successful ({len(final_report)} chars).")
                 else:
-                    translated_report = str(res)
-                if translated_report.strip():
-                    final_report = translated_report
-                self.logger.info("Translation successful.")
+                    self.logger.warning("Translation returned empty result, using original English report.")
             except Exception as e:
                 self.logger.error(f"Translation failed: {e}. Falling back to original English report.")
+
                 
             # Step 4: Reporting & Storage
             if not dry_run:
