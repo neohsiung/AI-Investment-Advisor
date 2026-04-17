@@ -83,8 +83,9 @@ class SentinelService:
         # Perform initial statistical calibration if historical data is available
         self._calibrate_thresholds()
         
-        # Buffer State
-        self._trigger_buffer: List[Dict[str, Any]] = [] # [{ "trigger": ..., "deadline": ... }]
+        # Buffer State — Redis-backed persistent buffer (replaces in-memory dict)
+        from src.infrastructure.redis_sentinel_buffer import RedisSentinelBuffer
+        self._redis_buffer = RedisSentinelBuffer()
         
         # Priority Deadlines (minutes) - Rule #8: Dynamic via settings if available
         # Keys use "P1".."P5" format to match priority lookup: f"P{priority}"
@@ -719,14 +720,15 @@ class SentinelService:
             trigger_id = t.get("id", "")
             
             # v5.4.1 Cost Optimization: Semantic/Response Caching (Buffer Level)
-            # If this exact trigger ID is already in the buffer, skip LLM evaluation completely
-            already_buffered = next((b for b in self._trigger_buffer if b["trigger"].get("id") == trigger_id), None)
+            # If this exact trigger ID is already in the Redis buffer, skip LLM evaluation completely
+            pending = await self._redis_buffer.all_pending(self.user_id)
+            already_buffered_trigger = next((b for b in pending if b.get("id") == trigger_id), None)
             
-            if already_buffered:
-                t["priority"] = already_buffered["trigger"].get("priority", 3)
-                t["target_agent"] = already_buffered["trigger"].get("target_agent", "CIO")
-                t["rationale"] = already_buffered["trigger"].get("rationale", "Cached from previous evaluation")
-                logger.debug(f"Sentinel: Skipping LLM evaluation for cached trigger (P{redact_secrets(t['priority'])})")
+            if already_buffered_trigger:
+                t["priority"] = already_buffered_trigger.get("priority", 3)
+                t["target_agent"] = already_buffered_trigger.get("target_agent", "CIO")
+                t["rationale"] = already_buffered_trigger.get("rationale", "Cached from Redis buffer")
+                logger.debug(f"Sentinel: Skipping LLM evaluation for Redis-cached trigger (P{redact_secrets(t['priority'])})")
             else:
                 # 1. AI-Driven Priority & Routing
                 try:
@@ -812,27 +814,14 @@ class SentinelService:
                     elif "info" in tid: priority = 5
                     t["priority"] = priority
 
-            # 2. Buffering Mode
+            # 2. Buffering Mode — Redis persistent buffer
             priority = t.get("priority", 3)
             wait_key = f"P{priority}"
             wait_mins = int(self.priority_minutes.get(wait_key, 240))
-            deadline = now_ts + (wait_mins * 60)
             
-            # Check if identical trigger already in buffer
-            exists = False
-            for b in self._trigger_buffer:
-                if b["trigger"].get("id") == t.get("id"):
-                    b["trigger"] = t 
-                    exists = True
-                    break
-            
-            if not exists:
-                self._trigger_buffer.append({
-                    "trigger": t,
-                    "deadline": deadline,
-                    "priority": priority
-                })
-                logger.info(f"Sentinel: Buffered trigger (P{redact_secrets(priority)}). Source: {redact_secrets(source)}. Deadline in {redact_secrets(wait_mins)}m")
+            added = await self._redis_buffer.add(self.user_id, t, wait_mins)
+            if added:
+                logger.info(f"Sentinel: Buffered trigger to Redis (P{redact_secrets(priority)}). Source: {redact_secrets(source)}. Deadline in {redact_secrets(wait_mins)}m")
 
     async def _check_buffer_flush(self) -> None:
         """
@@ -843,28 +832,25 @@ class SentinelService:
 
     async def _flush_buffer(self, force: bool = False, source: str = "Sentinel") -> None:
         """
-        Flush the buffered triggers and send alerts if conditions are met.
-        清除緩衝的觸發訊號，並在符合條件時發送警報。
+        Flush due triggers from Redis buffer and send alerts.
+        從 Redis buffer 取出已到期的觸發器並發送警報。
         """
-        if not self._trigger_buffer:
-             return
-             
-        from datetime import datetime
-        now_ts = datetime.now().timestamp()
-        
-        to_flush = []
-        remaining = []
-        
-        for item in self._trigger_buffer:
-            if force or now_ts >= item["deadline"]:
-                to_flush.append(item["trigger"])
-            else:
-                remaining.append(item)
+        if force:
+            # Force-flush: get all pending and clear
+            to_flush = await self._redis_buffer.all_pending(self.user_id)
+            if to_flush:
+                import redis.asyncio as _aioredis
+                try:
+                    r = await self._redis_buffer._get_client()
+                    await r.delete(self._redis_buffer._key(self.user_id))
+                except Exception as e:
+                    logger.warning(f"Sentinel: Force-flush Redis clear error: {e}")
+        else:
+            to_flush = await self._redis_buffer.flush_due(self.user_id)
         
         if to_flush:
-            logger.info(f"Sentinel: Flushing {len(to_flush)} triggers from buffer.")
+            logger.info(f"Sentinel: Flushing {len(to_flush)} trigger(s) from Redis buffer.")
             await self._do_send_alert(to_flush, source=source)
-            self._trigger_buffer = remaining
 
     async def _do_send_alert(self, triggers: List[Dict[str, Any]], source: str = "Sentinel") -> None:
         """
