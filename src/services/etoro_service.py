@@ -790,10 +790,14 @@ class EtoroService(IBroker):
                 pass
         return None
 
-    def sync_history(self, user_id: str = "default_user", days: int = 30, initial_sync: bool = False) -> Dict[str, int]:
+    async def sync_history(self, user_id: str = "default_user", days: int = 30, initial_sync: bool = False) -> Dict[str, int]:
         """
         Sync external history to local DB.
         同步外部交易歷史到本地資料庫。
+        
+        v7.1 Fix: Converted to async def. get_history() and get_watchlists() are both async;
+        calling them without await returned coroutine objects instead of data, causing
+        'coroutine object is not iterable' crash every scheduler run.
         
         Args:
             user_id: User ID for the transactions
@@ -802,13 +806,6 @@ class EtoroService(IBroker):
         
         Returns:
             Dict with 'added' and 'skipped' counts
-        
-        Usage:
-            # Initial sync: Get all history from 2024
-            service.sync_history(user_id, initial_sync=True)
-            
-            # Regular sync: Get last 30 days
-            service.sync_history(user_id, days=30)
         """
         # Determine fetch period
         if initial_sync:
@@ -818,7 +815,7 @@ class EtoroService(IBroker):
         else:
             logger.info(f"Regular sync: Fetching last {days} days")
         
-        history = self.get_history(days=days)
+        history = await self.get_history(days=days)  # ← was missing await: caused coroutine bug
         if not history:
             logger.warning("No history retrieved from eToro API")
             return {"added": 0, "skipped": 0}
@@ -826,7 +823,7 @@ class EtoroService(IBroker):
         # Ensure ID map is populated for symbol resolution
         if not self._id_to_symbol:
             logger.info("Populating instrument ID map from watchlists...")
-            self.get_watchlists()
+            await self.get_watchlists()  # ← was missing await: caused coroutine bug
 
         added_count = 0
         skipped_count = 0
@@ -1000,12 +997,13 @@ class EtoroService(IBroker):
                     }
                 )
 
-    def _backfill_from_positions(self, user_id: str) -> None:
+    async def _backfill_from_positions(self, user_id: str) -> None:
         """
         Backfill BUY transactions for active positions that have no trade history.
         回補沒有交易歷史的現有持倉 BUY 記錄。
+        v7.1 Fix: Converted to async def; get_positions() is async.
         """
-        positions = self.get_positions()
+        positions = await self.get_positions()  # ← was missing await
         active_tickers = self.transaction_repo.get_active_tickers(user_id)
         
         for pos in positions:

@@ -665,12 +665,12 @@ class DailyWorkflow(BaseWorkflow):
         
         try:
             # 1. Sync History
-            broker.sync_history(self.user_id)
+            await broker.sync_history(self.user_id)  # ← async
             
             # 2. Check Risk Status (Constraints)
             # Fetch history and positions for Risk Manager
-            history = broker.get_history()
-            positions = broker.get_positions()
+            history = await broker.get_history()    # ← async
+            positions = await broker.get_positions() # ← async
             
             constraints_ok = risk_manager.check_constraints(self.user_id, history, positions)
             
@@ -680,7 +680,7 @@ class DailyWorkflow(BaseWorkflow):
                 broker_status_msg = f"✅ **System Status ({broker.get_name()})**: Active & Monitoring."
             
             # 3. Get Financial Snapshot
-            account = broker.get_account()
+            account = await broker.get_account()  # ← async
             if account:
                 broker_status_msg += f"\n- **Total Equity**: ${account.total_equity:,.2f}"
                 broker_status_msg += f"\n- **Cash**: ${account.available_cash:,.2f}"

@@ -135,7 +135,7 @@ class AutomatedTradingService:
             try:
                 broker = BrokerFactory.get_broker(user_id)
                 if broker:
-                    positions = broker.get_positions()
+                    positions = await broker.get_positions()  # ← async
                     actual_holding = 0.0
                     for p in positions:
                         p_sym = str(getattr(p, 'symbol', '')).strip().upper()
@@ -245,12 +245,12 @@ class AutomatedTradingService:
         
         try:
             # Order execution is synchronous in current design
-            result = broker.execute_order(order)
+            result = await broker.execute_order(order)  # ← async
             
             # v6.0: Post-Trade Sync (交易後紀錄同步)
             if result.get("status") not in ["failed", "error"] and not result.get("error"):
                 try:
-                    broker.sync_history(user_id)
+                    await broker.sync_history(user_id)  # ← async
                     logger.info("Post-trade sync completed.")
                 except Exception as sync_e:
                     logger.warning(f"Post-trade sync failed (non-blocking): {sync_e}")

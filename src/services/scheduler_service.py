@@ -189,28 +189,31 @@ class SchedulerService:
         
         from src.services.broker_factory import BrokerFactory
         import asyncio
-        import inspect
         
         try:
             # Get preferred broker for user
             broker = BrokerFactory.get_broker(self.user_id)
             broker_name = broker.get_name()
             
-            # sync_history is async, so we need to await it
-            sync_result = broker.sync_history(self.user_id)
+            # v7.1: sync_history is now properly async — run via asyncio.run()
+            # Guard against reentrant loops (e.g. running inside an existing event loop)
+            try:
+                loop = asyncio.get_running_loop()
+            except RuntimeError:
+                loop = None
             
-            # Since sync_history returns a coroutine, we must run it with asyncio
-            if inspect.iscoroutine(sync_result):
-                try:
-                    loop = asyncio.get_event_loop()
-                except RuntimeError:
-                    loop = asyncio.new_event_loop()
-                    asyncio.set_event_loop(loop)
-                result = loop.run_until_complete(sync_result)
+            if loop and loop.is_running():
+                # Running inside an existing event loop (e.g., APScheduler async mode)
+                # Schedule as a coroutine task
+                import concurrent.futures
+                future = asyncio.run_coroutine_threadsafe(
+                    broker.sync_history(self.user_id), loop
+                )
+                result = future.result(timeout=120)
             else:
-                result = sync_result
+                result = asyncio.run(broker.sync_history(self.user_id))
             
-            # Safely handle result - check if it's a dict before accessing keys
+            # Safely handle result
             if isinstance(result, dict):
                 added = result.get('added', 0)
                 skipped = result.get('skipped', 0)
@@ -223,6 +226,7 @@ class SchedulerService:
         except Exception as e:
             logger.error(f"Broker Sync failed for {self.user_id}: {e}")
             self.log_job_execution("Broker Sync", "FAILED", str(e))
+
 
     def check_monthly_job(self) -> None:
         """
