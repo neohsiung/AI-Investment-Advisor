@@ -24,7 +24,7 @@
         },
         {
             "parameters": {
-                "url": "http://investment_advisor_mcp:8000/webhook/rss-sources",
+                "url": "http://mcp_server:8000/webhook/rss-sources",
                 "sendHeaders": true,
                 "headerParameters": {
                     "parameters": [
@@ -102,7 +102,7 @@
         {
             "parameters": {
                 "method": "POST",
-                "url": "http://investment_advisor_mcp:8000/webhook/n8n",
+                "url": "http://mcp_server:8000/webhook/n8n",
                 "sendHeaders": true,
                 "headerParameters": {
                     "parameters": [{"name": "X-API-Key", "value": "your_api_key_here"}]
@@ -159,7 +159,7 @@
         {
             "parameters": {
                 "method": "POST",
-                "url": "http://investment_advisor_mcp:8000/webhook/skill-learning",
+                "url": "http://mcp_server:8000/webhook/skill-learning",
                 "sendHeaders": true,
                 "headerParameters": {
                     "parameters": [{"name": "X-API-Key", "value": "your_api_key_here"}]
@@ -230,7 +230,7 @@
         {
             "parameters": {
                 "method": "POST",
-                "url": "http://investment_advisor_mcp:8000/webhook/podcast-extract",
+                "url": "http://mcp_server:8000/webhook/podcast-extract",
                 "sendHeaders": true,
                 "headerParameters": {
                     "parameters": [

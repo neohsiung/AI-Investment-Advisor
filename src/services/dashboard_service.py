@@ -100,41 +100,34 @@ class DashboardService:
             try:
                 # [FIX Issue #4] Use eToro's account.total_equity as the authoritative NLV source
                 # Don't use local calculations which can diverge from broker
-                nlv_from_broker = 0.0
-                total_pnl_from_positions = 0.0
-                
-                # Get NLV from broker account (eToro is authoritative)
-                broker_accounts = live_portfolio.get('broker_breakdown', {})
-                for broker_name, account in broker_accounts.items():
-                    nlv_from_broker += account.total_equity
-                    
-                # Calculate total P&L from position unrealized_pnl (sum of position PnL)
-                if live_positions:
-                    total_pnl_from_positions = sum(getattr(p, 'unrealized_pnl', 0) for p in live_positions)
-                
-                # Calculate invested capital from net cash flow
+                # 1. Invested Capital (Baseline)
                 invested_capital = self.transaction_repo.calculate_net_invested_capital(user_id)
+                metrics['invested_capital'] = invested_capital
+
+                # 2. Get NLV from broker account (eToro is authoritative)
+                total_pnl_from_positions = sum(getattr(p, 'unrealized_pnl', 0) for p in live_positions) if live_positions else 0.0
+                broker_accounts = live_portfolio.get('broker_breakdown', {})
+                nlv_from_broker = sum(acc.total_equity for acc in broker_accounts.values())
                 
-                # Set metrics with broker values
                 metrics['nlv'] = nlv_from_broker if nlv_from_broker > 0 else 0
                 metrics['cash_balance'] = sum(acc.available_cash for acc in broker_accounts.values())
-                metrics['invested_capital'] = invested_capital
                 metrics['unrealized_pnl'] = total_pnl_from_positions
                 
-                # P&L calculation
-                pnl_data['unrealized'] = total_pnl_from_positions
-                pnl_data['total'] = total_pnl_from_positions  # Match eToro: sum of position PnL
-                pnl_data['realized'] = pnl_data['total'] - pnl_data['unrealized']
-                
-                # ROI based on broker NLV
-                roi = ((metrics['nlv'] - invested_capital) / invested_capital) * 100 if invested_capital > 0 else 0.0
-                
-                # Fallback to local calculation if broker doesn't provide NLV
+                # 3. Fallback to local calculation if broker doesn't provide NLV
                 if metrics['nlv'] == 0:
                     metrics_derived = self.calc.calculate_metrics(current_prices, user_id=user_id)
                     metrics['nlv'] = metrics_derived['nlv']
-                    metrics['cash_balance'] = metrics_derived['cash_balance']
-                    metrics['gross_nlv'] = metrics_derived['tnv'] + metrics_derived['cash_balance']
+                    metrics['cash_balance'] = metrics_derived.get('cash_balance', metrics['cash_balance'])
+                    metrics['gross_nlv'] = metrics_derived.get('tnv', 0) + metrics['cash_balance']
+
+                # 4. Final Secondary Metrics (ROI, PnL) based on final NLV
+                pnl_data['unrealized'] = total_pnl_from_positions
+                # In authoritative mode, total PnL is often simplified to unrealized from positions
+                # but if we have NLV, we can calculate it more precisely:
+                pnl_data['total'] = metrics['nlv'] - invested_capital
+                pnl_data['realized'] = pnl_data['total'] - pnl_data['unrealized']
+                
+                roi = ((metrics['nlv'] - invested_capital) / invested_capital) * 100 if invested_capital > 0 else 0.0
                     
             except Exception as e:
                 logger.error(f"Metric calculation failed: {e}")

@@ -37,6 +37,30 @@ class LLMConfig:
     timeout_seconds: int = 30
 
 
+@dataclass
+class PingResult:
+    """Result of a provider healthcheck / reachability probe."""
+    ok: bool
+    latency_ms: float
+    error: Optional[str] = None
+    detail: Optional[Dict[str, Any]] = None
+
+
+@dataclass
+class DiscoveredModel:
+    """
+    A model discovered via a Provider's `list_models` endpoint.
+    Distinct from DB `llm_models` records — users pick which to import.
+    """
+    model_code: str
+    display_name: str
+    context_window: Optional[int] = None
+    input_cost_per_1k: Optional[float] = None
+    output_cost_per_1k: Optional[float] = None
+    capabilities: Optional[Dict[str, Any]] = None
+    raw: Optional[Dict[str, Any]] = None
+
+
 class ILLMGateway(ABC):
     """
     Interface for LLM Provider Gateway (Model Layer).
@@ -69,6 +93,24 @@ class ILLMGateway(ABC):
         為給定文本生成嵌入向量。
         """
         pass
+
+    # ──────────────────────────────────────────────────────────────
+    # Optional capabilities (Phase A multi-provider).
+    # 預設拋 NotImplementedError；具備 discovery/健康檢查能力的 Gateway
+    # (e.g. OllamaGateway) 可覆寫。不標記為 @abstractmethod，以免破壞
+    # 既有具體 Gateway 繼承（OpenRouterGateway / GeminiGateway / OpenAIGateway）。
+    # ──────────────────────────────────────────────────────────────
+    async def ping(self, config: LLMConfig) -> "PingResult":
+        """Probe provider reachability / auth. Default: not implemented."""
+        raise NotImplementedError(
+            f"{self.__class__.__name__} does not implement ping()"
+        )
+
+    async def list_models(self, config: LLMConfig) -> List["DiscoveredModel"]:
+        """Discover available models. Default: not implemented."""
+        raise NotImplementedError(
+            f"{self.__class__.__name__} does not implement list_models()"
+        )
 
 class FeedbackRepository(ABC):
     """

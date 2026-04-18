@@ -867,7 +867,7 @@ class SentinelService:
                 from src.services.broker_factory import BrokerFactory
                 _brk = BrokerFactory.get_broker(user_id)
                 if hasattr(_brk, 'get_pending_orders'):
-                    _p_orders = _brk.get_pending_orders()
+                    _p_orders = await _brk.get_pending_orders()
                     for o in _p_orders:
                         pending_symbols.add(o.get('symbol', ''))
             except Exception as e:
@@ -1129,7 +1129,7 @@ class SentinelService:
         else:
             import asyncio
             from src.agents.skills.skill_loader import SkillLoader
-            loader = SkillLoader()
+            loader = SkillLoader(user_id=target_user)
             
             trigger_types_set = set(t.get('type', '') for t in filtered_triggers)
             has_any_news = any('news' in tt or 'breaking' in tt for tt in trigger_types_set) or \
@@ -1161,7 +1161,7 @@ class SentinelService:
         import asyncio
         from src.agents.skills.skill_loader import SkillLoader
         import json
-        loader = SkillLoader()
+        loader = SkillLoader(user_id=target_user)
         
         asyncio.create_task(
             loader.run_skill(

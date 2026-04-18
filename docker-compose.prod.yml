@@ -32,7 +32,7 @@ services:
       otel-collector:
         condition: service_started
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      test: [ "CMD", "curl", "-f", "http://localhost:8000/health" ]
       interval: 30s
       timeout: 10s
       retries: 3
@@ -91,7 +91,7 @@ services:
     volumes:
       - advisor_db_data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      test: [ "CMD-SHELL", "pg_isready -U postgres" ]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -106,7 +106,7 @@ services:
     volumes:
       - advisor_redis_data:/data
     healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
+      test: [ "CMD", "redis-cli", "ping" ]
       interval: 10s
       retries: 5
     networks:
@@ -139,6 +139,23 @@ services:
     networks:
       - advisor-net
 
+  # 7. Local Model Engine (Ollama)
+  ollama:
+    image: ollama/ollama:latest
+    container_name: advisor_prod_ollama
+    restart: always
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama_data:/root/.ollama
+    networks:
+      - advisor-net
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:11434/api/tags"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
   otel-collector:
     restart: unless-stopped
     networks:
@@ -148,6 +165,7 @@ volumes:
   advisor_db_data:
   advisor_redis_data:
   advisor_n8n_data:
+  ollama_data:
 
 networks:
   advisor-net:

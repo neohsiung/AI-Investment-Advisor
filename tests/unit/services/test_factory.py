@@ -45,51 +45,51 @@ def test_configure_dspy_no_dspy_module():
 
 def test_create_momentum_agent():
     with patch("src.agents.factory.MomentumSwarm") as mock_agent:
-        agent = AgentFactory.create_agent("Momentum")
+        agent = AgentFactory.create_agent("Momentum", user_id="test_user")
         assert agent == mock_agent.return_value
 
 def test_create_fundamental_agent():
     with patch("src.agents.factory.FundamentalSwarm") as mock_agent:
-        agent = AgentFactory.create_agent("Fundamental")
+        agent = AgentFactory.create_agent("Fundamental", user_id="test_user")
         assert agent == mock_agent.return_value
 
 def test_create_macro_agent():
     with patch("src.agents.factory.MacroAgent") as mock_agent:
-        agent = AgentFactory.create_agent("Macro")
+        agent = AgentFactory.create_agent("Macro", user_id="test_user")
         assert agent == mock_agent.return_value
 
 def test_create_cio_agent():
     with patch("src.agents.factory.CIOAgent") as mock_agent:
-        agent = AgentFactory.create_agent("CIO", mode="daily")
+        agent = AgentFactory.create_agent("CIO", mode="daily", user_id="test_user")
         assert agent == mock_agent.return_value
 
 def test_create_engineer_agent():
     with patch("src.agents.factory.SystemEngineerAgent") as mock_agent:
-        agent = AgentFactory.create_agent("Engineer")
+        agent = AgentFactory.create_agent("Engineer", user_id="test_user")
         assert agent == mock_agent.return_value
 
 def test_create_sentiment_agent():
     with patch("src.agents.factory.SentimentSwarm") as mock_agent:
-        agent = AgentFactory.create_agent("Sentiment")
+        agent = AgentFactory.create_agent("Sentiment", user_id="test_user")
         assert agent == mock_agent.return_value
 
 def test_create_unknown_agent():
     with pytest.raises(ValueError):
-        AgentFactory.create_agent("UnknownAgent")
+        AgentFactory.create_agent("UnknownAgent", user_id="test_user")
 
 def test_kwargs_passing():
     with patch("src.agents.factory.MomentumSwarm") as mock_agent:
-        AgentFactory.create_agent("Momentum", extra_param="123")
-        mock_agent.assert_called_with(user_id="system", extra_param="123")
+        AgentFactory.create_agent("Momentum", extra_param="123", user_id="test_user")
+        mock_agent.assert_called_with(user_id="test_user", extra_param="123")
 
 def test_create_agent_with_tier_override():
     with patch("src.agents.factory.CIOAgent") as mock_agent:
         # Test default is 'smart'
-        AgentFactory.create_cio_agent()
+        AgentFactory.create_cio_agent(user_id="test_user")
         args, kwargs = mock_agent.call_args
         assert kwargs['tier'] == 'smart'
         
         # Test override is 'advanced'
-        AgentFactory.create_cio_agent(tier="advanced")
+        AgentFactory.create_cio_agent(tier="advanced", user_id="test_user")
         args, kwargs = mock_agent.call_args
         assert kwargs['tier'] == 'advanced'

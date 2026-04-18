@@ -8,6 +8,7 @@ from typing import Optional
 from src.utils.logger import setup_logger
 from src.domain.interfaces import Message, LLMConfig
 from src.infrastructure.llm.llm_gateway import LLMGatewayFactory, RetryLLMGateway, LoggingLLMGateway
+from src.services.settings_service import SettingsService  # pre-existing missing import fix
 
 logger = setup_logger("IntelligenceService")
 

@@ -42,6 +42,7 @@ COPY ./config /workspace/config
 COPY ./workspace /workspace/workspace
 COPY ./alembic.ini /workspace/alembic.ini
 COPY ./alembic /workspace/alembic
+COPY ./scripts /workspace/scripts
 
 USER root
 RUN mkdir -p /workspace/data /workspace/logs && \

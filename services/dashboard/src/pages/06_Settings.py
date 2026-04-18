@@ -6,7 +6,6 @@ from src.auth import auth_manager
 from src.utils.page_base import BasePage
 
 # Import modularized tab components
-from services.dashboard.src.pages.settings_tabs.ai_config_tab import render_api_settings
 from services.dashboard.src.pages.settings_tabs.scheduler_tab import render_scheduler_tab
 from services.dashboard.src.pages.settings_tabs.report_dry_run_tab import render_report_dry_run_tab
 from services.dashboard.src.pages.settings_tabs.agent_playground_tab import render_agent_playground_tab
@@ -79,8 +78,16 @@ class SettingsPage(BasePage):
             render_data_sources_tab(st, settings_service, user_id)
             
         elif selected_nav == nav_options[3]: # AI Model
-            settings = settings_service.get_all_settings()
-            render_api_settings(st, settings_service, settings)
+            st.info(
+                "🔧 **AI 模型設定已移至全新的 Next.js 介面。**\n\n"
+                "請前往 Next.js 前端 `/settings` 頁面的「AI 引擎」Tab 管理：\n"
+                "- **Providers**：新增/編輯 LLM 供應商（OpenRouter / OpenAI / Gemini / Ollama / Anthropic / Groq）\n"
+                "- **Models**：管理各 Provider 底下的模型（手動新增或 Discover from Provider）\n"
+                "- **Tier Bindings**：綁定 4 個 Tier（nano / fast / smart / advanced）的主模型與 fallback 鏈\n"
+                "- **Agent Overrides**：為特定 Agent（CIO、SkillRouter 等）覆寫 Tier 綁定\n\n"
+                "📄 操作手冊：`docs/runbook/llm_settings_user_guide.md`"
+            )
+            st.caption("若您無法存取 Next.js 前端，請聯絡管理員。")
             
         elif selected_nav == nav_options[4]: # Scheduler
             render_scheduler_tab(st, db_path, user_id=user_id)

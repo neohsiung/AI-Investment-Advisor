@@ -1,0 +1,124 @@
+# LLM Provider Catalog — seed entries for ProviderCatalog.
+# See docs/architecture/multi_provider_multi_model_design.md §2.2
+#
+# This file lists the *supported Provider classes*. It does NOT represent
+# user-configured instances — those are stored in the `llm_providers` DB
+# table (one row per user-added Provider instance).
+
+providers:
+  - provider_code: openrouter
+    display_name: "OpenRouter"
+    gateway_class: "src.infrastructure.llm.llm_gateway.OpenRouterGateway"
+    default_base_url: "https://openrouter.ai/api/v1"
+    auth_type: bearer
+    api_key_env: OPENROUTER_API_KEY
+    models_endpoint: "/models"
+    discovery_parser: parse_openai_models
+    pricing_source: openrouter
+    healthcheck_endpoint: "/models"
+    default_capabilities:
+      tool_calling: true
+      streaming: true
+      vision: true
+      json_mode: true
+      embeddings: true
+      local: false
+
+  - provider_code: openai
+    display_name: "OpenAI"
+    gateway_class: "src.infrastructure.llm.llm_gateway.OpenAIGateway"
+    default_base_url: "https://api.openai.com/v1"
+    auth_type: bearer
+    api_key_env: OPENAI_API_KEY
+    models_endpoint: "/models"
+    discovery_parser: parse_openai_models
+    pricing_source: static
+    healthcheck_endpoint: "/models"
+    default_capabilities:
+      tool_calling: true
+      streaming: true
+      vision: true
+      json_mode: true
+      embeddings: true
+      local: false
+
+  - provider_code: gemini
+    display_name: "Google Gemini"
+    gateway_class: "src.infrastructure.llm.llm_gateway.GeminiGateway"
+    default_base_url: "https://generativelanguage.googleapis.com/v1beta"
+    auth_type: api_key_query
+    api_key_env: GEMINI_API_KEY
+    models_endpoint: "/models"
+    discovery_parser: parse_gemini_models
+    pricing_source: static
+    healthcheck_endpoint: "/models"
+    default_capabilities:
+      tool_calling: true
+      streaming: true
+      vision: true
+      json_mode: true
+      embeddings: true
+      local: false
+
+  - provider_code: ollama
+    display_name: "Ollama (Local)"
+    gateway_class: "src.infrastructure.llm.llm_gateway.OllamaGateway"
+    default_base_url: "http://localhost:11434/v1"
+    auth_type: none
+    api_key_env: null
+    models_endpoint: "/api/tags"
+    discovery_parser: parse_ollama_tags
+    pricing_source: zero
+    healthcheck_endpoint: "/api/tags"
+    default_capabilities:
+      tool_calling: true
+      streaming: true
+      vision: false
+      json_mode: true
+      embeddings: true
+      local: true
+    notes: |
+      Local deployment. Requires `ollama serve` and model pulls (e.g.
+      `ollama pull qwen2.5:7b`). Discovery uses the native /api/tags
+      endpoint which returns richer details than /v1/models.
+
+  # Phase A: anthropic/groq point at OpenAI-compat placeholder Gateway.
+  # NOTE: native AnthropicGateway is deferred to Phase C.
+  - provider_code: anthropic
+    display_name: "Anthropic (via OpenAI-compat placeholder)"
+    gateway_class: "src.infrastructure.llm.llm_gateway.OpenAIGateway"
+    default_base_url: "https://api.anthropic.com/v1"
+    auth_type: custom
+    api_key_env: ANTHROPIC_API_KEY
+    models_endpoint: null
+    discovery_parser: parse_anthropic_static
+    pricing_source: static
+    healthcheck_endpoint: "/messages"
+    default_capabilities:
+      tool_calling: true
+      streaming: true
+      vision: true
+      json_mode: false
+      embeddings: false
+      local: false
+    notes: |
+      Phase A placeholder — points at OpenAIGateway for schema wiring only.
+      Native /v1/messages Gateway will land in Phase C.
+
+  - provider_code: groq
+    display_name: "Groq (Fast Inference)"
+    gateway_class: "src.infrastructure.llm.llm_gateway.OpenAIGateway"
+    default_base_url: "https://api.groq.com/openai/v1"
+    auth_type: bearer
+    api_key_env: GROQ_API_KEY
+    models_endpoint: "/models"
+    discovery_parser: parse_openai_models
+    pricing_source: static
+    healthcheck_endpoint: "/models"
+    default_capabilities:
+      tool_calling: true
+      streaming: true
+      vision: false
+      json_mode: true
+      embeddings: false
+      local: false

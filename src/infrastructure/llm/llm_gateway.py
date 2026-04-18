@@ -19,7 +19,10 @@ import asyncio
 import typing
 from typing import List, Optional, AsyncGenerator
 
-from src.domain.interfaces import ILLMGateway, Message, LLMConfig
+from src.domain.interfaces import (
+    ILLMGateway, Message, LLMConfig,
+    PingResult, DiscoveredModel,
+)
 from src.utils.security import redact_secrets as _redact_secrets, redact_pii as _redact_pii
 from src.utils.tracing import trace_external_call
 
@@ -165,6 +168,30 @@ class OpenRouterGateway(ILLMGateway):
             raise
         
         return response.json()["data"][0]["embedding"]
+    async def ping(self, config: LLMConfig) -> PingResult:
+        """Probe OpenRouter via public models endpoint (no auth required for ping)."""
+        url = "https://openrouter.ai/api/v1/models"
+        start = time.perf_counter()
+        try:
+            async with httpx.AsyncClient() as client:
+                response = await client.get(url, timeout=config.timeout_seconds)
+            response.raise_for_status()
+            latency_ms = (time.perf_counter() - start) * 1000.0
+            return PingResult(ok=True, latency_ms=latency_ms)
+        except Exception as e:
+            latency_ms = (time.perf_counter() - start) * 1000.0
+            logger.warning("OpenRouterGateway.ping failed: %s", e)
+            return PingResult(ok=False, latency_ms=latency_ms, error=str(e))
+
+    async def list_models(self, config: LLMConfig) -> List[DiscoveredModel]:
+        """Discover models via OpenRouter's public `/api/v1/models` endpoint."""
+        from src.infrastructure.llm.discovery_parsers import parse_openai_models
+        
+        url = "https://openrouter.ai/api/v1/models"
+        async with httpx.AsyncClient() as client:
+            response = await client.get(url, timeout=config.timeout_seconds)
+        response.raise_for_status()
+        return parse_openai_models(response.json())
 
 
 class GeminiGateway(ILLMGateway):
@@ -256,6 +283,36 @@ class GeminiGateway(ILLMGateway):
             )
         response.raise_for_status()
         return response.json()["embedding"]["values"]
+    async def ping(self, config: LLMConfig) -> PingResult:
+        """Probe Gemini via API key validation on models endpoint."""
+        if not config.api_key:
+            return PingResult(ok=False, latency_ms=0, error="Google API Key is missing.")
+        
+        url = f"https://generativelanguage.googleapis.com/v1beta/models?key={config.api_key}"
+        start = time.perf_counter()
+        try:
+            async with httpx.AsyncClient() as client:
+                response = await client.get(url, timeout=config.timeout_seconds)
+            response.raise_for_status()
+            latency_ms = (time.perf_counter() - start) * 1000.0
+            return PingResult(ok=True, latency_ms=latency_ms)
+        except Exception as e:
+            latency_ms = (time.perf_counter() - start) * 1000.0
+            logger.warning("GeminiGateway.ping failed: %s", e)
+            return PingResult(ok=False, latency_ms=latency_ms, error=str(e))
+
+    async def list_models(self, config: LLMConfig) -> List[DiscoveredModel]:
+        """Discover models via Google Gemini `/v1beta/models` endpoint."""
+        from src.infrastructure.llm.discovery_parsers import parse_gemini_models
+        
+        if not config.api_key:
+            raise ValueError("Google API Key is required for model discovery.")
+
+        url = f"https://generativelanguage.googleapis.com/v1beta/models?key={config.api_key}"
+        async with httpx.AsyncClient() as client:
+            response = await client.get(url, timeout=config.timeout_seconds)
+        response.raise_for_status()
+        return parse_gemini_models(response.json())
 
 
 class OpenAIGateway(ILLMGateway):
@@ -342,6 +399,156 @@ class OpenAIGateway(ILLMGateway):
             )
         response.raise_for_status()
         return response.json()["data"][0]["embedding"]
+    async def ping(self, config: LLMConfig) -> PingResult:
+        """Probe OpenAI (or compatible) via `/v1/models` (requires auth)."""
+        if not config.api_key:
+             return PingResult(ok=False, latency_ms=0, error="API Key is missing.")
+
+        url = config.base_url.rstrip("/").replace("/chat/completions", "") + "/models" if config.base_url else "https://api.openai.com/v1/models"
+        headers = {"Authorization": f"Bearer {config.api_key}"}
+        
+        start = time.perf_counter()
+        try:
+            async with httpx.AsyncClient() as client:
+                response = await client.get(url, headers=headers, timeout=config.timeout_seconds)
+            response.raise_for_status()
+            latency_ms = (time.perf_counter() - start) * 1000.0
+            return PingResult(ok=True, latency_ms=latency_ms)
+        except Exception as e:
+            latency_ms = (time.perf_counter() - start) * 1000.0
+            logger.warning("OpenAIGateway.ping failed: %s", e)
+            return PingResult(ok=False, latency_ms=latency_ms, error=str(e))
+
+    async def list_models(self, config: LLMConfig) -> List[DiscoveredModel]:
+        """Discover models via OpenAI-compatible `/v1/models` endpoint."""
+        from src.infrastructure.llm.discovery_parsers import parse_openai_models
+        
+        if not config.api_key:
+            raise ValueError("API Key is required for model discovery.")
+
+        url = config.base_url.rstrip("/").replace("/chat/completions", "") + "/models" if config.base_url else "https://api.openai.com/v1/models"
+        headers = {"Authorization": f"Bearer {config.api_key}"}
+        
+        async with httpx.AsyncClient() as client:
+            response = await client.get(url, headers=headers, timeout=config.timeout_seconds)
+        response.raise_for_status()
+        return parse_openai_models(response.json())
+
+
+class OllamaGateway(OpenAIGateway):
+    """
+    Ollama local-model Gateway.
+
+    Ollama exposes an OpenAI-compatible `/v1/chat/completions` endpoint, so we
+    reuse `OpenAIGateway`'s chat / stream / embed. We override `list_models`
+    to hit the native `/api/tags` endpoint (which returns richer info than
+    the OpenAI-style `/v1/models`), and provide `ping()` that just probes
+    `/api/tags` — Ollama needs no auth.
+    """
+
+    DEFAULT_BASE_URL = "http://localhost:11434/v1"
+
+    def __init__(self):
+        super().__init__()
+
+    # ------------------------------------------------------------------
+    # Helpers
+    # ------------------------------------------------------------------
+    @staticmethod
+    def _strip_v1(base_url: Optional[str]) -> str:
+        """
+        Given an OpenAI-compat base_url ending with `/v1`, return the root
+        so we can append `/api/tags`. If no `/v1` suffix, return as-is.
+        """
+        url = (base_url or OllamaGateway.DEFAULT_BASE_URL).rstrip("/")
+        if url.endswith("/v1"):
+            return url[: -len("/v1")]
+        return url
+
+    # ------------------------------------------------------------------
+    # Overrides
+    # ------------------------------------------------------------------
+    async def ping(self, config: LLMConfig) -> PingResult:
+        """Probe Ollama daemon via `/api/tags`. Success ⇒ healthy (200 OK)."""
+        url = self._strip_v1(config.base_url) + "/api/tags"
+        start = time.perf_counter()
+        try:
+            async with httpx.AsyncClient() as client:
+                response = await client.get(url, timeout=config.timeout_seconds)
+            response.raise_for_status()
+            latency_ms = (time.perf_counter() - start) * 1000.0
+            payload = response.json()
+            models = payload.get("models") or []
+            return PingResult(
+                ok=True,
+                latency_ms=latency_ms,
+                detail={"available_models": len(models)},
+            )
+        except Exception as e:
+            latency_ms = (time.perf_counter() - start) * 1000.0
+            logger.warning("OllamaGateway.ping failed: %s", e)
+            return PingResult(ok=False, latency_ms=latency_ms, error=str(e))
+
+    async def list_models(self, config: LLMConfig) -> List[DiscoveredModel]:
+        """
+        Discover locally pulled models via Ollama's `GET /api/tags`.
+
+        Response shape (Ollama >= 0.1):
+            {
+              "models": [
+                {
+                  "name": "qwen2.5:7b",
+                  "modified_at": "...",
+                  "size": 4730000000,
+                  "details": {
+                     "parameter_size": "7.6B",
+                     "family": "qwen2",
+                     ...
+                  }
+                }, ...
+              ]
+            }
+        """
+        # Defer parsing to discovery_parsers to keep logic unit-testable.
+        from src.infrastructure.llm.discovery_parsers import parse_ollama_tags
+
+        url = self._strip_v1(config.base_url) + "/api/tags"
+        async with httpx.AsyncClient() as client:
+            response = await client.get(url, timeout=config.timeout_seconds)
+        response.raise_for_status()
+        return parse_ollama_tags(response.json())
+
+
+class MockLLMGateway(ILLMGateway):
+    """
+    Mock Gateway for testing and simulation mode.
+    """
+
+    def __init__(self, default_response: str = None):
+        self._default_response = default_response
+
+    async def chat(self, messages: List[Message], config: LLMConfig) -> str:
+        if self._default_response:
+            return self._default_response
+
+        prompt_len = sum(len(m.content) for m in messages)
+        return (
+            f"### ⚠️ Simulation Mode (Missing API Key)\n\n"
+            f"**Provider**: {config.provider}\n"
+            f"**Model**: {config.model}\n\n"
+            f"- **Trend**: Neutral.\n"
+            f"- **Signal**: HOLD.\n"
+            f"(Context size: {prompt_len} chars)"
+        )
+
+    async def stream_chat(self, messages: List[Message], config: LLMConfig) -> AsyncGenerator[str, None]:
+        resp = await self.chat(messages, config)
+        for word in resp.split(" "):
+            yield word + " "
+            await asyncio.sleep(0.02)
+
+    async def embed(self, text: str, config: LLMConfig) -> List[float]:
+        return [0.0] * 1536
 
 
 class LLMGatewayFactory:
@@ -357,14 +564,16 @@ class LLMGatewayFactory:
         "gemini": GeminiGateway,
         "OpenAI": OpenAIGateway,
         "openai": OpenAIGateway,
+        "Ollama": OllamaGateway,
+        "ollama": OllamaGateway,
+        "mock": MockLLMGateway,
     }
 
     @classmethod
     def create(cls, provider: str) -> ILLMGateway:
         gateway_cls = cls._REGISTRY.get(provider)
         if gateway_cls is None:
-            supported = sorted(set(cls._REGISTRY.values()), key=lambda c: c.__name__)
-            supported_names = [c.__name__ for c in supported]
+            supported_names = sorted(list(cls._REGISTRY.keys()))
             raise ValueError(
                 f"Unsupported LLM provider: '{provider}'. "
                 f"Supported: {supported_names}"
@@ -586,18 +795,22 @@ class LoggingLLMGateway(ILLMGateway):
     async def embed(self, text: str, config: LLMConfig) -> List[float]:
         from opentelemetry import trace
         tracer = trace.get_tracer(__name__)
-        
-        # Force a dedicated embedding model, avoiding Text Generation models
+
+        # Force a dedicated embedding model, avoiding Text Generation models.
+        # LLMConfig is a frozen dataclass — use dataclasses.replace() with the
+        # new model value directly instead of post-assignment.
         import dataclasses
-        embed_config = dataclasses.replace(config)
         provider = (config.provider or "").lower()
         if "openrouter" in provider:
-            embed_config.model = "text-embedding-3-small" # OpenRouter resolves this to OpenAI
+            embed_model = "text-embedding-3-small"  # OpenRouter resolves this to OpenAI
         elif "gemini" in provider:
-            embed_config.model = "text-embedding-004"
+            embed_model = "text-embedding-004"
         elif "openai" in provider:
-            embed_config.model = "text-embedding-3-small"
-        
+            embed_model = "text-embedding-3-small"
+        else:
+            embed_model = config.model  # keep original for other providers
+        embed_config = dataclasses.replace(config, model=embed_model)
+
         with tracer.start_as_current_span(f"LLM.{self._agent_name}.embed") as span:
             span.set_attribute("llm.model", embed_config.model)
             span.set_attribute("agent.name", self._agent_name)
@@ -605,33 +818,3 @@ class LoggingLLMGateway(ILLMGateway):
             return await self._inner.embed(_redact_pii(text), embed_config)
 
 
-class MockLLMGateway(ILLMGateway):
-    """
-    Mock Gateway for testing and simulation mode.
-    """
-
-    def __init__(self, default_response: str = None):
-        self._default_response = default_response
-
-    async def chat(self, messages: List[Message], config: LLMConfig) -> str:
-        if self._default_response:
-            return self._default_response
-
-        prompt_len = sum(len(m.content) for m in messages)
-        return (
-            f"### ⚠️ Simulation Mode (Missing API Key)\n\n"
-            f"**Provider**: {config.provider}\n"
-            f"**Model**: {config.model}\n\n"
-            f"- **Trend**: Neutral.\n"
-            f"- **Signal**: HOLD.\n"
-            f"(Context size: {prompt_len} chars)"
-        )
-
-    async def stream_chat(self, messages: List[Message], config: LLMConfig) -> AsyncGenerator[str, None]:
-        resp = await self.chat(messages, config)
-        for word in resp.split(" "):
-            yield word + " "
-            await asyncio.sleep(0.02)
-
-    async def embed(self, text: str, config: LLMConfig) -> List[float]:
-        return [0.0] * 1536

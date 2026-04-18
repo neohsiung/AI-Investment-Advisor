@@ -35,5 +35,9 @@ description: 強制 Agent 在撰寫程式前，進行全局架構掃描與 UI/UX
 1. 操作: 產出 `implementation_plan.md`，使用 Markdown 將預定要更改的前後端模組與檔案清楚表列。
 2. 目標: 透過 `notify_user`，請使用者說 "Go" 或確認你的 Blueprint 之後，再寫下第一行 Python 程式碼。
 
+### Step 5: Wiki 內容校對 (Wiki Sync Validation)
+1. 操作: 在實作規劃或完成時，必須確認本次修改的服務、API或架構目錄是否有對應的 Wiki 頁面。
+2. 防護機制: 若修改的是核心架構（如新增 Skill、Service 或 Repository），應自動檢視 `wiki/` 目錄下對應文件，並將同步更新 Wiki 列入你的 Definition of Done (DoD) 清單中。亦可執行 `python .agent/skills/wiki-maintainer/scripts/audit_tree_mapping.py` 來驗證。
+
 ---
 🛡️ **防雷提醒**: 勿預設立場跳過上述任何一步驟，一次「慢工出細活」的對齊勝過十次「搞砸重做的程式碼修改」。

@@ -97,7 +97,7 @@ class AutomatedTradingService:
             try:
                 broker = BrokerFactory.get_broker(user_id)
                 if broker:
-                    account = broker.get_account()
+                    account = await broker.get_account()
                     if account and account.total_equity > 0:
                         nlv = account.total_equity
                         cash = account.available_cash

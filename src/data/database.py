@@ -210,10 +210,12 @@ class AsyncBaseRepository:
 
 def get_db_connection(db_path=None):
     """
-    Returns a SQLAlchemy Connection object.
+    Returns a SQLAlchemy Session object.
+    v19.1: Changed from Connection to Session to support ORM .query() in legacy repos.
     """
     engine = get_db_engine(db_path)
-    return engine.connect()
+    factory = sessionmaker(bind=engine)
+    return factory()
 
 def init_db(db_path=None, force=False, engine=None):
     """

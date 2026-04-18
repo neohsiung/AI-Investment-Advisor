@@ -5,10 +5,15 @@ Council Tier Router — Context-Aware LLM Tier Selection for Agent Council.
 職責:
   根據市場情境（VIX 波動率、辯論主題複雜度、辯論輪次）動態決定
   使用哪個模型層級 (Tier)。
+
+Phase B extension:
+  get_resilient_gateway(user_id, context, budget_router, db_session=None)
+    → ResilientLLMPipeline for the context-selected tier.
+  All existing methods (select_tier, select_tier_legacy) are unchanged.
 """
 
 import logging
-from typing import List
+from typing import Any, List, Optional
 from src.infrastructure.llm.tier_router_base import ITierRouter, RoutingContext
 
 logger = logging.getLogger(__name__)
@@ -106,4 +111,42 @@ class CouncilTierRouter(ITierRouter):
                 round_num=round_num,
                 market_volatility=market_volatility,
             )
+        )
+
+    # ──────────────────────────────────────────────────────────────────
+    # Phase B extension — Resilient pipeline integration
+    # ──────────────────────────────────────────────────────────────────
+
+    def get_resilient_gateway(
+        self,
+        user_id: str,
+        context: RoutingContext,
+        budget_router: Any,
+        db_session: Optional[Any] = None,
+    ) -> Any:
+        """
+        Select the appropriate tier for `context`, then return a
+        ResilientLLMPipeline configured for that tier.
+
+        This is the Phase B integration point: CouncilTierRouter selects
+        the tier; BudgetAwareModelRouter resolves the candidate chain.
+
+        Args:
+            user_id: The user whose tier bindings to use.
+            context: RoutingContext with topic/round_num/market_volatility.
+            budget_router: BudgetAwareModelRouter instance.
+            db_session: Optional SQLAlchemy session for DB chain resolution.
+
+        Returns:
+            ResilientLLMPipeline ready to call .execute(messages).
+        """
+        tier = self.select_tier(context)
+        logger.info(
+            "CouncilTierRouter.get_resilient_gateway: selected tier=%s for topic=%r",
+            tier, context.topic[:50],
+        )
+        return budget_router.get_resilient_gateway(
+            user_id=user_id,
+            tier=tier,
+            db_session=db_session,
         )

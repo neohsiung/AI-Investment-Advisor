@@ -13,6 +13,7 @@ description: 專指用於 Wiki 文檔維護、連結標準化與架構一致性�
 2. **完整性驗證 (Integrity Check)**: 遞迴掃描所有 Markdown 文件，識別斷開的內部連結。
 3. **模糊匹配 (Fuzzy Mapping)**: 當連結文字與檔名不完全一致時（例如只有英文名），自動匹配至正確的 `{繁中}-{英文}` 檔名。
 4. **Mermaid 語法審查 (Mermaid Syntax Audit)**: 自動識別並修復 Markdown 中的 Mermaid 語法錯誤（如多餘引號、無效標記）。
+5. **目錄映射審查 (Tree Mapping Audit)**: 自動比對 Repository 目錄結構與 Wiki 目錄結構，確保兩者對齊。
 
 ## 目錄結構 (Directory Structure)
 
@@ -20,6 +21,7 @@ description: 專指用於 Wiki 文檔維護、連結標準化與架構一致性�
 - `scripts/standardize_wiki_links.py`: 核心標準化邏輯。
 - `scripts/verify_wiki_links.py`: 連結健康檢查工具。
 - `scripts/audit_mermaid_syntax.py`: Mermaid 語法自動審查與修復工具。
+- `scripts/audit_tree_mapping.py`: Code 目錄與 Wiki 目錄對應結構同步審查器。
 
 ## 使用指南 (Usage Guide)
 
@@ -34,6 +36,9 @@ python .agent/skills/wiki-maintainer/scripts/verify_wiki_links.py
 
 # 審查並修復 Mermaid 語法
 python .agent/skills/wiki-maintainer/scripts/audit_mermaid_syntax.py wiki/ --fix
+
+# 審查 Repo Tree 與 Wiki Tree 映射一致性
+python .agent/skills/wiki-maintainer/scripts/audit_tree_mapping.py
 ```
 
 ## 連結標準化流程 (Standardization Workflow)

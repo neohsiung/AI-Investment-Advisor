@@ -133,6 +133,16 @@ class AlchemyUserRepository(BaseRepository, IUserRepository):
                 "user_id": user_uuid,
                 "identifier": email
             })
+        
+        # v9.1: Seed LLM defaults for new user
+        try:
+            from src.services.llm_onboarding_service import LLMOnboardingService
+            LLMOnboardingService().seed_defaults_for_user(user_uuid)
+        except Exception as e:
+            # Don't fail the whole user creation if seeding fails, but log it.
+            import logging
+            logging.getLogger(__name__).error(f"Failed to seed LLM defaults for new user {user_uuid}: {e}")
+
         return user_uuid
 
     def get_all_active_users(self) -> List[str]:
@@ -196,6 +206,14 @@ class AsyncAlchemyUserRepository(AsyncBaseRepository, IAsyncUserRepository):
             })
             await session.commit()
             
+        # v9.1: Seed LLM defaults for new user (Async)
+        try:
+            from src.services.llm_onboarding_service import LLMOnboardingService
+            await LLMOnboardingService().async_seed_defaults_for_user(user_uuid)
+        except Exception as e:
+            import logging
+            logging.getLogger(__name__).error(f"Failed to async seed LLM defaults for new user {user_uuid}: {e}")
+
         return user_uuid
 
     async def get_all_active_users(self) -> List[str]:

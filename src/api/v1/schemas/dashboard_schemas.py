@@ -40,8 +40,10 @@ class PositionListResponse(BaseModel):
 class SentimentMetric(BaseModel):
     """Individual sentiment score from intelligence scanning."""
     label: str
-    score: float
-    trend: str # 'up', 'down', 'stable'
+    value: float = 0
+    score: Optional[float] = None
+    trend: Optional[str] = None # 'up', 'down', 'stable'
+    color: str = "bg-secondary"
 
 class IntelligenceBriefing(BaseModel):
     """AI-generated market intelligence briefing."""

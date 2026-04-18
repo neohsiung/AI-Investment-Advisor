@@ -1,5 +1,5 @@
 import pytest
-from unittest.mock import MagicMock, patch, ANY
+from unittest.mock import MagicMock, patch, ANY, AsyncMock
 from src.services.performance_service import PerformanceService
 
 @pytest.fixture
@@ -18,15 +18,16 @@ def test_record_recommendation(mock_db):
     
     mock_conn.execute.assert_called()
 
-def test_get_agent_performance(mock_db):
+@pytest.mark.asyncio
+async def test_get_agent_performance(mock_db):
     service = PerformanceService(user_id="test_user")
     mock_conn = MagicMock()
     mock_db.return_value.begin.return_value.__enter__.return_value = mock_conn
     mock_db.return_value.begin.return_value.__exit__.return_value = None
     
-    # Mock MarketDataService
+    # Mock MarketDataService - it uses get_current_prices which is async
     service.market_service = MagicMock()
-    service.market_service.get_current_prices.return_value = {"AAPL": 160.0, "TSLA": 210.0}
+    service.market_service.get_current_prices = AsyncMock(return_value={"AAPL": 160.0, "TSLA": 210.0})
     
     # Mock pandas read_sql return
     import pandas as pd
@@ -38,11 +39,9 @@ def test_get_agent_performance(mock_db):
     ])
     
     with patch('pandas.read_sql', return_value=mock_df):
-        stats = service.get_agent_performance()
+        stats = await service.get_agent_performance()
         
         # Match actual implementation which returns list of dicts after aggregation
-        # 'Fundamental' agent had 'HOLD' signal, accuracy check returns None for HOLD, 
-        # but valid_df check includes Momentum only (BUY)
         assert len(stats) >= 1 
         
         momentum_stats = next(s for s in stats if s["agent"] == "Momentum")
@@ -56,10 +55,10 @@ def test_record_recommendation_error(mock_db):
     # Should not raise
     service.record_recommendation("Momentum", "AAPL", "BUY", 150.0)
 
-def test_get_agent_performance_error(mock_db):
+@pytest.mark.asyncio
+async def test_get_agent_performance_error(mock_db):
     service = PerformanceService(user_id="test_user")
     mock_db.return_value.begin.return_value.__enter__.side_effect = Exception("DB Fail")
     
-    stats = service.get_agent_performance()
+    stats = await service.get_agent_performance()
     assert stats == []
-

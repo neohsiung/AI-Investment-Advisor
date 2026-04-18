@@ -9,17 +9,19 @@ function show_help {
     echo "Usage: ./start.sh [mode]"
     echo ""
     echo "Modes:"
-    echo "  --docker    Deploy using Docker Compose (Default - Dev Mode)"
-    echo "  --prod      Deploy focused Production cluster (Hardened - B2C SaaS)"
-    echo "  --patch     Hot-patch Production (Rebuilds UI/API without downtime)"
-    echo "  --k8s       Deploy to Kubernetes (Minikube/Cloud - requires kubectl)"
-    echo "  --clean     Stop containers and remove K8s resources"
-    echo "  --help      Show this help message"
+    echo "  --docker       Deploy using Docker Compose (Default - Dev Mode)"
+    echo "  --prod         Deploy focused Production cluster (Hardened - B2C SaaS)"
+    echo "  --patch        Hot-patch Production (Rebuilds UI/API without downtime)"
+    echo "  --k8s          Deploy to Kubernetes (Minikube/Cloud - requires kubectl)"
+    echo "  --clean        Stop containers and remove K8s resources"
+    echo "  --migrate-llm  One-time migration: AI_MODEL_* env vars → new LLM settings tables"
+    echo "  --help         Show this help message"
     echo ""
     echo "Examples:"
     echo "  ./start.sh             # Starts Docker Compose"
     echo "  ./start.sh --k8s       # Starts K8s Deployment"
     echo "  ./start.sh --clean     # Cleanup"
+    echo "  ./start.sh --migrate-llm  # Migrate legacy AI_MODEL_* env vars (run once)"
 }
 
 function check_env {
@@ -42,6 +44,78 @@ function patch_prod {
     echo "✅ Patch Applied Successfully"
 }
 
+function import_n8n_workflow {
+    local db_container=$1
+    local n8n_container=$2
+
+    # Auto-import n8n workflow with API key injection
+    if [ -f n8n_workflow_template.json ]; then
+        echo "Attempting to auto-import n8n workflow..."
+        
+        # Ensure docker command is available
+        if ! command -v docker &> /dev/null; then
+            export PATH=$PATH:/usr/local/bin:/usr/bin:/bin
+        fi
+
+        # Inject webhook API key from DB into n8n template
+        source .env 2>/dev/null || true
+        
+        # Robustly wait for DB to be ready for the query
+        echo "Waiting for database to be ready for query..."
+        local db_ready=false
+        for i in {1..10}; do
+            if docker exec "$db_container" pg_isready -U "${DB_USER:-postgres}" &>/dev/null; then
+                db_ready=true
+                break
+            fi
+            sleep 2
+        done
+
+        if [ "$db_ready" = true ]; then
+            # Cleanly extract key: remove quotes, spaces, and newlines
+            WEBHOOK_KEY=$(docker exec "$db_container" psql -U "${DB_USER:-postgres}" -d "${DB_NAME:-advisor}" -t -c "SELECT value FROM settings WHERE key='webhook_api_key' LIMIT 1;" 2>/dev/null | sed 's/\"//g' | tr -d '[:space:]')
+        fi
+
+        if [ -n "$WEBHOOK_KEY" ]; then
+            echo "Injecting webhook API key from DB into n8n template..."
+            sed "s/your_api_key_here/$WEBHOOK_KEY/g" n8n_workflow_template.json > /tmp/n8n_workflow_injected.json
+            docker cp /tmp/n8n_workflow_injected.json "$n8n_container":/tmp/template_injected.json
+            rm -f /tmp/n8n_workflow_injected.json
+            N8N_IMPORT_PATH="/tmp/template_injected.json"
+        else
+            echo "⚠️  No webhook_api_key found in DB or DB not ready. Using template as-is."
+            # Fallback: check if we can reach the file inside container
+            N8N_IMPORT_PATH="/home/node/template.json"
+        fi
+
+        # Robust wait for n8n initialization
+        MAX_RETRIES=20
+        RETRY_COUNT=0
+        echo "Waiting for n8n to initialize..."
+        while [ $RETRY_COUNT -lt $MAX_RETRIES ]; do
+            # Try multiple command variants for n8n CLI
+            if docker exec "$n8n_container" n8n --version >/dev/null 2>&1; then
+                echo "n8n is ready. Importing workflow..."
+                # Import
+                if docker exec "$n8n_container" n8n import:workflow --input "$N8N_IMPORT_PATH"; then
+                    echo "✅ Workflow imported successfully"
+                    # Optional: In v1.x+ we might need to activate manually if the template didn't stick
+                    # But usually n8n import --input file.json with "active": true works if the DB is fresh.
+                    break
+                else
+                    echo "❌ Workflow import failed. Retrying..."
+                fi
+            fi
+            sleep 5
+            RETRY_COUNT=$((RETRY_COUNT+1))
+        done
+        
+        if [ $RETRY_COUNT -eq $MAX_RETRIES ]; then
+            echo "⚠️  Warning: n8n import timed out. Please check logs with: docker compose logs n8n"
+        fi
+    fi
+}
+
 function deploy_docker {
     echo "=== Starting Mode: Docker Compose (Local) ==="
     check_env
@@ -59,40 +133,7 @@ function deploy_docker {
     echo "🔗 n8n:                 http://localhost:5678"
     echo ""
     
-    # Auto-import n8n workflow with API key injection
-    if [ -f n8n_workflow_template.json ]; then
-        echo "Attempting to auto-import n8n workflow..."
-        # Inject webhook API key from DB into n8n template
-        source .env 2>/dev/null
-        WEBHOOK_KEY=$(docker exec investment_advisor_db psql -U "${DB_USER:-user}" -d "${DB_NAME:-advisor}" -t -c "SELECT value FROM settings WHERE key='webhook_api_key' LIMIT 1;" 2>/dev/null | tr -d ' \n')
-        if [ -n "$WEBHOOK_KEY" ]; then
-            echo "Injecting webhook API key into n8n template..."
-            sed "s/your_api_key_here/$WEBHOOK_KEY/g" n8n_workflow_template.json > /tmp/n8n_workflow_injected.json
-            docker cp /tmp/n8n_workflow_injected.json investment_advisor_n8n:/tmp/template_injected.json
-            rm -f /tmp/n8n_workflow_injected.json
-            N8N_IMPORT_PATH="/tmp/template_injected.json"
-        else
-            echo "⚠️  No webhook_api_key found in DB. Using template as-is."
-            N8N_IMPORT_PATH="/home/node/template.json"
-        fi
-        # Robust wait for n8n initialization (v1.x/v2.x CLI compat)
-        MAX_RETRIES=12
-        RETRY_COUNT=0
-        while [ $RETRY_COUNT -lt $MAX_RETRIES ]; do
-            if docker exec investment_advisor_n8n n8n --version >/dev/null 2>&1; then
-                echo "n8n is ready. Importing workflow..."
-                docker exec investment_advisor_n8n n8n import:workflow --input "$N8N_IMPORT_PATH" && echo "✅ Workflow imported and activated successfully"
-                break
-            fi
-            echo "Waiting for n8n to initialize (attempt $((RETRY_COUNT+1))/$MAX_RETRIES)..."
-            sleep 5
-            RETRY_COUNT=$((RETRY_COUNT+1))
-        done
-        
-        if [ $RETRY_COUNT -eq $MAX_RETRIES ]; then
-            echo "⚠️  Warning: n8n import timed out. Please check logs with: docker compose logs n8n"
-        fi
-    fi
+    import_n8n_workflow "investment_advisor_db" "investment_advisor_n8n"
 
     echo "To view logs: docker compose logs -f"
 }
@@ -112,6 +153,9 @@ function deploy_prod {
     echo "🩺 APM/Monitoring: http://localhost:8080 (SigNoz)"
     echo "🔗 Automation:     http://localhost:5678 (n8n)"
     echo ""
+
+    import_n8n_workflow "advisor_prod_db" "advisor_prod_n8n"
+
     echo "To view production logs: docker compose -f docker-compose.prod.yml logs -f"
 }
 
@@ -209,6 +253,10 @@ case "$1" in
         ;;
     --clean|--cleanup)
         cleanup
+        ;;
+    --migrate-llm)
+        echo "🔄 Migrating legacy AI_MODEL_* env vars to new LLM settings tables..."
+        python scripts/migrate_llm_settings.py
         ;;
     --help)
         show_help

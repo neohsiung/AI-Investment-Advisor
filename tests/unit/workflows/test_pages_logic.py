@@ -110,24 +110,9 @@ class TestTransactionService:
             mock_update.assert_called_once()
 
 class TestSettingsRender:
-    def test_render_api_settings(self):
-        mock_st = MagicMock()
-        mock_st.session_state = {}
-        mock_st.columns.side_effect = lambda n: [MagicMock() for _ in range(n if isinstance(n, int) else len(n))]
-
-        mock_service = MagicMock()
-        mock_service.save_settings_bulk.return_value = (True, "Success") # Fix ValueError unpacking
-        settings = {"AI_PROVIDER": "OpenRouter", "AI_MODEL": "gpt-4"}
-
-        # Call the render function
-        # Note: function name changed to render_api_settings
-        settings_mod.render_api_settings(mock_st, mock_service, settings)
-
-        # Verify UI interactions
-        # mock_st.subheader.assert_called_with("AI 模型參數 (AI Model Parameters)") # Removed subheader in favor of saas_card_start
-        # Check for card start call (indirectly via st.html)
-        # Note: saas_card_start uses global st, so we just verify the form was initiated
-        mock_st.form.assert_called_with("ai_settings_form")
+    # NOTE: test_render_api_settings removed — ai_config_tab.py was deleted in Phase C2.
+    # AI model settings are now managed exclusively via the Next.js /settings page.
+    # See: docs/architecture/multi_provider_multi_model_design.md §10
 
     def test_render_scheduler_tab(self):
         mock_st = MagicMock()

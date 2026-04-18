@@ -21,6 +21,7 @@ import sys
 import re
 import pathlib
 import subprocess
+import importlib.util
 from typing import Dict, List, Optional, Any
 from dataclasses import dataclass, field, asdict
 from enum import Enum
@@ -83,12 +84,68 @@ class SkillLoader:
     Layer 3 (Detail):    SKILL.md body → full instruction for prompt injection
     """
 
-    def __init__(self, skills_dir: str = "src/agents/skills"):
+    def __init__(self, skills_dir: str = "src/agents/skills", user_id: str = None):
         self.skills_dir = skills_dir
+        self.user_id = user_id
         self.skills: Dict[str, Skill] = {}
         self._metadata_cache: Dict[str, SkillMetadata] = {}
         if not os.path.exists(skills_dir):
             os.makedirs(skills_dir, exist_ok=True)
+
+    def run_skill(self, skill_name: str, **kwargs) -> Any:
+        """
+        Dynamically load and execute a skill's implementation (impl.py).
+        動態載入並執行技能實作 (impl.py)。
+        """
+        # Ensure user_id is in kwargs if passed in __init__
+        if self.user_id and "user_id" not in kwargs:
+            kwargs["user_id"] = self.user_id
+
+        # 1. Locate skill directory
+        skill_dir = os.path.join(self.skills_dir, skill_name)
+        if not os.path.isdir(skill_dir):
+            # Fallback check in sub-directories
+            for root, dirs, _ in os.walk(self.skills_dir):
+                if skill_name in dirs:
+                    skill_dir = os.path.join(root, skill_name)
+                    break
+            else:
+                raise ValueError(f"Skill '{skill_name}' not found in {self.skills_dir}")
+
+        impl_path = os.path.join(skill_dir, "impl.py")
+        if not os.path.exists(impl_path):
+            raise AttributeError(f"Skill '{skill_name}' has no implementation (impl.py) at {skill_dir}")
+
+        # 2. Dynamic Import
+        try:
+            module_name = f"src.agents.skills.{skill_name}.impl"
+            spec = importlib.util.spec_from_file_location(module_name, impl_path)
+            if spec is None or spec.loader is None:
+                raise ImportError(f"Could not load spec for {impl_path}")
+            
+            module = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(module)
+
+            # 3. Execute main function (assumed to have same name as skill)
+            func = getattr(module, skill_name, None)
+            if not func:
+                # Fallback: look for any function if only one exists or try 'run'
+                func = getattr(module, "run", None)
+                if not func:
+                    raise AttributeError(f"Module {module_name} has no function '{skill_name}' or 'run'")
+
+            import inspect
+            if inspect.iscoroutinefunction(func):
+                return func(**kwargs)
+            else:
+                # Wrap sync in a way that it can be awaited if the caller expects a coroutine
+                async def _sync_wrapper():
+                    return func(**kwargs)
+                return _sync_wrapper()
+
+        except Exception as e:
+            logger.error(f"SkillLoader: Failed to run skill '{skill_name}': {e}")
+            raise
 
     # ── Layer 1: Metadata Discovery ──────────────────────────
 
