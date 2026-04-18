@@ -38,7 +38,6 @@ class TierSpec:
     name: str                              # tier identifier
     display_name: str                      # human-readable
     env_key: str                           # env var for model override
-    default_model: str                     # fallback model
     input_cost_per_mtok: float = 0.0       # $/million input tokens
     output_cost_per_mtok: float = 0.0      # $/million output tokens
     max_tokens: int = 4096                 # default max output tokens
@@ -50,10 +49,10 @@ class TierSpec:
         """Blended cost (3:1 input:output ratio)."""
         return (self.input_cost_per_mtok * 3 + self.output_cost_per_mtok) / 4
 
-    def resolve_model(self, db_settings: Dict[str, str] = None) -> str:
+    def resolve_model(self, db_settings: Dict[str, str] = None) -> Optional[str]:
         """
         Resolve the actual model to use.
-        Priority: DB setting > Env var > Default.
+        Priority: DB setting > Env var > None.
         """
         db_settings = db_settings or {}
         # DB override
@@ -64,7 +63,7 @@ class TierSpec:
         env_model = os.getenv(self.env_key)
         if env_model:
             return env_model.strip().strip('"').strip("'")
-        return self.default_model
+        return None
 
 
 # ═══════════════════════════════════════════════════════
@@ -80,7 +79,6 @@ DEFAULT_TIERS: Dict[str, TierSpec] = {
         name="nano",
         display_name="Nano (反射)",
         env_key="AI_MODEL_NANO",
-        default_model="openai/gpt-4.1-nano",
         input_cost_per_mtok=0.10,
         output_cost_per_mtok=0.40,
         max_tokens=1024,
@@ -95,7 +93,6 @@ DEFAULT_TIERS: Dict[str, TierSpec] = {
         name="fast",
         display_name="Fast (快思)",
         env_key="AI_MODEL_FAST",
-        default_model="google/gemini-2.5-flash",
         input_cost_per_mtok=0.30,
         output_cost_per_mtok=2.50,
         max_tokens=4096,
@@ -111,7 +108,6 @@ DEFAULT_TIERS: Dict[str, TierSpec] = {
         name="smart",
         display_name="Smart (慢想)",
         env_key="AI_MODEL_SMART",
-        default_model="google/gemini-2.5-pro",
         input_cost_per_mtok=1.25,
         output_cost_per_mtok=10.00,
         max_tokens=8192,
@@ -127,7 +123,6 @@ DEFAULT_TIERS: Dict[str, TierSpec] = {
         name="advanced",
         display_name="Advanced (深思)",
         env_key="AI_MODEL_ADVANCED",
-        default_model="anthropic/claude-sonnet-4-5",
         input_cost_per_mtok=3.00,
         output_cost_per_mtok=15.00,
         max_tokens=8192,
@@ -233,7 +228,7 @@ class TierConfig:
             daily = spec.blended_cost_per_mtok * (avg_tokens / 1_000_000) * count
             daily_total += daily
             lines.append(
-                f"| {spec.display_name} | `{spec.default_model}` | "
+                f"| {spec.display_name} | `{spec.env_key}` | "
                 f"{count} | ${daily:.4f} | ${daily * 7:.4f} |"
             )
 
@@ -286,9 +281,9 @@ class SettingsAwareModelRouter:
         except Exception as e:
             logger.warning(f"ModelRouter: Failed DB lookup {user_id}/{tier}: {e}")
         
-        default_model = self.tier_config.resolve(tier)
-        logger.info(f"ModelRouter: {user_id} {tier} -> {default_model} (default)")
-        return default_model
+        model = self.tier_config.resolve(tier)
+        logger.info(f"ModelRouter: {user_id} {tier} -> {model} (resolved)")
+        return model or ""
     
     def get_all_models(self, user_id: str) -> Dict[str, str]:
         """Get all models for a user across all tiers."""

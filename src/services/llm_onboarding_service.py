@@ -137,9 +137,6 @@ class LLMOnboardingService:
         return code_to_id
 
     def _seed_models(self, session: Any, provider_code_to_id: Dict[str, str]) -> Dict[tuple[str, str], str]:
-        # ... (rest of the file needs to be updated too, I'll do it in chunks if needed but this looks okay for a first step)
-
-    def _seed_models(self, session: Any, provider_code_to_id: Dict[str, str]) -> Dict[tuple[str, str], str]:
         key_to_id: Dict[tuple[str, str], str] = {}
         for m in self.models_yaml:
             p_code = m["provider_code"]

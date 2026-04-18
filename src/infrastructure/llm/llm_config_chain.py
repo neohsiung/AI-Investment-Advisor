@@ -99,22 +99,14 @@ def build_config_chain(
     # ── Step 1: Try DB binding ──────────────────────────────────────
     if db_session is not None or True:  # Always try DB (uses own session)
         try:
-            candidates = _load_from_db(user_id, tier)
+            return _load_from_db(user_id, tier)
         except Exception as e:
             logger.warning(
                 "build_config_chain: DB load failed for user=%s tier=%s: %s",
                 user_id, tier, e,
             )
 
-    # ── Step 2: Fallback to tier_config defaults ────────────────────
-    if not candidates:
-        logger.info(
-            "build_config_chain: no DB binding for user=%s tier=%s, using tier_config defaults",
-            user_id, tier,
-        )
-        candidates = _load_from_tier_config(tier)
-
-    return candidates
+    return []
 
 
 def _load_from_db(user_id: str, tier: str) -> List[ModelCandidate]:
@@ -196,76 +188,3 @@ def _load_from_db(user_id: str, tier: str) -> List[ModelCandidate]:
             continue
 
     return candidates
-
-
-def _load_from_tier_config(tier: str) -> List[ModelCandidate]:
-    """
-    Fallback: build a single-candidate chain from tier_config.py defaults.
-    Uses environment variables / DB settings for model resolution.
-    """
-    registry = _get_gateway_registry()
-    tier_cfg = TierConfig()
-    spec = tier_cfg.get_spec(tier)
-
-    if spec is None:
-        logger.error("build_config_chain: unknown tier '%s' in tier_config", tier)
-        return []
-
-    # Resolve model name from env
-    model_name = spec.resolve_model()
-
-    # Infer provider from model name
-    provider_code = _infer_provider_code(model_name)
-    gateway_class = registry.get(provider_code, registry.get("openrouter"))
-
-    if gateway_class is None:
-        logger.error("build_config_chain: no gateway available for fallback")
-        return []
-
-    # Get API key from environment
-    api_key = _get_env_api_key(provider_code)
-
-    return [
-        ModelCandidate(
-            model_id=f"legacy:{tier}:{model_name}",
-            provider_code=provider_code,
-            model_code=model_name,
-            gateway_class=gateway_class,
-            base_url=None,
-            api_key=api_key,
-            max_retries=2,
-            timeout_seconds=30.0,
-        )
-    ]
-
-
-def _infer_provider_code(model_name: str) -> str:
-    """Infer provider_code from model name string (legacy compatibility)."""
-    name = model_name.lower()
-    if name.startswith("openai/") or name.startswith("anthropic/") or name.startswith("google/"):
-        return "openrouter"
-    if name.startswith("gemini-") or name.startswith("models/gemini"):
-        return "gemini"
-    if name.startswith("gpt-") or name.startswith("text-embedding-"):
-        return "openai"
-    if name.startswith("claude-"):
-        return "anthropic"
-    if ":" in name and not name.startswith("openai/"):
-        return "ollama"
-    return "openrouter"
-
-
-def _get_env_api_key(provider_code: str) -> Optional[str]:
-    """Get API key from environment variables for a given provider."""
-    env_map = {
-        "openrouter": "OPENROUTER_API_KEY",
-        "openai": "OPENAI_API_KEY",
-        "gemini": "GEMINI_API_KEY",
-        "anthropic": "ANTHROPIC_API_KEY",
-        "groq": "GROQ_API_KEY",
-        "ollama": None,  # No API key needed
-    }
-    env_var = env_map.get(provider_code)
-    if env_var:
-        return os.getenv(env_var) or os.getenv("API_KEY", "")
-    return None

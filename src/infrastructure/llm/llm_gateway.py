@@ -75,7 +75,7 @@ class OpenRouterGateway(ILLMGateway):
                 f"OpenRouter HTTP error {e.response.status_code} | "
                 f"Model: {model_id} | "
                 f"URL: {e.request.url} | "
-                f"Response: {e.response.text[:500]}"
+                f"Response: {e.response.text[:1000]}"
             )
             raise
         except httpx.HTTPError as e:
