@@ -453,16 +453,34 @@ class LoggingLLMGateway(ILLMGateway):
             span.set_attribute("agent.name", self._agent_name)
             
             # T16.3: SaaS Quota and Tier Access Enforcement [Phase 16]
+            is_tier_fallback = False
             try:
-                from src.services.billing_service import BillingService
+                from src.services.billing_service import BillingService, TierAccessDeniedError
                 billing = BillingService(user_id=self._user_id)
-                billing.check_quota(requested_tier=self._tier)
+                try:
+                    billing.check_quota(requested_tier=self._tier)
+                except TierAccessDeniedError as e:
+                    # v20.1: Automatic Downgrade on Tier Denial [Phase 20]
+                    if self._tier in ('smart', 'advanced'):
+                        logger.warning(f"LLM Gateway: Agent '{self._agent_name}' tier '{self._tier}' denied. Falling back to 'fast'.")
+                        is_tier_fallback = True
+                        from src.infrastructure.llm.tier_config import TierConfig
+                        fallback_model = TierConfig().resolve('fast')
+                        
+                        import dataclasses
+                        config = dataclasses.replace(config, model=fallback_model)
+                        
+                        # Re-verify quota for fast tier
+                        billing.check_quota(requested_tier='fast')
+                    else:
+                        raise e
             except Exception as e:
-                # If QuotaExceeded or TierAccessDenied, we re-raise to block execution
+                # If QuotaExceeded or TierAccessDenied (after fallback attempt), we re-raise
                 logger.error(f"LLM Gateway: Request blocked by billing policy: {e}")
                 raise e
             
             # T13.1: Semantic Cache lookup
+            content = None # Initialize to avoid UnboundLocalError
             try:
                 from src.repositories.vector_cache_repository import VectorCacheRepository
                 cache_repo = VectorCacheRepository()
@@ -472,7 +490,8 @@ class LoggingLLMGateway(ILLMGateway):
                 # We need the embedding for semantic search
                 # We reuse the gateway's embed function
                 # v13.1: Only cache for 'smart' or 'advanced' tiers where cost is higher
-                if self._tier in ('smart', 'advanced'):
+                # [Fix] If we fell back, we might still want to check cache for the original tier or just skip
+                if not is_tier_fallback and self._tier in ('smart', 'advanced'):
                     prompt_embedding = await self.embed(prompt_text, config)
                     cached_res = cache_repo.get_cached_response(self._user_id, prompt_text, prompt_embedding)
                     if cached_res:
@@ -492,12 +511,18 @@ class LoggingLLMGateway(ILLMGateway):
             try:
                 # v19.3: AI Model Automatic Fallback on Rate Limit [Phase 19]
                 content = await self._inner.chat(redacted_messages, config)
+                
+                # If we were in a tier fallback, prepend the note
+                if is_tier_fallback and content:
+                    content = "*(注意：由於高階模型權限限制，本分析已自動切換至高速模型生成)*\n\n" + content
+                    
             except Exception as e:
                 # Common rate limit strings in error messages
                 is_rate_limit = any(s in str(e).lower() for s in ("429", "rate limit", "quota exceeded"))
                 
                 # Only fallback if it's a rate limit and we are using a premium tier
-                if is_rate_limit and self._tier in ('smart', 'advanced'):
+                # And only if we haven't already fallen back due to tier denial
+                if not is_tier_fallback and is_rate_limit and self._tier in ('smart', 'advanced'):
                     logger.warning(f"LLM Gateway: [{self._agent_name}] '{self._tier}' limit hit. Falling back to 'fast' tier.")
                     from src.infrastructure.llm.tier_config import TierConfig
                     fallback_config = TierConfig().resolve('fast') # Resolve a fast model
