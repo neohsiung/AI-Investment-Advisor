@@ -21,7 +21,12 @@
 
 ### 2.2 混合儲存策略 (Hybrid Strategy - Rule #9)
 
-[詳細配置範例與優缺點比較，請參閱《混合儲存架構指南》](../../wiki/05_工程手冊-Engineering_Handbook/01_設計模式-Patterns/混合儲存架構-Hybrid-Storage-Architecture.md)
+### 1.4 LLM 配置誠信 (LLM Configuration Integrity)
+- **禁止硬編碼**：嚴禁在代碼、Prompt 或 Skill 指令中寫死任何特定的模型名稱（如 `gemini-2.0-pro`）或 `BASE_URL`。
+- **動態解析**：所有 LLM 調用必須通過 `ResilientLLMPipeline` 或 `LLMGateway`，並由 `TierSpec`（DB 綁定）動態解析模型。
+- **Fallback 邏輯**：系統應優先從 `llm_tier_bindings` (DB) 選取，若無則降級至 `settings` table (Legacy)；若皆無則必須拋出明確錯誤，而非嘗試猜測預設模型。
+
+[詳細配置範例與優缺點比較，請參閱《混合儲存架構指南》](混合儲存架構-Hybrid-Storage-Architecture)
 
 - **ORM Admin Layer**: 針對 `User`, `Settings`, `Logs` 等管理類實體，強制使用 **SQLAlchemy ORM** 以提升開發效率。
 - **Raw SQL Performance Layer**: 針對 `Transactions`, `MarketData`, `pgvector` 等大數據或高效能場景，強制使用 **Raw SQL (SQLAlchemy Core)** 以利精確優化。

@@ -48,7 +48,7 @@ description: 開發指導準則：指導 Agent 遵循 Trunk-based Development �
 
 本專案的 `wiki/` 目錄為獨立或視為 Submodule 管理的 Repository。因此：
 
-- **主專案提交**：在專案根目錄執行常規的 `git commit` 時，將不會（也不應）包含 `wiki/` 目錄的變更。
+- **主專案提交**：在專案根目錄執行常規的 `git commit` 時，將不會（也不應）包含 `wiki/` 目錄的變更。**強烈建議使用 `mcp_GitKraken_gitlens_commit_composer` 來自動組織高品質的雙語 Message。**
 - **Wiki 提交**：任何針對 `wiki/` 內實體文件的修改，**必須強制定向至 Wiki Repo**，使用 `git -C wiki add` 與 `git -C wiki commit` 獨立提交。
 - 若一項任務同時包辦了程式碼修改與 Wiki 文件更新，這必須被切分為**兩個完全獨立的原子化提交**（分別在主 Repo 執行 `feat` 等變更，在 Wiki Repo 執行 `docs(wiki)` 變更）。
 

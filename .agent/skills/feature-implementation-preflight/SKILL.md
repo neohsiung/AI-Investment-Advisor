@@ -13,7 +13,7 @@ description: 強制 Agent 在撰寫程式前，進行全局架構掃描與 UI/UX
 ## 🎯 執行指導手冊 (Execution Guidelines)
 
 ### Step 1: 架構先決與多租戶防護 (Architecture & Multi-Tenancy First)
-1. 操作: 必須閱讀 `wiki/04_架構觀點-Architect_Views` 下相關的文件。
+1. 操作: 必須閱讀 [系統全景圖](系統全景圖-System-Landscape) 下相關的文件。
 2. 目標: 定義本次開發功能是屬於系統的哪個模組 (Data Layer, Swarm Layer, API Gateway...)？
 3. B2C SaaS 護欄: 
    - [多租戶隔離] 任何新增的 API、Service 或 Repository 操作，**強制要求**必須接收並正確傳遞 `user_id`。嚴禁操作無 `user_id` 綁定的全域資料。
