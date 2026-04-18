@@ -74,23 +74,23 @@ export default function SettingsPage() {
   }
 
   return (
-    <div className="flex-1 flex flex-col bg-background pt-24 p-8 overflow-hidden h-full">
+    <div className="flex-1 flex flex-col bg-background pt-20 lg:pt-24 p-4 lg:p-8 overflow-hidden h-full">
       <div className="max-w-7xl mx-auto w-full flex flex-col h-full">
         {/* Header Section */}
-        <div className="flex justify-between items-end mb-8 flex-shrink-0">
+        <div className="flex flex-col md:flex-row md:justify-between md:items-end gap-4 mb-6 lg:mb-8 flex-shrink-0">
           <div>
             <div className="flex items-center gap-2 mb-2">
               <div className="p-1.5 bg-primary/10 rounded-lg text-primary">
                 <Settings size={20} />
               </div>
-              <h1 className="text-4xl font-bold font-headline tracking-tighter">系統控制中心</h1>
+              <h1 className="text-2xl lg:text-4xl font-bold font-headline tracking-tighter">系統控制中心</h1>
             </div>
             <p className="text-on-surface-variant font-label text-xs uppercase tracking-[0.3em]">
               配置 AI 模型集群、多維度數據源與全球 Broker 接口
             </p>
           </div>
 
-          <div className="flex items-center gap-6">
+          <div className="flex flex-wrap items-center gap-4 lg:gap-6">
             {feedback && (
               <div className={cn(
                 "animate-in fade-in slide-in-from-right-4 px-4 py-2 rounded-xl border flex items-center gap-2 text-xs font-bold",
@@ -112,9 +112,9 @@ export default function SettingsPage() {
         </div>
 
         {/* Main Interface Layout */}
-        <div className="flex gap-8 flex-1 overflow-hidden">
+        <div className="flex flex-col md:flex-row gap-4 lg:gap-8 flex-1 overflow-hidden">
           {/* Left Sidebar Navigation */}
-          <div className="w-64 flex flex-col gap-2 flex-shrink-0">
+          <div className="w-full md:w-56 lg:w-64 flex flex-col gap-2 flex-shrink-0 md:overflow-y-auto">
             {TABS.map((tab) => {
               const Icon = tab.icon;
               const isActive = activeTab === tab.id;
@@ -163,8 +163,8 @@ export default function SettingsPage() {
           </div>
 
           {/* Right Content Area */}
-          <div className="flex-1 bg-surface-container-low rounded-[32px] border border-outline-variant/10 shadow-sm overflow-hidden flex flex-col">
-            <div className="flex-1 overflow-y-auto p-12 custom-scrollbar">
+          <div className="flex-1 bg-surface-container-low rounded-[32px] border border-outline-variant/10 shadow-sm overflow-hidden flex flex-col min-w-0">
+            <div className="flex-1 overflow-y-auto p-6 lg:p-12 custom-scrollbar">
               {/* Tab content will be rendered here */}
               <div className="animate-in fade-in slide-in-from-bottom-4 duration-500">
                 {renderTabContent(activeTab, localSettings, updateSetting, toggleSecret, showSecrets)}
@@ -210,7 +210,7 @@ function TradingRiskPanel({ settings, update }: any) {
     <div className="space-y-12">
       <SectionHead title="全自動執行風控" desc="調整 AI 代理人自動化動作的信賴閾值與極端情況下的連鎖熔斷機制。" />
 
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4 lg:gap-6">
         <SettingCard title="自動執行信心閾值 (1-10)" icon={<Shield size={20} />} desc="數值越高越謹慎。建議值為 7-8，代表 AI 需具備高度把握才會自動下單。">
           <input
             type="range" min="1" max="100" step="1"
@@ -453,7 +453,7 @@ function NotifyPanel({ settings, update, toggle, secrets }: any) {
               />
             </div>
           </div>
-          <div className="grid grid-cols-2 gap-6">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 lg:gap-6">
             <SecretInput label="Bot Token" id="tg_token" value={settings.channel_telegram_bot_token || ""} toggle={toggle} show={secrets.tg_token} onChange={(v: string) => update("channel_telegram_bot_token", v)} />
             <LabeledInput label="Chat ID" value={settings.channel_telegram_chat_id || ""} onChange={(v: string) => update("channel_telegram_chat_id", v)} />
           </div>
@@ -486,7 +486,7 @@ function NotifyPanel({ settings, update, toggle, secrets }: any) {
               />
             </div>
           </div>
-          <div className="grid grid-cols-3 gap-6">
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4 lg:gap-6">
             <SecretInput label="Access Token" id="line_token" value={settings.channel_line_access_token || ""} toggle={toggle} show={secrets.line_token} onChange={(v: string) => update("channel_line_access_token", v)} />
             <SecretInput label="Channel Secret" id="line_sec" value={settings.channel_line_secret || ""} toggle={toggle} show={secrets.line_sec} onChange={(v: string) => update("channel_line_secret", v)} />
             <LabeledInput label="User ID (推播對象)" value={settings.channel_line_user_id || ""} onChange={(v: string) => update("channel_line_user_id", v)} />
@@ -511,7 +511,7 @@ function NotifyPanel({ settings, update, toggle, secrets }: any) {
               onChange={(v: boolean) => update("channel_email_enabled", v)}
             />
           </div>
-          <div className="grid grid-cols-4 gap-6">
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-4 lg:gap-6">
             <div className="col-span-2">
               <LabeledInput label="SMTP Server" value={settings.channel_email_smtp_server || ""} onChange={(v: string) => update("channel_email_smtp_server", v)} placeholder="smtp.gmail.com" />
             </div>
@@ -554,7 +554,7 @@ function SourcesPanel({ settings, update, toggle, secrets }: any) {
     <div className="space-y-12">
       <SectionHead title="外部數據源管理" desc="整合全球市場行情、新聞情緒與總體經濟數據接口。" />
 
-      <div className="grid grid-cols-2 gap-6">
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4 lg:gap-6">
         {sources.map(src => (
           <div key={src.id} className="bg-surface-container p-6 rounded-[24px] border border-outline-variant/10">
             <div className="flex justify-between items-start mb-4">
@@ -583,7 +583,7 @@ function SourcesPanel({ settings, update, toggle, secrets }: any) {
 
       <SectionHead title="Webhook 實時監聽器" desc="接收來自外部交易訊號或市場突發新聞的推送。" />
       <div className="bg-surface-container p-8 rounded-[32px] border border-outline-variant/5">
-        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
           {webhooks.map(wh => (
             <div key={wh.id} className="bg-background/50 p-4 rounded-2xl flex flex-col items-center gap-3">
               <span className="text-[10px] font-black uppercase text-on-surface-variant">{wh.label}</span>
@@ -626,7 +626,7 @@ function BrokerPanel({ settings, update, toggle, secrets }: any) {
             </div>
             <Switch checked={settings.enable_etoro} onChange={(v: boolean) => update("enable_etoro", v)} />
           </div>
-          <div className="grid grid-cols-3 gap-6">
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4 lg:gap-6">
             <div className="col-span-1">
               <label className="block text-[10px] font-black uppercase text-on-surface-variant mb-2 tracking-widest pl-1">執行模式</label>
               <select
@@ -657,7 +657,7 @@ function BrokerPanel({ settings, update, toggle, secrets }: any) {
             </div>
             <Switch checked={settings.enable_ibkr} onChange={(v: boolean) => update("enable_ibkr", v)} />
           </div>
-          <div className="grid grid-cols-3 gap-6">
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4 lg:gap-6">
             <LabeledInput label="Gateway Host" value={settings.ibkr_host || "127.0.0.1"} onChange={(v: string) => update("ibkr_host", v)} />
             <LabeledInput label="TWS Port" value={settings.ibkr_port || 7497} onChange={(v: string) => update("ibkr_port", v)} />
             <LabeledInput label="Account ID" value={settings.ibkr_account || ""} onChange={(v: string) => update("ibkr_account", v)} />
@@ -678,7 +678,7 @@ function BrokerPanel({ settings, update, toggle, secrets }: any) {
             </div>
             <Switch checked={settings.enable_futu} onChange={(v: boolean) => update("enable_futu", v)} />
           </div>
-          <div className="grid grid-cols-4 gap-6">
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-4 lg:gap-6">
             <LabeledInput label="Host" value={settings.futu_host || "127.0.0.1"} onChange={(v: string) => update("futu_host", v)} />
             <LabeledInput label="Port" value={settings.futu_port || 11111} onChange={(v: string) => update("futu_port", v)} />
             <div className="col-span-2">
@@ -709,7 +709,7 @@ function SystemPanel({ settings, update }: any) {
     <div className="space-y-12">
       <SectionHead title="系統排程與分析頻率" desc="定義 AI 掃描市場與生成報告的時間表。" />
 
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4 lg:gap-8">
         <SettingCard title="每日例行工作" icon={<History size={20} />} desc="設定每日 CIO 自動分析與持倉掃描的時間。">
           <div className="space-y-6">
             <LabeledInput label="執行時間 (Daily Time)" type="time" value={settings.schedule_daily || "20:00"} onChange={(v: string) => update("schedule_daily", v)} />

@@ -21,9 +21,9 @@ export default function IntelligenceBriefing() {
   }
 
   return (
-    <div className="max-w-6xl mx-auto space-y-12 py-12 animate-in slide-in-from-bottom duration-700">
+    <div className="max-w-6xl mx-auto space-y-8 lg:space-y-12 py-6 lg:py-12 animate-in slide-in-from-bottom duration-700">
       {/* Header */}
-      <div className="border-b border-outline-variant/10 pb-8 flex justify-between items-end">
+      <div className="border-b border-outline-variant/10 pb-6 lg:pb-8 flex flex-col md:flex-row md:justify-between md:items-end gap-4">
         <div>
           <p className="text-secondary font-bold font-label text-xs uppercase tracking-[0.3em] mb-2">Alpha Intelligence Report</p>
           <h1 className="text-5xl font-black font-headline tracking-tighter text-on-surface">市場情報簡報</h1>
@@ -31,8 +31,8 @@ export default function IntelligenceBriefing() {
             整合即時市場數據與 AI 分析的機構級投資情報，為您的資產配置提供戰略指引。
           </p>
         </div>
-        <div className="text-right flex flex-col items-end gap-3">
-          <button 
+        <div className="flex flex-col items-start md:items-end gap-3">
+          <button
             onClick={() => mutate("/api/v1/dashboard/intelligence")}
             className="flex items-center gap-2 px-4 py-2 bg-surface-container-high rounded-lg text-[10px] font-black uppercase hover:bg-primary hover:text-on-primary transition-all group"
           >
@@ -47,15 +47,15 @@ export default function IntelligenceBriefing() {
       </div>
 
       {/* Primary Insights Grid */}
-      <div className="grid grid-cols-12 gap-8">
-        <div className="col-span-12 lg:col-span-8">
-          <BriefingCard 
+      <div className="grid grid-cols-12 gap-4 lg:gap-8">
+        <div className="col-span-12 md:col-span-8 lg:col-span-8">
+          <BriefingCard
             title="核心摘要：戰略判斷與市場解構"
             tags={["High Priority", "Strategic Intelligence"]}
           >
             <div className="prose prose-sm max-w-none text-on-surface leading-loose">
               <p className="text-lg font-light">{briefing.executive_summary}</p>
-              
+
               <div className="mt-8 p-8 bg-primary/5 rounded-[2rem] border-l-4 border-primary shadow-sm">
                 <div className="flex items-center gap-2 mb-4">
                   <Zap size={18} className="text-primary" />
@@ -69,7 +69,7 @@ export default function IntelligenceBriefing() {
           </BriefingCard>
         </div>
 
-        <div className="col-span-12 lg:col-span-4 space-y-8">
+        <div className="col-span-12 md:col-span-4 lg:col-span-4 space-y-4 lg:space-y-8">
           <BriefingCard title="市場情緒動能 (Sentiment)">
             <div className="space-y-6">
               {briefing.sentiment_metrics && briefing.sentiment_metrics.length > 0 ? briefing.sentiment_metrics.map((item: any) => (
@@ -80,7 +80,7 @@ export default function IntelligenceBriefing() {
                   </div>
                   <div className="h-2 w-full bg-surface-container-highest rounded-full overflow-hidden">
                     <div className={cn("h-full transition-all duration-1000", item.color)} style={{ width: `${item.value}%` }}></div>
-                   </div>
+                  </div>
                 </div>
               )) : (
                 <p className="text-[10px] text-center opacity-30 py-8">正在生成情緒指標...</p>
@@ -101,7 +101,7 @@ export default function IntelligenceBriefing() {
       </div>
 
       {/* Comparative Data Grid */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4 lg:gap-8">
         {(briefing.stats || []).map((stat: any) => (
           <div key={stat.title} className="p-8 bg-surface-container-low border border-outline-variant/10 rounded-xl shadow-sm hover:shadow-md transition-shadow">
             <div className="flex justify-between items-start mb-4">
@@ -117,7 +117,7 @@ export default function IntelligenceBriefing() {
           </div>
         ))}
       </div>
-      
+
       {/* Footer Disclaimer/Signoff */}
       <div className="pt-12 border-t border-outline-variant/10 flex flex-col items-center">
         <div className="w-12 h-1 bg-primary/20 rounded-full mb-6"></div>

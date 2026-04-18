@@ -10,15 +10,15 @@ interface PortfolioStatsProps {
   onRebalance: () => void;
 }
 
-export function PortfolioStats({ 
-  summary, 
-  isReporting, 
-  isRebalancing, 
-  onGenerateReport, 
-  onRebalance 
+export function PortfolioStats({
+  summary,
+  isReporting,
+  isRebalancing,
+  onGenerateReport,
+  onRebalance
 }: PortfolioStatsProps) {
   return (
-    <div className="grid grid-cols-12 gap-6 mb-8 items-center">
+    <div className="grid grid-cols-12 gap-4 lg:gap-6 mb-6 lg:mb-8 items-center">
       <div className="col-span-12 lg:col-span-8">
         <div className="flex items-baseline gap-4 mb-2">
           <h1 className="text-4xl font-black font-headline tracking-tighter text-on-surface">
@@ -33,30 +33,30 @@ export function PortfolioStats({
         <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-6">
           <StatItem label="資產淨值 (NLV)" value={formatCurrency(summary?.total_valuation || 0)} />
           <StatItem label="可用現金 (Cash)" value={formatCurrency(summary?.uninvested_cash || 0)} />
-          <StatItem 
-            label="槓桿比率 (Lev)" 
-            value={`${(summary?.leverage_ratio || 0).toFixed(2)}x`} 
-            className="text-secondary" 
+          <StatItem
+            label="槓桿比率 (Lev)"
+            value={`${(summary?.leverage_ratio || 0).toFixed(2)}x`}
+            className="text-secondary"
           />
-          <StatItem 
-            label="總投報率 (ROI)" 
-            value={`${(summary?.roi_percentage || 0).toFixed(2)}%`} 
-            className="text-primary" 
+          <StatItem
+            label="總投報率 (ROI)"
+            value={`${(summary?.roi_percentage || 0).toFixed(2)}%`}
+            className="text-primary"
           />
-          <StatItem 
-            label="總損益 (P/L)" 
-            value={formatCurrency(summary?.total_pnl || 0)} 
-            className={(summary?.total_pnl || 0) >= 0 ? "text-secondary" : "text-error"} 
+          <StatItem
+            label="總損益 (P/L)"
+            value={formatCurrency(summary?.total_pnl || 0)}
+            className={(summary?.total_pnl || 0) >= 0 ? "text-secondary" : "text-error"}
           />
-          <StatItem 
-            label="風險敞口" 
-            value={summary?.risk_exposure || "MODERATE"} 
-            className="text-tertiary uppercase" 
+          <StatItem
+            label="風險敞口"
+            value={summary?.risk_exposure || "MODERATE"}
+            className="text-tertiary uppercase"
           />
         </div>
       </div>
-      <div className="col-span-12 lg:col-span-4 flex justify-end gap-3">
-        <button 
+      <div className="col-span-12 lg:col-span-4 flex flex-wrap justify-start lg:justify-end gap-3">
+        <button
           onClick={onGenerateReport}
           disabled={isReporting}
           className="flex items-center gap-2 bg-surface-container px-6 py-3 rounded-md font-label text-xs uppercase tracking-widest text-on-surface border border-outline-variant/10 hover:bg-surface-bright transition-all active:scale-95 disabled:opacity-50"
@@ -64,7 +64,7 @@ export function PortfolioStats({
           {isReporting ? <Loader2 className="h-3 w-3 animate-spin" /> : <FileText className="h-3 w-3" />}
           產出報告
         </button>
-        <button 
+        <button
           onClick={onRebalance}
           disabled={isRebalancing}
           className="flex items-center gap-2 bg-gradient-to-r from-primary-container to-primary px-6 py-3 rounded-md font-label text-xs uppercase tracking-widest text-white shadow-lg active:scale-95 transition-all disabled:opacity-50"
