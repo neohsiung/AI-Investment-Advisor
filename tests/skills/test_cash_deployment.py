@@ -1,6 +1,6 @@
 import pytest
 import json
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock, AsyncMock, patch
 from src.agents.skills.cash_deployment.cli import cash_deployment
 from src.domain.trading import Account, BrokerType
 
@@ -14,7 +14,7 @@ async def test_cash_deployment_balanced():
     # Mock signature: get(user_id, key, default)
     mock_settings.get.return_value = 0.10 # 10% target
     
-    # Mock broker
+    # Mock broker — get_account is async, use AsyncMock
     mock_broker = MagicMock()
     mock_account = Account(
         broker_type=BrokerType.MOCK,
@@ -23,7 +23,7 @@ async def test_cash_deployment_balanced():
         available_cash=800.0, # 8% < 10%
         currency="USD"
     )
-    mock_broker.get_account.return_value = mock_account
+    mock_broker.get_account = AsyncMock(return_value=mock_account)
     
     with patch("src.agents.skills.cash_deployment.cli.AlchemySettingsRepository", return_value=mock_settings), \
          patch("src.agents.skills.cash_deployment.cli.BrokerFactory.get_broker", return_value=mock_broker):
@@ -46,7 +46,7 @@ async def test_cash_deployment_overweight():
     mock_settings = MagicMock()
     mock_settings.get.return_value = 0.10 # 10% target
     
-    # Mock broker
+    # Mock broker — get_account is async, use AsyncMock
     mock_broker = MagicMock()
     mock_account = Account(
         broker_type=BrokerType.MOCK,
@@ -55,7 +55,7 @@ async def test_cash_deployment_overweight():
         available_cash=3000.0, # 30% > 10%
         currency="USD"
     )
-    mock_broker.get_account.return_value = mock_account
+    mock_broker.get_account = AsyncMock(return_value=mock_account)
     
     with patch("src.agents.skills.cash_deployment.cli.AlchemySettingsRepository", return_value=mock_settings), \
          patch("src.agents.skills.cash_deployment.cli.BrokerFactory.get_broker", return_value=mock_broker):
@@ -99,7 +99,7 @@ async def test_cash_deployment_invalid_settings():
         available_cash=3000.0, # 30% > default 10%
         currency="USD"
     )
-    mock_broker.get_account.return_value = mock_account
+    mock_broker.get_account = AsyncMock(return_value=mock_account)
     
     with patch("src.agents.skills.cash_deployment.cli.AlchemySettingsRepository", return_value=mock_settings), \
          patch("src.agents.skills.cash_deployment.cli.BrokerFactory.get_broker", return_value=mock_broker):

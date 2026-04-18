@@ -67,7 +67,8 @@ def test_search_historical_context(manager, mock_db_engine):
          patch("src.repositories.vector_repository.AlchemyVectorRepository") as MockVectorRepo:
          
         mock_gateway = MockFactory.create.return_value
-        mock_gateway.embed.return_value = [0.1, 0.2, 0.3]
+        # gateway.embed is async, use AsyncMock
+        mock_gateway.embed = AsyncMock(return_value=[0.1, 0.2, 0.3])
         
         mock_vector_repo = MockVectorRepo.return_value
         mock_vector_repo.search_memory.return_value = [{"content": "Historical data", "final_score": 0.95}]

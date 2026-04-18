@@ -36,6 +36,17 @@ async def test_sentinel_failsafe_message():
                 user_id="test_user"
             )
 
+            # Mock _redis_buffer so Redis connection failures don't break tests
+            _buffer_store = []
+            mock_redis_buffer = MagicMock()
+            async def _mock_add(uid, t, w): _buffer_store.append(t); return True
+            async def _mock_all_pending(uid): return list(_buffer_store)
+            async def _mock_flush_due(uid): due = list(_buffer_store); _buffer_store.clear(); return due
+            mock_redis_buffer.add = _mock_add
+            mock_redis_buffer.all_pending = _mock_all_pending
+            mock_redis_buffer.flush_due = _mock_flush_due
+            sentinel._redis_buffer = mock_redis_buffer
+
             # Trigger escalation
             triggers = [{"text": "⚠️ TEST TRIGGER", "id": "test_id"}]
             await sentinel._escalate(triggers)

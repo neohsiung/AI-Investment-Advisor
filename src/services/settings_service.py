@@ -260,16 +260,22 @@ class SettingsService:
             print(f"SettingsService: Migration from SYSTEM failed: {e}")
 
         # 3. 填補基礎 UX 必備預設值 (若遷移後仍缺少的關鍵欄位)
+        # NOTE: AI_MODEL_* 為舊路徑 (settings 表) 的 fallback 預設值。
+        #       新路徑優先使用 llm_tier_bindings 表（由 AI Engine Management UI 管理）。
+        #       模型名稱從 TierConfig.DEFAULT_TIERS 動態讀取，避免重複的真相來源。
+        from src.infrastructure.llm.tier_config import TierConfig
+        _tc = TierConfig()
         defaults = {
             "auto_trade_threshold": 75,
             "auto_trade_min_threshold": 30,
             "risk_profile": "Aggressive",
             "target_cash_ratio": 0.2,
             "AI_PROVIDER": "OpenRouter",
-            "AI_MODEL": "google/gemini-2.5-pro",
-            "AI_MODEL_ADVANCED": "google/gemini-3.1-pro-preview",
-            "AI_MODEL_SMART": "google/gemini-2.5-pro",
-            "AI_MODEL_FAST": "gemini-2.0-flash",
+            "AI_MODEL":          _tc.get_spec("smart").default_model,    # smart tier fallback
+            "AI_MODEL_ADVANCED": _tc.get_spec("advanced").default_model, # advanced tier fallback
+            "AI_MODEL_SMART":    _tc.get_spec("smart").default_model,    # smart tier fallback
+            "AI_MODEL_FAST":     _tc.get_spec("fast").default_model,     # fast tier fallback
+            "AI_MODEL_NANO":     _tc.get_spec("nano").default_model,     # nano tier fallback
             "DISPLAY_TIMEZONE": "Asia/Taipei",
             "enable_etoro": False,
             "etoro_mode": "demo"

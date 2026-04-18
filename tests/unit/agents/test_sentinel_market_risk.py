@@ -176,7 +176,7 @@ class TestPositionMoves:
 
 
 class TestMacroShifts:
-    def test_fed_rate_up_triggers(self, mock_services):
+    def test_fed_rate_up_triggers(self, mock_services, run_async):
         """Fed funds rate trending up — triggers alert."""
         sentinel = _create_sentinel(mock_services)
         mock_services["market"].get_macro_data.return_value = {
@@ -186,11 +186,14 @@ class TestMacroShifts:
             }
         }
 
-        triggers = sentinel._check_macro_shifts()
-        assert len(triggers) == 1
-        assert "聯邦利率上升" in triggers[0]["text"]
+        async def _test():
+            triggers = await sentinel._check_macro_shifts()
+            assert len(triggers) == 1
+            assert "聯邦利率上升" in triggers[0]["text"]
 
-    def test_yield_inversion_triggers(self, mock_services):
+        run_async(_test())
+
+    def test_yield_inversion_triggers(self, mock_services, run_async):
         """Yield curve inverted — triggers alert."""
         sentinel = _create_sentinel(mock_services)
         mock_services["market"].get_macro_data.return_value = {
@@ -200,11 +203,14 @@ class TestMacroShifts:
             }
         }
 
-        triggers = sentinel._check_macro_shifts()
-        assert len(triggers) == 1
-        assert "殖利率曲線倒掛" in triggers[0]["text"]
+        async def _test():
+            triggers = await sentinel._check_macro_shifts()
+            assert len(triggers) == 1
+            assert "殖利率曲線倒掛" in triggers[0]["text"]
 
-    def test_normal_macro_no_trigger(self, mock_services):
+        run_async(_test())
+
+    def test_normal_macro_no_trigger(self, mock_services, run_async):
         """Normal macro conditions — no trigger."""
         sentinel = _create_sentinel(mock_services)
         mock_services["market"].get_macro_data.return_value = {
@@ -214,8 +220,11 @@ class TestMacroShifts:
             }
         }
 
-        triggers = sentinel._check_macro_shifts()
-        assert len(triggers) == 0
+        async def _test():
+            triggers = await sentinel._check_macro_shifts()
+            assert len(triggers) == 0
+
+        run_async(_test())
 
 
 

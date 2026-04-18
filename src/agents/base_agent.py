@@ -183,23 +183,68 @@ class BaseAgent(ABC):
 
     def _load_config(self):
         """
-        Read AI configuration (Priority: Budget Router > DB > Env > Default).
-        讀取 AI 設定 (優先經由預算路由器，確保花費受控)
+        Read AI configuration (Priority: llm_tier_bindings (new) > Budget Router (legacy) > DB > Env > Default).
+        讀取 AI 設定 (優先使用 llm_tier_bindings 新路徑，確保模型名稱由 UI 管理)
         """
         try:
             # 1. Initialize dependencies for Router
-            # Use specific services to ensure consistency with router logic
             settings = SettingsService(user_id=self.user_id, settings_repo=self.settings_repo)
             token_logger = TokenLoggerService()
             router = BudgetAwareModelRouter(settings, token_logger)
-            
-            # 2. Get configuration from router (handles budget-based downgrading)
+
+            # 2. [NEW PATH] Try get_config_chain() → reads llm_tier_bindings table
+            #    This is the preferred path: model names are managed via UI, not hardcoded settings.
+            if self.user_id:
+                try:
+                    candidates = router.get_config_chain(
+                        user_id=self.user_id,
+                        tier=self.tier,
+                        agent_name=self.name,
+                    )
+                    if candidates:
+                        # Use the primary candidate (first in chain) to build config dict
+                        primary = candidates[0]
+                        # Resolve API key: candidate may carry it, else fall back to env
+                        api_key = primary.api_key or ""
+                        config = {
+                            "provider": primary.provider_code,
+                            "model": primary.model_code,
+                            "api_key": api_key,
+                            "base_url": primary.base_url or "",
+                            "temperature": 0.7,
+                            "max_tokens": 8192,
+                            "timeout_seconds": int(primary.timeout_seconds),
+                            "max_retries": primary.max_retries,
+                            # Preserve full chain for ResilientLLMPipeline consumers
+                            "_candidates": candidates,
+                        }
+                        self.logger.debug(
+                            f"[_load_config] Using llm_tier_bindings path: "
+                            f"tier={self.tier} model={primary.model_code} "
+                            f"provider={primary.provider_code} candidates={len(candidates)}"
+                        )
+                        return config
+                    else:
+                        self.logger.warning(
+                            f"[_load_config] llm_tier_bindings returned no candidates for "
+                            f"user={self.user_id} tier={self.tier}. "
+                            "Falling back to legacy settings path. "
+                            "Please configure Tier Bindings in AI Engine Management UI."
+                        )
+                except Exception as chain_err:
+                    self.logger.warning(
+                        f"[_load_config] get_config_chain failed for "
+                        f"user={self.user_id} tier={self.tier}: {chain_err}. "
+                        "Falling back to legacy settings path."
+                    )
+
+            # 3. [LEGACY PATH] Fallback: get_config() → reads settings table (AI_MODEL, AI_MODEL_ADVANCED, …)
+            #    These values may be stale; prefer configuring Tier Bindings instead.
             config_obj = router.get_config(self.tier, self.user_id)
-            
-            # 3. Convert to dict for backward compatibility with base classes and tests
-            # 將 LLMConfig 物件轉為字典，以容納目前的測試與基礎層邏輯
+
+            # 4. Convert to dict for backward compatibility with base classes and tests
             return asdict(config_obj)
-            
+
         except Exception as e:
             self.logger.error(f"[_load_config] Failed to use BudgetAwareModelRouter: {e}. Falling back to legacy loading.")
             # Fallback to legacy loading if router fails
@@ -216,7 +261,10 @@ class BaseAgent(ABC):
         tier_cfg = TierConfig()
         # Priority: DB AI_MODEL > Tier Resolution
         default_model = db_settings.get("AI_MODEL", db_settings.get("ai_model", tier_cfg.resolve(self.tier, db_settings)))
-        provider = db_settings.get("AI_PROVIDER", db_settings.get("ai_provider", os.getenv("AI_PROVIDER", "Google Gemini")))
+        provider = db_settings.get("AI_PROVIDER", db_settings.get("ai_provider", os.getenv("AI_PROVIDER")))
+        if not provider:
+            self.logger.warning("AI_PROVIDER not configured, defaulting to OpenRouter")
+            provider = "OpenRouter"
         
         config = {
             "provider": provider,

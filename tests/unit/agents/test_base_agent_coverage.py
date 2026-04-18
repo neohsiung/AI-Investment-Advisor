@@ -34,19 +34,19 @@ class TestBaseAgentCoverage:
 
     def test_load_config_priority(self):
         # Mock DB, Env and File System for new instance
-        # Remove invalid patch of SettingsService
+        # New _load_config() first tries get_config_chain() (llm_tier_bindings path).
+        # We mock it to return empty so it falls back to legacy get_config() path,
+        # which reads settings_repo (AI_MODEL_SMART etc.).
         with patch('os.path.exists', return_value=True), \
              patch('builtins.open', mock_open(read_data="Prompt")):
-            
-            # Test Env Var override (simulated by _load_config logic if DB empty)
-            # Actually BaseAgent loads from os.getenv.
-            # We want to test DB override.
             
             mock_settings_repo = MagicMock()
             # Mock the return value to be a list of tuples since BaseAgent handles that
             mock_settings_repo.get_all.return_value = [("AI_MODEL_SMART", "gemini-1.5-ultra")]
             
-            agent = ConcreteAgent(name="A", prompt_path="p", user_id="user1", settings_repo=mock_settings_repo)
+            # Patch get_config_chain to return empty → forces fallback to legacy path
+            with patch('src.infrastructure.llm.budget_aware_model_router.BudgetAwareModelRouter.get_config_chain', return_value=[]):
+                agent = ConcreteAgent(name="A", prompt_path="p", user_id="user1", settings_repo=mock_settings_repo)
             assert agent.config['model'] == "gemini-1.5-ultra"
 
     def test_render_system_prompt(self, agent):

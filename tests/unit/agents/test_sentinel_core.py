@@ -151,7 +151,7 @@ class TestSourcePollingAndThematic:
             assert isinstance(res, list)
         run_async(_test())
         
-    def test_analyze_ticker_news_ai_energy(self, mock_services):
+    def test_analyze_ticker_news_ai_energy(self, mock_services, run_async):
         sentinel = _create_sentinel(mock_services)
         
         # Force empty settings so bootstrapping triggers
@@ -169,11 +169,14 @@ class TestSourcePollingAndThematic:
         mock_services["market"].get_news.return_value = []
         mock_services["search"].search_financial_context.return_value = mock_results
         
-        score, summary = sentinel._analyze_ticker_news("MSFT", mock_keywords)
-        # PPA deals get score boost
-        assert score > 0.0
+        async def _test():
+            score, summary = await sentinel._analyze_ticker_news("MSFT", mock_keywords)
+            # PPA deals get score boost
+            assert score > 0.0
 
-    def test_analyze_ticker_news_physical_ai(self, mock_services):
+        run_async(_test())
+
+    def test_analyze_ticker_news_physical_ai(self, mock_services, run_async):
         sentinel = _create_sentinel(mock_services)
         sentinel.settings_service.get_setting.side_effect = lambda k: "TSLA" if "physical_ai" in k else None
         
@@ -188,9 +191,12 @@ class TestSourcePollingAndThematic:
         mock_services["market"].get_news.return_value = []
         mock_services["search"].search_financial_context.return_value = mock_results
         
-        score, summary = sentinel._analyze_ticker_news("TSLA", mock_keywords)
-        # Should detect Physical AI keywords and boost
-        assert score > 0.0
+        async def _test():
+            score, summary = await sentinel._analyze_ticker_news("TSLA", mock_keywords)
+            # Should detect Physical AI keywords and boost
+            assert score > 0.0
+
+        run_async(_test())
 
 
 

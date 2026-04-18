@@ -33,7 +33,8 @@ async def test_trade_approval_with_ok_reply(anyio_backend):
     
     mock_broker = MagicMock()
     mock_broker.get_name.return_value = "MockBroker"
-    mock_broker.execute_order.return_value = {"status": "success", "order_id": "12345"}
+    # execute_order is async, use AsyncMock
+    mock_broker.execute_order = AsyncMock(return_value={"status": "success", "order_id": "12345"})
     
     # 2. Setup Services
     # Use MagicMock for registration (sync) but maintain async for messaging

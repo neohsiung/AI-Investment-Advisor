@@ -102,6 +102,8 @@ class BudgetAwareModelRouter:
     def _build_config(self, tier_name: str, user_id: str) -> LLMConfig:
         """
         Internal mapping from tier name to actual LLMConfig using TierConfig.
+        [LEGACY PATH] Reads AI_MODEL / AI_MODEL_ADVANCED / … from settings table.
+        Prefer get_config_chain() which reads llm_tier_bindings instead.
         """
         # Fetch DB overrides if any
         db_settings = self.settings.get_all_settings() if user_id else {}
@@ -110,7 +112,7 @@ class BudgetAwareModelRouter:
         model_name = self.tier_cfg.resolve(tier_name, db_settings)
         if isinstance(model_name, str):
             model_name = model_name.strip().strip('"').strip("'")
-            
+
         spec = self.tier_cfg.get_spec(tier_name)
         
         # Provider resolution (Check AI_PROVIDER first for standards compliance)

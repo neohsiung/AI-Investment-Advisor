@@ -77,12 +77,13 @@ class TestCoverageFinalPush:
         assert risk_manager.check_sector_exposure("user1", "UNKNOWN", 1000, []) is True
 
     @patch('src.services.analytics_service.update_daily_snapshot')
-    def test_analytics_service_trigger(self, mock_update):
+    @pytest.mark.asyncio
+    async def test_analytics_service_trigger(self, mock_update):
         """Cover analytics service trigger."""
         with patch('src.services.analytics_service.AlchemySnapshotRepository'), \
              patch('src.services.analytics_service.PnLCalculator'):
             service = AnalyticsService(user_id="user1")
-            service.trigger_snapshot_update()
+            await service.trigger_snapshot_update()
             mock_update.assert_called_once()
 
     def test_pnl_calculator_realized_only(self):

@@ -24,15 +24,18 @@ class TestBreakingNews:
         keywords = self._get_test_keywords()
         sentinel.keyword_service.get_active_keywords.return_value = keywords
 
-        with patch.object(sentinel, '_get_all_user_ids', return_value=["user@test.com"]):
-            triggers = sentinel._check_breaking_news_v2(["AAPL"])
+        async def _test():
+            with patch.object(sentinel, '_get_all_user_ids', return_value=["user@test.com"]):
+                triggers = await sentinel._check_breaking_news_v2(["AAPL"])
 
-        assert len(triggers) == 1
-        assert "AAPL" in triggers[0]["id"]
-        assert "新聞異動" in triggers[0]["text"]
-        assert "加權分數" in triggers[0]["text"]
-        # Verify hits were recorded via keyword_service
-        assert sentinel.keyword_service.record_hit.call_count >= 1
+            assert len(triggers) == 1
+            assert "AAPL" in triggers[0]["id"]
+            assert "新聞異動" in triggers[0]["text"]
+            assert "加權分數" in triggers[0]["text"]
+            # Verify hits were recorded via keyword_service
+            assert sentinel.keyword_service.record_hit.call_count >= 1
+
+        run_async(_test())
 
     def test_no_risk_keyword_no_trigger(self, mock_services, run_async):
         """Tavily returns normal news — weighted score < 0.6, no trigger."""
@@ -46,10 +49,13 @@ class TestBreakingNews:
         keywords = self._get_test_keywords()
         sentinel.keyword_service.get_active_keywords.return_value = keywords
 
-        with patch.object(sentinel, '_get_all_user_ids', return_value=["user@test.com"]):
-            triggers = sentinel._check_breaking_news_v2(["MSFT"])
+        async def _test():
+            with patch.object(sentinel, '_get_all_user_ids', return_value=["user@test.com"]):
+                triggers = await sentinel._check_breaking_news_v2(["MSFT"])
 
-        assert len(triggers) == 0
+            assert len(triggers) == 0
+
+        run_async(_test())
 
     def test_tavily_failure_graceful(self, mock_services, run_async):
         """Tavily API fails — returns empty, no crash."""
@@ -61,10 +67,13 @@ class TestBreakingNews:
         keywords = self._get_test_keywords()
         sentinel.keyword_service.get_active_keywords.return_value = keywords
 
-        with patch.object(sentinel, '_get_all_user_ids', return_value=["user@test.com"]):
-            triggers = sentinel._check_breaking_news_v2(["AAPL"])
+        async def _test():
+            with patch.object(sentinel, '_get_all_user_ids', return_value=["user@test.com"]):
+                triggers = await sentinel._check_breaking_news_v2(["AAPL"])
 
-        assert len(triggers) == 0
+            assert len(triggers) == 0
+
+        run_async(_test())
 
 
 

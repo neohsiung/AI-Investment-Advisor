@@ -69,13 +69,17 @@ class OpenRouterGateway(ILLMGateway):
                     timeout=config.timeout_seconds,
                 )
             response.raise_for_status()
+        except httpx.HTTPStatusError as e:
+            model_id = getattr(config, 'model', 'unknown')
+            logger.error(
+                f"OpenRouter HTTP error {e.response.status_code} | "
+                f"Model: {model_id} | "
+                f"URL: {e.request.url} | "
+                f"Response: {e.response.text[:500]}"
+            )
+            raise
         except httpx.HTTPError as e:
-            # Log detailed error info for debugging
-            error_msg = f"OpenRouter API error: {e}"
-            if hasattr(response, 'text'):
-                error_msg += f"\nResponse body: {response.text}"
-            import logging
-            logging.error(error_msg)
+            logger.error(f"OpenRouter API error: {e}")
             raise
         
         resp_json = response.json()
