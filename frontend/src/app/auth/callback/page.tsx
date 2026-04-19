@@ -2,6 +2,7 @@
 
 import { useEffect, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
+import { mutate } from "swr";
 import { Loader2 } from "lucide-react";
 
 function TokenCollector() {
@@ -17,7 +18,10 @@ function TokenCollector() {
       localStorage.setItem("access_token", accessToken);
       localStorage.setItem("refresh_token", refreshToken);
 
-      // 2. 成功後引導至 CommandCenter
+      // 2. 立即觸發全局 SWR Revalidation，確保 TopBar 與 Page 及時更新狀態
+      mutate("/api/v1/auth/me");
+      
+      // 3. 成功後引導至 CommandCenter
       router.push("/");
     } else {
       // 3. 異常處理：若遺失 Token 則回歸登入頁

@@ -107,18 +107,36 @@ class N8nParser(BaseSourceParser):
             "signal_id": signal_id
         }
 
+class PolygonParser(BaseSourceParser):
+    @staticmethod
+    def parse(payload: Any) -> Dict[str, Any]:
+        # Polygon can send a list of events or a single event
+        data = payload[0] if isinstance(payload, list) and payload else payload
+        
+        ev_type = data.get("ev", "unknown")
+        ticker = data.get("sym", "UNKNOWN")
+        
+        msg = f"Polygon.io Alert: {ev_type} for {ticker}"
+        if ev_type == "T":
+            msg = f"Trade Event for {ticker}: Price={data.get('p')} Size={data.get('s')}"
+        elif ev_type == "A":
+            msg = f"Aggregate Alert for {ticker}: Close={data.get('c')} Vol={data.get('v')}"
+            
+        return {
+            "type": "POLYGON_EVENT",
+            "ticker": ticker,
+            "msg": msg,
+            "ev": ev_type
+        }
+
 class SkillLearningParser(BaseSourceParser):
-    """Parser for investment skill learning events (articles, podcast transcripts)."""
     @staticmethod
     def parse(payload: Dict[str, Any]) -> Dict[str, Any]:
-        data = payload.get("body", payload) if isinstance(payload.get("body"), dict) else payload
         return {
-            "type": data.get("event_type", "SKILL_LEARNING"),
-            "content": data.get("transcript") or data.get("article_text") or data.get("content") or "",
-            "source_url": data.get("article_url") or data.get("source_url") or data.get("url") or "",
-            "source_type": data.get("source_type", "article"),
-            "source_name": data.get("source_name", ""),
-            "msg": data.get("message") or f"Skill learning: {data.get('source_type', 'article')}",
+            "type": "SKILL_LEARNING",
+            "content": payload.get("content") or payload.get("text", ""),
+            "source_url": payload.get("source_url") or payload.get("url", ""),
+            "source_type": payload.get("source_type") or "article"
         }
 
 SOURCE_PARSERS = {
@@ -134,6 +152,7 @@ SOURCE_PARSERS = {
     "pipedream": N8nParser,  # Pipedream follows similar logic
     "skill_learning": SkillLearningParser,
     "skill-learning": SkillLearningParser,
+    "polygon": PolygonParser,
 }
 
 class WebhookService:

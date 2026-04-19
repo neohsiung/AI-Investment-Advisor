@@ -27,7 +27,7 @@ export default function TopBar() {
 
   return (
     <header className="flex justify-between items-center px-4 sm:px-8 h-16 fixed top-0 left-0 lg:left-64 right-0 z-50 bg-background/80 backdrop-blur-md border-b border-outline-variant/10">
-      <div className="flex items-center gap-4 sm:gap-8">
+      <div className="flex-1 flex items-center gap-4 sm:gap-6 min-w-0">
         {/* Hamburger 按鈕：僅在手機/平板顯示 */}
         <button
           onClick={toggle}
@@ -37,7 +37,7 @@ export default function TopBar() {
           <Menu className="h-5 w-5" />
         </button>
 
-        <nav className="hidden sm:flex items-center gap-6">
+        <nav className="hidden sm:flex items-center gap-4 lg:gap-6 min-w-0 overflow-hidden">
           {navLinks.map((link) => (
             <Link
               key={link.href}
@@ -55,7 +55,7 @@ export default function TopBar() {
         </nav>
       </div>
 
-      <div className="flex items-center gap-2 sm:gap-4">
+      <div className="flex items-center gap-2 sm:gap-4 ml-4 flex-shrink-0">
         <div className="relative group hidden sm:block">
           <input
             type="text"

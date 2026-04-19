@@ -581,11 +581,13 @@ class BaseAgent(ABC):
         """
         Build LLMConfig value object from agent config dict.
         """
+        model_raw = self.config.get('model') or ''
+        model = model_raw.strip('"').strip("'") if isinstance(model_raw, str) else ''
         return LLMConfig(
-            provider=self.config.get('provider', ''),
-            model=self.config.get('model', '').strip('"').strip("'"),
-            api_key=self.config.get('api_key', ''),
-            base_url=self.config.get('base_url', ''),
+            provider=self.config.get('provider') or '',
+            model=model,
+            api_key=self.config.get('api_key') or '',
+            base_url=self.config.get('base_url') or '',
             temperature=temperature,
             max_retries=self.config.get('max_retries', 3),
             timeout_seconds=30,

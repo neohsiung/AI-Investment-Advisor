@@ -271,11 +271,11 @@ class SettingsService:
             "risk_profile": "Aggressive",
             "target_cash_ratio": 0.2,
             "AI_PROVIDER": "OpenRouter",
-            "AI_MODEL":          _tc.get_spec("smart").default_model,    # smart tier fallback
-            "AI_MODEL_ADVANCED": _tc.get_spec("advanced").default_model, # advanced tier fallback
-            "AI_MODEL_SMART":    _tc.get_spec("smart").default_model,    # smart tier fallback
-            "AI_MODEL_FAST":     _tc.get_spec("fast").default_model,     # fast tier fallback
-            "AI_MODEL_NANO":     _tc.get_spec("nano").default_model,     # nano tier fallback
+            "AI_MODEL":          _tc.resolve("smart"),    # smart tier fallback
+            "AI_MODEL_ADVANCED": _tc.resolve("advanced"), # advanced tier fallback
+            "AI_MODEL_SMART":    _tc.resolve("smart"),    # smart tier fallback
+            "AI_MODEL_FAST":     _tc.resolve("fast"),     # fast tier fallback
+            "AI_MODEL_NANO":     _tc.resolve("nano"),     # nano tier fallback
             "DISPLAY_TIMEZONE": "Asia/Taipei",
             "enable_etoro": False,
             "etoro_mode": "demo"

@@ -177,6 +177,7 @@ class AsyncAlchemyUserRepository(AsyncBaseRepository, IAsyncUserRepository):
 
     async def get_by_identity(self, provider: str, identifier: str) -> Optional[Dict[str, Any]]:
         async with await self.get_session() as session:
+            # 1. 嘗試標準身份對應 (New UUID System)
             query = text("""
                 SELECT u.* FROM users u
                 JOIN user_identities ui ON u.id = ui.user_id
@@ -184,7 +185,29 @@ class AsyncAlchemyUserRepository(AsyncBaseRepository, IAsyncUserRepository):
             """)
             result = await session.execute(query, {"provider": provider, "identifier": identifier})
             row = result.fetchone()
-            return dict(row._mapping) if row else None
+            if row:
+                return dict(row._mapping)
+
+            # 2. Legacy Fallback (Sprint 1-2 Legacy):
+            # 如果是 Email 登入且沒找到與之關聯的 Identity，檢查 Users 表是否存在 id == identifier (當時使用 Email 作為 ID)
+            if provider == "email":
+                query_legacy = text("SELECT * FROM users WHERE id = :identifier")
+                res_legacy = await session.execute(query_legacy, {"identifier": identifier})
+                row_legacy = res_legacy.fetchone()
+                if row_legacy:
+                    # 發現遺留帳號！主動建立身份連結，確保下次登入一致
+                    await session.execute(text("""
+                        INSERT INTO user_identities (id, user_id, provider, identifier, is_primary)
+                        VALUES (:id, :uid, 'email', :identifier, 1)
+                    """), {
+                        "id": str(uuid.uuid4()),
+                        "uid": identifier,
+                        "identifier": identifier
+                    })
+                    await session.commit()
+                    return dict(row_legacy._mapping)
+
+            return None
 
     async def create_user(self, email: str, name: str = None) -> str:
         user_uuid = str(uuid.uuid4())

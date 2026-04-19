@@ -42,6 +42,7 @@ class TierSpec:
     output_cost_per_mtok: float = 0.0      # $/million output tokens
     max_tokens: int = 4096                 # default max output tokens
     description: str = ""
+    default_model: str = ""                # Fallback if DB and Env are missing
     cognitive_mapping: str = ""            # 認知科學對照
 
     @property
@@ -52,18 +53,20 @@ class TierSpec:
     def resolve_model(self, db_settings: Dict[str, str] = None) -> Optional[str]:
         """
         Resolve the actual model to use.
-        Priority: DB setting > Env var > None.
+        Priority: DB setting > Env var > Default.
         """
         db_settings = db_settings or {}
         # DB override
         if self.env_key in db_settings:
             val = db_settings[self.env_key]
-            return val.strip().strip('"').strip("'") if isinstance(val, str) else val
+            if val:
+                return val.strip().strip('"').strip("'")
         # Env override
         env_model = os.getenv(self.env_key)
         if env_model:
             return env_model.strip().strip('"').strip("'")
-        return None
+        # Default
+        return self.default_model
 
 
 # ═══════════════════════════════════════════════════════
@@ -73,36 +76,32 @@ class TierSpec:
 # fmt: off
 DEFAULT_TIERS: Dict[str, TierSpec] = {
     # ── Tier 0: Nano — 反射層 (Reflex) ─────────────────
-    # Use for: intent classification, routing, yes/no decisions
-    # 用途: 意圖分類、路由、是否判斷
     "nano": TierSpec(
         name="nano",
         display_name="Nano (反射)",
         env_key="AI_MODEL_NANO",
         input_cost_per_mtok=0.10,
         output_cost_per_mtok=0.40,
-        max_tokens=1024,
+        max_tokens=512,
         description="Ultra-cheap reflex layer for classification & routing",
+        default_model="google/gemini-2.0-flash-lite-preview-02-05",
         cognitive_mapping="System 0 — 反射 (Reflex): 不經思考的自動反應",
     ),
 
     # ── Tier 1: Fast — 快思層 (Fast Thinking) ──────────
-    # Use for: summarization, extraction, sentiment, memory compaction (D→I)
-    # 用途: 摘要、萃取、情緒分析、記憶壓縮
     "fast": TierSpec(
         name="fast",
-        display_name="Fast (快思)",
+        display_name="Fast (高速)",
         env_key="AI_MODEL_FAST",
         input_cost_per_mtok=0.30,
         output_cost_per_mtok=2.50,
-        max_tokens=4096,
-        description="High-throughput layer for summarization & extraction",
+        max_tokens=2048,
+        description="Low-latency balance for summary & sensory agents",
+        default_model="google/gemini-2.0-flash-exp",
         cognitive_mapping="System 1 — 快思 (Fast Thinking): 直覺式快速處理",
     ),
 
     # ── Tier 2: Smart — 慢想層 (Slow Thinking) ─────────
-    # Use for: analysis, reasoning, knowledge distillation (I→K),
-    #          conversation with context, multi-step decisions
     # 用途: 分析、推理、知識蒸餾、上下文對話、多步驟決策
     "smart": TierSpec(
         name="smart",
@@ -112,6 +111,7 @@ DEFAULT_TIERS: Dict[str, TierSpec] = {
         output_cost_per_mtok=10.00,
         max_tokens=8192,
         description="Analytical layer for reasoning & multi-step decisions",
+        default_model="google/gemini-2.0-pro-exp-02-05",
         cognitive_mapping="System 2 — 慢想 (Slow Thinking): 需要專注的分析性思考",
     ),
 
@@ -127,6 +127,7 @@ DEFAULT_TIERS: Dict[str, TierSpec] = {
         output_cost_per_mtok=15.00,
         max_tokens=8192,
         description="Deep reasoning for CIO decisions & complex strategy",
+        default_model="anthropic/claude-3.5-sonnet:beta",
         cognitive_mapping="System 2+ — 深思 (Deep Thinking): 深度推理與戰略判斷",
     ),
 }

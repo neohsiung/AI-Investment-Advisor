@@ -62,7 +62,7 @@ class MetaPromptAgent(BaseAgent):
         
         try:
             # High-tier reasoning call
-            new_prompt = self.call_llm(
+            new_prompt = await self.call_llm(
                 messages=[
                     {"role": "system", "content": system_prompt},
                     {"role": "user", "content": user_prompt}

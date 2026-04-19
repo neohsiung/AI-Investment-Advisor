@@ -150,14 +150,20 @@ services:
       - ollama_data:/root/.ollama
     networks:
       - advisor-net
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:11434/api/tags"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-
-  otel-collector:
-    restart: unless-stopped
+  # 8. Web Gateway & Reverse Proxy (Nginx)
+  nginx:
+    image: nginx:alpine
+    container_name: advisor_prod_gateway
+    restart: always
+    ports:
+      - "80:80"
+    volumes:
+      - ./infra/nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+    depends_on:
+      frontend:
+        condition: service_started
+      mcp_server:
+        condition: service_healthy
     networks:
       - advisor-net
 

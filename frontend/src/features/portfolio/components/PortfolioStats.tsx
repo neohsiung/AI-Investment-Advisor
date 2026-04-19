@@ -18,7 +18,7 @@ export function PortfolioStats({
   onRebalance
 }: PortfolioStatsProps) {
   return (
-    <div className="grid grid-cols-12 gap-4 lg:gap-6 mb-6 lg:mb-8 items-center">
+    <div className="grid grid-cols-12 gap-4 lg:gap-6 mb-6 lg:mb-8 items-center pt-4">
       <div className="col-span-12 lg:col-span-8">
         <div className="flex items-baseline gap-4 mb-2">
           <h1 className="text-4xl font-black font-headline tracking-tighter text-on-surface">
@@ -30,7 +30,7 @@ export function PortfolioStats({
           </div>
         </div>
 
-        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-6">
+        <div className="flex flex-wrap gap-4 sm:gap-6">
           <StatItem label="資產淨值 (NLV)" value={formatCurrency(summary?.total_valuation || 0)} />
           <StatItem label="可用現金 (Cash)" value={formatCurrency(summary?.uninvested_cash || 0)} />
           <StatItem
@@ -79,7 +79,7 @@ export function PortfolioStats({
 
 function StatItem({ label, value, className }: { label: string, value: string, className?: string }) {
   return (
-    <div>
+    <div className="flex-1 min-w-[140px]">
       <p className="font-label text-[10px] uppercase tracking-[0.2em] text-on-surface-variant mb-1">{label}</p>
       <p className={cn("text-xl font-bold font-headline tracking-tight", className)}>{value}</p>
     </div>

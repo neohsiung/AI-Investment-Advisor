@@ -74,7 +74,7 @@ export default function SettingsPage() {
   }
 
   return (
-    <div className="flex-1 flex flex-col bg-background pt-20 lg:pt-24 p-4 lg:p-8 overflow-hidden h-full">
+    <div className="flex-1 flex flex-col min-h-0">
       <div className="max-w-7xl mx-auto w-full flex flex-col h-full">
         {/* Header Section */}
         <div className="flex flex-col md:flex-row md:justify-between md:items-end gap-4 mb-6 lg:mb-8 flex-shrink-0">

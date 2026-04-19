@@ -51,7 +51,7 @@ class EvaluatorAgent(BaseAgent):
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": user_prompt}
             ]
-            response = self.call_llm(
+            response = await self.call_llm(
                 messages=messages,
                 temperature=0.1,
                 response_format={"type": "json_object"}
