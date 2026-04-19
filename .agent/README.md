@@ -17,6 +17,7 @@ The **Specialized Capability Packages**. Each folder contains a `SKILL.md` (inst
 - `wiki-maintainer`: Automated link verification and structure audits.
 - `trunk-based-commit`: High-frequency, atomic version control logic.
 - `postgres-raw-sql`: Standards for database interactions.
+- `audit-plugin`: Security auditing for 3rd-party tools and plugins.
 
 ### 3. Workflows (`/workflows`)
 The **Operational Playbooks**. Standardized processes for common large-scale tasks.

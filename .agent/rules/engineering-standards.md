@@ -114,6 +114,12 @@
   - **流程**: Streamlit (`<a>` tag) → `FastAPI /api/auth/login` → Google OAuth → `FastAPI /api/auth/callback` → `HTTP 302 Redirect` → Streamlit。
   - **前端驗證**: 使用 `st.context.cookies.get(cookie_name)` 同步讀取，透過 `auth_guard` 進行頁面阻斷。Cookie 屬性需設定 `samesite="lax"`。
 
+### 3.5 第三方工具與 Skill 審計 (Third-party Audit)
+
+- **強制審計**：在安裝任何第三方 AI 工具、Plugin、Skill 或 CLI 之前，必須執行 `.agent/skills/audit-plugin` 描述的資安審計流程。
+- **審計重點**：嚴禁安裝具備隱藏遙測 (Telemetry)、未授權 Outbound 呼叫、硬編碼外部金鑰或試圖寫入系統敏感目錄的工具。
+- **記錄留存**：審計結果必須記錄於當次開發對話或對應之 `implementation_plan.md` 中備查。
+
 ---
 
 ## 4. 專案組織與腳本管理 (Project Organization & Script Management)
