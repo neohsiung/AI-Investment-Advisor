@@ -174,5 +174,31 @@ def test_cognitive_memory_storage_fallback():
         args, kwargs = mock_file.call_args
         assert "test_memory" in str(args[0])
 
+def test_dashboard_add_transaction_sanitization(client):
+    """Test that /data/transactions (POST) sanitizes exceptions."""
+    with patch("src.services.dashboard_router.TransactionService") as mock_service_class:
+        mock_service = mock_service_class.return_value
+        # Mock add_manual_trade returning success=False with a sensitive message
+        mock_service.add_manual_trade.return_value = (False, "SQL_ERROR: Table 'users_private' not found")
+        
+        payload = {"ticker": "AAPL", "quantity": 10, "price": 150}
+        response = client.post("/data/transactions", json=payload)
+        
+        assert response.status_code == 400
+        assert "SQL_ERROR" not in response.text
+        assert "交易新增失敗" in response.json()["detail"]
+
+def test_dashboard_delete_transaction_sanitization(client):
+    """Test that /data/transactions/{id} (DELETE) sanitizes exceptions."""
+    with patch("src.services.dashboard_router.TransactionService") as mock_service_class:
+        mock_service = mock_service_class.return_value
+        mock_service.delete_transaction.return_value = (False, "OS_ERROR: Cannot delete file /root/db/tx_999.lock")
+        
+        response = client.delete("/data/transactions/999")
+        
+        assert response.status_code == 400
+        assert "OS_ERROR" not in response.text
+        assert "交易刪除失敗" in response.json()["detail"]
+
 def patch_open(*args, **kwargs):
     return MagicMock()
