@@ -191,7 +191,7 @@ class SentinelService:
         msg = data.get("msg", "Event Triggered")
         ticker = data.get("ticker")
         
-        logger.info(f"Sentinel Processing Event: [{source}] {msg}")
+        logger.info(f"Sentinel Processing Event: [{redact_secrets(source)}] {redact_secrets(msg)}")
         
         display_text = f"🔔 [{source.upper()}] {msg} " + (f"({ticker})" if ticker else "")
         # Use message content as ID for generic events if no specific ID provided
@@ -358,7 +358,7 @@ class SentinelService:
                     })
                     
         except Exception as e:
-            logger.warning(f"Position move check failed for {all_tickers}: {e}")
+            logger.warning(f"Position move check failed for {redact_secrets(all_tickers)}: {e}")
         return triggers
 
     async def _check_position_moves(self) -> List[Dict[str, Any]]:
@@ -500,7 +500,7 @@ class SentinelService:
                         tx_service = TransactionService(user_id=self.user_id)
                         active_tickers = tx_service.get_user_tickers(user_id=self.user_id, only_active=True)
                         if active_tickers:
-                            logger.info(f"Bootstrapping AI Energy Tickers from Watchlist: {active_tickers}")
+                            logger.info(f"Bootstrapping AI Energy Tickers from Watchlist: {redact_secrets(active_tickers)}")
                             from src.agents.factory import AgentFactory
                             thematic_agent = AgentFactory.create_thematic_agent(user_id=self.user_id)
                             context = {
@@ -550,7 +550,7 @@ class SentinelService:
                         tx_service = TransactionService(user_id=self.user_id)
                         active_tickers = tx_service.get_user_tickers(user_id=self.user_id, only_active=True)
                         if active_tickers:
-                            logger.info(f"Bootstrapping Physical AI Tickers from Watchlist: {active_tickers}")
+                            logger.info(f"Bootstrapping Physical AI Tickers from Watchlist: {redact_secrets(active_tickers)}")
                             from src.agents.factory import AgentFactory
                             thematic_agent = AgentFactory.create_thematic_agent(user_id=self.user_id)
                             context = {
@@ -778,7 +778,7 @@ class SentinelService:
                         err_msg = eval_res.get("error", "unknown")
                         logger.error(f"Sentinel: AI agent returned internal error: {err_msg}")
                         t["rationale"] = f"AI eval failed internally ({err_msg[:80]}), sending immediately"
-                        logger.warning(f"Sentinel: Sending alert immediately due to internal AI failure for trigger: {t.get('id', 'unknown')}")
+                        logger.warning(f"Sentinel: Sending alert immediately due to internal AI failure for trigger: {redact_secrets(t.get('id', 'unknown'))}")
                         await self._do_send_alert([t], source=source)
                         continue
 
@@ -802,7 +802,7 @@ class SentinelService:
                     t["priority"] = 2
                     t["target_agent"] = "CIO"
                     t["rationale"] = f"AI eval failed, sending immediately (Error: {str(e)[:50]})"
-                    logger.warning(f"Sentinel: Sending alert immediately due to AI eval failure for trigger: {t.get('id', 'unknown')}")
+                    logger.warning(f"Sentinel: Sending alert immediately due to AI eval failure for trigger: {redact_secrets(t.get('id', 'unknown'))}")
                     await self._do_send_alert([t], source=source)
                     continue
 
@@ -925,7 +925,7 @@ class SentinelService:
         if len(display_texts) > 3:
             topic += "..."
         
-        logger.info(f"Sentinel: Escalating {len(filtered_triggers)} trigger(s) (P{max_priority}) from {source}")
+        logger.info(f"Sentinel: Escalating {len(filtered_triggers)} trigger(s) (P{max_priority}) from {redact_secrets(source)}")
         
         # v9.1: Trigger-Aware Council Prompt
         # Each trigger type gets a focused prompt instead of a generic evaluation request.
@@ -1289,7 +1289,7 @@ class SentinelService:
                     # Get actual holding quantity for this ticker
                     holding_qty = holdings_map.get(ticker, {}).get('quantity', 0)
                     if holding_qty <= 0:
-                        logger.info(f"Emergency: Skipping {ticker} for {uid}, no active holdings.")
+                        logger.info(f"Emergency: Skipping {redact_secrets(ticker)} for {redact_pii(uid)}, no active holdings.")
                         continue
                     
                     # 發送清倉建議 (使用實際持倉量)
@@ -1436,7 +1436,7 @@ class SentinelService:
                     elif res:
                         triggers.append(res)
                 except Exception as e:
-                    logger.error(f"Polling failed for {sid}: {e}")
+                    logger.error(f"Polling failed for {redact_secrets(sid)}: {e}")
         
         return triggers
 
@@ -1570,7 +1570,7 @@ class SentinelService:
         """
         Helper to asynchronously trigger the ThematicAgent to update dynamic tracking lists based on events.
         """
-        logger.info(f"Triggering Thematic Update for {theme_key} due to high-impact event.")
+        logger.info(f"Triggering Thematic Update for {redact_secrets(theme_key)} due to high-impact event.")
         try:
             from src.agents.factory import AgentFactory
             thematic_agent = AgentFactory.create_thematic_agent(user_id=self.user_id)
@@ -1592,7 +1592,7 @@ class SentinelService:
                 
             loop.run_in_executor(None, thematic_agent.run, context)
         except Exception as e:
-            logger.error(f"Failed to trigger thematic update for {theme_key}: {e}")
+            logger.error(f"Failed to trigger thematic update for {redact_secrets(theme_key)}: {e}")
 
     async def _check_risk_consistency(self) -> List[Dict[str, Any]]:
         """
