@@ -713,8 +713,6 @@ class LoggingLLMGateway(ILLMGateway):
             except Exception as e:
                 logger.warning(f"Cache lookup bypassed due to error: {e}")
                 prompt_embedding = None
-            else:
-                prompt_embedding = None
             
             # T11.4: PII Redaction before sending to external API
             redacted_messages = [
@@ -727,6 +725,8 @@ class LoggingLLMGateway(ILLMGateway):
                 
                 # If we were in a tier fallback, prepend the note
                 if is_tier_fallback and content:
+                    # Note: Prepending text here might break naive JSON parsers. 
+                    # Use src.utils.json_utils.json_loads_safe which handles this robustly.
                     content = "*(注意：由於高階模型權限限制，本分析已自動切換至高速模型生成)*\n\n" + content
                     
             except Exception as e:
@@ -748,6 +748,8 @@ class LoggingLLMGateway(ILLMGateway):
                         temperature=config.temperature
                     )
                     content = await self._inner.chat(redacted_messages, new_cfg)
+                    # Note: Prepending text here might break naive JSON parsers. 
+                    # Use src.utils.json_utils.json_loads_safe which handles this robustly.
                     content = "*(注意：由於高階模型目前載載過高，本分析由高速模型生成備援)*\n\n" + content
                 else:
                     raise e

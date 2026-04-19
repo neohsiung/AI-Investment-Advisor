@@ -254,10 +254,21 @@ class CouncilService:
         }
         
         try:
+            # v9.1: High-verbosity logging for cio context to debug consensus issues
+            logger.info(f"Council: Launching CIO Consensus for topic: {topic}")
+            logger.debug(f"Council: CIO Final Context Keys: {list(final_context.keys())}")
+            
             cio = AgentFactory.create_cio_agent(tier=consensus_tier, user_id=user_id, mode=mode)
             decision = await cio.run(final_context)
+            
+            if not decision:
+                logger.warning("Council: CIO response was empty.")
+                decision = "Council reached no consensus (Empty response)."
+                
         except Exception as e:
-            logger.error(f"Council: CIO agent failed or could not be created: {e}")
+            # Log full context only on error to avoid bloating logs
+            logger.error(f"Council: CIO agent failed: {e}", exc_info=True)
+            logger.error(f"Council DEBUG - Final Context attempted: {final_context}")
             decision = f"Consensus failed due to internal error: {e}. Please review transcripts below."
         
         self._archive_minutes(user_id, session_id, topic, str(decision), "\n".join(transcript))

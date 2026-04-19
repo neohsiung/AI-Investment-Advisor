@@ -5,6 +5,7 @@ from .base_agent import BaseAgent
 from src.utils.time_utils import format_time
 from src.repositories.transaction_repository import AlchemyTransactionRepository
 from src.repositories.settings_repository import AlchemySettingsRepository
+from src.utils.json_utils import json_loads_safe
 
 class CIOAgent(BaseAgent):
     def __init__(self, use_cache=True, transaction_repo=None, prompt_path="prompts/cio_weekly.txt", mode="report", **kwargs):
@@ -143,7 +144,7 @@ class CIOAgent(BaseAgent):
             from .evaluator_agent import EvaluatorAgent
             evaluator = EvaluatorAgent(user_id=user_id)
             eval_res_str = await evaluator.run({"report_content": response})
-            eval_res = json.loads(eval_res_str)
+            eval_res = json_loads_safe(eval_res_str)
             
             if eval_res.get("is_compliant") is False:
                 violation = eval_res.get("violation_reason", "Unknown Violation")
@@ -220,16 +221,16 @@ class CIOAgent(BaseAgent):
         )
         
         # Parse JSON
-        try:
-            cleaned = response_str.replace("```json", "").replace("```", "").strip()
-            data = json.loads(cleaned)
-            return data
-        except json.JSONDecodeError:
-            self.logger.error(f"Failed to parse Strategy JSON: {response_str}")
+        data = json_loads_safe(response_str)
+        
+        # v9.1: Basic integrity check
+        if not data or "sector_strategy" not in data:
+            self.logger.error(f"CIOAgent: Strategy JSON invalid or incomplete. Raw: {response_str[:200]}...")
             return {
-                "sector_strategy": {"target_sectors": [], "rationale": "JSON Parse Error"},
+                "sector_strategy": {"target_sectors": [], "rationale": "Incomplete or Invalid JSON"},
                 "candidates": []
             }
+        return data
 
     async def polish_report(self, report_content: str) -> str:
         """
