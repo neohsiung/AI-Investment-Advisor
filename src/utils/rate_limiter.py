@@ -52,7 +52,11 @@ def rate_limit(requests_per_minute: int = 10):
         @functools.wraps(func)
         async def wrapper(*args, **kwargs):
             # Attempt to extract user_id from various common locations
-            user_id = kwargs.get("user_id") or (args[0]._user_id if hasattr(args[0], "_user_id") else "anonymous")
+            user_id = kwargs.get("user_id")
+            if not user_id and args and hasattr(args[0], "_user_id"):
+                user_id = args[0]._user_id
+            if not user_id:
+                user_id = "anonymous"
             
             if user_id not in _user_limiters:
                 _user_limiters[user_id] = TokenBucketLimiter(requests_per_minute)

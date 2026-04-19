@@ -38,10 +38,23 @@ def json_loads_safe(text: str, default: Any = None) -> Any:
     except json.JSONDecodeError:
         # 3. Second attempt: Robust extraction of JSON block
         try:
-            # Look for the first occurrence of { or [ and match to the last corresponding } or ]
-            match = re.search(r'([\{\[].*[\}\]])', repaired, re.DOTALL)
-            if match:
-                json_block = match.group(1).strip()
+            # Isolate {} and [] blocks separately to avoid matching from [ to }
+            dict_match = re.search(r'(\{.*\})', repaired, re.DOTALL)
+            list_match = re.search(r'(\[.*\])', repaired, re.DOTALL)
+            
+            json_block = None
+            if dict_match and list_match:
+                # If both exist, pick the one that starts first
+                if dict_match.start() < list_match.start():
+                    json_block = dict_match.group(1).strip()
+                else:
+                    json_block = list_match.group(1).strip()
+            elif dict_match:
+                json_block = dict_match.group(1).strip()
+            elif list_match:
+                json_block = list_match.group(1).strip()
+                
+            if json_block:
                 return json.loads(json_block)
         except Exception as e:
             logger.warning(f"json_loads_safe extraction failed: {e}")

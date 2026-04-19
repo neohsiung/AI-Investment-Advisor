@@ -4,7 +4,7 @@ from typing import Any, Dict, List
 import yaml
 from pathlib import Path
 
-from src.data.database import SessionLocal
+from src.data.database import get_db_connection
 from src.data.models import LLMProvider, LLMModel, LLMTierBinding
 
 logger = logging.getLogger(__name__)
@@ -29,8 +29,10 @@ class LLMOnboardingService:
     Uses synchronous SQLAlchemy ORM internally for encapsulation of the seeding process.
     """
     def __init__(self):
-        from src.config.paths import get_project_root
-        self.config_dir = get_project_root() / "config"
+        # Resolve config directory relative to this file: src/services/llm_onboarding_service.py
+        # parent = services/, parent.parent = src/, parent.parent.parent = root/
+        project_root = Path(__file__).resolve().parent.parent.parent
+        self.config_dir = project_root / "config"
         self.providers_yaml = load_yaml(self.config_dir / "llm_providers.yaml").get("providers", [])
         self.models_yaml = load_yaml(self.config_dir / "llm_models_seed.yaml").get("models", [])
 
@@ -42,7 +44,7 @@ class LLMOnboardingService:
             logger.warning("Missing LLM seed configs. Skipping LLM onboarding for user %s", user_id)
             return
 
-        with SessionLocal() as session:
+        with get_db_connection() as session:
             try:
                 code_to_id = self._seed_providers(session, user_id)
                 model_key_to_id = self._seed_models(session, code_to_id)

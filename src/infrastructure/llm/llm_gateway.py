@@ -82,7 +82,12 @@ class OpenRouterGateway(ILLMGateway):
             logger.error(f"OpenRouter API error: {e}")
             raise
         
-        resp_json = response.json()
+        try:
+            resp_json = response.json()
+        except json.JSONDecodeError as e:
+            logger.error(f"OpenRouter JSON Decode Error: {e} | Response: {response.text[:1000]}")
+            raise ValueError(f"OpenRouter API returned invalid JSON: {response.text[:200]}") from e
+            
         self._last_usage = resp_json.get("usage")
         return resp_json["choices"][0]["message"]["content"]
 
@@ -228,7 +233,11 @@ class GeminiGateway(ILLMGateway):
                 timeout=config.timeout_seconds,
             )
         response.raise_for_status()
-        resp_json = response.json()
+        try:
+            resp_json = response.json()
+        except json.JSONDecodeError as e:
+            logger.error(f"Gemini JSON Decode Error: {e} | Response: {response.text[:1000]}")
+            raise ValueError(f"Gemini API returned invalid JSON: {response.text[:200]}") from e
 
         usage = resp_json.get("usageMetadata")
         if usage:
@@ -347,7 +356,12 @@ class OpenAIGateway(ILLMGateway):
                 timeout=config.timeout_seconds,
             )
         response.raise_for_status()
-        resp_json = response.json()
+        try:
+            resp_json = response.json()
+        except json.JSONDecodeError as e:
+            logger.error(f"OpenAI JSON Decode Error: {e} | Response: {response.text[:1000]}")
+            raise ValueError(f"OpenAI API returned invalid JSON: {response.text[:200]}") from e
+            
         self._last_usage = resp_json.get("usage")
         return resp_json["choices"][0]["message"]["content"]
 
