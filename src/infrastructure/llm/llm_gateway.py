@@ -85,8 +85,12 @@ class OpenRouterGateway(ILLMGateway):
         try:
             resp_json = response.json()
         except json.JSONDecodeError as e:
+            error_preview = response.text[:200]
+            if "<!DOCTYPE html>" in error_preview.upper() or "<HTML" in error_preview.upper():
+                logger.error(f"OpenRouter Gateway: Provider returned HTML error page instead of JSON. Preview: {error_preview}")
+                raise ValueError(f"OpenRouter API returned HTML error page (provider down or blocked): {error_preview}...") from e
             logger.error(f"OpenRouter JSON Decode Error: {e} | Response: {response.text[:1000]}")
-            raise ValueError(f"OpenRouter API returned invalid JSON: {response.text[:200]}") from e
+            raise ValueError(f"OpenRouter API returned invalid JSON: {error_preview}...") from e
             
         self._last_usage = resp_json.get("usage")
         return resp_json["choices"][0]["message"]["content"]
@@ -359,8 +363,12 @@ class OpenAIGateway(ILLMGateway):
         try:
             resp_json = response.json()
         except json.JSONDecodeError as e:
+            error_preview = response.text[:200]
+            if "<!DOCTYPE html>" in error_preview.upper() or "<HTML" in error_preview.upper():
+                 logger.error(f"OpenAI Gateway: Provider returned HTML error page instead of JSON. Preview: {error_preview}")
+                 raise ValueError(f"OpenAI API returned HTML error page (provider down or blocked): {error_preview}...") from e
             logger.error(f"OpenAI JSON Decode Error: {e} | Response: {response.text[:1000]}")
-            raise ValueError(f"OpenAI API returned invalid JSON: {response.text[:200]}") from e
+            raise ValueError(f"OpenAI API returned invalid JSON: {error_preview}...") from e
             
         self._last_usage = resp_json.get("usage")
         return resp_json["choices"][0]["message"]["content"]
