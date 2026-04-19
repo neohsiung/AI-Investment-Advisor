@@ -1,0 +1,268 @@
+============================= test session starts ==============================
+platform darwin -- Python 3.10.13, pytest-7.4.3, pluggy-1.6.0
+rootdir: /Users/neohsiung/Work/Projects/AI/investment-advisor
+configfile: pytest.ini
+plugins: cov-4.1.0, asyncio-0.21.1, mock-3.12.0, anyio-4.13.0
+asyncio: mode=auto
+collected 1449 items / 2 errors
+
+==================================== ERRORS ====================================
+_____________ ERROR collecting tests/unit/utils/test_auth_guard.py _____________
+import file mismatch:
+imported module 'test_auth_guard' has this __file__ attribute:
+  /Users/neohsiung/Work/Projects/AI/investment-advisor/tests/unit/services/test_auth_guard.py
+which is not the same as the test file we want to collect:
+  /Users/neohsiung/Work/Projects/AI/investment-advisor/tests/unit/utils/test_auth_guard.py
+HINT: remove __pycache__ / .pyc files and/or use a unique basename for your test file modules
+____________ ERROR collecting tests/unit/workflow/test_optimizer.py ____________
+import file mismatch:
+imported module 'test_optimizer' has this __file__ attribute:
+  /Users/neohsiung/Work/Projects/AI/investment-advisor/tests/unit/agents/test_optimizer.py
+which is not the same as the test file we want to collect:
+  /Users/neohsiung/Work/Projects/AI/investment-advisor/tests/unit/workflow/test_optimizer.py
+HINT: remove __pycache__ / .pyc files and/or use a unique basename for your test file modules
+=============================== warnings summary ===============================
+tests/e2e/test_dashboard_v8.py:12
+  /Users/neohsiung/Work/Projects/AI/investment-advisor/tests/e2e/test_dashboard_v8.py:12: PytestUnknownMarkWarning: Unknown pytest.mark.async_api - is this a typo?  You can register custom marks to avoid this warning - for details, see https://docs.pytest.org/en/stable/how-to/mark.html
+    @pytest.mark.async_api
+
+tests/unit/test_phase7_logic.py:6
+  /Users/neohsiung/Work/Projects/AI/investment-advisor/tests/unit/test_phase7_logic.py:6: DeprecationWarning: src.services.budget_aware_model_router is deprecated. Please use 'from src.infrastructure.llm import BudgetAwareModelRouter' instead.
+    from src.services.budget_aware_model_router import BudgetAwareModelRouter
+
+src/api/v1/schemas/transaction_schemas.py:14
+  /Users/neohsiung/Work/Projects/AI/investment-advisor/src/api/v1/schemas/transaction_schemas.py:14: PydanticDeprecatedSince20: Pydantic V1 style `@validator` validators are deprecated. You should migrate to Pydantic V2 style `@field_validator` validators, see the migration guide for more details. Deprecated in Pydantic V2.0 to be removed in V3.0. See Pydantic V2 Migration Guide at https://errors.pydantic.dev/2.12/migration/
+    @validator('ticker')
+
+src/api/v1/schemas/transaction_schemas.py:18
+  /Users/neohsiung/Work/Projects/AI/investment-advisor/src/api/v1/schemas/transaction_schemas.py:18: PydanticDeprecatedSince20: Pydantic V1 style `@validator` validators are deprecated. You should migrate to Pydantic V2 style `@field_validator` validators, see the migration guide for more details. Deprecated in Pydantic V2.0 to be removed in V3.0. See Pydantic V2 Migration Guide at https://errors.pydantic.dev/2.12/migration/
+    @validator('action')
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+
+--------- coverage: platform darwin, python 3.10.13-final-0 ----------
+Name                                                  Stmts   Miss  Cover   Missing
+-----------------------------------------------------------------------------------
+src/__init__.py                                           0      0   100%
+src/agents/agent_loop.py                                127    101    20%   54-57, 81-112, 116-152, 158-179, 183-184, 188-196, 204-236, 241-252, 256-265
+src/agents/base_agent.py                                354    290    18%   38-116, 120-125, 132-176, 182, 189-251, 255-282, 288-304, 310-358, 365, 374, 378, 382, 386, 392-426, 437-451, 455, 464-484, 491-501, 505, 512-542, 553-578, 584-586, 601-627, 634-653, 658-662, 666, 674, 681-689, 696-712, 719-723
+src/agents/cio.py                                       181    165     9%   13-25, 37-43, 50-168, 174-233, 243-267, 271-307, 314-382
+src/agents/context.py                                    72     59    18%   43-47, 61-102, 108-133, 140-158, 166-168
+src/agents/conversation_agent.py                        318    294     8%   52-107, 111-132, 147-180, 206-301, 307-313, 317-328, 337-366, 370-447, 451-502, 506-553, 560-594, 598-607, 611-626, 631-632, 639-659, 672-705, 712-724
+src/agents/council_adapter.py                            24     19    21%   11-15, 22-41
+src/agents/dspy_modules.py                               27      9    67%   5-14
+src/agents/engineer.py                                  116     97    16%   16-17, 32-57, 60-65, 69-71, 74-77, 86-211, 219-232, 239-259
+src/agents/factory.py                                   146    103    29%   8-10, 42-73, 81-84, 88-119, 123-128, 132-137, 141-146, 150-155, 159-164, 168-173, 177-187, 191-194
+src/agents/fundamental.py                                50     42    16%   8-10, 23-82, 86-94
+src/agents/macro.py                                      34     29    15%   6-8, 16-71
+src/agents/momentum.py                                   30     22    27%   6-8, 12-21, 32-86
+src/agents/orchestration/swarm_orchestrator.py           69     54    22%   24-27, 39-77, 87-103, 107-111, 122-143
+src/agents/persona/__init__.py                            2      0   100%
+src/agents/persona/channel_tone_adapter.py              120     92    23%   72, 85-110, 119-150, 158-186, 191-203, 211-226, 234-248, 253-277
+src/agents/persona/persona_provider.py                  120     88    27%   47-50, 57-63, 92-94, 98-101, 105-127, 137-168, 189-190, 197-200, 204-205, 209-211, 222-272, 283-285
+src/agents/risk.py                                        9      5    44%   11-13, 27-29
+src/agents/sentiment.py                                  24     19    21%   17-18, 32-68
+src/agents/sentinel.py                                   34     29    15%   13, 30-92
+src/agents/skills/cash_deployment/cli.py                 69     53    23%   23-84, 88-126, 129-134, 137
+src/agents/skills/extract_actions/impl.py                46     35    24%   31-116
+src/agents/skills/gap_detector.py                        86     61    29%   40, 64-66, 70-80, 84-88, 92-101, 111-116, 137-192
+src/agents/skills/position_sizing/cli.py                 91     78    14%   18-26, 29-127, 130
+src/agents/skills/skill_loader.py                       206    152    26%   88-93, 101-148, 157-170, 177-220, 230-249, 256-319, 325, 329, 333, 342-363, 367-374
+src/agents/skills/skill_scaffolder.py                    70     56    20%   37-43, 62-167, 180-201, 208-219, 223-225
+src/agents/skills/ticker_discovery/impl.py               57     45    21%   24-116
+src/agents/swarm/__init__.py                              0      0   100%
+src/agents/swarm/fundamental_swarm.py                    61     47    23%   13-14, 17-21, 25-55, 71-115
+src/agents/swarm/momentum_swarm.py                       44     31    30%   16-17, 26, 33-39, 42-78
+src/agents/swarm/role_swarm.py                           78     64    18%   24-29, 36-40, 43-57, 60-103, 106-114
+src/agents/swarm/role_swarm_base.py                      32     20    38%   16-27, 31-41, 47-61, 68
+src/agents/swarm/sentiment_swarm.py                      47     34    28%   12-13, 16-20, 24-47, 50-79
+src/agents/swarm/strategies.py                           88     48    45%   57, 66-69, 90-103, 112-140, 150-154, 169, 175-182, 203-204, 209, 229-232
+src/agents/swarm/swarm_orchestrator.py                  117     98    16%   28-31, 38-71, 77-103, 109-112, 124-128, 135-136, 143, 158-213, 217
+src/agents/wal_protocol.py                               40     28    30%   45-47, 55, 75-84, 99-140
+src/api/v1/endpoints/auth.py                             91     56    38%   25, 29, 36-39, 61-62, 73-123, 130-144, 150-154, 169
+src/api/v1/endpoints/chat.py                             68     53    22%   21-52, 60-117
+src/api/v1/endpoints/dashboard.py                       145    105    28%   23, 28-51, 56-98, 103-109, 123-146, 149, 154-164, 169-177, 182-195, 200-208, 212, 217-225, 238-249
+src/api/v1/endpoints/llm_settings.py                    223    161    28%   98, 102, 106, 110, 117, 121, 133, 145, 156-157, 166-173, 182-189, 198-206, 215-227, 235-239, 249-256, 266-270, 284-288, 297-308, 316-328, 337-344, 353-361, 369-373, 382-384, 400, 427-433, 450-493, 503-519, 547-553, 573-615
+src/api/v1/endpoints/settings.py                         54     35    35%   17, 22-38, 47-52, 57-65, 73-98
+src/api/v1/endpoints/transactions.py                     57     40    30%   17, 22-38, 46-61, 69-99
+src/api/v1/exceptions.py                                  7      0   100%
+src/api/v1/router.py                                     31     13    58%   22-49
+src/api/v1/schemas/dashboard_schemas.py                  57      0   100%
+src/api/v1/schemas/llm_settings_schemas.py              230      0   100%
+src/api/v1/schemas/settings_schemas.py                   25      0   100%
+src/api/v1/schemas/transaction_schemas.py                27      2    93%   16, 20
+src/auth.py                                              54     27    50%   24-29, 32-35, 53-59, 63, 79-83, 89, 95, 101-108
+src/config/rss_config.py                                  3      1    67%   229
+src/data/__init__.py                                      0      0   100%
+src/data/database.py                                    201    103    49%   41, 45, 53-54, 61-66, 72, 90-91, 95-106, 113-126, 136, 142-143, 157-192, 200-201, 209, 216-218, 228, 230-235, 238, 245, 261-262, 583-584, 590-592, 597-642, 651
+src/data/feedback_store.py                               45     32    29%   12, 18-39, 46-73, 80-109
+src/data/ingestor.py                                    113     99    12%   15, 22-38, 42-110, 120-154, 168-214, 230-249
+src/data/ingestors/__init__.py                            2      0   100%
+src/data/ingestors/base.py                                8      2    75%   6, 13
+src/data/ingestors/factory.py                            15     10    33%   7-17
+src/data/ingestors/strategies.py                        119    103    13%   13-56, 72-106, 121-167, 188-231
+src/data/models.py                                      177      0   100%
+src/data/providers/__init__.py                            0      0   100%
+src/data/providers/alpha_vantage_provider.py             74     56    24%   21-26, 29-30, 37-51, 58-94, 100-110, 116-139
+src/data/providers/base.py                               17      4    76%   21, 29, 37, 45
+src/data/providers/financialdata_provider.py             98     81    17%   22-31, 39-64, 70-99, 107, 113-132, 140-150, 156-166
+src/data/providers/finnhub_provider.py                   92     73    21%   17-21, 24-25, 32-43, 50-88, 94-101, 107-136, 142-149
+src/data/providers/fmp_provider.py                      141    121    14%   25-36, 44-70, 76-108, 115-133, 140-159, 163-173, 177-192, 196-206, 210-220
+src/data/providers/fred_provider.py                      42     27    36%   16-18, 25, 33-51, 58-65, 71
+src/data/providers/polygon_provider.py                  131    111    15%   25-36, 44-106, 113-124, 132-160, 168-186, 194-208
+src/data/providers/readwise_provider.py                  53     39    26%   15-18, 21-23, 32-58, 66-79
+src/data/providers/tiingo_provider.py                    92     74    20%   25-34, 42-69, 77-116, 124-151, 158-178
+src/data/providers/yfinance_provider.py                 103     88    15%   22-28, 41-98, 106-113, 120-156, 163-175
+src/domain/broker.py                                     26      7    73%   16, 21, 26, 31, 36, 41, 46
+src/domain/entities.py                                  117     17    85%   27-28, 73, 77, 87, 91, 145-149, 179-184
+src/domain/interaction.py                                36      6    83%   41-46
+src/domain/interfaces.py                                107     22    79%   79, 87, 95, 105, 111, 122, 126, 137, 141, 155, 163, 171, 179, 187, 195, 203, 215, 227, 237, 241, 251, 255
+src/domain/trading.py                                    47      0   100%
+src/infrastructure/agent_llm_provider.py                 37     25    32%   18-21, 27-42, 48-75
+src/infrastructure/channels/base_adapter.py              48     29    40%   15-17, 21, 25, 32-40, 43-48, 51-59, 63, 66, 69, 72, 75, 82
+src/infrastructure/channels/channel_factory.py           72     57    21%   27-47, 56-140
+src/infrastructure/channels/email_adapter.py             42     30    29%   16-24, 30-32, 35, 38, 47-70
+src/infrastructure/channels/google_chat_adapter.py       41     28    32%   14-17, 23-25, 28, 31, 37-58, 63
+src/infrastructure/channels/line_adapter.py             168    149    11%   17-18, 36-57, 63-127, 133-144, 150-157, 165-270, 278-340
+src/infrastructure/channels/messenger_adapter.py        105     88    16%   17-24, 30-32, 35, 41-44, 50-78, 84-134, 140-179
+src/infrastructure/channels/slack_adapter.py            104     86    17%   19-26, 32-34, 37, 43-46, 53-93, 99-166, 172-198
+src/infrastructure/channels/telegram_adapter.py         138    123    11%   15-21, 27-29, 36-49, 52, 55, 63-144, 151-171, 177-214
+src/infrastructure/lane_manager.py                       54     40    26%   19-23, 29-35, 42-51, 57-82, 93-102, 108-109
+src/infrastructure/llm/__init__.py                        5      0   100%
+src/infrastructure/llm/budget_aware_model_router.py      74     59    20%   35-39, 53-72, 78-85, 92-100, 109-127, 166-205, 226-229
+src/infrastructure/llm/council_tier_router.py            43     28    35%   55-56, 62-91, 102-108, 143-148
+src/infrastructure/llm/discovery_parsers.py              74     60    19%   33-66, 82-120, 136-165, 214-227, 234-237, 241-244, 258-261
+src/infrastructure/llm/error_classifier.py               62     41    34%   63-78, 83-90, 104-131, 144
+src/infrastructure/llm/llm_gateway.py                   463    401    13%   39, 42-92, 95-144, 148-179, 182-193, 197-203, 213, 216-250, 253-283, 287-298, 301-315, 319-328, 338, 341-366, 369-400, 404-419, 422-438, 442-453, 470, 481-484, 491-508, 531-537, 546, 549-553, 563-566, 569, 592-599, 603, 612-613, 617, 620-632, 636-637, 640-652, 668-672, 675-799, 802-813, 816-838
+src/infrastructure/llm/provider_catalog.py               69     45    35%   36-39, 47-66, 70-79, 99, 103-108, 112, 116, 133-154, 166-168
+src/infrastructure/llm/provider_spec.py                  26      0   100%
+src/infrastructure/llm/resilient_pipeline.py             87     46    47%   69-73, 97-100, 105, 122-199, 212-231, 236
+src/infrastructure/llm/tier_config.py                    93     61    34%   51, 58-69, 150, 154-158, 162, 166, 180-187, 194-218, 222-239, 254-255, 262-287, 291
+src/infrastructure/llm/tier_router_base.py               18      2    89%   58, 61
+src/infrastructure/memory/channel_memory_manager.py     221    169    24%   50, 54, 58, 70-73, 77-93, 96, 99, 103-117, 121-132, 136-147, 155-174, 178-193, 200-209, 213-223, 227-246, 271-276, 280, 284, 288, 299, 308-309, 322-327, 341-353, 359, 373-429, 436-459, 470-472, 481-490
+src/infrastructure/memory/memory_manager.py              60     48    20%   17-23, 27-44, 60-94, 101-143
+src/infrastructure/memory/three_tier_memory.py          117     56    52%   127-128, 131, 134, 137, 140, 143-144, 147, 154-156, 168, 171-179, 182-186, 189-196, 199-203, 216-219, 222, 230, 240, 267-272, 279, 288-292, 302-307
+src/infrastructure/memory/wisdom_vault.py               169    124    27%   73, 90-99, 118-120, 124-126, 129, 134, 155-199, 218-235, 254-258, 271-307, 311-314, 318, 329-351, 360-413, 417-441, 455-476
+src/infrastructure/nlp/intent_classifier.py              32     22    31%   19, 31-80
+src/infrastructure/risk_manager.py                      138    119    14%   18-19, 22-23, 26, 33-85, 97-120, 123-130, 136-185, 191-218, 221-226, 229-230
+src/notifier.py                                          81     65    20%   16-30, 34, 67, 96-167, 171-172
+src/prompts/reflection_prompt.py                          9      2    78%   19, 56
+src/refinement.py                                        16      3    81%   17-18, 21
+src/repositories/agent_repository.py                     60     38    37%   20, 25, 30, 43-44, 51-67, 74-81, 88-120, 127-146
+src/repositories/agent_state_repository.py               31     14    55%   19, 27, 35, 47, 54-59, 65-77
+src/repositories/feedback_repository.py                  59     32    46%   22, 30, 38, 46, 54, 66, 73-79, 94-123, 130-149, 156-159, 166-169
+src/repositories/llm_agent_override_repository.py        97     80    18%   29, 37-39, 47-58, 62-74, 78-87, 111-155, 163-183, 187-201, 212-237
+src/repositories/llm_model_repository.py                124    104    16%   29, 46-62, 70-77, 80-84, 90-101, 119-144, 154-184, 192-238, 242-266, 273-286
+src/repositories/llm_provider_repository.py              79     61    23%   29, 36-46, 50-54, 58-66, 70-78, 90-112, 116-138, 146-159
+src/repositories/llm_tier_binding_repository.py          87     71    18%   37, 44-53, 57-65, 77-102, 122-157, 164-198, 202-215
+src/repositories/memory_repository.py                    25     13    48%   20, 27-47, 54-60
+src/repositories/prompt_repository.py                    37     20    46%   20, 28, 47-67, 74-83
+src/repositories/redis_memory_repository.py              47     32    32%   19-26, 29, 37-71, 77-98
+src/repositories/report_repository.py                    50     29    42%   20, 31, 43, 50-62, 69-86, 94, 100-110, 113-132
+src/repositories/risk_keyword_repository.py             155     97    37%   212, 217, 222, 227, 232, 237, 242, 247, 252, 257, 262, 268, 273, 278, 291-292, 299-321, 328-334, 341-344, 351-367, 377-378, 388-389, 399-400, 407-408, 422-433, 440-445, 449-480, 501-517, 524-528, 536-565
+src/repositories/sentinel_repository.py                  93     60    35%   21, 26, 31, 36, 41, 46, 51, 64, 71-80, 87-107, 114-117, 124-151, 158-172, 179-195
+src/repositories/settings_repository.py                 168    121    28%   21, 29, 37, 45, 53, 75, 83, 103, 107-113, 117-132, 139-144, 154-169, 173-178, 184-209, 215-229, 236-240, 247-257, 264-278, 284-310, 316-329
+src/repositories/snapshot_repository.py                  49     31    37%   19, 27, 48, 60, 67-70, 77-83, 105-158
+src/repositories/transaction_repository.py              120     73    39%   16, 20, 24, 28, 32, 36, 40, 44, 48, 52, 56, 60, 67, 70-80, 83-91, 94-104, 107-113, 128-138, 141-143, 150-162, 169-182, 185-202, 205-207, 210-222, 225-241, 244-247
+src/repositories/user_repository.py                     121     80    34%   16, 24, 32, 39, 46, 54, 58, 62, 66, 73, 76-79, 82-89, 92-110, 113-116, 119-146, 153-161, 169, 172-176, 179-210, 213-240, 246-254
+src/repositories/vector_repository.py                    65     39    40%   24, 32, 40, 48, 60-61, 68, 75-91, 98-186, 192-211, 217-235
+src/repositories/verification_repository.py              82     46    44%   25, 33, 41, 49, 57, 65, 73, 85, 92-107, 114-117, 124-127, 134-140, 148-163, 170-182, 189-190, 197-198
+src/services/__init__.py                                  0      0   100%
+src/services/analytics_service.py                       181    150    17%   23-25, 37-84, 93-98, 110-112, 119-127, 139-140, 148-180, 192-194, 198-203, 210-311, 325-357, 376-379, 386-387, 394-396, 403-405, 412-414
+src/services/attribution_analyzer.py                     32     25    22%   20, 27-81
+src/services/automated_trading_service.py               179    159    11%   28-31, 41-180, 185-233, 238-284, 293-312, 318-354
+src/services/backtest_service.py                         61     47    23%   30-31, 44-143, 146
+src/services/backtesting_engine.py                       22     22     0%   9-61
+src/services/billing_service.py                          59     59     0%   6-99
+src/services/broker_factory.py                           52     39    25%   23-54, 62-91
+src/services/browser_service.py                          24     24     0%   1-56
+src/services/budget_aware_model_router.py                 4      0   100%
+src/services/cognitive_memory_manager.py                206    187     9%   27-40, 44-49, 59-97, 103-150, 161-233, 240-303, 310-352, 359-369
+src/services/competitor_service.py                       23     13    43%   24-25, 29, 36-62
+src/services/conversation_router.py                      72     61    15%   44-51, 77-97, 107-112, 118-130, 134-146, 154-162, 172-200
+src/services/council_service.py                         128    104    19%   34-41, 51-59, 66-139, 151, 160-276, 287-300
+src/services/dashboard_router.py                        367    292    20%   28-48, 52-57, 61-62, 66, 71-101, 106-115, 125-140, 145-146, 150-151, 156-164, 175-181, 189-220, 225-233, 238-246, 254-270, 278-287, 298-343, 352-441, 446-470, 475-487, 507-516, 531-541, 546-554, 559-585, 590-601, 606-623, 631-664
+src/services/dashboard_service.py                       112     97    13%   25-34, 41-48, 54-187
+src/services/etoro_service.py                           652    609     7%   41-75, 82-115, 122, 129-138, 144-201, 213-295, 302-349, 355-383, 389-479, 485-502, 506-516, 520-526, 532-561, 567-582, 588-665, 672-681, 688-731, 735-751, 758-780, 786-791, 811-913, 923-984, 1006-1019, 1038-1074, 1081-1120, 1123-1138
+src/services/evaluation_service.py                       33     27    18%   22-23, 29-38, 48-77
+src/services/evolution_metrics.py                        46     35    24%   26-27, 41-50, 59-66, 72-100
+src/services/experience_replay_service.py               165    142    14%   38-60, 72-81, 88-112, 126-144, 154-221, 228-288, 295-336
+src/services/fred_service.py                             54     43    20%   21-41, 48-103
+src/services/hr_service.py                               56     50    11%   15, 26-115
+src/services/ibkr_service.py                             40     40     0%   1-88
+src/services/ingestion_service.py                        29     18    38%   22-23, 32-60
+src/services/intelligence_service.py                    100     82    18%   17-19, 23-26, 36-56, 68-92, 96-110, 114-125, 129-201, 204
+src/services/interaction_service.py                     176    156    11%   25-57, 63-125, 130-137, 148-174, 205-233, 240-326, 333-379
+src/services/investment_skill_learning_service.py       325    325     0%   15-832
+src/services/llm_agent_override_service.py              189    130    31%   112-115, 123-124, 137-160, 164, 191-263, 278-332, 336-356, 377, 398-476
+src/services/llm_credential_cipher.py                    79     61    23%   39-42, 54-65, 72-85, 89-117, 124-133
+src/services/llm_model_service.py                       166    131    21%   55-62, 66, 84-89, 98-101, 107-112, 144-152, 155, 158-165, 175-208, 212-243, 247-259, 272-307, 313-325, 339-378, 388-394
+src/services/llm_onboarding_service.py                  157    157     0%   1-277
+src/services/llm_provider_service.py                     99     76    23%   45-50, 61-75, 94-95, 98-101, 112-133, 143-162, 168-175, 194-252, 264-267
+src/services/llm_settings_errors.py                      27      7    74%   34-39, 56-59
+src/services/llm_tier_binding_service.py                148     84    43%   102-105, 116-151, 164-198, 220-302, 309-312, 315-318, 322-326, 354-360
+src/services/llm_usages_service.py                       34     23    32%   35-37, 46-65, 78-100
+src/services/market_data_service.py                     285    250    12%   31-58, 72, 80-106, 113-151, 158-179, 185-201, 213-247, 255-291, 298-303, 310-369, 377-391, 398-410, 418, 425-448, 456-494, 501-503, 510-512
+src/services/mcp_installation_guard.py                   68     59    13%   15, 22-70, 77-128
+src/services/memory_distillation_service.py              74     58    22%   27-35, 46-69, 75-110, 117-149
+src/services/memory_factory.py                           19      9    53%   25-41
+src/services/memory_service.py                           52     38    27%   29-31, 39-88, 101-111, 118-121
+src/services/notification_filters.py                     40     28    30%   47, 54-62, 74-83, 90-106
+src/services/notification_service.py                     84     71    15%   23-25, 33-78, 94-150, 157-168, 175-178
+src/services/notification_settings_manager.py           124    124     0%   11-390
+src/services/performance_service.py                     170    156     8%   19-23, 30, 38-58, 70-96, 103-158, 172, 179-312
+src/services/portfolio_aggregator_service.py             50     39    22%   22-24, 34-105
+src/services/readwise_service.py                         55     43    22%   17-21, 28-58, 65-92, 100-128
+src/services/refinement_service.py                       78     65    17%   20-32, 39-66, 69-90, 93-130
+src/services/reflection_manager.py                       50     34    32%   35-39, 60-112
+src/services/reporting_service.py                        29     29     0%   1-83
+src/services/risk_keyword_service.py                    323    288    11%   77-95, 111-122, 129-130, 141-146, 153-168, 175-178, 192-264, 271-279, 286-294, 307-329, 339-398, 409-425, 434-461, 474-508, 518-538, 547-573, 580-607, 622-652, 656-660
+src/services/scheduler_service.py                       233    201    14%   24, 36-38, 47-65, 71-84, 88-96, 103-135, 142-157, 160-165, 172-181, 187-228, 236-237, 244-271, 278-325, 334-354, 361-371, 374-391, 396-408
+src/services/search_service.py                          112     96    14%   26-66, 75-129, 136-164, 171-172
+src/services/sentinel_service.py                        937    883     6%   50-101, 112-178, 189-212, 219-238, 256-310, 321-362, 366-368, 375-392, 396-398, 408-432, 436-437, 444-596, 606-645, 653-699, 709-826, 833, 840-855, 863-1166, 1181-1232, 1239-1253, 1260-1317, 1324-1346, 1357-1378, 1385-1393, 1400-1409, 1416, 1422-1441, 1448-1567, 1573-1595, 1602-1718, 1725-1751, 1759-1809
+src/services/settings_service.py                        162    136    16%   29-31, 37-49, 55-81, 88-93, 99-104, 110-116, 122-129, 136-145, 152-156, 163-167, 173-177, 183-187, 193-208, 216-295
+src/services/socket_manager.py                           91     70    23%   24, 29-33, 37-42, 46-51, 55-61, 65-79, 83-165
+src/services/supply_chain_service.py                     59     49    17%   14-16, 22-71, 77-82, 89-122
+src/services/task_planning_service.py                    52     20    62%   53-55, 64-69, 76-133, 146, 151-166
+src/services/theme_service.py                            37     23    38%   19, 27-35, 43-44, 75-85, 92-250
+src/services/token_logger_service.py                     54     43    20%   30-33, 60-115, 124-181
+src/services/transaction_service.py                      51     36    29%   21-25, 32-35, 42-49, 56-65, 72-91, 98-110
+src/services/transcription_service.py                    61     61     0%   1-91
+src/services/unified_memory_service.py                   32     23    28%   40-41, 59-91, 98-103
+src/services/user_focus_service.py                       54     43    20%   23-26, 33-105
+src/services/verification_service.py                     96     80    17%   22-44, 55-73, 84-156, 163-184, 190-220, 227
+src/services/webhook_service.py                         297    237    20%   27, 32, 42, 52, 61-82, 93-101, 114-125, 139, 172-182, 185-227, 230-250, 257, 264-271, 280-286, 293-322, 330, 347-508, 513
+src/services/workflow_service.py                        656    594     9%   25-28, 51-70, 77-164, 171-300, 317-347, 353-361, 366, 371, 375-427, 431-447, 460-575, 583-857, 872-1035, 1039-1055, 1059-1072, 1080-1105, 1113-1126, 1131-1199, 1203, 1212-1216, 1223, 1230, 1236-1322, 1336-1337, 1344-1370
+src/tools/mcp_client_adapter.py                         108     88    19%   32-43, 47-99, 105-127, 131, 135-169, 173-177, 188-194
+src/tools/mcp_server.py                                  71     51    28%   9-14, 20-41, 49-58, 62-64, 67-74, 78-79, 82, 86-87, 91, 94, 97-99, 103-105, 109
+src/tools/mcp_sse_router.py                              32      9    72%   20-21, 27-28, 32, 54-57, 62
+src/utils/__init__.py                                     1      0   100%
+src/utils/async_utils.py                                  9      3    67%   17-21
+src/utils/auth_guard.py                                  44     41     7%   26-86
+src/utils/cache.py                                       51     35    31%   18-28, 32-34, 38-47, 51-57, 61-67
+src/utils/circuit_breaker.py                             72     37    49%   45, 48-51, 54-61, 64-71, 74-80, 83-86, 89-96
+src/utils/components.py                                  53     40    25%   11-13, 17-22, 26-39, 43, 51-70, 83-92, 100-110, 119-122, 137, 174-184
+src/utils/crypto_utils.py                                24     13    46%   24-30, 34-40
+src/utils/format_utils.py                                22     19    14%   8-34
+src/utils/google_auth.py                                106     82    23%   32-35, 39-50, 58-90, 96-171, 175-185, 189-191
+src/utils/json_utils.py                                  37     30    19%   14-21, 27-63
+src/utils/jwt_utils.py                                   30     19    37%   14-21, 25-32, 36-44
+src/utils/logger.py                                      50      8    84%   6-7, 17-18, 59-60, 82-84
+src/utils/market_clock.py                                29     18    38%   14-16, 23-33, 40-50, 63
+src/utils/page_base.py                                   41     27    34%   39-41, 53, 60-81, 88-89, 96-97, 103-107, 115, 125-133
+src/utils/rate_limit.py                                   3      0   100%
+src/utils/rate_limiter.py                                44     31    30%   24-28, 31-41, 51-72
+src/utils/security.py                                    22     17    23%   11-64, 71-96
+src/utils/time_utils.py                                  60     43    28%   22-40, 50-56, 63-64, 71-72, 78-80, 86, 96-118, 125
+src/utils/tracing.py                                     82     38    54%   10-11, 18-19, 30-31, 46-47, 54-56, 65-68, 82-93, 98-109
+src/utils/ui.py                                          61     46    25%   16-21, 27-40, 46-49, 53, 57, 63-76, 80-81, 85, 89-130, 134
+src/workflow/__init__.py                                  0      0   100%
+src/workflow/optimizer.py                                49     35    29%   10-12, 30-38, 53-88, 96-119
+-----------------------------------------------------------------------------------
+TOTAL                                                 19815  15073    24%
+
+=========================== short test summary info ============================
+ERROR tests/unit/utils/test_auth_guard.py
+ERROR tests/unit/workflow/test_optimizer.py
+!!!!!!!!!!!!!!!!!!! Interrupted: 2 errors during collection !!!!!!!!!!!!!!!!!!!!
+======================== 4 warnings, 2 errors in 38.70s ========================
