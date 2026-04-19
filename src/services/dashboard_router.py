@@ -19,6 +19,7 @@ import asyncio
 from src.services.transaction_service import TransactionService
 from src.services.settings_service import SettingsService
 from src.services.intelligence_service import IntelligenceService
+from src.utils.security import redact_pii
 
 logger = setup_logger("DashboardRouter")
 dashboard_router = APIRouter(tags=["Dashboard"])
@@ -261,13 +262,14 @@ async def add_transaction(
 
         success, msg = service.add_manual_trade(ticker, date_str, action, quantity, price, fees)
         if not success:
-            raise HTTPException(status_code=400, detail=msg)
+            logger.error(f"Transaction add failed for {redact_pii(service.user_id)}: {msg}")
+            raise HTTPException(status_code=400, detail="交易新增失敗，請檢查輸入數據格式")
             
-        return {"status": "success", "message": msg}
+        return {"status": "success", "message": "交易已成功新增"}
     except Exception as e:
         logger.exception("Error adding transaction")
         if isinstance(e, HTTPException): raise e
-        raise HTTPException(status_code=500, detail="Transaction creation failed")
+        raise HTTPException(status_code=500, detail="Transaction creation failed due to internal error")
 
 @dashboard_router.delete("/data/transactions/{transaction_id}")
 async def delete_transaction(
@@ -278,13 +280,14 @@ async def delete_transaction(
     try:
         success, msg = service.delete_transaction(transaction_id)
         if not success:
-            raise HTTPException(status_code=400, detail=msg)
+            logger.error(f"Transaction deletion failed for {redact_pii(service.user_id)} (ID: {transaction_id}): {msg}")
+            raise HTTPException(status_code=400, detail="交易刪除失敗，該交易可能不存在或權限不足")
             
-        return {"status": "success", "message": msg}
+        return {"status": "success", "message": "交易已成功刪除"}
     except Exception as e:
         logger.exception("Error deleting transaction")
         if isinstance(e, HTTPException): raise e
-        raise HTTPException(status_code=500, detail="Transaction deletion failed")
+        raise HTTPException(status_code=500, detail="Transaction deletion failed due to internal error")
 
 
 @dashboard_router.post("/chat")
