@@ -23,20 +23,39 @@ class CognitiveMemoryManager:
     """
 
     def __init__(self, user_id: str):
-        # Sanitize user_id to prevent path traversal (Rule #8 Security)
+        # 1. Base Directory Setup (Rule #8 Security - Path Hardening)
+        # 確保路徑為絕對路徑且位於 data/memory 內，防止 Path Traversal。
+        try:
+            project_root = Path(__file__).parent.parent.parent.resolve()
+            base_dir = (project_root / "data" / "memory").resolve()
+        except Exception:
+            # Fallback to relative if resolving fails in specific environments
+            base_dir = Path("data/memory").resolve()
+
+        # 2. Sanitize user_id
         safe_user_id = re.sub(r'[^a-zA-Z0-9_-]', '', str(user_id or "default"))
         if not safe_user_id: safe_user_id = "default"
         
         self.user_id = user_id
         self.engine = get_db_engine()
-        self.long_term_path = Path("data/memory/long_term") / safe_user_id
+
+        # 3. Path Construction with Boundary Shield
+        lt_path = (base_dir / "long_term" / safe_user_id).resolve()
+        if not str(lt_path).startswith(str(base_dir)):
+            logger.error(f"Security Alert: Attempted path traversal for user_id={user_id}")
+            raise PermissionError("Access denied: Invalid path construction.")
+        
+        self.long_term_path = lt_path
         self.long_term_path.mkdir(parents=True, exist_ok=True)
         
         # [Task 8.3] Runtime DB Resilience
         self._db_available = self._check_db_health()
         if not self._db_available:
             logger.warning(f"CognitiveMemoryManager ({user_id}): PostgreSQL unavailable. Falling back to local storage.")
-            self.fallback_path = Path("data/memory/medium_term_fallback") / safe_user_id
+            fb_path = (base_dir / "medium_term_fallback" / safe_user_id).resolve()
+            if not str(fb_path).startswith(str(base_dir)):
+                raise PermissionError("Access denied: Invalid path construction.")
+            self.fallback_path = fb_path
             self.fallback_path.mkdir(parents=True, exist_ok=True)
 
     def _check_db_health(self) -> bool:
