@@ -88,11 +88,11 @@ def seed():
 
         # OpenRouter Models
         or_models = [
-            ("anthropic/claude-3.5-sonnet", "Claude 4.6 (Latest)", {"streaming": True, "tool_calling": True}),
-            ("google/gemini-pro-1.5", "Gemini Pro 3.1 (Latest)", {"streaming": True, "tool_calling": True}),
+            ("anthropic/claude-3.5-sonnet", "Claude 4.6 (Latest)", {"streaming": True, "tool_calling": True}, 0.003, 0.015),
+            ("google/gemini-pro-1.5", "Gemini Pro 3.1 (Latest)", {"streaming": True, "tool_calling": True}, 0.00125, 0.005),
         ]
         
-        for m_code, d_name, caps in or_models:
+        for m_code, d_name, caps, ip_cost, op_cost in or_models:
             # Note: We use valid OR codes but requested display names
             existing = session.query(LLMModel).filter_by(provider_id=or_p.id, model_code=m_code).first()
             if not existing:
@@ -103,14 +103,18 @@ def seed():
                     display_name=d_name,
                     capability_streaming=caps.get("streaming", True),
                     capability_tool_calling=caps.get("tool_calling", False),
+                    input_cost_per_1k=ip_cost,
+                    output_cost_per_1k=op_cost,
                     source="seed",
                     enabled=True
                 )
                 session.add(existing)
-                logger.info(f"Added Model: {m_code}")
+                logger.info(f"Added Model: {m_code} with costs")
             else:
                 existing.display_name = d_name
-                logger.info(f"Updated Model Name: {m_code}")
+                existing.input_cost_per_1k = ip_cost
+                existing.output_cost_per_1k = op_cost
+                logger.info(f"Updated Model Name and costs: {m_code}")
             id_map[("openrouter", m_code)] = existing.id
 
         session.flush()
