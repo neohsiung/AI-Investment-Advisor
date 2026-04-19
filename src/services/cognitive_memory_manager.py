@@ -1,4 +1,5 @@
 import os
+import re
 import json
 import logging
 from pathlib import Path
@@ -22,16 +23,20 @@ class CognitiveMemoryManager:
     """
 
     def __init__(self, user_id: str):
+        # Sanitize user_id to prevent path traversal (Rule #8 Security)
+        safe_user_id = re.sub(r'[^a-zA-Z0-9_-]', '', str(user_id or "default"))
+        if not safe_user_id: safe_user_id = "default"
+        
         self.user_id = user_id
         self.engine = get_db_engine()
-        self.long_term_path = Path("data/memory/long_term") / str(user_id or "default")
+        self.long_term_path = Path("data/memory/long_term") / safe_user_id
         self.long_term_path.mkdir(parents=True, exist_ok=True)
         
         # [Task 8.3] Runtime DB Resilience
         self._db_available = self._check_db_health()
         if not self._db_available:
             logger.warning(f"CognitiveMemoryManager ({user_id}): PostgreSQL unavailable. Falling back to local storage.")
-            self.fallback_path = Path("data/memory/medium_term_fallback") / str(user_id or "default")
+            self.fallback_path = Path("data/memory/medium_term_fallback") / safe_user_id
             self.fallback_path.mkdir(parents=True, exist_ok=True)
 
     def _check_db_health(self) -> bool:

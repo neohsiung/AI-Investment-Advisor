@@ -132,11 +132,16 @@ class PolygonParser(BaseSourceParser):
 class SkillLearningParser(BaseSourceParser):
     @staticmethod
     def parse(payload: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Pillar 5: Skill Learning Webhook Parser.
+        技能學習 Webhook 解析器：動態處理多種來源（RSS, Podcast, Article）。
+        """
         return {
-            "type": "SKILL_LEARNING",
-            "content": payload.get("content") or payload.get("text", ""),
-            "source_url": payload.get("source_url") or payload.get("url", ""),
-            "source_type": payload.get("source_type") or "article"
+            "type": payload.get("event_type", "SKILL_LEARNING"),
+            "content": payload.get("content") or payload.get("article_text") or payload.get("transcript") or payload.get("text", ""),
+            "source_url": payload.get("source_url") or payload.get("article_url") or payload.get("audioUrl") or payload.get("url", ""),
+            "source_type": payload.get("source_type") or "article",
+            "source_name": payload.get("source_name") or payload.get("podcastName", "")
         }
 
 SOURCE_PARSERS = {

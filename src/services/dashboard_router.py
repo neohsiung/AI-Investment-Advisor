@@ -111,8 +111,8 @@ async def get_reports(repo: AsyncAlchemyReportRepository = Depends(get_reports_r
             "data": reports
         }
     except Exception as e:
-        logger.error(f"Error fetching reports: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.exception("Error fetching reports")
+        raise HTTPException(status_code=500, detail="Failed to fetch reports")
 
 @dashboard_router.post("/rebalance")
 @limiter.limit("1/5minute")
@@ -136,8 +136,8 @@ async def trigger_rebalance(
             "message": "再平衡指令已發送至哨兵監控系統，正在進行資產評估。"
         }
     except Exception as e:
-        logger.error(f"Error triggering rebalance: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.exception("Error triggering rebalance")
+        raise HTTPException(status_code=500, detail="Failed to trigger rebalance flow")
 
 
 def get_transaction_service(user: Dict[str, Any] = Depends(get_current_user)) -> TransactionService:
@@ -160,8 +160,8 @@ async def get_all_settings(service: SettingsService = Depends(get_settings_servi
             "data": settings
         }
     except Exception as e:
-        logger.error(f"Error fetching settings: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.exception("Error fetching settings")
+        raise HTTPException(status_code=500, detail="Internal server error while fetching settings")
 
 @dashboard_router.post("/settings")
 @limiter.limit("10/minute")
@@ -177,8 +177,8 @@ async def save_settings(
         background_tasks.add_task(service.save_settings_bulk, payload)
         return {"status": "success", "message": "設定已收悉，系統正在背景更新中。"}
     except Exception as e:
-        logger.error(f"Error initiating background settings save: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.exception("Error initiating background settings save")
+        raise HTTPException(status_code=500, detail="System update initiation failed")
 
 @dashboard_router.post("/settings/test-notification")
 async def test_notification(
@@ -214,10 +214,10 @@ async def test_notification(
             }
             
     except Exception as e:
-        logger.error(f"Error triggering test notification: {e}")
+        logger.exception("Error triggering test notification")
         if isinstance(e, HTTPException):
             raise e
-        raise HTTPException(status_code=500, detail=f"發送失敗: {str(e)}")
+        raise HTTPException(status_code=500, detail="Notification test failed")
 
 @dashboard_router.get("/settings/models")
 async def get_available_models(service: SettingsService = Depends(get_settings_service)):
@@ -229,8 +229,8 @@ async def get_available_models(service: SettingsService = Depends(get_settings_s
             "data": models
         }
     except Exception as e:
-        logger.error(f"Error fetching models: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.exception("Error fetching models")
+        raise HTTPException(status_code=500, detail="Failed to retrieve AI model list")
 
 @dashboard_router.get("/data/transactions")
 async def get_transactions(service: TransactionService = Depends(get_transaction_service)):
@@ -242,8 +242,8 @@ async def get_transactions(service: TransactionService = Depends(get_transaction
             "data": df.to_dict(orient='records')
         }
     except Exception as e:
-        logger.error(f"Error fetching transactions: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.exception("Error fetching transactions")
+        raise HTTPException(status_code=500, detail="Internal error retrieving transactions")
 
 @dashboard_router.post("/data/transactions")
 async def add_transaction(
@@ -265,8 +265,9 @@ async def add_transaction(
             
         return {"status": "success", "message": msg}
     except Exception as e:
-        logger.error(f"Error adding transaction: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.exception("Error adding transaction")
+        if isinstance(e, HTTPException): raise e
+        raise HTTPException(status_code=500, detail="Transaction creation failed")
 
 @dashboard_router.delete("/data/transactions/{transaction_id}")
 async def delete_transaction(
@@ -281,8 +282,9 @@ async def delete_transaction(
             
         return {"status": "success", "message": msg}
     except Exception as e:
-        logger.error(f"Error deleting transaction: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.exception("Error deleting transaction")
+        if isinstance(e, HTTPException): raise e
+        raise HTTPException(status_code=500, detail="Transaction deletion failed")
 
 
 @dashboard_router.post("/chat")
@@ -337,7 +339,8 @@ async def advisor_chat(
             }
         }
     except Exception as e:
-        logger.error(f"Chat error: {e}")
+        logger.exception("Chat error")
+        raise HTTPException(status_code=500, detail="Advisor chat assistance temporarily unavailable")
 @dashboard_router.post("/chat/stream")
 @limiter.limit("5/minute")
 async def advisor_chat_stream(
@@ -434,8 +437,8 @@ async def advisor_chat_stream(
         return StreamingResponse(event_generator(), media_type="text/event-stream")
 
     except Exception as e:
-        logger.error(f"Stream Chat error: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.exception("Stream Chat error")
+        raise HTTPException(status_code=500, detail="Live assistance stream interrupted")
 
 @dashboard_router.get("/summary")
 async def get_summary(service: DashboardService = Depends(get_dashboard_service)):
@@ -534,8 +537,8 @@ async def get_performance_history(service: PerformanceService = Depends(get_perf
             "data": history_df.to_dict(orient='records')
         }
     except Exception as e:
-        logger.error(f"Error fetching performance history: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.exception("Error fetching performance history")
+        raise HTTPException(status_code=500, detail="Failed to reconstruct portfolio history")
 
 @dashboard_router.get("/performance/agents")
 async def get_agent_performance_stats(service: PerformanceService = Depends(get_performance_service)):
@@ -547,8 +550,8 @@ async def get_agent_performance_stats(service: PerformanceService = Depends(get_
             "data": stats
         }
     except Exception as e:
-        logger.error(f"Error fetching agent performance: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.exception("Error fetching agent performance")
+        raise HTTPException(status_code=500, detail="Agent statistics unavailable")
 
 @dashboard_router.get("/agents")
 async def get_agent_status_list(user: Dict[str, Any] = Depends(get_current_user)):
@@ -616,8 +619,8 @@ async def clear_recent_alerts(user: Dict[str, Any] = Depends(get_current_user)):
                 
         return {"status": "success", "message": "所有通知已封存"}
     except Exception as e:
-        logger.error(f"Error clearing alerts: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.exception("Error clearing alerts")
+        raise HTTPException(status_code=500, detail="Alert database maintenance failed")
 
 @dashboard_router.post("/data/upload-csv")
 async def upload_csv(
@@ -656,5 +659,6 @@ async def upload_csv(
 
         return {"status": "success", "message": f"成功匯入 {count} 筆交易紀錄"}
     except Exception as e:
-        logger.error(f"CSV upload error: {e}")
-        raise HTTPException(status_code=500, detail=f"處理 CSV 失敗: {str(e)}")
+        logger.exception("CSV upload error")
+        if isinstance(e, HTTPException): raise e
+        raise HTTPException(status_code=500, detail="Bulk import processing failed")

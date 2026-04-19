@@ -14,7 +14,7 @@ from src.services.market_data_service import MarketDataService
 from src.services.search_service import InternetSearchService
 from src.services.council_service import CouncilService
 from src.services.transaction_service import TransactionService
-from src.utils.security import redact_secrets
+from src.utils.security import redact_secrets, redact_pii
 import httpx
 
 from src.repositories.sentinel_repository import AlchemySentinelRepository
@@ -121,7 +121,7 @@ class SentinelService:
             # Dimension 0: User Context Resolution (v5.0: Strictly isolated)
             active_tickers = self.transaction_service.get_user_tickers(self.user_id, only_active=True)
             ticker_list = list(active_tickers)
-            logger.info(f"Sentinel: Monitoring {len(ticker_list)} tickers for user {self.user_id}.")
+            logger.info(f"Sentinel: Monitoring {len(ticker_list)} tickers for user {redact_pii(self.user_id)}.")
             
             # Dimension 1: VIX Regime (每次 tick)
             triggers += self._check_vix_anomaly()
@@ -1723,16 +1723,16 @@ class SentinelService:
         攔截 'cash_ratio_high' 觸發訊號並啟動資本部署技能/工作流。
         """
         trigger_id = f"cash_ratio_high_{self.user_id}"
-        logger.info(f"DEBUG _handle_cash_deployment_logic received {len(triggers)} triggers. Looking for {trigger_id}")
+        logger.info(f"DEBUG _handle_cash_deployment_logic received {len(triggers)} triggers. Looking for {redact_pii(trigger_id)}")
         for t in triggers:
-            logger.info(f"  - Trigger ID present: {t.get('id')}")
+            logger.info(f"  - Trigger ID present: {redact_secrets(t.get('id'))}")
             
         cash_trigger = next((t for t in triggers if t.get("id") == trigger_id), None)
         if not cash_trigger:
-            logger.info(f"Sentinel: No {trigger_id} trigger found in {len(triggers)} total triggers.")
+            logger.info(f"Sentinel: No {redact_pii(trigger_id)} trigger found in {len(triggers)} total triggers.")
             return
 
-        logger.info(f"Sentinel: Excess Cash Detected for {redact_secrets(self.user_id)}. Initiating deployment flow.")
+        logger.info(f"Sentinel: Excess Cash Detected for {redact_pii(self.user_id)}. Initiating deployment flow.")
         
         try:
             # v9.0 Clean Architecture: Invoke cash_deployment skill via standalone CLI (Phase 4)
