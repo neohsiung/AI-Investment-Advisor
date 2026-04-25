@@ -204,7 +204,17 @@ class CognitiveMemoryManager:
             # 2. Get LLM Settings for Embeddings
             settings = SettingsService(user_id=self.user_id).get_all_settings()
             provider = settings.get("AI_PROVIDER", "Google Gemini")
-            model = settings.get("AI_MODEL_SMART", "gemini-1.5-pro")
+            
+            # Use tier-aware routing (smart tier for embeddings)
+            from src.infrastructure.llm.tier_config import SettingsAwareModelRouter, TierConfig
+            from src.repositories.settings_repository import AlchemySettingsRepository
+            settings_repo = AlchemySettingsRepository()
+            model_router = SettingsAwareModelRouter(settings_repo)
+            if self.user_id:
+                model = model_router.get_model(self.user_id, "smart")
+            else:
+                tier_config = TierConfig()
+                model = tier_config.resolve("smart")
             api_key = settings.get("API_KEY", "")
             
             if provider.lower() == "openai":
@@ -286,7 +296,17 @@ class CognitiveMemoryManager:
         config_data = settings.get_all_settings()
         
         provider = config_data.get("AI_PROVIDER", "Google Gemini")
-        model = config_data.get("AI_MODEL_SMART", "gemini-1.5-pro")
+        
+        # Use tier-aware routing (smart tier for distillation)
+        from src.infrastructure.llm.tier_config import SettingsAwareModelRouter, TierConfig
+        from src.repositories.settings_repository import AlchemySettingsRepository
+        settings_repo = AlchemySettingsRepository()
+        model_router = SettingsAwareModelRouter(settings_repo)
+        if self.user_id:
+            model = model_router.get_model(self.user_id, "smart")
+        else:
+            tier_config = TierConfig()
+            model = tier_config.resolve("smart")
         api_key = config_data.get("API_KEY", "")
 
         gateway = LLMGatewayFactory.create(provider)
@@ -336,7 +356,17 @@ class CognitiveMemoryManager:
         
         settings = SettingsService(user_id=self.user_id).get_all_settings()
         provider = settings.get("AI_PROVIDER", "Google Gemini")
-        model = settings.get("AI_MODEL_SMART", "gemini-1.5-pro")
+        
+        # Use tier-aware routing (smart tier for search)
+        from src.infrastructure.llm.tier_config import SettingsAwareModelRouter, TierConfig
+        from src.repositories.settings_repository import AlchemySettingsRepository
+        settings_repo = AlchemySettingsRepository()
+        model_router = SettingsAwareModelRouter(settings_repo)
+        if self.user_id:
+            model = model_router.get_model(self.user_id, "smart")
+        else:
+            tier_config = TierConfig()
+            model = tier_config.resolve("smart")
         api_key = settings.get("API_KEY", "")
         if provider.lower() == "openai":
             model = "text-embedding-3-small"

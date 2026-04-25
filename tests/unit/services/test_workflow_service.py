@@ -29,8 +29,7 @@ async def test_daily_workflow_execution(mock_deps):
     user_id = "test_user"
     mock_deps['trans'].get_user_tickers.return_value = ["AAPL"]
     
-    with patch('src.services.workflow_service.AgentFactory') as MockFactory, \
-         patch('src.services.workflow_service.PerformanceService') as MockPerf, \
+    with patch('src.services.workflow_service.PerformanceService') as MockPerf, \
          patch('src.services.broker_factory.BrokerFactory') as MockBrokerFactory:
         
         # Mock Broker
@@ -39,36 +38,8 @@ async def test_daily_workflow_execution(mock_deps):
         mock_broker.get_account.return_value = MagicMock(total_equity=10000, available_cash=5000)
         MockBrokerFactory.get_broker.return_value = mock_broker
 
-        # Mock Agents
-        mock_mom = MagicMock()
-        mock_mom.run = AsyncMock(return_value="STRONG BUY")
-        MockFactory.create_momentum_agent.return_value = mock_mom
-
-        mock_sent = MagicMock()
-        mock_sent.run = AsyncMock(return_value={"sentiment": "Bullish", "score": 0.8, "narrative": "Good news found."})
-        MockFactory.create_sentiment_agent.return_value = mock_sent
-
-        mock_fund = MagicMock()
-        mock_fund.run = AsyncMock(return_value="Solid")
-        MockFactory.create_fundamental_agent.return_value = mock_fund
+        report_content = "### NVDA (0.5)\n- **Action**: **SELL**\n\n### TSM (0.5)\n- **Action**: **HOLD**"
         
-        mock_macro = MagicMock()
-        mock_macro.run = AsyncMock(return_value="Macro Context")
-        MockFactory.create_macro_agent.return_value = mock_macro
-
-        mock_cio = MagicMock()
-        report_content = """
-### NVDA (0.5)
-- **Action**: **SELL**
-
-### TSM (0.5)
-- **Action**: **HOLD**
-"""
-        mock_cio.run = AsyncMock(return_value=report_content)
-        mock_cio.polish_report = AsyncMock(side_effect=lambda x: x) # Identity function
-        MockFactory.create_cio_agent.return_value = mock_cio
-        
-        # Instantiate inside structure where Factory is active
         workflow = DailyWorkflow(user_id, transaction_repo=mock_deps['repo'], transaction_service=mock_deps['trans'], market_service=mock_deps['market'])
         
         # Mock Memory Service to avoid AttributeErrors or logic errors
@@ -76,6 +47,16 @@ async def test_daily_workflow_execution(mock_deps):
         workflow.memory_service.detect_conflicts = AsyncMock(return_value=[])
         workflow.memory_service.get_context.return_value.recent_items = []
         workflow.memory_service.store_report = AsyncMock()
+        
+        # v11.1: Mock _call_agent_llm instead of AgentFactory
+        workflow._call_agent_llm = AsyncMock()
+        workflow._call_agent_llm.side_effect = lambda name, ctx, **kwargs: {
+            "Momentum": "STRONG BUY",
+            "Sentiment": {"sentiment": "Bullish", "score": 0.8, "narrative": "Good news found."},
+            "Fundamental": "Solid",
+            "Macro": "Macro Context",
+            "CIO": report_content
+        }.get(name, "Default Response")
         
         # Mock context setup usually done in collect_data
         workflow.context['tickers'] = ["NVDA", "TSM"]
@@ -96,7 +77,7 @@ async def test_daily_workflow_skip_empty_portfolio(mock_deps):
     user_id = "test_user"
     mock_deps['trans'].get_user_tickers.return_value = []
     
-    with patch('src.services.workflow_service.AgentFactory') as MockFactory:
+    with patch('src.services.workflow_service.PerformanceService') as MockPerf:
         workflow = DailyWorkflow(user_id, transaction_repo=mock_deps['repo'], transaction_service=mock_deps['trans'], market_service=mock_deps['market'])
         workflow.memory_service = MagicMock() # FIX
         workflow.memory_service.detect_conflicts = AsyncMock(return_value=[])
@@ -108,10 +89,10 @@ async def test_report_distribution(mock_deps):
     user_id = "test_user"
     mock_deps['trans'].get_user_tickers.return_value = ["AAPL"]
     
-    with patch('src.services.workflow_service.AgentFactory') as MockFactory, \
-         patch('src.repositories.report_repository.AlchemyReportRepository') as MockRepo, \
+    with patch('src.repositories.report_repository.AlchemyReportRepository') as MockRepo, \
          patch('src.services.broker_factory.BrokerFactory') as MockBrokerFactory, \
-         patch('src.services.workflow_service.PerformanceService') as MockPerf:
+         patch('src.services.workflow_service.PerformanceService') as MockPerf, \
+         patch('src.services.notification_settings_manager.NotificationSettingsManager') as MockNSM:
         
         # Mock Broker
         mock_broker = MagicMock()
@@ -119,38 +100,32 @@ async def test_report_distribution(mock_deps):
         mock_broker.get_account.return_value = MagicMock(total_equity=10000, available_cash=5000)
         MockBrokerFactory.get_broker.return_value = mock_broker
 
-        mock_mom = MagicMock()
-        mock_mom.run = AsyncMock(return_value="STRONG BUY")
-        MockFactory.create_momentum_agent.return_value = mock_mom
-        
-        # Mock other agents
-        # Mock other agents with AsyncMock runs
-        MockFactory.create_sentiment_agent.return_value.run = AsyncMock(return_value={"score": 0.5})
-        MockFactory.create_fundamental_agent.return_value.run = AsyncMock(return_value="Cached Fundamental")
-        MockFactory.create_macro_agent.return_value.run = AsyncMock(return_value="Macro Context")
-        
-        mock_cio = MagicMock()
-        mock_cio.run = AsyncMock(return_value="Report")
-        mock_cio.polish_report = AsyncMock(side_effect=lambda x: f"<html>{x}</html>")
-        MockFactory.create_cio_agent.return_value = mock_cio
-
         workflow = DailyWorkflow(user_id, transaction_repo=mock_deps['repo'], transaction_service=mock_deps['trans'], market_service=mock_deps['market'])
         workflow.memory_service = MagicMock() # FIX: Ensure memory service is mocked
         workflow.memory_service.detect_conflicts = AsyncMock(return_value=[])
         workflow.memory_service.get_context.return_value.recent_items = []
         workflow.memory_service.store_report = AsyncMock()
+        
+        # Mock Agents
+        workflow._call_agent_llm = AsyncMock()
+        workflow._call_agent_llm.side_effect = lambda name, ctx, **kwargs: {
+            "Momentum": "STRONG BUY",
+            "Sentiment": {"score": 0.5},
+            "Fundamental": "Cached Fundamental",
+            "Macro": "Macro Context",
+            "CIO": "Report"
+        }.get(name, "Default Response")
 
         mock_repo_instance = MagicMock()
         MockRepo.return_value = mock_repo_instance
         
-        with patch('httpx.AsyncClient.post', return_value=MagicMock(status_code=202)) as mock_post:
-            await workflow.run(dry_run=False)
-            
-            # Verify HTTP call
-            assert mock_post.called
-            call_kwargs = mock_post.call_args.kwargs
-            assert call_kwargs['json']['user_id'] == user_id
-            assert "Report" in call_kwargs['json']['content']
-            
-            # Verify DB storage
-            assert mock_repo_instance.save.called
+        mock_nsm_instance = MockNSM.return_value
+        mock_nsm_instance.get_active_notification_channels.return_value = []
+        
+        await workflow.run(dry_run=False)
+        
+        # Verify NSM was used instead of httpx
+        assert mock_nsm_instance.get_active_notification_channels.called
+        
+        # Verify DB storage
+        assert mock_repo_instance.save.called

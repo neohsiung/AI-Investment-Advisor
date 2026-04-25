@@ -11,6 +11,8 @@ class TestVIXAnomaly:
 
         mock_services["market"].get_ohlcv.return_value = {"close": [15.0] * 60}
         mock_services["transaction"].get_user_tickers.return_value = []
+        # Suppress cash alert in calm market test
+        mock_services["settings"].get_setting.side_effect = lambda key, default=None, user_id=None: 0.0 if key == "target_cash_ratio" else default
 
         async def _test():
             # Patch _get_all_user_ids and _check_active_sources to avoid DB
@@ -57,11 +59,10 @@ class TestVIXAnomaly:
             assert "vix_high_static" in triggers[0]["id"]
             
             # Now test the escalation via _escalate
-            with patch('httpx.AsyncClient.post', return_value=MagicMock(status_code=202)) as mock_post:
-                await sentinel._escalate(triggers)
-                await sentinel._flush_buffer(force=True) # Force flush for testing
-                mock_services["council"].start_session.assert_called_once()
-                assert mock_post.called
+            await sentinel._escalate(triggers)
+            await sentinel._flush_buffer(force=True) # Force flush for testing
+            mock_services["council"].start_session.assert_called_once()
+            assert sentinel._dispatch_notifications_direct.called
 
         run_async(_test())
 

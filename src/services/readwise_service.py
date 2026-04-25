@@ -1,24 +1,80 @@
 import typing
-from typing import List, Dict, Tuple, Any, Optional, Callable, Dict, List, Tuple, Any, Optional, Callable
+import os
 import json
 import re
+import asyncio
+from typing import List, Dict, Tuple, Any, Optional, Callable, Dict, List, Tuple, Any, Optional, Callable
 
 from src.data.providers.readwise_provider import ReadwiseProvider
-from src.agents.factory import AgentFactory
 from src.utils.logger import setup_logger
+from src.services.settings_service import SettingsService
+from src.infrastructure.llm.tier_config import SettingsAwareModelRouter
+from src.infrastructure.llm.llm_gateway import OpenRouterGateway
+from src.domain.interfaces import Message, LLMConfig
+from src.repositories.settings_repository import AlchemySettingsRepository
+
+logger = setup_logger("ReadwiseService")
 
 class ReadwiseService:
     """
     Readwise Service to process highlights and determine if they are investment-related or require actions.
     Readwise 服務，用來處理畫線筆記並判斷是否與投資相關或需要觸發行動。
+    
+    PAD Phase 2: Migrated to SettingsAwareModelRouter + OpenRouterGateway
     """
     
-    def __init__(self, user_id: str = "system", readwise_provider: ReadwiseProvider = None):
-        self.logger = setup_logger("ReadwiseService")
+    def __init__(self, user_id: str = "system", readwise_provider: ReadwiseProvider = None, settings_service: Optional[SettingsService] = None):
         self.user_id = user_id
         self.provider = readwise_provider or ReadwiseProvider(user_id=user_id)
-        # Using a general agent for analysis
-        self.agent = AgentFactory.create_agent("Engineer", use_cache=True, user_id=user_id)
+        self.settings_service = settings_service or SettingsService(user_id=user_id)
+        
+        # PAD Phase 2: Initialize router and gateway for LLM calls
+        from src.data.database import get_db_engine
+        self.settings_repo = AlchemySettingsRepository(engine=get_db_engine())
+        self.model_router = SettingsAwareModelRouter(self.settings_repo)
+        self.gateway = OpenRouterGateway()
+        
+    async def _call_agent_llm(self, agent_name: str, context: Dict[str, Any], tier: str = "fast", 
+                              temperature: float = 0.7, max_tokens: int = 1500) -> str:
+        """
+        PAD Phase 2: Replace AgentFactory.create_*_agent().run() with direct gateway calls.
+        Generic method to call LLM for any agent role.
+        """
+        try:
+            model = self.model_router.get_model(self.user_id, tier)
+            if not model:
+                logger.warning(f"Failed to route model for tier={tier}, using fallback")
+                return json.dumps({"status": "failed", "error": "No model routed"})
+            
+            # Determine system prompt based on agent name
+            agent_prompts = {
+                "Analyst": "You are an investment highlight analyzer. Analyze highlights for investment relevance and required actions. Return valid JSON.",
+            }
+            
+            system_prompt = agent_prompts.get(agent_name, f"You are a {agent_name}.")
+            messages = [
+                Message(role="system", content=system_prompt),
+                Message(role="user", content=json.dumps(context))
+            ]
+            
+            config = LLMConfig(
+                provider=os.getenv("AI_PROVIDER", "OpenRouter"),
+                model=model,
+                temperature=temperature,
+                max_tokens=max_tokens
+            )
+            
+            logger.debug(f"ReadwiseService: Calling {agent_name} agent via {model}")
+            response = await self.gateway.chat(messages, config)
+            
+            if not isinstance(response, str):
+                logger.error(f"ReadwiseService: Unexpected response type from gateway: {type(response)}")
+                return json.dumps({"status": "failed", "error": f"Invalid response type: {type(response)}"})
+            
+            return response
+        except Exception as e:
+            logger.error(f"ReadwiseService: {agent_name} agent failed: {e}")
+            return json.dumps({"status": "failed", "error": str(e)})
         
     def fetch_and_analyze_highlights(self, updated_after: Optional[str] = None) -> List[Dict[str, Any]]:
         """
@@ -38,7 +94,10 @@ class ReadwiseService:
                 # For basic analysis, the text itself and the user's note is usually sufficient
                 book_id = highlight.get("book_id", "Unknown Book ID")
                 
-                analysis = self.analyze_highlight(text, book_id=str(book_id), note=highlight.get("note", ""))
+                # PAD Phase 2: Use async analysis
+                analysis = asyncio.run(self.analyze_highlight_async(
+                    text, book_id=str(book_id), note=highlight.get("note", "")
+                ))
                 
                 # Ensure analysis is a dict before calling .get()
                 if isinstance(analysis, dict) and analysis.get("is_investment_related"):
@@ -54,49 +113,45 @@ class ReadwiseService:
                         
             return analyzed_highlights
         except Exception as e:
-            self.logger.error(f"Failed to fetch and analyze highlights: {e}")
+            logger.error(f"Failed to fetch and analyze highlights: {e}")
             return []
 
-    def analyze_highlight(self, highlight_text: str, book_id: str = "", note: str = "") -> Dict[str, Any]:
+    async def analyze_highlight_async(self, highlight_text: str, book_id: str = "", note: str = "") -> Dict[str, Any]:
         """
-        Analyze a specific highlight text using LLM.
-        使用 LLM 分析特定的畫線內容。
+        Asynchronously analyze a specific highlight text using LLM.
+        使用 LLM 非同步分析特定的畫線內容。
+        PAD Phase 2: Async implementation via gateway
         """
-        prompt = f"""
-        TASK:
-        Analyze the following user highlight from Readwise.
-        Determine:
-        1. Is this highlight directly or indirectly related to investment, macroeconomics, business strategy, trading, or finance?
-        2. Does this highlight imply a need to trigger any investment decisions, actions, or portfolio adjustments?
-
-        BOOK ID: {book_id}
-        USER NOTE: {note}
-        HIGHLIGHT TEXT:
-        {highlight_text}
-
-        Provide the response ONLY as a JSON object with the following keys, no markdown blocks:
-        {{
-            "is_investment_related": <boolean>,
-            "requires_action": <boolean>,
-            "reasoning": "<string describing why>",
-            "suggested_action": "<string describing what action to take, or null if none>"
-        }}
-        """
+        context = {
+            "highlight_text": highlight_text,
+            "book_id": book_id,
+            "user_note": note,
+            "task": "Analyze if this highlight is investment-related and requires action"
+        }
         
         try:
-            # v7.0: SystemEngineerAgent.run expects dict, use _call_real_llm for raw string prompts
-            response = self.agent._call_real_llm(prompt, self.agent.system_prompt or "You are an investment highlight analyzer.")
+            response = await self._call_agent_llm("Analyst", context, tier="fast", temperature=0.5, max_tokens=500)
             return self._parse_json_response(response)
         except Exception as e:
-            self.logger.error(f"Highlight analysis failed: {e}")
+            logger.error(f"Highlight analysis failed: {e}")
             return {
                 "is_investment_related": False,
                 "requires_action": False,
                 "reasoning": f"Analysis failed: {str(e)}",
                 "suggested_action": None
             }
+
+    def analyze_highlight(self, highlight_text: str, book_id: str = "", note: str = "") -> Dict[str, Any]:
+        """
+        Synchronous wrapper for analyze_highlight_async (for backward compatibility).
+        使用 LLM 分析特定的畫線內容。
+        """
+        return asyncio.run(self.analyze_highlight_async(highlight_text, book_id, note))
             
     def _parse_json_response(self, response: Any) -> Dict[str, Any]:
+        """
+        Parse JSON response from LLM, with multiple fallback strategies.
+        """
         if isinstance(response, dict) and "is_investment_related" in response:
             return response
             
@@ -117,7 +172,7 @@ class ReadwiseService:
                  obj = json.loads(match.group(0))
                  return obj
              except json.JSONDecodeError as e:
-                 self.logger.warning(f"Error decoding JSON response: {e}, raw string: {match.group(0)}")
+                 logger.warning(f"Error decoding JSON response: {e}, raw string: {match.group(0)}")
                  # Fallback to simple matching if json is malformed
                  pass
                  

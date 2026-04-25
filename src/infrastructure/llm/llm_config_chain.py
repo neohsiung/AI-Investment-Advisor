@@ -41,6 +41,7 @@ def _get_gateway_registry() -> dict[str, Any]:
                 "gemini": GeminiGateway,
                 "openai": OpenAIGateway,
                 "ollama": OllamaGateway,
+                "nvidia": OpenAIGateway,  # nvidia uses OpenAI-compatible API
             }
             # Try to load Anthropic / Groq if available
             try:

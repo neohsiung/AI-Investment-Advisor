@@ -106,7 +106,7 @@ class BudgetAwareModelRouter:
         Prefer get_config_chain() which reads llm_tier_bindings instead.
         """
         # Fetch DB overrides if any
-        db_settings = self.settings.get_all_settings() if user_id else {}
+        db_settings = self.settings.get_all_settings(user_id) if user_id else {}
         
         # Resolve model name (DB -> Env -> Default)
         model_name = self.tier_cfg.resolve(tier_name, db_settings)
@@ -118,10 +118,15 @@ class BudgetAwareModelRouter:
         # Provider resolution (Check AI_PROVIDER first for standards compliance)
         provider = db_settings.get("AI_PROVIDER", db_settings.get("ai_provider", "OpenRouter")) if user_id else "OpenRouter"
         
-        # API Key Mapping (source_{provider}_api_key or legacy API_KEY)
+        # API Key Mapping (source_{provider}_api_key or {provider}_api_key or legacy API_KEY)
         api_key_field = f"source_{provider.lower()}_api_key"
-        # Support fallback to legacy "API_KEY"
-        raw_key = db_settings.get(api_key_field, db_settings.get("API_KEY", "")) if user_id else ""
+        direct_provider_key = f"{provider.lower()}_api_key"
+        
+        # Support fallback across different naming conventions used in DB
+        raw_key = ""
+        if user_id:
+            raw_key = db_settings.get(api_key_field) or db_settings.get(direct_provider_key) or db_settings.get("API_KEY", "")
+            
         api_key = raw_key.strip().strip('"').strip("'") if isinstance(raw_key, str) else raw_key
         
         return LLMConfig(

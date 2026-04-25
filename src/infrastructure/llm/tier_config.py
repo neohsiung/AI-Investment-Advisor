@@ -273,7 +273,8 @@ class SettingsAwareModelRouter:
                 }
                 db_key = tier_key_map.get(tier)
                 if db_key:
-                    db_model = self.settings_repo.get_setting(user_id, db_key)
+                    # Use correct method signature: get(user_id, key, default)
+                    db_model = self.settings_repo.get(user_id, db_key, None)
                     if db_model:
                         if isinstance(db_model, str):
                             db_model = db_model.strip().strip('"').strip("'")

@@ -1,11 +1,15 @@
 import json
 import os
+import secrets as _secrets
 from typing import List, Dict, Tuple, Any, Optional, Callable
 from abc import ABC, abstractmethod
 from cryptography.fernet import Fernet
 from sqlalchemy import text
 from src.data.database import BaseRepository, get_db_engine
 from src.data.models import Setting
+from src.utils.logger import setup_logger
+
+_logger = setup_logger("SettingsRepository")
 
 class ISettingsRepository(ABC):
     """
@@ -96,39 +100,55 @@ class AlchemySettingsRepository(BaseRepository, ISettingsRepository):
         # v11.1: Initialize encryption cipher if secret key exists
         self.secret_key = os.getenv("APP_SECRET_KEY")
         self.cipher = Fernet(self.secret_key.encode()) if self.secret_key else None
-        self.sensitive_patterns = ["api_key", "token", "secret", "password", "private_key"]
+        self.sensitive_patterns = ["api_key", "token", "secret", "password", "private_key", "_pass", "_key"]
 
     def _should_encrypt(self, key: str) -> bool:
         """Determines if a key contains sensitive information that should be encrypted."""
         return any(pattern in key.lower() for pattern in self.sensitive_patterns)
 
     def _encrypt(self, value: Any) -> str:
-        """Encrypts the value if the cipher is available."""
+        """Encrypts the value if the cipher is available. Idempotent — won't double-encrypt."""
         if not self.cipher or value is None:
             return value
-        
-        # Ensure it is a string for encryption
         str_val = json.dumps(value) if not isinstance(value, str) else value
+        if str_val.startswith("ENC:"):
+            return str_val
         encrypted_bytes = self.cipher.encrypt(str_val.encode())
         return f"ENC:{encrypted_bytes.decode()}"
 
     def _decrypt(self, value: Any) -> Any:
         """Decrypts the value if it looks encrypted and the cipher is available."""
-        if not self.cipher or not isinstance(value, str) or not value.startswith("ENC:"):
+        if not isinstance(value, str):
             return value
-        
-        try:
-            encrypted_data = value[4:].encode()
-            decrypted_bytes = self.cipher.decrypt(encrypted_data)
-            decrypted_str = decrypted_bytes.decode()
             
-            # Try to parse as JSON if it was serialized
+        # v4.3.1: Strip potential quotes or whitespace from DB/JSON storage
+        raw_val = value.strip().strip('"').strip("'")
+        
+        if not raw_val.startswith("ENC:"):
+            return value
+            
+        if not self.cipher:
+            _logger.warning(
+                "Value is encrypted (ENC: prefix) but APP_SECRET_KEY is not set. "
+                "Set APP_SECRET_KEY in .env to decrypt stored credentials."
+            )
+            return value
+            
+        try:
+            # Strip 'ENC:' prefix and decrypt
+            encrypted_data = raw_val[4:]
+            decrypted_bytes = self.cipher.decrypt(encrypted_data.encode())
+            decrypted_str = decrypted_bytes.decode('utf-8')
             try:
                 return json.loads(decrypted_str)
             except json.JSONDecodeError:
                 return decrypted_str
-        except Exception as e:
-            # Fallback to original value if decryption fails (might be malformed or wrong key)
+        except Exception:
+            _logger.error(
+                "Decryption failed — APP_SECRET_KEY may have rotated. "
+                "Returning raw encrypted value; credential will appear invalid.",
+                exc_info=True,
+            )
             return value
 
     def _resolve_user(self, user_id: str) -> str:
@@ -145,10 +165,6 @@ class AlchemySettingsRepository(BaseRepository, ISettingsRepository):
 
     def get(self, user_id: str, key: str, default: Any = None) -> Any:
         """
-        Get a specific setting value (ORM).
-        """
-    def get(self, user_id: str, key: str, default: Any = None) -> Any:
-        """
         Get a specific setting value (ORM) with transparent decryption.
         """
         resolved_uid = self._resolve_user(user_id)
@@ -157,13 +173,12 @@ class AlchemySettingsRepository(BaseRepository, ISettingsRepository):
             setting = self.session.query(Setting).filter_by(user_id=resolved_uid, key=key).first()
             if not setting:
                 return default
-                
             raw_value = setting.value
-            # v11.1: Transparently decrypt sensitive data
             if self._should_encrypt(key):
                 return self._decrypt(raw_value)
             return raw_value
         except Exception:
+            _logger.exception(f"get() failed for user={resolved_uid!r} key={key!r}")
             return default
         finally:
             self.close_session()
@@ -235,7 +250,10 @@ class AlchemySettingsRepository(BaseRepository, ISettingsRepository):
         """
         try:
             rows = self.session.query(Setting).filter_by(user_id=user_id).all()
-            return [(r.key, r.value) for r in rows]
+            return [
+                (r.key, self._decrypt(r.value) if self._should_encrypt(r.key) else r.value)
+                for r in rows
+            ]
         finally:
             self.close_session()
 
@@ -311,18 +329,20 @@ class AlchemySettingsRepository(BaseRepository, ISettingsRepository):
 
     def find_user_by_webhook_secret(self, secret: str) -> Optional[str]:
         """
-        Find an internal user ID (email/UUID) based on a webhook secret / API key.
+        Find a user by webhook API key using application-side decrypt + constant-time compare.
+        Raw SQL value comparison is avoided so this works regardless of encryption state.
         """
         try:
-            # We look for a specific key 'webhook_api_key'
-            query = text("""
-                SELECT user_id FROM settings 
-                WHERE TRIM(BOTH '"' FROM value) = :val 
-                AND key = 'webhook_api_key'
-                LIMIT 1
-            """)
-            result = self.session.execute(query, {"val": secret}).fetchone()
-            return result[0] if result else None
+            rows = self.session.execute(
+                text("SELECT user_id, value FROM settings WHERE key = 'webhook_api_key'")
+            ).fetchall()
+            for row in rows:
+                stored_val = self._decrypt(row[1])
+                if isinstance(stored_val, str):
+                    stored_val = stored_val.strip('"')
+                if _secrets.compare_digest(str(stored_val), str(secret)):
+                    return row[0]
+            return None
         except Exception:
             return None
         finally:

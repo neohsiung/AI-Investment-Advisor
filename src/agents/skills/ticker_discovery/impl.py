@@ -48,10 +48,14 @@ async def ticker_discovery(
             logger.error(f"User {user_id} has no Gemini API key for ticker discovery.")
             return json.dumps({"status": "error", "error": "No Gemini API key found for extraction."})
             
-        # Use simple config for extraction
+        # Use simple config for extraction (tier-aware routing)
+        from src.infrastructure.llm.tier_config import TierConfig
+        tier_config = TierConfig()
+        model = tier_config.resolve("fast")  # Fast & reliable for extraction
+        
         config = LLMConfig(
             provider="gemini",
-            model="gemini-2.0-flash", # Fast & reliable for extraction
+            model=model,
             api_key=api_key,
             temperature=0.0
         )

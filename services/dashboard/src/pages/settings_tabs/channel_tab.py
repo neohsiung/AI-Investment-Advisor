@@ -38,6 +38,28 @@ def _migrate_env_to_settings(settings_service, settings):
                     st.toast("✅ 已從環境變數遷移設定至資料庫")
                 updated = True
 
+    # [T1] Auto-enable channels if credentials exist but enabled flag not set
+    # Email
+    if (settings.get("channel_email_smtp_user") and settings.get("channel_email_smtp_pass") and 
+        not settings.get("channel_email_enabled")):
+        settings_service.save_setting("channel_email_enabled", True)
+        settings["channel_email_enabled"] = True
+        updated = True
+
+    # Telegram
+    if (settings.get("channel_telegram_bot_token") and settings.get("channel_telegram_chat_id") and 
+        not settings.get("channel_telegram_enabled")):
+        settings_service.save_setting("channel_telegram_enabled", True)
+        settings["channel_telegram_enabled"] = True
+        updated = True
+    
+    # LINE (Optional but good for consistency)
+    if (settings.get("channel_line_access_token") and settings.get("channel_line_secret") and 
+        not settings.get("channel_line_enabled")):
+        settings_service.save_setting("channel_line_enabled", True)
+        settings["channel_line_enabled"] = True
+        updated = True
+
 def render_channel_tab(st, settings_service, user_id):
     """
     Renders the Interaction & Channel Management tab.

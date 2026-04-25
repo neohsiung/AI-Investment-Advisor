@@ -7,22 +7,96 @@ import io
 import re
 import httpx
 import os
+import json
+import asyncio
 from src.services.dashboard_service import DashboardService
 from src.utils.logger import setup_logger
 from src.utils.jwt_utils import decode_token
 from src.services.performance_service import PerformanceService
 from src.repositories.report_repository import AsyncAlchemyReportRepository
-from src.agents.factory import AgentFactory
 from src.utils.rate_limit import limiter
-import json
-import asyncio
 from src.services.transaction_service import TransactionService
 from src.services.settings_service import SettingsService
 from src.services.intelligence_service import IntelligenceService
 from src.utils.security import redact_pii
+# PAD Phase 2: Replace AgentFactory with model router and gateway
+from src.infrastructure.llm.tier_config import SettingsAwareModelRouter
+from src.infrastructure.llm.llm_gateway import OpenRouterGateway
+from src.domain.interfaces import Message, LLMConfig
+from src.repositories.settings_repository import AlchemySettingsRepository
 
 logger = setup_logger("DashboardRouter")
 dashboard_router = APIRouter(tags=["Dashboard"])
+
+# PAD Phase 2: Module-level initialization of model router and gateway
+# These are shared across all route handlers within this router
+_model_router = None
+_gateway = None
+_settings_repo_cache = {}
+
+def get_model_router_and_gateway(user_id: str):
+    """Lazy initialization of model router and gateway per user context"""
+    global _model_router, _gateway, _settings_repo_cache
+    
+    if _model_router is None:
+        _model_router = SettingsAwareModelRouter(None)
+    
+    if _gateway is None:
+        _gateway = OpenRouterGateway()
+    
+    # Initialize settings repo for this user if not cached
+    if user_id not in _settings_repo_cache:
+        from src.data.database import get_db_engine
+        _settings_repo_cache[user_id] = AlchemySettingsRepository(engine=get_db_engine())
+    
+    return _model_router, _gateway, _settings_repo_cache[user_id]
+
+async def _call_agent_llm(user_id: str, context: Dict[str, Any], tier: str = "smart", 
+                           temperature: float = 0.7, max_tokens: int = 2000) -> str:
+    """
+    PAD Phase 2: Replace AgentFactory.create_cio_agent().call_llm() with direct gateway calls.
+    Generic method to call LLM for CIO agent role.
+    """
+    try:
+        model_router, gateway, settings_repo = get_model_router_and_gateway(user_id)
+        
+        # Update router with current settings repo
+        model_router.settings_repo = settings_repo
+        
+        model = model_router.get_model(user_id, tier)
+        if not model:
+            logger.warning(f"Failed to route model for tier={tier}, falling back to default")
+            model = "claude-3.5-sonnet"  # Fallback model
+        
+        system_prompt = (
+            "You are a professional AI Investment Advisor. "
+            "Your goal is to answer the user's financial questions concisely, directly, and interactively. "
+            "Provide actionable, insightful, and data-driven responses. "
+            "Use traditional Chinese (繁體中文)."
+        )
+        
+        messages = [
+            Message(role="system", content=system_prompt),
+            Message(role="user", content=json.dumps(context))
+        ]
+        
+        config = LLMConfig(
+            provider=os.getenv("AI_PROVIDER", "OpenRouter"),
+            model=model,
+            temperature=temperature,
+            max_tokens=max_tokens
+        )
+        
+        logger.debug(f"DashboardRouter: Calling CIO agent via {model}")
+        response = await gateway.chat(messages, config)
+        
+        if not isinstance(response, str):
+            raise ValueError(f"Unexpected response type from gateway: {type(response)}")
+        
+        return response
+    except Exception as e:
+        logger.error(f"DashboardRouter: CIO agent LLM call failed: {e}")
+        raise
 
 def get_current_user(request: Request) -> Dict[str, Any]:
     """從 Header 或 Cookie 驗證 JWT 並獲取使用者資訊"""
@@ -306,9 +380,6 @@ async def advisor_chat(
         if not prompt:
             raise HTTPException(status_code=400, detail="Message is required")
 
-        factory = AgentFactory()
-        cio_agent = factory.create_cio_agent(user_id=user_id)
-
         # 檢測 Ticker 標的
         ticker_match = re.search(r'\b([A-Z]{1,5})\b', prompt)
         ticker = ticker_match.group(1) if ticker_match else None
@@ -331,8 +402,13 @@ async def advisor_chat(
             
         messages.append({"role": "user", "content": prompt})
 
-        # 調用 LLM
-        response = cio_agent.call_llm(messages=messages, temperature=0.7)
+        # PAD Phase 2: Replace AgentFactory with _call_agent_llm
+        context = {
+            "user_id": user_id,
+            "messages": messages,
+            "ticker": ticker
+        }
+        response = await _call_agent_llm(user_id, context, tier="smart", temperature=0.7, max_tokens=2000)
 
         return {
             "status": "success",
@@ -360,9 +436,6 @@ async def advisor_chat_stream(
         if not prompt:
             raise HTTPException(status_code=400, detail="Message is required")
 
-        factory = AgentFactory()
-        cio_agent = factory.create_cio_agent(user_id=user_id)
-
         # 檢測 Ticker 標的
         ticker_match = re.search(r'\b([A-Z]{1,5})\b', prompt)
         ticker = ticker_match.group(1) if ticker_match else None
@@ -388,46 +461,23 @@ async def advisor_chat_stream(
                 from src.utils.async_utils import to_thread
                 pulse_repo = AsyncPulseRepository()
                 
-                # Context dict for run_tool_loop
-                prompt_data = {
+                # Context dict for LLM call
+                context = {
                     "user_id": user_id,
                     "task_instruction": prompt,
                     "topic": ticker or "General",
+                    "messages": messages
                 }
                 
-                # Initialize pulse to avoid missing the first state
-                await pulse_repo.update_pulse(cio_agent.name, "Initializing Agent...")
+                # PAD Phase 2: Replace AgentFactory with _call_agent_llm
+                logger.debug(f"Starting streaming response for user {user_id}")
                 
-                # Run the actual Agent loop in a background thread to allow tool calls
-                # Phase 12: Run the Agent loop directly as it is now async-first
-                # No more to_thread needed for the loop itself
-                task = loop.create_task(cio_agent.run_tool_loop(
-                    context=prompt_data, 
-                    max_turns=3, 
-                    thought_chain=True
-                ))
+                # Call LLM and get response
+                response = await _call_agent_llm(user_id, context, tier="smart", temperature=0.7, max_tokens=2000)
                 
-                last_task_state = None
-                
-                # Poll pulse until task is done
-                while not task.done():
-                    current_pulse = await pulse_repo.get_pulse(cio_agent.name)
-                    if current_pulse:
-                        current_state = current_pulse.get("task")
-                        if current_state and current_state != last_task_state:
-                            # Send tool metadata to frontend
-                            yield f"data: {json.dumps({'metadata': {'type': 'tool_call', 'name': current_state}})}\n\n"
-                            last_task_state = current_state
-                    
-                    await asyncio.sleep(0.5)
-                
-                # Task completed, get the result
-                final_response = task.result()
-                
-                # Yield the final response in chunks to simulate typewriter effect
+                # Yield the response in chunks to simulate typewriter effect
                 # Split roughly by words to simulate LLM stream
-                import re
-                chunks = re.findall(r'\\S+|\\n|\\s+', final_response)
+                chunks = re.findall(r'\S+|\n|\s+', response)
                 for c in chunks:
                     yield f"data: {json.dumps({'chunk': c})}\n\n"
                     await asyncio.sleep(0.01)

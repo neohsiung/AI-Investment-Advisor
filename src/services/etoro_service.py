@@ -320,25 +320,25 @@ class EtoroService(IBroker):
                     if not self._id_to_symbol and raw_orders:
                         await self.get_watchlists()
                 
-                for o in raw_orders:
-                    # Safely handle missing ID
-                    inst_id = str(o.get('instrumentId', o.get('InstrumentID', o.get('InstrumentId', o.get('Instrument', '')))))
-                    if not inst_id:
-                        continue
+                    for o in raw_orders:
+                        # Safely handle missing ID
+                        inst_id = str(o.get('instrumentId', o.get('InstrumentID', o.get('InstrumentId', o.get('Instrument', '')))))
+                        if not inst_id:
+                            continue
+                            
+                        symbol = self._id_to_symbol.get(inst_id) or self._resolve_id_to_symbol(inst_id) or f"ID_{inst_id}"
                         
-                    symbol = self._id_to_symbol.get(inst_id) or self._resolve_id_to_symbol(inst_id) or f"ID_{inst_id}"
+                        is_buy = o.get('isBuy', o.get('IsBuy', True))
+                        action = "BUY" if is_buy else "SELL"
+                        
+                        orders.append({
+                            "order_id": str(o.get('orderId', o.get('OrderId', o.get('id', '')))),
+                            "symbol": symbol,
+                            "action": action,
+                            "amount": float(o.get('amount', o.get('Amount', o.get('amountBaseValueDollars', 0)))),
+                            "raw_status": o.get('status', o.get('Status', ''))
+                        })
                     
-                    is_buy = o.get('isBuy', o.get('IsBuy', True))
-                    action = "BUY" if is_buy else "SELL"
-                    
-                    orders.append({
-                        "order_id": str(o.get('orderId', o.get('OrderId', o.get('id', '')))),
-                        "symbol": symbol,
-                        "action": action,
-                        "amount": float(o.get('amount', o.get('Amount', o.get('amountBaseValueDollars', 0)))),
-                        "raw_status": o.get('status', o.get('Status', ''))
-                    })
-                
                     logger.info(f"ETORO ORDERS: Retrieved {len(orders)} pending orders")
                     return orders
                 else:

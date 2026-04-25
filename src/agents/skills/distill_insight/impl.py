@@ -29,8 +29,18 @@ async def distill_insight(
         try:
             ss = SettingsService(user_id=user_id)
             provider = ss.get_setting("AI_PROVIDER", "OpenRouter") or "OpenRouter"
-            model    = ss.get_setting("AI_MODEL_FAST", "google/gemini-2.0-flash") or "google/gemini-2.0-flash"
-            api_key  = ss.get_setting("OPENROUTER_API_KEY") or ss.get_setting("AI_API_KEY", "")
+            
+            # Use tier-aware routing (fast tier for insight distillation)
+            from src.infrastructure.llm.tier_config import SettingsAwareModelRouter, TierConfig
+            from src.repositories.settings_repository import AlchemySettingsRepository
+            settings_repo = AlchemySettingsRepository()
+            model_router = SettingsAwareModelRouter(settings_repo)
+            if user_id:
+                model = model_router.get_model(user_id, "fast")
+            else:
+                tier_config = TierConfig()
+                model = tier_config.resolve("fast")
+            api_key  = ss.get_setting("openrouter_api_key") or ss.get_setting("AI_API_KEY", "")
             base_url = ss.get_setting("OPENROUTER_BASE_URL", "https://openrouter.ai/api/v1")
 
             gateway = RetryLLMGateway(inner=LLMGatewayFactory.create(provider), max_retries=1)

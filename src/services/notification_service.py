@@ -96,7 +96,7 @@ class NotificationService:
         adapter_names = []
         
         # Resolve initial user
-        raw_user = user_id or os.getenv("LINE_USER_ID", "broadcast")
+        raw_user = user_id or "broadcast"
         capture_error = kwargs.get('capture_error', False)
 
         for adapter in self.adapters:

@@ -67,7 +67,18 @@ class IntelligenceService:
         """核心運算邏輯：真正執行 Tavily 搜尋與 LLM 生成 (耗時數十秒)"""
         tavily_key = self.settings.get_setting("source_tavily_api_key")
         api_key = self.settings.get_setting("API_KEY")
-        model = self.settings.get_setting("AI_MODEL_SMART", "google/gemini-2.0-pro")
+        
+        # Use tier-aware routing (smart tier for intelligence)
+        from src.infrastructure.llm.tier_config import SettingsAwareModelRouter, TierConfig
+        from src.repositories.settings_repository import AlchemySettingsRepository
+        settings_repo = AlchemySettingsRepository()
+        model_router = SettingsAwareModelRouter(settings_repo)
+        if self.user_id:
+            model = model_router.get_model(self.user_id, "smart")
+        else:
+            tier_config = TierConfig()
+            model = tier_config.resolve("smart")
+        
         provider = self.settings.get_setting("AI_PROVIDER", "OpenRouter").lower()
 
         if not api_key:
@@ -166,7 +177,7 @@ class IntelligenceService:
         
         config = LLMConfig(
             provider=self.settings.get_setting("AI_PROVIDER", "OpenRouter"),
-            model=self.settings.get_setting("AI_MODEL_SMART", "google/gemini-2.0-pro"),
+            model=model,  # Already resolved with tier-aware routing above
             api_key=self.settings.get_setting("API_KEY", ""),
             temperature=0.3,
             timeout_seconds=45

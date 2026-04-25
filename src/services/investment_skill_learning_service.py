@@ -16,11 +16,15 @@ import json
 import re
 import uuid
 import logging
+import os
 from datetime import datetime, timezone
 from typing import List, Dict, Any, Optional
 
 from src.utils.logger import setup_logger
-from src.agents.factory import AgentFactory
+from src.repositories.settings_repository import AlchemySettingsRepository
+from src.infrastructure.llm.tier_config import SettingsAwareModelRouter
+from src.infrastructure.llm.llm_gateway import OpenRouterGateway
+from src.domain.interfaces import Message, LLMConfig
 
 logger = setup_logger("InvestmentSkillLearningService")
 
@@ -93,9 +97,9 @@ class InvestmentSkillLearningService:
 
     def __init__(self, user_id: str = "system"):
         self.user_id = user_id
-        self.agent = AgentFactory.create_agent(
-            "Engineer", use_cache=True, user_id=user_id
-        )
+        from src.data.database import get_db_engine
+        self.settings_repo = AlchemySettingsRepository(engine=get_db_engine())
+        self.model_router = SettingsAwareModelRouter(self.settings_repo)
         self.logger = setup_logger("InvestmentSkillLearningService")
 
     # ── Core: Extract Skill from Content ────────────────────
@@ -116,7 +120,29 @@ class InvestmentSkillLearningService:
         )
 
         try:
-            response = await self.agent._call_real_llm(prompt, self.agent.system_prompt or "You are an investment skill extraction assistant.")
+            system_prompt = "You are an investment skill extraction assistant."
+            
+            # 1. Get model using SettingsAwareModelRouter
+            model = self.model_router.get_model(self.user_id, "smart")
+            
+            # 2. Create LLMConfig for OpenRouter
+            config = LLMConfig(
+                provider="OpenRouter",
+                model=model,
+                api_key=os.getenv("API_KEY", ""),
+                temperature=0.7,
+                max_tokens=2048
+            )
+            
+            # 3. Create gateway and call
+            gateway = OpenRouterGateway()
+            messages = [
+                Message(role="system", content=system_prompt),
+                Message(role="user", content=prompt)
+            ]
+            
+            response = await gateway.chat(messages, config)
+            
             self.logger.info(f"Agent response type: {type(response).__name__}, len: {len(str(response)[:200])}")
             parsed = self._parse_json_response(response)
 
@@ -212,7 +238,29 @@ class InvestmentSkillLearningService:
         )
 
         try:
-            response = await self.agent._call_real_llm(prompt, self.agent.system_prompt or "You are an investment skill management assistant.")
+            system_prompt = "You are an investment skill management assistant."
+            
+            # 1. Get model using SettingsAwareModelRouter
+            model = self.model_router.get_model(self.user_id, "smart")
+            
+            # 2. Create LLMConfig for OpenRouter
+            config = LLMConfig(
+                provider="OpenRouter",
+                model=model,
+                api_key=os.getenv("API_KEY", ""),
+                temperature=0.7,
+                max_tokens=2048
+            )
+            
+            # 3. Create gateway and call
+            gateway = OpenRouterGateway()
+            messages = [
+                Message(role="system", content=system_prompt),
+                Message(role="user", content=prompt)
+            ]
+            
+            response = await gateway.chat(messages, config)
+            
             decision = self._parse_json_response(response)
 
             if not decision:

@@ -95,8 +95,11 @@ Return ONLY the JSON list.
                     settings_repo = AlchemySettingsRepository()
                     model_router = SettingsAwareModelRouter(settings_repo)
                     model = model_router.get_model(self.user_id, self.tier)
-                except:
-                    model = os.getenv("AI_MODEL_SMART", "google/gemini-2.5-pro")
+                except Exception as e:
+                    logger.warning(f"Decomposer: Model router failed, using tier default: {e}")
+                    from src.infrastructure.llm.tier_config import TierConfig
+                    tier_config = TierConfig()
+                    model = tier_config.resolve(self.tier)
                 
                 self._config = LLMConfig(
                     provider=os.getenv("AI_PROVIDER", "OpenRouter"),

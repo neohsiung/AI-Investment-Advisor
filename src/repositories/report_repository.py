@@ -19,6 +19,14 @@ class IReportRepository(ABC):
         """
         pass
 
+    @abstractmethod
+    def get_by_id(self, report_id: str) -> Optional[Dict[str, Any]]:
+        """
+        Get a specific report by its ID.
+        根據 ID 取得特定報告。
+        """
+        pass
+
 class IAsyncReportRepository(ABC):
     """
     Async interface for Report Repository.
@@ -61,6 +69,21 @@ class AlchemyReportRepository(BaseRepository, IReportRepository):
             """)
             return pd.read_sql(query, conn, params={"uid": target_uid, "limit": limit})
 
+    def get_by_id(self, report_id: str) -> Optional[Dict[str, Any]]:
+        """
+        Get a specific report by its ID.
+        """
+        with self.engine.connect() as conn:
+            query = text("""
+                SELECT title as summary, content, user_id, report_type 
+                FROM reports 
+                WHERE id = :id
+            """)
+            result = conn.execute(query, {"id": report_id}).first()
+            if result:
+                return dict(result._mapping)
+            return None
+
     def save(self, user_id: str, report_type: str, summary: str, content: str, title: Optional[str] = None) -> bool:
         """
         Save a report to the database.
@@ -69,12 +92,17 @@ class AlchemyReportRepository(BaseRepository, IReportRepository):
         from datetime import datetime
         target_title = title or summary
         
+        # v11.1: Generate UUID for the report if not provided
+        import uuid
+        report_id = str(uuid.uuid4())
+        
         with self.engine.connect() as conn:
             query = text("""
-                INSERT INTO reports (user_id, report_type, summary, content, title, created_at)
-                VALUES (:uid, :type, :summary, :content, :title, :created_at)
+                INSERT INTO reports (id, user_id, report_type, summary, content, title, created_at)
+                VALUES (:id, :uid, :type, :summary, :content, :title, :created_at)
             """)
             conn.execute(query, {
+                "id": report_id,
                 "uid": user_id,
                 "type": report_type,
                 "summary": summary,
@@ -83,7 +111,7 @@ class AlchemyReportRepository(BaseRepository, IReportRepository):
                 "created_at": datetime.now()
             })
             conn.commit()
-            return True
+            return report_id
 
 class AsyncAlchemyReportRepository(AsyncBaseRepository, IAsyncReportRepository):
     """

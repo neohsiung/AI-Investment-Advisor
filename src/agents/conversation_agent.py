@@ -478,7 +478,14 @@ Return ONLY the Python code, no explanations."""
             model_router = SettingsAwareModelRouter()
             
             provider = llm_settings.get("AI_PROVIDER", os.getenv("AI_PROVIDER", "OpenRouter"))
-            model = model_router.get_model(self.user_id, "fast") if self.user_id else llm_settings.get("AI_MODEL_FAST", os.getenv("AI_MODEL_FAST", "google/gemini-2.0-flash-001"))
+            
+            # Use tier-aware routing (fast tier for code generation)
+            from src.infrastructure.llm.tier_config import TierConfig
+            tier_config = TierConfig()
+            if self.user_id:
+                model = model_router.get_model(self.user_id, "fast")
+            else:
+                model = tier_config.resolve("fast")
             api_key = llm_settings.get("API_KEY", os.getenv("API_KEY", ""))
 
             gateway = LLMGatewayFactory.create(provider)
@@ -532,7 +539,14 @@ Respond in ONE sentence: either "PASS: looks good" or "WARN: <specific issue>"."
             model_router = SettingsAwareModelRouter()
             
             provider = llm_settings.get("AI_PROVIDER", os.getenv("AI_PROVIDER", "OpenRouter"))
-            model = model_router.get_model(self.user_id, "smart") if self.user_id else llm_settings.get("AI_MODEL_SMART", os.getenv("AI_MODEL_SMART", "google/gemini-2.5-pro"))
+            
+            # Use tier-aware routing (smart tier for code review)
+            from src.infrastructure.llm.tier_config import TierConfig
+            tier_config = TierConfig()
+            if self.user_id:
+                model = model_router.get_model(self.user_id, "smart")
+            else:
+                model = tier_config.resolve("smart")
             api_key = llm_settings.get("API_KEY", os.getenv("API_KEY", ""))
 
             gateway = LLMGatewayFactory.create(provider)

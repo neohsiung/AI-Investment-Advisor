@@ -371,9 +371,13 @@ class SchedulerService:
             time.sleep(1)
 
     def _check_reload_signal(self):
+        """Check for reload signal every 5s with graceful error handling."""
         try:
             from src.repositories.settings_repository import AlchemySettingsRepository
-            settings_repo = AlchemySettingsRepository()
+            from src.data.database import get_db_engine
+            
+            # v5.1: Properly pass engine to repository
+            settings_repo = AlchemySettingsRepository(engine=get_db_engine())
             
             # v4.3.4: Use self.user_id instead of 'SYSTEM' for reload signal
             val = settings_repo.get(self.user_id, 'scheduler_reload_signal')
@@ -386,9 +390,16 @@ class SchedulerService:
                 self.reload_schedule()
                 # Reset signal using real boolean False
                 settings_repo.set(self.user_id, 'scheduler_reload_signal', False)
+            
+            # Properly close the session after use
+            settings_repo.close_session()
                 
+        except ValueError as ve:
+            # Only log user isolation errors once to avoid spam
+            if "Global 'system' user" not in str(ve):
+                logger.warning(f"User isolation check failed: {ve}")
         except Exception as e:
-            logger.error(f"Error checking reload signal: {e}")
+            logger.debug(f"Error checking reload signal: {e}")
 
     def get_execution_logs(self, limit: int = 50):
         """Retrieves latest execution logs from DB."""

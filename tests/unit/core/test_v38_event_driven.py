@@ -41,8 +41,7 @@ async def test_sentinel_process_event(mock_sentinel_repo):
          patch('src.services.fred_service.FredService'), \
          patch('src.services.supply_chain_service.SupplyChainService'), \
          patch('src.services.readwise_service.ReadwiseService'), \
-         patch('src.agents.factory.AgentFactory', autospec=True) as MockFactory, \
-         patch('httpx.AsyncClient.post', return_value=MagicMock(status_code=202)) as mock_post:
+         patch('src.agents.factory.AgentFactory', autospec=True) as MockFactory:
         
         # Configure SentinelAgent mock
         mock_sentinel_agent = MagicMock()
@@ -55,6 +54,10 @@ async def test_sentinel_process_event(mock_sentinel_repo):
             repo=mock_sentinel_repo,
             snapshot_repo=MagicMock() # Mock snapshot repo too
         )
+        # Suppress cash alert
+        sentinel.settings_service.get_setting.side_effect = lambda key, default=None, user_id=None: 0.0 if key == "target_cash_ratio" else default
+        # Mock direct dispatch
+        sentinel._dispatch_notifications_direct = AsyncMock()
 
         # Mock _redis_buffer so Redis connection failures don't break tests
         _buffer_store = []
@@ -82,11 +85,10 @@ async def test_sentinel_process_event(mock_sentinel_repo):
         await sentinel._flush_buffer(force=True)
 
 
-        # Verify notification was called through HTTP
-        assert mock_post.called
-        args, kwargs = mock_post.call_args
-        payload = kwargs['json']
-        assert "AAPL" in payload['content']
+        # Verify notification was called directly
+        assert sentinel._dispatch_notifications_direct.called
+        args, kwargs = sentinel._dispatch_notifications_direct.call_args
+        assert "AAPL" in kwargs['content']
 
 @pytest.mark.anyio
 async def test_sentinel_vix_logic(mock_sentinel_repo):

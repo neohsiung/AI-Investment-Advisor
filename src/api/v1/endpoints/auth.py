@@ -49,9 +49,7 @@ oauth.register(
     }
 )
 
-# --- Whitelist / Security ---
-# 短期內建議將您的 Email 放在 .env 中作為管理員/白名單
-AUTH_WHITELIST = os.getenv("AUTH_WHITELIST", "").split(",")
+# (AUTH_WHITELIST feature removed to support multi-tenant access)
 
 @router.get("/google/login")
 async def login(request: Request):
@@ -78,9 +76,7 @@ async def auth_callback(request: Request, user_repo: AsyncAlchemyUserRepository 
         
         email = user_info.get('email')
         
-        # 安全檢查：白名單過濾
-        if email not in AUTH_WHITELIST:
-            raise HTTPException(status_code=403, detail=f"Access Denied: {email} is not authorized.")
+        # (Whitelist check removed, all authenticated Google users can proceed)
 
         # 搜尋或建立使用者
         user = await user_repo.get_by_identity("email", email)

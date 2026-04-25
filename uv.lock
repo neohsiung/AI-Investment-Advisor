@@ -262,15 +262,6 @@ wheels = [
 ]
 
 [[package]]
-name = "appdirs"
-version = "1.4.4"
-source = { registry = "https://pypi.org/simple" }
-sdist = { url = "https://files.pythonhosted.org/packages/d7/d8/05696357e0311f5b5c316d7b95f46c669dd9c15aaeecbb48c7d0aeb88c40/appdirs-1.4.4.tar.gz", hash = "sha256:7d5d0167b2b1ba821647616af46a749d1c653740dd0d2415100fe26e27afdf41", size = 13470, upload-time = "2020-05-11T07:59:51.037Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/3b/00/2344469e2084fb287c2e0b57b72910309874c3245463acd6cf5e3db69324/appdirs-1.4.4-py2.py3-none-any.whl", hash = "sha256:a841dacd6b99318a741b166adb07e19ee71a274450e68237b4650ca1055ab128", size = 9566, upload-time = "2020-05-11T07:59:49.499Z" },
-]
-
-[[package]]
 name = "asgiref"
 version = "3.11.1"
 source = { registry = "https://pypi.org/simple" }
@@ -2290,7 +2281,7 @@ requires-dist = [
     { name = "transformers", specifier = "==4.53.0" },
     { name = "urllib3", specifier = "==2.6.3" },
     { name = "uvicorn", extras = ["standard"], specifier = "==0.24.0.post1" },
-    { name = "yfinance", specifier = "==0.2.31" },
+    { name = "yfinance", specifier = "==0.2.50" },
 ]
 
 [[package]]
@@ -6195,10 +6186,9 @@ wheels = [
 
 [[package]]
 name = "yfinance"
-version = "0.2.31"
+version = "0.2.50"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "appdirs" },
     { name = "beautifulsoup4" },
     { name = "frozendict" },
     { name = "html5lib" },
@@ -6207,12 +6197,13 @@ dependencies = [
     { name = "numpy" },
     { name = "pandas" },
     { name = "peewee" },
+    { name = "platformdirs" },
     { name = "pytz" },
     { name = "requests" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/5a/e1/de1ad132556e5af8c8363310d11a0982fede5248e7c2e53a61a42432ef99/yfinance-0.2.31.tar.gz", hash = "sha256:4e09959a6b838c9ade9fdfe054d2663d5543c8b3ec8b463d17ce4789a3a0b3c4", size = 63285, upload-time = "2023-10-04T21:06:38.473Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/d5/58/05bad58cd134b2c3b6a8ca46eca4cf74a740b47914439bdd0deeaaae3ac0/yfinance-0.2.50.tar.gz", hash = "sha256:33b379cad4261313dc93bfe3148d2f6e6083210e6341f0c93dd3af853019b1a0", size = 111862, upload-time = "2024-11-19T21:44:11.59Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/e6/b3/388ab967a387cc92926f70e97688dd9a7189b29a0773db815ffc5289e2b5/yfinance-0.2.31-py2.py3-none-any.whl", hash = "sha256:a2367c8f07fbeca95fc9e5ec46c2c8d0c41ab06b2c91f60d4a04c06aa01c7fba", size = 65552, upload-time = "2023-10-04T21:06:36.101Z" },
+    { url = "https://files.pythonhosted.org/packages/c5/98/6fd94db428a9670d638d4469cedfea51671de0126b8f50de1b06e2245c97/yfinance-0.2.50-py2.py3-none-any.whl", hash = "sha256:0db13b19313043328fe88ded2ddc306ede7d901d0f5181462a1cce76acdbcd2a", size = 102247, upload-time = "2024-11-19T21:44:10.341Z" },
 ]
 
 [[package]]

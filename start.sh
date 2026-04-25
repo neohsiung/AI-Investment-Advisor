@@ -1,6 +1,6 @@
 #!/bin/bash
 # start.sh - Unified Orchestration Entry Point for Investment Advisor Platform
-# v4.1: Harmonized Dev/Prod migration and gateway reporting.
+# v4.2: Added Redis queue sanity, health wait, and post-deploy verification.
 
 set -e
 
@@ -9,19 +9,32 @@ export PATH=$PATH:/usr/local/bin:/usr/bin:/bin
 
 # --- Helper Functions ---
 function show_help {
-    echo "Quantum AI Platform - Operational Control v4.1"
+    echo "Quantum AI Platform - Operational Control v4.2 (Enterprise)"
     echo "Usage: ./start.sh [command]"
     echo ""
     echo "Commands:"
+    echo "  health         Show live status of all services, queues, and DB."
+    echo "  fix-redis      Fix Redis queue key types (list→zset). Run if WRONGTYPE errors appear."
+    echo ""
     echo "  dev (default)  Deploy Local Development environment (Docker Compose)."
     echo "                 - Includes SigNoz APM, n8n, and Debugging tools."
     echo "                 - Gateway: http://localhost:80"
     echo ""
     echo "  prod           Deploy Hardened Production cluster (B2C SaaS Mode)."
+    echo "                 - Includes Worker Pool for async report generation."
     echo "                 - Security hardened, monitoring active."
+    echo "                 - If cluster already running: hot-restarts code services only (fast)."
     echo "                 - Gateway: http://localhost:80"
     echo ""
-    echo "  stop           Stop all containers and perform deep cleanup."
+    echo "  workers [N]    Scale worker pool to N instances (default: 2)."
+    echo "                 - Starts workers for async report processing."
+    echo "                 - Must run after: ./start.sh prod"
+    echo ""
+    echo "  worker-status  Check health status of worker pool."
+    echo ""
+    echo "  worker-logs    Tail logs from all worker containers."
+    echo ""
+    echo "  stop|clean     Stop all containers and perform deep cleanup."
     echo ""
     echo "  migrate        Align database heads and run all migrations (Auto-detect Env)."
     echo "                 - Fixes 'Multiple Heads' and syncs schema."
@@ -31,12 +44,114 @@ function show_help {
     echo "  k8s            Deploy to Kubernetes (Minikube / Cloud)."
 }
 
+PROD_COMPOSE="docker compose --project-name investment_advisor -f docker-compose.prod.yml"
+PROD_CACHE="advisor_prod_cache"
+PROD_DB="advisor_prod_db"
+readonly REPORT_QUEUES=("report:daily:queue" "report:weekly:queue" "report:priority:queue")
+
+function redis_cmd {
+    # Usage: redis_cmd <container> <redis args...>
+    docker exec "$1" redis-cli "${@:2}" 2>/dev/null | tr -d '\r'
+}
+
 function check_env {
     if [ ! -f .env ]; then
         echo "Error: .env file not found! Copying .env.example..."
         cp .env.example .env
         echo "WARNING: Created default .env. Please edit it with your API keys!"
     fi
+}
+
+function fix_redis_queues {
+    local cache_container=${1:-$PROD_CACHE}
+
+    if ! docker ps --format '{{.Names}}' | grep -q "$cache_container"; then
+        return 0
+    fi
+
+    echo "Checking Redis queue key types..."
+    local fixed=0
+
+    for queue in "${REPORT_QUEUES[@]}"; do
+        local ktype
+        ktype=$(redis_cmd "$cache_container" type "$queue")
+        if [ "$ktype" = "list" ]; then
+            echo "  Fixing $queue (was list, expected zset)..."
+            redis_cmd "$cache_container" del "$queue" >/dev/null
+            fixed=$((fixed + 1))
+        fi
+    done
+
+    if [ $fixed -gt 0 ]; then
+        echo "  Fixed $fixed queue key(s)."
+    else
+        echo "  All queue keys OK."
+    fi
+}
+
+function wait_for_api {
+    local api_url=${1:-"http://localhost:8000/health"}
+    local max_wait=${2:-120}
+    local waited=0
+
+    echo "Waiting for API to be healthy ($api_url)..."
+    while [ $waited -lt $max_wait ]; do
+        if curl -sf "$api_url" >/dev/null 2>&1; then
+            echo "  API ready (${waited}s)"
+            return 0
+        fi
+        sleep 3
+        waited=$((waited + 3))
+        printf "."
+    done
+    echo ""
+    echo "  WARNING: API did not become healthy within ${max_wait}s"
+    return 1
+}
+
+function show_health {
+    echo "=== System Health ==="
+
+    echo ""
+    echo "Containers:"
+    docker ps --filter "name=advisor_prod" --format "  {{.Names}}: {{.Status}}" 2>/dev/null
+
+    echo ""
+    echo "API:"
+    if curl -sf http://localhost:8000/health >/dev/null 2>&1; then
+        echo "  http://localhost:8000/health  OK"
+    else
+        echo "  http://localhost:8000/health  FAIL"
+    fi
+
+    echo ""
+    echo "Redis Queues:"
+    if docker ps --format '{{.Names}}' | grep -q "$PROD_CACHE"; then
+        for queue in "${REPORT_QUEUES[@]}"; do
+            local ktype
+            ktype=$(redis_cmd "$PROD_CACHE" type "$queue")
+            if [ "$ktype" = "none" ]; then
+                echo "  $queue: empty (ok)"
+            elif [ "$ktype" = "zset" ]; then
+                local depth
+                depth=$(redis_cmd "$PROD_CACHE" zcard "$queue")
+                echo "  $queue: $depth jobs (zset ok)"
+            else
+                echo "  $queue: WRONG TYPE=$ktype (run: ./start.sh fix-redis)"
+            fi
+        done
+        local dlq_depth
+        dlq_depth=$(redis_cmd "$PROD_CACHE" llen "report:dlq:failed")
+        echo "  report:dlq:failed: $dlq_depth failed jobs"
+    else
+        echo "  Redis not running"
+    fi
+
+    echo ""
+    echo "DB Job Status:"
+    docker exec "$PROD_DB" psql -U postgres portfolio -c \
+        "SELECT status, COUNT(*) FROM report_jobs GROUP BY status ORDER BY count DESC;" \
+        2>/dev/null | tail -n +3 | sed 's/^/  /' || echo "  (no report_jobs table or DB unavailable)"
 }
 
 function run_migrations {
@@ -72,9 +187,74 @@ function run_migrations {
 function patch_prod {
     echo "=== Mode: Hot-Patching Production Cluster ==="
     check_env
-    docker compose -f docker-compose.prod.yml build frontend mcp_server
-    docker compose -f docker-compose.prod.yml up -d --no-deps frontend mcp_server
+    $PROD_COMPOSE build frontend mcp_server
+    $PROD_COMPOSE up -d --no-deps frontend mcp_server
     echo "✅ Patch Applied Successfully"
+}
+
+function scale_workers {
+    local worker_count=${1:-2}
+    echo "=== Scaling Worker Pool to $worker_count instances ==="
+    check_env
+    
+    # Ensure prod cluster is running
+    if ! docker ps --format '{{.Names}}' | grep -q "advisor_prod_api"; then
+        echo "❌ Production cluster not running. Start with: ./start.sh prod"
+        exit 1
+    fi
+    
+    echo "Building worker image..."
+    $PROD_COMPOSE build worker_1 2>/dev/null || true
+
+    echo "Starting/updating worker pool..."
+    # Start baseline workers (1-2)
+    for i in 1 2; do
+        if [ $i -le $worker_count ]; then
+            $PROD_COMPOSE up -d worker_$i
+            echo "  ✅ Worker $i started"
+        else
+            $PROD_COMPOSE stop worker_$i 2>/dev/null || true
+            echo "  ⏸️  Worker $i stopped"
+        fi
+    done
+    
+    echo ""
+    echo "✅ Worker pool scaled to $worker_count instances"
+    worker_status
+}
+
+function worker_status {
+    echo "=== Worker Pool Status ==="
+    
+    if ! docker ps --format '{{.Names}}' | grep -q "advisor_prod_api"; then
+        echo "❌ Production cluster not running"
+        return 1
+    fi
+    
+    echo ""
+    echo "Worker Containers:"
+    docker ps --filter "name=advisor_prod_worker" --format "table {{.Names}}\tSTATUS"
+    
+    echo ""
+    echo "Queue Status (Redis):"
+    redis_cmd "$PROD_CACHE" ZCARD report:daily:queue | sed 's/^/  Daily queue depth: /'
+
+    echo ""
+    echo "Database Job Status:"
+    docker exec "$PROD_DB" psql -U postgres portfolio -c \
+        "SELECT status, COUNT(*) as count FROM report_jobs GROUP BY status ORDER BY count DESC;" \
+        2>/dev/null | tail -n +3 | sed 's/^/  /'
+}
+
+function worker_logs {
+    if ! docker ps --filter "name=advisor_prod_worker" --quiet | head -1 >/dev/null; then
+        echo "❌ No worker containers running"
+        exit 1
+    fi
+    
+    echo "=== Worker Pool Logs ==="
+    echo "(Press Ctrl+C to stop)"
+    docker logs -f $(docker ps --filter "name=advisor_prod_worker" --quiet)
 }
 
 function import_n8n_workflow {
@@ -141,8 +321,30 @@ function deploy_docker {
 function deploy_prod {
     echo "=== Mode: Production Cluster (Hardened) ==="
     check_env
-    docker compose -f docker-compose.prod.yml up --build -d
-    
+
+    # Hot-restart path: cluster already running → only restart code services (fast, no rebuild).
+    # Volume mounts in docker-compose.prod.yml ensure local src/ is live inside containers.
+    if docker ps --format '{{.Names}}' | grep -q "advisor_prod_api"; then
+        echo "Cluster running — hot-restarting code services (scheduler, worker_1, worker_2)..."
+        $PROD_COMPOSE up -d --no-build --no-deps scheduler worker_1 worker_2
+        echo ""
+        echo "✅ Code services restarted"
+        echo ""
+        show_health
+        return
+    fi
+
+    # Cold start: stop any stale/conflicting containers then full build.
+    docker ps -a --format '{{.Names}}' | grep -E "^(advisor_prod|signoz|schema-migrator|signoz-otel-collector|signoz-clickhouse|signoz-zookeeper)" \
+        | xargs -r docker stop 2>/dev/null || true
+    docker ps -a --format '{{.Names}}' | grep -E "^(advisor_prod|signoz|schema-migrator|signoz-otel-collector|signoz-clickhouse|signoz-zookeeper)" \
+        | xargs -r docker rm 2>/dev/null || true
+
+    $PROD_COMPOSE up --build -d
+
+    wait_for_api "http://localhost:8000/health" 120 || true
+    fix_redis_queues "advisor_prod_cache"
+
     echo ""
     echo "✅ PRODUCTION Cluster Online"
     echo "---------------------------"
@@ -152,12 +354,15 @@ function deploy_prod {
     echo ""
 
     import_n8n_workflow "advisor_prod_db" "advisor_prod_n8n"
+
+    echo ""
+    show_health
 }
 
 function cleanup {
     echo "=== Cleaning Up All Resources ==="
     [ -f docker-compose.yml ] && docker compose down --remove-orphans
-    [ -f docker-compose.prod.yml ] && docker compose -f docker-compose.prod.yml down --remove-orphans
+    [ -f docker-compose.prod.yml ] && $PROD_COMPOSE down --remove-orphans
     echo "✅ Cleanup Complete"
 }
 
@@ -169,6 +374,15 @@ case "$1" in
     prod)
         deploy_prod
         ;;
+    workers)
+        scale_workers "$2"
+        ;;
+    worker-status)
+        worker_status
+        ;;
+    worker-logs)
+        worker_logs
+        ;;
     stop|clean)
         cleanup
         ;;
@@ -177,6 +391,12 @@ case "$1" in
         ;;
     patch)
         patch_prod
+        ;;
+    health)
+        show_health
+        ;;
+    fix-redis)
+        fix_redis_queues "advisor_prod_cache"
         ;;
     k8s)
         # Assuming k8s logic remains the same

@@ -39,8 +39,9 @@ class OpenRouterGateway(ILLMGateway):
         self._last_usage: Optional[dict] = None
 
     async def chat(self, messages: List[Message], config: LLMConfig) -> str:
-        url = config.base_url or "https://openrouter.ai/api/v1/chat/completions"
-        
+        base = (config.base_url or "https://openrouter.ai/api/v1").rstrip("/")
+        url = base if base.endswith("/chat/completions") else base + "/chat/completions"
+
         # Validate API key
         if not config.api_key or config.api_key.strip() == "":
             raise ValueError("OpenRouter API key is missing or empty. Cannot proceed with LLM request.")
@@ -88,12 +89,13 @@ class OpenRouterGateway(ILLMGateway):
             error_preview = response.text[:200]
             if "<!DOCTYPE html>" in error_preview.upper() or "<HTML" in error_preview.upper():
                 logger.error(f"OpenRouter Gateway: Provider returned HTML error page instead of JSON. Preview: {error_preview}")
-                raise ValueError(f"OpenRouter API returned HTML error page (provider down or blocked): {error_preview}...") from e
+                raise ValueError(f"OpenRouter API returned HTML error page (provider unavailable): {error_preview}...") from e
             logger.error(f"OpenRouter JSON Decode Error: {e} | Response: {response.text[:1000]}")
             raise ValueError(f"OpenRouter API returned invalid JSON: {error_preview}...") from e
             
         self._last_usage = resp_json.get("usage")
-        return resp_json["choices"][0]["message"]["content"]
+        msg = resp_json["choices"][0]["message"]
+        return msg.get("content") or msg.get("reasoning_content") or ""
 
     async def stream_chat(self, messages: List[Message], config: LLMConfig) -> AsyncGenerator[str, None]:
         url = config.base_url or "https://openrouter.ai/api/v1/chat/completions"
@@ -342,17 +344,19 @@ class OpenAIGateway(ILLMGateway):
         self._last_usage: Optional[dict] = None
 
     async def chat(self, messages: List[Message], config: LLMConfig) -> str:
-        url = config.base_url or "https://api.openai.com/v1/chat/completions"
-        headers = {
-            "Authorization": f"Bearer {config.api_key}",
-            "Content-Type": "application/json",
-        }
+        base = (config.base_url or "https://api.openai.com/v1").rstrip("/")
+        url = base if base.endswith("/chat/completions") else base + "/chat/completions"
+        headers = {"Content-Type": "application/json"}
+        if config.api_key:
+            headers["Authorization"] = f"Bearer {config.api_key}"
         data = {
             "model": config.model,
             "messages": [{"role": m.role, "content": m.content} for m in messages],
         }
         if config.temperature is not None:
             data["temperature"] = config.temperature
+        if config.max_tokens:
+            data["max_tokens"] = config.max_tokens
 
         async with httpx.AsyncClient() as client:
             response = await client.post(
@@ -366,12 +370,13 @@ class OpenAIGateway(ILLMGateway):
             error_preview = response.text[:200]
             if "<!DOCTYPE html>" in error_preview.upper() or "<HTML" in error_preview.upper():
                  logger.error(f"OpenAI Gateway: Provider returned HTML error page instead of JSON. Preview: {error_preview}")
-                 raise ValueError(f"OpenAI API returned HTML error page (provider down or blocked): {error_preview}...") from e
+                 raise ValueError(f"OpenAI API returned HTML error page (provider unavailable): {error_preview}...") from e
             logger.error(f"OpenAI JSON Decode Error: {e} | Response: {response.text[:1000]}")
             raise ValueError(f"OpenAI API returned invalid JSON: {error_preview}...") from e
-            
+
         self._last_usage = resp_json.get("usage")
-        return resp_json["choices"][0]["message"]["content"]
+        msg = resp_json["choices"][0]["message"]
+        return msg.get("content") or msg.get("reasoning_content") or ""
 
     async def stream_chat(self, messages: List[Message], config: LLMConfig) -> AsyncGenerator[str, None]:
         url = config.base_url or "https://api.openai.com/v1/chat/completions"
@@ -545,6 +550,34 @@ class OllamaGateway(OpenAIGateway):
         return parse_ollama_tags(response.json())
 
 
+class NvidiaGateway(OpenAIGateway):
+    """
+    NVIDIA NIM Gateway — OpenAI-compatible inference at integrate.api.nvidia.com.
+    Inherits all OpenAIGateway logic; only overrides the fallback base URL.
+    """
+
+    _CHAT_URL = "https://integrate.api.nvidia.com/v1/chat/completions"
+
+    def _resolve_config(self, config: LLMConfig) -> LLMConfig:
+        if not config.base_url:
+            import dataclasses
+            return dataclasses.replace(config, base_url=self._CHAT_URL)
+        return config
+
+    async def chat(self, messages: List[Message], config: LLMConfig) -> str:
+        return await super().chat(messages, self._resolve_config(config))
+
+    async def stream_chat(self, messages: List[Message], config: LLMConfig) -> AsyncGenerator[str, None]:
+        async for chunk in super().stream_chat(messages, self._resolve_config(config)):
+            yield chunk
+
+    async def ping(self, config: LLMConfig) -> PingResult:
+        return await super().ping(self._resolve_config(config))
+
+    async def list_models(self, config: LLMConfig) -> List[DiscoveredModel]:
+        return await super().list_models(self._resolve_config(config))
+
+
 class MockLLMGateway(ILLMGateway):
     """
     Mock Gateway for testing and simulation mode.
@@ -592,6 +625,9 @@ class LLMGatewayFactory:
         "openai": OpenAIGateway,
         "Ollama": OllamaGateway,
         "ollama": OllamaGateway,
+        "Nvidia": NvidiaGateway,
+        "nvidia": NvidiaGateway,
+        "NVIDIA": NvidiaGateway,
         "mock": MockLLMGateway,
     }
 

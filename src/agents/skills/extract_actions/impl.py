@@ -37,7 +37,15 @@ async def extract_actions(
         # 1. Resolve API Settings
         settings_repo = AlchemySettingsRepository()
         provider = settings_repo.get(user_id, "preferred_provider", "gemini")
-        model = settings_repo.get(user_id, "preferred_nano_model", "gemini-2.0-flash")
+        
+        # Use tier-aware routing for model selection (nano tier for action extraction)
+        from src.infrastructure.llm.tier_config import SettingsAwareModelRouter, TierConfig
+        model_router = SettingsAwareModelRouter(settings_repo)
+        if user_id:
+            model = model_router.get_model(user_id, "nano")
+        else:
+            tier_config = TierConfig()
+            model = tier_config.resolve("nano")
         api_key = settings_repo.get(user_id, f"source_{provider}_api_key", os.environ.get(f"{provider.upper()}_API_KEY"))
 
         if not api_key:

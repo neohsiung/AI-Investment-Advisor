@@ -67,12 +67,22 @@ services:
     env_file:
       - .env
     environment:
+      - REDIS_URL=redis://redis:6379/0
+      - DB_HOST=postgres
       - OTEL_SERVICE_NAME=scheduler_prod
       - OTEL_EXPORTER_OTLP_ENDPOINT=http://otel-collector:4317
+    volumes:
+      - ./src/infrastructure:/workspace/src/infrastructure:ro
+      - ./src/workflow:/workspace/src/workflow:ro
+      - ./src/services:/workspace/src/services:ro
+      - ./src/agents:/workspace/src/agents:ro
+      - ./services/scheduler:/workspace/services/scheduler:ro
     depends_on:
       mcp_server:
         condition: service_healthy
       postgres:
+        condition: service_healthy
+      redis:
         condition: service_healthy
       otel-collector:
         condition: service_started
@@ -108,6 +118,7 @@ services:
     healthcheck:
       test: [ "CMD", "redis-cli", "ping" ]
       interval: 10s
+      timeout: 5s
       retries: 5
     networks:
       - advisor-net
@@ -150,7 +161,95 @@ services:
       - ollama_data:/root/.ollama
     networks:
       - advisor-net
-  # 8. Web Gateway & Reverse Proxy (Nginx)
+  # 8. Enterprise Report Worker Pool (Async Task Processing)
+  # Phase 1: 2 workers, scales to 4+ based on load
+  worker_1:
+    build:
+      context: .
+      dockerfile: services/scheduler/Dockerfile
+    container_name: advisor_prod_worker_1
+    restart: always
+    user: root
+    env_file:
+      - .env
+    environment:
+      - NODE_ENV=production
+      - WORKER_ID=worker-1
+      - WORKER_CONCURRENCY=2
+      - QUEUE_REDIS_URL=redis://redis:6379/0
+      - DATABASE_URL=postgresql://postgres:${DB_PASSWORD}@postgres:5432/portfolio
+      - OTEL_SERVICE_NAME=worker_1_prod
+      - OTEL_EXPORTER_OTLP_ENDPOINT=http://otel-collector:4317
+    volumes:
+      - ./src/infrastructure:/workspace/src/infrastructure:ro
+      - ./src/workflow:/workspace/src/workflow:ro
+      - ./src/services:/workspace/src/services:ro
+      - ./src/agents:/workspace/src/agents:ro
+      - ./services/scheduler:/workspace/services/scheduler:ro
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      otel-collector:
+        condition: service_started
+    healthcheck:
+      test: ["CMD", "python", "-c", "import redis; redis.Redis(host='redis', port=6379).ping()"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    networks:
+      - advisor-net
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  worker_2:
+    build:
+      context: .
+      dockerfile: services/scheduler/Dockerfile
+    container_name: advisor_prod_worker_2
+    restart: always
+    user: root
+    env_file:
+      - .env
+    environment:
+      - NODE_ENV=production
+      - WORKER_ID=worker-2
+      - WORKER_CONCURRENCY=2
+      - QUEUE_REDIS_URL=redis://redis:6379/0
+      - DATABASE_URL=postgresql://postgres:${DB_PASSWORD}@postgres:5432/portfolio
+      - OTEL_SERVICE_NAME=worker_2_prod
+      - OTEL_EXPORTER_OTLP_ENDPOINT=http://otel-collector:4317
+    volumes:
+      - ./src/infrastructure:/workspace/src/infrastructure:ro
+      - ./src/workflow:/workspace/src/workflow:ro
+      - ./src/services:/workspace/src/services:ro
+      - ./src/agents:/workspace/src/agents:ro
+      - ./services/scheduler:/workspace/services/scheduler:ro
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      otel-collector:
+        condition: service_started
+    healthcheck:
+      test: ["CMD", "python", "-c", "import redis; redis.Redis(host='redis', port=6379).ping()"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    networks:
+      - advisor-net
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  # 9. Web Gateway & Reverse Proxy (Nginx)
   nginx:
     image: nginx:alpine
     container_name: advisor_prod_gateway
@@ -164,6 +263,10 @@ services:
         condition: service_started
       mcp_server:
         condition: service_healthy
+      worker_1:
+        condition: service_started
+      worker_2:
+        condition: service_started
     networks:
       - advisor-net
 

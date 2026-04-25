@@ -87,5 +87,5 @@ dependencies = [
     "transformers==4.53.0",
     "urllib3==2.6.3",
     "uvicorn[standard]==0.24.0.post1",
-    "yfinance==0.2.31",
+    "yfinance==0.2.50",
 ]

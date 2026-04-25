@@ -95,8 +95,11 @@ class GapDetector:
             settings_repo = AlchemySettingsRepository()
             model_router = SettingsAwareModelRouter(settings_repo)
             model = model_router.get_model(self.user_id, "fast")
-        except:
-            model = os.getenv("AI_MODEL_FAST", "google/gemini-2.0-flash-001")
+        except Exception as e:
+            logger.warning(f"GapDetector: Model router failed, using tier default: {e}")
+            from src.infrastructure.llm.tier_config import TierConfig
+            tier_config = TierConfig()
+            model = tier_config.resolve("fast")
         
         return LLMConfig(
             provider=os.getenv("AI_PROVIDER", "OpenRouter"),

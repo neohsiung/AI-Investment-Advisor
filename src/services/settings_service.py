@@ -1,9 +1,12 @@
 import typing
-from typing import List, Dict, Tuple, Any, Optional, Callable, Dict, List, Tuple, Any, Optional, Callable
+from typing import List, Dict, Tuple, Any, Optional, Callable
 import requests
 import pandas as pd
 from src.repositories.settings_repository import AlchemySettingsRepository, ISettingsRepository
 from src.repositories.prompt_repository import AlchemyPromptRepository, IPromptRepository
+from src.utils.logger import setup_logger
+
+_logger = setup_logger("SettingsService")
 
 class SettingsService:
     """
@@ -40,12 +43,12 @@ class SettingsService:
         try:
             # v4.3.0: Strictly fetch only current user settings. No SYSTEM fallback.
             rows = self.settings_repo.get_all(target_uid)
-            
+
             for key, value in rows:
                 settings[key] = self._parse_setting_value(value)
         except Exception as e:
-            print(f"Error loading settings: {e}")
-            
+            _logger.error(f"get_all_settings failed for user={target_uid!r}: {e}", exc_info=True)
+
         return settings
 
     def _parse_setting_value(self, value: Any) -> Any:
@@ -226,14 +229,10 @@ class SettingsService:
                     text("SELECT 1 FROM users WHERE id = :uid"), {"uid": target_uid}
                 ).first()
             if not exists:
-                import logging
-                logging.getLogger("SettingsService").error(
-                    f"Initialization aborted: User {target_uid!r} not found in users table."
-                )
+                _logger.error(f"Initialization aborted: User {target_uid!r} not found in users table.")
                 return False
         except Exception as e:
-            import logging
-            logging.getLogger("SettingsService").error(f"Error checking user existence: {e}")
+            _logger.error(f"Error checking user existence: {e}")
             return False
             
         # 1. 檢查是否已經「完全」初始化
@@ -251,9 +250,10 @@ class SettingsService:
                  rows = self.settings_repo.get_all("system")
             
             if rows:
+                # Only migrate keys the user doesn't already have — never overwrite user data.
                 for key, val in rows:
-                    # 進行透明遷移
-                    self.save_setting(key, val, user_id=target_uid)
+                    if key not in existing:
+                        self.save_setting(key, val, user_id=target_uid)
                 system_settings_found = True
                 print(f"SettingsService: Migrated {len(rows)} settings from SYSTEM to {target_uid}")
         except Exception as e:

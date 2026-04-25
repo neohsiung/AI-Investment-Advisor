@@ -28,7 +28,8 @@ export type ProviderCode =
     | "gemini"
     | "anthropic"
     | "ollama"
-    | "groq";
+    | "groq"
+    | "nvidia";
 
 export type HealthStatus = "healthy" | "unhealthy" | "unknown";
 
@@ -267,11 +268,13 @@ export const PROVIDER_CODES: ProviderCode[] = [
     "anthropic",
     "ollama",
     "groq",
+    "nvidia",
 ];
 
 export const PROVIDER_DEFAULT_URLS: Partial<Record<ProviderCode, string>> = {
     ollama: "http://localhost:11434/v1",
     openrouter: "https://openrouter.ai/api/v1",
+    nvidia: "https://integrate.api.nvidia.com/v1",
 };
 
 // ─── Agent Overrides (Phase C) ───────────────────────────────────────────────

@@ -120,14 +120,18 @@ def main():
                 service.reload_schedule()
             
             logger.info("Multi-tenant scheduler loop started.")
+            import time
+            last_reload_check = time.time()
+            
             while True:
                 for service in services:
                     service.scheduler.run_pending()
-                    # Optional: periodically check for reload signal per user
-                    if int(asyncio.get_event_loop().time()) % 10 == 0:
+                    # Optional: periodically check for reload signal per user (every 10 seconds)
+                    current_time = time.time()
+                    if int(current_time - last_reload_check) >= 10:
                         service._check_reload_signal()
+                        last_reload_check = current_time
                 
-                import time
                 time.sleep(1)
             
     else:

@@ -358,7 +358,13 @@ Text:
             from src.infrastructure.llm.tier_config import SettingsAwareModelRouter
             model_router = SettingsAwareModelRouter()
             
-            model = model_router.get_model(self.user_id, self.tier) if self.user_id else os.getenv("AI_MODEL_NANO", "google/gemini-2.0-flash-001")
+            # Use tier-aware routing
+            if self.user_id:
+                model = model_router.get_model(self.user_id, self.tier)
+            else:
+                from src.infrastructure.llm.tier_config import TierConfig
+                tier_config = TierConfig()
+                model = tier_config.resolve(self.tier)
             
             # Use gateway instead of direct litellm call (Budget Tracking)
             config = LLMConfig(

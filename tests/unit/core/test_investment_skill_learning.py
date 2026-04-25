@@ -36,15 +36,22 @@ def mock_engine():
 
 @pytest.fixture
 def service(mock_engine):
-    """Create service with mocked agent and patched DB engine."""
-    with patch('src.services.investment_skill_learning_service.AgentFactory') as MockFactory, \
+    """Create service with mocked model_router, gateway and patched DB engine."""
+    with patch('src.services.investment_skill_learning_service.AlchemySettingsRepository') as MockSettingsRepo, \
+         patch('src.services.investment_skill_learning_service.SettingsAwareModelRouter') as MockRouter, \
+         patch('src.services.investment_skill_learning_service.OpenRouterGateway') as MockGateway, \
          patch('src.data.database.get_db_engine', return_value=mock_engine):
-        mock_agent = MagicMock()
-        MockFactory.create_agent.return_value = mock_agent
+        mock_router = MagicMock()
+        mock_router.get_model = MagicMock(return_value="openrouter/auto")
+        MockRouter.return_value = mock_router
+        
+        mock_gateway = MagicMock()
+        MockGateway.return_value = mock_gateway
         
         from src.services.investment_skill_learning_service import InvestmentSkillLearningService
         svc = InvestmentSkillLearningService(user_id="test_user")
-        svc._mock_agent = mock_agent  # expose for test assertions
+        svc._mock_router = mock_router  # expose for test assertions
+        svc._mock_gateway = mock_gateway  # expose gateway for test assertions
         yield svc
 
 
@@ -91,7 +98,7 @@ MOCK_CREATE_RESPONSE = json.dumps({
 @pytest.mark.asyncio
 async def test_extract_skill_from_article(service):
     """Test that extract_skill_from_content returns correct structure from article."""
-    service._mock_agent._call_real_llm = AsyncMock(return_value=MOCK_EXTRACTION_RESPONSE)
+    service._mock_gateway.chat = AsyncMock(return_value=MOCK_EXTRACTION_RESPONSE)
 
     result = await service.extract_skill_from_content(
         content="When a stock breaks above its 20-day high with above-average volume...",
@@ -110,7 +117,7 @@ async def test_extract_skill_from_article(service):
 @pytest.mark.asyncio
 async def test_extract_skill_from_podcast(service):
     """Test skill extraction from podcast transcript."""
-    service._mock_agent._call_real_llm = AsyncMock(return_value=MOCK_EXTRACTION_RESPONSE)
+    service._mock_gateway.chat = AsyncMock(return_value=MOCK_EXTRACTION_RESPONSE)
 
     result = await service.extract_skill_from_content(
         content="Transcript of investment podcast discussing breakout patterns...",
@@ -125,7 +132,7 @@ async def test_extract_skill_from_podcast(service):
 @pytest.mark.asyncio
 async def test_extract_invalid_content(service):
     """Test that non-investment content returns None."""
-    service._mock_agent._call_real_llm = AsyncMock(return_value=MOCK_INVALID_EXTRACTION)
+    service._mock_gateway.chat = AsyncMock(return_value=MOCK_INVALID_EXTRACTION)
 
     result = await service.extract_skill_from_content(
         content="Today we will discuss how to make spaghetti carbonara...",
@@ -149,7 +156,7 @@ async def test_merge_with_existing_skill(service, mock_engine):
             "VALUES ('existing_id_1', 'test_user', 'Basic Momentum', 'Simple momentum', 'momentum', 'short_term', 1)"
         ))
 
-    service._mock_agent._call_real_llm = AsyncMock(return_value=MOCK_MERGE_RESPONSE)
+    service._mock_gateway.chat = AsyncMock(return_value=MOCK_MERGE_RESPONSE)
 
     new_skill = {
         "name": "Advanced Momentum",
@@ -343,7 +350,7 @@ async def test_daily_learning_full_flow(service, mock_engine):
             "INSERT OR REPLACE INTO skill_learning_config (user_id) VALUES ('test_user')"
         ))
 
-    service._mock_agent._call_real_llm = AsyncMock(side_effect=[
+    service._mock_gateway.chat = AsyncMock(side_effect=[
         MOCK_EXTRACTION_RESPONSE,  # extract_skill_from_content
     ])
 

@@ -180,7 +180,7 @@ class TestSettingsAwareModelRouter:
 
     def test_get_model_from_db(self):
         mock_repo = MagicMock()
-        mock_repo.get_setting.return_value = "custom-model-from-db"
+        mock_repo.get.return_value = "custom-model-from-db"
         router = SettingsAwareModelRouter(settings_repo=mock_repo)
         result = router.get_model("user123", "fast")
         assert result == "custom-model-from-db"
@@ -188,7 +188,7 @@ class TestSettingsAwareModelRouter:
     def test_get_model_db_returns_none_falls_back_to_env(self, monkeypatch):
         monkeypatch.setenv("AI_MODEL_FAST", "google/gemini-2.5-flash")
         mock_repo = MagicMock()
-        mock_repo.get_setting.return_value = None
+        mock_repo.get.return_value = None
         router = SettingsAwareModelRouter(settings_repo=mock_repo)
         result = router.get_model("user123", "fast")
         assert result == "google/gemini-2.5-flash"
@@ -196,14 +196,14 @@ class TestSettingsAwareModelRouter:
     def test_get_model_db_exception_falls_back(self, monkeypatch):
         monkeypatch.setenv("AI_MODEL_FAST", "google/gemini-2.5-flash")
         mock_repo = MagicMock()
-        mock_repo.get_setting.side_effect = Exception("DB error")
+        mock_repo.get.side_effect = Exception("DB error")
         router = SettingsAwareModelRouter(settings_repo=mock_repo)
         result = router.get_model("user123", "fast")
         assert result == "google/gemini-2.5-flash"
 
     def test_get_model_strips_quotes_from_db(self):
         mock_repo = MagicMock()
-        mock_repo.get_setting.return_value = '"google/gemini-2.5-pro"'
+        mock_repo.get.return_value = '"google/gemini-2.5-pro"'
         router = SettingsAwareModelRouter(settings_repo=mock_repo)
         result = router.get_model("user123", "smart")
         assert result == "google/gemini-2.5-pro"
