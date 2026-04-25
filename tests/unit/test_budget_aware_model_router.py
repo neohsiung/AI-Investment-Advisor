@@ -14,6 +14,7 @@ def env_reset(monkeypatch):
     monkeypatch.setenv("AI_MODEL_ADVANCED", "google/gemini-2.5-pro")
     yield
 
+
 @pytest.fixture
 def mock_settings():
     svc = MagicMock()

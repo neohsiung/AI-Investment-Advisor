@@ -860,6 +860,58 @@ function SecretInput({ label, value, id, toggle, show, onChange }: {
   );
 }
 
+function InterestSelector({ label, value, onChange }: { label: string, value: string, onChange: (v: string) => void }) {
+  const options = [
+    { id: 'sentinel', label: '🛡️ Sentinel 警報' },
+    { id: 'report',   label: '📊 投資報告' },
+    { id: 'approval', label: '✅ 交易審核' },
+    { id: 'trading',  label: '💸 交易執行' },
+  ];
+
+  const currentInterests = value ? value.split(',').map(s => s.trim()) : [];
+
+  const toggleInterest = (id: string) => {
+    let next;
+    if (currentInterests.includes(id)) {
+      next = currentInterests.filter(i => i !== id);
+    } else {
+      next = [...currentInterests, id];
+    }
+    onChange(next.join(','));
+  };
+
+  return (
+    <div className="space-y-2">
+      <label className="block text-[10px] font-black uppercase text-on-surface-variant tracking-widest pl-1 mb-3">
+        {label}
+      </label>
+      <div className="flex flex-wrap gap-2">
+        {options.map(opt => {
+          const isActive = currentInterests.includes(opt.id);
+          return (
+            <button
+              key={opt.id}
+              onClick={() => toggleInterest(opt.id)}
+              className={cn(
+                "px-4 py-2 rounded-xl text-xs font-bold border transition-all flex items-center gap-2",
+                isActive 
+                  ? "bg-primary/10 border-primary/30 text-primary shadow-sm" 
+                  : "bg-background/40 border-outline-variant/20 text-on-surface-variant/70 hover:border-outline-variant/40"
+              )}
+            >
+              <div className={cn(
+                "w-3 h-3 rounded-full border-2 transition-all",
+                isActive ? "bg-primary border-primary scale-110" : "border-outline-variant/40"
+              )} />
+              {opt.label}
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 function Switch({ checked, onChange }: { checked: boolean, onChange: (v: boolean) => void }) {
   return (
     <button

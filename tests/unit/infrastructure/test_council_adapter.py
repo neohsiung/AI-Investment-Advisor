@@ -1,60 +1,40 @@
 import pytest
 import asyncio
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock, patch, AsyncMock
 from src.agents.council_adapter import CouncilAgentAdapter
 
-def test_council_adapter_run_sync_loop():
-    """Test adapter when no loop is running."""
-    with patch('src.agents.council_adapter.CouncilService') as MockService, \
-         patch('src.agents.council_adapter.asyncio') as mock_asyncio:
-        
+@pytest.mark.asyncio
+async def test_council_adapter_run_sync_loop():
+    """Test adapter runs via async run() which delegates to CouncilService."""
+    with patch('src.agents.council_adapter.CouncilService') as MockService:
         mock_instance = MagicMock()
         MockService.return_value = mock_instance
         
-        # Mock loop
-        mock_loop = MagicMock()
-        mock_loop.is_running.return_value = False
-        mock_asyncio.get_event_loop.return_value = mock_loop
-        # Support fallback to new_event_loop if get raises
+        # start_session is async, so mock with AsyncMock
+        mock_instance.start_session = AsyncMock(return_value={"result": "success"})
         
         adapter = CouncilAgentAdapter(user_id="test_user", scope="test", topic="Test Topic")
-        
-        # run_until_complete needs to return what start_session returns (a coroutine object)
-        mock_coro = MagicMock()
-        mock_instance.start_session.return_value = mock_coro
-        mock_loop.run_until_complete.return_value = {"result": "success"}
-        
-        result = adapter.run({})
+        result = await adapter.run({"user_id": "test_user"})
         
         assert result["result"] == "success"
-        mock_instance.start_session.assert_called_with("Test Topic", {}, "test_user", "test")
-        mock_loop.run_until_complete.assert_called_with(mock_coro)
+        mock_instance.start_session.assert_called_with(
+            topic="Test Topic",
+            context_data={"user_id": "test_user"},
+            user_id="test_user",
+            scope="test"
+        )
 
-def test_council_adapter_run_async_loop_running():
-    """Test adapter when loop IS running (needs thread/executor)."""
-    with patch('src.agents.council_adapter.CouncilService') as MockService, \
-         patch('src.agents.council_adapter.asyncio') as mock_asyncio, \
-         patch('concurrent.futures.ThreadPoolExecutor') as MockExecutor:
-        
+@pytest.mark.asyncio
+async def test_council_adapter_run_async_loop_running():
+    """Test adapter when called in an async context (most common case)."""
+    with patch('src.agents.council_adapter.CouncilService') as MockService:
         mock_instance = MagicMock()
         MockService.return_value = mock_instance
         
-        mock_loop = MagicMock()
-        mock_loop.is_running.return_value = True
-        mock_asyncio.get_event_loop.return_value = mock_loop
+        mock_instance.start_session = AsyncMock(return_value={"result": "threaded"})
         
         adapter = CouncilAgentAdapter(user_id="test_user")
-        
-        mock_executor_instance = MagicMock()
-        MockExecutor.return_value.__enter__.return_value = mock_executor_instance
-        
-        mock_future = MagicMock()
-        mock_future.result.return_value = {"result": "threaded"}
-        mock_executor_instance.submit.return_value = mock_future
-        
-        result = adapter.run({})
+        result = await adapter.run({"user_id": "test_user"})
         
         assert result["result"] == "threaded"
-        # Check that it submitted asyncio.run
-        args = mock_executor_instance.submit.call_args
-        assert args[0][0] == mock_asyncio.run
+        assert mock_instance.start_session.called

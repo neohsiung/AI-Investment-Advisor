@@ -48,7 +48,7 @@ class SystemEngineerAgent(BaseAgent):
         self.backtester = BacktestRunner()
         self.settings = AlchemySettingsRepository()
 
-    def run(self, context: Any) -> str:
+    async def run(self, context: Any) -> str:
         """
         Runs the alpha-seeking genetic algorithm workflow.
         """

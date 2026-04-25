@@ -12,7 +12,7 @@ import json
 
 # Define a concrete implementation of BaseAgent for testing
 class ConcreteAgent(BaseAgent):
-    def run(self, context, mode=None):
+    async def run(self, context, mode=None):
         return "Concrete Result"
 
 @pytest.fixture
@@ -51,9 +51,10 @@ def test_base_agent_init_and_config(mock_settings_repo, mock_state_repo, mock_pr
 
     with patch("src.agents.base_agent.BudgetAwareModelRouter") as mock_router:
         mock_router.side_effect = Exception("Router Disabled for Test")
-        agent = ConcreteAgent(name="TEST", prompt_path=str(prompt_file), use_cache=False, 
-                              user_id="test_user",
-                              settings_repo=mock_settings_repo, state_repo=mock_state_repo)
+        with patch('src.agents.base_agent.HybridMemory', return_value=MagicMock()):
+            agent = ConcreteAgent(name="TEST", prompt_path=str(prompt_file), use_cache=False, 
+                                  user_id="test_user",
+                                  settings_repo=mock_settings_repo, state_repo=mock_state_repo)
 
     assert agent.name == "TEST"
     assert agent.system_prompt == mock_prompt_content
@@ -66,9 +67,10 @@ def test_base_agent_render_prompt(mock_settings_repo, mock_state_repo, tmp_path)
     with open(prompt_file, 'w') as f:
         f.write("Hello {{ name }}")
     
-    agent = ConcreteAgent(name="TEST", prompt_path=str(prompt_file), use_cache=False,
-                          user_id="test_user",
-                          settings_repo=mock_settings_repo, state_repo=mock_state_repo)
+    with patch('src.agents.base_agent.HybridMemory', return_value=MagicMock()):
+        agent = ConcreteAgent(name="TEST", prompt_path=str(prompt_file), use_cache=False,
+                              user_id="test_user",
+                              settings_repo=mock_settings_repo, state_repo=mock_state_repo)
     rendered = agent.render_system_prompt({"name": "World"})
     assert "Hello World" in rendered
 

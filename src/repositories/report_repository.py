@@ -159,5 +159,51 @@ class AsyncAlchemyReportRepository(AsyncBaseRepository, IAsyncReportRepository):
             await session.commit()
             return True
 
+class AsyncAlchemyReportRepository(AsyncBaseRepository, IAsyncReportRepository):
+    """
+    Async SQLAlchemy implementation of IReportRepository.
+    v8.0: High-performance non-blocking implementation.
+    """
+    def __init__(self, engine: Any = None):
+        AsyncBaseRepository.__init__(self, engine or get_async_db_engine())
+
+    async def get_latest_reports(self, user_id: str, limit: int = 100) -> List[Dict[str, Any]]:
+        """
+        Get latest reports as a list of dictionaries.
+        """
+        async with await self.get_session() as session:
+            query = text("""
+                SELECT created_at as date, title as summary, content 
+                FROM reports 
+                WHERE user_id = :uid 
+                ORDER BY created_at DESC 
+                LIMIT :limit
+            """)
+            result = await session.execute(query, {"uid": user_id, "limit": limit})
+            rows = result.fetchall()
+            return [dict(r._mapping) for r in rows]
+
+    async def save_report(self, user_id: str, report_type: str, summary: str, content: str, title: Optional[str] = None) -> bool:
+        from datetime import datetime
+        target_title = title or summary
+        
+        async with await self.get_session() as session:
+            query = text("""
+                INSERT INTO reports (id, user_id, report_type, title, content, created_at)
+                VALUES (:id, :uid, :type, :title, :content, :created_at)
+            """)
+            # v8.0: Use UUID for ID
+            import uuid
+            await session.execute(query, {
+                "id": str(uuid.uuid4()),
+                "uid": user_id,
+                "type": report_type,
+                "title": target_title,
+                "content": content,
+                "created_at": datetime.now()
+            })
+            await session.commit()
+            return True
+
 # Legacy alias removed in v4.1.7
 # @deprecated: Use AlchemyReportRepository

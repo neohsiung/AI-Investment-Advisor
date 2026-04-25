@@ -5,6 +5,9 @@ import type { NextConfig } from "next";
 // In local dev: defaults to http://localhost:8000
 const BACKEND_URL = process.env.BACKEND_URL || 'http://localhost:8000';
 
+// NOTE: next-pwa removed — it injected webpack config incompatible with Next.js 16 Turbopack.
+// PWA support can be re-added with a Turbopack-compatible alternative (e.g. @serwist/next).
+
 const nextConfig: NextConfig = {
   output: 'standalone',
   async rewrites() {

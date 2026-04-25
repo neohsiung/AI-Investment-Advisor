@@ -11,7 +11,7 @@ Tests:
 """
 
 import pytest
-from unittest.mock import MagicMock, patch, Mock
+from unittest.mock import MagicMock, patch, Mock, AsyncMock
 from src.domain.interfaces import ILLMGateway, Message, LLMConfig
 from src.infrastructure.llm.llm_gateway import (
     OpenRouterGateway,
@@ -280,6 +280,7 @@ class TestMockLLMGateway:
 class TestBaseAgentGatewayDI:
     """Test that BaseAgent correctly uses injected ILLMGateway."""
 
+    @pytest.mark.asyncio
     @patch('src.agents.base_agent.BaseAgent._load_prompt', return_value="Test Prompt")
     @pytest.mark.asyncio
     async def test_injected_gateway_is_used(self, _):
@@ -337,6 +338,7 @@ class TestBaseAgentGatewayDI:
         # Should have a MockLLMGateway since no API key
         assert isinstance(agent._llm_gateway, MockLLMGateway)
 
+    @pytest.mark.asyncio
     @patch('src.agents.base_agent.BaseAgent._load_prompt', return_value="Test Prompt")
     @pytest.mark.asyncio
     async def test_legacy_mock_llm_call_bridges(self, _):

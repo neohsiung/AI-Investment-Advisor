@@ -17,12 +17,17 @@ description: 開發指導準則：指導 Agent 遵循 Trunk-based Development �
 
 ## 核心行為規範 (Core Behaviors)
 
-### 1. 嚴格的主幹開發 (Strict Trunk-Based Development)
+### 1. 擴展型主幹開發 (Scaled Trunk-Based Development)
 
-- **直接推進主幹**：除非使用者特別要求開啟 Feature Branch 或提出 PR，否則所有變更應**直接 commit 到開發主幹**。
-- **避免長時間未提交 (No Long-Lived Uncommitted State)**：Agent 在執行任務時，**絕對不要**等到整個跨越多個檔案的巨大功能做完才做一次巨大的 commit。
+- **嚴禁直接推送主幹 (No Direct Commits to Main)**：除非是極微小的熱修復 (Hotfix) 或使用者明確授權，否則**禁止直接 commit 到 `main` 或 `master` 分支**。
+- **短期特性分支 (Short-Lived Feature Branches)**：所有變更應在從主幹切出的短期分支中執行（分支壽命不應超過 1-2 天）。
+- **分支命名規範**：
+  - `feat/<task-description>`：新功能開發。
+  - `fix/<task-description>`：錯誤修復。
+  - `docs/<task-description>`：文件更新。
+  - `refactor/<task-description>`：代碼重構。
 
-### 2. 高頻次、原子化的提交 (High-Frequency Atomic Commits)
+### 2. 高頻次提交與自動化 Pull Request (PR Workflow)
 
 - **單點突破，立即提交**：每當成功寫好一個 Function、修正好一個 Bug、或是建立好一個模組且確認語法無誤後，就要執行 `git commit`。
 - **確保主幹不被破壞 (Don't Break the Trunk)**：每次 Commit 的段落至少不能引發 Syntax Error 或導致專案無法編譯/啟動測試。就算新功能尚未上線，也可先以 Dead Code 形式推入主幹。

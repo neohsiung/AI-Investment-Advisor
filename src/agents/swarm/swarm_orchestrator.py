@@ -104,12 +104,11 @@ class SwarmOrchestrator:
 
     async def run_agent(self, agent: BaseAgent, task: str, context: Dict[str, Any]) -> str:
         """
-        Wrapper to run synchronous BaseAgent.run in a thread.
+        Execute agent run asynchronously.
         """
-        loop = asyncio.get_event_loop()
         ctx = context.copy() if context else {}
         ctx["user_request"] = task
-        return await loop.run_in_executor(None, agent.run, ctx)
+        return await agent.run(ctx)
 
     def aggregate_results(self, results: Dict[str, str], strategy: str = "concat", weights: Optional[Dict[str, float]] = None) -> str:
         """

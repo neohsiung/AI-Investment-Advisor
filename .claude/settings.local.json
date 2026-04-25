@@ -1,0 +1,16 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(docker compose:*)",
+      "Bash(docker exec investment_advisor_mcp python3 -c ':*)",
+      "Bash(docker exec:*)",
+      "Bash(curl -s http://localhost:8000/api/dashboard/summary)",
+      "Bash(docker port:*)",
+      "Bash(python3 -c \"import sys,json; d=json.load\\(sys.stdin\\); print\\(d\\)\")",
+      "Bash(curl -s -o /dev/null -w \"%{http_code} %{time_total}s\" http://localhost:8000/api/dashboard/summary)",
+      "Bash(python3 -c \"import sys,json; d=json.load\\(sys.stdin\\); print\\(json.dumps\\(d['data'], indent=2\\)\\)\")",
+      "Read(//tmp/**)",
+      "Bash(docker restart:*)"
+    ]
+  }
+}

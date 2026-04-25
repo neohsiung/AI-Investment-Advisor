@@ -508,21 +508,16 @@ class DailyWorkflow(BaseWorkflow):
 
         # Lightweight analysis (e.g. Momentum only)
         # For simplicity, we assume we check all but filter in CIO
-        # Real implementation: Check specific alerts?
         
         # Here we run Momentum Agent & Sentiment Agent
         # Daily: Short TTL (1hr), assume force_refresh implies bypassing cache
         # PAD Phase 2: Replace AgentFactory calls with _call_agent_llm
         
         results = []
-        has_significant_change = False
-        
         ticker_reports = {}
         for ticker in self.context['tickers']:
-            # Short TTL for daily
             data = self.context['market_data'].get(ticker, {})
             
-            # Prepare Context for Agent
             ticker_ctx = {
                 "ticker": ticker,
                 "price_data": data.get("price_data", {}),
@@ -543,7 +538,6 @@ class DailyWorkflow(BaseWorkflow):
             # Fundamental Analysis (Cached Reference)
             f_res = await self._call_agent_llm("Fundamental", ticker_ctx, tier="smart")
 
-            # Format for CIO: Daily has Momentum, Sentiment, and Fundamental (Context)
             ticker_reports[ticker] = {
                 "momentum": res,
                 "sentiment": sent_res,
@@ -824,6 +818,8 @@ class DailyWorkflow(BaseWorkflow):
                 date=datetime.now().strftime("%Y-%m-%d"),
                 content=final_report
             )
+        except Exception as e:
+            logger.error(f"Failed to store report in memory: {e}")
 
         # Post-Process: Record Macro & CIO Signals
         # ... (rest of signal recording logic)

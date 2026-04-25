@@ -1,6 +1,5 @@
-
 import pytest
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock, patch, AsyncMock
 from src.agents.cio import CIOAgent
 
 @pytest.fixture
@@ -24,7 +23,9 @@ async def test_run_strategy_mode(cio_agent):
     context = {"user_id": "test_user", "macro_report": "Bullish"}
     
     # Mock internal methods used in strategy
-    with patch.object(cio_agent, 'call_llm', return_value='{"sector_strategy": {}, "candidates": []}'):
+    # call_llm is now async
+    with patch.object(cio_agent, 'call_llm', new_callable=AsyncMock) as mock_llm:
+        mock_llm.return_value = '{"sector_strategy": {}, "candidates": []}'
         # We don't verify portfolio context details here, just that it runs
         result = await cio_agent.run(context, mode='strategy')
         

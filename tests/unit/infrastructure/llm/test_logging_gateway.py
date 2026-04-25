@@ -3,7 +3,7 @@ Unit tests for LoggingLLMGateway.
 ILLMGateway Decorator 的單元測試。
 """
 import pytest
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock, patch, AsyncMock
 from src.infrastructure.llm.llm_gateway import LoggingLLMGateway
 from src.domain.interfaces import Message, LLMConfig
 

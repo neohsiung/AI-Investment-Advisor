@@ -214,6 +214,31 @@ async def trigger_rebalance(
         logger.exception("Error triggering rebalance")
         raise HTTPException(status_code=500, detail="Failed to trigger rebalance flow")
 
+@dashboard_router.post("/rebalance")
+@limiter.limit("1/5minute")
+async def trigger_rebalance(
+    request: Request,
+    background_tasks: BackgroundTasks,
+    user: Dict[str, Any] = Depends(get_current_user)
+):
+    """手動觸發投資組合再平衡 (非同步背景執行)"""
+    try:
+        user_id = user.get("sub")
+        from src.infrastructure.tasks import trigger_portfolio_rebalance
+        
+        # v6.3: Dispatch to Celery if available, or fallback to BackgroundTasks
+        # For simplicity in local dev, we call the task function via Celery .delay()
+        # if Celery is not running, researchers can use background_tasks.add_task
+        trigger_portfolio_rebalance.delay(user_id=user_id)
+        
+        return {
+            "status": "success",
+            "message": "再平衡指令已發送至哨兵監控系統，正在進行資產評估。"
+        }
+    except Exception as e:
+        logger.error(f"Error triggering rebalance: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
 
 def get_transaction_service(user: Dict[str, Any] = Depends(get_current_user)) -> TransactionService:
     """獲取 TransactionService 實例"""
@@ -364,6 +389,92 @@ async def delete_transaction(
         raise HTTPException(status_code=500, detail="Transaction deletion failed due to internal error")
 
 
+@dashboard_router.post("/data/capital-flow")
+async def set_capital_flow(
+    payload: Dict[str, Any] = Body(...),
+    user: Dict[str, Any] = Depends(get_current_user),
+):
+    """
+    設定真實投入資本基準（用於 ROI 計算）。
+    由於 eToro API 不提供累積入金總額，需手動從 eToro UI 確認後設定。
+
+    Body:
+      - amount: float  (必填) — 從 eToro 帳戶 → 「我的投資組合」→「存款」取得的累積真實入金總額
+      - date:   str    (選填) — YYYY-MM-DD，預設為今日
+      - replace: bool  (選填) — 是否先刪除現有 MANUAL_CAPITAL 記錄，預設 True
+
+    Set the real invested capital baseline for ROI calculation.
+    Since eToro's API doesn't expose cumulative real deposits, set this manually
+    from eToro UI → My Portfolio → Deposits total.
+    """
+    try:
+        from src.data.database import get_db_engine
+        from src.repositories.transaction_repository import (
+            AlchemyTransactionRepository,
+            ENTRY_CATEGORY_CAPITAL_FLOW,
+        )
+        from datetime import date as date_cls
+        from sqlalchemy import text as sqla_text
+
+        user_id = user.get("sub")
+        amount = float(payload.get("amount", 0))
+        deposit_date = payload.get("date") or date_cls.today().isoformat()
+        replace = payload.get("replace", True)
+
+        if amount <= 0:
+            raise HTTPException(status_code=400, detail="amount must be > 0")
+
+        engine = get_db_engine()
+
+        # Optionally remove previous MANUAL_CAPITAL entries
+        deleted = 0
+        if replace:
+            with engine.begin() as conn:
+                result = conn.execute(
+                    sqla_text("""
+                        DELETE FROM transactions
+                        WHERE user_id = :uid
+                          AND entry_category = 'capital_flow'
+                          AND source_file = 'MANUAL_CAPITAL'
+                    """),
+                    {"uid": user_id},
+                )
+                deleted = result.rowcount
+
+        tx_repo = AlchemyTransactionRepository(engine)
+        tx_repo.add(
+            user_id=user_id,
+            ticker="USD",
+            date=deposit_date,
+            action="DEPOSIT",
+            quantity=1.0,
+            price=amount,
+            fees=0.0,
+            leverage=1.0,
+            source_file="MANUAL_CAPITAL",
+            entry_category=ENTRY_CATEGORY_CAPITAL_FLOW,
+            amount=amount,
+        )
+        logger.info(f"capital_flow set: user={user_id} amount={amount} date={deposit_date} replaced={deleted}")
+
+        return {
+            "status": "success",
+            "data": {
+                "net_invested_capital": round(amount, 2),
+                "date": deposit_date,
+                "replaced_records": deleted,
+            },
+            "message": f"已設定投入資本 ${amount:,.2f}。ROI 計算將使用此基準值。",
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error setting capital flow: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+
+
 @dashboard_router.post("/chat")
 @limiter.limit("5/minute")
 async def advisor_chat(
@@ -495,7 +606,20 @@ async def advisor_chat_stream(
 
 @dashboard_router.get("/summary")
 async def get_summary(service: DashboardService = Depends(get_dashboard_service)):
-    """獲取投資概覽數據 (NLV, Cash, PnL, ROI)"""
+    """獲取投資概覽數據 (NLV, Cash, PnL, ROI) — Redis cached (120s TTL)"""
+    import redis as _redis
+    cache_key = f"dashboard:summary:{service.user_id}"
+    _r = None
+
+    # Fast path: return cached result if available
+    try:
+        _r = _redis.from_url(os.getenv("REDIS_URL", "redis://redis:6379/0"), decode_responses=True)
+        cached = _r.get(cache_key)
+        if cached:
+            return json.loads(cached)
+    except Exception:
+        pass
+
     try:
         data = service.prepare_dashboard_data(service.user_id)
         metrics = data.get('metrics', {})
@@ -509,7 +633,7 @@ async def get_summary(service: DashboardService = Depends(get_dashboard_service)
                 "uninvested_cash": metrics.get('cash_balance', 0),
                 "gross_exposure": metrics.get('gross_nlv', 0),
                 "leverage_ratio": metrics.get('leverage_ratio', 0),
-                "active_agents": metrics.get('active_agents', 7), 
+                "active_agents": metrics.get('active_agents', 7),
                 "risk_exposure": metrics.get('risk_level', "MODERATE"),
                 "total_pnl": pnl.get('total', 0),
                 "unrealized_pnl": pnl.get('unrealized', 0),
@@ -518,6 +642,15 @@ async def get_summary(service: DashboardService = Depends(get_dashboard_service)
             },
             "system_warnings": warnings
         }
+
+        # Cache the result for 120 seconds
+        try:
+            if _r:
+                _r.setex(cache_key, 120, json.dumps(result))
+        except Exception:
+            pass
+
+        return result
     except Exception as e:
         logger.exception(f"Error fetching dashboard summary: {e}")
         raise HTTPException(status_code=500, detail="Internal server error during dashboard summary calculation")

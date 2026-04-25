@@ -60,9 +60,47 @@ from src.services.interaction_service import InteractionService
 from src.services.socket_manager import socket_manager
 from src.utils.jwt_utils import decode_token
 
+def get_current_user(request: Request) -> Dict[str, Any]:
+    """從 Cookie 或 Authorization Header 獲取並驗證使用者資訊 [v8.1 MCP Auth Fix]"""
+    # 1. 優先從 Authorization Header 獲取 (Bearer Token)
+    auth_header = request.headers.get("Authorization")
+    token = None
+    if auth_header and auth_header.startswith("Bearer "):
+        token = auth_header.split(" ")[1]
+    
+    # 2. 次之從 Cookie 獲取
+    if not token:
+        token = request.cookies.get("access_token")
+        
+    if not token:
+        logger.warning("Missing authentication token")
+        raise HTTPException(status_code=401, detail="Not authenticated")
+        
+    payload = decode_token(token)
+    if not payload or payload.get("type") != "access":
+        logger.warning("Invalid or expired token")
+        raise HTTPException(status_code=401, detail="Invalid token")
+        
+    return payload
+
+_ws_data_cache: Dict[str, Any] = {}
+_ws_last_fetch: Dict[str, float] = {}
+WS_CACHE_TTL = 60  # seconds between full data refreshes
+
+async def _warm_redis_cache(user_id: str, summary: dict) -> None:
+    """Write the latest summary to Redis so REST /summary can respond instantly."""
+    try:
+        import redis as _redis, json as _json, os as _os
+        r = _redis.from_url(_os.getenv("REDIS_URL", "redis://redis:6379/0"), decode_responses=True)
+        payload = _json.dumps({"status": "success", "data": summary})
+        r.setex(f"dashboard:summary:{user_id}", 120, payload)
+    except Exception:
+        pass  # Redis unavailable — REST endpoint will fall through to full compute
+
 async def websocket_broadcast_loop():
-    """定期為所有活躍連線推送數據更新 (每 5 秒)"""
+    """定期為所有活躍連線推送數據更新 (每 30 秒廣播，每 60 秒重新計算)"""
     from src.services.dashboard_service import DashboardService
+    import time
     logger.info("✓ Starting WebSocket Broadcast Loop...")
     while True:
         try:
@@ -76,16 +114,16 @@ async def websocket_broadcast_loop():
                 await socket_manager.broadcast_to_user(user_id, {
                     "type": "PORTFOLIO_UPDATE",
                     "payload": {
-                        "summary": data.get('metrics', {}),
-                        "positions": data.get('positions_df', {}).to_dict('records') if hasattr(data.get('positions_df'), 'to_dict') else [],
+                        "summary": summary,
+                        "positions": positions,
                         "timestamp": datetime.now().isoformat()
                     }
                 })
-            
-            await asyncio.sleep(5)
+
+            await asyncio.sleep(30)
         except Exception as e:
             logger.error(f"WebSocket broadcast loop error: {e}")
-            await asyncio.sleep(10)
+            await asyncio.sleep(30)
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):

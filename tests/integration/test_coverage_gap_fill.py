@@ -13,7 +13,7 @@ import src.data.models # Ensure all models are registered for SQLite in-memory D
 # --- Base Agent Tests ---
 
 class MockAgent(BaseAgent):
-    def run(self, context):
+    async def run(self, context):
         return "Test Run"
 
 @pytest.fixture
@@ -32,20 +32,15 @@ def mock_state_repo():
 def mock_agent(mock_settings_repo, mock_state_repo):
     with patch('builtins.open', mock_open(read_data="System Prompt")):
         with patch('os.path.exists', return_value=True):
-            # We mock _load_config implicitly by ensuring settings_repo returns something empty or valid,
-            # BUT BaseAgent._load_config calls repo. If we want to mock what config ends up being,
-            # we can patch _load_config OR populate mock_settings_repo.
-            # Let's populate mock_settings_repo for better integration test
-            # Correctly mock get_all instead of get_global
-            mock_settings_repo.get_all.return_value = []
-            
-            # Using _load_config patch as in original to force specific config structure for testing
-            with patch.object(BaseAgent, '_load_config', return_value={
-                "provider": "Google Gemini", "model": "gemini-1.5-pro", "api_key": "test_key" # pragma: allowlist secret
-            }):
-                agent = MockAgent("TestAgent", "prompt.txt", user_id="test_user", 
-                                  settings_repo=mock_settings_repo, state_repo=mock_state_repo)
-                return agent
+            # Patch HybridMemory to avoid DB connection during construction
+            with patch('src.agents.base_agent.HybridMemory', return_value=MagicMock()):
+                # Using _load_config patch as in original
+                with patch.object(BaseAgent, '_load_config', return_value={
+                    "provider": "Google Gemini", "model": "gemini-1.5-pro", "api_key": "test_key"
+                }):
+                    agent = MockAgent("TestAgent", "prompt.txt", user_id="test_user", 
+                                      settings_repo=mock_settings_repo, state_repo=mock_state_repo)
+                    return agent
 
 def test_base_agent_load_config_error(mock_settings_repo, mock_state_repo):
     # Simulate Repo Error

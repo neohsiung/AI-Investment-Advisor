@@ -109,12 +109,6 @@ class AlchemyUserRepository(BaseRepository, IUserRepository):
             })
             return True
 
-    def get_identities(self, user_id: str) -> List[Dict[str, Any]]:
-        with self.engine.connect() as conn:
-            query = text("SELECT * FROM user_identities WHERE user_id = :uid")
-            rows = conn.execute(query, {"uid": user_id}).fetchall()
-            return [dict(r._mapping) for r in rows]
-
     def create_user(self, email: str, name: str = None) -> str:
         user_uuid = str(uuid.uuid4())
         with self.engine.begin() as conn:

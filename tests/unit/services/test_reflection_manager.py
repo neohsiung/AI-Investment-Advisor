@@ -14,6 +14,9 @@ class TestReflectionManager:
              patch("src.services.reflection_manager.LLMGatewayFactory") as m_factory, \
              patch("src.services.reflection_manager.LoggingLLMGateway") as m_logging_gw:
             
+            # Make the chat method async
+            m_logging_gw.return_value.chat = AsyncMock()
+            
             yield {
                 "settings": m_settings.return_value,
                 "tokens": m_tokens.return_value,

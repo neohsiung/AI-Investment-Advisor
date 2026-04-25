@@ -98,6 +98,7 @@ class TestSentimentAgent:
         assert result['sentiment'] == 'bearish'
         assert result['score'] == -0.6
     
+    @pytest.mark.asyncio
     @pytest.mark.xfail(reason="Template variable mismatch: 'news' vs 'news_list' - to be fixed")
     @pytest.mark.asyncio
     async def test_run_limits_news_to_top_5(self, agent):

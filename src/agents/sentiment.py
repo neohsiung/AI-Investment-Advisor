@@ -55,18 +55,18 @@ class SentimentAgent(BaseAgent):
         # Parse JSON
         # 解析 JSON
         try:
-            cleaned = response_str.replace("```json", "").replace("```", "").strip()
-            # Robust extraction
-            # 穩健提取
+            # Clean up response if it contains markdown
+            cleaned = response.replace("```json", "").replace("```", "").strip()
+            # Robust extraction of the first '{' to last '}'
             start = cleaned.find("{")
             end = cleaned.rfind("}")
             if start != -1 and end != -1:
                 cleaned = cleaned[start:end+1]
             return json.loads(cleaned)
         except json.JSONDecodeError:
-            self.logger.warning(f"Failed to parse sentiment JSON for {ticker}: {response_str}")
+            self.logger.warning(f"SentimentAgent: Failed to parse JSON for {ticker}. Returning fallback.")
             return {
                 "sentiment": "Unknown",
-                "narrative": response_str[:50] + "...",
+                "narrative": response[:100] + "...",
                 "score": 0.0
             }

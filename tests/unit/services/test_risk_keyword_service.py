@@ -65,7 +65,7 @@ class TestDiscoverFromReports:
         ]
         mock_data_repo.return_value = mock_repo_instance
 
-        # Mock LLM response
+        # Mock LLM response — must be AsyncMock since _llm_gateway.chat is async
         service._llm_gateway = MagicMock()
         service._llm_gateway.chat = AsyncMock(return_value='{"keywords": [{"keyword": "rate hike", "weight": 0.7, "category": "macro"}, {"keyword": "ai chip", "weight": 0.6, "category": "sector"}]}')
 

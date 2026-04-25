@@ -1,12 +1,12 @@
 
 import pytest
-from unittest.mock import Mock, patch, MagicMock
+from unittest.mock import Mock, patch, MagicMock, AsyncMock
 import os
 import json
 from src.agents.base_agent import BaseAgent
 
 class ConcreteAgent(BaseAgent):
-    def run(self, context):
+    async def run(self, context):
         return "Concreted"
 
 class TestBaseAgentMoreCoverage:
@@ -166,5 +166,5 @@ class TestBaseAgentMoreCoverage:
              
              assert resp == 'Final Answer: Apple is up.'
              assert agent.call_llm.call_count == 2
-             mock_search_instance.search_financial_context.assert_called_with("Apple Stock", max_results=3)
+             mock_search_instance.search_financial_context.assert_called_with("Apple Stock")
 

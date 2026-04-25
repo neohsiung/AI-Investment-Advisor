@@ -15,12 +15,19 @@ class DummyAgent(BaseAgent):
         self.delay = delay
         self.result_text = result_text
 
-    def run(self, context):
+    async def run(self, context):
         # We simulate blocking or async logic. Since BaseAgent is sync, it runs in thread executor
-        time.sleep(self.delay)
+        await asyncio.sleep(self.delay)
         return self.result_text
 
-def test_swarm_concurrency():
+import pytest
+
+@pytest.fixture
+def anyio_backend():
+    return 'asyncio'
+
+@pytest.mark.anyio
+async def test_swarm_concurrency():
     swarm = RoleSwarm(name="TestSwarm", user_id="test_user")
     
     # 1. Register Fast Tier (Takes 1 second)
@@ -39,7 +46,7 @@ def test_swarm_concurrency():
     start_time = time.time()
     
     # This should return in ~1 second due to Fast Tier returning SYSTEM PAUSE
-    result = swarm.run({"user_request": "Analyze market"})
+    result = await swarm.run({"user_request": "Analyze market"})
     
     end_time = time.time()
     duration = end_time - start_time
@@ -60,7 +67,7 @@ def test_swarm_concurrency():
     swarm2.register_agent("col_adv", DummyAgent("Adv1", delay=5.0, result_text="Buy Signal."))
     
     start_time2 = time.time()
-    res2 = swarm2.run({"user_request": "Analyze market"})
+    res2 = await swarm2.run({"user_request": "Analyze market"})
     end_time2 = time.time()
     dur2 = end_time2 - start_time2
     

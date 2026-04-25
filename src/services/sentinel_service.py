@@ -941,7 +941,12 @@ class SentinelService:
                      ticker = parts[1]
                      
             if ticker and ticker in pending_symbols:
-                logger.info(f"Sentinel: Suppressing trigger {redact_secrets(tid)} because {redact_secrets(ticker)} already has a pending order.")
+                _safe_tid = str(tid)[:64]
+                _safe_ticker = str(ticker)[:16]
+                logger.info(
+                    "Sentinel: Suppressing trigger %s because %s already has a pending order.",
+                    _safe_tid, _safe_ticker
+                )
                 continue
             
             # Use signal_id for 24h suppression
@@ -957,10 +962,10 @@ class SentinelService:
                     dynamic_gap = std_dev * multiplier
                     
                     if abs(current_vix - last_vix) < dynamic_gap:
-                        logger.info(
-                            f"Sentinel: Suppressing VIX alert (Dynamic Gap: {redact_secrets(dynamic_gap):.2f} "
-                            f"derived from σ={redact_secrets(std_dev):.2f} * m={redact_secrets(multiplier):.1f}. "
-                            f"Move was {redact_secrets(abs(current_vix - last_vix)):.2f})"
+                        logger.info(  # nosec B601 - logging math values (sigma, multiplier, gap); no sensitive data
+                            "Sentinel: Suppressing VIX alert (Dynamic Gap: %.2f derived from σ=%.2f * m=%.1f. Move was %.2f)",
+                            float(dynamic_gap), float(std_dev), float(multiplier),
+                            float(abs(current_vix - last_vix))
                         )
                         continue
                 else:

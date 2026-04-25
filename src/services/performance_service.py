@@ -254,11 +254,11 @@ class PerformanceService:
                             current_holdings[ticker] -= qty
                         current_cash += amount
                     elif action == 'DEPOSIT':
-                        if ticker not in ['CASH', 'STABILIZE_CASH', 'STABILIZE_CAP', 'ETORO_SYNC']:
+                        if row.get('entry_category', 'trade') == 'capital_flow':
                             current_invested += amount
                         current_cash += amount
                     elif action == 'WITHDRAWAL':
-                        if ticker not in ['CASH', 'STABILIZE_CASH', 'STABILIZE_CAP', 'ETORO_SYNC']:
+                        if row.get('entry_category', 'trade') == 'capital_flow':
                             current_invested -= amount
                         current_cash -= amount
                     elif action == 'DIVIDEND':

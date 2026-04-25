@@ -6,6 +6,24 @@ from src.data.database import BaseRepository, get_db_engine
 import pandas as pd
 import uuid
 
+# Valid values for the entry_category column.
+ENTRY_CATEGORY_TRADE = "trade"
+ENTRY_CATEGORY_CAPITAL_FLOW = "capital_flow"
+ENTRY_CATEGORY_SYNC_ADJUSTMENT = "sync_adjustment"
+
+# Immutable sets used for write-time validation.
+VALID_ENTRY_CATEGORIES: frozenset = frozenset({
+    ENTRY_CATEGORY_TRADE,
+    ENTRY_CATEGORY_CAPITAL_FLOW,
+    ENTRY_CATEGORY_SYNC_ADJUSTMENT,
+})
+
+# Actions that represent real asset transactions (must have a non-empty ticker).
+TRADE_ACTIONS: frozenset = frozenset({"BUY", "SELL"})
+
+# Actions that represent capital movements (must have amount > 0).
+CAPITAL_ACTIONS: frozenset = frozenset({"DEPOSIT", "WITHDRAWAL"})
+
 class ITransactionRepository(ABC):
     """
     Interface for Transaction Repository.
@@ -20,7 +38,20 @@ class ITransactionRepository(ABC):
         pass
 
     @abstractmethod
-    def add(self, user_id: str, ticker: str, date: str, action: str, quantity: float, price: float, fees: float, leverage: float = 1.0, source_file: str = None) -> None:
+    def add(
+        self,
+        user_id: str,
+        ticker: str,
+        date: str,
+        action: str,
+        quantity: float,
+        price: float,
+        fees: float,
+        leverage: float = 1.0,
+        source_file: str = None,
+        entry_category: str = ENTRY_CATEGORY_TRADE,
+        amount: Optional[float] = None,
+    ) -> None:
         pass
 
     @abstractmethod
@@ -103,25 +134,86 @@ class AlchemyTransactionRepository(BaseRepository, ITransactionRepository):
             rows = conn.execute(query, params).fetchall()
             return [r[0] for r in rows]
 
-    def add(self, user_id: str, ticker: str, date: str, action: str, quantity: float, price: float, fees: float, leverage: float = 1.0, source_file: str = None) -> None:
-        amount = (price * quantity) / leverage if leverage and leverage > 0 else (price * quantity)
+    def add(
+        self,
+        user_id: str,
+        ticker: str,
+        date: str,
+        action: str,
+        quantity: float,
+        price: float,
+        fees: float,
+        leverage: float = 1.0,
+        source_file: str = None,
+        entry_category: str = ENTRY_CATEGORY_TRADE,
+        amount: Optional[float] = None,
+    ) -> None:
+        """
+        Insert a transaction record with write-time validation.
+        寫入交易記錄，包含寫入時驗證防止非法資料進入資料庫。
+
+        Validation rules:
+          1. entry_category must be one of VALID_ENTRY_CATEGORIES.
+          2. BUY / SELL actions must have a non-empty ticker.
+          3. capital_flow entries must have action in CAPITAL_ACTIONS and amount > 0.
+        """
+        # Guard 1: entry_category must be a known value
+        if entry_category not in VALID_ENTRY_CATEGORIES:
+            raise ValueError(
+                f"Invalid entry_category='{entry_category}'. "
+                f"Must be one of {sorted(VALID_ENTRY_CATEGORIES)}. "
+                f"Use constants: ENTRY_CATEGORY_TRADE, ENTRY_CATEGORY_CAPITAL_FLOW, "
+                f"ENTRY_CATEGORY_SYNC_ADJUSTMENT."
+            )
+
+        # Guard 2: BUY/SELL must have a real ticker (prevents ghost trades)
+        action_upper = action.upper()
+        if action_upper in TRADE_ACTIONS and (not ticker or not ticker.strip()):
+            raise ValueError(
+                f"{action_upper} transaction requires a non-empty ticker, got: {ticker!r}. "
+                f"Synthetic cash flows should use action='DEPOSIT'/'WITHDRAWAL'."
+            )
+
+        # Guard 3: capital_flow must use DEPOSIT/WITHDRAWAL with a positive amount
+        if entry_category == ENTRY_CATEGORY_CAPITAL_FLOW:
+            if action_upper not in CAPITAL_ACTIONS:
+                raise ValueError(
+                    f"capital_flow entry must use action DEPOSIT or WITHDRAWAL, "
+                    f"got: '{action_upper}'. Trade entries should use entry_category='trade'."
+                )
+
+        # Compute amount: explicit override > derived from price * qty / leverage
+        if amount is None:
+            amount = (price * quantity) / leverage if leverage and leverage > 0 else (price * quantity)
+
+        if entry_category == ENTRY_CATEGORY_CAPITAL_FLOW and amount <= 0:
+            raise ValueError(
+                f"capital_flow transaction must have amount > 0, got: {amount}. "
+                f"Check price ({price}) and quantity ({quantity})."
+            )
+
         with self.engine.begin() as conn:
             query_trans = text("""
-                INSERT INTO transactions (id, user_id, ticker, trade_date, action, quantity, price, fees, amount, leverage, source_file)
-                VALUES (:id, :user_id, :ticker, :trade_date, :action, :quantity, :price, :fees, :amount, :leverage, :source_file)
+                INSERT INTO transactions
+                  (id, user_id, ticker, trade_date, action, quantity, price, fees,
+                   amount, leverage, source_file, entry_category)
+                VALUES
+                  (:id, :user_id, :ticker, :trade_date, :action, :quantity, :price, :fees,
+                   :amount, :leverage, :source_file, :entry_category)
             """)
             conn.execute(query_trans, {
                 "id": str(uuid.uuid4()),
                 "user_id": user_id,
                 "ticker": ticker,
                 "trade_date": date,
-                "action": action.upper(),
+                "action": action_upper,
                 "quantity": quantity,
                 "price": price,
                 "fees": fees,
                 "amount": amount,
                 "leverage": leverage,
-                "source_file": source_file
+                "source_file": source_file,
+                "entry_category": entry_category,
             })
 
     def get_holdings_summary(self, user_id: str, account_id: str = None) -> List[tuple]:
@@ -164,6 +256,8 @@ class AlchemyTransactionRepository(BaseRepository, ITransactionRepository):
     def calculate_net_invested_capital(self, user_id: str, account_id: str = None) -> float:
         """
         Calculates user-contributed capital, EXCLUDING internal balancing adjustments.
+        Filters by entry_category = 'capital_flow' so ETORO_SYNC entries are
+        automatically excluded regardless of their ticker value.
         Used for ROI and PnL metrics.
         """
         with self.engine.connect() as conn:
@@ -207,14 +301,49 @@ class AlchemyTransactionRepository(BaseRepository, ITransactionRepository):
             conn.execute(query, {"id": transaction_id, "user_id": user_id})
 
     def get_holdings(self, user_id: str, account_id: str = None) -> List[Dict[str, Any]]:
+        """
+        Return open holdings with weighted-average cost.
+
+        Strategy:
+          1. If position_lots is seeded for this user → O(1) read from lots.
+          2. Otherwise → O(N) fallback that replays BUY history (legacy path).
+        """
+        # --- Attempt O(1) path via position_lots ---
+        try:
+            from src.repositories.position_lot_repository import AlchemyPositionLotRepository
+            lot_repo = AlchemyPositionLotRepository(self.engine)
+            if lot_repo.has_lots_for_user(user_id):
+                lots = lot_repo.get_open_lots(user_id)
+                # Aggregate lots per ticker
+                agg: Dict[str, Dict[str, float]] = {}
+                for lot in lots:
+                    t = lot["ticker"]
+                    if t not in agg:
+                        agg[t] = {"total_qty": 0.0, "total_cost": 0.0}
+                    agg[t]["total_qty"] += lot["quantity"]
+                    agg[t]["total_cost"] += lot["quantity"] * lot["open_price"]
+                return [
+                    {
+                        "ticker": t,
+                        "quantity": v["total_qty"],
+                        "avg_price": v["total_cost"] / v["total_qty"] if v["total_qty"] > 0 else 0.0,
+                    }
+                    for t, v in agg.items()
+                    if v["total_qty"] > 0.0001
+                ]
+        except Exception:
+            pass  # Gracefully fall back to legacy path
+
+        # --- Legacy O(N) fallback: weighted-average BUY price ---
         with self.engine.connect() as conn:
             query = text("""
-                SELECT ticker, 
+                SELECT ticker,
                        SUM(CASE WHEN action='BUY' THEN quantity WHEN action='SELL' THEN -quantity ELSE 0 END) as net_qty,
-                       AVG(price) as avg_price
-                FROM transactions 
+                       SUM(CASE WHEN action='BUY' THEN quantity * price ELSE 0 END) /
+                           NULLIF(SUM(CASE WHEN action='BUY' THEN quantity ELSE 0 END), 0) as avg_price
+                FROM transactions
                 WHERE user_id = :uid AND (:account_id IS NULL OR source_file = :account_id)
-                GROUP BY ticker 
+                GROUP BY ticker
                 HAVING SUM(CASE WHEN action='BUY' THEN quantity WHEN action='SELL' THEN -quantity ELSE 0 END) > 0.0001
             """)
             params = {"uid": user_id, "account_id": account_id}

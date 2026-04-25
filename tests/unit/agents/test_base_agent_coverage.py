@@ -1,9 +1,9 @@
 import pytest
-from unittest.mock import MagicMock, patch, ANY, mock_open
+from unittest.mock import MagicMock, patch, ANY, mock_open, AsyncMock
 from src.agents.base_agent import BaseAgent
 
 class ConcreteAgent(BaseAgent):
-    def run(self, context):
+    async def run(self, context):
         return "Run Output"
 
 class TestBaseAgentCoverage:
@@ -105,7 +105,9 @@ class TestBaseAgentCoverage:
             
             res = await agent.run_tool_loop(context)
             
-            mock_svc.search_financial_context.assert_called_with("AAPL", max_results=3)
+            res = await agent.run_tool_loop(context)
+            
+            mock_svc.search_financial_context.assert_called_once_with("AAPL")
 
     @pytest.mark.asyncio
     async def test_call_real_llm(self, agent):

@@ -13,12 +13,12 @@ class FundamentalSubAgent(BaseAgent):
         super().__init__(name=name, prompt_path="prompts/common/default_system.j2", tier=tier, **kwargs)
         self.instruction = instruction
 
-    def run(self, context: Any) -> str:
+    async def run(self, context: Any) -> str:
         ctx_dump = json.dumps(context, indent=2, ensure_ascii=False) if isinstance(context, dict) else str(context)
         prompt_data = {
             "user_request": f"{self.instruction}\n\nData Context:\n{ctx_dump}"
         }
-        return self.run_tool_loop(context=prompt_data)
+        return await self.run_tool_loop(context=prompt_data)
 
 class FundamentalSwarm(RoleSwarmBase):
     def __init__(self, use_cache=True, ttl_hours=None, **kwargs):

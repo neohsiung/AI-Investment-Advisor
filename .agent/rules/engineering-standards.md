@@ -6,7 +6,7 @@
 
 ## 1. 開發環境要求 (Environment Requirements)
 
-- **Python 版本**: 強制要求使用 **Python 3.10+**。所有新增代碼與依賴項必須與 3.10+ 兼容。
+- **Python 版本**: 強制要求使用 **Python 3.11**（與 Docker `python:3.11-slim-bookworm` 及 CI matrix 保持一致）。所有新增代碼與依賴項必須與 3.11 兼容。
 - **依賴管理**: 建議使用 `uv` 或 `pip` 搭配 `requirements.txt` 並鎖定版本。
 
 ## 2. 代碼品質規範 (Coding Standards)

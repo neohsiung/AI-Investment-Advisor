@@ -7,6 +7,13 @@ from src.services.market_data_service import MarketDataService
 from src.utils.time_utils import get_current_date_str
 from sqlalchemy import text
 from src.utils.logger import setup_logger
+from typing import Optional as _Opt
+
+try:
+    from src.repositories.position_lot_repository import AlchemyPositionLotRepository, IPositionLotRepository
+    _LOTS_AVAILABLE = True
+except ImportError:  # Graceful degradation if table doesn't exist yet
+    _LOTS_AVAILABLE = False
 
 logger = setup_logger("AnalyticsService")
 
@@ -23,6 +30,23 @@ class LeverageCalculator:
         self.user_id = user_id
         self.db_path = db_path
         self.repo = repository or AlchemyTransactionRepository()
+        # O(1) avg_cost via position_lots (populated after backfill)
+        self._lot_repo: Optional[IPositionLotRepository] = None
+        if _LOTS_AVAILABLE:
+            try:
+                self._lot_repo = AlchemyPositionLotRepository(self.repo.engine)
+            except Exception:
+                pass
+
+    def _get_lot_avg_cost_map(self, user_id: str) -> Dict[str, float]:
+        """Return FIFO avg_cost per ticker from position_lots, or {} if unavailable."""
+        if self._lot_repo:
+            try:
+                if self._lot_repo.has_lots_for_user(user_id):
+                    return self._lot_repo.get_avg_cost_map(user_id)
+            except Exception as e:
+                logger.warning(f"PnLCalculator: could not load lot avg_cost: {e}")
+        return {}
 
     def calculate_metrics(self, current_prices: Dict[str, float], user_id: str, account_id: str = None) -> Dict[str, float]:
         """
@@ -51,12 +75,12 @@ class LeverageCalculator:
             if price <= 0:
                 price = avg_cost
                 logger.warning(f"LeverageCalc: Price for {ticker} is 0. Falling back to avg_cost: {price}")
-                
+
             market_val = qty * price
-            
+
             # Nominal Exposure = Market Value * Leverage
             nominal_exposure = market_val * leverage
-            
+
             tnv += abs(nominal_exposure)
             
             # [FIX] NLV should be based on Equity (Method B from specs)
@@ -192,6 +216,23 @@ class PnLCalculator:
         self.user_id = user_id
         self.db_path = db_path
         self.repo = repository or AlchemyTransactionRepository()
+        # O(1) avg_cost via position_lots
+        self._lot_repo: Optional["IPositionLotRepository"] = None
+        if _LOTS_AVAILABLE:
+            try:
+                self._lot_repo = AlchemyPositionLotRepository(self.repo.engine)
+            except Exception:
+                pass  # position_lots table not ready yet — graceful degradation
+
+    def _get_lot_avg_cost_map(self, user_id: str) -> Dict[str, float]:
+        """Return FIFO avg_cost per ticker from position_lots, or {} if unavailable."""
+        if self._lot_repo:
+            try:
+                if self._lot_repo.has_lots_for_user(user_id):
+                    return self._lot_repo.get_avg_cost_map(user_id)
+            except Exception as e:
+                logger.warning(f"PnLCalculator: could not load lot avg_cost: {e}")
+        return {}
 
     def _get_effective_price(self, ticker: str, current_prices: Dict[str, float], user_id: str, account_id: str = None) -> float:
         """Helper to resolve price with static anchor support."""
@@ -206,16 +247,22 @@ class PnLCalculator:
         """
         Calculate realized and unrealized P&L breakdown for each ticker.
         計算每個標的的已實現與未實現損益細項。
-        """
-        transactions = self.repo.get_all_by_user(user_id, account_id) 
-        # Note: interactions returns rows sorted by date DESC generally, checking repo implementation... 
-        # Repo says "ORDER BY trade_date DESC".
-        # PnL calc usually needs ASC order to calculate average cost correctly (FIFO/Weighted Avg).
-        # We should reverse it or ask repo for ASC.
-        # Let's reverse it here to be safe.
-        transactions = list(transactions)[::-1]
 
-        portfolio = {} # {ticker: {'qty': 0, 'avg_cost': 0, 'realized_pnl': 0}}
+        Strategy:
+          1. Replay transactions for realized PnL (always needed for SELL/DIVIDEND/FEE).
+          2. For open positions, override avg_cost with FIFO lots value when available
+             (corrects distortion when position was fully sold and re-opened).
+        """
+        # ── Load FIFO avg_cost map (O(1) from position_lots if seeded) ──────────
+        lot_avg_cost_map = self._get_lot_avg_cost_map(user_id)
+        using_lots = bool(lot_avg_cost_map)
+        if using_lots:
+            logger.info(f"PnLCalculator: using FIFO avg_cost from position_lots for {len(lot_avg_cost_map)} ticker(s)")
+
+        transactions = self.repo.get_all_by_user(user_id, account_id)
+        transactions = list(transactions)[::-1]  # ASC for correct running avg
+
+        portfolio = {}  # {ticker: {'qty': 0, 'avg_cost': 0, 'realized_pnl': 0, 'margin_invested': 0}}
         total_realized_pnl = 0.0
 
         for row in transactions:
@@ -225,8 +272,7 @@ class PnLCalculator:
             price = row.price
             fees = row.fees
 
-            # [NEW] v4.2.3: Exclude Stabilization records from Cost Basis / Holdings
-            # These are ghost-adjustments for Cash/Capital reconciliation.
+            # Exclude synthetic stabilization records from cost basis
             if 'STABILIZE' in ticker:
                 if action in ['FEE', 'TAX']:
                     total_realized_pnl -= getattr(row, 'amount', 0)
@@ -241,37 +287,31 @@ class PnLCalculator:
                 total_cost = (pos['qty'] * pos['avg_cost']) + (qty * price) + fees
                 new_qty = pos['qty'] + qty
                 pos['avg_cost'] = total_cost / new_qty if new_qty > 0 else 0.0
-                # Add to margin invested
                 leverage = getattr(row, 'leverage', 1.0) or 1.0
                 pos['margin_invested'] += ((qty * price) / leverage) + fees
                 pos['qty'] = new_qty
 
             elif action == 'SELL':
-                trade_pnl = (price - pos['avg_cost']) * qty - fees
+                # Use lot avg_cost for realized PnL if available (more accurate)
+                effective_cost = lot_avg_cost_map.get(ticker, pos['avg_cost']) if using_lots else pos['avg_cost']
+                trade_pnl = (price - effective_cost) * qty - fees
                 pos['realized_pnl'] += trade_pnl
                 total_realized_pnl += trade_pnl
-                
-                # Reduce margin invested proportionally
                 if pos['qty'] > 0:
                     reduction_ratio = qty / pos['qty']
                     pos['margin_invested'] -= pos['margin_invested'] * reduction_ratio
                 else:
                     pos['margin_invested'] = 0.0
-                    
                 pos['qty'] -= qty
                 if pos['qty'] <= 0:
                     pos['qty'] = 0
                     pos['margin_invested'] = 0.0
-            
-            # [NEW] v4.2.0: Handle Dividends (增量已實現損益)
+
             elif action == 'DIVIDEND':
-                pos['realized_pnl'] += price * qty 
+                pos['realized_pnl'] += price * qty
                 total_realized_pnl += price * qty
-            
-            # [NEW] v4.2.2: Handle Fees and Taxes as realized costs
+
             elif action in ['FEE', 'TAX']:
-                # Amount is already positive in DB for Fee/Tax records usually
-                # We deduct it from the tracker (either per-ticker or global)
                 pos['realized_pnl'] -= getattr(row, 'amount', 0)
                 total_realized_pnl -= getattr(row, 'amount', 0)
 
@@ -279,34 +319,45 @@ class PnLCalculator:
         breakdown = {}
 
         for ticker, pos in portfolio.items():
-            if pos['qty'] > 0.0001: 
+            if pos['qty'] > 0.0001:
                 curr_price = self._get_effective_price(ticker, current_prices, user_id, account_id)
-                # v4.3.2: Defensive: If price is 0, fallback to average cost to prevent P/L crash
                 if curr_price <= 0:
                     curr_price = pos['avg_cost']
-                    
-                unrealized = (curr_price - pos['avg_cost']) * pos['qty']
+
+                # ── Override avg_cost with FIFO lots for open positions ──────
+                open_avg_cost = lot_avg_cost_map.get(ticker, pos['avg_cost']) if using_lots else pos['avg_cost']
+                unrealized = (curr_price - open_avg_cost) * pos['qty']
                 total_unrealized_pnl += unrealized
 
                 breakdown[ticker] = {
                     'qty': pos['qty'],
-                    'avg_cost': pos['avg_cost'],
+                    'avg_cost': open_avg_cost,  # FIFO-correct cost basis
+                    'avg_cost_legacy': pos['avg_cost'],  # Old method (kept for diagnostics)
                     'margin_invested': pos['margin_invested'],
                     'current_price': curr_price,
                     'realized': pos['realized_pnl'],
                     'unrealized': unrealized,
-                    'total': pos['realized_pnl'] + unrealized
+                    'total': pos['realized_pnl'] + unrealized,
+                    'using_lots': using_lots,
                 }
             elif abs(pos['realized_pnl']) > 0:
-                 breakdown[ticker] = {
+                breakdown[ticker] = {
                     'qty': 0,
                     'avg_cost': 0,
+                    'avg_cost_legacy': pos['avg_cost'],
                     'margin_invested': 0.0,
                     'current_price': current_prices.get(ticker, 0.0),
                     'realized': pos['realized_pnl'],
                     'unrealized': 0,
-                    'total': pos['realized_pnl']
+                    'total': pos['realized_pnl'],
+                    'using_lots': using_lots,
                 }
+
+        # invested_capital: use FIFO cost basis for open positions
+        invested_capital = sum(
+            (lot_avg_cost_map.get(t, pos['avg_cost']) if using_lots else pos['avg_cost']) * pos['qty']
+            for t, pos in portfolio.items() if pos['qty'] > 0
+        )
 
         return {
             "realized": total_realized_pnl,
@@ -314,7 +365,8 @@ class PnLCalculator:
             "total": total_realized_pnl + total_unrealized_pnl,
             "invested_capital": self.repo.calculate_net_invested_capital(user_id, account_id),
             "margin_invested": sum(pos['margin_invested'] for pos in portfolio.values() if pos['qty'] > 0),
-            "details": breakdown
+            "details": breakdown,
+            "using_lots": using_lots,
         }
 
 async def update_daily_snapshot(db_path: str = None, user_id: str = None, force: bool = False, current_prices: Optional[Dict[str, float]] = None, account_id: str = None) -> None:

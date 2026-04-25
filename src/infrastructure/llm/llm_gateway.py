@@ -28,6 +28,9 @@ from src.utils.tracing import trace_external_call
 
 logger = logging.getLogger(__name__)
 
+from src.domain.interfaces import ILLMGateway, Message, LLMConfig
+from src.utils.security import redact_secrets as _redact_secrets, redact_pii as _redact_pii
+from src.utils.tracing import trace_external_call
 
 class OpenRouterGateway(ILLMGateway):
     """
@@ -220,7 +223,7 @@ class GeminiGateway(ILLMGateway):
 
     async def chat(self, messages: List[Message], config: LLMConfig) -> str:
         model_id = config.model if config.model.startswith("models/") else f"models/{config.model}"
-        url = f"https://generativelanguage.googleapis.com/v1beta/{model_id}:generateContent?key={config.api_key}"
+        url = f"https://generativelanguage.googleapis.com/v1beta/{model_id}:streamGenerateContent?alt=sse&key={config.api_key}"
         headers = {"Content-Type": "application/json"}
 
         combined_text = ""
@@ -290,10 +293,12 @@ class GeminiGateway(ILLMGateway):
 
     async def embed(self, text: str, config: LLMConfig) -> List[float]:
         """Gemini embedding via embedContent API."""
-        model_id = config.model if config.model.startswith("models/") else f"models/{config.model}"
-        url = f"https://generativelanguage.googleapis.com/v1beta/{model_id}:embedContent?key={config.api_key}"
-        headers = {"Content-Type": "application/json"}
-        data = {"content": {"parts": [{"text": text}]}}
+        import requests
+        def _sync_embed():
+            model_id = config.model if config.model.startswith("models/") else f"models/{config.model}"
+            url = f"https://generativelanguage.googleapis.com/v1beta/{model_id}:embedContent?key={config.api_key}"
+            headers = {"Content-Type": "application/json"}
+            data = {"content": {"parts": [{"text": text}]}}
 
         async with httpx.AsyncClient() as client:
             response = await client.post(
@@ -881,4 +886,17 @@ class LoggingLLMGateway(ILLMGateway):
             # T11.4: PII Redaction for embedding
             return await self._inner.embed(_redact_pii(text), embed_config)
 
+    async def stream_chat(self, messages: List[Message], config: LLMConfig) -> typing.AsyncGenerator[str, None]:
+        from opentelemetry import trace
+        tracer = trace.get_tracer(__name__)
+        
+        with tracer.start_as_current_span(f"LLM.{self._agent_name}.stream") as span:
+            span.set_attribute("llm.model", config.model)
+            span.set_attribute("agent.name", self._agent_name)
+            # T11.4: PII Redaction for streaming
+            redacted_messages = [
+                Message(role=m.role, content=_redact_pii(m.content)) for m in messages
+            ]
+            async for chunk in self._inner.stream_chat(redacted_messages, config):
+                yield chunk
 

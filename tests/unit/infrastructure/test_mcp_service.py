@@ -4,9 +4,10 @@ Tests for MCP Microservice.
 """
 import pytest
 pytestmark = pytest.mark.integration
+from typing import Any, Dict, List, Optional
 from fastapi.testclient import TestClient
 from services.mcp_server.src.app import app, services, registered_tools
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock, patch, AsyncMock
 
 @pytest.fixture(autouse=True)
 def mock_mcp_services():
@@ -22,12 +23,20 @@ def mock_mcp_services():
          patch("src.services.settings_service.SettingsService"), \
          patch("src.infrastructure.channels.channel_factory.ChannelFactory"), \
          patch("src.infrastructure.nlp.intent_classifier.IntentClassifier"), \
-         patch("services.mcp_server.src.app.InteractionService"):
+         patch("services.mcp_server.src.app.InteractionService"), \
+         patch("src.data.database.AsyncBaseRepository") as MockAsyncRepo:
          
         # Ensure instances are mocks
         MockMarket.return_value = MagicMock()
         MockSearch.return_value = MagicMock()
         MockFred.return_value = MagicMock()
+        
+        # Mock DB health check: prevent real DB connection in /health endpoint
+        mock_session = MagicMock()
+        mock_session.__aenter__ = AsyncMock(return_value=mock_session)
+        mock_session.__aexit__ = AsyncMock(return_value=False)
+        mock_session.execute = AsyncMock(return_value=None)
+        MockAsyncRepo.return_value.get_session = AsyncMock(return_value=mock_session)
         
         # Services dict mocking for tests that check 'services' directly
         services["market"] = MagicMock()
