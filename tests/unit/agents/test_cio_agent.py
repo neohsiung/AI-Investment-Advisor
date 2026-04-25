@@ -37,9 +37,8 @@ async def test_run_strategy_mode(cio_agent):
 async def test_run_report_mode(cio_agent):
     context = {"user_id": "test_user", "macro_report": "Bullish"}
     
-    # Mock run_tool_loop since report mode uses it (now async)
-    with patch.object(cio_agent, 'run_tool_loop', new_callable=AsyncMock) as mock_loop:
-        mock_loop.return_value = 'Markdown Report'
+    # Mock run_tool_loop since report mode uses it
+    with patch.object(cio_agent, 'run_tool_loop', return_value='Markdown Report'):
         result = await cio_agent.run(context, mode='report')
         assert result == "Markdown Report"
 

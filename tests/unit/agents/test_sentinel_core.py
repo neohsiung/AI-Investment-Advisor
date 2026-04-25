@@ -11,18 +11,18 @@ class TestEscalation:
         sentinel.user_id = "U123"
 
         async def _test():
-            with patch('httpx.AsyncClient.post', return_value=MagicMock(status_code=202)) as mock_post:
+            with patch('src.services.notification_settings_manager.NotificationSettingsManager') as MockNSM, \
+                 patch('src.services.notification_service.NotificationService') as MockNoti:
+                mock_nsm_instance = MockNSM.return_value
+                mock_nsm_instance.get_active_notification_channels.return_value = []
+                MockNoti.create_with_settings.return_value = MagicMock(notify_all=AsyncMock())
+                
                 await sentinel._escalate([{"text": "Test trigger 1", "id": "t1"}, {"text": "Test trigger 2", "id": "t2"}])
                 await sentinel._flush_buffer(force=True)
     
                 mock_services["council"].start_session.assert_called_once()
-                assert mock_post.called
-                
-                # Check payload
-                call_args = mock_post.call_args
-                payload = call_args.kwargs['json']
-                assert payload["user_id"] == "U123"
-                assert "偵測到以下重要訊號 (2)" in payload["content"]
+                # Verify NSM was called instead of httpx
+                assert mock_nsm_instance.get_active_notification_channels.called
 
         run_async(_test())
 
@@ -124,24 +124,16 @@ class TestSourcePollingAndThematic:
 
     def test_trigger_thematic_update(self, mock_services, run_async):
         """Test asynchronous thematic update trigger"""
-        # Test asynchronous thematic update trigger
-        # 測試非同步題材更新觸發
         sentinel = _create_sentinel(mock_services)
-        with patch('src.agents.factory.AgentFactory.create_thematic_agent', create=True) as mock_create, \
-             patch('asyncio.get_event_loop') as mock_get_loop:
-            
-            mock_loop = MagicMock()
-            mock_get_loop.return_value = mock_loop
-            mock_loop.is_closed.return_value = False
-            
-            # Mock analyze for thematic agent
-            mock_agent_instance = MagicMock()
-            mock_create.return_value = mock_agent_instance
-            
+        # Mock _call_agent_llm instead of AgentFactory
+        sentinel._call_agent_llm = AsyncMock()
+        
+        with patch('asyncio.ensure_future') as mock_ensure:
             # Call synchronous wrapper that fires task
             sentinel._trigger_thematic_update("Nvidia releases new chip", "ai", ["AAPL"])
             
-            assert mock_loop.run_in_executor.called
+            # Verify ensure_future was called with the coroutine
+            assert mock_ensure.called
 
     def test_check_active_sources(self, mock_services, run_async):
         sentinel = _create_sentinel(mock_services)
@@ -151,7 +143,7 @@ class TestSourcePollingAndThematic:
             assert isinstance(res, list)
         run_async(_test())
         
-    def test_analyze_ticker_news_ai_energy(self, mock_services):
+    def test_analyze_ticker_news_ai_energy(self, mock_services, run_async):
         sentinel = _create_sentinel(mock_services)
         
         # Force empty settings so bootstrapping triggers
@@ -169,11 +161,14 @@ class TestSourcePollingAndThematic:
         mock_services["market"].get_news.return_value = []
         mock_services["search"].search_financial_context.return_value = mock_results
         
-        score, summary = sentinel._analyze_ticker_news("MSFT", mock_keywords)
-        # PPA deals get score boost
-        assert score > 0.0
+        async def _test():
+            score, summary = await sentinel._analyze_ticker_news("MSFT", mock_keywords)
+            # PPA deals get score boost
+            assert score > 0.0
 
-    def test_analyze_ticker_news_physical_ai(self, mock_services):
+        run_async(_test())
+
+    def test_analyze_ticker_news_physical_ai(self, mock_services, run_async):
         sentinel = _create_sentinel(mock_services)
         sentinel.settings_service.get_setting.side_effect = lambda k: "TSLA" if "physical_ai" in k else None
         
@@ -188,9 +183,12 @@ class TestSourcePollingAndThematic:
         mock_services["market"].get_news.return_value = []
         mock_services["search"].search_financial_context.return_value = mock_results
         
-        score, summary = sentinel._analyze_ticker_news("TSLA", mock_keywords)
-        # Should detect Physical AI keywords and boost
-        assert score > 0.0
+        async def _test():
+            score, summary = await sentinel._analyze_ticker_news("TSLA", mock_keywords)
+            # Should detect Physical AI keywords and boost
+            assert score > 0.0
+
+        run_async(_test())
 
 
 

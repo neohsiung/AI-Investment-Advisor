@@ -217,17 +217,16 @@ async def test_distribute_report_includes_web_channel():
     
     workflow = DailyWorkflow(user_id="test_user")
     
-    with patch("httpx.AsyncClient.post", new_callable=AsyncMock) as mock_post:
-        # Simulate successful API response
-        mock_post.return_value.status_code = 202
+    with patch("src.services.notification_settings_manager.NotificationSettingsManager.get_active_notification_channels") as mock_channels, \
+         patch("src.services.notification_service.NotificationService.notify_all", new_callable=AsyncMock) as mock_notify:
         
+        mock_channels.return_value = ["web", "email"]
         await workflow.distribute_report(content="Test HTML Content")
         
-        # Verify the payload in the API call
-        mock_post.assert_called_once()
-        call_kwargs = mock_post.call_args[1]
-        payload = call_kwargs.get('json', {})
+        # Verify that notify_all was called with the correct channels
+        mock_notify.assert_called_once()
+        call_kwargs = mock_notify.call_args[1]
         
-        assert "email" in payload.get('channels', [])
-        assert "web" in payload.get('channels', [])
-        assert payload.get('category') == "report"
+        assert "email" in call_kwargs.get('channels', [])
+        assert "web" in call_kwargs.get('channels', [])
+        assert call_kwargs.get('category') == "report"

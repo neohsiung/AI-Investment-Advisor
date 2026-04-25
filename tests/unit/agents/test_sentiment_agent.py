@@ -21,8 +21,8 @@ class TestSentimentAgent:
         assert hasattr(agent, 'name')
         assert agent.name == "Sentiment"
     
+    @patch('src.agents.sentiment.SentimentAgent.run_tool_loop')
     @pytest.mark.asyncio
-    @patch('src.agents.sentiment.SentimentAgent.call_llm')
     async def test_run_with_valid_context(self, mock_llm, agent):
         """Test run method with valid context"""
         # Mock LLM response as JSON
@@ -37,6 +37,17 @@ class TestSentimentAgent:
             'news': ['Apple announces new product', 'Stock price rises 5%'],
             'price_change_percent': 5.2
         }
+        
+        # Check explicit signature of run() in SentimentAgent vs BaseAgent
+        # BaseAgent might have abstract run(self, context: Dict[str, Any]) -> Any
+        # SentimentAgent has run(self, context)
+        # The error "Can't instantiate abstract class" means SentimentAgent is missing implementation of something.
+        # If it's `run`, it might be the signature.
+        # But SentimentAgent DOES implement run.
+        # Maybe it's another method? `render_system_prompt`? `render_user_prompt`?
+        
+        # Let's verify BaseAgent content first (via view_file). 
+        # But to proceed, I will assume BaseAgent requires `run` and potentially others.
         
         result = await agent.run(context)
         
@@ -56,8 +67,8 @@ class TestSentimentAgent:
         assert result['sentiment'] == 'Neutral'
         assert result['score'] == 0.0
     
+    @patch.object(SentimentAgent, 'run_tool_loop')
     @pytest.mark.asyncio
-    @patch.object(SentimentAgent, 'call_llm')
     async def test_run_handles_invalid_json_response(self, mock_llm, agent):
         """Test run handles malformed JSON gracefully"""
         mock_llm.return_value = "This is not valid JSON"
@@ -69,8 +80,8 @@ class TestSentimentAgent:
         assert result['sentiment'] == 'Unknown'
         assert 'score' in result
     
+    @patch.object(SentimentAgent, 'run_tool_loop')
     @pytest.mark.asyncio
-    @patch.object(SentimentAgent, 'call_llm')
     async def test_run_with_json_code_blocks(self, mock_llm, agent):
         """Test run strips markdown JSON code blocks"""
         mock_llm.return_value = '''```json
@@ -89,9 +100,10 @@ class TestSentimentAgent:
     
     @pytest.mark.asyncio
     @pytest.mark.xfail(reason="Template variable mismatch: 'news' vs 'news_list' - to be fixed")
+    @pytest.mark.asyncio
     async def test_run_limits_news_to_top_5(self, agent):
         """Test that only top 5 news items are processed"""
-        with patch.object(SentimentAgent, 'call_llm') as mock_llm:
+        with patch.object(SentimentAgent, 'run_tool_loop') as mock_llm:
             mock_llm.return_value = json.dumps({"sentiment": "neutral", "narrative": "test", "score": 0})
             
             context = {

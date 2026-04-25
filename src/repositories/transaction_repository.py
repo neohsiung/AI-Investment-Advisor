@@ -262,15 +262,14 @@ class AlchemyTransactionRepository(BaseRepository, ITransactionRepository):
         """
         with self.engine.connect() as conn:
             query = text("""
-                SELECT SUM(CASE
-                    WHEN action = 'DEPOSIT' THEN amount
-                    WHEN action = 'WITHDRAWAL' THEN -amount
-                    ELSE 0
-                END)
-                FROM transactions
-                WHERE user_id = :user_id
-                  AND (:account_id IS NULL OR source_file = :account_id)
-                  AND entry_category = 'capital_flow'
+                SELECT SUM(CASE 
+                    WHEN action = 'DEPOSIT' THEN amount 
+                    WHEN action = 'WITHDRAWAL' THEN -amount 
+                    ELSE 0 
+                END) FROM transactions 
+                WHERE user_id = :user_id 
+                AND (:account_id IS NULL OR source_file = :account_id)
+                AND ticker NOT IN ('STABILIZE_CASH', 'STABILIZE_CAP', 'ETORO_SYNC')
             """)
             params = {"user_id": user_id, "account_id": account_id}
             result = conn.execute(query, params).fetchone()

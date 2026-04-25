@@ -7,27 +7,112 @@ import io
 import re
 import httpx
 import os
+import json
+import asyncio
 from src.services.dashboard_service import DashboardService
 from src.utils.logger import setup_logger
 from src.utils.jwt_utils import decode_token
 from src.services.performance_service import PerformanceService
 from src.repositories.report_repository import AsyncAlchemyReportRepository
-from src.agents.factory import AgentFactory
 from src.utils.rate_limit import limiter
-import json
-import asyncio
 from src.services.transaction_service import TransactionService
 from src.services.settings_service import SettingsService
 from src.services.intelligence_service import IntelligenceService
+from src.utils.security import redact_pii
+# PAD Phase 2: Replace AgentFactory with model router and gateway
+from src.infrastructure.llm.tier_config import SettingsAwareModelRouter
+from src.infrastructure.llm.llm_gateway import OpenRouterGateway
+from src.domain.interfaces import Message, LLMConfig
+from src.repositories.settings_repository import AlchemySettingsRepository
 
 logger = setup_logger("DashboardRouter")
 dashboard_router = APIRouter(tags=["Dashboard"])
 
+# PAD Phase 2: Module-level initialization of model router and gateway
+# These are shared across all route handlers within this router
+_model_router = None
+_gateway = None
+_settings_repo_cache = {}
+
+def get_model_router_and_gateway(user_id: str):
+    """Lazy initialization of model router and gateway per user context"""
+    global _model_router, _gateway, _settings_repo_cache
+    
+    if _model_router is None:
+        _model_router = SettingsAwareModelRouter(None)
+    
+    if _gateway is None:
+        _gateway = OpenRouterGateway()
+    
+    # Initialize settings repo for this user if not cached
+    if user_id not in _settings_repo_cache:
+        from src.data.database import get_db_engine
+        _settings_repo_cache[user_id] = AlchemySettingsRepository(engine=get_db_engine())
+    
+    return _model_router, _gateway, _settings_repo_cache[user_id]
+
+async def _call_agent_llm(user_id: str, context: Dict[str, Any], tier: str = "smart", 
+                           temperature: float = 0.7, max_tokens: int = 2000) -> str:
+    """
+    PAD Phase 2: Replace AgentFactory.create_cio_agent().call_llm() with direct gateway calls.
+    Generic method to call LLM for CIO agent role.
+    """
+    try:
+        model_router, gateway, settings_repo = get_model_router_and_gateway(user_id)
+        
+        # Update router with current settings repo
+        model_router.settings_repo = settings_repo
+        
+        model = model_router.get_model(user_id, tier)
+        if not model:
+            logger.warning(f"Failed to route model for tier={tier}, falling back to default")
+            model = "claude-3.5-sonnet"  # Fallback model
+        
+        system_prompt = (
+            "You are a professional AI Investment Advisor. "
+            "Your goal is to answer the user's financial questions concisely, directly, and interactively. "
+            "Provide actionable, insightful, and data-driven responses. "
+            "Use traditional Chinese (繁體中文)."
+        )
+        
+        messages = [
+            Message(role="system", content=system_prompt),
+            Message(role="user", content=json.dumps(context))
+        ]
+        
+        config = LLMConfig(
+            provider=os.getenv("AI_PROVIDER", "OpenRouter"),
+            model=model,
+            temperature=temperature,
+            max_tokens=max_tokens
+        )
+        
+        logger.debug(f"DashboardRouter: Calling CIO agent via {model}")
+        response = await gateway.chat(messages, config)
+        
+        if not isinstance(response, str):
+            raise ValueError(f"Unexpected response type from gateway: {type(response)}")
+        
+        return response
+    except Exception as e:
+        logger.error(f"DashboardRouter: CIO agent LLM call failed: {e}")
+        raise
+
 def get_current_user(request: Request) -> Dict[str, Any]:
-    """從 Cookie 驗證 JWT 並獲取使用者資訊"""
-    token = request.cookies.get("access_token")
+    """從 Header 或 Cookie 驗證 JWT 並獲取使用者資訊"""
+    token = None
+    
+    # 1. 優先檢查 Authorization Header (Sprint 3 localStorage 機制)
+    auth_header = request.headers.get("Authorization")
+    if auth_header and auth_header.startswith("Bearer "):
+        token = auth_header.split(" ")[1]
+        
+    # 2. 回退檢查 Cookie (舊版機制)
     if not token:
-        logger.warning("Missing access_token in cookies")
+        token = request.cookies.get("access_token")
+        
+    if not token:
+        logger.warning("Missing access_token in Authorization header and cookies")
         raise HTTPException(status_code=401, detail="Not authenticated")
         
     payload = decode_token(token)
@@ -38,21 +123,13 @@ def get_current_user(request: Request) -> Dict[str, Any]:
     return payload
 
 def get_dashboard_service(user: Dict[str, Any] = Depends(get_current_user)) -> DashboardService:
-    """獲取 DashboardService 實例，綁定當前使用者"""
+    """獲取 DashboardService 實例，嚴格綁定當前使用者 (User Isolation)"""
     user_id = user.get("sub")
-    from services.mcp_server.src.app.state import services
+    if not user_id:
+        raise HTTPException(status_code=401, detail="User ID not found in token")
     
-    # 注意：在真實多租戶環境，這裡應該按需創建服務或從池中獲取
-    # 目前專案結構偏向單一 User 實例，我們檢查 services 中是否已有
-    if "dashboard" in services and services["dashboard"].user_id == user_id:
-        return services["dashboard"]
-    
-    # 若不匹配或未初始化，建立新實例 (或報錯)
-    # 這裡為求穩定，我們先嘗試返回全域單例，若 user_id 不匹配則警告
-    if "dashboard" in services:
-        return services["dashboard"]
-        
-    raise HTTPException(status_code=503, detail="Dashboard service not ready")
+    # 動態實例化並返回綁定該 User ID 的 Service
+    return DashboardService(user_id=user_id)
 
 def get_performance_service(user: Dict[str, Any] = Depends(get_current_user)) -> PerformanceService:
     """獲取 PerformanceService 實例"""
@@ -109,8 +186,33 @@ async def get_reports(repo: AsyncAlchemyReportRepository = Depends(get_reports_r
             "data": reports
         }
     except Exception as e:
-        logger.error(f"Error fetching reports: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.exception("Error fetching reports")
+        raise HTTPException(status_code=500, detail="Failed to fetch reports")
+
+@dashboard_router.post("/rebalance")
+@limiter.limit("1/5minute")
+async def trigger_rebalance(
+    request: Request,
+    background_tasks: BackgroundTasks,
+    user: Dict[str, Any] = Depends(get_current_user)
+):
+    """手動觸發投資組合再平衡 (非同步背景執行)"""
+    try:
+        user_id = user.get("sub")
+        from src.infrastructure.tasks import trigger_portfolio_rebalance
+        
+        # v6.3: Dispatch to Celery if available, or fallback to BackgroundTasks
+        # For simplicity in local dev, we call the task function via Celery .delay()
+        # if Celery is not running, researchers can use background_tasks.add_task
+        trigger_portfolio_rebalance.delay(user_id=user_id)
+        
+        return {
+            "status": "success",
+            "message": "再平衡指令已發送至哨兵監控系統，正在進行資產評估。"
+        }
+    except Exception as e:
+        logger.exception("Error triggering rebalance")
+        raise HTTPException(status_code=500, detail="Failed to trigger rebalance flow")
 
 @dashboard_router.post("/rebalance")
 @limiter.limit("1/5minute")
@@ -158,8 +260,8 @@ async def get_all_settings(service: SettingsService = Depends(get_settings_servi
             "data": settings
         }
     except Exception as e:
-        logger.error(f"Error fetching settings: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.exception("Error fetching settings")
+        raise HTTPException(status_code=500, detail="Internal server error while fetching settings")
 
 @dashboard_router.post("/settings")
 @limiter.limit("10/minute")
@@ -175,8 +277,8 @@ async def save_settings(
         background_tasks.add_task(service.save_settings_bulk, payload)
         return {"status": "success", "message": "設定已收悉，系統正在背景更新中。"}
     except Exception as e:
-        logger.error(f"Error initiating background settings save: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.exception("Error initiating background settings save")
+        raise HTTPException(status_code=500, detail="System update initiation failed")
 
 @dashboard_router.post("/settings/test-notification")
 async def test_notification(
@@ -212,10 +314,10 @@ async def test_notification(
             }
             
     except Exception as e:
-        logger.error(f"Error triggering test notification: {e}")
+        logger.exception("Error triggering test notification")
         if isinstance(e, HTTPException):
             raise e
-        raise HTTPException(status_code=500, detail=f"發送失敗: {str(e)}")
+        raise HTTPException(status_code=500, detail="Notification test failed")
 
 @dashboard_router.get("/settings/models")
 async def get_available_models(service: SettingsService = Depends(get_settings_service)):
@@ -227,8 +329,8 @@ async def get_available_models(service: SettingsService = Depends(get_settings_s
             "data": models
         }
     except Exception as e:
-        logger.error(f"Error fetching models: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.exception("Error fetching models")
+        raise HTTPException(status_code=500, detail="Failed to retrieve AI model list")
 
 @dashboard_router.get("/data/transactions")
 async def get_transactions(service: TransactionService = Depends(get_transaction_service)):
@@ -240,8 +342,8 @@ async def get_transactions(service: TransactionService = Depends(get_transaction
             "data": df.to_dict(orient='records')
         }
     except Exception as e:
-        logger.error(f"Error fetching transactions: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.exception("Error fetching transactions")
+        raise HTTPException(status_code=500, detail="Internal error retrieving transactions")
 
 @dashboard_router.post("/data/transactions")
 async def add_transaction(
@@ -259,12 +361,14 @@ async def add_transaction(
 
         success, msg = service.add_manual_trade(ticker, date_str, action, quantity, price, fees)
         if not success:
-            raise HTTPException(status_code=400, detail=msg)
+            logger.error(f"Transaction add failed for {redact_pii(service.user_id)}: {msg}")
+            raise HTTPException(status_code=400, detail="交易新增失敗，請檢查輸入數據格式")
             
-        return {"status": "success", "message": msg}
+        return {"status": "success", "message": "交易已成功新增"}
     except Exception as e:
-        logger.error(f"Error adding transaction: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail="An internal error occurred while adding the transaction.")
+        logger.exception("Error adding transaction")
+        if isinstance(e, HTTPException): raise e
+        raise HTTPException(status_code=500, detail="Transaction creation failed due to internal error")
 
 @dashboard_router.delete("/data/transactions/{transaction_id}")
 async def delete_transaction(
@@ -275,57 +379,14 @@ async def delete_transaction(
     try:
         success, msg = service.delete_transaction(transaction_id)
         if not success:
-            raise HTTPException(status_code=400, detail=msg)
+            logger.error(f"Transaction deletion failed for {redact_pii(service.user_id)} (ID: {transaction_id}): {msg}")
+            raise HTTPException(status_code=400, detail="交易刪除失敗，該交易可能不存在或權限不足")
             
-        return {"status": "success", "message": msg}
+        return {"status": "success", "message": "交易已成功刪除"}
     except Exception as e:
-        logger.error(f"Error deleting transaction: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail="An internal error occurred while deleting the transaction.")
-
-
-@dashboard_router.get("/data/capital-flow")
-async def get_capital_flow(user: Dict[str, Any] = Depends(get_current_user)):
-    """
-    獲取已記錄的真實投入資本總額。
-    Get the recorded real invested capital (capital_flow entries) for ROI calculation.
-    """
-    try:
-        from src.data.database import get_db_engine
-        from sqlalchemy import text as sqla_text
-        engine = get_db_engine()
-        user_id = user.get("sub")
-        with engine.connect() as conn:
-            rows = conn.execute(
-                sqla_text("""
-                    SELECT id, trade_date, action, amount, source_file
-                    FROM transactions
-                    WHERE user_id = :uid AND entry_category = 'capital_flow'
-                    ORDER BY trade_date ASC
-                """),
-                {"uid": user_id},
-            ).fetchall()
-        records = [
-            {
-                "id": str(r[0]),
-                "date": str(r[1]),
-                "action": r[2],
-                "amount": float(r[3]),
-                "source": r[4],
-            }
-            for r in rows
-        ]
-        net = sum(r["amount"] if r["action"] == "DEPOSIT" else -r["amount"] for r in records)
-        return {
-            "status": "success",
-            "data": {
-                "records": records,
-                "net_invested_capital": round(net, 2),
-                "is_configured": len(records) > 0,
-            },
-        }
-    except Exception as e:
-        logger.error(f"Error fetching capital flow: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.exception("Error deleting transaction")
+        if isinstance(e, HTTPException): raise e
+        raise HTTPException(status_code=500, detail="Transaction deletion failed due to internal error")
 
 
 @dashboard_router.post("/data/capital-flow")
@@ -430,9 +491,6 @@ async def advisor_chat(
         if not prompt:
             raise HTTPException(status_code=400, detail="Message is required")
 
-        factory = AgentFactory()
-        cio_agent = factory.create_cio_agent(user_id=user_id)
-
         # 檢測 Ticker 標的
         ticker_match = re.search(r'\b([A-Z]{1,5})\b', prompt)
         ticker = ticker_match.group(1) if ticker_match else None
@@ -455,8 +513,13 @@ async def advisor_chat(
             
         messages.append({"role": "user", "content": prompt})
 
-        # 調用 LLM
-        response = await cio_agent.call_llm(messages=messages, temperature=0.7)
+        # PAD Phase 2: Replace AgentFactory with _call_agent_llm
+        context = {
+            "user_id": user_id,
+            "messages": messages,
+            "ticker": ticker
+        }
+        response = await _call_agent_llm(user_id, context, tier="smart", temperature=0.7, max_tokens=2000)
 
         return {
             "status": "success",
@@ -466,7 +529,8 @@ async def advisor_chat(
             }
         }
     except Exception as e:
-        logger.error(f"Chat error: {e}")
+        logger.exception("Chat error")
+        raise HTTPException(status_code=500, detail="Advisor chat assistance temporarily unavailable")
 @dashboard_router.post("/chat/stream")
 @limiter.limit("5/minute")
 async def advisor_chat_stream(
@@ -482,9 +546,6 @@ async def advisor_chat_stream(
 
         if not prompt:
             raise HTTPException(status_code=400, detail="Message is required")
-
-        factory = AgentFactory()
-        cio_agent = factory.create_cio_agent(user_id=user_id)
 
         # 檢測 Ticker 標的
         ticker_match = re.search(r'\b([A-Z]{1,5})\b', prompt)
@@ -511,59 +572,37 @@ async def advisor_chat_stream(
                 from src.utils.async_utils import to_thread
                 pulse_repo = AsyncPulseRepository()
                 
-                # Context dict for run_tool_loop
-                prompt_data = {
+                # Context dict for LLM call
+                context = {
                     "user_id": user_id,
                     "task_instruction": prompt,
                     "topic": ticker or "General",
+                    "messages": messages
                 }
                 
-                # Initialize pulse to avoid missing the first state
-                await pulse_repo.update_pulse(cio_agent.name, "Initializing Agent...")
+                # PAD Phase 2: Replace AgentFactory with _call_agent_llm
+                logger.debug(f"Starting streaming response for user {user_id}")
                 
-                # Run the actual Agent loop directly as it is now async-native
-                # No more to_thread needed for the loop itself
-                task = asyncio.create_task(cio_agent.run_tool_loop(
-                    context=prompt_data, 
-                    max_turns=3, 
-                    thought_chain=True
-                ))
+                # Call LLM and get response
+                response = await _call_agent_llm(user_id, context, tier="smart", temperature=0.7, max_tokens=2000)
                 
-                last_task_state = None
-                
-                # Poll pulse until task is done
-                while not task.done():
-                    current_pulse = await pulse_repo.get_pulse(cio_agent.name)
-                    if current_pulse:
-                        current_state = current_pulse.get("task")
-                        if current_state and current_state != last_task_state:
-                            # Send tool metadata to frontend
-                            yield f"data: {json.dumps({'metadata': {'type': 'tool_call', 'name': current_state}})}\n\n"
-                            last_task_state = current_state
-                    
-                    await asyncio.sleep(0.5)
-                
-                # Task completed, get the result
-                final_response = task.result()
-                
-                # Yield the final response in chunks to simulate typewriter effect
+                # Yield the response in chunks to simulate typewriter effect
                 # Split roughly by words to simulate LLM stream
-                import re
-                chunks = re.findall(r'\\S+|\\n|\\s+', final_response)
+                chunks = re.findall(r'\S+|\n|\s+', response)
                 for c in chunks:
                     yield f"data: {json.dumps({'chunk': c})}\n\n"
                     await asyncio.sleep(0.01)
                     
                 yield "data: [DONE]\n\n"
             except Exception as e:
-                logger.error("Streaming error in generator: %s", str(e)[:200])
-                yield f"data: {json.dumps({'error': 'An internal streaming error occurred.'})}\n\n"
+                logger.error(f"Streaming error in generator: {e}")
+                yield f"data: {json.dumps({'error': str(e)})}\n\n"
 
         return StreamingResponse(event_generator(), media_type="text/event-stream")
 
     except Exception as e:
-        logger.error(f"Stream Chat error: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail="An internal error occurred during the streaming response.")
+        logger.exception("Stream Chat error")
+        raise HTTPException(status_code=500, detail="Live assistance stream interrupted")
 
 @dashboard_router.get("/summary")
 async def get_summary(service: DashboardService = Depends(get_dashboard_service)):
@@ -585,9 +624,10 @@ async def get_summary(service: DashboardService = Depends(get_dashboard_service)
         data = service.prepare_dashboard_data(service.user_id)
         metrics = data.get('metrics', {})
         pnl = data.get('pnl_data', {})
-
-        result = {
-            "status": "success",
+        warnings = data.get('warnings', [])
+        
+        return {
+            "status": "success" if not warnings else "partial",
             "data": {
                 "total_valuation": metrics.get('nlv', 0),
                 "uninvested_cash": metrics.get('cash_balance', 0),
@@ -597,10 +637,10 @@ async def get_summary(service: DashboardService = Depends(get_dashboard_service)
                 "risk_exposure": metrics.get('risk_level', "MODERATE"),
                 "total_pnl": pnl.get('total', 0),
                 "unrealized_pnl": pnl.get('unrealized', 0),
-                "realized_pnl": pnl.get('realized', 0),
-                "roi_percentage": data.get('roi', 0),
-                "performance_change": "+1.2%"
-            }
+                "roi_percentage": data.get('roi', 0) * 100,
+                "performance_change": "+1.2%" # 暫時模擬，未來可從歷史數據計算
+            },
+            "system_warnings": warnings
         }
 
         # Cache the result for 120 seconds
@@ -612,8 +652,8 @@ async def get_summary(service: DashboardService = Depends(get_dashboard_service)
 
         return result
     except Exception as e:
-        logger.error(f"Error fetching dashboard summary: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.exception(f"Error fetching dashboard summary: {e}")
+        raise HTTPException(status_code=500, detail="Internal server error during dashboard summary calculation")
 
 @dashboard_router.get("/positions")
 async def get_positions(service: DashboardService = Depends(get_dashboard_service)):
@@ -621,17 +661,16 @@ async def get_positions(service: DashboardService = Depends(get_dashboard_servic
     try:
         data = service.prepare_dashboard_data(service.user_id)
         positions_df = data.get('positions_df', pd.DataFrame())
+        warnings = data.get('warnings', [])
         
-        if positions_df.empty:
-            return {"status": "success", "data": []}
-            
         return {
-            "status": "success",
-            "data": positions_df.to_dict(orient='records')
+            "status": "success" if not warnings else "partial",
+            "data": positions_df.to_dict(orient='records') if not positions_df.empty else [],
+            "system_warnings": warnings
         }
     except Exception as e:
-        logger.error(f"Error fetching positions: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.exception(f"Error fetching positions: {e}")
+        raise HTTPException(status_code=500, detail="Internal server error during positions aggregation")
 
     # 這裡未來應從 SentinelService 獲取真實狀態
     # 目前返回符合 7 Agent Swarm 架構的預設列表
@@ -684,8 +723,8 @@ async def get_performance_history(service: PerformanceService = Depends(get_perf
             "data": history_df.to_dict(orient='records')
         }
     except Exception as e:
-        logger.error(f"Error fetching performance history: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.exception("Error fetching performance history")
+        raise HTTPException(status_code=500, detail="Failed to reconstruct portfolio history")
 
 @dashboard_router.get("/performance/agents")
 async def get_agent_performance_stats(service: PerformanceService = Depends(get_performance_service)):
@@ -697,14 +736,14 @@ async def get_agent_performance_stats(service: PerformanceService = Depends(get_
             "data": stats
         }
     except Exception as e:
-        logger.error(f"Error fetching agent performance: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.exception("Error fetching agent performance")
+        raise HTTPException(status_code=500, detail="Agent statistics unavailable")
 
 @dashboard_router.get("/agents")
 async def get_agent_status_list(user: Dict[str, Any] = Depends(get_current_user)):
     """獲取 Agent 運行狀態列表（從 agent_performance 表）"""
     try:
-        from src.repositories.postgres_repositories import AlchemyAgentRepository
+        from src.repositories.agent_repository import AlchemyAgentRepository
         repo = AlchemyAgentRepository()
         # Direct execution since we need specific columns
         rows = repo.db.execute(
@@ -735,11 +774,13 @@ async def get_agent_status_list(user: Dict[str, Any] = Depends(get_current_user)
 async def get_recent_alerts(user: Dict[str, Any] = Depends(get_current_user)):
     """獲取最新系統事件（用於 Dashboard 通知面板）"""
     try:
-        from src.database import db
-        rows = db.session.execute(
-            text("SELECT event_type, message, created_at FROM event_logs ORDER BY created_at DESC LIMIT 5")
-        ).fetchall()
-        alerts = [{"type": r.event_type, "msg": r.message, "time": str(r.created_at)[:16]} for r in rows]
+        from src.data.database import get_db_engine
+        engine = get_db_engine()
+        with engine.connect() as conn:
+            rows = conn.execute(
+                text("SELECT event_type, content, created_at FROM event_logs ORDER BY created_at DESC LIMIT 5")
+            ).fetchall()
+        alerts = [{"type": r.event_type, "msg": r.content, "time": str(r.created_at)[:16]} for r in rows]
         return {"status": "success", "data": alerts or []}
     except Exception as e:
         logger.error(f"Error fetching recent alerts: {e}")
@@ -764,8 +805,8 @@ async def clear_recent_alerts(user: Dict[str, Any] = Depends(get_current_user)):
                 
         return {"status": "success", "message": "所有通知已封存"}
     except Exception as e:
-        logger.error(f"Error clearing alerts: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.exception("Error clearing alerts")
+        raise HTTPException(status_code=500, detail="Alert database maintenance failed")
 
 @dashboard_router.post("/data/upload-csv")
 async def upload_csv(
@@ -804,5 +845,6 @@ async def upload_csv(
 
         return {"status": "success", "message": f"成功匯入 {count} 筆交易紀錄"}
     except Exception as e:
-        logger.error(f"CSV upload error: {e}")
-        raise HTTPException(status_code=500, detail=f"處理 CSV 失敗: {str(e)}")
+        logger.exception("CSV upload error")
+        if isinstance(e, HTTPException): raise e
+        raise HTTPException(status_code=500, detail="Bulk import processing failed")

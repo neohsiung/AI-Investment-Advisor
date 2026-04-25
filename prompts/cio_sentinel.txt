@@ -14,6 +14,9 @@
 4. **歷史記憶與背景 (Memory/Context)**: {{memory_chain}}
 5. **投資組合現況 (Portfolio)**: {{portfolio}} (槓桿率: {{leverage_ratio}})
 
+## 本次議會特別指令 (Council Directive)
+{{council_directive}}
+
 ## 任務 (Tasks)
 1. **警報解析與 SWOT 分析**:
    - 根據各 Agent 的辯論與市場數據，對當前警報事件進行 SWOT 分析。

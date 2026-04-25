@@ -81,9 +81,9 @@ async def test_momentum_agent_run(mock_settings_repo, mock_state_repo):
         agent = MomentumAgent(user_id="test_user", use_cache=False, settings_repo=mock_settings_repo, state_repo=mock_state_repo)
 
         # Inject gateway mock for LLM call
-        from unittest.mock import MagicMock
-        mock_gw = AsyncMock()
-        mock_gw.chat.return_value = "BUY AAPL"
+
+        mock_gw = MagicMock()
+        mock_gw.chat = AsyncMock(return_value="BUY AAPL")
         agent._llm_gateway = mock_gw
 
         context = {
@@ -99,9 +99,9 @@ async def test_fundamental_agent_run(mock_settings_repo, mock_state_repo):
     with patch('src.agents.base_agent.BaseAgent._load_prompt', return_value="Fundamental System Prompt"):
         agent = FundamentalAgent(user_id="test_user", use_cache=False, settings_repo=mock_settings_repo, state_repo=mock_state_repo)
 
-        from unittest.mock import MagicMock
-        mock_gw = AsyncMock()
-        mock_gw.chat.return_value = "Strong Fundamentals"
+
+        mock_gw = MagicMock()
+        mock_gw.chat = AsyncMock(return_value="Strong Fundamentals")
         agent._llm_gateway = mock_gw
 
         context = {"ticker": "AAPL", "financials": {"pe": 15}, "news": []}
@@ -113,9 +113,8 @@ async def test_macro_agent_run(mock_settings_repo, mock_state_repo):
     with patch('src.agents.base_agent.BaseAgent._load_prompt', return_value="Macro System Prompt"):
         agent = MacroAgent(user_id="test_user", use_cache=False, settings_repo=mock_settings_repo, state_repo=mock_state_repo)
 
-        from unittest.mock import MagicMock
-        mock_gw = AsyncMock()
-        mock_gw.chat.return_value = "Risk Off"
+        mock_gw = MagicMock()
+        mock_gw.chat = AsyncMock(return_value="Risk Off")
         agent._llm_gateway = mock_gw
 
         context = {"macro_data": {"GDP": 2.5}}
@@ -132,8 +131,8 @@ async def test_cio_agent_run(mock_settings_repo, mock_state_repo):
                          settings_repo=mock_settings_repo, state_repo=mock_state_repo)
         
         # Inject gateway mock for LLM call
-        mock_gw = AsyncMock()
-        mock_gw.chat.return_value = "Final Decision"
+        mock_gw = MagicMock()
+        mock_gw.chat = AsyncMock(return_value="Final Decision")
         agent._llm_gateway = mock_gw
 
         # Mock _get_portfolio_context

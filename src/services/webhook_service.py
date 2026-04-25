@@ -107,18 +107,41 @@ class N8nParser(BaseSourceParser):
             "signal_id": signal_id
         }
 
+class PolygonParser(BaseSourceParser):
+    @staticmethod
+    def parse(payload: Any) -> Dict[str, Any]:
+        # Polygon can send a list of events or a single event
+        data = payload[0] if isinstance(payload, list) and payload else payload
+        
+        ev_type = data.get("ev", "unknown")
+        ticker = data.get("sym", "UNKNOWN")
+        
+        msg = f"Polygon.io Alert: {ev_type} for {ticker}"
+        if ev_type == "T":
+            msg = f"Trade Event for {ticker}: Price={data.get('p')} Size={data.get('s')}"
+        elif ev_type == "A":
+            msg = f"Aggregate Alert for {ticker}: Close={data.get('c')} Vol={data.get('v')}"
+            
+        return {
+            "type": "POLYGON_EVENT",
+            "ticker": ticker,
+            "msg": msg,
+            "ev": ev_type
+        }
+
 class SkillLearningParser(BaseSourceParser):
-    """Parser for investment skill learning events (articles, podcast transcripts)."""
     @staticmethod
     def parse(payload: Dict[str, Any]) -> Dict[str, Any]:
-        data = payload.get("body", payload) if isinstance(payload.get("body"), dict) else payload
+        """
+        Pillar 5: Skill Learning Webhook Parser.
+        技能學習 Webhook 解析器：動態處理多種來源（RSS, Podcast, Article）。
+        """
         return {
-            "type": data.get("event_type", "SKILL_LEARNING"),
-            "content": data.get("transcript") or data.get("article_text") or data.get("content") or "",
-            "source_url": data.get("article_url") or data.get("source_url") or data.get("url") or "",
-            "source_type": data.get("source_type", "article"),
-            "source_name": data.get("source_name", ""),
-            "msg": data.get("message") or f"Skill learning: {data.get('source_type', 'article')}",
+            "type": payload.get("event_type", "SKILL_LEARNING"),
+            "content": payload.get("content") or payload.get("article_text") or payload.get("transcript") or payload.get("text", ""),
+            "source_url": payload.get("source_url") or payload.get("article_url") or payload.get("audioUrl") or payload.get("url", ""),
+            "source_type": payload.get("source_type") or "article",
+            "source_name": payload.get("source_name") or payload.get("podcastName", "")
         }
 
 SOURCE_PARSERS = {
@@ -134,6 +157,7 @@ SOURCE_PARSERS = {
     "pipedream": N8nParser,  # Pipedream follows similar logic
     "skill_learning": SkillLearningParser,
     "skill-learning": SkillLearningParser,
+    "polygon": PolygonParser,
 }
 
 class WebhookService:
@@ -175,8 +199,7 @@ class WebhookService:
                 )
                 svc = InvestmentSkillLearningService(user_id=user_id)
                 asyncio.create_task(
-                    to_thread(
-                        svc.run_daily_learning,
+                    svc.run_daily_learning(
                         content=normalized_data.get("content", ""),
                         source_url=normalized_data.get("source_url", ""),
                         source_type=normalized_data.get("source_type", "article"),
@@ -285,8 +308,7 @@ async def podcast_extract_webhook(request: Request):
             transcript = await transcriber.transcribe_url(audio_url)
             if transcript and not transcript.startswith("Error:"):
                 # Run learning in a thread as it might be synchronous or heavy
-                await to_thread(
-                    skill_svc.run_daily_learning,
+                await skill_svc.run_daily_learning(
                     content=transcript,
                     source_url=audio_url,
                     source_type="podcast",
@@ -307,6 +329,186 @@ async def market_alert_webhook(request: Request):
     """
     return await webhook_service_instance.handle_generic_webhook("market-alert", request)
 
+
+@webhook_router.post("/telegram")
+async def telegram_bot_webhook(request: Request):
+    """
+    Telegram Bot Webhook Receiver.
+    Handles inbound messages (commands) and callback_query (inline buttons) from Telegram.
+
+    Telegram Bot setWebhook 接收端點：
+      - /report   → 立即觸發每日報告
+      - /status   → 回傳帳戶持倉摘要
+      - /sentinel → 手動觸發一次 Sentinel check
+      - /portfolio → 回傳現金比例和持倉列表
+
+    Setup: 到 https://api.telegram.org/bot<TOKEN>/setWebhook?url=https://YOUR_DOMAIN/webhook/telegram
+    """
+    try:
+        payload = await request.json()
+    except Exception:
+        return {"ok": True}  # Telegram expects 200 always
+
+    # Identify sender chat_id from either message or callback_query
+    chat_id: str | None = None
+    text: str = ""
+    callback_data: str | None = None
+
+    msg = payload.get("message") or payload.get("edited_message")
+    cb = payload.get("callback_query")
+
+    if msg:
+        chat = msg.get("chat", {})
+        chat_id = str(chat.get("id", ""))
+        text = (msg.get("text") or "").strip()
+    elif cb:
+        chat_id = str(cb.get("message", {}).get("chat", {}).get("id", ""))
+        callback_data = cb.get("data", "")
+
+    if not chat_id:
+        return {"ok": True}
+
+    # Resolve internal user_id from chat_id
+    try:
+        from src.services.settings_service import SettingsService
+        ss = SettingsService()
+        user_id = ss.find_user_by_channel_id(chat_id)
+    except Exception as e:
+        logger.error(f"Telegram webhook: failed to resolve user for chat {chat_id}: {e}")
+        user_id = None
+
+    if not user_id:
+        logger.warning(f"Telegram webhook: unknown chat_id {chat_id}, ignoring.")
+        return {"ok": True}
+
+    # Helper: send reply back to chat
+    async def _reply(reply_text: str):
+        try:
+            from src.services.settings_service import SettingsService
+            ss = SettingsService(user_id=user_id)
+            bot_token = ss.get_setting("channel_telegram_bot_token", "")
+            if not bot_token:
+                return
+            import httpx
+            import html
+            async with httpx.AsyncClient(timeout=8.0) as client:
+                await client.post(
+                    f"https://api.telegram.org/bot{bot_token}/sendMessage",
+                    json={"chat_id": chat_id, "text": reply_text[:4000], "parse_mode": "HTML"}
+                )
+        except Exception as e:
+            logger.error(f"Telegram reply failed: {e}")
+
+    # Callback query (inline button press)
+    if callback_data:
+        logger.info(f"Telegram callback: {callback_data} from chat {chat_id} (user {user_id[:8]}...)")
+        # Delegate to TelegramAdapter handle_webhook for callback handling
+        try:
+            from src.infrastructure.channels.telegram_adapter import TelegramAdapter
+            from src.services.settings_service import SettingsService
+            ss = SettingsService(user_id=user_id)
+            adapter = TelegramAdapter(
+                bot_token=ss.get_setting("channel_telegram_bot_token", ""),
+                chat_id=chat_id
+            )
+            asyncio.create_task(adapter.handle_webhook(payload))
+        except Exception as e:
+            logger.error(f"Telegram callback handling failed: {e}")
+        return {"ok": True}
+
+    # Text commands
+    cmd = text.split()[0].lower() if text else ""
+    logger.info(f"Telegram command: '{cmd}' from chat {chat_id} (user {user_id[:8]}...)")
+
+    if cmd in ("/start", "/help"):
+        help_text = (
+            "🤖 <b>Investment Advisor Bot</b>\n\n"
+            "可用指令 (Available commands):\n"
+            "/report   — 立即生成每日投資報告\n"
+            "/status   — 查看帳戶現金與持倉摘要\n"
+            "/sentinel — 手動觸發 Sentinel 市場掃描\n"
+            "/portfolio — 詳細持倉清單與比例"
+        )
+        asyncio.create_task(_reply(help_text))
+
+    elif cmd == "/status":
+        async def _status():
+            try:
+                from src.services.etoro_service import EtoroService
+                etoro = EtoroService(user_id=user_id)
+                port = await to_thread(etoro.get_portfolio)
+                positions = port.get("positions", [])
+                cash = port.get("cash_available", 0)
+                nlv = port.get("net_liquidation_value", 0)
+                cash_pct = (cash / nlv * 100) if nlv else 0
+                lines = [f"💼 <b>帳戶快照 ({len(positions)} 持倉)</b>", f"💵 現金: ${cash:,.0f} ({cash_pct:.1f}%)", f"📊 NLV: ${nlv:,.0f}", ""]
+                for p in sorted(positions, key=lambda x: -(x.get("value", 0)))[:10]:
+                    lines.append(f"• {p.get('ticker','?')}: ${p.get('value',0):,.0f} ({p.get('pnl_pct',0):.1f}%)")
+                await _reply("\n".join(lines))
+            except Exception as e:
+                await _reply(f"❌ 無法取得帳戶狀態: {e}")
+        asyncio.create_task(_status())
+
+    elif cmd == "/portfolio":
+        async def _portfolio():
+            try:
+                from src.services.etoro_service import EtoroService
+                etoro = EtoroService(user_id=user_id)
+                port = await to_thread(etoro.get_portfolio)
+                positions = port.get("positions", [])
+                lines = [f"📊 <b>完整持倉清單 ({len(positions)} 筆)</b>", ""]
+                for p in sorted(positions, key=lambda x: -(x.get("value", 0))):
+                    ticker = p.get("ticker", "?")
+                    val = p.get("value", 0)
+                    pnl = p.get("pnl_pct", 0)
+                    pnl_str = f"+{pnl:.1f}%" if pnl >= 0 else f"{pnl:.1f}%"
+                    lines.append(f"• {ticker}: ${val:,.0f} ({pnl_str})")
+                await _reply("\n".join(lines))
+            except Exception as e:
+                await _reply(f"❌ 無法取得持倉: {e}")
+        asyncio.create_task(_portfolio())
+
+    elif cmd == "/sentinel":
+        async def _sentinel():
+            await _reply("⚙️ 正在執行 Sentinel 市場掃描，請稍候...")
+            try:
+                sentinel = SentinelService(user_id=user_id)
+                await sentinel.process_tick()
+                await _reply("✅ Sentinel 掃描完成，若有警報將另行通知。")
+            except Exception as e:
+                await _reply(f"❌ Sentinel 執行失敗: {e}")
+        asyncio.create_task(_sentinel())
+
+    elif cmd == "/report":
+        async def _report():
+            await _reply("📊 正在生成每日投資報告，請稍候...")
+            try:
+                from src.services.workflow_service import DailyWorkflow
+                wf = DailyWorkflow(user_id=user_id)
+                asyncio.create_task(wf.run())
+                await _reply("✅ 每日報告已開始生成，完成後將自動送達。")
+            except Exception as e:
+                await _reply(f"❌ 報告生成失敗: {e}")
+        asyncio.create_task(_report())
+
+    else:
+        if text and not text.startswith("/"):
+            # Treat freeform text as a chat query (delegate to ConversationAgent)
+            async def _chat():
+                try:
+                    from src.agents.conversation_agent import ConversationAgent
+                    agent = ConversationAgent(user_id=user_id)
+                    result = await agent.chat(text)
+                    reply = result.get("response", "抱歉，我暫時無法回答這個問題。")
+                    await _reply(f"🤖 {reply}")
+                except Exception as e:
+                    await _reply(f"❌ 無法處理查詢: {e}")
+            asyncio.create_task(_chat())
+
+    return {"ok": True}
+
+
 @webhook_router.post("/{source}")
 async def generic_webhook(source: str, request: Request):
     return await webhook_service_instance.handle_generic_webhook(source, request)
+

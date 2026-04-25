@@ -21,18 +21,18 @@ export function SystemAlerts({ alerts, isLoading }: SystemAlertsProps) {
   const handleArchiveAlerts = async () => {
     // 樂觀更新 (Optimistic UI)
     // 假設成功，先清空 UI 上的通知
-    mutate("/api/dashboard/alerts", { status: "success", data: [] }, false);
+    mutate("/api/v1/dashboard/alerts", { status: "success", data: [] }, false);
 
     try {
       setIsArchiving(true);
       await NotificationRepository.archiveAll();
       toast.success("所有通知已成功封存。");
       // 請求成功後，真正重新驗證 SWR 快取
-      mutate("/api/dashboard/alerts");
+      mutate("/api/v1/dashboard/alerts");
     } catch (err) {
       toast.error("封存失敗。");
       // 請求失敗時，恢復原本快取
-      mutate("/api/dashboard/alerts");
+      mutate("/api/v1/dashboard/alerts");
     } finally {
       setIsArchiving(false);
     }

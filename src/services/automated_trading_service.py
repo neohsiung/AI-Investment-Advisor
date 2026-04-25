@@ -54,9 +54,17 @@ class AutomatedTradingService:
         raw_threshold = self.settings_repo.get(user_id, "auto_trade_threshold")
         threshold = int(raw_threshold) if raw_threshold is not None else 9
         
-        # v8.1: Dynamic threshold for Excess Cash Reinvestment
-        # 如果是旨在解決現金過高的交易，放寬門檻至設定值（預設 7 分）
-        is_excess_cash = "現金比例過高" in rationale or "Excess Cash" in rationale
+        # v8.2: Enhanced Excess Cash Detection with multiple trigger patterns
+        # 增強現金過高檢測，支援多種觸發模式
+        is_excess_cash = (
+            "現金比例過高" in rationale or 
+            "現金水位過高" in rationale or
+            "現金水位明顯過高" in rationale or
+            "現金再投資" in rationale or
+            "Excess Cash" in rationale or 
+            "High Cash" in rationale or
+            "cash_ratio >" in rationale  # Quantitative pattern
+        )
         if is_excess_cash:
             reinvest_threshold = int(self.settings_repo.get(user_id, "auto_reinvest_threshold") or 7)
             if threshold > reinvest_threshold:
@@ -89,7 +97,7 @@ class AutomatedTradingService:
             try:
                 broker = BrokerFactory.get_broker(user_id)
                 if broker:
-                    account = broker.get_account()
+                    account = await broker.get_account()
                     if account and account.total_equity > 0:
                         nlv = account.total_equity
                         cash = account.available_cash
@@ -127,7 +135,7 @@ class AutomatedTradingService:
             try:
                 broker = BrokerFactory.get_broker(user_id)
                 if broker:
-                    positions = broker.get_positions()
+                    positions = await broker.get_positions()  # ← async
                     actual_holding = 0.0
                     for p in positions:
                         p_sym = str(getattr(p, 'symbol', '')).strip().upper()
@@ -237,12 +245,12 @@ class AutomatedTradingService:
         
         try:
             # Order execution is synchronous in current design
-            result = broker.execute_order(order)
+            result = await broker.execute_order(order)  # ← async
             
             # v6.0: Post-Trade Sync (交易後紀錄同步)
             if result.get("status") not in ["failed", "error"] and not result.get("error"):
                 try:
-                    broker.sync_history(user_id)
+                    await broker.sync_history(user_id)  # ← async
                     logger.info("Post-trade sync completed.")
                 except Exception as sync_e:
                     logger.warning(f"Post-trade sync failed (non-blocking): {sync_e}")
@@ -325,12 +333,16 @@ class AutomatedTradingService:
         Extract trade recommendations from Council decisions and execute them based on confidence.
         從評議會決策中提取交易建議，並根據信心分數執行。
         """
-        from src.agents.factory import AgentFactory
+        from src.agents.skills.skill_loader import SkillLoader
+        import json
         
         logger.info(f"AutomatedTradingService: Extracting actions from Council decision for user {user_id}")
-        extractor = AgentFactory.create_action_extractor_agent(user_id=user_id, tier="nano")
+        loader = SkillLoader(user_id=user_id)
         
-        trades = await extractor.run(decision_text)
+        # Skillified: Use extract_actions skill instead of dedicated agent
+        trades_json = await loader.run_skill("extract_actions", user_id=user_id, decision_text=decision_text)
+        trades = json.loads(trades_json)
+
         if not trades:
             logger.info("AutomatedTradingService: No actionable trades found in Council decision.")
             return []

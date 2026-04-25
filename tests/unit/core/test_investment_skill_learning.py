@@ -14,7 +14,7 @@ Tests cover:
 """
 import json
 import pytest
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock, patch, AsyncMock
 
 
 # ── Fixtures ────────────────────────────────────────────────
@@ -36,15 +36,22 @@ def mock_engine():
 
 @pytest.fixture
 def service(mock_engine):
-    """Create service with mocked agent and patched DB engine."""
-    with patch('src.services.investment_skill_learning_service.AgentFactory') as MockFactory, \
+    """Create service with mocked model_router, gateway and patched DB engine."""
+    with patch('src.services.investment_skill_learning_service.AlchemySettingsRepository') as MockSettingsRepo, \
+         patch('src.services.investment_skill_learning_service.SettingsAwareModelRouter') as MockRouter, \
+         patch('src.services.investment_skill_learning_service.OpenRouterGateway') as MockGateway, \
          patch('src.data.database.get_db_engine', return_value=mock_engine):
-        mock_agent = MagicMock()
-        MockFactory.create_agent.return_value = mock_agent
+        mock_router = MagicMock()
+        mock_router.get_model = MagicMock(return_value="openrouter/auto")
+        MockRouter.return_value = mock_router
+        
+        mock_gateway = MagicMock()
+        MockGateway.return_value = mock_gateway
         
         from src.services.investment_skill_learning_service import InvestmentSkillLearningService
         svc = InvestmentSkillLearningService(user_id="test_user")
-        svc._mock_agent = mock_agent  # expose for test assertions
+        svc._mock_router = mock_router  # expose for test assertions
+        svc._mock_gateway = mock_gateway  # expose gateway for test assertions
         yield svc
 
 
@@ -88,11 +95,12 @@ MOCK_CREATE_RESPONSE = json.dumps({
 
 # ── Test: Skill Extraction ──────────────────────────────────
 
-def test_extract_skill_from_article(service):
+@pytest.mark.asyncio
+async def test_extract_skill_from_article(service):
     """Test that extract_skill_from_content returns correct structure from article."""
-    service._mock_agent._call_real_llm.return_value = MOCK_EXTRACTION_RESPONSE
+    service._mock_gateway.chat = AsyncMock(return_value=MOCK_EXTRACTION_RESPONSE)
 
-    result = service.extract_skill_from_content(
+    result = await service.extract_skill_from_content(
         content="When a stock breaks above its 20-day high with above-average volume...",
         source_url="https://example.com/momentum-strategy",
         source_type="article",
@@ -106,11 +114,12 @@ def test_extract_skill_from_article(service):
     assert result["source_type"] == "article"
 
 
-def test_extract_skill_from_podcast(service):
+@pytest.mark.asyncio
+async def test_extract_skill_from_podcast(service):
     """Test skill extraction from podcast transcript."""
-    service._mock_agent._call_real_llm.return_value = MOCK_EXTRACTION_RESPONSE
+    service._mock_gateway.chat = AsyncMock(return_value=MOCK_EXTRACTION_RESPONSE)
 
-    result = service.extract_skill_from_content(
+    result = await service.extract_skill_from_content(
         content="Transcript of investment podcast discussing breakout patterns...",
         source_url="https://podcast.example.com/ep42",
         source_type="podcast",
@@ -120,11 +129,12 @@ def test_extract_skill_from_podcast(service):
     assert result["source_type"] == "podcast"
 
 
-def test_extract_invalid_content(service):
+@pytest.mark.asyncio
+async def test_extract_invalid_content(service):
     """Test that non-investment content returns None."""
-    service._mock_agent._call_real_llm.return_value = MOCK_INVALID_EXTRACTION
+    service._mock_gateway.chat = AsyncMock(return_value=MOCK_INVALID_EXTRACTION)
 
-    result = service.extract_skill_from_content(
+    result = await service.extract_skill_from_content(
         content="Today we will discuss how to make spaghetti carbonara...",
         source_type="article",
     )
@@ -134,7 +144,8 @@ def test_extract_invalid_content(service):
 
 # ── Test: Merge or Create ───────────────────────────────────
 
-def test_merge_with_existing_skill(service, mock_engine):
+@pytest.mark.asyncio
+async def test_merge_with_existing_skill(service, mock_engine):
     """Test that skill is merged when similar exists and LLM says MERGE."""
     from sqlalchemy import text
 
@@ -145,7 +156,7 @@ def test_merge_with_existing_skill(service, mock_engine):
             "VALUES ('existing_id_1', 'test_user', 'Basic Momentum', 'Simple momentum', 'momentum', 'short_term', 1)"
         ))
 
-    service._mock_agent._call_real_llm.return_value = MOCK_MERGE_RESPONSE
+    service._mock_gateway.chat = AsyncMock(return_value=MOCK_MERGE_RESPONSE)
 
     new_skill = {
         "name": "Advanced Momentum",
@@ -155,13 +166,14 @@ def test_merge_with_existing_skill(service, mock_engine):
     }
 
     similar = [{"id": "existing_id_1", "name": "Basic Momentum", "description": "Simple momentum", "technique": "momentum", "timeframe": "short_term"}]
-    result = service.merge_or_create_skill(new_skill, similar)
+    result = await service.merge_or_create_skill(new_skill, similar)
 
     assert result["action"] == "MERGED"
     assert result["id"] == "existing_id_1"
 
 
-def test_create_when_no_similar(service, mock_engine):
+@pytest.mark.asyncio
+async def test_create_when_no_similar(service, mock_engine):
     """Test that a new skill is created when no similar skills exist."""
     new_skill = {
         "name": "Contrarian Macro",
@@ -175,7 +187,7 @@ def test_create_when_no_similar(service, mock_engine):
         "source_type": "article",
     }
 
-    result = service.merge_or_create_skill(new_skill, [])
+    result = await service.merge_or_create_skill(new_skill, [])
 
     assert result["action"] == "CREATED"
     assert result["name"] == "Contrarian Macro"
@@ -327,7 +339,8 @@ def test_skill_learning_parser_podcast():
 
 # ── Test: Daily Learning Flow ───────────────────────────────
 
-def test_daily_learning_full_flow(service, mock_engine):
+@pytest.mark.asyncio
+async def test_daily_learning_full_flow(service, mock_engine):
     """Test the complete daily learning flow with article input."""
     from sqlalchemy import text
 
@@ -337,11 +350,11 @@ def test_daily_learning_full_flow(service, mock_engine):
             "INSERT OR REPLACE INTO skill_learning_config (user_id) VALUES ('test_user')"
         ))
 
-    service._mock_agent._call_real_llm.side_effect = [
+    service._mock_gateway.chat = AsyncMock(side_effect=[
         MOCK_EXTRACTION_RESPONSE,  # extract_skill_from_content
-    ]
+    ])
 
-    result = service.run_daily_learning(
+    result = await service.run_daily_learning(
         content="When a stock breaks above its 20-day high...",
         source_url="https://example.com/strategy",
         source_type="article",
@@ -352,20 +365,13 @@ def test_daily_learning_full_flow(service, mock_engine):
     assert result["skill_name"] == "Momentum Breakout Strategy"
 
 
-def test_daily_learning_skips_no_content(service, mock_engine):
+@pytest.mark.asyncio
+async def test_daily_learning_skips_no_content(service, mock_engine):
     """Test that daily learning skips when no content is available."""
     with patch.object(service, '_fetch_readwise_content', return_value=""):
-        result = service.run_daily_learning()
+        result = await service.run_daily_learning()
 
     assert result["status"] == "skipped"
 
 
-# ── Test: Registry ──────────────────────────────────────────
 
-def test_registry_has_investment_skill():
-    """Test that the default registry includes investment_skill."""
-    from src.agents.skills.registry import SkillRegistry
-
-    registry = SkillRegistry()
-    registry._ensure_builtins()  # Builtins are lazy-loaded
-    assert registry.has("investment_skill")

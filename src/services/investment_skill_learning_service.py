@@ -16,11 +16,15 @@ import json
 import re
 import uuid
 import logging
+import os
 from datetime import datetime, timezone
 from typing import List, Dict, Any, Optional
 
 from src.utils.logger import setup_logger
-from src.agents.factory import AgentFactory
+from src.repositories.settings_repository import AlchemySettingsRepository
+from src.infrastructure.llm.tier_config import SettingsAwareModelRouter
+from src.infrastructure.llm.llm_gateway import OpenRouterGateway
+from src.domain.interfaces import Message, LLMConfig
 
 logger = setup_logger("InvestmentSkillLearningService")
 
@@ -93,14 +97,14 @@ class InvestmentSkillLearningService:
 
     def __init__(self, user_id: str = "system"):
         self.user_id = user_id
-        self.agent = AgentFactory.create_agent(
-            "Engineer", use_cache=True, user_id=user_id
-        )
+        from src.data.database import get_db_engine
+        self.settings_repo = AlchemySettingsRepository(engine=get_db_engine())
+        self.model_router = SettingsAwareModelRouter(self.settings_repo)
         self.logger = setup_logger("InvestmentSkillLearningService")
 
     # ── Core: Extract Skill from Content ────────────────────
 
-    def extract_skill_from_content(
+    async def extract_skill_from_content(
         self,
         content: str,
         source_url: str = "",
@@ -116,7 +120,29 @@ class InvestmentSkillLearningService:
         )
 
         try:
-            response = self.agent._call_real_llm(prompt, self.agent.system_prompt or "You are an investment skill extraction assistant.")
+            system_prompt = "You are an investment skill extraction assistant."
+            
+            # 1. Get model using SettingsAwareModelRouter
+            model = self.model_router.get_model(self.user_id, "smart")
+            
+            # 2. Create LLMConfig for OpenRouter
+            config = LLMConfig(
+                provider="OpenRouter",
+                model=model,
+                api_key=os.getenv("API_KEY", ""),
+                temperature=0.7,
+                max_tokens=2048
+            )
+            
+            # 3. Create gateway and call
+            gateway = OpenRouterGateway()
+            messages = [
+                Message(role="system", content=system_prompt),
+                Message(role="user", content=prompt)
+            ]
+            
+            response = await gateway.chat(messages, config)
+            
             self.logger.info(f"Agent response type: {type(response).__name__}, len: {len(str(response)[:200])}")
             parsed = self._parse_json_response(response)
 
@@ -175,7 +201,7 @@ class InvestmentSkillLearningService:
 
     # ── Core: Merge or Create ───────────────────────────────
 
-    def merge_or_create_skill(
+    async def merge_or_create_skill(
         self,
         new_skill: Dict[str, Any],
         similar_skills: List[Dict[str, Any]],
@@ -212,7 +238,29 @@ class InvestmentSkillLearningService:
         )
 
         try:
-            response = self.agent._call_real_llm(prompt, self.agent.system_prompt or "You are an investment skill management assistant.")
+            system_prompt = "You are an investment skill management assistant."
+            
+            # 1. Get model using SettingsAwareModelRouter
+            model = self.model_router.get_model(self.user_id, "smart")
+            
+            # 2. Create LLMConfig for OpenRouter
+            config = LLMConfig(
+                provider="OpenRouter",
+                model=model,
+                api_key=os.getenv("API_KEY", ""),
+                temperature=0.7,
+                max_tokens=2048
+            )
+            
+            # 3. Create gateway and call
+            gateway = OpenRouterGateway()
+            messages = [
+                Message(role="system", content=system_prompt),
+                Message(role="user", content=prompt)
+            ]
+            
+            response = await gateway.chat(messages, config)
+            
             decision = self._parse_json_response(response)
 
             if not decision:
@@ -387,7 +435,7 @@ class InvestmentSkillLearningService:
 
     # ── Orchestrator: Daily Learning ────────────────────────
 
-    def run_daily_learning(
+    async def run_daily_learning(
         self,
         content: str = "",
         source_url: str = "",
@@ -420,7 +468,7 @@ class InvestmentSkillLearningService:
                 if not content:
                     # Step 1b: Auto-Discovery fallback — search the web
                     self.logger.info("No Readwise content. Attempting auto-discovery...")
-                    discovered = self._auto_discover_content()
+                    discovered = await self._auto_discover_content()
                     if discovered:
                         content = discovered.get("content", "")
                         source_url = discovered.get("url", "")
@@ -433,7 +481,7 @@ class InvestmentSkillLearningService:
                         return result
 
             # Step 2: Extract skill
-            skill = self.extract_skill_from_content(content, source_url, source_type)
+            skill = await self.extract_skill_from_content(content, source_url, source_type)
             if not skill:
                 result["status"] = "skipped"
                 result["details"]["reason"] = "Content does not contain valid skill"
@@ -446,7 +494,7 @@ class InvestmentSkillLearningService:
             )
 
             # Step 4: Merge or create
-            action_result = self.merge_or_create_skill(skill, similar)
+            action_result = await self.merge_or_create_skill(skill, similar)
             result["action"] = action_result.get("action")
             result["skill_name"] = action_result.get("name")
             result["details"] = action_result
@@ -721,7 +769,7 @@ class InvestmentSkillLearningService:
             self.logger.error(f"Readwise fetch failed: {e}")
             return ""
 
-    def _auto_discover_content(self) -> Optional[Dict[str, str]]:
+    async def _auto_discover_content(self) -> Optional[Dict[str, str]]:
         """
         Auto-discover investment content from the web using SearchService (Tavily).
         自動從網路搜尋最佳投資策略文章作為學習素材。
@@ -745,8 +793,8 @@ class InvestmentSkillLearningService:
             ]
             query = random.choice(queries)
             self.logger.info(f"Auto-discovery search: '{query}'")
-
-            results = search_svc.search_financial_context(query, max_results=3)
+            
+            results = await search_svc.search_financial_context(query, max_results=3)
 
             if not results:
                 self.logger.info("Auto-discovery: No search results found.")

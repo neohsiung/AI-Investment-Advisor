@@ -17,7 +17,7 @@ import { Loader2 } from "lucide-react";
 
 export function PerformanceChart() {
   const { data: history, isLoading } = useSWR(
-    "/api/dashboard/performance/history",
+    "/api/v1/dashboard/performance/history",
     () => PortfolioRepository.getPerformanceHistory(),
     { refreshInterval: 600000 } // 10 mins
   );

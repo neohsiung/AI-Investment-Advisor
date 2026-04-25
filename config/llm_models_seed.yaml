@@ -1,0 +1,89 @@
+# Seed model list — "currently used 4 models" plus 2 Ollama suggestions.
+# See docs/architecture/multi_provider_multi_model_design.md §7.4 / §3.7.
+#
+# Used by `scripts/seed_llm_defaults.py` (Phase B) to upsert `llm_models`
+# rows for the SYSTEM user. Each entry references a provider_code that
+# must exist in config/llm_providers.yaml.
+
+models:
+  # ── OpenAI ────────────────────────────────────────────────────────
+  - provider_code: openai
+    model_code: gpt-4.1-nano
+    display_name: "GPT-4.1 nano"
+    capabilities:
+      tool_calling: true
+      vision: false
+      json_mode: true
+      streaming: true
+      embeddings: false
+    context_window: 128000
+    input_cost_per_1k: 0.0001
+    output_cost_per_1k: 0.0004
+
+  # ── Google Gemini ─────────────────────────────────────────────────
+  - provider_code: gemini
+    model_code: gemini-2.5-flash
+    display_name: "Gemini 2.5 Flash"
+    capabilities:
+      tool_calling: true
+      vision: true
+      json_mode: true
+      streaming: true
+      embeddings: false
+    context_window: 1048576
+    input_cost_per_1k: 0.000075
+    output_cost_per_1k: 0.0003
+
+  - provider_code: gemini
+    model_code: gemini-2.5-pro
+    display_name: "Gemini 2.5 Pro"
+    capabilities:
+      tool_calling: true
+      vision: true
+      json_mode: true
+      streaming: true
+      embeddings: false
+    context_window: 1048576
+    input_cost_per_1k: 0.00125
+    output_cost_per_1k: 0.005
+
+  # ── Anthropic (via placeholder Gateway) ──────────────────────────
+  - provider_code: anthropic
+    model_code: claude-sonnet-4-5-20250929
+    display_name: "Claude Sonnet 4.5"
+    capabilities:
+      tool_calling: true
+      vision: true
+      json_mode: false
+      streaming: true
+      embeddings: false
+    context_window: 200000
+    input_cost_per_1k: 0.003
+    output_cost_per_1k: 0.015
+
+  # ── Ollama (local) — 2 suggested models ──────────────────────────
+  - provider_code: ollama
+    model_code: "qwen2.5:7b"
+    display_name: "Qwen 2.5 7B (Local)"
+    capabilities:
+      tool_calling: true
+      vision: false
+      json_mode: true
+      streaming: true
+      embeddings: true
+    context_window: 32768
+    input_cost_per_1k: 0.0
+    output_cost_per_1k: 0.0
+
+  - provider_code: ollama
+    model_code: "qwen2.5:14b"
+    display_name: "Qwen 2.5 14B (Local)"
+    capabilities:
+      tool_calling: true
+      vision: false
+      json_mode: true
+      streaming: true
+      embeddings: true
+    context_window: 32768
+    input_cost_per_1k: 0.0
+    output_cost_per_1k: 0.0

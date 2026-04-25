@@ -22,17 +22,15 @@ async def test_fundamental_agent_run(mock_agent_deps):
         "news": [{"title": "Good Earnings", "sentiment": "Positive"}]
     }
     
-    # run_tool_loop (now async) is called by run
-    with patch.object(FundamentalAgent, 'run_tool_loop', new_callable=AsyncMock) as mock_loop:
-        mock_loop.return_value = "Fundamental Analysis Report"
-        result = await agent.run(context)
-        
-        assert "Fundamental Analysis Report" in result
-        mock_loop.assert_called_once()
-        
-        # Check that prompt_data passed to run_tool_loop contains the ticker
-        call_kwargs = mock_loop.call_args.kwargs
-        assert call_kwargs["context"]["ticker"] == "AAPL"
+    # FundamentalAgent.run calls run_tool_loop which uses _llm_gateway.chat
+    result = await agent.run(context)
+    
+    assert "Fundamental Analysis Report" in result
+    mock_gw.chat.assert_called()
+    
+    # Check prompt construction
+    call_args = str(mock_gw.chat.call_args)
+    assert "AAPL" in call_args
 
 @pytest.mark.asyncio
 async def test_fundamental_agent_run_empty_context():
@@ -54,15 +52,13 @@ async def test_fundamental_agent_batch_mode(mock_agent_deps):
         }
     }
     
-    # Mock run_tool_loop with AsyncMock side_effects
-    with patch.object(FundamentalAgent, 'run_tool_loop', new_callable=AsyncMock) as mock_loop:
-        mock_loop.side_effect = ["Analysis of AAPL", "Analysis of GOOG"]
-        
-        result = await agent.run(context)
-        
-        assert "### AAPL Analysis" in result
-        assert "Analysis of AAPL" in result
-        assert "### GOOG Analysis" in result
-        assert "Analysis of GOOG" in result
-        
-        assert mock_loop.call_count == 2
+    mock_gw.chat.side_effect = ["Analysis of AAPL", "Analysis of GOOG"]
+    
+    result = await agent.run(context)
+    
+    assert "### AAPL Analysis" in result
+    assert "Analysis of AAPL" in result
+    assert "### GOOG Analysis" in result
+    assert "Analysis of GOOG" in result
+    
+    assert mock_gw.chat.call_count == 2

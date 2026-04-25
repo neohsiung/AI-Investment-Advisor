@@ -1,3 +1,28 @@
+---
+name: ticker_discovery
+description: Scans the internet for high-potential ticker candidates based on a specific strategy or sector focus.
+category: analysis
+tier: smart
+input_schema:
+  type: object
+  properties:
+    user_id: {type: string}
+    strategy: {type: string, description: "e.g., 'growth', 'value', 'dividend', 'momentum'"}
+    sectors: 
+      type: array
+      items: {type: string}
+      description: "e.g., ['technology', 'healthcare']"
+  required: [user_id]
+output_schema:
+  type: object
+  properties:
+    status: {type: string}
+    tickers: {type: array}
+metadata:
+  openclaw:
+    os: ["linux", "darwin"]
+---
+
 # Ticker Discovery Skill (ticker_discovery)
 
 Scans the internet for high-potential ticker candidates based on a specific strategy or sector focus.

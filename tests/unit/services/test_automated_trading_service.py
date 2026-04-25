@@ -33,7 +33,17 @@ def mock_broker():
     broker = MagicMock()
     broker.get_name.return_value = "MockBroker"
     # Execute order returns a mock success status
-    broker.execute_order.return_value = {"status": "success", "order_id": "123"}
+    broker.execute_order = AsyncMock(return_value={"status": "success", "order_id": "123"})
+    broker.get_positions = AsyncMock(return_value=[])
+    
+    # Mock account for position sizing guards
+    account = MagicMock()
+    account.total_equity = 1000.0
+    account.available_cash = 500.0
+    broker.get_account = AsyncMock(return_value=account)
+    
+    broker.sync_history = AsyncMock(return_value=True)
+    
     return broker
 
 @pytest.fixture
@@ -189,8 +199,9 @@ def mock_position():
 def mock_broker_with_positions(mock_position):
     broker = MagicMock()
     broker.get_name.return_value = "MockBroker"
-    broker.execute_order.return_value = {"status": "success", "order_id": "456"}
-    broker.get_positions.return_value = [mock_position]
+    broker.execute_order = AsyncMock(return_value={"status": "success", "order_id": "456"})
+    broker.get_positions = AsyncMock(return_value=[mock_position])
+    broker.get_account = AsyncMock() # Empty mock
     return broker
 
 @pytest.mark.asyncio
@@ -217,7 +228,8 @@ async def test_sell_guard_skips_when_no_holding(test_svc):
     
     broker = MagicMock()
     broker.get_name.return_value = "MockBroker"
-    broker.get_positions.return_value = []  # No positions
+    broker.get_positions = AsyncMock(return_value=[])  # No positions
+    broker.get_account = AsyncMock()
     
     with patch('src.services.automated_trading_service.BrokerFactory.get_broker', return_value=broker):
         res = await test_svc.evaluate_and_execute_trade(

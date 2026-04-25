@@ -52,11 +52,17 @@ class SentinelAgent(BaseAgent):
                 return {
                     "priority": "P2",
                     "target_agent": "CIO",
+                    "trigger_type": "generic",
+                    "affected_tickers": [],
                     "rationale": "System running in simulation mode (Missing API key). Defaulting to P2 for safety.",
                     "is_simulated": True
                 }
             else:
                 raise ValueError("No JSON object found in response")
+            
+            # Ensure new fields have defaults
+            result_data.setdefault("trigger_type", "generic")
+            result_data.setdefault("affected_tickers", [])
             
             # 2. Potential Agent Consultation (If priority is high and target_agent is specified)
             # v2.1: According to user request, we can consult the most relevant agent.

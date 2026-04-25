@@ -30,6 +30,8 @@ class TestAnalyticsService:
         mock_repo.get_leverage_summary.return_value = [('AAPL', 12, 1.0)]
         # get_cash_balance returns total cash
         mock_repo.get_cash_balance.return_value = 10000
+        # get_holdings returns empty list for fallback pricing logic
+        mock_repo.get_holdings.return_value = []
     
         calc.repo = mock_repo
     
@@ -170,41 +172,36 @@ class TestWorkflowFiles:
         assert wf.user_id == "test"
     
     @patch('src.services.workflow_service.MarketDataService')
-    @patch('src.services.workflow_service.AgentFactory')
     @pytest.mark.asyncio
-    async def test_daily_workflow_execution(self, mock_factory, mock_market):
+    async def test_daily_workflow_execution(self, mock_market):
         """Test DailyWorkflow execution logic (Dry Run)"""
         from src.services.workflow_service import DailyWorkflow
         
-        # Mock AlchemyTransactionRepository WHERE IT IS USED
-        # DailyWorkflow is in src.services.workflow_service
-        # It imports AlchemyTransactionRepository.
-        # So we must patch src.services.workflow_service.AlchemyTransactionRepository
         with patch('src.services.workflow_service.AlchemyTransactionRepository') as MockRepo:
              MockRepo.return_value.get_active_tickers.return_value = ['AAPL']
              
-             # Instantiate INSIDE the patch so it uses the mock
              wf = DailyWorkflow(user_id="test")
+             
+             # Mock _call_agent_llm to avoid real LLM calls and dependencies on model config
+             wf._call_agent_llm = AsyncMock(side_effect=lambda agent_name, ctx, tier="smart": {
+                 "Momentum": "BUY",
+                 "Sentiment": "POSITIVE",
+                 "Fundamental": "STABLE",
+                 "Macro": "NEUTRAL",
+                 "CIO": "## 1. Summary\n## 2. Analysis\n## 3. The Great Debate\n## 4. Orders\n| AAPL | BUY | 10 | 8 | Reason |"
+             }.get(agent_name, "N/A"))
 
-             # Mock dependencies on the instance (if not passed in init or set later)
-             wf.market_service = Mock()
+             wf.market_service = MagicMock()
              wf.market_service.get_yield_curve_inversion.return_value = {'inverted': False}
-             wf.context['tickers'] = ['AAPL'] # Ensure we have tickers to avoid early return
+             wf.context['tickers'] = ['AAPL']
 
-             # Run dry run
-             # synthesize_results creates Agents which create NEW Repos. 
-             # We should patch synthesize_results to avoid that.
-             with patch.object(wf, 'synthesize_results'):
-                  # Also avoid PerformanceService DB hits in execute_analysis
-                  wf.performance_service = Mock()
-                  
-                  # Avoid AgentFactory creating agents that hit DB?
-                  # execute_analysis creates Mom/Sent agents using Factory.
-                  # Mock AgentFactory's agent to use AsyncMock for run()
-                  mock_agent = MagicMock()
-                  mock_agent.run = AsyncMock(return_value="Mock Analysis")
-                  mock_factory.create_momentum_agent.return_value = mock_agent
-                  mock_factory.create_sentiment_agent.return_value = mock_agent
-                  mock_factory.create_fundamental_agent.return_value = mock_agent
+             with patch.object(wf, 'synthesize_results', new_callable=AsyncMock) as mock_synth:
+                  mock_synth.return_value = "## 1. Summary\n## 2. Analysis\n## 3. The Great Debate\n## 4. Orders\n| AAPL | BUY | 10 | 8 | Reason |"
+                  wf.performance_service = MagicMock()
+                  wf.performance_service.record_recommendation = MagicMock()
                   
                   await wf.run(dry_run=True)
+
+                  # Verification
+                  assert wf._call_agent_llm.called
+                  assert wf.synthesize_results.called

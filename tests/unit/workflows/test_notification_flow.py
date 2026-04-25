@@ -20,18 +20,17 @@ def sentinel_setup():
         mock_repo = mock_repo_cls.return_value
         mock_repo.is_duplicate_alert.return_value = False
         
-        # Configure ActionExtractor mock to avoid real LLM calls
-        mock_extractor = MagicMock()
-        mock_extractor.run.return_value = [] # No trade signals extracted
-        MockFactory.create_action_extractor_agent.return_value = mock_extractor
+
 
         # Configure SentinelAgent mock too just in case
         mock_sentinel_agent = MagicMock()
-        mock_sentinel_agent.run.return_value = {"priority": "P1", "target_agent": "CIO"}
+        mock_sentinel_agent.run = AsyncMock(return_value={"priority": "P1", "target_agent": "CIO"})
         MockFactory.create_sentinel_agent.return_value = mock_sentinel_agent
 
         mock_settings = MagicMock(spec=SettingsService)
         mock_settings.user_id = "test_user_123"
+        mock_settings.settings_repo = MagicMock()
+        mock_settings.get_all_settings.return_value = {}
         
         mock_council = MagicMock(spec=CouncilService)
         # Actionable decision to bypass Significance Filter
@@ -63,7 +62,11 @@ async def test_alert_flow_and_format(sentinel_setup):
     ]
     
     # execution
-    with patch('httpx.AsyncClient.post', return_value=MagicMock(status_code=202)) as mock_post:
+    # Verify notify_all is used (v7.0 consolidation)
+    with patch("src.services.notification_settings_manager.NotificationSettingsManager.get_active_notification_channels") as mock_channels, \
+         patch('src.services.notification_service.NotificationService.notify_all', new_callable=AsyncMock) as mock_notify:
+        
+        mock_channels.return_value = ["web"]
         await sentinel._do_send_alert(triggers, source="TestSentinel")
     
         # Verify CouncilService called with user_id
@@ -71,17 +74,16 @@ async def test_alert_flow_and_format(sentinel_setup):
         args, kwargs = mock_council.start_session.call_args
         assert kwargs['user_id'] == "test_user_123"
         
-        # Verify Notification Format through HTTP
-        assert mock_post.called
-        call_kwargs = mock_post.call_args.kwargs
-        payload = call_kwargs['json']
-        content = payload['content']
+        # Verify Notification Format
+        assert mock_notify.called
+        call_kwargs = mock_notify.call_args.kwargs
         
         # v4.2.2: Verify user_id is the internal user_id from settings_service
-        assert payload['user_id'] == "test_user_123", (
-            f"Expected internal user_id 'test_user_123', got '{payload['user_id']}'"
+        assert call_kwargs['user_id'] == "test_user_123", (
+            f"Expected internal user_id 'test_user_123', got '{call_kwargs['user_id']}'"
         )
         
+        content = call_kwargs['content']
         # Verify content presence
         assert "### 🛡️ Sentinel 監控警報" in content
         assert "• 🔴 VIX Spike: 45.0 > 30.0" in content

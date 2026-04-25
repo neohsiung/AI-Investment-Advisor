@@ -32,8 +32,8 @@ class AgentLLMProvider(ILLMProvider):
         {text[:15000]} 
         """
         try:
-            # The agent might return a dict or string
-            response = await self.agent.run(prompt)
+            # The agent expects a context dictionary
+            response = await self.agent.run({"task_instruction": prompt})
             if isinstance(response, dict):
                 return str(response.get("content") or response.get("output") or response)
             return str(response)
@@ -56,7 +56,7 @@ class AgentLLMProvider(ILLMProvider):
         {new_text}
         """
         try:
-            response = await self.agent.run(prompt)
+            response = await self.agent.run({"task_instruction": prompt})
             # Normalize to string safely
             if isinstance(response, dict):
                 # Try common keys

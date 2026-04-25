@@ -96,7 +96,7 @@ class NotificationService:
         adapter_names = []
         
         # Resolve initial user
-        raw_user = user_id or os.getenv("LINE_USER_ID", "broadcast")
+        raw_user = user_id or "broadcast"
         capture_error = kwargs.get('capture_error', False)
 
         for adapter in self.adapters:
@@ -118,6 +118,9 @@ class NotificationService:
             call_kwargs = kwargs.copy()
             if capture_error:
                 call_kwargs['raise_error'] = True
+            # Pass category and filter for per-category recipient override resolution
+            call_kwargs['category'] = category
+            call_kwargs['_filter'] = self.notification_filter
             
             # Add to async queue
             tasks.append(adapter.send_alert(
@@ -128,6 +131,7 @@ class NotificationService:
                 **call_kwargs
             ))
             adapter_names.append(adapter.__class__.__name__)
+
 
         if not tasks:
             return {}

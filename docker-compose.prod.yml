@@ -1,0 +1,281 @@
+include:
+  - path: infra/signoz/docker/docker-compose.yaml
+
+services:
+  # 1. API Gateway & Backend Engine (FastAPI)
+  mcp_server:
+    build:
+      context: .
+      dockerfile: services/mcp_server/Dockerfile
+    container_name: advisor_prod_api
+    restart: always
+    user: root
+    ports:
+      - "8000:8000"
+    command: sh -c "/opt/venv/bin/pip install itsdangerous>=2.2.0 && alembic upgrade head && uvicorn services.mcp_server.src.app.main:app --host 0.0.0.0 --port 8000"
+    env_file:
+      - .env
+    environment:
+      - NODE_ENV=production
+      - REDIS_URL=redis://redis:6379/0
+      - DB_HOST=postgres
+      - OTEL_SERVICE_NAME=mcp_server_prod
+      - OTEL_EXPORTER_OTLP_ENDPOINT=http://otel-collector:4317
+    volumes:
+      - ./secrets/client_secret.json:/workspace/client_secret.json:ro
+      - ./services/mcp_server/src/app/__init__.py:/workspace/services/mcp_server/src/app/__init__.py:ro
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      otel-collector:
+        condition: service_started
+    healthcheck:
+      test: [ "CMD", "curl", "-f", "http://localhost:8000/health" ]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    networks:
+      - advisor-net
+
+  # 2. Modern Frontend (Next.js)
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: advisor_prod_ui
+    restart: always
+    ports:
+      - "3000:3000"
+    environment:
+      - NODE_ENV=production
+      - NEXT_PUBLIC_API_URL=http://localhost:8000
+    depends_on:
+      mcp_server:
+        condition: service_healthy
+    networks:
+      - advisor-net
+
+  # 3. Transactional & Research Scheduler
+  scheduler:
+    build:
+      context: .
+      dockerfile: services/scheduler/Dockerfile
+    container_name: advisor_prod_scheduler
+    restart: always
+    env_file:
+      - .env
+    environment:
+      - REDIS_URL=redis://redis:6379/0
+      - DB_HOST=postgres
+      - OTEL_SERVICE_NAME=scheduler_prod
+      - OTEL_EXPORTER_OTLP_ENDPOINT=http://otel-collector:4317
+    volumes:
+      - ./src/infrastructure:/workspace/src/infrastructure:ro
+      - ./src/workflow:/workspace/src/workflow:ro
+      - ./src/services:/workspace/src/services:ro
+      - ./src/agents:/workspace/src/agents:ro
+      - ./services/scheduler:/workspace/services/scheduler:ro
+    depends_on:
+      mcp_server:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      otel-collector:
+        condition: service_started
+    networks:
+      - advisor-net
+
+  # 4. State Management (PostgreSQL with pgvector)
+  postgres:
+    image: ankane/pgvector:v0.5.1
+    container_name: advisor_prod_db
+    restart: always
+    environment:
+      - POSTGRES_USER=${DB_USER}
+      - POSTGRES_PASSWORD=${DB_PASS}
+      - POSTGRES_DB=${DB_NAME}
+    volumes:
+      - advisor_db_data:/var/lib/postgresql/data
+    healthcheck:
+      test: [ "CMD-SHELL", "pg_isready -U postgres" ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - advisor-net
+
+  # 5. Distributed Cache & Task Queue (Redis)
+  redis:
+    image: redis:7-alpine
+    container_name: advisor_prod_cache
+    restart: always
+    volumes:
+      - advisor_redis_data:/data
+    healthcheck:
+      test: [ "CMD", "redis-cli", "ping" ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - advisor-net
+
+  # 6. Workflow Automation (n8n)
+  n8n:
+    image: n8nio/n8n@sha256:fdf1e22bc04a03e38da41da5a56ba9b9a48510f480874290ea9c180844cbdb0c
+    container_name: advisor_prod_n8n
+    restart: always
+    ports:
+      - "5678:5678"
+    environment:
+      - N8N_HOST=localhost
+      - N8N_PORT=5678
+      - N8N_PROTOCOL=http
+      - NODE_ENV=production
+      - N8N_OTEL_SDK_ENABLED=true
+      - OTEL_EXPORTER_OTLP_ENDPOINT=http://otel-collector:4317
+      - OTEL_EXPORTER_OTLP_PROTOCOL=grpc
+      - OTEL_SERVICE_NAME=n8n_prod
+    volumes:
+      - advisor_n8n_data:/home/node/.n8n
+      - ./n8n_workflow_template.json:/home/node/template.json:ro
+    depends_on:
+      mcp_server:
+        condition: service_healthy
+      otel-collector:
+        condition: service_started
+    networks:
+      - advisor-net
+
+  # 7. Local Model Engine (Ollama)
+  ollama:
+    image: ollama/ollama:latest
+    container_name: advisor_prod_ollama
+    restart: always
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama_data:/root/.ollama
+    networks:
+      - advisor-net
+  # 8. Enterprise Report Worker Pool (Async Task Processing)
+  # Phase 1: 2 workers, scales to 4+ based on load
+  worker_1:
+    build:
+      context: .
+      dockerfile: services/scheduler/Dockerfile
+    container_name: advisor_prod_worker_1
+    restart: always
+    user: root
+    env_file:
+      - .env
+    environment:
+      - NODE_ENV=production
+      - WORKER_ID=worker-1
+      - WORKER_CONCURRENCY=2
+      - QUEUE_REDIS_URL=redis://redis:6379/0
+      - DATABASE_URL=postgresql://postgres:${DB_PASSWORD}@postgres:5432/portfolio
+      - OTEL_SERVICE_NAME=worker_1_prod
+      - OTEL_EXPORTER_OTLP_ENDPOINT=http://otel-collector:4317
+    volumes:
+      - ./src/infrastructure:/workspace/src/infrastructure:ro
+      - ./src/workflow:/workspace/src/workflow:ro
+      - ./src/services:/workspace/src/services:ro
+      - ./src/agents:/workspace/src/agents:ro
+      - ./services/scheduler:/workspace/services/scheduler:ro
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      otel-collector:
+        condition: service_started
+    healthcheck:
+      test: ["CMD", "python", "-c", "import redis; redis.Redis(host='redis', port=6379).ping()"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    networks:
+      - advisor-net
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  worker_2:
+    build:
+      context: .
+      dockerfile: services/scheduler/Dockerfile
+    container_name: advisor_prod_worker_2
+    restart: always
+    user: root
+    env_file:
+      - .env
+    environment:
+      - NODE_ENV=production
+      - WORKER_ID=worker-2
+      - WORKER_CONCURRENCY=2
+      - QUEUE_REDIS_URL=redis://redis:6379/0
+      - DATABASE_URL=postgresql://postgres:${DB_PASSWORD}@postgres:5432/portfolio
+      - OTEL_SERVICE_NAME=worker_2_prod
+      - OTEL_EXPORTER_OTLP_ENDPOINT=http://otel-collector:4317
+    volumes:
+      - ./src/infrastructure:/workspace/src/infrastructure:ro
+      - ./src/workflow:/workspace/src/workflow:ro
+      - ./src/services:/workspace/src/services:ro
+      - ./src/agents:/workspace/src/agents:ro
+      - ./services/scheduler:/workspace/services/scheduler:ro
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      otel-collector:
+        condition: service_started
+    healthcheck:
+      test: ["CMD", "python", "-c", "import redis; redis.Redis(host='redis', port=6379).ping()"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    networks:
+      - advisor-net
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  # 9. Web Gateway & Reverse Proxy (Nginx)
+  nginx:
+    image: nginx:alpine
+    container_name: advisor_prod_gateway
+    restart: always
+    ports:
+      - "80:80"
+    volumes:
+      - ./infra/nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+    depends_on:
+      frontend:
+        condition: service_started
+      mcp_server:
+        condition: service_healthy
+      worker_1:
+        condition: service_started
+      worker_2:
+        condition: service_started
+    networks:
+      - advisor-net
+
+volumes:
+  advisor_db_data:
+  advisor_redis_data:
+  advisor_n8n_data:
+  ollama_data:
+
+networks:
+  advisor-net:
+    driver: bridge

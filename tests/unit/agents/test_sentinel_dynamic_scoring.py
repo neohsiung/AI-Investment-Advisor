@@ -6,11 +6,11 @@ from src.services.sentinel_service import SentinelService
 def mock_settings():
     svc = MagicMock()
     # Mock settings: emergency=10, hedge=5
-    def mock_get(uid, key):
+    def mock_get(key, default=None, user_id=None):
         if key == "emergency_liquidation_score": return 10
         if key == "auto_hedge_score": return 5
-        return None
-    svc.get.side_effect = mock_get
+        return default
+    svc.get_setting.side_effect = mock_get
     return svc
 
 @pytest.fixture

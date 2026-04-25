@@ -7,8 +7,7 @@ import pytest
 import json
 import os
 import tempfile
-import logging
-from unittest.mock import MagicMock, patch, mock_open, AsyncMock
+from unittest.mock import MagicMock, AsyncMock, patch, mock_open
 
 from src.agents.context import ContextAssembler
 from src.agents.wal_protocol import WalProtocol
@@ -125,11 +124,12 @@ class TestWalProtocol:
         messages = [{"content": "a" * 120000}]
         assert wal.check_context_window(messages, reserve_floor=4000, max_tokens=32000) is True
 
-    def test_perform_silent_flush_writes_state_file(self):
+    @pytest.mark.asyncio
+    async def test_perform_silent_flush_writes_state_file(self):
         """Verify STATE.md is written during flush."""
         with tempfile.TemporaryDirectory() as tmpdir:
             wal = WalProtocol(workspace_path=tmpdir, agent_name="TestAgent")
-            mock_llm = MagicMock(return_value="WAL_CHECKPOINT: summary")
+            mock_llm = AsyncMock(return_value="WAL_CHECKPOINT: summary")
 
             messages = [
                 {"role": "system", "content": "sys"},
@@ -138,7 +138,7 @@ class TestWalProtocol:
                 {"role": "user", "content": "q2"},
             ]
 
-            wal.perform_silent_flush(messages, mock_llm)
+            await wal.perform_silent_flush(messages, mock_llm)
 
             # Verify STATE.md was written
             state_path = os.path.join(tmpdir, "STATE.md")
@@ -146,10 +146,11 @@ class TestWalProtocol:
             content = open(state_path).read()
             assert "WAL_CHECKPOINT" in content
 
-    def test_perform_silent_flush_truncates_history(self):
+    @pytest.mark.asyncio
+    async def test_perform_silent_flush_truncates_history(self):
         """Verify messages are truncated to [system, checkpoint]."""
         wal = WalProtocol(agent_name="TestAgent")
-        mock_llm = MagicMock(return_value="Summary")
+        mock_llm = AsyncMock(return_value="Summary")
 
         messages = [
             {"role": "system", "content": "sys"},
@@ -158,18 +159,19 @@ class TestWalProtocol:
             {"role": "user", "content": "q2"},
         ]
 
-        wal.perform_silent_flush(messages, mock_llm)
+        await wal.perform_silent_flush(messages, mock_llm)
 
         assert len(messages) == 2
         assert messages[0]["role"] == "system"
         assert "Session Restored" in messages[1]["content"]
 
-    def test_perform_silent_flush_with_redaction(self):
+    @pytest.mark.asyncio
+    async def test_perform_silent_flush_with_redaction(self):
         """Verify redact_fn is called on WAL state before file write."""
         with tempfile.TemporaryDirectory() as tmpdir:
             redact_fn = MagicMock(side_effect=lambda x: x.replace("secret", "[REDACTED]"))
             wal = WalProtocol(workspace_path=tmpdir, agent_name="Test", redact_fn=redact_fn)
-            mock_llm = MagicMock(return_value="WAL: secret data")
+            mock_llm = AsyncMock(return_value="WAL: secret data")
 
             messages = [
                 {"role": "system", "content": "sys"},
@@ -178,16 +180,17 @@ class TestWalProtocol:
                 {"role": "user", "content": "q2"},
             ]
 
-            wal.perform_silent_flush(messages, mock_llm)
+            await wal.perform_silent_flush(messages, mock_llm)
 
             state_content = open(os.path.join(tmpdir, "STATE.md")).read()
             assert "[REDACTED]" in state_content
             redact_fn.assert_called_once()
 
-    def test_perform_silent_flush_handles_llm_error(self):
+    @pytest.mark.asyncio
+    async def test_perform_silent_flush_handles_llm_error(self):
         """LLM error should not raise, just log."""
         wal = WalProtocol(agent_name="TestAgent")
-        mock_llm = MagicMock(side_effect=Exception("LLM Down"))
+        mock_llm = AsyncMock(side_effect=Exception("LLM Down"))
 
         messages = [
             {"role": "system", "content": "sys"},
@@ -198,21 +201,22 @@ class TestWalProtocol:
         original_len = len(messages)
 
         # Should not raise
-        wal.perform_silent_flush(messages, mock_llm)
+        await wal.perform_silent_flush(messages, mock_llm)
         # Messages unchanged since error happened before truncation
         assert len(messages) == original_len
 
-    def test_no_truncation_if_short_history(self):
+    @pytest.mark.asyncio
+    async def test_no_truncation_if_short_history(self):
         """Messages with <= 3 entries should not be truncated."""
         wal = WalProtocol(agent_name="TestAgent")
-        mock_llm = MagicMock(return_value="Summary")
+        mock_llm = AsyncMock(return_value="Summary")
 
         messages = [
             {"role": "system", "content": "sys"},
             {"role": "user", "content": "q1"},
         ]
 
-        wal.perform_silent_flush(messages, mock_llm)
+        await wal.perform_silent_flush(messages, mock_llm)
         assert len(messages) == 2  # Unchanged
 
 
@@ -226,10 +230,7 @@ class TestAgentLoop:
     async def test_execute_no_tool_call(self):
         """Direct LLM response without tool call should return immediately."""
         loop = AgentLoop(agent_name="Test")
-        # LLM Gateway chat is now async in some mocks, but here we expect a callable
-        from src.utils.async_utils import to_thread
-        async def mock_llm(messages, **kwargs):
-            return "Final answer: 42"
+        mock_llm = AsyncMock(return_value="Final answer: 42")
 
         messages = [
             {"role": "system", "content": "sys"},
@@ -243,15 +244,15 @@ class TestAgentLoop:
     async def test_execute_with_search_tool(self):
         """Test SEARCH tool parsing and execution."""
         search_svc = MagicMock()
-        search_svc.search_financial_context.return_value = [
+        from unittest.mock import AsyncMock
+        search_svc.search_financial_context = AsyncMock(return_value=[
             {"title": "AAPL", "snippet": "Stock up 5%", "link": "url1"}
-        ]
+        ])
         loop = AgentLoop(agent_name="Test", search_service=search_svc)
-        
-        async def mock_llm(messages, **kwargs):
-            if len(messages) <= 2:
-                return 'SEARCH: "AAPL stock"'
-            return "Final: AAPL is up."
+        mock_llm = AsyncMock(side_effect=[
+            'SEARCH: "AAPL stock"',
+            "Final: AAPL is up.",
+        ])
 
         messages = [
             {"role": "system", "content": "sys"},
@@ -267,13 +268,13 @@ class TestAgentLoop:
         """Test MCP tool call execution."""
         toold = AsyncMock()
         toold.tools = {"get_price": True}
-        toold.call_tool.return_value = '{"price": 150}'
+        from unittest.mock import AsyncMock
+        toold.call_tool = AsyncMock(return_value={"price": 150})
         loop = AgentLoop(agent_name="Test", toold=toold)
-        
-        async def mock_llm(messages, **kwargs):
-            if len(messages) <= 2:
-                return 'CALL: get_price({"ticker": "AAPL"})'
-            return "AAPL is $150"
+        mock_llm = AsyncMock(side_effect=[
+            'CALL: get_price({"ticker": "AAPL"})',
+            "AAPL is $150",
+        ])
 
         messages = [
             {"role": "system", "content": "sys"},
@@ -288,9 +289,8 @@ class TestAgentLoop:
     async def test_execute_respects_max_turns(self):
         """After max turns, should return last response even if loop isn't done."""
         loop = AgentLoop(agent_name="Test")
-        # Use simple async mock bypass
-        async def mock_llm(messages, **kwargs):
-            return 'SEARCH: "endless"'
+        # Always return tool call, never exit loop naturally
+        mock_llm = AsyncMock(return_value='SEARCH: "endless"')
 
         messages = [
             {"role": "system", "content": "sys"},
@@ -298,16 +298,15 @@ class TestAgentLoop:
         ]
 
         result = await loop.execute(messages, call_llm_fn=mock_llm, max_turns=2)
-        assert result == 'SEARCH: "endless"'
+        assert mock_llm.call_count == 2
 
     @pytest.mark.asyncio
     async def test_execute_with_context_guard(self):
         """Test that context guard functions are called."""
         loop = AgentLoop(agent_name="Test")
-        async def mock_llm(messages, **kwargs):
-            return "Answer"
+        mock_llm = AsyncMock(return_value="Answer")
         check_fn = MagicMock(return_value=False)
-        flush_fn = MagicMock()
+        flush_fn = AsyncMock()
 
         messages = [
             {"role": "system", "content": "sys"},
@@ -325,10 +324,9 @@ class TestAgentLoop:
     async def test_execute_triggers_flush(self):
         """Context guard returns True → flush should be called."""
         loop = AgentLoop(agent_name="Test")
-        async def mock_llm(messages, **kwargs):
-            return "Answer"
+        mock_llm = AsyncMock(return_value="Answer")
         check_fn = MagicMock(return_value=True)
-        flush_fn = MagicMock()
+        flush_fn = AsyncMock()
 
         messages = [
             {"role": "system", "content": "sys"},
@@ -370,12 +368,12 @@ class TestAgentLoopParseToolCall:
     async def test_tool_not_found(self):
         """Tool not in registry should return error observation."""
         loop = AgentLoop(agent_name="Test")
-        result = await loop._run_tool_logic_async("unknown_tool", {"a": 1})
+        result = await loop._execute_tool_async("unknown_tool", {"a": 1})
         assert "Error: Tool 'unknown_tool' not found." in result
 
     @pytest.mark.asyncio
     async def test_search_no_service(self):
         """SEARCH without service should return error."""
         loop = AgentLoop(agent_name="Test")
-        result = await loop._execute_search_async("test")
-        assert "Error" in result or "No results" in result
+        result = await loop._run_tool_logic_async("SEARCH", {"query": "test"})
+        assert "Error: Search service not initialized." in result

@@ -15,6 +15,10 @@ def test_calculate_metrics_with_leverage():
         ('META', 1.0, 5.0),
         ('GOOG', 1.0, 1.0)
     ]
+    mock_repo.get_holdings.return_value = [
+        {'ticker': 'META', 'avg_price': 100.0},
+        {'ticker': 'GOOG', 'avg_price': 100.0}
+    ]
     mock_repo.get_cash_balance.return_value = 100.0
     
     calc = LeverageCalculator(user_id='user_123', repository=mock_repo)
@@ -36,6 +40,7 @@ def test_calculate_metrics_with_leverage():
 def test_calculate_metrics_zero_qty():
     mock_repo = MagicMock()
     mock_repo.get_leverage_summary.return_value = [('AAPL', 0.0, 1.0)]
+    mock_repo.get_holdings.return_value = [{'ticker': 'AAPL', 'avg_price': 150.0}]
     mock_repo.get_cash_balance.return_value = 50.0
     
     calc = LeverageCalculator(user_id='user_123', repository=mock_repo)

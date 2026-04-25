@@ -1,4 +1,6 @@
+import os
 import json
+from jinja2 import Template
 from .base_agent import BaseAgent
 
 class FundamentalAgent(BaseAgent):
@@ -28,7 +30,7 @@ class FundamentalAgent(BaseAgent):
             
             # General Research Mandate (Ticker Research Generalization)
             # 標的研究模式通用化：針對所有標的，強制分析其與 Tier-1 領先者 (如 NVDA) 的成長確定性差距。
-            research_mandate = f"Analyze {ticker}'s growth certainty compared to Tier-1 leaders (e.g., NVDA). Is the conviction justified vs industry standards?"
+            research_mandate = self._render_research_mandate(ticker)
             
             prompt_data = {
                 "ticker": ticker,
@@ -58,7 +60,7 @@ class FundamentalAgent(BaseAgent):
             sc_info = sc_service.get_shortage_premium(t)
             shortage_narrative = sc_info.get("narrative", "")
             
-            research_mandate = f"Analyze {t}'s growth certainty compared to Tier-1 leaders (e.g., NVDA). Is the conviction justified vs industry standards?"
+            research_mandate = self._render_research_mandate(t)
             
             prompt_data = {
                 "ticker": t,
@@ -78,3 +80,15 @@ class FundamentalAgent(BaseAgent):
         import asyncio
         reports = await asyncio.gather(*tasks)
         return "\n\n".join(reports)
+
+    def _render_research_mandate(self, ticker: str) -> str:
+        """Loads and renders the research mandate from a workspace template."""
+        template_path = os.path.join(self.workspace_path, "IDENTITY_research.md")
+        if os.path.exists(template_path):
+            with open(template_path, 'r', encoding='utf-8') as f:
+                template_str = f.read()
+            template = Template(template_str)
+            return template.render(ticker=ticker)
+        
+        # Fallback
+        return f"Analyze {ticker}'s growth certainty compared to Tier-1 leaders."

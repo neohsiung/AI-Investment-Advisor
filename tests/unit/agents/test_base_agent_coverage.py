@@ -34,19 +34,19 @@ class TestBaseAgentCoverage:
 
     def test_load_config_priority(self):
         # Mock DB, Env and File System for new instance
-        # Remove invalid patch of SettingsService
+        # New _load_config() first tries get_config_chain() (llm_tier_bindings path).
+        # We mock it to return empty so it falls back to legacy get_config() path,
+        # which reads settings_repo (AI_MODEL_SMART etc.).
         with patch('os.path.exists', return_value=True), \
              patch('builtins.open', mock_open(read_data="Prompt")):
-            
-            # Test Env Var override (simulated by _load_config logic if DB empty)
-            # Actually BaseAgent loads from os.getenv.
-            # We want to test DB override.
             
             mock_settings_repo = MagicMock()
             # Mock the return value to be a list of tuples since BaseAgent handles that
             mock_settings_repo.get_all.return_value = [("AI_MODEL_SMART", "gemini-1.5-ultra")]
             
-            agent = ConcreteAgent(name="A", prompt_path="p", user_id="user1", settings_repo=mock_settings_repo)
+            # Patch get_config_chain to return empty → forces fallback to legacy path
+            with patch('src.infrastructure.llm.budget_aware_model_router.BudgetAwareModelRouter.get_config_chain', return_value=[]):
+                agent = ConcreteAgent(name="A", prompt_path="p", user_id="user1", settings_repo=mock_settings_repo)
             assert agent.config['model'] == "gemini-1.5-ultra"
 
     def test_render_system_prompt(self, agent):
@@ -91,20 +91,19 @@ class TestBaseAgentCoverage:
         context = {}
         
         # Mock call_llm to return SEARCH then answer
-        # Must be AsyncMock because it's awaited
+        from unittest.mock import AsyncMock
         agent.call_llm = AsyncMock(side_effect=[
             'SEARCH: "AAPL"',
             'Analysis of AAPL'
         ])
         
         # Mock search service import inside method
+        from unittest.mock import AsyncMock
         with patch('src.services.search_service.InternetSearchService') as mock_search_cls:
-            mock_svc = MagicMock()
-            mock_search_cls.return_value = mock_svc
-            mock_svc.search_financial_context.return_value = [{'title': 'AAPL', 'snippet': '150', 'link': 'url'}]
+            mock_svc = mock_search_cls.return_value
+            mock_svc.search_financial_context = AsyncMock(return_value=[{'title': 'AAPL', 'snippet': '150', 'link': 'url'}])
             
-            # Since AgentLoop now uses to_thread for SEARCH, search_svc must be sync-capable
-            agent._search_service = mock_svc
+            res = await agent.run_tool_loop(context)
             
             res = await agent.run_tool_loop(context)
             
@@ -118,8 +117,9 @@ class TestBaseAgentCoverage:
         agent.config['model'] = 'model-x'
         
         # Patch the gateway directly since _call_real_llm now bridges to call_llm -> gateway
-        mock_gw = AsyncMock()
-        mock_gw.chat.return_value = "Real Logic Output"
+        from unittest.mock import AsyncMock
+        mock_gw = MagicMock()
+        mock_gw.chat = AsyncMock(return_value="Real Logic Output")
         agent._llm_gateway = mock_gw
         
         res = await agent._call_real_llm("prompt", "sys")
@@ -127,7 +127,7 @@ class TestBaseAgentCoverage:
         
         # Test Google Gemini path (same gateway, different config)
         agent.config['provider'] = 'Google Gemini'
-        mock_gw.chat.return_value = "Gemini Output"
+        mock_gw.chat = AsyncMock(return_value="Gemini Output")
         
         res = await agent._call_real_llm("prompt", "sys")
         assert res == "Gemini Output"

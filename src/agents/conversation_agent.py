@@ -16,6 +16,7 @@ Uses:
 
 import asyncio
 import logging
+import os
 from typing import Dict, Any, Optional, List
 
 logger = logging.getLogger(__name__)
@@ -105,7 +106,7 @@ class ConversationAgent:
         self._agent = None
         self._tools_registered = False
 
-    def _ensure_agent(self):
+    async def _ensure_agent(self):
         """Lazy-init the BaseAgent instance and register MCP skills."""
         if self._agent is not None:
             return
@@ -122,7 +123,7 @@ class ConversationAgent:
 
         # Ensure channel-facing skills are bound
         if not self._tools_registered:
-            self._register_channel_skills()
+            await self._register_channel_skills()
             self._tools_registered = True
 
         # [Cognitive Architecture] Prime with crystallized wisdom
@@ -132,45 +133,51 @@ class ConversationAgent:
                 self.user_id
             )
 
-    def _register_channel_skills(self):
-        """Register MCP skills relevant to channel conversations."""
-        from src.tools.mcp_server import McpTool
-        from src.agents.skills.get_macro_summary.impl import get_macro_summary
-        from src.agents.skills.get_user_holdings.impl import get_user_holdings
-        from src.agents.skills.run_momentum_analysis.impl import run_momentum_analysis
+    async def _register_channel_skills(self):
+        """
+        Register MCP skills and external MCP tools relevant to channel conversations dynamically.
+        v8.2: Added B2C user-isolated external MCP discovery.
+        """
+        
+        
+                
+        # 1. Bind local skills (Registry-based)
+                
+        # 2. [Task 8.2] Discover and bind External MCP Servers (Per-user settings)
+        try:
+            # We use the already initialized SettingsService
+            mcp_servers_json = self._settings_service.get_setting("external_mcp_servers", "[]")
+            import json
+            if isinstance(mcp_servers_json, str):
+                try:
+                    mcp_urls = json.loads(mcp_servers_json)
+                except json.JSONDecodeError:
+                    mcp_urls = []
+            else:
+                mcp_urls = mcp_servers_json if isinstance(mcp_servers_json, list) else []
 
-        user_id = self.user_id
-
-        # Register skills with bound user_id
-        import functools
-
-        channel_skills = [
-            McpTool(
-                name="get_macro_summary",
-                description="取得即時宏觀經濟指標摘要 (VIX, SPY, Yield Spread)",
-                func=functools.partial(get_macro_summary, user_id),
-                category="market_data",
-            ),
-            McpTool(
-                name="get_user_holdings",
-                description="取得使用者目前持股清單與數量",
-                func=functools.partial(get_user_holdings, user_id),
-                category="portfolio",
-            ),
-            McpTool(
-                name="run_momentum_analysis",
-                description="對指定標的執行動能分析 (RSI, MACD, Volume)",
-                func=functools.partial(run_momentum_analysis, user_id),
-                category="analysis",
-            ),
-        ]
-
-        for tool in channel_skills:
-            self._agent.register_tool(tool)
-
-        logger.info(
-            f"ConversationAgent: Registered {len(channel_skills)} channel skills"
-        )
+            if mcp_urls:
+                from src.tools.mcp_client_adapter import get_mcp_client
+                for url in mcp_urls:
+                    try:
+                        client = await get_mcp_client(url, self.user_id)
+                        tools = client.list_tools()
+                        for tool in tools:
+                            from src.tools.mcp_server import McpTool
+                            # Wrap the tool call
+                            mcp_tool = McpTool(
+                                name=f"ext_{tool.name}", # Namespace external tools
+                                description=f"[External] {tool.description}",
+                                func=functools.partial(client.call_tool, tool.name)
+                            )
+                            self._agent.register_tool(mcp_tool)
+                        logger.info(f"ConversationAgent ({self.user_id}): Bound {len(tools)} tools from {url}")
+                    except Exception as e:
+                        logger.warning(f"ConversationAgent: Failed to bind external MCP {url}: {e}")
+        except Exception as e:
+            logger.error(f"ConversationAgent: Error during external MCP discovery: {e}")
+        
+        logger.info("ConversationAgent: Skills and External tools bound via Registry/Gateway.")
 
     async def respond(
         self,
@@ -196,7 +203,7 @@ class ConversationAgent:
         Returns:
             Agent's response text
         """
-        self._ensure_agent()
+        await self._ensure_agent()
 
         try:
             # 0. [Phase 3 & 5A] Check persistent pending clarification from unified memory
@@ -361,7 +368,7 @@ class ConversationAgent:
     async def _execute_gap_confirmation(self, pending):
         """Execute gap scaffold after user confirmation."""
         from src.agents.skills.gap_detector import GapReport
-        from src.agents.skills.registry import get_default_registry
+        
 
         if pending == "rejected":
             self._evolution_metrics.record_event("user_rejected_scaffold", {})
@@ -369,8 +376,18 @@ class ConversationAgent:
 
         try:
             gap = GapReport(**pending)
+            from src.services.mcp_installation_guard import MCPBackgroundCheckService
+            guard = MCPBackgroundCheckService(user_id=self.user_id)
 
-            # [User Decision Q1] Generate impl with LLM, then review with Smart Model
+            # [Phase 3] 1. Verify Purpose Alignment before generating code
+            is_aligned, purpose_reason = await guard.verify_purpose_alignment(
+                gap.suggested_skill_name, gap.reasoning, gap.reasoning
+            )
+            if not is_aligned:
+                logger.warning(f"ConversationAgent: Purpose mismatch for {gap.suggested_skill_name}: {purpose_reason}")
+                return f"🛡️ **[資安攔截]** 拒絕建立新工具 `{gap.suggested_skill_name}`。\n原因：{purpose_reason}"
+
+            # [User Decision Q1] Generate impl with LLM
             impl_code = await self._generate_impl_code(gap)
 
             # Scaffold with generated code
@@ -378,14 +395,30 @@ class ConversationAgent:
                 gap, user_context="", impl_code=impl_code
             )
 
+            # [Phase 3] 2. Verify Security Clearance of generated code
+            # Use the actual path returned by scaffold (usually in _pending/)
+            impl_path = os.path.join(path, "impl.py")
+            is_safe, sec_reason = await guard.verify_security_clearance(impl_path)
+            if not is_safe:
+                logger.error(f"ConversationAgent: Security breach in generated code: {sec_reason}")
+                # [Phase 4] Cleanup malicious directory
+                try:
+                    import shutil
+                    if os.path.exists(path):
+                        shutil.rmtree(path)
+                        logger.info(f"ConversationAgent: Malicious skill directory {path} deleted.")
+                except Exception as cleanup_err:
+                    logger.error(f"ConversationAgent: Failed to cleanup malicious directory: {cleanup_err}")
+                
+                return f"🛡️ **[資安攔截]** 自動產生的程式碼未通過背景調查。\n原因：{sec_reason}\n出於安全考量，已將產生的原始碼自動刪除。"
+
+            # Smart Model review of generated code
+
             # Smart Model review of generated code
             review_result = await self._review_generated_impl(gap, impl_code)
 
             # Activate and hot-reload
             self._skill_scaffolder.approve_and_activate(gap.suggested_skill_name)
-            registry = get_default_registry()
-            new_skills = registry.hot_reload()
-            
             self._evolution_metrics.record_event("skill_hot_reloaded", {"skill": gap.suggested_skill_name})
 
             # Clear pending
@@ -394,7 +427,7 @@ class ConversationAgent:
 
             logger.info(
                 f"ConversationAgent: Skill '{gap.suggested_skill_name}' "
-                f"auto-generated and activated. Hot-reloaded: {new_skills}"
+                f"auto-generated and activated."
             )
 
             result = (
@@ -419,7 +452,6 @@ class ConversationAgent:
             import os
             from src.domain.interfaces import Message, LLMConfig
             from src.infrastructure.llm.llm_gateway import LLMGatewayFactory
-            from src.utils.async_utils import to_thread
 
             prompt = f"""Generate a Python skill implementation for an investment analysis agent.
 
@@ -438,12 +470,29 @@ Requirements:
 
 Return ONLY the Python code, no explanations."""
 
-            provider = os.getenv("AI_PROVIDER", "Google Gemini")
+            # [Phase 4] Multi-tenant isolation: Load credentials from SettingsService
+            llm_settings = self._settings_service.get_all_settings()
+            
+            # Use tier-aware model routing
+            from src.infrastructure.llm.tier_config import SettingsAwareModelRouter
+            model_router = SettingsAwareModelRouter()
+            
+            provider = llm_settings.get("AI_PROVIDER", os.getenv("AI_PROVIDER", "OpenRouter"))
+            
+            # Use tier-aware routing (fast tier for code generation)
+            from src.infrastructure.llm.tier_config import TierConfig
+            tier_config = TierConfig()
+            if self.user_id:
+                model = model_router.get_model(self.user_id, "fast")
+            else:
+                model = tier_config.resolve("fast")
+            api_key = llm_settings.get("API_KEY", os.getenv("API_KEY", ""))
+
             gateway = LLMGatewayFactory.create(provider)
             config = LLMConfig(
                 provider=provider,
-                model=os.getenv("AI_MODEL_FAST", "gemini-1.5-flash"),
-                api_key=os.getenv("API_KEY", ""),
+                model=model,
+                api_key=api_key,
                 temperature=0.2,
                 max_tokens=1500,
             )
@@ -451,7 +500,7 @@ Return ONLY the Python code, no explanations."""
                 Message(role="system", content="You are a Python code generator. Output only valid Python code."),
                 Message(role="user", content=prompt),
             ]
-            code = await to_thread(gateway.chat, messages, config)
+            code = await gateway.chat(messages, config)
             # Strip markdown code fences
             code = code.replace("```python", "").replace("```", "").strip()
             return code
@@ -481,14 +530,30 @@ Check for:
 3. Logic correctness
 4. Error handling completeness
 
-Respond in ONE sentence: either "PASS: looks good" or "WARN: <specific issue>".
-"""
-            provider = os.getenv("AI_PROVIDER", "Google Gemini")
+Respond in ONE sentence: either "PASS: looks good" or "WARN: <specific issue>"."""
+            # [Phase 4] Multi-tenant isolation: Load credentials from SettingsService
+            llm_settings = self._settings_service.get_all_settings()
+            
+            # Use tier-aware model routing
+            from src.infrastructure.llm.tier_config import SettingsAwareModelRouter
+            model_router = SettingsAwareModelRouter()
+            
+            provider = llm_settings.get("AI_PROVIDER", os.getenv("AI_PROVIDER", "OpenRouter"))
+            
+            # Use tier-aware routing (smart tier for code review)
+            from src.infrastructure.llm.tier_config import TierConfig
+            tier_config = TierConfig()
+            if self.user_id:
+                model = model_router.get_model(self.user_id, "smart")
+            else:
+                model = tier_config.resolve("smart")
+            api_key = llm_settings.get("API_KEY", os.getenv("API_KEY", ""))
+
             gateway = LLMGatewayFactory.create(provider)
             config = LLMConfig(
                 provider=provider,
-                model=os.getenv("AI_MODEL_SMART", "gemini-1.5-pro"),
-                api_key=os.getenv("API_KEY", ""),
+                model=model,
+                api_key=api_key,
                 temperature=0.0,
                 max_tokens=200,
             )

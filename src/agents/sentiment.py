@@ -49,9 +49,11 @@ class SentimentAgent(BaseAgent):
             "price_change_percent": context.get("price_change_percent", "N/A")
         }
         
-        response = await self.run_tool_loop(context=prompt_data)
+        # v9.0 Async / RAG pipeline compat
+        response_str = await self.run_tool_loop(context=prompt_data)
         
-        # [Phase 4] JSON Parse result for structured integration
+        # Parse JSON
+        # 解析 JSON
         try:
             # Clean up response if it contains markdown
             cleaned = response.replace("```json", "").replace("```", "").strip()

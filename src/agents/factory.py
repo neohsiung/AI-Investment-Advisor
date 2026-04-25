@@ -20,7 +20,6 @@ from src.agents.cio import CIOAgent
 from src.agents.engineer import SystemEngineerAgent
 from src.agents.risk import RiskAgent
 from src.agents.sentinel import SentinelAgent
-from src.tools.market_tools import create_market_server
 
 logger = setup_logger("AgentFactory")
 
@@ -49,7 +48,11 @@ class AgentFactory:
 
         api_key = os.getenv("LLM_API_KEY") or os.getenv("API_KEY")
         base_url = os.getenv("LLM_BASE_URL", "https://openrouter.ai/api/v1")
-        model = os.getenv("LLM_MODEL_SMART", "google/gemini-2.0-flash-exp")
+        
+        # Use TierConfig for model selection (smart tier for DSPy)
+        from src.infrastructure.llm.tier_config import TierConfig
+        tier_config = TierConfig()
+        model = tier_config.resolve("smart")
 
         if not api_key:
             try:
@@ -82,18 +85,12 @@ class AgentFactory:
         if not hasattr(agent, 'feedback_repo') or agent.feedback_repo is None:
              agent.feedback_repo = AlchemyFeedbackRepository()
         
-        user_id = getattr(agent, 'user_id', None)
-        market_server = create_market_server(user_id=user_id)
-        for tool in market_server.list_tools():
-            real_tool = market_server.tools.get(tool['name'])
-            if real_tool:
-                agent.register_tool(real_tool)
-        
         return agent
 
     @staticmethod
     def create_agent(agent_name, use_cache=True, user_id=None, **kwargs):
-        user_id = user_id or "system"
+        if not user_id:
+            raise ValueError(f"AgentFactory: user_id is required for multi-tenant isolation.")
         AgentFactory._configure_dspy(user_id=user_id)
         name_lower = agent_name.lower()
         
@@ -127,7 +124,8 @@ class AgentFactory:
 
     @staticmethod
     def create_thematic_agent(use_cache=True, user_id=None, **kwargs):
-        user_id = user_id or "system"
+        if not user_id:
+            raise ValueError(f"AgentFactory: user_id is required for multi-tenant isolation.")
         AgentFactory._configure_dspy(user_id=user_id)
         from src.agents.thematic import ThematicAgent
         agent = ThematicAgent(use_cache=use_cache, user_id=user_id, **kwargs)
@@ -135,7 +133,8 @@ class AgentFactory:
 
     @staticmethod
     def create_momentum_agent(use_cache=True, user_id=None, **kwargs):
-        user_id = user_id or "system"
+        if not user_id:
+            raise ValueError(f"AgentFactory: user_id is required for multi-tenant isolation.")
         AgentFactory._configure_dspy(user_id=user_id)
         # tier = kwargs.pop('tier', 'fast') # Swarm manages tiers
         agent = MomentumSwarm(user_id=user_id, use_cache=use_cache, **kwargs)
@@ -143,7 +142,8 @@ class AgentFactory:
 
     @staticmethod
     def create_fundamental_agent(use_cache=True, user_id=None, **kwargs):
-        user_id = user_id or "system"
+        if not user_id:
+            raise ValueError(f"AgentFactory: user_id is required for multi-tenant isolation.")
         AgentFactory._configure_dspy(user_id=user_id)
         # tier = kwargs.pop('tier', 'smart')
         agent = FundamentalSwarm(user_id=user_id, use_cache=use_cache, **kwargs)
@@ -151,7 +151,8 @@ class AgentFactory:
         
     @staticmethod
     def create_macro_agent(use_cache=True, user_id=None, **kwargs):
-        user_id = user_id or "system"
+        if not user_id:
+            raise ValueError(f"AgentFactory: user_id is required for multi-tenant isolation.")
         AgentFactory._configure_dspy(user_id=user_id)
         tier = kwargs.pop('tier', 'smart')
         agent = MacroAgent(use_cache=use_cache, tier=tier, user_id=user_id, **kwargs)
@@ -159,7 +160,8 @@ class AgentFactory:
 
     @staticmethod
     def create_sentiment_agent(use_cache=True, user_id=None, **kwargs):
-        user_id = user_id or "system"
+        if not user_id:
+            raise ValueError(f"AgentFactory: user_id is required for multi-tenant isolation.")
         AgentFactory._configure_dspy(user_id=user_id)
         # tier = kwargs.pop('tier', 'fast')
         agent = SentimentSwarm(user_id=user_id, use_cache=use_cache, **kwargs)
@@ -167,7 +169,8 @@ class AgentFactory:
 
     @staticmethod
     def create_risk_agent(use_cache=True, user_id=None, **kwargs):
-        user_id = user_id or "system"
+        if not user_id:
+            raise ValueError(f"AgentFactory: user_id is required for multi-tenant isolation.")
         AgentFactory._configure_dspy(user_id=user_id)
         tier = kwargs.pop('tier', 'fast')
         agent = RiskAgent(use_cache=use_cache, tier=tier, user_id=user_id, **kwargs)
@@ -175,7 +178,8 @@ class AgentFactory:
 
     @staticmethod
     def create_cio_agent(use_cache=True, transaction_repo=None, mode="weekly", tier="smart", user_id=None, **kwargs):
-        user_id = user_id or "system"
+        if not user_id:
+            raise ValueError(f"AgentFactory: user_id is required for multi-tenant isolation.")
         AgentFactory._configure_dspy(user_id=user_id)
         prompt_map = {
             "daily": "prompts/cio_daily.txt",
@@ -193,12 +197,3 @@ class AgentFactory:
         agent = SentinelAgent(use_cache=use_cache, user_id=user_id, **kwargs)
         return AgentFactory._inject_dependencies(agent)
 
-    @staticmethod
-    def create_action_extractor_agent(use_cache=True, user_id=None, **kwargs):
-        user_id = user_id or "system"
-        from src.agents.action_extractor import ActionExtractorAgent
-        AgentFactory._configure_dspy(user_id=user_id)
-        # Use fastest tier for extraction by default since it's just JSON formatting
-        tier = kwargs.pop('tier', 'fast')
-        agent = ActionExtractorAgent(use_cache=use_cache, user_id=user_id, tier=tier, **kwargs)
-        return AgentFactory._inject_dependencies(agent)

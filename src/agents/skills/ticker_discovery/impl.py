@@ -32,7 +32,7 @@ async def ticker_discovery(
         query = f"top {strategy} {sector_str} stocks to buy 2025 2026 analysis ticker"
         
         # 3. Search
-        search_results = search_svc.search_financial_context(query, max_results=5)
+        search_results = await search_svc.search_financial_context(query, max_results=5)
         if not search_results:
             logger.warning(f"No search results for query: {query}")
             return json.dumps({"status": "no_results", "tickers": []})
@@ -48,10 +48,14 @@ async def ticker_discovery(
             logger.error(f"User {user_id} has no Gemini API key for ticker discovery.")
             return json.dumps({"status": "error", "error": "No Gemini API key found for extraction."})
             
-        # Use simple config for extraction
+        # Use simple config for extraction (tier-aware routing)
+        from src.infrastructure.llm.tier_config import TierConfig
+        tier_config = TierConfig()
+        model = tier_config.resolve("fast")  # Fast & reliable for extraction
+        
         config = LLMConfig(
             provider="gemini",
-            model="gemini-2.0-flash", # Fast & reliable for extraction
+            model=model,
             api_key=api_key,
             temperature=0.0
         )
@@ -71,8 +75,8 @@ async def ticker_discovery(
             Message(role="user", content=f"Search Results:\n{context}")
         ]
         
-        # Run chat (assumed synchronous in current LLMGateway implementation)
-        llm_response = gateway.chat(messages, config)
+        # Run chat
+        llm_response = await gateway.chat(messages, config)
         
         # 5. Parse and Filter
         # Clean JSON from markdown if exists

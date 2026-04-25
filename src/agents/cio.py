@@ -5,6 +5,7 @@ from .base_agent import BaseAgent
 from src.utils.time_utils import format_time
 from src.repositories.transaction_repository import AlchemyTransactionRepository
 from src.repositories.settings_repository import AlchemySettingsRepository
+from src.utils.json_utils import json_loads_safe
 
 class CIOAgent(BaseAgent):
     def __init__(self, use_cache=True, transaction_repo=None, prompt_path="prompts/cio_weekly.txt", mode="report", **kwargs):
@@ -106,7 +107,14 @@ class CIOAgent(BaseAgent):
             self.logger.error(f"Failed to load narrative drift: {e}")
             narrative_drift_context = "無敘事偏離數據 (No narrative drift data)."
 
-        # 5. Prepare Data for Prompt Template
+        # 5. Get Cash Deployment Context (Dynamic Calculation)
+        # 5. 取得現金部署上下文 (動態計算)
+        if "cash_deployment_context" not in context or not context.get("cash_deployment_context"):
+            cash_deployment_context = self._get_cash_deployment_context(user_id)
+        else:
+            cash_deployment_context = context.get("cash_deployment_context", "")
+
+        # 6. Prepare Data for Prompt Template
         prompt_data = {
             "current_date": format_time(fmt="%Y-%m-%d"),
             "leverage_ratio": f"{leverage_ratio:.2f}",
@@ -118,6 +126,7 @@ class CIOAgent(BaseAgent):
             "thematic_context": thematic_context, 
             "narrative_drift_context": narrative_drift_context, # [NEW] Milestone 3.2 Context
             "sector_strategy": context.get("sector_strategy", "無 (None)"),
+            "cash_deployment_context": cash_deployment_context, # [FIX] Dynamic cash level calculation
             "report_focus": context.get("task_instruction") or context.get("report_focus", "Weekly Strategic"),
             "topic": context.get("topic", "未指定 (Not Specified)"),
             "memory_chain": context.get("memory_chain", "無相關歷史記憶 (No existing memory)")
@@ -135,7 +144,7 @@ class CIOAgent(BaseAgent):
             from .evaluator_agent import EvaluatorAgent
             evaluator = EvaluatorAgent(user_id=user_id)
             eval_res_str = await evaluator.run({"report_content": response})
-            eval_res = json.loads(eval_res_str)
+            eval_res = json_loads_safe(eval_res_str)
             
             if eval_res.get("is_compliant") is False:
                 violation = eval_res.get("violation_reason", "Unknown Violation")
@@ -159,7 +168,7 @@ class CIOAgent(BaseAgent):
         return response
 
     async def _run_strategy(self, context):
-        """Generates Sector Strategy & Candidates (JSON)."""
+        """Generates Sector Strategy & Candidates (JSON) (Async)."""
         
         # Load Strategy Prompt (Ideally use _load_prompt but different path)
         strategy_prompt_template = ""
@@ -212,16 +221,16 @@ class CIOAgent(BaseAgent):
         )
         
         # Parse JSON
-        try:
-            cleaned = response_str.replace("```json", "").replace("```", "").strip()
-            data = json.loads(cleaned)
-            return data
-        except json.JSONDecodeError:
-            self.logger.error(f"Failed to parse Strategy JSON: {response_str}")
+        data = json_loads_safe(response_str)
+        
+        # v9.1: Basic integrity check
+        if not data or "sector_strategy" not in data:
+            self.logger.error(f"CIOAgent: Strategy JSON invalid or incomplete. Raw: {response_str[:200]}...")
             return {
-                "sector_strategy": {"target_sectors": [], "rationale": "JSON Parse Error"},
+                "sector_strategy": {"target_sectors": [], "rationale": "Incomplete or Invalid JSON"},
                 "candidates": []
             }
+        return data
 
     async def polish_report(self, report_content: str) -> str:
         """
@@ -231,18 +240,16 @@ class CIOAgent(BaseAgent):
         潤飾最終報告以提升可讀性與語氣。
         確保行動指令表 (Actionable Orders) 包含持倉上下文 (若文本中有提供)。
         """
-        system_prompt = (
-            "You are the Chief Investment Officer (Editor Mode). "
-            "Your task is to review the following investment report. "
-            "1. Improve readability, flow, and formatting. "
-            "2. Ensure the 'Actionable Orders' table is clear, well-formatted in **Markdown pipe table** format (| col1 | col2 |), and includes a 'Quantity/Weight' column if data allows. "
-            "3. DO NOT remove the Detailed Analysis sections. Keep them intact but fix any markdown issues. "
-            "4. Add a final professional concluding remark if missing. "
-            "5. Ensure all headers are consistent (e.g., '## 1. 市場定調'). "
-            "6. The entire report MUST be written in **Traditional Chinese (繁體中文)**. DO NOT translate any section to English. Keep all section headers, analysis, and conclusions in Traditional Chinese. "
-            "7. The 'Actionable Orders' table column headers must be: 代號 | 動作 | 數量/比例 | 信心分數 (1-10) | 原因簡述. "
-            "Output the polished report in Markdown."
-        )
+        editor_identity_path = os.path.join(self.workspace_path, "IDENTITY_editor.md")
+        if os.path.exists(editor_identity_path):
+            with open(editor_identity_path, 'r', encoding='utf-8') as f:
+                system_prompt = f.read()
+        else:
+            # Fallback if file missing
+            system_prompt = (
+                "You are the Chief Investment Officer (Editor Mode). "
+                "Polish the following report for readability and tone in Traditional Chinese."
+            )
         
         user_prompt = f"Please polish this report:\n\n{report_content}"
         
@@ -298,3 +305,79 @@ class CIOAgent(BaseAgent):
         except Exception as e:
             self.logger.error(f"Error calculating portfolio context: {e}")
             return 1.0, "Error retrieving data."
+
+    def _get_cash_deployment_context(self, user_id):
+        """
+        計算並返回現金部署上下文 (Dynamic Cash Deployment Context).
+        基於帳戶現金水位提出建議。
+        """
+        if not user_id:
+            return "無法取得用戶 ID (No user ID)."
+        
+        try:
+            # Get account cash position
+            # 取得帳戶現金部位
+            from src.repositories.broker_account_repository import AlchemyBrokerAccountRepository
+            from src.repositories.holdings_repository import AlchemyHoldingsRepository
+            
+            account_repo = AlchemyBrokerAccountRepository()
+            holdings_repo = AlchemyHoldingsRepository()
+            
+            # Get latest account snapshot
+            account = account_repo.get_latest_by_user(user_id)
+            if not account:
+                return "無法取得帳戶信息 (No broker account info)."
+            
+            nlv = account.nlv if hasattr(account, 'nlv') else account.total_equity
+            cash = account.cash if hasattr(account, 'cash') else account.available_cash
+            
+            if nlv <= 0:
+                return "帳戶尚未初始化 (Account not initialized)."
+            
+            cash_ratio = (cash / nlv * 100)
+            
+            # Dynamic assessment based on cash ratio
+            # 基於現金比例的動態評估
+            if cash_ratio > 30:
+                status = "🔴 **現金水位明顯過高** (Excess Cash >30%)"
+                signal = "URGENT: 現金再投資"
+                recommendation = f"建議立即啟動「現金再投資」模組。目標: 將現金比例從 {cash_ratio:.1f}% 降至 15-20%。"
+            elif cash_ratio > 25:
+                status = "🔴 **現金水位過高** (High Cash 25-30%)"
+                signal = "HIGH: 現金再投資"
+                recommendation = f"建議在下一個交易機會啟動現金佈局。目標比例: 15-20%。"
+            elif cash_ratio > 15:
+                status = "🟡 **現金水位略高** (Moderate {cash_ratio:.1f}%)"
+                signal = "NORMAL: 分期佈局"
+                recommendation = "可考慮分期逢低吸納，但無急迫性。"
+            elif cash_ratio > 10:
+                status = "🟢 **現金水位正常** (Optimal {cash_ratio:.1f}%)"
+                signal = "HOLD: 保持策略"
+                recommendation = "現金配置合理，繼續按計劃投資。"
+            else:
+                status = "🔵 **現金水位低** (Low <10%)"
+                signal = "CAUTION: 保持流動性"
+                recommendation = "現金不足，應在下一輪獲利回吐時補充現金儲備。"
+            
+            # Build context string
+            context_str = f"""
+### 現金部署戰略 (Cash Deployment Strategy)
+{status}
+
+**帳戶快照 (Account Snapshot)**:
+- 淨資產值 (NLV): ${nlv:,.2f}
+- 可用現金: ${cash:,.2f}
+- 現金比例: {cash_ratio:.1f}%
+
+**信號 (Signal)**: {signal}
+
+**建議 (Recommendation)**: {recommendation}
+"""
+            
+            self.logger.info(f"Cash deployment context: {status} ({cash_ratio:.1f}%)")
+            return context_str
+            
+        except Exception as e:
+            self.logger.error(f"Failed to calculate cash deployment context: {e}")
+            return "無法計算現金水位 (Unable to calculate cash position)."
+

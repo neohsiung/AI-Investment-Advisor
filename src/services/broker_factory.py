@@ -1,6 +1,5 @@
 
-import typing
-from typing import List, Dict, Tuple, Any, Optional, Callable, Dict, List, Tuple, Any, Optional, Callable
+from typing import Dict, Any, Optional
 from src.domain.broker import IBroker
 from src.repositories.settings_repository import AlchemySettingsRepository
 from src.services.etoro_service import EtoroService
@@ -63,18 +62,17 @@ class BrokerFactory:
         brokers = {}
         
         # Check Etoro
-        if settings_repo.get(user_id, "enable_etoro") == "true":
+        raw_enable_etoro = settings_repo.get(user_id, "enable_etoro")
+        etoro_enabled = raw_enable_etoro is True or str(raw_enable_etoro).lower() in ("true", "1")
+        if etoro_enabled:
             try:
                 brokers["etoro"] = BrokerFactory.get_broker(user_id, "etoro")
             except Exception as e:
                 logger.warning(f"Failed to init etoro: {e}")
-        # Legacy Fallback: if not explicitly disabled in DB, and Env Vars exist, enable it?
-        # User said "manage in settings". So if settings are empty, we might defaults.
-        # But let's respect "enable_etoro" being None -> check env.
-        elif settings_repo.get(user_id, "enable_etoro") is None:
-             import os
-             if os.getenv("ETORO_API_KEY"): 
-                 brokers["etoro"] = BrokerFactory.get_broker(user_id, "etoro")
+        elif raw_enable_etoro is None:
+            import os
+            if os.getenv("ETORO_API_KEY"):
+                brokers["etoro"] = BrokerFactory.get_broker(user_id, "etoro")
 
 
         # Check IBKR

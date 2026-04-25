@@ -1,7 +1,9 @@
 from fastapi import WebSocket
-from typing import List, Dict, Any, Optional
+from typing import List, Dict, Any
 import json
 import asyncio
+from datetime import datetime, timedelta
+from sqlalchemy import text
 from src.utils.logger import setup_logger
 from src.utils.security import redact_secrets
 
@@ -145,7 +147,7 @@ class ConnectionManager:
                             "type": "SYSTEM_ALERT", # Map to frontend expected type
                             "payload": {
                                 "category": r.event_type,
-                                "message": r.message,
+                                "message": r.content,
                                 "timestamp": str(r.created_at)
                             }
                         })

@@ -38,11 +38,11 @@ class TierSpec:
     name: str                              # tier identifier
     display_name: str                      # human-readable
     env_key: str                           # env var for model override
-    default_model: str                     # fallback model
     input_cost_per_mtok: float = 0.0       # $/million input tokens
     output_cost_per_mtok: float = 0.0      # $/million output tokens
     max_tokens: int = 4096                 # default max output tokens
     description: str = ""
+    default_model: str = ""                # Fallback if DB and Env are missing
     cognitive_mapping: str = ""            # 認知科學對照
 
     @property
@@ -50,7 +50,7 @@ class TierSpec:
         """Blended cost (3:1 input:output ratio)."""
         return (self.input_cost_per_mtok * 3 + self.output_cost_per_mtok) / 4
 
-    def resolve_model(self, db_settings: Dict[str, str] = None) -> str:
+    def resolve_model(self, db_settings: Dict[str, str] = None) -> Optional[str]:
         """
         Resolve the actual model to use.
         Priority: DB setting > Env var > Default.
@@ -59,11 +59,13 @@ class TierSpec:
         # DB override
         if self.env_key in db_settings:
             val = db_settings[self.env_key]
-            return val.strip().strip('"').strip("'") if isinstance(val, str) else val
+            if val:
+                return val.strip().strip('"').strip("'")
         # Env override
         env_model = os.getenv(self.env_key)
         if env_model:
             return env_model.strip().strip('"').strip("'")
+        # Default
         return self.default_model
 
 
@@ -74,48 +76,42 @@ class TierSpec:
 # fmt: off
 DEFAULT_TIERS: Dict[str, TierSpec] = {
     # ── Tier 0: Nano — 反射層 (Reflex) ─────────────────
-    # Use for: intent classification, routing, yes/no decisions
-    # 用途: 意圖分類、路由、是否判斷
     "nano": TierSpec(
         name="nano",
         display_name="Nano (反射)",
         env_key="AI_MODEL_NANO",
-        default_model="openai/gpt-4.1-nano",
         input_cost_per_mtok=0.10,
         output_cost_per_mtok=0.40,
-        max_tokens=1024,
+        max_tokens=512,
         description="Ultra-cheap reflex layer for classification & routing",
+        default_model="google/gemini-2.0-flash-lite-preview-02-05",
         cognitive_mapping="System 0 — 反射 (Reflex): 不經思考的自動反應",
     ),
 
     # ── Tier 1: Fast — 快思層 (Fast Thinking) ──────────
-    # Use for: summarization, extraction, sentiment, memory compaction (D→I)
-    # 用途: 摘要、萃取、情緒分析、記憶壓縮
     "fast": TierSpec(
         name="fast",
-        display_name="Fast (快思)",
+        display_name="Fast (高速)",
         env_key="AI_MODEL_FAST",
-        default_model="google/gemini-2.5-flash",
         input_cost_per_mtok=0.30,
         output_cost_per_mtok=2.50,
-        max_tokens=4096,
-        description="High-throughput layer for summarization & extraction",
+        max_tokens=2048,
+        description="Low-latency balance for summary & sensory agents",
+        default_model="google/gemini-2.0-flash-exp",
         cognitive_mapping="System 1 — 快思 (Fast Thinking): 直覺式快速處理",
     ),
 
     # ── Tier 2: Smart — 慢想層 (Slow Thinking) ─────────
-    # Use for: analysis, reasoning, knowledge distillation (I→K),
-    #          conversation with context, multi-step decisions
     # 用途: 分析、推理、知識蒸餾、上下文對話、多步驟決策
     "smart": TierSpec(
         name="smart",
         display_name="Smart (慢想)",
         env_key="AI_MODEL_SMART",
-        default_model="google/gemini-2.5-pro",
         input_cost_per_mtok=1.25,
         output_cost_per_mtok=10.00,
         max_tokens=8192,
         description="Analytical layer for reasoning & multi-step decisions",
+        default_model="google/gemini-2.0-pro-exp-02-05",
         cognitive_mapping="System 2 — 慢想 (Slow Thinking): 需要專注的分析性思考",
     ),
 
@@ -127,11 +123,11 @@ DEFAULT_TIERS: Dict[str, TierSpec] = {
         name="advanced",
         display_name="Advanced (深思)",
         env_key="AI_MODEL_ADVANCED",
-        default_model="anthropic/claude-sonnet-4.5",
         input_cost_per_mtok=3.00,
         output_cost_per_mtok=15.00,
         max_tokens=8192,
         description="Deep reasoning for CIO decisions & complex strategy",
+        default_model="anthropic/claude-3.5-sonnet:beta",
         cognitive_mapping="System 2+ — 深思 (Deep Thinking): 深度推理與戰略判斷",
     ),
 }
@@ -233,7 +229,7 @@ class TierConfig:
             daily = spec.blended_cost_per_mtok * (avg_tokens / 1_000_000) * count
             daily_total += daily
             lines.append(
-                f"| {spec.display_name} | `{spec.default_model}` | "
+                f"| {spec.display_name} | `{spec.env_key}` | "
                 f"{count} | ${daily:.4f} | ${daily * 7:.4f} |"
             )
 
@@ -241,3 +237,59 @@ class TierConfig:
         lines.append(f"\n> Weekly budget: $20.00 | Estimated: ${daily_total * 7:.2f}")
 
         return "\n".join(lines)
+
+
+class SettingsAwareModelRouter:
+    """
+    User-aware model router that fetches models from database settings.
+    用戶感知的模型路由器，從資料庫設定中取得模型。
+    
+    Usage:
+        router = SettingsAwareModelRouter(settings_repo)
+        model = router.get_model(user_id, "fast")
+        models = router.get_all_models(user_id)
+    """
+    
+    def __init__(self, settings_repo=None):
+        self.settings_repo = settings_repo
+        self.tier_config = TierConfig()
+    
+    def get_model(self, user_id: str, tier: str) -> str:
+        """
+        Get the model for a specific tier and user.
+        Priority: DB setting > Tier default
+        """
+        if not user_id:
+            logger.warning("SettingsAwareModelRouter.get_model: user_id is empty")
+            return self.tier_config.resolve(tier)
+        
+        try:
+            if self.settings_repo:
+                tier_key_map = {
+                    "nano": "AI_MODEL_NANO",
+                    "fast": "AI_MODEL_FAST",
+                    "smart": "AI_MODEL_SMART",
+                    "advanced": "AI_MODEL_ADVANCED"
+                }
+                db_key = tier_key_map.get(tier)
+                if db_key:
+                    # Use correct method signature: get(user_id, key, default)
+                    db_model = self.settings_repo.get(user_id, db_key, None)
+                    if db_model:
+                        if isinstance(db_model, str):
+                            db_model = db_model.strip().strip('"').strip("'")
+                        logger.info(f"ModelRouter: {user_id} {tier} -> {db_model} (DB)")
+                        return db_model
+        except Exception as e:
+            logger.warning(f"ModelRouter: Failed DB lookup {user_id}/{tier}: {e}")
+        
+        model = self.tier_config.resolve(tier)
+        logger.info(f"ModelRouter: {user_id} {tier} -> {model} (resolved)")
+        return model or ""
+    
+    def get_all_models(self, user_id: str) -> Dict[str, str]:
+        """Get all models for a user across all tiers."""
+        return {
+            tier: self.get_model(user_id, tier)
+            for tier in ["nano", "fast", "smart", "advanced"]
+        }

@@ -33,13 +33,13 @@ class DashboardService:
         self.roi_engine = ROIEngine(db_path=self.db_path, user_id=user_id)
         self.pnl_calc = PnLCalculator(db_path=self.db_path, user_id=user_id)
 
-    def _fetch_market_prices(self, tickers: List[str], user_id: str = None) -> Dict[str, float]:
+    async def _fetch_market_prices(self, tickers: List[str], user_id: str = None) -> Dict[str, float]:
         """
         Internal helper to fetch market prices with caching.
         內部輔助方法：獲取帶快取的市場價格。
         """
         service = MarketDataService(user_id=user_id)
-        prices = service.get_current_prices(tickers)
+        prices = await service.get_current_prices(tickers)
         
         # Hardcode USD if present (Cash/Currency)
         if "USD" in tickers:
@@ -47,7 +47,7 @@ class DashboardService:
             
         return prices
 
-    def prepare_dashboard_data(self, user_id: str) -> Dict[str, Any]:
+    async def prepare_dashboard_data(self, user_id: str) -> Dict[str, Any]:
         """
         Fetch transactions, prices, and calculate all dashboard metrics for the user.
         """
@@ -56,18 +56,14 @@ class DashboardService:
             
             # 1. Identify Active Tickers First
             from src.services.portfolio_aggregator_service import PortfolioAggregatorService
-            aggregator = PortfolioAggregatorService(user_id)
-            live_portfolio = aggregator.get_aggregated_portfolio()
+            aggregator = PortfolioAggregatorService(user_id=user_id)
+            live_portfolio = await aggregator.get_aggregated_portfolio()
             
             active_tickers = []
             live_positions = live_portfolio.get('positions', [])
             
             if live_positions:
-                active_tickers = list({p.symbol for p in live_positions})
-                # Merge with DB active tickers so brokers that omit positions (e.g. eToro
-                # dropping META) don't cause a price-fetch miss and avg_cost fallback.
-                db_active = self.transaction_repo.get_active_tickers(user_id)
-                active_tickers = list(set(active_tickers) | set(db_active))
+                active_tickers = [p.symbol for p in live_positions]
             else:
                 # Fallback to transactions if no live positions
                 transactions_df = self.transaction_service.get_transactions(user_id)
@@ -78,27 +74,20 @@ class DashboardService:
                     active_tickers = active_holdings[active_holdings > 0.0001].index.tolist()
             
             # 2. Fetch Prices ONCE
-            # Priority: eToro/yfinance prices (already on pos.current_price) > Polygon fallback
-            # Polygon free-tier snapshot can return stale/wrong prices; yfinance is more reliable.
             current_prices = {}
-            if live_positions:
-                for p in live_positions:
-                    ticker = getattr(p, 'symbol', None)
-                    price = getattr(p, 'current_price', 0)
-                    if ticker and price > 0:
-                        current_prices[ticker] = price
-
-            # Polygon fallback for any tickers not covered by live positions
             if active_tickers:
-                missing = [t for t in active_tickers if not current_prices.get(t)]
-                if missing:
-                    polygon_prices = self._fetch_market_prices(missing, user_id=user_id)
-                    for ticker, price in polygon_prices.items():
-                        if price > 0 and not current_prices.get(ticker):
-                            current_prices[ticker] = price
+                current_prices = await self._fetch_market_prices(active_tickers, user_id=user_id)
+                
+                # price resilience fix
+                if live_positions:
+                    for p in live_positions:
+                        ticker = getattr(p, 'symbol', None)
+                        if ticker and (ticker not in current_prices or current_prices[ticker] == 0):
+                            current_prices[ticker] = getattr(p, 'current_price', 0)
 
             # 3. Update snapshot WITH pre-fetched prices
-            update_daily_snapshot(self.db_path, user_id=user_id, current_prices=current_prices)
+            from src.services.analytics_service import update_daily_snapshot
+            await update_daily_snapshot(self.db_path, user_id=user_id, current_prices=current_prices)
 
             # 4. Fetch Transactions for other UI needs
             transactions_df = self.transaction_service.get_transactions(user_id)
@@ -109,36 +98,49 @@ class DashboardService:
             roi = 0.0
 
             try:
-                metrics_derived = self.calc.calculate_metrics(current_prices, user_id=user_id)
-                metrics = metrics_derived
-                metrics['gross_nlv'] = metrics_derived['tnv'] + metrics_derived['cash_balance']
-            except Exception as e:
-                logger.error(f"Metric calculation (LeverageCalc) failed: {e}", exc_info=True)
+                # [FIX Issue #4] Use eToro's account.total_equity as the authoritative NLV source
+                # Don't use local calculations which can diverge from broker
+                # 1. Invested Capital (Baseline)
+                invested_capital = self.transaction_repo.calculate_net_invested_capital(user_id)
+                metrics['invested_capital'] = invested_capital
 
-            # Long-term solution: use broker account equity as NLV ground truth when available.
-            # EtoroService.get_account() computes equity = cash + ∑(qty × yfinance_price),
-            # which is authoritative. Override LeverageCalc NLV only if broker value is positive
-            # (it falls back to initial investment values when market is closed, still valid).
-            broker_equity = live_portfolio.get('total_equity', 0)
-            broker_cash = live_portfolio.get('total_cash', 0)
-            if broker_equity > 0:
-                metrics['nlv'] = broker_equity
-                metrics['cash_balance'] = broker_cash
-                # Recompute derived fields with broker equity as denominator
-                metrics['leverage_ratio'] = metrics['tnv'] / broker_equity if broker_equity > 0 else 0
-                metrics['gross_nlv'] = metrics['tnv'] + broker_cash
-                logger.info(f"NLV sourced from broker account: {broker_equity:.2f} (cash={broker_cash:.2f})")
+                # 2. Get NLV from broker account (eToro is authoritative)
+                total_pnl_from_positions = sum(getattr(p, 'unrealized_pnl', 0) for p in live_positions) if live_positions else 0.0
+                broker_accounts = live_portfolio.get('broker_breakdown', {})
+                nlv_from_broker = sum(acc.total_equity for acc in broker_accounts.values())
+                
+                metrics['nlv'] = nlv_from_broker if nlv_from_broker > 0 else 0
+                metrics['cash_balance'] = sum(acc.available_cash for acc in broker_accounts.values())
+                metrics['unrealized_pnl'] = total_pnl_from_positions
+                
+                # 3. Fallback to local calculation if broker doesn't provide NLV
+                if metrics['nlv'] == 0:
+                    metrics_derived = self.calc.calculate_metrics(current_prices, user_id=user_id)
+                    metrics['nlv'] = metrics_derived['nlv']
+                    metrics['cash_balance'] = metrics_derived.get('cash_balance', metrics['cash_balance'])
+                    metrics['gross_nlv'] = metrics_derived.get('tnv', 0) + metrics['cash_balance']
 
-            try:
-                pnl_data = self.pnl_calc.calculate_breakdown(current_prices, user_id=user_id)
-                cost_basis = pnl_data.get('invested_capital', 0)
-                metrics['invested_capital'] = cost_basis
-                metrics['unrealized_pnl'] = pnl_data.get('unrealized', 0)
-                pnl_data['total'] = metrics['nlv'] - cost_basis
-                pnl_data['realized'] = pnl_data['total'] - pnl_data.get('unrealized', 0)
-                roi = ((metrics['nlv'] - cost_basis) / cost_basis * 100) if cost_basis > 0 else 0.0
+                # 4. Final Secondary Metrics (ROI, PnL) based on final NLV
+                pnl_data['unrealized'] = total_pnl_from_positions
+                # In authoritative mode, total PnL is often simplified to unrealized from positions
+                # but if we have NLV, we can calculate it more precisely:
+                pnl_data['total'] = metrics['nlv'] - invested_capital
+                pnl_data['realized'] = pnl_data['total'] - pnl_data['unrealized']
+                
+                roi = ((metrics['nlv'] - invested_capital) / invested_capital) * 100 if invested_capital > 0 else 0.0
+                    
             except Exception as e:
-                logger.error(f"Metric calculation (PnL/ROI) failed: {e}", exc_info=True)
+                logger.error(f"Metric calculation failed: {e}")
+                # Fallback to local calculation on error
+                try:
+                    metrics_derived = self.calc.calculate_metrics(current_prices, user_id=user_id)
+                    metrics = metrics_derived
+                    metrics['invested_capital'] = self.transaction_repo.calculate_net_invested_capital(user_id)
+                    metrics['unrealized_pnl'] = pnl_data.get('unrealized', 0)
+                    pnl_data['total'] = metrics['nlv'] - metrics['invested_capital']
+                    pnl_data['realized'] = pnl_data['total'] - pnl_data['unrealized']
+                except Exception as e2:
+                    logger.error(f"Fallback metric calculation also failed: {e2}")
 
             # 6. Prepare Positions DataFrame
             positions_df = pd.DataFrame()
@@ -148,11 +150,9 @@ class DashboardService:
                      price = current_prices.get(p.symbol, 0) or getattr(p, 'current_price', 0)
                      gross = p.quantity * price
                      loan = 0.0
-                     lev = getattr(p, 'leverage', 1.0) or 1.0
-                     if lev > 1:
-                         # loan = notional × (1 - 1/leverage) = broker's funded portion
-                         loan = gross * (1 - 1 / lev)
-                     net_eq = gross - loan  # = notional / leverage = margin equity
+                     if hasattr(p, 'leverage') and p.leverage > 1:
+                         loan = getattr(p, 'market_value', 0) * (p.leverage - 1)
+                     net_eq = gross - loan
 
                      data.append({
                           'ticker': p.symbol,
@@ -166,6 +166,10 @@ class DashboardService:
                      })
                  positions_df = pd.DataFrame(data)
             elif not transactions_df.empty:
+                # [FIX] Account for leverage in fallback (offline) mode
+                leverage_summary = self.transaction_repo.get_leverage_summary(user_id)
+                lev_map = {row[0]: row[2] for row in leverage_summary}
+
                 positions_raw = transactions_df.copy()
                 positions_raw['qty_signed'] = positions_raw.apply(lambda x: x['quantity'] if x['action'] == 'BUY' else -x['quantity'], axis=1)
                 positions_grouped = positions_raw.groupby('ticker')['qty_signed'].sum().reset_index()
@@ -173,10 +177,12 @@ class DashboardService:
 
                 if not positions_df.empty:
                     positions_df['current_price'] = positions_df['ticker'].map(current_prices).fillna(0)
+                    positions_df['leverage'] = positions_df['ticker'].map(lev_map).fillna(1.0)
                     positions_df['gross_mv'] = positions_df['quantity'] * positions_df['current_price']
-                    positions_df['loan'] = 0.0
-                    positions_df['net_equity'] = positions_df['gross_mv']
-                    positions_df['leverage'] = 1.0
+                    
+                    # [V6.1] Correct Loan calculation: Borrowed = Nominal - Equity
+                    positions_df['loan'] = positions_df['gross_mv'] * (1 - 1/positions_df['leverage'])
+                    positions_df['net_equity'] = positions_df['gross_mv'] - positions_df['loan']
 
             return {
                 'transactions_df': transactions_df,
@@ -185,5 +191,6 @@ class DashboardService:
                 'pnl_data': pnl_data,
                 'roi': roi,
                 'positions_df': positions_df,
-                'broker_breakdown': live_portfolio.get('broker_breakdown', {})
+                'broker_breakdown': live_portfolio.get('broker_breakdown', {}),
+                'warnings': live_portfolio.get('warnings', [])
             }

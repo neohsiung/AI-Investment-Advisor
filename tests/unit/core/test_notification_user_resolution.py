@@ -36,6 +36,7 @@ async def test_do_send_alert_uses_internal_user_id():
 
         mock_settings = MagicMock(spec=SettingsService)
         mock_settings.user_id = "alice@example.com"  # Internal user ID
+        mock_settings.settings_repo = MagicMock()
 
         mock_council = MagicMock(spec=CouncilService)
         mock_council.start_session = AsyncMock(
@@ -50,24 +51,24 @@ async def test_do_send_alert_uses_internal_user_id():
 
         triggers = [{"id": "vix_spike", "text": "🔴 VIX Spike: 45.0 > 30.0"}]
 
-        with patch('httpx.AsyncClient') as mock_client_cls:
-            mock_response = MagicMock(status_code=202)
-            mock_client = AsyncMock()
-            mock_client.post = AsyncMock(return_value=mock_response)
-            mock_client.__aenter__ = AsyncMock(return_value=mock_client)
-            mock_client.__aexit__ = AsyncMock(return_value=None)
-            mock_client_cls.return_value = mock_client
+        with patch('src.services.notification_service.NotificationService') as mock_noti_cls, \
+             patch('src.services.notification_settings_manager.NotificationSettingsManager') as mock_nsm_cls:
+            
+            mock_noti_instance = MagicMock()
+            mock_noti_instance.notify_all = AsyncMock(return_value={})
+            mock_noti_cls.create_with_settings.return_value = mock_noti_instance
+            
+            mock_nsm = MagicMock()
+            mock_nsm.get_active_notification_channels.return_value = ["email"]
+            mock_nsm_cls.return_value = mock_nsm
 
             await sentinel._do_send_alert(triggers, source="Sentinel")
 
-            # Verify: the HTTP payload should use the INTERNAL user_id
-            assert mock_client.post.called
-            call_kwargs = mock_client.post.call_args
-            payload = call_kwargs.kwargs.get('json') or call_kwargs[1].get('json')
-
-            assert payload is not None, "HTTP POST payload should not be None"
-            assert payload["user_id"] == "alice@example.com", (
-                f"Expected internal user_id 'alice@example.com', got '{payload['user_id']}'"
+            # Verify: NotificationService was created with the INTERNAL user_id
+            mock_noti_cls.create_with_settings.assert_called_once()
+            call_kwargs = mock_noti_cls.create_with_settings.call_args.kwargs
+            assert call_kwargs["user_id"] == "alice@example.com", (
+                f"Expected internal user_id 'alice@example.com', got '{call_kwargs['user_id']}'"
             )
 
 

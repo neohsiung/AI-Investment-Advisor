@@ -4,6 +4,7 @@ logger = setup_logger("CouncilService")
 import uuid
 import json
 import asyncio
+import os
 import typing
 from typing import List, Dict, Tuple, Any, Optional, Callable, Union, Awaitable
 from datetime import datetime
@@ -11,6 +12,10 @@ from datetime import datetime
 from src.agents.factory import AgentFactory
 from src.infrastructure.llm.tier_router_base import ITierRouter, RoutingContext
 from src.infrastructure.llm.council_tier_router import CouncilTierRouter
+from src.infrastructure.llm.tier_config import SettingsAwareModelRouter
+from src.infrastructure.llm.llm_gateway import OpenRouterGateway
+from src.domain.interfaces import Message, LLMConfig
+from src.repositories.settings_repository import AlchemySettingsRepository
 from src.repositories.vector_repository import AlchemyVectorRepository
 from src.infrastructure.lane_manager import LaneManager
 from src.utils.format_utils import format_agent_output
@@ -39,6 +44,53 @@ class CouncilService:
         self.vector_repo = AlchemyVectorRepository()
         self.lane_manager = LaneManager()
         self.competitor_service = CompetitorService(user_id=user_id)
+
+        # PAD Phase 2: Add model router and gateway
+        from src.data.database import get_db_engine
+        self.settings_repo = AlchemySettingsRepository(engine=get_db_engine())
+        self.model_router = SettingsAwareModelRouter(self.settings_repo)
+        self.gateway = OpenRouterGateway()
+    
+    async def _call_agent_llm(self, agent_name: str, context: Dict[str, Any], tier: str = "smart", 
+                              temperature: float = 0.7, max_tokens: int = 2000) -> str:
+        """
+        PAD Phase 2: Replace AgentFactory.create_*_agent().run() with direct gateway calls.
+        Generic method to call LLM for any agent role.
+        """
+        try:
+            from src.infrastructure.llm.llm_config_chain import build_config_chain
+            from src.infrastructure.llm.resilient_pipeline import ResilientLLMPipeline
+
+            chain = build_config_chain(self.user_id, tier)
+            if not chain:
+                raise ValueError(f"No model configured for tier={tier} user={self.user_id}")
+
+            pipeline = ResilientLLMPipeline(config_chain=chain)
+
+            agent_prompts = {
+                "Momentum": "You are a Momentum analyst. Analyze price trends and technical indicators.",
+                "Fundamental": "You are a Fundamental analyst. Analyze financial statements and valuations.",
+                "Risk": "You are a Risk manager. Assess portfolio risks and downsides.",
+                "Sentiment": "You are a Sentiment analyst. Analyze market sentiment and investor psychology.",
+                "Macro": "You are a Macro strategist. Assess macroeconomic trends and cyclical factors."
+            }
+
+            system_prompt = agent_prompts.get(agent_name, f"You are a {agent_name} analyst.")
+            messages = [
+                Message(role="system", content=system_prompt),
+                Message(role="user", content=json.dumps(context))
+            ]
+
+            logger.debug(f"Council: Calling {agent_name} agent via tier={tier} (user={self.user_id})")
+            response, _ = await pipeline.execute(messages, temperature=temperature, max_tokens=max_tokens)
+
+            if not isinstance(response, str):
+                raise ValueError(f"Unexpected response type from pipeline: {type(response)}")
+
+            return response
+        except Exception as e:
+            logger.error(f"Council: {agent_name} agent failed: {e}")
+            raise
 
     async def start_session(self, topic: str, context_data: Dict[str, Any], user_id: str, scope: str = "single", market_volatility: float = 0.0, mode: str = "weekly") -> Dict[str, Any]:
         """
@@ -73,10 +125,6 @@ class CouncilService:
             ticker = ticker_data['symbol']
             qty = ticker_data['quantity']
             
-            # Sub-Council: Momentum + Fundamental (Fast Tier)
-            mom_agent = AgentFactory.create_agent("Momentum", tier="fast", user_id=user_id)
-            fun_agent = AgentFactory.create_agent("Fundamental", tier="fast", user_id=user_id)
-            
             sub_context = {
                 "topic": f"Analysis of {ticker}",
                 "ticker": ticker,
@@ -84,9 +132,11 @@ class CouncilService:
                 "market_data": context_data.get("market_data")
             }
             
+            # Parallel Run within Sub-Council - Directly await since agents are async
+            # PAD Phase 2: Replace AgentFactory calls with _call_agent_llm
             res_mom, res_fun = await asyncio.gather(
-                mom_agent.run(sub_context),
-                fun_agent.run(sub_context)
+                self._call_agent_llm("Momentum", sub_context, tier="fast"),
+                self._call_agent_llm("Fundamental", sub_context, tier="fast")
             )
             
             return {
@@ -118,7 +168,6 @@ class CouncilService:
         consensus_tier = self.router.select_tier(
             RoutingContext(topic=topic, round_num=99, market_volatility=market_volatility, user_id=self.user_id)
         )
-        cio = AgentFactory.create_cio_agent(tier=consensus_tier, user_id=user_id, mode=mode)
         
         final_context = {
             "topic": topic,
@@ -129,8 +178,8 @@ class CouncilService:
             "portfolio_summary": "Full Portfolio Analysis"
         }
         
-        # Run CIO
-        final_report = await cio.run(final_context)
+        # Run CIO (Async) - PAD Phase 2: Replace AgentFactory with _call_agent_llm
+        final_report = await self._call_agent_llm("CIO", final_context, tier=consensus_tier)
         
         # Archive (Simple)
         self._archive_minutes(user_id, session_id, topic, str(final_report), aggregated_summary)
@@ -144,12 +193,12 @@ class CouncilService:
 
     async def _run_standard_session(self, session_id: str, topic: str, context_data: Dict[str, Any], user_id: str, market_volatility: float = 0.0, mode: str = "weekly") -> Dict[str, Any]:
         """
-        Standard single-topic Council session wrapped for asynchronous execution.
-        為非同步執行封裝的標準單一主題委員會議程。
+        Standard single-topic Council session (Async).
+        標準單一主題委員會議程 (非同步)。
         """
-        return await self._run_async_logic(session_id, topic, context_data, user_id, market_volatility, mode)
+        return await self._run_debate_logic(session_id, topic, context_data, user_id, market_volatility, mode)
 
-    async def _run_async_logic(self, session_id: str, topic: str, context_data: Dict[str, Any], user_id: str, market_volatility: float = 0.0, mode: str = "weekly") -> Dict[str, Any]:
+    async def _run_debate_logic(self, session_id: str, topic: str, context_data: Dict[str, Any], user_id: str, market_volatility: float = 0.0, mode: str = "weekly") -> Dict[str, Any]:
         """
         Core asynchronous logic for running an agent debate and capturing the transcript.
         執行 Agent 辯論並記錄逐字稿的核心非同步邏輯。
@@ -173,24 +222,8 @@ class CouncilService:
         
         # Instantiate Agents with retrieved context
         # [Fix] Wrap in try-except to prevent one agent failure from crashing the whole council
-        members = []
-        agent_factories = [
-            ("Momentum", AgentFactory.create_momentum_agent),
-            ("Fundamental", AgentFactory.create_fundamental_agent),
-            ("Risk", AgentFactory.create_risk_agent),
-            ("Sentiment", AgentFactory.create_sentiment_agent),
-            ("Macro", AgentFactory.create_macro_agent)
-        ]
-        
-        for name, factory in agent_factories:
-            try:
-                agent = factory(tier=tier, user_id=user_id)
-                members.append(agent)
-            except Exception as e:
-                logger.error(f"Council: Failed to create {name} agent for user {user_id}: {e}")
-
-        if not members:
-            raise RuntimeError("Council: No agents could be instantiated. Aborting session.")
+        # PAD Phase 2: Remove agent instantiation; we'll call via _call_agent_llm
+        agent_names = ["Momentum", "Fundamental", "Risk", "Sentiment", "Macro"]
 
         # 3. Debate
         stances = []
@@ -219,16 +252,16 @@ class CouncilService:
             "competitor_analysis": competitor_analysis
         }
         
-        for agent in members:
+        # PAD Phase 2: Replace agent.run() with _call_agent_llm
+        for agent_name in agent_names:
             try:
-                # Agents are now async.
-                logger.debug(f"Council: Running agent {agent.name}...")
-                res = await agent.run(debate_context)
-                stances.append(f"[{agent.name}]: {res}")
-                transcript.append(f"[{agent.name}]: {res}")
+                logger.debug(f"Council: Running agent {agent_name}...")
+                res = await self._call_agent_llm(agent_name, debate_context, tier=tier)
+                stances.append(f"[{agent_name}]: {res}")
+                transcript.append(f"[{agent_name}]: {res}")
             except Exception as e:
-                logger.error(f"Agent {agent.name} failed during debate: {e}")
-                transcript.append(f"[{agent.name}]: Error - {e}")
+                logger.error(f"Agent {agent_name} failed during debate: {e}")
+                transcript.append(f"[{agent_name}]: Error - {e}")
 
         # 4. Final CIO Consensus
         consensus_tier = self.router.select_tier(
@@ -244,6 +277,7 @@ class CouncilService:
         final_context = {
             "topic": topic,
             "council_transcript": debates_text,
+            "council_directive": context_data.get("msg_prefix", ""),
             "memory_chain": past_wisdom,
             "current_date": datetime.now().strftime("%Y-%m-%d"),
             "market_data": context_data.get("market_data"),
@@ -252,10 +286,21 @@ class CouncilService:
         }
         
         try:
-            cio = AgentFactory.create_cio_agent(tier=consensus_tier, user_id=user_id, mode=mode)
-            decision = await cio.run(final_context)
+            # v9.1: High-verbosity logging for cio context to debug consensus issues
+            logger.info(f"Council: Launching CIO Consensus for topic: {topic}")
+            logger.debug(f"Council: CIO Final Context Keys: {list(final_context.keys())}")
+            
+            # PAD Phase 2: Replace AgentFactory with _call_agent_llm
+            decision = await self._call_agent_llm("CIO", final_context, tier=consensus_tier)
+            
+            if not decision:
+                logger.warning("Council: CIO response was empty.")
+                decision = "Council reached no consensus (Empty response)."
+                
         except Exception as e:
-            logger.error(f"Council: CIO agent failed or could not be created: {e}")
+            # Log full context only on error to avoid bloating logs
+            logger.error(f"Council: CIO agent failed: {e}", exc_info=True)
+            logger.error(f"Council DEBUG - Final Context attempted: {final_context}")
             decision = f"Consensus failed due to internal error: {e}. Please review transcripts below."
         
         self._archive_minutes(user_id, session_id, topic, str(decision), "\n".join(transcript))

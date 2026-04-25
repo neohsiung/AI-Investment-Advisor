@@ -1,6 +1,6 @@
 import pytest
 import json
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock, patch, AsyncMock
 from src.agents.skills.ticker_discovery.impl import ticker_discovery
 
 @pytest.mark.asyncio
@@ -9,19 +9,19 @@ async def test_ticker_discovery_success():
     user_id = "test_user_123"
     
     # Mock Search Service
-    mock_search = MagicMock()
+    mock_search = AsyncMock()
     mock_search.search_financial_context.return_value = [
         {"title": "Best AI Stocks", "link": "https://example.com/1", "snippet": "NVDA is leading the market, followed by MSFT and AMD."}
     ]
     
     # Mock LLM Gateway
-    mock_gateway = MagicMock()
+    mock_gateway = AsyncMock()
     # Return markdown-style JSON to test parsing resilience
     mock_llm_json = '```json\n[{"ticker": "NVDA", "reason": "GPU Leader", "source": "Web article"}]\n```'
     mock_gateway.chat.return_value = mock_llm_json
     
     # Mock Settings Repository
-    mock_settings = MagicMock()
+    mock_settings = AsyncMock()
     mock_settings.get.return_value = "fake_gemini_key"
 
     with patch("src.agents.skills.ticker_discovery.impl.InternetSearchService", return_value=mock_search), \
@@ -41,7 +41,7 @@ async def test_ticker_discovery_no_results():
     """Test behavior when search returns no results."""
     user_id = "test_user_123"
     
-    mock_search = MagicMock()
+    mock_search = AsyncMock()
     mock_search.search_financial_context.return_value = []
     
     with patch("src.agents.skills.ticker_discovery.impl.InternetSearchService", return_value=mock_search):
@@ -56,13 +56,14 @@ async def test_ticker_discovery_invalid_llm_response():
     """Test resilience against malformed LLM JSON."""
     user_id = "test_user_123"
     
-    mock_search = MagicMock()
+    mock_search = AsyncMock()
     mock_search.search_financial_context.return_value = [{"title": "News", "snippet": "Some text"}]
     
-    mock_gateway = MagicMock()
+    mock_gateway = AsyncMock()
+    # Ensure invalid response falls into parse_error
     mock_gateway.chat.return_value = "Non-JSON response text"
     
-    mock_settings = MagicMock()
+    mock_settings = AsyncMock()
     mock_settings.get.return_value = "fake_key"
 
     with patch("src.agents.skills.ticker_discovery.impl.InternetSearchService", return_value=mock_search), \

@@ -28,6 +28,8 @@
 {
     "priority": "P1 | P2 | P3 | P4 | P5",
     "target_agent": "Fundamental | Macro | Sentiment | Risk | Thematic | CIO",
+    "trigger_type": "news | macro | price_move | risk | cash",
+    "affected_tickers": ["AAPL", "NVDA"],
     "rationale": "用繁體中文簡述評分理由及影響層次。",
     "is_critical": boolean
 }

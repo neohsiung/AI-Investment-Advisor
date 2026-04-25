@@ -17,11 +17,20 @@ def mock_services():
     print("DEBUG: mock_services fixture start")
 
     market = MagicMock()
+    # market_service.get_current_prices is async (awaited in process_tick line 132)
+    market.get_current_prices = AsyncMock(return_value={})
+    # market_service.get_ohlcv_batch is sync (called without await in _check_position_moves_v2)
+    market.get_ohlcv_batch.return_value = {}
     search = MagicMock()
+    # search_service.search_financial_context is async (awaited in _analyze_ticker_news)
+    search.search_financial_context = AsyncMock(return_value=[])
     transaction = MagicMock()
     council = MagicMock()
     council.start_session = AsyncMock(return_value={"consensus": "Sell slightly"})
     settings = MagicMock()
+    settings.user_id = "test_user"
+    settings.settings_repo = MagicMock()
+    settings.get_setting.side_effect = lambda key, default=None, user_id=None: 0.0 if key == "target_cash_ratio" else default
     with patch('src.services.sentinel_service.AlchemySentinelRepository') as MockRepo, \
          patch('src.services.sentinel_service.AlchemySnapshotRepository') as MockSnapRepo, \
          patch('src.services.sentinel_service.SentinelService._calibrate_thresholds'), \
@@ -39,10 +48,7 @@ def mock_services():
          mock_sentinel_agent.run.return_value = {"priority": "P1", "target_agent": "CIO", "rationale": "Test Risk"}
          MockFactory.create_sentinel_agent.return_value = mock_sentinel_agent
 
-         # Configure ActionExtractor mock
-         mock_extractor = MagicMock()
-         mock_extractor.run.return_value = []
-         MockFactory.create_action_extractor_agent.return_value = mock_extractor
+
 
          
          mock_repo_instance.get_all_thresholds.return_value = {
@@ -86,6 +92,33 @@ def _create_sentinel(mock_services):
         keyword_service=mock_keyword_service,
     )
     print("DEBUG: SentinelService instantiated")
+
+    # Mock _redis_buffer so Redis connection failures don't break tests.
+    # The buffer stores triggers in memory: add() appends, all_pending() returns them.
+    _buffer_store = []
+
+    mock_redis_buffer = MagicMock()
+
+    async def _mock_add(user_id, trigger, wait_mins):
+        _buffer_store.append(trigger)
+        return True
+
+    async def _mock_all_pending(user_id):
+        return list(_buffer_store)
+
+    async def _mock_flush_due(user_id):
+        due = list(_buffer_store)
+        _buffer_store.clear()
+        return due
+
+    mock_redis_buffer.add = _mock_add
+    mock_redis_buffer.all_pending = _mock_all_pending
+    mock_redis_buffer.flush_due = _mock_flush_due
+
+    res._redis_buffer = mock_redis_buffer
+
+    # res._dispatch_notifications_direct = AsyncMock()
+
     return res
 
 

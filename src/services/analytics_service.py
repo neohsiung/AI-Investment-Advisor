@@ -59,9 +59,7 @@ class LeverageCalculator:
         # To keep it efficient, let's get weighted average leverage per ticker or sum of Nominal Values from DB.
         
         holdings = self.repo.get_leverage_summary(user_id, account_id)
-        # Fetch avg_cost once for Method B equity and price fallback
         holdings_detail = self.repo.get_holdings(user_id, account_id)
-        avg_cost_map = {h['ticker']: h['avg_price'] for h in holdings_detail}
 
         tnv = 0.0
         portfolio_value = 0.0
@@ -71,9 +69,11 @@ class LeverageCalculator:
                 continue
 
             price = self._get_effective_price(ticker, current_prices, user_id)
-            # Defensive: If price is 0, fallback to average cost to prevent NLV collapse
+            avg_cost = next((h['avg_price'] for h in holdings_detail if h['ticker'] == ticker), 0.0)
+            
+            # v4.3.2: Defensive: If price is 0, fallback to average cost to prevent NLV collapse
             if price <= 0:
-                price = avg_cost_map.get(ticker, 0.0)
+                price = avg_cost
                 logger.warning(f"LeverageCalc: Price for {ticker} is 0. Falling back to avg_cost: {price}")
 
             market_val = qty * price
@@ -82,17 +82,15 @@ class LeverageCalculator:
             nominal_exposure = market_val * leverage
 
             tnv += abs(nominal_exposure)
-
-            # Per wiki spec (核心指標計算規範):
-            # equity = margin_invested + unrealized_pnl
-            #        = (qty × open_price / leverage) + qty × (price - open_price)
-            # For 1x leverage this simplifies to market_val. For Nx, it correctly
-            # reflects only the owner's equity stake on the margin invested.
-            open_price = avg_cost_map.get(ticker, price)
-            margin_invested = (qty * open_price) / leverage
-            unrealized = qty * (price - open_price)
-            equity = margin_invested + unrealized
-            portfolio_value += equity
+            
+            # [FIX] NLV should be based on Equity (Method B from specs)
+            # equity = margin_invested + unrealized_pnl = (qty * open_price / lev) + qty * (price - open_price)
+            eff_leverage = leverage if leverage > 0 else 1.0
+            margin_invested = (qty * avg_cost) / eff_leverage
+            unrealized_pnl = qty * (price - avg_cost)
+            equity = margin_invested + unrealized_pnl
+            
+            portfolio_value += equity 
 
         # 2. Calculate Net Liquidity Value (NLV)
         # 2. 計算淨清算價值 (NLV)
@@ -103,7 +101,7 @@ class LeverageCalculator:
         # 3. 槓桿比率
         # Standard: Gross Exposure (TNV) / Net Liquidity Value (NLV)
         if nlv <= 0:
-            leverage_ratio = float('inf')
+            leverage_ratio = 0.0
         else:
             leverage_ratio = tnv / nlv
 
@@ -365,13 +363,13 @@ class PnLCalculator:
             "realized": total_realized_pnl,
             "unrealized": total_unrealized_pnl,
             "total": total_realized_pnl + total_unrealized_pnl,
-            "invested_capital": invested_capital,
+            "invested_capital": self.repo.calculate_net_invested_capital(user_id, account_id),
             "margin_invested": sum(pos['margin_invested'] for pos in portfolio.values() if pos['qty'] > 0),
             "details": breakdown,
             "using_lots": using_lots,
         }
 
-def update_daily_snapshot(db_path: str = None, user_id: str = None, force: bool = False, current_prices: Optional[Dict[str, float]] = None, account_id: str = None) -> None:
+async def update_daily_snapshot(db_path: str = None, user_id: str = None, force: bool = False, current_prices: Optional[Dict[str, float]] = None, account_id: str = None) -> None:
     """
     Recalculate and update today's performance snapshot if not already present.
     重新計算並更新今日績效快照（若尚未存在）。
@@ -395,7 +393,7 @@ def update_daily_snapshot(db_path: str = None, user_id: str = None, force: bool 
     # 2. Fetch prices only if not provided
     if current_prices is None:
         market_service = MarketDataService(user_id=user_id)
-        current_prices = market_service.get_current_prices(active_tickers)
+        current_prices = await market_service.get_current_prices(active_tickers)
 
     # [NEW] v4.2.1: Snapshot Validation (防呆機制)
     # If more than 50% of active tickers have 0.0 price, the data is likely corrupted.
@@ -432,13 +430,13 @@ class AnalyticsService:
         self.snapshot_repo = repository or AlchemySnapshotRepository(db_path)
         self.pnl_calculator = pnl_calc or PnLCalculator(user_id=user_id, db_path=self.db_path)
 
-    def trigger_snapshot_update(self, force: bool = False, current_prices: Optional[Dict[str, float]] = None, account_id: str = None) -> None:
+    async def trigger_snapshot_update(self, force: bool = False, current_prices: Optional[Dict[str, float]] = None, account_id: str = None) -> None:
         """
         Manually trigger a snapshot update for the user.
         手動觸發使用者的快照更新。
         """
         if self.user_id:
-            update_daily_snapshot(self.db_path, self.user_id, force=force, current_prices=current_prices, account_id=account_id)
+            await update_daily_snapshot(self.db_path, self.user_id, force=force, current_prices=current_prices, account_id=account_id)
 
     def get_pnl_breakdown(self, current_prices: Dict[str, float], account_id: str = None) -> Optional[Dict[str, Any]]:
         """

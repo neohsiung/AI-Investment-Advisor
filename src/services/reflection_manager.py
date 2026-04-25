@@ -43,17 +43,16 @@ class ReflectionManager:
         tool_name: str, 
         args: Any, 
         error: str, 
-        agent_name: str = "Agent",
+        agent_name: str = "Agent"
     ) -> Optional[Dict[str, Any]]:
         """
-        Synchronous reflection call with budget awareness and observability.
+        Asynchronous reflection call with budget awareness and observability.
         
         Args:
             tool_name: Name of the failed tool
             args: Original arguments sent to the tool
             error: Error message or exception string
             agent_name: Name of the calling agent for logging/tagging
-            is_async: Whether the caller is in an async context (for to_thread usage)
             
         Returns:
             Reflection dict or None if failed
@@ -90,7 +89,7 @@ class ReflectionManager:
             
             messages = [Message(role="user", content=prompt)]
             
-            # 4. LLM Call (Asynchronous) [Phase 1.2 Fix]
+            # 4. LLM Call (Asynchronous)
             response = await llm.chat(messages, config)
             
             # 5. Parse JSON response

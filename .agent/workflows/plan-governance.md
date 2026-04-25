@@ -1,4 +1,5 @@
 ---
+name: Plan Governance
 description: Plan Governance — 單一 Session 內計劃變更控制規則
 ---
 

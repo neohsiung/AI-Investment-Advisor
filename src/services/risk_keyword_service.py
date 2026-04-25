@@ -181,7 +181,7 @@ class RiskKeywordService:
     # Discovery Orchestrator
     # ──────────────────────────────────────────
 
-    def discover_and_refine(self, target: int = None) -> Dict[str, Any]:
+    async def discover_and_refine(self, target: int = None) -> Dict[str, Any]:
         """
         Full lifecycle orchestrator: discover from 3 sources → insert → prune → refine.
         完整生命週期：3 來源探索 → 插入 → 修剪 → 精煉。
@@ -207,7 +207,7 @@ class RiskKeywordService:
 
         # Source A: Reports
         try:
-            report_kws = self._discover_from_reports()
+            report_kws = await self._discover_from_reports()
             result["discovered"]["reports"] = len(report_kws)
             all_candidates.extend(report_kws)
         except Exception as e:
@@ -225,7 +225,7 @@ class RiskKeywordService:
 
         # Source C: Community trends
         try:
-            trend_kws = self._discover_from_community_trends()
+            trend_kws = await self._discover_from_community_trends()
             result["discovered"]["trends"] = len(trend_kws)
             all_candidates.extend(trend_kws)
         except Exception as e:
@@ -297,7 +297,7 @@ class RiskKeywordService:
     # Source A: Reports (LLM batch extract)
     # ──────────────────────────────────────────
 
-    def _discover_from_reports(self) -> List[Tuple[str, float, str, str]]:
+    async def _discover_from_reports(self) -> List[Tuple[str, float, str, str]]:
         """
         Extract keywords from past week's reports via LLM batch call.
         從過去一週報告中透過 LLM 批次提取關鍵字。
@@ -326,9 +326,9 @@ class RiskKeywordService:
         # Concatenate and truncate to save tokens
         combined_text = "\n---\n".join(r[0][:800] for r in rows)[:4000]
 
-        return self._extract_keywords_via_llm(combined_text, source="report")
+        return await self._extract_keywords_via_llm(combined_text, source="report")
 
-    def _extract_keywords_via_llm(self, text_block: str, source: str) -> List[Tuple[str, float, str, str]]:
+    async def _extract_keywords_via_llm(self, text_block: str, source: str) -> List[Tuple[str, float, str, str]]:
         """
         Use LLM (gpt-4o-mini) to extract financial risk keywords from text.
         使用 LLM 從文本中提取金融風險關鍵字。
@@ -354,10 +354,22 @@ Text:
         try:
             from src.domain.interfaces import LLMConfig, Message
             
+            # Use tier-aware model routing
+            from src.infrastructure.llm.tier_config import SettingsAwareModelRouter
+            model_router = SettingsAwareModelRouter()
+            
+            # Use tier-aware routing
+            if self.user_id:
+                model = model_router.get_model(self.user_id, self.tier)
+            else:
+                from src.infrastructure.llm.tier_config import TierConfig
+                tier_config = TierConfig()
+                model = tier_config.resolve(self.tier)
+            
             # Use gateway instead of direct litellm call (Budget Tracking)
             config = LLMConfig(
-                provider=os.getenv("AI_PROVIDER", "Google Gemini"),
-                model=os.getenv("AI_MODEL_NANO", "openai/gpt-4.1-nano"), # Default to nano tier
+                provider=os.getenv("AI_PROVIDER", "OpenRouter"),
+                model=model,
                 api_key=os.getenv("API_KEY", ""),
                 temperature=0.3,
                 max_tokens=800
@@ -365,15 +377,7 @@ Text:
             
             messages = [Message(role="user", content=prompt + text_block)]
             
-            import asyncio as _asyncio
-            try:
-                _asyncio.get_running_loop()
-                import concurrent.futures
-                with concurrent.futures.ThreadPoolExecutor() as pool:
-                    future = pool.submit(_asyncio.run, self._llm_gateway.chat(messages, config))
-                    content = future.result()
-            except RuntimeError:
-                content = _asyncio.run(self._llm_gateway.chat(messages, config))
+            content = await self._llm_gateway.chat(messages, config)
             data = json.loads(content)
 
             # Handle both {"keywords": [...]} and [...] formats
@@ -466,7 +470,7 @@ Text:
     # Source C: Community Trends (ApeWisdom + Finnhub + pytrends)
     # ──────────────────────────────────────────
 
-    def _discover_from_community_trends(self) -> List[Tuple[str, float, str, str]]:
+    async def _discover_from_community_trends(self) -> List[Tuple[str, float, str, str]]:
         """
         Fetch trending topics from community/trend APIs (fallback chain).
         從社群/趨勢 API 取得熱門主題（Fallback 鏈）。
@@ -478,7 +482,7 @@ Text:
 
         # Provider 1: ApeWisdom (Reddit/WSB trending)
         try:
-            ape_kws = self._fetch_apewisdom()
+            ape_kws = await self._fetch_apewisdom()
             for kw in ape_kws:
                 if kw.lower() not in existing:
                     results.append((kw.lower(), 0.5, "sentiment", "trends"))
@@ -488,7 +492,7 @@ Text:
 
         # Provider 2: Finnhub market news (already in project, reuse API key)
         try:
-            finn_kws = self._fetch_finnhub_trending()
+            finn_kws = await self._fetch_finnhub_trending()
             for kw in finn_kws:
                 if kw.lower() not in existing:
                     results.append((kw.lower(), 0.5, "market", "trends"))
@@ -498,7 +502,7 @@ Text:
 
         # Provider 3: Google Trends (fallback)
         try:
-            gt_kws = self._fetch_google_trends()
+            gt_kws = await self._fetch_google_trends()
             for kw in gt_kws:
                 if kw.lower() not in existing:
                     results.append((kw.lower(), 0.4, "sentiment", "trends"))
@@ -509,7 +513,7 @@ Text:
         logger.info(f"Community trends discovered {len(results)} new keywords.")
         return results
 
-    def _fetch_apewisdom(self, limit: int = 20) -> List[str]:
+    async def _fetch_apewisdom(self, limit: int = 20) -> List[str]:
         """
         Fetch trending tickers from ApeWisdom (Reddit/WSB/crypto).
         從 ApeWisdom 取得 Reddit/WSB 熱門 ticker。
@@ -519,10 +523,11 @@ Text:
         """
         import httpx
 
-        resp = httpx.get(
-            "https://apewisdom.io/api/v1.0/filter/all-stocks/",
-            timeout=10.0,
-        )
+        async with httpx.AsyncClient() as client:
+            resp = await client.get(
+                "https://apewisdom.io/api/v1.0/filter/all-stocks/",
+                timeout=10.0,
+            )
         resp.raise_for_status()
         data = resp.json()
         results = data.get("results", [])
@@ -538,7 +543,7 @@ Text:
 
         return keywords
 
-    def _fetch_finnhub_trending(self, limit: int = 15) -> List[str]:
+    async def _fetch_finnhub_trending(self, limit: int = 15) -> List[str]:
         """
         Fetch trending keywords from Finnhub market news headlines.
         從 Finnhub 市場新聞標題提取趨勢關鍵字。
@@ -552,11 +557,12 @@ Text:
         if not api_key:
             return []
 
-        resp = httpx.get(
-            "https://finnhub.io/api/v1/news",
-            params={"category": "general", "token": api_key},
-            timeout=10.0,
-        )
+        async with httpx.AsyncClient() as client:
+            resp = await client.get(
+                "https://finnhub.io/api/v1/news",
+                params={"category": "general", "token": api_key},
+                timeout=10.0,
+            )
         resp.raise_for_status()
         articles = resp.json()
 
@@ -572,7 +578,7 @@ Text:
 
         return [term for term, count in counter.most_common(limit) if count >= 2]
 
-    def _fetch_google_trends(self, limit: int = 15) -> List[str]:
+    async def _fetch_google_trends(self, limit: int = 15) -> List[str]:
         """
         Fetch trending searches from Google Trends via pytrends (fallback).
         透過 pytrends 取得 Google 搜尋趨勢（Fallback）。
@@ -583,21 +589,28 @@ Text:
             logger.debug("pytrends not installed, skipping Google Trends.")
             return []
 
-        pytrends = TrendReq(hl='en-US', tz=480, timeout=(5, 10))
-        keywords = []
+        # NOTE: pytrends is synchronous, we run it in executor if needed 
+        # for simplicity we keep it as is but call it in a way that doesn't block too much
+        # or just accept the sync hit since it's a weekly job 
+        import asyncio
+        loop = asyncio.get_event_loop()
+        
+        def run_pytrends():
+            pytrends = TrendReq(hl='en-US', tz=480, timeout=(5, 10))
+            keywords = []
+            for region in ['united_states', 'taiwan']:
+                try:
+                    df = pytrends.trending_searches(pn=region)
+                    if df is not None and not df.empty:
+                        for term in df[0].tolist()[:limit]:
+                            term_lower = str(term).lower().strip()
+                            if len(term_lower) >= 2:
+                                keywords.append(term_lower)
+                except Exception as e:
+                    logger.debug(f"Google Trends {region} failed: {e}")
+            return keywords[:limit]
 
-        for region in ['united_states', 'taiwan']:
-            try:
-                df = pytrends.trending_searches(pn=region)
-                if df is not None and not df.empty:
-                    for term in df[0].tolist()[:limit]:
-                        term_lower = str(term).lower().strip()
-                        if len(term_lower) >= 2:
-                            keywords.append(term_lower)
-            except Exception as e:
-                logger.debug(f"Google Trends {region} failed: {e}")
-
-        return keywords[:limit]
+        return await loop.run_in_executor(None, run_pytrends)
 
     # ──────────────────────────────────────────
     # Refine (Automated Weight Adjustment)

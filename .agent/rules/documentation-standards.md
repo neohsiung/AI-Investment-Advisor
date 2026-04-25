@@ -17,7 +17,7 @@
 - **雙向一致性**: 指向文件的名稱必須與該文件的 `basename`（不含副檔名）完全一致，確保在 GitHub Wiki 中具備正確的雙向導航功能。
 
 ### 1.2 雙語並列與撰寫順序 (Bilingual Workflow)
-本專案嚴格依循 [文件框架定義](wiki/00_規則規範-Rules/文件框架定義-Document-Frameworks.md) 與 [文件規範](wiki/00_規則規範-Rules/文件規範-Wiki-Standard.md) 實施雙語工作流：
+本專案嚴格依循 [文件框架定義](文件框架定義-Document-Frameworks) 與 [文件規範](文件規範-Wiki-Standard) 實施雙語工作流：
 - **撰寫順序 (Writing Order)**:
   1. **英文優先 (English First)**: 先以專業、具備產業規格的英文撰寫或更新內容，確保技術精確度與全球化通用性。
   2. **中文翻譯 (Traditional Chinese Translation)**: 完成英文後，完整翻譯為繁體中文。

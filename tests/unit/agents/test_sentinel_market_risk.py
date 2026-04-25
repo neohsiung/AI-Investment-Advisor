@@ -11,6 +11,8 @@ class TestVIXAnomaly:
 
         mock_services["market"].get_ohlcv.return_value = {"close": [15.0] * 60}
         mock_services["transaction"].get_user_tickers.return_value = []
+        # Suppress cash alert in calm market test
+        mock_services["settings"].get_setting.side_effect = lambda key, default=None, user_id=None: 0.0 if key == "target_cash_ratio" else default
 
         async def _test():
             # Patch _get_all_user_ids and _check_active_sources to avoid DB
@@ -57,11 +59,11 @@ class TestVIXAnomaly:
             assert "vix_high_static" in triggers[0]["id"]
             
             # Now test the escalation via _escalate
-            with patch('httpx.AsyncClient.post', return_value=MagicMock(status_code=202)) as mock_post:
-                await sentinel._escalate(triggers)
-                await sentinel._flush_buffer(force=True) # Force flush for testing
-                mock_services["council"].start_session.assert_called_once()
-                assert mock_post.called
+            sentinel._dispatch_notifications_direct = AsyncMock()
+            await sentinel._escalate(triggers)
+            await sentinel._flush_buffer(force=True) # Force flush for testing
+            mock_services["council"].start_session.assert_called_once()
+            assert sentinel._dispatch_notifications_direct.called
 
         run_async(_test())
 
@@ -176,7 +178,7 @@ class TestPositionMoves:
 
 
 class TestMacroShifts:
-    def test_fed_rate_up_triggers(self, mock_services):
+    def test_fed_rate_up_triggers(self, mock_services, run_async):
         """Fed funds rate trending up — triggers alert."""
         sentinel = _create_sentinel(mock_services)
         mock_services["market"].get_macro_data.return_value = {
@@ -186,11 +188,14 @@ class TestMacroShifts:
             }
         }
 
-        triggers = sentinel._check_macro_shifts()
-        assert len(triggers) == 1
-        assert "聯邦利率上升" in triggers[0]["text"]
+        async def _test():
+            triggers = await sentinel._check_macro_shifts()
+            assert len(triggers) == 1
+            assert "聯邦利率上升" in triggers[0]["text"]
 
-    def test_yield_inversion_triggers(self, mock_services):
+        run_async(_test())
+
+    def test_yield_inversion_triggers(self, mock_services, run_async):
         """Yield curve inverted — triggers alert."""
         sentinel = _create_sentinel(mock_services)
         mock_services["market"].get_macro_data.return_value = {
@@ -200,11 +205,14 @@ class TestMacroShifts:
             }
         }
 
-        triggers = sentinel._check_macro_shifts()
-        assert len(triggers) == 1
-        assert "殖利率曲線倒掛" in triggers[0]["text"]
+        async def _test():
+            triggers = await sentinel._check_macro_shifts()
+            assert len(triggers) == 1
+            assert "殖利率曲線倒掛" in triggers[0]["text"]
 
-    def test_normal_macro_no_trigger(self, mock_services):
+        run_async(_test())
+
+    def test_normal_macro_no_trigger(self, mock_services, run_async):
         """Normal macro conditions — no trigger."""
         sentinel = _create_sentinel(mock_services)
         mock_services["market"].get_macro_data.return_value = {
@@ -214,8 +222,11 @@ class TestMacroShifts:
             }
         }
 
-        triggers = sentinel._check_macro_shifts()
-        assert len(triggers) == 0
+        async def _test():
+            triggers = await sentinel._check_macro_shifts()
+            assert len(triggers) == 0
+
+        run_async(_test())
 
 
 

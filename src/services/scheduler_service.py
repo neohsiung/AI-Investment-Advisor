@@ -35,6 +35,7 @@ class SchedulerService:
         """
         self.user_id = user_id
         self.engineer = SystemEngineerAgent(user_id=user_id)
+        self.scheduler = schedule.Scheduler()
         # db_engine unused if we use get_db_connection, but keeping for DI signature
         # 如果我們使用 get_db_connection，db_engine 未被使用，但保留用於依賴注入簽名
     
@@ -187,19 +188,45 @@ class SchedulerService:
         self.log_job_execution("Broker Sync", "STARTED")
         
         from src.services.broker_factory import BrokerFactory
+        import asyncio
         
         try:
             # Get preferred broker for user
             broker = BrokerFactory.get_broker(self.user_id)
             broker_name = broker.get_name()
             
-            result = broker.sync_history(self.user_id)
-            msg = f"Synced [{broker_name}]: +{result['added']} / skipped {result['skipped']}"
+            # v7.1: sync_history is now properly async — run via asyncio.run()
+            # Guard against reentrant loops (e.g. running inside an existing event loop)
+            try:
+                loop = asyncio.get_running_loop()
+            except RuntimeError:
+                loop = None
+            
+            if loop and loop.is_running():
+                # Running inside an existing event loop (e.g., APScheduler async mode)
+                # Schedule as a coroutine task
+                import concurrent.futures
+                future = asyncio.run_coroutine_threadsafe(
+                    broker.sync_history(self.user_id), loop
+                )
+                result = future.result(timeout=120)
+            else:
+                result = asyncio.run(broker.sync_history(self.user_id))
+            
+            # Safely handle result
+            if isinstance(result, dict):
+                added = result.get('added', 0)
+                skipped = result.get('skipped', 0)
+                msg = f"Synced [{broker_name}]: +{added} / skipped {skipped}"
+            else:
+                msg = f"Synced [{broker_name}]: {result}"
+            
             logger.info(msg)
             self.log_job_execution("Broker Sync", "COMPLETED", msg)
         except Exception as e:
             logger.error(f"Broker Sync failed for {self.user_id}: {e}")
             self.log_job_execution("Broker Sync", "FAILED", str(e))
+
 
     def check_monthly_job(self) -> None:
         """
@@ -218,8 +245,17 @@ class SchedulerService:
         self.log_job_execution("Keyword Refine", "STARTED")
         try:
             from src.services.risk_keyword_service import RiskKeywordService
+            import asyncio
+            
             service = RiskKeywordService()
-            result = service.discover_and_refine()
+            
+            try:
+                loop = asyncio.get_event_loop()
+            except RuntimeError:
+                loop = asyncio.new_event_loop()
+                asyncio.set_event_loop(loop)
+            
+            result = loop.run_until_complete(service.discover_and_refine())
             msg = (
                 f"Discovered: reports={result['discovered']['reports']}, "
                 f"webhook={result['discovered']['webhook']}, "
@@ -239,8 +275,8 @@ class SchedulerService:
         Reload the schedule from database configuration.
         從資料庫設定重新載入排程。
         """
-        logger.info("Reloading schedule configuration...")
-        schedule.clear()
+        logger.info(f"Reloading schedule configuration for user {self.user_id}...")
+        self.scheduler.clear()
         
         config = self.engineer.get_schedule_config()
         daily_time = config.get("schedule_daily", "09:00")
@@ -256,10 +292,9 @@ class SchedulerService:
         daily_time_sys, daily_offset = convert_user_time_to_system_time(daily_time)
         weekly_time_sys, weekly_offset = convert_user_time_to_system_time(weekly_time)
         
-        logger.info(f"Loaded config: Daily={daily_time} ({daily_time_sys} System, offset {daily_offset}) on {daily_days}, Weekly={weekly_day} {weekly_time} ({weekly_time_sys} System, offset {weekly_offset})")
+        logger.info(f"[{self.user_id}] Loaded config: Daily={daily_time} ({daily_time_sys} System) on {daily_days}")
         
         # Helper to shift day
-        # 輔助函式：根據時區偏移調整執行日期
         days_map = ["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"]
         def get_shifted_day(day_name, offset):
             try:
@@ -267,49 +302,27 @@ class SchedulerService:
                 new_idx = (curr_idx + offset) % 7
                 return days_map[new_idx]
             except ValueError:
-                return day_name # Fallback
+                return day_name
 
         # Schedule Daily Job
-        # 設定每日檢查排程
         for day in daily_days:
             target_day = get_shifted_day(day, daily_offset)
-            if hasattr(schedule.every(), target_day):
-                getattr(schedule.every(), target_day).at(daily_time_sys).do(self.job_daily_check)
-                logger.info(f"Scheduled Daily Check on {target_day} at {daily_time_sys} System (User: {day} {daily_time})")
+            if hasattr(self.scheduler.every(), target_day):
+                getattr(self.scheduler.every(), target_day).at(daily_time_sys).do(self.job_daily_check)
+                logger.debug(f"[{self.user_id}] Scheduled Daily Check on {target_day} at {daily_time_sys}")
         
         # Etoro Sync Job (Every 4 hours)
-        # 每 4 小時同步 Etoro 交易紀錄
-        schedule.every(4).hours.do(self.job_etoro_sync)
-        logger.info("Scheduled Etoro Sync every 4 hours.")
+        self.scheduler.every(4).hours.do(self.job_etoro_sync)
         
-        # Dynamic day scheduling for Weekly Report
-        # 設定每週報告的動態日期
+        # Weekly Report
         target_weekly_day = get_shifted_day(weekly_day, weekly_offset)
-        if hasattr(schedule.every(), target_weekly_day):
-            getattr(schedule.every(), target_weekly_day).at(weekly_time_sys).do(self.job_weekly_report)
-            logger.info(f"Scheduled Weekly Report on {target_weekly_day} at {weekly_time_sys} System (User: {weekly_day} {weekly_time})")
+        if hasattr(self.scheduler.every(), target_weekly_day):
+            getattr(self.scheduler.every(), target_weekly_day).at(weekly_time_sys).do(self.job_weekly_report)
         else:
-            logger.warning(f"Invalid weekly day '{target_weekly_day}', defaulting to saturday.")
-            schedule.every().saturday.at(weekly_time_sys).do(self.job_weekly_report)
+            self.scheduler.every().saturday.at(weekly_time_sys).do(self.job_weekly_report)
             
-        # Run validation on Sunday to review the week
-        # 週日執行驗證、復盤與關鍵字精煉
-        schedule.every().sunday.at("10:00").do(self.job_weekly_validation)
-        schedule.every().sunday.at("11:00").do(self.job_experience_replay)
-        schedule.every().sunday.at("12:00").do(self.job_keyword_refine)
-        
-        # Monthly Check (UTC 00:00)
-        # 每月檢查 (UTC 00:00)
-        schedule.every().day.at("00:00").do(self.check_monthly_job)
-        
-        # Rule #8: Memory Distillation (UTC 00:05)
-        # 每日記憶提煉 (UTC 00:05)
-        schedule.every().day.at("00:05").do(self.job_memory_distillation)
-
-        # Sentinel Tick (Every Minute) - The Heartbeat of Agent Council
         # 哨兵心跳 (每分鐘)
-        # In Local Mode, this drives the Sentinel. In Cloud, Cloud Scheduler drives it via API.
-        schedule.every(1).minutes.do(self.job_minutely_tick)
+        self.scheduler.every(1).minutes.do(self.job_minutely_tick)
 
     def job_minutely_tick(self) -> None:
         """
@@ -358,9 +371,13 @@ class SchedulerService:
             time.sleep(1)
 
     def _check_reload_signal(self):
+        """Check for reload signal every 5s with graceful error handling."""
         try:
             from src.repositories.settings_repository import AlchemySettingsRepository
-            settings_repo = AlchemySettingsRepository()
+            from src.data.database import get_db_engine
+            
+            # v5.1: Properly pass engine to repository
+            settings_repo = AlchemySettingsRepository(engine=get_db_engine())
             
             # v4.3.4: Use self.user_id instead of 'SYSTEM' for reload signal
             val = settings_repo.get(self.user_id, 'scheduler_reload_signal')
@@ -373,9 +390,16 @@ class SchedulerService:
                 self.reload_schedule()
                 # Reset signal using real boolean False
                 settings_repo.set(self.user_id, 'scheduler_reload_signal', False)
+            
+            # Properly close the session after use
+            settings_repo.close_session()
                 
+        except ValueError as ve:
+            # Only log user isolation errors once to avoid spam
+            if "Global 'system' user" not in str(ve):
+                logger.warning(f"User isolation check failed: {ve}")
         except Exception as e:
-            logger.error(f"Error checking reload signal: {e}")
+            logger.debug(f"Error checking reload signal: {e}")
 
     def get_execution_logs(self, limit: int = 50):
         """Retrieves latest execution logs from DB."""

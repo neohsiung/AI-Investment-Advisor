@@ -73,8 +73,9 @@ class ContextAssembler:
             )
 
             # 3. Inject Dynamic Memory
-            memory_context_str = self._build_memory_context(context)
-            cognitive_context_str = self._build_cognitive_context()
+            context_dict = context if isinstance(context, dict) else {}
+            memory_context_str = self._build_memory_context(context_dict)
+            cognitive_context_str = self._build_cognitive_context(context_dict)
 
             # 4. Build persona context
             persona_context = ""
@@ -86,7 +87,6 @@ class ContextAssembler:
                 )
 
             # 5. Merge into template variables
-            context_dict = context if isinstance(context, dict) else {}
             context_with_tools = context_dict.copy()
             context_with_tools["tools"] = mcp_tools_json
             context_with_tools["skills_xml"] = skills_xml
@@ -101,21 +101,34 @@ class ContextAssembler:
             logger.error(f"Error rendering system prompt: {e}")
             return system_prompt
 
-    def _build_cognitive_context(self) -> str:
+    def _build_cognitive_context(self, context_dict: Dict) -> str:
         """
-        Fetch distilled insights from Medium-Term memory (CognitiveMemoryManager).
+        Fetch distilled insights from Medium-Term and Long-Term memory (RAG).
         """
         if not self._cognitive_memory:
             return ""
             
-        memories = self._cognitive_memory.get_recent_memories(limit=10)
+        user_req = context_dict.get("user_request", context_dict.get("topic", ""))
+        
+        if user_req:
+            # Active RAG Retrieval across Medium/Long Tiers
+            memories = self._cognitive_memory.search(str(user_req))
+        else:
+            recent = self._cognitive_memory.get_recent_memories(limit=3)
+            memories = [{"source": "Medium-Term", "content": m["content"]} for m in recent]
+            
         if not memories:
             return ""
 
         output = ["<cognitive_memory_highlights>"]
         for m in memories:
-            summary = m["content"].get("summary", "No summary")
-            output.append(f"- [{m['created_at']}] {summary}")
+            content = m.get("content", {})
+            if isinstance(content, dict):
+                summary = content.get("summary", json.dumps(content, ensure_ascii=False))
+            else:
+                summary = str(content)
+            source = m.get("source", "Memory")
+            output.append(f"- [{source}] {summary}")
         output.append("</cognitive_memory_highlights>")
         return "\n".join(output)
 

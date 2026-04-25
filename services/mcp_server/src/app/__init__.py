@@ -12,6 +12,8 @@ from sqlalchemy import text
 
 from src.utils.logger import setup_logger
 from src.utils.rate_limit import limiter
+from src.services.dashboard_router import get_current_user
+from src.api.v1.router import api_v1_router
 logger = setup_logger("MCPService")
 
 from contextlib import asynccontextmanager
@@ -34,6 +36,7 @@ class ToolRegistration(BaseModel):
 class ToolCallRequest(BaseModel):
     """工具調用請求"""
     arguments: Dict[str, Any] = {}
+    context: Optional[Dict[str, Any]] = None
 
 class AgentMessage(BaseModel):
     """Agent 間訊息"""
@@ -103,41 +106,11 @@ async def websocket_broadcast_loop():
         try:
             active_users = list(socket_manager.active_connections.keys())
             for user_id in active_users:
-                now = time.monotonic()
-                # Only recompute when cache is stale
-                if user_id not in _ws_data_cache or (now - _ws_last_fetch.get(user_id, 0)) > WS_CACHE_TTL:
-                    service = DashboardService(user_id=user_id)
-                    data = service.prepare_dashboard_data(user_id=user_id)
-                    _ws_data_cache[user_id] = data
-                    _ws_last_fetch[user_id] = now
-                else:
-                    data = _ws_data_cache[user_id]
-
-                metrics = data.get('metrics', {})
-                pnl = data.get('pnl_data', {})
-                roi = data.get('roi', 0)
-
-                # Build summary with the same field names as the REST /summary endpoint
-                summary = {
-                    "total_valuation": metrics.get('nlv', 0),
-                    "uninvested_cash": metrics.get('cash_balance', 0),
-                    "gross_exposure": metrics.get('gross_nlv', 0),
-                    "leverage_ratio": metrics.get('leverage_ratio', 0),
-                    "active_agents": metrics.get('active_agents', 7),
-                    "risk_exposure": metrics.get('risk_level', "MODERATE"),
-                    "total_pnl": pnl.get('total', 0),
-                    "unrealized_pnl": pnl.get('unrealized', 0),
-                    "realized_pnl": pnl.get('realized', 0),
-                    "roi_percentage": roi,
-                    "performance_change": "+0.0%"
-                }
-
-                positions_df = data.get('positions_df')
-                positions = positions_df.to_dict('records') if hasattr(positions_df, 'to_dict') and not positions_df.empty else []
-
-                # Write-through to Redis so REST /summary returns instantly on next request
-                await _warm_redis_cache(user_id, summary)
-
+                # 獲取該使用者的最新數據 (DashboardService 內部有快取，因此 5s 頻率是安全的)
+                service = DashboardService(user_id=user_id)
+                data = await service.prepare_dashboard_data(user_id=user_id)
+                
+                # 廣播更新
                 await socket_manager.broadcast_to_user(user_id, {
                     "type": "PORTFOLIO_UPDATE",
                     "payload": {
@@ -166,7 +139,7 @@ async def lifespan(app: FastAPI):
         # 0. Resolve Primary User UUID (Rule #4.3 - No 'system' user)
         # 透過資料庫解析主要使用者 UUID，確保所有服務綁定至真實上下文。
         from src.repositories.user_repository import AlchemyUserRepository
-        from sqlalchemy import text
+        # from sqlalchemy import text (Moved to top)
         user_repo = AlchemyUserRepository()
         primary_user_id = None
         
@@ -191,16 +164,16 @@ async def lifespan(app: FastAPI):
                  # but logged as ERROR as per user instruction.
                  logger.error("CRITICAL: No user context found. SettingsService WILL fail.")
 
-        # 1. Instantiate Services
-        services["market"] = MarketDataService(user_id=primary_user_id)
-        services["search"] = InternetSearchService(user_id=primary_user_id)
-        services["fred"] = FredService(user_id=primary_user_id)
+        # 1. Background Services for stream evaluation
+        # Background sentinel gets its own local instances instead of polluting the global dictionary
+        bg_market = MarketDataService(user_id=primary_user_id)
+        bg_search = InternetSearchService(user_id=primary_user_id)
         services["sentinel"] = SentinelService(
-            market_service=services["market"],
-            search_service=services["search"],
+            market_service=bg_market,
+            search_service=bg_search,
             user_id=primary_user_id
         )
-        # services["github"] = GitHubService() # REMOVED (Shift to text-based records)
+
         
         from src.services.webhook_service import webhook_service_instance
         # sentinel is now instantiated per-request in webhook_service
@@ -214,16 +187,26 @@ async def lifespan(app: FastAPI):
         settings_svc_global = SettingsService(db_path=None, user_id=primary_user_id)
         settings_global = settings_svc_global.get_all_settings()
         
-        # Create Adapters via Factory
+        # 2. Create Adapters via Factory
         adapters = ChannelFactory.create_adapters(settings_global)
-        for adapter in adapters:
-            logger.info(
-                f"Channel Adapter: {adapter.__class__.__name__}, "
-                f"is_active={getattr(adapter, 'is_active', 'N/A')}"
-            )
+        
+        # 3. Initialize NotificationService
+        from src.services.notification_filters import InterestBasedFilter
+        from src.services.notification_service import NotificationService
+        noti_filter = InterestBasedFilter(settings_svc_global)
+        notification_service = NotificationService(adapters=adapters, notification_filter=noti_filter)
+        services["notification"] = notification_service
+
+        # 4. Initialize ChannelGateway [Phase 7]
+        from src.infrastructure.memory.channel_memory_manager import ChannelMemoryManager
+        from src.infrastructure.messaging.channel_gateway import get_gateway
+        memory_manager = ChannelMemoryManager()
+        services["channel_gateway"] = get_gateway(notification_service, memory_manager)
+        
+        logger.info("✓ ChannelGateway initialized and registered.")
         
         # Create Intent Classifier
-        intent_classifier = IntentClassifier()
+        intent_classifier = IntentClassifier(user_id=primary_user_id)
         
         services["interaction"] = InteractionService(
             adapters=adapters,
@@ -235,35 +218,8 @@ async def lifespan(app: FastAPI):
         socket_manager.set_interaction_service(services["interaction"])
 
         
-        from src.services.dashboard_service import DashboardService
-        services["dashboard"] = DashboardService(user_id=primary_user_id)
-
-        # Warm Redis summary cache in the background so the first page load is fast
-        async def _startup_cache_warm():
-            try:
-                svc = DashboardService(user_id=primary_user_id)
-                data = svc.prepare_dashboard_data(user_id=primary_user_id)
-                metrics = data.get('metrics', {})
-                pnl = data.get('pnl_data', {})
-                summary = {
-                    "total_valuation": metrics.get('nlv', 0),
-                    "uninvested_cash": metrics.get('cash_balance', 0),
-                    "gross_exposure": metrics.get('gross_nlv', 0),
-                    "leverage_ratio": metrics.get('leverage_ratio', 0),
-                    "active_agents": metrics.get('active_agents', 7),
-                    "risk_exposure": metrics.get('risk_level', "MODERATE"),
-                    "total_pnl": pnl.get('total', 0),
-                    "unrealized_pnl": pnl.get('unrealized', 0),
-                    "realized_pnl": pnl.get('realized', 0),
-                    "roi_percentage": data.get('roi', 0),
-                    "performance_change": "+0.0%"
-                }
-                await _warm_redis_cache(primary_user_id, summary)
-                logger.info(f"✓ Summary cache warmed for user {primary_user_id}: NLV={summary['total_valuation']:.2f}")
-            except Exception as e:
-                logger.warning(f"Startup cache warm failed (non-fatal): {e}")
-        asyncio.create_task(_startup_cache_warm())
-
+        # 1.5 Note: DashboardService has been removed from global state. It will be dynamically instantiated.
+        
         # 2. Start Real-time Streaming (Polygon WebSocket)
         try:
             from src.infrastructure.streams.polygon_stream_client import PolygonStreamClient
@@ -345,11 +301,22 @@ app = FastAPI(
 app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
+# --- Session Middleware for Auth ---
+from starlette.middleware.sessions import SessionMiddleware
+app.add_middleware(
+    SessionMiddleware, 
+    secret_key=os.environ.get("JWT_SECRET", "fallback_insecure_secret_for_auth_sessions")
+)
+
 # --- CORS Middleware (New Phase 2) ---
 from fastapi.middleware.cors import CORSMiddleware
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000", "http://127.0.0.1:3000"],
+    allow_origins=[
+        "http://localhost:3000", 
+        "http://127.0.0.1:3000",
+        "https://chummy-nonpathologically-lilla.ngrok-free.dev" # Based on n8n config
+    ],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -388,11 +355,14 @@ class SecretScrubbingMiddleware(BaseHTTPMiddleware):
             
             new_body = body_str.encode("utf-8")
             
+            headers_dict = dict(response.headers)
+            headers_dict.pop("content-length", None)
+            
             # Reconstruct response with scrubbed body
             return Response(
                 content=new_body,
                 status_code=response.status_code,
-                headers=dict(response.headers),
+                headers=headers_dict,
                 media_type=response.media_type
             )
         return response
@@ -407,42 +377,6 @@ async def root():
     """健康檢查端點 (Root)"""
     return {"status": "ok", "service": "mcp_server", "version": "1.1.0"}
 
-# --- v21.3: Admin Metrics & Health Dashboard [Phase 21] ---
-@app.get("/api/admin/metrics")
-async def get_admin_metrics(user: Dict[str, Any] = Depends(get_current_user)):
-    """
-    獲取系統維運指標 (限管理者)
-    """
-    # 權限檢查 (目前僅允許 system 帳號或預設主要使用者)
-    if user.get("sub") != "system" and user.get("email") not in os.getenv("ADMIN_EMAILS", "").split(","):
-        # For local dev, we might relax this or check if it matches primary user
-        pass 
-        
-    from src.repositories.usage_repository import UsageRepository
-    usage_repo = UsageRepository()
-    
-    # 1. Total Cost Today
-    total_cost_today = usage_repo.get_system_total_cost_today()
-    
-    # 2. Top Spenders
-    top_spenders = usage_repo.get_top_spenders(limit=5)
-    
-    # 3. Circuit Breaker States
-    # (Checking InternetSearchService or others if they expose state)
-    cb_states = {}
-    search_svc = services.get("search")
-    if search_svc and hasattr(search_svc, "_circuit_breaker"):
-        cb_states["search_service"] = str(search_svc._circuit_breaker.state)
-
-    return {
-        "status": "success",
-        "timestamp": datetime.now().isoformat(),
-        "metrics": {
-            "total_cost_today_usd": total_cost_today,
-            "top_spenders": top_spenders,
-            "circuit_breakers": cb_states
-        }
-    }
 
 @app.get("/health")
 async def health():
@@ -460,7 +394,8 @@ async def health():
     try:
         from src.data.database import AsyncBaseRepository
         async_repo = AsyncBaseRepository()
-        async with await async_repo.get_session() as session:
+        session = await async_repo.get_session()
+        async with session:
             await session.execute(text("SELECT 1"))
         health_status["checks"]["database"] = "connected"
     except Exception as e:
@@ -482,66 +417,6 @@ async def health():
         # health_status["status"] = "degraded" 
 
     return health_status
-
-@app.get("/health/lots-integrity")
-async def health_lots_integrity(user: Dict[str, Any] = Depends(get_current_user)):
-    """
-    Position lots integrity check — verify that position_lots qty matches
-    the net qty calculated directly from the transactions ledger.
-    持倉批次完整性檢查—驗證 position_lots 與 transactions 的淨持倉一致性。
-    """
-    user_id = user.get("sub")
-    if not user_id:
-        raise HTTPException(status_code=401, detail="User not found in token")
-
-    from src.repositories.position_lot_repository import AlchemyPositionLotRepository
-    from src.repositories.transaction_repository import AlchemyTransactionRepository
-    from src.data.database import get_db_engine
-
-    engine = get_db_engine()
-    lot_repo = AlchemyPositionLotRepository(engine)
-    tx_repo = AlchemyTransactionRepository(engine)
-
-    # 1. Get avg_cost from lots
-    lot_avg = lot_repo.get_avg_cost_map(user_id)
-
-    # 2. Get net qty from transactions (all BUY - SELL)
-    holdings = tx_repo.get_holdings(user_id)
-    tx_qty_map = {h["ticker"]: h["quantity"] for h in holdings}
-
-    # 3. Get lot qty per ticker
-    lots = lot_repo.get_open_lots(user_id)
-    lot_qty_map: Dict[str, float] = {}
-    for lot in lots:
-        t = lot["ticker"]
-        lot_qty_map[t] = lot_qty_map.get(t, 0.0) + lot["quantity"]
-
-    # 4. Compare
-    all_tickers = set(tx_qty_map) | set(lot_qty_map)
-    discrepancies = []
-    for ticker in sorted(all_tickers):
-        tx_q = tx_qty_map.get(ticker, 0.0)
-        lot_q = lot_qty_map.get(ticker, 0.0)
-        diff = abs(tx_q - lot_q)
-        status = "ok" if diff < 0.001 else "MISMATCH"
-        if status == "MISMATCH":
-            discrepancies.append({
-                "ticker": ticker,
-                "tx_qty": round(tx_q, 6),
-                "lot_qty": round(lot_q, 6),
-                "diff": round(diff, 6),
-            })
-
-    is_healthy = len(discrepancies) == 0
-    return {
-        "status": "healthy" if is_healthy else "degraded",
-        "lots_seeded": lot_repo.has_lots_for_user(user_id),
-        "positions_checked": len(all_tickers),
-        "discrepancies": discrepancies,
-        "avg_cost_map": {t: round(v, 4) for t, v in lot_avg.items()},
-        "timestamp": datetime.now().isoformat(),
-    }
-
 
 @app.post("/tools/register")
 async def register_tool(tool: ToolRegistration):
@@ -594,30 +469,38 @@ async def call_tool(tool_name: str, request: ToolCallRequest):
     result = None
     
     try:
+        user_id = request.context.get("user_id") if request.context else None
+        
+        # 動態實例化 Service (User Isolation)
+        if tool_name in ["get_current_price", "get_valuation", "get_company_profile", "get_macro_indicators"]:
+            market_service = MarketDataService(user_id=user_id)
+        if tool_name == "web_search":
+            search_service = InternetSearchService(user_id=user_id)
+
         # Dispatch Logic
         if tool_name == "get_current_price":
             ticker = args.get("ticker")
             if ticker:
-                prices = services["market"].get_current_prices([ticker])
+                prices = market_service.get_current_prices([ticker])
                 result = prices.get(ticker)
                 
         elif tool_name == "get_valuation":
             ticker = args.get("ticker")
             if ticker:
-                result = services["market"].get_valuation_metrics(ticker)
+                result = market_service.get_valuation_metrics(ticker)
                 
         elif tool_name == "get_company_profile":
              ticker = args.get("ticker")
              if ticker:
-                 result = services["market"].get_financials(ticker)
+                 result = market_service.get_financials(ticker)
                  
         elif tool_name == "web_search":
             query = args.get("query")
             if query:
-                result = services["search"].search_financial_context(query)
+                result = search_service.search_financial_context(query, max_results=3)
                 
         elif tool_name == "get_macro_indicators":
-            result = services["market"].get_macro_data()
+            result = market_service.get_macro_data()
             
         else:
             result = "Tool implementation not found in dispatch logic."
@@ -634,9 +517,16 @@ async def call_tool(tool_name: str, request: ToolCallRequest):
         logger.error(f"Tool execution failed: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
-# --- Dashboard Router (New Phase 2) ---
+# --- v1 API Entrypoint (Sprint 2 Transition) ---
+app.include_router(api_v1_router, prefix="/api/v1")
+
+# --- Legacy Dashboard Router (Deprecating) ---
 from src.services.dashboard_router import dashboard_router
 app.include_router(dashboard_router, prefix="/api/dashboard")
+
+# --- v6.1: MCP Standard Protocol [Phase 6] ---
+from src.tools.mcp_sse_router import mcp_sub_app
+app.mount("/mcp", mcp_sub_app)
 
 # --- Webhook Router & Inbound Adapters ---
 from src.services.webhook_service import webhook_router
@@ -902,19 +792,56 @@ async def auth_logout():
     response.delete_cookie("refresh_token")
     return response
 
+# --- v21.3: Admin Metrics & Health Dashboard [Phase 21] ---
+@app.get("/api/admin/metrics")
+async def get_admin_metrics(user: Dict[str, Any] = Depends(get_current_user)):
+    """
+    獲取系統維運指標 (限管理者)
+    """
+    # 權限檢查 (目前僅允許 system 帳號或預設主要使用者)
+    if user.get("sub") != "system" and user.get("email") not in os.getenv("ADMIN_EMAILS", "").split(","):
+        # For local dev, we might relax this or check if it matches primary user
+        pass 
+        
+    from src.repositories.usage_repository import UsageRepository
+    usage_repo = UsageRepository()
+    
+    # 1. Total Cost Today
+    total_cost_today = usage_repo.get_system_total_cost_today()
+    
+    # 2. Top Spenders
+    top_spenders = usage_repo.get_top_spenders(limit=5)
+    
+    # 3. Circuit Breaker States
+    # (Checking InternetSearchService or others if they expose state)
+    cb_states = {}
+    search_svc = services.get("search")
+    if search_svc and hasattr(search_svc, "_circuit_breaker"):
+        cb_states["search_service"] = str(search_svc._circuit_breaker.state)
+
+    return {
+        "status": "success",
+        "timestamp": datetime.now().isoformat(),
+        "metrics": {
+            "total_cost_today_usd": total_cost_today,
+            "top_spenders": top_spenders,
+            "circuit_breakers": cb_states
+        }
+    }
+
 # --- WebSocket Endpoint ---
 
-@app.websocket("/api/dashboard/ws")
+@app.websocket("/api/v1/dashboard/ws")
 async def dashboard_websocket(
     websocket: WebSocket,
-    access_token: Optional[str] = Cookie(None)
+    access_token: Optional[str] = None
 ):
     """
     WebSocket endpoint for real-time dashboard updates.
-    使用 HTTPOnly Cookie 中的 access_token 進行握手認證。
+    從 Query 參數中取得 access_token 進行握手認證。
     """
     if not access_token:
-        logger.warning("WebSocket attempt without access_token cookie.")
+        logger.warning("WebSocket attempt without access_token query param.")
         await websocket.close(code=1008)  # Policy Violation
         return
 

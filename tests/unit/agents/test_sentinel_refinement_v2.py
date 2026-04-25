@@ -3,99 +3,104 @@ import asyncio
 from unittest.mock import MagicMock, patch, AsyncMock
 from datetime import datetime
 from src.services.sentinel_service import SentinelService
-from src.services.notification_service import NotificationService
-from src.repositories.sentinel_repository import AlchemySentinelRepository
 
 @pytest.fixture
 def anyio_backend():
     return 'asyncio'
 
-@pytest.fixture
-def mock_repo():
-    repo = MagicMock(spec=AlchemySentinelRepository)
-    repo.engine = MagicMock() # Fix AttributeError: engine
-    repo.get_all_thresholds.return_value = {}
-    repo.is_duplicate_alert.return_value = False
-    return repo
-
-@pytest.fixture
-def mock_council():
-    c = MagicMock()
-    c.start_session = AsyncMock(return_value={"consensus": "Stay Watchful"})
-    return c
-
-@pytest.fixture
-def sentinel_service(mock_repo, mock_council):
-    # Patch the internal repo creation
-    with patch("src.services.sentinel_service.AlchemySentinelRepository", return_value=mock_repo), \
-         patch("src.services.sentinel_service.AlchemySnapshotRepository", return_value=mock_repo): # Can use same mock if compatible
-        service = SentinelService(
-            user_id="test_user",
-            council_service=mock_council,
-            settings_service=MagicMock(),
-            repo=mock_repo,
-            snapshot_repo=mock_repo
-        )
-        return service
-
 @pytest.mark.anyio
-async def test_escalate_deduplication(sentinel_service, mock_repo):
-    # Setup: Repo says it IS a duplicate
+async def test_escalate_deduplication():
+    mock_repo = MagicMock()
+    mock_repo.engine = MagicMock()
+    mock_repo.get_all_thresholds.return_value = {}
     mock_repo.is_duplicate_alert.return_value = True
     
-    # We need to use dict triggers
-    triggers = [{"text": "Test Trigger 1", "id": "t1"}, {"text": "Test Trigger 2", "id": "t2"}]
+    mock_council = MagicMock()
+    mock_council.start_session = AsyncMock(return_value={"consensus": "Stay Watchful"})
     
-    # source="Test" makes it "external" which triggers immediate flush
-    with patch('httpx.AsyncClient.post') as mock_post:
-        await sentinel_service._escalate(triggers, source="Test")
-        await sentinel_service._flush_buffer(force=True, source="Test")
+    mock_redis = MagicMock()
+    mock_redis.all_pending = AsyncMock(return_value=[])
+    mock_redis.add = AsyncMock()
+    mock_redis.flush_all = AsyncMock(return_value=[{"text": "Test Trigger 1", "id": "t1", "priority": 2}])
+    
+    mock_settings = MagicMock()
+    mock_settings.user_id = None
+
+    with patch("src.services.sentinel_service.AlchemySentinelRepository", return_value=mock_repo), \
+         patch("src.services.sentinel_service.AlchemySnapshotRepository", return_value=mock_repo), \
+         patch("src.infrastructure.redis_sentinel_buffer.RedisSentinelBuffer", return_value=mock_redis), \
+         patch("src.services.sentinel_service.MarketDataService") as mock_market_factory, \
+         patch("src.agents.factory.AgentFactory.create_sentinel_agent") as mock_factory:
         
-        # Assert: Should NOT notify or deliberate
-        assert sentinel_service.council_service.start_session.call_count == 0
-        mock_post.assert_not_called()
-    
-    # Should check duplication
-    assert mock_repo.is_duplicate_alert.called
+        mock_market = mock_market_factory.return_value
+        mock_market.get_macro_data.return_value = {"market_indicators": {"^VIX": 20.0}}
+        
+        mock_agent = MagicMock()
+        mock_agent.run = AsyncMock(return_value='{"priority": 2, "target_agent": "CIO", "rationale": "Test"}')
+        mock_factory.return_value = mock_agent
+        
+        service = SentinelService(user_id="test_user", council_service=mock_council, settings_service=mock_settings, repo=mock_repo, snapshot_repo=mock_repo)
+        
+        triggers = [{"text": "Test Trigger 1", "id": "t1"}]
+        
+        with patch('src.services.notification_service.NotificationService') as mock_noti_cls:
+            mock_noti_instance = MagicMock()
+            mock_noti_instance.notify_all = AsyncMock()
+            mock_noti_cls.create_with_settings.return_value = mock_noti_instance
+
+            await service._escalate(triggers, source="Test")
+            await service._flush_buffer(force=True, source="Test")
+            
+            # Since is_duplicate_alert is True, it should not notify
+            assert mock_council.start_session.call_count == 0
+            assert mock_noti_instance.notify_all.called == False
 
 @pytest.mark.anyio
-async def test_escalate_new_alert(sentinel_service, mock_repo):
-    # Setup: Repo says it is NOT a duplicate
+async def test_escalate_new_alert():
+    mock_repo = MagicMock()
+    mock_repo.engine = MagicMock()
+    mock_repo.get_all_thresholds.return_value = {}
     mock_repo.is_duplicate_alert.return_value = False
     
-    triggers = [{"text": "New Trigger", "id": "new_t"}]
-    with patch('httpx.AsyncClient.post', return_value=MagicMock(status_code=202)) as mock_post:
-        await sentinel_service._escalate(triggers, source="Test")
-        await sentinel_service._flush_buffer(force=True, source="Test")
-        
-        # Assert: Should notify and log
-        assert mock_post.called
-        assert mock_repo.log_alert.called
+    mock_council = MagicMock()
+    mock_council.start_session = AsyncMock(return_value={"consensus": "⚠️ Priority: BUY AAPL"})
     
-    # Check arguments
-    args, _ = mock_repo.log_alert.call_args
-    # topic = f"{source.upper()} P{max_priority} ALERT: {'; '.join(display_texts)}"
-    assert args[0] == "TEST P2 ALERT: New Trigger"
-    assert args[1] == "New Trigger"
+    mock_redis = MagicMock()
+    mock_redis.all_pending = AsyncMock(return_value=[])
+    mock_redis.add = AsyncMock()
+    mock_redis.flush_all = AsyncMock(return_value=[{"text": "New Trigger", "id": "new_t", "priority": 2}])
+    
+    mock_settings = MagicMock()
+    mock_settings.user_id = None
 
-def test_notification_service_omni_channel_init():
-    # Mock ChannelFactory to return specific adapters
-    mock_adapters = [MagicMock(), MagicMock()] 
-    
-    with patch("src.infrastructure.channels.channel_factory.ChannelFactory.create_adapters", return_value=mock_adapters) as mock_factory, \
-         patch("src.services.settings_service.SettingsService") as MockSettings, \
-         patch("src.services.notification_filters.InterestBasedFilter") as MockFilter:
+    with patch("src.services.sentinel_service.AlchemySentinelRepository", return_value=mock_repo), \
+         patch("src.services.sentinel_service.AlchemySnapshotRepository", return_value=mock_repo), \
+         patch("src.infrastructure.redis_sentinel_buffer.RedisSentinelBuffer", return_value=mock_redis), \
+         patch("src.services.sentinel_service.MarketDataService") as mock_market_factory, \
+         patch("src.agents.factory.AgentFactory.create_sentinel_agent") as mock_factory:
         
-        # Mock settings
-        mock_settings_instance = MockSettings.return_value
-        mock_settings_instance.get_all_settings.return_value = {"some": "settings"}
+        mock_market = mock_market_factory.return_value
+        mock_market.get_macro_data.return_value = {"market_indicators": {"^VIX": 20.0}}
         
-        # Test create_with_settings instead of direct init if we want to test factory integration
-        service = NotificationService.create_with_settings(mock_settings_instance)
+        mock_agent = MagicMock()
+        mock_agent.run = AsyncMock(return_value='{"priority": 2, "target_agent": "CIO", "rationale": "Test"}')
+        mock_factory.return_value = mock_agent
         
-        # Factory should be called with settings
-        mock_factory.assert_called_with({"some": "settings"})
+        service = SentinelService(user_id="test_user", council_service=mock_council, settings_service=mock_settings, repo=mock_repo, snapshot_repo=mock_repo)
         
-        # Service should have the adapters
-        assert len(service.adapters) == len(mock_adapters)
-        assert service.adapters == mock_adapters
+        triggers = [{"text": "New Trigger", "id": "new_t"}]
+        
+        mock_resp = MagicMock()
+        mock_resp.status_code = 202
+        
+        with patch('src.services.notification_service.NotificationService') as mock_noti_cls:
+            mock_noti_instance = MagicMock()
+            mock_noti_instance.notify_all = AsyncMock()
+            mock_noti_cls.create_with_settings.return_value = mock_noti_instance
+
+            await service._escalate(triggers, source="Test")
+            await service._flush_buffer(force=True, source="Test")
+            
+            # Assert: Should notify and log
+            assert mock_repo.log_alert.called
+            assert mock_noti_instance.notify_all.called

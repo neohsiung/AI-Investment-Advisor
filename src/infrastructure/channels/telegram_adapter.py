@@ -57,12 +57,28 @@ class TelegramAdapter(BaseChannelAdapter):
     async def send_alert(self, user_id: str, title: str, content: str, actions: List[Dict[str, str]] = None, **kwargs) -> bool:
         """
         Send message to Telegram via Bot API asynchronously.
+        Supports per-category recipient override via notification_routing JSONB setting.
+        支援每類別的接收人 override（透過 notification_routing JSONB 設定）。
         """
         import httpx
-        target_chat_id = self._resolve_target_id(user_id)
+        category = kwargs.get("category", "")
+
+        # Per-category chat_id override: check notification_routing JSONB
+        override_chat_id = None
+        if category:
+            try:
+                from src.services.notification_filters import InterestBasedFilter
+                _filter = kwargs.get("_filter")
+                if _filter and hasattr(_filter, "get_recipient_override"):
+                    override_chat_id = _filter.get_recipient_override("telegram", category)
+            except Exception:
+                pass
+
+        target_chat_id = override_chat_id or self._resolve_target_id(user_id)
         
         if not self.base_url or not target_chat_id:
             return False
+
 
         url = f"{self.base_url}/sendMessage"
         
@@ -192,7 +208,8 @@ class TelegramAdapter(BaseChannelAdapter):
             if chat and text:
                 chat_id = str(chat.get("id"))
                 logger.info(f"Telegram Text: {text} from {chat_id}")
-                await self._trigger_text_callback(chat_id, text)
+                import asyncio
+                asyncio.create_task(self._trigger_text_callback(chat_id, text))
         
         return {"ok": True}
         

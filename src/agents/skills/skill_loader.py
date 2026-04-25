@@ -3,14 +3,14 @@ Skill Loader — Progressive Disclosure 3-Tier Architecture.
 技能載入器 — 三層漸進式揭露架構。
 
 Loading Tiers:
-  1. Metadata (metadata.json) — Lightweight discovery: name, description, schema
+  1. Metadata (SKILL.md frontmatter) — Lightweight discovery: name, description, schema
   2. Manifest (SKILL.md frontmatter) — Full config: OS restrictions, metadata
   3. Detail (SKILL.md body) — Full instruction text for system prompt injection
 
 遵循規範:
   - 規範三 (Spec-Driven Design): Pydantic schema 驗證 Skill I/O
   - 規範四 (模組化設計): 獨立可單元測試
-  - 規範八 (動態指標原則): 支援 metadata.json 動態發現
+  - 規範八 (動態指標原則): 支援 YAML Frontmatter 動態發現
 """
 
 import os
@@ -18,8 +18,12 @@ import json
 import yaml
 import logging
 import sys
+import re
+import pathlib
+import subprocess
+import importlib.util
 from typing import Dict, List, Optional, Any
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, asdict
 from enum import Enum
 
 logger = logging.getLogger(__name__)
@@ -35,8 +39,8 @@ class SkillTier(str, Enum):
 @dataclass
 class SkillMetadata:
     """
-    Layer 1: Lightweight metadata from metadata.json.
-    第一層：來自 metadata.json 的輕量級元資料。
+    Layer 1: Lightweight metadata from SKILL.md frontmatter.
+    第一層：來自 SKILL.md Frontmatter 的輕量級元資料。
     """
     name: str
     version: str = "1.0.0"
@@ -75,65 +79,142 @@ class SkillLoader:
     3-Tier Progressive Disclosure Skill Loader.
     三層漸進式揭露技能載入器。
 
-    Layer 1 (Metadata):  metadata.json → fast discovery
+    Layer 1 (Metadata):  SKILL.md frontmatter → fast discovery
     Layer 2 (Manifest):  SKILL.md frontmatter → OS config, extended metadata
     Layer 3 (Detail):    SKILL.md body → full instruction for prompt injection
     """
 
-    def __init__(self, skills_dir: str = "src/agents/skills"):
+    def __init__(self, skills_dir: str = "src/agents/skills", user_id: str = None):
         self.skills_dir = skills_dir
+        self.user_id = user_id
         self.skills: Dict[str, Skill] = {}
         self._metadata_cache: Dict[str, SkillMetadata] = {}
         if not os.path.exists(skills_dir):
             os.makedirs(skills_dir, exist_ok=True)
 
+    def run_skill(self, skill_name: str, **kwargs) -> Any:
+        """
+        Dynamically load and execute a skill's implementation (impl.py).
+        動態載入並執行技能實作 (impl.py)。
+        """
+        # Ensure user_id is in kwargs if passed in __init__
+        if self.user_id and "user_id" not in kwargs:
+            kwargs["user_id"] = self.user_id
+
+        # 1. Locate skill directory
+        skill_dir = os.path.join(self.skills_dir, skill_name)
+        if not os.path.isdir(skill_dir):
+            # Fallback check in sub-directories
+            for root, dirs, _ in os.walk(self.skills_dir):
+                if skill_name in dirs:
+                    skill_dir = os.path.join(root, skill_name)
+                    break
+            else:
+                raise ValueError(f"Skill '{skill_name}' not found in {self.skills_dir}")
+
+        impl_path = os.path.join(skill_dir, "impl.py")
+        if not os.path.exists(impl_path):
+            raise AttributeError(f"Skill '{skill_name}' has no implementation (impl.py) at {skill_dir}")
+
+        # 2. Dynamic Import
+        try:
+            module_name = f"src.agents.skills.{skill_name}.impl"
+            spec = importlib.util.spec_from_file_location(module_name, impl_path)
+            if spec is None or spec.loader is None:
+                raise ImportError(f"Could not load spec for {impl_path}")
+            
+            module = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(module)
+
+            # 3. Execute main function (assumed to have same name as skill)
+            func = getattr(module, skill_name, None)
+            if not func:
+                # Fallback: look for any function if only one exists or try 'run'
+                func = getattr(module, "run", None)
+                if not func:
+                    raise AttributeError(f"Module {module_name} has no function '{skill_name}' or 'run'")
+
+            import inspect
+            if inspect.iscoroutinefunction(func):
+                return func(**kwargs)
+            else:
+                # Wrap sync in a way that it can be awaited if the caller expects a coroutine
+                async def _sync_wrapper():
+                    return func(**kwargs)
+                return _sync_wrapper()
+
+        except Exception as e:
+            logger.error(f"SkillLoader: Failed to run skill '{skill_name}': {e}")
+            raise
+
     # ── Layer 1: Metadata Discovery ──────────────────────────
+
+    def _extract_frontmatter(self, file_path: str) -> Optional[Dict[str, Any]]:
+        """
+        Efficiently extract YAML Frontmatter from SKILL.md.
+        高效地從 SKILL.md 提取 YAML Frontmatter。
+        """
+        try:
+            with open(file_path, "r", encoding="utf-8") as f:
+                # Read the first 4KB, usually enough for frontmatter
+                # 讀取前 4KB，通常足以包含 frontmatter
+                chunk = f.read(4096)
+                if not chunk.startswith("---"):
+                    return None
+                parts = chunk.split("---", 2)
+                if len(parts) < 3:
+                    return None
+                return yaml.safe_load(parts[1])
+        except Exception as e:
+            logger.error(f"SkillLoader: Error reading frontmatter from {file_path}: {e}")
+            return None
 
     def discover_skills(self) -> Dict[str, SkillMetadata]:
         """
-        Layer 1: Scan for metadata.json files — lightweight discovery.
-        第一層：掃描 metadata.json — 輕量級發現。
+        Layer 1: Scan for SKILL.md files and extract basic metadata.
+        第一層：掃描 SKILL.md 檔案並提取基本元資料。
         """
         self._metadata_cache = {}
+        current_platform = "darwin" if sys.platform == "darwin" else "linux"
+
         if not os.path.exists(self.skills_dir):
             return {}
 
-        current_platform = "darwin" if sys.platform == "darwin" else "linux"
-
-        for entry in os.scandir(self.skills_dir):
-            if not entry.is_dir():
-                continue
-            meta_path = os.path.join(entry.path, "metadata.json")
-            if not os.path.exists(meta_path):
-                continue
-
-            try:
-                with open(meta_path, "r", encoding="utf-8") as f:
-                    raw = json.load(f)
-
-                meta = SkillMetadata(
-                    name=raw["name"],
-                    version=raw.get("version", "1.0.0"),
-                    description=raw.get("description", ""),
-                    category=raw.get("category", "general"),
-                    tier=raw.get("tier", "fast"),
-                    input_schema=raw.get("input_schema", {}),
-                    output_schema=raw.get("output_schema", {}),
-                    platform=raw.get("platform", ["linux", "darwin"]),
-                    tags=raw.get("tags", []),
-                )
-
-                # Platform filter
-                if meta.platform and current_platform not in meta.platform:
-                    logger.debug(
-                        f"SkillLoader: Skipping {meta.name} "
-                        f"(platform {current_platform} not in {meta.platform})"
-                    )
+        for root, dirs, files in os.walk(self.skills_dir):
+            if "SKILL.md" in files:
+                full_path = os.path.join(root, "SKILL.md")
+                raw = self._extract_frontmatter(full_path)
+                if not raw:
                     continue
 
-                self._metadata_cache[meta.name] = meta
-            except (json.JSONDecodeError, KeyError) as e:
-                logger.error(f"SkillLoader: Invalid metadata.json in {entry.path}: {e}")
+                try:
+                    name = raw.get("name")
+                    if not name:
+                        continue
+
+                    meta = SkillMetadata(
+                        name=name,
+                        version=raw.get("version", "1.0.0"),
+                        description=raw.get("description", ""),
+                        category=raw.get("category", "general"),
+                        tier=raw.get("tier", "fast"),
+                        input_schema=raw.get("input_schema", {}),
+                        output_schema=raw.get("output_schema", {}),
+                        platform=raw.get("platform", ["linux", "darwin"]),
+                        tags=raw.get("tags", []),
+                    )
+
+                    # Platform filter
+                    if meta.platform and current_platform not in meta.platform:
+                        logger.debug(
+                            f"SkillLoader: Skipping {meta.name} "
+                            f"(platform {current_platform} not in {meta.platform})"
+                        )
+                        continue
+
+                    self._metadata_cache[name] = meta
+                except Exception as e:
+                    logger.error(f"SkillLoader: Invalid metadata in {full_path}: {e}")
 
         logger.info(f"SkillLoader: Discovered {len(self._metadata_cache)} skills (Layer 1).")
         return self._metadata_cache
@@ -142,29 +223,27 @@ class SkillLoader:
 
     def load_skills(self) -> Dict[str, Skill]:
         """
-        Full load: Layer 1 (metadata.json) → Layer 2+3 (SKILL.md).
-        完整載入：第一層 → 第二層 + 第三層。
-
-        Falls back to SKILL.md-only parsing if metadata.json is absent.
-        若 metadata.json 不存在，則退回至 SKILL.md 純 YAML 解析。
+        Full load: Parse Layer 2 (frontmatter) and Layer 3 (body).
+        完整載入：解析第二層（Frontmatter）與第三層（Body）。
         """
-        # Start with Layer 1 discovery
-        self.discover_skills()
+        # Start with Layer 1 discovery if cache is empty
+        if not self._metadata_cache:
+            self.discover_skills()
+            
         self.skills = {}
 
         if not os.path.exists(self.skills_dir):
             return {}
 
         for root, dirs, files in os.walk(self.skills_dir):
-            for file in files:
-                if file == "SKILL.md":
-                    full_path = os.path.join(root, file)
-                    try:
-                        skill = self._parse_skill_file(full_path)
-                        if skill:
-                            self.skills[skill.name] = skill
-                    except Exception as e:
-                        logger.error(f"SkillLoader: Failed to load {full_path}: {e}")
+            if "SKILL.md" in files:
+                full_path = os.path.join(root, "SKILL.md")
+                try:
+                    skill = self._parse_skill_file(full_path)
+                    if skill:
+                        self.skills[skill.name] = skill
+                except Exception as e:
+                    logger.error(f"SkillLoader: Failed to load {full_path}: {e}")
 
         logger.info(f"SkillLoader: Loaded {len(self.skills)} skills (Layer 2+3).")
         return self.skills
@@ -172,10 +251,14 @@ class SkillLoader:
     def _parse_skill_file(self, file_path: str) -> Optional[Skill]:
         """
         Parses a single SKILL.md file (Layer 2 + 3).
-        Merges with previously discovered metadata.json (Layer 1).
+        Merges with Layer 1 metadata from cache.
         """
-        with open(file_path, "r", encoding="utf-8") as f:
-            content = f.read()
+        try:
+            with open(file_path, "r", encoding="utf-8") as f:
+                content = f.read()
+        except Exception as e:
+            logger.error(f"SkillLoader: Could not read {file_path}: {e}")
+            return None
 
         # Split Frontmatter and Content
         if not content.startswith("---"):
@@ -192,16 +275,16 @@ class SkillLoader:
         markdown_body = parts[2].strip()
 
         try:
-            meta = yaml.safe_load(yaml_content)
-            name = meta.get("name")
-            desc = meta.get("description", "")
-            metadata = meta.get("metadata", {})
+            meta_raw = yaml.safe_load(yaml_content)
+            name = meta_raw.get("name")
+            desc = meta_raw.get("description", "")
+            metadata = meta_raw.get("metadata", {})
 
             if not name:
                 logger.warning(f"SkillLoader: Missing 'name' in {file_path}")
                 return None
 
-            # Check OS restrictions from SKILL.md metadata
+            # Check OS restrictions from metadata
             openclaw_meta = metadata.get("openclaw", {})
             allowed_os = openclaw_meta.get("os", [])
             if allowed_os:
@@ -213,7 +296,7 @@ class SkillLoader:
                     )
                     return None
 
-            # Merge with Layer 1 metadata if available
+            # Retrieve Layer 1 metadata from cache
             layer1 = self._metadata_cache.get(name)
 
             return Skill(
@@ -222,13 +305,13 @@ class SkillLoader:
                 metadata=metadata,
                 instruction=markdown_body,
                 code_path=os.path.dirname(file_path),
-                version=layer1.version if layer1 else "1.0.0",
-                category=layer1.category if layer1 else "general",
-                tier=layer1.tier if layer1 else "fast",
-                input_schema=layer1.input_schema if layer1 else {},
-                output_schema=layer1.output_schema if layer1 else {},
-                platform=layer1.platform if layer1 else ["linux", "darwin"],
-                tags=layer1.tags if layer1 else [],
+                version=meta_raw.get("version", layer1.version if layer1 else "1.0.0"),
+                category=meta_raw.get("category", layer1.category if layer1 else "general"),
+                tier=meta_raw.get("tier", layer1.tier if layer1 else "fast"),
+                input_schema=layer1.input_schema if layer1 else meta_raw.get("input_schema", {}),
+                output_schema=layer1.output_schema if layer1 else meta_raw.get("output_schema", {}),
+                platform=meta_raw.get("platform", layer1.platform if layer1 else ["linux", "darwin"]),
+                tags=meta_raw.get("tags", layer1.tags if layer1 else []),
             )
 
         except yaml.YAMLError as e:

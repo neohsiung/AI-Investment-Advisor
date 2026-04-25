@@ -5,9 +5,13 @@ from src.domain.interfaces import LLMConfig
 
 @pytest.fixture(autouse=True)
 def env_reset(monkeypatch):
-    """Ensure environment variables don't pollute TierSpec resolution."""
-    for key in ["AI_MODEL_NANO", "AI_MODEL_FAST", "AI_MODEL_SMART", "AI_MODEL_ADVANCED", "AI_PROVIDER"]:
-        monkeypatch.delenv(key, raising=False)
+    """Ensure environment variables don't pollute TierSpec resolution.
+    Set default model values so TierSpec.resolve_model() returns non-None.
+    """
+    monkeypatch.setenv("AI_MODEL_NANO", "gpt-4.1-nano")
+    monkeypatch.setenv("AI_MODEL_FAST", "google/gemini-2.5-flash")
+    monkeypatch.setenv("AI_MODEL_SMART", "google/gemini-2.5-pro")
+    monkeypatch.setenv("AI_MODEL_ADVANCED", "google/gemini-2.5-pro")
     yield
 
 

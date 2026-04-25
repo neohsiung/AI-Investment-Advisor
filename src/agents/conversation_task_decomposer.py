@@ -89,9 +89,21 @@ Return ONLY the JSON list.
             except Exception as e:
                 logger.warning(f"Decomposer: Failed to load config from DB: {e}. Using env fallback.")
                 from src.domain.interfaces import LLMConfig
+                from src.infrastructure.llm.tier_config import SettingsAwareModelRouter
+                try:
+                    from src.repositories.settings_repository import AlchemySettingsRepository
+                    settings_repo = AlchemySettingsRepository()
+                    model_router = SettingsAwareModelRouter(settings_repo)
+                    model = model_router.get_model(self.user_id, self.tier)
+                except Exception as e:
+                    logger.warning(f"Decomposer: Model router failed, using tier default: {e}")
+                    from src.infrastructure.llm.tier_config import TierConfig
+                    tier_config = TierConfig()
+                    model = tier_config.resolve(self.tier)
+                
                 self._config = LLMConfig(
                     provider=os.getenv("AI_PROVIDER", "OpenRouter"),
-                    model=os.getenv("AI_MODEL_SMART", "google/gemini-2.5-pro"),
+                    model=model,
                     api_key=os.getenv("API_KEY", ""),
                     base_url=os.getenv("BASE_URL", ""),
                     temperature=0.1,
@@ -116,9 +128,8 @@ Return ONLY the JSON list.
         )
 
         try:
-            # chat() is synchronous, wrap it in to_thread
-            content = await to_thread(
-                llm.chat,
+            # chat() is async
+            content = await llm.chat(
                 messages=[Message(role="user", content=prompt)],
                 config=self._get_config()
             )

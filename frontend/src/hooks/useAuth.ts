@@ -6,7 +6,7 @@ import { useEffect } from "react";
 export function useAuth() {
   const router = useRouter();
   
-  const { data, error, mutate, isLoading } = useSWR("/api/auth/me", fetcher, {
+  const { data, error, mutate, isLoading } = useSWR("/api/v1/auth/me", fetcher, {
     shouldRetryOnError: false,
     revalidateOnFocus: false,
   });

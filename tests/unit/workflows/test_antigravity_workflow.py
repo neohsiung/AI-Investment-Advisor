@@ -39,29 +39,24 @@ def mock_workflow_deps():
     # Mock Memory Service
     mem_repo = MagicMock()
     agent_provider = MagicMock()
-    # detect_conflicts awaits check_contradictions, so it must be AsyncMock
-    agent_provider.check_contradictions = AsyncMock(return_value=[])
-    # store_report awaits summarize
-    agent_provider.summarize = AsyncMock(return_value="Summary")
+    agent_provider.summarize = AsyncMock(return_value="Mocked Summary")
     memory_service = MemoryService(repository=mem_repo, llm_provider=agent_provider)
     
     return planner, memory_service
 
 @pytest.mark.asyncio
-@patch('src.agents.factory.AgentFactory.create_macro_agent')
-@patch('src.agents.factory.AgentFactory.create_cio_agent')
-@patch('src.agents.factory.AgentFactory.create_fundamental_agent')
-async def test_weekly_workflow_execution(mock_fund, mock_cio, mock_macro, mock_workflow_deps):
+@patch('src.services.workflow_service.BaseWorkflow._call_agent_llm', new_callable=AsyncMock)
+async def test_weekly_workflow_execution(mock_llm, mock_workflow_deps):
     """Test full Weekly Workflow execution with mocked agents."""
     planner, memory_service = mock_workflow_deps
     
     # Setup Mock Agent Responses
-    mock_macro.return_value.run = AsyncMock(return_value="Macro: Growth")
-    mock_cio.return_value.run = AsyncMock(return_value="CIO: Buy Tech")
-    # Mock polish_report
-    mock_cio.return_value.polish_report.side_effect = lambda x: x
-    
-    mock_fund.return_value.run = AsyncMock(return_value="Fund: Strong Cashflow")
+    def side_effect(agent_name, *args, **kwargs):
+        if agent_name == "Macro": return "Macro: Growth"
+        if agent_name == "CIO": return "CIO: Buy Tech"
+        if agent_name == "Fundamental": return "Fund: Strong Cashflow"
+        return "Mock Response"
+    mock_llm.side_effect = side_effect
     
     workflow = WeeklyWorkflow(user_id="test_user")
     workflow.task_planner = planner
@@ -69,7 +64,7 @@ async def test_weekly_workflow_execution(mock_fund, mock_cio, mock_macro, mock_w
     
     # Mock Context
     workflow.context = {"tickers": ["NVDA"], "market_data": {}}
-    workflow.market_service = MagicMock() # Mock market service calls if any
+    workflow.market_service = MagicMock() 
     workflow.transaction_service = MagicMock()
     workflow.transaction_service.get_holdings_map.return_value = {}
     workflow.performance_service = MagicMock()
@@ -80,12 +75,9 @@ async def test_weekly_workflow_execution(mock_fund, mock_cio, mock_macro, mock_w
     # Assertions
     assert "CIO: Buy Tech" in report or "Macro: Growth" in report or "Fund" in report
     # Check that agents were called
-    assert mock_macro.called
-    assert mock_cio.called
+    assert mock_llm.called
     # Check that Memory Store was called
     memory_service.repo.save_report.assert_called()
-
-# --- Memory Consistency Tests ---
 
 # --- Memory Consistency Tests ---
 
@@ -95,16 +87,16 @@ async def test_weekly_workflow_execution(mock_fund, mock_cio, mock_macro, mock_w
 @patch('src.services.workflow_service.AlchemyTransactionRepository')
 @patch('src.services.workflow_service.TransactionService')
 @patch('src.services.workflow_service.MarketDataService')
-@patch('src.agents.factory.AgentFactory.create_cio_agent')
-@patch('src.agents.factory.AgentFactory.create_macro_agent')
+@patch('src.services.workflow_service.BaseWorkflow._call_agent_llm', new_callable=AsyncMock)
 @patch('src.services.broker_factory.BrokerFactory')
 @patch('src.infrastructure.risk_manager.RiskManager')
 @patch('src.infrastructure.risk_manager.AlchemySettingsRepository')
 @patch('src.services.workflow_service.PerformanceService')
-async def test_daily_consistency_warning(MockPerformanceService, MockRiskSettings, MockRiskManager, MockBrokerFactory, MockMacro, MockCIO, MockMarket, MockTransService, MockTransRepo, MockMemRepo, MockLLMProvider):
+async def test_daily_consistency_warning(MockPerformanceService, MockRiskSettings, MockRiskManager, MockBrokerFactory, mock_llm, MockMarket, MockTransService, MockTransRepo, MockMemRepo, MockLLMProvider):
     """Test that contradictory views trigger a warning."""
     mem_repo = MagicMock()
     agent_provider = MagicMock()
+    agent_provider.summarize = AsyncMock(return_value="Mocked Summary")
     
     # Mock Repository to return prior reports
     from src.services.memory_service import ReportMemoryItem
@@ -124,8 +116,11 @@ async def test_daily_consistency_warning(MockPerformanceService, MockRiskSetting
     memory_service = MemoryService(mem_repo, agent_provider)
     
     # Validate Mocks Setup
-    MockMacro.return_value.run = AsyncMock(return_value="Old Macro")
-    MockCIO.return_value.run = AsyncMock(return_value="Final Report with Warning")
+    def side_effect(agent_name, *args, **kwargs):
+        if agent_name == "Macro": return "Old Macro"
+        if agent_name == "CIO": return "Final Report with Warning"
+        return "Mock Response"
+    mock_llm.side_effect = side_effect
     
     mock_broker = MagicMock()
     mock_broker.get_name.return_value = "MockBroker"
@@ -143,8 +138,6 @@ async def test_daily_consistency_warning(MockPerformanceService, MockRiskSetting
     # Mock Context
     workflow.context = {"tickers": ["S"]}
     workflow.context['ticker_reports'] = {"S": {"momentum": "UP"}}
-    # Ensure Market/Transaction services are mocks (already patched in class but assigned in init)
-    # workflow.market_service is MockMarket()
     
     await workflow.synthesize_results()
     
@@ -152,7 +145,8 @@ async def test_daily_consistency_warning(MockPerformanceService, MockRiskSetting
     agent_provider.check_contradictions.assert_called()
     
     # Check that CIO agent received the warning in context
-    call_args = MockCIO.return_value.run.call_args
-    context_arg = call_args[0][0] if call_args[0] else call_args.kwargs.get('context', call_args[0][0] if call_args[0] else {})
+    # It should be the last call or one of the calls to mock_llm where agent_name="CIO"
+    cio_call = [call for call in mock_llm.call_args_list if call.args[0] == "CIO"][-1]
+    context_arg = cio_call.args[1]
     assert "consistency_constraints" in context_arg
     assert "Contradiction: Bull vs Bear" in context_arg["consistency_constraints"]

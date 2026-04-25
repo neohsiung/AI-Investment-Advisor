@@ -28,10 +28,10 @@ export default function CommandCenter() {
   const { agents, isLoading: isAgentsLoading } = useAgentsStatus();
   const { positions, isLoading: isPositionsLoading } = usePositions();
   const { alerts, isLoading: isAlertsLoading } = useAlerts();
-  
+
   const { status: socketStatus } = useDashboardSocket();
   const { isLoading: isAuthLoading } = useRequireAuth();
-  
+
   const [isReporting, setIsReporting] = React.useState(false);
   const [isRebalancing, setIsRebalancing] = React.useState(false);
 
@@ -59,26 +59,33 @@ export default function CommandCenter() {
     }
   };
 
-  if (isAuthLoading || isSummaryLoading || isAgentsLoading || isPositionsLoading || isIntelLoading) {
+  const isGlobalLoading = isAuthLoading || isSummaryLoading;
+
+  if (isGlobalLoading) {
     return (
       <div className="flex items-center justify-center min-h-[60vh]">
-        <Loader2 className="h-10 w-10 text-primary animate-spin" />
+        <div className="flex flex-col items-center gap-4">
+          <Loader2 className="h-10 w-10 text-primary animate-spin" />
+          <p className="text-xs font-label uppercase tracking-widest text-on-surface-variant opacity-60">
+            資產中心初始化中...
+          </p>
+        </div>
       </div>
     );
   }
 
   return (
-    <div className="space-y-8 animate-in fade-in duration-700">
-      <PortfolioStats 
-        summary={summary} 
-        isReporting={isReporting} 
-        isRebalancing={isRebalancing} 
-        onGenerateReport={handleGenerateReport} 
-        onRebalance={handleRebalance} 
+    <div className="space-y-4 lg:space-y-8 animate-in fade-in duration-700">
+      <PortfolioStats
+        summary={summary}
+        isReporting={isReporting}
+        isRebalancing={isRebalancing}
+        onGenerateReport={handleGenerateReport}
+        onRebalance={handleRebalance}
       />
 
-      <div className="grid grid-cols-12 gap-6">
-        <div className="col-span-12 lg:col-span-9">
+      <div className="grid grid-cols-12 gap-4 lg:gap-6">
+        <div className="col-span-12 md:col-span-8 lg:col-span-9">
           <TacticalCard title="資產績效表現趨勢" className="h-full">
             <ErrorBoundary fallback={<ComponentFallback name="績效圖表" />}>
               <PerformanceChart />
@@ -86,40 +93,30 @@ export default function CommandCenter() {
           </TacticalCard>
         </div>
 
-        <div className="col-span-12 lg:col-span-3">
+        <div className="col-span-12 md:col-span-4 lg:col-span-3">
           <ErrorBoundary fallback={<ComponentFallback name="市場情報" />}>
-            <BriefingCard 
-              title={briefing?.observation_window || "MARKET BRIEFING"}
-              tags={["AI Intelligence"]}
-            >
-              <div className="space-y-4 text-sm">
-                <p className="text-on-surface font-light leading-relaxed">
-                  {briefing?.executive_summary || "正在準備市場摘要..."}
-                </p>
-                <div className="pt-3 border-t border-outline-variant/10">
-                  <p className="text-[10px] font-black uppercase tracking-widest text-primary mb-1">操作建議</p>
-                  <p className="font-bold text-on-surface">{briefing?.recommendation || "分析中"}</p>
-                </div>
-                <p className="text-[10px] italic text-on-surface-variant leading-relaxed">
-                  <span className="font-bold uppercase not-italic mr-1 text-secondary">AI NOTE:</span>
-                  {briefing?.ai_note || "系統同步中"}
-                </p>
-              </div>
-            </BriefingCard>
+            <BriefingCard
+              summary={briefing?.executive_summary || "正在準備市場摘要..."}
+              recommendation={briefing?.recommendation || "分析中"}
+              note={briefing?.ai_note || "系統同步中"}
+              status={briefing?.observation_window || "INITIALIZING"}
+              metrics={briefing?.sentiment_metrics || []}
+              isLoading={isIntelLoading}
+            />
           </ErrorBoundary>
         </div>
       </div>
 
-      <div className="grid grid-cols-12 gap-6">
-        <div className="col-span-12 lg:col-span-8 space-y-6">
+      <div className="grid grid-cols-12 gap-4 lg:gap-6">
+        <div className="col-span-12 md:col-span-8 lg:col-span-8 space-y-4 lg:space-y-6">
           <Terminal />
-          
+
           <ErrorBoundary fallback={<ComponentFallback name="持倉明細" />}>
             <PositionsTable positions={positions} isLoading={isPositionsLoading} />
           </ErrorBoundary>
         </div>
 
-        <div className="col-span-12 lg:col-span-4">
+        <div className="col-span-12 md:col-span-4 lg:col-span-4">
           <ErrorBoundary fallback={<ComponentFallback name="系統通知" />}>
             <SystemAlerts alerts={alerts} isLoading={isAlertsLoading} />
           </ErrorBoundary>

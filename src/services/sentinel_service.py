@@ -3,6 +3,7 @@ logger = setup_logger("SentinelService")
 
 import asyncio
 import os
+import json
 import typing
 from typing import List, Dict, Tuple, Any, Optional, Callable, Union, Awaitable
 from src.utils.async_utils import to_thread
@@ -13,7 +14,7 @@ from src.services.market_data_service import MarketDataService
 from src.services.search_service import InternetSearchService
 from src.services.council_service import CouncilService
 from src.services.transaction_service import TransactionService
-from src.utils.security import redact_secrets
+from src.utils.security import redact_secrets, redact_pii
 import httpx
 
 from src.repositories.sentinel_repository import AlchemySentinelRepository
@@ -21,6 +22,12 @@ from src.repositories.snapshot_repository import AlchemySnapshotRepository
 from src.services.settings_service import SettingsService
 from src.services.risk_keyword_service import RiskKeywordService
 from src.domain.entities import RiskKeyword
+
+# PAD Phase 2: Add model router and gateway imports
+from src.infrastructure.llm.tier_config import SettingsAwareModelRouter
+from src.infrastructure.llm.llm_gateway import OpenRouterGateway
+from src.domain.interfaces import Message, LLMConfig
+from src.repositories.settings_repository import AlchemySettingsRepository
 
 class SentinelService:
     """
@@ -60,6 +67,15 @@ class SentinelService:
         self.keyword_service = keyword_service or RiskKeywordService()
         self.snapshot_repo = snapshot_repo or AlchemySnapshotRepository(engine=self.repo.engine)
         
+        # PAD Phase 2: Initialize model router and gateway for LLM calls
+        from src.infrastructure.llm.budget_aware_model_router import BudgetAwareModelRouter
+        from src.services.token_logger_service import TokenLoggerService
+        self.model_router = BudgetAwareModelRouter(
+            settings_service=self.settings_service,
+            token_logger=TokenLoggerService()
+        )
+        self.gateway = OpenRouterGateway()
+        
         self.notification_api_url = os.getenv("NOTIFICATION_API_URL", "http://notification:8001/api/v1/notify")
         
         # Thresholds (v3.5 - Defaults seeded to DB)
@@ -82,8 +98,9 @@ class SentinelService:
         # Perform initial statistical calibration if historical data is available
         self._calibrate_thresholds()
         
-        # Buffer State
-        self._trigger_buffer: List[Dict[str, Any]] = [] # [{ "trigger": ..., "deadline": ... }]
+        # Buffer State — Redis-backed persistent buffer (replaces in-memory dict)
+        from src.infrastructure.redis_sentinel_buffer import RedisSentinelBuffer
+        self._redis_buffer = RedisSentinelBuffer()
         
         # Priority Deadlines (minutes) - Rule #8: Dynamic via settings if available
         # Keys use "P1".."P5" format to match priority lookup: f"P{priority}"
@@ -97,6 +114,57 @@ class SentinelService:
         
         # Volatility State
         self.current_vix: float = 20.0 # Default fallback
+
+    # ──────────────────────────────────────────
+    # PAD Phase 2: Agent LLM Helper
+    # ──────────────────────────────────────────
+    
+    async def _call_agent_llm(self, agent_name: str, context: Dict[str, Any], tier: str = "smart", 
+                              temperature: float = 0.7, max_tokens: int = 2000) -> str:
+        """
+        PAD Phase 2: Replace AgentFactory.create_*_agent().run() with direct gateway calls.
+        Generic method to call LLM for any agent role (Thematic, Sentinel, etc).
+        """
+        try:
+            from src.infrastructure.llm.llm_config_chain import build_config_chain
+            from src.infrastructure.llm.resilient_pipeline import ResilientLLMPipeline
+
+            chain = build_config_chain(self.user_id, tier)
+            if not chain:
+                logger.warning(f"No tier binding for user={self.user_id} tier={tier}, using budget router fallback")
+                chain = self.model_router.get_config_chain(self.user_id, tier)
+            if not chain:
+                return json.dumps({"status": "failed", "error": f"No model configured for tier={tier}"})
+
+            pipeline = ResilientLLMPipeline(config_chain=chain)
+
+            agent_prompts = {
+                "Thematic": "You are a Thematic analyst. Analyze market themes, trends, and beneficiary companies. Update tracking lists based on events. Return valid JSON with 'status' and 'data' fields.",
+                "Sentinel": "You are a Sentinel agent. Evaluate event priority and routing. Determine priority (P0-P5), target_agent (CIO/PM/Analyst), trigger_type, affected_tickers, and rationale. Return valid JSON.",
+                "Momentum": "You are a Momentum analyst. Analyze price trends and technical indicators.",
+                "Fundamental": "You are a Fundamental analyst. Analyze financial statements and valuations.",
+                "Risk": "You are a Risk manager. Assess portfolio risks and downsides.",
+                "Sentiment": "You are a Sentiment analyst. Analyze market sentiment and investor psychology.",
+                "Macro": "You are a Macro strategist. Assess macroeconomic trends and cyclical factors."
+            }
+
+            system_prompt = agent_prompts.get(agent_name, f"You are a {agent_name} analyst.")
+            messages = [
+                Message(role="system", content=system_prompt),
+                Message(role="user", content=json.dumps(context))
+            ]
+
+            logger.debug(f"Sentinel: Calling {agent_name} agent via tier={tier} (user={self.user_id})")
+            response, _ = await pipeline.execute(messages, temperature=temperature, max_tokens=max_tokens)
+
+            if not isinstance(response, str):
+                logger.error(f"Sentinel: Unexpected response type from pipeline: {type(response)}")
+                return json.dumps({"status": "failed", "error": f"Invalid response type: {type(response)}"})
+
+            return response
+        except Exception as e:
+            logger.error(f"Sentinel: {agent_name} agent failed: {e}")
+            return json.dumps({"status": "failed", "error": str(e)})
 
     # ──────────────────────────────────────────
     # Main Entry Point
@@ -119,7 +187,7 @@ class SentinelService:
             # Dimension 0: User Context Resolution (v5.0: Strictly isolated)
             active_tickers = self.transaction_service.get_user_tickers(self.user_id, only_active=True)
             ticker_list = list(active_tickers)
-            logger.info(f"Sentinel: Monitoring {len(ticker_list)} tickers for user {self.user_id}.")
+            logger.info(f"Sentinel: Monitoring {len(ticker_list)} tickers for user {redact_pii(self.user_id)}.")
             
             # Dimension 1: VIX Regime (每次 tick)
             triggers += self._check_vix_anomaly()
@@ -127,18 +195,18 @@ class SentinelService:
             # Dimension 2: Position Price Moves (每次 tick)
             # Pass aggregated data to avoid redundant fetches
             if ticker_list:
-                current_prices = self.market_service.get_current_prices(ticker_list)
-                triggers += self._check_position_moves_v2(ticker_list, current_prices)
+                current_prices = await self.market_service.get_current_prices(ticker_list)
+                triggers += await self._check_position_moves_v2(ticker_list, current_prices)
             
             # Dimension 3: Breaking News (每 10 分鐘, 節省 Tavily credits)
             from datetime import datetime
             if datetime.now().minute % 10 == 0:
                 if ticker_list:
-                    triggers += self._check_breaking_news_v2(ticker_list)
+                    triggers += await self._check_breaking_news_v2(ticker_list)
             
             # Dimension 4: Macro Shifts (每小時, FRED 數據更新頻率低)
             if datetime.now().minute == 0:
-                triggers += self._check_macro_shifts()
+                triggers += await self._check_macro_shifts()
             
             # Dimension 5: Active Polling
             triggers += await self._check_active_sources()
@@ -146,11 +214,13 @@ class SentinelService:
             # Dimension 6: Global Macro / Geopolitical Events (每 30 分鐘)
             # 持倉數量無關的全球重大事件掃描
             if datetime.now().minute % 30 == 0:
-                triggers += self._check_global_macro_events()
+                triggers += await self._check_global_macro_events()
             
             # Dimension 7: Risk Consistency & Dynamic Cash (每次 tick)
             # v5.0: Ensure leverage and cash levels match risk profile
-            triggers += await self._check_risk_consistency()
+            new_triggers = await self._check_risk_consistency()
+            triggers.extend(new_triggers)
+            logger.debug("process_tick: %d triggers after risk check", len(triggers))
             
             # Dimension 8: Capital Deployment (v9.0 Add-on)
             # Check for excess cash and trigger deployment logic if allowed
@@ -187,7 +257,7 @@ class SentinelService:
         msg = data.get("msg", "Event Triggered")
         ticker = data.get("ticker")
         
-        logger.info(f"Sentinel Processing Event: [{source}] {msg}")
+        logger.info(f"Sentinel Processing Event: [{redact_secrets(source)}] {redact_secrets(msg)}")
         
         display_text = f"🔔 [{source.upper()}] {msg} " + (f"({ticker})" if ticker else "")
         # Use message content as ID for generic events if no specific ID provided
@@ -305,11 +375,11 @@ class SentinelService:
             logger.warning(f"VIX check failed: {e}")
         return triggers
 
-    # ──────────────────────────────────────────
     # Dimension 2: Position Price Moves
     # ──────────────────────────────────────────
 
-    def _check_position_moves_v2(self, all_tickers: List[str], current_prices: Dict[str, float]) -> List[Dict[str, Any]]:
+
+    async def _check_position_moves_v2(self, all_tickers: List[str], current_prices: Dict[str, float]) -> List[Dict[str, Any]]:
         """
         Monitor aggregated tickers for significant intraday price moves.
         Optimized to use pre-fetched current prices and batch OHLCV.
@@ -354,16 +424,16 @@ class SentinelService:
                     })
                     
         except Exception as e:
-            logger.warning(f"Position move check failed for {all_tickers}: {e}")
+            logger.warning(f"Position move check failed for {redact_secrets(all_tickers)}: {e}")
         return triggers
 
-    def _check_position_moves(self) -> List[Dict[str, Any]]:
+    async def _check_position_moves(self) -> List[Dict[str, Any]]:
         """Deprecated wrapper for backward compatibility."""
         ticker_list = self.transaction_service.get_user_tickers(self.user_id, only_active=True)
-        current_prices = self.market_service.get_current_prices(ticker_list)
-        return self._check_position_moves_v2(ticker_list, current_prices)
+        current_prices = await self.market_service.get_current_prices(ticker_list)
+        return await self._check_position_moves_v2(ticker_list, current_prices)
 
-    def _get_market_trend(self, benchmark: str = "SPY") -> str:
+    async def _get_market_trend(self, benchmark: str = "SPY") -> str:
         """
         Detects major market trend using SMA and MACD.
         Returns: 'Bullish', 'Bearish', or 'Neutral'
@@ -375,7 +445,7 @@ class SentinelService:
             
             # Simple Trend Rule: Price > SMA200 for long-term bull
             # We don't have current price here directly, let's fetch it
-            prices = self.market_service.get_current_prices([benchmark])
+            prices = await self.market_service.get_current_prices([benchmark])
             current_price = prices.get(benchmark, 0)
             
             if current_price > sma_200 and sma_200 > 0:
@@ -390,14 +460,14 @@ class SentinelService:
     async def _check_risk_consistency(self) -> List[Dict[str, Any]]:
         """Deprecated wrapper for backward compatibility."""
         ticker_list = self.transaction_service.get_user_tickers(self.user_id, only_active=True)
-        current_prices = self.market_service.get_current_prices(ticker_list)
-        return self._check_position_moves_v2(ticker_list, current_prices)
+        current_prices = await self.market_service.get_current_prices(ticker_list)
+        return await self._check_position_moves_v2(ticker_list, current_prices)
 
     # ──────────────────────────────────────────
     # Dimension 3: Breaking News (Tavily)
     # ──────────────────────────────────────────
     
-    def _check_breaking_news_v2(self, all_tickers: List[str]) -> List[Dict[str, Any]]:
+    async def _check_breaking_news_v2(self, all_tickers: List[str]) -> List[Dict[str, Any]]:
         """
         Search for risk-relevant breaking news for aggregated tickers.
         """
@@ -415,7 +485,7 @@ class SentinelService:
             risk_threshold = self.thresholds.get("news_risk_score", 0.6)
             
             for ticker in all_tickers:
-                risk_score, summary = self._analyze_ticker_news(ticker, active_keywords)
+                risk_score, summary = await self._analyze_ticker_news(ticker, active_keywords)
                 if risk_score >= risk_threshold:
                     triggers.append({
                         "text": f"⚠️ {ticker} 新聞異動: {summary} (加權分數: {risk_score:.2f})",
@@ -427,12 +497,12 @@ class SentinelService:
             logger.warning(f"Breaking news check failed: {e}")
         return triggers
 
-    def _check_breaking_news(self) -> List[Dict[str, Any]]:
+    async def _check_breaking_news(self) -> List[Dict[str, Any]]:
         """Deprecated wrapper for backward compatibility."""
         ticker_list = self.transaction_service.get_user_tickers(self.user_id, only_active=True)
-        return self._check_breaking_news_v2(ticker_list)
+        return await self._check_breaking_news_v2(ticker_list)
 
-    def _analyze_ticker_news(self, ticker: str, active_keywords: List[RiskKeyword]) -> Tuple[float, str]:
+    async def _analyze_ticker_news(self, ticker: str, active_keywords: List[RiskKeyword]) -> Tuple[float, str]:
         """
         Analyzes news for a given ticker against active risk keywords and returns a risk score and summary.
         v5.0 Optimization: Prioritize Tiingo/FMP over Tavily Search to save credits.
@@ -445,7 +515,7 @@ class SentinelService:
         # Fallback: search if NO news from primary providers
         if not results:
              query = f"{ticker} latest news investment impact"
-             results = self.search_service.search_financial_context(query, max_results=3)
+             results = await self.search_service.search_financial_context(query, max_results=3)
              
         if not results:
              return 0.0, "No recent news captured by primary providers or search."
@@ -496,15 +566,17 @@ class SentinelService:
                         tx_service = TransactionService(user_id=self.user_id)
                         active_tickers = tx_service.get_user_tickers(user_id=self.user_id, only_active=True)
                         if active_tickers:
-                            logger.info(f"Bootstrapping AI Energy Tickers from Watchlist: {active_tickers}")
-                            from src.agents.factory import AgentFactory
-                            thematic_agent = AgentFactory.create_thematic_agent(user_id=self.user_id)
+                            logger.info(f"Bootstrapping AI Energy Tickers from Watchlist: {redact_secrets(active_tickers)}")
                             context = {
                                 "event_text": f"Initial Bootstrapping. Find 'AI Energy / Infrastructure / Grid' beneficiaries from this watchlist: {', '.join(active_tickers)}",
                                 "theme_key": "ai_energy_tickers",
                                 "current_state": []
                             }
-                            res = thematic_agent.run(context)
+                            res_str = await self._call_agent_llm("Thematic", context, tier="smart")
+                            try:
+                                res = json.loads(res_str)
+                            except json.JSONDecodeError:
+                                res = {}
                             if res.get("status") == "success":
                                 ai_energy_tickers = self.settings_service.get_setting("ai_energy_tickers")
                     except Exception as e:
@@ -546,15 +618,17 @@ class SentinelService:
                         tx_service = TransactionService(user_id=self.user_id)
                         active_tickers = tx_service.get_user_tickers(user_id=self.user_id, only_active=True)
                         if active_tickers:
-                            logger.info(f"Bootstrapping Physical AI Tickers from Watchlist: {active_tickers}")
-                            from src.agents.factory import AgentFactory
-                            thematic_agent = AgentFactory.create_thematic_agent(user_id=self.user_id)
+                            logger.info(f"Bootstrapping Physical AI Tickers from Watchlist: {redact_secrets(active_tickers)}")
                             context = {
                                 "event_text": f"Initial Bootstrapping. Find 'Physical AI / Robotics / Autonomous' beneficiaries from this watchlist: {', '.join(active_tickers)}",
                                 "theme_key": "physical_ai_tickers",
                                 "current_state": []
                             }
-                            res = thematic_agent.run(context)
+                            res_str = await self._call_agent_llm("Thematic", context, tier="smart")
+                            try:
+                                res = json.loads(res_str)
+                            except json.JSONDecodeError:
+                                res = {}
                             if res.get("status") == "success":
                                 physical_ai_tickers = self.settings_service.get_setting("physical_ai_tickers")
                     except Exception as e:
@@ -595,7 +669,7 @@ class SentinelService:
     # Dimension 4: Macro Shifts (FRED)
     # ──────────────────────────────────────────
 
-    def _check_macro_shifts(self) -> List[Dict[str, Any]]:
+    async def _check_macro_shifts(self) -> List[Dict[str, Any]]:
         """
         Check for significant macro indicator changes via FRED.
         """
@@ -640,7 +714,7 @@ class SentinelService:
             logger.warning(f"Macro shift check failed: {e}")
         return triggers
 
-    def _check_global_macro_events(self) -> List[Dict[str, Any]]:
+    async def _check_global_macro_events(self) -> List[Dict[str, Any]]:
         """
         Dimension 6: Scan for major global/geopolitical events independent of user positions.
         持倉無關的全球重大事件掃描（戰爭、制裁、疫情、金融危機等）。
@@ -658,7 +732,7 @@ class SentinelService:
             seen_ids = set()
             for query in queries:
                 try:
-                    results = self.search_service.search(query, max_results=3)
+                    results = await self.search_service.search_financial_context(query, max_results=3)
                     if not results:
                         continue
 
@@ -705,39 +779,26 @@ class SentinelService:
         if not triggers:
              return
 
-        # v2.1.0: Universal Prioritization via SentinelAgent
-        # ──────────────────────────────────────────────
-        from datetime import datetime
-        now_ts = datetime.now().timestamp()
-        
-        from src.agents.factory import AgentFactory
+        # [T4] Batching logic for P0 / immediate escalation
+        immediate_triggers = []
         
         for t in triggers:
             trigger_id = t.get("id", "")
             
-            # v5.4.1 Cost Optimization: Semantic/Response Caching (Buffer Level)
-            # If this exact trigger ID is already in the buffer, skip LLM evaluation completely
-            already_buffered = next((b for b in self._trigger_buffer if b["trigger"].get("id") == trigger_id), None)
+            # v5.4.1 Cost Optimization: Semantic/Response Caching
+            pending = await self._redis_buffer.all_pending(self.user_id)
+            already_buffered_trigger = next((b for b in pending if b.get("id") == trigger_id), None)
             
-            if already_buffered:
-                t["priority"] = already_buffered["trigger"].get("priority", 3)
-                t["target_agent"] = already_buffered["trigger"].get("target_agent", "CIO")
-                t["rationale"] = already_buffered["trigger"].get("rationale", "Cached from previous evaluation")
-                logger.debug("Sentinel: Skipping LLM evaluation for cached trigger (P%d)", int(t['priority']))  # nosec B601 - priority is a non-sensitive int
+            if already_buffered_trigger:
+                t["priority"] = already_buffered_trigger.get("priority", 3)
+                t["target_agent"] = already_buffered_trigger.get("target_agent", "CIO")
+                t["rationale"] = already_buffered_trigger.get("rationale", "Cached from Redis buffer")
+                logger.debug(f"Sentinel: Skipping LLM evaluation for Redis-cached trigger (P{redact_secrets(t['priority'])})")
             else:
                 # 1. AI-Driven Priority & Routing
-                # 1. AI 驅動的優先級與路讀路由
                 try:
-                    # [Optimization] v1.2: Run LLM evaluation in thread pool to prevent blocking FastAPI event loop
-                    # v5.4.1 Cost Optimization: Force SentinelAgent to use the fastest model tier
-                    # v5.4.1 成本優化：強制 SentinelAgent 使用最快的模型等級
-                    sentinel_agent = AgentFactory.create_sentinel_agent(user_id=self.user_id, tier="fast")
-                    
-                    # Context Pruning: Truncate large payloads to prevent 400 Bad Request
-                    # 上下文修剪：截斷大型負載以防止 400 錯誤
                     raw_text = t.get("text", "")
                     text_snippet = raw_text[:2000] + ("..." if len(raw_text) > 2000 else "")
-                    
                     raw_data = str(t.get("data", {}))
                     data_snippet = raw_data[:2000] + ("..." if len(raw_data) > 2000 else "")
 
@@ -747,41 +808,54 @@ class SentinelService:
                         "data": data_snippet,
                         "source": source
                     }
-                    
-                    # Round VIX to 1 decimal place to dramatically improve Redis Cache hit rates
-                    # 將 VIX 四捨五入至小數點第一位，大幅提升 Redis 快取命中率
+
                     rounded_vix = round(self.current_vix, 1)
 
-                    # Offload to thread pool (NOT needed anymore as agent.run is async)
-                    eval_res = await sentinel_agent.run(
-                        {
-                            "trigger_source": source,
-                            "event_data": event_data,
-                            "current_vix": rounded_vix
-                        }
-                    )
-                
+                    # PAD Phase 2: Call Sentinel agent via gateway
+                    context = {
+                        "trigger_source": source,
+                        "event_data": event_data,
+                        "current_vix": rounded_vix
+                    }
+                    eval_res_str = await self._call_agent_llm("Sentinel", context, tier="fast")
+                    
+                    # Parse response
+                    try:
+                        eval_res = json.loads(eval_res_str)
+                    except json.JSONDecodeError:
+                        eval_res = {}
+
+                    # Detect internal agent failure
+                    if "error" in eval_res:
+                        err_msg = eval_res.get("error", "unknown")
+                        logger.error(f"Sentinel: AI agent returned internal error: {err_msg}")
+                        t["rationale"] = f"AI eval failed internally ({err_msg[:80]}), batching for immediate send"
+                        immediate_triggers.append(t)
+                        continue
+
                     p_str = eval_res.get("priority", "P3")
                     priority = int(p_str.replace("P", ""))
                     t["priority"] = priority
                     t["target_agent"] = eval_res.get("target_agent", "CIO")
+                    t["trigger_type"] = eval_res.get("trigger_type", "generic")
+                    t["affected_tickers"] = eval_res.get("affected_tickers", [])
                     t["rationale"] = eval_res.get("rationale", "")
-                    
-                    # Check for "Ultra-Critical" P0 or explicit critical flag
-                    # 檢查是否為「極度緊急」P0 或明確的緊急標記
+
+                    # P0 bypass buffer
                     if p_str == "P0" or eval_res.get("is_critical", False):
-                         logger.warning(f"Sentinel: Systemic Criticality detected ({p_str}). Bypassing buffer.")
-                         await self._do_send_alert([t], source=source)
-                         continue
+                        logger.warning(f"Sentinel: Systemic Criticality detected ({p_str}). Batching for immediate escalation.")
+                        immediate_triggers.append(t)
+                        continue
 
                 except Exception as e:
                     logger.error(f"Sentinel: AI Priority evaluation failed: {e}")
-                    # Fallback Priority (Rule #13.2)
-                    # 回退優先級
                     t["priority"] = 2
                     t["target_agent"] = "CIO"
-                    t["rationale"] = f"AI evaluation failed, falling back to P2 (Error: {str(e)[:50]})"
-                # Fallback to legacy heuristics
+                    t["rationale"] = f"AI eval failed, batching for immediate send (Error: {str(e)[:50]})"
+                    immediate_triggers.append(t)
+                    continue
+
+                # Fallback to legacy heuristics if priority still None
                 if t.get("priority") is None:
                     tid = t.get("id", "generic")
                     priority = 3
@@ -791,30 +865,19 @@ class SentinelService:
                     elif "info" in tid: priority = 5
                     t["priority"] = priority
 
-            # 2. Buffering Mode
+            # 2. Buffering Mode — Redis persistent buffer
             priority = t.get("priority", 3)
             wait_key = f"P{priority}"
             wait_mins = int(self.priority_minutes.get(wait_key, 240))
-            deadline = now_ts + (wait_mins * 60)
             
-            # Check if identical trigger already in buffer
-            exists = False
-            for b in self._trigger_buffer:
-                if b["trigger"].get("id") == t.get("id"):
-                    b["trigger"] = t 
-                    exists = True
-                    break
-            
-            if not exists:
-                self._trigger_buffer.append({
-                    "trigger": t,
-                    "deadline": deadline,
-                    "priority": priority
-                })
-                logger.info(  # nosec B601 - logging non-sensitive metadata (priority, source, wait time)
-                    "Sentinel: Buffered trigger (P%d). Source: %s. Deadline in %dm",
-                    int(priority), str(source)[:64], int(wait_mins)
-                )
+            added = await self._redis_buffer.add(self.user_id, t, wait_mins)
+            if added:
+                logger.info(f"Sentinel: Buffered trigger to Redis (P{redact_secrets(priority)}). Source: {redact_secrets(source)}.")
+
+        # [T4] Execute immediate escalation for all P0/failed triggers in ONE batch
+        if immediate_triggers:
+            logger.info(f"Sentinel: Escalating {len(immediate_triggers)} critical triggers in batch.")
+            await self._do_send_alert(immediate_triggers, source=source)
 
     async def _check_buffer_flush(self) -> None:
         """
@@ -825,28 +888,25 @@ class SentinelService:
 
     async def _flush_buffer(self, force: bool = False, source: str = "Sentinel") -> None:
         """
-        Flush the buffered triggers and send alerts if conditions are met.
-        清除緩衝的觸發訊號，並在符合條件時發送警報。
+        Flush due triggers from Redis buffer and send alerts.
+        從 Redis buffer 取出已到期的觸發器並發送警報。
         """
-        if not self._trigger_buffer:
-             return
-             
-        from datetime import datetime
-        now_ts = datetime.now().timestamp()
-        
-        to_flush = []
-        remaining = []
-        
-        for item in self._trigger_buffer:
-            if force or now_ts >= item["deadline"]:
-                to_flush.append(item["trigger"])
-            else:
-                remaining.append(item)
+        if force:
+            # Force-flush: get all pending and clear
+            to_flush = await self._redis_buffer.all_pending(self.user_id)
+            if to_flush:
+                import redis.asyncio as _aioredis
+                try:
+                    r = await self._redis_buffer._get_client()
+                    await r.delete(self._redis_buffer._key(self.user_id))
+                except Exception as e:
+                    logger.warning(f"Sentinel: Force-flush Redis clear error: {e}")
+        else:
+            to_flush = await self._redis_buffer.flush_due(self.user_id)
         
         if to_flush:
-            logger.info(f"Sentinel: Flushing {len(to_flush)} triggers from buffer.")
+            logger.info(f"Sentinel: Flushing {len(to_flush)} trigger(s) from Redis buffer.")
             await self._do_send_alert(to_flush, source=source)
-            self._trigger_buffer = remaining
 
     async def _do_send_alert(self, triggers: List[Dict[str, Any]], source: str = "Sentinel") -> None:
         """
@@ -861,7 +921,7 @@ class SentinelService:
                 from src.services.broker_factory import BrokerFactory
                 _brk = BrokerFactory.get_broker(user_id)
                 if hasattr(_brk, 'get_pending_orders'):
-                    _p_orders = _brk.get_pending_orders()
+                    _p_orders = await _brk.get_pending_orders()
                     for o in _p_orders:
                         pending_symbols.add(o.get('symbol', ''))
             except Exception as e:
@@ -924,12 +984,20 @@ class SentinelService:
         if len(display_texts) > 3:
             topic += "..."
         
-        logger.info(f"Sentinel: Escalating {len(filtered_triggers)} trigger(s) (P{max_priority}) from {source}")
+        logger.info(f"Sentinel: Escalating {len(filtered_triggers)} trigger(s) (P{max_priority}) from {redact_secrets(source)}")
         
-        # v5.0: Contextual msg_prefix based on triggers
-        has_excess_cash = any("cash_ratio_high" in t.get("id", "") for t in filtered_triggers) or source == "Excess Cash"
+        # v9.1: Trigger-Aware Council Prompt
+        # Each trigger type gets a focused prompt instead of a generic evaluation request.
+        # This prevents Council from producing off-topic weekly reports for specific alerts.
+        trigger_types = set(t.get("trigger_type", "generic") for t in filtered_triggers)
+        
+        has_excess_cash   = any("cash_ratio_high" in t.get("id", "") for t in filtered_triggers) or source == "Excess Cash" or "cash" in trigger_types
+        has_news_trigger  = "news" in trigger_types
+        has_price_trigger = "price_move" in trigger_types
+        has_risk_trigger  = "risk" in trigger_types
         
         msg_prefix = "請針對以下多個 Sentinel 警報進行彙整與風險評估，並以繁體中文 (Traditional Chinese) 提供一份簡短且具備行動建議的摘要。金融專業術語請保留英文。"
+        
         if has_excess_cash:
             wishlist_str = ""
             user_id = self.settings_service.user_id or self.user_id
@@ -938,7 +1006,7 @@ class SentinelService:
                     from src.services.broker_factory import BrokerFactory
                     _b = BrokerFactory.get_broker(user_id)
                     if hasattr(_b, 'get_watchlists'):
-                        wl = _b.get_watchlists()
+                        wl = await _b.get_watchlists()
                         symbols = []
                         _items = wl if isinstance(wl, list) else wl.get('items', wl.get('Items', []))
                         for i in _items:
@@ -947,7 +1015,7 @@ class SentinelService:
                         if symbols:
                             wishlist_str = ", ".join(symbols[:15])
                 except Exception as e:
-                    logger.warning(f"Failed to fetch wishlist for prompt: {e}")
+                    logger.warning(f"Failed to fetch watchlist for prompt: {e}")
 
             priorities_text = (
                 f"1. 第一優先序從用戶的 Wishlist 尋找合適標的 (候選: {wishlist_str if wishlist_str else '無'})。\n"
@@ -955,7 +1023,6 @@ class SentinelService:
             )
             
             # v8.5: Contrarian Greed Philosophy
-            # 偵測極度恐懼 (VIX > 30)
             vix_data = self.market_service.get_macro_data().get("market_indicators", {})
             vix = vix_data.get("^VIX", 20.0)
             contrarian_note = ""
@@ -977,6 +1044,40 @@ class SentinelService:
                 "| AAPL   | BUY    | 50          | 7                 | 理由... |\n\n"
                 "⚠️ **重要：Ticker 欄位必須是券商可交易代號。** 嚴禁建議買入 'Cash' 或 'T-Bills'。Confidence 分數將決定是否自動執行。\n"
                 "請以繁體中文 (Traditional Chinese) 撰寫，專業術語保留英文。"
+            )
+        
+        elif has_news_trigger:
+            # v9.1: News alert — inject exact trigger content and FORCE an action decision
+            news_texts = "\n".join(f"- {t.get('text', '')}" for t in filtered_triggers if t.get("type") in ["news", "breaking_news"] or "news" in t.get("id", ""))
+            msg_prefix = (
+                "📰 **以下新聞事件觸發了 Sentinel 警報，請針對此特定新聞進行分析，勿輸出通用週報。**\n\n"
+                f"觸發事件：\n{news_texts}\n\n"
+                "請以 **[行動] / [觀察等待] / [忽略]** 三選一作為結論（必須選擇其一）。\n"
+                "若選擇 [行動]，請在報告末尾輸出 Actionable Orders 表格（即使信心度偏低也請填入）：\n"
+                "| Ticker | Action | Amount (USD) | Confidence (1-10) | Reason |\n"
+                "|--------|--------|-------------|-------------------|---------|\n"
+                "若選擇 [觀察等待] 或 [忽略]，請說明理由（1-2 句）並指出此事件未來需要監控的條件。\n"
+                "請以繁體中文撰寫，專業術語保留英文。"
+            )
+        
+        elif has_price_trigger:
+            # v9.1: Price-move alert — demand explicit hold/trim/add decision
+            price_texts = "\n".join(f"- {t.get('text', '')}" for t in filtered_triggers if "move" in t.get("id", ""))
+            msg_prefix = (
+                "📊 **以下持倉出現重大價格異動，請立即評估並給出明確操作建議。**\n\n"
+                f"異動明細：\n{price_texts}\n\n"
+                "請針對每個異動持倉，給出 **加倉 / 持有 / 減倉** 的具體建議。\n"
+                "若有操作，請輸出 Actionable Orders 表格。若選擇持有，請說明理由與停損條件。\n"
+                "請以繁體中文撰寫，專業術語保留英文。"
+            )
+        
+        elif has_risk_trigger:
+            # v9.1: Risk alert — focus on portfolio risk, not generic market observation
+            msg_prefix = (
+                "⚠️ **以下風險指標觸發警報，請評估當前投資組合的風險曝露並給出具體改善建議。**\n\n"
+                "請針對：(1) 槓桿水位是否需要調整 (2) 持倉集中度風險 (3) 是否需要再平衡，分別給出建議。\n"
+                "若有操作（換庫 / 部分平倉 / 對沖），請輸出 Actionable Orders 表格。\n"
+                "請以繁體中文撰寫，專業術語保留英文。"
             )
 
         context = {
@@ -1040,7 +1141,6 @@ class SentinelService:
         # [Significance Filter v3.5]
         # If decision is vague and no critical trigger, suppress P0 noise.
         is_significant = is_actionable or is_extreme or "⚠️" in decision or "danger" in decision.lower()
-        
         if not is_significant and "hold" in decision.lower():
             logger.info("Sentinel: Significance Filter suppressed notification")
             return
@@ -1048,23 +1148,13 @@ class SentinelService:
         if is_actionable:
             actions.append({"label": "前往 eToro 下單", "data": "action=etoro_link"})
 
-        # Dispatch via Standalone Notification Microservice HTTP API
-        payload = {
-            "user_id": target_user,
-            "title": f"⚠️ {source} Alert",
-            "content": alert_content,
-            "actions": actions,
-            "channels": ["line", "telegram", "email", "discord", "slack"], 
-            "category": "sentinel"
-        }
-        
-        try:
-            async with httpx.AsyncClient() as client:
-                response = await client.post(self.notification_api_url, json=payload, timeout=5.0)
-                if response.status_code != 202:
-                    logger.warning(f"Notification Service returned non-202 status: {response.status_code} - {response.text}")
-        except Exception as e:
-            logger.error(f"Failed to reach Standalone Notification Service: {e}")
+        # [T3] Direct dispatch using NSM (no microservice, no hardcoded channels)
+        await self._dispatch_notifications_direct(
+            title=f"⚠️ {source} Alert",
+            content=alert_content,
+            actions=actions,
+            category="sentinel"
+        )
         
         # 🚨 Auto-hedging / Emergency Liquidation (Milestone 5.1)
         if is_extreme and any(kw in decision.lower() for kw in ["liquidate", "hedge", "panic", "emergency"]):
@@ -1075,24 +1165,77 @@ class SentinelService:
         # 📊 Actionable Trade Signals → evaluate_and_execute_trade (Milestone 13.2)
         # All trade signals go through the unified confidence threshold logic
         elif is_actionable:
-            trade_signals = self._extract_trade_signals_from_decision(decision, filtered_triggers)
+            trade_signals = await self._extract_trade_signals_from_decision(decision, filtered_triggers)
             if trade_signals:
                 import asyncio
                 asyncio.create_task(self._execute_trade_signals(target_user, trade_signals, source))
 
-    def _extract_trade_signals_from_decision(self, decision: str, triggers: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        # v9.1: Mandatory Post-Alert Action Fallback
+        # EVERY non-suppressed alert must leave a persistent artifact.
+        # If no trade signals were extracted and no emergency protocol ran,
+        # we still: (A) spawn a research task for news triggers and (B) store an insight to memory.
+        else:
+            import asyncio
+            from src.agents.skills.skill_loader import SkillLoader
+            loader = SkillLoader(user_id=target_user)
+            
+            trigger_types_set = set(t.get('type', '') for t in filtered_triggers)
+            has_any_news = any('news' in tt or 'breaking' in tt for tt in trigger_types_set) or \
+                           any('news' in t.get('id', '') for t in filtered_triggers)
+            
+            if has_any_news:
+                # Spawn background EventAnalysis research for each news ticker
+                for t in filtered_triggers:
+                    ticker = t.get('ticker')
+                    if not ticker:
+                        tid = t.get('id', '')
+                        parts = [p for p in tid.split('_') if p.isupper() and 1 < len(p) <= 6]
+                        if parts:
+                            ticker = parts[0]
+                    if ticker:
+                        asyncio.create_task(
+                            loader.run_skill(
+                                "event_research",
+                                user_id=target_user,
+                                ticker=ticker,
+                                event_source=t.get("type", "news"),
+                                event_text=t.get("text", ""),
+                                council_summary=decision[:500],
+                            )
+                        )
+        
+        # Always store alert insight to cognitive_memories (independent of action path)
+        # This ensures every alert outcome is captured for future reflection
+        import asyncio
+        from src.agents.skills.skill_loader import SkillLoader
+        import json
+        loader = SkillLoader(user_id=target_user)
+        
+        asyncio.create_task(
+            loader.run_skill(
+                "distill_insight",
+                user_id=target_user,
+                source_texts=json.dumps([t.get("text","") for t in filtered_triggers[:3]], ensure_ascii=False),
+                council_text=decision[:600],
+                agent_name="SentinelService"
+            )
+        )
+
+    async def _extract_trade_signals_from_decision(self, decision: str, triggers: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
         """
         Extract actionable trade signals from Council decision text.
         從委員會決策文字中提取可執行交易訊號。
         """
         logger.info("Sentinel: Extracting trade signals from Council decision using AI ActionExtractor...")
         try:
-            from src.agents.factory import AgentFactory
+            from src.agents.skills.skill_loader import SkillLoader
             from src.services.transaction_service import TransactionService
-            target_user = self.settings_service.user_id or self.user_id or "broadcast"
-            extractor = AgentFactory.create_action_extractor_agent(user_id=target_user, tier="nano")
+            import json
             
-            # Build portfolio context for ActionExtractor (Skill-First: portfolio-aware sizing)
+            target_user = self.settings_service.user_id or self.user_id or "broadcast"
+            loader = SkillLoader(user_id=target_user)
+            
+            # Build portfolio context for ActionExtractor
             portfolio_str = ""
             try:
                 tx_svc = TransactionService()
@@ -1102,11 +1245,14 @@ class SentinelService:
             except Exception as he:
                 logger.warning(f"Failed to get portfolio context for ActionExtractor: {he}")
             
-            # Pass as dict with portfolio context (enhanced ActionExtractor)
-            raw_trades = extractor.run({
-                "decision_text": decision,
-                "portfolio": portfolio_str
-            })
+            # Skillified: Pass as arguments to the skill
+            trades_json = await loader.run_skill(
+                "extract_actions", 
+                user_id=target_user,
+                decision_text=decision,
+                portfolio=portfolio_str
+            )
+            raw_trades = json.loads(trades_json)
             signals = []
             
             for trade in raw_trades:
@@ -1154,6 +1300,38 @@ class SentinelService:
         except Exception as e:
             logger.error(f"Sentinel trade signal execution failed: {e}")
 
+    async def _dispatch_notifications_direct(self, title: str, content: str, actions: List[Dict[str, Any]] = None, category: str = "sentinel"):
+        """[T3] Direct dispatch using NSM (no microservice, no hardcoded channels)."""
+        from src.services.notification_service import NotificationService
+        from src.services.notification_settings_manager import NotificationSettingsManager
+        
+        try:
+            target_user = self.settings_service.user_id or self.user_id or "broadcast"
+            # [T2] Query user's preferred channels from DB (no hardcoding)
+            nsm = NotificationSettingsManager(settings_repo=self.settings_service.settings_repo, user_id=target_user)
+            user_channels = nsm.get_active_notification_channels()
+            
+            # Absolute minimum fallback if nothing configured
+            if not user_channels:
+                user_channels = ["web"]
+
+            settings_svc = self.settings_service
+            notification_svc = NotificationService.create_with_settings(
+                settings_service=settings_svc, user_id=target_user
+            )
+            
+            await notification_svc.notify_all(
+                title=title,
+                content=content,
+                user_id=target_user,
+                channels=user_channels,  # From DB per §5.2
+                category=category,
+                actions=actions
+            )
+            logger.info(f"Sentinel: Notifications dispatched via {user_channels}")
+        except Exception as e:
+            logger.error(f"Sentinel: Direct notification dispatch failed: {e}")
+
     async def _trigger_emergency_protocol(self, user_id: str, rationale: str) -> None:
         """
         Execute Auto-hedging / Emergency Liquidation via AutomatedTradingService (Milestone 5.1).
@@ -1177,8 +1355,8 @@ class SentinelService:
             
             for uid in users:
                 # [NEW] Fetch dynamic scores from settings (Milestone 13.2)
-                emergency_score = int(self.settings_service.get(uid, "emergency_liquidation_score") or 9)
-                hedge_score = int(self.settings_service.get(uid, "auto_hedge_score") or 8)
+                emergency_score = int(self.settings_service.get_setting("emergency_liquidation_score", 9, user_id=uid) or 9)
+                hedge_score = int(self.settings_service.get_setting("auto_hedge_score", 8, user_id=uid) or 8)
                 
                 active_tickers = tx_service.get_user_tickers(user_id=uid, only_active=True)
                 if not active_tickers:
@@ -1191,7 +1369,7 @@ class SentinelService:
                     # Get actual holding quantity for this ticker
                     holding_qty = holdings_map.get(ticker, {}).get('quantity', 0)
                     if holding_qty <= 0:
-                        logger.info(f"Emergency: Skipping {ticker} for {uid}, no active holdings.")
+                        logger.info(f"Emergency: Skipping {redact_secrets(ticker)} for {redact_pii(uid)}, no active holdings.")
                         continue
                     
                     # 發送清倉建議 (使用實際持倉量)
@@ -1206,7 +1384,7 @@ class SentinelService:
                     
                 # 附帶建議：自動對沖 (Buy SQQQ for Nasdaq hedge)
                 # Use position_sizing skill logic for hedge amount
-                hedge_amount = float(self.settings_service.get(uid, "emergency_hedge_amount") or 50.0)
+                hedge_amount = float(self.settings_service.get_setting("emergency_hedge_amount", 50.0, user_id=uid) or 50.0)
                 await auto_trade_svc.evaluate_and_execute_trade(
                     user_id=uid,
                     ticker="SQQQ",
@@ -1338,7 +1516,7 @@ class SentinelService:
                     elif res:
                         triggers.append(res)
                 except Exception as e:
-                    logger.error(f"Polling failed for {sid}: {e}")
+                    logger.error(f"Polling failed for {redact_secrets(sid)}: {e}")
         
         return triggers
 
@@ -1471,11 +1649,10 @@ class SentinelService:
     def _trigger_thematic_update(self, event_text: str, theme_key: str, current_state: Any) -> None:
         """
         Helper to asynchronously trigger the ThematicAgent to update dynamic tracking lists based on events.
+        PAD Phase 2: Uses async LLM call via gateway.
         """
-        logger.info(f"Triggering Thematic Update for {theme_key} due to high-impact event.")
+        logger.info(f"Triggering Thematic Update for {redact_secrets(theme_key)} due to high-impact event.")
         try:
-            from src.agents.factory import AgentFactory
-            thematic_agent = AgentFactory.create_thematic_agent(user_id=self.user_id)
             context = {
                 "event_text": event_text,
                 "theme_key": theme_key,
@@ -1492,9 +1669,10 @@ class SentinelService:
                 loop = asyncio.new_event_loop()
                 asyncio.set_event_loop(loop)
                 
-            loop.run_in_executor(None, thematic_agent.run, context)
+            # PAD Phase 2: Schedule async task instead of thread executor
+            asyncio.ensure_future(self._call_agent_llm("Thematic", context, tier="smart"))
         except Exception as e:
-            logger.error(f"Failed to trigger thematic update for {theme_key}: {e}")
+            logger.error(f"Failed to trigger thematic update for {redact_secrets(theme_key)}: {e}")
 
     async def _check_risk_consistency(self) -> List[Dict[str, Any]]:
         """
@@ -1594,60 +1772,116 @@ class SentinelService:
                 "severity": "medium",
                 "type": "cash_management"
             })
-        elif actual_cash_ratio > final_target_cash * 1.5:
+        
+        if actual_cash_ratio > final_target_cash * 1.5:
             # v5.0: New trigger for excess cash (Rule #8 & User Request)
             is_aggressive = profile == "Aggressive"
             severity = "high" if is_aggressive else "low"
             priority = 1 if is_aggressive else 3
-            
+            trigger_id = f"cash_ratio_high_{uid}"
+            logger.info(
+                "Sentinel: cash_ratio_high trigger: ratio=%.1f%% target=%.1f%%",
+                actual_cash_ratio * 100, final_target_cash * 100,
+            )
             triggers.append({
-                "id": f"cash_ratio_high_{uid}",
+                "id": trigger_id,
                 "text": (f"💰 Excess Cash Alert: Actual {actual_cash_ratio*100:.1f}% "
                         f"vs Adjusted Target {final_target_cash*100:.1f}%. "
                         f"Consider searching for new investment opportunities."),
-                "severity": severity, 
+                "severity": severity,
                 "priority": priority,
                 "type": "cash_management"
             })
-                
+
         return triggers
 
     async def _handle_cash_deployment_logic(self, triggers: List[Dict[str, Any]]) -> None:
         """
-        Intersects triggers for 'cash_ratio_high' and initiates the capital deployment skill/workflow.
-        攔截 'cash_ratio_high' 觸發訊號並啟動資本部署技能/工作流。
+        Handle cash_ratio_high trigger: cooldown-gated, inline skill execution,
+        then route candidates through AutomatedTradingService (existing threshold logic).
+
+        Cooldown: settings key `cash_deployment_cooldown_hours` (default 4h) — prevents
+        repeated LLM + broker calls on every sentinel tick.
+        Auto-execute: governed by existing `auto_trade_threshold` / `auto_trade_min_threshold`
+        user settings in AutomatedTradingService.
         """
-        cash_trigger = next((t for t in triggers if t.get("id") == f"cash_ratio_high_{self.user_id}"), None)
+        trigger_id = f"cash_ratio_high_{self.user_id}"
+        cash_trigger = next((t for t in triggers if t.get("id") == trigger_id), None)
         if not cash_trigger:
             return
 
-        logger.info(f"Sentinel: Excess Cash Detected for {redact_secrets(self.user_id)}. Initiating deployment flow.")
-        
+        # Cooldown gate — prevents re-trigger on every tick
         try:
-            # 1. Invoke cash_deployment skill directly for immediate analysis
-            from src.agents.skills.registry import get_default_registry
-            skill_func = get_default_registry().get("cash_deployment")
-            
-            if skill_func:
-                # Skills are now direct async functions
-                res_json = await skill_func(user_id=self.user_id)
-                result = json.loads(res_json)
-                logger.info(f"Sentinel: Cash Deployment Analysis: {result.get('message')}")
-                
-                # 2. If excess cash is confirmed and tickers discovered, trigger the CIO Workflow
-                if result.get("excess_cash", 0) > 0 and result.get("candidates"):
-                             from src.services.workflow_service import WorkflowService
-                             ws = WorkflowService(user_id=self.user_id)
-                             # Task 1.5/1.6: This method will be implemented in WorkflowService
-                             if hasattr(ws, "trigger_capital_deployment_workflow"):
-                                 await ws.trigger_capital_deployment_workflow(result)
-                             else:
-                                 logger.warning("Sentinel: WorkflowService.trigger_capital_deployment_workflow not yet implemented.")
-            else:
-                logger.error("Sentinel: 'cash_deployment' skill not found in SkillFactory.")
-                
+            cooldown_hours = int(float(
+                self.settings_service.get_setting("cash_deployment_cooldown_hours", 4, user_id=self.user_id) or 4
+            ))
+        except (ValueError, TypeError):
+            cooldown_hours = 4
+        deploy_signal_id = f"cash_deployment_{self.user_id}"
+        if self.repo.is_duplicate_alert(title="", content="", hours=cooldown_hours, signal_id=deploy_signal_id):
+            logger.debug("Sentinel: cash_deployment within cooldown window (%dh), skipping.", cooldown_hours)
+            return
+
+        logger.info("Sentinel: Excess cash detected for %s. Starting deployment flow.", redact_pii(self.user_id))
+
+        # Run skill inline (avoids subprocess overhead and stdout-only result)
+        try:
+            from src.agents.skills.cash_deployment.impl import cash_deployment
+            result_json = await cash_deployment(self.user_id)
+            result = json.loads(result_json)
         except Exception as e:
-            logger.error(f"Sentinel: Error in cash deployment logic: {e}", exc_info=True)
+            logger.error("Sentinel: cash_deployment skill error: %s", e)
+            return
+
+        if result.get("status") != "overweight":
+            logger.info("Sentinel: cash_deployment status=%s, nothing to deploy.", result.get("status"))
+            return
+
+        # Archive immediately so cooldown prevents double-fire even if execution is slow
+        self.repo.log_alert(
+            "cash_deployment",
+            f"Cash deployment triggered: ${result.get('excess_cash', 0):.2f} excess",
+            metadata={"signal_id": deploy_signal_id, "excess_cash": result.get("excess_cash"), "candidates": result.get("candidates")},
+        )
+
+        candidates = result.get("candidates") or []
+        if not candidates:
+            logger.info("Sentinel: No deployment candidates returned.")
+            return
+
+        # Confidence score on 0-100 scale (matches auto_trade_threshold / auto_trade_min_threshold settings)
+        # excess_ratio: 2.0x→50, 2.5x→63, 3.0x→75 (auto-execute at default 75), 3.5x→88
+        cash_ratio = result.get("cash_ratio", 0.0)
+        target_ratio = max(result.get("target_ratio", 0.1), 0.01)
+        excess_ratio = cash_ratio / target_ratio
+        confidence_score = min(95, max(50, round(excess_ratio * 25)))
+
+        logger.info(
+            "Sentinel: Evaluating %d deployment candidates, confidence=%d "
+            "(cash=%.1f%%, target=%.1f%%, excess_ratio=%.1fx)",
+            len(candidates), confidence_score,
+            cash_ratio * 100, target_ratio * 100, excess_ratio,
+        )
+
+        try:
+            from src.services.automated_trading_service import AutomatedTradingService
+            auto_trade_svc = AutomatedTradingService()
+            for cand in candidates:
+                ticker = cand.get("ticker")
+                amount = cand.get("allocated_amount", 0.0)
+                reason = cand.get("reason", "Cash deployment")
+                if not ticker or amount <= 0:
+                    continue
+                await auto_trade_svc.evaluate_and_execute_trade(
+                    user_id=self.user_id,
+                    ticker=ticker,
+                    action="BUY",
+                    quantity=amount,
+                    confidence_score=confidence_score,
+                    rationale=f"[Cash Deployment] Excess Cash: ${result.get('excess_cash', 0):.2f} | {reason}",
+                )
+        except Exception as e:
+            logger.error("Sentinel: cash deployment execution error: %s", e, exc_info=True)
 
     async def _check_infrastructure_health(self) -> List[Dict[str, Any]]:
         """
@@ -1677,7 +1911,7 @@ class SentinelService:
                 })
 
             # 2. Celery Worker Queue Depth
-            from src.infrastructure.tasks import celery_app
+            from src.infrastructure.celery_app import app as celery_app
             import redis
             
             # Use redis directly if configured

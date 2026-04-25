@@ -55,7 +55,8 @@ class TestDiscoverFromReports:
     """Tests for _discover_from_reports."""
 
     @patch("src.repositories.data_repository.AlchemyDataRepository")
-    def test_extracts_keywords_from_reports(self, mock_data_repo, service):
+    @pytest.mark.asyncio
+    async def test_extracts_keywords_from_reports(self, mock_data_repo, service):
         """Should extract keywords from DB reports via LLM."""
         mock_repo_instance = MagicMock()
         mock_repo_instance.get_recent_aggregated_reports.return_value = [
@@ -68,7 +69,7 @@ class TestDiscoverFromReports:
         service._llm_gateway = MagicMock()
         service._llm_gateway.chat = AsyncMock(return_value='{"keywords": [{"keyword": "rate hike", "weight": 0.7, "category": "macro"}, {"keyword": "ai chip", "weight": 0.6, "category": "sector"}]}')
 
-        result = service._discover_from_reports()
+        result = await service._discover_from_reports()
 
         assert len(result) == 2
         assert result[0][0] == "rate hike"
@@ -76,17 +77,19 @@ class TestDiscoverFromReports:
         service._llm_gateway.chat.assert_called_once()
 
     @patch("src.repositories.data_repository.AlchemyDataRepository")
-    def test_no_reports_returns_empty(self, mock_data_repo, service):
+    @pytest.mark.asyncio
+    async def test_no_reports_returns_empty(self, mock_data_repo, service):
         """Should return empty list when no recent reports."""
         mock_repo_instance = MagicMock()
         mock_repo_instance.get_recent_aggregated_reports.return_value = []
         mock_data_repo.return_value = mock_repo_instance
 
-        result = service._discover_from_reports()
+        result = await service._discover_from_reports()
         assert result == []
 
     @patch("src.repositories.data_repository.AlchemyDataRepository")
-    def test_llm_failure_returns_empty(self, mock_data_repo, service):
+    @pytest.mark.asyncio
+    async def test_llm_failure_returns_empty(self, mock_data_repo, service):
         """Should gracefully return empty on LLM failure."""
         mock_repo_instance = MagicMock()
         mock_repo_instance.get_recent_aggregated_reports.return_value = [
@@ -96,7 +99,7 @@ class TestDiscoverFromReports:
         service._llm_gateway = MagicMock()
         service._llm_gateway.chat = AsyncMock(side_effect=Exception("LLM API error"))
 
-        result = service._discover_from_reports()
+        result = await service._discover_from_reports()
         assert result == []
 
 
@@ -142,41 +145,60 @@ class TestDiscoverFromWebhookNews:
 class TestDiscoverFromCommunityTrends:
     """Tests for _discover_from_community_trends."""
 
-    @patch.object(RiskKeywordService, "_fetch_google_trends", return_value=[])
-    @patch.object(RiskKeywordService, "_fetch_finnhub_trending", return_value=[])
-    @patch.object(RiskKeywordService, "_fetch_apewisdom", return_value=["TSLA", "tesla", "NVDA", "nvidia"])
-    def test_apewisdom_provides_keywords(self, mock_ape, mock_finn, mock_gt, service):
+    @patch.object(RiskKeywordService, "_fetch_google_trends", new_callable=AsyncMock)
+    @patch.object(RiskKeywordService, "_fetch_finnhub_trending", new_callable=AsyncMock)
+    @patch.object(RiskKeywordService, "_fetch_apewisdom", new_callable=AsyncMock)
+    @pytest.mark.asyncio
+    async def test_apewisdom_provides_keywords(self, mock_ape, mock_finn, mock_gt, service):
         """Should get trending tickers from ApeWisdom."""
-        result = service._discover_from_community_trends()
+        mock_ape.return_value = ["TSLA", "tesla", "NVDA", "nvidia"]
+        mock_finn.return_value = []
+        mock_gt.return_value = []
+        result = await service._discover_from_community_trends()
 
         # Should have at least some keywords (minus existing ones)
         assert len(result) > 0
         assert all(r[3] == "trends" for r in result)
 
-    @patch.object(RiskKeywordService, "_fetch_google_trends", return_value=["bitcoin rally"])
-    @patch.object(RiskKeywordService, "_fetch_finnhub_trending", return_value=[])
-    @patch.object(RiskKeywordService, "_fetch_apewisdom", side_effect=Exception("API down"))
-    def test_fallback_chain(self, mock_ape, mock_finn, mock_gt, service):
+    @patch.object(RiskKeywordService, "_fetch_google_trends", new_callable=AsyncMock)
+    @patch.object(RiskKeywordService, "_fetch_finnhub_trending", new_callable=AsyncMock)
+    @patch.object(RiskKeywordService, "_fetch_apewisdom", new_callable=AsyncMock)
+    @pytest.mark.asyncio
+    async def test_fallback_chain(self, mock_ape, mock_finn, mock_gt, service):
         """Should fallback to Google Trends when ApeWisdom fails."""
-        result = service._discover_from_community_trends()
+        mock_gt.return_value = ["bitcoin rally"]
+        mock_finn.return_value = []
+        mock_ape.side_effect = Exception("API down")
+        
+        result = await service._discover_from_community_trends()
 
         keywords = [r[0] for r in result]
         assert "bitcoin rally" in keywords
 
-    @patch.object(RiskKeywordService, "_fetch_google_trends", side_effect=Exception("No"))
-    @patch.object(RiskKeywordService, "_fetch_finnhub_trending", side_effect=Exception("No"))
-    @patch.object(RiskKeywordService, "_fetch_apewisdom", side_effect=Exception("No"))
-    def test_all_providers_fail_returns_empty(self, mock_ape, mock_finn, mock_gt, service):
+    @patch.object(RiskKeywordService, "_fetch_google_trends", new_callable=AsyncMock)
+    @patch.object(RiskKeywordService, "_fetch_finnhub_trending", new_callable=AsyncMock)
+    @patch.object(RiskKeywordService, "_fetch_apewisdom", new_callable=AsyncMock)
+    @pytest.mark.asyncio
+    async def test_all_providers_fail_returns_empty(self, mock_ape, mock_finn, mock_gt, service):
         """Should return empty when all providers fail (graceful degradation)."""
-        result = service._discover_from_community_trends()
+        mock_gt.side_effect = Exception("No")
+        mock_finn.side_effect = Exception("No")
+        mock_ape.side_effect = Exception("No")
+        
+        result = await service._discover_from_community_trends()
         assert result == []
 
-    @patch.object(RiskKeywordService, "_fetch_google_trends", return_value=[])
-    @patch.object(RiskKeywordService, "_fetch_finnhub_trending", return_value=[])
-    @patch.object(RiskKeywordService, "_fetch_apewisdom", return_value=["crash"])
-    def test_existing_keywords_skipped(self, mock_ape, mock_finn, mock_gt, service):
+    @patch.object(RiskKeywordService, "_fetch_google_trends", new_callable=AsyncMock)
+    @patch.object(RiskKeywordService, "_fetch_finnhub_trending", new_callable=AsyncMock)
+    @patch.object(RiskKeywordService, "_fetch_apewisdom", new_callable=AsyncMock)
+    @pytest.mark.asyncio
+    async def test_existing_keywords_skipped(self, mock_ape, mock_finn, mock_gt, service):
         """Should not duplicate existing keywords like 'crash'."""
-        result = service._discover_from_community_trends()
+        mock_gt.return_value = []
+        mock_finn.return_value = []
+        mock_ape.return_value = ["crash"]
+
+        result = await service._discover_from_community_trends()
         keywords = [r[0] for r in result]
         # "crash" is already in mock_repo's active keywords, should be skipped
         assert "crash" not in keywords
@@ -189,27 +211,29 @@ class TestDiscoverFromCommunityTrends:
 class TestPruning:
     """Tests for pruning logic."""
 
-    def test_prune_called_when_over_max(self, service, mock_repo):
+    @pytest.mark.asyncio
+    async def test_prune_called_when_over_max(self, service, mock_repo):
         """Should call prune_lowest when count > MAX_KEYWORDS."""
         mock_repo.get_count.return_value = 1050
         mock_repo.prune_lowest.return_value = 50
 
-        with patch.object(service, "_discover_from_reports", return_value=[]):
+        with patch.object(service, "_discover_from_reports", new_callable=AsyncMock, return_value=[]):
             with patch.object(service, "_discover_from_webhook_news", return_value=[]):
-                with patch.object(service, "_discover_from_community_trends", return_value=[]):
-                    result = service.discover_and_refine(target=200)
+                with patch.object(service, "_discover_from_community_trends", new_callable=AsyncMock, return_value=[]):
+                    result = await service.discover_and_refine(target=200)
 
         mock_repo.prune_lowest.assert_called_once_with(1000, protected_source="seed")
         assert result["pruned"] == 50
 
-    def test_no_prune_when_under_max(self, service, mock_repo):
+    @pytest.mark.asyncio
+    async def test_no_prune_when_under_max(self, service, mock_repo):
         """Should not prune when count <= MAX_KEYWORDS."""
         mock_repo.get_count.return_value = 200
 
-        with patch.object(service, "_discover_from_reports", return_value=[]):
+        with patch.object(service, "_discover_from_reports", new_callable=AsyncMock, return_value=[]):
             with patch.object(service, "_discover_from_webhook_news", return_value=[]):
-                with patch.object(service, "_discover_from_community_trends", return_value=[]):
-                    result = service.discover_and_refine(target=200)
+                with patch.object(service, "_discover_from_community_trends", new_callable=AsyncMock, return_value=[]):
+                    result = await service.discover_and_refine(target=200)
 
         mock_repo.prune_lowest.assert_not_called()
         assert result["pruned"] == 0
@@ -222,17 +246,18 @@ class TestPruning:
 class TestDiscoverAndRefine:
     """Tests for the full discover_and_refine orchestrator."""
 
-    def test_full_pipeline(self, service, mock_repo):
+    @pytest.mark.asyncio
+    async def test_full_pipeline(self, service, mock_repo):
         """Should run all 3 sources + insert + refine."""
         report_kws = [("rate hike", 0.7, "macro", "report")]
         webhook_kws = [("tariff", 0.5, "market", "webhook")]
         trend_kws = [("tsla", 0.5, "sentiment", "trends")]
 
-        with patch.object(service, "_discover_from_reports", return_value=report_kws):
+        with patch.object(service, "_discover_from_reports", new_callable=AsyncMock, return_value=report_kws):
             with patch.object(service, "_discover_from_webhook_news", return_value=webhook_kws):
-                with patch.object(service, "_discover_from_community_trends", return_value=trend_kws):
+                with patch.object(service, "_discover_from_community_trends", new_callable=AsyncMock, return_value=trend_kws):
                     mock_repo.get_count.return_value = 164  # Under MAX
-                    result = service.discover_and_refine(target=200)
+                    result = await service.discover_and_refine(target=200)
 
         assert result["discovered"]["reports"] == 1
         assert result["discovered"]["webhook"] == 1
@@ -241,33 +266,35 @@ class TestDiscoverAndRefine:
         assert mock_repo.add_if_not_exists.call_count == 3
         assert mock_repo.seed_defaults.called
 
-    def test_source_failure_non_blocking(self, service, mock_repo):
+    @pytest.mark.asyncio
+    async def test_source_failure_non_blocking(self, service, mock_repo):
         """One source failing should not block others."""
         webhook_kws = [("sanction", 0.6, "geopolitical", "webhook")]
 
-        with patch.object(service, "_discover_from_reports", side_effect=Exception("DB down")):
+        with patch.object(service, "_discover_from_reports", new_callable=AsyncMock, side_effect=Exception("DB down")):
             with patch.object(service, "_discover_from_webhook_news", return_value=webhook_kws):
-                with patch.object(service, "_discover_from_community_trends", return_value=[]):
+                with patch.object(service, "_discover_from_community_trends", new_callable=AsyncMock, return_value=[]):
                     mock_repo.get_count.return_value = 162
-                    result = service.discover_and_refine(target=200)
+                    result = await service.discover_and_refine(target=200)
 
         assert result["discovered"]["reports"] == 0
         assert result["discovered"]["webhook"] == 1
         assert "reports: DB down" in result["errors"][0]
         assert result["inserted"] == 1
 
-    def test_refine_included_in_pipeline(self, service, mock_repo):
+    @pytest.mark.asyncio
+    async def test_refine_included_in_pipeline(self, service, mock_repo):
         """Should call refine after discovery."""
         stale_kw = RiskKeyword(id="s1", keyword="old_term", weight=0.5,
                                category=RiskCategory.MARKET, hit_count=0, is_active=True)
         mock_repo.get_stale_keywords.return_value = [stale_kw]
         mock_repo.get_top_keywords.return_value = []
 
-        with patch.object(service, "_discover_from_reports", return_value=[]):
+        with patch.object(service, "_discover_from_reports", new_callable=AsyncMock, return_value=[]):
             with patch.object(service, "_discover_from_webhook_news", return_value=[]):
-                with patch.object(service, "_discover_from_community_trends", return_value=[]):
+                with patch.object(service, "_discover_from_community_trends", new_callable=AsyncMock, return_value=[]):
                     mock_repo.get_count.return_value = 161
-                    result = service.discover_and_refine(target=200)
+                    result = await service.discover_and_refine(target=200)
 
         assert result["refined"]["decayed"] == 1
         mock_repo.update_weight.assert_called_once_with("s1", 0.4)

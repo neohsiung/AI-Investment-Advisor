@@ -81,6 +81,15 @@ class McpServer:
     def register_tool(self, tool: McpTool):
         self.tools[tool.name] = tool
 
+    def unregister_tool(self, name: str):
+        """Unregister a tool (hot-unplug)."""
+        if name in self.tools:
+            del self.tools[name]
+
+    def clear_tools(self):
+        """Clear all registered tools."""
+        self.tools.clear()
+
     def list_tools(self) -> List[Dict]:
         return [t.to_dict() for t in self.tools.values()]
 

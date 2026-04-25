@@ -1,8 +1,15 @@
-from sqlalchemy import Column, String, Text, DateTime, Numeric, Integer, ForeignKey, JSON
+from sqlalchemy import Column, String, Text, DateTime, Numeric, Integer, ForeignKey, JSON, Boolean, UniqueConstraint, CheckConstraint, Index
 from sqlalchemy.orm import declarative_base
 from sqlalchemy.sql import func
+from sqlalchemy.dialects import postgresql
 import uuid
 from pgvector.sqlalchemy import Vector
+
+
+# NOTE: JSONB is PG-specific; on SQLite we fall back to plain JSON so local
+# macOS dev (SQLite default) can still run migrations and tests.
+def _JSONB():
+    return JSON().with_variant(postgresql.JSONB(astext_type=Text()), "postgresql")
 
 Base = declarative_base()
 
@@ -151,3 +158,141 @@ class UserCustomPrompt(Base):
     agent_name = Column(String, index=True)
     custom_prompt = Column(Text, nullable=False)
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+
+
+# ======================================================================
+# LLM Multi-Provider Multi-Model tables (Phase A)
+# Design: docs/architecture/multi_provider_multi_model_design.md §3
+# ======================================================================
+
+class LLMProvider(Base):
+    """
+    `llm_providers` — Provider instance owned by a user (or SYSTEM).
+    Describes "which provider implementation + credentials" the user has
+    configured; decoupled from Model / Tier binding.
+    """
+    __tablename__ = 'llm_providers'
+
+    id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
+    user_id = Column(String, ForeignKey('users.id', ondelete='CASCADE'), nullable=False)
+    provider_code = Column(String, nullable=False)
+    display_name = Column(String, nullable=False)
+    base_url = Column(Text, nullable=True)
+    encrypted_api_key = Column(Text, nullable=True)
+    enabled = Column(Boolean, nullable=False, default=True)
+    extra_config = Column(_JSONB(), nullable=False, default=dict)
+    health_status = Column(String, nullable=True)
+    health_detail = Column(_JSONB(), nullable=True)
+    last_checked_at = Column(DateTime(timezone=True), nullable=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
+
+    __table_args__ = (
+        UniqueConstraint('user_id', 'provider_code', 'display_name',
+                         name='uq_llm_providers_user_code_name'),
+        Index('ix_llm_providers_user_enabled', 'user_id', 'enabled'),
+        Index('ix_llm_providers_provider_code', 'provider_code'),
+    )
+
+
+class LLMModel(Base):
+    """
+    `llm_models` — Model instance owned by a Provider. Tier / Override
+    reference this table via FK (never embed model strings).
+    """
+    __tablename__ = 'llm_models'
+
+    id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
+    provider_id = Column(String, ForeignKey('llm_providers.id', ondelete='RESTRICT'), nullable=False)
+    model_code = Column(String, nullable=False)
+    display_name = Column(String, nullable=False)
+    capability_tool_calling = Column(Boolean, nullable=False, default=False)
+    capability_vision = Column(Boolean, nullable=False, default=False)
+    capability_json_mode = Column(Boolean, nullable=False, default=False)
+    capability_streaming = Column(Boolean, nullable=False, default=True)
+    capability_embeddings = Column(Boolean, nullable=False, default=False)
+    context_window = Column(Integer, nullable=True)
+    input_cost_per_1k = Column(Numeric(12, 6), nullable=True)
+    output_cost_per_1k = Column(Numeric(12, 6), nullable=True)
+    source = Column(String, nullable=False, default='manual')
+    raw_discovery = Column(_JSONB(), nullable=True)
+    enabled = Column(Boolean, nullable=False, default=True)
+    notes = Column(Text, nullable=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
+
+    __table_args__ = (
+        UniqueConstraint('provider_id', 'model_code', name='uq_llm_models_provider_code'),
+        CheckConstraint("source IN ('manual', 'auto_discovered', 'seed')",
+                        name='chk_llm_models_source'),
+        Index('ix_llm_models_provider_enabled', 'provider_id', 'enabled'),
+        Index('ix_llm_models_enabled', 'enabled'),
+    )
+
+
+class LLMTierBinding(Base):
+    """
+    `llm_tier_bindings` — Tier (nano/fast/smart/advanced) → primary Model FK
+    + fallback Model FK array. Only references, never embeds.
+    """
+    __tablename__ = 'llm_tier_bindings'
+
+    id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
+    user_id = Column(String, ForeignKey('users.id', ondelete='CASCADE'), nullable=False)
+    tier = Column(String, nullable=False)
+    primary_model_id = Column(String, ForeignKey('llm_models.id', ondelete='RESTRICT'), nullable=False)
+    # NOTE: fallback_model_ids is a JSON array of model UUIDs (logical FK;
+    # validated at application layer because PostgreSQL can't FK JSONB elements).
+    fallback_model_ids = Column(_JSONB(), nullable=False, default=list)
+    per_candidate_config = Column(_JSONB(), nullable=False, default=dict)
+    budget_aware = Column(Boolean, nullable=False, default=True)
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
+
+    __table_args__ = (
+        UniqueConstraint('user_id', 'tier', name='uq_llm_tier_bindings_user_tier'),
+        CheckConstraint("tier IN ('nano', 'fast', 'smart', 'advanced')",
+                        name='chk_llm_tier_bindings_tier'),
+        Index('ix_llm_tier_bindings_primary_model', 'primary_model_id'),
+    )
+
+
+class LLMAgentOverride(Base):
+    """
+    `llm_agent_overrides` — Per-agent / per-user model override.
+    Allows specific agents (e.g. CIO, SkillRouter) to bypass the default
+    Tier binding and use a custom primary + fallback chain.
+
+    Design: docs/architecture/multi_provider_multi_model_design.md §3.4
+    """
+    __tablename__ = 'llm_agent_overrides'
+
+    id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
+    user_id = Column(String, ForeignKey('users.id', ondelete='CASCADE'), nullable=False)
+    agent_name = Column(String(100), nullable=False)
+    # override_tier: if set, use this tier's chain instead of primary_model_id
+    override_tier = Column(String(20), nullable=True)
+    # primary_model_id: if set, overrides the tier's primary model
+    primary_model_id = Column(
+        String,
+        ForeignKey('llm_models.id', ondelete='RESTRICT'),
+        nullable=True,
+    )
+    # fallback_model_ids: ordered JSON array of model UUIDs (logical FK)
+    fallback_model_ids = Column(_JSONB(), nullable=True, default=list)
+    forbid_local = Column(Boolean, nullable=False, default=False)
+    forbid_fallback = Column(Boolean, nullable=False, default=False)
+    enabled = Column(Boolean, nullable=False, default=True)
+    notes = Column(Text, nullable=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
+
+    __table_args__ = (
+        UniqueConstraint('user_id', 'agent_name', name='uq_llm_agent_overrides_user_agent'),
+        CheckConstraint(
+            "override_tier IN ('nano', 'fast', 'smart', 'advanced') OR override_tier IS NULL",
+            name='chk_llm_agent_overrides_tier',
+        ),
+        Index('ix_llm_agent_overrides_user_id', 'user_id'),
+        Index('ix_llm_agent_overrides_agent_name', 'agent_name'),
+        Index('ix_llm_agent_overrides_primary_model', 'primary_model_id'),
+    )

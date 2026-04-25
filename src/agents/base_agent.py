@@ -5,11 +5,13 @@ import logging
 import requests
 import hashlib
 import re
+import subprocess
+import pathlib
 from dataclasses import asdict
 from src.utils.security import redact_secrets
 from abc import ABC, abstractmethod
 import typing
-from typing import List, Dict, Tuple, Any, Optional, Callable, Generator
+from typing import List, Dict, Tuple, Any, Optional, Callable, Generator, AsyncGenerator
 from sqlalchemy import text
 from jinja2 import Template
 # from src.data.database import get_db_connection # Removed for DIP
@@ -49,7 +51,8 @@ class BaseAgent(ABC):
         self.feedback_repo = feedback_repo or AlchemyFeedbackRepository()
         
         # [NEW] OpenClaw Components
-        self.memory = HybridMemory() # Shared DB for now (目前共用 DB)
+        # [NEW] OpenClaw Components
+        self.memory = None # DIP: Don't instantiate HybridMemory directly
         
         # Rule #8: Cognitive Memory Tiering
         from src.services.cognitive_memory_manager import CognitiveMemoryManager
@@ -66,7 +69,9 @@ class BaseAgent(ABC):
             "Momentum": "market-scanner",
             "Fundamental": "data-prep",
             "Thematic": "portfolio-manager",
-            "Engineer": "system-engineer"
+            "Engineer": "system-engineer",
+            "Evaluator Judge": "evaluator-judge",
+            "Sensory Watchdog": "sensory-watchdog"
         }
         mapped_name = workspace_map.get(self.name, self.name.lower().replace(" ", "-"))
         self.workspace_path = f"workspace/{mapped_name}"
@@ -91,10 +96,6 @@ class BaseAgent(ABC):
         # Set up Tool Server
         self.toold = McpServer(name=f"{self.name}_Tools")
         
-        # Bind implementations
-        from src.agents.skills.registry import bind_skills_to_agent
-        bind_skills_to_agent(self)
-        
         # [Phase 2] Composition: ContextAssembler, WalProtocol, AgentLoop
         self._context_assembler = ContextAssembler(
             skill_loader=self.skill_loader,
@@ -112,6 +113,69 @@ class BaseAgent(ABC):
             toold=self.toold,
             user_id=self.user_id
         )
+        
+        # [Task 1.1] Register run_script as a built-in generic tool
+        self._register_builtin_tools()
+
+    def _register_builtin_tools(self):
+        """Register generic tools available to all agents."""
+        run_script_tool = McpTool(
+            name="run_script",
+            description="Execute a local python script (cli.py) from a skill directory. Use this to perform data retrieval or analysis tasks.",
+            func=self.run_script
+        )
+        self.register_tool(run_script_tool)
+
+    async def run_script(self, skill_name: str, args: List[str] = None) -> str:
+        """
+        Execute a local python script (cli.py) from a skill directory.
+        安全限制：只能執行 .agent/skills/ 或 src/agents/skills/ 下的 cli.py
+        """
+        if args is None:
+            args = []
+            
+        # [Security] Path validation
+        # Only allow alphanumeric and underscore for skill_name to prevent path traversal
+        if not re.match(r"^[a-zA-Z0-9_\-]+$", skill_name):
+            return "Error: Invalid skill_name format."
+
+        # Search exclusively in src/agents/skills/ for business logic
+        potential_paths = [
+            pathlib.Path(f"src/agents/skills/{skill_name}/cli.py"),
+            pathlib.Path(f"src/agents/skills/{skill_name}/main.py")
+        ]
+        
+        script_path = None
+        for p in potential_paths:
+            if p.exists():
+                script_path = p
+                break
+        
+        if not script_path:
+            return f"Error: Skill '{skill_name}' not found in runtime registry. Access to .agent/ is restricted."
+
+        try:
+            # Execute the script
+            # Note: We use the current venv's python if possible or just "python"
+            cmd = ["python", str(script_path)] + args
+            self.logger.info(f"Executing: {' '.join(cmd)}")
+            
+            # Use run with timeout for safety
+            result = subprocess.run(
+                cmd,
+                capture_output=True,
+                text=True,
+                timeout=30 # 30 seconds limit
+            )
+            
+            if result.returncode != 0:
+                return f"Error (Code {result.returncode}):\nSTDOUT: {result.stdout}\nSTDERR: {result.stderr}"
+            
+            return result.stdout
+        except subprocess.TimeoutExpired:
+            return "Error: Script execution timed out."
+        except Exception as e:
+            return f"Error executing script: {str(e)}"
     def register_tool(self, tool: McpTool):
         """
         Register a tool for the agent to use.
@@ -121,23 +185,68 @@ class BaseAgent(ABC):
 
     def _load_config(self):
         """
-        Read AI configuration (Priority: Budget Router > DB > Env > Default).
-        讀取 AI 設定 (優先經由預算路由器，確保花費受控)
+        Read AI configuration (Priority: llm_tier_bindings (new) > Budget Router (legacy) > DB > Env > Default).
+        讀取 AI 設定 (優先使用 llm_tier_bindings 新路徑，確保模型名稱由 UI 管理)
         """
         try:
             # 1. Initialize dependencies for Router
-            # Use specific services to ensure consistency with router logic
             settings = SettingsService(user_id=self.user_id, settings_repo=self.settings_repo)
             token_logger = TokenLoggerService()
             router = BudgetAwareModelRouter(settings, token_logger)
-            
-            # 2. Get configuration from router (handles budget-based downgrading)
+
+            # 2. [NEW PATH] Try get_config_chain() → reads llm_tier_bindings table
+            #    This is the preferred path: model names are managed via UI, not hardcoded settings.
+            if self.user_id:
+                try:
+                    candidates = router.get_config_chain(
+                        user_id=self.user_id,
+                        tier=self.tier,
+                        agent_name=self.name,
+                    )
+                    if candidates:
+                        # Use the primary candidate (first in chain) to build config dict
+                        primary = candidates[0]
+                        # Resolve API key: candidate may carry it, else fall back to env
+                        api_key = primary.api_key or ""
+                        config = {
+                            "provider": primary.provider_code,
+                            "model": primary.model_code,
+                            "api_key": api_key,
+                            "base_url": primary.base_url or "",
+                            "temperature": 0.7,
+                            "max_tokens": 8192,
+                            "timeout_seconds": int(primary.timeout_seconds),
+                            "max_retries": primary.max_retries,
+                            # Preserve full chain for ResilientLLMPipeline consumers
+                            "_candidates": candidates,
+                        }
+                        self.logger.debug(
+                            f"[_load_config] Using llm_tier_bindings path: "
+                            f"tier={self.tier} model={primary.model_code} "
+                            f"provider={primary.provider_code} candidates={len(candidates)}"
+                        )
+                        return config
+                    else:
+                        self.logger.warning(
+                            f"[_load_config] llm_tier_bindings returned no candidates for "
+                            f"user={self.user_id} tier={self.tier}. "
+                            "Falling back to legacy settings path. "
+                            "Please configure Tier Bindings in AI Engine Management UI."
+                        )
+                except Exception as chain_err:
+                    self.logger.warning(
+                        f"[_load_config] get_config_chain failed for "
+                        f"user={self.user_id} tier={self.tier}: {chain_err}. "
+                        "Falling back to legacy settings path."
+                    )
+
+            # 3. [LEGACY PATH] Fallback: get_config() → reads settings table (AI_MODEL, AI_MODEL_ADVANCED, …)
+            #    These values may be stale; prefer configuring Tier Bindings instead.
             config_obj = router.get_config(self.tier, self.user_id)
-            
-            # 3. Convert to dict for backward compatibility with base classes and tests
-            # 將 LLMConfig 物件轉為字典，以容納目前的測試與基礎層邏輯
+
+            # 4. Convert to dict for backward compatibility with base classes and tests
             return asdict(config_obj)
-            
+
         except Exception as e:
             self.logger.error(f"[_load_config] Failed to use BudgetAwareModelRouter: {e}. Falling back to legacy loading.")
             # Fallback to legacy loading if router fails
@@ -154,7 +263,10 @@ class BaseAgent(ABC):
         tier_cfg = TierConfig()
         # Priority: DB AI_MODEL > Tier Resolution
         default_model = db_settings.get("AI_MODEL", db_settings.get("ai_model", tier_cfg.resolve(self.tier, db_settings)))
-        provider = db_settings.get("AI_PROVIDER", db_settings.get("ai_provider", os.getenv("AI_PROVIDER", "Google Gemini")))
+        provider = db_settings.get("AI_PROVIDER", db_settings.get("ai_provider", os.getenv("AI_PROVIDER")))
+        if not provider:
+            self.logger.warning("AI_PROVIDER not configured, defaulting to OpenRouter")
+            provider = "OpenRouter"
         
         config = {
             "provider": provider,
@@ -194,12 +306,12 @@ class BaseAgent(ABC):
         return settings
 
     def _load_prompt(self):
-        """
-        [Phase 18] Dynamic Personalization - Check for user-specific prompt overrides
-        This allows RLHF-optimized prompts to override static files.
-        """
+        """Load the system prompt for the agent."""
+        # [Phase 18] Dynamic Personalization - Check for user-specific prompt overrides
+        # This allows RLHF-optimized prompts to override static files.
         try:
             from sqlalchemy.orm import sessionmaker
+            from sqlalchemy.exc import OperationalError, ProgrammingError
             from src.data.database import get_db_engine
             from src.data.models import UserCustomPrompt
             
@@ -214,8 +326,11 @@ class BaseAgent(ABC):
                 self.logger.info(f"✨ Using dynamically optimized prompt for user {self.user_id} (Agent: {self.name})")
                 return custom.custom_prompt
             session.close()
+        except (OperationalError, ProgrammingError) as db_error:
+            # Table or column doesn't exist yet — safe to skip (likely pre-migration or schema mismatch)
+            self.logger.debug(f"Dynamic prompt table unavailable (pre-migration): {type(db_error).__name__}")
         except Exception as e:
-            self.logger.warning(f"Dynamic prompt check bypassed due to error: {e}")
+            self.logger.debug(f"Dynamic prompt check skipped: {type(e).__name__}: {str(e)[:100]}")
 
         # [Phase 1] Attempt to load from new Workspace directories first
         prompt_content = ""
@@ -268,9 +383,9 @@ class BaseAgent(ABC):
         """Check context window - delegates to WalProtocol."""
         return self._wal_protocol.check_context_window(messages, reserve_floor, max_tokens)
 
-    def _perform_silent_flush(self, messages: List[Dict[str, str]]):
+    async def _perform_silent_flush(self, messages: List[Dict[str, str]]):
         """WAL Protocol flush - delegates to WalProtocol."""
-        self._wal_protocol.perform_silent_flush(messages, self.call_llm)
+        await self._wal_protocol.perform_silent_flush(messages, self.call_llm)
 
     async def run_tool_loop(self, context, max_turns=3, thought_chain=False):
         """
@@ -299,11 +414,16 @@ class BaseAgent(ABC):
         
         # [Phase 9] Auto-save insights to Knowledge Vault
         if thought_chain and response:
+            from src.utils.async_utils import to_thread
+            import asyncio
+            
+            # Fire and forget extraction to not block the main flow
             try:
-                # Fire and forget async task
-                asyncio.create_task(self._extract_and_save_takeaways(response))
-            except Exception as e:
-                self.logger.warning(f"Failed to trigger takeaway extraction: {e}")
+                loop = asyncio.get_running_loop()
+                loop.create_task(self._extract_and_save_takeaways(response))
+            except RuntimeError:
+                # Fallback if no event loop running
+                asyncio.run(self._extract_and_save_takeaways(response))
 
         return response
 
@@ -366,8 +486,10 @@ class BaseAgent(ABC):
         return f"Error: Agent {agent_name} not found."
 
     def rate_request(self, sender: str, score: int, comment: str, context_hash: str = None):
-        # HR Protocol: Rate an incoming request from another agent.
-        # HR 協議: 對來自其他 Agent 的請求進行評分
+        """
+        HR Protocol: Rate an incoming request from another agent.
+        HR 協議：對來自其他 Agent 的請求進行評分
+        """
         try:
             self.feedback_repo.add_review(
                 reviewer=self.name,
@@ -385,8 +507,10 @@ class BaseAgent(ABC):
         return ContextAssembler.render_user_context(context)
 
     async def _extract_and_save_takeaways(self, agent_response: str) -> None:
-        # [Phase 9] Extracts key takeaways from the agent's response and saves them to the Knowledge Vault.
-        # Uses a fast LLM model to distill the context.
+        """
+        [Phase 9] Extracts key takeaways from the agent's response and saves them to the Knowledge Vault.
+        Uses a fast LLM model to distill the context.
+        """
         if len(agent_response) < 100:
             return  # Too short to contain meaningful long-term takeaways
             
@@ -407,10 +531,11 @@ class BaseAgent(ABC):
             
             if result and "NONE" not in result.upper() and len(result.strip()) > 10:
                 self.logger.info(f"Saving extracted takeaways to Knowledge Vault for {self.name}")
-                from src.infrastructure.memory.memory_manager import HybridMemory
-                memory = HybridMemory()
-                memory.add_memory(
-                    user_id=self.user_id,
+            if result and "NONE" not in result.upper() and len(result.strip()) > 10:
+                self.logger.info(f"Saving extracted takeaways to Knowledge Vault for {self.name}")
+                from src.services.cognitive_memory_manager import CognitiveMemoryManager
+                memory_mgr = CognitiveMemoryManager(user_id=self.user_id)
+                await memory_mgr.add_memory(
                     content=result,
                     category=f"{self.name.lower()}_takeaways",
                     metadata={"source": "auto_extraction", "agent": self.name}
@@ -458,11 +583,13 @@ class BaseAgent(ABC):
         """
         Build LLMConfig value object from agent config dict.
         """
+        model_raw = self.config.get('model') or ''
+        model = model_raw.strip('"').strip("'") if isinstance(model_raw, str) else ''
         return LLMConfig(
-            provider=self.config.get('provider', ''),
-            model=self.config.get('model', '').strip('"').strip("'"),
-            api_key=self.config.get('api_key', ''),
-            base_url=self.config.get('base_url', ''),
+            provider=self.config.get('provider') or '',
+            model=model,
+            api_key=self.config.get('api_key') or '',
+            base_url=self.config.get('base_url') or '',
             temperature=temperature,
             max_retries=self.config.get('max_retries', 3),
             timeout_seconds=30,
@@ -501,7 +628,7 @@ class BaseAgent(ABC):
         ]
         return await self._llm_gateway.chat(gateway_messages, config)
 
-    async def stream_llm(self, messages, temperature=0.7) -> typing.AsyncGenerator[str, None]:
+    async def stream_llm(self, messages, temperature=0.7) -> AsyncGenerator[str, None]:
         """
         Unified method to stream LLM response - delegates to ILLMGateway.
         統一的 LLM 串流調用方法 - 委派至 ILLMGateway

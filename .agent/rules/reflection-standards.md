@@ -13,7 +13,7 @@ All LLM calls initiated as part of a reflection/self-healing cycle **MUST** be t
 
 Example Implementation:
 ```python
-llm = LoggingLLMGateway(
+llm = await LoggingLLMGateway(
     inner=raw_llm,
     agent_name="AgentLoop",
     tier="smart",

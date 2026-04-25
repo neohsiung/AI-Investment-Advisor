@@ -7,8 +7,9 @@ from src.agents.sentinel import SentinelAgent
 @pytest.mark.asyncio
 async def test_sentinel_agent_priority_classification():
     """測試 Sentinel Agent 是否能正確從 LLM 輸出解析優先級"""
-    # 直接 patch call_llm 避開 LLM Provider 初始化與網路問題
-    with patch('src.agents.sentinel.SentinelAgent.call_llm') as mock_call:
+    # 直接 patch run_tool_loop 避開 LLM Provider 初始化與網路問題
+    with patch('src.agents.sentinel.SentinelAgent.run_tool_loop') as mock_call, \
+         patch('src.agents.sentinel.SentinelAgent.call_agent', new_callable=AsyncMock) as mock_agent:
         mock_call.return_value = """
         Thinking: Analysis of trigger.
         ```json
@@ -29,7 +30,7 @@ async def test_sentinel_agent_priority_classification():
 @pytest.mark.asyncio
 async def test_sentinel_agent_fallback_on_parse_error():
     """測試當 JSON 解析失敗時，Sentinel Agent 是否能回傳 P2 發布警報"""
-    with patch('src.agents.sentinel.SentinelAgent.call_llm') as mock_call:
+    with patch('src.agents.sentinel.SentinelAgent.run_tool_loop') as mock_call:
         mock_call.return_value = "Invalid response without JSON"
         
         agent = SentinelAgent(user_id="test_user")

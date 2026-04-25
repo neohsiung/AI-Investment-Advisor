@@ -50,9 +50,21 @@ class SkillRouter:
             except Exception as e:
                 logger.warning(f"SkillRouter: Failed to load config from DB: {e}. Using env fallback.")
                 from src.domain.interfaces import LLMConfig
+                from src.infrastructure.llm.tier_config import SettingsAwareModelRouter
+                try:
+                    from src.repositories.settings_repository import AlchemySettingsRepository
+                    settings_repo = AlchemySettingsRepository()
+                    model_router = SettingsAwareModelRouter(settings_repo)
+                    model = model_router.get_model(self.user_id, self.tier)
+                except Exception as e:
+                    logger.warning(f"SkillRouter: Model router failed, using tier default: {e}")
+                    from src.infrastructure.llm.tier_config import TierConfig
+                    tier_config = TierConfig()
+                    model = tier_config.resolve(self.tier)
+                
                 self._config = LLMConfig(
                     provider=os.getenv("AI_PROVIDER", "OpenRouter"),
-                    model=os.getenv("AI_MODEL_FAST", "google/gemini-2.5-flash"),
+                    model=model,
                     api_key=os.getenv("API_KEY", ""),
                     base_url=os.getenv("BASE_URL", ""),
                     temperature=0.0,
@@ -94,12 +106,13 @@ Return ONLY the category name.
 """
             try:
                 llm = self._get_llm()
+                config = self._get_config()
                 
-                category = await to_thread(
-                    llm.chat,
-                    messages=[Message(role="user", content=classification_prompt)],
-                    config=self._get_config()
-                )
+                messages = [
+                    Message(role="system", content="You are a tool-routing specialist. Output JSON only."),
+                    Message(role="user", content=classification_prompt),
+                ]
+                category = await llm.chat(messages=messages, config=config)
                 category = category.strip().upper()
                 
                 if "PRICE_CHECK" in category:
@@ -116,10 +129,8 @@ Return ONLY the category name.
 
         # 3. Execute the matched skill
         try:
-            from src.agents.skills.registry import get_default_registry
-            registry = get_default_registry()
-            registry._ensure_builtins()
             
+                                    
             # Simple keyword extraction for ticker if it's price/momentum
             import re
             ticker_match = re.search(r'\b([A-Z]{2,5})\b', user_message.upper())
@@ -131,21 +142,28 @@ Return ONLY the category name.
             
             logger.info(f"SkillRouter: Directly executing skill {matched_skill} for ticker {ticker}")
             
-            return await self._execute_skill(registry, matched_skill, skill_kwargs)
+            return await self._run_skill_via_loader(matched_skill, skill_kwargs, user_message)
             
         except Exception as e:
             logger.error(f"SkillRouter: Execution failed for {matched_skill}: {e}")
             return None
 
-    async def _execute_skill(self, registry, skill_name: str, kwargs: Dict[str, Any]) -> Optional[str]:
+    async def _run_skill_via_loader(self, skill_name: str, kwargs: Dict[str, Any], user_message: str) -> Optional[str]:
         """
         [Phase 6] Self-healing skill execution with reflection.
         具備自我修復（反思）機制的技能執行。
         """
+        manager = ReflectionManager(user_id=self.user_id)
         try:
-            return await self._run_skill_direct(registry, skill_name, kwargs)
+            return await self._agent.run_script(skill_name, **kwargs)
         except Exception as e:
-            logger.warning(f"SkillRouter: Primary execution failed for '{skill_name}': {e}. Starting Reflection.")
+            logger.warning(f"Skill routing failed locally: {e}. Attempting self-correction.")
+            # [Task 6.1] Event-driven Self-Correction (Sentinel)
+            await manager.reflect_on_error(
+                error_context=str(e),
+                failed_intent=user_message,
+                user_id=self.user_id
+            )
             
             # 1. Reflect on the failure
             reflection = await self._reflect_on_error(skill_name, kwargs, str(e))
@@ -155,7 +173,7 @@ Return ONLY the category name.
                 corrected_args = reflection.get("corrected_args", {})
                 logger.info(f"SkillRouter: Reflection suggested RETRY with args: {corrected_args}")
                 try:
-                    return await self._run_skill_direct(registry, skill_name, corrected_args)
+                    return await self._agent.run_script(skill_name, **corrected_args)
                 except Exception as retry_e:
                     logger.error(f"SkillRouter: Retry failed for '{skill_name}': {retry_e}")
                     return f"System: [Reflection Retry Failed] {retry_e}"
@@ -164,27 +182,15 @@ Return ONLY the category name.
             logger.error(f"SkillRouter: Tool failed and reflection could not recover: {e}")
             return f"System: [Tool Error] {e}"
 
-    async def _run_skill_direct(self, registry, skill_name: str, kwargs: Dict[str, Any]) -> Optional[str]:
-        """Core skill invocation logic."""
-        import functools
-        impl = registry.get(skill_name)
-        if not impl:
-            logger.warning(f"SkillRouter: No implementation for '{skill_name}' in registry")
-            return None
-            
-        # Registry implementations expect user_id as first arg (per standards)
-        bound = functools.partial(impl, self.user_id)
-        result = await to_thread(bound, **kwargs)
-        return str(result) if result else None
+    
 
     async def _reflect_on_error(self, tool_name: str, args: Any, error: str) -> Optional[Dict[str, Any]]:
         """
         Invokes a Smart model to analyze and fix the tool call. [Phase 7]
-        Delegates to ReflectionManager via to_thread to avoid code duplication.
+        Delegates to ReflectionManager.
         """
         manager = ReflectionManager(user_id=self.user_id)
-        return await to_thread(
-            manager.reflect_on_error,
+        return await manager.reflect_on_error(
             tool_name=tool_name,
             args=args,
             error=str(error),

@@ -28,7 +28,7 @@ class CompetitorService:
         """Get the list of competitors for a given leader."""
         return self.PEER_GROUPS.get(leader_ticker.upper(), [])
 
-    def analyze_penetration(self, leader_ticker: str) -> Dict[str, Any]:
+    async def analyze_penetration(self, leader_ticker: str) -> Dict[str, Any]:
         """
         Analyze penetration and narrative shift for a leader vs its peers.
         分析龍頭股相對於競爭對手的滲透率與敘事偏移。
@@ -39,7 +39,7 @@ class CompetitorService:
 
         # 1. Fetch Performance Summary
         tickers = [leader_ticker] + peers
-        prices = self.market_service.get_current_prices(tickers)
+        prices = await self.market_service.get_current_prices(tickers)
         
         # 2. Mock Sentiment/Narrative Analysis for now
         # In a real implementation, this would call SentimentService or an LLM-based narrative extractor

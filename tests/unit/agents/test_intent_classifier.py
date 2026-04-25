@@ -1,5 +1,5 @@
 import pytest
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock, patch, AsyncMock
 from src.infrastructure.nlp.intent_classifier import IntentClassifier
 
 @pytest.fixture
@@ -8,7 +8,7 @@ def mock_agent():
 
 def test_intent_classifier_approve(mock_agent):
     with patch("src.infrastructure.nlp.intent_classifier.AgentFactory.create_agent") as mock_create:
-        mock_agent.run.return_value = "APPROVE"
+        mock_agent.run = AsyncMock(return_value="APPROVE")
         mock_create.return_value = mock_agent
         
         classifier = IntentClassifier()
@@ -17,7 +17,7 @@ def test_intent_classifier_approve(mock_agent):
 
 def test_intent_classifier_reject(mock_agent):
     with patch("src.infrastructure.nlp.intent_classifier.AgentFactory.create_agent") as mock_create:
-        mock_agent.run.return_value = "REJECT"
+        mock_agent.run = AsyncMock(return_value="REJECT")
         mock_create.return_value = mock_agent
         
         classifier = IntentClassifier()
@@ -26,7 +26,10 @@ def test_intent_classifier_reject(mock_agent):
 
 def test_intent_classifier_keywords():
     # Test direct keyword pre-checks without LLM
-    classifier = IntentClassifier()
+    # AgentFactory.create_agent requires user_id, so mock it during init
+    with patch("src.infrastructure.nlp.intent_classifier.AgentFactory.create_agent") as mock_create:
+        mock_create.return_value = MagicMock()
+        classifier = IntentClassifier()
     with patch.object(classifier, 'agent') as mock_agent:
         assert classifier.classify("執行") == "APPROVE"
         assert classifier.classify("不執行") == "REJECT"

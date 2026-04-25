@@ -4,8 +4,9 @@ Tests for GapDetector — Task 4A-4.
 import asyncio
 import json
 import os
+import pytest
 import sys
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock, patch, AsyncMock
 
 # Ensure project root is in path
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
@@ -57,9 +58,10 @@ class TestGapDetectorHeuristics:
 
 
 class TestGapDetectorLLM:
-    def test_gap_detected(self):
+    @pytest.mark.asyncio
+    async def test_gap_detected(self):
         """When LLM reports a gap, GapReport should reflect it."""
-        mock_llm = MagicMock()
+        mock_llm = AsyncMock()
         mock_llm.chat.return_value = json.dumps({
             "is_gap": True,
             "suggested_skill_name": "get_crypto_data",
@@ -70,16 +72,15 @@ class TestGapDetectorLLM:
         })
 
         detector = GapDetector(llm_gateway=mock_llm)
-        result = asyncio.get_event_loop().run_until_complete(
-            detector.detect("幫我查一下比特幣的價格是多少？", _make_mock_skills())
-        )
+        result = await detector.detect("幫我查一下比特幣的價格是多少？", _make_mock_skills())
         assert result.is_gap is True
         assert result.suggested_skill_name == "get_crypto_data"
         assert result.existing_similar == "get_market_data"
 
-    def test_no_gap(self):
+    @pytest.mark.asyncio
+    async def test_no_gap(self):
         """When LLM reports no gap, should return is_gap=False."""
-        mock_llm = MagicMock()
+        mock_llm = AsyncMock()
         mock_llm.chat.return_value = json.dumps({
             "is_gap": False,
             "suggested_skill_name": "",
@@ -90,20 +91,17 @@ class TestGapDetectorLLM:
         })
 
         detector = GapDetector(llm_gateway=mock_llm)
-        result = asyncio.get_event_loop().run_until_complete(
-            detector.detect("NVDA 的股價是多少？", _make_mock_skills())
-        )
+        result = await detector.detect("NVDA 的股價是多少？", _make_mock_skills())
         assert result.is_gap is False
 
-    def test_malformed_json_handled(self):
+    @pytest.mark.asyncio
+    async def test_malformed_json_handled(self):
         """Malformed LLM response should not crash, return is_gap=False."""
-        mock_llm = MagicMock()
+        mock_llm = AsyncMock()
         mock_llm.chat.return_value = "This is not JSON"
 
         detector = GapDetector(llm_gateway=mock_llm)
-        result = asyncio.get_event_loop().run_until_complete(
-            detector.detect("一個需要分析的長問題說明看看", _make_mock_skills())
-        )
+        result = await detector.detect("一個需要分析的長問題說明看看", _make_mock_skills())
         assert result.is_gap is False
         assert "Parse error" in result.reasoning or "Error" in result.reasoning
 

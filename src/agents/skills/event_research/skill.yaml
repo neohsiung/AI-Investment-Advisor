@@ -1,0 +1,5 @@
+name: event_research
+description: "針對新聞/事件觸發的標的，執行 EventAnalysisWorkflow 深度研究分析"
+categories: [research, analysis, event-driven]
+version: "1.0.0"
+async: true

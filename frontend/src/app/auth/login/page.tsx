@@ -3,10 +3,22 @@
 import { Globe, ShieldCheck, Zap, Globe as GlobeIcon } from "lucide-react";
 import { cn } from "@/lib/utils";
 
+import { useAuth } from "@/hooks/useAuth";
+import { useRouter } from "next/navigation";
+import { useEffect } from "react";
+
 export default function LoginPage() {
-  // Use relative URL - Next.js proxy rewrites /api/* to http://mcp_server:8000/api/*
-  // This ensures it works in Docker, local dev, and production.
-  const BACKEND_LOGIN_URL = "/api/auth/login";
+  const { isAuthenticated, isLoading } = useAuth();
+  const router = useRouter();
+
+  useEffect(() => {
+    if (!isLoading && isAuthenticated) {
+      router.push("/");
+    }
+  }, [isLoading, isAuthenticated, router]);
+
+  // Use v1 API path for OAuth login
+  const BACKEND_LOGIN_URL = "/api/v1/auth/google/login";
 
   return (
     <div className="flex flex-col items-center justify-center min-h-screen bg-surface-container-lowest text-on-surface p-6">

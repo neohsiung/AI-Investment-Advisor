@@ -9,9 +9,10 @@ from src.domain.interfaces import Message, LLMConfig
 
 @pytest.fixture
 def mock_inner():
-    inner = AsyncMock()
-    inner.chat.return_value = "test response"
-    inner.embed.return_value = [0.1, 0.2, 0.3]
+    from unittest.mock import AsyncMock
+    inner = MagicMock()
+    inner.chat = AsyncMock(return_value="test response")
+    inner.embed = AsyncMock(return_value=[0.1, 0.2, 0.3])
     inner._last_usage = {"prompt_tokens": 100, "completion_tokens": 50}
     return inner
 
@@ -38,20 +39,22 @@ class TestLoggingLLMGateway:
         """chat() 後 UsageRepository.log_usage() 應被呼叫"""
         messages = [Message(role="user", content="test")]
         config = LLMConfig(provider="OpenRouter", model="gpt-4o", api_key="sk-123")
-
+    
+        import asyncio
         with patch("src.repositories.usage_repository.UsageRepository.log_usage") as mock_log:
             await logging_gateway.chat(messages, config)
-            # Give background task a moment if needed, though mocking create_task is better
-            import asyncio
-            await asyncio.sleep(0.01) 
-            
-            mock_log.assert_called_once()
-            args = mock_log.call_args[1]
-            assert args["user_id"] == "test@example.com"
-            assert args["agent_name"] == "TestAgent"
-            assert args["tier"] == "fast"
-            assert args["model"] == "gpt-4o"
-            assert args["prompt_tokens"] == 100
+            # Give background task a moment to execute
+            await asyncio.sleep(0.1)
+            mock_log.assert_called_once_with(
+                user_id="test@example.com",
+                agent_name="TestAgent",
+                tier="fast",
+                model="gpt-4o",
+                provider="OpenRouter",
+                prompt_tokens=100,
+                completion_tokens=50,
+                metadata={}
+            )
 
     @pytest.mark.asyncio
     async def test_no_usage_metadata_skips_logging(self, logging_gateway, mock_inner):
@@ -61,19 +64,17 @@ class TestLoggingLLMGateway:
         
         messages = [Message(role="user", content="test")]
         config = LLMConfig(provider="OpenRouter", model="gpt-4o", api_key="sk-123")
-
+    
         with patch("src.repositories.usage_repository.UsageRepository.log_usage") as mock_log:
             await logging_gateway.chat(messages, config)
-            import asyncio
-            await asyncio.sleep(0.01)
             mock_log.assert_not_called()
 
     @pytest.mark.asyncio
     async def test_logging_failure_does_not_raise(self, logging_gateway, mock_inner):
-        """Token Logger 失敗時，主流程不中斷"""
+        """Usage Repository 失敗時，主流程不中斷"""
         messages = [Message(role="user", content="test")]
         config = LLMConfig(provider="OpenRouter", model="gpt-4o", api_key="sk-123")
-
+    
         with patch("src.repositories.usage_repository.UsageRepository.log_usage") as mock_log:
             mock_log.side_effect = Exception("DB down")
             # Should NOT raise

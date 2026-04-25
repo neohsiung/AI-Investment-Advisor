@@ -28,8 +28,7 @@ class TestMomentumAgentCoverage:
         agent = MomentumAgent.__new__(MomentumAgent)
         agent.dspy_module = None
         agent.name = "Momentum"
-        # Since MomentumAgent is a ConcreteAgent (from test_agents.py logic), 
-        # it now uses async run.
+        from unittest.mock import AsyncMock
         agent.run_tool_loop = AsyncMock(return_value="Mock response for TSLA")
 
         context = {
@@ -37,7 +36,6 @@ class TestMomentumAgentCoverage:
             "price_data": {"close": 250.0},
             "indicators": {"rsi": 55}
         }
-        # In src/agents/momentum.py, run is async
         result = await agent.run(context)
         assert "TSLA" in result
         assert "分析報告" in result
@@ -50,6 +48,7 @@ class TestMomentumAgentCoverage:
         agent = MomentumAgent.__new__(MomentumAgent)
         agent.dspy_module = None
         agent.name = "Momentum"
+        from unittest.mock import AsyncMock
         agent.run_tool_loop = AsyncMock(return_value="## NVDA Momentum Analysis\nBullish trend")
 
         context = {"ticker": "NVDA", "price_data": {}, "indicators": {}}
@@ -67,7 +66,7 @@ class TestRiskAgentCoverage:
         from src.agents.risk import RiskAgent
         agent = RiskAgent.__new__(RiskAgent)
         agent.name = "Risk"
-        # RiskAgent.run is async and calls run_tool_loop which is now async
+        from unittest.mock import AsyncMock
         agent.run_tool_loop = AsyncMock(return_value="Risk analysis complete")
 
         context = {
@@ -165,28 +164,33 @@ class TestAgentLLMProviderCoverage:
 
     @pytest.mark.asyncio
     @patch('src.infrastructure.agent_llm_provider.AgentFactory')
+    @pytest.mark.asyncio
     async def test_summarize_success(self, mock_factory):
         """summarize calls agent.run and returns string."""
         from src.infrastructure.agent_llm_provider import AgentLLMProvider
+        from unittest.mock import AsyncMock
         mock_agent = MagicMock()
-        # Mock .run to return an awaitable
-        async def mock_run(ctx): return "Summary of report"
-        mock_agent.run = mock_run
+        mock_agent.run = AsyncMock(return_value="Summary of report")
         mock_factory.create_agent.return_value = mock_agent
 
         provider = AgentLLMProvider(user_id="test@user.com")
         result = await provider.summarize("Very long report text...")
         
         assert result == "Summary of report"
+        mock_agent.run.assert_called_once()
+        # call_args[0][0] is the context dict
+        call_context = mock_agent.run.call_args[0][0]
+        assert "TASK: Summarize" in call_context.get("task_instruction", "")
 
     @pytest.mark.asyncio
     @patch('src.infrastructure.agent_llm_provider.AgentFactory')
+    @pytest.mark.asyncio
     async def test_summarize_fallback(self, mock_factory):
         """summarize handles exceptions with fallback truncation."""
         from src.infrastructure.agent_llm_provider import AgentLLMProvider
+        from unittest.mock import AsyncMock
         mock_agent = MagicMock()
-        async def mock_run_fail(ctx): raise Exception("LLM Error")
-        mock_agent.run = mock_run_fail
+        mock_agent.run = AsyncMock(side_effect=Exception("LLM Error"))
         mock_factory.create_agent.return_value = mock_agent
 
         provider = AgentLLMProvider(user_id="test@user.com")
@@ -197,12 +201,13 @@ class TestAgentLLMProviderCoverage:
 
     @pytest.mark.asyncio
     @patch('src.infrastructure.agent_llm_provider.AgentFactory')
+    @pytest.mark.asyncio
     async def test_check_contradictions_json(self, mock_factory):
         """check_contradictions parses JSON list from agent output."""
         from src.infrastructure.agent_llm_provider import AgentLLMProvider
+        from unittest.mock import AsyncMock
         mock_agent = MagicMock()
-        async def mock_run_json(ctx): return 'Here is the list: ["Contradiction 1"]'
-        mock_agent.run = mock_run_json
+        mock_agent.run = AsyncMock(return_value='Here is the list: ["Contradiction 1"]')
         mock_factory.create_agent.return_value = mock_agent
 
         provider = AgentLLMProvider(user_id="test@user.com")
@@ -212,9 +217,11 @@ class TestAgentLLMProviderCoverage:
 
     @pytest.mark.asyncio
     @patch('src.infrastructure.agent_llm_provider.AgentFactory')
+    @pytest.mark.asyncio
     async def test_check_contradictions_failure(self, mock_factory):
         """check_contradictions returns empty list on error."""
         from src.infrastructure.agent_llm_provider import AgentLLMProvider
+        from unittest.mock import AsyncMock
         mock_agent = MagicMock()
         mock_agent.run = AsyncMock(side_effect=Exception("Fail"))
         mock_factory.create_agent.return_value = mock_agent

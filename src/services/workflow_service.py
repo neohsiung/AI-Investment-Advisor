@@ -8,16 +8,24 @@ from src.utils.time_utils import get_current_time
 from src.services.transaction_service import TransactionService
 from src.repositories.transaction_repository import AlchemyTransactionRepository
 from src.services.market_data_service import MarketDataService
-from src.agents.momentum import MomentumAgent
-from src.agents.fundamental import FundamentalAgent
-from src.agents.macro import MacroAgent
-from src.agents.cio import CIOAgent
-from src.agents.engineer import SystemEngineerAgent
-from src.agents.factory import AgentFactory
 from src.agents.council_adapter import CouncilAgentAdapter
 from src.services.performance_service import PerformanceService
 from src.utils.time_utils import get_current_utc_time
 import re
+import inspect
+import os
+import json
+import asyncio
+from src.infrastructure.llm.tier_config import SettingsAwareModelRouter, TierConfig
+from src.infrastructure.llm.llm_gateway import LLMGatewayFactory, Message, LLMConfig, RetryLLMGateway
+from src.repositories.settings_repository import AlchemySettingsRepository
+
+async def safe_run(agent, ctx):
+    """Helper to handle both async and sync agent run methods."""
+    res = agent.run(ctx)
+    if inspect.isawaitable(res):
+        return await res
+    return res
 
 logger = setup_logger("WorkflowService")
 
@@ -52,14 +60,58 @@ class BaseWorkflow(ABC):
         self.llm_provider = AgentLLMProvider(user_id=self.user_id)
         self.memory_service = MemoryService(repository=self.memory_repo, llm_provider=self.llm_provider)
         
+        # PAD Phase 2: Initialize model router and gateway for LLM calls
+        from src.data.database import get_db_engine
+        self.settings_repo = AlchemySettingsRepository(engine=get_db_engine())
+        self.model_router = SettingsAwareModelRouter(self.settings_repo)
+        self.gateway = LLMGatewayFactory.create(provider="openrouter")
+        
         self.context = {}
         self.logger = setup_logger(self.__class__.__name__)
-        self.cio_agent = AgentFactory.create_cio_agent(
-             transaction_repo=self.transaction_service.repository,
-             user_id=self.user_id
-        )
         self.performance_service = PerformanceService(user_id=self.user_id)
         self.logger = logger  # Use global logger for Base
+
+    async def _call_agent_llm(self, agent_name: str, context: Dict[str, Any], tier: str = "smart", 
+                              temperature: float = 0.7, max_tokens: int = 2000) -> str:
+        """
+        PAD Phase 2: Replace AgentFactory.create_*_agent().run() with direct gateway calls.
+        Generic method to call LLM for any agent role.
+        """
+        try:
+            from src.infrastructure.llm.llm_config_chain import build_config_chain
+            from src.infrastructure.llm.resilient_pipeline import ResilientLLMPipeline
+
+            chain = build_config_chain(self.user_id, tier)
+            if not chain:
+                raise ValueError(f"No model configured for tier={tier} user={self.user_id}")
+
+            pipeline = ResilientLLMPipeline(config_chain=chain)
+
+            agent_prompts = {
+                "Momentum": "You are a Momentum analyst. Analyze price trends and technical indicators.",
+                "Fundamental": "You are a Fundamental analyst. Analyze financial statements and valuations.",
+                "Risk": "You are a Risk manager. Assess portfolio risks and downsides.",
+                "Sentiment": "You are a Sentiment analyst. Analyze market sentiment and investor psychology.",
+                "Macro": "You are a Macro strategist. Assess macroeconomic trends and cyclical factors.",
+                "CIO": "You are a Chief Investment Officer. Synthesize analysis and provide strategic recommendations."
+            }
+
+            system_prompt = agent_prompts.get(agent_name, f"You are a {agent_name} analyst.")
+            messages = [
+                Message(role="system", content=system_prompt),
+                Message(role="user", content=json.dumps(context))
+            ]
+
+            logger.debug(f"WorkflowService: Calling {agent_name} agent via tier={tier} (user={self.user_id})")
+            response, _ = await pipeline.execute(messages, temperature=temperature, max_tokens=max_tokens)
+
+            if not isinstance(response, str):
+                raise ValueError(f"Unexpected response type from pipeline: {type(response)}")
+
+            return response
+        except Exception as e:
+            logger.error(f"WorkflowService: {agent_name} agent failed: {e}")
+            raise
 
     def _parse_actionable_orders(self, final_report: str):
         """
@@ -174,44 +226,60 @@ class BaseWorkflow(ABC):
                 return "SKIPPED"
 
             # Step 3: Synthesis & Decision
-            final_report = await self.synthesize_results()
+            # [Optimization] If synthesize_results is sync, it runs normally. 
+            # If we make it async, we must await it.
+            if hasattr(self, 'synthesize_results_async'):
+                final_report = await self.synthesize_results_async()
+            else:
+                final_report = self.synthesize_results()
+                import asyncio
+                if asyncio.iscoroutine(final_report):
+                    final_report = await final_report
             
             # --- Translate to Traditional Chinese ---
+            # v7.1 Fix: Use LLMGatewayFactory directly (NOT EngineerAgent which is a prompt optimizer and rejects translation tasks).
+            #           Direct gateway call returns a clean string — no JSON wrapping.
             self.logger.info("Translating final report to Traditional Chinese...")
             try:
-                from src.agents.factory import AgentFactory
-                # Use 'Conversation' role which is a neutral CIO-based agent for general tasks
-                translator = AgentFactory.create_agent("Conversation", use_cache=True, user_id=self.user_id)
-                
-                translation_system_prompt = (
-                    "You are a professional financial translator specializing in investment reports. "
-                    "Your goal is to provide accurate, professional Traditional Chinese (zh-TW) translations while "
-                    "retaining technical English terms as instructed."
+                from src.infrastructure.llm.llm_config_chain import build_config_chain
+                from src.infrastructure.llm.resilient_pipeline import ResilientLLMPipeline
+
+                chain = build_config_chain(self.user_id, "fast")
+                if not chain:
+                    raise ValueError(f"No fast-tier model configured for user={self.user_id}")
+                pipeline = ResilientLLMPipeline(config_chain=chain)
+
+                translation_system = (
+                    "You are a professional bilingual investment report translator specializing in Traditional Chinese (zh-TW). "
+                    "Your ONLY job is to translate the provided report. "
+                    "Rules (non-negotiable):\n"
+                    "1. Keep ALL financial terms in English: Momentum, Fundamental, Sentiment, VIX, Macro, ETF, P/E, EPS, etc.\n"
+                    "2. Keep proper nouns unchanged: company names, ticker symbols (AAPL, NVDA, TSM, SPY), product names.\n"
+                    "3. Preserve ALL formatting with 100% fidelity: Markdown headers (#), bold (**), italics (*), lists (-), tables, HTML.\n"
+                    "4. If the report is already in Traditional Chinese, output it verbatim.\n"
+                    "5. Output ONLY the translated text. NO preamble, NO JSON, NO commentary."
                 )
-                
-                prompt = (
-                    "TASK: Please translate the following investment report into Traditional Chinese (zh-TW).\n"
-                    "RULES:\n"
-                    "1. Keep all financial domain terms (like 'Momentum', 'Fundamental', 'Sentiment', ticker symbols, etc.) in English.\n"
-                    "2. Do NOT translate proper nouns (company names, asset classes if better known in English).\n"
-                    "3. Keep ALL formatting strictly intact (Markdown, HTML, brackets, tables).\n"
-                    "4. Output ONLY the translated text, no conversational filler.\n\n"
-                    f"REPORT TO TRANSLATE:\n{final_report}"
+                translation_user = (
+                    "Translate the following investment report to Traditional Chinese (zh-TW). "
+                    "Remember: output ONLY the translated text, nothing else.\n\n"
+                    f"REPORT:\n{final_report}"
                 )
-                # v7.1: Explicitly pass translation_system_prompt to avoid persona hijacking
-                res = await translator._call_real_llm(prompt, translation_system_prompt)
-                self.logger.debug(f"Translation raw result type: {type(res)}")
-                
-                if isinstance(res, dict):
-                    # Robust dict access
-                    translated_report = res.get("content") or res.get("output") or str(res)
+
+                messages = [
+                    Message(role="system", content=translation_system),
+                    Message(role="user",   content=translation_user),
+                ]
+                translated_report, _ = await pipeline.execute(messages, temperature=0.3, max_tokens=4096)
+
+                # gateway.chat returns a raw string — no dict parsing needed
+                if translated_report and isinstance(translated_report, str) and translated_report.strip():
+                    final_report = translated_report.strip()
+                    self.logger.info(f"Translation successful ({len(final_report)} chars).")
                 else:
-                    translated_report = str(res)
-                if translated_report.strip():
-                    final_report = translated_report
-                self.logger.info("Translation successful.")
+                    self.logger.warning("Translation returned empty result, using original English report.")
             except Exception as e:
                 self.logger.error(f"Translation failed: {e}. Falling back to original English report.")
+
                 
             # Step 4: Reporting & Storage
             if not dry_run:
@@ -264,7 +332,7 @@ class BaseWorkflow(ABC):
             logger.error(f"Workflow failed: {e}")
             raise e
 
-    def _assemble_integrated_report(self, 
+    async def _assemble_integrated_report(self, 
                                   cio_full_output: str, 
                                   detailed_debate_content: str, 
                                   agent_for_polish=None) -> str:
@@ -307,7 +375,7 @@ class BaseWorkflow(ABC):
         # 最終潤飾
         # Final Polish
         if agent_for_polish and hasattr(agent_for_polish, 'polish_report'):
-             final_report = agent_for_polish.polish_report(final_report)
+             final_report = await agent_for_polish.polish_report(final_report)
              
         return final_report
 
@@ -335,8 +403,8 @@ class BaseWorkflow(ABC):
         """Combine analysis results into a final report."""
         pass
 
-    async def distribute_report(self, content: str):
-        """Store in DB and send Email asynchronously."""
+    async def distribute_report(self, content: str) -> str:
+        """Store in DB and send notifications via preferred channels."""
         title = f"Investment Report ({self.__class__.__name__}) - {get_current_time().strftime('%Y-%m-%d')}"
         try:
             from src.services.reporting_service import ReportingService
@@ -347,69 +415,81 @@ class BaseWorkflow(ABC):
             html_content = content
         
         # 1. Store in DB
+        report_id = None
         try:
             from src.repositories.report_repository import AlchemyReportRepository
             report_repo = AlchemyReportRepository()
             
-            # Save the generated HTML content (We still pass content as 'markdown' 
-            # and HTML as 'html_content' if schema is updated, but for now just pass to repo)
-            report_repo.save(
+            # Save the generated HTML content
+            report_id = report_repo.save(
                 user_id=self.user_id,
                 report_type=self.__class__.__name__,
-                summary=title, # use title as summary for now
-                content=html_content # store HTML
+                summary=title,
+                content=html_content
             )
-            logger.info("Report stored in database (HTML format).")
+            logger.info(f"Report stored in database (ID: {report_id}).")
         except Exception as e:
             logger.error(f"Failed to store report: {e}")
 
-        # 2. Send Notifications (Email & Web)
-        import os
-        import httpx
+        # 2. Dispatch Notifications (DB-driven, no invalid microservice call)
+        await self._dispatch_notifications(title, html_content)
         
-        notification_api_url = os.getenv("NOTIFICATION_API_URL", "http://notification:8001/api/v1/notify")
-        subject = f"Investment Report ({self.__class__.__name__}) - {get_current_time().strftime('%Y-%m-%d')}"
-        
-        payload = {
-            "user_id": self.user_id,
-            "title": subject,
-            "content": html_content,
-            "channels": ["email", "web"], # Explicitly target Email and Web for reports
-            "category": "report"
-        }
-        
-        try:
-            async with httpx.AsyncClient() as client:
-                response = await client.post(notification_api_url, json=payload, timeout=10.0)
-                if response.status_code == 202:
-                    logger.info("Report notifications queued successfully via API.")
-                else:
-                    logger.warning(f"Notification API returned {response.status_code}: {response.text}")
-                    # Fallback to direct call if API exists but returned non-202
-                    await self._fallback_direct_notify(title, html_content)
-        except Exception as e:
-            logger.error(f"Failed to trigger Report Notification via API: {e}. Attempting direct fallback.")
-            await self._fallback_direct_notify(title, html_content)
+        return report_id
 
-    async def _fallback_direct_notify(self, title: str, html_content: str):
-        """Fallback to use direct NotificationService if API is down"""
+    async def _notify_user(self, report_id: str):
+        """[PAD] Helper for WorkflowStages to dispatch notifications for a stored report."""
         try:
-            from src.services.notification_service import NotificationService
-            from src.services.settings_service import SettingsService
+            from src.repositories.report_repository import AlchemyReportRepository
+            report_repo = AlchemyReportRepository()
             
+            # 1. Try to get specific report
+            report = report_repo.get_by_id(report_id)
+            if report:
+                await self._dispatch_notifications(report['summary'], report['content'])
+                return
+
+            # 2. Fallback to latest if ID not found (transient consistency or legacy)
+            df = report_repo.get_latest_reports(self.user_id, limit=1)
+            if not df.empty:
+                latest = df.iloc[0]
+                await self._dispatch_notifications(latest['summary'], latest['content'])
+            else:
+                logger.warning(f"No report found for user {self.user_id} to notify.")
+        except Exception as e:
+            logger.error(f"Failed to notify user for report {report_id}: {e}")
+
+    async def _dispatch_notifications(self, title: str, html_content: str):
+        """Send notifications via user-configured channels (DB-driven, not hardcoded)."""
+        from src.services.notification_service import NotificationService
+        from src.services.settings_service import SettingsService
+        from src.services.notification_settings_manager import NotificationSettingsManager
+        from src.repositories.settings_repository import AlchemySettingsRepository
+
+        try:
+            settings_repo = AlchemySettingsRepository()
+            # [T2] Query user's preferred channels from DB (no hardcoding)
+            nsm = NotificationSettingsManager(settings_repo=settings_repo, user_id=self.user_id)
+            user_channels = nsm.get_active_notification_channels()
+            
+            # Absolute minimum fallback if nothing configured
+            if not user_channels:
+                user_channels = ["web"]
+
             settings_svc = SettingsService(user_id=self.user_id)
-            notification_svc = NotificationService.create_with_settings(settings_service=settings_svc, user_id=self.user_id)
+            notification_svc = NotificationService.create_with_settings(
+                settings_service=settings_svc, user_id=self.user_id
+            )
             
             await notification_svc.notify_all(
                 title=title,
                 content=html_content,
                 user_id=self.user_id,
-                channels=["email", "web"],
+                channels=user_channels,  # From DB per §5.2
                 category="report"
             )
-            logger.info("Fallback direct notification successful.")
-        except Exception as fallback_e:
-            logger.error(f"Fallback direct notification failed: {fallback_e}")
+            logger.info(f"Notifications dispatched via channels: {user_channels}")
+        except Exception as e:
+            logger.error(f"Notification dispatch failed: {e}")
 
 
 class DailyWorkflow(BaseWorkflow):
@@ -430,8 +510,8 @@ class DailyWorkflow(BaseWorkflow):
         # For simplicity, we assume we check all but filter in CIO
         
         # Here we run Momentum Agent & Sentiment Agent
-        mom_agent = AgentFactory.create_momentum_agent(ttl_hours=1, use_cache=not force_refresh, user_id=self.user_id)
-        sent_agent = AgentFactory.create_sentiment_agent(ttl_hours=4, use_cache=not force_refresh, user_id=self.user_id)
+        # Daily: Short TTL (1hr), assume force_refresh implies bypassing cache
+        # PAD Phase 2: Replace AgentFactory calls with _call_agent_llm
         
         results = []
         ticker_reports = {}
@@ -448,13 +528,15 @@ class DailyWorkflow(BaseWorkflow):
                 "yield_curve": self.context['market_data'].get('yield_curve', {}) 
             }
 
-            res = await mom_agent.run(ticker_ctx)
-            results.append(res) 
+            # PAD Phase 2: Replace safe_run(agent) with _call_agent_llm
+            res = await self._call_agent_llm("Momentum", ticker_ctx, tier="fast")
+            results.append(res) # Keep for legacy check
             
-            sent_res = await sent_agent.run(ticker_ctx)
+            # Sentiment Analysis
+            sent_res = await self._call_agent_llm("Sentiment", ticker_ctx, tier="fast")
             
-            f_agent = AgentFactory.create_fundamental_agent(ttl_hours=168, use_cache=True, user_id=self.user_id) 
-            f_res = await f_agent.run(ticker_ctx)
+            # Fundamental Analysis (Cached Reference)
+            f_res = await self._call_agent_llm("Fundamental", ticker_ctx, tier="smart")
 
             ticker_reports[ticker] = {
                 "momentum": res,
@@ -536,7 +618,7 @@ class DailyWorkflow(BaseWorkflow):
         將分析結果綜合成最終報告。
         """
         # Use CIO Agent for Daily Report (Daily Pulse Mode)
-        cio = AgentFactory.create_cio_agent(mode="daily", user_id=self.user_id)
+        # PAD Phase 2: CIO agent will be called via _call_agent_llm later in this method
         
         # --- Section 1: Memory & Macro Context ---
         
@@ -566,9 +648,9 @@ class DailyWorkflow(BaseWorkflow):
         
         macro_summary_line = f"- VIX: {vix}\n- SPY: {spy}\n- Yield Spread (10Y-2Y): {spread}"
 
-        # Run Cached Macro Agent for Context
-        macro_agent = AgentFactory.create_macro_agent(ttl_hours=24, use_cache=True, user_id=self.user_id)
-        macro_deep = await macro_agent.run({})
+        # Run Macro Agent for Context via PAD Phase 2
+        macro_deep = await self._call_agent_llm("Macro", {}, tier="smart")
+    
         
         combined_macro = f"Daily Market Check (v3.2 Data):\n{macro_summary_line}\n\n[Reference Weekly Macro Context]:\n{macro_deep}"
         
@@ -615,12 +697,12 @@ class DailyWorkflow(BaseWorkflow):
         
         try:
             # 1. Sync History
-            broker.sync_history(self.user_id)
+            await broker.sync_history(self.user_id)  # ← async
             
             # 2. Check Risk Status (Constraints)
             # Fetch history and positions for Risk Manager
-            history = broker.get_history()
-            positions = broker.get_positions()
+            history = await broker.get_history()    # ← async
+            positions = await broker.get_positions() # ← async
             
             constraints_ok = risk_manager.check_constraints(self.user_id, history, positions)
             
@@ -630,7 +712,7 @@ class DailyWorkflow(BaseWorkflow):
                 broker_status_msg = f"✅ **System Status ({broker.get_name()})**: Active & Monitoring."
             
             # 3. Get Financial Snapshot
-            account = broker.get_account()
+            account = await broker.get_account()  # ← async
             if account:
                 broker_status_msg += f"\n- **Total Equity**: ${account.total_equity:,.2f}"
                 broker_status_msg += f"\n- **Cash**: ${account.available_cash:,.2f}"
@@ -647,7 +729,10 @@ class DailyWorkflow(BaseWorkflow):
             if deployment_mem and deployment_mem.recent_items:
                 latest = deployment_mem.recent_items[0]
                 cash_deployment_context = f"\n\n[CAPITAL DEPLOYMENT OPPORTUNITY DETECTED ({latest.report_date})]:\n{latest.compressed_summary or latest.full_content[:2000]}"
-            broker_status_msg = f"⚠️ **Connection Alert**: {broker.get_name()} Bridge Offline."
+        
+        # Ensure broker_status_msg is not overwritten incorrectly
+        if not broker_connected:
+             broker_status_msg = f"⚠️ **Connection Alert**: {broker.get_name()} Bridge Offline."
 
         detailed_debate_section = "## 2. 議會焦點辯論 (The Great Debate & Detailed Analysis)\n\n"
         detailed_debate_section += f"{broker_status_msg}\n\n"
@@ -698,6 +783,7 @@ class DailyWorkflow(BaseWorkflow):
             "council_transcript": "\n".join(ticker_contexts), 
             "portfolio": portfolio_str,
             "consistency_constraints": memory_consistency_note,
+            "cash_deployment_context": cash_deployment_context, # Inject deployment insight
             "user_id": self.user_id,
             "report_focus": "Daily Synthesis"
         }
@@ -710,21 +796,22 @@ class DailyWorkflow(BaseWorkflow):
         # Ideally, we want CIO to output 'Market Sentiment', 'CIO Synthesis', 'Actionable Orders'.
         # And we inject 'The Great Debate' in between.
         
-        cio_output = await cio.run(cio_context)
+        # PAD Phase 2: Replace AgentFactory with _call_agent_llm
+        cio_output = await self._call_agent_llm("CIO", cio_context, tier="smart", max_tokens=3000)
         
         # --- Final Assembly (Integrated Pattern) ---
         # 組合最終報告 (集成模式)
         # v7.0: Store deliberation context for trade notification enrichment
         self.context['deliberation_context'] = detailed_debate_section
         
-        final_report = self._assemble_integrated_report(
+        final_report = await self._assemble_integrated_report(
             cio_full_output=cio_output,
             detailed_debate_content=detailed_debate_section,
-            agent_for_polish=cio
+            agent_for_polish=None  # PAD Phase 2: agent_for_polish removed as we use gateway now
         )
 
-        # Sync memory store (Local filesystem/Vector store)
-        try:
+        # Store in Memory
+        if self.memory_service:
             await self.memory_service.store_report(
                 user_id=self.user_id,
                 report_type="daily",
@@ -857,13 +944,19 @@ class WeeklyWorkflow(BaseWorkflow):
                 logger.info(f"--- Executing Task: {task.name} ---")
                 
                 # 2.1 Agent Selection
-                agent = self._select_agent_for_task(task.name, user_id, tier=task.model_tier)
+                agent_info = self._select_agent_for_task(task.name, user_id, tier=task.model_tier)
                 # 2.2 Input Prep
                 agent_input = self._bridge_input_context(task, execution_context)
                 
                 # 2.3 Run Agent
                 try:
-                    response = await agent.run(agent_input)
+                    # PAD Phase 2: Handle both tuple returns (agent_name, tier) and CouncilAgentAdapter instances
+                    if isinstance(agent_info, tuple):
+                        agent_name, tier = agent_info
+                        response = await self._call_agent_llm(agent_name, agent_input, tier=tier, max_tokens=2000)
+                    else:
+                        # CouncilAgentAdapter case
+                        response = await safe_run(agent_info, agent_input)
                     # 2.4 Capture Output
                     task_results[task.name] = response
                     execution_context[f"RESULT_{task.name}"] = response
@@ -885,7 +978,7 @@ class WeeklyWorkflow(BaseWorkflow):
             
             # B. Progressive Debate & Synthesis (CIO)
             # Instead of a single pass, we have CIO review the map-reduce output and explicitly summarize the debate
-            synthesis_agent = self._select_agent_for_task("Report Synthesis", user_id)
+            synthesis_agent_info = self._select_agent_for_task("Report Synthesis", user_id)
             
             # Map Execution Context keys to CIO's specific prompt requirements
             macro_report_combined = f"【即時宏觀指標】\n{execution_context.get('macro_data_summary', 'N/A')}\n\n【週期分析】\n{execution_context.get('RESULT_Market Cycle Analysis', 'N/A')}"
@@ -905,7 +998,13 @@ class WeeklyWorkflow(BaseWorkflow):
             )
             syn_context["task_instruction"] = debate_prompt
             
-            syn_response = await synthesis_agent.run(syn_context)
+            # PAD Phase 2: Handle tuple return from _select_agent_for_task
+            if isinstance(synthesis_agent_info, tuple):
+                agent_name, tier = synthesis_agent_info
+                syn_response = await self._call_agent_llm(agent_name, syn_context, tier=tier, max_tokens=3000)
+            else:
+                # CouncilAgentAdapter case
+                syn_response = await safe_run(synthesis_agent_info, syn_context)
             
             # C. Assemble Final Report (Integrated Pattern)
             
@@ -920,10 +1019,10 @@ class WeeklyWorkflow(BaseWorkflow):
             
             # If portfolio_details (Transcript) is empty, warn
             # C. Assemble Final Report (Integrated Pattern)
-            final_report = self._assemble_integrated_report(
+            final_report = await self._assemble_integrated_report(
                 cio_full_output=syn_response,
                 detailed_debate_content=portfolio_details,
-                agent_for_polish=synthesis_agent
+                agent_for_polish=None
             )
             
             # D. Parse & Execute Actionable Orders (v7.0: consistent with DailyWorkflow)
@@ -1003,21 +1102,26 @@ class WeeklyWorkflow(BaseWorkflow):
             return "無法取得基礎主題數據。"
 
     def _select_agent_for_task(self, task_name: str, user_id: str, tier: str = "smart"):
-        """Map Task Name to Existing Agent implementations"""
+        """
+        PAD Phase 2: Map Task Name to agent names for _call_agent_llm
+        Returns a tuple (agent_name, tier) instead of agent instances
+        """
         name_lower = task_name.lower()
         if "market cycle" in name_lower or "macro" in name_lower:
-            return AgentFactory.create_macro_agent(user_id=user_id, tier=tier)
+            return ("Macro", tier)
         elif "sector" in name_lower or "swarm" in name_lower:
-            return AgentFactory.create_cio_agent(user_id=user_id, mode="sector_analysis", tier=tier) 
+            return ("CIO", tier)
         elif "deep-dive" in name_lower or "supply chain" in name_lower:
-            return AgentFactory.create_fundamental_agent(user_id=user_id, tier=tier)
+            return ("Fundamental", tier)
         elif "portfolio analysis" in name_lower:
-            # Use Map-Reduce Council for deep portfolio analysis
+            # Use Council adapter for deep portfolio analysis
             return CouncilAgentAdapter(user_id=user_id, scope="portfolio", topic=f"Weekly Portfolio Review ({name_lower})")
         elif "recommendation" in name_lower or "balancing" in name_lower or "alpha" in name_lower:
-            return AgentFactory.create_cio_agent(user_id=user_id, mode="weekly", tier=tier)
+            return ("CIO", tier)
         elif "synthesis" in name_lower:
-            return AgentFactory.create_cio_agent(user_id=user_id, mode="synthesis", tier=tier)
+            return ("CIO", tier)
+        # Default to CIO
+        return ("CIO", tier)
 
     def _bridge_input_context(self, task, context):
         """
@@ -1062,9 +1166,8 @@ class WeeklyWorkflow(BaseWorkflow):
         # Fallback to manual execution logic anyway if planner is missing
         try:
              # Basic Data Collection is done.
-             # 1. Macro Analysis
-             macro_agent = AgentFactory.create_macro_agent(user_id=user_id)
-             macro_report = await macro_agent.run({})
+             # 1. Macro Analysis via PAD Phase 2
+             macro_report = await self._call_agent_llm("Macro", {}, tier="smart")
              self.context['macro_report'] = macro_report
              
              # 2. Synthesis
@@ -1081,16 +1184,14 @@ class WeeklyWorkflow(BaseWorkflow):
             # 1. Get Performance Stats
             perf_stats = self.performance_service.get_agent_performance()
             
-            # 2. Engineer analyzes stats for THIS week
+            # 2. Engineer analyzes stats for THIS week via PAD Phase 2
             # However, Engineer mainly looks at stats.
-            engineer = AgentFactory.create_agent("Engineer", use_cache=False, user_id=self.user_id)
-            
             eng_context = {
                 "cio_report": "PRE_GENERATION_CHECK", 
                 "performance_stats": perf_stats
             }
             
-            opt_result = await engineer.run(eng_context)
+            opt_result = await self._call_agent_llm("Engineer", eng_context, tier="fast", max_tokens=1000)
             logger.info(f"Engineer Optimization Result: {opt_result}")
             
             # Format for CIO Context
@@ -1117,9 +1218,7 @@ class WeeklyWorkflow(BaseWorkflow):
                 f"- **Error Details**: {e}"
             )
 
-        # CIO Agent Synthesis (Weekly Strategy Mode)
-        cio = AgentFactory.create_cio_agent(mode="weekly", user_id=self.user_id)
-        
+        # CIO Agent Synthesis (Weekly Strategy Mode) via PAD Phase 2
         # Construct CIO Context
         portfolio_str = ", ".join(self.context['tickers']) if self.context['tickers'] else "No Tickers"
         
@@ -1143,7 +1242,8 @@ class WeeklyWorkflow(BaseWorkflow):
             "user_id": self.user_id
         }
         
-        final_report = await cio.run(cio_context)
+        # PAD Phase 2: Replace AgentFactory with _call_agent_llm
+        final_report = await self._call_agent_llm("CIO", cio_context, tier="smart", max_tokens=3000)
         return final_report
 
     async def execute_analysis(self, force_refresh: bool) -> bool:
@@ -1196,8 +1296,7 @@ class EventAnalysisWorkflow(BaseWorkflow):
             
             # 2. Execute Focused Analysis
             # For events, we want fresh data (use_cache=False if force_refresh)
-            mom_agent = AgentFactory.create_momentum_agent(ttl_hours=1, use_cache=not force_refresh, user_id=self.user_id)
-            sent_agent = AgentFactory.create_sentiment_agent(ttl_hours=1, use_cache=not force_refresh, user_id=self.user_id)
+            # PAD Phase 2: Replace AgentFactory calls with _call_agent_llm
             
             ticker_ctx = {
                 "ticker": self.ticker,
@@ -1207,8 +1306,8 @@ class EventAnalysisWorkflow(BaseWorkflow):
                 "event_context": self.event_data
             }
             
-            mom_res = await mom_agent.run(ticker_ctx)
-            sent_res = await sent_agent.run(ticker_ctx)
+            mom_res = await self._call_agent_llm("Momentum", ticker_ctx, tier="fast")
+            sent_res = await self._call_agent_llm("Sentiment", ticker_ctx, tier="fast")
             
             # 3. Holding Reduction Analysis (If needed)
             holding_info = ""
@@ -1223,8 +1322,7 @@ class EventAnalysisWorkflow(BaseWorkflow):
                     self.logger.info(f"Performing reduction analysis for {self.ticker}")
                     # Could run a specialized 'Risk' check or just let CIO decide
             
-            # 4. CIO Synthesis
-            cio = AgentFactory.create_cio_agent(mode="daily", user_id=self.user_id)
+            # 4. CIO Synthesis via PAD Phase 2
             cio_context = {
                 "macro_report": "Event-Driven Context",
                 "council_transcript": f"Ticker: {self.ticker}\n- Event Source: {self.event_source}\n- Event Detail: {self.event_data.get('msg')}\n- Momentum: {mom_res}\n- Sentiment: {sent_res}\n- Holdings: {holding_info}",
@@ -1233,7 +1331,7 @@ class EventAnalysisWorkflow(BaseWorkflow):
                 "report_focus": f"Event Analysis: {self.event_source}"
             }
             
-            cio_output = await cio.run(cio_context)
+            cio_output = await self._call_agent_llm("CIO", cio_context, tier="smart", max_tokens=2000)
             
             # Polish and translate if needed
             final_report = cio_output # Simplified for event workflow
@@ -1271,6 +1369,8 @@ class EventAnalysisWorkflow(BaseWorkflow):
 
     # Stubs for base class compatibility
     def collect_data(self): pass
+    async def execute_analysis(self, force_refresh: bool) -> bool: return True
+    def synthesise_results(self) -> str: return ""
 
 
 class WorkflowService:
@@ -1293,11 +1393,16 @@ class WorkflowService:
         from src.services.memory_service import MemoryService
         from src.repositories.memory_repository import AlchemyMemoryRepository
         from src.infrastructure.agent_llm_provider import AgentLLMProvider
+        import json
         
         repo = AlchemyMemoryRepository()
         llm_provider = AgentLLMProvider(user_id=self.user_id)
         memory_service = MemoryService(repository=repo, llm_provider=llm_provider)
         
+        # Ensure it is a string before storing in the database
+        if not isinstance(analysis_result, str):
+            analysis_result = json.dumps(analysis_result)
+            
         date_str = get_current_time().strftime("%Y-%m-%d %H:%M:%S")
         await memory_service.store_report(
             user_id=self.user_id,

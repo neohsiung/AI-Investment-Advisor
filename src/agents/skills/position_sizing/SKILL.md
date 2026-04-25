@@ -1,51 +1,29 @@
-# Position Sizing Skill
-
 ---
 name: position_sizing
-description: 計算適當的交易數量，考慮實際持倉、現金比例與風險閾值。
-metadata:
-  openclaw:
-    os: [linux, darwin]
+description: 計算適當的交易數量，考慮持有量、現金比例與風險閾值 (Calculate trade quantity considering holdings, cash ratio, and risk thresholds).
+category: risk
+tier: fast
+input_schema:
+  type: object
+  properties:
+    user_id: {type: string}
+    ticker: {type: string}
+    action: {type: string, enum: [BUY, SELL]}
+    desired_quantity: {type: number}
+    intent: {type: string, enum: [auto, full_close, partial_reduce]}
+  required: [user_id, ticker, action]
+output_schema:
+  type: object
+  properties:
+    recommended_quantity: {type: number}
+    actual_holding: {type: number}
+    cash_ratio_before: {type: number}
 ---
 
-## Instruction
+# Position Sizing Skill
 
-Use this skill **before executing any trade** to determine the appropriate quantity.
-It queries the broker for actual holdings and account data, then calculates a safe trade quantity.
+## 指令 (Instruction)
+使用此技能計算特定標的與動作的推薦交易數量。它會考慮用戶當前持倉、可用現金與風險設定。
 
-- **SELL**: Clamps quantity to actual holdings. Supports `full_close` / `partial_reduce` / `auto` intents.
-- **BUY**: Clamps quantity to available cash and max single position percentage.
-- Returns pre/post cash ratio estimates for impact evaluation.
-
-### When to Use
-
-- Before any BUY or SELL trade execution
-- When ActionExtractor needs to determine quantity for a recommendation
-- During emergency liquidation to get actual holding quantities
-
-### Rules
-
-1. **Always call this before `execute_order`** to avoid over-selling or over-buying
-2. If `recommended_quantity` is 0, the Agent MUST skip the trade
-3. For SELL: `intent=full_close` returns full holding; `intent=partial_reduce` returns min(desired, actual)
-4. For BUY: quantity is clamped to `min(desired, available_cash, nlv * max_position_pct)`
-
-### Examples
-
-User: 幫我賣出 TSLA
-Assistant: Let me first check the appropriate quantity.
-
-```tool_code
-position_sizing(ticker="TSLA", action="SELL", intent="full_close")
-```
-
-Result: `{ "recommended_quantity": 0.5, "actual_holding": 0.5, "reason": "Full close of TSLA position (0.5 units)" }`
-
-User: 買入 100 美元的 NVDA
-Assistant: Let me verify the sizing against portfolio limits.
-
-```tool_code
-position_sizing(ticker="NVDA", action="BUY", desired_quantity=100)
-```
-
-Result: `{ "recommended_quantity": 100, "actual_holding": 10, "reason": "Within limits (max position 10% of NLV)" }`
+### Required Arguments for run_script:
+Assistant: <tool_code>run_script(skill_name="position_sizing", args=["--user_id", "{{user_id}}", "--ticker", "AAPL", "--action", "BUY"])</tool_code>

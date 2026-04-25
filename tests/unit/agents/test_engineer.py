@@ -70,15 +70,15 @@ def test_set_schedule_config(agent, mock_settings_repo):
 async def test_run_with_optimization(agent, mock_prompt_repo):
     context = {"cio_report": "## System Optimization Feedback\nFix Momentum."}
     
-    # call_llm is now an AsyncMock
-    with patch.object(agent, 'call_llm', new_callable=AsyncMock) as mock_llm:
+    from unittest.mock import AsyncMock
+    with patch.object(agent, '_call_real_llm', new_callable=AsyncMock) as mock_llm:
         mock_llm.return_value = '{"optimized_prompt": "New Prompt", "diff_explanation": "Improved stability"}'
         with patch.object(agent, '_read_prompt', return_value="Original Prompt"):
-            with patch.object(agent, '_save_prompt'):
-                result = await agent.run(context)
-                assert len(result) > 0
-                assert result[0]['target_agent'] == 'Momentum'
-                mock_prompt_repo.log_change.assert_called_once()
+             with patch.object(agent, '_save_prompt'):
+                 result = await agent.run(context)
+                 assert len(result) > 0
+                 assert result[0]['target_agent'] == 'Momentum'
+                 mock_prompt_repo.log_change.assert_called_once()
 
 @pytest.mark.asyncio
 async def test_run_no_optimization_needed(agent):
@@ -88,8 +88,10 @@ async def test_run_no_optimization_needed(agent):
 
 @pytest.mark.asyncio
 async def test_run_optimization_failure(agent):
-    with patch.object(agent, '_call_real_llm', return_value="Invalid JSON"):
-        with patch.object(agent, '_read_prompt', return_value="Original"):
-            result = await agent.run({"cio_report": "## System Optimization Feedback\nDo it."})
-            result_str = str(result)
-            assert "error" in result_str.lower() or "failed" in result_str.lower()
+    from unittest.mock import AsyncMock
+    with patch.object(agent, '_call_real_llm', new_callable=AsyncMock) as mock_llm:
+         mock_llm.return_value = "Invalid JSON"
+         with patch.object(agent, '_read_prompt', return_value="Original"):
+             result = await agent.run({"cio_report": "## System Optimization Feedback\nDo it."})
+             result_str = str(result)
+             assert "error" in result_str.lower() or "failed" in result_str.lower()

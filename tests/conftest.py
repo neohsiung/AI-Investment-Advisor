@@ -85,6 +85,7 @@ def pytest_configure(config):
     # v4.2.1: Ensure Database Schema is initialized for in-memory SQLite tests
     try:
         from src.data.database import init_db, get_db_engine
+        import src.data.models # Ensure all models register with Base.metadata
         engine = get_db_engine()
         init_db(engine=engine, force=True)
     except Exception as e:

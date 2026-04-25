@@ -4,10 +4,17 @@ Budget Aware Model Router — Infrastructure Layer.
 
 Implements tiered model routing with automatic fallback based on weekly spend.
 實作具備週預算自動降級機制的模型分流。
+
+Phase B extension:
+  - get_config_chain(user_id, tier, db_session=None) -> list[ModelCandidate]
+    Returns the full fallback chain from DB (or legacy defaults).
+  - get_resilient_gateway(user_id, tier, db_session=None) -> ResilientLLMPipeline
+    Returns a ready-to-use pipeline for the given tier.
+  - Existing get_config() / is_budget_critical() / _resolve_tier() unchanged.
 """
 
 import logging
-from typing import Dict, Any, Optional
+from typing import Any, Dict, List, Optional
 from src.domain.interfaces import LLMConfig
 from src.infrastructure.llm.tier_config import TierConfig
 
@@ -22,7 +29,7 @@ class BudgetAwareModelRouter:
     BUDGET_SOFT_LIMIT = 16.0  # 80% (Warn / Partial Downgrade)
     BUDGET_HARD_LIMIT = 20.0  # 100% (Emergency / Full Downgrade)
 
-    def __init__(self, settings_service, 
+    def __init__(self, settings_service,
                  token_logger):
         # Lazy imports to avoid circular dependency with TokenLoggerService/SettingsService
         from src.services.settings_service import SettingsService
@@ -95,15 +102,17 @@ class BudgetAwareModelRouter:
     def _build_config(self, tier_name: str, user_id: str) -> LLMConfig:
         """
         Internal mapping from tier name to actual LLMConfig using TierConfig.
+        [LEGACY PATH] Reads AI_MODEL / AI_MODEL_ADVANCED / … from settings table.
+        Prefer get_config_chain() which reads llm_tier_bindings instead.
         """
         # Fetch DB overrides if any
-        db_settings = self.settings.get_all_settings() if user_id else {}
+        db_settings = self.settings.get_all_settings(user_id) if user_id else {}
         
         # Resolve model name (DB -> Env -> Default)
         model_name = self.tier_cfg.resolve(tier_name, db_settings)
         if isinstance(model_name, str):
             model_name = model_name.strip().strip('"').strip("'")
-            
+
         spec = self.tier_cfg.get_spec(tier_name)
         
         # Provider resolution (Check AI_PROVIDER first for standards compliance)
@@ -111,10 +120,15 @@ class BudgetAwareModelRouter:
         env_provider = os.getenv("AI_PROVIDER", "OpenRouter")
         provider = db_settings.get("AI_PROVIDER", db_settings.get("ai_provider", env_provider)) if user_id else env_provider
         
-        # API Key Mapping (source_{provider}_api_key or legacy API_KEY)
+        # API Key Mapping (source_{provider}_api_key or {provider}_api_key or legacy API_KEY)
         api_key_field = f"source_{provider.lower()}_api_key"
-        # Support fallback to legacy "API_KEY"
-        raw_key = db_settings.get(api_key_field, db_settings.get("API_KEY", "")) if user_id else ""
+        direct_provider_key = f"{provider.lower()}_api_key"
+        
+        # Support fallback across different naming conventions used in DB
+        raw_key = ""
+        if user_id:
+            raw_key = db_settings.get(api_key_field) or db_settings.get(direct_provider_key) or db_settings.get("API_KEY", "")
+            
         api_key = raw_key.strip().strip('"').strip("'") if isinstance(raw_key, str) else raw_key
         
         return LLMConfig(
@@ -124,3 +138,99 @@ class BudgetAwareModelRouter:
             temperature=0.7,
             max_tokens=spec.max_tokens if spec else None
         )
+
+    # ──────────────────────────────────────────────────────────────────
+    # Phase B extensions — DB-driven chain resolution
+    # ──────────────────────────────────────────────────────────────────
+
+    def get_config_chain(
+        self,
+        user_id: str,
+        tier: str,
+        db_session: Any = None,
+        agent_name: Optional[str] = None,
+    ) -> List[Any]:
+        """
+        Return the full ModelCandidate chain for (user_id, tier).
+
+        If agent_name is provided and the user has an enabled override for that
+        agent, the AgentOverrideService.resolve() is called first; it may return
+        a custom chain (different models or tier) or fall back to the tier chain.
+
+        The returned list is budget-aware: if the user is over the soft limit,
+        smart/advanced chains are replaced with the fast chain.
+
+        Args:
+            user_id: The user whose binding to load.
+            tier: One of "nano", "fast", "smart", "advanced".
+            db_session: Optional SQLAlchemy session.
+            agent_name: Optional agent identifier (e.g. "cio", "skill_router").
+                        If provided, agent overrides are checked first.
+
+        Returns:
+            list[ModelCandidate] — ordered primary-first.
+        """
+        from src.infrastructure.llm.llm_config_chain import build_config_chain
+
+        # Budget-aware tier downgrade (same logic as get_config)
+        try:
+            spend_summary = self.token_logger.get_user_spending(user_id, days=7)
+            total_spent = spend_summary.get("total_cost", 0.0)
+            effective_tier = self._resolve_tier(tier, total_spent)
+        except Exception:
+            effective_tier = tier
+
+        if effective_tier != tier:
+            logger.warning(
+                "BudgetAwareRouter.get_config_chain: downgrading %s → %s for user %s",
+                tier, effective_tier, user_id,
+            )
+
+        # ── Agent override resolution (Phase C) ───────────────────────
+        if agent_name:
+            try:
+                from src.services.llm_agent_override_service import LLMAgentOverrideService
+                override_svc = LLMAgentOverrideService(user_id=user_id)
+                candidates = override_svc.resolve(
+                    agent_name=agent_name,
+                    default_tier=effective_tier,
+                    db_session=db_session,
+                )
+                if candidates:
+                    logger.debug(
+                        "BudgetAwareRouter.get_config_chain: agent=%s resolved %d candidate(s)",
+                        agent_name, len(candidates),
+                    )
+                    return candidates
+            except Exception as exc:
+                logger.warning(
+                    "BudgetAwareRouter.get_config_chain: agent override resolution failed "
+                    "for agent=%s user=%s: %s — falling back to tier chain",
+                    agent_name, user_id, exc,
+                )
+
+        return build_config_chain(
+            user_id=user_id,
+            tier=effective_tier,
+            db_session=db_session,
+        )
+
+    def get_resilient_gateway(
+        self,
+        user_id: str,
+        tier: str,
+        db_session: Any = None,
+    ) -> Any:
+        """
+        Return a ResilientLLMPipeline configured for (user_id, tier).
+
+        Existing callers that use get_config() are unaffected.
+        New callers can use this for automatic multi-model fallback.
+
+        Returns:
+            ResilientLLMPipeline instance ready to call .execute(messages).
+        """
+        from src.infrastructure.llm.resilient_pipeline import ResilientLLMPipeline
+
+        chain = self.get_config_chain(user_id=user_id, tier=tier, db_session=db_session)
+        return ResilientLLMPipeline(config_chain=chain)

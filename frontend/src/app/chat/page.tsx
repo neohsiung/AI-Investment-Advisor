@@ -48,7 +48,7 @@ export default function ChatPage() {
     };
 
     try {
-      const response = await fetch("/api/dashboard/chat/stream", {
+      const response = await fetch("/api/v1/chat/stream", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -69,7 +69,7 @@ export default function ChatPage() {
         if (done) break;
 
         buffer += decoder.decode(value, { stream: true });
-        
+
         // SSE lines are separated by \n\n
         const lines = buffer.split("\n\n");
         buffer = lines.pop() || ""; // Keep the last partial line in buffer
@@ -84,19 +84,19 @@ export default function ChatPage() {
 
             try {
               const data = JSON.parse(dataStr);
-              
+
               // Handle metadata (agent state)
               if (data.metadata) {
                 if (data.metadata.type === "tool_call") {
                   setActivity(data.metadata.name);
                 }
-              } 
+              }
               // Handle content chunks
               else if (data.chunk) {
                 assistantContent += data.chunk;
                 updateAssistantMessage(assistantContent);
                 // Hide activity once text starts flowing
-                if (activity) setActivity(null); 
+                if (activity) setActivity(null);
               }
               // Handle errors
               else if (data.error) {
@@ -125,9 +125,9 @@ export default function ChatPage() {
   };
 
   return (
-    <div className="flex-1 flex flex-col bg-background pt-16 overflow-hidden">
+    <div className="flex-1 flex flex-col bg-background pt-16 overflow-hidden min-h-0">
       {/* Header / Context Bar */}
-      <div className="h-14 px-8 border-b border-outline-variant/10 flex items-center justify-between bg-surface/30 backdrop-blur-md z-10 sticky top-0">
+      <div className="h-14 px-4 md:px-8 border-b border-outline-variant/10 flex items-center justify-between bg-surface/30 backdrop-blur-md z-10 sticky top-0">
         <div className="flex items-center gap-3">
           <div className="h-2 w-2 rounded-full bg-secondary animate-pulse" />
           <h2 className="text-sm font-black uppercase tracking-[0.2em] text-on-surface-variant">即時諮詢顧問 <span className="text-primary/50 text-[10px] ml-2 font-mono uppercase">V10_Traceable_Stream</span></h2>
@@ -139,7 +139,7 @@ export default function ChatPage() {
               <span className="text-[10px] font-black text-primary uppercase tracking-widest">標的識别: {detectedTicker}</span>
             </div>
           )}
-          <button 
+          <button
             onClick={clearChat}
             className="p-2 text-on-surface-variant hover:text-error hover:bg-error/10 rounded-full transition-all"
             title="Clear Chat"
@@ -150,26 +150,26 @@ export default function ChatPage() {
       </div>
 
       {/* Message List */}
-      <div ref={scrollRef} className="flex-1 overflow-y-auto p-8 space-y-8 scroll-smooth">
+      <div ref={scrollRef} className="flex-1 overflow-y-auto p-4 md:p-8 space-y-4 md:space-y-8 scroll-smooth">
         {messages.length === 0 ? (
           <div className="h-full flex flex-col items-center justify-center opacity-20 gap-12 py-24">
-             <div className="relative">
-                <div className="absolute inset-0 bg-primary/20 blur-[100px] scale-150 animate-pulse rounded-full" />
-                <Sparkles size={120} className="text-primary relative z-10" />
-             </div>
-             <div className="max-w-md text-center space-y-4">
-                <h3 className="text-3xl font-bold font-headline tracking-tighter text-on-surface">我是您的專屬 AI 投資顧問</h3>
-                <p className="text-xs font-bold uppercase tracking-widest leading-relaxed">
-                  您可以詢問市場行情、公司基本面分析、或是投資組合的建議。
-                  <br />
-                  <span className="text-secondary mt-2 block font-mono">L4 AUTONOMY / TRACEABLE_SSE READY</span>
-                </p>
-             </div>
+            <div className="relative">
+              <div className="absolute inset-0 bg-primary/20 blur-[100px] scale-150 animate-pulse rounded-full" />
+              <Sparkles size={120} className="text-primary relative z-10" />
+            </div>
+            <div className="max-w-md text-center space-y-4">
+              <h3 className="text-3xl font-bold font-headline tracking-tighter text-on-surface">我是您的專屬 AI 投資顧問</h3>
+              <p className="text-xs font-bold uppercase tracking-widest leading-relaxed">
+                您可以詢問市場行情、公司基本面分析、或是投資組合的建議。
+                <br />
+                <span className="text-secondary mt-2 block font-mono">L4 AUTONOMY / TRACEABLE_SSE READY</span>
+              </p>
+            </div>
           </div>
         ) : (
           messages.map((msg, idx) => (
-            <div 
-              key={idx} 
+            <div
+              key={idx}
               className={cn(
                 "flex gap-6 max-w-4xl mx-auto group animate-fade-in",
                 msg.role === "user" ? "flex-row-reverse" : "flex-row"
@@ -183,8 +183,8 @@ export default function ChatPage() {
               </div>
               <div className={cn(
                 "flex-1 px-8 py-6 rounded-3xl text-sm leading-relaxed shadow-sm",
-                msg.role === "assistant" 
-                  ? "bg-surface-container-low border border-outline-variant/10" 
+                msg.role === "assistant"
+                  ? "bg-surface-container-low border border-outline-variant/10"
                   : "bg-surface-container-highest/50 border border-outline-variant/5 ml-12"
               )}>
                 <div className="prose prose-invert prose-slate max-w-none prose-p:leading-8 prose-p:mb-4">
@@ -204,7 +204,7 @@ export default function ChatPage() {
             </div>
           ))
         )}
-        
+
         {(isLoading || activity) && (
           <div className="flex gap-6 max-w-4xl mx-auto animate-fade-in">
             <div className="h-10 w-10 rounded-2xl bg-primary text-on-primary flex items-center justify-center shadow-lg animate-pulse">
@@ -230,19 +230,19 @@ export default function ChatPage() {
       </div>
 
       {/* Input Area */}
-      <div className="h-32 px-12 pb-12 bg-gradient-to-t from-background via-background to-transparent z-10">
+      <div className="px-4 md:px-12 pb-4 md:pb-12 pt-2 bg-gradient-to-t from-background via-background to-transparent z-10 flex-shrink-0">
         <div className="max-w-4xl mx-auto relative group">
           <div className="absolute -inset-1 bg-gradient-to-r from-primary/20 to-secondary/20 rounded-2xl blur opacity-30 group-hover:opacity-100 transition duration-1000 group-hover:duration-200" />
           <div className="relative bg-surface-container p-2 rounded-2xl border border-outline-variant/10 flex items-center gap-2 shadow-2xl">
-            <input 
-              type="text" 
+            <input
+              type="text"
               placeholder="輸入您的理財提問..."
               className="flex-1 bg-transparent border-none focus:ring-0 px-6 py-4 text-sm font-label tracking-wide"
               value={input}
               onChange={(e) => setInput(e.target.value)}
               onKeyDown={(e) => e.key === "Enter" && handleSend()}
             />
-            <button 
+            <button
               onClick={handleSend}
               disabled={isLoading || !input.trim()}
               className={cn(

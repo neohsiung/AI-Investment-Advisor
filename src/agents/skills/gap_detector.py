@@ -89,9 +89,21 @@ class GapDetector:
 
     def _get_config(self) -> LLMConfig:
         """Fast-tier LLM config for classification."""
+        from src.infrastructure.llm.tier_config import SettingsAwareModelRouter
+        try:
+            from src.repositories.settings_repository import AlchemySettingsRepository
+            settings_repo = AlchemySettingsRepository()
+            model_router = SettingsAwareModelRouter(settings_repo)
+            model = model_router.get_model(self.user_id, "fast")
+        except Exception as e:
+            logger.warning(f"GapDetector: Model router failed, using tier default: {e}")
+            from src.infrastructure.llm.tier_config import TierConfig
+            tier_config = TierConfig()
+            model = tier_config.resolve("fast")
+        
         return LLMConfig(
-            provider=os.getenv("AI_PROVIDER", "Google Gemini"),
-            model=os.getenv("AI_MODEL_FAST", "gemini-1.5-flash"),
+            provider=os.getenv("AI_PROVIDER", "OpenRouter"),
+            model=model,
             api_key=os.getenv("API_KEY", ""),
             temperature=0.0,
             max_tokens=500,
@@ -149,15 +161,13 @@ class GapDetector:
 
         # 4. Call Fast-tier LLM
         try:
-            from src.utils.async_utils import to_thread
-
             llm = self._get_llm()
             config = self._get_config()
             messages = [
                 Message(role="system", content="You are a JSON-only response agent."),
                 Message(role="user", content=prompt),
             ]
-            response_str = await to_thread(llm.chat, messages, config)
+            response_str = await llm.chat(messages, config)
 
             # 5. Parse JSON response
             cleaned = response_str.replace("```json", "").replace("```", "").strip()

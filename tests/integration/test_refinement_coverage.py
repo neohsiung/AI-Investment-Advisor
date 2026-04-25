@@ -27,9 +27,9 @@ class TestRefinementService:
         }
         
         mock_eng_instance = MockEngineer.return_value
-        mock_eng_instance.run.return_value = [
+        mock_eng_instance.run = AsyncMock(return_value=[
             {"target_agent": "Fundamental", "reason": "Low win rate"}
-        ]
+        ])
         
         # We need to mock SettingsService because it's imported inside __init__
         with patch('src.services.settings_service.SettingsService'):

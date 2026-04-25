@@ -26,9 +26,17 @@ class OptimizerPipeline:
         db_path (str): 資料庫路徑
         repo (FeedbackRepository): 回饋數據存取介面
     """
-    def __init__(self, db_path=None, model_name="gemini-1.5-pro"):
+    def __init__(self, db_path=None, model_name=None):
         self.db_path = db_path  # None will use environment DB_URL or DB_TYPE
         self.repo = AlchemyFeedbackRepository(db_path)
+        
+        # Use tier-aware routing for model selection (smart tier for optimization)
+        from src.infrastructure.llm.tier_config import TierConfig
+        if model_name is None:
+            tier_config = TierConfig()
+            self.model_name = tier_config.resolve("smart")
+        else:
+            self.model_name = model_name
         
         # Setup DSPy LM
         # In real usage, we should use the API Key from settings or env

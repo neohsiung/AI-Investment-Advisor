@@ -38,6 +38,13 @@ class IUserRepository(ABC):
         """
         pass
 
+    @abstractmethod
+    def get_all_active_users(self) -> List[str]:
+        """
+        Returns all real user IDs (excludes test/default accounts).
+        """
+        pass
+
 class IAsyncUserRepository(ABC):
     """
     Async interface for User and Identity management.
@@ -52,6 +59,10 @@ class IAsyncUserRepository(ABC):
 
     @abstractmethod
     async def create_user(self, email: str, name: str = None) -> str:
+        pass
+
+    @abstractmethod
+    async def get_all_active_users(self) -> List[str]:
         pass
 
 class AlchemyUserRepository(BaseRepository, IUserRepository):
@@ -116,16 +127,32 @@ class AlchemyUserRepository(BaseRepository, IUserRepository):
                 "user_id": user_uuid,
                 "identifier": email
             })
-            
+        
+        # v9.1: Seed LLM defaults for new user
+        try:
+            from src.services.llm_onboarding_service import LLMOnboardingService
+            LLMOnboardingService().seed_defaults_for_user(user_uuid)
+        except Exception as e:
+            # Don't fail the whole user creation if seeding fails, but log it.
+            import logging
+            logging.getLogger(__name__).error(f"Failed to seed LLM defaults for new user {user_uuid}: {e}")
+
         return user_uuid
 
-    def get_identities(self, user_id: str) -> List[Dict[str, Any]]:
+    def get_all_active_users(self) -> List[str]:
+        """
+        Returns all real user IDs (excludes test/default accounts).
+        B2C 多租戶排程器使用，不依賴 ENV。
+        """
         with self.engine.connect() as conn:
-            query = text("SELECT * FROM user_identities WHERE user_id = :uid")
-            rows = conn.execute(query, {"uid": user_id}).fetchall()
-            return [dict(r._mapping) for r in rows]
-
-        return user_uuid
+            rows = conn.execute(text(
+                "SELECT id FROM users "
+                "WHERE email NOT LIKE 'test%' "
+                "AND email NOT LIKE '%@example.com' "
+                "AND id != 'default' "
+                "ORDER BY created_at ASC"
+            )).fetchall()
+        return [row[0] for row in rows]
 
 class AsyncAlchemyUserRepository(AsyncBaseRepository, IAsyncUserRepository):
     """
@@ -144,6 +171,7 @@ class AsyncAlchemyUserRepository(AsyncBaseRepository, IAsyncUserRepository):
 
     async def get_by_identity(self, provider: str, identifier: str) -> Optional[Dict[str, Any]]:
         async with await self.get_session() as session:
+            # 1. 嘗試標準身份對應 (New UUID System)
             query = text("""
                 SELECT u.* FROM users u
                 JOIN user_identities ui ON u.id = ui.user_id
@@ -151,7 +179,29 @@ class AsyncAlchemyUserRepository(AsyncBaseRepository, IAsyncUserRepository):
             """)
             result = await session.execute(query, {"provider": provider, "identifier": identifier})
             row = result.fetchone()
-            return dict(row._mapping) if row else None
+            if row:
+                return dict(row._mapping)
+
+            # 2. Legacy Fallback (Sprint 1-2 Legacy):
+            # 如果是 Email 登入且沒找到與之關聯的 Identity，檢查 Users 表是否存在 id == identifier (當時使用 Email 作為 ID)
+            if provider == "email":
+                query_legacy = text("SELECT * FROM users WHERE id = :identifier")
+                res_legacy = await session.execute(query_legacy, {"identifier": identifier})
+                row_legacy = res_legacy.fetchone()
+                if row_legacy:
+                    # 發現遺留帳號！主動建立身份連結，確保下次登入一致
+                    await session.execute(text("""
+                        INSERT INTO user_identities (id, user_id, provider, identifier, is_primary)
+                        VALUES (:id, :uid, 'email', :identifier, 1)
+                    """), {
+                        "id": str(uuid.uuid4()),
+                        "uid": identifier,
+                        "identifier": identifier
+                    })
+                    await session.commit()
+                    return dict(row_legacy._mapping)
+
+            return None
 
     async def create_user(self, email: str, name: str = None) -> str:
         user_uuid = str(uuid.uuid4())
@@ -173,4 +223,26 @@ class AsyncAlchemyUserRepository(AsyncBaseRepository, IAsyncUserRepository):
             })
             await session.commit()
             
+        # v9.1: Seed LLM defaults for new user (Async)
+        try:
+            from src.services.llm_onboarding_service import LLMOnboardingService
+            await LLMOnboardingService().async_seed_defaults_for_user(user_uuid)
+        except Exception as e:
+            import logging
+            logging.getLogger(__name__).error(f"Failed to async seed LLM defaults for new user {user_uuid}: {e}")
+
         return user_uuid
+
+    async def get_all_active_users(self) -> List[str]:
+        """
+        Async version of get_all_active_users.
+        """
+        async with await self.get_session() as session:
+            result = await session.execute(text(
+                "SELECT id FROM users "
+                "WHERE email NOT LIKE 'test%' "
+                "AND email NOT LIKE '%@example.com' "
+                "AND id != 'default'"
+            ))
+            rows = result.fetchall()
+            return [row[0] for row in rows]

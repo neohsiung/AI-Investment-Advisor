@@ -21,8 +21,8 @@ class SensoryAgent(BaseAgent):
         # Sensory agents MUST use 'nano' or 'fast' to keep background scanning costs low.
         tier = kwargs.pop('tier', 'fast')
         super().__init__(
-            name="Sensory",
-            prompt_path="prompts/sensory_agent.txt", 
+            name="Sensory Watchdog",
+            prompt_path="", 
             use_cache=False, 
             tier=tier,
             **kwargs
@@ -37,22 +37,18 @@ class SensoryAgent(BaseAgent):
         price_info = context.get("price_info", "N/A")
         recent_news = context.get("recent_news", "N/A")
 
-        system_prompt = (
-            "You are a Proactive Market Watchdog. "
-            "Scan the provided data for IMMEDIATE ACTIONABLE ALERTS. "
-            "Examples: Price breakout, earnings surprise, massive gap, CEO resignation. "
-            "Be extremely conservative; only alert on significant moves (>3% or major news). "
-            "Output strictly valid JSON: {\"alert_needed\": bool, \"reason\": \"string\", \"urgency\": \"low|med|high\"}"
-        )
+        # Render system prompt via ContextAssembler (delegated to by BaseAgent)
+        system_prompt = self.render_system_prompt(context)
         
         user_prompt = f"Ticker: {ticker}\nPrice Data: {price_info}\nRecent News: {recent_news}"
         
         try:
-            response = self.call_llm(
-                messages=[
-                    {"role": "system", "content": system_prompt},
-                    {"role": "user", "content": user_prompt}
-                ],
+            messages = [
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user_prompt}
+            ]
+            response = await self.call_llm(
+                messages=messages,
                 temperature=0.0,
                 response_format={"type": "json_object"}
             )

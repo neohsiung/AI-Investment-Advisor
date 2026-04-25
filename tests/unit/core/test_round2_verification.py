@@ -53,14 +53,13 @@ async def test_sentinel_failsafe_msg_with_error_type():
 async def test_sentinel_escalate_no_to_thread_error():
     """Verify that _escalate uses our backport and doesn't hit AttributeError."""
     mock_sentinel_agent = MagicMock()
-    mock_sentinel_agent.run = MagicMock(return_value={"priority": "P1", "target_agent": "CIO"})
+    mock_sentinel_agent.run = AsyncMock(return_value={"priority": "P1", "target_agent": "CIO"})
     
     service = SentinelService(user_id="test_user")
     
-    with patch('src.agents.factory.AgentFactory.create_sentinel_agent', return_value=mock_sentinel_agent):
+    with patch.object(service, '_call_agent_llm', return_value='{"priority": "P1", "target_agent": "CIO"}'):
         triggers = [{"text": "High Volatility", "id": "vix_1"}]
-        # This calls to_thread internally
+        # This calls _call_agent_llm internally
         await service._escalate(triggers)
         
     assert triggers[0]["priority"] == 1
-    assert mock_sentinel_agent.run.called

@@ -88,6 +88,7 @@ def get_db_engine(db_path: str = None, use_null_pool: bool = False) -> Engine:
     # v4.2.1: Allow SQLite *only* if db_path is explicitly provided (Test Isolation)
     if db_path:
         db_url = f"sqlite:///{db_path}"
+        Path(db_path).parent.mkdir(parents=True, exist_ok=True)
     
     # 2. Construct from components (Default to Postgres)
     if not db_url:
@@ -156,6 +157,7 @@ def get_async_db_engine(db_path: str = None) -> AsyncEngine:
     db_url = os.getenv("DB_URL")
     if db_path:
         db_url = f"sqlite+aiosqlite:///{db_path}"
+        Path(db_path).parent.mkdir(parents=True, exist_ok=True)
     
     if not db_url:
         db_user = os.getenv("DB_USER", "postgres")
@@ -208,10 +210,12 @@ class AsyncBaseRepository:
 
 def get_db_connection(db_path=None):
     """
-    Returns a SQLAlchemy Connection object.
+    Returns a SQLAlchemy Session object.
+    v19.1: Changed from Connection to Session to support ORM .query() in legacy repos.
     """
     engine = get_db_engine(db_path)
-    return engine.connect()
+    factory = sessionmaker(bind=engine)
+    return factory()
 
 def init_db(db_path=None, force=False, engine=None):
     """
@@ -265,6 +269,8 @@ def init_db(db_path=None, force=False, engine=None):
         name TEXT,
         preferences {json_type} DEFAULT '{{}}',
         metadata {json_type} DEFAULT '{{}}',
+        subscription_id TEXT,
+        current_billing_cycle_start {timestamp_type},
         created_at {timestamp_type} DEFAULT CURRENT_TIMESTAMP,
         last_login {timestamp_type}
     );
@@ -283,6 +289,7 @@ def init_db(db_path=None, force=False, engine=None):
         fees {numeric_type} DEFAULT 0,
         amount {numeric_type} NOT NULL,
         currency TEXT DEFAULT 'USD',
+        leverage {numeric_type} DEFAULT 1.0,
         source_file TEXT,
         raw_data {json_type},
         created_at {timestamp_type} DEFAULT CURRENT_TIMESTAMP,

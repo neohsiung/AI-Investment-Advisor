@@ -4,9 +4,11 @@ IntelligenceService — 使用 Tavily + LLM 生成繁體中文市場情報
 import asyncio
 import httpx
 import json
-from typing import Optional, Dict, Any, List
-from src.services.settings_service import SettingsService
+from typing import Optional
 from src.utils.logger import setup_logger
+from src.domain.interfaces import Message, LLMConfig
+from src.infrastructure.llm.llm_gateway import LLMGatewayFactory, RetryLLMGateway, LoggingLLMGateway
+from src.services.settings_service import SettingsService  # pre-existing missing import fix
 
 logger = setup_logger("IntelligenceService")
 
@@ -14,6 +16,19 @@ class IntelligenceService:
     def __init__(self, settings_service: Optional[SettingsService] = None, user_id: str = None):
         self.user_id = user_id or "system"
         self.settings = settings_service or SettingsService(user_id=self.user_id)
+        self._llm_gateway = self._create_gateway()
+
+    def _create_gateway(self):
+        """建立符合標準規範的 LLM 閘道，包含重試與計費監控"""
+        provider = self.settings.get_setting("AI_PROVIDER", "OpenRouter")
+        inner = LLMGatewayFactory.create(provider)
+        retrying = RetryLLMGateway(inner=inner, max_retries=2)
+        return LoggingLLMGateway(
+            inner=retrying,
+            agent_name="IntelligenceService",
+            tier="smart", # 預設智慧型，權限不足時 gateway 會自動降級
+            user_id=self.user_id
+        )
 
     async def get_latest_briefing(self) -> dict:
         """從快取讀取最新情報 (毫秒級)"""
@@ -26,12 +41,16 @@ class IntelligenceService:
             if isinstance(cached, str):
                 try:
                     cached = json.loads(cached)
-                except:
-                    pass
+                except Exception as e:
+                    logger.warning(f"Failed to parse cached intelligence: {e}")
             
-            if timestamp:
-                cached["observation_window"] = f"UPDATED: {timestamp}"
-            return cached
+            if isinstance(cached, dict):
+                if timestamp:
+                    cached["observation_window"] = f"UPDATED: {timestamp}"
+                return cached
+            
+            # If we reach here, it was either non-JSON string or non-dict
+            logger.warning("Cached intelligence is invalid format. Falling back.")
             
         # Step 2: Fallback - 如果沒快取，則發送一個「生成中」的提示
         return {
@@ -40,7 +59,7 @@ class IntelligenceService:
             "ai_note": "BACKGROUND_SYNC_PENDING",
             "observation_window": "INITIALIZING",
             "sentiment_metrics": [
-                {"label": "處理進度", "value": 50, "color": "bg-secondary"}
+                {"label": "處理進度", "score": 50.0, "trend": "stable"}
             ]
         }
 
@@ -48,7 +67,18 @@ class IntelligenceService:
         """核心運算邏輯：真正執行 Tavily 搜尋與 LLM 生成 (耗時數十秒)"""
         tavily_key = self.settings.get_setting("source_tavily_api_key")
         api_key = self.settings.get_setting("API_KEY")
-        model = self.settings.get_setting("AI_MODEL_SMART", "google/gemini-2.0-pro")
+        
+        # Use tier-aware routing (smart tier for intelligence)
+        from src.infrastructure.llm.tier_config import SettingsAwareModelRouter, TierConfig
+        from src.repositories.settings_repository import AlchemySettingsRepository
+        settings_repo = AlchemySettingsRepository()
+        model_router = SettingsAwareModelRouter(settings_repo)
+        if self.user_id:
+            model = model_router.get_model(self.user_id, "smart")
+        else:
+            tier_config = TierConfig()
+            model = tier_config.resolve("smart")
+        
         provider = self.settings.get_setting("AI_PROVIDER", "OpenRouter").lower()
 
         if not api_key:
@@ -66,7 +96,7 @@ class IntelligenceService:
 
         # Step 3: LLM 生成報告 (強制繁體中文)
         try:
-            briefing = await self._llm_generate(api_key, model, provider, news_items, positions_summary)
+            briefing = await self._llm_generate(news_items, positions_summary)
             return briefing
         except Exception as e:
             logger.error(f"LLM generation failed: {e}")
@@ -93,19 +123,20 @@ class IntelligenceService:
     def _get_positions_summary(self) -> str:
         """從 DB 取得當前持倉摘要"""
         try:
-            from src.repositories.postgres_repositories import AlchemyTransactionRepository
-            repo = AlchemyTransactionRepository(user_id=self.user_id)
-            transactions = repo.get_all()
+            from src.repositories.transaction_repository import AlchemyTransactionRepository
+            repo = AlchemyTransactionRepository()
+            transactions = repo.get_all_by_user(self.user_id)
             if not transactions:
                 return "當前尚未有任何持倉數據。"
-            tickers = list(set([t.ticker for t in transactions]))
+            import re
+            tickers = list(set([re.sub(r'[*_]', '', t.ticker) for t in transactions]))
             return f"當前關鍵持倉標的包括：{', '.join(tickers[:15])}。請針對這些標的與目前市場情緒進行關聯分析。"
         except Exception as e:
             logger.warning(f"Failed to fetch transactions for intelligence: {e}")
             return "無法取得持倉資訊。"
 
-    async def _llm_generate(self, api_key: str, model: str, provider: str, news: list, positions: str) -> dict:
-        """用 LLM 生成繁體中文情報摘要"""
+    async def _llm_generate(self, news: list, positions: str) -> dict:
+        """用 LLM 生成繁體中文情報摘要 (透過標準 Gateway)"""
         news_text = "\n".join([f"- {n.get('title', '')}: {n.get('content', '')[:300]}" for n in news])
         
         system_prompt = "你是一位專業的台灣機構投資人首席投資官（CIO）助理。你擅長從繁雜的新聞中提取對投資組合有價值的洞見。"
@@ -133,60 +164,52 @@ class IntelligenceService:
   "ai_note": "觀察到...",
   "observation_window": "ACTIVE SESSION",
   "sentiment_metrics": [
-    {{"label": "市場多頭動能", "value": 65, "color": "bg-secondary"}},
-    {{"label": "避險需求", "value": 30, "color": "bg-tertiary"}},
-    {{"label": "波動風險", "value": 45, "color": "bg-error"}}
+    {{"label": "市場多頭動能", "score": 65, "trend": "up"}},
+    {{"label": "避險需求", "score": 30, "trend": "stable"}},
+    {{"label": "波動風險", "score": 45, "trend": "down"}}
   ]
 }}
 """
-
-        endpoint = "https://openrouter.ai/api/v1/chat/completions"
-        if provider == "google":
-            endpoint = "https://generativelanguage.googleapis.com/v1beta/openai/chat/completions"
+        messages = [
+            Message(role="system", content=system_prompt),
+            Message(role="user", content=prompt)
+        ]
         
-        headers = {
-            "Authorization": f"Bearer {api_key}",
-            "Content-Type": "application/json",
-            "HTTP-Referer": "https://github.com/neohsiung",
-            "X-Title": "Investment Advisor Swarm"
-        }
+        config = LLMConfig(
+            provider=self.settings.get_setting("AI_PROVIDER", "OpenRouter"),
+            model=model,  # Already resolved with tier-aware routing above
+            api_key=self.settings.get_setting("API_KEY", ""),
+            temperature=0.3,
+            timeout_seconds=45
+        )
 
-        async with httpx.AsyncClient(timeout=45) as client:
-            resp = await client.post(
-                endpoint,
-                headers=headers,
-                json={
-                    "model": model,
-                    "messages": [
-                        {"role": "system", "content": system_prompt},
-                        {"role": "user", "content": prompt}
-                    ],
-                    "response_format": {"type": "json_object"}
-                }
-            )
-            
-            if resp.status_code != 200:
-                logger.error(f"LLM API Error: {resp.text}")
-                return self._fallback_error(f"AI 供應商回傳錯誤 ({resp.status_code})")
+        content = await self._llm_gateway.chat(messages, config)
+        
+        if not content:
+            return self._fallback_error("AI 回傳內容為空。")
+
+        # Ensure it's valid JSON
+        try:
+            # Remove markdown code blocks if present
+            clean_content = content
+            if "```json" in content:
+                clean_content = content.split("```json")[1].split("```")[0].strip()
+            elif "```" in content:
+                clean_content = content.split("```")[1].split("```")[0].strip()
                 
-            data = resp.json()
-            content = data["choices"][0]["message"]["content"]
+            result = json.loads(clean_content)
             
-            # Ensure it's valid JSON
-            try:
-                # Remove markdown code blocks if present
-                if "```json" in content:
-                    content = content.split("```json")[1].split("```")[0].strip()
-                elif "```" in content:
-                    content = content.split("```")[1].split("```")[0].strip()
-                    
-                result = json.loads(content)
-                # Keep original fields if missing in AI response
-                if "observation_window" not in result: result["observation_window"] = "ANALYZED"
-                return result
-            except Exception as e:
-                logger.error(f"Failed to parse AI JSON: {content}")
-                return self._fallback_error("AI 回傳格式異常，無法解析。")
+            # 如果是降級生成的，保留 LLM Gateway 可能添加的筆記 (雖然 JSON 可能會被破壞，我們試著合併)
+            if "*(注意" in content and "ai_note" in result:
+                result["ai_note"] = "(FALLBACK) " + result["ai_note"]
+                
+            # Keep original fields if missing in AI response
+            if "observation_window" not in result: result["observation_window"] = "ANALYZED"
+            return result
+        except Exception as e:
+            logger.error(f"Failed to parse AI JSON: {content}")
+            # 如果解析失敗但有原始文字，至少回傳摘要
+            return self._fallback_error(f"解析 AI 回報時發生錯誤，原始內容：{content[:100]}...")
 
     def _fallback_error(self, message: str) -> dict:
         return {
@@ -195,6 +218,6 @@ class IntelligenceService:
             "ai_note": "ERROR_LOGGED",
             "observation_window": "OFFLINE",
             "sentiment_metrics": [
-                {"label": "系統狀態", "value": 0, "color": "bg-error"}
+                {"label": "系統狀態", "score": 0, "trend": "stable"}
             ]
         }

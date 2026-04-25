@@ -1,14 +1,18 @@
 import os
 import requests
+import json
+import time
 import typing
-from typing import List, Dict, Tuple, Any, Optional, Callable, Dict, List, Tuple, Any, Optional, Callable
-from datetime import datetime
+import asyncio
+from typing import List, Dict, Tuple, Any, Optional, Callable
+from datetime import datetime, timedelta
 from sqlalchemy import text
 from src.utils.logger import setup_logger
 from src.domain.broker import IBroker
 from src.domain.trading import Order, Position, Account, OrderAction, BrokerType
 from src.repositories.transaction_repository import AlchemyTransactionRepository
 from src.infrastructure.risk_manager import RiskManager
+from src.api.v1.exceptions import BrokerNotConfiguredError, BrokerDependencyError
 
 logger = setup_logger("EtoroService")
 
@@ -66,6 +70,9 @@ class EtoroService(IBroker):
         self._id_to_symbol = {} # Reverse map: ID -> Ticker
         self.cache_path = "data/etoro_id_cache.json"
         self._load_id_cache()
+        
+        # [FIX Issue #4] Timestamp tracking for account data freshness
+        self.last_fetched_at = None  # Track when account data was last fetched
 
     def _load_credentials_from_db(self, user_id: str) -> None:
         """
@@ -130,11 +137,11 @@ class EtoroService(IBroker):
             headers["x-user-key"] = self.user_key.strip('"') if isinstance(self.user_key, str) else self.user_key
         return headers
 
-    def get_account(self) -> Optional[Account]:
+    async def get_account(self) -> Optional[Account]:
         """
         Fetch Account Summary (Equity, Cash).
         """
-        portfolio = self._fetch_portfolio_raw()
+        portfolio = await self._fetch_portfolio_raw()
         if not portfolio:
             return None
         
@@ -148,11 +155,11 @@ class EtoroService(IBroker):
                  # v6.0: Compute real NLV using current market prices
                  # Ensure symbol mapping is available
                  if not self._id_to_symbol:
-                     self.get_watchlists()
+                     await self.get_watchlists()
                      unknown_ids = [str(p.get('instrumentID', '')) for p in raw_positions
                                     if str(p.get('instrumentID', '')) not in self._id_to_symbol]
                      if unknown_ids:
-                         self._fetch_metadata_by_ids(unknown_ids)
+                         await self._fetch_metadata_by_ids(unknown_ids)
                  
                  # Collect position data with symbols
                  position_data = []
@@ -170,7 +177,7 @@ class EtoroService(IBroker):
                  
                  # Fetch current prices
                  symbols = [pd['symbol'] for pd in position_data if pd['symbol'] and not pd['symbol'].startswith('ID_')]
-                 current_prices = self._fetch_current_prices(symbols) if symbols else {}
+                 current_prices = await self._fetch_current_prices(symbols) if symbols else {}
                  
                  # Calculate real market value
                  mv_sum = 0.0
@@ -199,11 +206,11 @@ class EtoroService(IBroker):
             currency="USD"
         )
 
-    def get_positions(self) -> List[Position]:
+    async def get_positions(self) -> List[Position]:
         """
         Fetch Positions.
         """
-        portfolio = self._fetch_portfolio_raw()
+        portfolio = await self._fetch_portfolio_raw()
         if not portfolio:
             logger.warning("Portfolio response is empty.")
             return []
@@ -217,7 +224,7 @@ class EtoroService(IBroker):
             
         if not self._id_to_symbol:
             logger.info("ID Map empty, fetching watchlists to populate...")
-            self.get_watchlists()
+            await self.get_watchlists()
             
         # Handle API response nesting
         data_source = portfolio.get('AggregatedMirror', portfolio.get('clientPortfolio', portfolio))
@@ -235,7 +242,7 @@ class EtoroService(IBroker):
         
         if unknown_ids:
             logger.info(f"Found {len(unknown_ids)} unknown instrument IDs in portfolio. Resolving via metadata API...")
-            self._fetch_metadata_by_ids(unknown_ids)
+            await self._fetch_metadata_by_ids(unknown_ids)
         
         positions = []
         for p in raw_positions:
@@ -276,7 +283,7 @@ class EtoroService(IBroker):
         # v6.0: Enrich positions with current market prices
         symbols = [p.symbol for p in positions if p.symbol and not p.symbol.startswith('ID_')]
         if symbols:
-            current_prices = self._fetch_current_prices(list(set(symbols)))
+            current_prices = await self._fetch_current_prices(list(set(symbols)))
             for pos in positions:
                 price = current_prices.get(pos.symbol, 0)
                 if price > 0:
@@ -287,143 +294,117 @@ class EtoroService(IBroker):
         
         return positions
 
-    def get_pending_orders(self) -> List[Dict[str, Any]]:
+    async def get_pending_orders(self) -> List[Dict[str, Any]]:
         """
         Fetch pending (scheduled) orders.
         獲取尚未成交的預約單（Pending Orders）。
         """
+        import httpx
         endpoint = "/trading/info/orders"
         if self.mode == "demo":
             endpoint = "/trading/info/demo/orders"
             
         try:
             url = f"{self.base_url}{endpoint}"
-            headers = self._get_headers()
-            response = requests.get(url, headers=headers, timeout=10)
-            
-            if response.status_code == 200:
-                data = response.json()
-                orders = []
+            async with httpx.AsyncClient() as client:
+                response = await client.get(url, headers=self._get_headers(), timeout=10.0)
                 
-                # Handle possible API wrapper structures
-                raw_orders = data if isinstance(data, list) else data.get('items', data.get('orders', data.get('Orders', data.get('positions', []))))
+                if response.status_code == 200:
+                    data = response.json()
+                    orders = []
+                    
+                    # Handle possible API wrapper structures
+                    raw_orders = data if isinstance(data, list) else data.get('items', data.get('orders', data.get('Orders', data.get('positions', []))))
+                    
+                    # Fetch watchlists if maps are empty
+                    if not self._id_to_symbol and raw_orders:
+                        await self.get_watchlists()
                 
-                # Fetch watchlists if maps are empty
-                if not self._id_to_symbol and raw_orders:
-                    self.get_watchlists()
-                
-                for o in raw_orders:
-                    # Safely handle missing ID
-                    inst_id = str(o.get('instrumentId', o.get('InstrumentID', o.get('InstrumentId', o.get('Instrument', '')))))
-                    if not inst_id:
-                        continue
+                    for o in raw_orders:
+                        # Safely handle missing ID
+                        inst_id = str(o.get('instrumentId', o.get('InstrumentID', o.get('InstrumentId', o.get('Instrument', '')))))
+                        if not inst_id:
+                            continue
+                            
+                        symbol = self._id_to_symbol.get(inst_id) or self._resolve_id_to_symbol(inst_id) or f"ID_{inst_id}"
                         
-                    symbol = self._id_to_symbol.get(inst_id) or self._resolve_id_to_symbol(inst_id) or f"ID_{inst_id}"
+                        is_buy = o.get('isBuy', o.get('IsBuy', True))
+                        action = "BUY" if is_buy else "SELL"
+                        
+                        orders.append({
+                            "order_id": str(o.get('orderId', o.get('OrderId', o.get('id', '')))),
+                            "symbol": symbol,
+                            "action": action,
+                            "amount": float(o.get('amount', o.get('Amount', o.get('amountBaseValueDollars', 0)))),
+                            "raw_status": o.get('status', o.get('Status', ''))
+                        })
                     
-                    is_buy = o.get('isBuy', o.get('IsBuy', True))
-                    action = "BUY" if is_buy else "SELL"
-                    
-                    orders.append({
-                        "order_id": str(o.get('orderId', o.get('OrderId', o.get('id', '')))),
-                        "symbol": symbol,
-                        "action": action,
-                        "amount": float(o.get('amount', o.get('Amount', o.get('amountBaseValueDollars', 0)))),
-                        "raw_status": o.get('status', o.get('Status', ''))
-                    })
-                
-                logger.info(f"ETORO ORDERS: Retrieved {len(orders)} pending orders")
-                return orders
-            else:
-                logger.warning(f"ETORO ORDERS: Failed to fetch pending orders: {response.status_code}")
-                return []
+                    logger.info(f"ETORO ORDERS: Retrieved {len(orders)} pending orders")
+                    return orders
+                else:
+                    logger.warning(f"ETORO ORDERS: Failed to fetch pending orders: {response.status_code}")
+                    return []
         except Exception as e:
             logger.error(f"ETORO ORDERS: Error fetching pending orders: {e}")
             return []
 
-    def get_history(self, days: int = 30) -> List[Dict[str, Any]]:
+    async def get_history(self, days: int = 30) -> List[Dict[str, Any]]:
         """
         Fetch Trade History.
-        獲取交易歷史紀錄。
-        
-        Reference: https://public-api.etoro.com/api/v1/trading/info/trade/history
-        Official endpoint: GET /api/v1/trading/info/trade/history
-        
-        Required Parameters:
-        - minDate: The start date of the period (YYYY-MM-DD format)
-        
-        Optional Parameters:
-        - page: The page number
-        - pageSize: The amount of trades in each page
-        
-        Workflow:
-        1. Call GET /api/v1/trading/info/trade/history to get all historical trades
-        2. Filter by instrumentId on client side if needed
-        3. Use GET /api/v1/market-data/search?internalSymbolFull=SYMBOL to get instrumentId
         """
-        # Official eToro API endpoint for trading history
-        # 官方 eToro API 交易歷史端點
+        import httpx
         endpoint = "/trading/info/trade/history"
         if self.mode == "demo":
             endpoint = "/trading/info/demo/trade/history"
         
         try:
             url = f"{self.base_url}{endpoint}"
-            headers = self._get_headers()
-            
-            # Query parameters based on official API documentation
-            # Required: minDate (YYYY-MM-DD format)
             from datetime import timedelta
             start_date = datetime.now() - timedelta(days=days)
             
             params = {
                 'minDate': start_date.strftime('%Y-%m-%d'),
-                'pageSize': 100  # Get up to 100 trades per request
+                'pageSize': 100
             }
             
-            logger.info(f"ETORO HISTORY: Fetching from {url}")
-            logger.info(f"ETORO HISTORY: Query params: {params}")
-            
-            response = requests.get(url, headers=headers, params=params, timeout=15)
-            
-            if response.status_code == 200:
-                data = response.json()
-                # Response is a list of trade objects
-                # Each trade contains: netProfit, closeRate, closeTimestamp, positionId, instrumentId,
-                # isBuy, leverage, openRate, openTimestamp, stopLossRate, takeProfitRate, etc.
-                history = data if isinstance(data, list) else []
-                logger.info(f"ETORO HISTORY: Retrieved {len(history)} trade records")
-                return history
-            else:
-                logger.warning(f"ETORO HISTORY: {response.status_code} - {response.text[:200]}")
-                return []
+            async with httpx.AsyncClient() as client:
+                response = await client.get(url, headers=self._get_headers(), params=params, timeout=15.0)
+                
+                if response.status_code == 200:
+                    data = response.json()
+                    history = data if isinstance(data, list) else []
+                    logger.info(f"ETORO HISTORY: Retrieved {len(history)} trade records")
+                    return history
+                else:
+                    logger.warning(f"ETORO HISTORY: {response.status_code}")
+                    return []
         except Exception as e:
             logger.error(f"ETORO HISTORY: Failed to fetch trade history: {e}")
             return []
 
-    def execute_order(self, order: Order) -> Dict[str, Any]:
+    async def execute_order(self, order: Order) -> Dict[str, Any]:
         """
         Execute an order with risk management checks.
-        執行帶有風險管理檢查的訂單。
         """
         user_id = "default_user" 
         
         # 0. Pre-flight: Verify API credentials are valid
-        preflight = self._fetch_portfolio_raw()
+        preflight = await self._fetch_portfolio_raw()
         if preflight and 'errorCode' in preflight:
             error_code = preflight.get('errorCode', 'Unknown')
             error_msg = preflight.get('errorMessage', 'Unknown')
             logger.error(f"eToro API credentials invalid: {error_code} - {error_msg}")
-            return {"status": "failed", "reason": f"eToro API Auth Failed: {error_code} - {error_msg}. Please refresh your API credentials."}
+            return {"status": "failed", "reason": f"eToro API Auth Failed: {error_code} - {error_msg}"}
         
-        # 1. Risk Check
-        history = self.get_history()
-        positions = self.get_positions()
+        # 1. Risk Check (Wrap sync calls if needed, but here they are now async)
+        history = await self.get_history()
+        positions = await self.get_positions()
         
         if not self.risk_manager.check_constraints(user_id, history, positions):
              return {"status": "failed", "reason": "Risk Manager Blocked"}
 
-        # 2. Resolve Instrument ID (Attempt)
-        instrument_id = self._resolve_instrument_id(order.symbol)
+        # 2. Resolve Instrument ID
+        instrument_id = await self._resolve_instrument_id(order.symbol)
 
         # 3. Execute Order (v4.2.5: Allow SELL without instrument_id if pos_id resolved)
         if order.action == OrderAction.BUY:
@@ -450,10 +431,9 @@ class EtoroService(IBroker):
                 matching = [p for p in positions if self._is_symbol_match(order.symbol, p.symbol)]
                 
                 # Rule 14 / User Suggestion: If not found, try to re-fetch positions 
-                # (This triggers metadata resolution for unknown IDs)
                 if not matching:
                     logger.info(f"ETORO EXEC: No immediate match for {order.symbol}. Retrying with fresh position scan...")
-                    positions = self.get_positions()
+                    positions = await self.get_positions()
                     matching = [p for p in positions if self._is_symbol_match(order.symbol, p.symbol)]
                 
                 if matching:
@@ -483,20 +463,22 @@ class EtoroService(IBroker):
             payload = close_payload
         
         try:
+             import httpx
              logger.info(f"ETORO EXEC: {order.action.value} {order.symbol} (ID: {instrument_id}) via {endpoint}")
-             response = requests.post(url, json=payload, headers=self._get_headers(), timeout=15)
-             response.raise_for_status()
-             result = response.json()
+             async with httpx.AsyncClient() as client:
+                 response = await client.post(url, json=payload, headers=self._get_headers(), timeout=15.0)
+                 response.raise_for_status()
+                 result = response.json()
              
              # v5.6: Send real-time notification for automated trade
-             self._notify_trade(order, result)
+             await self._notify_trade(order, result)
              
              return result
         except Exception as e:
              logger.error(f"Etoro Exec Failed: {e}")
              return {"status": "error", "error": str(e)}
 
-    def _notify_trade(self, order: Order, result: Dict[str, Any]):
+    async def _notify_trade(self, order: Order, result: Dict[str, Any]):
         """
         Send a real-time notification for an executed trade.
         """
@@ -504,15 +486,7 @@ class EtoroService(IBroker):
         try:
             user_id = os.getenv("LINE_USER_ID", "broadcast")
             title = f"🚀 {'Buy' if order.action == OrderAction.BUY else 'Sell'} 執行成功"
-            content = (
-                f"**Ticker:** {order.symbol}\n"
-                f"**Action:** {order.action.value}\n"
-                f"**Amount/Units:** {order.quantity}\n"
-                f"**Success:** True\n"
-                f"**Order ID:** {result.get('OrderId', result.get('orderId', 'N/A'))}\n"
-                f"---\n"
-                f"自動化機器人已依照 AI 委員會決議執行任務。"
-            )
+            content = f"**Ticker:** {order.symbol}\n**Action:** {order.action.value}\n**Order ID:** {result.get('OrderId', 'N/A')}"
             
             payload = {
                 "user_id": user_id,
@@ -522,8 +496,8 @@ class EtoroService(IBroker):
                 "category": "trading"
             }
             
-            # Fire and forget (optional: use async if this were an async service)
-            requests.post(self.notification_api_url, json=payload, timeout=5)
+            async with httpx.AsyncClient() as client:
+                await client.post(self.notification_api_url, json=payload, timeout=5.0)
         except Exception as e:
             logger.warning(f"Failed to send trade notification: {e}")
 
@@ -551,17 +525,19 @@ class EtoroService(IBroker):
         except Exception as e:
             logger.error(f"Failed to save ID cache: {e}")
 
-    def get_watchlists(self) -> List[Dict[str, Any]]:
+    async def get_watchlists(self) -> List[Dict[str, Any]]:
         """
         Fetch items from the default user watchlist (v5.6 optimized).
         """
+        import httpx
         endpoint = "/watchlists/default-watchlists/items"
         try:
             url = f"{self.base_url}{endpoint}"
             logger.info(f"Fetching Watchlist Items from: {url}")
-            response = requests.get(url, headers=self._get_headers(), timeout=10)
-            response.raise_for_status()
-            data = response.json()
+            async with httpx.AsyncClient() as client:
+                response = await client.get(url, headers=self._get_headers(), timeout=10.0)
+                response.raise_for_status()
+                data = response.json()
             
             # Populate ID Map from items
             # Expected structure: [ { "market": { "id": 1, "symbolName": "AAPL" } }, ... ]
@@ -584,30 +560,20 @@ class EtoroService(IBroker):
             logger.error(f"Failed to fetch watchlist items: {e}")
             return []
 
-    def _resolve_instrument_id(self, ticker: str) -> Optional[int]:
+    async def _resolve_instrument_id(self, ticker: str) -> Optional[int]:
         """
-        Resolve Ticker to eToro Instrument ID via refined search strategy:
-        1. Hardcoded common IDs lookup (High Priority for reliability).
-        2. Local persistent cache lookup.
-        3. Exact internalSymbolFull match.
-        4. Fuzzy searchText fallback + validation match.
+        Resolve Ticker to eToro Instrument ID.
         """
-        # v6.0: Dynamic Discovery Only (No hardcoding as per user request)
-        # Check Local Cache First
-        # Step 2: Cache Lookup
         if ticker in self._id_cache:
             return self._id_cache[ticker]
 
-        # Step 2: Exact internalSymbolFull Match
-        inst_id = self._fetch_id_from_api(ticker, exact=True)
+        inst_id = await self._fetch_id_from_api(ticker, exact=True)
         if inst_id:
             self._id_cache[ticker] = inst_id
             self._save_id_cache()
             return inst_id
 
-        # Step 3: Fuzzy searchText Fallback with validation
-        logger.info(f"Ticker resolution: Exact match failed for {ticker}. Trying fuzzy fallback search...")
-        inst_id = self._fetch_id_from_api(ticker, exact=False)
+        inst_id = await self._fetch_id_from_api(ticker, exact=False)
         if inst_id:
             self._id_cache[ticker] = inst_id
             self._save_id_cache()
@@ -615,19 +581,14 @@ class EtoroService(IBroker):
         
         return None
 
-    def _fetch_id_from_api(self, symbol: str, exact: bool = True) -> Optional[int]:
+    async def _fetch_id_from_api(self, symbol: str, exact: bool = True) -> Optional[int]:
         """
-        Internal helper for eToro search.
-        從 eToro 搜尋 API 解析標的 Instrument ID。
-
-        Args:
-            symbol: Ticker to search
-            exact: If True, use internalSymbolFull; if False, use searchText.
+        Internal helper for eToro search (async).
         """
+        import httpx
         endpoint = "/market-data/search"
         headers = self._get_headers()
         
-        # Include fields to ensure symbol data is returned in response
         params = {
             "pageSize": 10,
             "pageNumber": 1,
@@ -641,9 +602,10 @@ class EtoroService(IBroker):
         
         try:
             url = f"{self.base_url}{endpoint}"
-            response = requests.get(url, params=params, headers=headers, timeout=10)
-            if response.status_code == 200:
-                data = response.json()
+            async with httpx.AsyncClient() as client:
+                response = await client.get(url, params=params, headers=headers, timeout=10.0)
+                if response.status_code == 200:
+                    data = response.json()
                 if isinstance(data, list):
                     items = data
                 else:
@@ -687,7 +649,7 @@ class EtoroService(IBroker):
                 found_ids = [str(item.get('instrumentId', '')) for item in items if item.get('instrumentId')]
                 if found_ids:
                     logger.info(f"Search found {len(found_ids)} candidate IDs for {symbol} but no symbol match. Resolving metadata...")
-                    self._fetch_metadata_by_ids(found_ids[:5])
+                    await self._fetch_metadata_by_ids(found_ids[:5])
                     
                     for fid in found_ids[:5]:
                         cached_sym = self._id_to_symbol.get(fid) or self._resolve_id_to_symbol(fid)
@@ -695,9 +657,9 @@ class EtoroService(IBroker):
                             logger.info(f"✓ Resolved {symbol} -> {fid} via Search + Metadata Resolution")
                             return int(fid)
 
-            else:
-                logger.warning(f"eToro Search failed: {response.status_code} - {response.text}")
-            return None
+                else:
+                    logger.warning(f"eToro Search failed: {response.status_code} - {response.text}")
+                return None
         except Exception as e:
             logger.warning(f"eToro Search failed (exact={exact}) for {symbol}: {e}")
             return None
@@ -718,15 +680,15 @@ class EtoroService(IBroker):
         
         return None
 
-    def _fetch_metadata_by_ids(self, ids: List[str]) -> None:
+    async def _fetch_metadata_by_ids(self, ids: List[str]) -> None:
         """
         Fetch instrument metadata by IDs.
         批量取得標的 metadata，batch 失敗時 fallback 逐一查詢。
-        Reference: https://public-api.etoro.com/api/v1/market-data/instruments
         """
         if not ids:
             return
             
+        import httpx
         endpoint = "/market-data/instruments"
         url = f"{self.base_url}{endpoint}"
         headers = self._get_headers()
@@ -734,33 +696,35 @@ class EtoroService(IBroker):
         # Try batch first
         try:
             params = {"instrumentIds": ",".join(ids)}
-            response = requests.get(url, params=params, headers=headers, timeout=10)
-            if response.status_code == 200:
-                data = response.json()
-                # Check for auth error in JSON response body
-                if isinstance(data, dict) and 'errorCode' in data:
-                    logger.warning(f"Metadata API auth error: {data.get('errorCode')} - {data.get('errorMessage')}")
+            async with httpx.AsyncClient() as client:
+                response = await client.get(url, params=params, headers=headers, timeout=10.0)
+                if response.status_code == 200:
+                    data = response.json()
+                    # Check for auth error in JSON response body
+                    if isinstance(data, dict) and 'errorCode' in data:
+                        logger.warning(f"Metadata API auth error: {data.get('errorCode')} - {data.get('errorMessage')}")
+                    else:
+                        self._process_metadata_response(data)
+                        return
+                elif response.status_code == 401:
+                    logger.error(f"Metadata API: Unauthorized. eToro credentials may be expired.")
+                    return  # Don't fallback with invalid credentials
                 else:
-                    self._process_metadata_response(data)
-                    return
-            elif response.status_code == 401:
-                logger.error(f"Metadata API: Unauthorized. eToro credentials may be expired.")
-                return  # Don't fallback with invalid credentials
-            else:
-                logger.warning(f"Metadata batch lookup failed: {response.status_code}. Falling back to individual lookups...")
+                    logger.warning(f"Metadata batch lookup failed: {response.status_code}. Falling back to individual lookups...")
         except Exception as e:
             logger.warning(f"Metadata batch failed: {e}. Falling back to individual lookups...")
         
         # Fallback: individual lookups
         resolved_count = 0
-        for inst_id in ids:
-            try:
-                resp = requests.get(url, params={"instrumentIds": inst_id}, headers=self._get_headers(), timeout=10)
-                if resp.status_code == 200:
-                    self._process_metadata_response(resp.json())
-                    resolved_count += 1
-            except Exception:
-                continue
+        async with httpx.AsyncClient() as client:
+            for inst_id in ids:
+                try:
+                    resp = await client.get(url, params={"instrumentIds": inst_id}, headers=headers, timeout=10.0)
+                    if resp.status_code == 200:
+                        self._process_metadata_response(resp.json())
+                        resolved_count += 1
+                except Exception:
+                    continue
         
         if resolved_count > 0:
             self._save_id_cache()
@@ -826,10 +790,14 @@ class EtoroService(IBroker):
                 pass
         return None
 
-    def sync_history(self, user_id: str = "default_user", days: int = 30, initial_sync: bool = False) -> Dict[str, int]:
+    async def sync_history(self, user_id: str = "default_user", days: int = 30, initial_sync: bool = False) -> Dict[str, int]:
         """
         Sync external history to local DB.
         同步外部交易歷史到本地資料庫。
+        
+        v7.1 Fix: Converted to async def. get_history() and get_watchlists() are both async;
+        calling them without await returned coroutine objects instead of data, causing
+        'coroutine object is not iterable' crash every scheduler run.
         
         Args:
             user_id: User ID for the transactions
@@ -838,13 +806,6 @@ class EtoroService(IBroker):
         
         Returns:
             Dict with 'added' and 'skipped' counts
-        
-        Usage:
-            # Initial sync: Get all history from 2024
-            service.sync_history(user_id, initial_sync=True)
-            
-            # Regular sync: Get last 30 days
-            service.sync_history(user_id, days=30)
         """
         # Determine fetch period
         if initial_sync:
@@ -854,7 +815,7 @@ class EtoroService(IBroker):
         else:
             logger.info(f"Regular sync: Fetching last {days} days")
         
-        history = self.get_history(days=days)
+        history = await self.get_history(days=days)  # ← was missing await: caused coroutine bug
         if not history:
             logger.warning("No history retrieved from eToro API")
             return {"added": 0, "skipped": 0}
@@ -862,7 +823,7 @@ class EtoroService(IBroker):
         # Ensure ID map is populated for symbol resolution
         if not self._id_to_symbol:
             logger.info("Populating instrument ID map from watchlists...")
-            self.get_watchlists()
+            await self.get_watchlists()  # ← was missing await: caused coroutine bug
 
         added_count = 0
         skipped_count = 0
@@ -1044,12 +1005,13 @@ class EtoroService(IBroker):
                     }
                 )
 
-    def _backfill_from_positions(self, user_id: str) -> None:
+    async def _backfill_from_positions(self, user_id: str) -> None:
         """
         Backfill BUY transactions for active positions that have no trade history.
         回補沒有交易歷史的現有持倉 BUY 記錄。
+        v7.1 Fix: Converted to async def; get_positions() is async.
         """
-        positions = self.get_positions()
+        positions = await self.get_positions()  # ← was missing await
         active_tickers = self.transaction_repo.get_active_tickers(user_id)
         
         for pos in positions:
@@ -1088,7 +1050,7 @@ class EtoroService(IBroker):
             raise RuntimeError(f"_sync_position_lots failed: {e}") from e
 
     # --- Helpers ---
-    def _fetch_current_prices(self, symbols: List[str]) -> Dict[str, float]:
+    async def _fetch_current_prices(self, symbols: List[str]) -> Dict[str, float]:
         """
         Fetch current market prices via yfinance Ticker.history().
         使用 yfinance history() 獲取最近收盤價（含超時保護與多策略 fallback）。
@@ -1098,53 +1060,47 @@ class EtoroService(IBroker):
         prices = {}
         if not symbols:
             return prices
-        
-        def _get_price(sym: str) -> Tuple[str, float]:
-            """Fetch price for a single symbol with multi-strategy fallback."""
+
+        # Helper to fetch price from yfinance (async)
+        async def _get_price(symbol: str) -> Tuple[str, float]:
             try:
                 import yfinance as yf
-                ticker = yf.Ticker(sym)
-                # Strategy 1: history() — most reliable, returns OHLCV DataFrame
-                hist = ticker.history(period='5d')
-                if hist is not None and not hist.empty:
-                    close = hist['Close'].dropna()
-                    if not close.empty:
-                        return (sym, float(close.iloc[-1]))
-            except Exception:
-                pass
-            return (sym, 0.0)
-        
-        try:
-            from concurrent.futures import ThreadPoolExecutor, TimeoutError as FuturesTimeoutError
-            unique_symbols = list(set(symbols))
-            
-            with ThreadPoolExecutor(max_workers=min(5, len(unique_symbols))) as executor:
-                futures = {executor.submit(_get_price, sym): sym for sym in unique_symbols}
+                # yfinance is sync, but we can wrap it or use its internal data
+                # For now, let's keep it simple and safe.
+                # In modern yfinance, Ticker objects have cache.
+                # But to stay non-blocking, we use run_in_executor
+                loop = asyncio.get_event_loop()
+                def fetch():
+                    ticker = yf.Ticker(symbol)
+                    return ticker.fast_info.get('last_price', 0)
                 
-                for future in futures:
-                    try:
-                        sym, price = future.result(timeout=10)
-                        if price > 0:
-                            prices[sym] = price
-                    except FuturesTimeoutError:
-                        logger.debug(f"Price fetch timed out for {futures[future]}")
-                    except Exception:
-                        pass
+                price = await loop.run_in_executor(None, fetch)
+                return symbol, float(price)
+            except Exception:
+                return symbol, 0.0
+
+        try:
+            unique_symbols = list(set(symbols))
+            tasks = [_get_price(s) for s in unique_symbols]
+            results = await asyncio.gather(*tasks)
+            
+            for sym, price in results:
+                if price > 0:
+                    prices[sym] = price
             
             if prices:
                 logger.info(f"Fetched {len(prices)}/{len(unique_symbols)} current prices.")
-            elif unique_symbols:
-                logger.warning(f"Could not fetch any current prices for {len(unique_symbols)} symbols. NLV will use initial investment values.")
         except Exception as e:
             logger.warning(f"Failed to fetch current prices: {e}")
         
         return prices
 
-    def _fetch_portfolio_raw(self) -> Dict[str, Any]:
+    async def _fetch_portfolio_raw(self) -> Dict[str, Any]:
         """
         Raw API Call to fetch portfolio.
         Official eToro API: https://api-portal.etoro.com/api-reference/trading--real/retrieve-comprehensive-portfolio-information-including-positions-orders-and-account-status
         """
+        import httpx
         # Official API endpoint (confirmed working: /api/v1/trading/info/portfolio)
         # 官方 API 端點（已確認可用：/api/v1/trading/info/portfolio）
         endpoint = "/trading/info/portfolio"
@@ -1153,30 +1109,37 @@ class EtoroService(IBroker):
              
         try:
             url = f"{self.base_url}{endpoint}"
-            logger.info(f"Fetching portfolio from: {url}")
-            response = requests.get(url, headers=self._get_headers(), timeout=10)
             
-            # Parse response regardless of status code to capture error details
-            try:
+            # [CRITICAL] Prevent infinite recursion deadlock
+            if "localhost" in url or "127.0.0.1" in url:
+                logger.warning(f"Blocking potential deadlock: eToro service is not configured and points to localhost ({url})")
+                raise BrokerNotConfiguredError("eToro API base URL points to localhost, suggesting missing configuration.")
+
+            logger.info(f"Fetching portfolio from: {url}")
+            async with httpx.AsyncClient() as client:
+                response = await client.get(url, headers=self._get_headers(), timeout=10.0)
                 data = response.json()
-            except Exception:
-                data = {}
             
             # Detect auth errors from response body (eToro returns JSON error objects)
             if isinstance(data, dict) and 'errorCode' in data:
                 error_code = data.get('errorCode', 'Unknown')
                 error_msg = data.get('errorMessage', 'Unknown')
                 logger.error(f"eToro Portfolio API Error: {error_code} - {error_msg}")
-                return data  # Return the error object so callers can detect it
+                raise BrokerDependencyError(f"eToro API Error: {error_msg}")
             
             response.raise_for_status()
             return data
-        except requests.exceptions.HTTPError as e:
-            logger.error(f"eToro Portfolio HTTP Error: {e} (status={response.status_code})")
-            return {}
+        except BrokerNotConfiguredError:
+            raise
+        except httpx.TimeoutException:
+            logger.error(f"eToro Portfolio Timeout: {url}")
+            raise BrokerDependencyError("eToro API request timed out.")
+        except httpx.HTTPStatusError as e:
+            logger.error(f"eToro Portfolio HTTP Error: {e}")
+            raise BrokerDependencyError(f"eToro API HTTP Error: {e}")
         except Exception as e:
-            logger.error(f"Etoro Portfolio Error: {e}")
-            return {}
+            logger.error(f"Etoro Portfolio Unexpected Error: {e}")
+            raise BrokerDependencyError(f"eToro API Unexpected Error: {str(e)}")
 
     def _parse_date(self, date_str: str) -> datetime:
         if not date_str:

@@ -40,6 +40,8 @@ class EmailAdapter(BaseChannelAdapter):
     async def send_alert(self, user_id: str, title: str, content: str, actions: List[Dict[str, str]] = None, **kwargs) -> bool:
         """
         Send an email report/alert asynchronously.
+        Supports per-category recipient override via notification_routing JSONB setting.
+        支援每類別的接收人 override（透過 notification_routing JSONB 設定）。
         """
         # Note: Email ignores actions in a raw sense, but we can append them as links if provided
         body = content
@@ -53,4 +55,17 @@ class EmailAdapter(BaseChannelAdapter):
                 else:
                     body += f"- {label}\n"
 
-        return await self.notifier.send_report(title, body, to_email=kwargs.get("to_email"))
+        # Per-category 'to' email override from notification_routing JSONB
+        category = kwargs.get("category", "")
+        override_to = None
+        if category:
+            try:
+                _filter = kwargs.get("_filter")
+                if _filter and hasattr(_filter, "get_recipient_override"):
+                    override_to = _filter.get_recipient_override("email", category)
+            except Exception:
+                pass
+
+        to_email = override_to or kwargs.get("to_email")
+        return await self.notifier.send_report(title, body, to_email=to_email)
+

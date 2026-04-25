@@ -19,16 +19,27 @@
 - **行寬**: Soft limit 100, Hard limit 120。
 - **雙語註解 (Bilingual Comments & Docs)**: 遵循多人協作與開源標準 (Best Practice for Collaborative Development)，所有註解、函數說明 (Docstrings) 必須包含 **英文 (上)** 與 **繁體中文 (下)**。英文作為國際共通語境，中文輔助快速理解業務邏輯。
 
-### 1.2 混合儲存策略 (Hybrid Strategy - Rule #9)
+### 2.2 混合儲存策略 (Hybrid Strategy - Rule #9)
 
-[詳細配置範例與優缺點比較，請參閱《混合儲存架構指南》](../../wiki/05_工程手冊-Engineering_Handbook/01_設計模式-Patterns/混合儲存架構-Hybrid-Storage-Architecture.md)
+### 1.4 LLM 配置誠信 (LLM Configuration Integrity)
+- **禁止硬編碼**：嚴禁在代碼、Prompt 或 Skill 指令中寫死任何特定的模型名稱（如 `gemini-2.0-pro`）或 `BASE_URL`。
+- **動態解析**：所有 LLM 調用必須通過 `ResilientLLMPipeline` 或 `LLMGateway`，並由 `TierSpec`（DB 綁定）動態解析模型。
+- **Fallback 邏輯**：系統應優先從 `llm_tier_bindings` (DB) 選取，若無則降級至 `settings` table (Legacy)；若皆無則必須拋出明確錯誤，而非嘗試猜測預設模型。
+
+[詳細配置範例與優缺點比較，請參閱《混合儲存架構指南》](混合儲存架構-Hybrid-Storage-Architecture)
 
 - **ORM Admin Layer**: 針對 `User`, `Settings`, `Logs` 等管理類實體，強制使用 **SQLAlchemy ORM** 以提升開發效率。
 - **Raw SQL Performance Layer**: 針對 `Transactions`, `MarketData`, `pgvector` 等大數據或高效能場景，強制使用 **Raw SQL (SQLAlchemy Core)** 以利精確優化。
 
-### 1.3 Agent 初始化設計 (Kwargs Handling)
+### 2.3 Agent 初始化設計 (Kwargs Handling)
 
 - **避免參數重疊 (Avoid Keyword Collisions)**: 在 Agent Swarm 的繼承體系中，若要擷取參數傳遞給明確定義的 `super().__init__` 欄位，強制使用 `kwargs.pop("key", default)` 而非 `.get()`，以防 `**kwargs` 展開時引發 Python 關鍵字多重賦值錯誤 (`multiple values for keyword argument`)。
+
+### 2.4 上下文傳遞與 Agent 委派原則 (Context Propagation & Delegation)
+
+- **避免隱式丟失上下文 (Avoid Silent Context Drops)**: 當不同組件間傳遞 Prompt 變數（如 `msg_prefix`, `directive`）時，必須確保從進入點 (Entry Service) 確實傳遞至最終的系統提示渲染字典 (`final_context` -> `Jinja2 Template`) 中。進行多層呼叫時，需建立測試或明確走查機制，防止指令被中途丟棄。
+- **智能邏輯下放 (Push-down Intelligence)**: 當系統需要對事件進行複雜判斷或分類時，如果體系中已有專職此務的分類 Agent (如 `SentinelAgent`)，**嚴禁**在 Service 層中倒退使用脆弱的字串比對 (`string matching`) 或寫死規則 (Hard-coded heuristics)。必須修改 Agent 的 Prompt，強制其以標準化 JSON (如 `{"trigger_type": "news"}`) 輸出邏輯分支結果交給 Service 判斷。
+- **後續行動技能化 (Skillification of Post-Actions)**: 針對跨模組通用的後續行動（例如背景深度研究、萃取重點寫入記憶庫），嚴禁並寫在發起端方法內當成 Private Methods。必須將其封裝為獨立的 **Skills** (位於 `agents/skills/` 下的 `skill.yaml` 與 `impl.py`)，並透過 `SkillLoader` 統一調度，落實 DRY (Don't Repeat Yourself) 原則。
 
 ---
 
@@ -102,6 +113,12 @@
   - **原則**: 嚴禁在 Streamlit 異步渲染週期內直接進行 OAuth 回調處理或設置 Cookie (極度不穩定)。
   - **流程**: Streamlit (`<a>` tag) → `FastAPI /api/auth/login` → Google OAuth → `FastAPI /api/auth/callback` → `HTTP 302 Redirect` → Streamlit。
   - **前端驗證**: 使用 `st.context.cookies.get(cookie_name)` 同步讀取，透過 `auth_guard` 進行頁面阻斷。Cookie 屬性需設定 `samesite="lax"`。
+
+### 3.5 第三方工具與 Skill 審計 (Third-party Audit)
+
+- **強制審計**：在安裝任何第三方 AI 工具、Plugin、Skill 或 CLI 之前，必須執行 `.agent/skills/audit-plugin` 描述的資安審計流程。
+- **審計重點**：嚴禁安裝具備隱藏遙測 (Telemetry)、未授權 Outbound 呼叫、硬編碼外部金鑰或試圖寫入系統敏感目錄的工具。
+- **記錄留存**：審計結果必須記錄於當次開發對話或對應之 `implementation_plan.md` 中備查。
 
 ---
 
