@@ -57,10 +57,9 @@ async def test_sentinel_escalate_no_to_thread_error():
     
     service = SentinelService(user_id="test_user")
     
-    with patch('src.agents.factory.AgentFactory.create_sentinel_agent', return_value=mock_sentinel_agent):
+    with patch.object(service, '_call_agent_llm', return_value='{"priority": "P1", "target_agent": "CIO"}'):
         triggers = [{"text": "High Volatility", "id": "vix_1"}]
-        # This calls to_thread internally
+        # This calls _call_agent_llm internally
         await service._escalate(triggers)
         
     assert triggers[0]["priority"] == 1
-    assert mock_sentinel_agent.run.called

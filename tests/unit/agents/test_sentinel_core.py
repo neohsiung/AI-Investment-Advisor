@@ -11,9 +11,11 @@ class TestEscalation:
         sentinel.user_id = "U123"
 
         async def _test():
-            with patch('src.services.notification_settings_manager.NotificationSettingsManager') as MockNSM:
+            with patch('src.services.notification_settings_manager.NotificationSettingsManager') as MockNSM, \
+                 patch('src.services.notification_service.NotificationService') as MockNoti:
                 mock_nsm_instance = MockNSM.return_value
                 mock_nsm_instance.get_active_notification_channels.return_value = []
+                MockNoti.create_with_settings.return_value = MagicMock(notify_all=AsyncMock())
                 
                 await sentinel._escalate([{"text": "Test trigger 1", "id": "t1"}, {"text": "Test trigger 2", "id": "t2"}])
                 await sentinel._flush_buffer(force=True)

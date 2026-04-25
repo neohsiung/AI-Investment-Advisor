@@ -43,13 +43,17 @@ async def test_escalate_deduplication():
         
         triggers = [{"text": "Test Trigger 1", "id": "t1"}]
         
-        with patch('httpx.AsyncClient.post', new_callable=AsyncMock) as mock_post:
+        with patch('src.services.notification_service.NotificationService') as mock_noti_cls:
+            mock_noti_instance = MagicMock()
+            mock_noti_instance.notify_all = AsyncMock()
+            mock_noti_cls.create_with_settings.return_value = mock_noti_instance
+
             await service._escalate(triggers, source="Test")
             await service._flush_buffer(force=True, source="Test")
             
             # Since is_duplicate_alert is True, it should not notify
             assert mock_council.start_session.call_count == 0
-            assert mock_post.called == False
+            assert mock_noti_instance.notify_all.called == False
 
 @pytest.mark.anyio
 async def test_escalate_new_alert():
@@ -89,10 +93,14 @@ async def test_escalate_new_alert():
         mock_resp = MagicMock()
         mock_resp.status_code = 202
         
-        with patch('httpx.AsyncClient.post', new_callable=AsyncMock, return_value=mock_resp) as mock_post:
+        with patch('src.services.notification_service.NotificationService') as mock_noti_cls:
+            mock_noti_instance = MagicMock()
+            mock_noti_instance.notify_all = AsyncMock()
+            mock_noti_cls.create_with_settings.return_value = mock_noti_instance
+
             await service._escalate(triggers, source="Test")
             await service._flush_buffer(force=True, source="Test")
             
             # Assert: Should notify and log
             assert mock_repo.log_alert.called
-            assert mock_post.called
+            assert mock_noti_instance.notify_all.called

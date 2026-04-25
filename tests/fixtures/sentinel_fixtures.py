@@ -29,6 +29,7 @@ def mock_services():
     council.start_session = AsyncMock(return_value={"consensus": "Sell slightly"})
     settings = MagicMock()
     settings.user_id = "test_user"
+    settings.settings_repo = MagicMock()
     settings.get_setting.side_effect = lambda key, default=None, user_id=None: 0.0 if key == "target_cash_ratio" else default
     with patch('src.services.sentinel_service.AlchemySentinelRepository') as MockRepo, \
          patch('src.services.sentinel_service.AlchemySnapshotRepository') as MockSnapRepo, \
@@ -116,8 +117,7 @@ def _create_sentinel(mock_services):
 
     res._redis_buffer = mock_redis_buffer
 
-    # Mock notification classes to avoid real calls
-    res._dispatch_notifications_direct = AsyncMock()
+    # res._dispatch_notifications_direct = AsyncMock()
 
     return res
 

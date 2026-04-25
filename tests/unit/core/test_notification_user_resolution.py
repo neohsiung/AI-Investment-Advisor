@@ -36,6 +36,7 @@ async def test_do_send_alert_uses_internal_user_id():
 
         mock_settings = MagicMock(spec=SettingsService)
         mock_settings.user_id = "alice@example.com"  # Internal user ID
+        mock_settings.settings_repo = MagicMock()
 
         mock_council = MagicMock(spec=CouncilService)
         mock_council.start_session = AsyncMock(
@@ -50,8 +51,8 @@ async def test_do_send_alert_uses_internal_user_id():
 
         triggers = [{"id": "vix_spike", "text": "🔴 VIX Spike: 45.0 > 30.0"}]
 
-        with patch('src.services.sentinel_service.NotificationService') as mock_noti_cls, \
-             patch('src.services.sentinel_service.NotificationSettingsManager') as mock_nsm_cls:
+        with patch('src.services.notification_service.NotificationService') as mock_noti_cls, \
+             patch('src.services.notification_settings_manager.NotificationSettingsManager') as mock_nsm_cls:
             
             mock_noti_instance = MagicMock()
             mock_noti_instance.notify_all = AsyncMock(return_value={})

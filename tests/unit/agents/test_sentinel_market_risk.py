@@ -59,6 +59,7 @@ class TestVIXAnomaly:
             assert "vix_high_static" in triggers[0]["id"]
             
             # Now test the escalation via _escalate
+            sentinel._dispatch_notifications_direct = AsyncMock()
             await sentinel._escalate(triggers)
             await sentinel._flush_buffer(force=True) # Force flush for testing
             mock_services["council"].start_session.assert_called_once()
