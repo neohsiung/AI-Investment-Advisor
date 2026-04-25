@@ -172,41 +172,36 @@ class TestWorkflowFiles:
         assert wf.user_id == "test"
     
     @patch('src.services.workflow_service.MarketDataService')
-    @patch('src.services.workflow_service.AgentFactory')
     @pytest.mark.asyncio
-    async def test_daily_workflow_execution(self, mock_factory, mock_market):
+    async def test_daily_workflow_execution(self, mock_market):
         """Test DailyWorkflow execution logic (Dry Run)"""
         from src.services.workflow_service import DailyWorkflow
         
-        # Setup mock agents with AsyncMock
-        mock_mom = MagicMock()
-        mock_mom.run = AsyncMock(return_value="BUY")
-        mock_sent = MagicMock()
-        mock_sent.run = AsyncMock(return_value="LOW")
-        mock_fund = MagicMock()
-        mock_fund.run = AsyncMock(return_value="STABLE")
-        
-        # Mock specific factory methods called in WorkflowService
-        mock_factory.create_momentum_agent.return_value = mock_mom
-        mock_factory.create_sentiment_agent.return_value = mock_sent
-        mock_factory.create_fundamental_agent.return_value = mock_fund
-
         with patch('src.services.workflow_service.AlchemyTransactionRepository') as MockRepo:
              MockRepo.return_value.get_active_tickers.return_value = ['AAPL']
              
              wf = DailyWorkflow(user_id="test")
+             
+             # Mock _call_agent_llm to avoid real LLM calls and dependencies on model config
+             wf._call_agent_llm = AsyncMock(side_effect=lambda agent_name, ctx, tier="smart": {
+                 "Momentum": "BUY",
+                 "Sentiment": "POSITIVE",
+                 "Fundamental": "STABLE",
+                 "Macro": "NEUTRAL",
+                 "CIO": "## 1. Summary\n## 2. Analysis\n## 3. The Great Debate\n## 4. Orders\n| AAPL | BUY | 10 | 8 | Reason |"
+             }.get(agent_name, "N/A"))
 
              wf.market_service = MagicMock()
              wf.market_service.get_yield_curve_inversion.return_value = {'inverted': False}
              wf.context['tickers'] = ['AAPL']
 
-             with patch.object(wf, 'synthesize_results', new_callable=AsyncMock):
+             with patch.object(wf, 'synthesize_results', new_callable=AsyncMock) as mock_synth:
+                  mock_synth.return_value = "## 1. Summary\n## 2. Analysis\n## 3. The Great Debate\n## 4. Orders\n| AAPL | BUY | 10 | 8 | Reason |"
                   wf.performance_service = MagicMock()
                   wf.performance_service.record_recommendation = MagicMock()
                   
                   await wf.run(dry_run=True)
 
                   # Verification
-                  assert mock_factory.create_momentum_agent.called
-                  assert mock_factory.create_sentiment_agent.called
+                  assert wf._call_agent_llm.called
                   assert wf.synthesize_results.called

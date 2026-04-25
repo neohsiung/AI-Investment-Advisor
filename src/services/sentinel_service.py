@@ -1136,7 +1136,6 @@ class SentinelService:
         # [Significance Filter v3.5]
         # If decision is vague and no critical trigger, suppress P0 noise.
         is_significant = is_actionable or is_extreme or "⚠️" in decision or "danger" in decision.lower()
-        
         if not is_significant and "hold" in decision.lower():
             logger.info("Sentinel: Significance Filter suppressed notification")
             return

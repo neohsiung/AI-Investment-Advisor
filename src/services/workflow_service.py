@@ -1026,7 +1026,7 @@ class WeeklyWorkflow(BaseWorkflow):
             final_report = await self._assemble_integrated_report(
                 cio_full_output=syn_response,
                 detailed_debate_content=portfolio_details,
-                agent_for_polish=synthesis_agent
+                agent_for_polish=None
             )
             
             # D. Parse & Execute Actionable Orders (v7.0: consistent with DailyWorkflow)
