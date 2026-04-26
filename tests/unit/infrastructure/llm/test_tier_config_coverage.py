@@ -38,25 +38,27 @@ class TestTierSpec:
         result = spec.resolve_model(db_settings)
         assert result == "google/gemini-2.5-flash"
 
-    def test_resolve_model_from_env(self, monkeypatch):
+    def test_resolve_model_no_env_fallback(self, monkeypatch):
+        """DB-only mode: env vars are NOT used as fallback; returns None."""
         spec = TierSpec(name="fast", display_name="Fast", env_key="AI_MODEL_FAST")
         monkeypatch.setenv("AI_MODEL_FAST", "google/gemini-2.5-flash-env")
         result = spec.resolve_model({})
-        assert result == "google/gemini-2.5-flash-env"
+        # DB-only: env var is NOT consulted — returns None when DB has no entry
+        assert result is None
 
-    def test_resolve_model_returns_empty_when_no_source(self, monkeypatch):
+    def test_resolve_model_returns_none_when_no_source(self, monkeypatch):
         spec = TierSpec(name="fast", display_name="Fast", env_key="AI_MODEL_FAST")
         monkeypatch.delenv("AI_MODEL_FAST", raising=False)
         result = spec.resolve_model({})
-        # default_model defaults to "" when no DB or env source
-        assert result == ""
+        # DB-only: no DB entry → returns None
+        assert result is None
 
     def test_resolve_model_empty_db_settings(self, monkeypatch):
         spec = TierSpec(name="nano", display_name="Nano", env_key="AI_MODEL_NANO")
         monkeypatch.delenv("AI_MODEL_NANO", raising=False)
         result = spec.resolve_model(None)
-        # default_model defaults to "" when no DB or env source
-        assert result == ""
+        # DB-only: no DB entry → returns None
+        assert result is None
 
 
 class TestTierConfig:
@@ -71,15 +73,24 @@ class TestTierConfig:
         assert "smart" in DEFAULT_TIERS
         assert "advanced" in DEFAULT_TIERS
 
-    def test_resolve_known_tier_from_env(self, monkeypatch):
+    def test_resolve_known_tier_no_db_returns_none(self, monkeypatch):
+        """DB-only: env var is ignored; resolving with no DB settings returns None."""
         monkeypatch.setenv("AI_MODEL_FAST", "google/gemini-2.5-flash")
         result = self.config.resolve("fast")
+        # DB-only policy: no DB entry → None (env var not consulted)
+        assert result is None
+
+    def test_resolve_known_tier_from_db(self):
+        db_settings = {"AI_MODEL_FAST": "google/gemini-2.5-flash"}
+        result = self.config.resolve("fast", db_settings)
         assert result == "google/gemini-2.5-flash"
 
-    def test_resolve_unknown_tier_falls_back_to_fast(self, monkeypatch):
+    def test_resolve_unknown_tier_falls_back_to_fast_spec(self, monkeypatch):
+        """Unknown tier resolves via fast spec; returns None when fast has no DB entry."""
         monkeypatch.setenv("AI_MODEL_FAST", "google/gemini-2.5-flash")
         result = self.config.resolve("nonexistent_tier")
-        assert result == "google/gemini-2.5-flash"
+        # DB-only: fast spec resolves to None when no DB entry
+        assert result is None
 
     def test_resolve_with_db_settings(self):
         db_settings = {"AI_MODEL_SMART": "google/gemini-2.5-pro"}
@@ -175,8 +186,8 @@ class TestSettingsAwareModelRouter:
         monkeypatch.setenv("AI_MODEL_FAST", "google/gemini-2.5-flash")
         router = SettingsAwareModelRouter()
         result = router.get_model("", "fast")
-        # Falls back to tier_config.resolve
-        assert result == "google/gemini-2.5-flash"
+        # DB-only: empty user_id falls back to tier_config.resolve which is DB-only → returns ""
+        assert result == "" or result is None
 
     def test_get_model_from_db(self):
         mock_repo = MagicMock()
@@ -185,21 +196,25 @@ class TestSettingsAwareModelRouter:
         result = router.get_model("user123", "fast")
         assert result == "custom-model-from-db"
 
-    def test_get_model_db_returns_none_falls_back_to_env(self, monkeypatch):
+    def test_get_model_db_returns_none_no_env_fallback(self, monkeypatch):
+        """DB-only: when DB returns None, result is '' (no env fallback)."""
         monkeypatch.setenv("AI_MODEL_FAST", "google/gemini-2.5-flash")
         mock_repo = MagicMock()
         mock_repo.get.return_value = None
         router = SettingsAwareModelRouter(settings_repo=mock_repo)
         result = router.get_model("user123", "fast")
-        assert result == "google/gemini-2.5-flash"
+        # DB-only: no DB entry, env var is NOT consulted
+        assert result == "" or result is None
 
-    def test_get_model_db_exception_falls_back(self, monkeypatch):
+    def test_get_model_db_exception_returns_empty(self, monkeypatch):
+        """DB-only: DB exception does not fall back to env var."""
         monkeypatch.setenv("AI_MODEL_FAST", "google/gemini-2.5-flash")
         mock_repo = MagicMock()
         mock_repo.get.side_effect = Exception("DB error")
         router = SettingsAwareModelRouter(settings_repo=mock_repo)
         result = router.get_model("user123", "fast")
-        assert result == "google/gemini-2.5-flash"
+        # DB-only: exception handled, no env fallback
+        assert result == "" or result is None
 
     def test_get_model_strips_quotes_from_db(self):
         mock_repo = MagicMock()
@@ -215,11 +230,8 @@ class TestSettingsAwareModelRouter:
         result = router.get_model("user123", "unknown_tier")
         assert isinstance(result, str)
 
-    def test_get_all_models(self, monkeypatch):
-        monkeypatch.setenv("AI_MODEL_NANO", "gpt-4.1-nano")
-        monkeypatch.setenv("AI_MODEL_FAST", "google/gemini-2.5-flash")
-        monkeypatch.setenv("AI_MODEL_SMART", "google/gemini-2.5-pro")
-        monkeypatch.setenv("AI_MODEL_ADVANCED", "google/gemini-2.5-pro")
+    def test_get_all_models(self):
+        """get_all_models returns dict with all four tier keys (values may be None/empty in DB-only mode)."""
         router = SettingsAwareModelRouter()
         models = router.get_all_models("user123")
         assert "nano" in models
@@ -227,8 +239,10 @@ class TestSettingsAwareModelRouter:
         assert "smart" in models
         assert "advanced" in models
 
-    def test_get_model_without_repo_uses_env(self, monkeypatch):
+    def test_get_model_without_repo_returns_empty(self, monkeypatch):
+        """DB-only: without repo, env var is NOT consulted — returns empty."""
         monkeypatch.setenv("AI_MODEL_NANO", "gpt-4.1-nano")
         router = SettingsAwareModelRouter(settings_repo=None)
         result = router.get_model("user123", "nano")
-        assert result == "gpt-4.1-nano"
+        # DB-only: no repo, no DB entry → None/empty
+        assert result == "" or result is None

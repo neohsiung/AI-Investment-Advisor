@@ -80,7 +80,8 @@ async def test_verify_purpose_alignment_reject(mock_gateway_create, mock_get_set
     """測試用途對齊審核拒絕。"""
     mock_get_settings.return_value = {
         "AI_PROVIDER": "MockProvider",
-        "API_KEY": "mock-key"
+        "API_KEY": "mock-key",
+        "AI_MODEL_FAST": "mock-model",
     }
     
     mock_llm = AsyncMock()

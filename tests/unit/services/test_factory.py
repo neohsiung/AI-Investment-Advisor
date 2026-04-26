@@ -16,11 +16,13 @@ def enable_has_dspy():
         yield
 
 def test_configure_dspy_with_env(mock_dspy, enable_has_dspy):
-    with patch.dict(os.environ, {"LLM_API_KEY": "test_key", "LLM_MODEL_SMART": "test_model"}):
+    with patch("src.agents.factory.AlchemySettingsRepository") as MockRepo:
+        # Simulate DB returning an API key for the user
+        MockRepo.return_value.get.return_value = "test_key"
         # Reset state
         AgentFactory._dspy_configured = False
-        AgentFactory._configure_dspy()
-        
+        AgentFactory._configure_dspy(user_id="test_user")
+
         # Since has_dspy is mocked to True and we have an api_key, configure should be called
         mock_dspy.settings.configure.assert_called()
         assert AgentFactory._dspy_configured is True

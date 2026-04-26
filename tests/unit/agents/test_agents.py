@@ -33,34 +33,26 @@ def mock_state_repo():
     return repo
 
 def test_base_agent_init_and_config(mock_settings_repo, mock_state_repo, mock_prompt_content, tmp_path):
-    # Setup Mock Repo responses
-    # Mocking rows for BaseAgent._load_config_from_db
-    class MockRow:
-        def __init__(self, k, v):
-            self.k = k
-            self.v = v
-            self._mapping = {'key': k, 'value': v}
-        def __getitem__(self, idx):
-            return [self.k, self.v][idx]
-    mock_settings_repo.get_all.return_value = [MockRow("AI_PROVIDER", "TestProvider")]
-
+    """
+    Test that BaseAgent initializes correctly.
+    _load_config() now reads strictly from llm_tier_bindings (DB-only).
+    The conftest autouse fixture patches build_config_chain to return a mock candidate.
+    """
     # Create a dummy prompt file
     prompt_file = tmp_path / "dummy_prompt.txt"
     with open(prompt_file, 'w') as f:
         f.write(mock_prompt_content)
 
-    with patch("src.agents.base_agent.BudgetAwareModelRouter") as mock_router:
-        mock_router.side_effect = Exception("Router Disabled for Test")
-        with patch('src.agents.base_agent.HybridMemory', return_value=MagicMock()):
-            agent = ConcreteAgent(name="TEST", prompt_path=str(prompt_file), use_cache=False, 
-                                  user_id="test_user",
-                                  settings_repo=mock_settings_repo, state_repo=mock_state_repo)
+    # The conftest autouse mock_build_config_chain fixture handles DB mocking.
+    agent = ConcreteAgent(name="TEST", prompt_path=str(prompt_file), use_cache=False,
+                          user_id="test_user",
+                          settings_repo=mock_settings_repo, state_repo=mock_state_repo)
 
     assert agent.name == "TEST"
     assert agent.system_prompt == mock_prompt_content
-    # Check loaded config
-    assert agent.config['provider'] == "TestProvider"
-    mock_settings_repo.get_all.assert_called_with("test_user")
+    # Config is built from the mock candidate (provider_code='mock', model_code='mock-model')
+    assert agent.config['provider'] == "mock"
+    assert agent.config['model'] == "mock-model"
 
 def test_base_agent_render_prompt(mock_settings_repo, mock_state_repo, tmp_path):
     prompt_file = tmp_path / "dummy_prompt.txt"

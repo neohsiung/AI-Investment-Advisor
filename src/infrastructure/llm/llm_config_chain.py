@@ -113,7 +113,7 @@ def build_config_chain(
             user_id, tier
         )
         # We return empty list. The pipeline will raise an error if it cannot find any candidate.
-    
+
     return candidates
 
 

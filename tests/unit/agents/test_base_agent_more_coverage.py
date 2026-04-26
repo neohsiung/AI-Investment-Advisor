@@ -31,34 +31,29 @@ class TestBaseAgentMoreCoverage:
                  return agent
 
     def test_load_config_db_priority(self, mock_settings_repo, mock_state_repo):
-        # Setup DB mocks
-        mock_settings_repo.get_all.return_value = [("AI_PROVIDER", "DB_GEMINI")]
-        
-        # New _load_config() first tries get_config_chain() (llm_tier_bindings path).
-        # Mock it to return empty so it falls back to legacy get_config() path.
-        with patch.object(BaseAgent, '_load_prompt', return_value=""), \
-             patch('src.infrastructure.llm.budget_aware_model_router.BudgetAwareModelRouter.get_config_chain', return_value=[]):
-             # We want to test the REAL _load_config
-             agent = ConcreteAgent("TestAgent", "path", user_id="test_user", settings_repo=mock_settings_repo, state_repo=mock_state_repo)
-             # _load_config is called in __init__
-             
-             assert agent.config['provider'] == "DB_GEMINI"
+        """
+        _load_config() now reads strictly from llm_tier_bindings (DB-only).
+        The conftest autouse fixture patches build_config_chain to return a mock candidate.
+        Verify the config is built from the mock candidate (provider_code='mock').
+        """
+        with patch.object(BaseAgent, '_load_prompt', return_value=""):
+            agent = ConcreteAgent("TestAgent", "path", user_id="test_user", settings_repo=mock_settings_repo, state_repo=mock_state_repo)
+            # Config is sourced from the mock candidate returned by conftest fixture
+            assert agent.config['provider'] == "mock"
 
     def test_load_config_tier_smart(self, mock_settings_repo, mock_state_repo):
-        mock_settings_repo.get_all.return_value = [("AI_MODEL_SMART", "gemini-ultra")]
-        
-        with patch.object(BaseAgent, '_load_prompt', return_value=""), \
-             patch('src.infrastructure.llm.budget_aware_model_router.BudgetAwareModelRouter.get_config_chain', return_value=[]):
-             agent = ConcreteAgent("TestAgent", "path", user_id="test_user", tier="smart", settings_repo=mock_settings_repo, state_repo=mock_state_repo)
-             assert agent.config['model'] == "gemini-ultra"
+        """DB-only: config comes from llm_tier_bindings mock candidate, not settings_repo."""
+        with patch.object(BaseAgent, '_load_prompt', return_value=""):
+            agent = ConcreteAgent("TestAgent", "path", user_id="test_user", tier="smart", settings_repo=mock_settings_repo, state_repo=mock_state_repo)
+            # conftest fixture returns model_code='mock-model' for all tiers
+            assert agent.config['model'] == "mock-model"
 
     def test_load_config_tier_fast(self, mock_settings_repo, mock_state_repo):
-        mock_settings_repo.get_all.return_value = [("AI_MODEL_FAST", "gemini-flash")]
-        
-        with patch.object(BaseAgent, '_load_prompt', return_value=""), \
-             patch('src.infrastructure.llm.budget_aware_model_router.BudgetAwareModelRouter.get_config_chain', return_value=[]):
-             agent = ConcreteAgent("TestAgent", "path", user_id="test_user", tier="fast", settings_repo=mock_settings_repo, state_repo=mock_state_repo)
-             assert agent.config['model'] == "gemini-flash"
+        """DB-only: config comes from llm_tier_bindings mock candidate, not settings_repo."""
+        with patch.object(BaseAgent, '_load_prompt', return_value=""):
+            agent = ConcreteAgent("TestAgent", "path", user_id="test_user", tier="fast", settings_repo=mock_settings_repo, state_repo=mock_state_repo)
+            # conftest fixture returns model_code='mock-model' for all tiers
+            assert agent.config['model'] == "mock-model"
 
     def test_check_freshness_hash_match(self, agent):
         context = {"key": "val"}
