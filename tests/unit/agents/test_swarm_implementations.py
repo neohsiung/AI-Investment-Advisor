@@ -4,6 +4,21 @@ from unittest.mock import MagicMock, patch, AsyncMock
 from src.agents.swarm.fundamental_swarm import FundamentalSwarm
 from src.agents.swarm.momentum_swarm import MomentumSwarm
 from src.agents.swarm.sentiment_swarm import SentimentSwarm
+from src.infrastructure.llm.resilient_pipeline import ModelCandidate
+from src.infrastructure.llm.llm_gateway import MockLLMGateway
+
+@pytest.fixture
+def mock_chain():
+    """Return a mock model candidate chain."""
+    return [ModelCandidate(
+        model_id="mock-model",
+        provider_code="mock",
+        model_code="mock-smart",
+        gateway_class=MockLLMGateway,
+        api_key="mock-key",
+        max_retries=1,
+        timeout_seconds=5.0
+    )]
 
 @pytest.fixture
 def anyio_backend():
@@ -17,10 +32,10 @@ async def test_fundamental_swarm_run():
         mock_sc.get_shortage_premium.return_value = {"narrative": "Low supply"}
         
         swarm = FundamentalSwarm(user_id="test_user")
-        # RoleSwarm.run calls orchestrator.broadcast
+        # RoleSwarmBase calls orchestrator.run_parallel_tiers
         swarm.orchestrator = MagicMock()
-        swarm.orchestrator.broadcast = AsyncMock(return_value={"expert": "Financials are good."})
-        swarm.orchestrator.aggregate_results.return_value = "Financials are good."
+        swarm.orchestrator.run_parallel_tiers = AsyncMock(return_value={"Advanced": {"expert": "Financials are good."}})
+        swarm.orchestrator.fuse_results.return_value = "Financials are good."
         
         context = {
             "tickers": ["AAPL"],

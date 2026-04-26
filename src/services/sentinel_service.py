@@ -793,7 +793,7 @@ class SentinelService:
                 t["priority"] = already_buffered_trigger.get("priority", 3)
                 t["target_agent"] = already_buffered_trigger.get("target_agent", "CIO")
                 t["rationale"] = already_buffered_trigger.get("rationale", "Cached from Redis buffer")
-                logger.debug(f"Sentinel: Skipping LLM evaluation for Redis-cached trigger (P{redact_secrets(t['priority'])})")
+                logger.debug("Sentinel: Skipping LLM evaluation for Redis-cached trigger (P%s)", redact_secrets(t['priority']))
             else:
                 # 1. AI-Driven Priority & Routing
                 try:
@@ -872,7 +872,7 @@ class SentinelService:
             
             added = await self._redis_buffer.add(self.user_id, t, wait_mins)
             if added:
-                logger.info(f"Sentinel: Buffered trigger to Redis (P{redact_secrets(priority)}). Source: {redact_secrets(source)}.")
+                logger.debug("Sentinel: Buffered trigger to Redis (P%s). Source: %s.", redact_secrets(priority), redact_secrets(source))
 
         # [T4] Execute immediate escalation for all P0/failed triggers in ONE batch
         if immediate_triggers:
@@ -943,7 +943,7 @@ class SentinelService:
             if ticker and ticker in pending_symbols:
                 _safe_tid = str(tid)[:64]
                 _safe_ticker = str(ticker)[:16]
-                logger.info(
+                logger.debug(
                     "Sentinel: Suppressing trigger %s because %s already has a pending order.",
                     _safe_tid, _safe_ticker
                 )

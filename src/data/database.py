@@ -291,6 +291,7 @@ def init_db(db_path=None, force=False, engine=None):
         currency TEXT DEFAULT 'USD',
         leverage {numeric_type} DEFAULT 1.0,
         source_file TEXT,
+        entry_category TEXT DEFAULT 'trade',
         raw_data {json_type},
         created_at {timestamp_type} DEFAULT CURRENT_TIMESTAMP,
         updated_at {timestamp_type} DEFAULT CURRENT_TIMESTAMP

@@ -98,16 +98,25 @@ def build_config_chain(
     candidates: List[ModelCandidate] = []
 
     # ── Step 1: Try DB binding ──────────────────────────────────────
-    if db_session is not None or True:  # Always try DB (uses own session)
-        try:
-            return _load_from_db(user_id, tier)
-        except Exception as e:
-            logger.warning(
-                "build_config_chain: DB load failed for user=%s tier=%s: %s",
-                user_id, tier, e,
-            )
+    try:
+        candidates = _load_from_db(user_id, tier)
+    except Exception as e:
+        logger.warning(
+            "build_config_chain: DB load failed for user=%s tier=%s: %s",
+            user_id, tier, e,
+        )
 
-    return []
+    # ── Step 2: STRICT: No defaults allowed (Rule #13) ─────────────────────
+    if not candidates:
+        logger.warning(
+            "build_config_chain: No DB binding found for user=%s tier=%s. [STRICT] Fallback to defaults is disabled.",
+            user_id, tier
+        )
+        # We return empty list. The pipeline will raise an error if it cannot find any candidate.
+
+    return candidates
+
+
 
 
 def _load_from_db(user_id: str, tier: str) -> List[ModelCandidate]:
@@ -168,7 +177,7 @@ def _load_from_db(user_id: str, tier: str) -> List[ModelCandidate]:
                     spec = cat.get(provider.provider_code)
                     if spec:
                         base_url = spec.default_base_url
-                except Exception:
+                except Exception: # nosec B110
                     pass
 
             api_key = _decrypt_api_key(provider.encrypted_api_key)

@@ -319,6 +319,7 @@ class TestBaseAgentGatewayDI:
     def test_default_gateway_fallback_to_mock(self, _):
         """When no API key, should create MockLLMGateway automatically."""
         from src.agents.base_agent import BaseAgent
+        from src.infrastructure.llm.resilient_pipeline import ModelCandidate
 
         class TestAgent(BaseAgent):
             async def run(self, context, mode=None):
@@ -327,13 +328,31 @@ class TestBaseAgentGatewayDI:
         mock_settings = MagicMock()
         mock_settings.get_all.return_value = []
 
-        agent = TestAgent(
-            name="TestFallback",
-            prompt_path="dummy",
-            use_cache=False,
-            user_id="test_user",
-            settings_repo=mock_settings,
-        )
+        # Override the autouse build_config_chain fixture to return a candidate
+        # with no API key — this forces _create_default_gateway() to use MockLLMGateway.
+        def _no_key_chain(user_id, tier, **kwargs):
+            return [ModelCandidate(
+                model_id="mock",
+                provider_code="openrouter",
+                model_code="mock-model",
+                gateway_class=None,
+                base_url="",
+                api_key="",        # ← no key: triggers MockLLMGateway fallback
+                max_retries=1,
+                timeout_seconds=30.0,
+            )]
+
+        with patch(
+            "src.infrastructure.llm.llm_config_chain.build_config_chain",
+            side_effect=_no_key_chain,
+        ):
+            agent = TestAgent(
+                name="TestFallback",
+                prompt_path="dummy",
+                use_cache=False,
+                user_id="test_user",
+                settings_repo=mock_settings,
+            )
 
         # Should have a MockLLMGateway since no API key
         assert isinstance(agent._llm_gateway, MockLLMGateway)

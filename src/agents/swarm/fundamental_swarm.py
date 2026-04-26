@@ -64,11 +64,10 @@ class FundamentalSwarm(RoleSwarmBase):
             )
         )
         
-    def run(self, context: Any) -> str:
+    async def run(self, context: Any) -> str:
         """
         Processes one or more tickers using the parallel swarm engine.
         """
-        import asyncio
         tickers = context.get("tickers", [])
         single_ticker = context.get("ticker", "UNKNOWN")
         if not tickers and single_ticker != "UNKNOWN":
@@ -80,16 +79,6 @@ class FundamentalSwarm(RoleSwarmBase):
         reports = []
         sc_service = SupplyChainService(user_id=self.user_id)
         
-        # Ensure async loop is ready
-        try:
-            loop = asyncio.get_event_loop()
-        except RuntimeError:
-            loop = asyncio.new_event_loop()
-            asyncio.set_event_loop(loop)
-            
-        import nest_asyncio
-        nest_asyncio.apply()
-
         for t in tickers:
             logger.info(f"FundamentalSwarm: Starting swarm analysis for {t}")
             # Prepare specific context for this ticker
@@ -101,12 +90,12 @@ class FundamentalSwarm(RoleSwarmBase):
             try:
                 sc_info = sc_service.get_shortage_premium(t)
                 t_ctx["shortage_premium"] = sc_info.get("narrative", "")
-            except Exception:
+            except Exception: # nosec B110
                 pass
 
             try:
-                # Call the new parallel swarm engine
-                res = loop.run_until_complete(self.run_swarm(t_ctx))
+                # Call the new parallel swarm engine (Async)
+                res = await self.run_swarm(t_ctx)
                 reports.append(f"### {t} Fundamental Swarm Analysis\n{res}")
             except Exception as e:
                 logger.error(f"FundamentalSwarm failed for {t}: {e}")

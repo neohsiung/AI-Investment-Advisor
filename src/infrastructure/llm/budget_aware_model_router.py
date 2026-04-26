@@ -102,32 +102,41 @@ class BudgetAwareModelRouter:
     def _build_config(self, tier_name: str, user_id: str) -> LLMConfig:
         """
         Internal mapping from tier name to actual LLMConfig using TierConfig.
-        [LEGACY PATH] Reads AI_MODEL / AI_MODEL_ADVANCED / … from settings table.
+        [LEGACY PATH] Strictly fails if no DB setting found.
         Prefer get_config_chain() which reads llm_tier_bindings instead.
         """
-        # Fetch DB overrides if any
-        db_settings = self.settings.get_all_settings(user_id) if user_id else {}
+        if not user_id:
+            raise ValueError(f"Router._build_config requires user_id. Tier={tier_name}")
+
+        # Fetch DB settings
+        db_settings = self.settings.get_all_settings(user_id)
         
-        # Resolve model name (DB -> Env -> Default)
+        # Resolve model name (Strictly DB via TierConfig)
         model_name = self.tier_cfg.resolve(tier_name, db_settings)
+        if not model_name:
+             raise ValueError(
+                f"No legacy model configuration found for user {user_id} and tier {tier_name}. "
+                "Please configure Tier Bindings in the AI Engine Management UI."
+            )
+
         if isinstance(model_name, str):
             model_name = model_name.strip().strip('"').strip("'")
 
         spec = self.tier_cfg.get_spec(tier_name)
         
-        # Provider resolution (Check AI_PROVIDER first for standards compliance)
-        import os
-        env_provider = os.getenv("AI_PROVIDER", "OpenRouter")
-        provider = db_settings.get("AI_PROVIDER", db_settings.get("ai_provider", env_provider)) if user_id else env_provider
+        # Provider resolution (DB only)
+        provider = db_settings.get("AI_PROVIDER", db_settings.get("ai_provider", "OpenRouter"))
         
-        # API Key Mapping (source_{provider}_api_key or {provider}_api_key or legacy API_KEY)
+        # API Key Mapping (Strictly DB)
         api_key_field = f"source_{provider.lower()}_api_key"
         direct_provider_key = f"{provider.lower()}_api_key"
         
-        # Support fallback across different naming conventions used in DB
-        raw_key = ""
-        if user_id:
-            raw_key = db_settings.get(api_key_field) or db_settings.get(direct_provider_key) or db_settings.get("API_KEY", "")
+        raw_key = db_settings.get(api_key_field) or db_settings.get(direct_provider_key) or db_settings.get("API_KEY")
+        if not raw_key:
+             raise ValueError(
+                 f"No API Key found in database for user {user_id} and provider {provider}. "
+                 "Environment variable fallbacks are strictly prohibited."
+             )
             
         api_key = raw_key.strip().strip('"').strip("'") if isinstance(raw_key, str) else raw_key
         

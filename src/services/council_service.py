@@ -9,7 +9,6 @@ import typing
 from typing import List, Dict, Tuple, Any, Optional, Callable, Union, Awaitable
 from datetime import datetime
 
-from src.agents.factory import AgentFactory
 from src.infrastructure.llm.tier_router_base import ITierRouter, RoutingContext
 from src.infrastructure.llm.council_tier_router import CouncilTierRouter
 from src.infrastructure.llm.tier_config import SettingsAwareModelRouter
@@ -67,15 +66,11 @@ class CouncilService:
 
             pipeline = ResilientLLMPipeline(config_chain=chain)
 
-            agent_prompts = {
-                "Momentum": "You are a Momentum analyst. Analyze price trends and technical indicators.",
-                "Fundamental": "You are a Fundamental analyst. Analyze financial statements and valuations.",
-                "Risk": "You are a Risk manager. Assess portfolio risks and downsides.",
-                "Sentiment": "You are a Sentiment analyst. Analyze market sentiment and investor psychology.",
-                "Macro": "You are a Macro strategist. Assess macroeconomic trends and cyclical factors."
-            }
+            from src.utils.prompt_utils import load_agent_prompt
 
-            system_prompt = agent_prompts.get(agent_name, f"You are a {agent_name} analyst.")
+            # [Rule #13] Dynamic 指標原則: Load system prompt from prompts/*.txt instead of hardcoded strings
+            system_prompt = load_agent_prompt(agent_name)
+            
             messages = [
                 Message(role="system", content=system_prompt),
                 Message(role="user", content=json.dumps(context))

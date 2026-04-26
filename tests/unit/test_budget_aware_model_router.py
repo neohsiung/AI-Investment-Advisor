@@ -1,26 +1,21 @@
 import pytest
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 from src.infrastructure.llm import BudgetAwareModelRouter
 from src.domain.interfaces import LLMConfig
-
-@pytest.fixture(autouse=True)
-def env_reset(monkeypatch):
-    """Ensure environment variables don't pollute TierSpec resolution.
-    Set default model values so TierSpec.resolve_model() returns non-None.
-    """
-    monkeypatch.setenv("AI_MODEL_NANO", "gpt-4.1-nano")
-    monkeypatch.setenv("AI_MODEL_FAST", "google/gemini-2.5-flash")
-    monkeypatch.setenv("AI_MODEL_SMART", "google/gemini-2.5-pro")
-    monkeypatch.setenv("AI_MODEL_ADVANCED", "google/gemini-2.5-pro")
-    yield
-
 
 @pytest.fixture
 def mock_settings():
     svc = MagicMock()
     svc.user_id = "test_user"
-    svc.get_all_settings.return_value = {}
-    # Simulate standard provider/key retrieval
+    # Simulate DB settings containing model config (TierSpec.resolve_model reads db_settings by env_key)
+    svc.get_all_settings.return_value = {
+        "AI_MODEL_NANO": "gpt-4.1-nano",
+        "AI_MODEL_FAST": "google/gemini-2.5-flash",
+        "AI_MODEL_SMART": "google/gemini-2.5-pro",
+        "AI_MODEL_ADVANCED": "google/gemini-2.5-pro",
+        "AI_PROVIDER": "OpenRouter",
+        "source_openrouter_api_key": "mock_api_key",
+    }
     svc.get_setting.side_effect = lambda k, d=None, user_id=None: "mock_api_key" if "api_key" in k else d
     return svc
 
@@ -63,7 +58,7 @@ def test_router_hard_limit_downgrade(router, mock_logger):
 def test_router_uninitialized_user(mock_settings, mock_logger):
     mock_settings.user_id = None
     router = BudgetAwareModelRouter(mock_settings, mock_logger)
-    
-    # Should not crash, just return build_config with uninitialized defaults
-    config = router.get_config("nano")
-    assert "gpt-4.1-nano" in config.model
+
+    # Strict mode: uninitialized user_id must raise ValueError
+    with pytest.raises(ValueError, match="requires user_id"):
+        router.get_config("nano")

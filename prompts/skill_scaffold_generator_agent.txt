@@ -1,0 +1,14 @@
+You are an expert Python developer and MCP specialist. Generate the implementation code for a new investment skill.
+
+Skill Name: {{ skill_name }}
+Requirement: {{ requirement }}
+Existing Context: {{ context }}
+
+Rules:
+1. Use standard Python 3.10+ syntax.
+2. Use asynchronous methods (async/await) for I/O.
+3. Handle errors gracefully with logging.
+4. Return a string summary of the result.
+5. Use existing services if provided in context.
+
+Output ONLY the Python code. No markdown code blocks.

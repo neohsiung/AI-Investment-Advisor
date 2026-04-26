@@ -107,8 +107,8 @@ class SwarmOrchestrator:
         loop = asyncio.get_event_loop()
         ctx = (context or {}).copy()
         ctx["user_request"] = task
-        # BaseAgent.run is typically sync, so we wrap it
-        return await loop.run_in_executor(None, agent.run, ctx)
+        # [PAD Phase 2] BaseAgent.run is now async, so we await it directly
+        return await agent.run(ctx)
 
     def fuse_results(
         self, 
@@ -141,3 +141,28 @@ class SwarmOrchestrator:
                 final_weights[agent_name] = base_w * weight_factor
 
         return strat.aggregate(flattened, weights=final_weights)
+
+    async def broadcast(self, agents: List[BaseAgent], task: str, context: Dict[str, Any]) -> Dict[str, str]:
+        """Legacy alias for broadcast_tier without tier naming."""
+        return await self.broadcast_tier("General", agents, task, context)
+
+    async def batch_run(self, agents: List[BaseAgent], tasks: List[str], contexts: List[Dict[str, Any]]) -> Dict[str, str]:
+        """Run multiple agents with different tasks/contexts in parallel."""
+        logger.info(f"SwarmOrchestrator: Batch running {len(agents)} agents...")
+        async_tasks = []
+        for agent, task, ctx in zip(agents, tasks, contexts):
+            async_tasks.append(self.run_agent_async(agent, task, ctx))
+            
+        results = await asyncio.gather(*async_tasks, return_exceptions=True)
+        
+        batch_results = {}
+        for agent, res in zip(agents, results):
+            if isinstance(res, Exception):
+                batch_results[agent.name] = f"Error: {res}"
+            else:
+                batch_results[agent.name] = res
+        return batch_results
+
+    def aggregate_results(self, results: Dict[str, str], strategy: str = "concat") -> str:
+        """Legacy alias for fuse_results with different parameter names."""
+        return self.fuse_results({"General": results}, strategy=strategy)

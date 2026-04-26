@@ -10,6 +10,7 @@ from src.repositories.transaction_repository import AlchemyTransactionRepository
 from src.services.market_data_service import MarketDataService
 from src.agents.council_adapter import CouncilAgentAdapter
 from src.services.performance_service import PerformanceService
+from src.agents.factory import AgentFactory
 from src.utils.time_utils import get_current_utc_time
 import re
 import inspect
@@ -87,16 +88,9 @@ class BaseWorkflow(ABC):
 
             pipeline = ResilientLLMPipeline(config_chain=chain)
 
-            agent_prompts = {
-                "Momentum": "You are a Momentum analyst. Analyze price trends and technical indicators.",
-                "Fundamental": "You are a Fundamental analyst. Analyze financial statements and valuations.",
-                "Risk": "You are a Risk manager. Assess portfolio risks and downsides.",
-                "Sentiment": "You are a Sentiment analyst. Analyze market sentiment and investor psychology.",
-                "Macro": "You are a Macro strategist. Assess macroeconomic trends and cyclical factors.",
-                "CIO": "You are a Chief Investment Officer. Synthesize analysis and provide strategic recommendations."
-            }
-
-            system_prompt = agent_prompts.get(agent_name, f"You are a {agent_name} analyst.")
+            from src.utils.prompt_utils import load_agent_prompt
+            
+            system_prompt = load_agent_prompt(agent_name)
             messages = [
                 Message(role="system", content=system_prompt),
                 Message(role="user", content=json.dumps(context))
@@ -249,16 +243,9 @@ class BaseWorkflow(ABC):
                     raise ValueError(f"No fast-tier model configured for user={self.user_id}")
                 pipeline = ResilientLLMPipeline(config_chain=chain)
 
-                translation_system = (
-                    "You are a professional bilingual investment report translator specializing in Traditional Chinese (zh-TW). "
-                    "Your ONLY job is to translate the provided report. "
-                    "Rules (non-negotiable):\n"
-                    "1. Keep ALL financial terms in English: Momentum, Fundamental, Sentiment, VIX, Macro, ETF, P/E, EPS, etc.\n"
-                    "2. Keep proper nouns unchanged: company names, ticker symbols (AAPL, NVDA, TSM, SPY), product names.\n"
-                    "3. Preserve ALL formatting with 100% fidelity: Markdown headers (#), bold (**), italics (*), lists (-), tables, HTML.\n"
-                    "4. If the report is already in Traditional Chinese, output it verbatim.\n"
-                    "5. Output ONLY the translated text. NO preamble, NO JSON, NO commentary."
-                )
+                from src.utils.prompt_utils import load_agent_prompt
+                
+                translation_system = load_agent_prompt("report_translator")
                 translation_user = (
                     "Translate the following investment report to Traditional Chinese (zh-TW). "
                     "Remember: output ONLY the translated text, nothing else.\n\n"
@@ -812,14 +799,15 @@ class DailyWorkflow(BaseWorkflow):
 
         # Store in Memory
         if self.memory_service:
-            await self.memory_service.store_report(
-                user_id=self.user_id,
-                report_type="daily",
-                date=datetime.now().strftime("%Y-%m-%d"),
-                content=final_report
-            )
-        except Exception as e:
-            logger.error(f"Failed to store report in memory: {e}")
+            try:
+                await self.memory_service.store_report(
+                    user_id=self.user_id,
+                    report_type="daily",
+                    date=datetime.now().strftime("%Y-%m-%d"),
+                    content=final_report
+                )
+            except Exception as e:
+                logger.error(f"Failed to store report in memory: {e}")
 
         # Post-Process: Record Macro & CIO Signals
         # ... (rest of signal recording logic)

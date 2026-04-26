@@ -139,6 +139,14 @@ class AlchemyUserRepository(BaseRepository, IUserRepository):
 
         return user_uuid
 
+    def get_identities(self, user_id: str) -> List[Dict[str, Any]]:
+        with self.engine.connect() as conn:
+            rows = conn.execute(
+                text("SELECT provider, identifier, is_primary FROM user_identities WHERE user_id = :uid"),
+                {"uid": user_id}
+            ).fetchall()
+            return [dict(r._mapping) for r in rows]
+
     def get_all_active_users(self) -> List[str]:
         """
         Returns all real user IDs (excludes test/default accounts).

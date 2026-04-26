@@ -2,6 +2,7 @@ import pytest
 import uuid
 import asyncio
 from sqlalchemy import create_engine
+from unittest.mock import patch
 from src.data.database import init_db
 from src.data.models import Base, User, UserIdentity
 from src.repositories.user_repository import AlchemyUserRepository
@@ -14,7 +15,8 @@ def test_repo():
     Base.metadata.create_all(engine)
     return AlchemyUserRepository(engine)
 
-def test_identity_linking_and_resolution(test_repo):
+@patch('src.services.llm_onboarding_service.LLMOnboardingService.seed_defaults_for_user', return_value=None)
+def test_identity_linking_and_resolution(mock_seed, test_repo):
     """Test creating a user and linking multiple identities."""
     async def run_test():
         # 1. Create User
@@ -38,7 +40,8 @@ def test_identity_linking_and_resolution(test_repo):
 
     asyncio.run(run_test())
 
-def test_notification_service_resolution(test_repo):
+@patch('src.services.llm_onboarding_service.LLMOnboardingService.seed_defaults_for_user', return_value=None)
+def test_notification_service_resolution(mock_seed, test_repo):
     """Test that NotificationService correctly resolves channel IDs via UUID."""
     async def run_test():
         # Setup user with multiple identities

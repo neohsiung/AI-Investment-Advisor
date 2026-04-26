@@ -109,15 +109,25 @@ def test_calculate_net_invested_capital(mock_conn):
     assert result == 10000.0
 
 def test_calculate_net_invested_capital_uses_entry_category(mock_conn):
-    """Verify the SQL uses entry_category = 'capital_flow', not a ticker blacklist."""
+    """Verify the SQL uses entry_category = :category with capital_flow param, not a ticker blacklist."""
     repo = AlchemyTransactionRepository()
     mock_conn.execute.return_value.fetchone.return_value = (5000.0,)
-    
+
     repo.calculate_net_invested_capital("user1")
-    
-    called_sql = str(mock_conn.execute.call_args[0][0])
+
+    call_args = mock_conn.execute.call_args
+    called_sql = str(call_args[0][0])
+
+    # SQL text must reference the entry_category column
     assert "entry_category" in called_sql, "SQL must filter by entry_category"
-    assert "capital_flow" in called_sql, "SQL must filter for capital_flow entries only"
+
+    # The value 'capital_flow' is passed as a parameter (not embedded in SQL literal),
+    # so we verify it via the params dict, not the SQL string.
+    params = call_args[0][1] if len(call_args[0]) > 1 else call_args[1]
+    assert params.get("category") == "capital_flow", (
+        "SQL must pass 'capital_flow' as the :category parameter"
+    )
+
     # The old fragile ticker blacklist should NOT be present
     assert "ETORO_SYNC" not in called_sql, "SQL must not use the deprecated ticker blacklist"
 

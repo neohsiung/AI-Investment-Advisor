@@ -1,5 +1,5 @@
 import sys
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 import pytest
 
 # Import common shared fixtures to make them available globally
@@ -95,3 +95,33 @@ def pytest_configure(config):
 def mock_streamlit_module():
     """Fixture to provide access to the centralized Streamlit mock."""
     return sys.modules.get("streamlit")
+
+
+@pytest.fixture(autouse=True)
+def mock_build_config_chain():
+    """
+    Global test fixture: patch build_config_chain to return a MockLLMGateway candidate.
+    In unit tests there is no DB tier binding, so without this every agent __init__
+    raises ValueError("No model candidates configured in DB...").
+    Production code stays strict (DB-only, Rule #13); this patch is test-only.
+    """
+    from src.infrastructure.llm.llm_gateway import MockLLMGateway
+    from src.infrastructure.llm.resilient_pipeline import ModelCandidate
+
+    def _mock_chain(user_id, tier, **kwargs):
+        return [ModelCandidate(
+            model_id="mock",
+            provider_code="mock",
+            model_code="mock-model",
+            gateway_class=MockLLMGateway,
+            base_url="",
+            api_key="mock-key",
+            max_retries=1,
+            timeout_seconds=30.0,
+        )]
+
+    with patch(
+        "src.infrastructure.llm.llm_config_chain.build_config_chain",
+        side_effect=_mock_chain,
+    ):
+        yield

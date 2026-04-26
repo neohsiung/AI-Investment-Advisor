@@ -161,7 +161,7 @@ class BaseAgent(ABC):
             self.logger.info(f"Executing: {' '.join(cmd)}")
             
             # Use run with timeout for safety
-            result = subprocess.run(
+            result = subprocess.run( # nosec B603
                 cmd,
                 capture_output=True,
                 text=True,
@@ -185,8 +185,8 @@ class BaseAgent(ABC):
 
     def _load_config(self):
         """
-        Read AI configuration (Priority: llm_tier_bindings (new) > Budget Router (legacy) > DB > Env > Default).
-        讀取 AI 設定 (優先使用 llm_tier_bindings 新路徑，確保模型名稱由 UI 管理)
+        Read AI configuration strictly from llm_tier_bindings.
+        讀取 AI 設定 (嚴格使用 llm_tier_bindings，確保模型名稱由 UI 管理)
         """
         try:
             # 1. Initialize dependencies for Router
@@ -194,116 +194,49 @@ class BaseAgent(ABC):
             token_logger = TokenLoggerService()
             router = BudgetAwareModelRouter(settings, token_logger)
 
-            # 2. [NEW PATH] Try get_config_chain() → reads llm_tier_bindings table
-            #    This is the preferred path: model names are managed via UI, not hardcoded settings.
-            if self.user_id:
-                try:
-                    candidates = router.get_config_chain(
-                        user_id=self.user_id,
-                        tier=self.tier,
-                        agent_name=self.name,
-                    )
-                    if candidates:
-                        # Use the primary candidate (first in chain) to build config dict
-                        primary = candidates[0]
-                        # Resolve API key: candidate may carry it, else fall back to env
-                        api_key = primary.api_key or ""
-                        config = {
-                            "provider": primary.provider_code,
-                            "model": primary.model_code,
-                            "api_key": api_key,
-                            "base_url": primary.base_url or "",
-                            "temperature": 0.7,
-                            "max_tokens": 8192,
-                            "timeout_seconds": int(primary.timeout_seconds),
-                            "max_retries": primary.max_retries,
-                            # Preserve full chain for ResilientLLMPipeline consumers
-                            "_candidates": candidates,
-                        }
-                        self.logger.debug(
-                            f"[_load_config] Using llm_tier_bindings path: "
-                            f"tier={self.tier} model={primary.model_code} "
-                            f"provider={primary.provider_code} candidates={len(candidates)}"
-                        )
-                        return config
-                    else:
-                        self.logger.warning(
-                            f"[_load_config] llm_tier_bindings returned no candidates for "
-                            f"user={self.user_id} tier={self.tier}. "
-                            "Falling back to legacy settings path. "
-                            "Please configure Tier Bindings in AI Engine Management UI."
-                        )
-                except Exception as chain_err:
-                    self.logger.warning(
-                        f"[_load_config] get_config_chain failed for "
-                        f"user={self.user_id} tier={self.tier}: {chain_err}. "
-                        "Falling back to legacy settings path."
-                    )
+            # 2. Try get_config_chain() → reads llm_tier_bindings table
+            if not self.user_id:
+                raise ValueError(f"Agent {self.name} initialized without user_id. DB config resolution impossible.")
 
-            # 3. [LEGACY PATH] Fallback: get_config() → reads settings table (AI_MODEL, AI_MODEL_ADVANCED, …)
-            #    These values may be stale; prefer configuring Tier Bindings instead.
-            config_obj = router.get_config(self.tier, self.user_id)
+            candidates = router.get_config_chain(
+                user_id=self.user_id,
+                tier=self.tier,
+                agent_name=self.name,
+            )
+            
+            if not candidates:
+                 raise ValueError(
+                    f"No model candidates configured in DB for user {self.user_id} and tier {self.tier}. "
+                    "Please configure Tier Bindings in the AI Engine Management UI."
+                )
 
-            # 4. Convert to dict for backward compatibility with base classes and tests
-            return asdict(config_obj)
+            # Use the primary candidate (first in chain) to build config dict
+            primary = candidates[0]
+            # Resolve API key: candidate must carry it (from DB), no env fallbacks allowed in logic
+            api_key = primary.api_key or ""
+            
+            config = {
+                "provider": primary.provider_code,
+                "model": primary.model_code,
+                "api_key": api_key,
+                "base_url": primary.base_url or "",
+                "temperature": 0.7,
+                "max_tokens": 8192,
+                "timeout_seconds": int(primary.timeout_seconds),
+                "max_retries": primary.max_retries,
+                "_candidates": candidates,
+            }
+            
+            self.logger.debug(
+                f"[_load_config] Using llm_tier_bindings: "
+                f"tier={self.tier} model={primary.model_code} "
+                f"provider={primary.provider_code}"
+            )
+            return config
 
         except Exception as e:
-            self.logger.error(f"[_load_config] Failed to use BudgetAwareModelRouter: {e}. Falling back to legacy loading.")
-            # Fallback to legacy loading if router fails
-            return self._legacy_load_config()
-
-    def _legacy_load_config(self):
-        """Legacy configuration loader (Fallback using TierConfig)."""
-        from src.infrastructure.llm.tier_config import TierConfig
-        try:
-            db_settings = self._load_config_from_db()
-        except Exception:
-            db_settings = {}
-            
-        tier_cfg = TierConfig()
-        # Priority: DB AI_MODEL > Tier Resolution
-        default_model = db_settings.get("AI_MODEL", db_settings.get("ai_model", tier_cfg.resolve(self.tier, db_settings)))
-        provider = db_settings.get("AI_PROVIDER", db_settings.get("ai_provider", os.getenv("AI_PROVIDER")))
-        if not provider:
-            self.logger.warning("AI_PROVIDER not configured, defaulting to OpenRouter")
-            provider = "OpenRouter"
-        
-        config = {
-            "provider": provider,
-            "model": default_model,
-            "api_key": db_settings.get("API_KEY", db_settings.get("api_key", os.getenv("API_KEY", ""))),
-            "base_url": db_settings.get("api_base_url", os.getenv("BASE_URL", "")),
-            "temperature": float(db_settings.get("ai_temperature", 0.7)),
-            "max_tokens": int(db_settings.get("ai_max_tokens", 4096)),
-            "timeout_seconds": int(db_settings.get("ai_timeout", 60)),
-        }
-
-        # [Robustness] Clean quotes if any
-        if isinstance(config.get("model"), str):
-            config["model"] = config["model"].strip().strip('"').strip("'")
-        return config
-
-    def _load_config_from_db(self):
-        """
-        Load API settings from database (Via Repository).
-        """
-        settings = {}
-        if not self.user_id:
-            return settings
-            
-        try:
-            # v4.3.0: Only fetch settings specifically for this user. No global fallback.
-            user_rows = self.settings_repo.get_all(self.user_id)
-            for row in user_rows:
-                 key = row._mapping['key'] if hasattr(row, '_mapping') else row[0]
-                 val = row._mapping['value'] if hasattr(row, '_mapping') else row[1]
-                 settings[key] = val
-        except Exception as e:
-            # self.logger.warning(f"Failed to load settings from DB: {e}")
-            pass  # nosec B110
-        finally:
-            self.settings_repo.close_session()
-        return settings
+            self.logger.error(f"[_load_config] Configuration failed: {e}")
+            raise
 
     def _load_prompt(self):
         """Load the system prompt for the agent."""

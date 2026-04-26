@@ -35,7 +35,7 @@ async def get_transactions(service: TransactionService = Depends(get_transaction
         return {"status": "success", "data": records}
     except Exception as e:
         logger.error(f"Error fetching transactions: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 @router.post("", response_model=TransactionActionResponse)
 async def add_transaction(
@@ -58,7 +58,7 @@ async def add_transaction(
     except Exception as e:
         logger.error(f"Error adding transaction: {e}")
         if isinstance(e, HTTPException): raise e
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 @router.post("/upload-csv", response_model=TransactionActionResponse)
 async def upload_csv(
@@ -96,4 +96,4 @@ async def upload_csv(
     except Exception as e:
         logger.error(f"CSV upload error: {e}")
         if isinstance(e, HTTPException): raise e
-        raise HTTPException(status_code=500, detail=f"處理 CSV 失敗: {str(e)}")
+        raise HTTPException(status_code=500, detail="Internal server error")

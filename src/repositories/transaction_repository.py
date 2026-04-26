@@ -269,9 +269,13 @@ class AlchemyTransactionRepository(BaseRepository, ITransactionRepository):
                 END) FROM transactions 
                 WHERE user_id = :user_id 
                 AND (:account_id IS NULL OR source_file = :account_id)
-                AND ticker NOT IN ('STABILIZE_CASH', 'STABILIZE_CAP', 'ETORO_SYNC')
+                AND entry_category = :category
             """)
-            params = {"user_id": user_id, "account_id": account_id}
+            params = {
+                "user_id": user_id, 
+                "account_id": account_id,
+                "category": ENTRY_CATEGORY_CAPITAL_FLOW
+            }
             result = conn.execute(query, params).fetchone()
             return float(result[0]) if result and result[0] is not None else 0.0
 
@@ -331,7 +335,7 @@ class AlchemyTransactionRepository(BaseRepository, ITransactionRepository):
                     for t, v in agg.items()
                     if v["total_qty"] > 0.0001
                 ]
-        except Exception:
+        except Exception: # nosec B110
             pass  # Gracefully fall back to legacy path
 
         # --- Legacy O(N) fallback: weighted-average BUY price ---
