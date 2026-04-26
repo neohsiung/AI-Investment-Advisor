@@ -13,7 +13,7 @@ import json
 from src.tools.mcp_sse_router import mcp_sub_app, HAS_FASTMCP
 
 @pytest.fixture
-async def app():
+def app():
     _app = FastAPI()
     _app.mount("/mcp", mcp_sub_app)
     return _app
