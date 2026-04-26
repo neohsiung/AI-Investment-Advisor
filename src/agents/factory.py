@@ -46,7 +46,8 @@ class AgentFactory:
             cls._dspy_configured = True
             return
 
-        api_key = os.getenv("LLM_API_KEY") or os.getenv("API_KEY")
+        # [STRICT] API Key MUST come from DB, no environment fallbacks (Rule #15)
+        api_key = None
         base_url = os.getenv("LLM_BASE_URL", "https://openrouter.ai/api/v1")
         
         # Use TierConfig for model selection (smart tier for DSPy)
@@ -54,14 +55,20 @@ class AgentFactory:
         tier_config = TierConfig()
         model = tier_config.resolve("smart")
 
-        if not api_key:
-            try:
-                repo = AlchemySettingsRepository()
-                # 1. Try User Specific Key
-                if user_id:
-                    api_key = repo.get(user_id, "API_KEY") or repo.get(user_id, "LLM_API_KEY")
-            except Exception as e:
-                logger.warning(f"Failed to load API_KEY from DB for DSPy: {e}")
+        try:
+            repo = AlchemySettingsRepository()
+            # 1. Try User Specific Key
+            if user_id:
+                api_key = repo.get(user_id, "API_KEY") or repo.get(user_id, "LLM_API_KEY")
+            
+            if not api_key:
+                logger.warning(f"No API_KEY found in DB for user {user_id}. DSPy will not be configured.")
+                cls._dspy_configured = True
+                return
+        except Exception as e:
+            logger.warning(f"Failed to load API_KEY from DB for DSPy: {e}")
+            cls._dspy_configured = True
+            return
 
         if api_key:
             try:

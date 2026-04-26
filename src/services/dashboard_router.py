@@ -211,33 +211,9 @@ async def trigger_rebalance(
             "message": "再平衡指令已發送至哨兵監控系統，正在進行資產評估。"
         }
     except Exception as e:
-        logger.exception("Error triggering rebalance")
-        raise HTTPException(status_code=500, detail="Failed to trigger rebalance flow")
-
-@dashboard_router.post("/rebalance")
-@limiter.limit("1/5minute")
-async def trigger_rebalance(
-    request: Request,
-    background_tasks: BackgroundTasks,
-    user: Dict[str, Any] = Depends(get_current_user)
-):
-    """手動觸發投資組合再平衡 (非同步背景執行)"""
-    try:
-        user_id = user.get("sub")
-        from src.infrastructure.tasks import trigger_portfolio_rebalance
-        
-        # v6.3: Dispatch to Celery if available, or fallback to BackgroundTasks
-        # For simplicity in local dev, we call the task function via Celery .delay()
-        # if Celery is not running, researchers can use background_tasks.add_task
-        trigger_portfolio_rebalance.delay(user_id=user_id)
-        
-        return {
-            "status": "success",
-            "message": "再平衡指令已發送至哨兵監控系統，正在進行資產評估。"
-        }
-    except Exception as e:
         logger.error(f"Error triggering rebalance: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        # v9.1: Sanitization - do not leak raw exception details (e.g. IP addresses)
+        raise HTTPException(status_code=500, detail="Failed to trigger rebalance flow")
 
 
 def get_transaction_service(user: Dict[str, Any] = Depends(get_current_user)) -> TransactionService:
@@ -617,7 +593,7 @@ async def get_summary(service: DashboardService = Depends(get_dashboard_service)
         cached = _r.get(cache_key)
         if cached:
             return json.loads(cached)
-    except Exception:
+    except Exception: # nosec B110
         pass
 
     try:
@@ -647,7 +623,7 @@ async def get_summary(service: DashboardService = Depends(get_dashboard_service)
         try:
             if _r:
                 _r.setex(cache_key, 120, json.dumps(result))
-        except Exception:
+        except Exception: # nosec B110
             pass
 
         return result

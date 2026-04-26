@@ -17,6 +17,8 @@ def mock_user():
 def client(mock_user):
     from fastapi import FastAPI
     from src.services.dashboard_router import dashboard_router, get_current_user
+    from src.utils.rate_limit import limiter
+    limiter.enabled = False  # Disable rate limiting for tests
     app = FastAPI()
     app.include_router(dashboard_router)
     app.dependency_overrides[get_current_user] = lambda: mock_user

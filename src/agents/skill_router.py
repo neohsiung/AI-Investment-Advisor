@@ -40,35 +40,14 @@ class SkillRouter:
 
     def _get_config(self):
         if self._config is None:
-            try:
-                from src.services.settings_service import SettingsService
-                from src.services.token_logger_service import TokenLoggerService
-                from src.infrastructure.llm.budget_aware_model_router import BudgetAwareModelRouter
-                svc = SettingsService(user_id=self.user_id)
-                router = BudgetAwareModelRouter(svc, TokenLoggerService())
-                self._config = router.get_config(self.tier, self.user_id)
-            except Exception as e:
-                logger.warning(f"SkillRouter: Failed to load config from DB: {e}. Using env fallback.")
-                from src.domain.interfaces import LLMConfig
-                from src.infrastructure.llm.tier_config import SettingsAwareModelRouter
-                try:
-                    from src.repositories.settings_repository import AlchemySettingsRepository
-                    settings_repo = AlchemySettingsRepository()
-                    model_router = SettingsAwareModelRouter(settings_repo)
-                    model = model_router.get_model(self.user_id, self.tier)
-                except Exception as e:
-                    logger.warning(f"SkillRouter: Model router failed, using tier default: {e}")
-                    from src.infrastructure.llm.tier_config import TierConfig
-                    tier_config = TierConfig()
-                    model = tier_config.resolve(self.tier)
-                
-                self._config = LLMConfig(
-                    provider=os.getenv("AI_PROVIDER", "OpenRouter"),
-                    model=model,
-                    api_key=os.getenv("API_KEY", ""),
-                    base_url=os.getenv("BASE_URL", ""),
-                    temperature=0.0,
-                )
+            from src.services.settings_service import SettingsService
+            from src.services.token_logger_service import TokenLoggerService
+            from src.infrastructure.llm.budget_aware_model_router import BudgetAwareModelRouter
+            
+            svc = SettingsService(user_id=self.user_id)
+            router = BudgetAwareModelRouter(svc, TokenLoggerService())
+            # [STRICT] Must use BudgetAwareModelRouter. No fallbacks allowed.
+            self._config = router.get_config(self.tier, self.user_id)
         return self._config
 
     def _get_llm(self):
@@ -93,23 +72,17 @@ class SkillRouter:
         
         if not matched_skill:
             # 2. Fast-tier LLM classification for slightly more complex but still direct intents
-            classification_prompt = f"""
-Classify the user's intent into ONE of these categories: 
-- PRICE_CHECK: Checking ticker price/market data.
-- PORTFOLIO_CHECK: Checking account holdings or balance.
-- MACRO_CHECK: Checking VIX, macro indicators, or yield curves.
-- COMPLEX: Requires multi-step analysis or debate.
-
-User: {user_message}
-
-Return ONLY the category name.
-"""
+            from src.utils.prompt_utils import load_agent_prompt
+            
             try:
                 llm = self._get_llm()
                 config = self._get_config()
                 
+                system_prompt = load_agent_prompt("skill_router_classifier")
+                classification_prompt = load_agent_prompt("skill_router_classifier", {"user_message": user_message})
+                
                 messages = [
-                    Message(role="system", content="You are a tool-routing specialist. Output JSON only."),
+                    Message(role="system", content=system_prompt),
                     Message(role="user", content=classification_prompt),
                 ]
                 category = await llm.chat(messages=messages, config=config)

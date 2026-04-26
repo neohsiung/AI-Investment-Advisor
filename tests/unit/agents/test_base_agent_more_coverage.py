@@ -166,5 +166,5 @@ class TestBaseAgentMoreCoverage:
              
              assert resp == 'Final Answer: Apple is up.'
              assert agent.call_llm.call_count == 2
-             mock_search_instance.search_financial_context.assert_called_with("Apple Stock")
+             mock_search_instance.search_financial_context.assert_called_with("Apple Stock", max_results=3)
 

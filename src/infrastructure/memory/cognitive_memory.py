@@ -149,30 +149,30 @@ class CognitiveMemoryManager:
         使用快速 LLM 從對話記錄中萃取結構化情節。
         """
         try:
-            from src.agents.factory import AgentFactory
+            from src.infrastructure.llm.budget_aware_model_router import BudgetAwareModelRouter
+            from src.services.settings_service import SettingsService
+            from src.services.token_logger_service import TokenLoggerService
+            from src.infrastructure.llm.resilient_pipeline import ResilientLLMPipeline
+            from src.utils.prompt_utils import load_agent_prompt
+            from src.domain.interfaces import Message
 
-            agent = AgentFactory.create_agent(
-                "Sentiment", tier="nano", user_id=user_id, use_cache=True
-            )
+            # [STRICT] Configuration via BudgetAwareModelRouter
+            settings_svc = SettingsService(user_id=user_id)
+            router = BudgetAwareModelRouter(settings_svc, TokenLoggerService())
+            chain = router.get_config_chain("fast", user_id)
+            pipeline = ResilientLLMPipeline(config_chain=chain)
 
-            prompt = (
-                "分析以下對話記錄，回傳 JSON 格式的結構化摘要。\n"
-                "**僅回傳 JSON，不要包含其他文字。**\n\n"
-                "需要的欄位:\n"
-                '- "summary": 2-3 句話的對話精華摘要\n'
-                '- "entities": 提到的標的/公司/指標（陣列）\n'
-                '- "decisions": 討論的投資決策（陣列）\n'
-                '- "sentiment": 整體語氣 ("bullish"/"bearish"/"neutral"/"cautious")\n'
-                '- "key_numbers": 提到的關鍵數字（如 RSI, 價格）\n\n'
-                f"對話記錄:\n{transcript[:2000]}"
-            )
+            # [STRICT] Load prompt from file
+            system_prompt = load_agent_prompt("cognitive_episode_extractor")
+            user_content = f"Transcript:\n{transcript[:2000]}"
 
-            result = agent.run({"user_request": prompt})
-            raw = str(
-                result.get("content") or result.get("output") or result
-                if isinstance(result, dict)
-                else result
-            )
+            messages = [
+                Message(role="system", content=system_prompt),
+                Message(role="user", content=user_content),
+            ]
+
+            response, _ = await pipeline.execute(messages, temperature=0.0)
+            raw = str(response)
 
             # Parse JSON from response
             return self._parse_json_response(raw)
@@ -252,11 +252,18 @@ class CognitiveMemoryManager:
         使用 smart LLM 識別跨情節的模式。
         """
         try:
-            from src.agents.factory import AgentFactory
+            from src.infrastructure.llm.budget_aware_model_router import BudgetAwareModelRouter
+            from src.services.settings_service import SettingsService
+            from src.services.token_logger_service import TokenLoggerService
+            from src.infrastructure.llm.resilient_pipeline import ResilientLLMPipeline
+            from src.utils.prompt_utils import load_agent_prompt
+            from src.domain.interfaces import Message
 
-            agent = AgentFactory.create_agent(
-                "Conversation", tier="smart", user_id=user_id, use_cache=True
-            )
+            # [STRICT] Configuration via BudgetAwareModelRouter (Smart Tier for Knowledge)
+            settings_svc = SettingsService(user_id=user_id)
+            router = BudgetAwareModelRouter(settings_svc, TokenLoggerService())
+            chain = router.get_config_chain("smart", user_id)
+            pipeline = ResilientLLMPipeline(config_chain=chain)
 
             # Build episodes digest
             episodes_text = "\n\n".join(
@@ -267,24 +274,17 @@ class CognitiveMemoryManager:
                 ]
             )
 
-            prompt = (
-                "你是一位認知科學家。分析以下投資對話的情節記憶，\n"
-                "找出重複出現的**模式、偏好和行為規律**。\n\n"
-                "**回傳 JSON 陣列**，每個元素包含:\n"
-                '- "insight": 歸納出的知識/規律（一句話）\n'
-                '- "category": 分類 ("risk_profile"/"market_patterns"/"decision_habits"/"ticker_insights")\n'
-                '- "confidence": 信心度 0.0~1.0（根據支持的 episode 數量）\n'
-                '- "episode_ids": 支持這個結論的 episode 編號（陣列）\n\n'
-                "只回傳 JSON 陣列，不要其他文字。\n\n"
-                f"情節記憶:\n{episodes_text[:3000]}"
-            )
+            # [STRICT] Load prompt from file
+            system_prompt = load_agent_prompt("cognitive_knowledge_distiller")
+            user_content = f"Episodic Memory Digest:\n{episodes_text[:3000]}"
 
-            result = agent.run({"user_request": prompt})
-            raw = str(
-                result.get("content") or result.get("output") or result
-                if isinstance(result, dict)
-                else result
-            )
+            messages = [
+                Message(role="system", content=system_prompt),
+                Message(role="user", content=user_content),
+            ]
+
+            response, _ = await pipeline.execute(messages, temperature=0.3)
+            raw = str(response)
 
             parsed = self._parse_json_response(raw)
             if isinstance(parsed, list):
@@ -374,42 +374,34 @@ class CognitiveMemoryManager:
         使用 smart LLM 將知識合成為智慧。
         """
         try:
-            from src.agents.factory import AgentFactory
+            from src.infrastructure.llm.budget_aware_model_router import BudgetAwareModelRouter
+            from src.services.settings_service import SettingsService
+            from src.services.token_logger_service import TokenLoggerService
+            from src.infrastructure.llm.resilient_pipeline import ResilientLLMPipeline
+            from src.utils.prompt_utils import load_agent_prompt
+            from src.domain.interfaces import Message
 
-            agent = AgentFactory.create_agent(
-                "Conversation", tier="smart", user_id=user_id, use_cache=True
-            )
+            # [STRICT] Configuration via BudgetAwareModelRouter (Smart Tier for Wisdom)
+            settings_svc = SettingsService(user_id=user_id)
+            router = BudgetAwareModelRouter(settings_svc, TokenLoggerService())
+            chain = router.get_config_chain("smart", user_id)
+            pipeline = ResilientLLMPipeline(config_chain=chain)
 
             knowledge_text = "\n".join(
                 [f"- {f['content']}" for f in fragments[:20]]
             )
 
-            cat_instruction = {
-                "risk_profile": "歸納此使用者的風險偏好和容忍度",
-                "market_patterns": "歸納此使用者觀察到的市場規律",
-                "decision_habits": "歸納此使用者的決策行為模式",
-                "ticker_insights": "歸納此使用者對個股的累積觀點",
-            }.get(category, "歸納核心原則")
+            # [STRICT] Load prompt from file
+            system_prompt = load_agent_prompt("cognitive_wisdom_synthesizer")
+            user_content = f"Category: {category}\nKnowledge Fragments:\n{knowledge_text[:2000]}"
 
-            prompt = (
-                f"你是認知科學家。以下是關於 '{category}' 的知識片段。\n"
-                f"請{cat_instruction}。\n\n"
-                "將多個相似的知識片段**合併成一條抽象原則**。\n"
-                "原則應該是永恆的、不依賴特定時間的觀察。\n\n"
-                "**回傳 JSON 陣列**，每元素:\n"
-                '- "principle": 一條簡潔的智慧原則\n'
-                '- "confidence": 信心度 0.0~1.0\n'
-                '- "tags": 關鍵標籤（陣列）\n\n'
-                "只回傳 JSON，不要其他文字。\n\n"
-                f"知識片段:\n{knowledge_text[:2000]}"
-            )
+            messages = [
+                Message(role="system", content=system_prompt),
+                Message(role="user", content=user_content),
+            ]
 
-            result = agent.run({"user_request": prompt})
-            raw = str(
-                result.get("content") or result.get("output") or result
-                if isinstance(result, dict)
-                else result
-            )
+            response, _ = await pipeline.execute(messages, temperature=0.5)
+            raw = str(response)
 
             parsed = self._parse_json_response(raw)
             if isinstance(parsed, list):

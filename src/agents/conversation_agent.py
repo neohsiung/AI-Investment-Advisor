@@ -449,57 +449,34 @@ class ConversationAgent:
     async def _generate_impl_code(self, gap) -> str:
         """Use Fast-tier LLM to generate skill implementation code."""
         try:
-            import os
-            from src.domain.interfaces import Message, LLMConfig
+            from src.infrastructure.llm.budget_aware_model_router import BudgetAwareModelRouter
+            from src.services.token_logger_service import TokenLoggerService
             from src.infrastructure.llm.llm_gateway import LLMGatewayFactory
+            from src.domain.interfaces import Message
+            from src.utils.prompt_utils import load_agent_prompt
 
-            prompt = f"""Generate a Python skill implementation for an investment analysis agent.
-
-Skill name: {gap.suggested_skill_name}
-Category: {gap.suggested_category}
-Purpose: {gap.reasoning}
-Similar existing skill: {gap.existing_similar or 'None'}
-
-Requirements:
-- Function must be named `{gap.suggested_skill_name}(user_id: str, **kwargs) -> str`
-- Include proper error handling with try/except
-- Include logging with `logger = logging.getLogger(__name__)`
-- Return a formatted string result
-- Import only stdlib and src.* modules
-- Do NOT use hardcoded API keys
-
-Return ONLY the Python code, no explanations."""
-
-            # [Phase 4] Multi-tenant isolation: Load credentials from SettingsService
-            llm_settings = self._settings_service.get_all_settings()
+            # [STRICT] Use BudgetAwareModelRouter (Fast Tier)
+            router = BudgetAwareModelRouter(self._settings_service, TokenLoggerService())
+            config = router.get_config("fast", self.user_id)
+            config.temperature = 0.2
+            config.max_tokens = 1500
             
-            # Use tier-aware model routing
-            from src.infrastructure.llm.tier_config import SettingsAwareModelRouter
-            model_router = SettingsAwareModelRouter()
+            gateway = LLMGatewayFactory.create(config.provider)
             
-            provider = llm_settings.get("AI_PROVIDER", os.getenv("AI_PROVIDER", "OpenRouter"))
-            
-            # Use tier-aware routing (fast tier for code generation)
-            from src.infrastructure.llm.tier_config import TierConfig
-            tier_config = TierConfig()
-            if self.user_id:
-                model = model_router.get_model(self.user_id, "fast")
-            else:
-                model = tier_config.resolve("fast")
-            api_key = llm_settings.get("API_KEY", os.getenv("API_KEY", ""))
-
-            gateway = LLMGatewayFactory.create(provider)
-            config = LLMConfig(
-                provider=provider,
-                model=model,
-                api_key=api_key,
-                temperature=0.2,
-                max_tokens=1500,
+            # [STRICT] Load prompt from file
+            system_prompt = load_agent_prompt("skill_scaffold_generator")
+            user_prompt = (
+                f"Skill name: {gap.suggested_skill_name}\n"
+                f"Category: {gap.suggested_category}\n"
+                f"Purpose: {gap.reasoning}\n"
+                f"Similar existing skill: {gap.existing_similar or 'None'}"
             )
+
             messages = [
-                Message(role="system", content="You are a Python code generator. Output only valid Python code."),
-                Message(role="user", content=prompt),
+                Message(role="system", content=system_prompt),
+                Message(role="user", content=user_prompt),
             ]
+            
             code = await gateway.chat(messages, config)
             # Strip markdown code fences
             code = code.replace("```python", "").replace("```", "").strip()
@@ -513,54 +490,29 @@ Return ONLY the Python code, no explanations."""
         if not impl_code:
             return "⚠️ Using stub implementation (manual review required)"
         try:
-            import os
-            from src.domain.interfaces import Message, LLMConfig
+            from src.infrastructure.llm.budget_aware_model_router import BudgetAwareModelRouter
+            from src.services.token_logger_service import TokenLoggerService
             from src.infrastructure.llm.llm_gateway import LLMGatewayFactory
-            from src.utils.async_utils import to_thread
+            from src.domain.interfaces import Message
+            from src.utils.prompt_utils import load_agent_prompt
 
-            prompt = f"""Review this auto-generated Python skill implementation for an investment analysis agent.
-
-```python
-{impl_code}
-```
-
-Check for:
-1. Security issues (hardcoded secrets, SQL injection, unsafe eval)
-2. Import errors (non-existent modules)
-3. Logic correctness
-4. Error handling completeness
-
-Respond in ONE sentence: either "PASS: looks good" or "WARN: <specific issue>"."""
-            # [Phase 4] Multi-tenant isolation: Load credentials from SettingsService
-            llm_settings = self._settings_service.get_all_settings()
+            # [STRICT] Use BudgetAwareModelRouter (Smart Tier)
+            router = BudgetAwareModelRouter(self._settings_service, TokenLoggerService())
+            config = router.get_config("smart", self.user_id)
+            config.temperature = 0.0
             
-            # Use tier-aware model routing
-            from src.infrastructure.llm.tier_config import SettingsAwareModelRouter
-            model_router = SettingsAwareModelRouter()
+            gateway = LLMGatewayFactory.create(config.provider)
             
-            provider = llm_settings.get("AI_PROVIDER", os.getenv("AI_PROVIDER", "OpenRouter"))
-            
-            # Use tier-aware routing (smart tier for code review)
-            from src.infrastructure.llm.tier_config import TierConfig
-            tier_config = TierConfig()
-            if self.user_id:
-                model = model_router.get_model(self.user_id, "smart")
-            else:
-                model = tier_config.resolve("smart")
-            api_key = llm_settings.get("API_KEY", os.getenv("API_KEY", ""))
+            # [STRICT] Load prompt from file
+            system_prompt = load_agent_prompt("skill_scaffold_reviewer")
+            user_prompt = f"Code:\n{impl_code}\n\nRequirement: {gap.reasoning}"
 
-            gateway = LLMGatewayFactory.create(provider)
-            config = LLMConfig(
-                provider=provider,
-                model=model,
-                api_key=api_key,
-                temperature=0.0,
-                max_tokens=200,
-            )
             messages = [
-                Message(role="user", content=prompt),
+                Message(role="system", content=system_prompt),
+                Message(role="user", content=user_prompt),
             ]
-            review = await to_thread(gateway.chat, messages, config)
+            
+            review = await gateway.chat(messages, config)
             return review.strip()
         except Exception as e:
             logger.warning(f"ConversationAgent: Review failed: {e}")

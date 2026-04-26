@@ -244,7 +244,6 @@ class TestAgentLoop:
     async def test_execute_with_search_tool(self):
         """Test SEARCH tool parsing and execution."""
         search_svc = MagicMock()
-        from unittest.mock import AsyncMock
         search_svc.search_financial_context = AsyncMock(return_value=[
             {"title": "AAPL", "snippet": "Stock up 5%", "link": "url1"}
         ])
@@ -261,14 +260,13 @@ class TestAgentLoop:
 
         result = await loop.execute(messages, call_llm_fn=mock_llm)
         assert result == "Final: AAPL is up."
-        search_svc.search_financial_context.assert_called_once_with("AAPL stock")
+        search_svc.search_financial_context.assert_called_once_with("AAPL stock", max_results=3)
 
     @pytest.mark.asyncio
     async def test_execute_with_mcp_tool(self):
         """Test MCP tool call execution."""
         toold = AsyncMock()
         toold.tools = {"get_price": True}
-        from unittest.mock import AsyncMock
         toold.call_tool = AsyncMock(return_value={"price": 150})
         loop = AgentLoop(agent_name="Test", toold=toold)
         mock_llm = AsyncMock(side_effect=[

@@ -42,7 +42,7 @@ class TierSpec:
     output_cost_per_mtok: float = 0.0      # $/million output tokens
     max_tokens: int = 4096                 # default max output tokens
     description: str = ""
-    default_model: str = ""                # Fallback if DB and Env are missing
+    # default_model removed to enforce DB-only configuration
     cognitive_mapping: str = ""            # 認知科學對照
 
     @property
@@ -53,7 +53,8 @@ class TierSpec:
     def resolve_model(self, db_settings: Dict[str, str] = None) -> Optional[str]:
         """
         Resolve the actual model to use.
-        Priority: DB setting > Env var > Default.
+        Priority: DB setting (Only).
+        Strictly prohibits env-var or hardcoded fallbacks.
         """
         db_settings = db_settings or {}
         # DB override
@@ -61,12 +62,9 @@ class TierSpec:
             val = db_settings[self.env_key]
             if val:
                 return val.strip().strip('"').strip("'")
-        # Env override
-        env_model = os.getenv(self.env_key)
-        if env_model:
-            return env_model.strip().strip('"').strip("'")
-        # Default
-        return self.default_model
+        
+        # No fallback allowed
+        return None
 
 
 # ═══════════════════════════════════════════════════════
@@ -84,7 +82,6 @@ DEFAULT_TIERS: Dict[str, TierSpec] = {
         output_cost_per_mtok=0.40,
         max_tokens=512,
         description="Ultra-cheap reflex layer for classification & routing",
-        default_model="google/gemini-2.0-flash-lite-preview-02-05",
         cognitive_mapping="System 0 — 反射 (Reflex): 不經思考的自動反應",
     ),
 
@@ -97,7 +94,6 @@ DEFAULT_TIERS: Dict[str, TierSpec] = {
         output_cost_per_mtok=2.50,
         max_tokens=2048,
         description="Low-latency balance for summary & sensory agents",
-        default_model="google/gemini-2.0-flash-exp",
         cognitive_mapping="System 1 — 快思 (Fast Thinking): 直覺式快速處理",
     ),
 
@@ -111,7 +107,6 @@ DEFAULT_TIERS: Dict[str, TierSpec] = {
         output_cost_per_mtok=10.00,
         max_tokens=8192,
         description="Analytical layer for reasoning & multi-step decisions",
-        default_model="google/gemini-2.0-pro-exp-02-05",
         cognitive_mapping="System 2 — 慢想 (Slow Thinking): 需要專注的分析性思考",
     ),
 
@@ -127,7 +122,6 @@ DEFAULT_TIERS: Dict[str, TierSpec] = {
         output_cost_per_mtok=15.00,
         max_tokens=8192,
         description="Deep reasoning for CIO decisions & complex strategy",
-        default_model="anthropic/claude-3.5-sonnet:beta",
         cognitive_mapping="System 2+ — 深思 (Deep Thinking): 深度推理與戰略判斷",
     ),
 }

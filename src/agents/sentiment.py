@@ -56,7 +56,7 @@ class SentimentAgent(BaseAgent):
         # 解析 JSON
         try:
             # Clean up response if it contains markdown
-            cleaned = response.replace("```json", "").replace("```", "").strip()
+            cleaned = response_str.replace("```json", "").replace("```", "").strip()
             # Robust extraction of the first '{' to last '}'
             start = cleaned.find("{")
             end = cleaned.rfind("}")
@@ -67,6 +67,6 @@ class SentimentAgent(BaseAgent):
             self.logger.warning(f"SentimentAgent: Failed to parse JSON for {ticker}. Returning fallback.")
             return {
                 "sentiment": "Unknown",
-                "narrative": response[:100] + "...",
+                "narrative": response_str[:100] + "...",
                 "score": 0.0
             }

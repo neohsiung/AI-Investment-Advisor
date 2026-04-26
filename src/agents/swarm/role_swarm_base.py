@@ -61,7 +61,7 @@ class RoleSwarmBase(BaseAgent, ABC):
         return final_summary
 
     @abstractmethod
-    def run(self, context: Any) -> str:
+    async def run(self, context: Any) -> str:
         """
         Inherited agents must implement run, usually just calling await run_swarm.
         """

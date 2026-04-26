@@ -105,9 +105,7 @@ class TestBaseAgentCoverage:
             
             res = await agent.run_tool_loop(context)
             
-            res = await agent.run_tool_loop(context)
-            
-            mock_svc.search_financial_context.assert_called_once_with("AAPL")
+            mock_svc.search_financial_context.assert_called_once_with("AAPL", max_results=3)
 
     @pytest.mark.asyncio
     async def test_call_real_llm(self, agent):
