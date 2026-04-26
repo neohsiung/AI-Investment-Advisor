@@ -4,7 +4,10 @@ Authentication Guard Utility
 Provides a unified authentication gate for all Streamlit pages.
 Prevents UI flash by blocking execution until auth status is confirmed.
 """
-import streamlit as st
+try:
+    import streamlit as st
+except ImportError:
+    st = None
 from src.auth import auth_manager
 
 

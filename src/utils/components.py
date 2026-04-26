@@ -3,7 +3,10 @@
    Reusable UI elements for a professional Investment Advisor experience.
 """
 import re
-import streamlit as st
+try:
+    import streamlit as st
+except ImportError:
+    st = None
 from src.utils.ui import safe_html
 
 def load_material_font():
