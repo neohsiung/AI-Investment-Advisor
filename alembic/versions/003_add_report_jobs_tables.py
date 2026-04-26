@@ -57,7 +57,6 @@ def upgrade():
         sa.PrimaryKeyConstraint('id'),
         
         # Foreign Keys
-        sa.ForeignKeyConstraint(['user_id'], ['settings.user_id']),
         sa.ForeignKeyConstraint(['report_id'], ['reports.id']),
     )
     
