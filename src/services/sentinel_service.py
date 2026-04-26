@@ -1940,7 +1940,3 @@ class SentinelService:
             logger.error(f"Infrastructure Health Check Failed: {e}")
             
         return triggers
-n triggers
-           
-        return triggers
-n triggers
