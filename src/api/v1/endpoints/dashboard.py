@@ -46,9 +46,8 @@ async def get_summary(service: DashboardService = Depends(get_dashboard_service)
             }
         }
     except Exception as e:
-        import traceback
         logger.exception(f"Error fetching summary: {e}")
-        raise HTTPException(status_code=500, detail=traceback.format_exc())
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 @router.get("/positions", response_model=PositionListResponse)
 async def get_positions(service: DashboardService = Depends(get_dashboard_service)):
@@ -93,9 +92,8 @@ async def get_positions(service: DashboardService = Depends(get_dashboard_servic
             ))
         return {"status": "success", "data": items}
     except Exception as e:
-        import traceback
         logger.exception(f"Error fetching positions: {e}")
-        raise HTTPException(status_code=500, detail=traceback.format_exc())
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 @router.get("/intelligence", response_model=IntelligenceResponse)
 async def get_intelligence(user_id: str = Depends(get_current_user_id)):
@@ -161,7 +159,7 @@ async def get_performance_history(service: PerformanceService = Depends(get_perf
         }
     except Exception as e:
         logger.error(f"Error fetching performance history: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 @router.get("/performance/agents")
 async def get_agent_performance_stats(service: PerformanceService = Depends(get_performance_service)):
@@ -174,7 +172,7 @@ async def get_agent_performance_stats(service: PerformanceService = Depends(get_
         }
     except Exception as e:
         logger.error(f"Error fetching agent performance: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 @router.get("/alerts")
 async def get_recent_alerts(user_id: str = Depends(get_current_user_id)):
@@ -205,7 +203,7 @@ async def clear_recent_alerts(user_id: str = Depends(get_current_user_id)):
         return {"status": "success", "message": "Alerts cleared"}
     except Exception as e:
         logger.error(f"Error clearing alerts: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 from src.repositories.report_repository import AsyncAlchemyReportRepository
 def get_reports_repository() -> AsyncAlchemyReportRepository:
@@ -222,7 +220,7 @@ async def get_reports(repo: AsyncAlchemyReportRepository = Depends(get_reports_r
         }
     except Exception as e:
         logger.error(f"Error fetching reports: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 from src.utils.rate_limit import limiter
 from fastapi import Request
@@ -246,4 +244,4 @@ async def trigger_rebalance(
         }
     except Exception as e:
         logger.error(f"Error triggering rebalance: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="Internal server error")
