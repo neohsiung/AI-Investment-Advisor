@@ -7,6 +7,7 @@ from src.domain.entities import RiskKeyword
 @pytest.fixture
 def mock_repo():
     repo = MagicMock()
+    repo.engine = MagicMock()
     repo.get_all_thresholds.return_value = {
         "vix_high": 25.0,
         "vix_extreme": 40.0,
@@ -53,7 +54,11 @@ def sentinel_service(mock_repo, mock_market_service, mock_tx_service, mock_setti
     mock_buffer.clear = AsyncMock()
     mock_buffer.add_event = AsyncMock()
     
-    with patch("src.infrastructure.redis_sentinel_buffer.RedisSentinelBuffer", return_value=mock_buffer):
+    with patch("src.infrastructure.redis_sentinel_buffer.RedisSentinelBuffer", return_value=mock_buffer), \
+         patch("src.services.search_service.InternetSearchService"), \
+         patch("src.services.council_service.CouncilService"), \
+         patch("src.repositories.snapshot_repository.AlchemySnapshotRepository"), \
+         patch("src.services.token_logger_service.TokenLoggerService"):
         service = SentinelService(
             user_id="test_user",
             repo=mock_repo,

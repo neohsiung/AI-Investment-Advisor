@@ -5,7 +5,11 @@ from src.services.council_service import CouncilService
 
 @pytest.fixture
 def council_service():
-    return CouncilService(user_id="test_user")
+    with patch('src.services.council_service.AlchemyVectorRepository'), \
+         patch('src.services.council_service.LaneManager'), \
+         patch('src.services.council_service.AlchemySettingsRepository'), \
+         patch('src.data.database.get_db_engine'):
+        yield CouncilService(user_id="test_user")
 
 @pytest.mark.asyncio
 async def test_call_agent_llm_success(council_service):
@@ -54,7 +58,12 @@ async def test_run_map_reduce_portfolio(council_service):
             "Mom MSFT", "Fun MSFT", # MSFT
             "Final CIO Consensus"   # CIO
         ]
-        
+
+        async def fake_run_batch(tasks, batch_size=5):
+            return [await t() for t in tasks]
+
+        council_service.lane_manager.run_batch = fake_run_batch
+
         with patch.object(council_service, '_archive_minutes'):
             result = await council_service._run_map_reduce_portfolio(session_id, topic, context_data, user_id)
             
