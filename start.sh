@@ -318,9 +318,21 @@ function deploy_docker {
     import_n8n_workflow "investment_advisor_db" "investment_advisor_n8n"
 }
 
+function ensure_signoz_volumes {
+    for vol in signoz-clickhouse signoz-sqlite signoz-zookeeper-1; do
+        if ! docker volume inspect "$vol" &>/dev/null; then
+            echo "  Creating external volume: $vol"
+            docker volume create "$vol"
+        fi
+    done
+}
+
 function deploy_prod {
     echo "=== Mode: Production Cluster (Hardened) ==="
     check_env
+
+    # Pre-create external volumes required by SigNoz include.
+    ensure_signoz_volumes
 
     # Hot-restart path: cluster already running → only restart code services (fast, no rebuild).
     # Volume mounts in docker-compose.prod.yml ensure local src/ is live inside containers.
@@ -340,7 +352,7 @@ function deploy_prod {
     docker ps -a --format '{{.Names}}' | grep -E "^(advisor_prod|signoz|schema-migrator|signoz-otel-collector|signoz-clickhouse|signoz-zookeeper)" \
         | xargs -r docker rm 2>/dev/null || true
 
-    $PROD_COMPOSE up --build -d
+    $PROD_COMPOSE up --build -d --remove-orphans
 
     wait_for_api "http://localhost:8000/health" 120 || true
     fix_redis_queues "advisor_prod_cache"

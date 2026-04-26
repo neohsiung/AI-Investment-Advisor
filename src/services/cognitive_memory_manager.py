@@ -32,30 +32,32 @@ class CognitiveMemoryManager:
             # Fallback to relative if resolving fails in specific environments
             base_dir = Path("data/memory").resolve()
 
-        # 2. Sanitize user_id
-        safe_user_id = re.sub(r'[^a-zA-Z0-9_-]', '', str(user_id or "default"))
-        if not safe_user_id: safe_user_id = "default"
-        
+        # 2. Validate user_id — accept only alphanum/underscore/hyphen (1-128 chars).
+        # Using fullmatch so CodeQL recognises this as a taint-clearing validation gate.
+        _raw = str(user_id or "")[:128]
+        if re.fullmatch(r'[a-zA-Z0-9_-]+', _raw):
+            safe_user_id = _raw
+        else:
+            safe_user_id = "default"
+
         self.user_id = user_id
         self.engine = get_db_engine()
 
+        def _safe_path(sub: str) -> Path:
+            p = (base_dir / sub / safe_user_id).resolve()
+            if os.path.commonpath([str(p), str(base_dir)]) != str(base_dir):
+                raise PermissionError("Access denied: path outside memory base.")
+            return p
+
         # 3. Path Construction with Boundary Shield
-        lt_path = (base_dir / "long_term" / safe_user_id).resolve()
-        if not str(lt_path).startswith(str(base_dir)):
-            logger.error(f"Security Alert: Attempted path traversal for user_id={user_id}")
-            raise PermissionError("Access denied: Invalid path construction.")
-        
-        self.long_term_path = lt_path
+        self.long_term_path = _safe_path("long_term")
         self.long_term_path.mkdir(parents=True, exist_ok=True)
-        
+
         # [Task 8.3] Runtime DB Resilience
         self._db_available = self._check_db_health()
         if not self._db_available:
-            logger.warning(f"CognitiveMemoryManager ({user_id}): PostgreSQL unavailable. Falling back to local storage.")
-            fb_path = (base_dir / "medium_term_fallback" / safe_user_id).resolve()
-            if not str(fb_path).startswith(str(base_dir)):
-                raise PermissionError("Access denied: Invalid path construction.")
-            self.fallback_path = fb_path
+            logger.warning("CognitiveMemoryManager: PostgreSQL unavailable, using local fallback.")
+            self.fallback_path = _safe_path("medium_term_fallback")
             self.fallback_path.mkdir(parents=True, exist_ok=True)
 
     def _check_db_health(self) -> bool:

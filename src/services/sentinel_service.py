@@ -793,7 +793,7 @@ class SentinelService:
                 t["priority"] = already_buffered_trigger.get("priority", 3)
                 t["target_agent"] = already_buffered_trigger.get("target_agent", "CIO")
                 t["rationale"] = already_buffered_trigger.get("rationale", "Cached from Redis buffer")
-                logger.debug("Sentinel: Skipping LLM evaluation for Redis-cached trigger (P%s)", redact_secrets(t['priority']))
+                logger.debug("Sentinel: Skipping LLM evaluation for Redis-cached trigger (P%d)", int(t['priority']))
             else:
                 # 1. AI-Driven Priority & Routing
                 try:
@@ -872,7 +872,7 @@ class SentinelService:
             
             added = await self._redis_buffer.add(self.user_id, t, wait_mins)
             if added:
-                logger.debug("Sentinel: Buffered trigger to Redis (P%s). Source: %s.", redact_secrets(priority), redact_secrets(source))
+                logger.debug("Sentinel: Buffered trigger to Redis (P%d).", int(priority))
 
         # [T4] Execute immediate escalation for all P0/failed triggers in ONE batch
         if immediate_triggers:
@@ -1940,3 +1940,7 @@ class SentinelService:
             logger.error(f"Infrastructure Health Check Failed: {e}")
             
         return triggers
+n triggers
+           
+        return triggers
+n triggers

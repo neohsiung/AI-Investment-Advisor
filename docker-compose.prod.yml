@@ -150,17 +150,9 @@ services:
     networks:
       - advisor-net
 
-  # 7. Local Model Engine (Ollama)
-  ollama:
-    image: ollama/ollama:latest
-    container_name: advisor_prod_ollama
-    restart: always
-    ports:
-      - "11434:11434"
-    volumes:
-      - ollama_data:/root/.ollama
-    networks:
-      - advisor-net
+  # 7. Local Model Engine (Ollama) — managed by hermes-agent/docker-compose.infra.yml
+  #    hermes_ollama joins advisor-net with alias "ollama", accessible as ollama:11434
+  #    Start: bash ~/Work/Projects/hermes-agent/start.sh
   # 8. Enterprise Report Worker Pool (Async Task Processing)
   # Phase 1: 2 workers, scales to 4+ based on load
   worker_1:
@@ -274,7 +266,6 @@ volumes:
   advisor_db_data:
   advisor_redis_data:
   advisor_n8n_data:
-  ollama_data:
 
 networks:
   advisor-net:

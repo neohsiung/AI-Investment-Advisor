@@ -76,7 +76,7 @@ dependencies = [
     "pytz==2023.3.post1",
     "qdrant-client==1.17.1",
     "redis==5.0.1",
-    "requests==2.32.5",
+    "requests==2.33.1",
     "safety==3.7.0",
     "schedule==1.2.1",
     "sentencepiece==0.2.1",
