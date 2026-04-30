@@ -35,13 +35,14 @@ def _get_gateway_registry() -> dict[str, Any]:
                 GeminiGateway,
                 OpenAIGateway,
                 OllamaGateway,
+                NvidiaGateway,
             )
             _GATEWAY_REGISTRY = {
                 "openrouter": OpenRouterGateway,
                 "gemini": GeminiGateway,
                 "openai": OpenAIGateway,
                 "ollama": OllamaGateway,
-                "nvidia": OpenAIGateway,  # nvidia uses OpenAI-compatible API
+                "nvidia": NvidiaGateway,  # NVIDIA NIM (OpenAI-compatible)
             }
             # Try to load Anthropic / Groq if available
             try:
@@ -146,20 +147,18 @@ def _load_from_db(user_id: str, tier: str) -> List[ModelCandidate]:
     for model_id in model_ids:
         try:
             model = model_repo.get(model_id)
-            if model is None or not model.enabled:
-                logger.debug("build_config_chain: skipping disabled/missing model %s", model_id)
+            if model is None:
+                logger.debug("build_config_chain: skipping missing model %s", model_id)
                 continue
 
-            provider = provider_repo.get(model.provider_id)
-            if provider is None or not provider.enabled:
-                logger.debug("build_config_chain: skipping disabled/missing provider for model %s", model_id)
-                continue
-
-            gateway_class = registry.get(provider.provider_code)
+            # Use model.provider string directly (no FK to providers table now)
+            provider_code = model.provider
+            
+            gateway_class = registry.get(provider_code)
             if gateway_class is None:
                 logger.warning(
                     "build_config_chain: no gateway for provider_code=%s, skipping model %s",
-                    provider.provider_code, model_id,
+                    provider_code, model_id,
                 )
                 continue
 
@@ -168,24 +167,37 @@ def _load_from_db(user_id: str, tier: str) -> List[ModelCandidate]:
             max_retries = cand_cfg.get("max_retries", 2)
             timeout_seconds = float(cand_cfg.get("timeout_seconds", 30.0))
 
-            # Resolve base_url: provider row → spec default
-            base_url = provider.base_url
-            if not base_url:
-                try:
-                    from src.infrastructure.llm.provider_catalog import get_provider_catalog
-                    cat = get_provider_catalog()
-                    spec = cat.get(provider.provider_code)
-                    if spec:
-                        base_url = spec.default_base_url
-                except Exception: # nosec B110
-                    pass
+            # Resolve base_url from provider catalog
+            base_url = None
+            try:
+                from src.infrastructure.llm.provider_catalog import get_provider_catalog
+                cat = get_provider_catalog()
+                spec = cat.get(provider_code)
+                if spec:
+                    base_url = spec.default_base_url
+            except Exception: # nosec B110
+                logger.debug("Failed to get base_url from catalog for provider %s", provider_code)
 
-            api_key = _decrypt_api_key(provider.encrypted_api_key)
+            # Get API key from settings (bypassing provider table)
+            api_key = None
+            try:
+                from src.data.database import get_db_engine
+                from sqlalchemy import text
+                engine = get_db_engine()
+                with engine.connect() as conn:
+                    result = conn.execute(text(
+                        "SELECT value FROM settings WHERE key = :key AND user_id = :user_id LIMIT 1"
+                    ), {"key": f"{provider_code}_api_key", "user_id": user_id})
+                    row = result.fetchone()
+                    if row:
+                        api_key = _decrypt_api_key(row[0])
+            except Exception: # nosec B110
+                logger.debug("Failed to get API key for provider %s", provider_code)
 
             candidates.append(ModelCandidate(
                 model_id=model_id,
-                provider_code=provider.provider_code,
-                model_code=model.model_code,
+                provider_code=provider_code,
+                model_code=model.model_name,  # Use model_name not model_code
                 gateway_class=gateway_class,
                 base_url=base_url,
                 api_key=api_key,

@@ -57,8 +57,33 @@ class OpenRouterGateway(ILLMGateway):
         }
         
         # Build request data with all required fields
+        # Map local model name to actual provider model ID
+        actual_model_id = config.model
+        try:
+            import psycopg2, os
+            conn = psycopg2.connect(
+                host=os.environ.get("DB_HOST", "investment_advisor_db"),
+                user=os.environ.get("DB_USER", "postgres"),
+                password=os.environ.get("DB_PASSWORD", "postgres"),
+                database=os.environ.get("DB_NAME", "advisor_prod"),
+                connect_timeout=2
+            )
+            cur = conn.cursor()
+            cur.execute(
+                "SELECT provider_model_id FROM provider_model_id_mapping "
+                "WHERE local_model_name = %s AND provider = %s",
+                (config.model, "openrouter")
+            )
+            result = cur.fetchone()
+            if result:
+                actual_model_id = result[0]
+            cur.close()
+            conn.close()
+        except Exception:
+            pass  # Use config.model as fallback
+
         data = {
-            "model": config.model,
+            "model": actual_model_id,
             "messages": [{"role": m.role, "content": m.content} for m in messages],
             "max_tokens": config.max_tokens or 2048,
         }
@@ -102,6 +127,32 @@ class OpenRouterGateway(ILLMGateway):
 
     async def stream_chat(self, messages: List[Message], config: LLMConfig) -> AsyncGenerator[str, None]:
         url = config.base_url or "https://openrouter.ai/api/v1/chat/completions"
+
+        # Map local model name to actual provider model ID
+        actual_model_id = config.model
+        try:
+            import os, psycopg2
+            conn = psycopg2.connect(
+                host=os.environ.get('DB_HOST', 'investment_advisor_db'),
+                user=os.environ.get('DB_USER', 'postgres'),
+                password=os.environ.get('DB_PASSWORD', 'postgres'),
+                database=os.environ.get('DB_NAME', 'advisor_prod'),
+                connect_timeout=2
+            )
+            cur = conn.cursor()
+            cur.execute(
+                "SELECT provider_model_id FROM provider_model_id_mapping "
+                "WHERE local_model_name = %s AND provider = %s",
+                (config.model, 'openrouter')
+            )
+            result = cur.fetchone()
+            if result:
+                actual_model_id = result[0]
+            cur.close()
+            conn.close()
+        except Exception:
+            pass  # Use config.model as fallback
+        
         
         # Validate API key
         if not config.api_key or config.api_key.strip() == "":
@@ -116,7 +167,7 @@ class OpenRouterGateway(ILLMGateway):
         
         # Build request data with all required fields
         data = {
-            "model": config.model,
+            "model": actual_model_id,
             "messages": [{"role": m.role, "content": m.content} for m in messages],
             "stream": True,
             "max_tokens": config.max_tokens or 2048,
@@ -165,7 +216,7 @@ class OpenRouterGateway(ILLMGateway):
             "Content-Type": "application/json",
         }
         data = {
-            "model": config.model,
+            "model": actual_model_id,
             "input": text,
         }
         
@@ -355,7 +406,7 @@ class OpenAIGateway(ILLMGateway):
         if config.api_key:
             headers["Authorization"] = f"Bearer {config.api_key}"
         data = {
-            "model": config.model,
+            "model": actual_model_id,
             "messages": [{"role": m.role, "content": m.content} for m in messages],
         }
         if config.temperature is not None:
@@ -390,7 +441,7 @@ class OpenAIGateway(ILLMGateway):
             "Content-Type": "application/json",
         }
         data = {
-            "model": config.model,
+            "model": actual_model_id,
             "messages": [{"role": m.role, "content": m.content} for m in messages],
             "stream": True,
         }
@@ -425,7 +476,7 @@ class OpenAIGateway(ILLMGateway):
             "Content-Type": "application/json",
         }
         data = {
-            "model": config.model,
+            "model": actual_model_id,
             "input": text,
         }
         async with httpx.AsyncClient() as client:

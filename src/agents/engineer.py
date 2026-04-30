@@ -137,7 +137,7 @@ class SystemEngineerAgent(BaseAgent):
                 "Momentum": "prompts/momentum_agent.txt",
                 "Fundamental": "prompts/fundamental_agent.txt",
                 "Macro": "prompts/macro_agent.txt",
-                "CIO": "prompts/cio_weekly.txt",
+                "CIO": "prompts/cio_agent.txt",
                 "Risk": "prompts/risk_agent.txt",
                 "Sentiment": "prompts/sentiment_agent.txt",
                 "Thematic": "prompts/thematic_agent.txt"
