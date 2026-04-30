@@ -85,8 +85,8 @@ class AlchemySentinelRepository(BaseRepository, ISentinelRepository):
         更新或插入閾值。
         """
         query = text("""
-            INSERT INTO sentinel_thresholds (key, value, last_optimized_by, roi_hint, updated_at)
-            VALUES (:key, :value, :reviewer, :rationale, :updated_at)
+            INSERT INTO sentinel_thresholds (id, key, value, last_optimized_by, roi_hint, updated_at)
+            VALUES (:id, :key, :value, :reviewer, :rationale, :updated_at)
             ON CONFLICT(key) DO UPDATE SET
                 value = EXCLUDED.value,
                 last_optimized_by = EXCLUDED.last_optimized_by,
@@ -96,6 +96,7 @@ class AlchemySentinelRepository(BaseRepository, ISentinelRepository):
         try:
             with self.engine.begin() as conn:
                 conn.execute(query, {
+                    "id": str(__import__("uuid").uuid4()),
                     "key": key,
                     "value": value,
                     "reviewer": reviewer,

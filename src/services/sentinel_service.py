@@ -229,6 +229,10 @@ class SentinelService:
             # Dimension 9: Infrastructure Health / Self-Healing (Phase 9)
             triggers += await self._check_infrastructure_health()
             
+            # Dimension 10: Allocation Drift Check (v10.0 - Portfolio Rebalancing)
+            # Check if current portfolio allocation deviates from target allocation
+            triggers += await self._check_allocation_drift()
+            
             # ACT: Summon Council + Notifications if triggered
             if triggers:
                 await self._escalate(triggers)
@@ -1940,3 +1944,134 @@ class SentinelService:
             logger.error(f"Infrastructure Health Check Failed: {e}")
             
         return triggers
+    
+    # ──────────────────────────────────────────
+    # Dimension 10: Allocation Drift Detection (v10.0)
+    # ──────────────────────────────────────────
+    
+    async def _check_allocation_drift(self) -> List[Dict[str, Any]]:
+        """
+        Dimension 10: Allocation Drift Check
+        檢查投資組合配置是否偏離目標配置
+        
+        Returns:
+            List of triggers if drift exceeds thresholds
+        """
+        triggers = []
+        
+        try:
+            # 1. 獲取當前配置
+            current_allocation = await self._get_current_allocation()
+            target_allocation = self.settings_service.get_target_allocation(self.user_id)
+            
+            if not current_allocation or not target_allocation:
+                logger.debug("Cannot compute allocation drift: missing current or target allocation")
+                return triggers
+            
+            # 2. 計算每個持倉的漂移
+            for ticker, target_info in target_allocation.items():
+                target_weight = target_info.get('weight', 0)  # %
+                current_weight = current_allocation.get(ticker, {}).get('weight', 0)
+                
+                # 3. 漂移 % = |current - target|
+                drift_percentage = abs(current_weight - target_weight)
+                
+                # 4. 檢查閾值
+                warning_threshold = self.thresholds.get('allocation_drift_warning', 3.0)
+                alert_threshold = self.thresholds.get('allocation_drift_alert', 5.0)
+                critical_threshold = self.thresholds.get('allocation_drift_critical', 10.0)
+                
+                if drift_percentage >= critical_threshold:
+                    triggers.append({
+                        'id': f'allocation_drift_critical_{ticker}',
+                        'text': f'🆘 CRITICAL: Portfolio allocation drift detected for {ticker}: {drift_percentage:.1f}% (Current: {current_weight:.1f}%, Target: {target_weight:.1f}%). Initiating rebalance.',
+                        'type': 'allocation_drift',
+                        'severity': 'critical',
+                        'priority': 0,
+                        'ticker': ticker,
+                        'current_weight_pct': round(current_weight, 2),
+                        'target_weight_pct': round(target_weight, 2),
+                        'drift_pct': round(drift_percentage, 2),
+                        'action': 'trigger_rebalance',
+                        'timestamp': pd.Timestamp.now().isoformat()
+                    })
+                    logger.warning(f"[Allocation Drift] CRITICAL: {ticker} drift={drift_percentage:.1f}% (current={current_weight:.1f}%, target={target_weight:.1f}%)")
+                    
+                elif drift_percentage >= alert_threshold:
+                    triggers.append({
+                        'id': f'allocation_drift_alert_{ticker}',
+                        'text': f'🚨 ALERT: Portfolio allocation drift for {ticker}: {drift_percentage:.1f}% (Current: {current_weight:.1f}%, Target: {target_weight:.1f}%). Monitor for rebalance opportunity.',
+                        'type': 'allocation_drift',
+                        'severity': 'alert',
+                        'priority': 1,
+                        'ticker': ticker,
+                        'current_weight_pct': round(current_weight, 2),
+                        'target_weight_pct': round(target_weight, 2),
+                        'drift_pct': round(drift_percentage, 2),
+                        'action': 'monitor',
+                        'timestamp': pd.Timestamp.now().isoformat()
+                    })
+                    logger.info(f"[Allocation Drift] ALERT: {ticker} drift={drift_percentage:.1f}% (current={current_weight:.1f}%, target={target_weight:.1f}%)")
+                    
+                elif drift_percentage >= warning_threshold:
+                    logger.debug(f"[Allocation Drift] WARNING: {ticker} drift={drift_percentage:.1f}% (current={current_weight:.1f}%, target={target_weight:.1f}%)")
+            
+            logger.debug(f"Allocation Drift Check: {len(triggers)} triggers detected")
+            return triggers
+            
+        except Exception as e:
+            logger.error(f"Error in allocation drift check: {e}", exc_info=True)
+            return []
+
+    async def _get_current_allocation(self) -> Dict[str, Dict[str, float]]:
+        """
+        獲取當前投資組合配置（按權重 %）
+        
+        Returns:
+            {ticker: {shares, weight_pct, market_value, current_price}}
+        """
+        try:
+            # 獲取持倉
+            positions = self.transaction_service.get_active_positions(self.user_id)
+            portfolio_value = await self._calculate_total_portfolio_value()
+            
+            allocation = {}
+            for position in positions:
+                ticker = position['ticker']
+                market_value = position['market_value']
+                weight_pct = (market_value / portfolio_value * 100) if portfolio_value > 0 else 0
+                
+                allocation[ticker] = {
+                    'shares': position.get('quantity', 0),
+                    'market_value': market_value,
+                    'weight_pct': round(weight_pct, 2),
+                    'current_price': position.get('price', 0)
+                }
+            
+            logger.debug(f"Current allocation: {allocation}")
+            return allocation
+            
+        except Exception as e:
+            logger.error(f"Error calculating current allocation: {e}", exc_info=True)
+            return {}
+
+    async def _calculate_total_portfolio_value(self) -> float:
+        """
+        計算投資組合總價值（包括現金）
+        
+        Returns:
+            Total portfolio value in USD
+        """
+        try:
+            positions = self.transaction_service.get_active_positions(self.user_id)
+            cash = self.transaction_service.get_cash_balance(self.user_id)
+            
+            total_stock_value = sum(p.get('market_value', 0) for p in positions)
+            total_portfolio = total_stock_value + cash
+            
+            logger.debug(f"Portfolio value calculation: stocks={total_stock_value:.2f}, cash={cash:.2f}, total={total_portfolio:.2f}")
+            return total_portfolio
+            
+        except Exception as e:
+            logger.error(f"Error calculating portfolio value: {e}", exc_info=True)
+            return 0.0

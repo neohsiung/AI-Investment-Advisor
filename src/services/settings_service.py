@@ -293,3 +293,15 @@ class SettingsService:
         
         print(f"SettingsService: User {target_uid} initialization complete.")
         return True
+
+    def get_target_allocation(self, user_id: str = None) -> Dict[str, float]:
+        """获取目标资产配置权重"""
+        try:
+            uid = user_id or self._get_effective_uid()
+            allocation_json = self.get_setting('target_allocation', '{}', uid)
+            if isinstance(allocation_json, str):
+                import json
+                return json.loads(allocation_json)
+            return allocation_json or {}
+        except Exception as e:
+            return {'stocks': 0.6, 'bonds': 0.3, 'cash': 0.1}
