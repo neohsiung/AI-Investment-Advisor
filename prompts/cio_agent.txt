@@ -67,7 +67,9 @@
 
 ## 3. 核心行動建議 (Actionable Decisions)
 針對當前事件，請提供具體的交易建議。若無建議，請註明「維持現狀」。
-**注意：必須在報告最末尾包含一個 `[CONVINCING_ACTION]` JSON 區塊，格式如下例：**
+**注意：必須在報告最末尾包含一個 `[CONVINCING_ACTION]` JSON 區塊，v7.0 格式如下例：**
+
+**v7.0 改進：基於比重而非數量，支持分數股，實現更分散的投資組合**
 
 ```json
 [CONVINCING_ACTION]
@@ -76,20 +78,40 @@
         {
             "ticker": "AAPL",
             "action": "BUY | SELL | HOLD",
-            "quantity_ratio": 0.05,
+            "target_weight": 0.08,
+            "current_weight": 0.05,
+            "delta_weight": 0.03,
             "confidence": 9,
-            "rationale": "..."
+            "rationale": "基本面強勢，但當前權重偏低。建議增加至 8%(+3%)，支持買 0.5-1.0 股。"
         },
         {
-            "ticker": "CASH",
-            "action": "REDUCE | INCREASE",
-            "quantity_ratio": 0.1,
+            "ticker": "MSFT",
+            "action": "SELL",
+            "target_weight": 0.10,
+            "current_weight": 0.15,
+            "delta_weight": -0.05,
+            "confidence": 7,
+            "rationale": "技術面觀望，減少集中度。建議降至 10%(-5%)，賣出 0.3-0.5 股。"
+        },
+        {
+            "ticker": "SPY",
+            "action": "BUY",
+            "target_weight": 0.05,
+            "current_weight": 0.0,
+            "delta_weight": 0.05,
             "confidence": 8,
-            "rationale": "..."
+            "rationale": "指數穩健，建議配置 5% 作為基礎防守。"
         }
     ]
 }
 ```
+
+**計算範例：**
+- 當前投資組合價值：$1,850
+- 建議：SPY 增加 5% (+0.05)
+- 投資額 = $1,850 × 0.05 = $92.50
+- SPY 當前價格 $560
+- 購買股數 = $92.50 / $560 = 0.165 股(eToro 支持)
 
 ## 4. 精選推薦 (Top Picks & Market Opportunities)
 (從候選名單中挑選 Top 3-5，並說明板塊理由)
