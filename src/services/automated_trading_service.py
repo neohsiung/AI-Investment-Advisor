@@ -30,11 +30,17 @@ class AutomatedTradingService:
         self.notification_service = notification_service
         self.notification_api_url = os.getenv("NOTIFICATION_API_URL", "http://notification:8001/api/v1/notify")
 
-    async def evaluate_and_execute_trade(self, user_id: str, ticker: str, action: str, quantity: float, 
-                                         confidence_score: int, rationale: str) -> Dict[str, Any]:
+    async def evaluate_and_execute_trade(self, user_id: str, ticker: str, action: str, quantity: float = None,
+                                         confidence_score: int = None, rationale: str = None,
+                                         target_weight: float = None, current_weight: float = None,
+                                         delta_weight: float = None, portfolio_value: float = None) -> Dict[str, Any]:
         """
         Evaluate and potentially execute a trade based on confidence score.
         評估並可能根據信心分數執行交易。
+        
+        v7.0: Support weight-based position sizing (fractional shares)
+        - If target_weight/current_weight/delta_weight provided: calculate quantity from weights
+        - Otherwise: use legacy quantity-based approach
         """
         
         # v4.2.2: Ensure notification service is correctly configured for this user
@@ -43,6 +49,33 @@ class AutomatedTradingService:
             from src.services.notification_service import NotificationService
             settings_svc = SettingsService(user_id=user_id)
             self.notification_service = NotificationService.create_with_settings(settings_service=settings_svc, user_id=user_id)
+
+        # [NEW v7.0] Weight-based quantity calculation
+        # If target_weight is provided, calculate quantity from delta_weight
+        if delta_weight is not None and portfolio_value is not None and quantity is None:
+            try:
+                broker = BrokerFactory.get_broker(user_id)
+                if broker:
+                    # Get current price for the ticker
+                    # Note: This is a simplified approach; actual implementation may need more sophisticated pricing
+                    current_price = await self._get_current_price(broker, ticker)
+                    if current_price and current_price > 0:
+                        # Calculate dollar amount from delta_weight
+                        delta_amount = delta_weight * portfolio_value
+                        quantity = delta_amount / current_price
+                        logger.info(f"Weight-based calculation: delta_weight={delta_weight}, portfolio_value=${portfolio_value}, current_price=${current_price}, quantity={quantity:.4f}")
+                    else:
+                        logger.warning(f"Could not get current price for {ticker}, falling back to legacy approach")
+                        if quantity is None:
+                            quantity = 1.0  # Default fallback
+            except Exception as e:
+                logger.warning(f"Weight-based calculation failed: {e}, using quantity parameter")
+                if quantity is None:
+                    quantity = 1.0  # Default fallback
+        
+        # Ensure quantity is set
+        if quantity is None:
+            quantity = 1.0
 
         # 1. Check if trading is enabled
         trading_enabled = self.settings_repo.get(user_id, "ai_trading_enabled")
@@ -283,6 +316,22 @@ class AutomatedTradingService:
              logger.error(f"Trade execution failed: {e}")
              return {"status": "error", "reason": str(e)}
 
+    async def _get_current_price(self, broker, ticker: str) -> float:
+        """Get current price for a ticker from broker."""
+        try:
+            # Try to get from market data if available
+            if hasattr(broker, 'get_quote'):
+                quote = await broker.get_quote(ticker)
+                if quote and 'price' in quote:
+                    return float(quote['price'])
+            
+            # Fallback: try to get from positions or market data
+            logger.warning(f"Could not retrieve price for {ticker} from broker")
+            return None
+        except Exception as e:
+            logger.warning(f"Error getting price for {ticker}: {e}")
+            return None
+
     async def _notify_via_api(
         self, user_id: str, title: str, content: str, category: str = "approval"
     ) -> None:
@@ -351,19 +400,40 @@ class AutomatedTradingService:
         for trade in trades:
             ticker = trade.get("ticker")
             action = trade.get("action")
-            quantity = float(trade.get("quantity", 1.0))
             confidence = int(trade.get("confidence", 5))
             reason = trade.get("reason", "Council Recommendation")
             
+            # v7.0: Support both legacy (quantity) and new (weight-based) formats
+            quantity = None
+            target_weight = None
+            current_weight = None
+            delta_weight = None
+            portfolio_value = None
+            
+            # Try weight-based format first
+            if "target_weight" in trade and "delta_weight" in trade:
+                target_weight = float(trade.get("target_weight"))
+                current_weight = float(trade.get("current_weight", 0))
+                delta_weight = float(trade.get("delta_weight"))
+                portfolio_value = float(trade.get("portfolio_value", 0))
+                logger.info(f"AutomatedTradingService: Extracted weight-based trade -> {action} {ticker} (target_weight={target_weight}%, delta={delta_weight:+.2%}, Confidence: {confidence})")
+            else:
+                # Legacy format: use quantity
+                quantity = float(trade.get("quantity", 1.0))
+                logger.info(f"AutomatedTradingService: Extracted legacy trade -> {action} {quantity} {ticker} (Confidence: {confidence})")
+            
             if ticker and action:
-                logger.info(f"AutomatedTradingService: Extracted trade -> {action} {quantity} {ticker} (Confidence: {confidence})")
                 res = await self.evaluate_and_execute_trade(
                     user_id=user_id, 
                     ticker=ticker, 
                     action=action, 
-                    quantity=quantity, 
+                    quantity=quantity,
                     confidence_score=confidence, 
-                    rationale=reason
+                    rationale=reason,
+                    target_weight=target_weight,
+                    current_weight=current_weight,
+                    delta_weight=delta_weight,
+                    portfolio_value=portfolio_value
                 )
                 results.append(res)
             else:

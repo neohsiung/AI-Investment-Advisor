@@ -8,7 +8,7 @@ from src.repositories.settings_repository import AlchemySettingsRepository
 from src.utils.json_utils import json_loads_safe
 
 class CIOAgent(BaseAgent):
-    def __init__(self, use_cache=True, transaction_repo=None, prompt_path="prompts/cio_weekly.txt", mode="report", **kwargs):
+    def __init__(self, use_cache=True, transaction_repo=None, prompt_path="prompts/cio_agent.txt", mode="report", **kwargs):
         # Allow tier override or kwargs
         tier = kwargs.pop('tier', 'smart')
         mode_map = {
