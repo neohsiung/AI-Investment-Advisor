@@ -108,3 +108,56 @@ class TransactionService:
             return True, f"Transaction {transaction_id} deleted."
         except Exception as e:
             return False, f"Failed to delete transaction: {e}"
+
+    def get_active_positions(self, user_id: str = None) -> List[Dict]:
+        """获取活跃持仓列表"""
+        try:
+            holdings = self.get_holdings_map(user_id or self.user_id)
+            positions = []
+            for ticker, data in holdings.items():
+                if data.get('quantity', 0) > 0:
+                    positions.append({
+                        'ticker': ticker,
+                        'quantity': data['quantity'],
+                        'avg_price': data.get('avg_price', 0),
+                        'current_price': data.get('current_price', 0),
+                        'market_value': data.get('market_value', 0)
+                    })
+            return positions
+        except Exception as e:
+            return []
+
+
+    def get_cash_balance(self, user_id: str = None) -> float:
+        """获取现金余额 (Cash Balance)"""
+        try:
+            uid = user_id or self.user_id
+            # 先检查是否有 CASH 特殊头寸
+            positions = self.get_active_positions(uid)
+            for pos in positions:
+                if pos.get('ticker', '').upper() == 'CASH':
+                    return float(pos.get('quantity', 0))
+            
+            # 从 portfolios 表查询现金余额
+            try:
+                import psycopg2
+                # 如果有 DB 连接属性，使用它
+                if hasattr(self, 'db') and self.db:
+                    cur = self.db.cursor()
+                    cur.execute(
+                        "SELECT COALESCE(cash_balance, 0) FROM portfolios WHERE user_id = %s LIMIT 1",
+                        [uid]
+                    )
+                    result = cur.fetchone()
+                    cur.close()
+                    if result:
+                        return float(result[0])
+            except:
+                pass
+            
+            # Fallback: 返回 0
+            return 0.0
+        except Exception as e:
+            if hasattr(self, '_logger'):
+                self._logger.warning(f"get_cash_balance failed: {e}")
+            return 0.0
