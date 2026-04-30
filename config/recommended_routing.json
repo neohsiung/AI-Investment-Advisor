@@ -1,0 +1,46 @@
+{
+  "implementation_date": "2026-04-27T23:36:39.742049",
+  "strategy": "BALANCED (60% 免費 + 40% 付費)",
+  "weekly_budget_allocation_usd": 32.25,
+  "routing_table": {
+    "DeepResearch": {
+      "primary": "openrouter/claude-3.5-sonnet",
+      "fallback_1": "nvidia_nim/llama-3.1-70b",
+      "fallback_2": "ollama/deepseek-r1",
+      "fallback_3": "openrouter/gpt-4-turbo",
+      "cost_per_request_usd": 0.02,
+      "success_rate_pct": 99.2,
+      "latency_ms": 2100
+    },
+    "MemoryDig": {
+      "primary": "nvidia_nim/mixtral-8x22b",
+      "fallback_1": "openrouter/claude-3.5-haiku",
+      "fallback_2": "ollama/llama2:70b",
+      "fallback_3": "openrouter/gpt-4-turbo",
+      "cost_per_request_usd": 0.003,
+      "success_rate_pct": 98.5,
+      "latency_ms": 1200
+    },
+    "FastThink": {
+      "primary": "ollama/mistral:7b",
+      "fallback_1": "nvidia_nim/mistral-7b",
+      "fallback_2": "openrouter/claude-3.5-haiku",
+      "fallback_3": "ollama/phi",
+      "cost_per_request_usd": 0.0,
+      "success_rate_pct": 99.8,
+      "latency_ms": 500
+    },
+    "Reflexive": {
+      "primary": "ollama/phi:2.7b",
+      "fallback_1": "nvidia_nim/qwen-2.5-7b",
+      "fallback_2": "openrouter/llama-3.1-8b",
+      "fallback_3": "ollama/mistral:7b",
+      "cost_per_request_usd": 0.0,
+      "success_rate_pct": 99.9,
+      "latency_ms": 200
+    }
+  },
+  "estimated_monthly_cost_usd": 51.6,
+  "monthly_requests": 45000,
+  "cost_per_1k_requests": 1.147
+}
