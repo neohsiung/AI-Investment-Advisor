@@ -71,11 +71,12 @@ async def run_workflow(mode="daily", dry_run=False, user_id=None, force_report=F
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--dry-run", action="store_true")
-    parser.add_argument("--mode", choices=['daily', 'weekly', 'backtest', 'optimize', 'scheduler'], default='weekly', help="Execution mode")
+    parser.add_argument("--mode", choices=['daily', 'weekly', 'backtest', 'optimize', 'scheduler', 'worker'], default='weekly', help="Execution mode")
     parser.add_argument("--task", choices=['daily', 'weekly', 'monthly'], help="Specific task for scheduler mode (optional, defaults to loop)")
     parser.add_argument("--user_id", type=str, default=None, help="Specific User ID for SaaS mode")
     parser.add_argument("--ticker", type=str, default="AAPL", help="Ticker for backtest")
     parser.add_argument("--force-report", action="store_true", help="Force generate report even if no significant changes")
+    parser.add_argument("--concurrency", type=int, default=4, help="Number of concurrent workers for worker mode")
     args = parser.parse_args()
 
     if args.mode == 'backtest':
@@ -88,6 +89,12 @@ def main():
         trainset = pipeline.load_training_data(agent_name="Momentum")
         if trainset:
             pipeline.optimize_momentum_agent(trainset)
+    elif args.mode == 'worker':
+        # Enterprise worker pool mode - processes queued jobs asynchronously
+        from src.infrastructure.scheduler.job_worker import run_worker_mode
+        print(f"[{format_time()}] Starting PAD Worker Pool (concurrency={args.concurrency})...")
+        logger.info(f"Starting worker pool with concurrency={args.concurrency}")
+        asyncio.run(run_worker_mode(concurrency=args.concurrency))
             
     elif args.mode == 'scheduler':
         from src.services.scheduler_service import SchedulerService

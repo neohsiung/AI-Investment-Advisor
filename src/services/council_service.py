@@ -109,12 +109,18 @@ class CouncilService:
         """
         Phase 4: Map-Reduce execution for full portfolio analysis.
         第四階段：針對全投資組合分析的 Map-Reduce 執行。
+        
+        v7.0: Added HOLDINGS FILTERING + Scout Agents for buy opportunities.
         """
         portfolio = context_data.get("portfolio", [])
         if not portfolio:
              return {"error": "No portfolio data provided for map-reduce."}
 
-        # --- Phase 1: Map (Parallel Analysis) ---
+        # [NEW] Phase 0: Holdings Filtering
+        # Only analyze ACTUAL holdings (防止建議不存在的股票)
+        logger.info(f"Map-Reduce: Filtering portfolio to {len(portfolio)} actual holdings...")
+        
+        # --- Phase 1: Map (Parallel Analysis on HOLDINGS ONLY) ---
         # Define the task for each ticker
         async def analyze_ticker_task(ticker_data):
             ticker = ticker_data['symbol']
@@ -148,6 +154,29 @@ class CouncilService:
         logger.info(f"Map-Reduce: Starting analysis for {len(portfolio)} tickers...")
         map_results = await self.lane_manager.run_batch(tasks, batch_size=5)
         
+        # [NEW] Phase 1b: Parallel Scout Agents for BUY opportunities
+        # Simultaneously run Scout agents to find new buy candidates
+        scout_summary = ""
+        try:
+            logger.info("Map-Reduce: Starting Scout Agents for buy opportunities...")
+            scout_tasks = [
+                self._call_agent_llm("Momentum Scout", {"portfolio": portfolio, "market_data": context_data.get("market_data")}, tier="fast"),
+                self._call_agent_llm("Fundamental Scout", {"portfolio": portfolio, "market_data": context_data.get("market_data")}, tier="fast"),
+                self._call_agent_llm("Macro Scout", {"portfolio": portfolio, "market_data": context_data.get("market_data")}, tier="fast"),
+            ]
+            scout_results = await asyncio.gather(*scout_tasks, return_exceptions=True)
+            
+            # Handle Scout results (filter out exceptions)
+            scout_summary = "## Scout Agents: Buy Opportunities\n"
+            for i, result in enumerate(scout_results):
+                if isinstance(result, Exception):
+                    logger.warning(f"Scout Agent {i} failed: {result}")
+                else:
+                    scout_summary += f"\n{result}\n"
+        except Exception as e:
+            logger.warning(f"Scout Agents execution failed (non-blocking): {e}")
+            scout_summary = ""
+        
         # --- Phase 2: Reduce (Aggregation) ---
         aggregated_summary = "## 2. 議會焦點辯論 (The Great Debate & Detailed Analysis)\n"
         for res in map_results:
@@ -166,7 +195,7 @@ class CouncilService:
         
         final_context = {
             "topic": topic,
-            "council_transcript": aggregated_summary, 
+            "council_transcript": aggregated_summary + "\n" + scout_summary,  # [NEW] Include Scout recommendations
             "memory_chain": "Map-Reduce Session",
             "current_date": datetime.now().strftime("%Y-%m-%d"),
             "market_data": context_data.get("market_data"),
@@ -218,7 +247,20 @@ class CouncilService:
         # Instantiate Agents with retrieved context
         # [Fix] Wrap in try-except to prevent one agent failure from crashing the whole council
         # PAD Phase 2: Remove agent instantiation; we'll call via _call_agent_llm
-        agent_names = ["Momentum", "Fundamental", "Risk", "Sentiment", "Macro"]
+        # [B-PLAN] v2.0: 12 核心 Agents（3个 Scout + 7 分析 + CIO + Engineer）
+        agent_names = [
+            "Macro",
+            "Momentum", 
+            "Fundamental",
+            "Sentiment",
+            "Thematic",
+            "Risk",
+            "Sentinel",
+            # Scout agents for buy-side opportunity discovery
+            "Momentum Scout",
+            "Fundamental Scout",
+            "Macro Scout"
+        ]
 
         # 3. Debate
         stances = []
