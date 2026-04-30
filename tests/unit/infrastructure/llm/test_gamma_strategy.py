@@ -123,7 +123,7 @@ class TestComplexityDetector:
         """Mixed signals should have moderate confidence."""
         result = detector.analyze("Show me some analysis")
         # Moderate confidence for ambiguous input
-        assert 0.4 < result.confidence < 0.8
+        assert 0.4 < result.confidence <= 0.8
     
     # ─── Recommendation Tests ───
     

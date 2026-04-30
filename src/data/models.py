@@ -1,4 +1,4 @@
-from sqlalchemy import Column, String, Text, DateTime, Numeric, Integer, ForeignKey, JSON, Boolean, UniqueConstraint, CheckConstraint, Index
+from sqlalchemy import Column, String, Text, DateTime, Numeric, Integer, ForeignKey, JSON, Boolean, UniqueConstraint, CheckConstraint, Index, Date
 from sqlalchemy.orm import declarative_base
 from sqlalchemy.sql import func
 from sqlalchemy.dialects import postgresql
@@ -10,6 +10,14 @@ from pgvector.sqlalchemy import Vector
 # macOS dev (SQLite default) can still run migrations and tests.
 def _JSONB():
     return JSON().with_variant(postgresql.JSONB(astext_type=Text()), "postgresql")
+
+def _ARRAY(item_type):
+    # On SQLite, we store arrays as JSON strings
+    return JSON().with_variant(postgresql.ARRAY(item_type), "postgresql")
+
+def _DOUBLE():
+    # On SQLite, we use Numeric/Float
+    return Numeric(asdecimal=False).with_variant(postgresql.DOUBLE_PRECISION(), "postgresql")
 
 Base = declarative_base()
 
@@ -94,8 +102,9 @@ class RiskKeyword(Base):
     weight = Column(Numeric(18, 8), default=0.5)
     category = Column(String, default='custom')
     hit_count = Column(Integer, default=0)
-    last_hit_date = Column(String)
+    last_hit_date = Column(Date)
     is_active = Column(Integer, default=1)
+    source = Column(String, default='seed')
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
 class PromptCache(Base):
@@ -296,3 +305,336 @@ class LLMAgentOverride(Base):
         Index('ix_llm_agent_overrides_agent_name', 'agent_name'),
         Index('ix_llm_agent_overrides_primary_model', 'primary_model_id'),
     )
+
+
+# ======================================================================
+# Core Trading & Portfolio Models
+# ======================================================================
+
+class Transaction(Base):
+    """
+    `transactions` — Core ledger for all cash and asset movements.
+    """
+    __tablename__ = 'transactions'
+    
+    id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
+    user_id = Column(String, ForeignKey('users.id', ondelete='CASCADE'), nullable=False, index=True)
+    ticker = Column(String, nullable=False, index=True)
+    trade_date = Column(Date, nullable=False, index=True)
+    action = Column(String, nullable=False) # BUY, SELL, DIVIDEND, FEE, TAX, DEPOSIT, WITHDRAWAL
+    quantity = Column(Numeric(18, 8), nullable=False)
+    price = Column(Numeric(18, 8), nullable=False)
+    fees = Column(Numeric(18, 8), default=0)
+    amount = Column(Numeric(18, 8), nullable=False)
+    currency = Column(String, default='USD')
+    leverage = Column(Numeric(18, 8), default=1.0)
+    source_file = Column(String) # e.g., 'etoro_export.csv', 'manual', 'ETORO_SYNC'
+    entry_category = Column(String, default='trade') # trade, capital_flow, sync_adjustment
+    raw_data = Column(_JSONB())
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+
+class PositionLot(Base):
+    """
+    `position_lots` — Tracks specific tax lots for O(1) avg_cost and PnL calculation.
+    """
+    __tablename__ = 'position_lots'
+    
+    id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
+    user_id = Column(String, ForeignKey('users.id', ondelete='CASCADE'), nullable=False)
+    ticker = Column(String, nullable=False)
+    open_date = Column(String, nullable=False) # Kept as string to match existing schema
+    close_date = Column(String)
+    quantity = Column(postgresql.DOUBLE_PRECISION, nullable=False)
+    open_price = Column(postgresql.DOUBLE_PRECISION, nullable=False)
+    close_price = Column(postgresql.DOUBLE_PRECISION)
+    leverage = Column(postgresql.DOUBLE_PRECISION, default=1.0)
+    is_open = Column(Boolean, default=True)
+    source_tx_id = Column(String, ForeignKey('transactions.id', ondelete='SET NULL'))
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+    __table_args__ = (
+        Index('idx_position_lots_user_open', 'user_id', 'is_open'),
+        Index('idx_position_lots_user_ticker', 'user_id', 'ticker'),
+    )
+
+class DailySnapshot(Base):
+    """
+    `daily_snapshots` — Historical EOD account balances and performance metrics.
+    """
+    __tablename__ = 'daily_snapshots'
+    
+    date = Column(Date, primary_key=True)
+    user_id = Column(String, ForeignKey('users.id', ondelete='CASCADE'), primary_key=True)
+    account_id = Column(String, primary_key=True, default='')
+    total_nlv = Column(Numeric(18, 8))
+    cash_balance = Column(Numeric(18, 8))
+    invested_capital = Column(Numeric(18, 8))
+    pnl = Column(Numeric(18, 8))
+    total_tnv = Column(Numeric(18, 8), default=0)
+    leverage_ratio = Column(Numeric(18, 8), default=0)
+    conviction_level = Column(Numeric(18, 8), default=0)
+    time_horizon = Column(String)
+
+class PortfolioSnapshot(Base):
+    """
+    `portfolio_snapshots` — Redundant but used in some legacy views.
+    """
+    __tablename__ = 'portfolio_snapshots'
+    
+    id = Column(Integer, primary_key=True)
+    user_id = Column(String, index=True)
+    account_value = Column(Numeric(18, 2))
+    cash = Column(Numeric(18, 2))
+    invested = Column(Numeric(18, 2))
+    portfolio_pl = Column(Numeric(18, 2))
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+class CashFlow(Base):
+    """
+    `cash_flows` — Records of capital injections and withdrawals.
+    """
+    __tablename__ = 'cash_flows'
+    
+    id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
+    user_id = Column(String, ForeignKey('users.id', ondelete='CASCADE'), index=True)
+    date = Column(Date)
+    amount = Column(Numeric(18, 8))
+    type = Column(String) # DEPOSIT, WITHDRAWAL
+    description = Column(String)
+
+# ======================================================================
+# Agent Memory & Intelligence Models
+# ======================================================================
+
+class MemoryEmbedding(Base):
+    """
+    `memory_embeddings` — Long-term semantic memory for agents.
+    """
+    __tablename__ = 'memory_embeddings'
+    
+    id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
+    user_id = Column(String, ForeignKey('users.id', ondelete='CASCADE'), nullable=False, index=True)
+    content = Column(Text, nullable=False)
+    embedding = Column(Vector(1536)) # Standard OpenAI embedding size
+    meta = Column("metadata", _JSONB(), default={})
+    embedding_model = Column(String, default='text-embedding-ada-002')
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    expires_at = Column(DateTime(timezone=True))
+
+class CouncilMinute(Base):
+    """
+    `council_minutes` — Records of Agent Council deliberations and consensus.
+    """
+    __tablename__ = 'council_minutes'
+    
+    id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
+    user_id = Column(String, ForeignKey('users.id', ondelete='CASCADE'), nullable=False, index=True)
+    session_id = Column(String, nullable=False, index=True)
+    topic = Column(String)
+    participants = Column(Text) # JSON list of agent names
+    consensus = Column(Text)
+    transcript = Column(Text)
+    embedding = Column(Vector(1536))
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+class ReportJob(Base):
+    """
+    `report_jobs` — Tracks the state of complex multi-stage report generation.
+    """
+    __tablename__ = 'report_jobs'
+    
+    id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
+    user_id = Column(String, ForeignKey('users.id', ondelete='CASCADE'), nullable=False, index=True)
+    report_type = Column(String, nullable=False)
+    scheduled_date = Column(Date)
+    status = Column(String, default='pending') # pending, running, completed, failed
+    current_stage = Column(Integer, default=0)
+    priority = Column(Integer, default=0)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    started_at = Column(DateTime(timezone=True))
+    completed_at = Column(DateTime(timezone=True))
+    error_message = Column(Text)
+    error_details = Column(_JSONB())
+    report_id = Column(String) # Link back after creation
+    checkpoint_data = Column(_JSONB())
+    last_checkpoint_stage = Column(Integer)
+    model_used = Column(String)
+    cost_estimate = Column(_DOUBLE())
+    tags = Column(_ARRAY(String))
+
+class JobTelemetry(Base):
+    """
+    `job_telemetry` — Fine-grained timing and token usage for report job stages.
+    """
+    __tablename__ = 'job_telemetry'
+    
+    id = Column(Integer, primary_key=True)
+    job_id = Column(String, ForeignKey('report_jobs.id', ondelete='CASCADE'), nullable=False, index=True)
+    stage = Column(Integer)
+    stage_name = Column(String)
+    started_at = Column(DateTime(timezone=True), server_default=func.now())
+    completed_at = Column(DateTime(timezone=True))
+    duration_ms = Column(Integer)
+    status = Column(String)
+    model_used = Column(String)
+    tokens_input = Column(Integer)
+    tokens_output = Column(Integer)
+    cost_usd = Column(_DOUBLE())
+    error_code = Column(String)
+    error_message = Column(Text)
+    retry_count = Column(Integer, default=0)
+    meta = Column("metadata", _JSONB(), default={})
+
+class Report(Base):
+    """
+    `reports` — Generated analysis reports (Daily, Weekly, Monthly).
+    """
+    __tablename__ = 'reports'
+    
+    id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
+    user_id = Column(String, ForeignKey('users.id', ondelete='CASCADE'), nullable=False, index=True)
+    report_type = Column(String, nullable=False) # daily, weekly, monthly, thematic
+    title = Column(String, nullable=False)
+    content = Column(Text, nullable=False)
+    summary = Column(Text)
+    job_id = Column(String, ForeignKey('report_jobs.id', ondelete='SET NULL'), index=True)
+    generation_model = Column(String)
+    generation_cost_usd = Column(_DOUBLE())
+    is_draft = Column(Boolean, default=False)
+    embedding = Column(Vector(1536))
+    meta = Column("metadata", _JSONB(), default={})
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    published_at = Column(DateTime(timezone=True))
+
+class Recommendation(Base):
+    """
+    `recommendations` — Specific trade or action recommendations from agents.
+    """
+    __tablename__ = 'recommendations'
+    
+    id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
+    user_id = Column(String, ForeignKey('users.id', ondelete='CASCADE'), nullable=False, index=True)
+    date = Column(DateTime(timezone=True), server_default=func.now())
+    agent = Column(String, nullable=False)
+    ticker = Column(String, nullable=False)
+    signal = Column(String, nullable=False) # BUY, SELL, HOLD
+    price_at_signal = Column(Numeric(18, 8))
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+class CognitiveMemory(Base):
+    """
+    `cognitive_memories` — Medium-term structured storage for agent insights.
+    """
+    __tablename__ = 'cognitive_memories'
+    
+    id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
+    user_id = Column(String, ForeignKey('users.id', ondelete='CASCADE'), nullable=False, index=True)
+    agent_name = Column(String, nullable=False)
+    memory_type = Column(String, nullable=False) # insight, conviction, lesson, summary
+    content = Column(_JSONB(), nullable=False)
+    importance = Column(Numeric(18, 8), default=0.5)
+    source_id = Column(String)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+
+    __table_args__ = (
+        Index('idx_cog_mem_user_type', 'user_id', 'memory_type'),
+    )
+
+class InvestmentSkill(Base):
+    """
+    `investment_skills` — Learned investment techniques and conditions.
+    """
+    __tablename__ = 'investment_skills'
+    
+    id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
+    user_id = Column(String, ForeignKey('users.id', ondelete='CASCADE'), nullable=False)
+    name = Column(String, nullable=False)
+    description = Column(Text)
+    timeframe = Column(String)
+    environment = Column(_JSONB(), default={})
+    industry = Column(_JSONB(), default=[])
+    technique = Column(Text)
+    conditions = Column(_JSONB(), default={})
+    source_article = Column(Text)
+    source_type = Column(String, default='article')
+    source_highlight_id = Column(String)
+    merged_from = Column(_JSONB(), default=[])
+    usage_count = Column(Integer, default=0)
+    last_used_at = Column(DateTime(timezone=True))
+    is_active = Column(Integer, default=1)
+    version = Column(Integer, default=1)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+
+class SkillLearningConfig(Base):
+    """
+    `skill_learning_config` — Per-user configuration for skill learning.
+    """
+    __tablename__ = 'skill_learning_config'
+    
+    user_id = Column(String, ForeignKey('users.id', ondelete='CASCADE'), primary_key=True)
+    merge_threshold = Column(Numeric(18, 8), default=0.70)
+    max_token_budget = Column(Integer, default=2000)
+    last_token_usage = Column(Integer, default=0)
+    total_skills_count = Column(Integer, default=0)
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+
+# ======================================================================
+# System & Feedback Models
+# ======================================================================
+
+class WebPushSubscription(Base):
+    """
+    `web_push_subscriptions` — Browser push notification subscriptions.
+    """
+    __tablename__ = 'web_push_subscriptions'
+    
+    id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
+    user_id = Column(String, ForeignKey('users.id', ondelete='CASCADE'), nullable=False, index=True)
+    subscription_json = Column(_JSONB(), nullable=False)
+    device_info = Column(_JSONB(), default={})
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+class AgentFeedback(Base):
+    """
+    `agent_feedback` — Direct feedback on agent responses for reinforcement learning.
+    """
+    __tablename__ = 'agent_feedback'
+    
+    id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
+    agent_name = Column(String, nullable=False)
+    context_embedding = Column(Vector(1536))
+    context_text = Column(Text)
+    response_text = Column(Text)
+    signal = Column(String)
+    outcome_score = Column(Numeric(18, 8))
+    timestamp = Column(DateTime(timezone=True), server_default=func.now())
+
+class AgentReview(Base):
+    """
+    `agent_reviews` — HR 360 reviews where agents review each other.
+    """
+    __tablename__ = 'agent_reviews'
+    
+    id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
+    reviewer = Column(String, nullable=False)
+    reviewee = Column(String, nullable=False)
+    score = Column(Integer, nullable=False)
+    comment = Column(Text)
+    context_hash = Column(String)
+    timestamp = Column(DateTime(timezone=True), server_default=func.now())
+
+class SchedulerLog(Base):
+    """
+    `scheduler_logs` — Logs for background job execution.
+    """
+    __tablename__ = 'scheduler_logs'
+    
+    id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
+    timestamp = Column(DateTime(timezone=True), server_default=func.now())
+    job_name = Column(String, nullable=False)
+    status = Column(String, nullable=False) # success, failed, running
+    message = Column(Text)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())

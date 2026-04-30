@@ -294,14 +294,30 @@ class SettingsService:
         print(f"SettingsService: User {target_uid} initialization complete.")
         return True
 
-    def get_target_allocation(self, user_id: str = None) -> Dict[str, float]:
-        """获取目标资产配置权重"""
+    def get_target_allocation(self, user_id: str = None) -> Dict[str, Any]:
+        """获取目标资产配置权重。回傳格式: {ticker: {"weight": float}}"""
         try:
             uid = user_id or self._get_effective_uid()
             allocation_json = self.get_setting('target_allocation', '{}', uid)
             if isinstance(allocation_json, str):
                 import json
-                return json.loads(allocation_json)
-            return allocation_json or {}
+                raw = json.loads(allocation_json)
+            else:
+                raw = allocation_json or {}
+
+            # 正規化: 若 value 是 float/int，包裝為 {"weight": value}
+            normalized = {}
+            for key, val in raw.items():
+                if isinstance(val, (int, float)):
+                    normalized[key] = {"weight": float(val)}
+                elif isinstance(val, dict):
+                    normalized[key] = val
+                else:
+                    # 嘗試轉換為 float
+                    try:
+                        normalized[key] = {"weight": float(val)}
+                    except (ValueError, TypeError):
+                        pass  # 跳過無法解析的 entry
+            return normalized
         except Exception as e:
-            return {'stocks': 0.6, 'bonds': 0.3, 'cash': 0.1}
+            return {}  # 回傳空 dict 而非不相容的 fallback

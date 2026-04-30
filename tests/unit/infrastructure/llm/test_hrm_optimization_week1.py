@@ -305,8 +305,8 @@ class TestCostTrackingService:
             user_id="user_soft",
             tier="advanced",
             request_id="req_1",
-            input_tokens=5_000_000,
-            output_tokens=2_000_000
+            input_tokens=2_000_000,
+            output_tokens=600_000
         )
         
         # Check budget for another $5 request → should exceed soft limit

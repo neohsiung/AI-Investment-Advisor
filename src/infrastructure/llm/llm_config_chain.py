@@ -73,6 +73,12 @@ def _decrypt_api_key(encrypted_key: Optional[str]) -> Optional[str]:
         return encrypted_key  # Return as-is if decryption fails
 
 
+import time
+
+# Chain Cache: (user_id, tier) -> (timestamp, List[ModelCandidate])
+_CHAIN_CACHE: dict[tuple[str, str], tuple[float, List[ModelCandidate]]] = {}
+_CHAIN_CACHE_TTL = 300  # 5 minutes
+
 def build_config_chain(
     user_id: str,
     tier: str,
@@ -81,21 +87,16 @@ def build_config_chain(
 ) -> List[ModelCandidate]:
     """
     Build an ordered list of ModelCandidates for the given (user_id, tier).
-
-    Strategy:
-      1. If db_session provided, try to load from llm_tier_bindings
-      2. If no DB binding found, fall back to tier_config.py defaults
-      3. Returns at least one candidate (never empty)
-
-    Args:
-        user_id: The user whose tier binding to load.
-        tier: One of "nano", "fast", "smart", "advanced".
-        db_session: Optional SQLAlchemy session (if None, uses default engine).
-        catalog: Optional ProviderCatalog (unused currently, reserved for future).
-
-    Returns:
-        List[ModelCandidate] ordered primary-first.
+    Includes a 5-minute TTL cache for performance.
     """
+    cache_key = (user_id, tier)
+    now = time.time()
+    
+    if cache_key in _CHAIN_CACHE:
+        ts, candidates = _CHAIN_CACHE[cache_key]
+        if now - ts < _CHAIN_CACHE_TTL:
+            return candidates
+
     candidates: List[ModelCandidate] = []
 
     # ── Step 1: Try DB binding ──────────────────────────────────────
@@ -113,7 +114,9 @@ def build_config_chain(
             "build_config_chain: No DB binding found for user=%s tier=%s. [STRICT] Fallback to defaults is disabled.",
             user_id, tier
         )
-        # We return empty list. The pipeline will raise an error if it cannot find any candidate.
+    
+    # Update Cache
+    _CHAIN_CACHE[cache_key] = (now, candidates)
 
     return candidates
 

@@ -48,13 +48,15 @@ class StructuralFeatures:
     nested_queries: int        # Multi-level sub-queries
     reference_count: int       # Cross-references to entities/concepts
     
-    def complexity_score(self) -> float:
+    def complexity_score(self, text_length: int = 0) -> float:
         """0.0 (simple) to 1.0 (very complex)"""
+        length_factor = min(1.0, text_length / 1000.0)
         return min(1.0, 
             self.clause_depth * 0.3 +
             math.log(self.condition_count + 1) * 0.2 +
             self.nested_queries * 0.3 +
-            self.reference_count * 0.1
+            self.reference_count * 0.1 +
+            length_factor * 0.1
         )
 
 
@@ -118,9 +120,10 @@ class DomainFeatures:
     
     def complexity_score(self) -> float:
         return min(1.0,
-            math.log(self.ticker_count + 1) * 0.2 +
+            math.log(self.ticker_count + 1) * 0.1 +
+            self.market_indices * 0.2 +
             self.derivative_types * 0.3 +
-            self.risk_factor_count * 0.3 +
+            self.risk_factor_count * 0.2 +
             self.regulatory_refs * 0.2
         )
 
@@ -201,9 +204,10 @@ class SemanticComplexityDetectorV2:
     # Domain keywords (financial)
     FINANCIAL_KEYWORDS = {
         "stock", "equity", "bond", "derivative", "option", "future", "swap",
-        "portfolio", "allocation", "rebalance", "hedge", "margin", "risk",
+        "portfolio", "allocation", "rebalance", "rebalancing", "hedge", "margin", "risk",
         "volatility", "correlation", "dividend", "yield", "return", "loss",
-        "leverage", "short", "long", "bull", "bear", "bull call", "bear put"
+        "leverage", "short", "long", "bull", "bear", "bull call", "bear put",
+        "strategy", "optimize", "optimization"
     }
     
     # Market indices
@@ -216,7 +220,7 @@ class SemanticComplexityDetectorV2:
     RISK_FACTORS = {"market", "credit", "liquidity", "operational", "systemic", "tail"}
     
     # Derivatives
-    DERIVATIVES = {"option", "future", "swap", "forward", "swaption", "straddle", "spread"}
+    DERIVATIVES = {"option", "future", "swap", "forward", "swaption", "straddle", "spread", "call", "put", "calls", "puts"}
     
     # Uncertainty markers
     UNCERTAINTY_MARKERS = {"may", "might", "could", "uncertain", "unclear", "ambiguous", "risky"}
@@ -256,7 +260,7 @@ class SemanticComplexityDetectorV2:
         
         # Compute overall complexity score
         complexity_score = self._compute_complexity_score(
-            structural, semantic, temporal, numerical, domain, intent, context_features
+            structural, semantic, temporal, numerical, domain, intent, context_features, len(normalized)
         )
         
         # Classify into cognitive layer
@@ -566,23 +570,24 @@ class SemanticComplexityDetectorV2:
                                   numerical: NumericalFeatures,
                                   domain: DomainFeatures,
                                   intent: IntentFeatures,
-                                  context: ContextFeatures) -> float:
+                                  context: ContextFeatures,
+                                  text_length: int) -> float:
         """
         Weighted combination of all feature categories.
         Returns score in [0.0, 1.0].
         """
         weights = {
-            'structural': 0.20,
-            'semantic': 0.25,
+            'structural': 0.05,
+            'semantic': 0.15,
             'temporal': 0.10,
-            'numerical': 0.15,
-            'domain': 0.15,
-            'intent': 0.10,
+            'numerical': 0.10,
+            'domain': 0.25,
+            'intent': 0.30,
             'context': 0.05
         }
         
         scores = [
-            structural.complexity_score() * weights['structural'],
+            structural.complexity_score(text_length) * weights['structural'],
             semantic.complexity_score() * weights['semantic'],
             temporal.complexity_score() * weights['temporal'],
             numerical.complexity_score() * weights['numerical'],

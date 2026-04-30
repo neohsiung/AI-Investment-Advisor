@@ -17,7 +17,7 @@ if not db_url:
     db_pass = os.getenv("DB_PASS", "postgres")
     db_host = os.getenv("DB_HOST", "postgres")
     db_port = os.getenv("DB_PORT", "5432")
-    db_name = os.getenv("DB_NAME", "portfolio")
+    db_name = os.getenv("DB_NAME", "advisor_prod") # Fix default to advisor_prod
     db_url = f"postgresql+psycopg2://{db_user}:{db_pass}@{db_host}:{db_port}/{db_name}"
 
 config.set_main_option("sqlalchemy.url", db_url)
@@ -29,9 +29,8 @@ if config.config_file_name is not None:
 
 # add your model's MetaData object here
 # for 'autogenerate' support
-# from myapp import mymodel
-# target_metadata = mymodel.Base.metadata
-target_metadata = None
+from src.data.models import Base
+target_metadata = Base.metadata
 
 # other values from the config, defined by the needs of env.py,
 # can be acquired:

@@ -33,6 +33,7 @@
 2.  **報告生成**:
     - 若 `{{report_focus}}` 為 "Daily Tactical": 專注於短線動能變化、停損停利建議。簡短明瞭。
     - 若 `{{report_focus}}` 為 "Weekly Strategic": 綜合總經、基本面，給出下週的戰略配置建議。
+    - 若 `{{report_focus}}` 為 "Sentinel Breach Reaction": 針對突發事件 (Sentinel Event) 進行損害評估與防禦性調整建議。優先考慮對沖與風險平衡。
     - 若所有輸入報告皆為 "No Change" 且無重大事件，僅需回覆 "維持現狀 (Maintain Status Quo)"。
 
 3.  **現況診斷 (Assessment)**:

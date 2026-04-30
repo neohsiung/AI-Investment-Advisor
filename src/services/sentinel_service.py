@@ -999,6 +999,7 @@ class SentinelService:
         has_news_trigger  = "news" in trigger_types
         has_price_trigger = "price_move" in trigger_types
         has_risk_trigger  = "risk" in trigger_types
+        has_allocation_drift = "allocation_drift" in trigger_types
         
         msg_prefix = "請針對以下多個 Sentinel 警報進行彙整與風險評估，並以繁體中文 (Traditional Chinese) 提供一份簡短且具備行動建議的摘要。金融專業術語請保留英文。"
         
@@ -1081,6 +1082,22 @@ class SentinelService:
                 "⚠️ **以下風險指標觸發警報，請評估當前投資組合的風險曝露並給出具體改善建議。**\n\n"
                 "請針對：(1) 槓桿水位是否需要調整 (2) 持倉集中度風險 (3) 是否需要再平衡，分別給出建議。\n"
                 "若有操作（換庫 / 部分平倉 / 對沖），請輸出 Actionable Orders 表格。\n"
+                "請以繁體中文撰寫，專業術語保留英文。"
+            )
+
+        elif has_allocation_drift:
+            # Allocation Drift alert — focus Council on weight-based rebalancing
+            drift_details = "\n".join(
+                f"- {t.get('text', '')}" for t in filtered_triggers
+                if t.get('type') == 'allocation_drift'
+            )
+            msg_prefix = (
+                "⚖️ **以下持倉出現配置漂移 (Allocation Drift)，請評估是否需要再平衡。**\n\n"
+                f"漂移明細：\n{drift_details}\n\n"
+                "請針對每個漂移持倉，給出 **加倉 / 減倉 / 維持** 的具體建議，並以 weight-based 格式輸出。\n"
+                "若有操作，請在報告末尾輸出 Actionable Orders 表格，包含 target_weight 和 delta_weight：\n"
+                "| Ticker | Action | Target Weight (%) | Current Weight (%) | Delta Weight (%) | Confidence (1-10) | Reason |\n"
+                "|--------|--------|-------------------|-------------------|-----------------|-------------------|--------|\n"
                 "請以繁體中文撰寫，專業術語保留英文。"
             )
 
@@ -1986,6 +2003,7 @@ class SentinelService:
                         'id': f'allocation_drift_critical_{ticker}',
                         'text': f'🆘 CRITICAL: Portfolio allocation drift detected for {ticker}: {drift_percentage:.1f}% (Current: {current_weight:.1f}%, Target: {target_weight:.1f}%). Initiating rebalance.',
                         'type': 'allocation_drift',
+                        'trigger_type': 'allocation_drift', # v4.2.4: Added for deliberation routing
                         'severity': 'critical',
                         'priority': 0,
                         'ticker': ticker,
@@ -2002,6 +2020,7 @@ class SentinelService:
                         'id': f'allocation_drift_alert_{ticker}',
                         'text': f'🚨 ALERT: Portfolio allocation drift for {ticker}: {drift_percentage:.1f}% (Current: {current_weight:.1f}%, Target: {target_weight:.1f}%). Monitor for rebalance opportunity.',
                         'type': 'allocation_drift',
+                        'trigger_type': 'allocation_drift', # v4.2.4: Added for deliberation routing
                         'severity': 'alert',
                         'priority': 1,
                         'ticker': ticker,
@@ -2025,15 +2044,32 @@ class SentinelService:
 
     async def _get_current_allocation(self) -> Dict[str, Dict[str, float]]:
         """
-        獲取當前投資組合配置（按權重 %）
+        獲取當前投資組合配置（按權重 %），注入即時價格。
         
         Returns:
-            {ticker: {shares, weight_pct, market_value, current_price}}
+            {ticker: {shares, weight, market_value, current_price}}
         """
         try:
-            # 獲取持倉
+            # 1. 獲取活躍持倉 (成本價 fallback)
             positions = self.transaction_service.get_active_positions(self.user_id)
-            portfolio_value = await self._calculate_total_portfolio_value()
+            if not positions:
+                return {}
+
+            # 2. 獲取即時價格
+            tickers = [p['ticker'] for p in positions]
+            current_prices = await self.market_service.get_current_prices(tickers)
+
+            # 3. 計算總價值 (含現金)
+            cash = self.transaction_service.get_cash_balance(self.user_id)
+            total_stock_value = 0.0
+            for p in positions:
+                ticker = p['ticker']
+                price = current_prices.get(ticker, p.get('avg_price', 0))
+                p['current_price'] = price
+                p['market_value'] = price * p.get('quantity', 0)
+                total_stock_value += p['market_value']
+
+            portfolio_value = total_stock_value + cash
             
             allocation = {}
             for position in positions:
@@ -2044,8 +2080,8 @@ class SentinelService:
                 allocation[ticker] = {
                     'shares': position.get('quantity', 0),
                     'market_value': market_value,
-                    'weight_pct': round(weight_pct, 2),
-                    'current_price': position.get('price', 0)
+                    'weight': round(weight_pct, 2), # v4.2.4: key must be 'weight' for drift check
+                    'current_price': position.get('current_price', 0)
                 }
             
             logger.debug(f"Current allocation: {allocation}")
@@ -2057,16 +2093,16 @@ class SentinelService:
 
     async def _calculate_total_portfolio_value(self) -> float:
         """
-        計算投資組合總價值（包括現金）
+        計算投資組合總價值（包括現金），複用 allocation 邏輯以獲取即時價格。
         
         Returns:
             Total portfolio value in USD
         """
         try:
-            positions = self.transaction_service.get_active_positions(self.user_id)
+            allocation = await self._get_current_allocation()
             cash = self.transaction_service.get_cash_balance(self.user_id)
             
-            total_stock_value = sum(p.get('market_value', 0) for p in positions)
+            total_stock_value = sum(v.get('market_value', 0) for v in allocation.values())
             total_portfolio = total_stock_value + cash
             
             logger.debug(f"Portfolio value calculation: stocks={total_stock_value:.2f}, cash={cash:.2f}, total={total_portfolio:.2f}")

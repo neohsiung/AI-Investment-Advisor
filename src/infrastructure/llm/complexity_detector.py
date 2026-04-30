@@ -52,16 +52,18 @@ class SemanticComplexityDetector:
     
     # Keywords that escalate complexity
     ESCALATING_KEYWORDS = {
-        "strategy": 2, "complex": 2, "analyze": 2, "evaluate": 1,
+        "strategy": 3, "complex": 2, "analyze": 2, "evaluate": 1,
         "compare": 1, "predict": 2, "recommend": 2, "decide": 3,
         "risk": 2, "tradeoff": 1, "optimization": 2, "explain": 1,
-        "reasoning": 2, "deep": 1, "comprehensive": 1
+        "reasoning": 2, "deep": 1, "comprehensive": 1,
+        "portfolio": 1, "rebalance": 1, "allocation": 3, "hedge": 1,
+        "research": 2
     }
     
     # Keywords that reduce complexity
     DEESCALATING_KEYWORDS = {
         "price": -2, "what": -1, "when": -1, "where": -1,
-        "which": -1, "how much": -2, "list": -1, "show": -1,
+        "which": -1, "how much": -2, "show": -1,
         "current": -1, "latest": -1, "quick": -1
     }
     
@@ -111,7 +113,7 @@ class SemanticComplexityDetector:
         )
         
         # Step 5: Compute confidence score
-        confidence = self._compute_confidence(base_layer, final_layer, features)
+        confidence = self._compute_confidence(base_layer, final_layer, features, adjustments)
         
         # Step 6: Generate reasoning explanation
         reasoning = self._generate_reasoning(
@@ -130,7 +132,7 @@ class SemanticComplexityDetector:
     def _classify_by_length(self, request: str) -> CognitiveLayer:
         """Base classification by character length."""
         length = len(request)
-        if length < 50:
+        if length < 40:
             return CognitiveLayer.REFLEXIVE
         elif length < 200:
             return CognitiveLayer.FAST_THINK
@@ -202,7 +204,7 @@ class SemanticComplexityDetector:
     def _detect_numerical_comparisons(self, request: str) -> bool:
         """Detect numerical comparisons or calculations."""
         patterns = [
-            r'(>|<|>=|<=|=|vs\.)',
+            r'(>|<|>=|<=|=|vs\.?)',
             r'\b(more than|less than|greater than|between|ratio|percentage)\b',
             r'\d+\s*(vs|,|;)\s*\d+'  # Multiple numbers
         ]
@@ -250,7 +252,7 @@ class SemanticComplexityDetector:
         if entity_count > 5:
             adjustment += 1
         if has_temporal:
-            adjustment += 1
+            adjustment += 0.5
         if has_numerical:
             adjustment += 0.5
         
@@ -283,7 +285,8 @@ class SemanticComplexityDetector:
         self,
         base_layer: CognitiveLayer,
         final_layer: CognitiveLayer,
-        features: Dict
+        features: Dict,
+        adjustments: Dict
     ) -> float:
         """
         Compute confidence score in the classification.
@@ -292,8 +295,10 @@ class SemanticComplexityDetector:
         base_confidence = 0.5
         
         # High confidence if no adjustments were needed
-        if base_layer == final_layer:
+        if base_layer == final_layer and not adjustments:
             base_confidence += 0.3
+        elif base_layer == final_layer:
+            base_confidence += 0.15
         
         # Clear length signals
         length = features.get("length", 0)
@@ -351,7 +356,7 @@ class SemanticComplexityDetector:
         tier = layer_to_tier[result.layer]
         
         # Low confidence → fallback to smart (safeguard)
-        if result.confidence < 0.6:
+        if result.confidence < 0.4:
             tier = "smart"
             logger.warning(
                 f"Low confidence ({result.confidence:.0%}) classification, "

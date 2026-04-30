@@ -48,20 +48,21 @@ class TransactionService:
                 return self.repository.get_unique_tickers(user_id)
         return self.repository.get_unique_tickers(user_id)
         
-    def get_holdings_map(self, user_id: str = None) -> Dict[str, Dict[str, float]]:
+    def get_holdings_map(self, user_id: str = None) -> Dict[str, Dict]:
         """
-        Get a dictionary of current holdings for the user.
-        獲取使用者目前持倉的字典。
+        Returns a map of { ticker: { quantity: float, avg_price: float } }
         """
         uid = user_id or self.user_id
         if not uid: return {}
         
-        # Use existing summary method
-        summary = self.repository.get_holdings_summary(uid) # returns [(ticker, qty)]
-        
+        # v4.2.4: Use get_holdings() instead of summary to get avg_price
+        holdings = self.repository.get_holdings(uid)
         res = {}
-        for t, q in summary:
-            res[t] = {'quantity': float(q)}
+        for h in holdings:
+            res[h['ticker']] = {
+                'quantity': float(h['quantity']),
+                'avg_price': float(h.get('avg_price', 0))
+            }
         return res
 
     def add_manual_trade(self, ticker: str, date_str: str, action: str, quantity: float, price: float, fees: float) -> Tuple[bool, str]:
@@ -110,21 +111,26 @@ class TransactionService:
             return False, f"Failed to delete transaction: {e}"
 
     def get_active_positions(self, user_id: str = None) -> List[Dict]:
-        """获取活跃持仓列表"""
+        """獲取活躍持倉列表，包含成本價與市場價值 (fallback)"""
         try:
             holdings = self.get_holdings_map(user_id or self.user_id)
             positions = []
             for ticker, data in holdings.items():
-                if data.get('quantity', 0) > 0:
+                qty = data.get('quantity', 0)
+                if qty > 0:
+                    avg_price = data.get('avg_price', 0)
+                    # market_value 使用 avg_price 作為 fallback (SentinelService 會覆蓋即時價格)
+                    market_value = avg_price * qty
                     positions.append({
                         'ticker': ticker,
-                        'quantity': data['quantity'],
-                        'avg_price': data.get('avg_price', 0),
-                        'current_price': data.get('current_price', 0),
-                        'market_value': data.get('market_value', 0)
+                        'quantity': qty,
+                        'avg_price': avg_price,
+                        'current_price': avg_price,  # Fallback
+                        'market_value': market_value,
                     })
             return positions
         except Exception as e:
+            self._logger.error(f"get_active_positions failed: {e}")
             return []
 
 

@@ -79,13 +79,13 @@ async def extract_actions(
         5. 'intent' must be one of: "full_close", "partial_reduce", or omitted for BUY.
         6. Output ONLY a valid JSON array of objects, with NO surrounding markdown block quotes.
         7. If the decision mentions weights (percentages of portfolio), extract as v7.0 format:
-           {"ticker": "AAPL", "action": "BUY", "target_weight": 0.08, "current_weight": 0.05, "delta_weight": 0.03, "confidence": 9, "reason": "..."}
+           {{"ticker": "AAPL", "action": "BUY", "target_weight": 0.08, "current_weight": 0.05, "delta_weight": 0.03, "confidence": 9, "reason": "..."}}
         8. If no explicit trades are found, output an empty array [].
         
         Example Output (v7.0 weight-based):
         [
-            {"ticker": "NVDA", "action": "SELL", "target_weight": 0.10, "current_weight": 0.15, "delta_weight": -0.05, "confidence": 8, "reason": "Reason here"},
-            {"ticker": "AAPL", "action": "BUY", "target_weight": 0.08, "current_weight": 0.05, "delta_weight": 0.03, "confidence": 9, "reason": "Reason here"}
+            {{"ticker": "NVDA", "action": "SELL", "target_weight": 0.10, "current_weight": 0.15, "delta_weight": -0.05, "confidence": 8, "reason": "Reason here"}},
+            {{"ticker": "AAPL", "action": "BUY", "target_weight": 0.08, "current_weight": 0.05, "delta_weight": 0.03, "confidence": 9, "reason": "Reason here"}}
         ]
         """
 

@@ -61,7 +61,7 @@ class WeeklyCostReportService:
             return "CRITICAL"
         elif current_cost >= self.BUDGET_SOFT_LIMIT:
             return "WARNING"
-        elif current_cost >= self.BUDGET_WEEKLY * 0.5:
+        elif current_cost >= self.BUDGET_WEEKLY * 0.4:
             return "HEALTHY"
         else:
             return "EXCELLENT"
