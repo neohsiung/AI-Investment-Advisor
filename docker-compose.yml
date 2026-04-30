@@ -139,13 +139,13 @@ services:
     environment:
       - MCP_SERVER_URL=http://mcp_server:8000
       - MEMORY_BACKEND=redis
-      - REDIS_URL=redis://redis:6379/0
+      - REDIS_URL=redis://investment_advisor_redis:6379/0
       - OTEL_SERVICE_NAME=scheduler
       - OTEL_EXPORTER_OTLP_ENDPOINT=http://otel-collector:4317
       - NOTIFICATION_API_URL=http://notification:8001/api/v1/notify
       - DB_USER=${DB_USER}
       - DB_PASS=${DB_PASS}
-      - DB_HOST=postgres
+      - DB_HOST=investment_advisor_db
       - DB_PORT=5432
       - DB_NAME=${DB_NAME}
     extra_hosts:
@@ -187,7 +187,7 @@ services:
       - OTEL_EXPORTER_OTLP_ENDPOINT=http://otel-collector:4317
       - DB_USER=${DB_USER}
       - DB_PASS=${DB_PASS}
-      - DB_HOST=postgres
+      - DB_HOST=investment_advisor_db
       - DB_PORT=5432
       - DB_NAME=${DB_NAME}
     extra_hosts:

@@ -196,6 +196,7 @@ function scale_workers {
     local worker_count=${1:-2}
     echo "=== Scaling Worker Pool to $worker_count instances ==="
     check_env
+    source .env 2>/dev/null || true
     
     # Ensure prod cluster is running
     if ! docker ps --format '{{.Names}}' | grep -q "advisor_prod_api"; then
@@ -203,19 +204,47 @@ function scale_workers {
         exit 1
     fi
     
+    # Get worker image name from compose build
     echo "Building worker image..."
     $PROD_COMPOSE build worker_1 2>/dev/null || true
+    
+    # Get the built image name
+    local worker_image
+    worker_image=$(docker inspect --format='{{.Config.Image}}' advisor_prod_worker_1 2>/dev/null || echo "investment_advisor-worker_1:latest")
 
     echo "Starting/updating worker pool..."
-    # Start baseline workers (1-2)
-    for i in 1 2; do
-        if [ $i -le $worker_count ]; then
-            $PROD_COMPOSE up -d worker_$i
-            echo "  ✅ Worker $i started"
-        else
-            $PROD_COMPOSE stop worker_$i 2>/dev/null || true
-            echo "  ⏸️  Worker $i stopped"
-        fi
+    
+    # Stop old workers first
+    for i in 1 2 3 4; do
+        docker stop "advisor_prod_worker_$i" 2>/dev/null || true
+        docker rm "advisor_prod_worker_$i" 2>/dev/null || true
+    done
+    
+    # Start new workers with docker run (redis:// URL and correct env vars)
+    for i in $(seq 1 $worker_count); do
+        echo "  Starting Worker $i..."
+        docker run -d \
+            --name "advisor_prod_worker_$i" \
+            --network "advisor-net" \
+            --restart always \
+            -u root \
+            --env-file .env \
+            -e WORKER_ID="worker-$i" \
+            -e WORKER_CONCURRENCY=2 \
+            -e NODE_ENV=production \
+            -e QUEUE_REDIS_URL="redis://advisor_prod_cache:6379/0" \
+            -e OTEL_SERVICE_NAME="worker_${i}_prod" \
+            -e OTEL_EXPORTER_OTLP_ENDPOINT="http://otel-collector:4317" \
+            -e OTEL_EXPORTER_OTLP_PROTOCOL="grpc" \
+            -v "./src/infrastructure:/workspace/src/infrastructure:ro" \
+            -v "./src/workflow:/workspace/src/workflow:ro" \
+            -v "./src/services:/workspace/src/services:ro" \
+            -v "./src/agents:/workspace/src/agents:ro" \
+            -v "./services/scheduler:/workspace/services/scheduler:ro" \
+            "$worker_image" \
+            python services/scheduler/src/app.py --mode worker --concurrency 2
+        
+        echo "  ✅ Worker $i started"
     done
     
     echo ""
@@ -284,7 +313,7 @@ function import_n8n_workflow {
             rm -f /tmp/n8n_workflow_injected.json
             N8N_IMPORT_PATH="/tmp/template_injected.json"
         else
-            N8N_IMPORT_PATH="/home/node/template.json"
+            N8N_IMPORT_PATH="/home/node/.n8n/workflows/template.json"
         fi
 
         # n8n CLI Wait
@@ -319,12 +348,10 @@ function deploy_docker {
 }
 
 function ensure_signoz_volumes {
-    for vol in signoz-clickhouse signoz-sqlite signoz-zookeeper-1; do
-        if ! docker volume inspect "$vol" &>/dev/null; then
-            echo "  Creating external volume: $vol"
-            docker volume create "$vol"
-        fi
-    done
+    # NOTE: SigNoz volumes are now pre-configured in docker-compose.prod.yml include.
+    # Volume creation is handled automatically by Docker Compose.
+    # This function is maintained for backward compatibility.
+    return 0
 }
 
 function deploy_prod {
@@ -334,14 +361,22 @@ function deploy_prod {
     # Pre-create external volumes required by SigNoz include.
     ensure_signoz_volumes
 
-    # Hot-restart path: cluster already running → only restart code services (fast, no rebuild).
+    # Hot-restart path: cluster already running → stop and restart code services (fast reload).
     # Volume mounts in docker-compose.prod.yml ensure local src/ is live inside containers.
     if docker ps --format '{{.Names}}' | grep -q "advisor_prod_api"; then
         echo "Cluster running — hot-restarting code services (scheduler, worker_1, worker_2)..."
-        $PROD_COMPOSE up -d --no-build --no-deps scheduler worker_1 worker_2
+        $PROD_COMPOSE stop scheduler 2>/dev/null || true
+        sleep 1
+        
+        # Remove and restart workers (docker-compose can't replace running containers)
+        docker rm -f advisor_prod_worker_1 advisor_prod_worker_2 2>/dev/null || true
+        sleep 1
+        
+        $PROD_COMPOSE up -d --no-build scheduler worker_1 worker_2
         echo ""
-        echo "✅ Code services restarted"
+        echo "✅ Code services restarted (env reloaded)"
         echo ""
+        sleep 5
         show_health
         return
     fi
