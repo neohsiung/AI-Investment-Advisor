@@ -41,10 +41,25 @@ def enforce_position_limits(report_text: str, max_weight: float = 0.2) -> str:
             except ValueError:
                 return original
 
-        # Heuristic: Find percentages in table cells
-        # Looks for columns with % signs
-        new_text = re.sub(r'(\d+(?:\.\d+)?%)', cap_match, report_text)
-        return new_text
+        # Robust table parser: Process line by line to identify table rows
+        lines = report_text.split('\n')
+        new_lines = []
+        
+        for line in lines:
+            if line.strip().startswith('|') and line.strip().endswith('|'):
+                # It's a table row. Find percentage or weight cells.
+                # Regex looks for patterns like ' 30% ' or ' 0.30 ' within cells
+                def replace_cell(match):
+                    return cap_match(match)
+                
+                # Match percentages (e.g., 25%) or decimal numbers (e.g., 0.25) inside cells
+                # We target cells that look like they contain weight data
+                new_line = re.sub(r'(?<=\|)\s*(\d+(?:\.\d+)?%?)\s*(?=\|)', replace_cell, line)
+                new_lines.append(new_line)
+            else:
+                new_lines.append(line)
+                
+        return '\n'.join(new_lines)
         
     except Exception as e:
         logger.error(f"PortfolioGuard: Failed to enforce limits: {e}")

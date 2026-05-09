@@ -74,13 +74,14 @@ class IBKRService(IBroker):
         Execute IBKR Order.
         """
         # 1. Risk Check (Standard)
-        if not self.risk_manager.check_constraints("default_user", [], []):
+        if not self.risk_manager.check_constraints(self.user_id, [], []):
              return {"status": "failed", "reason": "Risk Manager Blocked"}
 
         logger.info(f"IBKR EXEC: {order.action.value} {order.symbol}")
         return {"status": "executed", "order_id": "mock_ibkr_1"}
     
-    async def sync_history(self, user_id: str = "default_user") -> Dict[str, int]:
+    async def sync_history(self, user_id: str = None) -> Dict[str, int]:
+        user_id = user_id or self.user_id
         return {"added": 0, "skipped": 0}
 
     async def get_pending_orders(self) -> List[Dict[str, Any]]:

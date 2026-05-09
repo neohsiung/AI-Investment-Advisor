@@ -10,7 +10,7 @@ import httpx
 from src.repositories.settings_repository import AlchemySettingsRepository
 from src.services.interaction_service import InteractionService
 from src.services.notification_service import NotificationService
-from src.domain.trading import Order, OrderAction, OrderType
+from src.domain.trading import Order, OrderAction, OrderType, OrderSizingMode
 from src.services.broker_factory import BrokerFactory
 
 class AutomatedTradingService:
@@ -28,7 +28,6 @@ class AutomatedTradingService:
         self.settings_repo = settings_repo or AlchemySettingsRepository()
         self.interaction_service = interaction_service or InteractionService()
         self.notification_service = notification_service
-        self.notification_api_url = os.getenv("NOTIFICATION_API_URL", "http://notification:8001/api/v1/notify")
 
     async def evaluate_and_execute_trade(self, user_id: str, ticker: str, action: str, quantity: float = None,
                                          confidence_score: int = None, rationale: str = None,
@@ -159,6 +158,9 @@ class AutomatedTradingService:
                         
                         if quantity != original_qty:
                             logger.info(f"Position Sizing: Adjusted {ticker} amount ${original_qty:.2f} → ${quantity:.2f} (NLV: ${nlv:.2f}, Cash: ${cash:.2f})")
+                        
+                        # Phase 2: Explicit rounding for USD amount
+                        quantity = round(quantity, 2)
             except Exception as e:
                 logger.warning(f"Position Sizing check failed (non-blocking): {e}")
         
@@ -173,8 +175,24 @@ class AutomatedTradingService:
                     for p in positions:
                         p_sym = str(getattr(p, 'symbol', '')).strip().upper()
                         t_sym = ticker.strip().upper()
+                        
+                        # Handle unresolved ID_xxxx symbols
+                        if p_sym.startswith("ID_"):
+                            # Check if the broker can resolve it
+                            resolved = None
+                            if hasattr(broker, '_resolve_id_to_symbol'):
+                                resolved = broker._resolve_id_to_symbol(p_sym[3:])
+                            
+                            if resolved:
+                                p_sym = resolved.strip().upper()
+                            else:
+                                # If it's still ID_xxxx, we can't match it unless we know the ticker's ID
+                                # For now, skip and log
+                                logger.debug(f"SELL Guard: Skipping unresolved position {p_sym}")
+                                continue
+
                         # Normalize eToro suffixes
-                        for suffix in [".US", ".RTH", ".EXT"]:
+                        for suffix in [".US", ".RTH", ".EXT", ".L", ".UK"]:
                             if p_sym.endswith(suffix):
                                 p_sym = p_sym[:-len(suffix)]
                         if p_sym == t_sym:
@@ -192,6 +210,9 @@ class AutomatedTradingService:
                     
                     if quantity != original_qty:
                         logger.info(f"SELL Guard: Adjusted {ticker} qty {original_qty} → {quantity} (holding: {actual_holding})")
+                    
+                    # Phase 2: Explicit rounding for eToro 0.01 share precision
+                    quantity = round(quantity, 2)
             except Exception as e:
                 logger.warning(f"SELL Position Sizing check failed (non-blocking): {e}")
         
@@ -199,6 +220,8 @@ class AutomatedTradingService:
             symbol=ticker,
             action=order_action,
             quantity=quantity,
+            amount_usd=quantity if order_action == OrderAction.BUY else None,
+            sizing_mode=OrderSizingMode.AMOUNT if order_action == OrderAction.BUY else OrderSizingMode.SHARES,
             order_type=OrderType.MARKET,
             reason=rationale
         )
@@ -332,51 +355,45 @@ class AutomatedTradingService:
             logger.warning(f"Error getting price for {ticker}: {e}")
             return None
 
+
     async def _notify_via_api(
         self, user_id: str, title: str, content: str, category: str = "approval"
     ) -> None:
         """
-        Dispatch notification via standalone Notification Microservice HTTP API.
-        透過獨立通知微服務 HTTP API 發送通知，確保所有啟用管道（含 LINE）都能收到。
+        Dispatch notification via direct NotificationService.
+        透過直接 NotificationService 發送通知，繞過已失效的通知微服務。
         """
-        payload = {
-            "user_id": user_id,
-            "title": title,
-            "content": content,
-            "channels": ["line", "telegram", "email", "discord", "slack"],
-            "category": category
-        }
         try:
-            async with httpx.AsyncClient() as client:
-                response = await client.post(
-                    self.notification_api_url, json=payload, timeout=5.0
+            if not self.notification_service:
+                from src.services.settings_service import SettingsService
+                from src.services.notification_service import NotificationService
+                settings_svc = SettingsService(user_id=user_id)
+                self.notification_service = NotificationService.create_with_settings(
+                    settings_service=settings_svc, user_id=user_id
                 )
-                if response.status_code == 202:
-                    logger.info(f"Trade notification dispatched for {user_id}")
-                else:
-                    logger.warning(
-                        f"Notification API returned {response.status_code}: {response.text}"
-                    )
+            
+            # [T2] Get user's preferred channels (no hardcoding §5.2)
+            from src.services.notification_settings_manager import NotificationSettingsManager
+            from src.repositories.settings_repository import AlchemySettingsRepository
+            nsm = NotificationSettingsManager(
+                settings_repo=AlchemySettingsRepository(), 
+                user_id=user_id
+            )
+            user_channels = nsm.get_active_notification_channels()
+            if not user_channels:
+                user_channels = ["web", "telegram"] # Fallback
+
+            await self.notification_service.notify_all(
+                title=title,
+                content=content,
+                user_id=user_id,
+                channels=user_channels,
+                category=category
+            )
+            logger.info(f"Trade notification dispatched via direct NotificationService for {user_id}")
         except Exception as e:
-            logger.error(f"Failed to dispatch trade notification via API: {e}. Attempting direct fallback.")
-            # v8.2: Fallback to direct NotificationService if API is down
-            try:
-                if not self.notification_service:
-                    from src.services.settings_service import SettingsService
-                    from src.services.notification_service import NotificationService
-                    settings_svc = SettingsService(user_id=user_id)
-                    self.notification_service = NotificationService.create_with_settings(settings_service=settings_svc, user_id=user_id)
-                
-                await self.notification_service.notify_all(
-                    title=title,
-                    content=content,
-                    user_id=user_id,
-                    channels=["line", "telegram", "email", "discord", "slack"],
-                    category=category
-                )
-                logger.info("Fallback direct notification successful.")
-            except Exception as fallback_e:
-                logger.error(f"Fallback direct notification failed: {fallback_e}")
+            logger.error(f"Failed to dispatch trade notification: {e}")
+
     async def process_council_decision(self, user_id: str, decision_text: str) -> List[Dict[str, Any]]:
         """
         Extract trade recommendations from Council decisions and execute them based on confidence.

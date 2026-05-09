@@ -55,7 +55,7 @@ class SettingsService:
         """
         Parses a setting value from its raw database representation.
         """
-        if value is None:
+        if value is None or value == "":
             return None
             
         import json
@@ -90,8 +90,13 @@ class SettingsService:
         """
         target_uid = user_id or self._get_effective_uid()
         try:
-            val = self.settings_repo.get(target_uid, key, default)
-            return self._parse_setting_value(val)
+            raw_val = self.settings_repo.get(target_uid, key, default)
+            parsed = self._parse_setting_value(raw_val)
+            # If parsed is None but raw_val was not None, it means it was "" or 'None'
+            # We should return default in these cases if a default is provided.
+            if parsed is None and raw_val is not None:
+                return default
+            return parsed
         except Exception:
             return default
 
@@ -202,7 +207,10 @@ class SettingsService:
             "sentinel_p2_limit_mins": 60,
             "sentinel_p3_limit_mins": 240,
             "sentinel_p4_limit_mins": 720,
-            "sentinel_p5_limit_mins": 1440
+            "sentinel_p5_limit_mins": 1440,
+            "max_single_position_weight": 25.0,
+            "emergency_liquidation_score": 9,
+            "emergency_hedge_amount": 50.0
         }
         
         for key, val in defaults.items():

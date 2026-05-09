@@ -13,6 +13,7 @@ from src.domain.trading import Order, Position, Account, OrderAction, BrokerType
 from src.repositories.transaction_repository import AlchemyTransactionRepository
 from src.infrastructure.risk_manager import RiskManager
 from src.api.v1.exceptions import BrokerNotConfiguredError, BrokerDependencyError
+from src.services.llm_credential_cipher import LLMCredentialCipher
 
 logger = setup_logger("EtoroService")
 
@@ -40,6 +41,7 @@ class EtoroService(IBroker):
         # Authentication (Priority: Arg > DB > Env)
         self.api_key = api_key
         self.user_key = user_key
+        self.user_id = user_id
         
         # If not provided, try to load from database
         if (not self.api_key or not self.user_key) and user_id:
@@ -60,7 +62,7 @@ class EtoroService(IBroker):
             logger.warning(f"No eToro API credentials found, using local bridge at {default_base}")
         
         self.base_url = base_url or os.getenv("ETORO_API_BASE_URL", default_base)
-        self.notification_api_url = os.getenv("NOTIFICATION_API_URL", "http://localhost:8001/api/v1/notify")
+        self.notification_service = None
         
         # Normalize mode: 'live' -> 'real' per BrokerFactory requirements
         self.mode = "real" if mode == "live" else mode
@@ -70,6 +72,7 @@ class EtoroService(IBroker):
         self._id_to_symbol = {} # Reverse map: ID -> Ticker
         self.cache_path = "data/etoro_id_cache.json"
         self._load_id_cache()
+        self.cipher = LLMCredentialCipher()
         
         # [FIX Issue #4] Timestamp tracking for account data freshness
         self.last_fetched_at = None  # Track when account data was last fetched
@@ -92,23 +95,24 @@ class EtoroService(IBroker):
             for row in result:
                 key, value = row[0], row[1]
                 # Parse JSON value if it's a JSON string
-                # Settings UI may wrap values in extra double quotes:
-                #   DB stores: '"eyJja...ifQ__"' instead of 'eyJja...ifQ__'
                 try:
                     if isinstance(value, str) and value.startswith('"') and value.endswith('"'):
                         parsed_value = json.loads(value)
                     else:
                         parsed_value = value
                 except json.JSONDecodeError:
-                    # Fallback: strip quotes directly
                     parsed_value = value.strip('"') if isinstance(value, str) else value
                 
+                # Decrypt if encrypted
+                if isinstance(parsed_value, str) and (parsed_value.startswith('ENC:') or parsed_value.startswith('FERN:') or parsed_value.startswith('B64H:')):
+                    parsed_value = self.cipher.decrypt(parsed_value)
+
                 if key == 'etoro_api_key':
                     self.api_key = parsed_value
-                    logger.info(f"✓ Loaded eToro API key from database (len={len(parsed_value)})")
+                    logger.info(f"✓ Loaded and decrypted eToro API key from database")
                 elif key == 'etoro_user_key':
                     self.user_key = parsed_value
-                    logger.info(f"✓ Loaded eToro user key from database (len={len(parsed_value)})")
+                    logger.info(f"✓ Loaded and decrypted eToro user key from database")
             
             conn.close()
         except Exception as e:
@@ -296,56 +300,51 @@ class EtoroService(IBroker):
 
     async def get_pending_orders(self) -> List[Dict[str, Any]]:
         """
-        Fetch pending (scheduled) orders.
-        獲取尚未成交的預約單（Pending Orders）。
+        Fetch pending (scheduled) orders from the comprehensive portfolio snapshot.
+        從綜合投資組合快照中獲取尚未成交的預約單。
         """
-        import httpx
-        endpoint = "/trading/info/orders"
-        if self.mode == "demo":
-            endpoint = "/trading/info/demo/orders"
-            
         try:
-            url = f"{self.base_url}{endpoint}"
-            async with httpx.AsyncClient() as client:
-                response = await client.get(url, headers=self._get_headers(), timeout=10.0)
+            portfolio = await self._fetch_portfolio_raw()
+            if not portfolio:
+                return []
                 
-                if response.status_code == 200:
-                    data = response.json()
-                    orders = []
+            # Detect API auth errors
+            if 'errorCode' in portfolio:
+                logger.error(f"eToro API Auth Error in get_pending_orders: {portfolio.get('errorCode')} - {portfolio.get('errorMessage')}")
+                return []
+
+            # Extract orders from AggregatedMirror or clientPortfolio
+            data_source = portfolio.get('AggregatedMirror', portfolio.get('clientPortfolio', portfolio))
+            raw_orders = data_source.get('Orders', data_source.get('orders', []))
+            
+            if not raw_orders:
+                return []
+
+            # Ensure ID map is available
+            if not self._id_to_symbol:
+                await self.get_watchlists()
+        
+            orders = []
+            for o in raw_orders:
+                inst_id = str(o.get('instrumentId', o.get('InstrumentID', o.get('Instrument', ''))))
+                if not inst_id:
+                    continue
                     
-                    # Handle possible API wrapper structures
-                    raw_orders = data if isinstance(data, list) else data.get('items', data.get('orders', data.get('Orders', data.get('positions', []))))
-                    
-                    # Fetch watchlists if maps are empty
-                    if not self._id_to_symbol and raw_orders:
-                        await self.get_watchlists()
+                symbol = self._id_to_symbol.get(inst_id) or self._resolve_id_to_symbol(inst_id) or f"ID_{inst_id}"
+                is_buy = o.get('isBuy', o.get('IsBuy', True))
+                action = "BUY" if is_buy else "SELL"
                 
-                    for o in raw_orders:
-                        # Safely handle missing ID
-                        inst_id = str(o.get('instrumentId', o.get('InstrumentID', o.get('InstrumentId', o.get('Instrument', '')))))
-                        if not inst_id:
-                            continue
-                            
-                        symbol = self._id_to_symbol.get(inst_id) or self._resolve_id_to_symbol(inst_id) or f"ID_{inst_id}"
-                        
-                        is_buy = o.get('isBuy', o.get('IsBuy', True))
-                        action = "BUY" if is_buy else "SELL"
-                        
-                        orders.append({
-                            "order_id": str(o.get('orderId', o.get('OrderId', o.get('id', '')))),
-                            "symbol": symbol,
-                            "action": action,
-                            "amount": float(o.get('amount', o.get('Amount', o.get('amountBaseValueDollars', 0)))),
-                            "raw_status": o.get('status', o.get('Status', ''))
-                        })
-                    
-                    logger.info(f"ETORO ORDERS: Retrieved {len(orders)} pending orders")
-                    return orders
-                else:
-                    logger.warning(f"ETORO ORDERS: Failed to fetch pending orders: {response.status_code}")
-                    return []
+                orders.append({
+                    "order_id": str(o.get('orderId', o.get('OrderId', o.get('id', '')))),
+                    "symbol": symbol,
+                    "action": action,
+                    "amount": float(o.get('amount', o.get('Amount', o.get('amountBaseValueDollars', 0)))),
+                    "raw_status": o.get('status', o.get('Status', 'Pending'))
+                })
+            
+            return orders
         except Exception as e:
-            logger.error(f"ETORO ORDERS: Error fetching pending orders: {e}")
+            logger.error(f"Failed to fetch pending orders: {e}")
             return []
 
     async def get_history(self, days: int = 30) -> List[Dict[str, Any]]:
@@ -386,7 +385,9 @@ class EtoroService(IBroker):
         """
         Execute an order with risk management checks.
         """
-        user_id = "default_user" 
+        user_id = self.user_id
+        if not user_id:
+            raise ValueError("EtoroService: execute_order requires an initialized user_id.")
         
         # 0. Pre-flight: Verify API credentials are valid
         preflight = await self._fetch_portfolio_raw()
@@ -414,9 +415,11 @@ class EtoroService(IBroker):
             endpoint = "/trading/execution/market-open-orders/by-amount"
             url = f"{self.base_url}{endpoint}"
             # eToro API: PascalCase body, Amount in USD (not shares)
+            # Phase 3: Explicitly use amount_usd or fallback to quantity, round to 2 decimals
+            buy_amount = order.amount_usd if order.amount_usd is not None else order.quantity
             payload = {
                 "InstrumentID": int(instrument_id),
-                "Amount": order.quantity,  # Dollar amount (USD)
+                "Amount": round(buy_amount, 2),  # Dollar amount (USD)
                 "IsBuy": True,
             }
             # Only include Leverage if non-default (eToro skill: "Use Defaults")
@@ -459,7 +462,8 @@ class EtoroService(IBroker):
             if instrument_id:
                 close_payload["InstrumentId"] = int(instrument_id)
             if order.quantity and order.quantity > 0:
-                close_payload["UnitsToDeduct"] = order.quantity
+                # Phase 3: eToro fractional sell precision (0.01)
+                close_payload["UnitsToDeduct"] = round(order.quantity, 2)
             payload = close_payload
         
         try:
@@ -480,24 +484,30 @@ class EtoroService(IBroker):
 
     async def _notify_trade(self, order: Order, result: Dict[str, Any]):
         """
-        Send a real-time notification for an executed trade.
+        Send a real-time notification for an executed trade using direct NotificationService.
         """
-        import httpx
         try:
-            user_id = os.getenv("LINE_USER_ID", "broadcast")
+            # v3.9 direct dispatch
+            if not self.notification_service:
+                from src.services.notification_service import NotificationService
+                from src.services.settings_service import SettingsService
+                # Use a default or system user if needed, but here we prefer the one associated with the broker
+                # user_id is passed to __init__ but we might need it here.
+                # If self.user_id was stored in __init__ we should use it.
+                # Let's check if we have user_id.
+                user_id = getattr(self, 'user_id', "broadcast")
+                settings_svc = SettingsService(user_id=user_id)
+                self.notification_service = NotificationService.create_with_settings(settings_service=settings_svc, user_id=user_id)
+            
             title = f"🚀 {'Buy' if order.action == OrderAction.BUY else 'Sell'} 執行成功"
             content = f"**Ticker:** {order.symbol}\n**Action:** {order.action.value}\n**Order ID:** {result.get('OrderId', 'N/A')}"
             
-            payload = {
-                "user_id": user_id,
-                "title": title,
-                "content": content,
-                "channels": ["line"],
-                "category": "trading"
-            }
-            
-            async with httpx.AsyncClient() as client:
-                await client.post(self.notification_api_url, json=payload, timeout=5.0)
+            await self.notification_service.notify_all(
+                title=title,
+                content=content,
+                channels=["telegram", "web"], # standard channels for trading alerts
+                category="trading"
+            )
         except Exception as e:
             logger.warning(f"Failed to send trade notification: {e}")
 
@@ -509,6 +519,10 @@ class EtoroService(IBroker):
                 with open(self.cache_path, 'r') as f:
                     self._id_cache = json.load(f)
                     logger.info(f"✓ Loaded {len(self._id_cache)} IDs from disk cache.")
+                    
+                    # Reconstruct reverse map for faster lookups in position flows
+                    for sym, uid in self._id_cache.items():
+                        self._id_to_symbol[str(uid)] = sym
             except Exception as e:
                 logger.warning(f"Failed to load ID cache: {e}")
                 self._id_cache = {}
@@ -790,7 +804,10 @@ class EtoroService(IBroker):
                 pass
         return None
 
-    async def sync_history(self, user_id: str = "default_user", days: int = 30, initial_sync: bool = False) -> Dict[str, int]:
+    async def sync_history(self, user_id: str = None, days: int = 30, initial_sync: bool = False) -> Dict[str, int]:
+        uid = user_id or self.user_id
+        if not uid:
+             raise ValueError("EtoroService: sync_history requires a user_id.")
         """
         Sync external history to local DB.
         同步外部交易歷史到本地資料庫。
@@ -904,8 +921,8 @@ class EtoroService(IBroker):
         # [NEW] v4.2.0: Synchronize Cash Balance and Backfill Positions
         # [NEW] v4.2.0: 同步現金餘額並回補持倉
         try:
-            self._sync_cash_balance(user_id)
-            self._backfill_from_positions(user_id)
+            await self._sync_cash_balance(user_id)
+            await self._backfill_from_positions(user_id)
         except Exception as e:
             logger.error(f"Post-sync logic failed: {e}")
 
@@ -920,7 +937,7 @@ class EtoroService(IBroker):
         logger.info(f"Etoro Sync: Added {added_count}, Skipped {skipped_count}")
         return {"added": added_count, "skipped": skipped_count}
 
-    def _sync_cash_balance(self, user_id: str) -> None:
+    async def _sync_cash_balance(self, user_id: str) -> None:
         """
         Adjust local cash balance to match broker's available cash.
         調整本地現金餘額以匹配券商的可提款現金。
@@ -928,7 +945,7 @@ class EtoroService(IBroker):
         v4.2.3: Fixed circular correction bug — now deletes prior sync entries
         before recalculating, preventing compounding DEPOSIT/WITHDRAWAL entries.
         """
-        account = self.get_account()
+        account = await self.get_account()
         if not account:
             return
 
