@@ -5,6 +5,10 @@ from src.services.automated_trading_service import AutomatedTradingService
 from src.domain.trading import OrderAction, OrderType
 
 @pytest.fixture
+def anyio_backend():
+    return 'asyncio'
+
+@pytest.fixture
 def mock_settings_repo():
     repo = MagicMock()
     # Default behavior: enabled, threshold 9, min_threshold 3
@@ -54,7 +58,7 @@ def test_svc(mock_settings_repo, mock_interaction_service, mock_notification_ser
         notification_service=mock_notification_service
     )
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_auto_execute_when_score_above_threshold(test_svc, mock_broker):
     user_id = "test_user"
     
@@ -72,7 +76,7 @@ async def test_auto_execute_when_score_above_threshold(test_svc, mock_broker):
     call_kwargs = mock_notify.call_args[1]
     assert "Auto-Approved" in call_kwargs["content"]
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_require_approval_when_score_between_thresholds(test_svc, mock_interaction_service, mock_broker):
     """Score between min (3) and max (9) -> request approval via interaction service."""
     user_id = "test_user"
@@ -87,7 +91,7 @@ async def test_require_approval_when_score_between_thresholds(test_svc, mock_int
     mock_interaction_service.request_approval.assert_called_once()
     assert res["status"] == "success"
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_rejection_or_timeout(test_svc, mock_interaction_service, mock_broker):
     user_id = "test_user"
     # Mocking interaction service to return False (rejected or timeout)
@@ -108,7 +112,7 @@ async def test_rejection_or_timeout(test_svc, mock_interaction_service, mock_bro
     call_kwargs = mock_notify.call_args[1]
     assert "取消" in call_kwargs["title"] or "Cancelled" in call_kwargs["title"]
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_disabled_trading_returns_blocked(test_svc):
     # Set mock to disabled
     def get_mock(user_id, key):
@@ -124,7 +128,7 @@ async def test_disabled_trading_returns_blocked(test_svc):
 # NEW: Min Threshold Tests
 # ──────────────────────────────────────────
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_skip_when_score_below_min_threshold(test_svc, mock_broker):
     """Score below min_threshold (3) -> skip silently, no broker/notification calls."""
     user_id = "test_user"
@@ -142,7 +146,7 @@ async def test_skip_when_score_below_min_threshold(test_svc, mock_broker):
     mock_broker.execute_order.assert_not_called()
     mock_notify.assert_not_called()
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_skip_when_score_equals_zero(test_svc, mock_broker):
     """Score 0 is below any reasonable min_threshold -> skip."""
     with patch.object(test_svc, '_notify_via_api', new_callable=AsyncMock) as mock_notify:
@@ -151,7 +155,7 @@ async def test_skip_when_score_equals_zero(test_svc, mock_broker):
     assert res["status"] == "skipped"
     mock_notify.assert_not_called()
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_exact_min_threshold_triggers_approval(test_svc, mock_interaction_service, mock_broker):
     """Score exactly equal to min_threshold (3) -> should trigger approval, NOT skip."""
     with patch('src.services.automated_trading_service.BrokerFactory.get_broker', return_value=mock_broker), \
@@ -161,13 +165,10 @@ async def test_exact_min_threshold_triggers_approval(test_svc, mock_interaction_
     mock_interaction_service.request_approval.assert_called_once()
     assert res["status"] == "success"
 
-@pytest.mark.asyncio
-async def test_notify_via_api_sends_http_post(test_svc):
-    """Verify _notify_via_api dispatches HTTP POST with correct payload including LINE channel."""
-    mock_response = MagicMock()
-    mock_response.status_code = 202
-    
-    with patch('httpx.AsyncClient.post', new_callable=AsyncMock, return_value=mock_response) as mock_post:
+@pytest.mark.anyio
+async def test_notify_via_direct_service(test_svc, mock_notification_service):
+    """Verify _notify_via_api dispatches via direct NotificationService."""
+    with patch('src.services.notification_settings_manager.NotificationSettingsManager.get_active_notification_channels', return_value=["telegram"]):
         await test_svc._notify_via_api(
             user_id="test_user",
             title="Test Title",
@@ -175,13 +176,12 @@ async def test_notify_via_api_sends_http_post(test_svc):
             category="approval"
         )
         
-        mock_post.assert_called_once()
-        call_kwargs = mock_post.call_args
-        payload = call_kwargs.kwargs.get('json') or call_kwargs[1].get('json')
+        mock_notification_service.notify_all.assert_called_once()
+        call_kwargs = mock_notification_service.notify_all.call_args[1]
         
-        assert payload["user_id"] == "test_user"
-        assert "line" in payload["channels"]
-        assert payload["category"] == "approval"
+        assert call_kwargs["user_id"] == "test_user"
+        assert "telegram" in call_kwargs["channels"]
+        assert call_kwargs["category"] == "approval"
 
 # ──────────────────────────────────────────
 # SELL Position Sizing Guard Tests (v7.0)
@@ -204,7 +204,7 @@ def mock_broker_with_positions(mock_position):
     broker.get_account = AsyncMock() # Empty mock
     return broker
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_sell_guard_clamps_quantity_to_actual_holding(test_svc, mock_broker_with_positions):
     """SELL quantity > actual holding → quantity clamped to actual holding (0.5)."""
     user_id = "test_user"
@@ -221,7 +221,7 @@ async def test_sell_guard_clamps_quantity_to_actual_holding(test_svc, mock_broke
     order = call_args[0][0] if call_args[0] else call_args[1].get('order')
     assert order.quantity == 0.5
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_sell_guard_skips_when_no_holding(test_svc):
     """SELL with 0 actual holding → skip trade entirely."""
     user_id = "test_user"
@@ -240,7 +240,7 @@ async def test_sell_guard_skips_when_no_holding(test_svc):
     assert "No active position" in res["reason"]
     broker.execute_order.assert_not_called()
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_sell_guard_passthrough_when_within_holding(test_svc, mock_broker_with_positions):
     """SELL quantity <= actual holding → no clamping needed."""
     user_id = "test_user"
