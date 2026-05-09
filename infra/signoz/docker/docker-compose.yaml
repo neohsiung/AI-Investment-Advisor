@@ -41,12 +41,11 @@ x-zookeeper-defaults: &zookeeper-defaults
     signoz.io/port: "9141"
     signoz.io/path: "/metrics"
   healthcheck:
-    test:
-      - CMD-SHELL
-      - curl -s -m 2 http://localhost:8080/commands/ruok | grep error | grep null
+    test: ["CMD", "curl", "-f", "http://localhost:9141/metrics"]
     interval: 30s
     timeout: 5s
     retries: 3
+
 x-db-depend: &db-depend
   !!merge <<: *common
   depends_on:
@@ -203,3 +202,9 @@ volumes:
   zookeeper-1:
     name: signoz-zookeeper-1
     external: true
+
+networks:
+  advisor-net:
+    name: investment_advisor_advisor-net
+    external: true
+
