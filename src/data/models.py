@@ -638,3 +638,19 @@ class SchedulerLog(Base):
     status = Column(String, nullable=False) # success, failed, running
     message = Column(Text)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+class SentinelThreshold(Base):
+    """
+    `sentinel_thresholds` — Dynamic thresholds for risk management and alerts.
+    Managed mostly via raw SQL in SentinelRepository for performance, but
+    defined here so Alembic correctly tracks the schema.
+    """
+    __tablename__ = 'sentinel_thresholds'
+    
+    id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
+    key = Column(String, unique=True, nullable=False)
+    value = Column(Numeric(18, 8), nullable=False)
+    last_optimized_by = Column(String)
+    roi_hint = Column(Text)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
