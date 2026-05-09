@@ -277,7 +277,7 @@ class CouncilService:
         # Simplified: Check if any peer group leader is in the topic
         for leader in self.competitor_service.PEER_GROUPS.keys():
             if leader in topic.upper():
-                competitor_analysis = self.competitor_service.analyze_penetration(leader)
+                competitor_analysis = await self.competitor_service.analyze_penetration(leader)
                 logger.info(f"Council: Injected competitor analysis for {leader}")
                 break
 

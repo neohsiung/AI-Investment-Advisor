@@ -127,9 +127,9 @@ class AlchemySentinelRepository(BaseRepository, ISentinelRepository):
                 if signal_id:
                     query = text("""
                         SELECT COUNT(*) FROM event_logs 
-                        WHERE source = 'Sentinel'
-                        AND metadata @> CAST(:signal_json AS JSONB)
-                        AND timestamp >= NOW() - CAST(:hours || ' hours' AS INTERVAL)
+                        WHERE event_type = 'Sentinel'
+                        AND metadata::jsonb @> CAST(:signal_json AS JSONB)
+                        AND created_at >= NOW() - CAST(:hours || ' hours' AS INTERVAL)
                     """)
                     signal_json = json.dumps({"signal_id": signal_id})
                     count = conn.execute(query, {"signal_json": signal_json, "hours": str(hours)}).scalar()
@@ -139,10 +139,10 @@ class AlchemySentinelRepository(BaseRepository, ISentinelRepository):
 
                 query_exact = text("""
                     SELECT COUNT(*) FROM event_logs 
-                    WHERE source = 'Sentinel'
+                    WHERE event_type = 'Sentinel'
                     AND title = :title
                     AND content = :content
-                    AND timestamp >= NOW() - CAST(:hours || ' hours' AS INTERVAL)
+                    AND created_at >= NOW() - CAST(:hours || ' hours' AS INTERVAL)
                 """)
                 count = conn.execute(query_exact, {"title": title, "content": content, "hours": str(hours)}).scalar()
                 
@@ -159,10 +159,10 @@ class AlchemySentinelRepository(BaseRepository, ISentinelRepository):
         try:
             with self.engine.connect() as conn:
                 query = text("""
-                    SELECT (metadata->>'value')::float FROM event_logs 
-                    WHERE source = 'Sentinel' 
-                    AND metadata @> CAST(:signal_json AS JSONB)
-                    ORDER BY timestamp DESC LIMIT 1
+                    SELECT (metadata::jsonb->>'value')::float FROM event_logs 
+                    WHERE event_type = 'Sentinel' 
+                    AND metadata::jsonb @> CAST(:signal_json AS JSONB)
+                    ORDER BY created_at DESC LIMIT 1
                 """)
                 signal_json = json.dumps({"signal_id": signal_id})
                 val = conn.execute(query, {"signal_json": signal_json}).scalar()
@@ -178,15 +178,15 @@ class AlchemySentinelRepository(BaseRepository, ISentinelRepository):
         將警報記錄至 event_logs。
         """
         query = text("""
-            INSERT INTO event_logs (id, timestamp, source, level, title, content, metadata, processed_by)
-            VALUES (:id, :timestamp, 'Sentinel', 'WARNING', :title, :content, :metadata, 'SentinelService')
+            INSERT INTO event_logs (id, event_type, severity, title, content, metadata, created_at)
+            VALUES (:id, 'Sentinel', 'WARNING', :title, :content, :metadata, :created_at)
         """)
         try:
             with self.engine.begin() as conn:
                 current_time = datetime.now(timezone.utc)
                 conn.execute(query, {
                     "id": str(uuid.uuid4()),
-                    "timestamp": current_time,
+                    "created_at": current_time,
                     "title": title,
                     "content": content,
                     "metadata": json.dumps(metadata or {}),
@@ -194,3 +194,5 @@ class AlchemySentinelRepository(BaseRepository, ISentinelRepository):
                 logger.debug(f"SentinelRepository: Logged alert '{title}' at {current_time}")
         except Exception as e:
             logger.error(f"SentinelRepository: Failed to log alert: {e}")
+# T18: Alias for consistency
+SentinelRepository = AlchemySentinelRepository

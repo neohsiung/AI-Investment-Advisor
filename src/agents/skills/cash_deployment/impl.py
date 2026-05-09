@@ -89,26 +89,21 @@ async def cash_deployment(user_id: str) -> str:
 
 
 async def _get_deployment_candidates(user_id: str, amount: float) -> list:
-    """獲取建議部署的標的清單 (Get recommended deployment candidates)."""
+    """
+    獲取建議部署的標的清單 (Get recommended deployment candidates).
+    v10.1: Removed hardcoded benchmarks in favor of dynamic discovery.
+    """
     from src.agents.skills.ticker_discovery.impl import ticker_discovery
-
-    core_candidates = [
-        {"ticker": "VOO", "reason": "Strategic Market Core (S&P 500)", "weight": 0.5},
-        {"ticker": "QQQ", "reason": "Technology Growth Focus (Nasdaq 100)", "weight": 0.5}
-    ]
-
+    
     results = []
-    core_amount = amount * 0.8
-    for c in core_candidates:
-        allocated = core_amount * c["weight"]
-        results.append({
-            "ticker": c["ticker"],
-            "allocated_amount": round(allocated, 2),
-            "reason": c["reason"],
-            "source": "strategic_core"
-        })
-
-    # Alpha Discovery (20%)
+    
+    # Try discovery for different strategies to diversify
+    strategies = ["growth", "value", "quality"]
+    discovery_tasks = []
+    
+    # We'll just use growth for now as it's the most common "buy" signal source
+    # but we could expand this to a loop of tasks if needed.
+    
     try:
         discovery_res_json = await ticker_discovery(user_id, strategy="growth")
         discovery_data = json.loads(discovery_res_json)
@@ -116,18 +111,28 @@ async def _get_deployment_candidates(user_id: str, amount: float) -> list:
         if discovery_data.get("status") == "success":
             discovered = discovery_data.get("tickers", [])
             if discovered:
-                alpha_amount = amount * 0.2
-                alpha_candidates = discovered[:2]
-                weight_per_alpha = 1.0 / len(alpha_candidates)
-
-                for item in alpha_candidates:
+                # Use top 3-5 candidates
+                target_candidates = discovered[:5]
+                count = len(target_candidates)
+                amount_per_ticker = amount / count
+                
+                for item in target_candidates:
                     results.append({
                         "ticker": item["ticker"],
-                        "allocated_amount": round(alpha_amount * weight_per_alpha, 2),
-                        "reason": f"AI Discovery - {item['reason']}",
+                        "allocated_amount": round(amount_per_ticker, 2),
+                        "reason": f"AI Dynamic Discovery: {item['reason']}",
                         "source": "ticker_discovery"
                     })
-    except Exception:
-        pass
+            else:
+                logger.warning(f"No tickers discovered for user {user_id}")
+        else:
+            logger.error(f"Ticker discovery failed for user {user_id}: {discovery_data.get('error')}")
+            
+    except Exception as e:
+        logger.error(f"Error in dynamic deployment discovery: {e}")
 
+    # Fallback only if discovery completely fails and no results
+    if not results:
+        logger.info("Discovery failed, no candidates found. Portfolio remains in cash.")
+        
     return results

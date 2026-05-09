@@ -17,7 +17,7 @@ from src.agents.swarm.fundamental_swarm import FundamentalSwarm
 from src.agents.swarm.sentiment_swarm import SentimentSwarm
 from src.agents.macro import MacroAgent
 from src.agents.cio import CIOAgent
-from src.agents.engineer import SystemEngineerAgent
+from src.agents.system_engineer_agent import SystemEngineerAgent
 from src.agents.risk import RiskAgent
 from src.agents.sentinel import SentinelAgent
 

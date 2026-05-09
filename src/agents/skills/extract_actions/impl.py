@@ -72,20 +72,22 @@ async def extract_actions(
         Rules:
         1. Only extract explicit trade recommendations (buying, selling, trimming, adding).
         2. 'action' must be exactly "BUY", "SELL", or "HOLD".
-        3. Support TWO formats:
-           a) Legacy: 'quantity' is numeric (shares/USD amount)
-           b) v7.0: 'target_weight', 'current_weight', 'delta_weight' for weight-based position sizing
-        4. 'confidence' must be an integer between 1 and 10, where 10 is highest conviction.
-        5. 'intent' must be one of: "full_close", "partial_reduce", or omitted for BUY.
-        6. Output ONLY a valid JSON array of objects, with NO surrounding markdown block quotes.
-        7. If the decision mentions weights (percentages of portfolio), extract as v7.0 format:
-           {{"ticker": "AAPL", "action": "BUY", "target_weight": 0.08, "current_weight": 0.05, "delta_weight": 0.03, "confidence": 9, "reason": "..."}}
-        8. If no explicit trades are found, output an empty array [].
+        3. For BUY: 'amount_usd' is the USD dollar amount to invest (NOT share count).
+           Example: "Buy $500 worth of AAPL" → amount_usd: 500
+        4. For SELL: 'quantity' is the number of shares to sell (supports fractional, min 0.01).
+           Example: "Sell 2.5 shares of NVDA" → quantity: 2.5
+        5. Support TWO formats:
+           a) Value-based: 'amount_usd' for BUY, 'quantity' for SELL.
+           b) v7.0 Weight-based: 'target_weight', 'current_weight', 'delta_weight' for automated position sizing.
+        6. 'confidence' must be an integer between 1 and 10, where 10 is highest conviction.
+        7. 'intent' must be one of: "full_close", "partial_reduce", or omitted for BUY.
+        8. Output ONLY a valid JSON array of objects, with NO surrounding markdown block quotes.
+        9. If no explicit trades are found, output an empty array [].
         
-        Example Output (v7.0 weight-based):
+        Example Output (Weight-based):
         [
-            {{"ticker": "NVDA", "action": "SELL", "target_weight": 0.10, "current_weight": 0.15, "delta_weight": -0.05, "confidence": 8, "reason": "Reason here"}},
-            {{"ticker": "AAPL", "action": "BUY", "target_weight": 0.08, "current_weight": 0.05, "delta_weight": 0.03, "confidence": 9, "reason": "Reason here"}}
+            {{"ticker": "NVDA", "action": "SELL", "quantity": 5.2, "target_weight": 0.10, "current_weight": 0.15, "confidence": 8, "reason": "Overweight"}},
+            {{"ticker": "AAPL", "action": "BUY", "amount_usd": 1000, "target_weight": 0.08, "current_weight": 0.05, "confidence": 9, "reason": "Growth potential"}}
         ]
         """
 
