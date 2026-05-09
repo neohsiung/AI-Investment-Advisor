@@ -30,6 +30,8 @@ logger = logging.getLogger(__name__)
 _ENV_KEY = "LLM_CREDENTIAL_KEY"
 _FERNET_PREFIX = "FERN:"
 _FALLBACK_PREFIX = "B64H:"
+_SETTINGS_PREFIX = "ENC:"
+_APP_SECRET_KEY_ENV = "APP_SECRET_KEY"
 
 
 class LLMCredentialCipher:
@@ -38,6 +40,8 @@ class LLMCredentialCipher:
     def __init__(self, key: Optional[str] = None):
         self._key = key or os.getenv(_ENV_KEY) or ""
         self._fernet = self._try_build_fernet(self._key)
+        # Secondary Fernet for ENC: prefix (uses APP_SECRET_KEY from settings repo)
+        self._app_fernet = self._try_build_fernet(os.getenv(_APP_SECRET_KEY_ENV, ""))
         if self._fernet is None:
             logger.warning(
                 "LLMCredentialCipher: Fernet unavailable (key=%s, cryptography=?). "
@@ -90,6 +94,18 @@ class LLMCredentialCipher:
             return None
         if ciphertext == "":
             return ""
+
+        # ENC: prefix — encrypted by AlchemySettingsRepository with APP_SECRET_KEY
+        if ciphertext.startswith(_SETTINGS_PREFIX):
+            if self._app_fernet is None:
+                logger.error("Cannot decrypt ENC: token — APP_SECRET_KEY Fernet not initialised.")
+                return None
+            token = ciphertext[len(_SETTINGS_PREFIX):]
+            try:
+                return self._app_fernet.decrypt(token.encode("utf-8")).decode("utf-8")
+            except Exception as exc:
+                logger.error("ENC: Fernet decrypt failed: %s", exc)
+                return None
 
         if ciphertext.startswith(_FERNET_PREFIX):
             if self._fernet is None:

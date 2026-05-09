@@ -154,8 +154,16 @@ def _load_from_db(user_id: str, tier: str) -> List[ModelCandidate]:
                 logger.debug("build_config_chain: skipping missing model %s", model_id)
                 continue
 
-            # Use model.provider string directly (no FK to providers table now)
-            provider_code = model.provider
+            # Resolve provider_code from LLMProvider table
+            provider = provider_repo.get(model.provider_id)
+            if provider is None:
+                logger.warning(
+                    "build_config_chain: skipping model %s with missing provider_id %s",
+                    model_id, model.provider_id
+                )
+                continue
+                
+            provider_code = provider.provider_code
             
             gateway_class = registry.get(provider_code)
             if gateway_class is None:
@@ -170,19 +178,19 @@ def _load_from_db(user_id: str, tier: str) -> List[ModelCandidate]:
             max_retries = cand_cfg.get("max_retries", 2)
             timeout_seconds = float(cand_cfg.get("timeout_seconds", 30.0))
 
-            # Resolve base_url from provider catalog
-            base_url = None
+            # Resolve base_url from provider catalog (fallback to provider.base_url)
+            base_url = provider.base_url
             try:
                 from src.infrastructure.llm.provider_catalog import get_provider_catalog
                 cat = get_provider_catalog()
                 spec = cat.get(provider_code)
-                if spec:
+                if spec and spec.default_base_url:
                     base_url = spec.default_base_url
             except Exception: # nosec B110
                 logger.debug("Failed to get base_url from catalog for provider %s", provider_code)
 
-            # Get API key from settings (bypassing provider table)
-            api_key = None
+            # Get API key from settings (fallback to provider.encrypted_api_key)
+            api_key = _decrypt_api_key(provider.encrypted_api_key)
             try:
                 from src.data.database import get_db_engine
                 from sqlalchemy import text
@@ -193,14 +201,22 @@ def _load_from_db(user_id: str, tier: str) -> List[ModelCandidate]:
                     ), {"key": f"{provider_code}_api_key", "user_id": user_id})
                     row = result.fetchone()
                     if row:
-                        api_key = _decrypt_api_key(row[0])
+                        settings_key = _decrypt_api_key(row[0])
+                        # Only override if decryption yielded a usable plaintext
+                        if settings_key and not settings_key.startswith("ENC:"):
+                            api_key = settings_key
+                        else:
+                            logger.debug(
+                                "Settings key for %s not usable (still encrypted?), "
+                                "keeping provider key", provider_code
+                            )
             except Exception: # nosec B110
-                logger.debug("Failed to get API key for provider %s", provider_code)
+                logger.debug("Failed to get API key for provider %s from settings", provider_code)
 
             candidates.append(ModelCandidate(
                 model_id=model_id,
                 provider_code=provider_code,
-                model_code=model.model_name,  # Use model_name not model_code
+                model_code=model.model_code,
                 gateway_class=gateway_class,
                 base_url=base_url,
                 api_key=api_key,
