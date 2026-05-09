@@ -14,6 +14,12 @@ def load_agent_prompt(agent_name: str, context: Optional[Dict[str, Any]] = None)
     """
     # Standardize agent name to lowercase for filename
     base_name = agent_name.lower().replace(" ", "_")
+    # Agent name -> filename overrides for legacy/non-standard names
+    _NAME_MAP = {
+        "macro": "macro_scout",
+    }
+    base_name = _NAME_MAP.get(base_name, base_name)
+
     if not base_name.endswith("_agent"):
         filename = f"{base_name}_agent.txt"
     else:

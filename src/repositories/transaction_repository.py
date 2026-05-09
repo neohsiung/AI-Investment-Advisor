@@ -5,6 +5,10 @@ from sqlalchemy import text
 from src.data.database import BaseRepository, get_db_engine
 import pandas as pd
 import uuid
+from datetime import datetime
+from src.utils.logger import setup_logger
+
+logger = setup_logger("TransactionRepository")
 
 # Valid values for the entry_category column.
 ENTRY_CATEGORY_TRADE = "trade"
@@ -88,6 +92,14 @@ class ITransactionRepository(ABC):
 
     @abstractmethod
     def get_all_accounts(self, user_id: str) -> List[str]:
+        pass
+
+    @abstractmethod
+    def reconcile_cash_balance(self, user_id: str, target_balance: float, account_id: str = None) -> None:
+        pass
+
+    @abstractmethod
+    def reconcile_positions(self, user_id: str, live_positions: List[Dict[str, Any]], account_id: str = None) -> None:
         pass
 
 class AlchemyTransactionRepository(BaseRepository, ITransactionRepository):
@@ -297,7 +309,7 @@ class AlchemyTransactionRepository(BaseRepository, ITransactionRepository):
             """)
             params = {"user_id": user_id, "account_id": account_id}
             impact = conn.execute(query_actions, params).scalar() or 0.0
-            return float(cash_flow_sum + impact)
+            return float(float(cash_flow_sum) + float(impact))
 
     def delete(self, user_id: str, transaction_id: str) -> None:
         with self.engine.begin() as conn:
@@ -378,3 +390,77 @@ class AlchemyTransactionRepository(BaseRepository, ITransactionRepository):
             query = text("SELECT DISTINCT source_file FROM transactions WHERE user_id = :uid AND source_file IS NOT NULL")
             rows = conn.execute(query, {"uid": user_id}).fetchall()
             return [r[0] for r in rows]
+    def reconcile_cash_balance(self, user_id: str, target_balance: float, account_id: str = None) -> None:
+        """
+        Adjusts local cash balance to match live broker balance.
+        調整本地現金餘額以匹配券商即時餘額。
+        """
+        current_balance = self.get_cash_balance(user_id, account_id)
+        diff = target_balance - current_balance
+        
+        # Avoid tiny adjustments due to rounding
+        if abs(diff) < 0.01:
+            return
+            
+        print(f"Reconciling cash for {user_id}: current={current_balance}, target={target_balance}, diff={diff}")
+        
+        # Add a sync adjustment transaction
+        self.add(
+            user_id=user_id,
+            ticker="CASH",
+            date=datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            action="DEPOSIT" if diff > 0 else "WITHDRAWAL",
+            quantity=0,
+            price=0,
+            fees=0,
+            amount=abs(diff),
+            entry_category=ENTRY_CATEGORY_SYNC_ADJUSTMENT,
+            source_file=account_id
+        )
+
+    def reconcile_positions(self, user_id: str, live_positions: List[Dict[str, Any]], account_id: str = None) -> None:
+        """
+        Adjusts local holdings to match live broker positions.
+        調整本地持倉以匹配券商即時持倉。
+        """
+        # Get current local holdings for this account
+        local_holdings = self.get_holdings(user_id, account_id)
+        local_map = {h['ticker'].upper(): h['quantity'] for h in local_holdings if h['ticker'].upper() != 'CASH'}
+        
+        # Map live positions
+        live_map = {p['ticker'].upper(): p['quantity'] for p in live_positions if p['ticker'].upper() != 'CASH'}
+        
+        all_tickers = set(local_map.keys()) | set(live_map.keys())
+        
+        for ticker in all_tickers:
+            if ticker.startswith("ID_"):
+                logger.warning(f"Reconciliation: Skipping unresolved instrument {ticker} for user {user_id}")
+                continue
+
+            local_qty = local_map.get(ticker, 0)
+            live_qty = live_map.get(ticker, 0)
+            diff = live_qty - local_qty
+            
+            if abs(diff) < 0.00001:
+                continue
+                
+            logger.info(f"Reconciling {ticker} for {user_id}: local={local_qty}, live={live_qty}, diff={diff}")
+            
+            # Since we don't have the live price easily here (it's passed in live_positions),
+            # we use the current market price or just 0 if it's a pure quantity sync.
+            # Best is to use the current price from live_positions if available.
+            live_price = next((p.get('current_price', 0) for p in live_positions if p['ticker'].upper() == ticker), 0)
+            
+            # Add a sync adjustment transaction
+            self.add(
+                user_id=user_id,
+                ticker=ticker,
+                date=datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                action="BUY" if diff > 0 else "SELL",
+                quantity=abs(diff),
+                price=live_price,
+                fees=0,
+                amount=abs(diff * live_price),
+                entry_category=ENTRY_CATEGORY_SYNC_ADJUSTMENT,
+                source_file=account_id
+            )

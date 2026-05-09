@@ -69,30 +69,33 @@ async def test_notification(
     payload: NotificationTestRequest,
     user_id: str = Depends(get_current_user_id)
 ):
-    """發送測試通知至指定管道 (Telegram, LINE, Email)"""
-    try:
-        NOTIFY_SERVICE_URL = os.getenv("NOTIFY_SERVICE_URL", "http://notification:8001/api/v1/notify")
-        
-        async with httpx.AsyncClient(timeout=10.0) as client:
-            resp = await client.post(NOTIFY_SERVICE_URL, json={
-                "user_id": user_id,
-                "title": "🧪 Quantum AI 系統測試",
-                "content": "如果您看到這則訊息，代表您的通知管道配置成功！",
-                "channels": payload.channels,
-                "category": "test"
-            })
-            
-            if resp.status_code >= 400:
-                logger.error(f"Notification service returned error: {resp.status_code} - {resp.text}")
-                raise HTTPException(status_code=resp.status_code, detail="通知服務暫時無法處理您的請求")
-            
-            return {
-                "status": "success",
-                "message": "測試通知已排入發送隊列",
-                "debug": resp.json()
-            }
-            
-    except Exception as e:
-        logger.error(f"Error triggering test notification: {e}")
-        if isinstance(e, HTTPException): raise e
-        raise HTTPException(status_code=500, detail=f"發送失敗: {str(e)}")
+    """直接通過 TelegramAdapter 發送測試通知"""
+    results = {}
+    
+    # 延遲導入以避免循環依賴
+    from src.infrastructure.channels.telegram_adapter import TelegramAdapter
+    adapter = TelegramAdapter()
+    
+    for channel in payload.channels:
+        if channel == "telegram":
+            try:
+                ok = await adapter.send_alert(
+                    user_id=user_id,
+                    title="🧪 Quantum AI 系統測試",
+                    content="如果您看到這則訊息，代表您的通知管道配置成功！",
+                    raise_error=True,
+                )
+                results[channel] = ok
+            except Exception as e:
+                logger.error(f"Telegram test failed: {e}")
+                results[channel] = False
+                raise HTTPException(status_code=500, detail=f"發送失敗: {str(e)}")
+        else:
+            # 目前僅支援 Telegram 測試
+            results[channel] = False
+    
+    return {
+        "status": "success",
+        "message": "測試通知已發送",
+        "debug": results
+    }

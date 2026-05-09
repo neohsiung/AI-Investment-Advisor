@@ -367,20 +367,15 @@ class SchedulerService:
 
     def run_loop(self) -> None:
         """
-        Start the infinite scheduler execution loop.
-        開始無限排程執行迴圈。
+        v10.0: DEPRECATED. Tasks migrated to Celery.
+        This loop is now disabled to prevent duplicate executions and resource conflicts.
         """
-        self.reload_schedule()
-        logger.info("Scheduler Service Running...")
+        logger.warning(f"SchedulerService.run_loop is DEPRECATED for user {self.user_id}. Tasks have been migrated to Celery (Beat).")
+        logger.warning("Please ensure 'celery -A src.infrastructure.celery_app beat' is running.")
         
-        while True:
-            schedule.run_pending()
-            
-            # Check signal
-            if int(time.time()) % 5 == 0:
-                self._check_reload_signal()
-            
-            time.sleep(1)
+        # Keep the process alive but idle if necessary for container stability, 
+        # but better to let it exit so Docker can restart or user can re-config.
+        return
 
     def _check_reload_signal(self):
         """Check for reload signal every 5s with graceful error handling."""

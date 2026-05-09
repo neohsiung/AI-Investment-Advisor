@@ -26,12 +26,11 @@ class TelegramAdapter(BaseChannelAdapter):
     def __init__(self, bot_token: str = None, chat_id: str = None):
         """
         Initialize adapter.
-        Note: bot_token and chat_id are IGNORED - they will be fetched from DB per-user.
+        v10.0: Store parameters as fallback if DB query fails.
         """
         super().__init__(default_target_id=chat_id)
-        # These are kept for backward compatibility but won't be used
-        self.bot_token = None
-        self.chat_id = None
+        self.bot_token = bot_token
+        self.chat_id = chat_id
         self.base_url = None
         self.is_active = True  # Always active - will validate at send time
         
@@ -73,27 +72,61 @@ class TelegramAdapter(BaseChannelAdapter):
                 return None, None
 
             async with pool.acquire() as connection:
-                # Query for bot token
+                # 1. Try primary keys (consistent with UI/ChannelFactory)
                 bot_token_row = await connection.fetchval(
                     "SELECT value FROM settings WHERE user_id = $1 AND key = $2",
-                    user_id,
-                    "notification_telegram_bot_token"
+                    user_id, "channel_telegram_bot_token"
                 )
                 
-                # Query for chat ID
                 chat_id_row = await connection.fetchval(
                     "SELECT value FROM settings WHERE user_id = $1 AND key = $2",
-                    user_id,
-                    "notification_telegram_chat_id"
+                    user_id, "channel_telegram_chat_id"
                 )
                 
-                bot_token = (bot_token_row or "").strip() if bot_token_row else None
-                chat_id = (chat_id_row or "").strip() if chat_id_row else None
+                # 2. Fallback to legacy keys
+                if not bot_token_row:
+                    bot_token_row = await connection.fetchval(
+                        "SELECT value FROM settings WHERE user_id = $1 AND key = $2",
+                        user_id, "notification_telegram_bot_token"
+                    )
+                if not chat_id_row:
+                    chat_id_row = await connection.fetchval(
+                        "SELECT value FROM settings WHERE user_id = $1 AND key = $2",
+                        user_id, "notification_telegram_chat_id"
+                    )
+                
+                bot_token = self._clean_db_value(bot_token_row)
+                chat_id = self._clean_db_value(chat_id_row)
                 
                 return bot_token, chat_id
         except Exception as e:
             logger.error(f"Failed to get user Telegram settings: {e}")
             return None, None
+
+    @staticmethod
+    def _clean_db_value(raw: Optional[str]) -> Optional[str]:
+        """Strip JSON quotes and decrypt ENC: values from asyncpg."""
+        if not raw:
+            return None
+        import json as _json
+        val = raw.strip()
+        # asyncpg may return JSON-serialised strings: '"ENC:xxx"' or '"12345"'
+        if val.startswith('"') and val.endswith('"'):
+            try:
+                val = _json.loads(val)
+            except (ValueError, TypeError):
+                pass
+        # Decrypt ENC: prefix using APP_SECRET_KEY
+        if isinstance(val, str) and val.startswith("ENC:"):
+            try:
+                from src.services.llm_credential_cipher import LLMCredentialCipher
+                cipher = LLMCredentialCipher()
+                decrypted = cipher.decrypt(val)
+                if decrypted:
+                    val = decrypted
+            except Exception:
+                pass  # Return as-is if decryption fails
+        return val if val else None
 
     async def send_message(self, user_id: str, message: Any, **kwargs) -> bool:
         """Send a generic message asynchronously."""
@@ -137,8 +170,12 @@ class TelegramAdapter(BaseChannelAdapter):
         # 1. Get user's Telegram settings from DB
         bot_token, chat_id = await self._get_user_telegram_settings(user_id)
         
+        # Fallback to constructor values if DB lookup fails
+        bot_token = bot_token or self.bot_token
+        chat_id = chat_id or self.chat_id
+        
         if not bot_token or not chat_id:
-            error_msg = f"Telegram settings not found for user {user_id}"
+            error_msg = f"Telegram settings not found for user {user_id} and no fallback provided"
             logger.error(error_msg)
             if raise_error:
                 raise ValueError(error_msg)
