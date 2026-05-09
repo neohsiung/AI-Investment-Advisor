@@ -25,7 +25,6 @@ services:
     volumes:
       - ./src:/workspace/src:ro
       - ./secrets/client_secret.json:/workspace/client_secret.json:ro
-      - ./services/mcp_server/src/app/__init__.py:/workspace/services/mcp_server/src/app/__init__.py:ro
     depends_on:
       postgres:
         condition: service_healthy
@@ -77,7 +76,8 @@ services:
       - OTEL_EXPORTER_OTLP_PROTOCOL=grpc
     volumes:
       - ./src:/workspace/src:ro
-      - ./services/scheduler:/workspace/services/scheduler:ro
+      # Note: ./services/scheduler is baked into the image via Dockerfile COPY.
+      # Mount ./src:ro for zero-downtime hotfixes without full image rebuild.
     depends_on:
       mcp_server:
         condition: service_healthy
@@ -177,7 +177,7 @@ services:
       - OTEL_EXPORTER_OTLP_PROTOCOL=grpc
     volumes:
       - ./src:/workspace/src:ro
-      - ./services/scheduler:/workspace/services/scheduler:ro
+      # Note: ./services/scheduler is baked into the image via Dockerfile COPY.
     depends_on:
       postgres:
         condition: service_healthy
@@ -219,7 +219,7 @@ services:
       - OTEL_EXPORTER_OTLP_PROTOCOL=grpc
     volumes:
       - ./src:/workspace/src:ro
-      - ./services/scheduler:/workspace/services/scheduler:ro
+      # Note: ./services/scheduler is baked into the image via Dockerfile COPY.
     depends_on:
       postgres:
         condition: service_healthy

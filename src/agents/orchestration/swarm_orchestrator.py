@@ -1,7 +1,7 @@
 import asyncio
 import time
 import logging
-from typing import List, Dict, Any, Optional, Tuple, Set
+from typing import List, Dict, Any, Optional, Tuple, Set, Callable
 import typing
 from src.utils.logger import setup_logger
 from src.agents.base_agent import BaseAgent
