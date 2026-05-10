@@ -1,52 +1,129 @@
 # AI Investment Advisor
 
-> 🧠 Autonomous quantitative investment platform — 7-agent swarm with fractal debate, 3-tier LLM routing, and automated eToro trading.
->
-> 自主量化投資平台 — 7 智能體集群碎形辯論、三層 LLM 路由、自動化 eToro 交易。
+<p align="center">
+  <a href="https://www.star-history.com/neohsiung/AI-Investment-Advisor">
+  <picture>
+   <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/badge?repo=neohsiung/AI-Investment-Advisor&theme=dark" />
+   <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/badge?repo=neohsiung/AI-Investment-Advisor" />
+   <img alt="Star History Rank" src="https://api.star-history.com/badge?repo=neohsiung/AI-Investment-Advisor" />
+  </picture>
+  </a>
+</p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/Python-3.11-blue.svg?style=for-the-badge&logo=python&logoColor=white" alt="Python">
-  <img src="https://img.shields.io/badge/FastAPI-0.124-009688.svg?style=for-the-badge&logo=fastapi&logoColor=white" alt="FastAPI">
-  <img src="https://img.shields.io/badge/Next.js-15-black.svg?style=for-the-badge&logo=next.js&logoColor=white" alt="Next.js">
-  <img src="https://img.shields.io/badge/Docker-Compose-2496ED.svg?style=for-the-badge&logo=docker&logoColor=white" alt="Docker">
-  <img src="https://img.shields.io/badge/PostgreSQL-16+pgvector-336791.svg?style=for-the-badge&logo=postgresql&logoColor=white" alt="PostgreSQL">
-  <img src="https://img.shields.io/badge/License-MIT-green.svg?style=for-the-badge" alt="License">
+  <a href="https://github.com/neohsiung/AI-Investment-Advisor/stargazers"><img src="https://img.shields.io/github/stars/neohsiung/AI-Investment-Advisor?style=social" alt="Stars"></a>
+  &nbsp;
+  <a href="https://github.com/neohsiung/AI-Investment-Advisor/network/members"><img src="https://img.shields.io/github/forks/neohsiung/AI-Investment-Advisor?style=social" alt="Forks"></a>
+  &nbsp;
+  <a href="https://github.com/neohsiung/AI-Investment-Advisor/issues"><img src="https://img.shields.io/github/issues/neohsiung/AI-Investment-Advisor" alt="Issues"></a>
+  &nbsp;
+  <a href="https://github.com/neohsiung/AI-Investment-Advisor/blob/main/LICENSE"><img src="https://img.shields.io/github/license/neohsiung/AI-Investment-Advisor" alt="License"></a>
+</p>
+
+<p align="center">
+  <img src="https://img.shields.io/badge/Python-3.11-blue?logo=python&logoColor=white" alt="Python">
+  <img src="https://img.shields.io/badge/FastAPI-0.124-009688?logo=fastapi&logoColor=white" alt="FastAPI">
+  <img src="https://img.shields.io/badge/Next.js-15-black?logo=next.js&logoColor=white" alt="Next.js">
+  <img src="https://img.shields.io/badge/Docker-Compose-2496ED?logo=docker&logoColor=white" alt="Docker">
+  <img src="https://img.shields.io/badge/PostgreSQL-16+pgvector-336791?logo=postgresql&logoColor=white" alt="PostgreSQL">
+  <img src="https://img.shields.io/badge/OpenTelemetry-1.39-F5A800?logo=opentelemetry&logoColor=white" alt="OTel">
+  <img src="https://img.shields.io/badge/MCP-Protocol-8A2BE2" alt="MCP">
+</p>
+
+<p align="center">
+  <img src="assets/hero.png" alt="AI Investment Advisor — 7-Agent Swarm Autonomous Quantitative Investment Platform" width="800" />
+</p>
+
+<p align="center">
+  <strong>English</strong> |
+  <a href="READMEs/README.zh-TW.md">繁體中文</a> |
+  <a href="READMEs/README.ja-JP.md">日本語</a>
 </p>
 
 ---
 
-## What Is This?
+> [!TIP]
+> **Your portfolio has 7 agents watching it 24/7.** This platform orchestrates a multi-agent swarm to autonomously monitor, debate, and rebalance your investments — the way a hedge fund brain would.
 
-AI Investment Advisor mirrors the decision-making architecture of a top-tier hedge fund. A **CIO Agent** decomposes investment questions, delegates to **7 specialized sub-agents**, orchestrates a **Fractal Debate** to eliminate model hallucinations, and produces actionable portfolio decisions — all executed automatically via eToro's trading API.
+**You just put $10,000 into a brokerage. How do you decide what to buy, when to hedge, and when to exit?**
 
-The platform features a **3-Tier LLM routing engine** (Advanced / Smart / Fast) for cost-optimized AI inference, a **10-Dimension Sentinel** for autonomous risk monitoring, and a **hybrid storage layer** (PostgreSQL + pgvector + Redis) for semantic memory and real-time state.
+AI Investment Advisor is an autonomous quantitative platform that deploys a **7-Agent Swarm** powered by **Fractal Debate** — a multi-round adversarial reasoning framework that eliminates single-model hallucinations. A CIO Agent decomposes investment questions, delegates to domain experts, orchestrates debate, and executes trades automatically via eToro's API.
+
+> **Debates that converge > predictions that hallucinate.**
 
 ---
 
-## Architecture
+## ✨ Features
+
+<table>
+  <tr>
+    <td width="50%" valign="top">
+      <h3>🧬 Fractal Debate</h3>
+      <p>Multi-agent adversarial reasoning across 7 specialized agents. Eliminates single-model hallucinations through structured disagreement and convergence.</p>
+    </td>
+    <td width="50%" valign="top">
+      <h3>🦅 10-Dimension Sentinel</h3>
+      <p>VIX, price, news, macro, allocation drift — autonomous risk radar that never sleeps. Auto-triggers hedging and rebalancing.</p>
+    </td>
+  </tr>
+  <tr>
+    <td width="50%" valign="top">
+      <h3>⚡ Auto-Hedging</h3>
+      <p>Millisecond-precision position liquidation via eToro API. Dual-track webhooks for rapid emergency response during market crashes.</p>
+    </td>
+    <td width="50%" valign="top">
+      <h3>🧠 OpenClaw Architecture</h3>
+      <p>Per-agent WAL (Write-Ahead Logging) with independent workspaces. Eliminates context overflow amnesia in long financial analyses.</p>
+    </td>
+  </tr>
+  <tr>
+    <td width="50%" valign="top">
+      <h3>📊 Hybrid RAG</h3>
+      <p>BM25 + temporal-decay semantic search via pgvector + Redis. Decisions are grounded in deep historical context, not just recent data.</p>
+    </td>
+    <td width="50%" valign="top">
+      <h3>🔐 Enterprise-Grade Security</h3>
+      <p>Fernet encryption at rest, parameterized SQL only, hardened Docker images, and SHA256 signal verification.</p>
+    </td>
+  </tr>
+  <tr>
+    <td width="50%" valign="top">
+      <h3>📡 Full Observability</h3>
+      <p>OpenTelemetry 1.39 + SigNoz APM. Distributed traces, metrics, and logs across all agents and services.</p>
+    </td>
+    <td width="50%" valign="top">
+      <h3>🔄 Scheduled Workflows</h3>
+      <p>Celery Beat orchestrates daily checks, weekly reports, and sentinel ticks. Set it and forget it.</p>
+    </td>
+  </tr>
+</table>
+
+---
+
+## 🏗️ Architecture
 
 ```mermaid
 graph TD
     User((User)) <-->|Dashboard| FE["Next.js Frontend"]
     FE <-->|REST API| API["FastAPI + MCP Server"]
 
-    subgraph "Intelligent Core"
+    subgraph "🧠 Intelligent Core"
         API --> WF["WorkflowService"]
         WF --> CIO["CIO Agent"]
-        CIO -->|Decompose| SUB["7 Sub-Agents<br/>(Macro, Fundamental, Momentum,<br/>Sentiment, Thematic, Risk, Narrative)"]
+        CIO -->|Decompose| SUB["7 Sub-Agents"]
         SUB -->|Fractal Debate| COUNCIL{"Council"}
-        COUNCIL --> ENG["Engineer Agent<br/>Self-Optimize"]
-        SENT["Sentinel<br/>10D Radar"] -->|Triggers| SA["SentinelAgent"]
+        COUNCIL --> ENG["Engineer Agent"]
+        SENT["Sentinel 🦅"] -->|Triggers| SA["SentinelAgent"]
         SA --> COUNCIL
     end
 
-    subgraph "Data & Memory"
+    subgraph "💾 Data & Memory"
         PG["PostgreSQL + pgvector"]
         RD["Redis Cache"]
     end
 
-    subgraph "Execution"
-        TRADE["AutomatedTradingService<br/>eToro API"]
+    subgraph "⚡ Execution"
+        TRADE["AutomatedTradingService"]
     end
 
     COUNCIL -->|Actions| TRADE
@@ -72,22 +149,7 @@ graph TD
 
 ---
 
-## Key Features
-
-| Feature | Description |
-|:--------|:------------|
-| 🧬 **Fractal Debate** | Multi-agent adversarial reasoning eliminates single-model hallucinations |
-| 🦅 **10D Sentinel** | VIX, price, news, macro, allocation drift — autonomous risk radar |
-| ⚡ **Auto-Hedging** | Millisecond-precision position liquidation via eToro API |
-| 🧠 **OpenClaw Architecture** | Per-agent WAL (Write-Ahead Logging) prevents context overflow amnesia |
-| 📊 **Hybrid RAG** | BM25 + temporal-decay semantic search via pgvector + Redis |
-| 🔐 **Fernet Encryption** | All API keys encrypted at rest with `LLMCredentialCipher` |
-| 📡 **OpenTelemetry** | Full observability via SigNoz APM (traces, metrics, logs) |
-| 🔄 **Celery Beat** | Scheduled workflows: daily checks, weekly reports, sentinel ticks |
-
----
-
-## Tech Stack
+## 🛠️ Tech Stack
 
 | Category | Technology |
 |:---------|:-----------|
@@ -103,7 +165,7 @@ graph TD
 
 ---
 
-## Quick Start
+## 🚀 Quick Start
 
 ### Prerequisites
 
@@ -133,7 +195,7 @@ cp .env.example .env
 
 ---
 
-## Project Structure
+## 📁 Project Structure
 
 ```
 AI-Investment-Advisor/
@@ -176,21 +238,20 @@ AI-Investment-Advisor/
 
 ---
 
-## AI Agent Context
+## 🤖 AI Agent Context
 
-This project uses [AGENTS.md](AGENTS.md) as the unified context file for all AI coding assistants. It provides:
+This project uses [AGENTS.md](AGENTS.md) as the unified context file for all AI coding assistants (Antigravity, Claude Code, Cursor, Copilot, Gemini CLI). It provides:
 
 - Project identity and architecture overview
 - Key technical constraints and conventions
 - Build, test, and lint commands
-- Directory semantics
-- Documentation references
+- Directory semantics and documentation references
 
 > For deeper governance rules, skills, and workflows, see the [`.agent/`](.agent/README.md) directory.
 
 ---
 
-## Governance & Standards
+## 📏 Governance & Standards
 
 | Standard | File |
 |:---------|:-----|
@@ -202,18 +263,49 @@ This project uses [AGENTS.md](AGENTS.md) as the unified context file for all AI 
 
 ---
 
-## Documentation
+## 🤝 Contributing
 
-- 📖 **Full Wiki**: See the [Wiki repository](https://github.com/neohsiung/AI-Investment-Advisor/wiki) for architectural blueprints, data source matrix, and contribution guides.
+Contributions are welcome! Here's how to get started:
+
+1. Fork the repository
+2. Create a feature branch (`git checkout -b feature/my-feature`)
+3. Run the tests (`pytest tests/ -x --tb=short`)
+4. Commit your changes and open a pull request
+
+Please open an issue first for major changes so we can discuss the approach.
+
+---
+
+## 📚 Documentation
+
+- 📖 **Full Wiki**: See the [Wiki](https://github.com/neohsiung/AI-Investment-Advisor/wiki) for architectural blueprints, data source matrix, and contribution guides.
 - 📝 **Changelog**: See [`CHANGELOG.md`](CHANGELOG.md) for version history.
 
 ---
 
-## License & Disclaimer
+## Star History
+
+<a href="https://www.star-history.com/?repos=neohsiung%2FAI-Investment-Advisor&type=date&legend=top-left">
+ <picture>
+   <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/image?repos=neohsiung/AI-Investment-Advisor&type=date&theme=dark&legend=top-left" />
+   <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/image?repos=neohsiung/AI-Investment-Advisor&type=date&legend=top-left" />
+   <img alt="Star History Chart" src="https://api.star-history.com/image?repos=neohsiung/AI-Investment-Advisor&type=date&legend=top-left" />
+ </picture>
+</a>
+
+---
+
+## 📄 License & Disclaimer
 
 - **License**: [MIT License](LICENSE)
 - **Disclaimer**: This project is for **educational and research purposes only**. It is not financial advice. Trading involves risk — use at your own discretion.
 
 ---
 
-<p align="center">Built with ❤️ for Modern Quantitative Investing</p>
+<p align="center">
+  <strong>Stop guessing. Start debating. Let agents converge on truth.</strong>
+</p>
+
+<p align="center">
+  MIT License &copy; <a href="https://github.com/neohsiung">neohsiung</a>
+</p>
