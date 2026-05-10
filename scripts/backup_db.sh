@@ -8,9 +8,11 @@ if [ -f .env ]; then
 fi
 
 DB_CONTAINER="advisor_prod_db"
-DB_NAME="${DB_NAME:-advisor_prod_db}"
+DB_NAME="${DB_NAME:-advisor_prod}"
 DB_USER="${DB_USER:-postgres}"
-BACKUP_DIR="./backups"
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+PROJECT_ROOT="$(dirname "$SCRIPT_DIR")"
+BACKUP_DIR="${PROJECT_ROOT}/backups"
 TIMESTAMP=$(date +%Y%m%d_%H%M%S)
 BACKUP_FILE="${BACKUP_DIR}/db_backup_${TIMESTAMP}.sql"
 

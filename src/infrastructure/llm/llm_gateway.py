@@ -28,9 +28,7 @@ from src.utils.tracing import trace_external_call
 
 logger = logging.getLogger(__name__)
 
-from src.domain.interfaces import ILLMGateway, Message, LLMConfig
-from src.utils.security import redact_secrets as _redact_secrets, redact_pii as _redact_pii
-from src.utils.tracing import trace_external_call
+from src.infrastructure.llm.model_id_resolver import resolve_model_id
 
 class OpenRouterGateway(ILLMGateway):
     """
@@ -56,9 +54,11 @@ class OpenRouterGateway(ILLMGateway):
             "X-Title": "AI Investment Advisor",
         }
         
-        # Build request data with all required fields
+        # Resolve model ID via centralized resolver (TTL Cached)
+        actual_model_id = resolve_model_id(config.model, "openrouter")
+
         data = {
-            "model": config.model,
+            "model": actual_model_id,
             "messages": [{"role": m.role, "content": m.content} for m in messages],
             "max_tokens": config.max_tokens or 2048,
         }
@@ -102,6 +102,9 @@ class OpenRouterGateway(ILLMGateway):
 
     async def stream_chat(self, messages: List[Message], config: LLMConfig) -> AsyncGenerator[str, None]:
         url = config.base_url or "https://openrouter.ai/api/v1/chat/completions"
+
+        actual_model_id = resolve_model_id(config.model, "openrouter")
+        
         
         # Validate API key
         if not config.api_key or config.api_key.strip() == "":
@@ -116,7 +119,7 @@ class OpenRouterGateway(ILLMGateway):
         
         # Build request data with all required fields
         data = {
-            "model": config.model,
+            "model": actual_model_id,
             "messages": [{"role": m.role, "content": m.content} for m in messages],
             "stream": True,
             "max_tokens": config.max_tokens or 2048,
@@ -164,8 +167,9 @@ class OpenRouterGateway(ILLMGateway):
             "Authorization": f"Bearer {config.api_key}",
             "Content-Type": "application/json",
         }
+        actual_model_id = resolve_model_id(config.model, "openrouter")
         data = {
-            "model": config.model,
+            "model": actual_model_id,
             "input": text,
         }
         
@@ -354,8 +358,9 @@ class OpenAIGateway(ILLMGateway):
         headers = {"Content-Type": "application/json"}
         if config.api_key:
             headers["Authorization"] = f"Bearer {config.api_key}"
+        actual_model_id = resolve_model_id(config.model, "openai")
         data = {
-            "model": config.model,
+            "model": actual_model_id,
             "messages": [{"role": m.role, "content": m.content} for m in messages],
         }
         if config.temperature is not None:
@@ -389,8 +394,9 @@ class OpenAIGateway(ILLMGateway):
             "Authorization": f"Bearer {config.api_key}",
             "Content-Type": "application/json",
         }
+        actual_model_id = resolve_model_id(config.model, "openai")
         data = {
-            "model": config.model,
+            "model": actual_model_id,
             "messages": [{"role": m.role, "content": m.content} for m in messages],
             "stream": True,
         }
@@ -424,8 +430,9 @@ class OpenAIGateway(ILLMGateway):
             "Authorization": f"Bearer {config.api_key}",
             "Content-Type": "application/json",
         }
+        actual_model_id = resolve_model_id(config.model, "openai")
         data = {
-            "model": config.model,
+            "model": actual_model_id,
             "input": text,
         }
         async with httpx.AsyncClient() as client:

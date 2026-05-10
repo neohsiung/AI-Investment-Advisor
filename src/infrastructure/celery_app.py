@@ -24,6 +24,18 @@ app.conf.beat_schedule = {
         "task": "src.infrastructure.tasks.generate_market_intelligence",
         "schedule": crontab(hour=17, minute=0),  # 05:00 PM EST
     },
+    "sentinel-minutely-tick": {
+        "task": "src.infrastructure.tasks.sentinel_tick",
+        "schedule": crontab(minute="*"),         # Every minute
+    },
+    "broker-position-sync": {
+        "task": "src.infrastructure.tasks.sync_broker_positions",
+        "schedule": crontab(minute="*/5"),       # Every 5 minutes
+    },
+    "memory-distillation": {
+        "task": "src.infrastructure.tasks.distill_memories",
+        "schedule": crontab(hour=1, minute=0),    # Daily at 1 AM EST
+    },
 }
 
 # Auto-discover tasks in the infrastructure directory

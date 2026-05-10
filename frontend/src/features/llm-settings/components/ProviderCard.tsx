@@ -78,9 +78,9 @@ export function ProviderCard({ provider, onEdit, onDeleted }: ProviderCardProps)
 
     // ─── Health dot color ────────────────────────────────────────────────────────
     const healthDot =
-        provider.health_status === "healthy"
+        provider.health_status === "healthy" || provider.health_status === "ok"
             ? "bg-green-500"
-            : provider.health_status === "unhealthy"
+            : provider.health_status === "unhealthy" || provider.health_status === "error"
                 ? "bg-red-500"
                 : "bg-gray-400";
 

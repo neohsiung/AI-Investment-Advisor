@@ -55,7 +55,7 @@ class SettingsService:
         """
         Parses a setting value from its raw database representation.
         """
-        if value is None:
+        if value is None or value == "":
             return None
             
         import json
@@ -90,8 +90,13 @@ class SettingsService:
         """
         target_uid = user_id or self._get_effective_uid()
         try:
-            val = self.settings_repo.get(target_uid, key, default)
-            return self._parse_setting_value(val)
+            raw_val = self.settings_repo.get(target_uid, key, default)
+            parsed = self._parse_setting_value(raw_val)
+            # If parsed is None but raw_val was not None, it means it was "" or 'None'
+            # We should return default in these cases if a default is provided.
+            if parsed is None and raw_val is not None:
+                return default
+            return parsed
         except Exception:
             return default
 
@@ -202,7 +207,10 @@ class SettingsService:
             "sentinel_p2_limit_mins": 60,
             "sentinel_p3_limit_mins": 240,
             "sentinel_p4_limit_mins": 720,
-            "sentinel_p5_limit_mins": 1440
+            "sentinel_p5_limit_mins": 1440,
+            "max_single_position_weight": 25.0,
+            "emergency_liquidation_score": 9,
+            "emergency_hedge_amount": 50.0
         }
         
         for key, val in defaults.items():
@@ -293,3 +301,31 @@ class SettingsService:
         
         print(f"SettingsService: User {target_uid} initialization complete.")
         return True
+
+    def get_target_allocation(self, user_id: str = None) -> Dict[str, Any]:
+        """获取目标资产配置权重。回傳格式: {ticker: {"weight": float}}"""
+        try:
+            uid = user_id or self._get_effective_uid()
+            allocation_json = self.get_setting('target_allocation', '{}', uid)
+            if isinstance(allocation_json, str):
+                import json
+                raw = json.loads(allocation_json)
+            else:
+                raw = allocation_json or {}
+
+            # 正規化: 若 value 是 float/int，包裝為 {"weight": value}
+            normalized = {}
+            for key, val in raw.items():
+                if isinstance(val, (int, float)):
+                    normalized[key] = {"weight": float(val)}
+                elif isinstance(val, dict):
+                    normalized[key] = val
+                else:
+                    # 嘗試轉換為 float
+                    try:
+                        normalized[key] = {"weight": float(val)}
+                    except (ValueError, TypeError):
+                        pass  # 跳過無法解析的 entry
+            return normalized
+        except Exception as e:
+            return {}  # 回傳空 dict 而非不相容的 fallback

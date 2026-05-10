@@ -51,11 +51,13 @@ async def test_verify_security_clearance_malicious_code(guard, malicious_code, e
     finally:
         os.unlink(tmp_path)
 
+@patch("src.utils.prompt_utils.load_agent_prompt")
 @patch("src.services.settings_service.SettingsService.get_all_settings")
 @patch("src.infrastructure.llm.llm_gateway.LLMGatewayFactory.create")
 @pytest.mark.asyncio
-async def test_verify_purpose_alignment_approve(mock_gateway_create, mock_get_settings, guard):
+async def test_verify_purpose_alignment_approve(mock_gateway_create, mock_get_settings, mock_load_prompt, guard):
     """測試用途對齊審核通過。"""
+    mock_load_prompt.return_value = "dummy prompt"
     mock_get_settings.return_value = {
         "AI_PROVIDER": "MockProvider",
         "AI_MODEL_FAST": "mock-model",
@@ -73,11 +75,13 @@ async def test_verify_purpose_alignment_approve(mock_gateway_create, mock_get_se
     assert is_aligned is True
     assert "PASSED" in reason
 
+@patch("src.utils.prompt_utils.load_agent_prompt")
 @patch("src.services.settings_service.SettingsService.get_all_settings")
 @patch("src.infrastructure.llm.llm_gateway.LLMGatewayFactory.create")
 @pytest.mark.asyncio
-async def test_verify_purpose_alignment_reject(mock_gateway_create, mock_get_settings, guard):
+async def test_verify_purpose_alignment_reject(mock_gateway_create, mock_get_settings, mock_load_prompt, guard):
     """測試用途對齊審核拒絕。"""
+    mock_load_prompt.return_value = "dummy prompt"
     mock_get_settings.return_value = {
         "AI_PROVIDER": "MockProvider",
         "API_KEY": "mock-key",

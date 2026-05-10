@@ -5,8 +5,10 @@ import typing
 from sqlalchemy import text
 from src.data.database import get_db_connection
 from .base import BaseIngestor
+from .factory import register_ingestor
 import json
 
+@register_ingestor("simple")
 class SimpleIngestor(BaseIngestor):
     def ingest(self, df: pd.DataFrame, user_id: str) -> None:
         # Normalize columns
@@ -66,6 +68,7 @@ class SimpleIngestor(BaseIngestor):
                         "raw_data": raw_data
                     })
 
+@register_ingestor("robinhood")
 class RobinhoodIngestor(BaseIngestor):
     def ingest(self, df: pd.DataFrame, user_id: str) -> None:
         # Normalize columns to lower case for easier matching
@@ -115,6 +118,7 @@ class RobinhoodIngestor(BaseIngestor):
                         "amount": amount
                     })
 
+@register_ingestor("ibkr")
 class IBKRIngestor(BaseIngestor):
     def ingest(self, df: pd.DataFrame, user_id: str) -> None:
          # Normalize columns
@@ -175,6 +179,7 @@ class IBKRIngestor(BaseIngestor):
                         "fees": fees,
                         "amount": amount
                     })
+@register_ingestor("etoro")
 class EtoroIngestor(BaseIngestor):
     """
     Ingestor for eToro Financial Statement (CSV).

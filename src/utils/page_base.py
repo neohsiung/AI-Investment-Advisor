@@ -6,7 +6,10 @@ Implements the Template Method Pattern to ensure consistent structure,
 styles, and authentication across all pages.
 實作樣板方法模式 (Template Method Pattern)，確保所有頁面擁有一致的結構、樣式與驗證機制。
 """
-import streamlit as st
+try:
+    import streamlit as st
+except ImportError:
+    st = None
 from abc import ABC, abstractmethod
 from dotenv import load_dotenv
 

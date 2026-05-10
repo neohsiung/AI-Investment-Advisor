@@ -31,7 +31,7 @@ export type ProviderCode =
     | "groq"
     | "nvidia";
 
-export type HealthStatus = "healthy" | "unhealthy" | "unknown";
+export type HealthStatus = "healthy" | "unhealthy" | "unknown" | "ok" | "error";
 
 export interface LLMProvider {
     id: string;

@@ -47,7 +47,7 @@ async def test_execute_order_uses_id():
          patch.object(EtoroService, '_resolve_instrument_id', return_value=555), \
          patch.object(EtoroService, '_fetch_portfolio_raw', return_value={'clientPortfolio': {'positions': []}}):
         
-        service = EtoroService()
+        service = EtoroService(user_id="test_user")
         mock_post.return_value.status_code = 200
         mock_post.return_value.json.return_value = {"status": "success"}
         
@@ -75,7 +75,7 @@ async def test_execute_order_uses_id():
 async def test_resolve_instrument_id_dynamic_tsla():
     """Verify TSLA now uses dynamic discovery (previously hardcoded)."""
     with patch.object(EtoroService, '_fetch_id_from_api', return_value=7):
-        service = EtoroService()
+        service = EtoroService(user_id="test_user")
         # Clear cache to force API call
         service._id_cache.pop("TSLA", None)
         
@@ -106,7 +106,7 @@ async def test_execute_sell_includes_instrument_id():
          patch.object(EtoroService, 'get_history', new_callable=AsyncMock, return_value=[]), \
          patch.object(EtoroService, '_fetch_portfolio_raw', new_callable=AsyncMock, return_value={'clientPortfolio': {'positions': []}}):
         
-        service = EtoroService()
+        service = EtoroService(user_id="test_user")
         service.risk_manager.check_constraints = MagicMock(return_value=True)
         
         # Mock a position matching our symbol
@@ -145,7 +145,7 @@ async def test_execute_order_auth_failure_returns_clear_error():
     with patch.object(EtoroService, '_fetch_portfolio_raw', new_callable=AsyncMock,
                       return_value={'errorCode': 'Unauthorized', 'errorMessage': 'Unauthorized'}):
         
-        service = EtoroService()
+        service = EtoroService(user_id="test_user")
         
         from src.domain.trading import Order, OrderAction
         order = Order(symbol="TSLA", action=OrderAction.SELL, quantity=1.0)

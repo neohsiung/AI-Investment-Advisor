@@ -8,7 +8,7 @@ from src.repositories.settings_repository import AlchemySettingsRepository
 from src.utils.json_utils import json_loads_safe
 
 class CIOAgent(BaseAgent):
-    def __init__(self, use_cache=True, transaction_repo=None, prompt_path="prompts/cio_weekly.txt", mode="report", **kwargs):
+    def __init__(self, use_cache=True, transaction_repo=None, prompt_path="prompts/cio_agent.txt", mode="report", **kwargs):
         # Allow tier override or kwargs
         tier = kwargs.pop('tier', 'smart')
         mode_map = {
@@ -115,6 +115,13 @@ class CIOAgent(BaseAgent):
             cash_deployment_context = context.get("cash_deployment_context", "")
 
         # 6. Prepare Data for Prompt Template
+        mode_focus_map = {
+            "daily": "Daily Tactical",
+            "weekly": "Weekly Strategic",
+            "sentinel": "Sentinel Breach Reaction"
+        }
+        default_focus = mode_focus_map.get(self.mode, "Weekly Strategic")
+
         prompt_data = {
             "current_date": format_time(fmt="%Y-%m-%d"),
             "leverage_ratio": f"{leverage_ratio:.2f}",
@@ -127,7 +134,7 @@ class CIOAgent(BaseAgent):
             "narrative_drift_context": narrative_drift_context, # [NEW] Milestone 3.2 Context
             "sector_strategy": context.get("sector_strategy", "無 (None)"),
             "cash_deployment_context": cash_deployment_context, # [FIX] Dynamic cash level calculation
-            "report_focus": context.get("task_instruction") or context.get("report_focus", "Weekly Strategic"),
+            "report_focus": context.get("task_instruction") or context.get("report_focus") or default_focus,
             "topic": context.get("topic", "未指定 (Not Specified)"),
             "memory_chain": context.get("memory_chain", "無相關歷史記憶 (No existing memory)")
         }

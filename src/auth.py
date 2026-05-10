@@ -1,4 +1,7 @@
-import streamlit as st
+try:
+    import streamlit as st
+except ImportError:
+    st = None
 import os
 from src.utils.google_auth import GoogleAuth
 

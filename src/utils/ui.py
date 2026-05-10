@@ -1,7 +1,10 @@
 """
 UI Helper Functions with Theme Support
 """
-import streamlit as st
+try:
+    import streamlit as st
+except ImportError:
+    st = None
 import os
 from datetime import datetime
 from src.services.theme_service import ThemeService

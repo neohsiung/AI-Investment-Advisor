@@ -5,7 +5,7 @@ class MacroAgent(BaseAgent):
     def __init__(self, use_cache=True, ttl_hours=None, **kwargs):
         ttl = ttl_hours if ttl_hours is not None else 24
         tier = kwargs.pop('tier', 'smart')
-        super().__init__(name="Macro", prompt_path="prompts/macro_agent.txt", use_cache=use_cache, ttl_hours=ttl, tier=tier, **kwargs)
+        super().__init__(name="Macro", prompt_path="prompts/macro_scout_agent.txt", use_cache=use_cache, ttl_hours=ttl, tier=tier, **kwargs)
 
     async def run(self, context):
         """

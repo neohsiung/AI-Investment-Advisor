@@ -1,0 +1,174 @@
+{
+  "ollama": {
+    "provider_type": "local",
+    "cost": "free",
+    "description": "Local self-hosted via Docker",
+    "models": {
+      "deepseek-r1": {
+        "name": "deepseek-r1:32b",
+        "tier": "DeepResearch",
+        "performance": {
+          "quality": 9,
+          "speed": 5,
+          "cost": 0
+        },
+        "context_window": 64000,
+        "availability": "✓ Running"
+      },
+      "llama2": {
+        "name": "llama2:70b",
+        "tier": "MemoryDig",
+        "performance": {
+          "quality": 8,
+          "speed": 4,
+          "cost": 0
+        },
+        "context_window": 4096,
+        "availability": "✓ Running"
+      },
+      "mistral": {
+        "name": "mistral:7b",
+        "tier": "FastThink",
+        "performance": {
+          "quality": 7,
+          "speed": 9,
+          "cost": 0
+        },
+        "context_window": 32000,
+        "availability": "✓ Running"
+      },
+      "phi": {
+        "name": "phi:2.7b",
+        "tier": "Reflexive",
+        "performance": {
+          "quality": 6,
+          "speed": 10,
+          "cost": 0
+        },
+        "context_window": 2048,
+        "availability": "✓ Running"
+      }
+    }
+  },
+  "nvidia_nim": {
+    "provider_type": "cloud",
+    "cost": "free_tier",
+    "description": "NVIDIA NIM - Free tier with rate limits",
+    "api_endpoint": "https://integrate.api.nvidia.com",
+    "rate_limit": "2000 tokens/min",
+    "models": {
+      "llama-3.1-70b": {
+        "name": "meta/llama-3.1-70b-instruct",
+        "tier": "DeepResearch",
+        "performance": {
+          "quality": 9,
+          "speed": 6,
+          "cost": 0
+        },
+        "context_window": 128000,
+        "availability": "✓ Free"
+      },
+      "mixtral-8x22b": {
+        "name": "mistralai/mixtral-8x22b-instruct-v0.1",
+        "tier": "MemoryDig",
+        "performance": {
+          "quality": 8,
+          "speed": 5,
+          "cost": 0
+        },
+        "context_window": 65536,
+        "availability": "✓ Free"
+      },
+      "mistral-7b": {
+        "name": "mistralai/mistral-7b-instruct-v0.3",
+        "tier": "FastThink",
+        "performance": {
+          "quality": 7,
+          "speed": 8,
+          "cost": 0
+        },
+        "context_window": 32768,
+        "availability": "✓ Free"
+      },
+      "qwen-2.5-7b": {
+        "name": "alibaba/qwen-2.5-7b-instruct",
+        "tier": "Reflexive",
+        "performance": {
+          "quality": 7,
+          "speed": 9,
+          "cost": 0
+        },
+        "context_window": 32768,
+        "availability": "✓ Free"
+      }
+    }
+  },
+  "openrouter": {
+    "provider_type": "cloud",
+    "cost": "paid",
+    "description": "OpenRouter - Multi-model aggregation with best pricing",
+    "api_endpoint": "https://openrouter.ai/api",
+    "models": {
+      "claude-sonnet-4": {
+        "name": "anthropic/claude-3.5-sonnet",
+        "tier": "DeepResearch",
+        "performance": {
+          "quality": 10,
+          "speed": 7,
+          "cost": 9
+        },
+        "context_window": 200000,
+        "price_per_1m": {
+          "input": 3.0,
+          "output": 15.0
+        },
+        "availability": "✓ Production"
+      },
+      "gpt-4-turbo": {
+        "name": "openai/gpt-4-turbo-preview",
+        "tier": "MemoryDig",
+        "performance": {
+          "quality": 9,
+          "speed": 6,
+          "cost": 8
+        },
+        "context_window": 128000,
+        "price_per_1m": {
+          "input": 10.0,
+          "output": 30.0
+        },
+        "availability": "✓ Production"
+      },
+      "claude-haiku": {
+        "name": "anthropic/claude-3.5-haiku",
+        "tier": "FastThink",
+        "performance": {
+          "quality": 8,
+          "speed": 9,
+          "cost": 3
+        },
+        "context_window": 200000,
+        "price_per_1m": {
+          "input": 0.8,
+          "output": 4.0
+        },
+        "availability": "✓ Production"
+      },
+      "llama-3.1-8b": {
+        "name": "meta-llama/llama-3.1-8b-instruct",
+        "tier": "Reflexive",
+        "performance": {
+          "quality": 7,
+          "speed": 10,
+          "cost": 1
+        },
+        "context_window": 128000,
+        "price_per_1m": {
+          "input": 0.05,
+          "output": 0.15
+        },
+        "availability": "✓ Production"
+      }
+    }
+  }
+}

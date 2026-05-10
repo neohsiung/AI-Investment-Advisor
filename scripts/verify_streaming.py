@@ -43,7 +43,7 @@ async def verify_streaming():
     from src.infrastructure.llm.llm_gateway import MockLLMGateway
     agent._llm_gateway = MockLLMGateway()
     
-    print(f"--- Testing LLM Gateway: {agent.config.get('provider')} ({agent.config.get('model')}) ---")
+    print("--- Testing LLM Gateway ---")
     
     messages = [
         {"role": "system", "content": "You are a helpful assistant."},

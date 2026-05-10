@@ -1,0 +1,204 @@
+# Agent → LLM Tier Mapping (Plan B: 12 Core Agents)
+# 用途：定義每個 Agent 在再平衡工作流中使用的 LLM 層級
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# Tier Cognitive Mapping (from tier_config.py)
+# ═══════════════════════════════════════════════════════════════════════════════
+# nano:     System 0 — 反射層  (classification, routing, fast responses)
+# fast:     System 1 — 快思層  (summarization, extraction, sentiment)
+# smart:    System 2 — 慢想層  (analysis, reasoning, multi-step decisions)
+# advanced: System 2+ — 深思層 (CIO decisions, complex strategy, deep reasoning)
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# Agent Tier Assignments (Plan B Phase 4)
+# ═══════════════════════════════════════════════════════════════════════════════
+
+agents:
+  
+  # ─────────────────────────────────────────────────────────────────────────────
+  # 【Stage 1-2: Market Scanning & Analysis】
+  # 並行執行 (Parallel) → Scout + Base Agents 同時掃描市場和技術
+  # ─────────────────────────────────────────────────────────────────────────────
+  
+  # ── Scout Agents (Buy-side opportunity discovery) ────────────────────────────
+  momentum_scout:
+    tier: fast
+    description: "Fast technical scan for oversold opportunities (momentum + RSI reversal)"
+    role: "opportunity_discovery"
+    stage: "market_scanning"
+    concurrency: "parallel"
+    
+  fundamental_scout:
+    tier: fast
+    description: "Fast fundamental scan for undervalued companies (P/E ratio, growth)"
+    role: "opportunity_discovery"
+    stage: "market_scanning"
+    concurrency: "parallel"
+    
+  macro_scout:
+    tier: fast
+    description: "Fast macro theme scan for economic trends (yield curve, inflation, geopolitics)"
+    role: "opportunity_discovery"
+    stage: "market_scanning"
+    concurrency: "parallel"
+    
+  # ── Base Analysis Agents (Market environment analysis) ────────────────────────
+  macro:
+    tier: smart
+    description: "Macro environment analysis (VIX, treasuries, sector rotation, rate outlook)"
+    role: "market_analysis"
+    stage: "environment_scanning"
+    concurrency: "parallel"
+    
+  momentum:
+    tier: fast
+    description: "Momentum analysis on existing portfolio (technical signals, relative strength)"
+    role: "momentum_analysis"
+    stage: "asset_analysis"
+    concurrency: "parallel"
+    
+  fundamental:
+    tier: smart
+    description: "Fundamental analysis (earnings, PEG, competitive moats, quality scores)"
+    role: "fundamental_analysis"
+    stage: "asset_analysis"
+    concurrency: "parallel"
+    
+  sentiment:
+    tier: fast
+    description: "Market sentiment & social signals (VIX, put/call ratio, options flow)"
+    role: "sentiment_analysis"
+    stage: "environment_scanning"
+    concurrency: "parallel"
+    
+  thematic:
+    tier: smart
+    description: "Thematic portfolio rotation (sector leadership, trend following)"
+    role: "thematic_analysis"
+    stage: "environment_scanning"
+    concurrency: "parallel"
+    
+  # ─────────────────────────────────────────────────────────────────────────────
+  # 【Stage 3: Risk Assessment】
+  # Sequential / Triggered by alerts
+  # ─────────────────────────────────────────────────────────────────────────────
+  
+  risk:
+    tier: smart
+    description: "Portfolio risk assessment (correlation, drawdown scenarios, volatility)"
+    role: "risk_assessment"
+    stage: "risk_assessment"
+    concurrency: "sequential"
+    trigger: "alert_or_scheduled"
+    
+  sentinel:
+    tier: smart
+    description: "Real-time monitoring & alert generation (price alerts, ratio breaches)"
+    role: "monitoring"
+    stage: "risk_assessment"
+    concurrency: "continuous"
+    trigger: "event_driven"
+    
+  # ─────────────────────────────────────────────────────────────────────────────
+  # 【Stage 4: Decision Synthesis】
+  # Consensus from agents above → CIO final decision
+  # ─────────────────────────────────────────────────────────────────────────────
+  
+  cio:
+    tier: smart
+    description: "Portfolio rebalancing decisions (target weights, position sizing, confidence)"
+    role: "decision_synthesis"
+    stage: "decision_synthesis"
+    concurrency: "single"
+    reasoning_mode: "adaptive"
+    reasoning_modes:
+      daily_tactical: "Fast tactical rebalancing (15% confidence threshold)"
+      weekly_strategic: "Medium strategic rebalancing (50% confidence threshold)"
+      risk_alert: "Emergency risk mitigation (ANY confidence)"
+    notes: |
+      Smart tier is sufficient for CIO decisions (Advanced tier reserved for future complexity).
+      CIO uses consensus from 10 analysis agents to synthesize final rebalancing actions.
+      Output: target_weight + current_weight + delta_weight (supports fractional shares for eToro).
+    
+  # ─────────────────────────────────────────────────────────────────────────────
+  # 【Stage 5: Execution & Feedback】
+  # Execute trades + log results + feedback to Engineer
+  # ─────────────────────────────────────────────────────────────────────────────
+  
+  engineer:
+    tier: smart
+    description: "System optimization feedback (prompt refinement, agent tuning)"
+    role: "optimization"
+    stage: "execution"
+    concurrency: "sequential"
+    trigger: "post_execution"
+    notes: "Engineer analyzes CIO feedback to suggest prompt/parameter improvements."
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# Tier Summary for Plan B (12 Agents)
+# ═══════════════════════════════════════════════════════════════════════════════
+tier_distribution:
+  nano: 0          # Not used in rebalancing (reserved for future routing)
+  fast: 5          # Momentum Scout + Fundamental Scout + Macro Scout + Momentum + Sentiment
+  smart: 6         # Macro + Fundamental + Thematic + Risk + Sentinel + CIO + Engineer
+  advanced: 0      # Reserved for future complex scenarios
+
+cost_analysis:
+  description: "Estimated weekly cost breakdown (based on March 2026 pricing)"
+  assumptions:
+    - "500K tokens/week across all agents"
+    - "Scout agents: 50K tokens/week (high volume, low complexity)"
+    - "Base agents: 200K tokens/week (parallel, balanced complexity)"
+    - "CIO: 50K tokens/week (consensus synthesis)"
+    - "Engineer: 20K tokens/week (feedback analysis)"
+  estimated_weekly_cost: "$2.50 - $3.50"
+  estimated_daily_cost: "$0.36 - $0.50"
+  budget_status: "✅ WITHIN $20/week target"
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# Execution Flow (Plan B v2.0)
+# ═══════════════════════════════════════════════════════════════════════════════
+execution_flow: |
+  1. Sentinel.process_tick()
+     ↓
+  2. Stage 1-2: Market Scanning (PARALLEL, ~2s)
+     ├─ Momentum Scout (fast)
+     ├─ Fundamental Scout (fast)
+     ├─ Macro Scout (fast)
+     ├─ Macro Agent (smart)
+     ├─ Momentum Agent (fast)
+     ├─ Fundamental Agent (smart)
+     ├─ Sentiment Agent (fast)
+     └─ Thematic Agent (smart)
+     ↓
+  3. Stage 3: Risk Assessment (SEQUENTIAL, ~1s)
+     ├─ Risk Agent (smart)
+     └─ Sentinel Alert Check (smart, continuous)
+     ↓
+  4. Stage 4: Decision Synthesis (SINGLE, ~1s)
+     └─ CIO Agent (smart)
+        • Receives: 10 agent analyses + portfolio state
+        • Outputs: target_weight, current_weight, delta_weight, confidence
+     ↓
+  5. Stage 5: Execution & Feedback (~2s)
+     ├─ AutomatedTradingService.evaluate_and_execute_trade()
+     │  └─ Confidence > threshold? → Execute via eToro API
+     └─ Engineer Agent (smart)
+        └─ Analyze CIO feedback for optimization
+     ↓
+  6. Notification & Logging
+     └─ Send result to user (Telegram/Email)
+
+total_latency: "~6s (optimal) to ~30s (if advanced reasoning needed)"
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# Migration Notes (from 30 Agent → 12 Agent Plan B)
+# ═══════════════════════════════════════════════════════════════════════════════
+migration_notes: |
+  ✅ Deleted 15 empty/redundant agents (cognitive_*, mcp_*, skill_*, memory_distillation, etc.)
+  ✅ Unified 3 CIO variants (daily/weekly/sentinel) → 1 smart CIO agent (adaptive)
+  ✅ Added 3 Scout agents for buy-side opportunity discovery
+  ✅ Tier assignments optimized for cost (mostly fast/smart, no advanced tier needed yet)
+  ✅ Code updated: council_service.py, engineer.py, cio.py
+  ✅ All 12 prompt files verified present
+  ✅ All Python syntax checks passed

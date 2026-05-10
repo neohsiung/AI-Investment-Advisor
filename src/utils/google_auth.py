@@ -1,5 +1,8 @@
-import streamlit as st
 import os
+try:
+    import streamlit as st
+except ImportError:
+    st = None
 # Allow basic HTTP for OAuth flow (Localhost support)
 # 允許本地開發使用 HTTP 進行 OAuth 驗證
 os.environ['OAUTHLIB_INSECURE_TRANSPORT'] = '1'

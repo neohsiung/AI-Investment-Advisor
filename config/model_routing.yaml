@@ -1,0 +1,168 @@
+# Model Routing Configuration (Generated 2026-04-27T23:36:39.742407)
+version: "2.0"
+
+providers:
+  local:
+    - ollama
+    
+  free:
+    - nvidia_nim
+    
+  paid:
+    - openrouter
+
+routing_by_tier:
+{
+  "DeepResearch": {
+    "description": "複雜分析/長文本/精細推理 (>500 chars)",
+    "primary": {
+      "provider": "openrouter",
+      "model": "claude-sonnet-4",
+      "reason": "最佳質量，支持 200K 上下文"
+    },
+    "fallbacks": [
+      {
+        "priority": 1,
+        "provider": "nvidia_nim",
+        "model": "llama-3.1-70b",
+        "reason": "免費替代，質量 9/10，128K 上下文"
+      },
+      {
+        "priority": 2,
+        "provider": "openrouter",
+        "model": "gpt-4-turbo",
+        "reason": "付費替代，若 Sonnet 超時或配額問題"
+      },
+      {
+        "priority": 3,
+        "provider": "ollama",
+        "model": "deepseek-r1",
+        "reason": "本地替代，無延遲，無成本"
+      }
+    ]
+  },
+  "MemoryDig": {
+    "description": "記憶檢索/中等複雜 (200-500 chars)",
+    "primary": {
+      "provider": "nvidia_nim",
+      "model": "mixtral-8x22b",
+      "reason": "免費，質量 8/10，65K 上下文"
+    },
+    "fallbacks": [
+      {
+        "priority": 1,
+        "provider": "openrouter",
+        "model": "claude-haiku",
+        "reason": "付費替代，成本低 ($4/1M output)，快速"
+      },
+      {
+        "priority": 2,
+        "provider": "ollama",
+        "model": "llama2:70b",
+        "reason": "本地替代，質量 8/10"
+      },
+      {
+        "priority": 3,
+        "provider": "openrouter",
+        "model": "gpt-4-turbo",
+        "reason": "最後替代，若前面都失敗"
+      }
+    ]
+  },
+  "FastThink": {
+    "description": "輕量級查詢 (50-200 chars)",
+    "primary": {
+      "provider": "ollama",
+      "model": "mistral:7b",
+      "reason": "本地最快，無延遲，無成本"
+    },
+    "fallbacks": [
+      {
+        "priority": 1,
+        "provider": "nvidia_nim",
+        "model": "mistral-7b",
+        "reason": "免費替代，若本地不可用"
+      },
+      {
+        "priority": 2,
+        "provider": "openrouter",
+        "model": "claude-haiku",
+        "reason": "付費替代，成本極低"
+      },
+      {
+        "priority": 3,
+        "provider": "ollama",
+        "model": "phi:2.7b",
+        "reason": "超輕量備份"
+      }
+    ]
+  },
+  "Reflexive": {
+    "description": "極簡查詢 (<50 chars)",
+    "primary": {
+      "provider": "ollama",
+      "model": "phi:2.7b",
+      "reason": "最輕量，本地秒速回應"
+    },
+    "fallbacks": [
+      {
+        "priority": 1,
+        "provider": "nvidia_nim",
+        "model": "qwen-2.5-7b",
+        "reason": "免費替代，若本地不可用"
+      },
+      {
+        "priority": 2,
+        "provider": "openrouter",
+        "model": "llama-3.1-8b",
+        "reason": "付費替代，成本極低 ($0.05/$0.15)"
+      },
+      {
+        "priority": 3,
+        "provider": "openrouter",
+        "model": "claude-haiku",
+        "reason": "最後備份，若都失敗"
+      }
+    ]
+  }
+}
+
+cost_scenarios:
+{
+  "scenario_conservative": {
+    "description": "最大化免費模型使用",
+    "distribution": {
+      "DeepResearch": "70% NIM + 30% OpenRouter",
+      "MemoryDig": "80% NIM + 20% OpenRouter",
+      "FastThink": "100% Local Ollama",
+      "Reflexive": "100% Local Ollama"
+    },
+    "weekly_cost_usd": 2.5,
+    "monthly_cost_usd": 10.0,
+    "roi": "96% savings vs paid"
+  },
+  "scenario_balanced": {
+    "description": "平衡免費/付費/本地",
+    "distribution": {
+      "DeepResearch": "40% NIM + 60% OpenRouter",
+      "MemoryDig": "60% NIM + 40% OpenRouter",
+      "FastThink": "100% Local Ollama",
+      "Reflexive": "100% Local Ollama"
+    },
+    "weekly_cost_usd": 12.9,
+    "monthly_cost_usd": 51.6,
+    "roi": "60% savings vs paid"
+  },
+  "scenario_production": {
+    "description": "最佳質量 (推薦用於關鍵請求)",
+    "distribution": {
+      "DeepResearch": "30% NIM + 70% Claude-Sonnet",
+      "MemoryDig": "40% NIM + 60% GPT-4T",
+      "FastThink": "90% Ollama + 10% Claude-Haiku",
+      "Reflexive": "100% Local Ollama"
+    },
+    "weekly_cost_usd": 25.8,
+    "monthly_cost_usd": 103.2,
+    "roi": "20% savings vs pure paid"
+  }
+}

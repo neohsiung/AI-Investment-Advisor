@@ -261,35 +261,44 @@ async def test_notification(
     payload: Dict[str, Any] = Body(...),
     user: Dict[str, Any] = Depends(get_current_user)
 ):
-    """發送測試通知至指定管道 (Telegram, LINE, Email)"""
+    """直接通過 TelegramAdapter 發送測試通知"""
     try:
         user_id = user.get("sub")
-        channels = payload.get("channels", ["telegram", "line"])
+        channels = payload.get("channels", ["telegram"])
         
-        # 內網呼叫 Notification 微服務
-        # 在 Docker 環境中，主機名稱為 'notification'
-        NOTIFY_SERVICE_URL = os.getenv("NOTIFY_SERVICE_URL", "http://notification:8001/api/v1/notify")
+        # 延遲導入以避免循環依賴
+        from src.infrastructure.channels.telegram_adapter import TelegramAdapter
+        adapter = TelegramAdapter()
         
-        async with httpx.AsyncClient(timeout=10.0) as client:
-            resp = await client.post(NOTIFY_SERVICE_URL, json={
-                "user_id": user_id,
-                "title": "🧪 Quantum AI 系統測試",
-                "content": "如果您看到這則訊息，代表您的通知管道配置成功！",
-                "channels": channels,
-                "category": "test"
-            })
-            
-            if resp.status_code >= 400:
-                logger.error(f"Notification service returned error: {resp.status_code} - {resp.text}")
-                raise HTTPException(status_code=resp.status_code, detail="通知服務暫時無法處理您的請求")
-            
-            return {
-                "status": "success",
-                "message": "測試通知已排入發送隊列",
-                "debug": resp.json()
-            }
+        results = {}
+        for channel in channels:
+            if channel == "telegram":
+                try:
+                    ok = await adapter.send_alert(
+                        user_id=user_id,
+                        title="🧪 Quantum AI 系統測試",
+                        content="如果您看到這則訊息，代表您的通知管道配置成功！",
+                        raise_error=True,
+                    )
+                    results[channel] = ok
+                except Exception as e:
+                    logger.error(f"Telegram test failed: {e}")
+                    results[channel] = False
+                    raise HTTPException(status_code=500, detail=f"發送失敗: {str(e)}")
+            else:
+                results[channel] = False
+        
+        return {
+            "status": "success",
+            "message": "測試通知已發送",
+            "debug": results
+        }
             
     except Exception as e:
+        logger.exception("Error triggering test notification")
+        if isinstance(e, HTTPException):
+            raise e
+        raise HTTPException(status_code=500, detail="Notification test failed")
         logger.exception("Error triggering test notification")
         if isinstance(e, HTTPException):
             raise e

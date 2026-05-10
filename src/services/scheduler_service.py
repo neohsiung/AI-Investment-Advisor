@@ -34,7 +34,7 @@ class SchedulerService:
         初始化排程服務。
         """
         self.user_id = user_id
-        self.engineer = SystemEngineerAgent(user_id=user_id)
+        self.engineer = None  # Lazy init — will be created on first job execution
         self.scheduler = schedule.Scheduler()
         # db_engine unused if we use get_db_connection, but keeping for DI signature
         # 如果我們使用 get_db_connection，db_engine 未被使用，但保留用於依賴注入簽名
@@ -66,9 +66,20 @@ class SchedulerService:
 
     # get_all_users removed for strict single-user isolation (v5.0)
 
+    def _ensure_engineer(self):
+        """Lazy initialize Engineer agent on first use."""
+        if self.engineer is None:
+            try:
+                self.engineer = SystemEngineerAgent(user_id=self.user_id)
+                logger.info(f"Engineer agent initialized for user {self.user_id}")
+            except Exception as e:
+                logger.error(f"Failed to initialize Engineer: {e}")
+                raise
+
     def job_daily_check(self):
         """Execute daily check for the current user context."""
         logger.info(f"Starting Daily Check Job for user {self.user_id}...")
+        self._ensure_engineer()  # Initialize on first use
         if get_current_time().weekday() >= 5: # Sat=5, Sun=6
             logger.info("Skipping Daily Check on weekend.")
             return
@@ -276,6 +287,7 @@ class SchedulerService:
         從資料庫設定重新載入排程。
         """
         logger.info(f"Reloading schedule configuration for user {self.user_id}...")
+        self._ensure_engineer()  # Initialize on first use
         self.scheduler.clear()
         
         config = self.engineer.get_schedule_config()
@@ -355,20 +367,15 @@ class SchedulerService:
 
     def run_loop(self) -> None:
         """
-        Start the infinite scheduler execution loop.
-        開始無限排程執行迴圈。
+        v10.0: DEPRECATED. Tasks migrated to Celery.
+        This loop is now disabled to prevent duplicate executions and resource conflicts.
         """
-        self.reload_schedule()
-        logger.info("Scheduler Service Running...")
+        logger.warning(f"SchedulerService.run_loop is DEPRECATED for user {self.user_id}. Tasks have been migrated to Celery (Beat).")
+        logger.warning("Please ensure 'celery -A src.infrastructure.celery_app beat' is running.")
         
-        while True:
-            schedule.run_pending()
-            
-            # Check signal
-            if int(time.time()) % 5 == 0:
-                self._check_reload_signal()
-            
-            time.sleep(1)
+        # Keep the process alive but idle if necessary for container stability, 
+        # but better to let it exit so Docker can restart or user can re-config.
+        return
 
     def _check_reload_signal(self):
         """Check for reload signal every 5s with graceful error handling."""

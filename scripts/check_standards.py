@@ -13,14 +13,16 @@ Usage: python scripts/check_standards.py
 import subprocess
 import sys
 import os
+import shlex
 
 def run_command(name, command, cwd="."):
     print(f"\n[🚀 Running: {name}]")
     print("-" * 40)
     try:
+        # SECURITY FIX: Use shlex.split() to safely parse command string
+        # and remove shell=True to prevent command injection
         result = subprocess.run(
-            command,
-            shell=True,
+            shlex.split(command),
             check=True,
             text=True,
             cwd=cwd

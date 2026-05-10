@@ -28,6 +28,7 @@ See docs/architecture/multi_provider_multi_model_design.md §4.
 from __future__ import annotations
 
 import logging
+from datetime import datetime, timezone
 from dataclasses import asdict
 from decimal import Decimal
 from typing import Any, Dict, List, Optional
@@ -223,8 +224,16 @@ async def test_provider(
     except Exception as exc:
         logger.error("test_provider error: %s", exc)
         raise HTTPException(status_code=500, detail=str(exc))
-    # Always 200 — failures are expressed in the body (ok=false)
-    return {"status": "success" if result["ok"] else "error", **result}
+    # Always 200 — failures are expressed in the body (success=false)
+    return {
+        "status": "success" if result["ok"] else "error",
+        "data": {
+            "success": result["ok"],
+            "latency_ms": result.get("latency_ms"),
+            "error": result.get("error"),
+            "checked_at": datetime.now(timezone.utc).isoformat(),
+        }
+    }
 
 
 @router.get("/providers/{provider_id}/usages", summary="Get usage summary for a Provider")

@@ -275,46 +275,37 @@ def render_channel_tab(st, settings_service, user_id):
                             _show_verification_status(st, cid, settings, user_id)
 
     def _handle_test_message(st, cid, settings, user_id):
-        import httpx
         import asyncio
-        import os
+        import time
+        from src.services.notification_service import NotificationService
+        from src.services.settings_service import SettingsService
         
         with st.spinner(f"正在透過 {cid} 發送測試訊息..."):
             try:
-                target_id = _get_target_id(cid, settings)
-                # Fallback to generic key lookup if helper returned None
-                if not target_id:
-                     target_id = settings.get(f"channel_{cid}_user_id") or settings.get(f"channel_{cid}_to_address") or settings.get(f"channel_{cid}_chat_id") or settings.get(f"channel_{cid}_channel_id")
-                
-                if not target_id:
-                     st.error("請先設定 User ID / Chat ID / Email Address")
-                     return
-
-                # Ensure URL is taken from env or fallback
-                notification_api_url = os.environ.get("NOTIFICATION_API_URL", "http://localhost:8001/api/v1/notify")
-                
-                payload = {
-                    "user_id": user_id,  # v4.2.2: Use internal user_id for settings lookup
-                    "title": f"🔔 {cid.upper()} 渠道測試",
-                    "content": f"這是一條從 Investment Advisor Settings 發送的測試訊息。\n時間：{time.strftime('%Y-%m-%d %H:%M:%S')}",
-                    "channels": [cid],
-                    "category": "system"  # Use 'system' to bypass InterestBasedFilter for tests
-                }
+                settings_svc = SettingsService(user_id=user_id)
+                notification_svc = NotificationService.create_with_settings(
+                    settings_service=settings_svc, user_id=user_id
+                )
 
                 async def send_test():
-                    async with httpx.AsyncClient() as client:
-                        resp = await client.post(notification_api_url, json=payload, timeout=10.0)
-                        return resp
+                    return await notification_svc.notify_all(
+                        title=f"🔔 {cid.upper()} 渠道測試",
+                        content=f"這是一條從 Investment Advisor Settings 發送的測試訊息。\n時間：{time.strftime('%Y-%m-%d %H:%M:%S')}",
+                        user_id=user_id,
+                        channels=[cid],
+                        category="system"
+                    )
 
-                response = asyncio.run(send_test())
+                result = asyncio.run(send_test())
                 
-                if 200 <= response.status_code < 300:
-                    st.success(f"✅ 測試請求已送出至微服務 (排隊中)。")
+                if result:
+                    st.success(f"✅ 測試訊息已透過 {cid.upper()} 發送。")
                 else:
-                    st.error(f"❌ 服務回應異常: HTTP {response.status_code}")
+                    st.warning(f"⚠️ 未收到確認回應，請檢查渠道設定。")
                     
             except Exception as e:
                 st.error(f"發送請求失敗: {e}")
+
 
     def _handle_verification(st, cid, settings, timeout, user_id):
         from src.services.verification_service import VerificationService

@@ -13,18 +13,18 @@ interface StatusBadgeProps {
 
 export function StatusBadge({ status, latencyMs, lastCheckedAt, className }: StatusBadgeProps) {
     const dot =
-        status === "healthy"
+        status === "healthy" || status === "ok"
             ? "bg-green-500"
-            : status === "unhealthy"
+            : status === "unhealthy" || status === "error"
                 ? "bg-red-500"
                 : "bg-gray-400";
 
     const label =
-        status === "healthy"
+        status === "healthy" || status === "ok"
             ? latencyMs != null
                 ? `OK (${latencyMs}ms)`
                 : "OK"
-            : status === "unhealthy"
+            : status === "unhealthy" || status === "error"
                 ? "Unhealthy"
                 : "Unknown";
 

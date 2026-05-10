@@ -12,7 +12,7 @@ services:
     user: root
     ports:
       - "8000:8000"
-    command: sh -c "/opt/venv/bin/pip install itsdangerous>=2.2.0 && alembic upgrade head && uvicorn services.mcp_server.src.app.main:app --host 0.0.0.0 --port 8000"
+    command: sh -c "/opt/venv/bin/pip install itsdangerous>=2.2.0 && python scripts/init_db.py && uvicorn services.mcp_server.src.app.main:app --host 0.0.0.0 --port 8000"
     env_file:
       - .env
     environment:
@@ -21,9 +21,10 @@ services:
       - DB_HOST=postgres
       - OTEL_SERVICE_NAME=mcp_server_prod
       - OTEL_EXPORTER_OTLP_ENDPOINT=http://otel-collector:4317
+      - OTEL_EXPORTER_OTLP_PROTOCOL=grpc
     volumes:
+      - ./src:/workspace/src:ro
       - ./secrets/client_secret.json:/workspace/client_secret.json:ro
-      - ./services/mcp_server/src/app/__init__.py:/workspace/services/mcp_server/src/app/__init__.py:ro
     depends_on:
       postgres:
         condition: service_healthy
@@ -64,6 +65,7 @@ services:
       dockerfile: services/scheduler/Dockerfile
     container_name: advisor_prod_scheduler
     restart: always
+    command: sh -c "celery -A src.infrastructure.celery_app beat --loglevel=info"
     env_file:
       - .env
     environment:
@@ -71,12 +73,11 @@ services:
       - DB_HOST=postgres
       - OTEL_SERVICE_NAME=scheduler_prod
       - OTEL_EXPORTER_OTLP_ENDPOINT=http://otel-collector:4317
+      - OTEL_EXPORTER_OTLP_PROTOCOL=grpc
     volumes:
-      - ./src/infrastructure:/workspace/src/infrastructure:ro
-      - ./src/workflow:/workspace/src/workflow:ro
-      - ./src/services:/workspace/src/services:ro
-      - ./src/agents:/workspace/src/agents:ro
-      - ./services/scheduler:/workspace/services/scheduler:ro
+      - ./src:/workspace/src:ro
+      # Note: ./services/scheduler is baked into the image via Dockerfile COPY.
+      # Mount ./src:ro for zero-downtime hotfixes without full image rebuild.
     depends_on:
       mcp_server:
         condition: service_healthy
@@ -150,17 +151,9 @@ services:
     networks:
       - advisor-net
 
-  # 7. Local Model Engine (Ollama)
-  ollama:
-    image: ollama/ollama:latest
-    container_name: advisor_prod_ollama
-    restart: always
-    ports:
-      - "11434:11434"
-    volumes:
-      - ollama_data:/root/.ollama
-    networks:
-      - advisor-net
+  # 7. Local Model Engine (Ollama) — managed by hermes-agent/docker-compose.infra.yml
+  #    hermes_ollama joins advisor-net with alias "ollama", accessible as ollama:11434
+  #    Start: bash ~/Work/Projects/hermes-agent/start.sh
   # 8. Enterprise Report Worker Pool (Async Task Processing)
   # Phase 1: 2 workers, scales to 4+ based on load
   worker_1:
@@ -169,6 +162,7 @@ services:
       dockerfile: services/scheduler/Dockerfile
     container_name: advisor_prod_worker_1
     restart: always
+    command: sh -c "celery -A src.infrastructure.celery_app worker --loglevel=info -c 2"
     user: root
     env_file:
       - .env
@@ -177,15 +171,13 @@ services:
       - WORKER_ID=worker-1
       - WORKER_CONCURRENCY=2
       - QUEUE_REDIS_URL=redis://redis:6379/0
-      - DATABASE_URL=postgresql://postgres:${DB_PASSWORD}@postgres:5432/portfolio
+      - DATABASE_URL=postgresql://${DB_USER}:${DB_PASS}@postgres:5432/${DB_NAME}
       - OTEL_SERVICE_NAME=worker_1_prod
       - OTEL_EXPORTER_OTLP_ENDPOINT=http://otel-collector:4317
+      - OTEL_EXPORTER_OTLP_PROTOCOL=grpc
     volumes:
-      - ./src/infrastructure:/workspace/src/infrastructure:ro
-      - ./src/workflow:/workspace/src/workflow:ro
-      - ./src/services:/workspace/src/services:ro
-      - ./src/agents:/workspace/src/agents:ro
-      - ./services/scheduler:/workspace/services/scheduler:ro
+      - ./src:/workspace/src:ro
+      # Note: ./services/scheduler is baked into the image via Dockerfile COPY.
     depends_on:
       postgres:
         condition: service_healthy
@@ -212,6 +204,7 @@ services:
       dockerfile: services/scheduler/Dockerfile
     container_name: advisor_prod_worker_2
     restart: always
+    command: sh -c "celery -A src.infrastructure.celery_app worker --loglevel=info -c 2"
     user: root
     env_file:
       - .env
@@ -220,15 +213,13 @@ services:
       - WORKER_ID=worker-2
       - WORKER_CONCURRENCY=2
       - QUEUE_REDIS_URL=redis://redis:6379/0
-      - DATABASE_URL=postgresql://postgres:${DB_PASSWORD}@postgres:5432/portfolio
+      - DATABASE_URL=postgresql://${DB_USER}:${DB_PASS}@postgres:5432/${DB_NAME}
       - OTEL_SERVICE_NAME=worker_2_prod
       - OTEL_EXPORTER_OTLP_ENDPOINT=http://otel-collector:4317
+      - OTEL_EXPORTER_OTLP_PROTOCOL=grpc
     volumes:
-      - ./src/infrastructure:/workspace/src/infrastructure:ro
-      - ./src/workflow:/workspace/src/workflow:ro
-      - ./src/services:/workspace/src/services:ro
-      - ./src/agents:/workspace/src/agents:ro
-      - ./services/scheduler:/workspace/services/scheduler:ro
+      - ./src:/workspace/src:ro
+      # Note: ./services/scheduler is baked into the image via Dockerfile COPY.
     depends_on:
       postgres:
         condition: service_healthy
@@ -274,7 +265,6 @@ volumes:
   advisor_db_data:
   advisor_redis_data:
   advisor_n8n_data:
-  ollama_data:
 
 networks:
   advisor-net:

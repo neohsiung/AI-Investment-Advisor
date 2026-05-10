@@ -59,3 +59,9 @@ Archive/scripts/test_db_conn.py
 
 # n8n templates
 n8n_workflow_template.json
+
+# Scratch / temp analysis scripts
+scratch/
+repomix-output.xml
+test_otel.py
+backups/

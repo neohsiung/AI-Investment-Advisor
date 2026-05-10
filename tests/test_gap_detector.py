@@ -58,8 +58,9 @@ class TestGapDetectorHeuristics:
 
 
 class TestGapDetectorLLM:
+    @patch("src.agents.skills.gap_detector.GapDetector._load_prompt", return_value="dummy prompt")
     @pytest.mark.asyncio
-    async def test_gap_detected(self):
+    async def test_gap_detected(self, mock_load):
         """When LLM reports a gap, GapReport should reflect it."""
         mock_llm = AsyncMock()
         mock_llm.chat.return_value = json.dumps({
@@ -77,8 +78,9 @@ class TestGapDetectorLLM:
         assert result.suggested_skill_name == "get_crypto_data"
         assert result.existing_similar == "get_market_data"
 
+    @patch("src.agents.skills.gap_detector.GapDetector._load_prompt", return_value="dummy prompt")
     @pytest.mark.asyncio
-    async def test_no_gap(self):
+    async def test_no_gap(self, mock_load):
         """When LLM reports no gap, should return is_gap=False."""
         mock_llm = AsyncMock()
         mock_llm.chat.return_value = json.dumps({
@@ -94,8 +96,9 @@ class TestGapDetectorLLM:
         result = await detector.detect("NVDA 的股價是多少？", _make_mock_skills())
         assert result.is_gap is False
 
+    @patch("src.agents.skills.gap_detector.GapDetector._load_prompt", return_value="dummy prompt")
     @pytest.mark.asyncio
-    async def test_malformed_json_handled(self):
+    async def test_malformed_json_handled(self, mock_load):
         """Malformed LLM response should not crash, return is_gap=False."""
         mock_llm = AsyncMock()
         mock_llm.chat.return_value = "This is not JSON"

@@ -28,10 +28,11 @@ class BrokerFactory:
         broker_type = broker_type.lower()
         
         # 2. Return cached instance or create new
-        if broker_type in BrokerFactory._instances:
-            return BrokerFactory._instances[broker_type]
+        cache_key = f"{user_id}_{broker_type}"
+        if cache_key in BrokerFactory._instances:
+            return BrokerFactory._instances[cache_key]
             
-        logger.info(f"Initializing Broker: {broker_type}")
+        logger.info(f"Initializing Broker: {broker_type} for user: {user_id}")
         
         if broker_type == "ibkr":
             from src.services.ibkr_service import IBKRService
@@ -43,13 +44,13 @@ class BrokerFactory:
             api_key = settings_repo.get(user_id, "etoro_api_key")
             user_key = settings_repo.get(user_id, "etoro_user_key")
             mode = settings_repo.get(user_id, "etoro_mode") or "real"
-            instance = EtoroService(mode=mode, api_key=api_key, user_key=user_key)
+            instance = EtoroService(mode=mode, api_key=api_key, user_key=user_key, user_id=user_id)
             
         else:
             logger.warning(f"Unknown broker type '{broker_type}', defaulting to Etoro")
-            instance = EtoroService()
+            instance = EtoroService(user_id=user_id)
             
-        BrokerFactory._instances[broker_type] = instance
+        BrokerFactory._instances[cache_key] = instance
         return instance
 
     @staticmethod

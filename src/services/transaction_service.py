@@ -7,6 +7,9 @@ import typing
 from typing import List, Dict, Tuple, Any, Optional, Callable, Dict, List, Tuple, Any, Optional, Callable
 # from src.ingestor import TradeIngestor # Removed for Clean Clean Architecture
 from src.services.analytics_service import update_daily_snapshot
+from src.utils.logger import setup_logger
+
+logger = setup_logger("TransactionService")
 
 class TransactionService:
     """
@@ -23,6 +26,7 @@ class TransactionService:
         # Use Alchemy Repository for Postgres strictness
         from src.repositories.transaction_repository import AlchemyTransactionRepository
         self.repository = repository or AlchemyTransactionRepository()
+        self.logger = logger
 
     def get_transactions(self, user_id: str = None) -> pd.DataFrame:
         """
@@ -48,20 +52,21 @@ class TransactionService:
                 return self.repository.get_unique_tickers(user_id)
         return self.repository.get_unique_tickers(user_id)
         
-    def get_holdings_map(self, user_id: str = None) -> Dict[str, Dict[str, float]]:
+    def get_holdings_map(self, user_id: str = None) -> Dict[str, Dict]:
         """
-        Get a dictionary of current holdings for the user.
-        獲取使用者目前持倉的字典。
+        Returns a map of { ticker: { quantity: float, avg_price: float } }
         """
         uid = user_id or self.user_id
         if not uid: return {}
         
-        # Use existing summary method
-        summary = self.repository.get_holdings_summary(uid) # returns [(ticker, qty)]
-        
+        # v4.2.4: Use get_holdings() instead of summary to get avg_price
+        holdings = self.repository.get_holdings(uid)
         res = {}
-        for t, q in summary:
-            res[t] = {'quantity': float(q)}
+        for h in holdings:
+            res[h['ticker']] = {
+                'quantity': float(h['quantity']),
+                'avg_price': float(h.get('avg_price', 0))
+            }
         return res
 
     def add_manual_trade(self, ticker: str, date_str: str, action: str, quantity: float, price: float, fees: float) -> Tuple[bool, str]:
@@ -108,3 +113,97 @@ class TransactionService:
             return True, f"Transaction {transaction_id} deleted."
         except Exception as e:
             return False, f"Failed to delete transaction: {e}"
+
+    def get_active_positions(self, user_id: str = None) -> List[Dict]:
+        """獲取活躍持倉列表，包含成本價與市場價值 (fallback)"""
+        try:
+            holdings = self.get_holdings_map(user_id or self.user_id)
+            positions = []
+            for ticker, data in holdings.items():
+                qty = data.get('quantity', 0)
+                if qty > 0:
+                    avg_price = data.get('avg_price', 0)
+                    # market_value 使用 avg_price 作為 fallback (SentinelService 會覆蓋即時價格)
+                    market_value = avg_price * qty
+                    positions.append({
+                        'ticker': ticker,
+                        'quantity': qty,
+                        'avg_price': avg_price,
+                        'current_price': avg_price,  # Fallback
+                        'market_value': market_value,
+                    })
+            return positions
+        except Exception as e:
+            self.logger.error(f"get_active_positions failed: {e}")
+            return []
+
+
+    def get_cash_balance(self, user_id: str = None) -> float:
+        """获取现金余额 (Cash Balance)"""
+        try:
+            uid = user_id or self.user_id
+            if not uid:
+                return 0.0
+            return self.repository.get_cash_balance(uid)
+        except Exception as e:
+            self.logger.warning(f"get_cash_balance failed: {e}")
+            return 0.0
+
+    async def sync_broker_positions(self, user_id: str = None) -> Dict[str, Any]:
+        """
+        Synchronize local transactions with live broker positions and cash.
+        將本地交易與券商即時持倉及現金進行同步。
+        """
+        uid = user_id or self.user_id
+        if not uid:
+            return {"status": "error", "message": "No user_id provided"}
+
+        self.logger.info(f"Starting broker sync for user {uid}...")
+        
+        try:
+            from src.services.portfolio_aggregator_service import PortfolioAggregatorService
+            aggregator = PortfolioAggregatorService(user_id=uid)
+            
+            # Fetch unified data
+            data = await aggregator.get_aggregated_portfolio()
+            
+            summary = {
+                "accounts_processed": 0,
+                "adjustments_made": 0,
+                "errors": data.get("warnings", [])
+            }
+
+            # Sync individual brokers
+            for broker_name, account in data.get("broker_breakdown", {}).items():
+                self.logger.info(f"Syncing broker {broker_name}: Cash={account.available_cash}")
+                
+                # 1. Reconcile Cash for this broker/account
+                self.repository.reconcile_cash_balance(uid, account.available_cash, broker_name)
+                
+                # 2. Reconcile Positions
+                # We need the positions for this specific broker. 
+                # Since get_aggregated_portfolio merges them, we'll fetch them again or 
+                # we could optimize by having the aggregator return positions per broker.
+                # For now, fetching again from the broker instance is safe.
+                broker_instance = aggregator.brokers.get(broker_name)
+                if broker_instance:
+                    live_positions_raw = await broker_instance.get_positions()
+                    live_positions = [
+                        {
+                            "ticker": p.symbol,
+                            "quantity": p.quantity,
+                            "current_price": p.current_price
+                        } for p in live_positions_raw
+                    ]
+                    self.repository.reconcile_positions(uid, live_positions, broker_name)
+                
+                summary["accounts_processed"] += 1
+
+            # Update daily snapshot to reflect changes
+            await update_daily_snapshot(uid)
+            
+            return {"status": "success", "summary": summary}
+            
+        except Exception as e:
+            self.logger.error(f"Broker sync failed for user {uid}: {e}")
+            return {"status": "error", "message": str(e)}

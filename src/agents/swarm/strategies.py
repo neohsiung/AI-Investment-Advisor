@@ -60,6 +60,9 @@ class AggregationStrategy(ABC):
 class ConcatStrategy(AggregationStrategy):
     """Simple concatenation (legacy default)."""
 
+    def __init__(self, **kwargs):
+        pass  # accepts agent_repo= and any future kwargs without error
+
     def aggregate(
         self, results: Dict[str, str], weights: Optional[Dict[str, float]] = None
     ) -> str:
@@ -74,6 +77,9 @@ class MajorityVoteStrategy(AggregationStrategy):
     Extract signals (bullish/bearish/neutral) and return majority.
     提取訊號並回傳多數決結果。
     """
+
+    def __init__(self, **kwargs):
+        pass  # accepts agent_repo= and any future kwargs without error
 
     # Signal detection patterns (case-insensitive)
     BULLISH_PATTERNS = [

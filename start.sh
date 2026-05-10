@@ -41,6 +41,8 @@ function show_help {
     echo ""
     echo "  patch          Production Hot-Patch (No downtime UI/API update)."
     echo ""
+    echo "  ollama         Deploy Local Ollama service (requires pre-downloaded models)."
+    echo ""
     echo "  k8s            Deploy to Kubernetes (Minikube / Cloud)."
 }
 
@@ -196,6 +198,7 @@ function scale_workers {
     local worker_count=${1:-2}
     echo "=== Scaling Worker Pool to $worker_count instances ==="
     check_env
+    source .env 2>/dev/null || true
     
     # Ensure prod cluster is running
     if ! docker ps --format '{{.Names}}' | grep -q "advisor_prod_api"; then
@@ -203,19 +206,47 @@ function scale_workers {
         exit 1
     fi
     
+    # Get worker image name from compose build
     echo "Building worker image..."
     $PROD_COMPOSE build worker_1 2>/dev/null || true
+    
+    # Get the built image name
+    local worker_image
+    worker_image=$(docker inspect --format='{{.Config.Image}}' advisor_prod_worker_1 2>/dev/null || echo "investment_advisor-worker_1:latest")
 
     echo "Starting/updating worker pool..."
-    # Start baseline workers (1-2)
-    for i in 1 2; do
-        if [ $i -le $worker_count ]; then
-            $PROD_COMPOSE up -d worker_$i
-            echo "  ✅ Worker $i started"
-        else
-            $PROD_COMPOSE stop worker_$i 2>/dev/null || true
-            echo "  ⏸️  Worker $i stopped"
-        fi
+    
+    # Stop old workers first
+    for i in 1 2 3 4; do
+        docker stop "advisor_prod_worker_$i" 2>/dev/null || true
+        docker rm "advisor_prod_worker_$i" 2>/dev/null || true
+    done
+    
+    # Start new workers with docker run (redis:// URL and correct env vars)
+    for i in $(seq 1 $worker_count); do
+        echo "  Starting Worker $i..."
+        docker run -d \
+            --name "advisor_prod_worker_$i" \
+            --network "advisor-net" \
+            --restart always \
+            -u root \
+            --env-file .env \
+            -e WORKER_ID="worker-$i" \
+            -e WORKER_CONCURRENCY=2 \
+            -e NODE_ENV=production \
+            -e QUEUE_REDIS_URL="redis://advisor_prod_cache:6379/0" \
+            -e OTEL_SERVICE_NAME="worker_${i}_prod" \
+            -e OTEL_EXPORTER_OTLP_ENDPOINT="http://otel-collector:4317" \
+            -e OTEL_EXPORTER_OTLP_PROTOCOL="grpc" \
+            -v "./src/infrastructure:/workspace/src/infrastructure:ro" \
+            -v "./src/workflow:/workspace/src/workflow:ro" \
+            -v "./src/services:/workspace/src/services:ro" \
+            -v "./src/agents:/workspace/src/agents:ro" \
+            -v "./services/scheduler:/workspace/services/scheduler:ro" \
+            "$worker_image" \
+            python services/scheduler/src/app.py --mode worker --concurrency 2
+        
+        echo "  ✅ Worker $i started"
     done
     
     echo ""
@@ -275,7 +306,9 @@ function import_n8n_workflow {
         done
 
         if [ "$db_ready" = true ]; then
-            WEBHOOK_KEY=$(docker exec "$db_container" psql -U "${DB_USER:-postgres}" -d "portfolio" -t -c "SELECT value FROM settings WHERE key='webhook_api_key' LIMIT 1;" 2>/dev/null | sed 's/\"//g' | tr -d '[:space:]')
+            # Use DB_NAME from env (default: advisor_prod). 'portfolio' was a legacy hardcoded name.
+            local db_name="${DB_NAME:-advisor_prod}"
+            WEBHOOK_KEY=$(docker exec "$db_container" psql -U "${DB_USER:-postgres}" -d "$db_name" -t -c "SELECT value::text FROM settings WHERE key='webhook_api_key' LIMIT 1;" 2>/dev/null | sed 's/"//g' | tr -d '[:space:]')
         fi
 
         if [ -n "$WEBHOOK_KEY" ]; then
@@ -318,29 +351,68 @@ function deploy_docker {
     import_n8n_workflow "investment_advisor_db" "investment_advisor_n8n"
 }
 
+function ensure_signoz_volumes {
+    echo "Ensuring SigNoz external volumes exist..."
+    docker volume create signoz-clickhouse >/dev/null 2>&1 || true
+    docker volume create signoz-sqlite >/dev/null 2>&1 || true
+    docker volume create signoz-zookeeper-1 >/dev/null 2>&1 || true
+    return 0
+}
+
 function deploy_prod {
     echo "=== Mode: Production Cluster (Hardened) ==="
     check_env
 
-    # Hot-restart path: cluster already running → only restart code services (fast, no rebuild).
+    # Pre-create external volumes required by SigNoz include.
+    ensure_signoz_volumes
+
+    # Hot-restart path: cluster already running → stop and restart code services (fast reload).
     # Volume mounts in docker-compose.prod.yml ensure local src/ is live inside containers.
     if docker ps --format '{{.Names}}' | grep -q "advisor_prod_api"; then
         echo "Cluster running — hot-restarting code services (scheduler, worker_1, worker_2)..."
+        $PROD_COMPOSE stop scheduler 2>/dev/null || true
+        sleep 1
+        
+        # Remove and restart workers (docker-compose can't replace running containers)
+        docker rm -f advisor_prod_worker_1 advisor_prod_worker_2 2>/dev/null || true
+        sleep 1
+        
         $PROD_COMPOSE up -d --no-build --no-deps scheduler worker_1 worker_2
         echo ""
-        echo "✅ Code services restarted"
+        echo "✅ Code services restarted (env reloaded)"
         echo ""
+        sleep 5
         show_health
         return
     fi
 
     # Cold start: stop any stale/conflicting containers then full build.
-    docker ps -a --format '{{.Names}}' | grep -E "^(advisor_prod|signoz|schema-migrator|signoz-otel-collector|signoz-clickhouse|signoz-zookeeper)" \
+    docker ps -a --format '{{.Names}}' | grep -E "^(advisor_prod|signoz|schema-migrator|investment_advisor)" \
         | xargs -r docker stop 2>/dev/null || true
-    docker ps -a --format '{{.Names}}' | grep -E "^(advisor_prod|signoz|schema-migrator|signoz-otel-collector|signoz-clickhouse|signoz-zookeeper)" \
-        | xargs -r docker rm 2>/dev/null || true
+    docker ps -a --format '{{.Names}}' | grep -E "^(advisor_prod|signoz|schema-migrator|investment_advisor)" \
+        | xargs -r docker rm -f 2>/dev/null || true
 
-    $PROD_COMPOSE up --build -d
+    $PROD_COMPOSE up --build -d --remove-orphans
+
+    # Post-deploy: Force-start containers stuck in 'created' state
+    # n8n depends on mcp_server healthy, but sometimes gets stuck before the health gate passes.
+    echo "🔁 Checking for containers stuck in 'created' state..."
+    for i in 1 2 3; do
+        STUCK=$(docker ps -a --filter "name=advisor_prod" --filter "status=created" --format "{{.Names}}" 2>/dev/null)
+        if [ -z "$STUCK" ]; then
+            echo "✅ All containers are running."
+            break
+        fi
+        echo "⚠️  Attempt $i: Force-starting stuck containers: $STUCK"
+        echo "$STUCK" | xargs -r docker start
+        sleep 15
+    done
+    # Final explicit check: ensure n8n started (it has a deep depends_on chain)
+    if ! docker ps --format '{{.Names}}' | grep -q "advisor_prod_n8n"; then
+        echo "⚠️  n8n not running — attempting explicit start..."
+        docker start advisor_prod_n8n 2>/dev/null || true
+        sleep 10
+    fi
 
     wait_for_api "http://localhost:8000/health" 120 || true
     fix_redis_queues "advisor_prod_cache"
@@ -359,10 +431,57 @@ function deploy_prod {
     show_health
 }
 
+function check_shared_ollama {
+    echo "Checking for shared Ollama service..."
+    if ! curl -s --max-time 2 http://localhost:11434/api/tags >/dev/null 2>&1; then
+        echo "⚠️  Shared Ollama not detected at http://localhost:11434"
+        echo "   Attempting to start from shared infra..."
+        if [ -f "../infra/start-ollama.sh" ]; then
+            bash ../infra/start-ollama.sh
+        elif [ -f "infra/start-ollama.sh" ]; then
+             bash infra/start-ollama.sh
+        else
+            echo "❌ Error: Shared infra start-ollama.sh not found."
+            return 1
+        fi
+    else
+        echo "✅ Shared Ollama is online."
+    fi
+}
+
+function deploy_ollama {
+    echo "=== Mode: Shared Ollama Infrastructure ==="
+    check_shared_ollama
+    echo ""
+    echo "✅ Shared Ollama Service Online"
+    echo "---------------------------"
+    echo "🌐 Ollama API Gateway: http://localhost:11434"
+    echo "To view models: curl http://localhost:11434/api/tags"
+    echo ""
+}
+
+function telegram_setup {
+    local public_url=$1
+    if [ -z "$public_url" ]; then
+        echo "❌ Error: Public URL (ngrok) is required."
+        echo "Usage: ./start.sh telegram-setup https://your-id.ngrok-free.app"
+        return 1
+    fi
+    echo "=== Setting up Telegram Webhook ==="
+    docker exec advisor_prod_api python src/setup_telegram_webhook.py "$public_url"
+}
+
 function cleanup {
     echo "=== Cleaning Up All Resources ==="
     [ -f docker-compose.yml ] && docker compose down --remove-orphans
     [ -f docker-compose.prod.yml ] && $PROD_COMPOSE down --remove-orphans
+    [ -f docker-compose.ollama.yml ] && docker compose -f docker-compose.ollama.yml down --remove-orphans
+    
+    if [ "$1" == "--prune" ]; then
+        echo "🧹 Pruning Docker system (containers, images, volumes, build cache)..."
+        docker system prune -af --volumes
+    fi
+    
     echo "✅ Cleanup Complete"
 }
 
@@ -392,8 +511,17 @@ case "$1" in
     patch)
         patch_prod
         ;;
+    ollama)
+        deploy_ollama
+        ;;
     health)
         show_health
+        ;;
+    telegram-setup)
+        telegram_setup "$2"
+        ;;
+    prune)
+        cleanup "--prune"
         ;;
     fix-redis)
         fix_redis_queues "advisor_prod_cache"

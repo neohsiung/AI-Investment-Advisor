@@ -12,7 +12,17 @@ from src.data.models import LLMProvider, LLMModel, LLMTierBinding
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("SeedProviders")
 
-USER_ID = "90693c07-6177-42df-97d9-915f3ce7c573"
+def _get_target_user_id():
+    from sqlalchemy import text
+    conn = get_db_connection()
+    # Find the user we just created (the first one or supermfb)
+    row = conn.execute(text("SELECT id FROM users ORDER BY created_at ASC LIMIT 1")).fetchone()
+    conn.close()
+    if not row:
+        return "00000000-0000-4000-a000-000000000000" # Fallback
+    return str(row[0])
+
+USER_ID = _get_target_user_id()
 
 def seed():
     session = get_db_connection()

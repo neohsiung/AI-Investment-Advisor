@@ -116,7 +116,12 @@ def get_env():
 import subprocess
 
 def run_cmd(cmd):
-    return subprocess.run(cmd, shell=True)
+    # SECURITY FIX: Use list format instead of shell=True to prevent command injection
+    # Parse command string safely if it comes from an untrusted source
+    if isinstance(cmd, str):
+        import shlex
+        cmd = shlex.split(cmd)
+    return subprocess.run(cmd)
 """
         with tempfile.NamedTemporaryFile(mode='w', suffix='.py', delete=False) as f:
             f.write(code)

@@ -7,7 +7,7 @@ from src.domain.trading import Order, OrderAction
 def etoro_service():
     with patch('src.repositories.transaction_repository.AlchemyTransactionRepository', return_value=MagicMock()), \
          patch('src.infrastructure.risk_manager.RiskManager', return_value=MagicMock()):
-        service = EtoroService(api_key="test_api", user_key="test_user")
+        service = EtoroService(api_key="test_api", user_key="test_user", user_id="test_user")
         service.base_url = "https://public-api.etoro.com/api/v1"
         return service
 

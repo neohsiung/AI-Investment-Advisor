@@ -1,7 +1,7 @@
 # Builder Stage
-FROM python:3.10-slim-bookworm as builder
+FROM public.ecr.aws/docker/library/python:3.10-slim-bookworm as builder
 
-COPY --from=ghcr.io/astral-sh/uv:latest /uv /bin/uv
+RUN pip install uv
 WORKDIR /workspace
 
 # Install exact build deps required for underlying C-extensions
@@ -17,7 +17,7 @@ RUN uv venv /opt/venv && \
     uv pip install --python /opt/venv --no-cache -r pyproject.toml
 
 # Runner Stage (Zero build dependencies)
-FROM python:3.10-slim-bookworm
+FROM public.ecr.aws/docker/library/python:3.10-slim-bookworm
 ENV PYTHONUNBUFFERED=1
 ENV PYTHONPATH=/workspace
 ENV PATH="/opt/venv/bin:$PATH"

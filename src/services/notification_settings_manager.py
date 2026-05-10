@@ -357,15 +357,22 @@ class NotificationSettingsManager:
                 active_channels.append(channel)
             elif channel == NotificationChannel.TELEGRAM.value:
                 # 檢查是否配置了 Telegram Chat ID
+                # v10.0: Prioritize channel_telegram_chat_id (consistent with UI)
                 telegram_id = self.settings_repo.get(
                     self.user_id,
-                    "telegram_chat_id"
+                    "channel_telegram_chat_id"
                 )
+                if not telegram_id:
+                     telegram_id = self.settings_repo.get(
+                        self.user_id,
+                        "telegram_chat_id"
+                    )
+                
                 if telegram_id:
                     active_channels.append(channel)
                 else:
                     self.logger.warning(
-                        f"Telegram channel selected but no telegram_chat_id "
+                        f"Telegram channel selected but no channel_telegram_chat_id "
                         f"configured for user {self.user_id}"
                     )
             elif channel == NotificationChannel.WEB.value:

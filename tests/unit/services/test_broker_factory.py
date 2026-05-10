@@ -63,8 +63,8 @@ class TestBrokerFactory:
 
             
             assert broker is not None
-            # BrokerFactory converts to lowercase and caches as "etoro"
-            assert "etoro" in BrokerFactory._instances
+            # BrokerFactory caches with key "{user_id}_{broker_type}" (lowercase)
+            assert "test_user_etoro" in BrokerFactory._instances
 
     
     def test_get_broker_caching(self):

@@ -33,7 +33,8 @@ def test_get_active_notification_channels_telegram_missing_id(mock_settings_repo
     # User enabled email and telegram
     mock_settings_repo.get.side_effect = [
         "email,telegram", # for get_notification_channels
-        None              # for telegram_chat_id check
+        None,             # for channel_telegram_chat_id (v10.0 priority check)
+        None              # for telegram_chat_id (legacy fallback)
     ]
     
     manager = NotificationSettingsManager(mock_settings_repo, user_id)

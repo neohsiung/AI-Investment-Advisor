@@ -35,13 +35,14 @@ def _get_gateway_registry() -> dict[str, Any]:
                 GeminiGateway,
                 OpenAIGateway,
                 OllamaGateway,
+                NvidiaGateway,
             )
             _GATEWAY_REGISTRY = {
                 "openrouter": OpenRouterGateway,
                 "gemini": GeminiGateway,
                 "openai": OpenAIGateway,
                 "ollama": OllamaGateway,
-                "nvidia": OpenAIGateway,  # nvidia uses OpenAI-compatible API
+                "nvidia": NvidiaGateway,  # NVIDIA NIM (OpenAI-compatible)
             }
             # Try to load Anthropic / Groq if available
             try:
@@ -72,6 +73,12 @@ def _decrypt_api_key(encrypted_key: Optional[str]) -> Optional[str]:
         return encrypted_key  # Return as-is if decryption fails
 
 
+import time
+
+# Chain Cache: (user_id, tier) -> (timestamp, List[ModelCandidate])
+_CHAIN_CACHE: dict[tuple[str, str], tuple[float, List[ModelCandidate]]] = {}
+_CHAIN_CACHE_TTL = 300  # 5 minutes
+
 def build_config_chain(
     user_id: str,
     tier: str,
@@ -80,21 +87,16 @@ def build_config_chain(
 ) -> List[ModelCandidate]:
     """
     Build an ordered list of ModelCandidates for the given (user_id, tier).
-
-    Strategy:
-      1. If db_session provided, try to load from llm_tier_bindings
-      2. If no DB binding found, fall back to tier_config.py defaults
-      3. Returns at least one candidate (never empty)
-
-    Args:
-        user_id: The user whose tier binding to load.
-        tier: One of "nano", "fast", "smart", "advanced".
-        db_session: Optional SQLAlchemy session (if None, uses default engine).
-        catalog: Optional ProviderCatalog (unused currently, reserved for future).
-
-    Returns:
-        List[ModelCandidate] ordered primary-first.
+    Includes a 5-minute TTL cache for performance.
     """
+    cache_key = (user_id, tier)
+    now = time.time()
+    
+    if cache_key in _CHAIN_CACHE:
+        ts, candidates = _CHAIN_CACHE[cache_key]
+        if now - ts < _CHAIN_CACHE_TTL:
+            return candidates
+
     candidates: List[ModelCandidate] = []
 
     # ── Step 1: Try DB binding ──────────────────────────────────────
@@ -112,7 +114,9 @@ def build_config_chain(
             "build_config_chain: No DB binding found for user=%s tier=%s. [STRICT] Fallback to defaults is disabled.",
             user_id, tier
         )
-        # We return empty list. The pipeline will raise an error if it cannot find any candidate.
+    
+    # Update Cache
+    _CHAIN_CACHE[cache_key] = (now, candidates)
 
     return candidates
 
@@ -146,20 +150,26 @@ def _load_from_db(user_id: str, tier: str) -> List[ModelCandidate]:
     for model_id in model_ids:
         try:
             model = model_repo.get(model_id)
-            if model is None or not model.enabled:
-                logger.debug("build_config_chain: skipping disabled/missing model %s", model_id)
+            if model is None:
+                logger.debug("build_config_chain: skipping missing model %s", model_id)
                 continue
 
+            # Resolve provider_code from LLMProvider table
             provider = provider_repo.get(model.provider_id)
-            if provider is None or not provider.enabled:
-                logger.debug("build_config_chain: skipping disabled/missing provider for model %s", model_id)
+            if provider is None:
+                logger.warning(
+                    "build_config_chain: skipping model %s with missing provider_id %s",
+                    model_id, model.provider_id
+                )
                 continue
-
-            gateway_class = registry.get(provider.provider_code)
+                
+            provider_code = provider.provider_code
+            
+            gateway_class = registry.get(provider_code)
             if gateway_class is None:
                 logger.warning(
                     "build_config_chain: no gateway for provider_code=%s, skipping model %s",
-                    provider.provider_code, model_id,
+                    provider_code, model_id,
                 )
                 continue
 
@@ -168,23 +178,44 @@ def _load_from_db(user_id: str, tier: str) -> List[ModelCandidate]:
             max_retries = cand_cfg.get("max_retries", 2)
             timeout_seconds = float(cand_cfg.get("timeout_seconds", 30.0))
 
-            # Resolve base_url: provider row → spec default
+            # Resolve base_url from provider catalog (fallback to provider.base_url)
             base_url = provider.base_url
-            if not base_url:
-                try:
-                    from src.infrastructure.llm.provider_catalog import get_provider_catalog
-                    cat = get_provider_catalog()
-                    spec = cat.get(provider.provider_code)
-                    if spec:
-                        base_url = spec.default_base_url
-                except Exception: # nosec B110
-                    pass
+            try:
+                from src.infrastructure.llm.provider_catalog import get_provider_catalog
+                cat = get_provider_catalog()
+                spec = cat.get(provider_code)
+                if spec and spec.default_base_url:
+                    base_url = spec.default_base_url
+            except Exception: # nosec B110
+                logger.debug("Failed to get base_url from catalog for provider %s", provider_code)
 
+            # Get API key from settings (fallback to provider.encrypted_api_key)
             api_key = _decrypt_api_key(provider.encrypted_api_key)
+            try:
+                from src.data.database import get_db_engine
+                from sqlalchemy import text
+                engine = get_db_engine()
+                with engine.connect() as conn:
+                    result = conn.execute(text(
+                        "SELECT value FROM settings WHERE key = :key AND user_id = :user_id LIMIT 1"
+                    ), {"key": f"{provider_code}_api_key", "user_id": user_id})
+                    row = result.fetchone()
+                    if row:
+                        settings_key = _decrypt_api_key(row[0])
+                        # Only override if decryption yielded a usable plaintext
+                        if settings_key and not settings_key.startswith("ENC:"):
+                            api_key = settings_key
+                        else:
+                            logger.debug(
+                                "Settings key for %s not usable (still encrypted?), "
+                                "keeping provider key", provider_code
+                            )
+            except Exception: # nosec B110
+                logger.debug("Failed to get API key for provider %s from settings", provider_code)
 
             candidates.append(ModelCandidate(
                 model_id=model_id,
-                provider_code=provider.provider_code,
+                provider_code=provider_code,
                 model_code=model.model_code,
                 gateway_class=gateway_class,
                 base_url=base_url,

@@ -17,7 +17,7 @@ from src.agents.swarm.fundamental_swarm import FundamentalSwarm
 from src.agents.swarm.sentiment_swarm import SentimentSwarm
 from src.agents.macro import MacroAgent
 from src.agents.cio import CIOAgent
-from src.agents.engineer import SystemEngineerAgent
+from src.agents.system_engineer_agent import SystemEngineerAgent
 from src.agents.risk import RiskAgent
 from src.agents.sentinel import SentinelAgent
 
@@ -189,9 +189,9 @@ class AgentFactory:
             raise ValueError(f"AgentFactory: user_id is required for multi-tenant isolation.")
         AgentFactory._configure_dspy(user_id=user_id)
         prompt_map = {
-            "daily": "prompts/cio_daily.txt",
-            "weekly": "prompts/cio_weekly.txt",
-            "sentinel": "prompts/cio_sentinel.txt"
+            "daily": "prompts/cio_agent.txt",
+            "weekly": "prompts/cio_agent.txt",
+            "sentinel": "prompts/cio_agent.txt"
         }
         prompt_path = prompt_map.get(mode, "prompts/cio_weekly.txt")
         agent = CIOAgent(use_cache=use_cache, transaction_repo=transaction_repo, prompt_path=prompt_path, mode=mode, tier=tier, user_id=user_id, **kwargs)

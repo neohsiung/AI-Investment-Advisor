@@ -11,10 +11,30 @@ logger = logging.getLogger(__name__)
 
 # Default tier → (provider_code, model_code) mapping
 DEFAULT_TIER_CHAIN: Dict[str, List[tuple[str, str]]] = {
-    "nano": [("openai", "gpt-4.1-nano")],
-    "fast": [("gemini", "gemini-2.5-flash"), ("openai", "gpt-4.1-nano")],
-    "smart": [("gemini", "gemini-2.5-pro"), ("anthropic", "claude-sonnet-4-5-20250929")],
-    "advanced": [("anthropic", "claude-sonnet-4-5-20250929"), ("gemini", "gemini-2.5-pro")],
+    "nano": [
+        ("openrouter", "openai/gpt-5.4-nano"),
+        ("ollama", "qwen2.5:7b"),
+        ("ollama", "gemma4:e4b"),
+        ("openrouter", "openrouter/auto"),
+    ],
+    "fast": [
+        ("openrouter", "google/gemma-4-26b-a4b-it:free"),
+        ("nvidia", "nvidia/nemotron-3-super-120b-a12b"),
+        ("nvidia", "deepseek-ai/deepseek-v4-flash"),
+        ("openrouter", "qwen/qwen3.6-plus"),
+    ],
+    "smart": [
+        ("openrouter", "qwen/qwen3.6-plus"),
+        ("nvidia", "minimaxai/minimax-m2.7"),
+        ("nvidia", "google/gemma-4-31b-it"),
+        ("openrouter", "google/gemma-4-26b-a4b-it:free"),
+    ],
+    "advanced": [
+        ("openrouter", "anthropic/claude-sonnet-4"),
+        ("openrouter", "google/gemini-3.1-pro-preview"),
+        ("nvidia", "moonshotai/kimi-k2.6"),
+        ("nvidia", "qwen/qwen3-coder-480b-a35b-instruct"),
+    ],
 }
 
 def load_yaml(path: Path) -> Dict[str, Any]:

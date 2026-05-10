@@ -20,6 +20,10 @@ class OrderType(Enum):
     MARKET = "MARKET"
     LIMIT = "LIMIT"
 
+class OrderSizingMode(str, Enum):
+    AMOUNT = "AMOUNT"    # BUY: 以 USD 金額下單
+    SHARES = "SHARES"    # SELL: 以股數下單
+
 @dataclass
 class Order:
     symbol: str
@@ -28,6 +32,8 @@ class Order:
     price: Optional[float] = None
     order_type: OrderType = OrderType.MARKET
     leverage: int = 1
+    amount_usd: Optional[float] = None       # 明確的 USD 金額（BUY 時使用）
+    sizing_mode: OrderSizingMode = OrderSizingMode.AMOUNT  # 預設金額制
     reason: str = ""
     position_id: Optional[str] = None # For closing specific positions
 

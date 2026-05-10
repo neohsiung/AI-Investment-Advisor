@@ -2,10 +2,14 @@ import logging
 import json
 import uuid
 import typing
-from typing import List, Dict, Tuple, Any, Optional, Callable, Dict, List, Tuple, Any, Optional, Callable
+import os
+import difflib
+from datetime import datetime
+from typing import List, Dict, Tuple, Any, Optional, Callable, Union
 
 from src.agents.base_agent import BaseAgent
 from src.repositories.settings_repository import AlchemySettingsRepository
+from src.repositories.prompt_repository import AlchemyPromptRepository
 
 logger = logging.getLogger(__name__)
 
@@ -34,9 +38,8 @@ class SystemEngineerAgent(BaseAgent):
     Milestone 5.3: Engineer Swarm & Alpha-Seeking
     Autonomous code generation and backtesting for alpha discovery.
     """
-    def __init__(self, user_id: str, **kwargs):
-        # We use a completely new class name or alias to avoid conflict with `engineer.py`
-        # Using suffix `Agent` but distinct file name `system_engineer_agent.py`
+    def __init__(self, user_id: str, prompt_repo: Optional[AlchemyPromptRepository] = None,
+                 settings_repo=None, **kwargs):
         super().__init__(
             name="AlphaEngineer", 
             prompt_path="prompts/common/default_system.j2",
@@ -46,57 +49,153 @@ class SystemEngineerAgent(BaseAgent):
         )
         self.code_gen = CodeGenerator()
         self.backtester = BacktestRunner()
-        self.settings = AlchemySettingsRepository()
+        self.settings = settings_repo if settings_repo is not None else AlchemySettingsRepository()
+        self.prompt_repo = prompt_repo or AlchemyPromptRepository()
 
-    async def run(self, context: Any) -> str:
+    def analyze_optimization_needs(self, cio_report: str) -> List[Dict[str, Any]]:
+        """Identify optimization targets from CIO reports.
+        
+        Handles two formats:
+        1. [HR_REQUEST] Replace Agent: <Name> (Reason: <text>)
+        2. ## System Optimization Feedback <freeform text>
         """
-        Runs the alpha-seeking genetic algorithm workflow.
+        import re
+        results = []
+
+        # 1. HR_REQUEST format — explicit agent replacement requests
+        hr_pattern = re.compile(
+            r'\[HR_REQUEST\].*?Replace Agent:\s*([\w\s]+?)\s*\(Reason:\s*([^)]+)\)',
+            re.IGNORECASE | re.DOTALL
+        )
+        for match in hr_pattern.finditer(cio_report):
+            target = match.group(1).strip()
+            reason = match.group(2).strip()
+            results.append({
+                'target_agent': target,
+                'raw_feedback': reason,
+                'type': 'hr_request'
+            })
+
+        if results:
+            return results
+
+        # 2. Freeform System Optimization Feedback section
+        feedback_section = ""
+        if "System Optimization Feedback" in cio_report:
+            parts = cio_report.split("System Optimization Feedback")
+            if len(parts) > 1:
+                feedback_section = parts[1].strip()
+
+        if not feedback_section or any(x in feedback_section for x in ["無", "None"]):
+            return []
+        return [{"raw_feedback": feedback_section}]
+
+    def get_schedule_config(self) -> Dict[str, str]:
+        """Read schedule config from settings repository."""
+        rows = self.settings.get_all(self.user_id)  # returns [(key, value), ...]
+        return {key: value for key, value in rows if key.startswith('schedule_')}
+
+    def set_schedule_config(self, daily_time: str, weekly_time: str, enabled: bool = True):
+        """Write schedule config to settings repository."""
+        self.settings.set(self.user_id, 'schedule_daily', daily_time)
+        self.settings.set(self.user_id, 'schedule_weekly', weekly_time)
+        self.settings.set(self.user_id, 'schedule_enabled', str(enabled))
+
+    def _read_prompt(self, prompt_path: str) -> str:
+        if not os.path.exists(prompt_path):
+            return ""
+        with open(prompt_path, "r") as f:
+            return f.read()
+
+    def _save_prompt(self, prompt_path: str, file_content: str):
+        # [Rule #11] Secret Redaction: Using centralized utility from BaseAgent
+        safe_content = self._redact_secrets(file_content)
+        with open(prompt_path, "w") as f:
+            f.write(safe_content)
+
+    def _log_prompt_change(self, agent_name: str, reason: str, old_prompt: str, new_prompt: str, diff: str):
+        try:
+            self.prompt_repo.log_change(agent_name, reason, old_prompt, new_prompt, diff, user_id=self.user_id)
+        except Exception as e:
+            logger.error(f"Error logging prompt change: {e}")
+
+    async def run(self, context: Any) -> Union[str, List[Dict[str, Any]]]:
         """
+        Unified System Engineer Agent run loop.
+        Handles: 1. Alpha Discovery (Genetic Algo) | 2. Prompt Optimization (Prompt Tuning)
+        """
+        if "cio_report" in context:
+            return await self._run_prompt_optimization(context)
+        else:
+            return await self._run_alpha_discovery(context)
+
+    async def _run_alpha_discovery(self, context: Any) -> str:
         ticker = context.get("ticker", "SPY")
         generations = context.get("generations", 3)
         population_size = context.get("population_size", 3)
         
-        logger.info(f"AlphaEngineer: Starting Genetic Algorithm for {ticker} (Gens: {generations}, Pop: {population_size})")
+        logger.info(f"AlphaEngineer: Starting Genetic Algorithm for {ticker}")
         
         best_code = ""
         best_score = -999.0
         best_metrics = {}
         
         for g in range(generations):
-            logger.info(f"--- Generation {g+1} ---")
             for p in range(population_size):
-                # 1. Generate Variant
                 instruction = f"Create a trading alpha factor for {ticker} using price momentum and volume."
                 if best_code:
                     instruction += f" Mutate this baseline code to improve Sharpe:\n{best_code}"
                 
                 new_code = self.code_gen.generate(instruction)
-                
-                # 2. Backtest
                 metrics = self.backtester.run(new_code, ticker)
                 score = metrics["sharpe_ratio"]
                 
-                logger.info(f"Variant {p+1} Score: {score} (Sharpe: {metrics['sharpe_ratio']}, WR: {metrics['win_rate']})")
-                
-                # 3. Selection
                 if score > best_score:
                     best_score = score
                     best_code = new_code
                     best_metrics = metrics
                     
-        # 4. Save best Alpha to Repository (or disk)
         alpha_id = f"alpha_{ticker.lower()}_{uuid.uuid4().hex[:4]}"
         self.settings.set(self.user_id, alpha_id, json.dumps({
             "code": best_code,
             "metrics": best_metrics
         }))
         
-        report = (
-            f"### 🧬 Alpha Discovery Complete ({ticker})\n"
-            f"- **Best Model ID**: `{alpha_id}`\n"
-            f"- **Sharpe Ratio**: {best_score}\n"
-            f"- **Win Rate**: {best_metrics.get('win_rate', 0) * 100}%\n"
-            f"- **Max Drawdown**: {best_metrics.get('max_drawdown', 0) * 100}%\n\n"
-            f"**Code Snippet**:\n```python\n{best_code}```"
-        )
-        return report
+        return (f"### 🧬 Alpha Discovery Complete ({ticker})\n"
+                f"- **Best Model ID**: `{alpha_id}`\n- **Sharpe**: {best_score}\n\n"
+                f"**Code**:\n```python\n{best_code}```")
+
+    async def _run_prompt_optimization(self, context: Dict[str, Any]) -> List[Dict[str, Any]]:
+        cio_report = context.get("cio_report", "")
+        optimizations = self.analyze_optimization_needs(cio_report)
+        if not optimizations:
+            return []
+
+        results = []
+        raw_feedback = optimizations[0]['raw_feedback']
+        # Use target_agent from HR_REQUEST parse, else fall back to context key or default
+        target_agent = optimizations[0].get('target_agent') or context.get("target_agent_name", "Momentum")
+        
+        # Simplified path resolution
+        target_path = f"prompts/{target_agent.lower()}_agent.txt"
+        original_prompt = self._read_prompt(target_path)
+
+        engineer_input = {"cio_feedback": raw_feedback, "target_agent_prompt": original_prompt}
+        response_str = await self._call_real_llm(json.dumps(engineer_input), self.system_prompt)
+
+        try:
+            cleaned = response_str.replace("```json", "").replace("```", "").strip()
+            result_json = json.loads(cleaned)
+            new_prompt = result_json.get("optimized_prompt", "")
+            if new_prompt and new_prompt != original_prompt:
+                diff = "\n".join(difflib.unified_diff(original_prompt.splitlines(), new_prompt.splitlines(), lineterm=""))
+                self._save_prompt(target_path, new_prompt)
+                self._log_prompt_change(target_agent, raw_feedback, original_prompt, new_prompt, diff)
+                results.append({'target_agent': target_agent, "diff": diff, "status": "Optimized"})
+            else:
+                results.append({'target_agent': target_agent, "status": "No change needed"})
+        except Exception as e:
+            logger.error(f"Prompt optimization failed: {e}")
+            results.append({"error": str(e)})
+
+        return results

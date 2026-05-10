@@ -76,8 +76,6 @@ class SentinelService:
         )
         self.gateway = OpenRouterGateway()
         
-        self.notification_api_url = os.getenv("NOTIFICATION_API_URL", "http://notification:8001/api/v1/notify")
-        
         # Thresholds (v3.5 - Defaults seeded to DB)
         self.default_thresholds = {
             "vix_high": 25.0,
@@ -97,6 +95,9 @@ class SentinelService:
         # 2. Dynamic Calibration (Rule #8)
         # Perform initial statistical calibration if historical data is available
         self._calibrate_thresholds()
+        
+        # [NEW] v5.1: Tracking firing times for de-bouncing (T16)
+        self.last_fire_time: Dict[str, float] = {}
         
         # Buffer State — Redis-backed persistent buffer (replaces in-memory dict)
         from src.infrastructure.redis_sentinel_buffer import RedisSentinelBuffer
@@ -228,6 +229,14 @@ class SentinelService:
             
             # Dimension 9: Infrastructure Health / Self-Healing (Phase 9)
             triggers += await self._check_infrastructure_health()
+            
+            # Dimension 10: Allocation Drift Check (v10.0 - Portfolio Rebalancing)
+            # Check if current portfolio allocation deviates from target allocation
+            rebalance_triggers = await self._check_allocation_drift()
+            triggers += rebalance_triggers
+            
+            # Dimension 10.1: Execute Rebalancing (Phase 5)
+            await self._handle_rebalance_logic(rebalance_triggers)
             
             # ACT: Summon Council + Notifications if triggered
             if triggers:
@@ -457,13 +466,6 @@ class SentinelService:
             logger.warning(f"Trend detection failed for {benchmark}: {e}")
             return "Neutral"
 
-    async def _check_risk_consistency(self) -> List[Dict[str, Any]]:
-        """Deprecated wrapper for backward compatibility."""
-        ticker_list = self.transaction_service.get_user_tickers(self.user_id, only_active=True)
-        current_prices = await self.market_service.get_current_prices(ticker_list)
-        return await self._check_position_moves_v2(ticker_list, current_prices)
-
-    # ──────────────────────────────────────────
     # Dimension 3: Breaking News (Tavily)
     # ──────────────────────────────────────────
     
@@ -776,6 +778,13 @@ class SentinelService:
         Escalate triggers to appropriate channels, applying buffering where necessary.
         呈報觸發訊號至適當管道，並在必要時套用緩衝機制。
         """
+        import time
+        cooldown = 1800 # 30 minutes
+        fire_key = f"escalate_{source}_{self.user_id}"
+        if self.last_fire_time.get(fire_key, 0) + cooldown > time.time():
+            logger.info(f"SentinelService: De-bouncing escalation for {fire_key} (cooldown: {cooldown}s)")
+            return
+        self.last_fire_time[fire_key] = time.time()
         if not triggers:
              return
 
@@ -793,7 +802,7 @@ class SentinelService:
                 t["priority"] = already_buffered_trigger.get("priority", 3)
                 t["target_agent"] = already_buffered_trigger.get("target_agent", "CIO")
                 t["rationale"] = already_buffered_trigger.get("rationale", "Cached from Redis buffer")
-                logger.debug("Sentinel: Skipping LLM evaluation for Redis-cached trigger (P%s)", redact_secrets(t['priority']))
+                logger.debug("Sentinel: Skipping LLM evaluation for Redis-cached trigger (P%d)", int(t['priority']))
             else:
                 # 1. AI-Driven Priority & Routing
                 try:
@@ -872,7 +881,7 @@ class SentinelService:
             
             added = await self._redis_buffer.add(self.user_id, t, wait_mins)
             if added:
-                logger.debug("Sentinel: Buffered trigger to Redis (P%s). Source: %s.", redact_secrets(priority), redact_secrets(source))
+                logger.debug("Sentinel: Buffered trigger to Redis (P%d).", int(priority))
 
         # [T4] Execute immediate escalation for all P0/failed triggers in ONE batch
         if immediate_triggers:
@@ -995,6 +1004,7 @@ class SentinelService:
         has_news_trigger  = "news" in trigger_types
         has_price_trigger = "price_move" in trigger_types
         has_risk_trigger  = "risk" in trigger_types
+        has_allocation_drift = "allocation_drift" in trigger_types
         
         msg_prefix = "請針對以下多個 Sentinel 警報進行彙整與風險評估，並以繁體中文 (Traditional Chinese) 提供一份簡短且具備行動建議的摘要。金融專業術語請保留英文。"
         
@@ -1077,6 +1087,22 @@ class SentinelService:
                 "⚠️ **以下風險指標觸發警報，請評估當前投資組合的風險曝露並給出具體改善建議。**\n\n"
                 "請針對：(1) 槓桿水位是否需要調整 (2) 持倉集中度風險 (3) 是否需要再平衡，分別給出建議。\n"
                 "若有操作（換庫 / 部分平倉 / 對沖），請輸出 Actionable Orders 表格。\n"
+                "請以繁體中文撰寫，專業術語保留英文。"
+            )
+
+        elif has_allocation_drift:
+            # Allocation Drift alert — focus Council on weight-based rebalancing
+            drift_details = "\n".join(
+                f"- {t.get('text', '')}" for t in filtered_triggers
+                if t.get('type') == 'allocation_drift'
+            )
+            msg_prefix = (
+                "⚖️ **以下持倉出現配置漂移 (Allocation Drift)，請評估是否需要再平衡。**\n\n"
+                f"漂移明細：\n{drift_details}\n\n"
+                "請針對每個漂移持倉，給出 **加倉 / 減倉 / 維持** 的具體建議，並以 weight-based 格式輸出。\n"
+                "若有操作，請在報告末尾輸出 Actionable Orders 表格，包含 target_weight 和 delta_weight：\n"
+                "| Ticker | Action | Target Weight (%) | Current Weight (%) | Delta Weight (%) | Confidence (1-10) | Reason |\n"
+                "|--------|--------|-------------------|-------------------|-----------------|-------------------|--------|\n"
                 "請以繁體中文撰寫，專業術語保留英文。"
             )
 
@@ -1883,6 +1909,62 @@ class SentinelService:
         except Exception as e:
             logger.error("Sentinel: cash deployment execution error: %s", e, exc_info=True)
 
+    # ──────────────────────────────────────────
+    # Dimension 10: Allocation Drift Detection (v10.0)
+    # ──────────────────────────────────────────
+
+    async def _handle_rebalance_logic(self, rebalance_triggers: Optional[List[Dict[str, Any]]] = None) -> None:
+        """
+        [Phase 5] Execute rebalancing trades based on detected triggers.
+        執行基於偵測到觸發點的再平衡交易。
+        """
+        import time
+        cooldown = 1800 # 30 minutes
+        fire_key = f"rebalance_{self.user_id}"
+        if self.last_fire_time.get(fire_key, 0) + cooldown > time.time():
+             logger.info(f"SentinelService: De-bouncing rebalance for {fire_key} (cooldown: {cooldown}s)")
+             return
+        self.last_fire_time[fire_key] = time.time()
+        if not rebalance_triggers:
+            logger.debug("Sentinel: No rebalance triggers to process.")
+            return
+
+        logger.info(f"Sentinel: Processing {len(rebalance_triggers)} rebalance triggers for user {self.user_id}")
+        
+        try:
+            from src.services.automated_trading_service import AutomatedTradingService
+            auto_trade_svc = AutomatedTradingService()
+
+            for trigger in rebalance_triggers:
+                if trigger.get('ticker') == 'CASH':
+                    logger.info(f"Sentinel: Cash overweight trigger routed to cash deployment flow.")
+                    continue
+                if trigger.get("action") != "trigger_rebalance":
+                    continue
+                
+                ticker = trigger.get("ticker")
+                sell_qty = trigger.get("sell_quantity")
+                rationale = trigger.get("rationale", "[Sentinel Rebalance] Concentration Risk detected.")
+                
+                if not ticker or not sell_qty or sell_qty < 0.01:
+                    logger.debug(f"Sentinel: Skipping rebalance for {ticker} (qty: {sell_qty})")
+                    continue
+
+                logger.warning(
+                    f"Sentinel Rebalancing Execution: {ticker} | Selling {sell_qty} units | Reason: {rationale}"
+                )
+                
+                # Execute rebalancing trade (Forced action, confidence=100)
+                await auto_trade_svc.evaluate_and_execute_trade(
+                    user_id=self.user_id,
+                    ticker=ticker,
+                    action="SELL",
+                    quantity=sell_qty,
+                    confidence_score=100, 
+                    rationale=rationale
+                )
+        except Exception as e:
+            logger.error(f"Sentinel: rebalancing execution error: {e}", exc_info=True)
     async def _check_infrastructure_health(self) -> List[Dict[str, Any]]:
         """
         [Phase 9] Dimension 9: Infrastructure Health Watchdog.
@@ -1940,3 +2022,199 @@ class SentinelService:
             logger.error(f"Infrastructure Health Check Failed: {e}")
             
         return triggers
+    
+    # ──────────────────────────────────────────
+    # Dimension 10: Allocation Drift Detection (v10.0)
+    # ──────────────────────────────────────────
+    
+    async def _check_allocation_drift(self) -> List[Dict[str, Any]]:
+        """
+        Dimension 10: Allocation Drift Check
+        v10.1: Concentration Risk Mode. Uses max_single_position_weight instead of fixed targets.
+        """
+        triggers = []
+        
+        try:
+            # 1. Get current allocation
+            current_allocation = await self._get_current_allocation()
+            if not current_allocation:
+                return triggers
+
+            # 2. Get thresholds from DB
+            max_single_weight = self.settings_service.get_setting('max_single_position_weight', 25.0, self.user_id)
+            # Rebalance target is slightly below max to prevent frequent oscillations
+            target_rebalance_weight = max_single_weight * 0.9  
+            warning_threshold = max_single_weight * 0.85
+            
+            # 3. Calculate total portfolio value for quantity math
+            cash = self.transaction_service.get_cash_balance(self.user_id)
+            total_portfolio_value = sum(item['market_value'] for item in current_allocation.values()) + cash
+            
+            # 4a. Cash Concentration Check (cash is also an allocation position)
+            # 現金也是一種配置倉位 — 過高的現金代表失去平衡
+            try:
+                from src.services.portfolio_aggregator_service import PortfolioAggregatorService
+                _aggregator = PortfolioAggregatorService(user_id=self.user_id)
+                _portfolio = await _aggregator.get_aggregated_portfolio()
+                broker_cash = _portfolio.get('total_cash', 0.0)
+                broker_equity = _portfolio.get('total_equity', 0.0)
+            except Exception:
+                broker_cash = max(cash, 0)
+                broker_equity = total_portfolio_value if total_portfolio_value > 0 else 1
+
+            if broker_equity > 0:
+                cash_weight = (broker_cash / broker_equity) * 100
+                if cash_weight >= max_single_weight:
+                    triggers.append({
+                        'id': f'cash_concentration_{self.user_id[:8]}',
+                        'text': f'💰 CASH OVERWEIGHT: Cash weight is {cash_weight:.1f}%, exceeding limit of {max_single_weight:.1f}%. Deploy excess cash to rebalance portfolio.',
+                        'type': 'allocation_drift',
+                        'trigger_type': 'cash_overweight',
+                        'severity': 'high',
+                        'priority': 2,
+                        'ticker': 'CASH',
+                        'current_weight_pct': round(cash_weight, 2),
+                        'limit_weight_pct': round(max_single_weight, 2),
+                        'action': 'deploy_cash',
+                        'timestamp': pd.Timestamp.now().isoformat()
+                    })
+                    logger.warning(f"[Cash Concentration] Cash weight={cash_weight:.1f}% exceeds limit={max_single_weight:.1f}%")
+
+            # 4b. Check for Concentration Risk
+            for ticker, info in current_allocation.items():
+                current_weight = info.get('weight', 0)
+                
+                if current_weight >= max_single_weight:
+                    # Calculate amount to sell to reach target_rebalance_weight
+                    # (current_weight - target_rebalance_weight) / 100 * total_portfolio_value = USD to sell
+                    current_price = info.get('current_price', 0)
+                    if current_price > 0 and total_portfolio_value > 0:
+                        weight_diff = current_weight - target_rebalance_weight
+                        usd_to_sell = (weight_diff / 100.0) * total_portfolio_value
+                        shares_to_sell = round(usd_to_sell / current_price, 2) # v6.0 Fractional rounding
+                        
+                        if shares_to_sell >= 0.01:
+                            triggers.append({
+                                'id': f'concentration_risk_critical_{ticker}',
+                                'text': f'🆘 CONCENTRATION RISK: {ticker} weight is {current_weight:.1f}%, exceeding limit of {max_single_weight:.1f}%. Auto-selling {shares_to_sell} units to rebalance.',
+                                'type': 'allocation_drift',
+                                'trigger_type': 'allocation_drift',
+                                'severity': 'critical',
+                                'priority': 1,
+                                'ticker': ticker,
+                                'current_weight_pct': round(current_weight, 2),
+                                'limit_weight_pct': round(max_single_weight, 2),
+                                'sell_quantity': shares_to_sell,
+                                'action': 'trigger_rebalance',
+                                'timestamp': pd.Timestamp.now().isoformat()
+                            })
+                            logger.warning(f"[Concentration Risk] CRITICAL: {ticker} weight={current_weight:.1f}% -> Selling {shares_to_sell} units")
+                
+                elif current_weight >= warning_threshold:
+                    logger.info(f"[Concentration Risk] WARNING: {ticker} approaching limit: {current_weight:.1f}% (limit={max_single_weight:.1f}%)")
+            
+            return triggers
+            
+        except Exception as e:
+            logger.error(f"Error in allocation drift check: {e}", exc_info=True)
+            return []
+
+    async def _get_current_allocation(self) -> Dict[str, Dict[str, float]]:
+        """
+        獲取當前投資組合配置（按權重 %），使用券商即時數據。
+        
+        Returns:
+            {ticker: {shares, weight, market_value, current_price}}
+        """
+        try:
+            # v10.1: 使用 PortfolioAggregatorService 獲取即時數據，避免 DB 滯後
+            from src.services.portfolio_aggregator_service import PortfolioAggregatorService
+            aggregator = PortfolioAggregatorService(user_id=self.user_id)
+            portfolio_data = await aggregator.get_aggregated_portfolio()
+            
+            positions = portfolio_data.get('positions', [])
+            total_equity = portfolio_data.get('total_equity', 0.0)
+
+            if not positions and portfolio_data.get('total_cash', 0.0) <= 0:
+                return {}
+
+            if total_equity <= 0:
+                logger.warning("Sentinel: Total portfolio value is zero or negative. Cannot calculate weights.")
+                return {}
+
+            allocation = {}
+            for p in positions:
+                weight = (p.market_value / total_equity) * 100
+                allocation[p.symbol] = {
+                    'shares': p.quantity,
+                    'quantity': p.quantity,
+                    'weight': round(weight, 2),
+                    'market_value': p.market_value,
+                    'current_price': p.current_price,
+                    'avg_price': p.open_price
+                }
+            
+            logger.debug(f"Sentinel: Live allocation retrieved: {allocation}")
+            return allocation
+        except Exception as e:
+            logger.error(f"Sentinel: Failed to get live allocation, falling back to DB: {e}", exc_info=True)
+            return await self._get_current_allocation_from_db()
+
+    async def _get_current_allocation_from_db(self) -> Dict[str, Dict[str, float]]:
+        """
+        (Fallback) 從資料庫獲取持倉配置。
+        """
+        try:
+            positions = self.transaction_service.get_active_positions(self.user_id)
+            if not positions:
+                return {}
+
+            tickers = [p['ticker'] for p in positions]
+            current_prices = await self.market_service.get_current_prices(tickers)
+
+            cash = self.transaction_service.get_cash_balance(self.user_id)
+            total_stock_value = 0.0
+            for p in positions:
+                ticker = p['ticker']
+                price = current_prices.get(ticker, p.get('avg_price', 0))
+                p['current_price'] = price
+                p['market_value'] = price * p.get('quantity', 0)
+                total_stock_value += p['market_value']
+
+            portfolio_value = total_stock_value + cash
+            
+            allocation = {}
+            for p in positions:
+                weight = (p['market_value'] / portfolio_value) * 100 if portfolio_value > 0 else 0
+                allocation[p['ticker']] = {
+                    'shares': p['quantity'],
+                    'weight': round(weight, 2),
+                    'market_value': p['market_value'],
+                    'current_price': p['current_price'],
+                    'avg_price': p['avg_price']
+                }
+            return allocation
+        except Exception as e:
+            logger.error(f"Fallback allocation fetch failed: {e}")
+            return {}
+
+    async def _calculate_total_portfolio_value(self) -> float:
+        """
+        計算投資組合總價值（包括現金），複用 allocation 邏輯以獲取即時價格。
+        
+        Returns:
+            Total portfolio value in USD
+        """
+        try:
+            allocation = await self._get_current_allocation()
+            cash = self.transaction_service.get_cash_balance(self.user_id)
+            
+            total_stock_value = sum(v.get('market_value', 0) for v in allocation.values())
+            total_portfolio = total_stock_value + cash
+            
+            logger.debug(f"Portfolio value calculation: stocks={total_stock_value:.2f}, cash={cash:.2f}, total={total_portfolio:.2f}")
+            return total_portfolio
+            
+        except Exception as e:
+            logger.error(f"Error calculating portfolio value: {e}", exc_info=True)
+            return 0.0
