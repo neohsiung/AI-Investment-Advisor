@@ -83,46 +83,48 @@ async def test_warning_level_drift_no_trigger(sentinel_service, mock_settings_se
 
 @pytest.mark.asyncio
 async def test_alert_level_drift(sentinel_service, mock_settings_service):
-    # AAPL Weight = 75%
-    # Target = 69% (Drift = 6%, above alert 5%)
-    mock_settings_service.get_target_allocation.return_value = {"AAPL": {"weight": 69.0}}
-    triggers = await sentinel_service._check_allocation_drift()
+    # v10.1 Concentration-Risk Model:
+    # AAPL weight = 1500/(1500+500) = 75%
+    # max_single_position_weight = 70% → AAPL (75%) exceeds limit → critical trigger
+    mock_settings_service.get_setting.return_value = 70.0
+    with patch("src.services.portfolio_aggregator_service.PortfolioAggregatorService",
+               side_effect=Exception("mocked")):
+        triggers = await sentinel_service._check_allocation_drift()
+
     assert len(triggers) == 1
-    assert triggers[0]['severity'] == 'alert'
+    assert triggers[0]['severity'] == 'critical'
     assert triggers[0]['trigger_type'] == 'allocation_drift'
     assert "AAPL" in triggers[0]['text']
 
 @pytest.mark.asyncio
 async def test_critical_level_drift(sentinel_service, mock_settings_service):
-    # AAPL Weight = 75%
-    # Target = 60% (Drift = 15%, above critical 10%)
-    mock_settings_service.get_target_allocation.return_value = {"AAPL": {"weight": 60.0}}
-    triggers = await sentinel_service._check_allocation_drift()
+    # AAPL weight = 75%, max_single_position_weight = 70% → critical rebalance action
+    mock_settings_service.get_setting.return_value = 70.0
+    with patch("src.services.portfolio_aggregator_service.PortfolioAggregatorService",
+               side_effect=Exception("mocked")):
+        triggers = await sentinel_service._check_allocation_drift()
+
     assert len(triggers) == 1
     assert triggers[0]['severity'] == 'critical'
     assert triggers[0]['action'] == 'trigger_rebalance'
 
 @pytest.mark.asyncio
 async def test_multiple_tickers_drift(sentinel_service, mock_tx_service, mock_market_service, mock_settings_service):
-    # AAPL: qty 10, price 150 -> 1500
-    # NVDA: qty 1, price 500 -> 500
-    # Cash: 500
-    # Total = 2500
-    # AAPL Weight = 1500/2500 = 60%
-    # NVDA Weight = 500/2500 = 20%
+    # AAPL: qty 10, price 150 → 1500; NVDA: qty 1, price 500 → 500; Cash: 500
+    # Total = 2500; AAPL weight = 60%; NVDA weight = 20%
+    # max_single_position_weight = 50% → AAPL (60%) triggers, NVDA (20%) does not
     mock_tx_service.get_active_positions.return_value = [
         {'ticker': 'AAPL', 'quantity': 10, 'avg_price': 150.0},
         {'ticker': 'NVDA', 'quantity': 1, 'avg_price': 500.0}
     ]
     mock_market_service.get_current_prices.return_value = {"AAPL": 150.0, "NVDA": 500.0}
-    
-    # Target: AAPL 40% (Drift 20% -> Critical), NVDA 19% (Drift 1% -> None)
-    mock_settings_service.get_target_allocation.return_value = {
-        "AAPL": {"weight": 40.0},
-        "NVDA": {"weight": 19.0}
-    }
-    
-    triggers = await sentinel_service._check_allocation_drift()
+    mock_settings_service.get_setting.return_value = 50.0
+
+    with patch("src.services.portfolio_aggregator_service.PortfolioAggregatorService",
+               side_effect=Exception("mocked")):
+        triggers = await sentinel_service._check_allocation_drift()
+
     assert len(triggers) == 1
     assert "AAPL" in triggers[0]['id']
     assert "NVDA" not in str(triggers)
+

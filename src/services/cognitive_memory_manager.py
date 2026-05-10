@@ -32,13 +32,11 @@ class CognitiveMemoryManager:
             # Fallback to relative if resolving fails in specific environments
             base_dir = Path("data/memory").resolve()
 
-        # 2. Validate user_id — accept only alphanum/underscore/hyphen (1-128 chars).
-        # Using fullmatch so CodeQL recognises this as a taint-clearing validation gate.
+        # 2. Sanitize user_id — strip all chars except alphanum/underscore/hyphen.
+        # strip() approach: keep meaningful parts instead of blanket fallback to 'default'.
+        # This makes '../../../etc/passwd' → 'etcpasswd' and prevents path traversal.
         _raw = str(user_id or "")[:128]
-        if re.fullmatch(r'[a-zA-Z0-9_-]+', _raw):
-            safe_user_id = _raw
-        else:
-            safe_user_id = "default"
+        safe_user_id = re.sub(r'[^a-zA-Z0-9_-]', '', _raw) or "default"
 
         self.user_id = user_id
         self.engine = get_db_engine()

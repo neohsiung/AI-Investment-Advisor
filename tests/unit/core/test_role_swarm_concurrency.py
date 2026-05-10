@@ -22,11 +22,7 @@ class DummyAgent(BaseAgent):
 
 import pytest
 
-@pytest.fixture
-def anyio_backend():
-    return 'asyncio'
-
-@pytest.mark.anyio
+@pytest.mark.asyncio
 async def test_swarm_concurrency():
     swarm = RoleSwarm(name="TestSwarm", user_id="test_user")
     

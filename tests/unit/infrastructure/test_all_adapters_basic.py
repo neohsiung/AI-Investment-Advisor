@@ -34,10 +34,13 @@ async def test_slack_adapter_specifics():
 
 @pytest.mark.anyio
 async def test_telegram_adapter_specifics():
-    with patch.dict('os.environ', {"TELEGRAM_BOT_TOKEN": "fake", "TELEGRAM_CHAT_ID": "t1"}):
-        with patch('httpx.AsyncClient.post') as mock_post:
-            mock_post.return_value = MagicMock(status_code=200, json=lambda: {"ok": True})
-            adapter = TelegramAdapter()
-            result = await adapter.send_alert("user", "Title", "Body")
-            assert result is True
-            assert mock_post.called
+    with patch('httpx.AsyncClient.post', new_callable=AsyncMock) as mock_post:
+        mock_post.return_value = MagicMock(
+            status_code=200,
+            json=MagicMock(return_value={"ok": True})
+        )
+        # Provide credentials via constructor so DB lookup is skipped as fallback
+        adapter = TelegramAdapter(bot_token="fake_token", chat_id="t1")
+        result = await adapter.send_alert("user", "Title", "Body")
+        assert result is True
+        assert mock_post.called

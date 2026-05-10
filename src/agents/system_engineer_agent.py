@@ -38,7 +38,8 @@ class SystemEngineerAgent(BaseAgent):
     Milestone 5.3: Engineer Swarm & Alpha-Seeking
     Autonomous code generation and backtesting for alpha discovery.
     """
-    def __init__(self, user_id: str, prompt_repo: Optional[AlchemyPromptRepository] = None, **kwargs):
+    def __init__(self, user_id: str, prompt_repo: Optional[AlchemyPromptRepository] = None,
+                 settings_repo=None, **kwargs):
         super().__init__(
             name="AlphaEngineer", 
             prompt_path="prompts/common/default_system.j2",
@@ -48,11 +49,37 @@ class SystemEngineerAgent(BaseAgent):
         )
         self.code_gen = CodeGenerator()
         self.backtester = BacktestRunner()
-        self.settings = AlchemySettingsRepository()
+        self.settings = settings_repo if settings_repo is not None else AlchemySettingsRepository()
         self.prompt_repo = prompt_repo or AlchemyPromptRepository()
 
     def analyze_optimization_needs(self, cio_report: str) -> List[Dict[str, Any]]:
-        """Identify optimization targets from CIO reports."""
+        """Identify optimization targets from CIO reports.
+        
+        Handles two formats:
+        1. [HR_REQUEST] Replace Agent: <Name> (Reason: <text>)
+        2. ## System Optimization Feedback <freeform text>
+        """
+        import re
+        results = []
+
+        # 1. HR_REQUEST format — explicit agent replacement requests
+        hr_pattern = re.compile(
+            r'\[HR_REQUEST\].*?Replace Agent:\s*([\w\s]+?)\s*\(Reason:\s*([^)]+)\)',
+            re.IGNORECASE | re.DOTALL
+        )
+        for match in hr_pattern.finditer(cio_report):
+            target = match.group(1).strip()
+            reason = match.group(2).strip()
+            results.append({
+                'target_agent': target,
+                'raw_feedback': reason,
+                'type': 'hr_request'
+            })
+
+        if results:
+            return results
+
+        # 2. Freeform System Optimization Feedback section
         feedback_section = ""
         if "System Optimization Feedback" in cio_report:
             parts = cio_report.split("System Optimization Feedback")
@@ -62,6 +89,17 @@ class SystemEngineerAgent(BaseAgent):
         if not feedback_section or any(x in feedback_section for x in ["無", "None"]):
             return []
         return [{"raw_feedback": feedback_section}]
+
+    def get_schedule_config(self) -> Dict[str, str]:
+        """Read schedule config from settings repository."""
+        rows = self.settings.get_all(self.user_id)  # returns [(key, value), ...]
+        return {key: value for key, value in rows if key.startswith('schedule_')}
+
+    def set_schedule_config(self, daily_time: str, weekly_time: str, enabled: bool = True):
+        """Write schedule config to settings repository."""
+        self.settings.set(self.user_id, 'schedule_daily', daily_time)
+        self.settings.set(self.user_id, 'schedule_weekly', weekly_time)
+        self.settings.set(self.user_id, 'schedule_enabled', str(enabled))
 
     def _read_prompt(self, prompt_path: str) -> str:
         if not os.path.exists(prompt_path):
@@ -135,7 +173,8 @@ class SystemEngineerAgent(BaseAgent):
 
         results = []
         raw_feedback = optimizations[0]['raw_feedback']
-        target_agent = context.get("target_agent_name", "Momentum")
+        # Use target_agent from HR_REQUEST parse, else fall back to context key or default
+        target_agent = optimizations[0].get('target_agent') or context.get("target_agent_name", "Momentum")
         
         # Simplified path resolution
         target_path = f"prompts/{target_agent.lower()}_agent.txt"
@@ -149,12 +188,12 @@ class SystemEngineerAgent(BaseAgent):
             result_json = json.loads(cleaned)
             new_prompt = result_json.get("optimized_prompt", "")
             if new_prompt and new_prompt != original_prompt:
-                diff = "\n".join(difflib.unified_diff(original_prompt.splitlines(), new_prompt.splitlines(), linterm=""))
+                diff = "\n".join(difflib.unified_diff(original_prompt.splitlines(), new_prompt.splitlines(), lineterm=""))
                 self._save_prompt(target_path, new_prompt)
                 self._log_prompt_change(target_agent, raw_feedback, original_prompt, new_prompt, diff)
-                results.append({"target": target_agent, "diff": diff, "status": "Optimized"})
+                results.append({'target_agent': target_agent, "diff": diff, "status": "Optimized"})
             else:
-                results.append({"target": target_agent, "status": "No change needed"})
+                results.append({'target_agent': target_agent, "status": "No change needed"})
         except Exception as e:
             logger.error(f"Prompt optimization failed: {e}")
             results.append({"error": str(e)})

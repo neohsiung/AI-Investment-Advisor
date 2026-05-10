@@ -82,7 +82,7 @@ def test_get_active_notification_channels_full_config(mock_settings_repo):
     
     mock_settings_repo.get.side_effect = [
         "email,telegram,sms,webhook,web", # get_notification_channels
-        "123456",                         # telegram_chat_id
+        "123456",                         # channel_telegram_chat_id (v10.0 priority)
         "+12345",                         # notification_phone
         "http://test.com"                # notification_webhook_url
     ]
@@ -99,7 +99,8 @@ def test_get_active_notification_channels_missing_configs(mock_settings_repo):
     # telegram selected but no chat_id
     mock_settings_repo.get.side_effect = [
         "email,telegram",  # get_notification_channels
-        None               # telegram_chat_id
+        None,              # channel_telegram_chat_id (v10.0 priority check)
+        None               # telegram_chat_id (legacy fallback)
     ]
     
     active = manager.get_active_notification_channels()

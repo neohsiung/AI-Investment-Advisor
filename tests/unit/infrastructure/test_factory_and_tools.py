@@ -56,7 +56,7 @@ async def test_run_tool_loop():
                  patch('src.agents.base_agent.SkillLoader'), \
                  patch('src.repositories.prompt_repository.AlchemyPromptRepository'):
                 
-                agent = MockAgent(name="Test", prompt_path="prompts/cio_weekly.txt", use_cache=False, user_id="test-user")
+                agent = MockAgent(name="Test", prompt_path="prompts/cio_agent.txt", use_cache=False, user_id="test-user")
                 response = await agent.run({"data": "test"})
                 
                 assert "Final Answer" in response

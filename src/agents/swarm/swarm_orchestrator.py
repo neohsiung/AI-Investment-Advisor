@@ -13,5 +13,6 @@ DO NOT add new code here. Use the canonical module instead:
   src/agents/orchestration/swarm_orchestrator.py
 """
 from src.agents.orchestration.swarm_orchestrator import SwarmOrchestrator  # noqa: F401
+from src.repositories.agent_repository import AlchemyAgentRepository  # noqa: F401
 
-__all__ = ["SwarmOrchestrator"]
+__all__ = ["SwarmOrchestrator", "AlchemyAgentRepository"]

@@ -20,11 +20,15 @@ class SwarmOrchestrator:
         self, 
         user_id: str = "system",
         timeout_seconds: int = 120,
-        fusion_strategy: str = "weighted_vote"
+        fusion_strategy: str = "weighted_vote",
+        reward_delta: float = 0.1,
+        penalty_delta: float = -0.1,
     ):
         self.user_id = user_id
         self.timeout_seconds = timeout_seconds
         self.fusion_strategy = fusion_strategy
+        self.reward_delta = reward_delta
+        self.penalty_delta = penalty_delta
         self.agent_repo = AlchemyAgentRepository()
 
     async def run_parallel_tiers(
@@ -219,6 +223,15 @@ class SwarmOrchestrator:
     def aggregate_results(self, results: Dict[str, str], strategy: str = "concat") -> str:
         """Legacy alias for fuse_results."""
         return self.fuse_results({"General": results}, strategy=strategy)
+
+    def run_consensus(self, results: Dict[str, str], weights: Dict[str, float] = None):
+        """Run MajorityVoteStrategy directly and return a VoteResult dataclass.
+        \n        Useful for callers that need structured verdict/confidence rather than a formatted string.
+        """
+        from src.agents.swarm.strategies import MajorityVoteStrategy
+        strategy = MajorityVoteStrategy()
+        return strategy.vote(results, weights=weights)
+
 
     async def map_reduce(
         self, 

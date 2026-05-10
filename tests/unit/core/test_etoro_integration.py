@@ -96,6 +96,7 @@ async def test_execute_order_wraps_risk_logic(service):
     service.get_positions = AsyncMock(return_value=[])
     service._fetch_portfolio_raw = AsyncMock(return_value={}) 
     
+    service.user_id = "test_user"
     order = Order(symbol="AAPL", action=OrderAction.BUY, quantity=100)
     
     res = await real_exec(service, order)
