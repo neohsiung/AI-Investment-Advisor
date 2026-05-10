@@ -65,3 +65,6 @@ scratch/
 repomix-output.xml
 test_otel.py
 backups/
+
+# Local-only project taskboard (gitignored)
+.taskboard/
