@@ -24,7 +24,7 @@ def main():
     args = parser.parse_args()
     
     try:
-        service = EtoroService()
+        service = EtoroService(user_id=args.user_id)
         
         if args.action == "STATUS":
             enabled = service.check_constraints(args.user_id)

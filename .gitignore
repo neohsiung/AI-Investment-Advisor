@@ -1,6 +1,7 @@
-# Environment & Secrets
+# ── Environment & Secrets ────────────────────────────────────────────
 .env
 env.production
+config/production.env
 secrets/
 client_secret.json
 client_secret_*.json
@@ -9,7 +10,7 @@ oauth-client-secret.json
 ai-investment-advisor-*.json
 *.apps.googleusercontent.com.json
 
-# Data & Databases
+# ── Data & Databases ────────────────────────────────────────────────
 *.db
 data/*.db
 data/*.csv
@@ -17,54 +18,59 @@ data/temp_*
 data/etoro_id_cache.json
 !data/.keep
 
-# Logs
+# ── Logs ────────────────────────────────────────────────────────────
 logs/
 *.log
-verification_output*.log
 
-# Python
+# ── Python ──────────────────────────────────────────────────────────
 __pycache__/
 *.py[cod]
 *$py.class
+*.egg-info/
 .pytest_cache/
 .coverage
 .coverage.Mac.*
 htmlcov/
 venv/
+.venv/
 env/
 
-# IDEs & OS
+# ── Build & CI Artifacts ────────────────────────────────────────────
+coverage.xml
+coverage_output*.txt
+
+# ── IDEs & OS ───────────────────────────────────────────────────────
 .vscode/
 .idea/
 .DS_Store
 
-# Docker
+# ── Docker ──────────────────────────────────────────────────────────
 .docker/
 
-# Sub-repositories (Standalone git repos)
+# ── Sub-repositories (standalone git repos) ─────────────────────────
 wiki/
 
-# Personal & Temporary Scripts (Excluded from Git)
+# ── Local-only Directories ──────────────────────────────────────────
+scratch/
+backups/
+Archive/
+docs/
+reports/
+.taskboard/
+
+# ── Local-only Scripts & Temp Files ─────────────────────────────────
 scripts/personal_*
 scripts/tmp_*
 scripts/github_bridge.py
-.agent/workflows/vibe-mobile.md
 *_local.py
 test_conn.py
 debug_*.py
-coverage_output*.txt
 dummy_prompt.txt
-Archive/scripts/inspect_db.py
-Archive/scripts/test_db_conn.py
-
-# n8n templates
+test_otel.py
+monitor_llm_traffic.sh
+repomix-output.xml
 n8n_workflow_template.json
 
-# Scratch / temp analysis scripts
-scratch/
-repomix-output.xml
-test_otel.py
-backups/
-
-# Local-only project taskboard (gitignored)
-.taskboard/
+# ── Agent Tool Configs (local-only) ────────────────────────────────
+.claude/
+.agent/workflows/vibe-mobile.md

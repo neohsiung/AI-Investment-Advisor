@@ -1,1 +1,0 @@
-Mock response from CIO using gemini-1.5-pro. Context received: 660 chars.
