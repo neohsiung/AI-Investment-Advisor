@@ -119,3 +119,33 @@ def distill_memories(user_id: str = None):
     except Exception as e:
         logger.error(f"Memory distillation failed: {e}")
         return f"Error: {str(e)}"
+
+@app.task(name="src.infrastructure.tasks.keyword_refine")
+def keyword_refine(user_id: str = None):
+    """
+    Weekly risk keyword discovery and weight refinement.
+    每週風險關鍵字探索與權重精煉。
+    """
+    user_id = user_id or os.getenv("PRIMARY_USER_ID") or os.getenv("USER_ID")
+    try:
+        from src.services.risk_keyword_service import RiskKeywordService
+        keyword_svc = RiskKeywordService()
+        result = keyword_svc.refine()
+        logger.info(f"keyword_refine completed: {result}")
+        return f"OK: {result}"
+    except Exception as e:
+        logger.error(f"keyword_refine failed: {e}")
+        return f"Error: {str(e)}"
+
+    """
+    Daily cognitive memory distillation.
+    """
+    user_id = user_id or os.getenv("PRIMARY_USER_ID") or os.getenv("USER_ID")
+    try:
+        from src.services.cognitive_memory_manager import CognitiveMemoryManager
+        memory_mgr = CognitiveMemoryManager(user_id=user_id)
+        _run_async_safe(memory_mgr.distill_memories())
+        return "Success"
+    except Exception as e:
+        logger.error(f"Memory distillation failed: {e}")
+        return f"Error: {str(e)}"
