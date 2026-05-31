@@ -821,12 +821,13 @@ class SentinelService:
                     rounded_vix = round(self.current_vix, 1)
 
                     # PAD Phase 2: Call Sentinel agent via gateway
+                    # 使用 smart tier — Sentinel 需要 System 2 推理，不應使用 fast tier
                     context = {
                         "trigger_source": source,
                         "event_data": event_data,
                         "current_vix": rounded_vix
                     }
-                    eval_res_str = await self._call_agent_llm("Sentinel", context, tier="fast")
+                    eval_res_str = await self._call_agent_llm("Sentinel", context, tier="smart")
                     
                     # Parse response
                     try:
