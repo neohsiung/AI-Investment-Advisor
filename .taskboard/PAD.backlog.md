@@ -2,15 +2,15 @@
 
 ### High Priority
 
-- **P0-2: Sentinel LLM Agent 失效 (gemma2 NETWORK_ERROR)**
+- [x] **P0-2: Sentinel LLM Agent 失效 (gemma2 NETWORK_ERROR)**
   - **Priority:** High
   - **Reason:** Current Blocker - AI analysis pipeline is completely down.
 
-- **P1-3: Migrate job_keyword_refine from deprecated SchedulerService to Celery**
+- [x] **P1-3: Migrate job_keyword_refine from deprecated SchedulerService to Celery**
   - **Priority:** High
   - **Reason:** Near-Term Deliverable - Keyword Refine has not been executed for 2+ weeks.
 
-- **P1-4: Migrate job_experience_replay from deprecated SchedulerService to Celery**
+- [x] **P1-4: Migrate job_experience_replay from deprecated SchedulerService to Celery**
   - **Priority:** High
   - **Reason:** Near-Term Deliverable - Experience Replay has not been executed for 2+ weeks.
 

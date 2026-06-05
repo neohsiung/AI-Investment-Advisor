@@ -120,6 +120,24 @@ def distill_memories(user_id: str = None):
         logger.error(f"Memory distillation failed: {e}")
         return f"Error: {str(e)}"
 
+@app.task(name="src.infrastructure.tasks.experience_replay")
+def experience_replay(user_id: str = None):
+    """
+    Weekly Experience Replay optimization to tune Sentinel thresholds based on history.
+    每週經驗復盤：根據歷史警報頻率與績效動態調整 Sentinel 閾值。
+    """
+    user_id = user_id or os.getenv("PRIMARY_USER_ID") or os.getenv("USER_ID")
+    try:
+        from src.services.experience_replay_service import ExperienceReplayService
+        svc = ExperienceReplayService()
+        result = svc.optimize_thresholds(user_id)
+        logger.info(f"experience_replay completed: {result}")
+        return f"OK: {result}"
+    except Exception as e:
+        logger.error(f"experience_replay failed: {e}")
+        return f"Error: {str(e)}"
+
+
 @app.task(name="src.infrastructure.tasks.keyword_refine")
 def keyword_refine(user_id: str = None):
     """

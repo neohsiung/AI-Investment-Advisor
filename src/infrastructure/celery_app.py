@@ -74,6 +74,12 @@ app.conf.beat_schedule = {
         "schedule": crontab(hour=7, minute=0, day_of_week="1"),  # Mon 07:00
         "args": (USER_ID,),
     },
+    # P1-4: experience_replay — 每週日 08:00 執行 (週日盤前復盤)
+    "weekly-experience-replay": {
+        "task": "src.infrastructure.tasks.experience_replay",
+        "schedule": crontab(hour=8, minute=0, day_of_week="0"),  # Sun 08:00
+        "args": (USER_ID,),
+    },
 }
 
 app.conf.timezone = "America/New_York"
