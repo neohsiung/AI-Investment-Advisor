@@ -171,7 +171,7 @@ services:
       - DB_HOST=postgres
       - OTEL_SERVICE_NAME=celery_beat
     healthcheck:
-      test: ["CMD-SHELL", "ps aux | grep '[c]elery .* beat' || exit 1"]
+      test: ["CMD", "python", "-c", "import os; exit(0 if any('celery' in open(f'/proc/{p}/cmdline').read() for p in os.listdir('/proc') if p.isdigit() and os.path.exists(f'/proc/{p}/cmdline')) else 1)"]
       interval: 60s
       timeout: 10s
       retries: 3
@@ -284,6 +284,17 @@ services:
       - advisor-net
     depends_on:
       - mcp_server
+
+  scraper:
+    build:
+      context: .
+      dockerfile: services/scraper/Dockerfile
+    container_name: investment_advisor_scraper
+    restart: unless-stopped
+    environment:
+      - NODE_ENV=development
+    networks:
+      - advisor-net
 
 volumes:
   postgres_data:
