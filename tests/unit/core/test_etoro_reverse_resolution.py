@@ -88,7 +88,7 @@ async def test_execute_order_sell_vti_with_resolved_position(etoro_service):
 
     mock_post_resp = MagicMock()
     mock_post_resp.status_code = 200
-    mock_post_resp.json.return_value = {"OrderId": 555}
+    mock_post_resp.json.return_value = {"orderForOpen": {"statusID": 2, "orderID": 555}}
     mock_post_resp.raise_for_status = MagicMock()  # No-op
 
     # Mock at service method level for robustness across Python versions
@@ -109,7 +109,7 @@ async def test_execute_order_sell_vti_with_resolved_position(etoro_service):
             order = Order(symbol="VTI", quantity=1.0, action=OrderAction.SELL)
             result = await etoro_service.execute_order(order)
 
-            assert result.get("OrderId") == 555
+            assert result.get("order_id") == "555"
 
             # Verify trade execution call
             mock_client.post.assert_called_once()

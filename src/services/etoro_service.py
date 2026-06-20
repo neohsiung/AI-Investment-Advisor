@@ -545,7 +545,7 @@ class EtoroService(IBroker):
                 self.notification_service = NotificationService.create_with_settings(settings_service=settings_svc, user_id=user_id)
             
             title = f"🚀 {'Buy' if order.action == OrderAction.BUY else 'Sell'} 執行成功"
-            content = f"**Ticker:** {order.symbol}\n**Action:** {order.action.value}\n**Order ID:** {result.get('OrderId', 'N/A')}"
+            content = f"**Ticker:** {order.symbol}\n**Action:** {order.action.value}\n**Order ID:** {result.get('order_id', 'N/A')}"
             
             await self.notification_service.notify_all(
                 title=title,
