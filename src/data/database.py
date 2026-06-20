@@ -360,6 +360,7 @@ def init_db(db_path=None, force=False, engine=None):
         report_type TEXT NOT NULL,
         title TEXT NOT NULL,
         content TEXT NOT NULL,
+        summary TEXT,
         embedding {vector_type},
         metadata {json_type} DEFAULT '{{}}',
         created_at {timestamp_type} DEFAULT CURRENT_TIMESTAMP,
@@ -579,6 +580,107 @@ def init_db(db_path=None, force=False, engine=None):
         updated_at {timestamp_type} DEFAULT CURRENT_TIMESTAMP
     );
     """)
+
+    # 18. event_queue table (v2.0 Event Aggregation)
+    schema_commands.append(f"""
+    CREATE TABLE IF NOT EXISTS event_queue (
+        id {pk_type},
+        user_id {fk_type} NOT NULL,
+        event_type TEXT NOT NULL,
+        content {json_type} NOT NULL,
+        tier TEXT NOT NULL,
+        priority INTEGER NOT NULL DEFAULT 0,
+        status TEXT NOT NULL,
+        batch_id TEXT,
+        created_at {timestamp_type} DEFAULT CURRENT_TIMESTAMP,
+        processed_at {timestamp_type}
+    );
+    """)
+
+    # Indexes
+    schema_commands.append("CREATE INDEX IF NOT EXISTS idx_event_queue_user_tier_status ON event_queue(user_id, tier, status);")
+    schema_commands.append("CREATE INDEX IF NOT EXISTS idx_event_queue_created_at ON event_queue(created_at);")
+    schema_commands.append("CREATE INDEX IF NOT EXISTS idx_event_queue_batch_id ON event_queue(batch_id);")
+
+    # 19. llm_providers table
+    schema_commands.append(f"""
+    CREATE TABLE IF NOT EXISTS llm_providers (
+        id {pk_type},
+        user_id {fk_type} NOT NULL,
+        provider_code TEXT NOT NULL,
+        display_name TEXT NOT NULL,
+        base_url TEXT,
+        encrypted_api_key TEXT,
+        enabled INTEGER NOT NULL DEFAULT 1,
+        extra_config {json_type} NOT NULL DEFAULT '{{}}',
+        health_status TEXT,
+        health_detail {json_type},
+        last_checked_at {timestamp_type},
+        created_at {timestamp_type} DEFAULT CURRENT_TIMESTAMP,
+        updated_at {timestamp_type} DEFAULT CURRENT_TIMESTAMP
+    );
+    """)
+
+    # 20. llm_models table
+    schema_commands.append(f"""
+    CREATE TABLE IF NOT EXISTS llm_models (
+        id {pk_type},
+        provider_id {fk_type} NOT NULL,
+        model_code TEXT NOT NULL,
+        display_name TEXT NOT NULL,
+        capability_tool_calling INTEGER NOT NULL DEFAULT 0,
+        capability_vision INTEGER NOT NULL DEFAULT 0,
+        capability_json_mode INTEGER NOT NULL DEFAULT 0,
+        capability_streaming INTEGER NOT NULL DEFAULT 1,
+        capability_embeddings INTEGER NOT NULL DEFAULT 0,
+        context_window INTEGER,
+        input_cost_per_1k {numeric_type},
+        output_cost_per_1k {numeric_type},
+        source TEXT NOT NULL DEFAULT 'manual',
+        raw_discovery {json_type},
+        enabled INTEGER NOT NULL DEFAULT 1,
+        notes TEXT,
+        created_at {timestamp_type} DEFAULT CURRENT_TIMESTAMP,
+        updated_at {timestamp_type} DEFAULT CURRENT_TIMESTAMP
+    );
+    """)
+
+    # 21. llm_tier_bindings table
+    schema_commands.append(f"""
+    CREATE TABLE IF NOT EXISTS llm_tier_bindings (
+        id {pk_type},
+        user_id {fk_type} NOT NULL,
+        tier TEXT NOT NULL,
+        primary_model_id {fk_type} NOT NULL,
+        fallback_model_ids {json_type} NOT NULL DEFAULT '[]',
+        per_candidate_config {json_type} NOT NULL DEFAULT '{{}}',
+        budget_aware INTEGER NOT NULL DEFAULT 1,
+        updated_at {timestamp_type} DEFAULT CURRENT_TIMESTAMP
+    );
+    """)
+
+    # 22. llm_agent_overrides table
+    schema_commands.append(f"""
+    CREATE TABLE IF NOT EXISTS llm_agent_overrides (
+        id {pk_type},
+        user_id {fk_type} NOT NULL,
+        agent_name TEXT NOT NULL,
+        override_tier TEXT,
+        primary_model_id {fk_type},
+        fallback_model_ids {json_type} DEFAULT '[]',
+        forbid_local INTEGER NOT NULL DEFAULT 0,
+        forbid_fallback INTEGER NOT NULL DEFAULT 0,
+        enabled INTEGER NOT NULL DEFAULT 1,
+        notes TEXT,
+        created_at {timestamp_type} DEFAULT CURRENT_TIMESTAMP,
+        updated_at {timestamp_type} DEFAULT CURRENT_TIMESTAMP
+    );
+    """)
+
+    schema_commands.append("CREATE INDEX IF NOT EXISTS ix_llm_providers_user_enabled ON llm_providers(user_id, enabled);")
+    schema_commands.append("CREATE INDEX IF NOT EXISTS ix_llm_models_provider_enabled ON llm_models(provider_id, enabled);")
+    schema_commands.append("CREATE INDEX IF NOT EXISTS ix_llm_tier_bindings_primary_model ON llm_tier_bindings(primary_model_id);")
+    schema_commands.append("CREATE INDEX IF NOT EXISTS ix_llm_agent_overrides_user_id ON llm_agent_overrides(user_id);")
 
     if not is_sqlite:
         schema_commands.append("CREATE INDEX IF NOT EXISTS idx_llm_usage_user_ts ON llm_usage_logs(user_id, timestamp DESC);")

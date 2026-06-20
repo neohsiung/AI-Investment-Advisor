@@ -76,27 +76,27 @@ def upgrade() -> None:
     sa.PrimaryKeyConstraint('id')
     )
     op.create_index(op.f('ix_web_push_subscriptions_user_id'), 'web_push_subscriptions', ['user_id'], unique=False)
-    op.drop_table('rebalance_events')
-    op.drop_table('daily_snapshots_backup')
-    op.drop_index(op.f('idx_trading_exec_status'), table_name='trading_execution_log')
-    op.drop_index(op.f('idx_trading_exec_ticker'), table_name='trading_execution_log')
-    op.drop_index(op.f('idx_trading_exec_user_rebalance'), table_name='trading_execution_log')
-    op.drop_table('trading_execution_log')
-    op.drop_index(op.f('idx_agent_analysis_agent_name'), table_name='agent_analysis_results')
-    op.drop_index(op.f('idx_agent_analysis_user_rebalance'), table_name='agent_analysis_results')
-    op.drop_table('agent_analysis_results')
-    op.drop_table('prompt_history')
-    op.drop_index(op.f('idx_rebalance_eval_user_date'), table_name='rebalance_evaluation')
-    op.drop_table('rebalance_evaluation')
-    op.drop_index(op.f('idx_pred_accuracy_agent'), table_name='agent_prediction_accuracy')
-    op.drop_table('agent_prediction_accuracy')
-    op.drop_index(op.f('idx_sentinel_alerts_user_id'), table_name='sentinel_alerts')
-    op.drop_table('sentinel_alerts')
-    op.drop_table('positions')
-    op.drop_index(op.f('idx_model_perf_user_date'), table_name='model_performance_metrics')
-    op.drop_table('model_performance_metrics')
-    op.drop_table('sentinel_thresholds')
-    op.drop_table('schema_version')
+    op.execute('DROP TABLE IF EXISTS rebalance_events CASCADE')
+    op.execute('DROP TABLE IF EXISTS daily_snapshots_backup CASCADE')
+    op.execute('DROP INDEX IF EXISTS idx_trading_exec_status')
+    op.execute('DROP INDEX IF EXISTS idx_trading_exec_ticker')
+    op.execute('DROP INDEX IF EXISTS idx_trading_exec_user_rebalance')
+    op.execute('DROP TABLE IF EXISTS trading_execution_log CASCADE')
+    op.execute('DROP INDEX IF EXISTS idx_agent_analysis_agent_name')
+    op.execute('DROP INDEX IF EXISTS idx_agent_analysis_user_rebalance')
+    op.execute('DROP TABLE IF EXISTS agent_analysis_results CASCADE')
+    op.execute('DROP TABLE IF EXISTS prompt_history CASCADE')
+    op.execute('DROP INDEX IF EXISTS idx_rebalance_eval_user_date')
+    op.execute('DROP TABLE IF EXISTS rebalance_evaluation CASCADE')
+    op.execute('DROP INDEX IF EXISTS idx_pred_accuracy_agent')
+    op.execute('DROP TABLE IF EXISTS agent_prediction_accuracy CASCADE')
+    op.execute('DROP INDEX IF EXISTS idx_sentinel_alerts_user_id')
+    op.execute('DROP TABLE IF EXISTS sentinel_alerts CASCADE')
+    op.execute('DROP TABLE IF EXISTS positions CASCADE')
+    op.execute('DROP INDEX IF EXISTS idx_model_perf_user_date')
+    op.execute('DROP TABLE IF EXISTS model_performance_metrics CASCADE')
+    op.execute('DROP TABLE IF EXISTS sentinel_thresholds CASCADE')
+    op.execute('DROP TABLE IF EXISTS schema_version CASCADE')
     op.alter_column('agent_feedback', 'id',
                existing_type=sa.TEXT(),
                type_=sa.String(),
@@ -197,9 +197,9 @@ def upgrade() -> None:
                existing_nullable=True,
                existing_server_default=sa.text("'[]'::jsonb"),
                postgresql_using='embedding::text::vector(1536)')
-    op.drop_index(op.f('idx_council_minutes_created_at'), table_name='council_minutes')
-    op.drop_index(op.f('idx_council_minutes_session_id'), table_name='council_minutes')
-    op.drop_index(op.f('idx_council_minutes_user_id'), table_name='council_minutes')
+    op.execute('DROP INDEX IF EXISTS idx_council_minutes_created_at')
+    op.execute('DROP INDEX IF EXISTS idx_council_minutes_session_id')
+    op.execute('DROP INDEX IF EXISTS idx_council_minutes_user_id')
     op.create_index(op.f('ix_council_minutes_session_id'), 'council_minutes', ['session_id'], unique=False)
     op.create_index(op.f('ix_council_minutes_user_id'), 'council_minutes', ['user_id'], unique=False)
     op.create_foreign_key(None, 'council_minutes', 'users', ['user_id'], ['id'], ondelete='CASCADE')
@@ -239,8 +239,8 @@ def upgrade() -> None:
                existing_type=sa.REAL(),
                type_=sa.Numeric(precision=18, scale=8),
                existing_nullable=True)
-    op.drop_index(op.f('idx_daily_snapshots_user_date'), table_name='daily_snapshots')
-    op.drop_index(op.f('idx_daily_snapshots_user_id'), table_name='daily_snapshots')
+    op.execute('DROP INDEX IF EXISTS idx_daily_snapshots_user_date')
+    op.execute('DROP INDEX IF EXISTS idx_daily_snapshots_user_id')
     op.create_foreign_key(None, 'daily_snapshots', 'users', ['user_id'], ['id'], ondelete='CASCADE')
     op.alter_column('event_logs', 'id',
                existing_type=sa.TEXT(),
@@ -323,9 +323,9 @@ def upgrade() -> None:
                existing_type=sa.INTEGER(),
                nullable=True,
                existing_server_default=sa.text('0'))
-    op.drop_index(op.f('idx_job_telemetry_completed_at'), table_name='job_telemetry')
-    op.drop_index(op.f('idx_job_telemetry_job_stage'), table_name='job_telemetry')
-    op.drop_index(op.f('idx_job_telemetry_stage_name'), table_name='job_telemetry')
+    op.execute('DROP INDEX IF EXISTS idx_job_telemetry_completed_at')
+    op.execute('DROP INDEX IF EXISTS idx_job_telemetry_job_stage')
+    op.execute('DROP INDEX IF EXISTS idx_job_telemetry_stage_name')
     op.create_index(op.f('ix_job_telemetry_job_id'), 'job_telemetry', ['job_id'], unique=False)
     op.drop_constraint(op.f('job_telemetry_job_id_fkey'), 'job_telemetry', type_='foreignkey')
     op.create_foreign_key(None, 'job_telemetry', 'report_jobs', ['job_id'], ['id'], ondelete='CASCADE')
@@ -496,10 +496,10 @@ def upgrade() -> None:
                existing_type=postgresql.ARRAY(sa.TEXT()),
                type_=postgresql.ARRAY(sa.String()),
                existing_nullable=True)
-    op.drop_index(op.f('idx_report_jobs_created_at'), table_name='report_jobs')
-    op.drop_index(op.f('idx_report_jobs_priority'), table_name='report_jobs')
-    op.drop_index(op.f('idx_report_jobs_scheduled_date'), table_name='report_jobs')
-    op.drop_index(op.f('idx_report_jobs_user_status'), table_name='report_jobs')
+    op.execute('DROP INDEX IF EXISTS idx_report_jobs_created_at')
+    op.execute('DROP INDEX IF EXISTS idx_report_jobs_priority')
+    op.execute('DROP INDEX IF EXISTS idx_report_jobs_scheduled_date')
+    op.execute('DROP INDEX IF EXISTS idx_report_jobs_user_status')
     op.create_index(op.f('ix_report_jobs_user_id'), 'report_jobs', ['user_id'], unique=False)
     op.drop_constraint(op.f('report_jobs_report_id_fkey'), 'report_jobs', type_='foreignkey')
     op.create_foreign_key(None, 'report_jobs', 'users', ['user_id'], ['id'], ondelete='CASCADE')
@@ -529,8 +529,8 @@ def upgrade() -> None:
                existing_type=postgresql.TIMESTAMP(),
                type_=sa.DateTime(timezone=True),
                existing_nullable=True)
-    op.drop_index(op.f('idx_reports_generation_model'), table_name='reports')
-    op.drop_index(op.f('idx_reports_job_id'), table_name='reports')
+    op.execute('DROP INDEX IF EXISTS idx_reports_generation_model')
+    op.execute('DROP INDEX IF EXISTS idx_reports_job_id')
     op.create_index(op.f('ix_reports_job_id'), 'reports', ['job_id'], unique=False)
     op.create_index(op.f('ix_reports_user_id'), 'reports', ['user_id'], unique=False)
     op.drop_constraint(op.f('fk_reports_job_id'), 'reports', type_='foreignkey')
@@ -659,7 +659,7 @@ def upgrade() -> None:
                type_=sa.JSON().with_variant(postgresql.JSONB(astext_type=sa.Text()), 'postgresql'),
                existing_nullable=True,
                postgresql_using="CASE WHEN raw_data ~ '^\\s*[{\\[]' THEN raw_data::jsonb ELSE to_jsonb(raw_data) END")
-    op.drop_index(op.f('idx_transactions_user_date'), table_name='transactions')
+    op.execute('DROP INDEX IF EXISTS idx_transactions_user_date')
     op.create_index(op.f('ix_transactions_ticker'), 'transactions', ['ticker'], unique=False)
     op.create_index(op.f('ix_transactions_trade_date'), 'transactions', ['trade_date'], unique=False)
     op.create_index(op.f('ix_transactions_user_id'), 'transactions', ['user_id'], unique=False)
@@ -680,7 +680,7 @@ def upgrade() -> None:
                existing_type=sa.TEXT(),
                type_=sa.String(),
                existing_nullable=False)
-    op.drop_index(op.f('idx_user_identities_user_id'), table_name='user_identities')
+    op.execute('DROP INDEX IF EXISTS idx_user_identities_user_id')
     op.alter_column('users', 'id',
                existing_type=sa.TEXT(),
                type_=sa.String(),
@@ -697,7 +697,7 @@ def upgrade() -> None:
                existing_type=sa.TEXT(),
                type_=sa.String(),
                existing_nullable=True)
-    op.drop_index(op.f('idx_users_email'), table_name='users')
+    op.execute('DROP INDEX IF EXISTS idx_users_email')
     op.create_index(op.f('ix_users_subscription_id'), 'users', ['subscription_id'], unique=False)
     op.create_foreign_key(None, 'users', 'subscription_plans', ['subscription_id'], ['id'], ondelete='SET NULL')
     # ### end Alembic commands ###
@@ -707,7 +707,7 @@ def downgrade() -> None:
     """Downgrade schema."""
     # ### commands auto generated by Alembic - please adjust! ###
     op.drop_constraint(None, 'users', type_='foreignkey')
-    op.drop_index(op.f('ix_users_subscription_id'), table_name='users')
+    op.execute('DROP INDEX IF EXISTS ix_users_subscription_id')
     op.create_index(op.f('idx_users_email'), 'users', ['email'], unique=False)
     op.alter_column('users', 'subscription_id',
                existing_type=sa.String(),
@@ -743,9 +743,9 @@ def downgrade() -> None:
                type_=sa.TEXT(),
                existing_nullable=False)
     op.drop_constraint(None, 'transactions', type_='foreignkey')
-    op.drop_index(op.f('ix_transactions_user_id'), table_name='transactions')
-    op.drop_index(op.f('ix_transactions_trade_date'), table_name='transactions')
-    op.drop_index(op.f('ix_transactions_ticker'), table_name='transactions')
+    op.execute('DROP INDEX IF EXISTS ix_transactions_user_id')
+    op.execute('DROP INDEX IF EXISTS ix_transactions_trade_date')
+    op.execute('DROP INDEX IF EXISTS ix_transactions_ticker')
     op.create_index(op.f('idx_transactions_user_date'), 'transactions', ['user_id', sa.literal_column('trade_date DESC')], unique=False)
     op.alter_column('transactions', 'raw_data',
                existing_type=sa.JSON().with_variant(postgresql.JSONB(astext_type=sa.Text()), 'postgresql'),
@@ -869,8 +869,8 @@ def downgrade() -> None:
     op.drop_constraint(None, 'reports', type_='foreignkey')
     op.drop_constraint(None, 'reports', type_='foreignkey')
     op.create_foreign_key(op.f('fk_reports_job_id'), 'reports', 'report_jobs', ['job_id'], ['id'])
-    op.drop_index(op.f('ix_reports_user_id'), table_name='reports')
-    op.drop_index(op.f('ix_reports_job_id'), table_name='reports')
+    op.execute('DROP INDEX IF EXISTS ix_reports_user_id')
+    op.execute('DROP INDEX IF EXISTS ix_reports_job_id')
     op.create_index(op.f('idx_reports_job_id'), 'reports', ['job_id'], unique=False)
     op.create_index(op.f('idx_reports_generation_model'), 'reports', ['generation_model'], unique=False)
     op.alter_column('reports', 'published_at',
@@ -901,7 +901,7 @@ def downgrade() -> None:
     op.drop_column('reports', 'user_id')
     op.drop_constraint(None, 'report_jobs', type_='foreignkey')
     op.create_foreign_key(op.f('report_jobs_report_id_fkey'), 'report_jobs', 'reports', ['report_id'], ['id'])
-    op.drop_index(op.f('ix_report_jobs_user_id'), table_name='report_jobs')
+    op.execute('DROP INDEX IF EXISTS ix_report_jobs_user_id')
     op.create_index(op.f('idx_report_jobs_user_status'), 'report_jobs', ['user_id', 'status'], unique=False)
     op.create_index(op.f('idx_report_jobs_scheduled_date'), 'report_jobs', ['scheduled_date'], unique=False)
     op.create_index(op.f('idx_report_jobs_priority'), 'report_jobs', ['priority', 'created_at'], unique=False)
@@ -948,7 +948,7 @@ def downgrade() -> None:
                existing_nullable=False)
     op.add_column('recommendations', sa.Column('outcome_score', sa.INTEGER(), server_default=sa.text('0'), autoincrement=False, nullable=True))
     op.drop_constraint(None, 'recommendations', type_='foreignkey')
-    op.drop_index(op.f('ix_recommendations_user_id'), table_name='recommendations')
+    op.execute('DROP INDEX IF EXISTS ix_recommendations_user_id')
     op.alter_column('recommendations', 'price_at_signal',
                existing_type=sa.Numeric(precision=18, scale=8),
                type_=sa.REAL(),
@@ -1000,7 +1000,7 @@ def downgrade() -> None:
                type_=sa.TEXT(),
                existing_nullable=False,
                existing_server_default=sa.text('(gen_random_uuid())::text'))
-    op.drop_index(op.f('ix_portfolio_snapshots_user_id'), table_name='portfolio_snapshots')
+    op.execute('DROP INDEX IF EXISTS ix_portfolio_snapshots_user_id')
     op.alter_column('portfolio_snapshots', 'created_at',
                existing_type=sa.DateTime(timezone=True),
                type_=postgresql.TIMESTAMP(),
@@ -1025,7 +1025,7 @@ def downgrade() -> None:
     op.alter_column('portfolio_snapshots', 'user_id',
                existing_type=sa.VARCHAR(length=255),
                nullable=False)
-    op.drop_index(op.f('ix_memory_embeddings_user_id'), table_name='memory_embeddings')
+    op.execute('DROP INDEX IF EXISTS ix_memory_embeddings_user_id')
     op.alter_column('memory_embeddings', 'embedding_model',
                existing_type=sa.String(),
                type_=sa.TEXT(),
@@ -1040,8 +1040,8 @@ def downgrade() -> None:
                type_=sa.TEXT(),
                existing_nullable=False)
     op.drop_constraint(None, 'llm_usage_logs', type_='foreignkey')
-    op.drop_index(op.f('ix_llm_usage_logs_user_id'), table_name='llm_usage_logs')
-    op.drop_index(op.f('ix_llm_usage_logs_agent_name'), table_name='llm_usage_logs')
+    op.execute('DROP INDEX IF EXISTS ix_llm_usage_logs_user_id')
+    op.execute('DROP INDEX IF EXISTS ix_llm_usage_logs_agent_name')
     op.alter_column('llm_usage_logs', 'metadata',
                existing_type=sa.JSON(),
                type_=postgresql.JSONB(astext_type=sa.Text()),
@@ -1074,7 +1074,7 @@ def downgrade() -> None:
                existing_server_default=sa.text('(gen_random_uuid())::text'))
     op.drop_constraint(None, 'job_telemetry', type_='foreignkey')
     op.create_foreign_key(op.f('job_telemetry_job_id_fkey'), 'job_telemetry', 'report_jobs', ['job_id'], ['id'])
-    op.drop_index(op.f('ix_job_telemetry_job_id'), table_name='job_telemetry')
+    op.execute('DROP INDEX IF EXISTS ix_job_telemetry_job_id')
     op.create_index(op.f('idx_job_telemetry_stage_name'), 'job_telemetry', ['stage_name'], unique=False)
     op.create_index(op.f('idx_job_telemetry_job_stage'), 'job_telemetry', ['job_id', 'stage'], unique=False)
     op.create_index(op.f('idx_job_telemetry_completed_at'), 'job_telemetry', ['completed_at'], unique=False)
@@ -1198,8 +1198,8 @@ def downgrade() -> None:
     op.drop_column('daily_snapshots', 'total_tnv')
     op.add_column('council_minutes', sa.Column('updated_at', postgresql.TIMESTAMP(timezone=True), server_default=sa.text('CURRENT_TIMESTAMP'), autoincrement=False, nullable=True))
     op.drop_constraint(None, 'council_minutes', type_='foreignkey')
-    op.drop_index(op.f('ix_council_minutes_user_id'), table_name='council_minutes')
-    op.drop_index(op.f('ix_council_minutes_session_id'), table_name='council_minutes')
+    op.execute('DROP INDEX IF EXISTS ix_council_minutes_user_id')
+    op.execute('DROP INDEX IF EXISTS ix_council_minutes_session_id')
     op.create_index(op.f('idx_council_minutes_user_id'), 'council_minutes', ['user_id'], unique=False)
     op.create_index(op.f('idx_council_minutes_session_id'), 'council_minutes', ['session_id'], unique=False)
     op.create_index(op.f('idx_council_minutes_created_at'), 'council_minutes', [sa.literal_column('created_at DESC')], unique=False)
@@ -1250,7 +1250,7 @@ def downgrade() -> None:
                type_=sa.TEXT(),
                existing_nullable=False)
     op.drop_constraint(None, 'cash_flows', type_='foreignkey')
-    op.drop_index(op.f('ix_cash_flows_user_id'), table_name='cash_flows')
+    op.execute('DROP INDEX IF EXISTS ix_cash_flows_user_id')
     op.alter_column('cash_flows', 'description',
                existing_type=sa.String(),
                type_=sa.TEXT(),
@@ -1488,15 +1488,15 @@ def downgrade() -> None:
     sa.Column('executed_at', postgresql.TIMESTAMP(), autoincrement=False, nullable=True),
     sa.PrimaryKeyConstraint('id', name=op.f('rebalance_events_pkey'))
     )
-    op.drop_index(op.f('ix_web_push_subscriptions_user_id'), table_name='web_push_subscriptions')
-    op.drop_table('web_push_subscriptions')
-    op.drop_index(op.f('ix_response_feedback_user_id'), table_name='response_feedback')
-    op.drop_index(op.f('ix_response_feedback_prompt_hash'), table_name='response_feedback')
-    op.drop_table('response_feedback')
-    op.drop_index(op.f('ix_prompt_cache_user_id'), table_name='prompt_cache')
-    op.drop_index(op.f('ix_prompt_cache_prompt_hash'), table_name='prompt_cache')
-    op.drop_table('prompt_cache')
-    op.drop_index(op.f('ix_cognitive_memories_user_id'), table_name='cognitive_memories')
-    op.drop_index('idx_cog_mem_user_type', table_name='cognitive_memories')
-    op.drop_table('cognitive_memories')
+    op.execute('DROP INDEX IF EXISTS ix_web_push_subscriptions_user_id')
+    op.execute('DROP TABLE IF EXISTS web_push_subscriptions CASCADE')
+    op.execute('DROP INDEX IF EXISTS ix_response_feedback_user_id')
+    op.execute('DROP INDEX IF EXISTS ix_response_feedback_prompt_hash')
+    op.execute('DROP TABLE IF EXISTS response_feedback CASCADE')
+    op.execute('DROP INDEX IF EXISTS ix_prompt_cache_user_id')
+    op.execute('DROP INDEX IF EXISTS ix_prompt_cache_prompt_hash')
+    op.execute('DROP TABLE IF EXISTS prompt_cache CASCADE')
+    op.execute('DROP INDEX IF EXISTS ix_cognitive_memories_user_id')
+    op.execute('DROP INDEX IF EXISTS idx_cog_mem_user_type')
+    op.execute('DROP TABLE IF EXISTS cognitive_memories CASCADE')
     # ### end Alembic commands ###
