@@ -1179,7 +1179,7 @@ class EtoroService(IBroker):
             host = parsed_url.hostname or ""
             port = parsed_url.port or 80
             
-            is_loopback = host in ("localhost", "127.0.0.1", "0.0.0.0")
+            is_loopback = host in ("localhost", "127.0.0.1", "0.0.0.0")  # nosec B104
             is_same_port = port == 8000 or (os.getenv("PORT") and port == int(os.getenv("PORT")))
             
             if is_loopback and is_same_port:

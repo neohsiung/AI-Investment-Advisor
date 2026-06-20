@@ -48,7 +48,7 @@ services:
     container_name: advisor_prod_ui
     restart: always
     ports:
-      - "3000:3000"
+      - "3001:3000"
     environment:
       - NODE_ENV=production
       - NEXT_PUBLIC_API_URL=http://localhost:8000

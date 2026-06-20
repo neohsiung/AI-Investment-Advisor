@@ -57,7 +57,7 @@ services:
         - BACKEND_URL=http://mcp_server:8000
     container_name: investment_advisor_frontend
     ports:
-      - "3000:3000"
+      - "3001:3000"
     environment:
       - NODE_ENV=production
       - NEXT_TELEMETRY_DISABLED=1
