@@ -59,3 +59,29 @@ async def test_fetch_portfolio_uses_headers():
         headers = service._get_headers()
         assert headers["x-api-key"] == "key1"
         assert headers["x-user-key"] == "user1"
+
+
+@pytest.mark.asyncio
+async def test_etoro_loopback_deadlock_check():
+    """
+    Verify loopback deadlock check behavior.
+    驗證 loopback 死鎖檢查行為。
+    """
+    from src.api.v1.exceptions import BrokerNotConfiguredError
+    from unittest.mock import AsyncMock
+    
+    # 1. Test localhost on port 8000 (same as running port) - should raise BrokerNotConfiguredError
+    # 1. 測試連接埠 8000 的 localhost（與運行連接埠相同）- 應引發 BrokerNotConfiguredError
+    service = EtoroService(base_url="http://localhost:8000")
+    with pytest.raises(BrokerNotConfiguredError):
+        await service._fetch_portfolio_raw()
+        
+    # 2. Test localhost on port 8080 (different port) - should NOT raise BrokerNotConfiguredError, but attempt HTTP call
+    # 2. 測試連接埠 8080 的 localhost（不同連接埠）- 不應引發 BrokerNotConfiguredError，而是嘗試 HTTP 呼叫
+    service2 = EtoroService(base_url="http://localhost:8080")
+    with patch("httpx.AsyncClient.get", new_callable=AsyncMock) as mock_get:
+        mock_get.return_value = MagicMock(status_code=200, json=lambda: {"ok": True})
+        # Note: _fetch_portfolio_raw returns the JSON response or dict
+        # 註：_fetch_portfolio_raw 回傳 JSON 回應或字典
+        res = await service2._fetch_portfolio_raw()
+        assert res == {"ok": True}
