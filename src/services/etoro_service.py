@@ -43,8 +43,17 @@ class EtoroService(IBroker):
         self.user_key = user_key
         self.user_id = user_id
         
-        # If not provided, try to load from database
-        if (not self.api_key or not self.user_key) and user_id:
+        # Initialize cipher before loading credentials (needed for decryption)
+        # 在載入憑證前初始化密碼器（解密所需）
+        self.cipher = LLMCredentialCipher()
+        
+        # Initialize base_url from argument
+        # 從引數初始化 base_url
+        self.base_url = base_url
+
+        # If user_id is provided, load settings from database
+        # 若提供 user_id，則自資料庫載入設定
+        if user_id:
             self._load_credentials_from_db(user_id)
         
         # Fallback to environment variables
@@ -61,7 +70,7 @@ class EtoroService(IBroker):
             default_base = "http://localhost:8000"
             logger.warning(f"No eToro API credentials found, using local bridge at {default_base}")
         
-        self.base_url = base_url or os.getenv("ETORO_API_BASE_URL", default_base)
+        self.base_url = self.base_url or os.getenv("ETORO_API_BASE_URL", default_base)
         self.notification_service = None
         
         # Normalize mode: 'live' -> 'real' per BrokerFactory requirements
@@ -72,7 +81,6 @@ class EtoroService(IBroker):
         self._id_to_symbol = {} # Reverse map: ID -> Ticker
         self.cache_path = "data/etoro_id_cache.json"
         self._load_id_cache()
-        self.cipher = LLMCredentialCipher()
         
         # [FIX Issue #4] Timestamp tracking for account data freshness
         self.last_fetched_at = None  # Track when account data was last fetched
@@ -88,8 +96,10 @@ class EtoroService(IBroker):
             import json
             
             conn = get_db_connection()
+            # Query credentials and base URL keys
+            # 查詢憑證與 API 基底網址鍵值
             result = conn.execute(text(
-                "SELECT key, value FROM settings WHERE user_id = :uid AND key IN ('etoro_api_key', 'etoro_user_key')"
+                "SELECT key, value FROM settings WHERE user_id = :uid AND key IN ('etoro_api_key', 'etoro_user_key', 'etoro_api_base_url', 'etoro_base_url')"
             ), {'uid': user_id}).fetchall()
             
             for row in result:
@@ -108,11 +118,17 @@ class EtoroService(IBroker):
                     parsed_value = self.cipher.decrypt(parsed_value)
 
                 if key == 'etoro_api_key':
-                    self.api_key = parsed_value
-                    logger.info(f"✓ Loaded and decrypted eToro API key from database")
+                    if not self.api_key:
+                        self.api_key = parsed_value
+                        logger.info(f"✓ Loaded and decrypted eToro API key from database")
                 elif key == 'etoro_user_key':
-                    self.user_key = parsed_value
-                    logger.info(f"✓ Loaded and decrypted eToro user key from database")
+                    if not self.user_key:
+                        self.user_key = parsed_value
+                        logger.info(f"✓ Loaded and decrypted eToro user key from database")
+                elif key in ('etoro_api_base_url', 'etoro_base_url'):
+                    if not self.base_url:
+                        self.base_url = parsed_value
+                        logger.info(f"✓ Loaded eToro base URL from database: {parsed_value}")
             
             conn.close()
         except Exception as e:
@@ -474,10 +490,39 @@ class EtoroService(IBroker):
                  response.raise_for_status()
                  result = response.json()
              
-             # v5.6: Send real-time notification for automated trade
-             await self._notify_trade(order, result)
+             # v7.2: Check actual order execution status from eToro API
+             # v7.2: 檢查 eToro API 中的實際訂單執行狀態
+             # statusID: 1=Pending, 2=Executed, 3+=Other
+             # 狀態ID: 1=處理中, 2=已執行, 3+=其他
+             order_info = result.get('orderForOpen', {})
+             order_status_id = order_info.get('statusID', 0)
+             order_id = order_info.get('orderID', 'N/A')
              
-             return result
+             if order_status_id == 2:
+                 # Fully executed
+                 # 已完全執行
+                 execution_status = "executed"
+                 logger.info(f"ETORO EXEC: Order {order_id} fully executed.")
+             elif order_status_id == 1:
+                 # Placed but pending — eToro will execute asynchronously
+                 # 已下單但仍在處理中 — eToro 將會非同步執行
+                 execution_status = "pending"
+                 logger.warning(f"ETORO EXEC: Order {order_id} placed (statusID=1, pending). Cash not yet deducted.")
+             else:
+                 execution_status = "unknown"
+                 logger.warning(f"ETORO EXEC: Order {order_id} has statusID={order_status_id}")
+             
+             return {
+                 "status": "success",
+                 "execution_status": execution_status,
+                 "order_id": str(order_id),
+                 "order_status_id": order_status_id,
+                 "token": result.get('token', ''),
+                 "symbol": order.symbol,
+                 "action": order.action.value,
+                 "amount": order.amount_usd or order.quantity,
+                 "raw_response": result,
+             }
         except Exception as e:
              logger.error(f"Etoro Exec Failed: {e}")
              return {"status": "error", "error": str(e)}
@@ -1127,10 +1172,19 @@ class EtoroService(IBroker):
         try:
             url = f"{self.base_url}{endpoint}"
             
-            # [CRITICAL] Prevent infinite recursion deadlock
-            if "localhost" in url or "127.0.0.1" in url:
-                logger.warning(f"Blocking potential deadlock: eToro service is not configured and points to localhost ({url})")
-                raise BrokerNotConfiguredError("eToro API base URL points to localhost, suggesting missing configuration.")
+            # [CRITICAL] Prevent loopback recursion deadlock on the same port
+            # [重要] 避免在相同連接埠上發生 loopback 遞迴死鎖
+            from urllib.parse import urlparse
+            parsed_url = urlparse(url)
+            host = parsed_url.hostname or ""
+            port = parsed_url.port or 80
+            
+            is_loopback = host in ("localhost", "127.0.0.1", "0.0.0.0")
+            is_same_port = port == 8000 or (os.getenv("PORT") and port == int(os.getenv("PORT")))
+            
+            if is_loopback and is_same_port:
+                logger.warning(f"Blocking potential deadlock: eToro service points to ourselves ({url})")
+                raise BrokerNotConfiguredError("eToro API base URL points to the main service itself, causing a deadlock.")
 
             logger.info(f"Fetching portfolio from: {url}")
             async with httpx.AsyncClient() as client:

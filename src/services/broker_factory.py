@@ -44,7 +44,10 @@ class BrokerFactory:
             api_key = settings_repo.get(user_id, "etoro_api_key")
             user_key = settings_repo.get(user_id, "etoro_user_key")
             mode = settings_repo.get(user_id, "etoro_mode") or "real"
-            instance = EtoroService(mode=mode, api_key=api_key, user_key=user_key, user_id=user_id)
+            # Load tenant-specific base URL from database
+            # 從資料庫載入租戶專屬的 API 基底網址
+            base_url = settings_repo.get(user_id, "etoro_api_base_url") or settings_repo.get(user_id, "etoro_base_url")
+            instance = EtoroService(base_url=base_url, mode=mode, api_key=api_key, user_key=user_key, user_id=user_id)
             
         else:
             logger.warning(f"Unknown broker type '{broker_type}', defaulting to Etoro")
