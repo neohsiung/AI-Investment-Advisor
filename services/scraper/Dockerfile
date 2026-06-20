@@ -24,8 +24,8 @@ RUN apt-get update && apt-get install -y \
 COPY requirements.txt ./
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Pre-download Chromium for pyppeteer by running a dummy render
-RUN python -c "from requests_html import HTMLSession; session = HTMLSession(); r = session.get('https://example.com'); r.html.render(timeout=20); session.close()"
+# Pre-download Chromium for pyppeteer (download only — no launch during build)
+RUN python -c "import pyppeteer; pyppeteer.chromium_downloader.download_chromium()"
 
 COPY app.py ./
 

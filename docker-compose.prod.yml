@@ -291,8 +291,8 @@ services:
   # 10. Lightweight Web Scraper Service
   scraper:
     build:
-      context: .
-      dockerfile: services/scraper/Dockerfile
+      context: ./services/scraper
+      dockerfile: Dockerfile
     container_name: advisor_prod_scraper
     restart: always
     environment:

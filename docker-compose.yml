@@ -287,8 +287,8 @@ services:
 
   scraper:
     build:
-      context: .
-      dockerfile: services/scraper/Dockerfile
+      context: ./services/scraper
+      dockerfile: Dockerfile
     container_name: investment_advisor_scraper
     restart: unless-stopped
     environment:

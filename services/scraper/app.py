@@ -29,7 +29,7 @@ async def scrape_url_async(url: str, max_length: int = 2000) -> dict:
 
 def scrape_url_sync(url: str, max_length: int = 2000) -> dict:
     """Sync wrapper for scraping"""
-    session = HTMLSession()
+    session = HTMLSession(browser_args=['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage'])
     try:
         response = session.get(url, timeout=30)
         response.html.render(timeout=20)  # Render JS
