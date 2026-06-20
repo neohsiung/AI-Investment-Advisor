@@ -455,7 +455,7 @@ async def set_capital_flow(
         raise
     except Exception as e:
         logger.error(f"Error setting capital flow: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="Failed to set capital flow")
 
 
 
@@ -581,7 +581,7 @@ async def advisor_chat_stream(
                 yield "data: [DONE]\n\n"
             except Exception as e:
                 logger.error(f"Streaming error in generator: {e}")
-                yield f"data: {json.dumps({'error': str(e)})}\n\n"
+                yield f"data: {json.dumps({'error': 'Live assistance stream interrupted'})}\n\n"
 
         return StreamingResponse(event_generator(), media_type="text/event-stream")
 

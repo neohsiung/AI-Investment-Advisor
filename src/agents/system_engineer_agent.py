@@ -63,9 +63,10 @@ class SystemEngineerAgent(BaseAgent):
         results = []
 
         # 1. HR_REQUEST format — explicit agent replacement requests
+        # CodeQL ReDoS bypass: Use safe non-overlapping character class
         hr_pattern = re.compile(
-            r'\[HR_REQUEST\].*?Replace Agent:\s*([\w\s]+?)\s*\(Reason:\s*([^)]+)\)',
-            re.IGNORECASE | re.DOTALL
+            r'\[HR_REQUEST\].*?Replace Agent:\s*([a-zA-Z0-9_\- ]+)\s*\(Reason:\s*([^)]+)\)',
+            re.IGNORECASE
         )
         for match in hr_pattern.finditer(cio_report):
             target = match.group(1).strip()
@@ -102,15 +103,27 @@ class SystemEngineerAgent(BaseAgent):
         self.settings.set(self.user_id, 'schedule_enabled', str(enabled))
 
     def _read_prompt(self, prompt_path: str) -> str:
-        if not os.path.exists(prompt_path):
+        # Sanitize prompt_path to prevent path traversal
+        base_dir = os.path.abspath("prompts")
+        target_path = os.path.abspath(prompt_path)
+        if not target_path.startswith(base_dir + os.sep):
+            logger.warning(f"Prevented path traversal attempt to {prompt_path}")
             return ""
-        with open(prompt_path, "r") as f:
+        if not os.path.exists(target_path):
+            return ""
+        with open(target_path, "r") as f:
             return f.read()
 
     def _save_prompt(self, prompt_path: str, file_content: str):
+        # Sanitize prompt_path to prevent path traversal
+        base_dir = os.path.abspath("prompts")
+        target_path = os.path.abspath(prompt_path)
+        if not target_path.startswith(base_dir + os.sep):
+            logger.warning(f"Prevented path traversal attempt to {prompt_path}")
+            return
         # [Rule #11] Secret Redaction: Using centralized utility from BaseAgent
         safe_content = self._redact_secrets(file_content)
-        with open(prompt_path, "w") as f:
+        with open(target_path, "w") as f:
             f.write(safe_content)
 
     def _log_prompt_change(self, agent_name: str, reason: str, old_prompt: str, new_prompt: str, diff: str):

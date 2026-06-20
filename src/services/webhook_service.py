@@ -268,7 +268,7 @@ async def get_rss_sources_list():
         return sources
     except Exception as e:
         logger.error(f"Error getting RSS sources: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="Failed to retrieve RSS sources")
 
 @webhook_router.get("/heartbeat")
 @webhook_router.post("/heartbeat")

@@ -112,7 +112,8 @@ class TransactionService:
 
             return True, f"Transaction {transaction_id} deleted."
         except Exception as e:
-            return False, f"Failed to delete transaction: {e}"
+            logger.error(f"Error deleting transaction: {e}", exc_info=True)
+            return False, "交易刪除失敗，該交易可能不存在或權限不足。"
 
     def get_active_positions(self, user_id: str = None) -> List[Dict]:
         """獲取活躍持倉列表，包含成本價與市場價值 (fallback)"""

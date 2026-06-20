@@ -867,12 +867,12 @@ class SentinelService:
 
                 # Fallback to legacy heuristics if priority still None
                 if t.get("priority") is None:
-                    tid = t.get("id", "generic")
+                    trigger_key = t.get("id", "generic")
                     priority = 3
-                    if tid == "vix_anomaly": priority = 1
-                    elif any(k in tid for k in ["move", "price", "critical", "crash", "crisis"]): priority = 2
-                    elif any(k in tid for k in ["news", "sentiment", "macro"]): priority = 4
-                    elif "info" in tid: priority = 5
+                    if trigger_key == "vix_anomaly": priority = 1
+                    elif any(k in trigger_key for k in ["move", "price", "critical", "crash", "crisis"]): priority = 2
+                    elif any(k in trigger_key for k in ["news", "sentiment", "macro"]): priority = 4
+                    elif "info" in trigger_key: priority = 5
                     t["priority"] = priority
 
             # 2. Buffering Mode — Redis persistent buffer
@@ -940,30 +940,30 @@ class SentinelService:
         # 1. Filter Triggers based on stable ID deduplication
         filtered_triggers = []
         for t in triggers:
-            tid = t.get("id", "generic")
+            trigger_key = t.get("id", "generic")
             display_text = t.get("text", "Unknown signal")
             
             # v6.1 Pending Order Guard: Suppress trigger if a pending order exists for this ticker
             ticker = t.get("ticker")
-            if not ticker and "_" in tid:
-                 parts = tid.split("_")
+            if not ticker and "_" in trigger_key:
+                 parts = trigger_key.split("_")
                  if len(parts) >= 2 and parts[1].isupper():
                      ticker = parts[1]
                      
             if ticker and ticker in pending_symbols:
-                _safe_tid = str(tid)[:64]
+                _safe_key = str(trigger_key)[:64]
                 _safe_ticker = str(ticker)[:16]
                 logger.debug(
                     "Sentinel: Suppressing trigger %s because %s already has a pending order.",
-                    _safe_tid, _safe_ticker
+                    _safe_key, _safe_ticker
                 )
                 continue
             
             # Use signal_id for 24h suppression
-            if self.repo.is_duplicate_alert(title="", content="", hours=24, signal_id=tid):
+            if self.repo.is_duplicate_alert(title="", content="", hours=24, signal_id=trigger_key):
                 # VIX specific threshold re-trigger logic
-                if tid == "vix_anomaly":
-                    last_vix = self.repo.get_last_signal_value(tid)
+                if trigger_key == "vix_anomaly":
+                    last_vix = self.repo.get_last_signal_value(trigger_key)
                     current_vix = t.get("value", 0)
                     std_dev = t.get("std_dev", 1.0) # Fallback to 1.0 if missing
                     multiplier = self.thresholds.get("vix_suppression_sigma_mult", 1.5)

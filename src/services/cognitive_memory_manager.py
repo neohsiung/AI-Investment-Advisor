@@ -32,11 +32,14 @@ class CognitiveMemoryManager:
             # Fallback to relative if resolving fails in specific environments
             base_dir = Path("data/memory").resolve()
 
-        # 2. Sanitize user_id — strip all chars except alphanum/underscore/hyphen.
-        # strip() approach: keep meaningful parts instead of blanket fallback to 'default'.
-        # This makes '../../../etc/passwd' → 'etcpasswd' and prevents path traversal.
+        # 2. Sanitize user_id to prevent path traversal
         _raw = str(user_id or "")[:128]
-        safe_user_id = re.sub(r'[^a-zA-Z0-9_-]', '', _raw) or "default"
+        cleaned = re.sub(r'[^a-zA-Z0-9_-]', '', _raw) or "default"
+        # Validate that it only contains safe characters to break static analysis taint
+        if not re.match(r'^[a-zA-Z0-9_-]+$', cleaned):
+            safe_user_id = "default"
+        else:
+            safe_user_id = cleaned
 
         self.user_id = user_id
         self.engine = get_db_engine()

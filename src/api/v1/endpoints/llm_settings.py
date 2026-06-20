@@ -170,7 +170,7 @@ async def create_provider(
         raise _bad_request(exc)
     except Exception as exc:
         logger.error("create_provider error: %s", exc)
-        raise HTTPException(status_code=500, detail=str(exc))
+        raise HTTPException(status_code=500, detail="Failed to create provider")
     return {"status": "success", "data": data}
 
 
@@ -186,7 +186,7 @@ async def update_provider(
         raise _not_found(exc)
     except Exception as exc:
         logger.error("update_provider error: %s", exc)
-        raise HTTPException(status_code=500, detail=str(exc))
+        raise HTTPException(status_code=500, detail="Failed to update provider")
     return {"status": "success", "data": data}
 
 
@@ -204,7 +204,7 @@ async def delete_provider(
         raise _conflict_provider(exc)
     except Exception as exc:
         logger.error("delete_provider error: %s", exc)
-        raise HTTPException(status_code=500, detail=str(exc))
+        raise HTTPException(status_code=500, detail="Failed to delete provider")
 
 
 @router.post("/providers/{provider_id}/test", summary="Test Provider connectivity (ping)")
@@ -223,7 +223,7 @@ async def test_provider(
         raise _not_found(exc)
     except Exception as exc:
         logger.error("test_provider error: %s", exc)
-        raise HTTPException(status_code=500, detail=str(exc))
+        raise HTTPException(status_code=500, detail="Failed to test provider")
     # Always 200 — failures are expressed in the body (success=false)
     return {
         "status": "success" if result["ok"] else "error",
@@ -261,7 +261,7 @@ async def discover_models(
         raise _not_found(exc)
     except Exception as exc:
         logger.error("discover_models error: %s", exc)
-        raise HTTPException(status_code=500, detail=str(exc))
+        raise HTTPException(status_code=500, detail="Failed to discover models")
     return {"status": "success", **result}
 
 
@@ -313,7 +313,7 @@ async def create_model(
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc))
     except Exception as exc:
         logger.error("create_model error: %s", exc)
-        raise HTTPException(status_code=500, detail=str(exc))
+        raise HTTPException(status_code=500, detail="Failed to create model")
     return {"status": "success", "data": data}
 
 
@@ -333,7 +333,7 @@ async def batch_import_models(
         raise _bad_request(exc)
     except Exception as exc:
         logger.error("batch_import_models error: %s", exc)
-        raise HTTPException(status_code=500, detail=str(exc))
+        raise HTTPException(status_code=500, detail="Failed to batch import models")
     return {"status": "success", **result}
 
 
@@ -349,7 +349,7 @@ async def update_model(
         raise _not_found(exc)
     except Exception as exc:
         logger.error("update_model error: %s", exc)
-        raise HTTPException(status_code=500, detail=str(exc))
+        raise HTTPException(status_code=500, detail="Failed to update model")
     return {"status": "success", "data": data}
 
 
@@ -367,7 +367,7 @@ async def delete_model(
         raise _conflict_model(exc)
     except Exception as exc:
         logger.error("delete_model error: %s", exc)
-        raise HTTPException(status_code=500, detail=str(exc))
+        raise HTTPException(status_code=500, detail="Failed to delete model")
 
 
 @router.get("/models/{model_id}/usages", summary="Get usage references for a Model")
@@ -439,7 +439,7 @@ async def list_tiers(
         return {"status": "success", "data": data}
     except Exception as exc:
         logger.error("list_tiers error: %s", exc)
-        raise HTTPException(status_code=500, detail=str(exc))
+        raise HTTPException(status_code=500, detail="Failed to list tier configurations")
 
 
 @router.put(
@@ -499,7 +499,7 @@ async def update_tiers(
         )
     except Exception as exc:
         logger.error("update_tiers error: %s", exc)
-        raise HTTPException(status_code=500, detail=str(exc))
+        raise HTTPException(status_code=500, detail="Failed to update tier configurations")
 
 
 # ══════════════════════════════════════════════════════════════════════
@@ -559,7 +559,7 @@ async def list_agent_overrides(
         return {"status": "success", "data": data}
     except Exception as exc:
         logger.error("list_agent_overrides error: %s", exc)
-        raise HTTPException(status_code=500, detail=str(exc))
+        raise HTTPException(status_code=500, detail="Failed to list agent overrides")
 
 
 @router.put(
@@ -621,4 +621,4 @@ async def update_agent_overrides(
         )
     except Exception as exc:
         logger.error("update_agent_overrides error: %s", exc)
-        raise HTTPException(status_code=500, detail=str(exc))
+        raise HTTPException(status_code=500, detail="Failed to update agent overrides")

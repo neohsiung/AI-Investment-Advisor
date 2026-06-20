@@ -35,7 +35,7 @@ async def get_all_settings(service: SettingsService = Depends(get_settings_servi
         }
     except Exception as e:
         logger.error(f"Error fetching settings: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="Failed to fetch settings")
 
 @router.post("", response_model=StandardActionResponse)
 async def save_settings(
@@ -49,7 +49,7 @@ async def save_settings(
         return {"status": "success", "message": "設定已收悉，系統正在背景更新中。"}
     except Exception as e:
         logger.error(f"Error saving settings: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="Failed to save settings")
 
 @router.get("/models", response_model=ModelListResponse)
 async def get_available_models(service: SettingsService = Depends(get_settings_service)):
@@ -62,7 +62,7 @@ async def get_available_models(service: SettingsService = Depends(get_settings_s
         }
     except Exception as e:
         logger.error(f"Error fetching models: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="Failed to fetch available models")
 
 @router.post("/test-notification", response_model=StandardActionResponse)
 async def test_notification(

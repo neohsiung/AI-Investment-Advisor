@@ -238,7 +238,7 @@ class LLMProviderService:
                 "health_detail": {"error": str(exc)},
                 "last_checked_at": datetime.now(timezone.utc),
             })
-            return {"ok": False, "latency_ms": 0.0, "detail": None, "error": str(exc)}
+            return {"ok": False, "latency_ms": 0.0, "detail": None, "error": "Connection test failed. Please verify provider settings and credentials."}
 
         self.provider_repo.update(provider_id, {
             "health_status": "ok" if result.ok else "error",

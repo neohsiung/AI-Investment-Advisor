@@ -53,7 +53,7 @@ async def add_transaction(
             fees=payload.fees
         )
         if not success:
-            raise HTTPException(status_code=400, detail=msg)
+            raise HTTPException(status_code=400, detail="交易新增失敗，請檢查輸入數據是否正確。")
         return {"status": "success", "message": msg}
     except Exception as e:
         logger.error(f"Error adding transaction: {e}")

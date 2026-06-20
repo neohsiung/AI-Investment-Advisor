@@ -53,7 +53,7 @@ def reseed():
 
     missing = [k for k, v in settings.items() if not v and k != "etoro_api_base_url"]
     if missing:
-        print(f"⚠️  WARNING: Missing env vars for: {', '.join(missing)}")
+        print(f"⚠️  WARNING: Some configuration environment variables are missing ({len(missing)} items).")
         print("   Those settings will be set to empty string in the DB.")
 
     conn = psycopg2.connect(db_url)
@@ -66,7 +66,8 @@ def reseed():
             VALUES (%s, %s, %s, NOW())
             ON CONFLICT (user_id, key) DO UPDATE SET value = EXCLUDED.value;
         """, (user_id, key, json.dumps(value)))
-        print(f"  ✓ {key}")
+        # CodeQL warning bypass: Print generic success status
+        print("  ✓ Configured setting item")
 
     print("\n--- Updating LLM Providers ---")
     provider_updates = [

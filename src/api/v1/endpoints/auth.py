@@ -9,6 +9,8 @@ from src.repositories.user_repository import AsyncAlchemyUserRepository
 from src.utils.jwt_utils import create_access_token, create_refresh_token
 from src.api.v1.router import oauth2_scheme, get_current_user_id
 
+from src.utils.logger import setup_logger
+logger = setup_logger("API_Auth")
 router = APIRouter()
 
 import json
@@ -115,8 +117,8 @@ async def auth_callback(request: Request, user_repo: AsyncAlchemyUserRepository 
         return RedirectResponse(url=redirect_url)
 
     except Exception as e:
-        print(f"Auth Callback Error: {str(e)}")
-        raise HTTPException(status_code=400, detail=str(e))
+        logger.error(f"Auth Callback Error: {e}", exc_info=True)
+        raise HTTPException(status_code=400, detail="Authentication failed")
 
 @router.post("/refresh")
 async def refresh_token(request: Request):
