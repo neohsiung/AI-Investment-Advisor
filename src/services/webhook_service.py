@@ -227,13 +227,40 @@ class WebhookService:
             raise HTTPException(status_code=400, detail="Invalid payload")
 
     async def handle_finnhub_webhook(self, request: Request) -> Dict[str, str]:
-        user_id = await self._resolve_user(request)
+        """
+        Finnhub Webhook Handler with Secret Verification.
+        Finnhub uses X-Finnhub-Secret header (not X-API-Key).
+        """
+        # Step 1: Verify Finnhub secret FIRST (acknowledge before heavy processing!)
+        received_secret = request.headers.get("X-Finnhub-Secret")
+        
+        # Look up secret from DB settings (admin user), fallback to env var
+        expected_secret = ""
+        try:
+            admin_user_id = os.getenv("DEFAULT_FINNHUB_USER_ID", "00000000-0000-4000-a000-000000000001")
+            from src.services.settings_service import SettingsService
+            svc = SettingsService(user_id=admin_user_id)
+            expected_secret = svc.get_setting("source_finnhub_webhook_secret", "")
+        except Exception:
+            pass
+        
+        if not expected_secret:
+            expected_secret = os.getenv("FINNHUB_WEBHOOK_SECRET", "")
+        
+        if not received_secret or not expected_secret or received_secret != expected_secret:
+            client_ip = request.headers.get("X-Forwarded-For", "unknown")
+            logger.warning(f"Invalid Finnhub secret from {client_ip}")
+            # CRITICAL: Return 200 OK even on failure (prevent Finnhub from disabling endpoint)
+            return {"status": "acknowledged", "detail": "invalid_secret"}
         
         try:
             payload = await request.json()
-            logger.info(f"Received Finnhub webhook for user {user_id}: {payload}")
+            logger.info(f"Received verified Finnhub webhook: {payload}")
             
             normalized = FinnhubParser.parse(payload)
+            
+            # Resolve user (Finnhub doesn't provide user context in payload)
+            user_id = os.getenv("DEFAULT_FINNHUB_USER_ID", "00000000-0000-4000-a000-000000000001")
             
             # [Refactor] Independent Event Analysis Workflow (v6.0)
             from src.services.workflow_service import EventAnalysisWorkflow
@@ -247,7 +274,8 @@ class WebhookService:
             return {"status": "accepted", "user_id": user_id}
         except Exception as e:
             logger.error(f"Finnhub webhook error: {e}")
-            raise HTTPException(status_code=400, detail="Processing failed")
+            # Still return 200 to acknowledge
+            return {"status": "acknowledged", "detail": "processing_error"}
 
 # Global instance for routing
 webhook_service_instance = WebhookService()

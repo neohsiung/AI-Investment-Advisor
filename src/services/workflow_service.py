@@ -446,37 +446,64 @@ class BaseWorkflow(ABC):
             logger.error(f"Failed to notify user for report {report_id}: {e}")
 
     async def _dispatch_notifications(self, title: str, html_content: str):
-        """Send notifications via user-configured channels (DB-driven, not hardcoded)."""
-        from src.services.notification_service import NotificationService
-        from src.services.settings_service import SettingsService
-        from src.services.notification_settings_manager import NotificationSettingsManager
-        from src.repositories.settings_repository import AlchemySettingsRepository
+        """Send notifications via Event Queue (Event Aggregation v2.0).
+        
+        Events are written to event_queue for agent pull-processing instead of
+        being pushed to notification channels. Only P0 events bypass the queue.
+        """
+        from src.services.event_aggregator import EventAggregator
 
         try:
-            settings_repo = AlchemySettingsRepository()
-            # [T2] Query user's preferred channels from DB (no hardcoding)
-            nsm = NotificationSettingsManager(settings_repo=settings_repo, user_id=self.user_id)
-            user_channels = nsm.get_active_notification_channels()
-            
-            # Absolute minimum fallback if nothing configured
-            if not user_channels:
-                user_channels = ["web"]
+            aggregator = EventAggregator()
 
-            settings_svc = SettingsService(user_id=self.user_id)
-            notification_svc = NotificationService.create_with_settings(
-                settings_service=settings_svc, user_id=self.user_id
-            )
-            
-            await notification_svc.notify_all(
-                title=title,
-                content=html_content,
+            # Extract summary from HTML for classification
+            import re
+            text_only = re.sub(r'<[^>]+>', ' ', html_content)
+            text_only = re.sub(r'\s+', ' ', text_only).strip()[:2000]
+
+            # Classify tier based on content
+            event_data = {
+                "title": title,
+                "summary": text_only[:500],
+                "has_html": True,
+            }
+
+            tier, priority = EventAggregator.classify_tier("report", event_data, text_only)
+            aggregator.ingest_event(
                 user_id=self.user_id,
-                channels=user_channels,  # From DB per §5.2
-                category="report"
+                event_type="report",
+                content=event_data,
+                tier=tier,
+                priority=priority,
             )
-            logger.info(f"Notifications dispatched via channels: {user_channels}")
+            logger.info(
+                f"Workflow: report ingested as event [{tier}/p{priority}] — {title[:50]}"
+            )
+
+            # P0 reports → immediate notification (theoretical, unlikely for reports)
+            if tier == "P0":
+                from src.services.notification_service import NotificationService
+                from src.services.settings_service import SettingsService
+                from src.services.notification_settings_manager import NotificationSettingsManager
+                from src.repositories.settings_repository import AlchemySettingsRepository
+
+                settings_repo = AlchemySettingsRepository()
+                nsm = NotificationSettingsManager(settings_repo=settings_repo, user_id=self.user_id)
+                user_channels = nsm.get_active_notification_channels() or ["web"]
+                settings_svc = SettingsService(user_id=self.user_id)
+                notification_svc = NotificationService.create_with_settings(
+                    settings_service=settings_svc, user_id=self.user_id
+                )
+                await notification_svc.notify_all(
+                    title=title,
+                    content=html_content,
+                    user_id=self.user_id,
+                    channels=user_channels,
+                    category="report"
+                )
+                logger.info(f"Workflow: P0 report bypassed queue → notified via {user_channels}")
         except Exception as e:
-            logger.error(f"Notification dispatch failed: {e}")
+            logger.error(f"Workflow: event ingestion failed: {e}")
 
 
 class DailyWorkflow(BaseWorkflow):
@@ -1273,12 +1300,59 @@ class EventAnalysisWorkflow(BaseWorkflow):
         
         try:
             # 1. Collect Data (Specific to the ticker)
-            analysis_tickers = [self.ticker] if self.ticker != "GLOBAL" else []
-            if not analysis_tickers:
-                # If global, maybe look at macro or skip
-                return "SKIPPED: Global event without specific ticker not yet implemented."
+            # GLOBAL: Handle macro news events — summarize + dispatch notification
+            # GLOBAL: 處理宏觀新聞事件 — 摘要 + 發送通知
+            if self.ticker == "GLOBAL":
+                news_msg = self.event_data.get("msg", "Global market news")
+                news_url = self.event_data.get("url", "")
+
+                # Run macro analysis via fast tier (inline prompt, no heavy agent context needed)
+                from src.infrastructure.llm.llm_config_chain import build_config_chain
+                from src.infrastructure.llm.resilient_pipeline import ResilientLLMPipeline
+
+                chain = build_config_chain(self.user_id, "fast")
+                pipeline = ResilientLLMPipeline(config_chain=chain)
+
+                macro_prompt = (
+                    "你是一位即時新聞分析師。請根據以下新聞事件，"
+                    "用繁體中文提供簡要的市場影響分析。\n\n"
+                    "分析重點：\n"
+                    "1. 事件摘要（1-2句）\n"
+                    "2. 對市場/板塊的潛在影響\n"
+                    "3. 市場情緒判斷（正面/中性/負面）\n\n"
+                    f"新聞來源：{self.event_source}\n"
+                    f"新聞內容：{news_msg}\n"
+                    f"連結：{news_url}\n\n"
+                    "請簡潔回答，不超過150字。"
+                )
+
+                messages = [
+                    Message(role="system", content=macro_prompt),
+                    Message(role="user", content="請分析這則新聞。")
+                ]
+
+                try:
+                    macro_res, _ = await pipeline.execute(
+                        messages, temperature=0.3, max_tokens=500
+                    )
+                except Exception as llm_e:
+                    self.logger.error(f"GLOBAL macro analysis failed: {llm_e}")
+                    macro_res = f"**新聞摘要**: {news_msg}"
+
+                final_report = (
+                    f"## 宏觀快訊 ({self.event_source})\n\n"
+                    f"{macro_res}\n\n"
+                    f"---\n"
+                    f"*來源: [{news_url}]({news_url})*"
+                )
+
+                if not dry_run:
+                    await self.distribute_report(final_report)
+
+                return final_report
 
             # Fetch market data context
+            analysis_tickers = [self.ticker]
             market_context = self.market_service.get_market_context(analysis_tickers, enrich=True)
             self.context['market_data'] = market_context
             

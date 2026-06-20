@@ -211,22 +211,17 @@ def test_notification_filters_import_from_domain():
 
 @pytest.mark.anyio
 async def test_distribute_report_includes_web_channel():
-    """Verify distribute_report sends to both email AND web channels."""
+    """Verify distribute_report ingests the report event into the aggregator."""
     from src.services.workflow_service import DailyWorkflow
-    from unittest.mock import patch, ANY
+    from unittest.mock import patch
     
     workflow = DailyWorkflow(user_id="test_user")
     
-    with patch("src.services.notification_settings_manager.NotificationSettingsManager.get_active_notification_channels") as mock_channels, \
-         patch("src.services.notification_service.NotificationService.notify_all", new_callable=AsyncMock) as mock_notify:
-        
-        mock_channels.return_value = ["web", "email"]
+    with patch("src.services.event_aggregator.EventAggregator.ingest_event") as mock_ingest:
         await workflow.distribute_report(content="Test HTML Content")
         
-        # Verify that notify_all was called with the correct channels
-        mock_notify.assert_called_once()
-        call_kwargs = mock_notify.call_args[1]
-        
-        assert "email" in call_kwargs.get('channels', [])
-        assert "web" in call_kwargs.get('channels', [])
-        assert call_kwargs.get('category') == "report"
+        # Verify that ingest_event was called
+        mock_ingest.assert_called_once()
+        args, kwargs = mock_ingest.call_args
+        assert kwargs.get('event_type') == "report"
+        assert kwargs.get('user_id') == "test_user"

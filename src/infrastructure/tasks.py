@@ -155,15 +155,57 @@ def keyword_refine(user_id: str = None):
         logger.error(f"keyword_refine failed: {e}")
         return f"Error: {str(e)}"
 
+
+@app.task(name="src.infrastructure.tasks.weekly_validation")
+def weekly_validation(user_id: str = None):
     """
-    Daily cognitive memory distillation.
+    Weekly Backtest Validation — runs simulation on major stocks to generate
+    feedback examples from the past week.
+    P1-5: Migrated from deprecated SchedulerService.job_weekly_validation.
+    每週回測驗證：對主要標的執行模擬，生成過去一週的回饋樣本。
     """
     user_id = user_id or os.getenv("PRIMARY_USER_ID") or os.getenv("USER_ID")
+    tickers = ["AAPL", "TSLA", "NVDA", "SPY"]
     try:
-        from src.services.cognitive_memory_manager import CognitiveMemoryManager
-        memory_mgr = CognitiveMemoryManager(user_id=user_id)
-        _run_async_safe(memory_mgr.distill_memories())
-        return "Success"
+        from src.services.backtest_service import BacktestService
+        svc = BacktestService()
+        for ticker in tickers:
+            logger.info(f"weekly_validation: validating {ticker}...")
+            _run_async_safe(svc.run_simulation(ticker, days_back=7))
+        logger.info("weekly_validation completed")
+        return f"OK: validated {', '.join(tickers)}"
     except Exception as e:
-        logger.error(f"Memory distillation failed: {e}")
+        logger.error(f"weekly_validation failed: {e}")
+        return f"Error: {str(e)}"
+
+
+@app.task(name="src.infrastructure.tasks.generate_daily_report")
+def generate_daily_report(user_id: str = None, force_report: bool = False):
+    """
+    Daily Report Generation — runs the DailyWorkflow to produce council debate report.
+    P2-2: Migrated from deprecated SchedulerService.job_daily_check.
+    每日報告生成：執行 DailyWorkflow 產生委員會辯論報告。
+    
+    Args:
+        user_id: Target user ID (defaults to PRIMARY_USER_ID env var)
+        force_report: Force report generation even if no significant changes
+    """
+    user_id = user_id or os.getenv("PRIMARY_USER_ID") or os.getenv("USER_ID") or ""
+    
+    # Check if market is open
+    if not is_market_open_today():
+        logger.info("Market is closed today, skipping daily report.")
+        return "Skipped (Market Closed)"
+    
+    try:
+        from src.services.workflow_service import DailyWorkflow
+        
+        # Run the daily workflow
+        workflow = DailyWorkflow(user_id=user_id)
+        result = _run_async_safe(workflow.run(dry_run=False, force_refresh=force_report))
+        
+        logger.info(f"daily_report completed for user {user_id}")
+        return f"Success: Daily report generated for {user_id}"
+    except Exception as e:
+        logger.error(f"daily_report failed for user {user_id}: {e}")
         return f"Error: {str(e)}"

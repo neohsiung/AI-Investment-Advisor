@@ -106,44 +106,19 @@ class SchedulerService:
             logger.error(f"Weekly Report failed for {self.user_id}: {e}")
             self.log_job_execution("Weekly Report", "FAILED", str(e))
 
-    def job_weekly_validation(self):
+    def job_weekly_validation(self):  # DEPRECATED: Migrated to Celery (P1-5) — redirect
+        """DEPRECATED: Redirects to the Celery task 'src.infrastructure.tasks.weekly_validation'.
+        This method is kept for backward compatibility only.
+        已棄用：轉發至 Celery 任務 'src.infrastructure.tasks.weekly_validation'。
         """
-        Runs the Backtest Service to generate feedback examples from the past week.
-        v5.0: Isolated to self.user_id.
-        """
-        logger.info(f"Starting Weekly Validation Job for user {self.user_id}...")
-        self.log_job_execution("Weekly Validation", "STARTED")
-        
-        try:
-            # Validation on major indices/stocks
-            tickers = ["AAPL", "TSLA", "NVDA", "SPY"]
-            
-            from src.services.backtest_service import BacktestService
-            service = BacktestService()
-            
-            for ticker in tickers:
-                logger.info(f"Validating {ticker}...")
-                service.run_simulation(ticker, days_back=7) # Review last week
-                
-            self.log_job_execution("Weekly Validation", "COMPLETED")
-            
-        except Exception as e:
-            logger.error(f"Weekly Validation failed: {e}")
-            self.log_job_execution("Weekly Validation", "FAILED", str(e))
-            
-            # Inline import to avoid circular dependency issues at module level
-            from src.services.backtest_service import BacktestService
-            service = BacktestService()
-            
-            for ticker in tickers:
-                logger.info(f"Validating {ticker}...")
-                service.run_simulation(ticker, days_back=7) # Review last week
-                
-            self.log_job_execution("Weekly Validation", "COMPLETED")
-            
-        except Exception as e:
-            logger.error(f"Weekly Validation failed: {e}")
-            self.log_job_execution("Weekly Validation", "FAILED", str(e))
+        logger.warning(
+            "SchedulerService.job_weekly_validation is DEPRECATED. "
+            "Use the Celery task 'src.infrastructure.tasks.weekly_validation' instead. "
+            "Redirecting..."
+        )
+        from src.infrastructure.tasks import weekly_validation
+        result = weekly_validation(user_id=self.user_id)
+        return result
 
     def job_experience_replay(self):
         """
@@ -174,6 +149,75 @@ class SchedulerService:
             self.log_job_execution("Monthly Refinement", "COMPLETED")
         except Exception as e:
             self.log_job_execution("Monthly Refinement", "FAILED", str(e))
+
+    def job_weekly_research(self):
+        """
+        Execute weekly LLM research cycle on all active tickers in the universe.
+        Runs ResearchAutomationService to call Fundamental/Momentum/Sentiment agents.
+        執行每週 LLM 研究週期（所有活躍標的）。
+        """
+        logger.info(f"Starting Weekly Research for user {self.user_id}...")
+        self.log_job_execution("Weekly Research", "STARTED")
+        try:
+            import asyncio
+            from src.services.research_automation_service import ResearchAutomationService
+
+            # Run async research in sync scheduler thread
+            try:
+                loop = asyncio.get_event_loop()
+            except RuntimeError:
+                loop = asyncio.new_event_loop()
+                asyncio.set_event_loop(loop)
+
+            svc = ResearchAutomationService(user_id=self.user_id)
+            result = loop.run_until_complete(svc.run_weekly_research(parallel=2))
+
+            researched = result.get("researched", 0)
+            total = result.get("total", 0)
+            errors = result.get("errors", 0)
+            candidates = result.get("removal_candidates", [])
+
+            msg = f"Researched {researched}/{total}, errors={errors}, removal_candidates={len(candidates)}"
+            self.log_job_execution("Weekly Research", "COMPLETED", msg)
+            logger.info(f"Weekly Research done: {msg}")
+
+            if candidates:
+                for c in candidates:
+                    logger.warning(f"  ⛔ Removal candidate: {c['ticker']} — {c['reason']}")
+
+            # ── Step 2: Optimize targets and execute confidence rebalance ──
+            try:
+                from src.services.confidence_rebalance_service import ConfidenceRebalanceService
+
+                logger.info("Optimizing target allocations after research...")
+                rbs = ConfidenceRebalanceService(user_id=self.user_id)
+                opt_result = rbs.ticker_service.optimize_allocations()
+
+                logger.info(f"Optimization result: {opt_result.get('message', 'ok')}")
+
+                logger.info("Executing confidence-driven rebalance...")
+                rebal_result = loop.run_until_complete(rbs.execute_rebalance())
+
+                if rebal_result.get("success"):
+                    summary = rebal_result.get("summary", {})
+                    rb_msg = (f"Rebalance executed: {summary.get('sells',0)} sells "
+                              f"(${summary.get('total_sell_amount',0):.0f}), "
+                              f"{summary.get('buys',0)} buys "
+                              f"(${summary.get('total_buy_amount',0):.0f}), "
+                              f"cash=${summary.get('available_cash',0):.0f}")
+                    logger.info(rb_msg)
+                    self.log_job_execution("Weekly Research", "COMPLETED",
+                                           f"{msg}; {rb_msg}")
+                else:
+                    logger.warning("Rebalance skipped or failed")
+            except Exception as rb_e:
+                logger.error(f"Rebalance after research failed: {rb_e}")
+                self.log_job_execution("Weekly Research", "PARTIAL",
+                                       f"{msg}; rebalance failed: {rb_e}")
+
+        except Exception as e:
+            logger.error(f"Weekly Research failed: {e}")
+            self.log_job_execution("Weekly Research", "FAILED", str(e))
 
     def job_memory_distillation(self):
         """
@@ -247,7 +291,7 @@ class SchedulerService:
         if get_current_time().day == 1:
             self.job_monthly_refinement()
 
-    def job_keyword_refine(self) -> None:
+    def job_keyword_refine(self) -> None: # DEPRECATED: Migrated to Celery (P1-3)
         """
         Weekly keyword lifecycle management: discover from 3 sources + refine weights.
         每週關鍵字生命週期管理：3 來源探索 + 自動調權。
@@ -332,6 +376,14 @@ class SchedulerService:
             getattr(self.scheduler.every(), target_weekly_day).at(weekly_time_sys).do(self.job_weekly_report)
         else:
             self.scheduler.every().saturday.at(weekly_time_sys).do(self.job_weekly_report)
+
+        # Weekly Research Cycle (Sunday 10:00, offset-adjusted)
+        research_day = get_shifted_day("sunday", weekly_offset)
+        research_time = "10:00"
+        if hasattr(self.scheduler.every(), research_day):
+            getattr(self.scheduler.every(), research_day).at(research_time).do(self.job_weekly_research)
+        else:
+            self.scheduler.every().sunday.at(research_time).do(self.job_weekly_research)
             
         # 哨兵心跳 (每分鐘)
         self.scheduler.every(1).minutes.do(self.job_minutely_tick)
@@ -370,11 +422,7 @@ class SchedulerService:
         v10.0: DEPRECATED. Tasks migrated to Celery.
         This loop is now disabled to prevent duplicate executions and resource conflicts.
         """
-        logger.warning(f"SchedulerService.run_loop is DEPRECATED for user {self.user_id}. Tasks have been migrated to Celery (Beat).")
-        logger.warning("Please ensure 'celery -A src.infrastructure.celery_app beat' is running.")
-        
-        # Keep the process alive but idle if necessary for container stability, 
-        # but better to let it exit so Docker can restart or user can re-config.
+        logger.info("SchedulerService.run_loop: Tasks migrated to Celery Beat. Enable 'celery -A src.infrastructure.celery_app beat' for scheduled execution.")
         return
 
     def _check_reload_signal(self):

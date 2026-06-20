@@ -240,6 +240,11 @@ class PerformanceService:
                     fees = row['fees']
                     amount = row['amount']
                     leverage = row.get('leverage', 1.0) or 1.0
+                    # Guard: NaN/None/0 leverage from legacy transactions would cause
+                    # cash calculation to become NaN and propagate to all performance data.
+                    # 防衛：舊交易的 NaN/None/0 leverage 會使現金計算變 NaN 並汙染所有績效數據
+                    if isinstance(leverage, float) and (pd.isna(leverage) or leverage == 0):
+                        leverage = 1.0
                     
                     if action == 'BUY':
                         current_holdings[ticker] = current_holdings.get(ticker, 0.0) + qty

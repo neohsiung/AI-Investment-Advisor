@@ -117,4 +117,3 @@ async def test_execute_order_sell_vti_with_resolved_position(etoro_service):
             actual_url = str(call_args[0][0]) if call_args[0] else str(call_args[1].get('url', ''))
             assert "1001" in actual_url
             assert "close-orders" in actual_url
-

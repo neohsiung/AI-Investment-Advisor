@@ -48,6 +48,14 @@ app.conf.beat_schedule = {
         "schedule": crontab(hour=2, minute=0),     # 02:00 AM daily
         "args": (USER_ID,),
     },
+    # P2-2: daily_report — 每個交易日 17:00 執行 (盤後報告)
+    "daily-report": {
+        "task": "src.infrastructure.tasks.generate_daily_report",
+        "schedule": crontab(hour=17, minute=0, day_of_week="1-5"),  # Mon-Fri 17:00 EST (after market close)
+        "args": (USER_ID,),
+        "kwargs": {"force_report": False},
+    },
+    # P2-3: portfolio_rebalance — 每 30 分鐘於交易時段執行 (08:00-16:59 EST, Mon-Fri)
     "portfolio-rebalance-trigger": {
         "task": "src.infrastructure.tasks.trigger_portfolio_rebalance",
         "schedule": crontab(minute="*/30", hour="8-16", day_of_week="1-5"),
@@ -78,6 +86,12 @@ app.conf.beat_schedule = {
     "weekly-experience-replay": {
         "task": "src.infrastructure.tasks.experience_replay",
         "schedule": crontab(hour=8, minute=0, day_of_week="0"),  # Sun 08:00
+        "args": (USER_ID,),
+    },
+    # P1-5: weekly_validation — 每週日 09:00 執行 (週日盤前回測驗證)
+    "weekly-validation": {
+        "task": "src.infrastructure.tasks.weekly_validation",
+        "schedule": crontab(hour=9, minute=0, day_of_week="0"),  # Sun 09:00
         "args": (USER_ID,),
     },
 }
