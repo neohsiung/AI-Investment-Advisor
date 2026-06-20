@@ -31,7 +31,7 @@ def mock_sentinel_repo():
 async def test_sentinel_process_event(mock_sentinel_repo):
     # Setup mocks for services
     mock_council = MagicMock()
-    mock_council.start_session = AsyncMock(return_value={"consensus": "⚠️ Sell AAPL immediately"})
+    mock_council.start_session = AsyncMock(return_value={"consensus": "⚠️ Sell AAPL immediately [安全模式]"})
     
     # Mock SettingsService for constructor
     with patch('src.services.sentinel_service.SettingsService') as MockSettings, \
@@ -47,6 +47,9 @@ async def test_sentinel_process_event(mock_sentinel_repo):
         mock_sentinel_agent = MagicMock()
         mock_sentinel_agent.run.return_value = {"priority": "P1", "target_agent": "CIO", "rationale": "High drop"}
         MockFactory.create_sentinel_agent.return_value = mock_sentinel_agent
+        
+        # Set user_id on mocked SettingsService instance
+        MockSettings.return_value.user_id = "test_user"
 
         sentinel = SentinelService(
             council_service=mock_council,

@@ -44,7 +44,7 @@ class ReportingService:
             # 2. Disclaimer / Footer (with inline styles)
             disclaimer = """
             <div style="margin-top: 40px; padding-top: 20px; border-top: 1px solid #e2e8f0; font-size: 12px; color: #94a3b8; text-align: justify; line-height: 1.6; font-family: sans-serif;">
-                <strong style="color: #64748b;">免責聲明 (Disclaimer):</strong> 本報告由 AI Investment Advisor 自動生成。報告內容僅供內部參考，不構成任何具體投資建議或財務指示。市場瞬息萬變，歷史數據（包含但不限於敘事復盤結果、模擬績效及報酬率分析）不代表未來實際績效表現。所有透過 Automated Trading 功能觸發之交易皆須經由授權人自行負責。本系統開發者與運營團隊不對依賴本報告做出之任何決策承擔任何直接或間接之損失責任。投資有賺有賠，執行前請詳閱各平台風險揭露說明文件並審慎評估自身風險承受能力。
+                投資有風險，內容僅供參考，不構成建議。
             </div>
             """
             

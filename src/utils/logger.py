@@ -9,7 +9,7 @@ except ImportError:
 # OpenTelemetry Logging Imports (OTel 1.39.1 compatible internal paths)
 try:
     from opentelemetry._logs import set_logger_provider
-    from opentelemetry.exporter.otlp.proto.grpc._log_exporter import OTLPLogExporter
+    from opentelemetry.exporter.otlp.proto.grpc.log_exporter import OTLPLogExporter
     from opentelemetry.sdk._logs import LoggerProvider, LoggingHandler
     from opentelemetry.sdk._logs.export import BatchLogRecordProcessor
     from opentelemetry.sdk.resources import Resource

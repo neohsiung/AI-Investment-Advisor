@@ -19,7 +19,7 @@ def test_generate_professional_html_basic():
     assert "Market Analysis" in html_output
     assert "Bullish on tech" in html_output
     assert "NVDA" in html_output
-    assert "免責聲明" in html_output  # Chinese disclaimer
+    assert "投資有風險" in html_output  # Chinese disclaimer
     assert "style=" in html_output  # Ensure styling is applied
 
 def test_generate_professional_html_error_handling():
