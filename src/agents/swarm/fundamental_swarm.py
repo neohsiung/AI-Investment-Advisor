@@ -57,7 +57,7 @@ class FundamentalSwarm(RoleSwarmBase):
             agent=FundamentalSubAgent(
                 name="ValuationModeler", 
                 instruction="建立估值模型判斷價格是否合理 (Build valuation model).",
-                tier="adv",
+                tier="advanced",
                 user_id=user_id,
                 use_cache=use_cache,
                 ttl_hours=ttl

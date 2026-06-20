@@ -332,6 +332,7 @@ class SentinelService:
         try:
             history_data = self.market_service.get_ohlcv("^VIX", days=60)
             if not history_data or not history_data.get("close"):
+                logger.debug("VIX check: No historical data available from market service.")
                 return triggers
                 
             closes = history_data["close"]
@@ -357,8 +358,7 @@ class SentinelService:
                     f"(MA={avg_vix:.2f}, σ={std_dev:.2f}, threshold={threshold:.2f}, Z={z_score:.1f}σ)"
                 )
                 
-                from unittest.mock import MagicMock
-                current_vix_val = 18.0 if isinstance(current_vix, MagicMock) else float(current_vix)
+                current_vix_val = float(current_vix)
                 
                 if current_vix_val > threshold:
                     triggers.append({
@@ -1137,19 +1137,22 @@ class SentinelService:
                 "請根據下方原始觸發訊號進行判斷。"
             )
         
-        # Format Notification (Improved UX)
-        formatted_triggers = ""
-        for i, t in enumerate(filtered_triggers, 1):
-            formatted_triggers += f"• {t['text']}\n"
-            
-        alert_content = (
-            f"### 🛡️ Sentinel 監控警報 (Sentinel Alert)\n\n"
-            f"**偵測到以下重要訊號 ({len(filtered_triggers)}):**\n"
-            f"{formatted_triggers}\n"
-            f"---\n"
-            f"**🤖 AI 委員會評估 (Council Assessment):**\n"
-            f"{decision}\n"
-        )
+        # Format Notification (Improved UX / Structured Layout)
+        if "📊" in decision and "💡" in decision:
+            alert_content = (
+                f"{decision}\n"
+                f"━━━━━━━━━━━━━━━━━━━━━\n"
+                f"💰 投資有風險，內容僅供參考，不構成建議。"
+            )
+        else:
+            # Fallback/Fail-safe structured layout
+            alert_content = (
+                f"📊 {topic} - CRITICAL\n"
+                f"━━━━━━━━━━━━━━━━━━━━━\n"
+                f"{decision}\n"
+                f"━━━━━━━━━━━━━━━━━━━━━\n"
+                f"💰 投資有風險，內容僅供參考，不構成建議。"
+            )
 
         # Log Alert with Signal IDs for future suppression
         for t in filtered_triggers:
@@ -1157,8 +1160,10 @@ class SentinelService:
             meta = {"decision": decision, "signal_id": t.get("id"), "value": t.get("value")}
             self.repo.log_alert(topic, t["text"], metadata=meta)
 
-        # Notify All Channels (Significance Filter applied)
-        # v4.2.2: Use internal user_id (email/UUID) for settings lookup, NOT LINE-specific ID
+        # Notify All Channels → Event Queue (Event Aggregation v2.0)
+        # v2.0: Events are written to event_queue instead of sending notifications.
+        # Agents pull events by tier for batch processing.
+        # Only P0+Actionable events trigger immediate notification.
         target_user = self.settings_service.user_id or self.user_id or "broadcast"
         actions = []
         
@@ -1166,22 +1171,62 @@ class SentinelService:
         is_extreme = any(t.get("level") == "CRITICAL" for t in filtered_triggers) or self.current_vix > 35
         
         # [Significance Filter v3.5]
-        # If decision is vague and no critical trigger, suppress P0 noise.
         is_significant = is_actionable or is_extreme or "⚠️" in decision or "danger" in decision.lower()
-        if not is_significant and "hold" in decision.lower():
-            logger.info("Sentinel: Significance Filter suppressed notification")
-            return
 
-        if is_actionable:
-            actions.append({"label": "前往 eToro 下單", "data": "action=etoro_link"})
+        # Classify event tier
+        event_data = {
+            "source": source,
+            "topic": topic,
+            "vix": self.current_vix,
+            "trigger_count": len(filtered_triggers),
+            "triggers": [{"text": t["text"], "level": t.get("level"), "type": t.get("type")} for t in filtered_triggers],
+            "decision": decision,
+            "is_actionable": is_actionable,
+            "is_extreme": is_extreme,
+            "is_significant": is_significant,
+        }
 
-        # [T3] Direct dispatch using NSM (no microservice, no hardcoded channels)
-        await self._dispatch_notifications_direct(
-            title=f"⚠️ {source} Alert",
-            content=alert_content,
-            actions=actions,
-            category="sentinel"
-        )
+        if is_extreme or is_significant:
+            from src.services.event_aggregator import EventAggregator
+            aggregator = EventAggregator()
+            
+            if is_actionable and is_extreme:
+                tier = "P0"
+                priority = 100
+            elif is_actionable:
+                tier = "P1"
+                priority = 80
+            elif is_extreme:
+                tier = "P1"
+                priority = 60
+            else:
+                tier = "P2"
+                priority = 30
+
+            aggregator.ingest_event(
+                user_id=target_user,
+                event_type="sentinel_alert",
+                content=event_data,
+                tier=tier,
+                priority=priority,
+            )
+            logger.info(f"Sentinel: ingested event [{tier}/p{priority}] — {len(filtered_triggers)} triggers")
+
+        # Only P0+Actionable or Fail-safe Mode → immediate notification to user
+        is_failsafe = "安全模式" in decision
+        if not (is_actionable and is_extreme) and not is_failsafe:
+            logger.info(f"Sentinel: event queued [{tier if is_significant else 'P2'}], no immediate notification")
+            # Still trigger emergency/trade logic below if applicable
+        else:
+            if is_actionable:
+                actions.append({"label": "前往 eToro 下單", "data": "action=etoro_link"})
+            # P0+Actionable → direct notification
+            await self._dispatch_notifications_direct(
+                title=f"🔴 {source} Alert",
+                content=alert_content,
+                actions=actions,
+                category="sentinel"
+            )
         
         # 🚨 Auto-hedging / Emergency Liquidation (Milestone 5.1)
         if is_extreme and any(kw in decision.lower() for kw in ["liquidate", "hedge", "panic", "emergency"]):
@@ -1202,7 +1247,6 @@ class SentinelService:
         # If no trade signals were extracted and no emergency protocol ran,
         # we still: (A) spawn a research task for news triggers and (B) store an insight to memory.
         else:
-            import asyncio
             from src.agents.skills.skill_loader import SkillLoader
             loader = SkillLoader(user_id=target_user)
             
@@ -1233,13 +1277,12 @@ class SentinelService:
         
         # Always store alert insight to cognitive_memories (independent of action path)
         # This ensures every alert outcome is captured for future reflection
-        import asyncio
+        import asyncio as _asyncio
         from src.agents.skills.skill_loader import SkillLoader
-        import json
-        loader = SkillLoader(user_id=target_user)
-        
-        asyncio.create_task(
-            loader.run_skill(
+        insight_loader = SkillLoader(user_id=target_user)
+
+        _asyncio.create_task(
+            insight_loader.run_skill(
                 "distill_insight",
                 user_id=target_user,
                 source_texts=json.dumps([t.get("text","") for t in filtered_triggers[:3]], ensure_ascii=False),
@@ -1257,8 +1300,6 @@ class SentinelService:
         try:
             from src.agents.skills.skill_loader import SkillLoader
             from src.services.transaction_service import TransactionService
-            import json
-            
             target_user = self.settings_service.user_id or self.user_id or "broadcast"
             loader = SkillLoader(user_id=target_user)
             
@@ -1553,18 +1594,21 @@ class SentinelService:
         """
         # Example for Fear & Greed (Alternative.me)
         if sid == "alternative_me":
-            import requests
-            resp = requests.get("https://api.alternative.me/fng/", timeout=5)
-            if resp.status_code == 200:
-                data = resp.json().get("data", [{}])[0]
-                val = int(data.get("value", 50))
-                label = data.get("value_classification", "Neutral")
-                if val < 25 or val > 75:
-                    return {
-                        "text": f"📊 市場情緒極端 ({label}): Fear & Greed = {val}",
-                        "id": "fng_extreme",
-                        "value": val
-                    }
+            try:
+                import httpx as _httpx
+                resp = _httpx.get("https://api.alternative.me/fng/", timeout=5)
+                if resp.status_code == 200:
+                    data = resp.json().get("data", [{}])[0]
+                    val = int(data.get("value", 50))
+                    label = data.get("value_classification", "Neutral")
+                    if val < 25 or val > 75:
+                        return {
+                            "text": f"📊 市場情緒極端 ({label}): Fear & Greed = {val}",
+                            "id": "fng_extreme",
+                            "value": val
+                        }
+            except Exception:
+                pass
         
         # Tiingo Integration (v5.0) - Event-Driven News Scanning
         elif sid == "tiingo":
@@ -1890,22 +1934,59 @@ class SentinelService:
             cash_ratio * 100, target_ratio * 100, excess_ratio,
         )
 
+        # Add Confidence Compositor: multi-agent aggregation
+        from src.services.confidence_compositor_service import CompositorService
+        compositor = CompositorService(user_id=self.user_id)
+        
+        # Compute per-ticker composite decisions
+        decisions = await compositor.compute_composite_decision(
+            candidates=candidates,
+            excess_cash=result.get("excess_cash", 0.0),
+            cash_ratio=cash_ratio,
+            target_cash_ratio=target_ratio,
+        )
+        
+        logger.info(
+            "Sentinel: Compositor returned %d decisions (execute=%d, skip=%d)",
+            len(decisions),
+            sum(1 for d in decisions if d["should_execute"]),
+            sum(1 for d in decisions if not d["should_execute"]),
+        )
+        
+        # Execute only decisions that pass threshold
         try:
             from src.services.automated_trading_service import AutomatedTradingService
             auto_trade_svc = AutomatedTradingService()
-            for cand in candidates:
-                ticker = cand.get("ticker")
-                amount = cand.get("allocated_amount", 0.0)
-                reason = cand.get("reason", "Cash deployment")
-                if not ticker or amount <= 0:
+            
+            for decision in decisions:
+                if not decision["should_execute"]:
+                    logger.info(
+                        "Sentinel: Skipping %s (composite=%.1f/10 < min_threshold)",
+                        decision["ticker"], decision["composite_score"],
+                    )
                     continue
+                
+                cand = decision["candidate"]
+                ticker = decision["ticker"]
+                amount = decision["allocated_amount"]
+                
+                # Build confidence breakdown for rationale
+                sub_scores = decision.get("breakdown", [])
+                breakdown = " | ".join([f"{s['agent']}:{s['confidence']:.1f}" for s in sub_scores[:3]])
+                rationale = (
+                    f"[Cash Deployment] Excess Cash: ${result.get('excess_cash', 0):.2f} | "
+                    f"Composite: {decision['composite_score']:.1f}/10 | "
+                    f"Breakdown: {breakdown}"
+                )
+                
                 await auto_trade_svc.evaluate_and_execute_trade(
                     user_id=self.user_id,
                     ticker=ticker,
                     action="BUY",
                     quantity=amount,
-                    confidence_score=confidence_score,
-                    rationale=f"[Cash Deployment] Excess Cash: ${result.get('excess_cash', 0):.2f} | {reason}",
+                    confidence_score=decision["composite_score"],  # Now uses 0-10 scale
+                    rationale=rationale,
+                    confidence_breakdown=decision.get("breakdown", []),  # New field for UI
                 )
         except Exception as e:
             logger.error("Sentinel: cash deployment execution error: %s", e, exc_info=True)
