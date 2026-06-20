@@ -6,8 +6,8 @@ class TransactionBase(BaseModel):
     """Base fields for a financial transaction."""
     ticker: str = Field(..., description="Stock or asset ticker (e.g., NVDA)")
     action: str = Field(..., description="BUY or SELL")
-    quantity: float = Field(..., gt=0, description="Number of units traded")
-    price: float = Field(..., gt=0, description="Execution price per unit")
+    quantity: float = Field(..., ge=0, description="Number of units traded (0 for cash deposits/withdrawals)")
+    price: float = Field(..., ge=0, description="Execution price per unit (0 for cash operations)")
     fees: float = Field(default=0.0, description="Transaction fees")
     date: str = Field(..., description="Transaction date in YYYY-MM-DD format")
 

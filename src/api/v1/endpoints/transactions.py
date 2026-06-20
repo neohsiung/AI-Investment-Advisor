@@ -30,7 +30,7 @@ async def get_transactions(service: TransactionService = Depends(get_transaction
                 quantity=float(row.get('quantity', 0)),
                 price=float(row.get('price', 0)),
                 fees=float(row.get('fees', 0)),
-                date=str(row.get('date', ''))
+                date=str(row.get('trade_date', ''))
             ))
         return {"status": "success", "data": records}
     except Exception as e:

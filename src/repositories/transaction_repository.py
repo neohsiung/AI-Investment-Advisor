@@ -306,8 +306,9 @@ class AlchemyTransactionRepository(BaseRepository, ITransactionRepository):
                 FROM transactions 
                 WHERE user_id = :user_id 
                 AND (:account_id IS NULL OR source_file = :account_id)
+                AND (entry_category IS NULL OR entry_category != :exclude_category)
             """)
-            params = {"user_id": user_id, "account_id": account_id}
+            params = {"user_id": user_id, "account_id": account_id, "exclude_category": ENTRY_CATEGORY_SYNC_ADJUSTMENT}
             impact = conn.execute(query_actions, params).scalar() or 0.0
             return float(float(cash_flow_sum) + float(impact))
 
@@ -414,7 +415,7 @@ class AlchemyTransactionRepository(BaseRepository, ITransactionRepository):
             price=0,
             fees=0,
             amount=abs(diff),
-            entry_category=ENTRY_CATEGORY_SYNC_ADJUSTMENT,
+            entry_category=ENTRY_CATEGORY_CAPITAL_FLOW,
             source_file=account_id
         )
 
@@ -451,6 +452,8 @@ class AlchemyTransactionRepository(BaseRepository, ITransactionRepository):
             # Best is to use the current price from live_positions if available.
             live_price = next((p.get('current_price', 0) for p in live_positions if p['ticker'].upper() == ticker), 0)
             
+            live_leverage = next((p.get('leverage', 1.0) for p in live_positions if p['ticker'].upper() == ticker), 1.0)
+
             # Add a sync adjustment transaction
             self.add(
                 user_id=user_id,
@@ -460,7 +463,45 @@ class AlchemyTransactionRepository(BaseRepository, ITransactionRepository):
                 quantity=abs(diff),
                 price=live_price,
                 fees=0,
-                amount=abs(diff * live_price),
+                leverage=live_leverage,
                 entry_category=ENTRY_CATEGORY_SYNC_ADJUSTMENT,
                 source_file=account_id
             )
+
+    def save_positions(self, user_id: str, live_positions: List[Dict[str, Any]], account_id: str = None) -> None:
+        """
+        Upsert live positions into the positions table for real-time snapshot.
+        將券商即時持倉寫入 positions 表，供 Dashboard / API 即時查詢。
+        """
+        from sqlalchemy import text as _text
+        upsert_sql = _text("""
+            INSERT INTO positions (user_id, account_id, symbol, quantity, current_price, market_value, leverage, is_open, last_updated)
+            VALUES (:uid, :acc, :sym, :qty, :price, :mv, :lev, true, NOW())
+            ON CONFLICT (user_id, account_id, symbol)
+            DO UPDATE SET
+                quantity = EXCLUDED.quantity,
+                current_price = EXCLUDED.current_price,
+                market_value = EXCLUDED.market_value,
+                leverage = EXCLUDED.leverage,
+                is_open = true,
+                last_updated = NOW()
+        """)
+        close_sql = _text("""
+            UPDATE positions SET is_open = false, last_updated = NOW()
+            WHERE user_id = :uid AND account_id = :acc AND symbol NOT IN :live AND is_open = true
+        """)
+        with self.engine.begin() as conn:
+            live_symbols = set()
+            for p in live_positions:
+                ticker = str(p.get("ticker", "")).upper()
+                if not ticker or ticker == "CASH":
+                    continue
+                live_symbols.add(ticker)
+                qty = float(p.get("quantity", 0))
+                price = float(p.get("current_price", 0))
+                lev = float(p.get("leverage", 1.0))
+                mv = qty * price
+                conn.execute(upsert_sql, {"uid": user_id, "acc": account_id or "", "sym": ticker, "qty": qty, "price": price, "mv": mv, "lev": lev})
+            if live_symbols:
+                conn.execute(close_sql, {"uid": user_id, "acc": account_id or "", "live": tuple(live_symbols)})
+            logger.info(f"Saved {len(live_positions)} live positions for user {user_id}")

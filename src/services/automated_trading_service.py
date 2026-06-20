@@ -32,7 +32,8 @@ class AutomatedTradingService:
     async def evaluate_and_execute_trade(self, user_id: str, ticker: str, action: str, quantity: float = None,
                                          confidence_score: int = None, rationale: str = None,
                                          target_weight: float = None, current_weight: float = None,
-                                         delta_weight: float = None, portfolio_value: float = None) -> Dict[str, Any]:
+                                         delta_weight: float = None, portfolio_value: float = None,
+                                         confidence_breakdown: list = None) -> Dict[str, Any]:
         """
         Evaluate and potentially execute a trade based on confidence score.
         評估並可能根據信心分數執行交易。
@@ -106,19 +107,27 @@ class AutomatedTradingService:
         raw_min_threshold = self.settings_repo.get(user_id, "auto_trade_min_threshold")
         min_threshold = int(raw_min_threshold) if raw_min_threshold is not None else 3
         
+        # ── Normalize confidence to 0-10 scale for consistent comparison ──
+        # Sentinel passes 0-100 (e.g. 86) but thresholds are 0-10 (e.g. 7)
+        # RebalanceService passes 0-10 (e.g. 8) — leave as-is.
+        if confidence_score is not None and confidence_score > 10:
+            normalized_confidence = round(confidence_score / 10)
+        else:
+            normalized_confidence = confidence_score
+        
         logger.info(
-            f"evaluating trade for {ticker}. Score: {confidence_score}, "
+            f"evaluating trade for {ticker}. Score: {normalized_confidence} (raw={confidence_score}), "
             f"Min: {min_threshold}, Threshold: {threshold} (ExcessCash={is_excess_cash})"
         )
         
         # 3. Decision Logic (三段式閥值)
         # 3a. Below minimum → skip silently, no notification
-        if confidence_score < min_threshold:
+        if normalized_confidence < min_threshold:
             logger.info(
-                f"Score {confidence_score} < min_threshold {min_threshold}. "
+                f"Score {normalized_confidence} < min_threshold {min_threshold}. "
                 f"Skipping silently for {ticker}."
             )
-            return {"status": "skipped", "reason": f"Score {confidence_score} below minimum threshold {min_threshold}"}
+            return {"status": "skipped", "reason": f"Score {normalized_confidence} below minimum threshold {min_threshold}"}
         
         # Prepare Order object
         order_action = OrderAction.BUY if action.upper() == "BUY" else OrderAction.SELL
@@ -227,16 +236,27 @@ class AutomatedTradingService:
         )
         
         # 3b. Above upper threshold → auto-execute
-        if confidence_score >= threshold:
-            logger.info(f"Score {confidence_score} >= {threshold}. Executing automatically.")
-            return await self._execute_trade(user_id, order, confidence_score, rationale, "✅ [自動執行] (Auto-Approved)")
+        if normalized_confidence >= threshold:
+            logger.info(f"Score {normalized_confidence} >= {threshold}. Executing automatically.")
+            return await self._execute_trade(user_id, order, normalized_confidence, rationale, "✅ [自動執行] (Auto-Approved)", confidence_breakdown=confidence_breakdown)
         
         # 3c. Between min and upper → notify all channels, request approval
-        logger.info(f"Score {confidence_score} in [{min_threshold}, {threshold}). Requesting approval.")
-        return await self._request_approval_and_execute(user_id, order, confidence_score, rationale)
+        logger.info(f"Score {normalized_confidence} in [{min_threshold}, {threshold}). Requesting approval.")
+        return await self._request_approval_and_execute(user_id, order, normalized_confidence, rationale, confidence_breakdown=confidence_breakdown)
 
-    async def _request_approval_and_execute(self, user_id: str, order: Order, confidence_score: int, rationale: str) -> Dict[str, Any]:
+    async def _request_approval_and_execute(self, user_id: str, order: Order, confidence_score: int, rationale: str, confidence_breakdown: list = None) -> Dict[str, Any]:
         """Request user approval synchronously via InteractionService."""
+        
+        # Build breakdown display
+        breakdown_lines = []
+        if confidence_breakdown and len(confidence_breakdown) > 0:
+            breakdown_lines.append("📊 Confidence Breakdown:")
+            for sub in confidence_breakdown:
+                agent = sub.get("agent", "?")
+                score = sub.get("confidence", 0)
+                factor = sub.get("key_factor", "")
+                breakdown_lines.append(f"  ├─ {agent}: {score}/10 ({factor})")
+        breakdown_str = "\n".join(breakdown_lines) + "\n" if breakdown_lines else ""
         
         title = f"🛎️ [需要核准] 交易請求 (Trade Approval Required) - {order.symbol}"
         content = (
@@ -244,7 +264,8 @@ class AutomatedTradingService:
             f"• **標的 (Ticker)**: {order.symbol}\n"
             f"• **方向 (Action)**: {order.action.value}\n"
             f"• **數量 (Quantity)**: {order.quantity}\n"
-            f"• **AI 把握度 (Confidence)**: **{confidence_score}/10**\n\n"
+            f"• **AI 把握度 (Confidence)**: **{confidence_score}/10**\n"
+            f"{breakdown_str}"
             f"**💡 AI 評分理由 (Rationale)**:\n"
             f"{rationale}\n\n"
             f"⚠️ *請在 5 分鐘內做出決定，逾期將自動失效。*"
@@ -264,7 +285,7 @@ class AutomatedTradingService:
             
             if is_approved:
                 logger.info(f"User {user_id} approved trade for {order.symbol}")
-                return await self._execute_trade(user_id, order, confidence_score, rationale, "👤 [核准執行] (User-Approved)")
+                return await self._execute_trade(user_id, order, confidence_score, rationale, "👤 [核准執行] (User-Approved)", confidence_breakdown=confidence_breakdown)
             else:
                 from src.domain.interaction import InteractionStatus
                 if status == InteractionStatus.EXPIRED:
@@ -288,7 +309,7 @@ class AutomatedTradingService:
             logger.error(f"Approval workflow failed: {e}")
             return {"status": "error", "reason": f"Approval workflow failed: {e}"}
 
-    async def _execute_trade(self, user_id: str, order: Order, confidence_score: int, rationale: str, approval_type: str) -> Dict[str, Any]:
+    async def _execute_trade(self, user_id: str, order: Order, confidence_score: int, rationale: str, approval_type: str, confidence_breakdown: list = None) -> Dict[str, Any]:
         """Execute the trade via the BrokerFactory."""
         
         broker = BrokerFactory.get_broker(user_id)
@@ -323,6 +344,16 @@ class AutomatedTradingService:
                 f"**數量 (Quantity)**: {order.quantity}\n"
                 f"**執行方式 (Type)**: {approval_type}\n"
                 f"**把握度 (Confidence)**: {confidence_score}/10\n\n"
+        + (
+            "\n".join([
+                "📊 Confidence Breakdown:",
+                *[f"  ├─ {s['agent']}: {s['confidence']}/10 ({s.get('key_factor', '-')})"
+                  for s in (confidence_breakdown or [])[:3]]
+            ]) + "\n\n"
+            if confidence_breakdown
+            else ""
+        )
+        + 
                 f"**💡 AI 評分理由 (Rationale)**:\n{rationale}\n\n"
                 f"**詳細結果 (Details)**: `{result}`"
             )
