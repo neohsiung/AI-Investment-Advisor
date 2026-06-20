@@ -654,3 +654,40 @@ class SentinelThreshold(Base):
     roi_hint = Column(Text)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+
+
+class EventQueue(Base):
+    """
+    `event_queue` — Tiered event queue for PAD event aggregation.
+
+    Event ingestion → tier classification → INSERT into event_queue (silent).
+    Agents pull pending events by tier + user_id in batch mode.
+    Only P0+Actionable events trigger immediate user notification.
+    """
+    __tablename__ = 'event_queue'
+
+    TIER_P0 = 'P0'  # Critical — immediate
+    TIER_P1 = 'P1'  # Important — every 5-15 min
+    TIER_P2 = 'P2'  # Routine — every 1-4 hours
+    TIER_P3 = 'P3'  # Reference — daily/weekly
+
+    STATUS_PENDING = 'pending'
+    STATUS_PROCESSING = 'processing'
+    STATUS_ANALYZED = 'analyzed'
+    STATUS_ARCHIVED = 'archived'
+
+    id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
+    user_id = Column(String, nullable=False, index=True)
+    event_type = Column(String(50), nullable=False)
+    content = Column(_JSONB(), nullable=False, default=dict)
+    tier = Column(String(10), nullable=False, default=TIER_P2)
+    priority = Column(Integer, nullable=False, default=0)
+    status = Column(String(20), nullable=False, default=STATUS_PENDING)
+    batch_id = Column(String, nullable=True, index=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    processed_at = Column(DateTime(timezone=True), nullable=True)
+
+    __table_args__ = (
+        Index('idx_event_queue_user_tier_status', 'user_id', 'tier', 'status'),
+        Index('idx_event_queue_created_at', 'created_at'),
+    )
