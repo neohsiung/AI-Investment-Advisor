@@ -193,10 +193,13 @@ class TransactionService:
                         {
                             "ticker": p.symbol,
                             "quantity": p.quantity,
-                            "current_price": p.current_price
+                            "current_price": p.current_price,
+                            "leverage": p.leverage
                         } for p in live_positions_raw
                     ]
                     self.repository.reconcile_positions(uid, live_positions, broker_name)
+                    # 3. Save live positions snapshot to positions table
+                    self.repository.save_positions(uid, live_positions, broker_name)
                 
                 summary["accounts_processed"] += 1
 
