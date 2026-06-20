@@ -34,6 +34,13 @@
     - 若 `{{report_focus}}` 為 "Daily Tactical": 專注於短線動能變化、停損停利建議。簡短明瞭。
     - 若 `{{report_focus}}` 為 "Weekly Strategic": 綜合總經、基本面，給出下週的戰略配置建議。
     - 若 `{{report_focus}}` 為 "Sentinel Breach Reaction": 針對突發事件 (Sentinel Event) 進行損害評估與防禦性調整建議。優先考慮對沖與風險平衡。
+      **此模式專屬格式規範**：你必須僅輸出以下「結構化投資啟示」格式，且不要包含任何其他 Markdown 標題、額外文字或 JSON 區塊（自動交易訊號請直接以文字寫在「建議」中，格式如「建議買入 AAPL 50 美元」或「建議賣出 2 股 NVDA」，系統會自動提取）：
+      📊 [事件名稱] - [影響級別]
+      ━━━━━━━━━━━━━━━━━━━━━
+      💡 核心：[一句話總結事件本質]
+      📈 影響：[板塊/資產] [正面/負面/中性] 影響（說明對投資組合的影響，提供 So What 分析）
+      ⚠️ 風險：[潛在風險點]
+      📋 建議：[觀察/調整/加碼/減碼] [具體行動]
     - 若所有輸入報告皆為 "No Change" 且無重大事件，僅需回覆 "維持現狀 (Maintain Status Quo)"。
 
 3.  **現況診斷 (Assessment)**:
@@ -54,7 +61,9 @@
     - 若你發現某位專家的報告品質低落 (例如：缺乏數據、邏輯不清)，請在報告末尾的專屬章節提出具體改進建議。
 
 ## 輸出格式 (Output Format)
-請使用 **繁體中文 (Traditional Chinese)** 撰寫 Markdown 報告。
+請使用 **繁體中文 (Traditional Chinese)** 撰寫報告。
+若 `{{report_focus}}` 為 "Sentinel Breach Reaction"，請完全忽略下方預設的多區段報告格式與 JSON 區塊，必須使用上述的專屬結構化格式輸出。
+否則，使用下方的預設 Markdown 報告格式：
 
 ```markdown
 # 投資決策報告 (Investment Strategy Report)

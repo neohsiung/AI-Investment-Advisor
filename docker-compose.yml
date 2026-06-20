@@ -4,50 +4,6 @@ include:
   - infra/signoz/docker/docker-compose.yaml
 
 services:
-  dashboard:
-    build:
-      context: .
-      dockerfile: services/dashboard/Dockerfile
-    container_name: investment_advisor_dashboard
-    volumes:
-      - ./data:/workspace/data
-      - ./src:/workspace/src
-      - ./services/dashboard:/workspace/services/dashboard
-      - ./prompts:/workspace/prompts
-      - ./secrets/client_secret.json:/workspace/client_secret.json:ro
-    ports:
-      - "8501:8501"
-    env_file:
-      - .env
-    environment:
-      - MCP_SERVER_URL=http://mcp_server:8000
-      - MEMORY_BACKEND=redis
-      - REDIS_URL=redis://redis:6379/0
-      - OTEL_SERVICE_NAME=dashboard
-      - OTEL_EXPORTER_OTLP_ENDPOINT=http://otel-collector:4317
-
-      - DB_USER=${DB_USER}
-      - DB_PASS=${DB_PASS}
-      - DB_HOST=postgres
-      - DB_PORT=5432
-      - DB_NAME=${DB_NAME}
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
-    restart: unless-stopped
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8501/health"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-    networks:
-      - advisor-net
-    depends_on:
-      mcp_server:
-        condition: service_started
-      redis:
-        condition: service_healthy
-      otel-collector:
-        condition: service_started
 
   frontend:
     build:
@@ -62,7 +18,7 @@ services:
       - NODE_ENV=production
       - NEXT_TELEMETRY_DISABLED=1
       - BACKEND_URL=http://mcp_server:8000
-      - NEXT_PUBLIC_API_URL=http://localhost:8000
+      - NEXT_PUBLIC_API_URL=http://localhost:8001
       - OTEL_SERVICE_NAME=nextjs_frontend
       - OTEL_EXPORTER_OTLP_ENDPOINT=http://otel-collector:4318
     networks:
@@ -85,7 +41,7 @@ services:
       dockerfile: services/mcp_server/Dockerfile
     container_name: investment_advisor_mcp
     ports:
-      - "8000:8000"
+      - "8001:8000"
     volumes:
       - ./data:/workspace/data
       - ./src:/workspace/src

@@ -14,6 +14,7 @@ const navItems = [
   { id: "chat", label: "AI 對話", icon: "smart_toy", href: "/chat" },
   { id: "data", label: "數據", icon: "table_chart", href: "/data" },
   { id: "intelligence", label: "市場情報", icon: "crisis_alert", href: "/intelligence" },
+  { id: "universe", label: "標的池", icon: "layers", href: "/universe" },
   { id: "settings", label: "Settings", icon: "tune", href: "/settings" },
 ];
 

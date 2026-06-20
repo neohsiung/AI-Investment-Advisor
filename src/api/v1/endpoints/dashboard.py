@@ -165,7 +165,7 @@ async def get_performance_history(service: PerformanceService = Depends(get_perf
 async def get_agent_performance_stats(service: PerformanceService = Depends(get_performance_service)):
     """獲取各代理人績效統計"""
     try:
-        stats = service.get_agent_performance()
+        stats = await service.get_agent_performance()
         return {
             "status": "success",
             "data": stats
