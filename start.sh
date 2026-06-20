@@ -92,7 +92,7 @@ function fix_redis_queues {
 }
 
 function wait_for_api {
-    local api_url=${1:-"http://localhost:8000/health"}
+    local api_url=${1:-"http://localhost:8001/health"}
     local max_wait=${2:-120}
     local waited=0
 
@@ -120,10 +120,10 @@ function show_health {
 
     echo ""
     echo "API:"
-    if curl -sf http://localhost:8000/health >/dev/null 2>&1; then
-        echo "  http://localhost:8000/health  OK"
+    if curl -sf http://localhost:8001/health >/dev/null 2>&1; then
+        echo "  http://localhost:8001/health  OK"
     else
-        echo "  http://localhost:8000/health  FAIL"
+        echo "  http://localhost:8001/health  FAIL"
     fi
 
     echo ""
@@ -414,7 +414,7 @@ function deploy_prod {
         sleep 10
     fi
 
-    wait_for_api "http://localhost:8000/health" 120 || true
+    wait_for_api "http://localhost:8001/health" 120 || true
     fix_redis_queues "advisor_prod_cache"
 
     echo ""

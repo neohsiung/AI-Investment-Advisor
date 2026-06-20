@@ -23,6 +23,7 @@ export default function TopBar() {
     { href: "/chat", label: "對話" },
     { href: "/data", label: "數據" },
     { href: "/settings", label: "設定" },
+    { href: "/universe", label: "標的池" },
   ];
 
   return (

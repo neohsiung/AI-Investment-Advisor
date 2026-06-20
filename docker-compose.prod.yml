@@ -10,6 +10,8 @@ services:
     container_name: advisor_prod_api
     restart: always
     user: root
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     ports:
       - "8000:8000"
     command: sh -c "/opt/venv/bin/pip install itsdangerous>=2.2.0 && python scripts/init_db.py && uvicorn services.mcp_server.src.app.main:app --host 0.0.0.0 --port 8000"
@@ -17,8 +19,10 @@ services:
       - .env
     environment:
       - NODE_ENV=production
+      - FRONTEND_URL=http://localhost:3001
+      - FRONTEND_CALLBACK_URL=http://localhost:3001/auth/callback
       - REDIS_URL=redis://redis:6379/0
-      - DB_HOST=postgres
+      - DB_HOST=advisor_prod_db
       - OTEL_SERVICE_NAME=mcp_server_prod
       - OTEL_EXPORTER_OTLP_ENDPOINT=http://otel-collector:4317
       - OTEL_EXPORTER_OTLP_PROTOCOL=grpc
@@ -52,13 +56,16 @@ services:
     environment:
       - NODE_ENV=production
       - NEXT_PUBLIC_API_URL=http://localhost:8000
+      - NEXT_PUBLIC_WS_URL=ws://localhost:8000
     depends_on:
       mcp_server:
+        condition: service_healthy
+      redis:
         condition: service_healthy
     networks:
       - advisor-net
 
-  # 3. Transactional & Research Scheduler
+  # 3. Task Scheduler (Celery Beat)
   scheduler:
     build:
       context: .
@@ -66,39 +73,49 @@ services:
     container_name: advisor_prod_scheduler
     restart: always
     command: sh -c "celery -A src.infrastructure.celery_app beat --loglevel=info"
+    user: root
     env_file:
       - .env
     environment:
+      - NODE_ENV=production
       - REDIS_URL=redis://redis:6379/0
-      - DB_HOST=postgres
+      - DB_HOST=advisor_prod_db
       - OTEL_SERVICE_NAME=scheduler_prod
       - OTEL_EXPORTER_OTLP_ENDPOINT=http://otel-collector:4317
       - OTEL_EXPORTER_OTLP_PROTOCOL=grpc
     volumes:
       - ./src:/workspace/src:ro
-      # Note: ./services/scheduler is baked into the image via Dockerfile COPY.
-      # Mount ./src:ro for zero-downtime hotfixes without full image rebuild.
     depends_on:
-      mcp_server:
-        condition: service_healthy
       postgres:
         condition: service_healthy
       redis:
         condition: service_healthy
       otel-collector:
         condition: service_started
+    healthcheck:
+      test: [ "CMD", "python", "-c", "import redis; redis.Redis(host='redis', port=6379).ping()" ]
+      interval: 30s
+      timeout: 10s
+      retries: 3
     networks:
       - advisor-net
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
 
-  # 4. State Management (PostgreSQL with pgvector)
+  # 4. PostgreSQL Database
   postgres:
-    image: ankane/pgvector:v0.5.1
+    image: pgvector/pgvector:pg16
     container_name: advisor_prod_db
     restart: always
+    ports:
+      - "5432:5432"
     environment:
-      - POSTGRES_USER=${DB_USER}
-      - POSTGRES_PASSWORD=${DB_PASS}
-      - POSTGRES_DB=${DB_NAME}
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=postgres
+      - POSTGRES_DB=advisor_prod
     volumes:
       - advisor_db_data:/var/lib/postgresql/data
     healthcheck:
@@ -109,13 +126,13 @@ services:
     networks:
       - advisor-net
 
-  # 5. Distributed Cache & Task Queue (Redis)
+  # 5. Redis Cache & Message Broker
   redis:
     image: redis:7-alpine
     container_name: advisor_prod_cache
     restart: always
-    volumes:
-      - advisor_redis_data:/data
+    ports:
+      - "6379:6379"
     healthcheck:
       test: [ "CMD", "redis-cli", "ping" ]
       interval: 10s
@@ -124,9 +141,9 @@ services:
     networks:
       - advisor-net
 
-  # 6. Workflow Automation (n8n)
+  # 6. n8n Workflow Automation
   n8n:
-    image: n8nio/n8n@sha256:fdf1e22bc04a03e38da41da5a56ba9b9a48510f480874290ea9c180844cbdb0c
+    image: n8nio/n8n:latest
     container_name: advisor_prod_n8n
     restart: always
     ports:
@@ -151,11 +168,7 @@ services:
     networks:
       - advisor-net
 
-  # 7. Local Model Engine (Ollama) — managed by hermes-agent/docker-compose.infra.yml
-  #    hermes_ollama joins advisor-net with alias "ollama", accessible as ollama:11434
-  #    Start: bash ~/Work/Projects/hermes-agent/start.sh
-  # 8. Enterprise Report Worker Pool (Async Task Processing)
-  # Phase 1: 2 workers, scales to 4+ based on load
+  # 7. Worker Pool
   worker_1:
     build:
       context: .
@@ -170,14 +183,13 @@ services:
       - NODE_ENV=production
       - WORKER_ID=worker-1
       - WORKER_CONCURRENCY=2
-      - QUEUE_REDIS_URL=redis://redis:6379/0
-      - DATABASE_URL=postgresql://${DB_USER}:${DB_PASS}@postgres:5432/${DB_NAME}
+      - DB_HOST=advisor_prod_db
+      - REDIS_URL=redis://redis:6379/0
       - OTEL_SERVICE_NAME=worker_1_prod
       - OTEL_EXPORTER_OTLP_ENDPOINT=http://otel-collector:4317
       - OTEL_EXPORTER_OTLP_PROTOCOL=grpc
     volumes:
       - ./src:/workspace/src:ro
-      # Note: ./services/scheduler is baked into the image via Dockerfile COPY.
     depends_on:
       postgres:
         condition: service_healthy
@@ -186,7 +198,7 @@ services:
       otel-collector:
         condition: service_started
     healthcheck:
-      test: ["CMD", "python", "-c", "import redis; redis.Redis(host='redis', port=6379).ping()"]
+      test: [ "CMD", "python", "-c", "import redis; redis.Redis(host='redis', port=6379).ping()" ]
       interval: 30s
       timeout: 10s
       retries: 3
@@ -212,14 +224,13 @@ services:
       - NODE_ENV=production
       - WORKER_ID=worker-2
       - WORKER_CONCURRENCY=2
-      - QUEUE_REDIS_URL=redis://redis:6379/0
-      - DATABASE_URL=postgresql://${DB_USER}:${DB_PASS}@postgres:5432/${DB_NAME}
+      - DB_HOST=advisor_prod_db
+      - REDIS_URL=redis://redis:6379/0
       - OTEL_SERVICE_NAME=worker_2_prod
       - OTEL_EXPORTER_OTLP_ENDPOINT=http://otel-collector:4317
       - OTEL_EXPORTER_OTLP_PROTOCOL=grpc
     volumes:
       - ./src:/workspace/src:ro
-      # Note: ./services/scheduler is baked into the image via Dockerfile COPY.
     depends_on:
       postgres:
         condition: service_healthy
@@ -228,7 +239,7 @@ services:
       otel-collector:
         condition: service_started
     healthcheck:
-      test: ["CMD", "python", "-c", "import redis; redis.Redis(host='redis', port=6379).ping()"]
+      test: [ "CMD", "python", "-c", "import redis; redis.Redis(host='redis', port=6379).ping()" ]
       interval: 30s
       timeout: 10s
       retries: 3
@@ -240,7 +251,44 @@ services:
         max-size: "10m"
         max-file: "3"
 
-  # 9. Web Gateway & Reverse Proxy (Nginx)
+  # P2-3: Celery Beat
+  celery_beat:
+    build:
+      context: .
+      dockerfile: services/scheduler/Dockerfile
+    container_name: advisor_prod_beat
+    restart: always
+    command: sh -c "celery -A src.infrastructure.celery_app beat --loglevel=info"
+    user: root
+    env_file:
+      - .env
+    environment:
+      - NODE_ENV=production
+      - DB_HOST=advisor_prod_db
+      - REDIS_URL=redis://redis:6379/0
+      - DB_USER=${DB_USER}
+      - DB_PASS=${DB_PASS}
+      - DB_PORT=5432
+      - DB_NAME=${DB_NAME}
+      - OTEL_SERVICE_NAME=celery_beat_prod
+    volumes:
+      - ./src:/workspace/src:ro
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      otel-collector:
+        condition: service_started
+    healthcheck:
+      test: ["CMD", "python", "-c", "import os; exit(0 if any('celery' in open(f'/proc/{p}/cmdline').read() for p in os.listdir('/proc') if p.isdigit() and os.path.exists(f'/proc/{p}/cmdline')) else 1)"]
+      interval: 60s
+      timeout: 10s
+      retries: 3
+    networks:
+      - advisor-net
+
+  # Nginx Gateway
   nginx:
     image: nginx:alpine
     container_name: advisor_prod_gateway

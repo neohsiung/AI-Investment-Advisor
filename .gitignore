@@ -74,3 +74,19 @@ n8n_workflow_template.json
 # ── Agent Tool Configs (local-only) ────────────────────────────────
 .claude/
 .agent/workflows/vibe-mobile.md
+# Added by code-review-graph
+.code-review-graph/
+.github/code-review-graph.instruction.md
+
+# ── Local IDEs & Agent Metadata ──
+.cursor/
+.cursorrules
+.gemini/
+.windsurfrules
+GEMINI.md
+QODER.md
+.qoder/
+.kiro/
+.mcp.json
+.opencode.json
+workspace/pad/

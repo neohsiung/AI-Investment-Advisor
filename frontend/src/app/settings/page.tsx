@@ -591,6 +591,18 @@ function SourcesPanel({ settings, update, toggle, secrets }: any) {
                 checked={settings[`source_webhook_${wh.id}_enabled`]}
                 onChange={(v: boolean) => update(`source_webhook_${wh.id}_enabled`, v)}
               />
+              {wh.id === "finnhub" && (
+                <div className="w-full mt-2 pt-2 border-t border-outline-variant/10">
+                  <SecretInput
+                    label="Secret"
+                    id="wh_finnhub_secret"
+                    value={settings.source_finnhub_webhook_secret || ""}
+                    toggle={toggle}
+                    show={secrets.wh_finnhub_secret}
+                    onChange={(v: string) => update("source_finnhub_webhook_secret", v)}
+                  />
+                </div>
+              )}
             </div>
           ))}
         </div>

@@ -107,9 +107,18 @@ class YFinanceProvider(MarketDataProvider):
             p = period
             if days:
                 p = f"{days + 20}d" 
-            return yf.download(ticker, period=p, progress=False, auto_adjust=True, session=self.session)
+            df = yf.download(ticker, period=p, progress=False, auto_adjust=True, session=self.session)
+            # Normalize: handle MultiIndex columns (yfinance >= 0.2.43) and empty results
+            if df is not None and not df.empty:
+                if isinstance(df.columns, pd.MultiIndex):
+                    df.columns = df.columns.get_level_values(0)
+                    df = df.loc[:, ~df.columns.duplicated(keep='first')]
+                required = ['Open', 'High', 'Low', 'Close', 'Volume']
+                cols = [c for c in required if c in df.columns]
+                return df[cols] if cols else df
+            return pd.DataFrame() if df is None else df
         except Exception as e:
-            self.logger.error(f"YFinance fetch_history error: {e}")
+            self.logger.error(f"YFinance fetch_history error for {ticker}: {e}")
             return pd.DataFrame()
 
     def fetch_news(self, ticker: str, limit: int = 5) -> List[Dict[str, Any]]:
