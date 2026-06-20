@@ -160,6 +160,38 @@ class TestClassifyErrorByMessage:
         assert classify_error(exc) == ErrorCategory.UNKNOWN
 
 
+class TestClassifyErrorColdStart:
+    """NVIDIA cold-start/deployment-not-ready → SERVER_ERROR (fallback-eligible)."""
+
+    def test_deploy_keyword(self):
+        """NVIDIA returns 400 with 'deploy' message on cold start."""
+        class NVIDIAColdStart(Exception):
+            status_code = 400
+        exc = NVIDIAColdStart("Model deployment is not ready yet, please try again")
+        assert classify_error(exc) == ErrorCategory.SERVER_ERROR
+
+    def test_model_load_keyword(self):
+        """Model still loading."""
+        class NVIDIAColdStart(Exception):
+            status_code = 400
+        exc = NVIDIAColdStart("model load in progress, retry later")
+        assert classify_error(exc) == ErrorCategory.SERVER_ERROR
+
+    def test_warming_up_keyword(self):
+        """Model warming up."""
+        class NVIDIAColdStart(Exception):
+            status_code = 400
+        exc = NVIDIAColdStart("model is warming up, please wait")
+        assert classify_error(exc) == ErrorCategory.SERVER_ERROR
+
+    def test_plain_400_unknown_unchanged(self):
+        """A plain 400 without cold-start keywords still returns UNKNOWN."""
+        class Plain400Error(Exception):
+            status_code = 400
+        exc = Plain400Error("bad request: invalid parameters")
+        assert classify_error(exc) == ErrorCategory.UNKNOWN
+
+
 # ──────────────────────────────────────────────────────────────────────
 # should_fallback
 # ──────────────────────────────────────────────────────────────────────

@@ -35,6 +35,7 @@ _HTTP_STATUS_MAP: dict[int, ErrorCategory] = {
     403: ErrorCategory.AUTH_FAILURE,
     404: ErrorCategory.MODEL_NOT_FOUND,
     408: ErrorCategory.TIMEOUT,
+    410: ErrorCategory.MODEL_NOT_FOUND,  # Gone — resource no longer available
     413: ErrorCategory.CONTEXT_TOO_LONG,
     422: ErrorCategory.UNKNOWN,          # Unprocessable — inspect message
     429: ErrorCategory.RATE_LIMIT,
@@ -53,6 +54,7 @@ _MESSAGE_PATTERNS: list[tuple[list[str], ErrorCategory]] = [
     (["content policy", "content_policy", "safety", "moderation", "harmful", "violates", "blocked"], ErrorCategory.CONTENT_POLICY),
     (["model not found", "model_not_found", "no such model", "does not exist", "invalid model", "unknown model"], ErrorCategory.MODEL_NOT_FOUND),
     (["connection", "network", "dns", "socket", "unreachable", "refused", "connect error"], ErrorCategory.NETWORK_ERROR),
+    (["deploy", "model load", "model not ready", "not yet available", "warming up", "initializing", "preparation"], ErrorCategory.SERVER_ERROR),
     (["internal server error", "server error", "service unavailable", "bad gateway", "overloaded", "html error page", "provider unavailable", "provider down"], ErrorCategory.SERVER_ERROR),
 ]
 

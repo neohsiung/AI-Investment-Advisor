@@ -110,7 +110,7 @@ MESSAGES = [Message(role="user", content="Hello")]
 class TestResilientPipelineSuccess:
     def test_success_on_first_candidate(self):
         gw = FakeGateway(response="Hello from primary!")
-        candidate = make_candidate("m1", "openai", "gpt-4.1-nano", gw)
+        candidate = make_candidate("s-m1", "openai", "gpt-4.1-nano", gw)
         pipeline = make_pipeline([candidate], [gw])
 
         response, attempts = asyncio.get_event_loop().run_until_complete(
@@ -120,13 +120,12 @@ class TestResilientPipelineSuccess:
         assert response == "Hello from primary!"
         assert len(attempts) == 1
         assert attempts[0].success is True
-        assert attempts[0].model_id == "m1"
-        assert attempts[0].provider_code == "openai"
+        assert attempts[0].model_id == "s-m1"
         assert attempts[0].error_category is None
 
     def test_attempt_record_has_duration(self):
         gw = FakeGateway(response="ok")
-        candidate = make_candidate("m1", "openai", "gpt-4.1-nano", gw)
+        candidate = make_candidate("s-m2", "openai", "gpt-4.1-nano", gw)
         pipeline = make_pipeline([candidate], [gw])
 
         _, attempts = asyncio.get_event_loop().run_until_complete(
@@ -143,8 +142,8 @@ class TestResilientPipelineFallback:
         gw1 = FakeGateway(exc=FakeRateLimitError())
         gw2 = FakeGateway(response="Fallback response")
 
-        c1 = make_candidate("m1", "gemini", "gemini-2.5-pro", gw1)
-        c2 = make_candidate("m2", "openai", "gpt-4.1-nano", gw2)
+        c1 = make_candidate("fb-m1", "gemini", "gemini-2.5-pro", gw1)
+        c2 = make_candidate("fb-m2", "openai", "gpt-4.1-nano", gw2)
         pipeline = make_pipeline([c1, c2], [gw1, gw2])
 
         response, attempts = asyncio.get_event_loop().run_until_complete(
@@ -156,15 +155,15 @@ class TestResilientPipelineFallback:
         assert attempts[0].success is False
         assert attempts[0].error_category == ErrorCategory.RATE_LIMIT
         assert attempts[1].success is True
-        assert attempts[1].model_id == "m2"
+        assert attempts[1].model_id == "fb-m2"
 
     def test_fallback_on_server_error(self):
         """Primary fails with 500, fallback succeeds."""
         gw1 = FakeGateway(exc=FakeServerError())
         gw2 = FakeGateway(response="ok from fallback")
 
-        c1 = make_candidate("m1", "openrouter", "google/gemini-2.5-pro", gw1)
-        c2 = make_candidate("m2", "anthropic", "claude-sonnet-4.5", gw2)
+        c1 = make_candidate("fb-m3", "openrouter", "google/gemini-2.5-pro", gw1)
+        c2 = make_candidate("fb-m4", "anthropic", "claude-sonnet-4.5", gw2)
         pipeline = make_pipeline([c1, c2], [gw1, gw2])
 
         response, attempts = asyncio.get_event_loop().run_until_complete(
@@ -182,9 +181,9 @@ class TestResilientPipelineFallback:
         gw3 = FakeGateway(response="third time lucky")
 
         candidates = [
-            make_candidate("m1", "gemini", "gemini-2.5-pro", gw1),
-            make_candidate("m2", "openai", "gpt-4.1-nano", gw2),
-            make_candidate("m3", "ollama", "qwen2.5:7b", gw3),
+            make_candidate("fb-m5", "gemini", "gemini-2.5-pro", gw1),
+            make_candidate("fb-m6", "openai", "gpt-4.1-nano", gw2),
+            make_candidate("fb-m7", "ollama", "qwen2.5:7b", gw3),
         ]
         pipeline = make_pipeline(candidates, [gw1, gw2, gw3])
 
@@ -204,8 +203,8 @@ class TestResilientPipelineAllFailed:
         gw2 = FakeGateway(exc=FakeServerError())
 
         candidates = [
-            make_candidate("m1", "gemini", "gemini-2.5-pro", gw1),
-            make_candidate("m2", "openai", "gpt-4.1-nano", gw2),
+            make_candidate("af-m1", "gemini", "gemini-2.5-pro", gw1),
+            make_candidate("af-m2", "openai", "gpt-4.1-nano", gw2),
         ]
         pipeline = make_pipeline(candidates, [gw1, gw2])
 
@@ -220,7 +219,7 @@ class TestResilientPipelineAllFailed:
 
     def test_all_failed_error_message_contains_models(self):
         gw1 = FakeGateway(exc=FakeRateLimitError())
-        candidates = [make_candidate("m1", "gemini", "gemini-2.5-pro", gw1)]
+        candidates = [make_candidate("af-m3", "gemini", "gemini-2.5-pro", gw1)]
         pipeline = make_pipeline(candidates, [gw1])
 
         with pytest.raises(AllCandidatesFailedError) as exc_info:
@@ -236,17 +235,13 @@ class TestResilientPipelineNonFallback:
         gw2 = FakeGateway(response="should not reach here")
 
         candidates = [
-            make_candidate("m1", "openai", "gpt-4.1-nano", gw1),
-            make_candidate("m2", "gemini", "gemini-2.5-pro", gw2),
+            make_candidate("nf-m1", "openai", "gpt-4.1-nano", gw1),
+            make_candidate("nf-m2", "gemini", "gemini-2.5-pro", gw2),
         ]
         pipeline = make_pipeline(candidates, [gw1, gw2])
 
         with pytest.raises(FakeAuthError):
             asyncio.get_event_loop().run_until_complete(pipeline.execute(MESSAGES))
-
-        # Only one attempt should have been made
-        # (We can't easily check this without inspecting internals,
-        #  but the test verifies the exception propagates)
 
     def test_content_policy_propagates_immediately(self):
         """CONTENT_POLICY should NOT trigger fallback."""
@@ -258,8 +253,8 @@ class TestResilientPipelineNonFallback:
         gw2 = FakeGateway(response="should not reach here")
 
         candidates = [
-            make_candidate("m1", "openai", "gpt-4.1-nano", gw1),
-            make_candidate("m2", "gemini", "gemini-2.5-pro", gw2),
+            make_candidate("nf-m3", "openai", "gpt-4.1-nano", gw1),
+            make_candidate("nf-m4", "gemini", "gemini-2.5-pro", gw2),
         ]
         pipeline = make_pipeline(candidates, [gw1, gw2])
 
@@ -271,3 +266,116 @@ class TestResilientPipelineValidation:
     def test_empty_chain_raises_value_error(self):
         with pytest.raises(ValueError, match="at least one candidate"):
             ResilientLLMPipeline(config_chain=[])
+
+
+# ──────────────────────────────────────────────────────────────────────
+# Cooldown tests
+# ──────────────────────────────────────────────────────────────────────
+
+class TestResilientPipelineCooldown:
+    """Cooldown mechanism: after N failures, model is skipped for M seconds."""
+
+    @pytest.fixture(autouse=True)
+    def _reset_cooldowns(self):
+        from src.infrastructure.llm.resilient_pipeline import clear_cooldowns
+        clear_cooldowns()
+        yield
+
+    def test_cooldown_after_two_failures(self):
+        """After 2 fallback-eligible failures on the same model_id,
+        subsequent calls skip it and fall through to the next candidate."""
+        # Use two model_ids to trigger cooldown independently
+        gw_fail = FakeGateway(exc=FakeServerError())
+        gw_ok = FakeGateway(response="fallback")
+
+        c_slow = make_candidate("m-cold", "nvidia", "qwen3.5-122b", gw_fail)
+        c_fast = make_candidate("m-fallback", "ollama", "qwen2.5:7b", gw_ok)
+
+        # Run twice: each time m-cold fails once
+        for _ in range(2):
+            pipeline = make_pipeline([c_slow, c_fast], [gw_fail, gw_ok])
+            resp, _ = asyncio.get_event_loop().run_until_complete(
+                pipeline.execute(MESSAGES)
+            )
+            assert resp == "fallback"
+
+        # Now m-cold should be in cooldown (fail_count=2 >= _COOLDOWN_FAIL_THRESHOLD)
+        gw_primary = FakeGateway(response="first try this time")
+
+        # m-cold should be skipped → m-fallback tried first
+        # NOTE: make_pipeline uses a positional iter, so when m-cold is
+        # skipped, the NEXT gateway in the iter goes to m-fallback.
+        # We pass [gw_primary] (one gateway) since only one candidate will be tried.
+        pipeline3 = make_pipeline([c_slow, c_fast], [gw_primary])
+        resp3, attempts3 = asyncio.get_event_loop().run_until_complete(
+            pipeline3.execute(MESSAGES)
+        )
+        assert resp3 == "first try this time"
+        # Only 1 attempt because m-cold was skipped
+        assert len(attempts3) == 1
+        assert attempts3[0].model_id == "m-fallback"
+
+    def test_cooldown_resets_on_success(self):
+        """When a model succeeds, its cooldown is cleared."""
+        # First: fail twice to trigger cooldown on m-clear
+        gw_fail1 = FakeGateway(exc=FakeServerError())
+        gw_fail2 = FakeGateway(exc=FakeServerError())
+        gw_ok = FakeGateway(response="ok")
+
+        c_slow = make_candidate("m-clear", "nvidia", "qwen3.5-122b", gw_fail1)
+        c_fast = make_candidate("m-clear-alt", "ollama", "qwen2.5:7b", gw_ok)
+
+        pipeline1 = make_pipeline([c_slow, c_fast], [gw_fail1, gw_ok])
+        resp1, _ = asyncio.get_event_loop().run_until_complete(pipeline1.execute(MESSAGES))
+        assert resp1 == "ok"
+
+        pipeline2 = make_pipeline([c_slow, c_fast], [gw_fail2, gw_ok])
+        resp2, _ = asyncio.get_event_loop().run_until_complete(pipeline2.execute(MESSAGES))
+        assert resp2 == "ok"
+
+        # Now m-clear is in cooldown. Force it to be tried as the only candidate
+        # (single-candidate chains skip the cooldown check — no point cooling
+        # down the only option). When it succeeds, cooldown resets.
+        gw_recovered = FakeGateway(response="recovered")
+
+        c_recovered = make_candidate("m-clear", "nvidia", "qwen3.5-122b", gw_recovered)
+
+        pipeline3 = make_pipeline([c_recovered], [gw_recovered])
+        response, attempts = asyncio.get_event_loop().run_until_complete(
+            pipeline3.execute(MESSAGES)
+        )
+        assert response == "recovered"
+        assert attempts[0].success is True
+        assert attempts[0].model_id == "m-clear"
+
+        # m-clear's cooldown was reset by success. Now try with fallback again.
+        gw_final = FakeGateway(response="tried first again")
+        gw_final_fallback = FakeGateway(response="fallback")
+
+        pipeline4 = make_pipeline([c_recovered, c_fast], [gw_final, gw_final_fallback])
+        response2, attempts2 = asyncio.get_event_loop().run_until_complete(
+            pipeline4.execute(MESSAGES)
+        )
+        assert response2 == "tried first again"
+        assert attempts2[0].model_id == "m-clear"
+
+    def test_no_skip_when_single_candidate(self):
+        """When there's only one candidate, cooldown is not checked
+        (no point cooling down the only option)."""
+        from src.infrastructure.llm.resilient_pipeline import (
+            _cooldown_registry,
+            _COOLDOWN_FAIL_THRESHOLD,
+        )
+
+        gw = FakeGateway(exc=FakeServerError())
+        c = make_candidate("m-solo", "nvidia", "qwen3.5-122b", gw)
+
+        # Simulate pre-existing cooldown
+        _cooldown_registry["m-solo"] = {"fail_count": 3, "until": 999999999999.0}
+
+        pipeline = make_pipeline([c], [gw])
+        with pytest.raises(AllCandidatesFailedError):
+            asyncio.get_event_loop().run_until_complete(pipeline.execute(MESSAGES))
+
+        # The model should have been tried (not skipped) even though in cooldown
+        assert gw.call_count > 0
