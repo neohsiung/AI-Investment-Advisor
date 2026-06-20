@@ -50,7 +50,7 @@ class TestVIXAnomaly:
         # 3.9 - Ensure thresholds are mockable
         sentinel.thresholds = {"vix_high": 20.0}
         
-        mock_services["market"].get_ohlcv.return_value = {"close": [22.0]}
+        mock_services["market"].get_ohlcv.return_value = {"close": [36.0]}
         
         async def _test():
             # Test the dimension logic directly to ensure it works

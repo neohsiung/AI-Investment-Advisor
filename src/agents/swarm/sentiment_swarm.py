@@ -37,7 +37,7 @@ class SentimentSwarm(RoleSwarm):
         self.social_pulse = SentimentSubAgent(
             name="SocialPulse", 
             instruction="評估市場情緒 (Assess overall market pulse).",
-            tier="adv",
+            tier="advanced",
             user_id=user_id,
             use_cache=use_cache,
             ttl_hours=ttl_hours

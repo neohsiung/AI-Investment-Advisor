@@ -88,7 +88,7 @@ async def test_escalate_new_alert():
 
         service = SentinelService(user_id="test_user", council_service=mock_council, settings_service=mock_settings, repo=mock_repo, snapshot_repo=mock_repo)
 
-        triggers = [{"text": "New Trigger", "id": "new_t"}]
+        triggers = [{"text": "New Trigger", "id": "new_t", "level": "CRITICAL"}]
 
         mock_resp = MagicMock()
         mock_resp.status_code = 202
