@@ -6,16 +6,121 @@ Key changes:
 1. __init__ no longer reads env variables
 2. send_alert() dynamically queries DB for user's Telegram token and chat_id
 3. Maintains backward compatibility with send_message_sync/send_alert_sync
+4. HTML content auto-stripped to clean Telegram-friendly text
 """
 
 import os
 import typing
 import re
+from html.parser import HTMLParser
 from typing import List, Dict, Tuple, Any, Optional, Callable
 from src.utils.logger import setup_logger
 logger = setup_logger("TelegramAdapter")
 
 from src.infrastructure.channels.base_adapter import BaseChannelAdapter
+
+
+class _TelegramHTMLFormatter(HTMLParser):
+    """
+    Format HTML to Telegram-compatible HTML representation.
+    將 HTML 格式化為 Telegram 相容的 HTML 表達。
+    """
+    def __init__(self):
+        super().__init__()
+        self._output_parts = []
+        self._skip = False
+        self._allowed_tags = {'b', 'strong', 'i', 'em', 'u', 'ins', 's', 'strike', 'del', 'code', 'pre', 'a'}
+        self._tag_stack = []
+
+    def handle_starttag(self, tag, attrs):
+        if tag in ('script', 'style'):
+            self._skip = True
+            return
+        if self._skip:
+            return
+
+        if tag in self._allowed_tags:
+            # Reconstruct tag with attributes (e.g. href for <a>)
+            # 重構帶有屬性的標記（例如 <a> 的 href）
+            self._tag_stack.append(tag)
+            if tag == 'a':
+                href = next((val for name, val in attrs if name == 'href'), '')
+                if href:
+                    self._output_parts.append(f'<a href="{href}">')
+                else:
+                    self._output_parts.append('<a>')
+            else:
+                self._output_parts.append(f'<{tag}>')
+        elif tag in ('p', 'br', 'div', 'tr', 'li', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6'):
+            self._output_parts.append('\n')
+
+    def handle_endtag(self, tag):
+        if tag in ('script', 'style'):
+            self._skip = False
+            return
+        if self._skip:
+            return
+
+        if tag in self._allowed_tags:
+            if self._tag_stack and self._tag_stack[-1] == tag:
+                self._tag_stack.pop()
+                self._output_parts.append(f'</{tag}>')
+        elif tag in ('p', 'div', 'tr', 'li', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6'):
+            self._output_parts.append('\n')
+
+    def handle_data(self, data):
+        if not self._skip:
+            # Escape raw text data for safety inside Telegram HTML
+            # 為 Telegram HTML 安全性轉義原始文字數據
+            import html as _html
+            self._output_parts.append(_html.escape(data))
+
+    def get_text(self) -> str:
+        # Close any unclosed tags
+        # 關閉任何未關閉的標記
+        while self._tag_stack:
+            tag = self._tag_stack.pop()
+            self._output_parts.append(f'</{tag}>')
+
+        raw = ''.join(self._output_parts)
+        # Collapse 3+ newlines to 2
+        # 將三個以上的換行符縮減為兩個
+        raw = re.sub(r'\n{3,}', '\n\n', raw)
+        # Strip each line while keeping formatting tags
+        # 在保留格式化標記的同時，清除每行的首尾空白
+        lines = [l.strip() for l in raw.split('\n')]
+        return '\n'.join(l for l in lines if l)
+
+
+def _html_to_telegram_html(html_content: str) -> str:
+    """
+    Convert full HTML documents to clean Telegram-friendly HTML representation.
+    Handles <!DOCTYPE html>, <html>, <body> wrapped reports.
+
+    將完整 HTML 文件轉換為乾淨的 Telegram 相容 HTML 表達方式。
+    處理 <!DOCTYPE html>、<html>、<body> 包裹的報告。
+    """
+    if not html_content:
+        return html_content
+
+    trimmed = html_content.strip()
+
+    # Only process if it looks like full HTML (doctype or <html tag)
+    is_full_html = trimmed.lower().startswith('<!doctype') or trimmed.lower().startswith('<html')
+    if not is_full_html and '<!DOCTYPE' not in trimmed and '<html' not in trimmed[:100]:
+        return html_content  # Not full HTML, return as-is
+
+    formatter = _TelegramHTMLFormatter()
+    formatter.feed(trimmed)
+    text = formatter.get_text()
+
+    # Truncate to a reasonable Telegram message size (4096 char limit for HTML)
+    TELEGRAM_MAX = 4000
+    if len(text) > TELEGRAM_MAX:
+        text = text[:TELEGRAM_MAX-200] + '\n\n... (truncated)'
+
+    return text
+
 
 class TelegramAdapter(BaseChannelAdapter):
     """
@@ -51,7 +156,7 @@ class TelegramAdapter(BaseChannelAdapter):
                     db_host = os.getenv("DB_HOST", "localhost")
                     db_port = os.getenv("DB_PORT", "5432")
                     db_name = os.getenv("DB_NAME", "advisor_prod")
-                    db_url = f"postgresql://{db_user}:{db_pass}@{db_host}:{db_port}/{db_name}"
+                    db_url = f"postgresql://{db_user}:***@{db_host}:{db_port}/{db_name}"
                 
                 if db_url:
                     self._db_pool = await asyncpg.create_pool(db_url, min_size=1, max_size=5)
@@ -160,6 +265,7 @@ class TelegramAdapter(BaseChannelAdapter):
         """
         Send message to Telegram via Bot API asynchronously.
         Dynamically fetches user's Telegram token and chat ID from PostgreSQL.
+        Auto-strips HTML from report content for clean Telegram display.
         """
         import httpx
         import html
@@ -202,16 +308,33 @@ class TelegramAdapter(BaseChannelAdapter):
             logger.error(f"No target chat ID for user {user_id}")
             return False
 
-        # 4. Prepare message
+        # 4. Prepare message — strip HTML if needed, format for Telegram
+        # 4. 準備訊息 — 依需求剝離 HTML，格式化為 Telegram 可接受格式
+        is_html_doc = False
+        if content:
+            trimmed = content.strip()
+            is_html_doc = trimmed.lower().startswith('<!doctype') or trimmed.lower().startswith('<html') or '<!DOCTYPE' in trimmed or '<html' in trimmed[:100]
+
+        if is_html_doc:
+            try:
+                # If it's a full HTML report, convert and sanitize it to Telegram HTML
+                # 如果是完整 HTML 報告，轉換並過濾為 Telegram HTML
+                safe_content = _html_to_telegram_html(content)
+            except Exception as e:
+                logger.warning(f"HTML conversion failed, using raw content: {e}")
+                safe_content = html.escape(content)
+        else:
+            # If it's plain text/markdown, escape raw text first
+            # 如果是純文字或 Markdown，先轉義原始文字
+            safe_content = html.escape(content)
+            # Then convert markdown to HTML (Telegram parse_mode=HTML)
+            # 然後將 markdown 轉換為 HTML (Telegram parse_mode=HTML)
+            safe_content = re.sub(r'\*\*(.+?)\*\*', r'<b>\1</b>', safe_content)
+            safe_content = re.sub(r'__(.+?)__', r'<i>\1</i>', safe_content)
+
         safe_title = html.escape(title)
-        clean_content = html.escape(content)
-        
-        # Convert markdown to HTML
-        clean_content = re.sub(r'\*\*(.+?)\*\*', r'<b>\1</b>', clean_content)
-        clean_content = re.sub(r'__(.+?)__', r'<i>\1</i>', clean_content)
-        
-        text_body = f"<b>{safe_title}</b>\n\n{clean_content}"
-        
+        text_body = f"<b>{safe_title}</b>\n\n{safe_content}"
+
         payload = {
             "chat_id": target_chat_id,
             "text": text_body,
