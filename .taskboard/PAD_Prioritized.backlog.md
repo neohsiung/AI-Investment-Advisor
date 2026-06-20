@@ -5,18 +5,22 @@
 - [x] **P0-2: Sentinel LLM Agent 失效 (gemma2 NETWORK_ERROR)**
   - **Priority:** High
   - **Reason:** Current Blocker - AI analysis pipeline is completely down.
+  - **Resolution:** Switched Sentinel LLM tier from `fast` to `smart` to bypass gemma2 NETWORK_ERROR. System now uses Qwen3-Coder 480B via smart tier for stable inference.
 
 - [x] **P1-3: Migrate job_keyword_refine from deprecated SchedulerService to Celery**
   - **Priority:** High
   - **Reason:** Near-Term Deliverable - Keyword Refine has not been executed for 2+ weeks.
+  - **Resolution:** Created `job_keyword_refine` Celery task in `src/infrastructure/tasks.py`, registered in Celery Beat schedule to run daily at 02:00 UTC. Deprecated SchedulerService wrapper removed.
 
 - [x] **P1-4: Migrate job_experience_replay from deprecated SchedulerService to Celery**
   - **Priority:** High
   - **Reason:** Near-Term Deliverable - Experience Replay has not been executed for 2+ weeks.
+  - **Resolution:** Created `job_experience_replay` Celery task in `src/infrastructure/tasks.py`, registered in Celery Beat schedule to run weekly on Sunday at 03:00 UTC. Deprecated SchedulerService wrapper removed.
 
 - [x] **P1-5: Fix job_weekly_validation bug + migrate to Celery**
   - **Priority:** High
   - **Reason:** Near-Term Deliverable - Weekly backtest is stalled + known code bug.
+  - **Resolution:** Fixed validation logic bug in `job_weekly_validation`, migrated to Celery task. Now runs weekly on Monday at 04:00 UTC with proper error handling and reporting.
 
 ### Medium Priority
 
