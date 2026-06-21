@@ -32,6 +32,17 @@ logger = logging.getLogger(__name__)
 # Data structures
 # ──────────────────────────────────────────────────────────────────────
 
+# Module-level cooldown registry: model_id → {"fail_count": int, "until": float (epoch seconds)}
+# Persists across pipeline instances so a model that repeatedly fails gets a cooldown
+# that subsequent pipeline calls also respect.
+_cooldown_registry: Dict[str, Dict[str, float]] = {}
+
+# After this many fallback-eligible failures, the model goes into cooldown
+_COOLDOWN_FAIL_THRESHOLD = 2
+
+# Duration (seconds) a model stays in cooldown before it's eligible again
+_COOLDOWN_SECONDS = 60
+
 @dataclass
 class ModelCandidate:
     """
@@ -71,6 +82,69 @@ class AllCandidatesFailedError(Exception):
             f"{a.model_code}({a.error_category})" for a in attempts
         )
         super().__init__(f"All {len(attempts)} candidates failed: {summary}")
+
+
+# ──────────────────────────────────────────────────────────────────────
+# Cooldown helpers
+# ──────────────────────────────────────────────────────────────────────
+
+
+def _is_in_cooldown(candidate: ModelCandidate) -> bool:
+    """Check if a candidate model is currently in cooldown.
+
+    Returns True if the model is actively cooling down.
+    Does NOT delete the registry entry — fail_count tracking is independent
+    of cooldown state so that repeated failures accumulate correctly.
+    """
+    entry = _cooldown_registry.get(candidate.model_id)
+    if entry is None:
+        return False
+    if entry["until"] > time.monotonic():
+        return True
+    # Cooldown expired — not in cooldown, but keep entry for fail_count tracking
+    return False
+
+
+def _record_cooldown(candidate: ModelCandidate, has_fallback: bool) -> None:
+    """Record a fallback-eligible failure for a candidate.
+
+    After COOLDOWN_FAIL_THRESHOLD failures, the model enters cooldown
+    for COOLDOWN_SECONDS. If there's no fallback, we don't bother
+    tracking cooldown (it won't help to cool down the only option).
+    """
+    if not has_fallback:
+        return
+    entry = _cooldown_registry.get(candidate.model_id)
+    if entry is None:
+        entry = {"fail_count": 1, "until": 0.0}
+        _cooldown_registry[candidate.model_id] = entry
+    else:
+        entry["fail_count"] = entry["fail_count"] + 1
+    if entry["fail_count"] >= _COOLDOWN_FAIL_THRESHOLD:
+        entry["until"] = time.monotonic() + _COOLDOWN_SECONDS
+        logger.warning(
+            "Cooldown: activated for %s/%s (%d fails, %ds cooldown)",
+            candidate.provider_code,
+            candidate.model_code,
+            entry["fail_count"],
+            _COOLDOWN_SECONDS,
+        )
+
+
+def _reset_cooldown(candidate: ModelCandidate) -> None:
+    """Clear cooldown for a candidate on success — proved it's working."""
+    if candidate.model_id in _cooldown_registry:
+        logger.info(
+            "Cooldown: cleared for %s/%s (successful request)",
+            candidate.provider_code,
+            candidate.model_code,
+        )
+        del _cooldown_registry[candidate.model_id]
+
+
+def clear_cooldowns() -> None:
+    """Reset the entire cooldown registry. Used in tests for isolation."""
+    _cooldown_registry.clear()
 
 
 # ──────────────────────────────────────────────────────────────────────
@@ -120,8 +194,18 @@ class ResilientLLMPipeline:
             Exception: immediately if a non-fallback error occurs (e.g. AUTH_FAILURE).
         """
         attempts: List[AttemptRecord] = []
+        has_fallback = len(self.config_chain) > 1
 
         for candidate in self.config_chain:
+            # Skip if model is in cooldown (but not if it's the only option)
+            if has_fallback and _is_in_cooldown(candidate):
+                logger.info(
+                    "ResilientLLMPipeline: skipping %s/%s (in cooldown)",
+                    candidate.provider_code,
+                    candidate.model_code,
+                )
+                continue
+
             started_at = datetime.now(timezone.utc)
             t0 = time.monotonic()
 
@@ -148,6 +232,9 @@ class ResilientLLMPipeline:
                     error_category=None,
                     success=True,
                 ))
+
+                # Reset cooldown on success — model proved healthy
+                _reset_cooldown(candidate)
 
                 logger.info(
                     "ResilientLLMPipeline: success with %s/%s in %.0fms",
@@ -188,6 +275,9 @@ class ResilientLLMPipeline:
                         category,
                     )
                     raise
+
+                # Record cooldown for transient failures
+                _record_cooldown(candidate, has_fallback)
 
                 # Transient error — try next candidate
                 logger.info(

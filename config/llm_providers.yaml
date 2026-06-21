@@ -63,7 +63,7 @@ providers:
   - provider_code: ollama
     display_name: "Ollama (Local)"
     gateway_class: "src.infrastructure.llm.llm_gateway.OllamaGateway"
-    default_base_url: "http://localhost:11434/v1"
+    default_base_url: "http://host.docker.internal:11434/v1"
     auth_type: none
     api_key_env: null
     models_endpoint: "/api/tags"

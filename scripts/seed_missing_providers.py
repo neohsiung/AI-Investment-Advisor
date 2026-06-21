@@ -133,7 +133,7 @@ def seed():
         # Define the desired tier chain
         tier_config = {
             "nano": [("ollama", "qwen2.5")],
-            "fast": [("ollama", "gemma2")],
+            "fast": [("openrouter", "google/gemini-pro-1.5")],
             "smart": [("openrouter", "google/gemini-pro-1.5")],
             "advanced": [("openrouter", "anthropic/claude-3.5-sonnet")],
         }
