@@ -28,7 +28,14 @@ from src.infrastructure.llm.resilient_pipeline import (
     AttemptRecord,
     ModelCandidate,
     ResilientLLMPipeline,
+    clear_cooldowns,
 )
+
+
+@pytest.fixture(autouse=True)
+def _reset_cooldowns():
+    clear_cooldowns()
+    yield
 
 
 # ──────────────────────────────────────────────────────────────────────
