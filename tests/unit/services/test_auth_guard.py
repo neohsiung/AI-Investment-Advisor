@@ -3,6 +3,12 @@ from unittest.mock import MagicMock, patch
 import sys
 
 # Streamlit is centrally mocked in conftest.py
+orig_extra_st = sys.modules.get("extra_streamlit_components")
+orig_google_oauth = sys.modules.get("google_auth_oauthlib")
+orig_google_flow = sys.modules.get("google_auth_oauthlib.flow")
+orig_google_oauth2 = sys.modules.get("google.oauth2")
+orig_google_trans = sys.modules.get("google.auth.transport")
+
 sys.modules["extra_streamlit_components"] = MagicMock()
 sys.modules["google_auth_oauthlib"] = MagicMock()
 sys.modules["google_auth_oauthlib.flow"] = MagicMock()
@@ -10,6 +16,20 @@ sys.modules["google.oauth2"] = MagicMock()
 sys.modules["google.auth.transport"] = MagicMock()
 
 from src.utils.auth_guard import require_authentication
+
+# Restore original sys.modules states
+def restore_module(name, orig):
+    if orig is None:
+        sys.modules.pop(name, None)
+    else:
+        sys.modules[name] = orig
+
+restore_module("extra_streamlit_components", orig_extra_st)
+restore_module("google_auth_oauthlib", orig_google_oauth)
+restore_module("google_auth_oauthlib.flow", orig_google_flow)
+restore_module("google.oauth2", orig_google_oauth2)
+restore_module("google.auth.transport", orig_google_trans)
+
 
 
 class TestAuthGuard:

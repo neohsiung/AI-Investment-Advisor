@@ -7,9 +7,27 @@ import pandas as pd
 from datetime import datetime
 import sys
 
-# Mock problematic modules (Streamlit is centrally mocked in conftest.py)
-sys.modules["plotly.express"] = MagicMock()
-sys.modules["streamlit.components.v1"] = MagicMock()
+# Mock problematic modules (Streamlit is centrally mocked in conftest.py) using a module-scoped fixture
+@pytest.fixture(scope="module", autouse=True)
+def mock_plotly_and_streamlit():
+    orig_plotly = sys.modules.get("plotly.express")
+    orig_st_comp = sys.modules.get("streamlit.components.v1")
+    
+    sys.modules["plotly.express"] = MagicMock()
+    sys.modules["streamlit.components.v1"] = MagicMock()
+    
+    yield
+    
+    if orig_plotly is None:
+        sys.modules.pop("plotly.express", None)
+    else:
+        sys.modules["plotly.express"] = orig_plotly
+        
+    if orig_st_comp is None:
+        sys.modules.pop("streamlit.components.v1", None)
+    else:
+        sys.modules["streamlit.components.v1"] = orig_st_comp
+
 
 
 class TestAnalyticsService:
