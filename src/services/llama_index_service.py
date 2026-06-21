@@ -312,12 +312,17 @@ class LlamaIndexService:
         取得向量索引的統計資料。
         """
         from sqlalchemy import create_engine, text
+        import re
+
+        # Validate table name to prevent SQL injection
+        if not re.match(r"^[a-zA-Z0-9_]+$", table_name):
+            raise ValueError("Invalid table name")
 
         engine = create_engine(self._connection_string)
         try:
             with engine.connect() as conn:
                 row = conn.execute(
-                    text(f"SELECT COUNT(*) as count FROM {table_name}")
+                    text(f"SELECT COUNT(*) as count FROM {table_name}")  # nosec B608
                 ).fetchone()
                 return {
                     "table": table_name,
@@ -339,14 +344,20 @@ class LlamaIndexService:
         刪除 N 天前的條目（資料保留政策）。
         """
         from sqlalchemy import create_engine, text
+        import re
+
+        # Validate table name to prevent SQL injection
+        if not re.match(r"^[a-zA-Z0-9_]+$", table_name):
+            raise ValueError("Invalid table name")
 
         engine = create_engine(self._connection_string)
         with engine.begin() as conn:
             result = conn.execute(
                 text(
-                    f"DELETE FROM {table_name} "
-                    f"WHERE (data->>'ingested_at')::timestamp < NOW() - INTERVAL '{days} days'"
-                )
+                    f"DELETE FROM {table_name} "  # nosec B608
+                    "WHERE (data->>'ingested_at')::timestamp < NOW() - (CAST(:days AS TEXT) || ' days')::INTERVAL"
+                ),
+                {"days": days},
             )
             count = result.rowcount
             logger.info(f"Deleted {count} old entries from {table_name}")
