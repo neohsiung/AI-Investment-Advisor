@@ -90,7 +90,7 @@ async def _call_llm_assessment(
 
     # Build router using the same pattern as base_agent.py
     settings_svc = SettingsService(user_id=user_id)
-    from src.services.token_logger import TokenLoggerService
+    from src.services.token_logger_service import TokenLoggerService
     router = BudgetAwareModelRouter(settings_svc, TokenLoggerService())
 
     # Get ResilientLLMPipeline for FAST tier
