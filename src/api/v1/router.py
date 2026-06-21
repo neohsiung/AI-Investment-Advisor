@@ -51,6 +51,7 @@ def get_current_user_id(request: Request, token: str = Depends(oauth2_scheme)) -
 # 3. Import and Include Endpoints
 from src.api.v1.endpoints import auth, dashboard, transactions, settings, chat
 from src.api.v1.endpoints import llm_settings
+from src.api.v1.endpoints import ticker_universe
 
 api_v1_router.include_router(auth.router, prefix="/auth", tags=["Authentication"])
 
@@ -58,6 +59,13 @@ api_v1_router.include_router(dashboard.router, prefix="/dashboard", tags=["Dashb
 api_v1_router.include_router(transactions.router, prefix="/transactions", tags=["Transactions"])
 api_v1_router.include_router(settings.router, prefix="/settings", tags=["Settings"])
 api_v1_router.include_router(chat.router, prefix="/chat", tags=["AI Advisor"])
+
+# Ticker Universe
+api_v1_router.include_router(
+    ticker_universe.router,
+    prefix="/ticker-universe",
+    tags=["Ticker Universe"],
+)
 
 # Phase A: LLM multi-provider settings
 api_v1_router.include_router(
