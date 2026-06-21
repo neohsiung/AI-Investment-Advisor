@@ -143,10 +143,10 @@ class TickerUniverseRepository(BaseRepository):
 
     def upsert(self, user_id: str, ticker: str, **kwargs) -> bool:
         """Insert or update a ticker in the universe."""
-        import re
         # Validate kwargs keys to prevent SQL injection
+        ALLOWED_FIELDS = {"company_name", "sector", "industry", "status"}
         for k in kwargs:
-            if not re.match(r"^[a-zA-Z0-9_]+$", k):
+            if k not in ALLOWED_FIELDS:
                 raise ValueError(f"Invalid field name: {k}")
 
         existing = self.get_by_ticker(user_id, ticker)
@@ -266,10 +266,10 @@ class TickerUniverseRepository(BaseRepository):
 
     def upsert_target(self, user_id: str, ticker: str, **kwargs) -> bool:
         """Insert or update a target allocation."""
-        import re
         # Validate kwargs keys to prevent SQL injection
+        ALLOWED_FIELDS = {"target_weight", "confidence_score", "expected_return", "min_weight", "max_weight"}
         for k in kwargs:
-            if not re.match(r"^[a-zA-Z0-9_]+$", k):
+            if k not in ALLOWED_FIELDS:
                 raise ValueError(f"Invalid field name: {k}")
 
         params = {k: v for k, v in kwargs.items()}
