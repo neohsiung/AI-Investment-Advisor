@@ -143,6 +143,12 @@ class TickerUniverseRepository(BaseRepository):
 
     def upsert(self, user_id: str, ticker: str, **kwargs) -> bool:
         """Insert or update a ticker in the universe."""
+        import re
+        # Validate kwargs keys to prevent SQL injection
+        for k in kwargs:
+            if not re.match(r"^[a-zA-Z0-9_]+$", k):
+                raise ValueError(f"Invalid field name: {k}")
+
         existing = self.get_by_ticker(user_id, ticker)
         now = datetime.now(timezone.utc)
         if existing:
@@ -153,7 +159,7 @@ class TickerUniverseRepository(BaseRepository):
             query = text(f"""
                 UPDATE ticker_universe SET {fields}, last_reviewed_at = :now
                 WHERE user_id = :uid AND ticker = :ticker
-            """)
+            """)  # nosec B608
             params["now"] = now
         else:
             cols = ["user_id", "ticker", "added_at"] + list(kwargs.keys())
@@ -165,7 +171,7 @@ class TickerUniverseRepository(BaseRepository):
                 VALUES ({', '.join(placeholders)})
                 ON CONFLICT (user_id, ticker) DO UPDATE SET
                     {', '.join(f"{k} = EXCLUDED.{k}" for k in kwargs)}
-            """)
+            """)  # nosec B608
         try:
             with self.engine.begin() as conn:
                 conn.execute(query, params)
@@ -260,6 +266,12 @@ class TickerUniverseRepository(BaseRepository):
 
     def upsert_target(self, user_id: str, ticker: str, **kwargs) -> bool:
         """Insert or update a target allocation."""
+        import re
+        # Validate kwargs keys to prevent SQL injection
+        for k in kwargs:
+            if not re.match(r"^[a-zA-Z0-9_]+$", k):
+                raise ValueError(f"Invalid field name: {k}")
+
         params = {k: v for k, v in kwargs.items()}
         params["uid"] = user_id
         params["ticker"] = ticker.upper()
@@ -272,7 +284,7 @@ class TickerUniverseRepository(BaseRepository):
             VALUES (:uid, :ticker, {', '.join(':' + k for k in kwargs.keys())}, :now)
             ON CONFLICT (user_id, ticker) DO UPDATE SET
                 {set_clause}, last_optimized_at = EXCLUDED.last_optimized_at
-        """)
+        """)  # nosec B608
         try:
             with self.engine.begin() as conn:
                 conn.execute(query, params)
