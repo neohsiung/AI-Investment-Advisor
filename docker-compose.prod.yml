@@ -288,7 +288,17 @@ services:
     networks:
       - advisor-net
 
-  # Nginx Gateway
+  # 10. Lightweight Web Scraper Service
+  scraper:
+    build:
+      context: ./services/scraper
+      dockerfile: Dockerfile
+    container_name: advisor_prod_scraper
+    restart: always
+    environment:
+      - NODE_ENV=production
+    networks:
+      - advisor-net
   nginx:
     image: nginx:alpine
     container_name: advisor_prod_gateway
