@@ -49,7 +49,7 @@ async def test_do_send_alert_uses_internal_user_id():
             council_service=mock_council,
         )
 
-        triggers = [{"id": "vix_spike", "text": "🔴 VIX Spike: 45.0 > 30.0"}]
+        triggers = [{"id": "vix_spike", "text": "🔴 VIX Spike: 45.0 > 30.0", "level": "CRITICAL"}]
 
         with patch('src.services.notification_service.NotificationService') as mock_noti_cls, \
              patch('src.services.notification_settings_manager.NotificationSettingsManager') as mock_nsm_cls:
