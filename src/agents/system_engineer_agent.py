@@ -67,7 +67,7 @@ class SystemEngineerAgent(BaseAgent):
         for line in cio_report.splitlines():
             if "[HR_REQUEST]" in line:
                 match = re.search(
-                    r'Replace Agent:\s*([a-zA-Z0-9_\- ]+)\s*\(Reason:\s*([^)]+)\)',
+                    r'Replace Agent:\s*([a-zA-Z0-9_\-]+)\s*\(Reason:\s*([^)]+)\)',
                     line,
                     re.IGNORECASE
                 )

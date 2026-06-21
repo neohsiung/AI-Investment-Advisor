@@ -51,7 +51,7 @@ async def optimize_targets(service: TickerUniverseService = Depends(get_service)
         return {"status": "success" if result.get("success") else "error", "data": result}
     except Exception as e:
         logger.error(f"Optimize targets failed: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 
 @router.get("/targets", response_model=TargetAllocationListResponse)
@@ -63,7 +63,7 @@ async def get_targets(service: TickerUniverseService = Depends(get_service)):
         return {"status": "success", "data": records}
     except Exception as e:
         logger.error(f"Error fetching targets: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 
 @router.get("/logs", response_model=LogListResponse)
@@ -78,7 +78,7 @@ async def get_logs(
         return {"status": "success", "data": records}
     except Exception as e:
         logger.error(f"Error fetching logs: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 
 @router.post("/migrate", response_model=TickerInfoResponse)
@@ -89,7 +89,7 @@ async def migrate_holdings(service: TickerUniverseService = Depends(get_service)
         return {"status": "success", "data": result}
     except Exception as e:
         logger.error(f"Migration failed: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 
 @router.post("/research/run", response_model=TickerInfoResponse)
@@ -107,7 +107,7 @@ async def run_batch_research(service: TickerUniverseService = Depends(get_servic
                 "message": f"Researched {count}/{total} tickers, {errors} errors, {len(candidates)} removal candidates"}
     except Exception as e:
         logger.error(f"Batch research failed: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 
 @router.post("/research/run/{ticker}", response_model=TickerInfoResponse)
@@ -120,7 +120,7 @@ async def run_single_research(ticker: str, service: TickerUniverseService = Depe
         return {"status": "success", "data": result}
     except Exception as e:
         logger.error(f"Research failed for {ticker}: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 
 @router.get("/removal-candidates", response_model=TickerInfoResponse)
@@ -133,7 +133,7 @@ async def get_removal_candidates(service: TickerUniverseService = Depends(get_se
         return {"status": "success", "data": result}
     except Exception as e:
         logger.error(f"Removal evaluation failed: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 
 @router.get("/rebalance/plan", response_model=TickerInfoResponse)
@@ -146,7 +146,7 @@ async def get_rebalance_plan(service: TickerUniverseService = Depends(get_servic
         return {"status": "success" if plan.get("success") else "error", "data": plan}
     except Exception as e:
         logger.error(f"Rebalance plan failed: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 
 @router.post("/rebalance", response_model=TickerInfoResponse)
@@ -159,7 +159,7 @@ async def execute_confidence_rebalance(service: TickerUniverseService = Depends(
         return {"status": "success" if result.get("success") else "error", "data": result}
     except Exception as e:
         logger.error(f"Rebalance execution failed: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 
 # ── Ticker Universe CRUD (must be after specific routes) ──
@@ -177,7 +177,7 @@ async def get_universe(
         return {"status": "success", "data": records}
     except Exception as e:
         logger.error(f"Error fetching universe: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 
 @router.post("", response_model=ActionResponse)
@@ -195,7 +195,7 @@ async def add_ticker(
         raise
     except Exception as e:
         logger.error(f"Error adding ticker: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 
 @router.get("/{ticker}", response_model=TickerInfoResponse)
@@ -213,7 +213,7 @@ async def get_ticker(
         raise
     except Exception as e:
         logger.error(f"Error fetching {ticker}: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 
 @router.patch("/{ticker}", response_model=ActionResponse)
@@ -233,7 +233,7 @@ async def update_ticker(
         raise
     except Exception as e:
         logger.error(f"Error updating {ticker}: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 
 @router.delete("/{ticker}", response_model=ActionResponse)
@@ -252,7 +252,7 @@ async def remove_ticker(
         raise
     except Exception as e:
         logger.error(f"Error removing {ticker}: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 
 # ── Research ──
@@ -271,7 +271,7 @@ async def get_research(
         return {"status": "success", "data": records}
     except Exception as e:
         logger.error(f"Error fetching research for {ticker}: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 
 @router.post("/research", response_model=ActionResponse)
@@ -289,4 +289,4 @@ async def submit_research(
         raise
     except Exception as e:
         logger.error(f"Error submitting research: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="Internal server error")
