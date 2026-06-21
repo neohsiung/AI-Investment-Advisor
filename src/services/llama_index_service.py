@@ -364,8 +364,9 @@ class LlamaIndexService:
         import re
 
         # Validate table name to prevent SQL injection
-        if not re.match(r"^[a-zA-Z0-9_]+$", table_name):
-            raise ValueError("Invalid table name")
+        ALLOWED_TABLES = {"llama_index_vectors", "llama_index_news"}
+        if table_name not in ALLOWED_TABLES:
+            raise ValueError(f"Invalid table name: {table_name}")
 
         engine = create_engine(self._connection_string)
         try:
@@ -396,8 +397,9 @@ class LlamaIndexService:
         import re
 
         # Validate table name to prevent SQL injection
-        if not re.match(r"^[a-zA-Z0-9_]+$", table_name):
-            raise ValueError("Invalid table name")
+        ALLOWED_TABLES = {"llama_index_vectors", "llama_index_news"}
+        if table_name not in ALLOWED_TABLES:
+            raise ValueError(f"Invalid table name: {table_name}")
 
         engine = create_engine(self._connection_string)
         with engine.begin() as conn:

@@ -147,9 +147,9 @@ async def test_get_index_stats(mock_llama_components):
     
     with patch("sqlalchemy.create_engine") as mock_create_engine:
         mock_create_engine.return_value.connect.return_value.__enter__.return_value = mock_conn
-        stats = await service.get_index_stats("test_table")
+        stats = await service.get_index_stats("llama_index_vectors")
         assert stats["document_count"] == 10
-        assert stats["table"] == "test_table"
+        assert stats["table"] == "llama_index_vectors"
 
 
 @pytest.mark.asyncio
@@ -161,7 +161,7 @@ async def test_delete_old_entries(mock_llama_components):
     mock_conn.execute.return_value.rowcount = 5
     with patch("sqlalchemy.create_engine") as mock_create_engine:
         mock_create_engine.return_value.begin.return_value.__enter__.return_value = mock_conn
-        res = await service.delete_old_entries(days=30, table_name="test_table")
+        res = await service.delete_old_entries(days=30, table_name="llama_index_vectors")
         assert res == 5
 
 
