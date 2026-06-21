@@ -96,5 +96,7 @@ dependencies = [
     "llama-index-llms-ollama>=0.3.0",
     "llama-index-vector-stores-postgres>=0.2.0",
     "llama-index-readers-file>=0.2.0",
-    "llama-index-readers-web>=0.2.0",
+    "feedparser>=6.0.10",
+    "newspaper3k>=0.2.8",
+    "lxml-html-clean>=0.1.0",
 ]

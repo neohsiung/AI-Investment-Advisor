@@ -163,3 +163,52 @@ async def test_delete_old_entries(mock_llama_components):
         mock_create_engine.return_value.begin.return_value.__enter__.return_value = mock_conn
         res = await service.delete_old_entries(days=30, table_name="test_table")
         assert res == 5
+
+
+def test_rss_news_reader_custom():
+    from src.services.llama_index_service import RssNewsReader
+    from unittest.mock import patch, MagicMock
+
+    reader = RssNewsReader(text_mode=True)
+    assert reader.reader_kwargs == {"text_mode": True}
+
+    mock_feed = MagicMock()
+    mock_entry = MagicMock()
+    mock_entry.get.return_value = "http://article.com"
+    mock_feed.entries = [mock_entry]
+
+    mock_article = MagicMock()
+    mock_article.title = "Test Article"
+    mock_article.text = "Article body text"
+    mock_article.authors = ["Author"]
+    mock_article.meta_lang = "en"
+    mock_article.meta_description = "Desc"
+    mock_article.publish_date = "2026-06-21"
+
+    with patch("feedparser.parse", return_value=mock_feed) as mock_parse, \
+         patch("newspaper.Article", return_value=mock_article) as mock_article_cls:
+        
+        # Test list of URLs
+        docs = reader.load_data(["http://rss.com"])
+        assert len(docs) == 1
+        assert docs[0].text == "Article body text"
+        assert docs[0].metadata["title"] == "Test Article"
+        assert docs[0].metadata["link"] == "http://article.com"
+        assert docs[0].metadata["feed"] == "http://rss.com"
+
+        # Test single string URL
+        docs_str = reader.load_data("http://rss.com")
+        assert len(docs_str) == 1
+        assert docs_str[0].text == "Article body text"
+
+        # Test feedparser exception handling
+        mock_parse.side_effect = Exception("Feed parse failed")
+        docs_err = reader.load_data("http://rss.com")
+        assert len(docs_err) == 0
+
+        # Test article download/parse exception handling
+        mock_parse.side_effect = None
+        mock_article_cls.side_effect = Exception("Article download failed")
+        docs_err2 = reader.load_data("http://rss.com")
+        assert len(docs_err2) == 0
+
