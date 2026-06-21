@@ -29,11 +29,60 @@ from llama_index.embeddings.ollama import OllamaEmbedding
 from llama_index.llms.ollama import Ollama
 from llama_index.vector_stores.postgres import PGVectorStore
 from llama_index.readers.file import PDFReader
-from llama_index.readers.web import RssNewsReader
-
 from src.utils.logger import setup_logger
 
 logger = setup_logger("LlamaIndexService")
+
+
+class RssNewsReader:
+    """
+    Custom RSS news reader that parses RSS feeds using feedparser and extracts text using newspaper3k.
+    Does not require llama-index-readers-web (which depends on GPL-licensed html2text).
+    """
+    def __init__(self, **reader_kwargs: Any):
+        self.reader_kwargs = reader_kwargs
+
+    def load_data(self, urls: str | List[str]) -> List[Document]:
+        import feedparser
+        from newspaper import Article
+
+        if isinstance(urls, str):
+            urls = [urls]
+
+        documents = []
+        for url in urls:
+            try:
+                feed = feedparser.parse(url)
+                for entry in feed.entries:
+                    link = entry.get("link")
+                    if not link:
+                        continue
+                    try:
+                        article = Article(link, **self.reader_kwargs)
+                        article.download()
+                        article.parse()
+                        
+                        metadata = {
+                            "title": getattr(article, "title", ""),
+                            "link": link,
+                            "authors": getattr(article, "authors", []),
+                            "language": getattr(article, "meta_lang", ""),
+                            "description": getattr(article, "meta_description", ""),
+                            "publish_date": getattr(article, "publish_date", ""),
+                            "feed": url,
+                        }
+                        
+                        documents.append(
+                            Document(text=article.text, metadata=metadata)
+                        )
+                    except Exception as e:
+                        logger.error(f"Error parsing article {link}: {e}")
+                        continue
+            except Exception as e:
+                logger.error(f"Error parsing feed {url}: {e}")
+                continue
+
+        return documents
 
 # Default embedding model configuration
 DEFAULT_EMBED_MODEL = "nomic-embed-text"
