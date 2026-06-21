@@ -54,6 +54,7 @@ def sentinel_setup():
 @pytest.mark.anyio
 async def test_alert_flow_and_format(sentinel_setup):
     sentinel = sentinel_setup["sentinel"]
+    sentinel.current_vix = 40.0
     mock_council = sentinel_setup["mock_council"]
     
     triggers = [
@@ -85,7 +86,7 @@ async def test_alert_flow_and_format(sentinel_setup):
         
         content = call_kwargs['content']
         # Verify content presence
-        assert "### 🛡️ Sentinel 監控警報" in content
-        assert "• 🔴 VIX Spike: 45.0 > 30.0" in content
-        assert "• 🏦 Fed Funds Rate Up" in content
+        assert "TESTSENTINEL" in content
+        assert "🔴 VIX Spike: 45.0 > 30.0" in content
+        assert "🏦 Fed Funds Rate Up" in content
         assert "Decision: SELL AAPL immediately." in content

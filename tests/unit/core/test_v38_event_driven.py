@@ -54,6 +54,8 @@ async def test_sentinel_process_event(mock_sentinel_repo):
             repo=mock_sentinel_repo,
             snapshot_repo=MagicMock() # Mock snapshot repo too
         )
+        sentinel.current_vix = 40.0
+        sentinel.settings_service.user_id = "test_user"
         # Suppress cash alert
         sentinel.settings_service.get_setting.side_effect = lambda key, default=None, user_id=None: 0.0 if key == "target_cash_ratio" else default
         # Mock direct dispatch
