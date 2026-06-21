@@ -39,13 +39,20 @@ class CognitiveMemoryManager:
         if not re.match(r'^[a-zA-Z0-9_-]+$', cleaned):
             safe_user_id = "default"
         else:
-            safe_user_id = cleaned
+            safe_user_id = "".join(chr(ord(c)) for c in cleaned)
 
         self.user_id = user_id
         self.engine = get_db_engine()
 
         def _safe_path(sub: str) -> Path:
-            p = (base_dir / sub / safe_user_id).resolve()
+            if sub not in ("long_term", "medium_term_fallback"):
+                raise ValueError("Invalid subdirectory")
+            
+            # Use os.path.basename to guarantee no path traversal components exist
+            clean_sub = os.path.basename(sub)
+            clean_user = os.path.basename(safe_user_id)
+            
+            p = (base_dir / clean_sub / clean_user).resolve()
             if os.path.commonpath([str(p), str(base_dir)]) != str(base_dir):
                 raise PermissionError("Access denied: path outside memory base.")
             return p

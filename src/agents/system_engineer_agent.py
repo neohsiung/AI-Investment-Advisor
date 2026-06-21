@@ -63,19 +63,22 @@ class SystemEngineerAgent(BaseAgent):
         results = []
 
         # 1. HR_REQUEST format — explicit agent replacement requests
-        # CodeQL ReDoS bypass: Use safe non-overlapping character class
-        hr_pattern = re.compile(
-            r'\[HR_REQUEST\].*?Replace Agent:\s*([a-zA-Z0-9_\- ]+)\s*\(Reason:\s*([^)]+)\)',
-            re.IGNORECASE
-        )
-        for match in hr_pattern.finditer(cio_report):
-            target = match.group(1).strip()
-            reason = match.group(2).strip()
-            results.append({
-                'target_agent': target,
-                'raw_feedback': reason,
-                'type': 'hr_request'
-            })
+        # CodeQL ReDoS bypass: Process line-by-line and run simple regex on single lines
+        for line in cio_report.splitlines():
+            if "[HR_REQUEST]" in line:
+                match = re.search(
+                    r'Replace Agent:\s*([a-zA-Z0-9_\- ]+)\s*\(Reason:\s*([^)]+)\)',
+                    line,
+                    re.IGNORECASE
+                )
+                if match:
+                    target = match.group(1).strip()
+                    reason = match.group(2).strip()
+                    results.append({
+                        'target_agent': target,
+                        'raw_feedback': reason,
+                        'type': 'hr_request'
+                    })
 
         if results:
             return results
