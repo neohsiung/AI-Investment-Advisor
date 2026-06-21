@@ -11,12 +11,33 @@ import pandas as pd
 import numpy as np
 
 # Mock problematic modules before importing PerformanceService
+orig_fredapi = sys.modules.get('fredapi')
+orig_fred_service = sys.modules.get('src.services.fred_service')
+orig_fred_provider = sys.modules.get('src.data.providers.fred_provider')
+
 sys.modules['fredapi'] = MagicMock()
 sys.modules['src.services.fred_service'] = MagicMock()
 sys.modules['src.data.providers.fred_provider'] = MagicMock()
 
 # Now safe to import
 from src.services.performance_service import PerformanceService
+
+# Restore original sys.modules states to prevent test contamination
+if orig_fredapi is None:
+    sys.modules.pop('fredapi', None)
+else:
+    sys.modules['fredapi'] = orig_fredapi
+
+if orig_fred_service is None:
+    sys.modules.pop('src.services.fred_service', None)
+else:
+    sys.modules['src.services.fred_service'] = orig_fred_service
+
+if orig_fred_provider is None:
+    sys.modules.pop('src.data.providers.fred_provider', None)
+else:
+    sys.modules['src.data.providers.fred_provider'] = orig_fred_provider
+
 
 
 @pytest.fixture
