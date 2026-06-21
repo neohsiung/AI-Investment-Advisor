@@ -557,4 +557,4 @@ Return JSON:
 
     def _ticker_hash(self, ticker: str) -> int:
         """Deterministic hash per ticker for reproducible fallback scores."""
-        return int(hashlib.md5(ticker.encode()).hexdigest()[:8], 16)
+        return int(hashlib.md5(ticker.encode(), usedforsecurity=False).hexdigest()[:8], 16)
