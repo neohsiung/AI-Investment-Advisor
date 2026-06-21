@@ -43,7 +43,7 @@ class SystemEngineerAgent(BaseAgent):
         super().__init__(
             name="AlphaEngineer", 
             prompt_path="prompts/common/default_system.j2",
-            tier="adv",
+            tier="advanced",
             user_id=user_id,
             **kwargs
         )

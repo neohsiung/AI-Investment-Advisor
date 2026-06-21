@@ -17,7 +17,7 @@ class TestEscalation:
                 mock_nsm_instance.get_active_notification_channels.return_value = []
                 MockNoti.create_with_settings.return_value = MagicMock(notify_all=AsyncMock())
                 
-                await sentinel._escalate([{"text": "Test trigger 1", "id": "t1"}, {"text": "Test trigger 2", "id": "t2"}])
+                await sentinel._escalate([{"text": "Test trigger 1", "id": "t1", "level": "CRITICAL"}, {"text": "Test trigger 2", "id": "t2"}])
                 await sentinel._flush_buffer(force=True)
     
                 mock_services["council"].start_session.assert_called_once()
@@ -47,7 +47,7 @@ class TestSourcePollingAndThematic:
     def test_poll_alternative_me(self, mock_services, run_async):
         """Test Fear & Greed API polling"""
         sentinel = _create_sentinel(mock_services)
-        with patch('requests.get') as mock_get:
+        with patch('httpx.get') as mock_get:
             mock_resp = MagicMock()
             mock_resp.status_code = 200
             mock_resp.json.return_value = {"data": [{"value": "15", "value_classification": "Extreme Fear"}]}

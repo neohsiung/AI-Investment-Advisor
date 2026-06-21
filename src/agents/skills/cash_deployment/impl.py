@@ -131,8 +131,30 @@ async def _get_deployment_candidates(user_id: str, amount: float) -> list:
     except Exception as e:
         logger.error(f"Error in dynamic deployment discovery: {e}")
 
-    # Fallback only if discovery completely fails and no results
+    # Fallback: use existing portfolio positions when discovery returns nothing
     if not results:
-        logger.info("Discovery failed, no candidates found. Portfolio remains in cash.")
+        logger.info("Discovery returned no candidates, falling back to existing portfolio positions.")
+        try:
+            from src.repositories.transaction_repository import AlchemyTransactionRepository
+            from src.data.database import get_db_engine
+            repo = AlchemyTransactionRepository(get_db_engine())
+            holdings = repo.get_holdings(user_id)
+            if holdings:
+                total_candidates = min(len(holdings), 5)
+                amount_per = amount / total_candidates
+                for h in holdings[:total_candidates]:
+                    ticker = h.get("ticker", "").upper()
+                    if ticker and ticker != "CASH":
+                        results.append({
+                            "ticker": ticker,
+                            "allocated_amount": round(amount_per, 2),
+                            "reason": f"Portfolio rebalancing: add to existing position {ticker}",
+                            "source": "portfolio_fallback"
+                        })
+                logger.info(f"Fallback: allocated ${amount_per:.2f} each to {total_candidates} existing positions.")
+            else:
+                logger.info("No existing holdings to deploy to. Portfolio remains in cash.")
+        except Exception as e:
+            logger.error(f"Fallback deployment failed: {e}")
         
     return results
