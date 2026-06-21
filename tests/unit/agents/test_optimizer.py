@@ -3,11 +3,30 @@ from unittest.mock import MagicMock, patch
 import sys
 
 # Mock dspy before importing optimizer
+orig_dspy = sys.modules.get("dspy")
+orig_dspy_teleprompt = sys.modules.get("dspy.teleprompt")
+
 sys.modules["dspy"] = MagicMock()
 sys.modules["dspy.teleprompt"] = MagicMock()
 
 from src.workflow.optimizer import OptimizerPipeline
 from src.domain.entities import FeedbackExample, SignalType
+
+@pytest.fixture(scope="module", autouse=True)
+def cleanup_dspy():
+    yield
+    # Restore original sys.modules states after all tests in this module run
+    if orig_dspy is None:
+        sys.modules.pop("dspy", None)
+    else:
+        sys.modules["dspy"] = orig_dspy
+
+    if orig_dspy_teleprompt is None:
+        sys.modules.pop("dspy.teleprompt", None)
+    else:
+        sys.modules["dspy.teleprompt"] = orig_dspy_teleprompt
+
+
 
 class MockFeedbackRepo:
     def __init__(self, db_path):
