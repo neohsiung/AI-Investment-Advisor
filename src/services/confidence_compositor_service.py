@@ -104,6 +104,7 @@ class CompositorService:
         tier: str,
     ) -> Tuple[float, Dict[str, Any]]:
         """Send a structured scoring prompt to LLM and parse the JSON response."""
+        response = ""
         try:
             pipeline = await self._get_pipeline(tier)
             prompt = prompt_template.format(ticker=ticker)
