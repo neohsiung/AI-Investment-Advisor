@@ -147,8 +147,9 @@ class ConfidenceRebalanceService:
                 if result.get("status") != "executed":
                     errors.append(f"{trade['ticker']} sell: {result.get('reason', 'unknown')}")
             except Exception as e:
-                errors.append(f"{trade['ticker']} sell error: {e}")
-                executed_trades.append({**trade, "status": "error", "error": str(e)})
+                logger.error(f"{trade['ticker']} sell error: {e}")
+                errors.append(f"{trade['ticker']} sell error: Internal error")
+                executed_trades.append({**trade, "status": "error", "error": "Internal error"})
 
         # Step 2: Execute all buys (after sells freed cash)
         logger.info(f"Rebalance: Executing {len(buys)} buys (after sells)")
@@ -164,8 +165,9 @@ class ConfidenceRebalanceService:
                 if result.get("status") != "executed":
                     errors.append(f"{trade['ticker']} buy: {result.get('reason', 'unknown')}")
             except Exception as e:
-                errors.append(f"{trade['ticker']} buy error: {e}")
-                executed_trades.append({**trade, "status": "error", "error": str(e)})
+                logger.error(f"{trade['ticker']} buy error: {e}")
+                errors.append(f"{trade['ticker']} buy error: Internal error")
+                executed_trades.append({**trade, "status": "error", "error": "Internal error"})
 
         # Log to audit
         self.repo.add_log(

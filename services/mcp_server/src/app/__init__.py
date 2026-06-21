@@ -590,7 +590,8 @@ async def call_tool(tool_name: str, request: ToolCallRequest):
                     elif tool_name == "llama_index_stats":
                         result = await per_request_svc.get_index_stats()
                 except Exception as e:
-                    result = {"status": "error", "error": str(e)}
+                    logger.error(f"Error during tool {tool_name} execution: {e}")
+                    result = {"status": "error", "error": "Internal error during tool execution"}
             else:
                 result = {"status": "error", "error": "LlamaIndex service not initialized"}
             
@@ -604,7 +605,7 @@ async def call_tool(tool_name: str, request: ToolCallRequest):
         
     except Exception as e:
         logger.error(f"Tool execution failed: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 # --- v1 API Entrypoint (Sprint 2 Transition) ---
 app.include_router(api_v1_router, prefix="/api/v1")
