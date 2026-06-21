@@ -163,6 +163,75 @@ class InternetSearchService:
             self.logger.warning(f"DuckDuckGo search failed after retries. Last Error: {type(last_error).__name__} - {last_error}")
         return results
 
+    @staticmethod
+    async def _scrape_url(url: str, max_length: int = 2000) -> Optional[str]:
+        """
+        Lightweight URL scraper using local Playwright Scraper Service.
+        Calls advisor_prod_scraper:3000 for JS-rendered content extraction.
+        使用本地 Playwright Scraper 服務，調用 advisor_prod_scraper:3000 提取 JS 渲染內容。
+        """
+        import urllib.request
+        import urllib.parse
+        import json
+        
+        scraper_url = "http://advisor_prod_scraper:3000/scrape-raw"
+        
+        try:
+            payload = {
+                "url": url,
+                "max_length": max_length
+            }
+            data = json.dumps(payload).encode('utf-8')
+            req = urllib.request.Request(
+                scraper_url, 
+                data=data, 
+                headers={"Content-Type": "application/json"},
+                method="POST"
+            )
+            
+            if not scraper_url.lower().startswith(('http://', 'https://')):
+                raise ValueError("Only http and https schemes are allowed for scraper_url")
+            
+            with urllib.request.urlopen(req, timeout=25) as response:  # nosec B310
+                result = json.loads(response.read().decode('utf-8'))
+                
+                title = result.get("title", "") or ""
+                plaintext = result.get("plaintext", "") or ""
+                
+                # Combine title + content for richer context
+                if title and plaintext:
+                    combined = f"{title}\n\n{plaintext}"
+                else:
+                    combined = plaintext or title
+                
+                return combined[:max_length] if len(combined) > max_length else combined
+                
+        except Exception as e:
+            # Fallback to basic requests if scraper service fails
+            try:
+                import requests
+                from bs4 import BeautifulSoup
+                
+                headers = {
+                    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36"
+                }
+                resp = requests.get(url, headers=headers, timeout=10)
+                resp.raise_for_status()
+                
+                soup = BeautifulSoup(resp.text, "html.parser")
+                for tag in soup(["script", "style", "nav", "footer", "header", "aside"]):
+                    tag.decompose()
+                
+                main_tag = soup.find("main") or soup.find("article") or soup.find("div", class_=lambda x: x and "content" in x.lower())
+                content = main_tag.get_text(separator="\n") if main_tag else soup.get_text(separator="\n")
+                
+                lines = [line.strip() for line in content.splitlines() if line.strip()]
+                cleaned_text = " ".join(lines)
+                
+                return cleaned_text[:max_length] if len(cleaned_text) > max_length else cleaned_text
+            except:
+                return None
+
     async def get_ticker_moat_and_catalyst(self, ticker: str) -> List[Dict[str, str]]:
         """
         Convenience method to fetch Moat and Catalyst info for a ticker.
