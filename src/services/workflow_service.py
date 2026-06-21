@@ -457,8 +457,28 @@ class BaseWorkflow(ABC):
             aggregator = EventAggregator()
 
             # Extract summary from HTML for classification
+            from html.parser import HTMLParser
+            
+            class HTMLStripper(HTMLParser):
+                def __init__(self):
+                    super().__init__()
+                    self.reset()
+                    self.strict = False
+                    self.convert_charrefs = True
+                    self.text = []
+                def handle_data(self, d):
+                    self.text.append(d)
+                def get_data(self):
+                    return "".join(self.text)
+
+            stripper = HTMLStripper()
+            try:
+                stripper.feed(html_content)
+                text_only = stripper.get_data()
+            except Exception:
+                text_only = html_content  # Fallback to raw if parser fails
+
             import re
-            text_only = re.sub(r'<[^>]+>', ' ', html_content)
             text_only = re.sub(r'\s+', ' ', text_only).strip()[:2000]
 
             # Classify tier based on content
