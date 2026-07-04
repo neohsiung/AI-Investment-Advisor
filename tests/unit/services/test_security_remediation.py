@@ -204,3 +204,26 @@ def test_dashboard_delete_transaction_sanitization(client):
 
 def patch_open(*args, **kwargs):
     return MagicMock()
+
+
+def test_ticker_universe_exception_sanitization(mock_user):
+    """Test that TickerUniverse endpoints sanitize raw exceptions to avoid information exposure."""
+    from fastapi import FastAPI
+    from fastapi.testclient import TestClient
+    from src.api.v1.endpoints.ticker_universe import router as universe_router, get_service
+    
+    app = FastAPI()
+    app.include_router(universe_router, prefix="/ticker-universe")
+    
+    mock_service = MagicMock()
+    mock_service.optimize_allocations.side_effect = Exception("SECRET_DB_URL_EXPOSED: postgres://pwd")
+    
+    app.dependency_overrides[get_service] = lambda: mock_service
+    
+    client = TestClient(app)
+    response = client.get("/ticker-universe/targets/optimize")
+    
+    assert response.status_code == 500
+    assert "SECRET_DB_URL_EXPOSED" not in response.text
+    assert "Internal server error" in response.json()["detail"]
+

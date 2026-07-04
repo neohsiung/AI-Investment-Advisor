@@ -58,7 +58,7 @@ async def test_alert_flow_and_format(sentinel_setup):
     mock_council = sentinel_setup["mock_council"]
     
     triggers = [
-        {"id": "vix_spike", "text": "🔴 VIX Spike: 45.0 > 30.0"},
+        {"id": "vix_spike", "text": "🔴 VIX Spike: 45.0 > 30.0", "level": "CRITICAL"},
         {"id": "rate_up", "text": "🏦 Fed Funds Rate Up"}
     ]
     
@@ -85,8 +85,9 @@ async def test_alert_flow_and_format(sentinel_setup):
         )
         
         content = call_kwargs['content']
-        # Verify content presence
-        assert "TESTSENTINEL" in content
+        # Verify content presence (Structured layout)
+        assert "📊 TESTSENTINEL" in content
         assert "🔴 VIX Spike: 45.0 > 30.0" in content
         assert "🏦 Fed Funds Rate Up" in content
         assert "Decision: SELL AAPL immediately." in content
+        assert "投資有風險，內容僅供參考，不構成建議。" in content

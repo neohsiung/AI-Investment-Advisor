@@ -10,7 +10,7 @@ def test_generate_professional_html_basic():
     assert "Test Report" in html
     assert "<h1" in html
     assert "This is a test." in html
-    assert "免責聲明" in html  # Disclaimer check
+    assert "投資有風險" in html  # Disclaimer check
 
 def test_generate_professional_html_complex():
     service = ReportingService()

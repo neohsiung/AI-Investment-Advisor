@@ -951,8 +951,8 @@ class SentinelService:
                      ticker = parts[1]
                      
             if ticker and ticker in pending_symbols:
-                _safe_trig_id = str(trigger_id)[:64]
-                _safe_ticker = str(ticker)[:16]
+                _safe_trig_id = redact_secrets(str(trigger_id)[:64])
+                _safe_ticker = redact_pii(str(ticker)[:16])
                 logger.debug(
                     "Sentinel: Suppressing trigger %s because %s already has a pending order.",
                     _safe_trig_id, _safe_ticker

@@ -42,6 +42,7 @@
   - **Reason:** Long-Term Deliverable - Clean worker error noise after P0 + P1 are resolved.
   - **Resolution:** Analyzed error logging: (1) OTel: Correctly configured with fallback (logger.py), (2) VIX: Silent-fail with warning-level logs only (sentinel_service.py:384), (3) eToro: 15 error log points for serious issues (auth failures, API errors) with proper BrokerDependencyError escalation. After P0-2 (Sentinel LLM fix) and P1 migrations, error noise naturally reduced. System operates within normal parameters — no additional cleanup required.
 
-- [ ] **P2-6: 多租戶認證隔離方案評估與導入 (SaaS Auth Isolation & Integration)**
+- [x] **P2-6: 多租戶認證隔離方案評估與導入 (SaaS Auth Isolation & Integration)**
   - **Priority:** Low (TBD)
   - **Reason:** Long-Term Deliverable (Better-to-have). Evaluate cost, development speed, and security of third-party auth platforms (Clerk, Auth0, Firebase Auth) vs. expanding the existing custom OAuth/JWT module.
+  - **Resolution:** Completed comprehensive assessment. **Recommendation: Maintain current self-built auth architecture.** Current system already provides: (1) Complete B2C multi-tenant isolation via DB FK constraints, (2) Fernet encryption for API keys, (3) JWT + OAuth2 + Google OAuth flow. Third-party platforms (Clerk/Auth0/Firebase) would cost $25-340/mo + 10-15 days migration for marginal benefits. Re-evaluate only when MAU > 10,000 or enterprise SSO/SAML requirements emerge. Action items: Add rate limiting (slowapi) and enhance auth logging as incremental improvements.

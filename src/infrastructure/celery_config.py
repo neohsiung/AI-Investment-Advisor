@@ -20,14 +20,24 @@ accept_content = ["json"]
 
 # Task execution settings
 # 任務執行設定
-task_acks_late = True
-worker_prefetch_multiplier = 1
+task_track_started = True
+task_time_limit = 30 * 60  # 30 minutes
+task_soft_time_limit = 25 * 60  # 25 minutes soft limit
+worker_max_tasks_per_child = 1000
 
-# Task time limits (seconds)
-# 任務時間限制（秒）
-task_soft_time_limit = 300
-task_time_limit = 600
+# Auto-import tasks so workers know about registered task handlers
+# Must be a string path to avoid circular imports
+imports = ("src.infrastructure.tasks",)
 
 # Result backend settings
 # 結果後端設定
-result_expires = 3600
+result_expires = 60 * 60 * 24  # 24 hours
+
+# Task routing defaults (if not using explicit queue names)
+task_default_queue = "default"
+task_default_exchange = "default"
+task_default_routing_key = "default"
+
+# Worker prefetch
+# 公平排程設定
+worker_prefetch_multiplier = 1  # Fair scheduling across workers

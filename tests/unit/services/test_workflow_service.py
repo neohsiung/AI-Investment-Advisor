@@ -92,7 +92,7 @@ async def test_report_distribution(mock_deps):
     with patch('src.repositories.report_repository.AlchemyReportRepository') as MockRepo, \
          patch('src.services.broker_factory.BrokerFactory') as MockBrokerFactory, \
          patch('src.services.workflow_service.PerformanceService') as MockPerf, \
-         patch('src.services.notification_settings_manager.NotificationSettingsManager') as MockNSM:
+         patch('src.services.event_aggregator.EventAggregator.ingest_event') as mock_ingest:
         
         # Mock Broker
         mock_broker = MagicMock()
@@ -119,13 +119,10 @@ async def test_report_distribution(mock_deps):
         mock_repo_instance = MagicMock()
         MockRepo.return_value = mock_repo_instance
         
-        mock_nsm_instance = MockNSM.return_value
-        mock_nsm_instance.get_active_notification_channels.return_value = []
-        
         await workflow.run(dry_run=False)
         
-        # Verify NSM was used instead of httpx
-        assert mock_nsm_instance.get_active_notification_channels.called
+        # Verify that ingest_event was called
+        assert mock_ingest.called
         
         # Verify DB storage
         assert mock_repo_instance.save.called

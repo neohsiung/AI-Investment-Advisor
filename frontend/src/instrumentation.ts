@@ -2,11 +2,11 @@ export async function register() {
   if (process.env.NEXT_RUNTIME === 'nodejs') {
     const { NodeSDK } = await import('@opentelemetry/sdk-node');
     const { OTLPTraceExporter } = await import('@opentelemetry/exporter-trace-otlp-http');
-    const { Resource } = await import('@opentelemetry/resources');
+    const { resourceFromAttributes } = await import('@opentelemetry/resources');
     const { SEMRESATTRS_SERVICE_NAME } = await import('@opentelemetry/semantic-conventions');
 
     const sdk = new NodeSDK({
-      resource: new Resource({
+      resource: resourceFromAttributes({
         [SEMRESATTRS_SERVICE_NAME]: process.env.OTEL_SERVICE_NAME || 'nextjs_frontend',
       }),
       traceExporter: new OTLPTraceExporter({

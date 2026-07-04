@@ -134,14 +134,14 @@ def test_job_weekly_report_exception(mock_scheduler_deps):
     assert mock_scheduler_deps['subprocess'].call_count == 1
 
 def test_job_weekly_validation(mock_scheduler_deps):
+    from unittest.mock import AsyncMock
     service = SchedulerService(user_id="test_user")
-    # It mocks BacktestService imported inside the method if not patched correctly?
-    # We patched 'src.services.scheduler_service.BacktestService' in fixture
-    
-    service.job_weekly_validation()
     
     mock_bt_cls = mock_scheduler_deps['backtest']
     mock_bt_instance = mock_bt_cls.return_value
+    mock_bt_instance.run_simulation = AsyncMock()
+    
+    service.job_weekly_validation()
     
     # Should call run_simulation for default tickers
     assert mock_bt_instance.run_simulation.call_count >= 1

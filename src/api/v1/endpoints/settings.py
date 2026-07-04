@@ -89,7 +89,7 @@ async def test_notification(
             except Exception as e:
                 logger.error(f"Telegram test failed: {e}")
                 results[channel] = False
-                raise HTTPException(status_code=500, detail=f"發送失敗: {str(e)}")
+                raise HTTPException(status_code=500, detail="發送失敗，通知發送服務異常。")
         else:
             # 目前僅支援 Telegram 測試
             results[channel] = False
