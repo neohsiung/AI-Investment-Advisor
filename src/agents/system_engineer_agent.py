@@ -66,19 +66,21 @@ class SystemEngineerAgent(BaseAgent):
         # CodeQL ReDoS bypass: Process line-by-line and run simple regex on single lines
         for line in cio_report.splitlines():
             if "[HR_REQUEST]" in line:
-                match = re.search(
-                    r'Replace Agent:\s*([a-zA-Z0-9_\-]+)\s*\(Reason:\s*([^)]+)\)',
-                    line,
-                    re.IGNORECASE
-                )
-                if match:
-                    target = match.group(1).strip()
-                    reason = match.group(2).strip()
-                    results.append({
-                        'target_agent': target,
-                        'raw_feedback': reason,
-                        'type': 'hr_request'
-                    })
+                line_lower = line.lower()
+                idx_agent = line_lower.find("replace agent:")
+                if idx_agent != -1:
+                    idx_reason = line_lower.find("(reason:", idx_agent)
+                    if idx_reason != -1:
+                        target = line[idx_agent + len("replace agent:"):idx_reason].strip()
+                        idx_close = line_lower.find(")", idx_reason)
+                        if idx_close != -1:
+                            reason = line[idx_reason + len("(reason:"):idx_close].strip()
+                            if target and all(c.isalnum() or c in "_-" for c in target) and reason:
+                                results.append({
+                                    'target_agent': target,
+                                    'raw_feedback': reason,
+                                    'type': 'hr_request'
+                                })
 
         if results:
             return results
