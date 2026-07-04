@@ -65,3 +65,40 @@ def test_notification_service_resolution(mock_seed, test_repo):
         assert fallback == user_uuid
 
     asyncio.run(run_test())
+
+@patch('src.services.llm_onboarding_service.LLMOnboardingService.seed_defaults_for_user', return_value=None)
+def test_get_by_identity_email_fallback(mock_seed, test_repo):
+    """Test get_by_identity falls back to users.email and links identity automatically."""
+    async def run_test():
+        # 1. Manually insert user into users table WITHOUT linking identity
+        user_uuid = str(uuid.uuid4())
+        email = "fallback_test@example.com"
+        with test_repo.engine.begin() as conn:
+            from sqlalchemy import text
+            conn.execute(
+                text("INSERT INTO users (id, email, name) VALUES (:id, :email, :name)"),
+                {"id": user_uuid, "email": email, "name": "Fallback User"}
+            )
+            
+        # 2. Query by identity (provider="email") - should trigger fallback and link identity
+        user = test_repo.get_by_identity("email", email)
+        assert user is not None
+        assert user['id'] == user_uuid
+        assert user['email'] == email
+        
+        # 3. Verify that identity was linked
+        with test_repo.engine.connect() as conn:
+            row = conn.execute(
+                text("SELECT * FROM user_identities WHERE user_id = :uid"),
+                {"uid": user_uuid}
+            ).fetchone()
+            assert row is not None
+            assert row._mapping["provider"] == "email"
+            assert row._mapping["identifier"] == email
+            
+        # 4. Resolve again - should succeed immediately via standard path
+        user_again = test_repo.get_by_identity("email", email)
+        assert user_again is not None
+        assert user_again['id'] == user_uuid
+
+    asyncio.run(run_test())

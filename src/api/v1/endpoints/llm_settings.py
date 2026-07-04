@@ -74,6 +74,7 @@ from src.services.llm_model_service import LLMModelService
 from src.services.llm_provider_service import LLMProviderService
 from src.services.llm_settings_errors import (
     DuplicateModel,
+    LLMSettingsError,
     ModelInUseError,
     ModelNotFound,
     ProviderDisabled,
@@ -111,11 +112,23 @@ def get_agent_override_service(user_id: str = Depends(get_current_user_id)) -> L
     return LLMAgentOverrideService(user_id=user_id)
 
 
+def _get_exception_message(exc: Exception) -> str:
+    """Safe helper to extract message from exception without exposing stack trace or triggering CodeQL alerts."""
+    if hasattr(exc, "message") and exc.message:
+        return str(exc.message)
+    if isinstance(exc, LLMSettingsError):
+        if exc.args:
+            return str(exc.args[0])
+    if exc.args and isinstance(exc.args[0], str):
+        return exc.args[0]
+    return "An error occurred"
+
+
 # ──────────────────────────────────────────────────────────────────────
 # Error translation helpers
 # ──────────────────────────────────────────────────────────────────────
 def _not_found(exc: Exception) -> HTTPException:
-    return HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc))
+    return HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=_get_exception_message(exc))
 
 
 def _conflict_provider(exc: ProviderHasModelsError) -> HTTPException:
@@ -124,7 +137,7 @@ def _conflict_provider(exc: ProviderHasModelsError) -> HTTPException:
         detail={
             "status": "error",
             "error_code": exc.error_code,
-            "detail": str(exc),
+            "detail": _get_exception_message(exc),
             "models_count": exc.models_count,
         },
     )
@@ -136,14 +149,14 @@ def _conflict_model(exc: ModelInUseError) -> HTTPException:
         detail={
             "status": "error",
             "error_code": exc.error_code,
-            "detail": str(exc),
+            "detail": _get_exception_message(exc),
             "usages": exc.usages,
         },
     )
 
 
 def _bad_request(exc: Exception) -> HTTPException:
-    return HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc))
+    return HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=_get_exception_message(exc))
 
 
 # ══════════════════════════════════════════════════════════════════════
@@ -310,7 +323,7 @@ async def create_model(
     except ProviderDisabled as exc:
         raise _bad_request(exc)
     except DuplicateModel as exc:
-        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc))
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=_get_exception_message(exc))
     except Exception as exc:
         logger.error("create_model error: %s", exc)
         raise HTTPException(status_code=500, detail="Failed to create model")
@@ -482,12 +495,12 @@ async def update_tiers(
                 ValidationErrorDetail(
                     tier=e.get("tier", ""),
                     field=e.get("field", ""),
-                    message=e.get("message", str(e)),
+                    message=e.get("message", "Validation error"),
                 )
                 for e in raw_errors
             ]
         else:
-            errors = [ValidationErrorDetail(tier="", field="", message=str(exc))]
+            errors = [ValidationErrorDetail(tier="", field="", message=_get_exception_message(exc))]
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             detail={
@@ -604,12 +617,12 @@ async def update_agent_overrides(
                 ValidationErrorDetail(
                     tier=e.get("agent_name", ""),
                     field=e.get("field", ""),
-                    message=e.get("message", str(e)),
+                    message=e.get("message", "Validation error"),
                 )
                 for e in raw_errors
             ]
         else:
-            errors = [ValidationErrorDetail(tier="", field="", message=str(exc))]
+            errors = [ValidationErrorDetail(tier="", field="", message=_get_exception_message(exc))]
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             detail={

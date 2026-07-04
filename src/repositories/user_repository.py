@@ -86,7 +86,26 @@ class AlchemyUserRepository(BaseRepository, IUserRepository):
                 WHERE ui.provider = :provider AND ui.identifier = :identifier
             """)
             row = conn.execute(query, {"provider": provider, "identifier": identifier}).fetchone()
-            return dict(row._mapping) if row else None
+            if row:
+                return dict(row._mapping)
+
+        if provider == "email":
+            with self.engine.begin() as conn:
+                query_legacy = text("SELECT * FROM users WHERE email = :identifier OR id = :identifier")
+                row_legacy = conn.execute(query_legacy, {"identifier": identifier}).fetchone()
+                if row_legacy:
+                    user_id = row_legacy._mapping["id"]
+                    conn.execute(text("""
+                        INSERT INTO user_identities (id, user_id, provider, identifier, is_primary)
+                        VALUES (:id, :user_id, 'email', :identifier, 1)
+                    """), {
+                        "id": str(uuid.uuid4()),
+                        "user_id": user_id,
+                        "identifier": identifier
+                    })
+                    return dict(row_legacy._mapping)
+
+        return None
 
     def link_identity(self, user_id: str, provider: str, identifier: str, is_primary: bool = False) -> bool:
         with self.engine.begin() as conn:
@@ -190,20 +209,21 @@ class AsyncAlchemyUserRepository(AsyncBaseRepository, IAsyncUserRepository):
             if row:
                 return dict(row._mapping)
 
-            # 2. Legacy Fallback (Sprint 1-2 Legacy):
-            # 如果是 Email 登入且沒找到與之關聯的 Identity，檢查 Users 表是否存在 id == identifier (當時使用 Email 作為 ID)
+            # 2. Legacy / Existing email check:
+            # 如果是 Email 登入且沒找到與之關聯的 Identity，檢查 Users 表是否存在 email == identifier 或 id == identifier
             if provider == "email":
-                query_legacy = text("SELECT * FROM users WHERE id = :identifier")
+                query_legacy = text("SELECT * FROM users WHERE email = :identifier OR id = :identifier")
                 res_legacy = await session.execute(query_legacy, {"identifier": identifier})
                 row_legacy = res_legacy.fetchone()
                 if row_legacy:
-                    # 發現遺留帳號！主動建立身份連結，確保下次登入一致
+                    # 發現已有帳號但未關聯 Identity！主動建立身份連結，確保下次登入一致
+                    user_id = row_legacy._mapping["id"]
                     await session.execute(text("""
                         INSERT INTO user_identities (id, user_id, provider, identifier, is_primary)
                         VALUES (:id, :uid, 'email', :identifier, 1)
                     """), {
                         "id": str(uuid.uuid4()),
-                        "uid": identifier,
+                        "uid": user_id,
                         "identifier": identifier
                     })
                     await session.commit()
