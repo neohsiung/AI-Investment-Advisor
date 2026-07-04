@@ -118,5 +118,10 @@ def setup_db_worker_context(**kwargs):
     database.get_db_engine()
 
 
+# Explicit import to ensure Celery tasks are registered at worker startup
+# The `imports` config in celery_config.py is set but Celery doesn't always
+# auto-process it during the worker lifecycle. Direct import guarantees it.
+import src.infrastructure.tasks  # noqa: F401
+
 if __name__ == "__main__":
     app.start()

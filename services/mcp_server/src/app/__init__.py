@@ -277,11 +277,44 @@ async def lifespan(app: FastAPI):
         for tool in tool_definitions:
             registered_tools[tool["name"]] = tool
             
-        logger.info(f"MCP Services & {len(tool_definitions)} Tools Ready.")
+        logger.info(f"MCP Services & {len(registered_tools)} Tools Ready.")
         
     except Exception as e:
         logger.error(f"Failed to initialize services: {e}")
         # Non-blocking, but tools won't work
+    
+    # Register LlamaIndex RAG Tools (independent of other service init)
+    try:
+        from src.services.llama_index_service import LlamaIndexService
+        li_service = LlamaIndexService()
+        rag_tools = [
+            {
+                "name": "llama_search_reports",
+                "description": "Search ingested financial reports by semantic similarity / 搜尋已載入的財報",
+                "parameters": {"query": "搜尋關鍵字", "ticker": "股票代碼(可選)", "top_k": "回傳數量(預設5)"}
+            },
+            {
+                "name": "llama_search_news",
+                "description": "Search ingested news articles by semantic similarity / 搜尋已載入的新聞",
+                "parameters": {"query": "搜尋關鍵字", "ticker": "股票代碼(可選)", "top_k": "回傳數量(預設5)"}
+            },
+            {
+                "name": "llama_ingest_pdf",
+                "description": "Ingest a financial PDF into the vector index / 載入金融 PDF",
+                "parameters": {"file_path": "PDF檔案路徑", "ticker": "股票代碼(可選)", "doc_type": "文件類型(預設report)"}
+            },
+            {
+                "name": "llama_index_stats",
+                "description": "Get vector index statistics / 取得索引統計",
+                "parameters": {}
+            },
+        ]
+        for tool in rag_tools:
+            registered_tools[tool["name"]] = tool
+        services["llama_index"] = li_service
+        logger.info(f"✓ LlamaIndex RAG Tools ({len(rag_tools)} tools) registered.")
+    except Exception as e:
+        logger.error(f"Failed to register LlamaIndex tools: {e}")
     
     yield
     
@@ -313,9 +346,11 @@ from fastapi.middleware.cors import CORSMiddleware
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[
-        "http://localhost:3000", 
-        "http://127.0.0.1:3000",
-        "https://chummy-nonpathologically-lilla.ngrok-free.dev" # Based on n8n config
+            "http://localhost:3000",
+            "http://localhost:3001",
+            "http://127.0.0.1:3000",
+            "http://127.0.0.1:3001",
+            "https://chummy-nonpathologically-lilla.ngrok-free.dev"
     ],
     allow_credentials=True,
     allow_methods=["*"],
@@ -505,6 +540,61 @@ async def call_tool(tool_name: str, request: ToolCallRequest):
         else:
             result = "Tool implementation not found in dispatch logic."
             
+        # LlamaIndex RAG Tools Dispatch
+        if tool_name.startswith("llama_"):
+            li_svc = services.get("llama_index")
+            if li_svc:
+                try:
+                    user_id = request.context.get("user_id") if request.context else None
+                    from src.services.llama_index_service import LlamaIndexService
+                    # Create per-request instance for user isolation
+                    per_request_svc = LlamaIndexService()
+                    
+                    if tool_name == "llama_search_reports":
+                        query = args.get("query", "")
+                        ticker = args.get("ticker", "")
+                        top_k = int(args.get("top_k", 5))
+                        if query:
+                            filters = {"ticker": ticker} if ticker else None
+                            results = await per_request_svc.search(
+                                query, table_name="llama_index_vectors",
+                                top_k=top_k, metadata_filters=filters
+                            )
+                            result = {"status": "ok", "count": len(results), "results": results}
+                        else:
+                            result = {"status": "error", "error": "query is required"}
+                            
+                    elif tool_name == "llama_search_news":
+                        query = args.get("query", "")
+                        ticker = args.get("ticker", "")
+                        top_k = int(args.get("top_k", 5))
+                        if query:
+                            filters = {"ticker": ticker} if ticker else None
+                            results = await per_request_svc.search(
+                                query, table_name="llama_index_news",
+                                top_k=top_k, metadata_filters=filters
+                            )
+                            result = {"status": "ok", "count": len(results), "results": results}
+                        else:
+                            result = {"status": "error", "error": "query is required"}
+                            
+                    elif tool_name == "llama_ingest_pdf":
+                        file_path = args.get("file_path", "")
+                        ticker = args.get("ticker", "")
+                        doc_type = args.get("doc_type", "report")
+                        if file_path:
+                            result = await per_request_svc.ingest_pdf(file_path, ticker, doc_type)
+                        else:
+                            result = {"status": "error", "error": "file_path is required"}
+                            
+                    elif tool_name == "llama_index_stats":
+                        result = await per_request_svc.get_index_stats()
+                except Exception as e:
+                    logger.error(f"Error during tool {tool_name} execution: {e}")
+                    result = {"status": "error", "error": "Internal error during tool execution"}
+            else:
+                result = {"status": "error", "error": "LlamaIndex service not initialized"}
+            
         logger.info(f"Tool {tool_name} executed. Result size: {len(str(result)) if result else 0} chars")
         
         return {
@@ -515,7 +605,7 @@ async def call_tool(tool_name: str, request: ToolCallRequest):
         
     except Exception as e:
         logger.error(f"Tool execution failed: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 # --- v1 API Entrypoint (Sprint 2 Transition) ---
 app.include_router(api_v1_router, prefix="/api/v1")

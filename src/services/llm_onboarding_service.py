@@ -1,6 +1,6 @@
 import logging
 import uuid
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Tuple
 import yaml
 from pathlib import Path
 
@@ -10,7 +10,7 @@ from src.data.models import LLMProvider, LLMModel, LLMTierBinding
 logger = logging.getLogger(__name__)
 
 # Default tier → (provider_code, model_code) mapping
-DEFAULT_TIER_CHAIN: Dict[str, List[tuple[str, str]]] = {
+DEFAULT_TIER_CHAIN: Dict[str, List[Tuple[str, str]]] = {
     "nano": [
         ("openrouter", "openai/gpt-5.4-nano"),
         ("ollama", "qwen2.5:7b"),
@@ -158,8 +158,8 @@ class LLMOnboardingService:
             code_to_id[code] = provider.id
         return code_to_id
 
-    def _seed_models(self, session: Any, provider_code_to_id: Dict[str, str]) -> Dict[tuple[str, str], str]:
-        key_to_id: Dict[tuple[str, str], str] = {}
+    def _seed_models(self, session: Any, provider_code_to_id: Dict[str, str]) -> Dict[Tuple[str, str], str]:
+        key_to_id: Dict[Tuple[str, str], str] = {}
         for m in self.models_yaml:
             p_code = m["provider_code"]
             m_code = m["model_code"]
@@ -195,9 +195,9 @@ class LLMOnboardingService:
             key_to_id[(p_code, m_code)] = model.id
         return key_to_id
 
-    async def _async_seed_models(self, session: Any, provider_code_to_id: Dict[str, str]) -> Dict[tuple[str, str], str]:
+    async def _async_seed_models(self, session: Any, provider_code_to_id: Dict[str, str]) -> Dict[Tuple[str, str], str]:
         from sqlalchemy import select
-        key_to_id: Dict[tuple[str, str], str] = {}
+        key_to_id: Dict[Tuple[str, str], str] = {}
         for m in self.models_yaml:
             p_code = m["provider_code"]
             m_code = m["model_code"]
@@ -236,7 +236,7 @@ class LLMOnboardingService:
             key_to_id[(p_code, m_code)] = model.id
         return key_to_id
 
-    def _seed_tier_bindings(self, session: Any, user_id: str, model_key_to_id: Dict[tuple[str, str], str], force: bool) -> None:
+    def _seed_tier_bindings(self, session: Any, user_id: str, model_key_to_id: Dict[Tuple[str, str], str], force: bool) -> None:
         for tier, chain in DEFAULT_TIER_CHAIN.items():
             existing = session.query(LLMTierBinding).filter_by(user_id=user_id, tier=tier).one_or_none()
             if existing and not force:
@@ -264,7 +264,7 @@ class LLMOnboardingService:
                 )
                 session.add(binding)
 
-    async def _async_seed_tier_bindings(self, session: Any, user_id: str, model_key_to_id: Dict[tuple[str, str], str], force: bool) -> None:
+    async def _async_seed_tier_bindings(self, session: Any, user_id: str, model_key_to_id: Dict[Tuple[str, str], str], force: bool) -> None:
         from sqlalchemy import select
         for tier, chain in DEFAULT_TIER_CHAIN.items():
             stmt = select(LLMTierBinding).filter_by(user_id=user_id, tier=tier)

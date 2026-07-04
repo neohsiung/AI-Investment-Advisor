@@ -11,6 +11,10 @@ class LLMSettingsError(Exception):
     """Base class."""
     error_code: str = "LLM_SETTINGS_ERROR"
 
+    def __init__(self, message: str = ""):
+        super().__init__(message)
+        self.message = message
+
 
 class UnknownProviderCode(LLMSettingsError):
     """provider_code not found in ProviderCatalog (YAML seed)."""
