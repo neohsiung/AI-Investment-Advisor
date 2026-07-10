@@ -95,6 +95,14 @@ class NotificationService:
         tasks = []
         adapter_names = []
         
+        # Normalize category to standard categories matching the UI/interests settings
+        if category:
+            category_lower = category.lower()
+            if category_lower == "daily_digest":
+                category = "report"
+            elif category_lower == "rebalance":
+                category = "trading"
+
         # Resolve initial user
         raw_user = user_id or "broadcast"
         capture_error = kwargs.get('capture_error', False)
