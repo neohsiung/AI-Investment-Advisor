@@ -23,7 +23,7 @@ async def get_all_settings(service: SettingsService = Depends(get_settings_servi
         settings = service.get_all_settings()
         
         # v4.4.1: 自動修復登入後設定空白或缺漏的問題
-        if "AI_MODEL" not in settings or "auto_trade_threshold" not in settings:
+        if "AI_MODEL" not in settings or "auto_trade_threshold" not in settings or "webhook_api_key" not in settings:
             logger.info(f"Settings missing core keys for user {service.user_id}, triggering migration/initialization.")
             service.initialize_user_settings()
             # 重新取得初始化後的資料

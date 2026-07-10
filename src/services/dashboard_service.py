@@ -119,6 +119,11 @@ class DashboardService:
                     metrics['nlv'] = metrics_derived['nlv']
                     metrics['cash_balance'] = metrics_derived.get('cash_balance', metrics['cash_balance'])
                     metrics['gross_nlv'] = metrics_derived.get('tnv', 0) + metrics['cash_balance']
+                    
+                    # Calculate local PnL breakdowns for correct unrealized/realized split
+                    pnl_breakdown = self.pnl_calc.calculate_breakdown(current_prices, user_id=user_id)
+                    total_pnl_from_positions = pnl_breakdown.get('unrealized', 0.0)
+                    metrics['unrealized_pnl'] = total_pnl_from_positions
 
                 # 4. Final Secondary Metrics (ROI, PnL) based on final NLV
                 pnl_data['unrealized'] = total_pnl_from_positions
@@ -183,6 +188,23 @@ class DashboardService:
                     # [V6.1] Correct Loan calculation: Borrowed = Nominal - Equity
                     positions_df['loan'] = positions_df['gross_mv'] * (1 - 1/positions_df['leverage'])
                     positions_df['net_equity'] = positions_df['gross_mv'] - positions_df['loan']
+                    
+                    # Calculate local PnL breakdowns for unrealized PnL per ticker
+                    pnl_breakdown = self.pnl_calc.calculate_breakdown(current_prices, user_id=user_id)
+                    positions_df['unrealized_pnl'] = positions_df['ticker'].map(lambda t: pnl_breakdown.get('details', {}).get(t, {}).get('unrealized', 0.0))
+
+            # Calculate and populate leverage ratio
+            if not positions_df.empty and 'gross_mv' in positions_df.columns:
+                total_gross = positions_df['gross_mv'].sum()
+                nlv = metrics.get('nlv', 0.0)
+                if nlv > 0:
+                    metrics['leverage_ratio'] = float(total_gross / nlv)
+                else:
+                    metrics['leverage_ratio'] = 0.0
+                metrics['gross_nlv'] = float(total_gross + metrics.get('cash_balance', 0.0))
+            else:
+                metrics['leverage_ratio'] = 0.0
+                metrics['gross_nlv'] = float(metrics.get('cash_balance', 0.0))
 
             return {
                 'transactions_df': transactions_df,

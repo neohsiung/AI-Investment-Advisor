@@ -1,6 +1,8 @@
 import yfinance as yf
 import pandas as pd
 import typing
+import time
+import random
 from typing import List, Dict, Tuple, Any, Optional, Callable, Dict, Any, List
 from src.data.providers.base import MarketDataProvider
 from src.utils.logger import setup_logger
@@ -169,16 +171,31 @@ class YFinanceProvider(MarketDataProvider):
         Fetch fundamental company information using yfinance.
         使用 yfinance 獲取公司基本面資訊。
         """
-        try:
-            t = yf.Ticker(ticker, session=self.session)
-            info = t.info
-            return {
-                "market_cap": info.get('marketCap'),
-                "trailing_pe": info.get('trailingPE'),
-                "forward_pe": info.get('forwardPE'),
-                "sector": info.get('sector'),
-                "industry": info.get('industry')
-            }
-        except Exception as e:
-            self.logger.error(f"YFinance fetch_info error: {e}")
-            return {}
+        max_attempts = 3
+        backoff_sec = 2.0
+        for attempt in range(1, max_attempts + 1):
+            try:
+                t = yf.Ticker(ticker, session=self.session)
+                info = t.info
+                # Safety check: if info is empty or None, trigger retry
+                if not info or not isinstance(info, dict) or not any(k in info for k in ['marketCap', 'sector', 'industry']):
+                    raise ValueError("Empty or invalid info dictionary returned by yfinance")
+                
+                return {
+                    "market_cap": info.get('marketCap'),
+                    "trailing_pe": info.get('trailingPE'),
+                    "forward_pe": info.get('forwardPE'),
+                    "sector": info.get('sector'),
+                    "industry": info.get('industry')
+                }
+            except Exception as e:
+                self.logger.warning(
+                    f"YFinance fetch_info attempt {attempt}/{max_attempts} failed for {ticker}: {e}"
+                )
+                if attempt < max_attempts:
+                    sleep_time = backoff_sec * attempt + random.uniform(0.5, 1.5)
+                    self.logger.info(f"Retrying in {sleep_time:.2f} seconds...")
+                    time.sleep(sleep_time)
+                else:
+                    self.logger.error(f"YFinance fetch_info exhausted all {max_attempts} attempts for {ticker}")
+        return {}

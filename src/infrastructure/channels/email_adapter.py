@@ -67,5 +67,7 @@ class EmailAdapter(BaseChannelAdapter):
                 pass
 
         to_email = override_to or kwargs.get("to_email")
+        if not to_email and user_id and "@" in user_id:
+            to_email = user_id
         return await self.notifier.send_report(title, body, to_email=to_email)
 

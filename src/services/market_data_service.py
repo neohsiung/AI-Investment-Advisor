@@ -395,7 +395,7 @@ class MarketDataService:
         Get fundamental financial data for a ticker.
         獲取標底的基本面財務數據。
         """
-        fund_providers = [self.fmp, self.alpha_vantage, self.finnhub, self.yfinance, self.polygon]
+        fund_providers = [self.yfinance, self.fmp, self.alpha_vantage, self.finnhub, self.polygon]
         
         for provider in fund_providers:
             if not self._is_provider_enabled(provider): continue

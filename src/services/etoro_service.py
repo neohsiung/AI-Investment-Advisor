@@ -25,6 +25,8 @@ class EtoroService(IBroker):
     Wraps eToro API and enforces Risk Management.
     封裝 eToro API 並執行風險管理。
     """
+    _cached_portfolio = None
+    _cached_time = 0.0
 
     def __init__(self, base_url: str = None, mode: str = "real", api_key: str = None, user_key: str = None, user_id: str = None) -> None:
         """
@@ -61,6 +63,12 @@ class EtoroService(IBroker):
             self.api_key = os.getenv("ETORO_API_KEY")
         if not self.user_key:
             self.user_key = os.getenv("ETORO_USER_KEY")
+
+        # Detect mock/placeholder credentials
+        if self.api_key and (self.api_key.startswith("sdgdskld") or "placeholder" in self.api_key.lower()):
+            logger.info("Mock/Placeholder eToro API key detected. Treating credentials as absent to trigger fast fallback.")
+            self.api_key = None
+            self.user_key = None
 
         # Use official endpoint if keys are provided, else fallback to bridge for legacy support
         if self.api_key and self.user_key:
@@ -1114,8 +1122,8 @@ class EtoroService(IBroker):
     # --- Helpers ---
     async def _fetch_current_prices(self, symbols: List[str]) -> Dict[str, float]:
         """
-        Fetch current market prices via yfinance Ticker.history().
-        使用 yfinance history() 獲取最近收盤價（含超時保護與多策略 fallback）。
+        Fetch current market prices via MarketDataService (Polygon).
+        使用 MarketDataService 獲取最新市價。
         
         Returns: {symbol: current_price}
         """
@@ -1123,37 +1131,15 @@ class EtoroService(IBroker):
         if not symbols:
             return prices
 
-        # Helper to fetch price from yfinance (async)
-        async def _get_price(symbol: str) -> Tuple[str, float]:
-            try:
-                import yfinance as yf
-                # yfinance is sync, but we can wrap it or use its internal data
-                # For now, let's keep it simple and safe.
-                # In modern yfinance, Ticker objects have cache.
-                # But to stay non-blocking, we use run_in_executor
-                loop = asyncio.get_event_loop()
-                def fetch():
-                    ticker = yf.Ticker(symbol)
-                    return ticker.fast_info.get('last_price', 0)
-                
-                price = await loop.run_in_executor(None, fetch)
-                return symbol, float(price)
-            except Exception:
-                return symbol, 0.0
-
         try:
-            unique_symbols = list(set(symbols))
-            tasks = [_get_price(s) for s in unique_symbols]
-            results = await asyncio.gather(*tasks)
-            
-            for sym, price in results:
-                if price > 0:
-                    prices[sym] = price
-            
+            from src.services.market_data_service import MarketDataService
+            uid = self.user_id or "00000000-0000-4000-a000-000000000001"
+            service = MarketDataService(user_id=uid)
+            prices = await service.get_current_prices(symbols)
             if prices:
-                logger.info(f"Fetched {len(prices)}/{len(unique_symbols)} current prices.")
+                logger.info(f"Fetched {len(prices)}/{len(symbols)} current prices via MarketDataService.")
         except Exception as e:
-            logger.warning(f"Failed to fetch current prices: {e}")
+            logger.warning(f"Failed to fetch current prices via MarketDataService: {e}")
         
         return prices
 
@@ -1162,6 +1148,11 @@ class EtoroService(IBroker):
         Raw API Call to fetch portfolio.
         Official eToro API: https://api-portal.etoro.com/api-reference/trading--real/retrieve-comprehensive-portfolio-information-including-positions-orders-and-account-status
         """
+        import time
+        now = time.time()
+        if EtoroService._cached_portfolio is not None and (now - EtoroService._cached_time) < 60.0:
+            return EtoroService._cached_portfolio
+
         import httpx
         # Official API endpoint (confirmed working: /api/v1/trading/info/portfolio)
         # 官方 API 端點（已確認可用：/api/v1/trading/info/portfolio）
@@ -1188,7 +1179,7 @@ class EtoroService(IBroker):
 
             logger.info(f"Fetching portfolio from: {url}")
             async with httpx.AsyncClient() as client:
-                response = await client.get(url, headers=self._get_headers(), timeout=10.0)
+                response = await client.get(url, headers=self._get_headers(), timeout=30.0)
                 data = response.json()
             
             # Detect auth errors from response body (eToro returns JSON error objects)
@@ -1199,6 +1190,8 @@ class EtoroService(IBroker):
                 raise BrokerDependencyError(f"eToro API Error: {error_msg}")
             
             response.raise_for_status()
+            EtoroService._cached_portfolio = data
+            EtoroService._cached_time = time.time()
             return data
         except BrokerNotConfiguredError:
             raise

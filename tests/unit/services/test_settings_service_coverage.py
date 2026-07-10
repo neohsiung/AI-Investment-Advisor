@@ -115,3 +115,21 @@ class TestSettingsService:
         result = service.fetch_openrouter_models()
         
         assert result == []
+
+    def test_initialize_user_settings_generates_webhook_key(self):
+        """Test initialize_user_settings generates webhook_api_key if missing."""
+        mock_repo = MagicMock()
+        mock_repo.get_all.return_value = [("AI_MODEL", "smart"), ("auto_trade_threshold", "75")]
+        mock_repo.engine.connect.return_value.__enter__.return_value.execute.return_value.first.return_value = (1,)
+        
+        service = SettingsService(user_id="user123", settings_repo=mock_repo)
+        
+        # Mock get_setting to simulate key missing
+        with patch.object(service, 'get_setting', return_value=None), \
+             patch.object(service, 'save_setting') as mock_save:
+            
+            result = service.initialize_user_settings()
+            
+            # Assert webhook_api_key was saved
+            from unittest.mock import ANY
+            mock_save.assert_any_call("webhook_api_key", ANY, user_id="user123")

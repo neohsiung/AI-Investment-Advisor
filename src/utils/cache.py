@@ -65,3 +65,26 @@ class ResponseCache:
                 self.logger.info(f"Cleared {len(keys)} cache entries.")
         except Exception as e:
             self.logger.error(f"Cache CLEAR error: {e}")
+
+    def get_value(self, key: str) -> Optional[str]:
+        """Retrieve generic value from cache."""
+        try:
+            return self.client.get(key)
+        except Exception as e:
+            self.logger.error(f"Cache get_value error for key {key}: {e}")
+            return None
+
+    def set_value(self, key: str, value: str, ttl_seconds: int = None):
+        """Store generic value in cache with optional TTL."""
+        try:
+            ttl = ttl_seconds if ttl_seconds is not None else self.ttl_seconds
+            self.client.setex(key, ttl, value)
+        except Exception as e:
+            self.logger.error(f"Cache set_value error for key {key}: {e}")
+
+    def delete_value(self, key: str):
+        """Remove value from cache."""
+        try:
+            self.client.delete(key)
+        except Exception as e:
+            self.logger.error(f"Cache delete_value error for key {key}: {e}")

@@ -156,7 +156,7 @@ class TelegramAdapter(BaseChannelAdapter):
                     db_host = os.getenv("DB_HOST", "localhost")
                     db_port = os.getenv("DB_PORT", "5432")
                     db_name = os.getenv("DB_NAME", "advisor_prod")
-                    db_url = f"postgresql://{db_user}:***@{db_host}:{db_port}/{db_name}"
+                    db_url = f"postgresql://{db_user}:{db_pass}@{db_host}:{db_port}/{db_name}"
                 
                 if db_url:
                     self._db_pool = await asyncpg.create_pool(db_url, min_size=1, max_size=5)

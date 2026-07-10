@@ -246,6 +246,16 @@ class SettingsService:
         # 1. 檢查是否已經「完全」初始化
         # 若已有關鍵設定，則視為已完全初始化
         existing = self.get_all_settings(user_id=target_uid)
+        
+        # v4.4.2: Ensure webhook API key is generated if missing
+        if "webhook_api_key" not in existing:
+            import secrets
+            api_key = f"sk_{secrets.token_hex(20)}"
+            self.save_setting("webhook_api_key", api_key, user_id=target_uid)
+            print(f"SettingsService: Generated missing webhook_api_key for user {target_uid}")
+            # Add it to existing dict so downstream logic is aware
+            existing["webhook_api_key"] = api_key
+
         if "AI_MODEL" in existing and "auto_trade_threshold" in existing:
             return False # Core keys exist, no need to seed again
             
