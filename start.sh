@@ -315,9 +315,23 @@ function import_n8n_workflow {
         done
 
         if [ "$db_ready" = true ]; then
-            # Use DB_NAME from env (default: advisor_prod). 'portfolio' was a legacy hardcoded name.
-            local db_name="${DB_NAME:-advisor_prod}"
-            WEBHOOK_KEY=$(docker exec "$db_container" psql -U "${DB_USER:-postgres}" -d "$db_name" -t -c "SELECT value::text FROM settings WHERE key='webhook_api_key' LIMIT 1;" 2>/dev/null | sed 's/"//g' | tr -d '[:space:]')
+            # Resolve API container to query decrypted key from business layer
+            local api_container=""
+            if [ "$db_container" = "advisor_prod_db" ]; then
+                api_container="advisor_prod_api"
+            elif [ "$db_container" = "investment_advisor_db" ]; then
+                api_container="investment_advisor_mcp"
+            fi
+
+            if [ -n "$api_container" ] && docker ps --filter "name=$api_container" --quiet | grep -q .; then
+                WEBHOOK_KEY=$(docker exec "$api_container" python -c "from src.services.settings_service import SettingsService; print(SettingsService(user_id='00000000-0000-4000-a000-000000000001').get_setting('webhook_api_key') or '')" 2>/dev/null | tr -d '[:space:]')
+            fi
+
+            # Fallback to raw SQL (encrypted value) if API container is not online/responsive
+            if [ -z "$WEBHOOK_KEY" ]; then
+                local db_name="${DB_NAME:-advisor_prod}"
+                WEBHOOK_KEY=$(docker exec "$db_container" psql -U "${DB_USER:-postgres}" -d "$db_name" -t -c "SELECT value::text FROM settings WHERE key='webhook_api_key' LIMIT 1;" 2>/dev/null | sed 's/"//g' | tr -d '[:space:]')
+            fi
         fi
 
         if [ -n "$WEBHOOK_KEY" ]; then
