@@ -163,6 +163,11 @@ SOURCE_PARSERS = {
 class WebhookService:
     def __init__(self, settings_service: Optional[SettingsService] = None):
         self.settings_service = settings_service or SettingsService()
+        import redis
+        try:
+            self._redis = redis.from_url(os.getenv("REDIS_URL", "redis://localhost:6379/0"), decode_responses=True, socket_connect_timeout=3)
+        except Exception:
+            self._redis = None
         
     async def _resolve_user(self, request: Request) -> str:
         """
@@ -213,6 +218,26 @@ class WebhookService:
             logger.error(f"Duplicate check failed: {e}")
             return False
 
+    def _acquire_concurrency_lock(self, user_id: str, url: str = None, signal_id: str = None) -> bool:
+        """
+        Acquire a Redis lock for this specific webhook event to prevent concurrent processing.
+        獲取特定 Webhook 事件的 Redis 鎖，以防止併發處理。
+        """
+        if not self._redis or (not url and not signal_id):
+            return True # If Redis is unavailable, skip the lock check (graceful degradation)
+            
+        try:
+            key_source = url or signal_id
+            hashed = hashlib.sha256(key_source.encode("utf-8")).hexdigest()
+            lock_key = f"lock:webhook:{user_id}:{hashed}"
+            
+            # SETNX with a 15-second expiration
+            acquired = self._redis.set(lock_key, "locked", ex=15, nx=True)
+            return bool(acquired)
+        except Exception as e:
+            logger.error(f"Failed to acquire concurrency lock: {e}")
+            return True # Fallback: proceed on Redis failure
+
     async def handle_generic_webhook(self, source: str, request: Request) -> Dict[str, str]:
         user_id = await self._resolve_user(request)
         logger.info(f"Webhook {source} for user {user_id}")
@@ -230,6 +255,11 @@ class WebhookService:
             if self._is_duplicate(user_id, url=url, signal_id=signal_id):
                 logger.info(f"Webhook: Duplicate event skipped. url={url}, signal_id={signal_id}")
                 return {"status": "skipped", "reason": "duplicate", "url": url}
+            
+            # Concurrency Lock Check (SETNX)
+            if not self._acquire_concurrency_lock(user_id, url=url, signal_id=signal_id):
+                logger.info(f"Webhook: Concurrent duplicate event locked. url={url}, signal_id={signal_id}")
+                return {"status": "skipped", "reason": "concurrent_lock", "url": url}
             
             # Route skill-learning events to InvestmentSkillLearningService
             if source.lower() in ("skill-learning", "skill_learning"):
@@ -307,6 +337,11 @@ class WebhookService:
             if self._is_duplicate(user_id, url=url, signal_id=signal_id):
                 logger.info(f"Finnhub webhook: Duplicate event skipped. url={url}, signal_id={signal_id}")
                 return {"status": "skipped", "reason": "duplicate", "url": url}
+            
+            # Concurrency Lock Check (SETNX)
+            if not self._acquire_concurrency_lock(user_id, url=url, signal_id=signal_id):
+                logger.info(f"Finnhub webhook: Concurrent duplicate event locked. url={url}, signal_id={signal_id}")
+                return {"status": "skipped", "reason": "concurrent_lock", "url": url}
             
             # [Refactor] Independent Event Analysis Workflow (v6.0)
             from src.services.workflow_service import EventAnalysisWorkflow
