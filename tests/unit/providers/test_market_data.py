@@ -139,6 +139,7 @@ class TestMarketDataServiceFixed:
         
     def test_get_financials(self, service, mock_providers):
         """Test fetching financial data"""
+        mock_providers['yfinance'].fetch_info.return_value = None
         mock_providers['fmp'].fetch_info.return_value = {
             'market_cap': 2500000000000,
             'trailing_pe': 28.5,

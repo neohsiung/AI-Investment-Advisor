@@ -89,7 +89,7 @@ class TestAlchemyMemoryRepositoryCoverage:
 
         # Setup mock row with attributes
         mock_row = MagicMock()
-        mock_row.date = "2026-02-14"
+        mock_row.created_at = "2026-02-14"
         mock_row.content = "Daily report content"
         mock_row.summary = "Summary"
         mock_row.user_id = "user@test.com"
