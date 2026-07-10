@@ -9,12 +9,13 @@ import {
 // Generic v1 fetcher for SWR
 const v1Fetcher = (url: string) => apiClient.get<any>(url);
 
-// 使用者要求的更新頻率：10 分鐘 (600,000 毫秒)
-const REFRESH_INTERVAL = 600000;
+// 使用者要求的更新頻率：1 分鐘 (60,000 毫秒)
+const REFRESH_INTERVAL = 60000;
 
 export function usePortfolioSummary() {
   const { data, error, isLoading, mutate } = useSWR<ApiResponse<DashboardMetrics>>("/api/v1/dashboard/summary", v1Fetcher, {
     refreshInterval: REFRESH_INTERVAL,
+    dedupingInterval: 30000,
   });
 
   return {
@@ -28,6 +29,7 @@ export function usePortfolioSummary() {
 export function usePositions() {
   const { data, error, isLoading, mutate } = useSWR<ApiResponse<PositionItem[]>>("/api/v1/dashboard/positions", v1Fetcher, {
     refreshInterval: REFRESH_INTERVAL,
+    dedupingInterval: 30000,
   });
 
   return {
@@ -41,6 +43,7 @@ export function usePositions() {
 export function useAgentsStatus() {
   const { data, error, isLoading, mutate } = useSWR<ApiResponse<AgentStatus[]>>("/api/v1/dashboard/agents", v1Fetcher, {
     refreshInterval: REFRESH_INTERVAL,
+    dedupingInterval: 30000,
   });
 
   return {
@@ -54,6 +57,7 @@ export function useAgentsStatus() {
 export function useIntelligenceBriefing() {
   const { data, error, isLoading, mutate } = useSWR<ApiResponse<IntelligenceBriefing>>("/api/v1/dashboard/intelligence", v1Fetcher, {
     refreshInterval: REFRESH_INTERVAL,
+    dedupingInterval: 30000,
   });
 
   return {
@@ -66,7 +70,8 @@ export function useIntelligenceBriefing() {
 
 export function useAlerts() {
   const { data, error, isLoading, mutate } = useSWR<ApiResponse<any[]>>("/dashboard/alerts", v1Fetcher, {
-    refreshInterval: 60000, 
+    refreshInterval: REFRESH_INTERVAL,
+    dedupingInterval: 30000,
   });
 
   return {

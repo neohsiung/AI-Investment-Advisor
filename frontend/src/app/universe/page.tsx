@@ -70,7 +70,8 @@ export default function UniversePage() {
   };
 
   return (
-    <div className="p-6 space-y-6">
+    <div className="flex-1 overflow-y-auto pt-16 sm:pt-20 lg:pt-24 px-4 sm:px-6 lg:px-8 pb-8">
+      <div className="max-w-7xl mx-auto space-y-6">
       {/* Header */}
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-3">
@@ -296,6 +297,7 @@ export default function UniversePage() {
           )}
         </div>
       )}
+      </div>
     </div>
   );
 }

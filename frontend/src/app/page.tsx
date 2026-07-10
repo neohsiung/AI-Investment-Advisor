@@ -75,57 +75,65 @@ export default function CommandCenter() {
   }
 
   return (
-    <div className="space-y-4 lg:space-y-8 animate-in fade-in duration-700">
-      <PortfolioStats
-        summary={summary}
-        isReporting={isReporting}
-        isRebalancing={isRebalancing}
-        onGenerateReport={handleGenerateReport}
-        onRebalance={handleRebalance}
-      />
+    <div className="flex-1 overflow-y-auto pt-16 sm:pt-20 lg:pt-24 px-4 sm:px-6 lg:px-8 pb-8 animate-in fade-in duration-700">
+      <div className="max-w-[1600px] mx-auto space-y-4 lg:space-y-8">
+        <PortfolioStats
+          summary={summary}
+          isReporting={isReporting}
+          isRebalancing={isRebalancing}
+          onGenerateReport={handleGenerateReport}
+          onRebalance={handleRebalance}
+        />
 
-      <div className="grid grid-cols-12 gap-4 lg:gap-6">
-        <div className="col-span-12 md:col-span-8 lg:col-span-9">
-          <TacticalCard title="資產績效表現趨勢" className="h-full">
-            <ErrorBoundary fallback={<ComponentFallback name="績效圖表" />}>
-              <PerformanceChart />
+        <div className="grid grid-cols-12 gap-4 lg:gap-6">
+          <div className="col-span-12 lg:col-span-8">
+            <TacticalCard title="資產績效表現趨勢" className="h-full">
+              <ErrorBoundary fallback={<ComponentFallback name="績效圖表" />}>
+                <PerformanceChart />
+              </ErrorBoundary>
+            </TacticalCard>
+          </div>
+
+          <div className="col-span-12 lg:col-span-4">
+            <ErrorBoundary fallback={<ComponentFallback name="市場情報" />}>
+              <BriefingCard
+                summary={briefing?.executive_summary || "正在準備市場摘要..."}
+                recommendation={briefing?.recommendation || "分析中"}
+                note={briefing?.ai_note || "系統同步中"}
+                status={briefing?.observation_window || "INITIALIZING"}
+                metrics={briefing?.sentiment_metrics || []}
+                isLoading={isIntelLoading}
+              />
             </ErrorBoundary>
-          </TacticalCard>
+          </div>
         </div>
 
-        <div className="col-span-12 md:col-span-4 lg:col-span-3">
-          <ErrorBoundary fallback={<ComponentFallback name="市場情報" />}>
-            <BriefingCard
-              summary={briefing?.executive_summary || "正在準備市場摘要..."}
-              recommendation={briefing?.recommendation || "分析中"}
-              note={briefing?.ai_note || "系統同步中"}
-              status={briefing?.observation_window || "INITIALIZING"}
-              metrics={briefing?.sentiment_metrics || []}
-              isLoading={isIntelLoading}
-            />
-          </ErrorBoundary>
-        </div>
-      </div>
+        <div className="grid grid-cols-12 gap-4 lg:gap-6">
+          <div className="col-span-12 lg:col-span-8">
+            <ErrorBoundary fallback={<ComponentFallback name="持倉明細" />}>
+              <PositionsTable positions={positions} isLoading={isPositionsLoading} />
+            </ErrorBoundary>
+          </div>
 
-      <div className="grid grid-cols-12 gap-4 lg:gap-6">
-        <div className="col-span-12 md:col-span-8 lg:col-span-8 space-y-4 lg:space-y-6">
-          <Terminal />
-
-          <ErrorBoundary fallback={<ComponentFallback name="持倉明細" />}>
-            <PositionsTable positions={positions} isLoading={isPositionsLoading} />
-          </ErrorBoundary>
+          <div className="col-span-12 lg:col-span-4">
+            <ErrorBoundary fallback={<ComponentFallback name="系統通知" />}>
+              <SystemAlerts alerts={alerts} isLoading={isAlertsLoading} />
+            </ErrorBoundary>
+          </div>
         </div>
 
-        <div className="col-span-12 md:col-span-4 lg:col-span-4">
-          <ErrorBoundary fallback={<ComponentFallback name="系統通知" />}>
-            <SystemAlerts alerts={alerts} isLoading={isAlertsLoading} />
-          </ErrorBoundary>
+        <div className="grid grid-cols-12 gap-4 lg:gap-6">
+          <div className="col-span-12 lg:col-span-8">
+            <Terminal />
+          </div>
+
+          <div className="col-span-12 lg:col-span-4">
+            <ErrorBoundary fallback={<ComponentFallback name="代理人監控" />}>
+              <AgentStatusPanel />
+            </ErrorBoundary>
+          </div>
         </div>
       </div>
-
-      <ErrorBoundary fallback={<ComponentFallback name="代理人監控" />}>
-        <AgentStatusPanel />
-      </ErrorBoundary>
     </div>
   );
 }
