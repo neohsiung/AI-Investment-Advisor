@@ -255,7 +255,7 @@ class TestEmailAdapterSendAlert:
             adapter = EmailAdapter()
             result = await adapter.send_alert("user@example.com", "Test Title", "Test Content")
             assert result is True
-            mock_notifier.send_report.assert_called_once_with("Test Title", "Test Content", to_email=None)
+            mock_notifier.send_report.assert_called_once_with("Test Title", "Test Content", to_email="user@example.com")
 
     @pytest.mark.asyncio
     async def test_send_alert_with_actions_appends_to_body(self):
@@ -321,4 +321,4 @@ class TestEmailAdapterSendAlert:
                 category="sentinel"
             )
             assert result is True
-            mock_notifier.send_report.assert_called_once_with("Title", "Content", to_email=None)
+            mock_notifier.send_report.assert_called_once_with("Title", "Content", to_email="user@example.com")
