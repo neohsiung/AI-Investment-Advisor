@@ -303,7 +303,12 @@ class BaseWorkflow(ABC):
                 chain = build_config_chain(self.user_id, "fast")
                 if not chain:
                     raise ValueError(f"No fast-tier model configured for user={self.user_id}")
-                pipeline = ResilientLLMPipeline(config_chain=chain)
+                pipeline = ResilientLLMPipeline(
+                    config_chain=chain,
+                    user_id=self.user_id,
+                    agent_name="report_translator",
+                    tier="fast",
+                )
 
                 from src.utils.prompt_utils import load_agent_prompt
                 
@@ -1391,7 +1396,12 @@ class EventAnalysisWorkflow(BaseWorkflow):
                 from src.infrastructure.llm.resilient_pipeline import ResilientLLMPipeline
 
                 chain = build_config_chain(self.user_id, "fast")
-                pipeline = ResilientLLMPipeline(config_chain=chain)
+                pipeline = ResilientLLMPipeline(
+                    config_chain=chain,
+                    user_id=self.user_id,
+                    agent_name="macro_news_analyst",
+                    tier="fast",
+                )
 
                 macro_prompt = (
                     "你是一位即時新聞分析師。請根據以下新聞事件，"

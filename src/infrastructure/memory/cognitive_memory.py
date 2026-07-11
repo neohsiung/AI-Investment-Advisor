@@ -160,7 +160,12 @@ class CognitiveMemoryManager:
             settings_svc = SettingsService(user_id=user_id)
             router = BudgetAwareModelRouter(settings_svc, TokenLoggerService())
             chain = router.get_config_chain("fast", user_id)
-            pipeline = ResilientLLMPipeline(config_chain=chain)
+            pipeline = ResilientLLMPipeline(
+                config_chain=chain,
+                user_id=user_id,
+                agent_name="cognitive_episode_extractor",
+                tier="fast",
+            )
 
             # [STRICT] Load prompt from file
             system_prompt = load_agent_prompt("cognitive_episode_extractor")
@@ -263,7 +268,12 @@ class CognitiveMemoryManager:
             settings_svc = SettingsService(user_id=user_id)
             router = BudgetAwareModelRouter(settings_svc, TokenLoggerService())
             chain = router.get_config_chain("smart", user_id)
-            pipeline = ResilientLLMPipeline(config_chain=chain)
+            pipeline = ResilientLLMPipeline(
+                config_chain=chain,
+                user_id=user_id,
+                agent_name="cognitive_knowledge_synthesizer",
+                tier="smart",
+            )
 
             # Build episodes digest
             episodes_text = "\n\n".join(
@@ -385,7 +395,12 @@ class CognitiveMemoryManager:
             settings_svc = SettingsService(user_id=user_id)
             router = BudgetAwareModelRouter(settings_svc, TokenLoggerService())
             chain = router.get_config_chain("smart", user_id)
-            pipeline = ResilientLLMPipeline(config_chain=chain)
+            pipeline = ResilientLLMPipeline(
+                config_chain=chain,
+                user_id=user_id,
+                agent_name="cognitive_wisdom_synthesizer",
+                tier="smart",
+            )
 
             knowledge_text = "\n".join(
                 [f"- {f['content']}" for f in fragments[:20]]

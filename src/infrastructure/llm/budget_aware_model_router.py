@@ -242,4 +242,9 @@ class BudgetAwareModelRouter:
         from src.infrastructure.llm.resilient_pipeline import ResilientLLMPipeline
 
         chain = self.get_config_chain(user_id=user_id, tier=tier, db_session=db_session)
-        return ResilientLLMPipeline(config_chain=chain)
+        return ResilientLLMPipeline(
+            config_chain=chain,
+            user_id=user_id,
+            agent_name="budget_aware_router",
+            tier=tier,
+        )

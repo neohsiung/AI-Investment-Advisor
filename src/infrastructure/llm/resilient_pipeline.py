@@ -230,6 +230,8 @@ class ResilientLLMPipeline:
                 )
 
                 response = await self._call_with_retry(gateway, messages, config, candidate.max_retries)
+                if not response or not response.strip():
+                    raise ValueError("Empty response from LLM")
                 duration_ms = (time.monotonic() - t0) * 1000
 
                 attempts.append(AttemptRecord(
