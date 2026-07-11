@@ -109,12 +109,69 @@ class BaseWorkflow(ABC):
 
     def _parse_actionable_orders(self, final_report: str):
         """
-        Parses the actionable orders table from the final report and populates the context.
-        Supports both Markdown pipe tables and HTML <table> formats.
+        Parses the actionable orders table or JSON from the final report and populates the context.
+        Supports Markdown pipe tables, HTML <table> formats, and [CONVINCING_ACTION] JSON blocks.
         """
         try:
             import re
+            import json
             rows = []
+            json_parsed = False
+
+            # --- Strategy 0: JSON block [CONVINCING_ACTION] ---
+            if "[CONVINCING_ACTION]" in final_report:
+                try:
+                    parts = final_report.split("[CONVINCING_ACTION]")
+                    if len(parts) > 1:
+                        json_str = parts[1].strip()
+                        brace_count = 0
+                        start_idx = -1
+                        end_idx = -1
+                        for idx, char in enumerate(json_str):
+                            if char == '{':
+                                if brace_count == 0:
+                                    start_idx = idx
+                                brace_count += 1
+                            elif char == '}':
+                                brace_count -= 1
+                                if brace_count == 0 and start_idx != -1:
+                                    end_idx = idx + 1
+                                    break
+                        if start_idx != -1 and end_idx != -1:
+                            data = json.loads(json_str[start_idx:end_idx])
+                            actions = data.get("actions", [])
+                            if 'actionable_orders' not in self.context:
+                                self.context['actionable_orders'] = []
+                            for act in actions:
+                                ticker = str(act.get("ticker", "")).strip().upper()
+                                action = str(act.get("action", "")).strip().upper()
+                                if "BUY" in action:
+                                    cio_signal = "BUY"
+                                elif "SELL" in action:
+                                    cio_signal = "SELL"
+                                else:
+                                    cio_signal = "HOLD"
+                                
+                                if ticker and cio_signal != "HOLD":
+                                    self.context['actionable_orders'].append({
+                                        'ticker': ticker,
+                                        'action': cio_signal,
+                                        'quantity': act.get("quantity") or 100.0,
+                                        'score': act.get("confidence") or 7,
+                                        'reason': act.get("rationale") or f"CIO Signal ({cio_signal})",
+                                        'target_weight': act.get("target_weight"),
+                                        'current_weight': act.get("current_weight"),
+                                        'delta_weight': act.get("delta_weight")
+                                    })
+                            json_parsed = True
+                            self.logger.info("Successfully parsed [CONVINCING_ACTION] JSON block.")
+                except Exception as json_err:
+                    self.logger.warning(f"Failed to parse [CONVINCING_ACTION] JSON block: {json_err}")
+
+            if json_parsed:
+                if self.context.get('actionable_orders'):
+                    self.logger.info(f"Parsed {len(self.context['actionable_orders'])} actionable orders from JSON.")
+                return
 
             # --- Strategy 1: Markdown pipe table (preferred) ---
             lines = final_report.split('\n')

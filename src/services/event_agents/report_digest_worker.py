@@ -60,34 +60,35 @@ async def main():
     p3_events = [e for e in events if e.get("tier") == EventQueue.TIER_P3]
     
     lines = [
-        f"📋 Daily Digest — {today}",
+        f"📋 每日投資摘要 (Daily Digest) — {today}",
         f"━━━━━━━━━━━━━━━━━━━━━",
-        f"Events processed: {len(events)} total",
-        f"  • P0 Critical: {len(p0_events)}",
-        f"  • P1 Important: {len(p1_events)}",
-        f"  • P2 Routine: {len(p2_events)}",
-        f"  • P3 Reference: {len(p3_events)}",
+        f"今日處理事件共 {len(events)} 件",
+        f"  • P0 關鍵/緊急: {len(p0_events)} 件",
+        f"  • P1 重要/操作: {len(p1_events)} 件",
+        f"  • P2 例行/報告: {len(p2_events)} 件",
+        f"  • P3 參考/訊號: {len(p3_events)} 件",
     ]
     
     if p0_events:
-        lines.append(f"\n🔴 Critical Events:")
+        lines.append(f"\n🔴 關鍵與緊急事件 (Critical Events):")
         for e in p0_events:
             content = e.get("content", {})
             lines.append(f"  • {content.get('source', '?')}: {content.get('topic', '')[:80]}")
     
     if p1_events:
-        lines.append(f"\n🟡 Important Events:")
+        lines.append(f"\n🟡 重要操作與警報 (Actionable Alerts):")
         for e in p1_events:
             content = e.get("content", {})
             decision = content.get("decision", "")[:150]
             lines.append(f"  • {content.get('source', '?')}: {decision}")
     
     if p2_events:
-        lines.append(f"\n⚪ Routine:")
+        lines.append(f"\n⚪ 例行報告與快訊 (Routine Reports):")
         for e in p2_events:
             content = e.get("content", {})
-            lines.append(f"  • {content.get('topic', e['event_type'])[:80]}")
-    
+            title = content.get('title') or content.get('topic') or e['event_type']
+            lines.append(f"  • {title[:80]}")
+            
     digest_text = "\n".join(lines)
     
     # 3. Send daily digest notification

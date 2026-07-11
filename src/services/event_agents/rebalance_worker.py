@@ -61,19 +61,20 @@ async def main():
         return
     
     # 4. Build digest for actionable events
-    digest_lines = [f"🔄 Rebalance Cycle — {datetime.now(timezone.utc).strftime('%H:%M UTC')}"]
-    digest_lines.append(f"Processed {len(events)} events ({summary['total_pending']} pending)")
+    digest_lines = [f"🔄 再平衡週期 (Rebalance Cycle) — {datetime.now(timezone.utc).strftime('%H:%M UTC')}"]
+    digest_lines.append(f"已處理 {len(events)} 件事件 ({summary['total_pending']} 件待處理)")
     
     for e in events:
         content = e.get("content", {})
         decision = content.get("decision", "")[:200]
         
+        title = content.get('title') or content.get('topic') or e['event_type']
         if e["tier"] == EventQueue.TIER_P0:
-            digest_lines.append(f"\n🔴 P0: {content.get('topic', 'Unknown')}")
+            digest_lines.append(f"\n🔴 P0 (緊急): {title}")
         elif e["tier"] == EventQueue.TIER_P1:
-            digest_lines.append(f"\n🟡 P1: {content.get('topic', 'Unknown')}")
+            digest_lines.append(f"\n🟡 P1 (重要): {title}")
         else:
-            digest_lines.append(f"\n⚪ P2: {content.get('topic', 'Unknown')}")
+            digest_lines.append(f"\n⚪ P2 (例行): {title}")
         
         if decision:
             digest_lines.append(f"  {decision[:200].replace(chr(10), ' ')}")
