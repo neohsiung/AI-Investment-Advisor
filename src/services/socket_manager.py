@@ -130,7 +130,7 @@ class ConnectionManager:
                 # Query recent event logs since the last received timestamp
                 with engine.connect() as conn:
                     query = text(
-                        "SELECT event_type, message, created_at "
+                        "SELECT event_type, title AS message, created_at "
                         "FROM event_logs "
                         "WHERE user_id = :uid AND created_at > :since "
                         "ORDER BY created_at ASC LIMIT 50"

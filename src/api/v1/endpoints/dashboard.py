@@ -189,7 +189,7 @@ async def get_recent_alerts(user_id: str = Depends(get_current_user_id)):
             # Enforce user isolation here where applicable, assuming event_logs tracks user!
             # If event_logs doesn't have user_id, it might be global, wait...
             rows = conn.execute(
-                text("SELECT event_type, message, created_at FROM event_logs ORDER BY created_at DESC LIMIT 5")
+                text("SELECT event_type, title AS message, created_at FROM event_logs ORDER BY created_at DESC LIMIT 5")
             ).fetchall()
         alerts = [{"type": r.event_type, "msg": r.message, "time": str(r.created_at)[:16]} for r in rows]
         return {"status": "success", "data": alerts or []}
