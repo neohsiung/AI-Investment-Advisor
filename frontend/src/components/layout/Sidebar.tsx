@@ -31,7 +31,7 @@ export default function Sidebar() {
         flex flex-col shadow-[20px_0_40px_rgba(0,0,0,0.4)]
         transform transition-transform duration-300
         ${isOpen ? "translate-x-0" : "-translate-x-full"}
-        lg:translate-x-0 lg:static lg:inset-auto
+        lg:translate-x-0
       `}
     >
       <div className="p-6 flex items-center gap-3">

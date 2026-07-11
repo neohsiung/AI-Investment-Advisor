@@ -41,6 +41,12 @@ async def test_telegram_adapter_get_settings(mock_db):
     assert token == "test_token"
     assert chat_id == "test_chat_id"
     assert mock_db['conn'].fetchval.call_count == 2
+    
+    # Verify DB connection URL does not mask password with ***
+    mock_db['pool_factory'].assert_called_once()
+    called_url = mock_db['pool_factory'].call_args[0][0]
+    assert "postgres:***@" not in called_url
+    assert "postgres:postgres@" in called_url
 
 @pytest.mark.anyio
 async def test_send_alert_success(mock_db):

@@ -11,6 +11,169 @@ from src.domain.interfaces import IChannelAdapter
 from src.infrastructure.channels.line_adapter import LineBotAdapter
 from src.services.conversation_router import ConversationRouter
 
+def serialize_request(req: InteractionRequest) -> str:
+    import json
+    return json.dumps({
+        "request_id": req.request_id,
+        "type": req.type.value,
+        "title": req.title,
+        "content": req.content,
+        "payload": req.payload,
+        "status": req.status.value,
+        "response": req.response,
+        "created_at": req.created_at.isoformat() if req.created_at else None,
+        "expires_at": req.expires_at.isoformat() if req.expires_at else None,
+        "channel_id": req.channel_id,
+        "user_id": req.user_id
+    })
+
+def deserialize_request(data_str: str) -> InteractionRequest:
+    import json
+    from datetime import datetime
+    from src.domain.interaction import InteractionRequest, InteractionType, InteractionStatus
+    data = json.loads(data_str)
+    
+    created_at = datetime.fromisoformat(data["created_at"]) if data.get("created_at") else datetime.now()
+    expires_at = datetime.fromisoformat(data["expires_at"]) if data.get("expires_at") else None
+    
+    return InteractionRequest(
+        request_id=data["request_id"],
+        type=InteractionType(data["type"]),
+        title=data["title"],
+        content=data["content"],
+        payload=data["payload"],
+        status=InteractionStatus(data["status"]),
+        response=data["response"],
+        created_at=created_at,
+        expires_at=expires_at,
+        channel_id=data.get("channel_id"),
+        user_id=data.get("user_id")
+    )
+
+class RedisPendingRequests:
+    def __init__(self):
+        import os
+        import sys
+        import redis
+        self._fallback_dict = {}
+        
+        # Check if we are running in a unit test environment
+        is_testing = "pytest" in sys.modules or os.getenv("TESTING") == "true"
+        
+        if is_testing:
+            self._redis = None
+        else:
+            redis_url = os.getenv("REDIS_URL", "redis://localhost:6379/0")
+            try:
+                self._redis = redis.from_url(redis_url, decode_responses=True, socket_connect_timeout=3)
+                self._redis.ping()
+            except Exception:
+                self._redis = None
+
+    def __setitem__(self, key: str, req: InteractionRequest):
+        self._fallback_dict[key] = req
+        if self._redis:
+            try:
+                self._redis.set(f"interaction:{key}", serialize_request(req), ex=3600)  # TTL of 1 hour
+            except Exception:
+                self._redis = None
+
+    def __getitem__(self, key: str) -> InteractionRequest:
+        val = self.get(key)
+        if val is None:
+            raise KeyError(key)
+        return val
+
+    def __delitem__(self, key: str):
+        if self._redis:
+            try:
+                self._redis.delete(f"interaction:{key}")
+            except Exception:
+                self._redis = None
+        if key in self._fallback_dict:
+            del self._fallback_dict[key]
+
+    def __len__(self) -> int:
+        if self._redis:
+            try:
+                return len(self._redis.keys("interaction:*"))
+            except Exception:
+                self._redis = None
+        return len(self._fallback_dict)
+
+    def __contains__(self, key: str) -> bool:
+        if self._redis:
+            try:
+                return bool(self._redis.exists(f"interaction:{key}"))
+            except Exception:
+                self._redis = None
+        return key in self._fallback_dict
+
+    def get(self, key: str, default=None) -> Optional[InteractionRequest]:
+        if self._redis:
+            try:
+                val = self._redis.get(f"interaction:{key}")
+                if val:
+                    redis_req = deserialize_request(val)
+                    if key in self._fallback_dict:
+                        local_req = self._fallback_dict[key]
+                        local_req.status = redis_req.status
+                        local_req.response = redis_req.response
+                        return local_req
+                    return redis_req
+            except Exception:
+                self._redis = None
+        return self._fallback_dict.get(key, default)
+
+    def pop(self, key: str, default=None) -> Optional[InteractionRequest]:
+        val = self.get(key)
+        if val is not None:
+            self.__delitem__(key)
+            return val
+        return default
+
+    def keys(self) -> List[str]:
+        if self._redis:
+            try:
+                raw_keys = self._redis.keys("interaction:*")
+                return [k.replace("interaction:", "") for k in raw_keys]
+            except Exception:
+                self._redis = None
+        return list(self._fallback_dict.keys())
+
+    def values(self) -> List[InteractionRequest]:
+        reqs = []
+        if self._redis:
+            try:
+                keys = self._redis.keys("interaction:*")
+                for k in keys:
+                    val = self._redis.get(k)
+                    if val:
+                        # Apply same local reference mapping to values() as well
+                        redis_req = deserialize_request(val)
+                        req_id = redis_req.request_id
+                        if req_id in self._fallback_dict:
+                            local_req = self._fallback_dict[req_id]
+                            local_req.status = redis_req.status
+                            local_req.response = redis_req.response
+                            reqs.append(local_req)
+                        else:
+                            reqs.append(redis_req)
+                return reqs
+            except Exception:
+                self._redis = None
+        return list(self._fallback_dict.values())
+
+    def clear(self):
+        if self._redis:
+            try:
+                keys = self._redis.keys("interaction:*")
+                if keys:
+                    self._redis.delete(*keys)
+            except Exception:
+                self._redis = None
+        self._fallback_dict.clear()
+
 class InteractionService:
     """
     Service for orchestrating two-way user interactions across multiple channels (e.g., Approval Workflows).
@@ -40,7 +203,7 @@ class InteractionService:
         self.intent_classifier = intent_classifier
             
         self.settings_service = settings_service
-        self._pending_requests: Dict[str, InteractionRequest] = {} 
+        self._pending_requests = RedisPendingRequests()
         
         # [Phase 1] ConversationRouter for free-form Q&A
         # 對話路由器：處理自由形式問答
@@ -220,15 +383,20 @@ class InteractionService:
         import asyncio
         start_time = time.time()
         while time.time() - start_time < timeout_seconds:
-            if req.status == InteractionStatus.APPROVED:
-                logger.info(f"Interaction {req.request_id} APPROVED")
-                return True, InteractionStatus.APPROVED
-            if req.status == InteractionStatus.REJECTED:
-                logger.info(f"Interaction {req.request_id} REJECTED")
-                return False, InteractionStatus.REJECTED
+            current_req = self._pending_requests.get(req.request_id)
+            if current_req:
+                if current_req.status == InteractionStatus.APPROVED:
+                    logger.info(f"Interaction {req.request_id} APPROVED")
+                    req.status = InteractionStatus.APPROVED
+                    return True, InteractionStatus.APPROVED
+                if current_req.status == InteractionStatus.REJECTED:
+                    logger.info(f"Interaction {req.request_id} REJECTED")
+                    req.status = InteractionStatus.REJECTED
+                    return False, InteractionStatus.REJECTED
             await asyncio.sleep(1) # Poll interval
             
         req.status = InteractionStatus.EXPIRED
+        self._pending_requests[req.request_id] = req
         logger.warning(f"Interaction {req.request_id} EXPIRED")
         return False, InteractionStatus.EXPIRED
 
@@ -353,6 +521,8 @@ class InteractionService:
             logger.warning(f"InteractionService: Unknown action {action} for request {request_id}")
             return
 
+        # Save status update back to the store
+        self._pending_requests[request_id] = req
         logger.info(f"InteractionService: Request {request_id} status updated to {req.status}")
 
         # v4.2.3: Resolve target adapters based on user settings for feedback consistency

@@ -110,6 +110,25 @@ async def websocket_broadcast_loop():
                 service = DashboardService(user_id=user_id)
                 data = await service.prepare_dashboard_data(user_id=user_id)
                 
+                metrics = data.get('metrics', {})
+                pnl = data.get('pnl_data', {})
+                summary = {
+                    "total_valuation": metrics.get('nlv', 0),
+                    "uninvested_cash": metrics.get('cash_balance', 0),
+                    "gross_exposure": metrics.get('gross_nlv', 0),
+                    "leverage_ratio": metrics.get('leverage_ratio', 0),
+                    "active_agents": metrics.get('active_agents', 7),
+                    "risk_exposure": metrics.get('risk_level', "MODERATE"),
+                    "total_pnl": pnl.get('total', 0),
+                    "unrealized_pnl": pnl.get('unrealized', 0),
+                    "roi_percentage": data.get('roi', 0) * 100,
+                    "performance_change": "+1.2%"
+                }
+                positions_df = data.get('positions_df')
+                positions = []
+                if positions_df is not None and hasattr(positions_df, 'empty') and not positions_df.empty:
+                    positions = positions_df.to_dict(orient='records')
+
                 # 廣播更新
                 await socket_manager.broadcast_to_user(user_id, {
                     "type": "PORTFOLIO_UPDATE",

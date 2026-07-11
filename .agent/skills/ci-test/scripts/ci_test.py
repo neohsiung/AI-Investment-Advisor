@@ -124,8 +124,8 @@ def main():
             steps.append(("Security Scan (Bandit - Incremental)", f"{python_cmd} -m bandit {bandit_paths}"))
             
     # Always run wiki and licenses if relevant or in full mode
-    if is_full or any(f.startswith("wiki/") for f in changed_files):
-        steps.append(("Wiki Integrity Check", f"{python_cmd} .agent/skills/wiki-maintainer/scripts/verify_wiki_links.py"))
+    if is_full or any(f.startswith("wiki/") for f in changed_files) or any(f.startswith("src/") for f in changed_files):
+        steps.append(("Wiki & Codebase Sync Check", f"{python_cmd} .agent/skills/wiki-maintainer/scripts/audit_wiki_codebase_sync.py"))
     
     steps.append(("License Compliance Check", f"{python_cmd} -m piplicenses"))
 

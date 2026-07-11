@@ -30,7 +30,7 @@ export function PortfolioStats({
           </div>
         </div>
 
-        <div className="flex flex-wrap gap-4 sm:gap-6">
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-4">
           <StatItem label="資產淨值 (NLV)" value={formatCurrency(summary?.total_valuation || 0)} />
           <StatItem label="可用現金 (Cash)" value={formatCurrency(summary?.uninvested_cash || 0)} />
           <StatItem

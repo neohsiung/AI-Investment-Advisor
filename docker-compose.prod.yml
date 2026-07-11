@@ -299,6 +299,19 @@ services:
       - NODE_ENV=production
     networks:
       - advisor-net
+  # 8. ngrok Tunnel (Webhook / External Access)
+  ngrok:
+    image: ngrok/ngrok:3-alpine
+    container_name: advisor_prod_ngrok
+    restart: always
+    command: http --url=chummy-nonpathologically-lilla.ngrok-free.dev advisor_prod_gateway:80
+    environment:
+      - NGROK_AUTHTOKEN=${NGROK_AUTHTOKEN}
+    depends_on:
+      - nginx
+    networks:
+      - advisor-net
+
   nginx:
     image: nginx:alpine
     container_name: advisor_prod_gateway

@@ -15,6 +15,7 @@ from src.services.performance_service import PerformanceService
 from src.repositories.agent_repository import AlchemyAgentRepository
 from sqlalchemy import text
 from src.utils.logger import setup_logger
+from src.utils.api_cache import cached_api_response
 
 logger = setup_logger("API_Dashboard")
 router = APIRouter()
@@ -23,6 +24,7 @@ def get_dashboard_service(user_id: str = Depends(get_current_user_id)) -> Dashbo
     return DashboardService(user_id=user_id)
 
 @router.get("/summary", response_model=DashboardSummaryResponse)
+@cached_api_response(ttl_seconds=30)
 async def get_summary(service: DashboardService = Depends(get_dashboard_service)):
     """獲取投資概覽數據 (NLV, Cash, PnL, ROI)"""
     try:
@@ -41,7 +43,7 @@ async def get_summary(service: DashboardService = Depends(get_dashboard_service)
                 "risk_exposure": metrics.get('risk_level', "MODERATE"),
                 "total_pnl": pnl.get('total', 0),
                 "unrealized_pnl": pnl.get('unrealized', 0),
-                "roi_percentage": data.get('roi', 0) * 100,
+                "roi_percentage": data.get('roi', 0),
                 "performance_change": "+1.2%"
             }
         }
@@ -50,6 +52,7 @@ async def get_summary(service: DashboardService = Depends(get_dashboard_service)
         raise HTTPException(status_code=500, detail="Internal server error")
 
 @router.get("/positions", response_model=PositionListResponse)
+@cached_api_response(ttl_seconds=30)
 async def get_positions(service: DashboardService = Depends(get_dashboard_service)):
     """獲取持倉清單極其數據"""
     try:
@@ -96,6 +99,7 @@ async def get_positions(service: DashboardService = Depends(get_dashboard_servic
         raise HTTPException(status_code=500, detail="Internal server error")
 
 @router.get("/intelligence", response_model=IntelligenceResponse)
+@cached_api_response(ttl_seconds=120)
 async def get_intelligence(user_id: str = Depends(get_current_user_id)):
     """獲取最新的市場情報簡報"""
     try:
@@ -116,6 +120,7 @@ async def get_intelligence(user_id: str = Depends(get_current_user_id)):
          }
 
 @router.get("/agents", response_model=AgentListResponse)
+@cached_api_response(ttl_seconds=120)
 async def get_agents(user_id: str = Depends(get_current_user_id)):
     """獲取 Agent Swarm 運作狀態"""
     try:
@@ -184,7 +189,7 @@ async def get_recent_alerts(user_id: str = Depends(get_current_user_id)):
             # Enforce user isolation here where applicable, assuming event_logs tracks user!
             # If event_logs doesn't have user_id, it might be global, wait...
             rows = conn.execute(
-                text("SELECT event_type, message, created_at FROM event_logs ORDER BY created_at DESC LIMIT 5")
+                text("SELECT event_type, title AS message, created_at FROM event_logs ORDER BY created_at DESC LIMIT 5")
             ).fetchall()
         alerts = [{"type": r.event_type, "msg": r.message, "time": str(r.created_at)[:16]} for r in rows]
         return {"status": "success", "data": alerts or []}

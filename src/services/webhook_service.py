@@ -163,6 +163,11 @@ SOURCE_PARSERS = {
 class WebhookService:
     def __init__(self, settings_service: Optional[SettingsService] = None):
         self.settings_service = settings_service or SettingsService()
+        import redis
+        try:
+            self._redis = redis.from_url(os.getenv("REDIS_URL", "redis://localhost:6379/0"), decode_responses=True, socket_connect_timeout=3)
+        except Exception:
+            self._redis = None
         
     async def _resolve_user(self, request: Request) -> str:
         """
@@ -181,6 +186,58 @@ class WebhookService:
             
         return user_id
 
+    def _is_duplicate(self, user_id: str, url: str = None, signal_id: str = None) -> bool:
+        """Checks if a URL or signal_id has already been processed in the event queue."""
+        if not url and not signal_id:
+            return False
+            
+        try:
+            from sqlalchemy import text
+            from src.data.database import get_db_engine
+            engine = get_db_engine()
+            with engine.connect() as conn:
+                query_str = """
+                    SELECT 1 FROM event_queue 
+                    WHERE user_id = :uid 
+                    AND (
+                        1 = 0
+                """
+                params = {"uid": user_id}
+                if url:
+                    query_str += " OR content->>'url' = :url OR content->>'link' = :url OR content->>'summary' LIKE :url_pattern"
+                    params["url"] = url
+                    params["url_pattern"] = f"%{url}%"
+                if signal_id:
+                    query_str += " OR content->>'signal_id' = :signal_id"
+                    params["signal_id"] = signal_id
+                query_str += "\n) LIMIT 1"
+                
+                exists = conn.execute(text(query_str), params).first()
+                return bool(exists)
+        except Exception as e:
+            logger.error(f"Duplicate check failed: {e}")
+            return False
+
+    def _acquire_concurrency_lock(self, user_id: str, url: str = None, signal_id: str = None) -> bool:
+        """
+        Acquire a Redis lock for this specific webhook event to prevent concurrent processing.
+        獲取特定 Webhook 事件的 Redis 鎖，以防止併發處理。
+        """
+        if not self._redis or (not url and not signal_id):
+            return True # If Redis is unavailable, skip the lock check (graceful degradation)
+            
+        try:
+            key_source = url or signal_id
+            hashed = hashlib.sha256(key_source.encode("utf-8")).hexdigest()
+            lock_key = f"lock:webhook:{user_id}:{hashed}"
+            
+            # SETNX with a 15-second expiration
+            acquired = self._redis.set(lock_key, "locked", ex=15, nx=True)
+            return bool(acquired)
+        except Exception as e:
+            logger.error(f"Failed to acquire concurrency lock: {e}")
+            return True # Fallback: proceed on Redis failure
+
     async def handle_generic_webhook(self, source: str, request: Request) -> Dict[str, str]:
         user_id = await self._resolve_user(request)
         logger.info(f"Webhook {source} for user {user_id}")
@@ -191,6 +248,18 @@ class WebhookService:
             
             parser = SOURCE_PARSERS.get(source.lower(), BaseSourceParser)
             normalized_data = parser.parse(payload)
+            
+            # Deduplication Check
+            url = normalized_data.get("url")
+            signal_id = normalized_data.get("signal_id")
+            if self._is_duplicate(user_id, url=url, signal_id=signal_id):
+                logger.info(f"Webhook: Duplicate event skipped. url={url}, signal_id={signal_id}")
+                return {"status": "skipped", "reason": "duplicate", "url": url}
+            
+            # Concurrency Lock Check (SETNX)
+            if not self._acquire_concurrency_lock(user_id, url=url, signal_id=signal_id):
+                logger.info(f"Webhook: Concurrent duplicate event locked. url={url}, signal_id={signal_id}")
+                return {"status": "skipped", "reason": "concurrent_lock", "url": url}
             
             # Route skill-learning events to InvestmentSkillLearningService
             if source.lower() in ("skill-learning", "skill_learning"):
@@ -261,6 +330,18 @@ class WebhookService:
             
             # Resolve user (Finnhub doesn't provide user context in payload)
             user_id = os.getenv("DEFAULT_FINNHUB_USER_ID", "00000000-0000-4000-a000-000000000001")
+            
+            # Deduplication Check
+            url = normalized.get("url")
+            signal_id = normalized.get("signal_id")
+            if self._is_duplicate(user_id, url=url, signal_id=signal_id):
+                logger.info(f"Finnhub webhook: Duplicate event skipped. url={url}, signal_id={signal_id}")
+                return {"status": "skipped", "reason": "duplicate", "url": url}
+            
+            # Concurrency Lock Check (SETNX)
+            if not self._acquire_concurrency_lock(user_id, url=url, signal_id=signal_id):
+                logger.info(f"Finnhub webhook: Concurrent duplicate event locked. url={url}, signal_id={signal_id}")
+                return {"status": "skipped", "reason": "concurrent_lock", "url": url}
             
             # [Refactor] Independent Event Analysis Workflow (v6.0)
             from src.services.workflow_service import EventAnalysisWorkflow
@@ -434,11 +515,16 @@ async def telegram_bot_webhook(request: Request):
         try:
             from src.infrastructure.channels.telegram_adapter import TelegramAdapter
             from src.services.settings_service import SettingsService
+            from src.services.interaction_service import InteractionService
             ss = SettingsService(user_id=user_id)
             adapter = TelegramAdapter(
                 bot_token=ss.get_setting("channel_telegram_bot_token", ""),
                 chat_id=chat_id
             )
+            # Register interaction callback to handle Approve/Reject clicks
+            interaction_svc = InteractionService(settings_service=ss)
+            adapter.register_callback(interaction_svc.handle_response)
+            
             asyncio.create_task(adapter.handle_webhook(payload))
         except Exception as e:
             logger.error(f"Telegram callback handling failed: {e}")

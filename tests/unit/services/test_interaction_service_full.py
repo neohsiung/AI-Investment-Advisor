@@ -195,3 +195,59 @@ async def test_interaction_service_inactive_adapters():
     with patch.dict('os.environ', {"LINE_CHANNEL_SECRET": "", "LINE_CHANNEL_ACCESS_TOKEN": ""}, clear=True):
         service = InteractionService()
         await service.handle_response("unknown", "approve")
+
+def test_redis_pending_requests_coverage():
+    from src.services.interaction_service import RedisPendingRequests
+    import sys
+    
+    # Test initialization with pytest check patched by copying sys.modules without "pytest"
+    mock_modules = dict(sys.modules)
+    if "pytest" in mock_modules:
+        del mock_modules["pytest"]
+        
+    with patch('sys.modules', mock_modules), patch('os.environ.get', return_value="redis://localhost:6379/0"), patch('redis.from_url') as mock_from_url:
+        mock_client = MagicMock()
+        mock_from_url.return_value = mock_client
+        store2 = RedisPendingRequests()
+        assert store2._redis is mock_client
+
+    store = RedisPendingRequests()
+    mock_redis = MagicMock()
+    store._redis = mock_redis
+    
+    # 1. __setitem__
+    req = InteractionRequest(type=InteractionType.APPROVAL, title="T", content="C")
+    store[req.request_id] = req
+    mock_redis.set.assert_called_once()
+    
+    # 2. get / __getitem__ / __contains__
+    mock_redis.get.return_value = '{"request_id": "' + req.request_id + '", "type": "APPROVAL", "title": "T", "content": "C", "status": "PENDING", "response": null, "payload": {}, "user_id": null, "expires_at": null, "channel_id": null}'
+    retrieved = store[req.request_id]
+    assert retrieved.request_id == req.request_id
+    
+    mock_redis.exists.return_value = True
+    assert req.request_id in store
+    
+    # 3. __len__
+    mock_redis.keys.return_value = ["interaction:123"]
+    assert len(store) == 1
+    
+    # 4. keys / values
+    assert store.keys() == ["123"]
+    
+    mock_redis.get.return_value = '{"request_id": "' + req.request_id + '", "type": "APPROVAL", "title": "T", "content": "C", "status": "PENDING", "response": null, "payload": {}, "user_id": null, "expires_at": null, "channel_id": null}'
+    vals = store.values()
+    assert len(vals) == 1
+    
+    # 5. pop
+    popped = store.pop(req.request_id)
+    assert popped.request_id == req.request_id
+    mock_redis.delete.assert_called()
+    
+    # 6. clear
+    store.clear()
+    
+    # 7. Test Exception fallback to None
+    mock_redis.set.side_effect = Exception("Redis error")
+    store[req.request_id] = req
+    assert store._redis is None

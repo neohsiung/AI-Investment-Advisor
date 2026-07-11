@@ -1,11 +1,9 @@
 import type { Metadata } from "next";
 import { Inter, Space_Grotesk } from "next/font/google";
 import "./globals.css";
-import Sidebar from "@/components/layout/Sidebar";
-import TopBar from "@/components/layout/TopBar";
+import AppShell from "@/components/layout/AppShell";
 import { Providers } from "@/components/Providers";
 import { SidebarProvider } from "@/context/SidebarContext";
-import SidebarOverlay from "@/components/layout/SidebarOverlay";
 
 const inter = Inter({
   variable: "--font-inter",
@@ -50,14 +48,7 @@ export default function RootLayout({
       <body className="min-h-full flex font-body bg-background text-on-surface">
         <Providers>
           <SidebarProvider>
-            <Sidebar />
-            <SidebarOverlay />
-            <div className="flex-1 flex flex-col min-h-screen ml-0 lg:ml-64 transition-all duration-300">
-              <TopBar />
-              <main className="flex-1 pt-16 sm:pt-20 lg:pt-24 px-4 sm:px-6 lg:px-8 pb-8 overflow-y-auto">
-                {children}
-              </main>
-            </div>
+            <AppShell>{children}</AppShell>
           </SidebarProvider>
         </Providers>
       </body>

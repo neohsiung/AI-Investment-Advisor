@@ -373,8 +373,8 @@ class AlchemyTransactionRepository(BaseRepository, ITransactionRepository):
                 SELECT ticker, 
                        SUM(CASE WHEN action='BUY' THEN quantity WHEN action='SELL' THEN -quantity ELSE 0 END) as net_qty,
                        SUM(CASE 
-                         WHEN action='BUY' THEN quantity * leverage 
-                         WHEN action='SELL' THEN -quantity * leverage 
+                         WHEN action='BUY' THEN quantity * COALESCE(leverage, 1.0) 
+                         WHEN action='SELL' THEN -quantity * COALESCE(leverage, 1.0) 
                          ELSE 0 END) / 
                        NULLIF(SUM(CASE WHEN action='BUY' THEN quantity WHEN action='SELL' THEN -quantity ELSE 0 END), 0) as avg_leverage
                 FROM transactions 

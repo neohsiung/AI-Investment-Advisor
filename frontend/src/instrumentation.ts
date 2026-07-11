@@ -10,9 +10,10 @@ export async function register() {
         [SEMRESATTRS_SERVICE_NAME]: process.env.OTEL_SERVICE_NAME || 'nextjs_frontend',
       }),
       traceExporter: new OTLPTraceExporter({
-        url: (process.env.OTEL_EXPORTER_OTLP_ENDPOINT || 'http://otel-collector:4318').endsWith('/v1/traces') 
-          ? process.env.OTEL_EXPORTER_OTLP_ENDPOINT 
-          : `${process.env.OTEL_EXPORTER_OTLP_ENDPOINT}/v1/traces`,
+        url: (() => {
+          const endpoint = process.env.OTEL_EXPORTER_OTLP_ENDPOINT || 'http://otel-collector:4318';
+          return endpoint.endsWith('/v1/traces') ? endpoint : `${endpoint}/v1/traces`;
+        })(),
       }),
     });
 

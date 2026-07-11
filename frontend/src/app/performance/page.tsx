@@ -20,7 +20,7 @@ export default function PerformancePage() {
   const agents = agentData?.data || [];
 
   return (
-    <div className="flex-1 flex flex-col p-4 lg:p-8 pt-20 lg:pt-24 overflow-y-auto bg-background">
+    <div className="flex-1 overflow-y-auto pt-16 sm:pt-20 lg:pt-24 px-4 sm:px-6 lg:px-8 pb-8 bg-background">
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:justify-between sm:items-end gap-4 mb-6 lg:mb-8">
         <div>
@@ -103,28 +103,28 @@ export default function PerformancePage() {
                 <AreaChart data={history}>
                   <defs>
                     <linearGradient id="colorNlv" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="5%" stopColor="var(--md-sys-color-primary)" stopOpacity={0.1} />
-                      <stop offset="95%" stopColor="var(--md-sys-color-primary)" stopOpacity={0} />
+                      <stop offset="5%" stopColor="var(--primary)" stopOpacity={0.1} />
+                      <stop offset="95%" stopColor="var(--primary)" stopOpacity={0} />
                     </linearGradient>
                   </defs>
-                  <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="rgba(var(--md-sys-color-outline-variant-rgb), 0.1)" />
+                  <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="var(--outline-variant)" strokeOpacity={0.15} />
                   <XAxis
                     dataKey="date"
                     hide
                   />
                   <YAxis
                     tickFormatter={(val: number) => `$${val >= 1000 ? (val / 1000).toFixed(1) + 'k' : val}`}
-                    tick={{ fontSize: 10, fill: 'var(--md-sys-color-on-surface-variant)', fontWeight: 'bold' }}
+                    tick={{ fontSize: 10, fill: 'var(--on-surface-variant)', fontWeight: 'bold' }}
                     axisLine={false}
                     tickLine={false}
                     domain={['auto', 'auto']}
                   />
                   <Tooltip
-                    contentStyle={{ backgroundColor: 'var(--md-sys-color-surface-container-highest)', border: 'none', borderRadius: '12px', fontSize: '10px', boxShadow: '0 4px 20px rgba(0,0,0,0.2)' }}
-                    itemStyle={{ color: 'var(--md-sys-color-primary)', fontWeight: 'bold' }}
+                    contentStyle={{ backgroundColor: 'var(--surface-container-highest)', border: 'none', borderRadius: '12px', fontSize: '10px', boxShadow: '0 4px 20px rgba(0,0,0,0.2)' }}
+                    itemStyle={{ color: 'var(--primary)', fontWeight: 'bold' }}
                     labelStyle={{ marginBottom: '4px', opacity: 0.6 }}
                   />
-                  <Area type="monotone" dataKey="total_nlv" name="資產淨值" stroke="var(--md-sys-color-primary)" strokeWidth={3} fillOpacity={1} fill="url(#colorNlv)" />
+                  <Area type="monotone" dataKey="total_nlv" name="資產淨值" stroke="var(--primary)" strokeWidth={3} fillOpacity={1} fill="url(#colorNlv)" />
                 </AreaChart>
               </ResponsiveContainer>
             ) : (
@@ -180,13 +180,13 @@ export default function PerformancePage() {
             {history.length > 0 ? (
               <ResponsiveContainer width="100%" height="100%">
                 <BarChart data={history}>
-                  <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="rgba(var(--md-sys-color-outline-variant-rgb), 0.05)" />
+                  <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="var(--outline-variant)" strokeOpacity={0.1} />
                   <XAxis dataKey="date" hide />
                   <Tooltip
-                    contentStyle={{ backgroundColor: 'var(--md-sys-color-surface-container-highest)', border: 'none', borderRadius: '12px', fontSize: '10px' }}
-                    cursor={{ fill: 'var(--md-sys-color-surface-variant)', opacity: 0.3 }}
+                    contentStyle={{ backgroundColor: 'var(--surface-container-highest)', border: 'none', borderRadius: '12px', fontSize: '10px' }}
+                    cursor={{ fill: 'var(--surface-variant)', opacity: 0.3 }}
                   />
-                  <Bar dataKey="pnl" name="損益變化" fill="var(--md-sys-color-secondary)" radius={[2, 2, 0, 0]} />
+                  <Bar dataKey="pnl" name="損益變化" fill="var(--secondary)" radius={[2, 2, 0, 0]} />
                 </BarChart>
               </ResponsiveContainer>
             ) : (

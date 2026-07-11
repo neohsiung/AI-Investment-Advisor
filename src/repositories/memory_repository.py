@@ -26,10 +26,10 @@ class AlchemyMemoryRepository(BaseRepository, IMemoryRepository):
         """
         with self.engine.connect() as conn:
             query = text("""
-                SELECT id, user_id, date, content, summary, report_type 
+                SELECT id, user_id, created_at, content, summary, report_type 
                 FROM reports 
                 WHERE user_id = :uid AND report_type = :rtype 
-                ORDER BY date DESC 
+                ORDER BY created_at DESC 
                 LIMIT :limit
             """)
             rows = conn.execute(query, {"uid": user_id, "rtype": report_type, "limit": limit}).fetchall()
@@ -39,7 +39,7 @@ class AlchemyMemoryRepository(BaseRepository, IMemoryRepository):
                 item = ReportMemoryItem(
                     user_id=row.user_id,
                     report_type=row.report_type if row.report_type else report_type,
-                    report_date=row.date,
+                    report_date=row.created_at,
                     full_content=row.content,
                     compressed_summary=row.summary
                 )
@@ -54,13 +54,17 @@ class AlchemyMemoryRepository(BaseRepository, IMemoryRepository):
         with self.engine.begin() as conn:
             new_id = str(uuid.uuid4())
             query = text("""
-                INSERT INTO reports (id, user_id, date, content, summary, report_type) 
-                VALUES (:id, :uid, :date, :content, :summary, :rtype)
+                INSERT INTO reports (id, user_id, created_at, title, content, summary, report_type) 
+                VALUES (:id, :uid, :created_at, :title, :content, :summary, :rtype)
             """)
+            # Create a user-friendly default title
+            date_str = item.report_date.strftime("%Y-%m-%d") if hasattr(item.report_date, "strftime") else str(item.report_date)
+            title = f"{item.report_type.capitalize()} Analysis Report ({date_str})"
             conn.execute(query, {
                 "id": new_id,
                 "uid": item.user_id,
-                "date": item.report_date,
+                "created_at": item.report_date,
+                "title": title,
                 "content": item.full_content,
                 "summary": item.compressed_summary,
                 "rtype": item.report_type

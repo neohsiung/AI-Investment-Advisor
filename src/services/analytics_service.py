@@ -268,14 +268,14 @@ class PnLCalculator:
         for row in transactions:
             ticker = row.ticker
             action = row.action
-            qty = row.quantity
-            price = row.price
-            fees = row.fees
+            qty = float(row.quantity) if row.quantity is not None else 0.0
+            price = float(row.price) if row.price is not None else 0.0
+            fees = float(row.fees) if row.fees is not None else 0.0
 
             # Exclude synthetic stabilization records from cost basis
             if 'STABILIZE' in ticker:
                 if action in ['FEE', 'TAX']:
-                    total_realized_pnl -= getattr(row, 'amount', 0)
+                    total_realized_pnl -= float(getattr(row, 'amount', 0.0) or 0.0)
                 continue
 
             if ticker not in portfolio:
@@ -287,7 +287,7 @@ class PnLCalculator:
                 total_cost = (pos['qty'] * pos['avg_cost']) + (qty * price) + fees
                 new_qty = pos['qty'] + qty
                 pos['avg_cost'] = total_cost / new_qty if new_qty > 0 else 0.0
-                leverage = getattr(row, 'leverage', 1.0) or 1.0
+                leverage = float(getattr(row, 'leverage', 1.0) or 1.0)
                 pos['margin_invested'] += ((qty * price) / leverage) + fees
                 pos['qty'] = new_qty
 
@@ -312,8 +312,9 @@ class PnLCalculator:
                 total_realized_pnl += price * qty
 
             elif action in ['FEE', 'TAX']:
-                pos['realized_pnl'] -= getattr(row, 'amount', 0)
-                total_realized_pnl -= getattr(row, 'amount', 0)
+                amount_val = float(getattr(row, 'amount', 0.0) or 0.0)
+                pos['realized_pnl'] -= amount_val
+                total_realized_pnl -= amount_val
 
         total_unrealized_pnl = 0.0
         breakdown = {}

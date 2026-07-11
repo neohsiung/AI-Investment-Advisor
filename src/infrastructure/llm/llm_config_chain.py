@@ -176,18 +176,19 @@ def _load_from_db(user_id: str, tier: str) -> List[ModelCandidate]:
             # Per-candidate config overrides
             cand_cfg = per_config.get(model_id, {})
             max_retries = cand_cfg.get("max_retries", 2)
-            timeout_seconds = float(cand_cfg.get("timeout_seconds", 30.0))
+            timeout_seconds = float(cand_cfg.get("timeout_seconds", 120.0))
 
-            # Resolve base_url from provider catalog (fallback to provider.base_url)
+            # Resolve base_url from provider catalog (fallback if not configured in DB)
             base_url = provider.base_url
-            try:
-                from src.infrastructure.llm.provider_catalog import get_provider_catalog
-                cat = get_provider_catalog()
-                spec = cat.get(provider_code)
-                if spec and spec.default_base_url:
-                    base_url = spec.default_base_url
-            except Exception: # nosec B110
-                logger.debug("Failed to get base_url from catalog for provider %s", provider_code)
+            if not base_url:
+                try:
+                    from src.infrastructure.llm.provider_catalog import get_provider_catalog
+                    cat = get_provider_catalog()
+                    spec = cat.get(provider_code)
+                    if spec and spec.default_base_url:
+                        base_url = spec.default_base_url
+                except Exception: # nosec B110
+                    logger.debug("Failed to get base_url from catalog for provider %s", provider_code)
 
             # Get API key from settings (fallback to provider.encrypted_api_key)
             api_key = _decrypt_api_key(provider.encrypted_api_key)
