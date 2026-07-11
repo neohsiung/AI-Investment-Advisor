@@ -79,10 +79,11 @@ class ReflectionManager:
             raw_llm = LLMGatewayFactory.create(provider)
             
             # Wrap with Logging gateway to add metadata tags for Phase 7 observability
+            # L4 復盤反思：低頻（每週）高槓桿，用最強模型。tier smart→advanced（2026-07-11）
             llm = LoggingLLMGateway(
                 inner=raw_llm,
                 agent_name=agent_name,
-                tier="smart",
+                tier="advanced",
                 user_id=self.user_id,
                 metadata={"tag": "reflection", "tool": tool_name}
             )

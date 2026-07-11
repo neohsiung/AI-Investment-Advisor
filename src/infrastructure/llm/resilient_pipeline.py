@@ -167,11 +167,20 @@ class ResilientLLMPipeline:
         self,
         config_chain: List[ModelCandidate],
         gateway_factory: Optional[Callable[[ModelCandidate], ILLMGateway]] = None,
+        user_id: str = "system",
+        agent_name: str = "",
+        tier: str = "",
     ):
         if not config_chain:
             raise ValueError("config_chain must have at least one candidate")
         self.config_chain = config_chain
         self._gateway_factory = gateway_factory or self._default_gateway_factory
+        # Attribution for usage logging (llm_usage_logs). The production path runs
+        # through this pipeline, so this is where usage must be recorded — the
+        # LoggingLLMGateway hook only covered the legacy base_agent path (2026-07-11).
+        self._user_id = user_id
+        self._agent_name = agent_name
+        self._tier = tier
 
     @staticmethod
     def _default_gateway_factory(candidate: ModelCandidate) -> ILLMGateway:
@@ -236,6 +245,10 @@ class ResilientLLMPipeline:
                 # Reset cooldown on success — model proved healthy
                 _reset_cooldown(candidate)
 
+                # Record usage (llm_usage_logs). Fire-and-forget; never block or
+                # break the response path on a logging failure.
+                self._log_usage(gateway, candidate)
+
                 logger.info(
                     "ResilientLLMPipeline: success with %s/%s in %.0fms",
                     candidate.provider_code,
@@ -287,6 +300,49 @@ class ResilientLLMPipeline:
 
         # All candidates exhausted
         raise AllCandidatesFailedError(attempts)
+
+    def _log_usage(self, gateway: ILLMGateway, candidate: ModelCandidate) -> None:
+        """
+        Persist token usage for this successful call to llm_usage_logs.
+
+        Reads the raw gateway's ``_last_usage`` dict and writes via
+        UsageRepository (which computes cost from TierConfig). Fire-and-forget
+        in a background thread; any failure is swallowed so logging can never
+        break the response path.
+        """
+        try:
+            usage = getattr(gateway, "_last_usage", None)
+            if not usage:
+                return
+            prompt_tokens = int(usage.get("prompt_tokens", 0) or 0)
+            completion_tokens = int(usage.get("completion_tokens", 0) or 0)
+            if prompt_tokens == 0 and completion_tokens == 0:
+                return
+
+            def _write():
+                try:
+                    from src.repositories.usage_repository import UsageRepository
+                    UsageRepository().log_usage(
+                        user_id=self._user_id or "system",
+                        agent_name=self._agent_name or "unknown",
+                        tier=self._tier or "",
+                        model=candidate.model_code,
+                        provider=candidate.provider_code,
+                        prompt_tokens=prompt_tokens,
+                        completion_tokens=completion_tokens,
+                        metadata={"model_id": candidate.model_id},
+                    )
+                except Exception as exc:  # pragma: no cover - defensive
+                    logger.debug("usage logging failed: %s", exc)
+
+            try:
+                loop = asyncio.get_running_loop()
+                loop.run_in_executor(None, _write)
+            except RuntimeError:
+                # No running loop — write synchronously.
+                _write()
+        except Exception as exc:  # pragma: no cover - defensive
+            logger.debug("usage logging skipped: %s", exc)
 
     async def _call_with_retry(
         self,

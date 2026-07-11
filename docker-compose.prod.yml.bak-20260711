@@ -13,7 +13,7 @@ services:
     extra_hosts:
       - "host.docker.internal:host-gateway"
     ports:
-      - "127.0.0.1:8000:8000"
+      - "8000:8000"
     command: sh -c "/opt/venv/bin/pip install itsdangerous>=2.2.0 && python scripts/init_db.py && uvicorn services.mcp_server.src.app.main:app --host 0.0.0.0 --port 8000"
     env_file:
       - .env
@@ -21,8 +21,7 @@ services:
       - NODE_ENV=production
       - FRONTEND_URL=http://localhost:3001
       - FRONTEND_CALLBACK_URL=http://localhost:3001/auth/callback
-      - REDIS_URL=redis://:${REDIS_PASSWORD}@redis:6379/0
-      - REDIS_PASSWORD=${REDIS_PASSWORD}
+      - REDIS_URL=redis://redis:6379/0
       - DB_HOST=advisor_prod_db
       - OTEL_SERVICE_NAME=mcp_server_prod
       - OTEL_EXPORTER_OTLP_ENDPOINT=http://otel-collector:4317
@@ -53,7 +52,7 @@ services:
     container_name: advisor_prod_ui
     restart: always
     ports:
-      - "127.0.0.1:3001:3000"
+      - "3001:3000"
     environment:
       - NODE_ENV=production
       - NEXT_PUBLIC_API_URL=http://localhost:8000
@@ -79,8 +78,7 @@ services:
       - .env
     environment:
       - NODE_ENV=production
-      - REDIS_URL=redis://:${REDIS_PASSWORD}@redis:6379/0
-      - REDIS_PASSWORD=${REDIS_PASSWORD}
+      - REDIS_URL=redis://redis:6379/0
       - DB_HOST=advisor_prod_db
       - OTEL_SERVICE_NAME=scheduler_prod
       - OTEL_EXPORTER_OTLP_ENDPOINT=http://otel-collector:4317
@@ -95,7 +93,7 @@ services:
       otel-collector:
         condition: service_started
     healthcheck:
-      test: [ "CMD", "python", "-c", "import os,redis; redis.Redis(host='redis', port=6379, password=os.environ['REDIS_PASSWORD']).ping()" ]
+      test: [ "CMD", "python", "-c", "import redis; redis.Redis(host='redis', port=6379).ping()" ]
       interval: 30s
       timeout: 10s
       retries: 3
@@ -113,7 +111,7 @@ services:
     container_name: advisor_prod_db
     restart: always
     ports:
-      - "127.0.0.1:5432:5432"
+      - "5432:5432"
     environment:
       - POSTGRES_USER=postgres
       - POSTGRES_PASSWORD=postgres
@@ -133,13 +131,10 @@ services:
     image: redis:7-alpine
     container_name: advisor_prod_cache
     restart: always
-    command: sh -c "redis-server --requirepass \"$$REDIS_PASSWORD\""
-    environment:
-      - REDIS_PASSWORD=${REDIS_PASSWORD}
     ports:
-      - "127.0.0.1:6379:6379"
+      - "6379:6379"
     healthcheck:
-      test: [ "CMD-SHELL", "redis-cli -a \"$$REDIS_PASSWORD\" ping | grep -q PONG" ]
+      test: [ "CMD", "redis-cli", "ping" ]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -152,7 +147,7 @@ services:
     container_name: advisor_prod_n8n
     restart: always
     ports:
-      - "127.0.0.1:5678:5678"
+      - "5678:5678"
     environment:
       - N8N_HOST=localhost
       - N8N_PORT=5678
@@ -189,8 +184,7 @@ services:
       - WORKER_ID=worker-1
       - WORKER_CONCURRENCY=2
       - DB_HOST=advisor_prod_db
-      - REDIS_URL=redis://:${REDIS_PASSWORD}@redis:6379/0
-      - REDIS_PASSWORD=${REDIS_PASSWORD}
+      - REDIS_URL=redis://redis:6379/0
       - OTEL_SERVICE_NAME=worker_1_prod
       - OTEL_EXPORTER_OTLP_ENDPOINT=http://otel-collector:4317
       - OTEL_EXPORTER_OTLP_PROTOCOL=grpc
@@ -204,7 +198,7 @@ services:
       otel-collector:
         condition: service_started
     healthcheck:
-      test: [ "CMD", "python", "-c", "import os,redis; redis.Redis(host='redis', port=6379, password=os.environ['REDIS_PASSWORD']).ping()" ]
+      test: [ "CMD", "python", "-c", "import redis; redis.Redis(host='redis', port=6379).ping()" ]
       interval: 30s
       timeout: 10s
       retries: 3
@@ -231,8 +225,7 @@ services:
       - WORKER_ID=worker-2
       - WORKER_CONCURRENCY=2
       - DB_HOST=advisor_prod_db
-      - REDIS_URL=redis://:${REDIS_PASSWORD}@redis:6379/0
-      - REDIS_PASSWORD=${REDIS_PASSWORD}
+      - REDIS_URL=redis://redis:6379/0
       - OTEL_SERVICE_NAME=worker_2_prod
       - OTEL_EXPORTER_OTLP_ENDPOINT=http://otel-collector:4317
       - OTEL_EXPORTER_OTLP_PROTOCOL=grpc
@@ -246,7 +239,7 @@ services:
       otel-collector:
         condition: service_started
     healthcheck:
-      test: [ "CMD", "python", "-c", "import os,redis; redis.Redis(host='redis', port=6379, password=os.environ['REDIS_PASSWORD']).ping()" ]
+      test: [ "CMD", "python", "-c", "import redis; redis.Redis(host='redis', port=6379).ping()" ]
       interval: 30s
       timeout: 10s
       retries: 3
@@ -272,8 +265,7 @@ services:
     environment:
       - NODE_ENV=production
       - DB_HOST=advisor_prod_db
-      - REDIS_URL=redis://:${REDIS_PASSWORD}@redis:6379/0
-      - REDIS_PASSWORD=${REDIS_PASSWORD}
+      - REDIS_URL=redis://redis:6379/0
       - DB_USER=${DB_USER}
       - DB_PASS=${DB_PASS}
       - DB_PORT=5432
@@ -325,9 +317,7 @@ services:
     container_name: advisor_prod_gateway
     restart: always
     ports:
-      # 127.0.0.1:8088 (was 0.0.0.0:80) — localhost-only; privileged :80 needs vmnetd helper.
-      # ngrok reaches nginx over advisor-net (advisor_prod_gateway:80), unaffected by host port.
-      - "127.0.0.1:8088:80"
+      - "80:80"
     volumes:
       - ./infra/nginx/nginx.conf:/etc/nginx/nginx.conf:ro
     depends_on:

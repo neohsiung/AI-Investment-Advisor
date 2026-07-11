@@ -129,7 +129,8 @@ def experience_replay(user_id: str = None):
     user_id = user_id or os.getenv("PRIMARY_USER_ID") or os.getenv("USER_ID")
     try:
         from src.services.experience_replay_service import ExperienceReplayService
-        svc = ExperienceReplayService()
+        # L4 復盤：低頻（每週）高槓桿，用最強模型（2026-07-11）
+        svc = ExperienceReplayService(tier="advanced")
         result = svc.optimize_thresholds(user_id)
         logger.info(f"experience_replay completed: {result}")
         return f"OK: {result}"

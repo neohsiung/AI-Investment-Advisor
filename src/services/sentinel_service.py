@@ -66,7 +66,11 @@ class SentinelService:
         self.council_service = council_service or CouncilService(user_id=self.user_id)
         self.keyword_service = keyword_service or RiskKeywordService()
         self.snapshot_repo = snapshot_repo or AlchemySnapshotRepository(engine=self.repo.engine)
-        
+
+        # L1 pre-filter (2026-07-11): content-hash seen-set to drop duplicate/trivial
+        # events before they reach the fast-tier classifier. {hash: epoch_seconds}.
+        self._prefilter_seen: Dict[str, float] = {}
+
         # PAD Phase 2: Initialize model router and gateway for LLM calls
         from src.infrastructure.llm.budget_aware_model_router import BudgetAwareModelRouter
         from src.services.token_logger_service import TokenLoggerService
@@ -117,10 +121,47 @@ class SentinelService:
         self.current_vix: float = 20.0 # Default fallback
 
     # ──────────────────────────────────────────
+    # L1 pre-filter — drop dup/trivial events before the classifier (2026-07-11)
+    # ──────────────────────────────────────────
+
+    def _prefilter_skip_reason(self, t: Dict[str, Any], source: str) -> Optional[str]:
+        """
+        Cheap, deterministic ($0) gate run before the fast-tier classifier.
+        Returns a reason string to SKIP the event, or None to keep it.
+
+        Halves classifier volume by dropping (a) events whose text is empty or
+        too short to be meaningful, and (b) content-duplicate events seen within
+        a TTL window. Free heuristic is preferred over a per-event nano LLM call
+        here: the minutely tick is throughput-sensitive and the local nano model
+        (~5s/call) would back the loop up; determinism also avoids false drops.
+        """
+        import time
+        import hashlib
+
+        raw_text = (t.get("text") or "").strip()
+        # (a) triviality: only drop genuinely empty events. Real alerts can be very
+        # short ("TSLA halted"), so do NOT gate on length — dedup does the heavy lifting.
+        if not raw_text and not t.get("data"):
+            return "trivial (empty event)"
+
+        # (b) content dedup within a TTL window (mirrors the 30-min escalation cooldown)
+        ttl = 1800
+        now = time.time()
+        # opportunistic prune so the dict cannot grow unbounded
+        if len(self._prefilter_seen) > 2000:
+            self._prefilter_seen = {h: ts for h, ts in self._prefilter_seen.items() if now - ts < ttl}
+        digest = hashlib.sha256(f"{source}|{raw_text}".encode("utf-8")).hexdigest()
+        last = self._prefilter_seen.get(digest, 0)
+        if now - last < ttl:
+            return "duplicate (seen within 30m)"
+        self._prefilter_seen[digest] = now
+        return None
+
+    # ──────────────────────────────────────────
     # PAD Phase 2: Agent LLM Helper
     # ──────────────────────────────────────────
-    
-    async def _call_agent_llm(self, agent_name: str, context: Dict[str, Any], tier: str = "smart", 
+
+    async def _call_agent_llm(self, agent_name: str, context: Dict[str, Any], tier: str = "smart",
                               temperature: float = 0.7, max_tokens: int = 2000) -> str:
         """
         PAD Phase 2: Replace AgentFactory.create_*_agent().run() with direct gateway calls.
@@ -129,6 +170,12 @@ class SentinelService:
         try:
             from src.infrastructure.llm.llm_config_chain import build_config_chain
             from src.infrastructure.llm.resilient_pipeline import ResilientLLMPipeline
+            from src.infrastructure.llm.auto_tier import resolve_effective_tier
+
+            # Auto tier: the passed tier is the ceiling; the free heuristic detector
+            # may downshift it when the payload is clearly simple (2026-07-11).
+            context_text = json.dumps(context, ensure_ascii=False)
+            tier = resolve_effective_tier(tier, context_text, agent_name=agent_name)
 
             chain = build_config_chain(self.user_id, tier)
             if not chain:
@@ -137,7 +184,12 @@ class SentinelService:
             if not chain:
                 return json.dumps({"status": "failed", "error": f"No model configured for tier={tier}"})
 
-            pipeline = ResilientLLMPipeline(config_chain=chain)
+            pipeline = ResilientLLMPipeline(
+                config_chain=chain,
+                user_id=self.user_id,
+                agent_name=agent_name,
+                tier=tier,
+            )
 
             agent_prompts = {
                 "Thematic": "You are a Thematic analyst. Analyze market themes, trends, and beneficiary companies. Update tracking lists based on events. Return valid JSON with 'status' and 'data' fields.",
@@ -793,7 +845,13 @@ class SentinelService:
         
         for t in triggers:
             trigger_id = t.get("id", "")
-            
+
+            # L1 pre-filter: drop dup/trivial events before any LLM classification ($0).
+            skip_reason = self._prefilter_skip_reason(t, source)
+            if skip_reason:
+                logger.debug("Sentinel: pre-filter skip trigger %s — %s", trigger_id, skip_reason)
+                continue
+
             # v5.4.1 Cost Optimization: Semantic/Response Caching
             pending = await self._redis_buffer.all_pending(self.user_id)
             already_buffered_trigger = next((b for b in pending if b.get("id") == trigger_id), None)
@@ -821,13 +879,17 @@ class SentinelService:
                     rounded_vix = round(self.current_vix, 1)
 
                     # PAD Phase 2: Call Sentinel agent via gateway
-                    # 使用 smart tier — Sentinel 需要 System 2 推理，不應使用 fast tier
+                    # Event classification/prioritization is L1-L2 work — fast tier suffices;
+                    # minutely tick on smart tier drove ~$15/week (2026-07-11 cost review).
+                    # Deep analysis escalates separately via Thematic on smart.
+                    # 事件分類/優先級屬 L1-L2 任務，fast tier 足夠；每分鐘 tick 用 smart 曾造成
+                    # 每週約 $15 成本（2026-07-11 成本審查）。深度分析由 Thematic 以 smart 升級處理。
                     context = {
                         "trigger_source": source,
                         "event_data": event_data,
                         "current_vix": rounded_vix
                     }
-                    eval_res_str = await self._call_agent_llm("Sentinel", context, tier="smart")
+                    eval_res_str = await self._call_agent_llm("Sentinel", context, tier="fast")
                     
                     # Parse response
                     try:

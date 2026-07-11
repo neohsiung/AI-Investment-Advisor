@@ -64,7 +64,12 @@ class CouncilService:
             if not chain:
                 raise ValueError(f"No model configured for tier={tier} user={self.user_id}")
 
-            pipeline = ResilientLLMPipeline(config_chain=chain)
+            pipeline = ResilientLLMPipeline(
+                config_chain=chain,
+                user_id=self.user_id,
+                agent_name=agent_name,
+                tier=tier,
+            )
 
             from src.utils.prompt_utils import load_agent_prompt
 

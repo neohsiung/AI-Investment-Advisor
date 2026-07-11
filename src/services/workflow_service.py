@@ -86,10 +86,15 @@ class BaseWorkflow(ABC):
             if not chain:
                 raise ValueError(f"No model configured for tier={tier} user={self.user_id}")
 
-            pipeline = ResilientLLMPipeline(config_chain=chain)
+            pipeline = ResilientLLMPipeline(
+                config_chain=chain,
+                user_id=self.user_id,
+                agent_name=agent_name,
+                tier=tier,
+            )
 
             from src.utils.prompt_utils import load_agent_prompt
-            
+
             system_prompt = load_agent_prompt(agent_name)
             messages = [
                 Message(role="system", content=system_prompt),
@@ -393,18 +398,16 @@ class BaseWorkflow(ABC):
         """
         import re
         
-        # 定義替換模式：尋找 ## 3. (Debate) 與下一個 ## 標題之間的內容 (包含標題本身)
-        # Define replacement pattern: Find content starting from ## 3 up to ## 4 or EOF
-        # Assuming the generated detailed content INCLUDES the header "## 3. ..."
-        pattern = r"(## 3\..*?)(?=## \d\.|$)"
+        # 定義替換模式：尋找 ## 2. (Debate) 與下一個 ## 標題之間的內容 (包含標題本身)
+        # Define replacement pattern: Find content starting from ## 2 up to ## 3 or EOF
+        pattern = r"(## 2\..*?)(?=## \d\.|$)"
         
         # 若無詳細內容，提供預設訊息
         if not detailed_debate_content:
-             detailed_debate_content = "## 3. 議會深度審議 (Council Deep Dive)\n(No detailed transcript available / 暫無詳細辯論紀錄)"
+             detailed_debate_content = "## 2. 議會深度審議 (Council Deep Dive)\n(No detailed transcript available / 暫無詳細辯論紀錄)"
 
         # 執行替換
         # Execute Replacement
-        import re
         modified_report = re.sub(pattern, detailed_debate_content, cio_full_output, flags=re.DOTALL)
         
         final_report = modified_report
@@ -412,7 +415,7 @@ class BaseWorkflow(ABC):
         # 若替換未發生 (例如找不到標題)，則將詳細內容附加於後，並發出警告
         # If replacement failed (headers not found), append logic and warn
         if modified_report == cio_full_output:
-             self.logger.warning("Report Injection Failed: Header '## 3...' not found. Appending transcript.")
+             self.logger.warning("Report Injection Failed: Header '## 2...' not found. Appending transcript.")
              # 嘗試簡單附加確保資訊不丟失
              final_report = f"{cio_full_output}\n\n{detailed_debate_content}"
         

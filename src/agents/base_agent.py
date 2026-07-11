@@ -36,7 +36,7 @@ from datetime import datetime
 
 class BaseAgent(ABC):
 
-    def __init__(self, name, prompt_path, use_cache=True, ttl_hours=24, tier="smart", user_id=None, settings_repo=None, state_repo=None, feedback_repo=None, identity_file="IDENTITY.md", llm_gateway: Optional[ILLMGateway] = None, persona: Optional[AgentPersona] = None, **kwargs):
+    def __init__(self, name, prompt_path, use_cache=True, ttl_hours=24, tier="fast", user_id=None, settings_repo=None, state_repo=None, feedback_repo=None, identity_file="IDENTITY.md", llm_gateway: Optional[ILLMGateway] = None, persona: Optional[AgentPersona] = None, **kwargs):
         self.name = name
         self.logger = setup_logger(name)
         self.prompt_path = prompt_path
