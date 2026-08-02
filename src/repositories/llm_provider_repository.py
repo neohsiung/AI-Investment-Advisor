@@ -105,7 +105,8 @@ class LLMProviderRepository(BaseRepository):
             logger.info("LLMProviderRepository.create: %s user=%s code=%s",
                         new_id, user_id, payload["provider_code"])
             return new_id
-        except Exception:
+        except Exception as e:
+            logger.warning(f'Exception in llm_provider_repository.py: {e}', exc_info=True)
             session.rollback()
             raise
         finally:
@@ -131,7 +132,8 @@ class LLMProviderRepository(BaseRepository):
             session.refresh(row)
             logger.info("LLMProviderRepository.update: %s", provider_id)
             return row
-        except Exception:
+        except Exception as e:
+            logger.warning(f'Exception in llm_provider_repository.py: {e}', exc_info=True)
             session.rollback()
             raise
         finally:
@@ -152,7 +154,8 @@ class LLMProviderRepository(BaseRepository):
             session.commit()
             logger.info("LLMProviderRepository.delete: %s", provider_id)
             return True
-        except Exception:
+        except Exception as e:
+            logger.warning(f'Exception in llm_provider_repository.py: {e}', exc_info=True)
             session.rollback()
             raise
         finally:

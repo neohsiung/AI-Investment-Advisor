@@ -90,8 +90,8 @@ class FundamentalSwarm(RoleSwarmBase):
             try:
                 sc_info = sc_service.get_shortage_premium(t)
                 t_ctx["shortage_premium"] = sc_info.get("narrative", "")
-            except Exception: # nosec B110
-                pass
+            except Exception as e:# nosec B110
+                logger.warning(f'Exception in fundamental_swarm.py: {e}', exc_info=True)
 
             try:
                 # Call the new parallel swarm engine (Async)

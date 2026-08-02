@@ -138,6 +138,8 @@ def _load_from_db(user_id: str, tier: str) -> List[ModelCandidate]:
 
     binding = tier_repo.get_by_tier(user_id, tier)
     if binding is None:
+        binding = tier_repo.get_default_by_tier(tier)
+    if binding is None:
         return []
 
     registry = _get_gateway_registry()
@@ -187,7 +189,8 @@ def _load_from_db(user_id: str, tier: str) -> List[ModelCandidate]:
                     spec = cat.get(provider_code)
                     if spec and spec.default_base_url:
                         base_url = spec.default_base_url
-                except Exception: # nosec B110
+                except Exception as e:# nosec B110
+                    logger.warning(f'Exception in llm_config_chain.py: {e}', exc_info=True)
                     logger.debug("Failed to get base_url from catalog for provider %s", provider_code)
 
             # Get API key from settings (fallback to provider.encrypted_api_key)
@@ -203,16 +206,33 @@ def _load_from_db(user_id: str, tier: str) -> List[ModelCandidate]:
                     row = result.fetchone()
                     if row:
                         settings_key = _decrypt_api_key(row[0])
-                        # Only override if decryption yielded a usable plaintext
-                        if settings_key and not settings_key.startswith("ENC:"):
+                        # Only override if decryption yielded a usable PLAINTEXT.
+                        # Reject anything that still carries an encryption prefix
+                        # (ENC:/FERN:/B64H:) — e.g. a double-wrapped ENC(FERN(key))
+                        # settings value where only the outer layer peels off would
+                        # otherwise overwrite a working provider key and cause 401s.
+                        # (2026-07-11)
+                        _enc_prefixes = ("ENC:", "FERN:", "B64H:")
+                        if settings_key and not settings_key.startswith(_enc_prefixes):
                             api_key = settings_key
                         else:
                             logger.debug(
                                 "Settings key for %s not usable (still encrypted?), "
                                 "keeping provider key", provider_code
                             )
-            except Exception: # nosec B110
+            except Exception as e:# nosec B110
+                logger.warning(f'Exception in llm_config_chain.py: {e}', exc_info=True)
                 logger.debug("Failed to get API key for provider %s from settings", provider_code)
+
+            extra_config = {
+                "tier": tier,
+                "max_tokens": 300 if tier == "fast" else (8192 if tier == "advanced" else 2048),
+                "temperature": 0.2 if tier == "fast" else 0.7,
+                "headers": {
+                    "Cache-Control": "ephem",
+                    "X-Prompt-Cache": "true",
+                }
+            }
 
             candidates.append(ModelCandidate(
                 model_id=model_id,
@@ -223,6 +243,7 @@ def _load_from_db(user_id: str, tier: str) -> List[ModelCandidate]:
                 api_key=api_key,
                 max_retries=max_retries,
                 timeout_seconds=timeout_seconds,
+                extra_config=extra_config,
             ))
 
         except Exception as e:

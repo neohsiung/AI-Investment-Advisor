@@ -147,7 +147,8 @@ class LLMAgentOverrideRepository:
                 session.commit()
                 session.refresh(row)
                 return row
-        except Exception:
+        except Exception as e:
+            logger.warning(f'Exception in llm_agent_override_repository.py: {e}', exc_info=True)
             session.rollback()
             raise
         finally:
@@ -175,7 +176,8 @@ class LLMAgentOverrideRepository:
             session.delete(row)
             session.commit()
             return True
-        except Exception:
+        except Exception as e:
+            logger.warning(f'Exception in llm_agent_override_repository.py: {e}', exc_info=True)
             session.rollback()
             raise
         finally:
@@ -193,7 +195,8 @@ class LLMAgentOverrideRepository:
             )
             session.commit()
             return count
-        except Exception:
+        except Exception as e:
+            logger.warning(f'Exception in llm_agent_override_repository.py: {e}', exc_info=True)
             session.rollback()
             raise
         finally:

@@ -8,6 +8,7 @@ import os
 from src.repositories.user_repository import AsyncAlchemyUserRepository
 from src.utils.jwt_utils import create_access_token, create_refresh_token
 from src.api.v1.router import oauth2_scheme, get_current_user_id
+from src.utils.rate_limit import limiter
 
 from src.utils.logger import setup_logger
 logger = setup_logger("API_Auth")
@@ -53,7 +54,53 @@ oauth.register(
 
 # (AUTH_WHITELIST feature removed to support multi-tenant access)
 
+# --- OAuth exchange-code store (2026-07-12) ---
+# Single-use, 30s-TTL Redis entry mapping an opaque code to the real JWTs,
+# so the OAuth redirect URL never carries the tokens themselves.
+_EXCHANGE_PREFIX = "auth:exchange:"
+_EXCHANGE_TTL_SECONDS = 30
+
+
+def _get_redis():
+    import redis
+    return redis.from_url(os.getenv("REDIS_URL", "redis://localhost:6379/0"), decode_responses=True)
+
+
+def _store_exchange_code(access_token: str, refresh_token: str) -> str:
+    import secrets
+    code = secrets.token_urlsafe(32)
+    payload = json.dumps({"access_token": access_token, "refresh_token": refresh_token})
+    _get_redis().set(f"{_EXCHANGE_PREFIX}{code}", payload, ex=_EXCHANGE_TTL_SECONDS)
+    return code
+
+
+@router.post("/exchange")
+@limiter.limit("5/minute")
+async def exchange_code(request: Request):
+    """
+    Redeem a single-use OAuth exchange code (see /google/callback) for the
+    real access/refresh tokens. Body: {"code": "..."}. The code is deleted
+    on first read — a replay gets 400.
+    兌換一次性 OAuth 交換碼取得真正的 tokens。用過即刪，重放即失敗。
+    """
+    body = await request.json()
+    code = body.get("code")
+    if not code:
+        raise HTTPException(status_code=400, detail="Missing code")
+
+    key = f"{_EXCHANGE_PREFIX}{code}"
+    r = _get_redis()
+    raw = r.get(key)
+    if not raw:
+        raise HTTPException(status_code=400, detail="Invalid or expired code")
+    r.delete(key)
+
+    data = json.loads(raw)
+    return {"access_token": data["access_token"], "refresh_token": data["refresh_token"]}
+
+
 @router.get("/google/login")
+@limiter.limit("5/minute")
 async def login(request: Request):
     """
     導向 Google 登入頁面
@@ -62,6 +109,7 @@ async def login(request: Request):
     return await oauth.google.authorize_redirect(request, redirect_uri)
 
 @router.get("/google/callback")
+@limiter.limit("5/minute")
 async def auth_callback(request: Request, user_repo: AsyncAlchemyUserRepository = Depends()):
     """
     Google 授權回傳處理：
@@ -112,8 +160,28 @@ async def auth_callback(request: Request, user_repo: AsyncAlchemyUserRepository 
 
         # 重定向回前端的 Callback 頁面 (Sprint 3 剛建好的那個)
         frontend_callback_url = os.getenv("FRONTEND_CALLBACK_URL", "http://localhost:3000/auth/callback")
-        
-        redirect_url = f"{frontend_callback_url}?access_token={access_token}&refresh_token={refresh_token}"
+
+        # 2026-07-12: tokens no longer travel in the redirect URL query
+        # string — they leaked into browser history, server access logs,
+        # and Referer headers on the very first page the user lands on.
+        # Instead of the real JWTs, the redirect carries a short-lived,
+        # single-use opaque exchange code; the frontend POSTs it to
+        # /auth/exchange to get the real tokens back in a JSON body (never
+        # in a URL). Deliberately NOT switched to httpOnly cookies: the
+        # dashboard WebSocket endpoint (dashboard_websocket) only accepts
+        # access_token as a query param with no cookie fallback, and
+        # several components (WebSocketContext, chat page) read the token
+        # from localStorage — an httpOnly cookie would silently break all
+        # of that. This keeps every existing consumer working unchanged.
+        # 2026-07-12：Token 不再走 redirect URL query string——會外洩進瀏覽器
+        # 歷史紀錄、伺服器 access log、以及首個頁面的 Referer 標頭。改用短效
+        # 一次性 opaque 交換碼，前端 POST 到 /auth/exchange 換回真正的
+        # tokens（走 JSON body，不進 URL）。刻意不用 httpOnly cookie：
+        # dashboard WebSocket 端點只認 query param 裡的 access_token、無
+        # cookie 備援，且多個元件仍從 localStorage 讀 token，httpOnly 會
+        # 悄悄弄壞這些既有消費端。
+        exchange_code = _store_exchange_code(access_token, refresh_token)
+        redirect_url = f"{frontend_callback_url}?code={exchange_code}"
         return RedirectResponse(url=redirect_url)
 
     except Exception as e:
@@ -121,6 +189,7 @@ async def auth_callback(request: Request, user_repo: AsyncAlchemyUserRepository 
         raise HTTPException(status_code=400, detail="Authentication failed")
 
 @router.post("/refresh")
+@limiter.limit("10/minute")
 async def refresh_token(request: Request):
     """
     背景續約接口 (由 apiClient 背景發送)
@@ -140,8 +209,15 @@ async def refresh_token(request: Request):
     from src.utils.jwt_utils import create_access_token
     new_access_token = create_access_token(data={"sub": user_id, "email": email} if email else {"sub": user_id})
     return {"access_token": new_access_token, "token_type": "bearer"}
+
+
 @router.get("/me")
-async def get_me(user_id: str = Depends(get_current_user_id), user_repo: AsyncAlchemyUserRepository = Depends()):
+@limiter.limit("20/minute")
+async def get_me(
+    request: Request,
+    user_id: str = Depends(get_current_user_id),
+    user_repo: AsyncAlchemyUserRepository = Depends()
+):
     """
     獲取當前登入者資訊 (由 useAuth 勾子調用)
     """
@@ -160,7 +236,8 @@ async def get_me(user_id: str = Depends(get_current_user_id), user_repo: AsyncAl
     }
 
 @router.post("/logout")
-async def logout():
+@limiter.limit("5/minute")
+async def logout(request: Request):
     """
     登出 (目前由前端拋棄 Token 處理，後端可擴充 Token 黑名單)
     """

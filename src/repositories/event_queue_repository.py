@@ -110,6 +110,12 @@ class EventQueueRepository(BaseRepository):
                     "batch_id": batch_id,
                 },
             )
+            # Materialize the RETURNING rows BEFORE commit (2026-07-12):
+            # commit() invalidates the cursor, and under NullPool (Celery
+            # workers) iterating afterwards raises psycopg2.InterfaceError
+            # "cursor already closed" — this silently broke every digest run.
+            # 先取回 RETURNING 結果再 commit,否則 NullPool 下游標已關閉。
+            fetched = rows.fetchall()
             sess.commit()
             results = [
                 {
@@ -121,7 +127,7 @@ class EventQueueRepository(BaseRepository):
                     "created_at": row.created_at.isoformat() if row.created_at else None,
                     "batch_id": batch_id,
                 }
-                for row in rows
+                for row in fetched
             ]
 
         logger.info(f"EventQueue: pulled {len(results)} events [{tier}] batch={batch_id}")
@@ -146,6 +152,22 @@ class EventQueueRepository(BaseRepository):
         for t in [EventQueue.TIER_P0, EventQueue.TIER_P1, EventQueue.TIER_P2, EventQueue.TIER_P3]:
             counts.setdefault(t, 0)
         return counts
+
+    def release_batch(self, event_ids: List[str]):
+        """Release processing events back to pending."""
+        if not event_ids:
+            return
+        with self.session as sess:
+            sess.execute(
+                text("""
+                UPDATE event_queue
+                SET status = 'pending', batch_id = NULL
+                WHERE id = ANY(:ids)
+                """),
+                {"ids": event_ids},
+            )
+            sess.commit()
+        logger.info(f"EventQueue: released {len(event_ids)} events back to pending")
 
     def archive_old_events(self, older_than_hours: int = 72):
         """Archive events older than N hours (called by housekeeping cron)."""

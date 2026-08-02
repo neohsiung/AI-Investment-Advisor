@@ -40,18 +40,34 @@ class IVectorRepository(ABC):
         pass
 
     @abstractmethod
-    def search_similar_minutes(self, topic: str, limit: int = 1) -> List[Dict]:
+    def search_similar_minutes(self, topic: str, user_id: Optional[str] = None, limit: int = 5) -> List[Dict]:
         """
         Retrieves past council minutes based on topic text similarity.
+        `user_id` is optional only for backward compatibility with legacy
+        callers; new call sites must pass it — omitting it searches across
+        every tenant's minutes.
         """
         pass
 
     @abstractmethod
-    def search_similar_minutes_by_embedding(self, embedding: List[float], limit: int = 1, threshold: float = 0.7) -> List[Dict]:
+    def search_similar_minutes_by_embedding(self, embedding: List[float], user_id: Optional[str] = None, limit: int = 5, threshold: float = 0.7) -> List[Dict]:
         """
-        Retrieves past council minutes based on embedding similarity.
-        根據嵌入相似度檢索過去的議會記錄。
+        Retrieves past council minutes based on embedding similarity,
+        ranked by a recency-weighted score (0.7*cosine + 0.3*recency decay).
+        根據嵌入相似度＋時間衰減混合分數檢索過去的議會記錄。
+        `user_id` is optional only for backward compatibility; omitting it
+        searches across every tenant's minutes (pre-2026-07-14 behavior).
         """
+        pass
+
+    @abstractmethod
+    def list_minutes(self, user_id: str, limit: int = 20) -> List[Dict]:
+        """List recent council minutes (id/topic/consensus preview/created_at), newest first."""
+        pass
+
+    @abstractmethod
+    def get_minute(self, minute_id: str) -> Optional[Dict]:
+        """Fetch a single council minute in full (topic/consensus/transcript)."""
         pass
 
 class AlchemyVectorRepository(BaseRepository, IVectorRepository):
@@ -194,27 +210,32 @@ class AlchemyVectorRepository(BaseRepository, IVectorRepository):
             })
             return new_id
 
-    def search_similar_minutes(self, topic: str, limit: int = 1) -> List[Dict]:
+    def search_similar_minutes(self, topic: str, user_id: Optional[str] = None, limit: int = 5) -> List[Dict]:
         """
         Retrieves past council minutes based on topic text similarity (PostgreSQL Full Text Search).
+
+        2026-07-14: added `user_id` filtering. Previously this searched
+        across every tenant's council_minutes with no isolation at all —
+        the same class of cross-tenant leak fixed in AgentState
+        (workspace/*/STATE.md had no user_id either).
         """
         if self.engine.dialect.name == "sqlite":
             return []
 
         with self.engine.connect() as conn:
-            query = text("""
+            query_str = """
                 SELECT id, topic, consensus, ts_rank(to_tsvector('simple', topic), plainto_tsquery('simple', :topic)) as rank
                 FROM council_minutes
                 WHERE to_tsvector('simple', topic) @@ plainto_tsquery('simple', :topic)
-                ORDER BY rank DESC
-                LIMIT :limit
-            """)
-            
-            rows = conn.execute(query, {
-                "topic": topic,
-                "limit": limit
-            }).fetchall()
-            
+            """
+            params = {"topic": topic, "limit": limit}
+            if user_id is not None:
+                query_str += " AND user_id = :uid"
+                params["uid"] = user_id
+            query_str += " ORDER BY rank DESC LIMIT :limit"
+
+            rows = conn.execute(text(query_str), params).fetchall()
+
             return [{
                 "id": row.id,
                 "topic": row.topic,
@@ -222,30 +243,76 @@ class AlchemyVectorRepository(BaseRepository, IVectorRepository):
                 "rank": row.rank
             } for row in rows]
 
-    def search_similar_minutes_by_embedding(self, embedding: List[float], limit: int = 1, threshold: float = 0.7) -> List[Dict]:
+    def search_similar_minutes_by_embedding(self, embedding: List[float], user_id: Optional[str] = None, limit: int = 5, threshold: float = 0.7) -> List[Dict]:
         """
-        Retrieves past council minutes based on embedding similarity (PostgreSQL pgvector).
+        Retrieves past council minutes based on embedding similarity (PostgreSQL pgvector),
+        re-ranked by a recency-weighted score = 0.7*cosine + 0.3*exp(-age_days/30).
+
+        2026-07-14: raised default k from 1 to 5 (was starving the council
+        of memory — only the single closest match ever surfaced) and added
+        `user_id` filtering (previously searched across every tenant's
+        council_minutes with no isolation at all).
         """
         if self.engine.dialect.name == "sqlite":
             return []
 
         with self.engine.connect() as conn:
-            query = text("""
-                SELECT id, consensus, 1 - (embedding <=> :emb) as similarity
+            query_str = """
+                SELECT id, topic, consensus, created_at,
+                       1 - (embedding <=> :emb) as similarity,
+                       (0.7 * (1 - (embedding <=> :emb)))
+                       + (0.3 * EXP(-EXTRACT(EPOCH FROM (NOW() - created_at)) / 86400.0 / 30.0)) as score
                 FROM council_minutes
-                WHERE 1 - (embedding <=> :emb) > :threshold
-                ORDER BY similarity DESC
-                LIMIT :limit
-            """)
-            
-            rows = conn.execute(query, {
+                WHERE embedding IS NOT NULL AND 1 - (embedding <=> :emb) > :threshold
+            """
+            params = {
                 "emb": self._ensure_string_embedding(embedding),
                 "threshold": threshold,
-                "limit": limit
-            }).fetchall()
-            
+                "limit": limit,
+            }
+            if user_id is not None:
+                query_str += " AND user_id = :uid"
+                params["uid"] = user_id
+            query_str += " ORDER BY score DESC LIMIT :limit"
+
+            rows = conn.execute(text(query_str), params).fetchall()
+
             return [{
                 "id": row.id,
+                "topic": row.topic,
                 "consensus": row.consensus,
-                "similarity": row.similarity
+                "similarity": row.similarity,
+                "score": row.score,
+                "created_at": row.created_at,
             } for row in rows]
+
+    def list_minutes(self, user_id: str, limit: int = 20) -> List[Dict]:
+        """P5.2 (2026-07-11): recent council minutes for the debate-transparency view."""
+        with self.engine.connect() as conn:
+            rows = conn.execute(text("""
+                SELECT id, session_id, topic, consensus, created_at
+                FROM council_minutes
+                WHERE user_id = :uid
+                ORDER BY created_at DESC LIMIT :limit
+            """), {"uid": user_id, "limit": limit}).fetchall()
+            return [{
+                "id": r.id, "session_id": r.session_id, "topic": r.topic,
+                "consensus_preview": (r.consensus or "")[:200],
+                "created_at": r.created_at,
+            } for r in rows]
+
+    def get_minute(self, minute_id: str) -> Optional[Dict]:
+        """P5.2 (2026-07-11): full council minute (topic/consensus/transcript) by id."""
+        with self.engine.connect() as conn:
+            row = conn.execute(text("""
+                SELECT id, session_id, user_id, topic, participants, consensus, transcript, created_at
+                FROM council_minutes WHERE id = :id
+            """), {"id": minute_id}).fetchone()
+            if not row:
+                return None
+            return {
+                "id": row.id, "session_id": row.session_id, "user_id": row.user_id,
+                "topic": row.topic, "participants": row.participants,
+                "consensus": row.consensus, "transcript": row.transcript,
+                "created_at": row.created_at,
+            }

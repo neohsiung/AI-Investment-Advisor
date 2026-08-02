@@ -81,7 +81,8 @@ class AlchemyDataRepository(BaseRepository, IDataRepository):
                     LIMIT :limit
                 """), {"days": days, "limit": limit}).fetchall()
                 return rows
-            except Exception:
+            except Exception as e:
+                import logging; logging.warning(f'Exception in data_repository.py: {e}', exc_info=True)
                 return []
 
     def get_recent_aggregated_reports(self, days: int = 7, limit: int = 10) -> Any:
@@ -98,7 +99,8 @@ class AlchemyDataRepository(BaseRepository, IDataRepository):
                     LIMIT :limit
                 """), {"days": days, "limit": limit}).fetchall()
                 return rows
-            except Exception:
+            except Exception as e:
+                import logging; logging.warning(f'Exception in data_repository.py: {e}', exc_info=True)
                 return []
 
 # Legacy alias removed in v4.1.7

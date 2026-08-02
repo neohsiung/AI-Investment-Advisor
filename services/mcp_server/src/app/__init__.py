@@ -149,8 +149,13 @@ async def lifespan(app: FastAPI):
     """
     (Lifespan) Initialize all services and tools.
     """
+    # 2026-07-12: fail fast rather than silently serve traffic with a
+    # publicly-known JWT secret or unencrypted-at-rest provider keys.
+    from src.utils.boot_validation import validate_production_secrets
+    validate_production_secrets()
+
     logger.info("Initializing MCP Services...")
-    
+
     # 啟動 WebSocket 廣播任務
     broadcast_task = asyncio.create_task(websocket_broadcast_loop())
     

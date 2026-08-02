@@ -309,7 +309,8 @@ class ConversationAgent:
             loader = SkillLoader()
             loader.discover_skills()
             return loader._metadata_cache
-        except Exception:
+        except Exception as e:
+            logger.warning(f'Exception in conversation_agent.py: {e}', exc_info=True)
             return {}
 
     def _check_gap_confirmation(self, user_message: str):

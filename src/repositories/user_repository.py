@@ -45,6 +45,11 @@ class IUserRepository(ABC):
         """
         pass
 
+    @abstractmethod
+    def get_first_user_id(self) -> Optional[str]:
+        """回傳最早建立的活躍使用者 ID（單租戶 fallback 用途）。"""
+        pass
+
 class IAsyncUserRepository(ABC):
     """
     Async interface for User and Identity management.
@@ -63,6 +68,11 @@ class IAsyncUserRepository(ABC):
 
     @abstractmethod
     async def get_all_active_users(self) -> List[str]:
+        pass
+
+    @abstractmethod
+    async def get_first_user_id(self) -> Optional[str]:
+        """回傳最早建立的活躍使用者 ID（單租戶 fallback 用途）。"""
         pass
 
 class AlchemyUserRepository(BaseRepository, IUserRepository):
@@ -181,6 +191,11 @@ class AlchemyUserRepository(BaseRepository, IUserRepository):
             )).fetchall()
         return [row[0] for row in rows]
 
+    def get_first_user_id(self) -> Optional[str]:
+        """回傳最早建立的活躍使用者 ID（單租戶 fallback 用途）。"""
+        users = self.get_all_active_users()
+        return users[0] if users else None
+
 class AsyncAlchemyUserRepository(AsyncBaseRepository, IAsyncUserRepository):
     """
     Async SQLAlchemy implementation of IUserRepository.
@@ -274,3 +289,8 @@ class AsyncAlchemyUserRepository(AsyncBaseRepository, IAsyncUserRepository):
             ))
             rows = result.fetchall()
             return [row[0] for row in rows]
+
+    async def get_first_user_id(self) -> Optional[str]:
+        """回傳最早建立的活躍使用者 ID（單租戶 fallback 用途）。"""
+        users = await self.get_all_active_users()
+        return users[0] if users else None

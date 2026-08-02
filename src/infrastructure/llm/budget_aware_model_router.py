@@ -186,7 +186,8 @@ class BudgetAwareModelRouter:
             spend_summary = self.token_logger.get_user_spending(user_id, days=7)
             total_spent = spend_summary.get("total_cost", 0.0)
             effective_tier = self._resolve_tier(tier, total_spent)
-        except Exception:
+        except Exception as e:
+            logger.warning(f'Exception in budget_aware_model_router.py: {e}', exc_info=True)
             effective_tier = tier
 
         if effective_tier != tier:

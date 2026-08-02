@@ -171,8 +171,8 @@ class GoogleAuth:
                         st.session_state['user_info'] = user_info
                         st.session_state['oauth_id'] = user_info.get('sub')
                         return "AUTHENTICATED"
-                except Exception:
-                    pass
+                except Exception as e:
+                    import logging; logging.warning(f'Exception in google_auth.py: {e}', exc_info=True)
 
         if 'connected' not in st.session_state:
             st.session_state['connected'] = False

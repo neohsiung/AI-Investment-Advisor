@@ -35,6 +35,7 @@ class LLMConfig:
     max_tokens: Optional[int] = None
     max_retries: int = 3
     timeout_seconds: int = 30
+    extra_config: Dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass

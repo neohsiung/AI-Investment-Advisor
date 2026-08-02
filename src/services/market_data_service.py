@@ -191,11 +191,45 @@ class MarketDataService:
                 "price_data": ohlcv,
                 "indicators": indicators
             }
-            
+
+            # P2.1 (2026-07-11): Alpha158-style factor snapshot — additive,
+            # zero-cost (pure pandas), richer momentum/volatility/volume
+            # signal than the handful of ad-hoc indicators above.
+            try:
+                from src.services.factor_service import compute_factors
+                factors = compute_factors(ohlcv)
+                if factors:
+                    data["factors"] = factors
+            except Exception as exc:
+                self.logger.debug(f"factor computation skipped for {ticker}: {exc}")
+
             if enrich:
                 data["financials"] = self.get_financials(ticker)
                 data["news"] = self.get_news(ticker)
                 data["web_intelligence"] = self.get_web_intelligence(ticker)
+
+                # P2.2 (2026-07-11): TimesFM forward point-forecast + quantile
+                # band — the one genuinely forward-looking signal the swarm
+                # previously lacked (agents only saw backward indicators/factors).
+                # Gated to enrich=True (the heavier daily/weekly path) since
+                # local inference has real per-ticker latency; never called
+                # from the lightweight/CLI path. No-ops silently if TimesFM
+                # isn't installed (see forecast_service.is_available()).
+                try:
+                    from src.services.forecast_service import forecast as _tfm_forecast
+                    closes = ohlcv.get("close") if ohlcv else None
+                    if closes and len(closes) >= 10:
+                        fc = _tfm_forecast(ticker, closes, horizon=5)
+                        if fc:
+                            data["forecast"] = {
+                                "horizon_days": fc.horizon,
+                                "point": [round(v, 4) for v in fc.point_forecast],
+                                "q10": [round(v, 4) for v in fc.q10],
+                                "q90": [round(v, 4) for v in fc.q90],
+                                "band_width_pct": fc.band_width_pct(),
+                            }
+                except Exception as exc:
+                    self.logger.debug(f"forecast skipped for {ticker}: {exc}")
                 
             context[ticker] = data
         return context

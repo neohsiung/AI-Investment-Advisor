@@ -74,7 +74,8 @@ async def get_positions(service: DashboardService = Depends(get_dashboard_servic
                     return default
                 try:
                     return float(val)
-                except:
+                except Exception as e:
+                    logger.warning(f'Exception in dashboard.py: {e}', exc_info=True)
                     return default
 
             market_value = safe_float('gross_mv', safe_float('market_value', 0))

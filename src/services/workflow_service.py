@@ -112,156 +112,46 @@ class BaseWorkflow(ABC):
             logger.error(f"WorkflowService: {agent_name} agent failed: {e}")
             raise
 
-    def _parse_actionable_orders(self, final_report: str):
+    async def _parse_actionable_orders(self, final_report: str):
         """
-        Parses the actionable orders table or JSON from the final report and populates the context.
-        Supports Markdown pipe tables, HTML <table> formats, and [CONVINCING_ACTION] JSON blocks.
+        Delegates structured order extraction to ActionExtractorAgent
+        (2026-07-12) — the dedicated component from the product spec
+        (§2.1.3 Actionable Council Results), replacing the inline parser
+        previously here. Strategy order unchanged (JSON block > Markdown
+        table > HTML table), now with an LLM fallback for reports that
+        don't match any deterministic format.
+
+        Populates self.context['actionable_orders'] and records each order
+        via performance_service for accuracy tracking — now applied
+        consistently across all extraction strategies (previously only the
+        Markdown-table path recorded recommendations).
         """
         try:
-            import re
-            import json
-            rows = []
-            json_parsed = False
+            from src.agents.action_extractor import ActionExtractorAgent
+            orders = await ActionExtractorAgent(user_id=self.user_id).extract(final_report)
+            self.context['actionable_orders'] = orders
 
-            # --- Strategy 0: JSON block [CONVINCING_ACTION] ---
-            if "[CONVINCING_ACTION]" in final_report:
-                try:
-                    parts = final_report.split("[CONVINCING_ACTION]")
-                    if len(parts) > 1:
-                        json_str = parts[1].strip()
-                        brace_count = 0
-                        start_idx = -1
-                        end_idx = -1
-                        for idx, char in enumerate(json_str):
-                            if char == '{':
-                                if brace_count == 0:
-                                    start_idx = idx
-                                brace_count += 1
-                            elif char == '}':
-                                brace_count -= 1
-                                if brace_count == 0 and start_idx != -1:
-                                    end_idx = idx + 1
-                                    break
-                        if start_idx != -1 and end_idx != -1:
-                            data = json.loads(json_str[start_idx:end_idx])
-                            actions = data.get("actions", [])
-                            if 'actionable_orders' not in self.context:
-                                self.context['actionable_orders'] = []
-                            for act in actions:
-                                ticker = str(act.get("ticker", "")).strip().upper()
-                                action = str(act.get("action", "")).strip().upper()
-                                if "BUY" in action:
-                                    cio_signal = "BUY"
-                                elif "SELL" in action:
-                                    cio_signal = "SELL"
-                                else:
-                                    cio_signal = "HOLD"
-                                
-                                if ticker and cio_signal != "HOLD":
-                                    self.context['actionable_orders'].append({
-                                        'ticker': ticker,
-                                        'action': cio_signal,
-                                        'quantity': act.get("quantity") or 100.0,
-                                        'score': act.get("confidence") or 7,
-                                        'reason': act.get("rationale") or f"CIO Signal ({cio_signal})",
-                                        'target_weight': act.get("target_weight"),
-                                        'current_weight': act.get("current_weight"),
-                                        'delta_weight': act.get("delta_weight")
-                                    })
-                            json_parsed = True
-                            self.logger.info("Successfully parsed [CONVINCING_ACTION] JSON block.")
-                except Exception as json_err:
-                    self.logger.warning(f"Failed to parse [CONVINCING_ACTION] JSON block: {json_err}")
-
-            if json_parsed:
-                if self.context.get('actionable_orders'):
-                    self.logger.info(f"Parsed {len(self.context['actionable_orders'])} actionable orders from JSON.")
-                return
-
-            # --- Strategy 1: Markdown pipe table (preferred) ---
-            lines = final_report.split('\n')
-            for i, line in enumerate(lines):
-                if '|' in line and '---' in line:
-                    # Validate that this is likely the Actionable Orders table
-                    prev_line = lines[i-1].lower() if i > 0 else ""
-                    if any(x in prev_line for x in ["action", "動作", "代號", "ticker"]):
-                        for j in range(i + 1, len(lines)):
-                            row_line = lines[j].strip()
-                            if not row_line.startswith('|'):
-                                break
-                            cols = [c.strip() for c in row_line.split('|') if c.strip()]
-                            if len(cols) >= 4 and "---" not in row_line:
-                                rows.append(cols)
-                        break
-
-            # --- Strategy 2: HTML <table> fallback ---
-            if not rows:
-                # Find all <tr> blocks, skip header row
-                tr_blocks = re.findall(r'<tr[^>]*>(.*?)</tr>', final_report, re.DOTALL | re.IGNORECASE)
-                for tr in tr_blocks:
-                    if '<th' in tr.lower():
-                        continue
-                    tds = re.findall(r'<td[^>]*>(.*?)</td>', tr, re.DOTALL | re.IGNORECASE)
-                    cleaned = [re.sub(r'<[^>]+>', '', td).strip() for td in tds]
-                    if len(cleaned) >= 4:
-                        rows.append(cleaned)
-
-            if not rows:
-                self.logger.info("No Actionable Orders table found in CIO report.")
-                return
-
-            # --- Process parsed rows ---
-            for cols in rows:
-                ticker = cols[0].strip().upper()
-                action = cols[1]
-                quantity = cols[2]
-
-                try:
-                    score_raw = re.search(r"(\d+)", cols[3])
-                    score = int(score_raw.group(1)) if score_raw else 5
-                except (ValueError, IndexError):
-                    score = 5
-
-                u_act = action.upper()
-                cio_signal = "HOLD"
-                if any(x in u_act for x in ["BUY", "ACCUMULATE", "加碼", "買"]):
-                    cio_signal = "BUY"
-                elif any(x in u_act for x in ["SELL", "TRIM", "REDUCE", "LIQUIDATE", "減碼", "出清", "賣", "避險"]):
-                    cio_signal = "SELL"
-
-                if cio_signal != "HOLD":
-                    # Get price for performance tracing
-                    t_data = self.context.get('market_data', {}).get(ticker, {})
-                    t_price = 0
-                    if t_data:
-                         raw = t_data.get('price_data', {}).get('close', 0)
-                         if isinstance(raw, list) and raw: t_price = raw[-1]
-                         else: t_price = raw
-
-                    if self.performance_service:
+            if orders and self.performance_service:
+                for order in orders:
+                    try:
+                        t_data = self.context.get('market_data', {}).get(order['ticker'], {})
+                        t_price = 0
+                        if t_data:
+                            raw = t_data.get('price_data', {}).get('close', 0)
+                            t_price = raw[-1] if isinstance(raw, list) and raw else raw
                         self.performance_service.record_recommendation(
-                            agent_name="CIO",
-                            ticker=ticker,
-                            signal=cio_signal,
-                            price=t_price
+                            agent_name="CIO", ticker=order['ticker'],
+                            signal=order['action'], price=t_price,
                         )
+                    except Exception as rec_err:
+                        self.logger.debug(f"record_recommendation skipped for {order.get('ticker')}: {rec_err}")
 
-                    if 'actionable_orders' not in self.context:
-                        self.context['actionable_orders'] = []
-
-                    self.context['actionable_orders'].append({
-                        'ticker': ticker,
-                        'action': cio_signal,
-                        'quantity': quantity,
-                        'score': score,
-                        'reason': cols[4] if len(cols) >= 5 else f"CIO Signal ({cio_signal})"
-                    })
-
-            if self.context.get('actionable_orders'):
-                self.logger.info(f"Parsed {len(self.context['actionable_orders'])} actionable orders.")
-
+            if orders:
+                self.logger.info(f"Parsed {len(orders)} actionable orders via ActionExtractorAgent.")
+            else:
+                self.logger.info("No Actionable Orders found in CIO report.")
         except Exception as e:
-            self.logger.warning(f"Failed to parse Actionable Orders table: {e}")
+            self.logger.warning(f"Failed to parse Actionable Orders: {e}")
 
     async def run(self, dry_run: bool = False, force_refresh: bool = False) -> Any:
         """
@@ -540,7 +430,8 @@ class BaseWorkflow(ABC):
             try:
                 stripper.feed(html_content)
                 text_only = stripper.get_data()
-            except Exception:
+            except Exception as e:
+                logger.warning(f'Exception in workflow_service.py: {e}', exc_info=True)
                 text_only = html_content  # Fallback to raw if parser fails
 
             import re
@@ -549,7 +440,8 @@ class BaseWorkflow(ABC):
             # Classify tier based on content
             event_data = {
                 "title": title,
-                "summary": text_only[:500],
+                "summary": text_only[:1500],
+                "full_text": text_only,
                 "has_html": True,
             }
 
@@ -987,7 +879,7 @@ class DailyWorkflow(BaseWorkflow):
             logger.warning(f"Failed to extract CIO signals block by block: {e}")
 
         # [NEW] Global Parse for Actionable Orders Table
-        self._parse_actionable_orders(final_report)
+        await self._parse_actionable_orders(final_report)
 
         return final_report
 
@@ -1127,7 +1019,7 @@ class WeeklyWorkflow(BaseWorkflow):
             
             # D. Parse & Execute Actionable Orders (v7.0: consistent with DailyWorkflow)
             # ─────────────────────────────────────────────────────────
-            self._parse_actionable_orders(str(final_report))
+            await self._parse_actionable_orders(str(final_report))
             actionable_orders = self.context.get('actionable_orders', [])
             if actionable_orders:
                 logger.info(f"WeeklyWorkflow: Processing {len(actionable_orders)} actionable orders via AutomatedTradingService.")
@@ -1198,7 +1090,8 @@ class WeeklyWorkflow(BaseWorkflow):
                 sc_str = json.dumps(supply_chain, ensure_ascii=False) if isinstance(supply_chain, dict) else str(supply_chain)
                 ctx += f"- **供應鏈瓶頸預測 (Supply Chain Bottlenecks)**: {sc_str}\n"
             return ctx
-        except Exception:
+        except Exception as e:
+            logger.warning(f'Exception in workflow_service.py: {e}', exc_info=True)
             return "無法取得基礎主題數據。"
 
     def _select_agent_for_task(self, task_name: str, user_id: str, tier: str = "smart"):
@@ -1492,7 +1385,7 @@ class EventAnalysisWorkflow(BaseWorkflow):
             self.context['deliberation_context'] = cio_context.get('council_transcript', '')
             
             # 5. Execute Action if actionable_orders table exists
-            self._parse_actionable_orders(final_report)
+            await self._parse_actionable_orders(final_report)
             
             if not dry_run:
                 # Distribute report (via Webhook/Notification)

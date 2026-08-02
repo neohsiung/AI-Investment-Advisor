@@ -35,6 +35,7 @@ def decrypt_secret(cipher_text: str) -> str:
         return ""
     try:
         return _FERNET.decrypt(cipher_text.encode()).decode()
-    except Exception:
+    except Exception as e:
+        logger.warning(f'Exception in crypto_utils.py: {e}', exc_info=True)
         # Fallback to plain if decryption fails (likely migrated from plain text)
         return cipher_text

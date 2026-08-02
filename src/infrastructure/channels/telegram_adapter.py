@@ -229,7 +229,8 @@ class TelegramAdapter(BaseChannelAdapter):
                 decrypted = cipher.decrypt(val)
                 if decrypted:
                     val = decrypted
-            except Exception:
+            except Exception as e:
+                logger.warning(f'Exception in telegram_adapter.py: {e}', exc_info=True)
                 pass  # Return as-is if decryption fails
         return val if val else None
 
@@ -299,14 +300,20 @@ class TelegramAdapter(BaseChannelAdapter):
                 _filter = kwargs.get("_filter")
                 if _filter and hasattr(_filter, "get_recipient_override"):
                     override_chat_id = _filter.get_recipient_override("telegram", category)
-            except Exception:
-                pass
+            except Exception as e:
+                logger.warning(f'Exception in telegram_adapter.py: {e}', exc_info=True)
 
         target_chat_id = override_chat_id or chat_id
         
         if not target_chat_id:
             logger.error(f"No target chat ID for user {user_id}")
             return False
+
+        chat_id_str = str(target_chat_id)
+        if len(chat_id_str) > 6:
+            masked_chat_id = f"{chat_id_str[:3]}...{chat_id_str[-3:]}"
+        else:
+            masked_chat_id = "***"
 
         # 4. Prepare message — strip HTML if needed, format for Telegram
         # 4. 準備訊息 — 依需求剝離 HTML，格式化為 Telegram 可接受格式
@@ -334,6 +341,8 @@ class TelegramAdapter(BaseChannelAdapter):
 
         safe_title = html.escape(title)
         text_body = f"<b>{safe_title}</b>\n\n{safe_content}"
+        if len(text_body) > 3900:
+            text_body = text_body[:3800] + "\n\n<i>... (content truncated for Telegram limit)</i>"
 
         payload = {
             "chat_id": target_chat_id,
@@ -364,16 +373,16 @@ class TelegramAdapter(BaseChannelAdapter):
                 response = await client.post(url, json=payload, timeout=10.0)
                 data = response.json()
                 if data.get("ok"):
-                    logger.info(f"Telegram message sent to {target_chat_id} for user {user_id}")
+                    logger.info(f"Telegram message sent to {masked_chat_id} for user {user_id}")
                     return True
                 else:
-                    error_msg = f"Telegram API error: {data.get('description', 'Unknown error')}"
+                    error_msg = f"Telegram API error (status: {response.status_code}, category: {category}, chat_id: {masked_chat_id}): {data.get('description', 'Unknown error')}"
                     logger.error(error_msg)
                     if raise_error:
                         raise ValueError(error_msg)
                     return False
         except Exception as e:
-            logger.error(f"TelegramAdapter exception: {e}")
+            logger.error(f"TelegramAdapter exception (category: {category}, chat_id: {masked_chat_id}): {e}", exc_info=True)
             if raise_error:
                 raise e
             return False

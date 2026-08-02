@@ -15,6 +15,7 @@ DEFAULT_ROUTING_SCHEMA = {
         "sentinel": {"chat_id": ""},
         "approval": {"chat_id": ""},
         "trading":  {"chat_id": ""},
+        "ops":      {"chat_id": ""},
     },
     "email": {
         "default_to": "",
@@ -22,6 +23,7 @@ DEFAULT_ROUTING_SCHEMA = {
         "sentinel": {"to": ""},
         "approval": {"to": ""},
         "trading":  {"to": ""},
+        "ops":      {"to": ""},
     },
     "line": {
         "default_user_id": "",
@@ -29,6 +31,7 @@ DEFAULT_ROUTING_SCHEMA = {
         "sentinel": {"user_id": ""},
         "approval": {"user_id": ""},
         "trading":  {"user_id": ""},
+        "ops":      {"user_id": ""},
     }
 }
 
@@ -57,8 +60,8 @@ class InterestBasedFilter(INotificationFilter):
             val = self.settings_service.get_setting("notification_routing")
             if isinstance(val, dict):
                 return val
-        except Exception:
-            pass
+        except Exception as e:
+            logger.warning(f'Exception in notification_filters.py: {e}', exc_info=True)
         return {}
 
     def get_recipient_override(self, adapter_type: str, category: str) -> Optional[str]:
@@ -96,7 +99,7 @@ class InterestBasedFilter(INotificationFilter):
         # Resolve adapter type name: e.g. EmailAdapter -> email
         adapter_type = adapter.__class__.__name__.lower().replace('adapter', '').replace('bot', '')
         
-        interests_str = self.settings_service.get_setting(f"channel_{adapter_type}_interests", "sentinel,report,approval")
+        interests_str = self.settings_service.get_setting(f"channel_{adapter_type}_interests", "sentinel,report,approval,ops")
         interests = [i.strip().lower() for i in interests_str.split(",") if i.strip()]
         
         if category.lower() in interests:

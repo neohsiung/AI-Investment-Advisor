@@ -308,13 +308,15 @@ class LLMTierBindingService:
     def _get_model_safe(self, model_id: str) -> Optional[LLMModel]:
         try:
             return self._model_repo.get(model_id)
-        except Exception:
+        except Exception as e:
+            logger.warning(f'Exception in llm_tier_binding_service.py: {e}', exc_info=True)
             return None
 
     def _get_provider_safe(self, provider_id: str) -> Optional[LLMProvider]:
         try:
             return self._provider_repo.get(provider_id)
-        except Exception:
+        except Exception as e:
+            logger.warning(f'Exception in llm_tier_binding_service.py: {e}', exc_info=True)
             return None
 
     def _fetch_model_out(self, model_id: str) -> Optional[ModelOut]:

@@ -19,6 +19,7 @@ Tier 3: Long-Term Memory (persisted across sessions, vector-backed)
 """
 
 import os
+import re
 import json
 import logging
 from abc import ABC, abstractmethod
@@ -27,6 +28,32 @@ from datetime import datetime, timezone
 from dataclasses import dataclass, field
 
 logger = logging.getLogger(__name__)
+
+_GENERAL_RULES_RE = re.compile(
+    r"(^##\s*General\s*Rules\b.*?)(?=\n#+|\Z)", re.DOTALL | re.MULTILINE | re.IGNORECASE
+)
+
+
+def _preserve_general_rules(state_path: str, new_content: str) -> str:
+    """
+    Carry forward any existing "## General Rules" section (distilled by
+    AgentState.save_general_rules in memory_repository.py) into a freshly
+    written STATE.md, so a WAL flush never silently wipes distilled rules.
+    Duplicated from src.agents.wal_protocol (small enough to not warrant a
+    cross-layer import — infrastructure shouldn't depend on the agents layer).
+    """
+    if not os.path.exists(state_path):
+        return new_content
+    try:
+        with open(state_path, "r", encoding="utf-8") as f:
+            existing = f.read()
+    except Exception as e:
+        logger.warning(f'Exception in three_tier_memory.py: {e}', exc_info=True)
+        return new_content
+    match = _GENERAL_RULES_RE.search(existing)
+    if not match:
+        return new_content
+    return new_content.rstrip() + "\n\n" + match.group(1).strip() + "\n"
 
 
 # ═══════════════════════════════════════════════════════
@@ -188,11 +215,16 @@ class FileSessionStorage(ISessionStorage):
     def save_wal(self, agent_name: str, wal_state: str) -> None:
         state_path = os.path.join(self._workspace_path, "STATE.md")
         os.makedirs(os.path.dirname(state_path) or ".", exist_ok=True)
+        new_content = (
+            f"# Session Checkpoint: {datetime.now().isoformat()}\n\n"
+            f"{wal_state}"
+        )
+        # 2026-07-12: previously blind-overwrote the file, silently destroying
+        # any "## General Rules" section AgentState.save_general_rules() had
+        # distilled into the same STATE.md. Preserve it across WAL flushes.
+        new_content = _preserve_general_rules(state_path, new_content)
         with open(state_path, "w", encoding="utf-8") as f:
-            f.write(
-                f"# Session Checkpoint: {datetime.now().isoformat()}\n\n"
-                f"{wal_state}"
-            )
+            f.write(new_content)
         logger.info(f"SessionStorage: WAL saved for {agent_name}")
 
     def load_wal(self, agent_name: str) -> Optional[str]:

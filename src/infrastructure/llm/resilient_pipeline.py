@@ -381,12 +381,21 @@ class ResilientLLMPipeline:
     @staticmethod
     def _build_llm_config(candidate: ModelCandidate, **kwargs: Any) -> LLMConfig:
         """Build an LLMConfig from a ModelCandidate."""
+        temperature = kwargs.get("temperature")
+        if temperature is None:
+            temperature = candidate.extra_config.get("temperature", 0.7)
+            
+        max_tokens = kwargs.get("max_tokens")
+        if max_tokens is None:
+            max_tokens = candidate.extra_config.get("max_tokens", 2048)
+
         return LLMConfig(
             provider=candidate.provider_code,
             model=candidate.model_code,
             api_key=candidate.api_key or "",
             base_url=candidate.base_url,
-            temperature=kwargs.get("temperature", 0.7),
-            max_tokens=kwargs.get("max_tokens", 2048),
+            temperature=temperature,
+            max_tokens=max_tokens,
             timeout_seconds=candidate.timeout_seconds,
+            extra_config=candidate.extra_config,
         )

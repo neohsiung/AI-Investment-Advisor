@@ -28,7 +28,8 @@ class CognitiveMemoryManager:
         try:
             project_root = Path(__file__).parent.parent.parent.resolve()
             base_dir = (project_root / "data" / "memory").resolve()
-        except Exception:
+        except Exception as e:
+            logger.warning(f'Exception in cognitive_memory_manager.py: {e}', exc_info=True)
             # Fallback to relative if resolving fails in specific environments
             base_dir = Path("data/memory").resolve()
 
@@ -74,7 +75,8 @@ class CognitiveMemoryManager:
             with self.engine.connect() as conn:
                 conn.execute(text("SELECT 1"))
                 return True
-        except Exception:
+        except Exception as e:
+            logger.warning(f'Exception in cognitive_memory_manager.py: {e}', exc_info=True)
             return False
 
     # ──────────────────────────────────────────

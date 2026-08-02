@@ -153,8 +153,12 @@ class NotificationService:
                 logger.error(f"Notification failed for {name}: {res}")
                 results[name] = (False, str(res)) if capture_error else False
             else:
+                is_ok = res[0] if isinstance(res, tuple) else res
+                if not is_ok:
+                    logger.warning(f"Notification returned falsy for {name}")
                 results[name] = (res, "OK" if res else "Failed") if capture_error else res
                 
+        logger.info(f"Notification dispatch results: {results}")
         return results
 
     @staticmethod
@@ -187,6 +191,6 @@ class NotificationService:
             title=subject,
             content=content,
             user_id=user_id,
-            channels=['email', 'web'],
+            channels=None,
             **kwargs
         )

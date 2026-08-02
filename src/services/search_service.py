@@ -229,7 +229,8 @@ class InternetSearchService:
                 cleaned_text = " ".join(lines)
                 
                 return cleaned_text[:max_length] if len(cleaned_text) > max_length else cleaned_text
-            except:
+            except Exception as e:
+                logger.warning(f'Exception in search_service.py: {e}', exc_info=True)
                 return None
 
     async def get_ticker_moat_and_catalyst(self, ticker: str) -> List[Dict[str, str]]:

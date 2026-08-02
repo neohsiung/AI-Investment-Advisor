@@ -78,7 +78,8 @@ class AlchemyPromptRepository(BaseRepository, IPromptRepository):
             with self.engine.connect() as conn:
                 df = pd.read_sql(query, conn, params={"uid": user_id, "limit": limit})
                 return df
-        except Exception:
+        except Exception as e:
+            import logging; logging.warning(f'Exception in prompt_repository.py: {e}', exc_info=True)
             import pandas as pd
             return pd.DataFrame()
 

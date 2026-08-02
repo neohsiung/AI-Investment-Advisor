@@ -19,7 +19,13 @@ logger = logging.getLogger('agent.rebalance')
 
 
 async def main():
-    user_id = os.environ.get("PAD_USER_ID", "00000000-0000-4000-a000-000000000001")
+    user_id = os.environ.get("PAD_USER_ID") or os.environ.get("PRIMARY_USER_ID") or os.environ.get("USER_ID")
+    if not user_id:
+        from src.repositories.user_repository import AlchemyUserRepository
+        user_id = AlchemyUserRepository().get_first_user_id()
+    if not user_id:
+        logger.error("RebalanceWorker: No user_id configured. Set PAD_USER_ID or PRIMARY_USER_ID env var.")
+        return
     
     from src.services.event_aggregator import EventAggregator
     from src.services.settings_service import SettingsService
@@ -56,8 +62,7 @@ async def main():
     event_ids = [e["id"] for e in events]
     
     if not actionable and not has_p0:
-        logger.info(f"RebalanceWorker: {len(events)} events processed, none actionable. Marking analyzed.")
-        aggregator.mark_processed(event_ids)
+        logger.info(f"RebalanceWorker: {len(events)} events inspected, none actionable for rebalance. Leaving in queue for digest.")
         return
     
     # 4. Build digest for actionable events
@@ -100,9 +105,11 @@ async def main():
     else:
         logger.info(f"RebalanceWorker: {len(events)} non-actionable events analyzed (no P0)")
     
-    # 6. Mark events as analyzed
-    aggregator.mark_processed(event_ids)
-    logger.info(f"RebalanceWorker: marked {len(event_ids)} events as analyzed")
+    # 6. Mark only actionable/P0 events as analyzed
+    actionable_ids = [e["id"] for e in actionable] if actionable else [e["id"] for e in events if e.get("tier") == EventQueue.TIER_P0]
+    if actionable_ids:
+        aggregator.mark_processed(actionable_ids)
+        logger.info(f"RebalanceWorker: marked {len(actionable_ids)} actionable events as analyzed")
 
 
 if __name__ == "__main__":
