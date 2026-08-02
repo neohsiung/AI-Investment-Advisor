@@ -60,13 +60,21 @@ class UserPreferenceService:
     def _fetch_feedback(self):
         try:
             with self._engine().connect() as conn:
+                # Bind the window as a parameter instead of interpolating it.
+                # LOOKBACK_DAYS is a module constant, so this was never
+                # injectable, but an f-string around SQL is the pattern bandit
+                # B608 flags and the one this repo bans outright. Same idiom as
+                # src/infrastructure/llm/cost_attribution.py:239.
+                # 天數改用綁定參數；雖然 LOOKBACK_DAYS 是模組常數不可能被注入，
+                # 但 SQL 內用 f-string 正是本專案明令禁止的寫法。
                 return conn.execute(
-                    text(f"""
+                    text("""
                         SELECT decision, reason_code, ticker
                         FROM interaction_feedback
-                        WHERE user_id = :uid AND created_at > NOW() - INTERVAL '{LOOKBACK_DAYS} days'
+                        WHERE user_id = :uid
+                          AND created_at > NOW() - (CAST(:lookback_days AS INTEGER) * INTERVAL '1 day')
                     """),
-                    {"uid": self.user_id},
+                    {"uid": self.user_id, "lookback_days": LOOKBACK_DAYS},
                 ).fetchall()
         except Exception as e:
             logger.warning(f"UserPreference: failed to fetch feedback for {self.user_id}: {e}")

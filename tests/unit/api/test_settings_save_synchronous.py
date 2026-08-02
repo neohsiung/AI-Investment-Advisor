@@ -57,12 +57,37 @@ class TestSaveSettingsIsSynchronous:
         assert "background_tasks" not in sig.parameters
 
     def test_repository_failure_surfaces_as_500(self, service):
-        service.save_settings_bulk.return_value = (False, "Error saving settings: db down")
+        service.save_settings_bulk.return_value = (False, "SETTINGS_SAVE_FAILED")
 
         response = _client(service).post("/settings", json={"settings": {"etoro_mode": "demo"}})
 
         assert response.status_code == 500
-        assert "db down" in response.json()["detail"]
+        assert response.json()["detail"] == "Failed to save settings"
+
+    def test_repository_failure_does_not_leak_internals(self, service, caplog):
+        """
+        A 500 must not carry the service's message into the response body.
+
+        2026-08-02 (CWE-209): save_settings_bulk used to return
+        f"Error saving settings: {e}" and the endpoint put that straight into
+        `detail`, leaking raw DB/driver exception text to any caller. Both ends
+        are now fixed — the service returns a stable code, the endpoint returns
+        a fixed string — and this asserts the whole path, not just one half.
+        錯誤細節只能進 log，不能進 HTTP 回應。
+        """
+        service.save_settings_bulk.return_value = (
+            False, 'relation "settings" does not exist at /var/lib/pg/data'
+        )
+
+        with caplog.at_level("ERROR"):
+            response = _client(service).post("/settings", json={"settings": {"etoro_mode": "demo"}})
+
+        body = response.text
+        assert response.status_code == 500
+        assert "relation" not in body
+        assert "/var/lib/pg/data" not in body
+        # ...but the operator still gets the detail, server-side.
+        assert "relation" in caplog.text
 
     def test_exception_surfaces_as_500(self, service):
         service.save_settings_bulk.side_effect = RuntimeError("boom")

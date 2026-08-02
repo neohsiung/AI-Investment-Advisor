@@ -136,8 +136,14 @@ class SettingsService:
             self.settings_repo.set(target_uid, key, value)
             self._invalidate_broker_cache_if_needed(target_uid, (key,))
             return True, "Success"
-        except Exception as e:
-            return False, str(e)
+        except Exception:
+            # Same contract as save_settings_bulk: the message may be surfaced
+            # to an HTTP client, so it carries a stable code, never exception
+            # text. No caller feeds this into an HTTPException today, but the
+            # sibling method's did — one refactor away from the same leak.
+            # 與 save_settings_bulk 同一契約：訊息可能被丟進 HTTP 回應，只回代碼。
+            _logger.exception("save_setting failed for key=%s", key)
+            return False, "SETTINGS_SAVE_FAILED"
 
     def save_settings_bulk(self, settings_dict: Dict[str, Any]) -> Tuple[bool, str]:
         """
@@ -157,8 +163,16 @@ class SettingsService:
                 return True, "No settings to save."
             self.settings_repo.set_many(target_uid, settings_dict)
             return True, "Settings saved successfully."
-        except Exception as e:
-            return False, f"Error saving settings: {e}"
+        except Exception:
+            # 2026-08-02: both callers (POST /api/v1/settings and the legacy
+            # dashboard route) put this string straight into an HTTP response,
+            # so returning f"...{e}" leaked raw DB/driver exception text to the
+            # client (CWE-209). Full detail goes to the log; the caller gets a
+            # stable code it can map to a user-facing message.
+            # 兩個呼叫端都把這字串原樣放進 HTTP 回應，夾帶例外內容等於洩漏內部
+            # 錯誤；詳情只進 log，回傳固定代碼。
+            _logger.exception("save_settings_bulk failed for user=%s", target_uid)
+            return False, "SETTINGS_SAVE_FAILED"
         finally:
             # Invalidate regardless of outcome: on a rollback the cache is
             # already consistent, and on an ambiguous failure dropping the

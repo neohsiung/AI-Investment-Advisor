@@ -16,6 +16,32 @@ from sqlalchemy import text
 
 from src.data.database import BaseRepository, get_db_engine
 
+# Two complete literal statements rather than one f-string with an
+# interpolated column fragment. The column set was always static — only the
+# JSONB cast wrapper varies by dialect — so building the SQL by interpolation
+# bought nothing and tripped bandit B608 (hardcoded_sql_expressions).
+# Selecting between two constants cannot construct a query from data.
+# psycopg2 needs an explicit CAST(:x AS jsonb) for JSONB columns — a raw
+# Python dict param doesn't auto-adapt (same convention as
+# event_queue_repository.py). sqlite has no jsonb cast; plain TEXT.
+# 欄位集合本來就是靜態的，只有 JSONB cast 隨方言變，用字串插值毫無好處還會
+# 觸發 bandit B608。改成在兩個常數字串之間選一個。
+_INSERT_RUN_SQLITE = """
+    INSERT INTO backtest_runs
+        (id, user_id, ticker, strategy_name, initial_cash, final_cash, metrics, trades, params)
+    VALUES
+        (:id, :user_id, :ticker, :strategy_name, :initial_cash, :final_cash,
+         :metrics, :trades, :params)
+"""
+
+_INSERT_RUN_POSTGRES = """
+    INSERT INTO backtest_runs
+        (id, user_id, ticker, strategy_name, initial_cash, final_cash, metrics, trades, params)
+    VALUES
+        (:id, :user_id, :ticker, :strategy_name, :initial_cash, :final_cash,
+         CAST(:metrics AS jsonb), CAST(:trades AS jsonb), CAST(:params AS jsonb))
+"""
+
 
 class IBacktestRepository(ABC):
     @abstractmethod
@@ -45,22 +71,13 @@ class AlchemyBacktestRepository(BaseRepository, IBacktestRepository):
                  params: Optional[Dict[str, Any]] = None) -> str:
         run_id = str(uuid.uuid4())
         is_sqlite = self.engine.dialect.name == "sqlite"
-        # psycopg2 needs an explicit CAST(:x AS jsonb) for JSONB columns — a
-        # raw Python dict param doesn't auto-adapt (matches the convention in
-        # event_queue_repository.py). sqlite has no jsonb cast; plain TEXT.
         metrics_val = json.dumps(metrics)
         trades_val = json.dumps(trades)
         params_val = json.dumps(params) if params else None
-        json_cols = "(:metrics, :trades, :params)" if is_sqlite else \
-            "(CAST(:metrics AS jsonb), CAST(:trades AS jsonb), CAST(:params AS jsonb))"
+        insert_run_sql = _INSERT_RUN_SQLITE if is_sqlite else _INSERT_RUN_POSTGRES
 
         with self.engine.begin() as conn:
-            conn.execute(text(f"""
-                INSERT INTO backtest_runs
-                    (id, user_id, ticker, strategy_name, initial_cash, final_cash, metrics, trades, params)
-                VALUES
-                    (:id, :user_id, :ticker, :strategy_name, :initial_cash, :final_cash, {json_cols[1:-1]})
-            """), {
+            conn.execute(text(insert_run_sql), {
                 "id": run_id, "user_id": user_id, "ticker": ticker, "strategy_name": strategy_name,
                 "initial_cash": initial_cash, "final_cash": final_cash,
                 "metrics": metrics_val, "trades": trades_val, "params": params_val,

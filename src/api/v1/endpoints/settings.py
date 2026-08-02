@@ -57,9 +57,14 @@ async def save_settings(
     try:
         ok, message = service.save_settings_bulk(payload.settings)
         if not ok:
+            # Log the service's message; never return it. save_settings_bulk
+            # now yields a stable code rather than exception text, and keeping
+            # both the raise and the success return on fixed strings severs the
+            # taint path twice so a future refactor cannot reopen it.
+            # 訊息只進 log 不外流；raise 與成功回傳都用固定字串，斷兩次污染路徑。
             logger.error(f"Error saving settings for {service.user_id}: {message}")
-            raise HTTPException(status_code=500, detail=message or "Failed to save settings")
-        return {"status": "success", "message": message or "設定已儲存。"}
+            raise HTTPException(status_code=500, detail="Failed to save settings")
+        return {"status": "success", "message": "設定已儲存。"}
     except HTTPException:
         raise
     except Exception as e:

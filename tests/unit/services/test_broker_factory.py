@@ -2,9 +2,34 @@
 Extended tests for Broker Factory.
 測試券商工廠。
 """
+from datetime import datetime, timezone
+
 import pytest
 from unittest.mock import MagicMock, patch
 from src.services.broker_factory import BrokerFactory
+
+_STAMP = datetime(2026, 1, 1, tzinfo=timezone.utc)
+
+
+def _wire_meta(repo: MagicMock) -> MagicMock:
+    """
+    Derive `get_many_with_meta` from whatever `get` this stub already does.
+
+    BrokerFactory reads the eToro settings through the batched
+    `get_many_with_meta` (it needs each row's updated_at to build the cache
+    change token without hashing credentials). Every test here already
+    configures `get`, so mirror it rather than restating each stub — a fixed
+    timestamp is enough, since these tests exercise construction rather than
+    invalidation (that lives in test_broker_cache_invalidation.py).
+
+    讓 get_many_with_meta 沿用各測試既有的 get 設定；這裡測的是建構而非失效，
+    所以時間戳固定即可（失效的部分在 test_broker_cache_invalidation.py）。
+    """
+    def _meta(uid, keys):
+        return {k: (repo.get(uid, k), _STAMP) for k in keys}
+
+    repo.get_many_with_meta.side_effect = _meta
+    return repo
 
 
 class TestBrokerFactory:
@@ -22,7 +47,7 @@ class TestBrokerFactory:
             
             mock_repo_instance = MagicMock()
             mock_repo_instance.get.return_value = None
-            MockRepo.return_value = mock_repo_instance
+            MockRepo.return_value = _wire_meta(mock_repo_instance)
             
             mock_broker = MagicMock()
             MockEtoro.return_value = mock_broker
@@ -40,7 +65,7 @@ class TestBrokerFactory:
             
             mock_repo_instance = MagicMock()
             mock_repo_instance.get.return_value = None
-            MockRepo.return_value = mock_repo_instance
+            MockRepo.return_value = _wire_meta(mock_repo_instance)
             
             broker = BrokerFactory.get_broker("test_user", broker_type="invalid")
             
@@ -54,7 +79,7 @@ class TestBrokerFactory:
             
             mock_repo_instance = MagicMock()
             mock_repo_instance.get.return_value = None
-            MockRepo.return_value = mock_repo_instance
+            MockRepo.return_value = _wire_meta(mock_repo_instance)
             
             mock_broker = MagicMock()
             MockEtoro.return_value = mock_broker
@@ -74,7 +99,7 @@ class TestBrokerFactory:
             
             mock_repo_instance = MagicMock()
             mock_repo_instance.get.return_value = None
-            MockRepo.return_value = mock_repo_instance
+            MockRepo.return_value = _wire_meta(mock_repo_instance)
             
             mock_broker = MagicMock()
             MockEtoro.return_value = mock_broker
@@ -96,7 +121,7 @@ class TestBrokerFactory:
             mock_repo_instance.get.side_effect = lambda user_id, key: {
                 "enable_etoro": "true"
             }.get(key)
-            MockRepo.return_value = mock_repo_instance
+            MockRepo.return_value = _wire_meta(mock_repo_instance)
             
             brokers = BrokerFactory.get_enabled_brokers("test_user")
 
@@ -111,7 +136,7 @@ class TestBrokerFactory:
             
             mock_repo_instance = MagicMock()
             mock_repo_instance.get.return_value = None
-            MockRepo.return_value = mock_repo_instance
+            MockRepo.return_value = _wire_meta(mock_repo_instance)
             
             brokers = BrokerFactory.get_enabled_brokers("test_user")
 
@@ -130,7 +155,7 @@ class TestBrokerFactory:
                 "etoro_user_key": "db_user_key",
                 "etoro_mode": "demo"
             }.get(key)
-            MockRepo.return_value = mock_repo_instance
+            MockRepo.return_value = _wire_meta(mock_repo_instance)
             
             broker = BrokerFactory.get_broker("test_user", broker_type="etoro")
 
@@ -162,7 +187,7 @@ class TestGlobalTradingModeOverride:
             mock_repo_instance.get.side_effect = lambda user_id, key: {
                 "etoro_mode": "real"
             }.get(key)
-            MockRepo.return_value = mock_repo_instance
+            MockRepo.return_value = _wire_meta(mock_repo_instance)
 
             BrokerFactory.get_broker("test_user", broker_type="etoro")
 
@@ -176,7 +201,7 @@ class TestGlobalTradingModeOverride:
             mock_repo_instance.get.side_effect = lambda user_id, key: {
                 "etoro_mode": "real"
             }.get(key)
-            MockRepo.return_value = mock_repo_instance
+            MockRepo.return_value = _wire_meta(mock_repo_instance)
 
             BrokerFactory.get_broker("test_user", broker_type="etoro")
 
@@ -190,7 +215,7 @@ class TestGlobalTradingModeOverride:
             mock_repo_instance.get.side_effect = lambda user_id, key: {
                 "etoro_mode": "demo"
             }.get(key)
-            MockRepo.return_value = mock_repo_instance
+            MockRepo.return_value = _wire_meta(mock_repo_instance)
 
             BrokerFactory.get_broker("test_user", broker_type="etoro")
 
@@ -205,7 +230,7 @@ class TestGlobalTradingModeOverride:
             mock_repo_instance.get.side_effect = lambda user_id, key: {
                 "etoro_mode": "real"
             }.get(key)
-            MockRepo.return_value = mock_repo_instance
+            MockRepo.return_value = _wire_meta(mock_repo_instance)
 
             BrokerFactory.get_broker("test_user", broker_type="etoro")
 

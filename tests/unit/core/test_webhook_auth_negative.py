@@ -90,17 +90,39 @@ class TestWebhookSecretDiagnostic:
         repo = _Stub.__new__(_Stub)
         return repo
 
-    def test_mismatch_logs_fingerprint_not_secret(self, caplog):
-        repo = self._repo([("user-1", "ENC:stored")], "the-real-stored-secret")
+    def test_mismatch_logs_lengths_not_secret_or_digest(self, caplog):
+        """
+        The diagnostic must reveal neither the secret nor a digest of it.
+
+        2026-08-02: this used to log a truncated SHA-256 as `fp=`. It carried
+        no diagnostic value the length and `still_enc` flag don't already give,
+        and running a secret through a fast hash is the pattern static analysis
+        flags (py/weak-sensitive-data-hashing) — so it was removed rather than
+        suppressed. Asserting the digest's absence keeps it removed.
+        原本會記錄截斷 SHA-256；那對診斷沒有貢獻，且把秘密送進快速雜湊會被靜態
+        分析標記，故直接移除而非抑制。這裡斷言雜湊確實不再出現。
+        """
+        import hashlib
+
+        presented = "the-presented-secret"
+        stored = "the-real-stored-secret"
+        repo = self._repo([("user-1", "ENC:stored")], stored)
 
         with caplog.at_level("WARNING"):
-            result = repo.find_user_by_webhook_secret("the-presented-secret")
+            result = repo.find_user_by_webhook_secret(presented)
 
         assert result is None
         logged = caplog.text
-        assert "the-presented-secret" not in logged
-        assert "the-real-stored-secret" not in logged
-        assert "fp=" in logged and "candidates=" in logged
+        assert presented not in logged
+        assert stored not in logged
+        for value in (presented, stored):
+            for algo in ("md5", "sha1", "sha256", "sha512"):
+                assert hashlib.new(algo, value.encode()).hexdigest()[:8] not in logged
+        # The signal an operator actually needs is still there.
+        assert "candidates=" in logged
+        assert f"presented(len={len(presented)})" in logged
+        assert f"len={len(stored)}" in logged
+        assert "still_enc=" in logged
 
     def test_diagnostic_flags_undecrypted_ciphertext(self, caplog):
         """still_enc=True is the APP_SECRET_KEY-rotation signature."""

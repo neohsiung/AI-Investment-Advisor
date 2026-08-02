@@ -258,9 +258,12 @@ async def save_settings(
     try:
         ok, message = service.save_settings_bulk(payload)
         if not ok:
+            # See the identical treatment in src/api/v1/endpoints/settings.py:
+            # the service message goes to the log only, never into the response.
+            # 同 src/api/v1/endpoints/settings.py：服務訊息只進 log，不進回應。
             logger.error(f"Error saving settings: {message}")
-            raise HTTPException(status_code=500, detail=message or "Failed to save settings")
-        return {"status": "success", "message": message or "設定已儲存。"}
+            raise HTTPException(status_code=500, detail="Failed to save settings")
+        return {"status": "success", "message": "設定已儲存。"}
     except HTTPException:
         raise
     except Exception as e:

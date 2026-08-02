@@ -1,8 +1,8 @@
-import hashlib as _hashlib
 import json
 import os
 import secrets as _secrets
-from typing import List, Dict, Tuple, Any, Optional, Callable
+from datetime import datetime
+from typing import List, Dict, Tuple, Any, Optional, Callable, Sequence
 from abc import ABC, abstractmethod
 from cryptography.fernet import Fernet
 from sqlalchemy import text
@@ -191,6 +191,44 @@ class AlchemySettingsRepository(BaseRepository, ISettingsRepository):
             _logger.warning(f'Exception in settings_repository.py: {e}', exc_info=True)
             _logger.exception(f"get() failed for user={resolved_uid!r} key={key!r}")
             return default
+        finally:
+            self.close_session()
+
+    def get_many_with_meta(
+        self, user_id: str, keys: Sequence[str]
+    ) -> Dict[str, Tuple[Any, Optional[datetime]]]:
+        """
+        Fetch several settings in one query, each paired with its row's
+        `updated_at`. Absent keys come back as `(None, None)`.
+
+        Exists so callers can build a change token out of row timestamps
+        instead of out of the values themselves — see BrokerFactory, which
+        needs to notice a credential rotation without ever hashing the
+        credential. Also strictly cheaper than the N separate `get()` calls it
+        replaces there.
+
+        一次查詢取回多個設定值與其 updated_at；不存在的 key 回 (None, None)。
+        讓呼叫端能用「列的時間戳」而非「值本身」組出變更權杖（見 BrokerFactory：
+        要偵測憑證輪換，但絕不雜湊憑證），順帶把 N 次 get() 併成一次查詢。
+        """
+        resolved_uid = self._resolve_user(user_id)
+        result: Dict[str, Tuple[Any, Optional[datetime]]] = {k: (None, None) for k in keys}
+        if not keys:
+            return result
+        try:
+            rows = (
+                self.session.query(Setting)
+                .filter(Setting.user_id == resolved_uid, Setting.key.in_(list(keys)))
+                .all()
+            )
+            for row in rows:
+                value = self._decrypt(row.value) if self._should_encrypt(row.key) else row.value
+                result[row.key] = (value, row.updated_at)
+            return result
+        except Exception as e:
+            _logger.warning(f'Exception in settings_repository.py: {e}', exc_info=True)
+            _logger.exception(f"get_many_with_meta() failed for user={resolved_uid!r}")
+            return result
         finally:
             self.close_session()
 
@@ -401,21 +439,33 @@ class AlchemySettingsRepository(BaseRepository, ISettingsRepository):
                     return row[0]
                 candidates.append(str(stored_val))
 
-            # No match — emit a NON-SECRET diagnostic. Only truncated SHA-256
-            # fingerprints and lengths are logged, never the values themselves.
-            # `still_enc` distinguishes a genuine key mismatch from an
-            # APP_SECRET_KEY rotation, where _decrypt silently returns the raw
-            # ciphertext and every comparison then fails.
-            # 只記錄截斷雜湊與長度，絕不記錄金鑰本身；still_enc 用來區分「金鑰不符」與
-            # 「APP_SECRET_KEY 輪換導致解密失敗回傳密文」。
-            def _fp(v: str) -> str:
-                return _hashlib.sha256(v.encode("utf-8", "replace")).hexdigest()[:8]
-
+            # No match — emit a NON-SECRET diagnostic: lengths and an
+            # "is it still ciphertext?" flag. No value, and no digest of a
+            # value, ever reaches the log.
+            #
+            # 2026-08-02: dropped a truncated SHA-256 fingerprint that used to
+            # be logged here. It contributed nothing the flag below doesn't
+            # already give, and running a secret through a fast hash is the
+            # pattern static analysis flags (py/weak-sensitive-data-hashing) —
+            # correctly, since "we only truncate it" is not a security property
+            # anyone should have to audit.
+            #
+            # `still_enc` is what actually separates the two failure modes:
+            #   - genuine key mismatch: every candidate decrypts, so all show
+            #     still_enc=False and the lengths tell you whether the operator
+            #     pasted a truncated or entirely different value
+            #   - APP_SECRET_KEY rotated: _decrypt swallows the Fernet failure
+            #     and hands back the raw ciphertext, so still_enc=True and the
+            #     length jumps to the ciphertext length
+            #
+            # 只記錄長度與 still_enc 旗標，既不記錄值也不記錄值的雜湊。
+            # still_enc 才是區分「金鑰不符」與「APP_SECRET_KEY 輪換」的關鍵，
+            # 原本那個截斷雜湊對這個判斷沒有貢獻。
             _logger.warning(
-                "Webhook secret mismatch: presented(len=%d, fp=%s) | candidates=%d | %s",
-                len(str(secret)), _fp(str(secret)), len(candidates),
+                "Webhook secret mismatch: presented(len=%d) | candidates=%d | %s",
+                len(str(secret)), len(candidates),
                 ", ".join(
-                    f"[fp={_fp(c)} len={len(c)} still_enc={c.startswith(('ENC:', 'FERN:', 'B64H:'))}]"
+                    f"[len={len(c)} still_enc={c.startswith(('ENC:', 'FERN:', 'B64H:'))}]"
                     for c in candidates
                 ) or "(no webhook_api_key rows)",
             )
