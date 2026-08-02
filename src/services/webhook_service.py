@@ -6,6 +6,7 @@ from typing import List, Dict, Tuple, Any, Optional, Callable
 from fastapi import APIRouter, Request, HTTPException
 from src.utils.logger import setup_logger
 from src.utils.async_utils import to_thread
+from src.utils.security import redact_secrets
 from src.config.rss_config import get_rss_sources
 from src.services.settings_service import SettingsService
 
@@ -166,7 +167,8 @@ class WebhookService:
         import redis
         try:
             self._redis = redis.from_url(os.getenv("REDIS_URL", "redis://localhost:6379/0"), decode_responses=True, socket_connect_timeout=3)
-        except Exception:
+        except Exception as e:
+            logger.warning(f'Exception in webhook_service.py: {e}', exc_info=True)
             self._redis = None
         
     async def _resolve_user(self, request: Request) -> str:
@@ -174,14 +176,24 @@ class WebhookService:
         Resolve user_id from API Key in request headers.
         從請求標頭中的 API Key 解析 user_id。
         """
+        # Route context: the catch-all POST /webhook/{source} means any stray
+        # request lands here, so log which path/source failed — otherwise n8n
+        # cannot be told apart from a scanner.
+        # 補上來源路徑，否則無法分辨是 n8n 還是掃描器。
+        route = getattr(request, "url", None)
+        route = route.path if route is not None else "?"
+        client = getattr(getattr(request, "client", None), "host", "?")
+
         api_key = request.headers.get("X-API-Key")
         if not api_key:
-            logger.warning("Webhook attempt missing X-API-Key")
+            logger.warning(f"Webhook attempt missing X-API-Key (route={route}, client={client})")
             raise HTTPException(status_code=401, detail="Missing X-API-Key")
-            
+
         user_id = self.settings_service.find_user_by_webhook_secret(api_key)
         if not user_id:
-            logger.warning("Unauthorized API Key attempt")
+            # settings_repository.find_user_by_webhook_secret already logged a
+            # non-secret fingerprint diagnostic explaining WHY it did not match.
+            logger.warning(f"Unauthorized API Key attempt (route={route}, client={client})")
             raise HTTPException(status_code=403, detail="Invalid API Key")
             
         return user_id
@@ -306,12 +318,15 @@ class WebhookService:
         # Look up secret from DB settings (admin user), fallback to env var
         expected_secret = ""
         try:
-            admin_user_id = os.getenv("DEFAULT_FINNHUB_USER_ID", "00000000-0000-4000-a000-000000000001")
+            admin_user_id = os.getenv("DEFAULT_FINNHUB_USER_ID")
+            if not admin_user_id:
+                from src.repositories.user_repository import AlchemyUserRepository
+                admin_user_id = AlchemyUserRepository().get_first_user_id()
             from src.services.settings_service import SettingsService
             svc = SettingsService(user_id=admin_user_id)
             expected_secret = svc.get_setting("source_finnhub_webhook_secret", "")
-        except Exception:
-            pass
+        except Exception as e:
+            logger.warning(f'Exception in webhook_service.py: {e}', exc_info=True)
         
         if not expected_secret:
             expected_secret = os.getenv("FINNHUB_WEBHOOK_SECRET", "")
@@ -329,7 +344,10 @@ class WebhookService:
             normalized = FinnhubParser.parse(payload)
             
             # Resolve user (Finnhub doesn't provide user context in payload)
-            user_id = os.getenv("DEFAULT_FINNHUB_USER_ID", "00000000-0000-4000-a000-000000000001")
+            user_id = os.getenv("DEFAULT_FINNHUB_USER_ID")
+            if not user_id:
+                from src.repositories.user_repository import AlchemyUserRepository
+                user_id = AlchemyUserRepository().get_first_user_id()
             
             # Deduplication Check
             url = normalized.get("url")
@@ -358,6 +376,100 @@ class WebhookService:
             # Still return 200 to acknowledge
             return {"status": "acknowledged", "detail": "processing_error"}
 
+    async def handle_stripe_webhook(self, request: Request) -> Dict[str, Any]:
+        """
+        Stripe Webhook Handler (2026-07-12) — implements the product spec's
+        "checkout.session.completed 觸發 account_id 初始化流程" (Webhook-觸發
+        源整合指南 §14): on successful checkout, create/resolve the user
+        account, seed default settings (webhook_api_key, sentinel thresholds,
+        risk keywords), and send a welcome notification.
+
+        Verifies the `Stripe-Signature` header via the official SDK
+        (stripe.Webhook.construct_event) — signature verification failures
+        return 400 (Stripe's own recommended practice), distinct from the
+        always-200 pattern used by best-effort sources like Finnhub.
+
+        `stripe_webhook_secret` is read from Settings (admin user) first,
+        falling back to the STRIPE_WEBHOOK_SECRET env var — same pattern as
+        Finnhub's source_finnhub_webhook_secret. Neither is hardcoded here;
+        until configured, this endpoint safely rejects all events (503).
+        """
+        try:
+            import stripe
+        except ImportError:
+            logger.error("Stripe webhook received but 'stripe' package is not installed")
+            raise HTTPException(status_code=503, detail="Stripe integration not available")
+
+        admin_user_id = os.getenv("DEFAULT_STRIPE_ADMIN_USER_ID")
+        if not admin_user_id:
+            from src.repositories.user_repository import AlchemyUserRepository
+            admin_user_id = AlchemyUserRepository().get_first_user_id()
+        endpoint_secret = ""
+        try:
+            svc = SettingsService(user_id=admin_user_id)
+            endpoint_secret = svc.get_setting("stripe_webhook_secret", "")
+        except Exception as e:
+            logger.warning(f'Exception in webhook_service.py: {e}', exc_info=True)
+        if not endpoint_secret:
+            endpoint_secret = os.getenv("STRIPE_WEBHOOK_SECRET", "")
+        if not endpoint_secret:
+            logger.warning("Stripe webhook rejected: stripe_webhook_secret not configured")
+            raise HTTPException(status_code=503, detail="Stripe webhook not configured")
+
+        raw_payload = await request.body()
+        sig_header = request.headers.get("Stripe-Signature", "")
+        try:
+            event = stripe.Webhook.construct_event(raw_payload, sig_header, endpoint_secret)
+        except (ValueError, stripe.error.SignatureVerificationError) as e:
+            logger.warning(f"Stripe webhook signature verification failed: {e}")
+            raise HTTPException(status_code=400, detail="Invalid signature")
+
+        if event.get("type") != "checkout.session.completed":
+            # Acknowledge other event types without processing — we only act on completed checkouts.
+            return {"status": "ignored", "event_type": event.get("type")}
+
+        try:
+            session = event["data"]["object"]
+            email = (
+                session.get("customer_details", {}).get("email")
+                or session.get("customer_email")
+            )
+            if not email:
+                logger.warning("Stripe checkout.session.completed missing customer email")
+                return {"status": "acknowledged", "detail": "no_email"}
+
+            from src.repositories.user_repository import AlchemyUserRepository
+            user_repo = AlchemyUserRepository()
+
+            existing = user_repo.get_by_identity("email", email)
+            if existing:
+                user_id = existing["id"]
+                logger.info(f"Stripe checkout: existing user resolved for {redact_secrets(email)}")
+            else:
+                user_id = user_repo.create_user(email=email, name=session.get("customer_details", {}).get("name"))
+                logger.info(f"Stripe checkout: created new user {user_id[:8]}... for {redact_secrets(email)}")
+
+            settings_svc = SettingsService(user_id=user_id)
+            settings_svc.initialize_user_settings(user_id)
+
+            try:
+                from src.services.notification_service import NotificationService
+                notif_svc = NotificationService.create_with_settings(settings_service=settings_svc, user_id=user_id)
+                asyncio.create_task(notif_svc.send_report(
+                    subject="🎉 歡迎加入 AI Investment Advisor",
+                    content="您的訂閱已啟用，帳戶已完成初始化。前往 Settings 設定您的投資偏好與券商連結即可開始使用。",
+                    user_id=user_id,
+                ))
+            except Exception as notif_err:
+                logger.warning(f"Stripe welcome notification failed (non-blocking): {notif_err}")
+
+            return {"status": "accepted", "user_id": user_id}
+        except Exception as e:
+            logger.error(f"Stripe webhook processing error: {e}")
+            # Acknowledge to prevent Stripe retry storms once signature is verified —
+            # a processing bug shouldn't cause repeated retries of the same event.
+            return {"status": "acknowledged", "detail": "processing_error"}
+
 # Global instance for routing
 webhook_service_instance = WebhookService()
 
@@ -365,19 +477,25 @@ webhook_service_instance = WebhookService()
 async def finnhub_webhook(request: Request):
     return await webhook_service_instance.handle_finnhub_webhook(request)
 
+@webhook_router.post("/stripe")
+async def stripe_webhook(request: Request):
+    return await webhook_service_instance.handle_stripe_webhook(request)
+
 @webhook_router.get("/rss-sources", tags=["RSS"])
-async def get_rss_sources_list():
+async def get_rss_sources_list(request: Request):
     """
     Expose RSS configuration for n8n to fetch dynamically.
     """
-    logger.info("Serving /rss-sources request")
+    user_id = await webhook_service_instance._resolve_user(request)
+    logger.info(f"Serving /rss-sources request for user {user_id}")
     try:
-        sources = get_rss_sources()
-        logger.info(f"Returning {len(sources)} RSS sources")
+        sources = get_rss_sources(user_id=user_id)
+        logger.info(f"Returning {len(sources)} RSS sources for user {user_id}")
         return sources
     except Exception as e:
         logger.error(f"Error getting RSS sources: {e}")
         raise HTTPException(status_code=500, detail="Failed to retrieve RSS sources")
+
 
 @webhook_router.get("/heartbeat")
 @webhook_router.post("/heartbeat")
@@ -455,7 +573,8 @@ async def telegram_bot_webhook(request: Request):
     """
     try:
         payload = await request.json()
-    except Exception:
+    except Exception as e:
+        logger.warning(f'Exception in webhook_service.py: {e}', exc_info=True)
         return {"ok": True}  # Telegram expects 200 always
 
     # Identify sender chat_id from either message or callback_query
@@ -541,7 +660,11 @@ async def telegram_bot_webhook(request: Request):
             "/report   — 立即生成每日投資報告\n"
             "/status   — 查看帳戶現金與持倉摘要\n"
             "/sentinel — 手動觸發 Sentinel 市場掃描\n"
-            "/portfolio — 詳細持倉清單與比例"
+            "/portfolio — 詳細持倉清單與比例\n"
+            "/backtest <TICKER> — 執行快速策略回測\n"
+            "/health   — 系統健康與保護機制狀態\n"
+            "/pause    — 暫停 AI 自動交易\n"
+            "/resume   — 恢復 AI 自動交易"
         )
         asyncio.create_task(_reply(help_text))
 
@@ -604,6 +727,89 @@ async def telegram_bot_webhook(request: Request):
             except Exception as e:
                 await _reply(f"❌ 報告生成失敗: {e}")
         asyncio.create_task(_report())
+
+    elif cmd == "/backtest":
+        # P5.4 (2026-07-11): quick MA-crossover backtest for a ticker, reported inline.
+        async def _backtest():
+            parts = text.split()
+            ticker = parts[1].upper() if len(parts) > 1 else None
+            if not ticker:
+                await _reply("用法: /backtest <TICKER>，例如 /backtest AAPL")
+                return
+            await _reply(f"📈 正在對 {ticker} 執行回測，請稍候...")
+            try:
+                from src.services.market_data_service import MarketDataService
+                from src.services.portfolio_backtest_engine import PortfolioBacktestEngine, simple_ma_crossover_signal
+                from src.repositories.backtest_repository import AlchemyBacktestRepository
+
+                market_service = MarketDataService(user_id=user_id)
+                ohlcv = await to_thread(market_service.get_ohlcv, ticker, 180)
+                if not ohlcv or not ohlcv.get("close") or len(ohlcv["close"]) < 35:
+                    await _reply(f"❌ {ticker} 歷史數據不足，無法回測")
+                    return
+                engine = PortfolioBacktestEngine()
+                result = engine.run(ticker, ohlcv, simple_ma_crossover_signal(10, 30))
+                m = result.metrics
+                AlchemyBacktestRepository().save_run(
+                    user_id=user_id, ticker=ticker, strategy_name="ma_crossover_10_30",
+                    initial_cash=100_000.0, final_cash=result.final_cash, metrics=m,
+                    trades=result.trades, equity_curve=result.equity_curve, dates=result.dates,
+                    params={"fast_ma": 10, "slow_ma": 30},
+                )
+
+                def fmt(v, suffix=""):
+                    return f"{v:.2f}{suffix}" if v is not None else "—"
+
+                lines = [
+                    f"📈 <b>{ticker} 回測結果</b> (MA 10/30, 180日)",
+                    f"最終資金: ${result.final_cash:,.0f} (初始 $100,000)",
+                    f"Sharpe: {fmt(m.get('sharpe'))} · Sortino: {fmt(m.get('sortino'))}",
+                    f"CAGR: {fmt(m.get('cagr_pct'), '%')} · 最大回撤: {fmt(m.get('max_drawdown_pct'), '%')}",
+                    f"勝率: {fmt(m.get('win_rate_pct'), '%')} · 交易次數: {m.get('total_trades', 0)}",
+                ]
+                await _reply("\n".join(lines))
+            except Exception as e:
+                await _reply(f"❌ 回測失敗: {e}")
+        asyncio.create_task(_backtest())
+
+    elif cmd == "/health":
+        # P5.4 (2026-07-11): trading status + active protection halts at a glance.
+        async def _health():
+            try:
+                from src.services.settings_service import SettingsService
+                ss = SettingsService(user_id=user_id)
+                trading_enabled = ss.get_setting("ai_trading_enabled", "true")
+                from src.services.trading_protections_service import TradingProtectionsService
+                protection_note = TradingProtectionsService(user_id=user_id).check("HEALTHCHECK", "BUY")
+                lines = [
+                    "🩺 <b>系統健康檢查</b>",
+                    f"AI 交易: {'✅ 啟用' if str(trading_enabled).lower() != 'false' else '⏸️ 已暫停'}",
+                    f"保護機制: {'⚠️ ' + protection_note if protection_note else '✅ 正常，無停機觸發'}",
+                ]
+                await _reply("\n".join(lines))
+            except Exception as e:
+                await _reply(f"❌ 健康檢查失敗: {e}")
+        asyncio.create_task(_health())
+
+    elif cmd == "/pause":
+        async def _pause():
+            try:
+                from src.services.settings_service import SettingsService
+                SettingsService(user_id=user_id).save_setting("ai_trading_enabled", "false")
+                await _reply("⏸️ AI 自動交易已暫停。使用 /resume 恢復。")
+            except Exception as e:
+                await _reply(f"❌ 暫停失敗: {e}")
+        asyncio.create_task(_pause())
+
+    elif cmd == "/resume":
+        async def _resume():
+            try:
+                from src.services.settings_service import SettingsService
+                SettingsService(user_id=user_id).save_setting("ai_trading_enabled", "true")
+                await _reply("▶️ AI 自動交易已恢復。")
+            except Exception as e:
+                await _reply(f"❌ 恢復失敗: {e}")
+        asyncio.create_task(_resume())
 
     else:
         if text and not text.startswith("/"):
