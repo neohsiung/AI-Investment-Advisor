@@ -90,15 +90,21 @@ def pytest_configure(config):
         engine = get_db_engine()
         init_db(engine=engine, force=True)
 
-        # 2026-08-02: decision_outcomes is created only via Alembic migration
-        # 007 (raw SQL) and has no ORM model, so init_db()'s create_all() never
-        # makes it here. TradingProtectionsService now fails CLOSED on a query
-        # error (see trading_protections_service.py), so the missing table
-        # started hard-blocking every BUY in tests that exercise the real
-        # protection path instead of silently no-op'ing.
-        # decision_outcomes 只由 alembic migration 007 建（raw SQL，無 ORM
-        # model），create_all() 建不到它。TradingProtectionsService 現在對
-        # 查詢失敗 fail-closed，這個缺表洞會直接擋掉 BUY 而非靜默放行。
+        # decision_outcomes still has to be created by hand here. Note that
+        # src/data/database.py's init_db() is a hand-written DDL script and
+        # does NOT call Base.metadata.create_all() — so the declaration-only
+        # ORM model added in 2026-08 (for `alembic check`) does not reach this
+        # test database. scripts/init_db.py, the deployment path, DOES use
+        # create_all() and is covered by that model.
+        #
+        # It matters because TradingProtectionsService fails CLOSED on a query
+        # error, so a missing table hard-blocks every BUY in tests that
+        # exercise the real protection path rather than silently no-op'ing.
+        #
+        # src/data/database.py 的 init_db() 是手寫 DDL、不呼叫 create_all()，
+        # 所以新加的 ORM model 到不了測試資料庫（部署用的 scripts/init_db.py
+        # 才走 create_all()）。TradingProtectionsService 查詢失敗是 fail-closed，
+        # 缺表會直接擋掉 BUY，因此這段必須留著。
         from sqlalchemy import text
         with engine.begin() as conn:
             conn.execute(text("""
