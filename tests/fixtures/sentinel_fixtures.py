@@ -111,9 +111,18 @@ def _create_sentinel(mock_services):
         _buffer_store.clear()
         return due
 
+    async def _mock_try_acquire(key, ttl_seconds):
+        # 2026-08-02: process_tick() now takes a per-minute Redis lock to stop
+        # duplicate ticks. Tests always win the lock, so each call runs exactly
+        # once; the dedup behaviour itself is covered by
+        # tests/unit/services/test_sentinel_tick_lock.py.
+        # 測試一律取得鎖；去重行為由專門的測試檔驗證。
+        return True
+
     mock_redis_buffer.add = _mock_add
     mock_redis_buffer.all_pending = _mock_all_pending
     mock_redis_buffer.flush_due = _mock_flush_due
+    mock_redis_buffer.try_acquire = _mock_try_acquire
 
     res._redis_buffer = mock_redis_buffer
 

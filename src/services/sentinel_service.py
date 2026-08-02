@@ -7,7 +7,7 @@ import json
 import typing
 from typing import List, Dict, Tuple, Any, Optional, Callable, Union, Awaitable
 from src.utils.async_utils import to_thread
-from datetime import date
+from datetime import date, datetime
 import pandas as pd
 
 from src.services.market_data_service import MarketDataService
@@ -66,6 +66,10 @@ class SentinelService:
         self.council_service = council_service or CouncilService(user_id=self.user_id)
         self.keyword_service = keyword_service or RiskKeywordService()
         self.snapshot_repo = snapshot_repo or AlchemySnapshotRepository(engine=self.repo.engine)
+        # 2026-07-12: in-memory last-price cache for polygon_websocket tick
+        # debouncing in process_event() — process-local, resets on restart
+        # (acceptable: worst case is one extra escalation after a restart).
+        self._polygon_last_price: Dict[str, float] = {}
 
         # L1 pre-filter (2026-07-11): content-hash seen-set to drop duplicate/trivial
         # events before they reach the fast-tier classifier. {hash: epoch_seconds}.
@@ -223,11 +227,47 @@ class SentinelService:
     # Main Entry Point
     # ──────────────────────────────────────────
         
-    async def process_tick(self) -> None:
+    # Tick lock TTL. Longer than the 60s tick interval so a slow tick cannot
+    # let the next scheduled one in early, short enough to self-heal.
+    # 大於 60 秒的 tick 間隔，避免慢 tick 讓下一次提早進來；同時能自行復原。
+    _TICK_LOCK_TTL_SECONDS = 120
+
+    async def process_tick(self, force: bool = False) -> None:
         """
         Main Event Loop: Perform multi-dimensional scanning and threshold-based monitoring.
         主事件迴圈：執行多維度掃描與基於門檻值的監控。
+
+        Guarded by a per-user, per-minute Redis lock so the tick cannot run
+        twice in the same minute regardless of how many schedulers call it.
+        The guard lives here rather than in the Celery task because there are
+        several entry points (two Celery tasks historically, the legacy
+        `schedule`-library job, and direct calls) and a future fifth must not
+        be able to bypass it.
+
+        force=True skips the lock — used only by the user-initiated
+        "rebalance now" path, which would otherwise be swallowed by the lock
+        the scheduled tick just took.
+        以「使用者 + 分鐘」為單位的 Redis 鎖防止同一分鐘重複執行；鎖放在這裡而非
+        task 層，是為了同時覆蓋所有入口。force=True 僅供使用者主動觸發的路徑使用。
         """
+        # Capture once: the three minute-gated branches below and the lock
+        # bucket must agree, otherwise a tick straddling a minute boundary can
+        # take the expensive branch and then lock the *next* minute.
+        # 只取一次時間：三個 minute gate 與鎖的分鐘桶必須一致，否則跨分鐘邊界會錯位。
+        now = datetime.now()
+
+        if not force and self.user_id:
+            lock_key = f"lock:sentinel:tick:{self.user_id}:{now:%Y%m%d%H%M}"
+            acquired = await self._redis_buffer.try_acquire(
+                lock_key, self._TICK_LOCK_TTL_SECONDS
+            )
+            if not acquired:
+                logger.info(
+                    "Sentinel tick already ran this minute for %s — skipping duplicate.",
+                    redact_pii(self.user_id),
+                )
+                return
+
         self.thresholds = self.repo.get_all_thresholds()
         
         # [Optimization] Check and Flush Buffer if deadline reached
@@ -252,13 +292,13 @@ class SentinelService:
                 triggers += await self._check_position_moves_v2(ticker_list, current_prices)
             
             # Dimension 3: Breaking News (每 10 分鐘, 節省 Tavily credits)
-            from datetime import datetime
-            if datetime.now().minute % 10 == 0:
+            # Uses the `now` captured at entry — see the note in the docstring.
+            if now.minute % 10 == 0:
                 if ticker_list:
                     triggers += await self._check_breaking_news_v2(ticker_list)
-            
+
             # Dimension 4: Macro Shifts (每小時, FRED 數據更新頻率低)
-            if datetime.now().minute == 0:
+            if now.minute == 0:
                 triggers += await self._check_macro_shifts()
             
             # Dimension 5: Active Polling
@@ -266,7 +306,7 @@ class SentinelService:
 
             # Dimension 6: Global Macro / Geopolitical Events (每 30 分鐘)
             # 持倉數量無關的全球重大事件掃描
-            if datetime.now().minute % 30 == 0:
+            if now.minute % 30 == 0:
                 triggers += await self._check_global_macro_events()
             
             # Dimension 7: Risk Consistency & Dynamic Cash (每次 tick)
@@ -332,9 +372,58 @@ class SentinelService:
             if sc_info.get("has_premium"):
                 display_text += f"\n💡 [Supply Chain Impact]: {sc_info.get('narrative')}"
                 signal_id = f"earnings_sc_impact_{ticker}"
-        
+
+        # 2026-07-12: "news" source dedicated branch — score external news
+        # webhook payloads through the same weighted risk-keyword system as
+        # Dimension 3 (_check_breaking_news_v2), instead of unconditionally
+        # escalating every inbound news webhook. Consistent threshold with
+        # the internal Tavily-sourced news dimension.
+        elif source == "news":
+            text_to_score = f"{msg} {ticker or ''}".strip()
+            total_weight, matched = self.keyword_service.score_text(text_to_score)
+            risk_threshold = self.thresholds.get("news_risk_score", 0.6)
+            if total_weight < risk_threshold:
+                logger.debug(
+                    "Sentinel: webhook news event scored %.2f (< %.2f threshold), suppressing: %s",
+                    total_weight, risk_threshold, redact_secrets(msg)[:80],
+                )
+                return
+            display_text += f"\n🔑 [Risk Keywords: {', '.join(matched[:5])}] (score={total_weight:.2f})"
+            signal_id = f"news_{signal_id}"
+
+        # 2026-07-12: "polygon_websocket" source dedicated branch — the
+        # comment here previously said "For now, bridge to process_event"
+        # with no significance filter, meaning EVERY trade/aggregate tick
+        # would escalate and trigger an LLM classification call. Apply a
+        # simple in-memory last-price debounce so only meaningful moves
+        # (>= polygon_move_pct threshold, default 1%) escalate.
+        elif source == "polygon_websocket" and ticker:
+            price = data.get("price")
+            if price is not None:
+                # VIX uses an absolute-level trigger (consistent with the
+                # polling-based _check_vix_anomaly dimension's vix_high
+                # threshold), not the move-based debounce below — a single
+                # tick above the level must escalate immediately, even if
+                # it's the first tick seen this session.
+                if ticker in ("VIX", "^VIX"):
+                    vix_high = self.thresholds.get("vix_high", 25.0)
+                    if price <= vix_high:
+                        return
+                    display_text += f"\n🔴 [VIX Level: {price:.2f} > {vix_high:.2f}]"
+                else:
+                    last_price = self._polygon_last_price.get(ticker)
+                    self._polygon_last_price[ticker] = price
+                    if last_price:
+                        move_pct = abs(price - last_price) / last_price * 100
+                        move_threshold = self.thresholds.get("polygon_move_pct", 1.0)
+                        if move_pct < move_threshold:
+                            return  # not a significant move, suppress to avoid tick-storm escalation
+                        display_text += f"\n📶 [Move: {move_pct:.2f}% vs last tick]"
+                    else:
+                        return  # first tick for this ticker this session — nothing to compare, just cache
+
         triggers = [{"text": display_text, "id": signal_id}]
-        
+
         # If it's a technical signal or critical spike, escalate immediately
         await self._escalate(triggers, source=source)
 
@@ -1293,7 +1382,6 @@ class SentinelService:
         # 🚨 Auto-hedging / Emergency Liquidation (Milestone 5.1)
         if is_extreme and any(kw in decision.lower() for kw in ["liquidate", "hedge", "panic", "emergency"]):
             # Run in background to avoid blocking notification flow
-            import asyncio
             asyncio.create_task(self._trigger_emergency_protocol(target_user, decision))
 
         # 📊 Actionable Trade Signals → evaluate_and_execute_trade (Milestone 13.2)
@@ -1301,7 +1389,6 @@ class SentinelService:
         elif is_actionable:
             trade_signals = await self._extract_trade_signals_from_decision(decision, filtered_triggers)
             if trade_signals:
-                import asyncio
                 asyncio.create_task(self._execute_trade_signals(target_user, trade_signals, source))
 
         # v9.1: Mandatory Post-Alert Action Fallback
@@ -1339,11 +1426,10 @@ class SentinelService:
         
         # Always store alert insight to cognitive_memories (independent of action path)
         # This ensures every alert outcome is captured for future reflection
-        import asyncio as _asyncio
         from src.agents.skills.skill_loader import SkillLoader
         insight_loader = SkillLoader(user_id=target_user)
 
-        _asyncio.create_task(
+        asyncio.create_task(
             insight_loader.run_skill(
                 "distill_insight",
                 user_id=target_user,
@@ -1669,8 +1755,8 @@ class SentinelService:
                             "id": "fng_extreme",
                             "value": val
                         }
-            except Exception:
-                pass
+            except Exception as e:
+                logger.warning(f'Exception in sentinel_service.py: {e}', exc_info=True)
         
         # Tiingo Integration (v5.0) - Event-Driven News Scanning
         elif sid == "tiingo":
@@ -1753,7 +1839,6 @@ class SentinelService:
                 last_sync = self.settings_service.get_setting("readwise_last_sync")
                 
                 # Fetch highlights in background thread
-                import asyncio
                 loop = asyncio.get_event_loop()
                 analyzed = await loop.run_in_executor(
                     None, 
@@ -1793,7 +1878,6 @@ class SentinelService:
             }
             # Run in a separate thread so we don't block the main event loop
             # 用於異步執行耗時的智能體分析，確保不會阻塞主事件迴圈
-            import asyncio
             try:
                 loop = asyncio.get_event_loop()
             except RuntimeError:
@@ -1960,10 +2044,28 @@ class SentinelService:
         # Run skill inline (avoids subprocess overhead and stdout-only result)
         try:
             from src.agents.skills.cash_deployment.impl import cash_deployment
+            from src.api.v1.exceptions import BrokerNotConfiguredError
             result_json = await cash_deployment(self.user_id)
             result = json.loads(result_json)
+        except BrokerNotConfiguredError as e:
+            logger.info("Sentinel: Broker not configured for user %s: %s", redact_pii(self.user_id), e)
+            self.repo.log_alert(
+                "cash_deployment_unconfigured",
+                f"cash_deployment skipped: broker not configured",
+                metadata={"signal_id": deploy_signal_id, "info": str(e)[:200]},
+            )
+            return
         except Exception as e:
             logger.error("Sentinel: cash_deployment skill error: %s", e)
+            # 2026-07-11: also engage the cooldown on failure (e.g. broker not
+            # configured) — without this, a persistent config error retried
+            # every minutely tick forever instead of backing off like a
+            # successful run does.
+            self.repo.log_alert(
+                "cash_deployment_error",
+                f"cash_deployment failed: {str(e)[:200]}",
+                metadata={"signal_id": deploy_signal_id, "error": str(e)[:500]},
+            )
             return
 
         if result.get("status") != "overweight":
@@ -2202,7 +2304,8 @@ class SentinelService:
                 _portfolio = await _aggregator.get_aggregated_portfolio()
                 broker_cash = _portfolio.get('total_cash', 0.0)
                 broker_equity = _portfolio.get('total_equity', 0.0)
-            except Exception:
+            except Exception as e:
+                logger.warning(f'Exception in sentinel_service.py: {e}', exc_info=True)
                 broker_cash = max(cash, 0)
                 broker_equity = total_portfolio_value if total_portfolio_value > 0 else 1
 

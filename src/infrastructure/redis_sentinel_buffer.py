@@ -74,8 +74,8 @@ class RedisSentinelBuffer:
                     if t.get("id") == trigger.get("id"):
                         logger.debug(f"RedisSentinelBuffer: Trigger {trigger.get('id')} already buffered, skipping.")
                         return False
-                except Exception:
-                    pass
+                except Exception as e:
+                    logger.warning(f'Exception in redis_sentinel_buffer.py: {e}', exc_info=True)
             await r.zadd(key, {member: score})
             logger.info(f"RedisSentinelBuffer: Buffered trigger {trigger.get('id')} for user {user_id[:8]}... deadline={deadline_minutes}m")
             return True
@@ -99,8 +99,8 @@ class RedisSentinelBuffer:
                 for m in members:
                     try:
                         triggers.append(json.loads(m))
-                    except Exception:
-                        pass
+                    except Exception as e:
+                        logger.warning(f'Exception in redis_sentinel_buffer.py: {e}', exc_info=True)
                 logger.info(f"RedisSentinelBuffer: Flushed {len(triggers)} due trigger(s) for user {user_id[:8]}...")
                 return triggers
         except Exception as e:
@@ -123,8 +123,8 @@ class RedisSentinelBuffer:
                         await r.zrem(key, m)
                         logger.info(f"RedisSentinelBuffer: Removed trigger {trigger_id} for {user_id[:8]}...")
                         return True
-                except Exception:
-                    pass
+                except Exception as e:
+                    logger.warning(f'Exception in redis_sentinel_buffer.py: {e}', exc_info=True)
         except Exception as e:
             logger.error(f"RedisSentinelBuffer.remove failed: {e}")
         return False
@@ -134,7 +134,8 @@ class RedisSentinelBuffer:
         try:
             r = await self._get_client()
             return await r.zcard(self._key(user_id))
-        except Exception:
+        except Exception as e:
+            logger.warning(f'Exception in redis_sentinel_buffer.py: {e}', exc_info=True)
             return 0
 
     async def all_pending(self, user_id: str) -> List[Dict[str, Any]]:
@@ -143,5 +144,30 @@ class RedisSentinelBuffer:
             r = await self._get_client()
             members = await r.zrange(self._key(user_id), 0, -1)
             return [json.loads(m) for m in members]
-        except Exception:
+        except Exception as e:
+            logger.warning(f'Exception in redis_sentinel_buffer.py: {e}', exc_info=True)
             return []
+
+    async def try_acquire(self, key: str, ttl_seconds: int) -> bool:
+        """
+        Best-effort distributed lock via SETNX+EX. Returns True if this caller
+        won the key, False if someone already holds it.
+
+        Deliberately FAILS OPEN: if Redis is unreachable the caller proceeds.
+        The Sentinel is the system's safety monitor — skipping ticks is worse
+        than an occasional duplicate — so a Redis outage must not silence it.
+        Mirrors the fallback in WebhookService._acquire_concurrency_lock.
+
+        There is no release method on purpose: the lock is released by TTL
+        expiry only. Releasing on completion would re-open the very window the
+        lock exists to close.
+        以 SETNX+EX 實作的盡力鎖；Redis 失效時 fail-open 照跑（哨兵漏跑比重複更糟）。
+        刻意不提供釋放方法 —— 提早釋放等於重開重複窗口，只靠 TTL 到期。
+        """
+        try:
+            r = await self._get_client()
+            acquired = await r.set(key, "1", nx=True, ex=ttl_seconds)
+            return bool(acquired)
+        except Exception as e:
+            logger.warning(f"RedisSentinelBuffer.try_acquire failed for {key}, failing open: {e}")
+            return True

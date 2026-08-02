@@ -53,6 +53,9 @@ def sentinel_service(mock_repo, mock_market_service, mock_tx_service, mock_setti
     mock_buffer.flush_due = AsyncMock(return_value=[])
     mock_buffer.clear = AsyncMock()
     mock_buffer.add_event = AsyncMock()
+    # 2026-08-02: process_tick() takes a per-minute Redis lock; always win it
+    # here. Dedup behaviour is covered by test_sentinel_tick_lock.py.
+    mock_buffer.try_acquire = AsyncMock(return_value=True)
     
     with patch("src.infrastructure.redis_sentinel_buffer.RedisSentinelBuffer", return_value=mock_buffer), \
          patch("src.services.search_service.InternetSearchService"), \
