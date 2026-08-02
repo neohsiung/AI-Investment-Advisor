@@ -3,6 +3,11 @@
 env.production
 config/production.env
 secrets/
+# 2026-07-12: local dev-safety backups (e.g. before an accidental cleanup)
+# were previously git-tracked and contained secret var names. Keep making
+# these locally, never track them.
+.env.bak-*
+*.bak-*
 client_secret.json
 client_secret_*.json
 app/client_secret_*.json
