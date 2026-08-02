@@ -105,39 +105,54 @@ class AlchemyVerificationRepository(BaseRepository, IVerificationRepository):
             session.rollback()
             logger.error(f"Failed to create verification: {e}")
             raise
+        finally:
+            # 2026-08-02: sessions are per repository instance now, so a method
+            # that never closes leaves this instance holding a pooled
+            # connection for its whole lifetime. Close at the method boundary.
+            # 2026-08-02：session 改為 per-instance，不關閉會讓實例終生佔住連線。
+            self.close_session()
 
     def get_by_code(self, channel: str, code: str) -> Optional[Dict[str, Any]]:
         """
         Get a pending verification by channel and code (ORM).
         依頻道與代碼取得待處理的驗證 (ORM)。
         """
-        verif = self.session.query(ChannelVerification).filter_by(
-            channel=channel, code=code, status='pending'
-        ).first()
-        return self._to_dict(verif) if verif else None
+        try:
+            verif = self.session.query(ChannelVerification).filter_by(
+                channel=channel, code=code, status='pending'
+            ).first()
+            return self._to_dict(verif) if verif else None
+        finally:
+            self.close_session()
 
     def get_by_user_id(self, user_id: str, channel: str) -> Optional[Dict[str, Any]]:
         """
         Get the latest verification for a user (ORM).
         取得使用者的最新驗證 (ORM)。
         """
-        verif = self.session.query(ChannelVerification).filter_by(
-            user_id=user_id, channel=channel
-        ).order_by(desc(ChannelVerification.created_at)).first()
-        return self._to_dict(verif) if verif else None
+        try:
+            verif = self.session.query(ChannelVerification).filter_by(
+                user_id=user_id, channel=channel
+            ).order_by(desc(ChannelVerification.created_at)).first()
+            return self._to_dict(verif) if verif else None
+        finally:
+            self.close_session()
 
     def get_pending_verification(self, user_id: str, channel: str) -> Optional[Dict[str, Any]]:
         """
         Get a pending, non-expired verification for a specific channel (ORM).
         取得特定頻道且未過期的待處理驗證 (ORM)。
         """
-        verif = self.session.query(ChannelVerification).filter(
-            or_(ChannelVerification.user_id == user_id, ChannelVerification.channel_user_id == user_id),
-            ChannelVerification.channel == channel,
-            ChannelVerification.status == 'pending',
-            ChannelVerification.expires_at > datetime.datetime.now(datetime.timezone.utc)
-        ).order_by(desc(ChannelVerification.created_at)).first()
-        return self._to_dict(verif) if verif else None
+        try:
+            verif = self.session.query(ChannelVerification).filter(
+                or_(ChannelVerification.user_id == user_id, ChannelVerification.channel_user_id == user_id),
+                ChannelVerification.channel == channel,
+                ChannelVerification.status == 'pending',
+                ChannelVerification.expires_at > datetime.datetime.now(datetime.timezone.utc)
+            ).order_by(desc(ChannelVerification.created_at)).first()
+            return self._to_dict(verif) if verif else None
+        finally:
+            self.close_session()
 
     def get_any_pending_verification(self, user_id: str) -> Optional[Dict[str, Any]]:
         """
@@ -146,21 +161,24 @@ class AlchemyVerificationRepository(BaseRepository, IVerificationRepository):
         """
         # Improved: Check both user_id (internal) AND channel_user_id (external/platform ID)
         logger.debug(f"get_any_pending_verification searching for: {user_id}")
-        verif = self.session.query(ChannelVerification).filter(
-            or_(
-                ChannelVerification.user_id == user_id, 
-                ChannelVerification.channel_user_id == user_id
-            ),
-            ChannelVerification.status == 'pending',
-            ChannelVerification.expires_at > datetime.datetime.utcnow() # Use UTC
-        ).order_by(desc(ChannelVerification.created_at)).first()
-        
-        if verif:
-            logger.info(f"DB Found Verification: ID={verif.id}, user_id={verif.user_id}, channel_id={verif.channel_user_id}, code={verif.code}")
-        else:
-            logger.warning(f"DB Match Failure for user_id/channel_user_id: {user_id}")
-            
-        return self._to_dict(verif) if verif else None
+        try:
+            verif = self.session.query(ChannelVerification).filter(
+                or_(
+                    ChannelVerification.user_id == user_id,
+                    ChannelVerification.channel_user_id == user_id
+                ),
+                ChannelVerification.status == 'pending',
+                ChannelVerification.expires_at > datetime.datetime.utcnow() # Use UTC
+            ).order_by(desc(ChannelVerification.created_at)).first()
+
+            if verif:
+                logger.info(f"DB Found Verification: ID={verif.id}, user_id={verif.user_id}, channel_id={verif.channel_user_id}, code={verif.code}")
+            else:
+                logger.warning(f"DB Match Failure for user_id/channel_user_id: {user_id}")
+
+            return self._to_dict(verif) if verif else None
+        finally:
+            self.close_session()
 
     def update_status(self, verification_id: str, status: str, error_message: str = None) -> bool:
         """
@@ -180,14 +198,19 @@ class AlchemyVerificationRepository(BaseRepository, IVerificationRepository):
             session.rollback()
             logger.error(f"Failed to update verification status: {e}")
             return False
+        finally:
+            self.close_session()
 
     def get_verification_by_id(self, verification_id: str) -> Optional[Dict[str, Any]]:
         """
         Get a verification record by ID (ORM).
         依 ID 取得驗證記錄 (ORM)。
         """
-        verif = self.session.get(ChannelVerification, verification_id)
-        return self._to_dict(verif) if verif else None
+        try:
+            verif = self.session.get(ChannelVerification, verification_id)
+            return self._to_dict(verif) if verif else None
+        finally:
+            self.close_session()
 
     def _to_dict(self, model: ChannelVerification) -> Dict[str, Any]:
         """

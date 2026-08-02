@@ -1,8 +1,9 @@
 import os
 import logging
+from contextlib import contextmanager
 from pathlib import Path
 from sqlalchemy import create_engine, text, Engine
-from sqlalchemy.orm import sessionmaker, scoped_session
+from sqlalchemy.orm import sessionmaker
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sessionmaker, AsyncEngine
 import typing
 from typing import List, Dict, Tuple, Any, Optional, Callable, Union, Awaitable
@@ -16,33 +17,85 @@ _async_db_engines: Dict[str, AsyncEngine] = {}
 # Global Engine Cache
 _db_engines: Dict[str, Engine] = {}
 
-# Global Session Registries (one per engine) to prevent leaks
-_session_registries: Dict[Engine, Any] = {}
+# 2026-08-02: the global `_session_registries` (one shared scoped_session per
+# Engine) is GONE. It was the root of a real concurrency defect: engines are
+# cached by URL, so the whole process shared one registry, and scoped_session
+# without a scopefunc scopes to threading.local() — but FastAPI runs every
+# coroutine on ONE event-loop thread, so "thread-local" meant "shared by every
+# concurrent request". One coroutine's `finally: close_session()` tore down a
+# session another was mid-use of, and any `commit()` expired everyone's
+# objects. Sessions are now per repository INSTANCE, with optional injection
+# for a caller-owned unit of work.
+# 2026-08-02：移除全域 scoped_session registry。FastAPI 所有 coroutine 同一執行緒，
+# thread-local 等同「所有請求共用」，一個 close_session() 會拆掉別人正在用的 session。
 
 # Global Initialization Registry to track which databases have been initialized
 _db_initialized: set = set()
 
 class BaseRepository:
-    def __init__(self, engine: Engine):
+    def __init__(self, engine: Engine, session: Any = None):
+        """
+        `session` lets a caller supply its own unit of work (e.g. a
+        per-request session) so several repositories can share one
+        transaction. When supplied, this repository never commits or closes
+        it — lifecycle belongs to whoever created it.
+        傳入 session 可讓多個 repository 共用一個交易；此時本物件不會 commit 或關閉它。
+        """
         self.engine = engine
-        
-        global _session_registries
-        if engine not in _session_registries:
-            # v4.2.6: Use a single shared scoped_session registry per engine
-            # to ensure thread-local sessions are shared across repository instances.
-            factory = sessionmaker(bind=self.engine)
-            _session_registries[engine] = scoped_session(factory)
-        
-        self.Session = _session_registries[engine]
+        self._external_session = session
+        # expire_on_commit=False: repositories legitimately return ORM objects
+        # that outlive their session (llm_tier_binding_repository does this on
+        # the hot LLM path). Expiring on commit turns those into
+        # DetachedInstanceError landmines.
+        # 讓 commit 後仍可讀已載入屬性；否則跨 session 回傳的 ORM 物件會變地雷。
+        self._session_factory = sessionmaker(bind=self.engine, expire_on_commit=False)
+        self._session = None
 
     @property
     def session(self):
-        """Returns a scoped session for ORM operations."""
-        return self.Session()
-        
+        """
+        The session for this repository instance.
+
+        MEMOIZED on purpose. Several methods read `self.session` more than
+        once in a single body — e.g. `usage_repository` does
+        `self.session.add(...)` then `self.session.commit()`. Returning a new
+        session per access would add to one and commit another, silently
+        losing the write.
+        必須 memoize：多處方法在同一 body 內兩次讀取，回傳新 session 會靜默丟失寫入。
+        """
+        if self._external_session is not None:
+            return self._external_session
+        if self._session is None:
+            self._session = self._session_factory()
+        return self._session
+
     def close_session(self):
-        """Closes and removes the current scoped session."""
-        self.Session.remove()
+        """Close this instance's session. Never touches an injected one."""
+        if self._external_session is not None:
+            return
+        if self._session is not None:
+            self._session.close()
+            self._session = None
+
+    @contextmanager
+    def session_scope(self):
+        """
+        Preferred idiom: commit on clean exit, roll back on error, always close.
+        An injected session is yielded as-is — the owner commits and closes it.
+        建議用法；若為外部注入的 session 則原樣讓出，由擁有者負責 commit/close。
+        """
+        if self._external_session is not None:
+            yield self._external_session
+            return
+        s = self._session_factory()
+        try:
+            yield s
+            s.commit()
+        except Exception:
+            s.rollback()
+            raise
+        finally:
+            s.close()
     
     def _get_json_extract(self, column: str, path: str) -> str:
         """
@@ -738,7 +791,8 @@ def init_db(db_path=None, force=False, engine=None):
                             "ALTER TABLE llm_usage_logs ALTER COLUMN id SET DEFAULT gen_random_uuid()::text"
                         ))
                         logger.info("Migration: Added DEFAULT gen_random_uuid() to llm_usage_logs.id")
-                    except Exception:
+                    except Exception as e:
+                        logger.warning(f'Exception in database.py: {e}', exc_info=True)
                         pass  # Already has a DEFAULT — ignore
                 
             except Exception as e:
