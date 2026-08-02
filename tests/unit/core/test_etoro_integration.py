@@ -102,3 +102,62 @@ async def test_execute_order_wraps_risk_logic(service):
     res = await real_exec(service, order)
     assert res['status'] == 'failed'
     assert "Risk Manager" in res['reason']
+
+
+class TestExecuteOrderDemoEndpointRouting:
+    """
+    2026-07-14 regression guard: execute_order() previously always hit the
+    REAL eToro execution endpoint even when self.mode == "demo" — a user
+    who believed they'd switched to safe paper trading was placing real
+    orders. get_positions()/get_history() already routed to the /demo/
+    endpoint namespace; execute_order must follow the same convention.
+    """
+
+    async def _run_buy(self, service, captured_urls):
+        from src.services.etoro_service import EtoroService
+        real_exec = EtoroService.execute_order
+        service.risk_manager.check_constraints = MagicMock(return_value=True)
+        service.get_history = AsyncMock(return_value=[])
+        service.get_positions = AsyncMock(return_value=[])
+        service._fetch_portfolio_raw = AsyncMock(return_value={})
+        service._resolve_instrument_id = AsyncMock(return_value="1001")
+        service.user_id = "test_user"
+
+        class _Resp:
+            def raise_for_status(self):
+                pass
+
+            def json(self):
+                return {"orderForOpen": {"statusID": 2, "orderID": "abc"}}
+
+        class _MockClient:
+            async def __aenter__(self):
+                return self
+
+            async def __aexit__(self, *a):
+                return False
+
+            async def post(self, url, **kwargs):
+                captured_urls.append(url)
+                return _Resp()
+
+        with patch("httpx.AsyncClient", return_value=_MockClient()):
+            order = Order(symbol="AAPL", action=OrderAction.BUY, quantity=100)
+            await real_exec(service, order)
+
+    @pytest.mark.asyncio
+    async def test_demo_mode_hits_demo_execution_endpoint(self, service):
+        assert service.mode == "demo"  # fixture default
+        urls = []
+        await self._run_buy(service, urls)
+        assert len(urls) == 1
+        assert "/trading/execution/demo/market-open-orders/by-amount" in urls[0]
+
+    @pytest.mark.asyncio
+    async def test_real_mode_hits_real_execution_endpoint(self, service):
+        service.mode = "real"
+        urls = []
+        await self._run_buy(service, urls)
+        assert len(urls) == 1
+        assert "/trading/execution/market-open-orders/by-amount" in urls[0]
+        assert "/demo/" not in urls[0]

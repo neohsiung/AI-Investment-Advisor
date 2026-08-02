@@ -19,7 +19,7 @@ def daily_workflow():
         }
         return workflow
 
-def test_parse_actionable_orders_table(daily_workflow):
+async def test_parse_actionable_orders_table(daily_workflow):
     report = """
 ## 投資結論與執行建議 (Investment Conclusion & Actionable Orders)
 
@@ -30,7 +30,7 @@ def test_parse_actionable_orders_table(daily_workflow):
 | MSFT | HOLD | - | 5 | 觀望中 |
 """
     # Call the new specialized method directly
-    daily_workflow._parse_actionable_orders(report)
+    await daily_workflow._parse_actionable_orders(report)
              
     assert "actionable_orders" in daily_workflow.context
     orders = daily_workflow.context['actionable_orders']
@@ -50,13 +50,13 @@ def test_parse_actionable_orders_table(daily_workflow):
     assert tsla['score'] == 7
     assert "技術指標" in tsla['reason']
 
-def test_parse_quantity_percentage(daily_workflow):
+async def test_parse_quantity_percentage(daily_workflow):
     report = """
 | 代號 | 動作 | 數量/比例 | 信心分數 | 理由 |
 | :--- | :--- | :--- | :--- | :--- |
 | NVDA | BUY | 5% | 8 | 輝達長期看好 |
 """
-    daily_workflow._parse_actionable_orders(report)
+    await daily_workflow._parse_actionable_orders(report)
         
     orders = daily_workflow.context.get('actionable_orders', [])
     assert len(orders) == 1

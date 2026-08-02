@@ -1,3 +1,4 @@
+import asyncio
 import unittest
 import json
 import os
@@ -108,11 +109,11 @@ class TestAdaptiveLogic(unittest.TestCase):
         }
         """
         
-        workflow._parse_actionable_orders(report_with_json)
-        
+        asyncio.run(workflow._parse_actionable_orders(report_with_json))
+
         orders = workflow.context.get('actionable_orders', [])
         self.assertEqual(len(orders), 2)
-        
+
         self.assertEqual(orders[0]['ticker'], "AAPL")
         self.assertEqual(orders[0]['action'], "BUY")
         self.assertEqual(orders[0]['score'], 9)

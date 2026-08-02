@@ -37,10 +37,18 @@ def test_market_alert_webhook(mock_sentinel):
         mock_handler.assert_called_once()
 
 def test_rss_sources_webhook():
-    response = client.get("/webhook/rss-sources")
+    # 2026-07-12: this endpoint now requires X-API-Key like every other
+    # /webhook/* route (it was previously reachable unauthenticated).
+    with patch('src.services.webhook_service.WebhookService._resolve_user', new_callable=AsyncMock, return_value="test_user"):
+        response = client.get("/webhook/rss-sources")
     assert response.status_code == 200
     data = response.json()
     assert isinstance(data, list)
     assert len(data) > 0
     assert "url" in data[0]
     assert "name" in data[0]
+
+
+def test_rss_sources_webhook_requires_auth():
+    response = client.get("/webhook/rss-sources")
+    assert response.status_code == 401
