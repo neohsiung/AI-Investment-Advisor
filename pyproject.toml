@@ -104,4 +104,6 @@ dependencies = [
     "feedparser>=6.0.10",
     "newspaper3k>=0.2.8",
     "lxml-html-clean>=0.1.0",
+    "httpx-sse>=0.4.3",
+    "alembic>=1.13",
 ]

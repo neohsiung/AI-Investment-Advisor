@@ -30,7 +30,12 @@ jobs:
       security-events: write
     services:
       postgres:
-        image: postgres:15
+        # pgvector, not stock postgres: the baseline migration's first act is
+        # CREATE EXTENSION "vector", so `alembic upgrade head` below dies
+        # immediately on an image without it. Same image as advisor_prod_db.
+        # 必須用 pgvector 版：baseline migration 一開始就 CREATE EXTENSION
+        # "vector"，stock postgres 會讓下面的 alembic 步驟當場失敗。
+        image: pgvector/pgvector:pg16
         env:
           POSTGRES_USER: postgres
           POSTGRES_PASSWORD: postgres

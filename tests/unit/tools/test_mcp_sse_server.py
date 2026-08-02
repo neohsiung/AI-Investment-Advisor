@@ -7,8 +7,16 @@ import pytest
 import asyncio
 from fastapi import FastAPI
 from httpx import AsyncClient, ASGITransport
-from httpx_sse import aconnect_sse
 import json
+
+# httpx_sse only reaches the environment transitively (via mcp), so a hard
+# top-level import made this module a collection landmine: CI resolves deps
+# from pyproject.toml rather than uv.lock, and a newer mcp stopped pulling it
+# in — aborting the entire pytest run with exit 2. The one test here is
+# skipped anyway, so importorskip costs nothing.
+# httpx_sse 是靠 mcp 傳遞進來的，硬 import 會讓整個 collection 掛掉；
+# 這裡唯一的測試本來就 skip，改用 importorskip 沒有損失。
+aconnect_sse = pytest.importorskip("httpx_sse").aconnect_sse
 
 from src.tools.mcp_sse_router import mcp_sub_app, HAS_FASTMCP
 
