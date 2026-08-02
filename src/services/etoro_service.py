@@ -25,8 +25,14 @@ class EtoroService(IBroker):
     Wraps eToro API and enforces Risk Management.
     封裝 eToro API 並執行風險管理。
     """
-    _cached_portfolio = None
-    _cached_time = 0.0
+    # 2026-08-02: portfolio cache moved from CLASS scope to INSTANCE scope.
+    # As class attributes these were shared by every EtoroService in the
+    # process, keyed by nothing — so a demo-mode instance and a real-mode
+    # instance (and, in multi-tenant use, two different users) served each
+    # other's portfolios for up to 60s. It also let execute_order's credential
+    # preflight pass on a cached success belonging to a different instance.
+    # 2026-08-02：投資組合快取由 class 層級改為 instance 層級。
+    # 原本無 key 的 class 屬性會讓 demo/real、甚至不同使用者互相污染。
 
     def __init__(self, base_url: str = None, mode: str = "real", api_key: str = None, user_key: str = None, user_id: str = None) -> None:
         """
@@ -64,9 +70,17 @@ class EtoroService(IBroker):
         if not self.user_key:
             self.user_key = os.getenv("ETORO_USER_KEY")
 
-        # Detect mock/placeholder credentials
-        if self.api_key and (self.api_key.startswith("sdgdskld") or "placeholder" in self.api_key.lower()):
-            logger.info("Mock/Placeholder eToro API key detected. Treating credentials as absent to trigger fast fallback.")
+        # Detect mock/placeholder credentials.
+        # 2026-08-02: removed the `startswith("sdgdskld")` clause — it was a
+        # FALSE POSITIVE that matched a real eToro Public API Key. eToro issues
+        # opaque keys with arbitrary prefixes, so no prefix can be treated as a
+        # mock marker. The clause silently nulled BOTH credentials, forcing the
+        # localhost:8000 bridge fallback and the self-deadlock guard below.
+        # Only an explicit "placeholder" marker is a safe signal.
+        # 2026-08-02：移除 sdgdskld 前綴判斷——它誤判了真實的 eToro 憑證。
+        # eToro 的 opaque key 前綴不固定，不能拿前綴當假資料標記。
+        if self.api_key and "placeholder" in self.api_key.lower():
+            logger.info("Placeholder eToro API key detected. Treating credentials as absent to trigger fast fallback.")
             self.api_key = None
             self.user_key = None
 
@@ -80,7 +94,11 @@ class EtoroService(IBroker):
         
         self.base_url = self.base_url or os.getenv("ETORO_API_BASE_URL", default_base)
         self.notification_service = None
-        
+
+        # Per-instance portfolio cache (see class-level note above).
+        self._cached_portfolio = None
+        self._cached_time = 0.0
+
         # Normalize mode: 'live' -> 'real' per BrokerFactory requirements
         self.mode = "real" if mode == "live" else mode
         self.transaction_repo = AlchemyTransactionRepository()
@@ -432,11 +450,19 @@ class EtoroService(IBroker):
         instrument_id = await self._resolve_instrument_id(order.symbol)
 
         # 3. Execute Order (v4.2.5: Allow SELL without instrument_id if pos_id resolved)
+        # 2026-07-14 CRITICAL FIX: get_positions()/get_history() already switch
+        # to eToro's "/demo/" endpoint namespace when self.mode == "demo"
+        # (lines ~380, ~1160), but execute_order — the one that actually
+        # places orders — never did. A user who configured etoro_mode=demo
+        # believing it was a safe paper-trading switch was placing REAL
+        # orders on the real endpoint the entire time. Fixed to follow the
+        # same /demo/ path-segment convention as the info endpoints.
+        demo_segment = "/demo" if self.mode == "demo" else ""
         if order.action == OrderAction.BUY:
             if not instrument_id:
                  return {"status": "failed", "reason": f"Instrument ID not found for {order.symbol} (Required for BUY)"}
-                 
-            endpoint = "/trading/execution/market-open-orders/by-amount"
+
+            endpoint = f"/trading/execution{demo_segment}/market-open-orders/by-amount"
             url = f"{self.base_url}{endpoint}"
             # eToro API: PascalCase body, Amount in USD (not shares)
             # Phase 3: Explicitly use amount_usd or fallback to quantity, round to 2 decimals
@@ -478,7 +504,7 @@ class EtoroService(IBroker):
             if not pos_id:
                 return {"status": "failed", "reason": f"No active position ID found for {order.symbol} to close"}
             
-            endpoint = f"/trading/execution/market-close-orders/positions/{pos_id}"
+            endpoint = f"/trading/execution{demo_segment}/market-close-orders/positions/{pos_id}"
             url = f"{self.base_url}{endpoint}"
             # eToro API: InstrumentId is REQUIRED in close body (lowercase 'd')
             # UnitsToDeduct: null = full close, number = partial close
@@ -790,7 +816,8 @@ class EtoroService(IBroker):
                     if resp.status_code == 200:
                         self._process_metadata_response(resp.json())
                         resolved_count += 1
-                except Exception:
+                except Exception as e:
+                    logger.warning(f'Exception in etoro_service.py: {e}', exc_info=True)
                     continue
         
         if resolved_count > 0:
@@ -1133,7 +1160,9 @@ class EtoroService(IBroker):
 
         try:
             from src.services.market_data_service import MarketDataService
-            uid = self.user_id or "00000000-0000-4000-a000-000000000001"
+            uid = self.user_id
+            if not uid:
+                raise ValueError("user_id is required for eToro operations — caller must provide a valid tenant user_id")
             service = MarketDataService(user_id=uid)
             prices = await service.get_current_prices(symbols)
             if prices:
@@ -1150,8 +1179,8 @@ class EtoroService(IBroker):
         """
         import time
         now = time.time()
-        if EtoroService._cached_portfolio is not None and (now - EtoroService._cached_time) < 60.0:
-            return EtoroService._cached_portfolio
+        if self._cached_portfolio is not None and (now - self._cached_time) < 60.0:
+            return self._cached_portfolio
 
         import httpx
         # Official API endpoint (confirmed working: /api/v1/trading/info/portfolio)
@@ -1190,8 +1219,8 @@ class EtoroService(IBroker):
                 raise BrokerDependencyError(f"eToro API Error: {error_msg}")
             
             response.raise_for_status()
-            EtoroService._cached_portfolio = data
-            EtoroService._cached_time = time.time()
+            self._cached_portfolio = data
+            self._cached_time = time.time()
             return data
         except BrokerNotConfiguredError:
             raise
