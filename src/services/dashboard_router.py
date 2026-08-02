@@ -158,7 +158,14 @@ async def health_check():
 
     # 2. Check Redis/Celery
     try:
-        from src.infrastructure.tasks import celery_app
+        # 2026-08-02: was `from src.infrastructure.tasks import celery_app`, but
+        # that module exposes the Celery instance as `app` (tasks.py:5) — there
+        # has never been a `celery_app` attribute. The ImportError fell into the
+        # except below, so this endpoint reported "degraded" and answered 503
+        # unconditionally, regardless of how healthy the workers actually were.
+        # 2026-08-02：原本 import 的名稱在該模組不存在（tasks.py:5 匯出的是 app），
+        # ImportError 被下面的 except 接住，導致此端點無條件回報 degraded / 503。
+        from src.infrastructure.celery_app import app as celery_app
         # Ping returns 'pong' if connection is alive
         ping = celery_app.control.ping(timeout=1.0)
         if ping:
@@ -309,10 +316,6 @@ async def test_notification(
         }
             
     except Exception as e:
-        logger.exception("Error triggering test notification")
-        if isinstance(e, HTTPException):
-            raise e
-        raise HTTPException(status_code=500, detail="Notification test failed")
         logger.exception("Error triggering test notification")
         if isinstance(e, HTTPException):
             raise e

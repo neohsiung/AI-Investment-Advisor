@@ -107,3 +107,35 @@ dependencies = [
     "httpx-sse>=0.4.3",
     "alembic>=1.13",
 ]
+
+[tool.coverage.run]
+# CI gates on `pytest --cov=src --cov-fail-under=65`. Note pytest.ini's
+# [coverage:*] sections were dead — coverage.py never reads pytest.ini — so
+# this is the first configuration that has actually taken effect.
+# 注意 pytest.ini 裡的 [coverage:*] 從來沒生效過（coverage.py 不讀 pytest.ini）。
+source = ["src"]
+# Explicit: the 65% gate is a statement-coverage number. Turning on branch
+# coverage would silently move the goalposts.
+# 明寫 false：65% 門檻是敘述覆蓋率，開 branch 會無聲改變基準。
+branch = false
+parallel = false
+# No `omit`. The obvious candidates are either already excluded (src/scripts/,
+# src/scratch/ and src/refactor/ have no __init__.py, so coverage never
+# descends into them) or live product code — research_automation_service is
+# imported by the ticker-universe endpoints and the scheduler,
+# transcription_service by webhook_service. Omitting those would be gaming the
+# gate, not measuring it.
+# 不設 omit：明顯的候選不是早就不在統計內，就是活的產品程式碼，排除它們等於灌水。
+
+[tool.coverage.report]
+precision = 2
+skip_empty = true
+show_missing = true
+# Deliberately no `fail_under` here — the threshold lives in the CI command
+# line only, so there is exactly one place to change it.
+# 刻意不設 fail_under：門檻只存在於 CI 命令列，避免兩處打架。
+exclude_also = [
+    "if TYPE_CHECKING:",
+    "raise NotImplementedError",
+    "@(abc\\.)?abstractmethod",
+]
