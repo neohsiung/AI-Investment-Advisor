@@ -29,7 +29,16 @@ services:
       - OTEL_EXPORTER_OTLP_PROTOCOL=grpc
     volumes:
       - ./src:/workspace/src:ro
+      - ./prompts:/workspace/prompts:ro
       - ./secrets/client_secret.json:/workspace/client_secret.json:ro
+      # 2026-07-14: alembic/ was never bind-mounted, so the container's
+      # baked-in migration files went stale the moment any new revision
+      # was added on the host — init_db.py's `alembic upgrade head` then
+      # crash-loops with "Can't locate revision" the instant
+      # alembic_version is stamped past whatever was baked in at last
+      # image build. src/ and prompts/ already follow this live-reload
+      # pattern; alembic/ needs it just as much.
+      - ./alembic:/workspace/alembic:ro
     depends_on:
       postgres:
         condition: service_healthy
@@ -66,46 +75,15 @@ services:
     networks:
       - advisor-net
 
-  # 3. Task Scheduler (Celery Beat)
-  scheduler:
-    build:
-      context: .
-      dockerfile: services/scheduler/Dockerfile
-    container_name: advisor_prod_scheduler
-    restart: always
-    command: sh -c "celery -A src.infrastructure.celery_app beat --loglevel=info"
-    user: root
-    env_file:
-      - .env
-    environment:
-      - NODE_ENV=production
-      - REDIS_URL=redis://:${REDIS_PASSWORD}@redis:6379/0
-      - REDIS_PASSWORD=${REDIS_PASSWORD}
-      - DB_HOST=advisor_prod_db
-      - OTEL_SERVICE_NAME=scheduler_prod
-      - OTEL_EXPORTER_OTLP_ENDPOINT=http://otel-collector:4317
-      - OTEL_EXPORTER_OTLP_PROTOCOL=grpc
-    volumes:
-      - ./src:/workspace/src:ro
-    depends_on:
-      postgres:
-        condition: service_healthy
-      redis:
-        condition: service_healthy
-      otel-collector:
-        condition: service_started
-    healthcheck:
-      test: [ "CMD", "python", "-c", "import os,redis; redis.Redis(host='redis', port=6379, password=os.environ['REDIS_PASSWORD']).ping()" ]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-    networks:
-      - advisor-net
-    logging:
-      driver: "json-file"
-      options:
-        max-size: "10m"
-        max-file: "3"
+  # 3. Task Scheduler — REMOVED 2026-07-12.
+  # The `scheduler` service ran `celery beat` identically to the `celery_beat`
+  # service below, so every beat task fired TWICE (double sentinel ticks,
+  # duplicate daily reports/digests) against a live brokerage. Single beat
+  # authority is now `celery_beat` (container advisor_prod_beat). If a
+  # multi-user fan-out dispatcher is introduced later (see roadmap Phase 3),
+  # it must be a NEW command — never a second `celery beat`.
+  # 2026-07-12 移除：scheduler 與下方 celery_beat 執行相同的 celery beat,
+  # 導致所有排程任務重複觸發 2 次。唯一 beat 權威為 celery_beat。
 
   # 4. PostgreSQL Database
   postgres:
@@ -116,7 +94,7 @@ services:
       - "127.0.0.1:5432:5432"
     environment:
       - POSTGRES_USER=postgres
-      - POSTGRES_PASSWORD=postgres
+      - POSTGRES_PASSWORD=${DB_PASS:?DB_PASS must be set in .env}
       - POSTGRES_DB=advisor_prod
     volumes:
       - advisor_db_data:/var/lib/postgresql/data
@@ -196,6 +174,7 @@ services:
       - OTEL_EXPORTER_OTLP_PROTOCOL=grpc
     volumes:
       - ./src:/workspace/src:ro
+      - ./prompts:/workspace/prompts:ro
     depends_on:
       postgres:
         condition: service_healthy
@@ -238,6 +217,7 @@ services:
       - OTEL_EXPORTER_OTLP_PROTOCOL=grpc
     volumes:
       - ./src:/workspace/src:ro
+      - ./prompts:/workspace/prompts:ro
     depends_on:
       postgres:
         condition: service_healthy
@@ -281,6 +261,7 @@ services:
       - OTEL_SERVICE_NAME=celery_beat_prod
     volumes:
       - ./src:/workspace/src:ro
+      - ./prompts:/workspace/prompts:ro
     depends_on:
       postgres:
         condition: service_healthy
@@ -312,7 +293,7 @@ services:
     image: ngrok/ngrok:3-alpine
     container_name: advisor_prod_ngrok
     restart: always
-    command: http --url=chummy-nonpathologically-lilla.ngrok-free.dev advisor_prod_gateway:80
+    command: http --url=${NGROK_DOMAIN} advisor_prod_gateway:80
     environment:
       - NGROK_AUTHTOKEN=${NGROK_AUTHTOKEN}
     depends_on:

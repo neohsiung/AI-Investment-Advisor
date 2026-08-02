@@ -105,8 +105,8 @@ providers:
       Phase A placeholder — points at OpenAIGateway for schema wiring only.
       Native /v1/messages Gateway will land in Phase C.
 
-  - provider_code: nvidia
-    display_name: "NVIDIA NIM"
+  - provider_code: nvidia_nim
+    display_name: "NVIDIA NIM Free"
     gateway_class: "src.infrastructure.llm.llm_gateway.NvidiaGateway"
     default_base_url: "https://integrate.api.nvidia.com/v1"
     auth_type: bearer

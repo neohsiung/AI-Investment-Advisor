@@ -26,6 +26,12 @@ function show_help {
     echo "                 - If cluster already running: hot-restarts code services only (fast)."
     echo "                 - Gateway: http://localhost:80"
     echo ""
+    echo "  selfhost       One-command self-host bootstrap (new installs)."
+    echo "                 - Auto-generates missing secrets (JWT/Fernet/DB/Redis) into .env."
+    echo "                 - Defaults TRADING_MODE=paper (no real orders until you opt in)."
+    echo "                 - Deploys the full cluster + runs migrations."
+    echo "                 - Safe to re-run: never overwrites secrets you've already set."
+    echo ""
     echo "  workers [N]    Scale worker pool to N instances (default: 2)."
     echo "                 - Starts workers for async report processing."
     echo "                 - Must run after: ./start.sh prod"
@@ -53,7 +59,17 @@ readonly REPORT_QUEUES=("report:daily:queue" "report:weekly:queue" "report:prior
 
 function redis_cmd {
     # Usage: redis_cmd <container> <redis args...>
-    docker exec "$1" redis-cli "${@:2}" 2>/dev/null | tr -d '\r'
+    # 2026-07-11: prod redis requires auth (REDIS_PASSWORD in .env, security
+    # hardening) — pass it so health checks stop reporting false NOAUTH errors.
+    local pass=""
+    if [ -f .env ]; then
+        pass=$(grep -m1 '^REDIS_PASSWORD=' .env | cut -d= -f2-)
+    fi
+    if [ -n "$pass" ]; then
+        docker exec "$1" redis-cli -a "$pass" --no-auth-warning "${@:2}" 2>/dev/null | tr -d '\r'
+    else
+        docker exec "$1" redis-cli "${@:2}" 2>/dev/null | tr -d '\r'
+    fi
 }
 
 function check_env {
@@ -62,6 +78,85 @@ function check_env {
         cp .env.example .env
         echo "WARNING: Created default .env. Please edit it with your API keys!"
     fi
+}
+
+# 2026-07-14 (open-source Phase 1 — self-host one-click bootstrap):
+# generate a real secret for VAR_NAME in .env if it is missing OR still a
+# placeholder from .env.example (REPLACE_WITH_..., <replace-with-...>, or
+# the literal known-default JWT secret). Never touches an already-real
+# value — idempotent and safe to call on every `selfhost` run, including
+# against an existing deployment that already set its own secrets.
+function ensure_secret {
+    local var_name="$1"
+    local generator="${2:-urlsafe}"
+    local current=""
+    if [ -f .env ]; then
+        current=$(grep -m1 "^${var_name}=" .env | cut -d= -f2-)
+    fi
+    case "$current" in
+        ""|*REPLACE_WITH*|*"<replace-with"*|*your-super-secret-key-for-jwt-signing*)
+            current=""
+            ;;
+    esac
+    if [ -n "$current" ]; then
+        return 0
+    fi
+
+    local new_value=""
+    if [ "$generator" = "fernet" ]; then
+        new_value=$(python3 -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())" 2>/dev/null)
+    else
+        new_value=$(python3 -c "import secrets; print(secrets.token_urlsafe(48))" 2>/dev/null)
+    fi
+    if [ -z "$new_value" ]; then
+        echo "  ⚠️  Could not auto-generate ${var_name} (python3/cryptography unavailable) — set it manually in .env"
+        return 1
+    fi
+
+    if grep -q "^${var_name}=" .env 2>/dev/null; then
+        sed -i.bak "s|^${var_name}=.*|${var_name}=${new_value}|" .env && rm -f .env.bak
+    else
+        echo "${var_name}=${new_value}" >> .env
+    fi
+    echo "  ✓ Generated ${var_name}"
+}
+
+function selfhost_bootstrap {
+    echo "=== Self-Host First-Run Bootstrap ==="
+    check_env
+
+    echo "Ensuring required secrets are set (only fills placeholders, never overwrites real values)..."
+    ensure_secret "JWT_SECRET" "urlsafe"
+    ensure_secret "LLM_CREDENTIAL_KEY" "fernet"
+    ensure_secret "APP_SECRET_KEY" "fernet"
+    ensure_secret "DB_PASS" "urlsafe"
+    ensure_secret "REDIS_PASSWORD" "urlsafe"
+
+    if ! grep -q "^TRADING_MODE=" .env 2>/dev/null; then
+        echo "TRADING_MODE=paper" >> .env
+        echo "  ✓ Set TRADING_MODE=paper (self-host safe default — no real trades until you explicitly opt in)"
+    fi
+
+    echo ""
+    echo "Deploying production cluster..."
+    deploy_prod
+
+    echo ""
+    echo "Applying database migrations..."
+    run_migrations
+
+    echo ""
+    echo "======================================================================"
+    echo "✅ Self-host bootstrap complete."
+    echo ""
+    echo "  Dashboard:     http://localhost:80"
+    echo "  Trading mode:  paper (no real orders will be placed)"
+    echo ""
+    echo "  Next step: open the dashboard → Settings → configure an LLM"
+    echo "  provider (OpenRouter API key, or a local Ollama endpoint) before"
+    echo "  the council/sentinel agents can run. Nothing else is required to"
+    echo "  explore the platform safely."
+    echo "======================================================================"
 }
 
 function fix_redis_queues {
@@ -186,10 +281,20 @@ function run_migrations {
         exit 1
     fi
 
-    # 2. Fix potential multiple heads (Alembic)
-    echo "Aligning database headers in $target_db..."
-    docker exec "$target_db" psql -U postgres -d portfolio -c "DELETE FROM alembic_version; INSERT INTO alembic_version (version_num) VALUES ('merge_heads_001');" 2>/dev/null || true
-    
+    # 2026-07-14: removed a blind `DELETE FROM alembic_version; INSERT ...
+    # 'merge_heads_001'` stamp that ran here unconditionally before every
+    # upgrade. It targeted the wrong database name ("portfolio" — prod's
+    # actual DB is "advisor_prod"/"investment_advisor_db"), so it silently
+    # no-op'd via the swallowed `|| true` and never actually did anything on
+    # this codebase's real databases. Had the name been correct, it would
+    # have blindly rewound alembic_version to an old revision on every run,
+    # which is exactly the kind of drift that made prod's tracked version
+    # (005) diverge from its real applied schema (011) — fixed by hand via
+    # `alembic stamp head` after verifying every intervening table/column/
+    # constraint actually existed. The alembic history already has a single
+    # head (the two `merge_heads_*` revisions already reconciled the old
+    # multi-head branches) — `alembic upgrade head` alone is correct and
+    # safe (no-op if already current).
     echo "Upgrading schema in $target_container..."
     docker exec "$target_container" alembic upgrade head
     echo "✅ Migration Successful."
@@ -391,16 +496,17 @@ function deploy_prod {
 
     # Hot-restart path: cluster already running → stop and restart code services (fast reload).
     # Volume mounts in docker-compose.prod.yml ensure local src/ is live inside containers.
+    # 2026-07-14: the `scheduler` service was removed (it ran a SECOND
+    # `celery beat` identical to `celery_beat`, double-firing every
+    # scheduled task — sentinel ticks, daily reports, the hourly digest,
+    # all 2x). `celery_beat` is now the sole beat authority and must be
+    # restarted here too, or code/schedule changes never reach it.
     if docker ps --format '{{.Names}}' | grep -q "advisor_prod_api"; then
-        echo "Cluster running — hot-restarting code services (scheduler, worker_1, worker_2)..."
-        $PROD_COMPOSE stop scheduler 2>/dev/null || true
+        echo "Cluster running — hot-restarting code services (celery_beat, worker_1, worker_2)..."
+        docker rm -f advisor_prod_beat advisor_prod_worker_1 advisor_prod_worker_2 2>/dev/null || true
         sleep 1
-        
-        # Remove and restart workers (docker-compose can't replace running containers)
-        docker rm -f advisor_prod_worker_1 advisor_prod_worker_2 2>/dev/null || true
-        sleep 1
-        
-        $PROD_COMPOSE up -d --no-build --no-deps scheduler worker_1 worker_2
+
+        $PROD_COMPOSE up -d --no-build --no-deps celery_beat worker_1 worker_2
         echo ""
         echo "✅ Code services restarted (env reloaded)"
         echo ""
@@ -515,6 +621,9 @@ case "$1" in
         ;;
     prod)
         deploy_prod
+        ;;
+    selfhost)
+        selfhost_bootstrap
         ;;
     workers)
         scale_workers "$2"

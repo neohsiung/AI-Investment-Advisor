@@ -85,6 +85,20 @@ jobs:
         run: |
           python -m pytest --cov=src --cov-report=xml --cov-fail-under=65 tests/
 
+      - name: Verify Alembic Migrations
+        env:
+          DB_TYPE: postgres
+          DB_HOST: localhost
+          DB_PORT: 5432
+          DB_USER: postgres
+          DB_PASS: postgres
+          DB_NAME: portfolio
+          REDIS_HOST: localhost
+          REDIS_PORT: 6379
+        run: |
+          alembic upgrade head
+          alembic check
+
       - name: Security Scan (Bandit)
         run: |
           # Fail if there are medium or high severity issues
