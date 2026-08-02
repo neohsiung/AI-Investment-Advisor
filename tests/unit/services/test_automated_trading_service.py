@@ -8,6 +8,22 @@ from src.domain.trading import OrderAction, OrderType
 def anyio_backend():
     return 'asyncio'
 
+@pytest.fixture(autouse=True)
+def allow_trading_protections():
+    """
+    Isolate these tests from TradingProtectionsService.
+
+    2026-08-02: protections now fail CLOSED — an internal error blocks the BUY
+    instead of allowing it. These tests exercise confidence-threshold branching
+    against an in-memory SQLite with no `decision_outcomes` table, so without
+    this stub every BUY would legitimately be blocked. Fail-closed behaviour
+    itself is covered in tests/unit/services/test_protections_fail_closed.py.
+    2026-08-02：風控改為 fail-closed；本檔測的是信心度分支，故隔離風控相依。
+    """
+    with patch('src.services.trading_protections_service.TradingProtectionsService') as MockProt:
+        MockProt.return_value.check.return_value = None
+        yield MockProt
+
 @pytest.fixture
 def mock_settings_repo():
     repo = MagicMock()

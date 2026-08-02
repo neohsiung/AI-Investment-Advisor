@@ -224,7 +224,14 @@ class ConfidenceRebalanceService:
 
         settings = SettingsService(user_id=self.user_id)
         notification = NotificationService.create_with_settings(settings_service=settings, user_id=self.user_id)
-        trading = AutomatedTradingService(settings_service=settings, notification_service=notification)
+        # 2026-08-02: was `settings_service=settings` — not a parameter of
+        # AutomatedTradingService.__init__(settings_repo, interaction_service,
+        # notification_service), so every call raised TypeError and this entire
+        # confidence-rebalance execution path was dead.
+        # 2026-08-02：原本傳 settings_service= 並非建構子參數，整條路徑都是死的。
+        trading = AutomatedTradingService(
+            settings_repo=settings.settings_repo, notification_service=notification
+        )
 
         return await trading.evaluate_and_execute_trade(
             user_id=self.user_id,

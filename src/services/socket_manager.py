@@ -92,8 +92,23 @@ class ConnectionManager:
             
             ticker = payload.get("ticker", "").upper()
             action = payload.get("action", "").upper()
-            quantity = float(payload.get("quantity", 0))
-            
+
+            # 2026-08-02: validate the client-supplied quantity. This path runs
+            # with confidence_score=10, which always clears the auto-execute
+            # threshold and skips the approval card — so it is the least
+            # supervised route to a live order and must not trust its payload.
+            # 2026-08-02：此路徑 confidence=10 直接自動執行、不出審核卡，payload 必須驗證。
+            try:
+                quantity = float(payload.get("quantity", 0))
+            except (TypeError, ValueError):
+                quantity = 0.0
+            if not (quantity > 0) or quantity != quantity or quantity in (float("inf"), float("-inf")):
+                await self.broadcast_to_user(user_id, {
+                    "type": "TRADE_RESULT",
+                    "data": {"status": "rejected", "reason": "Invalid quantity"},
+                })
+                return
+
             result = await trading_svc.evaluate_and_execute_trade(
                 user_id=user_id,
                 ticker=ticker,

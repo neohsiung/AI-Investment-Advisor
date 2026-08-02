@@ -77,15 +77,76 @@ class AutomatedTradingService:
         if quantity is None:
             quantity = 1.0
 
+        # 2026-08-02: rationale defaults to None but is used in `in` substring
+        # tests below (excess-cash detection) and interpolated into user-facing
+        # notification text. Normalize once here so a caller omitting it cannot
+        # raise TypeError: argument of type 'NoneType' is not iterable.
+        # 2026-08-02：rationale 預設 None 但下面會做 `in` 子字串比對，先正規化避免 TypeError。
+        rationale = rationale or ""
+
         # 1. Check if trading is enabled
         trading_enabled = self.settings_repo.get(user_id, "ai_trading_enabled")
-        if trading_enabled is not None and str(trading_enabled).lower() != "true":
+        if trading_enabled is None:
+            enable_etoro = self.settings_repo.get(user_id, "enable_etoro")
+            enable_ibkr = self.settings_repo.get(user_id, "enable_ibkr")
+            trading_enabled = (
+                enable_etoro is True or str(enable_etoro).lower() in ("true", "1") or
+                enable_ibkr is True or str(enable_ibkr).lower() in ("true", "1")
+            )
+            # Default to enabled if no explicit setting present
+            if enable_etoro is None and enable_ibkr is None:
+                trading_enabled = True
+
+        if str(trading_enabled).lower() not in ("true", "1"):
             logger.warning(f"Trade Execution Blocked: AI Trading is disabled for user {user_id}")
             return {"status": "blocked", "reason": "Trading is disabled in settings"}
-        
+
+        # 1b. P4.2 (2026-07-11): declarative protections — global drawdown
+        # halt, per-ticker cooldown after a loss, consecutive-loss lockout.
+        # Grounded in real resolved decision_outcomes (P1), not self-graded.
+        # 2026-08-02: fails CLOSED for BUY. check() now returns a block reason
+        # rather than None on internal error, so this outer catch only ever
+        # sees import/constructor failures — which are still a reason to refuse
+        # a BUY. SELL stays permitted so a user is never trapped in a position.
+        # 2026-08-02：BUY 改為 fail-closed；SELL 維持放行，避免把人鎖在部位裡。
+        try:
+            from src.services.trading_protections_service import TradingProtectionsService
+            block_reason = TradingProtectionsService(user_id=user_id).check(ticker, action)
+            if block_reason:
+                logger.warning(f"Trade Execution Blocked by protection: {block_reason}")
+                return {"status": "blocked", "reason": block_reason}
+        except Exception as e:
+            if str(action).upper() == "BUY":
+                logger.error(f"Trading protections unavailable — blocking BUY: {e}")
+                return {
+                    "status": "blocked",
+                    "reason": f"Protection subsystem unavailable ({type(e).__name__}); BUY blocked for safety",
+                }
+            logger.warning(f"Trading protections check failed (allowing {action}): {e}")
+
         # 2. Get the thresholds (upper + lower bound)
+        # Normalize thresholds to 0-10 scale: UI saves 0-100 (e.g. 75 -> 7.5, 30 -> 3.0)
         raw_threshold = self.settings_repo.get(user_id, "auto_trade_threshold")
-        threshold = int(raw_threshold) if raw_threshold is not None else 9
+        if raw_threshold is not None:
+            threshold = float(raw_threshold)
+            if threshold > 10:
+                threshold = threshold / 10.0
+        else:
+            threshold = 7.5
+
+        raw_min_threshold = self.settings_repo.get(user_id, "auto_trade_min_threshold")
+        if raw_min_threshold is not None:
+            min_threshold = float(raw_min_threshold)
+            if min_threshold > 10:
+                min_threshold = min_threshold / 10.0
+        else:
+            min_threshold = 3.0
+        
+        # ── Normalize confidence to 0-10 scale for consistent comparison ──
+        if confidence_score is not None and confidence_score > 10:
+            normalized_confidence = confidence_score / 10.0
+        else:
+            normalized_confidence = float(confidence_score if confidence_score is not None else 0)
         
         # v8.2: Enhanced Excess Cash Detection with multiple trigger patterns
         # 增強現金過高檢測，支援多種觸發模式
@@ -99,35 +160,25 @@ class AutomatedTradingService:
             "cash_ratio >" in rationale  # Quantitative pattern
         )
         if is_excess_cash:
-            reinvest_threshold = int(self.settings_repo.get(user_id, "auto_reinvest_threshold") or 7)
+            raw_reinvest = self.settings_repo.get(user_id, "auto_reinvest_threshold") or 7
+            reinvest_threshold = float(raw_reinvest) / 10.0 if float(raw_reinvest) > 10 else float(raw_reinvest)
             if threshold > reinvest_threshold:
                 logger.info(f"Excess Cash Reinvestment: Lowering threshold {threshold} -> {reinvest_threshold} for {ticker}")
                 threshold = reinvest_threshold
-        
-        raw_min_threshold = self.settings_repo.get(user_id, "auto_trade_min_threshold")
-        min_threshold = int(raw_min_threshold) if raw_min_threshold is not None else 3
-        
-        # ── Normalize confidence to 0-10 scale for consistent comparison ──
-        # Sentinel passes 0-100 (e.g. 86) but thresholds are 0-10 (e.g. 7)
-        # RebalanceService passes 0-10 (e.g. 8) — leave as-is.
-        if confidence_score is not None and confidence_score > 10:
-            normalized_confidence = round(confidence_score / 10)
-        else:
-            normalized_confidence = confidence_score
-        
+
         logger.info(
-            f"evaluating trade for {ticker}. Score: {normalized_confidence} (raw={confidence_score}), "
-            f"Min: {min_threshold}, Threshold: {threshold} (ExcessCash={is_excess_cash})"
+            f"evaluating trade for {ticker}. Score: {normalized_confidence:.1f} (raw={confidence_score}), "
+            f"Min: {min_threshold:.1f}, Threshold: {threshold:.1f} (ExcessCash={is_excess_cash})"
         )
         
         # 3. Decision Logic (三段式閥值)
         # 3a. Below minimum → skip silently, no notification
         if normalized_confidence < min_threshold:
             logger.info(
-                f"Score {normalized_confidence} < min_threshold {min_threshold}. "
+                f"Score {normalized_confidence:.1f} < min_threshold {min_threshold:.1f}. "
                 f"Skipping silently for {ticker}."
             )
-            return {"status": "skipped", "reason": f"Score {normalized_confidence} below minimum threshold {min_threshold}"}
+            return {"status": "skipped", "reason": f"Score {normalized_confidence:.1f} below minimum threshold {min_threshold:.1f}"}
         
         # Prepare Order object
         order_action = OrderAction.BUY if action.upper() == "BUY" else OrderAction.SELL
@@ -171,7 +222,16 @@ class AutomatedTradingService:
                         # Phase 2: Explicit rounding for USD amount
                         quantity = round(quantity, 2)
             except Exception as e:
-                logger.warning(f"Position Sizing check failed (non-blocking): {e}")
+                # 2026-08-02: fail CLOSED. This block enforces the max-position
+                # (% NLV), available-cash and minimum-amount limits. Letting an
+                # UNSIZED buy order through to a live broker is the worst
+                # outcome in this file, so a sizing failure must block.
+                # 2026-08-02：改為 fail-closed。未經 sizing 的買單流到真實 broker 是最糟結果。
+                logger.error(f"Position Sizing check failed — blocking BUY: {e}")
+                return {
+                    "status": "blocked",
+                    "reason": f"Position sizing unavailable ({type(e).__name__}); BUY blocked for safety",
+                }
         
         # v7.0: SELL Position Sizing Guard (持倉守衛 — 最後防線)
         # ─────────────────────────────────────────────────
@@ -223,7 +283,17 @@ class AutomatedTradingService:
                     # Phase 2: Explicit rounding for eToro 0.01 share precision
                     quantity = round(quantity, 2)
             except Exception as e:
-                logger.warning(f"SELL Position Sizing check failed (non-blocking): {e}")
+                # 2026-08-02: fail CLOSED. This clamp is what keeps a SELL from
+                # exceeding the actual holding (i.e. accidentally opening a
+                # short). Blocking here does not trap the user — they can retry
+                # or sell via the broker directly — whereas an unclamped SELL
+                # can create a position that did not exist.
+                # 2026-08-02：改為 fail-closed。未鉗制的賣單可能超賣成為做空部位。
+                logger.error(f"SELL Position Sizing check failed — blocking SELL: {e}")
+                return {
+                    "status": "blocked",
+                    "reason": f"Sell-quantity clamp unavailable ({type(e).__name__}); SELL blocked for safety",
+                }
         
         order = Order(
             symbol=ticker,
@@ -276,11 +346,15 @@ class AutomatedTradingService:
         
         try:
             # v4.2.3: Handle detailed status results (Approved/Rejected/Expired)
+            # 2026-07-14 (B-P2.2): pass ticker via context so a rejection can
+            # be attributed to a sector in UserPreferenceService — this was
+            # previously only embedded in the free-text `content` string.
             is_approved, status = await self.interaction_service.request_approval(
                 user_id=user_id,
                 title=title,
                 content=content,
-                timeout_seconds=300 
+                context={"ticker": order.symbol},
+                timeout_seconds=300
             )
             
             if is_approved:
