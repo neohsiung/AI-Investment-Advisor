@@ -64,8 +64,13 @@ cp .env.example .env
 
 | サービス | URL |
 |:---------|:----|
-| Next.js ダッシュボード | [http://localhost:3000](http://localhost:3000) |
-| FastAPI / MCP Server | [http://localhost:8000](http://localhost:8000) |
+| ゲートウェイ (nginx、本番のみ) | [http://127.0.0.1:8088](http://127.0.0.1:8088) |
+| Next.js ダッシュボード | [http://localhost:3001](http://localhost:3001) |
+| FastAPI / MCP Server | [http://localhost:8000](http://localhost:8000)（dev は 8001）|
+| SigNoz APM | [http://127.0.0.1:8080](http://127.0.0.1:8080) |
+
+> dev 環境の nginx はホストポートを公開していません。上記のフロントエンドと
+> API のポートに直接アクセスしてください。ゲートウェイは本番のみです。
 
 ---
 

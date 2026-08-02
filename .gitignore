@@ -74,6 +74,11 @@ dummy_prompt.txt
 test_otel.py
 monitor_llm_traffic.sh
 repomix-output.xml
+# Local working copy — seeded from the tracked n8n_workflow_template.example.json
+# by check_env() in start.sh. Kept out of git so local tweaks don't leave a
+# permanently dirty tree; the example is what ships.
+# 本地工作副本，由 start.sh 的 check_env() 從 .example 種出；不進 git，避免本地
+# 微調讓工作樹永遠是髒的。
 n8n_workflow_template.json
 
 # ── Agent Tool Configs (local-only) ────────────────────────────────

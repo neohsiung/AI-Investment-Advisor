@@ -196,10 +196,13 @@ For local development instead of the hardened self-host profile, use
 
 | Service | URL |
 |:--------|:----|
-| Next.js Dashboard | [http://localhost:3000](http://localhost:3000) |
-| FastAPI / MCP Server | [http://localhost:8000](http://localhost:8000) |
-| Streamlit (legacy) | [http://localhost:8501](http://localhost:8501) |
-| SigNoz APM | [http://localhost:3301](http://localhost:3301) |
+| Gateway (nginx, prod only) | [http://127.0.0.1:8088](http://127.0.0.1:8088) |
+| Next.js Dashboard | [http://localhost:3001](http://localhost:3001) |
+| FastAPI / MCP Server | [http://localhost:8000](http://localhost:8000) (dev: 8001) |
+| SigNoz APM | [http://127.0.0.1:8080](http://127.0.0.1:8080) |
+
+> The dev stack's nginx publishes no host port — reach the frontend and API
+> directly on the ports above. The gateway exists in production only.
 
 ---
 

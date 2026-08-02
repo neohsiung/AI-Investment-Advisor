@@ -130,9 +130,13 @@ cp .env.example .env
 
 | 服務 | 網址 |
 |:-----|:-----|
-| Next.js 儀表板 | [http://localhost:3000](http://localhost:3000) |
-| FastAPI / MCP Server | [http://localhost:8000](http://localhost:8000) |
-| SigNoz APM | [http://localhost:3301](http://localhost:3301) |
+| 閘道 (nginx，僅生產環境) | [http://127.0.0.1:8088](http://127.0.0.1:8088) |
+| Next.js 儀表板 | [http://localhost:3001](http://localhost:3001) |
+| FastAPI / MCP Server | [http://localhost:8000](http://localhost:8000)（dev 為 8001）|
+| SigNoz APM | [http://127.0.0.1:8080](http://127.0.0.1:8080) |
+
+> dev 環境的 nginx 沒有對外發佈埠口，請直接連上方的前端與 API 埠口；
+> 閘道只存在於生產環境。
 
 ---
 
