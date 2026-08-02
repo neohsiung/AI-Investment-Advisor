@@ -10,11 +10,14 @@ import { useSidebar } from "@/context/SidebarContext";
 const navItems = [
   { id: "command", label: "Command Center", icon: "terminal", href: "/" },
   { id: "performance", label: "績效分析", icon: "monitoring", href: "/performance" },
+  { id: "backtest", label: "策略回測", icon: "history", href: "/backtest" },
+  { id: "decisions", label: "議會辯論", icon: "forum", href: "/decisions" },
   { id: "reports", label: "報告", icon: "description", href: "/reports" },
   { id: "chat", label: "AI 對話", icon: "smart_toy", href: "/chat" },
   { id: "data", label: "數據", icon: "table_chart", href: "/data" },
   { id: "intelligence", label: "市場情報", icon: "crisis_alert", href: "/intelligence" },
   { id: "universe", label: "標的池", icon: "layers", href: "/universe" },
+  { id: "health", label: "健康監控", icon: "healing", href: "/health" },
   { id: "settings", label: "Settings", icon: "tune", href: "/settings" },
 ];
 

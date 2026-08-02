@@ -19,6 +19,12 @@ export default function ReportsPage() {
     r.content.toLowerCase().includes(searchQuery.toLowerCase())
   );
 
+  const isHtml = selectedReport && (
+    selectedReport.content.trim().toLowerCase().startsWith("<!doctype") ||
+    selectedReport.content.trim().toLowerCase().startsWith("<html") ||
+    selectedReport.content.includes("</html>")
+  );
+
   return (
     <div className="flex-1 flex flex-col md:flex-row overflow-hidden bg-background pt-16">
       {/* Sidebar - Report List */}
@@ -107,7 +113,7 @@ export default function ReportsPage() {
               </div>
             </div>
 
-            {/* Markdown Viewer */}
+            {/* Markdown/HTML Viewer */}
             <div className="flex-1 overflow-y-auto p-6 md:p-12 lg:px-24 xl:px-32">
               <div className="prose prose-invert prose-slate max-w-none">
                 <div className="mb-12 border-b border-outline-variant/20 pb-12">
@@ -127,19 +133,30 @@ export default function ReportsPage() {
                   </div>
                 </div>
 
-                <div className="prose-content text-on-surface/80 leading-relaxed text-lg font-body">
-                  <ReactMarkdown
-                    components={{
-                      h1: ({ ...props }) => <h1 className="text-3xl font-bold mt-12 mb-6 text-primary" {...props} />,
-                      h2: ({ ...props }) => <h2 className="text-2xl font-bold mt-10 mb-4 text-on-surface border-l-4 border-primary pl-4" {...props} />,
-                      p: ({ ...props }) => <p className="mb-6 leading-8" {...props} />,
-                      ul: ({ ...props }) => <ul className="list-disc pl-6 mb-6 space-y-2" {...props} />,
-                      code: ({ ...props }) => <code className="bg-surface-container-highest px-1.5 py-0.5 rounded font-mono text-sm text-secondary" {...props} />,
-                    }}
-                  >
-                    {selectedReport.content}
-                  </ReactMarkdown>
-                </div>
+                {isHtml ? (
+                  <div className="w-full bg-white rounded-xl overflow-hidden shadow-2xl border border-outline-variant/10">
+                    <iframe
+                      srcDoc={selectedReport.content}
+                      className="w-full h-[70vh] min-h-[600px] border-none"
+                      title={selectedReport.summary}
+                      sandbox="allow-scripts"
+                    />
+                  </div>
+                ) : (
+                  <div className="prose-content text-on-surface/80 leading-relaxed text-lg font-body">
+                    <ReactMarkdown
+                      components={{
+                        h1: ({ ...props }) => <h1 className="text-3xl font-bold mt-12 mb-6 text-primary" {...props} />,
+                        h2: ({ ...props }) => <h2 className="text-2xl font-bold mt-10 mb-4 text-on-surface border-l-4 border-primary pl-4" {...props} />,
+                        p: ({ ...props }) => <p className="mb-6 leading-8" {...props} />,
+                        ul: ({ ...props }) => <ul className="list-disc pl-6 mb-6 space-y-2" {...props} />,
+                        code: ({ ...props }) => <code className="bg-surface-container-highest px-1.5 py-0.5 rounded font-mono text-sm text-secondary" {...props} />,
+                      }}
+                    >
+                      {selectedReport.content}
+                    </ReactMarkdown>
+                  </div>
+                )}
               </div>
 
               <div className="mt-24 pt-12 border-t border-outline-variant/10 text-center opacity-30">

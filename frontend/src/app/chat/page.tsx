@@ -48,9 +48,14 @@ export default function ChatPage() {
     };
 
     try {
+      const token = localStorage.getItem("access_token");
+      const headers: Record<string, string> = { "Content-Type": "application/json" };
+      if (token) {
+        headers["Authorization"] = `Bearer ${token}`;
+      }
       const response = await fetch("/api/v1/chat/stream", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers,
         body: JSON.stringify({
           message: userPrompt,
           history: messages.slice(-10)
