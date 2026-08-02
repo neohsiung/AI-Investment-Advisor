@@ -42,6 +42,9 @@
 
 ---
 
+> [!WARNING]
+> **Not investment advice. Trades real money at your own risk.** This is autonomous trading software — if configured with live broker credentials, it will place real orders with real money. Provided "AS IS" with no warranty (see [LICENSE](LICENSE) / [NOTICE](NOTICE)). Always start in paper/demo mode and understand the code before connecting a funded account.
+
 > [!TIP]
 > **Your portfolio has 7 agents watching it 24/7.** This platform orchestrates a multi-agent swarm to autonomously monitor, debate, and rebalance your investments — the way a hedge fund brain would.
 
@@ -173,18 +176,23 @@ graph TD
 - Python 3.10+ (for local development)
 - Node.js 20+ (for frontend development)
 
-### Launch
+### Launch (self-host, one command)
 
 ```bash
-# 1. Clone & configure
 git clone https://github.com/neohsiung/AI-Investment-Advisor.git
 cd AI-Investment-Advisor
-cp .env.example .env
-# Edit .env — set APP_SECRET_KEY and LLM_CREDENTIAL_KEY
-
-# 2. Start all services (PostgreSQL, Redis, API, Frontend, Scheduler)
-./start.sh
+./start.sh selfhost
 ```
+
+This auto-generates every required secret, defaults to **paper trading
+mode** (no real orders, ever, until you opt in), builds and starts the
+full stack, and applies database migrations. See
+**[docs/SELF_HOSTING.md](docs/SELF_HOSTING.md)** for the first-run LLM
+provider setup, cost expectations, and how to switch to live trading
+when you're ready.
+
+For local development instead of the hardened self-host profile, use
+`./start.sh dev` (includes SigNoz APM, n8n, and debugging tools).
 
 | Service | URL |
 |:--------|:----|
@@ -297,8 +305,8 @@ Please open an issue first for major changes so we can discuss the approach.
 
 ## 📄 License & Disclaimer
 
-- **License**: [MIT License](LICENSE)
-- **Disclaimer**: This project is for **educational and research purposes only**. It is not financial advice. Trading involves risk — use at your own discretion.
+- **License**: [Apache License 2.0](LICENSE)
+- **Disclaimer**: This project autonomously analyzes markets and, if configured with live broker credentials, can place real trades with real money. It is not financial advice, provided "AS IS" with no warranty. See [NOTICE](NOTICE) for the full disclaimer.
 
 ---
 
@@ -307,5 +315,5 @@ Please open an issue first for major changes so we can discuss the approach.
 </p>
 
 <p align="center">
-  MIT License &copy; <a href="https://github.com/neohsiung">neohsiung</a>
+  Apache License 2.0 &copy; <a href="https://github.com/neohsiung">AI Investment Advisor Contributors</a>
 </p>
