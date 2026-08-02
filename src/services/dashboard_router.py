@@ -243,18 +243,29 @@ async def get_all_settings(service: SettingsService = Depends(get_settings_servi
 @limiter.limit("10/minute")
 async def save_settings(
     request: Request,
-    background_tasks: BackgroundTasks,
     payload: Dict[str, Any] = Body(...),
     service: SettingsService = Depends(get_settings_service),
 ):
-    """批次儲存系統設定 (非同步處理耗時重啟)"""
+    """
+    批次儲存系統設定 (同步寫入)。
+
+    2026-08-02: made synchronous alongside /api/v1/settings. This legacy route
+    writes the same keys — leaving it fire-and-forget would keep a back door
+    where a broker-credential or kill-switch write silently fails with a 200.
+    2026-08-02：與 /api/v1/settings 一併改同步；這條舊路由寫的是同一批 key，
+    留著背景寫入等於留一個「寫失敗卻回 200」的後門。
+    """
     try:
-        # v1.2: 即刻返回，背景執行耗時的 DB 寫入與可能的 Agent 重啟
-        background_tasks.add_task(service.save_settings_bulk, payload)
-        return {"status": "success", "message": "設定已收悉，系統正在背景更新中。"}
+        ok, message = service.save_settings_bulk(payload)
+        if not ok:
+            logger.error(f"Error saving settings: {message}")
+            raise HTTPException(status_code=500, detail=message or "Failed to save settings")
+        return {"status": "success", "message": message or "設定已儲存。"}
+    except HTTPException:
+        raise
     except Exception as e:
-        logger.exception("Error initiating background settings save")
-        raise HTTPException(status_code=500, detail="System update initiation failed")
+        logger.exception("Error saving settings")
+        raise HTTPException(status_code=500, detail="System update failed")
 
 @dashboard_router.post("/settings/test-notification")
 async def test_notification(
@@ -602,8 +613,8 @@ async def get_summary(service: DashboardService = Depends(get_dashboard_service)
         cached = _r.get(cache_key)
         if cached:
             return json.loads(cached)
-    except Exception: # nosec B110
-        pass
+    except Exception as e:# nosec B110
+        logger.warning(f'Exception in dashboard_router.py: {e}', exc_info=True)
 
     try:
         data = service.prepare_dashboard_data(service.user_id)
@@ -632,8 +643,8 @@ async def get_summary(service: DashboardService = Depends(get_dashboard_service)
         try:
             if _r:
                 _r.setex(cache_key, 120, json.dumps(result))
-        except Exception: # nosec B110
-            pass
+        except Exception as e:# nosec B110
+            logger.warning(f'Exception in dashboard_router.py: {e}', exc_info=True)
 
         return result
     except Exception as e:

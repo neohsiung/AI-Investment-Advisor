@@ -97,8 +97,35 @@ class SettingsService:
             if parsed is None and raw_val is not None:
                 return default
             return parsed
-        except Exception:
+        except Exception as e:
+            _logger.warning(f'Exception in settings_service.py: {e}', exc_info=True)
             return default
+
+    # Settings that change how a broker connects or which venue it trades on.
+    # Writing any of these must drop the cached broker for that user.
+    # 這些設定會改變 broker 連線方式或下單場域，寫入後必須清掉該使用者的 broker 快取。
+    BROKER_SETTING_KEYS = frozenset({
+        "etoro_api_key", "etoro_user_key", "etoro_mode",
+        "etoro_api_base_url", "etoro_base_url",
+        "preferred_broker", "enable_etoro", "enable_ibkr",
+        "ibkr_host", "ibkr_port",
+    })
+
+    @staticmethod
+    def _invalidate_broker_cache_if_needed(user_id: str, keys) -> None:
+        """
+        Evict the cached broker when broker-affecting settings change.
+        Redundant with BrokerFactory's config-fingerprint check by design —
+        this buys immediate freshness in the writing process. Never fatal.
+        與 BrokerFactory 的指紋比對重複是刻意的，這裡只求寫入端即時生效，失敗不致命。
+        """
+        if not any(k in SettingsService.BROKER_SETTING_KEYS for k in keys):
+            return
+        try:
+            from src.services.broker_factory import BrokerFactory
+            BrokerFactory.invalidate(user_id=user_id)
+        except Exception as e:
+            _logger.warning(f"Broker cache invalidation failed for {user_id}: {e}")
 
     def save_setting(self, key: str, value: Any, user_id: str = None) -> Tuple[bool, str]:
         """
@@ -107,21 +134,39 @@ class SettingsService:
         try:
             target_uid = user_id or self._get_effective_uid()
             self.settings_repo.set(target_uid, key, value)
+            self._invalidate_broker_cache_if_needed(target_uid, (key,))
             return True, "Success"
         except Exception as e:
             return False, str(e)
 
     def save_settings_bulk(self, settings_dict: Dict[str, Any]) -> Tuple[bool, str]:
         """
-        Saves or updates multiple settings in a single transaction.
+        Saves or updates multiple settings atomically — all or nothing.
+
+        2026-08-02: was a loop over `set()`, which commits per key, so a
+        mid-loop failure left a partial write. That matters because callers
+        write related keys together: the eToro credential pair must rotate as
+        a unit, and a half-applied pair is precisely the failure mode behind
+        the 2026-08-02 outage. Now delegates to `set_many()` (one transaction).
+        2026-08-02：改為委派 set_many() 單一交易；原本逐 key commit 會留下半套狀態。
         """
+        target_uid = None
         try:
             target_uid = self._get_effective_uid()
-            for key, value in settings_dict.items():
-                self.settings_repo.set(target_uid, key, value)
+            if not settings_dict:
+                return True, "No settings to save."
+            self.settings_repo.set_many(target_uid, settings_dict)
             return True, "Settings saved successfully."
         except Exception as e:
             return False, f"Error saving settings: {e}"
+        finally:
+            # Invalidate regardless of outcome: on a rollback the cache is
+            # already consistent, and on an ambiguous failure dropping the
+            # cached broker is strictly safer than keeping a possibly-stale
+            # one. Cheap and idempotent.
+            # 無論成敗都清快取：回滾時本就一致，失敗時清掉比留著可能過期的更安全。
+            if target_uid is not None:
+                self._invalidate_broker_cache_if_needed(target_uid, settings_dict.keys())
 
     def delete_setting(self, key: str, user_id: str = None) -> Tuple[bool, str]:
         """

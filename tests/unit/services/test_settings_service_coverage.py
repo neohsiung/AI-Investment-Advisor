@@ -80,14 +80,19 @@ class TestSettingsService:
         assert "DB Error" in msg
     
     def test_save_settings_bulk(self):
-        """Test saving multiple settings."""
+        """
+        Bulk save must go through the atomic set_many(), not a per-key loop.
+        2026-08-02: looping over set() committed per key, leaving partial
+        writes on failure — see AlchemySettingsRepository.set_many.
+        """
         mock_repo = MagicMock()
-        
+
         service = SettingsService(user_id="user123", settings_repo=mock_repo)
         success, msg = service.save_settings_bulk({"k1": "v1", "k2": "v2"})
-        
+
         assert success is True
-        assert mock_repo.set.call_count == 2
+        mock_repo.set_many.assert_called_once_with("user123", {"k1": "v1", "k2": "v2"})
+        assert mock_repo.set.call_count == 0
     
     @patch('src.services.settings_service.requests.get')
     def test_fetch_openrouter_models(self, mock_get):

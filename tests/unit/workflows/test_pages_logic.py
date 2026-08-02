@@ -58,11 +58,12 @@ class TestSettingsService:
         service = SettingsService("dummy.db", user_id="test_user", settings_repo=mock_repo)
         updates = {"AI_PROVIDER": "OpenAI", "API_KEY": "sk-123"} # pragma: allowlist secret
 
-        mock_repo.set.return_value = True # Ensure success
+        mock_repo.set_many.return_value = None  # Ensure success
         success, msg = service.save_settings_bulk(updates)
 
         assert success is True
-        assert mock_repo.set.call_count == 2
+        # 2026-08-02: bulk save is now one atomic set_many(), not a per-key loop.
+        mock_repo.set_many.assert_called_once_with("test_user", updates)
 
     def test_fetch_openrouter_models(self):
         with patch('requests.get') as mock_get:
