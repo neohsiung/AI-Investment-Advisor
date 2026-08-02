@@ -94,8 +94,15 @@ class RiskManager:
         Check if trading is allowed for this user based on dynamic constraints.
         """
         # 0. Global Check
+        # 2026-08-02: coerce via str(). Setting.value is a JSON column, so this
+        # setting may legitimately be stored as a JSON boolean (the Streamlit
+        # tab writes a Python bool). `enabled.lower()` then raised
+        # AttributeError on EVERY execute_order call. Every other reader
+        # (automated_trading_service, broker_factory) already coerces; this was
+        # the sole outlier.
+        # 2026-08-02：settings.value 是 JSON 欄位，可能存成 boolean，直接 .lower() 會 AttributeError。
         enabled = self._get_setting(user_id, "ai_trading_enabled", "true")
-        if enabled.lower() != "true":
+        if str(enabled).lower() not in ("true", "1"):
             logger.warning(f"Risk Check: Global trading disabled for {user_id}")
             return False
 
