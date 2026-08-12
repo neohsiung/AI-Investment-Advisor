@@ -104,11 +104,13 @@ class TestCacheUtility:
         """Test cache operations"""
         from src.utils.cache import ResponseCache
         
-        # Mock redis.from_url
-        with patch('redis.from_url') as mock_redis_factory:
+        # 2026-08-10: ResponseCache now takes its client from the shared pool
+        # accessor instead of building one with redis.from_url.
+        # 2026-08-10：ResponseCache 改由共用連線池取得 client。
+        with patch('src.infrastructure.cache.redis_client.get_redis_sync') as mock_get_redis:
             mock_client = MagicMock()
-            mock_redis_factory.return_value = mock_client
-            
+            mock_get_redis.return_value = mock_client
+
             cache = ResponseCache(redis_url="redis://localhost:6379/0")
             
             # Test key generation

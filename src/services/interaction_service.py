@@ -63,9 +63,9 @@ class RedisPendingRequests:
         if is_testing:
             self._redis = None
         else:
-            redis_url = os.getenv("REDIS_URL", "redis://localhost:6379/0")
             try:
-                self._redis = redis.from_url(redis_url, decode_responses=True, socket_connect_timeout=3)
+                from src.infrastructure.cache.redis_client import get_redis_sync
+                self._redis = get_redis_sync()
                 self._redis.ping()
             except Exception as e:
                 logger.warning(f'Exception in interaction_service.py: {e}', exc_info=True)

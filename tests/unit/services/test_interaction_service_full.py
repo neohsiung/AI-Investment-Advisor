@@ -205,9 +205,14 @@ def test_redis_pending_requests_coverage():
     if "pytest" in mock_modules:
         del mock_modules["pytest"]
         
-    with patch('sys.modules', mock_modules), patch('os.environ.get', return_value="redis://localhost:6379/0"), patch('redis.from_url') as mock_from_url:
+    # 2026-08-10: patch target moved to the shared pool accessor —
+    # RedisPendingRequests no longer calls redis.from_url itself.
+    # 2026-08-10：patch 目標改為共用連線池存取函式。
+    with patch('sys.modules', mock_modules), \
+         patch('os.environ.get', return_value="redis://localhost:6379/0"), \
+         patch('src.infrastructure.cache.redis_client.get_redis_sync') as mock_get_redis:
         mock_client = MagicMock()
-        mock_from_url.return_value = mock_client
+        mock_get_redis.return_value = mock_client
         store2 = RedisPendingRequests()
         assert store2._redis is mock_client
 

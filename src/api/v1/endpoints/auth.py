@@ -62,8 +62,13 @@ _EXCHANGE_TTL_SECONDS = 30
 
 
 def _get_redis():
-    import redis
-    return redis.from_url(os.getenv("REDIS_URL", "redis://localhost:6379/0"), decode_responses=True)
+    # 2026-08-10: returned a brand-new client on every call. Sync clients are
+    # GC-reclaimable so this churned rather than leaked, but it still opened a
+    # socket per auth exchange. Shared bounded pool instead.
+    # 2026-08-10：原本每次呼叫都新建 client；sync client 雖可被 GC 回收，仍會
+    # 每次認證交換開一條 socket。改用共用的有界連線池。
+    from src.infrastructure.cache.redis_client import get_redis_sync
+    return get_redis_sync()
 
 
 def _store_exchange_code(access_token: str, refresh_token: str) -> str:

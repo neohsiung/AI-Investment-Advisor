@@ -67,20 +67,18 @@ class WorkflowCache:
             
         if self._redis_client is None:
             try:
-                import redis.asyncio as aioredis
-                url = os.getenv("REDIS_URL", "redis://localhost:6379/0")
-                password = os.getenv("REDIS_PASSWORD")
-                
-                kwargs = {
-                    "decode_responses": True,
-                    "socket_connect_timeout": 2,
-                }
-                if password:
-                    kwargs["password"] = password
-                    
-                self._redis_client = aioredis.from_url(url, **kwargs)
+                # 2026-08-10: was a per-instance `aioredis.from_url()` that was
+                # never closed. WorkflowCache is built fresh per Council/DAG run
+                # (council_service.py) and per /api/v1/loop-health request, so
+                # each one abandoned another connection pool. Now shared.
+                # The explicit REDIS_PASSWORD kwarg is gone: prod's REDIS_URL
+                # already embeds the credential, so it was redundant.
+                # 2026-08-10：原本每個 instance 各建一個從不關閉的 client，而
+                # WorkflowCache 每次 Council/DAG 執行與每次請求都重建。改為共用。
+                from src.infrastructure.cache.redis_client import get_redis
+
+                self._redis_client = await get_redis(decode_responses=True)
                 await self._redis_client.ping()
-                logger.info(f"WorkflowCache: Connected to Redis at {url}")
             except Exception as e:
                 logger.warning(f"WorkflowCache: Redis unavailable ({e}). Falling back to SQLite/Memory.")
                 self._redis_client = None

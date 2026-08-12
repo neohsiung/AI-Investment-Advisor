@@ -164,9 +164,12 @@ SOURCE_PARSERS = {
 class WebhookService:
     def __init__(self, settings_service: Optional[SettingsService] = None):
         self.settings_service = settings_service or SettingsService()
-        import redis
+        # 2026-08-10: WebhookService is constructed per request, and this used
+        # to build a Redis client each time. Shared bounded pool instead.
+        # 2026-08-10：WebhookService 每次請求都重建，原本每次都新建 Redis client。
         try:
-            self._redis = redis.from_url(os.getenv("REDIS_URL", "redis://localhost:6379/0"), decode_responses=True, socket_connect_timeout=3)
+            from src.infrastructure.cache.redis_client import get_redis_sync
+            self._redis = get_redis_sync()
         except Exception as e:
             logger.warning(f'Exception in webhook_service.py: {e}', exc_info=True)
             self._redis = None

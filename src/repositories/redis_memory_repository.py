@@ -1,4 +1,3 @@
-import redis
 import json
 import logging
 import os
@@ -16,12 +15,13 @@ class RedisMemoryRepository(IMemoryRepository):
     Suitable for K8s microservices environment.
     """
     def __init__(self, redis_url: str = None):
-        url = redis_url or os.getenv("REDIS_URL", "redis://localhost:6379/0")
-        self.r = redis.from_url(url, decode_responses=True)
+        # 2026-08-10: one client per instance → shared process-wide pool.
+        # 2026-08-10：每個 instance 一個 client → 改為行程共用連線池。
+        from src.infrastructure.cache.redis_client import get_redis_sync
+        self.r = get_redis_sync()
         # Verify connection
         try:
             self.r.ping()
-            logger.info(f"Connected to Redis at {url}")
         except Exception as e:
             logger.error(f"Failed to connect to Redis: {e}")
 

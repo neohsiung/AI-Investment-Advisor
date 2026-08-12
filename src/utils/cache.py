@@ -1,4 +1,3 @@
-import redis
 import hashlib
 import json
 import os
@@ -18,12 +17,14 @@ class ResponseCache:
         self.redis_url = redis_url or os.getenv("REDIS_URL", "redis://localhost:6379/0")
         self.ttl_seconds = ttl_hours * 3600
         self.logger = setup_logger("ResponseCache")
-        self.client = redis.from_url(self.redis_url, decode_responses=True)
-        
+        # 2026-08-10: one client per instance → shared process-wide pool.
+        # 2026-08-10：每個 instance 一個 client → 改為行程共用連線池。
+        from src.infrastructure.cache.redis_client import get_redis_sync
+        self.client = get_redis_sync()
+
         # Verify connection
         try:
             self.client.ping()
-            self.logger.info(f"Connected to Redis cache at {self.redis_url}")
         except Exception as e:
             self.logger.error(f"Failed to connect to Redis cache: {e}")
 

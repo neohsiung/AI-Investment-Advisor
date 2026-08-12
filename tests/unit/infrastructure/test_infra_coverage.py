@@ -43,11 +43,15 @@ class MockRedis:
     def hgetall(self, key):
         return self.data.get(key, {})
 
-@patch('src.repositories.redis_memory_repository.redis.from_url')
-def test_redis_repo_save_and_fetch(mock_from_url):
+# 2026-08-10: patch target moved from `redis.from_url` to the shared pool
+# accessor. RedisMemoryRepository no longer builds its own client — see
+# src/infrastructure/cache/redis_client.py for why.
+# 2026-08-10：patch 目標由 redis.from_url 改為共用連線池存取函式。
+@patch('src.infrastructure.cache.redis_client.get_redis_sync')
+def test_redis_repo_save_and_fetch(mock_get_redis):
     mock_r = MockRedis()
-    mock_from_url.return_value = mock_r
-    
+    mock_get_redis.return_value = mock_r
+
     repo = RedisMemoryRepository("redis://mock")
     
     item = ReportMemoryItem(

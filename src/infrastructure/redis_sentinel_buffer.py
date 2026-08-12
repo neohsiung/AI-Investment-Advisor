@@ -32,24 +32,36 @@ class RedisSentinelBuffer:
     """
 
     def __init__(self, redis_url: str = None):
-        self._redis_url = redis_url or os.getenv("REDIS_URL", "redis://redis:6379/0")
+        # `redis_url` is retained for API compatibility but is no longer used:
+        # the client now comes from the process-wide pool, which resolves
+        # REDIS_URL itself. No caller has ever passed an override.
+        # redis_url 保留僅為相容；客戶端改由行程共用連線池提供，其自行解析
+        # REDIS_URL。目前沒有任何呼叫端傳入覆寫值。
+        self._redis_url = redis_url
         self._client: Optional[Any] = None  # lazy init
 
     def _key(self, user_id: str) -> str:
         return _REDIS_KEY_TEMPLATE.format(user_id=user_id)
 
     async def _get_client(self):
-        """Lazy-initialize async Redis client."""
+        """
+        Return the process-wide async Redis client.
+        取得行程共用的 async Redis 客戶端。
+
+        2026-08-10: this used to cache a client per *instance*, which only
+        helps when the owner is itself a singleton. SentinelService is
+        constructed fresh per Celery task (tasks.py) and per webhook request
+        (webhook_service.py), so each one minted and abandoned another pool.
+        The shared accessor makes the caching process-wide instead.
+        2026-08-10：原本以 instance 為單位快取，但 SentinelService 每個 Celery
+        task 與每次 webhook 請求都重建，等於每次都新建並遺棄一個連線池。
+        """
         if self._client is None:
             try:
-                import redis.asyncio as aioredis
-                self._client = aioredis.from_url(
-                    self._redis_url,
-                    decode_responses=True,
-                    socket_connect_timeout=2,
-                )
+                from src.infrastructure.cache.redis_client import get_redis
+
+                self._client = await get_redis(decode_responses=True)
                 await self._client.ping()
-                logger.info(f"RedisSentinelBuffer: Connected to {self._redis_url}")
             except Exception as e:
                 logger.error(f"RedisSentinelBuffer: Failed to connect to Redis: {e}")
                 self._client = None

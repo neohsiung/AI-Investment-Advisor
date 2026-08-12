@@ -609,13 +609,20 @@ async def advisor_chat_stream(
 @dashboard_router.get("/summary")
 async def get_summary(service: DashboardService = Depends(get_dashboard_service)):
     """獲取投資概覽數據 (NLV, Cash, PnL, ROI) — Redis cached (120s TTL)"""
-    import redis as _redis
+    from src.infrastructure.cache.redis_client import get_redis_sync
     cache_key = f"dashboard:summary:{service.user_id}"
     _r = None
 
     # Fast path: return cached result if available
+    # 2026-08-10: was a fresh redis.from_url() per request; now the shared pool.
+    # NOTE: the setex() below is unreachable — it sits after the `return` in the
+    # success branch — so this cache is only ever read, never written, and every
+    # request falls through to a full recompute. Left as-is here because fixing
+    # it turns a 120s cache on, which is a behaviour change, not a leak fix.
+    # 2026-08-10：改用共用連線池。注意：下方 setex() 位於 return 之後而永不執行，
+    # 此快取只讀不寫；修正它等同啟用 120 秒快取，屬行為變更，故此處不動。
     try:
-        _r = _redis.from_url(os.getenv("REDIS_URL", "redis://redis:6379/0"), decode_responses=True)
+        _r = get_redis_sync()
         cached = _r.get(cache_key)
         if cached:
             return json.loads(cached)

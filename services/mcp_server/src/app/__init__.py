@@ -12,6 +12,7 @@ from sqlalchemy import text
 
 from src.utils.logger import setup_logger
 from src.utils.rate_limit import limiter
+from src.infrastructure.cache.redis_client import get_redis, aclose_redis
 from src.services.dashboard_router import get_current_user
 from src.api.v1.router import api_v1_router
 logger = setup_logger("MCPService")
@@ -87,15 +88,11 @@ _ws_data_cache: Dict[str, Any] = {}
 _ws_last_fetch: Dict[str, float] = {}
 WS_CACHE_TTL = 60  # seconds between full data refreshes
 
-async def _warm_redis_cache(user_id: str, summary: dict) -> None:
-    """Write the latest summary to Redis so REST /summary can respond instantly."""
-    try:
-        import redis as _redis, json as _json, os as _os
-        r = _redis.from_url(_os.getenv("REDIS_URL", "redis://redis:6379/0"), decode_responses=True)
-        payload = _json.dumps({"status": "success", "data": summary})
-        r.setex(f"dashboard:summary:{user_id}", 120, payload)
-    except Exception:
-        pass  # Redis unavailable — REST endpoint will fall through to full compute
+# `_warm_redis_cache()` lived here until 2026-08-10. It had zero callers and
+# built an unclosed Redis client per invocation, so it was removed alongside
+# the /health connection-leak fix rather than migrated to the shared pool.
+# 2026-08-10 移除 _warm_redis_cache()：無任何呼叫者，且每次呼叫都建立未關閉的
+# Redis client，隨 /health 連線洩漏修復一併刪除。
 
 async def websocket_broadcast_loop():
     """定期為所有活躍連線推送數據更新 (每 30 秒廣播，每 60 秒重新計算)"""
@@ -341,9 +338,35 @@ async def lifespan(app: FastAPI):
         logger.error(f"Failed to register LlamaIndex tools: {e}")
     
     yield
-    
+
     # Teardown
+    # 2026-08-10: teardown used to be `services.clear()` alone — the broadcast
+    # task kept running, the Polygon socket stayed open, and no Redis client
+    # was ever released. On reload that left orphaned sockets behind, which
+    # compounded the maxclients exhaustion this file's /health fix addresses.
+    # 2026-08-10：原本 teardown 只有 services.clear()，廣播任務、Polygon 連線與
+    # Redis 連線都未釋放，reload 後留下孤兒 socket，加劇 maxclients 耗盡問題。
+    logger.info("Shutting down MCP Services...")
+
+    broadcast_task.cancel()
+    try:
+        await broadcast_task
+    except asyncio.CancelledError:
+        pass
+    except Exception as e:
+        logger.warning(f"WebSocket broadcast task shutdown error: {e}")
+
+    stream_client = services.get("polygon_stream")
+    if stream_client is not None:
+        try:
+            stream_client.stop()  # sync — see polygon_stream_client.py:82
+        except Exception as e:
+            logger.warning(f"Polygon stream client shutdown error: {e}")
+
+    await aclose_redis()
+
     services.clear()
+    logger.info("MCP Services shut down.")
 
 # v8.0: Rate Limiter is imported from src.utils.rate_limit
 
@@ -463,10 +486,16 @@ async def health():
         health_status["status"] = "degraded"
 
     # 2. Check Redis
+    # 2026-08-10: this block used to build a fresh `redis.asyncio` client per
+    # request and never close it. redis==5.0.1's async Connection has no
+    # __del__, so every call leaked a socket — at the 30s Docker healthcheck
+    # interval that is 2,880/day, and it exhausted Redis's 10,000 maxclients
+    # in a few days, taking every Celery worker down with it. The healthcheck
+    # was the thing killing the service it was checking. Use the shared pool.
+    # 2026-08-10：原本每次請求都新建 async client 且從不關閉，造成 socket 洩漏，
+    # 健康檢查本身打爆 maxclients 並拖垮所有 Celery worker。改用共用連線池。
     try:
-        redis_url = os.getenv("REDIS_URL", "redis://localhost:6379/0")
-        import redis.asyncio as redis
-        r = redis.from_url(redis_url)
+        r = await get_redis()
         await r.ping()
         health_status["checks"]["redis"] = "connected"
     except Exception as e:
