@@ -26,6 +26,36 @@ def _global_trading_mode() -> Optional[str]:
         logger.warning(f"Unrecognized TRADING_MODE={value!r}, ignoring (expected 'paper' or 'live')")
     return None
 
+def effective_trading_mode(user_id: str, settings_repo: Any = None) -> str:
+    """
+    Report whether orders for this user would hit real money. "real" | "demo".
+    回報此使用者的委託是否會動用真實資金。
+
+    Added 2026-08-10 so callers outside broker construction — notably the
+    strategy-validation gate in AutomatedTradingService — can ask the question
+    without building a broker or duplicating the override rules. Mirrors the
+    resolution order used by get_broker() below: the stored `etoro_mode`
+    (defaulting to "demo" when absent), with TRADING_MODE=paper forcing demo.
+
+    2026-08-10 新增，讓 broker 建構之外的呼叫端（主要是策略驗證關卡）能在不建立
+    broker、也不重複覆寫規則的前提下取得答案。解析順序與 get_broker() 一致。
+    """
+    repo = settings_repo or AlchemySettingsRepository()
+    try:
+        mode = repo.get(user_id, "etoro_mode") or "demo"
+    except Exception as e:
+        # Fail safe, not fail useful: if the mode cannot be read, treat it as
+        # real so anything gated on "is this live?" errs toward caution.
+        # 讀不到模式時一律視為實盤，讓以此為條件的防護傾向保守。
+        logger.warning(f"effective_trading_mode: settings read failed ({e}); assuming 'real'")
+        return "real"
+
+    mode = str(mode).strip().lower()
+    if _global_trading_mode() == "paper" and mode != "demo":
+        return "demo"
+    return mode
+
+
 # Settings that decide how an eToro broker is built. Watched as a group so a
 # rotation of either credential, a mode flip, or a base-URL change all move the
 # change token below.

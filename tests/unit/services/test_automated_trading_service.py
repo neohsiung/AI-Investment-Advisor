@@ -90,7 +90,17 @@ async def test_auto_execute_when_score_above_threshold(test_svc, mock_broker):
     # Check that notification was dispatched via HTTP API
     mock_notify.assert_called_once()
     call_kwargs = mock_notify.call_args[1]
-    assert "Auto-Approved" in call_kwargs["content"]
+    # 2026-08-11: the card was rewritten (src/services/decision_card.py), so
+    # the literal "Auto-Approved" label is gone. Assert on what the card must
+    # now convey instead: that it executed without asking, and what the score
+    # was measured against — an auto-executed trade is the only record the
+    # user gets of a decision they were never consulted on.
+    # 2026-08-11：卡片已改寫，原本的 "Auto-Approved" 字樣不再存在。改為斷言卡片
+    # 現在必須傳達的內容：未經詢問即執行，以及分數對照的門檻。
+    content = call_kwargs["content"]
+    assert "自動執行" in content
+    assert "分數 9.0/10" in content
+    assert "自動門檻 9.0" in content
 
 @pytest.mark.anyio
 async def test_require_approval_when_score_between_thresholds(test_svc, mock_interaction_service, mock_broker):

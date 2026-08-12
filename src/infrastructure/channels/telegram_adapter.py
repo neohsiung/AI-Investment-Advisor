@@ -336,6 +336,17 @@ class TelegramAdapter(BaseChannelAdapter):
             safe_content = html.escape(content)
             # Then convert markdown to HTML (Telegram parse_mode=HTML)
             # 然後將 markdown 轉換為 HTML (Telegram parse_mode=HTML)
+            #
+            # 2026-08-11: fenced blocks -> <pre>. Telegram renders normal text
+            # in a proportional font, so any column-aligned table (e.g. the
+            # score breakdown in decision_card.py) collapses into a ragged
+            # mess. <pre> is the only way to get monospace, and because this
+            # runs AFTER html.escape() the block's contents stay escaped —
+            # a caller cannot inject markup through it.
+            # 2026-08-11：新增 ``` 圍欄轉 <pre>。Telegram 內文為比例字型，任何
+            # 對齊表格都會跑版；<pre> 是取得等寬字型的唯一途徑。此轉換在
+            # html.escape() 之後執行，區塊內容仍為已轉義文字，無法藉此注入標記。
+            safe_content = re.sub(r'```\n?(.+?)\n?```', r'<pre>\1</pre>', safe_content, flags=re.DOTALL)
             safe_content = re.sub(r'\*\*(.+?)\*\*', r'<b>\1</b>', safe_content)
             safe_content = re.sub(r'__(.+?)__', r'<i>\1</i>', safe_content)
 

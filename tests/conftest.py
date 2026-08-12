@@ -139,6 +139,26 @@ def mock_streamlit_module():
 
 
 @pytest.fixture(autouse=True)
+def isolate_trading_mode(monkeypatch):
+    """
+    Keep TRADING_MODE out of the ambient environment for every test.
+    讓每個測試都在沒有 TRADING_MODE 環境變數的狀態下執行。
+
+    2026-08-10: prod's .env gained `TRADING_MODE=paper` as a global brake on
+    live trading. That variable leaks into the test process and silently
+    rewrote broker mode assertions — test_broker_cache_invalidation began
+    asserting 'real' but seeing 'demo'. Tests that care about the override
+    (e.g. test_trading_mode_paper_override_changes_token) set it explicitly,
+    so unsetting it by default is both hermetic and closer to their intent.
+
+    2026-08-10：prod 的 .env 新增了 TRADING_MODE=paper 作為實盤交易的全域煞車，
+    該變數會滲入測試行程並默默改寫 broker 模式的斷言。需要此覆寫的測試會自行
+    明確設定，因此預設清除它既能隔離環境，也更貼近測試原意。
+    """
+    monkeypatch.delenv("TRADING_MODE", raising=False)
+
+
+@pytest.fixture(autouse=True)
 def mock_build_config_chain():
     """
     Global test fixture: patch build_config_chain to return a MockLLMGateway candidate.

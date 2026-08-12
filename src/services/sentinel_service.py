@@ -105,8 +105,15 @@ class SentinelService:
         self._calibrate_thresholds()
         
         # [NEW] v5.1: Tracking firing times for de-bouncing (T16)
+        # 2026-08-10: retained only as the in-process fallback for
+        # _acquire_cooldown(). Debounce state lives in Redis now — this dict is
+        # per-instance and SentinelService is rebuilt for every Celery task and
+        # every webhook request, so on its own it never debounced anything.
+        # 2026-08-10：僅保留為 _acquire_cooldown() 的行程內備援。防抖狀態已移至
+        # Redis；此 dict 為 instance 層級，而 SentinelService 每個 task／請求都
+        # 重建，單靠它從來沒有真正防抖過。
         self.last_fire_time: Dict[str, float] = {}
-        
+
         # Buffer State — Redis-backed persistent buffer (replaces in-memory dict)
         from src.infrastructure.redis_sentinel_buffer import RedisSentinelBuffer
         self._redis_buffer = RedisSentinelBuffer()
@@ -914,20 +921,81 @@ class SentinelService:
     # Escalation: Council + Notifications
     # ──────────────────────────────────────────
 
+    async def _acquire_cooldown(self, name: str, seconds: int, fail_open: bool) -> bool:
+        """
+        Claim a cross-process debounce window. True means the caller may proceed.
+        取得跨行程防抖窗口；回傳 True 代表呼叫端可以繼續執行。
+
+        Added 2026-08-10. Both callers previously debounced via
+        `self.last_fire_time`, an instance dict on an object that tasks.py
+        rebuilds per Celery task and webhook_service.py per request — so
+        neither window ever spanned processes. A Redis `SET NX EX` gives all
+        workers one shared window.
+
+        `fail_open` decides what happens when Redis is unreachable, and the
+        two callers genuinely want opposite things: escalation passes True
+        (a duplicate alert beats a missed P0), rebalancing passes False
+        (a duplicate sell is an irreversible real-money action).
+
+        2026-08-10 新增。兩處呼叫端原本都用 instance dict 防抖，而該物件每個
+        Celery task／請求都重建，窗口從未跨行程生效。改用 Redis SET NX EX。
+        fail_open 決定 Redis 不可用時的行為：告警採 fail-open（重複告警優於漏掉
+        P0），再平衡採 fail-closed（重複賣單是不可逆的真錢動作）。
+        """
+        key = f"sentinel:cooldown:{name}"
+        try:
+            from src.infrastructure.cache.redis_client import get_redis
+
+            redis_client = await get_redis()
+            if await redis_client.set(key, "1", ex=seconds, nx=True):
+                return True
+            ttl = await redis_client.ttl(key)
+            logger.info(
+                f"SentinelService: De-bouncing {name} (cooldown {seconds}s, {ttl}s remaining)"
+            )
+            return False
+        except Exception as e:
+            import time
+
+            # In-process fallback. Weaker than Redis — it only debounces
+            # repeated calls on this same instance — but strictly better than
+            # no window at all when the caller wants to proceed anyway.
+            # 行程內備援：僅能防抖同一 instance 的重複呼叫，強度不如 Redis，
+            # 但在 fail-open 情境下仍優於完全沒有窗口。
+            if fail_open:
+                now = time.time()
+                if self.last_fire_time.get(key, 0) + seconds > now:
+                    logger.info(f"SentinelService: De-bouncing {name} (in-process fallback)")
+                    return False
+                self.last_fire_time[key] = now
+                logger.warning(
+                    f"Sentinel: cooldown backend unavailable ({e}); proceeding with {name} "
+                    f"using in-process debounce only."
+                )
+                return True
+
+            logger.error(
+                f"Sentinel: cooldown backend unavailable ({e}); skipping {name} for safety."
+            )
+            return False
+
     async def _escalate(self, triggers: List[Dict[str, Any]], source: str = "Sentinel") -> None:
         """
         Escalate triggers to appropriate channels, applying buffering where necessary.
         呈報觸發訊號至適當管道，並在必要時套用緩衝機制。
         """
-        import time
-        cooldown = 1800 # 30 minutes
-        fire_key = f"escalate_{source}_{self.user_id}"
-        if self.last_fire_time.get(fire_key, 0) + cooldown > time.time():
-            logger.info(f"SentinelService: De-bouncing escalation for {fire_key} (cooldown: {cooldown}s)")
-            return
-        self.last_fire_time[fire_key] = time.time()
+        # 2026-08-10: the empty-triggers check moved ABOVE the debounce. It used
+        # to sit after it, so a tick with nothing to escalate still armed the
+        # 30-minute window and suppressed the next real alert.
+        # 2026-08-10：空觸發檢查移到防抖「之前」。原本在其後，導致無事可報的 tick
+        # 也會啟動 30 分鐘窗口並壓掉下一次真實告警。
         if not triggers:
-             return
+            return
+
+        if not await self._acquire_cooldown(
+            f"escalate:{source}:{self.user_id}", 1800, fail_open=True
+        ):
+            return
 
         # [T4] Batching logic for P0 / immediate escalation
         immediate_triggers = []
@@ -2102,10 +2170,23 @@ class SentinelService:
         from src.services.confidence_compositor_service import CompositorService
         compositor = CompositorService(user_id=self.user_id)
         
+        # 2026-08-11: excess_cash bounded by tradable capital. The compositor
+        # allocates a fraction of whatever it is handed, so passing the real
+        # excess (~$400) would let it size positions far past the $100 mandate
+        # before AutomatedTradingService's per-order clamp ever sees them.
+        # 2026-08-11：excess_cash 以可交易資本設限。compositor 是按比例分配傳入
+        # 金額，若直接給真實超額現金（約 $400），部位規模會在到達單筆鉗制之前就
+        # 遠超過 $100 授權。
+        from src.services.capital_policy import tradable_capital
+
+        bounded_excess_cash = tradable_capital(
+            self.user_id, result.get("excess_cash", 0.0)
+        )
+
         # Compute per-ticker composite decisions
         decisions = await compositor.compute_composite_decision(
             candidates=candidates,
-            excess_cash=result.get("excess_cash", 0.0),
+            excess_cash=bounded_excess_cash,
             cash_ratio=cash_ratio,
             target_cash_ratio=target_ratio,
         )
@@ -2164,22 +2245,49 @@ class SentinelService:
         [Phase 5] Execute rebalancing trades based on detected triggers.
         執行基於偵測到觸發點的再平衡交易。
         """
-        import time
-        cooldown = 1800 # 30 minutes
-        fire_key = f"rebalance_{self.user_id}"
-        if self.last_fire_time.get(fire_key, 0) + cooldown > time.time():
-             logger.info(f"SentinelService: De-bouncing rebalance for {fire_key} (cooldown: {cooldown}s)")
-             return
-        self.last_fire_time[fire_key] = time.time()
+        # 2026-08-10: two defects fixed in this debounce.
+        #  (a) Order was inverted — the timestamp was stamped BEFORE the
+        #      empty-triggers check, so an ordinary tick with nothing to do
+        #      still armed the 30-minute cooldown and suppressed the next real
+        #      trigger. Now nothing is recorded unless work actually happens.
+        #  (b) It keyed off `self.last_fire_time`, a plain instance dict, on a
+        #      SentinelService that tasks.py rebuilds for every Celery task and
+        #      webhook_service.py for every request. The cooldown was therefore
+        #      a no-op across processes — the exact defect celery_app.py's
+        #      removal note called out. It is now a Redis SET NX EX, so all
+        #      workers share one window.
+        # 2026-08-10 修正兩個缺陷：(a) 時間戳記蓋在空觸發檢查「之前」，導致無事可
+        # 做的 tick 也會啟動 30 分鐘冷卻並壓掉下一次真實觸發；(b) 冷卻狀態存在
+        # instance dict，而 SentinelService 每個 Celery task／請求都重建，跨行程
+        # 完全無效。改用 Redis SET NX EX，讓所有 worker 共用同一個冷卻窗口。
         if not rebalance_triggers:
             logger.debug("Sentinel: No rebalance triggers to process.")
             return
 
+        # fail_open=False: rebalancing liquidates part of a real position and
+        # is not reversible. If the shared cooldown is unavailable, every
+        # worker's minutely tick could fire the same sell, so skipping this
+        # cycle (costing one rebalance opportunity) is the cheaper failure.
+        # fail_open=False：再平衡會賣出真實部位且不可逆。冷卻不可用時，每個
+        # worker 的每分鐘 tick 都可能重複送出同一筆賣單，故跳過本輪較便宜。
+        if not await self._acquire_cooldown(
+            f"rebalance:{self.user_id}", 1800, fail_open=False
+        ):
+            return
+
         logger.info(f"Sentinel: Processing {len(rebalance_triggers)} rebalance triggers for user {self.user_id}")
-        
+
         try:
             from src.services.automated_trading_service import AutomatedTradingService
+            from src.services.exit_compositor_service import ExitCompositorService
+
             auto_trade_svc = AutomatedTradingService()
+            # One instance per batch — it caches the LLM pipeline internally,
+            # so rebuilding it per trigger would re-resolve the model router.
+            # 每批共用一個實例：其內部快取 LLM 管線，逐筆重建會重複解析模型路由。
+            exit_compositor = ExitCompositorService(
+                user_id=self.user_id, settings_service=self.settings_service
+            )
 
             for trigger in rebalance_triggers:
                 if trigger.get('ticker') == 'CASH':
@@ -2200,14 +2308,54 @@ class SentinelService:
                     f"Sentinel Rebalancing Execution: {ticker} | Selling {sell_qty} units | Reason: {rationale}"
                 )
                 
-                # Execute rebalancing trade (Forced action, confidence=100)
+                # 2026-08-10: this passed confidence_score=100, which
+                # normalizes to 10.0 and always cleared the auto-execute bar —
+                # every concentration rebalance liquidated part of a real
+                # position with no human in the loop, on a bare constant.
+                # 2026-08-11: the constant is now a real score. ExitCompositor
+                # weighs unrealized P&L, concentration, momentum reversal and
+                # risk, so the number carries a reason the approval card can
+                # show and the user can argue with. Concentration is only one
+                # of its four inputs — a position over the ceiling whose
+                # thesis is still intact no longer auto-liquidates.
+                # 2026-08-10：原本寫死 100，必定越過門檻，等於以裸常數在無人監督下
+                # 賣出真實部位。2026-08-11 改為真實評分：ExitCompositor 綜合未實現
+                # 損益、集中度、動能反轉與風險，讓分數帶有可被檢視與反駁的理由。
+                # 集中度只是四項輸入之一——超標但論點未破的部位不再自動平倉。
+                exit_decision = await exit_compositor.score_exit(
+                    ticker=ticker,
+                    quantity=sell_qty,
+                    current_price=trigger.get("current_price"),
+                    current_weight_pct=trigger.get("current_weight_pct"),
+                    reason_hint=rationale,
+                )
+                rebalance_confidence = exit_decision["composite_score"]
+                logger.info(
+                    "Sentinel: exit score for %s = %.1f/10 (%s)",
+                    ticker, rebalance_confidence,
+                    ", ".join(
+                        f"{b['agent']} {b['confidence']:.1f}" for b in exit_decision["breakdown"]
+                    ),
+                )
+
+                # strategy_name attributes this sell to the concentration rule
+                # so the validation gate can ask whether that rule has ever
+                # cleared a backtest. Without it the gate cannot fire at all.
+                # strategy_name 讓此賣單歸屬到集中度規則，驗證關卡才能判斷該規則
+                # 是否曾通過回測；未帶此參數關卡不會生效。
+                from src.services.strategy_validation_service import (
+                    STRATEGY_CONCENTRATION_REBALANCE,
+                )
+
                 await auto_trade_svc.evaluate_and_execute_trade(
                     user_id=self.user_id,
                     ticker=ticker,
                     action="SELL",
                     quantity=sell_qty,
-                    confidence_score=100, 
-                    rationale=rationale
+                    confidence_score=rebalance_confidence,
+                    confidence_breakdown=exit_decision["breakdown"],
+                    rationale=rationale,
+                    strategy_name=STRATEGY_CONCENTRATION_REBALANCE,
                 )
         except Exception as e:
             logger.error(f"Sentinel: rebalancing execution error: {e}", exc_info=True)
@@ -2239,30 +2387,43 @@ class SentinelService:
                 })
 
             # 2. Celery Worker Queue Depth
-            from src.infrastructure.celery_app import app as celery_app
-            import redis
-            
-            # Use redis directly if configured
-            redis_url = os.getenv("CELERY_BROKER_URL", "redis://redis:6379/0")
+            # 2026-08-10, two bugs fixed here:
+            #  (a) This read CELERY_BROKER_URL, which docker-compose.prod.yml
+            #      has never set — only REDIS_URL. It therefore fell back to a
+            #      password-less URL against a --requirepass server, so every
+            #      minutely AUTH failed and was swallowed at debug level. This
+            #      watchdog has been blind for as long as it has existed.
+            #  (b) The client was rebuilt per call and never closed.
+            # get_redis_sync() resolves REDIS_URL and shares one bounded pool.
+            # 2026-08-10 修正兩個問題：(a) 讀了 prod 從未設定的 CELERY_BROKER_URL，
+            # 退化成無密碼連線、每分鐘 AUTH 失敗且被 debug 吞掉，此監控形同虛設；
+            # (b) client 每次重建且從不關閉。改用共用連線池並讀 REDIS_URL。
+            from src.infrastructure.cache.redis_client import get_redis_sync
+
             try:
-                r = redis.from_url(redis_url)
+                r = get_redis_sync()
                 # Celery default queue name is 'celery'
                 queue_depth = r.llen("celery")
-                
+
                 if queue_depth > 50:
                     logger.warning(f"Sentinel: High queue depth detected ({queue_depth} pending). Initiating Self-Healing.")
-                    # Self-Healing Action: Accelerate workers or alert
                     triggers.append({
                         "id": "health_queue_pressure",
-                        "text": f"⚠️ System Pressure Alert: High background task queue depth ({queue_depth}). Initiating worker soft-reload/scaling.",
+                        "text": f"⚠️ System Pressure Alert: High background task queue depth ({queue_depth}) pending tasks.",
                         "severity": "high",
                         "priority": 1,
                         "type": "infrastructure"
                     })
-                    # Worker Pool expansion attempt
-                    celery_app.control.broadcast('pool_grow', n=1)
+                    # The `celery_app.control.broadcast('pool_grow', n=1)` that
+                    # used to fire here was removed 2026-08-10. Queue depth
+                    # spikes because workers are starved of Redis connections;
+                    # growing the pool adds *more* connection demand at exactly
+                    # the moment the server is refusing new clients. It made
+                    # the failure mode worse, never better. Alert only.
+                    # 2026-08-10 移除 pool_grow：佇列積壓多半肇因於 worker 連線
+                    # 不足，此時擴充 pool 只會增加連線需求、雪上加霜。改為純告警。
             except Exception as redis_e:
-                 logger.debug(f"Sentinel could not check redis queue size directly: {redis_e}")
+                logger.warning(f"Sentinel could not check redis queue size: {redis_e}")
 
         except Exception as e:
             logger.error(f"Infrastructure Health Check Failed: {e}")
@@ -2293,9 +2454,20 @@ class SentinelService:
             warning_threshold = max_single_weight * 0.85
             
             # 3. Calculate total portfolio value for quantity math
+            # 2026-08-11: bounded by tradable capital so concentration weights
+            # are measured against the mandate this loop actually has ($100),
+            # not the whole account (~$1,048). Without this a $20 position
+            # reads as 2% of the account and would never trip the 25% ceiling,
+            # so the trim logic would be dead during the live test.
+            # 2026-08-11：以可交易資本為分母，讓集中度是相對於本迴圈實際獲准動用
+            # 的 $100 而非整個帳戶（約 $1,048）。否則 $20 部位只佔 2%，永遠碰不到
+            # 25% 上限，實測期間減碼邏輯等同失效。
+            from src.services.capital_policy import tradable_capital
+
             cash = self.transaction_service.get_cash_balance(self.user_id)
-            total_portfolio_value = sum(item['market_value'] for item in current_allocation.values()) + cash
-            
+            raw_portfolio_value = sum(item['market_value'] for item in current_allocation.values()) + cash
+            total_portfolio_value = tradable_capital(self.user_id, raw_portfolio_value)
+
             # 4a. Cash Concentration Check (cash is also an allocation position)
             # 現金也是一種配置倉位 — 過高的現金代表失去平衡
             try:
@@ -2308,6 +2480,31 @@ class SentinelService:
                 logger.warning(f'Exception in sentinel_service.py: {e}', exc_info=True)
                 broker_cash = max(cash, 0)
                 broker_equity = total_portfolio_value if total_portfolio_value > 0 else 1
+
+            # 2026-08-11: when the capital cap bites, the cash figure must be
+            # re-expressed inside the mandate too, or the numerator and
+            # denominator are measured against different totals. The account's
+            # real cash (~$397) over the capped equity ($100) reads as ~397%
+            # and fires a cash-overweight trigger on every single tick.
+            # The condition tests whether the cap actually applied — comparing
+            # against broker_equity instead misses the fallback branch above,
+            # where broker_equity was already set to the capped value.
+            # What the loop needs to know is: of the $100 it may deploy, how
+            # much is still uninvested?
+            # 2026-08-11：資本上限一旦生效，現金也必須換算到同一基準，否則分子與
+            # 分母的總額不同——真實現金（約 $397）除以受限權益（$100）會得到約
+            # 397%，每個 tick 都觸發現金過高。此處判斷的是「上限是否真的生效」；
+            # 若改與 broker_equity 比較，會漏掉上面的 fallback 分支（該分支已把
+            # broker_equity 設為受限值）。真正要問的是：獲准動用的 $100 裡還有
+            # 多少未投入？
+            capital_cap_applied = total_portfolio_value < raw_portfolio_value
+            if capital_cap_applied:
+                mandate_invested = min(
+                    sum(item['market_value'] for item in current_allocation.values()),
+                    total_portfolio_value,
+                )
+                broker_cash = max(0.0, total_portfolio_value - mandate_invested)
+                broker_equity = total_portfolio_value
 
             if broker_equity > 0:
                 cash_weight = (broker_cash / broker_equity) * 100
@@ -2352,6 +2549,12 @@ class SentinelService:
                                 'current_weight_pct': round(current_weight, 2),
                                 'limit_weight_pct': round(max_single_weight, 2),
                                 'sell_quantity': shares_to_sell,
+                                # 2026-08-11: carried so ExitCompositorService
+                                # can price unrealized P&L against
+                                # position_lots.open_price without re-fetching.
+                                # 2026-08-11：一併帶出，讓 ExitCompositorService 能
+                                # 直接對照開倉成本計算未實現損益，不必重抓報價。
+                                'current_price': current_price,
                                 'action': 'trigger_rebalance',
                                 'timestamp': pd.Timestamp.now().isoformat()
                             })
