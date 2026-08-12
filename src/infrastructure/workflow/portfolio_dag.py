@@ -135,26 +135,67 @@ async def run_ticker_map_analysis(
                 "Synthesize these into a single stance."
             )
             stance = await council_service._call_structured("TickerSynthesis", synth_prompt, AnalystStance, tier="fast")
-            if stance is not None:
-                if ticker_price:
-                    decision_id = council_service.outcome_service.record_decision(
-                        ticker=ticker, agent_name="CouncilSynthesis",
-                        signal=stance.rating.value, price=ticker_price,
-                        session_id=session_id, horizon_days=5,
+            # 2026-08-10: every failure below used to be invisible.
+            # decision_outcomes had 0 rows in production, and this is its only
+            # writer — but nothing said why. Two of the three ways to end up
+            # with no row (a null stance, a falsy price) logged nothing at all,
+            # and the third logged at DEBUG, which prod does not emit.
+            #
+            # That silence had teeth: TradingProtectionsService's three BUY
+            # guards (max drawdown, per-ticker cooldown, consecutive-loss
+            # lockout) each return None when decision_outcomes holds fewer
+            # than three rows, so an empty table meant every guard passed. The
+            # protections appeared active while enforcing nothing.
+            #
+            # Log level raised to warning and the skip reasons made explicit.
+            # This is diagnosis, not a fix — the point is that the next empty
+            # table announces itself instead of being inferred from a 0 count.
+            #
+            # 2026-08-10：此處三種「沒寫入」的路徑中，兩種完全不記錄、一種只記
+            # DEBUG（prod 不輸出），導致 decision_outcomes 為 0 筆卻無從得知原因。
+            # 而該表為空會讓 TradingProtectionsService 三道 BUY 護欄全部靜默放行。
+            # 改為 warning 並寫明跳過原因；這是讓問題可見，而非修好它。
+            if stance is None:
+                logger.warning(
+                    f"Council: no decision recorded for {ticker} — structured stance "
+                    f"parse returned None (decision_outcomes stays empty, which "
+                    f"disables the BUY protections that read it)"
+                )
+            elif not ticker_price:
+                logger.warning(
+                    f"Council: no decision recorded for {ticker} — ticker_price is "
+                    f"{ticker_price!r} (decision_outcomes stays empty, which "
+                    f"disables the BUY protections that read it)"
+                )
+            else:
+                decision_id = council_service.outcome_service.record_decision(
+                    ticker=ticker, agent_name="CouncilSynthesis",
+                    signal=stance.rating.value, price=ticker_price,
+                    session_id=session_id, horizon_days=5,
+                )
+                if not decision_id:
+                    logger.warning(
+                        f"Council: record_decision returned no id for {ticker}; "
+                        f"decision outcome was not persisted"
                     )
-                    if decision_id:
-                        try:
-                            from src.repositories.memory_repository import AgentState
-                            from src.services.rule_lifecycle_service import RuleLifecycleService
-                            active_rules = AgentState().get_active_rules("CouncilSynthesis", user_id=user_id)
-                            if active_rules:
-                                await RuleLifecycleService(user_id=user_id).judge_and_cite(
-                                    "CouncilSynthesis", decision_id, synth_prompt, active_rules,
-                                )
-                        except Exception as cite_e:
-                            logger.debug(f"Council: rule citation failed for {ticker}: {cite_e}")
+                else:
+                    try:
+                        from src.repositories.memory_repository import AgentState
+                        from src.services.rule_lifecycle_service import RuleLifecycleService
+                        active_rules = AgentState().get_active_rules("CouncilSynthesis", user_id=user_id)
+                        if active_rules:
+                            await RuleLifecycleService(user_id=user_id).judge_and_cite(
+                                "CouncilSynthesis", decision_id, synth_prompt, active_rules,
+                            )
+                    except Exception as cite_e:
+                        # Citation is auxiliary — the decision row is already
+                        # written, so this stays non-fatal and low-severity.
+                        # 引用為輔助流程，決策列已寫入，故維持非致命。
+                        logger.debug(f"Council: rule citation failed for {ticker}: {cite_e}")
         except Exception as synth_e:
-            logger.debug(f"Council: decision recording failed for {ticker}: {synth_e}")
+            logger.warning(
+                f"Council: decision recording failed for {ticker}: {synth_e}", exc_info=True
+            )
 
         result = {
             "ticker": ticker,

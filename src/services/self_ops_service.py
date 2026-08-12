@@ -32,6 +32,54 @@ logger = logging.getLogger(__name__)
 
 ALERT_COOLDOWN_HOURS = 6
 
+# Dispatcher → child task, for the fan-out divergence check below.
+#
+# 2026-08-10: the outage that motivated this check ran for three days without
+# tripping a single dead-man switch. Expectations are derived from the beat
+# schedule, and the beat schedule only ever names the *dispatchers*. The
+# dispatchers kept succeeding — `.delay()` returns as soon as the message is
+# queued — while Redis had hit `max number of clients reached`, so no worker
+# ever consumed the children. Over the final two days: 95 successful
+# `dispatch_sentinel_tick` runs, 2 successful `sentinel_tick` runs. Every
+# monitored signal was green while the trading loop was dead.
+#
+# The names cannot be derived by convention: `dispatch_broker_sync` fans out
+# to `sync_broker_positions`, not `broker_sync`. Hence an explicit map, kept
+# honest by test_self_ops_dispatcher_divergence.py, which reads the actual
+# `.delay()` call in each dispatcher's source and fails if this drifts.
+#
+# 2026-08-10：本次事故三天未觸發任何 dead-man 監控——期望值衍生自 beat 排程，
+# 而排程只列出 dispatcher。dispatcher 一路成功（.delay() 送出即返回），但 Redis
+# 已達連線上限，子任務從未被消費。最後兩天：dispatch_sentinel_tick 成功 95 次，
+# sentinel_tick 僅 2 次，所有監控訊號全綠而交易迴圈已死。
+# 名稱無法由命名慣例推導（dispatch_broker_sync 對應 sync_broker_positions），
+# 故採顯式對照表，並由測試比對 dispatcher 原始碼中的 .delay() 呼叫防止漂移。
+_TASK_PREFIX = "src.infrastructure.tasks."
+DISPATCHER_CHILD_TASKS: Dict[str, str] = {
+    "dispatch_market_intelligence": "generate_market_intelligence",
+    "dispatch_sentinel_tick": "sentinel_tick",
+    "dispatch_broker_sync": "sync_broker_positions",
+    "dispatch_memory_distill": "distill_memories",
+    "dispatch_experience_replay": "experience_replay",
+    "dispatch_keyword_refine": "keyword_refine",
+    "dispatch_rule_curation": "curate_agent_rules",
+    "dispatch_user_preferences": "update_user_preferences",
+    "dispatch_weekly_validation": "weekly_validation",
+    "dispatch_event_digest": "send_event_digest",
+    "dispatch_daily_report": "generate_daily_report",
+}
+
+# How far back to compare dispatcher and child success counts.
+# 比對 dispatcher 與子任務成功次數的回看窗口。
+DIVERGENCE_WINDOW_MINUTES = 60
+
+# Dispatchers must have run at least this many times in the window before a
+# zero child count means anything — otherwise an infrequent dispatcher (daily
+# report, weekly validation) reads as a breach every time it is idle.
+# dispatcher 在窗口內至少要跑過這麼多次，子任務為 0 才有意義；否則低頻的
+# dispatcher（每日報表、每週驗證）在閒置時都會被誤判為異常。
+DIVERGENCE_MIN_DISPATCHES = 3
+
 # Business invariants checked by key. SQL stays in code (規範十: no SQL in
 # data). Each returns (ok: bool, detail: str).
 _NAMED_CHECKS: Dict[str, Dict[str, Any]] = {
@@ -120,6 +168,31 @@ class SelfOpsService:
             # is satisfied by its most frequent cadence.
             scheduled[task_name] = min(gap, scheduled.get(task_name, gap))
 
+        # 2026-08-10: also expect the CHILD of every scheduled dispatcher.
+        #
+        # Watching only the beat entries is what let the Redis-exhaustion
+        # outage run for three days unalarmed: the schedule names dispatchers,
+        # a dispatcher's `.delay()` succeeds as soon as the broker accepts the
+        # message, and no worker ever consumed the children. Registering the
+        # children here puts them under the same dead-man switch, at the same
+        # cadence, including the low-frequency ones (daily report, weekly
+        # validation) that _check_dispatcher_divergence cannot judge because
+        # they never reach its minimum count inside a one-hour window.
+        #
+        # 2026-08-10：僅監看 beat 項目正是事故三天未告警的原因——排程只列
+        # dispatcher，而 .delay() 送出即成功。在此一併登記子任務，讓它們納入同一
+        # 套 dead-man 監控，也涵蓋 _check_dispatcher_divergence 因一小時窗口內次數
+        # 不足而無法判斷的低頻任務。
+        expected_children: Dict[str, int] = {}
+        for task_name, gap in scheduled.items():
+            short = task_name.rsplit(".", 1)[-1]
+            child = DISPATCHER_CHILD_TASKS.get(short)
+            if child:
+                child_task = f"{_TASK_PREFIX}{child}"
+                expected_children[child_task] = min(
+                    gap, expected_children.get(child_task, gap)
+                )
+
         drift: List[str] = []
         with self._engine().connect() as conn:
             for task_name, gap in scheduled.items():
@@ -132,15 +205,27 @@ class SelfOpsService:
                     """),
                     {"name": f"beat:{task_name}", "target": task_name, "gap": gap},
                 )
+            for child_task, gap in expected_children.items():
+                conn.execute(
+                    text("""
+                        INSERT INTO expected_outcomes (name, kind, target, max_gap_seconds)
+                        VALUES (:name, 'task_success', :target, :gap)
+                        ON CONFLICT (name) DO UPDATE
+                        SET max_gap_seconds = EXCLUDED.max_gap_seconds, enabled = TRUE
+                    """),
+                    {"name": f"child:{child_task}", "target": child_task, "gap": gap},
+                )
             # Drift: expectations for tasks no longer in the schedule
             rows = conn.execute(
                 text("""
                     SELECT name, target FROM expected_outcomes
-                    WHERE kind = 'task_success' AND enabled = TRUE AND name LIKE 'beat:%'
+                    WHERE kind = 'task_success' AND enabled = TRUE
+                      AND (name LIKE 'beat:%' OR name LIKE 'child:%')
                 """)
             ).fetchall()
             for name, target in rows:
-                if target not in scheduled:
+                live = scheduled if name.startswith("beat:") else expected_children
+                if target not in live:
                     conn.execute(
                         text("DELETE FROM expected_outcomes WHERE name = :n"),
                         {"n": name},
@@ -196,9 +281,11 @@ class SelfOpsService:
                 breaches.append(breach)
 
             repeat = self._check_repeat_failures(conn)
+            divergence = self._check_dispatcher_divergence(conn)
             conn.commit()
 
         breaches.extend(repeat)
+        breaches.extend(divergence)
         if breaches:
             self._emit_alerts(breaches)
         return {"checked": True, "breaches": breaches}
@@ -269,6 +356,66 @@ class SelfOpsService:
             breaches.append({
                 "name": f"repeat:{task_name}:{error_class}", "severity": "critical",
                 "detail": f"{n} {error_class} failures in 24h — sample: {(sample or '')[:200]} | remediation: {remediation}",
+            })
+        return breaches
+
+    def _check_dispatcher_divergence(self, conn) -> List[Dict]:
+        """
+        Catch fan-out that queues work nobody executes.
+        偵測「派工成功但子任務沒被執行」的情況。
+
+        A dispatcher's `.delay()` returns the moment the message is accepted
+        by the broker, so the dispatcher records `success` whether or not any
+        worker ever picks the child up. Every other check in this service
+        watches dispatchers (they are what the beat schedule names), which is
+        why the 2026-08-10 Redis exhaustion stayed invisible for three days.
+
+        This compares successes of each dispatcher against successes of the
+        child it fans out to, over the same window. The child normally runs at
+        least once per dispatch per active user, so a healthy ratio is >= 1.
+        Zero children against a busy dispatcher means the queue is not being
+        drained — worker down, broker refusing connections, or the child task
+        unregistered.
+
+        dispatcher 的 .delay() 在 broker 接受訊息時就返回，無論是否有 worker
+        取走子任務，都會記為 success。本服務其他檢查全部盯著 dispatcher（因為
+        beat 排程只列出它們），這正是 2026-08-10 事故三天無人察覺的原因。
+        """
+        rows = conn.execute(
+            text("""
+                SELECT task_name, COUNT(*) AS n
+                FROM task_runs
+                WHERE status = 'success'
+                  AND finished_at > NOW() - (:window_minutes * INTERVAL '1 minute')
+                GROUP BY task_name
+            """),
+            {"window_minutes": DIVERGENCE_WINDOW_MINUTES},
+        ).fetchall()
+
+        counts = {name: n for name, n in rows}
+
+        def _count(short_name: str) -> int:
+            # task_runs stores fully-qualified names; tolerate either form.
+            # task_runs 存的是完整名稱，兩種寫法都容忍。
+            return counts.get(f"{_TASK_PREFIX}{short_name}", counts.get(short_name, 0))
+
+        breaches = []
+        for dispatcher, child in DISPATCHER_CHILD_TASKS.items():
+            n_dispatch = _count(dispatcher)
+            if n_dispatch < DIVERGENCE_MIN_DISPATCHES:
+                continue
+            n_child = _count(child)
+            if n_child > 0:
+                continue
+            breaches.append({
+                "name": f"divergence:{dispatcher}",
+                "severity": "critical",
+                "detail": (
+                    f"{dispatcher} succeeded {n_dispatch}x in the last "
+                    f"{DIVERGENCE_WINDOW_MINUTES}m but {child} never ran — "
+                    f"queued work is not being consumed (check worker health "
+                    f"and broker connectivity)"
+                ),
             })
         return breaches
 
