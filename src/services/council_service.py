@@ -202,7 +202,18 @@ class CouncilService:
             note = await self._call_agent_llm("Verifier", {"instruction": prompt}, tier="fast", max_tokens=300)
             return str(note or "")
         except Exception as e:
-            logger.debug(f"Council: grounding verification skipped (non-blocking): {e}")
+            # 2026-08-12: raised from debug. This step exists to catch
+            # fabricated figures in a decision. Returning "" is read downstream
+            # as "No grounding issues found" — the check silently reports the
+            # same thing whether it passed or never ran, which is the one
+            # outcome a verifier must never have.
+            # 2026-08-12：由 debug 提升。此步驟的用途是抓出決策中捏造的數字；回傳
+            # 空字串在下游等同「查無問題」——驗證器最不該有的性質，就是「通過」與
+            # 「根本沒跑」看起來一樣。
+            logger.warning(
+                f"Council: grounding verification did NOT run ({e}); "
+                f"figures in this decision are unverified"
+            )
             return ""
 
     async def _call_structured(self, agent_name: str, prompt: str, schema, tier: str = "fast",
@@ -228,7 +239,20 @@ class CouncilService:
             parsed, _raw = await invoke_structured(gateway, [Message(role="user", content=prompt)], config, schema)
             return parsed
         except Exception as e:
-            logger.debug(f"Council: structured call for {agent_name} failed (non-blocking): {e}")
+            # 2026-08-12: raised from debug. Returning None makes
+            # portfolio_dag skip record_decision, so decision_outcomes gains no
+            # row — and the three BUY protections that read that table go inert
+            # when it holds fewer than three rows. "Non-critical synthesis" is
+            # how it was described; in practice it is the only thing that turns
+            # a decision into evidence.
+            # 2026-08-12：由 debug 提升。回傳 None 會讓 portfolio_dag 跳過
+            # record_decision，decision_outcomes 就不會新增資料，而讀該表的三道
+            # BUY 護欄在資料少於三筆時即失效。此步驟名為「非關鍵合成」，實際上卻是
+            # 決策轉化為證據的唯一途徑。
+            logger.warning(
+                f"Council: structured call for {agent_name} failed ({e}); "
+                f"no decision_outcomes row will be recorded for this ticker"
+            )
             return None
 
     async def start_session(self, topic: str, context_data: Dict[str, Any], user_id: str, scope: str = "single", market_volatility: float = 0.0, mode: str = "weekly") -> Dict[str, Any]:

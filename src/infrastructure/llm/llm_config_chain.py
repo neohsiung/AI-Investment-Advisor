@@ -82,7 +82,19 @@ def _decrypt_api_key(encrypted_key: Optional[str]) -> Optional[str]:
         cipher = LLMCredentialCipher()
         return cipher.decrypt(encrypted_key)
     except Exception as e:
-        logger.debug("Could not decrypt API key: %s", e)
+        # 2026-08-12: raised from debug. Returning the still-encrypted blob is
+        # the fail-silent shape — it is a plausible-looking string, so the
+        # caller happily builds a candidate with it and the failure resurfaces
+        # much later as an opaque 401 from the provider, with nothing linking
+        # it back to a cipher problem. The ciphertext is deliberately NOT
+        # logged; only the exception type and the fact it happened.
+        # 2026-08-12：由 debug 提升。回傳仍加密的字串正是靜默失敗的形狀——它看起來
+        # 像合法金鑰，呼叫端會照常建立候選，錯誤直到稍後才以難以追溯的 401 浮現。
+        # 此處刻意不記錄密文本身，只記錄例外類型與發生事實。
+        logger.warning(
+            "Could not decrypt API key (%s); passing the stored value through unchanged, "
+            "which will likely surface as a provider auth error", type(e).__name__
+        )
         return encrypted_key  # Return as-is if decryption fails
 
 

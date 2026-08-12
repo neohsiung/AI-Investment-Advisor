@@ -133,7 +133,18 @@ class OutcomeReflectionService:
         current_price = self._fetch_price(ticker)
         benchmark_then, benchmark_now = self._fetch_benchmark_window(decided_at, due_at)
         if current_price is None or not benchmark_then or not benchmark_now or price_then <= 0:
-            logger.debug("resolve_pending: insufficient price data for %s, skipping", ticker)
+            # 2026-08-12: warning, not debug. This line is the exact moment a
+            # decision fails to become evidence. decision_outcomes sat at 0
+            # rows in production while the three BUY guards that read it
+            # reported nothing wrong — they return None on fewer than three
+            # rows, so an empty table reads as "no reason to block".
+            # 2026-08-12：改為 warning。此行正是「決策無法成為證據」的瞬間；
+            # production 的 decision_outcomes 長期為 0 筆，而讀它的三道 BUY 護欄
+            # 在資料不足三筆時回傳 None，空表被解讀成「沒有理由阻擋」。
+            logger.warning(
+                "resolve_pending: insufficient price data for %s; decision stays unresolved "
+                "and the BUY protections that read decision_outcomes stay inert", ticker
+            )
             return False
 
         realized_pct = (current_price - price_then) / price_then * 100.0
@@ -154,7 +165,14 @@ class OutcomeReflectionService:
                 from src.services.rule_lifecycle_service import RuleLifecycleService
                 RuleLifecycleService(user_id=self.user_id).backfill_score(row["id"], alpha_pct)
             except Exception as score_e:
-                logger.debug(f"resolve_pending: rule score backfill skipped for {ticker}: {score_e}")
+                # Per-rule alpha attribution is how rules earn or lose their
+                # score; silently skipping it freezes every rule's weight.
+                # 逐條規則的 alpha 歸因決定規則權重的升降；靜默跳過會讓所有規則
+                # 的分數永遠凍結。
+                logger.warning(
+                    f"resolve_pending: rule score backfill failed for {ticker}, "
+                    f"rule weights not updated: {score_e}"
+                )
 
         with self.engine.begin() as conn:
             conn.execute(text("""
@@ -177,7 +195,18 @@ class OutcomeReflectionService:
                 return None
             return float(hist["Close"].iloc[-1])
         except Exception as exc:
-            logger.debug("_fetch_price(%s) failed: %s", ticker, exc)
+            # 2026-08-12: was debug. This is the gateway to resolving a
+            # decision, and an unresolved decision never reaches
+            # decision_outcomes.resolved_at — which is what
+            # TradingProtectionsService's BUY guards read. A persistent
+            # yfinance outage therefore keeps the guards permanently disabled,
+            # and at debug level nothing said so. self_ops_service's
+            # `decision_outcomes_not_stuck` check does catch it, but only once
+            # rows are past horizon+5 days.
+            # 2026-08-12：原為 debug。此處是決策結算的入口，結算不了就永遠不會寫入
+            # resolved_at，而 BUY 護欄正是讀它——資料源持續故障等於護欄長期停用，
+            # 而 debug 層級不會有任何人知道。
+            logger.warning("_fetch_price(%s) failed, decision cannot resolve: %s", ticker, exc)
             return None
 
     def _fetch_benchmark_window(self, start: datetime, end: datetime) -> tuple:
@@ -192,7 +221,9 @@ class OutcomeReflectionService:
                 return None, None
             return float(hist["Close"].iloc[0]), float(hist["Close"].iloc[-1])
         except Exception as exc:
-            logger.debug("_fetch_benchmark_window failed: %s", exc)
+            # Same reasoning as _fetch_price: no benchmark, no resolution.
+            # 與 _fetch_price 同理：取不到基準就無法結算。
+            logger.warning("_fetch_benchmark_window failed, decision cannot resolve: %s", exc)
             return None, None
 
     def _generate_lesson(self, ticker: str, signal: str, realized_pct: float,
@@ -237,8 +268,19 @@ class OutcomeReflectionService:
             except RuntimeError:
                 return asyncio.run(_run())
         except Exception as exc:
-            logger.debug("_generate_lesson LLM call failed (%s); using fallback", exc)
-            return self._fallback_lesson(ticker, signal, alpha_pct)
+            # 2026-08-12: this is the pattern the fail-silent rule exists for —
+            # log below warning AND return something that reads like a real
+            # answer. The lesson is written to decision_outcomes.lesson and is
+            # later fed back to agents as learned experience, so a templated
+            # fallback silently becomes training signal indistinguishable from
+            # a genuine reflection. Now logged at warning, and the returned
+            # text says plainly that it is not model-generated.
+            # 2026-08-12：這正是本規則要防的模式——以低於 warning 記錄，又回傳看似
+            # 真實的答案。lesson 會寫入 decision_outcomes 並回饋給 agent 當作經驗，
+            # 樣板文字會混入學習訊號且無從分辨。改為 warning，並在回傳文字中言明
+            # 此非模型產出。
+            logger.warning("_generate_lesson LLM call failed (%s); using templated fallback", exc)
+            return f"[未經模型分析 / not model-generated] {self._fallback_lesson(ticker, signal, alpha_pct)}"
 
     @staticmethod
     def _fallback_lesson(ticker: str, signal: str, alpha_pct: float) -> str:

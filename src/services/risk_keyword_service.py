@@ -478,6 +478,16 @@ Text:
         Provider chain: ApeWisdom → Finnhub → pytrends
         """
         results: List[Tuple[str, float, str, str]] = []
+        # 2026-08-12: collect provider failures instead of swallowing each at
+        # debug. Previously all three could fail and the method still ended
+        # with `logger.info("... discovered 0 new keywords")` — a success-shaped
+        # line for a total outage. An empty risk_keywords table disabled an
+        # entire Sentinel dimension for months (see self_ops_service's
+        # `risk_keywords_nonempty` named check, added after that incident).
+        # 2026-08-12：改為收集各 provider 的失敗原因。原本三個都失敗時，方法仍以
+        # 「discovered 0 new keywords」這種看似正常的 info 作結；而 risk_keywords
+        # 空表曾讓一整個哨兵維度失效數月。
+        failed: List[str] = []
         existing = {kw.keyword.lower() for kw in self.get_active_keywords()}
 
         # Provider 1: ApeWisdom (Reddit/WSB trending)
@@ -488,7 +498,7 @@ Text:
                     results.append((kw.lower(), 0.5, "sentiment", "trends"))
                     existing.add(kw.lower())
         except Exception as e:
-            logger.debug(f"ApeWisdom fetch failed: {e}")
+            failed.append(f"ApeWisdom: {e}")
 
         # Provider 2: Finnhub market news (already in project, reuse API key)
         try:
@@ -498,7 +508,7 @@ Text:
                     results.append((kw.lower(), 0.5, "market", "trends"))
                     existing.add(kw.lower())
         except Exception as e:
-            logger.debug(f"Finnhub trending fetch failed: {e}")
+            failed.append(f"Finnhub: {e}")
 
         # Provider 3: Google Trends (fallback)
         try:
@@ -508,9 +518,20 @@ Text:
                     results.append((kw.lower(), 0.4, "sentiment", "trends"))
                     existing.add(kw.lower())
         except Exception as e:
-            logger.debug(f"Google Trends fetch failed: {e}")
+            failed.append(f"GoogleTrends: {e}")
 
-        logger.info(f"Community trends discovered {len(results)} new keywords.")
+        if len(failed) == 3:
+            logger.error(
+                "Community trends: ALL three providers failed, no keywords can be "
+                "discovered this run — %s", "; ".join(failed)
+            )
+        elif failed:
+            logger.warning(
+                "Community trends: %d/3 providers failed (%s); discovered %d new keywords",
+                len(failed), "; ".join(failed), len(results),
+            )
+        else:
+            logger.info(f"Community trends discovered {len(results)} new keywords.")
         return results
 
     async def _fetch_apewisdom(self, limit: int = 20) -> List[str]:

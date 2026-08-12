@@ -49,7 +49,11 @@ class _ApprovalSlot:
         try:
             raw = self._settings_repo.get(self.user_id, "max_pending_approvals")
             return max(1, int(raw)) if raw is not None else 2
-        except Exception:
+        except Exception as e:
+            # Say so. A silent fallback here means the operator's configured
+            # budget is being ignored while they believe it applies.
+            # 必須說出來：靜默退回預設值等於操作者設定的預算被忽略，而他以為生效中。
+            logger.warning(f"max_pending_approvals unreadable ({e}); using default of 2")
             return 2
 
     async def acquire(self) -> bool:

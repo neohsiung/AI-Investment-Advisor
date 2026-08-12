@@ -463,5 +463,11 @@ class ExitCompositorService:
         try:
             raw = self._settings().get_setting(key, default, self.user_id)
             return float(raw) if raw is not None else default
-        except Exception:
+        except Exception as e:
+            # `stop_loss_pct` and `max_single_position_weight` come through
+            # here and both shape an exit score. Falling back quietly means a
+            # tuned threshold silently stops applying.
+            # stop_loss_pct 與 max_single_position_weight 都經由此處，且都會影響
+            # 出場評分；靜默退回預設等於調校過的門檻悄悄失效。
+            logger.warning(f"Setting {key!r} unreadable ({e}); using default {default}")
             return default
