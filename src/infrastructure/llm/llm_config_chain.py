@@ -43,6 +43,19 @@ def _get_gateway_registry() -> dict[str, Any]:
                 "openai": OpenAIGateway,
                 "ollama": OllamaGateway,
                 "nvidia": NvidiaGateway,  # NVIDIA NIM (OpenAI-compatible)
+                # 2026-08-12: the llm_providers row for NIM has
+                # provider_code='nvidia_nim', but this registry only had
+                # 'nvidia'. build_config_chain looks the code up here and
+                # skips the model when it misses, logging
+                # "no gateway for provider_code=nvidia_nim" at WARNING — so
+                # every NIM-backed candidate was silently dropped from every
+                # chain. Registering both spellings is the safe fix: renaming
+                # the DB rows would break any other install that already uses
+                # 'nvidia_nim'.
+                # 2026-08-12：DB 中 NIM 的 provider_code 是 'nvidia_nim'，但此註冊
+                # 表只有 'nvidia'，導致所有 NIM 候選模型都被靜默剔除。同時註冊兩種
+                # 拼法為安全解法；改 DB 命名會影響其他已使用該值的安裝。
+                "nvidia_nim": NvidiaGateway,
             }
             # Try to load Anthropic / Groq if available
             try:
@@ -226,7 +239,20 @@ def _load_from_db(user_id: str, tier: str) -> List[ModelCandidate]:
 
             extra_config = {
                 "tier": tier,
-                "max_tokens": 300 if tier == "fast" else (8192 if tier == "advanced" else 2048),
+                # 2026-08-12: fast raised 300 -> 1200. Every model now backing
+                # the fast tier is a reasoning model (NIM gpt-oss-120b,
+                # Nemotron 3.5 Lightning, Nemotron 3 Super), and they spend
+                # tokens on reasoning before emitting the answer. At 300 the
+                # Risk agent's JSON was cut mid-string:
+                #   Expecting ',' delimiter: line 1 column 200 (char 199)
+                # which threw, so CompositorService returned _fallback_score()
+                # — a hash of the ticker. The cap meant to save cost was
+                # silently converting paid-for calls into fake scores.
+                # 2026-08-12：fast 由 300 提高到 1200。目前 fast tier 背後全是推理
+                # 模型，會先花 token 推理再輸出答案；300 會把 JSON 從中截斷而拋錯，
+                # CompositorService 遂回傳以 ticker 雜湊產生的假分數——原本想省成本
+                # 的上限，實際上把已付費的呼叫變成了假分數。
+                "max_tokens": 1200 if tier == "fast" else (8192 if tier == "advanced" else 2048),
                 "temperature": 0.2 if tier == "fast" else 0.7,
                 "headers": {
                     "Cache-Control": "ephem",
