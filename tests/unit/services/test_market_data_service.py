@@ -121,3 +121,93 @@ def test_get_financials(market_data_service):
     with patch.object(market_data_service, '_is_provider_enabled', return_value=True):
         info = market_data_service.get_financials("AAPL")
         assert info == mock_info
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Per-symbol provider routing (2026-08-13)
+#
+# Polygon and Tiingo cover equities only. Asked for ^VIX they return a payload
+# with no Close column and raise KeyError('Close'). Production logs over 6h:
+# 453 Polygon + 453 Tiingo failures, every one of them ^VIX, FMP serving all
+# 453 — two wasted rate-limited calls per fetch plus 906 warnings burying the
+# provider failures that matter.
+# ─────────────────────────────────────────────────────────────────────────────
+
+def _ohlcv_frame(rows=2):
+    return pd.DataFrame({
+        "Open": [100] * rows, "High": [105] * rows, "Low": [95] * rows,
+        "Close": [102] * rows, "Volume": [1000] * rows,
+    }, index=pd.date_range("2024-01-01", periods=rows))
+
+
+@pytest.mark.parametrize("ticker,expected", [
+    ("^VIX", True), ("^TNX", True), ("^GSPC", True),
+    ("AAPL", False), ("BRK.B", False), ("", False), (None, False),
+])
+def test_is_index_symbol(ticker, expected):
+    assert MarketDataService.is_index_symbol(ticker) is expected
+
+
+def test_index_symbols_skip_equity_only_providers(market_data_service):
+    """^VIX must never reach Polygon or Tiingo — both provably fail on it."""
+    for provider in (market_data_service.polygon, market_data_service.tiingo,
+                     market_data_service.fmp, market_data_service.yfinance):
+        provider.fetch_history = MagicMock(side_effect=KeyError("Close"))
+    market_data_service.fmp.fetch_history = MagicMock(return_value=_ohlcv_frame())
+
+    with patch.object(market_data_service, "_is_provider_enabled", return_value=True):
+        data = market_data_service.get_ohlcv("^VIX", days=2)
+
+    assert data["close"] == [102, 102]
+    market_data_service.polygon.fetch_history.assert_not_called()
+    market_data_service.tiingo.fetch_history.assert_not_called()
+    market_data_service.fmp.fetch_history.assert_called_once()
+
+
+def test_equity_symbols_still_use_the_full_chain(market_data_service):
+    """The routing must not quietly demote Polygon for ordinary tickers — it
+    serves every equity request in production today."""
+    market_data_service.polygon.fetch_history = MagicMock(return_value=_ohlcv_frame())
+
+    with patch.object(market_data_service, "_is_provider_enabled", return_value=True):
+        data = market_data_service.get_ohlcv("NVDA", days=2)
+
+    assert data["close"] == [102, 102]
+    market_data_service.polygon.fetch_history.assert_called_once()
+
+
+def test_indicators_route_index_symbols_past_polygon(market_data_service):
+    market_data_service.polygon.fetch_history = MagicMock(side_effect=KeyError("Close"))
+    market_data_service.yfinance.fetch_history = MagicMock(return_value=_ohlcv_frame(rows=100))
+
+    with patch.object(market_data_service, "_is_provider_enabled", return_value=True):
+        indicators = market_data_service.get_technical_indicators("^VIX")
+
+    market_data_service.polygon.fetch_history.assert_not_called()
+    assert "_insufficient_data" not in indicators
+
+
+def test_indicators_mark_neutral_defaults_as_substitutes(market_data_service):
+    """RSI 50 from a data outage must be distinguishable from RSI 50 from a
+    genuinely flat chart, or a provider failure reads as a neutral signal."""
+    market_data_service.polygon.fetch_history = MagicMock(return_value=pd.DataFrame())
+    market_data_service.yfinance.fetch_history = MagicMock(return_value=pd.DataFrame())
+
+    with patch.object(market_data_service, "_is_provider_enabled", return_value=True):
+        indicators = market_data_service.get_technical_indicators("AAPL")
+
+    assert indicators["rsi"] == 50
+    assert indicators["_insufficient_data"] is True
+
+
+def test_total_history_failure_is_logged_not_just_returned_empty(market_data_service):
+    for provider in (market_data_service.polygon, market_data_service.tiingo,
+                     market_data_service.fmp, market_data_service.yfinance):
+        provider.fetch_history = MagicMock(side_effect=RuntimeError("upstream down"))
+
+    with patch.object(market_data_service, "_is_provider_enabled", return_value=True), \
+         patch.object(market_data_service.logger, "warning") as warn:
+        data = market_data_service.get_ohlcv("NVDA", days=2)
+
+    assert data == {}
+    assert any("No provider returned history for NVDA" in str(c) for c in warn.call_args_list)

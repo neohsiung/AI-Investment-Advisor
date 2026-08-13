@@ -16,7 +16,9 @@ dependencies = [
     "cryptography==49.0.0",
     "diskcache==5.6.3",
     "dspy==3.0.4b1",
-    "duckduckgo-search==3.9.3",
+    # Renamed upstream from duckduckgo-search; 3.9.3 passed httpx's removed
+    # `proxies` kwarg and had been dead since httpx 0.28.
+    "ddgs==9.14.4",
     "cvxpy==1.6.0",
     "fastapi==0.124.4",
     "scikit-learn==1.5.2",
