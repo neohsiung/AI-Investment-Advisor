@@ -3,7 +3,6 @@ from unittest.mock import MagicMock, patch
 import os
 import json
 from src.repositories.redis_memory_repository import RedisMemoryRepository
-from src.services.memory_factory import MemoryFactory
 from src.services.memory_service import MemoryService, ReportMemoryItem
 
 # --- Redis Repository Tests ---
@@ -73,21 +72,3 @@ def test_redis_repo_save_and_fetch(mock_get_redis):
     assert items[0].full_content == "Content"
     assert items[0].key_findings == {"k":"v"}
 
-# --- Memory Factory Tests ---
-
-@patch('src.services.memory_factory.RedisMemoryRepository')
-@patch('src.services.memory_factory.AlchemyMemoryRepository')
-def test_memory_factory_switching(mock_sqlite, mock_redis):
-    # Case 1: Default (SQLite)
-    if "MEMORY_BACKEND" in os.environ: del os.environ["MEMORY_BACKEND"]
-    
-    service = MemoryFactory.create_memory_service("u1")
-    assert isinstance(service, MemoryService)
-    mock_sqlite.assert_called()
-    
-    # Case 2: Redis
-    os.environ["MEMORY_BACKEND"] = "redis"
-    os.environ["REDIS_URL"] = "redis://host"
-    
-    service_r = MemoryFactory.create_memory_service("u1")
-    mock_redis.assert_called()

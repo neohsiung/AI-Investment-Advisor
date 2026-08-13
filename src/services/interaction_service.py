@@ -334,7 +334,7 @@ class InteractionService:
         from src.agents.persona.persona_provider import get_default_persona_provider
         from src.infrastructure.memory.channel_memory_manager import ChannelMemoryManager
         from src.infrastructure.memory.wisdom_vault import WisdomVault
-        from src.infrastructure.memory.cognitive_memory import CognitiveMemoryManager
+        from src.infrastructure.memory.cognitive_memory import DikwDistillationPipeline
         from src.infrastructure.memory.channel_memory_manager import RedisSTMStore
 
         persona_provider = get_default_persona_provider()
@@ -344,7 +344,7 @@ class InteractionService:
 
         # Initialize DIKW Distillation Engine
         stm_store = RedisSTMStore()
-        cognitive_engine = CognitiveMemoryManager(
+        cognitive_engine = DikwDistillationPipeline(
             stm=stm_store,
             episodic=None,  # Will use HybridMemory if available
             wisdom=wisdom_vault,

@@ -1,6 +1,18 @@
 """
-Cognitive Memory Manager — DIKW Distillation Engine.
-認知記憶管理器 — DIKW 蒸餾引擎。
+DIKW Distillation Pipeline.
+DIKW 蒸餾管線。
+
+Renamed 2026-08-13 from `CognitiveMemoryManager`, which was also the name of an
+unrelated class in `src/services/cognitive_memory_manager.py`. The two shared a
+name but nothing else: that one is a memory *store*
+(`store_insight` / `get_recent_memories` / `archive_to_long_term`) with five
+callers; this one is a distillation *pipeline* with one. `from ... import
+CognitiveMemoryManager` therefore resolved to a completely different object
+depending on which module path you typed — the kind of collision that produces
+a bug nobody can reproduce from the call site alone.
+2026-08-13 由 `CognitiveMemoryManager` 更名：該名稱同時屬於
+`src/services/cognitive_memory_manager.py` 中一個毫不相干的類別（記憶「儲存」，
+五個呼叫端），而本類別是蒸餾「管線」。同名不同物，import 路徑打錯就會拿到另一個東西。
 
 Orchestrates the Data → Information → Knowledge → Wisdom pipeline:
 
@@ -44,7 +56,7 @@ EPISODIC_DISTILL_THRESHOLD = 50   # Episodes before Knowledge distillation
 KNOWLEDGE_CRYSTALLIZE_THRESHOLD = 10  # Knowledge fragments before Wisdom
 
 
-class CognitiveMemoryManager:
+class DikwDistillationPipeline:
     """
     Orchestrates the DIKW distillation pipeline across 3 memory tiers.
     協調三層記憶之間的 DIKW 蒸餾管線。
@@ -55,7 +67,7 @@ class CognitiveMemoryManager:
       3. Wisdom (Files) — crystallized principles
 
     Usage:
-        cmm = CognitiveMemoryManager(stm=redis_store, episodic=hybrid_mem, wisdom=vault)
+        cmm = DikwDistillationPipeline(stm=redis_store, episodic=hybrid_mem, wisdom=vault)
         await cmm.compact_stm_to_episodic("ch_123", "user_001")
         await cmm.distill_episodic_to_knowledge("user_001")
         await cmm.crystallize_knowledge_to_wisdom("user_001")
