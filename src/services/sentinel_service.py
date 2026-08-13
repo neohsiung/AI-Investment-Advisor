@@ -58,14 +58,21 @@ class SentinelService:
             
         self.repo = repo or AlchemySentinelRepository()
         self.user_id = user_id
-        self.settings_service = settings_service or SettingsService(user_id=self.user_id)
-        
-        self.market_service = market_service or MarketDataService(settings_service=self.settings_service)
-        self.search_service = search_service or InternetSearchService(settings_service=self.settings_service)
-        self.transaction_service = transaction_service or TransactionService()
-        self.council_service = council_service or CouncilService(user_id=self.user_id)
-        self.keyword_service = keyword_service or RiskKeywordService()
-        self.snapshot_repo = snapshot_repo or AlchemySnapshotRepository(engine=self.repo.engine)
+
+        # Collaborators are built on first use, not here — see the properties
+        # below. Injected instances are honoured exactly as before.
+        # 協作服務改為首次使用時才建構（見下方 property），注入的實例行為不變。
+        self._settings_service = settings_service
+        self._market_service = market_service
+        self._search_service = search_service
+        self._transaction_service = transaction_service
+        self._council_service = council_service
+        self._keyword_service = keyword_service
+        self._snapshot_repo = snapshot_repo
+        self._model_router = None
+        self._gateway = None
+        self._thresholds: Optional[Dict[str, Any]] = None
+        self._priority_minutes: Optional[Dict[str, int]] = None
         # 2026-07-12: in-memory last-price cache for polygon_websocket tick
         # debouncing in process_event() — process-local, resets on restart
         # (acceptable: worst case is one extra escalation after a restart).
@@ -75,15 +82,6 @@ class SentinelService:
         # events before they reach the fast-tier classifier. {hash: epoch_seconds}.
         self._prefilter_seen: Dict[str, float] = {}
 
-        # PAD Phase 2: Initialize model router and gateway for LLM calls
-        from src.infrastructure.llm.budget_aware_model_router import BudgetAwareModelRouter
-        from src.services.token_logger_service import TokenLoggerService
-        self.model_router = BudgetAwareModelRouter(
-            settings_service=self.settings_service,
-            token_logger=TokenLoggerService()
-        )
-        self.gateway = OpenRouterGateway()
-        
         # Thresholds (v3.5 - Defaults seeded to DB)
         self.default_thresholds = {
             "vix_high": 25.0,
@@ -96,14 +94,11 @@ class SentinelService:
             "vix_suppression_sigma_mult": 1.5, # 抑制回報門檻 (sigma 倍數)
         }
         
-        # 1. Sync / Seed initial thresholds
-        self.repo.seed_defaults(self.default_thresholds)
-        self.thresholds = self.repo.get_all_thresholds()
-        
-        # 2. Dynamic Calibration (Rule #8)
-        # Perform initial statistical calibration if historical data is available
-        self._calibrate_thresholds()
-        
+        # Thresholds are seeded and read on first access (see the `thresholds`
+        # property), and calibration moved to process_tick behind a daily
+        # cooldown — see _maybe_calibrate_thresholds for the measurements.
+        # 門檻改為首次存取時才 seed/讀取；校準移至 process_tick 並加上每日冷卻。
+
         # [NEW] v5.1: Tracking firing times for de-bouncing (T16)
         # 2026-08-10: retained only as the in-process fallback for
         # _acquire_cooldown(). Debounce state lives in Redis now — this dict is
@@ -118,18 +113,224 @@ class SentinelService:
         from src.infrastructure.redis_sentinel_buffer import RedisSentinelBuffer
         self._redis_buffer = RedisSentinelBuffer()
         
-        # Priority Deadlines (minutes) - Rule #8: Dynamic via settings if available
-        # Keys use "P1".."P5" format to match priority lookup: f"P{priority}"
-        self.priority_minutes = {
-            "P1": int(self.settings_service.get_setting("sentinel_p1_limit_mins") or 15),
-            "P2": int(self.settings_service.get_setting("sentinel_p2_limit_mins") or 60),
-            "P3": int(self.settings_service.get_setting("sentinel_p3_limit_mins") or 240),
-            "P4": int(self.settings_service.get_setting("sentinel_p4_limit_mins") or 720),
-            "P5": int(self.settings_service.get_setting("sentinel_p5_limit_mins") or 1440),
-        }
-        
         # Volatility State
         self.current_vix: float = 20.0 # Default fallback
+
+    # ──────────────────────────────────────────
+    # Lazily-built collaborators (2026-08-13)
+    #
+    # `__init__` used to eagerly construct eight services — MarketDataService
+    # (which itself builds Polygon, Tiingo, FMP, FRED, AlphaVantage, Finnhub,
+    # FinancialData and a Tavily search client), InternetSearchService,
+    # TransactionService, CouncilService, RiskKeywordService, a snapshot repo,
+    # a model router and an LLM gateway — plus five settings reads, a threshold
+    # seed+read, and a 252-day ^VIX calibration fetch.
+    #
+    # tasks.py rebuilds SentinelService for every Celery task and
+    # webhook_service.py for every request, so that whole graph was rebuilt
+    # once a minute: 461 "Tavily initialized" and 461 "FRED initialized" lines
+    # per 6h of production logs. Most ticks touch two or three of these.
+    #
+    # The properties keep every call site (`self.market_service`) unchanged and
+    # keep constructor injection working; the setters keep post-construction
+    # assignment working, which several tests and callers rely on.
+    #
+    # `__init__` 原本急切建構八個服務（MarketDataService 會連帶建立全部 provider
+    # 與 Tavily 客戶端）、五次設定讀取、門檻 seed+讀取，以及一次 252 天的 ^VIX
+    # 校準抓取。而每個 Celery task 與每個 webhook 請求都會重建本服務，因此整張
+    # 服務圖每分鐘重建一次（6 小時內 461 次）。多數 tick 只用到其中兩三個。
+    # ──────────────────────────────────────────
+
+    @property
+    def settings_service(self) -> SettingsService:
+        if self._settings_service is None:
+            self._settings_service = SettingsService(user_id=self.user_id)
+        return self._settings_service
+
+    @settings_service.setter
+    def settings_service(self, value: SettingsService) -> None:
+        self._settings_service = value
+
+    @settings_service.deleter
+    def settings_service(self) -> None:
+        # Reset to "not built yet"; `unittest.mock.patch.object` deletes the
+        # attribute on exit, and a lazy property must be re-buildable after that.
+        self._settings_service = None
+
+    @property
+    def market_service(self) -> MarketDataService:
+        if self._market_service is None:
+            self._market_service = MarketDataService(settings_service=self.settings_service)
+        return self._market_service
+
+    @market_service.setter
+    def market_service(self, value: MarketDataService) -> None:
+        self._market_service = value
+
+    @market_service.deleter
+    def market_service(self) -> None:
+        # Reset to "not built yet"; `unittest.mock.patch.object` deletes the
+        # attribute on exit, and a lazy property must be re-buildable after that.
+        self._market_service = None
+
+    @property
+    def search_service(self) -> InternetSearchService:
+        if self._search_service is None:
+            self._search_service = InternetSearchService(settings_service=self.settings_service)
+        return self._search_service
+
+    @search_service.setter
+    def search_service(self, value: InternetSearchService) -> None:
+        self._search_service = value
+
+    @search_service.deleter
+    def search_service(self) -> None:
+        # Reset to "not built yet"; `unittest.mock.patch.object` deletes the
+        # attribute on exit, and a lazy property must be re-buildable after that.
+        self._search_service = None
+
+    @property
+    def transaction_service(self) -> TransactionService:
+        if self._transaction_service is None:
+            self._transaction_service = TransactionService()
+        return self._transaction_service
+
+    @transaction_service.setter
+    def transaction_service(self, value: TransactionService) -> None:
+        self._transaction_service = value
+
+    @transaction_service.deleter
+    def transaction_service(self) -> None:
+        # Reset to "not built yet"; `unittest.mock.patch.object` deletes the
+        # attribute on exit, and a lazy property must be re-buildable after that.
+        self._transaction_service = None
+
+    @property
+    def council_service(self) -> CouncilService:
+        if self._council_service is None:
+            self._council_service = CouncilService(user_id=self.user_id)
+        return self._council_service
+
+    @council_service.setter
+    def council_service(self, value: CouncilService) -> None:
+        self._council_service = value
+
+    @council_service.deleter
+    def council_service(self) -> None:
+        # Reset to "not built yet"; `unittest.mock.patch.object` deletes the
+        # attribute on exit, and a lazy property must be re-buildable after that.
+        self._council_service = None
+
+    @property
+    def keyword_service(self) -> RiskKeywordService:
+        if self._keyword_service is None:
+            self._keyword_service = RiskKeywordService()
+        return self._keyword_service
+
+    @keyword_service.setter
+    def keyword_service(self, value: RiskKeywordService) -> None:
+        self._keyword_service = value
+
+    @keyword_service.deleter
+    def keyword_service(self) -> None:
+        # Reset to "not built yet"; `unittest.mock.patch.object` deletes the
+        # attribute on exit, and a lazy property must be re-buildable after that.
+        self._keyword_service = None
+
+    @property
+    def snapshot_repo(self) -> AlchemySnapshotRepository:
+        if self._snapshot_repo is None:
+            self._snapshot_repo = AlchemySnapshotRepository(engine=self.repo.engine)
+        return self._snapshot_repo
+
+    @snapshot_repo.setter
+    def snapshot_repo(self, value: AlchemySnapshotRepository) -> None:
+        self._snapshot_repo = value
+
+    @snapshot_repo.deleter
+    def snapshot_repo(self) -> None:
+        # Reset to "not built yet"; `unittest.mock.patch.object` deletes the
+        # attribute on exit, and a lazy property must be re-buildable after that.
+        self._snapshot_repo = None
+
+    @property
+    def model_router(self):
+        if self._model_router is None:
+            from src.infrastructure.llm.budget_aware_model_router import BudgetAwareModelRouter
+            from src.services.token_logger_service import TokenLoggerService
+            self._model_router = BudgetAwareModelRouter(
+                settings_service=self.settings_service,
+                token_logger=TokenLoggerService(),
+            )
+        return self._model_router
+
+    @model_router.setter
+    def model_router(self, value) -> None:
+        self._model_router = value
+
+    @model_router.deleter
+    def model_router(self) -> None:
+        # Reset to "not built yet"; `unittest.mock.patch.object` deletes the
+        # attribute on exit, and a lazy property must be re-buildable after that.
+        self._model_router = None
+
+    @property
+    def gateway(self):
+        if self._gateway is None:
+            self._gateway = OpenRouterGateway()
+        return self._gateway
+
+    @gateway.setter
+    def gateway(self, value) -> None:
+        self._gateway = value
+
+    @gateway.deleter
+    def gateway(self) -> None:
+        # Reset to "not built yet"; `unittest.mock.patch.object` deletes the
+        # attribute on exit, and a lazy property must be re-buildable after that.
+        self._gateway = None
+
+    @property
+    def thresholds(self) -> Dict[str, Any]:
+        """Seeded and read on first access. process_tick refreshes it each
+        tick, so the ticking path sees the same values it always did.
+        首次存取時才 seed 與讀取；process_tick 每次仍會重新整理。"""
+        if self._thresholds is None:
+            self.repo.seed_defaults(self.default_thresholds)
+            self._thresholds = self.repo.get_all_thresholds()
+        return self._thresholds
+
+    @thresholds.setter
+    def thresholds(self, value: Dict[str, Any]) -> None:
+        self._thresholds = value
+
+    @thresholds.deleter
+    def thresholds(self) -> None:
+        # Reset to "not built yet"; `unittest.mock.patch.object` deletes the
+        # attribute on exit, and a lazy property must be re-buildable after that.
+        self._thresholds = None
+
+    @property
+    def priority_minutes(self) -> Dict[str, int]:
+        if self._priority_minutes is None:
+            self._priority_minutes = {
+                "P1": int(self.settings_service.get_setting("sentinel_p1_limit_mins") or 15),
+                "P2": int(self.settings_service.get_setting("sentinel_p2_limit_mins") or 60),
+                "P3": int(self.settings_service.get_setting("sentinel_p3_limit_mins") or 240),
+                "P4": int(self.settings_service.get_setting("sentinel_p4_limit_mins") or 720),
+                "P5": int(self.settings_service.get_setting("sentinel_p5_limit_mins") or 1440),
+            }
+        return self._priority_minutes
+
+    @priority_minutes.setter
+    def priority_minutes(self, value: Dict[str, int]) -> None:
+        self._priority_minutes = value
+
+    @priority_minutes.deleter
+    def priority_minutes(self) -> None:
+        # Reset to "not built yet"; `unittest.mock.patch.object` deletes the
+        # attribute on exit, and a lazy property must be re-buildable after that.
+        self._priority_minutes = None
 
     # ──────────────────────────────────────────
     # L1 pre-filter — drop dup/trivial events before the classifier (2026-07-11)
@@ -275,8 +476,11 @@ class SentinelService:
                 )
                 return
 
+        # Daily recalibration, claimed by whichever worker gets there first.
+        await self._maybe_calibrate_thresholds()
+
         self.thresholds = self.repo.get_all_thresholds()
-        
+
         # [Optimization] Check and Flush Buffer if deadline reached
         await self._check_buffer_flush()
         
@@ -1679,6 +1883,31 @@ class SentinelService:
                 )
         except Exception as e:
             logger.error(f"Emergency Protocol failed: {e}")
+
+    _CALIBRATION_COOLDOWN_SECONDS = 86400
+
+    async def _maybe_calibrate_thresholds(self) -> None:
+        """
+        Recalibrate at most once a day, across all processes.
+        跨行程每日最多校準一次。
+
+        Calibration reads 252 days of ^VIX and writes three threshold rows. It
+        used to run in `__init__`, and SentinelService is rebuilt for every
+        Celery task and every webhook request — so a 252-day fetch plus three
+        DB writes happened on the minutely tick, on "rebalance now", and on
+        every inbound webhook. Its inputs are year-long percentiles; they do
+        not move minute to minute, and the result is persisted, so a daily
+        cadence loses nothing.
+
+        `fail_open=False`: if Redis is unreachable, skip. Stale thresholds are
+        the status quo ante and are safe; duplicating the work across every
+        worker is exactly what this removes.
+        """
+        if not await self._acquire_cooldown(
+            "threshold_calibration", self._CALIBRATION_COOLDOWN_SECONDS, fail_open=False
+        ):
+            return
+        await to_thread(self._calibrate_thresholds)
 
     def _calibrate_thresholds(self) -> None:
         """
