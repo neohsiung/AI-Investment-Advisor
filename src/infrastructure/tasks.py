@@ -33,8 +33,22 @@ def _run_async_safe(coro):
             return loop.run_until_complete(coro)
         return loop.run_until_complete(coro)
     except RuntimeError:
-        # No event loop exists, create a new one
-        return asyncio.run(coro)
+        # No usable event loop. Deliberately NOT asyncio.run(): once
+        # nest_asyncio.apply() has run anywhere in this worker process it
+        # replaces asyncio.run with a version that itself calls
+        # asyncio.get_event_loop() — i.e. the call that just raised. The task
+        # would then return "Error: ..." having never executed the coroutine,
+        # and a worker only applies nest_asyncio after a nested-loop tick, so
+        # the breakage is sticky for the rest of that process's life.
+        # 不用 asyncio.run：nest_asyncio 套用後它會再呼叫一次剛才拋錯的
+        # get_event_loop，任務會在完全沒執行的情況下回傳 "Error: ..."。
+        loop = asyncio.new_event_loop()
+        try:
+            asyncio.set_event_loop(loop)
+            return loop.run_until_complete(coro)
+        finally:
+            asyncio.set_event_loop(None)
+            loop.close()
 
 def _resolve_target_users(user_id: str = None) -> list:
     """解析目標租戶：指定則回傳單一；否則從 DB 查詢所有活躍用戶。"""
