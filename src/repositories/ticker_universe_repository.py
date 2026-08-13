@@ -10,6 +10,41 @@ from src.utils.logger import setup_logger
 
 logger = setup_logger("TickerUniverseRepository")
 
+# Column allowlists for the two methods that build a SET/INSERT clause from
+# **kwargs keys. Values are always bound; only the *names* are interpolated,
+# and only names in these sets ever reach the SQL string.
+#
+# Module-level rather than function-local (where they lived until 2026-08-14)
+# so callers can validate against the same set instead of restating it.
+# ticker_universe_service.update_ticker kept its own copy of the first set,
+# and two copies of a security boundary drift apart quietly — the service's
+# copy silently dropping a field the repository would have accepted looks
+# exactly like a successful no-op update.
+#
+# 欄位白名單提升為 module 層級，讓呼叫端能引用同一份而不是各自重寫。
+# 安全邊界一旦有兩份副本就會悄悄分歧：service 端多濾掉一個欄位，
+# 從外面看起來就只是一次「成功但什麼都沒改」的更新。
+UNIVERSE_UPDATABLE_FIELDS = frozenset({"company_name", "sector", "industry", "status"})
+TARGET_UPDATABLE_FIELDS = frozenset({
+    "target_weight", "confidence_score", "expected_return", "min_weight", "max_weight",
+})
+
+
+def _validate_fields(kwargs: Dict[str, Any], allowed: frozenset, where: str) -> None:
+    """Reject any column name that is not in the allowlist.
+
+    Raises rather than filtering: a caller passing an unknown field has a bug
+    or is hostile, and silently dropping it would report success for an update
+    that never happened.
+    拒絕而非過濾：默默丟掉未知欄位，會讓一次根本沒發生的更新回報成功。
+    """
+    unknown = set(kwargs) - allowed
+    if unknown:
+        raise ValueError(
+            f"{where}: field(s) not in allowlist: {sorted(unknown)} "
+            f"(allowed: {sorted(allowed)})"
+        )
+
 
 class TickerUniverseRepository(BaseRepository):
     """Manages ticker_universe, ticker_research, target_allocations, ticker_universe_logs tables."""
@@ -143,11 +178,14 @@ class TickerUniverseRepository(BaseRepository):
 
     def upsert(self, user_id: str, ticker: str, **kwargs) -> bool:
         """Insert or update a ticker in the universe."""
-        # Validate kwargs keys to prevent SQL injection
-        ALLOWED_FIELDS = {"company_name", "sector", "industry", "status"}
-        for k in kwargs:
-            if k not in ALLOWED_FIELDS:
-                raise ValueError(f"Invalid field name: {k}")
+        _validate_fields(kwargs, UNIVERSE_UPDATABLE_FIELDS, "upsert")
+        if not kwargs:
+            # Both branches below interpolate a comma-joined clause built from
+            # kwargs; with none, they emit `SET , last_reviewed_at = ...` and an
+            # empty `DO UPDATE SET`, i.e. a syntax error the caller only sees as
+            # a generic False. Say what actually happened instead.
+            # 無欄位時兩條分支都會組出語法錯誤的 SQL，呼叫端只會收到一個沒有理由的 False。
+            raise ValueError("upsert: no updatable fields supplied")
 
         existing = self.get_by_ticker(user_id, ticker)
         now = datetime.now(timezone.utc)
@@ -267,10 +305,9 @@ class TickerUniverseRepository(BaseRepository):
     def upsert_target(self, user_id: str, ticker: str, **kwargs) -> bool:
         """Insert or update a target allocation."""
         # Validate kwargs keys to prevent SQL injection
-        ALLOWED_FIELDS = {"target_weight", "confidence_score", "expected_return", "min_weight", "max_weight"}
-        for k in kwargs:
-            if k not in ALLOWED_FIELDS:
-                raise ValueError(f"Invalid field name: {k}")
+        _validate_fields(kwargs, TARGET_UPDATABLE_FIELDS, "upsert_target")
+        if not kwargs:
+            raise ValueError("upsert_target: no updatable fields supplied")
 
         params = {k: v for k, v in kwargs.items()}
         params["uid"] = user_id
