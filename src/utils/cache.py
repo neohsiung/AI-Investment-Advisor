@@ -51,8 +51,10 @@ class ResponseCache:
         """Save a response to the cache with TTL."""
         key = self._generate_key(agent_name, prompt)
         try:
-            # Atomic set with expiration
-            self.client.setex(key, self.ttl_seconds, response)
+            # Atomic set with expiration. `set(ex=)` rather than `setex()`:
+            # redis-py deprecated the latter, and it warns from redis 8.
+            # 用 set(ex=) 而非 setex()：後者已被 redis-py 標記棄用。
+            self.client.set(key, response, ex=self.ttl_seconds)
             self.logger.info(f"Cache SET for {agent_name} (TTL: {self.ttl_seconds}s)")
         except Exception as e:
             self.logger.error(f"Cache SET error: {e}")
@@ -79,7 +81,7 @@ class ResponseCache:
         """Store generic value in cache with optional TTL."""
         try:
             ttl = ttl_seconds if ttl_seconds is not None else self.ttl_seconds
-            self.client.setex(key, ttl, value)
+            self.client.set(key, value, ex=ttl)
         except Exception as e:
             self.logger.error(f"Cache set_value error for key {key}: {e}")
 

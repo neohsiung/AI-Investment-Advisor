@@ -124,7 +124,9 @@ class TestCacheUtility:
             
             # Test set
             cache.set("Agent", "Prompt", "Response")
-            mock_client.setex.assert_called_once()
+            # TTL is now passed via `set(ex=)`; `setex` is deprecated in redis-py.
+            mock_client.set.assert_called_once()
+            assert mock_client.set.call_args.kwargs["ex"] > 0
 
 
 class TestSnapshotAndPerformance:

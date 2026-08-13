@@ -655,7 +655,7 @@ async def get_summary(service: DashboardService = Depends(get_dashboard_service)
         # Cache the result for 120 seconds
         try:
             if _r:
-                _r.setex(cache_key, 120, json.dumps(result))
+                _r.set(cache_key, json.dumps(result), ex=120)
         except Exception as e:# nosec B110
             logger.warning(f'Exception in dashboard_router.py: {e}', exc_info=True)
 

@@ -49,7 +49,11 @@ def test_cache_operations(mock_redis):
     
     # Test Set
     cache.set("TestAgent", "Hello", "Response 1")
-    assert mock_redis.setex.called
+    # `set(key, value, ex=ttl)`, not the deprecated `setex` — the TTL must
+    # still be applied, or cached responses would never expire.
+    mock_redis.set.assert_called_once()
+    assert mock_redis.set.call_args.kwargs["ex"] == 3600
+    assert not mock_redis.setex.called
     
     # Test Get (Hit)
     mock_redis.get.return_value = "Response 1"
