@@ -19,6 +19,16 @@ def _DOUBLE():
     # On SQLite, we use Numeric/Float
     return Numeric(asdecimal=False).with_variant(postgresql.DOUBLE_PRECISION(), "postgresql")
 
+def _REAL():
+    # PG REAL (4-byte float). SQLite has no distinct REAL width.
+    return Numeric(asdecimal=False).with_variant(postgresql.REAL(), "postgresql")
+
+def _UUID():
+    # PG native uuid; String on SQLite so Base.metadata.create_all() still
+    # works for the in-memory test database.
+    # PG 原生 uuid；SQLite 退回 String，讓測試用的記憶體資料庫仍能建表。
+    return String(36).with_variant(postgresql.UUID(as_uuid=False), "postgresql")
+
 Base = declarative_base()
 
 class User(Base):
@@ -993,3 +1003,141 @@ class ProductEvent(Base):
     __table_args__ = (
         Index('idx_product_events_lookup', 'event', desc('created_at')),
     )
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Runtime-created tables, promoted into the ORM (2026-08-13)
+#
+# These five were created by `CREATE TABLE IF NOT EXISTS` inside the
+# repositories themselves — ticker_universe_repository.py:25,46,68,83 and
+# agent_repository.py:52 — and were therefore invisible to both the migration
+# chain and `alembic check`. alembic/env.py named them in a
+# `_RUNTIME_MANAGED_TABLES` filter to stop autogenerate emitting a drop_table
+# for each, and its own comment recorded the cost: "these tables stay outside
+# migration control, so editing their DDL in the repositories will not be
+# caught by CI. Promoting them into the chain is a separate refactor."
+#
+# This is that refactor. The models below are declarations only — every query
+# against these tables is still raw SQL, per AGENTS.md — but they close the
+# gap: the DDL in the repositories and the schema CI compares against are now
+# the same statement of truth, and migration 018 puts the tables under the
+# chain for fresh installs.
+#
+# Columns were transcribed from the live production schema (pg_attribute), not
+# from the repository DDL, so any drift that had already happened is captured
+# rather than papered over. There was none.
+#
+# 這五張表由 repository 以 `CREATE TABLE IF NOT EXISTS` 在 runtime 建立，
+# 因此同時不在 migration 鏈也不在 `alembic check` 的比對範圍內。env.py 以
+# `_RUNTIME_MANAGED_TABLES` 過濾掉它們以免產生 drop_table，代價寫在它自己的
+# 註解裡：改動 DDL 不會被 CI 攔到。本次即為該註解所說的「另一次重構」。
+# 欄位取自 production 實際 schema 而非 repository DDL，以捕捉既有漂移（結果為無）。
+# ─────────────────────────────────────────────────────────────────────────────
+
+class TickerUniverse(Base):
+    """`ticker_universe` — the per-user candidate set the research loop scores."""
+    __tablename__ = 'ticker_universe'
+
+    id = Column(_UUID(), primary_key=True, default=lambda: str(uuid.uuid4()))
+    user_id = Column(_UUID(), nullable=False)
+    ticker = Column(String(10), nullable=False)
+    company_name = Column(Text)
+    sector = Column(String(50))
+    industry = Column(String(50))
+    status = Column(String(20), server_default='active')
+    added_at = Column(DateTime(timezone=True), server_default=func.now())
+    removed_at = Column(DateTime(timezone=True))
+    removal_reason = Column(Text)
+    last_reviewed_at = Column(DateTime(timezone=True))
+
+    __table_args__ = (
+        UniqueConstraint('user_id', 'ticker', name='ticker_universe_user_id_ticker_key'),
+        # Partial index — the WHERE clause must be declared, or autogenerate
+        # reports a remove+add pair on every run.
+        Index('idx_ticker_universe_active', 'user_id', 'status',
+              postgresql_where=text("status = 'active'")),
+    )
+
+
+class TickerResearch(Base):
+    """`ticker_research` — one row per agent per research pass on a ticker."""
+    __tablename__ = 'ticker_research'
+
+    id = Column(_UUID(), primary_key=True, default=lambda: str(uuid.uuid4()))
+    user_id = Column(_UUID(), nullable=False)
+    ticker = Column(String(10), nullable=False)
+    agent_name = Column(String(50), nullable=False)
+    research_type = Column(String(30), nullable=False)
+    confidence_score = Column(Numeric(5, 4))
+    target_weight = Column(Numeric(5, 4))
+    expected_return = Column(Numeric(8, 6))
+    risk_score = Column(Numeric(5, 4))
+    thesis = Column(Text)
+    risks = Column(_ARRAY(Text))
+    data_sources = Column(_JSONB())
+    raw_analysis = Column(_JSONB())
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+    __table_args__ = (
+        Index('idx_ticker_research_latest', 'user_id', 'ticker', desc('created_at')),
+    )
+
+
+class TargetAllocation(Base):
+    """`target_allocations` — optimizer output; the weights rebalancing aims at."""
+    __tablename__ = 'target_allocations'
+
+    id = Column(_UUID(), primary_key=True, default=lambda: str(uuid.uuid4()))
+    user_id = Column(_UUID(), nullable=False)
+    ticker = Column(String(10), nullable=False)
+    target_weight = Column(Numeric(5, 4))
+    confidence_score = Column(Numeric(5, 4))
+    expected_return = Column(Numeric(8, 6))
+    risk_adjusted_return = Column(Numeric(8, 6))
+    min_weight = Column(Numeric(5, 4))
+    max_weight = Column(Numeric(5, 4))
+    last_optimized_at = Column(DateTime(timezone=True))
+
+    __table_args__ = (
+        UniqueConstraint('user_id', 'ticker', name='target_allocations_user_id_ticker_key'),
+    )
+
+
+class TickerUniverseLog(Base):
+    """`ticker_universe_logs` — add/remove audit trail with the agent's reasoning."""
+    __tablename__ = 'ticker_universe_logs'
+
+    id = Column(_UUID(), primary_key=True, default=lambda: str(uuid.uuid4()))
+    user_id = Column(_UUID(), nullable=False)
+    ticker = Column(String(10))
+    action = Column(String(20), nullable=False)
+    agent_name = Column(String(50))
+    reasoning = Column(Text)
+    old_status = Column(String(20))
+    new_status = Column(String(20))
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+    __table_args__ = (
+        Index('idx_ticker_logs_user', 'user_id', desc('created_at')),
+    )
+
+
+class AgentPerformance(Base):
+    """`agent_performance` — per-agent success/latency counters driving weights.
+
+    Note the type family differs from the four tables above: this one was
+    written with PG TEXT and REAL and an un-timezoned TIMESTAMP, and is keyed
+    by agent_name rather than a uuid. Transcribed as-is.
+    型別家族與上面四張不同（TEXT/REAL/無時區 TIMESTAMP，且以 agent_name 為主鍵），
+    照實際 schema 轉錄。
+    """
+    __tablename__ = 'agent_performance'
+
+    agent_name = Column(Text, primary_key=True)
+    tier = Column(Text)
+    weight = Column(_REAL(), server_default='1.0')
+    success_count = Column(Integer, server_default='0')
+    failure_count = Column(Integer, server_default='0')
+    total_latency = Column(_REAL(), server_default='0.0')
+    avg_latency = Column(_REAL(), server_default='0.0')
+    last_updated = Column(DateTime())
