@@ -18,7 +18,14 @@ ENV HOME=/home/appuser
 
 # Copy dependency files
 COPY pyproject.toml uv.lock ./
+# torch first, from PyTorch's CPU index — see the long note in
+# services/mcp_server/Dockerfile. Short version: `timesfm[torch]` otherwise
+# pulls a CUDA build plus 2.9GB of `nvidia/*` wheels that no container in this
+# stack can use, and it filled the Docker VM disk.
+# 先裝 CPU 版 torch，理由見 services/mcp_server/Dockerfile 的說明。
 RUN pip install --no-cache-dir uv && \
+    uv pip install --system --no-cache \
+        --index-url https://download.pytorch.org/whl/cpu torch==2.13.0+cpu && \
     uv pip install --system --no-cache -r pyproject.toml
 
 # Copy service and core

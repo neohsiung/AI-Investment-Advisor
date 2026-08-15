@@ -13,7 +13,31 @@ ENV UV_COMPILE_BYTECODE=1
 COPY pyproject.toml uv.lock ./
 
 # Create venv and install dependencies into it at /opt/venv
+#
+# torch is installed first, from PyTorch's CPU index. `timesfm[torch]` in
+# pyproject.toml otherwise resolves to a CUDA build — measured in the image
+# running on 2026-08-14: torch 2.13.0+cu130 on aarch64, dragging in 2.9GB of
+# `nvidia/*` CUDA libraries next to 897MB of torch, for a timesfm package that
+# is itself 308KB. No container in this stack has an NVIDIA GPU, so those
+# 2.9GB can never execute. They filled the 63GB Docker VM disk and blocked
+# every rebuild.
+#
+# Two steps rather than one resolve: the PyTorch index also mirrors unrelated
+# packages (requests, etc.) at older versions, and uv's default index strategy
+# takes the first index that carries a name — pointing the whole install at it
+# fails to resolve. Installing torch alone from that index, then everything
+# else from PyPI, leaves torch satisfied at `2.13.0+cpu` (`==2.13.0` matches a
+# local version) so the second resolve adds no nvidia wheels. Verified by
+# dry-run before this change: 0 nvidia packages, torch stays +cpu.
+#
+# 先從 PyTorch CPU index 安裝 torch：pyproject 的 timesfm[torch] 預設會解析到
+# CUDA 版本（實測為 torch 2.13.0+cu130），連帶 2.9GB 的 nvidia CUDA 函式庫，
+# 而本堆疊沒有任何容器有 NVIDIA GPU——那 2.9GB 永遠不會被執行，卻塞爆了
+# 63GB 的 Docker VM 磁碟並讓每次重建失敗。分兩步是因為該 index 也鏡像了
+# requests 等套件的舊版本，整包指過去會解析失敗。
 RUN uv venv /opt/venv && \
+    uv pip install --python /opt/venv --no-cache \
+        --index-url https://download.pytorch.org/whl/cpu torch==2.13.0+cpu && \
     uv pip install --python /opt/venv --no-cache -r pyproject.toml
 
 # Runner Stage
