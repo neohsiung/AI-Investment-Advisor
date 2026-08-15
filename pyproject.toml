@@ -63,7 +63,7 @@ dependencies = [
     "pandas-market-calendars==4.4.1",
     "pbr==5.11.1",
     "pgvector==0.2.4",
-    "pillow==12.2.0",
+    "pillow==12.3.0",
     "pip-audit==2.9.0",
     "pip-licenses==4.3.3",
     "playwright>=1.44.0",
