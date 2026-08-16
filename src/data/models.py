@@ -354,6 +354,24 @@ class Transaction(Base):
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
 
+    __table_args__ = (
+        CheckConstraint(
+            "action IN ('BUY', 'SELL', 'DEPOSIT', 'WITHDRAWAL', 'DIVIDEND', 'FEE', 'TAX')",
+            name='chk_tx_action',
+        ),
+        CheckConstraint(
+            "action NOT IN ('BUY', 'SELL') OR (ticker IS NOT NULL AND TRIM(ticker) <> '')",
+            name='chk_tx_trade_has_ticker',
+        ),
+        CheckConstraint("quantity > 0", name='chk_tx_qty_positive'),
+        CheckConstraint("price >= 0", name='chk_tx_price_nonneg'),
+        CheckConstraint("amount >= 0", name='chk_tx_amount_nonneg'),
+        CheckConstraint(
+            "entry_category IN ('trade', 'capital_flow', 'sync_adjustment')",
+            name='transactions_entry_category_check',
+        ),
+    )
+
 class PositionLot(Base):
     """
     `position_lots` — Tracks specific tax lots for O(1) avg_cost and PnL calculation.
