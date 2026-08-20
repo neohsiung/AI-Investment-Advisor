@@ -159,22 +159,6 @@ class TestDryRunIsTheDefault:
 class TestRefusals:
     """Every case where writing something would be worse than writing nothing."""
 
-    def test_double_wrapped_value_aborts_the_batch(self, engine, keys):
-        """
-        ENC(FERN(key)) exists in this database's history — llm_config_chain.py
-        carries a guard for it. Peeling only the outer layer would strand the
-        inner one on the key we are retiring.
-        """
-        inner = _enc(LLM_OLD, "sk-live-123", "FERN:")
-        _add_setting(engine, "openai_api_key", _enc(APP_OLD, inner))
-        _add_setting(engine, "etoro_api_key", _enc(APP_OLD, "should-not-be-written"))
-
-        assert rotate(commit=True, engine=engine) == 1
-
-        # The healthy row in the same batch must be untouched too.
-        assert _decrypts_to(_raw_setting(engine, "etoro_api_key"), APP_OLD, "ENC:") \
-            == "should-not-be-written"
-
     def test_value_encrypted_under_an_unknown_key_aborts_the_batch(self, engine, keys):
         _add_setting(engine, "etoro_api_key", _enc(APP_OLD, "healthy"))
         _add_setting(engine, "stripe_secret", _enc(THIRD_PARTY, "opaque"))
@@ -215,6 +199,61 @@ class TestRefusals:
 
         with pytest.raises(RotationError, match="not a valid Fernet key"):
             rotate(commit=True, engine=engine)
+
+
+class TestNestedCiphertext:
+    """
+    ENC(FERN(key)) is real: prod's `settings.openrouter_api_key` holds one,
+    and llm_config_chain.py:236-245 rejects it, so the value has been unused
+    since 2026-07-11. Rotation must move BOTH layers without changing what
+    the application does with the row.
+    """
+
+    def test_both_layers_are_rotated(self, engine, keys):
+        inner = _enc(LLM_OLD, "sk-live-123", "FERN:")
+        _add_setting(engine, "openrouter_api_key", _enc(APP_OLD, inner))
+
+        assert rotate(commit=True, engine=engine) == 0
+
+        outer = _decrypts_to(_raw_setting(engine, "openrouter_api_key"), APP_NEW, "ENC:")
+        assert _decrypts_to(outer, LLM_NEW, "FERN:") == "sk-live-123"
+
+    def test_the_retired_keys_open_neither_layer(self, engine, keys):
+        """The whole point: no layer is left behind on a leaked key."""
+        inner = _enc(LLM_OLD, "sk-live-123", "FERN:")
+        _add_setting(engine, "openrouter_api_key", _enc(APP_OLD, inner))
+
+        rotate(commit=True, engine=engine)
+
+        stored = _raw_setting(engine, "openrouter_api_key")
+        with pytest.raises(Exception):
+            _decrypts_to(stored, APP_OLD, "ENC:")
+
+        outer = _decrypts_to(stored, APP_NEW, "ENC:")
+        with pytest.raises(Exception):
+            _decrypts_to(outer, LLM_OLD, "FERN:")
+
+    def test_nesting_shape_is_preserved_not_flattened(self, engine, keys):
+        """
+        Fully unwrapping would turn a value the app currently ignores into one
+        it starts using — a behaviour change smuggled into a security fix.
+        """
+        inner = _enc(LLM_OLD, "sk-live-123", "FERN:")
+        _add_setting(engine, "openrouter_api_key", _enc(APP_OLD, inner))
+
+        rotate(commit=True, engine=engine)
+
+        outer = _decrypts_to(_raw_setting(engine, "openrouter_api_key"), APP_NEW, "ENC:")
+        assert outer.startswith("FERN:"), "inner layer was flattened away"
+
+    def test_broken_inner_layer_aborts_the_batch(self, engine, keys):
+        inner = _enc(THIRD_PARTY, "opaque", "FERN:")
+        _add_setting(engine, "openrouter_api_key", _enc(APP_OLD, inner))
+        _add_setting(engine, "etoro_api_key", _enc(APP_OLD, "healthy"))
+
+        assert rotate(commit=True, engine=engine) == 1
+
+        assert _decrypts_to(_raw_setting(engine, "etoro_api_key"), APP_OLD, "ENC:") == "healthy"
 
 
 class TestValuesLeftAlone:

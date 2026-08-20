@@ -34,7 +34,7 @@ import argparse
 import os
 import sys
 from pathlib import Path
-from typing import Callable, List, NamedTuple, Optional, Tuple
+from typing import Callable, List, NamedTuple, Tuple
 
 project_root = Path(__file__).parent.parent
 sys.path.insert(0, str(project_root))
@@ -54,7 +54,6 @@ from src.repositories.settings_repository import AlchemySettingsRepository  # no
 SETTINGS_PREFIX = "ENC:"
 FERNET_PREFIX = "FERN:"
 FALLBACK_PREFIX = "B64H:"
-ALL_PREFIXES = (SETTINGS_PREFIX, FERNET_PREFIX, FALLBACK_PREFIX)
 
 
 class RotationError(RuntimeError):
@@ -66,6 +65,19 @@ class Row(NamedTuple):
     label: str              # human-readable, safe to print (never the value)
     ciphertext: str         # unwrapped, prefix included
     apply: Callable[[str], None]   # writes the new ciphertext onto the ORM object
+
+
+class KeyRing(NamedTuple):
+    """
+    Which (old, new) key pair rotates which prefix.
+
+    Keyed by prefix rather than by table, because a nested value carries
+    layers of both kinds — prod's ENC(FERN(key)) needs APP_SECRET_KEY for the
+    outer layer and LLM_CREDENTIAL_KEY for the inner one.
+    以前綴而非資料表為索引：巢狀值同時含兩種層級，外層用 APP_SECRET_KEY、
+    內層用 LLM_CREDENTIAL_KEY。
+    """
+    rotatable: dict         # prefix -> (old Fernet, new Fernet)
 
 
 # ----------------------------------------------------------------------
@@ -129,42 +141,69 @@ def _load_key_pair(env_name: str) -> Tuple[Fernet, Fernet]:
 # ----------------------------------------------------------------------
 # Re-wrap
 # ----------------------------------------------------------------------
-def _reencrypt(ciphertext: str, prefix: str, old: Fernet, new: Fernet, label: str) -> str:
-    """
-    Decrypt with `old`, re-encrypt with `new`, same prefix.
+MAX_NESTING = 4
 
-    Two things abort the batch rather than guess:
-      - the old key cannot open it (wrong key, or already rotated)
-      - the plaintext is itself another ciphertext
 
-    The second case is real: llm_config_chain.py:236-245 carries a guard for
-    double-wrapped ENC(FERN(key)) values. Peeling one layer and re-sealing
-    would leave the inner layer encrypted under a key we are about to retire,
-    which is exactly the silent breakage this script exists to prevent.
-    雙層加密確實存在（見 llm_config_chain 的防禦碼）。只剝一層再封回去，
-    內層仍綁在即將退役的金鑰上——正是本腳本要防止的靜默損壞，故直接中止。
+def _reencrypt(ciphertext: str, keys: "KeyRing", label: str, depth: int = 1) -> Tuple[str, int]:
     """
+    Re-wrap a ciphertext onto the new keys, preserving its exact structure.
+    Returns (new_ciphertext, layers_rotated).
+
+    Nesting is real. `settings.openrouter_api_key` in production holds
+    ENC(FERN(key)) — an ENC: layer wrapping a whole FERN: ciphertext, which
+    `llm_config_chain.py:236-245` recognises and rejects, so the value has sat
+    there unused since 2026-07-11.
+
+    Both layers are key-bound, so both must be rotated. Peeling only the outer
+    one would leave the inner sealed under a key we are retiring — the exact
+    silent breakage this script exists to prevent. Unwrapping fully would be
+    worse: it would turn a value the application currently ignores into one it
+    starts using, which is a behavioural change smuggled inside a security fix.
+    So each layer is decrypted with its own old key and re-sealed with its own
+    new key, and the shape comes back out identical.
+    巢狀加密確實存在（prod 的 openrouter_api_key 即 ENC(FERN(key))，
+    自 2026-07-11 起被 llm_config_chain 的 guard 忽略）。兩層都綁著金鑰，
+    故兩層都要輪換：只剝外層會讓內層留在退役金鑰上；完全拆開則會讓原本被
+    忽略的值變成生效值——那是把行為變更夾帶進安全修復。因此逐層以各自的
+    新舊金鑰重封，結構原樣還原。
+
+    Aborts the batch rather than guess when the old key cannot open a layer.
+    """
+    prefix = next((p for p in keys.rotatable if ciphertext.startswith(p)), None)
+    if prefix is None:
+        raise RotationError(f"{label}: not a rotatable ciphertext (depth {depth}).")
+
+    if depth > MAX_NESTING:
+        raise RotationError(
+            f"{label}: nested more than {MAX_NESTING} layers deep. Refusing to "
+            f"recurse further. Nothing has been written."
+        )
+
+    old, new = keys.rotatable[prefix]
     token = ciphertext[len(prefix):]
 
     try:
         plaintext = old.decrypt(token.encode()).decode("utf-8")
     except Exception as exc:
         raise RotationError(
-            f"{label}: cannot decrypt with the current {prefix.rstrip(':')} key "
-            f"({type(exc).__name__}). Either the wrong old key is in the "
-            f"environment, or this row was encrypted under a third key. "
-            f"Nothing has been written."
+            f"{label}: cannot decrypt the {prefix.rstrip(':')} layer at depth "
+            f"{depth} with the current key ({type(exc).__name__}). Either the "
+            f"wrong old key is in the environment, or this layer was encrypted "
+            f"under a third key. Nothing has been written."
         ) from exc
 
-    if plaintext.startswith(ALL_PREFIXES):
-        inner = next(p for p in ALL_PREFIXES if plaintext.startswith(p))
-        raise RotationError(
-            f"{label}: double-wrapped value — {prefix} wraps {inner}. Unwrap it "
-            f"by hand before rotating; re-sealing only the outer layer would "
-            f"strand the inner one on the retired key. Nothing has been written."
-        )
+    layers = 1
+    if plaintext.startswith(tuple(keys.rotatable)):
+        # Another key-bound ciphertext inside. Recurse so it is rotated too.
+        plaintext, inner_layers = _reencrypt(plaintext, keys, label, depth + 1)
+        layers += inner_layers
+    elif plaintext.startswith(FALLBACK_PREFIX):
+        # B64H: is keyless obfuscation (llm_credential_cipher.py:85-89) — there
+        # is no key to move it onto, so it rides along as opaque payload.
+        # B64H: 是無金鑰編碼，沒有金鑰可換，原樣當作內容一起重封。
+        pass
 
-    return f"{prefix}{new.encrypt(plaintext.encode('utf-8')).decode('utf-8')}"
+    return f"{prefix}{new.encrypt(plaintext.encode('utf-8')).decode('utf-8')}", layers
 
 
 # ----------------------------------------------------------------------
@@ -256,6 +295,10 @@ def rotate(commit: bool, engine=None) -> int:
 
     app_old, app_new = _load_key_pair("APP_SECRET_KEY")
     llm_old, llm_new = _load_key_pair("LLM_CREDENTIAL_KEY")
+    keys = KeyRing(rotatable={
+        SETTINGS_PREFIX: (app_old, app_new),
+        FERNET_PREFIX: (llm_old, llm_new),
+    })
 
     # Borrowed so the definition of "sensitive key name" lives in exactly one
     # place (settings_repository.py:112-116).
@@ -268,11 +311,7 @@ def rotate(commit: bool, engine=None) -> int:
     try:
         setting_rows, setting_notes = _collect_settings(session, should_encrypt)
         provider_rows, provider_notes = _collect_providers(session)
-
-        plan: List[Tuple[Row, str, Fernet, Fernet]] = [
-            *((r, SETTINGS_PREFIX, app_old, app_new) for r in setting_rows),
-            *((r, FERNET_PREFIX, llm_old, llm_new) for r in provider_rows),
-        ]
+        plan = setting_rows + provider_rows
 
         if not plan:
             print("Nothing to rotate: no ENC: or FERN: ciphertext found.")
@@ -283,10 +322,12 @@ def rotate(commit: bool, engine=None) -> int:
         # Re-encrypt everything before writing anything. A RotationError here
         # leaves the session untouched, so a bad row cannot half-rotate the DB.
         # 先全部重新加密再寫入；中途失敗時 session 未被觸碰，不會半套輪換。
-        for row, prefix, old, new in plan:
-            new_ct = _reencrypt(row.ciphertext, prefix, old, new, row.label)
+        for row in plan:
+            new_ct, layers = _reencrypt(row.ciphertext, keys, row.label)
             row.apply(new_ct)
-            print(f"  re-wrapped {row.label}  (len {len(row.ciphertext)} -> {len(new_ct)})")
+            nested = f", {layers} nested layers" if layers > 1 else ""
+            print(f"  re-wrapped {row.label}  "
+                  f"(len {len(row.ciphertext)} -> {len(new_ct)}{nested})")
 
         print(
             f"\n{len(setting_rows)} settings, {len(provider_rows)} llm_providers "
