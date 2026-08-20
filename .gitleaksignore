@@ -1,0 +1,30 @@
+# Known-dead secrets from .env.bak-20260711, all rotated 2026-08-20.
+#
+# The file was committed in 3a7be7f0 (2026-07-11) and removed in 533e6e00,
+# but the blob survives in history, so gitleaks re-reports it on every run
+# and blocks every PR.
+#
+# All five values have been rotated and are dead:
+#   TELEGRAM_BOT_TOKEN, NGROK_AUTHTOKEN     — reissued via each provider
+#   APP_SECRET_KEY, LLM_CREDENTIAL_KEY      — reissued, and every ciphertext
+#     re-wrapped onto the new keys by scripts/rotate_encryption_keys.py
+#     (swapping these two in .env alone would have orphaned the DB)
+#   FINNHUB_WEBHOOK_SECRET                  — reissued in the Finnhub console
+#
+# History is deliberately NOT rewritten: the branch is already pushed, and a
+# force-push would break every existing clone for no security gain once the
+# values are dead.
+#
+# Listed as fingerprints, not as a path or regex rule, on purpose — this
+# forgives exactly these five findings. A sixth secret in the same file, or
+# these same rules firing anywhere else, still fails the build.
+#
+# 上述五個密鑰皆已於 2026-08-20 輪換完畢，git history 中的值已失效。
+# 不改寫 history：分支已推送，force-push 會破壞既有 clone，且值已死無安全收益。
+# 採用 fingerprint 而非路徑或正規式，只赦免這五筆；同檔案若再出現第六筆仍會失敗。
+
+3a7be7f06e3899f98312296d596e1e60640df853:.env.bak-20260711:telegram-bot-api-token:2
+3a7be7f06e3899f98312296d596e1e60640df853:.env.bak-20260711:generic-api-key:9
+3a7be7f06e3899f98312296d596e1e60640df853:.env.bak-20260711:generic-api-key:10
+3a7be7f06e3899f98312296d596e1e60640df853:.env.bak-20260711:finnhub-access-token:13
+3a7be7f06e3899f98312296d596e1e60640df853:.env.bak-20260711:generic-api-key:14
