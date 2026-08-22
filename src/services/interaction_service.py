@@ -63,11 +63,12 @@ class RedisPendingRequests:
         if is_testing:
             self._redis = None
         else:
-            redis_url = os.getenv("REDIS_URL", "redis://localhost:6379/0")
             try:
-                self._redis = redis.from_url(redis_url, decode_responses=True, socket_connect_timeout=3)
+                from src.infrastructure.cache.redis_client import get_redis_sync
+                self._redis = get_redis_sync()
                 self._redis.ping()
-            except Exception:
+            except Exception as e:
+                logger.warning(f'Exception in interaction_service.py: {e}', exc_info=True)
                 self._redis = None
 
     def __setitem__(self, key: str, req: InteractionRequest):
@@ -75,7 +76,8 @@ class RedisPendingRequests:
         if self._redis:
             try:
                 self._redis.set(f"interaction:{key}", serialize_request(req), ex=3600)  # TTL of 1 hour
-            except Exception:
+            except Exception as e:
+                logger.warning(f'Exception in interaction_service.py: {e}', exc_info=True)
                 self._redis = None
 
     def __getitem__(self, key: str) -> InteractionRequest:
@@ -88,7 +90,8 @@ class RedisPendingRequests:
         if self._redis:
             try:
                 self._redis.delete(f"interaction:{key}")
-            except Exception:
+            except Exception as e:
+                logger.warning(f'Exception in interaction_service.py: {e}', exc_info=True)
                 self._redis = None
         if key in self._fallback_dict:
             del self._fallback_dict[key]
@@ -97,7 +100,8 @@ class RedisPendingRequests:
         if self._redis:
             try:
                 return len(self._redis.keys("interaction:*"))
-            except Exception:
+            except Exception as e:
+                logger.warning(f'Exception in interaction_service.py: {e}', exc_info=True)
                 self._redis = None
         return len(self._fallback_dict)
 
@@ -105,7 +109,8 @@ class RedisPendingRequests:
         if self._redis:
             try:
                 return bool(self._redis.exists(f"interaction:{key}"))
-            except Exception:
+            except Exception as e:
+                logger.warning(f'Exception in interaction_service.py: {e}', exc_info=True)
                 self._redis = None
         return key in self._fallback_dict
 
@@ -121,7 +126,8 @@ class RedisPendingRequests:
                         local_req.response = redis_req.response
                         return local_req
                     return redis_req
-            except Exception:
+            except Exception as e:
+                logger.warning(f'Exception in interaction_service.py: {e}', exc_info=True)
                 self._redis = None
         return self._fallback_dict.get(key, default)
 
@@ -137,7 +143,8 @@ class RedisPendingRequests:
             try:
                 raw_keys = self._redis.keys("interaction:*")
                 return [k.replace("interaction:", "") for k in raw_keys]
-            except Exception:
+            except Exception as e:
+                logger.warning(f'Exception in interaction_service.py: {e}', exc_info=True)
                 self._redis = None
         return list(self._fallback_dict.keys())
 
@@ -160,7 +167,8 @@ class RedisPendingRequests:
                         else:
                             reqs.append(redis_req)
                 return reqs
-            except Exception:
+            except Exception as e:
+                logger.warning(f'Exception in interaction_service.py: {e}', exc_info=True)
                 self._redis = None
         return list(self._fallback_dict.values())
 
@@ -170,9 +178,23 @@ class RedisPendingRequests:
                 keys = self._redis.keys("interaction:*")
                 if keys:
                     self._redis.delete(*keys)
-            except Exception:
+            except Exception as e:
+                logger.warning(f'Exception in interaction_service.py: {e}', exc_info=True)
                 self._redis = None
         self._fallback_dict.clear()
+
+# 2026-07-14 (Loop 3 — user-feedback-driven evolution): one-tap rejection
+# reasons. Kept to a fixed, small set so the Telegram/LINE keyboard stays a
+# single tap — no free-text UX for "why" beyond an explicit "other" bucket.
+REJECTION_REASONS: List[Tuple[str, str]] = [
+    ("too_risky", "太高風險"),
+    ("wrong_ticker", "標的判斷錯誤"),
+    ("bad_timing", "時機不對"),
+    ("position_too_large", "部位過大"),
+    ("dont_trust_thesis", "不信任論述"),
+    ("other", "其他"),
+]
+_REJECTION_REASON_CODES = {code for code, _ in REJECTION_REASONS}
 
 class InteractionService:
     """
@@ -312,7 +334,7 @@ class InteractionService:
         from src.agents.persona.persona_provider import get_default_persona_provider
         from src.infrastructure.memory.channel_memory_manager import ChannelMemoryManager
         from src.infrastructure.memory.wisdom_vault import WisdomVault
-        from src.infrastructure.memory.cognitive_memory import CognitiveMemoryManager
+        from src.infrastructure.memory.cognitive_memory import DikwDistillationPipeline
         from src.infrastructure.memory.channel_memory_manager import RedisSTMStore
 
         persona_provider = get_default_persona_provider()
@@ -322,7 +344,7 @@ class InteractionService:
 
         # Initialize DIKW Distillation Engine
         stm_store = RedisSTMStore()
-        cognitive_engine = CognitiveMemoryManager(
+        cognitive_engine = DikwDistillationPipeline(
             stm=stm_store,
             episodic=None,  # Will use HybridMemory if available
             wisdom=wisdom_vault,
@@ -398,7 +420,66 @@ class InteractionService:
         req.status = InteractionStatus.EXPIRED
         self._pending_requests[req.request_id] = req
         logger.warning(f"Interaction {req.request_id} EXPIRED")
+        self._record_feedback(req, "expired")
         return False, InteractionStatus.EXPIRED
+
+    def _record_feedback(
+        self, req: InteractionRequest, decision: str,
+        reason_code: Optional[str] = None, free_text: Optional[str] = None,
+    ) -> None:
+        """
+        Persist one row to interaction_feedback (Loop 3). Fire-and-forget —
+        a feedback-logging failure must never break the approval flow.
+        """
+        try:
+            from sqlalchemy import text
+            from src.data.database import get_db_engine
+            responded_in_s = (datetime.now() - req.created_at).total_seconds()
+            engine = get_db_engine()
+            with engine.begin() as conn:
+                conn.execute(
+                    text("""
+                        INSERT INTO interaction_feedback
+                            (request_id, user_id, decision, reason_code, free_text, responded_in_s, ticker)
+                        VALUES (:rid, :uid, :decision, :reason_code, :free_text, :responded_in_s, :ticker)
+                    """),
+                    {
+                        "rid": req.request_id,
+                        "uid": req.user_id or "unknown",
+                        "decision": decision,
+                        "reason_code": reason_code,
+                        "free_text": free_text,
+                        "responded_in_s": responded_in_s,
+                        "ticker": (req.payload or {}).get("ticker"),
+                    },
+                )
+        except Exception as e:
+            logger.warning(f"InteractionService: failed to record feedback for {req.request_id}: {e}")
+
+    def _update_rejection_reason(self, request_id: str, reason_code: str) -> bool:
+        """
+        Fill in the reason_code on the rejection row already inserted by
+        handle_response's REJECTED branch. Returns False if no matching
+        pending-reason row exists (e.g. duplicate button tap, or the
+        request wasn't actually a rejection).
+        """
+        try:
+            from sqlalchemy import text
+            from src.data.database import get_db_engine
+            engine = get_db_engine()
+            with engine.begin() as conn:
+                result = conn.execute(
+                    text("""
+                        UPDATE interaction_feedback
+                        SET reason_code = :reason_code
+                        WHERE request_id = :rid AND decision = 'rejected' AND reason_code IS NULL
+                    """),
+                    {"rid": request_id, "reason_code": reason_code},
+                )
+                return result.rowcount > 0
+        except Exception as e:
+            logger.warning(f"InteractionService: failed to update rejection reason for {request_id}: {e}")
+            return False
 
     async def _send_approval_request(self, req: InteractionRequest) -> None:
         """
@@ -499,10 +580,29 @@ class InteractionService:
         針對特定請求處理正式回覆（批准/婉拒）。
         """
         logger.info(f"InteractionService: [ACTION] Handling {action} for request {request_id}")
-        
+
         req = self._pending_requests.get(request_id)  # nosec B113
         if not req:
             logger.warning(f"InteractionService: Request {request_id} not found in pending list.")
+            return
+
+        # 2026-07-14: reason-picker follow-up (Loop 3). This fires AFTER the
+        # request is already REJECTED, so it must run before the
+        # is_pending() gate below (which would otherwise always short-circuit
+        # it — a rejected request is never "pending" anymore).
+        action_lower = action.lower()
+        if action_lower.startswith("reject_reason:"):
+            reason_code = action_lower.split(":", 1)[1]
+            if reason_code not in _REJECTION_REASON_CODES:
+                logger.warning(f"InteractionService: unknown rejection reason code {reason_code!r}")
+                return
+            updated = self._update_rejection_reason(request_id, reason_code)
+            resp_msg = "🙏 已記錄您的回饋，謝謝！" if updated else "（此請求已記錄過原因）"
+            for adapter in self.adapters:
+                try:
+                    await adapter.send_message(req.user_id, resp_msg)
+                except Exception as e:
+                    logger.error(f"InteractionService: failed to ack rejection reason via {adapter}: {e}")
             return
 
         if not req.is_pending():
@@ -511,12 +611,16 @@ class InteractionService:
 
         # Update status
         resp_msg = ""
-        if action.lower() == "approve":
+        reason_picker_needed = False
+        if action_lower == "approve":
             req.status = InteractionStatus.APPROVED
             resp_msg = "✅ 已收到批准指令 (Action: Approved)"
-        elif action.lower() == "reject":
+            self._record_feedback(req, "approved")
+        elif action_lower == "reject":
             req.status = InteractionStatus.REJECTED
             resp_msg = "❌ 已收到婉拒指令 (Action: Rejected)"
+            self._record_feedback(req, "rejected")  # reason_code filled in by the follow-up tap
+            reason_picker_needed = True
         else:
             logger.warning(f"InteractionService: Unknown action {action} for request {request_id}")
             return
@@ -544,6 +648,26 @@ class InteractionService:
              try:
                  # req.user_id is the internal email. Adapter will resolve to channel ID.
                  logger.info(f"InteractionService: Sending action feedback via {adapter.__class__.__name__} to user {req.user_id}")
-                 await adapter.send_message(req.user_id, resp_msg) 
+                 await adapter.send_message(req.user_id, resp_msg)
              except Exception as e:
                  logger.error(f"InteractionService: Failed to send interaction ack via {adapter}: {e}")
+
+        # 2026-07-14 (Loop 3): one-tap reason picker, sent as a second
+        # message right after the rejection ack — keeps request_approval's
+        # own polling loop (which already returned False/REJECTED above)
+        # unblocked by this fire-and-forget follow-up.
+        if reason_picker_needed:
+            reason_actions = [
+                {"label": label, "data": f"action=reject_reason:{code}&id={request_id}", "style": "secondary"}
+                for code, label in REJECTION_REASONS
+            ]
+            for adapter in target_adapters:
+                try:
+                    await adapter.send_alert(
+                        user_id=req.user_id or "broadcast",
+                        title="為什麼婉拒這筆交易？",
+                        content="請點選最貼近的原因（幫助系統學習您的偏好）：",
+                        actions=reason_actions,
+                    )
+                except Exception as e:
+                    logger.error(f"InteractionService: failed to send rejection-reason picker via {adapter}: {e}")

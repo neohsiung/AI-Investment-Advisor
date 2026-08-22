@@ -8,12 +8,15 @@ import re
 from src.api.v1.router import get_current_user_id
 from src.agents.factory import AgentFactory
 from src.utils.logger import setup_logger
+from src.utils.rate_limit import limiter
 
 logger = setup_logger("API_Chat")
 router = APIRouter()
 
 @router.post("")
+@limiter.limit("10/minute")
 async def advisor_chat(
+    request: Request,
     payload: Dict[str, Any] = Body(...),
     user_id: str = Depends(get_current_user_id)
 ):
@@ -52,7 +55,9 @@ async def advisor_chat(
         raise HTTPException(status_code=500, detail="Internal server error")
 
 @router.post("/stream")
+@limiter.limit("10/minute")
 async def advisor_chat_stream(
+    request: Request,
     payload: Dict[str, Any] = Body(...),
     user_id: str = Depends(get_current_user_id)
 ):

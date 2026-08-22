@@ -100,6 +100,12 @@ class ProviderCatalog:
 
     def get(self, provider_code: str) -> ProviderSpec:
         """Return spec by code. Raises KeyError if unknown."""
+        aliases = {"nvidia": "nvidia_nim", "nvidia_nim": "nvidia"}
+        if provider_code not in self._specs and provider_code in aliases:
+            alt_code = aliases[provider_code]
+            if alt_code in self._specs:
+                return self._specs[alt_code]
+
         if provider_code not in self._specs:
             raise KeyError(
                 f"Unknown provider_code '{provider_code}'. "

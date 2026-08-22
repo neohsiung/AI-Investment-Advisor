@@ -9,9 +9,25 @@
 
 ## Project Identity
 
-**AI Investment Advisor** — A production-grade, autonomous quantitative
-investment platform that orchestrates a 7-agent swarm with fractal debate
-to manage real portfolios on eToro.
+**AI Investment Advisor** — An autonomous quantitative investment platform
+that scores trade decisions with a multi-agent ensemble and executes them
+against eToro.
+
+**Current capability, stated honestly (2026-08-12).** The order path is wired
+end to end and connected to a live eToro account, but it has never filled a
+trade: `transactions` holds **0 rows** with `entry_category='trade'`. It runs
+under a `tradable_capital_usd` cap (currently $100) with a
+`TRADING_MODE=paper` brake in `.env`. Treat "autonomous trading" as built and
+under test, not as demonstrated. Earlier revisions of this file described the
+intent as though it were the capability.
+訂單路徑已接通實盤帳戶但至今從未成交（`entry_category='trade'` 為 0 筆），
+目前受 $100 資本上限與 paper 煞車限制。請視為「已建置、驗證中」而非已驗證。
+
+**Scoring ensemble: 4 agents**, weighted — Fundamental 0.35, Momentum 0.25,
+Sentiment 0.20, Risk 0.20 (`src/services/confidence_compositor_service.py`).
+Exits are scored separately by `ExitCompositorService` on different factors.
+Older docs claiming a "7-agent swarm" or "10 parallel debate agents" are
+describing designs that the running code does not implement.
 
 - **Repo**: `neohsiung/AI-Investment-Advisor`
 - **Language**: Python 3.11 (Docker) / 3.10+ (local)
@@ -45,8 +61,26 @@ to manage real portfolios on eToro.
 
 ## Key Technical Constraints
 
+0. **Never fail silently on a decision path** — On the trading, scoring, risk
+   and scheduling paths, an `except` must not do BOTH of these: log below
+   `warning`, AND return a value that looks like a real answer. Pick one.
+   If you must substitute a default, mark it (`_fallback_reason`,
+   `_insufficient_data`) and make the caller able to show that mark to the
+   user. Enforced by `tests/unit/test_fail_silent_policy.py`.
+   決策路徑（交易/評分/風控/排程）的 except 不得同時「以 warning 以下層級記錄」
+   且「回傳看似真實的答案」；若必須代換預設值，要帶可觀察的標記並讓呼叫端顯示。
+
+   Every serious incident in this system has been this pattern, not a crash:
+   a three-day outage with every monitor green, confidence scores that were
+   hashes of the ticker, three BUY guards that passed because their table was
+   empty. A crash gets noticed; a plausible wrong number does not.
+   See `wiki/05_Quality_Assurance/靜默失敗防治-Fail-Silent-Prevention.md`.
+
 1. **No hardcoded model names or API keys** — All LLM config is DB-managed
    via `llm_tier_bindings` table; resolved by `ResilientLLMPipeline`.
+   Note: `model_code` must be a **LiteLLM tier alias** (`nano`/`fast`/`smart`/
+   `advanced` + `-fbN`), never a raw vendor name — the proxy serves only
+   aliases and rejects raw names with HTTP 400.
 2. **Raw SQL for performance paths** — Transactions, market data, pgvector
    queries use SQLAlchemy Core / raw SQL. ORM only for admin entities.
 3. **Parameterized queries only** — Zero tolerance for string concatenation

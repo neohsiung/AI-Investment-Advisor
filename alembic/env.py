@@ -32,6 +32,27 @@ if config.config_file_name is not None:
 from src.data.models import Base
 target_metadata = Base.metadata
 
+# 2026-08-13: this used to hold a `_RUNTIME_MANAGED_TABLES` filter hiding the
+# five tables that the repositories create at runtime with
+# `CREATE TABLE IF NOT EXISTS` (ticker_universe, ticker_research,
+# target_allocations, ticker_universe_logs, agent_performance). The filter
+# existed because autogenerate reflected them out of the live database, found
+# no matching model, and emitted a drop_table for each — but it bought that at
+# the price its own comment named: those tables were outside migration control,
+# so changing their DDL in the repositories could never be caught by CI.
+#
+# They now have ORM models (src/data/models.py) and migration 018, so the
+# filter is gone and CI compares them like every other table.
+#
+# 2026-08-13：原本這裡有 `_RUNTIME_MANAGED_TABLES` 過濾器，把五張由 repository
+# 在 runtime 建立的表排除在比對之外，代價是改動其 DDL 永遠不會被 CI 攔到。
+# 這五張表已補上 ORM model 與 migration 018，故移除過濾器，改由 CI 一併比對。
+
+
+def include_name(name, type_, parent_names):
+    """No tables are excluded from autogenerate comparison."""
+    return True
+
 # other values from the config, defined by the needs of env.py,
 # can be acquired:
 # my_important_option = config.get_main_option("my_important_option")
@@ -56,6 +77,7 @@ def run_migrations_offline() -> None:
         target_metadata=target_metadata,
         literal_binds=True,
         dialect_opts={"paramstyle": "named"},
+        include_name=include_name,
     )
 
     with context.begin_transaction():
@@ -77,7 +99,9 @@ def run_migrations_online() -> None:
 
     with connectable.connect() as connection:
         context.configure(
-            connection=connection, target_metadata=target_metadata
+            connection=connection,
+            target_metadata=target_metadata,
+            include_name=include_name,
         )
 
         with context.begin_transaction():

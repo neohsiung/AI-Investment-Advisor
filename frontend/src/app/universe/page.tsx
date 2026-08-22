@@ -2,7 +2,7 @@
 
 import React, { useState, useCallback } from "react";
 import useSWR, { mutate } from "swr";
-import { fetcher } from "@/lib/api";
+import api, { fetcher } from "@/lib/api";
 import { formatCurrency, cn } from "@/lib/utils";
 import { Layers, Target, RefreshCw, TrendingUp, Search, Plus, Trash2, AlertTriangle, Loader2, CheckCircle2, XCircle } from "lucide-react";
 
@@ -32,25 +32,27 @@ export default function UniversePage() {
   const handleResearchAll = async () => {
     setIsResearching(true); setFeedback(null);
     try {
-      const res = await fetch("/api/v1/ticker-universe/research/run", { method: "POST" });
-      const data = await res.json();
+      const res = await api.post("/api/v1/ticker-universe/research/run");
+      const data = res.data;
       setFeedback({ type: data.status === "success" ? "success" : "error", msg: data.message || data.detail });
       mutate("/api/v1/ticker-universe?status=active");
     } catch (e: any) {
-      setFeedback({ type: "error", msg: e.message });
+      const errMsg = e.response?.data?.detail || e.response?.data?.message || e.message;
+      setFeedback({ type: "error", msg: errMsg });
     } finally { setIsResearching(false); }
   };
 
   const handleOptimize = async () => {
     setIsOptimizing(true); setFeedback(null);
     try {
-      const res = await fetch("/api/v1/ticker-universe/targets/optimize");
-      const data = await res.json();
+      const res = await api.get("/api/v1/ticker-universe/targets/optimize");
+      const data = res.data;
       setFeedback({ type: data.status === "success" ? "success" : "error", msg: `Optimized ${data.data?.length || 0} targets` });
       mutate("/api/v1/ticker-universe/targets");
       mutate("/api/v1/ticker-universe/rebalance/plan");
     } catch (e: any) {
-      setFeedback({ type: "error", msg: e.message });
+      const errMsg = e.response?.data?.detail || e.response?.data?.message || e.message;
+      setFeedback({ type: "error", msg: errMsg });
     } finally { setIsOptimizing(false); }
   };
 
@@ -58,15 +60,14 @@ export default function UniversePage() {
     const ticker = prompt("輸入標的代號 (如 AAPL)");
     if (!ticker) return;
     try {
-      const res = await fetch("/api/v1/ticker-universe", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ ticker: ticker.toUpperCase() }),
-      });
-      const data = await res.json();
+      const res = await api.post("/api/v1/ticker-universe", { ticker: ticker.toUpperCase() });
+      const data = res.data;
       setFeedback({ type: data.status === "success" ? "success" : "error", msg: data.message || data.detail });
       mutate("/api/v1/ticker-universe?status=active");
-    } catch (e: any) { setFeedback({ type: "error", msg: e.message }); }
+    } catch (e: any) {
+      const errMsg = e.response?.data?.detail || e.response?.data?.message || e.message;
+      setFeedback({ type: "error", msg: errMsg });
+    }
   };
 
   return (

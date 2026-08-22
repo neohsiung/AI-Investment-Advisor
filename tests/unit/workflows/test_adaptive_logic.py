@@ -1,3 +1,4 @@
+import asyncio
 import unittest
 import json
 import os
@@ -68,7 +69,64 @@ class TestAdaptiveLogic(unittest.TestCase):
         self.assertEqual(needs[0]['target_agent'], "Momentum")
         self.assertIn("Inactivity", needs[0]['raw_feedback'])
 
-# Removed Dispatcher Logic Test
+    @patch('src.services.workflow_service.AlchemyTransactionRepository')
+    @patch('src.services.workflow_service.TransactionService')
+    @patch('src.services.workflow_service.MarketDataService')
+    @patch('src.services.workflow_service.AlchemyMemoryRepository')
+    @patch('src.services.workflow_service.AlchemySettingsRepository')
+    def test_json_actionable_orders_parsing(self, mock_settings_repo, mock_memory_repo, mock_market_svc, mock_tx_svc, mock_tx_repo):
+        """Test parsing of [CONVINCING_ACTION] JSON blocks in workflow report."""
+        from src.services.workflow_service import DailyWorkflow
+        
+        workflow = DailyWorkflow(user_id="test_user")
+        
+        report_with_json = """
+        # Investment Strategy Report
+        Some preamble...
+        
+        [CONVINCING_ACTION]
+        {
+            "actions": [
+                {
+                    "ticker": "AAPL",
+                    "action": "BUY",
+                    "target_weight": 0.08,
+                    "current_weight": 0.05,
+                    "delta_weight": 0.03,
+                    "confidence": 9,
+                    "rationale": "Buy AAPL"
+                },
+                {
+                    "ticker": "TSLA",
+                    "action": "SELL",
+                    "target_weight": 0.02,
+                    "current_weight": 0.05,
+                    "delta_weight": -0.03,
+                    "confidence": 8,
+                    "rationale": "Sell TSLA"
+                }
+            ]
+        }
+        """
+        
+        asyncio.run(workflow._parse_actionable_orders(report_with_json))
+
+        orders = workflow.context.get('actionable_orders', [])
+        self.assertEqual(len(orders), 2)
+
+        self.assertEqual(orders[0]['ticker'], "AAPL")
+        self.assertEqual(orders[0]['action'], "BUY")
+        self.assertEqual(orders[0]['score'], 9)
+        self.assertEqual(orders[0]['target_weight'], 0.08)
+        self.assertEqual(orders[0]['delta_weight'], 0.03)
+        self.assertEqual(orders[0]['reason'], "Buy AAPL")
+        
+        self.assertEqual(orders[1]['ticker'], "TSLA")
+        self.assertEqual(orders[1]['action'], "SELL")
+        self.assertEqual(orders[1]['score'], 8)
+        self.assertEqual(orders[1]['target_weight'], 0.02)
+        self.assertEqual(orders[1]['delta_weight'], -0.03)
+        self.assertEqual(orders[1]['reason'], "Sell TSLA")
 
 if __name__ == '__main__':
     unittest.main()

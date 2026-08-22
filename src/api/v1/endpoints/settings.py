@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks
+from fastapi import APIRouter, Depends, HTTPException
 from typing import List, Dict, Any
 import httpx
 import os
@@ -40,13 +40,33 @@ async def get_all_settings(service: SettingsService = Depends(get_settings_servi
 @router.post("", response_model=StandardActionResponse)
 async def save_settings(
     payload: SettingsBulkSaveRequest,
-    background_tasks: BackgroundTasks,
     service: SettingsService = Depends(get_settings_service),
 ):
-    """批次儲存系統設定 (非同步背景處理)"""
+    """
+    批次儲存系統設定 (同步寫入，200 代表已實際落地)。
+
+    2026-08-02: was fire-and-forget via BackgroundTasks — the 200 returned
+    before the write happened, save_settings_bulk's failure return value was
+    discarded, and the frontend's immediate mutate() raced its own write. These
+    are the most safety-critical writes in the system (broker credentials,
+    trading mode, kill switch), so the caller must learn whether they landed.
+    The work is a handful of indexed upserts; the backgrounding bought nothing.
+    2026-08-02：原為背景寫入，200 不代表成功且前端會 race。這裡是券商憑證/交易模式/
+    kill switch 等最關鍵的寫入，改為同步並回報真實結果。
+    """
     try:
-        background_tasks.add_task(service.save_settings_bulk, payload.settings)
-        return {"status": "success", "message": "設定已收悉，系統正在背景更新中。"}
+        ok, message = service.save_settings_bulk(payload.settings)
+        if not ok:
+            # Log the service's message; never return it. save_settings_bulk
+            # now yields a stable code rather than exception text, and keeping
+            # both the raise and the success return on fixed strings severs the
+            # taint path twice so a future refactor cannot reopen it.
+            # 訊息只進 log 不外流；raise 與成功回傳都用固定字串，斷兩次污染路徑。
+            logger.error(f"Error saving settings for {service.user_id}: {message}")
+            raise HTTPException(status_code=500, detail="Failed to save settings")
+        return {"status": "success", "message": "設定已儲存。"}
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"Error saving settings: {e}")
         raise HTTPException(status_code=500, detail="Failed to save settings")

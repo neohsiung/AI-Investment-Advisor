@@ -101,6 +101,21 @@ class LLMTierBindingRepository(BaseRepository):
         finally:
             session.close()
 
+    def get_default_by_tier(self, tier: str) -> Optional[LLMTierBinding]:
+        """查詢指定 tier 的任意一筆可用綁定（不限特定使用者）。
+        用於當某租戶尚未設定自訂 tier binding 時的系統 fallback。
+        依 created_at 排序，取最早建立的綁定（通常為管理者初始設定）。
+        """
+        session = self.session
+        try:
+            return (
+                session.query(LLMTierBinding)
+                .filter(LLMTierBinding.tier == tier)
+                .first()
+            )
+        finally:
+            session.close()
+
     # ------------------------------------------------------------------
     # Writes (Phase B)
     # ------------------------------------------------------------------
@@ -150,7 +165,8 @@ class LLMTierBindingRepository(BaseRepository):
             session.commit()
             session.refresh(binding)
             return binding
-        except Exception:
+        except Exception as e:
+            logger.warning(f'Exception in llm_tier_binding_repository.py: {e}', exc_info=True)
             session.rollback()
             raise
         finally:
@@ -191,7 +207,8 @@ class LLMTierBindingRepository(BaseRepository):
                     existing.budget_aware = item.get("budget_aware", True)
 
             session.commit()
-        except Exception:
+        except Exception as e:
+            logger.warning(f'Exception in llm_tier_binding_repository.py: {e}', exc_info=True)
             session.rollback()
             raise
         finally:
@@ -208,7 +225,8 @@ class LLMTierBindingRepository(BaseRepository):
             )
             session.commit()
             return count
-        except Exception:
+        except Exception as e:
+            logger.warning(f'Exception in llm_tier_binding_repository.py: {e}', exc_info=True)
             session.rollback()
             raise
         finally:

@@ -69,25 +69,40 @@ class TestSettingsService:
         mock_repo.set.assert_called_once_with("user123", "key1", "new_value")
     
     def test_save_setting_error(self):
-        """Test error handling during save."""
+        """
+        A failed save reports a stable code, never the exception text.
+
+        2026-08-02 (CWE-209): this returned str(e). Its sibling
+        save_settings_bulk did the same and both callers put that string
+        straight into an HTTPException detail, leaking DB internals to API
+        clients. The returned message is now a code the caller can map.
+        回傳固定代碼而非例外內容 —— 這個字串會被呼叫端放進 HTTP 回應。
+        """
         mock_repo = MagicMock()
-        mock_repo.set.side_effect = Exception("DB Error")
-        
+        mock_repo.set.side_effect = Exception("DB Error: relation does not exist")
+
         service = SettingsService(user_id="user123", settings_repo=mock_repo)
         success, msg = service.save_setting("key1", "value")
-        
+
         assert success is False
-        assert "DB Error" in msg
+        assert msg == "SETTINGS_SAVE_FAILED"
+        assert "DB Error" not in msg
+        assert "relation" not in msg
     
     def test_save_settings_bulk(self):
-        """Test saving multiple settings."""
+        """
+        Bulk save must go through the atomic set_many(), not a per-key loop.
+        2026-08-02: looping over set() committed per key, leaving partial
+        writes on failure — see AlchemySettingsRepository.set_many.
+        """
         mock_repo = MagicMock()
-        
+
         service = SettingsService(user_id="user123", settings_repo=mock_repo)
         success, msg = service.save_settings_bulk({"k1": "v1", "k2": "v2"})
-        
+
         assert success is True
-        assert mock_repo.set.call_count == 2
+        mock_repo.set_many.assert_called_once_with("user123", {"k1": "v1", "k2": "v2"})
+        assert mock_repo.set.call_count == 0
     
     @patch('src.services.settings_service.requests.get')
     def test_fetch_openrouter_models(self, mock_get):

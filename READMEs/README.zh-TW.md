@@ -21,6 +21,9 @@
 
 ---
 
+> [!WARNING]
+> **非投資建議，真金交易風險自負。** 本軟體為自主交易系統，若配置真實券商憑證將以真實資金下單。依「現狀」提供，不含任何保證（詳見 [LICENSE](../LICENSE) / [NOTICE](../NOTICE)）。請務必先以 paper/demo 模式運行並理解程式邏輯後，再連接有實際資金的券商帳戶。
+
 ## 📌 這是什麼？
 
 **你的投資組合有多久沒被重新審視了？**
@@ -127,9 +130,13 @@ cp .env.example .env
 
 | 服務 | 網址 |
 |:-----|:-----|
-| Next.js 儀表板 | [http://localhost:3000](http://localhost:3000) |
-| FastAPI / MCP Server | [http://localhost:8000](http://localhost:8000) |
-| SigNoz APM | [http://localhost:3301](http://localhost:3301) |
+| 閘道 (nginx，僅生產環境) | [http://127.0.0.1:8088](http://127.0.0.1:8088) |
+| Next.js 儀表板 | [http://localhost:3001](http://localhost:3001) |
+| FastAPI / MCP Server | [http://localhost:8000](http://localhost:8000)（dev 為 8001）|
+| SigNoz APM | [http://127.0.0.1:8080](http://127.0.0.1:8080) |
+
+> dev 環境的 nginx 沒有對外發佈埠口，請直接連上方的前端與 API 埠口；
+> 閘道只存在於生產環境。
 
 ---
 
@@ -174,8 +181,8 @@ AI-Investment-Advisor/
 
 ## 📄 授權與免責聲明
 
-- **授權**: [MIT License](../LICENSE)
-- **免責聲明**: 本專案僅供**教育與研究用途**。非投資建議。交易有風險 — 請自行斟酌。
+- **授權**: [Apache License 2.0](../LICENSE)
+- **免責聲明**: 本軟體可自主分析市場，若配置真實券商憑證可能以真實資金下單。非投資建議，依「現狀」提供不含任何保證。詳見 [NOTICE](../NOTICE)。
 
 ---
 

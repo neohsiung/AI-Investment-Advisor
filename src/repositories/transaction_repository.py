@@ -348,7 +348,8 @@ class AlchemyTransactionRepository(BaseRepository, ITransactionRepository):
                     for t, v in agg.items()
                     if v["total_qty"] > 0.0001
                 ]
-        except Exception: # nosec B110
+        except Exception as e:# nosec B110
+            logger.warning(f'Exception in transaction_repository.py: {e}', exc_info=True)
             pass  # Gracefully fall back to legacy path
 
         # --- Legacy O(N) fallback: weighted-average BUY price ---

@@ -229,7 +229,8 @@ class TelegramAdapter(BaseChannelAdapter):
                 decrypted = cipher.decrypt(val)
                 if decrypted:
                     val = decrypted
-            except Exception:
+            except Exception as e:
+                logger.warning(f'Exception in telegram_adapter.py: {e}', exc_info=True)
                 pass  # Return as-is if decryption fails
         return val if val else None
 
@@ -299,14 +300,20 @@ class TelegramAdapter(BaseChannelAdapter):
                 _filter = kwargs.get("_filter")
                 if _filter and hasattr(_filter, "get_recipient_override"):
                     override_chat_id = _filter.get_recipient_override("telegram", category)
-            except Exception:
-                pass
+            except Exception as e:
+                logger.warning(f'Exception in telegram_adapter.py: {e}', exc_info=True)
 
         target_chat_id = override_chat_id or chat_id
         
         if not target_chat_id:
             logger.error(f"No target chat ID for user {user_id}")
             return False
+
+        chat_id_str = str(target_chat_id)
+        if len(chat_id_str) > 6:
+            masked_chat_id = f"{chat_id_str[:3]}...{chat_id_str[-3:]}"
+        else:
+            masked_chat_id = "***"
 
         # 4. Prepare message — strip HTML if needed, format for Telegram
         # 4. 準備訊息 — 依需求剝離 HTML，格式化為 Telegram 可接受格式
@@ -329,11 +336,24 @@ class TelegramAdapter(BaseChannelAdapter):
             safe_content = html.escape(content)
             # Then convert markdown to HTML (Telegram parse_mode=HTML)
             # 然後將 markdown 轉換為 HTML (Telegram parse_mode=HTML)
+            #
+            # 2026-08-11: fenced blocks -> <pre>. Telegram renders normal text
+            # in a proportional font, so any column-aligned table (e.g. the
+            # score breakdown in decision_card.py) collapses into a ragged
+            # mess. <pre> is the only way to get monospace, and because this
+            # runs AFTER html.escape() the block's contents stay escaped —
+            # a caller cannot inject markup through it.
+            # 2026-08-11：新增 ``` 圍欄轉 <pre>。Telegram 內文為比例字型，任何
+            # 對齊表格都會跑版；<pre> 是取得等寬字型的唯一途徑。此轉換在
+            # html.escape() 之後執行，區塊內容仍為已轉義文字，無法藉此注入標記。
+            safe_content = re.sub(r'```\n?(.+?)\n?```', r'<pre>\1</pre>', safe_content, flags=re.DOTALL)
             safe_content = re.sub(r'\*\*(.+?)\*\*', r'<b>\1</b>', safe_content)
             safe_content = re.sub(r'__(.+?)__', r'<i>\1</i>', safe_content)
 
         safe_title = html.escape(title)
         text_body = f"<b>{safe_title}</b>\n\n{safe_content}"
+        if len(text_body) > 3900:
+            text_body = text_body[:3800] + "\n\n<i>... (content truncated for Telegram limit)</i>"
 
         payload = {
             "chat_id": target_chat_id,
@@ -364,16 +384,16 @@ class TelegramAdapter(BaseChannelAdapter):
                 response = await client.post(url, json=payload, timeout=10.0)
                 data = response.json()
                 if data.get("ok"):
-                    logger.info(f"Telegram message sent to {target_chat_id} for user {user_id}")
+                    logger.info(f"Telegram message sent to {masked_chat_id} for user {user_id}")
                     return True
                 else:
-                    error_msg = f"Telegram API error: {data.get('description', 'Unknown error')}"
+                    error_msg = f"Telegram API error (status: {response.status_code}, category: {category}, chat_id: {masked_chat_id}): {data.get('description', 'Unknown error')}"
                     logger.error(error_msg)
                     if raise_error:
                         raise ValueError(error_msg)
                     return False
         except Exception as e:
-            logger.error(f"TelegramAdapter exception: {e}")
+            logger.error(f"TelegramAdapter exception (category: {category}, chat_id: {masked_chat_id}): {e}", exc_info=True)
             if raise_error:
                 raise e
             return False

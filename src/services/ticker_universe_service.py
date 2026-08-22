@@ -3,7 +3,10 @@ Ticker Universe Service
 Business logic for user-specific persistent ticker pool management.
 """
 from typing import List, Dict, Any, Optional
-from src.repositories.ticker_universe_repository import TickerUniverseRepository
+from src.repositories.ticker_universe_repository import (
+    TickerUniverseRepository,
+    UNIVERSE_UPDATABLE_FIELDS,
+)
 from src.services.portfolio_aggregator_service import PortfolioAggregatorService
 from src.utils.logger import setup_logger
 
@@ -54,8 +57,10 @@ class TickerUniverseService:
 
     def update_ticker(self, ticker: str, **kwargs) -> Dict[str, Any]:
         """Update ticker metadata (company_name, sector, industry, status)."""
-        allowed = {"company_name", "sector", "industry", "status"}
-        safe = {k: v for k, v in kwargs.items() if k in allowed}
+        # Same allowlist the repository enforces, imported rather than
+        # restated — two copies of a security boundary drift apart quietly.
+        # 直接引用 repository 的白名單，不再各留一份副本。
+        safe = {k: v for k, v in kwargs.items() if k in UNIVERSE_UPDATABLE_FIELDS}
         if not safe:
             return {"success": False, "message": "No valid fields to update"}
         ticker = ticker.upper()

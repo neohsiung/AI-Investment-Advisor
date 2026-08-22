@@ -93,9 +93,8 @@ async def test_send_report_filters_channels():
         user_id="test_user"
     )
     
-    # LINE should not be called for reports
-    assert not mock_line.send_alert.called
-    # Email and Web should be called
+    # Email, Web and Line should be called since channels=None defaults to all
+    mock_line.send_alert.assert_called_once()
     mock_email.send_alert.assert_called_once()
     mock_web.send_alert.assert_called_once()
 

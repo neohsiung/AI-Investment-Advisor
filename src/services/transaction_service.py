@@ -203,9 +203,46 @@ class TransactionService:
                 
                 summary["accounts_processed"] += 1
 
+            # 3. Seed position_lots from the reconciled transaction history.
+            #
+            # 2026-08-10: position_lots was empty in production (0 rows) even
+            # though this task had run 4,059 times. Nothing on this path ever
+            # populated it — the only writers were etoro_service.sync_history()
+            # and transaction_repository._sync_position_lots, neither of which
+            # sync_broker_positions calls. That mattered well beyond reporting:
+            # TradingProtectionsService's three BUY guards (max drawdown,
+            # per-ticker cooldown, consecutive-loss lockout) all return None
+            # when they see fewer than three rows of history, so an empty
+            # ledger meant every guard silently passed. The protections looked
+            # active and enforced nothing.
+            #
+            # backfill_from_transactions() is idempotent — it deletes this
+            # user's lots and replays the full FIFO history — so running it per
+            # sync is safe. It is O(N) in transactions each time; at the
+            # current scale (tens of rows) that is negligible, but it is the
+            # thing to revisit first if this task ever gets slow.
+            #
+            # 2026-08-10：position_lots 在 production 為 0 筆，即使此任務已執行
+            # 4059 次——此路徑從未寫入該表。影響不只報表：TradingProtectionsService
+            # 的三道 BUY 護欄在歷史少於三筆時一律回傳 None，空帳本等於所有護欄
+            # 靜默放行，看似啟用實則毫無作用。backfill 具冪等性，可每次同步執行。
+            try:
+                from src.repositories.position_lot_repository import AlchemyPositionLotRepository
+
+                lot_repo = AlchemyPositionLotRepository(self.repository.engine)
+                lots_created = lot_repo.backfill_from_transactions(uid)
+                summary["position_lots_seeded"] = lots_created
+            except Exception as e:
+                # Non-fatal: reconciliation already succeeded and is the point
+                # of this task. Surfaced at warning (not debug) so a silently
+                # empty ledger cannot hide again.
+                # 非致命：對帳已完成。以 warning 顯示，避免空帳本再次無聲無息。
+                self.logger.warning(f"position_lots backfill failed for user {uid}: {e}")
+                summary["errors"].append(f"position_lots backfill failed: {e}")
+
             # Update daily snapshot to reflect changes
             await update_daily_snapshot(uid)
-            
+
             return {"status": "success", "summary": summary}
             
         except Exception as e:

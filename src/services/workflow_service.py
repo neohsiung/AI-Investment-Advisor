@@ -86,10 +86,15 @@ class BaseWorkflow(ABC):
             if not chain:
                 raise ValueError(f"No model configured for tier={tier} user={self.user_id}")
 
-            pipeline = ResilientLLMPipeline(config_chain=chain)
+            pipeline = ResilientLLMPipeline(
+                config_chain=chain,
+                user_id=self.user_id,
+                agent_name=agent_name,
+                tier=tier,
+            )
 
             from src.utils.prompt_utils import load_agent_prompt
-            
+
             system_prompt = load_agent_prompt(agent_name)
             messages = [
                 Message(role="system", content=system_prompt),
@@ -107,99 +112,46 @@ class BaseWorkflow(ABC):
             logger.error(f"WorkflowService: {agent_name} agent failed: {e}")
             raise
 
-    def _parse_actionable_orders(self, final_report: str):
+    async def _parse_actionable_orders(self, final_report: str):
         """
-        Parses the actionable orders table from the final report and populates the context.
-        Supports both Markdown pipe tables and HTML <table> formats.
+        Delegates structured order extraction to ActionExtractorAgent
+        (2026-07-12) — the dedicated component from the product spec
+        (§2.1.3 Actionable Council Results), replacing the inline parser
+        previously here. Strategy order unchanged (JSON block > Markdown
+        table > HTML table), now with an LLM fallback for reports that
+        don't match any deterministic format.
+
+        Populates self.context['actionable_orders'] and records each order
+        via performance_service for accuracy tracking — now applied
+        consistently across all extraction strategies (previously only the
+        Markdown-table path recorded recommendations).
         """
         try:
-            import re
-            rows = []
+            from src.agents.action_extractor import ActionExtractorAgent
+            orders = await ActionExtractorAgent(user_id=self.user_id).extract(final_report)
+            self.context['actionable_orders'] = orders
 
-            # --- Strategy 1: Markdown pipe table (preferred) ---
-            lines = final_report.split('\n')
-            for i, line in enumerate(lines):
-                if '|' in line and '---' in line:
-                    # Validate that this is likely the Actionable Orders table
-                    prev_line = lines[i-1].lower() if i > 0 else ""
-                    if any(x in prev_line for x in ["action", "動作", "代號", "ticker"]):
-                        for j in range(i + 1, len(lines)):
-                            row_line = lines[j].strip()
-                            if not row_line.startswith('|'):
-                                break
-                            cols = [c.strip() for c in row_line.split('|') if c.strip()]
-                            if len(cols) >= 4 and "---" not in row_line:
-                                rows.append(cols)
-                        break
-
-            # --- Strategy 2: HTML <table> fallback ---
-            if not rows:
-                # Find all <tr> blocks, skip header row
-                tr_blocks = re.findall(r'<tr[^>]*>(.*?)</tr>', final_report, re.DOTALL | re.IGNORECASE)
-                for tr in tr_blocks:
-                    if '<th' in tr.lower():
-                        continue
-                    tds = re.findall(r'<td[^>]*>(.*?)</td>', tr, re.DOTALL | re.IGNORECASE)
-                    cleaned = [re.sub(r'<[^>]+>', '', td).strip() for td in tds]
-                    if len(cleaned) >= 4:
-                        rows.append(cleaned)
-
-            if not rows:
-                self.logger.info("No Actionable Orders table found in CIO report.")
-                return
-
-            # --- Process parsed rows ---
-            for cols in rows:
-                ticker = cols[0].strip().upper()
-                action = cols[1]
-                quantity = cols[2]
-
-                try:
-                    score_raw = re.search(r"(\d+)", cols[3])
-                    score = int(score_raw.group(1)) if score_raw else 5
-                except (ValueError, IndexError):
-                    score = 5
-
-                u_act = action.upper()
-                cio_signal = "HOLD"
-                if any(x in u_act for x in ["BUY", "ACCUMULATE", "加碼", "買"]):
-                    cio_signal = "BUY"
-                elif any(x in u_act for x in ["SELL", "TRIM", "REDUCE", "LIQUIDATE", "減碼", "出清", "賣", "避險"]):
-                    cio_signal = "SELL"
-
-                if cio_signal != "HOLD":
-                    # Get price for performance tracing
-                    t_data = self.context.get('market_data', {}).get(ticker, {})
-                    t_price = 0
-                    if t_data:
-                         raw = t_data.get('price_data', {}).get('close', 0)
-                         if isinstance(raw, list) and raw: t_price = raw[-1]
-                         else: t_price = raw
-
-                    if self.performance_service:
+            if orders and self.performance_service:
+                for order in orders:
+                    try:
+                        t_data = self.context.get('market_data', {}).get(order['ticker'], {})
+                        t_price = 0
+                        if t_data:
+                            raw = t_data.get('price_data', {}).get('close', 0)
+                            t_price = raw[-1] if isinstance(raw, list) and raw else raw
                         self.performance_service.record_recommendation(
-                            agent_name="CIO",
-                            ticker=ticker,
-                            signal=cio_signal,
-                            price=t_price
+                            agent_name="CIO", ticker=order['ticker'],
+                            signal=order['action'], price=t_price,
                         )
+                    except Exception as rec_err:
+                        self.logger.debug(f"record_recommendation skipped for {order.get('ticker')}: {rec_err}")
 
-                    if 'actionable_orders' not in self.context:
-                        self.context['actionable_orders'] = []
-
-                    self.context['actionable_orders'].append({
-                        'ticker': ticker,
-                        'action': cio_signal,
-                        'quantity': quantity,
-                        'score': score,
-                        'reason': cols[4] if len(cols) >= 5 else f"CIO Signal ({cio_signal})"
-                    })
-
-            if self.context.get('actionable_orders'):
-                self.logger.info(f"Parsed {len(self.context['actionable_orders'])} actionable orders.")
-
+            if orders:
+                self.logger.info(f"Parsed {len(orders)} actionable orders via ActionExtractorAgent.")
+            else:
+                self.logger.info("No Actionable Orders found in CIO report.")
         except Exception as e:
-            self.logger.warning(f"Failed to parse Actionable Orders table: {e}")
+            self.logger.warning(f"Failed to parse Actionable Orders: {e}")
 
     async def run(self, dry_run: bool = False, force_refresh: bool = False) -> Any:
         """
@@ -241,7 +193,12 @@ class BaseWorkflow(ABC):
                 chain = build_config_chain(self.user_id, "fast")
                 if not chain:
                     raise ValueError(f"No fast-tier model configured for user={self.user_id}")
-                pipeline = ResilientLLMPipeline(config_chain=chain)
+                pipeline = ResilientLLMPipeline(
+                    config_chain=chain,
+                    user_id=self.user_id,
+                    agent_name="report_translator",
+                    tier="fast",
+                )
 
                 from src.utils.prompt_utils import load_agent_prompt
                 
@@ -336,18 +293,16 @@ class BaseWorkflow(ABC):
         """
         import re
         
-        # 定義替換模式：尋找 ## 3. (Debate) 與下一個 ## 標題之間的內容 (包含標題本身)
-        # Define replacement pattern: Find content starting from ## 3 up to ## 4 or EOF
-        # Assuming the generated detailed content INCLUDES the header "## 3. ..."
-        pattern = r"(## 3\..*?)(?=## \d\.|$)"
+        # 定義替換模式：尋找 ## 2. (Debate) 與下一個 ## 標題之間的內容 (包含標題本身)
+        # Define replacement pattern: Find content starting from ## 2 up to ## 3 or EOF
+        pattern = r"(## 2\..*?)(?=## \d\.|$)"
         
         # 若無詳細內容，提供預設訊息
         if not detailed_debate_content:
-             detailed_debate_content = "## 3. 議會深度審議 (Council Deep Dive)\n(No detailed transcript available / 暫無詳細辯論紀錄)"
+             detailed_debate_content = "## 2. 議會深度審議 (Council Deep Dive)\n(No detailed transcript available / 暫無詳細辯論紀錄)"
 
         # 執行替換
         # Execute Replacement
-        import re
         modified_report = re.sub(pattern, detailed_debate_content, cio_full_output, flags=re.DOTALL)
         
         final_report = modified_report
@@ -355,7 +310,7 @@ class BaseWorkflow(ABC):
         # 若替換未發生 (例如找不到標題)，則將詳細內容附加於後，並發出警告
         # If replacement failed (headers not found), append logic and warn
         if modified_report == cio_full_output:
-             self.logger.warning("Report Injection Failed: Header '## 3...' not found. Appending transcript.")
+             self.logger.warning("Report Injection Failed: Header '## 2...' not found. Appending transcript.")
              # 嘗試簡單附加確保資訊不丟失
              final_report = f"{cio_full_output}\n\n{detailed_debate_content}"
         
@@ -475,7 +430,8 @@ class BaseWorkflow(ABC):
             try:
                 stripper.feed(html_content)
                 text_only = stripper.get_data()
-            except Exception:
+            except Exception as e:
+                logger.warning(f'Exception in workflow_service.py: {e}', exc_info=True)
                 text_only = html_content  # Fallback to raw if parser fails
 
             import re
@@ -484,7 +440,8 @@ class BaseWorkflow(ABC):
             # Classify tier based on content
             event_data = {
                 "title": title,
-                "summary": text_only[:500],
+                "summary": text_only[:1500],
+                "full_text": text_only,
                 "has_html": True,
             }
 
@@ -922,7 +879,7 @@ class DailyWorkflow(BaseWorkflow):
             logger.warning(f"Failed to extract CIO signals block by block: {e}")
 
         # [NEW] Global Parse for Actionable Orders Table
-        self._parse_actionable_orders(final_report)
+        await self._parse_actionable_orders(final_report)
 
         return final_report
 
@@ -1062,7 +1019,7 @@ class WeeklyWorkflow(BaseWorkflow):
             
             # D. Parse & Execute Actionable Orders (v7.0: consistent with DailyWorkflow)
             # ─────────────────────────────────────────────────────────
-            self._parse_actionable_orders(str(final_report))
+            await self._parse_actionable_orders(str(final_report))
             actionable_orders = self.context.get('actionable_orders', [])
             if actionable_orders:
                 logger.info(f"WeeklyWorkflow: Processing {len(actionable_orders)} actionable orders via AutomatedTradingService.")
@@ -1133,7 +1090,8 @@ class WeeklyWorkflow(BaseWorkflow):
                 sc_str = json.dumps(supply_chain, ensure_ascii=False) if isinstance(supply_chain, dict) else str(supply_chain)
                 ctx += f"- **供應鏈瓶頸預測 (Supply Chain Bottlenecks)**: {sc_str}\n"
             return ctx
-        except Exception:
+        except Exception as e:
+            logger.warning(f'Exception in workflow_service.py: {e}', exc_info=True)
             return "無法取得基礎主題數據。"
 
     def _select_agent_for_task(self, task_name: str, user_id: str, tier: str = "smart"):
@@ -1331,7 +1289,12 @@ class EventAnalysisWorkflow(BaseWorkflow):
                 from src.infrastructure.llm.resilient_pipeline import ResilientLLMPipeline
 
                 chain = build_config_chain(self.user_id, "fast")
-                pipeline = ResilientLLMPipeline(config_chain=chain)
+                pipeline = ResilientLLMPipeline(
+                    config_chain=chain,
+                    user_id=self.user_id,
+                    agent_name="macro_news_analyst",
+                    tier="fast",
+                )
 
                 macro_prompt = (
                     "你是一位即時新聞分析師。請根據以下新聞事件，"
@@ -1422,7 +1385,7 @@ class EventAnalysisWorkflow(BaseWorkflow):
             self.context['deliberation_context'] = cio_context.get('council_transcript', '')
             
             # 5. Execute Action if actionable_orders table exists
-            self._parse_actionable_orders(final_report)
+            await self._parse_actionable_orders(final_report)
             
             if not dry_run:
                 # Distribute report (via Webhook/Notification)

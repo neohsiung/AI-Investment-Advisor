@@ -35,8 +35,8 @@ def main():
                 with open(config_path, "r") as f:
                     config = json.load(f)
                     installed_mcps = list(config.get("mcpServers", {}).keys())
-            except Exception:
-                pass
+            except Exception as e:
+                logger.warning(f'Exception in cli.py: {e}', exc_info=True)
 
         query_lower = args.query.lower()
         recommendations = [m for m in mcp_registry if any(keyword in m["capability"].lower() or keyword in m["name"].lower() for keyword in query_lower.split())]

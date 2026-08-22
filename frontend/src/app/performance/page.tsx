@@ -8,16 +8,32 @@ import {
   LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, AreaChart, Area,
   BarChart, Bar, Cell, Legend
 } from 'recharts';
-import { TrendingUp, TrendingDown, Target, Zap, ShieldAlert, BarChart3, Clock } from "lucide-react";
+import { TrendingUp, TrendingDown, Target, Zap, ShieldAlert, BarChart3, Clock, Activity } from "lucide-react";
+
+type PositionItem = {
+  ticker: string;
+  name?: string;
+  quantity: number;
+  avg_price: number;
+  market_price: number;
+  market_value: number;
+  pnl: number;
+  pnl_percent: number;
+  weight: number;
+};
 
 export default function PerformancePage() {
-  const { data: summaryData } = useSWR("/api/v1/dashboard/summary", fetcher);
+  const { data: summaryData } = useSWR("/api/v1/dashboard/summary", fetcher, { refreshInterval: 30_000 });
   const { data: historyData, isLoading: historyLoading } = useSWR("/api/v1/dashboard/performance/history", fetcher);
   const { data: agentData } = useSWR("/api/v1/dashboard/performance/agents", fetcher);
+  // P5.3 (2026-07-11): live open-positions panel, polled every 30s (matches
+  // the backend's own @cached_api_response(ttl_seconds=30) on /positions).
+  const { data: positionsData } = useSWR("/api/v1/dashboard/positions", fetcher, { refreshInterval: 30_000 });
 
   const summary = summaryData?.data || ({} as any);
   const history = historyData?.data || [];
   const agents = agentData?.data || [];
+  const positions: PositionItem[] = positionsData?.data || [];
 
   return (
     <div className="flex-1 overflow-y-auto pt-16 sm:pt-20 lg:pt-24 px-4 sm:px-6 lg:px-8 pb-8 bg-background">
@@ -210,6 +226,54 @@ export default function PerformancePage() {
             </div>
           </div>
         </div>
+      </div>
+
+      {/* P5.3 (2026-07-11): Live open-positions panel — 30s poll */}
+      <div className="bg-surface-container-low p-4 lg:p-8 rounded-3xl border border-outline-variant/10 shadow-sm mt-4 lg:mt-8">
+        <div className="flex items-center justify-between mb-4 lg:mb-6">
+          <h3 className="font-headline font-bold text-lg tracking-tight">即時持倉 <span className="text-[10px] font-label uppercase tracking-widest text-on-surface-variant ml-4">Live Positions</span></h3>
+          <div className="flex items-center gap-2 text-[10px] font-bold text-secondary">
+            <Activity size={12} className="animate-pulse" />
+            <span>LIVE · 30s</span>
+          </div>
+        </div>
+        {positions.length === 0 ? (
+          <div className="h-24 flex items-center justify-center text-on-surface-variant text-xs">目前無持倉</div>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full text-xs">
+              <thead className="text-on-surface-variant uppercase text-[10px]">
+                <tr>
+                  <th className="text-left py-2">標的</th>
+                  <th className="text-right py-2">數量</th>
+                  <th className="text-right py-2">均價</th>
+                  <th className="text-right py-2">現價</th>
+                  <th className="text-right py-2">市值</th>
+                  <th className="text-right py-2">損益</th>
+                  <th className="text-right py-2">佔比</th>
+                </tr>
+              </thead>
+              <tbody>
+                {positions
+                  .sort((a, b) => b.market_value - a.market_value)
+                  .map((p) => (
+                    <tr key={p.ticker} className="border-t border-outline-variant/10">
+                      <td className="py-2 font-mono font-bold">{p.ticker}</td>
+                      <td className="py-2 text-right font-mono">{p.quantity.toFixed(2)}</td>
+                      <td className="py-2 text-right font-mono">{p.avg_price.toFixed(2)}</td>
+                      <td className="py-2 text-right font-mono">{p.market_price.toFixed(2)}</td>
+                      <td className="py-2 text-right font-mono">{formatCurrency(p.market_value)}</td>
+                      <td className={cn("py-2 text-right font-mono flex items-center justify-end gap-1", p.pnl >= 0 ? "text-secondary" : "text-error")}>
+                        {p.pnl >= 0 ? <TrendingUp size={12} /> : <TrendingDown size={12} />}
+                        {p.pnl_percent.toFixed(2)}%
+                      </td>
+                      <td className="py-2 text-right font-mono">{p.weight.toFixed(1)}%</td>
+                    </tr>
+                  ))}
+              </tbody>
+            </table>
+          </div>
+        )}
       </div>
     </div>
   );

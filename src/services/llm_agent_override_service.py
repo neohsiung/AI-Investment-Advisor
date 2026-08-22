@@ -308,8 +308,8 @@ class LLMAgentOverrideService:
                         spec = cat.get(provider.provider_code)
                         if spec:
                             base_url = spec.default_base_url
-                    except Exception:
-                        pass
+                    except Exception as e:
+                        logger.warning(f'Exception in llm_agent_override_service.py: {e}', exc_info=True)
 
                 api_key = _decrypt_api_key(provider.encrypted_api_key)
 

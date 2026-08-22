@@ -75,8 +75,8 @@ class ModelIdResolver:
                     row = result.fetchone()
                     if row:
                         return row[0]
-                except Exception:
-                    pass
+                except Exception as e:
+                    logger.warning(f'Exception in model_id_resolver.py: {e}', exc_info=True)
 
         except Exception as e:
             logger.warning(f"ModelIdResolver: DB lookup failed for {local_model_name}: {e}")

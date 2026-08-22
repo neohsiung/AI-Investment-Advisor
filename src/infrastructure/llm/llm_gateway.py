@@ -53,6 +53,8 @@ class OpenRouterGateway(ILLMGateway):
             "HTTP-Referer": "http://localhost:8501",
             "X-Title": "AI Investment Advisor",
         }
+        if config.extra_config and "headers" in config.extra_config:
+            headers.update(config.extra_config["headers"])
         
         # Resolve model ID via centralized resolver (TTL Cached)
         actual_model_id = resolve_model_id(config.model, "openrouter")
@@ -116,6 +118,8 @@ class OpenRouterGateway(ILLMGateway):
             "HTTP-Referer": "http://localhost:8501",
             "X-Title": "AI Investment Advisor",
         }
+        if config.extra_config and "headers" in config.extra_config:
+            headers.update(config.extra_config["headers"])
         
         # Build request data with all required fields
         data = {
@@ -358,6 +362,8 @@ class OpenAIGateway(ILLMGateway):
         headers = {"Content-Type": "application/json"}
         if config.api_key:
             headers["Authorization"] = f"Bearer {config.api_key}"
+        if config.extra_config and "headers" in config.extra_config:
+            headers.update(config.extra_config["headers"])
         actual_model_id = resolve_model_id(config.model, "openai")
         data = {
             "model": actual_model_id,
@@ -394,6 +400,8 @@ class OpenAIGateway(ILLMGateway):
             "Authorization": f"Bearer {config.api_key}",
             "Content-Type": "application/json",
         }
+        if config.extra_config and "headers" in config.extra_config:
+            headers.update(config.extra_config["headers"])
         actual_model_id = resolve_model_id(config.model, "openai")
         data = {
             "model": actual_model_id,
@@ -587,7 +595,19 @@ class NvidiaGateway(OpenAIGateway):
         return await super().ping(self._resolve_config(config))
 
     async def list_models(self, config: LLMConfig) -> List[DiscoveredModel]:
-        return await super().list_models(self._resolve_config(config))
+        conf = self._resolve_config(config)
+        base = conf.base_url.rstrip("/").replace("/chat/completions", "")
+        if not base or "integrate.api.nvidia.com" not in base:
+            base = "https://integrate.api.nvidia.com/v1"
+        url = f"{base}/models"
+        headers = {}
+        if conf.api_key:
+            headers["Authorization"] = f"Bearer {conf.api_key}"
+        async with httpx.AsyncClient() as client:
+            response = await client.get(url, headers=headers, timeout=conf.timeout_seconds)
+        response.raise_for_status()
+        from src.infrastructure.llm.discovery_parsers import parse_openai_models
+        return parse_openai_models(response.json())
 
 
 class MockLLMGateway(ILLMGateway):
@@ -776,7 +796,18 @@ class LoggingLLMGateway(ILLMGateway):
                 # [Fix] If we fell back, we might still want to check cache for the original tier or just skip
                 if not is_tier_fallback and self._tier in ('smart', 'advanced'):
                     prompt_embedding = await self.embed(prompt_text, config)
-                    cached_res = cache_repo.get_cached_response(self._user_id, prompt_text, prompt_embedding)
+                    # 2026-08-02: run the pgvector similarity search on a
+                    # worker thread. This is synchronous DB I/O inside an
+                    # `async def`, so on the loop thread it stalls every other
+                    # in-flight request. Matches the asyncio.to_thread usage
+                    # already applied to usage logging further down.
+                    # 2026-08-02：pgvector 相似度查詢是同步 DB I/O，留在 event loop
+                    # 上會卡住所有其他請求，改丟 worker thread。
+                    import asyncio as _asyncio
+                    cached_res = await _asyncio.to_thread(
+                        cache_repo.get_cached_response,
+                        self._user_id, prompt_text, prompt_embedding,
+                    )
                     if cached_res:
                         span.set_attribute("cache.hit", True)
                         return cached_res
@@ -848,9 +879,22 @@ class LoggingLLMGateway(ILLMGateway):
             # T13.1: Save result to semantic cache if it was a miss
             if self._tier in ('smart', 'advanced') and prompt_embedding:
                  try:
-                     cache_repo.save_cache(self._user_id, prompt_text, prompt_embedding, content)
-                 except Exception:
-                     pass
+                     # 2026-08-02: off the loop thread, same reasoning as the
+                     # cache read above. A FRESH repository instance is used
+                     # because sessions are per-instance and this runs on a
+                     # different worker thread than the read did.
+                     # 2026-08-02：同樣移出 event loop；因 session 現在是 per-instance
+                     # 且這裡在另一條 worker thread，需用新的 repository 實例。
+                     import asyncio as _asyncio
+                     from src.repositories.vector_cache_repository import (
+                         VectorCacheRepository as _VecRepo,
+                     )
+                     await _asyncio.to_thread(
+                         _VecRepo().save_cache,
+                         self._user_id, prompt_text, prompt_embedding, content,
+                     )
+                 except Exception as e:
+                     logger.warning(f'Exception in llm_gateway.py: {e}', exc_info=True)
 
             return content
 

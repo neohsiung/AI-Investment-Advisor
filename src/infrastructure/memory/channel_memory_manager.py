@@ -203,7 +203,8 @@ class RedisSTMStore:
         if r:
             try:
                 return r.llen(key)
-            except Exception:
+            except Exception as e:
+                logger.warning(f'Exception in channel_memory_manager.py: {e}', exc_info=True)
                 pass  # nosec B110
 
         return len(self._fallback.get(key, []))
@@ -217,7 +218,8 @@ class RedisSTMStore:
             try:
                 r.delete(key)
                 return
-            except Exception:
+            except Exception as e:
+                logger.warning(f'Exception in channel_memory_manager.py: {e}', exc_info=True)
                 pass  # nosec B110
 
         self._fallback.pop(key, None)

@@ -7,7 +7,7 @@ import json
 import typing
 from typing import List, Dict, Tuple, Any, Optional, Callable, Union, Awaitable
 from src.utils.async_utils import to_thread
-from datetime import date
+from datetime import date, datetime
 import pandas as pd
 
 from src.services.market_data_service import MarketDataService
@@ -58,24 +58,30 @@ class SentinelService:
             
         self.repo = repo or AlchemySentinelRepository()
         self.user_id = user_id
-        self.settings_service = settings_service or SettingsService(user_id=self.user_id)
-        
-        self.market_service = market_service or MarketDataService(settings_service=self.settings_service)
-        self.search_service = search_service or InternetSearchService(settings_service=self.settings_service)
-        self.transaction_service = transaction_service or TransactionService()
-        self.council_service = council_service or CouncilService(user_id=self.user_id)
-        self.keyword_service = keyword_service or RiskKeywordService()
-        self.snapshot_repo = snapshot_repo or AlchemySnapshotRepository(engine=self.repo.engine)
-        
-        # PAD Phase 2: Initialize model router and gateway for LLM calls
-        from src.infrastructure.llm.budget_aware_model_router import BudgetAwareModelRouter
-        from src.services.token_logger_service import TokenLoggerService
-        self.model_router = BudgetAwareModelRouter(
-            settings_service=self.settings_service,
-            token_logger=TokenLoggerService()
-        )
-        self.gateway = OpenRouterGateway()
-        
+
+        # Collaborators are built on first use, not here — see the properties
+        # below. Injected instances are honoured exactly as before.
+        # 協作服務改為首次使用時才建構（見下方 property），注入的實例行為不變。
+        self._settings_service = settings_service
+        self._market_service = market_service
+        self._search_service = search_service
+        self._transaction_service = transaction_service
+        self._council_service = council_service
+        self._keyword_service = keyword_service
+        self._snapshot_repo = snapshot_repo
+        self._model_router = None
+        self._gateway = None
+        self._thresholds: Optional[Dict[str, Any]] = None
+        self._priority_minutes: Optional[Dict[str, int]] = None
+        # 2026-07-12: in-memory last-price cache for polygon_websocket tick
+        # debouncing in process_event() — process-local, resets on restart
+        # (acceptable: worst case is one extra escalation after a restart).
+        self._polygon_last_price: Dict[str, float] = {}
+
+        # L1 pre-filter (2026-07-11): content-hash seen-set to drop duplicate/trivial
+        # events before they reach the fast-tier classifier. {hash: epoch_seconds}.
+        self._prefilter_seen: Dict[str, float] = {}
+
         # Thresholds (v3.5 - Defaults seeded to DB)
         self.default_thresholds = {
             "vix_high": 25.0,
@@ -88,39 +94,286 @@ class SentinelService:
             "vix_suppression_sigma_mult": 1.5, # 抑制回報門檻 (sigma 倍數)
         }
         
-        # 1. Sync / Seed initial thresholds
-        self.repo.seed_defaults(self.default_thresholds)
-        self.thresholds = self.repo.get_all_thresholds()
-        
-        # 2. Dynamic Calibration (Rule #8)
-        # Perform initial statistical calibration if historical data is available
-        self._calibrate_thresholds()
-        
+        # Thresholds are seeded and read on first access (see the `thresholds`
+        # property), and calibration moved to process_tick behind a daily
+        # cooldown — see _maybe_calibrate_thresholds for the measurements.
+        # 門檻改為首次存取時才 seed/讀取；校準移至 process_tick 並加上每日冷卻。
+
         # [NEW] v5.1: Tracking firing times for de-bouncing (T16)
+        # 2026-08-10: retained only as the in-process fallback for
+        # _acquire_cooldown(). Debounce state lives in Redis now — this dict is
+        # per-instance and SentinelService is rebuilt for every Celery task and
+        # every webhook request, so on its own it never debounced anything.
+        # 2026-08-10：僅保留為 _acquire_cooldown() 的行程內備援。防抖狀態已移至
+        # Redis；此 dict 為 instance 層級，而 SentinelService 每個 task／請求都
+        # 重建，單靠它從來沒有真正防抖過。
         self.last_fire_time: Dict[str, float] = {}
-        
+
         # Buffer State — Redis-backed persistent buffer (replaces in-memory dict)
         from src.infrastructure.redis_sentinel_buffer import RedisSentinelBuffer
         self._redis_buffer = RedisSentinelBuffer()
-        
-        # Priority Deadlines (minutes) - Rule #8: Dynamic via settings if available
-        # Keys use "P1".."P5" format to match priority lookup: f"P{priority}"
-        self.priority_minutes = {
-            "P1": int(self.settings_service.get_setting("sentinel_p1_limit_mins") or 15),
-            "P2": int(self.settings_service.get_setting("sentinel_p2_limit_mins") or 60),
-            "P3": int(self.settings_service.get_setting("sentinel_p3_limit_mins") or 240),
-            "P4": int(self.settings_service.get_setting("sentinel_p4_limit_mins") or 720),
-            "P5": int(self.settings_service.get_setting("sentinel_p5_limit_mins") or 1440),
-        }
         
         # Volatility State
         self.current_vix: float = 20.0 # Default fallback
 
     # ──────────────────────────────────────────
+    # Lazily-built collaborators (2026-08-13)
+    #
+    # `__init__` used to eagerly construct eight services — MarketDataService
+    # (which itself builds Polygon, Tiingo, FMP, FRED, AlphaVantage, Finnhub,
+    # FinancialData and a Tavily search client), InternetSearchService,
+    # TransactionService, CouncilService, RiskKeywordService, a snapshot repo,
+    # a model router and an LLM gateway — plus five settings reads, a threshold
+    # seed+read, and a 252-day ^VIX calibration fetch.
+    #
+    # tasks.py rebuilds SentinelService for every Celery task and
+    # webhook_service.py for every request, so that whole graph was rebuilt
+    # once a minute: 461 "Tavily initialized" and 461 "FRED initialized" lines
+    # per 6h of production logs. Most ticks touch two or three of these.
+    #
+    # The properties keep every call site (`self.market_service`) unchanged and
+    # keep constructor injection working; the setters keep post-construction
+    # assignment working, which several tests and callers rely on.
+    #
+    # `__init__` 原本急切建構八個服務（MarketDataService 會連帶建立全部 provider
+    # 與 Tavily 客戶端）、五次設定讀取、門檻 seed+讀取，以及一次 252 天的 ^VIX
+    # 校準抓取。而每個 Celery task 與每個 webhook 請求都會重建本服務，因此整張
+    # 服務圖每分鐘重建一次（6 小時內 461 次）。多數 tick 只用到其中兩三個。
+    # ──────────────────────────────────────────
+
+    @property
+    def settings_service(self) -> SettingsService:
+        if self._settings_service is None:
+            self._settings_service = SettingsService(user_id=self.user_id)
+        return self._settings_service
+
+    @settings_service.setter
+    def settings_service(self, value: SettingsService) -> None:
+        self._settings_service = value
+
+    @settings_service.deleter
+    def settings_service(self) -> None:
+        # Reset to "not built yet"; `unittest.mock.patch.object` deletes the
+        # attribute on exit, and a lazy property must be re-buildable after that.
+        self._settings_service = None
+
+    @property
+    def market_service(self) -> MarketDataService:
+        if self._market_service is None:
+            self._market_service = MarketDataService(settings_service=self.settings_service)
+        return self._market_service
+
+    @market_service.setter
+    def market_service(self, value: MarketDataService) -> None:
+        self._market_service = value
+
+    @market_service.deleter
+    def market_service(self) -> None:
+        # Reset to "not built yet"; `unittest.mock.patch.object` deletes the
+        # attribute on exit, and a lazy property must be re-buildable after that.
+        self._market_service = None
+
+    @property
+    def search_service(self) -> InternetSearchService:
+        if self._search_service is None:
+            self._search_service = InternetSearchService(settings_service=self.settings_service)
+        return self._search_service
+
+    @search_service.setter
+    def search_service(self, value: InternetSearchService) -> None:
+        self._search_service = value
+
+    @search_service.deleter
+    def search_service(self) -> None:
+        # Reset to "not built yet"; `unittest.mock.patch.object` deletes the
+        # attribute on exit, and a lazy property must be re-buildable after that.
+        self._search_service = None
+
+    @property
+    def transaction_service(self) -> TransactionService:
+        if self._transaction_service is None:
+            self._transaction_service = TransactionService()
+        return self._transaction_service
+
+    @transaction_service.setter
+    def transaction_service(self, value: TransactionService) -> None:
+        self._transaction_service = value
+
+    @transaction_service.deleter
+    def transaction_service(self) -> None:
+        # Reset to "not built yet"; `unittest.mock.patch.object` deletes the
+        # attribute on exit, and a lazy property must be re-buildable after that.
+        self._transaction_service = None
+
+    @property
+    def council_service(self) -> CouncilService:
+        if self._council_service is None:
+            self._council_service = CouncilService(user_id=self.user_id)
+        return self._council_service
+
+    @council_service.setter
+    def council_service(self, value: CouncilService) -> None:
+        self._council_service = value
+
+    @council_service.deleter
+    def council_service(self) -> None:
+        # Reset to "not built yet"; `unittest.mock.patch.object` deletes the
+        # attribute on exit, and a lazy property must be re-buildable after that.
+        self._council_service = None
+
+    @property
+    def keyword_service(self) -> RiskKeywordService:
+        if self._keyword_service is None:
+            self._keyword_service = RiskKeywordService()
+        return self._keyword_service
+
+    @keyword_service.setter
+    def keyword_service(self, value: RiskKeywordService) -> None:
+        self._keyword_service = value
+
+    @keyword_service.deleter
+    def keyword_service(self) -> None:
+        # Reset to "not built yet"; `unittest.mock.patch.object` deletes the
+        # attribute on exit, and a lazy property must be re-buildable after that.
+        self._keyword_service = None
+
+    @property
+    def snapshot_repo(self) -> AlchemySnapshotRepository:
+        if self._snapshot_repo is None:
+            self._snapshot_repo = AlchemySnapshotRepository(engine=self.repo.engine)
+        return self._snapshot_repo
+
+    @snapshot_repo.setter
+    def snapshot_repo(self, value: AlchemySnapshotRepository) -> None:
+        self._snapshot_repo = value
+
+    @snapshot_repo.deleter
+    def snapshot_repo(self) -> None:
+        # Reset to "not built yet"; `unittest.mock.patch.object` deletes the
+        # attribute on exit, and a lazy property must be re-buildable after that.
+        self._snapshot_repo = None
+
+    @property
+    def model_router(self):
+        if self._model_router is None:
+            from src.infrastructure.llm.budget_aware_model_router import BudgetAwareModelRouter
+            from src.services.token_logger_service import TokenLoggerService
+            self._model_router = BudgetAwareModelRouter(
+                settings_service=self.settings_service,
+                token_logger=TokenLoggerService(),
+            )
+        return self._model_router
+
+    @model_router.setter
+    def model_router(self, value) -> None:
+        self._model_router = value
+
+    @model_router.deleter
+    def model_router(self) -> None:
+        # Reset to "not built yet"; `unittest.mock.patch.object` deletes the
+        # attribute on exit, and a lazy property must be re-buildable after that.
+        self._model_router = None
+
+    @property
+    def gateway(self):
+        if self._gateway is None:
+            self._gateway = OpenRouterGateway()
+        return self._gateway
+
+    @gateway.setter
+    def gateway(self, value) -> None:
+        self._gateway = value
+
+    @gateway.deleter
+    def gateway(self) -> None:
+        # Reset to "not built yet"; `unittest.mock.patch.object` deletes the
+        # attribute on exit, and a lazy property must be re-buildable after that.
+        self._gateway = None
+
+    @property
+    def thresholds(self) -> Dict[str, Any]:
+        """Seeded and read on first access. process_tick refreshes it each
+        tick, so the ticking path sees the same values it always did.
+        首次存取時才 seed 與讀取；process_tick 每次仍會重新整理。"""
+        if self._thresholds is None:
+            self.repo.seed_defaults(self.default_thresholds)
+            self._thresholds = self.repo.get_all_thresholds()
+        return self._thresholds
+
+    @thresholds.setter
+    def thresholds(self, value: Dict[str, Any]) -> None:
+        self._thresholds = value
+
+    @thresholds.deleter
+    def thresholds(self) -> None:
+        # Reset to "not built yet"; `unittest.mock.patch.object` deletes the
+        # attribute on exit, and a lazy property must be re-buildable after that.
+        self._thresholds = None
+
+    @property
+    def priority_minutes(self) -> Dict[str, int]:
+        if self._priority_minutes is None:
+            self._priority_minutes = {
+                "P1": int(self.settings_service.get_setting("sentinel_p1_limit_mins") or 15),
+                "P2": int(self.settings_service.get_setting("sentinel_p2_limit_mins") or 60),
+                "P3": int(self.settings_service.get_setting("sentinel_p3_limit_mins") or 240),
+                "P4": int(self.settings_service.get_setting("sentinel_p4_limit_mins") or 720),
+                "P5": int(self.settings_service.get_setting("sentinel_p5_limit_mins") or 1440),
+            }
+        return self._priority_minutes
+
+    @priority_minutes.setter
+    def priority_minutes(self, value: Dict[str, int]) -> None:
+        self._priority_minutes = value
+
+    @priority_minutes.deleter
+    def priority_minutes(self) -> None:
+        # Reset to "not built yet"; `unittest.mock.patch.object` deletes the
+        # attribute on exit, and a lazy property must be re-buildable after that.
+        self._priority_minutes = None
+
+    # ──────────────────────────────────────────
+    # L1 pre-filter — drop dup/trivial events before the classifier (2026-07-11)
+    # ──────────────────────────────────────────
+
+    def _prefilter_skip_reason(self, t: Dict[str, Any], source: str) -> Optional[str]:
+        """
+        Cheap, deterministic ($0) gate run before the fast-tier classifier.
+        Returns a reason string to SKIP the event, or None to keep it.
+
+        Halves classifier volume by dropping (a) events whose text is empty or
+        too short to be meaningful, and (b) content-duplicate events seen within
+        a TTL window. Free heuristic is preferred over a per-event nano LLM call
+        here: the minutely tick is throughput-sensitive and the local nano model
+        (~5s/call) would back the loop up; determinism also avoids false drops.
+        """
+        import time
+        import hashlib
+
+        raw_text = (t.get("text") or "").strip()
+        # (a) triviality: only drop genuinely empty events. Real alerts can be very
+        # short ("TSLA halted"), so do NOT gate on length — dedup does the heavy lifting.
+        if not raw_text and not t.get("data"):
+            return "trivial (empty event)"
+
+        # (b) content dedup within a TTL window (mirrors the 30-min escalation cooldown)
+        ttl = 1800
+        now = time.time()
+        # opportunistic prune so the dict cannot grow unbounded
+        if len(self._prefilter_seen) > 2000:
+            self._prefilter_seen = {h: ts for h, ts in self._prefilter_seen.items() if now - ts < ttl}
+        digest = hashlib.sha256(f"{source}|{raw_text}".encode("utf-8")).hexdigest()
+        last = self._prefilter_seen.get(digest, 0)
+        if now - last < ttl:
+            return "duplicate (seen within 30m)"
+        self._prefilter_seen[digest] = now
+        return None
+
+    # ──────────────────────────────────────────
     # PAD Phase 2: Agent LLM Helper
     # ──────────────────────────────────────────
-    
-    async def _call_agent_llm(self, agent_name: str, context: Dict[str, Any], tier: str = "smart", 
+
+    async def _call_agent_llm(self, agent_name: str, context: Dict[str, Any], tier: str = "smart",
                               temperature: float = 0.7, max_tokens: int = 2000) -> str:
         """
         PAD Phase 2: Replace AgentFactory.create_*_agent().run() with direct gateway calls.
@@ -129,6 +382,12 @@ class SentinelService:
         try:
             from src.infrastructure.llm.llm_config_chain import build_config_chain
             from src.infrastructure.llm.resilient_pipeline import ResilientLLMPipeline
+            from src.infrastructure.llm.auto_tier import resolve_effective_tier
+
+            # Auto tier: the passed tier is the ceiling; the free heuristic detector
+            # may downshift it when the payload is clearly simple (2026-07-11).
+            context_text = json.dumps(context, ensure_ascii=False)
+            tier = resolve_effective_tier(tier, context_text, agent_name=agent_name)
 
             chain = build_config_chain(self.user_id, tier)
             if not chain:
@@ -137,7 +396,12 @@ class SentinelService:
             if not chain:
                 return json.dumps({"status": "failed", "error": f"No model configured for tier={tier}"})
 
-            pipeline = ResilientLLMPipeline(config_chain=chain)
+            pipeline = ResilientLLMPipeline(
+                config_chain=chain,
+                user_id=self.user_id,
+                agent_name=agent_name,
+                tier=tier,
+            )
 
             agent_prompts = {
                 "Thematic": "You are a Thematic analyst. Analyze market themes, trends, and beneficiary companies. Update tracking lists based on events. Return valid JSON with 'status' and 'data' fields.",
@@ -171,13 +435,52 @@ class SentinelService:
     # Main Entry Point
     # ──────────────────────────────────────────
         
-    async def process_tick(self) -> None:
+    # Tick lock TTL. Longer than the 60s tick interval so a slow tick cannot
+    # let the next scheduled one in early, short enough to self-heal.
+    # 大於 60 秒的 tick 間隔，避免慢 tick 讓下一次提早進來；同時能自行復原。
+    _TICK_LOCK_TTL_SECONDS = 120
+
+    async def process_tick(self, force: bool = False) -> None:
         """
         Main Event Loop: Perform multi-dimensional scanning and threshold-based monitoring.
         主事件迴圈：執行多維度掃描與基於門檻值的監控。
+
+        Guarded by a per-user, per-minute Redis lock so the tick cannot run
+        twice in the same minute regardless of how many schedulers call it.
+        The guard lives here rather than in the Celery task because there are
+        several entry points (two Celery tasks historically, the legacy
+        `schedule`-library job, and direct calls) and a future fifth must not
+        be able to bypass it.
+
+        force=True skips the lock — used only by the user-initiated
+        "rebalance now" path, which would otherwise be swallowed by the lock
+        the scheduled tick just took.
+        以「使用者 + 分鐘」為單位的 Redis 鎖防止同一分鐘重複執行；鎖放在這裡而非
+        task 層，是為了同時覆蓋所有入口。force=True 僅供使用者主動觸發的路徑使用。
         """
+        # Capture once: the three minute-gated branches below and the lock
+        # bucket must agree, otherwise a tick straddling a minute boundary can
+        # take the expensive branch and then lock the *next* minute.
+        # 只取一次時間：三個 minute gate 與鎖的分鐘桶必須一致，否則跨分鐘邊界會錯位。
+        now = datetime.now()
+
+        if not force and self.user_id:
+            lock_key = f"lock:sentinel:tick:{self.user_id}:{now:%Y%m%d%H%M}"
+            acquired = await self._redis_buffer.try_acquire(
+                lock_key, self._TICK_LOCK_TTL_SECONDS
+            )
+            if not acquired:
+                logger.info(
+                    "Sentinel tick already ran this minute for %s — skipping duplicate.",
+                    redact_pii(self.user_id),
+                )
+                return
+
+        # Daily recalibration, claimed by whichever worker gets there first.
+        await self._maybe_calibrate_thresholds()
+
         self.thresholds = self.repo.get_all_thresholds()
-        
+
         # [Optimization] Check and Flush Buffer if deadline reached
         await self._check_buffer_flush()
         
@@ -200,13 +503,13 @@ class SentinelService:
                 triggers += await self._check_position_moves_v2(ticker_list, current_prices)
             
             # Dimension 3: Breaking News (每 10 分鐘, 節省 Tavily credits)
-            from datetime import datetime
-            if datetime.now().minute % 10 == 0:
+            # Uses the `now` captured at entry — see the note in the docstring.
+            if now.minute % 10 == 0:
                 if ticker_list:
                     triggers += await self._check_breaking_news_v2(ticker_list)
-            
+
             # Dimension 4: Macro Shifts (每小時, FRED 數據更新頻率低)
-            if datetime.now().minute == 0:
+            if now.minute == 0:
                 triggers += await self._check_macro_shifts()
             
             # Dimension 5: Active Polling
@@ -214,7 +517,7 @@ class SentinelService:
 
             # Dimension 6: Global Macro / Geopolitical Events (每 30 分鐘)
             # 持倉數量無關的全球重大事件掃描
-            if datetime.now().minute % 30 == 0:
+            if now.minute % 30 == 0:
                 triggers += await self._check_global_macro_events()
             
             # Dimension 7: Risk Consistency & Dynamic Cash (每次 tick)
@@ -280,9 +583,58 @@ class SentinelService:
             if sc_info.get("has_premium"):
                 display_text += f"\n💡 [Supply Chain Impact]: {sc_info.get('narrative')}"
                 signal_id = f"earnings_sc_impact_{ticker}"
-        
+
+        # 2026-07-12: "news" source dedicated branch — score external news
+        # webhook payloads through the same weighted risk-keyword system as
+        # Dimension 3 (_check_breaking_news_v2), instead of unconditionally
+        # escalating every inbound news webhook. Consistent threshold with
+        # the internal Tavily-sourced news dimension.
+        elif source == "news":
+            text_to_score = f"{msg} {ticker or ''}".strip()
+            total_weight, matched = self.keyword_service.score_text(text_to_score)
+            risk_threshold = self.thresholds.get("news_risk_score", 0.6)
+            if total_weight < risk_threshold:
+                logger.debug(
+                    "Sentinel: webhook news event scored %.2f (< %.2f threshold), suppressing: %s",
+                    total_weight, risk_threshold, redact_secrets(msg)[:80],
+                )
+                return
+            display_text += f"\n🔑 [Risk Keywords: {', '.join(matched[:5])}] (score={total_weight:.2f})"
+            signal_id = f"news_{signal_id}"
+
+        # 2026-07-12: "polygon_websocket" source dedicated branch — the
+        # comment here previously said "For now, bridge to process_event"
+        # with no significance filter, meaning EVERY trade/aggregate tick
+        # would escalate and trigger an LLM classification call. Apply a
+        # simple in-memory last-price debounce so only meaningful moves
+        # (>= polygon_move_pct threshold, default 1%) escalate.
+        elif source == "polygon_websocket" and ticker:
+            price = data.get("price")
+            if price is not None:
+                # VIX uses an absolute-level trigger (consistent with the
+                # polling-based _check_vix_anomaly dimension's vix_high
+                # threshold), not the move-based debounce below — a single
+                # tick above the level must escalate immediately, even if
+                # it's the first tick seen this session.
+                if ticker in ("VIX", "^VIX"):
+                    vix_high = self.thresholds.get("vix_high", 25.0)
+                    if price <= vix_high:
+                        return
+                    display_text += f"\n🔴 [VIX Level: {price:.2f} > {vix_high:.2f}]"
+                else:
+                    last_price = self._polygon_last_price.get(ticker)
+                    self._polygon_last_price[ticker] = price
+                    if last_price:
+                        move_pct = abs(price - last_price) / last_price * 100
+                        move_threshold = self.thresholds.get("polygon_move_pct", 1.0)
+                        if move_pct < move_threshold:
+                            return  # not a significant move, suppress to avoid tick-storm escalation
+                        display_text += f"\n📶 [Move: {move_pct:.2f}% vs last tick]"
+                    else:
+                        return  # first tick for this ticker this session — nothing to compare, just cache
+
         triggers = [{"text": display_text, "id": signal_id}]
-        
+
         # If it's a technical signal or critical spike, escalate immediately
         await self._escalate(triggers, source=source)
 
@@ -773,27 +1125,94 @@ class SentinelService:
     # Escalation: Council + Notifications
     # ──────────────────────────────────────────
 
+    async def _acquire_cooldown(self, name: str, seconds: int, fail_open: bool) -> bool:
+        """
+        Claim a cross-process debounce window. True means the caller may proceed.
+        取得跨行程防抖窗口；回傳 True 代表呼叫端可以繼續執行。
+
+        Added 2026-08-10. Both callers previously debounced via
+        `self.last_fire_time`, an instance dict on an object that tasks.py
+        rebuilds per Celery task and webhook_service.py per request — so
+        neither window ever spanned processes. A Redis `SET NX EX` gives all
+        workers one shared window.
+
+        `fail_open` decides what happens when Redis is unreachable, and the
+        two callers genuinely want opposite things: escalation passes True
+        (a duplicate alert beats a missed P0), rebalancing passes False
+        (a duplicate sell is an irreversible real-money action).
+
+        2026-08-10 新增。兩處呼叫端原本都用 instance dict 防抖，而該物件每個
+        Celery task／請求都重建，窗口從未跨行程生效。改用 Redis SET NX EX。
+        fail_open 決定 Redis 不可用時的行為：告警採 fail-open（重複告警優於漏掉
+        P0），再平衡採 fail-closed（重複賣單是不可逆的真錢動作）。
+        """
+        key = f"sentinel:cooldown:{name}"
+        try:
+            from src.infrastructure.cache.redis_client import get_redis
+
+            redis_client = await get_redis()
+            if await redis_client.set(key, "1", ex=seconds, nx=True):
+                return True
+            ttl = await redis_client.ttl(key)
+            logger.info(
+                f"SentinelService: De-bouncing {name} (cooldown {seconds}s, {ttl}s remaining)"
+            )
+            return False
+        except Exception as e:
+            import time
+
+            # In-process fallback. Weaker than Redis — it only debounces
+            # repeated calls on this same instance — but strictly better than
+            # no window at all when the caller wants to proceed anyway.
+            # 行程內備援：僅能防抖同一 instance 的重複呼叫，強度不如 Redis，
+            # 但在 fail-open 情境下仍優於完全沒有窗口。
+            if fail_open:
+                now = time.time()
+                if self.last_fire_time.get(key, 0) + seconds > now:
+                    logger.info(f"SentinelService: De-bouncing {name} (in-process fallback)")
+                    return False
+                self.last_fire_time[key] = now
+                logger.warning(
+                    f"Sentinel: cooldown backend unavailable ({e}); proceeding with {name} "
+                    f"using in-process debounce only."
+                )
+                return True
+
+            logger.error(
+                f"Sentinel: cooldown backend unavailable ({e}); skipping {name} for safety."
+            )
+            return False
+
     async def _escalate(self, triggers: List[Dict[str, Any]], source: str = "Sentinel") -> None:
         """
         Escalate triggers to appropriate channels, applying buffering where necessary.
         呈報觸發訊號至適當管道，並在必要時套用緩衝機制。
         """
-        import time
-        cooldown = 1800 # 30 minutes
-        fire_key = f"escalate_{source}_{self.user_id}"
-        if self.last_fire_time.get(fire_key, 0) + cooldown > time.time():
-            logger.info(f"SentinelService: De-bouncing escalation for {fire_key} (cooldown: {cooldown}s)")
-            return
-        self.last_fire_time[fire_key] = time.time()
+        # 2026-08-10: the empty-triggers check moved ABOVE the debounce. It used
+        # to sit after it, so a tick with nothing to escalate still armed the
+        # 30-minute window and suppressed the next real alert.
+        # 2026-08-10：空觸發檢查移到防抖「之前」。原本在其後，導致無事可報的 tick
+        # 也會啟動 30 分鐘窗口並壓掉下一次真實告警。
         if not triggers:
-             return
+            return
+
+        if not await self._acquire_cooldown(
+            f"escalate:{source}:{self.user_id}", 1800, fail_open=True
+        ):
+            return
 
         # [T4] Batching logic for P0 / immediate escalation
         immediate_triggers = []
         
         for t in triggers:
             trigger_id = t.get("id", "")
-            
+
+            # L1 pre-filter: drop dup/trivial events before any LLM classification ($0).
+            skip_reason = self._prefilter_skip_reason(t, source)
+            if skip_reason:
+                logger.debug("Sentinel: pre-filter skip trigger %s — %s", trigger_id, skip_reason)
+                continue
+
             # v5.4.1 Cost Optimization: Semantic/Response Caching
             pending = await self._redis_buffer.all_pending(self.user_id)
             already_buffered_trigger = next((b for b in pending if b.get("id") == trigger_id), None)
@@ -821,13 +1240,17 @@ class SentinelService:
                     rounded_vix = round(self.current_vix, 1)
 
                     # PAD Phase 2: Call Sentinel agent via gateway
-                    # 使用 smart tier — Sentinel 需要 System 2 推理，不應使用 fast tier
+                    # Event classification/prioritization is L1-L2 work — fast tier suffices;
+                    # minutely tick on smart tier drove ~$15/week (2026-07-11 cost review).
+                    # Deep analysis escalates separately via Thematic on smart.
+                    # 事件分類/優先級屬 L1-L2 任務，fast tier 足夠；每分鐘 tick 用 smart 曾造成
+                    # 每週約 $15 成本（2026-07-11 成本審查）。深度分析由 Thematic 以 smart 升級處理。
                     context = {
                         "trigger_source": source,
                         "event_data": event_data,
                         "current_vix": rounded_vix
                     }
-                    eval_res_str = await self._call_agent_llm("Sentinel", context, tier="smart")
+                    eval_res_str = await self._call_agent_llm("Sentinel", context, tier="fast")
                     
                     # Parse response
                     try:
@@ -1231,7 +1654,6 @@ class SentinelService:
         # 🚨 Auto-hedging / Emergency Liquidation (Milestone 5.1)
         if is_extreme and any(kw in decision.lower() for kw in ["liquidate", "hedge", "panic", "emergency"]):
             # Run in background to avoid blocking notification flow
-            import asyncio
             asyncio.create_task(self._trigger_emergency_protocol(target_user, decision))
 
         # 📊 Actionable Trade Signals → evaluate_and_execute_trade (Milestone 13.2)
@@ -1239,7 +1661,6 @@ class SentinelService:
         elif is_actionable:
             trade_signals = await self._extract_trade_signals_from_decision(decision, filtered_triggers)
             if trade_signals:
-                import asyncio
                 asyncio.create_task(self._execute_trade_signals(target_user, trade_signals, source))
 
         # v9.1: Mandatory Post-Alert Action Fallback
@@ -1277,11 +1698,10 @@ class SentinelService:
         
         # Always store alert insight to cognitive_memories (independent of action path)
         # This ensures every alert outcome is captured for future reflection
-        import asyncio as _asyncio
         from src.agents.skills.skill_loader import SkillLoader
         insight_loader = SkillLoader(user_id=target_user)
 
-        _asyncio.create_task(
+        asyncio.create_task(
             insight_loader.run_skill(
                 "distill_insight",
                 user_id=target_user,
@@ -1464,6 +1884,31 @@ class SentinelService:
         except Exception as e:
             logger.error(f"Emergency Protocol failed: {e}")
 
+    _CALIBRATION_COOLDOWN_SECONDS = 86400
+
+    async def _maybe_calibrate_thresholds(self) -> None:
+        """
+        Recalibrate at most once a day, across all processes.
+        跨行程每日最多校準一次。
+
+        Calibration reads 252 days of ^VIX and writes three threshold rows. It
+        used to run in `__init__`, and SentinelService is rebuilt for every
+        Celery task and every webhook request — so a 252-day fetch plus three
+        DB writes happened on the minutely tick, on "rebalance now", and on
+        every inbound webhook. Its inputs are year-long percentiles; they do
+        not move minute to minute, and the result is persisted, so a daily
+        cadence loses nothing.
+
+        `fail_open=False`: if Redis is unreachable, skip. Stale thresholds are
+        the status quo ante and are safe; duplicating the work across every
+        worker is exactly what this removes.
+        """
+        if not await self._acquire_cooldown(
+            "threshold_calibration", self._CALIBRATION_COOLDOWN_SECONDS, fail_open=False
+        ):
+            return
+        await to_thread(self._calibrate_thresholds)
+
     def _calibrate_thresholds(self) -> None:
         """
         Dynamically calibrate thresholds based on historical distributions (Rule #8).
@@ -1607,8 +2052,8 @@ class SentinelService:
                             "id": "fng_extreme",
                             "value": val
                         }
-            except Exception:
-                pass
+            except Exception as e:
+                logger.warning(f'Exception in sentinel_service.py: {e}', exc_info=True)
         
         # Tiingo Integration (v5.0) - Event-Driven News Scanning
         elif sid == "tiingo":
@@ -1691,7 +2136,6 @@ class SentinelService:
                 last_sync = self.settings_service.get_setting("readwise_last_sync")
                 
                 # Fetch highlights in background thread
-                import asyncio
                 loop = asyncio.get_event_loop()
                 analyzed = await loop.run_in_executor(
                     None, 
@@ -1731,7 +2175,6 @@ class SentinelService:
             }
             # Run in a separate thread so we don't block the main event loop
             # 用於異步執行耗時的智能體分析，確保不會阻塞主事件迴圈
-            import asyncio
             try:
                 loop = asyncio.get_event_loop()
             except RuntimeError:
@@ -1898,10 +2341,28 @@ class SentinelService:
         # Run skill inline (avoids subprocess overhead and stdout-only result)
         try:
             from src.agents.skills.cash_deployment.impl import cash_deployment
+            from src.api.v1.exceptions import BrokerNotConfiguredError
             result_json = await cash_deployment(self.user_id)
             result = json.loads(result_json)
+        except BrokerNotConfiguredError as e:
+            logger.info("Sentinel: Broker not configured for user %s: %s", redact_pii(self.user_id), e)
+            self.repo.log_alert(
+                "cash_deployment_unconfigured",
+                f"cash_deployment skipped: broker not configured",
+                metadata={"signal_id": deploy_signal_id, "info": str(e)[:200]},
+            )
+            return
         except Exception as e:
             logger.error("Sentinel: cash_deployment skill error: %s", e)
+            # 2026-07-11: also engage the cooldown on failure (e.g. broker not
+            # configured) — without this, a persistent config error retried
+            # every minutely tick forever instead of backing off like a
+            # successful run does.
+            self.repo.log_alert(
+                "cash_deployment_error",
+                f"cash_deployment failed: {str(e)[:200]}",
+                metadata={"signal_id": deploy_signal_id, "error": str(e)[:500]},
+            )
             return
 
         if result.get("status") != "overweight":
@@ -1938,10 +2399,23 @@ class SentinelService:
         from src.services.confidence_compositor_service import CompositorService
         compositor = CompositorService(user_id=self.user_id)
         
+        # 2026-08-11: excess_cash bounded by tradable capital. The compositor
+        # allocates a fraction of whatever it is handed, so passing the real
+        # excess (~$400) would let it size positions far past the $100 mandate
+        # before AutomatedTradingService's per-order clamp ever sees them.
+        # 2026-08-11：excess_cash 以可交易資本設限。compositor 是按比例分配傳入
+        # 金額，若直接給真實超額現金（約 $400），部位規模會在到達單筆鉗制之前就
+        # 遠超過 $100 授權。
+        from src.services.capital_policy import tradable_capital
+
+        bounded_excess_cash = tradable_capital(
+            self.user_id, result.get("excess_cash", 0.0)
+        )
+
         # Compute per-ticker composite decisions
         decisions = await compositor.compute_composite_decision(
             candidates=candidates,
-            excess_cash=result.get("excess_cash", 0.0),
+            excess_cash=bounded_excess_cash,
             cash_ratio=cash_ratio,
             target_cash_ratio=target_ratio,
         )
@@ -2000,22 +2474,49 @@ class SentinelService:
         [Phase 5] Execute rebalancing trades based on detected triggers.
         執行基於偵測到觸發點的再平衡交易。
         """
-        import time
-        cooldown = 1800 # 30 minutes
-        fire_key = f"rebalance_{self.user_id}"
-        if self.last_fire_time.get(fire_key, 0) + cooldown > time.time():
-             logger.info(f"SentinelService: De-bouncing rebalance for {fire_key} (cooldown: {cooldown}s)")
-             return
-        self.last_fire_time[fire_key] = time.time()
+        # 2026-08-10: two defects fixed in this debounce.
+        #  (a) Order was inverted — the timestamp was stamped BEFORE the
+        #      empty-triggers check, so an ordinary tick with nothing to do
+        #      still armed the 30-minute cooldown and suppressed the next real
+        #      trigger. Now nothing is recorded unless work actually happens.
+        #  (b) It keyed off `self.last_fire_time`, a plain instance dict, on a
+        #      SentinelService that tasks.py rebuilds for every Celery task and
+        #      webhook_service.py for every request. The cooldown was therefore
+        #      a no-op across processes — the exact defect celery_app.py's
+        #      removal note called out. It is now a Redis SET NX EX, so all
+        #      workers share one window.
+        # 2026-08-10 修正兩個缺陷：(a) 時間戳記蓋在空觸發檢查「之前」，導致無事可
+        # 做的 tick 也會啟動 30 分鐘冷卻並壓掉下一次真實觸發；(b) 冷卻狀態存在
+        # instance dict，而 SentinelService 每個 Celery task／請求都重建，跨行程
+        # 完全無效。改用 Redis SET NX EX，讓所有 worker 共用同一個冷卻窗口。
         if not rebalance_triggers:
             logger.debug("Sentinel: No rebalance triggers to process.")
             return
 
+        # fail_open=False: rebalancing liquidates part of a real position and
+        # is not reversible. If the shared cooldown is unavailable, every
+        # worker's minutely tick could fire the same sell, so skipping this
+        # cycle (costing one rebalance opportunity) is the cheaper failure.
+        # fail_open=False：再平衡會賣出真實部位且不可逆。冷卻不可用時，每個
+        # worker 的每分鐘 tick 都可能重複送出同一筆賣單，故跳過本輪較便宜。
+        if not await self._acquire_cooldown(
+            f"rebalance:{self.user_id}", 1800, fail_open=False
+        ):
+            return
+
         logger.info(f"Sentinel: Processing {len(rebalance_triggers)} rebalance triggers for user {self.user_id}")
-        
+
         try:
             from src.services.automated_trading_service import AutomatedTradingService
+            from src.services.exit_compositor_service import ExitCompositorService
+
             auto_trade_svc = AutomatedTradingService()
+            # One instance per batch — it caches the LLM pipeline internally,
+            # so rebuilding it per trigger would re-resolve the model router.
+            # 每批共用一個實例：其內部快取 LLM 管線，逐筆重建會重複解析模型路由。
+            exit_compositor = ExitCompositorService(
+                user_id=self.user_id, settings_service=self.settings_service
+            )
 
             for trigger in rebalance_triggers:
                 if trigger.get('ticker') == 'CASH':
@@ -2036,14 +2537,54 @@ class SentinelService:
                     f"Sentinel Rebalancing Execution: {ticker} | Selling {sell_qty} units | Reason: {rationale}"
                 )
                 
-                # Execute rebalancing trade (Forced action, confidence=100)
+                # 2026-08-10: this passed confidence_score=100, which
+                # normalizes to 10.0 and always cleared the auto-execute bar —
+                # every concentration rebalance liquidated part of a real
+                # position with no human in the loop, on a bare constant.
+                # 2026-08-11: the constant is now a real score. ExitCompositor
+                # weighs unrealized P&L, concentration, momentum reversal and
+                # risk, so the number carries a reason the approval card can
+                # show and the user can argue with. Concentration is only one
+                # of its four inputs — a position over the ceiling whose
+                # thesis is still intact no longer auto-liquidates.
+                # 2026-08-10：原本寫死 100，必定越過門檻，等於以裸常數在無人監督下
+                # 賣出真實部位。2026-08-11 改為真實評分：ExitCompositor 綜合未實現
+                # 損益、集中度、動能反轉與風險，讓分數帶有可被檢視與反駁的理由。
+                # 集中度只是四項輸入之一——超標但論點未破的部位不再自動平倉。
+                exit_decision = await exit_compositor.score_exit(
+                    ticker=ticker,
+                    quantity=sell_qty,
+                    current_price=trigger.get("current_price"),
+                    current_weight_pct=trigger.get("current_weight_pct"),
+                    reason_hint=rationale,
+                )
+                rebalance_confidence = exit_decision["composite_score"]
+                logger.info(
+                    "Sentinel: exit score for %s = %.1f/10 (%s)",
+                    ticker, rebalance_confidence,
+                    ", ".join(
+                        f"{b['agent']} {b['confidence']:.1f}" for b in exit_decision["breakdown"]
+                    ),
+                )
+
+                # strategy_name attributes this sell to the concentration rule
+                # so the validation gate can ask whether that rule has ever
+                # cleared a backtest. Without it the gate cannot fire at all.
+                # strategy_name 讓此賣單歸屬到集中度規則，驗證關卡才能判斷該規則
+                # 是否曾通過回測；未帶此參數關卡不會生效。
+                from src.services.strategy_validation_service import (
+                    STRATEGY_CONCENTRATION_REBALANCE,
+                )
+
                 await auto_trade_svc.evaluate_and_execute_trade(
                     user_id=self.user_id,
                     ticker=ticker,
                     action="SELL",
                     quantity=sell_qty,
-                    confidence_score=100, 
-                    rationale=rationale
+                    confidence_score=rebalance_confidence,
+                    confidence_breakdown=exit_decision["breakdown"],
+                    rationale=rationale,
+                    strategy_name=STRATEGY_CONCENTRATION_REBALANCE,
                 )
         except Exception as e:
             logger.error(f"Sentinel: rebalancing execution error: {e}", exc_info=True)
@@ -2075,30 +2616,43 @@ class SentinelService:
                 })
 
             # 2. Celery Worker Queue Depth
-            from src.infrastructure.celery_app import app as celery_app
-            import redis
-            
-            # Use redis directly if configured
-            redis_url = os.getenv("CELERY_BROKER_URL", "redis://redis:6379/0")
+            # 2026-08-10, two bugs fixed here:
+            #  (a) This read CELERY_BROKER_URL, which docker-compose.prod.yml
+            #      has never set — only REDIS_URL. It therefore fell back to a
+            #      password-less URL against a --requirepass server, so every
+            #      minutely AUTH failed and was swallowed at debug level. This
+            #      watchdog has been blind for as long as it has existed.
+            #  (b) The client was rebuilt per call and never closed.
+            # get_redis_sync() resolves REDIS_URL and shares one bounded pool.
+            # 2026-08-10 修正兩個問題：(a) 讀了 prod 從未設定的 CELERY_BROKER_URL，
+            # 退化成無密碼連線、每分鐘 AUTH 失敗且被 debug 吞掉，此監控形同虛設；
+            # (b) client 每次重建且從不關閉。改用共用連線池並讀 REDIS_URL。
+            from src.infrastructure.cache.redis_client import get_redis_sync
+
             try:
-                r = redis.from_url(redis_url)
+                r = get_redis_sync()
                 # Celery default queue name is 'celery'
                 queue_depth = r.llen("celery")
-                
+
                 if queue_depth > 50:
                     logger.warning(f"Sentinel: High queue depth detected ({queue_depth} pending). Initiating Self-Healing.")
-                    # Self-Healing Action: Accelerate workers or alert
                     triggers.append({
                         "id": "health_queue_pressure",
-                        "text": f"⚠️ System Pressure Alert: High background task queue depth ({queue_depth}). Initiating worker soft-reload/scaling.",
+                        "text": f"⚠️ System Pressure Alert: High background task queue depth ({queue_depth}) pending tasks.",
                         "severity": "high",
                         "priority": 1,
                         "type": "infrastructure"
                     })
-                    # Worker Pool expansion attempt
-                    celery_app.control.broadcast('pool_grow', n=1)
+                    # The `celery_app.control.broadcast('pool_grow', n=1)` that
+                    # used to fire here was removed 2026-08-10. Queue depth
+                    # spikes because workers are starved of Redis connections;
+                    # growing the pool adds *more* connection demand at exactly
+                    # the moment the server is refusing new clients. It made
+                    # the failure mode worse, never better. Alert only.
+                    # 2026-08-10 移除 pool_grow：佇列積壓多半肇因於 worker 連線
+                    # 不足，此時擴充 pool 只會增加連線需求、雪上加霜。改為純告警。
             except Exception as redis_e:
-                 logger.debug(f"Sentinel could not check redis queue size directly: {redis_e}")
+                logger.warning(f"Sentinel could not check redis queue size: {redis_e}")
 
         except Exception as e:
             logger.error(f"Infrastructure Health Check Failed: {e}")
@@ -2129,9 +2683,20 @@ class SentinelService:
             warning_threshold = max_single_weight * 0.85
             
             # 3. Calculate total portfolio value for quantity math
+            # 2026-08-11: bounded by tradable capital so concentration weights
+            # are measured against the mandate this loop actually has ($100),
+            # not the whole account (~$1,048). Without this a $20 position
+            # reads as 2% of the account and would never trip the 25% ceiling,
+            # so the trim logic would be dead during the live test.
+            # 2026-08-11：以可交易資本為分母，讓集中度是相對於本迴圈實際獲准動用
+            # 的 $100 而非整個帳戶（約 $1,048）。否則 $20 部位只佔 2%，永遠碰不到
+            # 25% 上限，實測期間減碼邏輯等同失效。
+            from src.services.capital_policy import tradable_capital
+
             cash = self.transaction_service.get_cash_balance(self.user_id)
-            total_portfolio_value = sum(item['market_value'] for item in current_allocation.values()) + cash
-            
+            raw_portfolio_value = sum(item['market_value'] for item in current_allocation.values()) + cash
+            total_portfolio_value = tradable_capital(self.user_id, raw_portfolio_value)
+
             # 4a. Cash Concentration Check (cash is also an allocation position)
             # 現金也是一種配置倉位 — 過高的現金代表失去平衡
             try:
@@ -2140,9 +2705,35 @@ class SentinelService:
                 _portfolio = await _aggregator.get_aggregated_portfolio()
                 broker_cash = _portfolio.get('total_cash', 0.0)
                 broker_equity = _portfolio.get('total_equity', 0.0)
-            except Exception:
+            except Exception as e:
+                logger.warning(f'Exception in sentinel_service.py: {e}', exc_info=True)
                 broker_cash = max(cash, 0)
                 broker_equity = total_portfolio_value if total_portfolio_value > 0 else 1
+
+            # 2026-08-11: when the capital cap bites, the cash figure must be
+            # re-expressed inside the mandate too, or the numerator and
+            # denominator are measured against different totals. The account's
+            # real cash (~$397) over the capped equity ($100) reads as ~397%
+            # and fires a cash-overweight trigger on every single tick.
+            # The condition tests whether the cap actually applied — comparing
+            # against broker_equity instead misses the fallback branch above,
+            # where broker_equity was already set to the capped value.
+            # What the loop needs to know is: of the $100 it may deploy, how
+            # much is still uninvested?
+            # 2026-08-11：資本上限一旦生效，現金也必須換算到同一基準，否則分子與
+            # 分母的總額不同——真實現金（約 $397）除以受限權益（$100）會得到約
+            # 397%，每個 tick 都觸發現金過高。此處判斷的是「上限是否真的生效」；
+            # 若改與 broker_equity 比較，會漏掉上面的 fallback 分支（該分支已把
+            # broker_equity 設為受限值）。真正要問的是：獲准動用的 $100 裡還有
+            # 多少未投入？
+            capital_cap_applied = total_portfolio_value < raw_portfolio_value
+            if capital_cap_applied:
+                mandate_invested = min(
+                    sum(item['market_value'] for item in current_allocation.values()),
+                    total_portfolio_value,
+                )
+                broker_cash = max(0.0, total_portfolio_value - mandate_invested)
+                broker_equity = total_portfolio_value
 
             if broker_equity > 0:
                 cash_weight = (broker_cash / broker_equity) * 100
@@ -2187,6 +2778,12 @@ class SentinelService:
                                 'current_weight_pct': round(current_weight, 2),
                                 'limit_weight_pct': round(max_single_weight, 2),
                                 'sell_quantity': shares_to_sell,
+                                # 2026-08-11: carried so ExitCompositorService
+                                # can price unrealized P&L against
+                                # position_lots.open_price without re-fetching.
+                                # 2026-08-11：一併帶出，讓 ExitCompositorService 能
+                                # 直接對照開倉成本計算未實現損益，不必重抓報價。
+                                'current_price': current_price,
                                 'action': 'trigger_rebalance',
                                 'timestamp': pd.Timestamp.now().isoformat()
                             })

@@ -205,9 +205,14 @@ def test_redis_pending_requests_coverage():
     if "pytest" in mock_modules:
         del mock_modules["pytest"]
         
-    with patch('sys.modules', mock_modules), patch('os.environ.get', return_value="redis://localhost:6379/0"), patch('redis.from_url') as mock_from_url:
+    # 2026-08-10: patch target moved to the shared pool accessor —
+    # RedisPendingRequests no longer calls redis.from_url itself.
+    # 2026-08-10：patch 目標改為共用連線池存取函式。
+    with patch('sys.modules', mock_modules), \
+         patch('os.environ.get', return_value="redis://localhost:6379/0"), \
+         patch('src.infrastructure.cache.redis_client.get_redis_sync') as mock_get_redis:
         mock_client = MagicMock()
-        mock_from_url.return_value = mock_client
+        mock_get_redis.return_value = mock_client
         store2 = RedisPendingRequests()
         assert store2._redis is mock_client
 
@@ -251,3 +256,163 @@ def test_redis_pending_requests_coverage():
     mock_redis.set.side_effect = Exception("Redis error")
     store[req.request_id] = req
     assert store._redis is None
+
+
+# ──────────────────────────────────────────────────────────────────────
+# 2026-07-14 (Loop 3): structured rejection-reason capture.
+# ──────────────────────────────────────────────────────────────────────
+
+from src.services.interaction_service import REJECTION_REASONS, _REJECTION_REASON_CODES
+
+
+class TestRejectionFeedback:
+    @pytest.mark.anyio
+    async def test_reject_records_feedback_and_sends_reason_picker(self, mock_adapters, mock_classifier):
+        service = InteractionService(adapters=mock_adapters, intent_classifier=mock_classifier)
+        req = InteractionRequest(type=InteractionType.APPROVAL, title="T", content="C", user_id="u1")
+        service._pending_requests[req.request_id] = req
+
+        # user_id="u1" triggers dynamic per-user adapter resolution; force
+        # it to fall back to the injected mock_adapters (matches how the
+        # pre-existing tests in this file avoid pulling in a real adapter).
+        with patch('src.infrastructure.channels.channel_factory.ChannelFactory.create_adapters', return_value=None), \
+             patch.object(service, '_record_feedback') as mock_record:
+            await service.handle_response(req.request_id, "reject")
+
+        assert req.status == InteractionStatus.REJECTED
+        mock_record.assert_called_once_with(req, "rejected")
+        alert_calls = mock_adapters[0].send_alert.call_args_list
+        assert len(alert_calls) == 1
+        actions = alert_calls[0].kwargs["actions"]
+        assert len(actions) == len(REJECTION_REASONS)
+        assert all("action=reject_reason:" in a["data"] for a in actions)
+
+    @pytest.mark.anyio
+    async def test_approve_records_feedback_without_reason_picker(self, mock_adapters, mock_classifier):
+        service = InteractionService(adapters=mock_adapters, intent_classifier=mock_classifier)
+        req = InteractionRequest(type=InteractionType.APPROVAL, title="T", content="C", user_id="u1")
+        service._pending_requests[req.request_id] = req
+
+        with patch.object(service, '_record_feedback') as mock_record:
+            await service.handle_response(req.request_id, "approve")
+
+        mock_record.assert_called_once_with(req, "approved")
+        mock_adapters[0].send_alert.assert_not_called()
+
+    @pytest.mark.anyio
+    async def test_reason_tap_updates_existing_row_and_acks(self, mock_adapters, mock_classifier):
+        service = InteractionService(adapters=mock_adapters, intent_classifier=mock_classifier)
+        req = InteractionRequest(type=InteractionType.APPROVAL, title="T", content="C", user_id="u1")
+        req.status = InteractionStatus.REJECTED  # already rejected by a prior tap
+        service._pending_requests[req.request_id] = req
+
+        with patch.object(service, '_update_rejection_reason', return_value=True) as mock_update:
+            await service.handle_response(req.request_id, "reject_reason:too_risky")
+
+        mock_update.assert_called_once_with(req.request_id, "too_risky")
+        mock_adapters[0].send_message.assert_called_once()
+
+    @pytest.mark.anyio
+    async def test_reason_tap_survives_already_rejected_status(self, mock_adapters, mock_classifier):
+        """The is_pending() gate must not swallow the reason-picker follow-up
+        just because the request is no longer PENDING (it's REJECTED by design
+        at this point)."""
+        service = InteractionService(adapters=mock_adapters, intent_classifier=mock_classifier)
+        req = InteractionRequest(type=InteractionType.APPROVAL, title="T", content="C", user_id="u1")
+        req.status = InteractionStatus.REJECTED
+        service._pending_requests[req.request_id] = req
+        assert req.is_pending() is False  # sanity: this is the trap the fix avoids
+
+        with patch.object(service, '_update_rejection_reason', return_value=True):
+            await service.handle_response(req.request_id, "reject_reason:bad_timing")
+
+        mock_adapters[0].send_message.assert_called_once()
+
+    @pytest.mark.anyio
+    async def test_unknown_reason_code_rejected(self, mock_adapters, mock_classifier):
+        service = InteractionService(adapters=mock_adapters, intent_classifier=mock_classifier)
+        req = InteractionRequest(type=InteractionType.APPROVAL, title="T", content="C", user_id="u1")
+        req.status = InteractionStatus.REJECTED
+        service._pending_requests[req.request_id] = req
+
+        with patch.object(service, '_update_rejection_reason') as mock_update:
+            await service.handle_response(req.request_id, "reject_reason:not_a_real_code")
+
+        mock_update.assert_not_called()
+        mock_adapters[0].send_message.assert_not_called()
+
+    def test_all_reason_codes_are_registered(self):
+        assert _REJECTION_REASON_CODES == {code for code, _ in REJECTION_REASONS}
+        assert "other" in _REJECTION_REASON_CODES
+
+
+class TestFeedbackPersistence:
+    def test_record_feedback_writes_expected_row(self):
+        service = InteractionService(adapters=[], intent_classifier=None)
+        req = InteractionRequest(type=InteractionType.APPROVAL, title="T", content="C", user_id="u1")
+
+        engine = MagicMock()
+        conn = MagicMock()
+        engine.begin.return_value.__enter__.return_value = conn
+
+        with patch("src.data.database.get_db_engine", return_value=engine):
+            service._record_feedback(req, "rejected", reason_code="too_risky")
+
+        params = conn.execute.call_args[0][1]
+        assert params["decision"] == "rejected"
+        assert params["reason_code"] == "too_risky"
+        assert params["uid"] == "u1"
+        assert params["rid"] == req.request_id
+
+    def test_record_feedback_swallows_db_errors(self):
+        service = InteractionService(adapters=[], intent_classifier=None)
+        req = InteractionRequest(type=InteractionType.APPROVAL, title="T", content="C", user_id="u1")
+
+        with patch("src.data.database.get_db_engine", side_effect=Exception("db down")):
+            service._record_feedback(req, "expired")  # must not raise
+
+    def test_update_rejection_reason_only_targets_null_reason_rows(self):
+        service = InteractionService(adapters=[], intent_classifier=None)
+        engine = MagicMock()
+        conn = MagicMock()
+        conn.execute.return_value.rowcount = 1
+        engine.begin.return_value.__enter__.return_value = conn
+
+        with patch("src.data.database.get_db_engine", return_value=engine):
+            result = service._update_rejection_reason("req-1", "wrong_ticker")
+
+        assert result is True
+        query_text = str(conn.execute.call_args[0][0])
+        assert "reason_code IS NULL" in query_text
+        assert "decision = 'rejected'" in query_text
+
+    def test_update_rejection_reason_returns_false_when_no_match(self):
+        service = InteractionService(adapters=[], intent_classifier=None)
+        engine = MagicMock()
+        conn = MagicMock()
+        conn.execute.return_value.rowcount = 0
+        engine.begin.return_value.__enter__.return_value = conn
+
+        with patch("src.data.database.get_db_engine", return_value=engine):
+            result = service._update_rejection_reason("req-1", "wrong_ticker")
+
+        assert result is False
+
+
+class TestExpiredFeedback:
+    @pytest.mark.anyio
+    async def test_timeout_records_expired_feedback(self, mock_adapters, mock_classifier):
+        service = InteractionService(adapters=mock_adapters, intent_classifier=mock_classifier)
+
+        with patch('time.time') as mock_time, \
+             patch('asyncio.sleep', AsyncMock()), \
+             patch.object(service, '_send_approval_request', AsyncMock()), \
+             patch.object(service, '_record_feedback') as mock_record:
+
+            times = [0, 1, 2]
+            mock_time.side_effect = lambda: times.pop(0) if times else 999
+            result = await service.request_approval("Title", "Content", timeout_seconds=10)
+
+        assert result[1] == InteractionStatus.EXPIRED
+        mock_record.assert_called_once()
+        assert mock_record.call_args[0][1] == "expired"

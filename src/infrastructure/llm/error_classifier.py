@@ -56,6 +56,11 @@ _MESSAGE_PATTERNS: list[tuple[list[str], ErrorCategory]] = [
     (["connection", "network", "dns", "socket", "unreachable", "refused", "connect error"], ErrorCategory.NETWORK_ERROR),
     (["deploy", "model load", "model not ready", "not yet available", "warming up", "initializing", "preparation"], ErrorCategory.SERVER_ERROR),
     (["internal server error", "server error", "service unavailable", "bad gateway", "overloaded", "html error page", "provider unavailable", "provider down"], ErrorCategory.SERVER_ERROR),
+    # 2026-07-12: an empty/blank completion is almost always a transient
+    # provider hiccup (silent truncation, gateway swallowing the body under
+    # load) rather than a permanent policy error — treat it as fallback-
+    # eligible so the pipeline tries the next candidate instead of aborting.
+    (["empty response"], ErrorCategory.SERVER_ERROR),
 ]
 
 

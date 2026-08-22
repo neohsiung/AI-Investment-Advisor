@@ -120,8 +120,8 @@ async def _get_deployment_candidates(user_id: str, amount: float) -> list:
                         "reason": f"AI Discovery - {item['reason']}",
                         "source": "ticker_discovery"
                     })
-    except Exception:
-        pass
+    except Exception as e:
+        logger.warning(f'Exception in cli.py: {e}', exc_info=True)
 
     return results
 

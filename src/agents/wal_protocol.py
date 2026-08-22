@@ -23,6 +23,30 @@ from datetime import datetime
 
 logger = logging.getLogger(__name__)
 
+_GENERAL_RULES_RE = re.compile(
+    r"(^##\s*General\s*Rules\b.*?)(?=\n#+|\Z)", re.DOTALL | re.MULTILINE | re.IGNORECASE
+)
+
+
+def _preserve_general_rules(state_path: str, new_content: str) -> str:
+    """
+    Carry forward any existing "## General Rules" section (distilled by
+    AgentState.save_general_rules in memory_repository.py) into a freshly
+    written STATE.md, so a WAL flush never silently wipes distilled rules.
+    """
+    if not os.path.exists(state_path):
+        return new_content
+    try:
+        with open(state_path, "r", encoding="utf-8") as f:
+            existing = f.read()
+    except Exception as e:
+        logger.warning(f'Exception in wal_protocol.py: {e}', exc_info=True)
+        return new_content
+    match = _GENERAL_RULES_RE.search(existing)
+    if not match:
+        return new_content
+    return new_content.rstrip() + "\n\n" + match.group(1).strip() + "\n"
+
 
 class WalProtocol:
     """
@@ -117,11 +141,18 @@ class WalProtocol:
                 state_path = os.path.join(self._workspace_path, "STATE.md")
                 safe_wal_state = self._redact_fn(wal_state)
                 os.makedirs(os.path.dirname(state_path) or ".", exist_ok=True)
+                new_content = (
+                    f"# Session Checkpoint: {datetime.now().isoformat()}\n\n"
+                    f"{safe_wal_state}"
+                )
+                # 2026-07-12: this used to blind-overwrite the whole file,
+                # silently destroying any "## General Rules" section that
+                # AgentState.save_general_rules() (memory_repository.py) had
+                # distilled into the same STATE.md — the two writers were
+                # colliding. Preserve that section across WAL flushes.
+                new_content = _preserve_general_rules(state_path, new_content)
                 with open(state_path, "w", encoding="utf-8") as f:
-                    f.write(
-                        f"# Session Checkpoint: {datetime.now().isoformat()}\n\n"
-                        f"{safe_wal_state}"
-                    )
+                    f.write(new_content)
 
             # 3. Truncate History: Keep System Prompt + WAL state
             if len(messages) > 3:

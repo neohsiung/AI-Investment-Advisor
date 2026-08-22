@@ -272,7 +272,7 @@ class TestEmailAdapterSendAlert:
             assert result is True
             call_args = mock_notifier.send_report.call_args
             body = call_args[0][1]  # second positional arg
-            assert "### Actions" in body
+            assert "Actions" in body
             assert "View Portfolio" in body
             assert "https://www.etoro.com/watchlists" in body
 

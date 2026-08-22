@@ -225,5 +225,23 @@ RSS_SOURCES = [
     }
 ]
 
-def get_rss_sources():
-    return RSS_SOURCES
+def get_rss_sources(user_id: str = None):
+    sources = list(RSS_SOURCES)
+    if user_id:
+        try:
+            from src.services.settings_service import SettingsService
+            ss = SettingsService(user_id=user_id)
+            custom_sources = ss.get_setting("custom_rss_sources")
+            if custom_sources and isinstance(custom_sources, list):
+                for item in custom_sources:
+                    if isinstance(item, dict) and "url" in item:
+                        sources.append({
+                            "id": item.get("id", f"custom_{abs(hash(item['url'])) % 1000000}"),
+                            "name": item.get("name", "Custom Feed"),
+                            "url": item["url"],
+                            "region": item.get("region", "Custom"),
+                            "category": item.get("category", "Custom")
+                        })
+        except Exception:
+            pass
+    return sources

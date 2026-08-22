@@ -43,6 +43,19 @@ def _get_gateway_registry() -> dict[str, Any]:
                 "openai": OpenAIGateway,
                 "ollama": OllamaGateway,
                 "nvidia": NvidiaGateway,  # NVIDIA NIM (OpenAI-compatible)
+                # 2026-08-12: the llm_providers row for NIM has
+                # provider_code='nvidia_nim', but this registry only had
+                # 'nvidia'. build_config_chain looks the code up here and
+                # skips the model when it misses, logging
+                # "no gateway for provider_code=nvidia_nim" at WARNING — so
+                # every NIM-backed candidate was silently dropped from every
+                # chain. Registering both spellings is the safe fix: renaming
+                # the DB rows would break any other install that already uses
+                # 'nvidia_nim'.
+                # 2026-08-12：DB 中 NIM 的 provider_code 是 'nvidia_nim'，但此註冊
+                # 表只有 'nvidia'，導致所有 NIM 候選模型都被靜默剔除。同時註冊兩種
+                # 拼法為安全解法；改 DB 命名會影響其他已使用該值的安裝。
+                "nvidia_nim": NvidiaGateway,
             }
             # Try to load Anthropic / Groq if available
             try:
@@ -69,7 +82,19 @@ def _decrypt_api_key(encrypted_key: Optional[str]) -> Optional[str]:
         cipher = LLMCredentialCipher()
         return cipher.decrypt(encrypted_key)
     except Exception as e:
-        logger.debug("Could not decrypt API key: %s", e)
+        # 2026-08-12: raised from debug. Returning the still-encrypted blob is
+        # the fail-silent shape — it is a plausible-looking string, so the
+        # caller happily builds a candidate with it and the failure resurfaces
+        # much later as an opaque 401 from the provider, with nothing linking
+        # it back to a cipher problem. The ciphertext is deliberately NOT
+        # logged; only the exception type and the fact it happened.
+        # 2026-08-12：由 debug 提升。回傳仍加密的字串正是靜默失敗的形狀——它看起來
+        # 像合法金鑰，呼叫端會照常建立候選，錯誤直到稍後才以難以追溯的 401 浮現。
+        # 此處刻意不記錄密文本身，只記錄例外類型與發生事實。
+        logger.warning(
+            "Could not decrypt API key (%s); passing the stored value through unchanged, "
+            "which will likely surface as a provider auth error", type(e).__name__
+        )
         return encrypted_key  # Return as-is if decryption fails
 
 
@@ -138,6 +163,8 @@ def _load_from_db(user_id: str, tier: str) -> List[ModelCandidate]:
 
     binding = tier_repo.get_by_tier(user_id, tier)
     if binding is None:
+        binding = tier_repo.get_default_by_tier(tier)
+    if binding is None:
         return []
 
     registry = _get_gateway_registry()
@@ -187,7 +214,8 @@ def _load_from_db(user_id: str, tier: str) -> List[ModelCandidate]:
                     spec = cat.get(provider_code)
                     if spec and spec.default_base_url:
                         base_url = spec.default_base_url
-                except Exception: # nosec B110
+                except Exception as e:# nosec B110
+                    logger.warning(f'Exception in llm_config_chain.py: {e}', exc_info=True)
                     logger.debug("Failed to get base_url from catalog for provider %s", provider_code)
 
             # Get API key from settings (fallback to provider.encrypted_api_key)
@@ -203,16 +231,46 @@ def _load_from_db(user_id: str, tier: str) -> List[ModelCandidate]:
                     row = result.fetchone()
                     if row:
                         settings_key = _decrypt_api_key(row[0])
-                        # Only override if decryption yielded a usable plaintext
-                        if settings_key and not settings_key.startswith("ENC:"):
+                        # Only override if decryption yielded a usable PLAINTEXT.
+                        # Reject anything that still carries an encryption prefix
+                        # (ENC:/FERN:/B64H:) — e.g. a double-wrapped ENC(FERN(key))
+                        # settings value where only the outer layer peels off would
+                        # otherwise overwrite a working provider key and cause 401s.
+                        # (2026-07-11)
+                        _enc_prefixes = ("ENC:", "FERN:", "B64H:")
+                        if settings_key and not settings_key.startswith(_enc_prefixes):
                             api_key = settings_key
                         else:
                             logger.debug(
                                 "Settings key for %s not usable (still encrypted?), "
                                 "keeping provider key", provider_code
                             )
-            except Exception: # nosec B110
+            except Exception as e:# nosec B110
+                logger.warning(f'Exception in llm_config_chain.py: {e}', exc_info=True)
                 logger.debug("Failed to get API key for provider %s from settings", provider_code)
+
+            extra_config = {
+                "tier": tier,
+                # 2026-08-12: fast raised 300 -> 1200. Every model now backing
+                # the fast tier is a reasoning model (NIM gpt-oss-120b,
+                # Nemotron 3.5 Lightning, Nemotron 3 Super), and they spend
+                # tokens on reasoning before emitting the answer. At 300 the
+                # Risk agent's JSON was cut mid-string:
+                #   Expecting ',' delimiter: line 1 column 200 (char 199)
+                # which threw, so CompositorService returned _fallback_score()
+                # — a hash of the ticker. The cap meant to save cost was
+                # silently converting paid-for calls into fake scores.
+                # 2026-08-12：fast 由 300 提高到 1200。目前 fast tier 背後全是推理
+                # 模型，會先花 token 推理再輸出答案；300 會把 JSON 從中截斷而拋錯，
+                # CompositorService 遂回傳以 ticker 雜湊產生的假分數——原本想省成本
+                # 的上限，實際上把已付費的呼叫變成了假分數。
+                "max_tokens": 1200 if tier == "fast" else (8192 if tier == "advanced" else 2048),
+                "temperature": 0.2 if tier == "fast" else 0.7,
+                "headers": {
+                    "Cache-Control": "ephem",
+                    "X-Prompt-Cache": "true",
+                }
+            }
 
             candidates.append(ModelCandidate(
                 model_id=model_id,
@@ -223,6 +281,7 @@ def _load_from_db(user_id: str, tier: str) -> List[ModelCandidate]:
                 api_key=api_key,
                 max_retries=max_retries,
                 timeout_seconds=timeout_seconds,
+                extra_config=extra_config,
             ))
 
         except Exception as e:

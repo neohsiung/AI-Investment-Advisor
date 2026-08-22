@@ -80,50 +80,20 @@ services:
       otel-collector:
         condition: service_started
 
-  scheduler:
-    build:
-      context: .
-      dockerfile: services/scheduler/Dockerfile
-    container_name: investment_advisor_scheduler
-    volumes:
-      - ./data:/workspace/data
-      - ./src:/workspace/src
-      - ./prompts:/workspace/prompts
-      - ./secrets/client_secret.json:/workspace/client_secret.json:ro
-    env_file:
-      - .env
-    environment:
-      - MCP_SERVER_URL=http://mcp_server:8000
-      - MEMORY_BACKEND=redis
-      - REDIS_URL=redis://investment_advisor_redis:6379/0
-      - OTEL_SERVICE_NAME=scheduler
-      - OTEL_EXPORTER_OTLP_ENDPOINT=http://otel-collector:4317
-
-      - DB_USER=${DB_USER}
-      - DB_PASS=${DB_PASS}
-      - DB_HOST=investment_advisor_db
-      - DB_PORT=5432
-      - DB_NAME=${DB_NAME}
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
-    restart: unless-stopped
-    healthcheck:
-      test: ["CMD-SHELL", "pgrep -f 'python3 src/cron/scheduler.py' || exit 1"]
-      interval: 60s
-      timeout: 10s
-      retries: 3
-    networks:
-      - advisor-net
-    depends_on:
-      postgres:
-        condition: service_healthy
-      mcp_server:
-        condition: service_started
-      redis:
-        condition: service_healthy
-
-      otel-collector:
-        condition: service_started
+  # 2. Task Scheduler — REMOVED 2026-08-02 (dev caught up with prod).
+  # This service had no `command:` override, so it fell through to
+  # services/scheduler/Dockerfile's `CMD [..., "--mode", "scheduler"]`, which
+  # runs SchedulerService.reload_schedule() and registers a minutely sentinel
+  # tick — while this same compose file ALSO runs `celery beat` below. That is
+  # the exact double-fire prod removed on 2026-07-12 (see the note in
+  # docker-compose.prod.yml), and it doubled paid Tavily/FRED/LLM calls in dev.
+  # Every job it registered has a beat equivalent: daily → daily-report,
+  # weekly → weekly-report-trigger, eToro sync → broker-position-sync,
+  # minutely tick → sentinel-minutely-tick.
+  # Nothing depends_on it, and its healthcheck grepped `src/cron/scheduler.py`,
+  # a path that does not exist in this repo — so it was permanently unhealthy.
+  # 2026-08-02 移除：dev 這個 service 與下方 celery beat 雙軌，造成 sentinel tick
+  # 重複觸發（prod 已於 2026-07-12 移除同樣問題）。它註冊的每個 job 都有 beat 對應項。
 
   celery_worker:
     build:
@@ -264,7 +234,7 @@ services:
       - N8N_PORT=5678
       - N8N_PROTOCOL=http
       - NODE_ENV=production
-      - WEBHOOK_URL=https://chummy-nonpathologically-lilla.ngrok-free.dev/
+      - WEBHOOK_URL=https://${NGROK_DOMAIN}/
       - N8N_OTEL_SDK_ENABLED=true
       - OTEL_EXPORTER_OTLP_ENDPOINT=http://otel-collector:4317
       - OTEL_EXPORTER_OTLP_PROTOCOL=grpc

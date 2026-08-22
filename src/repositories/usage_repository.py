@@ -26,12 +26,17 @@ class UsageRepository(BaseRepository):
         provider: str,
         prompt_tokens: int,
         completion_tokens: int,
-        metadata: Optional[Dict[str, Any]] = None
+        metadata: Optional[dict] = None
     ):
         """
         Persist an LLM usage log entry with cost calculation using TierConfig [Phase 14].
         """
         try:
+            import re
+            # Set user_id to None if it is not a valid UUID format (e.g., "system") to avoid ForeignKeyViolation.
+            if not user_id or not re.match(r"^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$", str(user_id)):
+                user_id = None
+
             from src.infrastructure.llm.tier_config import TierConfig
             spec = TierConfig().get_spec(tier)
             total_cost = 0.0

@@ -52,6 +52,9 @@ def get_current_user_id(request: Request, token: str = Depends(oauth2_scheme)) -
 from src.api.v1.endpoints import auth, dashboard, transactions, settings, chat
 from src.api.v1.endpoints import llm_settings
 from src.api.v1.endpoints import ticker_universe
+from src.api.v1.endpoints import backtest
+from src.api.v1.endpoints import council
+from src.api.v1.endpoints import loop_health
 
 api_v1_router.include_router(auth.router, prefix="/auth", tags=["Authentication"])
 
@@ -59,6 +62,9 @@ api_v1_router.include_router(dashboard.router, prefix="/dashboard", tags=["Dashb
 api_v1_router.include_router(transactions.router, prefix="/transactions", tags=["Transactions"])
 api_v1_router.include_router(settings.router, prefix="/settings", tags=["Settings"])
 api_v1_router.include_router(chat.router, prefix="/chat", tags=["AI Advisor"])
+api_v1_router.include_router(backtest.router, prefix="/backtest", tags=["Backtest"])
+api_v1_router.include_router(council.router, prefix="/council", tags=["Council Decisions"])
+api_v1_router.include_router(loop_health.router, prefix="/loop-health", tags=["Loop Health"])
 
 # Ticker Universe
 api_v1_router.include_router(

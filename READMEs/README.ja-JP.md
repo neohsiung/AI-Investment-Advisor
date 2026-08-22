@@ -64,15 +64,20 @@ cp .env.example .env
 
 | サービス | URL |
 |:---------|:----|
-| Next.js ダッシュボード | [http://localhost:3000](http://localhost:3000) |
-| FastAPI / MCP Server | [http://localhost:8000](http://localhost:8000) |
+| ゲートウェイ (nginx、本番のみ) | [http://127.0.0.1:8088](http://127.0.0.1:8088) |
+| Next.js ダッシュボード | [http://localhost:3001](http://localhost:3001) |
+| FastAPI / MCP Server | [http://localhost:8000](http://localhost:8000)（dev は 8001）|
+| SigNoz APM | [http://127.0.0.1:8080](http://127.0.0.1:8080) |
+
+> dev 環境の nginx はホストポートを公開していません。上記のフロントエンドと
+> API のポートに直接アクセスしてください。ゲートウェイは本番のみです。
 
 ---
 
 ## 📄 ライセンス
 
-- **ライセンス**: [MIT License](../LICENSE)
-- **免責事項**: 本プロジェクトは**教育・研究目的のみ**です。投資アドバイスではありません。
+- **ライセンス**: [Apache License 2.0](../LICENSE)
+- **免責事項**: 本ソフトウェアは市場を自律的に分析し、実際のブローカー認証情報を設定すると実際の資金で取引を行う可能性があります。投資アドバイスではなく、いかなる保証もなく「現状のまま」提供されます。詳細は [NOTICE](../NOTICE) を参照してください。
 
 ---
 

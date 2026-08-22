@@ -35,8 +35,8 @@ class LeverageCalculator:
         if _LOTS_AVAILABLE:
             try:
                 self._lot_repo = AlchemyPositionLotRepository(self.repo.engine)
-            except Exception:
-                pass
+            except Exception as e:
+                logger.warning(f'Exception in analytics_service.py: {e}', exc_info=True)
 
     def _get_lot_avg_cost_map(self, user_id: str) -> Dict[str, float]:
         """Return FIFO avg_cost per ticker from position_lots, or {} if unavailable."""
@@ -221,7 +221,8 @@ class PnLCalculator:
         if _LOTS_AVAILABLE:
             try:
                 self._lot_repo = AlchemyPositionLotRepository(self.repo.engine)
-            except Exception:
+            except Exception as e:
+                logger.warning(f'Exception in analytics_service.py: {e}', exc_info=True)
                 pass  # position_lots table not ready yet — graceful degradation
 
     def _get_lot_avg_cost_map(self, user_id: str) -> Dict[str, float]:

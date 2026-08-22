@@ -36,9 +36,12 @@ def test_format_time():
 # --- Cache Tests (Redis Mocked) ---
 @pytest.fixture
 def mock_redis():
-    with patch('redis.from_url') as mock_from_url:
+    # 2026-08-10: patch target moved from `redis.from_url` to the shared pool
+    # accessor — ResponseCache no longer constructs its own client.
+    # 2026-08-10：patch 目標改為共用連線池存取函式。
+    with patch('src.infrastructure.cache.redis_client.get_redis_sync') as mock_get_redis:
         mock_client = MagicMock()
-        mock_from_url.return_value = mock_client
+        mock_get_redis.return_value = mock_client
         yield mock_client
 
 def test_cache_operations(mock_redis):
@@ -46,7 +49,11 @@ def test_cache_operations(mock_redis):
     
     # Test Set
     cache.set("TestAgent", "Hello", "Response 1")
-    assert mock_redis.setex.called
+    # `set(key, value, ex=ttl)`, not the deprecated `setex` — the TTL must
+    # still be applied, or cached responses would never expire.
+    mock_redis.set.assert_called_once()
+    assert mock_redis.set.call_args.kwargs["ex"] == 3600
+    assert not mock_redis.setex.called
     
     # Test Get (Hit)
     mock_redis.get.return_value = "Response 1"

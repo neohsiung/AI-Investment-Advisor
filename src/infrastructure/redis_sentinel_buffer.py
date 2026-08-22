@@ -32,24 +32,36 @@ class RedisSentinelBuffer:
     """
 
     def __init__(self, redis_url: str = None):
-        self._redis_url = redis_url or os.getenv("REDIS_URL", "redis://redis:6379/0")
+        # `redis_url` is retained for API compatibility but is no longer used:
+        # the client now comes from the process-wide pool, which resolves
+        # REDIS_URL itself. No caller has ever passed an override.
+        # redis_url 保留僅為相容；客戶端改由行程共用連線池提供，其自行解析
+        # REDIS_URL。目前沒有任何呼叫端傳入覆寫值。
+        self._redis_url = redis_url
         self._client: Optional[Any] = None  # lazy init
 
     def _key(self, user_id: str) -> str:
         return _REDIS_KEY_TEMPLATE.format(user_id=user_id)
 
     async def _get_client(self):
-        """Lazy-initialize async Redis client."""
+        """
+        Return the process-wide async Redis client.
+        取得行程共用的 async Redis 客戶端。
+
+        2026-08-10: this used to cache a client per *instance*, which only
+        helps when the owner is itself a singleton. SentinelService is
+        constructed fresh per Celery task (tasks.py) and per webhook request
+        (webhook_service.py), so each one minted and abandoned another pool.
+        The shared accessor makes the caching process-wide instead.
+        2026-08-10：原本以 instance 為單位快取，但 SentinelService 每個 Celery
+        task 與每次 webhook 請求都重建，等於每次都新建並遺棄一個連線池。
+        """
         if self._client is None:
             try:
-                import redis.asyncio as aioredis
-                self._client = aioredis.from_url(
-                    self._redis_url,
-                    decode_responses=True,
-                    socket_connect_timeout=2,
-                )
+                from src.infrastructure.cache.redis_client import get_redis
+
+                self._client = await get_redis(decode_responses=True)
                 await self._client.ping()
-                logger.info(f"RedisSentinelBuffer: Connected to {self._redis_url}")
             except Exception as e:
                 logger.error(f"RedisSentinelBuffer: Failed to connect to Redis: {e}")
                 self._client = None
@@ -74,8 +86,8 @@ class RedisSentinelBuffer:
                     if t.get("id") == trigger.get("id"):
                         logger.debug(f"RedisSentinelBuffer: Trigger {trigger.get('id')} already buffered, skipping.")
                         return False
-                except Exception:
-                    pass
+                except Exception as e:
+                    logger.warning(f'Exception in redis_sentinel_buffer.py: {e}', exc_info=True)
             await r.zadd(key, {member: score})
             logger.info(f"RedisSentinelBuffer: Buffered trigger {trigger.get('id')} for user {user_id[:8]}... deadline={deadline_minutes}m")
             return True
@@ -99,8 +111,8 @@ class RedisSentinelBuffer:
                 for m in members:
                     try:
                         triggers.append(json.loads(m))
-                    except Exception:
-                        pass
+                    except Exception as e:
+                        logger.warning(f'Exception in redis_sentinel_buffer.py: {e}', exc_info=True)
                 logger.info(f"RedisSentinelBuffer: Flushed {len(triggers)} due trigger(s) for user {user_id[:8]}...")
                 return triggers
         except Exception as e:
@@ -123,8 +135,8 @@ class RedisSentinelBuffer:
                         await r.zrem(key, m)
                         logger.info(f"RedisSentinelBuffer: Removed trigger {trigger_id} for {user_id[:8]}...")
                         return True
-                except Exception:
-                    pass
+                except Exception as e:
+                    logger.warning(f'Exception in redis_sentinel_buffer.py: {e}', exc_info=True)
         except Exception as e:
             logger.error(f"RedisSentinelBuffer.remove failed: {e}")
         return False
@@ -134,7 +146,8 @@ class RedisSentinelBuffer:
         try:
             r = await self._get_client()
             return await r.zcard(self._key(user_id))
-        except Exception:
+        except Exception as e:
+            logger.warning(f'Exception in redis_sentinel_buffer.py: {e}', exc_info=True)
             return 0
 
     async def all_pending(self, user_id: str) -> List[Dict[str, Any]]:
@@ -143,5 +156,30 @@ class RedisSentinelBuffer:
             r = await self._get_client()
             members = await r.zrange(self._key(user_id), 0, -1)
             return [json.loads(m) for m in members]
-        except Exception:
+        except Exception as e:
+            logger.warning(f'Exception in redis_sentinel_buffer.py: {e}', exc_info=True)
             return []
+
+    async def try_acquire(self, key: str, ttl_seconds: int) -> bool:
+        """
+        Best-effort distributed lock via SETNX+EX. Returns True if this caller
+        won the key, False if someone already holds it.
+
+        Deliberately FAILS OPEN: if Redis is unreachable the caller proceeds.
+        The Sentinel is the system's safety monitor — skipping ticks is worse
+        than an occasional duplicate — so a Redis outage must not silence it.
+        Mirrors the fallback in WebhookService._acquire_concurrency_lock.
+
+        There is no release method on purpose: the lock is released by TTL
+        expiry only. Releasing on completion would re-open the very window the
+        lock exists to close.
+        以 SETNX+EX 實作的盡力鎖；Redis 失效時 fail-open 照跑（哨兵漏跑比重複更糟）。
+        刻意不提供釋放方法 —— 提早釋放等於重開重複窗口，只靠 TTL 到期。
+        """
+        try:
+            r = await self._get_client()
+            acquired = await r.set(key, "1", nx=True, ex=ttl_seconds)
+            return bool(acquired)
+        except Exception as e:
+            logger.warning(f"RedisSentinelBuffer.try_acquire failed for {key}, failing open: {e}")
+            return True

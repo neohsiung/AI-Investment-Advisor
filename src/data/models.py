@@ -1,4 +1,4 @@
-from sqlalchemy import Column, String, Text, DateTime, Numeric, Integer, ForeignKey, JSON, Boolean, UniqueConstraint, CheckConstraint, Index, Date
+from sqlalchemy import Column, String, Text, DateTime, Numeric, Integer, BigInteger, ForeignKey, JSON, Boolean, UniqueConstraint, CheckConstraint, Index, Date, desc, text
 from sqlalchemy.orm import declarative_base
 from sqlalchemy.sql import func
 from sqlalchemy.dialects import postgresql
@@ -18,6 +18,16 @@ def _ARRAY(item_type):
 def _DOUBLE():
     # On SQLite, we use Numeric/Float
     return Numeric(asdecimal=False).with_variant(postgresql.DOUBLE_PRECISION(), "postgresql")
+
+def _REAL():
+    # PG REAL (4-byte float). SQLite has no distinct REAL width.
+    return Numeric(asdecimal=False).with_variant(postgresql.REAL(), "postgresql")
+
+def _UUID():
+    # PG native uuid; String on SQLite so Base.metadata.create_all() still
+    # works for the in-memory test database.
+    # PG 原生 uuid；SQLite 退回 String，讓測試用的記憶體資料庫仍能建表。
+    return String(36).with_variant(postgresql.UUID(as_uuid=False), "postgresql")
 
 Base = declarative_base()
 
@@ -106,6 +116,16 @@ class RiskKeyword(Base):
     is_active = Column(Integer, default=1)
     source = Column(String, default='seed')
     created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+    # Added by 009_risk_keywords_unique because RiskKeywordRepository's
+    # `INSERT ... ON CONFLICT (keyword)` was silently failing without it. The
+    # baseline's inline UNIQUE was dropped by f9861a2caa12, so this is the only
+    # one — the model just never declared it.
+    # 009 補上的唯一約束（缺了會讓 ON CONFLICT (keyword) 靜默失效）；
+    # baseline 那個已被 f9861a2caa12 移除，所以只有這一個。
+    __table_args__ = (
+        UniqueConstraint('keyword', name='uq_risk_keywords_keyword'),
+    )
 
 class PromptCache(Base):
     """
@@ -334,6 +354,24 @@ class Transaction(Base):
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
 
+    __table_args__ = (
+        CheckConstraint(
+            "action IN ('BUY', 'SELL', 'DEPOSIT', 'WITHDRAWAL', 'DIVIDEND', 'FEE', 'TAX')",
+            name='chk_tx_action',
+        ),
+        CheckConstraint(
+            "action NOT IN ('BUY', 'SELL') OR (ticker IS NOT NULL AND TRIM(ticker) <> '')",
+            name='chk_tx_trade_has_ticker',
+        ),
+        CheckConstraint("quantity > 0", name='chk_tx_qty_positive'),
+        CheckConstraint("price >= 0", name='chk_tx_price_nonneg'),
+        CheckConstraint("amount >= 0", name='chk_tx_amount_nonneg'),
+        CheckConstraint(
+            "entry_category IN ('trade', 'capital_flow', 'sync_adjustment')",
+            name='transactions_entry_category_check',
+        ),
+    )
+
 class PositionLot(Base):
     """
     `position_lots` — Tracks specific tax lots for O(1) avg_cost and PnL calculation.
@@ -435,7 +473,12 @@ class CouncilMinute(Base):
     participants = Column(Text) # JSON list of agent names
     consensus = Column(Text)
     transcript = Column(Text)
-    embedding = Column(Vector(1536))
+    # 768, not 1536: 006_council_embedding_768 narrowed the column to match the
+    # local nomic-embed-text model used everywhere else in the stack. The DB has
+    # been vector(768) since; only this declaration was left behind.
+    # 006 已把欄位收窄為 vector(768) 以對齊本地 nomic-embed-text，DB 一直是 768，
+    # 只有這行沒跟上。
+    embedding = Column(Vector(768))
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
 class ReportJob(Base):
@@ -677,17 +720,442 @@ class EventQueue(Base):
     STATUS_ARCHIVED = 'archived'
 
     id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
-    user_id = Column(String, nullable=False, index=True)
+    # No `index=True` on user_id or batch_id: it would auto-name the indexes
+    # ix_event_queue_* , but 005_add_event_queue creates idx_event_queue_batch_id
+    # and only a composite over user_id. Declaring them explicitly below keeps
+    # the names matching what the database actually has.
+    # 不用 index=True：它會自動命名成 ix_event_queue_*，但 005 建的是
+    # idx_event_queue_batch_id，且 user_id 只有複合索引沒有單欄索引。
+    user_id = Column(String, nullable=False)
     event_type = Column(String(50), nullable=False)
     content = Column(_JSONB(), nullable=False, default=dict)
     tier = Column(String(10), nullable=False, default=TIER_P2)
     priority = Column(Integer, nullable=False, default=0)
     status = Column(String(20), nullable=False, default=STATUS_PENDING)
-    batch_id = Column(String, nullable=True, index=True)
+    batch_id = Column(String, nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     processed_at = Column(DateTime(timezone=True), nullable=True)
 
     __table_args__ = (
         Index('idx_event_queue_user_tier_status', 'user_id', 'tier', 'status'),
         Index('idx_event_queue_created_at', 'created_at'),
+        Index('idx_event_queue_batch_id', 'batch_id'),
     )
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Raw-SQL-managed tables (migrations 007-017)
+#
+# These eleven tables are created by migrations and accessed exclusively through
+# raw SQL — per AGENTS.md, "raw SQL for performance paths, ORM only for admin
+# entities". The models below are therefore DECLARATIONS ONLY: nothing queries
+# through them, and adding them changes no runtime behaviour.
+#
+# They exist for two reasons:
+#   1. `alembic check` reflects the live schema and emits a drop_table for every
+#      table with no matching model. Without these, the CI migration gate can
+#      never pass.
+#   2. scripts/init_db.py:64 builds a fresh database with
+#      Base.metadata.create_all() and then stamps head. Before this, a
+#      brand-new production install got none of these eleven tables and was
+#      then marked as fully migrated. (Note this does NOT apply to
+#      src/data/database.py's init_db(), a hand-written DDL script that never
+#      calls create_all — which is why tests/conftest.py still creates
+#      decision_outcomes by hand.)
+#
+# Type families matter and are easy to get wrong: the eight raw-SQL tables use
+# PG TEXT (-> `Text`), while decision_outcomes / backtest_runs /
+# backtest_equity_points were built with op.create_table and sa.String()
+# (-> VARCHAR, so `String`). DESC indexes must spell out desc(), or autogenerate
+# reports a remove+add pair every run.
+#
+# 這十一張表由 migration 建立、只透過 raw SQL 存取，以下純屬宣告：沒有任何查詢
+# 走它們，加上去不改變 runtime 行為。目的一是讓 `alembic check` 不再誤判為
+# drop_table，二是讓 init_db.py 的 create_all() 路徑不再漏建這些表。
+# 型別家族容易寫錯：raw SQL 那八張用 PG TEXT，op.create_table 那三張是 VARCHAR。
+# DESC 索引一定要寫出 desc()，否則每次都會產生 remove+add。
+# ─────────────────────────────────────────────────────────────────────────────
+
+class DecisionOutcome(Base):
+    """`decision_outcomes` — alembic 007. P1 alpha-anchored decision memory."""
+    __tablename__ = 'decision_outcomes'
+
+    id = Column(String, primary_key=True)
+    user_id = Column(String, nullable=False, index=True)
+    session_id = Column(String)
+    agent_name = Column(String, nullable=False)
+    ticker = Column(String, nullable=False, index=True)
+    signal = Column(String, nullable=False)
+    price_at_decision = Column(Numeric(18, 8), nullable=False)
+    decided_at = Column(DateTime(timezone=True), nullable=False,
+                        server_default=func.current_timestamp())
+    horizon_days = Column(Integer, nullable=False, server_default='5')
+    resolved_at = Column(DateTime(timezone=True))
+    realized_return_pct = Column(Numeric(10, 4))
+    benchmark_return_pct = Column(Numeric(10, 4))
+    alpha_pct = Column(Numeric(10, 4))
+    lesson = Column(Text)
+    created_at = Column(DateTime(timezone=True), nullable=False,
+                        server_default=func.current_timestamp())
+
+    __table_args__ = (
+        Index('ix_decision_outcomes_pending', 'resolved_at', 'decided_at'),
+    )
+
+
+class BacktestRun(Base):
+    """`backtest_runs` — alembic 008."""
+    __tablename__ = 'backtest_runs'
+
+    id = Column(String, primary_key=True)
+    user_id = Column(String, nullable=False, index=True)
+    ticker = Column(String, nullable=False, index=True)
+    strategy_name = Column(String, nullable=False)
+    initial_cash = Column(Numeric(18, 4), nullable=False)
+    final_cash = Column(Numeric(18, 4), nullable=False)
+    metrics = Column(_JSONB(), nullable=False)
+    trades = Column(_JSONB(), nullable=False)
+    params = Column(_JSONB())
+    created_at = Column(DateTime(timezone=True), nullable=False,
+                        server_default=func.current_timestamp())
+
+
+class BacktestEquityPoint(Base):
+    """`backtest_equity_points` — alembic 008. Equity curve for a run."""
+    __tablename__ = 'backtest_equity_points'
+
+    id = Column(String, primary_key=True)
+    run_id = Column(String, ForeignKey('backtest_runs.id', ondelete='CASCADE'),
+                    nullable=False, index=True)
+    seq = Column(Integer, nullable=False)
+    # Stored as a string, not Date — matches the migration.
+    date = Column(String)
+    equity = Column(Numeric(18, 4), nullable=False)
+
+
+class TaskRun(Base):
+    """
+    `task_runs` — alembic 010. Celery signal telemetry.
+
+    Also created at runtime by src/infrastructure/task_telemetry.py:39; both
+    use IF NOT EXISTS, so they coexist, but the DDL lives in two places.
+    """
+    __tablename__ = 'task_runs'
+
+    id = Column(BigInteger, primary_key=True)
+    task_name = Column(Text, nullable=False)
+    task_id = Column(Text)
+    status = Column(Text, nullable=False)
+    error_class = Column(Text)
+    error_snippet = Column(Text)
+    duration_ms = Column(_DOUBLE())
+    finished_at = Column(DateTime(timezone=True), nullable=False,
+                         server_default=func.now())
+
+    __table_args__ = (
+        CheckConstraint("status IN ('success', 'soft_fail', 'failure')",
+                        name='task_runs_status_check'),
+        Index('idx_task_runs_name_time', 'task_name', desc('finished_at')),
+        Index('idx_task_runs_status_time', 'status', desc('finished_at')),
+    )
+
+
+class ExpectedOutcome(Base):
+    """`expected_outcomes` — alembic 011. Dead-man switch definitions."""
+    __tablename__ = 'expected_outcomes'
+
+    id = Column(BigInteger, primary_key=True)
+    name = Column(Text, nullable=False)
+    kind = Column(Text, nullable=False)
+    target = Column(Text, nullable=False)
+    max_gap_seconds = Column(Integer, nullable=False)
+    enabled = Column(Boolean, nullable=False, server_default=text('true'))
+    last_ok_at = Column(DateTime(timezone=True))
+    last_alerted_at = Column(DateTime(timezone=True))
+    created_at = Column(DateTime(timezone=True), nullable=False,
+                        server_default=func.now())
+
+    __table_args__ = (
+        # Postgres auto-named the migration's inline UNIQUE; spell it out so the
+        # names match. / migration 用的是 inline UNIQUE，PG 自動命名，這裡明寫。
+        UniqueConstraint('name', name='expected_outcomes_name_key'),
+        CheckConstraint("kind IN ('task_success', 'named_check')",
+                        name='expected_outcomes_kind_check'),
+    )
+
+
+class AgentRule(Base):
+    """`agent_rules` — alembic 012, extended by 014 and 018."""
+    __tablename__ = 'agent_rules'
+
+    id = Column(BigInteger, primary_key=True)
+    user_id = Column(Text, nullable=False)
+    agent_name = Column(Text, nullable=False)
+    rule_text = Column(Text, nullable=False)
+    status = Column(Text, nullable=False, server_default='active')
+    version = Column(Integer, nullable=False, server_default='1')
+    created_at = Column(DateTime(timezone=True), nullable=False,
+                        server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), nullable=False,
+                        server_default=func.now())
+    # 014
+    score = Column(_DOUBLE(), nullable=False, server_default='0')
+    times_cited = Column(Integer, nullable=False, server_default='0')
+    expires_at = Column(DateTime(timezone=True))
+    embedding = Column(Vector(768))
+    source_decision_id = Column(Text)
+    # 018
+    gate_status = Column(Text)
+    gate_checked_at = Column(DateTime(timezone=True))
+    gate_details = Column(_JSONB())
+
+    __table_args__ = (
+        CheckConstraint(
+            "status IN ('candidate','active','superseded','retired','rejected')",
+            name='agent_rules_status_check'),
+        # idx_agent_rules_lookup (012) and idx_agent_rules_active_lookup (014)
+        # have identical column lists — 014 added the second without dropping
+        # the first. Both are declared because alembic matches by name; dropping
+        # the duplicate belongs in its own migration.
+        # 兩個索引欄位完全相同（014 新增時沒刪掉 012 的）；alembic 按名字比對，
+        # 所以兩個都要宣告，清理留待另一支 migration。
+        Index('idx_agent_rules_lookup', 'user_id', 'agent_name', 'status'),
+        Index('idx_agent_rules_active_lookup', 'user_id', 'agent_name', 'status'),
+        Index('idx_agent_rules_candidate_lookup', 'user_id',
+              postgresql_where=text("status = 'candidate'")),
+    )
+
+
+class RuleCitation(Base):
+    """`rule_citations` — alembic 014. Which rules a decision actually used."""
+    __tablename__ = 'rule_citations'
+
+    id = Column(BigInteger, primary_key=True)
+    rule_id = Column(BigInteger, ForeignKey('agent_rules.id', ondelete='CASCADE'),
+                     nullable=False)
+    decision_id = Column(Text, nullable=False)
+    applied = Column(Boolean, nullable=False, server_default=text('true'))
+    alpha_pct = Column(_DOUBLE())
+    created_at = Column(DateTime(timezone=True), nullable=False,
+                        server_default=func.now())
+
+    __table_args__ = (
+        Index('idx_rule_citations_rule', 'rule_id'),
+        Index('idx_rule_citations_decision', 'decision_id'),
+    )
+
+
+class InteractionFeedback(Base):
+    """`interaction_feedback` — alembic 013, `ticker` added by 015."""
+    __tablename__ = 'interaction_feedback'
+
+    id = Column(BigInteger, primary_key=True)
+    request_id = Column(Text, nullable=False)
+    user_id = Column(Text, nullable=False)
+    decision = Column(Text, nullable=False)
+    reason_code = Column(Text)
+    free_text = Column(Text)
+    responded_in_s = Column(_DOUBLE())
+    created_at = Column(DateTime(timezone=True), nullable=False,
+                        server_default=func.now())
+    ticker = Column(Text)
+
+    __table_args__ = (
+        CheckConstraint("decision IN ('approved','rejected','expired')",
+                        name='interaction_feedback_decision_check'),
+        Index('idx_interaction_feedback_user', 'user_id', desc('created_at')),
+        Index('idx_interaction_feedback_request', 'request_id'),
+    )
+
+
+class UserPreference(Base):
+    """
+    `user_preferences` — alembic 015. Derived preference profile.
+
+    Natural PK on user_id, no surrogate id. Distinct from `users.preferences`,
+    which is a JSON column on a different table.
+    """
+    __tablename__ = 'user_preferences'
+
+    user_id = Column(Text, primary_key=True)
+    risk_appetite_score = Column(_DOUBLE())
+    sector_aversions = Column(_JSONB(), nullable=False)
+    position_comfort = Column(_DOUBLE())
+    summary_text = Column(Text)
+    sample_size = Column(Integer, nullable=False, server_default='0')
+    updated_at = Column(DateTime(timezone=True), nullable=False,
+                        server_default=func.now())
+
+
+class RemediationLog(Base):
+    """`remediation_log` — alembic 016. T1/T2/T3 self-repair audit trail."""
+    __tablename__ = 'remediation_log'
+
+    id = Column(BigInteger, primary_key=True)
+    task_name = Column(Text, nullable=False)
+    error_class = Column(Text, nullable=False)
+    tier = Column(Text, nullable=False)
+    action_taken = Column(Text, nullable=False)
+    diagnosis = Column(Text)
+    created_at = Column(DateTime(timezone=True), nullable=False,
+                        server_default=func.now())
+
+    __table_args__ = (
+        CheckConstraint("tier IN ('T1','T2','T3')", name='remediation_log_tier_check'),
+        Index('idx_remediation_log_lookup', 'task_name', 'error_class',
+              desc('created_at')),
+    )
+
+
+class ProductEvent(Base):
+    """`product_events` — alembic 017. Opt-in telemetry, off by default."""
+    __tablename__ = 'product_events'
+
+    id = Column(BigInteger, primary_key=True)
+    user_id = Column(Text, nullable=False)
+    event = Column(Text, nullable=False)
+    props = Column(_JSONB(), nullable=False)
+    created_at = Column(DateTime(timezone=True), nullable=False,
+                        server_default=func.now())
+
+    __table_args__ = (
+        Index('idx_product_events_lookup', 'event', desc('created_at')),
+    )
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Runtime-created tables, promoted into the ORM (2026-08-13)
+#
+# These five were created by `CREATE TABLE IF NOT EXISTS` inside the
+# repositories themselves — ticker_universe_repository.py:25,46,68,83 and
+# agent_repository.py:52 — and were therefore invisible to both the migration
+# chain and `alembic check`. alembic/env.py named them in a
+# `_RUNTIME_MANAGED_TABLES` filter to stop autogenerate emitting a drop_table
+# for each, and its own comment recorded the cost: "these tables stay outside
+# migration control, so editing their DDL in the repositories will not be
+# caught by CI. Promoting them into the chain is a separate refactor."
+#
+# This is that refactor. The models below are declarations only — every query
+# against these tables is still raw SQL, per AGENTS.md — but they close the
+# gap: the DDL in the repositories and the schema CI compares against are now
+# the same statement of truth, and migration 018 puts the tables under the
+# chain for fresh installs.
+#
+# Columns were transcribed from the live production schema (pg_attribute), not
+# from the repository DDL, so any drift that had already happened is captured
+# rather than papered over. There was none.
+#
+# 這五張表由 repository 以 `CREATE TABLE IF NOT EXISTS` 在 runtime 建立，
+# 因此同時不在 migration 鏈也不在 `alembic check` 的比對範圍內。env.py 以
+# `_RUNTIME_MANAGED_TABLES` 過濾掉它們以免產生 drop_table，代價寫在它自己的
+# 註解裡：改動 DDL 不會被 CI 攔到。本次即為該註解所說的「另一次重構」。
+# 欄位取自 production 實際 schema 而非 repository DDL，以捕捉既有漂移（結果為無）。
+# ─────────────────────────────────────────────────────────────────────────────
+
+class TickerUniverse(Base):
+    """`ticker_universe` — the per-user candidate set the research loop scores."""
+    __tablename__ = 'ticker_universe'
+
+    id = Column(_UUID(), primary_key=True, default=lambda: str(uuid.uuid4()))
+    user_id = Column(_UUID(), nullable=False)
+    ticker = Column(String(10), nullable=False)
+    company_name = Column(Text)
+    sector = Column(String(50))
+    industry = Column(String(50))
+    status = Column(String(20), server_default='active')
+    added_at = Column(DateTime(timezone=True), server_default=func.now())
+    removed_at = Column(DateTime(timezone=True))
+    removal_reason = Column(Text)
+    last_reviewed_at = Column(DateTime(timezone=True))
+
+    __table_args__ = (
+        UniqueConstraint('user_id', 'ticker', name='ticker_universe_user_id_ticker_key'),
+        # Partial index — the WHERE clause must be declared, or autogenerate
+        # reports a remove+add pair on every run.
+        Index('idx_ticker_universe_active', 'user_id', 'status',
+              postgresql_where=text("status = 'active'")),
+    )
+
+
+class TickerResearch(Base):
+    """`ticker_research` — one row per agent per research pass on a ticker."""
+    __tablename__ = 'ticker_research'
+
+    id = Column(_UUID(), primary_key=True, default=lambda: str(uuid.uuid4()))
+    user_id = Column(_UUID(), nullable=False)
+    ticker = Column(String(10), nullable=False)
+    agent_name = Column(String(50), nullable=False)
+    research_type = Column(String(30), nullable=False)
+    confidence_score = Column(Numeric(5, 4))
+    target_weight = Column(Numeric(5, 4))
+    expected_return = Column(Numeric(8, 6))
+    risk_score = Column(Numeric(5, 4))
+    thesis = Column(Text)
+    risks = Column(_ARRAY(Text))
+    data_sources = Column(_JSONB())
+    raw_analysis = Column(_JSONB())
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+    __table_args__ = (
+        Index('idx_ticker_research_latest', 'user_id', 'ticker', desc('created_at')),
+    )
+
+
+class TargetAllocation(Base):
+    """`target_allocations` — optimizer output; the weights rebalancing aims at."""
+    __tablename__ = 'target_allocations'
+
+    id = Column(_UUID(), primary_key=True, default=lambda: str(uuid.uuid4()))
+    user_id = Column(_UUID(), nullable=False)
+    ticker = Column(String(10), nullable=False)
+    target_weight = Column(Numeric(5, 4))
+    confidence_score = Column(Numeric(5, 4))
+    expected_return = Column(Numeric(8, 6))
+    risk_adjusted_return = Column(Numeric(8, 6))
+    min_weight = Column(Numeric(5, 4))
+    max_weight = Column(Numeric(5, 4))
+    last_optimized_at = Column(DateTime(timezone=True))
+
+    __table_args__ = (
+        UniqueConstraint('user_id', 'ticker', name='target_allocations_user_id_ticker_key'),
+    )
+
+
+class TickerUniverseLog(Base):
+    """`ticker_universe_logs` — add/remove audit trail with the agent's reasoning."""
+    __tablename__ = 'ticker_universe_logs'
+
+    id = Column(_UUID(), primary_key=True, default=lambda: str(uuid.uuid4()))
+    user_id = Column(_UUID(), nullable=False)
+    ticker = Column(String(10))
+    action = Column(String(20), nullable=False)
+    agent_name = Column(String(50))
+    reasoning = Column(Text)
+    old_status = Column(String(20))
+    new_status = Column(String(20))
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+    __table_args__ = (
+        Index('idx_ticker_logs_user', 'user_id', desc('created_at')),
+    )
+
+
+class AgentPerformance(Base):
+    """`agent_performance` — per-agent success/latency counters driving weights.
+
+    Note the type family differs from the four tables above: this one was
+    written with PG TEXT and REAL and an un-timezoned TIMESTAMP, and is keyed
+    by agent_name rather than a uuid. Transcribed as-is.
+    型別家族與上面四張不同（TEXT/REAL/無時區 TIMESTAMP，且以 agent_name 為主鍵），
+    照實際 schema 轉錄。
+    """
+    __tablename__ = 'agent_performance'
+
+    agent_name = Column(Text, primary_key=True)
+    tier = Column(Text)
+    weight = Column(_REAL(), server_default='1.0')
+    success_count = Column(Integer, server_default='0')
+    failure_count = Column(Integer, server_default='0')
+    total_latency = Column(_REAL(), server_default='0.0')
+    avg_latency = Column(_REAL(), server_default='0.0')
+    last_updated = Column(DateTime())

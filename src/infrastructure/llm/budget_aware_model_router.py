@@ -186,7 +186,8 @@ class BudgetAwareModelRouter:
             spend_summary = self.token_logger.get_user_spending(user_id, days=7)
             total_spent = spend_summary.get("total_cost", 0.0)
             effective_tier = self._resolve_tier(tier, total_spent)
-        except Exception:
+        except Exception as e:
+            logger.warning(f'Exception in budget_aware_model_router.py: {e}', exc_info=True)
             effective_tier = tier
 
         if effective_tier != tier:
@@ -242,4 +243,9 @@ class BudgetAwareModelRouter:
         from src.infrastructure.llm.resilient_pipeline import ResilientLLMPipeline
 
         chain = self.get_config_chain(user_id=user_id, tier=tier, db_session=db_session)
-        return ResilientLLMPipeline(config_chain=chain)
+        return ResilientLLMPipeline(
+            config_chain=chain,
+            user_id=user_id,
+            agent_name="budget_aware_router",
+            tier=tier,
+        )

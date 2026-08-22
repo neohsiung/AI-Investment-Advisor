@@ -9,6 +9,23 @@ from src.infrastructure.nlp.intent_classifier import IntentClassifier
 from src.domain.trading import Order, OrderAction
 from src.domain.interaction import InteractionStatus
 
+
+@pytest.fixture(autouse=True)
+def allow_trading_protections():
+    """
+    Isolate the approval-flow test from TradingProtectionsService.
+
+    2026-08-02: protections fail CLOSED on internal error. The in-memory SQLite
+    used here has no `decision_outcomes` table, so every BUY would be blocked
+    before reaching the approval path this test exercises. Fail-closed
+    behaviour is covered in tests/unit/services/test_protections_fail_closed.py.
+    2026-08-02：風控改為 fail-closed，此處隔離風控相依以測試審核流程本身。
+    """
+    with patch('src.services.trading_protections_service.TradingProtectionsService') as MockProt:
+        MockProt.return_value.check.return_value = None
+        yield MockProt
+
+
 @pytest.fixture
 def anyio_backend():
     return 'asyncio'
@@ -35,6 +52,16 @@ async def test_trade_approval_with_ok_reply(anyio_backend):
     mock_broker.get_name.return_value = "MockBroker"
     # execute_order is async, use AsyncMock
     mock_broker.execute_order = AsyncMock(return_value={"status": "success", "order_id": "12345"})
+    # 2026-08-02: the BUY position-sizing guard awaits get_account()/get_positions().
+    # A bare MagicMock raises "object MagicMock can't be used in 'await' expression";
+    # that used to be swallowed (fail-open) but now correctly blocks the BUY, so the
+    # async surface has to be mocked properly.
+    # 2026-08-02：sizing guard 會 await get_account()/get_positions()，需用 AsyncMock。
+    _account = MagicMock()
+    _account.total_equity = 10000.0
+    _account.available_cash = 10000.0
+    mock_broker.get_account = AsyncMock(return_value=_account)
+    mock_broker.get_positions = AsyncMock(return_value=[])
     
     # 2. Setup Services
     # Use MagicMock for registration (sync) but maintain async for messaging

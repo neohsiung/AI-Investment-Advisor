@@ -23,6 +23,11 @@ class MarketDataService:
     Unified service for fetching market data from multiple providers.
     從多個提供者獲取市場數據的統一服務。
     """
+
+    # Providers that serve equities only — never route an index symbol to them.
+    # 僅涵蓋個股的提供者，指數符號不得路由至此。
+    EQUITY_ONLY_PROVIDER_IDS = frozenset({"polygon", "tiingo"})
+
     def __init__(self, user_id: Optional[str] = None, settings_service: Optional[SettingsService] = None):
         """
         Initialize the market data service.
@@ -70,6 +75,31 @@ class MarketDataService:
         獲取提供者類別名稱的輔助方法。
         """
         return provider.__class__.__name__
+
+    @staticmethod
+    def is_index_symbol(ticker: str) -> bool:
+        """`^VIX`, `^TNX`, `^GSPC` … — an index, not a tradable equity.
+        以 `^` 開頭者為指數而非個股。"""
+        return bool(ticker) and str(ticker).startswith("^")
+
+    def _providers_for_symbol(
+        self, providers: List[MarketDataProvider], ticker: str
+    ) -> List[MarketDataProvider]:
+        """Drop equity-only providers when the symbol is an index.
+
+        Polygon and Tiingo cover equities only; asked for `^VIX` they return a
+        payload with no Close column and blow up with `KeyError: 'Close'`.
+        Measured over 6h of production logs (2026-08-13): 453 Polygon + 453
+        Tiingo failures, every one of them `^VIX`, with FMP then serving all
+        453. That is two wasted calls against rate-limited quotas per VIX
+        fetch, and 906 warnings per 6h burying the provider failures that
+        actually mean something.
+        Polygon/Tiingo 只涵蓋個股，對 `^VIX` 必然拋 KeyError('Close')。
+        實測 6 小時內 906 次必敗呼叫，全部是 `^VIX`，最終皆由 FMP 服務。
+        """
+        if not self.is_index_symbol(ticker):
+            return providers
+        return [p for p in providers if getattr(p, "id", None) not in self.EQUITY_ONLY_PROVIDER_IDS]
 
     def _is_provider_enabled(self, provider: MarketDataProvider) -> bool:
         """
@@ -191,11 +221,45 @@ class MarketDataService:
                 "price_data": ohlcv,
                 "indicators": indicators
             }
-            
+
+            # P2.1 (2026-07-11): Alpha158-style factor snapshot — additive,
+            # zero-cost (pure pandas), richer momentum/volatility/volume
+            # signal than the handful of ad-hoc indicators above.
+            try:
+                from src.services.factor_service import compute_factors
+                factors = compute_factors(ohlcv)
+                if factors:
+                    data["factors"] = factors
+            except Exception as exc:
+                self.logger.debug(f"factor computation skipped for {ticker}: {exc}")
+
             if enrich:
                 data["financials"] = self.get_financials(ticker)
                 data["news"] = self.get_news(ticker)
                 data["web_intelligence"] = self.get_web_intelligence(ticker)
+
+                # P2.2 (2026-07-11): TimesFM forward point-forecast + quantile
+                # band — the one genuinely forward-looking signal the swarm
+                # previously lacked (agents only saw backward indicators/factors).
+                # Gated to enrich=True (the heavier daily/weekly path) since
+                # local inference has real per-ticker latency; never called
+                # from the lightweight/CLI path. No-ops silently if TimesFM
+                # isn't installed (see forecast_service.is_available()).
+                try:
+                    from src.services.forecast_service import forecast as _tfm_forecast
+                    closes = ohlcv.get("close") if ohlcv else None
+                    if closes and len(closes) >= 10:
+                        fc = _tfm_forecast(ticker, closes, horizon=5)
+                        if fc:
+                            data["forecast"] = {
+                                "horizon_days": fc.horizon,
+                                "point": [round(v, 4) for v in fc.point_forecast],
+                                "q10": [round(v, 4) for v in fc.q10],
+                                "q90": [round(v, 4) for v in fc.q90],
+                                "band_width_pct": fc.band_width_pct(),
+                            }
+                except Exception as exc:
+                    self.logger.debug(f"forecast skipped for {ticker}: {exc}")
                 
             context[ticker] = data
         return context
@@ -252,8 +316,11 @@ class MarketDataService:
         獲取特定標的的歷史 OHLCV 數據。
         """
         # Override Priority for History: Polygon -> Tiingo -> FMP -> YFinance
-        history_providers = [self.polygon, self.tiingo, self.fmp, self.yfinance] 
-        
+        # Index symbols skip the equity-only providers (see _providers_for_symbol).
+        history_providers = self._providers_for_symbol(
+            [self.polygon, self.tiingo, self.fmp, self.yfinance], ticker
+        )
+
         for provider in history_providers:
             if not self._is_provider_enabled(provider): continue
             try:
@@ -287,7 +354,16 @@ class MarketDataService:
                     )
 
             except Exception as e:
-                 self.logger.warning(f"History fetch failed on {self._get_provider_name(provider)}: {e}")
+                 self.logger.warning(
+                     f"History fetch failed for {ticker} on {self._get_provider_name(provider)}: {e}"
+                 )
+        # Nobody served it. Say so once, plainly — otherwise the caller just
+        # sees an empty dict and the only trace is per-provider warnings.
+        # 全部提供者皆未回傳資料時明講一次，否則呼叫端只會看到空 dict。
+        self.logger.warning(
+            f"No provider returned history for {ticker} "
+            f"(tried: {', '.join(self._get_provider_name(p) for p in history_providers) or 'none'})"
+        )
         return {}
 
     def get_ohlcv_batch(self, tickers: List[str], days: int = 30) -> Dict[str, Dict[str, List[Any]]]:
@@ -312,14 +388,25 @@ class MarketDataService:
             # So we call fetch_history on YFinance directly or iterate.
             
             df = pd.DataFrame()
-            # Prioritize Polygon for indicators base data (Unlimited history)
-            for provider in [self.polygon, self.yfinance]:
+            # Prioritize Polygon for indicators base data (Unlimited history);
+            # index symbols route past it (see _providers_for_symbol).
+            for provider in self._providers_for_symbol([self.polygon, self.yfinance], ticker):
                 if not self._is_provider_enabled(provider): continue
                 df = provider.fetch_history(ticker, period="1y")
                 if not df.empty: break
-            
+
             if df.empty or len(df) < 26:
-                return {"rsi": 50, "macd": "neutral", "sma": {}, "volume": {}}
+                # Neutral defaults are a substitute, not a reading — mark them,
+                # or a data outage looks identical to a genuinely neutral chart.
+                # 中性預設值必須標記，否則資料中斷與真正的中性盤看起來一樣。
+                self.logger.warning(
+                    f"Technical indicators unavailable for {ticker}: "
+                    f"{len(df)} rows (need 26). Returning marked neutral defaults."
+                )
+                return {
+                    "rsi": 50, "macd": "neutral", "sma": {}, "volume": {},
+                    "_insufficient_data": True,
+                }
 
             close = df['Close']
             if isinstance(close, pd.DataFrame): close = close.iloc[:, 0]

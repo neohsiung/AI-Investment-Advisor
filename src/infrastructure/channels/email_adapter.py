@@ -46,12 +46,18 @@ class EmailAdapter(BaseChannelAdapter):
         # Note: Email ignores actions in a raw sense, but we can append them as links if provided
         body = content
         if actions:
-            body += "\n\n### Actions\n"
+            body += "\n\n### ⚡ 相關行動 (Actions)\n"
             for action in actions:
                 label = action.get("label", "Action")
-                # eToro link logic for consistency with Sentinel
-                if action.get("data") == "action=etoro_link":
-                    body += f"- [{label}](https://www.etoro.com/watchlists)\n"
+                url = action.get("url") or action.get("link") or action.get("uri")
+                data = str(action.get("data") or "")
+                if data == "action=etoro_link":
+                    url = "https://www.etoro.com/watchlists"
+                elif data.startswith("http://") or data.startswith("https://"):
+                    url = data
+                
+                if url:
+                    body += f"- [{label}]({url})\n"
                 else:
                     body += f"- {label}\n"
 
@@ -63,8 +69,8 @@ class EmailAdapter(BaseChannelAdapter):
                 _filter = kwargs.get("_filter")
                 if _filter and hasattr(_filter, "get_recipient_override"):
                     override_to = _filter.get_recipient_override("email", category)
-            except Exception:
-                pass
+            except Exception as e:
+                logger.warning(f'Exception in email_adapter.py: {e}', exc_info=True)
 
         to_email = override_to or kwargs.get("to_email")
         if not to_email and user_id and "@" in user_id:

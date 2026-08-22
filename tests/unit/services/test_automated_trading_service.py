@@ -8,6 +8,22 @@ from src.domain.trading import OrderAction, OrderType
 def anyio_backend():
     return 'asyncio'
 
+@pytest.fixture(autouse=True)
+def allow_trading_protections():
+    """
+    Isolate these tests from TradingProtectionsService.
+
+    2026-08-02: protections now fail CLOSED — an internal error blocks the BUY
+    instead of allowing it. These tests exercise confidence-threshold branching
+    against an in-memory SQLite with no `decision_outcomes` table, so without
+    this stub every BUY would legitimately be blocked. Fail-closed behaviour
+    itself is covered in tests/unit/services/test_protections_fail_closed.py.
+    2026-08-02：風控改為 fail-closed；本檔測的是信心度分支，故隔離風控相依。
+    """
+    with patch('src.services.trading_protections_service.TradingProtectionsService') as MockProt:
+        MockProt.return_value.check.return_value = None
+        yield MockProt
+
 @pytest.fixture
 def mock_settings_repo():
     repo = MagicMock()
@@ -74,7 +90,17 @@ async def test_auto_execute_when_score_above_threshold(test_svc, mock_broker):
     # Check that notification was dispatched via HTTP API
     mock_notify.assert_called_once()
     call_kwargs = mock_notify.call_args[1]
-    assert "Auto-Approved" in call_kwargs["content"]
+    # 2026-08-11: the card was rewritten (src/services/decision_card.py), so
+    # the literal "Auto-Approved" label is gone. Assert on what the card must
+    # now convey instead: that it executed without asking, and what the score
+    # was measured against — an auto-executed trade is the only record the
+    # user gets of a decision they were never consulted on.
+    # 2026-08-11：卡片已改寫，原本的 "Auto-Approved" 字樣不再存在。改為斷言卡片
+    # 現在必須傳達的內容：未經詢問即執行，以及分數對照的門檻。
+    content = call_kwargs["content"]
+    assert "自動執行" in content
+    assert "分數 9.0/10" in content
+    assert "自動門檻 9.0" in content
 
 @pytest.mark.anyio
 async def test_require_approval_when_score_between_thresholds(test_svc, mock_interaction_service, mock_broker):

@@ -41,3 +41,22 @@ task_default_routing_key = "default"
 # Worker prefetch
 # 公平排程設定
 worker_prefetch_multiplier = 1  # Fair scheduling across workers
+
+# Redis connection budget (added 2026-08-10)
+# Redis 連線預算
+#
+# None of these were set before, so Celery ran on unbounded/default pools.
+# The workers were not the cause of the 2026-08-10 maxclients exhaustion —
+# the API's leaking /health endpoint was — but they were its victims, and
+# with no health_check_interval they had no way to recover a stale pool
+# once the server started refusing connections. Bounding the pools and
+# enabling periodic health checks makes the workers self-healing.
+#
+# 這些設定原本全部缺漏，Celery 使用預設無界連線池。2026-08-10 的 maxclients
+# 耗盡並非 worker 造成（元兇是 API 的 /health 洩漏），但 worker 是受害者，且
+# 沒有 health_check_interval 就無法在伺服器開始拒絕連線後自行恢復。
+broker_pool_limit = 10
+redis_max_connections = 20
+redis_backend_health_check_interval = 30
+broker_transport_options = {"health_check_interval": 30}
+result_backend_transport_options = {"health_check_interval": 30}

@@ -2,9 +2,34 @@
 Extended tests for Broker Factory.
 測試券商工廠。
 """
+from datetime import datetime, timezone
+
 import pytest
 from unittest.mock import MagicMock, patch
 from src.services.broker_factory import BrokerFactory
+
+_STAMP = datetime(2026, 1, 1, tzinfo=timezone.utc)
+
+
+def _wire_meta(repo: MagicMock) -> MagicMock:
+    """
+    Derive `get_many_with_meta` from whatever `get` this stub already does.
+
+    BrokerFactory reads the eToro settings through the batched
+    `get_many_with_meta` (it needs each row's updated_at to build the cache
+    change token without hashing credentials). Every test here already
+    configures `get`, so mirror it rather than restating each stub — a fixed
+    timestamp is enough, since these tests exercise construction rather than
+    invalidation (that lives in test_broker_cache_invalidation.py).
+
+    讓 get_many_with_meta 沿用各測試既有的 get 設定；這裡測的是建構而非失效，
+    所以時間戳固定即可（失效的部分在 test_broker_cache_invalidation.py）。
+    """
+    def _meta(uid, keys):
+        return {k: (repo.get(uid, k), _STAMP) for k in keys}
+
+    repo.get_many_with_meta.side_effect = _meta
+    return repo
 
 
 class TestBrokerFactory:
@@ -22,7 +47,7 @@ class TestBrokerFactory:
             
             mock_repo_instance = MagicMock()
             mock_repo_instance.get.return_value = None
-            MockRepo.return_value = mock_repo_instance
+            MockRepo.return_value = _wire_meta(mock_repo_instance)
             
             mock_broker = MagicMock()
             MockEtoro.return_value = mock_broker
@@ -40,7 +65,7 @@ class TestBrokerFactory:
             
             mock_repo_instance = MagicMock()
             mock_repo_instance.get.return_value = None
-            MockRepo.return_value = mock_repo_instance
+            MockRepo.return_value = _wire_meta(mock_repo_instance)
             
             broker = BrokerFactory.get_broker("test_user", broker_type="invalid")
             
@@ -54,7 +79,7 @@ class TestBrokerFactory:
             
             mock_repo_instance = MagicMock()
             mock_repo_instance.get.return_value = None
-            MockRepo.return_value = mock_repo_instance
+            MockRepo.return_value = _wire_meta(mock_repo_instance)
             
             mock_broker = MagicMock()
             MockEtoro.return_value = mock_broker
@@ -74,7 +99,7 @@ class TestBrokerFactory:
             
             mock_repo_instance = MagicMock()
             mock_repo_instance.get.return_value = None
-            MockRepo.return_value = mock_repo_instance
+            MockRepo.return_value = _wire_meta(mock_repo_instance)
             
             mock_broker = MagicMock()
             MockEtoro.return_value = mock_broker
@@ -96,7 +121,7 @@ class TestBrokerFactory:
             mock_repo_instance.get.side_effect = lambda user_id, key: {
                 "enable_etoro": "true"
             }.get(key)
-            MockRepo.return_value = mock_repo_instance
+            MockRepo.return_value = _wire_meta(mock_repo_instance)
             
             brokers = BrokerFactory.get_enabled_brokers("test_user")
 
@@ -111,7 +136,7 @@ class TestBrokerFactory:
             
             mock_repo_instance = MagicMock()
             mock_repo_instance.get.return_value = None
-            MockRepo.return_value = mock_repo_instance
+            MockRepo.return_value = _wire_meta(mock_repo_instance)
             
             brokers = BrokerFactory.get_enabled_brokers("test_user")
 
@@ -130,7 +155,7 @@ class TestBrokerFactory:
                 "etoro_user_key": "db_user_key",
                 "etoro_mode": "demo"
             }.get(key)
-            MockRepo.return_value = mock_repo_instance
+            MockRepo.return_value = _wire_meta(mock_repo_instance)
             
             broker = BrokerFactory.get_broker("test_user", broker_type="etoro")
 
@@ -140,4 +165,74 @@ class TestBrokerFactory:
             assert call_kwargs["api_key"] == "db_api_key"
             assert call_kwargs["user_key"] == "db_user_key"
             assert call_kwargs["mode"] == "demo"
+
+
+class TestGlobalTradingModeOverride:
+    """
+    2026-07-14: self-host paper-mode default (open-source Phase 1). Must be
+    opt-in via TRADING_MODE — unset must reproduce pre-existing behavior
+    exactly (no silent change for already-deployed instances).
+    """
+
+    def setup_method(self):
+        BrokerFactory._instances.clear()
+
+    def test_unset_env_leaves_per_user_mode_untouched(self):
+        with patch('src.services.broker_factory.AlchemySettingsRepository') as MockRepo, \
+             patch('src.services.broker_factory.EtoroService') as MockEtoro, \
+             patch.dict('os.environ', {}, clear=False):
+            import os as _os
+            _os.environ.pop("TRADING_MODE", None)
+            mock_repo_instance = MagicMock()
+            mock_repo_instance.get.side_effect = lambda user_id, key: {
+                "etoro_mode": "real"
+            }.get(key)
+            MockRepo.return_value = _wire_meta(mock_repo_instance)
+
+            BrokerFactory.get_broker("test_user", broker_type="etoro")
+
+            assert MockEtoro.call_args[1]["mode"] == "real"
+
+    def test_trading_mode_paper_forces_demo_even_if_user_set_real(self):
+        with patch('src.services.broker_factory.AlchemySettingsRepository') as MockRepo, \
+             patch('src.services.broker_factory.EtoroService') as MockEtoro, \
+             patch.dict('os.environ', {"TRADING_MODE": "paper"}):
+            mock_repo_instance = MagicMock()
+            mock_repo_instance.get.side_effect = lambda user_id, key: {
+                "etoro_mode": "real"
+            }.get(key)
+            MockRepo.return_value = _wire_meta(mock_repo_instance)
+
+            BrokerFactory.get_broker("test_user", broker_type="etoro")
+
+            assert MockEtoro.call_args[1]["mode"] == "demo"
+
+    def test_trading_mode_live_does_not_override_per_user_setting(self):
+        with patch('src.services.broker_factory.AlchemySettingsRepository') as MockRepo, \
+             patch('src.services.broker_factory.EtoroService') as MockEtoro, \
+             patch.dict('os.environ', {"TRADING_MODE": "live"}):
+            mock_repo_instance = MagicMock()
+            mock_repo_instance.get.side_effect = lambda user_id, key: {
+                "etoro_mode": "demo"
+            }.get(key)
+            MockRepo.return_value = _wire_meta(mock_repo_instance)
+
+            BrokerFactory.get_broker("test_user", broker_type="etoro")
+
+            # live does not force real — a user who explicitly chose demo stays in demo
+            assert MockEtoro.call_args[1]["mode"] == "demo"
+
+    def test_unrecognized_trading_mode_value_ignored(self):
+        with patch('src.services.broker_factory.AlchemySettingsRepository') as MockRepo, \
+             patch('src.services.broker_factory.EtoroService') as MockEtoro, \
+             patch.dict('os.environ', {"TRADING_MODE": "bogus"}):
+            mock_repo_instance = MagicMock()
+            mock_repo_instance.get.side_effect = lambda user_id, key: {
+                "etoro_mode": "real"
+            }.get(key)
+            MockRepo.return_value = _wire_meta(mock_repo_instance)
+
+            BrokerFactory.get_broker("test_user", broker_type="etoro")
+
+            assert MockEtoro.call_args[1]["mode"] == "real"
 

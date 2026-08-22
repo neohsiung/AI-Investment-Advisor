@@ -158,7 +158,14 @@ async def health_check():
 
     # 2. Check Redis/Celery
     try:
-        from src.infrastructure.tasks import celery_app
+        # 2026-08-02: was `from src.infrastructure.tasks import celery_app`, but
+        # that module exposes the Celery instance as `app` (tasks.py:5) — there
+        # has never been a `celery_app` attribute. The ImportError fell into the
+        # except below, so this endpoint reported "degraded" and answered 503
+        # unconditionally, regardless of how healthy the workers actually were.
+        # 2026-08-02：原本 import 的名稱在該模組不存在（tasks.py:5 匯出的是 app），
+        # ImportError 被下面的 except 接住，導致此端點無條件回報 degraded / 503。
+        from src.infrastructure.celery_app import app as celery_app
         # Ping returns 'pong' if connection is alive
         ping = celery_app.control.ping(timeout=1.0)
         if ping:
@@ -243,18 +250,32 @@ async def get_all_settings(service: SettingsService = Depends(get_settings_servi
 @limiter.limit("10/minute")
 async def save_settings(
     request: Request,
-    background_tasks: BackgroundTasks,
     payload: Dict[str, Any] = Body(...),
     service: SettingsService = Depends(get_settings_service),
 ):
-    """批次儲存系統設定 (非同步處理耗時重啟)"""
+    """
+    批次儲存系統設定 (同步寫入)。
+
+    2026-08-02: made synchronous alongside /api/v1/settings. This legacy route
+    writes the same keys — leaving it fire-and-forget would keep a back door
+    where a broker-credential or kill-switch write silently fails with a 200.
+    2026-08-02：與 /api/v1/settings 一併改同步；這條舊路由寫的是同一批 key，
+    留著背景寫入等於留一個「寫失敗卻回 200」的後門。
+    """
     try:
-        # v1.2: 即刻返回，背景執行耗時的 DB 寫入與可能的 Agent 重啟
-        background_tasks.add_task(service.save_settings_bulk, payload)
-        return {"status": "success", "message": "設定已收悉，系統正在背景更新中。"}
+        ok, message = service.save_settings_bulk(payload)
+        if not ok:
+            # See the identical treatment in src/api/v1/endpoints/settings.py:
+            # the service message goes to the log only, never into the response.
+            # 同 src/api/v1/endpoints/settings.py：服務訊息只進 log，不進回應。
+            logger.error(f"Error saving settings: {message}")
+            raise HTTPException(status_code=500, detail="Failed to save settings")
+        return {"status": "success", "message": "設定已儲存。"}
+    except HTTPException:
+        raise
     except Exception as e:
-        logger.exception("Error initiating background settings save")
-        raise HTTPException(status_code=500, detail="System update initiation failed")
+        logger.exception("Error saving settings")
+        raise HTTPException(status_code=500, detail="System update failed")
 
 @dashboard_router.post("/settings/test-notification")
 async def test_notification(
@@ -295,10 +316,6 @@ async def test_notification(
         }
             
     except Exception as e:
-        logger.exception("Error triggering test notification")
-        if isinstance(e, HTTPException):
-            raise e
-        raise HTTPException(status_code=500, detail="Notification test failed")
         logger.exception("Error triggering test notification")
         if isinstance(e, HTTPException):
             raise e
@@ -592,18 +609,25 @@ async def advisor_chat_stream(
 @dashboard_router.get("/summary")
 async def get_summary(service: DashboardService = Depends(get_dashboard_service)):
     """獲取投資概覽數據 (NLV, Cash, PnL, ROI) — Redis cached (120s TTL)"""
-    import redis as _redis
+    from src.infrastructure.cache.redis_client import get_redis_sync
     cache_key = f"dashboard:summary:{service.user_id}"
     _r = None
 
     # Fast path: return cached result if available
+    # 2026-08-10: was a fresh redis.from_url() per request; now the shared pool.
+    # NOTE: the setex() below is unreachable — it sits after the `return` in the
+    # success branch — so this cache is only ever read, never written, and every
+    # request falls through to a full recompute. Left as-is here because fixing
+    # it turns a 120s cache on, which is a behaviour change, not a leak fix.
+    # 2026-08-10：改用共用連線池。注意：下方 setex() 位於 return 之後而永不執行，
+    # 此快取只讀不寫；修正它等同啟用 120 秒快取，屬行為變更，故此處不動。
     try:
-        _r = _redis.from_url(os.getenv("REDIS_URL", "redis://redis:6379/0"), decode_responses=True)
+        _r = get_redis_sync()
         cached = _r.get(cache_key)
         if cached:
             return json.loads(cached)
-    except Exception: # nosec B110
-        pass
+    except Exception as e:# nosec B110
+        logger.warning(f'Exception in dashboard_router.py: {e}', exc_info=True)
 
     try:
         data = service.prepare_dashboard_data(service.user_id)
@@ -631,9 +655,9 @@ async def get_summary(service: DashboardService = Depends(get_dashboard_service)
         # Cache the result for 120 seconds
         try:
             if _r:
-                _r.setex(cache_key, 120, json.dumps(result))
-        except Exception: # nosec B110
-            pass
+                _r.set(cache_key, json.dumps(result), ex=120)
+        except Exception as e:# nosec B110
+            logger.warning(f'Exception in dashboard_router.py: {e}', exc_info=True)
 
         return result
     except Exception as e:

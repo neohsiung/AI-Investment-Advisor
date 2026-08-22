@@ -68,6 +68,9 @@ async def test_sentinel_log_redaction():
             service.market_service.get_current_prices = AsyncMock(return_value={"AAPL": 150.0})
             service._check_vix_anomaly = MagicMock(return_value=[])
             service._check_buffer_flush = AsyncMock()
+            # 2026-08-02: process_tick() takes a per-minute Redis lock; always
+            # win it here so this redaction test still exercises a full tick.
+            service._redis_buffer.try_acquire = AsyncMock(return_value=True)
             service._check_position_moves_v2 = AsyncMock(return_value=[])
             service._check_active_sources = AsyncMock(return_value=[])
             service._check_risk_consistency = AsyncMock(return_value=[])

@@ -177,7 +177,8 @@ class LLMModelRepository(BaseRepository):
             logger.info("LLMModelRepository.create: %s provider=%s code=%s",
                         new_id, payload["provider_id"], payload["model_code"])
             return new_id
-        except Exception:
+        except Exception as e:
+            logger.warning(f'Exception in llm_model_repository.py: {e}', exc_info=True)
             session.rollback()
             raise
         finally:
@@ -231,7 +232,8 @@ class LLMModelRepository(BaseRepository):
             session.commit()
             logger.info("LLMModelRepository.batch_create: inserted=%d", len(new_ids))
             return new_ids
-        except Exception:
+        except Exception as e:
+            logger.warning(f'Exception in llm_model_repository.py: {e}', exc_info=True)
             session.rollback()
             raise
         finally:
@@ -259,7 +261,8 @@ class LLMModelRepository(BaseRepository):
             session.refresh(row)
             logger.info("LLMModelRepository.update: %s", model_id)
             return row
-        except Exception:
+        except Exception as e:
+            logger.warning(f'Exception in llm_model_repository.py: {e}', exc_info=True)
             session.rollback()
             raise
         finally:
@@ -279,7 +282,8 @@ class LLMModelRepository(BaseRepository):
             session.commit()
             logger.info("LLMModelRepository.delete: %s", model_id)
             return True
-        except Exception:
+        except Exception as e:
+            logger.warning(f'Exception in llm_model_repository.py: {e}', exc_info=True)
             session.rollback()
             raise
         finally:

@@ -338,7 +338,12 @@ class ResearchAutomationService:
         if not chain:
             return json.dumps({"error": f"No model configured for tier={tier}"})
 
-        pipeline = ResilientLLMPipeline(config_chain=chain)
+        pipeline = ResilientLLMPipeline(
+            config_chain=chain,
+            user_id=self.user_id,
+            agent_name="research_analyst",
+            tier=tier,
+        )
         from src.domain.interfaces import Message
 
         messages = [

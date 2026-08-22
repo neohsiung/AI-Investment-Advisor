@@ -10,24 +10,37 @@ function TokenCollector() {
   const searchParams = useSearchParams();
 
   useEffect(() => {
-    const accessToken = searchParams.get("access_token");
-    const refreshToken = searchParams.get("refresh_token");
-
-    if (accessToken && refreshToken) {
-      // 1. 持久化 Tokens 至 localStorage (Sprint 3 採用機制)
-      localStorage.setItem("access_token", accessToken);
-      localStorage.setItem("refresh_token", refreshToken);
-
-      // 2. 立即觸發全局 SWR Revalidation，確保 TopBar 與 Page 及時更新狀態
-      mutate("/api/v1/auth/me");
-      
-      // 3. 成功後引導至 CommandCenter
-      router.push("/");
-    } else {
-      // 3. 異常處理：若遺失 Token 則回歸登入頁
-      console.error("Auth Callback: Missing tokens in URL");
+    // 2026-07-12: the real tokens no longer travel in this URL — only a
+    // short-lived, single-use opaque exchange code does. We POST it to
+    // /auth/exchange to get the actual tokens back in the response body,
+    // then persist to localStorage exactly as before (unchanged for every
+    // downstream consumer: WebSocketContext, chat page, api.ts).
+    const code = searchParams.get("code");
+    if (!code) {
+      console.error("Auth Callback: Missing exchange code in URL");
       router.push("/auth/login?error=InvalidSession");
+      return;
     }
+
+    fetch("/api/v1/auth/exchange", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ code }),
+    })
+      .then((res) => {
+        if (!res.ok) throw new Error(`exchange failed: ${res.status}`);
+        return res.json();
+      })
+      .then(({ access_token, refresh_token }) => {
+        localStorage.setItem("access_token", access_token);
+        localStorage.setItem("refresh_token", refresh_token);
+        return mutate("/api/v1/auth/me");
+      })
+      .then(() => router.push("/"))
+      .catch((err) => {
+        console.error("Auth Callback: exchange failed", err);
+        router.push("/auth/login?error=InvalidSession");
+      });
   }, [searchParams, router]);
 
   return (

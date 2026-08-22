@@ -11,3 +11,11 @@ repos:
     hooks:
     -   id: detect-secrets
         exclude: package.lock.json
+# 2026-07-12 (open-source Phase 0): second, independent secret scanner —
+# .env.bak-20260711 was git-tracked with secret var names for weeks
+# without either scanner catching it (it predates this hook). Two
+# scanners with different heuristics reduce the chance of a repeat.
+-   repo: https://github.com/gitleaks/gitleaks
+    rev: v8.21.2
+    hooks:
+    -   id: gitleaks

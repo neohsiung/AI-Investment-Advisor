@@ -56,14 +56,38 @@ class InternetSearchService:
             self.logger.warning("TAVILY_API_KEY not found. Falling back to DuckDuckGo.")
         
         # Initialize DuckDuckGo (Fallback)
+        #
+        # 2026-08-13: this fallback had been dead since httpx 0.28 removed the
+        # `proxies` kwarg that duckduckgo-search 3.9.3 passes to httpx.Client —
+        # every construction raised `TypeError: Client.__init__() got an
+        # unexpected keyword argument 'proxies'`, 457 times per 6h in
+        # production, leaving Tavily as the only search backend while the code,
+        # the docstring and the log line all claimed a fallback existed.
+        # The package was renamed upstream (duckduckgo-search -> ddgs); the
+        # legacy import is kept so an un-rebuilt image degrades to "no
+        # fallback" loudly rather than crashing.
+        # 此備援自 httpx 0.28 起即已失效（每 6 小時失敗 457 次），而程式與日誌
+        # 都聲稱備援存在。套件已更名為 ddgs，保留舊 import 以便舊映像檔仍可運作。
         self.ddgs = None
         try:
-            from duckduckgo_search import DDGS
+            try:
+                from ddgs import DDGS
+            except ImportError:  # pragma: no cover - legacy package name
+                from duckduckgo_search import DDGS
             self.ddgs = DDGS()
         except ImportError:
-            self.logger.warning("duckduckgo-search not installed.")
+            self.logger.warning("ddgs not installed — Tavily is the only search backend.")
         except Exception as e:
             self.logger.warning(f"Failed to initialize DuckDuckGo: {e}")
+
+        if not self.tavily_client and not self.ddgs:
+            # Both backends gone means every search silently returns []. Callers
+            # cannot distinguish that from "nothing found", so say it at error.
+            # 兩個後端皆不可用時每次搜尋都回空陣列，呼叫端無法與「查無結果」區分。
+            self.logger.error(
+                "InternetSearchService has NO usable backend (Tavily unavailable, "
+                "DuckDuckGo unavailable). Every search will return no results."
+            )
 
     @circuit_breaker(name="InternetSearch", failure_threshold=3, recovery_timeout=60)
     async def search_financial_context(self, query: str, max_results: int = 3) -> List[Dict[str, str]]:
@@ -229,7 +253,8 @@ class InternetSearchService:
                 cleaned_text = " ".join(lines)
                 
                 return cleaned_text[:max_length] if len(cleaned_text) > max_length else cleaned_text
-            except:
+            except Exception as e:
+                logger.warning(f'Exception in search_service.py: {e}', exc_info=True)
                 return None
 
     async def get_ticker_moat_and_catalyst(self, ticker: str) -> List[Dict[str, str]]:

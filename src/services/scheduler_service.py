@@ -385,8 +385,15 @@ class SchedulerService:
         else:
             self.scheduler.every().sunday.at(research_time).do(self.job_weekly_research)
             
-        # 哨兵心跳 (每分鐘)
-        self.scheduler.every(1).minutes.do(self.job_minutely_tick)
+        # 哨兵心跳註冊已於 2026-08-02 移除。
+        # Sentinel tick registration removed 2026-08-02: Celery Beat's
+        # "sentinel-minutely-tick" is the single authority. Leaving it here
+        # meant anyone running `--mode scheduler` by hand became a third tick
+        # source alongside beat. `job_minutely_tick` itself is kept (it is
+        # still reachable for manual/legacy invocation and is covered by
+        # tests), but nothing schedules it any more.
+        # Note process_tick() is now additionally guarded by a per-minute
+        # Redis lock, so even a stray caller cannot double-run it.
 
     def job_minutely_tick(self) -> None:
         """

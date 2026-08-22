@@ -35,6 +35,73 @@ class AgentSubScore:
     timestamp: str
 
 
+def _extract_score_object(text: str) -> Dict[str, Any]:
+    """
+    Pull the scoring object out of an LLM reply that may contain prose.
+    從可能夾雜自然語言的 LLM 回覆中取出評分物件。
+
+    2026-08-12: the previous approach took everything from the first `{` to
+    the last `}`. Reasoning models routinely restate the prompt before
+    answering, and the prompt itself contains the template:
+
+        The user asks: "... Return ONLY JSON: {"score": <0-10>, ...}"
+        We need to provide a JSON object with ...
+        {"score": 7, "key_factor": "...", ...}
+
+    First-brace-to-last-brace spanned both, and `<0-10>` is not valid JSON, so
+    the parse threw and the caller substituted `_fallback_score()` — a hash of
+    the ticker. A model that answered perfectly well was recorded as noise.
+
+    Scans every balanced `{...}` region, parses each, and returns the last one
+    that both parses AND carries a usable "score" — the answer follows the
+    restatement, so the last valid object is the real one.
+
+    2026-08-12：舊做法取「第一個 { 到最後一個 }」。推理模型常先複述提示再作答，而
+    提示本身就含有 JSON 模板，該區間會同時涵蓋兩者，其中 `<0-10>` 並非合法 JSON，
+    解析因此失敗並退回以 ticker 雜湊產生的假分數——模型明明答對了卻被記成雜訊。
+    改為掃描所有成對的 {...}，回傳最後一個可解析且含有效 score 的物件。
+    """
+    candidates = []
+    depth = 0
+    start = -1
+    for i, ch in enumerate(text):
+        if ch == "{":
+            if depth == 0:
+                start = i
+            depth += 1
+        elif ch == "}":
+            if depth > 0:
+                depth -= 1
+                if depth == 0 and start != -1:
+                    candidates.append(text[start:i + 1])
+                    start = -1
+
+    best = None
+    for blob in candidates:
+        try:
+            obj = json.loads(blob)
+        except (ValueError, TypeError):
+            continue
+        if not isinstance(obj, dict):
+            continue
+        raw = obj.get("score")
+        if raw is None:
+            continue
+        try:
+            float(raw)
+        except (TypeError, ValueError):
+            # Skips the echoed template, whose "score" is the literal <0-10>.
+            # 跳過被複述的模板，其 score 是字面的 <0-10>。
+            continue
+        best = obj
+
+    if best is None:
+        # Preserve the old failure mode for the caller's except clause.
+        # 維持原本的失敗行為，讓呼叫端的 except 分支照舊處理。
+        raise json.JSONDecodeError("no scoring object found in response", text[:200], 0)
+    return best
+
+
 class CompositorService:
     """
     Aggregates multi-agent confidence scores into composite decisions
@@ -121,13 +188,7 @@ class CompositorService:
             elif "```" in cleaned:
                 cleaned = cleaned.split("```")[1].split("```")[0]
 
-            # Find first { to last }
-            start = cleaned.find("{")
-            end = cleaned.rfind("}")
-            if start != -1 and end != -1:
-                cleaned = cleaned[start:end + 1]
-
-            data = json.loads(cleaned)
+            data = _extract_score_object(cleaned)
             raw_score = data.get("score")
             if raw_score is None:
                 logger.warning(f"LLM returned null score for {agent_name}/{ticker}, response keys: {list(data.keys())}")

@@ -294,10 +294,15 @@ function NotifyPanel({ settings, update, toggle, secrets }: any) {
     { id: "sentinel", label: "⚠️ 市場警報", desc: "Sentinel 即時觸發警示" },
     { id: "approval", label: "✅ 交易審批", desc: "待確認下單通知" },
     { id: "trading", label: "💸 交易執行", desc: "自動下單確認回報" },
+    { id: "ops", label: "🛠️ 系統維運", desc: "系統異常與自我維運通知" },
   ];
 
   const getInterests = (channelKey: string): string[] => {
-    const raw = settings[`channel_${channelKey}_interests`] || "";
+    const rawValue = settings[`channel_${channelKey}_interests`];
+    if (rawValue === undefined) {
+      return ["sentinel", "report", "approval", "ops"];
+    }
+    const raw = rawValue || "";
     // Strip surrounding quotes if present
     const cleaned = raw.replace(/^"|"$/g, "").trim();
     return cleaned ? cleaned.split(",").map((s: string) => s.trim()).filter(Boolean) : [];
@@ -618,10 +623,71 @@ function SourcesPanel({ settings, update, toggle, secrets }: any) {
     </div>
   );
 }
+/**
+ * Read ai_trading_enabled tolerantly.
+ *
+ * settings.value is a JSON column, so historical rows may hold a real boolean
+ * while new writes use the string "true"/"false". Absent means enabled — that
+ * matches the backend default in AutomatedTradingService.
+ * ai_trading_enabled 可能是 boolean 或字串；未設定時後端預設為啟用。
+ */
+function isTradingEnabled(settings: any): boolean {
+  const v = settings?.ai_trading_enabled;
+  if (v === undefined || v === null || v === "") return true;
+  return String(v).toLowerCase() === "true" || String(v) === "1";
+}
+
 function BrokerPanel({ settings, update, toggle, secrets }: any) {
   return (
     <div className="space-y-12">
       <SectionHead title="券商與交易接口 (Broker Integration)" desc="連接您的真實交易帳戶。支援多券商同時串接與自動下單。" />
+
+      {/*
+        AI Trading kill switch. This is the single global gate every trade path
+        funnels through (AutomatedTradingService.evaluate_and_execute_trade),
+        so it must be reachable from the UI — previously it only existed in the
+        undeployed Streamlit dashboard, leaving Telegram /pause as the only way
+        to stop trading.
+        AI 交易總開關：所有下單路徑的唯一咽喉點，先前 UI 沒有這個開關，
+        只能靠 Telegram /pause。
+
+        NOTE: the value is sent as the STRING "true"/"false", not a JS boolean.
+        settings.value is a JSON column and consumers coerce with str(); a raw
+        boolean previously crashed RiskManager with AttributeError.
+        注意：必須送字串，不可送 JS boolean（DB 是 JSON 欄位）。
+      */}
+      <div className={cn(
+        "p-8 rounded-[32px] border-2 transition-colors",
+        isTradingEnabled(settings)
+          ? "bg-surface-container border-primary/30"
+          : "bg-error-container/20 border-error/40"
+      )}>
+        <div className="flex justify-between items-start gap-6">
+          <div className="flex items-center gap-3">
+            <div className={cn(
+              "p-2.5 rounded-2xl",
+              isTradingEnabled(settings) ? "bg-primary/10 text-primary" : "bg-error/10 text-error"
+            )}>
+              <ShieldAlert size={20} />
+            </div>
+            <div>
+              <h3 className="font-bold text-lg tracking-tight">AI 自動交易總開關</h3>
+              <p className="text-[10px] uppercase font-black text-on-surface-variant tracking-widest mt-1">
+                Global Kill Switch
+              </p>
+              <p className="text-xs text-on-surface-variant mt-2 max-w-xl">
+                {isTradingEnabled(settings)
+                  ? "已啟用：Agent 可依信心度門檻自動送出真實委託。"
+                  : "已停用：所有自動與手動下單路徑一律阻擋，僅保留資產讀取與分析。"}
+              </p>
+            </div>
+          </div>
+          <Switch
+            checked={isTradingEnabled(settings)}
+            onChange={(v: boolean) => update("ai_trading_enabled", v ? "true" : "false")}
+          />
+        </div>
+      </div>
 
       <div className="grid grid-cols-1 gap-8">
         {/* eToro */}
@@ -650,8 +716,16 @@ function BrokerPanel({ settings, update, toggle, secrets }: any) {
                 <option value="real">真實帳戶 (Real)</option>
               </select>
             </div>
-            <SecretInput label="API Key" id="et_key" value={settings.etoro_api_key || ""} toggle={toggle} show={secrets.et_key} onChange={(v: string) => update("etoro_api_key", v)} />
-            <SecretInput label="User Key" id="et_user" value={settings.etoro_user_key || ""} toggle={toggle} show={secrets.et_user} onChange={(v: string) => update("etoro_user_key", v)} />
+            {/*
+              2026-08-02: hints added after a real outage — these two were
+              filled in swapped, which eToro rejects with 401. Verified against
+              the live API: x-api-key takes the SHORT opaque key, x-user-key
+              takes the LONG JWT. Counter-intuitive, hence the labels.
+              2026-08-02：實測確認短的 opaque 放 API Key、長的 JWT 放 User Key，
+              填反會 401。曾因此故障，故加註說明。
+            */}
+            <SecretInput label="API Key (x-api-key)" hint="短的 opaque 金鑰（約 63 字元，非 eyJ 開頭）" id="et_key" value={settings.etoro_api_key || ""} toggle={toggle} show={secrets.et_key} onChange={(v: string) => update("etoro_api_key", v)} />
+            <SecretInput label="User Key (x-user-key)" hint="長的 JWT（約 260 字元，eyJ 開頭）" id="et_user" value={settings.etoro_user_key || ""} toggle={toggle} show={secrets.et_user} onChange={(v: string) => update("etoro_user_key", v)} />
           </div>
         </div>
 
@@ -841,19 +915,23 @@ function LabeledInput({ label, value, onChange, placeholder, disabled, type = "t
   );
 }
 
-function SecretInput({ label, value, id, toggle, show, onChange }: {
+function SecretInput({ label, value, id, toggle, show, onChange, hint }: {
   label: string;
   value: any;
   id: string;
   toggle: (id: string) => void;
   show: boolean;
   onChange: (v: string) => void;
+  hint?: string;
 }) {
   return (
     <div className="space-y-2">
       <label className="block text-[10px] font-black uppercase text-on-surface-variant tracking-widest pl-1">
         {label}
       </label>
+      {hint && (
+        <p className="text-[10px] text-on-surface-variant/70 pl-1 leading-relaxed">{hint}</p>
+      )}
       <div className="relative">
         <input
           type={show ? "text" : "password"}

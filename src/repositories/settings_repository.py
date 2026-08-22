@@ -1,7 +1,8 @@
 import json
 import os
 import secrets as _secrets
-from typing import List, Dict, Tuple, Any, Optional, Callable
+from datetime import datetime
+from typing import List, Dict, Tuple, Any, Optional, Callable, Sequence
 from abc import ABC, abstractmethod
 from cryptography.fernet import Fernet
 from sqlalchemy import text
@@ -37,6 +38,14 @@ class ISettingsRepository(ABC):
         """
         Set or update a specific setting value.
         設定或更新特定設定值。
+        """
+        pass
+
+    @abstractmethod
+    def set_many(self, user_id: str, settings: Dict[str, Any]) -> None:
+        """
+        Atomically set multiple settings — all succeed or none are written.
+        原子性寫入多筆設定：全部成功或全部不寫入。
         """
         pass
 
@@ -143,7 +152,8 @@ class AlchemySettingsRepository(BaseRepository, ISettingsRepository):
                 return json.loads(decrypted_str)
             except json.JSONDecodeError:
                 return decrypted_str
-        except Exception:
+        except Exception as e:
+            _logger.warning(f'Exception in settings_repository.py: {e}', exc_info=True)
             _logger.error(
                 "Decryption failed — APP_SECRET_KEY may have rotated. "
                 "Returning raw encrypted value; credential will appear invalid.",
@@ -177,9 +187,48 @@ class AlchemySettingsRepository(BaseRepository, ISettingsRepository):
             if self._should_encrypt(key):
                 return self._decrypt(raw_value)
             return raw_value
-        except Exception:
+        except Exception as e:
+            _logger.warning(f'Exception in settings_repository.py: {e}', exc_info=True)
             _logger.exception(f"get() failed for user={resolved_uid!r} key={key!r}")
             return default
+        finally:
+            self.close_session()
+
+    def get_many_with_meta(
+        self, user_id: str, keys: Sequence[str]
+    ) -> Dict[str, Tuple[Any, Optional[datetime]]]:
+        """
+        Fetch several settings in one query, each paired with its row's
+        `updated_at`. Absent keys come back as `(None, None)`.
+
+        Exists so callers can build a change token out of row timestamps
+        instead of out of the values themselves — see BrokerFactory, which
+        needs to notice a credential rotation without ever hashing the
+        credential. Also strictly cheaper than the N separate `get()` calls it
+        replaces there.
+
+        一次查詢取回多個設定值與其 updated_at；不存在的 key 回 (None, None)。
+        讓呼叫端能用「列的時間戳」而非「值本身」組出變更權杖（見 BrokerFactory：
+        要偵測憑證輪換，但絕不雜湊憑證），順帶把 N 次 get() 併成一次查詢。
+        """
+        resolved_uid = self._resolve_user(user_id)
+        result: Dict[str, Tuple[Any, Optional[datetime]]] = {k: (None, None) for k in keys}
+        if not keys:
+            return result
+        try:
+            rows = (
+                self.session.query(Setting)
+                .filter(Setting.user_id == resolved_uid, Setting.key.in_(list(keys)))
+                .all()
+            )
+            for row in rows:
+                value = self._decrypt(row.value) if self._should_encrypt(row.key) else row.value
+                result[row.key] = (value, row.updated_at)
+            return result
+        except Exception as e:
+            _logger.warning(f'Exception in settings_repository.py: {e}', exc_info=True)
+            _logger.exception(f"get_many_with_meta() failed for user={resolved_uid!r}")
+            return result
         finally:
             self.close_session()
 
@@ -218,6 +267,51 @@ class AlchemySettingsRepository(BaseRepository, ISettingsRepository):
                 session.add(setting)
             session.commit()
         except Exception as e:
+            session.rollback()
+            raise
+        finally:
+            self.close_session()
+
+    def set_many(self, user_id: str, settings: Dict[str, Any]) -> None:
+        """
+        Atomic all-or-nothing bulk upsert: one transaction, one commit.
+
+        Callers write related keys together — notably the eToro credential PAIR
+        (`etoro_api_key` + `etoro_user_key`) and the `ai_trading_enabled` kill
+        switch. Looping over `set()` committed per key, so a mid-loop failure
+        left a half-applied state; for a credential pair that means one key
+        rotated and the other not, which is exactly the shape of the
+        2026-08-02 outage. Here nothing lands unless everything lands.
+
+        Deliberately dialect-agnostic ORM (no `on_conflict_do_update`) —
+        repository tests run against in-memory sqlite.
+        原子性批次寫入：單一 transaction、單一 commit。
+        憑證是成對的，逐 key commit 會留下「一把換了一把沒換」的半套狀態。
+        """
+        if not settings:
+            return
+
+        resolved_uid = self._resolve_user(user_id)
+        session = self.session
+        try:
+            keys = list(settings.keys())
+            existing = {
+                row.key: row
+                for row in session.query(Setting)
+                .filter(Setting.user_id == resolved_uid, Setting.key.in_(keys))
+                .all()
+            }
+
+            for key, value in settings.items():
+                store_value = self._encrypt(value) if self._should_encrypt(key) else value
+                row = existing.get(key)
+                if row is not None:
+                    row.value = store_value
+                else:
+                    session.add(Setting(user_id=resolved_uid, key=key, value=store_value))
+
+            session.commit()
+        except Exception:
             session.rollback()
             raise
         finally:
@@ -336,14 +430,48 @@ class AlchemySettingsRepository(BaseRepository, ISettingsRepository):
             rows = self.session.execute(
                 text("SELECT user_id, value FROM settings WHERE key = 'webhook_api_key'")
             ).fetchall()
+            candidates = []
             for row in rows:
                 stored_val = self._decrypt(row[1])
                 if isinstance(stored_val, str):
                     stored_val = stored_val.strip('"')
                 if _secrets.compare_digest(str(stored_val), str(secret)):
                     return row[0]
+                candidates.append(str(stored_val))
+
+            # No match — emit a NON-SECRET diagnostic: lengths and an
+            # "is it still ciphertext?" flag. No value, and no digest of a
+            # value, ever reaches the log.
+            #
+            # 2026-08-02: dropped a truncated SHA-256 fingerprint that used to
+            # be logged here. It contributed nothing the flag below doesn't
+            # already give, and running a secret through a fast hash is the
+            # pattern static analysis flags (py/weak-sensitive-data-hashing) —
+            # correctly, since "we only truncate it" is not a security property
+            # anyone should have to audit.
+            #
+            # `still_enc` is what actually separates the two failure modes:
+            #   - genuine key mismatch: every candidate decrypts, so all show
+            #     still_enc=False and the lengths tell you whether the operator
+            #     pasted a truncated or entirely different value
+            #   - APP_SECRET_KEY rotated: _decrypt swallows the Fernet failure
+            #     and hands back the raw ciphertext, so still_enc=True and the
+            #     length jumps to the ciphertext length
+            #
+            # 只記錄長度與 still_enc 旗標，既不記錄值也不記錄值的雜湊。
+            # still_enc 才是區分「金鑰不符」與「APP_SECRET_KEY 輪換」的關鍵，
+            # 原本那個截斷雜湊對這個判斷沒有貢獻。
+            _logger.warning(
+                "Webhook secret mismatch: presented(len=%d) | candidates=%d | %s",
+                len(str(secret)), len(candidates),
+                ", ".join(
+                    f"[len={len(c)} still_enc={c.startswith(('ENC:', 'FERN:', 'B64H:'))}]"
+                    for c in candidates
+                ) or "(no webhook_api_key rows)",
+            )
             return None
-        except Exception:
+        except Exception as e:
+            _logger.warning(f'Exception in settings_repository.py: {e}', exc_info=True)
             return None
         finally:
             self.close_session()
