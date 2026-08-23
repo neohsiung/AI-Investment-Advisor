@@ -25,10 +25,15 @@ def verify():
                 links = link_pattern.findall(content)
                 for label, path in links:
                     # Skip external, anchor, or special files
+                    # gbrain:// is the knowledge-graph scheme used by the
+                    # scheduler/notification pages — an external addressing
+                    # scheme like file://, not a wiki page that went missing.
+                    # gbrain:// 是知識圖譜的定址協定，與 file:// 同類，並非斷鏈。
                     if (path.startswith("http") or
                         path.startswith("#") or
                         path in ["Dockerfile", "Dockerfile.mcp", "docker-compose.yml"] or
-                        path.startswith("file://")):
+                        path.startswith("file://") or
+                        path.startswith("gbrain://")):
                         continue
                     
                     # Skip relative paths pointing outside wiki (e.g. ../../.agent/...)
