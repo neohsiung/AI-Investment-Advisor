@@ -210,6 +210,7 @@ DISPATCHERS = [
     ("dispatch_weekly_validation", "weekly_validation"),
     ("dispatch_event_digest", "send_event_digest"),
     ("dispatch_daily_report", "generate_daily_report"),
+    ("dispatch_weekly_report", "generate_weekly_report"),
 ]
 
 
@@ -269,6 +270,7 @@ USER_SCOPED_TASKS = [
     "weekly_validation",
     "send_event_digest",
     "generate_daily_report",
+    "generate_weekly_report",
 ]
 
 
@@ -664,6 +666,48 @@ class TestGenerateDailyReport:
 
         assert result == "Error: council timeout"
         assert _SOFT_FAIL_RE.match(result)
+
+
+class TestGenerateWeeklyReport:
+    """
+    2026-08-23: "weekly-report-trigger" pointed at dispatch_market_intelligence,
+    so the scheduler had never produced a weekly report — it just ran the
+    market-intelligence fan-out a second time. WeeklyWorkflow itself was fine;
+    nothing called it.
+    週報排程原本指向市場情報任務，週報從未被排程產生過。
+    """
+
+    def test_success(self, run_async_identity):
+        with patch("src.services.workflow_service.WeeklyWorkflow") as cls:
+            result = tasks.generate_weekly_report(user_id=USER)
+
+        cls.assert_called_once_with(user_id=USER)
+        cls.return_value.run_weekly_cycle.assert_called_once_with(user_id=USER)
+        assert result == f"Success: Weekly report generated for {USER}"
+
+    def test_runs_regardless_of_market_hours(self, run_async_identity):
+        """It is scheduled for Saturday 10:00 — the market is always closed."""
+        with patch.object(tasks, "is_market_open_today", return_value=False), \
+             patch("src.services.workflow_service.WeeklyWorkflow") as cls:
+            result = tasks.generate_weekly_report(user_id=USER)
+
+        assert result.startswith("Success:")
+        cls.return_value.run_weekly_cycle.assert_called_once()
+
+    def test_failure(self, run_async_identity):
+        with patch("src.services.workflow_service.WeeklyWorkflow", side_effect=RuntimeError("planner down")):
+            result = tasks.generate_weekly_report(user_id=USER)
+
+        assert result == "Error: planner down"
+        assert _SOFT_FAIL_RE.match(result)
+
+
+class TestWeeklyReportBeatEntry:
+    def test_weekly_report_trigger_points_at_the_weekly_dispatcher(self):
+        from src.infrastructure.celery_app import app
+
+        entry = app.conf.beat_schedule["weekly-report-trigger"]
+        assert entry["task"] == "src.infrastructure.tasks.dispatch_weekly_report"
 
 
 # ─────────────────────────────────────────────────────────────────────────────
