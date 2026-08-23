@@ -64,6 +64,11 @@ DELETED_MODULES = [
     "src.services.portfolio_optimizer_service",
     "src.infrastructure.memory.three_tier_memory",
     "src.services.memory_factory",
+    # 2026-08-23: dead module carrying a hardcoded Fernet key as its
+    # "insecure default". Nothing imported it; the key still tripped a
+    # local gitleaks scan (CI only scans the PR commit range, so it
+    # never surfaced there).
+    "src.utils.crypto_utils",
 ]
 
 
