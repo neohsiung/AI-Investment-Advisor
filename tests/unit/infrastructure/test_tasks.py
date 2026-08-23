@@ -761,3 +761,46 @@ class TestSoftFailContract:
         for retval in ["Success", "OK: 3 breaches", "Skipped", "Skipped (Market Closed)",
                        "Dispatched 3 sentinel_tick tasks", "Success: archived 7 memories"]:
             assert not _SOFT_FAIL_RE.match(retval), retval
+
+
+class TestBrokerSyncSurfacesServiceErrors:
+    """
+    2026-08-23: `sync_broker_positions` returned "Success" without looking at
+    the result. The service catches its own exceptions and returns
+    {"status": "error", ...}, so a sync that failed on its first write still
+    reported success — every 5 minutes, for as long as the dead `positions`
+    table sat on the path. The dead-man divergence check compares dispatcher
+    and child SUCCESS counts, so a child that always claims success is
+    invisible to it.
+    原本無視 service 回傳值一律回 "Success"，使每 5 分鐘一次的失敗完全不可見。
+    """
+
+    def test_error_status_is_reported_as_error(self, run_async_identity):
+        with patch("src.services.transaction_service.TransactionService") as cls:
+            cls.return_value.sync_broker_positions.return_value = {
+                "status": "error",
+                "message": 'relation "positions" does not exist',
+            }
+            result = tasks.sync_broker_positions(user_id=USER)
+
+        assert result.startswith("Error:")
+        assert "positions" in result
+        assert _SOFT_FAIL_RE.match(result)
+
+    def test_success_status_still_reports_success(self, run_async_identity):
+        with patch("src.services.transaction_service.TransactionService") as cls:
+            cls.return_value.sync_broker_positions.return_value = {
+                "status": "success",
+                "summary": {"accounts_processed": 1},
+            }
+            result = tasks.sync_broker_positions(user_id=USER)
+
+        assert result == "Success"
+
+    def test_non_dict_result_is_not_treated_as_failure(self, run_async_identity):
+        """`_run_async_safe` may hand back None in some paths; that is not an error."""
+        with patch("src.services.transaction_service.TransactionService") as cls:
+            cls.return_value.sync_broker_positions.return_value = None
+            result = tasks.sync_broker_positions(user_id=USER)
+
+        assert result == "Success"
