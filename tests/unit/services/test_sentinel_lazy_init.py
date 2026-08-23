@@ -157,3 +157,55 @@ class TestCalibrationCooldown:
             await sentinel._maybe_calibrate_thresholds()
 
         assert cooldown.call_args.kwargs.get("fail_open") is False
+
+
+class TestCloseReleasesEverySession:
+    """
+    `close()` used to be one try block wrapping three closes, and the middle
+    one was a guaranteed `AttributeError`: it called
+    `settings_service.repo.close_session()` while `SettingsService` exposes
+    `settings_repo` (settings_service.py:25). The except swallowed it into a
+    single log line, so the settings session AND the keyword session below it
+    leaked on every close — silently, for as long as the code existed.
+
+    close() 原本三個關閉共用一個 try，中間那個必然 AttributeError，
+    導致 settings 與 keyword 的 session 每次都沒被關閉，且只留一行 log。
+    """
+
+    def test_closes_repo_settings_and_keyword_sessions(self, sentinel):
+        settings_service = MagicMock()
+        keyword_service = MagicMock()
+        sentinel.settings_service = settings_service
+        sentinel.keyword_service = keyword_service
+        sentinel.repo = MagicMock()
+
+        sentinel.close()
+
+        sentinel.repo.close_session.assert_called_once()
+        settings_service.settings_repo.close_session.assert_called_once()
+        keyword_service._repo.close_session.assert_called_once()
+
+    def test_one_failing_close_does_not_skip_the_others(self, sentinel):
+        settings_service = MagicMock()
+        settings_service.settings_repo.close_session.side_effect = RuntimeError("boom")
+        keyword_service = MagicMock()
+        sentinel.settings_service = settings_service
+        sentinel.keyword_service = keyword_service
+        sentinel.repo = MagicMock()
+
+        sentinel.close()
+
+        sentinel.repo.close_session.assert_called_once()
+        keyword_service._repo.close_session.assert_called_once()
+
+    def test_close_does_not_build_collaborators_it_never_used(self, sentinel):
+        """`self.settings_service` is a lazy property that CONSTRUCTS on read."""
+        sentinel._settings_service = None
+        sentinel._keyword_service = None
+        sentinel.repo = MagicMock()
+
+        sentinel.close()
+
+        assert sentinel._settings_service is None
+        assert sentinel._keyword_service is None
+        sentinel.repo.close_session.assert_called_once()
