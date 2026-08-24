@@ -86,9 +86,18 @@ app.conf.beat_schedule = {
     # Manual "rebalance now" still works — see tasks.trigger_portfolio_rebalance.
     # 2026-08-02 移除：與 sentinel_tick 呼叫同一個 process_tick()，而再平衡檢查本來
     # 每分鐘就會跑，此排程只造成 :00/:30 重複，且正好打在付費的 Tavily/FRED 分支上。
+    # 2026-08-23: this pointed at dispatch_market_intelligence, so the weekly
+    # report had never once been generated on schedule — the entry fired the
+    # market-intelligence fan-out a second time instead (the "monthly-report"
+    # entry below still does; see the technical-debt list). The weekly logic
+    # itself was never dead: WeeklyWorkflow.run_weekly_cycle() exists and is
+    # covered by tests/e2e/test_weekly_report_flow.py, but its only caller was
+    # SchedulerService.job_weekly_report on the retired APScheduler side, which
+    # nothing instantiates any more.
+    # 原本指向市場情報任務，導致週報從未被排程產生過。
     "weekly-report-trigger": {
-        "task": "src.infrastructure.tasks.dispatch_market_intelligence",
-        "schedule": crontab(hour=10, minute=0, day_of_week="6"),
+        "task": "src.infrastructure.tasks.dispatch_weekly_report",
+        "schedule": crontab(hour=10, minute=0, day_of_week="6"),  # Sat 10:00
     },
     "weekly-cost-review": {
         "task": "src.infrastructure.tasks.dispatch_memory_distill",

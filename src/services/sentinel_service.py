@@ -1975,15 +1975,42 @@ class SentinelService:
         Explicitly close all resources.
         明確關閉所有資源。
         """
-        try:
-            self.repo.close_session()
-            if self.settings_service:
-                self.settings_service.repo.close_session()
-            if self.keyword_service:
-                self.keyword_service._repo.close_session()
+        # 2026-08-23: this was one try block around three closes, and the
+        # middle one was a guaranteed AttributeError — `SettingsService`
+        # exposes `settings_repo` (settings_service.py:25), never `repo`. The
+        # except swallowed it into a single log line, so every close() left
+        # the settings session AND the keyword session open, unnoticed.
+        # Each close now stands alone: one failure can no longer skip the rest.
+        # 每個 close 各自獨立捕捉例外，一個失敗不再導致其餘被跳過。
+        closers = [
+            ("repo", lambda: self.repo.close_session()),
+        ]
+        # Read the backing fields, not the lazy properties: `self.settings_service`
+        # BUILDS a SettingsService when none exists (f5967ee8 made the whole
+        # service graph lazy), so closing would have constructed the very
+        # sessions it is trying to close on any tick that never touched them.
+        # 讀取私有欄位而非 lazy property，否則 close() 會為了關閉而先建立 session。
+        if self._settings_service is not None:
+            closers.append(
+                ("settings_repo", lambda: self._settings_service.settings_repo.close_session())
+            )
+        if self._keyword_service is not None:
+            closers.append(
+                ("keyword_repo", lambda: self._keyword_service._repo.close_session())
+            )
+
+        failed = []
+        for name, close_fn in closers:
+            try:
+                close_fn()
+            except Exception as e:
+                failed.append(name)
+                logger.error(f"SentinelService close: {name} failed: {e}")
+
+        if failed:
+            logger.error(f"SentinelService context closed with errors: {', '.join(failed)}")
+        else:
             logger.info("SentinelService context closed.")
-        except Exception as e:
-            logger.error(f"Error during SentinelService close: {e}")
 
     def _get_polling_tickers(self) -> List[str]:
         """

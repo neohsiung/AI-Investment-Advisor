@@ -13,21 +13,43 @@
 that scores trade decisions with a multi-agent ensemble and executes them
 against eToro.
 
-**Current capability, stated honestly (2026-08-12).** The order path is wired
+**Current capability, stated honestly (2026-08-23).** The order path is wired
 end to end and connected to a live eToro account, but it has never filled a
-trade: `transactions` holds **0 rows** with `entry_category='trade'`. It runs
-under a `tradable_capital_usd` cap (currently $100) with a
-`TRADING_MODE=paper` brake in `.env`. Treat "autonomous trading" as built and
-under test, not as demonstrated. Earlier revisions of this file described the
-intent as though it were the capability.
-訂單路徑已接通實盤帳戶但至今從未成交（`entry_category='trade'` 為 0 筆），
-目前受 $100 資本上限與 paper 煞車限制。請視為「已建置、驗證中」而非已驗證。
+trade: `transactions` holds **0 rows** with `entry_category='trade'`. Treat
+"autonomous trading" as built and under test, not as demonstrated. Earlier
+revisions of this file described the intent as though it were the capability.
 
-**Scoring ensemble: 4 agents**, weighted — Fundamental 0.35, Momentum 0.25,
-Sentiment 0.20, Risk 0.20 (`src/services/confidence_compositor_service.py`).
-Exits are scored separately by `ExitCompositorService` on different factors.
-Older docs claiming a "7-agent swarm" or "10 parallel debate agents" are
-describing designs that the running code does not implement.
+The `TRADING_MODE=paper` brake was **lifted on 2026-08-23** — orders now reach
+the real account, bounded by the `tradable_capital_usd` cap (currently $100)
+and `ai_trading_enabled`. Paper mode is not a usable fallback here: the eToro
+token has no demo permission (a deliberate decision — there is no demo path in
+this project), so setting `TRADING_MODE=paper` makes every broker call return
+`InsufficientPermissions`. It is a full stop, not a degraded mode.
+
+訂單路徑已接通實盤帳戶但至今從未成交（`entry_category='trade'` 為 0 筆）。
+2026-08-23 已解除 paper 煞車，目前受 $100 資本上限與 `ai_trading_enabled` 約束。
+paper 模式不是可用的降級模式——token 無 demo 權限（刻意決定，本專案不走 demo），
+掛上去只會讓所有 broker 呼叫回 `InsufficientPermissions`。
+
+**Agent counts refer to different subsystems — four numbers, all real**
+(verified against source 2026-08-23; canonical table in the wiki page
+代理人戰略協定 §2.1):
+
+- **10** — the Council debate roster, run in parallel as Layer 1 of
+  `SingleTickerAnalysisDAG.AGENT_ROSTER`: Macro, Momentum, Fundamental,
+  Sentiment, Thematic, Risk, Sentinel plus three buy-side Scouts.
+- **7** — that roster minus the three Scouts (the analysis agents).
+- **4** — the buy-side weighted **scoring ensemble**: Fundamental 0.35,
+  Momentum 0.25, Sentiment 0.20, Risk 0.20
+  (`src/services/confidence_compositor_service.py`). Exits are scored
+  separately by `ExitCompositorService` on different factors.
+- **11** — the functional role table in the wiki, which includes CIO, Council
+  and the `extract_actions` skill; not any single execution path.
+
+An earlier revision of this file called the "10 parallel debate agents" claim
+an unimplemented design. That was wrong: the debate roster is real, and it is
+the scoring ensemble that is 4. Say which subsystem you mean when quoting a
+number.
 
 - **Repo**: `neohsiung/AI-Investment-Advisor`
 - **Language**: Python 3.11 (Docker) / 3.10+ (local)

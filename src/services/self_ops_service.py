@@ -67,6 +67,7 @@ DISPATCHER_CHILD_TASKS: Dict[str, str] = {
     "dispatch_weekly_validation": "weekly_validation",
     "dispatch_event_digest": "send_event_digest",
     "dispatch_daily_report": "generate_daily_report",
+    "dispatch_weekly_report": "generate_weekly_report",
 }
 
 # How far back to compare dispatcher and child success counts.

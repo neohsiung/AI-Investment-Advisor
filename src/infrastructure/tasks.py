@@ -584,6 +584,48 @@ def dispatch_daily_report(force_report: bool = False):
         generate_daily_report.delay(user_id=uid, force_report=force_report)
     return f"Dispatched {len(users)} daily_report tasks"
 
+@app.task(name="src.infrastructure.tasks.dispatch_weekly_report")
+def dispatch_weekly_report():
+    """Fan-out dispatcher: 查詢所有活躍租戶，為每位分派獨立 Task。"""
+    users = _resolve_target_users()
+    for uid in users:
+        generate_weekly_report.delay(user_id=uid)
+    return f"Dispatched {len(users)} weekly_report tasks"
+
+
+@app.task(name="src.infrastructure.tasks.generate_weekly_report", soft_time_limit=1800, time_limit=1860)
+def generate_weekly_report(user_id: str = None):
+    """
+    Weekly Report Generation — runs WeeklyWorkflow.run_weekly_cycle().
+    2026-08-23: the "weekly-report-trigger" beat entry pointed at
+    dispatch_market_intelligence, so no weekly report had ever been generated
+    by the scheduler; the only path to run_weekly_cycle() was
+    SchedulerService.job_weekly_report, on the retired APScheduler side that
+    nothing instantiates any more.
+    每週報告生成：執行 WeeklyWorkflow。原排程指向市場情報任務，週報從未被排程產生過。
+
+    The weekly cycle plans and then fans out to the agent swarm, so it runs
+    considerably longer than the daily report — hence the 30-minute soft limit
+    against the daily report's 10.
+    """
+    user_id = user_id or os.getenv("PRIMARY_USER_ID") or os.getenv("USER_ID")
+    if not user_id:
+        logger.error("generate_weekly_report: user_id is required. Set PRIMARY_USER_ID env var or pass explicitly.")
+        return "Error: user_id is required"
+
+    try:
+        from src.services.workflow_service import WeeklyWorkflow
+
+        workflow = WeeklyWorkflow(user_id=user_id)
+        _run_async_safe(workflow.run_weekly_cycle(user_id=user_id))
+
+        logger.info(f"weekly_report completed for user {user_id}")
+        return f"Success: Weekly report generated for {user_id}"
+    except Exception as e:
+        logger.error(f"weekly_report failed for user {user_id}: {e}")
+        return f"Error: {str(e)}"
+
+
 @app.task(name="src.infrastructure.tasks.generate_daily_report", soft_time_limit=600, time_limit=660)
 def generate_daily_report(user_id: str = None, force_report: bool = False):
     """
