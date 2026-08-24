@@ -363,7 +363,17 @@ class Transaction(Base):
             "action NOT IN ('BUY', 'SELL') OR (ticker IS NOT NULL AND TRIM(ticker) <> '')",
             name='chk_tx_trade_has_ticker',
         ),
-        CheckConstraint("quantity > 0", name='chk_tx_qty_positive'),
+        # 2026-08-23: was an unconditional `quantity > 0`, which no production
+        # database could ever satisfy — DEPOSIT/WITHDRAWAL rows are cash moves
+        # with no instrument, so they legitimately carry quantity 0 (10 such
+        # rows in prod). The constraint had never been applied anywhere, so
+        # nothing failed; it just could not be applied.
+        # 原本是無條件 quantity > 0，但現金流列（DEPOSIT/WITHDRAWAL）本來就沒有數量，
+        # 合法地存 0，因此該約束在任何真實資料庫上都套用不上。
+        CheckConstraint(
+            "quantity > 0 OR entry_category = 'capital_flow'",
+            name='chk_tx_qty_positive',
+        ),
         CheckConstraint("price >= 0", name='chk_tx_price_nonneg'),
         CheckConstraint("amount >= 0", name='chk_tx_amount_nonneg'),
         CheckConstraint(
@@ -394,6 +404,14 @@ class PositionLot(Base):
     __table_args__ = (
         Index('idx_position_lots_user_open', 'user_id', 'is_open'),
         Index('idx_position_lots_user_ticker', 'user_id', 'ticker'),
+        # 2026-08-23: b7f2a91c3d0e's docstring listed these four; its code
+        # never wrote them. Declared here and installed by
+        # 021_backfill_integrity_checks so the promise and the database agree.
+        # b7f2a91c3d0e 的 docstring 列了這四條，但程式碼從未寫入。
+        CheckConstraint("quantity > 0", name='chk_lot_qty_positive'),
+        CheckConstraint("open_price > 0", name='chk_lot_open_price_pos'),
+        CheckConstraint("close_price IS NULL OR close_price > 0", name='chk_lot_close_price_pos'),
+        CheckConstraint("leverage IS NULL OR leverage >= 1.0", name='chk_lot_leverage_pos'),
     )
 
 class DailySnapshot(Base):

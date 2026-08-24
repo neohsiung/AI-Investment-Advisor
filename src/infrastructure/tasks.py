@@ -172,7 +172,20 @@ def sync_broker_positions(user_id: str = None):
     try:
         from src.services.transaction_service import TransactionService
         tx_svc = TransactionService(user_id=user_id)
-        _run_async_safe(tx_svc.sync_broker_positions())
+        result = _run_async_safe(tx_svc.sync_broker_positions())
+
+        # 2026-08-23: this used to `return "Success"` unconditionally, ignoring
+        # the result. `sync_broker_positions()` catches its own exceptions and
+        # returns {"status": "error", ...}, so a sync that failed on its very
+        # first write still reported success — for every 5-minute run, for as
+        # long as the dead `positions` table was on the path. The dead-man
+        # divergence check compares dispatcher and child SUCCESS counts, so a
+        # child that always claims success is invisible to it.
+        # 原本無視回傳值一律回 "Success"，導致每 5 分鐘一次的失敗完全不可見。
+        if isinstance(result, dict) and result.get("status") == "error":
+            message = result.get("message", "unknown error")
+            logger.error(f"Broker sync failed for {user_id}: {message}")
+            return f"Error: {message}"
         return "Success"
     except Exception as e:
         logger.error(f"Broker sync failed: {e}")

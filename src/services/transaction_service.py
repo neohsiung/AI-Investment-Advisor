@@ -198,8 +198,16 @@ class TransactionService:
                         } for p in live_positions_raw
                     ]
                     self.repository.reconcile_positions(uid, live_positions, broker_name)
-                    # 3. Save live positions snapshot to positions table
-                    self.repository.save_positions(uid, live_positions, broker_name)
+                    # 2026-08-23: the `save_positions()` call that stood here
+                    # wrote to a `positions` table that f9861a2caa12 DROPPED in
+                    # the v8 schema normalization — holdings are derived from
+                    # `transactions` and tracked as `position_lots` now. Nothing
+                    # in the tree ever read it back. So every run raised
+                    # UndefinedTable here and skipped the two steps below
+                    # (position_lots seeding, update_daily_snapshot), while the
+                    # Celery task still reported success.
+                    # 該呼叫寫入的 positions 表已在 v8 正規化時被移除，且無人讀取；
+                    # 它每次都拋 UndefinedTable，連帶跳過後面兩個步驟。
                 
                 summary["accounts_processed"] += 1
 
