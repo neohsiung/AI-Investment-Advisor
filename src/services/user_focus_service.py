@@ -25,13 +25,13 @@ class UserFocusService:
         self.etoro = etoro_service or EtoroService(user_id=user_id)
         self.market_data = market_data_service or MarketDataService(settings_service=self.settings_service)
         
-    def get_user_focus(self, top_n: int = 3) -> Dict[str, Any]:
+    async def get_user_focus(self, top_n: int = 3) -> Dict[str, Any]:
         """
         Analyzes watchlists to identify top sectors and industries of interest.
         分析觀察名單以識別最感興趣的板塊與產業。
         """
         try:
-            watchlists = self.etoro.get_watchlists()
+            watchlists = await self.etoro.get_watchlists()
             if not watchlists:
                 return {}
                 

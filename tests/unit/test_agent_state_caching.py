@@ -117,7 +117,7 @@ async def test_council_service_verifier_isolation():
         with patch.object(service, '_call_agent_llm', new_callable=AsyncMock) as mock_call:
             mock_call.return_value = "Mock decision"
             
-            with patch('src.services.user_focus_service.UserFocusService.get_user_focus', return_value="Focus"):
+            with patch('src.services.user_focus_service.UserFocusService.get_user_focus', new_callable=AsyncMock, return_value="Focus"):
                 with patch.object(service, '_archive_minutes'):
                     with patch.object(service, '_verify_grounding', new_callable=AsyncMock) as mock_verify:
                         mock_verify.return_value = "No issues"
