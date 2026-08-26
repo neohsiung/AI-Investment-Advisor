@@ -372,7 +372,7 @@ class CouncilService:
 
         # User focus & competitor analysis
         uf_service = UserFocusService(user_id=user_id, settings_service=self.settings_service)
-        user_focus = uf_service.get_user_focus()
+        user_focus = await uf_service.get_user_focus()
 
         competitor_analysis = None
         for leader in self.competitor_service.PEER_GROUPS.keys():
@@ -543,7 +543,7 @@ class CouncilService:
         # Inject Memory and User Focus
         # v5.0: Instantiate UserFocusService with the correct user_id
         uf_service = UserFocusService(user_id=user_id, settings_service=self.settings_service)
-        user_focus = uf_service.get_user_focus()
+        user_focus = await uf_service.get_user_focus()
         
         # [NEW] v4.5.1: Competitor Penetration check for leaders
         competitor_analysis = None

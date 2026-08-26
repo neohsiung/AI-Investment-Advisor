@@ -85,7 +85,10 @@ class OpenRouterGateway(ILLMGateway):
             )
             raise
         except httpx.HTTPError as e:
-            logger.error(f"OpenRouter API error: {e}")
+            logger.error(
+                f"OpenRouter API error: {type(e).__name__}: {e!r} | "
+                f"Model: {getattr(config, 'model', 'unknown')}"
+            )
             raise
         
         try:
@@ -154,7 +157,10 @@ class OpenRouterGateway(ILLMGateway):
                                     continue
         except httpx.HTTPError as e:
             # Log detailed error info for debugging
-            error_msg = f"OpenRouter API error in stream: {e}"
+            error_msg = (
+                f"OpenRouter API error in stream: {type(e).__name__}: {e!r} | "
+                f"Model: {getattr(config, 'model', 'unknown')}"
+            )
             import logging
             logging.error(error_msg)
             raise

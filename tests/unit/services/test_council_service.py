@@ -85,7 +85,7 @@ async def test_run_debate_logic_with_past_wisdom(council_service):
         with patch.object(council_service, '_call_agent_llm', new_callable=AsyncMock) as mock_call:
             mock_call.return_value = "Agent opinion"
             
-            with patch('src.services.user_focus_service.UserFocusService.get_user_focus', return_value="Growth"):
+            with patch('src.services.user_focus_service.UserFocusService.get_user_focus', new_callable=AsyncMock, return_value="Growth"):
                 with patch.object(council_service, '_archive_minutes'):
                     result = await council_service._run_debate_logic(session_id, topic, context_data, user_id)
                     
@@ -108,7 +108,7 @@ async def test_run_debate_logic_passes_user_id_to_recall(council_service):
         mock_search.return_value = []
         with patch.object(council_service, '_call_agent_llm', new_callable=AsyncMock) as mock_call:
             mock_call.return_value = "Agent opinion"
-            with patch('src.services.user_focus_service.UserFocusService.get_user_focus', return_value="Growth"):
+            with patch('src.services.user_focus_service.UserFocusService.get_user_focus', new_callable=AsyncMock, return_value="Growth"):
                 with patch.object(council_service, '_archive_minutes'):
                     await council_service._run_debate_logic("s1", "NVDA", {"market_data": {}}, "test_user")
 
