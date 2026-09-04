@@ -8,10 +8,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 > **Versioning note.** The active version line is `0.x`. The repository also
 > carries older tags (`v9.0.0`, `v6.0.0`, `v1.6.0`, `v1.0.0`) from a prior
 > numbering scheme; they are historical and do not supersede this line.
+>
+> **Tag offset for 0.3.0 — read this before checking out `v0.3.0`.** The
+> `v0.3.0` tag was cut at `d63671cc` (PR #54), one commit *before* PR #55
+> landed the version bump and this changelog entry. So `v0.3.0` still carries
+> `version = "0.2.0"` in `pyproject.toml` and has no `[0.3.0]` section here.
+> The release described below is `v0.3.1` (`75b6b3a0`), which is where
+> `pyproject.toml` reads `0.3.0`. The tags are left as published rather than
+> force-moved; this note is the correction.
 
 ## [Unreleased]
 
 ## [0.3.0] - 2026-08-26
+
+Released as tag **`v0.3.1`** — see the tag-offset note above.
 
 First release since `v0.2.1` (2026-05-10), covering 83 commits. Headline theme:
 the eToro credential incident and the class of silent failures it exposed —
@@ -106,4 +116,4 @@ noticed. See PRs #45, #47, #50, #53, #54.
 ### Dependencies
 - uv group bumps (#46, #48, #52), npm/yarn group bump (#51), axios (#49)
 
-[0.3.0]: https://github.com/neohsiung/AI-Investment-Advisor/compare/v0.2.1...v0.3.0
+[0.3.0]: https://github.com/neohsiung/AI-Investment-Advisor/compare/v0.2.1...v0.3.1
