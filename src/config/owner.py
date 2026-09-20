@@ -128,15 +128,20 @@ def _bootstrap_owner() -> Optional[str]:
         if row:
             return row[0]
 
-        # NOW() is Postgres; SQLite needs CURRENT_TIMESTAMP.
-        now_fn = "NOW()" if conn.engine.dialect.name == "postgresql" else "CURRENT_TIMESTAMP"
+        from datetime import datetime, timezone
+
         conn.execute(
             text(
                 "INSERT INTO users (id, email, name, created_at) "
-                f"VALUES (:uid, :email, :name, {now_fn}) "
+                "VALUES (:uid, :email, :name, :created_at) "
                 "ON CONFLICT (id) DO NOTHING"
             ),
-            {"uid": owner_id, "email": email, "name": name},
+            {
+                "uid": owner_id,
+                "email": email,
+                "name": name,
+                "created_at": datetime.now(timezone.utc),
+            },
         )
         # `user_identities.id` has a Python-side default only, and `is_primary`
         # is an Integer (0/1), not a boolean — raw SQL must supply both.

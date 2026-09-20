@@ -15,7 +15,9 @@ for mandatory user review before activation.
 import json
 import logging
 import os
+import re
 import shutil
+from pathlib import Path
 from typing import List, Optional, Dict, Any
 from dataclasses import dataclass
 
@@ -64,8 +66,14 @@ class SkillScaffolder:
             raise ValueError("GapReport must have a suggested_skill_name")
 
         # Sanitize name
-        skill_name = skill_name.strip().lower().replace("-", "_").replace(" ", "_")
-        skill_dir = os.path.join(self._pending_dir, skill_name)
+        raw_name = gap.suggested_skill_name.strip().lower().replace("-", "_").replace(" ", "_")
+        clean_name = self._safe_skill_name(raw_name)
+        pending_dir = Path(self._pending_dir).resolve()
+        skill_dir_path = (pending_dir / clean_name).resolve()
+        if not skill_dir_path.is_relative_to(pending_dir):
+            raise ValueError("Path traversal attempt detected")
+        skill_name = clean_name
+        skill_dir = str(skill_dir_path)
 
         # Create directory
         os.makedirs(skill_dir, exist_ok=True)
@@ -166,6 +174,13 @@ def {skill_name}(user_id: str, **kwargs) -> str:
         )
         return os.path.abspath(skill_dir)
 
+    @staticmethod
+    def _safe_skill_name(name: str) -> str:
+        clean = os.path.basename(name.strip())
+        if not clean or clean != name or not re.match(r"^[a-zA-Z0-9_-]+$", clean):
+            raise ValueError(f"Invalid skill name: {name}")
+        return clean
+
     def approve_and_activate(self, skill_name: str) -> bool:
         """
         Move a pending skill to the active skill directory.
@@ -177,27 +192,37 @@ def {skill_name}(user_id: str, **kwargs) -> str:
         Returns:
             True if successfully moved
         """
-        pending_path = os.path.join(self._pending_dir, skill_name)
-        active_path = os.path.join(self._base_dir, skill_name)
-
-        if not os.path.isdir(pending_path):
-            logger.error(f"SkillScaffolder: Pending skill '{skill_name}' not found")
+        try:
+            safe_name = self._safe_skill_name(skill_name)
+            pending_dir = Path(self._pending_dir).resolve()
+            base_dir = Path(self._base_dir).resolve()
+            pending_path = (pending_dir / safe_name).resolve()
+            active_path = (base_dir / safe_name).resolve()
+            if not pending_path.is_relative_to(pending_dir) or not active_path.is_relative_to(base_dir):
+                logger.error("SkillScaffolder: Path traversal attempt: %s", skill_name)
+                return False
+        except ValueError as exc:
+            logger.error("SkillScaffolder: %s", exc)
             return False
 
-        if os.path.exists(active_path):
+        if not pending_path.is_dir():
+            logger.error("SkillScaffolder: Pending skill '%s' not found", safe_name)
+            return False
+
+        if active_path.exists():
             logger.error(
-                f"SkillScaffolder: Active skill '{skill_name}' already exists"
+                "SkillScaffolder: Active skill '%s' already exists", safe_name
             )
             return False
 
         try:
-            shutil.move(pending_path, active_path)
+            shutil.move(str(pending_path), str(active_path))
             logger.info(
-                f"SkillScaffolder: Activated skill '{skill_name}' → {active_path}"
+                "SkillScaffolder: Activated skill '%s' → %s", safe_name, active_path
             )
             return True
         except Exception as e:
-            logger.error(f"SkillScaffolder: Failed to activate '{skill_name}': {e}")
+            logger.error("SkillScaffolder: Failed to activate '%s': %s", safe_name, e)
             return False
 
     def reject(self, skill_name: str) -> bool:
@@ -205,17 +230,27 @@ def {skill_name}(user_id: str, **kwargs) -> str:
         Delete a pending skill directory.
         刪除待核准的 Skill 目錄。
         """
-        pending_path = os.path.join(self._pending_dir, skill_name)
-        if not os.path.isdir(pending_path):
-            logger.warning(f"SkillScaffolder: Pending skill '{skill_name}' not found")
+        try:
+            safe_name = self._safe_skill_name(skill_name)
+            pending_dir = Path(self._pending_dir).resolve()
+            pending_path = (pending_dir / safe_name).resolve()
+            if not pending_path.is_relative_to(pending_dir):
+                logger.error("SkillScaffolder: Path traversal attempt: %s", skill_name)
+                return False
+        except ValueError as exc:
+            logger.error("SkillScaffolder: %s", exc)
+            return False
+
+        if not pending_path.is_dir():
+            logger.warning("SkillScaffolder: Pending skill '%s' not found", safe_name)
             return False
 
         try:
-            shutil.rmtree(pending_path)
-            logger.info(f"SkillScaffolder: Rejected and removed '{skill_name}'")
+            shutil.rmtree(str(pending_path))
+            logger.info("SkillScaffolder: Rejected and removed '%s'", safe_name)
             return True
         except Exception as e:
-            logger.error(f"SkillScaffolder: Failed to remove '{skill_name}': {e}")
+            logger.error("SkillScaffolder: Failed to remove '%s': %s", safe_name, e)
             return False
 
     def list_pending(self) -> List[str]:

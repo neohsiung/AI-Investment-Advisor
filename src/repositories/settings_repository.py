@@ -219,8 +219,8 @@ class AlchemySettingsRepository(BaseRepository, ISettingsRepository):
                 return self._decrypt(raw_value)
             return raw_value
         except Exception as e:
-            _logger.warning(f'Exception in settings_repository.py: {e}', exc_info=True)
-            _logger.exception(f"get() failed for user={resolved_uid!r} key={key!r}")
+            _logger.warning(f"Exception in settings_repository.py: {e}", exc_info=True)
+            _logger.exception(f"get() failed for user={resolved_uid!r}")
             return default
         finally:
             self.close_session()

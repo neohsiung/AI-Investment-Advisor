@@ -191,7 +191,7 @@ class AlchemySentinelRepository(BaseRepository, ISentinelRepository):
                     "content": content,
                     "metadata": json.dumps(metadata or {}),
                 })
-                logger.debug(f"SentinelRepository: Logged alert '{title}' at {current_time}")
+                logger.debug("SentinelRepository: Logged alert at %s", current_time)
         except Exception as e:
             logger.error(f"SentinelRepository: Failed to log alert: {e}")
 # T18: Alias for consistency

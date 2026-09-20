@@ -700,8 +700,7 @@ class BaseAgent(ABC):
                 self.logger.info(f"Using Cached Response for {self.name}")
                 return cached_response
 
-        prompt_snippet = user_prompt[:50].replace('\n', ' ') + "..."
-        self.logger.info(f"Calling LLM via Gateway | Prompt: {prompt_snippet}")
+        self.logger.info(f"Calling LLM via Gateway for {self.name}")
 
         # Delegate to ILLMGateway
         config = self._build_llm_config(temperature=temperature)

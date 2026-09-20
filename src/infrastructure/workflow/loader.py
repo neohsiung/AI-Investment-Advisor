@@ -25,6 +25,7 @@ from __future__ import annotations
 
 import logging
 import os
+import re
 import threading
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -187,8 +188,13 @@ def load_workflow(wf_id: str, force: bool = False) -> WorkflowSpec:
     workers — the point of moving the graph into a file.
     以 mtime 快取：編輯後無須重啟 worker 即生效。
     """
-    path = workflows_dir() / f"{wf_id}.yaml"
-    if not path.exists():
+    safe_name = os.path.basename(wf_id.strip())
+    if not safe_name or safe_name != wf_id or not re.match(r"^[a-zA-Z0-9_-]+$", safe_name):
+        raise WorkflowError(f"invalid workflow id: {wf_id!r}")
+
+    base_dir = workflows_dir().resolve()
+    path = (base_dir / f"{safe_name}.yaml").resolve()
+    if not path.is_relative_to(base_dir) or not path.exists():
         raise WorkflowError(f"workflow {wf_id!r} not found at {path}")
 
     mtime = path.stat().st_mtime

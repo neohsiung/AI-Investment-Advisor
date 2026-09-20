@@ -53,12 +53,13 @@ _ID_OK = set("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_-")
 
 
 def _safe_id(wf_id: str) -> str:
-    if not wf_id or not set(wf_id) <= _ID_OK:
+    clean_id = os.path.basename(wf_id.strip())
+    if not clean_id or clean_id != wf_id or not set(clean_id) <= _ID_OK:
         raise HTTPException(
             status_code=400,
             detail="workflow id may contain only letters, digits, hyphen and underscore",
         )
-    return wf_id
+    return clean_id
 
 
 class WorkflowSummary(BaseModel):
@@ -129,21 +130,22 @@ async def available_nodes(user_id: str = Depends(get_current_user_id)):
 
 @router.get("/{wf_id}", response_model=WorkflowDetail)
 async def get_one(wf_id: str, user_id: str = Depends(get_current_user_id)):
-    _safe_id(wf_id)
-    path = workflows_dir() / f"{wf_id}.yaml"
-    if not path.exists():
+    safe_name = _safe_id(wf_id)
+    base_dir = workflows_dir().resolve()
+    path = (base_dir / f"{safe_name}.yaml").resolve()
+    if not path.is_relative_to(base_dir) or not path.exists():
         raise HTTPException(status_code=404, detail=f"workflow '{wf_id}' not found")
 
     raw = path.read_text()
     try:
-        spec = load_workflow(wf_id, force=True)
+        spec = load_workflow(safe_name, force=True)
         return WorkflowDetail(
             id=spec.id, version=spec.version, description=spec.description,
             yaml=raw, layers=spec.layers(), valid=True,
         )
     except Exception as exc:
         return WorkflowDetail(
-            id=wf_id, version=0, yaml=raw, layers=[], valid=False, error=str(exc),
+            id=safe_name, version=0, yaml=raw, layers=[], valid=False, error=str(exc),
         )
 
 
@@ -197,28 +199,33 @@ async def save(wf_id: str, payload: WorkflowSaveRequest,
     不接受無法通過驗證的內容：存下壞掉的圖、等到下次排程才發現，
     對這些 workflow 而言就是一次漏掉的投組審查。
     """
-    _safe_id(wf_id)
+    safe_name = _safe_id(wf_id)
+    payload_clean = payload.yaml
 
-    result = _validate_yaml(payload.yaml)
+    result = _validate_yaml(payload_clean)
     if not result.valid:
         raise HTTPException(status_code=400, detail=result.error or "invalid workflow")
 
-    directory = workflows_dir()
+    directory = workflows_dir().resolve()
     directory.mkdir(parents=True, exist_ok=True)
-    path = directory / f"{wf_id}.yaml"
+    path = (directory / f"{safe_name}.yaml").resolve()
+    if not path.is_relative_to(directory):
+        raise HTTPException(status_code=400, detail="invalid workflow path")
 
     # Snapshot the outgoing version before overwriting.
     if path.exists():
-        history = directory / ".history"
+        history = (directory / ".history").resolve()
         history.mkdir(exist_ok=True)
         stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
-        try:
-            shutil.copy2(path, history / f"{wf_id}.{stamp}.yaml")
-        except OSError as exc:
-            # Losing the snapshot is not worth failing the save, but the operator
-            # should know their undo is missing.
-            # 快照失敗不值得中止儲存，但必須讓使用者知道少了還原點。
-            logger.warning("could not snapshot %s before overwrite: %s", wf_id, exc)
+        snapshot_file = (history / f"{safe_name}.{stamp}.yaml").resolve()
+        if snapshot_file.is_relative_to(history):
+            try:
+                shutil.copy2(path, snapshot_file)
+            except OSError as exc:
+                # Losing the snapshot is not worth failing the save, but the operator
+                # should know their undo is missing.
+                # 快照失敗不值得中止儲存，但必須讓使用者知道少了還原點。
+                logger.warning("could not snapshot %s before overwrite: %s", safe_name, exc)
 
     # Atomic replace: a partially written workflow file would fail to parse on
     # the next load, taking the graph down between two keystrokes.
@@ -226,17 +233,17 @@ async def save(wf_id: str, payload: WorkflowSaveRequest,
     try:
         fd, tmp = tempfile.mkstemp(dir=str(directory), suffix=".tmp")
         with os.fdopen(fd, "w") as fh:
-            fh.write(payload.yaml)
+            fh.write(payload_clean)
         os.replace(tmp, path)
     except OSError as exc:
-        logger.error("failed to write workflow %s: %s", wf_id, exc)
+        logger.error("failed to write workflow %s: %s", safe_name, exc)
         raise HTTPException(
             status_code=500,
             detail="could not write the workflow file — is config/ mounted writable?",
         ) from exc
 
-    logger.info("workflow %s saved by %s (%d nodes)", wf_id, user_id, result.node_count)
-    return await get_one(wf_id, user_id=user_id)
+    logger.info("workflow %s saved by %s (%d nodes)", safe_name, user_id, result.node_count)
+    return await get_one(safe_name, user_id=user_id)
 
 
 @router.get("/{wf_id}/history", response_model=List[str])
