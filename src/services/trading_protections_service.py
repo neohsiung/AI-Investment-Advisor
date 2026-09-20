@@ -25,6 +25,7 @@ from typing import Optional
 from sqlalchemy import bindparam, text
 
 from src.data.database import get_db_engine
+from src.config.owner import resolve_user_id
 
 logger = logging.getLogger(__name__)
 
@@ -99,7 +100,7 @@ def _normalize_side(action: object) -> Optional[str]:
 
 class TradingProtectionsService:
     def __init__(self, user_id: str, db_path: Optional[str] = None):
-        self.user_id = user_id
+        self.user_id = resolve_user_id(user_id)
         self.engine = get_db_engine(db_path)
         self._cfg = None
 

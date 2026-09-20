@@ -20,6 +20,7 @@ from typing import Dict, List, Any, Optional, Tuple
 from src.domain.interfaces import Message
 from dataclasses import dataclass
 from datetime import datetime
+from src.config.owner import resolve_user_id
 
 logger = logging.getLogger("ConfidenceCompositorService")
 
@@ -123,7 +124,7 @@ class CompositorService:
     }
 
     def __init__(self, user_id: str):
-        self.user_id = user_id
+        self.user_id = resolve_user_id(user_id)
         self.min_threshold = 5.0  # 5/10 minimum to execute
         self.max_single_allocation = 0.25  # 25% of excess cash max
         self.min_allocation = 0.05  # 5% minimum allocation

@@ -26,25 +26,29 @@ class SentimentSwarm(RoleSwarm):
             raise ValueError("SentimentSwarm: user_id is required.")
         super().__init__(name="SentimentSwarm", use_cache=use_cache, ttl_hours=ttl_hours, user_id=user_id, **kwargs)
         
-        self.news_scanner = SentimentSubAgent(
-            name="NewsScanner", 
-            instruction="分析新聞情緒 (Analyze sentiment of news).",
-            tier="fast",
-            user_id=user_id,
-            use_cache=use_cache,
-            ttl_hours=ttl_hours
-        )
-        self.social_pulse = SentimentSubAgent(
-            name="SocialPulse", 
-            instruction="評估市場情緒 (Assess overall market pulse).",
-            tier="advanced",
-            user_id=user_id,
-            use_cache=use_cache,
-            ttl_hours=ttl_hours
-        )
-        
-        self.register_agent("col_fast", self.news_scanner)
-        self.register_agent("col_adv", self.social_pulse)
+        # Sub-agents come from config/agents/swarms/sentiment.yaml. Their names,
+        # instructions, tiers and registration columns were Python literals here.
+        # 子代理改由 config/agents/swarms/sentiment.yaml 定義（原為此處的字面值）。
+        from src.agents.swarm.roster import load_roster
+
+        self.sub_agents = {}
+        for spec in load_roster("sentiment"):
+            agent = SentimentSubAgent(
+                name=spec.name,
+                instruction=spec.instruction,
+                tier=spec.tier,
+                user_id=user_id,
+                use_cache=use_cache,
+                ttl_hours=ttl_hours,
+            )
+            self.sub_agents[spec.name] = agent
+            if spec.column:
+                self.register_agent(spec.column, agent)
+
+        # Named attributes retained: run() and existing tests reference them.
+        # 保留具名屬性：run() 與既有測試會使用。
+        self.news_scanner = self.sub_agents.get("NewsScanner")
+        self.social_pulse = self.sub_agents.get("SocialPulse")
         
     async def run(self, context: Any) -> str:
         tickers = context.get("tickers", [])

@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException, UploadFile, File
 from typing import List, Dict, Any
 import io
 import pandas as pd
-from src.api.v1.router import get_current_user_id
+from src.api.v1.dependencies import get_current_user_id
 from src.api.v1.schemas.transaction_schemas import (
     TransactionListResponse, TransactionRecord, 
     TransactionCreateRequest, TransactionActionResponse

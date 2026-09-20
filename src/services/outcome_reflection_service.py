@@ -29,6 +29,7 @@ from typing import Any, Dict, List, Optional
 from sqlalchemy import text
 
 from src.data.database import get_db_engine
+from src.config.owner import resolve_user_id
 
 logger = logging.getLogger(__name__)
 
@@ -38,7 +39,7 @@ DEFAULT_BENCHMARK = "SPY"
 
 class OutcomeReflectionService:
     def __init__(self, user_id: str, db_path: Optional[str] = None):
-        self.user_id = user_id
+        self.user_id = resolve_user_id(user_id)
         self.engine = get_db_engine(db_path)
 
     # ── Phase A: record ──────────────────────────────────────────────

@@ -7,6 +7,7 @@ from src.services.market_data_service import MarketDataService
 from src.services.transaction_service import TransactionService
 from src.repositories.transaction_repository import AlchemyTransactionRepository
 from opentelemetry import trace
+from src.config.owner import resolve_user_id
 
 logger = setup_logger("DashboardService")
 tracer = trace.get_tracer(__name__)
@@ -22,7 +23,7 @@ class DashboardService:
         Initialize the dashboard service.
         初始化儀表板服務。
         """
-        self.user_id = user_id
+        self.user_id = resolve_user_id(user_id)
         self.db_path = db_path  # None will use environment DB_URL or DB_TYPE
         self.transaction_repo = AlchemyTransactionRepository()
         self.transaction_service = TransactionService(repository=self.transaction_repo)

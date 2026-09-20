@@ -75,10 +75,20 @@ class TestAnalyticsService:
             # Call is: update_daily_snapshot(self.db_path, self.user_id, force=force, current_prices=current_prices, account_id=account_id)
             assert args[1] == "user_123"
 
-    def test_missing_user_handling(self, mock_snapshot_repo):
-        """Test service behavior when user_id is not provided."""
+    def test_missing_user_resolves_to_the_owner(self, mock_snapshot_repo, monkeypatch):
+        """
+        Omitting user_id used to make every method return None — a service that
+        silently did nothing. In a single-owner deployment there is no such
+        thing as "no user": it resolves to the owner and the queries run.
+        未指定 user_id 不再讓服務靜默回傳 None，而是解析成擁有者並正常查詢。
+        """
+        from src.config.owner import reset_owner_cache
+
+        owner = "00000000-0000-4000-a000-000000000001"
+        monkeypatch.setenv("OWNER_ID", owner)
+        reset_owner_cache()
+
         service = AnalyticsService(user_id=None, repository=mock_snapshot_repo)
-        
-        assert service.get_performance_history() is None
-        assert service.get_latest_performance() is None
-        assert service.get_pnl_breakdown({}) is None
+        assert service.user_id == owner
+
+        reset_owner_cache()

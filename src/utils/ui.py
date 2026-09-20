@@ -88,9 +88,13 @@ def load_theme_css(theme="light"):
     load_design_system_css()
 
 def render_sidebar(user, default_db_path=None):
-    """Sleek minimalist sidebar with horizontal preference-centric navigation."""
-    from src.auth import auth_manager
-    
+    """
+    Sleek minimalist sidebar with horizontal preference-centric navigation.
+
+    The `src.auth.auth_manager` import was dropped with the Streamlit login —
+    there is no sign-in to render a sign-out button for any more.
+    Streamlit 登入已移除，不再需要 auth_manager。
+    """
     with st.sidebar:
         if user:
             display_name = user.get('name', 'User')
@@ -117,17 +121,11 @@ def render_sidebar(user, default_db_path=None):
             </style>
             """, unsafe_allow_html=True)
             
-            # The Integrated Preference Row: [Profile/Settings | Logout]
-            cols = st.columns([3.5, 1])
-            
-            with cols[0]:
-                # Link to Settings page. Path is relative to dashboard.py/Main.py
-                safe_page_link("pages/06_Settings.py", label=f"{short_name}. {display_name[:6]}...", icon=":material/account_circle:", help="User Settings")
-            
-            with cols[1]:
-                if safe_button("", key="logout_v18", icon=":material/logout:", help="Logout", use_container_width=True):
-                    auth_manager.logout()
-            
+            # Profile row. The logout button that sat beside it is gone with the
+            # login — there is no session to end in a single-operator install.
+            # 單人部署沒有登入工作階段，登出按鈕一併移除。
+            safe_page_link("pages/06_Settings.py", label=f"{short_name}. {display_name[:6]}...", icon=":material/account_circle:", help="User Settings")
+
             st.divider()
             
     return None

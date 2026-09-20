@@ -33,20 +33,34 @@ async def test_full_cognitive_memory_pipeline(db_setup):
     engine = db_setup
     
     # 1. Seed some event logs
+    #
+    # `id` is supplied explicitly, as both production writers do
+    # (sentinel_repository.py, web_adapter.py). It used to be omitted here and
+    # the insert still succeeded, because the old hand-written DDL declared
+    # `id TEXT PRIMARY KEY` and SQLite's legacy quirk permits NULL in exactly
+    # that shape. Postgres does not — so this test was passing on a behaviour
+    # production would have rejected.
+    #
+    # 舊手寫 DDL 的 `id TEXT PRIMARY KEY` 在 SQLite 允許 NULL（歷史相容行為），
+    # Postgres 則否；此測試原本依賴的正是生產環境不接受的行為。
+    import uuid as _uuid
+
     with engine.begin() as conn:
         conn.execute(text("""
-            INSERT INTO event_logs (user_id, event_type, title, content, created_at)
-            VALUES (:user_id, 'alert', 'VIX Spike', 'VIX jumped to 30.0', :ts)
+            INSERT INTO event_logs (id, user_id, event_type, title, content, created_at)
+            VALUES (:id, :user_id, 'alert', 'VIX Spike', 'VIX jumped to 30.0', :ts)
         """), {
-            "user_id": user_id, 
+            "id": str(_uuid.uuid4()),
+            "user_id": user_id,
             "ts": datetime.now() - timedelta(hours=2),
             "content": "VIX jumped to 30.0"
         })
         conn.execute(text("""
-            INSERT INTO event_logs (user_id, event_type, title, content, created_at)
-            VALUES (:user_id, 'signal', 'TSLA Long', 'Momentum turning bullish', :ts)
+            INSERT INTO event_logs (id, user_id, event_type, title, content, created_at)
+            VALUES (:id, :user_id, 'signal', 'TSLA Long', 'Momentum turning bullish', :ts)
         """), {
-            "user_id": user_id, 
+            "id": str(_uuid.uuid4()),
+            "user_id": user_id,
             "ts": datetime.now() - timedelta(hours=1),
             "content": "Momentum turning bullish"
         })

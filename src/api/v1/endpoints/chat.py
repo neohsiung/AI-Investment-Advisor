@@ -5,7 +5,7 @@ import json
 import asyncio
 import re
 
-from src.api.v1.router import get_current_user_id
+from src.api.v1.dependencies import get_current_user_id
 from src.agents.factory import AgentFactory
 from src.utils.logger import setup_logger
 from src.utils.rate_limit import limiter

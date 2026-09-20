@@ -11,6 +11,20 @@ def anyio_backend():
     return 'asyncio'
 
 class TestChannelFactory:
+    """
+    The patches these tests carried (MagicMock over each adapter class) are
+    refused by the plugin registry's subclass check, and were never needed: every
+    adapter constructor tolerates empty credentials. See
+    tests/unit/infrastructure/test_infra_channel_factory.py for the full note.
+    原本的 MagicMock patch 會被 registry 的子類別檢查拒絕，且本來就非必要。
+    """
+
+    @pytest.fixture(autouse=True)
+    def _reset(self):
+        ChannelFactory.reset()
+        yield
+        ChannelFactory.reset()
+
     def test_create_adapters_all_enabled(self):
         settings = {
             "channel_line_enabled": "true",
@@ -20,26 +34,20 @@ class TestChannelFactory:
             "channel_messenger_enabled": "true",
             "channel_google_chat_enabled": "true",
             "channel_email_smtp_server": "smtp.test.com",
-            # other settings can be blank for basic init
         }
-        
-        with patch('src.infrastructure.channels.line_adapter.LineBotAdapter'), \
-             patch('src.infrastructure.channels.slack_adapter.SlackAdapter'), \
-             patch('src.infrastructure.channels.telegram_adapter.TelegramAdapter'), \
-             patch('src.infrastructure.channels.messenger_adapter.MessengerAdapter'), \
-             patch('src.infrastructure.channels.google_chat_adapter.GoogleChatAdapter'), \
-             patch('src.infrastructure.channels.email_adapter.EmailAdapter'):
-            
-            adapters = ChannelFactory.create_adapters(settings)
-            # 6 enabled + 1 WebAdapter (always included) = 7
-            assert len(adapters) == 7
+        adapters = ChannelFactory.create_adapters(settings)
+        # 6 enabled + 1 WebAdapter (always included) = 7
+        assert len(adapters) == 7
 
     def test_create_adapters_error_handling(self):
+        from src.infrastructure.channels.line_adapter import LineBotAdapter
+
         settings = {"channel_line_enabled": "true"}
-        with patch('src.infrastructure.channels.line_adapter.LineBotAdapter', side_effect=Exception("Init Fail")):
+        with patch.object(LineBotAdapter, "__init__", side_effect=Exception("Init Fail")):
             adapters = ChannelFactory.create_adapters(settings)
             # Should not include LINE, but always includes WebAdapter
             assert len(adapters) >= 1
+            assert not any(isinstance(a, LineBotAdapter) for a in adapters)
             assert not any(isinstance(a, MagicMock) for a in adapters)
 
 class TestBaseChannelAdapter:

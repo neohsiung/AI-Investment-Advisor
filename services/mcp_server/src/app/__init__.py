@@ -28,12 +28,6 @@ tracer = init_tracing("mcp_server")
 # -------------------------
 
 # Define Models (Restored)
-class ToolRegistration(BaseModel):
-    """工具註冊請求"""
-    name: str
-    description: str
-    parameters: Dict[str, Any] = {}
-
 class ToolCallRequest(BaseModel):
     """工具調用請求"""
     arguments: Dict[str, Any] = {}
@@ -49,6 +43,11 @@ class AgentMessage(BaseModel):
 # 工具註冊表
 registered_tools: Dict[str, Dict] = {}
 
+# Distinguishes "no dispatch branch matched" from a tool that legitimately
+# returned None. Used by /tools/call to fail instead of reporting success.
+# 區分「沒有分派分支匹配」與「工具正常回傳 None」；供 /tools/call 用來失敗而非報成功。
+_UNHANDLED = object()
+
 # Services Global Instance (Moved to .state to avoid circular imports)
 from .state import services
 
@@ -59,30 +58,11 @@ from src.services.sentinel_service import SentinelService
 from src.services.interaction_service import InteractionService
 
 from src.services.socket_manager import socket_manager
-from src.utils.jwt_utils import decode_token
-
-def get_current_user(request: Request) -> Dict[str, Any]:
-    """從 Cookie 或 Authorization Header 獲取並驗證使用者資訊 [v8.1 MCP Auth Fix]"""
-    # 1. 優先從 Authorization Header 獲取 (Bearer Token)
-    auth_header = request.headers.get("Authorization")
-    token = None
-    if auth_header and auth_header.startswith("Bearer "):
-        token = auth_header.split(" ")[1]
-    
-    # 2. 次之從 Cookie 獲取
-    if not token:
-        token = request.cookies.get("access_token")
-        
-    if not token:
-        logger.warning("Missing authentication token")
-        raise HTTPException(status_code=401, detail="Not authenticated")
-        
-    payload = decode_token(token)
-    if not payload or payload.get("type") != "access":
-        logger.warning("Invalid or expired token")
-        raise HTTPException(status_code=401, detail="Invalid token")
-        
-    return payload
+from src.config.owner import get_owner_id
+import secrets
+# A local JWT-decoding `get_current_user` lived here and shadowed the import
+# above. Both are gone: identity is src.config.owner.get_owner_id(), and
+# authentication is LocalAuthMiddleware.
 
 _ws_data_cache: Dict[str, Any] = {}
 _ws_last_fetch: Dict[str, float] = {}
@@ -151,39 +131,30 @@ async def lifespan(app: FastAPI):
     from src.utils.boot_validation import validate_production_secrets
     validate_production_secrets()
 
+    # Single-operator mode removes the login gate, so the bind address IS the
+    # security boundary. Refuse to serve a non-loopback interface without a
+    # token rather than silently exposing the trading API.
+    from src.api.middleware.local_auth import assert_safe_bind
+    assert_safe_bind()
+
     logger.info("Initializing MCP Services...")
 
     # 啟動 WebSocket 廣播任務
     broadcast_task = asyncio.create_task(websocket_broadcast_loop())
     
     try:
-        # 0. Resolve Primary User UUID (Rule #4.3 - No 'system' user)
-        # 透過資料庫解析主要使用者 UUID，確保所有服務綁定至真實上下文。
-        from src.repositories.user_repository import AlchemyUserRepository
-        # from sqlalchemy import text (Moved to top)
-        user_repo = AlchemyUserRepository()
-        primary_user_id = None
-        
+        # 0. Resolve the owner. This replaces a hand-rolled
+        #    "SELECT id FROM users ORDER BY created_at LIMIT 1" plus a
+        #    PRIMARY_USER_ID env fallback plus a "services WILL fail" error log:
+        #    the resolver does the same lookup, bootstraps the row when absent,
+        #    and serialises that bootstrap against the other four processes.
+        from src.config.owner import OwnerNotResolved, get_owner_id
         try:
-            with user_repo.engine.connect() as conn:
-                row = conn.execute(text("SELECT id FROM users ORDER BY created_at ASC LIMIT 1")).fetchone()
-                if row:
-                    primary_user_id = row[0]
-                    logger.info(f"✓ MCP Services binding to primary user: {primary_user_id}")
-                else:
-                    logger.warning("⚠️ No users found in database. Services may fail to initialize correctly.")
-        except Exception as e:
-            logger.error(f"Failed to resolve primary user from DB: {e}")
-
-        if not primary_user_id:
-            # Fallback for bootstrap/tests if DB is empty
-            primary_user_id = os.getenv("PRIMARY_USER_ID")
-            if primary_user_id:
-                logger.info(f"Using PRIMARY_USER_ID from environment: {primary_user_id}")
-            else:
-                 # Last resort fallback to prevent startup crash if absolutely necessary, 
-                 # but logged as ERROR as per user instruction.
-                 logger.error("CRITICAL: No user context found. SettingsService WILL fail.")
+            primary_user_id = get_owner_id()
+            logger.info(f"✓ MCP Services binding to owner: {primary_user_id}")
+        except OwnerNotResolved as exc:
+            primary_user_id = None
+            logger.error(f"CRITICAL: no owner could be resolved — {exc}")
 
         # 1. Background Services for stream evaluation
         # Background sentinel gets its own local instances instead of polluting the global dictionary
@@ -370,35 +341,59 @@ async def lifespan(app: FastAPI):
 
 # v8.0: Rate Limiter is imported from src.utils.rate_limit
 
+# /docs, /redoc and /openapi.json are served openly in the default loopback-only
+# mode (they are genuinely useful there). Under AUTH_MODE=token the deployment is
+# reachable from somewhere else, and an open schema dump advertises every
+# trading endpoint to an unauthenticated caller — so they are turned off.
+# 預設本機模式保留 API 文件；AUTH_MODE=token 代表對外可達，關閉結構描述輸出。
+_docs_enabled = os.getenv("AUTH_MODE", "none").strip().lower() != "token"
+
 app = FastAPI(
     title="MCP Server",
     description="Model Context Protocol 工具伺服器 | Tool Server for Agent Mesh",
     version="1.1.0",
-    lifespan=lifespan
+    lifespan=lifespan,
+    docs_url="/docs" if _docs_enabled else None,
+    redoc_url="/redoc" if _docs_enabled else None,
+    openapi_url="/openapi.json" if _docs_enabled else None,
 )
 
 # Add Limiter to state
 app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
-# --- Session Middleware for Auth ---
-from starlette.middleware.sessions import SessionMiddleware
-app.add_middleware(
-    SessionMiddleware, 
-    secret_key=os.environ.get("JWT_SECRET", "fallback_insecure_secret_for_auth_sessions")
-)
+# SessionMiddleware removed with the OAuth flows — it existed solely to hold
+# authlib's OAuth `state` between the login redirect and the callback. Nothing
+# else in the app reads request.session, and keeping it meant carrying a
+# server-side session keyed by an insecure default JWT_SECRET for no purpose.
+# SessionMiddleware 只為 authlib OAuth 的 state 而存在，隨 OAuth 一併移除。
+
+# --- Local single-operator auth gate ---
+# AUTH_MODE=none (default) lets everything through; AUTH_MODE=token requires
+# ADMIN_TOKEN app-wide, covering the dashboard router, the MCP sub-app and the
+# admin endpoints — not just /api/v1, which has its own dependency-level check.
+#
+# Registered BEFORE CORS on purpose: add_middleware() prepends, so the later
+# registration ends up outermost. CORS must wrap this gate, otherwise a 401
+# would come back without CORS headers and the browser would report an opaque
+# network error instead of "unauthorized".
+# 必須註冊在 CORS 之前，否則 401 回應不帶 CORS 標頭，瀏覽器只會看到不明錯誤。
+from src.api.middleware.local_auth import LocalAuthMiddleware
+app.add_middleware(LocalAuthMiddleware)
 
 # --- CORS Middleware (New Phase 2) ---
 from fastapi.middleware.cors import CORSMiddleware
+# Origins come from FRONTEND_ORIGIN (comma-separated) and default to loopback.
+# A specific ngrok domain used to be hardcoded here, which meant the allow-list
+# silently granted a public tunnel origin credentialed access to the API — and
+# it stayed in the list whether or not the tunnel was running.
+# 原本寫死了一個 ngrok 網域，等於永久允許該公開來源攜帶憑證存取 API。
+_default_origins = "http://localhost:3000,http://localhost:3001,http://127.0.0.1:3000,http://127.0.0.1:3001"
+_allowed_origins = [o.strip() for o in os.getenv("FRONTEND_ORIGIN", _default_origins).split(",") if o.strip()]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[
-            "http://localhost:3000",
-            "http://localhost:3001",
-            "http://127.0.0.1:3000",
-            "http://127.0.0.1:3001",
-            "https://chummy-nonpathologically-lilla.ngrok-free.dev"
-    ],
+    allow_origins=_allowed_origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -506,19 +501,20 @@ async def health():
 
     return health_status
 
-@app.post("/tools/register")
-async def register_tool(tool: ToolRegistration):
-    """
-    註冊工具至 MCP Server
-    Register a tool to MCP Server
-    """
-    registered_tools[tool.name] = {
-        "name": tool.name,
-        "description": tool.description,
-        "parameters": tool.parameters
-    }
-    logger.info(f"Tool registered: {tool.name}")
-    return {"status": "registered", "tool": tool.name}
+# `POST /tools/register` was deleted here (M7-4).
+#
+# It wrote the submitted name into `registered_tools`, which is the 404 gate for
+# `POST /tools/call/{name}`. Dispatch below is a fixed if/elif chain, so a
+# registered name passed the gate, matched nothing, and returned HTTP 200 with
+# {"status": "success", "result": "Tool implementation not found in dispatch
+# logic."} — a success envelope carrying an error string, which is the exact
+# fail-silent pattern AGENTS.md rule 0 forbids on a decision path. No caller in
+# the repo ever used it. Tools are declared in `config/tools.yaml` and registered
+# into each agent's McpServer; this app no longer accepts tool registrations.
+#
+# 已刪除 POST /tools/register：註冊的名稱會通過 404 閘門但匹配不到任何分派，
+# 回傳 200 success 夾帶錯誤字串（AGENTS.md 規範 0 禁止的靜默失敗）。
+# 工具改由 config/tools.yaml 宣告並註冊進各 agent 的 McpServer。
 
 @app.get("/tools/list")
 async def list_tools():
@@ -591,8 +587,13 @@ async def call_tool(tool_name: str, request: ToolCallRequest):
             result = market_service.get_macro_data()
             
         else:
-            result = "Tool implementation not found in dispatch logic."
-            
+            # Sentinel rather than a message-as-result: the llama_* chain below
+            # may still handle this name, and if nothing does, the request must
+            # fail rather than return a success envelope holding an error string.
+            # 用哨符而非把訊息當結果：下方 llama_* 鏈可能仍會處理此名稱；
+            # 若無人處理則必須失敗，不可回傳夾帶錯誤字串的成功封包。
+            result = _UNHANDLED
+
         # LlamaIndex RAG Tools Dispatch
         if tool_name.startswith("llama_"):
             li_svc = services.get("llama_index")
@@ -648,6 +649,16 @@ async def call_tool(tool_name: str, request: ToolCallRequest):
             else:
                 result = {"status": "error", "error": "LlamaIndex service not initialized"}
             
+        if result is _UNHANDLED:
+            # The name is in `registered_tools` but no branch implements it.
+            # That is a wiring bug, not a client error, and it must be visible.
+            # 名稱在 registered_tools 內但沒有分支實作它：這是接線錯誤而非用戶端錯誤，必須可見。
+            logger.error(f"Tool '{tool_name}' is registered but has no dispatch branch")
+            raise HTTPException(
+                status_code=501,
+                detail=f"Tool '{tool_name}' is registered but not implemented",
+            )
+
         logger.info(f"Tool {tool_name} executed. Result size: {len(str(result)) if result else 0} chars")
         
         return {
@@ -655,7 +666,11 @@ async def call_tool(tool_name: str, request: ToolCallRequest):
             "tool": tool_name,
             "result": result
         }
-        
+
+    except HTTPException:
+        # 404/501 must survive; the blanket handler below would turn them into 500.
+        # 404/501 必須原樣傳出，否則會被下方的總括處理器改寫成 500。
+        raise
     except Exception as e:
         logger.error(f"Tool execution failed: {e}")
         raise HTTPException(status_code=500, detail="Internal server error")
@@ -784,168 +799,42 @@ async def generic_channel_callback(channel_name: str, request: Request):
     except Exception as e:
         logger.error(f"Error handling {channel_name} callback: {e}")
         raise HTTPException(status_code=500, detail="Processing Failed")
-# --- Authentication Hub (New Phase 4) ---
-from src.utils.google_auth import GoogleAuth
+# --- Authentication ---
+# The Google OAuth hub that lived here (GoogleAuth, /api/auth/login,
+# /api/auth/callback, /api/auth/refresh, /api/auth/me, /api/auth/logout, plus a
+# second `get_current_user` that shadowed the one above) has been removed.
+#
+# It was the second of three parallel OAuth implementations, and the least safe
+# of them: its callback returned the freshly minted JWTs in the redirect *query
+# string* (i.e. into browser history and any proxy log), which is precisely why
+# the /api/v1 flow had been rewritten to use a short-lived exchange code.
+#
+# Identity is now a single function: src.config.owner.get_owner_id(), gated by
+# LocalAuthMiddleware. Some imports below (RedirectResponse, urllib, json) are
+# retained because other handlers in this module still use them.
+#
+# 三套並存的 Google OAuth 已刪除；此為其中最不安全的一套（JWT 走 redirect
+# query string）。身分改由 owner 解析 + LocalAuthMiddleware 統一負責。
 from fastapi.responses import RedirectResponse, HTMLResponse
 import urllib.parse
 import json
 
-# Initialize Auth with backend configuration
-# backend uses port 8000 for callback
-BACKEND_URL = os.getenv("BACKEND_URL", "http://localhost:8000")
 FRONTEND_URL = os.getenv("FRONTEND_URL", "http://localhost:3000")
-
-auth_hub = GoogleAuth(
-    secret_credentials_path=os.getenv('GOOGLE_CLIENT_SECRET_PATH', 'client_secret.json'),
-    redirect_uri=f"{BACKEND_URL}/api/auth/callback",
-    cookie_key=os.getenv('COOKIE_KEY', 'your_secret_cookie_key_should_be_long')
-)
-
-@app.get("/api/auth/login")
-async def auth_login():
-    """Start OAuth flow by redirecting to Google."""
-    try:
-        flow = auth_hub._get_flow()
-        authorization_url, state = flow.authorization_url(
-            access_type='offline',
-            include_granted_scopes='true'
-        )
-        return RedirectResponse(authorization_url)
-    except Exception as e:
-        logger.error(f"Auth login failed: {e}")
-        return HTMLResponse(content="Auth Error: Initialization failed", status_code=500)
-
-@app.get("/api/auth/callback")
-async def auth_callback(code: str):
-    """Handle Google callback, set HTTPOnly tokens, and redirect to Next.js."""
-    try:
-        flow = auth_hub._get_flow()
-        flow.fetch_token(code=code)
-        credentials = flow.credentials
-        
-        # Verify ID Token
-        from google.oauth2 import id_token
-        from google.auth.transport import requests as google_requests
-        from src.utils.jwt_utils import create_access_token, create_refresh_token
-        
-        id_info = id_token.verify_oauth2_token(
-            credentials.id_token, google_requests.Request(), flow.client_config['client_id']
-        )
-        
-        user_email = id_info.get("email")
-        google_sub = id_info.get("sub")
-        
-        # 0. Core ID Mapping - Align Google sub/email to DB UUID
-        from src.repositories.user_repository import AlchemyUserRepository
-        user_repo = AlchemyUserRepository()
-        
-        # Check if user exists by email identity
-        # AlchemyUserRepository uses get_by_identity(provider, identifier) pattern
-        existing_user = user_repo.get_by_identity("email", user_email) if user_email else None
-        
-        if existing_user:
-            resolved_user_id = existing_user["id"]
-            logger.info(f"Mapping Google user {user_email} to existing UUID {resolved_user_id}")
-        else:
-            # Auto-register new user — create_user() also creates the email identity record
-            resolved_user_id = user_repo.create_user(email=user_email)
-            logger.info(f"Auto-registered new user {user_email} with UUID {resolved_user_id}")
-
-            
-        # Create Stateless JWT Tokens using resolved UUID
-        token_data = {"sub": resolved_user_id, "email": user_email}
-        access_token = create_access_token(token_data)
-        refresh_token = create_refresh_token(token_data)
-        
-        # Best Practice for cross-origin cookie:
-        # Pass tokens to the frontend via URL params.
-        # The Next.js /auth/callback page will then call a server-side API route
-        # to set cookies on its own origin (localhost:3000), avoiding the
-        # cross-port cookie rejection issue (localhost:8000 != localhost:3000).
-        import urllib.parse
-        params = urllib.parse.urlencode({
-            "access_token": access_token,
-            "refresh_token": refresh_token
-        })
-        response = RedirectResponse(url=f"{FRONTEND_URL}/auth/callback?{params}")
-        
-        logger.info(f"User {user_email} authenticated. Redirecting to frontend with tokens.")
-        return response
-        
-    except Exception as e:
-        logger.error(f"Auth callback failed: {e}")
-        return RedirectResponse(url=f"{FRONTEND_URL}/auth/login?error=Authentication%20Failed")
-
-@app.post("/api/auth/refresh")
-async def auth_refresh(request: Request):
-    """Exchange refresh token for a new access token."""
-    from src.utils.jwt_utils import decode_token, create_access_token
-    refresh_token = request.cookies.get("refresh_token")
-    
-    if not refresh_token:
-        raise HTTPException(status_code=401, detail="Refresh token missing")
-        
-    payload = decode_token(refresh_token)
-    if not payload or payload.get("type") != "refresh":
-        raise HTTPException(status_code=401, detail="Invalid refresh token")
-        
-    # Create new access token
-    new_data = {"sub": payload.get("sub"), "email": payload.get("email")}
-    new_access_token = create_access_token(new_data)
-    
-    response = JSONResponse(content={"status": "refreshed"})
-    response.set_cookie(
-        key="access_token",
-        value=new_access_token,
-        max_age=3600,
-        httponly=True,
-        samesite="lax",
-        secure=False
-    )
-    return response
-
-async def get_current_user(access_token: Optional[str] = Cookie(None)):
-    """依據 Cookie 中的 JWT token 驗證使用者身份"""
-    if not access_token:
-        raise HTTPException(status_code=401, detail="Not authenticated")
-    
-    payload = decode_token(access_token)
-    if not payload:
-        raise HTTPException(status_code=401, detail="Invalid or expired token")
-        
-    return payload
-
-@app.get("/api/auth/me")
-async def auth_me(user: Dict[str, Any] = Depends(get_current_user)):
-    """獲取當前登入的使用者資訊"""
-    return {
-        "status": "success",
-        "data": {
-            "user_id": user.get("sub"),
-            "email": user.get("email"),
-            "is_authenticated": True
-        }
-    }
-
-@app.post("/api/auth/logout")
-async def auth_logout():
-    """Clear all auth cookies."""
-    response = JSONResponse(content={"status": "logged_out"})
-    response.delete_cookie("access_token")
-    response.delete_cookie("refresh_token")
-    return response
 
 # --- v21.3: Admin Metrics & Health Dashboard [Phase 21] ---
 @app.get("/api/admin/metrics")
-async def get_admin_metrics(user: Dict[str, Any] = Depends(get_current_user)):
+async def get_admin_metrics():
     """
-    獲取系統維運指標 (限管理者)
+    System operations metrics.
+
+    The ADMIN_EMAILS allow-list that used to guard this is gone: it compared
+    against a JWT claim that nothing issues any more, and its body was a bare
+    `pass`, so it never actually denied anything. There is one operator now,
+    and LocalAuthMiddleware is what decides whether they may reach this at all.
+
+    原本的 ADMIN_EMAILS 檢查比對的是已不存在的 JWT claim，且分支內容是 pass，
+    從未真正擋下任何請求；單一擁有者下由 LocalAuthMiddleware 統一把關。
     """
-    # 權限檢查 (目前僅允許 system 帳號或預設主要使用者)
-    if user.get("sub") != "system" and user.get("email") not in os.getenv("ADMIN_EMAILS", "").split(","):
-        # For local dev, we might relax this or check if it matches primary user
-        pass 
-        
     from src.repositories.usage_repository import UsageRepository
     usage_repo = UsageRepository()
     
@@ -983,24 +872,23 @@ async def dashboard_websocket(
     WebSocket endpoint for real-time dashboard updates.
     從 Query 參數中取得 access_token 進行握手認證。
     """
-    if not access_token:
-        logger.warning("WebSocket attempt without access_token query param.")
-        await websocket.close(code=1008)  # Policy Violation
-        return
+    # WebSocket handshakes do NOT pass through LocalAuthMiddleware — Starlette's
+    # BaseHTTPMiddleware only wraps HTTP. So the token check has to be repeated
+    # here, or this endpoint would stay wide open in token mode while every
+    # HTTP route was gated. It is the one hole a middleware-only design leaves.
+    # WebSocket 握手不經過 BaseHTTPMiddleware，token 檢查必須在此重做，
+    # 否則 token 模式下 HTTP 全被擋、WS 卻完全開放。
+    from src.api.middleware.local_auth import admin_token, auth_mode
+
+    if auth_mode() == "token":
+        expected = admin_token()
+        if not expected or not access_token or not secrets.compare_digest(access_token, expected):
+            logger.warning("WebSocket rejected: missing or invalid admin token.")
+            await websocket.close(code=1008)  # Policy Violation
+            return
 
     try:
-        # 驗證 Token
-        payload = decode_token(access_token)
-        if not payload:
-            logger.warning("Invalid WebSocket token.")
-            await websocket.close(code=1008)
-            return
-
-        user_id = payload.get("sub")
-        if not user_id:
-            logger.warning("WebSocket token missing user_id.")
-            await websocket.close(code=1008)
-            return
+        user_id = get_owner_id()
 
         # 註冊連線
         await socket_manager.connect(websocket, user_id)

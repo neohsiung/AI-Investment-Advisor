@@ -1,0 +1,77 @@
+# LLM tiers — the cognitive routing ladder.
+#
+# These four specs were a 54-line literal `DEFAULT_TIERS` dict in
+# src/infrastructure/llm/tier_config.py. Nothing about them is code: they are
+# display names, prices and token ceilings, and the per-tier cost numbers are
+# what `budget_aware_model_router` and the cost dashboards reason about. Editing
+# a price should not mean editing Python.
+#
+# `env_key` is the settings key the tier's model is read from — despite the name,
+# resolution is DB-only (`TierSpec.resolve_model` deliberately refuses env-var
+# and hardcoded fallbacks, so an unconfigured tier resolves to None and fails
+# loudly rather than quietly using a model nobody chose).
+#
+# Costs are $ per million tokens. `blended_cost_per_mtok` weights them 3:1
+# input:output.
+#
+# 原本是 tier_config.py 內 54 行的字面 DEFAULT_TIERS。這些內容全是資料——顯示名稱、
+# 價格、token 上限——其中每層成本是預算路由與成本儀表板的計算依據；改價格不該要改 Python。
+# env_key 是該層模型的設定鍵；儘管名稱如此，解析僅來自資料庫（刻意不允許環境變數或
+# 硬編備援，未設定的層級會解析為 None 並明確失敗，而非靜默使用沒人選過的模型）。
+
+version: 1
+
+tiers:
+  # ── Tier 0: Reflex — 條件裁決層 (Arbiter / Jev 1.13) ─────────
+  - name: reflex
+    display_name: "Reflex (條件裁決)"
+    env_key: AI_MODEL_REFLEX
+    input_cost_per_mtok: 0.042
+    output_cost_per_mtok: 0.00
+    max_tokens: 512
+    description: Type-safe non-generative decision arbiter (Jev 1.13 via Decisions API)
+    cognitive_mapping: "Reflex Tier — 條件反射層: 70ms 強型別機率裁決"
+
+  # ── Tier 0b: Nano — 本地輕量層 (Local Reflex) ──────────────
+  - name: nano
+    display_name: "Nano (反射)"
+    env_key: AI_MODEL_NANO
+    input_cost_per_mtok: 0.10
+    output_cost_per_mtok: 0.40
+    max_tokens: 512
+    description: Ultra-cheap reflex layer for classification & routing
+    cognitive_mapping: "System 0 — 反射 (Reflex): 不經思考的自動反應"
+
+  # ── Tier 1: Fast — 快思層 (Fast Thinking) ──────────
+  - name: fast
+    display_name: "Fast (高速)"
+    env_key: AI_MODEL_FAST
+    input_cost_per_mtok: 0.30
+    output_cost_per_mtok: 2.50
+    max_tokens: 2048
+    description: Low-latency balance for summary & sensory agents
+    cognitive_mapping: "System 1 — 快思 (Fast Thinking): 直覺式快速處理"
+
+  # ── Tier 2: Smart — 慢想層 (Slow Thinking) ─────────
+  # 用途: 分析、推理、知識蒸餾、上下文對話、多步驟決策
+  - name: smart
+    display_name: "Smart (慢想)"
+    env_key: AI_MODEL_SMART
+    input_cost_per_mtok: 1.25
+    output_cost_per_mtok: 10.00
+    max_tokens: 8192
+    description: Analytical layer for reasoning & multi-step decisions
+    cognitive_mapping: "System 2 — 慢想 (Slow Thinking): 需要專注的分析性思考"
+
+  # ── Tier 3: Advanced — 深思層 (Deep Thinking) ──────
+  # Use for: CIO final decisions, wisdom crystallization (K→W),
+  #          complex strategy, risk assessment with high stakes
+  # 用途: CIO 最終決策、智慧結晶、複雜策略、高風險評估
+  - name: advanced
+    display_name: "Advanced (深思)"
+    env_key: AI_MODEL_ADVANCED
+    input_cost_per_mtok: 3.00
+    output_cost_per_mtok: 15.00
+    max_tokens: 8192
+    description: Deep reasoning for CIO decisions & complex strategy
+    cognitive_mapping: "System 2+ — 深思 (Deep Thinking): 深度推理與戰略判斷"

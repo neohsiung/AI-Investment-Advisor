@@ -1,0 +1,61 @@
+# Opportunity detection — scouts only, no CIO chain.
+#
+# Transcribed from OpportunityDetectionDAG._build_nodes(). Deliberately stops at
+# the scout reduction: this pipeline exists to surface candidates cheaply, so it
+# never pays for the smart-tier CIO draft/final chain.
+#
+# 由 OpportunityDetectionDAG._build_nodes() 轉錄。刻意只跑到 scout 匯總，
+# 目的是以低成本找出候選標的，不動用 smart tier 的 CIO 決策鏈。
+
+id: opportunity_detection
+version: 1
+description: Cheap scout-only sweep for new candidates.
+
+inputs:
+  - portfolio
+
+nodes:
+  - name: FilterHoldings
+    type: code
+    ref: filter_holdings
+    inputs: [portfolio]
+    outputs: [filtered_portfolio]
+    ttl: 0
+
+  - name: FetchMarketData
+    type: code
+    ref: fetch_market_data
+    inputs: [filtered_portfolio]
+    outputs: [portfolio_market_data]
+    ttl: 300
+
+  - name: MomentumScout
+    type: agent
+    agent: Momentum Scout
+    tier: fast
+    inputs: [filtered_portfolio, portfolio_market_data]
+    outputs: [momentum_scout_result]
+    ttl: 3600
+
+  - name: FundamentalScout
+    type: agent
+    agent: Fundamental Scout
+    tier: fast
+    inputs: [filtered_portfolio, portfolio_market_data]
+    outputs: [fundamental_scout_result]
+    ttl: 3600
+
+  - name: MacroScout
+    type: agent
+    agent: Macro Scout
+    tier: fast
+    inputs: [filtered_portfolio, portfolio_market_data]
+    outputs: [macro_scout_result]
+    ttl: 3600
+
+  - name: ReduceScouts
+    type: code
+    ref: reduce_scouts
+    inputs: [momentum_scout_result, fundamental_scout_result, macro_scout_result]
+    outputs: [scout_summary]
+    ttl: 0

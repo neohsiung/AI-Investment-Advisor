@@ -1,6 +1,9 @@
 ---
 name: get_macro_summary
 description: 取得即時宏觀經濟指標摘要 (VIX, SPY, Yield Spread, Fed Rate)
+intents:
+  - macro
+  - vix
 ---
 
 # Get Macro Summary

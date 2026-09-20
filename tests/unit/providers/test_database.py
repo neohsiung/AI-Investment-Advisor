@@ -16,9 +16,16 @@ def test_init_db(tmp_path):
     tables = cursor.execute("SELECT name FROM sqlite_master WHERE type='table'").fetchall()
     table_names = [t[0] for t in tables]
 
+    # `schema_version` was in this list and is deliberately not any more.
+    # Alembic owns versioning via `alembic_version`; migration
+    # f9861a2caa12 explicitly DROPs `schema_version`, and it does not exist in
+    # the production database. The old hand-written DDL in database.py kept
+    # re-creating it anyway — one more way the two schema sources had diverged.
+    # schema_version 已由 migration 明確刪除、生產環境也沒有此表；
+    # 舊的手寫 DDL 卻仍會重建它，正是兩份 schema 來源漂移的例子。
     expected_tables = [
         'users', 'transactions', 'memory_embeddings', 'settings',
-        'council_minutes', 'event_logs', 'reports', 'schema_version',
+        'council_minutes', 'event_logs', 'reports',
         'user_identities', 'daily_snapshots', 'cash_flows', 'risk_keywords',
         'channel_verifications'
     ]

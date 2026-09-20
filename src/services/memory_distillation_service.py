@@ -9,6 +9,7 @@ from src.domain.interfaces import LLMConfig, Message
 from src.services.cognitive_memory_manager import CognitiveMemoryManager
 from src.data.database import get_db_engine
 from sqlalchemy import text
+from src.config.owner import resolve_user_id
 
 logger = logging.getLogger("MemoryDistillationService")
 
@@ -24,7 +25,7 @@ class MemoryDistillationService:
     """
 
     def __init__(self, user_id: str, tier: str = "nano"):
-        self.user_id = user_id
+        self.user_id = resolve_user_id(user_id)
         self.tier = tier
         self.memory_manager = CognitiveMemoryManager(user_id=user_id)
         self.engine = get_db_engine()

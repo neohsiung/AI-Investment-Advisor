@@ -2,6 +2,7 @@ import ast
 import logging
 from typing import Tuple, Dict, Any
 import os
+from src.config.owner import resolve_user_id
 
 logger = logging.getLogger(__name__)
 
@@ -12,7 +13,7 @@ class MCPBackgroundCheckService:
     """
 
     def __init__(self, user_id: str):
-        self.user_id = user_id
+        self.user_id = resolve_user_id(user_id)
 
     async def verify_security_clearance(self, skill_filepath: str) -> Tuple[bool, str]:
         """

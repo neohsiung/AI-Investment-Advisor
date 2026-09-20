@@ -19,6 +19,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-09-20
+
+Major architecture transition to declarative workflows, dynamic agent registry,
+unified LLM tier bindings, Next.js 15 UI extensions, and streamlined single-box operations.
+
+### Added
+- Declarative Workflow DAG engine (`src/infrastructure/workflow/loader.py`, `config/workflows/`) supporting YAML-driven execution graphs, code node registry, parallel execution layers, and hot-reloading
+- Dynamic Agent Registry (`src/agents/registry.py`, `src/agents/impls.py`, `config/agents/`) enabling declarative agent persona definitions and skill bindings
+- Unified model routing with tier-based configuration (`config/llm_tiers.yaml`, `config/data_providers.yaml`, `src/services/cost_profile_service.py`)
+- Turnkey onboarding and single-box operations (`install.sh`, `scripts/onboarding_wizard.py`, rewritten `start.sh`)
+- Next.js 15 frontend management pages for workflows, agents, extensions, and runtime settings (`frontend/src/app/workflows/`, `frontend/src/app/agents/`, etc.)
+- Discord channel notification adapter (`src/infrastructure/channels/discord_adapter.py`, `config/channels.yaml`)
+- Comprehensive test suites covering DAG workflows, dynamic agent registry, and security sanitization (over 2,800 tests)
+
+### Changed
+- Refactored `start.sh` from a 1000+ line script into an operational control CLI tailored for single-box deployments
+- Re-architected optional dependencies in `pyproject.toml` to prevent GPU/PyTorch bloating in default Docker environments
+- Replaced hardcoded model configurations with declarative provider catalog and budget-aware tier bindings
+
+### Fixed
+- Fixed unawaited coroutines in async service methods
+- Cleaned up obsolete database schema references and legacy test cases
+
+### Dependencies
+- Bumps in uv dependency groups (aiohttp, cryptography, urllib3, soupsieve) and npm packages (Next.js 16.3.3)
+
 ## [0.3.0] - 2026-08-26
 
 Released as tag **`v0.3.1`** — see the tag-offset note above.
@@ -116,4 +142,5 @@ noticed. See PRs #45, #47, #50, #53, #54.
 ### Dependencies
 - uv group bumps (#46, #48, #52), npm/yarn group bump (#51), axios (#49)
 
+[0.4.0]: https://github.com/neohsiung/AI-Investment-Advisor/compare/v0.3.1...v0.4.0
 [0.3.0]: https://github.com/neohsiung/AI-Investment-Advisor/compare/v0.2.1...v0.3.1

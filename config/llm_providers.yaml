@@ -4,10 +4,37 @@
 # This file lists the *supported Provider classes*. It does NOT represent
 # user-configured instances — those are stored in the `llm_providers` DB
 # table (one row per user-added Provider instance).
+#
+# M7-5: it is now the single source for all three provider lookups that used to
+# disagree with each other:
+#
+#   1. `ProviderCatalog` — already read this file.
+#   2. `LLMGatewayFactory._REGISTRY` — a hardcoded dict of 13 aliases over 6
+#      classes, with no `groq` and no `anthropic`. `settings_schema.yaml` offers
+#      "Groq" in the AI_PROVIDER enum, so choosing it raised
+#      "Unsupported LLM provider: 'Groq'".
+#   3. `llm_config_chain._GATEWAY_REGISTRY` — same list again, plus a
+#      `try: from ... import GroqGateway / except ImportError: pass`. Neither
+#      GroqGateway nor AnthropicGateway has ever existed, so both excepts always
+#      fired and every groq/anthropic candidate was dropped from every config
+#      chain with a WARNING — the same silent-drop bug the nvidia_nim comment in
+#      that file documents, still live for two more providers. Both are
+#      OpenAI-compatible, which this file already said.
+#
+# `aliases:` exists because callers pass provider names from several eras: DB
+# `provider_code` values, display names shown in the UI, and legacy spellings.
+# Every alias resolves to the same gateway class, and each is also registered
+# lowercased.
+#
+# M7-5：本檔成為三處互相矛盾的供應商查表的單一來源。
+# LLMGatewayFactory 缺 groq/anthropic（UI 卻提供 Groq 選項，選了會拋錯）；
+# llm_config_chain 以 try-import 載入從未存在的 GroqGateway/AnthropicGateway，
+# except 永遠觸發，導致所有 groq/anthropic 候選被靜默剔除。兩者皆為 OpenAI 相容。
 
 providers:
   - provider_code: openrouter
     display_name: "OpenRouter"
+    aliases: [OpenRouter, openrouter]
     gateway_class: "src.infrastructure.llm.llm_gateway.OpenRouterGateway"
     default_base_url: "https://openrouter.ai/api/v1"
     auth_type: bearer
@@ -26,6 +53,7 @@ providers:
 
   - provider_code: openai
     display_name: "OpenAI"
+    aliases: [OpenAI, openai]
     gateway_class: "src.infrastructure.llm.llm_gateway.OpenAIGateway"
     default_base_url: "https://api.openai.com/v1"
     auth_type: bearer
@@ -44,6 +72,7 @@ providers:
 
   - provider_code: gemini
     display_name: "Google Gemini"
+    aliases: ["Google Gemini", google_gemini, gemini]
     gateway_class: "src.infrastructure.llm.llm_gateway.GeminiGateway"
     default_base_url: "https://generativelanguage.googleapis.com/v1beta"
     auth_type: api_key_query
@@ -61,7 +90,9 @@ providers:
       local: false
 
   - provider_code: ollama
+    # The display name carries "(Local)", so "Ollama" has to be an explicit alias.
     display_name: "Ollama (Local)"
+    aliases: [Ollama, ollama]
     gateway_class: "src.infrastructure.llm.llm_gateway.OllamaGateway"
     default_base_url: "http://host.docker.internal:11434/v1"
     auth_type: none
@@ -86,6 +117,7 @@ providers:
   # NOTE: native AnthropicGateway is deferred to Phase C.
   - provider_code: anthropic
     display_name: "Anthropic (via OpenAI-compat placeholder)"
+    aliases: [Anthropic, anthropic]
     gateway_class: "src.infrastructure.llm.llm_gateway.OpenAIGateway"
     default_base_url: "https://api.anthropic.com/v1"
     auth_type: custom
@@ -107,6 +139,11 @@ providers:
 
   - provider_code: nvidia_nim
     display_name: "NVIDIA NIM Free"
+    # 'nvidia' and 'nvidia_nim' are both in use: see the 2026-08-12 note in
+    # llm_config_chain.py, where the missing spelling silently dropped every
+    # NIM-backed candidate. Both stay registered.
+    # 兩種拼法都在使用中；缺少其一曾導致所有 NIM 候選被靜默剔除。
+    aliases: [NVIDIA, Nvidia, nvidia, nvidia_nim]
     gateway_class: "src.infrastructure.llm.llm_gateway.NvidiaGateway"
     default_base_url: "https://integrate.api.nvidia.com/v1"
     auth_type: bearer
@@ -129,6 +166,7 @@ providers:
 
   - provider_code: groq
     display_name: "Groq (Fast Inference)"
+    aliases: [Groq, groq]
     gateway_class: "src.infrastructure.llm.llm_gateway.OpenAIGateway"
     default_base_url: "https://api.groq.com/openai/v1"
     auth_type: bearer

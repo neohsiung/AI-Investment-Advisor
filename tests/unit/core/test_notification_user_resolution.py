@@ -73,97 +73,65 @@ async def test_do_send_alert_uses_internal_user_id():
 
 
 # ─────────────────────────────────────────────────────
-# Test 2: Microservice resolves channel-specific ID
+# Test 2: channel-specific identifiers resolve to/from the internal user
+#
+# These used to exercise services/notification/src/app/main.py — a standalone
+# microservice that was in no compose file and had been superseded by the
+# in-process NotificationService. The service is gone; the invariant is not,
+# because NotificationService._resolve_channel_id still performs exactly this
+# mapping every time an alert is dispatched.
+#
+# 原本測試的獨立通知微服務已刪除（不在任何 compose 中、早被行程內服務取代），
+# 但「內部 user_id ↔ 管道專屬 ID」的對應仍在 _resolve_channel_id 中，故保留驗證。
 # ─────────────────────────────────────────────────────
 
 @pytest.mark.anyio
-async def test_process_notification_resolves_channel_id():
-    """
-    Verify the notification microservice resolves a LINE User ID
-    to the internal user_id via find_user_by_channel_id fallback.
-    確認微服務能從 LINE User ID 反查出內部 user_id。
-    """
-    from services.notification.src.app.main import NotificationRequest, _process_notification
+async def test_resolve_channel_id_maps_internal_user_to_channel_identifier():
+    """A UUID resolves to that user's LINE identifier for the line adapter."""
+    from src.services.notification_service import NotificationService
 
-    req = NotificationRequest(
-        user_id="U1a2b3c4d5e6f",  # LINE-specific User ID
-        title="Test Alert",
-        content="Test content",
-        channels=["line"],
-        category="sentinel",
-    )
+    uuid = "00000000-0000-4000-a000-000000000001"
+    user_repo = MagicMock()
+    user_repo.get_identities.return_value = [
+        {"provider": "email", "identifier": "owner@example.com", "is_primary": 1},
+        {"provider": "line", "identifier": "U1a2b3c4d5e6f", "is_primary": 0},
+    ]
 
-    with patch('services.notification.src.app.main.SettingsService') as mock_svc_cls, \
-         patch('services.notification.src.app.main.NotificationService') as mock_noti_cls:
+    svc = NotificationService(adapters=[], user_repo=user_repo)
 
-        # First call: no channel settings found (wrong user_id)
-        mock_svc_empty = MagicMock()
-        mock_svc_empty.get_all_settings.return_value = {}
-        mock_svc_empty.find_user_by_channel_id.return_value = "alice@example.com"
-
-        # Second call: correct settings found
-        mock_svc_resolved = MagicMock()
-        mock_svc_resolved.get_all_settings.return_value = {
-            "channel_line_enabled": "true",
-            "channel_line_access_token": "tok_xxx",
-        }
-
-        mock_svc_cls.side_effect = [mock_svc_empty, mock_svc_resolved]
-
-        mock_noti_instance = MagicMock()
-        mock_noti_instance.notify_all = AsyncMock(return_value={})
-        mock_noti_cls.create_with_settings.return_value = mock_noti_instance
-
-        await _process_notification(req)
-
-        # Verify: find_user_by_channel_id was called with the LINE User ID
-        mock_svc_empty.find_user_by_channel_id.assert_called_once_with("U1a2b3c4d5e6f")
-
-        # Verify: NotificationService was created with the RESOLVED internal user_id
-        mock_noti_cls.create_with_settings.assert_called_once_with(
-            settings_service=mock_svc_resolved,
-            user_id="alice@example.com",
-        )
+    assert await svc._resolve_channel_id(uuid, "line") == "U1a2b3c4d5e6f"
+    assert await svc._resolve_channel_id(uuid, "email") == "owner@example.com"
+    user_repo.get_identities.assert_called_with(uuid)
 
 
 @pytest.mark.anyio
-async def test_process_notification_direct_user_id():
+async def test_resolve_channel_id_falls_back_to_the_user_id_itself():
     """
-    Verify the notification microservice works directly when
-    the incoming user_id already has channel settings.
-    確認當傳入的 user_id 已有設定時，不會觸發 fallback。
+    With no matching identity the user_id passes through unchanged, rather than
+    resolving to something else or raising — a missing LINE identity must not
+    redirect an alert to a different channel's address.
+    找不到對應身分時原樣回傳，不得把警示送到別的管道位址。
     """
-    from services.notification.src.app.main import NotificationRequest, _process_notification
+    from src.services.notification_service import NotificationService
 
-    req = NotificationRequest(
-        user_id="alice@example.com",
-        title="Test Alert",
-        content="Test content",
-        channels=["line", "email"],
-        category="sentinel",
-    )
+    uuid = "00000000-0000-4000-a000-000000000001"
+    user_repo = MagicMock()
+    user_repo.get_identities.return_value = [
+        {"provider": "email", "identifier": "owner@example.com", "is_primary": 1},
+    ]
 
-    with patch('services.notification.src.app.main.SettingsService') as mock_svc_cls, \
-         patch('services.notification.src.app.main.NotificationService') as mock_noti_cls:
+    svc = NotificationService(adapters=[], user_repo=user_repo)
 
-        mock_svc = MagicMock()
-        mock_svc.get_all_settings.return_value = {
-            "channel_line_enabled": "true",
-            "channel_email_enabled": "true",
-        }
-        mock_svc_cls.return_value = mock_svc
+    assert await svc._resolve_channel_id(uuid, "telegram") == uuid
 
-        mock_noti_instance = MagicMock()
-        mock_noti_instance.notify_all = AsyncMock(return_value={})
-        mock_noti_cls.create_with_settings.return_value = mock_noti_instance
 
-        await _process_notification(req)
+@pytest.mark.anyio
+async def test_broadcast_pseudo_user_is_passed_through():
+    """`broadcast` is a sentinel, not a user — it must never hit the repository."""
+    from src.services.notification_service import NotificationService
 
-        # Verify: find_user_by_channel_id should NOT be called (direct match)
-        mock_svc.find_user_by_channel_id.assert_not_called()
+    user_repo = MagicMock()
+    svc = NotificationService(adapters=[], user_repo=user_repo)
 
-        # Verify: NotificationService created with the original user_id
-        mock_noti_cls.create_with_settings.assert_called_once_with(
-            settings_service=mock_svc,
-            user_id="alice@example.com",
-        )
+    assert await svc._resolve_channel_id("broadcast", "line") == "broadcast"
+    user_repo.get_identities.assert_not_called()

@@ -1,0 +1,1012 @@
+# ═══════════════════════════════════════════════════════════════════════════
+# Settings schema — the registry for every user-facing configuration key.
+#
+# WHY THIS FILE EXISTS
+#
+# The `settings` table is a schema-less key/value store. Before this file, the
+# consequences were:
+#
+#   * ~100 keys existed only as string literals scattered across src/, with no
+#     list of what was valid;
+#   * defaults were re-declared at each read site and had already drifted —
+#     `target_cash_ratio` was read with three different fallbacks (0.1, 0.10,
+#     0.20) in four places;
+#   * encryption was decided by regex-guessing the key name
+#     (settings_repository's `sensitive_patterns`), so a credential whose name
+#     lacked "key"/"token"/"secret" was silently stored in plaintext;
+#   * the UI was 1030 lines of hand-written JSX, one block per field, and the
+#     data-source list was declared a third time inside it.
+#
+# Adding a key here gives it: a default, a type, validation, encryption if it is
+# a secret, and a rendered form field — with no Python or TypeScript change.
+#
+# SCOPE: user-facing configuration only. The same table is also used as a
+# machine-written scratch store (53 of 128 live rows are `alpha_spy_*` generated
+# code, plus `cached_*` runtime caches). Those are deliberately absent: the
+# strict path is `save_settings_bulk` (the HTTP endpoints), while the internal
+# single-key `save_setting` stays permissive so those writers keep working.
+#
+# 本檔是所有「使用者可見」設定鍵的註冊表。settings 表原本無 schema：~100 個鍵
+# 只以字串常數散落各處、預設值在各讀取點重複宣告且已漂移、加密靠猜鍵名。
+# 注意：同一張表也被機器寫入當暫存（線上 128 列中 53 列是產生的程式碼），
+# 故本檔僅涵蓋使用者設定；嚴格驗證只作用在 HTTP 的 bulk 寫入路徑。
+#
+# FIELD REFERENCE
+#   type      string | secret | int | float | bool | enum | json | list | cron | time
+#   secret    encrypted at rest; never returned by the API (masked + has_value)
+#   danger    UI must require explicit confirmation (money / trading impact)
+#   restart   takes effect only after a container restart
+#   depends   only shown/meaningful when the named bool key is true
+# ═══════════════════════════════════════════════════════════════════════════
+
+version: 1
+
+groups:
+  - id: ai
+    label_en: AI Engine
+    label_zh: AI 引擎
+  - id: trading
+    label_en: Trading & Risk
+    label_zh: 交易與風控
+  - id: allocation
+    label_en: Allocation
+    label_zh: 資產配置
+  - id: sentinel
+    label_en: Sentinel
+    label_zh: 哨兵監控
+  - id: notify
+    label_en: Notifications
+    label_zh: 通知
+  - id: sources
+    label_en: Data Sources
+    label_zh: 資料來源
+  - id: broker
+    label_en: Brokers
+    label_zh: 券商
+  - id: ingest
+    label_en: Content Ingestion
+    label_zh: 內容攝取
+  - id: system
+    label_en: System
+    label_zh: 系統
+
+settings:
+
+  # ── AI engine ────────────────────────────────────────────────────────────
+  # AI_MODEL* are legacy fallbacks. The live path is the llm_tier_bindings
+  # table, managed by the AI Engine UI; these are only consulted when a tier has
+  # no binding. All five are NULL in the live database, which is the healthy
+  # state — they exist so an unbound tier degrades rather than crashing.
+  # AI_MODEL* 是舊路徑的 fallback；實際走 llm_tier_bindings 表。
+  - key: AI_PROVIDER
+    group: ai
+    type: enum
+    enum: [OpenRouter, Google Gemini, Groq, Ollama, OpenAI, NVIDIA]
+    default: OpenRouter
+    label_en: Default provider
+    label_zh: 預設供應商
+    help_en: Legacy fallback. Providers are normally managed per-tier in the AI Engine panel.
+  - key: AI_MODEL
+    group: ai
+    type: string
+    default: null
+    label_en: Fallback model (smart tier)
+    label_zh: 備援模型（smart）
+    help_en: Only used when the smart tier has no binding in llm_tier_bindings.
+  - key: AI_MODEL_ADVANCED
+    group: ai
+    type: string
+    default: null
+    label_en: Fallback model (advanced tier)
+    label_zh: 備援模型（advanced）
+  - key: AI_MODEL_SMART
+    group: ai
+    type: string
+    default: null
+    label_en: Fallback model (smart tier, explicit)
+    label_zh: 備援模型（smart，明確）
+  - key: AI_MODEL_FAST
+    group: ai
+    type: string
+    default: null
+    label_en: Fallback model (fast tier)
+    label_zh: 備援模型（fast）
+  - key: AI_MODEL_NANO
+    group: ai
+    type: string
+    default: null
+    label_en: Fallback model (nano tier)
+    label_zh: 備援模型（nano）
+  - key: external_mcp_servers
+    group: ai
+    type: json
+    default: []
+    label_en: External MCP servers
+    label_zh: 外部 MCP 伺服器
+    help_en: JSON list of SSE/stdio endpoints exposed to the conversation agent.
+
+  # ── Trading & risk ───────────────────────────────────────────────────────
+  - key: ai_trading_enabled
+    group: trading
+    type: bool
+    default: false
+    danger: true
+    label_en: Autonomous trading
+    label_zh: 自動交易
+    help_en: >-
+      Master switch for placing real orders. This — not TRADING_MODE — is the
+      brake: the eToro token has no demo permission, so TRADING_MODE=paper makes
+      every broker call fail outright instead of degrading.
+    help_zh: 下真實訂單的總開關。TRADING_MODE=paper 在本專案是全停而非降級，安全煞車請用此鍵。
+  - key: auto_trade_threshold
+    group: trading
+    type: int
+    default: 75
+    min: 0
+    max: 100
+    danger: true
+    label_en: Auto-execute confidence (buy)
+    label_zh: 自動執行信心門檻（買進）
+  - key: auto_trade_threshold_sell
+    group: trading
+    type: int
+    default: 60
+    min: 0
+    max: 100
+    danger: true
+    label_en: Auto-execute confidence (sell)
+    label_zh: 自動執行信心門檻（賣出）
+  - key: auto_trade_min_threshold
+    group: trading
+    type: int
+    default: 30
+    min: 0
+    max: 100
+    label_en: Minimum actionable confidence
+    label_zh: 最低可行動信心
+  - key: ai_max_daily_trades
+    group: trading
+    type: int
+    default: 3
+    min: 0
+    max: 100
+    danger: true
+    label_en: Max trades per day
+    label_zh: 每日最大交易次數
+  - key: tradable_capital_usd
+    group: trading
+    type: float
+    default: 100.0
+    min: 0
+    danger: true
+    label_en: Tradable capital (USD)
+    label_zh: 可交易資本（USD）
+    help_en: Hard cap on capital the autonomous path may deploy.
+  - key: min_trade_amount
+    group: trading
+    type: float
+    default: 50.0
+    min: 0
+    label_en: Minimum order size (USD)
+    label_zh: 最小下單金額（USD）
+  - key: risk_profile
+    group: trading
+    type: enum
+    enum: [Conservative, Balanced, Moderate, Aggressive]
+    default: Balanced
+    label_en: Risk profile
+    label_zh: 風險偏好
+  # Circuit breakers. risk_manager.py read these with its own hardcoded
+  # fallbacks (max_daily=3, holding_days=21, loss_pct=0.15, streak=3, and a
+  # different 5/3/30/0.20 set on its error path) — two defaults for the same
+  # knob depending on which branch ran.
+  # 斷路器：risk_manager 原本自帶兩組不同的 fallback，視走哪個分支而定。
+  - key: cb_loss_streak
+    group: trading
+    type: int
+    default: 3
+    min: 1
+    max: 20
+    danger: true
+    label_en: Circuit breaker — consecutive losses
+    label_zh: 斷路器：連續虧損次數
+  - key: cb_loss_pct
+    group: trading
+    type: float
+    default: 0.15
+    min: 0.0
+    max: 1.0
+    danger: true
+    label_en: Circuit breaker — drawdown fraction
+    label_zh: 斷路器：回撤比例
+  - key: cb_holding_days
+    group: trading
+    type: int
+    default: 21
+    min: 1
+    max: 365
+    label_en: Circuit breaker — max holding days
+    label_zh: 斷路器：最長持有天數
+  - key: max_pending_approvals
+    group: trading
+    type: int
+    default: 5
+    min: 1
+    max: 100
+    label_en: Max pending approvals
+    label_zh: 最多待審核數
+
+  # ── Allocation ───────────────────────────────────────────────────────────
+  # These four were `MIN_POS`/`MAX_POS`/`SECTOR_CAP`/`TARGET_SUM` module
+  # constants in ticker_universe_service.py — the optimizer's shape was not
+  # adjustable without editing Python.
+  # 這四個原本是 ticker_universe_service 的模組常數，不改程式無法調整。
+  - key: alloc_min_position
+    group: allocation
+    type: float
+    default: 0.03
+    min: 0.0
+    max: 1.0
+    label_en: Minimum position weight
+    label_zh: 最小單一部位權重
+  - key: alloc_max_position
+    group: allocation
+    type: float
+    default: 0.25
+    min: 0.0
+    max: 1.0
+    label_en: Maximum position weight
+    label_zh: 最大單一部位權重
+  - key: alloc_sector_cap
+    group: allocation
+    type: float
+    default: 0.40
+    min: 0.0
+    max: 1.0
+    label_en: Sector exposure cap
+    label_zh: 單一產業曝險上限
+  - key: alloc_target_sum
+    group: allocation
+    type: float
+    default: 0.95
+    min: 0.0
+    max: 1.0
+    label_en: Target invested fraction
+    label_zh: 目標投入比例
+    help_en: The remainder is held as cash by the optimizer.
+  - key: target_cash_ratio
+    group: allocation
+    type: float
+    default: 0.2
+    min: 0.0
+    max: 1.0
+    label_en: Target cash ratio
+    label_zh: 目標現金比例
+    help_en: >-
+      Read in four places with three different hardcoded fallbacks (0.1, 0.10,
+      0.20) before this schema existed — the exact drift a registry prevents.
+    help_zh: 此鍵原本在四處被讀取、各自帶 0.1 / 0.10 / 0.20 三種不同預設值。
+  - key: risk_max_sector_exposure
+    group: allocation
+    type: float
+    default: 0.35
+    min: 0.0
+    max: 1.0
+    label_en: Max sector exposure (risk guard)
+    label_zh: 產業曝險上限（風控）
+  - key: max_single_position_pct
+    group: allocation
+    type: float
+    default: 0.25
+    min: 0.0
+    max: 1.0
+    label_en: Max single position (fraction)
+    label_zh: 單一部位上限（比例）
+  - key: max_single_position_weight
+    group: allocation
+    type: float
+    default: 25.0
+    min: 0.0
+    max: 100.0
+    label_en: Max single position (percent)
+    label_zh: 單一部位上限（百分比）
+    help_en: Percent-scaled twin of max_single_position_pct, kept for the sentinel path.
+  - key: target_allocation
+    group: allocation
+    type: json
+    default: {}
+    label_en: Target allocation
+    label_zh: 目標配置
+    help_en: 'JSON map of ticker to target weight, e.g. {"NVDA": 0.1}.'
+  - key: auto_reinvest_threshold
+    group: allocation
+    type: float
+    default: 0.0
+    min: 0.0
+    label_en: Auto-reinvest cash above (USD)
+    label_zh: 現金超過此金額自動再投入（USD）
+  - key: cash_deployment_cooldown_hours
+    group: allocation
+    type: int
+    default: 4
+    min: 0
+    max: 168
+    label_en: Cash deployment cooldown (hours)
+    label_zh: 現金投入冷卻（小時）
+  - key: flat_market_threshold
+    group: allocation
+    type: float
+    default: 0.5
+    min: 0.0
+    label_en: Flat-market threshold
+    label_zh: 盤整判定門檻
+
+  # ── Sentinel ─────────────────────────────────────────────────────────────
+  - key: sentinel_p1_limit_mins
+    group: sentinel
+    type: int
+    default: 15
+    min: 1
+    label_en: P1 alert window (minutes)
+    label_zh: P1 告警窗口（分鐘）
+  - key: sentinel_p2_limit_mins
+    group: sentinel
+    type: int
+    default: 60
+    min: 1
+    label_en: P2 alert window (minutes)
+    label_zh: P2 告警窗口（分鐘）
+  - key: sentinel_p3_limit_mins
+    group: sentinel
+    type: int
+    default: 240
+    min: 1
+    label_en: P3 alert window (minutes)
+    label_zh: P3 告警窗口（分鐘）
+  - key: sentinel_p4_limit_mins
+    group: sentinel
+    type: int
+    default: 720
+    min: 1
+    label_en: P4 alert window (minutes)
+    label_zh: P4 告警窗口（分鐘）
+  - key: sentinel_p5_limit_mins
+    group: sentinel
+    type: int
+    default: 1440
+    min: 1
+    label_en: P5 alert window (minutes)
+    label_zh: P5 告警窗口（分鐘）
+  # The three expensive tick dimensions. They used to gate on `now.minute % N`,
+  # which silently changed meaning when the tick moved off every-minute.
+  # 這三個原本用 now.minute % N 判斷，tick 頻率一改語意就跑掉。
+  - key: sentinel_breaking_news_interval_min
+    group: sentinel
+    type: int
+    default: 30
+    min: 1
+    label_en: Breaking-news scan interval (minutes)
+    label_zh: 突發新聞掃描間隔（分鐘）
+    help_en: Hits the paid Tavily search. Lower means more spend.
+  - key: sentinel_macro_interval_min
+    group: sentinel
+    type: int
+    default: 60
+    min: 1
+    label_en: Macro (FRED) scan interval (minutes)
+    label_zh: 總經（FRED）掃描間隔（分鐘）
+  - key: sentinel_deep_interval_min
+    group: sentinel
+    type: int
+    default: 60
+    min: 1
+    label_en: Global macro scan interval (minutes)
+    label_zh: 全球總經掃描間隔（分鐘）
+  - key: auto_hedge_score
+    group: sentinel
+    type: int
+    default: 8
+    min: 0
+    max: 10
+    danger: true
+    label_en: Auto-hedge trigger score
+    label_zh: 自動避險觸發分數
+  - key: emergency_liquidation_score
+    group: sentinel
+    type: int
+    default: 9
+    min: 0
+    max: 10
+    danger: true
+    label_en: Emergency liquidation score
+    label_zh: 緊急清倉分數
+  - key: emergency_hedge_amount
+    group: sentinel
+    type: float
+    default: 50.0
+    min: 0
+    danger: true
+    label_en: Emergency hedge amount (USD)
+    label_zh: 緊急避險金額（USD）
+  - key: risk_appetite_score
+    group: sentinel
+    type: int
+    default: 5
+    min: 0
+    max: 10
+    label_en: Risk appetite score
+    label_zh: 風險偏好分數
+
+  # ── Notifications ────────────────────────────────────────────────────────
+  - key: notification_routing
+    group: notify
+    type: json
+    default: {}
+    label_en: Category routing
+    label_zh: 類別路由
+    help_en: 'JSON map of category (report/sentinel/approval/trading/ops) to channels.'
+  - key: channel_telegram_enabled
+    group: notify
+    type: bool
+    default: false
+    label_en: Telegram
+    label_zh: Telegram
+  - key: channel_telegram_bot_token
+    group: notify
+    type: secret
+    default: ''
+    depends: channel_telegram_enabled
+    label_en: Telegram bot token
+    label_zh: Telegram bot token
+  - key: channel_telegram_chat_id
+    group: notify
+    type: string
+    default: ''
+    depends: channel_telegram_enabled
+    label_en: Telegram chat ID
+    label_zh: Telegram chat ID
+  - key: channel_line_enabled
+    group: notify
+    type: bool
+    default: false
+    label_en: LINE
+    label_zh: LINE
+  - key: channel_line_access_token
+    group: notify
+    type: secret
+    default: ''
+    depends: channel_line_enabled
+    label_en: LINE access token
+    label_zh: LINE access token
+  - key: channel_line_secret
+    group: notify
+    type: secret
+    default: ''
+    depends: channel_line_enabled
+    label_en: LINE channel secret
+    label_zh: LINE channel secret
+  - key: channel_line_user_id
+    group: notify
+    type: string
+    default: ''
+    depends: channel_line_enabled
+    label_en: LINE user ID
+    label_zh: LINE user ID
+  - key: channel_email_enabled
+    group: notify
+    type: bool
+    default: false
+    label_en: Email
+    label_zh: 電子郵件
+  - key: channel_email_smtp_server
+    group: notify
+    type: string
+    default: ''
+    depends: channel_email_enabled
+    label_en: SMTP server
+    label_zh: SMTP 伺服器
+  - key: channel_email_smtp_port
+    group: notify
+    type: int
+    default: 587
+    min: 1
+    max: 65535
+    depends: channel_email_enabled
+    label_en: SMTP port
+    label_zh: SMTP 連接埠
+  - key: channel_email_smtp_user
+    group: notify
+    type: string
+    default: ''
+    depends: channel_email_enabled
+    label_en: SMTP username
+    label_zh: SMTP 使用者
+  - key: channel_email_smtp_pass
+    group: notify
+    type: secret
+    default: ''
+    depends: channel_email_enabled
+    label_en: SMTP password
+    label_zh: SMTP 密碼
+  - key: channel_email_from_address
+    group: notify
+    type: string
+    default: ''
+    depends: channel_email_enabled
+    label_en: From address
+    label_zh: 寄件地址
+  # Email's recipient had no schema entry, so `save_settings_bulk` rejected it as
+  # an unknown key — the channel could be enabled but never given an address.
+  # email 收件地址原本不在 schema 內，bulk save 會當成未知鍵拒絕，導致管道可啟用卻無收件人。
+  - key: channel_email_to_address
+    group: notify
+    type: string
+    default: ''
+    depends: channel_email_enabled
+    label_en: To address
+    label_zh: 收件地址
+    help_en: Where notifications are delivered. Email is enabled but silent without it.
+  - key: channel_slack_enabled
+    group: notify
+    type: bool
+    default: false
+    label_en: Slack notifications
+    label_zh: Slack 通知
+  - key: channel_slack_bot_token
+    group: notify
+    type: secret
+    default: ''
+    depends: channel_slack_enabled
+    label_en: Slack bot token
+    label_zh: Slack bot token
+    help_en: xoxb-… from the app's OAuth page.
+  - key: channel_slack_channel_id
+    group: notify
+    type: string
+    default: ''
+    depends: channel_slack_enabled
+    label_en: Slack channel ID
+    label_zh: Slack 頻道 ID
+  - key: channel_slack_signing_secret
+    group: notify
+    type: secret
+    default: ''
+    depends: channel_slack_enabled
+    label_en: Slack signing secret
+    label_zh: Slack signing secret
+    help_en: Verifies inbound Slack requests. Without it, signature checks fail closed.
+  - key: channel_messenger_enabled
+    group: notify
+    type: bool
+    default: false
+    label_en: Messenger notifications
+    label_zh: Messenger 通知
+  - key: channel_messenger_page_token
+    group: notify
+    type: secret
+    default: ''
+    depends: channel_messenger_enabled
+    label_en: Page access token
+    label_zh: 粉絲頁 access token
+  - key: channel_messenger_verify_token
+    group: notify
+    type: secret
+    default: ''
+    depends: channel_messenger_enabled
+    label_en: Webhook verify token
+    label_zh: Webhook 驗證 token
+  - key: channel_messenger_app_secret
+    group: notify
+    type: secret
+    default: ''
+    depends: channel_messenger_enabled
+    label_en: App secret
+    label_zh: App secret
+  - key: channel_google_chat_enabled
+    group: notify
+    type: bool
+    default: false
+    label_en: Google Chat notifications
+    label_zh: Google Chat 通知
+  - key: channel_google_chat_webhook_url
+    group: notify
+    type: secret
+    default: ''
+    depends: channel_google_chat_enabled
+    label_en: Google Chat webhook URL
+    label_zh: Google Chat webhook URL
+    help_en: A webhook URL is a bearer credential — anyone holding it can post to the space.
+  # Discord exists to prove a channel needs only a manifest entry, an adapter file
+  # and these two keys — no ChannelFactory edit.
+  # Discord 用以證明新增管道只需 manifest 條目、適配器檔與這兩個鍵，無須改 ChannelFactory。
+  - key: channel_discord_enabled
+    group: notify
+    type: bool
+    default: false
+    label_en: Discord notifications
+    label_zh: Discord 通知
+  - key: external_mcp_enabled
+    group: ai
+    type: bool
+    default: false
+    danger: true
+    label_en: External MCP servers
+    label_zh: 外部 MCP 伺服器
+    help_en: >-
+      Lets agents call tools hosted on the MCP servers listed in config/tools.yaml.
+      Those tools run outside this machine and see whatever arguments an agent
+      sends them. Off by default; a server must also be enabled in the manifest.
+    help_zh: >-
+      允許 agent 呼叫 config/tools.yaml 所列 MCP 伺服器上的工具。
+      這些工具在本機之外執行，且能看到 agent 傳送的所有參數。預設關閉，
+      且該伺服器在 manifest 中也必須啟用。
+  - key: channel_discord_webhook_url
+    group: notify
+    type: secret
+    default: ''
+    depends: channel_discord_enabled
+    label_en: Discord webhook URL
+    label_zh: Discord webhook URL
+    help_en: Channel Settings → Integrations → Webhooks. Treat it as a credential.
+  - key: notification_webhook_url
+    group: notify
+    type: string
+    default: ''
+    label_en: Outbound webhook URL
+    label_zh: 對外 webhook URL
+  - key: notification_phone
+    group: notify
+    type: string
+    default: ''
+    label_en: Notification phone
+    label_zh: 通知電話
+  - key: enabled_report_types
+    group: notify
+    type: list
+    default: [daily, weekly]
+    label_en: Enabled report types
+    label_zh: 啟用的報表類型
+
+  # ── Data sources ─────────────────────────────────────────────────────────
+  # `source_<id>_enabled` / `source_<id>_api_key` are also built dynamically as
+  # f-strings in market_data_service, so the provider ids here must stay in step
+  # with the provider registry.
+  # 這些鍵在 market_data_service 也會以 f-string 動態組出，需與 provider 註冊表一致。
+  - key: source_polygon_api_key
+    group: sources
+    type: secret
+    default: ''
+    label_en: Polygon API key
+    label_zh: Polygon API key
+  - key: source_polygon_enabled
+    group: sources
+    type: bool
+    default: false
+    label_en: Polygon
+    label_zh: Polygon
+  - key: source_tiingo_api_key
+    group: sources
+    type: secret
+    default: ''
+    label_en: Tiingo API key
+    label_zh: Tiingo API key
+  - key: source_tiingo_enabled
+    group: sources
+    type: bool
+    default: false
+    label_en: Tiingo
+    label_zh: Tiingo
+  - key: source_finnhub_api_key
+    group: sources
+    type: secret
+    default: ''
+    label_en: Finnhub API key
+    label_zh: Finnhub API key
+  - key: source_finnhub_enabled
+    group: sources
+    type: bool
+    default: false
+    label_en: Finnhub
+    label_zh: Finnhub
+  - key: source_finnhub_webhook_secret
+    group: sources
+    type: secret
+    default: ''
+    label_en: Finnhub webhook secret
+    label_zh: Finnhub webhook secret
+  - key: source_fmp_api_key
+    group: sources
+    type: secret
+    default: ''
+    label_en: FMP API key
+    label_zh: FMP API key
+  - key: source_fmp_enabled
+    group: sources
+    type: bool
+    default: false
+    label_en: FMP
+    label_zh: FMP
+  - key: source_alpha_vantage_api_key
+    group: sources
+    type: secret
+    default: ''
+    label_en: Alpha Vantage API key
+    label_zh: Alpha Vantage API key
+  - key: source_alpha_vantage_enabled
+    group: sources
+    type: bool
+    default: false
+    label_en: Alpha Vantage
+    label_zh: Alpha Vantage
+  - key: source_fred_api_key
+    group: sources
+    type: secret
+    default: ''
+    label_en: FRED API key
+    label_zh: FRED API key
+  - key: source_tavily_api_key
+    group: sources
+    type: secret
+    default: ''
+    label_en: Tavily API key
+    label_zh: Tavily API key
+  - key: source_tavily_enabled
+    group: sources
+    type: bool
+    default: true
+    label_en: Tavily web search
+    label_zh: Tavily 網路搜尋
+  - key: source_readwise_api_key
+    group: sources
+    type: secret
+    default: ''
+    label_en: Readwise API key
+    label_zh: Readwise API key
+  - key: source_financialdata_api_key
+    group: sources
+    type: secret
+    default: ''
+    label_en: FinancialData API key
+    label_zh: FinancialData API key
+  - key: source_yfinance_enabled
+    group: sources
+    type: bool
+    default: true
+    label_en: Yahoo Finance
+    label_zh: Yahoo Finance
+  - key: webhook_api_key
+    group: sources
+    type: secret
+    default: ''
+    label_en: Inbound webhook API key
+    label_zh: 對內 webhook API key
+    help_en: >-
+      Sent as X-API-Key by inbound webhooks. This is the only credential-based
+      auth path left in the system, so a missing value silently drops every
+      inbound webhook.
+    help_zh: 對內 webhook 的 X-API-Key；這是系統中唯一剩下的憑證驗證路徑，缺值會讓所有對內 webhook 被靜默丟棄。
+
+  # ── Brokers ──────────────────────────────────────────────────────────────
+  - key: preferred_broker
+    group: broker
+    type: enum
+    enum: [etoro, ibkr, futu]
+    default: etoro
+    label_en: Preferred broker
+    label_zh: 偏好券商
+  - key: enable_etoro
+    group: broker
+    type: bool
+    default: false
+    danger: true
+    label_en: eToro
+    label_zh: eToro
+  - key: etoro_api_key
+    group: broker
+    type: secret
+    default: ''
+    depends: enable_etoro
+    label_en: eToro API key
+    label_zh: eToro API key
+  - key: etoro_user_key
+    group: broker
+    type: secret
+    default: ''
+    depends: enable_etoro
+    label_en: eToro user key
+    label_zh: eToro user key
+  - key: etoro_mode
+    group: broker
+    type: enum
+    enum: [demo, real]
+    default: demo
+    depends: enable_etoro
+    danger: true
+    label_en: eToro mode
+    label_zh: eToro 模式
+    help_en: >-
+      The configured token has no demo permission, so selecting `demo` makes
+      every broker call return InsufficientPermissions. Use ai_trading_enabled
+      to stop trading, not this.
+    help_zh: 目前的 token 無 demo 權限，選 demo 會讓所有 broker 呼叫失敗；要停止交易請用 ai_trading_enabled。
+  - key: enable_ibkr
+    group: broker
+    type: bool
+    default: false
+    label_en: Interactive Brokers
+    label_zh: Interactive Brokers
+  - key: ibkr_host
+    group: broker
+    type: string
+    default: 127.0.0.1
+    depends: enable_ibkr
+    label_en: IBKR host
+    label_zh: IBKR 主機
+  - key: ibkr_port
+    group: broker
+    type: int
+    default: 7497
+    min: 1
+    max: 65535
+    depends: enable_ibkr
+    label_en: IBKR port
+    label_zh: IBKR 連接埠
+  - key: ibkr_account
+    group: broker
+    type: string
+    default: ''
+    depends: enable_ibkr
+    label_en: IBKR account
+    label_zh: IBKR 帳號
+  - key: enable_futu
+    group: broker
+    type: bool
+    default: false
+    label_en: Futu
+    label_zh: 富途
+  - key: futu_host
+    group: broker
+    type: string
+    default: 127.0.0.1
+    depends: enable_futu
+    label_en: Futu host
+    label_zh: 富途主機
+  - key: futu_port
+    group: broker
+    type: int
+    default: 11111
+    min: 1
+    max: 65535
+    depends: enable_futu
+    label_en: Futu port
+    label_zh: 富途連接埠
+  - key: futu_pwd
+    group: broker
+    type: secret
+    default: ''
+    depends: enable_futu
+    label_en: Futu unlock password
+    label_zh: 富途解鎖密碼
+
+  # ── Content ingestion ────────────────────────────────────────────────────
+  - key: custom_rss_sources
+    group: ingest
+    type: json
+    default: []
+    label_en: Custom RSS sources
+    label_zh: 自訂 RSS 來源
+    help_en: >-
+      Merged with the built-in list in src/config/rss_config.py. The merge has
+      always existed; until this schema there was no UI that wrote the key.
+    help_zh: 會與內建清單合併。此合併邏輯早已存在，但過去沒有任何 UI 會寫入這個鍵。
+  - key: podcast_feeds
+    group: ingest
+    type: json
+    default: []
+    label_en: Podcast feeds
+    label_zh: Podcast 來源
+    help_en: >-
+      JSON list of {name, url}. Previously a commented-out JavaScript array
+      inside an n8n Code node.
+    help_zh: JSON 陣列 {name, url}；原本是 n8n Code 節點裡註解掉的 JS 陣列。
+  - key: ai_energy_tickers
+    group: ingest
+    type: list
+    default: [CEG, VST, MSFT, AMZN, GOOGL]
+    label_en: AI-energy watchlist
+    label_zh: AI 能源觀察名單
+  - key: physical_ai_tickers
+    group: ingest
+    type: list
+    default: []
+    label_en: Physical-AI watchlist
+    label_zh: 實體 AI 觀察名單
+  - key: supply_chain_knowledge_graph
+    group: ingest
+    type: json
+    default: {}
+    label_en: Supply-chain graph
+    label_zh: 供應鏈圖譜
+  # Defaults mirror RiskKeywordService.DEFAULT_TARGET / MAX_KEYWORDS exactly.
+  # A schema default that disagrees with the code's own constant is worse than
+  # no default: it silently changes behaviour the moment the key is absent.
+  # 預設值必須與 RiskKeywordService 的常數一致；不一致的預設值會在鍵缺失時
+  # 靜默改變行為，比沒有預設值更糟。
+  - key: keyword_target_count
+    group: ingest
+    type: int
+    default: 200
+    min: 1
+    label_en: Risk keyword target count
+    label_zh: 風險關鍵詞目標數
+  - key: keyword_max_count
+    group: ingest
+    type: int
+    default: 1000
+    min: 1
+    label_en: Risk keyword hard cap
+    label_zh: 風險關鍵詞上限
+
+  # ── System ───────────────────────────────────────────────────────────────
+  - key: cost_profile
+    group: system
+    type: enum
+    enum: [frugal, balanced, aggressive]
+    default: balanced
+    label_en: Operating Cost Profile
+    label_zh: 運算成本方案
+    help_en: Operating cadence (sentinel tick interval, external news scans, and model tier allocation).
+  - key: schedule_daily
+    group: system
+    type: time
+    default: '17:00'
+    label_en: Daily report time
+    label_zh: 每日報表時間
+  - key: schedule_daily_days
+    group: system
+    type: list
+    default: [mon, tue, wed, thu, fri]
+    label_en: Daily report days
+    label_zh: 每日報表執行日
+  - key: schedule_weekly
+    group: system
+    type: time
+    default: '10:00'
+    label_en: Weekly report time
+    label_zh: 每週報表時間
+  - key: schedule_weekly_day
+    group: system
+    type: enum
+    enum: [mon, tue, wed, thu, fri, sat, sun]
+    default: sat
+    label_en: Weekly report day
+    label_zh: 每週報表執行日
+  - key: DISPLAY_TIMEZONE
+    group: system
+    type: string
+    default: Asia/Taipei
+    label_en: Display timezone
+    label_zh: 顯示時區
+  - key: telemetry_enabled
+    group: system
+    type: bool
+    default: false
+    label_en: Product telemetry
+    label_zh: 產品遙測
+    help_en: Records anonymous usage events to the local product_events table only.
+  - key: INTERNAL_BASE_URL
+    group: system
+    type: string
+    default: http://mcp_server:8000
+    restart: true
+    label_en: Internal API base URL
+    label_zh: 內部 API 位址
+  - key: WS_PORT
+    group: system
+    type: int
+    default: 8000
+    min: 1
+    max: 65535
+    restart: true
+    label_en: WebSocket port
+    label_zh: WebSocket 連接埠

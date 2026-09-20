@@ -51,6 +51,9 @@ class SkillMetadata:
     output_schema: Dict[str, Any] = field(default_factory=dict)
     platform: List[str] = field(default_factory=lambda: ["linux", "darwin"])
     tags: List[str] = field(default_factory=list)
+    intents: List[str] = field(default_factory=list)
+    enabled: bool = True
+    async_execution: bool = False
 
 
 @dataclass
@@ -72,6 +75,9 @@ class Skill:
     output_schema: Dict[str, Any] = field(default_factory=dict)
     platform: List[str] = field(default_factory=lambda: ["linux", "darwin"])
     tags: List[str] = field(default_factory=list)
+    intents: List[str] = field(default_factory=list)
+    enabled: bool = True
+    async_execution: bool = False
 
 
 class SkillLoader:
@@ -151,23 +157,37 @@ class SkillLoader:
 
     def _extract_frontmatter(self, file_path: str) -> Optional[Dict[str, Any]]:
         """
-        Efficiently extract YAML Frontmatter from SKILL.md.
-        高效地從 SKILL.md 提取 YAML Frontmatter。
+        Extract YAML frontmatter from SKILL.md.
+
+        Delegates to src/utils/frontmatter.py, shared with PersonaProvider and the
+        agent registry. This method used to read only the first 4096 bytes "as
+        that is usually enough": frontmatter longer than that yielded fewer than
+        three parts, the method returned None, and the skill silently vanished
+        from discovery with no error logged. The shared parser reads whole files.
+
+        原本只讀前 4096 bytes（「通常足夠」）：frontmatter 超過即回傳 None，
+        該 skill 會在毫無錯誤訊息的情況下從探索結果消失。共用解析器完整讀取檔案。
         """
+        from src.utils.frontmatter import read_meta
+
+        return read_meta(file_path)
+
+    def is_skill_enabled(self, name: str, default_enabled: bool = True) -> bool:
+        """Check whether a skill is enabled for this user or globally."""
+        if not self.user_id:
+            return default_enabled
         try:
-            with open(file_path, "r", encoding="utf-8") as f:
-                # Read the first 4KB, usually enough for frontmatter
-                # 讀取前 4KB，通常足以包含 frontmatter
-                chunk = f.read(4096)
-                if not chunk.startswith("---"):
-                    return None
-                parts = chunk.split("---", 2)
-                if len(parts) < 3:
-                    return None
-                return yaml.safe_load(parts[1])
+            from src.services.settings_service import SettingsService
+            svc = SettingsService(user_id=self.user_id)
+            val = svc.get_setting(f"skill_{name}_enabled")
+            if val is not None:
+                if isinstance(val, bool):
+                    return val
+                if isinstance(val, str):
+                    return val.strip().lower() in ("true", "1", "yes")
         except Exception as e:
-            logger.error(f"SkillLoader: Error reading frontmatter from {file_path}: {e}")
-            return None
+            logger.debug(f"SkillLoader: could not check setting for skill_{name}_enabled: {e}")
+        return default_enabled
 
     def discover_skills(self) -> Dict[str, SkillMetadata]:
         """
@@ -192,16 +212,39 @@ class SkillLoader:
                     if not name:
                         continue
 
+                    raw_enabled = raw.get("enabled", True)
+                    if isinstance(raw_enabled, str):
+                        raw_enabled = raw_enabled.strip().lower() in ("true", "1", "yes")
+                    is_enabled = self.is_skill_enabled(name, bool(raw_enabled))
+
+                    raw_intents = raw.get("intents", [])
+                    if isinstance(raw_intents, str):
+                        raw_intents = [raw_intents]
+                    elif not isinstance(raw_intents, list):
+                        raw_intents = []
+                    intents = [str(x).strip() for x in raw_intents if x]
+
+                    raw_async = raw.get("async", False)
+                    if isinstance(raw_async, str):
+                        raw_async = raw_async.strip().lower() in ("true", "1", "yes")
+
+                    tags = raw.get("tags") or raw.get("categories") or []
+                    if isinstance(tags, str):
+                        tags = [tags]
+
                     meta = SkillMetadata(
                         name=name,
-                        version=raw.get("version", "1.0.0"),
+                        version=str(raw.get("version", "1.0.0")),
                         description=raw.get("description", ""),
                         category=raw.get("category", "general"),
                         tier=raw.get("tier", "fast"),
                         input_schema=raw.get("input_schema", {}),
                         output_schema=raw.get("output_schema", {}),
                         platform=raw.get("platform", ["linux", "darwin"]),
-                        tags=raw.get("tags", []),
+                        tags=tags,
+                        intents=intents,
+                        enabled=is_enabled,
+                        async_execution=bool(raw_async),
                     )
 
                     # Platform filter
@@ -253,70 +296,91 @@ class SkillLoader:
         Parses a single SKILL.md file (Layer 2 + 3).
         Merges with Layer 1 metadata from cache.
         """
+        from src.utils.frontmatter import parse_file
+
         try:
-            with open(file_path, "r", encoding="utf-8") as f:
-                content = f.read()
+            doc = parse_file(file_path)
+            meta_raw = doc.meta
+            markdown_body = doc.body
         except Exception as e:
             logger.error(f"SkillLoader: Could not read {file_path}: {e}")
             return None
 
-        # Split Frontmatter and Content
-        if not content.startswith("---"):
-            logger.warning(
-                f"SkillLoader: Invalid format (missing frontmatter) in {file_path}"
-            )
+        name = meta_raw.get("name")
+        desc = meta_raw.get("description", "")
+        metadata = meta_raw.get("metadata", {})
+
+        if not name:
+            logger.warning(f"SkillLoader: Missing 'name' in {file_path}")
             return None
 
-        parts = content.split("---", 2)
-        if len(parts) < 3:
-            return None
-
-        yaml_content = parts[1]
-        markdown_body = parts[2].strip()
-
-        try:
-            meta_raw = yaml.safe_load(yaml_content)
-            name = meta_raw.get("name")
-            desc = meta_raw.get("description", "")
-            metadata = meta_raw.get("metadata", {})
-
-            if not name:
-                logger.warning(f"SkillLoader: Missing 'name' in {file_path}")
+        # Check OS restrictions from metadata
+        openclaw_meta = metadata.get("openclaw", {})
+        allowed_os = openclaw_meta.get("os", [])
+        if allowed_os:
+            current_os = "darwin" if sys.platform == "darwin" else "linux"
+            if current_os not in allowed_os:
+                logger.debug(
+                    f"SkillLoader: Skipping {name} "
+                    f"(OS mismatch: {current_os} not in {allowed_os})"
+                )
                 return None
 
-            # Check OS restrictions from metadata
-            openclaw_meta = metadata.get("openclaw", {})
-            allowed_os = openclaw_meta.get("os", [])
-            if allowed_os:
-                current_os = "darwin" if sys.platform == "darwin" else "linux"
-                if current_os not in allowed_os:
-                    logger.debug(
-                        f"SkillLoader: Skipping {name} "
-                        f"(OS mismatch: {current_os} not in {allowed_os})"
-                    )
-                    return None
+        # Retrieve Layer 1 metadata from cache
+        layer1 = self._metadata_cache.get(name)
 
-            # Retrieve Layer 1 metadata from cache
-            layer1 = self._metadata_cache.get(name)
+        raw_enabled = meta_raw.get("enabled", layer1.enabled if layer1 else True)
+        if isinstance(raw_enabled, str):
+            raw_enabled = raw_enabled.strip().lower() in ("true", "1", "yes")
+        is_enabled = self.is_skill_enabled(name, bool(raw_enabled))
 
-            return Skill(
-                name=name,
-                description=desc,
-                metadata=metadata,
-                instruction=markdown_body,
-                code_path=os.path.dirname(file_path),
-                version=meta_raw.get("version", layer1.version if layer1 else "1.0.0"),
-                category=meta_raw.get("category", layer1.category if layer1 else "general"),
-                tier=meta_raw.get("tier", layer1.tier if layer1 else "fast"),
-                input_schema=layer1.input_schema if layer1 else meta_raw.get("input_schema", {}),
-                output_schema=layer1.output_schema if layer1 else meta_raw.get("output_schema", {}),
-                platform=meta_raw.get("platform", layer1.platform if layer1 else ["linux", "darwin"]),
-                tags=meta_raw.get("tags", layer1.tags if layer1 else []),
-            )
+        raw_intents = meta_raw.get("intents", layer1.intents if layer1 else [])
+        if isinstance(raw_intents, str):
+            raw_intents = [raw_intents]
+        elif not isinstance(raw_intents, list):
+            raw_intents = []
+        intents = [str(x).strip() for x in raw_intents if x]
 
-        except yaml.YAMLError as e:
-            logger.error(f"SkillLoader: YAML error in {file_path}: {e}")
-            return None
+        raw_async = meta_raw.get("async", layer1.async_execution if layer1 else False)
+        if isinstance(raw_async, str):
+            raw_async = raw_async.strip().lower() in ("true", "1", "yes")
+
+        tags = meta_raw.get("tags") or meta_raw.get("categories") or (layer1.tags if layer1 else [])
+        if isinstance(tags, str):
+            tags = [tags]
+
+        return Skill(
+            name=name,
+            description=desc,
+            metadata=metadata,
+            instruction=markdown_body,
+            code_path=os.path.dirname(file_path),
+            version=str(meta_raw.get("version", layer1.version if layer1 else "1.0.0")),
+            category=meta_raw.get("category", layer1.category if layer1 else "general"),
+            tier=meta_raw.get("tier", layer1.tier if layer1 else "fast"),
+            input_schema=layer1.input_schema if layer1 else meta_raw.get("input_schema", {}),
+            output_schema=layer1.output_schema if layer1 else meta_raw.get("output_schema", {}),
+            platform=meta_raw.get("platform", layer1.platform if layer1 else ["linux", "darwin"]),
+            tags=tags,
+            intents=intents,
+            enabled=is_enabled,
+            async_execution=bool(raw_async),
+        )
+
+    def get_direct_skill_map(self) -> Dict[str, str]:
+        """
+        Return intent -> skill_name mapping for all active, enabled skills.
+        回傳所有已啟用技能的「意圖關鍵字 -> 技能名稱」映射表。
+        """
+        if not self._metadata_cache:
+            self.discover_skills()
+        mapping = {}
+        for skill_name, meta in self._metadata_cache.items():
+            if not meta.enabled:
+                continue
+            for intent in meta.intents:
+                mapping[intent.lower().strip()] = skill_name
+        return mapping
 
     # ── Query API ────────────────────────────────────────────
 

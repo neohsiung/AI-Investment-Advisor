@@ -7,7 +7,7 @@ See docs/architecture/multi_provider_multi_model_design.md §2.1 / §6.1.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Optional, Literal
+from typing import Optional, Literal, List
 
 
 AuthType = Literal["bearer", "api_key_query", "none", "custom"]
@@ -48,3 +48,9 @@ class ProviderSpec:
     healthcheck_endpoint: Optional[str] = None
     default_capabilities: ProviderCapabilities = field(default_factory=ProviderCapabilities)
     notes: str = ""
+    # Names a caller may use for this provider: DB `provider_code` values,
+    # display names from the UI, and legacy spellings that predate the catalog.
+    # Two registries used to keep their own copies of this list and disagree.
+    # 呼叫端可能使用的各種名稱（DB provider_code、UI 顯示名、舊拼法）；
+    # 原本由兩處各自維護且彼此不一致。
+    aliases: List[str] = field(default_factory=list)

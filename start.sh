@@ -1,68 +1,81 @@
-#!/bin/bash
-# start.sh - Unified Orchestration Entry Point for Investment Advisor Platform
-# v4.2: Added Redis queue sanity, health wait, and post-deploy verification.
-
+#!/usr/bin/env bash
+#
+# investment-advisor — single-box control script.
+#
+# Rewritten from 1031 lines / 26 functions / 14 commands down to the commands a
+# single-operator deployment actually needs. What went, and why:
+#
+#   k8s                    manifests deleted (4 months stale, referenced a
+#                          Streamlit dashboard that no longer exists)
+#   ollama helpers         `check_shared_ollama` sourced ../infra/start-ollama.sh
+#                          from a sibling repo that is not in this tree, and
+#                          `cleanup` referenced a docker-compose.ollama.yml that
+#                          has never existed
+#   n8n import/backup      ~150 lines of workflow export + id-1 upsert wrangling;
+#                          n8n's three schedules now run in Celery Beat
+#   force-start retry loop  papered over deep depends_on chains in an 18-container
+#                          cluster; the default stack is 7 containers now
+#   workers/worker-status/  the two identical worker services became one; set
+#   worker-logs/patch       WORKER_CONCURRENCY to scale it, `logs` to read it
+#
+# 從 1031 行縮減為單機部署實際需要的指令；移除的都是指向不存在的檔案、
+# 或為了掩蓋 18 容器叢集啟動順序問題而存在的補丁。
+#
 set -e
 
-# Support for environments where docker is in /usr/local/bin
-export PATH=$PATH:/usr/local/bin:/usr/bin:/bin
+# ─────────────────────────────────────────────────────────────────────────────
+# Configuration
+# ─────────────────────────────────────────────────────────────────────────────
 
-# --- Helper Functions ---
-function show_help {
-    echo "Quantum AI Platform - Operational Control v4.2 (Enterprise)"
-    echo "Usage: ./start.sh [command]"
-    echo ""
-    echo "Commands:"
-    echo "  health         Show live status of all services, queues, and DB."
-    echo "  fix-redis      Fix Redis queue key types (list→zset). Run if WRONGTYPE errors appear."
-    echo ""
-    echo "  dev (default)  Deploy Local Development environment (Docker Compose)."
-    echo "                 - Includes SigNoz APM, n8n, and Debugging tools."
-    echo "                 - UI: http://localhost:3001   API: http://localhost:8001"
-    echo "                 - (dev nginx publishes no host port — reach services directly)"
-    echo ""
-    echo "  prod           Deploy Hardened Production cluster (B2C SaaS Mode)."
-    echo "                 - Includes Worker Pool for async report generation."
-    echo "                 - Security hardened, monitoring active."
-    echo "                 - If cluster already running: hot-restarts code services only (fast)."
-    echo "                 - Gateway: http://127.0.0.1:8088"
-    echo ""
-    echo "  selfhost       One-command self-host bootstrap (new installs)."
-    echo "                 - Auto-generates missing secrets (JWT/Fernet/DB/Redis) into .env."
-    echo "                 - Defaults TRADING_MODE=paper (no real orders until you opt in)."
-    echo "                 - Deploys the full cluster + runs migrations."
-    echo "                 - Safe to re-run: never overwrites secrets you've already set."
-    echo ""
-    echo "  workers [N]    Scale worker pool to N instances (default: 2)."
-    echo "                 - Starts workers for async report processing."
-    echo "                 - Must run after: ./start.sh prod"
-    echo ""
-    echo "  worker-status  Check health status of worker pool."
-    echo ""
-    echo "  worker-logs    Tail logs from all worker containers."
-    echo ""
-    echo "  stop|clean     Stop all containers and perform deep cleanup."
-    echo ""
-    echo "  migrate        Align database heads and run all migrations (Auto-detect Env)."
-    echo "                 - Fixes 'Multiple Heads' and syncs schema."
-    echo ""
-    echo "  patch          Production Hot-Patch (No downtime UI/API update)."
-    echo ""
-    echo "  ollama         Deploy Local Ollama service (requires pre-downloaded models)."
-    echo ""
-    echo "  k8s            Deploy to Kubernetes (Minikube / Cloud)."
-    echo ""
-    echo "Environment flags (set inline or in .env):"
-    echo "  SKIP_N8N_IMPORT=1   Skip the n8n workflow auto-import on cold start."
-    echo "                      The import UPSERTs onto workflow ID 1 and will"
-    echo "                      overwrite edits made in the n8n UI."
-    echo "                      e.g. SKIP_N8N_IMPORT=1 ./start.sh prod"
-}
+# Observability (SigNoz: ClickHouse + ZooKeeper + collector + 2 migrators) is an
+# opt-in compose profile. `OBSERVABILITY=1 ./start.sh up` brings it up; the
+# default stack leaves ~4-6GB of RAM unspent and falls back to structured logs.
+# 預設不啟動 SigNoz；需要時 OBSERVABILITY=1 ./start.sh up。
+if [ "${OBSERVABILITY:-0}" = "1" ]; then
+    PROD_PROFILES="--profile observability"
+    export OTEL_EXPORTER_OTLP_ENDPOINT="${OTEL_EXPORTER_OTLP_ENDPOINT:-http://otel-collector:4317}"
+else
+    PROD_PROFILES=""
+fi
 
-PROD_COMPOSE="docker compose --project-name investment_advisor -f docker-compose.prod.yml"
+PROD_COMPOSE="docker compose --project-name investment_advisor -f docker-compose.prod.yml ${PROD_PROFILES}"
 PROD_CACHE="advisor_prod_cache"
 PROD_DB="advisor_prod_db"
 readonly REPORT_QUEUES=("report:daily:queue" "report:weekly:queue" "report:priority:queue")
+
+# Core single-box stack. SigNoz and n8n are opt-in profiles and are deliberately
+# absent — a healthy default deployment must report green without them.
+# SigNoz 與 n8n 為選配 profile，預設健檢不要求它們。
+readonly REQUIRED_PROD_CONTAINERS=(
+    advisor_prod_api advisor_prod_ui advisor_prod_db advisor_prod_cache
+    advisor_prod_beat advisor_prod_worker advisor_prod_gateway
+)
+
+readonly OBSERVABILITY_CONTAINERS=(
+    signoz signoz-otel-collector signoz-clickhouse
+)
+
+function show_help {
+    echo "investment-advisor — single-box control"
+    echo ""
+    echo "Usage: ./start.sh <command>"
+    echo ""
+    echo "  up            Build and start the stack (generates secrets on first run)."
+    echo "  down          Stop the stack. Add --volumes to destroy data too."
+    echo "  logs [svc]    Follow logs (all services, or one)."
+    echo "  health        Check the deployment. Exits non-zero when unhealthy."
+    echo "  migrate       Apply database migrations."
+    echo "  backup        Dump the database and config to backups/."
+    echo "  restore [id]  Restore database and config from a backup in backups/."
+    echo "  upgrade       Pull, migrate, restart, and health-gate the result."
+    echo "  wizard        Run the interactive onboarding and cost-profile wizard."
+    echo "  tunnel        Start the ngrok tunnel (webhook endpoints only)."
+    echo ""
+    echo "Environment:"
+    echo "  OBSERVABILITY=1        also run the SigNoz stack"
+    echo "  WORKER_CONCURRENCY=N   Celery worker processes (default 4)"
+    echo "  SKIP_BUILD=1           skip image builds on 'up'"
+}
 
 function redis_cmd {
     # Usage: redis_cmd <container> <redis args...>
@@ -96,7 +109,10 @@ function check_env {
     # 兩個 compose 都會把 n8n_workflow_template.json 唯讀掛進 n8n 容器；該檔被
     # gitignore，全新 clone 不會有它，而 Docker 在 bind 來源不存在時會自動建立一個
     # root 所有的「目錄」，導致容器裡掛到的是目錄、匯入靜默失效。
-    if [ ! -e n8n_workflow_template.json ] && [ -f n8n_workflow_template.example.json ]; then
+    # Only needed for the optional `n8n` profile — n8n's own schedules moved
+    # into Celery Beat, so a default deployment never reads this file.
+    # 僅選配的 n8n profile 需要；預設部署不會用到。
+    if [ "${N8N:-0}" = "1" ] && [ ! -e n8n_workflow_template.json ] && [ -f n8n_workflow_template.example.json ]; then
         cp n8n_workflow_template.example.json n8n_workflow_template.json
         echo "  ✓ Seeded n8n_workflow_template.json from the example."
     elif [ -d n8n_workflow_template.json ]; then
@@ -107,12 +123,6 @@ function check_env {
     fi
 }
 
-# 2026-07-14 (open-source Phase 1 — self-host one-click bootstrap):
-# generate a real secret for VAR_NAME in .env if it is missing OR still a
-# placeholder from .env.example (REPLACE_WITH_..., <replace-with-...>, or
-# the literal known-default JWT secret). Never touches an already-real
-# value — idempotent and safe to call on every `selfhost` run, including
-# against an existing deployment that already set its own secrets.
 function ensure_secret {
     local var_name="$1"
     local generator="${2:-urlsafe}"
@@ -148,42 +158,78 @@ function ensure_secret {
     echo "  ✓ Generated ${var_name}"
 }
 
-function selfhost_bootstrap {
-    echo "=== Self-Host First-Run Bootstrap ==="
-    check_env
+function ensure_literal {
+    # Like ensure_secret, but writes a fixed value instead of a generated one.
+    local var_name="$1" value="$2" current=""
+    [ -f .env ] && current=$(grep -m1 "^${var_name}=" .env | cut -d= -f2-)
+    [ -n "$current" ] && return 0
+    echo "${var_name}=${value}" >> .env
+    echo "  ✓ Set ${var_name}=${value}"
+}
 
-    echo "Ensuring required secrets are set (only fills placeholders, never overwrites real values)..."
-    ensure_secret "JWT_SECRET" "urlsafe"
-    ensure_secret "LLM_CREDENTIAL_KEY" "fernet"
-    ensure_secret "APP_SECRET_KEY" "fernet"
-    ensure_secret "DB_PASS" "urlsafe"
-    ensure_secret "REDIS_PASSWORD" "urlsafe"
-
-    if ! grep -q "^TRADING_MODE=" .env 2>/dev/null; then
-        echo "TRADING_MODE=paper" >> .env
-        echo "  ✓ Set TRADING_MODE=paper (self-host safe default — no real trades until you explicitly opt in)"
+function guard_encryption_keys {
+    # APP_SECRET_KEY and LLM_CREDENTIAL_KEY encrypt rows *inside Postgres*
+    # (settings values, llm_providers.encrypted_api_key). If the database volume
+    # survives but .env does not — a lost file, a fresh clone over an old
+    # volume — regenerating them turns every stored eToro and LLM credential
+    # into undecryptable garbage, and the failure shows up later as
+    # "credential invalid", not as an error here.
+    #
+    # 這兩把金鑰加密的是資料庫內容；DB volume 還在而 .env 不見時重新產生金鑰，
+    # 會讓既有 eToro / LLM 憑證永久無法解密，且錯誤要很久以後才浮現。
+    local db_volume_exists=0
+    if docker volume inspect investment_advisor_advisor_db_data >/dev/null 2>&1 \
+       || docker volume inspect advisor_db_data >/dev/null 2>&1; then
+        db_volume_exists=1
     fi
+    [ "$db_volume_exists" = "0" ] && return 0
+
+    local missing=""
+    for key in APP_SECRET_KEY LLM_CREDENTIAL_KEY; do
+        local current=""
+        [ -f .env ] && current=$(grep -m1 "^${key}=" .env | cut -d= -f2-)
+        case "$current" in ""|*REPLACE_WITH*|*"<replace-with"*) missing="$missing $key" ;; esac
+    done
+    [ -z "$missing" ] && return 0
 
     echo ""
-    echo "Deploying production cluster..."
-    deploy_prod
+    echo "❌ Refusing to bootstrap."
+    echo "   An existing database volume was found, but these keys are missing from .env:"
+    echo "  ${missing}"
+    echo ""
+    echo "   They decrypt data already stored in that database. Generating new ones"
+    echo "   would permanently orphan your saved eToro and LLM provider credentials."
+    echo ""
+    echo "   Restore the original values into .env (check backups/ or .env.bak-*),"
+    echo "   or, if you accept losing those stored credentials, start from a clean"
+    echo "   database:  ./start.sh clean   (destroys the volume), then re-run."
+    return 1
+}
 
-    echo ""
-    echo "Applying database migrations..."
-    run_migrations
+function seed_safe_defaults {
+    # Runs inside the API container so it uses the same DB credentials and the
+    # same encryption keys the application will use.
+    #
+    # Two things happen here:
+    #   1. the owner row is created under a Postgres advisory lock, BEFORE the
+    #      workers/beat start racing for it;
+    #   2. auto-trading is pinned off for a fresh install.
+    # 在 API 容器內執行：先建立擁有者（advisory lock 序列化），再關閉自動交易。
+    docker exec advisor_prod_api python -c "
+import sys
+from src.config.owner import get_owner_id
+owner = get_owner_id()
+print(f'  ✓ Owner: {owner}')
 
-    echo ""
-    echo "======================================================================"
-    echo "✅ Self-host bootstrap complete."
-    echo ""
-    echo "  Dashboard:     http://127.0.0.1:8088"
-    echo "  Trading mode:  paper (no real orders will be placed)"
-    echo ""
-    echo "  Next step: open the dashboard → Settings → configure an LLM"
-    echo "  provider (OpenRouter API key, or a local Ollama endpoint) before"
-    echo "  the council/sentinel agents can run. Nothing else is required to"
-    echo "  explore the platform safely."
-    echo "======================================================================"
+from src.services.settings_service import SettingsService
+svc = SettingsService(user_id=owner)
+existing = svc.get_setting('ai_trading_enabled')
+if existing is None:
+    svc.save_settings_bulk({'ai_trading_enabled': False})
+    print('  ✓ ai_trading_enabled=false (auto-trading held off on a fresh install)')
+else:
+    print(f'  · ai_trading_enabled already set to {existing!r} — left untouched')
+" || echo "  ⚠️  Could not seed defaults — run './start.sh health' and check the API container logs."
 }
 
 function fix_redis_queues {
@@ -237,29 +283,15 @@ function wait_for_api {
     return 1
 }
 
-# Containers that must be up for the stack to count as green. SigNoz is
-# included deliberately: it ships in the same compose project via the
-# `include:` at the top of docker-compose.prod.yml, and the old
-# `name=advisor_prod` filter missed it entirely.
-# 這些容器都起來才算綠燈；SigNoz 也算在內——它經由 compose 的 include 屬於同一個
-# project，但舊的 name=advisor_prod 過濾器完全看不到它。
-readonly REQUIRED_PROD_CONTAINERS=(
-    advisor_prod_api advisor_prod_ui advisor_prod_db advisor_prod_cache
-    advisor_prod_n8n advisor_prod_beat advisor_prod_worker_1
-    advisor_prod_worker_2 advisor_prod_gateway
-    signoz signoz-otel-collector signoz-clickhouse
-)
-
 function show_health {
     # Returns 0 when everything checks out, non-zero otherwise, so cold-start
     # verification can gate on it: `./start.sh health && echo GREEN`. Human
     # output is a strict superset of what it printed before.
     #
-    # The two internal callers in deploy_prod invoke this as `show_health ||
-    # true` — under `set -e` a failing health check would otherwise abort the
-    # deploy, and worse, make selfhost_bootstrap skip run_migrations.
-    # 回傳 exit code 以便自動化把關；deploy_prod 內部呼叫加 || true，否則 set -e
-    # 下健檢失敗會炸掉部署，甚至讓 selfhost 跳過 run_migrations。
+    # Callers inside cmd_up/cmd_upgrade invoke this as `show_health || true` —
+    # under `set -e` a red health check would otherwise abort the command
+    # mid-way and skip the steps after it.
+    # 內部呼叫加 || true，否則 set -e 下健檢失敗會中斷後續步驟。
     local failed=0
     echo "=== System Health ==="
 
@@ -271,7 +303,11 @@ function show_health {
     local running
     running=$(docker ps --format '{{.Names}}')
     local c
-    for c in "${REQUIRED_PROD_CONTAINERS[@]}"; do
+    local _required=("${REQUIRED_PROD_CONTAINERS[@]}")
+    if [ "${OBSERVABILITY:-0}" = "1" ]; then
+        _required+=("${OBSERVABILITY_CONTAINERS[@]}")
+    fi
+    for c in "${_required[@]}"; do
         if ! printf '%s\n' "$running" | grep -qx "$c"; then
             echo "  ✗ MISSING: $c"
             failed=$((failed + 1))
@@ -301,31 +337,22 @@ function show_health {
         failed=$((failed + 1))
     fi
 
-    # NOTE: /rest/health — which scripts/health_check_deep.sh:37 probes — is a
-    # 404 on n8n 2.x and has always reported "unavailable". /healthz is the
-    # live endpoint. /rest/executions needs an auth cookie, so workflow state
-    # is read through the CLI instead.
-    # 註：health_check_deep.sh 用的 /rest/health 在 n8n 2.x 是 404，一直都測不到；
-    # /healthz 才是活的端點。
-    echo ""
-    echo "n8n:"
-    if curl -sf "http://localhost:5678/healthz" >/dev/null 2>&1; then
-        echo "  http://localhost:5678/healthz  OK"
-        if docker exec advisor_prod_n8n n8n list:workflow --active=true --onlyId 2>/dev/null \
-                | tr -d '\r' | grep -qx "1"; then
-            echo "  workflow 1: ACTIVE"
+    # n8n is an optional connector hub now (compose profile `n8n`), not part of
+    # the product. Its three schedules moved into Celery Beat, so a stopped n8n
+    # is a normal state and must not fail the health gate. Only report on it
+    # when it is actually running.
+    # n8n 已降為選配；停用是正常狀態，僅在實際執行時才回報。
+    if docker ps --format '{{.Names}}' | grep -q "advisor_prod_n8n"; then
+        echo ""
+        echo "n8n (optional):"
+        if curl -sf "http://localhost:5678/healthz" >/dev/null 2>&1; then
+            echo "  http://localhost:5678/healthz  OK"
         else
-            echo "  workflow 1: NOT ACTIVE (import:workflow deactivates by default on"
-            echo "              n8n 2.x — re-import with --activeState=fromJson, or"
-            echo "              toggle it back on in the UI)"
+            echo "  http://localhost:5678/healthz  FAIL"
             failed=$((failed + 1))
         fi
-    else
-        echo "  http://localhost:5678/healthz  FAIL"
-        failed=$((failed + 1))
     fi
 
-    echo ""
     echo "Redis Queues:"
     if printf '%s\n' "$running" | grep -qx "$PROD_CACHE"; then
         for queue in "${REPORT_QUEUES[@]}"; do
@@ -423,463 +450,285 @@ function run_migrations {
     echo "✅ Migration Successful."
 }
 
-function patch_prod {
-    echo "=== Mode: Hot-Patching Production Cluster ==="
-    check_env
-    $PROD_COMPOSE build frontend mcp_server
-    $PROD_COMPOSE up -d --no-deps frontend mcp_server
-    echo "✅ Patch Applied Successfully"
-}
-
-function scale_workers {
-    local worker_count=${1:-2}
-    echo "=== Scaling Worker Pool to $worker_count instances ==="
-    check_env
-    source .env 2>/dev/null || true
-    
-    # Ensure prod cluster is running
-    if ! docker ps --format '{{.Names}}' | grep -q "advisor_prod_api"; then
-        echo "❌ Production cluster not running. Start with: ./start.sh prod"
-        exit 1
-    fi
-    
-    # Get worker image name from compose build
-    echo "Building worker image..."
-    $PROD_COMPOSE build worker_1 2>/dev/null || true
-    
-    # Get the built image name
-    local worker_image
-    worker_image=$(docker inspect --format='{{.Config.Image}}' advisor_prod_worker_1 2>/dev/null || echo "investment_advisor-worker_1:latest")
-
-    echo "Starting/updating worker pool..."
-    
-    # Stop old workers first
-    for i in 1 2 3 4; do
-        docker stop "advisor_prod_worker_$i" 2>/dev/null || true
-        docker rm "advisor_prod_worker_$i" 2>/dev/null || true
-    done
-    
-    # Start new workers with docker run (redis:// URL and correct env vars)
-    for i in $(seq 1 $worker_count); do
-        echo "  Starting Worker $i..."
-        docker run -d \
-            --name "advisor_prod_worker_$i" \
-            --network "advisor-net" \
-            --restart always \
-            -u root \
-            --env-file .env \
-            -e WORKER_ID="worker-$i" \
-            -e WORKER_CONCURRENCY=2 \
-            -e NODE_ENV=production \
-            -e QUEUE_REDIS_URL="redis://advisor_prod_cache:6379/0" \
-            -e OTEL_SERVICE_NAME="worker_${i}_prod" \
-            -e OTEL_EXPORTER_OTLP_ENDPOINT="http://otel-collector:4317" \
-            -e OTEL_EXPORTER_OTLP_PROTOCOL="grpc" \
-            -v "./src/infrastructure:/workspace/src/infrastructure:ro" \
-            -v "./src/workflow:/workspace/src/workflow:ro" \
-            -v "./src/services:/workspace/src/services:ro" \
-            -v "./src/agents:/workspace/src/agents:ro" \
-            -v "./services/scheduler:/workspace/services/scheduler:ro" \
-            "$worker_image" \
-            python services/scheduler/src/app.py --mode worker --concurrency 2
-        
-        echo "  ✅ Worker $i started"
-    done
-    
-    echo ""
-    echo "✅ Worker pool scaled to $worker_count instances"
-    worker_status
-}
-
-function worker_status {
-    echo "=== Worker Pool Status ==="
-    
-    if ! docker ps --format '{{.Names}}' | grep -q "advisor_prod_api"; then
-        echo "❌ Production cluster not running"
+function start_tunnel {
+    # The tunnel now points at the webhook-only nginx vhost (port 8080), which
+    # publishes /webhook/* and /callback/* and 404s everything else. Those
+    # endpoints carry their own credentials — X-API-Key for webhooks, provider
+    # signatures for callbacks — so the tunnel no longer depends on ADMIN_TOKEN
+    # to be safe, and the dashboard stays loopback-only either way.
+    #
+    # What is still checked: that nobody has repointed ngrok back at :80.
+    #
+    # 通道已改指向 webhook 專用 vhost（:8080），只公開自帶憑證的端點；
+    # 此處仍檢查是否有人把 ngrok 改回 :80。
+    if grep -qE '^\s*command:\s*http .*advisor_prod_gateway:80\s*$' docker-compose.prod.yml; then
+        echo "❌ Refusing to start the tunnel."
+        echo "   docker-compose.prod.yml points ngrok at advisor_prod_gateway:80,"
+        echo "   which publishes the unauthenticated dashboard and the whole /api/"
+        echo "   surface to the internet. It must target :8080 (webhook-only vhost)."
         return 1
     fi
-    
-    echo ""
-    echo "Worker Containers:"
-    docker ps --filter "name=advisor_prod_worker" --format "table {{.Names}}\tSTATUS"
-    
-    echo ""
-    echo "Queue Status (Redis):"
-    redis_cmd "$PROD_CACHE" ZCARD report:daily:queue | sed 's/^/  Daily queue depth: /'
 
-    echo ""
-    echo "Database Job Status:"
-    docker exec "$PROD_DB" psql -U postgres portfolio -c \
-        "SELECT status, COUNT(*) as count FROM report_jobs GROUP BY status ORDER BY count DESC;" \
-        2>/dev/null | tail -n +3 | sed 's/^/  /'
-}
-
-function worker_logs {
-    if ! docker ps --filter "name=advisor_prod_worker" --quiet | head -1 >/dev/null; then
-        echo "❌ No worker containers running"
-        exit 1
-    fi
-    
-    echo "=== Worker Pool Logs ==="
-    echo "(Press Ctrl+C to stop)"
-    docker logs -f $(docker ps --filter "name=advisor_prod_worker" --quiet)
-}
-
-function backup_n8n_workflow {
-    # Export a workflow before import:workflow upserts over it.
-    #
-    # n8n has NO other backup coverage anywhere: it keeps everything in the
-    # advisor_n8n_data volume (its own SQLite plus an auto-generated encryption
-    # key), and scripts/backup_db.sh only pg_dumps Postgres. Losing a
-    # hand-tuned workflow is unrecoverable, so 15 lines is cheap insurance.
-    #
-    # Silent no-op on a genuine first cold start, where there is nothing to
-    # export yet.
-    #
-    # n8n 目前零備份覆蓋：它的資料全在 advisor_n8n_data（自帶 SQLite 與自動產生
-    # 的加密金鑰），而 backup_db.sh 只 dump Postgres。手工調過的 workflow 一旦被
-    # 覆寫就救不回來。真正首次冷啟動時沒東西可備份，直接跳過。
-    local n8n_container=$1
-    local wf_id="${2:-1}"
-
-    if ! docker exec "$n8n_container" n8n list:workflow --onlyId 2>/dev/null \
-            | tr -d '\r' | grep -qx "$wf_id"; then
-        echo "  (no existing workflow ${wf_id} — nothing to back up)"
-        return 0
+    if ! grep -q "listen 8080;" infra/nginx/nginx.conf; then
+        echo "❌ Refusing to start the tunnel: the webhook-only vhost (listen 8080)"
+        echo "   is missing from infra/nginx/nginx.conf."
+        return 1
     fi
 
-    mkdir -p backups
-    local ts
-    ts=$(date +%Y%m%d_%H%M%S)
-    local tmp="/tmp/n8n_wf_${wf_id}_${ts}.json"
-    local out="backups/n8n_workflow_${wf_id}_${ts}.json"
-
-    if docker exec "$n8n_container" n8n export:workflow --id="$wf_id" --pretty \
-             --output="$tmp" >/dev/null 2>&1 \
-       && docker cp "$n8n_container:$tmp" "$out" >/dev/null 2>&1 \
-       && [ -s "$out" ]; then
-        docker exec "$n8n_container" rm -f "$tmp" 2>/dev/null || true
-        echo "  ✓ Backed up n8n workflow ${wf_id} → ${out}"
-        find backups -name "n8n_workflow_*.json" -mtime +30 -delete 2>/dev/null || true
-        return 0
-    fi
-
-    rm -f "$out" 2>/dev/null || true
-    echo "  ⚠️  Could not export n8n workflow ${wf_id}."
-    return 1
-}
-
-function import_n8n_workflow {
-    local db_container=$1
-    local n8n_container=$2
-
-    # SKIP_N8N_IMPORT — opt out of the destructive re-import.
-    #
-    # The template carries a top-level "id": "1", so `n8n import:workflow` is an
-    # UPSERT onto workflow 1: anything edited in the n8n UI is overwritten. On
-    # n8n 2.x it is worse than that — `--activeState` defaults to false, so
-    # every cold start also silently DEACTIVATES the workflow.
-    #
-    # Read the process environment first, then .env, using the same
-    # non-sourcing idiom as redis_cmd/ensure_secret. Deliberately placed BEFORE
-    # the `source .env` below: sourcing would leak TELEGRAM_BOT_TOKEN, DB_PASS
-    # and everything else into the remainder of the run (deploy_prod continues
-    # on to show_health after this returns).
-    #
-    # 模板帶有頂層 "id": "1"，所以 import 是對 workflow 1 的 UPSERT，UI 上的修改
-    # 會被覆寫；n8n 2.x 的 --activeState 預設 false，還會順手把它停用。
-    # 這段刻意放在 source .env 之前——sourcing 會把 .env 的所有機密洩漏到腳本後續。
-    local skip="${SKIP_N8N_IMPORT:-}"
-    if [ -z "$skip" ] && [ -f .env ]; then
-        skip=$(grep -m1 '^SKIP_N8N_IMPORT=' .env | cut -d= -f2-)
-    fi
-    case "$(printf '%s' "$skip" | tr '[:upper:]' '[:lower:]')" in
-        ""|0|false|no|off)
-            ;;
-        *)
-            echo "⏭️  Skipping n8n workflow import (SKIP_N8N_IMPORT=${skip})."
-            echo "    Workflow 1 in ${n8n_container} is left exactly as-is."
-            echo "    Unset SKIP_N8N_IMPORT (or set it to 0) to re-enable."
-            return 0
-            ;;
-    esac
-
-    if [ -f n8n_workflow_template.json ]; then
-        echo "Attempting to auto-import n8n workflow..."
-        source .env 2>/dev/null || true
-        
-        local db_ready=false
-        for i in {1..10}; do
-            if docker exec "$db_container" pg_isready -U "${DB_USER:-postgres}" &>/dev/null; then
-                db_ready=true
-                break
-            fi
-            sleep 2
-        done
-
-        if [ "$db_ready" = true ]; then
-            # Resolve API container to query decrypted key from business layer
-            local api_container=""
-            if [ "$db_container" = "advisor_prod_db" ]; then
-                api_container="advisor_prod_api"
-            elif [ "$db_container" = "investment_advisor_db" ]; then
-                api_container="investment_advisor_mcp"
-            fi
-
-            if [ -n "$api_container" ] && docker ps --filter "name=$api_container" --quiet | grep -q .; then
-                WEBHOOK_KEY=$(docker exec "$api_container" python -c "from src.services.settings_service import SettingsService; print(SettingsService(user_id='00000000-0000-4000-a000-000000000001').get_setting('webhook_api_key') or '')" 2>/dev/null | tr -d '[:space:]')
-            fi
-
-            # Fallback to raw SQL (encrypted value) if API container is not online/responsive
-            if [ -z "$WEBHOOK_KEY" ]; then
-                local db_name="${DB_NAME:-advisor_prod}"
-                WEBHOOK_KEY=$(docker exec "$db_container" psql -U "${DB_USER:-postgres}" -d "$db_name" -t -c "SELECT value::text FROM settings WHERE key='webhook_api_key' LIMIT 1;" 2>/dev/null | sed 's/"//g' | tr -d '[:space:]')
-            fi
-        fi
-
-        if [ -n "$WEBHOOK_KEY" ]; then
-            sed "s/your_api_key_here/$WEBHOOK_KEY/g" n8n_workflow_template.json > /tmp/n8n_workflow_injected.json
-            docker cp /tmp/n8n_workflow_injected.json "$n8n_container":/tmp/template_injected.json
-            rm -f /tmp/n8n_workflow_injected.json
-            N8N_IMPORT_PATH="/tmp/template_injected.json"
-        else
-            N8N_IMPORT_PATH="/home/node/template.json"
-        fi
-
-        # n8n CLI Wait
-        MAX_RETRIES=15
-        RETRY_COUNT=0
-        while [ $RETRY_COUNT -lt $MAX_RETRIES ]; do
-            if docker exec "$n8n_container" n8n --version >/dev/null 2>&1; then
-                if ! backup_n8n_workflow "$n8n_container" 1; then
-                    echo "❌ n8n import ABORTED — pre-import backup failed."
-                    echo "   Existing workflow left untouched. Re-run with"
-                    echo "   SKIP_N8N_IMPORT=1 if you want to proceed without one."
-                    # return 0, not 1: the script runs under `set -e` and this is
-                    # called from deploy_prod BEFORE show_health, so a non-zero
-                    # return would abort the deploy with the cluster already up.
-                    # The banner is the signal.
-                    # 回 0 而非 1：set -e 下非零會在叢集已起來後炸掉整個部署。
-                    return 0
-                fi
-                # --activeState=fromJson: n8n 2.x defaults this to false, which
-                # DEACTIVATES every imported workflow — the template says
-                # "active": true and is expected to keep running. n8n 1.x has no
-                # such flag, hence the fallback.
-                # n8n 2.x 的預設值會停用匯入的 workflow；1.x 沒有這個參數，故 fallback。
-                docker exec "$n8n_container" n8n import:workflow --input "$N8N_IMPORT_PATH" --activeState=fromJson \
-                    || docker exec "$n8n_container" n8n import:workflow --input "$N8N_IMPORT_PATH"
-                echo "✅ n8n Workflow imported."
-                break
-            fi
-            sleep 5
-            RETRY_COUNT=$((RETRY_COUNT+1))
-        done
-    fi
-}
-
-function deploy_docker {
-    echo "=== Mode: Local Development (Docker) ==="
-    check_env
-    docker compose up --build -d
-    
+    echo "✓ Tunnel targets the webhook-only vhost. Starting ngrok."
+    $PROD_COMPOSE --profile tunnel up -d ngrok
     echo ""
-    echo "✅ Deployment Complete"
-    echo "----------------------"
-    echo "🌐 Frontend:            http://localhost:3001"
-    echo "🔌 API:                 http://localhost:8001"
-    echo "📊 Monitoring (SigNoz): http://localhost:8080"
-    echo "🌍 Public Access:        $(docker compose port ngrok 4040 2>/dev/null | grep -q . && echo "http://localhost:4040 (ngrok Dashboard)" || echo "Pending...")"
-    echo ""
-    
-    import_n8n_workflow "investment_advisor_db" "investment_advisor_n8n"
+    echo "  Exposed publicly:  /webhook/*  (X-API-Key)   /callback/*  (signed)"
+    echo "  NOT exposed:       dashboard, /api/*, /docs  — loopback only"
 }
 
-function ensure_signoz_volumes {
-    echo "Ensuring SigNoz external volumes exist..."
-    docker volume create signoz-clickhouse >/dev/null 2>&1 || true
-    docker volume create signoz-sqlite >/dev/null 2>&1 || true
-    docker volume create signoz-zookeeper-1 >/dev/null 2>&1 || true
-    return 0
-}
+# ─────────────────────────────────────────────────────────────────────────────
+# Commands
+# ─────────────────────────────────────────────────────────────────────────────
 
-function deploy_prod {
-    echo "=== Mode: Production Cluster (Hardened) ==="
+function cmd_up {
+    echo "=== Starting investment-advisor ==="
     check_env
 
-    # Pre-create external volumes required by SigNoz include.
-    ensure_signoz_volumes
+    guard_encryption_keys || return 1
 
-    # Hot-restart path: cluster already running → stop and restart code services (fast reload).
-    # Volume mounts in docker-compose.prod.yml ensure local src/ is live inside containers.
-    # 2026-07-14: the `scheduler` service was removed (it ran a SECOND
-    # `celery beat` identical to `celery_beat`, double-firing every
-    # scheduled task — sentinel ticks, daily reports, the hourly digest,
-    # all 2x). `celery_beat` is now the sole beat authority and must be
-    # restarted here too, or code/schedule changes never reach it.
-    if docker ps --format '{{.Names}}' | grep -q "advisor_prod_api"; then
-        echo "Cluster running — hot-restarting code services (celery_beat, worker_1, worker_2)..."
-        docker rm -f advisor_prod_beat advisor_prod_worker_1 advisor_prod_worker_2 2>/dev/null || true
-        sleep 1
+    echo "Ensuring secrets (only fills placeholders, never overwrites real values)..."
+    ensure_secret "LLM_CREDENTIAL_KEY" "fernet"
+    ensure_secret "APP_SECRET_KEY" "fernet"
+    ensure_secret "DB_PASS" "urlsafe"
+    ensure_secret "REDIS_PASSWORD" "urlsafe"
+    ensure_literal "DB_USER" "postgres"
+    ensure_literal "DB_NAME" "advisor_prod"
 
-        $PROD_COMPOSE up -d --no-build --no-deps celery_beat worker_1 worker_2
-        echo ""
-        echo "✅ Code services restarted (env reloaded)"
-        echo ""
-        sleep 5
-        # || true: under `set -e` a red health check must not abort the deploy.
-        show_health || true
-        return
+    # TRADING_MODE=paper is NOT a safe default here: the eToro token has no demo
+    # permission, so paper mode makes every broker call return
+    # InsufficientPermissions — a full stop, not a degraded mode (AGENTS.md
+    # 2026-08-23). The brake is the ai_trading_enabled setting, applied by
+    # seed_safe_defaults below.
+    # paper 模式在本專案是全停而非降級；安全預設用 ai_trading_enabled=false。
+
+    if [ "${SKIP_BUILD:-0}" != "1" ]; then
+        echo "Building images..."
+        $PROD_COMPOSE build
     fi
 
-    # Cold start: stop any stale/conflicting containers then full build.
-    docker ps -a --format '{{.Names}}' | grep -E "^(advisor_prod|signoz|schema-migrator|investment_advisor)" \
-        | xargs -r docker stop 2>/dev/null || true
-    docker ps -a --format '{{.Names}}' | grep -E "^(advisor_prod|signoz|schema-migrator|investment_advisor)" \
-        | xargs -r docker rm -f 2>/dev/null || true
+    echo "Starting containers..."
+    $PROD_COMPOSE up -d --remove-orphans
 
-    $PROD_COMPOSE up --build -d --remove-orphans
-
-    # Post-deploy: Force-start containers stuck in 'created' state
-    # n8n depends on mcp_server healthy, but sometimes gets stuck before the health gate passes.
-    echo "🔁 Checking for containers stuck in 'created' state..."
-    for i in 1 2 3; do
-        STUCK=$(docker ps -a --filter "name=advisor_prod" --filter "status=created" --format "{{.Names}}" 2>/dev/null)
-        if [ -z "$STUCK" ]; then
-            echo "✅ All containers are running."
-            break
-        fi
-        echo "⚠️  Attempt $i: Force-starting stuck containers: $STUCK"
-        echo "$STUCK" | xargs -r docker start
-        sleep 15
-    done
-    # Final explicit check: ensure n8n started (it has a deep depends_on chain)
-    if ! docker ps --format '{{.Names}}' | grep -q "advisor_prod_n8n"; then
-        echo "⚠️  n8n not running — attempting explicit start..."
-        docker start advisor_prod_n8n 2>/dev/null || true
-        sleep 10
-    fi
-
-    wait_for_api "http://localhost:8000/health" 120 || true
-    fix_redis_queues "advisor_prod_cache"
+    wait_for_api || true
+    run_migrations
+    seed_safe_defaults
 
     echo ""
-    echo "✅ PRODUCTION Cluster Online"
-    echo "---------------------------"
-    echo "🌐 Production Gateway:  http://127.0.0.1:8088"
-    echo "📊 Monitoring (SigNoz): http://localhost:8080"
-    echo "🛡️  Status:             Hardened, APM Active"
-    echo ""
-
-    import_n8n_workflow "advisor_prod_db" "advisor_prod_n8n"
-
-    echo ""
-    # || true: see above — the dispatcher's `health` case is the gating surface.
     show_health || true
+    echo ""
+    echo "======================================================================"
+    echo "  Dashboard:  http://127.0.0.1:8088   (no login required)"
+    echo ""
+    echo "  Next: Settings -> configure an LLM provider (OpenRouter key, or a"
+    echo "  local Ollama endpoint) before the council/sentinel agents can run."
+    echo "======================================================================"
 }
 
-function check_shared_ollama {
-    echo "Checking for shared Ollama service..."
-    if ! curl -s --max-time 2 http://localhost:11434/api/tags >/dev/null 2>&1; then
-        echo "⚠️  Shared Ollama not detected at http://localhost:11434"
-        echo "   Attempting to start from shared infra..."
-        if [ -f "../infra/start-ollama.sh" ]; then
-            bash ../infra/start-ollama.sh
-        elif [ -f "infra/start-ollama.sh" ]; then
-             bash infra/start-ollama.sh
+function cmd_down {
+    if [ "${1:-}" = "--volumes" ]; then
+        echo "⚠️  Destroying containers AND data volumes (database, redis, n8n)."
+        printf "Type 'destroy' to confirm: "
+        read -r reply
+        [ "$reply" = "destroy" ] || { echo "Aborted."; return 1; }
+        $PROD_COMPOSE --profile observability --profile n8n --profile tunnel down --volumes --remove-orphans
+    else
+        $PROD_COMPOSE --profile observability --profile n8n --profile tunnel down --remove-orphans
+    fi
+}
+
+function cmd_logs {
+    if [ -n "${1:-}" ]; then
+        $PROD_COMPOSE logs -f --tail=200 "$1"
+    else
+        $PROD_COMPOSE logs -f --tail=100
+    fi
+}
+
+function cmd_backup {
+    local ts
+    ts=$(date +%Y%m%d-%H%M%S)
+    mkdir -p backups
+
+    echo "Dumping database..."
+    local db_name="advisor_prod"
+    if [ -f .env ]; then
+        db_name=$(grep -m1 '^DB_NAME=' .env | cut -d= -f2-)
+        db_name="${db_name:-advisor_prod}"
+    fi
+
+    docker exec "$PROD_DB" pg_dump -U "${DB_USER:-postgres}" "$db_name" \
+        > "backups/db-${ts}.sql"
+    local db_size
+    db_size=$(du -h "backups/db-${ts}.sql" | cut -f1)
+    echo "  ✓ backups/db-${ts}.sql (${db_size})"
+
+    # config/ holds workflow, agent and settings manifests that the UI writes —
+    # product state, not source. A database dump alone would not restore it.
+    tar -czf "backups/config-${ts}.tar.gz" config/ 2>/dev/null || true
+    echo "  ✓ backups/config-${ts}.tar.gz"
+
+    if [ -f .env ]; then
+        cp .env "backups/env-${ts}.bak"
+        echo "  ✓ backups/env-${ts}.bak"
+    fi
+
+    # Write backup manifest with git SHA and metadata
+    local git_sha="unknown"
+    if command -v git >/dev/null 2>&1 && [ -d .git ]; then
+        git_sha=$(git rev-parse HEAD 2>/dev/null || echo "unknown")
+    fi
+    cat <<EOF > "backups/manifest-${ts}.json"
+{
+  "timestamp": "${ts}",
+  "database": "${db_name}",
+  "git_commit": "${git_sha}",
+  "files": {
+    "db": "db-${ts}.sql",
+    "config": "config-${ts}.tar.gz",
+    "env": "env-${ts}.bak"
+  }
+}
+EOF
+    echo "  ✓ backups/manifest-${ts}.json"
+    echo "✅ Backup complete. (ID: ${ts})"
+}
+
+function cmd_restore {
+    local target="${1:-}"
+    if [ -z "$target" ]; then
+        # Auto-detect latest backup manifest
+        local latest_manifest
+        latest_manifest=$(ls -1t backups/manifest-*.json 2>/dev/null | head -n1 || true)
+        if [ -n "$latest_manifest" ]; then
+            target=$(basename "$latest_manifest" | sed 's/manifest-//' | sed 's/\.json//')
+            echo "No backup ID specified. Found latest backup: ${target}"
         else
-            echo "❌ Error: Shared infra start-ollama.sh not found."
+            echo "❌ No backups found in backups/ directory."
             return 1
         fi
-    else
-        echo "✅ Shared Ollama is online."
     fi
-}
 
-function deploy_ollama {
-    echo "=== Mode: Shared Ollama Infrastructure ==="
-    check_shared_ollama
-    echo ""
-    echo "✅ Shared Ollama Service Online"
-    echo "---------------------------"
-    echo "🌐 Ollama API Gateway: http://localhost:11434"
-    echo "To view models: curl http://localhost:11434/api/tags"
-    echo ""
-}
+    # Strip prefixes/suffixes if operator provided a full path
+    target=$(echo "$target" | sed 's/.*db-//' | sed 's/.*config-//' | sed 's/.*manifest-//' | sed 's/\..*//')
 
-function telegram_setup {
-    local public_url=$1
-    if [ -z "$public_url" ]; then
-        echo "❌ Error: Public URL (ngrok) is required."
-        echo "Usage: ./start.sh telegram-setup https://your-id.ngrok-free.app"
+    local db_file="backups/db-${target}.sql"
+    local config_file="backups/config-${target}.tar.gz"
+
+    if [ ! -f "$db_file" ]; then
+        echo "❌ Database backup file not found: $db_file"
         return 1
     fi
-    echo "=== Setting up Telegram Webhook ==="
-    docker exec advisor_prod_api python src/setup_telegram_webhook.py "$public_url"
-}
 
-function cleanup {
-    echo "=== Cleaning Up All Resources ==="
-    [ -f docker-compose.yml ] && docker compose down --remove-orphans
-    [ -f docker-compose.prod.yml ] && $PROD_COMPOSE down --remove-orphans
-    [ -f docker-compose.ollama.yml ] && docker compose -f docker-compose.ollama.yml down --remove-orphans
-    
-    if [ "$1" == "--prune" ]; then
-        echo "🧹 Pruning Docker system (containers, images, volumes, build cache)..."
-        docker system prune -af --volumes
+    echo "⚠️  WARNING: Restoring backup '${target}' will OVERWRITE current database and config/ state!"
+    printf "Type 'restore' to confirm: "
+    read -r reply
+    [ "$reply" = "restore" ] || { echo "Aborted."; return 1; }
+
+    local db_name="advisor_prod"
+    if [ -f .env ]; then
+        db_name=$(grep -m1 '^DB_NAME=' .env | cut -d= -f2-)
+        db_name="${db_name:-advisor_prod}"
     fi
-    
-    echo "✅ Cleanup Complete"
+
+    echo "Restoring database from ${db_file}..."
+    docker exec -i "$PROD_DB" psql -U "${DB_USER:-postgres}" -d "$db_name" < "$db_file"
+    echo "  ✓ Database restored."
+
+    if [ -f "$config_file" ]; then
+        echo "Restoring config/ from ${config_file}..."
+        tar -xzf "$config_file"
+        echo "  ✓ config/ restored."
+    fi
+
+    if [ -f "backups/env-${target}.bak" ]; then
+        echo "  · Note: backups/env-${target}.bak preserved (not automatically overwriting active .env)."
+    fi
+
+    echo "Restarting services to apply restored configuration..."
+    $PROD_COMPOSE restart advisor_prod_api advisor_prod_beat advisor_prod_worker
+    wait_for_api || true
+    echo "✅ Restore complete."
 }
 
-# --- Main Logic ---
-case "$1" in
-    dev|"")
-        deploy_docker
+function cmd_upgrade {
+    echo "=== Upgrading investment-advisor ==="
+    cmd_backup
+
+    if command -v git >/dev/null 2>&1 && [ -d .git ]; then
+        echo "Pulling latest code changes via git..."
+        if ! git pull --ff-only; then
+            echo "⚠️  git pull --ff-only failed (local changes detected). Please resolve manually or stash."
+            return 1
+        fi
+    fi
+
+    echo "Rebuilding images..."
+    $PROD_COMPOSE build
+
+    echo "Restarting containers..."
+    $PROD_COMPOSE up -d --remove-orphans
+    wait_for_api || true
+    run_migrations
+
+    echo ""
+    if show_health; then
+        echo "✅ Upgrade complete and healthy."
+    else
+        echo ""
+        echo "⚠️  Upgrade finished but the health check is RED."
+        echo "   Inspect with './start.sh logs', or restore with './start.sh restore ${ts}'."
+        return 1
+    fi
+}
+
+function cmd_wizard {
+    echo "=== Running Onboarding Wizard ==="
+    if docker ps --format '{{.Names}}' | grep -q "advisor_prod_api"; then
+        docker exec -it advisor_prod_api python scripts/onboarding_wizard.py "$@"
+    else
+        python3 scripts/onboarding_wizard.py "$@"
+    fi
+}
+
+case "${1:-up}" in
+    up|start|prod|selfhost)
+        cmd_up
         ;;
-    prod)
-        deploy_prod
+    down|stop)
+        cmd_down "${2:-}"
         ;;
-    selfhost)
-        selfhost_bootstrap
-        ;;
-    workers)
-        scale_workers "$2"
-        ;;
-    worker-status)
-        worker_status
-        ;;
-    worker-logs)
-        worker_logs
-        ;;
-    stop|clean)
-        cleanup
-        ;;
-    migrate)
-        run_migrations
-        ;;
-    patch)
-        patch_prod
-        ;;
-    ollama)
-        deploy_ollama
+    logs)
+        cmd_logs "${2:-}"
         ;;
     health)
         show_health
         ;;
-    telegram-setup)
-        telegram_setup "$2"
+    migrate)
+        run_migrations
         ;;
-    prune)
-        cleanup "--prune"
+    backup)
+        cmd_backup
+        ;;
+    restore)
+        cmd_restore "${2:-}"
+        ;;
+    upgrade)
+        cmd_upgrade
+        ;;
+    wizard)
+        cmd_wizard "${@:2}"
+        ;;
+    tunnel)
+        start_tunnel
         ;;
     fix-redis)
-        fix_redis_queues "advisor_prod_cache"
-        ;;
-    k8s)
-        # Assuming k8s logic remains the same
-        check_env
-        kubectl apply -f k8s/
+        fix_redis_queues "$PROD_CACHE"
         ;;
     *)
         show_help

@@ -1,6 +1,8 @@
 ---
 name: get_market_data
 description: Fetch quantitative market data for a ticker (Price, Volume, RSI, MACD).
+intents:
+  - price
 metadata:
   openclaw:
     os: [linux, darwin]

@@ -90,19 +90,37 @@ class AgentState:
         self.workspace_root = workspace_root
 
     def get_state_path(self, agent_name: str) -> str:
-        workspace_map = {
-            "CIO": "captain",
-            "Macro": "macro-evaluator",
-            "Risk": "risk-assessor",
-            "Sentiment": "sentiment-analyst",
-            "Momentum": "market-scanner",
-            "Fundamental": "data-prep",
-            "Thematic": "portfolio-manager",
-            "Engineer": "system-engineer",
-            "Evaluator Judge": "evaluator-judge",
-            "Sensory Watchdog": "sensory-watchdog"
-        }
-        mapped_name = workspace_map.get(agent_name, agent_name.lower().replace(" ", "-"))
+        """
+        Path to an agent's STATE.md.
+
+        This held a FOURTH copy of the agent -> workspace-directory map, identical
+        to the ones in BaseAgent, the factory's if/elif chain and
+        KNOWN_AGENT_NAMES. Four copies of one mapping means an agent whose
+        directory is renamed in three of them writes its state somewhere nothing
+        reads — a silent loss of the agent's own memory.
+
+        Resolved from config/agents/<id>.md now, with the same slug fallback the
+        map had for names it did not cover.
+
+        此處原本是第四份「代理 → workspace 目錄」對照表（與 BaseAgent、factory、
+        KNOWN_AGENT_NAMES 各一份相同）。四份副本意味著只改其中三份時，
+        該代理會把狀態寫到沒人讀取的位置——靜默遺失代理自身的記憶。
+        """
+        mapped_name = None
+        try:
+            from src.agents.registry import get_manifest
+
+            manifest = get_manifest(agent_name)
+            if manifest and manifest.workspace:
+                mapped_name = manifest.workspace
+        except Exception:
+            # Registry unavailable (e.g. a repository used outside the app) —
+            # the slug fallback preserves the previous behaviour.
+            # 註冊表不可用時沿用原本的 slug 行為。
+            mapped_name = None
+
+        if not mapped_name:
+            mapped_name = agent_name.lower().replace(" ", "-")
         return f"{self.workspace_root}/{mapped_name}/STATE.md"
 
     def load_general_rules(self, agent_name: str, user_id: str = "system") -> str:

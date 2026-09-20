@@ -13,6 +13,7 @@ from datetime import datetime
 from sqlalchemy import text
 from src.agents.engineer import SystemEngineerAgent
 from src.utils.time_utils import format_time, get_current_time, convert_user_time_to_system_time
+from src.config.owner import resolve_user_id
 
 # Helper function to get current UTC time
 # 獲取目前 UTC 時間的輔助函式
@@ -33,7 +34,7 @@ class SchedulerService:
         Initialize the scheduler service.
         初始化排程服務。
         """
-        self.user_id = user_id
+        self.user_id = resolve_user_id(user_id)
         self.engineer = None  # Lazy init — will be created on first job execution
         self.scheduler = schedule.Scheduler()
         # db_engine unused if we use get_db_connection, but keeping for DI signature
@@ -387,7 +388,7 @@ class SchedulerService:
             
         # 哨兵心跳註冊已於 2026-08-02 移除。
         # Sentinel tick registration removed 2026-08-02: Celery Beat's
-        # "sentinel-minutely-tick" is the single authority. Leaving it here
+        # "sentinel-tick" is the single authority. Leaving it here
         # meant anyone running `--mode scheduler` by hand became a third tick
         # source alongside beat. `job_minutely_tick` itself is kept (it is
         # still reachable for manual/legacy invocation and is covered by

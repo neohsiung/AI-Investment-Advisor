@@ -6,6 +6,7 @@ from typing import List, Optional
 from pydub import AudioSegment
 from src.utils.logger import setup_logger
 from src.services.settings_service import SettingsService
+from src.config.owner import resolve_user_id
 
 class TranscriptionService:
     """
@@ -14,7 +15,7 @@ class TranscriptionService:
     """
     def __init__(self, user_id: str = "system", settings_service: Optional[SettingsService] = None):
         self.logger = setup_logger("TranscriptionService")
-        self.user_id = user_id
+        self.user_id = resolve_user_id(user_id)
         self.settings_service = settings_service or SettingsService(user_id=user_id)
         self.groq_url = "https://api.groq.com/openai/v1/audio/transcriptions"
         

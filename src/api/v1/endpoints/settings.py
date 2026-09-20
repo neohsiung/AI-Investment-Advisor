@@ -2,12 +2,18 @@ from fastapi import APIRouter, Depends, HTTPException
 from typing import List, Dict, Any
 import httpx
 import os
-from src.api.v1.router import get_current_user_id
+from src.api.v1.dependencies import get_current_user_id
 from src.api.v1.schemas.settings_schemas import (
-    AllSettingsResponse, SettingsBulkSaveRequest, 
-    ModelListResponse, NotificationTestRequest, StandardActionResponse
+    AllSettingsResponse, SettingsBulkSaveRequest,
+    ModelListResponse, NotificationTestRequest, StandardActionResponse,
+    SettingsSchemaResponse, SettingsValidateResponse,
+    CostProfileApplyRequest, CostProfilesResponse,
+    OnboardingStatusResponse, OnboardingCompleteRequest,
 )
+from src.config.settings_schema import load_schema
 from src.services.settings_service import SettingsService
+from src.services.cost_profile_service import CostProfileService
+from src.services.llm_provider_service import LLMProviderService
 from src.utils.logger import setup_logger
 
 logger = setup_logger("API_Settings")
@@ -57,11 +63,29 @@ async def save_settings(
     try:
         ok, message = service.save_settings_bulk(payload.settings)
         if not ok:
-            # Log the service's message; never return it. save_settings_bulk
-            # now yields a stable code rather than exception text, and keeping
-            # both the raise and the success return on fixed strings severs the
-            # taint path twice so a future refactor cannot reopen it.
-            # 訊息只進 log 不外流；raise 與成功回傳都用固定字串，斷兩次污染路徑。
+            # Two different failures, two different responses.
+            #
+            # Validation failures are the CALLER's error and their detail is
+            # safe to return: the message is composed from schema metadata (key
+            # names, declared bounds, enum members) and never from exception
+            # text. A schema-driven form cannot show field-level errors if the
+            # server refuses to say which key was wrong.
+            #
+            # Everything else keeps the original opaque 500. That message may be
+            # derived from a DB/driver exception, and returning it is the
+            # CWE-209 leak the 2026-08-02 fix closed — so it stays in the log.
+            #
+            # 驗證失敗屬呼叫端錯誤，且訊息僅由 schema 中介資料組成，可安全回傳，
+            # 否則表單無法顯示欄位層級錯誤。其餘失敗維持不透明的 500，
+            # 因其訊息可能源自資料庫例外（CWE-209）。
+            if message.startswith("SETTINGS_VALIDATION_FAILED"):
+                logger.warning(
+                    "Rejected settings write for %s: %s", service.user_id, message
+                )
+                raise HTTPException(
+                    status_code=400,
+                    detail=message.split(": ", 1)[1] if ": " in message else message,
+                )
             logger.error(f"Error saving settings for {service.user_id}: {message}")
             raise HTTPException(status_code=500, detail="Failed to save settings")
         return {"status": "success", "message": "設定已儲存。"}
@@ -119,3 +143,202 @@ async def test_notification(
         "message": "測試通知已發送",
         "debug": results
     }
+
+
+@router.get("/schema", response_model=SettingsSchemaResponse)
+async def get_settings_schema(service: SettingsService = Depends(get_settings_service)):
+    """
+    The field registry that drives the settings UI.
+
+    This is what replaced 1030 lines of hand-written JSX: the frontend renders
+    whatever this returns, so adding a knob is a YAML edit with no TypeScript
+    change and no rebuild.
+
+    Secret fields never carry their value — only `has_value`, so the form can
+    show "configured" without the credential crossing the wire. That is why the
+    UI cannot simply read GET /settings for secrets.
+
+    此端點取代了 1030 行手寫 JSX：前端依回傳內容渲染，新增設定只需改 YAML。
+    secret 欄位只回傳是否已設定，憑證不經過網路。
+    """
+    try:
+        schema = load_schema()
+        stored = service.get_all_settings()
+
+        groups = []
+        for group in schema.by_group():
+            fields = []
+            for f in group["fields"]:
+                raw = stored.get(f.key)
+                has_value = raw not in (None, "")
+                fields.append({
+                    "key": f.key,
+                    "type": f.type,
+                    "label_en": f.label_en,
+                    "label_zh": f.label_zh,
+                    "help_en": f.help_en,
+                    "help_zh": f.help_zh,
+                    # A secret's default is never interesting and its value must
+                    # not leave the server.
+                    "default": None if f.secret else f.default,
+                    "enum": f.enum,
+                    "min": f.minimum,
+                    "max": f.maximum,
+                    "secret": f.secret,
+                    "danger": f.danger,
+                    "restart": f.restart,
+                    "depends": f.depends,
+                    "has_value": has_value,
+                })
+            groups.append({
+                "id": group["id"],
+                "label_en": group["label_en"],
+                "label_zh": group["label_zh"],
+                "fields": fields,
+            })
+
+        return {"status": "success", "version": schema.version, "groups": groups}
+    except Exception as e:
+        logger.error(f"Error building settings schema: {e}")
+        raise HTTPException(status_code=500, detail="Failed to load settings schema")
+
+
+@router.post("/validate", response_model=SettingsValidateResponse)
+async def validate_settings(
+    payload: SettingsBulkSaveRequest,
+    service: SettingsService = Depends(get_settings_service),
+):
+    """
+    Dry-run the same validation `POST /settings` applies, without writing.
+
+    Lets the form check a value before the operator commits it — relevant here
+    because several of these keys move real money (order thresholds, capital
+    caps, the trading kill switch).
+
+    以與寫入端點相同的規則試算但不落地；此處多個鍵直接影響真實下單。
+    """
+    _, rejected = service._validate_against_schema(payload.settings or {})
+    return {"status": "success", "valid": not rejected, "errors": rejected}
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Cost Profiles & Onboarding Wizard Endpoints
+# ─────────────────────────────────────────────────────────────────────────────
+
+@router.get("/cost-profiles", response_model=CostProfilesResponse)
+async def get_cost_profiles(user_id: str = Depends(get_current_user_id)):
+    """獲取可用的運算成本方案 (Frugal / Balanced / Aggressive) 與目前啟用的方案。"""
+    try:
+        service = CostProfileService(user_id=user_id)
+        current = service.get_current_profile()
+        profiles = service.list_profiles()
+        return {
+            "status": "success",
+            "active_profile": current["id"],
+            "profiles": profiles,
+        }
+    except Exception as e:
+        logger.error(f"Error getting cost profiles: {e}")
+        raise HTTPException(status_code=500, detail="Failed to retrieve cost profiles")
+
+
+@router.post("/cost-profiles/apply", response_model=StandardActionResponse)
+async def apply_cost_profile(
+    payload: CostProfileApplyRequest,
+    user_id: str = Depends(get_current_user_id),
+):
+    """套用選定的運算成本方案，調整哨兵週期與各項外部資訊抓取頻率。"""
+    try:
+        service = CostProfileService(user_id=user_id)
+        res = service.apply_profile(payload.profile)
+        return {
+            "status": "success",
+            "message": f"成本配置方案已成功切換為 {res['name']}。",
+            "debug": res,
+        }
+    except ValueError as ve:
+        raise HTTPException(status_code=400, detail=str(ve))
+    except Exception as e:
+        logger.error(f"Error applying cost profile '{payload.profile}': {e}")
+        raise HTTPException(status_code=500, detail="Failed to apply cost profile")
+
+
+@router.get("/onboarding-status", response_model=OnboardingStatusResponse)
+async def get_onboarding_status(user_id: str = Depends(get_current_user_id)):
+    """檢查系統是否需要開箱引導 (是否有任何已配置憑證之 LLM Provider)。"""
+    try:
+        cost_service = CostProfileService(user_id=user_id)
+        active_profile = cost_service.get_current_profile()["id"]
+
+        provider_service = LLMProviderService(user_id=user_id)
+        providers = provider_service.list()
+
+        configured = []
+        for p in providers:
+            if not p.get("enabled"):
+                continue
+            has_key = bool(p.get("api_key_masked"))
+            is_local = p.get("provider_code") == "ollama" and bool(p.get("base_url"))
+            if has_key or is_local:
+                configured.append(p["provider_code"])
+
+        needs_onboarding = len(configured) == 0
+        return {
+            "status": "success",
+            "needs_onboarding": needs_onboarding,
+            "configured_providers": configured,
+            "active_cost_profile": active_profile,
+        }
+    except Exception as e:
+        logger.error(f"Error getting onboarding status: {e}")
+        raise HTTPException(status_code=500, detail="Failed to check onboarding status")
+
+
+@router.post("/onboarding/complete", response_model=StandardActionResponse)
+async def complete_onboarding(
+    payload: OnboardingCompleteRequest,
+    user_id: str = Depends(get_current_user_id),
+):
+    """
+    完成初始開箱設定：
+    1. 套用選取的運算成本方案 (若有指定)。
+    2. 設定並啟用指定之主要 LLM 提供商金鑰或端點。
+    """
+    try:
+        # 1. 套用成本方案
+        if payload.cost_profile:
+            cost_service = CostProfileService(user_id=user_id)
+            cost_service.apply_profile(payload.cost_profile)
+
+        # 2. 配置提供商
+        provider_service = LLMProviderService(user_id=user_id)
+        providers = provider_service.list()
+
+        existing = next((p for p in providers if p["provider_code"] == payload.provider_code), None)
+        patch_data: Dict[str, Any] = {"enabled": True}
+        if payload.api_key:
+            patch_data["api_key"] = payload.api_key
+        if payload.base_url:
+            patch_data["base_url"] = payload.base_url
+
+        if existing:
+            provider_service.update(existing["id"], patch_data)
+        else:
+            # 建立新的 Provider 實例
+            display_name = payload.provider_code.title()
+            provider_service.create({
+                "provider_code": payload.provider_code,
+                "display_name": display_name,
+                "api_key": payload.api_key,
+                "base_url": payload.base_url,
+                "enabled": True,
+            })
+
+        return {
+            "status": "success",
+            "message": "開箱設定已成功完成！系統已就緒。",
+        }
+    except Exception as e:
+        logger.error(f"Error completing onboarding: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to complete onboarding: {e}")
+

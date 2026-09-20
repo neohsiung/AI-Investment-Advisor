@@ -1,0 +1,106 @@
+# Notification channels.
+#
+# ChannelFactory.create_adapters was seven near-identical if-blocks, each one:
+#
+#     if parsed.get("channel_<x>_enabled") is True or parsed.get(...) == "true":
+#         try:
+#             adapters.append(XAdapter(kwarg=str(parsed.get("channel_<x>_key") or "")))
+#         except Exception as e:
+#             logger.error(...)
+#
+# ~90 lines expressing one idea: "if enabled, build this class from these settings
+# keys". Adding a channel meant another block, plus its own import at module scope,
+# plus remembering the `or "true"` string comparison every other block also does.
+#
+# `args` maps constructor keyword -> settings key. `nested_arg` covers the one
+# adapter (email) whose constructor takes a single config dict rather than
+# individual keywords.
+#
+# 原本是七段幾乎相同的 if 區塊（約 90 行），表達的只有一件事：
+# 「若啟用，就用這些設定鍵建構這個類別」。新增管道要再寫一段、加一個模組層 import，
+# 並記得複製那個 `or "true"` 的字串比較。
+
+version: 1
+
+channels:
+  - id: line
+    class: src.infrastructure.channels.line_adapter.LineBotAdapter
+    label: LINE
+    enabled_setting: channel_line_enabled
+    args:
+      channel_access_token: channel_line_access_token
+      channel_secret: channel_line_secret
+      line_user_id: channel_line_user_id
+
+  - id: slack
+    class: src.infrastructure.channels.slack_adapter.SlackAdapter
+    label: Slack
+    enabled_setting: channel_slack_enabled
+    args:
+      bot_token: channel_slack_bot_token
+      channel_id: channel_slack_channel_id
+      signing_secret: channel_slack_signing_secret
+
+  - id: telegram
+    class: src.infrastructure.channels.telegram_adapter.TelegramAdapter
+    label: Telegram
+    enabled_setting: channel_telegram_enabled
+    args:
+      bot_token: channel_telegram_bot_token
+      chat_id: channel_telegram_chat_id
+
+  # EmailAdapter takes one `smtp_config` dict rather than separate keywords, so
+  # its settings are nested under that name.
+  # EmailAdapter 接收單一 smtp_config 字典而非逐一關鍵字參數。
+  - id: email
+    class: src.infrastructure.channels.email_adapter.EmailAdapter
+    label: Email
+    enabled_setting: channel_email_enabled
+    nested_arg: smtp_config
+    # The old if-block read the port as `parsed.get(key, "587")`; every other
+    # value defaulted to empty. EmailAdapter int()s the port, so this default is
+    # load-bearing, not cosmetic.
+    # 舊 if 區塊只有 port 有非空預設（"587"），且 EmailAdapter 會對它呼叫 int()。
+    defaults:
+      port: "587"
+    args:
+      server: channel_email_smtp_server
+      port: channel_email_smtp_port
+      user: channel_email_smtp_user
+      password: channel_email_smtp_pass
+      from_address: channel_email_from_address
+      to_address: channel_email_to_address
+
+  - id: messenger
+    class: src.infrastructure.channels.messenger_adapter.MessengerAdapter
+    label: Messenger
+    enabled_setting: channel_messenger_enabled
+    args:
+      page_token: channel_messenger_page_token
+      verify_token: channel_messenger_verify_token
+      app_secret: channel_messenger_app_secret
+
+  - id: google_chat
+    class: src.infrastructure.channels.google_chat_adapter.GoogleChatAdapter
+    label: Google Chat
+    enabled_setting: channel_google_chat_enabled
+    args:
+      webhook_url: channel_google_chat_webhook_url
+
+  # Added in M7 as proof that a channel can be introduced without touching
+  # ChannelFactory: this entry plus one adapter file, no factory edit.
+  # M7 新增，用以證明新增管道無須改動 ChannelFactory：一個 manifest 條目加一個檔案。
+  - id: discord
+    class: src.infrastructure.channels.discord_adapter.DiscordAdapter
+    label: Discord
+    enabled_setting: channel_discord_enabled
+    args:
+      webhook_url: channel_discord_webhook_url
+
+  # Always constructed, regardless of settings: this is what records events for
+  # the dashboard, so disabling it would silently stop the event feed.
+  # 一律建構：它負責記錄儀表板的事件，停用會讓事件串流靜默中斷。
+  - id: web
+    class: src.infrastructure.channels.web_adapter.WebAdapter
+    label: Dashboard (event log)
+    always: true

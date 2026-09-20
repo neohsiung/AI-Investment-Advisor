@@ -12,6 +12,7 @@ from src.domain.interfaces import LLMConfig, Message
 from src.infrastructure.llm import BudgetAwareModelRouter
 from src.services.settings_service import SettingsService
 from src.services.token_logger_service import TokenLoggerService
+from src.config.owner import resolve_user_id
 
 logger = setup_logger("ExperienceReplay")
 
@@ -40,7 +41,7 @@ class ExperienceReplayService:
         self._wisdom_vault = wisdom_vault or WisdomVault()
         
         self.agent_name = agent_name
-        self.user_id = user_id
+        self.user_id = resolve_user_id(user_id)
         self.tier = tier
         
         # [Rule #14] Budget-Aware Model Routing

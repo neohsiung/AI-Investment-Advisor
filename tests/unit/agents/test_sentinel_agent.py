@@ -38,3 +38,25 @@ async def test_sentinel_agent_fallback_on_parse_error():
         
         assert result["priority"] == "P2"  # Fallback priority in implementation is P2
         assert "error" in result or "rationale" in result
+
+@pytest.mark.asyncio
+async def test_sentinel_agent_with_arbiter_direct():
+    """測試 Sentinel Agent 啟用 Arbiter 模式時直接回傳毫秒級強型別結果"""
+    mock_arbiter = MagicMock()
+    mock_decision = MagicMock()
+    mock_decision.choice = "P0"
+    mock_decision.confidence = 0.98
+    mock_decision.is_escalated = False
+    mock_decision.tier = "reflex"
+    mock_decision.state_hash = "abc123hash"
+    mock_arbiter.decide = AsyncMock(return_value=mock_decision)
+
+    agent = SentinelAgent(user_id="test_user", use_arbiter=True, shadow_mode=False, arbiter_client=mock_arbiter)
+    result = await agent.run({"trigger_source": "circuit_breaker", "event_data": {"drop": "7%"}, "current_vix": 38.5})
+
+    assert result["priority"] == "P0"
+    assert result["confidence"] == 0.98
+    assert result["tier"] == "reflex"
+    assert result["is_escalated"] is False
+    mock_arbiter.decide.assert_called_once()
+

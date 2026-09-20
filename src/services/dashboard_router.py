@@ -11,7 +11,7 @@ import json
 import asyncio
 from src.services.dashboard_service import DashboardService
 from src.utils.logger import setup_logger
-from src.utils.jwt_utils import decode_token
+from src.config.owner import get_owner_id
 from src.services.performance_service import PerformanceService
 from src.repositories.report_repository import AsyncAlchemyReportRepository
 from src.utils.rate_limit import limiter
@@ -99,28 +99,22 @@ async def _call_agent_llm(user_id: str, context: Dict[str, Any], tier: str = "sm
         raise
 
 def get_current_user(request: Request) -> Dict[str, Any]:
-    """從 Header 或 Cookie 驗證 JWT 並獲取使用者資訊"""
-    token = None
-    
-    # 1. 優先檢查 Authorization Header (Sprint 3 localStorage 機制)
-    auth_header = request.headers.get("Authorization")
-    if auth_header and auth_header.startswith("Bearer "):
-        token = auth_header.split(" ")[1]
-        
-    # 2. 回退檢查 Cookie (舊版機制)
-    if not token:
-        token = request.cookies.get("access_token")
-        
-    if not token:
-        logger.warning("Missing access_token in Authorization header and cookies")
-        raise HTTPException(status_code=401, detail="Not authenticated")
-        
-    payload = decode_token(token)
-    if not payload or payload.get("type") != "access":
-        logger.warning("Invalid or expired access_token")
-        raise HTTPException(status_code=401, detail="Invalid token")
-        
-    return payload
+    """
+    Identity for the /api/dashboard routes.
+
+    Returns the same `{"sub": <user_id>}` shape the JWT payload used to have,
+    so the ~10 `user.get("sub")` call sites below and the dependency override in
+    tests/unit/services/test_security_remediation.py keep working unchanged.
+
+    Authentication itself now lives in LocalAuthMiddleware, which gates the
+    whole app rather than this router alone. Before that existed, these routes
+    required a Google-issued JWT — and after the login was removed they simply
+    returned 401 to everyone, because nothing mints those tokens any more.
+
+    保留 {"sub": ...} 形狀讓下游呼叫端不用改；驗證改由 LocalAuthMiddleware
+    在全應用層負責。
+    """
+    return {"sub": get_owner_id()}
 
 def get_dashboard_service(user: Dict[str, Any] = Depends(get_current_user)) -> DashboardService:
     """獲取 DashboardService 實例，嚴格綁定當前使用者 (User Isolation)"""

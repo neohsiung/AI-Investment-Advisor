@@ -26,50 +26,45 @@ _GATEWAY_REGISTRY: dict[str, Any] = {}
 
 
 def _get_gateway_registry() -> dict[str, Any]:
-    """Lazy-load gateway classes to avoid circular imports."""
+    """
+    provider_code -> gateway class, from config/llm_providers.yaml.
+
+    This was a hand-maintained copy of the same list held by
+    `LLMGatewayFactory._REGISTRY`, followed by:
+
+        try:
+            from src.infrastructure.llm.llm_gateway import GroqGateway
+            _GATEWAY_REGISTRY["groq"] = GroqGateway
+        except (ImportError, AttributeError):
+            pass
+
+    for Groq and Anthropic. Neither class has ever existed, so both excepts
+    always fired, both codes stayed absent, and `build_config_chain` dropped
+    every groq- and anthropic-backed candidate from every chain with a WARNING —
+    the same silent-drop failure the 2026-08-12 nvidia_nim note below describes,
+    live for two more providers. The catalog resolves both to `OpenAIGateway`,
+    which `config/llm_providers.yaml` already declared.
+
+    The nvidia_nim lesson is kept by the manifest rather than by this comment:
+    both 'nvidia' and 'nvidia_nim' are declared aliases there, and a test asserts
+    every provider_code present in the `llm_providers` table resolves.
+
+    原本是與 LLMGatewayFactory._REGISTRY 重複的手寫清單，後面接著對
+    GroqGateway / AnthropicGateway 的 try-import——兩個類別從未存在，except 永遠觸發，
+    使 build_config_chain 將所有 groq / anthropic 候選以 WARNING 靜默剔除，
+    正是下方 2026-08-12 nvidia_nim 註解所描述的同一種失敗，只是換了兩個供應商。
+    """
     global _GATEWAY_REGISTRY
     if not _GATEWAY_REGISTRY:
         try:
-            from src.infrastructure.llm.llm_gateway import (
-                OpenRouterGateway,
-                GeminiGateway,
-                OpenAIGateway,
-                OllamaGateway,
-                NvidiaGateway,
-            )
-            _GATEWAY_REGISTRY = {
-                "openrouter": OpenRouterGateway,
-                "gemini": GeminiGateway,
-                "openai": OpenAIGateway,
-                "ollama": OllamaGateway,
-                "nvidia": NvidiaGateway,  # NVIDIA NIM (OpenAI-compatible)
-                # 2026-08-12: the llm_providers row for NIM has
-                # provider_code='nvidia_nim', but this registry only had
-                # 'nvidia'. build_config_chain looks the code up here and
-                # skips the model when it misses, logging
-                # "no gateway for provider_code=nvidia_nim" at WARNING — so
-                # every NIM-backed candidate was silently dropped from every
-                # chain. Registering both spellings is the safe fix: renaming
-                # the DB rows would break any other install that already uses
-                # 'nvidia_nim'.
-                # 2026-08-12：DB 中 NIM 的 provider_code 是 'nvidia_nim'，但此註冊
-                # 表只有 'nvidia'，導致所有 NIM 候選模型都被靜默剔除。同時註冊兩種
-                # 拼法為安全解法；改 DB 命名會影響其他已使用該值的安裝。
-                "nvidia_nim": NvidiaGateway,
-            }
-            # Try to load Anthropic / Groq if available
-            try:
-                from src.infrastructure.llm.llm_gateway import AnthropicGateway
-                _GATEWAY_REGISTRY["anthropic"] = AnthropicGateway
-            except (ImportError, AttributeError):
-                pass
-            try:
-                from src.infrastructure.llm.llm_gateway import GroqGateway
-                _GATEWAY_REGISTRY["groq"] = GroqGateway
-            except (ImportError, AttributeError):
-                pass
-        except ImportError as e:
-            logger.warning("Could not load gateway classes: %s", e)
+            from src.infrastructure.llm.provider_catalog import get_provider_catalog
+
+            _GATEWAY_REGISTRY = dict(get_provider_catalog().gateway_map())
+        except Exception as e:
+            # Loud: an empty registry means every candidate gets dropped, and the
+            # per-candidate warning downstream does not say why.
+            # 必須大聲：空的註冊表會讓每個候選都被剔除，而下游的逐一警告不會說明原因。
+            logger.error("Could not load gateway registry from provider catalog: %s", e)
     return _GATEWAY_REGISTRY
 
 

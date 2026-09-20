@@ -22,6 +22,7 @@ from src.utils.format_utils import format_agent_output
 from src.services.user_focus_service import UserFocusService
 from src.services.settings_service import SettingsService
 from src.services.competitor_service import CompetitorService
+from src.config.owner import resolve_user_id
 
 class CouncilService:
     """
@@ -35,7 +36,7 @@ class CouncilService:
     def __init__(self, user_id: str, settings_service: Optional["SettingsService"] = None,
         tier_router: Optional[ITierRouter] = None,
     ):
-        self.user_id = user_id
+        self.user_id = resolve_user_id(user_id)
         # Delayed import to avoid circular dependency
         from src.services.settings_service import SettingsService
         self.settings_service = settings_service or SettingsService(user_id=user_id)

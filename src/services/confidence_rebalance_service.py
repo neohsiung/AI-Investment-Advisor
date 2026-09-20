@@ -17,6 +17,7 @@ from decimal import Decimal
 from src.repositories.ticker_universe_repository import TickerUniverseRepository
 from src.services.ticker_universe_service import TickerUniverseService
 from src.utils.logger import setup_logger
+from src.config.owner import resolve_user_id
 
 logger = setup_logger("ConfidenceRebalanceService")
 
@@ -29,7 +30,7 @@ class ConfidenceRebalanceService:
     CASH_BUFFER = 5.0     # Keep 5% cash reserve
 
     def __init__(self, user_id: str):
-        self.user_id = user_id
+        self.user_id = resolve_user_id(user_id)
         self.repo = TickerUniverseRepository()
         self.ticker_service = TickerUniverseService(user_id=user_id)
 

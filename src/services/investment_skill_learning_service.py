@@ -25,6 +25,7 @@ from src.repositories.settings_repository import AlchemySettingsRepository
 from src.infrastructure.llm.tier_config import SettingsAwareModelRouter
 from src.infrastructure.llm.llm_gateway import OpenRouterGateway
 from src.domain.interfaces import Message, LLMConfig
+from src.config.owner import resolve_user_id
 
 logger = setup_logger("InvestmentSkillLearningService")
 
@@ -96,7 +97,7 @@ class InvestmentSkillLearningService:
     """
 
     def __init__(self, user_id: str = "system"):
-        self.user_id = user_id
+        self.user_id = resolve_user_id(user_id)
         from src.data.database import get_db_engine
         self.settings_repo = AlchemySettingsRepository(engine=get_db_engine())
         self.model_router = SettingsAwareModelRouter(self.settings_repo)

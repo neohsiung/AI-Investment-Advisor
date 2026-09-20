@@ -20,14 +20,12 @@ services:
       - BACKEND_URL=http://mcp_server:8000
       - NEXT_PUBLIC_API_URL=http://localhost:8001
       - OTEL_SERVICE_NAME=nextjs_frontend
-      - OTEL_EXPORTER_OTLP_ENDPOINT=http://otel-collector:4318
+      - OTEL_EXPORTER_OTLP_ENDPOINT=${OTEL_EXPORTER_OTLP_ENDPOINT:-}
     networks:
       - advisor-net
     depends_on:
       mcp_server:
         condition: service_healthy
-      otel-collector:
-        condition: service_started
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:3000"]
@@ -46,6 +44,10 @@ services:
       - ./data:/workspace/data
       - ./src:/workspace/src
       - ./prompts:/workspace/prompts
+      # The low-code settings registry and manifests. Baked into the image
+      # only until now, so host edits needed a rebuild to take effect.
+      # 低程式碼設定註冊表；原本只烤進映像，主機上的編輯需重建才生效。
+      - ./config:/workspace/config
       - ./services/mcp_server:/workspace/services/mcp_server
       - ./secrets/client_secret.json:/workspace/client_secret.json:ro
     env_file:
@@ -54,7 +56,7 @@ services:
       - MEMORY_BACKEND=redis
       - REDIS_URL=redis://redis:6379/0
       - OTEL_SERVICE_NAME=mcp_server
-      - OTEL_EXPORTER_OTLP_ENDPOINT=http://otel-collector:4317
+      - OTEL_EXPORTER_OTLP_ENDPOINT=${OTEL_EXPORTER_OTLP_ENDPOINT:-}
       - DB_HOST=postgres
 
       - DB_USER=${DB_USER}
@@ -77,8 +79,6 @@ services:
         condition: service_healthy
       postgres:
         condition: service_healthy
-      otel-collector:
-        condition: service_started
 
   # 2. Task Scheduler — REMOVED 2026-08-02 (dev caught up with prod).
   # This service had no `command:` override, so it fell through to
@@ -105,6 +105,10 @@ services:
       - ./data:/workspace/data
       - ./src:/workspace/src
       - ./prompts:/workspace/prompts
+      # The low-code settings registry and manifests. Baked into the image
+      # only until now, so host edits needed a rebuild to take effect.
+      # 低程式碼設定註冊表；原本只烤進映像，主機上的編輯需重建才生效。
+      - ./config:/workspace/config
     env_file:
       - .env
     environment:
@@ -134,6 +138,10 @@ services:
       - ./data:/workspace/data
       - ./src:/workspace/src
       - ./prompts:/workspace/prompts
+      # The low-code settings registry and manifests. Baked into the image
+      # only until now, so host edits needed a rebuild to take effect.
+      # 低程式碼設定註冊表；原本只烤進映像，主機上的編輯需重建才生效。
+      - ./config:/workspace/config
     env_file:
       - .env
     environment:
@@ -222,9 +230,27 @@ services:
   otel-collector:
     # Overriding infra/signoz/docker/docker-compose.yaml to remove incompatible healthcheck
     # Keeping it simple as the image lacks curl/wget
+    profiles: [observability]
     restart: unless-stopped
 
   n8n:
+    # Optional third-party connector hub — NOT part of the product's boot path.
+    #
+    # n8n used to run three schedules against this app (RSS ingest every 15m,
+    # skill learning daily, podcast extraction every 4h), each a round-trip back
+    # into our own /webhook endpoints. Those now live in Celery Beat
+    # (src/infrastructure/tasks.py), so nothing here depends on n8n any more.
+    #
+    # It stays available because its 400+ connectors are genuinely useful for
+    # wiring external services in without code; inbound automation can also
+    # still POST to /webhook/{source} (make, pipedream and ifttt are already
+    # first-class parsers).
+    #
+    #   docker compose --profile n8n up -d n8n
+    #
+    # n8n 的三個排程已改由 Celery Beat 執行；此服務降級為選配連接器，
+    # 不再位於開機路徑上。
+    profiles: [n8n]
     image: n8nio/n8n@sha256:fdf1e22bc04a03e38da41da5a56ba9b9a48510f480874290ea9c180844cbdb0c
     container_name: investment_advisor_n8n
     ports:
@@ -236,7 +262,7 @@ services:
       - NODE_ENV=production
       - WEBHOOK_URL=https://${NGROK_DOMAIN}/
       - N8N_OTEL_SDK_ENABLED=true
-      - OTEL_EXPORTER_OTLP_ENDPOINT=http://otel-collector:4317
+      - OTEL_EXPORTER_OTLP_ENDPOINT=${OTEL_EXPORTER_OTLP_ENDPOINT:-}
       - OTEL_EXPORTER_OTLP_PROTOCOL=grpc
       - OTEL_SERVICE_NAME=n8n
       - N8N_LOG_LEVEL=info
@@ -255,16 +281,38 @@ services:
     depends_on:
       - mcp_server
 
-  scraper:
-    build:
-      context: ./services/scraper
-      dockerfile: Dockerfile
-    container_name: investment_advisor_scraper
-    restart: unless-stopped
-    environment:
-      - NODE_ENV=development
-    networks:
-      - advisor-net
+  # The `scraper` sidecar was removed — nothing depended on it and the main
+  # image covers browser automation via the optional `scrape` extra.
+  # scraper 服務已移除：無人依賴，主映像的 scrape extra 已涵蓋。
+
+  # ───────────────────────────────────────────────────────────────────────────
+  # SigNoz observability stack — OPT-IN ONLY.
+  #   docker compose --profile observability up -d
+  # These come from `include: infra/signoz/docker/docker-compose.yaml`
+  # (ClickHouse + ZooKeeper + collector + 2 migrators, ~4-6GB RAM). A single-box
+  # deployment does not pay that by default; the app degrades to structured logs
+  # because src/utils/tracing.py disables tracing when
+  # OTEL_EXPORTER_OTLP_ENDPOINT is unset.
+  # 可觀測性堆疊為選配，預設不啟動以省下 4-6GB RAM。
+  # ───────────────────────────────────────────────────────────────────────────
+
+  init-clickhouse:
+    profiles: [observability]
+
+  zookeeper-1:
+    profiles: [observability]
+
+  clickhouse:
+    profiles: [observability]
+
+  signoz:
+    profiles: [observability]
+
+  schema-migrator-sync:
+    profiles: [observability]
+
+  schema-migrator-async:
+    profiles: [observability]
 
 volumes:
   postgres_data:

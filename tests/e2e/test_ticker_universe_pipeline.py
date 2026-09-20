@@ -6,12 +6,16 @@ Skips if container not running. Set RUN_E2E=1 to enable.
 import pytest
 import httpx
 import os
-import jwt
-from datetime import datetime, timedelta
 
 BASE_URL = os.environ.get("API_BASE_URL", "http://localhost:8000")
 TEST_USER = os.environ.get("TEST_USER_ID", "00000000-0000-4000-a000-000000000001")
-JWT_SECRET = os.environ.get("JWT_SECRET", "your-super-secret-key-for-jwt-signing")
+
+# The API no longer accepts JWTs — it resolves the owner itself. In the default
+# AUTH_MODE=none it needs no credential at all; under AUTH_MODE=token it wants
+# ADMIN_TOKEN. This test used to forge an HS256 token with the app's JWT_SECRET,
+# which now authenticates nothing.
+# API 不再接受 JWT；預設模式免憑證，token 模式則需要 ADMIN_TOKEN。
+ADMIN_TOKEN = os.environ.get("ADMIN_TOKEN", "")
 
 pytestmark = pytest.mark.skipif(
     not os.environ.get("RUN_E2E"),
@@ -19,15 +23,8 @@ pytestmark = pytest.mark.skipif(
 )
 
 
-def _make_token(user_id: str = TEST_USER) -> str:
-    payload = {
-        "sub": user_id,
-        "type": "access",
-        "exp": datetime.utcnow() + timedelta(hours=1),
-    }
-    token = jwt.encode(payload, JWT_SECRET, algorithm="HS256")
-    print(f"[DEBUG] _make_token: {token[:50]}... len={len(token)}", flush=True)
-    return token
+def _auth_headers() -> dict:
+    return {"X-Admin-Token": ADMIN_TOKEN} if ADMIN_TOKEN else {}
 
 
 def api_url(path: str) -> str:
@@ -38,8 +35,7 @@ class TestTickerUniverseAPI:
 
     @pytest.fixture
     def headers(self):
-        token = _make_token()
-        return {"Authorization": f"Bearer {token}"}
+        return _auth_headers()
 
     def test_health_check(self):
         resp = httpx.get(api_url("/health"), timeout=5)

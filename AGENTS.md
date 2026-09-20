@@ -62,22 +62,23 @@ number.
 ```
 ┌─────────────────────────────────────────────────┐
 │                  User Interface                  │
-│          Next.js Dashboard (frontend/)           │
-│             Streamlit (legacy, src/dashboard/)   │
+│       Next.js 15 Web Dashboard (frontend/)      │
+│     (/workflows, /agents, /extensions, /settings)│
 └──────────────────────┬──────────────────────────┘
-                       │ REST / WebSocket
+                       │ Loopback Nginx Gateway (:8088)
 ┌──────────────────────▼──────────────────────────┐
-│              FastAPI + MCP Server                 │
-│         services/mcp_server/ + src/api/           │
+│              FastAPI + MCP Server                │
+│         services/mcp_server/ + src/api/          │
 ├──────────────────────────────────────────────────┤
-│   WorkflowService → CIO Agent → 7 Sub-Agents     │
+│   WorkflowDAGEngine → CIO Agent → Sub-Agents     │
 │   SentinelService → 10D Radar → Auto-Hedging     │
-│   AutomatedTradingService → eToro API             │
+│   AutomatedTradingService → Broker APIs          │
 ├──────────────────────────────────────────────────┤
-│   3-Tier LLM Routing (Advanced/Smart/Fast)        │
-│   via ResilientLLMPipeline + LLMGateway            │
+│   4-Tier Cognitive Routing (Nano/Fast/Smart/Adv) │
+│   via ResilientLLMPipeline + LLMGatewayFactory   │
 ├──────────────────────────────────────────────────┤
-│  PostgreSQL 16 + pgvector │ Redis │ Celery Beat   │
+│  PostgreSQL 16 + pgvector │ Redis │ Celery Beat  │
+│  Declarative State: config/ (Workflows, Agents)  │
 └──────────────────────────────────────────────────┘
 ```
 
@@ -114,23 +115,21 @@ number.
 ## Commands
 
 ```bash
-# Dev server (backend)
-uvicorn services.mcp_server.main:app --reload --port 8000
+# Turnkey cold-start installation
+./install.sh
 
-# Dev server (frontend)
-cd frontend && npm run dev
+# Single-box operations (7-container stack)
+./start.sh up              # Build and start stack
+./start.sh health          # Health verification gate
+./start.sh backup          # Snapshot DB + config/ state + manifest
+./start.sh restore [id]    # Restore database and config from backup
+./start.sh upgrade         # Auto-backup, git pull, rebuild, migrate, health check
+./start.sh wizard          # Interactive onboarding & cost profile setup
+./start.sh logs [svc]      # Follow live container logs
+./start.sh down            # Stop services
 
-# Full stack via Docker
-./start.sh
-
-# Run tests
-pytest tests/ -x --tb=short
-
-# Run tests with coverage
-pytest tests/ --cov=src --cov-report=term-missing
-
-# Lint (security)
-bandit -r src/ -c pyproject.toml
+# Local testing
+pytest tests/unit/ -q
 ```
 
 ## Directory Semantics

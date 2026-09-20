@@ -17,6 +17,7 @@ from src.data.providers.financialdata_provider import FinancialDataProvider
 from src.services.fred_service import FredService
 from src.services.search_service import InternetSearchService
 from src.services.settings_service import SettingsService
+from src.config.owner import resolve_user_id
 
 class MarketDataService:
     """
@@ -24,9 +25,20 @@ class MarketDataService:
     從多個提供者獲取市場數據的統一服務。
     """
 
-    # Providers that serve equities only — never route an index symbol to them.
-    # 僅涵蓋個股的提供者，指數符號不得路由至此。
-    EQUITY_ONLY_PROVIDER_IDS = frozenset({"polygon", "tiingo"})
+    @property
+    def EQUITY_ONLY_PROVIDER_IDS(self) -> frozenset:  # noqa: N802 (existing name)
+        """
+        Providers that serve equities only — never route an index symbol to them.
+
+        Was a frozenset constant listing two ids by hand. Derived from each
+        provider's `asset_classes` in config/data_providers.yaml now, so adding an
+        equities-only provider does not require also remembering this set.
+        原本是手寫兩個 id 的 frozenset 常數；改由 manifest 的 asset_classes 推導，
+        新增個股專用供應商時不必再記得同步這個集合。
+        """
+        from src.data import providers as provider_registry
+
+        return frozenset(s.id for s in provider_registry.list_specs() if s.equity_only)
 
     def __init__(self, user_id: Optional[str] = None, settings_service: Optional[SettingsService] = None):
         """
@@ -34,40 +46,57 @@ class MarketDataService:
         初始化市場數據服務。
         """
         self.logger = setup_logger("MarketDataService")
-        self.user_id = user_id
+        self.user_id = resolve_user_id(user_id)
         self.settings_service = settings_service or SettingsService(user_id=user_id)
         
-        # Initialize Providers
-        self.polygon = PolygonProvider(settings_service=self.settings_service)
-        self.polygon.id = "polygon"
-        self.tiingo = TiingoProvider(settings_service=self.settings_service)
-        self.tiingo.id = "tiingo"
-        self.fmp = FMPProvider(settings_service=self.settings_service)
-        self.fmp.id = "fmp"
-        self.yfinance = YFinanceProvider(settings_service=self.settings_service)
-        self.yfinance.id = "yahoo_finance"
-        self.fred = FredProvider(user_id=self.user_id, settings_service=self.settings_service)
-        self.fred.id = "fred"
-        self.alpha_vantage = AlphaVantageProvider(user_id=self.user_id, settings_service=self.settings_service)
-        self.alpha_vantage.id = "alpha_vantage"
-        self.finnhub = FinnhubProvider(user_id=self.user_id, settings_service=self.settings_service)
-        self.finnhub.id = "finnhub"
-        self.financialdata = FinancialDataProvider(settings_service=self.settings_service)
-        self.financialdata.id = "financialdata"
-        
+        # Providers come from config/data_providers.yaml.
+        #
+        # This was eight `self.x = XProvider(...)` / `self.x.id = "x"` pairs
+        # followed by a hand-ordered `self.providers` list, plus three MORE
+        # hand-ordered lists further down for history, news and fundamentals.
+        # Four lists over the same population, each independently maintained.
+        #
+        # 原本是八組手動建構 + 建構後補指派 .id，再加上四份各自維護的優先序清單。
+        from src.data import providers as provider_registry
+
+        self._provider_map = provider_registry.build_all(
+            settings_service=self.settings_service,
+            user_id=self.user_id,
+        )
+
+        # Named attributes retained: methods throughout this class and several
+        # tests reference self.polygon, self.fred and friends directly.
+        # 保留具名屬性：本類別多處方法與部分測試會直接引用 self.polygon 等。
+        for _pid, _attr in (
+            ("polygon", "polygon"), ("tiingo", "tiingo"), ("fmp", "fmp"),
+            ("yahoo_finance", "yfinance"), ("fred", "fred"),
+            ("alpha_vantage", "alpha_vantage"), ("finnhub", "finnhub"),
+            ("financialdata", "financialdata"),
+        ):
+            setattr(self, _attr, self._provider_map.get(_pid))
+
         # Initialize Search (Tavily Primary, DuckDuckGo Fallback)
         self.search_service = InternetSearchService(settings_service=self.settings_service)
-        
-        # Priority Order (Primary -> Backup -> Fallback)
-        # Optimized Order: Polygon (Unlimited) -> Tiingo (P1) -> Finnhub -> FMP -> AlphaVantage -> YFinance
-        self.providers: List[MarketDataProvider] = [
-            self.polygon,
-            self.tiingo,
-            self.finnhub,
-            self.fmp,
-            self.alpha_vantage,
-            self.yfinance
-        ]
+
+        # Quote priority, derived from the manifest's `capabilities.quote`.
+        self.providers: List[MarketDataProvider] = self._chain("quote")
+
+    def _chain(self, capability: str) -> List[MarketDataProvider]:
+        """
+        Provider instances for one capability, in manifest priority order.
+
+        Replaces four separately-hardcoded Python lists. Providers that failed to
+        construct are skipped here rather than appearing as None in a chain.
+        取代四份各自硬編的清單；建構失敗的供應商在此略過，不會以 None 出現在鏈中。
+        """
+        from src.data import providers as provider_registry
+
+        out = []
+        for spec in provider_registry.capability_order(capability):
+            instance = self._provider_map.get(spec.id)
+            if instance is not None:
+                out.append(instance)
+        return out
 
     def _get_provider_name(self, provider: MarketDataProvider) -> str:
         """
@@ -146,7 +175,7 @@ class MarketDataService:
         missing_tickers = list(tickers)
         
         # Priority: Polygon (Unlimited) -> Tiingo (P1) -> FMP (300/min) -> FinancialData (300/day) -> YFinance (Free)
-        for provider in [self.polygon, self.tiingo, self.fmp, self.financialdata, self.yfinance]:
+        for provider in self._chain("quote_batch"):
             if not missing_tickers:
                 break
             if not self._is_provider_enabled(provider):
@@ -252,6 +281,7 @@ class MarketDataService:
                         fc = _tfm_forecast(ticker, closes, horizon=5)
                         if fc:
                             data["forecast"] = {
+                                "method": fc.method,
                                 "horizon_days": fc.horizon,
                                 "point": [round(v, 4) for v in fc.point_forecast],
                                 "q10": [round(v, 4) for v in fc.q10],
@@ -318,7 +348,7 @@ class MarketDataService:
         # Override Priority for History: Polygon -> Tiingo -> FMP -> YFinance
         # Index symbols skip the equity-only providers (see _providers_for_symbol).
         history_providers = self._providers_for_symbol(
-            [self.polygon, self.tiingo, self.fmp, self.yfinance], ticker
+            self._chain("history"), ticker
         )
 
         for provider in history_providers:
@@ -390,7 +420,7 @@ class MarketDataService:
             df = pd.DataFrame()
             # Prioritize Polygon for indicators base data (Unlimited history);
             # index symbols route past it (see _providers_for_symbol).
-            for provider in self._providers_for_symbol([self.polygon, self.yfinance], ticker):
+            for provider in self._providers_for_symbol(self._chain("indicators"), ticker):
                 if not self._is_provider_enabled(provider): continue
                 df = provider.fetch_history(ticker, period="1y")
                 if not df.empty: break
@@ -461,7 +491,7 @@ class MarketDataService:
         返回結構化新聞數據：優先使用 Tiingo。
         """
         # News Strategy: Tiingo is best for tagged financial news, Finnhub/AlphaVantage following.
-        news_providers = [self.tiingo, self.finnhub, self.alpha_vantage, self.fmp, self.yfinance, self.polygon]
+        news_providers = self._chain("news")
         
         all_news = []
         for provider in news_providers:
@@ -482,7 +512,7 @@ class MarketDataService:
         Get fundamental financial data for a ticker.
         獲取標底的基本面財務數據。
         """
-        fund_providers = [self.yfinance, self.fmp, self.alpha_vantage, self.finnhub, self.polygon]
+        fund_providers = self._chain("fundamentals")
         
         for provider in fund_providers:
             if not self._is_provider_enabled(provider): continue

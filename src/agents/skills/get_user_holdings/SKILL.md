@@ -1,6 +1,9 @@
 ---
 name: get_user_holdings
 description: 取得使用者目前持股清單與數量 (Get user's current holdings and quantities)
+intents:
+  - holdings
+  - portfolio
 ---
 
 # Get User Holdings

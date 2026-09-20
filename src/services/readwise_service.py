@@ -12,6 +12,7 @@ from src.infrastructure.llm.tier_config import SettingsAwareModelRouter
 from src.infrastructure.llm.llm_gateway import OpenRouterGateway
 from src.domain.interfaces import Message, LLMConfig
 from src.repositories.settings_repository import AlchemySettingsRepository
+from src.config.owner import resolve_user_id
 
 logger = setup_logger("ReadwiseService")
 
@@ -24,7 +25,7 @@ class ReadwiseService:
     """
     
     def __init__(self, user_id: str = "system", readwise_provider: ReadwiseProvider = None, settings_service: Optional[SettingsService] = None):
-        self.user_id = user_id
+        self.user_id = resolve_user_id(user_id)
         self.provider = readwise_provider or ReadwiseProvider(user_id=user_id)
         self.settings_service = settings_service or SettingsService(user_id=user_id)
         

@@ -9,6 +9,7 @@ from src.repositories.ticker_universe_repository import (
 )
 from src.services.portfolio_aggregator_service import PortfolioAggregatorService
 from src.utils.logger import setup_logger
+from src.config.owner import resolve_user_id
 
 logger = setup_logger("TickerUniverseService")
 
@@ -17,8 +18,22 @@ class TickerUniverseService:
     """High-level service for ticker universe operations."""
 
     def __init__(self, user_id: str):
-        self.user_id = user_id
+        self.user_id = resolve_user_id(user_id)
         self.repo = TickerUniverseRepository()
+        self._settings = None
+
+    @property
+    def settings_service(self):
+        """
+        Lazily constructed so building this service stays free of DB work — the
+        allocation optimizer is the only path that needs settings.
+        延遲建立，讓本服務的建構不觸及資料庫。
+        """
+        if self._settings is None:
+            from src.services.settings_service import SettingsService
+
+            self._settings = SettingsService(user_id=self.user_id)
+        return self._settings
 
     # ── Universe Management ──
 
@@ -171,11 +186,31 @@ class TickerUniverseService:
             sector = ticker_scores[ticker]["sector"]
             sector_weights[sector] = sector_weights.get(sector, 0.0) + raw_w
 
-        # Apply position limits: clamp to [3%, 25%]
-        MIN_POS = 0.03
-        MAX_POS = 0.25
-        SECTOR_CAP = 0.40
-        TARGET_SUM = 0.95  # leave 5% cash buffer
+        # Position limits, sector cap and target invested fraction now come from
+        # the settings registry (config/settings_schema.yaml, group `allocation`)
+        # instead of being module constants. The shape of the optimizer is the
+        # kind of thing a low-code operator should be able to tune; before this
+        # it required editing Python and redeploying.
+        #
+        # 這四個原本是模組常數，調整最佳化器的形狀必須改 Python 並重新部署；
+        # 現在改讀設定註冊表。
+        MIN_POS = float(self.settings_service.get_setting("alloc_min_position"))
+        MAX_POS = float(self.settings_service.get_setting("alloc_max_position"))
+        SECTOR_CAP = float(self.settings_service.get_setting("alloc_sector_cap"))
+        TARGET_SUM = float(self.settings_service.get_setting("alloc_target_sum"))
+
+        if MIN_POS > MAX_POS:
+            # A caller could otherwise produce an empty feasible set and get
+            # silently-zero weights out of the clamp below.
+            # 否則 clamp 會產生空的可行區間，靜默輸出全零權重。
+            logger.warning(
+                "alloc_min_position (%.3f) exceeds alloc_max_position (%.3f); "
+                "falling back to the schema defaults for this run.",
+                MIN_POS, MAX_POS,
+            )
+            from src.config.settings_schema import schema_default
+            MIN_POS = float(schema_default("alloc_min_position"))
+            MAX_POS = float(schema_default("alloc_max_position"))
 
         for ticker in raw_weights:
             raw_weights[ticker] = max(MIN_POS, min(MAX_POS, raw_weights[ticker]))

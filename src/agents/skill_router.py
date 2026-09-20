@@ -22,8 +22,8 @@ class SkillRouter:
     將簡單的使用者意圖直接路由到技能，跳過 Swarm。
     """
 
-    # Intents that can be handled directly via skills
-    DIRECT_SKILL_MAP = {
+    # Default fallback intents if manifest discovery yields none (for isolated tests)
+    DEFAULT_DIRECT_SKILL_MAP = {
         "price": "get_market_data",
         "holdings": "get_user_holdings",
         "portfolio": "get_user_holdings",
@@ -32,11 +32,36 @@ class SkillRouter:
         "momentum": "run_momentum_analysis",
     }
 
-    def __init__(self, user_id: str, tier: str = "fast"):
+    # Backward compatibility reference
+    DIRECT_SKILL_MAP = DEFAULT_DIRECT_SKILL_MAP
+
+    def get_direct_skill_map(self) -> Dict[str, str]:
+        """Resolve direct intent map dynamically from SKILL.md manifests."""
+        try:
+            from src.agents.skills.skill_loader import SkillLoader
+            loader = SkillLoader(user_id=self.user_id)
+            mapping = loader.get_direct_skill_map()
+            if mapping:
+                return mapping
+        except Exception as e:
+            logger.debug(f"SkillRouter: dynamic skill map load failed, using default: {e}")
+        return self.DEFAULT_DIRECT_SKILL_MAP
+
+    def __init__(self, user_id: str, tier: str = "fast", use_arbiter: Optional[bool] = None, arbiter_client: Optional[Any] = None):
         self.user_id = user_id
         self.tier = tier
         self._llm = None
         self._config = None
+        if use_arbiter is None:
+            use_arbiter = os.getenv("SKILL_ROUTER_USE_ARBITER", "true").lower() in ("true", "1")
+        self.use_arbiter = use_arbiter
+        self._arbiter_client = arbiter_client
+
+    def _get_arbiter_client(self):
+        if self._arbiter_client is None:
+            from src.infrastructure.llm.arbiter_client import ArbiterClient
+            self._arbiter_client = ArbiterClient(llm_gateway=self._get_llm())
+        return self._arbiter_client
 
     def _get_config(self):
         if self._config is None:
@@ -63,42 +88,83 @@ class SkillRouter:
         """
         msg_lower = user_message.lower()
         
-        # 1. Simple heuristic check (Keywords)
+        # 1. Simple heuristic check (Keywords from dynamic manifest intents)
         matched_skill = None
-        for keyword, skill_name in self.DIRECT_SKILL_MAP.items():
+        direct_map = self.get_direct_skill_map()
+        for keyword, skill_name in direct_map.items():
             if keyword in msg_lower:
                 matched_skill = skill_name
                 break
         
         if not matched_skill:
-            # 2. Fast-tier LLM classification for slightly more complex but still direct intents
-            from src.utils.prompt_utils import load_agent_prompt
-            
-            try:
-                llm = self._get_llm()
-                config = self._get_config()
+            if self.use_arbiter:
+                # 2a. Reflex Tier: Jev 1.13 毫秒級條件裁決 (置信度不足時自動升級)
+                try:
+                    question_spec = {
+                        "type": "choice",
+                        "instructions": "Classify user intent into a specific skill or complex swarm",
+                        "criteria": {
+                            "PRICE_CHECK": "User asks for stock price quote, ticker status or chart",
+                            "PORTFOLIO_CHECK": "User asks about user portfolio holdings, cash or position",
+                            "MACRO_CHECK": "User asks about macro economics, inflation, VIX, interest rates",
+                            "SWARM": "Complex stock analysis, company valuation, debate or general conversation"
+                        }
+                    }
+                    fallback_prompt = (
+                        f"Classify user request: '{user_message}'.\n"
+                        "Return JSON with {\"intent\": \"PRICE_CHECK\"|\"PORTFOLIO_CHECK\"|\"MACRO_CHECK\"|\"SWARM\"}"
+                    )
+                    arbiter = self._get_arbiter_client()
+                    decision = await arbiter.decide(
+                        domain="skill_router",
+                        state={"user_message": user_message},
+                        question_key="intent",
+                        question_spec=question_spec,
+                        confidence_threshold=0.88,
+                        system2_fallback_prompt=fallback_prompt,
+                        deterministic_default="SWARM"
+                    )
+                    category = str(decision.choice).upper()
+                    if "PRICE_CHECK" in category:
+                        matched_skill = "get_market_data"
+                    elif "PORTFOLIO_CHECK" in category:
+                        matched_skill = "get_user_holdings"
+                    elif "MACRO_CHECK" in category:
+                        matched_skill = "get_macro_summary"
+                    else:
+                        return None
+                except Exception as e:
+                    logger.warning(f"SkillRouter: Arbiter classification failed: {e}")
+                    return None
+            else:
+                # 2b. Legacy Fast-tier LLM classification
+                from src.utils.prompt_utils import load_agent_prompt
                 
-                system_prompt = load_agent_prompt("skill_router_classifier")
-                classification_prompt = load_agent_prompt("skill_router_classifier", {"user_message": user_message})
-                
-                messages = [
-                    Message(role="system", content=system_prompt),
-                    Message(role="user", content=classification_prompt),
-                ]
-                category = await llm.chat(messages=messages, config=config)
-                category = category.strip().upper()
-                
-                if "PRICE_CHECK" in category:
-                    matched_skill = "get_market_data"
-                elif "PORTFOLIO_CHECK" in category:
-                    matched_skill = "get_user_holdings"
-                elif "MACRO_CHECK" in category:
-                    matched_skill = "get_macro_summary"
-                else:
-                    return None # Default to complex swarm flow
-            except Exception as e:
-                logger.warning(f"SkillRouter: Classification failed: {e}")
-                return None
+                try:
+                    llm = self._get_llm()
+                    config = self._get_config()
+                    
+                    system_prompt = load_agent_prompt("skill_router_classifier")
+                    classification_prompt = load_agent_prompt("skill_router_classifier", {"user_message": user_message})
+                    
+                    messages = [
+                        Message(role="system", content=system_prompt),
+                        Message(role="user", content=classification_prompt),
+                    ]
+                    category = await llm.chat(messages=messages, config=config)
+                    category = category.strip().upper()
+                    
+                    if "PRICE_CHECK" in category:
+                        matched_skill = "get_market_data"
+                    elif "PORTFOLIO_CHECK" in category:
+                        matched_skill = "get_user_holdings"
+                    elif "MACRO_CHECK" in category:
+                        matched_skill = "get_macro_summary"
+                    else:
+                        return None # Default to complex swarm flow
+                except Exception as e:
+                    logger.warning(f"SkillRouter: Classification failed: {e}")
+                    return None
 
         # 3. Execute the matched skill
         try:

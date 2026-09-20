@@ -14,6 +14,7 @@ import logging
 from typing import Any, Dict, Optional
 
 from sqlalchemy import text
+from src.config.owner import resolve_user_id
 
 logger = logging.getLogger(__name__)
 
@@ -26,7 +27,7 @@ CONVICTION_REASON_CODES = {"too_risky", "wrong_ticker", "dont_trust_thesis"}
 
 class UserPreferenceService:
     def __init__(self, user_id: str):
-        self.user_id = user_id
+        self.user_id = resolve_user_id(user_id)
 
     def _engine(self):
         from src.data.database import get_db_engine

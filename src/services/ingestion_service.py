@@ -8,6 +8,7 @@ from typing import List, Dict, Tuple, Any, Optional, Callable, Dict, List, Tuple
 
 from src.services.analytics_service import update_daily_snapshot
 from src.data.ingestors import IngestorFactory
+from src.config.owner import resolve_user_id
 
 class IngestionService:
     """
@@ -20,7 +21,7 @@ class IngestionService:
         初始化匯入服務。
         """
         self.db_path = db_path
-        self.user_id = user_id
+        self.user_id = resolve_user_id(user_id)
         # self.ingestor = TradeIngestor(db_path) # Deprecated
 
 

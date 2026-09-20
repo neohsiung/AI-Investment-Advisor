@@ -1,0 +1,106 @@
+# Standard weekly research plan (config/plans/, NOT config/workflows/).
+#
+# These are sequential Tasks for the Task/ExecutionPlan pipeline, not DAG nodes.
+# config/workflows/ holds DAG graphs with input/output key wiring; this file holds
+# an ordered task list with tiers and complexity. Different schemas, different
+# directories — keeping both in one place made the DAG loader try to parse this.
+# 這是循序任務清單（Task/ExecutionPlan），不是 DAG 節點；schema 與目錄都不同。
+#
+# Transcribed from TaskPlanningService._create_standard_weekly_plan(), which was
+# a literal list of six `Task(...)` dataclasses. Reordering the research, moving
+# a step to a cheaper tier, or changing which agent writes a section all required
+# editing Python and redeploying.
+#
+# `agent:` is now stated explicitly per task. It previously came from
+# workflow_service._select_agent_for_task(), which matched substrings of the task
+# NAME ("market cycle" -> Macro, "sector" -> CIO, ...) — so renaming a task for
+# readability could silently hand it to a different agent. The values below are
+# what that matcher actually resolved to, replayed rather than guessed.
+#
+# NOTE: this plan drives the Task/ExecutionPlan pipeline, not the DAG executor.
+# The two orchestration models have not been merged; see the module docstring in
+# workflow_service.py.
+#
+# 由 _create_standard_weekly_plan() 的六個字面 Task 轉錄。原本調整順序、改 tier
+# 或換執行代理都得改 Python。agent 改為明確指定：先前是用任務「名稱」的子字串
+# 比對推斷（"market cycle" -> Macro…），為了可讀性改名就可能靜默換掉執行代理。
+# 下列值是重放該比對邏輯得出的實際結果。
+
+id: weekly_plan
+version: 1
+description: Six-stage macro-to-micro weekly research plan.
+
+tasks:
+  - name: "Market Cycle Analysis"
+    agent: Macro
+    model_tier: advanced
+    complexity: 8
+    estimated_tokens: 6000
+    inputs: []
+    outputs: [Market_Phase, Macro_Outlook]
+    description: >-
+      Analyze current Market Cycle (Early/Mid/Late/Recession). Focus on Liquidity (Fed), Rates
+      (Yield Curve), and Growth (GDP). MUST execute 'get_historical_report' to compare with last
+      week's Macro Outlook and clearly explain any narrative shifts or structural changes.
+      Output current 'Market_Phase' and 'Macro_Outlook'.
+
+  - name: "Sector Rotation & Swarm Insight"
+    agent: CIO
+    model_tier: smart
+    complexity: 8
+    estimated_tokens: 5000
+    inputs: [Market_Phase, Macro_Outlook]
+    outputs: [Target_Sectors, Sector_Themes]
+    description: >-
+      Identify Outperforming Sectors based on 'Market_Phase'. Aggregate 'Swarm Signals'
+      (Momentum/Sentiment/Fundamental) to find sector-level divergences. Output 'Target_Sectors'
+      and 'Sector_Themes'.
+
+  - name: "Supply Chain & Industry Deep-Dive"
+    agent: Fundamental
+    model_tier: smart
+    complexity: 9
+    estimated_tokens: 10000
+    inputs: [Target_Sectors, Sector_Themes]
+    outputs: [Supply_Chain_Trends, Industry_Outlook]
+    description: >-
+      For 'Target_Sectors': Analyze Upstream (Suppliers) and Downstream (Customers) logic.
+      Review recent Vendor financial guidance to confirm trends. Output 'Supply_Chain_Trends'.
+
+  - name: "Portfolio Deep-Dive & Health Check"
+    agent: Fundamental
+    model_tier: advanced
+    complexity: 9
+    estimated_tokens: 8000
+    inputs: [Market_Phase, Supply_Chain_Trends, Industry_Outlook]
+    outputs: [Holdings_Analysis, Gap_Analysis]
+    description: >-
+      Audit current holdings against 'Independent_Analysis'. Check '10-16 Stock Constraint'.
+      Diagnose 'Swarm Signals' for each holding: Fundamental Quality vs Momentum Price Action.
+      Recommend trim/hold.
+
+  - name: "Alpha Candidate Selection & Recommendations"
+    agent: CIO
+    model_tier: advanced
+    complexity: 9
+    estimated_tokens: 8000
+    inputs: [Holdings_Analysis, Gap_Analysis, Supply_Chain_Trends, Target_Sectors]
+    outputs: [Action_Plan, Final_Target_Portfolio, Buy_List]
+    description: >-
+      Check if 'Current_Holdings_Count' < 15. IF YES: Execute 'Gap Filling Strategy'. Recommend
+      new tickers following strict flow: 1. Macro (Cycle) -> 2. Sector (Themes) -> 3.
+      Fundamental (Quality) -> 4. Technical (Entry). Target total 15 holdings.
+
+  - name: "Report Synthesis"
+    agent: CIO
+    model_tier: smart
+    complexity: 6
+    estimated_tokens: 12000
+    inputs: [ALL]
+    outputs: [Final_Report]
+    description: >-
+      Synthesize all findings into a professional 'Macro-to-Micro' Investment Report (>10 mins
+      read). MUST execute 'get_historical_report' to deeply analyze WHY portfolio adjustments
+      were made compared to last week. Explore strategic reasons behind the changes (e.g.
+      narrative drift, cyclical rotation). Include explicit sections for 'Strategic Adjustments
+      vs Last Week', 'Swarm Multi-Dim Insights' and 'Deep Portfolio Diagnosis'.

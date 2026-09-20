@@ -61,19 +61,31 @@ class BaseAgent(ABC):
         self.skill_loader = SkillLoader()
         
         # [NEW] Agentic Brain (Workspace)
-        workspace_map = {
-            "CIO": "captain",
-            "Macro": "macro-evaluator",
-            "Risk": "risk-assessor",
-            "Sentiment": "sentiment-analyst",
-            "Momentum": "market-scanner",
-            "Fundamental": "data-prep",
-            "Thematic": "portfolio-manager",
-            "Engineer": "system-engineer",
-            "Evaluator Judge": "evaluator-judge",
-            "Sensory Watchdog": "sensory-watchdog"
-        }
-        mapped_name = workspace_map.get(self.name, self.name.lower().replace(" ", "-"))
+        # Workspace directory comes from the agent's manifest
+        # (config/agents/<id>.md, `workspace:` key). This was a hardcoded dict of
+        # ten entries here, which is why adding an agent meant editing BaseAgent
+        # as well as the factory and KNOWN_AGENT_NAMES.
+        #
+        # The slug fallback is retained: two of the ten mapped entries
+        # ("Evaluator Judge", "Sensory Watchdog") have no manifest because no
+        # factory branch ever constructed them, and several agents legitimately
+        # want the slugged default.
+        #
+        # workspace 目錄改由 manifest 的 `workspace:` 提供。原本是此處硬編的十項
+        # 對照表，這也是為何新增代理必須同時改 BaseAgent、factory 與 KNOWN_AGENT_NAMES。
+        # 保留 slug 後備：其中兩項從未被 factory 建構過，故沒有對應 manifest。
+        mapped_name = None
+        try:
+            from src.agents.registry import get_manifest
+
+            manifest = get_manifest(self.name)
+            if manifest and manifest.workspace:
+                mapped_name = manifest.workspace
+        except Exception as exc:  # registry unavailable — fall back to the slug
+            logger.debug(f"workspace lookup via registry failed for {self.name}: {exc}")
+
+        if not mapped_name:
+            mapped_name = self.name.lower().replace(" ", "-")
         self.workspace_path = f"workspace/{mapped_name}"
         
         # [Phase 3] Agent Persona System
@@ -118,13 +130,90 @@ class BaseAgent(ABC):
         self._register_builtin_tools()
 
     def _register_builtin_tools(self):
-        """Register generic tools available to all agents."""
-        run_script_tool = McpTool(
-            name="run_script",
-            description="Execute a local python script (cli.py) from a skill directory. Use this to perform data retrieval or analysis tasks.",
-            func=self.run_script
+        """
+        Register this agent's tools from `config/tools.yaml`.
+
+        This used to hardcode `run_script` — a subprocess-spawning tool every
+        agent got unconditionally, with no way to withhold it. The manifest also
+        finally wires up `LlamaIndexTools`, whose `register()` had no callers at
+        all, so its four RAG tools were reachable from no agent while the HTTP
+        endpoint reimplemented the same four inline.
+        原本硬編 run_script（會啟動子行程、所有 agent 無條件取得且無法收回）。
+        manifest 同時接上 LlamaIndexTools——它的 register() 從未被呼叫，
+        四個 RAG 工具沒有任何 agent 用得到，而 HTTP 端點另外重做了一遍。
+        """
+        from src.tools.tool_manifest import register_builtin_tools
+
+        names = register_builtin_tools(self)
+        self.logger.info(
+            f"{self.name}: registered {len(names)} tool(s) from manifest: "
+            f"{', '.join(names) or 'none'}"
         )
-        self.register_tool(run_script_tool)
+
+    async def bind_external_mcp_tools(self, settings_service=None) -> int:
+        """
+        Bind tools from external MCP servers declared in `config/tools.yaml`.
+
+        This lived inside `conversation_agent`, which meant external MCP tools
+        reached exactly one of the agents. It is on the base class so any agent
+        can have them, and it is gated twice — the settings flag and the
+        manifest's per-server `enabled` must both be true — so a server left in
+        the manifest cannot quietly resume making outbound calls.
+
+        Returns the number of tools bound. Never raises: an unreachable remote
+        server must not stop an agent from running with its local tools.
+        原本寫在 conversation_agent 內，外部 MCP 工具只有一個 agent 拿得到。
+        移到基底類別，並以「設定開關」與「manifest 個別 enabled」雙重閘門控制。
+        回傳綁定的工具數；不拋出例外——遠端無法連線不該讓 agent 失去本地工具。
+        """
+        import functools
+
+        from src.tools.tool_manifest import (
+            enabled_external_servers,
+            external_mcp_config,
+        )
+        from src.tools.mcp_server import McpTool
+
+        cfg = external_mcp_config()
+        servers = enabled_external_servers()
+        if not servers:
+            return 0
+
+        gate = cfg["enabled_setting"]
+        if settings_service is not None and gate:
+            try:
+                raw = settings_service.get_setting(gate, False)
+                allowed = raw is True or (isinstance(raw, str) and raw.strip().lower() == "true")
+            except Exception as exc:
+                # Fail closed: if the gate cannot be read, do not reach outward.
+                # 讀不到開關就不對外連線（fail closed）。
+                self.logger.error(f"{self.name}: cannot read '{gate}', skipping external MCP: {exc}")
+                return 0
+            if not allowed:
+                self.logger.info(f"{self.name}: external MCP disabled by '{gate}'")
+                return 0
+
+        prefix = cfg["namespace_prefix"]
+        bound = 0
+        for server in servers:
+            url = server["url"]
+            try:
+                from src.tools.mcp_client_adapter import get_mcp_client
+
+                client = await get_mcp_client(url, self.user_id)
+                for tool in client.list_tools():
+                    # Namespaced so a remote server cannot shadow a local tool.
+                    # 加前綴命名空間，避免遠端工具覆蓋本地同名工具。
+                    self.register_tool(McpTool(
+                        name=f"{prefix}{tool.name}",
+                        description=f"[External] {tool.description}",
+                        func=functools.partial(client.call_tool, tool.name),
+                    ))
+                    bound += 1
+                self.logger.info(f"{self.name}: bound {bound} tool(s) from {url}")
+            except Exception as exc:
+                self.logger.warning(f"{self.name}: failed to bind external MCP {url}: {exc}")
+        return bound
 
     async def run_script(self, skill_name: str, args: List[str] = None) -> str:
         """
@@ -239,58 +328,119 @@ class BaseAgent(ABC):
             raise
 
     def _load_prompt(self):
-        """Load the system prompt for the agent."""
-        # [Phase 18] Dynamic Personalization - Check for user-specific prompt overrides
-        # This allows RLHF-optimized prompts to override static files.
+        """
+        Resolve this agent's system prompt.
+
+        Order, highest priority first:
+
+          1. `user_custom_prompts` row for (user_id, agent name) — the operator's
+             own edit, or output from the RLHF meta-prompt agent. USER STATE, so
+             it lives in the database, consistent with every other setting.
+          2. The Markdown body of config/agents/<id>.md — the SHIPPED DEFAULT for
+             this agent. Product definition, so it lives in a file and ships with
+             the release.
+          3. `workspace/<dir>/IDENTITY.md` + `SOUL.md` — the pre-existing
+             per-agent prompt files, still authoritative for the agents that use
+             them.
+          4. The legacy `prompts/*.txt` path in `self.prompt_path`.
+
+        Note on 1 vs 2: the plan for this milestone had the manifest body winning
+        over the database. Inverted deliberately — a shipped default must not
+        silently override an edit the operator made through the UI, and prompts a
+        person changed are user state like any other setting.
+
+        A persona prefix (config/personas/*.md) is prepended to whichever source
+        wins, not just to the workspace one as before.
+
+        解析順序：DB 的 user_custom_prompts（使用者狀態）> manifest 本文（出貨預設）
+        > workspace 的 IDENTITY/SOUL > 舊的 prompts/*.txt。
+        原計畫讓 manifest 優先於 DB，此處刻意反轉：出貨預設值不應覆寫使用者透過 UI
+        做的修改，而使用者修改過的提示詞與其他設定一樣屬於使用者狀態。
+        """
+        # ── 1. database override ────────────────────────────────────────
+        custom = self._load_prompt_override()
+        if custom:
+            self.logger.info(
+                f"Using stored prompt override for agent '{self.name}' "
+                f"(user {self.user_id})"
+            )
+            return self._with_persona(custom)
+
+        # ── 2. manifest body (shipped default) ──────────────────────────
         try:
-            from sqlalchemy.orm import sessionmaker
-            from sqlalchemy.exc import OperationalError, ProgrammingError
-            from src.data.database import get_db_engine
-            from src.data.models import UserCustomPrompt
-            
-            Session = sessionmaker(bind=get_db_engine())
-            session = Session()
-            custom = session.query(UserCustomPrompt).filter_by(
-                user_id=self.user_id, 
-                agent_name=self.name
-            ).first()
-            
-            if custom and custom.custom_prompt:
-                self.logger.info(f"✨ Using dynamically optimized prompt for user {self.user_id} (Agent: {self.name})")
-                return custom.custom_prompt
-            session.close()
-        except (OperationalError, ProgrammingError) as db_error:
-            # Table or column doesn't exist yet — safe to skip (likely pre-migration or schema mismatch)
-            self.logger.debug(f"Dynamic prompt table unavailable (pre-migration): {type(db_error).__name__}")
-        except Exception as e:
-            self.logger.debug(f"Dynamic prompt check skipped: {type(e).__name__}: {str(e)[:100]}")
+            from src.agents.registry import get_manifest
 
-        # [Phase 1] Attempt to load from new Workspace directories first
+            manifest = get_manifest(self.name)
+            if manifest and manifest.prompt.strip():
+                return self._with_persona(manifest.prompt.strip())
+        except Exception as exc:
+            self.logger.debug(f"manifest prompt lookup skipped: {exc}")
+
+        # ── 3. workspace IDENTITY.md + SOUL.md ──────────────────────────
         prompt_content = ""
-        if hasattr(self, 'workspace_path') and self.workspace_path and os.path.exists(self.workspace_path):
-            identity_path = os.path.join(self.workspace_path, self.identity_file)
-            soul_path = os.path.join(self.workspace_path, "SOUL.md")
-            
-            if os.path.exists(identity_path):
-                with open(identity_path, 'r', encoding='utf-8') as f:
-                    prompt_content += f.read() + "\n\n"
-                    
-            if os.path.exists(soul_path):
-                with open(soul_path, 'r', encoding='utf-8') as f:
-                    prompt_content += f.read() + "\n\n"
-                    
-            if prompt_content.strip():
-                # Inject Persona prefix before workspace prompt
-                if self.persona and self.persona.system_prompt_prefix:
-                    persona_block = self.persona.render_prefix()
-                    return f"{persona_block}\n\n{prompt_content.strip()}"
-                return prompt_content.strip()
+        if getattr(self, "workspace_path", None) and os.path.exists(self.workspace_path):
+            for filename in (self.identity_file, "SOUL.md"):
+                candidate = os.path.join(self.workspace_path, filename)
+                if os.path.exists(candidate):
+                    with open(candidate, "r", encoding="utf-8") as fh:
+                        prompt_content += fh.read() + "\n\n"
 
-        # Fallback to legacy path
+            if prompt_content.strip():
+                return self._with_persona(prompt_content.strip())
+
+        # ── 4. legacy prompts/*.txt ─────────────────────────────────────
         if not os.path.exists(self.prompt_path):
             raise FileNotFoundError(f"Prompt file not found: {self.prompt_path}")
-        with open(self.prompt_path, 'r', encoding='utf-8') as f:
-            return f.read()
+        with open(self.prompt_path, "r", encoding="utf-8") as fh:
+            return self._with_persona(fh.read())
+
+    def _load_prompt_override(self):
+        """
+        The stored prompt override for this (user, agent), or None.
+
+        Also fixes a session leak: the previous inline version called
+        `session.close()` only on the path where NO override was found, so every
+        agent construction that DID find one leaked a database session.
+        同時修掉一個 session 洩漏：原本只在「找不到覆寫」的路徑呼叫 close()，
+        因此每次成功取得覆寫的代理建構都會洩漏一個資料庫 session。
+        """
+        session = None
+        try:
+            from sqlalchemy.exc import OperationalError, ProgrammingError
+            from sqlalchemy.orm import sessionmaker
+
+            from src.data.database import get_db_engine
+            from src.data.models import UserCustomPrompt
+
+            Session = sessionmaker(bind=get_db_engine())
+            session = Session()
+            row = session.query(UserCustomPrompt).filter_by(
+                user_id=self.user_id,
+                agent_name=self.name,
+            ).first()
+            return row.custom_prompt if row and row.custom_prompt else None
+        except Exception as exc:
+            # Pre-migration schema, or no database at all — the file-based
+            # sources below are a complete fallback.
+            self.logger.debug(
+                f"prompt override lookup skipped: {type(exc).__name__}: {str(exc)[:100]}"
+            )
+            return None
+        finally:
+            if session is not None:
+                session.close()
+
+    def _with_persona(self, prompt: str) -> str:
+        """
+        Prepend the persona prefix, if this agent has a persona.
+
+        Previously applied only to the workspace branch, so an agent whose prompt
+        came from the database or a legacy file silently lost its persona.
+        原本只套用在 workspace 分支：提示詞來自資料庫或舊檔案的代理會靜默失去人格設定。
+        """
+        if self.persona and getattr(self.persona, "system_prompt_prefix", None):
+            return f"{self.persona.render_prefix()}\n\n{prompt.strip()}"
+        return prompt.strip()
 
     def render_system_prompt(self, context):
         """

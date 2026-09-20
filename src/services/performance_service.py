@@ -4,6 +4,7 @@ from typing import List, Dict, Tuple, Any, Optional, Callable, Dict, List, Tuple
 from src.services.analytics_service import AnalyticsService
 from src.repositories.transaction_repository import AlchemyTransactionRepository
 from src.services.market_data_service import MarketDataService
+from src.config.owner import resolve_user_id
 
 class PerformanceService:
     """
@@ -17,7 +18,7 @@ class PerformanceService:
         初始化績效服務。
         """
         self.db_path = db_path
-        self.user_id = user_id
+        self.user_id = resolve_user_id(user_id)
         self.analytics_service = AnalyticsService(db_path=db_path, user_id=user_id)
         self.market_service = MarketDataService(user_id=user_id)
         self.trans_repo = AlchemyTransactionRepository()

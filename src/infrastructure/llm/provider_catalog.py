@@ -89,6 +89,7 @@ class ProviderCatalog:
             healthcheck_endpoint=entry.get("healthcheck_endpoint"),
             default_capabilities=caps,
             notes=entry.get("notes", ""),
+            aliases=[str(a) for a in (entry.get("aliases") or [])],
         )
 
     # ------------------------------------------------------------------
@@ -158,6 +159,81 @@ class ProviderCatalog:
                 f"Gateway class {spec.gateway_class} must subclass ILLMGateway"
             )
         return gateway_cls()
+
+
+    # ------------------------------------------------------------------
+    # Alias resolution — the single provider-name lookup
+    # ------------------------------------------------------------------
+    def alias_map(self) -> Dict[str, str]:
+        """
+        Every accepted spelling -> provider_code.
+
+        Each spec contributes its `provider_code`, its `display_name`, its
+        declared `aliases`, and a lowercased form of each. Lowercased forms are
+        added only where they do not collide with an existing entry, so an
+        explicit alias always wins over a derived one.
+        每個 spec 貢獻 provider_code、display_name、宣告的 aliases 及各自的小寫形式；
+        小寫形式僅在不衝突時加入，明確宣告的別名優先。
+        """
+        mapping: Dict[str, str] = {}
+        derived: Dict[str, str] = {}
+        for spec in self._specs.values():
+            names = [spec.provider_code, spec.display_name, *spec.aliases]
+            for name in names:
+                if not name:
+                    continue
+                mapping.setdefault(name, spec.provider_code)
+                derived.setdefault(name.lower(), spec.provider_code)
+        for name, code in derived.items():
+            mapping.setdefault(name, code)
+        return mapping
+
+    def resolve_code(self, name: str) -> Optional[str]:
+        """Map any accepted spelling to a provider_code, or None."""
+        if not name:
+            return None
+        aliases = self.alias_map()
+        return aliases.get(name) or aliases.get(name.lower())
+
+    def gateway_class_for(self, name: str) -> type:
+        """
+        Import and return the gateway class for any accepted provider spelling.
+
+        The `issubclass(ILLMGateway)` check in `build_gateway` is the reason a
+        dotted `gateway_class:` in YAML is safe to import; this shares it rather
+        than re-implementing the import.
+        build_gateway 的 ILLMGateway 子類別檢查是 YAML dotted path 可安全匯入的原因；
+        此處共用該檢查，不另行實作匯入。
+        """
+        code = self.resolve_code(name)
+        if code is None:
+            raise KeyError(name)
+        return type(self.build_gateway(code))
+
+    def gateway_map(self) -> Dict[str, type]:
+        """
+        Accepted spelling -> gateway class, for the two registries that used to
+        hardcode this. A provider whose class cannot be imported is logged and
+        omitted: a missing optional gateway must not stop the others loading, but
+        it must not appear available either.
+        供原本硬編此表的兩處查表使用。無法匯入的 provider 會記錄並略過：
+        缺少選用 gateway 不該讓其他 provider 無法載入，但也不能看起來可用。
+        """
+        classes: Dict[str, type] = {}
+        by_code: Dict[str, type] = {}
+        for name, code in self.alias_map().items():
+            if code not in by_code:
+                try:
+                    by_code[code] = type(self.build_gateway(code))
+                except Exception as exc:
+                    logger.error(
+                        "Provider '%s' is declared but its gateway cannot be loaded: %s",
+                        code, exc,
+                    )
+                    by_code[code] = None
+            if by_code[code] is not None:
+                classes[name] = by_code[code]
+        return classes
 
 
 # ──────────────────────────────────────────────────────────────────────

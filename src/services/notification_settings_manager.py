@@ -11,6 +11,7 @@ PAD 通知系統 - 用戶設置驅動 (Settings-Driven Notification System)
 from typing import List, Dict, Optional
 from enum import Enum
 import logging
+from src.config.owner import resolve_user_id
 
 logger = logging.getLogger(__name__)
 
@@ -62,7 +63,7 @@ class NotificationSettingsManager:
             user_id: 用戶 ID
         """
         self.settings_repo = settings_repo
-        self.user_id = user_id
+        self.user_id = resolve_user_id(user_id)
         self.logger = logging.getLogger(__name__)
     
     # ============================================================================

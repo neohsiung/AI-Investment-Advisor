@@ -28,6 +28,7 @@ from src.infrastructure.llm.tier_config import SettingsAwareModelRouter
 from src.infrastructure.llm.llm_gateway import OpenRouterGateway
 from src.domain.interfaces import Message, LLMConfig
 from src.repositories.settings_repository import AlchemySettingsRepository
+from src.config.owner import resolve_user_id
 
 class SentinelService:
     """
@@ -57,7 +58,7 @@ class SentinelService:
             logger.warning("SentinelService: No user_id provided. Running in anonymous mode (testing only).")
             
         self.repo = repo or AlchemySentinelRepository()
-        self.user_id = user_id
+        self.user_id = resolve_user_id(user_id)
 
         # Collaborators are built on first use, not here — see the properties
         # below. Injected instances are honoured exactly as before.
@@ -458,10 +459,11 @@ class SentinelService:
         以「使用者 + 分鐘」為單位的 Redis 鎖防止同一分鐘重複執行；鎖放在這裡而非
         task 層，是為了同時覆蓋所有入口。force=True 僅供使用者主動觸發的路徑使用。
         """
-        # Capture once: the three minute-gated branches below and the lock
-        # bucket must agree, otherwise a tick straddling a minute boundary can
-        # take the expensive branch and then lock the *next* minute.
-        # 只取一次時間：三個 minute gate 與鎖的分鐘桶必須一致，否則跨分鐘邊界會錯位。
+        # Minute bucket for the duplicate-tick lock below. The three expensive
+        # dimensions no longer gate on this clock at all — they use elapsed-time
+        # windows (see `_interval_seconds`), so they are independent of the tick
+        # rate. This value is only the dedup key now.
+        # 這個時間只剩下重複 tick 去重鎖在用；三個昂貴維度已改用時間窗。
         now = datetime.now()
 
         if not force and self.user_id:
@@ -502,22 +504,47 @@ class SentinelService:
                 current_prices = await self.market_service.get_current_prices(ticker_list)
                 triggers += await self._check_position_moves_v2(ticker_list, current_prices)
             
-            # Dimension 3: Breaking News (每 10 分鐘, 節省 Tavily credits)
-            # Uses the `now` captured at entry — see the note in the docstring.
-            if now.minute % 10 == 0:
-                if ticker_list:
-                    triggers += await self._check_breaking_news_v2(ticker_list)
+            # Dimensions 3, 4 and 6 are deliberately rarer than the tick: they
+            # hit paid APIs (Tavily) or slow-moving data (FRED).
+            #
+            # These used to be `now.minute % 10 == 0` / `== 0` / `% 30 == 0`,
+            # which silently encoded "the tick runs every minute". The tick is
+            # now configurable (SENTINEL_TICK_CRON_MINUTE, default */15) and at
+            # that cadence `minute % 10 == 0` fires at :00 and :30 only — the
+            # breaking-news scan would have quietly become half-hourly, and any
+            # other tick rate would have skewed it differently again.
+            #
+            # An elapsed-time window is independent of the tick rate, and it is
+            # shared across worker processes. fail_open=False: when Redis is
+            # down, skip the paid call rather than risk running it every tick.
+            #
+            # 原本三個 minute 取模閘門隱含「每分鐘 tick」的假設；tick 改成可設定
+            # 後語意會走樣。改用與 tick 頻率無關、且跨行程共享的時間窗。
+            if ticker_list and await self._acquire_cooldown(
+                "breaking_news",
+                self._interval_seconds("sentinel_breaking_news_interval_min", 30),
+                fail_open=False,
+            ):
+                triggers += await self._check_breaking_news_v2(ticker_list)
 
-            # Dimension 4: Macro Shifts (每小時, FRED 數據更新頻率低)
-            if now.minute == 0:
+            # Dimension 4: Macro Shifts (FRED updates slowly)
+            if await self._acquire_cooldown(
+                "macro_shifts",
+                self._interval_seconds("sentinel_macro_interval_min", 60),
+                fail_open=False,
+            ):
                 triggers += await self._check_macro_shifts()
-            
+
             # Dimension 5: Active Polling
             triggers += await self._check_active_sources()
 
-            # Dimension 6: Global Macro / Geopolitical Events (每 30 分鐘)
+            # Dimension 6: Global Macro / Geopolitical Events
             # 持倉數量無關的全球重大事件掃描
-            if now.minute % 30 == 0:
+            if await self._acquire_cooldown(
+                "global_macro",
+                self._interval_seconds("sentinel_deep_interval_min", 60),
+                fail_open=False,
+            ):
                 triggers += await self._check_global_macro_events()
             
             # Dimension 7: Risk Consistency & Dynamic Cash (每次 tick)
@@ -1124,6 +1151,24 @@ class SentinelService:
 
     # Escalation: Council + Notifications
     # ──────────────────────────────────────────
+
+    def _interval_seconds(self, setting_key: str, default_minutes: int) -> int:
+        """
+        Minutes from settings → seconds, with a sane floor.
+
+        Reading this per tick (rather than caching it) is what makes the
+        cadence editable from the UI without restarting the workers.
+        每次 tick 讀取，讓 UI 調整頻率後無須重啟 worker。
+        """
+        try:
+            minutes = int(self.settings_service.get_setting(setting_key) or default_minutes)
+        except (TypeError, ValueError):
+            logger.warning(
+                "Sentinel: %s is not an integer; falling back to %d minutes",
+                setting_key, default_minutes,
+            )
+            minutes = default_minutes
+        return max(60, minutes * 60)
 
     async def _acquire_cooldown(self, name: str, seconds: int, fail_open: bool) -> bool:
         """
@@ -1944,31 +1989,20 @@ class SentinelService:
 
     def _get_all_user_ids(self) -> List[str]:
         """
-        Get all registered user IDs for position monitoring.
-        取得所有已註冊用戶 ID。
+        Users this Sentinel monitors — the single owner, by design.
+
+        This used to be `SELECT id FROM users` UNION the distinct `user_id`s in
+        `settings`, which pulled in test accounts and orphaned setting rows.
+        One of its two callers is `_trigger_emergency_protocol`, i.e. this list
+        decided whose portfolio got liquidated on a broadcast alert — not a
+        place for a best-effort enumeration.
+
+        單機版僅監控擁有者。舊實作會把測試帳號與孤兒設定列一併撈進來，
+        而其中一個呼叫端是緊急清倉，範圍必須精確。
         """
-        try:
-            # v4.2.6: Use with self.engine.connect() to avoid session leaks in helper method
-            from sqlalchemy import text
-            with self.repo.engine.connect() as conn:
-                # Primary: use user id (UUID) from users table
-                rows = conn.execute(text("SELECT id FROM users")).fetchall()
-                user_ids = [str(row[0]) for row in rows] if rows else []
-                
-                # Fallback: also include user_ids from settings table
-                settings_rows = conn.execute(text(
-                    "SELECT DISTINCT user_id FROM settings "
-                    "WHERE user_id IS NOT NULL AND user_id NOT IN ('system', 'SYSTEM')"
-                )).fetchall()
-                for row in settings_rows:
-                    uid_str = str(row[0])
-                    if uid_str and uid_str not in user_ids:
-                        user_ids.append(uid_str)
-                
-                return user_ids
-        except Exception as e:
-            logger.warning(f"Failed to get user IDs: {e}")
-            return []
+        from src.config.owner import active_user_ids
+
+        return active_user_ids()
 
     def close(self):
         """

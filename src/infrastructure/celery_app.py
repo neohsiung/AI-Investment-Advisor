@@ -29,13 +29,43 @@ app.conf.beat_schedule = {
         "task": "src.infrastructure.tasks.dispatch_market_intelligence",
         "schedule": crontab(hour=16, minute=30),  # 04:30 PM EST
     },
-    "sentinel-minutely-tick": {
+    # The sentinel tick is the single largest driver of this deployment's LLM
+    # bill: at `crontab(minute="*")` it ran 1,440 times a day, and each tick can
+    # fan out into a multi-agent council debate. A self-hosted single-box
+    # install should not default to that. */15 cuts it to 96/day; set
+    # SENTINEL_TICK_CRON_MINUTE="*" to restore the old behaviour.
+    #
+    # The tick's three expensive dimensions (breaking news / macro / global
+    # macro) no longer depend on this rate — they hold their own elapsed-time
+    # windows in sentinel_service._interval_seconds().
+    #
+    # sentinel tick 是 LLM 帳單的主要來源；單機自架預設改為每 15 分鐘，
+    # 需要恢復每分鐘可設 SENTINEL_TICK_CRON_MINUTE="*"。
+    "sentinel-tick": {
         "task": "src.infrastructure.tasks.dispatch_sentinel_tick",
-        "schedule": crontab(minute="*"),           # Every minute
+        "schedule": crontab(minute=os.getenv("SENTINEL_TICK_CRON_MINUTE", "*/15")),
     },
     "broker-position-sync": {
         "task": "src.infrastructure.tasks.dispatch_broker_sync",
-        "schedule": crontab(minute="*/5"),         # Every 5 minutes
+        "schedule": crontab(minute=os.getenv("BROKER_SYNC_CRON_MINUTE", "*/15")),
+    },
+
+    # ── Ingestion previously scheduled by n8n ────────────────────────────────
+    # Same cadences the n8n workflow used, minus the container and the two HTTP
+    # hops per feed. n8n is now an optional compose profile for third-party
+    # connectors only; nothing in the product depends on it.
+    # 與原 n8n workflow 相同的頻率，但少了一個容器與每個 feed 兩趟 HTTP。
+    "rss-ingest": {
+        "task": "src.infrastructure.tasks.dispatch_rss_ingest",
+        "schedule": crontab(minute=os.getenv("RSS_INGEST_CRON_MINUTE", "*/15")),
+    },
+    "daily-skill-learning": {
+        "task": "src.infrastructure.tasks.dispatch_skill_learning",
+        "schedule": crontab(hour=7, minute=0),      # 07:00 daily (was n8n cron 0 7 * * *)
+    },
+    "podcast-ingest": {
+        "task": "src.infrastructure.tasks.dispatch_podcast_ingest",
+        "schedule": crontab(minute=0, hour="*/4"),  # every 4h (was n8n cron 0 */4 * * *)
     },
     "daily-memory-distillation": {
         "task": "src.infrastructure.tasks.dispatch_memory_distill",

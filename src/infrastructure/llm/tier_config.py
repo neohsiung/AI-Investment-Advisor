@@ -24,7 +24,10 @@ Tier naming convention (cognitive mapping):
 import os
 import logging
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Dict, Optional, List
+
+import yaml
 
 logger = logging.getLogger(__name__)
 
@@ -68,64 +71,73 @@ class TierSpec:
 
 
 # ═══════════════════════════════════════════════════════
-# Tier Definitions (Recommended Models — March 2026)
+# Tier Definitions — loaded from config/llm_tiers.yaml
 # ═══════════════════════════════════════════════════════
+#
+# This was a 54-line literal dict of four TierSpec constructions. The contents
+# are data — display names, per-million-token prices, token ceilings — and those
+# prices are what the budget router and cost dashboards compute against, so
+# adjusting one meant editing Python and shipping an image.
+#
+# `DEFAULT_TIERS` keeps its name and its `Dict[str, TierSpec]` shape: it is read
+# directly by `TierConfig.__init__`, `weekly_cost_review` and several tests.
+# 原本是 54 行、四個 TierSpec 的字面 dict；內容純屬資料，且價格是預算路由與成本
+# 報表的計算基礎。DEFAULT_TIERS 名稱與型別不變（多處直接讀取）。
 
-# fmt: off
-DEFAULT_TIERS: Dict[str, TierSpec] = {
-    # ── Tier 0: Nano — 反射層 (Reflex) ─────────────────
-    "nano": TierSpec(
-        name="nano",
-        display_name="Nano (反射)",
-        env_key="AI_MODEL_NANO",
-        input_cost_per_mtok=0.10,
-        output_cost_per_mtok=0.40,
-        max_tokens=512,
-        description="Ultra-cheap reflex layer for classification & routing",
-        cognitive_mapping="System 0 — 反射 (Reflex): 不經思考的自動反應",
-    ),
+TIERS_ENV = "LLM_TIERS_MANIFEST"
+DEFAULT_TIERS_PATH = Path(__file__).resolve().parents[3] / "config" / "llm_tiers.yaml"
 
-    # ── Tier 1: Fast — 快思層 (Fast Thinking) ──────────
-    "fast": TierSpec(
-        name="fast",
-        display_name="Fast (高速)",
-        env_key="AI_MODEL_FAST",
-        input_cost_per_mtok=0.30,
-        output_cost_per_mtok=2.50,
-        max_tokens=2048,
-        description="Low-latency balance for summary & sensory agents",
-        cognitive_mapping="System 1 — 快思 (Fast Thinking): 直覺式快速處理",
-    ),
 
-    # ── Tier 2: Smart — 慢想層 (Slow Thinking) ─────────
-    # 用途: 分析、推理、知識蒸餾、上下文對話、多步驟決策
-    "smart": TierSpec(
-        name="smart",
-        display_name="Smart (慢想)",
-        env_key="AI_MODEL_SMART",
-        input_cost_per_mtok=1.25,
-        output_cost_per_mtok=10.00,
-        max_tokens=8192,
-        description="Analytical layer for reasoning & multi-step decisions",
-        cognitive_mapping="System 2 — 慢想 (Slow Thinking): 需要專注的分析性思考",
-    ),
+def tiers_manifest_path() -> Path:
+    explicit = os.getenv(TIERS_ENV)
+    return Path(explicit) if explicit else DEFAULT_TIERS_PATH
 
-    # ── Tier 3: Advanced — 深思層 (Deep Thinking) ──────
-    # Use for: CIO final decisions, wisdom crystallization (K→W),
-    #          complex strategy, risk assessment with high stakes
-    # 用途: CIO 最終決策、智慧結晶、複雜策略、高風險評估
-    "advanced": TierSpec(
-        name="advanced",
-        display_name="Advanced (深思)",
-        env_key="AI_MODEL_ADVANCED",
-        input_cost_per_mtok=3.00,
-        output_cost_per_mtok=15.00,
-        max_tokens=8192,
-        description="Deep reasoning for CIO decisions & complex strategy",
-        cognitive_mapping="System 2+ — 深思 (Deep Thinking): 深度推理與戰略判斷",
-    ),
-}
-# fmt: on
+
+def _spec_from_dict(entry: Dict) -> TierSpec:
+    return TierSpec(
+        name=entry["name"],
+        display_name=entry.get("display_name", entry["name"]),
+        env_key=entry["env_key"],
+        input_cost_per_mtok=float(entry.get("input_cost_per_mtok", 0.0)),
+        output_cost_per_mtok=float(entry.get("output_cost_per_mtok", 0.0)),
+        max_tokens=int(entry.get("max_tokens", 4096)),
+        description=entry.get("description", ""),
+        cognitive_mapping=entry.get("cognitive_mapping", ""),
+    )
+
+
+def load_tiers(path=None) -> Dict[str, TierSpec]:
+    """
+    Parse the tier manifest.
+
+    Raises if the file is missing or yields no tiers. An empty tier table would
+    make every `resolve()` fall through to "unknown tier" and route everything to
+    whatever happened to be first — a silent, expensive misroute — so this is one
+    of the few places where failing to start is the correct behaviour.
+    檔案缺失或沒有任何 tier 時直接拋出：空的 tier 表會讓每次 resolve 落入「未知層級」
+    並路由到恰好排在第一個的模型（靜默且昂貴的錯誤路由），因此此處啟動失敗才是正確行為。
+    """
+    tiers_path = Path(path) if path else tiers_manifest_path()
+    if not tiers_path.exists():
+        raise FileNotFoundError(f"LLM tier manifest not found at {tiers_path}")
+
+    raw = yaml.safe_load(tiers_path.read_text(encoding="utf-8")) or {}
+    specs: Dict[str, TierSpec] = {}
+    for entry in raw.get("tiers") or []:
+        try:
+            spec = _spec_from_dict(entry)
+        except Exception as exc:
+            raise ValueError(f"Invalid tier entry {entry!r} in {tiers_path}: {exc}") from exc
+        specs[spec.name] = spec
+
+    if not specs:
+        raise ValueError(f"No tiers defined in {tiers_path}")
+
+    logger.info(f"TierConfig: loaded {len(specs)} tiers from {tiers_path}")
+    return specs
+
+
+DEFAULT_TIERS: Dict[str, TierSpec] = load_tiers()
 
 
 class TierConfig:

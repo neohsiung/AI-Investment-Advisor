@@ -97,12 +97,67 @@ class TestSettingsService:
         """
         mock_repo = MagicMock()
 
+        # Real schema keys: the bulk path validates against the registry now, so
+        # placeholder keys like "k1" are rejected before reaching the repository.
+        # bulk 路徑現在會對照註冊表驗證，佔位鍵會在寫入前被拒絕。
         service = SettingsService(user_id="user123", settings_repo=mock_repo)
-        success, msg = service.save_settings_bulk({"k1": "v1", "k2": "v2"})
+        success, msg = service.save_settings_bulk({
+            "auto_trade_threshold": 80,
+            "risk_profile": "Balanced",
+        })
+
+        assert success is True, msg
+        mock_repo.set_many.assert_called_once_with(
+            "user123", {"auto_trade_threshold": 80, "risk_profile": "Balanced"}
+        )
+        assert mock_repo.set.call_count == 0
+
+    def test_save_settings_bulk_rejects_unknown_keys(self):
+        """
+        An unknown key fails the whole write rather than being dropped.
+
+        Silently ignoring it would make a typo look like a success: the operator
+        sets `auto_trade_threshhold`, is told "saved", and the real threshold
+        never moves. On a path that governs order placement, that is the wrong
+        way to fail.
+        靜默忽略會讓打錯的鍵看起來儲存成功，而真正的門檻從未改變。
+        """
+        mock_repo = MagicMock()
+        service = SettingsService(user_id="user123", settings_repo=mock_repo)
+
+        success, msg = service.save_settings_bulk({"auto_trade_threshhold": 80})
+
+        assert success is False
+        assert "unknown setting" in msg
+        mock_repo.set_many.assert_not_called()
+
+    def test_save_settings_bulk_rejects_out_of_range(self):
+        """Type/range validation happens before the write, not in the UI only."""
+        mock_repo = MagicMock()
+        service = SettingsService(user_id="user123", settings_repo=mock_repo)
+
+        success, msg = service.save_settings_bulk({"auto_trade_threshold": 150})
+
+        assert success is False
+        assert "must be <= 100" in msg
+        mock_repo.set_many.assert_not_called()
+
+    def test_save_settings_bulk_coerces_types(self):
+        """A browser sends strings; the stored value must be correctly typed."""
+        mock_repo = MagicMock()
+        service = SettingsService(user_id="user123", settings_repo=mock_repo)
+
+        success, _ = service.save_settings_bulk({
+            "auto_trade_threshold": "80",
+            "ai_trading_enabled": "false",
+            "target_cash_ratio": "0.25",
+        })
 
         assert success is True
-        mock_repo.set_many.assert_called_once_with("user123", {"k1": "v1", "k2": "v2"})
-        assert mock_repo.set.call_count == 0
+        written = mock_repo.set_many.call_args[0][1]
+        assert written["auto_trade_threshold"] == 80
+        assert written["ai_trading_enabled"] is False
+        assert written["target_cash_ratio"] == 0.25
     
     @patch('src.services.settings_service.requests.get')
     def test_fetch_openrouter_models(self, mock_get):

@@ -13,36 +13,53 @@ class TestMarketDataServiceFixed:
     
     @pytest.fixture
     def mock_providers(self):
-        """Mock the provider classes"""
-        with patch('src.services.market_data_service.PolygonProvider') as MockPolygon, \
-             patch('src.services.market_data_service.TiingoProvider') as MockTiingo, \
-             patch('src.services.market_data_service.FMPProvider') as MockFMP, \
-             patch('src.services.market_data_service.YFinanceProvider') as MockYF, \
-             patch('src.services.market_data_service.FredProvider') as MockFred, \
+        """
+        Mock providers, injected at the construction seam.
+
+        This used to patch `src.services.market_data_service.PolygonProvider` and
+        friends — the classes as imported into that module. The service no longer
+        imports them: providers are declared in config/data_providers.yaml and
+        resolved through importlib by src/data/providers/__init__.py, so those
+        patches silently had no effect and the real classes were constructed.
+
+        Patching the class paths directly does not work either, because the
+        registry verifies each resolved class subclasses MarketDataProvider (the
+        check that makes a manifest's dotted path safe to import) and a bare
+        MagicMock is not a class. Patching `build_all` — the single function that
+        turns specs into instances — expresses what this fixture actually wants
+        and needs no subclass gymnastics.
+
+        原本 patch 的是 market_data_service 模組中匯入的類別；服務已不再匯入它們，
+        改由 registry 以 importlib 解析，故那些 patch 靜默失效、建構的是真實類別。
+        直接 patch 類別路徑也不行：registry 會驗證解析結果是 MarketDataProvider 的
+        子類別（正是讓 dotted path 可安全匯入的檢查），而裸 MagicMock 不是類別。
+        改為 patch build_all —— 把 spec 轉成實例的唯一入口。
+        """
+        instances = {}
+        for pid in ("polygon", "tiingo", "fmp", "yahoo_finance", "fred",
+                    "alpha_vantage", "finnhub", "financialdata"):
+            inst = MagicMock()
+            inst.id = pid
+            instances[pid] = inst
+
+        with patch('src.data.providers.build_all', return_value=instances), \
              patch('src.services.market_data_service.InternetSearchService') as MockSearch:
-            
-            # Setup instances
-            poly_instance = MockPolygon.return_value
-            poly_instance.id = "polygon"
-            tiingo_instance = MockTiingo.return_value
-            tiingo_instance.id = "tiingo"
-            fmp_instance = MockFMP.return_value
-            fmp_instance.id = "fmp"
-            yf_instance = MockYF.return_value
-            yf_instance.id = "yahoo_finance"
-            fred_instance = MockFred.return_value
-            fred_instance.id = "fred"
+
             search_instance = MockSearch.return_value
-            # Search methods are async
             search_instance.search_financial_context = AsyncMock()
-            
+
             yield {
-                'polygon': poly_instance,
-                'tiingo': tiingo_instance,
-                'fmp': fmp_instance,
-                'yfinance': yf_instance,
-                'fred': fred_instance,
-                'search': search_instance
+                'polygon': instances['polygon'],
+                'tiingo': instances['tiingo'],
+                'fmp': instances['fmp'],
+                # The manifest id is `yahoo_finance`; the service exposes it as
+                # self.yfinance, and these tests use the short name.
+                'yfinance': instances['yahoo_finance'],
+                'fred': instances['fred'],
+                'alpha_vantage': instances['alpha_vantage'],
+                'finnhub': instances['finnhub'],
+                'financialdata': instances['financialdata'],
+                'search': search_instance,
             }
 
     @pytest.fixture

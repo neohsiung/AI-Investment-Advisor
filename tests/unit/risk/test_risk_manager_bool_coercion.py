@@ -59,8 +59,28 @@ class TestAiTradingEnabledCoercion:
         except AttributeError as exc:  # pragma: no cover - regression guard
             pytest.fail(f"check_constraints raised AttributeError on bool: {exc}")
 
-    def test_missing_setting_defaults_to_enabled(self, manager):
+    def test_missing_setting_blocks_trading(self, manager):
+        """
+        An absent `ai_trading_enabled` must BLOCK, not permit.
+
+        This test previously asserted the opposite — that a missing setting
+        defaulted to enabled — which meant a fresh or partially-seeded database
+        authorised live order placement with no row ever having been written.
+        The schema default is false, so the gate now fails closed.
+
+        原本斷言「缺少設定即視為啟用」：全新或只部分初始化的資料庫會在沒有任何
+        設定列的情況下授權真實下單。schema 預設為 false，此閘門改為 fail-closed。
+        """
         _stub_settings(manager, {"ai_max_daily_trades": 999})
+        manager._get_dynamic_thresholds = lambda uid: {"max_daily_trades": 999}
+        manager._get_daily_trade_count = lambda uid, day: 0
+        manager._is_circuit_breaker_triggered = lambda *a, **kw: False
+
+        assert manager.check_constraints("u1") is False
+
+    def test_explicit_true_still_allows_trading(self, manager):
+        """The fail-closed default must not break the configured-on case."""
+        _stub_settings(manager, {"ai_trading_enabled": "true", "ai_max_daily_trades": 999})
         manager._get_dynamic_thresholds = lambda uid: {"max_daily_trades": 999}
         manager._get_daily_trade_count = lambda uid, day: 0
         manager._is_circuit_breaker_triggered = lambda *a, **kw: False
