@@ -1,6 +1,8 @@
 ---
 name: run_momentum_analysis
 description: 對指定標的執行動能分析 (RSI, MACD, Volume)
+intents:
+  - momentum
 ---
 
 # Run Momentum Analysis

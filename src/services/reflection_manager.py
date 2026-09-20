@@ -21,6 +21,7 @@ from src.services.settings_service import SettingsService
 from src.services.token_logger_service import TokenLoggerService
 from src.services.evolution_metrics import EvolutionMetrics
 from src.infrastructure.llm.llm_gateway import LLMGatewayFactory, LoggingLLMGateway
+from src.config.owner import resolve_user_id
 
 logger = logging.getLogger(__name__)
 
@@ -32,7 +33,7 @@ class ReflectionManager:
     """
 
     def __init__(self, user_id: str = "system"):
-        self.user_id = user_id
+        self.user_id = resolve_user_id(user_id)
         self.settings = SettingsService(user_id=user_id)
         self.token_logger = TokenLoggerService()
         self.router = BudgetAwareModelRouter(self.settings, self.token_logger)

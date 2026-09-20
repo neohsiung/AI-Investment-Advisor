@@ -20,6 +20,7 @@ from dataclasses import dataclass, field, asdict
 
 from src.repositories.ticker_universe_repository import TickerUniverseRepository
 from src.services.market_data_service import MarketDataService
+from src.config.owner import resolve_user_id
 
 logger = logging.getLogger(__name__)
 
@@ -45,7 +46,7 @@ class ResearchAutomationService:
     """
 
     def __init__(self, user_id: str):
-        self.user_id = user_id
+        self.user_id = resolve_user_id(user_id)
         self.repo = TickerUniverseRepository()
         self.market = MarketDataService(user_id=user_id)
         self._pipeline = None  # lazy init

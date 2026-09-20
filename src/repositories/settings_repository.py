@@ -8,6 +8,7 @@ from cryptography.fernet import Fernet
 from sqlalchemy import text
 from src.data.database import BaseRepository, get_db_engine
 from src.data.models import Setting
+from src.config.owner import resolve_user_id
 from src.utils.logger import setup_logger
 
 _logger = setup_logger("SettingsRepository")
@@ -112,7 +113,39 @@ class AlchemySettingsRepository(BaseRepository, ISettingsRepository):
         self.sensitive_patterns = ["api_key", "token", "secret", "password", "private_key", "_pass", "_key"]
 
     def _should_encrypt(self, key: str) -> bool:
-        """Determines if a key contains sensitive information that should be encrypted."""
+        """
+        Encrypt when the schema declares the key a secret, OR when the legacy
+        name-pattern matches.
+
+        The union is deliberate, and it is NOT safe to drop either half:
+
+        * schema-only would silently downgrade to plaintext every credential
+          that is stored today but absent from the registry. Measured on the
+          live database: 8 such keys (etoro_token, openrouter_api_key,
+          nvidia_api_key, fred_api_key, tiingo_api_key, vantage_api_key,
+          finnhub_api_key, notification_telegram_bot_token) — legacy or orphaned
+          rows that are still real credentials.
+
+        * regex-only is what we had, and it decides secrecy by guessing at the
+          key's name. `futu_pwd` is the counter-example: the pattern list has
+          "_pass", not "pwd", so that password was stored in plaintext. The
+          schema states it outright.
+
+        Reads are unaffected either way — decryption keys off the `ENC:` prefix,
+        not off this predicate.
+
+        取聯集是刻意的，兩邊都不能拿掉：只看 schema 會讓 8 個線上仍在使用、
+        但未列入註冊表的憑證變成明文；只看正則則是靠猜鍵名，futu_pwd 就因為
+        模式只有 "_pass" 而以明文儲存。讀取不受影響（解密依 ENC: 前綴判斷）。
+        """
+        try:
+            from src.config.settings_schema import is_secret_key
+
+            if is_secret_key(key):
+                return True
+        except Exception as exc:  # schema unavailable — fall through to the regex
+            _logger.debug("settings schema unavailable for secret check: %s", exc)
+
         return any(pattern in key.lower() for pattern in self.sensitive_patterns)
 
     def _encrypt(self, value: Any) -> str:
@@ -163,15 +196,13 @@ class AlchemySettingsRepository(BaseRepository, ISettingsRepository):
 
     def _resolve_user(self, user_id: str) -> str:
         """
-        v4.3.0: Enforce mandatory user isolation.
-        No more 'system' fallback. All settings must belong to a real user UUID.
+        Single-owner resolution. An explicit user UUID is honoured unchanged;
+        the "no identity supplied" sentinels ('system', None, '') resolve to
+        the deployment's owner instead of raising.
+
+        單機版：明確帶入的 UUID 原樣使用；未指定者解析成擁有者。
         """
-        if user_id in ('system', 'SYSTEM', 'None', '', None):
-             # 🚨 CRITICAL: In a strictly isolated system, passing 'system' is an error.
-             # We throw an error to force developer to fix the caller logic.
-             raise ValueError(f"Global 'system' user is retired. Settings must be assigned to a real User UUID. Received: {user_id}")
-        
-        return user_id
+        return resolve_user_id(user_id)
 
     def get(self, user_id: str, key: str, default: Any = None) -> Any:
         """
@@ -188,8 +219,8 @@ class AlchemySettingsRepository(BaseRepository, ISettingsRepository):
                 return self._decrypt(raw_value)
             return raw_value
         except Exception as e:
-            _logger.warning(f'Exception in settings_repository.py: {e}', exc_info=True)
-            _logger.exception(f"get() failed for user={resolved_uid!r} key={key!r}")
+            _logger.warning(f"Exception in settings_repository.py: {e}", exc_info=True)
+            _logger.exception(f"get() failed for user={resolved_uid!r}")
             return default
         finally:
             self.close_session()

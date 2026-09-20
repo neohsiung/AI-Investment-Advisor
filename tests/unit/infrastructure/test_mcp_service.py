@@ -79,21 +79,37 @@ def test_list_tools(client):
     assert "tools" in response.json()
     assert response.json()["count"] >= 2  # Built-in tools
 
-def test_register_tool(client):
-    """Test tool registration."""
-    tool_data = {
-        "name": "test_tool",
-        "description": "A test tool",
-        "parameters": {"param1": "string"}
-    }
-    response = client.post("/tools/register", json=tool_data)
-    assert response.status_code == 200
-    assert response.json()["tool"] == "test_tool"
-    
-    # Verify it's in the list
-    list_resp = client.get("/tools/list")
-    tool_names = [t["name"] for t in list_resp.json()["tools"]]
-    assert "test_tool" in tool_names
+def test_tool_registration_endpoint_is_gone(client):
+    """
+    `POST /tools/register` accepted any name into the dict that gates
+    `/tools/call/{name}`, but dispatch is a fixed if/elif chain — so a registered
+    tool passed the gate, matched nothing, and came back HTTP 200
+    {"status": "success", "result": "Tool implementation not found in dispatch
+    logic."}. Registering a tool made it *look* callable and never made it
+    callable. Tools are declared in config/tools.yaml now.
+    註冊端點已刪除：註冊後會通過閘門但匹配不到分派，回傳 200 success 夾帶錯誤字串。
+    """
+    response = client.post("/tools/register", json={
+        "name": "test_tool", "description": "A test tool", "parameters": {}
+    })
+    assert response.status_code in (404, 405)
+
+
+def test_a_registered_tool_without_a_dispatch_branch_fails_loudly(client):
+    """
+    The pattern the deleted endpoint created, reproduced directly: a name present
+    in `registered_tools` with no implementation must not return success.
+    直接重現該端點造成的情境：registered_tools 內有名稱但無實作，不得回報成功。
+    """
+    from services.mcp_server.src.app import registered_tools
+
+    registered_tools["ghost_tool"] = {"name": "ghost_tool", "description": "", "parameters": {}}
+    try:
+        response = client.post("/tools/call/ghost_tool", json={"arguments": {}})
+        assert response.status_code == 501, response.text
+        assert "not implemented" in response.json()["detail"]
+    finally:
+        registered_tools.pop("ghost_tool", None)
 
 def test_call_tool(client):
     """Test calling a tool."""

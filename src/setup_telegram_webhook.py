@@ -13,15 +13,13 @@ async def setup_webhook(public_url: str, user_id: str = None):
     """
     Sets the Telegram bot webhook to the public URL.
     """
-    if not user_id:
-        # Find first user with telegram enabled
-        from src.repositories.user_repository import AlchemyUserRepository
-        user_repo = AlchemyUserRepository()
-        users = user_repo.get_all_active_users()
-        if not users:
-            print("❌ Error: No active users found in database.")
-            return False
-        user_id = users[0]
+    from src.config.owner import OwnerNotResolved, resolve_user_id
+
+    try:
+        user_id = resolve_user_id(user_id)
+    except OwnerNotResolved as exc:
+        print(f"❌ Error: {exc}")
+        return False
 
     ss = SettingsService(user_id=user_id)
     bot_token = ss.get_setting("channel_telegram_bot_token")

@@ -23,25 +23,42 @@ from src.repositories.llm_agent_override_repository import LLMAgentOverrideRepos
 from src.repositories.llm_model_repository import LLMModelRepository
 from src.repositories.llm_provider_repository import LLMProviderRepository
 from src.services.llm_settings_errors import ModelNotFound
+from src.config.owner import resolve_user_id
 
 logger = logging.getLogger(__name__)
 
 # ──────────────────────────────────────────────────────────────────────
 # Known agent names (for UI autocomplete / validation)
 # ──────────────────────────────────────────────────────────────────────
-KNOWN_AGENT_NAMES: List[str] = [
-    "cio",
-    "fundamental",
-    "macro",
-    "momentum",
-    "sentiment",
-    "thematic",
-    "risk",
-    "sentinel",
-    "engineer",
-    "conversation",
-    "skill_router",
-]
+def known_agent_names() -> List[str]:
+    """
+    Agent identifiers the per-agent model override UI offers.
+
+    This was a hardcoded list of eleven strings, which meant a newly added agent
+    could not be given a model override until someone remembered to append to it —
+    the override would be rejected as an unknown agent. It now derives from
+    config/agents/*.md, so declaring an agent is enough.
+
+    `skill_router` is appended because it takes overrides but is not an agent
+    manifest: it is the intent router in src/agents/skill_router.py.
+
+    原本是十一個字串的硬編清單：新增代理後無法設定模型覆寫，直到有人記得補這份
+    清單。現由 config/agents/*.md 推導。skill_router 另外附加——它會接受覆寫，
+    但並非代理 manifest，而是意圖路由器。
+    """
+    try:
+        from src.agents.registry import load_manifests
+
+        ids = sorted(m.id for m in load_manifests().values() if m.enabled)
+    except Exception:  # registry unavailable — do not break override validation
+        ids = []
+    return ids + ["skill_router"]
+
+
+# Backwards-compatible module-level view. Evaluated at import time, so prefer
+# known_agent_names() where freshness matters.
+# 為相容保留的模組層變數（import 時求值）；需要即時性請用 known_agent_names()。
+KNOWN_AGENT_NAMES: List[str] = known_agent_names()
 
 VALID_TIERS = ["nano", "fast", "smart", "advanced"]
 
@@ -109,7 +126,7 @@ class LLMAgentOverrideService:
     """
 
     def __init__(self, user_id: str, db_session=None):
-        self.user_id = user_id
+        self.user_id = resolve_user_id(user_id)
         self._override_repo = LLMAgentOverrideRepository(db_session=db_session)
         self._model_repo = LLMModelRepository()
         self._provider_repo = LLMProviderRepository()

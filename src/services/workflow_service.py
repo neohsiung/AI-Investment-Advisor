@@ -35,6 +35,7 @@ from src.services.memory_service import MemoryService
 from src.repositories.memory_repository import AlchemyMemoryRepository
 from src.infrastructure.agent_llm_provider import AgentLLMProvider
 from src.utils.format_utils import format_agent_output
+from src.config.owner import resolve_user_id
 
 class BaseWorkflow(ABC):
     """
@@ -49,7 +50,7 @@ class BaseWorkflow(ABC):
         Initialize the base workflow.
         初始化基底工作流。
         """
-        self.user_id = user_id
+        self.user_id = resolve_user_id(user_id)
         
         # Dependency Injection
         self.transaction_repo = transaction_repo or AlchemyTransactionRepository()
@@ -936,7 +937,10 @@ class WeeklyWorkflow(BaseWorkflow):
                 logger.info(f"--- Executing Task: {task.name} ---")
                 
                 # 2.1 Agent Selection
-                agent_info = self._select_agent_for_task(task.name, user_id, tier=task.model_tier)
+                agent_info = self._select_agent_for_task(
+                    task.name, user_id, tier=task.model_tier,
+                    agent=getattr(task, "agent", None),
+                )
                 # 2.2 Input Prep
                 agent_input = self._bridge_input_context(task, execution_context)
                 
@@ -1094,11 +1098,30 @@ class WeeklyWorkflow(BaseWorkflow):
             logger.warning(f'Exception in workflow_service.py: {e}', exc_info=True)
             return "無法取得基礎主題數據。"
 
-    def _select_agent_for_task(self, task_name: str, user_id: str, tier: str = "smart"):
+    def _select_agent_for_task(self, task_name: str, user_id: str, tier: str = "smart",
+                               agent: str = None):
         """
-        PAD Phase 2: Map Task Name to agent names for _call_agent_llm
-        Returns a tuple (agent_name, tier) instead of agent instances
+        Resolve which agent executes a task.
+
+        An explicit `agent` (stated per task in config/workflows/weekly_plan.yaml)
+        always wins. Everything below it is a NAME-MATCHING FALLBACK, and it is
+        only still here because `_create_dynamic_plan()` asks an LLM to invent
+        tasks, and those arrive with no agent assigned — deleting the chain would
+        send every dynamically planned task to the default.
+
+        Why the fallback is a poor mechanism, which is why plan files no longer
+        rely on it: it matches substrings of the task NAME, so renaming a task for
+        readability could silently hand it to a different agent. Renaming
+        "Market Cycle Analysis" to "Cycle Review" would move it off Macro without
+        any other visible change.
+
+        明確指定的 agent 優先。以下的名稱比對僅為後備：_create_dynamic_plan() 由
+        LLM 產生任務、不帶 agent，若刪除會全數落到預設值。此機制以任務「名稱」
+        子字串比對，為了可讀性改名就可能靜默換掉執行代理，故計畫檔不再依賴它。
         """
+        if agent:
+            return (agent, tier)
+
         name_lower = task_name.lower()
         if "market cycle" in name_lower or "macro" in name_lower:
             return ("Macro", tier)
@@ -1424,7 +1447,7 @@ class WorkflowService:
     投資工作流協調服務。
     """
     def __init__(self, user_id: str):
-        self.user_id = user_id
+        self.user_id = resolve_user_id(user_id)
         self.logger = setup_logger("WorkflowService")
 
     async def trigger_capital_deployment_workflow(self, analysis_result: str):

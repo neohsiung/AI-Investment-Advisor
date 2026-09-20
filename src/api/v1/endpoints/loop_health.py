@@ -8,7 +8,7 @@ from typing import Any, Dict
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import text
 
-from src.api.v1.router import get_current_user_id
+from src.api.v1.dependencies import get_current_user_id
 from src.data.database import get_db_engine
 from src.utils.logger import setup_logger
 

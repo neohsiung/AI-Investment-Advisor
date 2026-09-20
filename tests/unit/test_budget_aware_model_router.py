@@ -55,10 +55,29 @@ def test_router_hard_limit_downgrade(router, mock_logger):
     
     assert "gemini-2.5-flash" in config.model
 
-def test_router_uninitialized_user(mock_settings, mock_logger):
+def test_router_uninitialized_user(mock_settings, mock_logger, monkeypatch):
+    """
+    An unset user_id resolves to the owner instead of raising.
+
+    The old ValueError existed to force callers to thread a tenant through. On
+    a single-owner box that check only produced crashes on the LLM path for
+    internal callers that legitimately had no user context.
+    未指定 user_id 改為解析成擁有者；舊的 ValueError 只會讓內部呼叫端在
+    LLM 路徑上炸掉。
+    """
+    from src.config.owner import reset_owner_cache
+
+    owner = "00000000-0000-4000-a000-000000000001"
+    monkeypatch.setenv("OWNER_ID", owner)
+    reset_owner_cache()
+
     mock_settings.user_id = None
     router = BudgetAwareModelRouter(mock_settings, mock_logger)
 
-    # Strict mode: uninitialized user_id must raise ValueError
-    with pytest.raises(ValueError, match="requires user_id"):
+    # Resolution happens; whatever fails afterwards must not be about identity.
+    try:
         router.get_config("nano")
+    except ValueError as exc:
+        assert "requires user_id" not in str(exc), exc
+
+    reset_owner_cache()

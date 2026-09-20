@@ -1,0 +1,136 @@
+# Market data providers.
+#
+# Before this file, provider wiring was spread across four places in
+# market_data_service.py and one more in the frontend:
+#
+#   * eight `self.x = XProvider(...)` lines followed by `self.x.id = "x"` —
+#     the id assigned imperatively AFTER construction, so a provider's identity
+#     lived outside the provider;
+#   * FOUR independent priority lists (quote, history, news, fundamentals),
+#     each a hand-ordered Python list of those attributes;
+#   * `EQUITY_ONLY_PROVIDER_IDS` as a frozenset constant;
+#   * the same provider list declared a THIRD time in settings/page.tsx (removed
+#     in M4 when the settings form became schema-driven) and a fourth time in
+#     src/config/data_source_matrix_config.py.
+#
+# Reordering which provider is tried first for news therefore meant editing
+# Python, and the four lists could — and did — disagree about which providers
+# exist at all.
+#
+# `priority` is per capability, lower first. A provider is only tried for a
+# capability it declares.
+#
+# There are SIX capabilities, not four. Beyond quote/history/news/fundamentals,
+# market_data_service also had a separate hand-ordered chain for BATCH price
+# fetches (which included financialdata, a provider absent from all four other
+# lists) and another for the INDICATORS base series (polygon then yahoo only).
+# Six independently-maintained orderings over one population.
+#
+# 共有六個 capability 而非四個：除了 quote/history/news/fundamentals，
+# 批次報價與技術指標基礎序列各自還有一份手排清單（批次那份包含 financialdata，
+# 而它不在其他四份清單中）。同一群供應商，六份獨立維護的順序。
+#
+# 原本供應商接線散在 market_data_service.py 的四處加前端一處：八行手動建構後再
+# 補指派 .id、四份各自手排的優先序清單、一個 frozenset 常數，以及另外兩份重複宣告。
+# 調整新聞來源的嘗試順序都得改 Python，而那四份清單對「有哪些供應商」意見不一。
+
+version: 1
+
+providers:
+  - id: polygon
+    class: src.data.providers.polygon_provider.PolygonProvider
+    label: Polygon
+    # Equities only — never route an index symbol here.
+    # 僅涵蓋個股，指數符號不得路由至此。
+    asset_classes: [equity]
+    enabled_setting: source_polygon_enabled
+    credentials: [source_polygon_api_key]
+    capabilities:
+      quote: 10
+      quote_batch: 10
+      history: 10
+      indicators: 10
+      news: 60
+      fundamentals: 50
+
+  - id: tiingo
+    class: src.data.providers.tiingo_provider.TiingoProvider
+    label: Tiingo
+    asset_classes: [equity]
+    enabled_setting: source_tiingo_enabled
+    credentials: [source_tiingo_api_key]
+    capabilities:
+      quote: 20
+      quote_batch: 20
+      history: 20
+      news: 10
+
+  - id: finnhub
+    class: src.data.providers.finnhub_provider.FinnhubProvider
+    label: Finnhub
+    needs_user_id: true
+    enabled_setting: source_finnhub_enabled
+    credentials: [source_finnhub_api_key, source_finnhub_webhook_secret]
+    capabilities:
+      quote: 30
+      news: 20
+      fundamentals: 40
+
+  - id: fmp
+    class: src.data.providers.fmp_provider.FMPProvider
+    label: Financial Modeling Prep
+    enabled_setting: source_fmp_enabled
+    credentials: [source_fmp_api_key]
+    capabilities:
+      quote: 40
+      quote_batch: 30
+      history: 30
+      news: 40
+      fundamentals: 20
+
+  - id: alpha_vantage
+    class: src.data.providers.alpha_vantage_provider.AlphaVantageProvider
+    label: Alpha Vantage
+    needs_user_id: true
+    enabled_setting: source_alpha_vantage_enabled
+    credentials: [source_alpha_vantage_api_key]
+    capabilities:
+      quote: 50
+      news: 30
+      fundamentals: 30
+
+  - id: yahoo_finance
+    class: src.data.providers.yfinance_provider.YFinanceProvider
+    label: Yahoo Finance
+    enabled_setting: source_yfinance_enabled
+    capabilities:
+      quote: 60
+      quote_batch: 50
+      history: 40
+      indicators: 20
+      news: 50
+      fundamentals: 10
+
+  # FRED is queried directly for macro series and appears in no priority chain, so
+  # it declares no capabilities. Listing it anyway makes its credential visible to
+  # the settings UI.
+  # FRED 供總經序列直接查詢、不在任何優先序鏈中，故不宣告 capability；
+  # 仍列出以便設定 UI 看見其憑證。
+  - id: fred
+    class: src.data.providers.fred_provider.FredProvider
+    label: FRED (macro)
+    needs_user_id: true
+    credentials: [source_fred_api_key]
+    capabilities: {}
+
+  # Appears ONLY in the batch-quote chain. An earlier draft of this manifest gave
+  # it no capabilities, which would have silently dropped it from batch price
+  # fetches — exactly the failure mode that having six separate lists caused.
+  # 僅出現在批次報價鏈中。本 manifest 的初稿未給它任何 capability，
+  # 會讓它從批次報價中靜默消失——正是「六份獨立清單」所導致的失效模式。
+  - id: financialdata
+    class: src.data.providers.financialdata_provider.FinancialDataProvider
+    label: FinancialData
+    credentials: [source_financialdata_api_key]
+    capabilities:
+      quote_batch: 40

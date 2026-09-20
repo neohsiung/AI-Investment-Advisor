@@ -1,0 +1,72 @@
+# Agent tools — one declaration, one surface.
+#
+# Before this file there were four tool surfaces and only one of them worked:
+#
+#   1. `McpServer` on every agent (`base_agent.py`, `self.toold`) — the real one.
+#      It auto-generates JSON schema from type hints and handles sync/async.
+#   2. `POST /tools/register` on the HTTP app — wrote the name into a dict that
+#      gated `POST /tools/call/{name}`, but dispatch was a hardcoded if/elif
+#      chain. A registered name therefore passed the 404 gate, fell through the
+#      chain to `else`, and came back as HTTP 200 `{"status": "success",
+#      "result": "Tool implementation not found in dispatch logic."}` — a
+#      fail-silent success envelope. Deleted.
+#   3. `src/tools/llama_index_tools.py` — four well-built RAG tools whose
+#      `register()` was never called by anything, while `/tools/call`
+#      reimplemented the same four inline. Now registered from here.
+#   4. `external_mcp_servers`, a JSON blob in the settings table, read by
+#      `conversation_agent` alone — so external MCP tools reached exactly one
+#      agent. Now declared below and available to all of them.
+#
+# 四個工具介面只有一個能用：agent 的 McpServer 是真的；HTTP /tools/register 註冊後
+# 會以 200 success 回傳「找不到實作」字串（靜默失敗，已刪除）；llama_index_tools 的
+# register() 從未被呼叫；external_mcp_servers 只有 conversation_agent 讀得到。
+
+version: 1
+
+# Tools registered into every agent's McpServer at construction.
+#
+# `method:` is a bound method on the agent (it needs `self`).
+# `func:` is a module-level callable, resolved by dotted path.
+# `bundle:` is a class with `register(mcp_server)`, constructed with `user_id`.
+#
+# `agents:` restricts a tool to named agents; omit or use ["*"] for all.
+builtin:
+  # run_script spawns a subprocess. It was previously registered unconditionally
+  # for every agent, with no way to turn it off; declaring it here makes that
+  # reviewable and disableable without editing Python.
+  # run_script 會啟動子行程，原本對所有 agent 無條件註冊且無法關閉；
+  # 移到此處後可審閱、可停用，無須改 Python。
+  - name: run_script
+    method: run_script
+    category: system
+    enabled: true
+    agents: ["*"]
+    description: >-
+      Execute a local python script (cli.py) from a skill directory. Use this to
+      perform data retrieval or analysis tasks.
+
+  # These four exist in src/tools/llama_index_tools.py and were reachable from
+  # no agent at all — `LlamaIndexTools.register()` had zero callers.
+  # 這四個工具存在於 llama_index_tools.py，但 register() 從未被呼叫，沒有任何 agent 用得到。
+  - name: llama_index_rag
+    bundle: src.tools.llama_index_tools.LlamaIndexTools
+    category: rag
+    enabled: true
+    agents: ["*"]
+    description: Semantic search and ingestion over financial reports and news (LlamaIndex + pgvector).
+
+# External MCP servers. Tools they expose are namespaced so a remote server
+# cannot shadow a local tool name.
+#
+# `enabled_setting` gates the whole feature from the settings UI; a server also
+# has to be `enabled: true` here. Both must agree, so a forgotten YAML entry
+# cannot quietly start making outbound calls.
+# enabled_setting 由設定 UI 控制整體開關，個別伺服器另需 enabled: true；
+# 兩者都要成立，忘記移除的條目不會靜默開始對外連線。
+external_mcp:
+  enabled_setting: external_mcp_enabled
+  namespace_prefix: "ext_"
+  servers: []
+    # - url: http://127.0.0.1:9000/sse
+    #   enabled: false
+    #   label: Example MCP server

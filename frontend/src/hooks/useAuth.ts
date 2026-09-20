@@ -1,51 +1,38 @@
-import useSWR from "swr";
-import api, { fetcher } from "@/lib/api";
-import { useRouter } from "next/navigation";
-import { useEffect } from "react";
+/**
+ * Single-operator identity.
+ *
+ * There is no login. The backend resolves the owner itself
+ * (src/config/owner.py) and the API is published on loopback only, so the
+ * browser has nothing to authenticate with and nothing to store.
+ *
+ * This hook is kept — rather than deleted — because six components consume
+ * `{ user, isAuthenticated, isLoading, logout }`. Returning a settled,
+ * always-authenticated value lets them all keep working untouched, and means
+ * `useRequireAuth()` no longer bounces to a /auth/login page that no longer
+ * exists.
+ *
+ * 單人部署沒有登入流程；此 hook 保留固定回傳值，讓既有六個消費端不需改動，
+ * useRequireAuth 也不再導向已刪除的登入頁。
+ */
+
+const OWNER = {
+  user_id: "owner",
+  is_authenticated: true as const,
+};
 
 export function useAuth() {
-  const router = useRouter();
-  
-  const { data, error, mutate, isLoading } = useSWR("/api/v1/auth/me", fetcher, {
-    shouldRetryOnError: false,
-    revalidateOnFocus: false,
-  });
-
-  const isAuthenticated = !!data?.data?.is_authenticated;
-  const user = data?.data;
-
-  const logout = async () => {
-    try {
-      await api.post("/api/auth/logout");
-      mutate(undefined, false);
-      router.push("/auth/login");
-    } catch (e) {
-      console.error("Logout failed", e);
-    }
-  };
-
   return {
-    user,
-    isAuthenticated,
-    isLoading,
-    error,
-    logout,
-    mutate,
+    user: OWNER,
+    isAuthenticated: true,
+    isLoading: false,
+    error: undefined as unknown,
+    logout: async () => {
+      /* no session to end in a single-operator deployment */
+    },
+    mutate: async () => undefined,
   };
 }
 
-/**
- * 中間件：強制防護頁面
- */
 export function useRequireAuth() {
-  const { isAuthenticated, isLoading } = useAuth();
-  const router = useRouter();
-
-  useEffect(() => {
-    if (!isLoading && !isAuthenticated) {
-      router.push("/auth/login");
-    }
-  }, [isLoading, isAuthenticated, router]);
-
-  return { isAuthenticated, isLoading };
+  return { isAuthenticated: true, isLoading: false };
 }

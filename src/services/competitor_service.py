@@ -2,6 +2,7 @@ import typing
 from typing import List, Dict, Any, Optional
 from src.utils.logger import setup_logger
 from src.services.market_data_service import MarketDataService
+from src.config.owner import resolve_user_id
 
 logger = setup_logger("CompetitorService")
 
@@ -21,7 +22,7 @@ class CompetitorService:
     }
 
     def __init__(self, user_id: str = "default_user", market_service: Optional[MarketDataService] = None):
-        self.user_id = user_id
+        self.user_id = resolve_user_id(user_id)
         self.market_service = market_service or MarketDataService(user_id=user_id)
 
     def get_peer_group(self, leader_ticker: str) -> List[str]:

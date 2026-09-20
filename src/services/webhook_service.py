@@ -14,6 +14,7 @@ logger = setup_logger("WebhookService")
 
 webhook_router = APIRouter(tags=["Webhook"])
 from src.services.sentinel_service import SentinelService
+from src.config.owner import resolve_user_id
 
 # Services instance from mcp_service to be injected or accessed
 # We will use a dependency or global reference. To avoid circular imports,
@@ -310,6 +311,40 @@ class WebhookService:
             logger.error(f"Webhook error: {e}")
             raise HTTPException(status_code=400, detail="Invalid payload")
 
+    async def ingest_event(self, user_id: str, source: str, payload: Dict[str, Any]) -> Dict[str, str]:
+        """
+        The same dedup -> lock -> EventAnalysisWorkflow path as
+        handle_generic_webhook, but driven by an in-process caller instead of an
+        HTTP request.
+
+        This exists so the scheduled RSS/podcast ingestion can reuse the exact
+        parsing and deduplication rules the webhook path uses. The alternative —
+        having a Celery task POST to our own /webhook endpoint — is what the n8n
+        workflow did: two extra HTTP hops and a second copy of the dedup logic
+        that could drift from this one.
+
+        提供給排程任務直接呼叫，共用 webhook 的解析與去重規則；
+        原本 n8n 的做法是繞兩趟 HTTP 回打自己的端點。
+        """
+        parser = SOURCE_PARSERS.get(source.lower(), BaseSourceParser)
+        normalized_data = parser.parse(payload)
+
+        url = normalized_data.get("url")
+        signal_id = normalized_data.get("signal_id")
+        if self._is_duplicate(user_id, url=url, signal_id=signal_id):
+            return {"status": "skipped", "reason": "duplicate", "url": url or ""}
+        if not self._acquire_concurrency_lock(user_id, url=url, signal_id=signal_id):
+            return {"status": "skipped", "reason": "concurrent_lock", "url": url or ""}
+
+        from src.services.workflow_service import EventAnalysisWorkflow
+
+        await EventAnalysisWorkflow(
+            user_id=user_id,
+            event_source=source,
+            event_data=normalized_data,
+        ).run()
+        return {"status": "accepted", "user_id": user_id, "source": source}
+
     async def handle_finnhub_webhook(self, request: Request) -> Dict[str, str]:
         """
         Finnhub Webhook Handler with Secret Verification.
@@ -321,10 +356,7 @@ class WebhookService:
         # Look up secret from DB settings (admin user), fallback to env var
         expected_secret = ""
         try:
-            admin_user_id = os.getenv("DEFAULT_FINNHUB_USER_ID")
-            if not admin_user_id:
-                from src.repositories.user_repository import AlchemyUserRepository
-                admin_user_id = AlchemyUserRepository().get_first_user_id()
+            admin_user_id = resolve_user_id(os.getenv("DEFAULT_FINNHUB_USER_ID"))
             from src.services.settings_service import SettingsService
             svc = SettingsService(user_id=admin_user_id)
             expected_secret = svc.get_setting("source_finnhub_webhook_secret", "")
@@ -347,10 +379,7 @@ class WebhookService:
             normalized = FinnhubParser.parse(payload)
             
             # Resolve user (Finnhub doesn't provide user context in payload)
-            user_id = os.getenv("DEFAULT_FINNHUB_USER_ID")
-            if not user_id:
-                from src.repositories.user_repository import AlchemyUserRepository
-                user_id = AlchemyUserRepository().get_first_user_id()
+            user_id = resolve_user_id(os.getenv("DEFAULT_FINNHUB_USER_ID"))
             
             # Deduplication Check
             url = normalized.get("url")
@@ -379,99 +408,14 @@ class WebhookService:
             # Still return 200 to acknowledge
             return {"status": "acknowledged", "detail": "processing_error"}
 
-    async def handle_stripe_webhook(self, request: Request) -> Dict[str, Any]:
-        """
-        Stripe Webhook Handler (2026-07-12) — implements the product spec's
-        "checkout.session.completed 觸發 account_id 初始化流程" (Webhook-觸發
-        源整合指南 §14): on successful checkout, create/resolve the user
-        account, seed default settings (webhook_api_key, sentinel thresholds,
-        risk keywords), and send a welcome notification.
-
-        Verifies the `Stripe-Signature` header via the official SDK
-        (stripe.Webhook.construct_event) — signature verification failures
-        return 400 (Stripe's own recommended practice), distinct from the
-        always-200 pattern used by best-effort sources like Finnhub.
-
-        `stripe_webhook_secret` is read from Settings (admin user) first,
-        falling back to the STRIPE_WEBHOOK_SECRET env var — same pattern as
-        Finnhub's source_finnhub_webhook_secret. Neither is hardcoded here;
-        until configured, this endpoint safely rejects all events (503).
-        """
-        try:
-            import stripe
-        except ImportError:
-            logger.error("Stripe webhook received but 'stripe' package is not installed")
-            raise HTTPException(status_code=503, detail="Stripe integration not available")
-
-        admin_user_id = os.getenv("DEFAULT_STRIPE_ADMIN_USER_ID")
-        if not admin_user_id:
-            from src.repositories.user_repository import AlchemyUserRepository
-            admin_user_id = AlchemyUserRepository().get_first_user_id()
-        endpoint_secret = ""
-        try:
-            svc = SettingsService(user_id=admin_user_id)
-            endpoint_secret = svc.get_setting("stripe_webhook_secret", "")
-        except Exception as e:
-            logger.warning(f'Exception in webhook_service.py: {e}', exc_info=True)
-        if not endpoint_secret:
-            endpoint_secret = os.getenv("STRIPE_WEBHOOK_SECRET", "")
-        if not endpoint_secret:
-            logger.warning("Stripe webhook rejected: stripe_webhook_secret not configured")
-            raise HTTPException(status_code=503, detail="Stripe webhook not configured")
-
-        raw_payload = await request.body()
-        sig_header = request.headers.get("Stripe-Signature", "")
-        try:
-            event = stripe.Webhook.construct_event(raw_payload, sig_header, endpoint_secret)
-        except (ValueError, stripe.error.SignatureVerificationError) as e:
-            logger.warning(f"Stripe webhook signature verification failed: {e}")
-            raise HTTPException(status_code=400, detail="Invalid signature")
-
-        if event.get("type") != "checkout.session.completed":
-            # Acknowledge other event types without processing — we only act on completed checkouts.
-            return {"status": "ignored", "event_type": event.get("type")}
-
-        try:
-            session = event["data"]["object"]
-            email = (
-                session.get("customer_details", {}).get("email")
-                or session.get("customer_email")
-            )
-            if not email:
-                logger.warning("Stripe checkout.session.completed missing customer email")
-                return {"status": "acknowledged", "detail": "no_email"}
-
-            from src.repositories.user_repository import AlchemyUserRepository
-            user_repo = AlchemyUserRepository()
-
-            existing = user_repo.get_by_identity("email", email)
-            if existing:
-                user_id = existing["id"]
-                logger.info(f"Stripe checkout: existing user resolved for {redact_secrets(email)}")
-            else:
-                user_id = user_repo.create_user(email=email, name=session.get("customer_details", {}).get("name"))
-                logger.info(f"Stripe checkout: created new user {user_id[:8]}... for {redact_secrets(email)}")
-
-            settings_svc = SettingsService(user_id=user_id)
-            settings_svc.initialize_user_settings(user_id)
-
-            try:
-                from src.services.notification_service import NotificationService
-                notif_svc = NotificationService.create_with_settings(settings_service=settings_svc, user_id=user_id)
-                asyncio.create_task(notif_svc.send_report(
-                    subject="🎉 歡迎加入 AI Investment Advisor",
-                    content="您的訂閱已啟用，帳戶已完成初始化。前往 Settings 設定您的投資偏好與券商連結即可開始使用。",
-                    user_id=user_id,
-                ))
-            except Exception as notif_err:
-                logger.warning(f"Stripe welcome notification failed (non-blocking): {notif_err}")
-
-            return {"status": "accepted", "user_id": user_id}
-        except Exception as e:
-            logger.error(f"Stripe webhook processing error: {e}")
-            # Acknowledge to prevent Stripe retry storms once signature is verified —
-            # a processing bug shouldn't cause repeated retries of the same event.
-            return {"status": "acknowledged", "detail": "processing_error"}
+    # handle_stripe_webhook() lived here: it verified a Stripe-Signature,
+    # then CREATED A USER ACCOUNT from the checkout email and sent a welcome
+    # notification. That is subscription-signup machinery for a product with
+    # exactly one operator — and it was the only remaining path that could mint
+    # a second user, which is precisely what the single-owner model must not
+    # allow. Removed along with the /stripe route.
+    # Stripe webhook 會依結帳 email 自動建立帳號，是單人部署下唯一還能產生
+    # 第二個使用者的路徑，連同 /stripe 路由一併移除。
 
 # Global instance for routing
 webhook_service_instance = WebhookService()
@@ -479,10 +423,6 @@ webhook_service_instance = WebhookService()
 @webhook_router.post("/finnhub")
 async def finnhub_webhook(request: Request):
     return await webhook_service_instance.handle_finnhub_webhook(request)
-
-@webhook_router.post("/stripe")
-async def stripe_webhook(request: Request):
-    return await webhook_service_instance.handle_stripe_webhook(request)
 
 @webhook_router.get("/rss-sources", tags=["RSS"])
 async def get_rss_sources_list(request: Request):

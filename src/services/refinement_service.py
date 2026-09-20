@@ -6,6 +6,7 @@ from src.agents.engineer import SystemEngineerAgent
 from src.services.performance_service import PerformanceService
 from src.services.notification_service import NotificationService
 from src.utils.logger import setup_logger
+from src.config.owner import resolve_user_id
 
 class RefinementService:
     """
@@ -18,7 +19,7 @@ class RefinementService:
         初始化進化服務。
         """
         self.logger = setup_logger("RefinementService")
-        self.user_id = user_id
+        self.user_id = resolve_user_id(user_id)
         self.perf_service = PerformanceService(user_id=self.user_id)
         self.engineer = SystemEngineerAgent(user_id=self.user_id)
         

@@ -5,6 +5,7 @@ from collections import Counter
 from src.services.etoro_service import EtoroService
 from src.services.market_data_service import MarketDataService
 from src.services.settings_service import SettingsService
+from src.config.owner import resolve_user_id
 
 logger = logging.getLogger(__name__)
 
@@ -20,7 +21,7 @@ class UserFocusService:
         """
         Initialize the UserFocusService with optional service overrides.
         """
-        self.user_id = user_id
+        self.user_id = resolve_user_id(user_id)
         self.settings_service = settings_service or SettingsService(user_id=user_id)
         self.etoro = etoro_service or EtoroService(user_id=user_id)
         self.market_data = market_data_service or MarketDataService(settings_service=self.settings_service)

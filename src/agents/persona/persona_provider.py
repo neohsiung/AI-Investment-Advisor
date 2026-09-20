@@ -134,30 +134,27 @@ class PersonaProvider:
         Parse a single .md persona file (YAML frontmatter + Markdown body).
         解析單一 .md 人格檔案（YAML frontmatter + Markdown body）。
         """
-        with open(file_path, "r", encoding="utf-8") as f:
-            content = f.read()
-
-        if not content.startswith("---"):
-            logger.warning(
-                f"PersonaProvider: Invalid format (missing frontmatter) in "
-                f"{file_path}"
-            )
-            return None
-
-        parts = content.split("---", 2)
-        if len(parts) < 3:
-            logger.warning(
-                f"PersonaProvider: Incomplete frontmatter in {file_path}"
-            )
-            return None
-
-        yaml_content = parts[1]
-        markdown_body = parts[2].strip()
+        # Shared with SkillLoader and the agent registry — see
+        # src/utils/frontmatter.py. Three copies of this split existed before.
+        # 與 SkillLoader、agent 註冊表共用同一解析器（原本有三份）。
+        from src.utils.frontmatter import FrontmatterError, parse_file
 
         try:
-            meta = yaml.safe_load(yaml_content) or {}
-        except yaml.YAMLError as e:
-            logger.error(f"PersonaProvider: YAML error in {file_path}: {e}")
+            doc = parse_file(file_path)
+        except FrontmatterError as e:
+            logger.warning(f"PersonaProvider: {e}")
+            return None
+        except OSError as e:
+            logger.error(f"PersonaProvider: cannot read {file_path}: {e}")
+            return None
+
+        meta = doc.meta
+        markdown_body = doc.body
+
+        if not meta:
+            logger.warning(
+                f"PersonaProvider: no frontmatter in {file_path}"
+            )
             return None
 
         name = meta.get("name")

@@ -9,7 +9,7 @@ argued its way there.
 from typing import Any, Dict
 
 from fastapi import APIRouter, Depends, HTTPException, Request
-from src.api.v1.router import get_current_user_id
+from src.api.v1.dependencies import get_current_user_id
 from src.repositories.vector_repository import AlchemyVectorRepository
 from src.utils.logger import setup_logger
 from src.utils.rate_limit import limiter

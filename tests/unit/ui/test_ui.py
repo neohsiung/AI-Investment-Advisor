@@ -44,19 +44,23 @@ class TestUI:
             mock_md.assert_called()
 
     def test_render_sidebar_structure(self, ui_module):
-        """Test sidebar rendering structure with hyper-minimalist preference bar."""
+        """
+        Sidebar still renders the profile link.
+
+        The `src.auth.auth_manager` patch and the two-column [profile | logout]
+        assertion are gone with the Streamlit login: there is no session to end,
+        so the logout button and the column split it required were removed.
+        登入已移除，登出按鈕與為它而存在的雙欄配置一併刪除。
+        """
         st_mock = sys.modules['streamlit']
         st_mock.session_state = MockSessionState({'theme': 'light'})
-        st_mock.columns.return_value = [MagicMock(), MagicMock()]
-        
+
         user = {'name': 'Test User', 'email': 'test@example.com', 'picture': 'pic.jpg'}
-        
-        with patch('src.auth.auth_manager') as mock_auth:
-            ui_module.render_sidebar(user)
-        
-        # Verify sidebar elements
+        ui_module.render_sidebar(user)
+
         st_mock.sidebar.__enter__.assert_called()
-        # Verify Profile/Settings link
-        st_mock.page_link.assert_any_call("pages/06_Settings.py", label="T. Test U...", icon=":material/account_circle:", help="User Settings", use_container_width=False)
-        # Verify columns allocation
-        st_mock.columns.assert_called_with([3.5, 1])
+        st_mock.page_link.assert_any_call(
+            "pages/06_Settings.py", label="T. Test U...",
+            icon=":material/account_circle:", help="User Settings",
+            use_container_width=False,
+        )

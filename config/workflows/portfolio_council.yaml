@@ -1,0 +1,128 @@
+# Portfolio analysis council.
+#
+# This graph was 120 lines of imperative `CodeNode(...)` / `AgentNode(...)`
+# construction inside PortfolioAnalysisDAG._build_nodes(). Tuning which tier an
+# agent ran at, or inserting a step, meant editing Python and redeploying.
+#
+# The execution layers are NOT declared here. DAGExecutor derives them from the
+# inputs/outputs below using Kahn's algorithm, so the dependency order cannot
+# drift out of step with the data flow — and a cycle or a duplicated output key
+# is rejected at load time rather than producing a silently wrong order.
+#
+# 本圖原為 PortfolioAnalysisDAG._build_nodes() 中 120 行命令式程式碼；
+# 調整某個 agent 的 tier 或插入步驟都得改 Python 並重新部署。
+# 執行層級不在此宣告：由 DAGExecutor 從 inputs/outputs 推導，
+# 因此相依順序不可能與資料流脫節，環與重複輸出鍵會在載入時就被拒絕。
+
+id: portfolio_council
+version: 1
+description: Full portfolio review — scouts, per-ticker map/reduce, CIO draft, risk challenge, final decision, verifier.
+
+# Supplied by the caller in the initial context, not produced by any node.
+inputs:
+  - portfolio
+  - topic
+
+nodes:
+  - name: FilterHoldings
+    type: code
+    ref: filter_holdings
+    inputs: [portfolio]
+    outputs: [filtered_portfolio]
+    ttl: 0            # trivial filter; caching it would cost more than it saves
+
+  - name: FetchMarketData
+    type: code
+    ref: fetch_market_data
+    inputs: [filtered_portfolio]
+    outputs: [portfolio_market_data]
+    ttl: 300          # 5 min — market data staleness tolerance
+
+  # The three scouts have identical inputs, so the executor places them in one
+  # layer and runs them concurrently. Nothing here says "parallel"; that falls
+  # out of the data flow.
+  # 三個 scout 輸入相同，executor 會自動放在同一層併行執行。
+  - name: MomentumScout
+    type: agent
+    agent: Momentum Scout
+    tier: fast
+    inputs: [filtered_portfolio, portfolio_market_data]
+    outputs: [momentum_scout_result]
+    ttl: 3600
+
+  - name: FundamentalScout
+    type: agent
+    agent: Fundamental Scout
+    tier: fast
+    inputs: [filtered_portfolio, portfolio_market_data]
+    outputs: [fundamental_scout_result]
+    ttl: 3600
+
+  - name: MacroScout
+    type: agent
+    agent: Macro Scout
+    tier: fast
+    inputs: [filtered_portfolio, portfolio_market_data]
+    outputs: [macro_scout_result]
+    ttl: 3600
+
+  - name: TickerMapAnalysis
+    type: code
+    ref: run_ticker_map_analysis
+    inputs: [filtered_portfolio, portfolio_market_data]
+    outputs: [map_results]
+    ttl: 0            # caches per-ticker internally; a node-level cache would double-store
+
+  - name: ReduceHoldings
+    type: code
+    ref: reduce_holdings
+    inputs: [map_results]
+    outputs: [aggregated_summary]
+    ttl: 0
+
+  - name: ReduceScouts
+    type: code
+    ref: reduce_scouts
+    inputs: [momentum_scout_result, fundamental_scout_result, macro_scout_result]
+    outputs: [scout_summary]
+    ttl: 0
+
+  - name: CIODraft
+    type: agent
+    agent: CIO
+    tier: smart
+    inputs: [topic, aggregated_summary, scout_summary, portfolio_market_data]
+    outputs: [draft_report]
+    ttl: 3600
+
+  # Adversarial step: Risk critiques the draft before it becomes final.
+  # 對抗步驟：Risk 先挑戰草案，再產生最終決策。
+  - name: RiskChallenge
+    type: agent
+    agent: Risk
+    tier: fast
+    inputs: [topic, draft_report, aggregated_summary]
+    outputs: [risk_challenge]
+    ttl: 3600
+
+  - name: CIOFinal
+    type: agent
+    agent: CIO
+    tier: smart
+    inputs:
+      - topic
+      - draft_report
+      - risk_challenge
+      - aggregated_summary
+      - scout_summary
+      - portfolio_market_data
+    outputs: [final_report]
+    ttl: 3600
+
+  - name: VerifierCheck
+    type: agent
+    agent: Verifier
+    tier: fast
+    inputs: [final_report, portfolio_market_data]
+    outputs: [verifier_note]
+    ttl: 3600

@@ -17,7 +17,7 @@ import logging
 import httpx
 import asyncio
 import typing
-from typing import List, Optional, AsyncGenerator
+from typing import Dict, List, Optional, AsyncGenerator
 
 from src.domain.interfaces import (
     ILLMGateway, Message, LLMConfig,
@@ -653,24 +653,38 @@ class LLMGatewayFactory:
     Factory for creating ILLMGateway instances based on provider name.
     """
 
-    _REGISTRY = {
-        "OpenRouter": OpenRouterGateway,
-        "openrouter": OpenRouterGateway,
-        "Google Gemini": GeminiGateway,
-        "google_gemini": GeminiGateway,
-        "gemini": GeminiGateway,
-        "OpenAI": OpenAIGateway,
-        "openai": OpenAIGateway,
-        "Ollama": OllamaGateway,
-        "ollama": OllamaGateway,
-        "Nvidia": NvidiaGateway,
-        "nvidia": NvidiaGateway,
-        "NVIDIA": NvidiaGateway,
-        "mock": MockLLMGateway,
-    }
+    # Populated from config/llm_providers.yaml on first use (M7-5).
+    #
+    # This was a literal dict of 13 spellings over 6 classes, maintained by hand
+    # alongside two other copies of the same list. It had no `groq` entry while
+    # settings_schema.yaml offered "Groq" in the AI_PROVIDER enum, so selecting
+    # the provider the UI advertised raised "Unsupported LLM provider: 'Groq'".
+    # 原本是手寫的 13 個拼法對應 6 個類別，與另外兩份副本並存；沒有 groq 條目，
+    # 但設定 UI 的 AI_PROVIDER 選單提供 "Groq"，選了就拋錯。
+    _REGISTRY: Dict[str, type] = {}
+    _registry_loaded = False
+
+    @classmethod
+    def _ensure_loaded(cls) -> None:
+        if cls._registry_loaded:
+            return
+        # Set before loading so a failing catalog does not re-import on every call.
+        # 先設旗標，避免載入失敗時每次呼叫都重試匯入。
+        cls._registry_loaded = True
+        try:
+            from src.infrastructure.llm.provider_catalog import get_provider_catalog
+
+            cls._REGISTRY.update(get_provider_catalog().gateway_map())
+        except Exception as exc:
+            logger.error(f"LLMGatewayFactory: could not load provider catalog: {exc}")
+        # `mock` is a test double, not a provider anyone should be able to select
+        # from the UI, so it stays in code rather than in the catalog YAML.
+        # mock 是測試替身，不該出現在 UI 可選清單中，故留在程式碼而非 YAML。
+        cls._REGISTRY.setdefault("mock", MockLLMGateway)
 
     @classmethod
     def create(cls, provider: str) -> ILLMGateway:
+        cls._ensure_loaded()
         gateway_cls = cls._REGISTRY.get(provider)
         if gateway_cls is None:
             supported_names = sorted(list(cls._REGISTRY.keys()))
@@ -682,6 +696,14 @@ class LLMGatewayFactory:
 
     @classmethod
     def register(cls, provider_name: str, gateway_cls: type) -> None:
+        """
+        Register or override a gateway at runtime.
+
+        Loads the catalog first so an explicit registration lands on top of the
+        YAML-derived entries rather than being overwritten by a later lazy load.
+        先載入目錄，讓明確註冊覆蓋 YAML 來源的條目，而不會被之後的延遲載入蓋掉。
+        """
+        cls._ensure_loaded()
         cls._REGISTRY[provider_name] = gateway_cls
 
 
@@ -761,33 +783,21 @@ class LoggingLLMGateway(ILLMGateway):
             span.set_attribute("llm.model", config.model)
             span.set_attribute("agent.name", self._agent_name)
             
-            # T16.3: SaaS Quota and Tier Access Enforcement [Phase 16]
+            # Subscription quota / tier-access enforcement used to sit here and
+            # could raise QuotaExceededError or TierAccessDeniedError on this,
+            # the hot path of every single LLM call. A single-operator install
+            # has no plans to enforce, and the failure mode was badly placed:
+            # a stray `subscription_plans` row capped the owner at nano/fast and
+            # surfaced as an LLM error, not as anything resembling billing.
+            #
+            # `is_tier_fallback` survives — it is read three times below to
+            # decide cache writes and rate-limit downgrades. It is now only ever
+            # set by the rate-limit path, never by a billing decision.
+            #
+            # 配額檢查原本掛在每次 LLM 呼叫的熱路徑上；單人部署沒有方案可強制，
+            # 且失敗會偽裝成 LLM 錯誤。is_tier_fallback 保留，改由限流路徑設定。
             is_tier_fallback = False
-            try:
-                from src.services.billing_service import BillingService, TierAccessDeniedError
-                billing = BillingService(user_id=self._user_id)
-                try:
-                    billing.check_quota(requested_tier=self._tier)
-                except TierAccessDeniedError as e:
-                    # v20.1: Automatic Downgrade on Tier Denial [Phase 20]
-                    if self._tier in ('smart', 'advanced'):
-                        logger.warning(f"LLM Gateway: Agent '{self._agent_name}' tier '{self._tier}' denied. Falling back to 'fast'.")
-                        is_tier_fallback = True
-                        from src.infrastructure.llm.tier_config import TierConfig
-                        fallback_model = TierConfig().resolve('fast')
-                        
-                        import dataclasses
-                        config = dataclasses.replace(config, model=fallback_model)
-                        
-                        # Re-verify quota for fast tier
-                        billing.check_quota(requested_tier='fast')
-                    else:
-                        raise e
-            except Exception as e:
-                # If QuotaExceeded or TierAccessDenied (after fallback attempt), we re-raise
-                logger.error(f"LLM Gateway: Request blocked by billing policy: {e}")
-                raise e
-            
+
             # T13.1: Semantic Cache lookup
             content = None # Initialize to avoid UnboundLocalError
             try:

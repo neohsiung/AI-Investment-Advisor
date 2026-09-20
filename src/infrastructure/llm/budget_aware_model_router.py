@@ -17,6 +17,7 @@ import logging
 from typing import Any, Dict, List, Optional
 from src.domain.interfaces import LLMConfig
 from src.infrastructure.llm.tier_config import TierConfig
+from src.config.owner import resolve_user_id
 
 logger = logging.getLogger(__name__)
 
@@ -105,8 +106,7 @@ class BudgetAwareModelRouter:
         [LEGACY PATH] Strictly fails if no DB setting found.
         Prefer get_config_chain() which reads llm_tier_bindings instead.
         """
-        if not user_id:
-            raise ValueError(f"Router._build_config requires user_id. Tier={tier_name}")
+        user_id = resolve_user_id(user_id)
 
         # Fetch DB settings
         db_settings = self.settings.get_all_settings(user_id)

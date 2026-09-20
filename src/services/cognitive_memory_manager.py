@@ -1,3 +1,4 @@
+import uuid
 import os
 import re
 import json
@@ -8,6 +9,7 @@ from datetime import datetime, timedelta
 
 from src.data.database import BaseRepository, get_db_engine
 from sqlalchemy import text
+from src.config.owner import resolve_user_id
 
 logger = logging.getLogger("CognitiveMemoryManager")
 
@@ -42,7 +44,7 @@ class CognitiveMemoryManager:
         else:
             safe_user_id = "".join(chr(ord(c)) for c in cleaned)
 
-        self.user_id = user_id
+        self.user_id = resolve_user_id(user_id)
         self.engine = get_db_engine()
 
         def _safe_path(sub: str) -> Path:
@@ -88,13 +90,29 @@ class CognitiveMemoryManager:
         Stores a distilled insight. Falls back to local JSON if DB is offline.
         """
         if self._db_available:
+            # `id` must be supplied: cognitive_memories.id is NOT NULL with no
+            # server default (its ORM model uses a Python-side uuid4 default,
+            # which raw SQL bypasses). Omitting it made every insert raise
+            # IntegrityError, get caught below, flip `_db_available` to False
+            # and divert the write to a local JSON file — silently, for the
+            # lifetime of the process.
+            #
+            # This never worked in production: `cognitive_memories` held 0 rows
+            # and max(created_at) was NULL. Tests did not catch it because the
+            # old hand-written DDL declared `id TEXT PRIMARY KEY`, and SQLite
+            # alone permits NULL in that legacy shape.
+            #
+            # id 為 NOT NULL 且無 server default（ORM 用 Python 端 uuid4，
+            # raw SQL 繞過了它）。缺 id 會讓每次寫入失敗並靜默改寫本機檔案；
+            # 生產環境該表始終是 0 筆。SQLite 的舊行為讓測試看不出來。
             sql = """
-            INSERT INTO cognitive_memories (user_id, agent_name, memory_type, content, importance, source_id)
-            VALUES (:user_id, :agent_name, :memory_type, :content, :importance, :source_id)
+            INSERT INTO cognitive_memories (id, user_id, agent_name, memory_type, content, importance, source_id)
+            VALUES (:id, :user_id, :agent_name, :memory_type, :content, :importance, :source_id)
             """
             try:
                 with self.engine.begin() as conn:
                     conn.execute(text(sql), {
+                        "id": str(uuid.uuid4()),
                         "user_id": self.user_id,
                         "agent_name": agent_name,
                         "memory_type": memory_type,

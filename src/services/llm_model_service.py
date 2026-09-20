@@ -38,6 +38,7 @@ from src.services.llm_settings_errors import (
     ProviderNotFound,
 )
 from src.services.llm_usages_service import LLMUsagesService
+from src.config.owner import resolve_user_id
 
 
 logger = logging.getLogger(__name__)
@@ -81,7 +82,7 @@ class LLMModelService:
         cipher: Optional[LLMCredentialCipher] = None,
         usages_service: Optional[LLMUsagesService] = None,
     ):
-        self.user_id = user_id
+        self.user_id = resolve_user_id(user_id)
         self.provider_repo = provider_repo or LLMProviderRepository()
         self.model_repo = model_repo or LLMModelRepository()
         self.catalog = catalog or get_provider_catalog()

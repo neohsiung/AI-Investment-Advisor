@@ -27,6 +27,7 @@ from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional, Tuple
 
 from sqlalchemy import text
+from src.config.owner import resolve_user_id
 
 logger = logging.getLogger(__name__)
 
@@ -68,6 +69,16 @@ DISPATCHER_CHILD_TASKS: Dict[str, str] = {
     "dispatch_event_digest": "send_event_digest",
     "dispatch_daily_report": "generate_daily_report",
     "dispatch_weekly_report": "generate_weekly_report",
+    # Ingestion that used to run in n8n. Registered here so the divergence
+    # monitor treats them like every other dispatcher: an n8n workflow failing
+    # silently was invisible to this system, which is part of why moving these
+    # in-process is an improvement rather than just a container saved.
+    # 原本在 n8n 的攝取排程；n8n 靜默失敗時本系統看不見，納入監控後才有觀測性。
+    # ingest_rss_feeds fans out further into analyze_ingested_event; the
+    # dispatcher->child pair monitored here is the first hop.
+    "dispatch_rss_ingest": "ingest_rss_feeds",
+    "dispatch_skill_learning": "run_skill_learning",
+    "dispatch_podcast_ingest": "ingest_podcasts",
 }
 
 # How far back to compare dispatcher and child success counts.
@@ -142,10 +153,7 @@ class SelfOpsService:
     def __init__(self, user_id: Optional[str] = None):
         # Alerts are ops-level: they go to the deployment admin/primary user.
         import os
-        self.user_id = user_id or os.getenv("PRIMARY_USER_ID") or os.getenv("USER_ID")
-        if not self.user_id:
-            from src.repositories.user_repository import AlchemyUserRepository
-            self.user_id = AlchemyUserRepository().get_first_user_id()
+        self.user_id = resolve_user_id(user_id)
 
     def _engine(self):
         from src.data.database import get_db_engine

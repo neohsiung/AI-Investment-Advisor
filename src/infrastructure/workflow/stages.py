@@ -177,13 +177,13 @@ class WorkflowStages:
         
         Tasks:
         - Validate job inputs
-        - Check user subscription/quota
         - Acquire job lock
         - Checkpoint stage entry
         """
         logger.info(f"[Job {self.job_id}] Stage 1: Validating inputs...")
         
-        # Validate user exists and has active subscription
+        # Validate the user has settings (i.e. exists and is initialized).
+        # This never checked a subscription despite the old comment saying so.
         try:
             settings = await self.settings_repo.get_settings(self.user_id)
             if not settings:

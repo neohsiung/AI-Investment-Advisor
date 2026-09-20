@@ -1,0 +1,140 @@
+# Single-ticker council debate.
+#
+# Transcribed from SingleTickerAnalysisDAG._build_nodes(). Layer 1 is the
+# ten-agent debate roster referenced in AGENTS.md: seven analysis agents plus
+# three buy-side scouts, all sharing `debate_context`, so the executor runs them
+# concurrently in one layer. That roster was a Python list of tuples
+# (AGENT_ROSTER) — adding or removing a voice meant editing the class.
+#
+# 由 SingleTickerAnalysisDAG._build_nodes() 轉錄。第一層即 AGENTS.md 所述的
+# 十人辯論名單（七個分析代理 + 三個買方 scout），輸入相同故自動併行。
+# 原本該名單是 Python 的 tuple list，增減一位就得改程式。
+
+id: single_ticker_council
+version: 1
+description: Ten-agent debate on one ticker, then CIO draft, risk challenge, final decision and verifier.
+
+inputs:
+  - topic
+  - debate_context
+  - market_data
+
+nodes:
+  - name: Debate_Macro
+    type: agent
+    agent: Macro
+    tier: fast
+    inputs: [debate_context]
+    outputs: [macro_stance]
+    ttl: 3600
+
+  - name: Debate_Momentum
+    type: agent
+    agent: Momentum
+    tier: fast
+    inputs: [debate_context]
+    outputs: [momentum_stance]
+    ttl: 3600
+
+  - name: Debate_Fundamental
+    type: agent
+    agent: Fundamental
+    tier: fast
+    inputs: [debate_context]
+    outputs: [fundamental_stance]
+    ttl: 3600
+
+  - name: Debate_Sentiment
+    type: agent
+    agent: Sentiment
+    tier: fast
+    inputs: [debate_context]
+    outputs: [sentiment_stance]
+    ttl: 3600
+
+  - name: Debate_Thematic
+    type: agent
+    agent: Thematic
+    tier: fast
+    inputs: [debate_context]
+    outputs: [thematic_stance]
+    ttl: 3600
+
+  - name: Debate_Risk
+    type: agent
+    agent: Risk
+    tier: fast
+    inputs: [debate_context]
+    outputs: [risk_stance]
+    ttl: 3600
+
+  - name: Debate_Sentinel
+    type: agent
+    agent: Sentinel
+    tier: fast
+    inputs: [debate_context]
+    outputs: [sentinel_stance]
+    ttl: 3600
+
+  - name: Debate_MomentumScout
+    type: agent
+    agent: Momentum Scout
+    tier: fast
+    inputs: [debate_context]
+    outputs: [momentum_scout_stance]
+    ttl: 3600
+
+  - name: Debate_FundamentalScout
+    type: agent
+    agent: Fundamental Scout
+    tier: fast
+    inputs: [debate_context]
+    outputs: [fundamental_scout_stance]
+    ttl: 3600
+
+  - name: Debate_MacroScout
+    type: agent
+    agent: Macro Scout
+    tier: fast
+    inputs: [debate_context]
+    outputs: [macro_scout_stance]
+    ttl: 3600
+
+  - name: ReduceDebateStances
+    type: code
+    ref: reduce_debate_stances
+    inputs: [macro_stance, momentum_stance, fundamental_stance, sentiment_stance, thematic_stance, risk_stance, sentinel_stance, momentum_scout_stance, fundamental_scout_stance, macro_scout_stance]
+    outputs: [council_transcript]
+    ttl: 0
+
+  - name: CIODraft
+    type: agent
+    agent: CIO
+    tier: smart
+    inputs: [topic, council_transcript, market_data]
+    outputs: [draft_report]
+    ttl: 3600
+
+  - name: RiskChallenge
+    type: agent
+    agent: Risk
+    tier: fast
+    inputs: [topic, draft_report, council_transcript]
+    outputs: [risk_challenge]
+    ttl: 3600
+
+  - name: CIOFinal
+    type: agent
+    agent: CIO
+    tier: smart
+    inputs: [topic, draft_report, risk_challenge, council_transcript, market_data]
+    outputs: [final_report]
+    ttl: 3600
+
+  - name: VerifierCheck
+    type: agent
+    agent: Verifier
+    tier: fast
+    inputs: [final_report, market_data]
+    outputs: [verifier_note]
+    ttl: 3600

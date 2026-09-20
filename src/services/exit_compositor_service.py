@@ -60,6 +60,7 @@ from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional, Tuple
 
 from src.services.confidence_compositor_service import AgentSubScore, CompositorService
+from src.config.owner import resolve_user_id
 
 logger = logging.getLogger("ExitCompositorService")
 
@@ -89,7 +90,7 @@ class ExitCompositorService:
     """
 
     def __init__(self, user_id: str, settings_service: Any = None, market_service: Any = None):
-        self.user_id = user_id
+        self.user_id = resolve_user_id(user_id)
         self._settings_service = settings_service
         self._market_service = market_service
         # Reused for its LLM plumbing (_get_pipeline / _score_via_llm /

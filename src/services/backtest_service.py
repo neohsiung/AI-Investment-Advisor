@@ -12,6 +12,7 @@ from src.domain.interfaces import Message, LLMConfig
 from src.infrastructure.llm.tier_config import SettingsAwareModelRouter
 from src.infrastructure.llm.llm_gateway import OpenRouterGateway
 from src.repositories.settings_repository import AlchemySettingsRepository
+from src.config.owner import resolve_user_id
 
 logger = setup_logger("BacktestService")
 
@@ -36,7 +37,7 @@ class BacktestService:
         # 相依注入：允許注入 Repository，預設使用 SQLAlchemy (Postgres) 實作
         from src.repositories.feedback_repository import AlchemyFeedbackRepository
         self.feedback_repo = feedback_repo if feedback_repo else AlchemyFeedbackRepository()
-        self.user_id = user_id or "system"
+        self.user_id = resolve_user_id(user_id)
         
         # PAD Phase 2: Initialize router and gateway for LLM calls
         self.settings_repo = AlchemySettingsRepository()

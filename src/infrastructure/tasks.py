@@ -1,3 +1,4 @@
+import hashlib
 import os
 import pandas as pd
 import pandas_market_calendars as mcal
@@ -51,15 +52,21 @@ def _run_async_safe(coro):
             loop.close()
 
 def _resolve_target_users(user_id: str = None) -> list:
-    """解析目標租戶：指定則回傳單一；否則從 DB 查詢所有活躍用戶。"""
+    """
+    Scheduling targets. Single-owner deployment: exactly one, always.
+
+    A stray extra `users` row (a test account, a half-deleted signup) used to
+    silently double every scheduled LLM job — and therefore the bill. The owner
+    resolver is the only source of truth now; `get_all_active_users()` is left
+    truthful and simply no longer consulted for scheduling.
+
+    單機版排程目標恆為擁有者一人，避免多餘 users 列讓排程成本翻倍。
+    """
+    from src.config.owner import active_user_ids, resolve_user_id
+
     if user_id:
-        return [user_id]
-    from src.repositories.user_repository import AlchemyUserRepository
-    users = AlchemyUserRepository().get_all_active_users()
-    if not users:
-        fallback = os.getenv("PRIMARY_USER_ID") or os.getenv("USER_ID")
-        return [fallback] if fallback else []
-    return users
+        return [resolve_user_id(user_id)]
+    return active_user_ids()
 
 @app.task(name="src.infrastructure.tasks.dispatch_market_intelligence")
 def dispatch_market_intelligence():
@@ -672,3 +679,267 @@ def generate_daily_report(user_id: str = None, force_report: bool = False):
     except Exception as e:
         logger.error(f"daily_report failed for user {user_id}: {e}")
         return f"Error: {str(e)}"
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Scheduled ingestion — previously driven by n8n
+#
+# n8n ran exactly three schedules against this application, and all three were
+# HTTP round-trips back into endpoints we own:
+#
+#   every 15m   GET /webhook/rss-sources -> fetch each feed -> sanitize XML in a
+#               JS Code node -> parse -> POST /webhook/n8n
+#   daily 07:00 POST /webhook/skill-learning
+#   every 4h    a hard-coded feed list in a JS node -> POST /webhook/podcast-extract
+#
+# Running them here removes a container, two network hops per feed, an XML
+# sanitiser written in JavaScript, and ~150 lines of workflow import/upsert
+# wrangling in start.sh. It also puts the podcast feed list in the settings
+# table, where it is editable, instead of in a commented-out JS block.
+#
+# n8n 的三個排程都是繞回自家端點的 HTTP 往返，改由 Beat 直接呼叫服務層。
+# ─────────────────────────────────────────────────────────────────────────────
+
+@app.task(name="src.infrastructure.tasks.dispatch_rss_ingest")
+def dispatch_rss_ingest():
+    users = _resolve_target_users()
+    for uid in users:
+        ingest_rss_feeds.delay(user_id=uid)
+    return f"Dispatched {len(users)} rss_ingest tasks"
+
+
+@app.task(name="src.infrastructure.tasks.ingest_rss_feeds")
+def ingest_rss_feeds(user_id: str = None):
+    """
+    Fetch every configured RSS feed and enqueue one analysis task per new entry.
+
+    This task does NO LLM work itself. That distinction matters: each accepted
+    entry triggers an EventAnalysisWorkflow, which is a multi-agent LLM run. The
+    first version of this ran them inline in a `for` loop and awaited each one —
+    roughly 30 feeds x 5 entries = 150 sequential LLM workflows in a single task
+    that fires every 15 minutes. It did not finish inside a 10-minute timeout,
+    and the bill would have dwarfed the sentinel tick this milestone just cut.
+    (The n8n workflow it replaced had the same per-entry cost, but POSTed each
+    item separately so they at least ran concurrently and independently.)
+
+    Now: fetch and dedup cheaply here, then fan out one Celery task per fresh
+    entry so the work is bounded by worker concurrency, individually retryable,
+    and visible in task telemetry.
+
+    本任務不做任何 LLM 工作。每筆新項目會觸發一次多代理工作流，初版在迴圈中
+    逐一 await，等於每 15 分鐘跑 ~150 次 LLM 工作流；改為每筆各自派送 Celery
+    任務，受 worker 併發上限約束、可單獨重試、且在遙測中可見。
+    """
+    from src.config.owner import resolve_user_id
+
+    user_id = resolve_user_id(user_id)
+
+    try:
+        import feedparser
+
+        from src.config.rss_config import get_rss_sources
+        from src.services.webhook_service import webhook_service_instance
+    except Exception as exc:
+        logger.error(f"ingest_rss_feeds: dependencies unavailable: {exc}")
+        return f"Error: {exc}"
+
+    sources = get_rss_sources(user_id=user_id)
+    max_entries = int(os.getenv("RSS_MAX_ENTRIES_PER_FEED", "3"))
+    # Hard ceiling on LLM workflows started per run. Without it, adding feeds
+    # silently multiplies cost. Dropped entries are logged, never silent.
+    #
+    # Measured 2026-09-11 on the live deployment: 10 events cost $0.0126, i.e.
+    # ~$0.0013 per event. At this cap and a 15-minute cadence that is ~$1.21/day
+    # — comfortably under the ~$4/day the stack was running at before. Raise it
+    # with eyes open: cost scales linearly with this number.
+    #
+    # 實測：每筆事件約 $0.0013，在此上限與 15 分鐘頻率下約 $1.21/日。
+    # 成本與此數字成線性關係，調高前請先算過。
+    max_events = int(os.getenv("RSS_MAX_EVENTS_PER_RUN", "10"))
+
+    enqueued = duplicate = failed = dropped = 0
+    for src in sources:
+        url = src.get("url")
+        if not url:
+            continue
+        try:
+            parsed = feedparser.parse(url)
+            for entry in (parsed.entries or [])[:max_entries]:
+                link = entry.get("link") or ""
+                payload = {
+                    "event_type": "RSS",
+                    "message": entry.get("title") or "",
+                    "link": link,
+                    "ticker": src.get("ticker", "GLOBAL"),
+                    "source_name": src.get("name", src.get("id", "rss")),
+                }
+
+                # Cheap pre-filter so duplicates never consume a task slot.
+                # ingest_event re-checks, which is what actually guarantees it.
+                signal_id = f"rss_{hashlib.sha256(link.encode()).hexdigest()}" if link else None
+                if webhook_service_instance._is_duplicate(user_id, url=link or None, signal_id=signal_id):
+                    duplicate += 1
+                    continue
+
+                if enqueued >= max_events:
+                    dropped += 1
+                    continue
+
+                analyze_ingested_event.delay(user_id=user_id, source="rss", payload=payload)
+                enqueued += 1
+        except Exception as exc:
+            failed += 1
+            logger.warning(f"ingest_rss_feeds: feed failed {url}: {exc}")
+
+    if dropped:
+        logger.warning(
+            "ingest_rss_feeds: %d fresh entries NOT analysed — hit the "
+            "RSS_MAX_EVENTS_PER_RUN cap of %d. Raise it, or reduce feeds, if "
+            "this is persistent.", dropped, max_events,
+        )
+    logger.info(
+        "ingest_rss_feeds: %d enqueued, %d duplicates, %d dropped, %d feeds failed (of %d)",
+        enqueued, duplicate, dropped, failed, len(sources),
+    )
+    return f"enqueued={enqueued} duplicate={duplicate} dropped={dropped} failed={failed}"
+
+
+@app.task(
+    name="src.infrastructure.tasks.analyze_ingested_event",
+    bind=True,
+    max_retries=2,
+    default_retry_delay=120,
+)
+def analyze_ingested_event(self, user_id: str = None, source: str = "rss", payload: dict = None):
+    """Run the event-analysis workflow for exactly one ingested item."""
+    from src.config.owner import resolve_user_id
+    from src.services.webhook_service import webhook_service_instance
+
+    user_id = resolve_user_id(user_id)
+    try:
+        result = _run_async_safe(
+            webhook_service_instance.ingest_event(user_id, source, payload or {})
+        )
+        return str(result)
+    except Exception as exc:
+        logger.warning(f"analyze_ingested_event({source}) failed: {exc}")
+        raise self.retry(exc=exc)
+
+
+@app.task(name="src.infrastructure.tasks.dispatch_skill_learning")
+def dispatch_skill_learning():
+    users = _resolve_target_users()
+    for uid in users:
+        run_skill_learning.delay(user_id=uid)
+    return f"Dispatched {len(users)} skill_learning tasks"
+
+
+@app.task(name="src.infrastructure.tasks.run_skill_learning")
+def run_skill_learning(user_id: str = None):
+    from src.config.owner import resolve_user_id
+
+    user_id = resolve_user_id(user_id)
+    try:
+        from src.services.investment_skill_learning_service import (
+            InvestmentSkillLearningService,
+        )
+
+        svc = InvestmentSkillLearningService(user_id=user_id)
+        _run_async_safe(svc.run_daily_learning())
+        logger.info(f"run_skill_learning completed for {user_id}")
+        return "Success"
+    except Exception as exc:
+        logger.error(f"run_skill_learning failed for {user_id}: {exc}")
+        return f"Error: {exc}"
+
+
+@app.task(name="src.infrastructure.tasks.dispatch_podcast_ingest")
+def dispatch_podcast_ingest():
+    users = _resolve_target_users()
+    for uid in users:
+        ingest_podcasts.delay(user_id=uid)
+    return f"Dispatched {len(users)} podcast_ingest tasks"
+
+
+@app.task(name="src.infrastructure.tasks.ingest_podcasts")
+def ingest_podcasts(user_id: str = None):
+    """
+    Transcribe the latest episode of each configured podcast feed and feed it to
+    skill learning.
+
+    The feed list comes from the `podcast_feeds` setting (a JSON list of
+    {name, url}) rather than from a commented-out JavaScript array inside an n8n
+    Code node — which is what "low-code configuration" meant before.
+    Podcast 來源改存 settings 的 podcast_feeds，可在 UI 編輯。
+    """
+    from src.config.owner import resolve_user_id
+
+    user_id = resolve_user_id(user_id)
+    try:
+        import feedparser
+
+        from src.services.investment_skill_learning_service import (
+            InvestmentSkillLearningService,
+        )
+        from src.services.settings_service import SettingsService
+        from src.services.transcription_service import TranscriptionService
+    except Exception as exc:
+        logger.error(f"ingest_podcasts: dependencies unavailable: {exc}")
+        return f"Error: {exc}"
+
+    raw = SettingsService(user_id=user_id).get_setting("podcast_feeds") or []
+    if isinstance(raw, str):
+        import json as _json
+
+        try:
+            raw = _json.loads(raw)
+        except ValueError:
+            logger.warning("ingest_podcasts: podcast_feeds is not valid JSON; skipping")
+            return "Skipped (bad podcast_feeds)"
+    if not raw:
+        logger.info("ingest_podcasts: no podcast_feeds configured; nothing to do")
+        return "Skipped (no feeds)"
+
+    transcriber = TranscriptionService(user_id=user_id)
+    skill_svc = InvestmentSkillLearningService(user_id=user_id)
+
+    done = failed = 0
+    for feed in raw:
+        url = feed.get("url") if isinstance(feed, dict) else None
+        if not url:
+            continue
+        name = feed.get("name", "Podcast")
+        try:
+            parsed = feedparser.parse(url)
+            entries = parsed.entries or []
+            if not entries:
+                continue
+            audio_url = None
+            for link in entries[0].get("links", []):
+                if str(link.get("type", "")).startswith("audio"):
+                    audio_url = link.get("href")
+                    break
+            if not audio_url:
+                logger.info(f"ingest_podcasts: no audio enclosure in latest {name} episode")
+                continue
+
+            transcript = _run_async_safe(transcriber.transcribe_url(audio_url))
+            if not transcript or str(transcript).startswith("Error:"):
+                failed += 1
+                logger.warning(f"ingest_podcasts: transcription failed for {name}")
+                continue
+
+            _run_async_safe(
+                skill_svc.run_daily_learning(
+                    content=transcript,
+                    source_url=audio_url,
+                    source_type="podcast",
+                )
+            )
+            done += 1
+        except Exception as exc:
+            failed += 1
+            logger.warning(f"ingest_podcasts: {name} failed: {exc}")
+
+    logger.info("ingest_podcasts: %d processed, %d failed", done, failed)
+    return f"processed={done} failed={failed}"

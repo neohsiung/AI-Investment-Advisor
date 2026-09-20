@@ -9,12 +9,13 @@ from src.utils.logger import setup_logger
 from src.domain.interfaces import Message, LLMConfig
 from src.infrastructure.llm.llm_gateway import LLMGatewayFactory, RetryLLMGateway, LoggingLLMGateway
 from src.services.settings_service import SettingsService  # pre-existing missing import fix
+from src.config.owner import resolve_user_id
 
 logger = setup_logger("IntelligenceService")
 
 class IntelligenceService:
     def __init__(self, settings_service: Optional[SettingsService] = None, user_id: str = None):
-        self.user_id = user_id or "system"
+        self.user_id = resolve_user_id(user_id)
         self.settings = settings_service or SettingsService(user_id=self.user_id)
         self._llm_gateway = self._create_gateway()
 

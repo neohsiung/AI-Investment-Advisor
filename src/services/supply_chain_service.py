@@ -9,6 +9,7 @@ from src.infrastructure.llm.tier_config import SettingsAwareModelRouter
 from src.infrastructure.llm.llm_gateway import OpenRouterGateway
 from src.domain.interfaces import Message, LLMConfig
 from src.repositories.settings_repository import AlchemySettingsRepository
+from src.config.owner import resolve_user_id
 
 logger = setup_logger("SupplyChainService")
 
@@ -20,7 +21,7 @@ class SupplyChainService:
     PAD Phase 2: Migrated to SettingsAwareModelRouter + OpenRouterGateway
     """
     def __init__(self, user_id: str = None, settings_service: Any = None):
-        self.user_id = user_id
+        self.user_id = resolve_user_id(user_id)
         self.settings_service = settings_service or SettingsService(user_id=self.user_id)
         
         # PAD Phase 2: Initialize router and gateway for LLM calls

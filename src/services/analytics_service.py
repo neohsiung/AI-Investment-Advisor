@@ -8,6 +8,7 @@ from src.utils.time_utils import get_current_date_str
 from sqlalchemy import text
 from src.utils.logger import setup_logger
 from typing import Optional as _Opt
+from src.config.owner import resolve_user_id
 
 try:
     from src.repositories.position_lot_repository import AlchemyPositionLotRepository, IPositionLotRepository
@@ -27,7 +28,7 @@ class LeverageCalculator:
         Initialize the calculator.
         初始化計算器。
         """
-        self.user_id = user_id
+        self.user_id = resolve_user_id(user_id)
         self.db_path = db_path
         self.repo = repository or AlchemyTransactionRepository()
         # O(1) avg_cost via position_lots (populated after backfill)
@@ -131,7 +132,7 @@ class ROIEngine:
         Initialize the ROI engine.
         初始化 ROI 引擎。
         """
-        self.user_id = user_id
+        self.user_id = resolve_user_id(user_id)
         self.db_path = db_path
         self.repo = repository or AlchemyTransactionRepository()
 
@@ -213,7 +214,7 @@ class PnLCalculator:
         Initialize the calculator.
         初始化計算器。
         """
-        self.user_id = user_id
+        self.user_id = resolve_user_id(user_id)
         self.db_path = db_path
         self.repo = repository or AlchemyTransactionRepository()
         # O(1) avg_cost via position_lots
@@ -428,7 +429,7 @@ class AnalyticsService:
         初始化分析服務。
         """
         self.db_path = db_path
-        self.user_id = user_id
+        self.user_id = resolve_user_id(user_id)
         self.snapshot_repo = repository or AlchemySnapshotRepository(db_path)
         self.pnl_calculator = pnl_calc or PnLCalculator(user_id=user_id, db_path=self.db_path)
 

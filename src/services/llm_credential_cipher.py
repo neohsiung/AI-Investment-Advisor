@@ -82,10 +82,10 @@ class LLMCredentialCipher:
             token = self._fernet.encrypt(plaintext.encode("utf-8")).decode("utf-8")
             return f"{_FERNET_PREFIX}{token}"
 
-        # Fallback: base64 payload + HMAC of plaintext (key derived from env or constant)
+        # Fallback: base64 payload + HMAC of encoded payload (key derived from env or constant)
         derivation_key = (self._key or "llm-cipher-fallback-key").encode("utf-8")
         b64 = base64.urlsafe_b64encode(plaintext.encode("utf-8")).decode("utf-8")
-        mac = hmac.new(derivation_key, plaintext.encode("utf-8"), hashlib.sha256).hexdigest()
+        mac = hmac.new(derivation_key, b64.encode("utf-8"), hashlib.sha256).hexdigest()
         return f"{_FALLBACK_PREFIX}{b64}.{mac}"
 
     def decrypt(self, ciphertext: Optional[str]) -> Optional[str]:

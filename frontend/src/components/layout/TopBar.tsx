@@ -11,7 +11,7 @@ import { cn } from "@/lib/utils";
 import { useSidebar } from "@/context/SidebarContext";
 
 export default function TopBar() {
-  const { user, logout, isLoading: authLoading } = useAuth();
+  const { user, isLoading: authLoading } = useAuth();
   const { stableStatus } = useDashboardSocket();
   const pathname = usePathname();
   const { toggle } = useSidebar();
@@ -101,26 +101,17 @@ export default function TopBar() {
               <Loader2 className="h-4 w-4 animate-spin text-primary" />
             ) : user ? (
               <>
+                {/* Showed the signed-in Google account's email. There is no
+                    sign-in and no account directory in a single-operator
+                    deployment, so there is no address to show. */}
                 <div className="hidden sm:flex flex-col items-end">
                   <span className="text-[10px] font-bold text-on-surface tracking-tight truncate max-w-[120px]">
-                    {user.email}
+                    Owner
                   </span>
                   <span className="text-[8px] font-black uppercase text-secondary tracking-widest">Architect</span>
                 </div>
-                <button
-                  onClick={logout}
-                  className="p-1.5 text-on-surface-variant hover:text-error hover:bg-error/10 rounded-full transition-all"
-                  title="Secure Logout"
-                >
-                  <LogOut className="h-4 w-4" />
-                </button>
               </>
-            ) : (
-              <Link href="/auth/login" className="flex items-center gap-2">
-                <UserIcon className="h-4 w-4 text-primary" />
-                <span className="text-xs font-bold uppercase tracking-widest">Sign In</span>
-              </Link>
-            )}
+            ) : null}
           </div>
         </div>
       </div>

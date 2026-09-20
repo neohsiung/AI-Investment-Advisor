@@ -1,0 +1,22 @@
+# Sentiment swarm sub-agents.
+#
+# These were Python string literals inside SentimentSwarm.__init__ — the
+# instruction text, the tier and the registration column all inline. Retuning what
+# a sub-agent is asked to do, or moving it to a cheaper tier, meant editing Python
+# and redeploying, for what is prompt copy.
+#
+# `column` is the slot the sub-agent registers into (col_fast / col_adv).
+#
+# 這些原本是 SentimentSwarm.__init__ 裡的 Python 字串：指令文字、tier、註冊欄位
+# 全部內嵌。調整指令或換 tier 都得改程式重新部署，而那本質上只是提示詞文案。
+
+id: sentiment
+sub_agents:
+  - name: NewsScanner
+    tier: fast
+    column: col_fast
+    instruction: 分析新聞情緒 (Analyze sentiment of news).
+  - name: SocialPulse
+    tier: advanced
+    column: col_adv
+    instruction: 評估市場情緒 (Assess overall market pulse).

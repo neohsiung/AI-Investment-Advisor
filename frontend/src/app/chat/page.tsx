@@ -48,14 +48,13 @@ export default function ChatPage() {
     };
 
     try {
-      const token = localStorage.getItem("access_token");
-      const headers: Record<string, string> = { "Content-Type": "application/json" };
-      if (token) {
-        headers["Authorization"] = `Bearer ${token}`;
-      }
+      // No Authorization header: there is no login and nothing issues tokens.
+      // The backend resolves the owner itself.
+      // 無登入、無 token；後端自行解析擁有者身分。
       const response = await fetch("/api/v1/chat/stream", {
         method: "POST",
-        headers,
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           message: userPrompt,
           history: messages.slice(-10)

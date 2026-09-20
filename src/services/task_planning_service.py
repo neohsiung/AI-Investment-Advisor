@@ -21,6 +21,11 @@ class Task:
     input_keys: List[str] = field(default_factory=list)
     output_keys: List[str] = field(default_factory=list)
     estimated_tokens: int = 1000
+    # Which agent executes this task. Set explicitly by plan files; left None by
+    # the LLM planner, which is why workflow_service still keeps a name-based
+    # fallback for that path.
+    # 由計畫檔明確指定；LLM 動態規劃不會設定，故仍保留以名稱推斷的後備路徑。
+    agent: Optional[str] = None
 
 @dataclass
 class ExecutionPlan:
@@ -70,72 +75,96 @@ class TaskPlanningService:
 
     def _create_standard_weekly_plan(self, goal: str, context: Dict[str, Any]) -> ExecutionPlan:
         """
-        Client-Code defined best practice workflow. 
-        This is the 'Antigravity' way: Reliable, Engineered Patterns.
+        The engineered weekly research plan, loaded from
+        config/workflows/weekly_plan.yaml.
+
+        This was a literal list of six `Task(...)` dataclasses in this method.
+        Reordering the research, moving a stage to a cheaper tier, or changing
+        which agent writes a section all meant editing Python and redeploying —
+        for values that are pure configuration.
+
+        Falls back to the built-in plan if the file is missing or malformed: a
+        broken edit must not take the weekly report offline entirely.
+
+        原本是本方法中六個字面 Task 的清單；調整順序、tier 或執行代理都得改程式。
+        檔案缺失或格式錯誤時退回內建計畫，避免一次錯誤編輯讓週報完全停擺。
         """
-        tasks = [
-            Task(
-                name="Market Cycle Analysis",
-                description="Analyze current Market Cycle (Early/Mid/Late/Recession). Focus on Liquidity (Fed), Rates (Yield Curve), and Growth (GDP). MUST execute 'get_historical_report' to compare with last week's Macro Outlook and clearly explain any narrative shifts or structural changes. Output current 'Market_Phase' and 'Macro_Outlook'.",
-                complexity=8,
-                model_tier="advanced",
-                input_keys=[], 
-                output_keys=["Market_Phase", "Macro_Outlook"],
-                estimated_tokens=6000
-            ),
-            Task(
-                name="Sector Rotation & Swarm Insight",
-                description="Identify Outperforming Sectors based on 'Market_Phase'. Aggregate 'Swarm Signals' (Momentum/Sentiment/Fundamental) to find sector-level divergences. Output 'Target_Sectors' and 'Sector_Themes'.",
-                complexity=8,
-                model_tier="smart",
-                input_keys=["Market_Phase", "Macro_Outlook"],
-                output_keys=["Target_Sectors", "Sector_Themes"],
-                estimated_tokens=5000
-            ),
-            Task(
-                name="Supply Chain & Industry Deep-Dive",
-                description="For 'Target_Sectors': Analyze Upstream (Suppliers) and Downstream (Customers) logic. Review recent Vendor financial guidance to confirm trends. Output 'Supply_Chain_Trends'.",
-                complexity=9,
-                model_tier="smart",
-                input_keys=["Target_Sectors", "Sector_Themes"],
-                output_keys=["Supply_Chain_Trends", "Industry_Outlook"],
-                estimated_tokens=10000
-            ),
-            Task(
-                name="Portfolio Deep-Dive & Health Check",
-                description="Audit current holdings against 'Independent_Analysis'. Check '10-16 Stock Constraint'. Diagnose 'Swarm Signals' for each holding: Fundamental Quality vs Momentum Price Action. Recommend trim/hold.",
-                complexity=9,
-                model_tier="advanced",
-                input_keys=["Market_Phase", "Supply_Chain_Trends", "Industry_Outlook"],
-                output_keys=["Holdings_Analysis", "Gap_Analysis"],
-                estimated_tokens=8000
-            ),
-            Task(
-                name="Alpha Candidate Selection & Recommendations",
-                description="Check if 'Current_Holdings_Count' < 15. IF YES: Execute 'Gap Filling Strategy'. Recommend new tickers following strict flow: 1. Macro (Cycle) -> 2. Sector (Themes) -> 3. Fundamental (Quality) -> 4. Technical (Entry). Target total 15 holdings.",
-                complexity=9,
-                model_tier="advanced",
-                input_keys=["Holdings_Analysis", "Gap_Analysis", "Supply_Chain_Trends", "Target_Sectors"],
-                output_keys=["Action_Plan", "Final_Target_Portfolio", "Buy_List"],
-                estimated_tokens=8000
-            ),
-            Task(
-                name="Report Synthesis",
-                description="Synthesize all findings into a professional 'Macro-to-Micro' Investment Report (>10 mins read). MUST execute 'get_historical_report' to deeply analyze WHY portfolio adjustments were made compared to last week. Explore strategic reasons behind the changes (e.g. narrative drift, cyclical rotation). Include explicit sections for 'Strategic Adjustments vs Last Week', 'Swarm Multi-Dim Insights' and 'Deep Portfolio Diagnosis'.",
-                complexity=6,
-                model_tier="smart",
-                input_keys=["ALL"], 
-                output_keys=["Final_Report"],
-                estimated_tokens=12000
-            )
-        ]
-        
+        tasks = self._load_weekly_tasks()
         return ExecutionPlan(
             plan_id=str(uuid.uuid4()),
             goal=goal,
             context=context,
-            tasks=tasks
+            tasks=tasks,
         )
+
+    def _load_weekly_tasks(self) -> List[Task]:
+        """Parse config/workflows/weekly_plan.yaml into Task objects."""
+        try:
+            import yaml
+
+            from src.infrastructure.workflow.loader import workflows_dir
+
+            # config/plans/, not config/workflows/. The two directories hold
+            # different schemas: workflows/ are DAG graphs (`nodes:` with
+            # input/output keys, executed by DAGExecutor), plans/ are sequential
+            # Task lists (`tasks:` with model_tier and complexity, executed by the
+            # Task/ExecutionPlan pipeline). Sharing one directory made the DAG
+            # loader try to parse this file and fail.
+            # 兩者 schema 不同：workflows/ 是 DAG 圖，plans/ 是循序任務清單。
+            # 放在同一個目錄會讓 DAG loader 嘗試解析本檔而失敗。
+            path = workflows_dir().parent / "plans" / "weekly_plan.yaml"
+            raw = yaml.safe_load(path.read_text()) or {}
+            entries = raw.get("tasks") or []
+            if not entries:
+                raise ValueError("`tasks:` is empty")
+
+            tasks = []
+            for e in entries:
+                name = e.get("name")
+                if not name:
+                    raise ValueError("a task is missing `name:`")
+                tasks.append(Task(
+                    name=name,
+                    description=e.get("description", ""),
+                    complexity=int(e.get("complexity", 5)),
+                    model_tier=e.get("model_tier", "smart"),
+                    input_keys=list(e.get("inputs") or []),
+                    output_keys=list(e.get("outputs") or []),
+                    estimated_tokens=int(e.get("estimated_tokens", 1000)),
+                    agent=e.get("agent"),
+                ))
+            logger.info("Loaded weekly plan from YAML: %d tasks", len(tasks))
+            return tasks
+        except Exception as exc:
+            logger.error(
+                "Could not load config/workflows/weekly_plan.yaml (%s) — "
+                "falling back to the built-in plan.", exc,
+            )
+            return self._builtin_weekly_tasks()
+
+    def _builtin_weekly_tasks(self) -> List[Task]:
+        """
+        Minimal in-code fallback. Deliberately short: it exists so a malformed
+        YAML edit degrades to a working-but-basic weekly report rather than to
+        nothing, not as a second copy of the full plan to keep in sync.
+        刻意精簡的後備計畫：目的是讓錯誤編輯降級為「可用但簡化」的週報，
+        而不是維護第二份完整計畫。
+        """
+        return [
+            Task(
+                name="Market Cycle Analysis",
+                description="Analyze the current market cycle: liquidity, rates and growth.",
+                complexity=8, model_tier="advanced", input_keys=[],
+                output_keys=["Market_Phase", "Macro_Outlook"],
+                estimated_tokens=6000, agent="Macro",
+            ),
+            Task(
+                name="Report Synthesis",
+                description="Synthesize the findings into a macro-to-micro investment report.",
+                complexity=6, model_tier="smart", input_keys=["ALL"],
+                output_keys=["Final_Report"], estimated_tokens=12000, agent="CIO",
+            ),
+        ]
 
     def _create_dynamic_plan(self, goal: str, context: Dict[str, Any]) -> ExecutionPlan:
         """

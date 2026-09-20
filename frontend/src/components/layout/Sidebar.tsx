@@ -4,7 +4,6 @@ import React from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { X } from "lucide-react";
-import { useAuth } from "@/hooks/useAuth";
 import { useSidebar } from "@/context/SidebarContext";
 
 const navItems = [
@@ -18,12 +17,14 @@ const navItems = [
   { id: "intelligence", label: "市場情報", icon: "crisis_alert", href: "/intelligence" },
   { id: "universe", label: "標的池", icon: "layers", href: "/universe" },
   { id: "health", label: "健康監控", icon: "healing", href: "/health" },
+  { id: "agents", label: "Agents", icon: "smart_toy", href: "/agents" },
+  { id: "workflows", label: "Workflows", icon: "account_tree", href: "/workflows" },
+  { id: "extensions", label: "Extensions", icon: "extension", href: "/extensions" },
   { id: "settings", label: "Settings", icon: "tune", href: "/settings" },
 ];
 
 export default function Sidebar() {
   const pathname = usePathname();
-  const { logout } = useAuth();
   const { isOpen, close } = useSidebar();
 
   return (
@@ -91,13 +92,6 @@ export default function Sidebar() {
           <div className="flex items-center gap-3 px-2 py-2 text-on-surface-variant hover:text-on-surface cursor-pointer transition-all hover:bg-surface-variant rounded-md">
             <span className="material-symbols-outlined text-sm">help_outline</span>
             <span className="font-label text-xs uppercase tracking-widest">Help</span>
-          </div>
-          <div
-            onClick={logout}
-            className="flex items-center gap-3 px-2 py-2 text-error hover:opacity-80 cursor-pointer transition-all hover:bg-error-container/10 rounded-md"
-          >
-            <span className="material-symbols-outlined text-sm">logout</span>
-            <span className="font-label text-xs uppercase tracking-widest">Logout</span>
           </div>
         </div>
       </div>

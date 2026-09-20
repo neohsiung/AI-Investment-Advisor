@@ -1,64 +1,104 @@
-# Builder Stage
-FROM public.ecr.aws/docker/library/python:3.10-slim-bookworm as builder
+# ── Builder ──────────────────────────────────────────────────────────────────
+FROM public.ecr.aws/docker/library/python:3.11-slim-bookworm AS builder
 
 RUN pip install uv
 WORKDIR /workspace
 
-# Install exact build deps required for underlying C-extensions
 RUN apt-get update && apt-get install -y build-essential curl && rm -rf /var/lib/apt/lists/*
 
 ENV UV_COMPILE_BYTECODE=1
 
-# Copy dependency files
+# Which optional-dependency groups to bake in (see [project.optional-dependencies]).
+#
+# The default set is what the application actually imports at runtime:
+#   memory        llama_index / mem0 — imported eagerly by llama_index_service
+#   dspy          imported by the agent factory
+#   channels-line imports as `linebot`, used by the LINE adapter
+#   obs           OpenTelemetry exporters
+#
+# Deliberately NOT default: `forecast` (~900MB of PyTorch), `optimize`
+# (cvxpy/scikit-learn — currently imported by nothing), `scrape` (playwright +
+# a browser), and `dev` (pytest/bandit/safety, which have no business in a
+# production image).
+#
+# 預設只裝執行期真正會 import 的 extras；torch、cvxpy、playwright 與測試工具不裝。
+ARG PYTHON_EXTRAS="memory,dspy,channels-line,obs"
+
 COPY pyproject.toml uv.lock ./
 
-# Create venv and install dependencies into it at /opt/venv
+# torch, when requested, must come from PyTorch's CPU index FIRST.
 #
-# torch is installed first, from PyTorch's CPU index. `timesfm[torch]` in
-# pyproject.toml otherwise resolves to a CUDA build — measured in the image
-# running on 2026-08-14: torch 2.13.0+cu130 on aarch64, dragging in 2.9GB of
-# `nvidia/*` CUDA libraries next to 897MB of torch, for a timesfm package that
-# is itself 308KB. No container in this stack has an NVIDIA GPU, so those
-# 2.9GB can never execute. They filled the 63GB Docker VM disk and blocked
-# every rebuild.
+# `timesfm[torch]` otherwise resolves to a CUDA build — measured 2026-08-14:
+# torch 2.13.0+cu130 on aarch64, dragging in 2.9GB of `nvidia/*` libraries next
+# to 897MB of torch, for a timesfm package that is itself 308KB. No container
+# here has an NVIDIA GPU, so those 2.9GB can never execute; they filled the
+# 63GB Docker VM disk and blocked every rebuild.
 #
 # Two steps rather than one resolve: the PyTorch index also mirrors unrelated
-# packages (requests, etc.) at older versions, and uv's default index strategy
-# takes the first index that carries a name — pointing the whole install at it
-# fails to resolve. Installing torch alone from that index, then everything
-# else from PyPI, leaves torch satisfied at `2.13.0+cpu` (`==2.13.0` matches a
-# local version) so the second resolve adds no nvidia wheels. Verified by
-# dry-run before this change: 0 nvidia packages, torch stays +cpu.
+# packages at older versions and uv takes the first index carrying a name, so
+# pointing the whole install at it fails to resolve. Installing torch alone
+# from that index leaves it satisfied at `2.13.0+cpu`, and the second resolve
+# adds no nvidia wheels.
 #
-# 先從 PyTorch CPU index 安裝 torch：pyproject 的 timesfm[torch] 預設會解析到
-# CUDA 版本（實測為 torch 2.13.0+cu130），連帶 2.9GB 的 nvidia CUDA 函式庫，
-# 而本堆疊沒有任何容器有 NVIDIA GPU——那 2.9GB 永遠不會被執行，卻塞爆了
-# 63GB 的 Docker VM 磁碟並讓每次重建失敗。分兩步是因為該 index 也鏡像了
-# requests 等套件的舊版本，整包指過去會解析失敗。
+# This step is now skipped entirely unless `forecast` is in PYTHON_EXTRAS —
+# which by default it is not.
+#
+# 僅在啟用 forecast extra 時才安裝 torch，且強制走 CPU index。
 RUN uv venv /opt/venv && \
-    uv pip install --python /opt/venv --no-cache \
-        --index-url https://download.pytorch.org/whl/cpu torch==2.13.0+cpu && \
-    uv pip install --python /opt/venv --no-cache -r pyproject.toml
+    if echo ",${PYTHON_EXTRAS}," | grep -q ",forecast,"; then \
+        echo "Installing CPU-only torch for the 'forecast' extra..." && \
+        uv pip install --python /opt/venv --no-cache \
+            --index-url https://download.pytorch.org/whl/cpu torch==2.13.0+cpu ; \
+    fi
 
-# Runner Stage
-FROM public.ecr.aws/docker/library/python:3.10-slim-bookworm
+# Dependencies, resolved FROM THE LOCKFILE.
+#
+# This was `uv pip install -r pyproject.toml`, which ignores uv.lock entirely and
+# re-resolves every dependency against PyPI on each build. Two consequences:
+#
+#   * builds were not reproducible — the same commit could produce different
+#     transitive versions depending on when it was built;
+#   * they were slow. A full re-resolve of ~50 direct dependencies took long
+#     enough that a 40-minute build timeout killed it, while the lockfile that
+#     would have made it fast sat unused. uv.lock had also drifted out of sync
+#     (it was missing pydantic-settings entirely) with nothing to detect that,
+#     precisely because nothing read it.
+#
+# `uv export --locked` FAILS if uv.lock disagrees with pyproject.toml, so a stale
+# lock now breaks the build loudly instead of being silently bypassed. Run
+# `uv lock` after changing dependencies.
+#
+# 原本用 -r pyproject.toml 安裝，完全忽略 uv.lock 並每次向 PyPI 重新解析：
+# 建置不可重現且緩慢（曾因此被 40 分鐘 timeout 殺掉），而能讓它變快的 lock 檔
+# 卻無人使用——也正因無人使用，lock 檔漂移（缺少 pydantic-settings）沒被發現。
+# --locked 會在 lock 與 pyproject 不一致時讓建置直接失敗，改相依後請執行 uv lock。
+RUN EXTRA_FLAGS="" && \
+    for e in $(echo "${PYTHON_EXTRAS}" | tr ',' ' '); do \
+        [ -n "$e" ] && EXTRA_FLAGS="$EXTRA_FLAGS --extra $e" ; \
+    done && \
+    echo "uv export --locked $EXTRA_FLAGS" && \
+    uv export --locked --no-emit-project --no-hashes $EXTRA_FLAGS \
+        -o /tmp/requirements.txt && \
+    uv pip install --python /opt/venv --no-cache -r /tmp/requirements.txt
+
+# ── Runner ───────────────────────────────────────────────────────────────────
+FROM public.ecr.aws/docker/library/python:3.11-slim-bookworm
 ENV PYTHONUNBUFFERED=1
 ENV PYTHONPATH=/workspace
 ENV PATH="/opt/venv/bin:$PATH"
 WORKDIR /workspace
 
-# Install runtime dependencies (e.g., ffmpeg for pydub/ffmpy)
-RUN apt-get update && apt-get install -y ffmpeg curl && rm -rf /var/lib/apt/lists/*
+# ffmpeg is required by pydub (podcast transcription); curl by the healthcheck.
+RUN apt-get update && apt-get install --no-install-recommends -y ffmpeg curl && \
+    rm -rf /var/lib/apt/lists/*
 
 RUN addgroup --system appgroup && \
     adduser --system --group --home /home/appuser appuser
 
 ENV HOME=/home/appuser
 
-# Copy virtual env from builder
 COPY --from=builder /opt/venv /opt/venv
 
-# Copy application code
 COPY ./services/mcp_server /workspace/services/mcp_server
 COPY ./src /workspace/src
 COPY ./prompts /workspace/prompts

@@ -8,6 +8,7 @@ import typing
 from typing import List, Dict, Tuple, Any, Optional, Callable, Dict, List, Tuple, Any, Optional, Callable
 from src.repositories.verification_repository import AlchemyVerificationRepository
 from src.services.notification_service import NotificationService
+from src.config.owner import resolve_user_id
 
 class VerificationService:
     """
@@ -19,7 +20,7 @@ class VerificationService:
         Initialize the verification service.
         初始化驗證服務。
         """
-        self.user_id = user_id
+        self.user_id = resolve_user_id(user_id)
         self.repo = repo or AlchemyVerificationRepository()
         
         # Create notification service with settings

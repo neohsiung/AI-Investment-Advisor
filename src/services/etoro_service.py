@@ -14,6 +14,7 @@ from src.repositories.transaction_repository import AlchemyTransactionRepository
 from src.infrastructure.risk_manager import RiskManager
 from src.api.v1.exceptions import BrokerNotConfiguredError, BrokerDependencyError
 from src.services.llm_credential_cipher import LLMCredentialCipher
+from src.config.owner import resolve_user_id
 
 logger = setup_logger("EtoroService")
 
@@ -49,7 +50,7 @@ class EtoroService(IBroker):
         # Authentication (Priority: Arg > DB > Env)
         self.api_key = api_key
         self.user_key = user_key
-        self.user_id = user_id
+        self.user_id = resolve_user_id(user_id)
         
         # Initialize cipher before loading credentials (needed for decryption)
         # 在載入憑證前初始化密碼器（解密所需）

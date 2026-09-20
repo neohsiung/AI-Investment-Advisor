@@ -36,16 +36,17 @@ def test_mcp_tools_list():
         assert response.status_code == 200
         assert "tools" in response.json()
 
-def test_mcp_tool_register():
+def test_mcp_tool_register_is_removed():
+    """
+    See tests/unit/infrastructure/test_mcp_service.py for why: registering a tool
+    through HTTP could never make it callable, and reported success anyway.
+    註冊端點無法讓工具真的可被呼叫，卻回報成功，故已移除。
+    """
     with TestClient(app) as client:
-        payload = {
-            "name": "test_tool",
-            "description": "desc",
-            "parameters": {"a": "b"}
-        }
-        response = client.post("/tools/register", json=payload)
-        assert response.status_code == 200
-        assert response.json()["tool"] == "test_tool"
+        response = client.post("/tools/register", json={
+            "name": "test_tool", "description": "desc", "parameters": {"a": "b"}
+        })
+        assert response.status_code in (404, 405)
 
 def test_mcp_agent_message():
     with TestClient(app) as client:

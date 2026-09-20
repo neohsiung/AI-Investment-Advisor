@@ -20,6 +20,7 @@ from typing import List, Dict, Tuple, Any, Optional, Callable
 from src.repositories.risk_keyword_repository import AlchemyRiskKeywordRepository
 from src.domain.entities import RiskKeyword
 from src.infrastructure.llm.llm_gateway import ILLMGateway
+from src.config.owner import resolve_user_id
 
 logger = logging.getLogger(__name__)
 
@@ -79,7 +80,7 @@ class RiskKeywordService:
         self._cache_timestamp: float = 0.0
         
         self.agent_name = agent_name
-        self.user_id = user_id
+        self.user_id = resolve_user_id(user_id)
         self.tier = tier
         
         # [Rule #14] Model Tiering Injection

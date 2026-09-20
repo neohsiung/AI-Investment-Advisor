@@ -7,7 +7,7 @@ from typing import Any, Dict, List, Optional
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 
-from src.api.v1.router import get_current_user_id
+from src.api.v1.dependencies import get_current_user_id
 from src.repositories.backtest_repository import AlchemyBacktestRepository
 from src.services.market_data_service import MarketDataService
 from src.services.portfolio_backtest_engine import PortfolioBacktestEngine, simple_ma_crossover_signal

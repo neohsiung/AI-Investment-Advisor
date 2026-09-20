@@ -25,6 +25,24 @@ class RiskManager:
     def _set_setting(self, user_id: str, key: str, value: str):
         self.settings_repo.set(user_id, key, str(value))
 
+    def _schema_thresholds(self) -> Dict[str, Any]:
+        """
+        Baseline thresholds from the settings registry.
+
+        `_get_dynamic_thresholds` still computes limits from trade history when
+        there is history to compute from (Rule #8) — this only replaces the
+        literal constants it fell back to when there was not.
+        歷史資料足夠時仍動態計算；本方法只取代原本的字面常數 fallback。
+        """
+        from src.config.settings_schema import schema_default
+
+        return {
+            "max_daily_trades": int(schema_default("ai_max_daily_trades", 3)),
+            "loss_streak_limit": int(schema_default("cb_loss_streak", 3)),
+            "holding_days_limit": int(schema_default("cb_holding_days", 21)),
+            "loss_pct_threshold": float(schema_default("cb_loss_pct", 0.15)),
+        }
+
     def _get_dynamic_thresholds(self, user_id: str) -> Dict[str, Any]:
         """
         Calculate dynamic thresholds based on historical data.
@@ -34,22 +52,12 @@ class RiskManager:
             df = self.transaction_repo.get_all_by_user_df(user_id)
             if df.empty:
                 # Conservative startup defaults for new users
-                return {
-                    "max_daily_trades": 3,
-                    "loss_streak_limit": 2,
-                    "holding_days_limit": 14,
-                    "loss_pct_threshold": 0.10
-                }
+                return self._schema_thresholds()
             
             # Filter trades
             trades = df[df['action'].isin(['BUY', 'SELL'])].copy()
             if trades.empty:
-                 return {
-                    "max_daily_trades": 3,
-                    "loss_streak_limit": 2,
-                    "holding_days_limit": 14,
-                    "loss_pct_threshold": 0.10
-                }
+                 return self._schema_thresholds()
 
             # 1. Daily Trades: Avg daily count in last 30 days + 1 StdDev
             trades['date'] = pd.to_datetime(trades['trade_date']).dt.date
@@ -82,12 +90,13 @@ class RiskManager:
             }
         except Exception as e:
             logger.error(f"RiskManager: Dynamic threshold calculation failed: {e}")
-            return {
-                "max_daily_trades": 5,
-                "loss_streak_limit": 3,
-                "holding_days_limit": 30,
-                "loss_pct_threshold": 0.20
-            }
+            # Was a SECOND, laxer literal set (5/3/30/0.20) — so the same knob
+            # had two different defaults depending on whether the history query
+            # succeeded, and the error path was the more permissive of the two.
+            # On a trading guard, an exception must not widen the limits.
+            # 原本這裡是另一組更寬鬆的字面值（5/3/30/0.20）：同一個門檻依查詢是否
+            # 成功而有兩種預設，且錯誤路徑反而更寬鬆。風控閘門不該因例外而放寬。
+            return self._schema_thresholds()
 
     def check_constraints(self, user_id: str, history: List[Dict[str, Any]] = None, current_positions: List[Any] = None) -> bool:
         """
@@ -101,7 +110,16 @@ class RiskManager:
         # (automated_trading_service, broker_factory) already coerces; this was
         # the sole outlier.
         # 2026-08-02：settings.value 是 JSON 欄位，可能存成 boolean，直接 .lower() 會 AttributeError。
-        enabled = self._get_setting(user_id, "ai_trading_enabled", "true")
+        # Fails CLOSED. This defaulted to "true", meaning an absent
+        # `ai_trading_enabled` row authorised live order placement — a fresh or
+        # partially-seeded database would trade by default. The schema default is
+        # false, so a missing value now blocks instead of permitting.
+        # (Production is unaffected: the row is present and explicitly "true".)
+        # 原本預設為 "true"：缺少該設定列等於授權真實下單。改為 fail-closed。
+        enabled = self._get_setting(user_id, "ai_trading_enabled", None)
+        if enabled is None:
+            from src.config.settings_schema import schema_default
+            enabled = schema_default("ai_trading_enabled", False)
         if str(enabled).lower() not in ("true", "1"):
             logger.warning(f"Risk Check: Global trading disabled for {user_id}")
             return False

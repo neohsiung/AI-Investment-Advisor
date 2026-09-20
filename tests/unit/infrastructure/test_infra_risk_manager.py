@@ -18,9 +18,19 @@ def test_get_dynamic_thresholds_empty(risk_manager):
     risk_manager.transaction_repo.get_all_by_user_df.return_value = pd.DataFrame()
     
     thresholds = risk_manager._get_dynamic_thresholds("user_123")
-    
-    assert thresholds["max_daily_trades"] == 3
-    assert thresholds["loss_pct_threshold"] == 0.10
+
+    # Asserted against the schema rather than repeating literals here. The two
+    # literal fallback sets this replaced (3/2/14/0.10 on the empty path,
+    # 5/3/30/0.20 on the error path) are exactly the drift a single source of
+    # defaults removes — and a test that hardcodes them would reintroduce it.
+    # 以 schema 為斷言來源，而非在此重複字面值；原本兩組不同的 fallback 正是
+    # 單一預設值來源要消除的漂移。
+    from src.config.settings_schema import schema_default
+
+    assert thresholds["max_daily_trades"] == int(schema_default("ai_max_daily_trades"))
+    assert thresholds["loss_pct_threshold"] == float(schema_default("cb_loss_pct"))
+    assert thresholds["loss_streak_limit"] == int(schema_default("cb_loss_streak"))
+    assert thresholds["holding_days_limit"] == int(schema_default("cb_holding_days"))
 
 def test_get_dynamic_thresholds_with_data(risk_manager):
     # Setup: Some trades in last 30 days

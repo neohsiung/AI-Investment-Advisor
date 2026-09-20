@@ -135,49 +135,29 @@ class ConversationAgent:
 
     async def _register_channel_skills(self):
         """
-        Register MCP skills and external MCP tools relevant to channel conversations dynamically.
-        v8.2: Added B2C user-isolated external MCP discovery.
-        """
-        
-        
-                
-        # 1. Bind local skills (Registry-based)
-                
-        # 2. [Task 8.2] Discover and bind External MCP Servers (Per-user settings)
-        try:
-            # We use the already initialized SettingsService
-            mcp_servers_json = self._settings_service.get_setting("external_mcp_servers", "[]")
-            import json
-            if isinstance(mcp_servers_json, str):
-                try:
-                    mcp_urls = json.loads(mcp_servers_json)
-                except json.JSONDecodeError:
-                    mcp_urls = []
-            else:
-                mcp_urls = mcp_servers_json if isinstance(mcp_servers_json, list) else []
+        Bind external MCP tools for this conversation.
 
-            if mcp_urls:
-                from src.tools.mcp_client_adapter import get_mcp_client
-                for url in mcp_urls:
-                    try:
-                        client = await get_mcp_client(url, self.user_id)
-                        tools = client.list_tools()
-                        for tool in tools:
-                            from src.tools.mcp_server import McpTool
-                            # Wrap the tool call
-                            mcp_tool = McpTool(
-                                name=f"ext_{tool.name}", # Namespace external tools
-                                description=f"[External] {tool.description}",
-                                func=functools.partial(client.call_tool, tool.name)
-                            )
-                            self._agent.register_tool(mcp_tool)
-                        logger.info(f"ConversationAgent ({self.user_id}): Bound {len(tools)} tools from {url}")
-                    except Exception as e:
-                        logger.warning(f"ConversationAgent: Failed to bind external MCP {url}: {e}")
-        except Exception as e:
-            logger.error(f"ConversationAgent: Error during external MCP discovery: {e}")
-        
-        logger.info("ConversationAgent: Skills and External tools bound via Registry/Gateway.")
+        The body was ~40 lines that read the `external_mcp_servers` JSON blob out
+        of the settings table and wrapped each remote tool — duplicated nowhere
+        else, which is precisely the problem: external MCP tools reached this one
+        agent and no other. That logic now lives on `BaseAgent`, driven by
+        `config/tools.yaml`, so every agent can have them.
+
+        It also opened with a `# 1. Bind local skills (Registry-based)` comment
+        followed by no code at all. Local tools are registered from the manifest
+        at construction, so there is nothing for that step to do here.
+
+        原本約 40 行讀取 settings 表的 external_mcp_servers JSON blob，
+        導致外部 MCP 工具只有這一個 agent 拿得到；該邏輯已移至 BaseAgent 並由
+        config/tools.yaml 驅動。另原本有一行「綁定本地技能」註解但完全沒有程式碼——
+        本地工具已在建構時由 manifest 註冊。
+        """
+        count = await self._agent.bind_external_mcp_tools(
+            settings_service=self._settings_service
+        )
+        logger.info(
+            f"ConversationAgent ({self.user_id}): bound {count} external MCP tool(s)"
+        )
 
     async def respond(
         self,

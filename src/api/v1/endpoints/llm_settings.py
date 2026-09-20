@@ -35,7 +35,7 @@ from typing import Any, Dict, List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 
-from src.api.v1.router import get_current_user_id
+from src.api.v1.dependencies import get_current_user_id
 from src.api.v1.schemas.llm_settings_schemas import (
     AgentOverrideOut,
     AgentOverridesResponse,

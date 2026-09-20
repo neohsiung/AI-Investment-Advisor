@@ -3,6 +3,12 @@ from typing import List, Dict, Tuple, Any, Optional, Callable
 import requests
 import pandas as pd
 from src.repositories.settings_repository import AlchemySettingsRepository, ISettingsRepository
+from src.config.owner import resolve_user_id
+from src.config.settings_schema import (
+    SettingsSchemaError,
+    load_schema,
+    schema_default,
+)
 from src.repositories.prompt_repository import AlchemyPromptRepository, IPromptRepository
 from src.utils.logger import setup_logger
 
@@ -21,7 +27,7 @@ class SettingsService:
         初始化具備儲存庫的設定服務。
         """
         self.db_path = db_path
-        self.user_id = user_id
+        self.user_id = user_id  # resolved lazily in _get_effective_uid()
         self.settings_repo = settings_repo or AlchemySettingsRepository()
         self.prompt_repo = prompt_repo or AlchemyPromptRepository()
 
@@ -29,9 +35,9 @@ class SettingsService:
         """
         Determine the effective user ID.
         """
-        if not self.user_id:
-            raise ValueError("SettingsService: No user_id provided or initialized.")
-        return self.user_id
+        # Resolved lazily (not in __init__) so tests can patch the owner and so
+        # constructing the service never touches the database.
+        return resolve_user_id(self.user_id)
 
     def get_all_settings(self, user_id: str = None) -> Dict[str, Any]:
         """
@@ -86,20 +92,36 @@ class SettingsService:
     def get_setting(self, key: str, default: Any = None, user_id: str = None) -> Any:
         """
         Retrieves a single setting value by its key.
-        v4.3.3: Strict DB-only retrieval per user policy.
+
+        When the caller passes no explicit `default`, the schema's default is
+        used (config/settings_schema.yaml). That removes the need for every read
+        site to carry its own fallback — the pattern that let `target_cash_ratio`
+        end up read with 0.1, 0.10 and 0.20 in four different places.
+
+        An explicit `default=` argument still wins, so existing call sites keep
+        their exact behaviour and can be migrated one at a time.
+
+        未指定 default 時改用 schema 預設值，避免每個讀取點各自帶 fallback
+        （target_cash_ratio 曾在四處出現三種不同預設值）；明確傳入的 default 優先。
         """
         target_uid = user_id or self._get_effective_uid()
+        effective_default = default
+        if default is None:
+            effective_default = schema_default(key, None)
+
         try:
-            raw_val = self.settings_repo.get(target_uid, key, default)
+            raw_val = self.settings_repo.get(target_uid, key, effective_default)
             parsed = self._parse_setting_value(raw_val)
-            # If parsed is None but raw_val was not None, it means it was "" or 'None'
-            # We should return default in these cases if a default is provided.
+            # A stored "" or "None" parses to None; fall back rather than
+            # handing the caller a null it did not ask for.
             if parsed is None and raw_val is not None:
-                return default
+                return effective_default
+            if parsed is None:
+                return effective_default
             return parsed
         except Exception as e:
             _logger.warning(f'Exception in settings_service.py: {e}', exc_info=True)
-            return default
+            return effective_default
 
     # Settings that change how a broker connects or which venue it trades on.
     # Writing any of these must drop the cached broker for that user.
@@ -145,6 +167,34 @@ class SettingsService:
             _logger.exception("save_setting failed for key=%s", key)
             return False, "SETTINGS_SAVE_FAILED"
 
+    def _validate_against_schema(
+        self, settings_dict: Dict[str, Any]
+    ) -> Tuple[Dict[str, Any], list]:
+        """
+        Coerce every value to its declared type; collect human-readable errors.
+
+        Unknown keys are rejected rather than ignored. Silently dropping them
+        would let a typo look like a successful save — the user sets
+        `auto_trade_threshhold`, sees "saved", and the real threshold never
+        moves. On a path that governs order placement that is the wrong failure.
+        未知鍵一律拒絕而非忽略：靜默丟棄會讓打錯的鍵看起來儲存成功，
+        而真正的門檻從未改變——在會下單的路徑上這是錯誤的失敗方式。
+        """
+        schema = load_schema()
+        validated: Dict[str, Any] = {}
+        rejected: list = []
+
+        for key, value in settings_dict.items():
+            if not schema.is_known(key):
+                rejected.append(f"{key}: unknown setting")
+                continue
+            try:
+                validated[key] = schema.coerce(key, value)
+            except SettingsSchemaError as exc:
+                rejected.append(str(exc))
+
+        return validated, rejected
+
     def save_settings_bulk(self, settings_dict: Dict[str, Any]) -> Tuple[bool, str]:
         """
         Saves or updates multiple settings atomically — all or nothing.
@@ -161,7 +211,26 @@ class SettingsService:
             target_uid = self._get_effective_uid()
             if not settings_dict:
                 return True, "No settings to save."
-            self.settings_repo.set_many(target_uid, settings_dict)
+
+            # Validate and coerce against the registry before writing.
+            #
+            # Only this bulk path is strict. Its two callers are both HTTP
+            # endpoints, i.e. user input; the internal single-key `save_setting`
+            # stays permissive because the same table carries machine-written
+            # rows (alpha_spy_* generated code, cached_* runtime caches) that are
+            # deliberately not in the schema.
+            #
+            # 只有此 bulk 路徑嚴格驗證：它的兩個呼叫端都是 HTTP 端點（使用者輸入）。
+            # 內部單鍵寫入保持寬鬆，因為同一張表還有刻意不納入 schema 的機器寫入列。
+            validated, rejected = self._validate_against_schema(settings_dict)
+            if rejected:
+                _logger.warning(
+                    "save_settings_bulk rejected %d key(s) for user=%s: %s",
+                    len(rejected), target_uid, "; ".join(rejected),
+                )
+                return False, "SETTINGS_VALIDATION_FAILED: " + "; ".join(rejected)
+
+            self.settings_repo.set_many(target_uid, validated)
             return True, "Settings saved successfully."
         except Exception:
             # 2026-08-02: both callers (POST /api/v1/settings and the legacy
@@ -261,15 +330,22 @@ class SettingsService:
         if not target_uid:
             return
             
+        # Sourced from the registry rather than a private dict. These eight values
+        # existed here AND as read-site fallbacks AND (after M4) in
+        # config/settings_schema.yaml — three places to change one number.
+        # 這八個值原本同時存在於此、各讀取點的 fallback、以及 schema 中。
+        from src.config.settings_schema import load_schema
+
+        _schema = load_schema()
         defaults = {
-            "sentinel_p1_limit_mins": 15,
-            "sentinel_p2_limit_mins": 60,
-            "sentinel_p3_limit_mins": 240,
-            "sentinel_p4_limit_mins": 720,
-            "sentinel_p5_limit_mins": 1440,
-            "max_single_position_weight": 25.0,
-            "emergency_liquidation_score": 9,
-            "emergency_hedge_amount": 50.0
+            k: _schema.default(k)
+            for k in (
+                "sentinel_p1_limit_mins", "sentinel_p2_limit_mins",
+                "sentinel_p3_limit_mins", "sentinel_p4_limit_mins",
+                "sentinel_p5_limit_mins", "max_single_position_weight",
+                "emergency_liquidation_score", "emergency_hedge_amount",
+            )
+            if _schema.default(k) is not None
         }
         
         for key, val in defaults.items():
@@ -342,20 +418,34 @@ class SettingsService:
         #       模型名稱從 TierConfig.DEFAULT_TIERS 動態讀取，避免重複的真相來源。
         from src.infrastructure.llm.tier_config import TierConfig
         _tc = TierConfig()
+        # Values come from the registry; only the AI_MODEL_* entries are computed,
+        # because they resolve against TierConfig rather than being static.
+        #
+        # NOTE ON AUTHORITY: this only ever *seeds* rows that are absent. The
+        # settings table stays the authority for every value — the schema default
+        # occupies the lowest tier of the project's documented precedence
+        # (settings table > .env > code defaults), which is exactly where a
+        # shipped default belongs.
+        #
+        # 僅在該列不存在時寫入；settings 表始終是值的權威來源，
+        # schema 預設值位於既定優先序的最低層（settings 表 > .env > 程式預設）。
+        from src.config.settings_schema import load_schema as _load_settings_schema
+
+        _sc = _load_settings_schema()
         defaults = {
-            "auto_trade_threshold": 75,
-            "auto_trade_min_threshold": 30,
-            "risk_profile": "Aggressive",
-            "target_cash_ratio": 0.2,
-            "AI_PROVIDER": "OpenRouter",
+            "auto_trade_threshold": _sc.default("auto_trade_threshold"),
+            "auto_trade_min_threshold": _sc.default("auto_trade_min_threshold"),
+            "risk_profile": _sc.default("risk_profile"),
+            "target_cash_ratio": _sc.default("target_cash_ratio"),
+            "AI_PROVIDER": _sc.default("AI_PROVIDER"),
             "AI_MODEL":          _tc.resolve("smart"),    # smart tier fallback
             "AI_MODEL_ADVANCED": _tc.resolve("advanced"), # advanced tier fallback
             "AI_MODEL_SMART":    _tc.resolve("smart"),    # smart tier fallback
             "AI_MODEL_FAST":     _tc.resolve("fast"),     # fast tier fallback
             "AI_MODEL_NANO":     _tc.resolve("nano"),     # nano tier fallback
-            "DISPLAY_TIMEZONE": "Asia/Taipei",
-            "enable_etoro": False,
-            "etoro_mode": "demo"
+            "DISPLAY_TIMEZONE": _sc.default("DISPLAY_TIMEZONE"),
+            "enable_etoro": _sc.default("enable_etoro"),
+            "etoro_mode": _sc.default("etoro_mode"),
         }
         
         # 重新整理遷移後的現況

@@ -12,6 +12,7 @@ from src.services.interaction_service import InteractionService
 from src.services.notification_service import NotificationService
 from src.domain.trading import Order, OrderAction, OrderType, OrderSizingMode
 from src.services.broker_factory import BrokerFactory
+from src.config.owner import resolve_user_id
 
 class _ApprovalSlot:
     """
@@ -40,7 +41,7 @@ class _ApprovalSlot:
     _TTL_SECONDS = 420
 
     def __init__(self, user_id: str, settings_repo: Any):
-        self.user_id = user_id
+        self.user_id = resolve_user_id(user_id)
         self._settings_repo = settings_repo
         self._key = f"approval:slots:{user_id}"
         self._held = False

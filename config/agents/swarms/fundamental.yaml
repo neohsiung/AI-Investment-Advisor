@@ -1,0 +1,20 @@
+# Fundamental swarm sub-agents.
+#
+# Transcribed from FundamentalSwarm.__init__, where each sub-agent was a nested
+# `register_sub_agent(tier=..., agent=FundamentalSubAgent(...))` call with its
+# instruction inline.
+#
+# 由 FundamentalSwarm.__init__ 轉錄；每個子代理原本是巢狀的 register_sub_agent
+# 呼叫，指令文字內嵌其中。
+
+id: fundamental
+sub_agents:
+  - name: RevenueExtractor
+    tier: smart
+    instruction: 分析財務數據與尋找營收增長點與利潤率趨勢 (Extract revenue and margin trends).
+  - name: RiskFactorScanner
+    tier: fast
+    instruction: 掃描新聞與財報中的風險因子 (Scan for risk factors).
+  - name: ValuationModeler
+    tier: advanced
+    instruction: 建立估值模型判斷價格是否合理 (Build valuation model).

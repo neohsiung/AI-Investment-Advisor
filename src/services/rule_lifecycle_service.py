@@ -24,6 +24,7 @@ from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional
 
 from sqlalchemy import text
+from src.config.owner import resolve_user_id
 
 logger = logging.getLogger(__name__)
 
@@ -44,10 +45,7 @@ GATE_PROVISIONAL_TTL_DAYS = 30
 class RuleLifecycleService:
     def __init__(self, user_id: Optional[str] = None):
         import os
-        self.user_id = user_id or os.getenv("PRIMARY_USER_ID") or os.getenv("USER_ID")
-        if not self.user_id:
-            from src.repositories.user_repository import AlchemyUserRepository
-            self.user_id = AlchemyUserRepository().get_first_user_id()
+        self.user_id = resolve_user_id(user_id)
 
     def _engine(self):
         from src.data.database import get_db_engine

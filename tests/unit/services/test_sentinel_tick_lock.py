@@ -6,11 +6,17 @@ Context (2026-08-02): two Celery Beat entries terminated in the SAME call —
 "sentinel-minutely-tick" (every minute) and "portfolio-rebalance-trigger"
 (*/30 during 08:00-16:59 Mon-Fri) both ran
 `SentinelService(user_id).process_tick()`. At :00 and :30 the tick therefore
-ran twice, and both of those minutes satisfy the `minute % 10 == 0` gate that
-guards the paid Tavily breaking-news search (:00 also hits FRED) — roughly 18
+ran twice, and both of those minutes satisfied the `minute % 10 == 0` gate that
+guarded the paid Tavily breaking-news search (:00 also hit FRED) — roughly 18
 duplicated paid ticks per trading day. `_handle_rebalance_logic`'s 30-minute
 debounce could not stop it: it keys off `self.last_fire_time` on an instance
 each Celery task constructs fresh.
+
+Single-box update: the entry is now "sentinel-tick" and its rate is
+configurable (SENTINEL_TICK_CRON_MINUTE, default */15), and the paid dimensions
+hold their own elapsed-time windows instead of gating on `minute % N`. The
+invariant these tests guard is unchanged: exactly one beat entry may drive
+process_tick.
 
 Fix: the redundant beat entry is gone, and `process_tick()` now takes a
 per-user, per-minute Redis lock so no arrangement of callers can double-run it.
@@ -26,10 +32,10 @@ class TestBeatScheduleHasNoDuplicateSentinelEntry:
 
         assert "portfolio-rebalance-trigger" not in app.conf.beat_schedule
 
-    def test_sentinel_minutely_tick_survives(self):
+    def test_sentinel_tick_entry_survives(self):
         from src.infrastructure.celery_app import app
 
-        assert "sentinel-minutely-tick" in app.conf.beat_schedule
+        assert "sentinel-tick" in app.conf.beat_schedule
 
     def test_only_one_beat_entry_reaches_process_tick(self):
         """
@@ -65,8 +71,8 @@ class TestBeatScheduleHasNoDuplicateSentinelEntry:
                 if "process_tick" in src:
                     reaching.append(name)
 
-        assert reaching == ["sentinel-minutely-tick"], (
-            f"expected only the minutely tick to drive process_tick, got {reaching}"
+        assert reaching == ["sentinel-tick"], (
+            f"expected only the sentinel tick to drive process_tick, got {reaching}"
         )
 
     def test_dispatch_portfolio_rebalance_removed(self):

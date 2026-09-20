@@ -176,33 +176,25 @@ graph TD
 - Python 3.10+ (for local development)
 - Node.js 20+ (for frontend development)
 
-### Launch (self-host, one command)
+### Launch (Turnkey Self-Host, One Command)
 
 ```bash
 git clone https://github.com/neohsiung/AI-Investment-Advisor.git
 cd AI-Investment-Advisor
-./start.sh selfhost
+./install.sh
 ```
 
-This auto-generates every required secret, defaults to **paper trading
-mode** (no real orders, ever, until you opt in), builds and starts the
-full stack, and applies database migrations. See
-**[docs/SELF_HOSTING.md](docs/SELF_HOSTING.md)** for the first-run LLM
-provider setup, cost expectations, and how to switch to live trading
-when you're ready.
+`install.sh` performs pre-flight verification, generates cryptographic secrets, protects database encryption keys, runs an onboarding wizard to pick your **Operating Cost Profile** (Frugal, Balanced, or Aggressive), builds the 7 core containers, applies database migrations, seeds safe defaults (`ai_trading_enabled=false`), and health-gates the deployment.
 
-For local development instead of the hardened self-host profile, use
-`./start.sh dev` (includes SigNoz APM, n8n, and debugging tools).
+See **[docs/SELF_HOSTING.md](docs/SELF_HOSTING.md)** for detailed operating and customization instructions.
 
-| Service | URL |
-|:--------|:----|
-| Gateway (nginx, prod only) | [http://127.0.0.1:8088](http://127.0.0.1:8088) |
-| Next.js Dashboard | [http://localhost:3001](http://localhost:3001) |
-| FastAPI / MCP Server | [http://localhost:8000](http://localhost:8000) (dev: 8001) |
-| SigNoz APM | [http://127.0.0.1:8080](http://127.0.0.1:8080) |
-
-> The dev stack's nginx publishes no host port — reach the frontend and API
-> directly on the ports above. The gateway exists in production only.
+| Service | Access URL | Description |
+|:--------|:-----------|:------------|
+| **Web Dashboard** | [http://127.0.0.1:8088](http://127.0.0.1:8088) | Unified Gateway (No Login Needed on Loopback) |
+| **Extensions Hub** | [http://127.0.0.1:8088/extensions](http://127.0.0.1:8088/extensions) | Data Sources, Notification Channels, Tools, Skills |
+| **Agents & Prompts** | [http://127.0.0.1:8088/agents](http://127.0.0.1:8088/agents) | Agent Roster, Prompt Directives & Personas |
+| **Workflows** | [http://127.0.0.1:8088/workflows](http://127.0.0.1:8088/workflows) | Multi-Agent Directed Acyclic Graphs (DAGs) |
+| **Cost Profiles** | [http://127.0.0.1:8088/settings](http://127.0.0.1:8088/settings) | Frugal / Balanced / Aggressive Switching |
 
 ---
 

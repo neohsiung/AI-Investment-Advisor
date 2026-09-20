@@ -164,34 +164,75 @@ class TestRunAsyncSafe:
 
 
 class TestResolveTargetUsers:
+    """
+    Scheduling fan-out. This used to enumerate every active user; a single-box
+    deployment schedules for exactly one owner.
+
+    The regression being guarded is financial: each fan-out target gets its own
+    Celery task, and the sentinel tick can escalate into a multi-agent council
+    debate. One stray `users` row — a test account, a half-deleted signup —
+    used to double the LLM bill silently.
+
+    排程扇出收斂為擁有者一人；多餘的 users 列曾會讓 LLM 帳單直接翻倍。
+    """
+
+    OWNER = "00000000-0000-4000-a000-000000000001"
+
+    @pytest.fixture(autouse=True)
+    def _pin_owner(self, monkeypatch):
+        from src.config.owner import reset_owner_cache
+
+        monkeypatch.setenv("OWNER_ID", self.OWNER)
+        reset_owner_cache()
+        yield
+        reset_owner_cache()
+
     def test_explicit_user_id_skips_db(self):
         with patch("src.repositories.user_repository.AlchemyUserRepository") as repo:
             assert tasks._resolve_target_users("u1") == ["u1"]
             repo.assert_not_called()
 
-    def test_queries_active_users_from_db(self):
+    def test_defaults_to_the_owner(self):
+        assert tasks._resolve_target_users() == [self.OWNER]
+
+    def test_extra_user_rows_do_not_multiply_the_fan_out(self):
         with patch("src.repositories.user_repository.AlchemyUserRepository") as repo:
             repo.return_value.get_all_active_users.return_value = ["u1", "u2", "u3"]
-            assert tasks._resolve_target_users() == ["u1", "u2", "u3"]
+            assert tasks._resolve_target_users() == [self.OWNER]
 
-    def test_falls_back_to_env_when_db_empty(self, monkeypatch):
+    def test_owner_id_env_is_authoritative(self, monkeypatch):
+        monkeypatch.setenv("OWNER_ID", "pinned-owner")
+        from src.config.owner import reset_owner_cache
+
+        reset_owner_cache()
+        assert tasks._resolve_target_users() == ["pinned-owner"]
+
+    def test_legacy_env_var_still_honoured(self, monkeypatch):
+        """PRIMARY_USER_ID / USER_ID predate OWNER_ID and still resolve."""
+        from src.config.owner import reset_owner_cache
+
+        monkeypatch.delenv("OWNER_ID", raising=False)
         monkeypatch.setenv("PRIMARY_USER_ID", "env-user")
-        with patch("src.repositories.user_repository.AlchemyUserRepository") as repo:
-            repo.return_value.get_all_active_users.return_value = []
-            assert tasks._resolve_target_users() == ["env-user"]
+        reset_owner_cache()
+        assert tasks._resolve_target_users() == ["env-user"]
 
-    def test_falls_back_to_secondary_env_var(self, monkeypatch):
-        monkeypatch.setenv("USER_ID", "legacy-user")
-        with patch("src.repositories.user_repository.AlchemyUserRepository") as repo:
-            repo.return_value.get_all_active_users.return_value = []
-            assert tasks._resolve_target_users() == ["legacy-user"]
+    def test_no_owner_anywhere_raises_rather_than_scheduling_for_none(self, monkeypatch):
+        """
+        Previously this returned `[]` so dispatchers silently fanned out to
+        nobody — a scheduler doing nothing while every monitor stayed green.
+        Now it fails loudly.
+        舊行為是回傳空清單、排程靜默不執行；現在改為明確拋錯。
+        """
+        from src.config.owner import OwnerNotResolved, reset_owner_cache
+        from src.repositories.user_repository import AlchemyUserRepository
 
-    def test_returns_empty_when_no_users_and_no_env(self):
-        """No users anywhere -> empty list, so dispatchers fan out to nobody
-        rather than enqueueing a task with user_id=None."""
-        with patch("src.repositories.user_repository.AlchemyUserRepository") as repo:
-            repo.return_value.get_all_active_users.return_value = []
-            assert tasks._resolve_target_users() == []
+        for var in ("OWNER_ID", "PRIMARY_USER_ID", "USER_ID"):
+            monkeypatch.delenv(var, raising=False)
+        monkeypatch.setenv("OWNER_BOOTSTRAP", "0")
+        reset_owner_cache()
+        with patch.object(AlchemyUserRepository, "get_first_user_id", return_value=None):
+            with pytest.raises(OwnerNotResolved):
+                tasks._resolve_target_users()
 
 
 # ─────────────────────────────────────────────────────────────────────────────

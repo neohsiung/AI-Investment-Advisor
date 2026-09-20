@@ -90,45 +90,18 @@ def pytest_configure(config):
         engine = get_db_engine()
         init_db(engine=engine, force=True)
 
-        # decision_outcomes still has to be created by hand here. Note that
-        # src/data/database.py's init_db() is a hand-written DDL script and
-        # does NOT call Base.metadata.create_all() — so the declaration-only
-        # ORM model added in 2026-08 (for `alembic check`) does not reach this
-        # test database. scripts/init_db.py, the deployment path, DOES use
-        # create_all() and is covered by that model.
+        # The hand-created `decision_outcomes` table that used to live here is
+        # gone. It existed because src/data/database.py's init_db() was a
+        # hand-written DDL script that did not call Base.metadata.create_all(),
+        # so an ORM-only model never reached the test database — and
+        # TradingProtectionsService fails CLOSED on a query error, meaning a
+        # missing table hard-blocked every BUY in tests.
         #
-        # It matters because TradingProtectionsService fails CLOSED on a query
-        # error, so a missing table hard-blocks every BUY in tests that
-        # exercise the real protection path rather than silently no-op'ing.
+        # init_db() now create_all()s from the ORM, so every model reaches this
+        # database automatically and the workaround has no reason to exist.
         #
-        # src/data/database.py 的 init_db() 是手寫 DDL、不呼叫 create_all()，
-        # 所以新加的 ORM model 到不了測試資料庫（部署用的 scripts/init_db.py
-        # 才走 create_all()）。TradingProtectionsService 查詢失敗是 fail-closed，
-        # 缺表會直接擋掉 BUY，因此這段必須留著。
-        from sqlalchemy import text
-        with engine.begin() as conn:
-            conn.execute(text("""
-                CREATE TABLE IF NOT EXISTS decision_outcomes (
-                    id TEXT PRIMARY KEY,
-                    user_id TEXT NOT NULL,
-                    session_id TEXT,
-                    agent_name TEXT NOT NULL,
-                    ticker TEXT NOT NULL,
-                    signal TEXT NOT NULL,
-                    price_at_decision NUMERIC(18, 8) NOT NULL,
-                    decided_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-                    horizon_days INTEGER NOT NULL DEFAULT 5,
-                    resolved_at DATETIME,
-                    realized_return_pct NUMERIC(10, 4),
-                    benchmark_return_pct NUMERIC(10, 4),
-                    alpha_pct NUMERIC(10, 4),
-                    lesson TEXT,
-                    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
-                )
-            """))
-            conn.execute(text("CREATE INDEX IF NOT EXISTS ix_decision_outcomes_user_id ON decision_outcomes (user_id)"))
-            conn.execute(text("CREATE INDEX IF NOT EXISTS ix_decision_outcomes_ticker ON decision_outcomes (ticker)"))
-            conn.execute(text("CREATE INDEX IF NOT EXISTS ix_decision_outcomes_pending ON decision_outcomes (resolved_at, decided_at)"))
+        # 舊 init_db 是手寫 DDL、不呼叫 create_all，ORM-only 的 model 到不了測試庫，
+        # 故需手動建表。現已改為 create_all，此變通不再需要。
     except Exception as e:
         print(f"DEBUG: Failed to initialize in-memory DB during collection: {e}")
 

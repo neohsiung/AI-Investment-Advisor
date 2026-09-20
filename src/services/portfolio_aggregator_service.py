@@ -6,6 +6,7 @@ from src.domain.trading import Position, Account
 from src.services.broker_factory import BrokerFactory
 from src.repositories.transaction_repository import AlchemyTransactionRepository
 from src.api.v1.exceptions import BrokerNotConfiguredError, BrokerDependencyError
+from src.config.owner import resolve_user_id
 
 logger = logging.getLogger(__name__)
 
@@ -19,7 +20,7 @@ class PortfolioAggregatorService:
         Initialize the portfolio aggregator service.
         初始化投資組合整合服務。
         """
-        self.user_id = user_id
+        self.user_id = resolve_user_id(user_id)
         # In future, we might want to check which brokers are actually enabled in settings
         self.brokers = BrokerFactory.get_enabled_brokers(user_id)
 

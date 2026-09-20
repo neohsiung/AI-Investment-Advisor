@@ -8,6 +8,7 @@ from typing import List, Dict, Tuple, Any, Optional, Callable, Dict, List, Tuple
 # from src.ingestor import TradeIngestor # Removed for Clean Clean Architecture
 from src.services.analytics_service import update_daily_snapshot
 from src.utils.logger import setup_logger
+from src.config.owner import resolve_user_id
 
 logger = setup_logger("TransactionService")
 
@@ -22,7 +23,7 @@ class TransactionService:
         初始化交易服務。
         """
         self.db_path = db_path
-        self.user_id = user_id
+        self.user_id = resolve_user_id(user_id)
         # Use Alchemy Repository for Postgres strictness
         from src.repositories.transaction_repository import AlchemyTransactionRepository
         self.repository = repository or AlchemyTransactionRepository()

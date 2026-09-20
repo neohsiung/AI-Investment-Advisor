@@ -30,6 +30,41 @@ class FundamentalSwarm(RoleSwarmBase):
         kwargs['tier'] = 'smart'
         super().__init__(name="FundamentalSwarm", use_cache=use_cache, ttl_hours=ttl, user_id=user_id, **kwargs)
         
+        # Sub-agents come from config/agents/swarms/fundamental.yaml. Each was a
+        # nested register_sub_agent(...) call with its instruction inline here.
+        # 子代理改由 config/agents/swarms/fundamental.yaml 定義。
+        from src.agents.swarm.roster import load_roster
+
+        for spec in load_roster("fundamental"):
+            self.register_sub_agent(
+                tier=spec.tier,
+                agent=FundamentalSubAgent(
+                    name=spec.name,
+                    instruction=spec.instruction,
+                    tier=spec.tier,
+                    user_id=user_id,
+                    use_cache=use_cache,
+                    ttl_hours=ttl,
+                ),
+            )
+
+    async def run(self, context: Any) -> str:
+        ctx_dump = json.dumps(context, indent=2, ensure_ascii=False) if isinstance(context, dict) else str(context)
+        prompt_data = {
+            "user_request": f"{self.instruction}\n\nData Context:\n{ctx_dump}"
+        }
+        return await self.run_tool_loop(context=prompt_data)
+
+class FundamentalSwarm(RoleSwarmBase):
+    def __init__(self, use_cache=True, ttl_hours=None, **kwargs):
+        ttl = ttl_hours if ttl_hours is not None else 24
+        user_id = kwargs.pop("user_id", None)
+        if not user_id:
+            raise ValueError("FundamentalSwarm: user_id is required.")
+        # Ensure tier is passed to base agent for factory consistency
+        kwargs['tier'] = 'smart'
+        super().__init__(name="FundamentalSwarm", use_cache=use_cache, ttl_hours=ttl, user_id=user_id, **kwargs)
+        
         self.register_sub_agent(
             tier="smart",
             agent=FundamentalSubAgent(
