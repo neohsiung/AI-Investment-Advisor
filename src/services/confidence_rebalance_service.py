@@ -254,8 +254,8 @@ class ConfidenceRebalanceService:
                 logger.warning("ConfidenceRebalance: Total equity is zero")
                 return None
 
-            # Align with capital policy: respect tradable_capital mandate ($500 cap)
-            # 對齊受託資本政策：以 tradable_capital 上限為基準計算部位與權重
+            # Align with capital policy: respect configured tradable_capital mandate
+            # 對齊受託資本政策：以系統設定的 tradable_capital 上限為基準計算部位與權重
             raw_total = total_equity + total_cash
             effective_capital = tradable_capital(self.user_id, raw_total)
             total_portfolio_value = min(raw_total, effective_capital) if effective_capital > 0 else raw_total

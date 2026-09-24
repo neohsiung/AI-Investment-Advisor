@@ -43,6 +43,32 @@ P1_KEYWORDS = [
 ]
 
 
+def _strip_thinking_traces(text: str) -> str:
+    """Safely strip LLM thinking traces without polynomial regex ReDoS vulnerability."""
+    # Strip <think>...</think> blocks in linear O(N) time
+    while "<think>" in text:
+        start_idx = text.find("<think>")
+        end_idx = text.find("</think>", start_idx + 7)
+        if end_idx != -1:
+            text = text[:start_idx] + text[end_idx + 8:]
+        else:
+            text = text[:start_idx]
+            break
+
+    # Strip "here's a thinking process:" to next double newline or end
+    marker = "here's a thinking process:"
+    while marker in text:
+        start_idx = text.find(marker)
+        end_idx = text.find("\n\n", start_idx + len(marker))
+        if end_idx != -1:
+            text = text[:start_idx] + text[end_idx + 2:]
+        else:
+            text = text[:start_idx]
+            break
+
+    return text
+
+
 class EventAggregator:
     """Service for managing the event aggregation lifecycle."""
 
@@ -67,10 +93,8 @@ class EventAggregator:
         content_text = json_content_str(content) + " " + existing_decision.lower()
         content_lower = content_text.lower()
 
-        # Sanitize text to remove leaked LLM thinking traces
-        import re
-        content_clean = re.sub(r"<think>.*?</think>", "", content_lower, flags=re.DOTALL)
-        content_clean = re.sub(r"here's a thinking process:.*?(?=\n\n|\Z)", "", content_clean, flags=re.DOTALL)
+        # Sanitize text to remove leaked LLM thinking traces (safe against ReDoS)
+        content_clean = _strip_thinking_traces(content_lower)
 
         # Reports and routine workflows should NEVER trigger P0 emergency bypass.
         # General market news or analysis mentioning words like "fraud" or "hack"
