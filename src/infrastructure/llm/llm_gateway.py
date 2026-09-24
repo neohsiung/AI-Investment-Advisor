@@ -61,7 +61,11 @@ class OpenRouterGateway(ILLMGateway):
 
         data = {
             "model": actual_model_id,
-            "messages": [{"role": m.role, "content": m.content} for m in messages],
+            "messages": [
+                {"role": m.role if hasattr(m, "role") else m.get("role", "user"),
+                 "content": m.content if hasattr(m, "content") else m.get("content", "")}
+                for m in messages
+            ],
             "max_tokens": config.max_tokens or 2048,
         }
         
@@ -127,7 +131,11 @@ class OpenRouterGateway(ILLMGateway):
         # Build request data with all required fields
         data = {
             "model": actual_model_id,
-            "messages": [{"role": m.role, "content": m.content} for m in messages],
+            "messages": [
+                {"role": m.role if hasattr(m, "role") else m.get("role", "user"),
+                 "content": m.content if hasattr(m, "content") else m.get("content", "")}
+                for m in messages
+            ],
             "stream": True,
             "max_tokens": config.max_tokens or 2048,
         }

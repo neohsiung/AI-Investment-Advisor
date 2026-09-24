@@ -43,7 +43,6 @@ def compose_ops_health(events: List[Dict[str, Any]]) -> Tuple[str, str]:
     
     lines = [
         f"🛠️ 系統運作狀況摘要 (Ops Health) — {today}",
-        "━━━━━━━━━━━━━━━━━━━━━",
         f"今日系統事件共 {len(events)} 件",
     ]
     
@@ -82,6 +81,7 @@ ops_health_node = DigestNode(
     selector=ops_selector,
     composer=compose_ops_health,
     category="ops",
+    channels=["web"],  # Strict: Ops health internal metrics stay on web, never spam email
     suppress=suppress_ops_health
 )
 
@@ -94,59 +94,77 @@ def investment_selector(event: Dict[str, Any]) -> bool:
 
 def compose_investment_digest(events: List[Dict[str, Any]]) -> Tuple[str, str]:
     today = datetime.now().strftime("%Y-%m-%d")
-    title = f"📋 Daily Portfolio Digest — {today}"
+    title = f"🕒 即時市場與事件快訊 (Hourly Market Events) — {today}"
     
     p0 = [e for e in events if e.get("tier") == "P0"]
     p1 = [e for e in events if e.get("tier") == "P1"]
     p2 = [e for e in events if e.get("tier") == "P2"]
-    p3 = [e for e in events if e.get("tier") == "P3"]
     
     lines = [
-        f"📋 每日投資摘要 (Daily Digest) — {today}",
-        "━━━━━━━━━━━━━━━━━━━━━",
-        f"今日處理事件共 {len(events)} 件",
-        f"  • P0 關鍵/緊急: {len(p0)} 件",
-        f"  • P1 重要/操作: {len(p1)} 件",
-        f"  • P2 例行/報告: {len(p2)} 件",
-        f"  • P3 參考/訊號: {len(p3)} 件",
+        f"🕒 即時市場與事件快訊 — {today}",
     ]
     
-    if p0:
-        lines.append("\n🔴 關鍵與緊急事件 (Critical Events):")
-        for e in p0:
-            content = e.get("content", {})
-            lines.append(f"  • {content.get('source', '?')}: {content.get('topic', '')[:80]}")
-    if p1:
-        lines.append("\n🟡 重要操作與警報 (Actionable Alerts):")
-        for e in p1:
-            content = e.get("content", {})
-            decision = content.get("decision", content.get("summary", ""))[:150]
-            lines.append(f"  • {content.get('source', '?')}: {decision}")
-    if p2:
-        lines.append("\n⚪ 例行報告與快訊 (Routine Reports):")
-        for e in p2:
-            content = e.get("content", {})
-            t = content.get("title") or content.get("topic") or e.get("event_type") or "Report"
-            summary = content.get("summary") or content.get("full_text") or ""
-            lines.append(f"\n📄 **{t}**")
-            if summary:
-                clean_s = summary.strip()
-                if len(clean_s) > 1200:
-                    clean_s = clean_s[:1200] + "..."
-                lines.append(f"{clean_s}\n")
-    if p3:
-        lines.append("\n🔵 參考訊號與資訊 (Reference Signals):")
-        for e in p3:
-            content = e.get("content", {})
-            t = content.get("title") or content.get("topic") or content.get("summary") or e.get("event_type") or "Reference"
-            lines.append(f"  • {t[:80]}")
+    # 1. Critical & Actionable Trade Insights (P0/P1)
+    actionable_items = []
+    import re
+    for e in (p0 + p1):
+        content = e.get("content", {})
+        topic = content.get("topic", "")
+        decision = content.get("decision", content.get("summary", ""))
+        source = content.get("source")
+        if not source or source == "?":
+            source = "Sentinel" if str(e.get("event_type", "")).startswith("sentinel") else "市場快訊"
+        
+        # Clean up decision text and remove any leaked LLM thinking scratchpad
+        clean_dec = decision.replace("━━━━━━━━━━━━━━━━━━━━━", "").replace("💰 投資有風險，內容僅供參考，不構成建議。", "")
+        clean_dec = re.sub(r'<think>.*?</think>', '', clean_dec, flags=re.DOTALL | re.IGNORECASE)
+        clean_dec = re.sub(r"(?i)here['’]?s\s+a\s+thinking\s+process:.*?(?=\n\n\S|##|\d+\.|\Z)", '', clean_dec, flags=re.DOTALL)
+        clean_dec = re.sub(r"(?i)^.*?analyze user request:.*?(?=\n\n\S|\d+\.|\Z)", '', clean_dec, flags=re.DOTALL)
+        clean_dec = clean_dec.strip()
+        if clean_dec:
+            # Extract first 2-3 essential lines
+            dec_lines = [l.strip() for l in clean_dec.split("\n") if l.strip() and not l.startswith("━")]
+            summary_point = "；".join(dec_lines[:2])[:180]
+            actionable_items.append(f"• **{source}**: {summary_point}")
+            
+    if actionable_items:
+        lines.append("\n⚡ **重要操作與市場動態 (Key Actions)**:")
+        lines.extend(actionable_items[:5])
+        
+    # 2. Routine Reports / Research Highlights (P2)
+    report_items = []
+    for e in p2:
+        content = e.get("content", {})
+        t = content.get("title") or content.get("topic") or e.get("event_type") or "Report"
+        # If title is generic default, simplify it
+        if "Investment Report" in t or "EventAnalysisWorkflow" in t:
+            t = "市場事件快訊"
+        summary = content.get("summary") or content.get("full_text") or ""
+        if summary:
+            clean_s = summary.replace("━━━━━━━━━━━━━━━━━━━━━", "")
+            clean_s = re.sub(r'<think>.*?</think>', '', clean_s, flags=re.DOTALL | re.IGNORECASE)
+            clean_s = re.sub(r"(?i)here['’]?s\s+a\s+thinking\s+process:.*?(?=\n\n\S|##|\d+\.|\Z)", '', clean_s, flags=re.DOTALL)
+            clean_s = re.sub(r"(?i)^.*?analyze user request:.*?(?=\n\n\S|\d+\.|\Z)", '', clean_s, flags=re.DOTALL)
+            clean_s = clean_s.strip()
+            # Grab concise summary without dumping thousands of characters
+            s_lines = [l.strip() for l in clean_s.split("\n") if l.strip() and not l.startswith("━") and not l.startswith("<")]
+            brief = " ".join(s_lines[:2])[:200]
+            if brief:
+                report_items.append(f"• **{t}**: {brief}")
+            
+    if report_items:
+        lines.append("\n📊 **研報與市場動態 (Market Dynamics)**:")
+        lines.extend(report_items[:3])
+        
+    if not actionable_items and not report_items:
+        lines.append("\n✅ 今日投資組合維持正常，無重大異常或需干預之操作。")
             
     return title, "\n".join(lines)
 
 
 def suppress_investment_digest(events: List[Dict[str, Any]]) -> bool:
-    # 有 P0/P1、或包含報告 (report)、或 ≥3 筆 P2、或有 >24h 的 P2 才寄；否則不寄。
-    has_p0_p1 = any(e.get("tier") in ("P0", "P1") for e in events)
+    # 有 P0/P1、或包含報告 (report)、或 ≥3 筆 P2、或有 >24h 的 P2 才發送至 Web；否則不發送。
+    has_actionable = any(e.get("tier") in ("P0", "P1") for e in events)
     has_report = any(
         e.get("event_type") == "report" or "report" in str(e.get("content", {})).lower()
         for e in events
@@ -164,14 +182,15 @@ def suppress_investment_digest(events: List[Dict[str, Any]]) -> bool:
                 has_old_p2 = True
                 break
                 
-    return not (has_p0_p1 or has_report or len(p2_events) >= 3 or has_old_p2)
+    return not (has_actionable or has_report or len(p2_events) >= 3 or has_old_p2)
 
 
 investment_digest_node = DigestNode(
     name="investment_digest",
     selector=investment_selector,
     composer=compose_investment_digest,
-    category="daily_digest",
+    category="report",
+    channels=["web"],  # Strict: Hourly digest belongs EXCLUSIVELY on dashboard, NEVER in email!
     suppress=suppress_investment_digest
 )
 

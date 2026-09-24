@@ -35,7 +35,7 @@ async def event_research(
             },
             target_action='RESEARCH',
         )
-        result = await wf.synthesize_results()
+        result = await wf.run()
         logger.info(f"Event Research: Task completed for ticker={ticker}")
         return f"Research completed for {ticker}. Result: {str(result)[:200]}..."
     except Exception as e:

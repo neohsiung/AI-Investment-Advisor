@@ -241,3 +241,66 @@ class TestRebalanceExecuteSafety:
         all_trades = plan["trades"]["all"]
         assert all_trades[0]["action"] == "SELL"
         assert all_trades[0]["ticker"] == "AAPL"
+
+    @pytest.mark.asyncio
+    async def test_rebalance_plan_includes_evicted_holdings(self):
+        """Positions held in portfolio but not in target universe must be sold (target_weight = 0)."""
+        from src.services.confidence_rebalance_service import ConfidenceRebalanceService
+
+        svc = ConfidenceRebalanceService(user_id="test-user")
+        svc._get_current_weights = AsyncMock(return_value={
+            "weights": {"AAPL": 10.0, "TSLA": 15.0, "CASH": 75.0},
+            "cash_weight": 75.0,
+            "total_value": 100000.0,
+        })
+        svc.ticker_service.optimize_allocations = MagicMock(return_value={
+            "success": True, "targets": [
+                {"ticker": "AAPL", "target_weight": 0.10, "confidence_score": 0.8},
+                {"ticker": "NVDA", "target_weight": 0.15, "confidence_score": 0.9},
+            ]
+        })
+
+        plan = await svc.get_rebalance_plan()
+        assert plan["success"]
+        sells = plan["trades"]["sells"]
+        buys = plan["trades"]["buys"]
+
+        tsla_sell = next((s for s in sells if s["ticker"] == "TSLA"), None)
+        assert tsla_sell is not None
+        assert tsla_sell["target_weight"] == 0.0
+        assert tsla_sell["current_weight"] == 15.0
+        assert tsla_sell["delta_weight"] == -15.0
+
+        nvda_buy = next((b for b in buys if b["ticker"] == "NVDA"), None)
+        assert nvda_buy is not None
+
+    @pytest.mark.asyncio
+    async def test_rotation_opportunity_cost_gate(self):
+        """Rotation buy is skipped if candidate does not meet opportunity cost hurdle over liquidated asset."""
+        from src.services.confidence_rebalance_service import ConfidenceRebalanceService
+
+        svc = ConfidenceRebalanceService(user_id="test-user")
+        plan_mock = {
+            "success": True,
+            "trades": {
+                "sells": [
+                    {"ticker": "BAD", "action": "SELL", "delta_weight": -10.0, "confidence": 0.6}
+                ],
+                "buys": [
+                    {"ticker": "WEAK", "action": "BUY", "delta_weight": 10.0, "confidence": 0.65},
+                    {"ticker": "STRONG", "action": "BUY", "delta_weight": 10.0, "confidence": 0.90},
+                ],
+            },
+            "summary": {"total_value": 100000.0},
+        }
+        svc.get_rebalance_plan = AsyncMock(return_value=plan_mock)
+        svc._execute_trade = AsyncMock(return_value={"status": "executed"})
+        svc.repo.add_log = MagicMock()
+
+        result = await svc.execute_rebalance()
+        assert result["success"]
+
+        called_tickers = [call.kwargs.get("ticker") for call in svc._execute_trade.call_args_list]
+        assert "BAD" in called_tickers
+        assert "STRONG" in called_tickers
+        assert "WEAK" not in called_tickers

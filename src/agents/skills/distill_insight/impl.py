@@ -77,7 +77,7 @@ async def distill_insight(
             conn.execute(text("""
                 INSERT INTO cognitive_memories 
                 (id, user_id, agent_name, memory_type, content, importance, source_id, created_at, updated_at)
-                VALUES (:id, :uid, :agent, :mtype, :content::jsonb, :importance, :src_id, :ts, :ts)
+                VALUES (:id, :uid, :agent, :mtype, CAST(:content AS jsonb), :importance, :src_id, :ts, :ts)
             """), {
                 "id":         str(uuid.uuid4()),
                 "uid":        user_id,

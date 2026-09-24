@@ -282,3 +282,148 @@ async def test_sell_guard_passthrough_when_within_holding(test_svc, mock_broker_
     order = call_args[0][0] if call_args[0] else call_args[1].get('order')
     assert order.quantity == 0.3
 
+
+@pytest.mark.anyio
+async def test_autonomous_stop_loss_executes_without_approval(test_svc, mock_broker_with_positions, mock_interaction_service):
+    """stop_loss sell strategy executes autonomously without waiting for approval."""
+    user_id = "test_user"
+    with patch('src.services.automated_trading_service.BrokerFactory.get_broker', return_value=mock_broker_with_positions), \
+         patch.object(test_svc, '_notify_via_api', new_callable=AsyncMock) as mock_notify:
+        res = await test_svc.evaluate_and_execute_trade(
+            user_id, "TSLA", "SELL", 0.5, confidence_score=10.0,
+            rationale="Stop loss hit", strategy_name="stop_loss"
+        )
+    assert res["status"] == "success"
+    mock_interaction_service.request_approval.assert_not_called()
+    mock_broker_with_positions.execute_order.assert_called_once()
+    mock_notify.assert_called_once()
+    assert mock_notify.call_args.kwargs["category"] == "trading"
+
+
+@pytest.mark.anyio
+async def test_autonomous_take_profit_executes_without_approval(test_svc, mock_broker_with_positions, mock_interaction_service):
+    """take_profit sell strategy executes autonomously without waiting for approval."""
+    user_id = "test_user"
+    with patch('src.services.automated_trading_service.BrokerFactory.get_broker', return_value=mock_broker_with_positions), \
+         patch.object(test_svc, '_notify_via_api', new_callable=AsyncMock) as mock_notify:
+        res = await test_svc.evaluate_and_execute_trade(
+            user_id, "TSLA", "SELL", 0.5, confidence_score=8.5,
+            rationale="Take profit reached", strategy_name="take_profit"
+        )
+    assert res["status"] == "success"
+    mock_interaction_service.request_approval.assert_not_called()
+    mock_broker_with_positions.execute_order.assert_called_once()
+    mock_notify.assert_called_once()
+    assert mock_notify.call_args.kwargs["category"] == "trading"
+
+
+@pytest.mark.anyio
+async def test_expired_approval_does_not_send_notification(test_svc, mock_interaction_service, mock_broker):
+    """When approval request times out / expires, suppress notification to avoid user spam."""
+    user_id = "test_user"
+    from src.domain.interaction import InteractionStatus
+    mock_interaction_service.request_approval.return_value = (False, InteractionStatus.EXPIRED)
+    
+    with patch('src.services.automated_trading_service.BrokerFactory.get_broker', return_value=mock_broker), \
+         patch.object(test_svc, '_notify_via_api', new_callable=AsyncMock) as mock_notify:
+        res = await test_svc.evaluate_and_execute_trade(
+            user_id, "AAPL", "buy", 10.0, 5, "Moderate momentum"
+        )
+    assert res["status"] == "rejected_or_timeout"
+    mock_broker.execute_order.assert_not_called()
+    mock_notify.assert_not_called()
+
+
+@pytest.mark.anyio
+async def test_autonomous_capital_rotation_executes_without_approval(test_svc, mock_broker_with_positions, mock_interaction_service):
+    """capital_rotation sell strategy executes autonomously without waiting for manual approval."""
+    user_id = "test_user"
+    with patch('src.services.automated_trading_service.BrokerFactory.get_broker', return_value=mock_broker_with_positions), \
+         patch.object(test_svc, '_notify_via_api', new_callable=AsyncMock) as mock_notify:
+        res = await test_svc.evaluate_and_execute_trade(
+            user_id, "TSLA", "SELL", 0.5, confidence_score=8.0,
+            rationale="Rotate TSLA into TSM", strategy_name="capital_rotation"
+        )
+    assert res["status"] == "success"
+    mock_interaction_service.request_approval.assert_not_called()
+    mock_broker_with_positions.execute_order.assert_called_once()
+    mock_notify.assert_called_once()
+    assert mock_notify.call_args.kwargs["category"] == "trading"
+
+
+@pytest.mark.anyio
+async def test_autonomous_rebalance_executes_without_approval(test_svc, mock_broker_with_positions, mock_interaction_service):
+    """rebalance_diversification sell strategy executes autonomously without manual approval."""
+    user_id = "test_user"
+    with patch('src.services.automated_trading_service.BrokerFactory.get_broker', return_value=mock_broker_with_positions), \
+         patch.object(test_svc, '_notify_via_api', new_callable=AsyncMock) as mock_notify:
+        res = await test_svc.evaluate_and_execute_trade(
+            user_id, "TSLA", "SELL", 0.5, confidence_score=7.0,
+            rationale="Concentration risk rebalance", strategy_name="rebalance_diversification"
+        )
+    assert res["status"] == "success"
+    mock_interaction_service.request_approval.assert_not_called()
+    mock_broker_with_positions.execute_order.assert_called_once()
+    mock_notify.assert_called_once()
+    assert mock_notify.call_args.kwargs["category"] == "trading"
+
+
+@pytest.mark.anyio
+async def test_weight_based_buy_order_sizing(test_svc):
+    """Weight-based BUY calculates dollar amount (not shares) so min_amount check uses dollars."""
+    user_id = "test_user"
+    mock_broker = MagicMock()
+    mock_broker.get_name.return_value = "MockBroker"
+    mock_account = MagicMock()
+    mock_account.total_equity = 1000.0
+    mock_account.available_cash = 200.0
+    mock_broker.get_account = AsyncMock(return_value=mock_account)
+    mock_broker.execute_order = AsyncMock(return_value={"status": "success", "order_id": "buy_123"})
+
+    with patch('src.services.automated_trading_service.BrokerFactory.get_broker', return_value=mock_broker), \
+         patch.object(test_svc, '_notify_via_api', new_callable=AsyncMock):
+        # delta_weight=0.02, portfolio_value=1000 -> $20 USD (stock price $200 would have been 0.1 share)
+        res = await test_svc.evaluate_and_execute_trade(
+            user_id=user_id,
+            ticker="AAPL",
+            action="BUY",
+            delta_weight=0.02,
+            portfolio_value=1000.0,
+            confidence_score=8.5,
+            rationale="Confidence rebalance BUY",
+        )
+
+    assert res["status"] == "success"
+    order = mock_broker.execute_order.call_args[0][0]
+    # Under small_test_capital ($100 cap), max 10% is $10.0, clamped to $10.0, order amount_usd is $10.0
+    assert order.amount_usd >= 10.0
+    assert order.action.value == "BUY"
+
+
+@pytest.mark.anyio
+async def test_weight_based_sell_order_sizing(test_svc, mock_broker_with_positions):
+    """Weight-based SELL calculates shares using current price and clamps against holdings."""
+    user_id = "test_user"
+    mock_account = MagicMock()
+    mock_account.total_equity = 1000.0
+    mock_account.available_cash = 50.0
+    mock_broker_with_positions.get_account = AsyncMock(return_value=mock_account)
+
+    with patch('src.services.automated_trading_service.BrokerFactory.get_broker', return_value=mock_broker_with_positions), \
+         patch.object(test_svc, '_get_current_price', new_callable=AsyncMock, return_value=200.0), \
+         patch.object(test_svc, '_notify_via_api', new_callable=AsyncMock):
+        # delta_weight=-0.04, portfolio_value=1000 -> $40 USD / $200 = 0.2 shares
+        res = await test_svc.evaluate_and_execute_trade(
+            user_id=user_id,
+            ticker="TSLA",
+            action="SELL",
+            delta_weight=-0.04,
+            portfolio_value=1000.0,
+            confidence_score=8.5,
+            rationale="Confidence rebalance SELL",
+        )
+
+    assert res["status"] == "success"
+    order = mock_broker_with_positions.execute_order.call_args[0][0]
+    assert order.quantity == 0.2
+    assert order.action.value == "SELL"

@@ -646,6 +646,74 @@ def generate_weekly_report(user_id: str = None):
         return f"Error: {str(e)}"
 
 
+@app.task(name="src.infrastructure.tasks.dispatch_universe_lifecycle")
+def dispatch_universe_lifecycle():
+    """Fan-out dispatcher: 為活躍租戶分派標的池生命週期演化任務。"""
+    users = _resolve_target_users()
+    for uid in users:
+        run_universe_lifecycle.delay(user_id=uid)
+    return f"Dispatched {len(users)} universe_lifecycle tasks"
+
+
+@app.task(name="src.infrastructure.tasks.run_universe_lifecycle", soft_time_limit=600, time_limit=660)
+def run_universe_lifecycle(user_id: str = None, candidate_pool: list = None, force: bool = False):
+    """
+    Universe Lifecycle Evolution:
+    Evaluates macro regime, evicts degraded tickers (< 4.0 or broken hard gates),
+    and screens/admits top qualified candidates up to capacity.
+    標的池生命週期演化任務：評估宏觀環境、淘汰劣化標的、審核補充優質新標的。
+    """
+    user_id = user_id or os.getenv("PRIMARY_USER_ID") or os.getenv("USER_ID")
+    if not user_id:
+        logger.error("run_universe_lifecycle: user_id is required. Set PRIMARY_USER_ID env var or pass explicitly.")
+        return "Error: user_id is required"
+
+    try:
+        from src.services.universe_lifecycle_service import UniverseLifecycleService
+
+        svc = UniverseLifecycleService(user_id=user_id)
+        result = _run_async_safe(svc.run_lifecycle_cycle(candidate_pool=candidate_pool, force=force))
+        msg = result.get("message") if isinstance(result, dict) else str(result)
+        logger.info(f"run_universe_lifecycle completed for {user_id}: {msg}")
+        return result
+    except Exception as e:
+        logger.error(f"run_universe_lifecycle failed for {user_id}: {e}", exc_info=True)
+        return f"Error: {str(e)}"
+
+
+@app.task(name="src.infrastructure.tasks.dispatch_weekly_rebalance")
+def dispatch_weekly_rebalance():
+    """Fan-out dispatcher: 為活躍租戶分派每週自主再平衡下單任務。"""
+    users = _resolve_target_users()
+    for uid in users:
+        run_weekly_rebalance.delay(user_id=uid)
+    return f"Dispatched {len(users)} weekly_rebalance tasks"
+
+
+@app.task(name="src.infrastructure.tasks.run_weekly_rebalance", soft_time_limit=600, time_limit=660)
+def run_weekly_rebalance(user_id: str = None):
+    """
+    Weekly Autonomous Confidence Rebalance:
+    Executes confidence-driven portfolio rebalance: sells overweighted/degraded
+    positions and buys underweighted high-conviction candidates according to target weights.
+    每週自主再平衡任務：依照多因子置信度與目標權重，自動執行減倉與加倉下單。
+    """
+    user_id = user_id or os.getenv("PRIMARY_USER_ID") or os.getenv("USER_ID")
+    if not user_id:
+        logger.error("run_weekly_rebalance: user_id is required. Set PRIMARY_USER_ID env var or pass explicitly.")
+        return "Error: user_id is required"
+
+    try:
+        from src.services.confidence_rebalance_service import ConfidenceRebalanceService
+        svc = ConfidenceRebalanceService(user_id=user_id)
+        result = _run_async_safe(svc.execute_rebalance())
+        logger.info(f"run_weekly_rebalance completed for {user_id}: {result.get('success')}")
+        return result
+    except Exception as e:
+        logger.error(f"run_weekly_rebalance failed for {user_id}: {e}", exc_info=True)
+        return f"Error: {str(e)}"
+
+
 @app.task(name="src.infrastructure.tasks.generate_daily_report", soft_time_limit=600, time_limit=660)
 def generate_daily_report(user_id: str = None, force_report: bool = False):
     """
@@ -668,16 +736,21 @@ def generate_daily_report(user_id: str = None, force_report: bool = False):
         return "Skipped (Market Closed)"
     
     try:
-        from src.services.workflow_service import DailyWorkflow
+        from src.services.daily_portfolio_summary_service import DailyPortfolioSummaryService
         
-        # Run the daily workflow
-        workflow = DailyWorkflow(user_id=user_id)
-        result = _run_async_safe(workflow.run(dry_run=False, force_refresh=force_report))
+        svc = DailyPortfolioSummaryService(user_id=user_id)
+        result = _run_async_safe(svc.generate_and_dispatch(force_report=force_report))
         
-        logger.info(f"daily_report completed for user {user_id}")
-        return f"Success: Daily report generated for {user_id}"
+        if result.get("status") == "skipped":
+            reason = result.get("reason", "unknown")
+            detail = result.get("detail", "")
+            logger.info(f"daily_report skipped for user {user_id}: reason={reason}, detail={detail}")
+            return f"Skipped: Daily summary already handled ({reason})"
+
+        logger.info(f"daily_report completed for user {user_id}: {result.get('title')}")
+        return f"Success: Daily portfolio summary generated and dispatched for {user_id}"
     except Exception as e:
-        logger.error(f"daily_report failed for user {user_id}: {e}")
+        logger.error(f"daily_report failed for user {user_id}: {e}", exc_info=True)
         return f"Error: {str(e)}"
 
 
@@ -744,18 +817,17 @@ def ingest_rss_feeds(user_id: str = None):
         return f"Error: {exc}"
 
     sources = get_rss_sources(user_id=user_id)
-    max_entries = int(os.getenv("RSS_MAX_ENTRIES_PER_FEED", "3"))
-    # Hard ceiling on LLM workflows started per run. Without it, adding feeds
-    # silently multiplies cost. Dropped entries are logged, never silent.
-    #
-    # Measured 2026-09-11 on the live deployment: 10 events cost $0.0126, i.e.
-    # ~$0.0013 per event. At this cap and a 15-minute cadence that is ~$1.21/day
-    # — comfortably under the ~$4/day the stack was running at before. Raise it
-    # with eyes open: cost scales linearly with this number.
-    #
-    # 實測：每筆事件約 $0.0013，在此上限與 15 分鐘頻率下約 $1.21/日。
-    # 成本與此數字成線性關係，調高前請先算過。
-    max_events = int(os.getenv("RSS_MAX_EVENTS_PER_RUN", "10"))
+
+    # Filter sources to high-signal financial markets categories to eliminate foreign HR/lifestyle noise
+    allowed_categories = {"Markets", "Finance", "Business", "Global Finance"}
+    filtered_sources = [
+        s for s in sources 
+        if s.get("category") in allowed_categories and s.get("region") in ("US", "Global", "UK", "Custom")
+    ]
+    sources = filtered_sources or sources
+
+    max_entries = int(os.getenv("RSS_MAX_ENTRIES_PER_FEED", "2"))
+    max_events = int(os.getenv("RSS_MAX_EVENTS_PER_RUN", "5"))
 
     enqueued = duplicate = failed = dropped = 0
     for src in sources:
@@ -807,8 +879,10 @@ def ingest_rss_feeds(user_id: str = None):
 @app.task(
     name="src.infrastructure.tasks.analyze_ingested_event",
     bind=True,
-    max_retries=2,
-    default_retry_delay=120,
+    max_retries=1,
+    default_retry_delay=60,
+    soft_time_limit=45,
+    time_limit=60,
 )
 def analyze_ingested_event(self, user_id: str = None, source: str = "rss", payload: dict = None):
     """Run the event-analysis workflow for exactly one ingested item."""

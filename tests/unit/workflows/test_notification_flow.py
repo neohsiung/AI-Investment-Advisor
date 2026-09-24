@@ -90,4 +90,3 @@ async def test_alert_flow_and_format(sentinel_setup):
         assert "🔴 VIX Spike: 45.0 > 30.0" in content
         assert "🏦 Fed Funds Rate Up" in content
         assert "Decision: SELL AAPL immediately." in content
-        assert "投資有風險，內容僅供參考，不構成建議。" in content

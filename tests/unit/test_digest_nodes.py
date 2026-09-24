@@ -133,10 +133,17 @@ def test_compose_investment_digest_with_report():
         }
     ]
     title, content = compose_investment_digest(events)
-    assert "Daily Portfolio Digest" in title
+    assert "Hourly Market Events" in title
     assert "每日委員會投資報告" in content
     assert "核心結論" in content
     assert "NVDA/AAPL" in content
+
+
+def test_investment_digest_channels_web():
+    from src.services.digest_nodes import investment_digest_node, ops_health_node
+    # Strictly isolated from email: Hourly digests must never spam user inbox
+    assert investment_digest_node.channels == ["web"]
+    assert ops_health_node.channels == ["web"]
 
 
 def test_suppress_investment_digest_report():
@@ -149,3 +156,38 @@ def test_suppress_investment_digest_report():
         }
     ]
     assert suppress_investment_digest(events) is False
+
+
+def test_classify_tier_report_never_p0():
+    from src.services.event_aggregator import EventAggregator
+    from src.data.models import EventQueue
+
+    # Report mentioning fraud/hack/crash must NOT become P0
+    content = {
+        "title": "Corporate fraud investigation into subsidiary",
+        "summary": "<think>Arbeitszeitbetrug = fraud</think> Here's a thinking process: Analyze fraud",
+    }
+    tier, priority = EventAggregator.classify_tier("report", content)
+    assert tier != EventQueue.TIER_P0
+    assert tier in (EventQueue.TIER_P1, EventQueue.TIER_P2)
+
+
+def test_compose_investment_digest_cleans_thinking_and_unknown_source():
+    events = [
+        {
+            "event_type": "report",
+            "tier": "P1",
+            "created_at": datetime.now(timezone.utc).isoformat(),
+            "content": {
+                "source": "?",
+                "topic": "市場快訊",
+                "summary": "<think>This is internal scratchpad.</think>Here's a thinking process: Analyze user request:\n\n聯準會宣布降息一碼，市場情緒正面。",
+            }
+        }
+    ]
+    title, content = compose_investment_digest(events)
+    assert "• ?:" not in content
+    assert "<think>" not in content
+    assert "thinking process" not in content.lower()
+    assert "聯準會宣布降息一碼" in content
+

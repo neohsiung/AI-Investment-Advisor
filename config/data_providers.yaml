@@ -51,7 +51,7 @@ providers:
       history: 10
       indicators: 10
       news: 60
-      fundamentals: 50
+      fundamentals: 10
 
   - id: tiingo
     class: src.data.providers.tiingo_provider.TiingoProvider
@@ -74,7 +74,7 @@ providers:
     capabilities:
       quote: 30
       news: 20
-      fundamentals: 40
+      fundamentals: 15
 
   - id: fmp
     class: src.data.providers.fmp_provider.FMPProvider
@@ -109,7 +109,7 @@ providers:
       history: 40
       indicators: 20
       news: 50
-      fundamentals: 10
+      fundamentals: 50
 
   # FRED is queried directly for macro series and appears in no priority chain, so
   # it declares no capabilities. Listing it anyway makes its credential visible to

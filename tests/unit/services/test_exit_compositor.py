@@ -23,6 +23,10 @@ from src.services.exit_compositor_service import (
     ExitCompositorService,
 )
 
+@pytest.fixture
+def anyio_backend():
+    return "asyncio"
+
 
 def _svc(*, lots=None, closes=None, settings=None, risk=(5.0, {"key_factor": "無事件"})):
     settings_service = MagicMock()
@@ -50,7 +54,7 @@ class TestWeights:
     def test_weights_sum_to_one(self):
         assert abs(sum(EXIT_FACTOR_WEIGHTS.values()) - 1.0) < 1e-9
 
-    @pytest.mark.asyncio
+    @pytest.mark.anyio
     async def test_composite_is_the_weighted_sum(self):
         svc = _svc(
             lots=[{"quantity": 1.0, "open_price": 100.0}],
@@ -67,16 +71,26 @@ class TestWeights:
 
 class TestPnLFactor:
 
-    @pytest.mark.asyncio
+    @pytest.mark.anyio
     async def test_hitting_the_stop_scores_maximum(self):
-        """A position through its stop is the strongest reason to exit."""
+        """When enable_fixed_stops is True, a position through its stop scores maximum."""
         svc = _svc(lots=[{"quantity": 1.0, "open_price": 100.0}],
-                   settings={"stop_loss_pct": 8.0})
+                   settings={"stop_loss_pct": 8.0, "enable_fixed_stops": True})
         d = await svc.score_exit("AAPL", 1.0, current_price=90.0, current_weight_pct=5.0)
         assert _factor(d, "pnl")["confidence"] == 10.0
         assert d["unrealized_pnl_pct"] == -10.0
 
-    @pytest.mark.asyncio
+    @pytest.mark.anyio
+    async def test_long_term_mode_treats_pullback_as_normal_noise(self):
+        """In long-term mode (default), normal drawdowns (-10%) do not trigger panic exit."""
+        svc = _svc(lots=[{"quantity": 1.0, "open_price": 100.0}],
+                   settings={"stop_loss_pct": 8.0, "enable_fixed_stops": False})
+        d = await svc.score_exit("AAPL", 1.0, current_price=90.0, current_weight_pct=5.0)
+        # Score is 4.0 (normal pullback), not an urgent 10.0 exit!
+        assert _factor(d, "pnl")["confidence"] == 4.0
+        assert d["unrealized_pnl_pct"] == -10.0
+
+    @pytest.mark.anyio
     async def test_a_modest_winner_is_not_a_reason_to_sell(self):
         """
         Being up must not by itself push toward the exit — that is how a
@@ -87,15 +101,15 @@ class TestPnLFactor:
         d = await svc.score_exit("AAPL", 1.0, current_price=110.0, current_weight_pct=5.0)
         assert _factor(d, "pnl")["confidence"] < 5.0
 
-    @pytest.mark.asyncio
+    @pytest.mark.anyio
     async def test_loss_scales_toward_the_stop(self):
         svc = _svc(lots=[{"quantity": 1.0, "open_price": 100.0}],
-                   settings={"stop_loss_pct": 10.0})
+                   settings={"stop_loss_pct": 10.0, "enable_fixed_stops": True})
         near = await svc.score_exit("AAPL", 1.0, current_price=92.0, current_weight_pct=5.0)
         far = await svc.score_exit("AAPL", 1.0, current_price=98.0, current_weight_pct=5.0)
         assert _factor(near, "pnl")["confidence"] > _factor(far, "pnl")["confidence"]
 
-    @pytest.mark.asyncio
+    @pytest.mark.anyio
     async def test_missing_cost_basis_is_neutral_not_alarming(self):
         """
         No lot history must not read as urgency. position_lots was empty in
@@ -112,19 +126,19 @@ class TestPnLFactor:
 
 class TestConcentrationFactor:
 
-    @pytest.mark.asyncio
+    @pytest.mark.anyio
     async def test_over_the_ceiling_scores_high(self):
         svc = _svc(settings={"max_single_position_weight": 25.0})
         d = await svc.score_exit("AAPL", 1.0, current_price=100.0, current_weight_pct=26.0)
         assert _factor(d, "concentration")["confidence"] >= 9.0
 
-    @pytest.mark.asyncio
+    @pytest.mark.anyio
     async def test_under_the_ceiling_is_not_an_exit_reason(self):
         svc = _svc(settings={"max_single_position_weight": 25.0})
         d = await svc.score_exit("AAPL", 1.0, current_price=100.0, current_weight_pct=10.0)
         assert _factor(d, "concentration")["confidence"] < 5.0
 
-    @pytest.mark.asyncio
+    @pytest.mark.anyio
     async def test_concentration_alone_does_not_clear_the_sell_bar(self):
         """
         The whole point of scoring exits: a position over the ceiling whose
@@ -146,19 +160,19 @@ class TestConcentrationFactor:
 
 class TestMomentumFactor:
 
-    @pytest.mark.asyncio
+    @pytest.mark.anyio
     async def test_breaking_below_the_average_scores_high(self):
         svc = _svc(closes=[100.0] * 19 + [90.0])
         d = await svc.score_exit("AAPL", 1.0, current_price=90.0, current_weight_pct=5.0)
         assert _factor(d, "momentum_reversal")["confidence"] >= 9.0
 
-    @pytest.mark.asyncio
+    @pytest.mark.anyio
     async def test_trading_strongly_above_scores_low(self):
         svc = _svc(closes=[100.0] * 19 + [115.0])
         d = await svc.score_exit("AAPL", 1.0, current_price=115.0, current_weight_pct=5.0)
         assert _factor(d, "momentum_reversal")["confidence"] <= 2.0
 
-    @pytest.mark.asyncio
+    @pytest.mark.anyio
     async def test_insufficient_history_is_neutral(self):
         svc = _svc(closes=[100.0] * 5)
         d = await svc.score_exit("AAPL", 1.0, current_price=100.0, current_weight_pct=5.0)
@@ -167,7 +181,7 @@ class TestMomentumFactor:
 
 class TestRiskFactor:
 
-    @pytest.mark.asyncio
+    @pytest.mark.anyio
     async def test_llm_failure_is_neutral_not_a_liquidation_signal(self):
         """
         A broken LLM call is not evidence of risk. Scoring it 10 would turn
@@ -182,7 +196,7 @@ class TestRiskFactor:
 
 class TestOutputContract:
 
-    @pytest.mark.asyncio
+    @pytest.mark.anyio
     async def test_breakdown_shape_matches_the_card_contract(self):
         """decision_card reads agent / confidence / weight / contribution."""
         svc = _svc(lots=[{"quantity": 1.0, "open_price": 100.0}], closes=[100.0] * 20)
@@ -193,7 +207,7 @@ class TestOutputContract:
             assert {"agent", "confidence", "weight", "contribution", "key_factor"} <= set(b)
             assert abs(b["contribution"] - b["confidence"] * b["weight"]) < 0.02
 
-    @pytest.mark.asyncio
+    @pytest.mark.anyio
     async def test_renders_through_the_decision_card(self):
         from src.services.decision_card import render_card
 
@@ -205,7 +219,7 @@ class TestOutputContract:
         )
         assert "未實現損益" in card and "集中度" in card
 
-    @pytest.mark.asyncio
+    @pytest.mark.anyio
     async def test_scoring_never_raises(self):
         """
         A scoring failure must not stop a stop-loss from being considered.

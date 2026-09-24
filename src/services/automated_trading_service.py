@@ -132,24 +132,36 @@ class AutomatedTradingService:
             settings_svc = SettingsService(user_id=user_id)
             self.notification_service = NotificationService.create_with_settings(settings_service=settings_svc, user_id=user_id)
 
-        # [NEW v7.0] Weight-based quantity calculation
-        # If target_weight is provided, calculate quantity from delta_weight
+        # [NEW v7.0 / v8.3] Weight-based quantity calculation
+        # If target_weight is provided, calculate quantity from delta_weight:
+        # BUY: quantity is in USD (eToro /market-open-orders/by-amount and downstream cash guards expect USD)
+        # SELL: quantity is in shares (eToro /market-close-orders/positions/{id} UnitsToDeduct expects shares)
+        # 依權重計算交易量：BUY 端點與後續風控需美元金額；SELL 平倉端點需扣減股數。
         if delta_weight is not None and portfolio_value is not None and quantity is None:
             try:
                 broker = BrokerFactory.get_broker(user_id)
                 if broker:
-                    # Get current price for the ticker
-                    # Note: This is a simplified approach; actual implementation may need more sophisticated pricing
-                    current_price = await self._get_current_price(broker, ticker)
-                    if current_price and current_price > 0:
-                        # Calculate dollar amount from delta_weight
-                        delta_amount = delta_weight * portfolio_value
-                        quantity = delta_amount / current_price
-                        logger.info(f"Weight-based calculation: delta_weight={delta_weight}, portfolio_value=${portfolio_value}, current_price=${current_price}, quantity={quantity:.4f}")
+                    delta_amount = abs(float(delta_weight) * float(portfolio_value))
+                    if str(action).upper() == "BUY":
+                        # For BUY orders, keep quantity as the dollar amount
+                        quantity = delta_amount
+                        logger.info(
+                            f"Weight-based BUY calculation: delta_weight={delta_weight:+.4f}, "
+                            f"portfolio_value=${portfolio_value:.2f}, amount_usd=${quantity:.2f}"
+                        )
                     else:
-                        logger.warning(f"Could not get current price for {ticker}, falling back to legacy approach")
-                        if quantity is None:
-                            quantity = 1.0  # Default fallback
+                        # For SELL orders, calculate required shares from current price
+                        current_price = await self._get_current_price(broker, ticker)
+                        if current_price and current_price > 0:
+                            quantity = delta_amount / current_price
+                            logger.info(
+                                f"Weight-based SELL calculation: delta_weight={delta_weight:+.4f}, "
+                                f"portfolio_value=${portfolio_value:.2f}, current_price=${current_price:.2f}, shares={quantity:.4f}"
+                            )
+                        else:
+                            logger.warning(f"Could not get current price for {ticker}, falling back to legacy quantity")
+                            if quantity is None:
+                                quantity = 1.0  # Default fallback
             except Exception as e:
                 logger.warning(f"Weight-based calculation failed: {e}, using quantity parameter")
                 if quantity is None:
@@ -233,8 +245,14 @@ class AutomatedTradingService:
         # 途徑，限制它等於擋掉關卡所要求的證據。
         # SELL 採降級而非封鎖：拒絕賣出會把使用者困在部位裡（本檔既有立場亦同），
         # 故未驗證的 SELL 只是失去自動執行資格，改走人工核准。
+        # 停損（stop_loss）與緊急避險（emergency_exit）屬資本安全控制，豁免於回測閘門。
+        is_sell = str(action).upper() == "SELL"
         requires_approval_reason = None
-        if strategy_name:
+        is_safety_exit = is_sell and strategy_name in (
+            "stop_loss", "emergency_exit", "position_exit", "take_profit",
+            "capital_rotation", "rebalance_diversification"
+        )
+        if strategy_name and not is_safety_exit:
             try:
                 from src.services.broker_factory import effective_trading_mode
                 from src.services.strategy_validation_service import StrategyValidationService
@@ -521,15 +539,43 @@ class AutomatedTradingService:
             reason=rationale
         )
         
-        # 3b. Above upper threshold → auto-execute
-        # 2026-08-10: unless the strategy-validation gate withheld that
-        # privilege (unvalidated SELL in live mode — see step 1c). The score
-        # is high enough; the evidence that the strategy works is not there.
-        # 2026-08-10：除非策略驗證關卡撤銷了自動執行資格（實盤下未驗證的 SELL）。
-        # 分數夠高，但缺少策略有效的證據。
-        if normalized_confidence >= threshold and not requires_approval_reason:
-            logger.info(f"Score {normalized_confidence} >= {threshold}. Executing automatically.")
-            return await self._execute_trade(user_id, order, normalized_confidence, rationale, "自動執行", confidence_breakdown=confidence_breakdown, threshold=threshold)
+        # 3b. Auto-execute logic (減少人為介入)
+        # 停損（stop_loss）屬於資本安全防護，直接全自動執行；
+        # 一般賣出若達到賣出門檻且啟用 autonomous_exit_enabled 亦自動執行。
+        auto_exit_enabled = self.settings_repo.get(user_id, "autonomous_exit_enabled")
+        if auto_exit_enabled is None:
+            auto_exit_enabled = True
+        else:
+            auto_exit_enabled = str(auto_exit_enabled).lower() in ("true", "1")
+
+        should_auto_execute = False
+        approval_label = "自動執行"
+
+        if is_sell and strategy_name == "stop_loss":
+            should_auto_execute = True
+            approval_label = "停損自動執行"
+        elif is_sell and strategy_name == "take_profit" and auto_exit_enabled and not requires_approval_reason:
+            should_auto_execute = True
+            approval_label = "停利自動執行"
+        elif is_sell and strategy_name == "capital_rotation" and auto_exit_enabled and not requires_approval_reason:
+            should_auto_execute = True
+            approval_label = "換庫自動執行"
+        elif is_sell and strategy_name in ("rebalance_diversification", "concentration_rebalance") and auto_exit_enabled and not requires_approval_reason:
+            should_auto_execute = True
+            approval_label = "再平衡自動執行"
+        elif is_sell and normalized_confidence >= threshold and auto_exit_enabled and not requires_approval_reason:
+            should_auto_execute = True
+            approval_label = "出場自動執行"
+        elif normalized_confidence >= threshold and not requires_approval_reason:
+            should_auto_execute = True
+            approval_label = "自動執行"
+
+        if should_auto_execute:
+            logger.info(f"Score {normalized_confidence} >= {threshold} (or stop_loss). Executing automatically ({approval_label}).")
+            return await self._execute_trade(
+                user_id, order, normalized_confidence, rationale, approval_label,
+                confidence_breakdown=confidence_breakdown, threshold=threshold
+            )
 
         # 3c. Between min and upper → notify all channels, request approval
         if requires_approval_reason:
@@ -644,10 +690,9 @@ class AutomatedTradingService:
                 return await self._execute_trade(user_id, order, confidence_score, rationale, "核准後執行", confidence_breakdown=confidence_breakdown, threshold=threshold)
             else:
                 from src.domain.interaction import InteractionStatus
-                if status == InteractionStatus.EXPIRED:
-                    logger.warning(f"Trade approval for {order.symbol} EXPIRED after 5 mins.")
-                    notif_title = f"❌ [交易失效] 逾時未處理 - {order.symbol}"
-                    notif_content = f"審核請求已逾時過期 (Approval Request Expired)。\n\n**標的:** {order.symbol}\n**方向:** {order.action.value}\n**原因:** 5 分鐘內未收到回應。"
+                if status == InteractionStatus.EXPIRED or str(status).upper() in ("EXPIRED", "INTERACTIONSTATUS.EXPIRED"):
+                    logger.warning(f"Trade approval for {order.symbol} EXPIRED after timeout. Suppressing notification to avoid spam.")
+                    return {"status": "rejected_or_timeout", "reason": f"Trade {status.name if hasattr(status, 'name') else status}"}
                 else:
                     logger.info(f"User {user_id} rejected trade for {order.symbol}")
                     notif_title = f"❌ [交易取消] 使用者拒絕 - {order.symbol}"
@@ -789,7 +834,7 @@ class AutomatedTradingService:
                 user_id=user_id, 
                 title=title, 
                 content=content,
-                category="approval"
+                category="trading"
             )
             
             return result

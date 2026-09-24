@@ -67,12 +67,25 @@ class EventAggregator:
         content_text = json_content_str(content) + " " + existing_decision.lower()
         content_lower = content_text.lower()
 
-        # P0: Critical keywords
-        if any(kw in content_lower for kw in P0_KEYWORDS):
+        # Sanitize text to remove leaked LLM thinking traces
+        import re
+        content_clean = re.sub(r"<think>.*?</think>", "", content_lower, flags=re.DOTALL)
+        content_clean = re.sub(r"here's a thinking process:.*?(?=\n\n|\Z)", "", content_clean, flags=re.DOTALL)
+
+        # Reports and routine workflows should NEVER trigger P0 emergency bypass.
+        # General market news or analysis mentioning words like "fraud" or "hack"
+        # is background intelligence, not a portfolio-level liquidation emergency.
+        if event_type in ("report", "daily_snapshot", "rebalance_check"):
+            if any(kw in content_clean for kw in P1_KEYWORDS):
+                return EventQueue.TIER_P1, 80
+            return EventQueue.TIER_P2, 30
+
+        # P0: Critical keywords (strictly for active sentinel alerts and critical execution errors)
+        if any(kw in content_clean for kw in P0_KEYWORDS):
             return EventQueue.TIER_P0, 100
 
         # P1: Actionable keywords
-        if any(kw in content_lower for kw in P1_KEYWORDS):
+        if any(kw in content_clean for kw in P1_KEYWORDS):
             return EventQueue.TIER_P1, 80
 
         # P1: Any event with concrete numerical data (price changes, %, $ amounts)

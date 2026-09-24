@@ -179,3 +179,78 @@ async def test_migrate_from_holdings_failure(service):
         res = await service.migrate_from_holdings()
         assert res["success"] is False
         assert res["count"] == 0
+
+
+@pytest.mark.asyncio
+async def test_evaluate_ticker_quality(service):
+    mock_qg = MagicMock()
+    mock_assessment = MagicMock()
+    mock_assessment.to_dict.return_value = {"ticker": "AAPL", "passed": True, "overall_score": 8.5}
+    mock_qg.evaluate_ticker = AsyncMock(return_value=mock_assessment)
+    service._quality_gate = mock_qg
+
+    res = await service.evaluate_ticker_quality("AAPL")
+    assert res["passed"] is True
+    assert res["overall_score"] == 8.5
+    mock_qg.evaluate_ticker.assert_called_once_with("AAPL")
+
+
+@pytest.mark.asyncio
+async def test_add_ticker_with_quality_gate_passed(service):
+    mock_qg = MagicMock()
+    mock_assessment = MagicMock()
+    mock_assessment.passed = True
+    mock_assessment.overall_score = 8.5
+    mock_assessment.to_dict.return_value = {"ticker": "AAPL", "passed": True}
+    mock_qg.evaluate_ticker = AsyncMock(return_value=mock_assessment)
+    service._quality_gate = mock_qg
+
+    service.repo = MagicMock()
+    service.repo.get_by_ticker.return_value = None
+    service.repo.upsert.return_value = True
+
+    res = await service.add_ticker_with_quality_gate("AAPL", "Apple Inc", "Tech", "Hardware")
+    assert res["success"] is True
+    assert "added" in res["message"]
+
+
+@pytest.mark.asyncio
+async def test_add_ticker_with_quality_gate_rejected(service):
+    mock_qg = MagicMock()
+    mock_assessment = MagicMock()
+    mock_assessment.passed = False
+    mock_assessment.overall_score = 4.2
+    mock_assessment.reasons = ["Score 4.2 below 6.5 threshold"]
+    mock_assessment.to_dict.return_value = {"ticker": "BAD", "passed": False}
+    mock_qg.evaluate_ticker = AsyncMock(return_value=mock_assessment)
+    service._quality_gate = mock_qg
+
+    res = await service.add_ticker_with_quality_gate("BAD")
+    assert res["success"] is False
+    assert "Quality Gate Rejected" in res["message"]
+
+
+@pytest.mark.asyncio
+async def test_add_ticker_with_quality_gate_bypassed(service):
+    mock_qg = MagicMock()
+    service._quality_gate = mock_qg
+
+    service.repo = MagicMock()
+    service.repo.get_by_ticker.return_value = None
+    service.repo.upsert.return_value = True
+
+    res = await service.add_ticker_with_quality_gate("BAD", bypass_quality_check=True)
+    assert res["success"] is True
+    mock_qg.evaluate_ticker.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_run_lifecycle_evolution(service):
+    mock_lc = MagicMock()
+    mock_lc.run_lifecycle_cycle = AsyncMock(return_value={"success": True, "active_count": 10})
+    service._lifecycle_service = mock_lc
+
+    res = await service.run_lifecycle_evolution(force=True)
+    assert res["success"] is True
+    assert res["active_count"] == 10
+    mock_lc.run_lifecycle_cycle.assert_called_once_with(candidate_pool=None, force=True)

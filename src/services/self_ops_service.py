@@ -75,10 +75,11 @@ DISPATCHER_CHILD_TASKS: Dict[str, str] = {
     # in-process is an improvement rather than just a container saved.
     # 原本在 n8n 的攝取排程；n8n 靜默失敗時本系統看不見，納入監控後才有觀測性。
     # ingest_rss_feeds fans out further into analyze_ingested_event; the
-    # dispatcher->child pair monitored here is the first hop.
     "dispatch_rss_ingest": "ingest_rss_feeds",
     "dispatch_skill_learning": "run_skill_learning",
     "dispatch_podcast_ingest": "ingest_podcasts",
+    "dispatch_universe_lifecycle": "run_universe_lifecycle",
+    "dispatch_weekly_rebalance": "run_weekly_rebalance",
 }
 
 # How far back to compare dispatcher and child success counts.

@@ -52,6 +52,9 @@ class ModelIdResolver:
         Internal DB lookup for model mapping.
         Note: We look into llm_models table first, then a legacy mapping table if it exists.
         """
+        if not local_model_name:
+            return ""
+
         engine = get_db_engine()
         try:
             with engine.connect() as conn:
@@ -75,8 +78,8 @@ class ModelIdResolver:
                     row = result.fetchone()
                     if row:
                         return row[0]
-                except Exception as e:
-                    logger.warning(f'Exception in model_id_resolver.py: {e}', exc_info=True)
+                except Exception:
+                    pass
 
         except Exception as e:
             logger.warning(f"ModelIdResolver: DB lookup failed for {local_model_name}: {e}")

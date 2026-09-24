@@ -156,6 +156,77 @@ settings:
     danger: true
     label_en: Auto-execute confidence (sell)
     label_zh: 自動執行信心門檻（賣出）
+  - key: enable_fixed_stops
+    group: trading
+    type: bool
+    default: false
+    danger: true
+    label_en: Enable fixed-percentage stops
+    label_zh: 啟用固定百分比停損停利
+    help_en: >-
+      When false (recommended for long-term investing), positions are NOT sold based
+      on arbitrary fixed percentages (-8% / +20%), but managed through opportunity cost
+      rotation, concentration rebalancing, and thesis breakdown analysis.
+    help_zh: 設為 false 時（長線投資推薦），部位不會因死板的固定百分比（如 -8% 或 +20%）被強制賣出，改以機會成本換庫、集中度再平衡與核心論點分析驅動。
+  - key: stop_loss_pct
+    group: trading
+    type: float
+    default: 8.0
+    min: 1.0
+    max: 50.0
+    danger: true
+    label_en: Stop-loss threshold (%)
+    label_zh: 停損門檻百分比（%）
+    help_en: Used only when enable_fixed_stops is true.
+    help_zh: 僅在 enable_fixed_stops 為 true 時生效。
+  - key: take_profit_pct
+    group: trading
+    type: float
+    default: 20.0
+    min: 5.0
+    max: 200.0
+    label_en: Take-profit threshold (%)
+    label_zh: 停利門檻百分比（%）
+    help_en: Used only when enable_fixed_stops is true.
+    help_zh: 僅在 enable_fixed_stops 為 true 時生效。
+  - key: capital_rotation_enabled
+    group: trading
+    type: bool
+    default: true
+    danger: true
+    label_en: Opportunity cost capital rotation
+    label_zh: 機會成本換庫
+    help_en: >-
+      When better investment opportunities are scouted and cash is limited, automatically
+      rotate capital out of the lowest-conviction holding into the superior candidate.
+    help_zh: 當市場或自選清單出現評分顯著更高的新機會且資金有限時，自動賣出/減碼評分最低的現有持倉進行換庫。
+  - key: rotation_min_score_delta
+    group: trading
+    type: float
+    default: 2.0
+    min: 0.5
+    max: 5.0
+    label_en: Min score advantage for rotation
+    label_zh: 換庫最低評分優勢
+    help_en: Minimum score gap (e.g. 2.0 points) required between a new candidate and an existing holding to trigger rotation.
+    help_zh: 新標的評分必須高於現有持倉至少此數值（例如 8.5 vs 6.0，差 2.5 分）才執行換庫，避免頻繁摩擦成本。
+  - key: rebalance_risk_diversification_enabled
+    group: trading
+    type: bool
+    default: true
+    label_en: Rebalancing for risk diversification
+    label_zh: 集中度與風險再平衡
+    help_en: Automatically trim positions that exceed max_single_position_weight to diversify portfolio risk.
+    help_zh: 當單一持倉超出最大持倉權重（max_single_position_weight）時，自動減碼超額部位以分散投資組合風險。
+  - key: autonomous_exit_enabled
+    group: trading
+    type: bool
+    default: true
+    danger: true
+    label_en: Autonomous position exits
+    label_zh: 自動執行部位出場與換庫
+    help_en: Automatically execute capital rotation, rebalancing, and thesis exits without manual approval.
+    help_zh: 自動執行機會成本換庫、風險再平衡與論點破壞出場，無需等待手動確認，減少人為介入。
   - key: auto_trade_min_threshold
     group: trading
     type: int
@@ -182,6 +253,15 @@ settings:
     label_en: Tradable capital (USD)
     label_zh: 可交易資本（USD）
     help_en: Hard cap on capital the autonomous path may deploy.
+  - key: monthly_data_subscription_cost_usd
+    group: trading
+    type: float
+    default: 0.0
+    min: 0.0
+    label_en: Monthly Data Subscription Cost (USD)
+    label_zh: 每月數據源訂閱費用（USD）
+    help_en: Fixed monthly cost paid to external data providers (e.g. Polygon, FMP). Amortized daily into True Net PnL.
+    help_zh: 每月支付給外部數據商（如 Polygon, FMP）之固定訂閱費；將每日攤提以核算真實淨利。
   - key: min_trade_amount
     group: trading
     type: float
@@ -340,6 +420,53 @@ settings:
     min: 0.0
     label_en: Flat-market threshold
     label_zh: 盤整判定門檻
+  - key: universe_auto_refresh_enabled
+    group: allocation
+    type: bool
+    default: true
+    label_en: Enable dynamic universe evolution
+    label_zh: 啟用自選標的池動態進化
+    help_en: Dynamically evict degraded tickers and screen market candidates based on macro regime.
+  - key: universe_min_quality_score
+    group: allocation
+    type: float
+    default: 6.5
+    min: 0.0
+    max: 10.0
+    label_en: Universe minimum admission score
+    label_zh: 標的池入選最低綜合品質分 (0-10)
+    help_en: Candidates must reach this score to be admitted to the universe.
+  - key: universe_eviction_threshold
+    group: allocation
+    type: float
+    default: 4.0
+    min: 0.0
+    max: 10.0
+    label_en: Universe eviction score threshold
+    label_zh: 標的池剔除品質分門檻 (0-10)
+    help_en: Active tickers scoring below this threshold are removed from the active universe.
+  - key: universe_max_active_tickers
+    group: allocation
+    type: int
+    default: 30
+    min: 5
+    max: 100
+    label_en: Max active universe size
+    label_zh: 標的池最大活躍標的數量
+  - key: universe_min_market_cap_billions
+    group: allocation
+    type: float
+    default: 2.0
+    min: 0.0
+    label_en: Universe minimum market cap ($B)
+    label_zh: 標的池最低市值門檻（十億美元）
+  - key: universe_min_daily_volume_millions
+    group: allocation
+    type: float
+    default: 5.0
+    min: 0.0
+    label_en: Universe minimum daily dollar volume ($M)
+    label_zh: 標的池最低每日成交金額（百萬美元）
 
   # ── Sentinel ─────────────────────────────────────────────────────────────
   - key: sentinel_p1_limit_mins

@@ -568,6 +568,10 @@ class SentinelService:
             # Dimension 10.1: Execute Rebalancing (Phase 5)
             await self._handle_rebalance_logic(rebalance_triggers)
             
+            # Dimension 11: Position Exit Engine (Stop-Loss, Take-Profit, Thesis Breakdown)
+            position_exit_triggers = await self._check_position_exits()
+            await self._handle_position_exits(position_exit_triggers)
+            
             # ACT: Summon Council + Notifications if triggered
             if triggers:
                 await self._escalate(triggers)
@@ -1335,12 +1339,18 @@ class SentinelService:
 
                 # Fallback to legacy heuristics if priority still None
                 if t.get("priority") is None:
-                    trigger_id = t.get("id", "generic")
-                    priority = 3
-                    if trigger_id == "vix_anomaly": priority = 1
-                    elif any(k in trigger_id for k in ["move", "price", "critical", "crash", "crisis"]): priority = 2
-                    elif any(k in trigger_id for k in ["news", "sentiment", "macro"]): priority = 4
-                    elif "info" in trigger_id: priority = 5
+                    lvl = str(t.get("level", "")).upper()
+                    if lvl in ("CRITICAL", "EMERGENCY"):
+                        priority = 1
+                    elif lvl in ("WARNING", "HIGH"):
+                        priority = 2
+                    else:
+                        trigger_id = t.get("id", "generic")
+                        priority = 3
+                        if trigger_id == "vix_anomaly": priority = 1
+                        elif any(k in trigger_id for k in ["move", "price", "critical", "crash", "crisis"]): priority = 2
+                        elif any(k in trigger_id for k in ["news", "sentiment", "macro"]): priority = 4
+                        elif "info" in trigger_id: priority = 5
                     t["priority"] = priority
 
             # 2. Buffering Mode — Redis persistent buffer
@@ -1456,7 +1466,20 @@ class SentinelService:
             return
 
         display_texts = [t["text"] for t in filtered_triggers]
-        max_priority = min([t.get("priority", 3) for t in filtered_triggers]) # Lower is higher priority
+        def _resolve_trigger_priority(trig: Dict[str, Any]) -> int:
+            if "priority" in trig and trig["priority"] is not None:
+                try:
+                    return int(trig["priority"])
+                except (ValueError, TypeError):
+                    pass
+            lvl = str(trig.get("level", "")).upper()
+            if lvl in ("CRITICAL", "EMERGENCY"):
+                return 1
+            if lvl in ("HIGH", "WARNING"):
+                return 2
+            return 3
+
+        max_priority = min([_resolve_trigger_priority(t) for t in filtered_triggers]) # Lower is higher priority
         
         topic = f"{source.upper()} P{max_priority} ALERT: {'; '.join(display_texts[:3])}"
         if len(display_texts) > 3:
@@ -1472,7 +1495,7 @@ class SentinelService:
         has_excess_cash   = any("cash_ratio_high" in t.get("id", "") for t in filtered_triggers) or source == "Excess Cash" or "cash" in trigger_types
         has_news_trigger  = "news" in trigger_types
         has_price_trigger = "price_move" in trigger_types
-        has_risk_trigger  = "risk" in trigger_types
+        has_risk_trigger  = "risk" in trigger_types or any("vix" in t.get("id", "").lower() for t in filtered_triggers)
         has_allocation_drift = "allocation_drift" in trigger_types
         
         msg_prefix = "請針對以下多個 Sentinel 警報進行彙整與風險評估，並以繁體中文 (Traditional Chinese) 提供一份簡短且具備行動建議的摘要。金融專業術語請保留英文。"
@@ -1582,45 +1605,42 @@ class SentinelService:
             "msg_prefix": msg_prefix,
         }
         
-        # Council Deliberation
-        try:
-            user_id = self.settings_service.user_id or self.user_id
-            if not user_id:
-                logger.warning("No user_id available for council session")
-                return None
-            summary = await self.council_service.start_session(
-                topic, 
-                context, 
-                market_volatility=self.current_vix,
-                user_id=user_id,
-                mode="sentinel"
-            )
-            decision = summary.get('consensus', 'No Consensus')
-        except Exception as e:
-            logger.error(f"Council session failed: {e}", exc_info=True)
-            err_type = type(e).__name__
-            decision = (
-                f"⚠️ **系統運行於安全模式 (Fail-safe Mode: {err_type})**\n\n"
-                "目前無法取得 AI 委員會的即時評估（可能是內部組件初始化失敗或 LLM API 連線問題）。\n"
-                "請根據下方原始觸發訊號進行判斷。"
-            )
+        # Council Deliberation:
+        # P3 routine news alerts bypass expensive multi-agent Council debate.
+        # Actionable triggers, price moves, risk spikes, and manual escalations proceed to Council.
+        is_routine_news = has_news_trigger and max_priority >= 3 and not (has_excess_cash or has_risk_trigger or has_price_trigger or has_allocation_drift)
+        if is_routine_news:
+            logger.info(f"Sentinel: P3 routine news bypassed Council session: {topic}")
+            decision = f"ℹ️ **市場資訊監控 (P3)**：{'; '.join(display_texts[:3])}\n\n標的無重大基本面或結構性破壞，維持現有長線配置。"
+        else:
+            try:
+                user_id = self.settings_service.user_id or self.user_id
+                if not user_id:
+                    logger.warning("No user_id available for council session")
+                    return None
+                summary = await self.council_service.start_session(
+                    topic, 
+                    context, 
+                    market_volatility=self.current_vix,
+                    user_id=user_id,
+                    mode="sentinel"
+                )
+                decision = summary.get('consensus', 'No Consensus')
+            except Exception as e:
+                logger.error(f"Council session failed: {e}", exc_info=True)
+                err_type = type(e).__name__
+                decision = (
+                    f"⚠️ **系統運行於安全模式 (Fail-safe Mode: {err_type})**\n\n"
+                    "目前無法取得 AI 委員會的即時評估（可能是內部組件初始化失敗或 LLM API 連線問題）。\n"
+                    "請根據下方原始觸發訊號進行判斷。"
+                )
         
-        # Format Notification (Improved UX / Structured Layout)
+        # Format Notification (Improved UX / Clean Structured Layout)
         if "📊" in decision and "💡" in decision:
-            alert_content = (
-                f"{decision}\n"
-                f"━━━━━━━━━━━━━━━━━━━━━\n"
-                f"💰 投資有風險，內容僅供參考，不構成建議。"
-            )
+            alert_content = decision.strip()
         else:
             # Fallback/Fail-safe structured layout
-            alert_content = (
-                f"📊 {topic} - CRITICAL\n"
-                f"━━━━━━━━━━━━━━━━━━━━━\n"
-                f"{decision}\n"
-                f"━━━━━━━━━━━━━━━━━━━━━\n"
-                f"💰 投資有風險，內容僅供參考，不構成建議。"
-            )
+            alert_content = f"📊 {topic} - CRITICAL\n\n{decision.strip()}"
 
         # Log Alert with Signal IDs for future suppression
         for t in filtered_triggers:
@@ -2381,7 +2401,7 @@ class SentinelService:
         user settings in AutomatedTradingService.
         """
         trigger_id = f"cash_ratio_high_{self.user_id}"
-        cash_trigger = next((t for t in triggers if t.get("id") == trigger_id), None)
+        cash_trigger = next((t for t in triggers if t.get("id") == trigger_id or t.get("ticker") == "CASH"), None)
         if not cash_trigger:
             return
 
@@ -2582,6 +2602,7 @@ class SentinelService:
             for trigger in rebalance_triggers:
                 if trigger.get('ticker') == 'CASH':
                     logger.info(f"Sentinel: Cash overweight trigger routed to cash deployment flow.")
+                    await self._handle_cash_deployment_logic([trigger])
                     continue
                 if trigger.get("action") != "trigger_rebalance":
                     continue
@@ -2738,6 +2759,11 @@ class SentinelService:
                 return triggers
 
             # 2. Get thresholds from DB
+            rebalance_enabled = self.settings_service.get_setting("rebalance_risk_diversification_enabled", True, self.user_id)
+            if str(rebalance_enabled).lower() in ("false", "0"):
+                logger.debug("Sentinel: rebalance_risk_diversification_enabled is False, skipping concentration check.")
+                return triggers
+
             max_single_weight = self.settings_service.get_setting('max_single_position_weight', 25.0, self.user_id)
             # Rebalance target is slightly below max to prevent frequent oscillations
             target_rebalance_weight = max_single_weight * 0.9  
@@ -2958,3 +2984,499 @@ class SentinelService:
         except Exception as e:
             logger.error(f"Error calculating portfolio value: {e}", exc_info=True)
             return 0.0
+
+    # ──────────────────────────────────────────
+    # Dimension 11: Position Exit Engine (Stop-Loss, Take-Profit, Thesis Breakdown)
+    # ──────────────────────────────────────────
+
+    async def _check_position_exits(self) -> List[Dict[str, Any]]:
+        """
+        Dimension 11: Active Position Exit Check
+        主動監控所有持倉之停損、停利與多因子出場訊號。
+        
+        Evaluates active holdings against:
+        1. Hard Stop-Loss (default 8%): return_pct <= -stop_loss_pct
+        2. Hard Take-Profit (default 20%): return_pct >= take_profit_pct
+        3. ExitCompositor Multi-Factor Score: composite_score >= sell_threshold
+        """
+        triggers: List[Dict[str, Any]] = []
+        try:
+            current_allocation = await self._get_current_allocation()
+            if not current_allocation:
+                return triggers
+
+            enable_fixed_stops_val = self.settings_service.get_setting("enable_fixed_stops", False, self.user_id)
+            enable_fixed_stops = str(enable_fixed_stops_val).lower() in ("true", "1") if enable_fixed_stops_val is not None else False
+            stop_loss_pct = float(self.settings_service.get_setting("stop_loss_pct", 8.0, self.user_id))
+            take_profit_pct = float(self.settings_service.get_setting("take_profit_pct", 20.0, self.user_id))
+            sell_threshold = float(self.settings_service.get_setting("auto_trade_threshold_sell", 6.0, self.user_id))
+
+            eval_candidates: List[Dict[str, Any]] = []
+            for ticker, info in current_allocation.items():
+                if str(ticker).upper() in ("CASH", "USD"):
+                    continue
+
+                shares = float(info.get("shares", 0) or info.get("quantity", 0))
+                if shares <= 0.0001:
+                    continue
+
+                current_price = float(info.get("current_price", 0) or 0)
+                avg_price = float(info.get("avg_price", 0) or 0)
+                weight = float(info.get("weight", 0) or 0)
+
+                # Fallback: lookup cost basis if avg_price is missing
+                if avg_price <= 0:
+                    try:
+                        lots = self.transaction_service.get_position_lots(self.user_id, ticker)
+                        if lots:
+                            total_cost = sum(lot.open_price * lot.quantity for lot in lots)
+                            total_qty = sum(lot.quantity for lot in lots)
+                            if total_qty > 0:
+                                avg_price = total_cost / total_qty
+                    except Exception as e:
+                        logger.warning(f"Could not resolve open price for {ticker} from lots: {e}")
+
+                if current_price <= 0:
+                    continue
+
+                return_pct = None
+                if avg_price > 0:
+                    return_pct = ((current_price - avg_price) / avg_price) * 100.0
+
+                # 1. Hard Stop-Loss Trigger (Only when fixed stops are explicitly enabled)
+                if enable_fixed_stops and return_pct is not None and return_pct <= -abs(stop_loss_pct):
+                    triggers.append({
+                        "id": f"stop_loss_{ticker}_{self.user_id[:8]}",
+                        "ticker": ticker,
+                        "action": "trigger_exit",
+                        "strategy_name": "stop_loss",
+                        "sell_quantity": shares,
+                        "current_price": current_price,
+                        "avg_price": avg_price,
+                        "return_pct": round(return_pct, 2),
+                        "current_weight_pct": weight,
+                        "text": f"🛑 [停損觸發] {ticker} 報酬率 {return_pct:.2f}% (成本 ${avg_price:.2f}, 現價 ${current_price:.2f}) 達到停損門檻 -{stop_loss_pct:.1f}%",
+                        "severity": "critical",
+                        "priority": 1,
+                        "type": "position_exit",
+                        "trigger_type": "stop_loss",
+                        "timestamp": pd.Timestamp.now().isoformat(),
+                    })
+                    logger.warning(f"[Sentinel Exit] Stop-loss triggered for {ticker}: {return_pct:.2f}% <= -{stop_loss_pct:.1f}%")
+                    continue
+
+                # 2. Hard Take-Profit Trigger (Only when fixed stops are explicitly enabled)
+                if enable_fixed_stops and return_pct is not None and return_pct >= abs(take_profit_pct):
+                    triggers.append({
+                        "id": f"take_profit_{ticker}_{self.user_id[:8]}",
+                        "ticker": ticker,
+                        "action": "trigger_exit",
+                        "strategy_name": "take_profit",
+                        "sell_quantity": shares,
+                        "current_price": current_price,
+                        "avg_price": avg_price,
+                        "return_pct": round(return_pct, 2),
+                        "current_weight_pct": weight,
+                        "text": f"🎯 [停利觸發] {ticker} 報酬率 +{return_pct:.2f}% (成本 ${avg_price:.2f}, 現價 ${current_price:.2f}) 達到停利目標 +{take_profit_pct:.1f}%",
+                        "severity": "high",
+                        "priority": 2,
+                        "type": "position_exit",
+                        "trigger_type": "take_profit",
+                        "timestamp": pd.Timestamp.now().isoformat(),
+                    })
+                    logger.info(f"[Sentinel Exit] Take-profit triggered for {ticker}: +{return_pct:.2f}% >= +{take_profit_pct:.1f}%")
+                    continue
+
+                # Candidate for Multi-Factor Exit check
+                eval_candidates.append({
+                    "ticker": ticker,
+                    "shares": shares,
+                    "current_price": current_price,
+                    "avg_price": avg_price,
+                    "weight": weight,
+                    "return_pct": return_pct,
+                })
+
+            # 3. Multi-Factor Exit check via ExitCompositor (Rate-limited: 30 min cooldown per ticker; Bounded concurrency)
+            if eval_candidates:
+                sem = asyncio.Semaphore(3)
+                from src.services.exit_compositor_service import ExitCompositorService
+                compositor = ExitCompositorService(user_id=self.user_id, settings_service=self.settings_service)
+
+                async def _eval_holding(cand: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+                    t_sym = cand["ticker"]
+                    cooldown_key = f"exit_eval:{t_sym}:{self.user_id}"
+                    if not await self._acquire_cooldown(cooldown_key, 1800, fail_open=False):
+                        return None
+
+                    async with sem:
+                        try:
+                            decision = await compositor.score_exit(
+                                ticker=t_sym,
+                                quantity=cand["shares"],
+                                current_price=cand["current_price"],
+                                current_weight_pct=cand["weight"],
+                                open_price=cand["avg_price"] if cand["avg_price"] > 0 else None,
+                                reason_hint=f"Periodic holding review for {t_sym}"
+                            )
+                            comp_score = decision.get("composite_score", 0.0)
+                            if comp_score >= sell_threshold:
+                                logger.info(f"[Sentinel Exit] Multi-factor exit triggered for {t_sym}: score={comp_score:.1f} >= {sell_threshold:.1f}")
+                                return {
+                                    "id": f"exit_thesis_{t_sym}_{self.user_id[:8]}",
+                                    "ticker": t_sym,
+                                    "action": "trigger_exit",
+                                    "strategy_name": "position_exit",
+                                    "sell_quantity": cand["shares"],
+                                    "current_price": cand["current_price"],
+                                    "avg_price": cand["avg_price"],
+                                    "return_pct": round(cand["return_pct"], 2) if cand["return_pct"] is not None else None,
+                                    "current_weight_pct": cand["weight"],
+                                    "composite_score": comp_score,
+                                    "confidence_breakdown": decision.get("breakdown", []),
+                                    "rationale": decision.get("rationale", f"出場綜合評分 {comp_score:.1f}/10 達賣出門檻"),
+                                    "text": f"📉 [多因子出場] {t_sym} 出場綜合評分 {comp_score:.1f}/10 達到賣出門檻 ({sell_threshold:.1f})",
+                                    "severity": "high",
+                                    "priority": 2,
+                                    "type": "position_exit",
+                                    "trigger_type": "position_exit",
+                                    "timestamp": pd.Timestamp.now().isoformat(),
+                                }
+                        except Exception as eval_err:
+                            logger.warning(f"[Sentinel Exit] Multi-factor exit evaluation failed for {t_sym}: {eval_err}")
+                    return None
+
+                results = await asyncio.gather(*[_eval_holding(c) for c in eval_candidates], return_exceptions=True)
+                for r in results:
+                    if isinstance(r, dict):
+                        triggers.append(r)
+                    elif isinstance(r, Exception):
+                        logger.error(f"[Sentinel Exit] Exception in concurrent exit eval: {r}")
+
+            # 4. Opportunity Cost & Capital Rotation Check (長期投資換庫：尋找更高確信的新標的)
+            rotation_triggers = await self._check_capital_rotation_opportunities(current_allocation)
+            if rotation_triggers:
+                triggers.extend(rotation_triggers)
+
+        except Exception as e:
+            logger.error(f"[Sentinel Exit] Error in _check_position_exits: {e}", exc_info=True)
+
+        return triggers
+
+    async def _handle_position_exits(self, exit_triggers: Optional[List[Dict[str, Any]]] = None) -> None:
+        """
+        Execute or request approval for position exit trades.
+        執行或發送部位出場（停損、停利、多因子出場、資本換庫）之交易請求。
+        """
+        if not exit_triggers:
+            return
+
+        from src.services.automated_trading_service import AutomatedTradingService
+        auto_trade_svc = AutomatedTradingService()
+
+        for trigger in exit_triggers:
+            if trigger.get("action") != "trigger_exit":
+                continue
+
+            ticker = trigger.get("ticker")
+            sell_qty = trigger.get("sell_quantity")
+            strategy_name = trigger.get("strategy_name", "position_exit")
+            current_price = trigger.get("current_price")
+            avg_price = trigger.get("avg_price")
+            return_pct = trigger.get("return_pct")
+
+            if not ticker or not sell_qty or sell_qty < 0.0001:
+                continue
+
+            # Check cooldown per ticker exit to avoid duplicate orders in rapid succession
+            cooldown_key = f"exit_exec:{ticker}:{self.user_id}"
+            if not await self._acquire_cooldown(cooldown_key, 600, fail_open=False):
+                logger.info(f"[Sentinel Exit] Cooldown active for {ticker} exit execution, skipping duplicate.")
+                continue
+
+            composite_score = trigger.get("composite_score")
+            breakdown = trigger.get("confidence_breakdown")
+            rationale = trigger.get("rationale")
+
+            if composite_score is None:
+                if strategy_name == "stop_loss":
+                    composite_score = 10.0
+                    cost_info = f"(成本 ${avg_price:.2f}, 現價 ${current_price:.2f})" if avg_price and current_price else ""
+                    ret_str = f"{return_pct:.2f}%" if return_pct is not None else ""
+                    rationale = f"🛑 觸發硬停損：報酬率 {ret_str} {cost_info} 跌破停損線，主動平倉避險。"
+                    breakdown = [{"agent": "Risk", "confidence": 10.0, "weight": 1.0, "key_factor": "Stop Loss Hit"}]
+                elif strategy_name == "take_profit":
+                    composite_score = 8.5
+                    cost_info = f"(成本 ${avg_price:.2f}, 現價 ${current_price:.2f})" if avg_price and current_price else ""
+                    ret_str = f"+{return_pct:.2f}%" if return_pct is not None else ""
+                    rationale = f"🎯 觸發停利點：報酬率 {ret_str} {cost_info} 達到獲利了結目標，落袋為安。"
+                    breakdown = [{"agent": "Risk", "confidence": 8.5, "weight": 1.0, "key_factor": "Take Profit Reached"}]
+                elif strategy_name == "capital_rotation":
+                    composite_score = float(trigger.get("composite_score", 8.0))
+                    rationale = trigger.get("rationale") or f"🔄 機會成本換庫：自 {ticker} 換庫釋放資金至更高確信標的。"
+                    breakdown = trigger.get("confidence_breakdown") or [
+                        {"agent": "CapitalRotation", "confidence": composite_score, "weight": 1.0, "key_factor": "Superior Opportunity Found"}
+                    ]
+                else:
+                    composite_score = 7.5
+                    rationale = trigger.get("text", "Position exit triggered.")
+                    breakdown = []
+
+            logger.warning(
+                f"[Sentinel Exit Execution] Submitting {strategy_name} for {ticker}: {sell_qty} shares, score={composite_score}"
+            )
+
+            try:
+                res = await auto_trade_svc.evaluate_and_execute_trade(
+                    user_id=self.user_id,
+                    ticker=ticker,
+                    action="SELL",
+                    quantity=sell_qty,
+                    confidence_score=composite_score,
+                    confidence_breakdown=breakdown,
+                    rationale=rationale,
+                    strategy_name=strategy_name,
+                )
+                target_ticker = trigger.get("target_ticker")
+                if (
+                    strategy_name == "capital_rotation"
+                    and target_ticker
+                    and res
+                    and res.get("status") in ("success", "executed")
+                ):
+                    cand_score = float(trigger.get("candidate_score", 8.0))
+                    est_proceeds = round(sell_qty * (current_price or 0), 2)
+                    if est_proceeds > 5.0:
+                        logger.info(
+                            f"[Sentinel Exit Execution] Rotation sell executed for {ticker}; "
+                            f"deploying proceeds (~${est_proceeds}) into target {target_ticker}"
+                        )
+                        await auto_trade_svc.evaluate_and_execute_trade(
+                            user_id=self.user_id,
+                            ticker=target_ticker,
+                            action="BUY",
+                            quantity=est_proceeds,
+                            confidence_score=cand_score,
+                            confidence_breakdown=[
+                                {
+                                    "agent": "CapitalRotation",
+                                    "confidence": cand_score,
+                                    "weight": 1.0,
+                                    "key_factor": f"Rotated from {ticker}",
+                                }
+                            ],
+                            rationale=f"🔄 換庫買入：自 {ticker} 換庫釋放資金，轉進高確信標的 {target_ticker} (評分 {cand_score:.1f}/10)",
+                            strategy_name="capital_rotation",
+                        )
+            except Exception as e:
+                logger.error(f"[Sentinel Exit Execution] Failed to execute exit for {ticker}: {e}", exc_info=True)
+
+    async def _check_capital_rotation_opportunities(
+        self,
+        current_allocation: Dict[str, Dict[str, Any]],
+        candidates_override: Optional[List[Dict[str, Any]]] = None,
+    ) -> List[Dict[str, Any]]:
+        """
+        Dimension 11.2: Capital Rotation / Opportunity Cost Exit Check
+        長期投資換庫機制：評估現有持倉相較於市場更優機會的留存確信度。
+        若市場或自選池出現評分顯著更高的新機會（差值 >= rotation_min_score_delta），
+        且現有部位表現疲弱或論點已鈍化，觸發資本換庫賣出。
+        """
+        rotation_triggers: List[Dict[str, Any]] = []
+        try:
+            rotation_enabled = self.settings_service.get_setting(
+                "capital_rotation_enabled", True, self.user_id
+            )
+            if str(rotation_enabled).lower() not in ("true", "1"):
+                return []
+
+            rotation_min_delta = float(
+                self.settings_service.get_setting("rotation_min_score_delta", 2.0, self.user_id) or 2.0
+            )
+
+            # Filter valid holdings
+            active_holdings = {}
+            for ticker, info in current_allocation.items():
+                if str(ticker).upper() in ("CASH", "USD"):
+                    continue
+                shares = float(info.get("shares", 0) or info.get("quantity", 0) or 0)
+                price = float(info.get("current_price", 0) or 0)
+                if shares > 0.0001 and price > 0:
+                    active_holdings[ticker] = info
+
+            if not active_holdings:
+                return []
+
+            # Cooldown per user rotation evaluation (prevent continuous heavy rotation checks)
+            cooldown_key = f"capital_rotation_eval:{self.user_id}"
+            if not await self._acquire_cooldown(cooldown_key, 1800, fail_open=False):
+                return []
+
+            # 1. Fetch Candidates
+            candidates = candidates_override
+            if candidates is None:
+                candidates = await self._get_rotation_candidates(active_holdings)
+
+            if not candidates:
+                return []
+
+            # 2. Score Candidates to find the best alternative
+            best_candidate = None
+            best_cand_score = 0.0
+
+            for cand in candidates:
+                cand_ticker = cand.get("ticker")
+                if not cand_ticker or cand_ticker in active_holdings:
+                    continue
+
+                cand_score = cand.get("composite_score") or cand.get("confidence") or cand.get("score")
+                if cand_score is None:
+                    # Score candidate via CompositorService if not pre-scored
+                    try:
+                        from src.services.confidence_compositor_service import CompositorService
+                        compositor = CompositorService(user_id=self.user_id)
+                        agent_scores = await compositor._gather_agent_scores(cand_ticker, cash_ratio=0.05, target_cash_ratio=0.1)
+                        cand_score, _ = compositor._aggregate_scores(agent_scores)
+                    except Exception as ce:
+                        logger.debug(f"[Capital Rotation] Could not score candidate {cand_ticker}: {ce}")
+                        continue
+
+                cand_score = float(cand_score)
+                if cand_score > best_cand_score:
+                    best_cand_score = cand_score
+                    best_candidate = {**cand, "ticker": cand_ticker, "composite_score": cand_score}
+
+            # Only consider rotation if the new candidate is genuinely strong (e.g. >= 7.0)
+            if not best_candidate or best_cand_score < 7.0:
+                return []
+
+            # 3. Evaluate retention conviction for each holding
+            from src.services.exit_compositor_service import ExitCompositorService
+            exit_compositor = ExitCompositorService(
+                user_id=self.user_id, settings_service=self.settings_service
+            )
+
+            weakest_ticker = None
+            weakest_conviction = 999.0
+            weakest_exit_decision = None
+            weakest_info = None
+
+            for ticker, info in active_holdings.items():
+                shares = float(info.get("shares", 0) or info.get("quantity", 0) or 0)
+                current_price = float(info.get("current_price", 0) or 0)
+                avg_price = float(info.get("avg_price", 0) or 0)
+                weight = float(info.get("weight", 0) or 0)
+
+                try:
+                    exit_decision = await exit_compositor.score_exit(
+                        ticker=ticker,
+                        quantity=shares,
+                        current_price=current_price,
+                        current_weight_pct=weight,
+                        open_price=avg_price if avg_price > 0 else None,
+                        reason_hint=f"Capital rotation comparative evaluation against {best_candidate['ticker']}",
+                    )
+                    exit_score = float(exit_decision.get("composite_score", 5.0))
+                    # Retention conviction: inverse of exit urgency
+                    holding_conviction = max(0.0, 10.0 - exit_score)
+                except Exception as ee:
+                    logger.warning(f"[Capital Rotation] Could not evaluate holding {ticker}: {ee}")
+                    holding_conviction = 5.0
+                    exit_decision = {"composite_score": 5.0, "breakdown": []}
+
+                if holding_conviction < weakest_conviction:
+                    weakest_conviction = holding_conviction
+                    weakest_ticker = ticker
+                    weakest_exit_decision = exit_decision
+                    weakest_info = info
+
+            if not weakest_ticker or not weakest_info:
+                return []
+
+            # 4. Check if score advantage satisfies rotation_min_score_delta
+            score_delta = round(best_cand_score - weakest_conviction, 2)
+            if score_delta >= rotation_min_delta:
+                shares_to_sell = float(weakest_info.get("shares", 0) or weakest_info.get("quantity", 0) or 0)
+                price = float(weakest_info.get("current_price", 0) or 0)
+                avg_p = float(weakest_info.get("avg_price", 0) or 0)
+                ret_pct = ((price - avg_p) / avg_p * 100.0) if avg_p > 0 else None
+
+                target_sym = best_candidate["ticker"]
+                rationale = (
+                    f"🔄 機會成本換庫：發現更優投資機會 {target_sym} (評分 {best_cand_score:.1f}/10)，"
+                    f"現有持倉 {weakest_ticker} 評分 {weakest_conviction:.1f}/10，"
+                    f"評分差距 +{score_delta:.1f} >= 門檻 {rotation_min_delta:.1f}。"
+                    f"自動減碼/賣出疲弱標的以釋放資金進行換庫。"
+                )
+
+                rotation_triggers.append({
+                    "id": f"capital_rotation_{weakest_ticker}_{target_sym}_{self.user_id[:8]}",
+                    "ticker": weakest_ticker,
+                    "target_ticker": target_sym,
+                    "action": "trigger_exit",
+                    "strategy_name": "capital_rotation",
+                    "sell_quantity": shares_to_sell,
+                    "current_price": price,
+                    "avg_price": avg_p,
+                    "return_pct": round(ret_pct, 2) if ret_pct is not None else None,
+                    "current_weight_pct": float(weakest_info.get("weight", 0) or 0),
+                    "composite_score": max(6.0, round(10.0 - weakest_conviction, 2)),
+                    "candidate_score": best_cand_score,
+                    "holding_conviction": weakest_conviction,
+                    "score_delta": score_delta,
+                    "confidence_breakdown": weakest_exit_decision.get("breakdown", []),
+                    "rationale": rationale,
+                    "text": f"🔄 [機會成本換庫] {weakest_ticker} (評分 {weakest_conviction:.1f}/10) 換庫轉進 {target_sym} (評分 {best_cand_score:.1f}/10，差距 +{score_delta:.1f})",
+                    "severity": "high",
+                    "priority": 2,
+                    "type": "position_exit",
+                    "trigger_type": "capital_rotation",
+                    "timestamp": pd.Timestamp.now().isoformat(),
+                })
+                logger.info(
+                    f"[Capital Rotation] Triggered rotation from {weakest_ticker} ({weakest_conviction:.1f}) "
+                    f"to {target_sym} ({best_cand_score:.1f}), delta=+{score_delta:.1f}"
+                )
+
+        except Exception as e:
+            logger.error(f"[Capital Rotation] Error in _check_capital_rotation_opportunities: {e}", exc_info=True)
+
+        return rotation_triggers
+
+    async def _get_rotation_candidates(self, active_holdings: Dict[str, Any]) -> List[Dict[str, Any]]:
+        """
+        Fetch prospective candidates for capital rotation.
+        Priority:
+        1. Tickers in ticker_universe with status in ('active', 'scouted', 'watchlist')
+        2. Tickers discovered via ticker_discovery
+        """
+        candidates: List[Dict[str, Any]] = []
+        try:
+            from src.repositories.ticker_universe_repository import TickerUniverseRepository
+            universe_repo = TickerUniverseRepository()
+            all_univ = universe_repo.get_all(self.user_id)
+            for item in all_univ:
+                sym = item.get("ticker", "").upper()
+                if sym and sym not in active_holdings and item.get("status") in ("active", "scouted", "watchlist"):
+                    candidates.append({
+                        "ticker": sym,
+                        "confidence": float(item.get("conviction_score", 0) or 0),
+                        "source": "ticker_universe",
+                    })
+        except Exception as e:
+            logger.debug(f"[Capital Rotation] Could not query ticker_universe: {e}")
+
+        # Fallback to ticker discovery if no candidates in universe
+        if not candidates:
+            try:
+                from src.agents.skills.cash_deployment.impl import _get_deployment_candidates
+                discovered = await _get_deployment_candidates(self.user_id, 100.0)
+                for item in discovered:
+                    sym = item.get("ticker", "").upper()
+                    if sym and sym not in active_holdings:
+                        candidates.append(item)
+            except Exception as e:
+                logger.debug(f"[Capital Rotation] Discovery fallback failed: {e}")
+
+        return candidates
+
