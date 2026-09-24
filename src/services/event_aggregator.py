@@ -133,6 +133,72 @@ class EventAggregator:
         # P0 is always actionable by definition
         return True
 
+    @classmethod
+    async def classify_tier_with_arbiter(
+        cls,
+        event_type: str,
+        content: dict,
+        existing_decision: str = "",
+        user_id: Optional[str] = None,
+        cognitive_routing_service: Optional[Any] = None,
+    ) -> Tuple[str, int]:
+        """
+        Classify event priority using TypeSafe Jev (Reflex Tier) when applicable,
+        falling back to deterministic classify_tier.
+        """
+        # First check baseline deterministic rules
+        baseline_tier, baseline_priority = cls.classify_tier(event_type, content, existing_decision)
+
+        # Routine workflows should remain deterministic
+        if event_type in ("report", "daily_snapshot", "rebalance_check"):
+            return baseline_tier, baseline_priority
+
+        try:
+            from src.services.cognitive_routing_service import CognitiveRoutingService
+            from src.domain.cognitive_issue_type import CognitiveIssueType
+
+            svc = cognitive_routing_service or CognitiveRoutingService()
+            if not svc.should_use_reflex(CognitiveIssueType.EVENT_PRIORITIZATION, user_id=user_id):
+                return baseline_tier, baseline_priority
+
+            question_spec = {
+                "type": "choice",
+                "instructions": "Classify the priority of this market event",
+                "criteria": {
+                    "P0": "Immediate liquidation threat, market crash, catastrophic failure, circuit breaker",
+                    "P1": "Urgent risk drift, major price movement >2%, earnings beat/miss, actionable trade alert",
+                    "P2": "Routine update, minor price tick, non-critical status report",
+                    "P3": "Background noise, irrelevant research, low-value information"
+                }
+            }
+            fallback_prompt = (
+                f"Classify event: type={event_type}, content={json_content_str(content)}.\n"
+                "Return JSON with {\"priority\": \"P0\"|\"P1\"|\"P2\"|\"P3\"}"
+            )
+            decision = await svc.evaluate_reflex_issue(
+                issue_type=CognitiveIssueType.EVENT_PRIORITIZATION,
+                domain="event_aggregator",
+                state={"event_type": event_type, "content": content},
+                question_key="priority",
+                question_spec=question_spec,
+                system2_fallback_prompt=fallback_prompt,
+                deterministic_default=baseline_tier,
+                user_id=user_id,
+            )
+            tier_choice = str(decision.choice).upper()
+            priority_map = {
+                EventQueue.TIER_P0: 100,
+                EventQueue.TIER_P1: 80,
+                EventQueue.TIER_P2: 30,
+                EventQueue.TIER_P3: 10,
+            }
+            if tier_choice in priority_map:
+                return tier_choice, priority_map[tier_choice]
+            return baseline_tier, baseline_priority
+        except Exception as e:
+            logger.warning(f"EventAggregator: Arbiter classification error: {e}, using baseline")
+            return baseline_tier, baseline_priority
+
     # ──────────────────────────────────────────────
     # Ingestion
     # ──────────────────────────────────────────────

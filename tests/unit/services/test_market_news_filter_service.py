@@ -116,3 +116,39 @@ def test_generic_irrelevant_market_noise_dropped():
         assert res.should_drop
         assert not res.is_relevant
         assert res.category == "unrelated_market_noise"
+
+
+@pytest.mark.asyncio
+async def test_evaluate_with_arbiter_rescues_industry_shock():
+    """Verify evaluate_with_arbiter promotes ambiguous news with high Jev confidence."""
+    from unittest.mock import AsyncMock, MagicMock
+    from src.infrastructure.llm.arbiter_client import ArbiterDecision
+
+    svc = MarketNewsFilterService(user_id="test_user")
+    mock_routing = MagicMock()
+    mock_routing.should_use_reflex.return_value = True
+    mock_routing.evaluate_reflex_issue = AsyncMock(return_value=ArbiterDecision(
+        decision_id="dec_news_999",
+        choice="YES",
+        confidence=0.94,
+        is_escalated=False,
+        tier="reflex",
+        state_hash="news_hash",
+        latency_ms=40.0
+    ))
+
+    with patch.object(svc, "get_portfolio_holdings", return_value={"NVDA"}), \
+         patch.object(svc, "get_watchlist_tickers", return_value={"SPY"}):
+
+        res = await svc.evaluate_with_arbiter(
+            title="Global shipping alliance adjusts container slot allocations across Pacific routes",
+            content="Container freight rates and shipping route allocations see unexpected realignment.",
+            url="https://shipping-watch.com/pacific-slots",
+            cognitive_routing_service=mock_routing,
+        )
+
+        assert not res.should_drop
+        assert res.is_relevant
+        assert res.relevance_score == 7.5
+        assert res.category == "macro_systemic"
+        mock_routing.evaluate_reflex_issue.assert_called_once()

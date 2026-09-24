@@ -47,15 +47,37 @@ class SkillRouter:
             logger.debug(f"SkillRouter: dynamic skill map load failed, using default: {e}")
         return self.DEFAULT_DIRECT_SKILL_MAP
 
-    def __init__(self, user_id: str, tier: str = "fast", use_arbiter: Optional[bool] = None, arbiter_client: Optional[Any] = None):
+    def __init__(
+        self,
+        user_id: str,
+        tier: str = "fast",
+        use_arbiter: Optional[bool] = None,
+        arbiter_client: Optional[Any] = None,
+        cognitive_routing_service: Optional[Any] = None,
+    ):
         self.user_id = user_id
-        self.tier = tier
+        self._cognitive_routing_service = cognitive_routing_service
         self._llm = None
         self._config = None
-        if use_arbiter is None:
-            use_arbiter = os.getenv("SKILL_ROUTER_USE_ARBITER", "true").lower() in ("true", "1")
-        self.use_arbiter = use_arbiter
         self._arbiter_client = arbiter_client
+
+        # Resolve tier and reflex eligibility via CognitiveRoutingService if not explicitly specified
+        if use_arbiter is None:
+            svc = self._get_cognitive_routing_service()
+            from src.domain.cognitive_issue_type import CognitiveIssueType
+            self.use_arbiter = svc.should_use_reflex(CognitiveIssueType.INTENT_ROUTING, user_id=self.user_id)
+        else:
+            self.use_arbiter = use_arbiter
+
+        # Effective tier for legacy/fallback path
+        svc = self._get_cognitive_routing_service()
+        self.tier = tier or svc.get_tier_for_issue(CognitiveIssueType.INTENT_ROUTING, user_id=self.user_id)
+
+    def _get_cognitive_routing_service(self):
+        if self._cognitive_routing_service is None:
+            from src.services.cognitive_routing_service import CognitiveRoutingService
+            self._cognitive_routing_service = CognitiveRoutingService()
+        return self._cognitive_routing_service
 
     def _get_arbiter_client(self):
         if self._arbiter_client is None:
@@ -114,15 +136,19 @@ class SkillRouter:
                         f"Classify user request: '{user_message}'.\n"
                         "Return JSON with {\"intent\": \"PRICE_CHECK\"|\"PORTFOLIO_CHECK\"|\"MACRO_CHECK\"|\"SWARM\"}"
                     )
+                    svc = self._get_cognitive_routing_service()
+                    from src.domain.cognitive_issue_type import CognitiveIssueType
+                    routing_spec = svc.get_routing_spec(CognitiveIssueType.INTENT_ROUTING, user_id=self.user_id)
                     arbiter = self._get_arbiter_client()
                     decision = await arbiter.decide(
                         domain="skill_router",
                         state={"user_message": user_message},
                         question_key="intent",
                         question_spec=question_spec,
-                        confidence_threshold=0.88,
+                        confidence_threshold=routing_spec.confidence_threshold,
                         system2_fallback_prompt=fallback_prompt,
-                        deterministic_default="SWARM"
+                        deterministic_default="SWARM",
+                        timeout_ms=routing_spec.timeout_ms,
                     )
                     category = str(decision.choice).upper()
                     if "PRICE_CHECK" in category:

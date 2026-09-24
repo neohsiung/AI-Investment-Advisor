@@ -58,3 +58,33 @@ def test_classify_tier_with_thinking_traces():
     }
     tier, priority = EventAggregator.classify_tier("report", content)
     assert tier != EventQueue.TIER_P0
+
+
+@pytest.mark.asyncio
+async def test_classify_tier_with_arbiter():
+    """Verify classify_tier_with_arbiter routes to Jev and maps priority."""
+    from unittest.mock import AsyncMock, MagicMock
+    from src.infrastructure.llm.arbiter_client import ArbiterDecision
+
+    mock_svc = MagicMock()
+    mock_svc.should_use_reflex.return_value = True
+    mock_svc.evaluate_reflex_issue = AsyncMock(return_value=ArbiterDecision(
+        decision_id="dec_456",
+        choice="P1",
+        confidence=0.96,
+        is_escalated=False,
+        tier="reflex",
+        state_hash="def",
+        latency_ms=35.0
+    ))
+
+    content = {"headline": "Surprise rate cut announced"}
+    tier, priority = await EventAggregator.classify_tier_with_arbiter(
+        event_type="market_news",
+        content=content,
+        cognitive_routing_service=mock_svc
+    )
+
+    assert tier == EventQueue.TIER_P1
+    assert priority == 80
+    mock_svc.evaluate_reflex_issue.assert_called_once()

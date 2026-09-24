@@ -365,3 +365,75 @@ class MarketNewsFilterService:
             category="unrelated_market_noise",
             reason="Lacks direct portfolio holding relevance or systemic macro impact",
         )
+
+    async def evaluate_with_arbiter(
+        self,
+        title: str,
+        content: str = "",
+        url: Optional[str] = None,
+        ticker: Optional[str] = None,
+        signal: Optional[str] = None,
+        holdings: Optional[Set[str]] = None,
+        cognitive_routing_service: Optional[Any] = None,
+    ) -> MarketFilterResult:
+        """
+        Evaluate news relevance, augmenting baseline heuristic filter with
+        TypeSafe Jev (Reflex Tier) for ambiguous or industry-wide events.
+        """
+        # Step 1: Run fast baseline heuristic
+        base_result = self.evaluate(
+            title=title, content=content, url=url, ticker=ticker, signal=signal, holdings=holdings
+        )
+        if base_result.is_duplicate or base_result.is_relevant:
+            return base_result
+
+        # Step 2: If rejected as generic noise, check if Reflex (Jev) should arbitrate
+        try:
+            from src.services.cognitive_routing_service import CognitiveRoutingService
+            from src.domain.cognitive_issue_type import CognitiveIssueType
+
+            svc = cognitive_routing_service or CognitiveRoutingService()
+            if not svc.should_use_reflex(CognitiveIssueType.NEWS_RELEVANCE, user_id=self.user_id):
+                return base_result
+
+            combined_text = f"{title}\n{content}".strip()
+            if len(combined_text) < 30:
+                return base_result
+
+            question_spec = {
+                "type": "choice",
+                "instructions": "Determine if this financial news has actionable market shock or industry supply chain impact",
+                "criteria": {
+                    "YES": "High-impact policy change, antitrust, unexpected regulatory shock, supply chain crisis",
+                    "NO": "Generic commentary, marketing, routine daily market chatter or irrelevant fluff"
+                }
+            }
+            fallback_prompt = (
+                f"Evaluate news: Title: {title}. Content: {content[:300]}.\n"
+                "Return JSON with {\"impact\": \"YES\"|\"NO\"}"
+            )
+            decision = await svc.evaluate_reflex_issue(
+                issue_type=CognitiveIssueType.NEWS_RELEVANCE,
+                domain="news_filter",
+                state={"title": title, "content_snippet": content[:300]},
+                question_key="impact",
+                question_spec=question_spec,
+                system2_fallback_prompt=fallback_prompt,
+                deterministic_default="NO",
+                user_id=self.user_id,
+            )
+
+            if str(decision.choice).upper() == "YES" and decision.confidence >= 0.90:
+                self.record_seen(title=title, url=url)
+                return MarketFilterResult(
+                    is_duplicate=False,
+                    is_relevant=True,
+                    relevance_score=7.5,
+                    matched_tickers=["SPY", "QQQ"],
+                    category="macro_systemic",
+                    reason=f"Arbiter identified high-impact industry shock (conf={decision.confidence:.2f})",
+                )
+        except Exception as e:
+            logger.debug(f"MarketNewsFilterService: Arbiter evaluation error: {e}")
+
+        return base_result

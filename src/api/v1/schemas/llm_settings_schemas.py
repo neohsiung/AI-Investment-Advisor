@@ -375,3 +375,28 @@ class ErrorResponse(BaseModel):
     detail: str
     models_count: Optional[int] = None
     usages: Optional[Dict[str, Any]] = None
+
+
+# ──────────────────────────────────────────────────────────────────────
+# Cognitive Issue Routing (Jev & Tier Mapping)
+# ──────────────────────────────────────────────────────────────────────
+class IssueRoutingOut(BaseModel):
+    issue_type: str
+    default_tier: str
+    description: str = ""
+    confidence_threshold: float = 0.90
+    fallback_tier: Optional[str] = None
+    timeout_ms: int = 800
+    is_reflex_eligible: bool = False
+
+
+class IssueRoutingListResponse(BaseModel):
+    status: str = "success"
+    data: List[IssueRoutingOut]
+
+
+class IssueRoutingUpdateRequest(BaseModel):
+    default_tier: Optional[str] = None
+    confidence_threshold: Optional[float] = Field(None, ge=0.0, le=1.0)
+    fallback_tier: Optional[str] = None
+    timeout_ms: Optional[int] = Field(None, ge=50, le=60000)

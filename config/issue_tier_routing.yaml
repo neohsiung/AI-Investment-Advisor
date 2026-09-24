@@ -1,0 +1,135 @@
+# Issue-to-Tier Cognitive Routing Matrix
+# 議題 $\times$ 模型階層認知路由標準矩陣
+#
+# Maps specific tasks/issues to optimal cognitive model tiers:
+# - reflex: TypeSafe Jev 1.13 (<70ms, non-generative, $0.042/MTok, 0 output token cost)
+# - fast: Fast thinking (300-800ms, summarization & extraction)
+# - smart: Slow analytical thinking (1.5-3.5s, multi-step reasoning & audit)
+# - advanced: Deep strategic reasoning (5-25s, high-stakes CIO arbitration)
+
+version: 1
+
+routing:
+  # ── Level 0: 條件式微決策 (Reflex Tier 0, TypeSafe Jev 1.13) ──
+  - issue_type: intent_routing
+    default_tier: reflex
+    description: "用戶自然語言意圖分類與技能選擇 (User intent classification & skill routing)"
+    confidence_threshold: 0.88
+    fallback_tier: fast
+    timeout_ms: 800
+    is_reflex_eligible: true
+
+  - issue_type: news_relevance
+    default_tier: reflex
+    description: "市場新聞與監控標的二元相關度初篩 (Binary news relevance to watchlisted tickers)"
+    confidence_threshold: 0.90
+    fallback_tier: fast
+    timeout_ms: 800
+    is_reflex_eligible: true
+
+  - issue_type: sentinel_breach
+    default_tier: reflex
+    description: "哨兵持倉集中度/回撤風控門檻判定 (Sentinel concentration breach & threshold checks)"
+    confidence_threshold: 0.92
+    fallback_tier: smart
+    timeout_ms: 800
+    is_reflex_eligible: true
+
+  - issue_type: event_prioritization
+    default_tier: reflex
+    description: "事件佇列緊急度分級 P0-P3 (Event queue priority tiering P0-P3)"
+    confidence_threshold: 0.90
+    fallback_tier: smart
+    timeout_ms: 800
+    is_reflex_eligible: true
+
+  - issue_type: state_transition
+    default_tier: reflex
+    description: "工作流 DAG 節點資料完備性與終止裁決 (Workflow DAG node completion & loop termination)"
+    confidence_threshold: 0.92
+    fallback_tier: fast
+    timeout_ms: 800
+    is_reflex_eligible: true
+
+  # ── Level 1: 輕量資訊蒸餾 (Fast Tier 1, Claude Haiku / GPT-4o-mini) ──
+  - issue_type: news_summarization
+    default_tier: fast
+    description: "市場快訊觀點與情緒快速摘要 (Market news gist & sentiment extraction)"
+    confidence_threshold: 0.80
+    fallback_tier: smart
+    timeout_ms: 3000
+    is_reflex_eligible: false
+
+  - issue_type: tech_signal_extraction
+    default_tier: fast
+    description: "技術面指標多空特徵描述 (Technical indicator signal extraction)"
+    confidence_threshold: 0.80
+    fallback_tier: smart
+    timeout_ms: 3000
+    is_reflex_eligible: false
+
+  - issue_type: notification_tone_adapt
+    default_tier: fast
+    description: "全渠道訊息語氣轉譯 (LINE/Discord/Telegram tone adaptation)"
+    confidence_threshold: 0.70
+    fallback_tier: fast
+    timeout_ms: 2500
+    is_reflex_eligible: false
+
+  - issue_type: routine_digest
+    default_tier: fast
+    description: "每日無交易常規營運摘要 (Daily routine operations digest)"
+    confidence_threshold: 0.80
+    fallback_tier: smart
+    timeout_ms: 3000
+    is_reflex_eligible: false
+
+  # ── Level 2: 深度多維分析 (Smart Tier 2, Claude Sonnet / GPT-4o) ──
+  - issue_type: fundamental_analysis
+    default_tier: smart
+    description: "個股基本面深度財報審計與評分 (Deep fundamental financial statement audit & scoring)"
+    confidence_threshold: 0.85
+    fallback_tier: advanced
+    timeout_ms: 8000
+    is_reflex_eligible: false
+
+  - issue_type: risk_hedging_eval
+    default_tier: smart
+    description: "宏觀體制倒掛下的對沖策略評估 (Hedging evaluation under macro stress/inversion)"
+    confidence_threshold: 0.85
+    fallback_tier: advanced
+    timeout_ms: 8000
+    is_reflex_eligible: false
+
+  - issue_type: arbitration_escalation
+    default_tier: smart
+    description: "Jev 置信度不足時的慢思覆核 (Deliberative review for low-confidence Jev decisions)"
+    confidence_threshold: 0.85
+    fallback_tier: advanced
+    timeout_ms: 8000
+    is_reflex_eligible: false
+
+  - issue_type: research_synthesis
+    default_tier: smart
+    description: "多方資料交叉驗證研報產出 (Multi-source research synthesis)"
+    confidence_threshold: 0.85
+    fallback_tier: advanced
+    timeout_ms: 8000
+    is_reflex_eligible: false
+
+  # ── Level 3: 戰略仲裁 (Advanced Tier 3, o1 / o3 / Claude Opus) ──
+  - issue_type: strategy_synthesis
+    default_tier: advanced
+    description: "智庫評議會 10 代理人辯論終局仲裁 (Council debate synthesis & trade-off arbitration)"
+    confidence_threshold: 0.90
+    fallback_tier: advanced
+    timeout_ms: 15000
+    is_reflex_eligible: false
+
+  - issue_type: cio_decision
+    default_tier: advanced
+    description: "投資長最終總裁決與黑天鵝緊急應變 (CIO final portfolio mandate & black swan response)"
+    confidence_threshold: 0.95
+    fallback_tier: advanced
+    timeout_ms: 20000
+    is_reflex_eligible: false

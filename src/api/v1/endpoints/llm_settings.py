@@ -63,6 +63,9 @@ from src.api.v1.schemas.llm_settings_schemas import (
     TierBindingsUpdateRequest,
     TierBindingValidationError,
     ValidationErrorDetail,
+    IssueRoutingOut,
+    IssueRoutingListResponse,
+    IssueRoutingUpdateRequest,
 )
 from src.services.llm_agent_override_service import (
     LLMAgentOverrideService,
@@ -635,3 +638,43 @@ async def update_agent_overrides(
     except Exception as exc:
         logger.error("update_agent_overrides error: %s", exc)
         raise HTTPException(status_code=500, detail="Failed to update agent overrides")
+
+
+# ──────────────────────────────────────────────────────────────────────
+# Cognitive Issue Routing (Jev & Tier Mapping)
+# ──────────────────────────────────────────────────────────────────────
+@router.get("/issue-routing", response_model=IssueRoutingListResponse)
+async def list_issue_routing(
+    user_id: str = Depends(get_current_user_id),
+):
+    """
+    List all platform issues mapped to cognitive model tiers (Reflex, Fast, Smart, Advanced).
+    列出所有業務議題所映射的模型階層。
+    """
+    from src.services.cognitive_routing_service import CognitiveRoutingService
+    svc = CognitiveRoutingService()
+    specs = svc.list_all_routing_specs(user_id=user_id)
+    return IssueRoutingListResponse(
+        data=[IssueRoutingOut(**s.model_dump()) for s in specs]
+    )
+
+
+@router.put("/issue-routing/{issue_type}", response_model=IssueRoutingOut)
+async def update_issue_routing(
+    issue_type: str,
+    payload: IssueRoutingUpdateRequest,
+    user_id: str = Depends(get_current_user_id),
+):
+    """
+    Update tenant-specific routing overrides for an issue type.
+    更新特定議題的模型階層與置信度閾值覆寫。
+    """
+    from src.services.cognitive_routing_service import CognitiveRoutingService
+    svc = CognitiveRoutingService()
+    updates = {k: v for k, v in payload.model_dump().items() if v is not None}
+    updated_spec = svc.update_issue_override(
+        user_id=user_id,
+        issue_type=issue_type,
+        updates=updates,
+    )
+    return IssueRoutingOut(**updated_spec.model_dump())
