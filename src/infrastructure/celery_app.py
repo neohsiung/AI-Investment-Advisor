@@ -141,6 +141,12 @@ app.conf.beat_schedule = {
         "task": "src.infrastructure.tasks.dispatch_strategy_evolution",
         "schedule": crontab(hour=21, minute=0, day_of_week="0"),  # Sun 21:00 EST
     },
+    # Autonomous Factor Exploration & Canary Evolution — runs daily at 01:30 AM EST (off-market hours)
+    # 自主量化因子探索與金絲雀灰度演化：每日凌晨離線探索未覆蓋體制策略並自動滾動 14 天金絲雀影子追蹤。
+    "daily-autonomous-factor-evolution": {
+        "task": "src.infrastructure.tasks.dispatch_autonomous_evolution",
+        "schedule": crontab(hour=1, minute=30),  # 01:30 AM EST daily
+    },
     # Autonomous Weekly Confidence Rebalance — runs Monday post-market open (09:35 EST)
     # 自主每週置信度再平衡：每週一美股開盤後（09:35 EST）自動計算目標權重並執行賣出與買入下單。
     "weekly-confidence-rebalance": {

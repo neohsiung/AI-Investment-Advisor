@@ -48,7 +48,7 @@ class IntelligenceService:
             if isinstance(cached, dict):
                 if timestamp:
                     cached["observation_window"] = f"UPDATED: {timestamp}"
-                cached["self_evolution_summary"] = cached.get("self_evolution_summary") or self._get_self_evolution_summary()
+                cached["self_evolution_summary"] = self._get_self_evolution_summary()
                 return cached
 
             
@@ -252,6 +252,10 @@ class IntelligenceService:
                 elif art.status == ArtifactStatus.VERIFIED:
                     title = "通過沙盒自測"[:10]
                     desc = f"{art.name[:12]} 100%通過AST審計與四大極端邊界測試。"[:30]
+                    items.append({"title": title, "description": desc, "status": art.status})
+                elif art.status == ArtifactStatus.KILLED:
+                    title = "已緊急熔斷"[:10]
+                    desc = f"{art.name[:12]} 依操作者指示緊急下線並撤銷授權。"[:30]
                     items.append({"title": title, "description": desc, "status": art.status})
         except Exception as e:
             logger.warning("Failed to collect self-evolution items: %s", str(e))

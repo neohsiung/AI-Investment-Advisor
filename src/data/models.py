@@ -1193,7 +1193,9 @@ class GeneratedCodeArtifact(Base):
     status = Column(String(20), nullable=False, default='DRAFT')  # DRAFT, VERIFIED, PROVISIONAL, ACTIVE, REJECTED, KILLED
     parameters = Column(_JSONB(), default={})
     backtest_metrics = Column(_JSONB(), default={})
+    ast_metrics = Column(_JSONB(), default={})
     shadow_days_remaining = Column(Integer, default=14)
+    shadow_tracking_log = Column(_JSONB(), default=[])
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
 

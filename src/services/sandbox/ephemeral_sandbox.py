@@ -79,6 +79,16 @@ class EphemeralSandbox:
             (temp_path / "your_module.py").write_text("from factor_module import *\n", encoding="utf-8")
             (temp_path / "candidate_factor.py").write_text("from factor_module import *\n", encoding="utf-8")
 
+            # 自動探索並建立測試代碼中 import 的模組別名 (解決 LLM 任意模組命名)
+            if test_code:
+                import re
+                for match in re.finditer(r"(?:from|import)\s+([a-zA-Z_0-9]+)", test_code):
+                    mod_name = match.group(1)
+                    if mod_name not in ("math", "sys", "os", "pytest", "numpy", "pandas", "scipy", "typing", "datetime", "unittest"):
+                        target_mod_file = temp_path / f"{mod_name}.py"
+                        if not target_mod_file.exists():
+                            target_mod_file.write_text("from factor_module import *\n", encoding="utf-8")
+
             # 2. 注入沙盒安全守護檔 (conftest.py - 阻斷網絡與特權)
             conftest_file = temp_path / "conftest.py"
             conftest_content = (

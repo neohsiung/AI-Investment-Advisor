@@ -53,11 +53,52 @@ class CodeArtifactRecord:
 class CanaryShadowRunner:
     """
     Coordinates 14-day shadow tracking and lifecycle states of synthesized code artifacts.
+    Supports in-memory caching with PostgreSQL persistence via GeneratedCodeRepository.
     """
 
     def __init__(self):
         # In-memory store (mirrored with DB model GeneratedCodeArtifact)
         self._store: Dict[str, CodeArtifactRecord] = {}
+        self._repo = None
+
+    def _get_repo(self):
+        if self._repo is None:
+            try:
+                from src.repositories.generated_code_repository import GeneratedCodeRepository
+                self._repo = GeneratedCodeRepository()
+            except Exception as e:
+                logger.warning("Could not initialize GeneratedCodeRepository, using in-memory store: %s", e)
+                self._repo = False
+        return self._repo if self._repo is not False else None
+
+    def _row_to_record(self, row: Any) -> CodeArtifactRecord:
+        created_at_str = (
+            row.created_at.isoformat()
+            if hasattr(row.created_at, "isoformat")
+            else str(row.created_at)
+        )
+        updated_at_str = (
+            row.updated_at.isoformat()
+            if hasattr(row.updated_at, "isoformat")
+            else str(row.updated_at)
+        )
+        return CodeArtifactRecord(
+            id=str(row.id),
+            user_id=str(row.user_id),
+            name=row.name,
+            description=row.description or "",
+            source_code=row.source_code,
+            test_code=row.test_code or "",
+            ast_hash=row.ast_hash,
+            status=row.status,
+            parameters=row.parameters or {},
+            backtest_metrics=row.backtest_metrics or {},
+            ast_metrics=row.ast_metrics or {},
+            shadow_days_remaining=row.shadow_days_remaining or 0,
+            shadow_tracking_log=row.shadow_tracking_log or [],
+            created_at=created_at_str,
+            updated_at=updated_at_str,
+        )
 
     def register_artifact(
         self,
@@ -91,6 +132,29 @@ class CanaryShadowRunner:
             shadow_days_remaining=14 if status == ArtifactStatus.PROVISIONAL else 0,
         )
         self._store[artifact_id] = record
+
+        # Persist to database if repository is available
+        repo = self._get_repo()
+        if repo:
+            try:
+                repo.save_artifact(
+                    artifact_id=artifact_id,
+                    user_id=user_id,
+                    name=name,
+                    description=description,
+                    source_code=source_code,
+                    test_code=test_code,
+                    ast_hash=ast_hash,
+                    status=status,
+                    parameters=parameters,
+                    backtest_metrics=backtest_metrics,
+                    ast_metrics=ast_metrics,
+                    shadow_days_remaining=record.shadow_days_remaining,
+                    shadow_tracking_log=record.shadow_tracking_log,
+                )
+            except Exception as e:
+                logger.warning("Failed to persist artifact %s to DB: %s", artifact_id, e)
+
         logger.info(
             "Registered synthesized code artifact '%s' (ID: %s, Status: %s)",
             name,
@@ -100,7 +164,20 @@ class CanaryShadowRunner:
         return record
 
     def get_artifact(self, artifact_id: str) -> Optional[CodeArtifactRecord]:
-        return self._store.get(artifact_id)
+        if artifact_id in self._store:
+            return self._store[artifact_id]
+
+        repo = self._get_repo()
+        if repo:
+            try:
+                row = repo.get_artifact(artifact_id)
+                if row:
+                    rec = self._row_to_record(row)
+                    self._store[artifact_id] = rec
+                    return rec
+            except Exception as e:
+                logger.warning("Failed to fetch artifact %s from DB: %s", artifact_id, e)
+        return None
 
     def list_artifacts(
         self,
@@ -110,6 +187,20 @@ class CanaryShadowRunner:
         """
         List artifacts filtered by user_id and/or status.
         """
+        repo = self._get_repo()
+        if repo:
+            try:
+                rows = repo.list_artifacts(user_id=user_id, status=status)
+                if rows:
+                    records = []
+                    for row in rows:
+                        rec = self._row_to_record(row)
+                        self._store[rec.id] = rec
+                        records.append(rec)
+                    return records
+            except Exception as e:
+                logger.warning("Failed to query artifacts from DB, falling back to cache: %s", e)
+
         results = list(self._store.values())
         if user_id:
             results = [r for r in results if r.user_id == user_id]
@@ -126,7 +217,7 @@ class CanaryShadowRunner:
         """
         Advance one day in the 14-day canary shadow tracking phase.
         """
-        record = self._store.get(artifact_id)
+        record = self.get_artifact(artifact_id)
         if not record or record.status != ArtifactStatus.PROVISIONAL:
             return record
 
@@ -152,13 +243,26 @@ class CanaryShadowRunner:
         elif record.shadow_days_remaining == 0:
             logger.info("Canary artifact %s completed 14-day shadow tracking successfully", artifact_id)
 
+        # Update in DB
+        repo = self._get_repo()
+        if repo:
+            try:
+                repo.update_lifecycle(
+                    artifact_id=artifact_id,
+                    status=record.status,
+                    shadow_days_remaining=record.shadow_days_remaining,
+                    shadow_tracking_log=record.shadow_tracking_log,
+                )
+            except Exception as e:
+                logger.warning("Failed to update lifecycle in DB for %s: %s", artifact_id, e)
+
         return record
 
     def approve_artifact(self, artifact_id: str, user_id: str) -> bool:
         """
         Operator manual approval: promote artifact to ACTIVE.
         """
-        record = self._store.get(artifact_id)
+        record = self.get_artifact(artifact_id)
         if not record or record.user_id != user_id:
             return False
 
@@ -169,19 +273,35 @@ class CanaryShadowRunner:
         record.status = ArtifactStatus.ACTIVE
         record.updated_at = datetime.now(timezone.utc).isoformat()
         logger.info("Operator approved artifact %s to ACTIVE status", artifact_id)
+
+        repo = self._get_repo()
+        if repo:
+            try:
+                repo.update_lifecycle(artifact_id=artifact_id, status=ArtifactStatus.ACTIVE)
+            except Exception as e:
+                logger.warning("Failed to update approved status in DB for %s: %s", artifact_id, e)
+
         return True
 
     def kill_artifact(self, artifact_id: str, user_id: str) -> bool:
         """
         Operator emergency kill switch: immediately disarms the artifact.
         """
-        record = self._store.get(artifact_id)
+        record = self.get_artifact(artifact_id)
         if not record or record.user_id != user_id:
             return False
 
         record.status = ArtifactStatus.KILLED
         record.updated_at = datetime.now(timezone.utc).isoformat()
         logger.warning("Operator TRIGGERED KILL-SWITCH for artifact %s", artifact_id)
+
+        repo = self._get_repo()
+        if repo:
+            try:
+                repo.update_lifecycle(artifact_id=artifact_id, status=ArtifactStatus.KILLED)
+            except Exception as e:
+                logger.warning("Failed to update killed status in DB for %s: %s", artifact_id, e)
+
         return True
 
 
