@@ -14,6 +14,11 @@ from src.domain.trading import Order, OrderAction, OrderType, OrderSizingMode
 from src.services.broker_factory import BrokerFactory
 from src.config.owner import resolve_user_id
 
+RESERVED_NON_EQUITY_SYMBOLS = {
+    "CASH", "USD", "USDT", "CURRENCY", "RESERVE", "HOLDING", "PORTFOLIO", "INDEX", "MONEY"
+}
+
+
 class _ApprovalSlot:
     """
     A budget limiting how many workers may sit blocked awaiting approval.
@@ -125,6 +130,12 @@ class AutomatedTradingService:
         - Otherwise: use legacy quantity-based approach
         """
         
+        # 0. Non-equity pseudo symbol guard (杜絕偽標的如 CASH/USD 下單)
+        sym_upper = (ticker or "").strip().upper()
+        if not sym_upper or sym_upper in RESERVED_NON_EQUITY_SYMBOLS:
+            logger.info(f"Skipping non-equity pseudo symbol '{ticker}' (liquidity/cash instruction, not trade order)")
+            return {"status": "skipped", "reason": f"Non-equity pseudo symbol '{ticker}' is not an executable asset"}
+
         # v4.2.2: Ensure notification service is correctly configured for this user
         if not self.notification_service:
             from src.services.settings_service import SettingsService
@@ -539,14 +550,39 @@ class AutomatedTradingService:
             reason=rationale
         )
         
-        # 3b. Auto-execute logic (減少人為介入)
-        # 停損（stop_loss）屬於資本安全防護，直接全自動執行；
-        # 一般賣出若達到賣出門檻且啟用 autonomous_exit_enabled 亦自動執行。
+        # 3b. Auto-execute logic (走向全自主通報模式：從要我決策，變成跟我報告)
         auto_exit_enabled = self.settings_repo.get(user_id, "autonomous_exit_enabled")
         if auto_exit_enabled is None:
             auto_exit_enabled = True
         else:
             auto_exit_enabled = str(auto_exit_enabled).lower() in ("true", "1")
+
+        # 2026-09-25: autonomous_reporting_mode (目標從要我決策，變成跟我報告)
+        auto_rep_setting = self.settings_repo.get(user_id, "autonomous_reporting_mode")
+        autonomous_reporting_mode = str(auto_rep_setting).lower() in ("true", "1")
+
+        # 自主判決置信度優化 (Autonomous Confidence Optimizer)
+        optimized_confidence = normalized_confidence
+        if normalized_confidence < threshold and (autonomous_reporting_mode or auto_exit_enabled):
+            try:
+                from src.services.autonomous_reporting_service import AutonomousConfidenceOptimizer
+                optimized_confidence, boosts = AutonomousConfidenceOptimizer.optimize_confidence(
+                    base_confidence=normalized_confidence,
+                    action=action,
+                    threshold=threshold,
+                    rationale=rationale,
+                    confidence_breakdown=confidence_breakdown,
+                    strategy_name=strategy_name,
+                )
+                if optimized_confidence >= threshold:
+                    logger.info(
+                        f"Autonomous Confidence Optimizer: {ticker} boosted {normalized_confidence:.1f} → "
+                        f"{optimized_confidence:.1f} ({', '.join(boosts)}), cleared threshold {threshold:.1f}"
+                    )
+            except Exception as opt_err:
+                logger.warning(f"Confidence optimization check non-blocking failure: {opt_err}")
+
+        effective_confidence = max(normalized_confidence, optimized_confidence)
 
         should_auto_execute = False
         approval_label = "自動執行"
@@ -554,30 +590,46 @@ class AutomatedTradingService:
         if is_sell and strategy_name == "stop_loss":
             should_auto_execute = True
             approval_label = "停損自動執行"
-        elif is_sell and strategy_name == "take_profit" and auto_exit_enabled and not requires_approval_reason:
+        elif is_sell and strategy_name == "take_profit" and auto_exit_enabled:
             should_auto_execute = True
             approval_label = "停利自動執行"
-        elif is_sell and strategy_name == "capital_rotation" and auto_exit_enabled and not requires_approval_reason:
+        elif is_sell and strategy_name == "capital_rotation" and auto_exit_enabled:
             should_auto_execute = True
             approval_label = "換庫自動執行"
-        elif is_sell and strategy_name in ("rebalance_diversification", "concentration_rebalance") and auto_exit_enabled and not requires_approval_reason:
+        elif is_sell and strategy_name in ("rebalance_diversification", "concentration_rebalance") and auto_exit_enabled:
             should_auto_execute = True
             approval_label = "再平衡自動執行"
-        elif is_sell and normalized_confidence >= threshold and auto_exit_enabled and not requires_approval_reason:
+        elif is_sell and effective_confidence >= threshold and auto_exit_enabled:
             should_auto_execute = True
-            approval_label = "出場自動執行"
-        elif normalized_confidence >= threshold and not requires_approval_reason:
+            approval_label = "出場自動執行" if optimized_confidence == normalized_confidence else "自主執行 (信心優化放行)"
+        elif effective_confidence >= threshold and not requires_approval_reason:
             should_auto_execute = True
-            approval_label = "自動執行"
+            approval_label = "自動執行" if optimized_confidence == normalized_confidence else "自主執行 (信心優化放行)"
+        elif effective_confidence >= threshold and autonomous_reporting_mode and is_sell:
+            should_auto_execute = True
+            approval_label = "自主執行 (策略自適應)"
 
         if should_auto_execute:
-            logger.info(f"Score {normalized_confidence} >= {threshold} (or stop_loss). Executing automatically ({approval_label}).")
+            logger.info(f"Score {effective_confidence} >= {threshold} (or exit/rebalance). Executing automatically ({approval_label}).")
             return await self._execute_trade(
-                user_id, order, normalized_confidence, rationale, approval_label,
-                confidence_breakdown=confidence_breakdown, threshold=threshold
+                user_id, order, effective_confidence, rationale, approval_label,
+                confidence_breakdown=confidence_breakdown, threshold=threshold,
+                strategy_name=strategy_name
             )
 
-        # 3c. Between min and upper → notify all channels, request approval
+        # 3c. Autonomous Reporting Mode: Do not block or harass user with approval requests
+        if autonomous_reporting_mode:
+            skip_reason = requires_approval_reason or f"Score {effective_confidence:.1f} below threshold {threshold:.1f}"
+            logger.info(
+                f"Autonomous Mode: {order.action.value} {ticker} not auto-executed ({skip_reason}). "
+                f"Skipping trade autonomously without interrupting user."
+            )
+            return {
+                "status": "skipped",
+                "reason": f"Autonomous evaluation: {skip_reason} (Declined without human interruption)",
+            }
+
+        # Legacy 3c: Between min and upper → notify all channels, request approval
         if requires_approval_reason:
             logger.info(
                 f"Score {normalized_confidence} would auto-execute, but approval is "
@@ -766,7 +818,17 @@ class AutomatedTradingService:
         account = await broker.get_account()
         return float(getattr(account, "total_equity", 0.0) or 0.0)
 
-    async def _execute_trade(self, user_id: str, order: Order, confidence_score: int, rationale: str, approval_type: str, confidence_breakdown: list = None, threshold: float = None) -> Dict[str, Any]:
+    async def _execute_trade(
+        self,
+        user_id: str,
+        order: Order,
+        confidence_score: int,
+        rationale: str,
+        approval_type: str,
+        confidence_breakdown: list = None,
+        threshold: float = None,
+        strategy_name: str = None,
+    ) -> Dict[str, Any]:
         """Execute the trade via the BrokerFactory."""
         
         broker = BrokerFactory.get_broker(user_id)
@@ -789,51 +851,65 @@ class AutomatedTradingService:
                 except Exception as sync_e:
                     logger.warning(f"Post-trade sync failed (non-blocking): {sync_e}")
             
-            # Send Notification
+            # Send Notification: Three-Pillar Autonomous Post-Action Report
+            # (一、行動  二、行動後的狀況影響  三、交易策略改變的行動)
             failed = result.get("status") in ["failed", "error"]
-            title = f"✅ 交易執行成功 (Trade Executed) - {order.symbol}"
-            if failed:
-                 title = f"⚠️ 交易執行失敗 (Trade Failed) - {order.symbol}"
             headline = (
                 f"⚠️ 執行失敗：{order.action.value} {order.symbol}" if failed
                 else f"✅ {approval_type}：{order.action.value} {order.symbol}"
             )
 
-            # 2026-08-11: an auto-executed trade needs the same score
-            # composition as one that asked permission. It is the only record
-            # the user gets of a decision they were never consulted on, and
-            # the previous version truncated the breakdown to 3 factors.
-            # 2026-08-11：自動成交的通知需與核准卡呈現同樣的分數組成——那是使用者
-            # 對「未被徵詢過的決策」唯一的紀錄，而舊版只顯示前三項因子。
-            from src.services.decision_card import render_card
+            title = f"✅ 交易執行成功 (Trade Executed) - {order.symbol}"
+            if failed:
+                title = f"⚠️ 交易執行失敗 (Trade Failed) - {order.symbol}"
 
-            is_buy = order.action == OrderAction.BUY
-            size_line = (
-                f"部位：${order.quantity:.2f}" if is_buy
-                else f"賣出數量：{order.quantity} 股"
-            )
-            content = render_card(
-                action=order.action.value,
-                ticker=order.symbol,
-                score=float(confidence_score),
-                threshold=float(threshold) if threshold is not None else 7.5,
-                breakdown=confidence_breakdown,
-                size_line=size_line,
-                context_lines=[
-                    "",
-                    f"券商：{broker.get_name()}　執行方式：{approval_type}",
-                    f"依據：{(rationale or '').strip()[:300]}",
-                    "",
-                    f"結果：{result}",
-                ],
-                auto_executed=True,
-                headline=headline,
-            )
+            try:
+                from src.services.autonomous_reporting_service import AutonomousReportingService
+                reporting_svc = AutonomousReportingService(broker=broker, notification_service=self.notification_service)
+                report = await reporting_svc.generate_report(
+                    user_id=user_id,
+                    order=order,
+                    result=result,
+                    confidence_score=float(confidence_score),
+                    threshold=float(threshold) if threshold is not None else 7.5,
+                    rationale=rationale,
+                    approval_type=approval_type,
+                    confidence_breakdown=confidence_breakdown,
+                    strategy_name=strategy_name,
+                )
+                title = report["title"]
+                content = report["content"]
+            except Exception as rep_err:
+                logger.warning(f"Autonomous report generation failed ({rep_err}), falling back to decision card")
+                from src.services.decision_card import render_card
+
+                is_buy = order.action == OrderAction.BUY
+                size_line = (
+                    f"部位：${order.quantity:.2f}" if is_buy
+                    else f"賣出數量：{order.quantity} 股"
+                )
+                content = render_card(
+                    action=order.action.value,
+                    ticker=order.symbol,
+                    score=float(confidence_score),
+                    threshold=float(threshold) if threshold is not None else 7.5,
+                    breakdown=confidence_breakdown,
+                    size_line=size_line,
+                    context_lines=[
+                        "",
+                        f"券商：{broker.get_name()}　執行方式：{approval_type}",
+                        f"依據：{(rationale or '').strip()[:300]}",
+                        "",
+                        f"結果：{result}",
+                    ],
+                    auto_executed=True,
+                    headline=headline,
+                )
 
             await self._notify_via_api(
                 user_id=user_id, 
                 title=title, 
-                content=content,
+                content=content, 
                 category="trading"
             )
             

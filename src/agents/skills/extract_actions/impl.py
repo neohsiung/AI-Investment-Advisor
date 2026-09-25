@@ -11,6 +11,10 @@ from src.repositories.settings_repository import AlchemySettingsRepository
 
 logger = setup_logger("skill_extract_actions")
 
+RESERVED_NON_EQUITY_SYMBOLS = {
+    "CASH", "USD", "USDT", "CURRENCY", "RESERVE", "HOLDING", "PORTFOLIO", "INDEX", "MONEY"
+}
+
 async def extract_actions(
     user_id: str,
     decision_text: str,
@@ -118,14 +122,21 @@ async def extract_actions(
                 response_clean = response_clean[7:-3].strip()
             elif response_clean.startswith("```"):
                 response_clean = response_clean[3:-3].strip()
-
-        # Simple validation
+        # Simple validation and filtering of non-equity pseudo-symbols
         trades = json.loads(response_clean)
         if not isinstance(trades, list):
             logger.warning(f"Extracted result is not a list: {trades}")
             return "[]"
+
+        valid_trades = []
+        for t in trades:
+            sym = str(t.get("ticker", "")).strip().upper()
+            if not sym or sym in RESERVED_NON_EQUITY_SYMBOLS:
+                logger.info(f"extract_actions: Filtered non-equity symbol '{sym}' (liquidity instruction, not trade order)")
+                continue
+            valid_trades.append(t)
             
-        return json.dumps(trades, ensure_ascii=False)
+        return json.dumps(valid_trades, ensure_ascii=False)
 
     except Exception as e:
         logger.error(f"extract_actions skill failed: {e}", exc_info=True)

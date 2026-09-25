@@ -137,12 +137,19 @@ def _configured_cap(user_id: str, settings_repo: Any) -> Optional[float]:
 
 def _small_test_threshold(user_id: str, settings_repo: Any) -> float:
     raw = _read_setting(user_id, "small_test_capital_usd", settings_repo)
-    if raw is None:
-        return DEFAULT_TRADABLE_CAPITAL_USD
-    try:
-        return float(raw)
-    except (TypeError, ValueError):
-        return DEFAULT_TRADABLE_CAPITAL_USD
+    if raw is not None:
+        try:
+            return float(raw)
+        except (TypeError, ValueError):
+            pass
+    # If not explicitly set, align with configured tradable_capital cap (if set and positive)
+    # or fallback to DEFAULT_TRADABLE_CAPITAL_USD ($100).
+    # 若未明確指定小額實測門檻，動態繼承已設定之可交易資本上限（例如調高至 $500 實測），
+    # 避免實測資本調大後卻被舊門檻判為非小額而誤觸無回測人工核准阻斷。
+    cap = _configured_cap(user_id, settings_repo)
+    if cap is not None and cap > 0:
+        return float(cap)
+    return DEFAULT_TRADABLE_CAPITAL_USD
 
 
 def _read_setting(user_id: str, key: str, settings_repo: Any) -> Any:
