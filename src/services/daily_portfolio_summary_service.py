@@ -388,7 +388,7 @@ class DailyPortfolioSummaryService:
         except Exception as e:
             logger.error(f"Failed to save daily summary to DB: {e}")
 
-        # 3. Dispatch Notification (Strictly Email + Web, ONCE per day)
+        # 3. Dispatch Notification (Dynamic channels according to user configuration, ONCE per day)
         try:
             notif_svc = NotificationService.create_with_settings(
                 settings_service=self.settings_svc, user_id=self.user_id
@@ -398,7 +398,7 @@ class DailyPortfolioSummaryService:
                 title=title,
                 content=html_content,
                 category="report",
-                channels=["email", "web"],
+                channels=None,
             )
             logger.info(f"Daily summary dispatched successfully. Results: {results}")
 

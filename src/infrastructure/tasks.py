@@ -96,7 +96,26 @@ def generate_market_intelligence(user_id: str = None):
         # 4. Persistence
         settings_svc.save_setting("cached_intelligence_briefing", briefing, user_id=user_id)
         settings_svc.save_setting("last_intelligence_timestamp", datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
-        
+
+        # 5. Dispatch Pre-market briefing to user channels (Web, Email, Telegram)
+        try:
+            from src.services.notification_service import NotificationService
+            notif_svc = NotificationService.create_with_settings(settings_service=settings_svc, user_id=user_id)
+            title = "🟢 盤前市場監控與策略快報"
+            summary_text = briefing.get("executive_summary", "") if isinstance(briefing, dict) else str(briefing)
+            rec_text = briefing.get("recommendation", "") if isinstance(briefing, dict) else ""
+            content = f"### 📊 今日盤前摘要\n\n{summary_text}\n\n**策略姿態**：{rec_text}"
+            _run_async_safe(notif_svc.notify_all(
+                user_id=user_id,
+                title=title,
+                content=content,
+                category="digest",
+                channels=None,
+            ))
+            logger.info("generate_market_intelligence: Pre-market briefing dispatched successfully.")
+        except Exception as notify_err:
+            logger.warning(f"generate_market_intelligence: Notification dispatch skipped/failed: {notify_err}")
+
         return "Success"
         
     except Exception as e:

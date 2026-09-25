@@ -90,10 +90,10 @@ async def test_daily_portfolio_summary_dispatch():
         assert res["report_id"] == "rep-123"
         mock_save.assert_called_once()
         
-        # Verify notification dispatched strictly to email and web
+        # Verify notification dispatched dynamically to user configured channels
         mock_notif_svc.notify_all.assert_called_once()
         _, kwargs = mock_notif_svc.notify_all.call_args
-        assert kwargs["channels"] == ["email", "web"]
+        assert kwargs["channels"] is None
         assert kwargs["category"] == "report"
 
 
