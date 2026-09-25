@@ -2596,6 +2596,29 @@ class SentinelService:
                     rationale=rationale,
                     confidence_breakdown=decision.get("breakdown", []),  # New field for UI
                 )
+
+                # Option B: If synthesized factor(s) participated in this trade decision, dispatch transparent alert
+                synth_factors = [
+                    s for s in sub_scores
+                    if str(s.get("agent", "")).startswith("Synth_")
+                ]
+                if synth_factors:
+                    try:
+                        from src.services.factor_notification_service import factor_notification_service
+                        top_synth = synth_factors[0]
+                        fname = str(top_synth.get("agent", "")).replace("Synth_", "")
+                        fscore = float(top_synth.get("confidence", 0.0))
+                        await factor_notification_service.notify_factor_order_decision(
+                            ticker=ticker,
+                            action="BUY",
+                            amount_usd=float(amount),
+                            composite_score=float(decision.get("composite_score", 0.0)),
+                            factor_name=fname,
+                            factor_confidence=fscore,
+                            user_id=self.user_id,
+                        )
+                    except Exception as notif_err:
+                        logger.warning("Sentinel: failed to dispatch factor order decision alert for %s: %s", ticker, notif_err)
         except Exception as e:
             logger.error("Sentinel: cash deployment execution error: %s", e, exc_info=True)
 

@@ -956,4 +956,58 @@ class TestStrategyEvolutionTasks:
             assert _SOFT_FAIL_RE.match(res)
 
 
+class TestAutonomousEvolutionTasks:
+    def test_dispatch_autonomous_evolution(self):
+        with patch.object(tasks, "_resolve_target_users", return_value=["u1", "u2"]), \
+             patch.object(tasks.run_autonomous_evolution, "delay") as mock_delay:
+            res = tasks.dispatch_autonomous_evolution()
+            assert res == "Dispatched 2 autonomous_evolution tasks"
+            assert mock_delay.call_count == 2
+
+    def test_run_autonomous_evolution_missing_user_id(self):
+        res = tasks.run_autonomous_evolution(user_id=None)
+        assert res == "Error: user_id is required"
+        assert _SOFT_FAIL_RE.match(res)
+
+    def test_run_autonomous_evolution_success(self, run_async_identity):
+        from src.services.canary_shadow_runner import CodeArtifactRecord, ArtifactStatus
+        mock_art = CodeArtifactRecord(
+            id="art-123",
+            user_id=USER,
+            name="VolPivot",
+            description="desc",
+            source_code="pass",
+            test_code="pass",
+            ast_hash="h1",
+            status=ArtifactStatus.PROVISIONAL,
+            parameters={"target_regime": "VOLATILITY_PIVOT"},
+            shadow_days_remaining=10,
+        )
+
+        with patch("src.services.canary_shadow_runner.canary_runner.list_artifacts", return_value=[mock_art]), \
+             patch("src.services.canary_shadow_runner.canary_runner.step_shadow_day", return_value=mock_art) as mock_step, \
+             patch("src.services.code_synthesis.synthesis_orchestrator.SynthesisOrchestrator") as mock_synth_cls, \
+             patch("src.services.intelligence_service.IntelligenceService") as mock_intel_cls:
+
+            synth_mock = MagicMock()
+            synth_mock.generate_and_verify = MagicMock(return_value=None)
+            mock_synth_cls.return_value = synth_mock
+
+            intel_mock = MagicMock()
+            intel_mock.compute_briefing = MagicMock(return_value={})
+            mock_intel_cls.return_value = intel_mock
+
+            res = tasks.run_autonomous_evolution(user_id=USER)
+            assert res.get("status") == "success"
+            assert res.get("stepped_artifacts") == 1
+            assert mock_step.called
+
+    def test_run_autonomous_evolution_failure(self, run_async_identity):
+        with patch("src.services.canary_shadow_runner.canary_runner.list_artifacts", side_effect=RuntimeError("Canary runner exploded")):
+            res = tasks.run_autonomous_evolution(user_id=USER)
+            assert res == "Error: Canary runner exploded"
+            assert _SOFT_FAIL_RE.match(res)
+
+
+
 
