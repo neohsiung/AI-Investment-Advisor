@@ -162,7 +162,7 @@ class AutomatedTradingService:
                         )
                     else:
                         # For SELL orders, calculate required shares from current price
-                        current_price = await self._get_current_price(broker, ticker)
+                        current_price = await self._get_current_price(broker, ticker, user_id=user_id)
                         if current_price and current_price > 0:
                             quantity = delta_amount / current_price
                             logger.info(
@@ -850,6 +850,45 @@ class AutomatedTradingService:
                     logger.info("Post-trade sync completed.")
                 except Exception as sync_e:
                     logger.warning(f"Post-trade sync failed (non-blocking): {sync_e}")
+
+                # v8.0: Record decision outcome for alpha reflection & rule learning
+                try:
+                    from src.services.outcome_reflection_service import OutcomeReflectionService
+                    execution_price = order.price
+                    if not execution_price or execution_price <= 0:
+                        execution_price = await self._get_current_price(broker, order.symbol, user_id=user_id)
+                    
+                    if execution_price and execution_price > 0:
+                        outcome_svc = OutcomeReflectionService(user_id=user_id)
+                        agent_identifier = strategy_name or "AutomatedTrading"
+                        dec_id = outcome_svc.record_decision(
+                            ticker=order.symbol,
+                            agent_name=agent_identifier,
+                            signal=order.action.value,
+                            price=execution_price,
+                            horizon_days=5,
+                        )
+                        logger.info(f"Recorded decision outcome {dec_id} for {order.symbol} at ${execution_price:.2f}")
+
+                        # Trigger rule citation if active rules exist
+                        try:
+                            from src.repositories.memory_repository import AgentState
+                            from src.services.rule_lifecycle_service import RuleLifecycleService
+                            active_rules = AgentState().get_active_rules(agent_identifier, user_id=user_id)
+                            if active_rules and dec_id:
+                                rule_svc = RuleLifecycleService(user_id=user_id)
+                                await rule_svc.judge_and_cite(
+                                    agent_identifier, dec_id, rationale or f"Trade executed for {order.symbol}", active_rules
+                                )
+                        except Exception as cite_err:
+                            logger.warning(f"Rule citation for trade {dec_id} skipped: {cite_err}")
+                    else:
+                        logger.warning(
+                            f"Decision outcome for {order.symbol} skipped: price unavailable "
+                            f"(order.price={order.price}, fetched={execution_price})"
+                        )
+                except Exception as outcome_err:
+                    logger.warning(f"Failed to record decision outcome for trade (non-blocking): {outcome_err}")
             
             # Send Notification: Three-Pillar Autonomous Post-Action Report
             # (一、行動  二、行動後的狀況影響  三、交易策略改變的行動)
@@ -918,17 +957,37 @@ class AutomatedTradingService:
              logger.error(f"Trade execution failed: {e}")
              return {"status": "error", "reason": str(e)}
 
-    async def _get_current_price(self, broker, ticker: str) -> float:
-        """Get current price for a ticker from broker."""
+    async def _get_current_price(self, broker, ticker: str, user_id: str = None) -> Optional[float]:
+        """Get current price for a ticker from broker, positions, or MarketDataService."""
         try:
-            # Try to get from market data if available
+            # 1. Try broker quote
             if hasattr(broker, 'get_quote'):
                 quote = await broker.get_quote(ticker)
-                if quote and 'price' in quote:
+                if quote and 'price' in quote and float(quote['price']) > 0:
                     return float(quote['price'])
             
-            # Fallback: try to get from positions or market data
-            logger.warning(f"Could not retrieve price for {ticker} from broker")
+            # 2. Try positions from broker
+            if hasattr(broker, 'get_positions'):
+                try:
+                    positions = await broker.get_positions()
+                    for pos in positions:
+                        if getattr(pos, 'symbol', None) == ticker and getattr(pos, 'current_price', 0) > 0:
+                            return float(pos.current_price)
+                except Exception as pos_e:
+                    logger.debug(f"Position price lookup skipped: {pos_e}")
+
+            # 3. Fallback: MarketDataService (Polygon -> Tiingo -> FMP -> FinancialData -> YFinance)
+            try:
+                from src.services.market_data_service import MarketDataService
+                effective_uid = user_id or getattr(broker, 'user_id', None)
+                mds = MarketDataService(user_id=effective_uid)
+                prices = await mds.get_current_prices([ticker])
+                if prices.get(ticker) and prices[ticker] > 0:
+                    return float(prices[ticker])
+            except Exception as mds_e:
+                logger.warning(f"MarketDataService failed for price of {ticker}: {mds_e}")
+
+            logger.warning(f"Could not retrieve price for {ticker} from broker or market data")
             return None
         except Exception as e:
             logger.warning(f"Error getting price for {ticker}: {e}")

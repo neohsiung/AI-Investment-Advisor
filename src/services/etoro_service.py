@@ -463,11 +463,20 @@ class EtoroService(IBroker):
             if not instrument_id:
                  return {"status": "failed", "reason": f"Instrument ID not found for {order.symbol} (Required for BUY)"}
 
+            # eToro API physical constraint: Minimum order amount is $10.00 USD
+            buy_amount = order.amount_usd if order.amount_usd is not None else order.quantity
+            if buy_amount is None or round(buy_amount, 2) < 10.0:
+                logger.warning(f"ETORO EXEC: Order amount ${buy_amount} is below eToro minimum required amount of $10.00 USD.")
+                return {
+                    "status": "failed",
+                    "reason": f"Order amount ${buy_amount} is below eToro minimum threshold ($10.00 USD)",
+                    "_fallback_reason": "eToro physical constraint: minimum order amount is $10.00 USD",
+                }
+
             endpoint = f"/trading/execution{demo_segment}/market-open-orders/by-amount"
             url = f"{self.base_url}{endpoint}"
             # eToro API: PascalCase body, Amount in USD (not shares)
             # Phase 3: Explicitly use amount_usd or fallback to quantity, round to 2 decimals
-            buy_amount = order.amount_usd if order.amount_usd is not None else order.quantity
             payload = {
                 "InstrumentID": int(instrument_id),
                 "Amount": round(buy_amount, 2),  # Dollar amount (USD)
@@ -514,7 +523,11 @@ class EtoroService(IBroker):
                 close_payload["InstrumentId"] = int(instrument_id)
             if order.quantity and order.quantity > 0:
                 # Phase 3: eToro fractional sell precision (0.01)
-                close_payload["UnitsToDeduct"] = round(order.quantity, 2)
+                rounded_qty = round(order.quantity, 2)
+                if rounded_qty >= 0.01:
+                    close_payload["UnitsToDeduct"] = rounded_qty
+                else:
+                    logger.info(f"ETORO EXEC: UnitsToDeduct {order.quantity} < 0.01 minimum precision; closing full position.")
             payload = close_payload
         
         try:
@@ -527,22 +540,23 @@ class EtoroService(IBroker):
              
              # v7.2: Check actual order execution status from eToro API
              # v7.2: 檢查 eToro API 中的實際訂單執行狀態
-             # statusID: 1=Pending, 2=Executed, 3+=Other
-             # 狀態ID: 1=處理中, 2=已執行, 3+=其他
-             order_info = result.get('orderForOpen', {})
-             order_status_id = order_info.get('statusID', 0)
-             order_id = order_info.get('orderID', 'N/A')
+             # Handles both BUY (orderForOpen) and SELL (orderForClose / root orderID)
+             order_info = result.get('orderForOpen') or result.get('orderForClose') or result.get('order') or result
+             order_status_id = order_info.get('statusID', result.get('statusID', 0))
+             order_id = order_info.get('orderID', result.get('orderID', result.get('token', 'N/A')))
              
              if order_status_id == 2:
                  # Fully executed
-                 # 已完全執行
                  execution_status = "executed"
                  logger.info(f"ETORO EXEC: Order {order_id} fully executed.")
              elif order_status_id == 1:
                  # Placed but pending — eToro will execute asynchronously
-                 # 已下單但仍在處理中 — eToro 將會非同步執行
                  execution_status = "pending"
                  logger.warning(f"ETORO EXEC: Order {order_id} placed (statusID=1, pending). Cash not yet deducted.")
+             elif order_id and order_id != 'N/A':
+                 # Successful response with valid orderID
+                 execution_status = "executed" if order.action == OrderAction.SELL else "pending"
+                 logger.info(f"ETORO EXEC: Order {order_id} accepted by broker ({execution_status}).")
              else:
                  execution_status = "unknown"
                  logger.warning(f"ETORO EXEC: Order {order_id} has statusID={order_status_id}")
@@ -558,9 +572,26 @@ class EtoroService(IBroker):
                  "amount": order.amount_usd or order.quantity,
                  "raw_response": result,
              }
+        except httpx.HTTPStatusError as e:
+            error_body = ""
+            try:
+                error_body = f" - Response: {e.response.text}"
+            except Exception:
+                pass
+            err_msg = f"{e}{error_body}"
+            logger.error(f"Etoro Exec HTTP Failed: {err_msg}")
+            return {
+                "status": "error",
+                "error": err_msg,
+                "_fallback_reason": f"eToro API HTTP error: {e.response.status_code}",
+            }
         except Exception as e:
-             logger.error(f"Etoro Exec Failed: {e}")
-             return {"status": "error", "error": str(e)}
+            logger.error(f"Etoro Exec Failed: {e}")
+            return {
+                "status": "error",
+                "error": str(e),
+                "_fallback_reason": f"eToro execution exception: {type(e).__name__}",
+            }
 
     async def _notify_trade(self, order: Order, result: Dict[str, Any]):
         """
