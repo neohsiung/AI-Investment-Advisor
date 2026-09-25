@@ -346,13 +346,20 @@ class BaseWorkflow(ABC):
         """Combine analysis results into a final report."""
         pass
 
-    async def distribute_report(self, content: str) -> str:
+    async def distribute_report(
+        self,
+        content: str,
+        title: Optional[str] = None,
+        report_type: Optional[str] = None,
+        dispatch_notifications: bool = True,
+    ) -> str:
         """Store in DB and send notifications via preferred channels."""
-        title = f"Investment Report ({self.__class__.__name__}) - {get_current_time().strftime('%Y-%m-%d')}"
+        report_title = title or f"Investment Report ({self.__class__.__name__}) - {get_current_time().strftime('%Y-%m-%d')}"
+        target_report_type = report_type or self.__class__.__name__
         try:
             from src.services.reporting_service import ReportingService
             reporting_service = ReportingService()
-            html_content = reporting_service.generate_professional_html(content, title=title)
+            html_content = reporting_service.generate_professional_html(content, title=report_title)
         except Exception as e:
             logger.error(f"HTML transformation failed: {e}. Falling back to markdown.")
             html_content = content
@@ -366,8 +373,8 @@ class BaseWorkflow(ABC):
             # Save the generated HTML content
             report_id = report_repo.save(
                 user_id=self.user_id,
-                report_type=self.__class__.__name__,
-                summary=title,
+                report_type=target_report_type,
+                summary=report_title,
                 content=html_content
             )
             logger.info(f"Report stored in database (ID: {report_id}).")
@@ -375,7 +382,8 @@ class BaseWorkflow(ABC):
             logger.error(f"Failed to store report: {e}")
 
         # 2. Dispatch Notifications (DB-driven, no invalid microservice call)
-        await self._dispatch_notifications(title, html_content)
+        if dispatch_notifications:
+            await self._dispatch_notifications(report_title, html_content)
         
         return report_id
 
@@ -458,28 +466,9 @@ class BaseWorkflow(ABC):
                 f"Workflow: report ingested as event [{tier}/p{priority}] — {title[:50]}"
             )
 
-            # P0 reports → immediate notification (theoretical, unlikely for reports)
-            if tier == "P0":
-                from src.services.notification_service import NotificationService
-                from src.services.settings_service import SettingsService
-                from src.services.notification_settings_manager import NotificationSettingsManager
-                from src.repositories.settings_repository import AlchemySettingsRepository
-
-                settings_repo = AlchemySettingsRepository()
-                nsm = NotificationSettingsManager(settings_repo=settings_repo, user_id=self.user_id)
-                user_channels = nsm.get_active_notification_channels() or ["web"]
-                settings_svc = SettingsService(user_id=self.user_id)
-                notification_svc = NotificationService.create_with_settings(
-                    settings_service=settings_svc, user_id=self.user_id
-                )
-                await notification_svc.notify_all(
-                    title=title,
-                    content=html_content,
-                    user_id=self.user_id,
-                    channels=user_channels,
-                    category="report"
-                )
-                logger.info(f"Workflow: P0 report bypassed queue → notified via {user_channels}")
+            # Reports are strictly aggregated into daily/hourly investment digests.
+            # Emergency direct-to-inbox dispatch is reserved for live Sentinel portfolio risk alerts.
+            logger.debug(f"Workflow: report queued for digest aggregation [{tier}/p{priority}]")
         except Exception as e:
             logger.error(f"Workflow: event ingestion failed: {e}")
 
@@ -1273,11 +1262,11 @@ class EventAnalysisWorkflow(BaseWorkflow):
     事件分析工作流：處理單個外部信號（Webhooks）。
     """
     def __init__(self, user_id: str, event_source: str, event_data: Dict[str, Any], **kwargs):
+        self.ticker = kwargs.pop("ticker", event_data.get("ticker", "GLOBAL"))
+        self.target_action = kwargs.pop("target_action", event_data.get("signal"))
         super().__init__(user_id=user_id, **kwargs)
         self.event_source = event_source
         self.event_data = event_data
-        self.ticker = event_data.get("ticker", "GLOBAL")
-        self.target_action = event_data.get("signal")  # e.g., "BUY", "SELL"
 
     async def execute_analysis(self, force_refresh: bool) -> bool:
         """
@@ -1295,128 +1284,132 @@ class EventAnalysisWorkflow(BaseWorkflow):
 
     async def run(self, dry_run: bool = False, force_refresh: bool = False) -> str:
         """
-        Custom run logic for event-driven analysis.
+        Executes the 5-Stage Market Intelligence Pipeline:
+          Stage 1: 標題與語義去重 (Semantic Deduplication, 48h sliding window)
+          Stage 2: 快速價值與相關性篩選 (Quick Filter Gate, 淘汰 >85% 噪音)
+          Stage 3: 深度探勘研究 (Deep Scout, 即時行情、持倉成本與宏觀數據)
+          Stage 4: 領域 Agent 專業研判 (Momentum, Sentiment)
+          Stage 5: CIO 統整發訊與行動門檻 (CIO Gate, 零信箱干擾，僅對實質操作推播 Web)
         """
-        self.logger.info(f"Starting EventAnalysisWorkflow for {self.ticker} from {self.event_source}")
-        
+        news_msg = self.event_data.get("msg") or self.event_data.get("message") or ""
+        news_url = self.event_data.get("url") or self.event_data.get("link") or ""
+        news_content = self.event_data.get("content") or ""
+
+        self.logger.info(
+            f"EventAnalysisWorkflow: Ingesting event from {self.event_source} "
+            f"(ticker={self.ticker}, title='{news_msg[:60]}')"
+        )
+
         try:
-            # 1. Collect Data (Specific to the ticker)
-            # GLOBAL: Handle macro news events — summarize + dispatch notification
-            # GLOBAL: 處理宏觀新聞事件 — 摘要 + 發送通知
-            if self.ticker == "GLOBAL":
-                news_msg = self.event_data.get("msg", "Global market news")
-                news_url = self.event_data.get("url", "")
+            # Fetch user holdings upfront
+            holdings = self.transaction_service.get_holdings_map(self.user_id)
+            user_holding_tickers = {k.upper() for k, v in holdings.items() if v.get("quantity", 0) > 0}
 
-                # Run macro analysis via fast tier (inline prompt, no heavy agent context needed)
-                from src.infrastructure.llm.llm_config_chain import build_config_chain
-                from src.infrastructure.llm.resilient_pipeline import ResilientLLMPipeline
+            # ── Stage 1 & 2: 去重與極速篩選 (Pre-filter Dedup & Fast Relevance Gate) ──
+            from src.services.market_news_filter_service import MarketNewsFilterService
+            filter_svc = MarketNewsFilterService(user_id=self.user_id)
+            explicit_ticker = self.ticker if self.ticker and self.ticker.upper() not in ("GLOBAL", "ALL", "NONE") else None
+            filter_res = filter_svc.evaluate(
+                title=news_msg,
+                content=news_content,
+                url=news_url,
+                ticker=explicit_ticker,
+                signal=self.target_action,
+                holdings=user_holding_tickers,
+            )
 
-                chain = build_config_chain(self.user_id, "fast")
-                pipeline = ResilientLLMPipeline(
-                    config_chain=chain,
-                    user_id=self.user_id,
-                    agent_name="macro_news_analyst",
-                    tier="fast",
+            if filter_res.should_drop:
+                self.logger.info(
+                    f"EventAnalysisWorkflow: Event from {self.event_source} dropped by filter. "
+                    f"Reason: {filter_res.reason} (category={filter_res.category}, score={filter_res.relevance_score})"
                 )
+                # Discarded! Zero LLM spend, zero DB clutter, zero notifications.
+                return f"Dropped: {filter_res.reason}"
 
-                macro_prompt = (
-                    "你是一位即時新聞分析師。請根據以下新聞事件，"
-                    "用繁體中文提供簡要的市場影響分析。\n\n"
-                    "分析重點：\n"
-                    "1. 事件摘要（1-2句）\n"
-                    "2. 對市場/板塊的潛在影響\n"
-                    "3. 市場情緒判斷（正面/中性/負面）\n\n"
-                    f"新聞來源：{self.event_source}\n"
-                    f"新聞內容：{news_msg}\n"
-                    f"連結：{news_url}\n\n"
-                    "請簡潔回答，不超過150字。"
-                )
+            # ── Stage 3: 進入探勘研究 (Deep Scout / Fact Dossier) ──
+            target_tickers = filter_res.matched_tickers or ([self.ticker] if self.ticker != "GLOBAL" else ["SPY"])
+            primary_ticker = target_tickers[0] if target_tickers else "SPY"
 
-                messages = [
-                    Message(role="system", content=macro_prompt),
-                    Message(role="user", content="請分析這則新聞。")
-                ]
-
-                try:
-                    macro_res, _ = await pipeline.execute(
-                        messages, temperature=0.3, max_tokens=500
-                    )
-                except Exception as llm_e:
-                    self.logger.error(f"GLOBAL macro analysis failed: {llm_e}")
-                    macro_res = f"**新聞摘要**: {news_msg}"
-
-                final_report = (
-                    f"## 宏觀快訊 ({self.event_source})\n\n"
-                    f"{macro_res}\n\n"
-                    f"---\n"
-                    f"*來源: [{news_url}]({news_url})*"
-                )
-
-                if not dry_run:
-                    await self.distribute_report(final_report)
-
-                return final_report
-
-            # Fetch market data context
-            analysis_tickers = [self.ticker]
-            market_context = self.market_service.get_market_context(analysis_tickers, enrich=True)
+            # Fetch fresh market context
+            market_context = self.market_service.get_market_context(target_tickers, enrich=True)
             self.context['market_data'] = market_context
-            
-            # 2. Execute Focused Analysis
-            # For events, we want fresh data (use_cache=False if force_refresh)
-            # PAD Phase 2: Replace AgentFactory calls with _call_agent_llm
-            
+            holding_item = holdings.get(primary_ticker, {})
+            qty = float(holding_item.get('quantity', 0))
+            avg_price = float(holding_item.get('avg_price', 0))
+            holding_info = (
+                f"持倉 {qty} 股（成本均價 ${avg_price:.2f}）"
+                if qty > 0 else "目前無持倉（自選/觀察標的）"
+            )
+
+            # ── Stage 4: 各 Agent 給出建議 (Multi-Agent Deliberation) ──
             ticker_ctx = {
-                "ticker": self.ticker,
-                "price_data": market_context.get(self.ticker, {}).get("price_data", {}),
-                "indicators": market_context.get(self.ticker, {}).get("indicators", {}),
-                "news": self.market_service.get_news(self.ticker),
-                "event_context": self.event_data
+                "ticker": primary_ticker,
+                "price_data": market_context.get(primary_ticker, {}).get("price_data", {}),
+                "indicators": market_context.get(primary_ticker, {}).get("indicators", {}),
+                "news": self.market_service.get_news(primary_ticker) if hasattr(self.market_service, "get_news") else [],
+                "event_context": self.event_data,
+                "holding_info": holding_info,
+                "macro_topic": filter_res.macro_topic,
             }
-            
+
             mom_res = await self._call_agent_llm("Momentum", ticker_ctx, tier="fast")
             sent_res = await self._call_agent_llm("Sentiment", ticker_ctx, tier="fast")
-            
-            # 3. Holding Reduction Analysis (If needed)
-            holding_info = ""
-            holdings = self.transaction_service.get_holdings_map(self.user_id)
-            qty = holdings.get(self.ticker, {}).get('quantity', 0)
-            
-            if qty > 0:
-                holding_info = f"\n現有持倉: {qty} 股。"
-                # If signal is to SELL/REDUCE or event is negative
-                is_negative = "SELL" in str(self.target_action).upper() or "NEGATIVE" in str(sent_res).upper()
-                if is_negative:
-                    self.logger.info(f"Performing reduction analysis for {self.ticker}")
-                    # Could run a specialized 'Risk' check or just let CIO decide
-            
-            # 4. CIO Synthesis via PAD Phase 2
+
+            # ── Stage 5: 由 CIO 統整發訊與行動門檻 (CIO Synthesis & Actionable Gate) ──
             cio_context = {
-                "macro_report": "Event-Driven Context",
-                "council_transcript": f"Ticker: {self.ticker}\n- Event Source: {self.event_source}\n- Event Detail: {self.event_data.get('msg')}\n- Momentum: {mom_res}\n- Sentiment: {sent_res}\n- Holdings: {holding_info}",
-                "portfolio": f"{self.ticker} ({qty})",
+                "macro_report": f"Event Source: {self.event_source} | Topic: {filter_res.macro_topic or filter_res.category}",
+                "council_transcript": (
+                    f"Ticker: {primary_ticker} ({holding_info})\n"
+                    f"- Event Source: {self.event_source}\n"
+                    f"- Event Detail: {news_msg}\n"
+                    f"- Category: {filter_res.category} (Score: {filter_res.relevance_score})\n"
+                    f"- Momentum: {mom_res}\n"
+                    f"- Sentiment: {sent_res}\n"
+                    f"- Holdings: {holding_info}"
+                ),
+                "portfolio": f"{primary_ticker} ({qty})",
                 "user_id": self.user_id,
-                "report_focus": f"Event Analysis: {self.event_source}"
+                "report_focus": f"Event Analysis: {primary_ticker}"
             }
-            
+
             cio_output = await self._call_agent_llm("CIO", cio_context, tier="smart", max_tokens=2000)
-            
-            # Polish and translate if needed
-            final_report = cio_output # Simplified for event workflow
-            
-            # v7.0: Store deliberation context for trade notification enrichment
+
+            # Strip any leaked <think> tags or reasoning scratchpads from the output
+            import re
+            clean_output = re.sub(r'<think>.*?</think>', '', cio_output or '', flags=re.DOTALL | re.IGNORECASE)
+            clean_output = re.sub(r"(?i)here['’]?s\s+a\s+thinking\s+process:.*?(?=\n\n\S|##|\d+\.|\Z)", '', clean_output, flags=re.DOTALL)
+            clean_output = re.sub(r"(?i)^.*?analyze user request:.*?(?=\n\n\S|\d+\.|\Z)", '', clean_output, flags=re.DOTALL)
+            final_report = clean_output.strip() or cio_output
+
             self.context['deliberation_context'] = cio_context.get('council_transcript', '')
-            
-            # 5. Execute Action if actionable_orders table exists
+
+            # Parse actionable orders
             await self._parse_actionable_orders(final_report)
-            
+            actionable_orders = self.context.get('actionable_orders', [])
+
+            # Actionability Check
+            is_actionable = bool(actionable_orders) or any(
+                act in str(final_report).upper() for act in ["**BUY**", "**SELL**", "**REDUCE**"]
+            )
+
+            report_title = (
+                f"⚡ 實盤操作建議 ({primary_ticker}): 觸發調倉/避險信號"
+                if is_actionable
+                else f"📊 市場情報追蹤 ({primary_ticker}): 論點維持，無需操作"
+            )
+
             if not dry_run:
-                # Distribute report (via Webhook/Notification)
-                await self.distribute_report(final_report)
-                
+                report_type = "ActionableMarketAlert" if is_actionable else "MarketIntelligence"
+                # Zero inbox spam: Only actionable alerts are dispatched to Web notifications (NEVER email)
+                await self.distribute_report(
+                    final_report,
+                    title=report_title,
+                    report_type=report_type,
+                    dispatch_notifications=is_actionable,
+                )
+
                 # Auto-execution logic (System 2)
-                actionable_orders = self.context.get('actionable_orders', [])
-                if actionable_orders:
+                if is_actionable and actionable_orders:
                     from src.services.automated_trading_service import AutomatedTradingService
                     auto_trade_svc = AutomatedTradingService()
                     for order_data in actionable_orders:
@@ -1428,9 +1421,9 @@ class EventAnalysisWorkflow(BaseWorkflow):
                             rationale=f"Webhook [{self.event_source}] Triggered: {order_data['reason']}",
                             user_id=self.user_id
                         )
-            
+
             return final_report
-            
+
         except Exception as e:
             self.logger.error(f"EventAnalysisWorkflow failed: {e}")
             raise e

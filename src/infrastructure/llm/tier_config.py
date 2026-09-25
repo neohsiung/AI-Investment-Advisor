@@ -289,6 +289,16 @@ class SettingsAwareModelRouter:
         except Exception as e:
             logger.warning(f"ModelRouter: Failed DB lookup {user_id}/{tier}: {e}")
         
+        try:
+            from src.infrastructure.llm.llm_config_chain import build_config_chain
+            chain = build_config_chain(tier=tier, user_id=user_id)
+            if chain:
+                model = chain[0].model_code
+                logger.info(f"ModelRouter: {user_id} {tier} -> {model} (tier_bindings)")
+                return model
+        except Exception:
+            pass
+
         model = self.tier_config.resolve(tier)
         logger.info(f"ModelRouter: {user_id} {tier} -> {model} (resolved)")
         return model or ""

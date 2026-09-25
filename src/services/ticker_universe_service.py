@@ -35,6 +35,66 @@ class TickerUniverseService:
             self._settings = SettingsService(user_id=self.user_id)
         return self._settings
 
+    @property
+    def quality_gate(self):
+        """Lazily constructed quality gate service."""
+        if not hasattr(self, "_quality_gate") or self._quality_gate is None:
+            from src.services.quality_gate_service import QualityGateService
+            self._quality_gate = QualityGateService(user_id=self.user_id)
+        return self._quality_gate
+
+    @property
+    def lifecycle_service(self):
+        """Lazily constructed universe lifecycle service."""
+        if not hasattr(self, "_lifecycle_service") or self._lifecycle_service is None:
+            from src.services.universe_lifecycle_service import UniverseLifecycleService
+            self._lifecycle_service = UniverseLifecycleService(
+                user_id=self.user_id,
+                repo=self.repo,
+                quality_gate=self.quality_gate,
+            )
+        return self._lifecycle_service
+
+    async def evaluate_ticker_quality(self, ticker: str) -> Dict[str, Any]:
+        """Evaluate a ticker against the quality gate."""
+        assessment = await self.quality_gate.evaluate_ticker(ticker)
+        return assessment.to_dict()
+
+    async def add_ticker_with_quality_gate(
+        self,
+        ticker: str,
+        company_name: str = "",
+        sector: str = "",
+        industry: str = "",
+        bypass_quality_check: bool = False,
+    ) -> Dict[str, Any]:
+        """
+        Add a ticker to the universe after verifying quality criteria.
+        加入標的前強制審查品質（除非明確 bypass）。
+        """
+        ticker = ticker.upper().strip()
+        if not bypass_quality_check:
+            assessment = await self.quality_gate.evaluate_ticker(ticker)
+            if not assessment.passed:
+                reason_summary = "; ".join(assessment.reasons) or "Did not meet quality thresholds"
+                return {
+                    "success": False,
+                    "message": f"Quality Gate Rejected: {ticker} failed criteria: {reason_summary}",
+                    "assessment": assessment.to_dict(),
+                }
+        return self.add_ticker(ticker, company_name, sector, industry)
+
+    async def run_lifecycle_evolution(
+        self,
+        candidate_pool: Optional[List[str]] = None,
+        force: bool = False
+    ) -> Dict[str, Any]:
+        """
+        Run a full cycle of universe lifecycle evolution.
+        執行標的池生命週期演化循環。
+        """
+        return await self.lifecycle_service.run_lifecycle_cycle(candidate_pool=candidate_pool, force=force)
+
     # ── Universe Management ──
 
     def get_universe(self, status: Optional[str] = None) -> List[Dict[str, Any]]:
@@ -228,6 +288,7 @@ class TickerUniverseService:
         actual = sum(sector_capped.values())
         targets = []
         if actual > 0:
+            self.repo.clear_targets(self.user_id)
             for ticker, w in sector_capped.items():
                 norm_w = w / actual * TARGET_SUM
                 info = ticker_scores[ticker]
@@ -266,11 +327,15 @@ class TickerUniverseService:
             positions = portfolio.get("positions", [])
             holdings = []
             for p in positions:
+                sym = getattr(p, "symbol", None) or (p.get("symbol", "") if isinstance(p, dict) else "")
+                c_name = getattr(p, "company_name", getattr(p, "name", None)) or (p.get("company_name", p.get("name", "")) if isinstance(p, dict) else "")
+                sec = getattr(p, "sector", None) or (p.get("sector", "") if isinstance(p, dict) else "")
+                qty = getattr(p, "quantity", None) or (p.get("quantity", 0) if isinstance(p, dict) else 0)
                 holdings.append({
-                    "ticker": getattr(p, "symbol", ""),
-                    "company_name": getattr(p, "company_name", getattr(p, "name", "")),
-                    "sector": getattr(p, "sector", ""),
-                    "quantity": getattr(p, "quantity", 0),
+                    "ticker": sym,
+                    "company_name": c_name,
+                    "sector": sec,
+                    "quantity": qty,
                 })
             count = self.repo.migrate_holdings_to_universe(self.user_id, holdings)
             return {"success": True, "count": count, "message": f"Migrated {count} holdings"}

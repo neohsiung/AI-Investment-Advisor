@@ -80,7 +80,7 @@ class TestChainsMatchTheOriginalCode:
         "history":      ["polygon", "tiingo", "fmp", "yahoo_finance"],
         "indicators":   ["polygon", "yahoo_finance"],
         "news":         ["tiingo", "finnhub", "alpha_vantage", "fmp", "yahoo_finance", "polygon"],
-        "fundamentals": ["yahoo_finance", "fmp", "alpha_vantage", "finnhub", "polygon"],
+        "fundamentals": ["polygon", "finnhub", "fmp", "alpha_vantage", "yahoo_finance"],
     }
 
     @pytest.mark.parametrize("capability,expected", sorted(EXPECTED.items()))

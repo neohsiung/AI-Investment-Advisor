@@ -85,7 +85,7 @@ async def get_logs(
 async def migrate_holdings(service: TickerUniverseService = Depends(get_service)):
     """將現有持倉導入標的池（一次性）"""
     try:
-        result = service.migrate_from_holdings()
+        result = await service.migrate_from_holdings()
         return {"status": "success", "data": result}
     except Exception as e:
         logger.error(f"Migration failed: {e}")
@@ -162,6 +162,34 @@ async def execute_confidence_rebalance(service: TickerUniverseService = Depends(
         raise HTTPException(status_code=500, detail="Internal server error")
 
 
+@router.get("/quality-check/{ticker}", response_model=TickerInfoResponse)
+async def check_ticker_quality(
+    ticker: str,
+    service: TickerUniverseService = Depends(get_service),
+):
+    """評估單一標的是否符合品質把關門檻（硬門檻、基本面、技術面、流動性）"""
+    try:
+        assessment = await service.evaluate_ticker_quality(ticker.upper())
+        return {"status": "success", "data": assessment}
+    except Exception as e:
+        logger.error(f"Quality check failed for {ticker}: {e}")
+        raise HTTPException(status_code=500, detail="Internal server error")
+
+
+@router.post("/lifecycle/run", response_model=TickerInfoResponse)
+async def run_lifecycle(
+    force: bool = Query(False, description="Force run even if auto-refresh setting is false"),
+    service: TickerUniverseService = Depends(get_service),
+):
+    """手動或定時觸發標的池生命週期演化（宏觀環境偵測、劣質剔除、優質納入）"""
+    try:
+        result = await service.run_lifecycle_evolution(force=force)
+        return {"status": "success" if result.get("success") else "error", "data": result}
+    except Exception as e:
+        logger.error(f"Lifecycle run failed: {e}")
+        raise HTTPException(status_code=500, detail="Internal server error")
+
+
 # ── Ticker Universe CRUD (must be after specific routes) ──
 
 
@@ -185,11 +213,12 @@ async def add_ticker(
     payload: TickerUniverseAddRequest,
     service: TickerUniverseService = Depends(get_service),
 ):
-    """加入新標的到標的池"""
+    """加入新標的到標的池（預設進行嚴格品質檢查）"""
     try:
-        result = service.add_ticker(**payload.model_dump())
+        data = payload.model_dump()
+        result = await service.add_ticker_with_quality_gate(**data)
         if not result["success"]:
-            raise HTTPException(status_code=500, detail=result["message"])
+            raise HTTPException(status_code=400, detail=result["message"])
         return {"status": "success", "message": result["message"]}
     except HTTPException:
         raise

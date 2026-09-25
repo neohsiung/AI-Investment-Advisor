@@ -202,6 +202,17 @@ class ResilientLLMPipeline:
             AllCandidatesFailedError: if every candidate fails with a fallback-eligible error.
             Exception: immediately if a non-fallback error occurs (e.g. AUTH_FAILURE).
         """
+        # Defensive normalization: ensure elements are Message objects
+        norm_messages: List[Message] = []
+        for m in messages:
+            if isinstance(m, Message):
+                norm_messages.append(m)
+            elif isinstance(m, dict):
+                norm_messages.append(Message(role=m.get("role", "user"), content=m.get("content", "")))
+            else:
+                norm_messages.append(Message(role="user", content=str(m)))
+        messages = norm_messages
+
         attempts: List[AttemptRecord] = []
         has_fallback = len(self.config_chain) > 1
 

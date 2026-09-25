@@ -99,9 +99,16 @@ class InterestBasedFilter(INotificationFilter):
         # Resolve adapter type name: e.g. EmailAdapter -> email
         adapter_type = adapter.__class__.__name__.lower().replace('adapter', '').replace('bot', '')
         
-        interests_str = self.settings_service.get_setting(f"channel_{adapter_type}_interests", "sentinel,report,approval,ops")
+        # v11.0: Email defaults to high-value trading and report only (no ops/approval noise)
+        default_interests = "trading,report" if adapter_type == "email" else "sentinel,report,approval,ops"
+        interests_str = self.settings_service.get_setting(f"channel_{adapter_type}_interests", default_interests)
         interests = [i.strip().lower() for i in interests_str.split(",") if i.strip()]
         
+        # Email strict guard: Never send ops health / audit noise to email
+        if adapter_type == "email" and category.lower() == "ops" and "ops" not in interests:
+            logger.info(f"InterestBasedFilter: Blocked ops category for email channel")
+            return False
+            
         if category.lower() in interests:
             return True
             

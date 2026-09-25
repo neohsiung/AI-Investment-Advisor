@@ -202,7 +202,8 @@ class TestSettingsAwareModelRouter:
         mock_repo = MagicMock()
         mock_repo.get.return_value = None
         router = SettingsAwareModelRouter(settings_repo=mock_repo)
-        result = router.get_model("user123", "fast")
+        with patch("src.infrastructure.llm.llm_config_chain.build_config_chain", return_value=[]):
+            result = router.get_model("user123", "fast")
         # DB-only: no DB entry, env var is NOT consulted
         assert result == "" or result is None
 
@@ -212,7 +213,8 @@ class TestSettingsAwareModelRouter:
         mock_repo = MagicMock()
         mock_repo.get.side_effect = Exception("DB error")
         router = SettingsAwareModelRouter(settings_repo=mock_repo)
-        result = router.get_model("user123", "fast")
+        with patch("src.infrastructure.llm.llm_config_chain.build_config_chain", return_value=[]):
+            result = router.get_model("user123", "fast")
         # DB-only: exception handled, no env fallback
         assert result == "" or result is None
 
@@ -243,6 +245,7 @@ class TestSettingsAwareModelRouter:
         """DB-only: without repo, env var is NOT consulted — returns empty."""
         monkeypatch.setenv("AI_MODEL_NANO", "gpt-4.1-nano")
         router = SettingsAwareModelRouter(settings_repo=None)
-        result = router.get_model("user123", "nano")
+        with patch("src.infrastructure.llm.llm_config_chain.build_config_chain", return_value=[]):
+            result = router.get_model("user123", "nano")
         # DB-only: no repo, no DB entry → None/empty
         assert result == "" or result is None

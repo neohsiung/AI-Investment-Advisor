@@ -69,6 +69,7 @@ _ALL_SERVICE_TARGETS = [
     "src.services.backtest_service.BacktestService",
     "src.services.event_aggregator.EventAggregator",
     "src.services.workflow_service.DailyWorkflow",
+    "src.services.universe_lifecycle_service.UniverseLifecycleService",
     "src.data.database.get_db_engine",
 ]
 
@@ -252,6 +253,8 @@ DISPATCHERS = [
     ("dispatch_event_digest", "send_event_digest"),
     ("dispatch_daily_report", "generate_daily_report"),
     ("dispatch_weekly_report", "generate_weekly_report"),
+    ("dispatch_universe_lifecycle", "run_universe_lifecycle"),
+    ("dispatch_weekly_rebalance", "run_weekly_rebalance"),
 ]
 
 
@@ -312,6 +315,8 @@ USER_SCOPED_TASKS = [
     "send_event_digest",
     "generate_daily_report",
     "generate_weekly_report",
+    "run_universe_lifecycle",
+    "run_weekly_rebalance",
 ]
 
 
@@ -687,25 +692,25 @@ class TestGenerateDailyReport:
 
     def test_force_report_overrides_closed_market(self, run_async_identity):
         with patch.object(tasks, "is_market_open_today", return_value=False), \
-             patch("src.services.workflow_service.DailyWorkflow") as cls:
+             patch("src.services.daily_portfolio_summary_service.DailyPortfolioSummaryService") as cls:
             result = tasks.generate_daily_report(user_id=USER, force_report=True)
 
         assert result.startswith("Success:")
-        cls.return_value.run.assert_called_once_with(dry_run=False, force_refresh=True)
+        cls.return_value.generate_and_dispatch.assert_called_once_with(force_report=True)
 
     def test_success(self, market_open, run_async_identity):
-        with patch("src.services.workflow_service.DailyWorkflow") as cls:
+        with patch("src.services.daily_portfolio_summary_service.DailyPortfolioSummaryService") as cls:
             result = tasks.generate_daily_report(user_id=USER)
 
         cls.assert_called_once_with(user_id=USER)
-        cls.return_value.run.assert_called_once_with(dry_run=False, force_refresh=False)
-        assert result == f"Success: Daily report generated for {USER}"
+        cls.return_value.generate_and_dispatch.assert_called_once_with(force_report=False)
+        assert result == f"Success: Daily portfolio summary generated and dispatched for {USER}"
 
     def test_failure(self, market_open, run_async_identity):
-        with patch("src.services.workflow_service.DailyWorkflow", side_effect=RuntimeError("council timeout")):
+        with patch("src.services.daily_portfolio_summary_service.DailyPortfolioSummaryService", side_effect=RuntimeError("summary error")):
             result = tasks.generate_daily_report(user_id=USER)
 
-        assert result == "Error: council timeout"
+        assert result == "Error: summary error"
         assert _SOFT_FAIL_RE.match(result)
 
 
@@ -889,3 +894,39 @@ class TestBrokerSyncSurfacesServiceErrors:
             result = tasks.sync_broker_positions(user_id=USER)
 
         assert result == "Success"
+
+
+class TestUniverseLifecycleTasks:
+    def test_run_universe_lifecycle_success(self, run_async_identity):
+        with patch("src.services.universe_lifecycle_service.UniverseLifecycleService") as cls:
+            cls.return_value.run_lifecycle_cycle = MagicMock(return_value={"success": True, "message": "All good"})
+            result = tasks.run_universe_lifecycle(user_id=USER)
+            assert result == {"success": True, "message": "All good"}
+
+        cls.assert_called_once_with(user_id=USER)
+
+    def test_run_universe_lifecycle_failure(self, run_async_identity):
+        with patch("src.services.universe_lifecycle_service.UniverseLifecycleService", side_effect=RuntimeError("Lifecycle crash")):
+            result = tasks.run_universe_lifecycle(user_id=USER)
+
+        assert result == "Error: Lifecycle crash"
+        assert _SOFT_FAIL_RE.match(result)
+
+
+class TestWeeklyRebalanceTasks:
+    def test_run_weekly_rebalance_success(self, run_async_identity):
+        with patch("src.services.confidence_rebalance_service.ConfidenceRebalanceService") as cls:
+            cls.return_value.execute_rebalance = MagicMock(return_value={"success": True, "executed_trades": []})
+            result = tasks.run_weekly_rebalance(user_id=USER)
+            assert result == {"success": True, "executed_trades": []}
+
+        cls.assert_called_once_with(user_id=USER)
+
+    def test_run_weekly_rebalance_failure(self, run_async_identity):
+        with patch("src.services.confidence_rebalance_service.ConfidenceRebalanceService", side_effect=RuntimeError("Rebalance crash")):
+            result = tasks.run_weekly_rebalance(user_id=USER)
+
+        assert result == "Error: Rebalance crash"
+        assert _SOFT_FAIL_RE.match(result)
+
+

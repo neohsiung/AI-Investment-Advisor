@@ -108,6 +108,7 @@ class ExitCompositorService:
         current_price: Optional[float] = None,
         current_weight_pct: Optional[float] = None,
         reason_hint: str = "",
+        open_price: Optional[float] = None,
     ) -> Dict[str, Any]:
         """
         Score one candidate exit. Never raises — a scoring failure must not
@@ -119,18 +120,8 @@ class ExitCompositorService:
         """
         sub_scores: List[AgentSubScore] = []
 
-        # Each factor is isolated. The individual scorers already handle their
-        # own expected failures, but an unhandled one here would propagate and
-        # abort the whole evaluation — which in the rebalance path means a
-        # position that should have been considered for a stop-loss is simply
-        # never looked at. A neutral 5.0 keeps the other three factors
-        # meaningful; losing the whole score loses the stop.
-        # 每個因子彼此隔離。各評分函式已處理自身的預期失敗，但此處若有未攔截的
-        # 例外會往上拋並中止整次評估——在再平衡路徑上，等於某個本該被考慮停損的
-        # 部位根本沒被看過。給中性 5.0 可保留其餘三項因子的意義；讓整個評分失敗
-        # 則連停損機會一起失去。
         pnl_pct, pnl_score, pnl_factors = self._safe(
-            lambda: self._score_pnl(ticker, current_price),
+            lambda: self._score_pnl(ticker, current_price, open_price=open_price),
             default=(None, 5.0, {}),
             label="pnl",
         )
@@ -150,11 +141,30 @@ class ExitCompositorService:
         )
         sub_scores.append(self._sub("momentum_reversal", ticker, mom_score, mom_factors))
 
-        try:
-            risk_score, risk_factors = await self._score_risk(ticker, reason_hint)
-        except Exception as e:
-            logger.warning(f"ExitCompositor: risk factor raised for {ticker}: {e}")
-            risk_score, risk_factors = 5.0, self._unavailable(e)
+        # Fast path: if quantitative factors prove that even under the worst possible
+        # risk score (10.0), the composite score cannot reach 5.0 (sell threshold is >= 6.0),
+        # skip the expensive ~75s LLM call and assign neutral risk (3.0).
+        # 若量化三因子顯示持倉極度穩健（即使風險給最極端 10 分總分仍低於 5.0），
+        # 且無外部觸發理由，則豁免慢速 LLM 呼叫，避免 Celery worker 軟超時。
+        max_possible_composite = (
+            pnl_score * EXIT_FACTOR_WEIGHTS["pnl"]
+            + conc_score * EXIT_FACTOR_WEIGHTS["concentration"]
+            + mom_score * EXIT_FACTOR_WEIGHTS["momentum_reversal"]
+            + 10.0 * EXIT_FACTOR_WEIGHTS["risk"]
+        )
+        if not reason_hint and max_possible_composite < 5.0:
+            risk_score = 3.0
+            risk_factors = {
+                "key_factor": "基本面與技術面強健（豁免 LLM 慢速呼叫）",
+                "rationale": f"量化指標穩健，最高可能總分 {max_possible_composite:.1f} < 5.0（賣出門檻 >= 6.0）",
+                "_fast_path_exempt": True,
+            }
+        else:
+            try:
+                risk_score, risk_factors = await self._score_risk(ticker, reason_hint)
+            except Exception as e:
+                logger.warning(f"ExitCompositor: risk factor raised for {ticker}: {e}")
+                risk_score, risk_factors = 5.0, self._unavailable(e)
         sub_scores.append(self._sub("risk", ticker, risk_score, risk_factors))
 
         composite = self._aggregate(sub_scores)
@@ -186,68 +196,83 @@ class ExitCompositorService:
     # ── Factors ──
 
     def _score_pnl(
-        self, ticker: str, current_price: Optional[float]
+        self, ticker: str, current_price: Optional[float], open_price: Optional[float] = None
     ) -> Tuple[Optional[float], float, Dict[str, Any]]:
         """
         Score exit urgency from where the position sits versus its entry.
         以部位相對於進場價的位置評估出場急迫性。
 
         Losses score high (cut it), gains score low-to-middling (let it run,
-        with a mild bias to taking profit once the move is large). The stop
-        level is `stop_loss_pct` from settings, defaulting to 8%.
-        虧損得高分（該砍），獲利得低到中間分（讓利潤跑，僅在漲幅很大時略偏向
-        獲利了結）。停損水位取設定 stop_loss_pct，預設 8%。
+        with a bias to taking profit once the move hits target).
+        虧損得高分（該砍），獲利達標時觸發停利。
         """
-        lots = self._open_lots(ticker)
-        if not lots or not current_price or current_price <= 0:
+        avg_entry = None
+        if open_price and open_price > 0:
+            avg_entry = open_price
+        else:
+            lots = self._open_lots(ticker)
+            if lots and current_price and current_price > 0:
+                total_qty = sum(float(l.get("quantity") or 0) for l in lots)
+                if total_qty > 0:
+                    cost = sum(float(l.get("quantity") or 0) * float(l.get("open_price") or 0) for l in lots)
+                    if cost > 0:
+                        avg_entry = cost / total_qty
+
+        if not avg_entry or avg_entry <= 0 or not current_price or current_price <= 0:
             return None, 5.0, {
                 "key_factor": "無進場成本資料",
-                "rationale": "position_lots 無此標的開倉紀錄，或缺少現價，無法計算損益",
-                "_insufficient_data": True,
-            }
-
-        total_qty = sum(float(l.get("quantity") or 0) for l in lots)
-        if total_qty <= 0:
-            return None, 5.0, {
-                "key_factor": "無有效持倉",
-                "rationale": "開倉紀錄數量為 0",
-                "_insufficient_data": True,
-            }
-
-        cost = sum(float(l.get("quantity") or 0) * float(l.get("open_price") or 0) for l in lots)
-        avg_entry = cost / total_qty
-        if avg_entry <= 0:
-            return None, 5.0, {
-                "key_factor": "進場成本異常",
-                "rationale": f"加權平均成本為 {avg_entry}",
+                "rationale": "缺少開倉紀錄或現價，無法計算損益",
                 "_insufficient_data": True,
             }
 
         pnl_pct = (current_price / avg_entry - 1) * 100
+        enable_fixed_stops = self._setting_bool("enable_fixed_stops", False)
         stop_pct = self._setting_float("stop_loss_pct", 8.0)
+        tp_pct = self._setting_float("take_profit_pct", 20.0)
 
-        if pnl_pct <= -stop_pct:
-            score = 10.0
-            key = f"{pnl_pct:.1f}%，已觸停損 -{stop_pct:.0f}%"
-        elif pnl_pct < 0:
-            # Ramp 5 -> 10 as the loss approaches the stop.
-            # 虧損逼近停損時由 5 線性升到 10。
-            score = 5.0 + 5.0 * min(1.0, abs(pnl_pct) / stop_pct)
-            key = f"{pnl_pct:.1f}%，距停損 {stop_pct - abs(pnl_pct):.1f} 個百分點"
-        elif pnl_pct >= 25.0:
-            score = 6.0
-            key = f"+{pnl_pct:.1f}%，漲幅大，可考慮部分了結"
+        if enable_fixed_stops:
+            if pnl_pct <= -stop_pct:
+                score = 10.0
+                key = f"{pnl_pct:.1f}%，已觸停損 -{stop_pct:.0f}%"
+            elif pnl_pct < 0:
+                # Ramp 5 -> 10 as the loss approaches the stop.
+                # 虧損逼近停損時由 5 線性升到 10。
+                score = 5.0 + 5.0 * min(1.0, abs(pnl_pct) / stop_pct)
+                key = f"{pnl_pct:.1f}%，距停損 {stop_pct - abs(pnl_pct):.1f} 個百分點"
+            elif pnl_pct >= tp_pct:
+                score = 8.5
+                key = f"+{pnl_pct:.1f}%，已達停利目標 +{tp_pct:.0f}%"
+            else:
+                # Ramp 2 -> 6 across 0..tp_pct gain.
+                score = 2.0 + 4.0 * (pnl_pct / max(tp_pct, 1.0))
+                key = f"+{pnl_pct:.1f}%，仍在持有區間"
         else:
-            # Ramp 2 -> 6 across 0..25% gain. A winner is not a reason to sell.
-            # 0~25% 獲利區間由 2 升到 6；獲利本身不是賣出理由。
-            score = 2.0 + 4.0 * (pnl_pct / 25.0)
-            key = f"+{pnl_pct:.1f}%，仍在持有區間"
+            # Long-term investment logic (長線投資模式：不因短期拉回砍倉，不隨意切斷贏家複利)
+            if pnl_pct > 0:
+                # Profitable compounder: low exit urgency (1.0 - 2.5), let winners run.
+                # Concentration factor independently handles over-weight risk.
+                score = max(1.0, 2.5 - min(1.5, pnl_pct / 50.0))
+                key = f"+{pnl_pct:.1f}%，長線獲利中（持續持有複利）"
+            elif pnl_pct >= -15.0:
+                # Normal market noise / minor pullback (0% to -15%): neutral hold (score 3.0 - 4.5).
+                score = 3.0 + 1.5 * (abs(pnl_pct) / 15.0)
+                key = f"{pnl_pct:.1f}%，常規回撤區間（無急迫出場需求）"
+            elif pnl_pct >= -30.0:
+                # Moderately deep drawdown (-15% to -30%): moderate score (4.5 - 6.5), prompt review.
+                score = 4.5 + 2.0 * ((abs(pnl_pct) - 15.0) / 15.0)
+                key = f"{pnl_pct:.1f}%，拉回幅度偏深（觀察基本面論點）"
+            else:
+                # Severe secular drawdown (> -30%): score 7.0 - 8.5.
+                score = min(8.5, 6.5 + 2.0 * ((abs(pnl_pct) - 30.0) / 20.0))
+                key = f"{pnl_pct:.1f}%，深幅回撤（檢視是否換庫或論點失效）"
 
         return round(pnl_pct, 2), round(score, 1), {
             "key_factor": key,
             "rationale": f"加權平均成本 ${avg_entry:.4f}，現價 ${current_price:.4f}",
             "avg_entry_price": round(avg_entry, 4),
             "stop_loss_pct": stop_pct,
+            "take_profit_pct": tp_pct,
+            "enable_fixed_stops": enable_fixed_stops,
         }
 
     def _score_concentration(self, current_weight_pct: Optional[float]) -> Tuple[float, Dict[str, Any]]:
@@ -470,5 +495,15 @@ class ExitCompositorService:
             # tuned threshold silently stops applying.
             # stop_loss_pct 與 max_single_position_weight 都經由此處，且都會影響
             # 出場評分；靜默退回預設等於調校過的門檻悄悄失效。
+            logger.warning(f"Setting {key!r} unreadable ({e}); using default {default}")
+            return default
+
+    def _setting_bool(self, key: str, default: bool) -> bool:
+        try:
+            raw = self._settings().get_setting(key, default, self.user_id)
+            if isinstance(raw, str):
+                return raw.lower() in ("true", "1")
+            return bool(raw) if raw is not None else default
+        except Exception as e:
             logger.warning(f"Setting {key!r} unreadable ({e}); using default {default}")
             return default

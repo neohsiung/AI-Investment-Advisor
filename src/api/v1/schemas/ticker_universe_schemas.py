@@ -33,6 +33,7 @@ class TickerUniverseAddRequest(BaseModel):
     company_name: str = ""
     sector: str = ""
     industry: str = ""
+    bypass_quality_check: bool = False
 
     @validator("ticker")
     def uppercase(cls, v):

@@ -6,9 +6,7 @@ from typing import List, Dict, Any, Optional
 
 from src.utils.logger import setup_logger
 from src.services.search_service import InternetSearchService
-from src.infrastructure.llm.llm_gateway import LLMGatewayFactory, LoggingLLMGateway
-from src.domain.interfaces import Message, LLMConfig
-from src.repositories.settings_repository import AlchemySettingsRepository
+from src.domain.interfaces import Message
 
 logger = setup_logger("skill_ticker_discovery")
 
@@ -28,8 +26,8 @@ async def ticker_discovery(
         search_svc = InternetSearchService(user_id=user_id)
         
         # 2. Construct Search Query
-        sector_str = " ".join(sectors) if sectors else "high-potential"
-        query = f"top {strategy} {sector_str} stocks to buy 2025 2026 analysis ticker"
+        sector_str = f" {sectors[0]}" if (sectors and len(sectors) > 0) else ""
+        query = f"best {strategy}{sector_str} stocks to buy 2026 ticker symbol"
         
         # 3. Search
         search_results = await search_svc.search_financial_context(query, max_results=5)
@@ -37,37 +35,20 @@ async def ticker_discovery(
             logger.warning(f"No search results for query: {query}")
             return json.dumps({"status": "no_results", "tickers": []})
 
-        # 4. Extract Tickers via LLM (Fast Tier)
-        context = "\n".join([f"- {r['title']}: {r['snippet']}" for r in search_results])
-        
-        settings_repo = AlchemySettingsRepository()
-        # Fallback to env if DB key not set
-        api_key = settings_repo.get(user_id, "source_gemini_api_key", os.environ.get("GEMINI_API_KEY"))
-        
-        if not api_key:
-            logger.error(f"User {user_id} has no Gemini API key for ticker discovery.")
-            return json.dumps({"status": "error", "error": "No Gemini API key found for extraction."})
-            
-        # Use simple config for extraction (tier-aware routing)
-        from src.infrastructure.llm.tier_config import TierConfig
-        tier_config = TierConfig()
-        model = tier_config.resolve("fast")  # Fast & reliable for extraction
-        
-        config = LLMConfig(
-            provider="gemini",
-            model=model,
-            api_key=api_key,
-            temperature=0.0
-        )
-        
-        gateway = LLMGatewayFactory.create(config.provider)
-        
+        # 4. Extract Tickers via ResilientLLMPipeline (Fast Tier)
+        # 透過具備自動備援與重試的 ResilientLLMPipeline 提取候選標的，嚴格遵守無硬編碼金鑰規範
+        context = "\n".join([f"- {r.get('title', '')}: {r.get('snippet', '')}" for r in search_results])
+
+        from src.infrastructure.llm.llm_config_chain import build_config_chain
+        from src.infrastructure.llm.resilient_pipeline import ResilientLLMPipeline
+
         system_prompt = (
             "You are a professional financial data extractor. "
-            "Extract distinct stock ticker symbols (US Market) mentioned in the following search results. "
+            "Extract distinct stock ticker symbols (US Market) mentioned or discussed in the following search results. "
             "Return a JSON list of objects: [{\"ticker\": \"...\", \"reason\": \"...\", \"source\": \"...\"}]. "
+            "If prominent companies are mentioned by name without explicit tickers (e.g. Amazon, Nvidia, Apple), infer their standard US ticker symbol (e.g. AMZN, NVDA, AAPL). "
             "Focus on high-potential tickers. Limit to top 10. "
-            "If no tickers are found, return exactly []."
+            "If no tickers or companies are found, return exactly []."
         )
         
         messages = [
@@ -75,22 +56,58 @@ async def ticker_discovery(
             Message(role="user", content=f"Search Results:\n{context}")
         ]
         
-        # Run chat
-        llm_response = await gateway.chat(messages, config)
+        chain = build_config_chain(user_id=user_id, tier="fast")
+        if not chain:
+            logger.error(f"User {user_id} has no LLM candidates configured for fast tier.")
+            return json.dumps({"status": "error", "error": "No LLM candidates found for fast tier."})
+
+        pipeline = ResilientLLMPipeline(
+            config_chain=chain,
+            user_id=user_id,
+            agent_name="ticker_discovery",
+            tier="fast",
+        )
+        exec_res = await pipeline.execute(messages)
+        llm_response = exec_res[0] if isinstance(exec_res, tuple) else str(exec_res)
         
         # 5. Parse and Filter
         # Clean JSON from markdown if exists
-        clean_json = re.sub(r'```json\n?|\n?```', '', llm_response).strip()
+        clean_json = re.sub(r'```json\s*|\s*```', '', llm_response).strip()
+        discovered = None
         try:
             discovered = json.loads(clean_json)
-        except json.JSONDecodeError:
-            # Try a second attempt at extracting just the list part
-            match = re.search(r'\[.*\]', clean_json, re.DOTALL)
+        except (json.JSONDecodeError, ValueError):
+            pass
+
+        if discovered is None:
+            # Locate first '[' or '{'
+            start_bracket = clean_json.find('[')
+            start_brace = clean_json.find('{')
+            start_idx = -1
+            if start_bracket != -1 and (start_brace == -1 or start_bracket < start_brace):
+                start_idx = start_bracket
+            elif start_brace != -1:
+                start_idx = start_brace
+
+            if start_idx != -1:
+                try:
+                    obj, _ = json.JSONDecoder().raw_decode(clean_json[start_idx:])
+                    discovered = obj
+                except Exception:
+                    pass
+
+        if discovered is None:
+            # Fallback regex for list
+            match = re.search(r'\[.*?\]', clean_json, re.DOTALL)
             if match:
-                discovered = json.loads(match.group(0))
-            else:
-                logger.error(f"Failed to parse LLM response: {llm_response}")
-                return json.dumps({"status": "parse_error", "raw": llm_response})
+                try:
+                    discovered = json.loads(match.group(0))
+                except Exception:
+                    pass
+
+        if discovered is None:
+            logger.error(f"Failed to parse LLM response: {llm_response}")
+            return json.dumps({"status": "parse_error", "raw": llm_response})
         
         if not isinstance(discovered, list):
             # Fallback if it returned an object with a field

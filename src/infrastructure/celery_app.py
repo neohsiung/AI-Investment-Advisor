@@ -129,6 +129,18 @@ app.conf.beat_schedule = {
         "task": "src.infrastructure.tasks.dispatch_weekly_report",
         "schedule": crontab(hour=10, minute=0, day_of_week="6"),  # Sat 10:00
     },
+    # Ticker Universe Lifecycle Evolution — runs weekly on Monday pre-market (08:00 EST)
+    # 標的池生命週期演化：每週一開盤前評估宏觀環境、淘汰劣化標的、補充優質新標的。
+    "universe-lifecycle-evolution": {
+        "task": "src.infrastructure.tasks.dispatch_universe_lifecycle",
+        "schedule": crontab(hour=8, minute=0, day_of_week="1"),  # Mon 08:00 EST
+    },
+    # Autonomous Weekly Confidence Rebalance — runs Monday post-market open (09:35 EST)
+    # 自主每週置信度再平衡：每週一美股開盤後（09:35 EST）自動計算目標權重並執行賣出與買入下單。
+    "weekly-confidence-rebalance": {
+        "task": "src.infrastructure.tasks.dispatch_weekly_rebalance",
+        "schedule": crontab(hour=9, minute=35, day_of_week="1"),  # Mon 09:35 EST
+    },
     "weekly-cost-review": {
         "task": "src.infrastructure.tasks.dispatch_memory_distill",
         "schedule": crontab(hour=22, minute=0, day_of_week="0"),
