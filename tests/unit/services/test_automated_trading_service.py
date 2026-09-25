@@ -427,3 +427,78 @@ async def test_weight_based_sell_order_sizing(test_svc, mock_broker_with_positio
     order = mock_broker_with_positions.execute_order.call_args[0][0]
     assert order.quantity == 0.2
     assert order.action.value == "SELL"
+
+
+@pytest.mark.anyio
+async def test_execute_trade_records_decision_outcome(test_svc, mock_broker_with_positions):
+    """Successful trade execution records decision outcome for reflection and rule learning."""
+    user_id = "test_user"
+    mock_account = MagicMock()
+    mock_account.total_equity = 1000.0
+    mock_account.available_cash = 50.0
+    mock_broker_with_positions.get_account = AsyncMock(return_value=mock_account)
+
+    mock_outcome_svc = MagicMock()
+    mock_outcome_svc.record_decision.return_value = "dec-test-123"
+
+    with patch('src.services.automated_trading_service.BrokerFactory.get_broker', return_value=mock_broker_with_positions), \
+         patch.object(test_svc, '_get_current_price', new_callable=AsyncMock, return_value=150.0), \
+         patch.object(test_svc, '_notify_via_api', new_callable=AsyncMock), \
+         patch('src.services.outcome_reflection_service.OutcomeReflectionService', return_value=mock_outcome_svc) as mock_cls:
+        res = await test_svc.evaluate_and_execute_trade(
+            user_id=user_id,
+            ticker="TSLA",
+            action="SELL",
+            delta_weight=-0.04,
+            portfolio_value=1000.0,
+            confidence_score=9.0,
+            rationale="Take profit test",
+            strategy_name="take_profit",
+        )
+
+    assert res["status"] == "success"
+    mock_outcome_svc.record_decision.assert_called_once_with(
+        ticker="TSLA",
+        agent_name="take_profit",
+        signal="SELL",
+        price=150.0,
+        horizon_days=5,
+    )
+
+
+@pytest.mark.anyio
+async def test_evaluate_and_execute_trade_injects_leverage_and_trailing_stop(test_svc, mock_broker):
+    """High confidence BUY order receives X2 leverage and mandatory Trailing Stop Loss."""
+    user_id = "test_user"
+    mock_account = MagicMock()
+    mock_account.total_equity = 2000.0
+    mock_account.available_cash = 500.0
+    mock_broker.get_account = AsyncMock(return_value=mock_account)
+
+    breakdown = [
+        {"agent": "FundamentalScout", "score": 9.2},
+        {"agent": "MomentumScout", "score": 9.0},
+        {"agent": "ThematicScout", "score": 8.8},
+    ]
+
+    with patch('src.services.automated_trading_service.BrokerFactory.get_broker', return_value=mock_broker), \
+         patch.object(test_svc, '_get_current_price', new_callable=AsyncMock, return_value=100.0), \
+         patch.object(test_svc, '_notify_via_api', new_callable=AsyncMock):
+        res = await test_svc.evaluate_and_execute_trade(
+            user_id=user_id,
+            ticker="NVDA",
+            action="BUY",
+            quantity=50.0,
+            confidence_score=9.0,
+            confidence_breakdown=breakdown,
+            rationale="High conviction AI breakout",
+        )
+
+    assert res["status"] == "success"
+    order = mock_broker.execute_order.call_args[0][0]
+    assert order.symbol == "NVDA"
+    assert order.leverage == 2
+    assert order.is_trailing_stop_loss is True
+    assert order.stop_loss_rate == round(100.0 * (1.0 - 0.055), 4)  # 5.5% TSL
+
+

@@ -189,6 +189,40 @@ settings:
     label_zh: 停利門檻百分比（%）
     help_en: Used only when enable_fixed_stops is true.
     help_zh: 僅在 enable_fixed_stops 為 true 時生效。
+  - key: enable_trailing_stops
+    group: trading
+    type: bool
+    default: true
+    label_en: Enable trailing stops
+    label_zh: 啟用移動停損
+    help_en: Dynamically trail stops behind peak prices to protect realized gains.
+    help_zh: 啟用最高價回檔追蹤停損機制，當持倉獲利回檔超過設定門檻時自動鎖利出場。
+  - key: trailing_stop_pct
+    group: trading
+    type: float
+    default: 6.0
+    min: 1.0
+    max: 30.0
+    label_en: Trailing stop threshold (%)
+    label_zh: 移動停損回檔門檻（%）
+    help_en: Allowable drawdown from peak price before triggering trailing stop exit.
+    help_zh: 自部位最高價允許回檔之最大百分比，超過即觸發移動停損出場。
+  - key: enable_ratchet_take_profit
+    group: trading
+    type: bool
+    default: false
+    label_en: Enable ratchet take-profit
+    label_zh: 啟用階梯鎖利
+    help_en: Dynamically tighten trailing stops as profit targets are reached.
+    help_zh: 當未實現獲利達到不同階梯目標時，動態收緊移動停損保護利潤。
+  - key: strategy_evolution_enabled
+    group: trading
+    type: bool
+    default: true
+    label_en: Enable strategy discovery & evolution
+    label_zh: 啟用策略自學演化循環
+    help_en: Allow background discovery and evolution cycles to test, optimize, and promote trading strategy contracts.
+    help_zh: 允許背景排程定期進行全歷史回測、參數優化與策略晉級演化循環。
   - key: capital_rotation_enabled
     group: trading
     type: bool

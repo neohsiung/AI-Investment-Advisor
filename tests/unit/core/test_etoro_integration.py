@@ -161,3 +161,114 @@ class TestExecuteOrderDemoEndpointRouting:
         assert len(urls) == 1
         assert "/trading/execution/market-open-orders/by-amount" in urls[0]
         assert "/demo/" not in urls[0]
+
+
+@pytest.mark.asyncio
+async def test_execute_order_buy_under_ten_dollars_fails(service):
+    from src.services.etoro_service import EtoroService
+    service.risk_manager.check_constraints = MagicMock(return_value=True)
+    service.get_history = AsyncMock(return_value=[])
+    service.get_positions = AsyncMock(return_value=[])
+    service._resolve_instrument_id = AsyncMock(return_value="1001")
+    service.user_id = "test_user"
+
+    order = Order(symbol="AAPL", action=OrderAction.BUY, quantity=5.0, amount_usd=5.0)
+    res = await EtoroService.execute_order(service, order)
+    assert res["status"] == "failed"
+    assert "below eToro minimum threshold" in res["reason"]
+
+
+@pytest.mark.asyncio
+async def test_execute_order_sell_precision_and_close_parsing(service):
+    from src.services.etoro_service import EtoroService
+    from src.domain.trading import Position
+    service.risk_manager.check_constraints = MagicMock(return_value=True)
+    service.get_history = AsyncMock(return_value=[])
+    mock_pos = Position(
+        symbol="AAPL", quantity=1.5, open_price=150.0, current_price=160.0,
+        market_value=240.0, unrealized_pnl=15.0, position_id="pos_999"
+    )
+    service.get_positions = AsyncMock(return_value=[mock_pos])
+    service._resolve_instrument_id = AsyncMock(return_value="1001")
+    service.user_id = "test_user"
+
+    captured_payloads = []
+
+    class _MockClient:
+        async def __aenter__(self):
+            return self
+        async def __aexit__(self, *a):
+            return False
+        async def post(self, url, json=None, **kwargs):
+            captured_payloads.append(json)
+            class _Resp:
+                def raise_for_status(self):
+                    pass
+                def json(self):
+                    return {"orderForClose": {"orderID": "close_123", "statusID": 2}}
+            return _Resp()
+
+    # Case A: Sell with quantity >= 0.01 sets UnitsToDeduct
+    with patch("httpx.AsyncClient", return_value=_MockClient()):
+        order = Order(symbol="AAPL", action=OrderAction.SELL, quantity=0.555)
+        res = await EtoroService.execute_order(service, order)
+        assert res["status"] == "success"
+        assert res["execution_status"] == "executed"
+        assert res["order_id"] == "close_123"
+        assert captured_payloads[0]["UnitsToDeduct"] == 0.56
+
+    # Case B: Sell with quantity < 0.01 omits UnitsToDeduct (full close)
+    captured_payloads.clear()
+    with patch("httpx.AsyncClient", return_value=_MockClient()):
+        order_tiny = Order(symbol="AAPL", action=OrderAction.SELL, quantity=0.004)
+        res_tiny = await EtoroService.execute_order(service, order_tiny)
+        assert res_tiny["status"] == "success"
+        assert "UnitsToDeduct" not in captured_payloads[0]
+
+
+@pytest.mark.asyncio
+async def test_execute_order_buy_with_leverage_and_trailing_stop(service):
+    from src.services.etoro_service import EtoroService
+    service.risk_manager.check_constraints = MagicMock(return_value=True)
+    service.get_history = AsyncMock(return_value=[])
+    service.get_positions = AsyncMock(return_value=[])
+    service._resolve_instrument_id = AsyncMock(return_value="1001")
+    service.user_id = "test_user"
+
+    captured_payloads = []
+
+    class _MockClient:
+        async def __aenter__(self):
+            return self
+        async def __aexit__(self, *a):
+            return False
+        async def post(self, url, json=None, **kwargs):
+            captured_payloads.append(json)
+            class _Resp:
+                def raise_for_status(self):
+                    pass
+                def json(self):
+                    return {"orderForOpen": {"orderID": "open_777", "statusID": 2}}
+            return _Resp()
+
+    with patch("httpx.AsyncClient", return_value=_MockClient()):
+        order = Order(
+            symbol="NVDA",
+            action=OrderAction.BUY,
+            quantity=50.0,
+            amount_usd=50.0,
+            leverage=2,
+            stop_loss_rate=110.5,
+            take_profit_rate=140.0,
+            is_trailing_stop_loss=True,
+        )
+        res = await EtoroService.execute_order(service, order)
+        assert res["status"] == "success"
+        assert res["order_id"] == "open_777"
+        payload = captured_payloads[0]
+        assert payload["Leverage"] == 2
+        assert payload["StopLossRate"] == 110.5
+        assert payload["TakeProfitRate"] == 140.0
+        assert payload["IsTrailingStopLoss"] is True
+
+

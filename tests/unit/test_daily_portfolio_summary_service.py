@@ -58,6 +58,7 @@ async def test_daily_portfolio_summary_generation_zero_trades():
         assert "Δ ≥ 2.0" in md or "未達機會成本換庫門檻" in md
         assert "SPY" in md
         assert "VIX" in md
+        assert "系統自學與自我演化成果" in md
 
 
 @pytest.mark.asyncio
@@ -90,10 +91,10 @@ async def test_daily_portfolio_summary_dispatch():
         assert res["report_id"] == "rep-123"
         mock_save.assert_called_once()
         
-        # Verify notification dispatched strictly to email and web
+        # Verify notification dispatched dynamically to user configured channels
         mock_notif_svc.notify_all.assert_called_once()
         _, kwargs = mock_notif_svc.notify_all.call_args
-        assert kwargs["channels"] == ["email", "web"]
+        assert kwargs["channels"] is None
         assert kwargs["category"] == "report"
 
 
@@ -155,3 +156,23 @@ async def test_daily_portfolio_summary_bypass_throttle():
 
         assert res["status"] == "success"
         assert res["report_id"] == "rep-forced"
+
+
+@pytest.mark.asyncio
+async def test_daily_portfolio_summary_self_evolution_length_constraints():
+    """
+    Verify the daily self-evolution list format constraints:
+    Each item: headline ~10 words/characters, description <= 30 words/characters.
+    """
+    user_id = "00000000-0000-4000-a000-000000000001"
+    svc = DailyPortfolioSummaryService(user_id=user_id)
+    achievements = svc._get_self_evolution_achievements()
+
+    assert len(achievements) > 0
+    for ach in achievements:
+        title = ach["title"]
+        desc = ach["desc"]
+        # Headline around 10 words/characters (allowing emoji prefix)
+        assert len(title) <= 12, f"Title too long: {title}"
+        # Description strictly within 30 characters
+        assert len(desc) <= 30, f"Description exceeds 30 characters: {desc}"

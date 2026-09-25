@@ -135,6 +135,12 @@ app.conf.beat_schedule = {
         "task": "src.infrastructure.tasks.dispatch_universe_lifecycle",
         "schedule": crontab(hour=8, minute=0, day_of_week="1"),  # Mon 08:00 EST
     },
+    # Strategy Lifecycle & Discovery Evolution — runs weekly on Sunday night (21:00 EST)
+    # 策略生命週期與自主探索演進：每週自動滾動執行歷史回測掃描、檢驗既有策略績效、探索新體制候選策略並更新註冊中心。
+    "strategy-lifecycle-evolution": {
+        "task": "src.infrastructure.tasks.dispatch_strategy_evolution",
+        "schedule": crontab(hour=21, minute=0, day_of_week="0"),  # Sun 21:00 EST
+    },
     # Autonomous Weekly Confidence Rebalance — runs Monday post-market open (09:35 EST)
     # 自主每週置信度再平衡：每週一美股開盤後（09:35 EST）自動計算目標權重並執行賣出與買入下單。
     "weekly-confidence-rebalance": {

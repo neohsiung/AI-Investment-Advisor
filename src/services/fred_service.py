@@ -40,6 +40,11 @@ class FredService:
         except Exception as e:
             self.logger.error(f"Failed to initialize FRED client: {e}")
 
+        # In-memory macro caching (6 hours TTL) to conserve API quota
+        self._macro_cache: Dict[str, Any] = {}
+        self._macro_cache_time: float = 0.0
+        self._CACHE_TTL_SECONDS: float = 21600.0  # 6 hours
+
     def get_macro_indicators(self) -> Dict[str, Dict[str, Any]]:
         """
         Fetches key macro indicators like GDP, CPI, and Yield Spreads.
@@ -47,6 +52,22 @@ class FredService:
         """
         if not self.client:
             self.logger.warning("FRED client not initialized (missing API key). Returning empty data.")
+            return {}
+
+        import time
+        now = time.time()
+        if self._macro_cache and (now - self._macro_cache_time < self._CACHE_TTL_SECONDS):
+            self.logger.debug("Returning cached macro indicators from memory.")
+            return self._macro_cache
+
+        # Quota Guard: Ensure <= 60% capacity utilization
+        from src.infrastructure.governance.quota_governor import ExternalQuotaGovernor
+        governor = ExternalQuotaGovernor.get_instance()
+        if not governor.can_acquire("fred"):
+            if self._macro_cache:
+                self.logger.info("FRED 60% capacity cap reached; returning stale cached macro data.")
+                return self._macro_cache
+            self.logger.warning("FRED 60% capacity cap reached and no cache available.")
             return {}
 
         indicators = {
@@ -100,4 +121,9 @@ class FredService:
         except Exception as e:
             self.logger.error(f"Error fetching FRED data: {e}")
         
+        if result:
+            governor.record_usage("fred", count=len(indicators))
+            self._macro_cache = result
+            self._macro_cache_time = now
+
         return result

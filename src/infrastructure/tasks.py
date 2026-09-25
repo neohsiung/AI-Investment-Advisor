@@ -96,7 +96,26 @@ def generate_market_intelligence(user_id: str = None):
         # 4. Persistence
         settings_svc.save_setting("cached_intelligence_briefing", briefing, user_id=user_id)
         settings_svc.save_setting("last_intelligence_timestamp", datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
-        
+
+        # 5. Dispatch Pre-market briefing to user channels (Web, Email, Telegram)
+        try:
+            from src.services.notification_service import NotificationService
+            notif_svc = NotificationService.create_with_settings(settings_service=settings_svc, user_id=user_id)
+            title = "🟢 盤前市場監控與策略快報"
+            summary_text = briefing.get("executive_summary", "") if isinstance(briefing, dict) else str(briefing)
+            rec_text = briefing.get("recommendation", "") if isinstance(briefing, dict) else ""
+            content = f"### 📊 今日盤前摘要\n\n{summary_text}\n\n**策略姿態**：{rec_text}"
+            _run_async_safe(notif_svc.notify_all(
+                user_id=user_id,
+                title=title,
+                content=content,
+                category="digest",
+                channels=None,
+            ))
+            logger.info("generate_market_intelligence: Pre-market briefing dispatched successfully.")
+        except Exception as notify_err:
+            logger.warning(f"generate_market_intelligence: Notification dispatch skipped/failed: {notify_err}")
+
         return "Success"
         
     except Exception as e:
@@ -711,6 +730,39 @@ def run_weekly_rebalance(user_id: str = None):
         return result
     except Exception as e:
         logger.error(f"run_weekly_rebalance failed for {user_id}: {e}", exc_info=True)
+        return f"Error: {str(e)}"
+
+
+@app.task(name="src.infrastructure.tasks.dispatch_strategy_evolution")
+def dispatch_strategy_evolution():
+    """Fan-out dispatcher: 為活躍租戶分派量化策略自主演進與優化任務。"""
+    users = _resolve_target_users()
+    for uid in users:
+        run_strategy_evolution.delay(user_id=uid)
+    return f"Dispatched {len(users)} strategy_evolution tasks"
+
+
+@app.task(name="src.infrastructure.tasks.run_strategy_evolution", soft_time_limit=600, time_limit=660)
+def run_strategy_evolution(user_id: str = None, force: bool = False):
+    """
+    Strategy Lifecycle & Discovery Evolution:
+    Runs automated parameter sweeps, evaluates against ValidationThresholds,
+    optimizes StrategyRegistry contracts, and emits 3-part evolution reports.
+    策略生命週期與探索演進任務：執行參數網格回測、驗證門檻篩選、註冊中心動態晉升與通報。
+    """
+    user_id = user_id or os.getenv("PRIMARY_USER_ID") or os.getenv("USER_ID")
+    if not user_id:
+        logger.error("run_strategy_evolution: user_id is required. Set PRIMARY_USER_ID env var or pass explicitly.")
+        return "Error: user_id is required"
+
+    try:
+        from src.services.strategy_discovery_service import StrategyDiscoveryService
+        svc = StrategyDiscoveryService()
+        result = _run_async_safe(svc.run_evolution_cycle(user_id=user_id, force=force))
+        logger.info(f"run_strategy_evolution completed for {user_id}: {result.get('status')}")
+        return result
+    except Exception as e:
+        logger.error(f"run_strategy_evolution failed for {user_id}: {e}", exc_info=True)
         return f"Error: {str(e)}"
 
 

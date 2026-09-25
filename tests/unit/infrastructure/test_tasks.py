@@ -930,3 +930,30 @@ class TestWeeklyRebalanceTasks:
         assert _SOFT_FAIL_RE.match(result)
 
 
+class TestStrategyEvolutionTasks:
+    def test_dispatch_strategy_evolution(self):
+        with patch.object(tasks, "_resolve_target_users", return_value=["u1", "u2"]), \
+             patch.object(tasks.run_strategy_evolution, "delay") as mock_delay:
+            res = tasks.dispatch_strategy_evolution()
+            assert res == "Dispatched 2 strategy_evolution tasks"
+            assert mock_delay.call_count == 2
+
+    def test_run_strategy_evolution_missing_user_id(self):
+        res = tasks.run_strategy_evolution(user_id=None)
+        assert res == "Error: user_id is required"
+        assert _SOFT_FAIL_RE.match(res)
+
+    def test_run_strategy_evolution_success(self, run_async_identity):
+        with patch("src.services.strategy_discovery_service.StrategyDiscoveryService") as cls:
+            cls.return_value.run_evolution_cycle = MagicMock(return_value={"status": "success", "scenarios_tested": 10})
+            res = tasks.run_strategy_evolution(user_id=USER)
+            assert res == {"status": "success", "scenarios_tested": 10}
+
+    def test_run_strategy_evolution_failure(self, run_async_identity):
+        with patch("src.services.strategy_discovery_service.StrategyDiscoveryService", side_effect=RuntimeError("Discovery sweep exploded")):
+            res = tasks.run_strategy_evolution(user_id=USER)
+            assert res == "Error: Discovery sweep exploded"
+            assert _SOFT_FAIL_RE.match(res)
+
+
+

@@ -11,6 +11,14 @@ from src.data.providers.polygon_provider import PolygonProvider
 class TestPolygonProviderEdgeCases:
     """Extended edge case tests for Polygon Provider."""
     
+    @pytest.fixture(autouse=True)
+    def reset_quota(self):
+        """Reset polygon quota usage before and after each test."""
+        from src.infrastructure.governance.quota_governor import ExternalQuotaGovernor
+        ExternalQuotaGovernor.get_instance().reset("polygon")
+        yield
+        ExternalQuotaGovernor.get_instance().reset("polygon")
+
     @pytest.fixture
     def mock_settings(self):
         """Mock settings service."""

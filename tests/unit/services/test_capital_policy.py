@@ -123,3 +123,13 @@ class TestSmallTestWaiver:
         assert is_small_test_capital(
             "u1", 1048.64, _repo(tradable_capital_usd=0, small_test_capital_usd=100)
         ) is False
+
+    def test_waives_when_small_test_capital_falls_back_to_tradable_capital(self):
+        """
+        When small_test_capital_usd is not explicitly set, it dynamically scales with
+        the configured tradable_capital_usd cap.
+        """
+        assert is_small_test_capital(
+            "u1", 1048.64, _repo(tradable_capital_usd=500)
+        ) is True
+

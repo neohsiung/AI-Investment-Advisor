@@ -43,6 +43,13 @@ class PolygonProvider(MarketDataProvider):
         """
         if not self.api_key or not tickers: return {}
         prices = {}
+
+        # Quota Guard: Ensure <= 60% capacity utilization
+        from src.infrastructure.governance.quota_governor import ExternalQuotaGovernor
+        governor = ExternalQuotaGovernor.get_instance()
+        if not governor.can_acquire("polygon"):
+            self.logger.warning("PolygonProvider: 60% capacity utilization cap reached; deferring to secondary provider.")
+            return prices
         
         # Strategy: Use v3 snapshot for bulk (Up to 1 call instead of N)
         try:
@@ -52,6 +59,7 @@ class PolygonProvider(MarketDataProvider):
                 "ticker.any_of": ticker_list,
                 "apiKey": self.api_key
             }
+            governor.record_usage("polygon")
             
             resp = requests.get(url, params=params, timeout=10)
             if resp.status_code == 200:
