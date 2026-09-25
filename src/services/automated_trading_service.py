@@ -259,10 +259,8 @@ class AutomatedTradingService:
         # 停損（stop_loss）與緊急避險（emergency_exit）屬資本安全控制，豁免於回測閘門。
         is_sell = str(action).upper() == "SELL"
         requires_approval_reason = None
-        is_safety_exit = is_sell and strategy_name in (
-            "stop_loss", "emergency_exit", "position_exit", "take_profit",
-            "capital_rotation", "rebalance_diversification"
-        )
+        from src.services.strategy_registry import StrategyRegistry
+        is_safety_exit = is_sell and StrategyRegistry.is_safety_control(strategy_name or "")
         if strategy_name and not is_safety_exit:
             try:
                 from src.services.broker_factory import effective_trading_mode
@@ -635,31 +633,16 @@ class AutomatedTradingService:
 
         effective_confidence = max(normalized_confidence, optimized_confidence)
 
-        should_auto_execute = False
-        approval_label = "自動執行"
-
-        if is_sell and strategy_name == "stop_loss":
-            should_auto_execute = True
-            approval_label = "停損自動執行"
-        elif not requires_approval_reason:
-            if is_sell and strategy_name == "take_profit" and auto_exit_enabled:
-                should_auto_execute = True
-                approval_label = "停利自動執行"
-            elif is_sell and strategy_name == "capital_rotation" and auto_exit_enabled:
-                should_auto_execute = True
-                approval_label = "換庫自動執行"
-            elif is_sell and strategy_name in ("rebalance_diversification", "concentration_rebalance") and auto_exit_enabled:
-                should_auto_execute = True
-                approval_label = "再平衡自動執行"
-            elif is_sell and effective_confidence >= threshold and auto_exit_enabled:
-                should_auto_execute = True
-                approval_label = "出場自動執行" if optimized_confidence == normalized_confidence else "自主執行 (信心優化放行)"
-            elif effective_confidence >= threshold:
-                should_auto_execute = True
-                approval_label = "自動執行" if optimized_confidence == normalized_confidence else "自主執行 (信心優化放行)"
-            elif effective_confidence >= threshold and autonomous_reporting_mode and is_sell:
-                should_auto_execute = True
-                approval_label = "自主執行 (策略自適應)"
+        should_auto_execute, approval_label = self._determine_auto_execution_policy(
+            is_sell=is_sell,
+            strategy_name=strategy_name,
+            effective_confidence=effective_confidence,
+            threshold=threshold,
+            auto_exit_enabled=auto_exit_enabled,
+            autonomous_reporting_mode=autonomous_reporting_mode,
+            requires_approval_reason=requires_approval_reason,
+            is_optimized=(optimized_confidence != normalized_confidence),
+        )
 
         if should_auto_execute:
             logger.info(f"Score {effective_confidence} >= {threshold} (or exit/rebalance). Executing automatically ({approval_label}).")
@@ -695,6 +678,53 @@ class AutomatedTradingService:
             threshold=threshold,
             extra_reason=requires_approval_reason,
         )
+
+    @staticmethod
+    def _determine_auto_execution_policy(
+        is_sell: bool,
+        strategy_name: Optional[str],
+        effective_confidence: float,
+        threshold: float,
+        auto_exit_enabled: bool,
+        autonomous_reporting_mode: bool,
+        requires_approval_reason: Optional[str],
+        is_optimized: bool,
+    ) -> Tuple[bool, str]:
+        """
+        Streamlined auto-execution policy gatekeeper.
+        統一判定是否符合自動執行標準與對應標籤。
+        """
+        from src.services.strategy_registry import StrategyRegistry
+
+        if is_sell and strategy_name == "stop_loss":
+            return True, "停損自動執行"
+
+        if requires_approval_reason:
+            return False, "審批要求阻斷"
+
+        # 安全控制與再平衡出場
+        if is_sell and StrategyRegistry.is_safety_control(strategy_name or "") and auto_exit_enabled:
+            labels = {
+                "take_profit": "停利自動執行",
+                "capital_rotation": "換庫自動執行",
+                "rebalance_diversification": "再平衡自動執行",
+                "concentration_rebalance": "再平衡自動執行",
+            }
+            return True, labels.get(strategy_name, "安全出場自動執行")
+
+        # 一般賣出且置信度達標
+        if is_sell and effective_confidence >= threshold and auto_exit_enabled:
+            return True, "出場自動執行" if not is_optimized else "自主執行 (信心優化放行)"
+
+        # 一般買進/賣出且置信度達標
+        if effective_confidence >= threshold:
+            return True, "自動執行" if not is_optimized else "自主執行 (信心優化放行)"
+
+        # 自主回報模式下的自適應賣出
+        if effective_confidence >= threshold and autonomous_reporting_mode and is_sell:
+            return True, "自主執行 (策略自適應)"
+
+        return False, "未達自動執行門檻"
 
     async def _request_approval_and_execute(self, user_id: str, order: Order, confidence_score: int, rationale: str, confidence_breakdown: list = None, threshold: float = None, extra_reason: str = None) -> Dict[str, Any]:
         """Request user approval synchronously via InteractionService."""

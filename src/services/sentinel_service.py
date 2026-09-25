@@ -118,6 +118,11 @@ class SentinelService:
         
         # Volatility State
         self.current_vix: float = 20.0 # Default fallback
+        self.active_cognitive_blindspots: List[Any] = []
+
+    def get_cognitive_blindspots(self) -> List[Any]:
+        """Return currently observed market regimes that lack registered strategy contracts."""
+        return list(self.active_cognitive_blindspots)
 
     # ──────────────────────────────────────────
     # Lazily-built collaborators (2026-08-13)
@@ -1097,21 +1102,51 @@ class SentinelService:
                     "priority": 1 # P1: Extreme Panic
                 })
 
-            # Check VIX Panic Rebound Strategy Opportunity (別人恐懼我貪婪逆勢機會)
-            if isinstance(vix, (int, float)) and vix >= 35.0:
+            # ── Generic Regime Matching & Cognitive Blindspot Detection ──
+            active_regimes = []
+            if spread and isinstance(spread.get("value"), (int, float)) and spread["value"] < 0:
+                from src.domain.strategy_contract import MarketRegimeType
+                active_regimes.append(MarketRegimeType.LIQUIDITY_SHOCK)
+
+            if isinstance(vix, (int, float)):
+                from src.domain.strategy_contract import MarketRegimeType
+                if vix >= self.thresholds.get("vix_extreme", 40.0):
+                    active_regimes.append(MarketRegimeType.VOLATILITY_EXTREME)
+                elif vix >= 35.0:
+                    active_regimes.append(MarketRegimeType.VOLATILITY_PIVOT)
+
+            if active_regimes:
                 try:
-                    from src.services.vix_panic_rebound_strategy import VixPanicReboundStrategy
-                    sig = VixPanicReboundStrategy.evaluate_signal(current_vix=float(vix))
-                    triggers.append({
-                        "text": f"🔥 逆勢恐慌抄底機會 ({sig.action.value}): VIX = {vix:.2f} ({sig.reason})",
-                        "id": "vix_panic_rebound_opportunity",
-                        "value": vix,
-                        "priority": 1 if vix >= 40.0 else 2,
-                        "strategy_name": "vix_panic_rebound",
-                        "recommended_leverage": sig.recommended_leverage,
-                    })
+                    from src.services.strategy_registry import StrategyRegistry
+                    # 1. Check for Cognitive Blindspots (regimes without any registered strategy)
+                    blindspots = StrategyRegistry.check_cognitive_blindspots(active_regimes)
+                    self.active_cognitive_blindspots = blindspots
+                    if blindspots and not getattr(self, "_blindspot_evolution_triggered", False):
+                        self._blindspot_evolution_triggered = True
+                        try:
+                            from src.infrastructure.tasks import run_strategy_evolution
+                            run_strategy_evolution.delay(user_id=self.user_id, force=True)
+                            logger.info(f"Sentinel: Automatically triggered strategy evolution for blindspots: {[b.value for b in blindspots]}")
+                        except Exception as trigger_err:
+                            logger.warning(f"Sentinel: Failed to trigger async strategy evolution: {trigger_err}")
+
+                    # 2. Match active strategies to regimes
+                    matched = StrategyRegistry.match_regimes(active_regimes)
+                    for strat in matched:
+                        plan = strat.evaluate_entry({"vix": float(vix), "indicators": market})
+                        if plan and plan.action == "BUY":
+                            triggers.append({
+                                "text": f"🔥 逆勢恐慌抄底機會 ({strat.strategy_id} Stage {plan.stage}): VIX = {vix:.2f} ({plan.reason})",
+                                "id": f"{strat.strategy_id}_opportunity",
+                                "value": vix,
+                                "priority": 1 if (isinstance(vix, (int, float)) and vix >= self.thresholds.get("vix_extreme", 40.0)) else 2,
+                                "strategy_name": strat.strategy_id,
+                                "recommended_leverage": plan.target_leverage,
+                                "stop_loss_pct": plan.stop_loss_pct,
+                                "is_trailing_stop_loss": plan.is_trailing_stop_loss,
+                            })
                 except Exception as strat_err:
-                    logger.warning(f"VixPanicReboundStrategy evaluation failed in sentinel: {strat_err}")
+                    logger.warning(f"Strategy registry matching failed in sentinel: {strat_err}")
                 
         except Exception as e:
             logger.warning(f"Macro shift check failed: {e}")

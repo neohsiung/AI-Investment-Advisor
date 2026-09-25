@@ -246,3 +246,80 @@ class VixPanicReboundStrategy:
             stop_loss_pct=0.0,
             reason=f"VIX {current_vix:.1f} is below panic threshold ({cls.VIX_STAGE1_SPOT:.1f}); idle.",
         )
+
+
+class VixPanicReboundStrategyContract:
+    """
+    Contract wrapper adapting VixPanicReboundStrategy to the generalized StrategyContract interface.
+    """
+    def __init__(self):
+        from src.domain.strategy_contract import StrategyContract, MarketRegimeType, RiskBudget
+        self.strategy_id = STRATEGY_NAME
+        self.subscribed_regimes = [
+            MarketRegimeType.VOLATILITY_EXTREME,
+            MarketRegimeType.VOLATILITY_PIVOT,
+        ]
+        self.risk_budget = RiskBudget(
+            max_underlying_stop_pct=15.0,
+            trailing_stop_pct=6.0,
+            max_position_margin_pct=0.10,
+            max_holding_days=60,
+            max_portfolio_gross_leverage=1.30,
+            max_allowed_leverage=2,
+        )
+
+    def evaluate_entry(self, market_context: Dict[str, Any]):
+        from src.domain.strategy_contract import StrategyExecutionPlan
+        vix = market_context.get("vix")
+        if vix is None:
+            return None
+        current_stage = market_context.get("current_stage", 0)
+        vix_history = market_context.get("vix_history")
+        sig = VixPanicReboundStrategy.evaluate_signal(
+            current_vix=float(vix),
+            current_stage=current_stage,
+            vix_history=vix_history,
+        )
+        if sig.action in (VixPanicAction.BUY_STAGE1, VixPanicAction.BUY_STAGE2, VixPanicAction.BUY_STAGE3):
+            return StrategyExecutionPlan(
+                action="BUY",
+                stage=sig.current_stage,
+                target_leverage=sig.recommended_leverage,
+                target_cumulative_weight=sig.target_cumulative_weight,
+                incremental_weight=sig.incremental_weight,
+                stop_loss_pct=sig.stop_loss_pct,
+                is_trailing_stop_loss=sig.is_trailing_stop_loss,
+                reason=sig.reason,
+            )
+        return None
+
+    def evaluate_exit(self, position: Any, market_context: Dict[str, Any]):
+        from src.domain.strategy_contract import StrategyExecutionPlan
+        vix = market_context.get("vix")
+        if vix is None:
+            return None
+        current_stage = market_context.get("current_stage", 1)
+        current_pnl_pct = market_context.get("current_pnl_pct")
+        dd_hwm = market_context.get("drawdown_from_hwm")
+        sig = VixPanicReboundStrategy.evaluate_signal(
+            current_vix=float(vix),
+            current_stage=current_stage,
+            current_pnl_pct=current_pnl_pct,
+            drawdown_from_hwm=dd_hwm,
+        )
+        if sig.action in (VixPanicAction.PARTIAL_EXIT_DELEVERAGE, VixPanicAction.FULL_EXIT, VixPanicAction.STOP_LOSS):
+            act = "PARTIAL_EXIT" if sig.action == VixPanicAction.PARTIAL_EXIT_DELEVERAGE else ("STOP_LOSS" if sig.action == VixPanicAction.STOP_LOSS else "SELL")
+            return StrategyExecutionPlan(
+                action=act,
+                stage=sig.current_stage,
+                target_leverage=sig.recommended_leverage,
+                target_cumulative_weight=sig.target_cumulative_weight,
+                incremental_weight=sig.incremental_weight,
+                stop_loss_pct=sig.stop_loss_pct,
+                is_trailing_stop_loss=sig.is_trailing_stop_loss,
+                reason=sig.reason,
+            )
+        return None
+
+    def is_safety_control(self) -> bool:
+        return False

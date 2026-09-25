@@ -89,16 +89,20 @@ class LeveragePolicyService:
                 max_holding_days=0,
             )
 
-        # 0. 特殊策略通道：VIX 極端恐慌逆勢抄底策略 (VixPanicReboundStrategy)
-        if strategy_name == "vix_panic_rebound":
-            return self._evaluate_vix_panic_rebound_leverage(
+        # 0. 契約化策略通道 (StrategyContract Registry Channel)
+        if strategy_name:
+            contract_decision = self._evaluate_strategy_contract_leverage(
+                strategy_name=strategy_name,
                 ticker=ticker,
                 current_price=current_price,
                 amount_usd=amount_usd,
                 portfolio_nlv=portfolio_nlv,
                 current_gross_tnv=current_gross_tnv,
                 vix=vix,
+                confidence_score=confidence_score,
             )
+            if contract_decision is not None:
+                return contract_decision
 
         # 1. 信心度門檻檢查
         if confidence_score < self.MIN_CONFIDENCE_FOR_LEVERAGE:
@@ -290,3 +294,98 @@ class LeveragePolicyService:
             reason=reason,
             max_holding_days=60,
         )
+
+    def _evaluate_strategy_contract_leverage(
+        self,
+        strategy_name: str,
+        ticker: str,
+        current_price: Optional[float] = None,
+        amount_usd: Optional[float] = None,
+        portfolio_nlv: Optional[float] = None,
+        current_gross_tnv: Optional[float] = None,
+        vix: Optional[float] = None,
+        confidence_score: float = 0.0,
+    ) -> Optional[LeverageDecision]:
+        """
+        Generalized evaluation using registered StrategyContract.
+        透過 StrategyRegistry 查詢已註冊策略契約之風險預算與階梯規則。
+        """
+        try:
+            from src.services.strategy_registry import StrategyRegistry
+            contract = StrategyRegistry.get(strategy_name)
+            if not contract:
+                return None
+
+            # 若為 vix_panic_rebound，調用專屬評估 (保持向下相容)
+            if strategy_name == "vix_panic_rebound":
+                return self._evaluate_vix_panic_rebound_leverage(
+                    ticker=ticker,
+                    current_price=current_price,
+                    amount_usd=amount_usd,
+                    portfolio_nlv=portfolio_nlv,
+                    current_gross_tnv=current_gross_tnv,
+                    vix=vix,
+                )
+
+            budget = contract.risk_budget
+            allowed_lev = budget.max_allowed_leverage
+            stop_loss_pct = budget.trailing_stop_pct
+
+            # 投組總名目槓桿上限檢查
+            if portfolio_nlv and portfolio_nlv > 0 and current_gross_tnv is not None and amount_usd and allowed_lev > 1:
+                projected_tnv = current_gross_tnv + (amount_usd * allowed_lev)
+                if (projected_tnv / portfolio_nlv) > budget.max_portfolio_gross_leverage:
+                    return self._make_spot_decision(
+                        current_price,
+                        f"Strategy {strategy_name}: Projected leverage exceeds {budget.max_portfolio_gross_leverage:.2f}x cap; capped at X1 spot."
+                    )
+
+            # 單檔保證金上限檢查
+            if portfolio_nlv and portfolio_nlv > 0 and amount_usd:
+                if (amount_usd / portfolio_nlv) > budget.max_position_margin_pct:
+                    return self._make_spot_decision(
+                        current_price,
+                        f"Strategy {strategy_name}: Margin exceeds {budget.max_position_margin_pct:.1%} cap; suppressed to X1 spot."
+                    )
+
+            if allowed_lev > 1:
+                stop_loss_rate = round(current_price * (1.0 - stop_loss_pct / 100.0), 4) if current_price else None
+                take_profit_rate = round(current_price * 1.25, 4) if current_price else None
+                return LeverageDecision(
+                    eligible_leverage=allowed_lev,
+                    is_leveraged=True,
+                    stop_loss_pct=stop_loss_pct,
+                    take_profit_pct=25.0,
+                    stop_loss_rate=stop_loss_rate,
+                    take_profit_rate=take_profit_rate,
+                    is_trailing_stop_loss=True,
+                    overnight_fee_annual_pct=self.ESTIMATED_CFD_OVERNIGHT_PCT,
+                    reason=f"Strategy contract '{strategy_name}' authorized X{allowed_lev} leverage with {stop_loss_pct}% TSL.",
+                    max_holding_days=budget.max_holding_days,
+                )
+
+            return None
+        except Exception as e:
+            logger.warning(f"Strategy contract leverage evaluation failed for {strategy_name}: {e}")
+            return None
+
+    @classmethod
+    def calculate_volatility_adjusted_margin(
+        cls,
+        portfolio_nlv: float,
+        stop_loss_pct: float,
+        leverage: int = 1,
+        max_risk_pct_nlv: float = 0.01,  # 預設單筆最大損失不超過 1% NLV
+    ) -> float:
+        """
+        Volatility/Stop-Distance-Adjusted Sizing Law:
+        Position Margin USD = (NLV * Max Risk Pct) / (Stop Loss Distance Pct * Leverage)
+        依據停損距離與槓桿倍數反比定價，確保最壞情況下對帳戶總淨值的最大損失恆定。
+        """
+        if portfolio_nlv <= 0 or stop_loss_pct <= 0 or leverage <= 0:
+            return 0.0
+        stop_distance_decimal = stop_loss_pct / 100.0
+        max_dollar_loss = portfolio_nlv * max_risk_pct_nlv
+        margin_usd = max_dollar_loss / (stop_distance_decimal * leverage)
+        return round(margin_usd, 2)
+
