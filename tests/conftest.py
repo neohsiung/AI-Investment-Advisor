@@ -159,3 +159,23 @@ def mock_build_config_chain():
         side_effect=_mock_chain,
     ):
         yield
+
+
+@pytest.fixture(autouse=True)
+def isolate_quota_governor():
+    """
+    Keep external quota governor state hermetic across unit tests.
+    外部配額控管器為單例模式，測試間重置避免跨測試之配額耗盡與頻率防抖洩漏。
+    """
+    try:
+        from src.infrastructure.governance.quota_governor import ExternalQuotaGovernor
+        ExternalQuotaGovernor.get_instance().reset()
+    except Exception:
+        pass
+    yield
+    try:
+        from src.infrastructure.governance.quota_governor import ExternalQuotaGovernor
+        ExternalQuotaGovernor.get_instance().reset()
+    except Exception:
+        pass
+

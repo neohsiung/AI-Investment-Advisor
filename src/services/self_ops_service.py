@@ -80,6 +80,7 @@ DISPATCHER_CHILD_TASKS: Dict[str, str] = {
     "dispatch_podcast_ingest": "ingest_podcasts",
     "dispatch_universe_lifecycle": "run_universe_lifecycle",
     "dispatch_weekly_rebalance": "run_weekly_rebalance",
+    "dispatch_strategy_evolution": "run_strategy_evolution",
 }
 
 # How far back to compare dispatcher and child success counts.
