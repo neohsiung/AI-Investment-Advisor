@@ -554,6 +554,18 @@ class AutomatedTradingService:
                 nlv = getattr(acc, 'total_equity', None) or portfolio_value
                 est_price = await self._get_current_price(broker, ticker, user_id=user_id)
 
+                current_vix = None
+                try:
+                    from src.services.market_data_service import MarketDataService
+                    mds = MarketDataService()
+                    macro_data = mds.get_macro_shift()
+                    indicators = macro_data.get("market_indicators", {})
+                    raw_vix = indicators.get("^VIX")
+                    if raw_vix is not None:
+                        current_vix = float(raw_vix)
+                except Exception as vix_e:
+                    logger.warning(f"LeveragePolicy: could not fetch real-time VIX ({vix_e}); using None")
+
                 consensus_count = len(confidence_breakdown) if confidence_breakdown else 1
                 lev_decision = lev_svc.evaluate_leverage(
                     ticker=ticker,
@@ -562,7 +574,9 @@ class AutomatedTradingService:
                     current_price=est_price,
                     amount_usd=quantity,
                     portfolio_nlv=nlv,
+                    vix=current_vix,
                     confirming_agents_count=consensus_count,
+                    strategy_name=strategy_name,
                 )
                 leverage = lev_decision.eligible_leverage
                 stop_loss_rate = lev_decision.stop_loss_rate
@@ -627,24 +641,25 @@ class AutomatedTradingService:
         if is_sell and strategy_name == "stop_loss":
             should_auto_execute = True
             approval_label = "停損自動執行"
-        elif is_sell and strategy_name == "take_profit" and auto_exit_enabled:
-            should_auto_execute = True
-            approval_label = "停利自動執行"
-        elif is_sell and strategy_name == "capital_rotation" and auto_exit_enabled:
-            should_auto_execute = True
-            approval_label = "換庫自動執行"
-        elif is_sell and strategy_name in ("rebalance_diversification", "concentration_rebalance") and auto_exit_enabled:
-            should_auto_execute = True
-            approval_label = "再平衡自動執行"
-        elif is_sell and effective_confidence >= threshold and auto_exit_enabled:
-            should_auto_execute = True
-            approval_label = "出場自動執行" if optimized_confidence == normalized_confidence else "自主執行 (信心優化放行)"
-        elif effective_confidence >= threshold and not requires_approval_reason:
-            should_auto_execute = True
-            approval_label = "自動執行" if optimized_confidence == normalized_confidence else "自主執行 (信心優化放行)"
-        elif effective_confidence >= threshold and autonomous_reporting_mode and is_sell:
-            should_auto_execute = True
-            approval_label = "自主執行 (策略自適應)"
+        elif not requires_approval_reason:
+            if is_sell and strategy_name == "take_profit" and auto_exit_enabled:
+                should_auto_execute = True
+                approval_label = "停利自動執行"
+            elif is_sell and strategy_name == "capital_rotation" and auto_exit_enabled:
+                should_auto_execute = True
+                approval_label = "換庫自動執行"
+            elif is_sell and strategy_name in ("rebalance_diversification", "concentration_rebalance") and auto_exit_enabled:
+                should_auto_execute = True
+                approval_label = "再平衡自動執行"
+            elif is_sell and effective_confidence >= threshold and auto_exit_enabled:
+                should_auto_execute = True
+                approval_label = "出場自動執行" if optimized_confidence == normalized_confidence else "自主執行 (信心優化放行)"
+            elif effective_confidence >= threshold:
+                should_auto_execute = True
+                approval_label = "自動執行" if optimized_confidence == normalized_confidence else "自主執行 (信心優化放行)"
+            elif effective_confidence >= threshold and autonomous_reporting_mode and is_sell:
+                should_auto_execute = True
+                approval_label = "自主執行 (策略自適應)"
 
         if should_auto_execute:
             logger.info(f"Score {effective_confidence} >= {threshold} (or exit/rebalance). Executing automatically ({approval_label}).")
@@ -654,9 +669,9 @@ class AutomatedTradingService:
                 strategy_name=strategy_name
             )
 
-        # 3c. Autonomous Reporting Mode: Do not block or harass user with approval requests
-        if autonomous_reporting_mode:
-            skip_reason = requires_approval_reason or f"Score {effective_confidence:.1f} below threshold {threshold:.1f}"
+        # 3c. Autonomous Reporting Mode: Do not block or harass user with approval requests unless explicitly required by policy
+        if autonomous_reporting_mode and not requires_approval_reason:
+            skip_reason = f"Score {effective_confidence:.1f} below threshold {threshold:.1f}"
             logger.info(
                 f"Autonomous Mode: {order.action.value} {ticker} not auto-executed ({skip_reason}). "
                 f"Skipping trade autonomously without interrupting user."

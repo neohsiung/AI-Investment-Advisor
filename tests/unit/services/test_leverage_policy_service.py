@@ -99,3 +99,83 @@ def test_sell_order_does_not_use_leverage(service):
     )
     assert decision.eligible_leverage == 1
     assert decision.is_leveraged is False
+
+
+def test_vix_panic_rebound_stage1_spot(service):
+    # VIX 37 in [35, 40) under vix_panic_rebound strategy -> Deploys X1 spot equity
+    decision = service.evaluate_leverage(
+        ticker="QQQ",
+        action="BUY",
+        confidence_score=7.0,  # Confidence check bypassed by panic rebound mandate
+        current_price=450.0,
+        amount_usd=50.0,
+        portfolio_nlv=1000.0,
+        current_gross_tnv=100.0,
+        vix=37.0,
+        strategy_name="vix_panic_rebound",
+    )
+    assert decision.eligible_leverage == 1
+    assert decision.is_leveraged is False
+    assert "Stage 1" in decision.reason
+    assert "Deploying unleveraged X1 spot" in decision.reason
+
+
+def test_vix_panic_rebound_stage2_leverage_granted(service):
+    # VIX 42 >= 40 under vix_panic_rebound strategy -> Grants X2 leverage with trailing stop
+    decision = service.evaluate_leverage(
+        ticker="QQQ",
+        action="BUY",
+        confidence_score=7.0,
+        current_price=420.0,
+        amount_usd=50.0,
+        portfolio_nlv=1000.0,
+        current_gross_tnv=200.0,
+        vix=42.0,
+        strategy_name="vix_panic_rebound",
+    )
+    assert decision.eligible_leverage == 2
+    assert decision.is_leveraged is True
+    assert decision.is_trailing_stop_loss is True
+    assert decision.stop_loss_pct == 5.0
+    assert decision.stop_loss_rate == round(420.0 * 0.95, 4)
+    assert "VixPanicRebound Stage 2 authorized" in decision.reason
+
+
+def test_vix_panic_rebound_stage3_leverage_granted(service):
+    # VIX 48 >= 45 under vix_panic_rebound strategy -> Grants X2 leverage with 5.5% trailing stop
+    decision = service.evaluate_leverage(
+        ticker="TQQQ",
+        action="BUY",
+        confidence_score=7.0,
+        current_price=50.0,
+        amount_usd=50.0,
+        portfolio_nlv=1000.0,
+        current_gross_tnv=200.0,
+        vix=48.0,
+        strategy_name="vix_panic_rebound",
+    )
+    assert decision.eligible_leverage == 2
+    assert decision.is_leveraged is True
+    assert decision.is_trailing_stop_loss is True
+    assert decision.stop_loss_pct == 5.5
+    assert decision.stop_loss_rate == round(50.0 * (1.0 - 0.055), 4)
+    assert "VixPanicRebound Stage 3 authorized" in decision.reason
+
+
+def test_vix_panic_rebound_suppressed_when_gross_leverage_exceeded(service):
+    # VIX 42, but adding $100 * 2 would push TNV 1250 -> 1450 (1.45x > 1.30x cap)
+    decision = service.evaluate_leverage(
+        ticker="QQQ",
+        action="BUY",
+        confidence_score=7.0,
+        current_price=420.0,
+        amount_usd=100.0,
+        portfolio_nlv=1000.0,
+        current_gross_tnv=1250.0,
+        vix=42.0,
+        strategy_name="vix_panic_rebound",
+    )
+    assert decision.eligible_leverage == 1
+    assert decision.is_leveraged is False
+    assert "exceeds 1.30x cap" in decision.reason
+

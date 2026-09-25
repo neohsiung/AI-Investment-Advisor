@@ -68,6 +68,7 @@ class LeveragePolicyService:
         vix: Optional[float] = None,
         sentinel_macro_risk: Optional[str] = "low_risk",
         confirming_agents_count: int = 1,
+        strategy_name: Optional[str] = None,
     ) -> LeverageDecision:
         """
         Evaluate leverage eligibility and calculate protective stop levels.
@@ -86,6 +87,17 @@ class LeveragePolicyService:
                 overnight_fee_annual_pct=0.0,
                 reason="Sell/Close order does not establish leverage",
                 max_holding_days=0,
+            )
+
+        # 0. 特殊策略通道：VIX 極端恐慌逆勢抄底策略 (VixPanicReboundStrategy)
+        if strategy_name == "vix_panic_rebound":
+            return self._evaluate_vix_panic_rebound_leverage(
+                ticker=ticker,
+                current_price=current_price,
+                amount_usd=amount_usd,
+                portfolio_nlv=portfolio_nlv,
+                current_gross_tnv=current_gross_tnv,
+                vix=vix,
             )
 
         # 1. 信心度門檻檢查
@@ -195,4 +207,86 @@ class LeveragePolicyService:
             overnight_fee_annual_pct=0.0,
             reason=reason,
             max_holding_days=60,         # 現貨無融資利息負擔，可長線波段持有
+        )
+
+    def _evaluate_vix_panic_rebound_leverage(
+        self,
+        ticker: str,
+        current_price: Optional[float] = None,
+        amount_usd: Optional[float] = None,
+        portfolio_nlv: Optional[float] = None,
+        current_gross_tnv: Optional[float] = None,
+        vix: Optional[float] = None,
+    ) -> LeverageDecision:
+        """
+        Dedicated leverage authorization for VIX Panic Rebound Strategy.
+        針對 VIX 極端恐慌逆勢抄底策略之特許槓桿通道。
+
+        依據 36 年歷史全量回測金字塔防爆倉階梯：
+        - VIX < 35: 不開倉 / X1 現貨
+        - 35 <= VIX < 40 (Stage 1): 部署 30% 資金，採用 X1 現貨 (0 融資利息，0 強平風險)
+        - 40 <= VIX < 45 (Stage 2): 部署 30% 資金，採用 X2 受控槓桿 (5.0% TSL)
+        - VIX >= 45 (Stage 3): 部署 40% 資金，採用 X2 頂格槓桿 (5.5% TSL)
+        """
+        if vix is None or vix < 35.0:
+            vix_str = f"{vix:.1f}" if vix is not None else "None"
+            reason = f"VIX {vix_str} < 35.0 panic threshold; unleveraged spot deployed."
+            return self._make_spot_decision(current_price, reason)
+
+        # Stage 1: 35 <= VIX < 40 (現貨建倉以防爆倉)
+        if vix < 40.0:
+            reason = (
+                f"VixPanicRebound Stage 1 (VIX {vix:.1f} in [35, 40)): "
+                f"Deploying unleveraged X1 spot to capture early rebound safely without CFD liquidation risk."
+            )
+            return self._make_spot_decision(current_price, reason)
+
+        # Stage 2 & 3: VIX >= 40 (受控槓桿進攻)
+        # 仍須遵守投組總槓桿上限與單檔保證金上限
+        if portfolio_nlv and portfolio_nlv > 0 and current_gross_tnv is not None and amount_usd:
+            proposed_additional_exposure = amount_usd * 2.0
+            new_gross_tnv = current_gross_tnv + proposed_additional_exposure
+            projected_leverage_ratio = new_gross_tnv / portfolio_nlv
+            if projected_leverage_ratio > self.MAX_PORTFOLIO_GROSS_LEVERAGE:
+                reason = (
+                    f"VixPanicRebound: Projected gross leverage {projected_leverage_ratio:.2f}x "
+                    f"exceeds {self.MAX_PORTFOLIO_GROSS_LEVERAGE:.2f}x cap; suppressed to X1 spot."
+                )
+                return self._make_spot_decision(current_price, reason)
+
+        if portfolio_nlv and portfolio_nlv > 0 and amount_usd:
+            margin_ratio = amount_usd / portfolio_nlv
+            if margin_ratio > self.MAX_SINGLE_POSITION_MARGIN_PCT:
+                reason = (
+                    f"VixPanicRebound: Order amount represents {margin_ratio:.1%} of NLV "
+                    f"(cap: {self.MAX_SINGLE_POSITION_MARGIN_PCT:.1%}); suppressed to X1 spot."
+                )
+                return self._make_spot_decision(current_price, reason)
+
+        # 通過守門：放行 X2 槓桿
+        stage_num = 3 if vix >= 45.0 else 2
+        stop_loss_pct = 5.5 if vix >= 45.0 else 5.0
+        take_profit_pct = 25.0
+        stop_loss_rate = None
+        take_profit_rate = None
+        if current_price and current_price > 0:
+            stop_loss_rate = round(current_price * (1.0 - stop_loss_pct / 100.0), 4)
+            take_profit_rate = round(current_price * (1.0 + take_profit_pct / 100.0), 4)
+
+        reason = (
+            f"⚡ VixPanicRebound Stage {stage_num} authorized: VIX {vix:.1f} >= 40.0 extreme panic. "
+            f"Deploying controlled X2 leverage with mandatory {stop_loss_pct}% Trailing Stop Loss."
+        )
+
+        return LeverageDecision(
+            eligible_leverage=2,
+            is_leveraged=True,
+            stop_loss_pct=stop_loss_pct,
+            take_profit_pct=take_profit_pct,
+            stop_loss_rate=stop_loss_rate,
+            take_profit_rate=take_profit_rate,
+            is_trailing_stop_loss=True,
+            overnight_fee_annual_pct=self.ESTIMATED_CFD_OVERNIGHT_PCT,
+            reason=reason,
+            max_holding_days=60,
         )

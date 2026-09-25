@@ -1096,6 +1096,22 @@ class SentinelService:
                     "value": vix,
                     "priority": 1 # P1: Extreme Panic
                 })
+
+            # Check VIX Panic Rebound Strategy Opportunity (別人恐懼我貪婪逆勢機會)
+            if isinstance(vix, (int, float)) and vix >= 35.0:
+                try:
+                    from src.services.vix_panic_rebound_strategy import VixPanicReboundStrategy
+                    sig = VixPanicReboundStrategy.evaluate_signal(current_vix=float(vix))
+                    triggers.append({
+                        "text": f"🔥 逆勢恐慌抄底機會 ({sig.action.value}): VIX = {vix:.2f} ({sig.reason})",
+                        "id": "vix_panic_rebound_opportunity",
+                        "value": vix,
+                        "priority": 1 if vix >= 40.0 else 2,
+                        "strategy_name": "vix_panic_rebound",
+                        "recommended_leverage": sig.recommended_leverage,
+                    })
+                except Exception as strat_err:
+                    logger.warning(f"VixPanicReboundStrategy evaluation failed in sentinel: {strat_err}")
                 
         except Exception as e:
             logger.warning(f"Macro shift check failed: {e}")
