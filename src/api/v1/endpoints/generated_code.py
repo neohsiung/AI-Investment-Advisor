@@ -186,12 +186,27 @@ async def approve_artifact_endpoint(
     """
     Operator manual approval: promote provisional artifact to ACTIVE live status.
     """
+    record = canary_runner.get_artifact(artifact_id)
     success = canary_runner.approve_artifact(artifact_id, user_id)
     if not success:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=f"Artifact {artifact_id} could not be approved or not owned by user",
         )
+
+    # Option B: Multi-channel notification on manual approval
+    try:
+        from src.services.factor_notification_service import factor_notification_service
+        await factor_notification_service.notify_factor_promoted(
+            artifact_name=record.name if record else artifact_id,
+            regime=record.parameters.get("target_regime", "DYNAMIC") if record else "DYNAMIC",
+            user_id=user_id,
+            metrics=record.backtest_metrics if record else None,
+            approval_type="manual",
+        )
+    except Exception as e:
+        logger.warning("Failed to dispatch promotion notification for %s: %s", artifact_id, e)
+
     return {"status": "success", "artifact_id": artifact_id, "new_status": ArtifactStatus.ACTIVE}
 
 
@@ -203,10 +218,23 @@ async def kill_artifact_endpoint(
     """
     Operator emergency kill switch: immediately disarm and revoke license.
     """
+    record = canary_runner.get_artifact(artifact_id)
     success = canary_runner.kill_artifact(artifact_id, user_id)
     if not success:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=f"Artifact {artifact_id} could not be killed or not owned by user",
         )
+
+    # Option B: Multi-channel notification on operator kill-switch
+    try:
+        from src.services.factor_notification_service import factor_notification_service
+        await factor_notification_service.notify_circuit_breaker_tripped(
+            artifact_name=record.name if record else artifact_id,
+            reason="Operator Emergency Kill-Switch (人工緊急下線)",
+            user_id=user_id,
+        )
+    except Exception as e:
+        logger.warning("Failed to dispatch kill notification for %s: %s", artifact_id, e)
+
     return {"status": "success", "artifact_id": artifact_id, "new_status": ArtifactStatus.KILLED}

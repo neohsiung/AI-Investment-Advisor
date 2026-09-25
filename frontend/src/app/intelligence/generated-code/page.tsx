@@ -14,6 +14,7 @@ import {
   Cpu,
   Layers,
   Sparkles,
+  Bell,
 } from "lucide-react";
 
 type CodeArtifact = {
@@ -36,6 +37,7 @@ export default function GeneratedCodeDashboard() {
   const { data, isLoading } = useSWR("/api/v1/generated-code", fetcher);
   const artifacts: CodeArtifact[] = data?.artifacts || [];
 
+  const [toastMessage, setToastMessage] = useState<{ text: string; type: "success" | "warning" } | null>(null);
   const [hypothesis, setHypothesis] = useState(
     "VIX Panic Rebound Exhaustion: detect extreme volatility spike followed by 5MA breakdown, normalized by rolling ATR."
   );
@@ -66,6 +68,13 @@ export default function GeneratedCodeDashboard() {
       setActionLoading((prev) => ({ ...prev, [id]: true }));
       await api.post(`/api/v1/generated-code/${id}/approve`);
       mutate("/api/v1/generated-code");
+      setToastMessage({
+        text: "已核發實盤執照！已同步推播 Telegram / Slack 即時告警並納入置信度評分層。",
+        type: "success",
+      });
+      setTimeout(() => setToastMessage(null), 6000);
+    } catch (err) {
+      console.error("Approve failed:", err);
     } finally {
       setActionLoading((prev) => ({ ...prev, [id]: false }));
     }
@@ -76,6 +85,13 @@ export default function GeneratedCodeDashboard() {
       setActionLoading((prev) => ({ ...prev, [id]: true }));
       await api.post(`/api/v1/generated-code/${id}/kill`);
       mutate("/api/v1/generated-code");
+      setToastMessage({
+        text: "已觸發安全熔斷！已即刻撤銷授權、移出實盤候選池並通報所有渠道。",
+        type: "warning",
+      });
+      setTimeout(() => setToastMessage(null), 6000);
+    } catch (err) {
+      console.error("Kill failed:", err);
     } finally {
       setActionLoading((prev) => ({ ...prev, [id]: false }));
     }
@@ -102,8 +118,13 @@ export default function GeneratedCodeDashboard() {
         {/* Header */}
         <div className="border-b border-outline-variant/10 pb-6 flex flex-col md:flex-row md:justify-between md:items-end gap-4">
           <div>
-            <div className="flex items-center gap-2 text-secondary font-bold text-xs uppercase tracking-widest mb-1">
-              <Sparkles size={14} /> Autonomous Alpha Factor & Strategy Synthesis
+            <div className="flex flex-wrap items-center gap-2 mb-1">
+              <span className="flex items-center gap-1.5 text-secondary font-bold text-xs uppercase tracking-widest">
+                <Sparkles size={14} /> Autonomous Alpha Factor & Strategy Synthesis
+              </span>
+              <span className="flex items-center gap-1 px-2 py-0.5 bg-primary/10 border border-primary/20 rounded-full text-[11px] font-semibold text-primary">
+                <Bell size={11} /> 多通道告警 (Telegram / Slack) 已就緒
+              </span>
             </div>
             <h1 className="text-3xl font-black tracking-tight text-on-surface">自主生成代碼與金絲雀影子看板</h1>
             <p className="mt-2 text-on-surface-variant text-sm max-w-2xl leading-relaxed">
@@ -117,6 +138,21 @@ export default function GeneratedCodeDashboard() {
             <RotateCw size={12} /> 重新載入
           </button>
         </div>
+
+        {/* Real-time Notification Toast Banner */}
+        {toastMessage && (
+          <div
+            className={cn(
+              "px-4 py-3 rounded-xl border flex items-center gap-3 animate-in fade-in slide-in-from-top duration-300 text-sm font-medium",
+              toastMessage.type === "success"
+                ? "bg-emerald-500/10 border-emerald-500/20 text-emerald-400"
+                : "bg-rose-500/10 border-rose-500/20 text-rose-400"
+            )}
+          >
+            <Bell size={16} />
+            <span>{toastMessage.text}</span>
+          </div>
+        )}
 
         {/* Synthesis Control Card */}
         <div className="bg-surface-container-low rounded-2xl p-6 border border-outline-variant/15 shadow-sm space-y-4">

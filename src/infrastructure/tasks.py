@@ -830,8 +830,35 @@ def run_autonomous_evolution(user_id: str = None, force: bool = False):
                 stepped_count += 1
                 if updated.status == ArtifactStatus.REJECTED:
                     degraded_count += 1
+                    # Option B: Multi-channel alert on shadow circuit breaker tripping
+                    try:
+                        from src.services.factor_notification_service import factor_notification_service
+                        _run_async(
+                            factor_notification_service.notify_circuit_breaker_tripped(
+                                artifact_name=updated.name,
+                                reason=f"Single-day shadow loss {daily_pnl:.2f}% exceeded -5.0% threshold (單日模擬虧損超標熔斷)",
+                                user_id=user_id,
+                                daily_pnl_pct=daily_pnl,
+                            )
+                        )
+                    except Exception as notif_err:
+                        logger.warning("Failed to dispatch circuit breaker notification for %s: %s", updated.name, notif_err)
                 elif updated.shadow_days_remaining == 0:
                     completed_count += 1
+                    # Option B: Multi-channel alert on canary 14-day graduation
+                    try:
+                        from src.services.factor_notification_service import factor_notification_service
+                        _run_async(
+                            factor_notification_service.notify_factor_promoted(
+                                artifact_name=updated.name,
+                                regime=updated.parameters.get("target_regime", "DYNAMIC"),
+                                user_id=user_id,
+                                metrics=updated.backtest_metrics,
+                                approval_type="canary_graduation",
+                            )
+                        )
+                    except Exception as notif_err:
+                        logger.warning("Failed to dispatch graduation notification for %s: %s", updated.name, notif_err)
 
         logger.info(
             "Canary shadow stepping completed for %s: %d stepped, %d degraded, %d completed 14-day cycle",
