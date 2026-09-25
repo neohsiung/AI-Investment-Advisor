@@ -176,8 +176,60 @@ class BacktestAdapter:
             thresholds=ValidationThresholds,
         )
 
+        # 5. 樣本外前向走查 (WFA) 與蒙地卡羅路徑擾動 (Monte Carlo)
+        from src.services.code_synthesis.walk_forward_engine import (
+            WalkForwardEngine,
+            MonteCarloSimulator,
+        )
+
+        if len(df) >= 50 and len(clean_factors) >= 30:
+            try:
+                wfa_res = WalkForwardEngine.evaluate(
+                    candidate_params=candidate.parameters or {},
+                    factor_callable=factor_callable,
+                    df=df,
+                    num_windows=4,
+                    train_ratio=0.65,
+                    entry_quantile=entry_quantile,
+                    exit_quantile=exit_quantile,
+                )
+                metrics["wfe"] = wfa_res.wfe
+                metrics["oos_sharpe"] = wfa_res.avg_oos_sharpe
+                metrics["oos_return_pct"] = wfa_res.avg_oos_return_pct
+                metrics["oos_win_rate_pct"] = wfa_res.oos_win_rate_pct
+                metrics["wfa_passed"] = wfa_res.passed
+                if not wfa_res.passed:
+                    failures.extend([f"[WFA] {f}" for f in wfa_res.failures])
+            except Exception as wfa_err:
+                logger.warning("WFA evaluation failed: %s", wfa_err)
+                metrics["wfe"] = 0.0
+                metrics["wfa_passed"] = False
+                failures.append(f"[WFA] Calculation error: {wfa_err}")
+
+        if len(trades) >= 4:
+            try:
+                mc_res = MonteCarloSimulator.simulate_trade_paths(
+                    trades=trades,
+                    initial_cash=self.initial_cash,
+                    num_simulations=500,
+                    random_seed=42,
+                )
+                metrics["mc_mdd_95"] = mc_res.mc_mdd_95
+                metrics["mc_mdd_99"] = mc_res.mc_mdd_99
+                metrics["mc_profit_prob"] = mc_res.mc_profit_prob
+                metrics["mc_passed"] = mc_res.passed
+                if not mc_res.passed:
+                    failures.extend([f"[MonteCarlo] {f}" for f in mc_res.failures])
+            except Exception as mc_err:
+                logger.warning("Monte Carlo simulation failed: %s", mc_err)
+                metrics["mc_mdd_95"] = 99.0
+                metrics["mc_passed"] = False
+                failures.append(f"[MonteCarlo] Simulation error: {mc_err}")
+
+        final_passed = passed and (len(failures) == 0)
+
         return BacktestValidationResult(
-            passed=passed,
+            passed=final_passed,
             metrics=metrics,
             failures=failures,
             initial_cash=self.initial_cash,

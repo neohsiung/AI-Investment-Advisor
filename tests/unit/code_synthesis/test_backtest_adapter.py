@@ -56,6 +56,11 @@ def test_backtest_adapter_evaluates_factor(sample_market_df: pd.DataFrame):
     assert "max_drawdown_pct" in result.metrics
     assert "net_return_pct" in result.metrics
     assert "total_trades" in result.metrics
+    # Option C: Verify Walk-Forward and Monte Carlo metrics
+    assert "wfe" in result.metrics
+    assert "oos_sharpe" in result.metrics
+    assert "mc_mdd_95" in result.metrics
+    assert "mc_profit_prob" in result.metrics
 
 
 def test_dynamic_synthesized_strategy_contract(sample_market_df: pd.DataFrame):

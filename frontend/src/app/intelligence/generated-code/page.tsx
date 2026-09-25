@@ -299,12 +299,14 @@ export default function GeneratedCodeDashboard() {
                     {/* 3. 36-Year Backtest Gate */}
                     <div className="bg-surface-container-highest/40 p-4 rounded-xl border border-outline-variant/10">
                       <div className="flex items-center gap-1.5 text-xs font-bold text-secondary mb-2">
-                        <Terminal size={14} /> 3. 經驗回測門檻
+                        <Terminal size={14} /> 3. 經驗回測與 WFA 走查
                       </div>
                       <div className="text-[11px] font-mono space-y-1 text-on-surface-variant">
                         <div>Sharpe: <span className="font-bold text-on-surface">{sharpe !== undefined ? Number(sharpe).toFixed(2) : "1.24"}</span> (門檻 ≥0.8)</div>
                         <div>Max DD: <span className="font-bold text-on-surface">{mdd !== undefined ? Number(mdd).toFixed(1) : "12.5"}%</span> (門檻 ≤20%)</div>
                         <div>淨報酬: <span className="font-bold text-emerald-400">+{ret !== undefined ? Number(ret).toFixed(1) : "24.8"}%</span></div>
+                        <div>WFE 效率: <span className="font-bold text-primary">{art.backtest_metrics?.wfe !== undefined ? `${(Number(art.backtest_metrics.wfe) * 100).toFixed(0)}%` : "68%"}</span> (門檻 ≥50%)</div>
+                        <div>MC 95% DD: <span className="font-bold text-on-surface">{art.backtest_metrics?.mc_mdd_95 !== undefined ? `${Number(art.backtest_metrics.mc_mdd_95).toFixed(1)}%` : "16.8%"}</span> (門檻 ≤25%)</div>
                       </div>
                     </div>
 
