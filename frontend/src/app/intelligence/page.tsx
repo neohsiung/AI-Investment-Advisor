@@ -1,12 +1,35 @@
 "use client";
 
 import React from "react";
-import useSWR, { mutate } from "swr";
+import Link from "next/link";
+import { mutate } from "swr";
 import BriefingCard from "@/components/ui/BriefingCard";
 import { useIntelligenceBriefing } from "@/hooks/useDashboard";
 import { useRequireAuth } from "@/hooks/useAuth";
-import { Loader2, RefreshCw, Zap } from "lucide-react";
-import { cn, formatCurrency } from "@/lib/utils";
+import { Loader2, RefreshCw, Zap, Sparkles } from "lucide-react";
+import { cn } from "@/lib/utils";
+
+type SelfEvolutionItem = {
+  title: string;
+  description: string;
+  status?: string;
+};
+
+type SentimentMetric = {
+  label: string;
+  value: number;
+  color?: string;
+};
+
+type StatItem = {
+  title: string;
+  icon: string;
+  value: string | number;
+  change?: string;
+  isPositive?: boolean;
+};
+
+
 
 export default function IntelligenceBriefing() {
   const { briefing, isLoading } = useIntelligenceBriefing();
@@ -66,14 +89,42 @@ export default function IntelligenceBriefing() {
                   {briefing.recommendation}
                 </p>
               </div>
+
+              {briefing.self_evolution_summary && briefing.self_evolution_summary.length > 0 && (
+                <div className="mt-8 pt-6 border-t border-outline-variant/15">
+                  <div className="flex items-center justify-between mb-4">
+                    <div className="flex items-center gap-2">
+                      <Sparkles size={16} className="text-secondary" />
+                      <h4 className="font-bold text-xs uppercase tracking-widest text-on-surface">系統自學與自主演化成果 (Self-Evolution)</h4>
+                    </div>
+                    <Link href="/intelligence/generated-code" className="text-[11px] font-bold text-primary hover:underline flex items-center gap-1">
+                      代碼與金絲雀看板 →
+                    </Link>
+                  </div>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    {briefing.self_evolution_summary.map((item: SelfEvolutionItem, idx: number) => (
+                      <div key={idx} className="bg-surface-container-high/60 p-3.5 rounded-xl border border-outline-variant/10 space-y-1">
+                        <div className="flex items-center justify-between">
+                          <p className="text-xs font-bold text-on-surface font-mono">{item.title}</p>
+                          <span className="text-[9px] px-1.5 py-0.5 rounded font-mono font-bold bg-secondary/10 text-secondary">
+                            {item.status || "VERIFIED"}
+                          </span>
+                        </div>
+                        <p className="text-[11px] text-on-surface-variant leading-relaxed">{item.description}</p>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
             </div>
           </BriefingCard>
         </div>
 
+
         <div className="col-span-12 md:col-span-4 lg:col-span-4 space-y-4 lg:space-y-8">
           <BriefingCard title="市場情緒動能 (Sentiment)">
             <div className="space-y-6">
-              {briefing.sentiment_metrics && briefing.sentiment_metrics.length > 0 ? briefing.sentiment_metrics.map((item: any) => (
+              {briefing.sentiment_metrics && briefing.sentiment_metrics.length > 0 ? briefing.sentiment_metrics.map((item: SentimentMetric) => (
                 <div key={item.label}>
                   <div className="flex justify-between items-center mb-1">
                     <span className="text-[10px] font-label uppercase font-bold text-on-surface-variant tracking-widest">{item.label}</span>
@@ -103,7 +154,8 @@ export default function IntelligenceBriefing() {
 
       {/* Comparative Data Grid */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4 lg:gap-8">
-        {(briefing.stats || []).map((stat: any) => (
+        {(briefing.stats || []).map((stat: StatItem) => (
+
           <div key={stat.title} className="p-8 bg-surface-container-low border border-outline-variant/10 rounded-xl shadow-sm hover:shadow-md transition-shadow">
             <div className="flex justify-between items-start mb-4">
               <div className="p-3 bg-secondary-container/10 rounded-lg text-secondary">

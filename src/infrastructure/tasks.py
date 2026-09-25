@@ -105,7 +105,15 @@ def generate_market_intelligence(user_id: str = None):
             summary_text = briefing.get("executive_summary", "") if isinstance(briefing, dict) else str(briefing)
             rec_text = briefing.get("recommendation", "") if isinstance(briefing, dict) else ""
             content = f"### 📊 今日盤前摘要\n\n{summary_text}\n\n**策略姿態**：{rec_text}"
+
+            evo_items = briefing.get("self_evolution_summary", []) if isinstance(briefing, dict) else []
+            if evo_items:
+                content += "\n\n### 🧬 系統自我演化與學習\n"
+                for item in evo_items:
+                    content += f"- **{item.get('title', '')}**：{item.get('description', '')}\n"
+
             _run_async_safe(notif_svc.notify_all(
+
                 user_id=user_id,
                 title=title,
                 content=content,
