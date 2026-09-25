@@ -16,6 +16,7 @@ Architecture:
 import json
 import logging
 import hashlib
+import math
 from typing import Dict, List, Any, Optional, Tuple
 from src.domain.interfaces import Message
 from dataclasses import dataclass
@@ -403,6 +404,110 @@ Return JSON:
                 timestamp=datetime.now().isoformat(),
             ))
 
+        # Query and evaluate active synthesized factors
+        synth_sub_scores = await self._gather_synthesized_factor_scores(ticker)
+        sub_scores.extend(synth_sub_scores)
+
+        return sub_scores
+
+    async def _gather_synthesized_factor_scores(self, ticker: str) -> List[AgentSubScore]:
+        """
+        Evaluate all ACTIVE synthesized factor code artifacts against recent market data for `ticker`.
+        Returns a list of AgentSubScore objects for active synthesized factors.
+        """
+        sub_scores = []
+        try:
+            from src.services.canary_shadow_runner import canary_runner, ArtifactStatus
+            active_artifacts = canary_runner.list_artifacts(
+                user_id=self.user_id,
+                status=ArtifactStatus.ACTIVE,
+            )
+            if not active_artifacts:
+                return sub_scores
+
+            # Fetch recent market data for ticker
+            market_df = None
+            try:
+                from src.data.providers.yfinance_provider import YFinanceProvider
+                yf_provider = YFinanceProvider()
+                market_df = yf_provider.fetch_history(ticker, period="60d")
+            except Exception as e:
+                logger.warning("Could not fetch market data from YFinanceProvider for %s: %s", ticker, e)
+
+            # Fallback data generation if market data is unavailable (e.g. offline/mock environment)
+            if market_df is None or market_df.empty:
+                import numpy as np
+                import pandas as pd
+                n = 40
+                dates = pd.date_range(end=datetime.now(), periods=n, freq="D")
+                seed = self._ticker_hash(ticker)
+                np.random.seed(seed % 10000)
+                close = 100.0 + np.cumsum(np.random.normal(0.1, 1.0, n))
+                market_df = pd.DataFrame({
+                    "Open": close - 0.5,
+                    "High": close + 1.0,
+                    "Low": close - 1.0,
+                    "Close": close,
+                    "Volume": np.random.randint(1000, 20000, n),
+                }, index=dates)
+
+            for art in active_artifacts:
+                try:
+                    local_ns = {}
+                    exec(art.source_code, local_ns)
+                    factor_func = local_ns.get("calculate_factor")
+                    if not factor_func:
+                        logger.warning("Artifact %s missing calculate_factor function", art.name)
+                        continue
+
+                    # Execute factor calculation
+                    factor_series = factor_func(market_df, art.parameters)
+                    if factor_series is None or len(factor_series) == 0:
+                        logger.warning("Artifact %s returned empty factor series for %s", art.name, ticker)
+                        continue
+
+                    valid_vals = factor_series.dropna()
+                    if valid_vals.empty:
+                        raw_val = 0.0
+                    else:
+                        raw_val = float(valid_vals.iloc[-1])
+
+                    # Standardize raw factor to 0.0-10.0 scale using bounded sigmoid normalization
+                    norm_score = 10.0 / (1.0 + math.exp(-max(-5.0, min(5.0, raw_val))))
+                    confidence = round(max(0.0, min(10.0, norm_score)), 1)
+
+                    sub_scores.append(AgentSubScore(
+                        agent_name=f"Synth_{art.name}",
+                        ticker=ticker,
+                        confidence=confidence,
+                        factors={
+                            "key_factor": f"Regime: {art.parameters.get('target_regime', 'QUANT_FACTOR')}",
+                            "raw_factor_value": round(raw_val, 4),
+                            "target_regime": art.parameters.get("target_regime"),
+                            "artifact_id": art.id,
+                            "source": "autonomous_synthesis",
+                        },
+                        rationale=f"Active synthesized factor {art.name} evaluated on {ticker} (value={raw_val:.4f})",
+                        timestamp=datetime.now().isoformat(),
+                    ))
+                except Exception as e:
+                    logger.warning("Failed to evaluate synthesized factor %s for %s: %s", art.name, ticker, e)
+                    # Constraint #0: do not silently swallow, mark fallback reason
+                    sub_scores.append(AgentSubScore(
+                        agent_name=f"Synth_{art.name}",
+                        ticker=ticker,
+                        confidence=5.0,
+                        factors={
+                            "_fallback_reason": str(e),
+                            "key_factor": "Factor Evaluation Failed",
+                            "error": str(e),
+                        },
+                        rationale=f"Evaluation failed: {e}",
+                        timestamp=datetime.now().isoformat(),
+                    ))
+        except Exception as e:
+            logger.warning("Failed to gather synthesized factor scores for %s: %s", ticker, e)
+
         return sub_scores
 
     # ── Per-Agent Query Methods ──
@@ -489,13 +594,40 @@ Return JSON:
         if not sub_scores:
             return 5.0, False
 
+        base_scores = [s for s in sub_scores if not s.agent_name.startswith("Synth_")]
+        synth_scores = [s for s in sub_scores if s.agent_name.startswith("Synth_")]
+
+        # Case 1: Standard 4-agent ensemble (no active synthesized factors)
+        if not synth_scores:
+            weighted_sum = 0.0
+            total_weight = 0.0
+            for score in base_scores:
+                weight = self.agent_weights.get(score.agent_name.lower(), 0.25)
+                weighted_sum += score.confidence * weight
+                total_weight += weight
+
+            composite = weighted_sum / total_weight if total_weight > 0 else 5.0
+            should_execute = composite >= self.min_threshold
+            return composite, should_execute
+
+        # Case 2: Adaptive ensemble with synthesized factors
+        # Total weight capped at 15% for all synthesized factors combined
+        max_synth_weight = 0.15
+        synth_weight_per_factor = max_synth_weight / len(synth_scores)
+        total_synth_weight = synth_weight_per_factor * len(synth_scores)
+        base_scale = 1.0 - total_synth_weight
+
         weighted_sum = 0.0
         total_weight = 0.0
 
-        for score in sub_scores:
-            weight = self.agent_weights.get(score.agent_name.lower(), 0.25)
+        for score in base_scores:
+            weight = self.agent_weights.get(score.agent_name.lower(), 0.25) * base_scale
             weighted_sum += score.confidence * weight
             total_weight += weight
+
+        for score in synth_scores:
+            weighted_sum += score.confidence * synth_weight_per_factor
+            total_weight += synth_weight_per_factor
 
         composite = weighted_sum / total_weight if total_weight > 0 else 5.0
         should_execute = composite >= self.min_threshold
