@@ -113,14 +113,14 @@ Synthesize a production-ready, pure quantitative factor function `calculate_fact
                 Message(role="system", content=system_prompt),
                 Message(role="user", content=user_prompt),
             ]
-            response, _ = await pipeline.execute(messages, temperature=0.2, max_tokens=2500)
+            response, _ = await pipeline.execute(messages, temperature=0.2, max_tokens=3500)
             return response
         except Exception as e:
             logger.warning("LLM call failed in FactorSynthesizer: %s; using deterministic fallback", str(e))
             return self._get_fallback_factor_json("VOLATILITY_PIVOT")
 
     def _parse_response(self, text: str, default_regime: str) -> SynthesizedFactorCandidate:
-        """Parse structured JSON from LLM response."""
+        """Parse structured JSON from LLM response with multi-layer fallback."""
         cleaned = text.strip()
         # Remove markdown code block if present
         if cleaned.startswith("```json"):
@@ -131,16 +131,23 @@ Synthesize a production-ready, pure quantitative factor function `calculate_fact
             cleaned = cleaned[:-3]
         cleaned = cleaned.strip()
 
+        data = None
         try:
             data = json.loads(cleaned)
-        except json.JSONDecodeError:
-            # Fallback regex extraction
+        except Exception:
+            pass
+
+        if not data:
             match = re.search(r"\{.*\}", cleaned, re.DOTALL)
             if match:
-                data = json.loads(match.group(0))
-            else:
-                logger.warning("Failed to decode JSON from LLM response; returning fallback candidate")
-                data = json.loads(self._get_fallback_factor_json(default_regime))
+                try:
+                    data = json.loads(match.group(0))
+                except Exception:
+                    pass
+
+        if not data:
+            logger.warning("Failed to decode JSON from LLM response; returning verified fallback candidate")
+            data = json.loads(self._get_fallback_factor_json(default_regime))
 
         return SynthesizedFactorCandidate(
             factor_name=data.get("factor_name", "synthesized_factor"),
@@ -149,8 +156,9 @@ Synthesize a production-ready, pure quantitative factor function `calculate_fact
             test_code=data.get("test_code", ""),
             parameters=data.get("parameters", {}),
             target_regimes=data.get("target_regimes", [default_regime]),
-            metadata={"parser": "standard_json"},
+            metadata={"parser": "robust_json"},
         )
+
 
     def _get_fallback_factor_json(self, regime: str) -> str:
         """Deterministic, verified fallback factor template."""

@@ -45,6 +45,11 @@ class SentimentMetric(BaseModel):
     trend: Optional[str] = None # 'up', 'down', 'stable'
     color: str = "bg-secondary"
 
+class SelfEvolutionSummaryItem(BaseModel):
+    title: str
+    description: str
+    status: Optional[str] = "VERIFIED"
+
 class IntelligenceBriefing(BaseModel):
     """AI-generated market intelligence briefing."""
     executive_summary: str
@@ -52,6 +57,8 @@ class IntelligenceBriefing(BaseModel):
     ai_note: str
     observation_window: str
     sentiment_metrics: List[SentimentMetric] = []
+    self_evolution_summary: List[SelfEvolutionSummaryItem] = []
+
 
 class IntelligenceResponse(BaseModel):
     """Standardized response for information briefings."""

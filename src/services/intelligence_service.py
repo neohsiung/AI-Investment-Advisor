@@ -48,7 +48,9 @@ class IntelligenceService:
             if isinstance(cached, dict):
                 if timestamp:
                     cached["observation_window"] = f"UPDATED: {timestamp}"
+                cached["self_evolution_summary"] = cached.get("self_evolution_summary") or self._get_self_evolution_summary()
                 return cached
+
             
             # If we reach here, it was either non-JSON string or non-dict
             logger.warning("Cached intelligence is invalid format. Falling back.")

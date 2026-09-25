@@ -73,9 +73,11 @@ class EphemeralSandbox:
         with tempfile.TemporaryDirectory(prefix="quant_sandbox_") as temp_dir:
             temp_path = Path(temp_dir)
 
-            # 1. 寫入候選因子模組 (factor_module.py)
+            # 1. 寫入候選因子模組 (factor_module.py) 及常見別名
             factor_file = temp_path / "factor_module.py"
             factor_file.write_text(source_code, encoding="utf-8")
+            (temp_path / "your_module.py").write_text("from factor_module import *\n", encoding="utf-8")
+            (temp_path / "candidate_factor.py").write_text("from factor_module import *\n", encoding="utf-8")
 
             # 2. 注入沙盒安全守護檔 (conftest.py - 阻斷網絡與特權)
             conftest_file = temp_path / "conftest.py"
@@ -88,19 +90,61 @@ class EphemeralSandbox:
             )
             conftest_file.write_text(conftest_content, encoding="utf-8")
 
+            # 提供輕量級 pytest mock，確保生產映像檔即使無 pytest dev 套件亦能執行
+            pytest_mock_file = temp_path / "pytest.py"
+            pytest_mock_content = (
+                "class RaisesContext:\n"
+                "    def __init__(self, expected_exc):\n"
+                "        self.expected = expected_exc\n"
+                "    def __enter__(self):\n"
+                "        return self\n"
+                "    def __exit__(self, exc_type, exc_val, exc_tb):\n"
+                "        if exc_type is None:\n"
+                "            raise AssertionError(f'Expected {self.expected}, but no exception was raised')\n"
+                "        return issubclass(exc_type, self.expected)\n\n"
+                "def raises(expected_exc, *args, **kwargs):\n"
+                "    return RaisesContext(expected_exc)\n"
+            )
+            pytest_mock_file.write_text(pytest_mock_content, encoding="utf-8")
+
             # 3. 準備執行指令
             if test_code:
                 # 寫入測試套件
                 test_file = temp_path / "test_factor.py"
                 test_file.write_text(test_code, encoding="utf-8")
-                # 執行 pytest
+
+                # 建立零依賴沙盒執行腳本 (run_tests.py)
+                runner_file = temp_path / "run_tests.py"
+                runner_content = (
+                    "import conftest\n"
+                    "import sys\n"
+                    "import inspect\n"
+                    "import test_factor\n\n"
+
+                    "test_funcs = [\n"
+                    "    (name, func)\n"
+                    "    for name, func in inspect.getmembers(test_factor, inspect.isfunction)\n"
+                    "    if name.startswith('test_')\n"
+                    "]\n"
+                    "failures = []\n"
+                    "for name, func in test_funcs:\n"
+                    "    try:\n"
+                    "        func()\n"
+                    "        print(f'PASSED {name}')\n"
+                    "    except Exception as e:\n"
+                    "        print(f'FAILED {name}: {e}')\n"
+                    "        failures.append((name, str(e)))\n\n"
+                    "if failures:\n"
+                    "    print(f'Total failures: {len(failures)}/{len(test_funcs)}')\n"
+                    "    sys.exit(1)\n"
+                    "else:\n"
+                    "    print(f'All {len(test_funcs)} tests passed successfully.')\n"
+                    "    sys.exit(0)\n"
+                )
+                runner_file.write_text(runner_content, encoding="utf-8")
                 cmd = [
                     sys.executable,
-                    "-m",
-                    "pytest",
-                    str(test_file.name),
-                    "-q",
-                    "--tb=short",
+                    str(runner_file.name),
                 ]
             else:
                 # 純驗證語法與導入執行
@@ -114,6 +158,7 @@ class EphemeralSandbox:
                     sys.executable,
                     str(runner_file.name),
                 ]
+
 
             # 4. 在隔離子程序中執行
             env = os.environ.copy()
