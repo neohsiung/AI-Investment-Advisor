@@ -432,7 +432,17 @@ class EtoroService(IBroker):
         if not user_id:
             raise ValueError("EtoroService: execute_order requires an initialized user_id.")
         
-        # 0. Pre-flight: Verify API credentials are valid
+        # 0. Quota Guard (60% Cap Enforcement)
+        from src.infrastructure.governance.quota_governor import ExternalQuotaGovernor
+        governor = ExternalQuotaGovernor.get_instance()
+        if not await governor.acquire("etoro", wait=True, max_wait_seconds=2.0):
+            return {
+                "status": "failed",
+                "reason": "eToro API request throttled: 60% capacity utilization cap reached",
+                "_fallback_reason": "quota_governor_etoro_cap_reached",
+            }
+
+        # Pre-flight: Verify API credentials are valid
         preflight = await self._fetch_portfolio_raw()
         if preflight and 'errorCode' in preflight:
             error_code = preflight.get('errorCode', 'Unknown')
@@ -482,9 +492,16 @@ class EtoroService(IBroker):
                 "Amount": round(buy_amount, 2),  # Dollar amount (USD)
                 "IsBuy": True,
             }
-            # Only include Leverage if non-default (eToro skill: "Use Defaults")
+            # Leverage support (eToro CFD leverage: X1, X2, etc.)
             if order.leverage and order.leverage != 1:
                 payload["Leverage"] = order.leverage
+            # Protective stops & Trailing Stop Loss support
+            if order.stop_loss_rate and order.stop_loss_rate > 0:
+                payload["StopLossRate"] = round(order.stop_loss_rate, 4)
+            if order.take_profit_rate and order.take_profit_rate > 0:
+                payload["TakeProfitRate"] = round(order.take_profit_rate, 4)
+            if order.is_trailing_stop_loss:
+                payload["IsTrailingStopLoss"] = True
         else: # SELL / CLOSE
             # Use specific positionId if provided, else attempt to find one
             pos_id = getattr(order, 'position_id', None)

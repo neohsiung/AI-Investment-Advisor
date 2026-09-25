@@ -36,6 +36,10 @@ class Order:
     sizing_mode: OrderSizingMode = OrderSizingMode.AMOUNT  # 預設金額制
     reason: str = ""
     position_id: Optional[str] = None # For closing specific positions
+    stop_loss_rate: Optional[float] = None
+    take_profit_rate: Optional[float] = None
+    is_trailing_stop_loss: bool = False
+    trailing_stop_distance_pct: Optional[float] = None
 
 @dataclass
 class Position:

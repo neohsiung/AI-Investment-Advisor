@@ -540,6 +540,39 @@ class AutomatedTradingService:
                     "reason": f"Sell-quantity clamp unavailable ({type(e).__name__}); SELL blocked for safety",
                 }
         
+        # Controlled Leverage & Trailing Stop Evaluation (受控槓桿與移動停損評估)
+        leverage = 1
+        stop_loss_rate = None
+        take_profit_rate = None
+        is_trailing_stop_loss = False
+
+        if order_action == OrderAction.BUY:
+            try:
+                from src.services.leverage_policy_service import LeveragePolicyService
+                lev_svc = LeveragePolicyService(user_id=user_id, settings_repo=self.settings_repo)
+                acc = await broker.get_account() if hasattr(broker, 'get_account') else None
+                nlv = getattr(acc, 'total_equity', None) or portfolio_value
+                est_price = await self._get_current_price(broker, ticker, user_id=user_id)
+
+                consensus_count = len(confidence_breakdown) if confidence_breakdown else 1
+                lev_decision = lev_svc.evaluate_leverage(
+                    ticker=ticker,
+                    action="BUY",
+                    confidence_score=normalized_confidence,
+                    current_price=est_price,
+                    amount_usd=quantity,
+                    portfolio_nlv=nlv,
+                    confirming_agents_count=consensus_count,
+                )
+                leverage = lev_decision.eligible_leverage
+                stop_loss_rate = lev_decision.stop_loss_rate
+                take_profit_rate = lev_decision.take_profit_rate
+                is_trailing_stop_loss = lev_decision.is_trailing_stop_loss
+                if lev_decision.is_leveraged:
+                    logger.info(f"LeveragePolicy: {ticker} approved for X{leverage} leverage ({lev_decision.reason})")
+            except Exception as lev_e:
+                logger.warning(f"LeveragePolicy check skipped due to error: {lev_e}")
+
         order = Order(
             symbol=ticker,
             action=order_action,
@@ -547,6 +580,10 @@ class AutomatedTradingService:
             amount_usd=quantity if order_action == OrderAction.BUY else None,
             sizing_mode=OrderSizingMode.AMOUNT if order_action == OrderAction.BUY else OrderSizingMode.SHARES,
             order_type=OrderType.MARKET,
+            leverage=leverage,
+            stop_loss_rate=stop_loss_rate,
+            take_profit_rate=take_profit_rate,
+            is_trailing_stop_loss=is_trailing_stop_loss,
             reason=rationale
         )
         

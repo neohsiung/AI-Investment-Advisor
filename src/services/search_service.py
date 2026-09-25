@@ -118,26 +118,33 @@ class InternetSearchService:
         self.logger.info(f"Searching web for: {query}")
         results = []
 
-        # Try Tavily (Primary)
+        # Try Tavily (Primary with 60% Quota Guard)
+        from src.infrastructure.governance.quota_governor import ExternalQuotaGovernor
+        governor = ExternalQuotaGovernor.get_instance()
+
         if self.tavily_client and not self._tavily_exhausted:
-            try:
-                response = self.tavily_client.search(query=query, max_results=max_results)
-                if response and "results" in response:
-                    for r in response["results"]:
-                        results.append({
-                            "title": r.get("title"),
-                            "link": r.get("url"),
-                            "snippet": r.get("content", "")
-                        })
-                    if results:
-                        self.cache[query] = (time.time(), results)
-                        return results
-            except Exception as e:
-                error_msg = str(e).lower()
-                self.logger.warning(f"Tavily search failed: {error_msg}. Falling back to DuckDuckGo.")
-                if any(k in error_msg for k in ["exceeds your plan", "limit", "429", "too many requests", "exhausted", "insufficient_balance"]):
-                    self.logger.error("Tavily API quota exhausted. Disabling Tavily for this session.")
-                    self._tavily_exhausted = True
+            if not governor.can_acquire("tavily"):
+                self.logger.info("Tavily reached 60% daily budget cap; smoothly routing to DuckDuckGo fallback.")
+            else:
+                try:
+                    governor.record_usage("tavily")
+                    response = self.tavily_client.search(query=query, max_results=max_results)
+                    if response and "results" in response:
+                        for r in response["results"]:
+                            results.append({
+                                "title": r.get("title"),
+                                "link": r.get("url"),
+                                "snippet": r.get("content", "")
+                            })
+                        if results:
+                            self.cache[query] = (time.time(), results)
+                            return results
+                except Exception as e:
+                    error_msg = str(e).lower()
+                    self.logger.warning(f"Tavily search failed: {error_msg}. Falling back to DuckDuckGo.")
+                    if any(k in error_msg for k in ["exceeds your plan", "limit", "429", "too many requests", "exhausted", "insufficient_balance"]):
+                        self.logger.error("Tavily API quota exhausted. Disabling Tavily for this session.")
+                        self._tavily_exhausted = True
 
         # Fallback to DuckDuckGo
         if self.ddgs:

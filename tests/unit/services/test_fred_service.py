@@ -8,6 +8,14 @@ import pandas as pd
 from datetime import datetime
 from src.services.fred_service import FredService
 
+@pytest.fixture(autouse=True)
+def reset_quota():
+    from src.infrastructure.governance.quota_governor import ExternalQuotaGovernor
+    ExternalQuotaGovernor.get_instance().reset("fred")
+    yield
+    ExternalQuotaGovernor.get_instance().reset("fred")
+
+
 @pytest.fixture
 def mock_settings():
     settings = MagicMock()

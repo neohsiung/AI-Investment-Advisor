@@ -78,6 +78,8 @@ class SentinelService:
         # debouncing in process_event() — process-local, resets on restart
         # (acceptable: worst case is one extra escalation after a restart).
         self._polygon_last_price: Dict[str, float] = {}
+        # 2026-09-25: High-Water Mark tracking for Trailing Stop-Loss and Profit Ratchets
+        self._position_peaks: Dict[str, float] = {}
 
         # L1 pre-filter (2026-07-11): content-hash seen-set to drop duplicate/trivial
         # events before they reach the fast-tier classifier. {hash: epoch_seconds}.
@@ -3065,7 +3067,68 @@ class SentinelService:
                     logger.warning(f"[Sentinel Exit] Stop-loss triggered for {ticker}: {return_pct:.2f}% <= -{stop_loss_pct:.1f}%")
                     continue
 
-                # 2. Hard Take-Profit Trigger (Only when fixed stops are explicitly enabled)
+                # 2. High-Water Mark Tracking & Trailing Stop-Loss (移動停損鎖定利潤)
+                if not hasattr(self, '_position_peaks') or self._position_peaks is None:
+                    self._position_peaks = {}
+                current_peak = max(self._position_peaks.get(ticker, 0.0), avg_price, current_price)
+                self._position_peaks[ticker] = current_peak
+
+                trailing_stop_pct = float(self.settings_service.get_setting("trailing_stop_pct", 6.0, self.user_id))
+                enable_trailing_stops_val = self.settings_service.get_setting("enable_trailing_stops", True, self.user_id)
+                enable_trailing_stops = str(enable_trailing_stops_val).lower() in ("true", "1")
+
+                drawdown_from_peak_pct = ((current_price - current_peak) / current_peak) * 100.0 if current_peak > 0 else 0.0
+
+                # 只有當標的曾漲過成本線 (current_peak > avg_price * 1.02) 且自高點回檔達標時啟動移動停損
+                if enable_trailing_stops and current_peak > (avg_price * 1.02) and drawdown_from_peak_pct <= -abs(trailing_stop_pct):
+                    triggers.append({
+                        "id": f"trailing_stop_{ticker}_{self.user_id[:8]}",
+                        "ticker": ticker,
+                        "action": "trigger_exit",
+                        "strategy_name": "trailing_stop_loss",
+                        "sell_quantity": shares,
+                        "current_price": current_price,
+                        "avg_price": avg_price,
+                        "peak_price": current_peak,
+                        "drawdown_from_peak_pct": round(drawdown_from_peak_pct, 2),
+                        "return_pct": round(return_pct, 2) if return_pct is not None else 0.0,
+                        "current_weight_pct": weight,
+                        "text": f"🛡️ [移動停損觸發] {ticker} 自最高價 ${current_peak:.2f} 回檔 {drawdown_from_peak_pct:.2f}% (門檻 -{trailing_stop_pct:.1f}%)，現價 ${current_price:.2f}，鎖定利潤出場",
+                        "severity": "critical",
+                        "priority": 1,
+                        "type": "position_exit",
+                        "trigger_type": "trailing_stop_loss",
+                        "timestamp": pd.Timestamp.now().isoformat(),
+                    })
+                    logger.warning(f"[Sentinel Exit] Trailing stop triggered for {ticker}: {drawdown_from_peak_pct:.2f}% from peak ${current_peak:.2f}")
+                    continue
+
+                # 3. Ratchet Partial Take-Profit (階梯分批移動停利: 獲利 >= 25% 減倉 50%)
+                enable_ratchet_val = self.settings_service.get_setting("enable_ratchet_take_profit", False, self.user_id)
+                enable_ratchet = str(enable_ratchet_val).lower() in ("true", "1")
+                if enable_ratchet and return_pct is not None and return_pct >= 25.0 and shares >= 0.02:
+                    partial_shares = round(shares * 0.5, 2)
+                    triggers.append({
+                        "id": f"take_profit_ratchet_{ticker}_{self.user_id[:8]}",
+                        "ticker": ticker,
+                        "action": "trigger_exit",
+                        "strategy_name": "take_profit",
+                        "sell_quantity": partial_shares,
+                        "current_price": current_price,
+                        "avg_price": avg_price,
+                        "return_pct": round(return_pct, 2),
+                        "current_weight_pct": weight,
+                        "text": f"🎯 [階梯停利觸發] {ticker} 報酬率 +{return_pct:.2f}% 達到 +25% 階梯目標，執行 50% 分批獲利了結 ({partial_shares} 股)",
+                        "severity": "high",
+                        "priority": 2,
+                        "type": "position_exit",
+                        "trigger_type": "take_profit",
+                        "timestamp": pd.Timestamp.now().isoformat(),
+                    })
+                    logger.info(f"[Sentinel Exit] Ratchet take-profit triggered for {ticker}: +{return_pct:.2f}% >= +25.0%")
+                    continue
+
+                # 4. Hard Take-Profit Trigger (Only when fixed stops are explicitly enabled)
                 if enable_fixed_stops and return_pct is not None and return_pct >= abs(take_profit_pct):
                     triggers.append({
                         "id": f"take_profit_{ticker}_{self.user_id[:8]}",

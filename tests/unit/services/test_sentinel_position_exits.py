@@ -392,3 +392,64 @@ async def test_handle_position_exits_cooldown_dedup(sentinel):
     with patch("src.services.automated_trading_service.AutomatedTradingService", return_value=mock_auto_trade):
         await sentinel._handle_position_exits(exit_triggers)
         mock_auto_trade.evaluate_and_execute_trade.assert_not_called()
+
+
+@pytest.mark.anyio
+async def test_check_position_exits_trailing_stop_loss(sentinel, mock_dependencies):
+    """Verify Trailing Stop Loss triggers when price draws down > 6% from its high-water mark."""
+    mock_dependencies["settings"]._settings_map["enable_trailing_stops"] = True
+    mock_dependencies["settings"]._settings_map["trailing_stop_pct"] = 6.0
+
+    # Stock bought at $100, previously reached $130, now pulled back to $121 (drawdown: (121-130)/130 = -6.92%)
+    sentinel._position_peaks["NVDA"] = 130.0
+
+    mock_allocation = {
+        "NVDA": {
+            "shares": 10.0,
+            "quantity": 10.0,
+            "weight": 12.0,
+            "current_price": 121.0,
+            "avg_price": 100.0,
+        }
+    }
+    sentinel._get_current_allocation = AsyncMock(return_value=mock_allocation)
+    sentinel._check_capital_rotation_opportunities = AsyncMock(return_value=[])
+
+    triggers = await sentinel._check_position_exits()
+    assert len(triggers) == 1
+    t = triggers[0]
+    assert t["ticker"] == "NVDA"
+    assert t["strategy_name"] == "trailing_stop_loss"
+    assert t["trigger_type"] == "trailing_stop_loss"
+    assert t["sell_quantity"] == 10.0
+    assert t["peak_price"] == 130.0
+    assert t["drawdown_from_peak_pct"] == -6.92
+    assert "移動停損觸發" in t["text"]
+
+
+@pytest.mark.anyio
+async def test_check_position_exits_ratchet_take_profit(sentinel, mock_dependencies):
+    """Verify Ratchet Take-Profit triggers 50% partial exit when return exceeds +25%."""
+    mock_dependencies["settings"]._settings_map["enable_fixed_stops"] = True
+    mock_dependencies["settings"]._settings_map["enable_ratchet_take_profit"] = True
+
+    mock_allocation = {
+        "TSLA": {
+            "shares": 10.0,
+            "quantity": 10.0,
+            "weight": 15.0,
+            "current_price": 130.0,
+            "avg_price": 100.0,
+        }
+    }
+    sentinel._get_current_allocation = AsyncMock(return_value=mock_allocation)
+    sentinel._check_capital_rotation_opportunities = AsyncMock(return_value=[])
+
+    triggers = await sentinel._check_position_exits()
+    assert len(triggers) == 1
+    t = triggers[0]
+    assert t["ticker"] == "TSLA"
+    assert t["strategy_name"] == "take_profit"
+    assert t["sell_quantity"] == 5.0  # 50% scale out
+    assert "階梯停利觸發" in t["text"]
+
