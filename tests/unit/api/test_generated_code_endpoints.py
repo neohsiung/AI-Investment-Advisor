@@ -70,3 +70,14 @@ def test_approve_and_kill_endpoints(client: TestClient):
     resp = client.post(f"/api/v1/generated-code/{record.id}/kill")
     assert resp.status_code == 200
     assert resp.json()["new_status"] == ArtifactStatus.KILLED
+
+
+def test_auto_promote_endpoint(client: TestClient):
+    resp = client.post("/api/v1/generated-code/auto-promote")
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["status"] == "success"
+    assert "enrolled_count" in data
+    assert "promoted_count" in data
+    assert "promoted" in data
+

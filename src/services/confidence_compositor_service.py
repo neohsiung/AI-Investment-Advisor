@@ -475,6 +475,7 @@ Return JSON:
                     # Standardize raw factor to 0.0-10.0 scale using bounded sigmoid normalization
                     norm_score = 10.0 / (1.0 + math.exp(-max(-5.0, min(5.0, raw_val))))
                     confidence = round(max(0.0, min(10.0, norm_score)), 1)
+                    eff_weight_cap = canary_runner.get_effective_weight_cap(art)
 
                     sub_scores.append(AgentSubScore(
                         agent_name=f"Synth_{art.name}",
@@ -486,13 +487,20 @@ Return JSON:
                             "target_regime": art.parameters.get("target_regime"),
                             "artifact_id": art.id,
                             "source": "autonomous_synthesis",
+                            "weight_cap": eff_weight_cap,
+                            "approval_type": art.parameters.get("approval_type", "manual"),
                         },
-                        rationale=f"Active synthesized factor {art.name} evaluated on {ticker} (value={raw_val:.4f})",
+                        rationale=f"Active synthesized factor {art.name} evaluated on {ticker} (value={raw_val:.4f}, weight_cap={eff_weight_cap:.2f})",
                         timestamp=datetime.now().isoformat(),
                     ))
                 except Exception as e:
                     logger.warning("Failed to evaluate synthesized factor %s for %s: %s", art.name, ticker, e)
                     # Constraint #0: do not silently swallow, mark fallback reason
+                    eff_weight_cap = 0.05
+                    try:
+                        eff_weight_cap = canary_runner.get_effective_weight_cap(art)
+                    except Exception:
+                        pass
                     sub_scores.append(AgentSubScore(
                         agent_name=f"Synth_{art.name}",
                         ticker=ticker,
@@ -501,6 +509,7 @@ Return JSON:
                             "_fallback_reason": str(e),
                             "key_factor": "Factor Evaluation Failed",
                             "error": str(e),
+                            "weight_cap": eff_weight_cap,
                         },
                         rationale=f"Evaluation failed: {e}",
                         timestamp=datetime.now().isoformat(),
@@ -611,11 +620,21 @@ Return JSON:
             return composite, should_execute
 
         # Case 2: Adaptive ensemble with synthesized factors
-        # Total weight capped at 15% for all synthesized factors combined
-        max_synth_weight = 0.15
-        synth_weight_per_factor = max_synth_weight / len(synth_scores)
-        total_synth_weight = synth_weight_per_factor * len(synth_scores)
-        base_scale = 1.0 - total_synth_weight
+        # Total weight capped at 15% for all synthesized factors combined,
+        # with individual factors respecting their stepped weight_cap.
+        raw_synth_weights = [
+            max(0.01, min(0.15, float(s.factors.get("weight_cap", 0.05))))
+            for s in synth_scores
+        ]
+        sum_raw = sum(raw_synth_weights)
+        if sum_raw > 0.15:
+            scale_synth = 0.15 / sum_raw
+            normalized_synth_weights = [w * scale_synth for w in raw_synth_weights]
+        else:
+            normalized_synth_weights = raw_synth_weights
+
+        total_synth_weight = sum(normalized_synth_weights)
+        base_scale = max(0.0, 1.0 - total_synth_weight)
 
         weighted_sum = 0.0
         total_weight = 0.0
@@ -625,9 +644,9 @@ Return JSON:
             weighted_sum += score.confidence * weight
             total_weight += weight
 
-        for score in synth_scores:
-            weighted_sum += score.confidence * synth_weight_per_factor
-            total_weight += synth_weight_per_factor
+        for score, w in zip(synth_scores, normalized_synth_weights):
+            weighted_sum += score.confidence * w
+            total_weight += w
 
         composite = weighted_sum / total_weight if total_weight > 0 else 5.0
         should_execute = composite >= self.min_threshold

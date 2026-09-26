@@ -52,6 +52,11 @@ export interface IntelligenceBriefing {
     change: string;
     icon: string;
   }>;
+  self_evolution_summary?: Array<{
+    title: string;
+    description: string;
+    status?: string;
+  }>;
 }
 
 export interface AgentStatus {

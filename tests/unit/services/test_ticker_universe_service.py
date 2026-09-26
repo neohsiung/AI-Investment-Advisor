@@ -254,3 +254,37 @@ async def test_run_lifecycle_evolution(service):
     assert res["success"] is True
     assert res["active_count"] == 10
     mock_lc.run_lifecycle_cycle.assert_called_once_with(candidate_pool=None, force=True)
+
+
+def test_optimize_allocations_top_k_concentration(service):
+    # Setup 6 active tickers, but max_holdings = 3
+    service.repo = MagicMock()
+    service.repo.get_all.return_value = [
+        {"ticker": f"TICK{i}", "sector": "Tech"} for i in range(1, 7)
+    ]
+    # Research with decreasing confidence: TICK1 highest, TICK6 lowest
+    def mock_get_research(uid, ticker, limit=5):
+        idx = int(ticker.replace("TICK", ""))
+        conf = 0.9 - (idx * 0.1)
+        return [{"confidence_score": conf, "expected_return": 0.10}]
+
+    service.repo.get_research.side_effect = mock_get_research
+    service.repo.upsert_target.return_value = True
+
+    # Mock settings_service with alloc_max_holdings = 3
+    service._settings = MagicMock()
+    service._settings.get_setting.side_effect = lambda k, default=None: {
+        "alloc_min_position": 0.05,
+        "alloc_max_position": 0.50,
+        "alloc_sector_cap": 0.80,
+        "alloc_target_sum": 0.95,
+        "alloc_max_holdings": 3,
+    }.get(k, default)
+
+    res = service.optimize_allocations()
+    assert res["success"] is True
+    assert len(res["targets"]) == 3
+    allocated_tickers = [t["ticker"] for t in res["targets"]]
+    assert set(allocated_tickers) == {"TICK1", "TICK2", "TICK3"}
+
+

@@ -25,9 +25,9 @@ type CodeArtifact = {
   test_code: string;
   ast_hash: string;
   status: "DRAFT" | "VERIFIED" | "PROVISIONAL" | "ACTIVE" | "REJECTED" | "KILLED";
-  parameters: Record<string, unknown>;
-  backtest_metrics: Record<string, unknown>;
-  ast_metrics: Record<string, unknown>;
+  parameters: Record<string, any>;
+  backtest_metrics: Record<string, any>;
+  ast_metrics: Record<string, any>;
   shadow_days_remaining: number;
   created_at: string;
 };
@@ -46,6 +46,7 @@ export default function GeneratedCodeDashboard() {
   const [isSynthesizing, setIsSynthesizing] = useState(false);
   const [activeCodeTab, setActiveCodeTab] = useState<Record<string, "source" | "tests">>({});
   const [actionLoading, setActionLoading] = useState<Record<string, boolean>>({});
+  const [isAutoPromoting, setIsAutoPromoting] = useState(false);
 
   const handleSynthesize = async () => {
     try {
@@ -80,6 +81,24 @@ export default function GeneratedCodeDashboard() {
     }
   };
 
+  const handleAutoPromote = async () => {
+    try {
+      setIsAutoPromoting(true);
+      const res = await api.post("/api/v1/generated-code/auto-promote");
+      mutate("/api/v1/generated-code");
+      const d = res.data;
+      setToastMessage({
+        text: `自動晉升檢測完成：已自動納入 ${d.enrolled_count} 筆沙盒因子，並自動晉升 ${d.promoted_count} 筆符合標準之合格因子！`,
+        type: "success",
+      });
+      setTimeout(() => setToastMessage(null), 6000);
+    } catch (err) {
+      console.error("Auto-promote failed:", err);
+    } finally {
+      setIsAutoPromoting(false);
+    }
+  };
+
   const handleKill = async (id: string) => {
     try {
       setActionLoading((prev) => ({ ...prev, [id]: true }));
@@ -97,10 +116,18 @@ export default function GeneratedCodeDashboard() {
     }
   };
 
-  const getStatusBadge = (status: CodeArtifact["status"]) => {
+  const getStatusBadge = (status: CodeArtifact["status"], params?: Record<string, unknown>) => {
     switch (status) {
       case "ACTIVE":
-        return <span className="px-2.5 py-1 rounded-full text-xs font-bold font-mono bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">ACTIVE (實盤核准)</span>;
+        if (params?.approval_type === "automated") {
+          const cap = typeof params?.weight_cap === "number" ? (params.weight_cap * 100).toFixed(0) : "5";
+          return (
+            <span className="px-2.5 py-1 rounded-full text-xs font-bold font-mono bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 flex items-center gap-1">
+              <Sparkles size={11} /> ACTIVE (自動晉升 - 階梯上限 {cap}%)
+            </span>
+          );
+        }
+        return <span className="px-2.5 py-1 rounded-full text-xs font-bold font-mono bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">ACTIVE (實盤核准 - 滿額 15%)</span>;
       case "PROVISIONAL":
         return <span className="px-2.5 py-1 rounded-full text-xs font-bold font-mono bg-amber-500/10 text-amber-400 border border-amber-500/20 animate-pulse">PROVISIONAL (灰度影子 14D)</span>;
       case "VERIFIED":
@@ -131,12 +158,21 @@ export default function GeneratedCodeDashboard() {
               系統自適應合成純量化因子函式，經由 AST 靜態語法審計、微沙盒極端邊界測試 (TDD) 與 36 年歷史回測篩選，實施 14 日影子虛擬跟蹤。
             </p>
           </div>
-          <button
-            onClick={() => mutate("/api/v1/generated-code")}
-            className="flex items-center gap-2 px-3 py-1.5 bg-surface-container-high rounded-lg text-xs font-bold uppercase hover:bg-primary hover:text-on-primary transition-all"
-          >
-            <RotateCw size={12} /> 重新載入
-          </button>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={handleAutoPromote}
+              disabled={isAutoPromoting}
+              className="flex items-center gap-1.5 px-3 py-1.5 bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 rounded-lg text-xs font-bold hover:bg-emerald-500/20 transition-all"
+            >
+              <Sparkles size={12} /> {isAutoPromoting ? "檢測晉升中..." : "一鍵自動晉升檢測"}
+            </button>
+            <button
+              onClick={() => mutate("/api/v1/generated-code")}
+              className="flex items-center gap-2 px-3 py-1.5 bg-surface-container-high rounded-lg text-xs font-bold uppercase hover:bg-primary hover:text-on-primary transition-all"
+            >
+              <RotateCw size={12} /> 重新載入
+            </button>
+          </div>
         </div>
 
         {/* Real-time Notification Toast Banner */}
@@ -241,9 +277,15 @@ export default function GeneratedCodeDashboard() {
                     <div>
                       <div className="flex items-center gap-3">
                         <h3 className="text-base font-bold font-mono text-on-surface">{art.name}</h3>
-                        {getStatusBadge(art.status)}
+                        {getStatusBadge(art.status, art.parameters)}
                       </div>
                       <p className="text-xs text-on-surface-variant mt-1">{art.description}</p>
+                      {art.parameters?.promotion_reason && (
+                        <div className="mt-2 text-[11px] font-mono bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 px-2.5 py-1 rounded-md flex items-center gap-1.5">
+                          <CheckCircle2 size={12} />
+                          <span>自動晉升依據: {art.parameters.promotion_reason}</span>
+                        </div>
+                      )}
                     </div>
                     {/* Operator Controls */}
                     <div className="flex items-center gap-2">

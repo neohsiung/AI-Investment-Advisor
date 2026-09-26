@@ -124,6 +124,14 @@ settings:
     label_en: External MCP servers
     label_zh: 外部 MCP 伺服器
     help_en: JSON list of SSE/stdio endpoints exposed to the conversation agent.
+  - key: auto_promote_synthesized_factors
+    group: ai
+    type: bool
+    default: true
+    label_en: Auto-promote synthesized factors
+    label_zh: 自動晉升自研量化因子
+    help_en: Automatically promote synthesized code artifacts from provisional canary shadow tracking to active status upon passing evaluation.
+    help_zh: 當自研因子通過回測、WFA、蒙地卡羅與金絲雀影子考覈無異常時，由排程自動晉升為實盤 ACTIVE 因子。
 
   # ── Trading & risk ───────────────────────────────────────────────────────
   - key: ai_trading_enabled
@@ -388,6 +396,26 @@ settings:
     label_en: Target invested fraction
     label_zh: 目標投入比例
     help_en: The remainder is held as cash by the optimizer.
+  - key: alloc_max_holdings
+    group: allocation
+    type: int
+    default: 10
+    min: 4
+    max: 30
+    label_en: Maximum target holdings
+    label_zh: 目標最大持倉檔數
+    help_en: Cap target portfolio size to top-K highest-conviction tickers, preventing capital fragmentation.
+    help_zh: 將目標投資組合檔數收斂至評分最高的前 K 檔標的，避免小資金過度分散與碎屑化。
+  - key: alloc_prune_micro_threshold_usd
+    group: allocation
+    type: float
+    default: 30.0
+    min: 0.0
+    max: 500.0
+    label_en: Micro-position pruning threshold (USD)
+    label_zh: 微型部位汰除門檻（USD）
+    help_en: Stale or low-conviction holdings valued below this threshold will be proactively liquidated during rebalancing.
+    help_zh: 市值低於此門檻且非核心標的之邊緣持倉，在再平衡時將被主動清倉以釋放現金。
   - key: target_cash_ratio
     group: allocation
     type: float

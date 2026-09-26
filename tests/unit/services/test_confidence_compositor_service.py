@@ -245,20 +245,36 @@ def test_aggregate_scores_with_active_synthesized_factor(compositor):
     Test that active synthesized factor is assigned up to 15% weight,
     and base agents are scaled proportionally so total weight is strictly 1.0.
     """
-    sub_scores = [
+    # Case A: Full 15% weight cap
+    sub_scores_15 = [
+        AgentSubScore("Fundamental", "AAPL", 8.0, {}, "", ""),
+        AgentSubScore("Momentum", "AAPL", 6.0, {}, "", ""),
+        AgentSubScore("Sentiment", "AAPL", 7.0, {}, "", ""),
+        AgentSubScore("Risk", "AAPL", 5.0, {}, "", ""),
+        AgentSubScore("Synth_VolPivot", "AAPL", 9.0, {"weight_cap": 0.15}, "", ""),
+    ]
+    score_15, execute_15 = compositor._aggregate_scores(sub_scores_15)
+    # Base weighted: 8*0.35 + 6*0.25 + 7*0.20 + 5*0.20 = 6.7
+    # Scaled by 0.85: 6.7 * 0.85 = 5.695
+    # Synth weight 0.15: 9.0 * 0.15 = 1.35
+    # Expected composite: 5.695 + 1.35 = 7.045
+    assert abs(score_15 - 7.045) < 0.01
+    assert execute_15 is True
+
+    # Case B: Stepped 5% initial weight cap (default)
+    sub_scores_5 = [
         AgentSubScore("Fundamental", "AAPL", 8.0, {}, "", ""),
         AgentSubScore("Momentum", "AAPL", 6.0, {}, "", ""),
         AgentSubScore("Sentiment", "AAPL", 7.0, {}, "", ""),
         AgentSubScore("Risk", "AAPL", 5.0, {}, "", ""),
         AgentSubScore("Synth_VolPivot", "AAPL", 9.0, {}, "", ""),
     ]
-    score, execute = compositor._aggregate_scores(sub_scores)
-    # Base weighted: 8*0.35 + 6*0.25 + 7*0.20 + 5*0.20 = 6.7
-    # Scaled by 0.85: 6.7 * 0.85 = 5.695
-    # Synth weight 0.15: 9.0 * 0.15 = 1.35
-    # Expected composite: 5.695 + 1.35 = 7.045
-    assert abs(score - 7.045) < 0.01
-    assert execute is True
+    score_5, execute_5 = compositor._aggregate_scores(sub_scores_5)
+    # Scaled by 0.95: 6.7 * 0.95 = 6.365
+    # Synth weight 0.05: 9.0 * 0.05 = 0.45
+    # Expected composite: 6.365 + 0.45 = 6.815
+    assert abs(score_5 - 6.815) < 0.01
+    assert execute_5 is True
 
 
 @pytest.mark.asyncio

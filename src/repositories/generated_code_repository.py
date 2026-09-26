@@ -135,9 +135,10 @@ class GeneratedCodeRepository(BaseRepository):
         status: str,
         shadow_days_remaining: Optional[int] = None,
         shadow_tracking_log: Optional[List[Dict[str, Any]]] = None,
+        parameters: Optional[Dict[str, Any]] = None,
     ) -> bool:
         """
-        Update the lifecycle status and shadow tracking state of an artifact.
+        Update the lifecycle status, shadow tracking state, and parameters of an artifact.
         """
         session = self.session
         try:
@@ -152,6 +153,8 @@ class GeneratedCodeRepository(BaseRepository):
                 row.shadow_days_remaining = shadow_days_remaining
             if shadow_tracking_log is not None:
                 row.shadow_tracking_log = shadow_tracking_log
+            if parameters is not None:
+                row.parameters = parameters
             row.updated_at = datetime.now(timezone.utc)
 
             session.commit()

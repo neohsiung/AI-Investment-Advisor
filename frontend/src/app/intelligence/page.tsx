@@ -161,8 +161,8 @@ export default function IntelligenceBriefing() {
               <div className="p-3 bg-secondary-container/10 rounded-lg text-secondary">
                 <span className="material-symbols-outlined text-2xl">{stat.icon}</span>
               </div>
-              <span className={`text-xs font-bold ${stat.change.startsWith('+') ? 'text-secondary' : 'text-error'}`}>
-                {stat.change}
+              <span className={`text-xs font-bold ${stat.change?.startsWith('+') ? 'text-secondary' : 'text-error'}`}>
+                {stat.change || ''}
               </span>
             </div>
             <p className="text-on-surface-variant font-label text-[10px] uppercase font-bold tracking-widest">{stat.title}</p>

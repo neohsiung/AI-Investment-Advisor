@@ -1,6 +1,7 @@
 """Ticker Universe API endpoints."""
 from fastapi import APIRouter, Depends, HTTPException, Query
 from typing import Optional
+from pydantic import BaseModel
 from uuid import UUID
 from datetime import datetime
 
@@ -160,6 +161,35 @@ async def execute_confidence_rebalance(service: TickerUniverseService = Depends(
     except Exception as e:
         logger.error(f"Rebalance execution failed: {e}")
         raise HTTPException(status_code=500, detail="Internal server error")
+
+
+class ReclaimCapitalRequest(BaseModel):
+    candidate_ticker: str
+    target_amount: float
+    candidate_score: Optional[float] = 8.5
+    execute: Optional[bool] = False
+
+
+@router.post("/rebalance/reclaim-capital", response_model=TickerInfoResponse)
+async def reclaim_capital_endpoint(
+    payload: ReclaimCapitalRequest,
+    service: TickerUniverseService = Depends(get_service),
+):
+    """主動資本置換：計算或執行賣出低置信度/微型持倉，以籌措高置信度買入所需資金"""
+    try:
+        from src.services.confidence_rebalance_service import ConfidenceRebalanceService
+        rbs = ConfidenceRebalanceService(user_id=service.user_id)
+        result = await rbs.reclaim_capital_for_buy(
+            candidate_ticker=payload.candidate_ticker.upper(),
+            target_amount=payload.target_amount,
+            candidate_score=payload.candidate_score or 8.5,
+            execute=payload.execute or False,
+        )
+        return {"status": "success", "data": result}
+    except Exception as e:
+        logger.error(f"Reclaim capital failed: {e}")
+        raise HTTPException(status_code=500, detail="Internal server error")
+
 
 
 @router.get("/quality-check/{ticker}", response_model=TickerInfoResponse)

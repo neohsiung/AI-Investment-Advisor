@@ -89,16 +89,27 @@ class ConfidenceRebalanceService:
                 "confidence": t.get("confidence_score", 0.5),
             })
 
-        # Also inspect positions currently held that are NOT in target allocations (e.g. evicted tickers)
+        # Read micro-position threshold from settings
+        prune_micro_threshold_usd = 30.0
+        try:
+            from src.services.settings_service import SettingsService
+            prune_micro_threshold_usd = float(SettingsService(user_id=self.user_id).get_setting("alloc_prune_micro_threshold_usd", 30.0))
+        except Exception:
+            prune_micro_threshold_usd = 30.0
+
+        # Also inspect positions currently held that are NOT in target allocations (e.g. evicted tickers, dead capital)
+        # 檢視不在目標配置中的既有持倉（被淘汰標的或死資本）：全面列入主動賣出清單以釋放現金
+        pruned_lots = []
         for held_ticker, held_pct in current_weights.items():
             if held_ticker == "CASH" or held_ticker in target_map:
                 continue
             held_w = held_pct / 100.0
             delta = 0.0 - held_w
             delta_amount = delta * total_portfolio_value
-            if held_w * 100 < self.MIN_TRADE_PCT or abs(delta_amount) < min_trade_usd:
+            # Liquidate as long as holding has non-negligible value (> $1 or > 0.05%)
+            if abs(delta_amount) < 1.0 and held_w * 100 < 0.05:
                 continue
-            trades.append({
+            trade_item = {
                 "ticker": held_ticker,
                 "target_weight": 0.0,
                 "current_weight": round(held_pct, 2),
@@ -106,15 +117,19 @@ class ConfidenceRebalanceService:
                 "delta_amount": round(delta_amount, 2),
                 "action": "SELL",
                 "confidence": 0.0,
-            })
+                "is_pruning": True,
+            }
+            trades.append(trade_item)
+            pruned_lots.append(trade_item)
 
-        # Sort: sells first (most overweighted first), then buys (most underweighted first)
+        # Sort: sells first (most overweighted / pruned first), then buys (most underweighted first)
         sells = sorted([t for t in trades if t["action"] == "SELL"], key=lambda x: x["delta_weight"])
         buys = sorted([t for t in trades if t["action"] == "BUY"], key=lambda x: x["delta_weight"], reverse=True)
 
         # Estimate freed cash from sells
         total_sell_amount = sum(abs(t["delta_amount"]) for t in sells)
         total_buy_amount = sum(t["delta_amount"] for t in buys)
+        pruned_amount = sum(abs(t["delta_amount"]) for t in pruned_lots)
 
         # Check if cash is sufficient for buys (sells first, then available cash)
         available_cash = total_sell_amount + (cash_weight / 100.0 * total_portfolio_value) * 0.8  # 80% of cash usable
@@ -140,6 +155,11 @@ class ConfidenceRebalanceService:
                 "available_cash": round(available_cash, 2),
                 "cash_shortfall": round(max(cash_shortfall, 0), 2),
                 "total_value": round(total_portfolio_value, 2),
+                "pruning_summary": {
+                    "pruned_count": len(pruned_lots),
+                    "pruned_tickers": [p["ticker"] for p in pruned_lots],
+                    "pruned_amount": round(pruned_amount, 2),
+                },
             },
         }
 
@@ -237,6 +257,118 @@ class ConfidenceRebalanceService:
             "errors": errors,
             "summary": plan["summary"],
         }
+
+    async def reclaim_capital_for_buy(
+        self,
+        candidate_ticker: str,
+        target_amount: float,
+        candidate_score: float = 8.5,
+        execute: bool = False,
+    ) -> Dict[str, Any]:
+        """
+        Active Capital Rotation: Reclaim capital by liquidating lowest-conviction or
+        micro positions to fund a high-conviction buy opportunity.
+        主動資本置換：清倉末位低置信度或微型持倉，釋放資金以執行高置信度買入。
+        """
+        current = await self._get_current_weights()
+        if not current:
+            return {"status": "error", "message": "Failed to fetch portfolio weights", "sells": []}
+
+        total_value = current.get("total_value", 1.0)
+        current_weights = current.get("weights", {})
+        cash_weight = current.get("cash_weight", 0.0)
+        available_cash = (cash_weight / 100.0) * total_value
+
+        if available_cash >= target_amount:
+            return {
+                "status": "sufficient_cash",
+                "available_cash": round(available_cash, 2),
+                "target_amount": round(target_amount, 2),
+                "reclaimed_amount": 0.0,
+                "sells": [],
+            }
+
+        shortfall = target_amount - available_cash
+        reclaimed = 0.0
+        candidate_sells = []
+
+        # Read targets to identify non-target holdings
+        targets = self.ticker_service.get_targets()
+        target_map = {t["ticker"]: t.get("target_weight", 0.0) for t in targets}
+
+        # Gather latest confidence for all held positions
+        held_scores = {}
+        for ticker, weight in current_weights.items():
+            if ticker == "CASH":
+                continue
+            research = self.ticker_service.repo.get_research(self.user_id, ticker, limit=3)
+            scores = [float(r["confidence_score"]) for r in research if r.get("confidence_score")]
+            score_val = max(scores) if scores else 5.0
+            if score_val <= 1.0:
+                score_val *= 10.0
+            held_scores[ticker] = score_val
+
+        # Sort positions: 1. not in targets, 2. lowest confidence score, 3. smallest position
+        sortable_holdings = []
+        for ticker, weight in current_weights.items():
+            if ticker in ("CASH", candidate_ticker):
+                continue
+            score = held_scores.get(ticker, 5.0)
+            in_target = ticker in target_map and target_map[ticker] > 0
+            val = (weight / 100.0) * total_value
+            sortable_holdings.append({
+                "ticker": ticker,
+                "weight": weight,
+                "value": val,
+                "score": score,
+                "in_target": in_target,
+            })
+
+        # Evicted / non-target first (in_target=False), then lowest score, then smallest value
+        sortable_holdings.sort(key=lambda x: (x["in_target"], x["score"], x["value"]))
+
+        for item in sortable_holdings:
+            if reclaimed >= shortfall:
+                break
+            # Edge check: ensure candidate offers edge or holding is low conviction
+            if item["score"] >= 8.0 and (candidate_score - item["score"] < 1.5):
+                continue
+
+            delta_w = item["weight"] / 100.0
+            reclaim_val = item["value"]
+            reclaimed += reclaim_val
+            candidate_sells.append({
+                "ticker": item["ticker"],
+                "action": "SELL",
+                "delta_weight": -delta_w,
+                "amount": round(reclaim_val, 2),
+                "confidence": item["score"],
+                "reason": f"Capital rotation for {candidate_ticker}: liquidate {item['ticker']} (score={item['score']:.1f} vs {candidate_score:.1f})",
+            })
+
+        executed = []
+        if execute and candidate_sells:
+            for s in candidate_sells:
+                res = await self._execute_trade(
+                    ticker=s["ticker"],
+                    action="SELL",
+                    delta_weight=s["delta_weight"],
+                    portfolio_value=total_value,
+                    confidence_score=s["confidence"],
+                    rationale=s["reason"],
+                )
+                executed.append({**s, "status": res.get("status", "executed")})
+
+        return {
+            "status": "reclaimed",
+            "candidate_ticker": candidate_ticker,
+            "target_amount": round(target_amount, 2),
+            "available_cash_before": round(available_cash, 2),
+            "reclaimed_amount": round(reclaimed, 2),
+            "shortfall_remaining": round(max(0.0, shortfall - reclaimed), 2),
+            "sells": executed if execute else candidate_sells,
+        }
+
 
     async def _get_current_weights(self) -> Optional[Dict[str, Any]]:
         """Get current portfolio weights from PortfolioAggregator."""

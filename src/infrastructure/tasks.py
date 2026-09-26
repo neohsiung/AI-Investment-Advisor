@@ -810,11 +810,25 @@ def run_autonomous_evolution(user_id: str = None, force: bool = False):
         from src.services.code_synthesis.synthesis_orchestrator import SynthesisOrchestrator
         from src.services.code_synthesis.backtest_adapter import BacktestAdapter
 
+        # Step 0: Check if auto-promotion is enabled in settings and auto-enroll VERIFIED artifacts
+        auto_promote_enabled = True
+        try:
+            from src.services.settings_service import SettingsService
+            settings_svc = SettingsService(user_id=user_id)
+            auto_promote_enabled = bool(settings_svc.get_setting("auto_promote_synthesized_factors", True))
+        except Exception as e:
+            logger.warning("Could not read auto_promote_synthesized_factors setting for %s: %s", user_id, e)
+
+        enrolled = canary_runner.auto_enroll_verified_artifacts(user_id=user_id)
+        if enrolled:
+            logger.info("Auto-enrolled %d VERIFIED artifacts into 14-day canary tracking for %s", len(enrolled), user_id)
+
         # Step 1: Step shadow day for all active PROVISIONAL artifacts
         provisional_artifacts = canary_runner.list_artifacts(user_id=user_id, status=ArtifactStatus.PROVISIONAL)
         stepped_count = 0
         degraded_count = 0
         completed_count = 0
+        promoted_count = 0
 
         for art in provisional_artifacts:
             pnl_mean = art.backtest_metrics.get("net_profit_pct", 0.0) / 100.0 if art.backtest_metrics else 0.05
@@ -830,7 +844,7 @@ def run_autonomous_evolution(user_id: str = None, force: bool = False):
                 stepped_count += 1
                 if updated.status == ArtifactStatus.REJECTED:
                     degraded_count += 1
-                    # Option B: Multi-channel alert on shadow circuit breaker tripping
+                    # Multi-channel alert on shadow circuit breaker tripping
                     try:
                         from src.services.factor_notification_service import factor_notification_service
                         _run_async(
@@ -843,29 +857,35 @@ def run_autonomous_evolution(user_id: str = None, force: bool = False):
                         )
                     except Exception as notif_err:
                         logger.warning("Failed to dispatch circuit breaker notification for %s: %s", updated.name, notif_err)
-                elif updated.shadow_days_remaining == 0:
-                    completed_count += 1
-                    # Option B: Multi-channel alert on canary 14-day graduation
-                    try:
-                        from src.services.factor_notification_service import factor_notification_service
-                        _run_async(
-                            factor_notification_service.notify_factor_promoted(
-                                artifact_name=updated.name,
-                                regime=updated.parameters.get("target_regime", "DYNAMIC"),
-                                user_id=user_id,
-                                metrics=updated.backtest_metrics,
-                                approval_type="canary_graduation",
+                else:
+                    if auto_promote_enabled and canary_runner.evaluate_auto_promotion(updated).get("eligible"):
+                        promoted = canary_runner.auto_promote_artifact(artifact_id=updated.id, user_id=user_id)
+                        if promoted:
+                            promoted_count += 1
+                    elif updated.shadow_days_remaining == 0:
+                        completed_count += 1
+                        # Multi-channel alert on canary 14-day graduation (manual approval mode)
+                        try:
+                            from src.services.factor_notification_service import factor_notification_service
+                            _run_async(
+                                factor_notification_service.notify_factor_promoted(
+                                    artifact_name=updated.name,
+                                    regime=updated.parameters.get("target_regime", "DYNAMIC"),
+                                    user_id=user_id,
+                                    metrics=updated.backtest_metrics,
+                                    approval_type="canary_graduation",
+                                )
                             )
-                        )
-                    except Exception as notif_err:
-                        logger.warning("Failed to dispatch graduation notification for %s: %s", updated.name, notif_err)
+                        except Exception as notif_err:
+                            logger.warning("Failed to dispatch graduation notification for %s: %s", updated.name, notif_err)
 
         logger.info(
-            "Canary shadow stepping completed for %s: %d stepped, %d degraded, %d completed 14-day cycle",
+            "Canary shadow stepping completed for %s: %d stepped, %d degraded, %d completed 14-day cycle, %d auto-promoted",
             user_id,
             stepped_count,
             degraded_count,
             completed_count,
+            promoted_count,
         )
 
         # Step 2: Uncovered market regime discovery

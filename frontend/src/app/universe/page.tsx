@@ -23,6 +23,7 @@ export default function UniversePage() {
 
   const [isResearching, setIsResearching] = useState(false);
   const [isOptimizing, setIsOptimizing] = useState(false);
+  const [isExecutingRebalance, setIsExecutingRebalance] = useState(false);
   const [feedback, setFeedback] = useState<{ type: 'success' | 'error', msg: string } | null>(null);
 
   // Build target map for display
@@ -47,13 +48,30 @@ export default function UniversePage() {
     try {
       const res = await api.get("/api/v1/ticker-universe/targets/optimize");
       const data = res.data;
-      setFeedback({ type: data.status === "success" ? "success" : "error", msg: `Optimized ${data.data?.length || 0} targets` });
+      setFeedback({ type: data.status === "success" ? "success" : "error", msg: `優化完成：已收斂至 Top ${data.data?.length || 0} 檔核心標的` });
       mutate("/api/v1/ticker-universe/targets");
       mutate("/api/v1/ticker-universe/rebalance/plan");
     } catch (e: any) {
       const errMsg = e.response?.data?.detail || e.response?.data?.message || e.message;
       setFeedback({ type: "error", msg: errMsg });
     } finally { setIsOptimizing(false); }
+  };
+
+  const handleExecuteRebalance = async () => {
+    if (!confirm("確定要執行主動資本輪動？系統將優先平倉淘汰標的釋放資金，並集中加碼至核心 Top 標的。")) return;
+    setIsExecutingRebalance(true); setFeedback(null);
+    try {
+      const res = await api.post("/api/v1/ticker-universe/rebalance");
+      const data = res.data;
+      const count = data.data?.executed_trades?.length || 0;
+      setFeedback({ type: data.status === "success" ? "success" : "error", msg: `資本輪動已完成！共執行 ${count} 筆調度下單。` });
+      mutate("/api/v1/ticker-universe/targets");
+      mutate("/api/v1/ticker-universe/rebalance/plan");
+      mutate("/api/v1/ticker-universe?status=active");
+    } catch (e: any) {
+      const errMsg = e.response?.data?.detail || e.response?.data?.message || e.message;
+      setFeedback({ type: "error", msg: errMsg });
+    } finally { setIsExecutingRebalance(false); }
   };
 
   const handleAddTicker = async () => {
@@ -203,11 +221,43 @@ export default function UniversePage() {
 
       {/* Tab: Rebalance Plan */}
       {activeTab === "rebalance" && (
-        <div>
+        <div className="space-y-4">
           {planLoading ? (
             <div className="flex items-center justify-center py-12"><Loader2 className="w-6 h-6 animate-spin" /></div>
           ) : (
             <>
+              {/* Action Bar */}
+              <div className="flex items-center justify-between bg-base-200/50 p-4 rounded-xl border border-outline-variant/10">
+                <div>
+                  <h3 className="font-bold text-base flex items-center gap-2">
+                    <RefreshCw className="w-4 h-4 text-primary" />
+                    主動資本輪動與持倉集中化計劃
+                  </h3>
+                  <p className="text-xs text-muted-foreground mt-0.5">
+                    自動優先平倉非核心淘汰標的，釋出死資本全額集中配置於高置信度核心標的。
+                  </p>
+                </div>
+                <button
+                  onClick={handleExecuteRebalance}
+                  disabled={isExecutingRebalance || trades.length === 0}
+                  className="btn btn-sm btn-primary gap-2 shadow-lg shadow-primary/20"
+                >
+                  {isExecutingRebalance ? <Loader2 className="w-4 h-4 animate-spin" /> : <RefreshCw className="w-4 h-4" />}
+                  {isExecutingRebalance ? "調度執行中..." : "⚡ 執行主動資本輪動 (汰弱留強)"}
+                </button>
+              </div>
+
+              {/* Pruning Alert Banner */}
+              {plan.summary?.pruning_summary?.pruned_count > 0 && (
+                <div className="alert bg-amber-500/10 border border-amber-500/20 text-amber-300 text-sm">
+                  <AlertTriangle className="w-5 h-5 text-amber-400 flex-shrink-0" />
+                  <div>
+                    <span className="font-bold">資本置換清單：</span>
+                    系統已識別出 <span className="font-mono font-bold text-white">{plan.summary.pruning_summary.pruned_count}</span> 筆死資本/淘汰部位（{plan.summary.pruning_summary.pruned_tickers.join(", ")}），執行輪動將主動清倉並釋出約 <span className="font-mono font-bold text-emerald-400">${plan.summary.pruning_summary.pruned_amount} USD</span> 現金，優先停泊至 Top 核心標的！
+                  </div>
+                </div>
+              )}
+
               {/* Summary */}
               <div className="grid grid-cols-4 gap-4 mb-4">
                 <div className="stat bg-base-200 rounded-lg p-4">
@@ -215,12 +265,12 @@ export default function UniversePage() {
                   <div className="stat-value text-lg">${plan.summary?.total_value.toFixed(0) || "-"}</div>
                 </div>
                 <div className="stat bg-base-200 rounded-lg p-4">
-                  <div className="stat-title">需賣出</div>
+                  <div className="stat-title">需賣出 (含汰弱)</div>
                   <div className="stat-value text-lg text-red-400">${plan.summary?.total_sell_amount.toFixed(0) || "-"}</div>
                   <div className="stat-desc">{plan.summary?.sells || 0} 筆</div>
                 </div>
                 <div className="stat bg-base-200 rounded-lg p-4">
-                  <div className="stat-title">需買入</div>
+                  <div className="stat-title">需買入加碼</div>
                   <div className="stat-value text-lg text-green-400">${plan.summary?.total_buy_amount.toFixed(0) || "-"}</div>
                   <div className="stat-desc">{plan.summary?.buys || 0} 筆</div>
                 </div>
@@ -247,8 +297,13 @@ export default function UniversePage() {
                   {trades.map((t: any) => (
                     <tr key={t.ticker} className={t.action === "SELL" ? "bg-red-900/10" : "bg-green-900/10"}>
                       <td>
-                        <span className={cn("badge", t.action === "SELL" ? "badge-error" : "badge-success")}>
-                          {t.action === "SELL" ? "賣出" : "買入"}
+                        <span className={cn(
+                          "badge",
+                          t.action === "SELL"
+                            ? (t.is_pruning || t.target_weight === 0 ? "badge-error badge-outline" : "badge-error")
+                            : "badge-success"
+                        )}>
+                          {t.action === "SELL" ? (t.is_pruning || t.target_weight === 0 ? "汰弱清倉" : "減碼賣出") : "加碼買入"}
                         </span>
                       </td>
                       <td className="font-bold">{t.ticker}</td>
