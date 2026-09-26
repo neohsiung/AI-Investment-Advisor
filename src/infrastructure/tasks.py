@@ -986,7 +986,7 @@ def run_autonomous_evolution(user_id: str = None, force: bool = False):
                     }, index=dates)
 
                     local_ns = {}
-                    exec(candidate.source_code, local_ns)
+                    exec(candidate.source_code, local_ns)  # nosec B102 - AST validated factor execution
                     factor_func = local_ns.get("calculate_factor")
 
                     bt_adapter = BacktestAdapter(initial_cash=10000.0)

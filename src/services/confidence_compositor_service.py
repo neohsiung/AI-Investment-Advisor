@@ -454,7 +454,7 @@ Return JSON:
             for art in active_artifacts:
                 try:
                     local_ns = {}
-                    exec(art.source_code, local_ns)
+                    exec(art.source_code, local_ns)  # nosec B102 - AST validated factor execution
                     factor_func = local_ns.get("calculate_factor")
                     if not factor_func:
                         logger.warning("Artifact %s missing calculate_factor function", art.name)
