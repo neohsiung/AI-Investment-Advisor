@@ -60,6 +60,7 @@ DISPATCHER_CHILD_TASKS: Dict[str, str] = {
     "dispatch_market_intelligence": "generate_market_intelligence",
     "dispatch_sentinel_tick": "sentinel_tick",
     "dispatch_broker_sync": "sync_broker_positions",
+    "dispatch_order_reconciliation": "reconcile_pending_orders_task",
     "dispatch_memory_distill": "distill_memories",
     "dispatch_experience_replay": "experience_replay",
     "dispatch_keyword_refine": "keyword_refine",

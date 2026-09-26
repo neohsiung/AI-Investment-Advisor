@@ -225,6 +225,38 @@ def sync_broker_positions(user_id: str = None):
         logger.error(f"Broker sync failed: {e}")
         return f"Error: {str(e)}"
 
+@app.task(name="src.infrastructure.tasks.dispatch_order_reconciliation")
+def dispatch_order_reconciliation():
+    """Fan-out dispatcher: 查詢所有活躍租戶，為每位分派掛單對賬與撮合成交任務。"""
+    users = _resolve_target_users()
+    for uid in users:
+        reconcile_pending_orders_task.delay(user_id=uid)
+    return f"Dispatched {len(users)} order_reconciliation tasks"
+
+@app.task(name="src.infrastructure.tasks.reconcile_pending_orders_task")
+def reconcile_pending_orders_task(user_id: str = None):
+    """
+    Reconciles pending orders with broker and settles filled trades (Every 5 mins).
+    """
+    user_id = user_id or os.getenv("PRIMARY_USER_ID") or os.getenv("USER_ID")
+    if not user_id:
+        logger.error("reconcile_pending_orders_task: user_id is required.")
+        return "Error: user_id is required"
+    try:
+        from src.services.order_reconciliation_service import OrderReconciliationService
+        recon_svc = OrderReconciliationService(user_id=user_id)
+        result = _run_async_safe(recon_svc.reconcile_pending_orders())
+
+        if isinstance(result, dict) and result.get("status") == "error":
+            message = result.get("message", "unknown error")
+            logger.error(f"Order reconciliation failed for {user_id}: {message}")
+            return f"Error: {message}"
+        return "Success"
+    except Exception as e:
+        logger.error(f"Order reconciliation task failed: {e}")
+        return f"Error: {str(e)}"
+
+
 @app.task(name="src.infrastructure.tasks.dispatch_memory_distill")
 def dispatch_memory_distill():
     """Fan-out dispatcher: 查詢所有活躍租戶，為每位分派獨立 Task。"""

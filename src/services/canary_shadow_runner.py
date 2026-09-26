@@ -367,31 +367,64 @@ class CanaryShadowRunner:
                 "weight_tier": 0.0,
             }
 
-        # Condition A: Completed full 14-day canary shadow tracking
-        if record.shadow_days_remaining == 0:
-            return {
-                "eligible": True,
-                "reason": "Graduated: Completed full 14-day canary shadow tracking with zero severe drawdowns",
-                "weight_tier": 0.05,
-            }
+        # Check tracking duration / fast-track requirements
+        is_graduated = (record.shadow_days_remaining == 0)
+        is_fast_track = False
+        fast_track_reason = ""
 
-        # Condition B: Fast-track promotion for superior robustness after >= 7 shadow days
-        if record.shadow_days_remaining <= 7 and len(shadow_log) >= 7:
+        if not is_graduated and record.shadow_days_remaining <= 7 and len(shadow_log) >= 7:
             cum_pnl = sum(float(e.get("daily_pnl_pct", 0.0)) for e in shadow_log)
             # Must have non-negative cumulative simulated pnl and solid WFE / MC scores
             is_wfe_robust = (wfe >= 0.70 or wfe == 0.0)  # if WFE was computed, must be >= 0.70
             is_mc_robust = (mc_win_rate >= 75.0 or mc_win_rate == 0.0)
             if cum_pnl >= 0.0 and is_wfe_robust and is_mc_robust:
-                return {
-                    "eligible": True,
-                    "reason": f"Fast-Track: 7-day shadow track positive ({cum_pnl:+.2f}%) with WFE={wfe:.2f}, MC={mc_win_rate:.1f}%",
-                    "weight_tier": 0.05,
-                }
+                is_fast_track = True
+                fast_track_reason = f"Fast-Track: 7-day shadow track positive ({cum_pnl:+.2f}%) with WFE={wfe:.2f}, MC={mc_win_rate:.1f}%"
 
+        if not (is_graduated or is_fast_track):
+            return {
+                "eligible": False,
+                "reason": f"Shadow tracking in progress: {record.shadow_days_remaining} days remaining (logged {len(shadow_log)} days)",
+                "weight_tier": 0.0,
+            }
+
+        # 3. Factor Orthogonality & Multi-Collinearity Gate
+        # 因子正交性與共線性閘門：確保候選因子與在線 ACTIVE 因子的相關性低於閾值（預設 0.65）
+        try:
+            from src.services.factor_orthogonalization_service import FactorOrthogonalizationService
+            active_factors = self.list_artifacts(user_id=record.user_id, status=ArtifactStatus.ACTIVE)
+
+            threshold = 0.65
+            try:
+                from src.repositories.settings_repository import AlchemySettingsRepository
+                settings_repo = AlchemySettingsRepository()
+                th_val = settings_repo.get(record.user_id, "factor_max_correlation_threshold")
+                if th_val is not None:
+                    threshold = float(th_val)
+            except Exception as st_err:
+                logger.debug("Failed reading factor_max_correlation_threshold, using default: %s", st_err)
+
+            ortho_svc = FactorOrthogonalizationService(max_correlation=threshold)
+            ortho_res = ortho_svc.check_orthogonality(record, active_factors)
+            if not ortho_res["orthogonal"]:
+                return {
+                    "eligible": False,
+                    "reason": ortho_res["reason"],
+                    "weight_tier": 0.0,
+                    "orthogonality": ortho_res,
+                }
+        except Exception as ortho_err:
+            logger.warning("Factor orthogonality check encountered error: %s", ortho_err)
+
+        base_reason = (
+            "Graduated: Completed full 14-day canary shadow tracking with zero severe drawdowns"
+            if is_graduated
+            else fast_track_reason
+        )
         return {
-            "eligible": False,
-            "reason": f"Shadow tracking in progress: {record.shadow_days_remaining} days remaining (logged {len(shadow_log)} days)",
-            "weight_tier": 0.0,
+            "eligible": True,
+            "reason": base_reason,
+            "weight_tier": 0.05,
         }
 
     def auto_promote_artifact(self, artifact_id: str, user_id: str) -> bool:

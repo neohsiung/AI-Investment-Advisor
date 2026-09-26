@@ -900,6 +900,75 @@ class AutomatedTradingService:
         account = await broker.get_account()
         return float(getattr(account, "total_equity", 0.0) or 0.0)
 
+    async def _record_order_transaction(
+        self,
+        user_id: str,
+        order: Order,
+        result: Dict[str, Any],
+        broker: Any,
+        execution_status: str,
+        confidence_score: int,
+        rationale: str,
+        approval_type: str,
+        threshold: float = None,
+        strategy_name: str = None,
+    ) -> Optional[str]:
+        """
+        Record order placement in transactions ledger with initial lifecycle status (pending or filled).
+        在交易帳本中記錄訂單下單狀態（pending 或 filled）。
+        """
+        try:
+            from src.repositories.transaction_repository import AlchemyTransactionRepository
+            tx_repo = AlchemyTransactionRepository()
+            broker_order_id = str(result.get("order_id", ""))
+            
+            execution_price = order.price
+            if not execution_price or execution_price <= 0:
+                execution_price = await self._get_current_price(broker, order.symbol, user_id=user_id) or 0.0
+                
+            qty = order.quantity
+            if (qty is None or qty <= 0) and execution_price > 0:
+                qty = (order.amount_usd or 0.0) / execution_price
+            qty = max(float(qty or 0.0), 0.0001)
+            
+            amount = order.amount_usd or (float(execution_price) * float(qty))
+            
+            raw_meta = {
+                "order_status": execution_status,
+                "broker_order_id": broker_order_id,
+                "strategy_name": strategy_name or "AutomatedTrading",
+                "confidence_score": confidence_score,
+                "rationale": rationale,
+                "approval_type": approval_type,
+                "threshold": threshold,
+                "placed_at": datetime.now().isoformat(),
+                "amount_usd": order.amount_usd,
+            }
+            
+            # If pending: keep entry_category='sync_adjustment' so it does not count as a filled trade yet
+            # If executed: entry_category='trade'
+            category = "trade" if execution_status == "executed" else "sync_adjustment"
+            
+            tx_id = tx_repo.add(
+                user_id=user_id,
+                ticker=order.symbol,
+                date=datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                action=order.action.value,
+                quantity=qty,
+                price=float(execution_price),
+                fees=0.0,
+                leverage=float(order.leverage or 1.0),
+                source_file=broker.get_name(),
+                entry_category=category,
+                amount=amount,
+                raw_data=raw_meta,
+            )
+            logger.info(f"Recorded {execution_status} order tx={tx_id} (broker_id={broker_order_id}) for {order.symbol}")
+            return tx_id
+        except Exception as e:
+            logger.warning(f"Failed to record order transaction: {e}")
+            return None
+
     async def _execute_trade(
         self,
         user_id: str,
@@ -927,6 +996,22 @@ class AutomatedTradingService:
             
             # v6.0: Post-Trade Sync (交易後紀錄同步)
             if result.get("status") not in ["failed", "error"] and not result.get("error"):
+                execution_status = result.get("execution_status", "executed" if result.get("status") == "success" else "unknown")
+                
+                # Record transaction in local ledger with lifecycle status tracking
+                await self._record_order_transaction(
+                    user_id=user_id,
+                    order=order,
+                    result=result,
+                    broker=broker,
+                    execution_status=execution_status,
+                    confidence_score=confidence_score,
+                    rationale=rationale,
+                    approval_type=approval_type,
+                    threshold=threshold,
+                    strategy_name=strategy_name,
+                )
+
                 try:
                     await broker.sync_history(user_id)  # ← async
                     logger.info("Post-trade sync completed.")
@@ -934,43 +1019,50 @@ class AutomatedTradingService:
                     logger.warning(f"Post-trade sync failed (non-blocking): {sync_e}")
 
                 # v8.0: Record decision outcome for alpha reflection & rule learning
-                try:
-                    from src.services.outcome_reflection_service import OutcomeReflectionService
-                    execution_price = order.price
-                    if not execution_price or execution_price <= 0:
-                        execution_price = await self._get_current_price(broker, order.symbol, user_id=user_id)
-                    
-                    if execution_price and execution_price > 0:
-                        outcome_svc = OutcomeReflectionService(user_id=user_id)
-                        agent_identifier = strategy_name or "AutomatedTrading"
-                        dec_id = outcome_svc.record_decision(
-                            ticker=order.symbol,
-                            agent_name=agent_identifier,
-                            signal=order.action.value,
-                            price=execution_price,
-                            horizon_days=5,
-                        )
-                        logger.info(f"Recorded decision outcome {dec_id} for {order.symbol} at ${execution_price:.2f}")
+                # If immediately executed, record now. If pending, OrderReconciliationService will record upon fill.
+                if execution_status == "executed":
+                    try:
+                        from src.services.outcome_reflection_service import OutcomeReflectionService
+                        execution_price = order.price
+                        if not execution_price or execution_price <= 0:
+                            execution_price = await self._get_current_price(broker, order.symbol, user_id=user_id)
+                        
+                        if execution_price and execution_price > 0:
+                            outcome_svc = OutcomeReflectionService(user_id=user_id)
+                            agent_identifier = strategy_name or "AutomatedTrading"
+                            dec_id = outcome_svc.record_decision(
+                                ticker=order.symbol,
+                                agent_name=agent_identifier,
+                                signal=order.action.value,
+                                price=execution_price,
+                                horizon_days=5,
+                            )
+                            logger.info(f"Recorded decision outcome {dec_id} for {order.symbol} at ${execution_price:.2f}")
 
-                        # Trigger rule citation if active rules exist
-                        try:
-                            from src.repositories.memory_repository import AgentState
-                            from src.services.rule_lifecycle_service import RuleLifecycleService
-                            active_rules = AgentState().get_active_rules(agent_identifier, user_id=user_id)
-                            if active_rules and dec_id:
-                                rule_svc = RuleLifecycleService(user_id=user_id)
-                                await rule_svc.judge_and_cite(
-                                    agent_identifier, dec_id, rationale or f"Trade executed for {order.symbol}", active_rules
-                                )
-                        except Exception as cite_err:
-                            logger.warning(f"Rule citation for trade {dec_id} skipped: {cite_err}")
-                    else:
-                        logger.warning(
-                            f"Decision outcome for {order.symbol} skipped: price unavailable "
-                            f"(order.price={order.price}, fetched={execution_price})"
-                        )
-                except Exception as outcome_err:
-                    logger.warning(f"Failed to record decision outcome for trade (non-blocking): {outcome_err}")
+                            # Trigger rule citation if active rules exist
+                            try:
+                                from src.repositories.memory_repository import AgentState
+                                from src.services.rule_lifecycle_service import RuleLifecycleService
+                                active_rules = AgentState().get_active_rules(agent_identifier, user_id=user_id)
+                                if active_rules and dec_id:
+                                    rule_svc = RuleLifecycleService(user_id=user_id)
+                                    await rule_svc.judge_and_cite(
+                                        agent_identifier, dec_id, rationale or f"Trade executed for {order.symbol}", active_rules
+                                    )
+                            except Exception as cite_err:
+                                logger.warning(f"Rule citation for trade {dec_id} skipped: {cite_err}")
+                        else:
+                            logger.warning(
+                                f"Decision outcome for {order.symbol} skipped: price unavailable "
+                                f"(order.price={order.price}, fetched={execution_price})"
+                            )
+                    except Exception as outcome_err:
+                        logger.warning(f"Failed to record decision outcome for trade (non-blocking): {outcome_err}")
+                else:
+                    logger.info(
+                        f"Order {result.get('order_id')} is {execution_status}. "
+                        f"Outcome reflection deferred until reconciliation confirms execution."
+                    )
             
             # Send Notification: Three-Pillar Autonomous Post-Action Report
             # (一、行動  二、行動後的狀況影響  三、交易策略改變的行動)

@@ -87,3 +87,8 @@ class IBKRService(IBroker):
     async def get_pending_orders(self) -> List[Dict[str, Any]]:
         """Get pending (scheduled) orders."""
         return []
+
+    async def get_order_status(self, order_id: str) -> Dict[str, Any]:
+        """Get pending / execution status of an order."""
+        return {"order_id": str(order_id), "status": "unknown"}
+

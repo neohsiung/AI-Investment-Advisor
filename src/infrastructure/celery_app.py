@@ -49,6 +49,10 @@ app.conf.beat_schedule = {
         "task": "src.infrastructure.tasks.dispatch_broker_sync",
         "schedule": crontab(minute=os.getenv("BROKER_SYNC_CRON_MINUTE", "*/15")),
     },
+    "order-reconciliation": {
+        "task": "src.infrastructure.tasks.dispatch_order_reconciliation",
+        "schedule": crontab(minute=os.getenv("ORDER_RECONCILIATION_CRON_MINUTE", "*/5")),
+    },
 
     # ── Ingestion previously scheduled by n8n ────────────────────────────────
     # Same cadences the n8n workflow used, minus the container and the two HTTP

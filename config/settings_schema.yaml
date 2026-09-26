@@ -132,6 +132,15 @@ settings:
     label_zh: 自動晉升自研量化因子
     help_en: Automatically promote synthesized code artifacts from provisional canary shadow tracking to active status upon passing evaluation.
     help_zh: 當自研因子通過回測、WFA、蒙地卡羅與金絲雀影子考覈無異常時，由排程自動晉升為實盤 ACTIVE 因子。
+  - key: factor_max_correlation_threshold
+    group: ai
+    type: float
+    default: 0.65
+    label_en: Factor max correlation threshold
+    label_zh: 自研因子最大相關性閾值
+    help_en: Maximum allowed Spearman/Pearson correlation between candidate factors and active live factors to prevent multi-collinearity.
+    help_zh: 候選量化因子與線上在線 ACTIVE 因子的最大允許相關係數（預設 0.65）。超過此門檻將觸發共線性阻斷，避免重複配置。
+
 
   # ── Trading & risk ───────────────────────────────────────────────────────
   - key: ai_trading_enabled

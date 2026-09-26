@@ -5,6 +5,7 @@ from sqlalchemy import text
 from src.data.database import BaseRepository, get_db_engine
 import pandas as pd
 import uuid
+import json
 from datetime import datetime
 from src.utils.logger import setup_logger
 
@@ -55,7 +56,25 @@ class ITransactionRepository(ABC):
         source_file: str = None,
         entry_category: str = ENTRY_CATEGORY_TRADE,
         amount: Optional[float] = None,
-    ) -> None:
+        raw_data: Optional[Dict[str, Any]] = None,
+    ) -> str:
+        pass
+
+    @abstractmethod
+    def get_pending_transactions(self, user_id: str) -> List[Dict[str, Any]]:
+        pass
+
+    @abstractmethod
+    def update_transaction_status(
+        self,
+        transaction_id: str,
+        new_status: str,
+        entry_category: Optional[str] = None,
+        price: Optional[float] = None,
+        quantity: Optional[float] = None,
+        fees: Optional[float] = None,
+        extra_raw: Optional[Dict[str, Any]] = None,
+    ) -> bool:
         pass
 
     @abstractmethod
@@ -159,7 +178,8 @@ class AlchemyTransactionRepository(BaseRepository, ITransactionRepository):
         source_file: str = None,
         entry_category: str = ENTRY_CATEGORY_TRADE,
         amount: Optional[float] = None,
-    ) -> None:
+        raw_data: Optional[Dict[str, Any]] = None,
+    ) -> str:
         """
         Insert a transaction record with write-time validation.
         寫入交易記錄，包含寫入時驗證防止非法資料進入資料庫。
@@ -204,17 +224,20 @@ class AlchemyTransactionRepository(BaseRepository, ITransactionRepository):
                 f"Check price ({price}) and quantity ({quantity})."
             )
 
+        tx_id = str(uuid.uuid4())
+        raw_json = json.dumps(raw_data) if (raw_data is not None and isinstance(raw_data, (dict, list))) else raw_data
+
         with self.engine.begin() as conn:
             query_trans = text("""
                 INSERT INTO transactions
                   (id, user_id, ticker, trade_date, action, quantity, price, fees,
-                   amount, leverage, source_file, entry_category)
+                   amount, leverage, source_file, entry_category, raw_data)
                 VALUES
                   (:id, :user_id, :ticker, :trade_date, :action, :quantity, :price, :fees,
-                   :amount, :leverage, :source_file, :entry_category)
+                   :amount, :leverage, :source_file, :entry_category, :raw_data)
             """)
             conn.execute(query_trans, {
-                "id": str(uuid.uuid4()),
+                "id": tx_id,
                 "user_id": user_id,
                 "ticker": ticker,
                 "trade_date": date,
@@ -226,7 +249,117 @@ class AlchemyTransactionRepository(BaseRepository, ITransactionRepository):
                 "leverage": leverage,
                 "source_file": source_file,
                 "entry_category": entry_category,
+                "raw_data": raw_json,
             })
+        return tx_id
+
+    def get_pending_transactions(self, user_id: str) -> List[Dict[str, Any]]:
+        """
+        Fetch transactions that are in pending status (stored in raw_data->>'order_status' = 'pending').
+        獲取仍處於掛單 (pending) 狀態的交易。
+        """
+        with self.engine.connect() as conn:
+            query = text("""
+                SELECT id, user_id, ticker, trade_date, action, quantity, price, fees,
+                       amount, leverage, source_file, entry_category, raw_data, created_at
+                FROM transactions
+                WHERE user_id = :uid
+                ORDER BY created_at DESC
+            """)
+            rows = conn.execute(query, {"uid": user_id}).fetchall()
+            pending = []
+            for r in rows:
+                raw = r.raw_data
+                if isinstance(raw, str):
+                    try:
+                        raw = json.loads(raw)
+                    except Exception:
+                        raw = {}
+                if isinstance(raw, dict) and raw.get("order_status") == "pending":
+                    pending.append({
+                        "id": str(r.id),
+                        "user_id": str(r.user_id),
+                        "ticker": str(r.ticker),
+                        "trade_date": str(r.trade_date),
+                        "action": str(r.action),
+                        "quantity": float(r.quantity),
+                        "price": float(r.price),
+                        "fees": float(r.fees or 0.0),
+                        "amount": float(r.amount),
+                        "leverage": float(getattr(r, "leverage", 1.0) or 1.0),
+                        "source_file": r.source_file,
+                        "entry_category": r.entry_category,
+                        "raw_data": raw,
+                        "created_at": r.created_at,
+                    })
+            return pending
+
+    def update_transaction_status(
+        self,
+        transaction_id: str,
+        new_status: str,
+        entry_category: Optional[str] = None,
+        price: Optional[float] = None,
+        quantity: Optional[float] = None,
+        fees: Optional[float] = None,
+        extra_raw: Optional[Dict[str, Any]] = None,
+    ) -> bool:
+        """
+        Update the lifecycle status of a transaction (e.g. pending -> filled / cancelled).
+        更新交易的生命週期狀態（如 pending -> filled / cancelled）。
+        """
+        with self.engine.begin() as conn:
+            row = conn.execute(
+                text("SELECT raw_data, price, quantity, leverage, entry_category FROM transactions WHERE id = :id"),
+                {"id": transaction_id}
+            ).fetchone()
+            if not row:
+                return False
+            
+            raw = row.raw_data
+            if isinstance(raw, str):
+                try:
+                    raw = json.loads(raw)
+                except Exception:
+                    raw = {}
+            if not isinstance(raw, dict):
+                raw = {}
+                
+            raw["order_status"] = new_status
+            raw["updated_status_at"] = datetime.now().isoformat()
+            if extra_raw:
+                raw.update(extra_raw)
+                
+            eff_price = price if price is not None else float(row.price)
+            eff_qty = quantity if quantity is not None else float(row.quantity)
+            eff_fees = fees if fees is not None else 0.0
+            eff_leverage = float(row.leverage or 1.0)
+            eff_amount = (eff_price * eff_qty) / eff_leverage if eff_leverage > 0 else (eff_price * eff_qty)
+            eff_category = entry_category or row.entry_category
+            
+            conn.execute(
+                text("""
+                    UPDATE transactions
+                    SET entry_category = :category,
+                        price = :price,
+                        quantity = :quantity,
+                        fees = :fees,
+                        amount = :amount,
+                        raw_data = :raw,
+                        updated_at = NOW()
+                    WHERE id = :id
+                """),
+                {
+                    "id": transaction_id,
+                    "category": eff_category,
+                    "price": eff_price,
+                    "quantity": eff_qty,
+                    "fees": eff_fees,
+                    "amount": eff_amount,
+                    "raw": json.dumps(raw),
+                }
+            )
+            return True
 
     def get_holdings_summary(self, user_id: str, account_id: str = None) -> List[tuple]:
         with self.engine.connect() as conn:
