@@ -27,7 +27,11 @@ type CodeArtifact = {
   status: "DRAFT" | "VERIFIED" | "PROVISIONAL" | "ACTIVE" | "REJECTED" | "KILLED";
   parameters: Record<string, unknown>;
   backtest_metrics: Record<string, unknown>;
-  ast_metrics: Record<string, unknown>;
+  ast_metrics?: {
+    total_nodes?: number;
+    max_loop_depth?: number;
+    [key: string]: unknown;
+  };
   shadow_days_remaining: number;
   created_at: string;
 };
@@ -276,8 +280,8 @@ export default function GeneratedCodeDashboard() {
                         <ShieldCheck size={14} /> 1. AST 安全稽核
                       </div>
                       <div className="text-[11px] font-mono space-y-1 text-on-surface-variant">
-                        <div>節點數: {art.ast_metrics?.total_nodes || 120}</div>
-                        <div>最大迴圈深度: {art.ast_metrics?.max_loop_depth || 1}</div>
+                        <div>節點數: {art.ast_metrics?.total_nodes ?? 120}</div>
+                        <div>最大迴圈深度: {art.ast_metrics?.max_loop_depth ?? 1}</div>
                         <div className="text-emerald-400 font-bold">✓ Constraint #0 合規</div>
                         <div className="truncate text-[10px] text-zinc-500">Hash: {art.ast_hash.slice(0, 10)}...</div>
                       </div>

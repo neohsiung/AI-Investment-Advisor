@@ -49,8 +49,13 @@ export interface IntelligenceBriefing {
   stats?: Array<{
     title: string;
     value: string;
-    change: string;
+    change?: string;
     icon: string;
+  }>;
+  self_evolution_summary?: Array<{
+    title: string;
+    description: string;
+    status?: string;
   }>;
 }
 
