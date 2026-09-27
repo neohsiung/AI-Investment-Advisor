@@ -173,6 +173,45 @@ settings:
     danger: true
     label_en: Auto-execute confidence (sell)
     label_zh: 自動執行信心門檻（賣出）
+  - key: tiered_approval_enabled
+    group: trading
+    type: bool
+    default: true
+    label_en: Enable tiered auto-approval
+    label_zh: 啟用分級自動核准
+    help_en: Automatically approve high-confidence small-sized orders within strict risk bounds without human block.
+    help_zh: 在嚴格風控邊界下，自動核准放行符合條件的高勝率小額試單，避免因無人在線而錯失時機。
+  - key: tiered_approval_auto_score_min
+    group: trading
+    type: float
+    default: 6.8
+    min: 5.0
+    max: 10.0
+    label_en: Tiered auto-approval min score
+    label_zh: 分級自動核准最低信心分數
+    help_en: Minimum confidence score required to qualify for tiered auto-approval (0-10 scale).
+    help_zh: 進入分級自動核准之最低信心門檻（0-10 分制，預設 6.8 分）。
+  - key: tiered_approval_max_amount_usd
+    group: trading
+    type: float
+    default: 30.0
+    min: 5.0
+    max: 100.0
+    danger: true
+    label_en: Tiered auto-approval max amount ($)
+    label_zh: 分級自動核准單筆金額上限（美元）
+    help_en: Maximum USD amount per trade allowed to be auto-approved.
+    help_zh: 單筆交易允許自動放行之最高金額上限（美元）。
+  - key: tiered_approval_max_daily_count
+    group: trading
+    type: int
+    default: 3
+    min: 1
+    max: 20
+    label_en: Tiered auto-approval max daily count
+    label_zh: 每日分級自動核准上限筆數
+    help_en: Maximum number of orders that can be auto-approved per day.
+    help_zh: 每日允許分級自動放行之最大訂單筆數，防止異常行情連續自動下單。
   - key: enable_fixed_stops
     group: trading
     type: bool
@@ -538,6 +577,33 @@ settings:
     min: 0.0
     label_en: Universe minimum daily dollar volume ($M)
     label_zh: 標的池最低每日成交金額（百萬美元）
+  - key: pyramid_screener_enabled
+    group: allocation
+    type: bool
+    default: true
+    label_en: Enable two-stage pyramid screener
+    label_zh: 啟用兩階段金字塔標的初篩器
+    help_en: Run deterministic quant filters on expanded candidate pool before deep quality gate.
+    help_zh: 於標的池生命週期演化前，先對 150+ 檔標的執行純 Python 量化快速過濾收窄至菁英候選。
+  - key: pyramid_screener_top_candidates
+    group: allocation
+    type: int
+    default: 12
+    min: 3
+    max: 50
+    label_en: Pyramid screener top candidates
+    label_zh: 金字塔初篩保留菁英標的數
+    help_en: Number of top-ranked candidates retained from Stage 1 quant screening.
+    help_zh: 第一階段量化動量評分中保留之候選標的數量（送往第二階段深層審查）。
+  - key: pyramid_screener_min_dollar_volume_m
+    group: allocation
+    type: float
+    default: 10.0
+    min: 1.0
+    label_en: Pyramid screener min daily dollar volume ($M)
+    label_zh: 金字塔初篩最低每日成交金額（百萬美元）
+    help_en: Liquidity threshold for candidate stocks in Stage 1 screening.
+    help_zh: 第一階段篩選候選標的之每日成交金額門檻（百萬美元）。
 
   # ── Sentinel ─────────────────────────────────────────────────────────────
   - key: sentinel_p1_limit_mins

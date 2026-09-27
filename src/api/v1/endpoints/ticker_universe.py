@@ -220,6 +220,21 @@ async def run_lifecycle(
         raise HTTPException(status_code=500, detail="Internal server error")
 
 
+@router.post("/pyramid-screen", response_model=TickerInfoResponse)
+async def run_pyramid_screen_endpoint(
+    top_n: int = Query(12, ge=3, le=50, description="Top candidates to retain from Stage 1"),
+    auto_admit: bool = Query(False, description="Automatically admit Stage 2 approved candidates to universe"),
+    service: TickerUniverseService = Depends(get_service),
+):
+    """執行兩階段金字塔初篩器：Stage 1 純量化快速篩選，Stage 2 深度品質把關"""
+    try:
+        result = await service.run_pyramid_screen(top_n=top_n, auto_admit=auto_admit)
+        return {"status": "success", "data": result}
+    except Exception as e:
+        logger.error(f"Pyramid screen failed: {e}")
+        raise HTTPException(status_code=500, detail="Internal server error")
+
+
 # ── Ticker Universe CRUD (must be after specific routes) ──
 
 

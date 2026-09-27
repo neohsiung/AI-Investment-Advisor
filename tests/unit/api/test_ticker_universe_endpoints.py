@@ -108,3 +108,20 @@ def test_reclaim_capital_endpoint(client, mock_service):
         assert data["status"] == "success"
         assert data["data"]["reclaimed_amount"] == 60.0
 
+
+def test_pyramid_screen_endpoint(client, mock_service):
+    mock_service.run_pyramid_screen = AsyncMock(return_value={
+        "stage1_total_scanned": 150,
+        "stage1_candidates": [{"ticker": "NVDA", "quant_score": 9.2}],
+        "stage2_approved": [{"ticker": "NVDA", "overall_score": 8.7}],
+        "admitted_to_universe": ["NVDA"],
+    })
+
+    resp = client.post("/api/v1/ticker-universe/pyramid-screen?top_n=10&auto_admit=true")
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["status"] == "success"
+    assert data["data"]["stage1_total_scanned"] == 150
+    assert data["data"]["admitted_to_universe"] == ["NVDA"]
+
+

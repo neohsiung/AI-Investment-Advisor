@@ -502,3 +502,45 @@ async def test_evaluate_and_execute_trade_injects_leverage_and_trailing_stop(tes
     assert order.stop_loss_rate == round(100.0 * (1.0 - 0.055), 4)  # 5.5% TSL
 
 
+@pytest.mark.anyio
+async def test_evaluate_and_execute_trade_triggers_tiered_auto_approval(test_svc, mock_broker):
+    """Score 7.0 (below standard buy threshold 7.5, but >= 6.8 auto min) triggers Tiered Auto-Approval."""
+    user_id = "test_user"
+    mock_account = MagicMock()
+    mock_account.total_equity = 1000.0
+    mock_account.available_cash = 200.0
+    mock_broker.get_account = AsyncMock(return_value=mock_account)
+
+    test_svc.settings_repo.get = MagicMock(side_effect=lambda uid, key: {
+        "auto_trade_threshold": 7.5,
+        "auto_trade_min_threshold": 3.0,
+        "tiered_approval_enabled": True,
+        "tiered_approval_auto_score_min": 6.8,
+        "tiered_approval_max_amount_usd": 30.0,
+        "tiered_approval_max_daily_count": 3,
+        "max_single_position_pct": 0.10,
+        "min_trade_amount": 10.0,
+    }.get(key))
+
+    with patch('src.services.automated_trading_service.BrokerFactory.get_broker', return_value=mock_broker), \
+         patch.object(test_svc, '_get_current_price', new_callable=AsyncMock, return_value=150.0), \
+         patch.object(test_svc, '_notify_via_api', new_callable=AsyncMock):
+        res = await test_svc.evaluate_and_execute_trade(
+            user_id=user_id,
+            ticker="AAPL",
+            action="BUY",
+            quantity=20.0,
+            confidence_score=7.0,
+            rationale="Solid momentum, meets tiered approval criteria",
+        )
+
+    assert res["status"] == "success"
+    # Should have executed the order automatically without manual approval
+    mock_broker.execute_order.assert_called_once()
+    executed_order = mock_broker.execute_order.call_args[0][0]
+    assert executed_order.symbol == "AAPL"
+    # Sized to 10.0 due to max_single_position_pct (10% of $100 tradable capital)
+    assert executed_order.quantity == 10.0
+
+
+

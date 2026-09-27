@@ -24,11 +24,32 @@ export default function UniversePage() {
   const [isResearching, setIsResearching] = useState(false);
   const [isOptimizing, setIsOptimizing] = useState(false);
   const [isExecutingRebalance, setIsExecutingRebalance] = useState(false);
+  const [isPyramidScreening, setIsPyramidScreening] = useState(false);
+  const [pyramidResult, setPyramidResult] = useState<any>(null);
   const [feedback, setFeedback] = useState<{ type: 'success' | 'error', msg: string } | null>(null);
 
   // Build target map for display
   const targetMap: Record<string, any> = {};
   targets.forEach((t: any) => { targetMap[t.ticker] = t; });
+
+  const handleRunPyramidScreen = async (autoAdmit: boolean = false) => {
+    setIsPyramidScreening(true); setFeedback(null);
+    try {
+      const res = await api.post(`/api/v1/ticker-universe/pyramid-screen?top_n=12&auto_admit=${autoAdmit}`);
+      const data = res.data;
+      setPyramidResult(data.data);
+      const admittedCount = data.data?.admitted_to_universe?.length || 0;
+      setFeedback({
+        type: "success",
+        msg: `金字塔初篩完成！掃描 ${data.data?.stage1_total_scanned || 0} 檔，篩出 ${data.data?.stage1_candidates?.length || 0} 檔菁英，${data.data?.stage2_approved?.length || 0} 檔通過深層審查${autoAdmit ? `（已自動納入 ${admittedCount} 檔）` : ''}`
+      });
+      setActiveTab("pyramid");
+      if (autoAdmit) mutate("/api/v1/ticker-universe?status=active");
+    } catch (e: any) {
+      const errMsg = e.response?.data?.detail || e.response?.data?.message || e.message;
+      setFeedback({ type: "error", msg: errMsg });
+    } finally { setIsPyramidScreening(false); }
+  };
 
   const handleResearchAll = async () => {
     setIsResearching(true); setFeedback(null);
@@ -101,6 +122,10 @@ export default function UniversePage() {
           <button onClick={handleAddTicker} className="btn btn-sm btn-outline gap-2">
             <Plus className="w-4 h-4" /> 新增標的
           </button>
+          <button onClick={() => handleRunPyramidScreen(false)} disabled={isPyramidScreening} className="btn btn-sm btn-accent gap-2">
+            {isPyramidScreening ? <Loader2 className="w-4 h-4 animate-spin" /> : <TrendingUp className="w-4 h-4" />}
+            {isPyramidScreening ? "初篩中..." : "金字塔初篩"}
+          </button>
           <button onClick={handleResearchAll} disabled={isResearching} className="btn btn-sm btn-secondary gap-2">
             {isResearching ? <Loader2 className="w-4 h-4 animate-spin" /> : <Search className="w-4 h-4" />}
             {isResearching ? "研究中..." : "LLM 研究全部"}
@@ -125,6 +150,9 @@ export default function UniversePage() {
       <div className="tabs tabs-bordered">
         <button className={cn("tab", activeTab === "universe" && "tab-active")} onClick={() => setActiveTab("universe")}>
           <Layers className="w-4 h-4 mr-1" /> 標的池
+        </button>
+        <button className={cn("tab", activeTab === "pyramid" && "tab-active")} onClick={() => setActiveTab("pyramid")}>
+          <TrendingUp className="w-4 h-4 mr-1" /> 金字塔初篩 {pyramidResult && <span className="badge badge-accent ml-1">{pyramidResult.stage1_candidates?.length || 0}</span>}
         </button>
         <button className={cn("tab", activeTab === "targets" && "tab-active")} onClick={() => setActiveTab("targets")}>
           <Target className="w-4 h-4 mr-1" /> 目標配置
@@ -170,6 +198,108 @@ export default function UniversePage() {
                 })}
               </tbody>
             </table>
+          )}
+        </div>
+      )}
+
+      {/* Tab: Pyramid Screener */}
+      {activeTab === "pyramid" && (
+        <div className="space-y-4">
+          <div className="bg-base-200/50 p-4 rounded-xl flex flex-col sm:flex-row sm:items-center justify-between gap-4 border border-base-300">
+            <div>
+              <h3 className="font-bold text-lg flex items-center gap-2">
+                <TrendingUp className="w-5 h-5 text-accent" /> 兩階段金字塔標的初篩器 (Two-Stage Pyramid Screener)
+              </h3>
+              <p className="text-sm text-gray-400 mt-1">
+                第一階段：對 160+ 檔標的執行 0 成本 Python 純量化快速篩選（排除仙股、低量與破位股，收窄至 Top 12）<br />
+                第二階段：對菁英候選進行多維度深度品質把關（基本面、財務比率、流動性硬指標）
+              </p>
+            </div>
+            <div className="flex gap-2">
+              <button
+                onClick={() => handleRunPyramidScreen(false)}
+                disabled={isPyramidScreening}
+                className="btn btn-sm btn-outline gap-2"
+              >
+                {isPyramidScreening ? <Loader2 className="w-4 h-4 animate-spin" /> : <RefreshCw className="w-4 h-4" />}
+                重新初篩
+              </button>
+              <button
+                onClick={() => handleRunPyramidScreen(true)}
+                disabled={isPyramidScreening || !pyramidResult?.stage2_approved?.length}
+                className="btn btn-sm btn-accent gap-2"
+              >
+                <CheckCircle2 className="w-4 h-4" /> 一鍵納入標的池
+              </button>
+            </div>
+          </div>
+
+          {!pyramidResult ? (
+            <div className="text-center py-16 text-gray-500 bg-base-200/20 rounded-xl border border-dashed border-base-300">
+              <TrendingUp className="w-10 h-10 mx-auto mb-3 opacity-30" />
+              <p className="text-base font-medium">尚未執行金字塔初篩</p>
+              <p className="text-sm text-gray-400 mt-1 mb-4">點擊下方按鈕，對 160+ 檔美股核心流動性標的進行秒級量化篩選與深度審查</p>
+              <button onClick={() => handleRunPyramidScreen(false)} disabled={isPyramidScreening} className="btn btn-sm btn-accent gap-2">
+                {isPyramidScreening ? <Loader2 className="w-4 h-4 animate-spin" /> : <TrendingUp className="w-4 h-4" />}
+                立即執行金字塔初篩
+              </button>
+            </div>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="table w-full">
+                <thead>
+                  <tr>
+                    <th>標的</th>
+                    <th>價格</th>
+                    <th>量化評分</th>
+                    <th>趨勢狀態</th>
+                    <th>RSI(14)</th>
+                    <th>日均額 ($M)</th>
+                    <th>深層品質審核</th>
+                    <th>篩選說明</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {pyramidResult.stage1_candidates?.map((cand: any) => {
+                    const approved = pyramidResult.stage2_approved?.find((a: any) => a.ticker === cand.ticker);
+                    return (
+                      <tr key={cand.ticker} className={approved ? "bg-accent/5" : ""}>
+                        <td className="font-bold font-mono text-base">{cand.ticker}</td>
+                        <td className="font-mono">${cand.price?.toFixed(2)}</td>
+                        <td>
+                          <span className="badge badge-accent font-bold">
+                            {cand.quant_score?.toFixed(1)} / 10
+                          </span>
+                        </td>
+                        <td>
+                          {cand.trend_aligned ? (
+                            <span className="badge badge-success badge-sm">多頭排列 (P&gt;50&gt;200)</span>
+                          ) : cand.price >= cand.sma_50 ? (
+                            <span className="badge badge-info badge-sm">突破季線 (P&gt;50)</span>
+                          ) : (
+                            <span className="badge badge-warning badge-sm">整理格局</span>
+                          )}
+                        </td>
+                        <td className="font-mono">{cand.rsi?.toFixed(1)}</td>
+                        <td className="font-mono">${cand.dollar_volume_m?.toFixed(1)}M</td>
+                        <td>
+                          {approved ? (
+                            <span className="badge badge-success gap-1 text-xs">
+                              <CheckCircle2 className="w-3 h-3" /> 通過 ({approved.overall_score?.toFixed(1)})
+                            </span>
+                          ) : (
+                            <span className="badge badge-ghost text-xs text-gray-500">候選名單</span>
+                          )}
+                        </td>
+                        <td className="text-xs text-gray-400 max-w-xs truncate" title={cand.reasons?.join("; ")}>
+                          {cand.reasons?.join("; ")}
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
           )}
         </div>
       )}

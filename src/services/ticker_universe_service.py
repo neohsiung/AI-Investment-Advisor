@@ -95,6 +95,29 @@ class TickerUniverseService:
         """
         return await self.lifecycle_service.run_lifecycle_cycle(candidate_pool=candidate_pool, force=force)
 
+    async def run_pyramid_screen(
+        self,
+        candidate_pool: Optional[List[str]] = None,
+        top_n: Optional[int] = None,
+        auto_admit: bool = False,
+    ) -> Dict[str, Any]:
+        """
+        Run two-stage pyramid screener.
+        執行兩階段金字塔初篩器。
+        """
+        from src.services.pyramid_screener_service import PyramidScreenerService
+        screener = PyramidScreenerService(
+            user_id=self.user_id,
+            quality_gate=self.quality_gate,
+            ticker_repo=self.repo,
+        )
+        res = await screener.run_full_pyramid_screen(
+            candidate_pool=candidate_pool,
+            top_n=top_n,
+            auto_admit=auto_admit,
+        )
+        return res.to_dict()
+
     # ── Universe Management ──
 
     def get_universe(self, status: Optional[str] = None) -> List[Dict[str, Any]]:

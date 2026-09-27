@@ -652,6 +652,42 @@ class AutomatedTradingService:
                 strategy_name=strategy_name
             )
 
+        # 3b-2. Tiered Auto-Approval Evaluation (分級自動核准評估)
+        # 介於自動門檻與手動核准之間，若符合小額試單、高勝率、風控安全的條件，自動放行
+        if not requires_approval_reason:
+            try:
+                from src.services.tiered_approval_service import TieredApprovalService
+                tiered_svc = TieredApprovalService(user_id=user_id, settings_repo=self.settings_repo)
+
+                sentinel_mode = getattr(self, "_sentinel_status", "NORMAL")
+
+                approval_eval = tiered_svc.evaluate_approval(
+                    order=order,
+                    confidence_score=effective_confidence,
+                    rationale=rationale,
+                    sentinel_status=sentinel_mode,
+                    threshold=threshold,
+                )
+
+                if approval_eval.approved:
+                    tiered_svc.record_auto_approval()
+                    approval_label = f"分級自動核准 ({approval_eval.reason})"
+                    logger.info(
+                        f"Tiered Auto-Approval GRANTED for {order.action.value} {ticker}: "
+                        f"Score {effective_confidence:.1f}, Amount ${order.quantity:.2f}"
+                    )
+                    return await self._execute_trade(
+                        user_id, order, effective_confidence, rationale, approval_label,
+                        confidence_breakdown=confidence_breakdown, threshold=threshold,
+                        strategy_name=strategy_name
+                    )
+                else:
+                    logger.info(
+                        f"Tiered Auto-Approval WITHHELD for {order.action.value} {ticker}: {approval_eval.reason}"
+                    )
+            except Exception as tiered_err:
+                logger.warning(f"Tiered approval check failed non-blockingly: {tiered_err}")
+
         # 3c. Autonomous Reporting Mode: Do not block or harass user with approval requests unless explicitly required by policy
         if autonomous_reporting_mode and not requires_approval_reason:
             skip_reason = f"Score {effective_confidence:.1f} below threshold {threshold:.1f}"
