@@ -308,6 +308,14 @@ settings:
     label_zh: 集中度與風險再平衡
     help_en: Automatically trim positions that exceed max_single_position_weight to diversify portfolio risk.
     help_zh: 當單一持倉超出最大持倉權重（max_single_position_weight）時，自動減碼超額部位以分散投資組合風險。
+  - key: protect_winning_compounders
+    group: trading
+    type: bool
+    default: true
+    label_en: Protect winning compounders
+    label_zh: 中長期結構性贏家保護
+    help_en: Protect verified long-term structural compounders from premature trimming during routine rebalances, trimming only excess profits for opportunity costs while preserving core holdings.
+    help_zh: 保護經深研確認之中長期結構性贏家（股價穩居生命線、基本面卓越且動能強勁），避免在例行再平衡中被機械式減碼；若有更佳機會僅調節超額浮盈，堅定保留核心底倉。
   - key: autonomous_exit_enabled
     group: trading
     type: bool
