@@ -3530,20 +3530,39 @@ class SentinelService:
             if not weakest_ticker or not weakest_info:
                 return []
 
-            # 4. Check if score advantage satisfies rotation_min_score_delta
-            score_delta = round(best_cand_score - weakest_conviction, 2)
-            if score_delta >= rotation_min_delta:
-                shares_to_sell = float(weakest_info.get("shares", 0) or weakest_info.get("quantity", 0) or 0)
-                price = float(weakest_info.get("current_price", 0) or 0)
-                avg_p = float(weakest_info.get("avg_price", 0) or 0)
-                ret_pct = ((price - avg_p) / avg_p * 100.0) if avg_p > 0 else None
+            # 4. Rigorous Opportunity Cost Evaluation via OpportunityCostService
+            # 採用機會成本決策引擎：計算扣除摩擦成本（手續費、滑點）後的邊際效用與標的即時狀態
+            from src.services.opportunity_cost_service import OpportunityCostService
 
-                target_sym = best_candidate["ticker"]
+            shares_to_sell = float(weakest_info.get("shares", 0) or weakest_info.get("quantity", 0) or 0)
+            price = float(weakest_info.get("current_price", 0) or 0)
+            avg_p = float(weakest_info.get("avg_price", 0) or 0)
+            ret_pct = ((price - avg_p) / avg_p * 100.0) if avg_p > 0 else 0.0
+
+            holding_state = {
+                "unrealized_pnl_pct": ret_pct,
+                "is_runner": ret_pct > 8.0,
+                "is_broken": weakest_conviction < 3.0,
+            }
+
+            target_sym = best_candidate["ticker"]
+            opp_service = OpportunityCostService(min_score_delta=rotation_min_delta)
+            swap_decision = opp_service.evaluate_swap(
+                holding_ticker=weakest_ticker,
+                candidate_ticker=target_sym,
+                holding_score=weakest_conviction,
+                candidate_score=best_cand_score,
+                holding_state=holding_state,
+                min_delta_override=rotation_min_delta,
+            )
+
+            if swap_decision.should_swap:
+                score_delta = swap_decision.raw_delta
                 rationale = (
-                    f"🔄 機會成本換庫：發現更優投資機會 {target_sym} (評分 {best_cand_score:.1f}/10)，"
+                    f"🔄 機會成本換庫核准：發現更優投資機會 {target_sym} (評分 {best_cand_score:.1f}/10)，"
                     f"現有持倉 {weakest_ticker} 評分 {weakest_conviction:.1f}/10，"
-                    f"評分差距 +{score_delta:.1f} >= 門檻 {rotation_min_delta:.1f}。"
-                    f"自動減碼/賣出疲弱標的以釋放資金進行換庫。"
+                    f"淨機會成本優勢 +{swap_decision.net_opportunity_delta:.2f} >= 門檻 {swap_decision.friction_hurdle:.2f}。"
+                    f"{swap_decision.reason}。自動減碼/賣出疲弱標的以釋放資金進行換庫。"
                 )
 
                 rotation_triggers.append({
@@ -3561,9 +3580,10 @@ class SentinelService:
                     "candidate_score": best_cand_score,
                     "holding_conviction": weakest_conviction,
                     "score_delta": score_delta,
+                    "net_opportunity_delta": swap_decision.net_opportunity_delta,
                     "confidence_breakdown": weakest_exit_decision.get("breakdown", []),
                     "rationale": rationale,
-                    "text": f"🔄 [機會成本換庫] {weakest_ticker} (評分 {weakest_conviction:.1f}/10) 換庫轉進 {target_sym} (評分 {best_cand_score:.1f}/10，差距 +{score_delta:.1f})",
+                    "text": f"🔄 [機會成本換庫] {weakest_ticker} (評分 {weakest_conviction:.1f}/10) 換庫轉進 {target_sym} (評分 {best_cand_score:.1f}/10，淨差距 +{swap_decision.net_opportunity_delta:.2f})",
                     "severity": "high",
                     "priority": 2,
                     "type": "position_exit",
@@ -3571,8 +3591,12 @@ class SentinelService:
                     "timestamp": pd.Timestamp.now().isoformat(),
                 })
                 logger.info(
-                    f"[Capital Rotation] Triggered rotation from {weakest_ticker} ({weakest_conviction:.1f}) "
-                    f"to {target_sym} ({best_cand_score:.1f}), delta=+{score_delta:.1f}"
+                    f"[Capital Rotation] Approved swap from {weakest_ticker} ({weakest_conviction:.1f}) "
+                    f"to {target_sym} ({best_cand_score:.1f}), net_delta=+{swap_decision.net_opportunity_delta:.2f}"
+                )
+            else:
+                logger.info(
+                    f"[Capital Rotation] Swap rejected by OpportunityCostService: {swap_decision.reason}"
                 )
 
         except Exception as e:

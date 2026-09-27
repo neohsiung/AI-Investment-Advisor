@@ -765,7 +765,7 @@ def run_weekly_rebalance(user_id: str = None):
     try:
         from src.services.confidence_rebalance_service import ConfidenceRebalanceService
         svc = ConfidenceRebalanceService(user_id=user_id)
-        result = _run_async_safe(svc.execute_rebalance())
+        result = _run_async_safe(svc.execute_rebalance(enforce_market_hours=True))
         logger.info(f"run_weekly_rebalance completed for {user_id}: {result.get('success')}")
         return result
     except Exception as e:

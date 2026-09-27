@@ -156,7 +156,7 @@ async def execute_confidence_rebalance(service: TickerUniverseService = Depends(
     try:
         from src.services.confidence_rebalance_service import ConfidenceRebalanceService
         rbs = ConfidenceRebalanceService(user_id=service.user_id)
-        result = await rbs.execute_rebalance()
+        result = await rbs.execute_rebalance(enforce_market_hours=True)
         return {"status": "success" if result.get("success") else "error", "data": result}
     except Exception as e:
         logger.error(f"Rebalance execution failed: {e}")

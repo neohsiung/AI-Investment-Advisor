@@ -587,10 +587,20 @@ class OllamaGateway(OpenAIGateway):
 class NvidiaGateway(OpenAIGateway):
     """
     NVIDIA NIM Gateway — OpenAI-compatible inference at integrate.api.nvidia.com.
-    Inherits all OpenAIGateway logic; only overrides the fallback base URL.
+    Inherits all OpenAIGateway logic; only overrides the fallback base URL and
+    imposes strict concurrency limits to stay well below the 40 RPM free tier cap.
     """
 
     _CHAT_URL = "https://integrate.api.nvidia.com/v1/chat/completions"
+    _CONCURRENCY_SEMAPHORE: Optional[asyncio.Semaphore] = None
+    _MAX_CONCURRENT_REQUESTS: int = 3  # Stay safely under 40 RPM threshold
+
+    @classmethod
+    def _get_semaphore(cls) -> asyncio.Semaphore:
+        """Lazily initialize the semaphore on the running event loop."""
+        if cls._CONCURRENCY_SEMAPHORE is None:
+            cls._CONCURRENCY_SEMAPHORE = asyncio.Semaphore(cls._MAX_CONCURRENT_REQUESTS)
+        return cls._CONCURRENCY_SEMAPHORE
 
     def _resolve_config(self, config: LLMConfig) -> LLMConfig:
         if not config.base_url:
@@ -599,11 +609,30 @@ class NvidiaGateway(OpenAIGateway):
         return config
 
     async def chat(self, messages: List[Message], config: LLMConfig) -> str:
-        return await super().chat(messages, self._resolve_config(config))
+        sem = self._get_semaphore()
+        async with sem:
+            try:
+                return await super().chat(messages, self._resolve_config(config))
+            except httpx.HTTPStatusError as exc:
+                if exc.response.status_code == 429:
+                    logger.warning(
+                        "NvidiaGateway: NIM 40 RPM rate limit hit (429 Too Many Requests). "
+                        "Triggering pipeline fallback to next candidate."
+                    )
+                raise
 
     async def stream_chat(self, messages: List[Message], config: LLMConfig) -> AsyncGenerator[str, None]:
-        async for chunk in super().stream_chat(messages, self._resolve_config(config)):
-            yield chunk
+        sem = self._get_semaphore()
+        async with sem:
+            try:
+                async for chunk in super().stream_chat(messages, self._resolve_config(config)):
+                    yield chunk
+            except httpx.HTTPStatusError as exc:
+                if exc.response.status_code == 429:
+                    logger.warning(
+                        "NvidiaGateway: NIM rate limit hit in stream (429 Too Many Requests)."
+                    )
+                raise
 
     async def ping(self, config: LLMConfig) -> PingResult:
         return await super().ping(self._resolve_config(config))

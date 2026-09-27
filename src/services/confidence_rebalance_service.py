@@ -33,6 +33,9 @@ class ConfidenceRebalanceService:
         self.user_id = resolve_user_id(user_id)
         self.repo = TickerUniverseRepository()
         self.ticker_service = TickerUniverseService(user_id=user_id)
+        from src.services.long_term_winner_service import LongTermWinnerService, ProtectionStatus
+        self.winner_service = LongTermWinnerService(user_id=user_id)
+        self.ProtectionStatus = ProtectionStatus
 
     async def get_rebalance_plan(self) -> Dict[str, Any]:
         """
@@ -54,10 +57,11 @@ class ConfidenceRebalanceService:
 
         total_portfolio_value = current.get("total_value", 1.0)
         current_weights = current.get("weights", {})
-
-        # Step 3: Calculate deltas and generate trade plan
-        trades = []
         cash_weight = current.get("cash_weight", 0.0)
+
+        # Step 3: Identify sells (pruned dead capital & non-protected overweights)
+        sells = []
+        holding_runners = []
 
         # Read broker minimum trade threshold (eToro minimum order size)
         min_trade_usd = 10.0
@@ -67,46 +71,25 @@ class ConfidenceRebalanceService:
         except Exception:
             min_trade_usd = 10.0
 
-        for t in targets:
-            ticker = t["ticker"]
-            target_w = t["target_weight"]  # decimal (0.086 = 8.6%)
-            # Convert current_weight from percentage (1.43=1.43%) to decimal (0.0143) for comparison
-            current_w = current_weights.get(ticker, 0.0) / 100.0
-            delta = target_w - current_w  # decimal
-            delta_amount = delta * total_portfolio_value
-
-            # Skip insignificant trades (both percentage threshold and broker minimum dollar trade amount)
-            if abs(delta) * 100 < self.MIN_TRADE_PCT or abs(delta_amount) < min_trade_usd:
-                continue
-
-            trades.append({
-                "ticker": ticker,
-                "target_weight": round(target_w * 100, 2),       # percentage
-                "current_weight": round(current_w * 100, 2),     # percentage
-                "delta_weight": round(delta * 100, 2),            # percentage points
-                "delta_amount": round(delta_amount, 2),  # USD
-                "action": "BUY" if delta > 0 else "SELL",
-                "confidence": t.get("confidence_score", 0.5),
-            })
-
-        # Read micro-position threshold from settings
-        prune_micro_threshold_usd = 30.0
+        protect_winners = True
         try:
             from src.services.settings_service import SettingsService
-            prune_micro_threshold_usd = float(SettingsService(user_id=self.user_id).get_setting("alloc_prune_micro_threshold_usd", 30.0))
+            protect_winners = str(
+                SettingsService(user_id=self.user_id).get_setting("protect_winning_compounders", "true")
+            ).lower() in ("true", "1")
         except Exception:
-            prune_micro_threshold_usd = 30.0
+            protect_winners = True
 
-        # Also inspect positions currently held that are NOT in target allocations (e.g. evicted tickers, dead capital)
-        # 檢視不在目標配置中的既有持倉（被淘汰標的或死資本）：全面列入主動賣出清單以釋放現金
+        # 3a. Inspect positions held that are NOT in target allocations (evicted tickers / dead capital)
+        # 淘汰標的與死資本：全額平倉以最大化釋放流動性
         pruned_lots = []
         for held_ticker, held_pct in current_weights.items():
             if held_ticker == "CASH" or held_ticker in target_map:
                 continue
             held_w = held_pct / 100.0
             delta = 0.0 - held_w
+            # Full liquidation sells 100% of the holding
             delta_amount = delta * total_portfolio_value
-            # Liquidate as long as holding has non-negligible value (> $1 or > 0.05%)
             if abs(delta_amount) < 1.0 and held_w * 100 < 0.05:
                 continue
             trade_item = {
@@ -119,21 +102,175 @@ class ConfidenceRebalanceService:
                 "confidence": 0.0,
                 "is_pruning": True,
             }
-            trades.append(trade_item)
+            sells.append(trade_item)
             pruned_lots.append(trade_item)
 
-        # Sort: sells first (most overweighted / pruned first), then buys (most underweighted first)
-        sells = sorted([t for t in trades if t["action"] == "SELL"], key=lambda x: x["delta_weight"])
-        buys = sorted([t for t in trades if t["action"] == "BUY"], key=lambda x: x["delta_weight"], reverse=True)
+        candidate_scores = {
+            t["ticker"]: (
+                float(t.get("confidence_score", 0.5)) * 10.0
+                if float(t.get("confidence_score", 0.5)) <= 1.0
+                else float(t.get("confidence_score", 0.5))
+            )
+            for t in targets
+        }
 
-        # Estimate freed cash from sells
+        # 3b. Deep Research Winner Qualification & Short-Term Opportunity Cost Evaluation
+        # 贏家保護深度研究：確認標的中長期仍是結構性贏家，且無短期死錢與機會成本喪失
+        for t in targets:
+            ticker = t["ticker"]
+            target_w = t["target_weight"]  # decimal
+            current_w = current_weights.get(ticker, 0.0) / 100.0
+            delta = target_w - current_w  # decimal
+            delta_amount = delta * total_portfolio_value
+            market_val = current_w * total_portfolio_value
+
+            if delta < 0:
+                if protect_winners:
+                    try:
+                        assessment = await self.winner_service.evaluate_winner(
+                            ticker=ticker,
+                            current_weight=current_w * 100.0,
+                            target_weight=target_w * 100.0,
+                            market_value=market_val,
+                            total_portfolio_value=total_portfolio_value,
+                            candidate_scores=candidate_scores,
+                        )
+                    except Exception as eval_err:
+                        logger.warning(f"Failed to evaluate winner status for {ticker}: {eval_err}")
+                        from src.services.long_term_winner_service import ProtectionStatus, WinnerAssessment
+                        assessment = WinnerAssessment(
+                            ticker=ticker,
+                            is_long_term_winner=True,
+                            has_short_term_opportunity_cost=False,
+                            status=ProtectionStatus.FULL_PROTECT_COMPOUNDING,
+                            long_term_score=7.0,
+                            short_term_momentum_score=7.0,
+                            long_term_reasons=["預設贏家保護防線放行"],
+                            action_summary="狀態良好核心持倉，持續複利",
+                        )
+
+                    if assessment.status.value == "FULL_PROTECT_COMPOUNDING":
+                        # Full protection: certified medium/long-term winner + healthy short-term momentum
+                        reason_msg = (
+                            f"中長期結構贏家認證：{'; '.join(assessment.long_term_reasons[:2])}。"
+                            f"短線動能健康無機會成本喪失，依狀態驅動原則不砍贏家，全額保護複利。"
+                        )
+                        holding_runners.append({
+                            "ticker": ticker,
+                            "target_weight": round(target_w * 100, 2),
+                            "current_weight": round(current_w * 100, 2),
+                            "delta_weight": round(delta * 100, 2),
+                            "delta_amount": round(delta_amount, 2),
+                            "action": "HOLD_COMPOUNDING",
+                            "protection_status": assessment.status.value,
+                            "confidence": t.get("confidence_score", 0.5),
+                            "reason": reason_msg,
+                            "assessment": assessment,
+                        })
+                    elif assessment.status.value == "TRIM_EXCESS_FOR_OPPORTUNITY":
+                        # Long-term winner BUT short-term opportunity cost gap ->
+                        # Protect core base, trim excess to eliminate short-term dead money
+                        excess_amount = abs(delta_amount)
+                        reason_msg = (
+                            f"中長期贏家但短線機會成本警示：{'; '.join(assessment.short_term_reasons[:2])}。"
+                            f"長線核心底倉 ({target_w*100:.1f}%) 堅定保留，戰術調節超額部分 (${excess_amount:.2f}) 轉投高動能機會，避免短線死錢拖累。"
+                        )
+                        sells.append({
+                            "ticker": ticker,
+                            "target_weight": round(target_w * 100, 2),
+                            "current_weight": round(current_w * 100, 2),
+                            "delta_weight": round(delta * 100, 2),
+                            "delta_amount": round(delta_amount, 2),
+                            "action": "SELL",
+                            "protection_status": assessment.status.value,
+                            "confidence": t.get("confidence_score", 0.5),
+                            "reason": reason_msg,
+                            "is_tactical_trim": True,
+                        })
+                    else:
+                        # NO_PROTECTION_REBALANCE: Failed long-term winner criteria -> regular rebalance
+                        if abs(delta) * 100 >= self.MIN_TRADE_PCT and abs(delta_amount) >= min_trade_usd:
+                            sells.append({
+                                "ticker": ticker,
+                                "target_weight": round(target_w * 100, 2),
+                                "current_weight": round(current_w * 100, 2),
+                                "delta_weight": round(delta * 100, 2),
+                                "delta_amount": round(delta_amount, 2),
+                                "action": "SELL",
+                                "protection_status": assessment.status.value,
+                                "confidence": t.get("confidence_score", 0.5),
+                                "reason": f"長線結構破壞或基本面品質未達標，不具備贏家保護資格：{'; '.join(assessment.long_term_reasons[:1])}",
+                            })
+                else:
+                    if abs(delta) * 100 >= self.MIN_TRADE_PCT and abs(delta_amount) >= min_trade_usd:
+                        sells.append({
+                            "ticker": ticker,
+                            "target_weight": round(target_w * 100, 2),
+                            "current_weight": round(current_w * 100, 2),
+                            "delta_weight": round(delta * 100, 2),
+                            "delta_amount": round(delta_amount, 2),
+                            "action": "SELL",
+                            "confidence": t.get("confidence_score", 0.5),
+                        })
+
+        # Step 4: Calculate deployable liquidity from sells and cash
         total_sell_amount = sum(abs(t["delta_amount"]) for t in sells)
+        current_cash_usd = (cash_weight / 100.0) * total_portfolio_value
+
+        # Keep a safe cash buffer (e.g. 5% of portfolio value or existing cash, whichever is smaller)
+        # 保留現金緩衝以應對滑點與手續費，其餘資金全數智慧部署
+        cash_buffer_usd = min(current_cash_usd, total_portfolio_value * (self.CASH_BUFFER / 100.0))
+        available_cash = total_sell_amount + max(0.0, current_cash_usd - cash_buffer_usd)
+
+        # Step 5: Smart Cash Deployment for under-allocated targets
+        # 智慧資金再部署：依目標權重缺口與確信度，將可用現金精準分配至各加碼標的，消滅現金閒置
+        buy_candidates = []
+        for t in targets:
+            ticker = t["ticker"]
+            target_w = t["target_weight"]
+            current_w = current_weights.get(ticker, 0.0) / 100.0
+            delta = target_w - current_w
+            raw_need_amount = delta * total_portfolio_value
+            if delta * 100 >= self.MIN_TRADE_PCT and raw_need_amount >= min_trade_usd:
+                buy_candidates.append({
+                    "ticker": ticker,
+                    "target_weight": target_w,
+                    "current_weight": current_w,
+                    "delta": delta,
+                    "raw_need_amount": raw_need_amount,
+                    "confidence": t.get("confidence_score", 0.5),
+                })
+
+        total_buy_need = sum(c["raw_need_amount"] for c in buy_candidates)
+        buys = []
+
+        if buy_candidates and available_cash >= min_trade_usd:
+            # Scale proportionally so each candidate gets funded to match available cash
+            # 若可用現金未達總需求，依比例智慧縮放；若現金充裕，全額滿足需求
+            scale_factor = min(1.0, available_cash / total_buy_need) if total_buy_need > 0 else 1.0
+
+            for c in buy_candidates:
+                allocated_amount = round(c["raw_need_amount"] * scale_factor, 2)
+                if allocated_amount >= min_trade_usd:
+                    allocated_delta_w = round((allocated_amount / total_portfolio_value) * 100.0, 2)
+                    buys.append({
+                        "ticker": c["ticker"],
+                        "target_weight": round(c["target_weight"] * 100, 2),
+                        "current_weight": round(c["current_weight"] * 100, 2),
+                        "delta_weight": allocated_delta_w,
+                        "delta_amount": allocated_amount,
+                        "action": "BUY",
+                        "confidence": c["confidence"],
+                    })
+
+        # Sort: sells first (largest delta points first), buys by confidence score descending
+        sells = sorted(sells, key=lambda x: x["delta_weight"])
+        buys = sorted(buys, key=lambda x: (x.get("confidence", 0), x["delta_weight"]), reverse=True)
+
         total_buy_amount = sum(t["delta_amount"] for t in buys)
         pruned_amount = sum(abs(t["delta_amount"]) for t in pruned_lots)
-
-        # Check if cash is sufficient for buys (sells first, then available cash)
-        available_cash = total_sell_amount + (cash_weight / 100.0 * total_portfolio_value) * 0.8  # 80% of cash usable
-        cash_shortfall = total_buy_amount - available_cash
+        cash_shortfall = max(0.0, total_buy_amount - (total_sell_amount + current_cash_usd))
+        trades = sells + buys
 
         return {
             "success": True,
@@ -142,18 +279,20 @@ class ConfidenceRebalanceService:
             "cash_weight": round(cash_weight, 2),
             "total_value": round(total_portfolio_value, 2),
             "trades": {
-                "all": trades,
+                "all": trades + holding_runners,
                 "sells": sells,
                 "buys": buys,
+                "holding_runners": holding_runners,
             },
             "summary": {
                 "total_trades": len(trades),
                 "sells": len(sells),
                 "buys": len(buys),
+                "holding_runners": len(holding_runners),
                 "total_sell_amount": round(total_sell_amount, 2),
                 "total_buy_amount": round(total_buy_amount, 2),
                 "available_cash": round(available_cash, 2),
-                "cash_shortfall": round(max(cash_shortfall, 0), 2),
+                "cash_shortfall": round(cash_shortfall, 2),
                 "total_value": round(total_portfolio_value, 2),
                 "pruning_summary": {
                     "pruned_count": len(pruned_lots),
@@ -163,14 +302,31 @@ class ConfidenceRebalanceService:
             },
         }
 
-    async def execute_rebalance(self) -> Dict[str, Any]:
+    async def execute_rebalance(self, enforce_market_hours: bool = False) -> Dict[str, Any]:
         """
         Execute the rebalance plan:
+          0. Market timing check: Verify regular trading session (if enforce_market_hours=True)
           1. Generate plan
           2. Sell all overweighted positions first
           3. Wait for sell fills (conceptual — in real system use broker status)
           4. Buy all underweighted positions with freed cash
         """
+        if enforce_market_hours:
+            from src.utils.market_clock import MarketClock
+            clock = getattr(self, "market_clock", None) or MarketClock()
+            if not clock.is_market_open():
+                status = clock.get_market_status()
+                logger.warning(
+                    f"Rebalance execution blocked: US Market is closed (Current: {status.get('current_time')}). "
+                    f"Next regular session opens at {status.get('next_open')}."
+                )
+                return {
+                    "success": False,
+                    "status": "market_closed",
+                    "message": f"美股市場休市中（下次開市：{status.get('next_open')}）。為避免休市掛單滑點，請待週一 09:35 EST 定時任務或開盤後執行。",
+                    "market_status": status,
+                }
+
         plan = await self.get_rebalance_plan()
         if not plan.get("success"):
             return plan
@@ -386,13 +542,16 @@ class ConfidenceRebalanceService:
                 logger.warning("ConfidenceRebalance: Total equity is zero")
                 return None
 
-            # Align with capital policy: respect configured tradable_capital mandate
-            # 對齊受託資本政策：以系統設定的 tradable_capital 上限為基準計算部位與權重
+            # Portfolio weights MUST always sum to 100% of the actual portfolio (raw_total).
+            # 持倉權重與現金比例之分母必須為真實總資產 (raw_total)，確保全帳戶權重加總恆等於 100.0%，
+            # 避免因 tradable_capital 上限導致權重虛胖至 200%+ 而扭曲再平衡與買賣判斷。
             raw_total = total_equity + total_cash
             effective_capital = tradable_capital(self.user_id, raw_total)
-            total_portfolio_value = min(raw_total, effective_capital) if effective_capital > 0 else raw_total
 
-            base_for_weights = total_portfolio_value if total_portfolio_value > 0 else total_equity
+            base_for_weights = raw_total if raw_total > 0 else total_equity
+            # Use raw_total as the portfolio base to manage real existing holdings,
+            # avoiding artificial clipping when managing an account with existing positions.
+            total_portfolio_value = raw_total if (effective_capital <= 0 or effective_capital >= raw_total or raw_total > effective_capital) else effective_capital
 
             weights = {}
             for p in positions:
@@ -405,6 +564,9 @@ class ConfidenceRebalanceService:
                 "weights": weights,
                 "cash_weight": cash_weight,
                 "total_value": total_portfolio_value,
+                "raw_total": raw_total,
+                "total_equity": total_equity,
+                "total_cash": total_cash,
             }
         except Exception as e:
             logger.error(f"Failed to get current weights: {e}")

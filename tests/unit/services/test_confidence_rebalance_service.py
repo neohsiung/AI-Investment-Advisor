@@ -111,3 +111,49 @@ async def test_reclaim_capital_for_buy_trigger_rotation(rebalance_service):
     sold_tickers = [s["ticker"] for s in res["sells"]]
     assert "WEAK_STOCK" in sold_tickers or "MICRO_STOCK" in sold_tickers
     assert res["reclaimed_amount"] >= 80.0
+
+
+@pytest.mark.asyncio
+async def test_smart_cash_deployment_eliminates_cash_drag(rebalance_service):
+    """
+    驗證先賣後買智慧資金再部署：
+    平倉 2 檔死資本釋放 $200，帳戶有 2 檔目標股需要增持，
+    系統智慧分配 $200 至買單，現金拖累為 0。
+    """
+    rebalance_service.ticker_service = MagicMock()
+    rebalance_service.ticker_service.optimize_allocations.return_value = {
+        "success": True,
+        "targets": [
+            {"ticker": "NVDA", "target_weight": 0.30, "confidence_score": 0.85},
+            {"ticker": "AAPL", "target_weight": 0.30, "confidence_score": 0.80},
+        ],
+    }
+
+    # Total = $1000. DEAD1 (10%=$100), DEAD2 (10%=$100), NVDA (10%=$100), AAPL (10%=$100), CASH (60%)
+    mock_weights = {
+        "weights": {"DEAD1": 10.0, "DEAD2": 10.0, "NVDA": 10.0, "AAPL": 10.0},
+        "cash_weight": 60.0,
+        "total_value": 1000.0,
+    }
+
+    with patch.object(rebalance_service, "_get_current_weights", AsyncMock(return_value=mock_weights)):
+        plan = await rebalance_service.get_rebalance_plan()
+
+    assert plan["success"] is True
+    sells = plan["trades"]["sells"]
+    buys = plan["trades"]["buys"]
+
+    # 2 dead stocks sold
+    assert len(sells) == 2
+    assert plan["summary"]["total_sell_amount"] == 200.0
+
+    # 2 buys generated
+    assert len(buys) == 2
+    buy_tickers = [b["ticker"] for b in buys]
+    assert "NVDA" in buy_tickers
+    assert "AAPL" in buy_tickers
+
+    # Both NVDA and AAPL need (0.30 - 0.10) * 1000 = $200 each ($400 total)
+    # Available cash covers the $400 ($200 from sells + usable cash) -> buys fully funded
+    assert plan["summary"]["cash_shortfall"] == 0.0
+
