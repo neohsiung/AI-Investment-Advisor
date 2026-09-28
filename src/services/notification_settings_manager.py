@@ -21,6 +21,9 @@ class NotificationChannel(str, Enum):
     EMAIL = "email"
     WEB = "web"
     TELEGRAM = "telegram"
+    SLACK = "slack"
+    LINE = "line"
+    DISCORD = "discord"
     SMS = "sms"
     WEBHOOK = "webhook"
 
@@ -378,6 +381,48 @@ class NotificationSettingsManager:
                     )
             elif channel == NotificationChannel.WEB.value:
                 active_channels.append(channel)
+            elif channel == NotificationChannel.SLACK.value:
+                slack_channel = self.settings_repo.get(
+                    self.user_id,
+                    "channel_slack_channel_id"
+                ) or self.settings_repo.get(
+                    self.user_id,
+                    "slack_channel_id"
+                )
+                if slack_channel:
+                    active_channels.append(channel)
+                else:
+                    self.logger.warning(
+                        f"Slack channel selected but no channel_slack_channel_id configured for user {self.user_id}"
+                    )
+            elif channel == NotificationChannel.LINE.value:
+                line_user = self.settings_repo.get(
+                    self.user_id,
+                    "channel_line_user_id"
+                ) or self.settings_repo.get(
+                    self.user_id,
+                    "line_user_id"
+                )
+                if line_user:
+                    active_channels.append(channel)
+                else:
+                    self.logger.warning(
+                        f"Line channel selected but no channel_line_user_id configured for user {self.user_id}"
+                    )
+            elif channel == NotificationChannel.DISCORD.value:
+                discord_url = self.settings_repo.get(
+                    self.user_id,
+                    "channel_discord_webhook_url"
+                ) or self.settings_repo.get(
+                    self.user_id,
+                    "discord_webhook_url"
+                )
+                if discord_url:
+                    active_channels.append(channel)
+                else:
+                    self.logger.warning(
+                        f"Discord channel selected but no channel_discord_webhook_url configured for user {self.user_id}"
+                    )
             elif channel == NotificationChannel.SMS.value:
                 # 檢查是否配置了電話號碼
                 phone = self.settings_repo.get(

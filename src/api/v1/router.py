@@ -36,6 +36,7 @@ from src.api.v1.endpoints import loop_health
 from src.api.v1.endpoints import workflows
 from src.api.v1.endpoints import agents as agents_ep
 from src.api.v1.endpoints import skills as skills_ep
+from src.api.v1.endpoints import generated_code as generated_code_ep
 
 # The /auth router (Google OAuth login/callback/exchange/refresh/me/logout)
 # is gone. Identity comes from get_current_user_id() above.
@@ -51,6 +52,7 @@ api_v1_router.include_router(loop_health.router, prefix="/loop-health", tags=["L
 api_v1_router.include_router(workflows.router, prefix="/workflows", tags=["Workflows"])
 api_v1_router.include_router(agents_ep.router, prefix="/agents", tags=["Agents"])
 api_v1_router.include_router(skills_ep.router, prefix="/skills", tags=["Skills"])
+api_v1_router.include_router(generated_code_ep.router, prefix="/generated-code", tags=["Autonomous Code Synthesis"])
 
 # Ticker Universe
 api_v1_router.include_router(
@@ -65,3 +67,4 @@ api_v1_router.include_router(
     prefix="/settings/llm",
     tags=["LLM Settings"],
 )
+

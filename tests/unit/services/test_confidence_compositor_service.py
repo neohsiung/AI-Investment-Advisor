@@ -238,3 +238,80 @@ async def test_get_pipeline(compositor):
         # Test cache hit
         pipeline2 = await compositor._get_pipeline("smart")
         assert pipeline2 == mock_pipeline
+
+
+def test_aggregate_scores_with_active_synthesized_factor(compositor):
+    """
+    Test that active synthesized factor is assigned up to 15% weight,
+    and base agents are scaled proportionally so total weight is strictly 1.0.
+    """
+    sub_scores = [
+        AgentSubScore("Fundamental", "AAPL", 8.0, {}, "", ""),
+        AgentSubScore("Momentum", "AAPL", 6.0, {}, "", ""),
+        AgentSubScore("Sentiment", "AAPL", 7.0, {}, "", ""),
+        AgentSubScore("Risk", "AAPL", 5.0, {}, "", ""),
+        AgentSubScore("Synth_VolPivot", "AAPL", 9.0, {}, "", ""),
+    ]
+    score, execute = compositor._aggregate_scores(sub_scores)
+    # Base weighted: 8*0.35 + 6*0.25 + 7*0.20 + 5*0.20 = 6.7
+    # Scaled by 0.85: 6.7 * 0.85 = 5.695
+    # Synth weight 0.15: 9.0 * 0.15 = 1.35
+    # Expected composite: 5.695 + 1.35 = 7.045
+    assert abs(score - 7.045) < 0.01
+    assert execute is True
+
+
+@pytest.mark.asyncio
+async def test_gather_synthesized_factor_scores_success(compositor):
+    """
+    Test evaluating active synthesized factor against market data.
+    """
+    from src.services.canary_shadow_runner import CodeArtifactRecord, ArtifactStatus
+    mock_art = CodeArtifactRecord(
+        id="art-test-1",
+        user_id=compositor.user_id,
+        name="MomentumZScore",
+        description="Z-Score Momentum",
+        source_code="import pandas as pd\ndef calculate_factor(df, params=None): return df['Close'].pct_change().fillna(0.0)",
+        test_code="pass",
+        ast_hash="h1",
+        status=ArtifactStatus.ACTIVE,
+        parameters={"target_regime": "TREND_ACCELERATION"},
+    )
+
+    with patch("src.services.canary_shadow_runner.canary_runner.list_artifacts", return_value=[mock_art]):
+        synth_scores = await compositor._gather_synthesized_factor_scores("AAPL")
+        assert len(synth_scores) == 1
+        sub = synth_scores[0]
+        assert sub.agent_name == "Synth_MomentumZScore"
+        assert 0.0 <= sub.confidence <= 10.0
+        assert sub.factors["target_regime"] == "TREND_ACCELERATION"
+        assert sub.factors["source"] == "autonomous_synthesis"
+
+
+@pytest.mark.asyncio
+async def test_gather_synthesized_factor_scores_graceful_fallback(compositor):
+    """
+    Test that exceptions during synthesized factor evaluation fail safely (Constraint #0).
+    """
+    from src.services.canary_shadow_runner import CodeArtifactRecord, ArtifactStatus
+    mock_art = CodeArtifactRecord(
+        id="art-test-err",
+        user_id=compositor.user_id,
+        name="BrokenFactor",
+        description="Error prone factor",
+        source_code="def calculate_factor(df, params=None): raise ZeroDivisionError('simulated math error')",
+        test_code="pass",
+        ast_hash="h2",
+        status=ArtifactStatus.ACTIVE,
+        parameters={"target_regime": "VOLATILITY_PIVOT"},
+    )
+
+    with patch("src.services.canary_shadow_runner.canary_runner.list_artifacts", return_value=[mock_art]):
+        synth_scores = await compositor._gather_synthesized_factor_scores("AAPL")
+        assert len(synth_scores) == 1
+        sub = synth_scores[0]
+        assert sub.confidence == 5.0
+        assert "_fallback_reason" in sub.factors
+        assert "simulated math error" in sub.factors["_fallback_reason"]
+

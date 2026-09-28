@@ -1177,3 +1177,29 @@ class AgentPerformance(Base):
     total_latency = Column(_REAL(), server_default='0.0')
     avg_latency = Column(_REAL(), server_default='0.0')
     last_updated = Column(DateTime())
+
+
+class GeneratedCodeArtifact(Base):
+    """`generated_code_artifacts` — storage for autonomous code synthesis, AST audits, and canary status."""
+    __tablename__ = 'generated_code_artifacts'
+
+    id = Column(_UUID(), primary_key=True, default=lambda: str(uuid.uuid4()))
+    user_id = Column(_UUID(), nullable=False)
+    name = Column(String(100), nullable=False)
+    description = Column(Text)
+    source_code = Column(Text, nullable=False)
+    test_code = Column(Text)
+    ast_hash = Column(String(64), nullable=False)
+    status = Column(String(20), nullable=False, default='DRAFT')  # DRAFT, VERIFIED, PROVISIONAL, ACTIVE, REJECTED, KILLED
+    parameters = Column(_JSONB(), default={})
+    backtest_metrics = Column(_JSONB(), default={})
+    ast_metrics = Column(_JSONB(), default={})
+    shadow_days_remaining = Column(Integer, default=14)
+    shadow_tracking_log = Column(_JSONB(), default=[])
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+
+    __table_args__ = (
+        Index('idx_gen_code_user_status', 'user_id', 'status'),
+    )
+
