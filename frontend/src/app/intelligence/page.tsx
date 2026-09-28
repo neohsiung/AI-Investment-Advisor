@@ -4,6 +4,7 @@ import React from "react";
 import Link from "next/link";
 import { mutate } from "swr";
 import BriefingCard from "@/components/ui/BriefingCard";
+import ActiveEventBiasesCard from "@/components/ui/ActiveEventBiasesCard";
 import { useIntelligenceBriefing } from "@/hooks/useDashboard";
 import { useRequireAuth } from "@/hooks/useAuth";
 import { Loader2, RefreshCw, Zap, Sparkles } from "lucide-react";
@@ -151,6 +152,9 @@ export default function IntelligenceBriefing() {
           </div>
         </div>
       </div>
+
+      {/* Active Event Biases Section */}
+      <ActiveEventBiasesCard />
 
       {/* Comparative Data Grid */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4 lg:gap-8">

@@ -3539,10 +3539,25 @@ class SentinelService:
             avg_p = float(weakest_info.get("avg_price", 0) or 0)
             ret_pct = ((price - avg_p) / avg_p * 100.0) if avg_p > 0 else 0.0
 
+            # Query micro event bias for holding and candidate
+            holding_bias = 0.0
+            candidate_bias = 0.0
+            try:
+                from src.services.event_impact_service import EventImpactService
+                impact_svc = EventImpactService(user_id=self.user_id, settings_service=self.settings_service)
+                holding_bias, _ = impact_svc.get_ticker_micro_bias(weakest_ticker)
+                candidate_bias, _ = impact_svc.get_ticker_micro_bias(target_sym)
+            except Exception as e:
+                logger.warning(f"Sentinel: failed to fetch event bias for swap: {e}")
+
             holding_state = {
                 "unrealized_pnl_pct": ret_pct,
                 "is_runner": ret_pct > 8.0,
                 "is_broken": weakest_conviction < 3.0,
+                "event_bias": holding_bias,
+            }
+            candidate_state = {
+                "event_bias": candidate_bias,
             }
 
             target_sym = best_candidate["ticker"]
@@ -3553,6 +3568,7 @@ class SentinelService:
                 holding_score=weakest_conviction,
                 candidate_score=best_cand_score,
                 holding_state=holding_state,
+                candidate_state=candidate_state,
                 min_delta_override=rotation_min_delta,
             )
 

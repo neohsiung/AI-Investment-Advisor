@@ -408,6 +408,31 @@ Return JSON:
         synth_sub_scores = await self._gather_synthesized_factor_scores(ticker)
         sub_scores.extend(synth_sub_scores)
 
+        # Query active micro event bias (個經事件偏置)
+        try:
+            from src.services.event_impact_service import EventImpactService
+            impact_svc = EventImpactService(user_id=self.user_id)
+            micro_bias, active_events = impact_svc.get_ticker_micro_bias(ticker)
+            if active_events and micro_bias != 0.0:
+                latest_evt = active_events[0]
+                sub_scores.append(AgentSubScore(
+                    agent_name="Event_Bias",
+                    ticker=ticker,
+                    confidence=max(0.0, min(10.0, 5.0 + micro_bias * 2.5)),
+                    factors={
+                        "key_factor": f"Event Bias ({micro_bias:+.2f} pt)",
+                        "headline": latest_evt.get("headline", ""),
+                        "current_impact": micro_bias,
+                        "category": latest_evt.get("category", "event"),
+                        "active_events_count": len(active_events),
+                        "remaining_hours": latest_evt.get("remaining_hours", 0.0),
+                    },
+                    rationale=f"Active micro event bias for {ticker}: {latest_evt.get('headline', '')} (Impact: {micro_bias:+.2f} pt)",
+                    timestamp=datetime.now().isoformat(),
+                ))
+        except Exception as e:
+            logger.warning(f"Failed to gather micro event bias for {ticker}: {e}")
+
         return sub_scores
 
     async def _gather_synthesized_factor_scores(self, ticker: str) -> List[AgentSubScore]:
@@ -603,8 +628,9 @@ Return JSON:
         if not sub_scores:
             return 5.0, False
 
-        base_scores = [s for s in sub_scores if not s.agent_name.startswith("Synth_")]
+        base_scores = [s for s in sub_scores if not s.agent_name.startswith("Synth_") and s.agent_name != "Event_Bias"]
         synth_scores = [s for s in sub_scores if s.agent_name.startswith("Synth_")]
+        event_bias_score = next((s for s in sub_scores if s.agent_name == "Event_Bias"), None)
 
         # Case 1: Standard 4-agent ensemble (no active synthesized factors)
         if not synth_scores:
@@ -616,41 +642,44 @@ Return JSON:
                 total_weight += weight
 
             composite = weighted_sum / total_weight if total_weight > 0 else 5.0
-            should_execute = composite >= self.min_threshold
-            return composite, should_execute
-
-        # Case 2: Adaptive ensemble with synthesized factors
-        # Total weight capped at 15% for all synthesized factors combined,
-        # with individual factors respecting their stepped weight_cap.
-        raw_synth_weights = [
-            max(0.01, min(0.15, float(s.factors.get("weight_cap", 0.05))))
-            for s in synth_scores
-        ]
-        sum_raw = sum(raw_synth_weights)
-        if sum_raw > 0.15:
-            scale_synth = 0.15 / sum_raw
-            normalized_synth_weights = [w * scale_synth for w in raw_synth_weights]
         else:
-            normalized_synth_weights = raw_synth_weights
+            # Case 2: Adaptive ensemble with synthesized factors
+            # Total weight capped at 15% for all synthesized factors combined,
+            # with individual factors respecting their stepped weight_cap.
+            raw_synth_weights = [
+                max(0.01, min(0.15, float(s.factors.get("weight_cap", 0.05))))
+                for s in synth_scores
+            ]
+            sum_raw = sum(raw_synth_weights)
+            if sum_raw > 0.15:
+                scale_synth = 0.15 / sum_raw
+                normalized_synth_weights = [w * scale_synth for w in raw_synth_weights]
+            else:
+                normalized_synth_weights = raw_synth_weights
 
-        total_synth_weight = sum(normalized_synth_weights)
-        base_scale = max(0.0, 1.0 - total_synth_weight)
+            total_synth_weight = sum(normalized_synth_weights)
+            base_scale = max(0.0, 1.0 - total_synth_weight)
 
-        weighted_sum = 0.0
-        total_weight = 0.0
+            weighted_sum = 0.0
+            total_weight = 0.0
 
-        for score in base_scores:
-            weight = self.agent_weights.get(score.agent_name.lower(), 0.25) * base_scale
-            weighted_sum += score.confidence * weight
-            total_weight += weight
+            for score in base_scores:
+                weight = self.agent_weights.get(score.agent_name.lower(), 0.25) * base_scale
+                weighted_sum += score.confidence * weight
+                total_weight += weight
 
-        for score, w in zip(synth_scores, normalized_synth_weights):
-            weighted_sum += score.confidence * w
-            total_weight += w
+            for score, w in zip(synth_scores, normalized_synth_weights):
+                weighted_sum += score.confidence * w
+                total_weight += w
 
-        composite = weighted_sum / total_weight if total_weight > 0 else 5.0
+            composite = weighted_sum / total_weight if total_weight > 0 else 5.0
+
+        # Apply active micro event bias (個經事件偏置微調)
+        if event_bias_score:
+            micro_bias = float(event_bias_score.factors.get("current_impact", 0.0))
+            composite = max(0.0, min(10.0, composite + micro_bias))
+
         should_execute = composite >= self.min_threshold
-
         return composite, should_execute
 
     def _compute_cash_reserve_factor(
@@ -674,6 +703,15 @@ Return JSON:
             reserve = 0.40 + (6.0 - composite_score) * 0.40
         else:
             reserve = 0.80 + (5.0 - composite_score) * 0.03
+
+        # Macro stress integration (總經壓力動態調升防禦儲備)
+        try:
+            from src.services.event_impact_service import EventImpactService
+            impact_svc = EventImpactService(user_id=self.user_id)
+            _, extra_cash_ratio, _ = impact_svc.get_macro_stress_bias()
+            reserve += extra_cash_ratio
+        except Exception as e:
+            logger.warning(f"CompositorService: failed to check macro stress for cash reserve: {e}")
 
         return max(0.10, min(0.95, round(reserve, 2)))
 

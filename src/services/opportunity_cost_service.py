@@ -68,33 +68,53 @@ class OpportunityCostService:
         candidate_state = candidate_state or {}
 
         hurdle = min_delta_override if min_delta_override is not None else self.min_score_delta
-        raw_delta = candidate_score - holding_score
+
+        # Check event bias from holding_state / candidate_state
+        holding_event_bias = float(holding_state.get("event_bias", 0.0))
+        candidate_event_bias = float(candidate_state.get("event_bias", 0.0))
+
+        effective_holding_score = max(0.0, holding_score + holding_event_bias)
+        effective_candidate_score = max(0.0, min(10.0, candidate_score + candidate_event_bias))
+
+        raw_delta = effective_candidate_score - effective_holding_score
         net_delta = raw_delta - self.friction_hurdle_score
 
-        # Check if holding state is explicitly broken (e.g. stop hit, thesis broke)
-        is_holding_broken = holding_state.get("is_broken", False) or holding_state.get("stop_triggered", False)
-        
+        # Check if holding state is explicitly broken or hit severe adverse event
+        is_severe_adverse_event = (holding_event_bias <= -1.2)
+        is_holding_broken = (
+            holding_state.get("is_broken", False)
+            or holding_state.get("stop_triggered", False)
+            or is_severe_adverse_event
+        )
+
         # Check protection status from LongTermWinnerService
         protection_status = holding_state.get("protection_status")
         is_full_compounding = (protection_status == "FULL_PROTECT_COMPOUNDING")
         is_trim_excess = (protection_status == "TRIM_EXCESS_FOR_OPPORTUNITY")
-        
+
         # Check if holding is a strong runner (e.g. profitable compounder with healthy trend)
-        is_holding_runner = is_full_compounding or holding_state.get("is_runner", False) or (
-            holding_state.get("unrealized_pnl_pct", 0.0) > 8.0 and holding_state.get("is_above_ma50", True)
+        is_holding_runner = (not is_severe_adverse_event) and (
+            is_full_compounding or holding_state.get("is_runner", False) or (
+                holding_state.get("unrealized_pnl_pct", 0.0) > 8.0 and holding_state.get("is_above_ma50", True)
+            )
         )
 
         if is_holding_broken:
+            trigger_cause = (
+                f"遭遇重大負面事件衝擊 (偏置 {holding_event_bias:+.2f})"
+                if is_severe_adverse_event
+                else "論點破壞或觸發停損"
+            )
             return SwapDecision(
                 should_swap=True,
                 holding_ticker=holding_ticker,
                 candidate_ticker=candidate_ticker,
-                holding_score=holding_score,
-                candidate_score=candidate_score,
+                holding_score=round(effective_holding_score, 2),
+                candidate_score=round(effective_candidate_score, 2),
                 raw_delta=round(raw_delta, 2),
                 net_opportunity_delta=round(net_delta, 2),
                 friction_hurdle=round(hurdle, 2),
-                reason=f"持有標的 {holding_ticker} 論點破壞或觸發停損，無條件放行置換至優質候選 {candidate_ticker}",
+                reason=f"持有標的 {holding_ticker} {trigger_cause}，無條件放行置換至優質候選 {candidate_ticker}",
             )
 
         # Full compounding winner: require 1.75x hurdle to displace structural long-term winner

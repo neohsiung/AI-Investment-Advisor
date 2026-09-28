@@ -708,6 +708,58 @@ settings:
     max: 10
     label_en: Risk appetite score
     label_zh: 風險偏好分數
+  - key: event_bias_enabled
+    group: sentinel
+    type: bool
+    default: true
+    label_en: Enable Event Impact Bias Loop
+    label_zh: 啟用市場事件量化偏置閉環
+    help_en: Quantifies market events (Micro vs Macro) into exponential time-decay biases affecting buy confidence, exit urgency, and cash buffer.
+    help_zh: 將市場事件 (個經/總經) 量化為指數時間衰減偏置，動態微調買進信心、出場急迫性與防禦性現金水位。
+  - key: event_bias_micro_half_life_hours
+    group: sentinel
+    type: float
+    default: 36.0
+    min: 6.0
+    max: 168.0
+    depends: event_bias_enabled
+    label_en: Micro Event Half-Life (Hours)
+    label_zh: 個經事件半衰期 (小時)
+    help_en: Half-life in hours for ticker-specific events (analyst downgrades, earnings misses, etc.).
+    help_zh: 單一標的特異性事件 (券商降評、財報、管理層異動等) 之指數衰減半衰期。
+  - key: event_bias_macro_half_life_hours
+    group: sentinel
+    type: float
+    default: 96.0
+    min: 12.0
+    max: 336.0
+    depends: event_bias_enabled
+    label_en: Macro Event Half-Life (Hours)
+    label_zh: 總經事件半衰期 (小時)
+    help_en: Half-life in hours for systemic market events (FOMC rates, CPI inflation, geopolitics).
+    help_zh: 總體經濟與系統性事件 (FOMC 利率決議、通膨數據、地緣衝突) 之指數衰減半衰期。
+  - key: event_bias_max_micro_impact
+    group: sentinel
+    type: float
+    default: 1.5
+    min: 0.5
+    max: 3.0
+    depends: event_bias_enabled
+    label_en: Max Micro Score Bias (+/- pt)
+    label_zh: 個經評分最大微調幅度 (±分)
+    help_en: Maximum score delta that micro events can apply to ticker composite score.
+    help_zh: 單一標的因個經事件最多微調的分數上限 (0-10 分制)。
+  - key: event_bias_max_macro_cash_buffer
+    group: sentinel
+    type: float
+    default: 0.15
+    min: 0.05
+    max: 0.35
+    depends: event_bias_enabled
+    label_en: Max Macro Cash Reserve Expansion
+    label_zh: 總經最大現金防禦擴增比例
+    help_en: Maximum additional cash reserve ratio dynamically held during severe macro stress.
+    help_zh: 遭遇嚴重總經壓力衝擊時，投資組合自動額外保留現金防禦比率的上限。
 
   # ── Notifications ────────────────────────────────────────────────────────
   - key: notification_routing

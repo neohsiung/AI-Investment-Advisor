@@ -142,18 +142,37 @@ class ExitCompositorService:
         )
         sub_scores.append(self._sub("momentum_reversal", ticker, mom_score, mom_factors))
 
+        # Check active micro event bias (個經事件偏置)
+        active_micro_bias = 0.0
+        active_event_headline = ""
+        try:
+            from src.services.event_impact_service import EventImpactService
+            impact_svc = EventImpactService(user_id=self.user_id, settings_service=self._settings_service)
+            active_micro_bias, active_events = impact_svc.get_ticker_micro_bias(ticker)
+            if active_events and active_micro_bias < 0:
+                active_event_headline = active_events[0].get("headline", "")
+        except Exception as e:
+            logger.warning(f"ExitCompositor: failed to check micro event bias for {ticker}: {e}")
+
+        effective_reason_hint = reason_hint
+        if active_event_headline:
+            effective_reason_hint = (
+                f"{reason_hint} | Active Negative Event: {active_event_headline}"
+                if reason_hint else f"Active Negative Event: {active_event_headline}"
+            )
+
         # Fast path: if quantitative factors prove that even under the worst possible
         # risk score (10.0), the composite score cannot reach 5.0 (sell threshold is >= 6.0),
         # skip the expensive ~75s LLM call and assign neutral risk (3.0).
         # 若量化三因子顯示持倉極度穩健（即使風險給最極端 10 分總分仍低於 5.0），
-        # 且無外部觸發理由，則豁免慢速 LLM 呼叫，避免 Celery worker 軟超時。
+        # 且無外部觸發理由與負面事件，則豁免慢速 LLM 呼叫，避免 Celery worker 軟超時。
         max_possible_composite = (
             pnl_score * EXIT_FACTOR_WEIGHTS["pnl"]
             + conc_score * EXIT_FACTOR_WEIGHTS["concentration"]
             + mom_score * EXIT_FACTOR_WEIGHTS["momentum_reversal"]
             + 10.0 * EXIT_FACTOR_WEIGHTS["risk"]
         )
-        if not reason_hint and max_possible_composite < 5.0:
+        if not effective_reason_hint and max_possible_composite < 5.0:
             risk_score = 3.0
             risk_factors = {
                 "key_factor": "基本面與技術面強健（豁免 LLM 慢速呼叫）",
@@ -162,10 +181,20 @@ class ExitCompositorService:
             }
         else:
             try:
-                risk_score, risk_factors = await self._score_risk(ticker, reason_hint)
+                risk_score, risk_factors = await self._score_risk(ticker, effective_reason_hint)
             except Exception as e:
                 logger.warning(f"ExitCompositor: risk factor raised for {ticker}: {e}")
                 risk_score, risk_factors = 5.0, self._unavailable(e)
+
+        # Apply risk floor if active negative event bias exists
+        if active_micro_bias < 0:
+            event_risk_floor = min(10.0, 5.0 + abs(active_micro_bias) * 2.0)
+            if risk_score < event_risk_floor:
+                risk_score = event_risk_floor
+                risk_factors["event_bias_floor_applied"] = True
+                risk_factors["active_event_bias"] = active_micro_bias
+                risk_factors["key_factor"] = f"事件利空衝擊 ({active_micro_bias:+.2f} pt)"
+
         sub_scores.append(self._sub("risk", ticker, risk_score, risk_factors))
 
         composite = self._aggregate(sub_scores)

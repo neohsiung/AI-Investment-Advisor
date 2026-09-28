@@ -361,6 +361,22 @@ class AutomatedTradingService:
                 min_threshold = min_threshold / 10.0
         else:
             min_threshold = 3.0
+
+        # Macro stress hurdle adjustment: elevate BUY hurdle during systemic turmoil
+        if action.upper() in ("BUY", "STRONG_BUY"):
+            try:
+                from src.services.event_impact_service import EventImpactService
+                impact_svc = EventImpactService(user_id=user_id)
+                macro_stress, _, _ = impact_svc.get_macro_stress_bias()
+                if macro_stress < -0.2:
+                    hurdle_bump = min(0.8, abs(macro_stress) * 0.8)
+                    min_threshold += hurdle_bump
+                    logger.info(
+                        f"AutomatedTrading: Macro stress ({macro_stress:+.2f}) elevated BUY execution hurdle "
+                        f"by +{hurdle_bump:.2f} to {min_threshold:.1f}"
+                    )
+            except Exception as e:
+                logger.warning(f"AutomatedTrading: Failed to factor macro stress into execution hurdle: {e}")
         
         # ── Normalize confidence to 0-10 scale for consistent comparison ──
         if confidence_score is not None and confidence_score > 10:
