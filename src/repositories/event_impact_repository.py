@@ -197,14 +197,15 @@ class AlchemyEventImpactRepository(BaseRepository, IEventImpactRepository):
             params["ticker"] = ticker.upper()
 
         where_stmt = " AND ".join(clauses)
-        query = text(f"""
+        sql_str = f"""
             SELECT id, user_id, scope, ticker, category, headline, summary,
                    sentiment, initial_impact, half_life_hours, created_at, metadata, is_dismissed
             FROM event_impact_biases
             WHERE {where_stmt}
             ORDER BY created_at DESC
             LIMIT 100
-        """)
+        """  # nosec B608
+        query = text(sql_str)  # nosec B608
 
         impacts: List[EventImpact] = []
         try:
