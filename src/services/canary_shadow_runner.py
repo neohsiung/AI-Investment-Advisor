@@ -304,6 +304,224 @@ class CanaryShadowRunner:
 
         return True
 
+    def auto_enroll_verified_artifacts(self, user_id: str) -> List[CodeArtifactRecord]:
+        """
+        Scan all VERIFIED artifacts owned by user_id and enroll them into PROVISIONAL canary tracking (14 days).
+        掃描所有通過沙盒驗測之 VERIFIED 因子，自動登錄進入 14 天金絲雀灰度考覈。
+        """
+        verified = self.list_artifacts(user_id=user_id, status=ArtifactStatus.VERIFIED)
+        enrolled = []
+        now_iso = datetime.now(timezone.utc).isoformat()
+        repo = self._get_repo()
+
+        for art in verified:
+            art.status = ArtifactStatus.PROVISIONAL
+            art.shadow_days_remaining = 14
+            art.updated_at = now_iso
+            enrolled.append(art)
+            if repo:
+                try:
+                    repo.update_lifecycle(
+                        artifact_id=art.id,
+                        status=ArtifactStatus.PROVISIONAL,
+                        shadow_days_remaining=14,
+                    )
+                except Exception as e:
+                    logger.warning("Failed to enroll artifact %s to provisional in DB: %s", art.id, e)
+            logger.info("Auto-enrolled VERIFIED artifact %s (%s) into 14-day canary tracking", art.id, art.name)
+
+        return enrolled
+
+    def evaluate_auto_promotion(self, record: CodeArtifactRecord) -> Dict[str, Any]:
+        """
+        Evaluate if a PROVISIONAL artifact meets rigid statistical and canary stability criteria for automated promotion.
+        評估灰度影子期因子是否滿足統計健壯性與即時跟蹤穩定度，符合自動晉升實盤門檻。
+        """
+        if record.status != ArtifactStatus.PROVISIONAL:
+            return {"eligible": False, "reason": f"Status is {record.status}, expected PROVISIONAL", "weight_tier": 0.0}
+
+        metrics = record.backtest_metrics or {}
+        params = record.parameters or {}
+
+        # 1. Backtest & Robustness Hard Gates
+        sharpe = float(metrics.get("sharpe_ratio", 0.0) or 0.0)
+        mdd = float(metrics.get("max_drawdown_pct", 100.0) or 100.0)
+        wfe = float(metrics.get("wfe", params.get("wfe", 0.0)) or 0.0)
+        mc_win_rate = float(metrics.get("monte_carlo_win_rate", params.get("monte_carlo_win_rate", 0.0)) or 0.0)
+
+        if sharpe < 1.0 or mdd > 25.0:
+            return {
+                "eligible": False,
+                "reason": f"Backtest metrics below gate: Sharpe={sharpe:.2f} (min 1.0), MDD={mdd:.1f}% (max 25%)",
+                "weight_tier": 0.0,
+            }
+
+        # 2. Canary Shadow Tracking Gates
+        # Rule out any severe single-day drop in shadow tracking
+        shadow_log = record.shadow_tracking_log or []
+        severe_drops = [entry for entry in shadow_log if float(entry.get("daily_pnl_pct", 0.0)) <= -5.0]
+        if severe_drops:
+            return {
+                "eligible": False,
+                "reason": f"Severe single-day drawdown encountered in shadow period ({len(severe_drops)} events)",
+                "weight_tier": 0.0,
+            }
+
+        # Check tracking duration / fast-track requirements
+        is_graduated = (record.shadow_days_remaining == 0)
+        is_fast_track = False
+        fast_track_reason = ""
+
+        if not is_graduated and record.shadow_days_remaining <= 7 and len(shadow_log) >= 7:
+            cum_pnl = sum(float(e.get("daily_pnl_pct", 0.0)) for e in shadow_log)
+            # Must have non-negative cumulative simulated pnl and solid WFE / MC scores
+            is_wfe_robust = (wfe >= 0.70 or wfe == 0.0)  # if WFE was computed, must be >= 0.70
+            is_mc_robust = (mc_win_rate >= 75.0 or mc_win_rate == 0.0)
+            if cum_pnl >= 0.0 and is_wfe_robust and is_mc_robust:
+                is_fast_track = True
+                fast_track_reason = f"Fast-Track: 7-day shadow track positive ({cum_pnl:+.2f}%) with WFE={wfe:.2f}, MC={mc_win_rate:.1f}%"
+
+        if not (is_graduated or is_fast_track):
+            return {
+                "eligible": False,
+                "reason": f"Shadow tracking in progress: {record.shadow_days_remaining} days remaining (logged {len(shadow_log)} days)",
+                "weight_tier": 0.0,
+            }
+
+        # 3. Factor Orthogonality & Multi-Collinearity Gate
+        # 因子正交性與共線性閘門：確保候選因子與在線 ACTIVE 因子的相關性低於閾值（預設 0.65）
+        try:
+            from src.services.factor_orthogonalization_service import FactorOrthogonalizationService
+            active_factors = self.list_artifacts(user_id=record.user_id, status=ArtifactStatus.ACTIVE)
+
+            threshold = 0.65
+            try:
+                from src.repositories.settings_repository import AlchemySettingsRepository
+                settings_repo = AlchemySettingsRepository()
+                th_val = settings_repo.get(record.user_id, "factor_max_correlation_threshold")
+                if th_val is not None:
+                    threshold = float(th_val)
+            except Exception as st_err:
+                logger.debug("Failed reading factor_max_correlation_threshold, using default: %s", st_err)
+
+            ortho_svc = FactorOrthogonalizationService(max_correlation=threshold)
+            ortho_res = ortho_svc.check_orthogonality(record, active_factors)
+            if not ortho_res["orthogonal"]:
+                return {
+                    "eligible": False,
+                    "reason": ortho_res["reason"],
+                    "weight_tier": 0.0,
+                    "orthogonality": ortho_res,
+                }
+        except Exception as ortho_err:
+            logger.warning("Factor orthogonality check encountered error: %s", ortho_err)
+
+        base_reason = (
+            "Graduated: Completed full 14-day canary shadow tracking with zero severe drawdowns"
+            if is_graduated
+            else fast_track_reason
+        )
+        return {
+            "eligible": True,
+            "reason": base_reason,
+            "weight_tier": 0.05,
+        }
+
+    def auto_promote_artifact(self, artifact_id: str, user_id: str) -> bool:
+        """
+        Execute automated promotion from PROVISIONAL to ACTIVE with stepped weight allocation and notifications.
+        執行自動核准晉升：將符合標準之因子轉為 ACTIVE 狀態，配賦 5% 初始階梯權重並發送推播。
+        """
+        record = self.get_artifact(artifact_id)
+        if not record or record.user_id != user_id:
+            return False
+
+        eval_res = self.evaluate_auto_promotion(record)
+        if not eval_res["eligible"]:
+            logger.info("Artifact %s not eligible for auto-promotion: %s", artifact_id, eval_res["reason"])
+            return False
+
+        now_iso = datetime.now(timezone.utc).isoformat()
+        initial_weight = eval_res.get("weight_tier", 0.05)
+
+        record.status = ArtifactStatus.ACTIVE
+        record.updated_at = now_iso
+        record.parameters["approval_type"] = "automated"
+        record.parameters["weight_cap"] = initial_weight
+        record.parameters["promoted_at"] = now_iso
+        record.parameters["promotion_reason"] = eval_res["reason"]
+
+        logger.info(
+            "Auto-promoted artifact '%s' (%s) to ACTIVE live status (initial weight: %.1f%%, reason: %s)",
+            record.name,
+            artifact_id,
+            initial_weight * 100,
+            eval_res["reason"],
+        )
+
+        repo = self._get_repo()
+        if repo:
+            try:
+                repo.update_lifecycle(
+                    artifact_id=artifact_id,
+                    status=ArtifactStatus.ACTIVE,
+                    parameters=record.parameters,
+                )
+            except Exception as e:
+                logger.warning("Failed to update auto-promoted status in DB for %s: %s", artifact_id, e)
+
+        # Dispatch multi-channel notification
+        try:
+            from src.services.factor_notification_service import factor_notification_service
+            import asyncio
+            coro = factor_notification_service.notify_factor_promoted(
+                artifact_name=record.name,
+                regime=record.parameters.get("target_regime", "DYNAMIC"),
+                user_id=user_id,
+                metrics=record.backtest_metrics,
+                approval_type="automated",
+            )
+            try:
+                loop = asyncio.get_event_loop()
+                if loop.is_running():
+                    asyncio.create_task(coro)
+                else:
+                    loop.run_until_complete(coro)
+            except Exception:
+                asyncio.run(coro)
+        except Exception as notif_err:
+            logger.warning("Failed to dispatch auto-promotion notification for %s: %s", artifact_id, notif_err)
+
+        return True
+
+    def get_effective_weight_cap(self, record: CodeArtifactRecord) -> float:
+        """
+        Compute effective weight cap for active factor.
+        Stepped release: Freshly auto-promoted factors start at 5% cap;
+        after 7 days of live stability, step up to full 15% cap.
+        計算因子實盤有效權重上限：新自動晉升因子初始 5%，平穩運行 7 天後階梯釋放至 15%。
+        """
+        params = record.parameters or {}
+        if params.get("approval_type") != "automated":
+            # Manual approval defaults to full 15% cap
+            return float(params.get("weight_cap", 0.15))
+
+        promoted_at_str = params.get("promoted_at")
+        if not promoted_at_str:
+            return float(params.get("weight_cap", 0.05))
+
+        try:
+            promoted_dt = datetime.fromisoformat(promoted_at_str)
+            now_dt = datetime.now(timezone.utc)
+            days_active = (now_dt - promoted_dt).total_seconds() / 86400.0
+            if days_active >= 7.0:
+                # Stepped up to full 15%
+                return 0.15
+            return float(params.get("weight_cap", 0.05))
+        except Exception:
+            return float(params.get("weight_cap", 0.05))
+
 
 # Global Singleton Instance for Runtime Tracking
 canary_runner = CanaryShadowRunner()
+

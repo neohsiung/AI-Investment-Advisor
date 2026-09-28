@@ -1408,6 +1408,63 @@ class EventAnalysisWorkflow(BaseWorkflow):
                     dispatch_notifications=is_actionable,
                 )
 
+                # ── Stage 6: 事件量化偏置閉環 (Event Impact Bias Loop Persistence) ──
+                try:
+                    from src.services.event_impact_service import EventImpactService
+                    from src.domain.event_impact import EventScope, EventSentiment
+
+                    impact_svc = EventImpactService(user_id=self.user_id)
+
+                    is_macro = bool(filter_res.macro_topic) or (
+                        not filter_res.matched_tickers and primary_ticker in ("SPY", "GLOBAL", "MARKET")
+                    )
+                    event_scope = EventScope.MACRO if is_macro else EventScope.MICRO
+                    target_ticker = None if is_macro else primary_ticker
+
+                    # Determine sentiment & impact score
+                    if any(act in str(final_report).upper() for act in ["**SELL**", "**REDUCE**"]) or any(
+                        o.get("action") in ["SELL", "REDUCE"] for o in actionable_orders
+                    ):
+                        event_sentiment = EventSentiment.BEARISH
+                        impact_val = -1.5 if not is_macro else -0.7
+                    elif "**BUY**" in str(final_report).upper() or any(
+                        o.get("action") in ["BUY", "STRONG_BUY"] for o in actionable_orders
+                    ):
+                        event_sentiment = EventSentiment.BULLISH
+                        impact_val = 1.3 if not is_macro else 0.5
+                    elif "bearish" in str(sent_res).lower():
+                        event_sentiment = EventSentiment.BEARISH
+                        impact_val = -0.8 if not is_macro else -0.4
+                    elif "bullish" in str(sent_res).lower():
+                        event_sentiment = EventSentiment.BULLISH
+                        impact_val = 0.7 if not is_macro else 0.3
+                    else:
+                        event_sentiment = EventSentiment.NEUTRAL
+                        impact_val = 0.0
+
+                    if impact_val != 0.0:
+                        impact_svc.record_event_impact(
+                            scope=event_scope,
+                            headline=news_msg[:200],
+                            summary=final_report[:500],
+                            ticker=target_ticker,
+                            category=filter_res.category or (filter_res.macro_topic or "market_news"),
+                            sentiment=event_sentiment,
+                            initial_impact=impact_val,
+                            metadata={
+                                "event_source": self.event_source,
+                                "is_actionable": is_actionable,
+                                "relevance_score": filter_res.relevance_score,
+                                "macro_topic": filter_res.macro_topic,
+                            }
+                        )
+                        self.logger.info(
+                            f"EventAnalysisWorkflow: Recorded event bias [{event_scope.value}] "
+                            f"ticker={target_ticker} impact={impact_val:+.2f} for user={self.user_id}"
+                        )
+                except Exception as bias_err:
+                    self.logger.warning(f"EventAnalysisWorkflow: Failed to record event bias: {bias_err}")
+
                 # Auto-execution logic (System 2)
                 if is_actionable and actionable_orders:
                     from src.services.automated_trading_service import AutomatedTradingService

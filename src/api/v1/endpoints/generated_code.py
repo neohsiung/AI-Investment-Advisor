@@ -238,3 +238,32 @@ async def kill_artifact_endpoint(
         logger.warning("Failed to dispatch kill notification for %s: %s", artifact_id, e)
 
     return {"status": "success", "artifact_id": artifact_id, "new_status": ArtifactStatus.KILLED}
+
+
+@router.post("/auto-promote")
+async def trigger_auto_promote_endpoint(
+    user_id: str = Depends(get_current_user_id),
+):
+    """
+    Trigger automated promotion evaluation:
+    1. Enrolls any VERIFIED artifacts into PROVISIONAL canary tracking.
+    2. Evaluates PROVISIONAL artifacts and promotes qualified ones to ACTIVE with stepped weight.
+    """
+    enrolled = canary_runner.auto_enroll_verified_artifacts(user_id=user_id)
+    provisional = canary_runner.list_artifacts(user_id=user_id, status=ArtifactStatus.PROVISIONAL)
+    promoted = []
+
+    for art in provisional:
+        eval_res = canary_runner.evaluate_auto_promotion(art)
+        if eval_res.get("eligible"):
+            ok = canary_runner.auto_promote_artifact(art.id, user_id=user_id)
+            if ok:
+                promoted.append({"id": art.id, "name": art.name, "reason": eval_res.get("reason")})
+
+    return {
+        "status": "success",
+        "enrolled_count": len(enrolled),
+        "promoted_count": len(promoted),
+        "promoted": promoted,
+    }
+

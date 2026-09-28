@@ -81,3 +81,47 @@ def test_add_ticker_quality_gate_rejected(client, mock_service):
     resp = client.post("/api/v1/ticker-universe", json={"ticker": "JUNK"})
     assert resp.status_code == 400
     assert "Quality Gate Rejected" in resp.json()["detail"]
+
+
+def test_reclaim_capital_endpoint(client, mock_service):
+    mock_service.user_id = "test-user-001"
+    with patch("src.services.confidence_rebalance_service.ConfidenceRebalanceService.reclaim_capital_for_buy", new_callable=AsyncMock) as mock_reclaim:
+        mock_reclaim.return_value = {
+            "status": "success",
+            "message": "Capital planned",
+            "needed_amount": 50.0,
+            "reclaimed_amount": 60.0,
+            "sales_planned": [{"ticker": "TSLA", "amount": 60.0}],
+            "candidate_ticker": "NVDA",
+        }
+        resp = client.post(
+            "/api/v1/ticker-universe/rebalance/reclaim-capital",
+            json={
+                "candidate_ticker": "NVDA",
+                "target_amount": 50.0,
+                "candidate_score": 8.8,
+                "execute": False,
+            },
+        )
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["status"] == "success"
+        assert data["data"]["reclaimed_amount"] == 60.0
+
+
+def test_pyramid_screen_endpoint(client, mock_service):
+    mock_service.run_pyramid_screen = AsyncMock(return_value={
+        "stage1_total_scanned": 150,
+        "stage1_candidates": [{"ticker": "NVDA", "quant_score": 9.2}],
+        "stage2_approved": [{"ticker": "NVDA", "overall_score": 8.7}],
+        "admitted_to_universe": ["NVDA"],
+    })
+
+    resp = client.post("/api/v1/ticker-universe/pyramid-screen?top_n=10&auto_admit=true")
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["status"] == "success"
+    assert data["data"]["stage1_total_scanned"] == 150
+    assert data["data"]["admitted_to_universe"] == ["NVDA"]
+
+

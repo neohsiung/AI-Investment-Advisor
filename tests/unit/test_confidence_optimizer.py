@@ -304,3 +304,27 @@ class TestRebalanceExecuteSafety:
         assert "BAD" in called_tickers
         assert "STRONG" in called_tickers
         assert "WEAK" not in called_tickers
+
+    @pytest.mark.asyncio
+    async def test_rebalance_execute_blocks_when_market_closed_if_enforced(self):
+        """When enforce_market_hours=True and market is closed, execution is safely blocked."""
+        from src.services.confidence_rebalance_service import ConfidenceRebalanceService
+
+        mock_clock = MagicMock()
+        mock_clock.is_market_open.return_value = False
+        mock_clock.get_market_status.return_value = {
+            "is_open": False,
+            "current_time": "2026-09-27T08:00:00-04:00",
+            "next_open": "2026-09-28T09:30:00-04:00",
+        }
+
+        svc = ConfidenceRebalanceService(user_id="test-user")
+        svc.market_clock = mock_clock
+        svc._execute_trade = AsyncMock()
+
+        result = await svc.execute_rebalance(enforce_market_hours=True)
+
+        assert result["success"] is False
+        assert result["status"] == "market_closed"
+        assert "休市中" in result["message"]
+        svc._execute_trade.assert_not_called()

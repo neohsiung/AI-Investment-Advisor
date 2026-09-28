@@ -8,16 +8,23 @@ logger = logging.getLogger(__name__)
 def repair_json(text: str) -> str:
     """
     Attempts to repair common JSON errors from LLM outputs.
-    1. Removes Markdown code blocks (```json ... ```)
-    2. Handles leading/trailing whitespace
+    1. Strips reasoning/thought tags (<think>...</think>) from models like DeepSeek-R1
+    2. Removes Markdown code blocks (```json ... ```)
+    3. Handles leading/trailing whitespace
     """
     if not text:
         return ""
-        
+
+    # Strip thought / reasoning blocks (e.g. <think>...</think>)
+    text = re.sub(r'<think>[\s\S]*?</think>', '', text, flags=re.MULTILINE)
+    # Also handle unclosed <think> if response was truncated
+    if '<think>' in text and '</think>' not in text:
+        text = re.sub(r'<think>[\s\S]*$', '', text, flags=re.MULTILINE)
+
     # Remove Markdown fences
     text = re.sub(r'^```(?:json)?', '', text.strip(), flags=re.MULTILINE)
     text = re.sub(r'```$', '', text.strip(), flags=re.MULTILINE)
-    
+
     return text.strip()
 
 def json_loads_safe(text: str, default: Any = None) -> Any:

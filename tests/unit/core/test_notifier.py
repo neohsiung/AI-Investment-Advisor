@@ -1,6 +1,6 @@
 import pytest
 from unittest.mock import MagicMock, patch, AsyncMock
-from src.notifier import EmailNotifier
+from src.infrastructure.channels.email_notifier import EmailNotifier
 import os
 
 @pytest.fixture

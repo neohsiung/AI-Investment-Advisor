@@ -251,3 +251,33 @@ async def trigger_rebalance(
     except Exception as e:
         logger.error(f"Error triggering rebalance: {e}")
         raise HTTPException(status_code=500, detail="Internal server error")
+
+
+@router.get("/event-biases")
+async def get_event_biases(user_id: str = Depends(get_current_user_id)):
+    """獲取目前生效中之市場事件量化偏置清單 (個經與總經雙軌)"""
+    try:
+        from src.services.event_impact_service import EventImpactService
+        service = EventImpactService(user_id=user_id)
+        biases = service.get_all_active_biases()
+        return {"status": "success", "data": biases}
+    except Exception as e:
+        logger.error(f"Error fetching event biases: {e}")
+        raise HTTPException(status_code=500, detail="Internal server error")
+
+
+@router.post("/event-biases/{impact_id}/dismiss")
+async def dismiss_event_bias(impact_id: str, user_id: str = Depends(get_current_user_id)):
+    """手動撤銷/忽略特定的市場事件偏置"""
+    try:
+        from src.services.event_impact_service import EventImpactService
+        service = EventImpactService(user_id=user_id)
+        success = service.dismiss_bias(impact_id)
+        if not success:
+            raise HTTPException(status_code=404, detail="Bias not found or already dismissed")
+        return {"status": "success", "message": f"Event bias {impact_id} dismissed"}
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error dismissing event bias: {e}")
+        raise HTTPException(status_code=500, detail="Internal server error")

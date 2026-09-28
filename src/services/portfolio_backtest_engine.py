@@ -61,12 +61,16 @@ class PortfolioBacktestEngine:
         slippage_pct: float = 0.0005,
         stoploss_pct: Optional[float] = 0.08,
         position_size_pct: float = 0.20,
+        token_cost_per_trade: float = 0.0,
+        token_cost_per_bar: float = 0.0,
     ):
         self.initial_cash = initial_cash
         self.fee_pct = fee_pct
         self.slippage_pct = slippage_pct
         self.stoploss_pct = stoploss_pct
         self.position_size_pct = position_size_pct
+        self.token_cost_per_trade = token_cost_per_trade
+        self.token_cost_per_bar = token_cost_per_bar
 
     def run(self, ticker: str, ohlcv: Dict[str, List[Any]], signal_fn: SignalFn) -> BacktestResult:
         """
@@ -89,8 +93,14 @@ class PortfolioBacktestEngine:
         entry_date = None
         trades: List[Trade] = []
         equity_curve: List[float] = []
+        total_token_cost = 0.0
 
         for i in range(n):
+            # Per-bar operational token / computational cost deduction
+            if self.token_cost_per_bar > 0:
+                cash -= self.token_cost_per_bar
+                total_token_cost += self.token_cost_per_bar
+
             price = float(closes[i])
             low = float(lows[i]) if i < len(lows) else price
             date = str(dates[i]) if i < len(dates) else str(i)
@@ -101,6 +111,9 @@ class PortfolioBacktestEngine:
                 if low <= stop_price:
                     fill_price = stop_price * (1 - self.slippage_pct)
                     proceeds = position_qty * fill_price * (1 - self.fee_pct)
+                    if self.token_cost_per_trade > 0:
+                        proceeds -= self.token_cost_per_trade
+                        total_token_cost += self.token_cost_per_trade
                     pnl = proceeds - (position_qty * entry_price)
                     trades.append(Trade(
                         entry_date=entry_date, entry_price=entry_price,
@@ -124,7 +137,11 @@ class PortfolioBacktestEngine:
                 fill_price = price * (1 + self.slippage_pct)
                 qty = (alloc * (1 - self.fee_pct)) / fill_price
                 if qty > 0:
-                    cash -= qty * fill_price * (1 + self.fee_pct)
+                    trade_cost = qty * fill_price * (1 + self.fee_pct)
+                    if self.token_cost_per_trade > 0:
+                        trade_cost += self.token_cost_per_trade
+                        total_token_cost += self.token_cost_per_trade
+                    cash -= trade_cost
                     position_qty = qty
                     entry_price = fill_price
                     entry_date = date
@@ -132,6 +149,9 @@ class PortfolioBacktestEngine:
             elif signal == "SELL" and position_qty > 0:
                 fill_price = price * (1 - self.slippage_pct)
                 proceeds = position_qty * fill_price * (1 - self.fee_pct)
+                if self.token_cost_per_trade > 0:
+                    proceeds -= self.token_cost_per_trade
+                    total_token_cost += self.token_cost_per_trade
                 pnl = proceeds - (position_qty * entry_price)
                 trades.append(Trade(
                     entry_date=entry_date, entry_price=entry_price,
@@ -155,6 +175,12 @@ class PortfolioBacktestEngine:
         from src.services.metrics_service import compute_all_metrics
         trade_dicts = [vars(t) for t in trades]
         metrics = compute_all_metrics(equity_curve, trade_dicts)
+        metrics["total_token_cost"] = round(total_token_cost, 4)
+        cagr_val = metrics.get("cagr_pct")
+        max_dd_val = metrics.get("max_drawdown_pct")
+        metrics["net_cagr_pct"] = cagr_val
+        metrics["is_cagr_target_met"] = bool(cagr_val is not None and cagr_val >= 10.0)
+        metrics["is_max_dd_target_met"] = bool(max_dd_val is not None and abs(max_dd_val) <= 15.0)
 
         return BacktestResult(
             ticker=ticker, equity_curve=equity_curve, dates=[str(d) for d in dates[:len(equity_curve)]],

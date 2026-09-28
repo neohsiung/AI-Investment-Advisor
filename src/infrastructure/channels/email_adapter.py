@@ -2,7 +2,7 @@ import typing
 from typing import List, Dict, Tuple, Any, Optional, Callable, Dict, Any, List
 from src.utils.logger import setup_logger
 from src.infrastructure.channels.base_adapter import BaseChannelAdapter
-from src.notifier import EmailNotifier
+from src.infrastructure.channels.email_notifier import EmailNotifier
 
 logger = setup_logger("EmailAdapter")
 

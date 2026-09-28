@@ -95,6 +95,29 @@ class TickerUniverseService:
         """
         return await self.lifecycle_service.run_lifecycle_cycle(candidate_pool=candidate_pool, force=force)
 
+    async def run_pyramid_screen(
+        self,
+        candidate_pool: Optional[List[str]] = None,
+        top_n: Optional[int] = None,
+        auto_admit: bool = False,
+    ) -> Dict[str, Any]:
+        """
+        Run two-stage pyramid screener.
+        執行兩階段金字塔初篩器。
+        """
+        from src.services.pyramid_screener_service import PyramidScreenerService
+        screener = PyramidScreenerService(
+            user_id=self.user_id,
+            quality_gate=self.quality_gate,
+            ticker_repo=self.repo,
+        )
+        res = await screener.run_full_pyramid_screen(
+            candidate_pool=candidate_pool,
+            top_n=top_n,
+            auto_admit=auto_admit,
+        )
+        return res.to_dict()
+
     # ── Universe Management ──
 
     def get_universe(self, status: Optional[str] = None) -> List[Dict[str, Any]]:
@@ -258,6 +281,7 @@ class TickerUniverseService:
         MAX_POS = float(self.settings_service.get_setting("alloc_max_position"))
         SECTOR_CAP = float(self.settings_service.get_setting("alloc_sector_cap"))
         TARGET_SUM = float(self.settings_service.get_setting("alloc_target_sum"))
+        MAX_HOLDINGS = int(self.settings_service.get_setting("alloc_max_holdings", 10))
 
         if MIN_POS > MAX_POS:
             # A caller could otherwise produce an empty feasible set and get
@@ -272,13 +296,37 @@ class TickerUniverseService:
             MIN_POS = float(schema_default("alloc_min_position"))
             MAX_POS = float(schema_default("alloc_max_position"))
 
+        # Portfolio concentration: Top-K conviction selection to prevent fragmentation
+        # 投資組合集中度收斂：僅配置綜合評分最高的前 K 檔標的，避免小資金過度分散與碎屑化
+        if MAX_HOLDINGS > 0 and len(raw_weights) > MAX_HOLDINGS:
+            sorted_by_conviction = sorted(raw_weights.keys(), key=lambda t: raw_weights[t], reverse=True)
+            top_tickers = set(sorted_by_conviction[:MAX_HOLDINGS])
+            evicted_tickers = [t for t in sorted_by_conviction if t not in top_tickers]
+            logger.info(
+                "Concentrating allocations: keeping Top %d tickers (%s), excluded %d lower-ranked (%s)",
+                MAX_HOLDINGS,
+                ", ".join(sorted_by_conviction[:MAX_HOLDINGS]),
+                len(evicted_tickers),
+                ", ".join(evicted_tickers),
+            )
+            raw_weights = {t: raw_weights[t] for t in top_tickers}
+            sub_total = sum(raw_weights.values())
+            if sub_total > 0:
+                raw_weights = {t: w / sub_total for t, w in raw_weights.items()}
+
+            # Rebuild sector weights for selected Top-K
+            sector_weights = {}
+            for ticker, raw_w in raw_weights.items():
+                sec = ticker_scores[ticker]["sector"]
+                sector_weights[sec] = sector_weights.get(sec, 0.0) + raw_w
+
         for ticker in raw_weights:
             raw_weights[ticker] = max(MIN_POS, min(MAX_POS, raw_weights[ticker]))
 
         # Sector concentration: cap at 40%
         sector_capped = dict(raw_weights)
-        for ticker, info in ticker_scores.items():
-            sector = info["sector"]
+        for ticker in raw_weights:
+            sector = ticker_scores[ticker]["sector"]
             if sector and sector_weights.get(sector, 0) > SECTOR_CAP:
                 # Reduce this ticker's weight proportionally
                 ratio = SECTOR_CAP / sector_weights[sector]

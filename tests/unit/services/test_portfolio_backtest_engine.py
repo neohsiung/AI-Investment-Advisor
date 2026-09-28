@@ -240,3 +240,21 @@ class TestSimpleMaCrossoverSignal:
             "AAPL", _ohlcv(closes), simple_ma_crossover_signal(5, 20))
         assert len(result.equity_curve) == 120
         assert result.final_cash > 0
+
+
+class TestTokenFrictionAccounting:
+    def test_token_cost_is_deducted_and_reported(self):
+        engine = PortfolioBacktestEngine(
+            fee_pct=0.0, slippage_pct=0.0, stoploss_pct=None, position_size_pct=1.0,
+            token_cost_per_trade=0.50, token_cost_per_bar=0.10,
+        )
+        # 3 bars: BUY at 0, SELL at 2
+        result = engine.run("AAPL", _ohlcv([100.0, 110.0, 120.0]), _on_bars({0: "BUY", 2: "SELL"}))
+
+        # 3 bars * 0.10 = 0.30 bar tokens + 2 trades * 0.50 = 1.00 trade tokens => 1.30 total tokens
+        assert result.metrics["total_token_cost"] == pytest.approx(1.30)
+        assert result.final_cash == pytest.approx(100_000.0 * 1.20 - 1.30)
+        assert "net_cagr_pct" in result.metrics
+        assert "is_cagr_target_met" in result.metrics
+        assert "is_max_dd_target_met" in result.metrics
+

@@ -98,8 +98,20 @@ async def test_trade_approval_with_ok_reply(anyio_backend):
         interaction_service=interaction_svc
     )
     
-    # 3. Trigger Trade Evaluation (Score 7 is between 3 and 9)
-    with patch("src.services.broker_factory.BrokerFactory.get_broker", return_value=mock_broker):
+    from src.services.tiered_approval_service import TieredApprovalResult
+    manual_required_result = TieredApprovalResult(
+        approved=False,
+        tier="TIER_3_MANUAL_REQUIRED",
+        reason="Manual approval required for test",
+        confidence_score=7.0,
+        order_amount=10.0,
+        daily_count=0,
+        max_daily_count=3,
+    )
+    # 3. Trigger Trade Evaluation (Score 7 is between 3 and 9, manual approval required)
+    with patch("src.services.broker_factory.BrokerFactory.get_broker", return_value=mock_broker), \
+         patch("src.services.tiered_approval_service.TieredApprovalService.evaluate_approval", return_value=manual_required_result), \
+         patch("src.services.automated_trading_service._ApprovalSlot.acquire", new_callable=AsyncMock, return_value=True):
         # Start evaluation in a task because it will block waiting for approval
         trade_task = asyncio.create_task(trade_svc.evaluate_and_execute_trade(
             user_id=user_id,

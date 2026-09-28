@@ -149,3 +149,17 @@ export function useDashboardSocket() {
 
   return { status, stableStatus };
 }
+
+export function useEventBiases() {
+  const { data, error, isLoading, mutate } = useSWR<ApiResponse<any>>("/api/v1/dashboard/event-biases", v1Fetcher, {
+    refreshInterval: 30000,
+    dedupingInterval: 15000,
+  });
+
+  return {
+    biases: data?.data || { macro: { stress_index: 0, extra_cash_reserve_ratio: 0, events: [] }, micro: {}, total_active_events: 0 },
+    isLoading,
+    isError: error,
+    mutate,
+  };
+}

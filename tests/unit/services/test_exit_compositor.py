@@ -157,6 +157,23 @@ class TestConcentrationFactor:
         assert _factor(d, "concentration")["confidence"] >= 9.0
         assert d["composite_score"] < 6.0
 
+    @pytest.mark.anyio
+    async def test_winning_compounder_concentration_is_softened_when_protection_enabled(self):
+        """
+        When protect_winning_compounders is enabled, a profitable runner's concentration
+        score is softened (kept low) rather than forcing an exit.
+        """
+        svc = _svc(
+            lots=[{"quantity": 1.0, "open_price": 100.0}],
+            closes=[100.0] * 19 + [120.0],
+            settings={"max_single_position_weight": 25.0, "protect_winning_compounders": True},
+            risk=(2.0, {"key_factor": "無事件"}),
+        )
+        d = await svc.score_exit("AAPL", 1.0, current_price=120.0, current_weight_pct=40.0)
+        # Concentration confidence should be kept low (<= 4.0), not 10.0!
+        assert _factor(d, "concentration")["confidence"] <= 4.0
+        assert _factor(d, "concentration")["factors"]["winner_protected"] is True
+
 
 class TestMomentumFactor:
 
@@ -230,3 +247,61 @@ class TestOutputContract:
         svc._market = MagicMock(side_effect=RuntimeError("api down"))
         d = await svc.score_exit("AAPL", 1.0)
         assert 0.0 <= d["composite_score"] <= 10.0
+
+
+class TestDynamicAtrExit:
+    def test_initial_stop_regimes(self):
+        from src.services.exit_compositor_service import compute_dynamic_atr_exit
+
+        # Bull regime: 2.5x ATR
+        res_bull = compute_dynamic_atr_exit(entry_price=100.0, current_price=100.0, atr=2.0, regime="BULL_MOMENTUM")
+        assert res_bull.stop_price == 95.0
+        assert res_bull.ratchet_stage == "INITIAL"
+        assert not res_bull.should_exit
+
+        # Bear regime: 1.5x ATR
+        res_bear = compute_dynamic_atr_exit(entry_price=100.0, current_price=100.0, atr=2.0, regime="BEAR_CRISIS")
+        assert res_bear.stop_price == 97.0
+        assert res_bear.ratchet_stage == "INITIAL"
+        assert not res_bear.should_exit
+
+        # Neutral regime: 2.0x ATR
+        res_neutral = compute_dynamic_atr_exit(entry_price=100.0, current_price=100.0, atr=2.0, regime="NEUTRAL_RANGE")
+        assert res_neutral.stop_price == 96.0
+
+    def test_breakeven_ratchet_at_8_pct(self):
+        from src.services.exit_compositor_service import compute_dynamic_atr_exit
+
+        # Up 8%: Breakeven stop triggered at entry * 1.005 = 100.5
+        res = compute_dynamic_atr_exit(entry_price=100.0, current_price=108.0, highest_price=108.0, atr=2.0)
+        assert res.ratchet_stage == "BREAKEVEN"
+        assert res.stop_price == 100.5
+        assert not res.should_exit
+
+        # Pullback towards breakeven stop: falls to 100.4
+        res_stopped = compute_dynamic_atr_exit(entry_price=100.0, current_price=100.4, highest_price=108.0, atr=2.0)
+        assert res_stopped.should_exit
+        assert res_stopped.exit_type == "BREAKEVEN_PROTECTION"
+
+    def test_trailing_profit_ratchet_at_15_pct(self):
+        from src.services.exit_compositor_service import compute_dynamic_atr_exit
+
+        # Reached 120 (gain 20% > 15%): trailing stop = 120 - 2.0 * 2.0 = 116.0
+        res = compute_dynamic_atr_exit(entry_price=100.0, current_price=118.0, highest_price=120.0, atr=2.0)
+        assert res.ratchet_stage == "TRAILING"
+        assert res.stop_price == 116.0
+        assert not res.should_exit
+
+        # Drops to 115.5: triggers trailing profit exit
+        res_exit = compute_dynamic_atr_exit(entry_price=100.0, current_price=115.5, highest_price=120.0, atr=2.0)
+        assert res_exit.should_exit
+        assert res_exit.exit_type == "TRAILING_PROFIT"
+
+    def test_initial_stop_triggered_on_plunge(self):
+        from src.services.exit_compositor_service import compute_dynamic_atr_exit
+
+        # Entry 100, ATR 2, Neutral stop is 96. Price drops to 95.5
+        res = compute_dynamic_atr_exit(entry_price=100.0, current_price=95.5, highest_price=100.0, atr=2.0)
+        assert res.should_exit
+        assert res.exit_type == "STOP_LOSS"
+

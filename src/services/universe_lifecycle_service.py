@@ -235,7 +235,33 @@ class UniverseLifecycleService:
         if candidate_pool:
             candidates_to_check.update(c.upper() for c in candidate_pool)
         else:
-            candidates_to_check.update(DEFAULT_CANDIDATE_POOL)
+            # Check if pyramid screener is enabled
+            use_pyramid = True
+            try:
+                use_pyramid = str(self.settings.get_setting("pyramid_screener_enabled", True)).lower() in ("true", "1")
+            except Exception:
+                use_pyramid = True
+
+            if use_pyramid:
+                try:
+                    from src.services.pyramid_screener_service import PyramidScreenerService
+                    screener = PyramidScreenerService(
+                        user_id=self.user_id,
+                        market_data_service=self.market,
+                        quality_gate=self.quality_gate,
+                        ticker_repo=self.repo,
+                    )
+                    elites = await screener.run_stage1_quant_screen(top_n=20)
+                    for cand in elites:
+                        candidates_to_check.add(cand.ticker.upper())
+                    logger.info("UniverseLifecycle: Pyramid screener injected %d elite candidates", len(elites))
+                except Exception as ps_err:
+                    logger.warning("UniverseLifecycle: Pyramid screener failed (%s); falling back to default pool", ps_err)
+
+            # Ensure default pool is included as fallback baseline
+            if not candidates_to_check:
+                candidates_to_check.update(DEFAULT_CANDIDATE_POOL)
+
             # S&P ETF holdings if available
             try:
                 spy_holdings = self.market.get_etf_holdings("SPY")

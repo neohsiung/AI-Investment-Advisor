@@ -124,6 +124,23 @@ settings:
     label_en: External MCP servers
     label_zh: 外部 MCP 伺服器
     help_en: JSON list of SSE/stdio endpoints exposed to the conversation agent.
+  - key: auto_promote_synthesized_factors
+    group: ai
+    type: bool
+    default: true
+    label_en: Auto-promote synthesized factors
+    label_zh: 自動晉升自研量化因子
+    help_en: Automatically promote synthesized code artifacts from provisional canary shadow tracking to active status upon passing evaluation.
+    help_zh: 當自研因子通過回測、WFA、蒙地卡羅與金絲雀影子考覈無異常時，由排程自動晉升為實盤 ACTIVE 因子。
+  - key: factor_max_correlation_threshold
+    group: ai
+    type: float
+    default: 0.65
+    label_en: Factor max correlation threshold
+    label_zh: 自研因子最大相關性閾值
+    help_en: Maximum allowed Spearman/Pearson correlation between candidate factors and active live factors to prevent multi-collinearity.
+    help_zh: 候選量化因子與線上在線 ACTIVE 因子的最大允許相關係數（預設 0.65）。超過此門檻將觸發共線性阻斷，避免重複配置。
+
 
   # ── Trading & risk ───────────────────────────────────────────────────────
   - key: ai_trading_enabled
@@ -156,6 +173,45 @@ settings:
     danger: true
     label_en: Auto-execute confidence (sell)
     label_zh: 自動執行信心門檻（賣出）
+  - key: tiered_approval_enabled
+    group: trading
+    type: bool
+    default: true
+    label_en: Enable tiered auto-approval
+    label_zh: 啟用分級自動核准
+    help_en: Automatically approve high-confidence small-sized orders within strict risk bounds without human block.
+    help_zh: 在嚴格風控邊界下，自動核准放行符合條件的高勝率小額試單，避免因無人在線而錯失時機。
+  - key: tiered_approval_auto_score_min
+    group: trading
+    type: float
+    default: 6.8
+    min: 5.0
+    max: 10.0
+    label_en: Tiered auto-approval min score
+    label_zh: 分級自動核准最低信心分數
+    help_en: Minimum confidence score required to qualify for tiered auto-approval (0-10 scale).
+    help_zh: 進入分級自動核准之最低信心門檻（0-10 分制，預設 6.8 分）。
+  - key: tiered_approval_max_amount_usd
+    group: trading
+    type: float
+    default: 30.0
+    min: 5.0
+    max: 100.0
+    danger: true
+    label_en: Tiered auto-approval max amount ($)
+    label_zh: 分級自動核准單筆金額上限（美元）
+    help_en: Maximum USD amount per trade allowed to be auto-approved.
+    help_zh: 單筆交易允許自動放行之最高金額上限（美元）。
+  - key: tiered_approval_max_daily_count
+    group: trading
+    type: int
+    default: 3
+    min: 1
+    max: 20
+    label_en: Tiered auto-approval max daily count
+    label_zh: 每日分級自動核准上限筆數
+    help_en: Maximum number of orders that can be auto-approved per day.
+    help_zh: 每日允許分級自動放行之最大訂單筆數，防止異常行情連續自動下單。
   - key: enable_fixed_stops
     group: trading
     type: bool
@@ -252,6 +308,14 @@ settings:
     label_zh: 集中度與風險再平衡
     help_en: Automatically trim positions that exceed max_single_position_weight to diversify portfolio risk.
     help_zh: 當單一持倉超出最大持倉權重（max_single_position_weight）時，自動減碼超額部位以分散投資組合風險。
+  - key: protect_winning_compounders
+    group: trading
+    type: bool
+    default: true
+    label_en: Protect winning compounders
+    label_zh: 中長期結構性贏家保護
+    help_en: Protect verified long-term structural compounders from premature trimming during routine rebalances, trimming only excess profits for opportunity costs while preserving core holdings.
+    help_zh: 保護經深研確認之中長期結構性贏家（股價穩居生命線、基本面卓越且動能強勁），避免在例行再平衡中被機械式減碼；若有更佳機會僅調節超額浮盈，堅定保留核心底倉。
   - key: autonomous_exit_enabled
     group: trading
     type: bool
@@ -388,6 +452,26 @@ settings:
     label_en: Target invested fraction
     label_zh: 目標投入比例
     help_en: The remainder is held as cash by the optimizer.
+  - key: alloc_max_holdings
+    group: allocation
+    type: int
+    default: 10
+    min: 4
+    max: 30
+    label_en: Maximum target holdings
+    label_zh: 目標最大持倉檔數
+    help_en: Cap target portfolio size to top-K highest-conviction tickers, preventing capital fragmentation.
+    help_zh: 將目標投資組合檔數收斂至評分最高的前 K 檔標的，避免小資金過度分散與碎屑化。
+  - key: alloc_prune_micro_threshold_usd
+    group: allocation
+    type: float
+    default: 30.0
+    min: 0.0
+    max: 500.0
+    label_en: Micro-position pruning threshold (USD)
+    label_zh: 微型部位汰除門檻（USD）
+    help_en: Stale or low-conviction holdings valued below this threshold will be proactively liquidated during rebalancing.
+    help_zh: 市值低於此門檻且非核心標的之邊緣持倉，在再平衡時將被主動清倉以釋放現金。
   - key: target_cash_ratio
     group: allocation
     type: float
@@ -501,6 +585,33 @@ settings:
     min: 0.0
     label_en: Universe minimum daily dollar volume ($M)
     label_zh: 標的池最低每日成交金額（百萬美元）
+  - key: pyramid_screener_enabled
+    group: allocation
+    type: bool
+    default: true
+    label_en: Enable two-stage pyramid screener
+    label_zh: 啟用兩階段金字塔標的初篩器
+    help_en: Run deterministic quant filters on expanded candidate pool before deep quality gate.
+    help_zh: 於標的池生命週期演化前，先對 150+ 檔標的執行純 Python 量化快速過濾收窄至菁英候選。
+  - key: pyramid_screener_top_candidates
+    group: allocation
+    type: int
+    default: 12
+    min: 3
+    max: 50
+    label_en: Pyramid screener top candidates
+    label_zh: 金字塔初篩保留菁英標的數
+    help_en: Number of top-ranked candidates retained from Stage 1 quant screening.
+    help_zh: 第一階段量化動量評分中保留之候選標的數量（送往第二階段深層審查）。
+  - key: pyramid_screener_min_dollar_volume_m
+    group: allocation
+    type: float
+    default: 10.0
+    min: 1.0
+    label_en: Pyramid screener min daily dollar volume ($M)
+    label_zh: 金字塔初篩最低每日成交金額（百萬美元）
+    help_en: Liquidity threshold for candidate stocks in Stage 1 screening.
+    help_zh: 第一階段篩選候選標的之每日成交金額門檻（百萬美元）。
 
   # ── Sentinel ─────────────────────────────────────────────────────────────
   - key: sentinel_p1_limit_mins
@@ -597,6 +708,58 @@ settings:
     max: 10
     label_en: Risk appetite score
     label_zh: 風險偏好分數
+  - key: event_bias_enabled
+    group: sentinel
+    type: bool
+    default: true
+    label_en: Enable Event Impact Bias Loop
+    label_zh: 啟用市場事件量化偏置閉環
+    help_en: Quantifies market events (Micro vs Macro) into exponential time-decay biases affecting buy confidence, exit urgency, and cash buffer.
+    help_zh: 將市場事件 (個經/總經) 量化為指數時間衰減偏置，動態微調買進信心、出場急迫性與防禦性現金水位。
+  - key: event_bias_micro_half_life_hours
+    group: sentinel
+    type: float
+    default: 36.0
+    min: 6.0
+    max: 168.0
+    depends: event_bias_enabled
+    label_en: Micro Event Half-Life (Hours)
+    label_zh: 個經事件半衰期 (小時)
+    help_en: Half-life in hours for ticker-specific events (analyst downgrades, earnings misses, etc.).
+    help_zh: 單一標的特異性事件 (券商降評、財報、管理層異動等) 之指數衰減半衰期。
+  - key: event_bias_macro_half_life_hours
+    group: sentinel
+    type: float
+    default: 96.0
+    min: 12.0
+    max: 336.0
+    depends: event_bias_enabled
+    label_en: Macro Event Half-Life (Hours)
+    label_zh: 總經事件半衰期 (小時)
+    help_en: Half-life in hours for systemic market events (FOMC rates, CPI inflation, geopolitics).
+    help_zh: 總體經濟與系統性事件 (FOMC 利率決議、通膨數據、地緣衝突) 之指數衰減半衰期。
+  - key: event_bias_max_micro_impact
+    group: sentinel
+    type: float
+    default: 1.5
+    min: 0.5
+    max: 3.0
+    depends: event_bias_enabled
+    label_en: Max Micro Score Bias (+/- pt)
+    label_zh: 個經評分最大微調幅度 (±分)
+    help_en: Maximum score delta that micro events can apply to ticker composite score.
+    help_zh: 單一標的因個經事件最多微調的分數上限 (0-10 分制)。
+  - key: event_bias_max_macro_cash_buffer
+    group: sentinel
+    type: float
+    default: 0.15
+    min: 0.05
+    max: 0.35
+    depends: event_bias_enabled
+    label_en: Max Macro Cash Reserve Expansion
+    label_zh: 總經最大現金防禦擴增比例
+    help_en: Maximum additional cash reserve ratio dynamically held during severe macro stress.
+    help_zh: 遭遇嚴重總經壓力衝擊時，投資組合自動額外保留現金防禦比率的上限。
 
   # ── Notifications ────────────────────────────────────────────────────────
   - key: notification_routing

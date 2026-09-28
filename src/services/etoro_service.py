@@ -390,6 +390,66 @@ class EtoroService(IBroker):
             logger.error(f"Failed to fetch pending orders: {e}")
             return []
 
+    async def get_order_status(self, order_id: str) -> Dict[str, Any]:
+        """
+        Query order execution status from eToro.
+        查詢 eToro 訂單執行狀態。
+        
+        Checks:
+          1. get_pending_orders(): if present, status='pending'
+          2. get_history(days=7): if present in trade history, status='filled'
+          3. Returns structured status dictionary.
+        """
+        if not order_id or str(order_id).strip() in ("N/A", "None", ""):
+            return {"order_id": str(order_id), "status": "unknown", "error": "Invalid order_id"}
+
+        str_oid = str(order_id).strip()
+
+        # 1. Check pending orders
+        try:
+            pending = await self.get_pending_orders()
+            for p in pending:
+                p_id = str(p.get("order_id", "")).strip()
+                if p_id == str_oid:
+                    return {
+                        "order_id": str_oid,
+                        "status": "pending",
+                        "symbol": p.get("symbol"),
+                        "action": p.get("action"),
+                        "amount": p.get("amount"),
+                        "raw": p,
+                    }
+        except Exception as e:
+            logger.warning(f"Failed to check pending orders for order {str_oid}: {e}")
+
+        # 2. Check trade history (last 7 days)
+        try:
+            history = await self.get_history(days=7)
+            for trade in history:
+                t_oid = str(trade.get("orderId") or trade.get("OrderId") or trade.get("positionId") or "").strip()
+                if t_oid == str_oid:
+                    open_rate = float(trade.get("openRate", 0.0) or 0.0)
+                    units = float(trade.get("units", 0.0) or 0.0)
+                    fees = abs(float(trade.get("fees", 0.0) or 0.0))
+                    return {
+                        "order_id": str_oid,
+                        "status": "filled",
+                        "fill_price": open_rate,
+                        "quantity": units,
+                        "fees": fees,
+                        "executed_at": trade.get("openTimestamp"),
+                        "raw": trade,
+                    }
+        except Exception as e:
+            logger.warning(f"Failed to check trade history for order {str_oid}: {e}")
+
+        # 3. Not found in pending or history
+        return {
+            "order_id": str_oid,
+            "status": "unknown",
+            "message": "Order not found in pending orders or recent trade history",
+        }
+
     async def get_history(self, days: int = 30) -> List[Dict[str, Any]]:
         """
         Fetch Trade History.

@@ -9,31 +9,27 @@ from src.data.models import LLMProvider, LLMModel, LLMTierBinding
 
 logger = logging.getLogger(__name__)
 
-# Default tier → (provider_code, model_code) mapping
+# Default tier → (provider_code, model_code) mapping (2026 High-Efficiency Evaluated Models)
 DEFAULT_TIER_CHAIN: Dict[str, List[Tuple[str, str]]] = {
     "nano": [
-        ("openrouter", "openai/gpt-5.4-nano"),
-        ("ollama", "qwen2.5:7b"),
-        ("ollama", "gemma4:e4b"),
-        ("openrouter", "openrouter/auto"),
+        ("ollama", "qwen2.5:3b"),
+        ("nvidia_nim", "meta/llama-3.2-3b-instruct"),
+        ("openrouter", "google/gemini-2.0-flash-lite-001"),
     ],
     "fast": [
-        ("openrouter", "google/gemma-4-26b-a4b-it:free"),
-        ("nvidia", "nvidia/nemotron-3-super-120b-a12b"),
-        ("nvidia", "deepseek-ai/deepseek-v4-flash"),
-        ("openrouter", "qwen/qwen3.6-plus"),
+        ("ollama", "qwen2.5:7b"),
+        ("nvidia_nim", "meta/llama-3.1-8b-instruct"),
+        ("openrouter", "deepseek/deepseek-chat"),
     ],
     "smart": [
-        ("openrouter", "qwen/qwen3.6-plus"),
-        ("nvidia", "minimaxai/minimax-m2.7"),
-        ("nvidia", "google/gemma-4-31b-it"),
-        ("openrouter", "google/gemma-4-26b-a4b-it:free"),
+        ("nvidia_nim", "meta/llama-3.3-70b-instruct"),
+        ("ollama", "qwen2.5:14b"),
+        ("openrouter", "deepseek/deepseek-chat"),
     ],
     "advanced": [
-        ("openrouter", "anthropic/claude-sonnet-4"),
-        ("openrouter", "google/gemini-3.1-pro-preview"),
-        ("nvidia", "moonshotai/kimi-k2.6"),
-        ("nvidia", "qwen/qwen3-coder-480b-a35b-instruct"),
+        ("openrouter", "deepseek/deepseek-r1"),
+        ("nvidia_nim", "meta/llama-3.3-70b-instruct"),
+        ("ollama", "qwen2.5:32b"),
     ],
 }
 

@@ -56,6 +56,7 @@ resolved history to calibrate against.
 from __future__ import annotations
 
 import logging
+from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -128,7 +129,7 @@ class ExitCompositorService:
         sub_scores.append(self._sub("pnl", ticker, pnl_score, pnl_factors))
 
         conc_score, conc_factors = self._safe(
-            lambda: self._score_concentration(current_weight_pct),
+            lambda: self._score_concentration(current_weight_pct, pnl_pct=pnl_pct),
             default=(5.0, {}),
             label="concentration",
         )
@@ -141,18 +142,37 @@ class ExitCompositorService:
         )
         sub_scores.append(self._sub("momentum_reversal", ticker, mom_score, mom_factors))
 
+        # Check active micro event bias (個經事件偏置)
+        active_micro_bias = 0.0
+        active_event_headline = ""
+        try:
+            from src.services.event_impact_service import EventImpactService
+            impact_svc = EventImpactService(user_id=self.user_id, settings_service=self._settings_service)
+            active_micro_bias, active_events = impact_svc.get_ticker_micro_bias(ticker)
+            if active_events and active_micro_bias < 0:
+                active_event_headline = active_events[0].get("headline", "")
+        except Exception as e:
+            logger.warning(f"ExitCompositor: failed to check micro event bias for {ticker}: {e}")
+
+        effective_reason_hint = reason_hint
+        if active_event_headline:
+            effective_reason_hint = (
+                f"{reason_hint} | Active Negative Event: {active_event_headline}"
+                if reason_hint else f"Active Negative Event: {active_event_headline}"
+            )
+
         # Fast path: if quantitative factors prove that even under the worst possible
         # risk score (10.0), the composite score cannot reach 5.0 (sell threshold is >= 6.0),
         # skip the expensive ~75s LLM call and assign neutral risk (3.0).
         # 若量化三因子顯示持倉極度穩健（即使風險給最極端 10 分總分仍低於 5.0），
-        # 且無外部觸發理由，則豁免慢速 LLM 呼叫，避免 Celery worker 軟超時。
+        # 且無外部觸發理由與負面事件，則豁免慢速 LLM 呼叫，避免 Celery worker 軟超時。
         max_possible_composite = (
             pnl_score * EXIT_FACTOR_WEIGHTS["pnl"]
             + conc_score * EXIT_FACTOR_WEIGHTS["concentration"]
             + mom_score * EXIT_FACTOR_WEIGHTS["momentum_reversal"]
             + 10.0 * EXIT_FACTOR_WEIGHTS["risk"]
         )
-        if not reason_hint and max_possible_composite < 5.0:
+        if not effective_reason_hint and max_possible_composite < 5.0:
             risk_score = 3.0
             risk_factors = {
                 "key_factor": "基本面與技術面強健（豁免 LLM 慢速呼叫）",
@@ -161,10 +181,20 @@ class ExitCompositorService:
             }
         else:
             try:
-                risk_score, risk_factors = await self._score_risk(ticker, reason_hint)
+                risk_score, risk_factors = await self._score_risk(ticker, effective_reason_hint)
             except Exception as e:
                 logger.warning(f"ExitCompositor: risk factor raised for {ticker}: {e}")
                 risk_score, risk_factors = 5.0, self._unavailable(e)
+
+        # Apply risk floor if active negative event bias exists
+        if active_micro_bias < 0:
+            event_risk_floor = min(10.0, 5.0 + abs(active_micro_bias) * 2.0)
+            if risk_score < event_risk_floor:
+                risk_score = event_risk_floor
+                risk_factors["event_bias_floor_applied"] = True
+                risk_factors["active_event_bias"] = active_micro_bias
+                risk_factors["key_factor"] = f"事件利空衝擊 ({active_micro_bias:+.2f} pt)"
+
         sub_scores.append(self._sub("risk", ticker, risk_score, risk_factors))
 
         composite = self._aggregate(sub_scores)
@@ -275,10 +305,14 @@ class ExitCompositorService:
             "enable_fixed_stops": enable_fixed_stops,
         }
 
-    def _score_concentration(self, current_weight_pct: Optional[float]) -> Tuple[float, Dict[str, Any]]:
+    def _score_concentration(
+        self, current_weight_pct: Optional[float], pnl_pct: Optional[float] = None
+    ) -> Tuple[float, Dict[str, Any]]:
         """
         Score exit urgency from position weight against the ceiling.
         以部位權重相對上限評估出場急迫性。
+        State-driven: 處於獲利複利期的強勢贏家（pnl_pct > 5%），集中度不作為機械式出場理由，
+        避免「拔掉鮮花去澆灌野草」；虧損或未達標者超出上限才產生高度出場急迫性。
         """
         if current_weight_pct is None:
             return 5.0, {
@@ -292,14 +326,17 @@ class ExitCompositorService:
             return 5.0, {"key_factor": "上限設定無效", "rationale": f"max_single_position_weight={ceiling}"}
 
         ratio = current_weight_pct / ceiling
+        protect_winners = self._setting_bool("protect_winning_compounders", False)
+
         if ratio >= 1.0:
-            # 10 at the ceiling, saturating as it goes further past.
-            # 觸及上限得 10，超越越多越飽和。
-            score = min(10.0, 9.0 + (ratio - 1.0) * 4.0)
-            key = f"佔 {current_weight_pct:.1f}% > 上限 {ceiling:.0f}%"
+            if protect_winners and pnl_pct is not None and pnl_pct > 5.0:
+                # Profitable runner: concentration is an alert for tight trailing stop, NOT an urge to sell
+                score = min(4.0, 2.0 + (ratio - 1.0) * 1.5)
+                key = f"佔 {current_weight_pct:.1f}% > 上限 {ceiling:.0f}%（獲利複利中，由動態 ATR 追蹤保護）"
+            else:
+                score = min(10.0, 9.0 + (ratio - 1.0) * 4.0)
+                key = f"佔 {current_weight_pct:.1f}% > 上限 {ceiling:.0f}%"
         else:
-            # Below the ceiling concentration is not an exit reason.
-            # 未達上限時，集中度不構成出場理由。
             score = max(0.0, 6.0 * ratio)
             key = f"佔 {current_weight_pct:.1f}%，未達上限 {ceiling:.0f}%"
 
@@ -307,6 +344,8 @@ class ExitCompositorService:
             "key_factor": key,
             "rationale": f"權重 {current_weight_pct:.1f}% vs 上限 {ceiling:.1f}%",
             "ceiling_pct": ceiling,
+            "pnl_pct": pnl_pct,
+            "winner_protected": bool(protect_winners and pnl_pct is not None and pnl_pct > 5.0),
         }
 
     def _score_momentum_reversal(self, ticker: str) -> Tuple[float, Dict[str, Any]]:
@@ -507,3 +546,130 @@ class ExitCompositorService:
         except Exception as e:
             logger.warning(f"Setting {key!r} unreadable ({e}); using default {default}")
             return default
+
+    def evaluate_dynamic_atr_exit(
+        self,
+        entry_price: float,
+        current_price: float,
+        highest_price: Optional[float] = None,
+        atr: Optional[float] = None,
+        regime: Optional[Any] = None,
+    ) -> DynamicAtrExitResult:
+        """Evaluate dynamic ATR exit with profit ratchet."""
+        return compute_dynamic_atr_exit(
+            entry_price=entry_price,
+            current_price=current_price,
+            highest_price=highest_price,
+            atr=atr,
+            regime=regime,
+        )
+
+
+@dataclass
+class DynamicAtrExitResult:
+    """Dynamic ATR Stop-Loss and Profit Ratchet Evaluation Result."""
+    should_exit: bool
+    exit_type: str                   # "STOP_LOSS" | "BREAKEVEN_PROTECTION" | "TRAILING_PROFIT" | "HOLD"
+    stop_price: float                # The active stop price
+    pnl_pct: float                   # Unrealized gain/loss % from entry
+    highest_price: float             # Highest price reached since entry
+    ratchet_stage: str               # "INITIAL" | "BREAKEVEN" | "TRAILING"
+    rationale: str                   # Detailed explanation of status
+
+
+def compute_dynamic_atr_exit(
+    entry_price: float,
+    current_price: float,
+    highest_price: Optional[float] = None,
+    atr: Optional[float] = None,
+    regime: Optional[Any] = None,
+    atr_multiplier: Optional[float] = None,
+) -> DynamicAtrExitResult:
+    """
+    Compute dynamic ATR-based trailing stop and profit ratchet.
+    動態 ATR 移動停損與利潤棘輪計算器：
+    - 階段 1 (初始停損): 進場點 - (ATR 乘數 * ATR)。乘數隨市場體制自適應 (Bull: 2.5x, Neutral: 2.0x, Bear: 1.5x)。
+    - 階段 2 (保本鎖定): 當獲利 >= +8% 時，停損線單向棘輪上移至成本保本價 (Entry * 1.005)，立於不敗之地。
+    - 階段 3 (移動追蹤): 當獲利 >= +15% 時，啟動移動追蹤停利 (Highest - 2.0x ATR，熊市 1.5x ATR)，讓贏家奔跑。
+    - 單調遞增特性：停損價只升不降，嚴密截斷虧損、保全獲利。
+    """
+    if entry_price <= 0:
+        raise ValueError(f"entry_price must be positive, got {entry_price}")
+
+    # Safe default for ATR: if missing or non-positive, estimate as 3% of entry price
+    effective_atr = atr if (atr is not None and atr > 0) else (entry_price * 0.03)
+    effective_highest = max(entry_price, current_price, highest_price or 0.0)
+    pnl_pct = (current_price / entry_price - 1.0) * 100.0
+    peak_pnl_pct = (effective_highest / entry_price - 1.0) * 100.0
+
+    # Determine regime string or enum
+    regime_str = str(getattr(regime, "value", regime) or "NEUTRAL_RANGE").upper()
+
+    # Determine base multiplier
+    if atr_multiplier is not None and atr_multiplier > 0:
+        mult = float(atr_multiplier)
+    elif "BEAR" in regime_str:
+        mult = 1.5
+    elif "BULL" in regime_str:
+        mult = 2.5
+    else:
+        mult = 2.0
+
+    # 1. Initial stop
+    initial_stop = entry_price - mult * effective_atr
+    active_stop = initial_stop
+    ratchet_stage = "INITIAL"
+
+    # 2. Profit Ratchet Stage: Breakeven (peak >= +8%)
+    if peak_pnl_pct >= 8.0:
+        breakeven_stop = entry_price * 1.005
+        if breakeven_stop > active_stop:
+            active_stop = breakeven_stop
+            ratchet_stage = "BREAKEVEN"
+
+    # 3. Profit Ratchet Stage: Trailing (peak >= +15%)
+    if peak_pnl_pct >= 15.0:
+        trail_mult = 1.5 if "BEAR" in regime_str else 2.0
+        trailing_stop = effective_highest - trail_mult * effective_atr
+        if trailing_stop > active_stop:
+            active_stop = trailing_stop
+            ratchet_stage = "TRAILING"
+
+    # Evaluate whether to exit
+    should_exit = current_price <= active_stop
+    if should_exit:
+        if ratchet_stage == "TRAILING":
+            exit_type = "TRAILING_PROFIT"
+            rationale = (
+                f"觸發追蹤停利：現價 ${current_price:.2f} <= 停利價 ${active_stop:.2f} "
+                f"(最高價 ${effective_highest:.2f}, 峰值獲利 +{peak_pnl_pct:.1f}%)"
+            )
+        elif ratchet_stage == "BREAKEVEN":
+            exit_type = "BREAKEVEN_PROTECTION"
+            rationale = (
+                f"觸發保本防線：現價 ${current_price:.2f} <= 保本價 ${active_stop:.2f} "
+                f"(成本 ${entry_price:.2f}, 峰值獲利曾達 +{peak_pnl_pct:.1f}%)"
+            )
+        else:
+            exit_type = "STOP_LOSS"
+            rationale = (
+                f"觸發 ATR 動態停損：現價 ${current_price:.2f} <= 停損價 ${active_stop:.2f} "
+                f"(進場 ${entry_price:.2f}, {mult:.1f}x ATR, 虧損 {pnl_pct:.1f}%)"
+            )
+    else:
+        exit_type = "HOLD"
+        rationale = (
+            f"部位安全持有中：現價 ${current_price:.2f} > 活躍停損/利價 ${active_stop:.2f} "
+            f"(階段: {ratchet_stage}, 未實現損益: {pnl_pct:+.2f}%)"
+        )
+
+    return DynamicAtrExitResult(
+        should_exit=should_exit,
+        exit_type=exit_type,
+        stop_price=round(active_stop, 4),
+        pnl_pct=round(pnl_pct, 2),
+        highest_price=round(effective_highest, 4),
+        ratchet_stage=ratchet_stage,
+        rationale=rationale,
+    )
+

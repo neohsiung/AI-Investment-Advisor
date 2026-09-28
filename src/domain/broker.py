@@ -44,3 +44,9 @@ class IBroker(ABC):
     async def get_pending_orders(self) -> List[Dict[str, Any]]:
         """Get pending (scheduled) orders."""
         pass
+
+    @abstractmethod
+    async def get_order_status(self, order_id: str) -> Dict[str, Any]:
+        """Get current lifecycle status of an order by broker ID."""
+        pass
+
