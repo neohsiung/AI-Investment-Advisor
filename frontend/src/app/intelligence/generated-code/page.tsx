@@ -25,9 +25,16 @@ type CodeArtifact = {
   test_code: string;
   ast_hash: string;
   status: "DRAFT" | "VERIFIED" | "PROVISIONAL" | "ACTIVE" | "REJECTED" | "KILLED";
-  parameters: Record<string, any>;
-  backtest_metrics: Record<string, any>;
-  ast_metrics: Record<string, any>;
+  parameters?: {
+    promotion_reason?: string;
+    [key: string]: unknown;
+  };
+  backtest_metrics: Record<string, unknown>;
+  ast_metrics?: {
+    total_nodes?: number;
+    max_loop_depth?: number;
+    [key: string]: unknown;
+  };
   shadow_days_remaining: number;
   created_at: string;
 };
@@ -280,10 +287,10 @@ export default function GeneratedCodeDashboard() {
                         {getStatusBadge(art.status, art.parameters)}
                       </div>
                       <p className="text-xs text-on-surface-variant mt-1">{art.description}</p>
-                      {art.parameters?.promotion_reason && (
+                      {Boolean(art.parameters?.promotion_reason) && (
                         <div className="mt-2 text-[11px] font-mono bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 px-2.5 py-1 rounded-md flex items-center gap-1.5">
                           <CheckCircle2 size={12} />
-                          <span>自動晉升依據: {art.parameters.promotion_reason}</span>
+                          <span>自動晉升依據: {String(art.parameters?.promotion_reason)}</span>
                         </div>
                       )}
                     </div>
@@ -318,8 +325,8 @@ export default function GeneratedCodeDashboard() {
                         <ShieldCheck size={14} /> 1. AST 安全稽核
                       </div>
                       <div className="text-[11px] font-mono space-y-1 text-on-surface-variant">
-                        <div>節點數: {art.ast_metrics?.total_nodes || 120}</div>
-                        <div>最大迴圈深度: {art.ast_metrics?.max_loop_depth || 1}</div>
+                        <div>節點數: {art.ast_metrics?.total_nodes ?? 120}</div>
+                        <div>最大迴圈深度: {art.ast_metrics?.max_loop_depth ?? 1}</div>
                         <div className="text-emerald-400 font-bold">✓ Constraint #0 合規</div>
                         <div className="truncate text-[10px] text-zinc-500">Hash: {art.ast_hash.slice(0, 10)}...</div>
                       </div>

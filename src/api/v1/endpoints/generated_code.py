@@ -152,9 +152,9 @@ async def synthesize_factor_endpoint(
         "Volume": np.random.randint(1000, 20000, n),
     }, index=dates)
 
-    # In-memory execution of verified code for backtest
+    # In-memory execution of verified code for backtest (guarded by ASTSecurityAuditor)
     local_ns = {}
-    exec(candidate.source_code, local_ns)  # nosec B102 - AST validated factor execution
+    exec(candidate.source_code, local_ns)  # nosec B102
     factor_func = local_ns.get("calculate_factor")
 
     backtest_adapter = BacktestAdapter(initial_cash=10000.0)
