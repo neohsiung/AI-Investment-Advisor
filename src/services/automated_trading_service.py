@@ -417,7 +417,10 @@ class AutomatedTradingService:
         
         # 3. Decision Logic (三段式閥值)
         # 3a. Below minimum → skip silently, no notification
-        if normalized_confidence < min_threshold:
+        # Exemption: Safety controls and rebalance liquidations are pre-authorized
+        from src.services.strategy_registry import StrategyRegistry
+        is_safety = is_sell and StrategyRegistry.is_safety_control(strategy_name or "")
+        if not is_safety and normalized_confidence < min_threshold:
             logger.info(
                 f"Score {normalized_confidence:.1f} < min_threshold {min_threshold:.1f}. "
                 f"Skipping silently for {ticker}."
@@ -658,6 +661,7 @@ class AutomatedTradingService:
             autonomous_reporting_mode=autonomous_reporting_mode,
             requires_approval_reason=requires_approval_reason,
             is_optimized=(optimized_confidence != normalized_confidence),
+            min_threshold=min_threshold,
         )
 
         if should_auto_execute:
@@ -741,6 +745,7 @@ class AutomatedTradingService:
         autonomous_reporting_mode: bool,
         requires_approval_reason: Optional[str],
         is_optimized: bool,
+        min_threshold: float = 3.0,
     ) -> Tuple[bool, str]:
         """
         Streamlined auto-execution policy gatekeeper.
@@ -763,6 +768,11 @@ class AutomatedTradingService:
                 "concentration_rebalance": "再平衡自動執行",
             }
             return True, labels.get(strategy_name, "安全出場自動執行")
+
+        # 再平衡買進自動執行 (Rebalance Buy Auto-execution)
+        # 若為經投組模型審核之再平衡配置買進，且達最低信賴門檻，由系統自動放行
+        if not is_sell and strategy_name in ("rebalance_diversification", "portfolio_rebalance", "concentration_rebalance") and effective_confidence >= min_threshold:
+            return True, "再平衡買進自動執行"
 
         # 一般賣出且置信度達標
         if is_sell and effective_confidence >= threshold and auto_exit_enabled:

@@ -99,7 +99,7 @@ class ConfidenceRebalanceService:
                 "delta_weight": round(delta * 100, 2),
                 "delta_amount": round(delta_amount, 2),
                 "action": "SELL",
-                "confidence": 0.0,
+                "confidence": 8.5,
                 "is_pruning": True,
             }
             sells.append(trade_item)
@@ -343,10 +343,16 @@ class ConfidenceRebalanceService:
         max_liquidated_score = 0.0
         for trade in sells:
             try:
+                is_pruning = trade.get("is_pruning", False)
                 conf = float(trade.get("confidence") or 0.0)
-                if 0.0 <= conf <= 1.0:
+                if conf <= 0.0:
+                    conf = 8.5
+                elif 0.0 < conf <= 1.0:
                     conf *= 10.0
-                max_liquidated_score = max(max_liquidated_score, conf)
+
+                # 淘汰標的 (is_pruning) 釋放死資本不應抬高買進標的的機會成本比較門檻
+                if not is_pruning:
+                    max_liquidated_score = max(max_liquidated_score, conf)
 
                 result = await self._execute_trade(
                     ticker=trade["ticker"],
@@ -355,6 +361,7 @@ class ConfidenceRebalanceService:
                     portfolio_value=total_value,
                     confidence_score=conf,
                     rationale=f"Confidence-driven rebalance: SELL {trade['ticker']} (delta={trade['delta_weight']/100.0:+.2%})",
+                    strategy_name="rebalance_diversification",
                 )
                 executed_trades.append({**trade, "status": result.get("status", "executed")})
                 if result.get("status") != "executed":
@@ -390,6 +397,7 @@ class ConfidenceRebalanceService:
                     portfolio_value=total_value,
                     confidence_score=conf,
                     rationale=f"Confidence-driven rebalance: BUY {trade['ticker']} (delta={trade['delta_weight']/100.0:+.2%})",
+                    strategy_name="portfolio_rebalance",
                 )
                 executed_trades.append({**trade, "status": result.get("status", "executed")})
                 if result.get("status") != "executed":
@@ -575,7 +583,8 @@ class ConfidenceRebalanceService:
     async def _execute_trade(self, ticker: str, action: str,
                              delta_weight: float, portfolio_value: float,
                              confidence_score: Optional[float] = None,
-                             rationale: Optional[str] = None) -> Dict[str, Any]:
+                             rationale: Optional[str] = None,
+                             strategy_name: Optional[str] = None) -> Dict[str, Any]:
         """Execute a single trade via AutomatedTradingService."""
         from src.services.automated_trading_service import AutomatedTradingService
         from src.services.settings_service import SettingsService
@@ -587,7 +596,8 @@ class ConfidenceRebalanceService:
             settings_repo=settings.settings_repo, notification_service=notification
         )
 
-        score_to_use = 8.0 if confidence_score is None else confidence_score
+        strat = strategy_name or ("rebalance_diversification" if action.upper() == "SELL" else "portfolio_rebalance")
+        score_to_use = 8.5 if (confidence_score is None or confidence_score <= 0.0) else confidence_score
         rationale_to_use = rationale or f"Confidence-driven rebalance: {action} {ticker} (delta={delta_weight:+.2%})"
 
         return await trading.evaluate_and_execute_trade(
@@ -598,4 +608,5 @@ class ConfidenceRebalanceService:
             portfolio_value=portfolio_value,
             confidence_score=score_to_use,
             rationale=rationale_to_use,
+            strategy_name=strat,
         )

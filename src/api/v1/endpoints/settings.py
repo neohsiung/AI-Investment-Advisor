@@ -113,31 +113,57 @@ async def test_notification(
     payload: NotificationTestRequest,
     user_id: str = Depends(get_current_user_id)
 ):
-    """直接通過 TelegramAdapter 發送測試通知"""
+    """通過配置之適配器發送測試通知，具備精確錯誤診斷"""
+    from src.services.notification_service import NotificationService
     results = {}
-    
-    # 延遲導入以避免循環依賴
-    from src.infrastructure.channels.telegram_adapter import TelegramAdapter
-    adapter = TelegramAdapter()
-    
+    settings_svc = SettingsService(user_id=user_id)
+    notif_svc = NotificationService.create_with_settings(settings_svc, user_id=user_id)
+
+    adapter_by_type = {}
+    for adapter in notif_svc.adapters:
+        adapter_type = adapter.__class__.__name__.lower().replace("adapter", "")
+        adapter_by_type[adapter_type] = adapter
+
+    test_title = "🧪 Quantum AI 系統測試"
+    test_content = "如果您看到這則訊息，代表您的通知管道配置成功！"
+
     for channel in payload.channels:
-        if channel == "telegram":
-            try:
-                ok = await adapter.send_alert(
-                    user_id=user_id,
-                    title="🧪 Quantum AI 系統測試",
-                    content="如果您看到這則訊息，代表您的通知管道配置成功！",
-                    raise_error=True,
-                )
-                results[channel] = ok
-            except Exception as e:
-                logger.error(f"Telegram test failed: {e}")
-                results[channel] = False
-                raise HTTPException(status_code=500, detail="發送失敗，通知發送服務異常。")
-        else:
-            # 目前僅支援 Telegram 測試
+        ch = channel.lower().strip()
+        adapter = adapter_by_type.get(ch)
+        if not adapter:
+            if ch == "telegram":
+                from src.infrastructure.channels.telegram_adapter import TelegramAdapter
+                adapter = TelegramAdapter()
+            elif ch == "email":
+                from src.infrastructure.channels.email_adapter import EmailAdapter
+                adapter = EmailAdapter()
+
+        if not adapter:
             results[channel] = False
-    
+            continue
+
+        try:
+            ok = await adapter.send_alert(
+                user_id=user_id,
+                title=test_title,
+                content=test_content,
+                raise_error=True,
+            )
+            results[channel] = bool(ok)
+        except Exception as e:
+            err_msg = str(e)
+            logger.error(f"Notification test failed for {channel}: {err_msg}")
+            results[channel] = False
+            if ch == "telegram" and ("401" in err_msg or "Unauthorized" in err_msg):
+                raise HTTPException(
+                    status_code=400,
+                    detail="Telegram 測試發送失敗：Bot Token 無效或已遭撤銷 (401 Unauthorized)。請至 Telegram @BotFather 重新取得有效 Token 並至系統設定中儲存更新。"
+                )
+            raise HTTPException(
+                status_code=400,
+                detail=f"{channel.capitalize()} 測試發送失敗：{err_msg}"
+            )
+
     return {
         "status": "success",
         "message": "測試通知已發送",
