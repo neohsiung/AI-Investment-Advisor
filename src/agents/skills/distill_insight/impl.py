@@ -27,27 +27,9 @@ async def distill_insight(
         # Use a fast, cheap LLM call to distill the key insight
         distilled = ""
         try:
-            ss = SettingsService(user_id=user_id)
-            provider = ss.get_setting("AI_PROVIDER", "OpenRouter") or "OpenRouter"
-            
-            # Use tier-aware routing (fast tier for insight distillation)
-            from src.infrastructure.llm.tier_config import SettingsAwareModelRouter, TierConfig
-            from src.repositories.settings_repository import AlchemySettingsRepository
-            settings_repo = AlchemySettingsRepository()
-            model_router = SettingsAwareModelRouter(settings_repo)
-            if user_id:
-                model = model_router.get_model(user_id, "fast")
-            else:
-                tier_config = TierConfig()
-                model = tier_config.resolve("fast")
-            api_key  = ss.get_setting("openrouter_api_key") or ss.get_setting("AI_API_KEY", "")
-            base_url = ss.get_setting("OPENROUTER_BASE_URL", "https://openrouter.ai/api/v1")
+            from src.infrastructure.llm.llm_config_chain import build_config_chain
+            from src.infrastructure.llm.resilient_pipeline import ResilientLLMPipeline
 
-            gateway = RetryLLMGateway(inner=LLMGatewayFactory.create(provider), max_retries=1)
-            distill_cfg = LLMConfig(
-                provider=provider, model=model, api_key=api_key, base_url=base_url,
-                temperature=0.2, max_retries=1, timeout_seconds=20
-            )
             distill_msgs = [
                 Message(role="system", content=(
                     "You are a financial memory distiller. Extract the single most important insight "
@@ -60,8 +42,19 @@ async def distill_insight(
                     f"Assessment (first 600 chars): {council_text[:600]}"
                 )),
             ]
-            distilled = await gateway.chat(distill_msgs, distill_cfg)
-            distilled = distilled.strip()
+
+            chain = build_config_chain(user_id, "fast")
+            if chain:
+                pipeline = ResilientLLMPipeline(
+                    config_chain=chain,
+                    user_id=user_id,
+                    agent_name="DistillInsight",
+                    tier="fast",
+                )
+                res, _ = await pipeline.execute(distill_msgs, temperature=0.2)
+                distilled = res.strip()
+            else:
+                distilled = f"[Alert] {source_texts[:200]}"
         except Exception as llm_e:
             logger.warning(f"Insight distillation LLM call failed: {llm_e}")
             # Fallback: use raw trigger text

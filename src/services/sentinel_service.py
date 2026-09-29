@@ -1261,6 +1261,20 @@ class SentinelService:
             )
             return False
         except Exception as e:
+            # Fallback 1: Sync Redis client (immune to asyncio event-loop mismatch across Celery tasks)
+            try:
+                from src.infrastructure.cache.redis_client import get_redis_sync
+                sync_client = get_redis_sync()
+                if sync_client.set(key, "1", ex=seconds, nx=True):
+                    return True
+                ttl = sync_client.ttl(key)
+                logger.info(
+                    f"SentinelService: De-bouncing {name} (cooldown {seconds}s, {ttl}s remaining, sync fallback)"
+                )
+                return False
+            except Exception as sync_e:
+                logger.debug(f"Sentinel: sync Redis fallback failed: {sync_e}")
+
             import time
 
             # In-process fallback. Weaker than Redis — it only debounces

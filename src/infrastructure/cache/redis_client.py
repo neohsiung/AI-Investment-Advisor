@@ -38,6 +38,7 @@ at process shutdown (e.g. FastAPI lifespan teardown).
 import os
 import logging
 import threading
+import asyncio
 from typing import Any, Optional
 
 logger = logging.getLogger("RedisClient")
@@ -48,6 +49,7 @@ logger = logging.getLogger("RedisClient")
 _DEFAULT_MAX_CONNECTIONS = 20
 
 _async_client: Optional[Any] = None
+_async_client_loop: Optional[Any] = None
 _sync_client: Optional[Any] = None
 
 # Guards lazy init. Async callers are single-threaded per event loop, but
@@ -97,10 +99,23 @@ async def get_redis(decode_responses: bool = True) -> Any:
     The client is created on first use and reused thereafter. `from_url`
     builds its own pool internally, which is exactly what we want to share.
     """
-    global _async_client
-    if _async_client is None:
+    global _async_client, _async_client_loop
+    try:
+        current_loop = asyncio.get_running_loop()
+    except RuntimeError:
+        current_loop = None
+
+    if (
+        _async_client is None
+        or _async_client_loop != current_loop
+        or (_async_client_loop and _async_client_loop.is_closed())
+    ):
         with _lock:
-            if _async_client is None:
+            if (
+                _async_client is None
+                or _async_client_loop != current_loop
+                or (_async_client_loop and _async_client_loop.is_closed())
+            ):
                 import redis.asyncio as aioredis
 
                 _async_client = aioredis.from_url(
@@ -113,6 +128,7 @@ async def get_redis(decode_responses: bool = True) -> Any:
                     # 回收伺服器端已斷開的 socket，避免把陳舊連線錯誤丟給呼叫端。
                     health_check_interval=30,
                 )
+                _async_client_loop = current_loop
                 logger.info(
                     f"Shared async Redis pool created (max_connections={_max_connections()})"
                 )
@@ -148,9 +164,10 @@ async def aclose_redis() -> None:
     Tear down the async pool. Call once at process shutdown only.
     關閉 async 連線池；僅在行程結束時呼叫一次。
     """
-    global _async_client
+    global _async_client, _async_client_loop
     client = _async_client
     _async_client = None
+    _async_client_loop = None
     if client is None:
         return
     try:
