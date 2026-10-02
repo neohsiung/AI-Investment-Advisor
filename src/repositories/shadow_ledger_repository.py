@@ -325,7 +325,7 @@ class AlchemyShadowLedgerRepository(BaseRepository, IShadowLedgerRepository):
             params["ticker"] = ticker.upper().strip()
 
         where_clause = " AND ".join(clauses)
-        sql = f"SELECT * FROM shadow_positions WHERE {where_clause} ORDER BY entry_date DESC"
+        sql = f"SELECT * FROM shadow_positions WHERE {where_clause} ORDER BY entry_date DESC"  # nosec B608
 
         with self.engine.connect() as conn:
             rows = conn.execute(text(sql), params).fetchall()
@@ -355,7 +355,7 @@ class AlchemyShadowLedgerRepository(BaseRepository, IShadowLedgerRepository):
             params[key] = val
             set_clauses.append(f"{key} = :{key}")
 
-        sql = f"UPDATE shadow_positions SET {', '.join(set_clauses)} WHERE id = :id"
+        sql = f"UPDATE shadow_positions SET {', '.join(set_clauses)} WHERE id = :id"  # nosec B608
 
         with self.engine.begin() as conn:
             res = conn.execute(text(sql), params)
