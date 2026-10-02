@@ -657,8 +657,8 @@ def compute_dynamic_atr_exit(
             ratchet_stage = "TRAILING"
         tier = 2
 
-    # 5. Tier 3: Harvest Stage: Tight Trailing & Locked Profit (peak >= +25%)
-    if peak_pnl_pct >= 25.0:
+    # 5. Tier 3: Harvest Stage: Tight Trailing & Locked Profit (peak > +25%)
+    if peak_pnl_pct > 25.0:
         harvest_mult = 0.8 if "BEAR" in regime_str else 1.2
         harvest_stop = effective_highest - harvest_mult * effective_atr
         # Guaranteed floor: protect at least 65% of peak gains
