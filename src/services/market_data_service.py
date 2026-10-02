@@ -224,8 +224,11 @@ class MarketDataService:
                 # to prevent matching market cap, volume, or revenue figures as stock prices.
                 escaped_ticker = re.escape(ticker)
                 patterns = [
+                    rf"(?:{escaped_ticker}|stock|price|trading at|closed at|currently)\s*(?:is|at|:)\s*\$?\s*([0-9]{{1,5}}\.[0-9]{{1,2}})",
                     rf"(?:{escaped_ticker}|stock|price|trading at|closed at|currently)\s*(?:is|at|:)?\s*\$\s*([0-9]{{1,5}}\.[0-9]{{1,2}})",
+                    rf"(?:{escaped_ticker}|stock|price|trading at|closed at|currently)\s*([0-9]{{1,5}}\.[0-9]{{1,2}})\s*USD",
                     rf"\$\s*([0-9]{{1,5}}\.[0-9]{{1,2}})\s*(?:USD)?\s*(?:per share|for {escaped_ticker}|\b{escaped_ticker}\b)",
+                    rf"([0-9]{{1,5}}\.[0-9]{{1,2}})\s*USD\s*(?:per share|for {escaped_ticker}|\b{escaped_ticker}\b)",
                 ]
                 for p in patterns:
                     matches = re.findall(p, snippet, re.IGNORECASE)

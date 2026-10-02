@@ -158,11 +158,11 @@ class RiskManager:
         txs = self.transaction_repo.get_all_by_user(user_id)
         count = 0
         for tx in txs:
-            # 僅統計真實成交 (entry_category='trade')，排除持倉同步 (sync_adjustment) 與資金調配 (capital_flow)
-            cat = getattr(tx, 'entry_category', None) or (tx.get('entry_category') if isinstance(tx, dict) else None)
-            if cat != 'trade':
+            # 僅排除持倉同步 (sync_adjustment) 與資金調配 (capital_flow)，其餘（包含 trade 或未標記之交易）均計入交易筆數
+            cat = getattr(tx, 'entry_category', None) if not isinstance(tx, dict) else tx.get('entry_category')
+            if isinstance(cat, str) and cat in ('sync_adjustment', 'capital_flow'):
                 continue
-            t_date = getattr(tx, 'trade_date', None) or (tx.get('trade_date') if isinstance(tx, dict) else None)
+            t_date = getattr(tx, 'trade_date', None) if not isinstance(tx, dict) else tx.get('trade_date')
             if str(t_date).startswith(date_str):
                 count += 1
         return count

@@ -759,9 +759,6 @@ def run_weekly_rebalance(user_id: str = None):
     """
     user_id = user_id or os.getenv("PRIMARY_USER_ID") or os.getenv("USER_ID")
     if not user_id:
-        users = _resolve_target_users()
-        user_id = users[0] if users else None
-    if not user_id:
         logger.error("run_weekly_rebalance: user_id is required. Set PRIMARY_USER_ID env var or pass explicitly.")
         return "Error: user_id is required"
 
