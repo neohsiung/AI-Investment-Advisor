@@ -458,7 +458,6 @@ class ShadowLedgerService:
 
         # P3 Actionable Alert Hub: dispatch graduation promotion alert
         try:
-            import asyncio
             from src.services.actionable_alert_service import ActionableAlertHubService
             hub = ActionableAlertHubService(user_id=self.user_id)
             asyncio.create_task(hub.dispatch_shadow_graduation_alert(
@@ -535,7 +534,6 @@ class ShadowLedgerService:
 
         # P3 Actionable Alert Hub: dispatch shadow failure/eviction alert
         try:
-            import asyncio
             from src.services.actionable_alert_service import ActionableAlertHubService
             hub = ActionableAlertHubService(user_id=self.user_id)
             asyncio.create_task(hub.dispatch_shadow_graduation_alert(
