@@ -3079,6 +3079,41 @@ class SentinelService:
     # Dimension 11: Position Exit Engine (Stop-Loss, Take-Profit, Thesis Breakdown)
     # ──────────────────────────────────────────
 
+    async def _resolve_and_update_peak(self, ticker: str, current_price: float, avg_price: float) -> float:
+        """
+        獲取並更新持倉歷史最高價（支援 Redis 持久化 + 行程內字典快取雙層架構）。
+        """
+        stored_peak = 0.0
+        try:
+            from src.infrastructure.cache.redis_client import get_redis
+            r = await get_redis(decode_responses=True)
+            key = f"sentinel:peak:{self.user_id}:{ticker}"
+            cached = await r.get(key)
+            if cached:
+                stored_peak = float(cached)
+        except Exception as e:
+            logger.debug(f"Sentinel: Redis peak read skipped for {ticker}: {e}")
+
+        # In-memory fallback
+        if not hasattr(self, '_position_peaks') or self._position_peaks is None:
+            self._position_peaks = {}
+        in_memory_peak = self._position_peaks.get(ticker, 0.0)
+
+        effective_peak = max(stored_peak, in_memory_peak, avg_price, current_price)
+        self._position_peaks[ticker] = effective_peak
+
+        # Update Redis if peak advanced
+        if effective_peak > stored_peak:
+            try:
+                from src.infrastructure.cache.redis_client import get_redis
+                r = await get_redis(decode_responses=True)
+                key = f"sentinel:peak:{self.user_id}:{ticker}"
+                await r.set(key, str(effective_peak), ex=86400 * 60)
+            except Exception as e:
+                logger.debug(f"Sentinel: Redis peak update skipped for {ticker}: {e}")
+
+        return effective_peak
+
     async def _check_position_exits(self) -> List[Dict[str, Any]]:
         """
         Dimension 11: Active Position Exit Check
@@ -3155,11 +3190,8 @@ class SentinelService:
                     logger.warning(f"[Sentinel Exit] Stop-loss triggered for {ticker}: {return_pct:.2f}% <= -{stop_loss_pct:.1f}%")
                     continue
 
-                # 2. High-Water Mark Tracking & Trailing Stop-Loss (移動停損鎖定利潤)
-                if not hasattr(self, '_position_peaks') or self._position_peaks is None:
-                    self._position_peaks = {}
-                current_peak = max(self._position_peaks.get(ticker, 0.0), avg_price, current_price)
-                self._position_peaks[ticker] = current_peak
+                # 2. High-Water Mark Tracking & Tiered Dynamic Trailing Stop-Loss (分段動態移動停損)
+                current_peak = await self._resolve_and_update_peak(ticker, current_price, avg_price)
 
                 trailing_stop_pct = float(self.settings_service.get_setting("trailing_stop_pct", 6.0, self.user_id))
                 enable_trailing_stops_val = self.settings_service.get_setting("enable_trailing_stops", True, self.user_id)
@@ -3184,12 +3216,38 @@ class SentinelService:
                     except Exception as sm_e:
                         logger.debug(f"Sentinel: Smart support calculation skipped for {ticker}: {sm_e}")
 
-                if enable_trailing_stops and current_peak > (avg_price * 1.02) and (is_drawdown_triggered or is_support_broken):
-                    trigger_msg = (
-                        f"🛡️ [移動停損觸發] {ticker} 跌破主力籌碼支撐 ${support_price:.2f} (現價 ${current_price:.2f})，提前鎖定利潤出場"
-                        if is_support_broken and not is_drawdown_triggered
-                        else f"🛡️ [移動停損觸發] {ticker} 自最高價 ${current_peak:.2f} 回檔 {drawdown_from_peak_pct:.2f}% (門檻 -{trailing_stop_pct:.1f}%)，現價 ${current_price:.2f}，鎖定利潤出場"
-                    )
+                # Fetch ATR if available
+                ticker_atr = None
+                try:
+                    if hasattr(self.market_service, "get_technical_indicators"):
+                        ind = self.market_service.get_technical_indicators(ticker)
+                        if ind and ind.get("atr"):
+                            ticker_atr = float(ind["atr"])
+                except Exception as ind_e:
+                    logger.debug(f"Sentinel: ATR fetch failed for {ticker}: {ind_e}")
+
+                # Evaluate Non-Linear Tiered Dynamic ATR Exit
+                from src.services.exit_compositor_service import compute_dynamic_atr_exit
+                market_regime = "BEAR" if getattr(self, 'current_vix', 20.0) > 25 else "BULL" if getattr(self, 'current_vix', 20.0) < 18 else "NEUTRAL"
+                dynamic_exit = compute_dynamic_atr_exit(
+                    entry_price=avg_price,
+                    current_price=current_price,
+                    highest_price=current_peak,
+                    atr=ticker_atr,
+                    regime=market_regime,
+                    institutional_support_price=support_price,
+                )
+
+                is_dynamic_triggered = dynamic_exit.should_exit and dynamic_exit.ratchet_stage in ("BREAKEVEN", "TRAILING", "HARVEST", "SUPPORT_LOCKED")
+
+                if enable_trailing_stops and current_peak > (avg_price * 1.02) and (is_dynamic_triggered or is_drawdown_triggered or is_support_broken):
+                    if is_dynamic_triggered:
+                        trigger_msg = f"🛡️ [移動停損觸發 - {dynamic_exit.ratchet_stage}] {ticker}: {dynamic_exit.rationale}"
+                    elif is_support_broken and not is_drawdown_triggered:
+                        trigger_msg = f"🛡️ [移動停損觸發] {ticker} 跌破主力籌碼支撐 ${support_price:.2f} (現價 ${current_price:.2f})，提前鎖定利潤出場"
+                    else:
+                        trigger_msg = f"🛡️ [移動停損觸發] {ticker} 自最高價 ${current_peak:.2f} 回檔 {drawdown_from_peak_pct:.2f}% (門檻 -{trailing_stop_pct:.1f}%)，現價 ${current_price:.2f}，鎖定利潤出場"
+
                     triggers.append({
                         "id": f"trailing_stop_{ticker}_{self.user_id[:8]}",
                         "ticker": ticker,
@@ -3199,6 +3257,10 @@ class SentinelService:
                         "current_price": current_price,
                         "avg_price": avg_price,
                         "peak_price": current_peak,
+                        "stop_price": dynamic_exit.stop_price,
+                        "ratchet_stage": dynamic_exit.ratchet_stage,
+                        "tier": dynamic_exit.tier,
+                        "locked_profit_pct": dynamic_exit.locked_profit_pct,
                         "drawdown_from_peak_pct": round(drawdown_from_peak_pct, 2),
                         "return_pct": round(return_pct, 2) if return_pct is not None else 0.0,
                         "current_weight_pct": weight,
@@ -3209,7 +3271,11 @@ class SentinelService:
                         "trigger_type": "trailing_stop_loss",
                         "timestamp": pd.Timestamp.now().isoformat(),
                     })
-                    logger.warning(f"[Sentinel Exit] Trailing stop triggered for {ticker}: {drawdown_from_peak_pct:.2f}% from peak ${current_peak:.2f} (support_broken={is_support_broken})")
+                    logger.warning(
+                        f"[Sentinel Exit] Trailing stop triggered for {ticker}: "
+                        f"stage={dynamic_exit.ratchet_stage}, drawdown={drawdown_from_peak_pct:.2f}%, "
+                        f"peak=${current_peak:.2f}, active_stop=${dynamic_exit.stop_price:.2f}"
+                    )
                     continue
 
                 # 3. Ratchet Partial Take-Profit (階梯分批移動停利: 獲利 >= 25% 減倉 50%)
@@ -3389,6 +3455,11 @@ class SentinelService:
                     breakdown = trigger.get("confidence_breakdown") or [
                         {"agent": "CapitalRotation", "confidence": composite_score, "weight": 1.0, "key_factor": "Superior Opportunity Found"}
                     ]
+                elif strategy_name == "trailing_stop_loss":
+                    stage = trigger.get("ratchet_stage", "TRAILING")
+                    composite_score = 9.5 if stage == "HARVEST" else 9.0 if stage in ("TRAILING", "SUPPORT_LOCKED") else 8.5
+                    rationale = trigger.get("text") or f"🛡️ 移動停損觸發：鎖定獲利出場。"
+                    breakdown = [{"agent": "Risk", "confidence": composite_score, "weight": 1.0, "key_factor": f"Dynamic TSL ({stage})"}]
                 else:
                     composite_score = 7.5
                     rationale = trigger.get("text", "Position exit triggered.")
