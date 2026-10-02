@@ -627,10 +627,11 @@ class UniverseLifecycleService:
         max_active: Optional[int] = None,
         min_quality_score: Optional[float] = None,
         regime_adjustment: float = 0.0,
+        require_shadow_validation: Optional[bool] = None,
     ) -> List[Dict[str, Any]]:
         """
         Screen candidates against the quality gate and admit top-scoring ones up to capacity.
-        篩選市場候選標的，依照綜合品質評分由高至低擇優納入活躍自選池，直至額滿。
+        篩選市場候選標的，依照綜合品質評分由高至低擇優納入活躍自選池（或影子驗證軌道），直至額滿。
         """
         try:
             max_active = max_active or int(self.settings.get_setting("universe_max_active_tickers"))
@@ -641,6 +642,13 @@ class UniverseLifecycleService:
             min_quality_score = min_quality_score or float(self.settings.get_setting("universe_min_quality_score"))
         except Exception:
             min_quality_score = 6.5
+
+        if require_shadow_validation is None:
+            try:
+                val = self.settings.get_setting("universe_require_shadow_validation")
+                require_shadow_validation = str(val).lower() in ("true", "1", "yes") if val is not None else False
+            except Exception:
+                require_shadow_validation = False
 
         effective_min_score = min_quality_score + regime_adjustment
 
@@ -721,38 +729,57 @@ class UniverseLifecycleService:
             sector = str(fin.get("sector") or "")[:100]
             industry = str(fin.get("industry") or "")[:100]
 
+            target_status = "shadow" if require_shadow_validation else "active"
+
             ok = self.repo.upsert(
                 self.user_id,
                 ticker,
                 company_name=company_name,
                 sector=sector,
                 industry=industry,
-                status="active"
+                status=target_status,
             )
 
             if ok:
+                if require_shadow_validation:
+                    try:
+                        from src.services.shadow_ledger_service import ShadowLedgerService
+                        shadow_svc = ShadowLedgerService(
+                            user_id=self.user_id,
+                            ticker_repo=self.repo,
+                            market=self.market,
+                        )
+                        await shadow_svc.open_shadow_position(
+                            ticker=ticker,
+                            strategy_name="lifecycle_admission",
+                            notes=f"Auto-admitted to shadow validation with score {assessment.overall_score:.2f}",
+                        )
+                    except Exception as s_err:
+                        logger.warning("Could not open shadow position for %s: %s", ticker, s_err)
+
                 log_reasoning = (
-                    f"Auto-admitted to active: Score {assessment.overall_score:.2f} "
+                    f"Auto-admitted to {target_status}: Score {assessment.overall_score:.2f} "
                     f"(Fund: {assessment.fundamental_score:.1f}, Tech: {assessment.technical_score:.1f}, "
                     f"Liq: {assessment.liquidity_score:.1f}). Sector: {sector}"
                 )
                 self.repo.add_log(
                     self.user_id,
                     ticker,
-                    "auto_admitted",
+                    "auto_admitted_shadow" if require_shadow_validation else "auto_admitted",
                     "UniverseLifecycleService",
                     reasoning=log_reasoning,
                     old_status="candidate" if ticker in candidates_to_check else "",
-                    new_status="active",
+                    new_status=target_status,
                 )
                 admitted.append({
                     "ticker": ticker,
                     "company_name": company_name,
                     "sector": sector,
                     "score": assessment.overall_score,
+                    "status": target_status,
                     "admitted_at": datetime.now(timezone.utc).isoformat(),
                 })
-                logger.info("Admitted %s into active universe with score %.2f", ticker, assessment.overall_score)
+                logger.info("Admitted %s into universe (%s) with score %.2f", ticker, target_status, assessment.overall_score)
 
         return admitted
 
@@ -802,7 +829,27 @@ class UniverseLifecycleService:
         # 4. Dynamic Active Pool Competitive Rotation (汰弱留強 -> replace outclassed unpinned active with top candidate)
         active_evolution = await self.evolve_active_pool(max_active=max_active)
 
-        # 5. Screen & admit new candidates to active pool if slots available
+        # 4.5. Dynamic Shadow Ledger Step & Evaluation (影子交易驗證軌道)
+        shadow_evolution = {}
+        try:
+            from src.services.shadow_ledger_service import ShadowLedgerService
+            shadow_svc = ShadowLedgerService(
+                user_id=self.user_id,
+                ticker_repo=self.repo,
+                market=self.market,
+                quality_gate=self.quality_gate,
+            )
+            shadow_evolution = await shadow_svc.batch_step_and_evaluate(auto_promote=True)
+            logger.info(
+                "Lifecycle shadow evaluation: %d graduated, %d in progress, %d failed",
+                shadow_evolution.get("graduated_count", 0),
+                shadow_evolution.get("in_progress_count", 0),
+                shadow_evolution.get("failed_count", 0),
+            )
+        except Exception as sle:
+            logger.debug("Shadow ledger evaluation skipped/failed during lifecycle cycle: %s", sle)
+
+        # 5. Screen & admit new candidates to active pool (or shadow pipeline) if slots available
         admitted = await self.screen_and_admit_candidates(
             candidate_pool=candidate_pool,
             max_active=max_active,
@@ -811,10 +858,12 @@ class UniverseLifecycleService:
 
         current_active = self.repo.get_all(self.user_id, status="active")
         current_candidates = self.repo.get_all(self.user_id, status="candidate")
+        current_shadow = self.repo.get_all(self.user_id, status="shadow")
 
         summary_message = (
             f"Lifecycle run completed [{regime.regime}]. "
             f"Active: {len(current_active)}/{max_active} (Evicted: {len(evicted)}, Rotated: {active_evolution.get('rotation_count', 0)}, Admitted: {len(admitted)}). "
+            f"Shadow: {len(current_shadow)} (Graduated: {shadow_evolution.get('graduated_count', 0)}). "
             f"Candidates: {len(current_candidates)}/30 (Admitted: {candidate_evolution.get('admitted_new_count', 0)}, Pruned: {candidate_evolution.get('pruned_count', 0)})."
         )
         logger.info(summary_message)
@@ -832,9 +881,11 @@ class UniverseLifecycleService:
             "evicted": evicted,
             "rotations": active_evolution.get("rotations", []),
             "active_evolution": active_evolution,
+            "shadow_evolution": shadow_evolution,
             "admitted": admitted,
             "candidate_evolution": candidate_evolution,
             "active_count": len(current_active),
+            "shadow_count": len(current_shadow),
             "candidate_count": len(current_candidates),
         }
 

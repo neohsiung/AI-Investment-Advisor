@@ -229,6 +229,49 @@ class AutomatedTradingService:
                 }
             logger.warning(f"Trading protections check failed (allowing {action}): {e}")
 
+        # 1d. Shadow Validation Gate (P2: 影子交易 / 模擬跟單驗證軌道)
+        # If the ticker is currently undergoing shadow validation (status='shadow' in ticker_universe),
+        # live broker capital is protected. The trade is tracked in ShadowLedger instead.
+        try:
+            from src.repositories.ticker_universe_repository import TickerUniverseRepository
+            from src.services.shadow_ledger_service import ShadowLedgerService
+
+            ticker_repo = TickerUniverseRepository()
+            shadow_records = ticker_repo.get_all(user_id=user_id, status="shadow")
+            shadow_tickers = {r["ticker"].upper() for r in shadow_records}
+            if sym_upper in shadow_tickers:
+                logger.info(
+                    f"Ticker {sym_upper} is in Shadow Validation track. "
+                    f"Routing order to Shadow Ledger instead of live broker."
+                )
+                shadow_svc = ShadowLedgerService(user_id=user_id, ticker_repo=ticker_repo)
+                if str(action).upper() == "BUY":
+                    cap = float(quantity) if (delta_weight is not None and portfolio_value is not None) else 1000.0
+                    shadow_pos = await shadow_svc.open_shadow_position(
+                        ticker=sym_upper,
+                        strategy_name=strategy_name or "automated_trading_shadow",
+                        allocated_capital=cap,
+                        notes=f"Auto-routed shadow BUY (Confidence: {confidence_score})"
+                    )
+                    return {
+                        "status": "shadow_executed",
+                        "action": "BUY",
+                        "ticker": sym_upper,
+                        "shadow_position_id": shadow_pos.get("id"),
+                        "message": f"Virtual shadow BUY tracked for {sym_upper}; live capital protected."
+                    }
+                else:  # SELL
+                    eval_res = shadow_svc.evaluate_graduation(sym_upper)
+                    return {
+                        "status": "shadow_evaluated",
+                        "action": "SELL",
+                        "ticker": sym_upper,
+                        "evaluation": eval_res.to_dict(),
+                        "message": f"Virtual shadow SELL evaluated for {sym_upper}."
+                    }
+        except Exception as shadow_err:
+            logger.warning(f"Shadow validation check error for {sym_upper}: {shadow_err}")
+
         # 1c. Strategy validation gate (2026-08-10).
         #
         # Context: this system was configured to trade a live eToro account

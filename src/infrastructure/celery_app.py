@@ -157,6 +157,12 @@ app.conf.beat_schedule = {
         "task": "src.infrastructure.tasks.dispatch_weekly_rebalance",
         "schedule": crontab(hour=9, minute=35, day_of_week="1"),  # Mon 09:35 EST
     },
+    # Shadow Ledger Evaluation (P2) — runs daily at 16:45 EST (after US market close)
+    # 影子交易每日 MTM 損益計算與畢業考核：每個交易日盤後（16:45 EST）自動評估影子部位與提拔晉升。
+    "daily-shadow-ledger-eval": {
+        "task": "src.infrastructure.tasks.dispatch_shadow_ledger_eval",
+        "schedule": crontab(hour=16, minute=45, day_of_week="1-5"),
+    },
     "weekly-cost-review": {
         "task": "src.infrastructure.tasks.dispatch_memory_distill",
         "schedule": crontab(hour=22, minute=0, day_of_week="0"),
