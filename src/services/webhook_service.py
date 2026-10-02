@@ -573,7 +573,56 @@ async def telegram_bot_webhook(request: Request):
     # Callback query (inline button press)
     if callback_data:
         logger.info(f"Telegram callback: {callback_data} from chat {chat_id} (user {user_id[:8]}...)")
-        # Delegate to TelegramAdapter handle_webhook for callback handling
+
+        # Answer callback query immediately to dismiss client loading spinner
+        query_id = cb.get("id") if cb else None
+        if query_id:
+            async def _answer_cb(toast_msg: str = ""):
+                try:
+                    from src.services.settings_service import SettingsService
+                    ss_cb = SettingsService(user_id=user_id)
+                    b_token = ss_cb.get_setting("channel_telegram_bot_token", "")
+                    if b_token:
+                        import httpx
+                        async with httpx.AsyncClient(timeout=4.0) as client:
+                            await client.post(
+                                f"https://api.telegram.org/bot{b_token}/answerCallbackQuery",
+                                json={"callback_query_id": query_id, "text": toast_msg}
+                            )
+                except Exception as cb_err:
+                    logger.debug("Telegram answerCallbackQuery ignored error: %s", cb_err)
+            asyncio.create_task(_answer_cb())
+
+        # Parse callback params
+        cb_params: Dict[str, str] = {}
+        for part in callback_data.split("&"):
+            if "=" in part:
+                k, v = part.split("=", 1)
+                cb_params[k] = v
+
+        action_name = cb_params.get("action", "")
+        # P3 Actionable Alert Hub direct execution
+        if action_name in (
+            "close_pos",
+            "pause_trading",
+            "resume_trading",
+            "reset_protection",
+            "confirm_eviction",
+            "view_universe",
+            "dismiss",
+        ):
+            try:
+                from src.services.actionable_alert_service import ActionableAlertHubService
+                hub_svc = ActionableAlertHubService(user_id=user_id)
+                res = await hub_svc.execute_action(action_name, cb_params)
+                msg = res.get("message", "已執行指令。")
+                await _reply(msg)
+            except Exception as e:
+                logger.error(f"Actionable alert execution failed: {e}")
+                await _reply(f"❌ 執行失敗: {e}")
+            return {"ok": True}
+
+        # Delegate to TelegramAdapter handle_webhook for legacy approval callbacks
         try:
             from src.infrastructure.channels.telegram_adapter import TelegramAdapter
             from src.services.settings_service import SettingsService
@@ -604,6 +653,8 @@ async def telegram_bot_webhook(request: Request):
             "/status   — 查看帳戶現金與持倉摘要\n"
             "/sentinel — 手動觸發 Sentinel 市場掃描\n"
             "/portfolio — 詳細持倉清單與比例\n"
+            "/support <TICKER> — 查詢主力平均成本與關鍵支撐線\n"
+            "/shadow   — 檢視影子交易紙上驗證部位與進度\n"
             "/backtest <TICKER> — 執行快速策略回測\n"
             "/health   — 系統健康與保護機制狀態\n"
             "/pause    — 暫停 AI 自動交易\n"
@@ -647,6 +698,64 @@ async def telegram_bot_webhook(request: Request):
             except Exception as e:
                 await _reply(f"❌ 無法取得持倉: {e}")
         asyncio.create_task(_portfolio())
+
+    elif cmd == "/support":
+        async def _support():
+            parts = text.split()
+            ticker = parts[1].upper() if len(parts) > 1 else None
+            if not ticker:
+                await _reply("用法: /support <TICKER>，例如 /support AAPL")
+                return
+            await _reply(f"🔍 正在計算 {ticker} 之主力籌碼成本與關鍵支撐價...")
+            try:
+                from src.services.smart_money_support_service import SmartMoneySupportService
+                svc = SmartMoneySupportService(user_id=user_id)
+                res = await svc.calculate_institutional_support(ticker)
+
+                status_icon = "🛡️ 站穩支撐" if res.is_bullish_support else "⚠️ 跌破支撐"
+                lines = [
+                    f"📊 <b>{ticker} 主力籌碼分析報告</b>",
+                    f"當前市價: ${res.current_price:.2f}",
+                    f"狀態: {status_icon}",
+                    "",
+                    f"• <b>關鍵主力支撐價</b>: ${res.key_support_price:.2f}",
+                    f"• <b>建議移動停損價</b>: ${res.recommended_stop_loss:.2f}",
+                    f"• <b>錨定 VWAP (AVWAP)</b>: ${res.anchored_vwap:.2f}",
+                    f"• <b>成交量控制點 (POC)</b>: ${res.point_of_control:.2f}",
+                    f"• <b>籌碼價值區 (VAH / VAL)</b>: ${res.value_area_high:.2f} / ${res.value_area_low:.2f}",
+                    "",
+                    f"<i>{res.notes}</i>",
+                ]
+                await _reply("\n".join(lines))
+            except Exception as e:
+                await _reply(f"❌ 主力支撐計算失敗: {e}")
+        asyncio.create_task(_support())
+
+    elif cmd == "/shadow":
+        async def _shadow():
+            await _reply("🔍 正在盤點影子交易驗證軌道部位...")
+            try:
+                from src.services.shadow_ledger_service import ShadowLedgerService
+                svc = ShadowLedgerService(user_id=user_id)
+                positions = svc.repo.list_positions(user_id=user_id, status="OPEN")
+                if not positions:
+                    await _reply("🌱 目前沒有正在進行中的影子驗證部位。")
+                    return
+                lines = [f"🧪 <b>影子交易驗證軌道 ({len(positions)} 檔進行中)</b>", ""]
+                for p in positions:
+                    ticker_sym = p.get("ticker", "?")
+                    days = p.get("evaluation_days", 0)
+                    pnl = p.get("unrealized_pnl_pct", 0.0)
+                    dd = p.get("max_drawdown_pct", 0.0)
+                    sup_status = "❌ 跌破主力" if p.get("support_breached") else "✅ 守穩"
+                    pnl_str = f"+{pnl:.2f}%" if pnl >= 0 else f"{pnl:.2f}%"
+                    lines.append(
+                        f"• <b>{ticker_sym}</b>: 報酬 {pnl_str} | 回撤 {dd:.1f}% | 觀察 {days}/7天 | {sup_status}"
+                    )
+                await _reply("\n".join(lines))
+            except Exception as e:
+                await _reply(f"❌ 查詢影子部位失敗: {e}")
+        asyncio.create_task(_shadow())
 
     elif cmd == "/sentinel":
         async def _sentinel():
@@ -767,6 +876,75 @@ async def telegram_bot_webhook(request: Request):
                 except Exception as e:
                     await _reply(f"❌ 無法處理查詢: {e}")
             asyncio.create_task(_chat())
+
+    return {"ok": True}
+
+
+@webhook_router.post("/slack")
+async def slack_interactivity_webhook(request: Request):
+    """
+    Slack Interactivity Webhook Receiver (P3).
+    Handles Block Kit interactive buttons from Slack Actionable Alerts.
+    """
+    headers = dict(request.headers)
+    body_bytes = await request.body()
+    body_str = body_bytes.decode("utf-8", errors="ignore")
+
+    from src.infrastructure.channels.slack_adapter import SlackAdapter
+    adapter = SlackAdapter()
+    if adapter.signing_secret:
+        if not adapter.verify_signature(body_str, headers):
+            logger.warning("Slack webhook rejected: invalid signature")
+            raise HTTPException(status_code=403, detail="Invalid Slack signature")
+
+    # Slack sends application/x-www-form-urlencoded with 'payload' key containing JSON
+    import json
+    from urllib.parse import parse_qs
+
+    parsed_form = parse_qs(body_str)
+    payload_raw = parsed_form.get("payload", [""])[0]
+    if not payload_raw:
+        try:
+            payload_data = json.loads(body_str) if body_str else {}
+        except Exception:
+            payload_data = {}
+    else:
+        try:
+            payload_data = json.loads(payload_raw)
+        except Exception as e:
+            logger.error(f"Failed to parse Slack interactive payload: {e}")
+            payload_data = {}
+
+    actions = payload_data.get("actions", [])
+    user_id = os.getenv("PRIMARY_USER_ID") or resolve_user_id()
+
+    execution_results = []
+    for act in actions:
+        val = act.get("value", "")
+        params = {}
+        for part in val.split("&"):
+            if "=" in part:
+                k, v = part.split("=", 1)
+                params[k] = v
+        action_name = params.get("action") or act.get("action_id", "")
+        if action_name:
+            try:
+                from src.services.actionable_alert_service import ActionableAlertHubService
+                hub = ActionableAlertHubService(user_id=user_id)
+                res = await hub.execute_action(action_name, params)
+                execution_results.append(res)
+                logger.info(f"Slack interactive action executed: {action_name} -> {res}")
+            except Exception as act_err:
+                logger.error(f"Slack action {action_name} execution error: {act_err}")
+
+    if execution_results:
+        msg = "\n".join(r.get("message", "OK") for r in execution_results)
+        return {
+            "ok": True,
+            "response_type": "ephemeral",
+            "replace_original": False,
+            "text": f"🤖 <b>AI 戰情中心回覆</b>：\n{msg}"
+        }
 
     return {"ok": True}
 

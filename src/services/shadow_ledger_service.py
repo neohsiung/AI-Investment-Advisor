@@ -455,6 +455,24 @@ class ShadowLedgerService:
             "Graduated shadow position: %s -> active (Return: %.2f%%, MaxDD: %.2f%%)",
             ticker_sym, pos.get("unrealized_pnl_pct", 0.0), pos.get("max_drawdown_pct", 0.0)
         )
+
+        # P3 Actionable Alert Hub: dispatch graduation promotion alert
+        try:
+            import asyncio
+            from src.services.actionable_alert_service import ActionableAlertHubService
+            hub = ActionableAlertHubService(user_id=self.user_id)
+            asyncio.create_task(hub.dispatch_shadow_graduation_alert(
+                ticker=ticker_sym,
+                graduated=True,
+                metrics=metrics,
+                eval_days=int(pos.get("evaluation_days", 0)),
+                unrealized_pnl_pct=float(pos.get("unrealized_pnl_pct", 0.0)),
+                max_drawdown_pct=float(pos.get("max_drawdown_pct", 0.0)),
+                support_breached=False,
+            ))
+        except Exception as alert_e:
+            logger.debug("Failed to dispatch shadow graduation alert: %s", alert_e)
+
         return {
             "success": True,
             "ticker": ticker_sym,
@@ -514,6 +532,24 @@ class ShadowLedgerService:
             "Failed shadow position: %s -> %s (Reason: %s)",
             ticker_sym, new_status, reason
         )
+
+        # P3 Actionable Alert Hub: dispatch shadow failure/eviction alert
+        try:
+            import asyncio
+            from src.services.actionable_alert_service import ActionableAlertHubService
+            hub = ActionableAlertHubService(user_id=self.user_id)
+            asyncio.create_task(hub.dispatch_shadow_graduation_alert(
+                ticker=ticker_sym,
+                graduated=False,
+                metrics=metrics,
+                eval_days=int(pos.get("evaluation_days", 0)),
+                unrealized_pnl_pct=float(pos.get("unrealized_pnl_pct", 0.0)),
+                max_drawdown_pct=float(pos.get("max_drawdown_pct", 0.0)),
+                support_breached=bool(pos.get("support_breached", False)),
+            ))
+        except Exception as alert_e:
+            logger.debug("Failed to dispatch shadow fail alert: %s", alert_e)
+
         return {
             "success": True,
             "ticker": ticker_sym,

@@ -3271,6 +3271,25 @@ class SentinelService:
                         "trigger_type": "trailing_stop_loss",
                         "timestamp": pd.Timestamp.now().isoformat(),
                     })
+
+                    # P3 Actionable Alert Hub: dispatch immediate interactive alert for support breakdown
+                    if is_support_broken and support_price:
+                        try:
+                            from src.services.actionable_alert_service import ActionableAlertHubService
+                            breakdown_pct = ((current_price - support_price) / support_price) * 100.0
+                            hub_svc = ActionableAlertHubService(user_id=self.user_id)
+                            import asyncio
+                            asyncio.create_task(hub_svc.dispatch_support_breakdown_alert(
+                                ticker=ticker,
+                                current_price=current_price,
+                                support_price=support_price,
+                                breakdown_pct=breakdown_pct,
+                                unrealized_pnl_pct=return_pct,
+                                position_value=current_price * shares,
+                            ))
+                        except Exception as alert_err:
+                            logger.debug(f"Actionable support breakdown alert failed: {alert_err}")
+
                     logger.warning(
                         f"[Sentinel Exit] Trailing stop triggered for {ticker}: "
                         f"stage={dynamic_exit.ratchet_stage}, drawdown={drawdown_from_peak_pct:.2f}%, "
