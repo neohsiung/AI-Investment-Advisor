@@ -554,14 +554,16 @@ class ExitCompositorService:
         highest_price: Optional[float] = None,
         atr: Optional[float] = None,
         regime: Optional[Any] = None,
+        institutional_support_price: Optional[float] = None,
     ) -> DynamicAtrExitResult:
-        """Evaluate dynamic ATR exit with profit ratchet."""
+        """Evaluate dynamic ATR exit with profit ratchet and institutional support."""
         return compute_dynamic_atr_exit(
             entry_price=entry_price,
             current_price=current_price,
             highest_price=highest_price,
             atr=atr,
             regime=regime,
+            institutional_support_price=institutional_support_price,
         )
 
 
@@ -573,7 +575,7 @@ class DynamicAtrExitResult:
     stop_price: float                # The active stop price
     pnl_pct: float                   # Unrealized gain/loss % from entry
     highest_price: float             # Highest price reached since entry
-    ratchet_stage: str               # "INITIAL" | "BREAKEVEN" | "TRAILING"
+    ratchet_stage: str               # "INITIAL" | "BREAKEVEN" | "TRAILING" | "SUPPORT_LOCKED"
     rationale: str                   # Detailed explanation of status
 
 
@@ -584,13 +586,15 @@ def compute_dynamic_atr_exit(
     atr: Optional[float] = None,
     regime: Optional[Any] = None,
     atr_multiplier: Optional[float] = None,
+    institutional_support_price: Optional[float] = None,
 ) -> DynamicAtrExitResult:
     """
-    Compute dynamic ATR-based trailing stop and profit ratchet.
-    動態 ATR 移動停損與利潤棘輪計算器：
-    - 階段 1 (初始停損): 進場點 - (ATR 乘數 * ATR)。乘數隨市場體制自適應 (Bull: 2.5x, Neutral: 2.0x, Bear: 1.5x)。
-    - 階段 2 (保本鎖定): 當獲利 >= +8% 時，停損線單向棘輪上移至成本保本價 (Entry * 1.005)，立於不敗之地。
-    - 階段 3 (移動追蹤): 當獲利 >= +15% 時，啟動移動追蹤停利 (Highest - 2.0x ATR，熊市 1.5x ATR)，讓贏家奔跑。
+    Compute dynamic ATR-based trailing stop and profit ratchet with institutional support awareness.
+    動態 ATR 移動停損與利潤棘輪計算器（結合主力籌碼支撐）：
+    - 階段 1 (初始停損): 進場點 - (ATR 乘數 * ATR)。若提供主力支撐價，亦評估籌碼防守線取較高者。
+    - 階段 2 (主力籌碼推進): 若主力支撐價墊高 (POC/AVWAP)，停損線上推至支撐價下方 0.8% 處。
+    - 階段 3 (保本鎖定): 當獲利 >= +8% 時，停損線單向棘輪上移至成本保本價 (Entry * 1.005)，立於不敗之地。
+    - 階段 4 (移動追蹤): 當獲利 >= +15% 時，啟動移動追蹤停利 (Highest - 2.0x ATR，熊市 1.5x ATR)，讓贏家奔跑。
     - 單調遞增特性：停損價只升不降，嚴密截斷虧損、保全獲利。
     """
     if entry_price <= 0:
@@ -620,14 +624,22 @@ def compute_dynamic_atr_exit(
     active_stop = initial_stop
     ratchet_stage = "INITIAL"
 
-    # 2. Profit Ratchet Stage: Breakeven (peak >= +8%)
+    # 2. Institutional Support Anchor / Ratchet
+    if institutional_support_price and institutional_support_price > 0:
+        support_stop = institutional_support_price * 0.992  # 0.8% buffer below support
+        if support_stop > active_stop:
+            active_stop = support_stop
+            if active_stop >= entry_price:
+                ratchet_stage = "SUPPORT_LOCKED"
+
+    # 3. Profit Ratchet Stage: Breakeven (peak >= +8%)
     if peak_pnl_pct >= 8.0:
         breakeven_stop = entry_price * 1.005
         if breakeven_stop > active_stop:
             active_stop = breakeven_stop
             ratchet_stage = "BREAKEVEN"
 
-    # 3. Profit Ratchet Stage: Trailing (peak >= +15%)
+    # 4. Profit Ratchet Stage: Trailing (peak >= +15%)
     if peak_pnl_pct >= 15.0:
         trail_mult = 1.5 if "BEAR" in regime_str else 2.0
         trailing_stop = effective_highest - trail_mult * effective_atr
@@ -649,6 +661,12 @@ def compute_dynamic_atr_exit(
             rationale = (
                 f"觸發保本防線：現價 ${current_price:.2f} <= 保本價 ${active_stop:.2f} "
                 f"(成本 ${entry_price:.2f}, 峰值獲利曾達 +{peak_pnl_pct:.1f}%)"
+            )
+        elif ratchet_stage == "SUPPORT_LOCKED":
+            exit_type = "TRAILING_PROFIT" if pnl_pct >= 0 else "STOP_LOSS"
+            rationale = (
+                f"觸發主力籌碼防線：現價 ${current_price:.2f} <= 籌碼支撐停損價 ${active_stop:.2f} "
+                f"(主力支撐 ${institutional_support_price:.2f}, 損益 {pnl_pct:+.1f}%)"
             )
         else:
             exit_type = "STOP_LOSS"

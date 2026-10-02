@@ -17,6 +17,7 @@ class TickerUniverseRecord(BaseModel):
     sector: Optional[str] = None
     industry: Optional[str] = None
     status: str = "active"
+    is_pinned: bool = False
     added_at: str
     updated_at: Optional[str] = None
     removal_reason: Optional[str] = None
@@ -34,6 +35,7 @@ class TickerUniverseAddRequest(BaseModel):
     sector: str = ""
     industry: str = ""
     bypass_quality_check: bool = False
+    is_pinned: bool = True
 
     @validator("ticker")
     def uppercase(cls, v):
@@ -45,6 +47,11 @@ class TickerUniverseUpdateRequest(BaseModel):
     sector: Optional[str] = None
     industry: Optional[str] = None
     status: Optional[str] = None
+    is_pinned: Optional[bool] = None
+
+
+class TickerPinRequest(BaseModel):
+    is_pinned: bool = Field(..., description="Whether the ticker is user-designated (immune to rotation/eviction)")
 
 
 class TickerUniverseRemoveRequest(BaseModel):

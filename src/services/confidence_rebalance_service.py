@@ -363,15 +363,25 @@ class ConfidenceRebalanceService:
                     rationale=f"Confidence-driven rebalance: SELL {trade['ticker']} (delta={trade['delta_weight']/100.0:+.2%})",
                     strategy_name="rebalance_diversification",
                 )
-                executed_trades.append({**trade, "status": result.get("status", "executed")})
-                if result.get("status") != "executed":
+                is_ok = result.get("status") in ("success", "executed") or result.get("execution_status") in ("executed", "pending")
+                trade_status = "executed" if is_ok else result.get("status", "failed")
+                executed_trades.append({**trade, "status": trade_status, "order_id": result.get("order_id")})
+                if not is_ok:
                     errors.append(f"{trade['ticker']} sell: {result.get('reason', 'unknown')}")
+                else:
+                    import asyncio
+                    await asyncio.sleep(1.0)
             except Exception as e:
                 logger.error(f"{trade['ticker']} sell error: {e}")
                 errors.append(f"{trade['ticker']} sell error: Internal error")
                 executed_trades.append({**trade, "status": "error", "error": "Internal error"})
 
         # Step 2: Execute all buys (after sells freed cash)
+        if sells and buys:
+            import asyncio
+            logger.info("Rebalance: Waiting 3.0s for broker liquidity to settle before executing buys...")
+            await asyncio.sleep(3.0)
+
         logger.info(f"Rebalance: Executing {len(buys)} buys (after sells)")
         for trade in buys:
             try:
@@ -399,9 +409,14 @@ class ConfidenceRebalanceService:
                     rationale=f"Confidence-driven rebalance: BUY {trade['ticker']} (delta={trade['delta_weight']/100.0:+.2%})",
                     strategy_name="portfolio_rebalance",
                 )
-                executed_trades.append({**trade, "status": result.get("status", "executed")})
-                if result.get("status") != "executed":
+                is_ok = result.get("status") in ("success", "executed") or result.get("execution_status") in ("executed", "pending")
+                trade_status = "executed" if is_ok else result.get("status", "failed")
+                executed_trades.append({**trade, "status": trade_status, "order_id": result.get("order_id")})
+                if not is_ok:
                     errors.append(f"{trade['ticker']} buy: {result.get('reason', 'unknown')}")
+                else:
+                    import asyncio
+                    await asyncio.sleep(1.0)
             except Exception as e:
                 logger.error(f"{trade['ticker']} buy error: {e}")
                 errors.append(f"{trade['ticker']} buy error: Internal error")

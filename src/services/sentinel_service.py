@@ -3167,8 +3167,29 @@ class SentinelService:
 
                 drawdown_from_peak_pct = ((current_price - current_peak) / current_peak) * 100.0 if current_peak > 0 else 0.0
 
-                # 只有當標的曾漲過成本線 (current_peak > avg_price * 1.02) 且自高點回檔達標時啟動移動停損
-                if enable_trailing_stops and current_peak > (avg_price * 1.02) and drawdown_from_peak_pct <= -abs(trailing_stop_pct):
+                # 只有當標的曾漲過成本線 (current_peak > avg_price * 1.02) 且自高點回檔達標或跌破主力支撐時啟動移動停損
+                is_drawdown_triggered = drawdown_from_peak_pct <= -abs(trailing_stop_pct)
+                is_support_broken = False
+                support_price = None
+                if enable_trailing_stops and current_peak > (avg_price * 1.02):
+                    try:
+                        from src.services.smart_money_support_service import SmartMoneySupportService
+                        sm_svc = SmartMoneySupportService()
+                        sm_res = sm_svc.calculate_institutional_support(ticker=ticker, current_price=current_price)
+                        if sm_res and sm_res.support_type != "FALLBACK_PERCENTAGE":
+                            support_price = sm_res.key_support_price
+                            # 若現價跌破主力關鍵支撐下方緩衝價，且該支撐高於進場成本，提前鎖定利潤
+                            if support_price >= avg_price and current_price < support_price * 0.992:
+                                is_support_broken = True
+                    except Exception as sm_e:
+                        logger.debug(f"Sentinel: Smart support calculation skipped for {ticker}: {sm_e}")
+
+                if enable_trailing_stops and current_peak > (avg_price * 1.02) and (is_drawdown_triggered or is_support_broken):
+                    trigger_msg = (
+                        f"🛡️ [移動停損觸發] {ticker} 跌破主力籌碼支撐 ${support_price:.2f} (現價 ${current_price:.2f})，提前鎖定利潤出場"
+                        if is_support_broken and not is_drawdown_triggered
+                        else f"🛡️ [移動停損觸發] {ticker} 自最高價 ${current_peak:.2f} 回檔 {drawdown_from_peak_pct:.2f}% (門檻 -{trailing_stop_pct:.1f}%)，現價 ${current_price:.2f}，鎖定利潤出場"
+                    )
                     triggers.append({
                         "id": f"trailing_stop_{ticker}_{self.user_id[:8]}",
                         "ticker": ticker,
@@ -3181,14 +3202,14 @@ class SentinelService:
                         "drawdown_from_peak_pct": round(drawdown_from_peak_pct, 2),
                         "return_pct": round(return_pct, 2) if return_pct is not None else 0.0,
                         "current_weight_pct": weight,
-                        "text": f"🛡️ [移動停損觸發] {ticker} 自最高價 ${current_peak:.2f} 回檔 {drawdown_from_peak_pct:.2f}% (門檻 -{trailing_stop_pct:.1f}%)，現價 ${current_price:.2f}，鎖定利潤出場",
+                        "text": trigger_msg,
                         "severity": "critical",
                         "priority": 1,
                         "type": "position_exit",
                         "trigger_type": "trailing_stop_loss",
                         "timestamp": pd.Timestamp.now().isoformat(),
                     })
-                    logger.warning(f"[Sentinel Exit] Trailing stop triggered for {ticker}: {drawdown_from_peak_pct:.2f}% from peak ${current_peak:.2f}")
+                    logger.warning(f"[Sentinel Exit] Trailing stop triggered for {ticker}: {drawdown_from_peak_pct:.2f}% from peak ${current_peak:.2f} (support_broken={is_support_broken})")
                     continue
 
                 # 3. Ratchet Partial Take-Profit (階梯分批移動停利: 獲利 >= 25% 減倉 50%)

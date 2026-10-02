@@ -542,8 +542,12 @@ class AutomatedTradingService:
                     if quantity != original_qty:
                         logger.info(f"SELL Guard: Adjusted {ticker} qty {original_qty} → {quantity} (holding: {actual_holding})")
                     
-                    # Phase 2: Explicit rounding for eToro 0.01 share precision
-                    quantity = round(quantity, 2)
+                    # Phase 2: Explicit precision for eToro share precision without exceeding actual_holding
+                    if quantity >= actual_holding * 0.999:
+                        quantity = actual_holding
+                    else:
+                        import math
+                        quantity = math.floor(quantity * 100.0) / 100.0
             except Exception as e:
                 # 2026-08-02: fail CLOSED. This clamp is what keeps a SELL from
                 # exceeding the actual holding (i.e. accidentally opening a
@@ -615,7 +619,8 @@ class AutomatedTradingService:
             stop_loss_rate=stop_loss_rate,
             take_profit_rate=take_profit_rate,
             is_trailing_stop_loss=is_trailing_stop_loss,
-            reason=rationale
+            reason=rationale,
+            strategy_name=strategy_name
         )
         
         # 3b. Auto-execute logic (走向全自主通報模式：從要我決策，變成跟我報告)
@@ -988,9 +993,16 @@ class AutomatedTradingService:
             if not execution_price or execution_price <= 0:
                 execution_price = await self._get_current_price(broker, order.symbol, user_id=user_id) or 0.0
                 
-            qty = order.quantity
-            if (qty is None or qty <= 0) and execution_price > 0:
-                qty = (order.amount_usd or 0.0) / execution_price
+            # If amount-based order, calculate units (shares) from amount_usd / execution_price
+            # 若為金額型訂單，由 amount_usd / execution_price 計算出實際股數
+            is_amount_sizing = getattr(order, 'sizing_mode', None) == OrderSizingMode.AMOUNT or (order.action == OrderAction.BUY and order.amount_usd)
+            if is_amount_sizing and execution_price > 0:
+                order_amt = float(order.amount_usd or order.quantity or 0.0)
+                qty = order_amt / float(execution_price)
+            else:
+                qty = order.quantity
+                if (qty is None or qty <= 0) and execution_price > 0:
+                    qty = (order.amount_usd or 0.0) / execution_price
             qty = max(float(qty or 0.0), 0.0001)
             
             amount = order.amount_usd or (float(execution_price) * float(qty))

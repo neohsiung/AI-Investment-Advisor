@@ -40,6 +40,7 @@ class Order:
     take_profit_rate: Optional[float] = None
     is_trailing_stop_loss: bool = False
     trailing_stop_distance_pct: Optional[float] = None
+    strategy_name: Optional[str] = None
 
 @dataclass
 class Position:

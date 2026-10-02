@@ -98,7 +98,7 @@ class RiskManager:
             # 成功而有兩種預設，且錯誤路徑反而更寬鬆。風控閘門不該因例外而放寬。
             return self._schema_thresholds()
 
-    def check_constraints(self, user_id: str, history: List[Dict[str, Any]] = None, current_positions: List[Any] = None) -> bool:
+    def check_constraints(self, user_id: str, history: List[Dict[str, Any]] = None, current_positions: List[Any] = None, strategy_name: Optional[str] = None, action: Optional[str] = None) -> bool:
         """
         Check if trading is allowed for this user based on dynamic constraints.
         """
@@ -127,13 +127,23 @@ class RiskManager:
         # Get Dynamic Thresholds
         thresholds = self._get_dynamic_thresholds(user_id)
 
-        # 1. Daily Limit
-        max_daily = int(self._get_setting(user_id, "ai_max_daily_trades", thresholds["max_daily_trades"]))
-        today_str = datetime.now().strftime('%Y-%m-%d')
-        daily_count = self._get_daily_trade_count(user_id, today_str)
-        if daily_count >= max_daily:
-            logger.warning(f"Risk Check: Daily trade limit reached ({daily_count}/{max_daily}) for {user_id}")
-            return False
+        # 0b. Exemption for SELL, Safety Controls, and Rebalance Batches
+        # 部位減倉、安全控制出場與模型再平衡豁免單日次數限制，避免將使用者鎖在應退場部位
+        from src.services.strategy_registry import StrategyRegistry
+        is_sell = str(action).upper() == "SELL" if action else False
+        is_safety = StrategyRegistry.is_safety_control(strategy_name or "")
+        is_rebalance = (strategy_name or "") in (
+            "rebalance_diversification", "portfolio_rebalance", "concentration_rebalance"
+        )
+
+        # 1. Daily Limit (僅約束一般主動買進開倉，不卡平倉與再平衡)
+        if not is_sell and not is_safety and not is_rebalance:
+            max_daily = int(self._get_setting(user_id, "ai_max_daily_trades", thresholds["max_daily_trades"]))
+            today_str = datetime.now().strftime('%Y-%m-%d')
+            daily_count = self._get_daily_trade_count(user_id, today_str)
+            if daily_count >= max_daily:
+                logger.warning(f"Risk Check: Daily trade limit reached ({daily_count}/{max_daily}) for {user_id}")
+                return False
 
         # 2. Circuit Breaker (Loss Analysis)
         if self._is_circuit_breaker_triggered(user_id, history, current_positions, thresholds):
@@ -148,8 +158,11 @@ class RiskManager:
         txs = self.transaction_repo.get_all_by_user(user_id)
         count = 0
         for tx in txs:
-            # tx might be Row or dict
-            t_date = getattr(tx, 'trade_date', None) or tx.get('trade_date')
+            # 僅統計真實成交 (entry_category='trade')，排除持倉同步 (sync_adjustment) 與資金調配 (capital_flow)
+            cat = getattr(tx, 'entry_category', None) or (tx.get('entry_category') if isinstance(tx, dict) else None)
+            if cat != 'trade':
+                continue
+            t_date = getattr(tx, 'trade_date', None) or (tx.get('trade_date') if isinstance(tx, dict) else None)
             if str(t_date).startswith(date_str):
                 count += 1
         return count

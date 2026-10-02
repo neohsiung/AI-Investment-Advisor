@@ -566,11 +566,41 @@ settings:
   - key: universe_max_active_tickers
     group: allocation
     type: int
+    default: 8
+    min: 3
+    max: 50
+    label_en: Max active universe size
+    label_zh: 標的池最大活躍標的數量
+  - key: universe_max_candidate_tickers
+    group: allocation
+    type: int
     default: 30
     min: 5
     max: 100
-    label_en: Max active universe size
-    label_zh: 標的池最大活躍標的數量
+    label_en: Max candidate universe size
+    label_zh: 標的池最大候選標的數量
+    help_en: Target capacity for reserve candidates managed through dynamic elimination and retention.
+    help_zh: 候選池中定期汰弱留強之儲備標的數量上限。
+  - key: universe_rotation_hurdle
+    group: allocation
+    type: float
+    default: 1.5
+    min: 0.5
+    max: 5.0
+    label_en: Active vs Candidate rotation hurdle
+    label_zh: 活躍池動態輪換淘汰利差門檻 (0.5-5.0)
+    help_en: Minimum score advantage required for a top candidate to replace an unpinned active ticker.
+    help_zh: 候選股評分超越未鎖定活躍股的最低利差，達到門檻方能觸發活躍池汰弱留強替換。
+  - key: universe_max_rotations_per_cycle
+    group: allocation
+    type: int
+    default: 2
+    min: 1
+    max: 5
+    label_en: Max rotations per lifecycle cycle
+    label_zh: 單輪週期最大替換標的數 (1-5)
+    help_en: Maximum number of unpinned active tickers that can be replaced by candidates in one review cycle to prevent churn.
+    help_zh: 單次審查週期中允許被候選股替換之未鎖定活躍股數量上限，防止換手率過高。
   - key: universe_min_market_cap_billions
     group: allocation
     type: float

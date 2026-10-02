@@ -125,3 +125,43 @@ def test_pyramid_screen_endpoint(client, mock_service):
     assert data["data"]["admitted_to_universe"] == ["NVDA"]
 
 
+def test_pin_ticker_endpoint(client, mock_service):
+    mock_service.set_ticker_pin.return_value = {
+        "success": True,
+        "message": "NVDA pinned (user-designated, immune to rotation/eviction)",
+    }
+
+    resp = client.put("/api/v1/ticker-universe/NVDA/pin", json={"is_pinned": True})
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["status"] == "success"
+    assert "NVDA pinned" in data["message"]
+    mock_service.set_ticker_pin.assert_called_with("NVDA", True)
+
+
+def test_evolve_active_endpoint(client, mock_service):
+    mock_service.evolve_active = AsyncMock(return_value={
+        "success": True,
+        "message": "Active pool evolution complete",
+        "rotation_count": 1,
+        "rotations": [
+            {
+                "demoted_ticker": "OLD_TICKER",
+                "promoted_ticker": "NEW_TICKER",
+                "score_delta": 2.5,
+            }
+        ],
+        "total_active": 8,
+        "pinned_active_count": 4,
+        "unpinned_active_count": 4,
+    })
+
+    resp = client.post("/api/v1/ticker-universe/active/evolve?rotation_hurdle=1.5")
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["status"] == "success"
+    assert data["data"]["rotation_count"] == 1
+    assert data["data"]["rotations"][0]["promoted_ticker"] == "NEW_TICKER"
+
+
+
