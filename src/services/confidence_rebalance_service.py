@@ -46,6 +46,10 @@ class ConfidenceRebalanceService:
         self.RegimePolicy = RegimePolicy
         self.regime_service = regime_service or MarketRegimeService(market_data_service=market_data_service)
         self.market_data_service = market_data_service
+        from src.services.opportunity_cost_service import OpportunityCostService
+        from src.services.alpha_decay_service import AlphaDecayService
+        self.opportunity_cost_service = OpportunityCostService(user_id=user_id)
+        self.alpha_decay_service = AlphaDecayService(user_id=user_id, market_data_service=market_data_service)
 
     async def _get_regime_policy(self) -> Any:
         """Query current market regime to determine adaptive cash buffer and buy permission."""
@@ -67,8 +71,35 @@ class ConfidenceRebalanceService:
         """
         policy = await self._get_regime_policy()
 
-        # Step 1: Optimize target allocations from confidence scores
-        opt_result = self.ticker_service.optimize_allocations()
+        # Step 1: Get current portfolio weights and holdings
+        current = await self._get_current_weights()
+        if current is None:
+            return {"success": False, "message": "Could not fetch current portfolio", "trades": []}
+
+        total_portfolio_value = current.get("total_value", 1.0)
+        current_weights = current.get("weights", {})
+        cash_weight = current.get("cash_weight", 0.0)
+        positions_map = current.get("positions_map", {})
+
+        current_holdings = {}
+        for held_ticker, p_info in positions_map.items():
+            if held_ticker != "CASH":
+                open_date = p_info.get("open_date")
+                holding_days = self.alpha_decay_service.calculate_holding_days(open_date)
+                current_holdings[held_ticker] = {
+                    "holding_days": holding_days,
+                    "open_date": open_date,
+                    "current_price": p_info.get("current_price", 0.0),
+                    "open_price": p_info.get("open_price", 0.0),
+                    "unrealized_pnl_pct": p_info.get("unrealized_pnl_pct", 0.0),
+                }
+
+        # Step 2: Optimize target allocations from confidence scores (with Alpha Decay)
+        try:
+            opt_result = self.ticker_service.optimize_allocations(current_holdings=current_holdings)
+        except TypeError:
+            opt_result = self.ticker_service.optimize_allocations()
+
         if not opt_result.get("success"):
             return {
                 "success": False,
@@ -79,15 +110,6 @@ class ConfidenceRebalanceService:
 
         targets = opt_result.get("targets", [])
         target_map = {t["ticker"]: t["target_weight"] for t in targets}
-
-        # Step 2: Get current portfolio weights
-        current = await self._get_current_weights()
-        if current is None:
-            return {"success": False, "message": "Could not fetch current portfolio", "trades": []}
-
-        total_portfolio_value = current.get("total_value", 1.0)
-        current_weights = current.get("weights", {})
-        cash_weight = current.get("cash_weight", 0.0)
 
         # Step 3: Identify sells (pruned dead capital & non-protected overweights)
         sells = []
@@ -199,24 +221,49 @@ class ConfidenceRebalanceService:
                         })
                     elif assessment.status.value == "TRIM_EXCESS_FOR_OPPORTUNITY":
                         # Long-term winner BUT short-term opportunity cost gap ->
-                        # Protect core base, trim excess to eliminate short-term dead money
-                        excess_amount = abs(delta_amount)
-                        reason_msg = (
-                            f"中長期贏家但短線機會成本警示：{'; '.join(assessment.short_term_reasons[:2])}。"
-                            f"長線核心底倉 ({target_w*100:.1f}%) 堅定保留，戰術調節超額部分 (${excess_amount:.2f}) 轉投高動能機會，避免短線死錢拖累。"
+                        # Evaluate whether replacing capital passes non-linear opportunity cost hurdle
+                        top_candidate_conf = max(candidate_scores.values()) if candidate_scores else 8.0
+                        swap_check = self.opportunity_cost_service.evaluate_swap(
+                            selling_ticker=ticker,
+                            buying_ticker="TOP_CANDIDATE",
+                            sell_confidence=assessment.long_term_score / 10.0,
+                            buy_confidence=top_candidate_conf / 10.0,
                         )
-                        sells.append({
-                            "ticker": ticker,
-                            "target_weight": round(target_w * 100, 2),
-                            "current_weight": round(current_w * 100, 2),
-                            "delta_weight": round(delta * 100, 2),
-                            "delta_amount": round(delta_amount, 2),
-                            "action": "SELL",
-                            "protection_status": assessment.status.value,
-                            "confidence": t.get("confidence_score", 0.5),
-                            "reason": reason_msg,
-                            "is_tactical_trim": True,
-                        })
+                        excess_amount = abs(delta_amount)
+                        if swap_check.is_approved:
+                            reason_msg = (
+                                f"中長期贏家戰術調節（通過換庫機會成本考覈）：{'; '.join(assessment.short_term_reasons[:2])}。"
+                                f"長線核心底倉 ({target_w*100:.1f}%) 堅定保留，戰術調節超額部分 (${excess_amount:.2f}) 轉投高動能機會。"
+                            )
+                            sells.append({
+                                "ticker": ticker,
+                                "target_weight": round(target_w * 100, 2),
+                                "current_weight": round(current_w * 100, 2),
+                                "delta_weight": round(delta * 100, 2),
+                                "delta_amount": round(delta_amount, 2),
+                                "action": "SELL",
+                                "protection_status": assessment.status.value,
+                                "confidence": t.get("confidence_score", 0.5),
+                                "reason": reason_msg,
+                                "is_tactical_trim": True,
+                            })
+                        else:
+                            reason_msg = (
+                                f"中長期贏家保護：換庫利差未達非線性機會成本門檻 ({swap_check.hurdle*100:.2f}%)，"
+                                f"不足以覆蓋雙向交易摩擦，保留長線核心部位全額複利。"
+                            )
+                            holding_runners.append({
+                                "ticker": ticker,
+                                "target_weight": round(target_w * 100, 2),
+                                "current_weight": round(current_w * 100, 2),
+                                "delta_weight": round(delta * 100, 2),
+                                "delta_amount": round(delta_amount, 2),
+                                "action": "HOLD_INSUFFICIENT_EDGE",
+                                "protection_status": assessment.status.value,
+                                "confidence": t.get("confidence_score", 0.5),
+                                "reason": reason_msg,
+                                "assessment": assessment,
+                            })
                     else:
                         # NO_PROTECTION_REBALANCE: Failed long-term winner criteria -> regular rebalance
                         if abs(delta) * 100 >= self.MIN_TRADE_PCT and abs(delta_amount) >= min_trade_usd:
@@ -306,7 +353,20 @@ class ConfidenceRebalanceService:
         sells = sorted(sells, key=lambda x: x["delta_weight"])
         buys = sorted(buys, key=lambda x: (x.get("confidence", 0), x["delta_weight"]), reverse=True)
 
+        # M3: Filter discretionary rebalance swaps via OpportunityCostService
+        suppressed_swaps = []
+        if sells and buys:
+            filter_res = self.opportunity_cost_service.filter_rebalance_trades(
+                sells=sells,
+                buys=buys,
+                total_portfolio_value=total_portfolio_value,
+            )
+            sells = filter_res["approved_sells"]
+            suppressed_swaps = filter_res["suppressed_sells"]
+            holding_runners.extend(suppressed_swaps)
+
         total_buy_amount = sum(t["delta_amount"] for t in buys)
+        total_sell_amount = sum(abs(t["delta_amount"]) for t in sells)
         pruned_amount = sum(abs(t["delta_amount"]) for t in pruned_lots)
         cash_shortfall = max(0.0, total_buy_amount - (total_sell_amount + current_cash_usd))
         trades = sells + buys
@@ -334,12 +394,14 @@ class ConfidenceRebalanceService:
                 "sells": sells,
                 "buys": buys,
                 "holding_runners": holding_runners,
+                "suppressed_swaps": suppressed_swaps,
             },
             "summary": {
                 "total_trades": len(trades),
                 "sells": len(sells),
                 "buys": len(buys),
                 "holding_runners": len(holding_runners),
+                "suppressed_swaps": len(suppressed_swaps),
                 "total_sell_amount": round(total_sell_amount, 2),
                 "total_buy_amount": round(total_buy_amount, 2),
                 "target_cash_pct": round(effective_cash_reserve_pct, 2),
@@ -446,12 +508,17 @@ class ConfidenceRebalanceService:
 
                 # Capital rotation opportunity cost check:
                 # If capital was liquidated from active holdings (max_liquidated_score > 0),
-                # ensure the buy candidate offers sufficient edge (delta >= 2.0 or score >= 8.0)
+                # ensure the buy candidate offers sufficient edge over friction
                 if sells and max_liquidated_score > 0.0:
-                    if (conf - max_liquidated_score < 2.0) and conf < 8.0:
+                    swap_check = self.opportunity_cost_service.evaluate_swap(
+                        selling_ticker="LIQUIDATED_HOLDING",
+                        buying_ticker=trade["ticker"],
+                        sell_confidence=max_liquidated_score / 10.0,
+                        buy_confidence=conf / 10.0,
+                    )
+                    if not swap_check.is_approved and conf < 8.0:
                         logger.warning(
-                            f"Skipping rotation buy for {trade['ticker']}: Score {conf:.1f} "
-                            f"fails opportunity cost edge vs liquidated asset ({max_liquidated_score:.1f})."
+                            f"Skipping rotation buy for {trade['ticker']}: {swap_check.reason}"
                         )
                         continue
 
@@ -564,8 +631,18 @@ class ConfidenceRebalanceService:
         for item in sortable_holdings:
             if reclaimed >= shortfall:
                 break
-            # Edge check: ensure candidate offers edge or holding is low conviction
-            if item["score"] >= 8.0 and (candidate_score - item["score"] < 1.5):
+            # Edge check via OpportunityCostService: ensure candidate offers sufficient profit edge over friction
+            swap_eval = self.opportunity_cost_service.evaluate_swap(
+                selling_ticker=item["ticker"],
+                buying_ticker=candidate_ticker,
+                sell_confidence=item["score"] / 10.0,
+                buy_confidence=candidate_score / 10.0,
+                is_pruning=(not item["in_target"]),
+            )
+            if not swap_eval.is_approved:
+                logger.info(
+                    f"Reclaim skipped for {item['ticker']} -> {candidate_ticker}: {swap_eval.reason}"
+                )
                 continue
 
             delta_w = item["weight"] / 100.0
@@ -632,9 +709,23 @@ class ConfidenceRebalanceService:
             total_portfolio_value = raw_total if (effective_capital <= 0 or effective_capital >= raw_total or raw_total > effective_capital) else effective_capital
 
             weights = {}
+            positions_map = {}
             for p in positions:
+                sym = getattr(p, "symbol", "")
                 weight = (getattr(p, "market_value", 0) / base_for_weights) * 100.0
-                weights[getattr(p, "symbol", "")] = round(weight, 2)
+                weights[sym] = round(weight, 2)
+                pnl = float(getattr(p, "unrealized_pnl", 0.0) or 0.0)
+                mval = float(getattr(p, "market_value", 0.0) or 0.0)
+                cost_basis = mval - pnl
+                pnl_pct = (pnl / cost_basis) if cost_basis > 0 else 0.0
+                positions_map[sym] = {
+                    "open_date": getattr(p, "open_date", None),
+                    "current_price": float(getattr(p, "current_price", 0.0) or 0.0),
+                    "open_price": float(getattr(p, "open_price", 0.0) or 0.0),
+                    "market_value": mval,
+                    "unrealized_pnl": pnl,
+                    "unrealized_pnl_pct": pnl_pct,
+                }
 
             cash_weight = (total_cash / base_for_weights) * 100.0 if base_for_weights > 0 else 0.0
 
@@ -645,6 +736,7 @@ class ConfidenceRebalanceService:
                 "raw_total": raw_total,
                 "total_equity": total_equity,
                 "total_cash": total_cash,
+                "positions_map": positions_map,
             }
         except Exception as e:
             logger.error(f"Failed to get current weights: {e}")

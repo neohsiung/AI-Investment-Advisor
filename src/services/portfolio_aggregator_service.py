@@ -69,6 +69,8 @@ class PortfolioAggregatorService:
                         # Current price should be similar, take latest
                         existing.current_price = pos.current_price 
                         existing.leverage = pos.leverage
+                        if getattr(pos, "open_date", None) and (not existing.open_date or pos.open_date < existing.open_date):
+                            existing.open_date = pos.open_date
                         
                     else:
                         # New Entry (Clone to avoid mutating original if ref shared)
@@ -79,7 +81,9 @@ class PortfolioAggregatorService:
                             current_price=pos.current_price,
                             market_value=pos.market_value,
                             unrealized_pnl=pos.unrealized_pnl,
-                            leverage=pos.leverage
+                            leverage=pos.leverage,
+                            open_date=getattr(pos, "open_date", None),
+                            position_id=getattr(pos, "position_id", None),
                         )
             except BrokerNotConfiguredError as e:
                 logger.warning(f"Broker {broker_name} not configured: {e}")

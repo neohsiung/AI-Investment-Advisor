@@ -512,6 +512,56 @@ settings:
     label_zh: 微型部位汰除門檻（USD）
     help_en: Stale or low-conviction holdings valued below this threshold will be proactively liquidated during rebalancing.
     help_zh: 市值低於此門檻且非核心標的之邊緣持倉，在再平衡時將被主動清倉以釋放現金。
+  - key: rotation_friction_multiplier
+    group: allocation
+    type: float
+    default: 2.5
+    min: 1.0
+    max: 5.0
+    label_en: Rotation friction multiplier
+    label_zh: 換庫摩擦倍數
+    help_en: Multiplier applied to round-trip trading friction (slippage + commissions) when calculating the opportunity cost hurdle for swapping positions.
+    help_zh: 計算資產換庫機會成本門檻時施加於雙向交易摩擦（滑價與佣金）之安全倍數（預設 2.5 倍）。
+  - key: rotation_hurdle_rate
+    group: allocation
+    type: float
+    default: 0.010
+    min: 0.001
+    max: 0.050
+    label_en: Rotation excess hurdle rate
+    label_zh: 換庫超額利差門檻
+    help_en: Minimum expected profit edge required above friction to approve swapping an existing holding for a candidate.
+    help_zh: 核准換庫置換所需的超越交易摩擦之額外超額預期利差門檻（預設 0.010 即 1.0%）。
+  - key: holding_decay_start_days
+    group: allocation
+    type: int
+    default: 20
+    min: 5
+    max: 90
+    label_en: Holding alpha decay start tenure (days)
+    label_zh: 持倉 Alpha 衰減啟動天數
+    help_en: Number of trading days a position can be held before momentum stall and alpha decay checks kick in.
+    help_zh: 部位開倉後進入動能鈍化與 Alpha 衰減考覈前的寬限持有天數（預設 20 個交易日）。
+  - key: holding_decay_rate
+    group: allocation
+    type: float
+    default: 0.035
+    min: 0.005
+    max: 0.150
+    label_en: Holding alpha decay rate (lambda)
+    label_zh: 持倉 Alpha 衰減速率
+    help_en: Exponential decay rate applied to stagnant or momentum-stalled positions beyond the start days.
+    help_zh: 超過寬限期且動能鈍化或負 Alpha 之持倉所施加之指數衰減速率（預設 0.035）。
+  - key: holding_decay_floor
+    group: allocation
+    type: float
+    default: 0.40
+    min: 0.10
+    max: 0.80
+    label_en: Holding alpha decay floor
+    label_zh: 持倉 Alpha 衰減底限
+    help_en: Minimum decay multiplier floor, ensuring active positions maintain baseline sizing until formal liquidation.
+    help_zh: 持倉 Alpha 衰減因子之最低下限，確保持倉在正式平倉前維持基礎平滑底倉（預設 0.40）。
   - key: target_cash_ratio
     group: allocation
     type: float
