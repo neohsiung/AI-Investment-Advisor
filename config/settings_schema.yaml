@@ -413,6 +413,55 @@ settings:
     max: 100
     label_en: Max pending approvals
     label_zh: 最多待審核數
+  - key: sor_enabled
+    group: trading
+    type: bool
+    default: true
+    label_en: Enable smart order routing (SOR) & slicing
+    label_zh: 啟用智能訂單路由與分批執行
+    help_en: Dynamically slice large parent orders into TWAP/VWAP child orders with liquidity constraints to prevent market impact and slippage.
+    help_zh: 啟用智能訂單路由，將大額委託依流動性切分為 TWAP 或 VWAP 子訂單分批執行，防範滑價與市場衝擊。
+  - key: sor_adv_max_pct
+    group: trading
+    type: float
+    default: 0.015
+    min: 0.001
+    max: 0.050
+    label_en: Maximum executable volume ratio of 20d ADV
+    label_zh: 20日日均成交量最大執行比例上限
+    help_en: Maximum fraction of a ticker's 20-day average daily volume executable in a single session; excess shares are held in a rollover queue.
+    help_zh: 單日調倉佔該標的 20 日日均成交量 (ADV20) 之最大執行上限（預設 0.015 即 1.5%），超額部分轉入待執行隊列。
+  - key: sor_max_slippage_bps
+    group: trading
+    type: float
+    default: 35.0
+    min: 5.0
+    max: 150.0
+    danger: true
+    label_en: Smart order execution max slippage (bps)
+    label_zh: 智能訂單執行最大容許滑價 (bps)
+    help_en: Maximum allowable execution slippage in basis points relative to arrival price before triggering an immediate execution circuit breaker.
+    help_zh: 子訂單相對於抵達價格之最大容許滑價門檻（預設 35 bps）；若成交滑價超過此限制立即觸發熔斷並撤銷剩餘委託。
+  - key: sor_default_execution_window_minutes
+    group: trading
+    type: int
+    default: 30
+    min: 5
+    max: 240
+    label_en: Default order slicing execution window (minutes)
+    label_zh: 預設分批訂單執行時間窗口（分鐘）
+    help_en: Target duration over which child slices are scheduled during TWAP or VWAP algorithmic execution.
+    help_zh: TWAP 或 VWAP 演算法執行分批子訂單之預設時間跨度窗口（預設 30 分鐘）。
+  - key: sor_twap_jitter_pct
+    group: trading
+    type: float
+    default: 0.15
+    min: 0.0
+    max: 0.40
+    label_en: TWAP time interval and size randomization jitter
+    label_zh: TWAP 時間間隔與子單規模隨機微擾比例
+    help_en: Percentage randomization applied to slice intervals and quantities to disguise order footprints from HFT algorithms.
+    help_zh: 施加於 TWAP 子單時間間隔與數量之均勻隨機微擾比例（預設 0.15 即 15%），避免被高頻做市商算法模式識別與掠奪。
 
   # ── Allocation ───────────────────────────────────────────────────────────
   # These four were `MIN_POS`/`MAX_POS`/`SECTOR_CAP`/`TARGET_SUM` module
