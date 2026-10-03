@@ -429,7 +429,7 @@ class TickerUniverseService:
         """Get current target allocations."""
         return self.repo.get_target_allocations(self.user_id)
 
-    def optimize_allocations(self) -> Dict[str, Any]:
+    def optimize_allocations(self, current_holdings: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
         """
         Recalculate target allocations using confidence-weighted optimization.
         Implements risk-parity adjusted confidence weighting with portfolio volatility targeting:
@@ -441,7 +441,10 @@ class TickerUniverseService:
           - Min position: 3% (alloc_min_position)
           - Max position: 20% (alloc_max_position)
           - Sector cap: 40% (alloc_sector_cap)
+          - Cluster cap: 30% (alloc_cluster_cap)
           - Target portfolio volatility scaling: if σ_p > σ_target, scale equity down and retain difference as cash
+          - Target portfolio beta scaling: if β_p > β_target, dampen high-beta positions
+          - Holding alpha decay: stale/stagnant holdings undergo exponential alpha decay to free capital
         """
         active = self.repo.get_all(self.user_id, status="active")
         if not active:
@@ -486,6 +489,46 @@ class TickerUniverseService:
                     "beta": float(beta) if beta and float(beta) > 0 else 1.0,
                     "sector": t.get("sector", ""),
                 }
+
+        # M3: Apply Holding Alpha Decay to currently held positions if provided
+        decay_factors = {}
+        if current_holdings:
+            try:
+                from src.services.alpha_decay_service import AlphaDecayService
+                decay_service = AlphaDecayService(self.user_id, settings_service=self.settings_service)
+                for ticker, info in ticker_scores.items():
+                    if ticker in current_holdings:
+                        h_info = current_holdings[ticker]
+                        if isinstance(h_info, dict):
+                            holding_days = int(h_info.get("holding_days", 0) or 0)
+                            open_date = h_info.get("open_date")
+                            if not holding_days and open_date:
+                                holding_days = decay_service.calculate_holding_days(open_date)
+
+                            if holding_days > 0:
+                                assessment = decay_service.evaluate_holding_decay(
+                                    ticker=ticker,
+                                    holding_days=holding_days,
+                                    current_price=float(h_info.get("current_price", 0.0) or 0.0),
+                                    sma_20=float(h_info.get("sma_20", 0.0) or 0.0),
+                                    rsi=float(h_info.get("rsi", 50.0) or 50.0),
+                                    macd_status=str(h_info.get("macd", "neutral")),
+                                    holding_return_pct=h_info.get("return_since_entry") or h_info.get("unrealized_pnl_pct"),
+                                    benchmark_return_pct=h_info.get("benchmark_return_pct"),
+                                    is_long_term_winner=bool(h_info.get("is_long_term_winner", False)),
+                                )
+                                decay_factors[ticker] = assessment.decay_factor
+                                info["confidence"] = decay_service.apply_decay_to_confidence(
+                                    info["confidence"], assessment.decay_factor
+                                )
+                                info["alpha_decay"] = {
+                                    "holding_days": holding_days,
+                                    "decay_factor": assessment.decay_factor,
+                                    "has_decay": assessment.has_decay,
+                                    "reason": assessment.reason,
+                                }
+            except Exception as decay_err:
+                logger.warning(f"Failed to evaluate holding alpha decay in optimize_allocations: {decay_err}")
 
         # Risk-parity adjusted confidence weight:
         # Score_adj = (confidence_boost * (1 + μ_i)) / max(σ_i, 0.10)
@@ -686,6 +729,7 @@ class TickerUniverseService:
             "effective_scale_factor": round(effective_scale, 4),
             "correlation_clusters": clusters,
             "effective_target_sum": round(effective_target_sum, 4),
+            "decay_factors": decay_factors,
         }
 
     # ── Audit Logs ──
