@@ -430,11 +430,21 @@ settings:
   - key: alloc_max_position
     group: allocation
     type: float
-    default: 0.25
+    default: 0.20
     min: 0.0
     max: 1.0
     label_en: Maximum position weight
     label_zh: 最大單一部位權重
+  - key: alloc_target_volatility
+    group: allocation
+    type: float
+    default: 0.14
+    min: 0.05
+    max: 0.40
+    label_en: Target portfolio volatility
+    label_zh: 目標投資組合年化波動率
+    help_en: Target annualized volatility (e.g. 0.14 for 14%). If projected portfolio volatility exceeds this target, equity positions are scaled down and excess capital is retained in cash.
+    help_zh: 目標投資組合年化波動率（例如 0.14 代表 14%）。當投組預期年化波動率超越此目標時，線性縮減股票配置並將資金留存現金以壓降回撤。
   - key: alloc_sector_cap
     group: allocation
     type: float

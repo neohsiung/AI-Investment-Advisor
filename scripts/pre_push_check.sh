@@ -65,6 +65,7 @@ $PYTEST tests/unit/services/test_actionable_alert_service.py \
         tests/unit/services/test_protections_*.py \
         tests/unit/services/test_exit_compositor.py \
         tests/unit/services/test_webhook_telegram.py \
+        tests/unit/services/test_dynamic_volatility_rebalance.py \
         tests/unit/config/test_settings_schema.py -q
 
 echo -e "\n${GREEN}======================================================${NC}"

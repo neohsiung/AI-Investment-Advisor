@@ -16,7 +16,7 @@ from __future__ import annotations
 import logging
 from dataclasses import dataclass
 from enum import Enum
-from typing import Dict, Any, Optional
+from typing import Any, Optional
 
 logger = logging.getLogger(__name__)
 
@@ -48,6 +48,46 @@ class MarketRegimeService:
 
     def __init__(self, market_data_service=None):
         self.market_data_service = market_data_service
+
+    async def get_current_regime(self) -> RegimePolicy:
+        """
+        Fetch SPY price, 200-day SMA, and VIX from market_data_service and classify current regime.
+        If data is unavailable or fails, gracefully fallback to NEUTRAL_RANGE.
+        """
+        if not self.market_data_service:
+            return self._build_policy(MarketRegime.NEUTRAL_RANGE, "No market data service configured; default to neutral risk")
+
+        spy_price = 0.0
+        spy_sma200 = 0.0
+        vix = 20.0  # neutral default
+
+        try:
+            # 1. Fetch SPY technical indicators (including SMA 200)
+            indicators = self.market_data_service.get_technical_indicators("SPY")
+            sma_dict = indicators.get("sma", {}) if indicators else {}
+            spy_sma200 = float(sma_dict.get("sma_200") or 0.0)
+        except Exception as e:
+            logger.debug("Failed to fetch SPY technical indicators: %s", e)
+
+        try:
+            # 2. Fetch SPY and VIX from macro data or direct quotes
+            macro = self.market_data_service.get_macro_data()
+            indicators_macro = macro.get("market_indicators", {}) if macro else {}
+            spy_price = float(indicators_macro.get("SPY") or 0.0)
+            vix_val = indicators_macro.get("^VIX") or indicators_macro.get("VIX")
+            if vix_val and float(vix_val) > 0:
+                vix = float(vix_val)
+
+            if spy_price <= 0 and hasattr(self.market_data_service, "get_current_prices"):
+                prices = await self.market_data_service.get_current_prices(["SPY"])
+                spy_price = float(prices.get("SPY") or 0.0)
+        except Exception as e:
+            logger.debug("Failed to fetch SPY/VIX prices: %s", e)
+
+        if spy_price <= 0 or spy_sma200 <= 0:
+            return self._build_policy(MarketRegime.NEUTRAL_RANGE, "SPY/SMA200 unavailable; default to neutral risk")
+
+        return self.classify_regime(spy_price=spy_price, spy_sma200=spy_sma200, vix=vix)
 
     def classify_regime(
         self,
