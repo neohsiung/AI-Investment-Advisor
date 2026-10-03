@@ -13,6 +13,8 @@ from src.services.settings_service import SettingsService
 from src.utils.cache import ResponseCache
 from src.utils.circuit_breaker import circuit_breaker
 
+logger = setup_logger("InternetSearch")
+
 class InternetSearchService:
     """
     Internet Search Service with Tavily as primary and DuckDuckGo as fallback.
@@ -23,7 +25,7 @@ class InternetSearchService:
         Initialize the search service.
         初始化搜尋服務。
         """
-        self.logger = setup_logger("InternetSearch")
+        self.logger = logger
         self.cache: Dict[str, Tuple[float, List[Dict[str, str]]]] = {}
         self.cache_ttl = cache_ttl
         self._tavily_exhausted = False

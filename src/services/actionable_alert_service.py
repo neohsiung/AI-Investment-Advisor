@@ -267,18 +267,18 @@ class ActionableAlertHubService:
                 return {"ok": False, "action": action, "message": "❌ 未指定平倉標的代號 (Ticker)"}
 
             try:
+                # 1. Check if broker provides direct position lookup & close (e.g. mocked in tests)
                 from src.services.etoro_service import EtoroService
                 etoro = EtoroService(user_id=self.user_id)
-                # Attempt eToro position close
-                port = etoro.get_portfolio()
-                positions = [p for p in port.get("positions", []) if str(p.get("ticker", "")).upper() == ticker]
-                
                 closed_count = 0
-                for pos in positions:
-                    pos_id = pos.get("id") or pos.get("position_id")
-                    if pos_id:
-                        etoro.close_position(position_id=pos_id)
-                        closed_count += 1
+                if hasattr(etoro, "get_portfolio"):
+                    port = etoro.get_portfolio()
+                    positions = [p for p in (port.get("positions", []) if isinstance(port, dict) else []) if str(p.get("ticker", "")).upper() == ticker]
+                    for pos in positions:
+                        pos_id = pos.get("id") or pos.get("position_id")
+                        if pos_id and hasattr(etoro, "close_position"):
+                            etoro.close_position(position_id=pos_id)
+                            closed_count += 1
 
                 if closed_count > 0:
                     return {
@@ -287,24 +287,24 @@ class ActionableAlertHubService:
                         "ticker": ticker,
                         "message": f"🚨 已成功送出 {ticker} 市價平倉指令（共平倉 {closed_count} 筆部位）。",
                     }
-                else:
-                    # Fallback to automated trading service SELL order
-                    from src.services.automated_trading_service import AutomatedTradingService
-                    auto_svc = AutomatedTradingService()
-                    res = await auto_svc.execute_trade(
-                        user_id=self.user_id,
-                        ticker=ticker,
-                        action="SELL",
-                        quantity=1.0,
-                        confidence_score=10,
-                        rationale="Interactive Alert Hub 1-tap manual emergency close",
-                    )
-                    return {
-                        "ok": True,
-                        "action": action,
-                        "ticker": ticker,
-                        "message": f"🚨 已為 {ticker} 送出緊急平倉單 (執行結果: {res.get('status', 'submitted')})。",
-                    }
+
+                # 2. Unified execution via AutomatedTradingService
+                from src.services.automated_trading_service import AutomatedTradingService
+                auto_svc = AutomatedTradingService()
+                res = await auto_svc.evaluate_and_execute_trade(
+                    user_id=self.user_id,
+                    ticker=ticker,
+                    action="SELL",
+                    confidence_score=10.0,
+                    rationale="Interactive Alert Hub 1-tap manual emergency close",
+                )
+                status_str = res.get("status") or ("success" if res.get("success") else "submitted")
+                return {
+                    "ok": True,
+                    "action": action,
+                    "ticker": ticker,
+                    "message": f"🚨 已為 {ticker} 送出緊急平倉單 (執行結果: {status_str})。",
+                }
             except Exception as e:
                 logger.error("Failed to close position for %s: %s", ticker, e, exc_info=True)
                 return {"ok": False, "action": action, "ticker": ticker, "message": f"❌ 平倉失敗: {str(e)}"}

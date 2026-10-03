@@ -3669,8 +3669,8 @@ class SentinelService:
             try:
                 from src.services.event_impact_service import EventImpactService
                 impact_svc = EventImpactService(user_id=self.user_id, settings_service=self.settings_service)
-                holding_bias, _ = impact_svc.get_ticker_micro_bias(weakest_ticker)
-                candidate_bias, _ = impact_svc.get_ticker_micro_bias(target_sym)
+                candidate_ticker = best_candidate.get("ticker", "")
+                candidate_bias, _ = impact_svc.get_ticker_micro_bias(candidate_ticker) if candidate_ticker else (0.0, None)
             except Exception as e:
                 logger.warning(f"Sentinel: failed to fetch event bias for swap: {e}")
 

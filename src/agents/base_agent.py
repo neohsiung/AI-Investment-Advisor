@@ -82,7 +82,7 @@ class BaseAgent(ABC):
             if manifest and manifest.workspace:
                 mapped_name = manifest.workspace
         except Exception as exc:  # registry unavailable — fall back to the slug
-            logger.debug(f"workspace lookup via registry failed for {self.name}: {exc}")
+            self.logger.debug(f"workspace lookup via registry failed for {self.name}: {exc}")
 
         if not mapped_name:
             mapped_name = self.name.lower().replace(" ", "-")

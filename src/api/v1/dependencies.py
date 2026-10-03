@@ -1,12 +1,14 @@
-"""Shared API dependencies - avoids circular imports between endpoints and router."""
+import logging
 import os
 import secrets
 
 from typing import Iterator, Optional
 
-from fastapi import Depends, Request
+from fastapi import Depends, HTTPException, Request, status
 from fastapi.security import OAuth2PasswordBearer
 from sqlalchemy.orm import Session, sessionmaker
+
+logger = logging.getLogger(__name__)
 
 # Moved here with get_current_user_id — it resolves the single owner.
 # 隨 get_current_user_id 一併移入：用於解析單一擁有者。

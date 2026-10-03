@@ -50,7 +50,7 @@ class PerformanceService:
             pnl_data = {'realized': 0, 'unrealized': 0, 'total': 0, 'details': {}}
 
         # 3. Get performance history (History-First Reconstruction)
-        history_df = _self.reconstruct_history(_self.user_id, account_id)
+        history_df = self.reconstruct_history(self.user_id, account_id)
         
         # 確保 history_df 不為 None
         if history_df is None:

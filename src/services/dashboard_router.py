@@ -629,7 +629,7 @@ async def get_summary(service: DashboardService = Depends(get_dashboard_service)
         pnl = data.get('pnl_data', {})
         warnings = data.get('warnings', [])
         
-        return {
+        result = {
             "status": "success" if not warnings else "partial",
             "data": {
                 "total_valuation": metrics.get('nlv', 0),

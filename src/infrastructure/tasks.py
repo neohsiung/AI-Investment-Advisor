@@ -914,7 +914,7 @@ def run_autonomous_evolution(user_id: str = None, force: bool = False):
                     # Multi-channel alert on shadow circuit breaker tripping
                     try:
                         from src.services.factor_notification_service import factor_notification_service
-                        _run_async(
+                        _run_async_safe(
                             factor_notification_service.notify_circuit_breaker_tripped(
                                 artifact_name=updated.name,
                                 reason=f"Single-day shadow loss {daily_pnl:.2f}% exceeded -5.0% threshold (單日模擬虧損超標熔斷)",
@@ -934,7 +934,7 @@ def run_autonomous_evolution(user_id: str = None, force: bool = False):
                         # Multi-channel alert on canary 14-day graduation (manual approval mode)
                         try:
                             from src.services.factor_notification_service import factor_notification_service
-                            _run_async(
+                            _run_async_safe(
                                 factor_notification_service.notify_factor_promoted(
                                     artifact_name=updated.name,
                                     regime=updated.parameters.get("target_regime", "DYNAMIC"),

@@ -70,23 +70,3 @@ class MacroAgent(BaseAgent):
 
         return await self.run_tool_loop(context=prompt_data)
 
-        if "Mock response" in response:
-            return f"""
-### 全球總經環境分析
-*   **週期階段**: 放緩 (Slowdown)
-*   **結構性降溫**: {"是 (Yes) - 偏好軟體服務業" if structural_cooling_signal else "否 (No)"}
-*   **就業市場降溫**: {"是 (Yes) - Fed 具備彈性" if labor_cooling_ind else "否 (No)"}
-*   **Fed 動向**: Data Dependent
-*   **關鍵數據解讀**:
-    *   製造業 PMI: {mfg_pmi if mfg_pmi else 'N/A'}
-    *   服務業 PMI: {svc_pmi if svc_pmi else 'N/A'}
-    *   CPI (通膨): {cpi_val if cpi_val else 'N/A'}
-    *   NFP (非農): {nfp_val if nfp_val else 'N/A'}
-*   **配置建議**:
-    *   **看好板塊**: 軟體服務 (Software), 生產力工具 (Productivity)
-    *   **避開板塊**: 傳統製造業 (Traditional Manufacturing)
-*   **結論**: {cooling_narrative if structural_cooling_signal else '維持中性配置 (Neutral)'}
-    *   **附加說明**: {labor_narrative if labor_cooling_ind else ''}
-    *   **Fed 政策環境**: 目前利率水平 {fed_funds if fed_funds else 'N/A'}%，需關注降息預期與通膨路徑。
-"""
-        return response
