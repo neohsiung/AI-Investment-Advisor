@@ -498,6 +498,53 @@ settings:
     label_zh: 啟用動態 EWMA 市場衝擊係數校準
     help_en: Dynamically recalibrates asset-level market impact coefficient η using empirical fill executions and EWMA filtering.
     help_zh: 依據真實成交樣本與指數加權移動平均 (EWMA)，在線動態校準各資產之市場衝擊參數 η 並閉環反饋至拆單引擎。
+  - key: evolution_annealing_enabled
+    group: trading
+    type: bool
+    default: true
+    label_en: Enable strategy auto-evolution & grid annealing
+    label_zh: 啟用策略自動演化與網格退火
+    help_en: Optimizes portfolio hyperparameters via Simulated Annealing or Grid Search with Walk-Forward cross-validation.
+    help_zh: 透過模擬退火法或網格搜尋自動演化最佳超參數，並透過滾動前向交叉驗證 (WFO) 防範過擬合。
+  - key: evolution_search_method
+    group: trading
+    type: enum
+    enum: [simulated_annealing, grid, random]
+    default: simulated_annealing
+    label_en: Evolution search method
+    label_zh: 演化搜尋演算法
+    help_en: Algorithm used for parameter exploration (Simulated Annealing, Grid Search, or Random Search).
+    help_zh: 超參數空間搜尋演算法（模擬退火法 Simulated Annealing、網格搜尋 Grid Search 或隨機搜尋 Random Search）。
+  - key: evolution_wfo_min_efficiency
+    group: trading
+    type: float
+    default: 0.55
+    min: 0.30
+    max: 0.90
+    label_en: Walk-forward optimization minimum efficiency ratio
+    label_zh: 滾動前向驗證 (WFO) 最低效率比率門檻
+    help_en: Minimum acceptable ratio of Out-of-Sample Sharpe to In-Sample Sharpe to guard against curve-fitting.
+    help_zh: 樣本外 (OOS) Sharpe 與樣本內 (IS) Sharpe 之最低效率比率門檻（預設 0.55），低於此值視為過擬合拒絕晉升。
+  - key: evolution_annealing_initial_temp
+    group: trading
+    type: float
+    default: 100.0
+    min: 10.0
+    max: 500.0
+    label_en: Simulated annealing initial temperature (T0)
+    label_zh: 模擬退火初始溫度 (T0)
+    help_en: Starting temperature controlling initial Metropolis acceptance probability of suboptimal mutations.
+    help_zh: 模擬退火演算法之起始溫度 T0（預設 100.0），控制早期探索階段接受次優解之概率。
+  - key: evolution_annealing_cooling_rate
+    group: trading
+    type: float
+    default: 0.85
+    min: 0.50
+    max: 0.99
+    label_en: Simulated annealing cooling rate (gamma)
+    label_zh: 模擬退火幾何降溫率 (gamma)
+    help_en: Multiplicative decay factor applied to temperature per iteration (T_k = T_0 * gamma^k).
+    help_zh: 每一演化迭代之幾何降溫衰減因子 gamma（預設 0.85），控制系統由探索過渡至精準收斂之速度。
 
   # ── Allocation ───────────────────────────────────────────────────────────
   # These four were `MIN_POS`/`MAX_POS`/`SECTOR_CAP`/`TARGET_SUM` module
