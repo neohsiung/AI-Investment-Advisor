@@ -237,6 +237,7 @@ async def test_execute_order_buy_with_leverage_and_trailing_stop(service):
     service.get_history = AsyncMock(return_value=[])
     service.get_positions = AsyncMock(return_value=[])
     service._resolve_instrument_id = AsyncMock(return_value="1001")
+    service._fetch_current_prices = AsyncMock(return_value={"NVDA": 125.0})
     service.user_id = "test_user"
 
     captured_payloads = []
@@ -287,6 +288,7 @@ async def test_execute_order_spot_with_trailing_stop_attaches_stops(service):
     service.get_history = AsyncMock(return_value=[])
     service.get_positions = AsyncMock(return_value=[])
     service._resolve_instrument_id = AsyncMock(return_value="1002")
+    service._fetch_current_prices = AsyncMock(return_value={"AAPL": 190.0})
     service.user_id = "test_user"
 
     captured_payloads = []

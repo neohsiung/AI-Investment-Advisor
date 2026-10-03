@@ -124,14 +124,12 @@ class TestSearchBackendAvailability(unittest.IsolatedAsyncioTestCase):
         with patch.dict('os.environ', {'TAVILY_API_KEY': ''}), \
              patch('src.services.search_service.SettingsService'), \
              patch('ddgs.DDGS', side_effect=RuntimeError("ddgs broken")), \
-             patch('src.services.search_service.setup_logger') as logger_factory:
-            logger = MagicMock()
-            logger_factory.return_value = logger
+             patch('src.services.search_service.logger') as mock_logger:
             service = InternetSearchService(user_id="test_user")
 
         self.assertIsNone(service.ddgs)
         self.assertIsNone(service.tavily_client)
         self.assertTrue(
-            any("NO usable backend" in str(c) for c in logger.error.call_args_list),
-            f"expected an error-level report, got: {logger.error.call_args_list}",
+            any("NO usable backend" in str(c) for c in mock_logger.error.call_args_list),
+            f"expected an error-level report, got: {mock_logger.error.call_args_list}",
         )
