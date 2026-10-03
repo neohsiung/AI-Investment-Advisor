@@ -68,6 +68,7 @@ $PYTEST tests/unit/services/test_actionable_alert_service.py \
         tests/unit/services/test_dynamic_volatility_rebalance.py \
         tests/unit/services/test_correlation_clustering_and_beta.py \
         tests/unit/services/test_opportunity_cost_and_alpha_decay.py \
+        tests/unit/services/test_portfolio_backtest_and_kelly.py \
         tests/unit/config/test_settings_schema.py -q
 
 echo -e "\n${GREEN}======================================================${NC}"
