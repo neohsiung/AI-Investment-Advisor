@@ -759,6 +759,54 @@ settings:
     label_zh: 因子橫截面縮尾標準差倍數
     help_en: Number of standard deviations from the cross-sectional mean at which extreme factor values are winsorized to prevent distortion.
     help_zh: 橫截面因子評分極端值縮尾截斷之標準差倍數門檻（預設 3.0 個標準差）。
+  - key: hmm_regime_enabled
+    group: allocation
+    type: bool
+    default: true
+    label_en: Enable Bayesian HMM regime transition & nowcasting
+    label_zh: 啟用貝葉斯隱馬爾可夫體制轉移與在線現在預測
+    help_en: Replaces discrete boundary regime classifications with continuous Bayesian posterior probability distributions.
+    help_zh: 以連續貝葉斯後驗機率分佈取代傳統單點階梯式硬門檻體制判定，杜絕臨界抖動與斷崖式跳躍。
+  - key: hmm_transition_persistence
+    group: allocation
+    type: float
+    default: 0.92
+    min: 0.50
+    max: 0.99
+    label_en: HMM regime transition persistence
+    label_zh: HMM 體制狀態延續性對角機率
+    help_en: Diagonal persistence probability in the HMM transition matrix, governing regime stickiness and memory.
+    help_zh: 隱馬爾可夫模型狀態轉移矩陣之對角延續機率（預設 0.92），控制市場體制之延續性與時序記憶。
+  - key: hmm_min_confidence_threshold
+    group: allocation
+    type: float
+    default: 0.40
+    min: 0.10
+    max: 0.90
+    label_en: HMM regime minimum confidence threshold
+    label_zh: HMM 體制最低置信度門檻
+    help_en: Confidence index threshold below which the market is recognized as in a choppy or ambiguous transition zone.
+    help_zh: 依據香農體制熵計算之最低置信度門檻（預設 0.40）；低於此值代表市場處於體制轉換混沌期。
+  - key: hmm_vix_bear_threshold
+    group: allocation
+    type: float
+    default: 28.0
+    min: 20.0
+    max: 50.0
+    label_en: HMM Bear Crisis VIX center threshold
+    label_zh: HMM 熊市危機 VIX 中心門檻
+    help_en: VIX baseline anchor around which Bear Crisis emission likelihood peaks.
+    help_zh: 熊市危機體制發射高斯分佈之 VIX 中心錨定值（預設 28.0）。
+  - key: hmm_vix_bull_threshold
+    group: allocation
+    type: float
+    default: 19.0
+    min: 10.0
+    max: 25.0
+    label_en: HMM Bull Momentum VIX upper threshold
+    label_zh: HMM 牛市進攻 VIX 上限門檻
+    help_en: VIX baseline ceiling below which Bull Momentum emission likelihood operates.
+    help_zh: 牛市進攻體制發射高斯分佈之 VIX 波動率參考值（預設 19.0）。
   - key: target_cash_ratio
     group: allocation
     type: float
