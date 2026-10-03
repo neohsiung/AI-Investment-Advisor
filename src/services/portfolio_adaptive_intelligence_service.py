@@ -59,6 +59,12 @@ from src.services.smart_order_routing_service import (
     ExecutionStrategy,
     OrderAction,
 )
+from src.services.extreme_value_theory_service import (
+    ExtremeValueTheoryService,
+    PortfolioEVTAssessment,
+    EVTTailRiskMetrics,
+    BlackSwanAlertLevel,
+)
 from src.config.owner import resolve_user_id
 from src.utils.logger import setup_logger
 
@@ -134,6 +140,7 @@ class PortfolioAdaptiveIntelligenceService:
         opportunity_service: Optional[OpportunityCostService] = None,
         alpha_decay_service: Optional[AlphaDecayService] = None,
         sor_service: Optional[SmartOrderRoutingService] = None,
+        evt_service: Optional[ExtremeValueTheoryService] = None,
         settings_repo: Optional[Any] = None,
     ):
         self.user_id = resolve_user_id(user_id)
@@ -145,6 +152,7 @@ class PortfolioAdaptiveIntelligenceService:
         self.opportunity_service = opportunity_service or OpportunityCostService(user_id=self.user_id)
         self.alpha_decay_service = alpha_decay_service or AlphaDecayService(user_id=self.user_id)
         self.sor_service = sor_service or SmartOrderRoutingService(user_id=self.user_id, settings_repo=settings_repo)
+        self.evt_service = evt_service or ExtremeValueTheoryService(settings_repo=settings_repo)
 
     def _get_setting(self, key: str, default: Any) -> Any:
         if self.settings_repo and hasattr(self.settings_repo, "get"):
@@ -162,7 +170,7 @@ class PortfolioAdaptiveIntelligenceService:
     def diagnose_portfolio(
         self,
         current_weights: Dict[str, float],
-        portfolio_value: float,
+        portfolio_value: float = 100000.0,
         asset_prices: Optional[Dict[str, float]] = None,
         asset_advs: Optional[Dict[str, float]] = None,
         asset_betas: Optional[Dict[str, float]] = None,
@@ -250,13 +258,27 @@ class PortfolioAdaptiveIntelligenceService:
             "dominant_factor": max(factor_exposures.items(), key=lambda x: x[1])[0] if factor_exposures else "NEUTRAL",
         }
 
-        # 5. M5: Stress Testing & Monte Carlo CVaR
+        # 5. M5 & O2: Stress Testing & Extreme Value Theory Tail Risk
         stress_assessment: StressTestAssessment = self.stress_service.evaluate_portfolio(
             weights=equity_weights,
             betas=betas,
             sectors=sectors,
             vols=vols,
         )
+
+        returns_for_evt = returns_history.get("PORTFOLIO") if returns_history else None
+        if (returns_for_evt is None or len(returns_for_evt) < 20) and vols:
+            mean_vol = float(np.mean(list(vols.values()))) if vols else 0.20
+            daily_vol = mean_vol / math.sqrt(252)
+            np.random.seed(42)
+            returns_for_evt = list(np.random.normal(0.0003, daily_vol, 250))
+
+        evt_assessment = self.evt_service.assess_tail_risk(
+            returns=returns_for_evt if returns_for_evt else [0.0] * 20,
+            weights=equity_weights,
+            asset_returns=returns_history,
+        )
+        evt_metrics = evt_assessment.portfolio_metrics
 
         tail_risk_data = {
             "var_95": round(stress_assessment.var_95, 4),
@@ -265,7 +287,12 @@ class PortfolioAdaptiveIntelligenceService:
             "worst_scenario_name": stress_assessment.worst_scenario_name,
             "mc_breach_prob": round(stress_assessment.mc_mdd_breach_prob, 4),
             "expected_mdd": round(stress_assessment.mc_expected_mdd, 4),
-            "is_defense_triggered": stress_assessment.is_defense_triggered,
+            "is_defense_triggered": stress_assessment.is_defense_triggered or evt_assessment.is_black_swan_triggered,
+            "evt_var_999": round(evt_metrics.var_999, 4),
+            "evt_cvar_999": round(evt_metrics.es_999, 4),
+            "tail_fatness_ratio": round(evt_metrics.tail_fatness_ratio_999, 3),
+            "black_swan_alert": evt_metrics.alert_level.value,
+            "tail_domain": evt_metrics.tail_domain.value,
         }
 
         # 6. M4: Kelly Sizing & Drawdown Protection
@@ -318,6 +345,7 @@ class PortfolioAdaptiveIntelligenceService:
             worst_historical_drop=-stress_assessment.worst_scenario_loss_pct,
             shrinkage_factor=shrinkage,
             leverage=1.0 - cash_pct,
+            tail_fatness_ratio=evt_metrics.tail_fatness_ratio_999,
         )
 
         overall_score = (
@@ -414,8 +442,13 @@ class PortfolioAdaptiveIntelligenceService:
         }
 
         for i, s in enumerate(symbols):
-            if returns_history is not None and s in returns_history.columns:
-                vols[s] = float(returns_history[s].std() * math.sqrt(252))
+            if returns_history is not None:
+                if isinstance(returns_history, pd.DataFrame) and s in returns_history.columns:
+                    vols[s] = float(returns_history[s].std() * math.sqrt(252))
+                elif isinstance(returns_history, dict) and s in returns_history:
+                    vols[s] = float(np.std(returns_history[s]) * math.sqrt(252))
+                else:
+                    vols[s] = 0.18 + (i % 5) * 0.03
             else:
                 vols[s] = 0.18 + (i % 5) * 0.03
 
@@ -621,6 +654,7 @@ class PortfolioAdaptiveIntelligenceService:
         worst_historical_drop: float,
         shrinkage_factor: float,
         leverage: float,
+        tail_fatness_ratio: float = 1.0,
     ) -> HealthRadarDimensions:
         """Compute normalized scores [0.0, 100.0] for the 5 radar dimensions."""
         # 1. Regime Alignment (25%)
@@ -652,6 +686,8 @@ class PortfolioAdaptiveIntelligenceService:
         cvar_score = 100.0 - max(0.0, (cvar_99 - 0.025) / 0.045) * 70.0
         hist_score = 100.0 - max(0.0, (abs(worst_historical_drop) - 0.15) / 0.25) * 60.0
         tail_score = 0.5 * cvar_score + 0.5 * hist_score
+        if tail_fatness_ratio > 1.80:
+            tail_score -= min(30.0, (tail_fatness_ratio - 1.80) * 20.0)
         tail_score = max(10.0, min(100.0, tail_score))
 
         # 5. Capital Safety (15%)
