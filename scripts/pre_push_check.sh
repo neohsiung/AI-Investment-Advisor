@@ -70,6 +70,7 @@ $PYTEST tests/unit/services/test_actionable_alert_service.py \
         tests/unit/services/test_opportunity_cost_and_alpha_decay.py \
         tests/unit/services/test_portfolio_backtest_and_kelly.py \
         tests/unit/services/test_stress_testing_and_cvar.py \
+        tests/unit/services/test_multi_factor_ensemble.py \
         tests/unit/config/test_settings_schema.py -q
 
 echo -e "\n${GREEN}======================================================${NC}"

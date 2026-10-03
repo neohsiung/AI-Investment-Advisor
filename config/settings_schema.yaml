@@ -662,6 +662,54 @@ settings:
     label_zh: 預防性緊急防禦現金比例
     help_en: Target cash allocation automatically mandated when portfolio tail risk or stress test thresholds are breached.
     help_zh: 當壓力測試或尾部在險價值超標時，系統自動啟動之預防性防守現金比例（預設 35.0%）。
+  - key: factor_ensemble_enabled
+    group: allocation
+    type: bool
+    default: true
+    label_en: Enable regime-conditioned multi-factor ensemble
+    label_zh: 啟用體制感知動態多因子融合
+    help_en: Dynamically weight Momentum, Quality, Value, Low Volatility, and Smart Money factors conditioned on macro market regimes.
+    help_zh: 依據市場宏觀體制（牛市/震盪/熊市危機）動態合成動能、品質、成長價值、低波動與主力籌碼五大因子。
+  - key: factor_momentum_weight_bull
+    group: allocation
+    type: float
+    default: 0.40
+    min: 0.10
+    max: 0.70
+    label_en: Momentum factor weight during Bull Trend
+    label_zh: 牛市體制動能因子權重
+    help_en: Allocation weight of momentum factor during confirmed Bull Market regime.
+    help_zh: 牛市體制下賦予動能因子（12-1M 動能與相對強弱）之最高配置權重（預設 40.0%）。
+  - key: factor_quality_weight_neutral
+    group: allocation
+    type: float
+    default: 0.35
+    min: 0.10
+    max: 0.60
+    label_en: Quality factor weight during Neutral/Sideways regime
+    label_zh: 震盪體制品質因子權重
+    help_en: Allocation weight of quality factor (ROE, profit margins, balance sheet health) during sideways markets.
+    help_zh: 震盪橫盤體制下賦予品質因子（ROE、毛利率、負債健康度）之核心權重（預設 35.0%）。
+  - key: factor_low_vol_weight_bear
+    group: allocation
+    type: float
+    default: 0.40
+    min: 0.15
+    max: 0.70
+    label_en: Low volatility factor weight during Bear/Crisis regime
+    label_zh: 熊市危機體制低波動因子權重
+    help_en: Allocation weight of low volatility factor (inverse annualized volatility & downside semi-variance) during Bear Crisis.
+    help_zh: 熊市危機體制下賦予低波動因子之最高防禦權重（預設 40.0%）。
+  - key: factor_winsorize_std
+    group: allocation
+    type: float
+    default: 3.0
+    min: 1.5
+    max: 5.0
+    label_en: Factor winsorization standard deviation threshold
+    label_zh: 因子橫截面縮尾標準差倍數
+    help_en: Number of standard deviations from the cross-sectional mean at which extreme factor values are winsorized to prevent distortion.
+    help_zh: 橫截面因子評分極端值縮尾截斷之標準差倍數門檻（預設 3.0 個標準差）。
   - key: target_cash_ratio
     group: allocation
     type: float
