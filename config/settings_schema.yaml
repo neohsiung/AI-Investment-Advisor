@@ -833,6 +833,44 @@ settings:
     label_zh: 啟用嚴重健康惡化時之自動再平衡觸發
     help_en: Automatically dispatches M3 rebalance plans through E1 smart order routing when health score drops to CRITICAL level.
     help_zh: 當投組健康評分跌入 CRITICAL 嚴重警戒且 M3 緩衝帶突破時，是否自動授權生成調倉執行單（預設 false 需人機確認）。
+  - key: evt_tail_risk_enabled
+    group: allocation
+    type: bool
+    default: true
+    label_en: Enable extreme value theory (EVT) tail risk extrapolation
+    label_zh: 啟用黑天鵝極值理論尾部風險外推
+    help_en: Activates Peaks-Over-Threshold (POT) and Generalized Pareto Distribution (GPD) modeling to capture non-linear black swan fat tails beyond Gaussian limits.
+    help_zh: 啟用超額峰值法 (POT) 與廣義帕雷托分佈 (GPD)，精準捕捉超越常態與經驗分佈邊界之 99.9% 極端黑天鵝尾部損失。
+  - key: evt_threshold_quantile
+    group: allocation
+    type: float
+    default: 0.90
+    min: 0.80
+    max: 0.98
+    label_en: EVT POT exceedance threshold quantile
+    label_zh: 極值理論 POT 超額門檻分位數
+    help_en: High loss quantile used to establish threshold u for Generalized Pareto exceedance modeling.
+    help_zh: 用於界定超額損失門檻 u 之損失分位數（預設 0.90，即右側 10% 尾部超額擬合）。
+  - key: evt_tail_fatness_alert_threshold
+    group: allocation
+    type: float
+    default: 1.80
+    min: 1.20
+    max: 3.50
+    label_en: EVT tail fatness alert ratio threshold
+    label_zh: 極值理論肥尾倍數預警門檻
+    help_en: Multiplier of EVT 99.9% VaR over Gaussian 99.9% VaR above which elevated or critical black swan risk is declared.
+    help_zh: EVT 99.9% VaR 相對常態分佈 99.9% VaR 之倍數門檻（預設 1.80x）；超過此值即判定市場或投組具備嚴重黑天鵝厚尾脆弱性。
+  - key: evt_max_shape_xi
+    group: allocation
+    type: float
+    default: 0.80
+    min: 0.30
+    max: 1.50
+    label_en: EVT GPD shape parameter upper bound
+    label_zh: 極值理論 GPD 形狀參數上限保護
+    help_en: Upper cap on shape parameter xi to ensure numerical stability and prevent infinite mean distortion during extreme disruptions.
+    help_zh: 廣義帕雷托形狀參數 xi 之數值截斷上限（預設 0.80），確保極端動盪環境下數值運算穩定性。
   - key: target_cash_ratio
     group: allocation
     type: float

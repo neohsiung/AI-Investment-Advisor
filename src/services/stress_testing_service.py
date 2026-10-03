@@ -67,6 +67,10 @@ class StressTestAssessment:
     defense_reasons: list[str]
     recommended_cash_pct: float
     recommended_weight_adjustments: dict[str, float] = field(default_factory=dict)
+    evt_var_999: float | None = None
+    evt_cvar_999: float | None = None
+    tail_fatness_ratio: float | None = None
+    black_swan_alert: str | None = None
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -86,6 +90,10 @@ class StressTestAssessment:
             "recommended_weight_adjustments": {
                 k: round(v, 4) for k, v in self.recommended_weight_adjustments.items()
             },
+            "evt_var_999": round(self.evt_var_999, 4) if self.evt_var_999 is not None else None,
+            "evt_cvar_999": round(self.evt_cvar_999, 4) if self.evt_cvar_999 is not None else None,
+            "tail_fatness_ratio": round(self.tail_fatness_ratio, 3) if self.tail_fatness_ratio is not None else None,
+            "black_swan_alert": self.black_swan_alert,
         }
 
 
@@ -158,10 +166,12 @@ class StressTestingService:
         user_id: str = "default_user",
         settings_service: Any | None = None,
         custom_scenarios: list[StressScenario] | None = None,
+        evt_service: Any | None = None,
     ):
         self.user_id = resolve_user_id(user_id)
         self.settings_service = settings_service
         self.scenarios = custom_scenarios if custom_scenarios is not None else list(self.STANDARD_SCENARIOS)
+        self.evt_service = evt_service
 
     def _get_setting(self, key: str, default: Any) -> Any:
         if self.settings_service is not None:
@@ -396,6 +406,34 @@ class StressTestingService:
             mdd_threshold=0.12,
         )
 
+        # 4.1 O2: Extreme Value Theory (EVT) Tail Risk Extrapolation
+        evt_var_999: float | None = None
+        evt_cvar_999: float | None = None
+        tail_fatness_ratio: float | None = None
+        black_swan_alert: str | None = None
+        is_evt_black_swan = False
+
+        returns_for_evt = historical_portfolio_returns
+        if (returns_for_evt is None or len(returns_for_evt) < 20) and port_daily_vol > 0:
+            # Generate parametric Monte Carlo return proxy for EVT evaluation
+            np.random.seed(42)
+            returns_for_evt = list(np.random.normal(0.0003, port_daily_vol, 250))
+
+        if returns_for_evt and len(returns_for_evt) >= 20:
+            try:
+                evt_svc = self.evt_service
+                if evt_svc is None:
+                    from src.services.extreme_value_theory_service import ExtremeValueTheoryService
+                    evt_svc = ExtremeValueTheoryService()
+                evt_assessment = evt_svc.assess_tail_risk(returns=returns_for_evt, weights=weights)
+                evt_var_999 = evt_assessment.portfolio_metrics.var_999
+                evt_cvar_999 = evt_assessment.portfolio_metrics.es_999
+                tail_fatness_ratio = evt_assessment.portfolio_metrics.tail_fatness_ratio_999
+                black_swan_alert = evt_assessment.portfolio_metrics.alert_level.value
+                is_evt_black_swan = evt_assessment.is_black_swan_triggered
+            except Exception as e:  # noqa: BLE001
+                logger.debug("EVT tail risk evaluation skipped: %s", e)
+
         # 5. Pre-emptive De-Risking Assessment
         defense_reasons: list[str] = []
         is_triggered = False
@@ -421,6 +459,13 @@ class StressTestingService:
             is_triggered = True
             defense_reasons.append(
                 f"未來 60 天內跌破 12% MDD 機率 ({breach_prob:.1%}) 高於安全上限 ({mdd_prob_limit:.1%})"
+            )
+
+        if is_evt_black_swan and tail_fatness_ratio is not None and evt_cvar_999 is not None:
+            is_triggered = True
+            defense_reasons.append(
+                f"黑天鵝極值理論 (EVT) 偵測到嚴重肥尾風險 (99.9% ES {evt_cvar_999:.1%}, "
+                f"肥尾倍數 {tail_fatness_ratio:.2f}x)，警報等級 [{black_swan_alert}]"
             )
 
         # Determine recommended defensive cash and asset scaling
@@ -466,4 +511,8 @@ class StressTestingService:
             defense_reasons=defense_reasons,
             recommended_cash_pct=rec_cash,
             recommended_weight_adjustments=rec_adjustments,
+            evt_var_999=evt_var_999,
+            evt_cvar_999=evt_cvar_999,
+            tail_fatness_ratio=tail_fatness_ratio,
+            black_swan_alert=black_swan_alert,
         )
