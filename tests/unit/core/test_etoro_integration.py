@@ -5,6 +5,10 @@ from src.services.etoro_service import EtoroService
 from src.domain.trading import Order, OrderAction
 
 @pytest.fixture
+def anyio_backend():
+    return "asyncio"
+
+@pytest.fixture
 def service():
     with patch('src.services.etoro_service.os.path.exists', return_value=False):
         svc = EtoroService(base_url="http://mock-etoro", mode="demo")
@@ -57,7 +61,7 @@ def test_circuit_breaker_trigger(service):
     # Check disable
     service.settings_repo.set.assert_called_with("user1", "ai_trading_enabled", "false")
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_sync_history_logic(service):
     # We need to test the REAL logic of sync_history, so we un-mock it
     from src.services.etoro_service import EtoroService
@@ -84,7 +88,7 @@ async def test_sync_history_logic(service):
     assert res['added'] == 1
     service.transaction_repo.add.assert_called_once()
     
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_execute_order_wraps_risk_logic(service):
     # We need real logic for execute_order
     from src.services.etoro_service import EtoroService
@@ -145,7 +149,7 @@ class TestExecuteOrderDemoEndpointRouting:
             order = Order(symbol="AAPL", action=OrderAction.BUY, quantity=100)
             await real_exec(service, order)
 
-    @pytest.mark.asyncio
+    @pytest.mark.anyio
     async def test_demo_mode_hits_demo_execution_endpoint(self, service):
         assert service.mode == "demo"  # fixture default
         urls = []
@@ -153,7 +157,7 @@ class TestExecuteOrderDemoEndpointRouting:
         assert len(urls) == 1
         assert "/trading/execution/demo/market-open-orders/by-amount" in urls[0]
 
-    @pytest.mark.asyncio
+    @pytest.mark.anyio
     async def test_real_mode_hits_real_execution_endpoint(self, service):
         service.mode = "real"
         urls = []
@@ -163,7 +167,7 @@ class TestExecuteOrderDemoEndpointRouting:
         assert "/demo/" not in urls[0]
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_execute_order_buy_under_ten_dollars_fails(service):
     from src.services.etoro_service import EtoroService
     service.risk_manager.check_constraints = MagicMock(return_value=True)
@@ -178,7 +182,7 @@ async def test_execute_order_buy_under_ten_dollars_fails(service):
     assert "below eToro minimum threshold" in res["reason"]
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_execute_order_sell_precision_and_close_parsing(service):
     from src.services.etoro_service import EtoroService
     from src.domain.trading import Position
@@ -226,13 +230,14 @@ async def test_execute_order_sell_precision_and_close_parsing(service):
         assert "UnitsToDeduct" not in captured_payloads[0]
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_execute_order_buy_with_leverage_and_trailing_stop(service):
     from src.services.etoro_service import EtoroService
     service.risk_manager.check_constraints = MagicMock(return_value=True)
     service.get_history = AsyncMock(return_value=[])
     service.get_positions = AsyncMock(return_value=[])
     service._resolve_instrument_id = AsyncMock(return_value="1001")
+    service._fetch_current_prices = AsyncMock(return_value={"NVDA": 125.0})
     service.user_id = "test_user"
 
     captured_payloads = []
@@ -270,5 +275,57 @@ async def test_execute_order_buy_with_leverage_and_trailing_stop(service):
         assert payload["StopLossRate"] == 110.5
         assert payload["TakeProfitRate"] == 140.0
         assert payload["IsTrailingStopLoss"] is True
+
+
+@pytest.mark.anyio
+async def test_execute_order_spot_with_trailing_stop_attaches_stops(service):
+    """
+    Verify that unleveraged spot orders (leverage=1) successfully attach
+    eToro's native Trailing Stop Loss when order.is_trailing_stop_loss is True.
+    """
+    from src.services.etoro_service import EtoroService
+    service.risk_manager.check_constraints = MagicMock(return_value=True)
+    service.get_history = AsyncMock(return_value=[])
+    service.get_positions = AsyncMock(return_value=[])
+    service._resolve_instrument_id = AsyncMock(return_value="1002")
+    service._fetch_current_prices = AsyncMock(return_value={"AAPL": 190.0})
+    service.user_id = "test_user"
+
+    captured_payloads = []
+
+    class _MockClient:
+        async def __aenter__(self):
+            return self
+        async def __aexit__(self, *a):
+            return False
+        async def post(self, url, json=None, **kwargs):
+            captured_payloads.append(json)
+            class _Resp:
+                def raise_for_status(self):
+                    pass
+                def json(self):
+                    return {"orderForOpen": {"orderID": "open_888", "statusID": 2}}
+            return _Resp()
+
+    with patch("httpx.AsyncClient", return_value=_MockClient()):
+        order = Order(
+            symbol="AAPL",
+            action=OrderAction.BUY,
+            quantity=100.0,
+            amount_usd=100.0,
+            leverage=1,
+            stop_loss_rate=175.25,
+            take_profit_rate=210.0,
+            is_trailing_stop_loss=True,
+        )
+        res = await EtoroService.execute_order(service, order)
+        assert res["status"] == "success"
+        assert res["order_id"] == "open_888"
+        payload = captured_payloads[0]
+        assert payload["Leverage"] == 1
+        assert payload["StopLossRate"] == 175.25
+        assert payload["TakeProfitRate"] == 210.0
+        assert payload["IsTrailingStopLoss"] is True
+
 
 

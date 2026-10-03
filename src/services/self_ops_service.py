@@ -83,6 +83,7 @@ DISPATCHER_CHILD_TASKS: Dict[str, str] = {
     "dispatch_weekly_rebalance": "run_weekly_rebalance",
     "dispatch_strategy_evolution": "run_strategy_evolution",
     "dispatch_autonomous_evolution": "run_autonomous_evolution",
+    "dispatch_shadow_ledger_eval": "run_shadow_ledger_eval",
 }
 
 # How far back to compare dispatcher and child success counts.

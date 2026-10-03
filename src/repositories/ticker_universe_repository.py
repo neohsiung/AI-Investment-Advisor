@@ -24,7 +24,7 @@ logger = setup_logger("TickerUniverseRepository")
 # 欄位白名單提升為 module 層級，讓呼叫端能引用同一份而不是各自重寫。
 # 安全邊界一旦有兩份副本就會悄悄分歧：service 端多濾掉一個欄位，
 # 從外面看起來就只是一次「成功但什麼都沒改」的更新。
-UNIVERSE_UPDATABLE_FIELDS = frozenset({"company_name", "sector", "industry", "status"})
+UNIVERSE_UPDATABLE_FIELDS = frozenset({"company_name", "sector", "industry", "status", "is_pinned"})
 TARGET_UPDATABLE_FIELDS = frozenset({
     "target_weight", "confidence_score", "expected_return", "min_weight", "max_weight",
 })
@@ -62,15 +62,19 @@ class TickerUniverseRepository(BaseRepository):
                 user_id         UUID NOT NULL,
                 ticker          VARCHAR(10) NOT NULL,
                 company_name    TEXT,
-                sector          VARCHAR(50),
-                industry        VARCHAR(50),
+                sector          VARCHAR(100),
+                industry        VARCHAR(100),
                 status          VARCHAR(20) DEFAULT 'active',
+                is_pinned       BOOLEAN DEFAULT FALSE,
                 added_at        TIMESTAMPTZ DEFAULT NOW(),
                 removed_at      TIMESTAMPTZ,
                 removal_reason  TEXT,
                 last_reviewed_at TIMESTAMPTZ,
                 UNIQUE(user_id, ticker)
             );
+            """),
+            text("""
+            ALTER TABLE ticker_universe ADD COLUMN IF NOT EXISTS is_pinned BOOLEAN DEFAULT FALSE;
             """),
             text("""
             CREATE INDEX IF NOT EXISTS idx_ticker_universe_active
@@ -231,6 +235,31 @@ class TickerUniverseRepository(BaseRepository):
             return True
         except Exception as e:
             logger.error(f"remove({ticker}) failed: {e}")
+            return False
+
+    def set_pin(self, user_id: str, ticker: str, is_pinned: bool) -> bool:
+        """Set user-designated pin status for a ticker."""
+        query = text("""
+            UPDATE ticker_universe
+            SET is_pinned = :is_pinned, last_reviewed_at = NOW()
+            WHERE user_id = :uid AND ticker = :ticker
+        """)
+        try:
+            with self.engine.begin() as conn:
+                conn.execute(query, {"uid": user_id, "ticker": ticker.upper(), "is_pinned": is_pinned})
+            action = "pinned" if is_pinned else "unpinned"
+            self.add_log(
+                user_id=user_id,
+                ticker=ticker.upper(),
+                action=action,
+                agent_name="user",
+                reasoning=f"User {action} ticker",
+                old_status="",
+                new_status="",
+            )
+            return True
+        except Exception as e:
+            logger.error(f"set_pin({ticker}, {is_pinned}) failed: {e}")
             return False
 
     # ── Ticker Research CRUD ──

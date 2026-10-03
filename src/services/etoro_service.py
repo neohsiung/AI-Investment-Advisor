@@ -405,6 +405,61 @@ class EtoroService(IBroker):
 
         str_oid = str(order_id).strip()
 
+        # 0. Check official v2 orders:lookup endpoint (accurate lifecycle status for open/market orders)
+        try:
+            lookup_url = "https://public-api.etoro.com/api/v2/trading/info/orders:lookup"
+            if self.mode == "demo":
+                lookup_url = "https://public-api.etoro.com/api/v2/trading/info/demo/orders:lookup"
+            import httpx
+            async with httpx.AsyncClient() as client:
+                resp = await client.get(lookup_url, headers=self._get_headers(), params={"orderId": str_oid}, timeout=10.0)
+                if resp.status_code == 200:
+                    order_data = resp.json()
+                    status_obj = order_data.get("status", {})
+                    status_id = status_obj.get("id")
+                    status_name = (status_obj.get("name") or "").lower()
+                    error_msg = status_obj.get("errorMessage")
+
+                    if status_id in (2, 3) or "executed" in status_name or "filled" in status_name:
+                        # Extract exact execution fill price and units from positionExecutions if present
+                        pos_execs = order_data.get("positionExecutions", [])
+                        exec_data = pos_execs[0].get("openingData", {}) if pos_execs else {}
+                        fill_rate = float(exec_data.get("avgPrice") or order_data.get("openRate", 0.0) or 0.0)
+                        units = float(exec_data.get("units") or order_data.get("requestedUnits", 0.0) or 0.0)
+                        return {
+                            "order_id": str_oid,
+                            "status": "filled",
+                            "fill_price": fill_rate,
+                            "quantity": units,
+                            "fees": float(order_data.get("totalCosts", 0.0) or 0.0),
+                            "executed_at": order_data.get("lastUpdate") or order_data.get("requestTime"),
+                            "raw": order_data,
+                        }
+                    elif status_id == 4 or "rejected" in status_name:
+                        return {
+                            "order_id": str_oid,
+                            "status": "rejected",
+                            "message": error_msg or "Order rejected by broker",
+                            "raw": order_data,
+                        }
+                    elif "cancelled" in status_name or "canceled" in status_name:
+                        return {
+                            "order_id": str_oid,
+                            "status": "cancelled",
+                            "message": error_msg or "Order cancelled",
+                            "raw": order_data,
+                        }
+                    elif status_id == 1 or "pending" in status_name or "open" in status_name:
+                        return {
+                            "order_id": str_oid,
+                            "status": "pending",
+                            "symbol": order_data.get("asset", {}).get("symbol"),
+                            "amount": float(order_data.get("requestedAmount", 0.0) or 0.0),
+                            "raw": order_data,
+                        }
+        except Exception as e:
+            logger.debug(f"v2 orders:lookup check skipped for order {str_oid}: {e}")
+
         # 1. Check pending orders
         try:
             pending = await self.get_pending_orders()
@@ -514,7 +569,9 @@ class EtoroService(IBroker):
         history = await self.get_history()
         positions = await self.get_positions()
         
-        if not self.risk_manager.check_constraints(user_id, history, positions):
+        strat_name = getattr(order, "strategy_name", None)
+        action_str = order.action.value if hasattr(order, "action") and hasattr(order.action, "value") else str(order.action)
+        if not self.risk_manager.check_constraints(user_id, history, positions, strategy_name=strat_name, action=action_str):
              return {"status": "failed", "reason": "Risk Manager Blocked"}
 
         # 2. Resolve Instrument ID
@@ -553,18 +610,51 @@ class EtoroService(IBroker):
                 "IsBuy": True,
             }
             # Leverage support (eToro CFD leverage: X1, X2, etc.)
-            if order.leverage and order.leverage != 1:
-                payload["Leverage"] = order.leverage
+            # Physical constraint: eToro requires Leverage >= 1. Omission causes backend validation error 609:
+            # "NotionalToUnitsCalculationRequest validation failed: 'Leverage' must be greater than '0'."
+            leverage_val = int(order.leverage) if (order.leverage and int(order.leverage) >= 1) else 1
+            payload["Leverage"] = leverage_val
             # Protective stops & Trailing Stop Loss support
-            if order.stop_loss_rate and order.stop_loss_rate > 0:
-                payload["StopLossRate"] = round(order.stop_loss_rate, 4)
-            if order.take_profit_rate and order.take_profit_rate > 0:
-                payload["TakeProfitRate"] = round(order.take_profit_rate, 4)
-            if order.is_trailing_stop_loss:
-                payload["IsTrailingStopLoss"] = True
+            # Physical constraint: On eToro, passing SL/TP calculated from delayed/estimated quotes
+            # frequently causes matching engine error 612/613: "Min pip validation failure - position
+            # cannot be opened when the stop loss/take profit is less then a min pip away".
+            # For unleveraged spot orders (leverage_val == 1), eToro does not require SL/TP;
+            # exits and protection are handled autonomously by SentinelService & AutomatedTradingService.
+            # Only attach SL/TP if leverage > 1 (CFD requirement), explicitly forced, OR if
+            # Trailing Stop Loss is enabled to lock in profits via eToro's native TSL engine.
+            should_attach_stops = (
+                (leverage_val > 1)
+                or getattr(order, 'force_broker_stops', False)
+                or getattr(order, 'is_trailing_stop_loss', False)
+            )
+            if should_attach_stops:
+                curr_price = await self._fetch_current_prices([order.symbol])
+                mkt_p = curr_price.get(order.symbol) if curr_price else None
+
+                if order.stop_loss_rate and order.stop_loss_rate > 0:
+                    if mkt_p and order.stop_loss_rate >= mkt_p:
+                        logger.warning(
+                            f"ETORO EXEC: Dropping invalid StopLossRate {order.stop_loss_rate} >= market price {mkt_p} "
+                            f"for {order.symbol} to prevent min-pip rejection"
+                        )
+                    else:
+                        payload["StopLossRate"] = round(order.stop_loss_rate, 4)
+
+                if order.take_profit_rate and order.take_profit_rate > 0:
+                    if mkt_p and order.take_profit_rate <= mkt_p:
+                        logger.warning(
+                            f"ETORO EXEC: Dropping invalid TakeProfitRate {order.take_profit_rate} <= market price {mkt_p} "
+                            f"for {order.symbol} to prevent min-pip rejection"
+                        )
+                    else:
+                        payload["TakeProfitRate"] = round(order.take_profit_rate, 4)
+
+                if order.is_trailing_stop_loss and "StopLossRate" in payload:
+                    payload["IsTrailingStopLoss"] = True
         else: # SELL / CLOSE
             # Use specific positionId if provided, else attempt to find one
             pos_id = getattr(order, 'position_id', None)
+            matched_pos = None
             if not pos_id:
                 # Find matching position by symbol
                 logger.info(f"ETORO EXEC: Searching for position matching symbol '{order.symbol}'...")
@@ -577,7 +667,8 @@ class EtoroService(IBroker):
                     matching = [p for p in positions if self._is_symbol_match(order.symbol, p.symbol)]
                 
                 if matching:
-                    pos_id = matching[0].position_id
+                    matched_pos = matching[0]
+                    pos_id = matched_pos.position_id
                     # Also extract instrument_id from the matched position for close body
                     if not instrument_id:
                         matched_inst = self._id_cache.get(matching[0].symbol)
@@ -587,6 +678,11 @@ class EtoroService(IBroker):
                 else:
                     symbols_found = [p.symbol for p in positions]
                     logger.warning(f"ETORO EXEC: No match for {order.symbol} even after retry. Current positions: {symbols_found}")
+            else:
+                for p in positions:
+                    if str(getattr(p, 'position_id', '')) == str(pos_id):
+                        matched_pos = p
+                        break
             
             if not pos_id:
                 return {"status": "failed", "reason": f"No active position ID found for {order.symbol} to close"}
@@ -598,20 +694,33 @@ class EtoroService(IBroker):
             close_payload: Dict[str, Any] = {}
             if instrument_id:
                 close_payload["InstrumentId"] = int(instrument_id)
-            if order.quantity and order.quantity > 0:
-                # Phase 3: eToro fractional sell precision (0.01)
-                rounded_qty = round(order.quantity, 2)
-                if rounded_qty >= 0.01:
-                    close_payload["UnitsToDeduct"] = rounded_qty
+
+            pos_qty = float(getattr(matched_pos, 'quantity', 0.0) or 0.0) if matched_pos else 0.0
+            is_full_close = (
+                order.quantity is None
+                or pos_qty <= 0
+                or float(order.quantity) >= (pos_qty * 0.999)
+            )
+
+            if not is_full_close and order.quantity and order.quantity > 0:
+                import math
+                # Partial close: units to deduct cannot exceed held units
+                max_deduct = math.floor(pos_qty * 100) / 100
+                deduct_qty = min(round(float(order.quantity), 2), max_deduct)
+                if deduct_qty >= 0.01:
+                    close_payload["UnitsToDeduct"] = deduct_qty
                 else:
                     logger.info(f"ETORO EXEC: UnitsToDeduct {order.quantity} < 0.01 minimum precision; closing full position.")
+            else:
+                logger.info(f"ETORO EXEC: Full close for {order.symbol} position {pos_id} (UnitsToDeduct omitted).")
+
             payload = close_payload
         
         try:
              import httpx
              logger.info(f"ETORO EXEC: {order.action.value} {order.symbol} (ID: {instrument_id}) via {endpoint}")
              async with httpx.AsyncClient() as client:
-                 response = await client.post(url, json=payload, headers=self._get_headers(), timeout=15.0)
+                 response = await client.post(url, json=payload, headers=self._get_headers(), timeout=30.0)
                  response.raise_for_status()
                  result = response.json()
              
@@ -637,7 +746,10 @@ class EtoroService(IBroker):
              else:
                  execution_status = "unknown"
                  logger.warning(f"ETORO EXEC: Order {order_id} has statusID={order_status_id}")
-             
+             # Invalidate cached portfolio so subsequent reads reflect new position/cash state
+             self._cached_portfolio = None
+             self._cached_time = 0.0
+
              return {
                  "status": "success",
                  "execution_status": execution_status,
@@ -1111,7 +1223,9 @@ class EtoroService(IBroker):
         # [NEW] v4.2.0: 同步現金餘額並回補持倉
         try:
             await self._sync_cash_balance(user_id)
-            await self._backfill_from_positions(user_id)
+            backfilled = await self._backfill_from_positions(user_id)
+            if backfilled:
+                added_count += backfilled
         except Exception as e:
             logger.error(f"Post-sync logic failed: {e}")
 
@@ -1211,32 +1325,82 @@ class EtoroService(IBroker):
                     }
                 )
 
-    async def _backfill_from_positions(self, user_id: str) -> None:
+    async def _backfill_from_positions(self, user_id: str) -> int:
         """
         Backfill BUY transactions for active positions that have no trade history.
-        回補沒有交易歷史的現有持倉 BUY 記錄。
+        回補沒有交易歷史的現有持倉 BUY 記錄（具備嚴格冪等防重保護）。
         v7.1 Fix: Converted to async def; get_positions() is async.
+        v8.2 Fix: Added idempotency signature & position_id check, changed entry_category to 'sync_adjustment'.
         """
-        positions = await self.get_positions()  # ← was missing await
-        active_tickers = self.transaction_repo.get_active_tickers(user_id)
-        
-        for pos in positions:
-            if pos.symbol.isdigit():
-                 continue
+        positions = await self.get_positions()
+        if not positions:
+            return 0
 
-            if pos.symbol not in active_tickers:
-                logger.info(f"Backfilling Position: Missing BUY for {pos.symbol}, Leverage={getattr(pos, 'leverage', 1.0)}")
-                self.transaction_repo.add(
-                    user_id=user_id,
-                    ticker=pos.symbol,
-                    date=pos.open_date.strftime('%Y-%m-%d'),
-                    action="BUY",
-                    quantity=pos.quantity,
-                    price=pos.open_price,
-                    fees=0.0,
-                    leverage=getattr(pos, 'leverage', 1.0),
-                    entry_category="trade",  # Backfilled synthetic BUY = regular trade
-                )
+        existing_txs = self.transaction_repo.get_all_by_user(user_id)
+        existing_sigs = set()
+        existing_pos_ids = set()
+
+        for tx in existing_txs:
+            try:
+                t_date = str(tx.trade_date)[:10]
+                sig = f"{tx.ticker}_{tx.action}_{t_date}_{float(tx.quantity):.4f}"
+                existing_sigs.add(sig)
+
+                # Also track position IDs from source_file or raw_data
+                src = getattr(tx, "source_file", "") or ""
+                if src.startswith("etoro_pos_"):
+                    existing_pos_ids.add(src[len("etoro_pos_"):])
+
+                raw = getattr(tx, "raw_data", None)
+                if isinstance(raw, dict):
+                    bt_info = raw.get("broker_trade_info", {})
+                    for pe in bt_info.get("positionExecutions", []):
+                        pid = str(pe.get("positionId", ""))
+                        if pid:
+                            existing_pos_ids.add(pid)
+                    if "position_id" in raw:
+                        existing_pos_ids.add(str(raw["position_id"]))
+            except (ValueError, TypeError, AttributeError):
+                continue
+
+        added_count = 0
+        for pos in positions:
+            if not pos.symbol or pos.symbol.isdigit() or pos.symbol.startswith("ID_"):
+                continue
+
+            pos_id_str = str(getattr(pos, "position_id", "") or "")
+            if pos_id_str and pos_id_str in existing_pos_ids:
+                continue
+
+            open_date_str = pos.open_date.strftime('%Y-%m-%d') if pos.open_date else datetime.now().strftime('%Y-%m-%d')
+            pos_sig = f"{pos.symbol}_BUY_{open_date_str}_{float(pos.quantity):.4f}"
+            if pos_sig in existing_sigs:
+                continue
+
+            logger.info(
+                f"Backfilling Position: Missing BUY for {pos.symbol}, "
+                f"qty={pos.quantity}, price={pos.open_price}, date={open_date_str}, pos_id={pos_id_str}"
+            )
+            src_file = f"etoro_pos_{pos_id_str}" if pos_id_str else "etoro_pos_backfill"
+            self.transaction_repo.add(
+                user_id=user_id,
+                ticker=pos.symbol,
+                date=open_date_str,
+                action="BUY",
+                quantity=pos.quantity,
+                price=pos.open_price,
+                fees=0.0,
+                leverage=getattr(pos, 'leverage', 1.0),
+                source_file=src_file,
+                entry_category="sync_adjustment",  # Backfilled synthetic BUY = sync_adjustment, not filled trade
+                raw_data={"position_id": pos_id_str, "backfill_reason": "missing_open_position_trade"},
+            )
+            existing_sigs.add(pos_sig)
+            if pos_id_str:
+                existing_pos_ids.add(pos_id_str)
+            added_count += 1
+
+        return added_count
 
     def _sync_position_lots(self, user_id: str) -> None:
         """

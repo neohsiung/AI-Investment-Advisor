@@ -453,3 +453,92 @@ async def test_check_position_exits_ratchet_take_profit(sentinel, mock_dependenc
     assert t["sell_quantity"] == 5.0  # 50% scale out
     assert "階梯停利觸發" in t["text"]
 
+
+@pytest.mark.anyio
+async def test_check_position_exits_harvest_mode(sentinel, mock_dependencies):
+    """Verify Tier 3 Harvest Mode triggers when peak >= 25% and price pulls back."""
+    mock_dependencies["settings"]._settings_map["enable_trailing_stops"] = True
+    mock_dependencies["market"].get_technical_indicators.return_value = {"atr": 2.0}
+
+    # NVDA bought at $100, peaked at $135 (+35% gain)
+    sentinel._position_peaks["NVDA"] = 135.0
+
+    # In Harvest: harvest_stop = max(135 - 1.2*2.0=132.6, 100 + 0.65*35=122.75) = 132.6
+    # Price pulled back to $131.0 <= 132.6
+    mock_allocation = {
+        "NVDA": {
+            "shares": 10.0,
+            "quantity": 10.0,
+            "weight": 12.0,
+            "current_price": 131.0,
+            "avg_price": 100.0,
+        }
+    }
+    sentinel._get_current_allocation = AsyncMock(return_value=mock_allocation)
+    sentinel._check_capital_rotation_opportunities = AsyncMock(return_value=[])
+
+    triggers = await sentinel._check_position_exits()
+    assert len(triggers) == 1
+    t = triggers[0]
+    assert t["ticker"] == "NVDA"
+    assert t["strategy_name"] == "trailing_stop_loss"
+    assert t["ratchet_stage"] == "HARVEST"
+    assert t["tier"] == 3
+    assert t["stop_price"] == 132.6
+    assert t["locked_profit_pct"] == 32.6
+    assert "HARVEST" in t["text"]
+
+
+@pytest.mark.anyio
+async def test_resolve_and_update_peak_with_redis(sentinel):
+    """Verify _resolve_and_update_peak stores and reads peak from redis."""
+    stored = {"val": "120.0"}
+    async def fake_get(key):
+        return stored["val"]
+    async def fake_set(key, val, ex=None):
+        stored["val"] = str(val)
+
+    mock_redis = MagicMock()
+    mock_redis.get = AsyncMock(side_effect=fake_get)
+    mock_redis.set = AsyncMock(side_effect=fake_set)
+
+    with patch("src.infrastructure.cache.redis_client.get_redis", return_value=mock_redis):
+        # Current price 125.0 > cached 120.0 -> peak becomes 125.0 and writes to redis
+        peak = await sentinel._resolve_and_update_peak("AAPL", current_price=125.0, avg_price=100.0)
+        assert peak == 125.0
+        mock_redis.set.assert_called_once()
+        assert stored["val"] == "125.0"
+
+        # Current price 122.0 < peak 125.0 -> peak remains 125.0
+        mock_redis.set.reset_mock()
+        peak2 = await sentinel._resolve_and_update_peak("AAPL", current_price=122.0, avg_price=100.0)
+        assert peak2 == 125.0
+        mock_redis.set.assert_not_called()
+
+
+@pytest.mark.anyio
+async def test_handle_position_exits_trailing_stop_scores(sentinel):
+    """Verify _handle_position_exits assigns 9.5 for HARVEST and 9.0 for TRAILING."""
+    exit_triggers = [
+        {
+            "id": "tsl_harvest_test",
+            "action": "trigger_exit",
+            "ticker": "NVDA",
+            "sell_quantity": 10.0,
+            "strategy_name": "trailing_stop_loss",
+            "ratchet_stage": "HARVEST",
+            "current_price": 131.0,
+            "text": "🛡️ Harvest exit",
+        }
+    ]
+    sentinel._acquire_cooldown = AsyncMock(return_value=True)
+
+    mock_auto_trade = MagicMock()
+    mock_auto_trade.evaluate_and_execute_trade = AsyncMock(return_value={"status": "success"})
+
+    with patch("src.services.automated_trading_service.AutomatedTradingService", return_value=mock_auto_trade):
+        await sentinel._handle_position_exits(exit_triggers)
+        call_kwargs = mock_auto_trade.evaluate_and_execute_trade.call_args.kwargs
+        assert call_kwargs["confidence_score"] == 9.5
+        assert call_kwargs["strategy_name"] == "trailing_stop_loss"
+

@@ -69,23 +69,6 @@ class IntelligenceService:
     async def compute_briefing(self) -> dict:
         """核心運算邏輯：真正執行 Tavily 搜尋與 LLM 生成 (耗時數十秒)"""
         tavily_key = self.settings.get_setting("source_tavily_api_key")
-        api_key = self.settings.get_setting("API_KEY")
-        
-        # Use tier-aware routing (smart tier for intelligence)
-        from src.infrastructure.llm.tier_config import SettingsAwareModelRouter, TierConfig
-        from src.repositories.settings_repository import AlchemySettingsRepository
-        settings_repo = AlchemySettingsRepository()
-        model_router = SettingsAwareModelRouter(settings_repo)
-        if self.user_id:
-            model = model_router.get_model(self.user_id, "smart")
-        else:
-            tier_config = TierConfig()
-            model = tier_config.resolve("smart")
-        
-        provider = self.settings.get_setting("AI_PROVIDER", "OpenRouter").lower()
-
-        if not api_key:
-            return self._fallback_error("未配置 AI API Key，請前往設定頁面完成配置。")
 
         # Step 1: Tavily 搜尋
         news_items = []
@@ -97,7 +80,7 @@ class IntelligenceService:
         # Step 2: 整合現有持倉資訊 (Mocked for now or fetched from Repo)
         positions_summary = self._get_positions_summary()
 
-        # Step 3: LLM 生成報告 (強制繁體中文)
+        # Step 3: LLM 生成報告 (強制繁體中文) - 採用現代化 ResilientLLMPipeline
         try:
             briefing = await self._llm_generate(news_items, positions_summary)
             # Step 4: 整合系統自學與自主演化成果 (Self-Evolution Summary)
@@ -183,16 +166,42 @@ class IntelligenceService:
             Message(role="user", content=prompt)
         ]
         
-        config = LLMConfig(
-            provider=self.settings.get_setting("AI_PROVIDER", "OpenRouter"),
-            model=model,  # Already resolved with tier-aware routing above
-            api_key=self.settings.get_setting("API_KEY", ""),
-            temperature=0.3,
-            timeout_seconds=45
-        )
+        content = None
+        try:
+            from src.infrastructure.llm.llm_config_chain import build_config_chain
+            from src.infrastructure.llm.resilient_pipeline import ResilientLLMPipeline
 
-        content = await self._llm_gateway.chat(messages, config)
-        
+            chain = build_config_chain(self.user_id, "smart")
+            if chain:
+                pipeline = ResilientLLMPipeline(
+                    config_chain=chain,
+                    user_id=self.user_id,
+                    agent_name="IntelligenceService",
+                    tier="smart",
+                )
+                content, _ = await pipeline.execute(messages, temperature=0.3, max_tokens=1500)
+        except Exception as pipe_err:
+            logger.warning(f"ResilientLLMPipeline failed in IntelligenceService: {pipe_err}")
+
+        # Fallback to legacy gateway if ResilientLLMPipeline returned nothing
+        if not content and self._llm_gateway:
+            try:
+                from src.infrastructure.llm.tier_config import SettingsAwareModelRouter
+                from src.repositories.settings_repository import AlchemySettingsRepository
+                settings_repo = AlchemySettingsRepository()
+                model_router = SettingsAwareModelRouter(settings_repo)
+                model = model_router.get_model(self.user_id, "smart") if self.user_id else "smart"
+                config = LLMConfig(
+                    provider=self.settings.get_setting("AI_PROVIDER", "OpenRouter"),
+                    model=model,
+                    api_key=self.settings.get_setting("openrouter_api_key", ""),
+                    temperature=0.3,
+                    timeout_seconds=45,
+                )
+                content = await self._llm_gateway.chat(messages, config)
+            except Exception as gw_err:
+                logger.warning(f"Fallback LLM gateway also failed: {gw_err}")
+
         if not content:
             return self._fallback_error("AI 回傳內容為空。")
 
@@ -212,10 +221,11 @@ class IntelligenceService:
                 result["ai_note"] = "(FALLBACK) " + result["ai_note"]
                 
             # Keep original fields if missing in AI response
-            if "observation_window" not in result: result["observation_window"] = "ANALYZED"
+            if "observation_window" not in result:
+                result["observation_window"] = "ANALYZED"
             return result
-        except Exception as e:
-            logger.error(f"Failed to parse AI JSON: {content}")
+        except Exception as parse_err:
+            logger.error(f"Failed to parse AI JSON: {parse_err}, content: {content}")
             # 如果解析失敗但有原始文字，至少回傳摘要
             return self._fallback_error(f"解析 AI 回報時發生錯誤，原始內容：{content[:100]}...")
 

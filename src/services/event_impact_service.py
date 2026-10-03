@@ -42,7 +42,12 @@ class EventImpactService:
         """Safely fetch setting from SettingsService or fallback."""
         if self._settings_service is not None:
             try:
-                val = self._settings_service.get(key)
+                if hasattr(self._settings_service, "get_setting"):
+                    val = self._settings_service.get_setting(key, default=default, user_id=self.user_id)
+                elif hasattr(self._settings_service, "get"):
+                    val = self._settings_service.get(key)
+                else:
+                    val = None
                 if val is not None:
                     return val
             except Exception as e:

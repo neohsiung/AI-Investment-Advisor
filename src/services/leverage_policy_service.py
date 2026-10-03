@@ -20,7 +20,7 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
-from typing import Dict, Any, Optional, List
+from typing import Dict, Any, Optional, List, Tuple
 
 logger = logging.getLogger("LeveragePolicyService")
 
@@ -110,7 +110,7 @@ class LeveragePolicyService:
                 f"Confidence {confidence_score:.1f} < {self.MIN_CONFIDENCE_FOR_LEVERAGE:.1f} threshold; "
                 f"unleveraged spot equity (X1) deployed to preserve capital."
             )
-            return self._make_spot_decision(current_price, reason)
+            return self._make_spot_decision(current_price, reason, ticker=ticker)
 
         # 2. 宏觀波動率檢查 (VIX)
         if vix is not None and vix > self.MAX_VIX_FOR_LEVERAGE:
@@ -118,7 +118,7 @@ class LeveragePolicyService:
                 f"Macro VIX {vix:.1f} > {self.MAX_VIX_FOR_LEVERAGE:.1f} safe threshold; "
                 f"high market volatility suppresses leverage to X1 spot."
             )
-            return self._make_spot_decision(current_price, reason)
+            return self._make_spot_decision(current_price, reason, ticker=ticker)
 
         # 3. 宏觀哨兵警報檢查
         if sentinel_macro_risk and sentinel_macro_risk.lower() not in ("low_risk", "green", "normal"):
@@ -126,7 +126,7 @@ class LeveragePolicyService:
                 f"Sentinel macro radar is '{sentinel_macro_risk}'; "
                 f"leverage blocked for macroeconomic defense."
             )
-            return self._make_spot_decision(current_price, reason)
+            return self._make_spot_decision(current_price, reason, ticker=ticker)
 
         # 4. 多智能體共識檢查
         if confirming_agents_count < 2:
@@ -134,7 +134,7 @@ class LeveragePolicyService:
                 f"Agent consensus count {confirming_agents_count} < 2; "
                 f"insufficient multi-agent conviction for leverage."
             )
-            return self._make_spot_decision(current_price, reason)
+            return self._make_spot_decision(current_price, reason, ticker=ticker)
 
         # 5. 投組總槓桿上限檢查 (Portfolio Gross Leverage <= 1.30x)
         if portfolio_nlv and portfolio_nlv > 0 and current_gross_tnv is not None and amount_usd:
@@ -147,7 +147,7 @@ class LeveragePolicyService:
                     f"Projected portfolio gross leverage {projected_leverage_ratio:.2f}x "
                     f"exceeds {self.MAX_PORTFOLIO_GROSS_LEVERAGE:.2f}x cap; capped at X1 spot."
                 )
-                return self._make_spot_decision(current_price, reason)
+                return self._make_spot_decision(current_price, reason, ticker=ticker)
 
         # 6. 單檔保證金上限檢查 (Single Position Margin <= 10% NLV)
         if portfolio_nlv and portfolio_nlv > 0 and amount_usd:
@@ -157,23 +157,20 @@ class LeveragePolicyService:
                     f"Order amount ${amount_usd:.2f} represents {margin_ratio:.1%} of NLV "
                     f"(cap: {self.MAX_SINGLE_POSITION_MARGIN_PCT:.1%}); leverage suppressed to X1."
                 )
-                return self._make_spot_decision(current_price, reason)
+                return self._make_spot_decision(current_price, reason, ticker=ticker)
 
         # ── 通過所有守門條件：放行 X2 槓桿 ──────────────────────────────
-        stop_loss_pct = self.DEFAULT_LEVERAGED_TSL_PCT
-        take_profit_pct = 15.0
-        stop_loss_rate = None
-        take_profit_rate = None
-
-        if current_price and current_price > 0:
-            # 計算停損價與停利價
-            stop_loss_rate = round(current_price * (1.0 - stop_loss_pct / 100.0), 4)
-            take_profit_rate = round(current_price * (1.0 + take_profit_pct / 100.0), 4)
+        stop_loss_pct, take_profit_pct, stop_loss_rate, take_profit_rate, support_note = self._resolve_smart_stops(
+            ticker=ticker,
+            current_price=current_price,
+            default_sl_pct=self.DEFAULT_LEVERAGED_TSL_PCT,
+            default_tp_pct=15.0,
+        )
 
         reason = (
             f"✅ Super-high confidence ({confidence_score:.1f}>={self.MIN_CONFIDENCE_FOR_LEVERAGE}), "
             f"calm macro environment, and strong consensus ({confirming_agents_count} agents). "
-            f"Deploying controlled X2 leverage with mandatory {stop_loss_pct}% Trailing Stop Loss."
+            f"Deploying controlled X2 leverage with mandatory {stop_loss_pct:.1f}% Trailing Stop Loss{support_note}."
         )
 
         return LeverageDecision(
@@ -189,16 +186,58 @@ class LeveragePolicyService:
             max_holding_days=10,         # 槓桿波段建議持有 <= 10 日
         )
 
-    def _make_spot_decision(self, current_price: Optional[float], reason: str) -> LeverageDecision:
-        """Create an unleveraged spot (X1) decision with default trailing stop."""
-        stop_loss_pct = self.DEFAULT_UNLEVERAGED_TSL_PCT
-        take_profit_pct = 20.0
+    def _resolve_smart_stops(
+        self,
+        ticker: Optional[str],
+        current_price: Optional[float],
+        default_sl_pct: float,
+        default_tp_pct: float,
+    ) -> Tuple[float, float, Optional[float], Optional[float], str]:
+        """
+        Calculate stop loss & take profit rates anchored to institutional support if available.
+        若可用則計算錨定於主力籌碼支撐 (POC / AVWAP) 的停損與停利價格。
+        """
+        stop_loss_pct = default_sl_pct
+        take_profit_pct = default_tp_pct
         stop_loss_rate = None
         take_profit_rate = None
+        support_note = ""
 
         if current_price and current_price > 0:
-            stop_loss_rate = round(current_price * (1.0 - stop_loss_pct / 100.0), 4)
+            if ticker:
+                try:
+                    from src.services.smart_money_support_service import SmartMoneySupportService
+                    svc = SmartMoneySupportService()
+                    res = svc.calculate_institutional_support(ticker=ticker, current_price=current_price)
+                    if res and res.support_type != "FALLBACK_PERCENTAGE":
+                        stop_loss_rate = res.recommended_stop_loss
+                        stop_loss_pct = res.stop_loss_distance_pct
+                        support_note = f" (Anchored to {res.support_type}: Key Support ${res.key_support_price:.2f})"
+                except Exception as e:
+                    logger.debug(f"SmartMoneySupport calculation skipped for {ticker}: {e}")
+
+            if stop_loss_rate is None:
+                stop_loss_rate = round(current_price * (1.0 - stop_loss_pct / 100.0), 4)
+
             take_profit_rate = round(current_price * (1.0 + take_profit_pct / 100.0), 4)
+
+        return stop_loss_pct, take_profit_pct, stop_loss_rate, take_profit_rate, support_note
+
+    def _make_spot_decision(
+        self,
+        current_price: Optional[float],
+        reason: str,
+        ticker: Optional[str] = None,
+    ) -> LeverageDecision:
+        """Create an unleveraged spot (X1) decision with default trailing stop."""
+        stop_loss_pct, take_profit_pct, stop_loss_rate, take_profit_rate, support_note = self._resolve_smart_stops(
+            ticker=ticker,
+            current_price=current_price,
+            default_sl_pct=self.DEFAULT_UNLEVERAGED_TSL_PCT,
+            default_tp_pct=20.0,
+        )
+        if support_note:
+            reason = f"{reason}{support_note}"
 
         return LeverageDecision(
             eligible_leverage=1,

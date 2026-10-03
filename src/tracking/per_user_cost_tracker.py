@@ -2,6 +2,7 @@
 # src/tracking/per_user_cost_tracker.py
 """Per-user 成本追蹤與預算管理"""
 
+import json
 import uuid
 from datetime import datetime, timedelta
 from typing import Dict, Optional, List

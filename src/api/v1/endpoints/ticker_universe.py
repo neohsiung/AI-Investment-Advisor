@@ -11,7 +11,7 @@ from src.api.v1.schemas.ticker_universe_schemas import (
     TickerUniverseRemoveRequest, ActionResponse, TickerInfoResponse,
     ResearchListResponse, ResearchSubmitRequest,
     TargetAllocationListResponse, TargetAllocationRecord,
-    LogListResponse,
+    LogListResponse, TickerPinRequest,
 )
 from src.services.ticker_universe_service import TickerUniverseService
 from src.utils.logger import setup_logger
@@ -235,6 +235,40 @@ async def run_pyramid_screen_endpoint(
         raise HTTPException(status_code=500, detail="Internal server error")
 
 
+@router.post("/candidates/evolve", response_model=TickerInfoResponse)
+async def evolve_candidates_endpoint(
+    max_candidates: Optional[int] = Query(None, ge=5, le=100, description="Max reserve candidates to retain"),
+    service: TickerUniverseService = Depends(get_service),
+):
+    """手動觸發候選池動態演化與汰弱留強（收斂並留存 Top 30 儲備標的）"""
+    try:
+        result = await service.evolve_candidates(max_candidates=max_candidates)
+        return {"status": "success", "data": result}
+    except Exception as e:
+        logger.error(f"Candidates evolution failed: {e}")
+        raise HTTPException(status_code=500, detail="Internal server error")
+
+
+@router.post("/active/evolve", response_model=TickerInfoResponse)
+async def evolve_active_endpoint(
+    max_active: Optional[int] = Query(None, ge=3, le=50, description="Max active tickers in universe"),
+    rotation_hurdle: Optional[float] = Query(None, ge=0.5, le=5.0, description="Hurdle score delta required for candidate to replace active"),
+    max_rotations: Optional[int] = Query(None, ge=1, le=5, description="Max active tickers rotated per cycle"),
+    service: TickerUniverseService = Depends(get_service),
+):
+    """手動觸發活躍池動態汰弱留強（未鎖定之活躍股與候選股進行優勝劣汰輪換）"""
+    try:
+        result = await service.evolve_active(
+            max_active=max_active,
+            rotation_hurdle=rotation_hurdle,
+            max_rotations=max_rotations,
+        )
+        return {"status": "success", "data": result}
+    except Exception as e:
+        logger.error(f"Active pool evolution failed: {e}")
+        raise HTTPException(status_code=500, detail="Internal server error")
+
+
 # ── Ticker Universe CRUD (must be after specific routes) ──
 
 
@@ -307,6 +341,25 @@ async def update_ticker(
         raise
     except Exception as e:
         logger.error(f"Error updating {ticker}: {e}")
+        raise HTTPException(status_code=500, detail="Internal server error")
+
+
+@router.put("/{ticker}/pin", response_model=ActionResponse)
+async def pin_ticker_endpoint(
+    ticker: str,
+    payload: TickerPinRequest,
+    service: TickerUniverseService = Depends(get_service),
+):
+    """設定標的指定/鎖定狀態（鎖定者免疫自動汰除與輪動）"""
+    try:
+        result = service.set_ticker_pin(ticker.upper(), payload.is_pinned)
+        if not result["success"]:
+            raise HTTPException(status_code=500, detail=result["message"])
+        return {"status": "success", "message": result["message"]}
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error updating pin status for {ticker}: {e}")
         raise HTTPException(status_code=500, detail="Internal server error")
 
 

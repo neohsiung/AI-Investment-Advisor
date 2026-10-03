@@ -229,6 +229,49 @@ class AutomatedTradingService:
                 }
             logger.warning(f"Trading protections check failed (allowing {action}): {e}")
 
+        # 1d. Shadow Validation Gate (P2: 影子交易 / 模擬跟單驗證軌道)
+        # If the ticker is currently undergoing shadow validation (status='shadow' in ticker_universe),
+        # live broker capital is protected. The trade is tracked in ShadowLedger instead.
+        try:
+            from src.repositories.ticker_universe_repository import TickerUniverseRepository
+            from src.services.shadow_ledger_service import ShadowLedgerService
+
+            ticker_repo = TickerUniverseRepository()
+            shadow_records = ticker_repo.get_all(user_id=user_id, status="shadow")
+            shadow_tickers = {r["ticker"].upper() for r in shadow_records}
+            if sym_upper in shadow_tickers:
+                logger.info(
+                    f"Ticker {sym_upper} is in Shadow Validation track. "
+                    f"Routing order to Shadow Ledger instead of live broker."
+                )
+                shadow_svc = ShadowLedgerService(user_id=user_id, ticker_repo=ticker_repo)
+                if str(action).upper() == "BUY":
+                    cap = float(quantity) if (delta_weight is not None and portfolio_value is not None) else 1000.0
+                    shadow_pos = await shadow_svc.open_shadow_position(
+                        ticker=sym_upper,
+                        strategy_name=strategy_name or "automated_trading_shadow",
+                        allocated_capital=cap,
+                        notes=f"Auto-routed shadow BUY (Confidence: {confidence_score})"
+                    )
+                    return {
+                        "status": "shadow_executed",
+                        "action": "BUY",
+                        "ticker": sym_upper,
+                        "shadow_position_id": shadow_pos.get("id"),
+                        "message": f"Virtual shadow BUY tracked for {sym_upper}; live capital protected."
+                    }
+                else:  # SELL
+                    eval_res = shadow_svc.evaluate_graduation(sym_upper)
+                    return {
+                        "status": "shadow_evaluated",
+                        "action": "SELL",
+                        "ticker": sym_upper,
+                        "evaluation": eval_res.to_dict(),
+                        "message": f"Virtual shadow SELL evaluated for {sym_upper}."
+                    }
+        except Exception as shadow_err:
+            logger.warning(f"Shadow validation check error for {sym_upper}: {shadow_err}")
+
         # 1c. Strategy validation gate (2026-08-10).
         #
         # Context: this system was configured to trade a live eToro account
@@ -417,7 +460,10 @@ class AutomatedTradingService:
         
         # 3. Decision Logic (三段式閥值)
         # 3a. Below minimum → skip silently, no notification
-        if normalized_confidence < min_threshold:
+        # Exemption: Safety controls and rebalance liquidations are pre-authorized
+        from src.services.strategy_registry import StrategyRegistry
+        is_safety = is_sell and StrategyRegistry.is_safety_control(strategy_name or "")
+        if not is_safety and normalized_confidence < min_threshold:
             logger.info(
                 f"Score {normalized_confidence:.1f} < min_threshold {min_threshold:.1f}. "
                 f"Skipping silently for {ticker}."
@@ -539,8 +585,12 @@ class AutomatedTradingService:
                     if quantity != original_qty:
                         logger.info(f"SELL Guard: Adjusted {ticker} qty {original_qty} → {quantity} (holding: {actual_holding})")
                     
-                    # Phase 2: Explicit rounding for eToro 0.01 share precision
-                    quantity = round(quantity, 2)
+                    # Phase 2: Explicit precision for eToro share precision without exceeding actual_holding
+                    if quantity >= actual_holding * 0.999:
+                        quantity = actual_holding
+                    else:
+                        import math
+                        quantity = math.floor(quantity * 100.0) / 100.0
             except Exception as e:
                 # 2026-08-02: fail CLOSED. This clamp is what keeps a SELL from
                 # exceeding the actual holding (i.e. accidentally opening a
@@ -612,7 +662,8 @@ class AutomatedTradingService:
             stop_loss_rate=stop_loss_rate,
             take_profit_rate=take_profit_rate,
             is_trailing_stop_loss=is_trailing_stop_loss,
-            reason=rationale
+            reason=rationale,
+            strategy_name=strategy_name
         )
         
         # 3b. Auto-execute logic (走向全自主通報模式：從要我決策，變成跟我報告)
@@ -658,6 +709,7 @@ class AutomatedTradingService:
             autonomous_reporting_mode=autonomous_reporting_mode,
             requires_approval_reason=requires_approval_reason,
             is_optimized=(optimized_confidence != normalized_confidence),
+            min_threshold=min_threshold,
         )
 
         if should_auto_execute:
@@ -741,6 +793,7 @@ class AutomatedTradingService:
         autonomous_reporting_mode: bool,
         requires_approval_reason: Optional[str],
         is_optimized: bool,
+        min_threshold: float = 3.0,
     ) -> Tuple[bool, str]:
         """
         Streamlined auto-execution policy gatekeeper.
@@ -763,6 +816,11 @@ class AutomatedTradingService:
                 "concentration_rebalance": "再平衡自動執行",
             }
             return True, labels.get(strategy_name, "安全出場自動執行")
+
+        # 再平衡買進自動執行 (Rebalance Buy Auto-execution)
+        # 若為經投組模型審核之再平衡配置買進，且達最低信賴門檻，由系統自動放行
+        if not is_sell and strategy_name in ("rebalance_diversification", "portfolio_rebalance", "concentration_rebalance") and effective_confidence >= min_threshold:
+            return True, "再平衡買進自動執行"
 
         # 一般賣出且置信度達標
         if is_sell and effective_confidence >= threshold and auto_exit_enabled:
@@ -978,9 +1036,16 @@ class AutomatedTradingService:
             if not execution_price or execution_price <= 0:
                 execution_price = await self._get_current_price(broker, order.symbol, user_id=user_id) or 0.0
                 
-            qty = order.quantity
-            if (qty is None or qty <= 0) and execution_price > 0:
-                qty = (order.amount_usd or 0.0) / execution_price
+            # If amount-based order, calculate units (shares) from amount_usd / execution_price
+            # 若為金額型訂單，由 amount_usd / execution_price 計算出實際股數
+            is_amount_sizing = getattr(order, 'sizing_mode', None) == OrderSizingMode.AMOUNT or (order.action == OrderAction.BUY and order.amount_usd)
+            if is_amount_sizing and execution_price > 0:
+                order_amt = float(order.amount_usd or order.quantity or 0.0)
+                qty = order_amt / float(execution_price)
+            else:
+                qty = order.quantity
+                if (qty is None or qty <= 0) and execution_price > 0:
+                    qty = (order.amount_usd or 0.0) / execution_price
             qty = max(float(qty or 0.0), 0.0001)
             
             amount = order.amount_usd or (float(execution_price) * float(qty))

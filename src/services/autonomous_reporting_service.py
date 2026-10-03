@@ -73,6 +73,11 @@ class AutonomousConfidenceOptimizer:
 
         # 2. 流動性與資金效率加成 (Liquidity & Capital Efficiency)
         if not is_sell:
+            is_rebalance_buy = any(k in strat or k in rat for k in ("rebalance", "portfolio_rebalance", "diversification", "再平衡"))
+            if is_rebalance_buy:
+                score += 1.5
+                boosts.append("標的配置放行：投資組合再平衡模型權重校準 (+1.5)")
+
             is_excess_cash = (
                 (cash_ratio is not None and cash_ratio > 0.25) or
                 any(k in rat for k in ("現金過高", "現金水位", "excess cash", "high cash", "cash_ratio >"))

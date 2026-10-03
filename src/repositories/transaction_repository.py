@@ -157,7 +157,8 @@ class AlchemyTransactionRepository(BaseRepository, ITransactionRepository):
             query = text("""
                 SELECT ticker, SUM(CASE WHEN action='BUY' THEN quantity WHEN action='SELL' THEN -quantity ELSE 0 END) as net_qty
                 FROM transactions
-                WHERE user_id = :user_id AND (:account_id IS NULL OR source_file = :account_id)
+                WHERE user_id = :user_id 
+                AND (:account_id IS NULL OR LOWER(source_file) = LOWER(:account_id) OR LOWER(source_file) LIKE LOWER(:account_id) || '%')
                 GROUP BY ticker
                 HAVING SUM(CASE WHEN action='BUY' THEN quantity WHEN action='SELL' THEN -quantity ELSE 0 END) > 0.0001
             """)
@@ -392,7 +393,7 @@ class AlchemyTransactionRepository(BaseRepository, ITransactionRepository):
                     ELSE 0 
                 END) FROM transactions 
                 WHERE user_id = :user_id 
-                AND (:account_id IS NULL OR source_file = :account_id)
+                AND (:account_id IS NULL OR LOWER(source_file) = LOWER(:account_id) OR LOWER(source_file) LIKE LOWER(:account_id) || '%')
             """)
             params = {"user_id": user_id, "account_id": account_id}
             result = conn.execute(query, params).fetchone()
@@ -413,7 +414,7 @@ class AlchemyTransactionRepository(BaseRepository, ITransactionRepository):
                     ELSE 0 
                 END) FROM transactions 
                 WHERE user_id = :user_id 
-                AND (:account_id IS NULL OR source_file = :account_id)
+                AND (:account_id IS NULL OR LOWER(source_file) = LOWER(:account_id) OR LOWER(source_file) LIKE LOWER(:account_id) || '%')
                 AND entry_category = :category
             """)
             params = {
@@ -438,7 +439,7 @@ class AlchemyTransactionRepository(BaseRepository, ITransactionRepository):
                 END) as impact
                 FROM transactions 
                 WHERE user_id = :user_id 
-                AND (:account_id IS NULL OR source_file = :account_id)
+                AND (:account_id IS NULL OR LOWER(source_file) = LOWER(:account_id) OR LOWER(source_file) LIKE LOWER(:account_id) || '%')
                 AND (entry_category IS NULL OR entry_category != :exclude_category)
             """)
             params = {"user_id": user_id, "account_id": account_id, "exclude_category": ENTRY_CATEGORY_SYNC_ADJUSTMENT}
@@ -560,10 +561,18 @@ class AlchemyTransactionRepository(BaseRepository, ITransactionRepository):
         """
         # Get current local holdings for this account
         local_holdings = self.get_holdings(user_id, account_id)
-        local_map = {h['ticker'].upper(): h['quantity'] for h in local_holdings if h['ticker'].upper() != 'CASH'}
+        local_map: Dict[str, float] = {}
+        for h in local_holdings:
+            t = str(h.get('ticker', '')).upper()
+            if t and t != 'CASH':
+                local_map[t] = local_map.get(t, 0.0) + float(h.get('quantity', 0.0))
         
-        # Map live positions
-        live_map = {p['ticker'].upper(): p['quantity'] for p in live_positions if p['ticker'].upper() != 'CASH'}
+        # Map live positions - sum quantities across all lots for the same ticker
+        live_map: Dict[str, float] = {}
+        for p in live_positions:
+            t = str(p.get('ticker', '')).upper()
+            if t and t != 'CASH':
+                live_map[t] = live_map.get(t, 0.0) + float(p.get('quantity', 0.0))
         
         all_tickers = set(local_map.keys()) | set(live_map.keys())
         

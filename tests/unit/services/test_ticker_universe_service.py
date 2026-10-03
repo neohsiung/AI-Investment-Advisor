@@ -43,7 +43,7 @@ def test_add_ticker_existing_removed(service):
     assert res["success"] is True
     assert "reactivated" in res["message"]
     service.repo.upsert.assert_called_once_with(
-        "test-user", "AAPL", company_name="Apple Inc", sector="Tech", industry="Hardware", status="active"
+        "test-user", "AAPL", company_name="Apple Inc", sector="Tech", industry="Hardware", status="active", is_pinned=True
     )
 
 

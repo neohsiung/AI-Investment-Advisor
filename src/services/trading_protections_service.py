@@ -184,6 +184,8 @@ class TradingProtectionsService:
                 or self._check_ticker_cooldown(ticker)
                 or self._check_consecutive_loss_lockout()
             )
+            if reason:
+                self._dispatch_protection_alert_safely(reason, ticker)
             return reason
         except Exception as exc:
             # 2026-08-02: fail CLOSED. Previously this returned None on any
@@ -345,3 +347,30 @@ class TradingProtectionsService:
                 "decisions all lost alpha. New BUY orders paused system-wide pending review."
             )
         return None
+
+    def _dispatch_protection_alert_safely(self, reason: str, ticker: str) -> None:
+        """Fire-and-forget actionable alert dispatch on protection breach."""
+        try:
+            import asyncio
+            from src.services.actionable_alert_service import ActionableAlertHubService
+            hub = ActionableAlertHubService(user_id=self.user_id)
+            rule_name = (
+                "全域回撤停機" if "drawdown" in reason.lower() or "alpha" in reason.lower() else (
+                    "連續虧損鎖定" if "consecutive" in reason.lower() or "loss" in reason.lower() else (
+                        "個股冷卻" if "cooldown" in reason.lower() else "交易保護停機"
+                    )
+                )
+            )
+            try:
+                loop = asyncio.get_event_loop()
+                if loop.is_running():
+                    asyncio.create_task(hub.dispatch_protection_breached_alert(
+                        rule_name=rule_name,
+                        reason=reason,
+                        ticker=ticker,
+                    ))
+            except Exception as loop_err:
+                logger.debug("TradingProtectionsService: could not schedule alert on loop: %s", loop_err)
+        except Exception as e:
+            logger.debug("TradingProtectionsService: alert dispatch skipped: %s", e)
+

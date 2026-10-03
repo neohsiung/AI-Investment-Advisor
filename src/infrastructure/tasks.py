@@ -740,6 +740,41 @@ def run_universe_lifecycle(user_id: str = None, candidate_pool: list = None, for
         return f"Error: {str(e)}"
 
 
+@app.task(name="src.infrastructure.tasks.dispatch_shadow_ledger_eval")
+def dispatch_shadow_ledger_eval():
+    """Fan-out dispatcher: 為活躍租戶分派影子交易每日 MTM 與畢業考核任務。"""
+    users = _resolve_target_users()
+    for uid in users:
+        run_shadow_ledger_eval.delay(user_id=uid)
+    return f"Dispatched {len(users)} shadow_ledger_eval tasks"
+
+
+@app.task(name="src.infrastructure.tasks.run_shadow_ledger_eval", soft_time_limit=300, time_limit=360)
+def run_shadow_ledger_eval(user_id: str = None, auto_promote: bool = True):
+    """
+    Shadow Ledger Mark-to-Market & Graduation Evaluation Task (Daily / Periodic).
+    Steps shadow positions, evaluates graduation hurdles, and promotes/demotes tickers.
+    影子交易每日 MTM 損益計算與畢業考核任務。
+    """
+    user_id = user_id or os.getenv("PRIMARY_USER_ID") or os.getenv("USER_ID")
+    if not user_id:
+        logger.error("run_shadow_ledger_eval: user_id is required. Set PRIMARY_USER_ID env var or pass explicitly.")
+        return "Error: user_id is required"
+
+    try:
+        from src.services.shadow_ledger_service import ShadowLedgerService
+        svc = ShadowLedgerService(user_id=user_id)
+        result = _run_async_safe(svc.batch_step_and_evaluate(auto_promote=auto_promote))
+        logger.info(
+            "run_shadow_ledger_eval completed for %s: %d graduated, %d in progress, %d failed",
+            user_id, result.get("graduated_count", 0), result.get("in_progress_count", 0), result.get("failed_count", 0)
+        )
+        return result
+    except Exception as e:
+        logger.error("run_shadow_ledger_eval failed for %s: %s", user_id, e, exc_info=True)
+        return f"Error: {str(e)}"
+
+
 @app.task(name="src.infrastructure.tasks.dispatch_weekly_rebalance")
 def dispatch_weekly_rebalance():
     """Fan-out dispatcher: 為活躍租戶分派每週自主再平衡下單任務。"""
@@ -879,7 +914,7 @@ def run_autonomous_evolution(user_id: str = None, force: bool = False):
                     # Multi-channel alert on shadow circuit breaker tripping
                     try:
                         from src.services.factor_notification_service import factor_notification_service
-                        _run_async(
+                        _run_async_safe(
                             factor_notification_service.notify_circuit_breaker_tripped(
                                 artifact_name=updated.name,
                                 reason=f"Single-day shadow loss {daily_pnl:.2f}% exceeded -5.0% threshold (單日模擬虧損超標熔斷)",
@@ -899,7 +934,7 @@ def run_autonomous_evolution(user_id: str = None, force: bool = False):
                         # Multi-channel alert on canary 14-day graduation (manual approval mode)
                         try:
                             from src.services.factor_notification_service import factor_notification_service
-                            _run_async(
+                            _run_async_safe(
                                 factor_notification_service.notify_factor_promoted(
                                     artifact_name=updated.name,
                                     regime=updated.parameters.get("target_regime", "DYNAMIC"),

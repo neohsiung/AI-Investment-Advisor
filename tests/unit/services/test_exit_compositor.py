@@ -304,4 +304,22 @@ class TestDynamicAtrExit:
         res = compute_dynamic_atr_exit(entry_price=100.0, current_price=95.5, highest_price=100.0, atr=2.0)
         assert res.should_exit
         assert res.exit_type == "STOP_LOSS"
+        assert res.tier == 0
+
+    def test_harvest_ratchet_at_25_pct(self):
+        from src.services.exit_compositor_service import compute_dynamic_atr_exit
+
+        # Reached 130 (gain 30% >= 25%): harvest stop = max(130 - 1.2*2.0=127.6, 100 + 0.65*30=119.5) = 127.6
+        res = compute_dynamic_atr_exit(entry_price=100.0, current_price=128.0, highest_price=130.0, atr=2.0)
+        assert res.ratchet_stage == "HARVEST"
+        assert res.tier == 3
+        assert res.stop_price == 127.6
+        assert res.locked_profit_pct == 27.6
+        assert not res.should_exit
+
+        # Drops to 127.0: triggers harvest exit
+        res_exit = compute_dynamic_atr_exit(entry_price=100.0, current_price=127.0, highest_price=130.0, atr=2.0)
+        assert res_exit.should_exit
+        assert res_exit.exit_type == "TRAILING_PROFIT"
+        assert "HARVEST" in res_exit.rationale
 

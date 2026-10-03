@@ -566,11 +566,41 @@ settings:
   - key: universe_max_active_tickers
     group: allocation
     type: int
+    default: 8
+    min: 3
+    max: 50
+    label_en: Max active universe size
+    label_zh: 標的池最大活躍標的數量
+  - key: universe_max_candidate_tickers
+    group: allocation
+    type: int
     default: 30
     min: 5
     max: 100
-    label_en: Max active universe size
-    label_zh: 標的池最大活躍標的數量
+    label_en: Max candidate universe size
+    label_zh: 標的池最大候選標的數量
+    help_en: Target capacity for reserve candidates managed through dynamic elimination and retention.
+    help_zh: 候選池中定期汰弱留強之儲備標的數量上限。
+  - key: universe_rotation_hurdle
+    group: allocation
+    type: float
+    default: 1.5
+    min: 0.5
+    max: 5.0
+    label_en: Active vs Candidate rotation hurdle
+    label_zh: 活躍池動態輪換淘汰利差門檻 (0.5-5.0)
+    help_en: Minimum score advantage required for a top candidate to replace an unpinned active ticker.
+    help_zh: 候選股評分超越未鎖定活躍股的最低利差，達到門檻方能觸發活躍池汰弱留強替換。
+  - key: universe_max_rotations_per_cycle
+    group: allocation
+    type: int
+    default: 2
+    min: 1
+    max: 5
+    label_en: Max rotations per lifecycle cycle
+    label_zh: 單輪週期最大替換標的數 (1-5)
+    help_en: Maximum number of unpinned active tickers that can be replaced by candidates in one review cycle to prevent churn.
+    help_zh: 單次審查週期中允許被候選股替換之未鎖定活躍股數量上限，防止換手率過高。
   - key: universe_min_market_cap_billions
     group: allocation
     type: float
@@ -612,6 +642,51 @@ settings:
     label_zh: 金字塔初篩最低每日成交金額（百萬美元）
     help_en: Liquidity threshold for candidate stocks in Stage 1 screening.
     help_zh: 第一階段篩選候選標的之每日成交金額門檻（百萬美元）。
+  - key: universe_require_shadow_validation
+    group: allocation
+    type: bool
+    default: true
+    label_en: Require shadow validation for admitted candidates
+    label_zh: 候選標的晉級實盤前強制執行影子交易驗證軌道 (P2)
+    help_en: When enabled, candidates admitted by the screener enter 'shadow' status for 7-14 days of virtual tracking before graduating to the live active pool.
+    help_zh: 開啟時，篩選出的候選標的會先進入影子驗證軌道進行 7-14 天虛擬跟單考核，達成損益與回撤門檻方晉升為實盤活躍股。
+  - key: shadow_validation_min_days
+    group: allocation
+    type: int
+    default: 7
+    min: 1
+    max: 90
+    label_en: Minimum shadow validation observation days
+    label_zh: 影子交易考核最低觀察天數（天）
+    help_en: Minimum days a candidate must trade virtually before graduation evaluation.
+    help_zh: 候選標的在影子軌道中必須累積虛擬運行的最短交易天數方可參與畢業審查。
+  - key: shadow_validation_min_return
+    group: allocation
+    type: float
+    default: 0.0
+    label_en: Minimum shadow validation return (%)
+    label_zh: 影子交易考核最低浮動報酬率 (%)
+    help_en: Minimum cumulative return required for graduation (net of simulated fees).
+    help_zh: 扣除模擬滑價與手續費後，影子部位必須達成的最低累計浮動報酬率。
+  - key: shadow_validation_max_drawdown
+    group: allocation
+    type: float
+    default: 5.0
+    min: 0.5
+    max: 30.0
+    label_en: Maximum shadow validation drawdown (%)
+    label_zh: 影子交易考核最大回撤上限 (%)
+    help_en: Maximum peak-to-trough drawdown tolerated during validation period.
+    help_zh: 影子考核期間從波段高點允許之最大回撤幅度上限。
+  - key: shadow_require_support_held
+    group: allocation
+    type: bool
+    default: true
+    label_en: Require institutional support integrity for graduation
+    label_zh: 影子交易考核必須保持主力籌碼支撐未跌破
+    help_en: When enabled, candidates that breach institutional support (Anchored VWAP / POC) fail validation.
+    help_zh: 開啟時，若價格跌破主力籌碼成本防線即判定考核失敗，不予提拔實盤。
+
 
   # ── Sentinel ─────────────────────────────────────────────────────────────
   - key: sentinel_p1_limit_mins

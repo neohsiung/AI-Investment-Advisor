@@ -67,10 +67,11 @@ class TickerUniverseService:
         sector: str = "",
         industry: str = "",
         bypass_quality_check: bool = False,
+        is_pinned: bool = True,
     ) -> Dict[str, Any]:
         """
         Add a ticker to the universe after verifying quality criteria.
-        加入標的前強制審查品質（除非明確 bypass）。
+        加入標的前強制審查品質（除非明確 bypass）。手動加入預設設為用戶指定標的（is_pinned=True）。
         """
         ticker = ticker.upper().strip()
         if not bypass_quality_check:
@@ -82,7 +83,7 @@ class TickerUniverseService:
                     "message": f"Quality Gate Rejected: {ticker} failed criteria: {reason_summary}",
                     "assessment": assessment.to_dict(),
                 }
-        return self.add_ticker(ticker, company_name, sector, industry)
+        return self.add_ticker(ticker, company_name, sector, industry, is_pinned=is_pinned)
 
     async def run_lifecycle_evolution(
         self,
@@ -94,6 +95,36 @@ class TickerUniverseService:
         執行標的池生命週期演化循環。
         """
         return await self.lifecycle_service.run_lifecycle_cycle(candidate_pool=candidate_pool, force=force)
+
+    async def evolve_candidates(
+        self,
+        max_candidates: Optional[int] = None,
+        candidate_pool: Optional[List[str]] = None,
+    ) -> Dict[str, Any]:
+        """
+        Evolve candidate pool through competitive ranking (汰弱留強).
+        執行候選池動態演化（汰弱留強），收斂並維護 Top N 儲備標的。
+        """
+        return await self.lifecycle_service.evolve_candidate_pool(
+            max_candidates=max_candidates,
+            candidate_pool=candidate_pool
+        )
+
+    async def evolve_active(
+        self,
+        max_active: Optional[int] = None,
+        rotation_hurdle: Optional[float] = None,
+        max_rotations: Optional[int] = None,
+    ) -> Dict[str, Any]:
+        """
+        Evolve active pool through competitive rotation (汰弱留強).
+        執行活躍池動態汰弱留強：未鎖定之落後活躍標的與候選池強者競爭輪替。
+        """
+        return await self.lifecycle_service.evolve_active_pool(
+            max_active=max_active,
+            rotation_hurdle=rotation_hurdle,
+            max_rotations=max_rotations,
+        )
 
     async def run_pyramid_screen(
         self,
@@ -129,8 +160,9 @@ class TickerUniverseService:
         return self.repo.get_by_ticker(self.user_id, ticker)
 
     def add_ticker(self, ticker: str, company_name: str = "",
-                   sector: str = "", industry: str = "") -> Dict[str, Any]:
-        """Add a new ticker to the universe (or reactivate if removed)."""
+                   sector: str = "", industry: str = "",
+                   is_pinned: bool = True) -> Dict[str, Any]:
+        """Add a new ticker to the universe (or reactivate if removed). Defaults to user-designated (is_pinned=True)."""
         ticker = ticker.upper()
         existing = self.repo.get_by_ticker(self.user_id, ticker)
         if existing:
@@ -139,19 +171,31 @@ class TickerUniverseService:
                 ok = self.repo.upsert(self.user_id, ticker,
                                       company_name=company_name,
                                       sector=sector, industry=industry,
-                                      status="active")
+                                      status="active",
+                                      is_pinned=is_pinned)
                 self.repo.add_log(self.user_id, ticker, "upgraded",
                                   "user", "Reactivated from removed",
                                   "removed", "active")
                 return {"success": ok, "message": f"{ticker} reactivated" if ok else "Failed"}
+            # If already in universe, ensure pin status is preserved or updated
+            if is_pinned and not existing.get("is_pinned"):
+                self.repo.set_pin(self.user_id, ticker, True)
             return {"success": True, "message": f"{ticker} already in universe"}
         ok = self.repo.upsert(self.user_id, ticker,
                               company_name=company_name,
                               sector=sector, industry=industry,
-                              status="active")
+                              status="active",
+                              is_pinned=is_pinned)
         self.repo.add_log(self.user_id, ticker, "added",
-                          "user", "Manually added", "", "active")
+                          "user", "Manually added (user-designated)", "", "active")
         return {"success": ok, "message": f"{ticker} added" if ok else "Failed"}
+
+    def set_ticker_pin(self, ticker: str, is_pinned: bool) -> Dict[str, Any]:
+        """Set user-designated pin status for a ticker."""
+        ticker = ticker.upper()
+        ok = self.repo.set_pin(self.user_id, ticker, is_pinned)
+        msg = f"{ticker} {'pinned (user-designated, immune to rotation/eviction)' if is_pinned else 'unpinned (eligible for dynamic rotation)'}"
+        return {"success": ok, "message": msg if ok else f"Failed to update pin status for {ticker}"}
 
     def update_ticker(self, ticker: str, **kwargs) -> Dict[str, Any]:
         """Update ticker metadata (company_name, sector, industry, status)."""

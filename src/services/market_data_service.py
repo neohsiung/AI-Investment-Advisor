@@ -220,13 +220,18 @@ class MarketDataService:
             results = await self.search_service.search_financial_context(query, max_results=2)
             for res in results:
                 snippet = res.get('snippet', '') + " " + res.get('title', '')
-                # Look for patterns like $123.45 or 123.45 USD
+                # Require specific proximity between ticker/price keywords and dollar amounts
+                # to prevent matching market cap, volume, or revenue figures as stock prices.
+                escaped_ticker = re.escape(ticker)
                 patterns = [
-                    r'\$\s?([0-9]{1,5}\.[0-9]{1,2})',
-                    r'([0-9]{1,5}\.[0-9]{1,2})\s?USD'
+                    rf"(?:{escaped_ticker}|stock|price|trading at|closed at|currently)\s*(?:is|at|:)\s*\$?\s*([0-9]{{1,5}}\.[0-9]{{1,2}})",
+                    rf"(?:{escaped_ticker}|stock|price|trading at|closed at|currently)\s*(?:is|at|:)?\s*\$\s*([0-9]{{1,5}}\.[0-9]{{1,2}})",
+                    rf"(?:{escaped_ticker}|stock|price|trading at|closed at|currently)\s*([0-9]{{1,5}}\.[0-9]{{1,2}})\s*USD",
+                    rf"\$\s*([0-9]{{1,5}}\.[0-9]{{1,2}})\s*(?:USD)?\s*(?:per share|for {escaped_ticker}|\b{escaped_ticker}\b)",
+                    rf"([0-9]{{1,5}}\.[0-9]{{1,2}})\s*USD\s*(?:per share|for {escaped_ticker}|\b{escaped_ticker}\b)",
                 ]
                 for p in patterns:
-                    matches = re.findall(p, snippet)
+                    matches = re.findall(p, snippet, re.IGNORECASE)
                     if matches:
                         price = float(matches[0])
                         # Basic sanity check (exclude 0 or ridiculously high values if not BRK.A)

@@ -4,18 +4,20 @@ import React, { useState, useCallback } from "react";
 import useSWR, { mutate } from "swr";
 import api, { fetcher } from "@/lib/api";
 import { formatCurrency, cn } from "@/lib/utils";
-import { Layers, Target, RefreshCw, TrendingUp, Search, Plus, Trash2, AlertTriangle, Loader2, CheckCircle2, XCircle } from "lucide-react";
+import { Layers, Target, RefreshCw, TrendingUp, Search, Plus, Trash2, AlertTriangle, Loader2, CheckCircle2, XCircle, Pin } from "lucide-react";
 
 export default function UniversePage() {
   const [activeTab, setActiveTab] = useState("universe");
   
   // Data fetching
   const { data: universeData, isLoading: uniLoading } = useSWR("/api/v1/ticker-universe?status=active", fetcher);
+  const { data: candidatesData, isLoading: candLoading } = useSWR("/api/v1/ticker-universe?status=candidate", fetcher);
   const { data: targetsData, isLoading: tgtLoading } = useSWR("/api/v1/ticker-universe/targets", fetcher);
   const { data: rebalancePlan, isLoading: planLoading } = useSWR("/api/v1/ticker-universe/rebalance/plan", fetcher);
   const { data: removalData } = useSWR("/api/v1/ticker-universe/removal-candidates", fetcher);
 
   const universe = universeData?.data || [];
+  const candidates = candidatesData?.data || [];
   const targets = targetsData?.data || [];
   const plan = rebalancePlan?.data || {};
   const removals = removalData?.data?.candidates || [];
@@ -25,6 +27,8 @@ export default function UniversePage() {
   const [isOptimizing, setIsOptimizing] = useState(false);
   const [isExecutingRebalance, setIsExecutingRebalance] = useState(false);
   const [isPyramidScreening, setIsPyramidScreening] = useState(false);
+  const [isEvolvingCandidates, setIsEvolvingCandidates] = useState(false);
+  const [isEvolvingActive, setIsEvolvingActive] = useState(false);
   const [pyramidResult, setPyramidResult] = useState<any>(null);
   const [feedback, setFeedback] = useState<{ type: 'success' | 'error', msg: string } | null>(null);
 
@@ -109,6 +113,103 @@ export default function UniversePage() {
     }
   };
 
+  const handleEvolveCandidates = async () => {
+    setIsEvolvingCandidates(true); setFeedback(null);
+    try {
+      const res = await api.post("/api/v1/ticker-universe/candidates/evolve");
+      const data = res.data;
+      const count = data.data?.candidate_count || 0;
+      const admitted = data.data?.admitted_new_count || 0;
+      const pruned = data.data?.pruned_count || 0;
+      setFeedback({
+        type: "success",
+        msg: `候選池演化完成！汰弱留強後保留 Top ${count} 檔（新增納入 ${admitted} 檔，淘汰 Pruned ${pruned} 檔）`
+      });
+      mutate("/api/v1/ticker-universe?status=candidate");
+      mutate("/api/v1/ticker-universe?status=active");
+      setActiveTab("candidates");
+    } catch (e: any) {
+      const errMsg = e.response?.data?.detail || e.response?.data?.message || e.message;
+      setFeedback({ type: "error", msg: errMsg });
+    } finally { setIsEvolvingCandidates(false); }
+  };
+
+  const handlePromoteCandidate = async (ticker: string) => {
+    try {
+      const res = await api.put(`/api/v1/ticker-universe/${ticker}`, { status: "active" });
+      setFeedback({ type: "success", msg: `${ticker} 已成功晉升為活躍持倉標的！` });
+      mutate("/api/v1/ticker-universe?status=candidate");
+      mutate("/api/v1/ticker-universe?status=active");
+    } catch (e: any) {
+      const errMsg = e.response?.data?.detail || e.response?.data?.message || e.message;
+      setFeedback({ type: "error", msg: errMsg });
+    }
+  };
+
+  const handleRemoveCandidate = async (ticker: string) => {
+    if (!confirm(`確定要將 ${ticker} 移出候選池？`)) return;
+    try {
+      await api.delete(`/api/v1/ticker-universe/${ticker}`);
+      setFeedback({ type: "success", msg: `${ticker} 已移出候選池` });
+      mutate("/api/v1/ticker-universe?status=candidate");
+    } catch (e: any) {
+      const errMsg = e.response?.data?.detail || e.response?.data?.message || e.message;
+      setFeedback({ type: "error", msg: errMsg });
+    }
+  };
+
+  const handleEvolveActive = async () => {
+    setIsEvolvingActive(true); setFeedback(null);
+    try {
+      const res = await api.post("/api/v1/ticker-universe/active/evolve");
+      const data = res.data;
+      const count = data.data?.rotation_count || 0;
+      const rotations = data.data?.rotations || [];
+      const rotMsg = rotations.map((r: any) => `${r.demoted_ticker} (評分 ${r.demoted_score}) ➔ ${r.promoted_ticker} (評分 ${r.promoted_score})`).join("; ");
+      setFeedback({
+        type: "success",
+        msg: count > 0 
+          ? `活躍池汰弱留強完成！共輪替 ${count} 檔標的：${rotMsg}`
+          : `活躍池審核完成：所有未鎖定活躍標的表現皆優於候選股利差門檻，無需輪替（已保護 ${data.data?.pinned_active_count || 0} 檔指定標的）`
+      });
+      mutate("/api/v1/ticker-universe?status=active");
+      mutate("/api/v1/ticker-universe?status=candidate");
+    } catch (e: any) {
+      const errMsg = e.response?.data?.detail || e.response?.data?.message || e.message;
+      setFeedback({ type: "error", msg: errMsg });
+    } finally { setIsEvolvingActive(false); }
+  };
+
+  const handleTogglePin = async (ticker: string, currentPin: boolean) => {
+    try {
+      const nextPin = !currentPin;
+      await api.put(`/api/v1/ticker-universe/${ticker}/pin`, { is_pinned: nextPin });
+      setFeedback({
+        type: "success",
+        msg: nextPin 
+          ? `📌 ${ticker} 已鎖定為指定標的（享有最高豁免保護，免疫自動汰弱留強/剔除）`
+          : `⚡️ ${ticker} 已解除鎖定（恢復系統動態汰弱留強輪替）`
+      });
+      mutate("/api/v1/ticker-universe?status=active");
+      mutate("/api/v1/ticker-universe?status=candidate");
+    } catch (e: any) {
+      const errMsg = e.response?.data?.detail || e.response?.data?.message || e.message;
+      setFeedback({ type: "error", msg: errMsg });
+    }
+  };
+
+  const handleRemoveActive = async (ticker: string) => {
+    if (!confirm(`確定要將 ${ticker} 移出活躍標的池？`)) return;
+    try {
+      await api.delete(`/api/v1/ticker-universe/${ticker}`);
+      setFeedback({ type: "success", msg: `${ticker} 已移出活躍池` });
+      mutate("/api/v1/ticker-universe?status=active");
+    } catch (e: any) {
+      const errMsg = e.response?.data?.detail || e.response?.data?.message || e.message;
+      setFeedback({ type: "error", msg: errMsg });
+    }
+  };
+
   return (
     <div className="flex-1 overflow-y-auto pt-16 sm:pt-20 lg:pt-24 px-4 sm:px-6 lg:px-8 pb-8">
       <div className="max-w-7xl mx-auto space-y-6">
@@ -122,7 +223,11 @@ export default function UniversePage() {
           <button onClick={handleAddTicker} className="btn btn-sm btn-outline gap-2">
             <Plus className="w-4 h-4" /> 新增標的
           </button>
-          <button onClick={() => handleRunPyramidScreen(false)} disabled={isPyramidScreening} className="btn btn-sm btn-accent gap-2">
+          <button onClick={handleEvolveCandidates} disabled={isEvolvingCandidates} className="btn btn-sm btn-accent gap-2">
+            {isEvolvingCandidates ? <Loader2 className="w-4 h-4 animate-spin" /> : <RefreshCw className="w-4 h-4" />}
+            {isEvolvingCandidates ? "演化中..." : "候選池汰弱留強"}
+          </button>
+          <button onClick={() => handleRunPyramidScreen(false)} disabled={isPyramidScreening} className="btn btn-sm btn-outline gap-2">
             {isPyramidScreening ? <Loader2 className="w-4 h-4 animate-spin" /> : <TrendingUp className="w-4 h-4" />}
             {isPyramidScreening ? "初篩中..." : "金字塔初篩"}
           </button>
@@ -149,7 +254,10 @@ export default function UniversePage() {
       {/* Tabs */}
       <div className="tabs tabs-bordered">
         <button className={cn("tab", activeTab === "universe" && "tab-active")} onClick={() => setActiveTab("universe")}>
-          <Layers className="w-4 h-4 mr-1" /> 標的池
+          <Layers className="w-4 h-4 mr-1" /> 活躍池 ({universe.length}/8)
+        </button>
+        <button className={cn("tab", activeTab === "candidates" && "tab-active")} onClick={() => setActiveTab("candidates")}>
+          <Layers className="w-4 h-4 mr-1" /> 候選池 ({candidates.length}/30)
         </button>
         <button className={cn("tab", activeTab === "pyramid" && "tab-active")} onClick={() => setActiveTab("pyramid")}>
           <TrendingUp className="w-4 h-4 mr-1" /> 金字塔初篩 {pyramidResult && <span className="badge badge-accent ml-1">{pyramidResult.stage1_candidates?.length || 0}</span>}
@@ -165,40 +273,191 @@ export default function UniversePage() {
         </button>
       </div>
 
-      {/* Tab: Universe */}
+      {/* Tab: Universe (Active) */}
       {activeTab === "universe" && (
-        <div className="overflow-x-auto">
-          {uniLoading ? (
-            <div className="flex items-center justify-center py-12"><Loader2 className="w-6 h-6 animate-spin" /></div>
-          ) : (
-            <table className="table w-full">
-              <thead>
-                <tr>
-                  <th>標的</th>
-                  <th>公司</th>
-                  <th>產業</th>
-                  <th>狀態</th>
-                  <th>最新信心</th>
-                  <th>目標權重</th>
-                </tr>
-              </thead>
-              <tbody>
-                {universe.map((t: any) => {
-                  const target = targetMap[t.ticker];
-                  return (
-                    <tr key={t.ticker}>
-                      <td className="font-bold">{t.ticker}</td>
-                      <td className="text-sm text-gray-400">{t.company_name || "-"}</td>
-                      <td className="text-sm">{t.sector || t.industry || "-"}</td>
-                      <td><span className="badge badge-success badge-sm">{t.status}</span></td>
-                      <td>{target ? `${(target.confidence_score * 100).toFixed(0)}%` : "-"}</td>
-                      <td>{target ? `${(target.target_weight * 100).toFixed(1)}%` : "-"}</td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          )}
+        <div className="space-y-4">
+          <div className="bg-base-200/50 p-4 rounded-xl flex flex-col sm:flex-row sm:items-center justify-between gap-4 border border-base-300">
+            <div>
+              <h3 className="font-bold text-lg flex items-center gap-2">
+                <Layers className="w-5 h-5 text-primary" /> 核心活躍標的池 (Active Core Universe)
+              </h3>
+              <p className="text-sm text-gray-400 mt-1">
+                維持精選 8 檔核心活躍持倉。標記 📌「自選指定」之標的享有最高免疫保護，絕對不會被系統淘汰；未鎖定之標的將在審核或演化時與候選池頂尖強者動態「汰弱留強」競爭輪換。
+              </p>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              <button
+                onClick={handleEvolveActive}
+                disabled={isEvolvingActive}
+                className="btn btn-sm btn-primary gap-2"
+                title="審查活躍池標的，並讓未鎖定之落後標的與候選池強者輪動"
+              >
+                {isEvolvingActive ? <Loader2 className="w-4 h-4 animate-spin" /> : <RefreshCw className="w-4 h-4" />}
+                活躍池汰弱留強
+              </button>
+              <button onClick={handleAddTicker} className="btn btn-sm btn-outline gap-1">
+                <Plus className="w-4 h-4" /> 新增標的
+              </button>
+            </div>
+          </div>
+
+          <div className="overflow-x-auto">
+            {uniLoading ? (
+              <div className="flex items-center justify-center py-12"><Loader2 className="w-6 h-6 animate-spin" /></div>
+            ) : (
+              <table className="table w-full">
+                <thead>
+                  <tr>
+                    <th>標的</th>
+                    <th>指定保護 (📌)</th>
+                    <th>公司名稱</th>
+                    <th>板塊 / 產業</th>
+                    <th>狀態</th>
+                    <th>最新信心</th>
+                    <th>目標權重</th>
+                    <th>操作</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {universe.map((t: any) => {
+                    const target = targetMap[t.ticker];
+                    const isPinned = !!t.is_pinned;
+                    return (
+                      <tr key={t.ticker} className="hover">
+                        <td className="font-bold text-base">{t.ticker}</td>
+                        <td>
+                          <button
+                            onClick={() => handleTogglePin(t.ticker, isPinned)}
+                            className={cn(
+                              "btn btn-xs gap-1 transition-all",
+                              isPinned
+                                ? "btn-primary shadow-sm"
+                                : "btn-ghost text-gray-400 hover:text-white"
+                            )}
+                            title={isPinned ? "點擊解除指定保護（恢復系統動態輪動）" : "點擊鎖定為自選指定（享有最高免疫保護，絕不自動汰除）"}
+                          >
+                            <Pin className={cn("w-3.5 h-3.5", isPinned && "fill-current")} />
+                            {isPinned ? "自選指定（免疫汰除）" : "系統輪動"}
+                          </button>
+                        </td>
+                        <td className="text-sm text-gray-300">{t.company_name || "-"}</td>
+                        <td className="text-sm">{t.sector || t.industry || "-"}</td>
+                        <td><span className="badge badge-success badge-sm">{t.status}</span></td>
+                        <td>{target ? `${(target.confidence_score * 100).toFixed(0)}%` : "-"}</td>
+                        <td>{target ? `${(target.target_weight * 100).toFixed(1)}%` : "-"}</td>
+                        <td>
+                          <button
+                            onClick={() => handleRemoveActive(t.ticker)}
+                            className="btn btn-xs btn-ghost text-error"
+                            title="移出活躍池"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Tab: Candidates */}
+      {activeTab === "candidates" && (
+        <div className="space-y-4">
+          <div className="bg-base-200/50 p-4 rounded-xl flex flex-col sm:flex-row sm:items-center justify-between gap-4 border border-base-300">
+            <div>
+              <h3 className="font-bold text-lg flex items-center gap-2">
+                <Layers className="w-5 h-5 text-accent" /> 動態儲備候選池 (Dynamic Candidate Reserve Pool)
+              </h3>
+              <p className="text-sm text-gray-400 mt-1">
+                制度化擴充至 Top 30 檔儲備標的。標記 📌「指定儲備」之標的享有免疫淘汰保護；未鎖定之標的定期由系統「汰弱留強」收斂留存最強 30 檔。
+              </p>
+            </div>
+            <button
+              onClick={handleEvolveCandidates}
+              disabled={isEvolvingCandidates}
+              className="btn btn-sm btn-accent gap-2"
+            >
+              {isEvolvingCandidates ? <Loader2 className="w-4 h-4 animate-spin" /> : <RefreshCw className="w-4 h-4" />}
+              立即演化（汰弱留強）
+            </button>
+          </div>
+
+          <div className="overflow-x-auto">
+            {candLoading ? (
+              <div className="flex items-center justify-center py-12"><Loader2 className="w-6 h-6 animate-spin" /></div>
+            ) : candidates.length === 0 ? (
+              <div className="text-center py-12 text-gray-500 bg-base-200/20 rounded-xl border border-dashed border-base-300">
+                <Layers className="w-8 h-8 mx-auto mb-2 opacity-30" />
+                <p>候選池目前暫無標的，請點擊上方「立即演化（汰弱留強）」自動補充儲備標的。</p>
+              </div>
+            ) : (
+              <table className="table w-full">
+                <thead>
+                  <tr>
+                    <th>排名 / 代號</th>
+                    <th>指定保護 (📌)</th>
+                    <th>公司名稱</th>
+                    <th>板塊 / 產業</th>
+                    <th>狀態</th>
+                    <th>入選日期</th>
+                    <th>操作</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {candidates.map((c: any, idx: number) => {
+                    const isPinned = !!c.is_pinned;
+                    return (
+                      <tr key={c.ticker} className="hover">
+                        <td className="font-bold">
+                          <span className="text-xs text-gray-400 mr-2">#{idx + 1}</span>
+                          {c.ticker}
+                        </td>
+                        <td>
+                          <button
+                            onClick={() => handleTogglePin(c.ticker, isPinned)}
+                            className={cn(
+                              "btn btn-xs gap-1 transition-all",
+                              isPinned
+                                ? "btn-accent shadow-sm"
+                                : "btn-ghost text-gray-400 hover:text-white"
+                            )}
+                            title={isPinned ? "點擊解除指定保護" : "點擊鎖定為指定儲備（免疫淘汰，維持於候選池）"}
+                          >
+                            <Pin className={cn("w-3.5 h-3.5", isPinned && "fill-current")} />
+                            {isPinned ? "指定儲備（免疫淘汰）" : "動態儲備"}
+                          </button>
+                        </td>
+                        <td className="text-sm text-gray-300">{c.company_name || "-"}</td>
+                        <td className="text-sm">{c.sector || c.industry || "-"}</td>
+                        <td><span className="badge badge-warning badge-sm">{c.status}</span></td>
+                        <td className="text-xs text-gray-400">{c.added_at ? new Date(c.added_at).toLocaleDateString() : "-"}</td>
+                        <td className="flex gap-2">
+                          <button
+                            onClick={() => handlePromoteCandidate(c.ticker)}
+                            className="btn btn-xs btn-outline btn-success"
+                            title="晉升至活躍池"
+                          >
+                            晉升
+                          </button>
+                          <button
+                            onClick={() => handleRemoveCandidate(c.ticker)}
+                            className="btn btn-xs btn-ghost text-error"
+                            title="移出候選池"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            )}
+          </div>
         </div>
       )}
 

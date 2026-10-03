@@ -314,13 +314,10 @@ class GeminiGateway(ILLMGateway):
                                 continue
 
     async def embed(self, text: str, config: LLMConfig) -> List[float]:
-        """Gemini embedding via embedContent API."""
-        import requests
-        def _sync_embed():
-            model_id = config.model if config.model.startswith("models/") else f"models/{config.model}"
-            url = f"https://generativelanguage.googleapis.com/v1beta/{model_id}:embedContent?key={config.api_key}"
-            headers = {"Content-Type": "application/json"}
-            data = {"content": {"parts": [{"text": text}]}}
+        model_id = config.model if config.model.startswith("models/") else f"models/{config.model}"
+        url = f"https://generativelanguage.googleapis.com/v1beta/{model_id}:embedContent?key={config.api_key}"
+        headers = {"Content-Type": "application/json"}
+        data = {"content": {"parts": [{"text": text}]}}
 
         async with httpx.AsyncClient() as client:
             response = await client.post(
