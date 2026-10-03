@@ -562,6 +562,56 @@ settings:
     label_zh: 持倉 Alpha 衰減底限
     help_en: Minimum decay multiplier floor, ensuring active positions maintain baseline sizing until formal liquidation.
     help_zh: 持倉 Alpha 衰減因子之最低下限，確保持倉在正式平倉前維持基礎平滑底倉（預設 0.40）。
+  - key: kelly_fraction_multiplier
+    group: allocation
+    type: float
+    default: 0.25
+    min: 0.05
+    max: 1.00
+    label_en: Kelly fraction multiplier
+    label_zh: 凱利分數縮放倍數
+    help_en: Multiplier applied to full Kelly sizing (0.25 = Quarter-Kelly) to prevent aggressive leverage and dampen equity volatility.
+    help_zh: 施加於全額凱利注碼之分數縮放倍數（預設 0.25 即 Quarter-Kelly），防止過度激進下注並平抑權益波動。
+  - key: kelly_min_trades
+    group: allocation
+    type: int
+    default: 10
+    min: 3
+    max: 100
+    label_en: Kelly sizing minimum sample trades
+    label_zh: 凱利定價最低樣本交易數
+    help_en: Minimum number of realized closed trades required before activating dynamic Kelly sizing; otherwise smooth fallback to prior benchmark.
+    help_zh: 啟動動態凱利部位定價所需之最低已實現交易樣本數（預設 10 筆）；樣本不足時平滑回退至先驗預設基準。
+  - key: kelly_min_position_pct
+    group: allocation
+    type: float
+    default: 0.02
+    min: 0.005
+    max: 0.100
+    label_en: Kelly sizing minimum position limit
+    label_zh: 凱利定價單一部位下限
+    help_en: Rigid minimum allocation floor for positive-edge trades under Kelly sizing.
+    help_zh: 具正期望值交易在凱利部位定價下的剛性單一部位下限（預設 2.0%）。
+  - key: kelly_max_position_pct
+    group: allocation
+    type: float
+    default: 0.20
+    min: 0.05
+    max: 0.50
+    label_en: Kelly sizing maximum position limit
+    label_zh: 凱利定價單一部位上限
+    help_en: Rigid maximum allocation cap for any single trade under Kelly sizing to prevent concentration risk.
+    help_zh: 凱利部位定價下任何單一部位的剛性最大持倉上限，防止單一標的過度集中風險（預設 20.0%）。
+  - key: kelly_lookback_days
+    group: allocation
+    type: int
+    default: 90
+    min: 10
+    max: 365
+    label_en: Kelly historical lookback window (days)
+    label_zh: 凱利歷史統計回顧窗口（天）
+    help_en: Number of calendar days of historical realized decisions used to calculate rolling win rate and payoff ratio.
+    help_zh: 用於統計滾動已實現勝率與盈虧賠率之歷史決策回顧天數窗口（預設 90 天）。
   - key: target_cash_ratio
     group: allocation
     type: float
