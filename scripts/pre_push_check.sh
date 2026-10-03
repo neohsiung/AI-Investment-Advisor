@@ -73,6 +73,7 @@ $PYTEST tests/unit/services/test_actionable_alert_service.py \
         tests/unit/services/test_multi_factor_ensemble.py \
         tests/unit/services/test_smart_order_routing.py \
         tests/unit/services/test_regime_hmm.py \
+        tests/unit/services/test_portfolio_adaptive_intelligence.py \
         tests/unit/config/test_settings_schema.py -q
 
 echo -e "\n${GREEN}======================================================${NC}"

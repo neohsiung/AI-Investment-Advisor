@@ -37,6 +37,7 @@ from src.api.v1.endpoints import workflows
 from src.api.v1.endpoints import agents as agents_ep
 from src.api.v1.endpoints import skills as skills_ep
 from src.api.v1.endpoints import generated_code as generated_code_ep
+from src.api.v1.endpoints import adaptive_intelligence
 
 # The /auth router (Google OAuth login/callback/exchange/refresh/me/logout)
 # is gone. Identity comes from get_current_user_id() above.
@@ -66,5 +67,12 @@ api_v1_router.include_router(
     llm_settings.router,
     prefix="/settings/llm",
     tags=["LLM Settings"],
+)
+
+# D1: Portfolio Adaptive Intelligence
+api_v1_router.include_router(
+    adaptive_intelligence.router,
+    prefix="/adaptive-intelligence",
+    tags=["Adaptive Intelligence"],
 )
 

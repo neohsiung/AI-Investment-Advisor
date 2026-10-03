@@ -807,6 +807,32 @@ settings:
     label_zh: HMM 牛市進攻 VIX 上限門檻
     help_en: VIX baseline ceiling below which Bull Momentum emission likelihood operates.
     help_zh: 牛市進攻體制發射高斯分佈之 VIX 波動率參考值（預設 19.0）。
+  - key: adaptive_intelligence_enabled
+    group: allocation
+    type: bool
+    default: true
+    label_en: Enable unified adaptive portfolio intelligence orchestrator
+    label_zh: 啟用統一投組自適應智慧聚合中樞
+    help_en: Unifies M1-M6, E1, and O1 into a central portfolio diagnostic orchestrator with five-dimensional health radar scoring.
+    help_zh: 統整 M1~M6、E1 與 O1 八大核心模組，提供五維健康雷達、全方位投組診斷與端到端執行排程。
+  - key: adaptive_health_min_score_alert
+    group: allocation
+    type: float
+    default: 60.0
+    min: 30.0
+    max: 90.0
+    label_en: Adaptive health score minimum alert threshold
+    label_zh: 自適應健康總分最低警報門檻
+    help_en: Minimum acceptable overall portfolio adaptive health score (0-100) below which caution or critical warnings are triggered.
+    help_zh: 投組自適應綜合健康總評分之最低容許警報門檻（預設 60.0）；低於此分數時觸發防禦預警。
+  - key: adaptive_auto_rebalance_trigger
+    group: allocation
+    type: bool
+    default: false
+    label_en: Enable automatic rebalance trigger on critical score
+    label_zh: 啟用嚴重健康惡化時之自動再平衡觸發
+    help_en: Automatically dispatches M3 rebalance plans through E1 smart order routing when health score drops to CRITICAL level.
+    help_zh: 當投組健康評分跌入 CRITICAL 嚴重警戒且 M3 緩衝帶突破時，是否自動授權生成調倉執行單（預設 false 需人機確認）。
   - key: target_cash_ratio
     group: allocation
     type: float
