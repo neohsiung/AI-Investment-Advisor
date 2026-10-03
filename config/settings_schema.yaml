@@ -453,6 +453,36 @@ settings:
     max: 1.0
     label_en: Sector exposure cap
     label_zh: 單一產業曝險上限
+  - key: alloc_cluster_cap
+    group: allocation
+    type: float
+    default: 0.30
+    min: 0.10
+    max: 0.60
+    label_en: Correlation cluster exposure cap
+    label_zh: 高相關集群曝險上限
+    help_en: Cap maximum combined weight of tickers belonging to the same high-correlation cluster (correlation >= threshold), preventing cross-sector concentration collapse.
+    help_zh: 高相關集群（相關係數高於門檻之標的群組）之最大合併持倉權重上限，防範跨產業假分散與共振式巨幅回撤。
+  - key: alloc_correlation_cluster_threshold
+    group: allocation
+    type: float
+    default: 0.70
+    min: 0.40
+    max: 0.95
+    label_en: Correlation clustering threshold
+    label_zh: 相關性分群共振門檻
+    help_en: Minimum correlation coefficient between two tickers to be grouped into the same risk cluster.
+    help_zh: 判定兩檔標的屬於同一風險集群之最低 60 日滾動相關係數門檻（預設 0.70）。
+  - key: alloc_target_beta
+    group: allocation
+    type: float
+    default: 0.90
+    min: 0.30
+    max: 1.50
+    label_en: Target portfolio market beta
+    label_zh: 目標投資組合市場 Beta
+    help_en: Target weighted beta of the portfolio against the market benchmark (SPY). If projected beta exceeds the target, high-beta positions are dampened to protect against systemic volatility.
+    help_zh: 投資組合相對於標普 500 (SPY) 之加權目標市場 Beta。當預期 Beta 超標時，對高 Beta 標的進行阻尼壓縮以平抑系統性大盤波動。
   - key: alloc_target_sum
     group: allocation
     type: float

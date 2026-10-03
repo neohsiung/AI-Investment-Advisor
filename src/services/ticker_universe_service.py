@@ -3,7 +3,7 @@ Ticker Universe Service
 Business logic for user-specific persistent ticker pool management.
 """
 import math
-from typing import List, Dict, Any, Optional
+from typing import List, Dict, Any, Optional, Tuple
 from src.repositories.ticker_universe_repository import (
     TickerUniverseRepository,
     UNIVERSE_UPDATABLE_FIELDS,
@@ -68,27 +68,168 @@ class TickerUniverseService:
                 self._market_data = None
         return self._market_data
 
-    def calculate_ticker_volatility(self, ticker: str, days: int = 60, default_vol: float = 0.25) -> float:
+    def calculate_ticker_returns(self, ticker: str, days: int = 60) -> List[float]:
         """
-        Calculate 60-day annualized return volatility:
-        sigma_i = std(daily_returns_60d) * sqrt(252)
+        Calculate daily percentage returns for a ticker over the specified window.
+        Returns: r_t = (p_t - p_{t-1}) / p_{t-1}.
         """
         try:
             mds = getattr(self, "market_data_service", None)
             if mds:
                 ohlcv = mds.get_ohlcv(ticker, days=days)
                 closes = ohlcv.get("close", []) if ohlcv else []
-                if closes and len(closes) >= 10:
+                if closes and len(closes) >= 5:
                     import pandas as pd
                     series = pd.Series(closes, dtype=float)
-                    daily_returns = series.pct_change().dropna()
-                    std = float(daily_returns.std())
-                    if pd.notna(std) and std > 0:
-                        annualized_vol = std * math.sqrt(252)
-                        return round(annualized_vol, 4)
+                    daily_returns = series.pct_change().dropna().tolist()
+                    return [float(r) for r in daily_returns if pd.notna(r)]
+        except Exception as e:
+            logger.debug(f"Could not compute daily returns for {ticker}: {e}")
+        return []
+
+    def calculate_ticker_volatility(self, ticker: str, days: int = 60, default_vol: float = 0.25) -> float:
+        """
+        Calculate 60-day annualized return volatility:
+        sigma_i = std(daily_returns_60d) * sqrt(252)
+        """
+        try:
+            rets = self.calculate_ticker_returns(ticker, days=days)
+            if len(rets) >= 10:
+                import numpy as np
+                std = float(np.std(rets, ddof=1))
+                if std > 0:
+                    annualized_vol = std * math.sqrt(252)
+                    return round(annualized_vol, 4)
         except Exception as e:
             logger.debug(f"Could not compute historical volatility for {ticker}: {e}")
         return default_vol
+
+    def calculate_ticker_beta(
+        self,
+        ticker: str,
+        spy_returns: Optional[List[float]] = None,
+        days: int = 60,
+        default_beta: float = 1.0,
+    ) -> float:
+        """
+        Calculate 60-day market beta against S&P 500 (SPY):
+        beta_i = Cov(r_i, r_spy) / Var(r_spy)
+        """
+        try:
+            if spy_returns is None:
+                spy_returns = self.calculate_ticker_returns("SPY", days=days)
+
+            r_ticker = self.calculate_ticker_returns(ticker, days=days)
+            if len(r_ticker) >= 10 and len(spy_returns) >= 10:
+                import numpy as np
+                min_len = min(len(r_ticker), len(spy_returns))
+                y = np.array(r_ticker[-min_len:], dtype=float)
+                x = np.array(spy_returns[-min_len:], dtype=float)
+                var_x = float(np.var(x, ddof=1))
+                if var_x > 1e-7:
+                    cov_xy = float(np.cov(y, x, ddof=1)[0, 1])
+                    beta = cov_xy / var_x
+                    return round(max(0.1, min(3.0, beta)), 4)
+        except Exception as e:
+            logger.debug(f"Could not compute market beta for {ticker}: {e}")
+        return default_beta
+
+    def build_correlation_clusters(
+        self,
+        tickers: List[str],
+        ticker_returns_map: Optional[Dict[str, List[float]]] = None,
+        threshold: float = 0.70,
+        days: int = 60,
+    ) -> Tuple[Dict[str, Dict[str, float]], List[List[str]]]:
+        """
+        Build Pearson correlation matrix and identify high-correlation clusters (connected components).
+        Two tickers belong to the same cluster if Pearson correlation >= threshold.
+        """
+        if not tickers:
+            return {}, []
+
+        if ticker_returns_map is None:
+            ticker_returns_map = {t: self.calculate_ticker_returns(t, days=days) for t in tickers}
+
+        import numpy as np
+        corr_matrix: Dict[str, Dict[str, float]] = {t: {t: 1.0} for t in tickers}
+        adj: Dict[str, set] = {t: set() for t in tickers}
+
+        for i in range(len(tickers)):
+            t_i = tickers[i]
+            r_i = ticker_returns_map.get(t_i, [])
+            for j in range(i + 1, len(tickers)):
+                t_j = tickers[j]
+                r_j = ticker_returns_map.get(t_j, [])
+                corr = 0.40  # Default moderate correlation if insufficient historical data
+                if len(r_i) >= 10 and len(r_j) >= 10:
+                    min_len = min(len(r_i), len(r_j))
+                    arr_i = np.array(r_i[-min_len:], dtype=float)
+                    arr_j = np.array(r_j[-min_len:], dtype=float)
+                    std_i = float(np.std(arr_i, ddof=1))
+                    std_j = float(np.std(arr_j, ddof=1))
+                    if std_i > 1e-6 and std_j > 1e-6:
+                        c = float(np.corrcoef(arr_i, arr_j)[0, 1])
+                        if not np.isnan(c):
+                            corr = c
+
+                corr = round(max(-1.0, min(1.0, corr)), 4)
+                corr_matrix[t_i][t_j] = corr
+                corr_matrix.setdefault(t_j, {})[t_i] = corr
+
+                if corr >= threshold:
+                    adj[t_i].add(t_j)
+                    adj[t_j].add(t_i)
+
+        visited = set()
+        clusters: List[List[str]] = []
+        for t in tickers:
+            if t not in visited:
+                comp = []
+                queue = [t]
+                visited.add(t)
+                while queue:
+                    curr = queue.pop(0)
+                    comp.append(curr)
+                    for neighbor in sorted(adj.get(curr, [])):
+                        if neighbor not in visited:
+                            visited.add(neighbor)
+                            queue.append(neighbor)
+                comp.sort()
+                clusters.append(comp)
+
+        clusters.sort(key=lambda c: (-len(c), c[0] if c else ""))
+        return corr_matrix, clusters
+
+    def apply_cluster_caps(
+        self,
+        weights: Dict[str, float],
+        clusters: List[List[str]],
+        cluster_cap: float = 0.30,
+    ) -> Dict[str, float]:
+        """
+        Cap total weight of any multi-ticker high-correlation cluster at cluster_cap.
+        If sum_{t in cluster} w_t > cluster_cap, scale all cluster members down proportionally.
+        """
+        capped_weights = dict(weights)
+        for cluster in clusters:
+            if len(cluster) <= 1:
+                continue
+            cluster_sum = sum(capped_weights.get(t, 0.0) for t in cluster)
+            if cluster_sum > cluster_cap and cluster_sum > 0:
+                ratio = cluster_cap / cluster_sum
+                logger.info(
+                    "High-correlation cluster %s total weight (%.1f%%) exceeds cluster cap (%.1f%%). "
+                    "Scaling down by factor %.3f",
+                    cluster,
+                    cluster_sum * 100.0,
+                    cluster_cap * 100.0,
+                    ratio,
+                )
+                for t in cluster:
+                    if t in capped_weights:
+                        capped_weights[t] = capped_weights[t] * ratio
+        return capped_weights
 
     async def evaluate_ticker_quality(self, ticker: str) -> Dict[str, Any]:
         """Evaluate a ticker against the quality gate."""
@@ -306,15 +447,25 @@ class TickerUniverseService:
         if not active:
             return {"success": False, "message": "No active tickers in universe", "targets": []}
 
-        # Gather latest research confidence and historical volatility for each ticker
+        # Gather latest research confidence, returns, historical volatility, and beta for each ticker
+        spy_returns = self.calculate_ticker_returns("SPY", days=60)
+        returns_map: Dict[str, List[float]] = {}
         ticker_scores = {}
         for t in active:
             ticker = t["ticker"]
             research = self.repo.get_research(self.user_id, ticker, limit=5)
-            # Use pre-supplied or cached volatility if present, else calculate
+            rets = self.calculate_ticker_returns(ticker, days=60)
+            returns_map[ticker] = rets
+
+            # Volatility (60-day annualized)
             vol = t.get("volatility_60d") or t.get("volatility")
             if vol is None:
                 vol = self.calculate_ticker_volatility(ticker, days=60, default_vol=0.25)
+
+            # Beta (60-day against SPY)
+            beta = t.get("beta_60d") or t.get("beta")
+            if beta is None:
+                beta = self.calculate_ticker_beta(ticker, spy_returns=spy_returns, days=60, default_beta=1.0)
 
             if research:
                 scores = [float(r["confidence_score"]) for r in research if r.get("confidence_score")]
@@ -324,6 +475,7 @@ class TickerUniverseService:
                         (r.get("expected_return") or 0.0) for r in research
                     )) or 0.05,
                     "volatility": float(vol) if vol and float(vol) > 0 else 0.25,
+                    "beta": float(beta) if beta and float(beta) > 0 else 1.0,
                     "sector": t.get("sector", ""),
                 }
             else:
@@ -331,6 +483,7 @@ class TickerUniverseService:
                     "confidence": 0.5,
                     "expected_return": 0.05,
                     "volatility": float(vol) if vol and float(vol) > 0 else 0.25,
+                    "beta": float(beta) if beta and float(beta) > 0 else 1.0,
                     "sector": t.get("sector", ""),
                 }
 
@@ -361,6 +514,9 @@ class TickerUniverseService:
         MIN_POS = float(self.settings_service.get_setting("alloc_min_position"))
         MAX_POS = float(self.settings_service.get_setting("alloc_max_position"))
         SECTOR_CAP = float(self.settings_service.get_setting("alloc_sector_cap"))
+        CLUSTER_CAP = float(self.settings_service.get_setting("alloc_cluster_cap", 0.30))
+        CORR_THRESH = float(self.settings_service.get_setting("alloc_correlation_cluster_threshold", 0.70))
+        TARGET_BETA = float(self.settings_service.get_setting("alloc_target_beta", 0.90))
         TARGET_SUM = float(self.settings_service.get_setting("alloc_target_sum"))
         MAX_HOLDINGS = int(self.settings_service.get_setting("alloc_max_holdings", 10))
         TARGET_VOLATILITY = float(self.settings_service.get_setting("alloc_target_volatility", 0.14))
@@ -408,17 +564,28 @@ class TickerUniverseService:
                 ratio = SECTOR_CAP / sector_weights[sector]
                 sector_capped[ticker] = raw_weights[ticker] * ratio
 
-        # Normalize preliminary weights to sum to 1.0 to assess portfolio annualized volatility
-        actual = sum(sector_capped.values())
+        # M2: High-Correlation Clustering & Cluster Cap
+        corr_matrix, clusters = self.build_correlation_clusters(
+            list(sector_capped.keys()),
+            ticker_returns_map=returns_map,
+            threshold=CORR_THRESH,
+        )
+        cluster_capped = self.apply_cluster_caps(
+            sector_capped,
+            clusters,
+            cluster_cap=CLUSTER_CAP,
+        )
+
+        # Normalize preliminary weights to sum to 1.0 to assess portfolio annualized volatility & beta
+        actual = sum(cluster_capped.values())
         if actual <= 0:
             return {"success": False, "message": "Failed to compute valid allocation weights", "targets": []}
 
-        prelim_weights = {ticker: w / actual for ticker, w in sector_capped.items()}
+        prelim_weights = {ticker: w / actual for ticker, w in cluster_capped.items()}
 
         # Estimate portfolio annualized volatility:
-        # sigma_p = sqrt(sum_i (w_i * sigma_i)^2 + 2 * sum_{i < j} w_i * w_j * rho * sigma_i * sigma_j)
-        # Assuming average diversified equity correlation rho = 0.40
-        rho = 0.40
+        # sigma_p = sqrt(sum_i (w_i * sigma_i)^2 + 2 * sum_{i < j} w_i * w_j * rho_ij * sigma_i * sigma_j)
+        rho_default = 0.40
         variance_p = 0.0
         portfolio_tickers = list(prelim_weights.keys())
         for i, t_i in enumerate(portfolio_tickers):
@@ -429,13 +596,12 @@ class TickerUniverseService:
                 t_j = portfolio_tickers[j]
                 w_j = prelim_weights[t_j]
                 v_j = ticker_scores[t_j].get("volatility", 0.25)
-                variance_p += 2.0 * w_i * w_j * rho * v_i * v_j
+                pair_corr = corr_matrix.get(t_i, {}).get(t_j, rho_default)
+                variance_p += 2.0 * w_i * w_j * pair_corr * v_i * v_j
 
         portfolio_volatility = math.sqrt(max(0.0, variance_p))
 
         # Target Volatility Scaling:
-        # If portfolio annualized volatility exceeds target, scale down equity exposure
-        # and retain the unallocated fraction as risk-free cash buffer.
         vol_scale = 1.0
         if TARGET_VOLATILITY > 0 and portfolio_volatility > TARGET_VOLATILITY:
             vol_scale = min(1.0, TARGET_VOLATILITY / portfolio_volatility)
@@ -447,7 +613,35 @@ class TickerUniverseService:
                 vol_scale,
             )
 
-        effective_target_sum = TARGET_SUM * vol_scale
+        # M2: Estimate portfolio weighted market beta:
+        portfolio_beta = sum(
+            prelim_weights[t] * ticker_scores[t].get("beta", 1.0)
+            for t in portfolio_tickers
+        )
+
+        # Target Beta Scaling:
+        beta_scale = 1.0
+        if TARGET_BETA > 0 and portfolio_beta > TARGET_BETA:
+            beta_scale = min(1.0, TARGET_BETA / portfolio_beta)
+            logger.info(
+                "Portfolio projected market beta (%.2f) exceeds target (%.2f). "
+                "Applying beta scaling factor: %.3f",
+                portfolio_beta,
+                TARGET_BETA,
+                beta_scale,
+            )
+
+        # Effective risk scale factor (dual constraint: volatility & beta)
+        effective_scale = min(vol_scale, beta_scale)
+        effective_target_sum = TARGET_SUM * effective_scale
+
+        # Map cluster IDs for multi-ticker clusters
+        ticker_cluster_map = {}
+        for idx, cluster in enumerate(clusters):
+            if len(cluster) > 1:
+                cid = f"cluster_{idx}"
+                for t in cluster:
+                    ticker_cluster_map[t] = cid
 
         # Normalize to effective_target_sum with strict ceiling of MAX_POS
         targets = []
@@ -470,12 +664,14 @@ class TickerUniverseService:
                 "confidence_score": round(info["confidence"], 4),
                 "expected_return": round(info["expected_return"], 6),
                 "volatility_60d": round(info["volatility"], 4),
+                "beta_60d": round(info.get("beta", 1.0), 4),
+                "cluster_id": ticker_cluster_map.get(ticker),
             })
 
         self.repo.add_log(
             self.user_id, "ALL", "optimized",
             "system",
-            f"Re-optimized {len(targets)} targets (risk-parity, port_vol {portfolio_volatility:.1%}, target_vol {TARGET_VOLATILITY:.1%}, scale {vol_scale:.2f})"
+            f"Re-optimized {len(targets)} targets (risk-parity, port_vol {portfolio_volatility:.1%}, port_beta {portfolio_beta:.2f}, scale {effective_scale:.2f})"
         )
         return {
             "success": True,
@@ -484,6 +680,11 @@ class TickerUniverseService:
             "portfolio_volatility": round(portfolio_volatility, 4),
             "target_volatility": round(TARGET_VOLATILITY, 4),
             "volatility_scale_factor": round(vol_scale, 4),
+            "portfolio_beta": round(portfolio_beta, 4),
+            "target_beta": round(TARGET_BETA, 4),
+            "beta_scale_factor": round(beta_scale, 4),
+            "effective_scale_factor": round(effective_scale, 4),
+            "correlation_clusters": clusters,
             "effective_target_sum": round(effective_target_sum, 4),
         }
 

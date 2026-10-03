@@ -38,6 +38,7 @@ class RegimePolicy:
     max_leverage: float                # Upper bound on leverage (e.g. 1.2x vs 0.0x)
     allow_new_buys: bool               # Whether new buy positions are authorized
     rationale: str                     # Human/Agent-readable policy explanation
+    target_beta: float = 0.90          # Dynamic target portfolio market beta (Bull 1.10, Neutral 0.85, Bear 0.40)
 
 
 class MarketRegimeService:
@@ -133,6 +134,7 @@ class MarketRegimeService:
                 max_leverage=0.0,                 # 0x leverage (no margin allowed)
                 allow_new_buys=False,             # Halt standard buying
                 rationale=rationale,
+                target_beta=0.40,                 # Ultra-defensive target beta
             )
         elif regime == MarketRegime.BULL_MOMENTUM:
             return RegimePolicy(
@@ -143,6 +145,7 @@ class MarketRegimeService:
                 max_leverage=1.2,                 # Moderate safe leverage
                 allow_new_buys=True,
                 rationale=rationale,
+                target_beta=1.10,                 # Momentum offensive target beta
             )
         else: # NEUTRAL_RANGE
             return RegimePolicy(
@@ -153,4 +156,5 @@ class MarketRegimeService:
                 max_leverage=1.0,                 # 1x spot equity only
                 allow_new_buys=True,
                 rationale=rationale,
+                target_beta=0.85,                 # Neutral defensive target beta
             )
