@@ -221,49 +221,24 @@ class ConfidenceRebalanceService:
                         })
                     elif assessment.status.value == "TRIM_EXCESS_FOR_OPPORTUNITY":
                         # Long-term winner BUT short-term opportunity cost gap ->
-                        # Evaluate whether replacing capital passes non-linear opportunity cost hurdle
-                        top_candidate_conf = max(candidate_scores.values()) if candidate_scores else 8.0
-                        swap_check = self.opportunity_cost_service.evaluate_swap(
-                            selling_ticker=ticker,
-                            buying_ticker="TOP_CANDIDATE",
-                            sell_confidence=assessment.long_term_score / 10.0,
-                            buy_confidence=top_candidate_conf / 10.0,
-                        )
+                        # Protect core base, trim excess to eliminate short-term dead money
                         excess_amount = abs(delta_amount)
-                        if swap_check.is_approved:
-                            reason_msg = (
-                                f"中長期贏家戰術調節（通過換庫機會成本考覈）：{'; '.join(assessment.short_term_reasons[:2])}。"
-                                f"長線核心底倉 ({target_w*100:.1f}%) 堅定保留，戰術調節超額部分 (${excess_amount:.2f}) 轉投高動能機會。"
-                            )
-                            sells.append({
-                                "ticker": ticker,
-                                "target_weight": round(target_w * 100, 2),
-                                "current_weight": round(current_w * 100, 2),
-                                "delta_weight": round(delta * 100, 2),
-                                "delta_amount": round(delta_amount, 2),
-                                "action": "SELL",
-                                "protection_status": assessment.status.value,
-                                "confidence": t.get("confidence_score", 0.5),
-                                "reason": reason_msg,
-                                "is_tactical_trim": True,
-                            })
-                        else:
-                            reason_msg = (
-                                f"中長期贏家保護：換庫利差未達非線性機會成本門檻 ({swap_check.hurdle*100:.2f}%)，"
-                                f"不足以覆蓋雙向交易摩擦，保留長線核心部位全額複利。"
-                            )
-                            holding_runners.append({
-                                "ticker": ticker,
-                                "target_weight": round(target_w * 100, 2),
-                                "current_weight": round(current_w * 100, 2),
-                                "delta_weight": round(delta * 100, 2),
-                                "delta_amount": round(delta_amount, 2),
-                                "action": "HOLD_INSUFFICIENT_EDGE",
-                                "protection_status": assessment.status.value,
-                                "confidence": t.get("confidence_score", 0.5),
-                                "reason": reason_msg,
-                                "assessment": assessment,
-                            })
+                        reason_msg = (
+                            f"中長期贏家但短線機會成本警示：{'; '.join(assessment.short_term_reasons[:2])}。"
+                            f"長線核心底倉 ({target_w*100:.1f}%) 堅定保留，戰術調節超額部分 (${excess_amount:.2f}) 轉投高動能機會，避免短線死錢拖累。"
+                        )
+                        sells.append({
+                            "ticker": ticker,
+                            "target_weight": round(target_w * 100, 2),
+                            "current_weight": round(current_w * 100, 2),
+                            "delta_weight": round(delta * 100, 2),
+                            "delta_amount": round(delta_amount, 2),
+                            "action": "SELL",
+                            "protection_status": assessment.status.value,
+                            "confidence": t.get("confidence_score", 0.5),
+                            "reason": reason_msg,
+                            "is_tactical_trim": True,
+                        })
                     else:
                         # NO_PROTECTION_REBALANCE: Failed long-term winner criteria -> regular rebalance
                         if abs(delta) * 100 >= self.MIN_TRADE_PCT and abs(delta_amount) >= min_trade_usd:

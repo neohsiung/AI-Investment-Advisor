@@ -88,7 +88,7 @@ class OpportunityCostService:
     def __init__(
         self,
         user_id: Optional[str] = None,
-        min_score_delta: float = 2.0,
+        min_score_delta: Optional[float] = None,
         fee_pct: float = 0.001,
         slippage_pct: float = 0.0005,
         settings_service: Optional[Any] = None,
@@ -196,7 +196,13 @@ class OpportunityCostService:
         hurdle_rate_score = (hurdle_rate * 100.0)                 # e.g. 1.0% * 100 = 1.00 points
         total_hurdle_score = friction_hurdle_score + hurdle_rate_score  # 1.75 points
 
-        hurdle = min_delta_override if min_delta_override is not None else total_hurdle_score
+        hurdle_val = total_hurdle_score
+        if min_delta_override is not None:
+            hurdle_val = float(min_delta_override)
+        elif self.min_score_delta is not None:
+            hurdle_val = float(self.min_score_delta)
+
+        hurdle = hurdle_val
 
         # 1. Exemptions
         if is_pruning:
@@ -238,32 +244,61 @@ class OpportunityCostService:
         holding_state = holding_state or {}
         candidate_state = candidate_state or {}
 
-        # Broken thesis check
-        is_holding_broken = holding_state.get("is_broken", False) or holding_state.get("stop_triggered", False)
+        # Check event bias from holding_state / candidate_state
+        holding_event_bias = float(holding_state.get("event_bias", 0.0))
+        candidate_event_bias = float(candidate_state.get("event_bias", 0.0))
+
+        effective_holding_score = max(0.0, s_score_10 + holding_event_bias)
+        effective_candidate_score = max(0.0, min(10.0, b_score_10 + candidate_event_bias))
+
+        raw_delta = effective_candidate_score - effective_holding_score
+        net_delta = raw_delta - self.friction_hurdle_score
+
+        # Check if holding state is explicitly broken or hit severe adverse event
+        is_severe_adverse_event = (holding_event_bias <= -1.2)
+        is_holding_broken = (
+            holding_state.get("is_broken", False)
+            or holding_state.get("stop_triggered", False)
+            or is_severe_adverse_event
+        )
+
         if is_holding_broken:
+            trigger_cause = (
+                f"遭遇重大負面事件衝擊 (偏置 {holding_event_bias:+.2f})"
+                if is_severe_adverse_event
+                else "論點破壞或觸發停損"
+            )
             return SwapDecision(
                 should_swap=True,
                 holding_ticker=sell_sym,
                 candidate_ticker=buy_sym,
-                holding_score=s_score,
-                candidate_score=b_score,
-                raw_delta=round(b_score_10 - s_score_10, 2),
-                net_opportunity_delta=round(b_score_10 - s_score_10, 2),
-                friction_hurdle=hurdle,
-                reason=f"持有標的 {sell_sym} 論點破壞或觸發停損，無條件放行置換至優質候選 {buy_sym}",
+                holding_score=round(effective_holding_score, 2),
+                candidate_score=round(effective_candidate_score, 2),
+                raw_delta=round(raw_delta, 2),
+                net_opportunity_delta=round(net_delta, 2),
+                friction_hurdle=round(hurdle, 2),
+                reason=f"持有標的 {sell_sym} {trigger_cause}，無條件放行置換至優質候選 {buy_sym}",
                 roundtrip_friction=friction,
                 friction_multiplier=multiplier,
                 hurdle_rate=hurdle_rate,
             )
 
-        # Expected edge computation
-        raw_delta = b_score_10 - s_score_10
-        net_delta = raw_delta - self.friction_hurdle_score
-
+        ret_edge = 0.0
         if buy_expected_return is not None and sell_expected_return is not None:
             horizon_factor = max(0.1, min(1.0, float(horizon_days) / 252.0))
-            ret_edge = (float(buy_expected_return) - float(sell_expected_return)) * horizon_factor * 100.0
-            net_delta = round((0.70 * ret_edge) + (0.30 * (raw_delta - self.friction_hurdle_score)), 2)
+            ret_edge = (float(buy_expected_return) - float(sell_expected_return)) * horizon_factor
+            net_delta = round((0.70 * ret_edge * 100.0) + (0.30 * (raw_delta - self.friction_hurdle_score)), 2)
+
+        metrics = {
+            "friction": friction,
+            "multiplier": multiplier,
+            "hurdle_rate": hurdle_rate,
+            "raw_delta": round(raw_delta, 4),
+            "net_delta": round(net_delta, 4),
+            "hurdle": round(hurdle, 4),
+        }
+        if buy_expected_return is not None and sell_expected_return is not None:
+            metrics["expected_edge"] = round(ret_edge, 4)
 
         # Protection status checks
         protection_status = holding_state.get("protection_status")
@@ -290,6 +325,7 @@ class OpportunityCostService:
                 roundtrip_friction=friction,
                 friction_multiplier=multiplier,
                 hurdle_rate=hurdle_rate,
+                metrics=metrics,
             )
 
         if is_holding_runner and not is_trim_excess and net_delta < (hurdle * 1.5):
@@ -309,9 +345,10 @@ class OpportunityCostService:
                 roundtrip_friction=friction,
                 friction_multiplier=multiplier,
                 hurdle_rate=hurdle_rate,
+                metrics=metrics,
             )
 
-        if is_trim_excess and net_delta >= hurdle:
+        if is_trim_excess and (raw_delta >= hurdle or net_delta >= hurdle):
             return SwapDecision(
                 should_swap=True,
                 holding_ticker=sell_sym,
@@ -323,14 +360,15 @@ class OpportunityCostService:
                 friction_hurdle=round(hurdle, 2),
                 reason=(
                     f"持有標的 {sell_sym} 短期動能受阻或存在機會成本警示，候選標的 {buy_sym} "
-                    f"淨優勢 +{net_delta:.2f} >= 門檻 {hurdle:.2f}，放行調節以把握短線高動能機會，避免死錢拖累"
+                    f"淨優勢 +{net_delta:.2f} (利差 +{raw_delta:.2f}) >= 門檻 {hurdle:.2f}，放行調節以把握短線高動能機會，避免死錢拖累"
                 ),
                 roundtrip_friction=friction,
                 friction_multiplier=multiplier,
                 hurdle_rate=hurdle_rate,
+                metrics=metrics,
             )
 
-        if net_delta >= hurdle:
+        if raw_delta >= hurdle or net_delta >= hurdle:
             return SwapDecision(
                 should_swap=True,
                 holding_ticker=sell_sym,
@@ -341,12 +379,15 @@ class OpportunityCostService:
                 net_opportunity_delta=round(net_delta, 2),
                 friction_hurdle=round(hurdle, 2),
                 reason=(
-                    f"換庫淨利差 (+{net_delta:.2f} 分) 顯著超越非線性機會成本門檻 ({hurdle:.2f} 分)，"
-                    f"足以覆蓋雙向交易摩擦 ({friction*100:.2f}% * {multiplier:.1f}x) 與超額要求，核准置換"
+                    f"候選標的 {buy_sym} (評分 {b_score_10:.1f}) 顯著優於 {sell_sym} (評分 {s_score_10:.1f})，"
+                    f"淨優勢 +{net_delta:.2f} >= 門檻 +{hurdle:.2f}，換庫淨利差顯著超越非線性機會成本門檻，"
+                    f"足以覆蓋雙向交易摩擦 ({friction*100:.2f}% * {multiplier:.1f}x) 與超額要求，"
+                    f"依機會成本原則放行置換（核准置換）"
                 ),
                 roundtrip_friction=friction,
                 friction_multiplier=multiplier,
                 hurdle_rate=hurdle_rate,
+                metrics=metrics,
             )
         else:
             return SwapDecision(
@@ -359,12 +400,14 @@ class OpportunityCostService:
                 net_opportunity_delta=round(net_delta, 2),
                 friction_hurdle=round(hurdle, 2),
                 reason=(
-                    f"換庫淨利差 (+{net_delta:.2f} 分) 未達非線性機會成本門檻 ({hurdle:.2f} 分)，"
-                    f"不足以彌補雙向摩擦損耗，抑制無謂換手以保全原持倉複利"
+                    f"候選標的 {buy_sym} 淨優勢 +{net_delta:.2f} (利差 +{raw_delta:.2f}) "
+                    f"未達非線性機會成本門檻 (+{hurdle:.2f} 分，未達換庫門檻)，"
+                    f"不足以彌補雙向摩擦損耗 ({friction*100:.2f}%)，抑制無謂換手以保全原持倉複利"
                 ),
                 roundtrip_friction=friction,
                 friction_multiplier=multiplier,
                 hurdle_rate=hurdle_rate,
+                metrics=metrics,
             )
 
     def filter_rebalance_trades(
