@@ -612,6 +612,56 @@ settings:
     label_zh: 凱利歷史統計回顧窗口（天）
     help_en: Number of calendar days of historical realized decisions used to calculate rolling win rate and payoff ratio.
     help_zh: 用於統計滾動已實現勝率與盈虧賠率之歷史決策回顧天數窗口（預設 90 天）。
+  - key: stress_test_cvar_budget
+    group: allocation
+    type: float
+    default: 0.08
+    min: 0.03
+    max: 0.20
+    label_en: CVaR (Expected Shortfall @ 99%) risk budget
+    label_zh: 99% 條件在險價值 (CVaR) 風險預算
+    help_en: Maximum allowable 1-day 99% Conditional Value-at-Risk; exceeding this triggers pre-emptive capital preservation de-risking.
+    help_zh: 投資組合允許之單日 99% 條件在險價值（Expected Shortfall）上限（預設 8.0%）；超標時自動觸發預防性避險機制。
+  - key: stress_test_loss_threshold
+    group: allocation
+    type: float
+    default: 0.10
+    min: 0.05
+    max: 0.30
+    label_en: Worst historical stress loss threshold
+    label_zh: 極端歷史情境最劣損失門檻
+    help_en: Maximum allowable portfolio shock under historical replay scenarios (e.g. 2008, 2020 crash); exceeding this triggers defensive cash raise.
+    help_zh: 歷史極端黑天鵝情境重演下允許之最大瞬間投組衝擊門檻（預設 10.0%）；超越時主動收縮風險敞口並提高現金水位。
+  - key: stress_test_mc_simulations
+    group: allocation
+    type: int
+    default: 1000
+    min: 100
+    max: 10000
+    label_en: Monte Carlo stress simulation paths
+    label_zh: 蒙地卡羅壓力模擬路徑數
+    help_en: Number of simulated future return paths generated to evaluate the empirical probability of breaching max drawdown limits.
+    help_zh: 用於估算未來 60 天內跌破 12% 最大回撤門檻之隨機幾何布朗運動路徑模擬次數（預設 1,000 次）。
+  - key: stress_test_max_mdd_prob
+    group: allocation
+    type: float
+    default: 0.15
+    min: 0.01
+    max: 0.50
+    label_en: Maximum allowable 12% MDD breach probability
+    label_zh: 跌破 12% 最大回撤之最高容許機率
+    help_en: Maximum allowable Monte Carlo probability of portfolio experiencing >12% drawdown within 60 days.
+    help_zh: 蒙地卡羅模擬評估未來 60 天內回撤超過 12% 的最高容許機率（預設 15.0%）；超過時觸發防禦性降險。
+  - key: stress_test_emergency_cash_pct
+    group: allocation
+    type: float
+    default: 0.35
+    min: 0.15
+    max: 0.70
+    label_en: Pre-emptive emergency cash defense ratio
+    label_zh: 預防性緊急防禦現金比例
+    help_en: Target cash allocation automatically mandated when portfolio tail risk or stress test thresholds are breached.
+    help_zh: 當壓力測試或尾部在險價值超標時，系統自動啟動之預防性防守現金比例（預設 35.0%）。
   - key: target_cash_ratio
     group: allocation
     type: float
