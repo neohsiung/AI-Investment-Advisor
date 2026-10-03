@@ -27,25 +27,55 @@ class ConfidenceRebalanceService:
 
     MIN_TRADE_PCT = 0.5   # Skip trades smaller than 0.5% of portfolio (in percentage points)
     MAX_SINGLE_WEIGHT = 25.0  # Cap any single position at 25%
-    CASH_BUFFER = 5.0     # Keep 5% cash reserve
+    CASH_BUFFER = 5.0     # Baseline fallback cash reserve (overridden dynamically by MarketRegimeService)
 
-    def __init__(self, user_id: str):
+    def __init__(
+        self,
+        user_id: str,
+        regime_service: Optional[Any] = None,
+        market_data_service: Optional[Any] = None,
+    ):
         self.user_id = resolve_user_id(user_id)
         self.repo = TickerUniverseRepository()
         self.ticker_service = TickerUniverseService(user_id=user_id)
         from src.services.long_term_winner_service import LongTermWinnerService, ProtectionStatus
         self.winner_service = LongTermWinnerService(user_id=user_id)
         self.ProtectionStatus = ProtectionStatus
+        from src.services.market_regime_service import MarketRegimeService, MarketRegime, RegimePolicy
+        self.MarketRegime = MarketRegime
+        self.RegimePolicy = RegimePolicy
+        self.regime_service = regime_service or MarketRegimeService(market_data_service=market_data_service)
+        self.market_data_service = market_data_service
+
+    async def _get_regime_policy(self) -> Any:
+        """Query current market regime to determine adaptive cash buffer and buy permission."""
+        try:
+            if hasattr(self.regime_service, "get_current_regime"):
+                return await self.regime_service.get_current_regime()
+            elif hasattr(self.regime_service, "classify_regime"):
+                return self.regime_service.classify_regime(450.0, 440.0, 15.0)
+        except Exception as e:
+            logger.warning(f"Failed to query market regime: {e}; defaulting to NEUTRAL_RANGE")
+        return self.regime_service._build_policy(
+            self.MarketRegime.NEUTRAL_RANGE, "Defaulting to neutral risk cushion"
+        )
 
     async def get_rebalance_plan(self) -> Dict[str, Any]:
         """
         Full pipeline: optimize targets → compare with current → generate trade plan.
         Returns a complete rebalance plan with all details.
         """
+        policy = await self._get_regime_policy()
+
         # Step 1: Optimize target allocations from confidence scores
         opt_result = self.ticker_service.optimize_allocations()
         if not opt_result.get("success"):
-            return {"success": False, "message": opt_result.get("message", "Optimization failed"), "trades": []}
+            return {
+                "success": False,
+                "message": opt_result.get("message", "Optimization failed"),
+                "trades": [],
+                "regime": getattr(policy, "regime", self.MarketRegime.NEUTRAL_RANGE).value if hasattr(getattr(policy, "regime", None), "value") else str(getattr(policy, "regime", "NEUTRAL_RANGE")),
+            }
 
         targets = opt_result.get("targets", [])
         target_map = {t["ticker"]: t["target_weight"] for t in targets}
@@ -217,51 +247,60 @@ class ConfidenceRebalanceService:
         total_sell_amount = sum(abs(t["delta_amount"]) for t in sells)
         current_cash_usd = (cash_weight / 100.0) * total_portfolio_value
 
-        # Keep a safe cash buffer (e.g. 5% of portfolio value or existing cash, whichever is smaller)
-        # 保留現金緩衝以應對滑點與手續費，其餘資金全數智慧部署
-        cash_buffer_usd = min(current_cash_usd, total_portfolio_value * (self.CASH_BUFFER / 100.0))
+        # Dynamic Regime-Aware Cash Defense:
+        # Enforce dynamic cash reserve (Bull: 5%, Neutral: 20%, Bear/Crisis: 50%)
+        effective_cash_reserve_pct = float(getattr(policy, "cash_reserve_pct", self.CASH_BUFFER))
+        target_cash_usd = total_portfolio_value * (effective_cash_reserve_pct / 100.0)
+        cash_buffer_usd = min(current_cash_usd, target_cash_usd)
+        gross_cash = current_cash_usd + total_sell_amount
         available_cash = total_sell_amount + max(0.0, current_cash_usd - cash_buffer_usd)
 
         # Step 5: Smart Cash Deployment for under-allocated targets
-        # 智慧資金再部署：依目標權重缺口與確信度，將可用現金精準分配至各加碼標的，消滅現金閒置
-        buy_candidates = []
-        for t in targets:
-            ticker = t["ticker"]
-            target_w = t["target_weight"]
-            current_w = current_weights.get(ticker, 0.0) / 100.0
-            delta = target_w - current_w
-            raw_need_amount = delta * total_portfolio_value
-            if delta * 100 >= self.MIN_TRADE_PCT and raw_need_amount >= min_trade_usd:
-                buy_candidates.append({
-                    "ticker": ticker,
-                    "target_weight": target_w,
-                    "current_weight": current_w,
-                    "delta": delta,
-                    "raw_need_amount": raw_need_amount,
-                    "confidence": t.get("confidence_score", 0.5),
-                })
-
-        total_buy_need = sum(c["raw_need_amount"] for c in buy_candidates)
+        allow_new_buys = bool(getattr(policy, "allow_new_buys", True))
         buys = []
+        buy_candidates = []
 
-        if buy_candidates and available_cash >= min_trade_usd:
-            # Scale proportionally so each candidate gets funded to match available cash
-            # 若可用現金未達總需求，依比例智慧縮放；若現金充裕，全額滿足需求
-            scale_factor = min(1.0, available_cash / total_buy_need) if total_buy_need > 0 else 1.0
-
-            for c in buy_candidates:
-                allocated_amount = round(c["raw_need_amount"] * scale_factor, 2)
-                if allocated_amount >= min_trade_usd:
-                    allocated_delta_w = round((allocated_amount / total_portfolio_value) * 100.0, 2)
-                    buys.append({
-                        "ticker": c["ticker"],
-                        "target_weight": round(c["target_weight"] * 100, 2),
-                        "current_weight": round(c["current_weight"] * 100, 2),
-                        "delta_weight": allocated_delta_w,
-                        "delta_amount": allocated_amount,
-                        "action": "BUY",
-                        "confidence": c["confidence"],
+        if not allow_new_buys:
+            logger.warning(
+                "Market regime %s blocks new buy allocations (allow_new_buys=False). "
+                "Preserving all liquidity ($%.2f) as defensive cash cushion.",
+                getattr(policy, "regime", "UNKNOWN"), gross_cash,
+            )
+        else:
+            for t in targets:
+                ticker = t["ticker"]
+                target_w = t["target_weight"]
+                current_w = current_weights.get(ticker, 0.0) / 100.0
+                delta = target_w - current_w
+                raw_need_amount = delta * total_portfolio_value
+                if delta * 100 >= self.MIN_TRADE_PCT and raw_need_amount >= min_trade_usd:
+                    buy_candidates.append({
+                        "ticker": ticker,
+                        "target_weight": target_w,
+                        "current_weight": current_w,
+                        "delta": delta,
+                        "raw_need_amount": raw_need_amount,
+                        "confidence": t.get("confidence_score", 0.5),
                     })
+
+            total_buy_need = sum(c["raw_need_amount"] for c in buy_candidates)
+            if buy_candidates and available_cash >= min_trade_usd:
+                # Scale proportionally so each candidate gets funded to match available cash
+                scale_factor = min(1.0, available_cash / total_buy_need) if total_buy_need > 0 else 1.0
+
+                for c in buy_candidates:
+                    allocated_amount = round(c["raw_need_amount"] * scale_factor, 2)
+                    if allocated_amount >= min_trade_usd:
+                        allocated_delta_w = round((allocated_amount / total_portfolio_value) * 100.0, 2)
+                        buys.append({
+                            "ticker": c["ticker"],
+                            "target_weight": round(c["target_weight"] * 100, 2),
+                            "current_weight": round(c["current_weight"] * 100, 2),
+                            "delta_weight": allocated_delta_w,
+                            "delta_amount": allocated_amount,
+                            "action": "BUY",
+                            "confidence": c["confidence"],
+                        })
 
         # Sort: sells first (largest delta points first), buys by confidence score descending
         sells = sorted(sells, key=lambda x: x["delta_weight"])
@@ -272,12 +311,24 @@ class ConfidenceRebalanceService:
         cash_shortfall = max(0.0, total_buy_amount - (total_sell_amount + current_cash_usd))
         trades = sells + buys
 
+        regime_val = getattr(policy, "regime", self.MarketRegime.NEUTRAL_RANGE)
+        regime_str = regime_val.value if hasattr(regime_val, "value") else str(regime_val)
+
         return {
             "success": True,
             "targets": targets,
             "current_weights": current_weights,
             "cash_weight": round(cash_weight, 2),
             "total_value": round(total_portfolio_value, 2),
+            "regime": regime_str,
+            "regime_policy": {
+                "regime": regime_str,
+                "cash_reserve_pct": round(effective_cash_reserve_pct, 2),
+                "target_cash_usd": round(target_cash_usd, 2),
+                "allow_new_buys": allow_new_buys,
+                "buy_confidence_threshold": getattr(policy, "buy_confidence_threshold", 7.5),
+                "rationale": getattr(policy, "rationale", ""),
+            },
             "trades": {
                 "all": trades + holding_runners,
                 "sells": sells,
@@ -291,6 +342,10 @@ class ConfidenceRebalanceService:
                 "holding_runners": len(holding_runners),
                 "total_sell_amount": round(total_sell_amount, 2),
                 "total_buy_amount": round(total_buy_amount, 2),
+                "target_cash_pct": round(effective_cash_reserve_pct, 2),
+                "target_cash_usd": round(target_cash_usd, 2),
+                "regime": regime_str,
+                "allow_new_buys": allow_new_buys,
                 "available_cash": round(available_cash, 2),
                 "cash_shortfall": round(cash_shortfall, 2),
                 "total_value": round(total_portfolio_value, 2),
