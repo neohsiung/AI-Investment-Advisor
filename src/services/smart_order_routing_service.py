@@ -26,6 +26,7 @@ from __future__ import annotations
 
 import logging
 import random
+import uuid
 from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any, Optional
@@ -110,9 +111,11 @@ class SlicingPlan:
     total_slippage_bps: Optional[float] = None
     implementation_shortfall_bps: Optional[float] = None
     execution_efficiency: float = 1.0
+    plan_id: str = field(default_factory=lambda: str(uuid.uuid4()))
 
     def to_dict(self) -> dict[str, Any]:
         return {
+            "plan_id": self.plan_id,
             "symbol": self.symbol,
             "action": self.action.value,
             "strategy": self.strategy.value,
@@ -144,9 +147,10 @@ class SmartOrderRoutingService:
     DEFAULT_JITTER_PCT = 0.15                 # +/- 15% interval & size randomization
     SMALL_ORDER_VALUE_THRESHOLD = 500.0       # Orders < $500 direct route
 
-    def __init__(self, user_id: str = "default_user", settings_repo: Any = None):
+    def __init__(self, user_id: str = "default_user", settings_repo: Any = None, feedback_service: Any = None):
         self.user_id = resolve_user_id(user_id)
         self.settings_repo = settings_repo
+        self.feedback_service = feedback_service
 
     def _get_setting(self, key: str, default: Any, val_type: type = float) -> Any:
         """Helper to retrieve dynamic setting with fallback."""
@@ -201,7 +205,8 @@ class SmartOrderRoutingService:
         if isinstance(action, OrderAction):
             parsed_action = action
         else:
-            parsed_action = OrderAction(str(action).upper())
+            act_val = getattr(action, "value", str(action)).upper()
+            parsed_action = OrderAction(act_val)
         window_minutes = int(execution_window_minutes or self.default_execution_window_minutes)
         window_minutes = max(5, min(240, window_minutes))
 
@@ -224,6 +229,24 @@ class SmartOrderRoutingService:
         else:
             approved_quantity = round(abs_quantity, 4)
             rollover_quantity = 0.0
+
+        # Dynamic window scaling based on E2 Almgren-Chriss impact eta
+        if self.feedback_service is not None and execution_window_minutes is None:
+            try:
+                expected_slippage_bps = self.feedback_service.estimate_expected_slippage(
+                    symbol=symbol,
+                    order_quantity=approved_quantity,
+                    adv_20=adv,
+                )
+                if expected_slippage_bps > 15.0:
+                    scale = 1.0 + min(2.0, (expected_slippage_bps - 15.0) / 30.0)
+                    window_minutes = min(240, max(5, int(window_minutes * scale)))
+                    logger.info(
+                        f"SOR Adaptive Window Extension: {symbol} expected slippage {expected_slippage_bps:.1f} bps > 15 bps; "
+                        f"extended window to {window_minutes} min (scale: {scale:.2f}x)"
+                    )
+            except Exception as e:
+                logger.warning(f"Failed to query feedback_service for slippage estimate: {e}")
 
         # Handle zero or micro approved quantity
         if approved_quantity <= 0.0:
@@ -459,6 +482,24 @@ class SmartOrderRoutingService:
         )
         if all_done and not plan.circuit_breaker_triggered:
             plan.status = "COMPLETED"
+
+        # 5. Sync Fill to OrderExecutionFeedbackService (E2) if available
+        if self.feedback_service is not None:
+            try:
+                self.feedback_service.record_fill(
+                    order_id=f"{plan.symbol}-slice-{slice_index}",
+                    parent_plan_id=getattr(plan, "plan_id", None),
+                    symbol=plan.symbol,
+                    action=plan.action.value if hasattr(plan.action, "value") else str(plan.action),
+                    venue="COMPOSITE",
+                    fill_price=child.filled_price,
+                    fill_quantity=child.filled_quantity,
+                    arrival_price=plan.arrival_price,
+                    executed_at=child.executed_at,
+                    adv_20=plan.adv_20,
+                )
+            except Exception as e:
+                logger.warning(f"Failed to sync fill to feedback_service: {e}")
 
         return plan
 

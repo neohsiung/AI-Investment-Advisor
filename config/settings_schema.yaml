@@ -462,6 +462,42 @@ settings:
     label_zh: TWAP 時間間隔與子單規模隨機微擾比例
     help_en: Percentage randomization applied to slice intervals and quantities to disguise order footprints from HFT algorithms.
     help_zh: 施加於 TWAP 子單時間間隔與數量之均勻隨機微擾比例（預設 0.15 即 15%），避免被高頻做市商算法模式識別與掠奪。
+  - key: execution_feedback_enabled
+    group: trading
+    type: bool
+    default: true
+    label_en: Enable order execution feedback & slippage analytics
+    label_zh: 啟用訂單執行監控與成交回報反饋
+    help_en: Records fill executions, analyzes Perold implementation shortfall, and evaluates venue execution quality.
+    help_zh: 記錄訂單真實成交回報，執行 Perold 實施缺口歸因分解，並監控交易場所與經紀商之執行品質。
+  - key: execution_slippage_alert_threshold_bps
+    group: trading
+    type: float
+    default: 25.0
+    min: 5.0
+    max: 100.0
+    label_en: Adverse selection slippage alert threshold (bps)
+    label_zh: 逆向選擇滑價警報門檻 (bps)
+    help_en: Slippage threshold in basis points above which trade fills are flagged for potential adverse selection or front-running.
+    help_zh: 單筆成交相對於抵達價格之滑價警報門檻（預設 25 bps）；超標時標記潛在逆向選擇或毒性訂單流異常。
+  - key: almgren_chriss_eta_default
+    group: trading
+    type: float
+    default: 0.15
+    min: 0.01
+    max: 1.00
+    label_en: Almgren-Chriss default market impact coefficient (eta)
+    label_zh: Almgren-Chriss 預設市場衝擊係數 (eta)
+    help_en: Baseline temporary market impact coefficient η used in the square-root execution model prior to empirical calibration.
+    help_zh: Almgren-Chriss 平方根市場衝擊模型之基準暫時衝擊係數 η（預設 0.15）；將依歷史成交記錄動態校準。
+  - key: execution_dynamic_eta_calibration
+    group: trading
+    type: bool
+    default: true
+    label_en: Enable dynamic EWMA market impact calibration
+    label_zh: 啟用動態 EWMA 市場衝擊係數校準
+    help_en: Dynamically recalibrates asset-level market impact coefficient η using empirical fill executions and EWMA filtering.
+    help_zh: 依據真實成交樣本與指數加權移動平均 (EWMA)，在線動態校準各資產之市場衝擊參數 η 並閉環反饋至拆單引擎。
 
   # ── Allocation ───────────────────────────────────────────────────────────
   # These four were `MIN_POS`/`MAX_POS`/`SECTOR_CAP`/`TARGET_SUM` module

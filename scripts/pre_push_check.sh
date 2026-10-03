@@ -72,6 +72,7 @@ $PYTEST tests/unit/services/test_actionable_alert_service.py \
         tests/unit/services/test_stress_testing_and_cvar.py \
         tests/unit/services/test_multi_factor_ensemble.py \
         tests/unit/services/test_smart_order_routing.py \
+        tests/unit/services/test_order_execution_feedback.py \
         tests/unit/services/test_regime_hmm.py \
         tests/unit/services/test_portfolio_adaptive_intelligence.py \
         tests/unit/services/test_extreme_value_theory.py \
