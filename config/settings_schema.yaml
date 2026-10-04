@@ -184,6 +184,34 @@ settings:
     label_zh: 認知盲區連續失誤門檻
     help_en: Minimum number of consecutive decision misses before classifying an active blindspot and triggering reflection constraints.
     help_zh: 專家連續預測失誤觸發盲區警報與反省約束的最低連敗次數（預設 2 次）。
+  - key: council_memory_retrieval_enabled
+    group: ai
+    type: bool
+    default: true
+    label_en: Council Debate Memory & Vector Precedent Retrieval (A3)
+    label_zh: 評議會歷史辯論向量檢索與決策歸因知識庫
+    help_en: Semantically retrieves historical debate minutes with post-trade alpha attribution to enrich council debate context and CIO deliberations.
+    help_zh: 自動以向量檢索歷史相似辯論前例與事後 Alpha 結算歸因，注入評議會專家系統提示詞與 CIO 終審裁決。
+  - key: council_memory_similarity_threshold
+    group: ai
+    type: float
+    default: 0.60
+    min: 0.10
+    max: 0.99
+    label_en: Debate Memory Semantic Similarity Threshold
+    label_zh: 辯論記憶語意相似度門檻
+    help_en: Cosine similarity cutoff for retrieving past council debate minutes via pgvector embeddings.
+    help_zh: 經由 pgvector 向量嵌入檢索歷史評議會紀要之最低餘弦相似度門檻（預設 0.60）。
+  - key: council_memory_top_k
+    group: ai
+    type: int
+    default: 3
+    min: 1
+    max: 10
+    label_en: Debate Memory Top-K Precedents
+    label_zh: 辯論記憶前例檢索數量 (Top-K)
+    help_en: Maximum number of relevant historical debate precedents injected into the council deliberation context.
+    help_zh: 注入評議會各專家與 CIO 決策上下文之歷史相似辯論先例最大數量（預設 3 筆）。
 
 
   # ── Trading & risk ───────────────────────────────────────────────────────

@@ -17,6 +17,13 @@ from src.api.v1.schemas.council_blindspot_schemas import (
     BlindspotScanResponse,
     BlindspotSchema,
 )
+from src.api.v1.schemas.council_memory_schemas import (
+    CouncilMemoryDetailResponse,
+    CouncilMemorySearchRequest,
+    CouncilMemorySearchResponse,
+    DebateOutcomeSchema,
+    DebatePrecedentSchema,
+)
 from src.api.v1.schemas.council_meta_learning_schemas import (
     AgentAttributionSchema,
     MetaLearningAttributionsResponse,
@@ -25,6 +32,7 @@ from src.api.v1.schemas.council_meta_learning_schemas import (
 from src.repositories.vector_repository import AlchemyVectorRepository
 from src.services.adaptive_council_meta_learning_service import AdaptiveCouncilMetaLearningService
 from src.services.cognitive_blindspot_service import CognitiveBlindspotService
+from src.services.council_debate_memory_service import CouncilDebateMemoryService
 from src.utils.logger import setup_logger
 from src.utils.rate_limit import limiter
 
@@ -42,6 +50,10 @@ def get_meta_learning_service(user_id: str = Depends(get_current_user_id)) -> Ad
 
 def get_blindspot_service(user_id: str = Depends(get_current_user_id)) -> CognitiveBlindspotService:
     return CognitiveBlindspotService(user_id=user_id)
+
+
+def get_debate_memory_service(user_id: str = Depends(get_current_user_id)) -> CouncilDebateMemoryService:
+    return CouncilDebateMemoryService(user_id=user_id)
 
 
 @router.get("/sessions")
@@ -279,5 +291,113 @@ async def resolve_blindspot(
     except Exception as e:
         logger.error(f"resolve_blindspot failed: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/memory/search", response_model=CouncilMemorySearchResponse)
+@limiter.limit("20/minute")
+async def search_council_memory(
+    request: Request,
+    body: CouncilMemorySearchRequest,
+    user_id: str = Depends(get_current_user_id),
+    service: CouncilDebateMemoryService = Depends(get_debate_memory_service),
+) -> CouncilMemorySearchResponse:
+    """
+    Search historical council debate precedents using vector similarity + outcome attribution re-ranking (A3).
+    """
+    try:
+        precedents = service.search_debates_api(
+            query=body.query,
+            ticker=body.ticker,
+            min_alpha=body.min_alpha,
+            limit=body.limit,
+        )
+        prompt_block = service.synthesize_precedents_for_prompt(precedents)
+        return CouncilMemorySearchResponse(
+            status="success",
+            query=body.query,
+            total_found=len(precedents),
+            synthesized_prompt_context=prompt_block,
+            precedents=[
+                DebatePrecedentSchema(
+                    minute_id=p.minute_id,
+                    session_id=p.session_id,
+                    topic=p.topic,
+                    consensus=p.consensus,
+                    created_at=p.created_at,
+                    similarity=p.similarity,
+                    relevance_score=p.relevance_score,
+                    has_attribution=p.has_attribution,
+                    avg_alpha_pct=p.avg_alpha_pct,
+                    outcomes=[
+                        DebateOutcomeSchema(
+                            outcome_id=o.outcome_id,
+                            ticker=o.ticker,
+                            agent_name=o.agent_name,
+                            signal=o.signal,
+                            realized_return_pct=o.realized_return_pct,
+                            benchmark_return_pct=o.benchmark_return_pct,
+                            alpha_pct=o.alpha_pct,
+                            lesson=o.lesson,
+                            resolved_at=o.resolved_at,
+                        )
+                        for o in p.outcomes
+                    ],
+                    participants=p.participants,
+                    transcript_preview=p.transcript_preview,
+                )
+                for p in precedents
+            ],
+        )
+    except Exception as e:
+        logger.error(f"search_council_memory failed: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/memory/{session_id}", response_model=CouncilMemoryDetailResponse)
+@limiter.limit("20/minute")
+async def get_council_memory_detail(
+    request: Request,
+    session_id: str,
+    user_id: str = Depends(get_current_user_id),
+    service: CouncilDebateMemoryService = Depends(get_debate_memory_service),
+) -> CouncilMemoryDetailResponse:
+    """
+    Fetch comprehensive debate memory detail including consensus, transcript, and associated decision outcomes (A3).
+    """
+    try:
+        detail = service.get_debate_detail(session_id)
+        if not detail or detail.get("user_id") != user_id:
+            raise HTTPException(status_code=404, detail="Debate memory session not found")
+        return CouncilMemoryDetailResponse(
+            status="success",
+            minute_id=detail["minute_id"],
+            session_id=detail["session_id"],
+            user_id=detail["user_id"],
+            topic=detail["topic"],
+            participants=detail.get("participants"),
+            consensus=detail.get("consensus"),
+            transcript=detail.get("transcript"),
+            created_at=detail.get("created_at"),
+            outcomes=[
+                DebateOutcomeSchema(
+                    outcome_id=o["outcome_id"],
+                    ticker=o["ticker"],
+                    agent_name=o["agent_name"],
+                    signal=o["signal"],
+                    realized_return_pct=o.get("realized_return_pct"),
+                    benchmark_return_pct=o.get("benchmark_return_pct"),
+                    alpha_pct=o.get("alpha_pct"),
+                    lesson=o.get("lesson"),
+                    resolved_at=o.get("resolved_at"),
+                )
+                for o in detail.get("outcomes", [])
+            ],
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"get_council_memory_detail failed: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
 
 
