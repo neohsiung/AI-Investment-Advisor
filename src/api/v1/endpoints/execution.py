@@ -19,6 +19,8 @@ from src.api.v1.schemas.circuit_breaker_schemas import (
     CircuitBreakerStatusListResponse,
     CircuitBreakerStatusSchema,
     CircuitBreakerTriggerRequest,
+    ContagionImpactSchema,
+    SpilloverContagionResponse,
 )
 from src.api.v1.schemas.execution_slippage_schemas import (
     ExecutionFillRequest,
@@ -36,6 +38,10 @@ from src.services.intraday_liquidity_circuit_breaker_service import (
     IntradayLiquidityCircuitBreakerService,
     MarketQuoteObservation,
 )
+from src.services.cross_asset_volatility_spillover_service import (
+    CrossAssetVolatilitySpilloverService,
+    SpilloverContagionAssessment,
+)
 from src.services.settings_service import SettingsService
 from src.utils.logger import setup_logger
 
@@ -45,6 +51,7 @@ router = APIRouter()
 # In-memory service cache per user for state continuity
 _compensators: Dict[str, AdaptiveExecutionSlippageCompensator] = {}
 _circuit_breakers: Dict[str, IntradayLiquidityCircuitBreakerService] = {}
+_spillover_services: Dict[str, CrossAssetVolatilitySpilloverService] = {}
 
 
 def get_slippage_compensator(
@@ -72,6 +79,23 @@ def get_circuit_breaker_service(
             settings_service=settings_svc,
         )
     return _circuit_breakers[user_id]
+
+
+def get_spillover_service(
+    user_id: str = Depends(get_current_user_id),
+    cb_service: IntradayLiquidityCircuitBreakerService = Depends(get_circuit_breaker_service),
+    compensator: AdaptiveExecutionSlippageCompensator = Depends(get_slippage_compensator),
+) -> CrossAssetVolatilitySpilloverService:
+    """Dependency provider for CrossAssetVolatilitySpilloverService (M7)."""
+    if user_id not in _spillover_services:
+        settings_svc = SettingsService(user_id=user_id)
+        _spillover_services[user_id] = CrossAssetVolatilitySpilloverService(
+            user_id=user_id,
+            settings_service=settings_svc,
+            circuit_breaker_service=cb_service,
+            slippage_compensator=compensator,
+        )
+    return _spillover_services[user_id]
 
 
 @router.post(
@@ -314,5 +338,34 @@ def manually_resume_circuit_breaker(
         symbol=res.symbol,
         state=res.state.value if hasattr(res.state, "value") else str(res.state),
         message=f"🟢 已成功解除 {payload.symbol} 之盤中熔斷，恢復正常交易執行。",
+    )
+
+
+@router.get(
+    "/circuit-breaker/spillover",
+    response_model=SpilloverContagionResponse,
+    summary="獲取當前跨資產波動率傳染矩陣與防禦防護狀態 (M7)",
+)
+def get_spillover_contagion_status(
+    service: CrossAssetVolatilitySpilloverService = Depends(get_spillover_service),
+) -> SpilloverContagionResponse:
+    """
+    查詢當前活躍的跨資產流動性衝擊傳染評估：
+    包括活躍傳染源、受波及之關聯標的、調升後之滑價補償乘數及額外防禦現金儲備比率。
+    """
+    assessment: SpilloverContagionAssessment = service.evaluate_contagion()
+    impacts_dict = {
+        sym: ContagionImpactSchema(**impact.to_dict())
+        for sym, impact in assessment.impacts.items()
+    }
+    return SpilloverContagionResponse(
+        status="success",
+        is_active=assessment.is_active,
+        active_sources=assessment.active_sources,
+        total_impacted_tickers=assessment.total_impacted_tickers,
+        aggregate_cash_expansion_pct=assessment.aggregate_cash_expansion_pct,
+        max_slippage_multiplier=assessment.max_slippage_multiplier,
+        impacts=impacts_dict,
+        evaluated_at=assessment.evaluated_at,
     )
 

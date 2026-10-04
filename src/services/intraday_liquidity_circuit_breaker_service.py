@@ -144,6 +144,17 @@ class IntradayLiquidityCircuitBreakerService:
         # In-memory circuit breaker registries for ultra-fast checks (<1us)
         self._statuses: Dict[str, CircuitBreakerStatus] = {}
         self._baselines: Dict[str, AssetBaseline] = {}
+        self._listeners: List[Any] = []
+
+    def register_listener(self, listener: Any) -> None:
+        """Register a callback or subscriber service (e.g. VolatilitySpilloverContagionService)."""
+        if listener not in self._listeners:
+            self._listeners.append(listener)
+
+    def unregister_listener(self, listener: Any) -> None:
+        """Unregister a subscriber service."""
+        if listener in self._listeners:
+            self._listeners.remove(listener)
 
     def _get_setting(self, key: str, default: Any, val_type: type = float) -> Any:
         """Dynamic settings retrieval helper."""
@@ -396,6 +407,7 @@ class IntradayLiquidityCircuitBreakerService:
         status.cooldown_until = None
         status.actions_taken.append("MANUALLY_RESUMED")
         logger.info(f"Circuit Breaker resumed for {sym}")
+        self._notify_listeners(status)
         return True
 
     def extend_cooldown(self, symbol: str, additional_minutes: int = 30) -> CircuitBreakerStatus:
@@ -442,3 +454,17 @@ class IntradayLiquidityCircuitBreakerService:
                     coro.close()
         except Exception as e:
             logger.warning(f"Failed to dispatch circuit breaker alert: {e}")
+
+        # Notify registered listeners (e.g. M7 Volatility Spillover & Contagion Shielder)
+        self._notify_listeners(status)
+
+    def _notify_listeners(self, status: CircuitBreakerStatus) -> None:
+        """Broadcast state updates to registered subscribers."""
+        for listener in list(self._listeners):
+            try:
+                if hasattr(listener, "on_circuit_breaker_triggered"):
+                    listener.on_circuit_breaker_triggered(status)
+                elif callable(listener):
+                    listener(status)
+            except Exception as ex:
+                logger.warning(f"Error in circuit breaker listener callback: {ex}")
