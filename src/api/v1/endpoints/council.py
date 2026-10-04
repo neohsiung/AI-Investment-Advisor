@@ -29,10 +29,21 @@ from src.api.v1.schemas.council_meta_learning_schemas import (
     MetaLearningAttributionsResponse,
     MetaLearningStatusResponse,
 )
+from src.api.v1.schemas.council_diversity_schemas import (
+    AgentVoteSchema,
+    DiversityEvaluationRequest,
+    DiversityEvaluationResponse,
+)
 from src.repositories.vector_repository import AlchemyVectorRepository
 from src.services.adaptive_council_meta_learning_service import AdaptiveCouncilMetaLearningService
 from src.services.cognitive_blindspot_service import CognitiveBlindspotService
 from src.services.council_debate_memory_service import CouncilDebateMemoryService
+from src.services.council_diversity_entropy_service import (
+    AgentVote,
+    CouncilDiversityEntropyService,
+    DiversityAssessment,
+)
+from src.services.settings_service import SettingsService
 from src.utils.logger import setup_logger
 from src.utils.rate_limit import limiter
 
@@ -54,6 +65,12 @@ def get_blindspot_service(user_id: str = Depends(get_current_user_id)) -> Cognit
 
 def get_debate_memory_service(user_id: str = Depends(get_current_user_id)) -> CouncilDebateMemoryService:
     return CouncilDebateMemoryService(user_id=user_id)
+
+
+def get_diversity_service(user_id: str = Depends(get_current_user_id)) -> CouncilDiversityEntropyService:
+    settings_svc = SettingsService(user_id=user_id)
+    settings_repo = getattr(settings_svc, "repo", None)
+    return CouncilDiversityEntropyService(user_id=user_id, settings_repo=settings_repo)
 
 
 @router.get("/sessions")
@@ -398,6 +415,35 @@ async def get_council_memory_detail(
     except Exception as e:
         logger.error(f"get_council_memory_detail failed: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post(
+    "/diversity/evaluate",
+    response_model=DiversityEvaluationResponse,
+    summary="評估評議會專家意見歧異度與群體思維盲區熵值 (A4)",
+)
+def evaluate_council_diversity(
+    payload: DiversityEvaluationRequest,
+    service: CouncilDiversityEntropyService = Depends(get_diversity_service),
+) -> DiversityEvaluationResponse:
+    """
+    接收評議會各專家 Agent 之投票立場 (BUY/HOLD/SELL) 與權重，
+    計算標準化香農多樣性熵值 (Shannon Diversity Entropy)。
+    當偵測到極端同質化回音室 (Groupthink) 時，自動生成魔鬼代言人反向審查卡片與部位安全折減。
+    """
+    votes = [
+        AgentVote(
+            agent_name=v.agent_name,
+            stance=v.stance,
+            weight=v.weight,
+            confidence=v.confidence,
+            rationale=v.rationale,
+        )
+        for v in payload.votes
+    ]
+    assessment: DiversityAssessment = service.evaluate_diversity(votes, symbol=payload.symbol)
+    return DiversityEvaluationResponse(**assessment.to_dict())
+
 
 
 
