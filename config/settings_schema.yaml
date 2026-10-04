@@ -686,6 +686,54 @@ settings:
     label_zh: 熔斷冷卻恢復期（分鐘）
     help_en: Default cooldown period in minutes after a circuit breaker trigger before execution automatically returns to normal status.
     help_zh: 熔斷觸發後自動轉入冷卻觀察期之持續時間（預設 15 分鐘）；期滿無新衝擊則平穩回歸正常。
+  - key: volatility_spillover_enabled
+    group: trading
+    type: bool
+    default: true
+    label_en: Enable cross-asset volatility spillover contagion shielder (M7)
+    label_zh: 啟用跨資產波動率傳染矩陣與防禦防護器 (M7)
+    help_en: Dynamically propagates liquidity shocks from halted leader tickers to correlated cluster peers and industry basket holdings, elevating execution slippage multipliers and expanding cash reserves.
+    help_zh: 當龍頭標的觸發流動性熔斷時，自動依據 60 日相關性與產業族群權重傳播波動率溢出懲罰，調升同群標的滑價補償乘數並動態擴增防禦現金。
+  - key: volatility_spillover_threshold
+    group: trading
+    type: float
+    default: 0.40
+    min: 0.10
+    max: 0.90
+    label_en: Volatility spillover contagion trigger threshold
+    label_zh: 波動率傳染衝擊觸發門檻
+    help_en: Minimum composite contagion intensity required to apply spillover protections to peer tickers.
+    help_zh: 判定同群關聯標的啟動波及防護之綜合傳染強度下限門檻（預設 0.40）。
+  - key: volatility_spillover_max_slippage_elevation
+    group: trading
+    type: float
+    default: 2.50
+    min: 1.20
+    max: 5.00
+    label_en: Maximum spillover slippage multiplier elevation
+    label_zh: 傳染波及最大滑價乘數調升上限
+    help_en: Upper bound for the elevated slippage multiplier applied to correlated peer assets during contagion waves.
+    help_zh: 遭遇波動率傳染波及之同群關聯標的所能被調升之最大滑價補償乘數上限（預設 2.50 倍）。
+  - key: volatility_spillover_max_cash_expansion_pct
+    group: trading
+    type: float
+    default: 0.15
+    min: 0.02
+    max: 0.35
+    label_en: Maximum contagion defensive cash expansion ratio
+    label_zh: 傳染波及最大防禦現金擴增上限
+    help_en: Maximum additional cash reserve percentage injected into the portfolio during peak cross-asset contagion shocks.
+    help_zh: 遭遇系統性或跨資產波動率傳染時，投組額外強制拉升之防禦現金儲備上限（預設 0.15 即 +15%）。
+  - key: volatility_spillover_half_life_minutes
+    group: trading
+    type: float
+    default: 30.0
+    min: 5.0
+    max: 180.0
+    label_en: Volatility spillover exponential decay half-life (minutes)
+    label_zh: 波動率傳染指數衰減半衰期（分鐘）
+    help_en: Half-life in minutes for exponential decay of contagion spillover intensity after shock inception.
+    help_zh: 傳染衝擊自觸發起之指數衰減半衰期（預設 30 分鐘）；期滿影響強度減半，平穩回歸常態。
   - key: evolution_annealing_enabled
     group: trading
     type: bool

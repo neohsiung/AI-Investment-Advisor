@@ -147,6 +147,7 @@ class PortfolioAdaptiveIntelligenceService:
         alpha_decay_service: Optional[AlphaDecayService] = None,
         sor_service: Optional[SmartOrderRoutingService] = None,
         evt_service: Optional[ExtremeValueTheoryService] = None,
+        spillover_service: Optional[Any] = None,
         settings_repo: Optional[Any] = None,
     ):
         self.user_id = resolve_user_id(user_id)
@@ -159,6 +160,7 @@ class PortfolioAdaptiveIntelligenceService:
         self.alpha_decay_service = alpha_decay_service or AlphaDecayService(user_id=self.user_id)
         self.sor_service = sor_service or SmartOrderRoutingService(user_id=self.user_id, settings_repo=settings_repo)
         self.evt_service = evt_service or ExtremeValueTheoryService(settings_repo=settings_repo)
+        self.spillover_service = spillover_service
 
     def _get_setting(self, key: str, default: Any) -> Any:
         if self.settings_repo and hasattr(self.settings_repo, "get"):
@@ -324,7 +326,15 @@ class PortfolioAdaptiveIntelligenceService:
         }
 
         # 7. Synthesize Target Weights & M3 Rebalance Evaluation
-        suggested_cash = regime_posterior.blended_cash_reserve_pct / 100.0
+        base_suggested_cash = regime_posterior.blended_cash_reserve_pct / 100.0
+        extra_spillover_cash = 0.0
+        if self.spillover_service is not None and hasattr(self.spillover_service, "get_extra_defensive_cash_pct"):
+            try:
+                extra_spillover_cash = float(self.spillover_service.get_extra_defensive_cash_pct())
+            except Exception as e:
+                logger.warning(f"Failed to query spillover extra cash: {e}")
+
+        suggested_cash = min(0.90, base_suggested_cash + extra_spillover_cash)
         target_weights = self._build_target_portfolio_weights(
             base_weights=inv_vol_weights,
             suggested_cash=suggested_cash,

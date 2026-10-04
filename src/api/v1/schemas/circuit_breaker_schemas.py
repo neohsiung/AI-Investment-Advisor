@@ -55,3 +55,26 @@ class CircuitBreakerQuoteEvaluationRequest(BaseModel):
 class CircuitBreakerQuoteEvaluationResponse(BaseModel):
     status: str = "success"
     circuit_breaker: CircuitBreakerStatusSchema = Field(..., description="評估後之最新熔斷狀態")
+
+
+class ContagionImpactSchema(BaseModel):
+    target_ticker: str = Field(..., description="受波及蔓延之標的代碼")
+    source_ticker: str = Field(..., description="引發傳染震盪之源頭熔斷標的")
+    correlation: float = Field(..., description="雙標的間之歷史相關係數")
+    same_sector: bool = Field(..., description="是否屬於相同產業/族群")
+    spillover_intensity: float = Field(..., description="傳染衝擊強度 [0.0, 1.0]")
+    elevated_slippage_multiplier: float = Field(..., description="調升後之防禦滑價補償乘數 (M_spill)")
+    additional_cash_buffer_pct: float = Field(..., description="額外附加之防禦現金儲備比率")
+    cooldown_until: Optional[str] = Field(None, description="傳染防護冷卻到期時間")
+    reason: str = Field("", description="波及蔓延原因說明")
+
+
+class SpilloverContagionResponse(BaseModel):
+    status: str = "success"
+    is_active: bool = Field(..., description="當前是否存在活躍之跨資產波動率傳染")
+    active_sources: List[str] = Field(default_factory=list, description="活躍傳染源標的列表")
+    total_impacted_tickers: int = Field(..., description="受波及防禦之標的總數")
+    aggregate_cash_expansion_pct: float = Field(..., description="全系統額外擴增之防禦現金比率")
+    max_slippage_multiplier: float = Field(..., description="當前系統中最大防禦滑價乘數")
+    impacts: Dict[str, ContagionImpactSchema] = Field(default_factory=dict, description="各標的受波及衝擊評估明細")
+    evaluated_at: str = Field(..., description="評估時間 (ISO-8601)")

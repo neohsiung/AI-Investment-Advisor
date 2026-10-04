@@ -152,6 +152,23 @@ class AdaptiveExecutionSlippageCompensator:
         self._metrics_map: Dict[str, SlippageCompensationMetrics] = {}
         self._recent_fills_per_symbol: Dict[str, List[ExecutionFill]] = {}
         self._expected_vs_realized_history: Dict[str, List[tuple[float, float]]] = {}
+        self._spillover_multipliers: Dict[str, float] = {}
+
+    def set_spillover_multiplier(self, symbol: str, multiplier: float) -> None:
+        """Set cross-asset volatility spillover multiplier for an asset."""
+        sym = symbol.upper().strip()
+        if multiplier <= 1.0:
+            self._spillover_multipliers.pop(sym, None)
+        else:
+            self._spillover_multipliers[sym] = float(multiplier)
+
+    def get_spillover_multiplier(self, symbol: str) -> float:
+        """Get current cross-asset volatility spillover multiplier."""
+        return self._spillover_multipliers.get(symbol.upper().strip(), 1.0)
+
+    def clear_spillover_multipliers(self) -> None:
+        """Clear all active spillover multipliers."""
+        self._spillover_multipliers.clear()
 
     def _get_setting(self, key: str, default: Any, val_type: type = float) -> Any:
         """Helper to retrieve dynamic setting with fallback."""
@@ -330,20 +347,40 @@ class AdaptiveExecutionSlippageCompensator:
     def get_metrics(self, symbol: str) -> SlippageCompensationMetrics:
         """Retrieve current calibrated compensation metrics for an asset."""
         sym = symbol.upper().strip()
+        spillover_mult = self.get_spillover_multiplier(sym)
+
         if sym in self._metrics_map:
-            return self._metrics_map[sym]
+            base_m = self._metrics_map[sym]
+            if spillover_mult > 1.0:
+                combined_mult = min(self.max_multiplier, base_m.slippage_multiplier * spillover_mult)
+                eff_bps = max(1.0, (base_m.expected_slippage_bps_mean * combined_mult) + base_m.adverse_penalty_bps)
+                return SlippageCompensationMetrics(
+                    symbol=sym,
+                    realized_slippage_bps_mean=base_m.realized_slippage_bps_mean,
+                    expected_slippage_bps_mean=base_m.expected_slippage_bps_mean,
+                    slippage_multiplier=combined_mult,
+                    adverse_selection_count=base_m.adverse_selection_count,
+                    adverse_penalty_bps=base_m.adverse_penalty_bps,
+                    calibrated_effective_slippage_bps=eff_bps,
+                    calibrated_effective_slippage_pct=eff_bps / 10000.0,
+                    sample_count=base_m.sample_count,
+                    last_updated=base_m.last_updated,
+                )
+            return base_m
 
         # Return default initialized metrics
         default_bps = self.baseline_slippage_bps
+        eff_mult = min(self.max_multiplier, 1.0 * spillover_mult)
+        eff_bps = default_bps * eff_mult
         return SlippageCompensationMetrics(
             symbol=sym,
             realized_slippage_bps_mean=default_bps,
             expected_slippage_bps_mean=default_bps,
-            slippage_multiplier=1.0,
+            slippage_multiplier=eff_mult,
             adverse_selection_count=0,
             adverse_penalty_bps=0.0,
-            calibrated_effective_slippage_bps=default_bps,
-            calibrated_effective_slippage_pct=default_bps / 10000.0,
+            calibrated_effective_slippage_bps=eff_bps,
+            calibrated_effective_slippage_pct=eff_bps / 10000.0,
             sample_count=0,
             last_updated=datetime.now(timezone.utc).isoformat(),
         )
