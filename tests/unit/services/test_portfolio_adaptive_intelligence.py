@@ -256,6 +256,10 @@ def test_api_endpoints_health_and_diagnose_contract():
     assert "health_score" in data_health
     assert "radar" in data_health
     assert "current_regime" in data_health
+    assert "provenance" in data_health
+    assert "holdings" in data_health["provenance"]
+    assert "market_observation" in data_health["provenance"]
+    assert "tail_risk" in data_health["provenance"]
 
     # 2. Test POST /api/v1/adaptive-intelligence/diagnose
     payload_diag = {
@@ -269,6 +273,8 @@ def test_api_endpoints_health_and_diagnose_contract():
     assert "health_score" in data_diag["data"]
     assert "radar_dimensions" in data_diag["data"]
     assert "rebalance_recommendation" in data_diag["data"]
+    assert "provenance" in data_diag["data"]
+    assert data_diag["data"]["provenance"]["holdings"] == "live"
 
     # 3. Test POST /api/v1/adaptive-intelligence/rebalance-plan
     payload_rebal = {

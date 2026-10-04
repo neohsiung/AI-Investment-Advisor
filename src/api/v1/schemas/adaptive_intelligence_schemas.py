@@ -14,6 +14,12 @@ class HealthRadarSchema(BaseModel):
     capital_safety: float = Field(..., description="資本安全與槓桿評分 [0, 100]")
 
 
+class ProvenanceSchema(BaseModel):
+    holdings: str = Field("template", description="持倉數據來源 (live, template)")
+    market_observation: str = Field("default", description="宏觀市場觀測數據來源 (live, default)")
+    tail_risk: str = Field("synthetic", description="尾部風險報酬率來源 (live_portfolio, weighted_assets, synthetic)")
+
+
 class AdaptiveHealthSummaryResponse(BaseModel):
     status: str = "success"
     health_score: float = Field(..., description="綜合投組健康總評分 [0, 100]")
@@ -23,6 +29,9 @@ class AdaptiveHealthSummaryResponse(BaseModel):
     regime_confidence: float = Field(..., description="體制預測置信度 [0, 1]")
     needs_rebalance: bool = Field(..., description="是否建議啟動再平衡調倉")
     summary_insights: List[str] = Field(..., description="核心洞察分析摘要")
+    provenance: Optional[ProvenanceSchema] = Field(
+        None, description="各指標數據真實度與來源標籤 (live / default / synthetic / template)"
+    )
 
 
 class DiagnosePortfolioRequest(BaseModel):
