@@ -153,11 +153,13 @@ class SmartOrderRoutingService:
         settings_repo: Any = None,
         feedback_service: Any = None,
         circuit_breaker_service: Any = None,
+        toxicity_service: Any = None,
     ):
         self.user_id = resolve_user_id(user_id)
         self.settings_repo = settings_repo
         self.feedback_service = feedback_service
         self.circuit_breaker_service = circuit_breaker_service
+        self.toxicity_service = toxicity_service
 
     def _get_setting(self, key: str, default: Any, val_type: type = float) -> Any:
         """Helper to retrieve dynamic setting with fallback."""
@@ -243,6 +245,33 @@ class SmartOrderRoutingService:
                 circuit_breaker_triggered=True,
                 circuit_breaker_reason=reason,
             )
+
+        # E3 Microstructure Toxicity & VPIN check
+        if self.toxicity_service is not None:
+            tox_eval = self.toxicity_service.evaluate_toxicity(symbol, proposed_action=parsed_action)
+            tox_lvl = getattr(tox_eval.toxicity_level, "value", str(tox_eval.toxicity_level))
+            if tox_lvl == "CRITICAL_TOXICITY":
+                reason = f"Microstructure Toxic Order Flow Detected (VPIN={tox_eval.vpin:.2f}, OBI={tox_eval.order_book_imbalance:.2f})"
+                logger.warning(f"🚨 SOR plan halted for {symbol}: {reason}")
+                return SlicingPlan(
+                    symbol=symbol.upper(),
+                    action=parsed_action,
+                    strategy=ExecutionStrategy.DIRECT_LIMIT,
+                    total_requested_quantity=abs_quantity,
+                    adv_20=adv,
+                    adv_limit_pct=self.adv_max_pct,
+                    approved_quantity=0.0,
+                    unfilled_rollover_quantity=abs_quantity,
+                    arrival_price=price,
+                    execution_window_minutes=window_minutes,
+                    num_slices=0,
+                    child_orders=[],
+                    status="TOXICITY_HALTED",
+                    circuit_breaker_triggered=True,
+                    circuit_breaker_reason=reason,
+                )
+            elif tox_lvl == "ELEVATED_TOXICITY":
+                window_minutes = min(240, int(window_minutes * 1.5))
 
         # 1. ADV Constraint Gating
         adv_limit = self.adv_max_pct

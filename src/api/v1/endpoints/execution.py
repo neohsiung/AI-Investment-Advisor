@@ -42,6 +42,18 @@ from src.services.cross_asset_volatility_spillover_service import (
     CrossAssetVolatilitySpilloverService,
     SpilloverContagionAssessment,
 )
+from src.services.order_book_toxicity_detector_service import (
+    OrderBookDepthSnapshot,
+    OrderBookToxicityDetectorService,
+    ToxicityAssessment,
+    TradeDirection,
+    TradeTick,
+)
+from src.api.v1.schemas.toxicity_schemas import (
+    RecordQuoteRequest,
+    RecordTradeRequest,
+    ToxicityAssessmentResponse,
+)
 from src.services.settings_service import SettingsService
 from src.utils.logger import setup_logger
 
@@ -52,6 +64,7 @@ router = APIRouter()
 _compensators: Dict[str, AdaptiveExecutionSlippageCompensator] = {}
 _circuit_breakers: Dict[str, IntradayLiquidityCircuitBreakerService] = {}
 _spillover_services: Dict[str, CrossAssetVolatilitySpilloverService] = {}
+_toxicity_services: Dict[str, OrderBookToxicityDetectorService] = {}
 
 
 def get_slippage_compensator(
@@ -96,6 +109,24 @@ def get_spillover_service(
             slippage_compensator=compensator,
         )
     return _spillover_services[user_id]
+
+
+def get_toxicity_service(
+    user_id: str = Depends(get_current_user_id),
+    cb_service: IntradayLiquidityCircuitBreakerService = Depends(get_circuit_breaker_service),
+    compensator: AdaptiveExecutionSlippageCompensator = Depends(get_slippage_compensator),
+) -> OrderBookToxicityDetectorService:
+    """Dependency provider for OrderBookToxicityDetectorService (E3)."""
+    if user_id not in _toxicity_services:
+        settings_svc = SettingsService(user_id=user_id)
+        settings_repo = getattr(settings_svc, "repo", None)
+        _toxicity_services[user_id] = OrderBookToxicityDetectorService(
+            user_id=user_id,
+            settings_repo=settings_repo,
+            circuit_breaker_service=cb_service,
+            slippage_compensator=compensator,
+        )
+    return _toxicity_services[user_id]
 
 
 @router.post(
@@ -368,4 +399,79 @@ def get_spillover_contagion_status(
         impacts=impacts_dict,
         evaluated_at=assessment.evaluated_at,
     )
+
+
+@router.get(
+    "/orderbook/toxicity",
+    response_model=ToxicityAssessmentResponse,
+    summary="查詢標的微觀訂單流毒性與深度失衡評估 (E3)",
+)
+def get_orderbook_toxicity(
+    symbol: str = Query(..., description="標的代碼", examples=["NVDA"]),
+    action: Optional[str] = Query(None, description="擬執行的交易方向 (BUY/SELL) 以評估逆向選擇風險", examples=["BUY"]),
+    service: OrderBookToxicityDetectorService = Depends(get_toxicity_service),
+) -> ToxicityAssessmentResponse:
+    """
+    查詢指定標的之 VPIN (Volume-Synchronized Probability of Toxicity) 與
+    訂單簿深度失衡度 (OBI)，返回即時毒性等級與執行調節建議。
+    """
+    assessment: ToxicityAssessment = service.evaluate_toxicity(symbol, proposed_action=action)
+    return ToxicityAssessmentResponse(**assessment.to_dict())
+
+
+@router.post(
+    "/orderbook/quote",
+    response_model=ToxicityAssessmentResponse,
+    summary="錄入最新盤口深度快照並更新微觀失衡 (E3)",
+)
+def record_orderbook_quote(
+    payload: RecordQuoteRequest,
+    service: OrderBookToxicityDetectorService = Depends(get_toxicity_service),
+) -> ToxicityAssessmentResponse:
+    """
+    接收最新 Level-1 / Level-2 最佳買賣報價與掛單深度，
+    即時更新 Order Book Imbalance (OBI) 並返回最新毒性評估。
+    """
+    snapshot = OrderBookDepthSnapshot(
+        symbol=payload.symbol,
+        bid_price=payload.bid_price,
+        ask_price=payload.ask_price,
+        bid_size=payload.bid_size,
+        ask_size=payload.ask_size,
+    )
+    service.record_quote(snapshot)
+    assessment = service.evaluate_toxicity(payload.symbol)
+    return ToxicityAssessmentResponse(**assessment.to_dict())
+
+
+@router.post(
+    "/orderbook/trade",
+    response_model=ToxicityAssessmentResponse,
+    summary="錄入逐筆成交 Tick 並推進 VPIN 交易量時鐘 (E3)",
+)
+def record_orderbook_trade(
+    payload: RecordTradeRequest,
+    service: OrderBookToxicityDetectorService = Depends(get_toxicity_service),
+) -> ToxicityAssessmentResponse:
+    """
+    接收最新市場逐筆成交回報，將成交量分配至固定體積的 VPIN 交易量桶，
+    計算主動買賣方失衡比例並返回最新毒性評估。
+    """
+    direction = None
+    if payload.direction:
+        try:
+            direction = TradeDirection(payload.direction.upper())
+        except ValueError:
+            direction = TradeDirection.UNKNOWN
+
+    tick = TradeTick(
+        symbol=payload.symbol,
+        price=payload.price,
+        volume=payload.volume,
+        direction=direction,
+    )
+    service.record_trade(tick)
+    assessment = service.evaluate_toxicity(payload.symbol)
+    return ToxicityAssessmentResponse(**assessment.to_dict())
+
 
