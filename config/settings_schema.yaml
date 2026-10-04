@@ -212,6 +212,44 @@ settings:
     label_zh: 辯論記憶前例檢索數量 (Top-K)
     help_en: Maximum number of relevant historical debate precedents injected into the council deliberation context.
     help_zh: 注入評議會各專家與 CIO 決策上下文之歷史相似辯論先例最大數量（預設 3 筆）。
+  - key: council_diversity_enabled
+    group: ai
+    type: bool
+    default: true
+    label_en: Council Diversity Entropy & Groupthink Shielder (A4)
+    label_zh: 評議會專家意見歧異度與群體思維盲區熵值警戒 (A4)
+    help_en: Computes normalized Shannon Diversity Entropy across expert votes to detect echo chambers and inject Devil's Advocate challenges.
+    help_zh: 計算評議會專家投票之標準化香農多樣性熵值，在意見過度同質化時發出群體思維警戒並注入魔鬼代言人反向審查。
+  - key: groupthink_entropy_threshold
+    group: ai
+    type: float
+    default: 0.40
+    min: 0.10
+    max: 0.80
+    label_en: Groupthink Normalized Entropy Threshold
+    label_zh: 群體思維標準化熵值門檻
+    help_en: Normalized Shannon entropy threshold below which council consensus is flagged for potential echo-chamber herd bias.
+    help_zh: 評議會標準化多樣性熵值下限門檻（預設 0.40）；低於此值且多數意見高度集中時觸發群體思維警戒。
+  - key: groupthink_dominant_ratio_threshold
+    group: ai
+    type: float
+    default: 0.80
+    min: 0.50
+    max: 0.99
+    label_en: Groupthink Dominant Stance Ratio Threshold
+    label_zh: 群體思維多數立場集中度門檻
+    help_en: Minimum proportion of weighted votes aligned in the dominant stance required to trip the groupthink alert.
+    help_zh: 評議會單一多數立場（買/賣/觀望）佔總加權票數之最低集中比例門檻（預設 0.80 即 80%）。
+  - key: groupthink_haircut_pct
+    group: ai
+    type: float
+    default: 0.25
+    min: 0.05
+    max: 0.60
+    label_en: Groupthink Position Conviction Haircut
+    label_zh: 群體思維部位置信度保護折減率
+    help_en: Haircut percentage applied to position sizing or signal conviction when an echo chamber is identified.
+    help_zh: 觸發群體思維警戒時，建議部位大小或信號置信度之強制安全折減比率（預設 0.25 即 25% 折減）。
 
 
   # ── Trading & risk ───────────────────────────────────────────────────────
