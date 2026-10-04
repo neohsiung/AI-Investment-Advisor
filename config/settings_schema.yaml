@@ -734,6 +734,74 @@ settings:
     label_zh: 波動率傳染指數衰減半衰期（分鐘）
     help_en: Half-life in minutes for exponential decay of contagion spillover intensity after shock inception.
     help_zh: 傳染衝擊自觸發起之指數衰減半衰期（預設 30 分鐘）；期滿影響強度減半，平穩回歸常態。
+  - key: toxicity_detector_enabled
+    group: trading
+    type: bool
+    default: true
+    label_en: Enable order book toxicity & VPIN detector (E3)
+    label_zh: 啟用訂單簿深度失衡與毒性流偵測器 (E3)
+    help_en: Detects informed trading flow and adverse selection via VPIN volume clock and queue depth imbalance before spreads widen.
+    help_zh: 透過 VPIN 交易量時鐘與盤口掛單深度失衡 (OBI)，在點差顯著擴大前提前捕捉知情交易者毒性訂單流。
+  - key: vpin_bucket_size
+    group: trading
+    type: float
+    default: 1000.0
+    min: 100.0
+    max: 50000.0
+    label_en: VPIN volume bucket capacity (shares)
+    label_zh: VPIN 交易量時鐘單桶容量（股）
+    help_en: Discrete trade volume slice required to complete a single VPIN volume clock observation bucket.
+    help_zh: 完成單個 VPIN 觀察桶所需累積之離散成交股數容量（預設 1,000 股）。
+  - key: vpin_window_buckets
+    group: trading
+    type: int
+    default: 20
+    min: 5
+    max: 100
+    label_en: VPIN rolling evaluation window (buckets)
+    label_zh: VPIN 滾動評估視窗桶數
+    help_en: Number of recent completed volume buckets used to calculate the rolling probability of informed trading toxicity.
+    help_zh: 用於計算滾動知情交易毒性機率之最新已完成交易量桶數量（預設 20 桶）。
+  - key: vpin_elevated_threshold
+    group: trading
+    type: float
+    default: 0.50
+    min: 0.20
+    max: 0.80
+    label_en: VPIN elevated toxicity alert threshold
+    label_zh: VPIN 中度毒性預警門檻
+    help_en: VPIN threshold above which order routing throttles execution intervals and boosts slippage compensation.
+    help_zh: 觸發微觀執行降速與調升滑價補償保護之 VPIN 毒性門檻（預設 0.50）。
+  - key: vpin_critical_threshold
+    group: trading
+    type: float
+    default: 0.75
+    min: 0.50
+    max: 0.95
+    label_en: VPIN critical toxicity flash-crash threshold
+    label_zh: VPIN 重度毒性閃崩防禦門檻
+    help_en: Critical VPIN threshold triggering immediate aggressive flow halting to prevent adverse selection execution.
+    help_zh: 判定市場存在極端掠奪性毒性流之 VPIN 門檻（預設 0.75）；超標時即刻阻斷市價主動吃單。
+  - key: obi_extreme_threshold
+    group: trading
+    type: float
+    default: 0.60
+    min: 0.20
+    max: 0.95
+    label_en: Order Book Imbalance extreme skew threshold
+    label_zh: 訂單簿深度失衡極端偏斜門檻
+    help_en: Absolute normalized queue depth imbalance |OBI| above which order book skew is flagged as high risk.
+    help_zh: 盤口佇列買賣深度失衡度絕對值門檻（預設 0.60）；超標代表盤口掛單單邊極端失衡。
+  - key: toxicity_slippage_boost_max
+    group: trading
+    type: float
+    default: 1.00
+    min: 0.10
+    max: 3.00
+    label_en: Maximum slippage boost for toxic flow
+    label_zh: 毒性訂單流最大額外滑價倍數加成
+    help_en: Maximum additional multiplier added to the adaptive slippage compensator when critical toxicity is detected.
+    help_zh: 偵測到重度毒性訂單流時，額外疊加至 P6 自適應滑價補償器之最大乘數加成（預設 +1.00x）。
   - key: evolution_annealing_enabled
     group: trading
     type: bool
