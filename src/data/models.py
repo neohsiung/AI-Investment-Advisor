@@ -1203,3 +1203,25 @@ class GeneratedCodeArtifact(Base):
         Index('idx_gen_code_user_status', 'user_id', 'status'),
     )
 
+
+class AgentCognitiveBlindspot(Base):
+    """`agent_cognitive_blindspots` — A2 online cognitive bias detection, consecutive failures, and reflection constraints."""
+    __tablename__ = 'agent_cognitive_blindspots'
+
+    id = Column(String(64), primary_key=True, default=lambda: str(uuid.uuid4()))
+    user_id = Column(String(64), nullable=False)
+    agent_name = Column(String(64), nullable=False)
+    bias_pattern = Column(String(50), nullable=False)
+    regime = Column(String(50), nullable=False)
+    consecutive_failures = Column(Integer, nullable=False, default=2)
+    avg_alpha_loss = Column(Numeric(10, 4), default=0.0)
+    severity = Column(String(20), nullable=False, default='MEDIUM')
+    corrective_guidance = Column(Text, nullable=False)
+    is_active = Column(Boolean, nullable=False, default=True)
+    detected_at = Column(DateTime(timezone=True), server_default=func.now())
+    resolved_at = Column(DateTime(timezone=True))
+
+    __table_args__ = (
+        Index('ix_agent_blindspots_user_agent_active', 'user_id', 'agent_name', 'is_active'),
+    )
+

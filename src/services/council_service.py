@@ -54,6 +54,11 @@ class CouncilService:
         from src.services.adaptive_council_meta_learning_service import AdaptiveCouncilMetaLearningService
         self.meta_learning_service = AdaptiveCouncilMetaLearningService(user_id=user_id)
 
+        # A2 cognitive blindspot loop (2026-10-04): consecutive failure detection
+        # and self-reflection alignment constraints.
+        from src.services.cognitive_blindspot_service import CognitiveBlindspotService
+        self.blindspot_service = CognitiveBlindspotService(user_id=user_id)
+
         # PAD Phase 2: Add model router and gateway
         from src.data.database import get_db_engine
         self.settings_repo = AlchemySettingsRepository(engine=get_db_engine())
@@ -95,6 +100,14 @@ class CouncilService:
             except Exception as re_err:
                 logger.debug(f"Council: failed to load AgentState for {agent_name} (non-blocking): {re_err}")
 
+            # A2 (2026-10-04): Inject cognitive blindspot corrective guidance for the agent
+            try:
+                agent_guidance = self.blindspot_service.get_agent_guidance(agent_name)
+                if agent_guidance:
+                    system_prompt += f"\n\n## Self-Reflection Constraint (Cognitive Blindspot Alignment):\n{agent_guidance}"
+            except Exception as bs_err:
+                logger.debug(f"Council: failed to load blindspot guidance for {agent_name} (non-blocking): {bs_err}")
+
             # B-P2.2 (2026-07-14): inject the learned user-preference summary
             # (risk appetite, sector aversions, position-size comfort) at
             # the synthesis step only — not every sub-agent call, to avoid
@@ -107,6 +120,14 @@ class CouncilService:
                         system_prompt += f"\n\n## User Preference Profile (learned from past approve/reject decisions):\n{pref_summary}"
                 except Exception as pref_e:
                     logger.debug(f"Council: failed to load user preferences (non-blocking): {pref_e}")
+
+                # A2: Inject blindspot summary across all debate participants for CIO consensus
+                try:
+                    cio_bs_summary = self.blindspot_service.get_cio_blindspot_summary()
+                    if cio_bs_summary:
+                        system_prompt += f"\n\n{cio_bs_summary}"
+                except Exception as bs_cio_err:
+                    logger.debug(f"Council: failed to load CIO blindspot summary (non-blocking): {bs_cio_err}")
             
             messages = [
                 Message(role="system", content=system_prompt),
@@ -490,12 +511,28 @@ class CouncilService:
         except Exception as e:
             logger.warning(f"Cold Backup: failed to write: {e}")
 
+        active_blindspots = []
+        try:
+            active_blindspots = [
+                {
+                    "agent_name": b.agent_name,
+                    "bias_pattern": b.bias_pattern,
+                    "consecutive_failures": b.consecutive_failures,
+                    "avg_alpha_loss": float(b.avg_alpha_loss or 0.0),
+                    "severity": b.severity,
+                }
+                for b in self.blindspot_service.get_active_blindspots()
+            ]
+        except Exception as bs_e:
+            logger.debug(f"Council: failed to fetch active blindspots for session result: {bs_e}")
+
         return {
             "session_id": session_id,
             "consensus": str(final_report),
             "transcript": transcript_lines,
             "grounding_check": grounding_note,
             "adaptive_context": adaptive_context.to_dict() if adaptive_context else None,
+            "active_blindspots": active_blindspots,
         }
 
     async def _run_debate_logic(self, session_id: str, topic: str, context_data: Dict[str, Any], user_id: str, market_volatility: float = 0.0, mode: str = "weekly") -> Dict[str, Any]:
@@ -707,12 +744,28 @@ class CouncilService:
         except Exception as e:
             logger.warning(f"Cold Backup: failed to write: {e}")
 
+        active_blindspots = []
+        try:
+            active_blindspots = [
+                {
+                    "agent_name": b.agent_name,
+                    "bias_pattern": b.bias_pattern,
+                    "consecutive_failures": b.consecutive_failures,
+                    "avg_alpha_loss": float(b.avg_alpha_loss or 0.0),
+                    "severity": b.severity,
+                }
+                for b in self.blindspot_service.get_active_blindspots()
+            ]
+        except Exception as bs_e:
+            logger.debug(f"Council: failed to fetch active blindspots for session result: {bs_e}")
+
         return {
             "session_id": session_id,
             "consensus": str(decision),
             "transcript": transcript,
             "grounding_check": grounding_note,
             "adaptive_context": adaptive_context.to_dict() if adaptive_context else None,
+            "active_blindspots": active_blindspots,
         }
 
     def _archive_minutes(self, user_id: str, session_id: str, topic: str, consensus: str, transcript: str) -> None:

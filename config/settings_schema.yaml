@@ -166,6 +166,24 @@ settings:
     label_zh: 極值黑天鵝 Risk Agent 一票否決權
     help_en: Automatically anchor Risk Agent weight >= 0.50 with mandatory veto authority when EVT Black Swan alert is WARNING or CRITICAL.
     help_zh: 當 O2 EVT 極值黑天鵝預警為 WARNING 或 CRITICAL 時，強制將 Risk Agent 權重提升至 50% 以上並啟用一票否決權。
+  - key: cognitive_blindspot_detection_enabled
+    group: ai
+    type: bool
+    default: true
+    label_en: Online Cognitive Blindspot Detector & Self-Reflection (A2)
+    label_zh: 在線認知盲區偵測與自動反省校準
+    help_en: Detect repeated failure patterns and inject self-reflection constraints into council agent debate prompts.
+    help_zh: 自動偵測專家連敗與體制錯配盲區，並向評議會辯論注入自我反省校準約束。
+  - key: cognitive_blindspot_consecutive_failure_threshold
+    group: ai
+    type: int
+    default: 2
+    min: 2
+    max: 10
+    label_en: Blindspot Consecutive Failure Threshold
+    label_zh: 認知盲區連續失誤門檻
+    help_en: Minimum number of consecutive decision misses before classifying an active blindspot and triggering reflection constraints.
+    help_zh: 專家連續預測失誤觸發盲區警報與反省約束的最低連敗次數（預設 2 次）。
 
 
   # ── Trading & risk ───────────────────────────────────────────────────────
