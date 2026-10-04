@@ -7,7 +7,8 @@ recommendations, and calculating empirical opportunity cost frictions.
 """
 from __future__ import annotations
 
-from typing import Dict, Optional
+from datetime import datetime, timezone
+from typing import Any, Dict, Optional
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 
 from src.api.v1.dependencies import get_current_user_id
@@ -54,6 +55,25 @@ from src.api.v1.schemas.toxicity_schemas import (
     RecordTradeRequest,
     ToxicityAssessmentResponse,
 )
+from src.api.v1.schemas.hunt_guard_schemas import (
+    GuardEvaluationRequest,
+    GuardEvaluationResponse,
+    GuardResetRequest,
+    GuardStatusListResponse,
+    KeyLevelSchema,
+    LiquidityHoleAssessmentSchema,
+    OrderBookSnapshotSchema,
+    StopHuntAssessmentSchema,
+    SymbolGuardStatusSchema,
+    TradeBarSchema,
+)
+from src.services.intraday_liquidity_hunt_guard_service import (
+    IntradayLiquidityHuntGuardService,
+    KeyLevel,
+    KeyLevelType,
+    OrderBookSnapshot,
+    TradeBar,
+)
 from src.services.settings_service import SettingsService
 from src.utils.logger import setup_logger
 
@@ -65,6 +85,7 @@ _compensators: Dict[str, AdaptiveExecutionSlippageCompensator] = {}
 _circuit_breakers: Dict[str, IntradayLiquidityCircuitBreakerService] = {}
 _spillover_services: Dict[str, CrossAssetVolatilitySpilloverService] = {}
 _toxicity_services: Dict[str, OrderBookToxicityDetectorService] = {}
+_hunt_guard_services: Dict[str, IntradayLiquidityHuntGuardService] = {}
 
 
 def get_slippage_compensator(
@@ -127,6 +148,19 @@ def get_toxicity_service(
             slippage_compensator=compensator,
         )
     return _toxicity_services[user_id]
+
+
+def get_hunt_guard_service(
+    user_id: str = Depends(get_current_user_id),
+) -> IntradayLiquidityHuntGuardService:
+    """Dependency provider for IntradayLiquidityHuntGuardService (E4)."""
+    if user_id not in _hunt_guard_services:
+        settings_svc = SettingsService(user_id=user_id)
+        _hunt_guard_services[user_id] = IntradayLiquidityHuntGuardService(
+            user_id=user_id,
+            settings_service=settings_svc,
+        )
+    return _hunt_guard_services[user_id]
 
 
 @router.post(
@@ -473,5 +507,138 @@ def record_orderbook_trade(
     service.record_trade(tick)
     assessment = service.evaluate_toxicity(payload.symbol)
     return ToxicityAssessmentResponse(**assessment.to_dict())
+
+
+# ============================================================================
+# E4 Engine: Intraday Liquidity Hole & Stop-Hunt Guard Endpoints
+# ============================================================================
+
+
+@router.post(
+    "/guard/evaluate",
+    response_model=GuardEvaluationResponse,
+    summary="評估日內流動性空洞與假突破獵殺防線 (E4)",
+)
+def evaluate_microstructure_guard(
+    payload: GuardEvaluationRequest,
+    guard_service: IntradayLiquidityHuntGuardService = Depends(get_hunt_guard_service),
+) -> GuardEvaluationResponse:
+    """
+    接收最新盤口報價快照 (OrderBookSnapshot)、K線 (TradeBar) 與關鍵價位，
+    計算盤口深度枯竭比率 (DDR)、假突破掃蕩評分 (SHS) 與防禦狀態機。
+    返回執行建議動作 (PROCEED_NORMAL, DELAY_EXECUTION, FORCE_PASSIVE_LIMIT, ABORT_BREAKOUT_CHASE)
+    以及額外逆向選擇滑價保護緩衝 (adverse_slippage_buffer_bps)。
+    """
+    snapshot = None
+    if payload.snapshot:
+        snapshot = OrderBookSnapshot(
+            symbol=payload.snapshot.symbol,
+            bid_price=payload.snapshot.bid_price,
+            ask_price=payload.snapshot.ask_price,
+            bid_size=payload.snapshot.bid_size,
+            ask_size=payload.snapshot.ask_size,
+            timestamp=payload.snapshot.timestamp or datetime.now(timezone.utc),
+        )
+
+    bar = None
+    if payload.bar:
+        bar = TradeBar(
+            symbol=payload.bar.symbol,
+            open_price=payload.bar.open_price,
+            high_price=payload.bar.high_price,
+            low_price=payload.bar.low_price,
+            close_price=payload.bar.close_price,
+            volume=payload.bar.volume,
+            timestamp=payload.bar.timestamp or datetime.now(timezone.utc),
+        )
+
+    key_levels = None
+    if payload.key_levels:
+        key_levels = [
+            KeyLevel(
+                level_type=kl.level_type,
+                price=kl.price,
+                description=kl.description,
+            )
+            for kl in payload.key_levels
+        ]
+
+    eval_result = guard_service.evaluate_guard(
+        symbol=payload.symbol,
+        snapshot=snapshot,
+        bar=bar,
+        key_levels=key_levels,
+    )
+
+    return GuardEvaluationResponse(
+        symbol=eval_result.symbol,
+        state=eval_result.state,
+        action=eval_result.action,
+        liquidity_hole=LiquidityHoleAssessmentSchema(
+            is_hole_detected=eval_result.liquidity_hole.is_hole_detected,
+            depth_depletion_ratio=eval_result.liquidity_hole.depth_depletion_ratio,
+            current_depth=eval_result.liquidity_hole.current_depth,
+            baseline_depth=eval_result.liquidity_hole.baseline_depth,
+            spread_bps=eval_result.liquidity_hole.spread_bps,
+            spread_expansion_ratio=eval_result.liquidity_hole.spread_expansion_ratio,
+            details=eval_result.liquidity_hole.details,
+        ),
+        stop_hunt=StopHuntAssessmentSchema(
+            is_hunt_detected=eval_result.stop_hunt.is_hunt_detected,
+            stop_hunt_score=eval_result.stop_hunt.stop_hunt_score,
+            swept_level=eval_result.stop_hunt.swept_level,
+            level_type=eval_result.stop_hunt.level_type,
+            penetration_pct=eval_result.stop_hunt.penetration_pct,
+            reversion_ratio=eval_result.stop_hunt.reversion_ratio,
+            volume_spike_ratio=eval_result.stop_hunt.volume_spike_ratio,
+            details=eval_result.stop_hunt.details,
+        ),
+        recommended_delay_seconds=eval_result.recommended_delay_seconds,
+        adverse_slippage_buffer_bps=eval_result.adverse_slippage_buffer_bps,
+        evaluated_at=eval_result.evaluated_at,
+    )
+
+
+@router.get(
+    "/guard/status",
+    response_model=GuardStatusListResponse,
+    summary="查詢所有監控標的之獵殺防線狀態與冷卻資訊 (E4)",
+)
+def get_all_guard_statuses(
+    guard_service: IntradayLiquidityHuntGuardService = Depends(get_hunt_guard_service),
+) -> GuardStatusListResponse:
+    """
+    返回目前記憶體內所有追蹤資產的防線狀態機、是否處於冷卻期、剩餘冷卻秒數及最近觸發詳情。
+    """
+    all_states = guard_service.get_all_guard_states()
+    items = {
+        sym: SymbolGuardStatusSchema(**data)
+        for sym, data in all_states.items()
+    }
+    return GuardStatusListResponse(
+        total_symbols=len(items),
+        symbols=items,
+    )
+
+
+@router.post(
+    "/guard/reset",
+    summary="手動重設指定標的之防線狀態至 NORMAL (E4)",
+)
+def reset_guard_status(
+    payload: GuardResetRequest,
+    guard_service: IntradayLiquidityHuntGuardService = Depends(get_hunt_guard_service),
+) -> Dict[str, Any]:
+    """
+    手動重設標的之微結構防護狀態，解除冷卻期並恢復為 NORMAL。
+    """
+    guard_service.reset_symbol_state(payload.symbol)
+    return {
+        "status": "success",
+        "symbol": payload.symbol.upper().strip(),
+        "current_state": "NORMAL",
+        "message": f"Guard state for {payload.symbol.upper()} has been reset to NORMAL.",
+    }
+
 
 

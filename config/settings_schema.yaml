@@ -840,6 +840,54 @@ settings:
     label_zh: 毒性訂單流最大額外滑價倍數加成
     help_en: Maximum additional multiplier added to the adaptive slippage compensator when critical toxicity is detected.
     help_zh: 偵測到重度毒性訂單流時，額外疊加至 P6 自適應滑價補償器之最大乘數加成（預設 +1.00x）。
+  - key: liquidity_hunt_guard_enabled
+    group: trading
+    type: bool
+    default: true
+    label_en: Enable liquidity hole & stop-hunt guard (E4)
+    label_zh: 啟用微結構流動性空洞與假突破獵殺防線
+    help_en: Dynamically monitors order book depth depletion and predatory algorithmic liquidity sweeps to prevent adverse selection and bull/bear trap slippage.
+    help_zh: 即時監控盤口深度枯竭空洞與做市商獵殺停損之假突破掃蕩，自動延遲或轉為被動限價單，防止逆向選擇與追高殺跌滑價。
+  - key: liquidity_hole_depth_depletion_threshold
+    group: trading
+    type: float
+    default: 0.70
+    min: 0.30
+    max: 0.95
+    label_en: Liquidity hole depth depletion threshold
+    label_zh: 流動性空洞深度枯竭門檻
+    help_en: Normalized drop in aggregate top-of-book depth relative to rolling baseline that triggers a liquidity hole alert.
+    help_zh: 盤口即時買賣深度相對滾動基準的驟降比例門檻（預設 0.70，即深度蒸發 70% 觸發警報）。
+  - key: liquidity_hole_spread_expansion_threshold
+    group: trading
+    type: float
+    default: 2.0
+    min: 1.2
+    max: 10.0
+    label_en: Liquidity hole spread expansion multiplier
+    label_zh: 流動性空洞點差膨脹倍數門檻
+    help_en: Ratio of current bid-ask spread to baseline spread required in conjunction with depth depletion to confirm a liquidity vacuum.
+    help_zh: 當前買賣點差相對基準點差之膨脹倍數門檻（預設 2.0x，與深度枯竭同時滿足時確認流動性真空）。
+  - key: stop_hunt_score_threshold
+    group: trading
+    type: float
+    default: 0.65
+    min: 0.30
+    max: 0.95
+    label_en: Stop-hunt composite score threshold
+    label_zh: 假突破掃蕩獵殺評分警報門檻
+    help_en: Composite threshold combining level penetration, rapid mean-reversion retracement, and volume spike to flag a predatory trap.
+    help_zh: 結合穿透度、迅速均值回歸回吐比與爆量倍數之綜合獵殺評分門檻（預設 0.65，超過則判定為誘多/誘空獵殺）。
+  - key: hunt_guard_cooldown_seconds
+    group: trading
+    type: int
+    default: 60
+    min: 10
+    max: 600
+    label_en: Microstructure guard defense cooldown (seconds)
+    label_zh: 獵殺防線防禦冷卻秒數
+    help_en: Defensive cooling-off window in seconds during which aggressive orders are delayed or routed with passive limit pegs.
+    help_zh: 觸發獵殺防線警報後的防禦冷卻時間（秒，預設 60 秒），此期間強制作息冷卻並預留額外滑價緩衝。
   - key: evolution_annealing_enabled
     group: trading
     type: bool
