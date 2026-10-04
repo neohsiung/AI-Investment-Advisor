@@ -44,6 +44,7 @@ fi
 echo -e "\n${YELLOW}[2/4] Running Bandit SAST Security Scan...${NC}"
 if [ -f "$BANDIT" ]; then
     $BANDIT -r src/services/actionable_alert_service.py \
+              src/services/adaptive_execution_slippage_compensator.py \
               src/services/sentinel_service.py \
               src/services/shadow_ledger_service.py \
               src/services/shadow_promotion_orchestrator.py \
@@ -52,7 +53,7 @@ if [ -f "$BANDIT" ]; then
     echo -e "${GREEN}✓ Bandit security baseline clean (0 high/medium issues)${NC}"
 fi
 
-# 3. Wiki Flat-Link Integrity Check
+# 3. Wiki Flat-Links Integrity Check
 echo -e "\n${YELLOW}[3/4] Validating Wiki Flat-Links Integrity...${NC}"
 $PYTHON .agent/skills/wiki-maintainer/scripts/verify_wiki_links.py
 echo -e "${GREEN}✓ Wiki internal links verified${NC}"
@@ -60,6 +61,7 @@ echo -e "${GREEN}✓ Wiki internal links verified${NC}"
 # 4. Core Quantitative & Protections Regression Test Suite
 echo -e "\n${YELLOW}[4/4] Running Core Regression Test Suite...${NC}"
 $PYTEST tests/unit/services/test_actionable_alert_service.py \
+        tests/unit/services/test_adaptive_execution_slippage_compensator.py \
         tests/unit/services/test_shadow_ledger_service.py \
         tests/unit/services/test_shadow_promotion_orchestrator.py \
         tests/unit/services/test_smart_money_support_service.py \
