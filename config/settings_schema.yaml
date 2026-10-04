@@ -140,6 +140,32 @@ settings:
     label_zh: 自研因子最大相關性閾值
     help_en: Maximum allowed Spearman/Pearson correlation between candidate factors and active live factors to prevent multi-collinearity.
     help_zh: 候選量化因子與線上在線 ACTIVE 因子的最大允許相關係數（預設 0.65）。超過此門檻將觸發共線性阻斷，避免重複配置。
+  - key: adaptive_council_meta_learning_enabled
+    group: ai
+    type: bool
+    default: true
+    label_en: Adaptive Council Meta-Learning Loop (A1)
+    label_zh: 自適應評議會元學習閉環
+    help_en: Dynamically condition council expert voting weights on market regime, EVT tail risk, and historical attribution win-rates.
+    help_zh: 整合 D1 健康度、O1 貝氏體制與 O2 EVT 尾部黑天鵝，動態校準專家投票權重並賦予黑天鵝否決權。
+  - key: meta_learning_smoothing_kappa
+    group: ai
+    type: float
+    default: 10.0
+    min: 1.0
+    max: 50.0
+    label_en: Meta-learning attribution smoothing factor (kappa)
+    label_zh: 元學習歸因平滑因子（kappa）
+    help_en: Prior weight parameter kappa for Laplace/Dirichlet smoothing in rolling win rate calibration.
+    help_zh: 專家滾動勝率貝氏更新之平滑權重係數 kappa（預設 10.0）。
+  - key: meta_learning_black_swan_risk_veto
+    group: ai
+    type: bool
+    default: true
+    label_en: EVT Black Swan Risk Agent Veto Power
+    label_zh: 極值黑天鵝 Risk Agent 一票否決權
+    help_en: Automatically anchor Risk Agent weight >= 0.50 with mandatory veto authority when EVT Black Swan alert is WARNING or CRITICAL.
+    help_zh: 當 O2 EVT 極值黑天鵝預警為 WARNING 或 CRITICAL 時，強制將 Risk Agent 權重提升至 50% 以上並啟用一票否決權。
 
 
   # ── Trading & risk ───────────────────────────────────────────────────────

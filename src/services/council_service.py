@@ -49,6 +49,11 @@ class CouncilService:
         from src.services.outcome_reflection_service import OutcomeReflectionService
         self.outcome_service = OutcomeReflectionService(user_id=user_id)
 
+        # A1 adaptive meta-learning loop (2026-10-04): regime & tail-risk prior
+        # injection, outcome attribution, and dynamic meta-weights calibration.
+        from src.services.adaptive_council_meta_learning_service import AdaptiveCouncilMetaLearningService
+        self.meta_learning_service = AdaptiveCouncilMetaLearningService(user_id=user_id)
+
         # PAD Phase 2: Add model router and gateway
         from src.data.database import get_db_engine
         self.settings_repo = AlchemySettingsRepository(engine=get_db_engine())
@@ -389,6 +394,15 @@ class CouncilService:
                 break
         past_decision_lessons = self.outcome_service.get_past_context(ticker=_topic_ticker, limit=3)
 
+        # A1: Inject adaptive macro regime, EVT tail risk & meta-learning weights
+        adaptive_context = None
+        try:
+            adaptive_context = self.meta_learning_service.generate_adaptive_council_context(
+                market_observation=context_data.get("market_observation") or context_data.get("market_data")
+            )
+        except Exception as e:
+            logger.debug(f"Council: meta_learning context generation fallback: {e}")
+
         # ── 2. Build enriched debate_context dict for all agents ──
         debate_context = {
             **context_data,
@@ -397,6 +411,8 @@ class CouncilService:
             "user_focus": user_focus,
             "competitor_analysis": competitor_analysis,
             "past_decision_lessons": past_decision_lessons or "No prior resolved decisions yet.",
+            "adaptive_prior_context": adaptive_context.prompt_guidance if adaptive_context else "",
+            "regime": adaptive_context.current_regime if adaptive_context else "SIDEWAYS_HIGH_VOL",
         }
 
         # ── 3. Select dynamic consensus tier ──
@@ -479,6 +495,7 @@ class CouncilService:
             "consensus": str(final_report),
             "transcript": transcript_lines,
             "grounding_check": grounding_note,
+            "adaptive_context": adaptive_context.to_dict() if adaptive_context else None,
         }
 
     async def _run_debate_logic(self, session_id: str, topic: str, context_data: Dict[str, Any], user_id: str, market_volatility: float = 0.0, mode: str = "weekly") -> Dict[str, Any]:
@@ -566,6 +583,15 @@ class CouncilService:
                 break
         past_decision_lessons = self.outcome_service.get_past_context(ticker=_topic_ticker, limit=3)
 
+        # A1: Inject adaptive macro regime, EVT tail risk & meta-learning weights
+        adaptive_context = None
+        try:
+            adaptive_context = self.meta_learning_service.generate_adaptive_council_context(
+                market_observation=context_data.get("market_observation") or context_data.get("market_data")
+            )
+        except Exception as e:
+            logger.debug(f"Council: meta_learning context generation fallback in debate logic: {e}")
+
         debate_context = {
             **context_data,
             "historical_context": past_wisdom,
@@ -573,6 +599,8 @@ class CouncilService:
             "user_focus": user_focus,
             "competitor_analysis": competitor_analysis,
             "past_decision_lessons": past_decision_lessons or "No prior resolved decisions yet.",
+            "adaptive_prior_context": adaptive_context.prompt_guidance if adaptive_context else "",
+            "regime": adaptive_context.current_regime if adaptive_context else "SIDEWAYS_HIGH_VOL",
         }
         
         # PAD Phase 2: Replace agent.run() with _call_agent_llm
@@ -605,7 +633,9 @@ class CouncilService:
             "current_date": datetime.now().strftime("%Y-%m-%d"),
             "market_data": context_data.get("market_data"),
             "fractal_debate_rules": fractal_debate_rules,
-            "competitor_analysis": competitor_analysis
+            "competitor_analysis": competitor_analysis,
+            "adaptive_prior_context": adaptive_context.prompt_guidance if adaptive_context else "",
+            "meta_weights": adaptive_context.meta_weights if adaptive_context else None,
         }
         
         try:
@@ -682,6 +712,7 @@ class CouncilService:
             "consensus": str(decision),
             "transcript": transcript,
             "grounding_check": grounding_note,
+            "adaptive_context": adaptive_context.to_dict() if adaptive_context else None,
         }
 
     def _archive_minutes(self, user_id: str, session_id: str, topic: str, consensus: str, transcript: str) -> None:
