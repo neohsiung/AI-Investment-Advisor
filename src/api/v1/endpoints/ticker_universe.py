@@ -12,8 +12,11 @@ from src.api.v1.schemas.ticker_universe_schemas import (
     ResearchListResponse, ResearchSubmitRequest,
     TargetAllocationListResponse, TargetAllocationRecord,
     LogListResponse, TickerPinRequest,
+    PromotionPlanSchema, ShadowPromotionListResponse,
+    ShadowPromotionExecuteRequest, ShadowPromotionExecuteResponse,
 )
 from src.services.ticker_universe_service import TickerUniverseService
+from src.services.shadow_promotion_orchestrator import ShadowPromotionOrchestrator
 from src.utils.logger import setup_logger
 
 logger = setup_logger("API_TickerUniverse")
@@ -41,7 +44,62 @@ def get_service(user_id: str = Depends(get_current_user_id)) -> TickerUniverseSe
     return TickerUniverseService(user_id=user_id)
 
 
+def get_shadow_orchestrator(user_id: str = Depends(get_current_user_id)) -> ShadowPromotionOrchestrator:
+    return ShadowPromotionOrchestrator(user_id=user_id)
+
+
 # ── Specific routes (must be before /{ticker} to avoid path conflicts) ──
+
+
+@router.get("/shadow/promotions", response_model=ShadowPromotionListResponse)
+async def get_shadow_promotions(
+    auto_execute: bool = Query(False, description="Automatically execute eligible rotations if configured"),
+    orchestrator: ShadowPromotionOrchestrator = Depends(get_shadow_orchestrator),
+):
+    """
+    評估影子候選標的之畢業考核狀態，並與實盤持倉進行機會成本換庫與 Alpha 鈍化對比 (P5)。
+    """
+    try:
+        proposals = await orchestrator.evaluate_promotions(auto_execute_if_eligible=auto_execute)
+        total_qual = sum(1 for p in proposals if p.qualified)
+        total_rot = sum(1 for p in proposals if p.action_type == "CAPITAL_ROTATION")
+        data = [PromotionPlanSchema(**p.to_dict()) for p in proposals]
+        return ShadowPromotionListResponse(
+            status="success",
+            data=data,
+            total_qualified=total_qual,
+            total_rotations=total_rot,
+        )
+    except Exception as e:
+        logger.error(f"Error evaluating shadow promotions: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Internal server error evaluating promotions")
+
+
+@router.post("/shadow/promotions/execute", response_model=ShadowPromotionExecuteResponse)
+async def execute_shadow_promotion(
+    payload: ShadowPromotionExecuteRequest,
+    orchestrator: ShadowPromotionOrchestrator = Depends(get_shadow_orchestrator),
+):
+    """
+    執行指定影子標的之畢業提拔與實盤換庫置換（包含 E1 SOR 拆單排程與推播）(P5)。
+    """
+    try:
+        res = await orchestrator.execute_promotion(
+            candidate_ticker=payload.candidate_ticker,
+            displaced_ticker=payload.displaced_ticker,
+            auto_rebalance=payload.auto_rebalance,
+        )
+        if not res.success:
+            raise HTTPException(status_code=400, detail=res.message)
+        return ShadowPromotionExecuteResponse(
+            status="success",
+            data=res.to_dict(),
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error executing shadow promotion for {payload.candidate_ticker}: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Internal server error executing promotion")
 
 
 @router.get("/targets/optimize", response_model=TickerInfoResponse)
