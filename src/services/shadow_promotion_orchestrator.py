@@ -131,12 +131,14 @@ class ShadowPromotionOrchestrator:
         alert_hub: Optional[ActionableAlertHubService] = None,
         settings_service: Optional[SettingsService] = None,
         market_data_service: Optional[MarketDataService] = None,
+        slippage_compensator: Optional[Any] = None,
     ):
         self.user_id = resolve_user_id(user_id)
         self.shadow_repo = shadow_repo or AlchemyShadowLedgerRepository()
         self.ticker_repo = ticker_repo or TickerUniverseRepository()
         self.market = market_data_service or MarketDataService(user_id=self.user_id)
         self.settings = settings_service or SettingsService(user_id=self.user_id)
+        self.slippage_compensator = slippage_compensator
 
         self.shadow_ledger = shadow_ledger_service or ShadowLedgerService(
             user_id=self.user_id,
@@ -147,6 +149,7 @@ class ShadowPromotionOrchestrator:
         self.opportunity_cost = opportunity_cost_service or OpportunityCostService(
             user_id=self.user_id,
             settings_service=self.settings,
+            slippage_compensator=self.slippage_compensator,
         )
         self.alpha_decay = alpha_decay_service or AlphaDecayService(
             user_id=self.user_id,
@@ -156,6 +159,7 @@ class ShadowPromotionOrchestrator:
         self.sor_service = sor_service or SmartOrderRoutingService(
             user_id=self.user_id,
             settings_repo=getattr(self.settings, "repo", None),
+            feedback_service=self.slippage_compensator,
         )
         self.portfolio_aggregator = portfolio_aggregator or PortfolioAggregatorService(user_id=self.user_id)
         self.alert_hub = alert_hub or ActionableAlertHubService(user_id=self.user_id)

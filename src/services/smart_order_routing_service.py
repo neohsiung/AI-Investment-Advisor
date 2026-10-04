@@ -230,8 +230,29 @@ class SmartOrderRoutingService:
             approved_quantity = round(abs_quantity, 4)
             rollover_quantity = 0.0
 
-        # Dynamic window scaling based on E2 Almgren-Chriss impact eta
-        if self.feedback_service is not None and execution_window_minutes is None:
+        # Dynamic window scaling based on E2 Almgren-Chriss impact eta / P6 Slippage Compensator
+        adaptation = None
+        if self.feedback_service is not None and hasattr(self.feedback_service, "get_sor_adaptation_parameters"):
+            try:
+                base_slices_guess = max(3, min(12, int(window_minutes / 3)))
+                adaptation = self.feedback_service.get_sor_adaptation_parameters(
+                    symbol=symbol,
+                    base_slices=base_slices_guess,
+                    base_window_minutes=window_minutes,
+                    base_max_slippage_bps=self.max_slippage_bps,
+                    base_jitter_pct=self.twap_jitter_pct,
+                    order_quantity=approved_quantity,
+                    adv_20=adv,
+                )
+                if execution_window_minutes is None:
+                    window_minutes = adaptation.recommended_window_minutes
+                    logger.info(
+                        f"SOR Adaptive Adaptation (P6): {symbol} slices={adaptation.recommended_slices}, "
+                        f"window={window_minutes}m, hint={adaptation.strategy_hint} ({adaptation.reason})"
+                    )
+            except Exception as e:
+                logger.warning(f"Failed to query feedback_service for SOR adaptation: {e}")
+        elif self.feedback_service is not None and execution_window_minutes is None:
             try:
                 expected_slippage_bps = self.feedback_service.estimate_expected_slippage(
                     symbol=symbol,
@@ -287,6 +308,8 @@ class SmartOrderRoutingService:
             slices_count = 1
         elif num_slices is not None:
             slices_count = max(2, min(24, int(num_slices)))
+        elif adaptation is not None:
+            slices_count = max(2, min(24, int(adaptation.recommended_slices)))
         else:
             # Slices scaled with window: roughly 1 slice per 3~5 minutes
             slices_count = max(3, min(12, int(window_minutes / 3)))
@@ -295,8 +318,8 @@ class SmartOrderRoutingService:
 
         # 4. Generate Child Order Schedule
         child_orders: list[ChildOrder] = []
-        jitter = self.twap_jitter_pct
-        max_slippage = self.max_slippage_bps
+        jitter = adaptation.recommended_jitter_pct if adaptation is not None else self.twap_jitter_pct
+        max_slippage = adaptation.recommended_max_slippage_bps if adaptation is not None else self.max_slippage_bps
 
         if selected_strategy == ExecutionStrategy.DIRECT_LIMIT:
             limit_p = price * (1.0 + (max_slippage / 10000.0) if parsed_action == OrderAction.BUY else 1.0 - (max_slippage / 10000.0))

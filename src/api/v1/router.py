@@ -38,6 +38,7 @@ from src.api.v1.endpoints import agents as agents_ep
 from src.api.v1.endpoints import skills as skills_ep
 from src.api.v1.endpoints import generated_code as generated_code_ep
 from src.api.v1.endpoints import adaptive_intelligence
+from src.api.v1.endpoints import execution
 
 # The /auth router (Google OAuth login/callback/exchange/refresh/me/logout)
 # is gone. Identity comes from get_current_user_id() above.
@@ -75,4 +76,12 @@ api_v1_router.include_router(
     prefix="/adaptive-intelligence",
     tags=["Adaptive Intelligence"],
 )
+
+# P6: Execution & Slippage Analytics
+api_v1_router.include_router(
+    execution.router,
+    prefix="/execution",
+    tags=["Execution & Slippage"],
+)
+
 

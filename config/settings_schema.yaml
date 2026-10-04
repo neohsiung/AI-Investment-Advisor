@@ -542,6 +542,64 @@ settings:
     label_zh: 啟用動態 EWMA 市場衝擊係數校準
     help_en: Dynamically recalibrates asset-level market impact coefficient η using empirical fill executions and EWMA filtering.
     help_zh: 依據真實成交樣本與指數加權移動平均 (EWMA)，在線動態校準各資產之市場衝擊參數 η 並閉環反饋至拆單引擎。
+  - key: slippage_compensator_enabled
+    group: trading
+    type: bool
+    default: true
+    label_en: Enable adaptive slippage compensator (P6)
+    label_zh: 啟用自適應訂單執行滑價補償器 (P6)
+    help_en: Dynamically monitors realized vs expected slippage deviations, modulates SOR slicing parameters, and injects empirical friction into opportunity cost evaluation.
+    help_zh: 動態追蹤實際成交滑價與模型預期偏差，自適應微調 SOR 拆單切片與時窗，並將真實摩擦成本注入換庫機會成本門檻。
+  - key: slippage_ewma_alpha
+    group: trading
+    type: float
+    default: 0.20
+    min: 0.01
+    max: 0.50
+    label_en: Slippage multiplier EWMA smoothing factor (alpha)
+    label_zh: 滑價補償乘數 EWMA 平滑係數 (alpha)
+    help_en: Exponential smoothing weight applied to newly observed slippage deviation ratios.
+    help_zh: 應用於最新成交滑價偏離比率之指數平滑權重係數（預設 0.20）。
+  - key: slippage_min_multiplier
+    group: trading
+    type: float
+    default: 0.50
+    min: 0.10
+    max: 1.00
+    label_en: Minimum slippage compensation multiplier
+    label_zh: 滑價補償乘數下限
+    help_en: Floor for the adaptive slippage compensation multiplier in highly liquid regimes.
+    help_zh: 高流動性良好成交環境下滑價補償乘數之保護下限（預設 0.50）。
+  - key: slippage_max_multiplier
+    group: trading
+    type: float
+    default: 3.00
+    min: 1.50
+    max: 5.00
+    label_en: Maximum slippage compensation multiplier
+    label_zh: 滑價補償乘數上限
+    help_en: Ceiling for the adaptive slippage compensation multiplier during illiquid or high-friction conditions.
+    help_zh: 流動性枯竭或高滑價磨擦衝擊時滑價補償乘數之保護上限（預設 3.00）。
+  - key: slippage_adverse_penalty_bps
+    group: trading
+    type: float
+    default: 5.0
+    min: 0.0
+    max: 50.0
+    label_en: Adverse selection safety penalty buffer (bps)
+    label_zh: 逆向選擇安全懲罰緩衝 (bps)
+    help_en: Additional safety buffer in basis points added to expected slippage when recent fills exhibit toxic order flow.
+    help_zh: 當近期成交出現逆向選擇或毒性訂單流異常時額外附加的安全防護緩衝（預設 5.0 bps）。
+  - key: slippage_baseline_bps
+    group: trading
+    type: float
+    default: 10.0
+    min: 1.0
+    max: 50.0
+    label_en: Baseline fallback execution slippage (bps)
+    label_zh: 基準備援執行滑價 (bps)
+    help_en: Fallback baseline slippage used for cold-start assets before empirical execution history exists.
+    help_zh: 尚無真實成交樣本之冷啟動標的所使用之基準執行滑價（預設 10.0 bps）。
   - key: evolution_annealing_enabled
     group: trading
     type: bool

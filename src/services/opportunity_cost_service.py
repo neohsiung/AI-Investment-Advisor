@@ -92,6 +92,7 @@ class OpportunityCostService:
         fee_pct: float = 0.001,
         slippage_pct: float = 0.0005,
         settings_service: Optional[Any] = None,
+        slippage_compensator: Optional[Any] = None,
     ):
         self.user_id = resolve_user_id(user_id) if user_id else "default_user"
         self.min_score_delta = min_score_delta
@@ -100,16 +101,40 @@ class OpportunityCostService:
         # Two-way roundtrip friction hurdle in score points (~0.3 score penalty for 0.3% roundtrip)
         self.friction_hurdle_score = (fee_pct + slippage_pct) * 2 * 100.0
         self.settings_service = settings_service
+        self.slippage_compensator = slippage_compensator
 
     def calculate_roundtrip_friction(
         self,
         slippage_pct: Optional[float] = None,
         commission_pct: Optional[float] = None,
+        sell_ticker: Optional[str] = None,
+        buy_ticker: Optional[str] = None,
     ) -> float:
         """
         Calculates 2-way round-trip transaction friction:
         F_roundtrip = 2 * (slippage + commission)
+        Supports empirical calibrated slippage from AdaptiveExecutionSlippageCompensator (P6)
+        when sell_ticker and buy_ticker are provided.
         """
+        if (
+            slippage_pct is None
+            and sell_ticker is not None
+            and buy_ticker is not None
+            and self.slippage_compensator is not None
+            and hasattr(self.slippage_compensator, "get_calibrated_roundtrip_friction")
+        ):
+            try:
+                comm = self.DEFAULT_COMMISSION_PCT if commission_pct is None else float(commission_pct)
+                assessment = self.slippage_compensator.get_calibrated_roundtrip_friction(
+                    sell_ticker=sell_ticker,
+                    buy_ticker=buy_ticker,
+                    sell_fee_pct=comm,
+                    buy_fee_pct=comm,
+                )
+                return round(assessment.total_roundtrip_friction, 6)
+            except Exception as e:
+                logger.warning(f"Failed to compute calibrated friction via compensator: {e}")
+
         s = self.DEFAULT_SLIPPAGE_PCT if slippage_pct is None else float(slippage_pct)
         c = self.DEFAULT_COMMISSION_PCT if commission_pct is None else float(commission_pct)
         return round(2.0 * (s + c), 6)
@@ -182,7 +207,7 @@ class OpportunityCostService:
         s_score_10 = s_score * 10.0 if is_decimal_scale else s_score
         b_score_10 = b_score * 10.0 if is_decimal_scale else b_score
 
-        friction = self.calculate_roundtrip_friction()
+        friction = self.calculate_roundtrip_friction(sell_ticker=sell_sym, buy_ticker=buy_sym)
         multiplier = self.DEFAULT_MULTIPLIER
         hurdle_rate = self.DEFAULT_HURDLE_RATE
         if self.settings_service and hasattr(self.settings_service, "get_setting"):
