@@ -108,6 +108,7 @@ class AdaptiveDiagnosticReport:
     capital_safety_metrics: Dict[str, Any]
     rebalance_recommendation: Dict[str, Any]
     summary_insights: List[str]
+    provenance: Dict[str, str] = field(default_factory=dict)
 
     def to_dict(self) -> Dict[str, Any]:
         return {
@@ -121,6 +122,11 @@ class AdaptiveDiagnosticReport:
             "capital_safety_metrics": self.capital_safety_metrics,
             "rebalance_recommendation": self.rebalance_recommendation,
             "summary_insights": self.summary_insights,
+            "provenance": self.provenance or {
+                "holdings": "template",
+                "market_observation": "default",
+                "tail_risk": "synthetic",
+            },
         }
 
 
@@ -180,6 +186,7 @@ class PortfolioAdaptiveIntelligenceService:
         current_drawdown: float = 0.05,
         recent_win_rate: float = 0.55,
         recent_payoff_ratio: float = 1.8,
+        provenance: Optional[Dict[str, str]] = None,
     ) -> AdaptiveDiagnosticReport:
         """
         Execute full cross-engine diagnostic evaluation.
@@ -379,6 +386,12 @@ class PortfolioAdaptiveIntelligenceService:
             cvar_99=stress_assessment.cvar_99,
         )
 
+        actual_provenance = provenance or {
+            "holdings": "live" if ((len(current_weights) > 1 and "CASH" not in current_weights) or len(current_weights) > 2) else "template",
+            "market_observation": "live" if market_observation is not None else "default",
+            "tail_risk": "live_portfolio" if returns_history is not None else "synthetic",
+        }
+
         return AdaptiveDiagnosticReport(
             health_score=overall_score,
             health_rating=rating,
@@ -390,6 +403,7 @@ class PortfolioAdaptiveIntelligenceService:
             capital_safety_metrics=capital_safety_data,
             rebalance_recommendation=rebalance_data,
             summary_insights=insights,
+            provenance=actual_provenance,
         )
 
     def _extract_equity_and_cash(

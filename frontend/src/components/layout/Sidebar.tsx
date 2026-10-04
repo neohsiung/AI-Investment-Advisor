@@ -9,6 +9,7 @@ import { useSidebar } from "@/context/SidebarContext";
 const navItems = [
   { id: "command", label: "Command Center", icon: "terminal", href: "/" },
   { id: "performance", label: "績效分析", icon: "monitoring", href: "/performance" },
+  { id: "adaptive", label: "自適應風控雷達", icon: "radar", href: "/adaptive" },
   { id: "backtest", label: "策略回測", icon: "history", href: "/backtest" },
   { id: "decisions", label: "議會辯論", icon: "forum", href: "/decisions" },
   { id: "reports", label: "報告", icon: "description", href: "/reports" },
