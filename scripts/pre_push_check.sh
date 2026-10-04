@@ -46,6 +46,7 @@ if [ -f "$BANDIT" ]; then
     $BANDIT -r src/services/actionable_alert_service.py \
               src/services/sentinel_service.py \
               src/services/shadow_ledger_service.py \
+              src/services/shadow_promotion_orchestrator.py \
               src/services/trading_protections_service.py \
               src/services/webhook_service.py -q -lll
     echo -e "${GREEN}✓ Bandit security baseline clean (0 high/medium issues)${NC}"
@@ -60,6 +61,7 @@ echo -e "${GREEN}✓ Wiki internal links verified${NC}"
 echo -e "\n${YELLOW}[4/4] Running Core Regression Test Suite...${NC}"
 $PYTEST tests/unit/services/test_actionable_alert_service.py \
         tests/unit/services/test_shadow_ledger_service.py \
+        tests/unit/services/test_shadow_promotion_orchestrator.py \
         tests/unit/services/test_smart_money_support_service.py \
         tests/unit/services/test_sentinel_position_exits.py \
         tests/unit/services/test_protections_*.py \

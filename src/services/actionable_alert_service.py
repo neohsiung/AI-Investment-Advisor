@@ -227,6 +227,74 @@ class ActionableAlertHubService:
             category="trading",
         )
 
+    async def dispatch_shadow_promotion_rotation_alert(
+        self,
+        candidate_ticker: str,
+        action_type: str,
+        displaced_ticker: Optional[str] = None,
+        net_edge_pct: float = 0.0,
+        hurdle_pct: float = 0.0,
+        estimated_capital: float = 0.0,
+        sor_plans_summary: Optional[str] = None,
+        auto_executed: bool = False,
+    ) -> Dict[str, Any]:
+        """
+        Dispatched when a shadow candidate completes evaluation and triggers
+        direct promotion or holding rotation plan (P5).
+        """
+        cand = candidate_ticker.upper().strip()
+        disp = displaced_ticker.upper().strip() if displaced_ticker else ""
+
+        if auto_executed:
+            title = f"🔄 影子畢業自動實盤輪轉已執行：{cand}" + (f" ⇄ {disp}" if disp else "")
+            status_text = "系統已依據非線性機會成本利差自動核准並執行實盤置換："
+        else:
+            title = f"📋 影子畢業實盤換庫建議：{cand}" + (f" ⇄ {disp}" if disp else "")
+            status_text = "影子標的考核達標且淨利差突破機會成本門檻，等待確認輪轉："
+
+        content = (
+            f"{status_text}\n\n"
+            f"• <b>提拔影子標的</b>：<code>{cand}</code>\n"
+        )
+        if disp:
+            content += (
+                f"• <b>擬淘汰鈍化持倉</b>：<code>{disp}</code>\n"
+                f"• <b>預估淨利差優勢</b>：+{net_edge_pct * 100:.2f}%\n"
+                f"• <b>機會成本門檻 (Hurdle)</b>：{hurdle_pct * 100:.2f}%\n"
+            )
+        content += f"• <b>置換資本規模</b>：${estimated_capital:,.2f}\n"
+        if sor_plans_summary:
+            content += f"• <b>E1 SOR 拆單執行</b>：{sor_plans_summary}\n"
+
+        if auto_executed:
+            actions = [
+                {"label": "📊 檢視投組 (Portfolio)", "data": "action=view_universe", "key": "view_universe"},
+                {"label": "👌 確認知悉 (Dismiss)", "data": "action=dismiss", "key": "dismiss"},
+            ]
+        else:
+            actions = [
+                {
+                    "label": "🔄 一鍵輪轉換庫 (Rotate)",
+                    "data": f"action=exec_rotation&buy={cand}&sell={disp}",
+                    "key": "exec_rotation",
+                },
+                {"label": "✋ 暫緩保留持倉 (Dismiss)", "data": "action=dismiss", "key": "dismiss"},
+            ]
+
+        logger.info(
+            "ActionableAlertHub: Dispatching shadow promotion rotation alert for %s (disp=%s, auto=%s)",
+            cand, disp, auto_executed,
+        )
+
+        noti_svc = self._get_notification_service()
+        return await noti_svc.notify_all(
+            title=title,
+            content=content,
+            user_id=self.user_id,
+            actions=actions,
+            category="trading",
+        )
+
     async def execute_action(
         self,
         action_name: str,
@@ -356,6 +424,30 @@ class ActionableAlertHubService:
                 return {"ok": True, "action": action, "message": msg}
             except Exception as e:
                 return {"ok": False, "action": action, "message": f"❌ 查詢標的池失敗: {str(e)}"}
+
+        elif action == "exec_rotation":
+            buy_sym = (params.get("buy") or params.get("candidate") or "").upper().strip()
+            sell_sym = (params.get("sell") or params.get("displaced") or "").upper().strip()
+            if not buy_sym:
+                return {"ok": False, "action": action, "message": "❌ 未指定輪轉買入標的代號"}
+
+            try:
+                from src.services.shadow_promotion_orchestrator import ShadowPromotionOrchestrator
+                orch = ShadowPromotionOrchestrator(user_id=self.user_id)
+                res = await orch.execute_promotion(
+                    candidate_ticker=buy_sym,
+                    displaced_ticker=sell_sym or None,
+                )
+                return {
+                    "ok": res.success,
+                    "action": action,
+                    "candidate": buy_sym,
+                    "displaced": sell_sym,
+                    "message": res.message,
+                }
+            except Exception as ex:
+                logger.error("Failed to execute rotation via alert action: %s", ex, exc_info=True)
+                return {"ok": False, "action": action, "message": f"❌ 執行輪轉換庫失敗: {str(ex)}"}
 
         elif action == "dismiss":
             return {"ok": True, "action": action, "message": "👌 警報已確認知悉。"}

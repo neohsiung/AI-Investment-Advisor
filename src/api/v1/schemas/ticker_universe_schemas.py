@@ -141,3 +141,42 @@ class ActionResponse(BaseModel):
 class TickerInfoResponse(BaseModel):
     status: str = "success"
     data: Any
+
+
+# ── Shadow Promotion & Rotation (P5) ──
+
+class PromotionPlanSchema(BaseModel):
+    candidate_ticker: str
+    action_type: str
+    qualified: bool
+    candidate_metrics: Dict[str, Any] = Field(default_factory=dict)
+    displaced_ticker: Optional[str] = None
+    displaced_metrics: Optional[Dict[str, Any]] = None
+    raw_score_delta: float = 0.0
+    net_opportunity_delta: float = 0.0
+    hurdle: float = 0.0
+    roundtrip_friction: float = 0.0
+    estimated_capital: float = 0.0
+    sor_plans: List[Dict[str, Any]] = Field(default_factory=list)
+    rationale: str = ""
+    can_auto_execute: bool = False
+    status: str = "PENDING_APPROVAL"
+    created_at: Optional[str] = None
+
+
+class ShadowPromotionListResponse(BaseModel):
+    status: str = "success"
+    data: List[PromotionPlanSchema]
+    total_qualified: int = 0
+    total_rotations: int = 0
+
+
+class ShadowPromotionExecuteRequest(BaseModel):
+    candidate_ticker: str
+    displaced_ticker: Optional[str] = None
+    auto_rebalance: bool = True
+
+
+class ShadowPromotionExecuteResponse(BaseModel):
+    status: str = "success"
+    data: Dict[str, Any]

@@ -1212,6 +1212,35 @@ settings:
     label_zh: 影子交易考核必須保持主力籌碼支撐未跌破
     help_en: When enabled, candidates that breach institutional support (Anchored VWAP / POC) fail validation.
     help_zh: 開啟時，若價格跌破主力籌碼成本防線即判定考核失敗，不予提拔實盤。
+  - key: shadow_auto_rotation_enabled
+    group: allocation
+    type: bool
+    default: false
+    danger: true
+    label_en: Enable automated shadow-to-live rotation
+    label_zh: 啟用影子交易自動實盤輪轉換庫 (P5)
+    help_en: When enabled, qualified shadow positions that clear the opportunity cost hurdle will automatically execute live capital replacement and SOR orders without manual confirmation.
+    help_zh: 開啟時，考核合格之影子標的若突破非線性換庫機會成本門檻，將由系統自動執行實盤置換與 E1 SOR 拆單，無需人工手動點擊確認。
+  - key: shadow_rotation_min_edge
+    group: allocation
+    type: float
+    default: 0.015
+    min: 0.005
+    max: 0.10
+    label_en: Minimum shadow rotation excess edge
+    label_zh: 影子換庫超額淨利差最低門檻
+    help_en: Minimum net expected edge advantage (over two-way friction and hurdle) required to trigger holding replacement.
+    help_zh: 扣除雙向摩擦阻尼與基本門檻後，影子標的相較於被替換持倉必須保有的最低淨超額利差優勢（預設 1.5%）。
+  - key: shadow_max_active_positions
+    group: allocation
+    type: int
+    default: 10
+    min: 1
+    max: 50
+    label_en: Maximum active live positions limit
+    label_zh: 實盤活躍持倉數量上限
+    help_en: Capacity threshold beyond which shadow graduations must displace an existing decaying holding instead of opening direct new lots.
+    help_zh: 投組實盤活躍持倉上限；超出此上限之影子畢業標的必須透過置換淘汰衰減持倉進行換庫，不可直接開立新倉。
 
 
   # ── Sentinel ─────────────────────────────────────────────────────────────

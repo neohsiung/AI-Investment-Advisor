@@ -379,3 +379,61 @@ async def test_slack_interactivity_webhook():
         res = await ws.slack_interactivity_webhook(req)
         assert res["ok"] is True or "response_type" in res
         mock_exec.assert_called_once_with("pause_trading", {"action": "pause_trading"})
+
+
+@pytest.mark.asyncio
+async def test_dispatch_shadow_promotion_rotation_alert():
+    hub = ActionableAlertHubService(user_id="test_user_p5")
+
+    with patch.object(hub, "_get_notification_service") as mock_get_noti:
+        mock_noti = MagicMock()
+        mock_noti.notify_all = AsyncMock(return_value={"TelegramAdapter": True})
+        mock_get_noti.return_value = mock_noti
+
+        res = await hub.dispatch_shadow_promotion_rotation_alert(
+            candidate_ticker="NVDA",
+            action_type="CAPITAL_ROTATION",
+            displaced_ticker="INTC",
+            net_edge_pct=0.035,
+            hurdle_pct=0.0175,
+            estimated_capital=1500.0,
+            sor_plans_summary="2 筆子單 (TWAP)",
+            auto_executed=False,
+        )
+
+        assert res == {"TelegramAdapter": True}
+        mock_noti.notify_all.assert_called_once()
+        _, kwargs = mock_noti.notify_all.call_args
+        assert "NVDA" in kwargs["title"]
+        assert "INTC" in kwargs["title"]
+        assert "換庫建議" in kwargs["title"]
+        assert "+3.50%" in kwargs["content"]
+        assert "$1,500.00" in kwargs["content"]
+        actions = kwargs["actions"]
+        assert len(actions) == 2
+        assert actions[0]["key"] == "exec_rotation"
+        assert "buy=NVDA" in actions[0]["data"]
+        assert "sell=INTC" in actions[0]["data"]
+
+
+@pytest.mark.asyncio
+async def test_execute_action_exec_rotation():
+    hub = ActionableAlertHubService(user_id="test_user_p5")
+
+    with patch("src.services.shadow_promotion_orchestrator.ShadowPromotionOrchestrator.execute_promotion", new_callable=AsyncMock) as mock_exec:
+        from src.services.shadow_promotion_orchestrator import PromotionExecutionResult
+        mock_exec.return_value = PromotionExecutionResult(
+            success=True,
+            action_type="CAPITAL_ROTATION",
+            candidate_ticker="NVDA",
+            displaced_ticker="INTC",
+            message="Promotion executed successfully",
+        )
+
+        res = await hub.execute_action("exec_rotation", {"buy": "NVDA", "sell": "INTC"})
+        assert res["ok"] is True
+        assert res["action"] == "exec_rotation"
+        assert res["candidate"] == "NVDA"
+        assert res["displaced"] == "INTC"
+        mock_exec.assert_called_once_with(candidate_ticker="NVDA", displaced_ticker="INTC")
+

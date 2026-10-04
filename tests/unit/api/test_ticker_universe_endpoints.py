@@ -6,7 +6,7 @@ from unittest.mock import MagicMock, AsyncMock, patch
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from src.api.v1.endpoints.ticker_universe import router, get_service
+from src.api.v1.endpoints.ticker_universe import router, get_service, get_shadow_orchestrator
 
 
 @pytest.fixture
@@ -23,8 +23,15 @@ def mock_service():
 
 
 @pytest.fixture
-def client(app, mock_service):
+def mock_shadow_orchestrator():
+    orch = MagicMock()
+    return orch
+
+
+@pytest.fixture
+def client(app, mock_service, mock_shadow_orchestrator):
     app.dependency_overrides[get_service] = lambda: mock_service
+    app.dependency_overrides[get_shadow_orchestrator] = lambda: mock_shadow_orchestrator
     yield TestClient(app)
     app.dependency_overrides.clear()
 
@@ -162,6 +169,68 @@ def test_evolve_active_endpoint(client, mock_service):
     assert data["status"] == "success"
     assert data["data"]["rotation_count"] == 1
     assert data["data"]["rotations"][0]["promoted_ticker"] == "NEW_TICKER"
+
+
+def test_get_shadow_promotions_endpoint(client, mock_shadow_orchestrator):
+    from src.services.shadow_promotion_orchestrator import PromotionProposal
+    mock_shadow_orchestrator.evaluate_promotions = AsyncMock(return_value=[
+        PromotionProposal(
+            candidate_ticker="NVDA",
+            action_type="CAPITAL_ROTATION",
+            qualified=True,
+            candidate_metrics={"unrealized_pnl_pct": 12.5},
+            displaced_ticker="INTC",
+            displaced_metrics={"holding_days": 35, "has_decay": True},
+            raw_score_delta=5.0,
+            net_opportunity_delta=0.035,
+            hurdle=0.0175,
+            roundtrip_friction=0.003,
+            estimated_capital=1500.0,
+            sor_plans=[{"symbol": "INTC", "action": "SELL"}, {"symbol": "NVDA", "action": "BUY"}],
+            rationale="Approved rotation displacing stagnant INTC",
+            can_auto_execute=True,
+            status="PENDING_APPROVAL",
+        )
+    ])
+
+    resp = client.get("/api/v1/ticker-universe/shadow/promotions")
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["status"] == "success"
+    assert data["total_qualified"] == 1
+    assert data["total_rotations"] == 1
+    assert len(data["data"]) == 1
+    item = data["data"][0]
+    assert item["candidate_ticker"] == "NVDA"
+    assert item["displaced_ticker"] == "INTC"
+    assert item["action_type"] == "CAPITAL_ROTATION"
+
+
+def test_execute_shadow_promotion_endpoint(client, mock_shadow_orchestrator):
+    from src.services.shadow_promotion_orchestrator import PromotionExecutionResult
+    mock_shadow_orchestrator.execute_promotion = AsyncMock(return_value=PromotionExecutionResult(
+        success=True,
+        action_type="CAPITAL_ROTATION",
+        candidate_ticker="NVDA",
+        displaced_ticker="INTC",
+        graduated_position_id="shadow-123",
+        sor_execution_plans=[{"symbol": "INTC"}, {"symbol": "NVDA"}],
+        alert_dispatched=True,
+        message="Promotion executed successfully",
+    ))
+
+    resp = client.post("/api/v1/ticker-universe/shadow/promotions/execute", json={
+        "candidate_ticker": "NVDA",
+        "displaced_ticker": "INTC",
+        "auto_rebalance": True,
+    })
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["status"] == "success"
+    assert data["data"]["candidate_ticker"] == "NVDA"
+    assert data["data"]["displaced_ticker"] == "INTC"
+    assert data["data"]["success"] is True
+
 
 
 
