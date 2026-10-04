@@ -11,6 +11,15 @@ from typing import Dict, Optional
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 
 from src.api.v1.dependencies import get_current_user_id
+from src.api.v1.schemas.circuit_breaker_schemas import (
+    CircuitBreakerActionResponse,
+    CircuitBreakerQuoteEvaluationRequest,
+    CircuitBreakerQuoteEvaluationResponse,
+    CircuitBreakerResumeRequest,
+    CircuitBreakerStatusListResponse,
+    CircuitBreakerStatusSchema,
+    CircuitBreakerTriggerRequest,
+)
 from src.api.v1.schemas.execution_slippage_schemas import (
     ExecutionFillRequest,
     ExecutionFillResponse,
@@ -23,6 +32,10 @@ from src.services.adaptive_execution_slippage_compensator import (
     AdaptiveExecutionSlippageCompensator,
     SlippageCompensationMetrics,
 )
+from src.services.intraday_liquidity_circuit_breaker_service import (
+    IntradayLiquidityCircuitBreakerService,
+    MarketQuoteObservation,
+)
 from src.services.settings_service import SettingsService
 from src.utils.logger import setup_logger
 
@@ -31,6 +44,7 @@ router = APIRouter()
 
 # In-memory service cache per user for state continuity
 _compensators: Dict[str, AdaptiveExecutionSlippageCompensator] = {}
+_circuit_breakers: Dict[str, IntradayLiquidityCircuitBreakerService] = {}
 
 
 def get_slippage_compensator(
@@ -45,6 +59,19 @@ def get_slippage_compensator(
             settings_repo=settings_repo,
         )
     return _compensators[user_id]
+
+
+def get_circuit_breaker_service(
+    user_id: str = Depends(get_current_user_id),
+) -> IntradayLiquidityCircuitBreakerService:
+    """Dependency provider for IntradayLiquidityCircuitBreakerService."""
+    if user_id not in _circuit_breakers:
+        settings_svc = SettingsService(user_id=user_id)
+        _circuit_breakers[user_id] = IntradayLiquidityCircuitBreakerService(
+            user_id=user_id,
+            settings_service=settings_svc,
+        )
+    return _circuit_breakers[user_id]
 
 
 @router.post(
@@ -178,3 +205,114 @@ def get_calibrated_roundtrip_friction(
         hurdle_rate=hurdle_rate,
     )
     return RoundtripFrictionResponse(status="success", **assessment.to_dict())
+
+
+# ── P7: Intraday Liquidity Circuit Breaker Endpoints ─────────────────────────
+
+
+@router.get(
+    "/circuit-breaker/status",
+    response_model=CircuitBreakerStatusListResponse,
+    summary="獲取當前所有標的之盤中流動性熔斷器狀態",
+)
+def list_circuit_breaker_statuses(
+    service: IntradayLiquidityCircuitBreakerService = Depends(get_circuit_breaker_service),
+) -> CircuitBreakerStatusListResponse:
+    """查詢當前所有監控標的與全局之盤中流動性熔斷狀態（NORMAL, WARNING, TRIGGERED, COOLDOWN）。"""
+    all_statuses = service.get_all_statuses()
+    formatted = {
+        sym: CircuitBreakerStatusSchema(**st.to_dict())
+        for sym, st in all_statuses.items()
+    }
+    return CircuitBreakerStatusListResponse(
+        status="success",
+        total=len(formatted),
+        circuit_breakers=formatted,
+    )
+
+
+@router.get(
+    "/circuit-breaker/status/{symbol}",
+    response_model=CircuitBreakerStatusSchema,
+    summary="獲取指定標的之盤中流動性熔斷器狀態",
+)
+def get_symbol_circuit_breaker_status(
+    symbol: str,
+    service: IntradayLiquidityCircuitBreakerService = Depends(get_circuit_breaker_service),
+) -> CircuitBreakerStatusSchema:
+    """查詢單一標的或 GLOBAL 熔斷狀態、點差倍數、偏離幅度與冷卻倒數。"""
+    st = service.get_status(symbol)
+    return CircuitBreakerStatusSchema(**st.to_dict())
+
+
+@router.post(
+    "/circuit-breaker/assess",
+    response_model=CircuitBreakerQuoteEvaluationResponse,
+    summary="提交盤中報價並評估是否觸發流動性衝擊熔斷",
+)
+def assess_quote_for_circuit_breaker(
+    payload: CircuitBreakerQuoteEvaluationRequest,
+    service: IntradayLiquidityCircuitBreakerService = Depends(get_circuit_breaker_service),
+) -> CircuitBreakerQuoteEvaluationResponse:
+    """
+    提交最新盤中買賣報價與實時波動率，評估點差突增、瞬時跳空或波動暴增是否突破閾值，
+    若衝擊嚴重則自動觸發熔斷並進入冷卻期。
+    """
+    obs = MarketQuoteObservation(
+        symbol=payload.symbol,
+        bid_price=payload.bid_price,
+        ask_price=payload.ask_price,
+        last_price=payload.last_price,
+        bid_size=payload.bid_size,
+        ask_size=payload.ask_size,
+        intraday_volatility=payload.intraday_volatility,
+    )
+    status_res = service.evaluate_quote(obs)
+    return CircuitBreakerQuoteEvaluationResponse(
+        status="success",
+        circuit_breaker=CircuitBreakerStatusSchema(**status_res.to_dict()),
+    )
+
+
+@router.post(
+    "/circuit-breaker/trigger",
+    response_model=CircuitBreakerActionResponse,
+    summary="手動緊急觸發盤中流動性熔斷",
+)
+def manually_trigger_circuit_breaker(
+    payload: CircuitBreakerTriggerRequest,
+    service: IntradayLiquidityCircuitBreakerService = Depends(get_circuit_breaker_service),
+) -> CircuitBreakerActionResponse:
+    """手動暫停特定標的或全局投資組合之交易執行，撤回掛單並鎖定冷卻期。"""
+    res = service.manual_trigger(
+        symbol=payload.symbol,
+        reason=payload.reason,
+        cooldown_minutes=payload.cooldown_minutes,
+    )
+    return CircuitBreakerActionResponse(
+        status="success",
+        symbol=res.symbol,
+        state=res.state.value if hasattr(res.state, "value") else str(res.state),
+        message=f"🚨 已成功對 {res.symbol} 觸發盤中流動性緊急熔斷，冷卻 {payload.cooldown_minutes} 分鐘。",
+    )
+
+
+@router.post(
+    "/circuit-breaker/resume",
+    response_model=CircuitBreakerActionResponse,
+    summary="手動恢復盤中交易執行與解除熔斷",
+)
+def manually_resume_circuit_breaker(
+    payload: CircuitBreakerResumeRequest,
+    service: IntradayLiquidityCircuitBreakerService = Depends(get_circuit_breaker_service),
+) -> CircuitBreakerActionResponse:
+    """手動解除熔斷狀態，恢復正常 SOR 拆單與訂單路由執行。"""
+    service.resume(payload.symbol)
+    res = service.get_status(payload.symbol)
+    return CircuitBreakerActionResponse(
+        status="success",
+        symbol=res.symbol,
+        state=res.state.value if hasattr(res.state, "value") else str(res.state),
+        message=f"🟢 已成功解除 {payload.symbol} 之盤中熔斷，恢復正常交易執行。",
+    )
+

@@ -628,6 +628,64 @@ settings:
     label_zh: 基準備援執行滑價 (bps)
     help_en: Fallback baseline slippage used for cold-start assets before empirical execution history exists.
     help_zh: 尚無真實成交樣本之冷啟動標的所使用之基準執行滑價（預設 10.0 bps）。
+  - key: circuit_breaker_enabled
+    group: trading
+    type: bool
+    default: true
+    label_en: Enable intraday liquidity circuit breaker (P7)
+    label_zh: 啟用盤中流動性衝擊與自適應緊急熔斷器 (P7)
+    help_en: Real-time intraday liquidity and flash-crash monitoring engine that detects spread expansion, price gaps, and volatility surges, halting order execution and alerting via P3 Actionable Hub.
+    help_zh: 盤中即時流動性枯竭與閃崩防禦引擎，即時監控買賣點差擴張、價格瞬時跳空與波動率突增，及時熔斷訂單執行並連動 P3 行動推播中心。
+  - key: circuit_breaker_spread_multiplier_threshold
+    group: trading
+    type: float
+    default: 3.0
+    min: 1.5
+    max: 10.0
+    label_en: Circuit breaker spread expansion multiplier threshold
+    label_zh: 流動性熔斷點差擴張倍數門檻
+    help_en: Ratio of current bid-ask spread to baseline spread that triggers a liquidity shock circuit breaker.
+    help_zh: 當前買賣點差相對於基底點差之擴張倍數門檻（預設 3.0 倍）；超過即觸發流動性熔斷。
+  - key: circuit_breaker_spread_absolute_bps_threshold
+    group: trading
+    type: float
+    default: 50.0
+    min: 10.0
+    max: 200.0
+    label_en: Circuit breaker absolute spread threshold (bps)
+    label_zh: 流動性熔斷絕對點差門檻 (bps)
+    help_en: Minimum absolute spread in basis points required along with the spread multiplier to trigger a liquidity shock halt.
+    help_zh: 配合點差倍數觸發熔斷之絕對點差下限門檻（預設 50 bps），避免低點差標的輕微跳動誤觸。
+  - key: circuit_breaker_price_gap_pct
+    group: trading
+    type: float
+    default: 3.5
+    min: 1.0
+    max: 10.0
+    label_en: Circuit breaker price gap shock threshold (%)
+    label_zh: 瞬時價格跳空閃崩熔斷門檻 (%)
+    help_en: Absolute percentage change between current price and baseline price that triggers an immediate price gap shock circuit breaker.
+    help_zh: 最新報價相對於基準價之瞬時價格跳空百分比門檻（預設 3.5%）；超過即觸發閃崩熔斷。
+  - key: circuit_breaker_vol_spike_sigma
+    group: trading
+    type: float
+    default: 3.0
+    min: 1.5
+    max: 5.0
+    label_en: Circuit breaker volatility surge threshold (sigma)
+    label_zh: 波動率劇增熔斷門檻 (sigma)
+    help_en: Normalized volatility standard deviation multiple above historical baseline that triggers a volatility surge halt.
+    help_zh: 當前瞬時波動率相對於歷史基線之標準差倍數門檻（預設 3.0 sigma）；超標即觸發波動劇增熔斷。
+  - key: circuit_breaker_cooldown_minutes
+    group: trading
+    type: int
+    default: 15
+    min: 1
+    max: 120
+    label_en: Circuit breaker cooldown period (minutes)
+    label_zh: 熔斷冷卻恢復期（分鐘）
+    help_en: Default cooldown period in minutes after a circuit breaker trigger before execution automatically returns to normal status.
+    help_zh: 熔斷觸發後自動轉入冷卻觀察期之持續時間（預設 15 分鐘）；期滿無新衝擊則平穩回歸正常。
   - key: evolution_annealing_enabled
     group: trading
     type: bool
