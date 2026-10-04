@@ -10,6 +10,13 @@ from typing import Any, Dict
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from src.api.v1.dependencies import get_current_user_id
+from src.api.v1.schemas.council_blindspot_schemas import (
+    BlindspotListResponse,
+    BlindspotResolveRequest,
+    BlindspotResolveResponse,
+    BlindspotScanResponse,
+    BlindspotSchema,
+)
 from src.api.v1.schemas.council_meta_learning_schemas import (
     AgentAttributionSchema,
     MetaLearningAttributionsResponse,
@@ -17,6 +24,7 @@ from src.api.v1.schemas.council_meta_learning_schemas import (
 )
 from src.repositories.vector_repository import AlchemyVectorRepository
 from src.services.adaptive_council_meta_learning_service import AdaptiveCouncilMetaLearningService
+from src.services.cognitive_blindspot_service import CognitiveBlindspotService
 from src.utils.logger import setup_logger
 from src.utils.rate_limit import limiter
 
@@ -30,6 +38,10 @@ def get_vector_repo() -> AlchemyVectorRepository:
 
 def get_meta_learning_service(user_id: str = Depends(get_current_user_id)) -> AdaptiveCouncilMetaLearningService:
     return AdaptiveCouncilMetaLearningService(user_id=user_id)
+
+
+def get_blindspot_service(user_id: str = Depends(get_current_user_id)) -> CognitiveBlindspotService:
+    return CognitiveBlindspotService(user_id=user_id)
 
 
 @router.get("/sessions")
@@ -163,4 +175,109 @@ async def calibrate_meta_learning(
     except Exception as e:
         logger.error(f"calibrate_meta_learning failed: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
+
+
+# ── A2: Cognitive Blindspot Detector Endpoints ───────────────────────────────
+
+@router.get("/blindspots", response_model=BlindspotListResponse)
+@limiter.limit("20/minute")
+async def list_blindspots(
+    request: Request,
+    user_id: str = Depends(get_current_user_id),
+    service: CognitiveBlindspotService = Depends(get_blindspot_service),
+) -> BlindspotListResponse:
+    """Fetch all active cognitive blindspots and reflection constraints."""
+    try:
+        active = service.get_active_blindspots()
+        return BlindspotListResponse(
+            status="success",
+            total_active=len(active),
+            blindspots=[
+                BlindspotSchema(
+                    id=b.id,
+                    user_id=b.user_id,
+                    agent_name=b.agent_name,
+                    bias_pattern=b.bias_pattern,
+                    regime=b.regime,
+                    consecutive_failures=b.consecutive_failures,
+                    avg_alpha_loss=float(b.avg_alpha_loss or 0.0),
+                    severity=b.severity,
+                    corrective_guidance=b.corrective_guidance,
+                    is_active=b.is_active,
+                    detected_at=b.detected_at,
+                    resolved_at=b.resolved_at,
+                )
+                for b in active
+            ],
+        )
+    except Exception as e:
+        logger.error(f"list_blindspots failed: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/blindspots/scan", response_model=BlindspotScanResponse)
+@limiter.limit("10/minute")
+async def scan_blindspots(
+    request: Request,
+    regime: str = "SIDEWAYS_HIGH_VOL",
+    user_id: str = Depends(get_current_user_id),
+    service: CognitiveBlindspotService = Depends(get_blindspot_service),
+) -> BlindspotScanResponse:
+    """Trigger on-demand scan of agent cognitive blindspots across historical outcomes."""
+    try:
+        detected = service.scan_and_detect_blindspots(current_regime=regime)
+        active = service.get_active_blindspots()
+        return BlindspotScanResponse(
+            status="success",
+            scanned_agents=5,
+            new_blindspots_detected=len(detected),
+            active_blindspots=[
+                BlindspotSchema(
+                    id=b.id,
+                    user_id=b.user_id,
+                    agent_name=b.agent_name,
+                    bias_pattern=b.bias_pattern,
+                    regime=b.regime,
+                    consecutive_failures=b.consecutive_failures,
+                    avg_alpha_loss=float(b.avg_alpha_loss or 0.0),
+                    severity=b.severity,
+                    corrective_guidance=b.corrective_guidance,
+                    is_active=b.is_active,
+                    detected_at=b.detected_at,
+                    resolved_at=b.resolved_at,
+                )
+                for b in active
+            ],
+        )
+    except Exception as e:
+        logger.error(f"scan_blindspots failed: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/blindspots/{blindspot_id}/resolve", response_model=BlindspotResolveResponse)
+@limiter.limit("20/minute")
+async def resolve_blindspot(
+    request: Request,
+    blindspot_id: str,
+    body: BlindspotResolveRequest = BlindspotResolveRequest(),
+    user_id: str = Depends(get_current_user_id),
+    service: CognitiveBlindspotService = Depends(get_blindspot_service),
+) -> BlindspotResolveResponse:
+    """Manually resolve and calibrate an active cognitive blindspot constraint."""
+    try:
+        success = service.resolve_blindspot(blindspot_id)
+        if not success:
+            raise HTTPException(status_code=404, detail="Blindspot not found or already resolved.")
+        from datetime import datetime, timezone
+        return BlindspotResolveResponse(
+            status="success",
+            blindspot_id=blindspot_id,
+            resolved_at=datetime.now(timezone.utc),
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"resolve_blindspot failed: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
 
