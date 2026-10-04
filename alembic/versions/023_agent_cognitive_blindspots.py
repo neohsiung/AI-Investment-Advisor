@@ -1,13 +1,13 @@
-"""023_add_agent_cognitive_blindspots: A2 Cognitive Blindspot Detection and Self-Reflection Memory
+"""023_agent_cognitive_blindspots: A2 Cognitive Blindspot Detection and Self-Reflection Memory
 
-Revision ID: 023_add_agent_cognitive_blindspots
+Revision ID: 023_agent_cognitive_blindspots
 Revises: 022_add_generated_code_artifacts
 Create Date: 2026-10-04
 """
 from alembic import op
 import sqlalchemy as sa
 
-revision = "023_add_agent_cognitive_blindspots"
+revision = "023_agent_cognitive_blindspots"
 down_revision = "022_add_generated_code_artifacts"
 branch_labels = None
 depends_on = None
