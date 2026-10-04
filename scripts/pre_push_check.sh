@@ -45,6 +45,7 @@ echo -e "\n${YELLOW}[2/4] Running Bandit SAST Security Scan...${NC}"
 if [ -f "$BANDIT" ]; then
     $BANDIT -r src/services/actionable_alert_service.py \
               src/services/adaptive_execution_slippage_compensator.py \
+              src/services/council_debate_memory_service.py \
               src/services/sentinel_service.py \
               src/services/shadow_ledger_service.py \
               src/services/shadow_promotion_orchestrator.py \
@@ -83,6 +84,7 @@ $PYTEST tests/unit/services/test_actionable_alert_service.py \
         tests/unit/services/test_extreme_value_theory.py \
         tests/unit/services/test_adaptive_council_meta_learning.py \
         tests/unit/services/test_cognitive_blindspot_service.py \
+        tests/unit/services/test_council_debate_memory_service.py \
         tests/unit/config/test_settings_schema.py -q
 
 echo -e "\n${GREEN}======================================================${NC}"

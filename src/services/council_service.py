@@ -59,6 +59,14 @@ class CouncilService:
         from src.services.cognitive_blindspot_service import CognitiveBlindspotService
         self.blindspot_service = CognitiveBlindspotService(user_id=user_id)
 
+        # A3 council debate memory retrieval loop (2026-10-04): vector precedent retrieval
+        # and outcome-anchored decision attribution synthesis.
+        from src.services.council_debate_memory_service import CouncilDebateMemoryService
+        self.debate_memory_service = CouncilDebateMemoryService(
+            user_id=user_id,
+            settings_service=self.settings_service,
+        )
+
         # PAD Phase 2: Add model router and gateway
         from src.data.database import get_db_engine
         self.settings_repo = AlchemySettingsRepository(engine=get_db_engine())
@@ -128,6 +136,14 @@ class CouncilService:
                         system_prompt += f"\n\n{cio_bs_summary}"
                 except Exception as bs_cio_err:
                     logger.debug(f"Council: failed to load CIO blindspot summary (non-blocking): {bs_cio_err}")
+
+                # A3: Inject historical debate precedents & decision lessons for CIO
+                try:
+                    precedents_block = context.get("historical_precedents") if isinstance(context, dict) else None
+                    if precedents_block and "No historical council precedents found" not in precedents_block:
+                        system_prompt += f"\n\n## Historical Debate Precedents & Decision Lessons (A3 Attribution):\n{precedents_block}"
+                except Exception as prec_err:
+                    logger.debug(f"Council: failed to load precedent guidance for CIO (non-blocking): {prec_err}")
             
             messages = [
                 Message(role="system", content=system_prompt),
@@ -424,10 +440,24 @@ class CouncilService:
         except Exception as e:
             logger.debug(f"Council: meta_learning context generation fallback: {e}")
 
+        # A3: Retrieve historical debate precedents with outcome attribution
+        debate_precedents_prompt = ""
+        try:
+            retrieval_res = self.debate_memory_service.retrieve_similar_precedents(
+                topic=topic,
+                ticker=_topic_ticker,
+            )
+            if retrieval_res and retrieval_res.synthesized_prompt_context:
+                debate_precedents_prompt = retrieval_res.synthesized_prompt_context
+                logger.info(f"Council: Retrieved {len(retrieval_res.precedents)} historical debate precedents")
+        except Exception as e:
+            logger.debug(f"Council: debate_memory_service retrieval fallback: {e}")
+
         # ── 2. Build enriched debate_context dict for all agents ──
         debate_context = {
             **context_data,
             "historical_context": past_wisdom,
+            "historical_precedents": debate_precedents_prompt,
             "topic": topic,
             "user_focus": user_focus,
             "competitor_analysis": competitor_analysis,
@@ -629,9 +659,23 @@ class CouncilService:
         except Exception as e:
             logger.debug(f"Council: meta_learning context generation fallback in debate logic: {e}")
 
+        # A3: Retrieve historical debate precedents with outcome attribution
+        debate_precedents_prompt = ""
+        try:
+            retrieval_res = self.debate_memory_service.retrieve_similar_precedents(
+                topic=topic,
+                ticker=_topic_ticker,
+            )
+            if retrieval_res and retrieval_res.synthesized_prompt_context:
+                debate_precedents_prompt = retrieval_res.synthesized_prompt_context
+                logger.info(f"Council: Retrieved {len(retrieval_res.precedents)} historical debate precedents (debate logic)")
+        except Exception as e:
+            logger.debug(f"Council: debate_memory_service retrieval fallback in debate logic: {e}")
+
         debate_context = {
             **context_data,
             "historical_context": past_wisdom,
+            "historical_precedents": debate_precedents_prompt,
             "topic": topic,
             "user_focus": user_focus,
             "competitor_analysis": competitor_analysis,
