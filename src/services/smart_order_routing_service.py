@@ -147,10 +147,17 @@ class SmartOrderRoutingService:
     DEFAULT_JITTER_PCT = 0.15                 # +/- 15% interval & size randomization
     SMALL_ORDER_VALUE_THRESHOLD = 500.0       # Orders < $500 direct route
 
-    def __init__(self, user_id: str = "default_user", settings_repo: Any = None, feedback_service: Any = None):
+    def __init__(
+        self,
+        user_id: str = "default_user",
+        settings_repo: Any = None,
+        feedback_service: Any = None,
+        circuit_breaker_service: Any = None,
+    ):
         self.user_id = resolve_user_id(user_id)
         self.settings_repo = settings_repo
         self.feedback_service = feedback_service
+        self.circuit_breaker_service = circuit_breaker_service
 
     def _get_setting(self, key: str, default: Any, val_type: type = float) -> Any:
         """Helper to retrieve dynamic setting with fallback."""
@@ -213,6 +220,29 @@ class SmartOrderRoutingService:
         abs_quantity = abs(float(requested_quantity))
         adv = max(1.0, float(adv_20))
         price = max(0.0001, float(arrival_price))
+
+        # P7 Intraday Liquidity Circuit Breaker check
+        if self.circuit_breaker_service is not None and self.circuit_breaker_service.is_halted(symbol):
+            cb_status = self.circuit_breaker_service.get_status(symbol)
+            reason = cb_status.reason if cb_status else "Intraday Liquidity Circuit Breaker active"
+            logger.warning(f"🚨 SOR plan rejected for {symbol}: Circuit breaker active ({reason})")
+            return SlicingPlan(
+                symbol=symbol.upper(),
+                action=parsed_action,
+                strategy=ExecutionStrategy.DIRECT_LIMIT,
+                total_requested_quantity=abs_quantity,
+                adv_20=adv,
+                adv_limit_pct=self.adv_max_pct,
+                approved_quantity=0.0,
+                unfilled_rollover_quantity=abs_quantity,
+                arrival_price=price,
+                execution_window_minutes=window_minutes,
+                num_slices=0,
+                child_orders=[],
+                status="CIRCUIT_BREAKER_HALTED",
+                circuit_breaker_triggered=True,
+                circuit_breaker_reason=reason,
+            )
 
         # 1. ADV Constraint Gating
         adv_limit = self.adv_max_pct

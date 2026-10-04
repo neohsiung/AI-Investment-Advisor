@@ -130,6 +130,50 @@ class ActionableAlertHubService:
             category="trading",
         )
 
+    async def dispatch_liquidity_circuit_breaker_alert(
+        self,
+        ticker: str,
+        reason: str,
+        trigger_type: str = "LIQUIDITY_SHOCK",
+        spread_bps: float = 0.0,
+        spread_multiplier: float = 1.0,
+        cooldown_minutes: int = 15,
+    ) -> Dict[str, Any]:
+        """
+        P7: Dispatched when intraday liquidity shock trips the circuit breaker.
+        Provides 1-tap Resume, Emergency Cash, and Extend Cooldown actions.
+        """
+        sym = ticker.upper().strip()
+        title = f"🚨 盤中流動性衝擊緊急熔斷：{sym}"
+        content = (
+            f"標的 <b>{sym}</b> 觸發盤中流動性衝擊熔斷機制，E1 SOR 拆單與撮合執行已立即暫停！\n\n"
+            f"• <b>衝擊類型</b>：<code>{trigger_type}</code>\n"
+            f"• <b>熔斷原因</b>：{reason}\n"
+            f"• <b>即時點差</b>：{spread_bps:.1f} bps (倍數: {spread_multiplier:.2f}x)\n"
+            f"• <b>冷卻觀察期</b>：{cooldown_minutes} 分鐘\n\n"
+            f"為保護真金資本免遭閃崩或逆向選擇嚴重滑價吞噬，請選擇應對操作："
+        )
+
+        actions = [
+            {"label": "🟢 一鍵解除熔斷 (Resume)", "data": f"action=resume_circuit_breaker&ticker={sym}", "key": "cb_resume"},
+            {"label": "🛡️ 強制轉入防守現金 (Cash)", "data": f"action=emergency_cash&ticker={sym}", "key": "cb_cash"},
+            {"label": "⏸️ 延長冷卻 30 分鐘 (Extend)", "data": f"action=extend_circuit_breaker&ticker={sym}", "key": "cb_extend"},
+        ]
+
+        logger.warning(
+            "ActionableAlertHub: Dispatching liquidity circuit breaker alert for %s (type=%s, spread=%.1f bps)",
+            sym, trigger_type, spread_bps,
+        )
+
+        noti_svc = self._get_notification_service()
+        return await noti_svc.notify_all(
+            title=title,
+            content=content,
+            user_id=self.user_id,
+            actions=actions,
+            category="trading",
+        )
+
     async def dispatch_shadow_graduation_alert(
         self,
         ticker: str,
@@ -448,6 +492,48 @@ class ActionableAlertHubService:
             except Exception as ex:
                 logger.error("Failed to execute rotation via alert action: %s", ex, exc_info=True)
                 return {"ok": False, "action": action, "message": f"❌ 執行輪轉換庫失敗: {str(ex)}"}
+
+        elif action == "resume_circuit_breaker":
+            ticker = params.get("ticker", "GLOBAL").upper().strip()
+            try:
+                from src.services.intraday_liquidity_circuit_breaker_service import IntradayLiquidityCircuitBreakerService
+                cb = IntradayLiquidityCircuitBreakerService(user_id=self.user_id)
+                cb.resume(ticker)
+                return {
+                    "ok": True,
+                    "action": action,
+                    "ticker": ticker,
+                    "message": f"🟢 已成功手動解除 {ticker} 之盤中流動性熔斷，恢復正常交易。",
+                }
+            except Exception as e:
+                logger.error("Failed to resume circuit breaker for %s: %s", ticker, e)
+                return {"ok": False, "action": action, "ticker": ticker, "message": f"❌ 解除熔斷失敗: {str(e)}"}
+
+        elif action == "extend_circuit_breaker":
+            ticker = params.get("ticker", "GLOBAL").upper().strip()
+            try:
+                from src.services.intraday_liquidity_circuit_breaker_service import IntradayLiquidityCircuitBreakerService
+                cb = IntradayLiquidityCircuitBreakerService(user_id=self.user_id)
+                cb.extend_cooldown(ticker, additional_minutes=30)
+                return {
+                    "ok": True,
+                    "action": action,
+                    "ticker": ticker,
+                    "message": f"⏸️ 已成功將 {ticker} 之熔斷冷卻期延長 30 分鐘。",
+                }
+            except Exception as e:
+                logger.error("Failed to extend circuit breaker for %s: %s", ticker, e)
+                return {"ok": False, "action": action, "ticker": ticker, "message": f"❌ 延長冷卻失敗: {str(e)}"}
+
+        elif action == "emergency_cash":
+            ticker = params.get("ticker", "GLOBAL").upper().strip()
+            ss.save_setting("ai_trading_enabled", "false")
+            return {
+                "ok": True,
+                "action": action,
+                "ticker": ticker,
+                "message": f"🛡️ 已觸發緊急防守現金模式：AI 自動交易已全面停用，阻斷所有新開倉訊號。",
+            }
 
         elif action == "dismiss":
             return {"ok": True, "action": action, "message": "👌 警報已確認知悉。"}
