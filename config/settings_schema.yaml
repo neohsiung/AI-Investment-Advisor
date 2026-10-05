@@ -250,6 +250,54 @@ settings:
     label_zh: 群體思維部位置信度保護折減率
     help_en: Haircut percentage applied to position sizing or signal conviction when an echo chamber is identified.
     help_zh: 觸發群體思維警戒時，建議部位大小或信號置信度之強制安全折減比率（預設 0.25 即 25% 折減）。
+  - key: debate_termination_enabled
+    group: ai
+    type: bool
+    default: true
+    label_en: Dynamic Debate Termination & Information Gain (A5)
+    label_zh: 跨專家交互辯論動態終止與邊際資訊增益 (A5)
+    help_en: Dynamically stops council debate rounds early when arguments converge and marginal information gain drops below threshold.
+    help_zh: 監控專家多輪辯論之語意收斂度與邊際資訊增益，在觀點已定時提早動態終止以節省 30%~50% 呼叫延遲與 Token 成本。
+  - key: debate_min_rounds
+    group: ai
+    type: int
+    default: 2
+    min: 1
+    max: 5
+    label_en: Debate Minimum Required Rounds
+    label_zh: 評議會最小必辯輪次
+    help_en: Minimum number of debate rounds that must execute before dynamic early stopping is permitted.
+    help_zh: 啟用動態提早終止前必須執行的最低辯論輪次（預設 2 輪），確保專家充分陳述初始觀點。
+  - key: debate_max_rounds
+    group: ai
+    type: int
+    default: 5
+    min: 2
+    max: 10
+    label_en: Debate Maximum Round Limit
+    label_zh: 評議會最大輪次上限
+    help_en: Hard ceiling for total allowed debate rounds regardless of convergence.
+    help_zh: 評議會辯論輪次之剛性上限（預設 5 輪）；達到此輪次時強制終止並轉由 CIO 裁決。
+  - key: debate_marginal_info_gain_threshold
+    group: ai
+    type: float
+    default: 0.12
+    min: 0.01
+    max: 0.50
+    label_en: Marginal Information Gain Cutoff (epsilon)
+    label_zh: 邊際資訊增益終止門檻 (epsilon)
+    help_en: Threshold for Delta Information Gain below which further debate rounds are deemed redundant.
+    help_zh: 輪次間邊際資訊增益下限門檻（預設 0.12）；低於此門檻且論點高度相似時觸發提早終止。
+  - key: debate_argument_similarity_threshold
+    group: ai
+    type: float
+    default: 0.85
+    min: 0.50
+    max: 0.99
+    label_en: Debate Argument Semantic Convergence Similarity
+    label_zh: 辯論論點語意收斂相似度門檻
+    help_en: Semantic argument similarity threshold across rounds indicating expert arguments have reached saturation.
+    help_zh: 前後輪次論點語意相似度門檻（預設 0.85）；超過代表各專家僅在重複相同論據無新資訊。
 
 
   # ── Trading & risk ───────────────────────────────────────────────────────

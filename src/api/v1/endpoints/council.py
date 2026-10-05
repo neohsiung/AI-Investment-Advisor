@@ -6,6 +6,7 @@ this is the advisor's differentiator vs. reference systems (TradingAgents,
 freqtrade): most systems show a final signal; this shows HOW the council
 argued its way there.
 """
+from datetime import datetime, timezone
 from typing import Any, Dict
 
 from fastapi import APIRouter, Depends, HTTPException, Request
@@ -34,6 +35,12 @@ from src.api.v1.schemas.council_diversity_schemas import (
     DiversityEvaluationRequest,
     DiversityEvaluationResponse,
 )
+from src.api.v1.schemas.debate_termination_schemas import (
+    AgentDebateTurnSchema,
+    DebateRoundSnapshotSchema,
+    DebateTerminationEvaluationRequest,
+    DebateTerminationEvaluationResponse,
+)
 from src.repositories.vector_repository import AlchemyVectorRepository
 from src.services.adaptive_council_meta_learning_service import AdaptiveCouncilMetaLearningService
 from src.services.cognitive_blindspot_service import CognitiveBlindspotService
@@ -42,6 +49,13 @@ from src.services.council_diversity_entropy_service import (
     AgentVote,
     CouncilDiversityEntropyService,
     DiversityAssessment,
+)
+from src.services.dynamic_debate_termination_service import (
+    AgentDebateTurn,
+    DebateRoundSnapshot,
+    DynamicDebateTerminationService,
+    TerminationEvaluation,
+    TerminationStatus,
 )
 from src.services.settings_service import SettingsService
 from src.utils.logger import setup_logger
@@ -71,6 +85,11 @@ def get_diversity_service(user_id: str = Depends(get_current_user_id)) -> Counci
     settings_svc = SettingsService(user_id=user_id)
     settings_repo = getattr(settings_svc, "repo", None)
     return CouncilDiversityEntropyService(user_id=user_id, settings_repo=settings_repo)
+
+
+def get_debate_termination_service(user_id: str = Depends(get_current_user_id)) -> DynamicDebateTerminationService:
+    settings_svc = SettingsService(user_id=user_id)
+    return DynamicDebateTerminationService(user_id=user_id, settings_service=settings_svc)
 
 
 @router.get("/sessions")
@@ -443,6 +462,41 @@ def evaluate_council_diversity(
     ]
     assessment: DiversityAssessment = service.evaluate_diversity(votes, symbol=payload.symbol)
     return DiversityEvaluationResponse(**assessment.to_dict())
+
+
+@router.post(
+    "/debate/terminate-check",
+    response_model=DebateTerminationEvaluationResponse,
+    summary="評估跨專家交互辯論輪次動態終止與邊際資訊增益 (A5)",
+)
+def evaluate_debate_termination(
+    payload: DebateTerminationEvaluationRequest,
+    service: DynamicDebateTerminationService = Depends(get_debate_termination_service),
+) -> DebateTerminationEvaluationResponse:
+    """
+    接收多輪評議會辯論快照，計算前後輪次論點之語意相似度、專家立場轉變度與邊際資訊增益 (Delta I)。
+    當邊際資訊增益遞減耗盡或已形成強收斂共識時，自動發出提早終止決策並估算節省之 Token 與延遲。
+    """
+    history_rounds = [
+        DebateRoundSnapshot(
+            round_number=r.round_number,
+            turns=[
+                AgentDebateTurn(
+                    agent_name=t.agent_name,
+                    stance=t.stance,
+                    confidence=t.confidence,
+                    arguments=t.arguments,
+                    key_points=t.key_points or [],
+                )
+                for t in r.turns
+            ],
+            timestamp=r.timestamp or datetime.now(timezone.utc),
+        )
+        for r in payload.history_rounds
+    ]
+    evaluation = service.evaluate_termination(history_rounds)
+    return DebateTerminationEvaluationResponse(**evaluation.to_dict())
+
 
 
 
