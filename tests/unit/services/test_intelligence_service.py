@@ -89,3 +89,87 @@ async def test_get_latest_briefing_cache(mock_settings_service):
     res = await intel_service.get_latest_briefing()
     assert res["executive_summary"] == "快取之情報摘要"
     assert "UPDATED: 2026-09-29 08:00:00" in res["observation_window"]
+
+
+def test_parse_llm_json_with_preamble_no_code_block(mock_settings_service):
+    """Verify parser extracts JSON when LLM prefixes with prompt regurgitation without markdown blocks."""
+    intel_service = IntelligenceService(settings_service=mock_settings_service, user_id="user_123")
+    raw_content = """We need to produce JSON with fields: executive_summary (≤250 Chinese characters), recommendation (specific action)...
+{
+  "executive_summary": "今日科技股因獲利了結回檔，債市殖利率小幅回落。",
+  "recommendation": "適度獲利了結高估值部位，轉向低波動防守型資產。",
+  "ai_note": "留意盤前 CPI 數據公布後的連鎖波動。",
+  "sentiment_metrics": [
+    {"label": "市場多頭動能", "score": 58, "trend": "down"},
+    {"label": "避險需求", "score": 42, "trend": "up"},
+    {"label": "波動風險", "score": 50, "trend": "stable"}
+  ]
+}
+"""
+    result = intel_service._parse_ai_response(raw_content)
+    assert result is not None
+    assert "今日科技股因獲利了結回檔" in result["executive_summary"]
+    assert result["recommendation"] == "適度獲利了結高估值部位，轉向低波動防守型資產。"
+    assert len(result["sentiment_metrics"]) == 3
+
+
+def test_parse_llm_json_with_think_tags(mock_settings_service):
+    """Verify parser strips <think> tags containing scratchpad drafts and extracts final code fence."""
+    intel_service = IntelligenceService(settings_service=mock_settings_service, user_id="user_123")
+    raw_content = """<think>
+We need to produce JSON with fields: executive_summary...
+Drafting ideas: {"fake": 123}
+</think>
+```json
+{
+  "executive_summary": "聯準會多位官員發表演說，暗示降息步伐依據數據滾動調整。",
+  "recommendation": "維持既有資產配置，靜待政策風向明朗。",
+  "ai_note": "長端美債殖利率波動收斂。"
+}
+```
+"""
+    result = intel_service._parse_ai_response(raw_content)
+    assert result is not None
+    assert "聯準會多位官員" in result["executive_summary"]
+    assert result["observation_window"] == "ACTIVE SESSION"
+    assert len(result["sentiment_metrics"]) == 3  # Normalized fallback metrics
+
+
+def test_parse_llm_json_with_trailing_commas(mock_settings_service):
+    """Verify parser handles trailing commas gracefully."""
+    intel_service = IntelligenceService(settings_service=mock_settings_service, user_id="user_123")
+    raw_content = """```json
+{
+  "executive_summary": "原油價格反彈提振能源板塊。",
+  "recommendation": "增持抗通膨大宗商品配置。",
+}
+```"""
+    result = intel_service._parse_ai_response(raw_content)
+    assert result is not None
+    assert "原油價格反彈" in result["executive_summary"]
+
+
+def test_heuristic_regex_extract_corrupted_json(mock_settings_service):
+    """Verify regex heuristic extractor recovers fields when JSON brackets are corrupted."""
+    intel_service = IntelligenceService(settings_service=mock_settings_service, user_id="user_123")
+    raw_content = """Some text before...
+executive_summary: "地緣衝突升溫導致避險情緒蔓延。",
+recommendation: "提高現金儲備至20%以上以防極端外溢。",
+Some footer notes...
+"""
+    result = intel_service._parse_ai_response(raw_content)
+    assert result is not None
+    assert "地緣衝突升溫" in result["executive_summary"]
+    assert "提高現金儲備" in result["recommendation"]
+    assert result["ai_note"] == "REGEX_HEURISTIC_RECOVERED"
+
+
+def test_fallback_error_prevents_prompt_leakage(mock_settings_service):
+    """Verify fallback does not leak raw prompt text when LLM outputs pure English rambling."""
+    intel_service = IntelligenceService(settings_service=mock_settings_service, user_id="user_123")
+    pure_english_leak = "We need to produce JSON with fields: executive_summary (≤250 Chinese characters), recommendation (sp..."
+    res = intel_service._fallback_error(content=pure_english_leak)
+    assert "We need to produce" not in res["executive_summary"]
+    assert "今日全球市場焦點持續輪動" in res["executive_summary"]
+    assert res["recommendation"] == "維持既有防禦姿態與風險預算配置，靜待盤前關鍵數據公布。"
+
