@@ -46,6 +46,11 @@ from src.api.v1.schemas.counterfactual_schemas import (
     CounterfactualInoculationResponse,
     CounterfactualScenarioSchema,
 )
+from src.api.v1.schemas.contagion_schemas import (
+    AssetSpilloverImpactSchema,
+    ContagionAssessmentRequest,
+    ContagionAssessmentResponse,
+)
 from src.repositories.vector_repository import AlchemyVectorRepository
 from src.services.adaptive_council_meta_learning_service import AdaptiveCouncilMetaLearningService
 from src.services.cognitive_blindspot_service import CognitiveBlindspotService
@@ -66,6 +71,11 @@ from src.services.counterfactual_reasoning_service import (
     CounterfactualReasoningService,
     CounterfactualInoculationResult,
     CounterfactualScenario,
+)
+from src.services.cross_market_contagion_service import (
+    CrossMarketContagionService,
+    ContagionAssessmentResult,
+    AssetSpilloverImpact,
 )
 from src.services.settings_service import SettingsService
 from src.utils.logger import setup_logger
@@ -105,6 +115,11 @@ def get_debate_termination_service(user_id: str = Depends(get_current_user_id)) 
 def get_counterfactual_service(user_id: str = Depends(get_current_user_id)) -> CounterfactualReasoningService:
     settings_svc = SettingsService(user_id=user_id)
     return CounterfactualReasoningService(user_id=user_id, settings_service=settings_svc)
+
+
+def get_contagion_service(user_id: str = Depends(get_current_user_id)) -> CrossMarketContagionService:
+    settings_svc = SettingsService(user_id=user_id)
+    return CrossMarketContagionService(user_id=user_id, settings_service=settings_svc)
 
 
 @router.get("/sessions")
@@ -535,6 +550,28 @@ def evaluate_counterfactual_inoculation(
         max_scenarios=payload.max_scenarios,
     )
     return CounterfactualInoculationResponse(**result.to_dict())
+
+
+@router.post(
+    "/contagion/assess",
+    response_model=ContagionAssessmentResponse,
+    summary="跨市場連鎖傳導與資產外溢分析 (A7)",
+)
+def assess_cross_market_contagion(
+    payload: ContagionAssessmentRequest,
+    service: CrossMarketContagionService = Depends(get_contagion_service),
+) -> ContagionAssessmentResponse:
+    """
+    評估股、債、匯、大宗商品四維跨市場連鎖傳導動態，量化標的之板塊外溢衝擊並給出動態對沖避險覆蓋策略。
+    """
+    result: ContagionAssessmentResult = service.assess_contagion(
+        symbol=payload.symbol,
+        sector=payload.sector or "Technology",
+        macro_signals=payload.macro_signals,
+        custom_shocks=payload.custom_shocks,
+    )
+    return ContagionAssessmentResponse(**result.to_dict())
+
 
 
 

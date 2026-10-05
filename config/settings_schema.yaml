@@ -326,8 +326,34 @@ settings:
     label_zh: 反事實壓力測試啟動置信度門檻
     help_en: Minimum consensus conviction score required to trigger intensive counterfactual stress testing.
     help_zh: 評議會共識置信度門檻（預設 0.70）；高於此門檻之單邊共識將強制啟動反事實壓力測試以防過度自信。
-
-
+  - key: council_contagion_enabled
+    group: ai
+    type: bool
+    default: true
+    label_en: Cross-Market Contagion & Inter-Asset Transmission (A7)
+    label_zh: 跨市場連鎖傳導與資產外溢分析 (A7)
+    help_en: Evaluates multi-channel spillover risks (Rates, FX, Commodities, Credit) before final investment deliberation.
+    help_zh: 於評議會決策前評估利率、匯率、大宗原物料及信用利差等跨市場連鎖外溢風險，確保無宏觀盲區。
+  - key: council_contagion_risk_threshold
+    group: ai
+    type: float
+    default: 0.65
+    min: 0.10
+    max: 0.95
+    label_en: Contagion Alert Risk Threshold
+    label_zh: 跨市場外溢警報風險門檻
+    help_en: Overall cross-market contagion risk score threshold to trigger high-priority risk-off and hedging alerts.
+    help_zh: 跨市場傳染綜合風險評分臨界值（預設 0.65）；超過該門檻時強制啟動宏觀對沖避險覆蓋建議。
+  - key: council_contagion_lookback_days
+    group: ai
+    type: int
+    default: 30
+    min: 5
+    max: 180
+    label_en: Contagion Transmission Lookback Days
+    label_zh: 跨市場外溢分析回測觀察期 (天)
+    help_en: Number of historical days used to compute dynamic asset cross-correlation and spillover beta.
+    help_zh: 計算資產跨市場動態相關性與外溢 Beta 所參考之歷史交易日長度（預設 30 天）。
 
   # ── Trading & risk ───────────────────────────────────────────────────────
   - key: ai_trading_enabled
