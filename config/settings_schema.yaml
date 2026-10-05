@@ -298,6 +298,35 @@ settings:
     label_zh: 辯論論點語意收斂相似度門檻
     help_en: Semantic argument similarity threshold across rounds indicating expert arguments have reached saturation.
     help_zh: 前後輪次論點語意相似度門檻（預設 0.85）；超過代表各專家僅在重複相同論據無新資訊。
+  - key: council_counterfactual_enabled
+    group: ai
+    type: bool
+    default: true
+    label_en: Council Counterfactual Reasoning & Stress Inoculation (A6)
+    label_zh: 評議會反事實推理與情境壓力假設生成 (A6)
+    help_en: Generates dynamic 'What-If' stress scenarios probing consensus vulnerabilities before CIO final verdict.
+    help_zh: 在 CIO 終審前生成反事實壓力假設（如利率反彈、供應鏈斷鏈、巨頭砍單），要求專家提出防守抗跌方案。
+  - key: council_counterfactual_max_scenarios
+    group: ai
+    type: int
+    default: 3
+    min: 1
+    max: 6
+    label_en: Counterfactual Maximum Scenarios Count
+    label_zh: 反事實情境最大生成數量
+    help_en: Maximum number of counterfactual stress scenarios synthesized for a single deliberation.
+    help_zh: 單次評議會終審所生成之反事實情境假設數量上限（預設 3 組）。
+  - key: council_counterfactual_conviction_threshold
+    group: ai
+    type: float
+    default: 0.70
+    min: 0.50
+    max: 0.95
+    label_en: Counterfactual Trigger Conviction Threshold
+    label_zh: 反事實壓力測試啟動置信度門檻
+    help_en: Minimum consensus conviction score required to trigger intensive counterfactual stress testing.
+    help_zh: 評議會共識置信度門檻（預設 0.70）；高於此門檻之單邊共識將強制啟動反事實壓力測試以防過度自信。
+
 
 
   # ── Trading & risk ───────────────────────────────────────────────────────

@@ -41,6 +41,11 @@ from src.api.v1.schemas.debate_termination_schemas import (
     DebateTerminationEvaluationRequest,
     DebateTerminationEvaluationResponse,
 )
+from src.api.v1.schemas.counterfactual_schemas import (
+    CounterfactualInoculationRequest,
+    CounterfactualInoculationResponse,
+    CounterfactualScenarioSchema,
+)
 from src.repositories.vector_repository import AlchemyVectorRepository
 from src.services.adaptive_council_meta_learning_service import AdaptiveCouncilMetaLearningService
 from src.services.cognitive_blindspot_service import CognitiveBlindspotService
@@ -56,6 +61,11 @@ from src.services.dynamic_debate_termination_service import (
     DynamicDebateTerminationService,
     TerminationEvaluation,
     TerminationStatus,
+)
+from src.services.counterfactual_reasoning_service import (
+    CounterfactualReasoningService,
+    CounterfactualInoculationResult,
+    CounterfactualScenario,
 )
 from src.services.settings_service import SettingsService
 from src.utils.logger import setup_logger
@@ -90,6 +100,11 @@ def get_diversity_service(user_id: str = Depends(get_current_user_id)) -> Counci
 def get_debate_termination_service(user_id: str = Depends(get_current_user_id)) -> DynamicDebateTerminationService:
     settings_svc = SettingsService(user_id=user_id)
     return DynamicDebateTerminationService(user_id=user_id, settings_service=settings_svc)
+
+
+def get_counterfactual_service(user_id: str = Depends(get_current_user_id)) -> CounterfactualReasoningService:
+    settings_svc = SettingsService(user_id=user_id)
+    return CounterfactualReasoningService(user_id=user_id, settings_service=settings_svc)
 
 
 @router.get("/sessions")
@@ -496,6 +511,30 @@ def evaluate_debate_termination(
     ]
     evaluation = service.evaluate_termination(history_rounds)
     return DebateTerminationEvaluationResponse(**evaluation.to_dict())
+
+
+@router.post(
+    "/counterfactual/inoculate",
+    response_model=CounterfactualInoculationResponse,
+    summary="專家反事實推理與情境壓力假設生成 (A6)",
+)
+def evaluate_counterfactual_inoculation(
+    payload: CounterfactualInoculationRequest,
+    service: CounterfactualReasoningService = Depends(get_counterfactual_service),
+) -> CounterfactualInoculationResponse:
+    """
+    依據評議會共識立場與資產領域，動態生成「若利率反彈/巨頭砍單/出口管制」之極端反事實壓力情境，
+    並自動合成 CIO 終審反向審查卡片與剛性防禦檢查清單。
+    """
+    result: CounterfactualInoculationResult = service.evaluate_inoculation(
+        symbol=payload.symbol,
+        consensus_stance=payload.consensus_stance,
+        conviction=payload.conviction,
+        key_drivers=payload.key_drivers,
+        sector=payload.sector,
+        max_scenarios=payload.max_scenarios,
+    )
+    return CounterfactualInoculationResponse(**result.to_dict())
 
 
 
