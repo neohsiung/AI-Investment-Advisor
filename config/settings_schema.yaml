@@ -820,6 +820,44 @@ settings:
     label_zh: 波動率傳染指數衰減半衰期（分鐘）
     help_en: Half-life in minutes for exponential decay of contagion spillover intensity after shock inception.
     help_zh: 傳染衝擊自觸發起之指數衰減半衰期（預設 30 分鐘）；期滿影響強度減半，平穩回歸常態。
+  - key: macro_surprise_enabled
+    group: trading
+    type: bool
+    default: true
+    label_en: Enable Macro Surprise Index & Liquidity Beta Dampener (M8)
+    label_zh: 啟用動態宏觀經濟驚奇指數與流動性傳導乘數 (M8)
+    help_en: Monitors macroeconomic data releases against consensus expectations to dynamically dampen portfolio target beta and expand defensive cash buffers.
+    help_zh: 監控 FRED 宏觀經濟數據相對於市場預期之標準化驚奇差 (Z-Score)，在遭遇緊縮或衰退衝擊時動態阻尼投組目標 Beta 並擴增防禦現金。
+  - key: macro_surprise_shock_threshold
+    group: trading
+    type: float
+    default: 1.50
+    min: 0.50
+    max: 3.00
+    label_en: Macro surprise shock trigger threshold
+    label_zh: 宏觀驚奇衝擊觸發門檻 (Z-score)
+    help_en: Standardized Macro Surprise Index (MSI) absolute threshold beyond which hawkish or recessionary shocks are triggered.
+    help_zh: 標準化宏觀驚奇指數 (MSI) 絕對值門檻（預設 1.50）；超過此值即觸發緊縮鷹派衝擊或衰退衝擊狀態機。
+  - key: macro_surprise_min_beta_multiplier
+    group: trading
+    type: float
+    default: 0.50
+    min: 0.20
+    max: 0.90
+    label_en: Minimum liquidity beta dampener multiplier
+    label_zh: 流動性 Beta 阻尼最小乘數下限
+    help_en: Lower bound on portfolio target beta multiplier during severe macroeconomic shock waves.
+    help_zh: 遭遇嚴重宏觀衝擊時，投組目標 Beta 允許被阻尼壓縮之最小乘數下限（預設 0.50 倍）。
+  - key: macro_surprise_max_cash_adjustment
+    group: trading
+    type: float
+    default: 0.15
+    min: 0.02
+    max: 0.30
+    label_en: Maximum macro surprise defensive cash adjustment
+    label_zh: 宏觀驚奇最大防禦現金擴增比例
+    help_en: Maximum additional cash reserve percentage injected into the portfolio during peak macro shocks.
+    help_zh: 遭遇極端宏觀驚奇衝擊時，系統強制額外擴增之最大防禦現金比率（預設 0.15 即 +15%）。
   - key: toxicity_detector_enabled
     group: trading
     type: bool

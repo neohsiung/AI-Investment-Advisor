@@ -20,6 +20,11 @@ from src.services.portfolio_adaptive_intelligence_service import (
     PortfolioAdaptiveIntelligenceService,
     AdaptiveDiagnosticReport,
 )
+from src.services.macro_surprise_service import MacroSurpriseService
+from src.api.v1.schemas.macro_surprise_schemas import (
+    MacroSurpriseAssessmentResponse,
+    MacroSurpriseEvaluateRequest,
+)
 from src.services.regime_hmm_service import RegimeObservation
 from src.services.dashboard_service import DashboardService
 from src.utils.logger import setup_logger
@@ -29,9 +34,17 @@ logger = setup_logger("API_AdaptiveIntelligence")
 router = APIRouter()
 
 
-def get_adaptive_service(user_id: str = Depends(get_current_user_id)) -> PortfolioAdaptiveIntelligenceService:
+def get_macro_surprise_service(user_id: str = Depends(get_current_user_id)) -> MacroSurpriseService:
+    """Dependency provider for MacroSurpriseService"""
+    return MacroSurpriseService(user_id=user_id)
+
+
+def get_adaptive_service(
+    user_id: str = Depends(get_current_user_id),
+    macro_service: MacroSurpriseService = Depends(get_macro_surprise_service),
+) -> PortfolioAdaptiveIntelligenceService:
     """Dependency provider for PortfolioAdaptiveIntelligenceService"""
-    return PortfolioAdaptiveIntelligenceService(user_id=user_id)
+    return PortfolioAdaptiveIntelligenceService(user_id=user_id, macro_surprise_service=macro_service)
 
 
 def get_dashboard_service(user_id: str = Depends(get_current_user_id)) -> DashboardService:
@@ -343,3 +356,21 @@ async def generate_rebalance_plan(
     except Exception as e:
         logger.exception(f"Error generating rebalance plan: {e}")
         raise HTTPException(status_code=500, detail=f"Rebalance plan error: {str(e)}")
+
+
+@router.post("/macro/surprise", response_model=MacroSurpriseAssessmentResponse)
+async def evaluate_macro_surprise(
+    request: Optional[MacroSurpriseEvaluateRequest] = Body(None),
+    service: MacroSurpriseService = Depends(get_macro_surprise_service),
+):
+    """
+    評估宏觀經濟數據驚奇指數 (MSI) 與流動性 Beta 阻尼乘數 (M8)。
+    """
+    try:
+        custom_indicators = request.custom_indicators if request else None
+        assessment = service.evaluate_surprises(custom_indicators=custom_indicators)
+        return MacroSurpriseAssessmentResponse(**assessment.to_dict())
+    except Exception as e:
+        logger.exception(f"Error evaluating macro surprise index: {e}")
+        raise HTTPException(status_code=500, detail=f"Macro surprise evaluation error: {str(e)}")
+

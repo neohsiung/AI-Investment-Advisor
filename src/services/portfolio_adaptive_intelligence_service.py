@@ -148,6 +148,7 @@ class PortfolioAdaptiveIntelligenceService:
         sor_service: Optional[SmartOrderRoutingService] = None,
         evt_service: Optional[ExtremeValueTheoryService] = None,
         spillover_service: Optional[Any] = None,
+        macro_surprise_service: Optional[Any] = None,
         settings_repo: Optional[Any] = None,
     ):
         self.user_id = resolve_user_id(user_id)
@@ -161,6 +162,7 @@ class PortfolioAdaptiveIntelligenceService:
         self.sor_service = sor_service or SmartOrderRoutingService(user_id=self.user_id, settings_repo=settings_repo)
         self.evt_service = evt_service or ExtremeValueTheoryService(settings_repo=settings_repo)
         self.spillover_service = spillover_service
+        self.macro_surprise_service = macro_surprise_service
 
     def _get_setting(self, key: str, default: Any) -> Any:
         if self.settings_repo and hasattr(self.settings_repo, "get"):
@@ -334,7 +336,15 @@ class PortfolioAdaptiveIntelligenceService:
             except Exception as e:
                 logger.warning(f"Failed to query spillover extra cash: {e}")
 
-        suggested_cash = min(0.90, base_suggested_cash + extra_spillover_cash)
+        extra_macro_cash = 0.0
+        if self.macro_surprise_service is not None and hasattr(self.macro_surprise_service, "evaluate_surprises"):
+            try:
+                macro_assessment = self.macro_surprise_service.evaluate_surprises()
+                extra_macro_cash = float(getattr(macro_assessment, "recommended_cash_adjustment_pct", 0.0))
+            except Exception as e:
+                logger.warning(f"Failed to query macro surprise cash adjustment: {e}")
+
+        suggested_cash = min(0.90, base_suggested_cash + extra_spillover_cash + extra_macro_cash)
         target_weights = self._build_target_portfolio_weights(
             base_weights=inv_vol_weights,
             suggested_cash=suggested_cash,
