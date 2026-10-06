@@ -101,9 +101,6 @@ class LLMModelLifecycleService(BaseRepository):
         )
         self.tier_service = tier_service or LLMTierBindingService(
             user_id=self.user_id,
-            tier_repo=self.tier_repo,
-            model_repo=self.model_repo,
-            provider_repo=self.provider_repo,
         )
 
     # ──────────────────────────────────────────────────────────────────
