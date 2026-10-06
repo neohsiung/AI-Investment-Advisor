@@ -286,3 +286,33 @@ def test_api_endpoints_health_and_diagnose_contract():
     data_rebal = resp_rebal.json()
     assert data_rebal["status"] == "success"
     assert "rebalance_recommendation" in data_rebal["data"]
+
+
+def test_build_target_portfolio_weights_with_alpha_tilt(adaptive_service):
+    """驗證 M6 多因子 Alpha 分數動態傾斜 target_weights 增益"""
+    base_weights = {"AAPL": 0.5, "MSFT": 0.5}
+    suggested_cash = 0.10
+    
+    # 情況 1：無 factor_scores 時平分 equity budget
+    weights_no_tilt = adaptive_service._build_target_portfolio_weights(
+        base_weights=base_weights,
+        suggested_cash=suggested_cash,
+        factor_scores=None,
+    )
+    assert weights_no_tilt["CASH"] == 0.10
+    assert abs(weights_no_tilt["AAPL"] - 0.45) < 1e-4
+    assert abs(weights_no_tilt["MSFT"] - 0.45) < 1e-4
+
+    # 情況 2：AAPL alpha=0.90 (高超額), MSFT alpha=0.10 (低超額)
+    factor_scores = {"AAPL": 0.90, "MSFT": 0.10}
+    weights_tilted = adaptive_service._build_target_portfolio_weights(
+        base_weights=base_weights,
+        suggested_cash=suggested_cash,
+        factor_scores=factor_scores,
+    )
+    assert weights_tilted["CASH"] == 0.10
+    # AAPL 應被加權 (> 0.45), MSFT 應被減權 (< 0.45)
+    assert weights_tilted["AAPL"] > 0.45
+    assert weights_tilted["MSFT"] < 0.45
+    assert abs((weights_tilted["AAPL"] + weights_tilted["MSFT"] + weights_tilted["CASH"]) - 1.0) < 1e-4
+
