@@ -163,6 +163,12 @@ app.conf.beat_schedule = {
         "task": "src.infrastructure.tasks.dispatch_shadow_ledger_eval",
         "schedule": crontab(hour=16, minute=45, day_of_week="1-5"),
     },
+    # LLM Model Lifecycle & Blue-Green Canary Evolution — runs daily at 02:30 AM EST (off-market hours)
+    # LLM 模型生命週期動態掃描與藍綠金絲雀演進：每日定期探測下架模型、探索高性價比新模型並執行藍綠安全驗證與升級。
+    "daily-llm-model-lifecycle-evolution": {
+        "task": "src.infrastructure.tasks.dispatch_model_lifecycle",
+        "schedule": crontab(hour=2, minute=30),  # 02:30 AM EST daily
+    },
     "weekly-cost-review": {
         "task": "src.infrastructure.tasks.dispatch_memory_distill",
         "schedule": crontab(hour=22, minute=0, day_of_week="0"),

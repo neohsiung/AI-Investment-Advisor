@@ -1225,3 +1225,33 @@ class AgentCognitiveBlindspot(Base):
         Index('ix_agent_blindspots_user_agent_active', 'user_id', 'agent_name', 'is_active'),
     )
 
+
+class LLMBlueGreenDeployment(Base):
+    """
+    `llm_blue_green_deployments` — Tracks blue-green shadow evaluations, canaries, and rollbacks for LLM tier configurations.
+    """
+    __tablename__ = 'llm_blue_green_deployments'
+
+    id = Column(String(64), primary_key=True, default=lambda: str(uuid.uuid4()))
+    user_id = Column(String(64), nullable=False)
+    tier = Column(String(20), nullable=False)
+    blue_model_id = Column(String(64), nullable=False)
+    green_model_id = Column(String(64), nullable=False)
+    status = Column(String(20), nullable=False, default='EVALUATING')  # EVALUATING, PROMOTED, ROLLED_BACK
+    benchmark_prompt = Column(Text, nullable=True)
+    blue_latency_ms = Column(_DOUBLE(), nullable=True)
+    green_latency_ms = Column(_DOUBLE(), nullable=True)
+    blue_success_rate = Column(_DOUBLE(), default=1.0)
+    green_success_rate = Column(_DOUBLE(), default=1.0)
+    blue_cost_per_1k = Column(Numeric(12, 6), default=0.0)
+    green_cost_per_1k = Column(Numeric(12, 6), default=0.0)
+    cost_saving_pct = Column(_DOUBLE(), default=0.0)
+    evaluation_notes = Column(Text, nullable=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    promoted_at = Column(DateTime(timezone=True), nullable=True)
+
+    __table_args__ = (
+        Index('ix_llm_bg_user_tier_status', 'user_id', 'tier', 'status'),
+    )
+
+
