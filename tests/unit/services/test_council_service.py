@@ -188,3 +188,18 @@ class TestCompactPastWisdom:
             assert "test_user" in content
             assert "Consensus Content" in content
             assert "Factual check verified" in content
+
+    def test_resilient_init_auxiliary_services_failure(self):
+        """Test CouncilService resilient initialization when A1-A3 imports or initializations raise ImportError/Exception."""
+        with patch.dict('sys.modules', {
+            'src.services.adaptive_council_meta_learning_service': None,
+            'src.services.cognitive_blindspot_service': None,
+            'src.services.council_debate_memory_service': None,
+        }):
+            from src.services.council_service import CouncilService
+            # Instantiation must not raise ImportError
+            service = CouncilService(user_id="test_user")
+            assert service.meta_learning_service is None
+            assert service.blindspot_service is None
+            assert service.debate_memory_service is None
+

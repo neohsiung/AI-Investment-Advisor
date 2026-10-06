@@ -51,21 +51,33 @@ class CouncilService:
 
         # A1 adaptive meta-learning loop (2026-10-04): regime & tail-risk prior
         # injection, outcome attribution, and dynamic meta-weights calibration.
-        from src.services.adaptive_council_meta_learning_service import AdaptiveCouncilMetaLearningService
-        self.meta_learning_service = AdaptiveCouncilMetaLearningService(user_id=user_id)
+        self.meta_learning_service = None
+        try:
+            from src.services.adaptive_council_meta_learning_service import AdaptiveCouncilMetaLearningService
+            self.meta_learning_service = AdaptiveCouncilMetaLearningService(user_id=user_id)
+        except Exception as e:
+            logger.warning(f"Council: AdaptiveCouncilMetaLearningService initialization failed: {e}")
 
         # A2 cognitive blindspot loop (2026-10-04): consecutive failure detection
         # and self-reflection alignment constraints.
-        from src.services.cognitive_blindspot_service import CognitiveBlindspotService
-        self.blindspot_service = CognitiveBlindspotService(user_id=user_id)
+        self.blindspot_service = None
+        try:
+            from src.services.cognitive_blindspot_service import CognitiveBlindspotService
+            self.blindspot_service = CognitiveBlindspotService(user_id=user_id)
+        except Exception as e:
+            logger.warning(f"Council: CognitiveBlindspotService initialization failed: {e}")
 
         # A3 council debate memory retrieval loop (2026-10-04): vector precedent retrieval
         # and outcome-anchored decision attribution synthesis.
-        from src.services.council_debate_memory_service import CouncilDebateMemoryService
-        self.debate_memory_service = CouncilDebateMemoryService(
-            user_id=user_id,
-            settings_service=self.settings_service,
-        )
+        self.debate_memory_service = None
+        try:
+            from src.services.council_debate_memory_service import CouncilDebateMemoryService
+            self.debate_memory_service = CouncilDebateMemoryService(
+                user_id=user_id,
+                settings_service=self.settings_service,
+            )
+        except Exception as e:
+            logger.warning(f"Council: CouncilDebateMemoryService initialization failed: {e}")
 
         # PAD Phase 2: Add model router and gateway
         from src.data.database import get_db_engine
@@ -433,25 +445,27 @@ class CouncilService:
 
         # A1: Inject adaptive macro regime, EVT tail risk & meta-learning weights
         adaptive_context = None
-        try:
-            adaptive_context = self.meta_learning_service.generate_adaptive_council_context(
-                market_observation=context_data.get("market_observation") or context_data.get("market_data")
-            )
-        except Exception as e:
-            logger.debug(f"Council: meta_learning context generation fallback: {e}")
+        if self.meta_learning_service:
+            try:
+                adaptive_context = self.meta_learning_service.generate_adaptive_council_context(
+                    market_observation=context_data.get("market_observation") or context_data.get("market_data")
+                )
+            except Exception as e:
+                logger.debug(f"Council: meta_learning context generation fallback: {e}")
 
         # A3: Retrieve historical debate precedents with outcome attribution
         debate_precedents_prompt = ""
-        try:
-            retrieval_res = self.debate_memory_service.retrieve_similar_precedents(
-                topic=topic,
-                ticker=_topic_ticker,
-            )
-            if retrieval_res and retrieval_res.synthesized_prompt_context:
-                debate_precedents_prompt = retrieval_res.synthesized_prompt_context
-                logger.info(f"Council: Retrieved {len(retrieval_res.precedents)} historical debate precedents")
-        except Exception as e:
-            logger.debug(f"Council: debate_memory_service retrieval fallback: {e}")
+        if self.debate_memory_service:
+            try:
+                retrieval_res = self.debate_memory_service.retrieve_similar_precedents(
+                    topic=topic,
+                    ticker=_topic_ticker,
+                )
+                if retrieval_res and retrieval_res.synthesized_prompt_context:
+                    debate_precedents_prompt = retrieval_res.synthesized_prompt_context
+                    logger.info(f"Council: Retrieved {len(retrieval_res.precedents)} historical debate precedents")
+            except Exception as e:
+                logger.debug(f"Council: debate_memory_service retrieval fallback: {e}")
 
         # ── 2. Build enriched debate_context dict for all agents ──
         debate_context = {
@@ -542,19 +556,20 @@ class CouncilService:
             logger.warning(f"Cold Backup: failed to write: {e}")
 
         active_blindspots = []
-        try:
-            active_blindspots = [
-                {
-                    "agent_name": b.agent_name,
-                    "bias_pattern": b.bias_pattern,
-                    "consecutive_failures": b.consecutive_failures,
-                    "avg_alpha_loss": float(b.avg_alpha_loss or 0.0),
-                    "severity": b.severity,
-                }
-                for b in self.blindspot_service.get_active_blindspots()
-            ]
-        except Exception as bs_e:
-            logger.debug(f"Council: failed to fetch active blindspots for session result: {bs_e}")
+        if self.blindspot_service:
+            try:
+                active_blindspots = [
+                    {
+                        "agent_name": b.agent_name,
+                        "bias_pattern": b.bias_pattern,
+                        "consecutive_failures": b.consecutive_failures,
+                        "avg_alpha_loss": float(b.avg_alpha_loss or 0.0),
+                        "severity": b.severity,
+                    }
+                    for b in self.blindspot_service.get_active_blindspots()
+                ]
+            except Exception as bs_e:
+                logger.debug(f"Council: failed to fetch active blindspots for session result: {bs_e}")
 
         return {
             "session_id": session_id,
@@ -652,25 +667,27 @@ class CouncilService:
 
         # A1: Inject adaptive macro regime, EVT tail risk & meta-learning weights
         adaptive_context = None
-        try:
-            adaptive_context = self.meta_learning_service.generate_adaptive_council_context(
-                market_observation=context_data.get("market_observation") or context_data.get("market_data")
-            )
-        except Exception as e:
-            logger.debug(f"Council: meta_learning context generation fallback in debate logic: {e}")
+        if self.meta_learning_service:
+            try:
+                adaptive_context = self.meta_learning_service.generate_adaptive_council_context(
+                    market_observation=context_data.get("market_observation") or context_data.get("market_data")
+                )
+            except Exception as e:
+                logger.debug(f"Council: meta_learning context generation fallback in debate logic: {e}")
 
         # A3: Retrieve historical debate precedents with outcome attribution
         debate_precedents_prompt = ""
-        try:
-            retrieval_res = self.debate_memory_service.retrieve_similar_precedents(
-                topic=topic,
-                ticker=_topic_ticker,
-            )
-            if retrieval_res and retrieval_res.synthesized_prompt_context:
-                debate_precedents_prompt = retrieval_res.synthesized_prompt_context
-                logger.info(f"Council: Retrieved {len(retrieval_res.precedents)} historical debate precedents (debate logic)")
-        except Exception as e:
-            logger.debug(f"Council: debate_memory_service retrieval fallback in debate logic: {e}")
+        if self.debate_memory_service:
+            try:
+                retrieval_res = self.debate_memory_service.retrieve_similar_precedents(
+                    topic=topic,
+                    ticker=_topic_ticker,
+                )
+                if retrieval_res and retrieval_res.synthesized_prompt_context:
+                    debate_precedents_prompt = retrieval_res.synthesized_prompt_context
+                    logger.info(f"Council: Retrieved {len(retrieval_res.precedents)} historical debate precedents (debate logic)")
+            except Exception as e:
+                logger.debug(f"Council: debate_memory_service retrieval fallback in debate logic: {e}")
 
         debate_context = {
             **context_data,
@@ -789,19 +806,20 @@ class CouncilService:
             logger.warning(f"Cold Backup: failed to write: {e}")
 
         active_blindspots = []
-        try:
-            active_blindspots = [
-                {
-                    "agent_name": b.agent_name,
-                    "bias_pattern": b.bias_pattern,
-                    "consecutive_failures": b.consecutive_failures,
-                    "avg_alpha_loss": float(b.avg_alpha_loss or 0.0),
-                    "severity": b.severity,
-                }
-                for b in self.blindspot_service.get_active_blindspots()
-            ]
-        except Exception as bs_e:
-            logger.debug(f"Council: failed to fetch active blindspots for session result: {bs_e}")
+        if self.blindspot_service:
+            try:
+                active_blindspots = [
+                    {
+                        "agent_name": b.agent_name,
+                        "bias_pattern": b.bias_pattern,
+                        "consecutive_failures": b.consecutive_failures,
+                        "avg_alpha_loss": float(b.avg_alpha_loss or 0.0),
+                        "severity": b.severity,
+                    }
+                    for b in self.blindspot_service.get_active_blindspots()
+                ]
+            except Exception as bs_e:
+                logger.debug(f"Council: failed to fetch active blindspots for session result: {bs_e}")
 
         return {
             "session_id": session_id,
