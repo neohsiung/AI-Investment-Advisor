@@ -345,9 +345,36 @@ class PortfolioAdaptiveIntelligenceService:
                 logger.warning(f"Failed to query macro surprise cash adjustment: {e}")
 
         suggested_cash = min(0.90, base_suggested_cash + extra_spillover_cash + extra_macro_cash)
+
+        # Derive individual asset alpha scores from M6 MultiFactorEnsembleService
+        asset_alpha_scores: Dict[str, float] = {}
+        if symbols and self.factor_service:
+            try:
+                metrics_list = []
+                for s in symbols:
+                    s_vol = vols.get(s, 0.25)
+                    s_beta = betas.get(s, 1.0)
+                    metrics_list.append(
+                        RawFactorMetrics(
+                            ticker=s,
+                            momentum_12_1=float(max(-0.5, min(1.0, (s_beta - 1.0) * 0.3 + 0.1))),
+                            relative_strength_60d=float(max(-0.3, min(0.5, (s_beta - 1.0) * 0.2))),
+                            annualized_vol_60d=float(s_vol),
+                            downside_dev_60d=float(s_vol * 0.7),
+                        )
+                    )
+                alpha_results = self.factor_service.compute_ensemble_alphas(
+                    metrics_list=metrics_list,
+                    current_regime=regime_str,
+                )
+                asset_alpha_scores = {r.ticker: r.composite_alpha_score for r in alpha_results}
+            except Exception as e:
+                logger.warning(f"PortfolioAdaptiveIntelligenceService: Failed to compute asset alpha scores: {e}")
+
         target_weights = self._build_target_portfolio_weights(
             base_weights=inv_vol_weights,
             suggested_cash=suggested_cash,
+            factor_scores=asset_alpha_scores if asset_alpha_scores else None,
         )
 
         friction = self.opportunity_service.calculate_roundtrip_friction()
@@ -586,16 +613,36 @@ class PortfolioAdaptiveIntelligenceService:
         self,
         base_weights: Dict[str, float],
         suggested_cash: float,
+        factor_scores: Optional[Dict[str, float]] = None,
     ) -> Dict[str, float]:
-        """Combine base weights with O1 cash defense."""
+        """
+        Combine base weights with O1 cash defense and optional M6 multi-factor alpha tilts.
+        Higher alpha scores receive proportional overweights while preserving inverse-vol risk parity baseline.
+        """
         target = {}
         target["CASH"] = max(0.02, min(0.60, suggested_cash))
         equity_budget = 1.0 - target["CASH"]
 
         total_base = sum(base_weights.values())
-        if total_base > 0:
-            for sym, w in base_weights.items():
-                target[sym] = (w / total_base) * equity_budget
+        if total_base <= 0:
+            return target
+
+        # If factor_scores supplied, apply alpha tilt multiplier [0.70x ~ 1.30x]
+        tilted_weights = {}
+        for sym, w in base_weights.items():
+            base_norm = w / total_base
+            if factor_scores and sym in factor_scores:
+                # Factor score in [0.0, 1.0], center at 0.50 -> multiplier in [0.80, 1.20]
+                alpha_score = factor_scores[sym]
+                multiplier = 1.0 + (alpha_score - 0.50) * 0.40
+                tilted_weights[sym] = max(0.01, base_norm * multiplier)
+            else:
+                tilted_weights[sym] = base_norm
+
+        total_tilted = sum(tilted_weights.values())
+        for sym, tw in tilted_weights.items():
+            target[sym] = (tw / total_tilted) * equity_budget
+
         return target
 
     def _evaluate_rebalance_and_trades(

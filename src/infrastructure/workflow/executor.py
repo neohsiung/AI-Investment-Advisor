@@ -85,17 +85,26 @@ class DAGExecutor:
         if "telemetry" not in context:
             context["telemetry"] = []
 
+        max_concurrency = context.get("max_concurrency", 2)
+        semaphore = asyncio.Semaphore(max_concurrency) if max_concurrency and max_concurrency > 0 else None
+
         for layer_idx, layer in enumerate(self.layers):
             logger.debug(f"DAGExecutor: Starting layer {layer_idx + 1}/{len(self.layers)} with {len(layer)} node(s)")
             
-            # Execute all nodes in the current layer in parallel
+            # Execute all nodes in the current layer with throttled concurrency to protect LLM RPM
             async def run_node(node_to_run: BaseNode):
-                try:
-                    node_outputs = await node_to_run.execute(flow_data, context, cache=self.cache)
-                    return node_outputs, None
-                except Exception as e:
-                    logger.error(f"DAGExecutor: Node '{node_to_run.name}' failed during execution: {e}", exc_info=True)
-                    return None, e
+                async def _invoke():
+                    try:
+                        node_outputs = await node_to_run.execute(flow_data, context, cache=self.cache)
+                        return node_outputs, None
+                    except Exception as e:
+                        logger.error(f"DAGExecutor: Node '{node_to_run.name}' failed during execution: {e}", exc_info=True)
+                        return None, e
+
+                if semaphore:
+                    async with semaphore:
+                        return await _invoke()
+                return await _invoke()
 
             results = await asyncio.gather(*(run_node(node) for node in layer))
             

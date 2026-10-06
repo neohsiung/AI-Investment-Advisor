@@ -197,3 +197,34 @@ async def test_agent_node_execution(mock_load_prompt, mock_build_chain, mock_pip
     
     assert res == {"momentum_scout_result": "Final response report text"}
     mock_pipeline_execute.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_dag_concurrency_throttling():
+    """Verify that DAGExecutor throttles parallel execution to max_concurrency."""
+    active_count = 0
+    max_active_observed = 0
+
+    class SlowNode(BaseNode):
+        async def _run(self, inputs, context):
+            nonlocal active_count, max_active_observed
+            active_count += 1
+            if active_count > max_active_observed:
+                max_active_observed = active_count
+            await asyncio.sleep(0.05)
+            active_count -= 1
+            return {self.output_keys[0]: inputs.get("val", 0)}
+
+    node1 = SlowNode("Node1", ["val"], ["out1"])
+    node2 = SlowNode("Node2", ["val"], ["out2"])
+    node3 = SlowNode("Node3", ["val"], ["out3"])
+    node4 = SlowNode("Node4", ["val"], ["out4"])
+
+    executor = DAGExecutor([node1, node2, node3, node4])
+    context = {"max_concurrency": 2}
+
+    res = await executor.execute({"val": 42}, context)
+    assert res["out1"] == 42
+    assert res["out4"] == 42
+    assert max_active_observed <= 2
+
