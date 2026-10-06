@@ -5,15 +5,15 @@ Order Reconciliation & Lifecycle State Machine Service.
 Responsible for:
 1. Tracking pending orders in the local transaction ledger.
 2. Polling broker status (eToro/IBKR) for unconfirmed/pending orders.
-3. Performing state transitions (PENDING -> FILLED / CANCELLED / REJECTED).
+3. Performing state transitions (PENDING -> FILLED / CANCELLED / REJECTED / UNRESOLVED).
 4. On FILLED: Promoting to entry_category='trade', re-seeding position_lots,
-   recording outcome reflections, and broadcasting notifications.
-5. Syncing external broker history and refreshing portfolio snapshots.
+   recording outcome reflections, releasing in-flight locks, and broadcasting notifications.
+5. Ghost Order Reconciliation: Tracking unknown attempts with exponential retry backoff,
+   cross-referencing live positions, transitioning unresolved orders, and clearing in-flight locks.
+6. Syncing external broker history and refreshing portfolio snapshots.
 """
 
-import os
-import json
-from typing import List, Dict, Any, Optional
+from typing import Dict, Any, Optional
 from datetime import datetime, timezone, timedelta
 
 from src.utils.logger import setup_logger
@@ -21,6 +21,7 @@ from src.repositories.transaction_repository import AlchemyTransactionRepository
 from src.repositories.position_lot_repository import AlchemyPositionLotRepository
 from src.services.broker_factory import BrokerFactory
 from src.domain.broker import IBroker
+from src.services.order_inflight_lock_service import OrderInflightLockService
 from src.config.owner import resolve_user_id
 
 logger = setup_logger("OrderReconciliationService")
@@ -38,12 +39,14 @@ class OrderReconciliationService:
         broker: Optional[IBroker] = None,
         tx_repo: Optional[AlchemyTransactionRepository] = None,
         lot_repo: Optional[AlchemyPositionLotRepository] = None,
+        lock_svc: Optional[OrderInflightLockService] = None,
         notification_service: Any = None,
     ) -> None:
         self.user_id = resolve_user_id(user_id)
         self.broker = broker
         self.tx_repo = tx_repo or AlchemyTransactionRepository()
         self.lot_repo = lot_repo or AlchemyPositionLotRepository(self.tx_repo.engine)
+        self.lock_svc = lock_svc or OrderInflightLockService(user_id=self.user_id)
         self.notification_service = notification_service
 
     def _get_broker(self, user_id: str) -> Optional[IBroker]:
@@ -54,6 +57,15 @@ class OrderReconciliationService:
         except Exception as e:
             logger.warning(f"Failed to resolve broker for user {user_id}: {e}")
             return None
+
+    def _get_retry_limit(self, user_id: str) -> int:
+        """Fetch max retry limit for unknown order status before resolving."""
+        try:
+            from src.services.settings_service import SettingsService
+            limit = SettingsService(user_id=user_id).get("order_reconciliation_retry_limit")
+            return max(1, int(limit)) if limit is not None else 5
+        except Exception:
+            return 5
 
     async def _notify(self, title: str, content: str, user_id: str) -> None:
         """Helper to send notifications safely."""
@@ -107,15 +119,39 @@ class OrderReconciliationService:
             "pending_checked": 0,
             "filled": 0,
             "cancelled": 0,
+            "unresolved": 0,
             "still_pending": 0,
             "errors": [],
         }
+
+        # 0. Self-repair any historical zero-price entries in DB
+        lots_need_resync = False
+        try:
+            repaired_count = self.tx_repo.repair_zero_price_transactions(uid)
+            if repaired_count > 0:
+                lots_need_resync = True
+                logger.info(f"Self-repaired {repaired_count} zero-price transactions during reconciliation.")
+        except Exception as rep_e:
+            logger.debug(f"Zero price repair routine skipped: {rep_e}")
 
         # 1. Fetch pending orders from local DB
         pending_txs = self.tx_repo.get_pending_transactions(uid)
         summary["pending_checked"] = len(pending_txs)
 
-        lots_need_resync = False
+        retry_limit = self._get_retry_limit(uid)
+
+        # Cache live positions for cross-check if needed
+        cached_positions = None
+
+        async def _get_live_positions():
+            nonlocal cached_positions
+            if cached_positions is None:
+                try:
+                    cached_positions = await broker.get_positions()
+                except Exception as p_err:
+                    logger.warning(f"Failed to fetch live positions for reconciliation cross-check: {p_err}")
+                    cached_positions = []
+            return cached_positions
 
         for tx in pending_txs:
             tx_id = tx["id"]
@@ -138,9 +174,22 @@ class OrderReconciliationService:
                     fill_qty = float(status_res.get("quantity") or tx["quantity"] or 0.0)
                     fees = float(status_res.get("fees") or 0.0)
 
+                    # Ensure non-zero price
+                    if fill_price <= 0.0:
+                        try:
+                            from src.services.market_data_service import MarketDataService
+                            m_price = MarketDataService().get_latest_price(ticker)
+                            if m_price and float(m_price) > 0:
+                                fill_price = float(m_price)
+                        except Exception:
+                            pass
+                    if fill_price <= 0.0:
+                        fill_price = float(tx.get("price") or 1.0)
+
                     extra_raw = {
                         "filled_at": datetime.now(timezone.utc).isoformat(),
                         "broker_trade_info": status_res.get("raw", {}),
+                        "unknown_reconcile_count": 0,
                     }
 
                     # Promote entry_category to 'trade'
@@ -156,6 +205,9 @@ class OrderReconciliationService:
                     summary["filled"] += 1
                     lots_need_resync = True
                     logger.info(f"Order {broker_order_id} ({ticker}) FILLED at ${fill_price:.2f} ({fill_qty} units).")
+
+                    # Release ticker in-flight lock
+                    await self.lock_svc.release_lock(ticker, user_id=uid)
 
                     # Record outcome reflection for alpha learning
                     try:
@@ -190,6 +242,7 @@ class OrderReconciliationService:
                     extra_raw = {
                         "cancelled_at": datetime.now(timezone.utc).isoformat(),
                         "cancellation_reason": status_res.get("message", "Cancelled by broker"),
+                        "unknown_reconcile_count": 0,
                     }
                     self.tx_repo.update_transaction_status(
                         transaction_id=tx_id,
@@ -199,6 +252,9 @@ class OrderReconciliationService:
                     )
                     summary["cancelled"] += 1
                     logger.info(f"Order {broker_order_id} ({ticker}) {broker_status.upper()}.")
+
+                    # Release in-flight lock
+                    await self.lock_svc.release_lock(ticker, user_id=uid)
 
                     title = f"⚠️ 掛單已失效或取消 (Order {broker_status.capitalize()}) - {ticker}"
                     content = (
@@ -230,22 +286,119 @@ class OrderReconciliationService:
                             entry_category="sync_adjustment",
                         )
                         summary["cancelled"] += 1
+                        await self.lock_svc.release_lock(ticker, user_id=uid)
                     else:
                         summary["still_pending"] += 1
 
                 else:
-                    # Unknown status - log warning per Rule 0
+                    # Unknown status handling with Ghost Order Reconciliation Guard
+                    unknown_count = int(raw.get("unknown_reconcile_count", 0)) + 1
                     logger.warning(
-                        f"Reconciliation: Order {broker_order_id} ({ticker}) returned status '{broker_status}'. "
-                        f"Preserving pending state until definitive confirmation."
+                        f"Reconciliation: Order {broker_order_id} ({ticker}) returned status '{broker_status}' "
+                        f"(attempt {unknown_count}/{retry_limit})."
                     )
-                    summary["still_pending"] += 1
+
+                    # When reaching retry limit, attempt position cross-check
+                    confirmed_via_position = False
+                    inferred_price = float(tx.get("price") or 0.0)
+                    inferred_qty = float(tx.get("quantity") or 0.0)
+
+                    if unknown_count >= retry_limit:
+                        live_pos = await _get_live_positions()
+                        pos_match = next((p for p in live_pos if getattr(p, "symbol", "").strip().upper() == ticker.strip().upper()), None)
+
+                        if str(action).upper() == "BUY" and pos_match and float(getattr(pos_match, "quantity", 0) or 0) >= (inferred_qty * 0.95):
+                            # BUY confirmed: position exists on broker!
+                            confirmed_via_position = True
+                            inferred_price = float(getattr(pos_match, "current_price", 0.0) or inferred_price or 1.0)
+                            inferred_qty = float(getattr(pos_match, "quantity", 0.0) or inferred_qty)
+                            logger.info(f"Cross-Check: Inferred BUY FILLED for {ticker} via live position match ({inferred_qty} units).")
+                        elif str(action).upper() == "SELL" and not pos_match:
+                            # SELL confirmed: position no longer on broker!
+                            confirmed_via_position = True
+                            if inferred_price <= 0:
+                                inferred_price = 1.0
+                            logger.info(f"Cross-Check: Inferred SELL FILLED for {ticker} via closed position.")
+
+                    if confirmed_via_position:
+                        extra_raw = {
+                            "filled_at": datetime.now(timezone.utc).isoformat(),
+                            "reconciled_via": "position_cross_check",
+                            "unknown_reconcile_count": unknown_count,
+                        }
+                        self.tx_repo.update_transaction_status(
+                            transaction_id=tx_id,
+                            new_status="filled",
+                            entry_category="trade",
+                            price=inferred_price,
+                            quantity=inferred_qty,
+                            fees=0.0,
+                            extra_raw=extra_raw,
+                        )
+                        summary["filled"] += 1
+                        lots_need_resync = True
+                        await self.lock_svc.release_lock(ticker, user_id=uid)
+
+                        title = f"🎉 掛單撮合成交 (持倉交叉核驗確認) - {ticker}"
+                        content = (
+                            f"**標的 (Ticker):** {ticker}\n"
+                            f"**動作 (Action):** {action}\n"
+                            f"**成交數量 (Units):** {inferred_qty:.4f}\n"
+                            f"**成交均價 (Fill Price):** ${inferred_price:.2f}\n"
+                            f"**狀態 (Status):** 已由持倉交叉核驗確認撮合\n"
+                            f"**券商單號 (Broker ID):** {broker_order_id}"
+                        )
+                        await self._notify(title, content, uid)
+
+                    elif unknown_count >= retry_limit:
+                        # Exceeded retries and cross-check inconclusive -> mark unresolved & release lock
+                        extra_raw = {
+                            "unresolved_at": datetime.now(timezone.utc).isoformat(),
+                            "unresolved_reason": f"Exceeded {retry_limit} unknown reconciliation attempts",
+                            "unknown_reconcile_count": unknown_count,
+                        }
+                        self.tx_repo.update_transaction_status(
+                            transaction_id=tx_id,
+                            new_status="unresolved",
+                            entry_category="sync_adjustment",
+                            extra_raw=extra_raw,
+                        )
+                        summary["unresolved"] += 1
+                        summary["cancelled"] += 1
+                        logger.warning(
+                            f"🚨 [GhostOrder] Order {broker_order_id} ({ticker}) marked UNRESOLVED after {unknown_count} retries. "
+                            f"Releasing in-flight lock to unblock future trading."
+                        )
+                        await self.lock_svc.release_lock(ticker, user_id=uid)
+
+                        title = f"🚨 [幽靈訂單警報] 掛單多次對賬未知已自動結案釋放 - {ticker}"
+                        content = (
+                            f"**標的 (Ticker):** {ticker}\n"
+                            f"**動作 (Action):** {action}\n"
+                            f"**券商單號 (Broker ID):** {broker_order_id}\n"
+                            f"**重試次數 (Attempts):** {unknown_count}/{retry_limit}\n"
+                            f"**處置結果 (Resolution):** 已標記為 unresolved 並解鎖標的交易，避免帳戶操作阻塞。"
+                        )
+                        await self._notify(title, content, uid)
+
+                    else:
+                        # Still pending within retry budget
+                        extra_raw = {
+                            "unknown_reconcile_count": unknown_count,
+                            "last_unknown_at": datetime.now(timezone.utc).isoformat(),
+                        }
+                        self.tx_repo.update_transaction_status(
+                            transaction_id=tx_id,
+                            new_status="pending",
+                            extra_raw=extra_raw,
+                        )
+                        summary["still_pending"] += 1
 
             except Exception as order_err:
                 logger.error(f"Error checking status for order {broker_order_id} ({ticker}): {order_err}")
                 summary["errors"].append(f"{ticker} ({broker_order_id}): {str(order_err)}")
 
-        # 2. Reseed position_lots if any pending order was filled
+        # 2. Reseed position_lots if any pending order was filled or repaired
         if lots_need_resync:
             try:
                 lots_seeded = self.lot_repo.backfill_from_transactions(uid)
@@ -271,7 +424,7 @@ class OrderReconciliationService:
 
         logger.info(
             f"Order reconciliation complete for {uid}: "
-            f"{summary['filled']} filled, {summary['cancelled']} cancelled, "
+            f"{summary['filled']} filled, {summary['cancelled']} cancelled/unresolved, "
             f"{summary['still_pending']} still pending."
         )
 

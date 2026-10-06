@@ -1200,7 +1200,9 @@ class EtoroService(IBroker):
             # 2. Closing Leg (if closed)
             if close_ts:
                 close_action = 'SELL' if open_action == 'BUY' else 'BUY'
-                close_price = float(trade.get('closeRate', 0))
+                close_price = float(trade.get('closeRate', 0) or 0.0)
+                if close_price <= 0 and open_price > 0:
+                    close_price = open_price
                 close_date_str = close_ts[:10]
                 close_sig = f"{close_date_str}_{close_action}_{quantity:.4f}_{close_price:.4f}"
                 

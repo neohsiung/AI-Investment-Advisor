@@ -121,6 +121,10 @@ class ITransactionRepository(ABC):
     def reconcile_positions(self, user_id: str, live_positions: List[Dict[str, Any]], account_id: str = None) -> None:
         pass
 
+    @abstractmethod
+    def repair_zero_price_transactions(self, user_id: Optional[str] = None) -> int:
+        pass
+
 class AlchemyTransactionRepository(BaseRepository, ITransactionRepository):
     """
     Implementation of ITransactionRepository using SQLAlchemy.
@@ -556,16 +560,18 @@ class AlchemyTransactionRepository(BaseRepository, ITransactionRepository):
 
     def reconcile_positions(self, user_id: str, live_positions: List[Dict[str, Any]], account_id: str = None) -> None:
         """
-        Adjusts local holdings to match live broker positions.
-        調整本地持倉以匹配券商即時持倉。
+        Adjusts local holdings to match live broker positions with strict price fallback.
+        調整本地持倉以匹配券商即時持倉，嚴格防止零價格寫入。
         """
         # Get current local holdings for this account
         local_holdings = self.get_holdings(user_id, account_id)
         local_map: Dict[str, float] = {}
+        local_avg_price_map: Dict[str, float] = {}
         for h in local_holdings:
             t = str(h.get('ticker', '')).upper()
             if t and t != 'CASH':
                 local_map[t] = local_map.get(t, 0.0) + float(h.get('quantity', 0.0))
+                local_avg_price_map[t] = float(h.get('avg_price', 0.0) or 0.0)
         
         # Map live positions - sum quantities across all lots for the same ticker
         live_map: Dict[str, float] = {}
@@ -581,8 +587,8 @@ class AlchemyTransactionRepository(BaseRepository, ITransactionRepository):
                 logger.warning(f"Reconciliation: Skipping unresolved instrument {ticker} for user {user_id}")
                 continue
 
-            local_qty = local_map.get(ticker, 0)
-            live_qty = live_map.get(ticker, 0)
+            local_qty = local_map.get(ticker, 0.0)
+            live_qty = live_map.get(ticker, 0.0)
             diff = live_qty - local_qty
             
             if abs(diff) < 0.00001:
@@ -590,14 +596,43 @@ class AlchemyTransactionRepository(BaseRepository, ITransactionRepository):
                 
             logger.info(f"Reconciling {ticker} for {user_id}: local={local_qty}, live={live_qty}, diff={diff}")
             
-            # Since we don't have the live price easily here (it's passed in live_positions),
-            # we use the current market price or just 0 if it's a pure quantity sync.
-            # Best is to use the current price from live_positions if available.
-            live_price = next((p.get('current_price', 0) for p in live_positions if p['ticker'].upper() == ticker), 0)
-            
-            live_leverage = next((p.get('leverage', 1.0) for p in live_positions if p['ticker'].upper() == ticker), 1.0)
+            # Step 1: Try current_price from live_positions
+            live_price = next((float(p.get('current_price', 0.0) or 0.0) for p in live_positions if p['ticker'].upper() == ticker), 0.0)
+            live_leverage = next((float(p.get('leverage', 1.0) or 1.0) for p in live_positions if p['ticker'].upper() == ticker), 1.0)
 
-            # Add a sync adjustment transaction
+            # Step 2: Fallback to MarketDataService if live_price is missing or 0
+            if live_price <= 0.0:
+                try:
+                    from src.services.market_data_service import MarketDataService
+                    mkt_p = MarketDataService().get_latest_price(ticker)
+                    if mkt_p and float(mkt_p) > 0:
+                        live_price = float(mkt_p)
+                except Exception as mkt_err:
+                    logger.debug(f"MarketDataService fallback price lookup failed for {ticker}: {mkt_err}")
+
+            # Step 3: Fallback to local average cost if position lot exists
+            if live_price <= 0.0 and ticker in local_avg_price_map and local_avg_price_map[ticker] > 0:
+                live_price = local_avg_price_map[ticker]
+
+            # Step 4: Fallback to most recent non-zero transaction price
+            if live_price <= 0.0:
+                with self.engine.connect() as conn:
+                    recent = conn.execute(
+                        text("""
+                            SELECT price FROM transactions
+                            WHERE user_id = :uid AND ticker = :tk AND price > 0
+                            ORDER BY trade_date DESC LIMIT 1
+                        """),
+                        {"uid": user_id, "tk": ticker}
+                    ).fetchone()
+                    if recent and float(recent[0]) > 0:
+                        live_price = float(recent[0])
+
+            if live_price <= 0.0:
+                logger.error(f"CRITICAL: Failed to determine non-zero price for {ticker} during reconciliation. Defaulting to 1.0.")
+                live_price = 1.0
+
+            # Add a sync adjustment transaction with guaranteed non-zero price
             self.add(
                 user_id=user_id,
                 ticker=ticker,
@@ -605,9 +640,76 @@ class AlchemyTransactionRepository(BaseRepository, ITransactionRepository):
                 action="BUY" if diff > 0 else "SELL",
                 quantity=abs(diff),
                 price=live_price,
-                fees=0,
+                fees=0.0,
                 leverage=live_leverage,
                 entry_category=ENTRY_CATEGORY_SYNC_ADJUSTMENT,
                 source_file=account_id
             )
+
+    def repair_zero_price_transactions(self, user_id: Optional[str] = None) -> int:
+        """
+        Repair historical equity transactions where price was erroneously recorded as 0.0.
+        修復歷史股票交易中成交價被誤記為 0.0 的記錄，更新價格、金額並重置損益扭曲。
+        """
+        repaired_count = 0
+        with self.engine.connect() as conn:
+            query = text("""
+                SELECT id, user_id, ticker, action, trade_date, quantity, leverage
+                FROM transactions
+                WHERE price <= 0 AND ticker != 'CASH'
+                AND (:uid IS NULL OR user_id = :uid)
+            """)
+            rows = conn.execute(query, {"uid": user_id}).fetchall()
+
+        if not rows:
+            return 0
+
+        logger.info(f"repair_zero_price_transactions: Found {len(rows)} zero-price equity transactions.")
+
+        for r in rows:
+            tx_id, uid, tk, act, dt, qty, lev = r[0], r[1], r[2], r[3], r[4], float(r[5]), float(r[6] or 1.0)
+            rep_price = 0.0
+
+            # 1. Look for avg buy price of that ticker for that user
+            with self.engine.connect() as conn:
+                avg_res = conn.execute(
+                    text("""
+                        SELECT AVG(price) FROM transactions
+                        WHERE user_id = :uid AND ticker = :tk AND action = 'BUY' AND price > 0
+                    """),
+                    {"uid": uid, "tk": tk}
+                ).fetchone()
+                if avg_res and avg_res[0] and float(avg_res[0]) > 0:
+                    rep_price = float(avg_res[0])
+
+            # 2. Look for recent market price if avg buy price not found
+            if rep_price <= 0:
+                try:
+                    from src.services.market_data_service import MarketDataService
+                    mkt_p = MarketDataService().get_latest_price(tk)
+                    if mkt_p and float(mkt_p) > 0:
+                        rep_price = float(mkt_p)
+                except Exception:
+                    pass
+
+            if rep_price > 0:
+                new_amount = (rep_price * qty) / lev if lev > 0 else (rep_price * qty)
+                with self.engine.begin() as conn:
+                    conn.execute(
+                        text("""
+                            UPDATE transactions
+                            SET price = :price,
+                                amount = :amount,
+                                updated_at = NOW()
+                            WHERE id = :id
+                        """),
+                        {"id": tx_id, "price": rep_price, "amount": new_amount}
+                    )
+                repaired_count += 1
+                logger.info(f"✓ Repaired zero-price tx {tx_id} ({tk} {act} qty={qty}): price=${rep_price:.2f}, amount=${new_amount:.2f}")
+
+        if repaired_count > 0:
+            logger.info(f"repair_zero_price_transactions successfully repaired {repaired_count} records.")
+
+        return repaired_count
 

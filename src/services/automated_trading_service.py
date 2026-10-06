@@ -8,6 +8,8 @@ from datetime import datetime
 import asyncio
 import httpx
 from src.repositories.settings_repository import AlchemySettingsRepository
+from src.repositories.transaction_repository import AlchemyTransactionRepository
+from src.services.order_inflight_lock_service import OrderInflightLockService
 from src.services.interaction_service import InteractionService
 from src.services.notification_service import NotificationService
 from src.domain.trading import Order, OrderAction, OrderType, OrderSizingMode
@@ -110,10 +112,12 @@ class AutomatedTradingService:
     
     def __init__(self, settings_repo: Optional[AlchemySettingsRepository] = None, 
                  interaction_service: Optional[InteractionService] = None,
-                 notification_service: Optional[NotificationService] = None):
+                 notification_service: Optional[NotificationService] = None,
+                 tx_repo: Optional[AlchemyTransactionRepository] = None):
         self.settings_repo = settings_repo or AlchemySettingsRepository()
         self.interaction_service = interaction_service or InteractionService()
         self.notification_service = notification_service
+        self.tx_repo = tx_repo or AlchemyTransactionRepository()
 
     async def evaluate_and_execute_trade(self, user_id: str, ticker: str, action: str, quantity: float = None,
                                          confidence_score: int = None, rationale: str = None,
@@ -188,6 +192,106 @@ class AutomatedTradingService:
         # raise TypeError: argument of type 'NoneType' is not iterable.
         # 2026-08-02：rationale 預設 None 但下面會做 `in` 子字串比對，先正規化避免 TypeError。
         rationale = rationale or ""
+
+        # 0b. Min Turnover Hurdle (最低調倉門檻 — 防微調雜訊磨損)
+        # If delta_weight is provided, enforce a minimum weight shift hurdle to prevent churn noise (e.g. < 3%)
+        if delta_weight is not None:
+            try:
+                raw_hurdle = self.settings_repo.get(user_id, "min_rebalance_hurdle_pct")
+                min_hurdle = float(raw_hurdle) if raw_hurdle is not None else 0.03
+                is_sell = str(action).upper() == "SELL"
+                # Exemptions:
+                # 1. Full position liquidation
+                is_full_close = (target_weight == 0) or (is_sell and current_weight is not None and abs(current_weight) <= 0.001)
+                # 2. Safety controls
+                from src.services.strategy_registry import StrategyRegistry
+                is_safety = StrategyRegistry.is_safety_control(strategy_name or "")
+                # 3. New position opening from zero
+                is_new_position = (current_weight == 0 or current_weight is None) and (not is_sell)
+                
+                if not (is_full_close or is_safety or is_new_position) and abs(float(delta_weight)) < min_hurdle:
+                    logger.info(
+                        f"Min Turnover Hurdle: Skipping {ticker} trade — delta_weight={delta_weight:+.4f} "
+                        f"below hurdle threshold ±{min_hurdle:.4f} (churn noise reduction)."
+                    )
+                    return {
+                        "status": "skipped",
+                        "reason": f"Delta weight {delta_weight:+.4f} below min turnover hurdle ({min_hurdle:.1%})"
+                    }
+            except Exception as hurdle_err:
+                logger.warning(f"Min turnover hurdle check failed non-blockingly: {hurdle_err}")
+
+        # 0c. Ticker In-Flight Lock Guard (標的在途鎖 — 杜絕並發重複送單)
+        lock_svc = OrderInflightLockService(user_id=user_id)
+        if await lock_svc.is_locked(ticker, user_id=user_id):
+            lock_info = await lock_svc.get_lock_info(ticker, user_id=user_id) or {}
+            logger.warning(
+                f"Trade Execution Blocked: Ticker {ticker} has active in-flight order lock "
+                f"(held by order {lock_info.get('order_id')} action={lock_info.get('action')})."
+            )
+            return {
+                "status": "blocked",
+                "reason": f"Order in-flight lock active for {ticker} (pending execution or reconciliation)",
+                "lock_info": lock_info,
+            }
+
+        # 0d. Intraday Churn Throttler (日內過度交易防抖冷卻 — 攔截 24h 翻轉磨損)
+        try:
+            raw_cooldown = self.settings_repo.get(user_id, "intraday_churn_cooldown_hours")
+            cooldown_hours = float(raw_cooldown) if raw_cooldown is not None else 24.0
+            from src.services.strategy_registry import StrategyRegistry
+            is_safety = StrategyRegistry.is_safety_control(strategy_name or "")
+
+            if cooldown_hours > 0 and not is_safety:
+                all_txs = self.tx_repo.get_all_by_user(user_id)
+                now_dt = datetime.now()
+
+                for tx in all_txs:
+                    t_sym = str(getattr(tx, "ticker", "")).strip().upper()
+                    if t_sym != sym_upper:
+                        continue
+                    cat = getattr(tx, "entry_category", "")
+                    if cat not in ("trade", "sync_adjustment"):
+                        continue
+                    past_action = str(getattr(tx, "action", "")).upper()
+                    if past_action not in ("BUY", "SELL"):
+                        continue
+
+                    t_date = getattr(tx, "trade_date", None)
+                    if not t_date:
+                        continue
+                    if isinstance(t_date, str):
+                        try:
+                            t_date = datetime.fromisoformat(t_date)
+                        except Exception:
+                            try:
+                                t_date = datetime.strptime(t_date[:19], "%Y-%m-%d %H:%M:%S")
+                            except Exception:
+                                t_date = None
+                    elif hasattr(t_date, "year") and not hasattr(t_date, "hour"):
+                        t_date = datetime.combine(t_date, datetime.min.time())
+
+                    if t_date:
+                        diff_hours = (now_dt - t_date.replace(tzinfo=None)).total_seconds() / 3600.0
+                        if 0 <= diff_hours < cooldown_hours:
+                            curr_action = str(action).upper()
+                            # Opposite direction trade is considered flip-flop churn
+                            if (curr_action == "BUY" and past_action == "SELL") or (curr_action == "SELL" and past_action == "BUY"):
+                                logger.warning(
+                                    f"Intraday Churn Throttler: Blocked flip-flop {curr_action} for {ticker}. "
+                                    f"Reverse {past_action} occurred {diff_hours:.1f}h ago (< {cooldown_hours:.1f}h cooldown)."
+                                )
+                                return {
+                                    "status": "blocked",
+                                    "reason": (
+                                        f"Intraday churn throttler: {curr_action} blocked because reverse action {past_action} "
+                                        f"occurred {diff_hours:.1f}h ago (cooldown is {cooldown_hours:.1f}h)"
+                                    ),
+                                }
+                        # Only inspect the most recent trade for this ticker
+                        break
+        except Exception as churn_err:
+            logger.warning(f"Intraday churn throttler check non-blocking error: {churn_err}")
 
         # 1. Check if trading is enabled
         trading_enabled = self.settings_repo.get(user_id, "ai_trading_enabled")
@@ -1107,6 +1211,17 @@ class AutomatedTradingService:
             
         logger.info(f"Executing {order.action.value} {order.symbol} via {broker.get_name()}")
         
+        lock_svc = OrderInflightLockService(user_id=user_id)
+        raw_lock_ttl = self.settings_repo.get(user_id, "order_lock_ttl_seconds")
+        lock_ttl = int(raw_lock_ttl) if raw_lock_ttl is not None else 1800
+        await lock_svc.acquire_lock(
+            ticker=order.symbol,
+            user_id=user_id,
+            action=order.action.value,
+            ttl_seconds=lock_ttl,
+            strategy_name=strategy_name,
+        )
+
         try:
             # Order execution is synchronous in current design
             result = await broker.execute_order(order)  # ← async
@@ -1114,6 +1229,13 @@ class AutomatedTradingService:
             # v6.0: Post-Trade Sync (交易後紀錄同步)
             if result.get("status") not in ["failed", "error"] and not result.get("error"):
                 execution_status = result.get("execution_status", "executed" if result.get("status") == "success" else "unknown")
+                if execution_status == "executed":
+                    await lock_svc.release_lock(order.symbol, user_id=user_id)
+            else:
+                await lock_svc.release_lock(order.symbol, user_id=user_id)
+                execution_status = "failed"
+
+            if result.get("status") not in ["failed", "error"] and not result.get("error"):
                 
                 # Record transaction in local ledger with lifecycle status tracking
                 await self._record_order_transaction(
@@ -1245,8 +1367,9 @@ class AutomatedTradingService:
             
             return result
         except Exception as e:
-             logger.error(f"Trade execution failed: {e}")
-             return {"status": "error", "reason": str(e)}
+            await lock_svc.release_lock(order.symbol, user_id=user_id)
+            logger.error(f"Trade execution failed: {e}")
+            return {"status": "error", "reason": str(e)}
 
     async def _get_current_price(self, broker, ticker: str, user_id: str = None) -> Optional[float]:
         """Get current price for a ticker from broker, positions, or MarketDataService."""

@@ -1076,6 +1076,46 @@ settings:
     label_zh: 模擬退火幾何降溫率 (gamma)
     help_en: Multiplicative decay factor applied to temperature per iteration (T_k = T_0 * gamma^k).
     help_zh: 每一演化迭代之幾何降溫衰減因子 gamma（預設 0.85），控制系統由探索過渡至精準收斂之速度。
+  - key: order_reconciliation_retry_limit
+    group: trading
+    type: int
+    default: 5
+    min: 1
+    max: 20
+    label_en: Order reconciliation retry limit
+    label_zh: 訂單對賬重試上限
+    help_en: Maximum reconciliation retries for unknown broker order status before initiating position cross-checks and auto-resolving.
+    help_zh: 當券商訂單狀態為 unknown 時，最多重試對賬次數。超過此上限將進行持倉交叉核驗，若仍無法確認則結案轉為人工調查並解鎖標的。
+  - key: order_lock_ttl_seconds
+    group: trading
+    type: int
+    default: 1800
+    min: 60
+    max: 86400
+    label_en: Order in-flight lock TTL (seconds)
+    label_zh: 標的在途鎖有效時間 (秒)
+    help_en: Expiration time for ticker-level in-flight execution lock preventing concurrent duplicate orders.
+    help_zh: 當標的處於委託中或等待券商成交確認時，禁止同一標的重複下單的在途鎖超時時間（預設 1800 秒）。
+  - key: intraday_churn_cooldown_hours
+    group: trading
+    type: float
+    default: 24.0
+    min: 0.0
+    max: 72.0
+    label_en: Intraday churn cooldown (hours)
+    label_zh: 日內過度交易防抖冷卻 (小時)
+    help_en: Cooldown period preventing opposite-direction flip-flop trades on the same ticker within specified hours to eliminate turnover churn.
+    help_zh: 限制同一標的在特定時間內反覆買賣或過度調倉。若在冷卻時間內出現反向交易（買進後迅速賣出），除停損避險外將予以攔截阻斷，大幅降低週轉率磨損。
+  - key: min_rebalance_hurdle_pct
+    group: trading
+    type: float
+    default: 0.03
+    min: 0.005
+    max: 0.15
+    label_en: Minimum rebalance delta hurdle pct
+    label_zh: 最小調倉權重門檻 (比例)
+    help_en: Minimum target weight delta required to execute a rebalance trade; smaller shifts are filtered out as micro-churn noise.
+    help_zh: 目標權重與當前權重之變動幅度必須大於此門檻（預設 0.03 即 3%），才允許觸發調倉交易，杜絕微幅波動造成的摩擦成本吞噬超額收益。
 
   # ── Allocation ───────────────────────────────────────────────────────────
   # These four were `MIN_POS`/`MAX_POS`/`SECTOR_CAP`/`TARGET_SUM` module
