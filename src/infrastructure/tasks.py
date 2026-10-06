@@ -1374,3 +1374,39 @@ def ingest_podcasts(user_id: str = None):
 
     logger.info("ingest_podcasts: %d processed, %d failed", done, failed)
     return f"processed={done} failed={failed}"
+
+
+@app.task(name="src.infrastructure.tasks.dispatch_model_lifecycle")
+def dispatch_model_lifecycle():
+    """Dispatch LLM model lifecycle scan & blue-green evolution for all users."""
+    users = _resolve_target_users()
+    for uid in users:
+        run_model_lifecycle.delay(user_id=uid)
+    return f"Dispatched {len(users)} model_lifecycle tasks"
+
+
+@app.task(name="src.infrastructure.tasks.run_model_lifecycle")
+def run_model_lifecycle(user_id: str = None):
+    """
+    Periodic task to scan, discover new LLM models, deprecate retired ones,
+    and conduct blue-green canary evaluations on tier bindings for cost & efficiency gains.
+    """
+    from src.config.owner import resolve_user_id
+    from src.services.llm_model_lifecycle_service import LLMModelLifecycleService
+
+    user_id = resolve_user_id(user_id)
+    try:
+        service = LLMModelLifecycleService(user_id=user_id)
+        report = _run_async_safe(service.scan_and_evolve_models())
+        summary = (
+            f"user={user_id} discovered={report.discovered_count} "
+            f"imported={report.new_imported_count} deprecated={report.deprecated_count} "
+            f"bg_evaluated={report.evaluated_blue_green} promoted={report.promoted_count} "
+            f"rolled_back={report.rolled_back_count}"
+        )
+        logger.info(f"run_model_lifecycle completed: {summary}")
+        return summary
+    except Exception as exc:
+        logger.error(f"run_model_lifecycle failed for user {user_id}: {exc}", exc_info=True)
+        return f"Error: {exc}"
+
