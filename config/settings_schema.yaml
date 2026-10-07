@@ -484,6 +484,24 @@ settings:
     label_zh: 啟用階梯鎖利
     help_en: Dynamically tighten trailing stops as profit targets are reached.
     help_zh: 當未實現獲利達到不同階梯目標時，動態收緊移動停損保護利潤。
+  - key: enable_stagnation_pruning
+    group: trading
+    type: bool
+    default: true
+    label_en: Enable dead-capital stagnation pruning
+    label_zh: 啟用死資金停滯修剪
+    help_en: Prune sideways/stagnant holdings lacking momentum after minimum days to liberate liquidity for top-performing alpha assets.
+    help_zh: 持倉達門檻天數且損益橫盤鈍化、跑輸大盤時，主動停滯平倉修剪以釋放流動性換庫至強勢 Alpha 標的（長期贏家自動豁免）。
+  - key: stagnation_prune_min_days
+    group: trading
+    type: int
+    default: 15
+    min: 5
+    max: 90
+    label_en: Minimum holding days for stagnation pruning
+    label_zh: 死資金修剪最短觀察天數
+    help_en: Minimum holding duration in days before evaluating dead-capital momentum stall.
+    help_zh: 評估死資金橫盤停滯的最短持倉天數門檻（預設 15 天）。
   - key: strategy_evolution_enabled
     group: trading
     type: bool

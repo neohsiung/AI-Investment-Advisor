@@ -123,7 +123,8 @@ class LLMModelLifecycleService(BaseRepository):
         # 1. 探測與發現新模型
         for prov in active_providers:
             try:
-                disc_res = await self.model_service.discover(prov.id, force_refresh=True)
+                disc_call = self.model_service.discover(prov.id, force_refresh=True)
+                disc_res = await disc_call if asyncio.iscoroutine(disc_call) else disc_call
                 data = disc_res.get("data", [])
                 report.discovered_count += len(data)
 
@@ -303,19 +304,33 @@ class LLMModelLifecycleService(BaseRepository):
         green_cost = float(green_model.input_cost_per_1k or 0.0)
         saving_pct = (blue_cost - green_cost) / blue_cost * 100.0 if blue_cost > 0 else 0.0
 
-        # 模擬/執行基準探測（可平滑降級為快速探測）
         start_time = time.perf_counter()
-        green_ok = True
+        # 使用 ModelCanaryEvaluator 執行嚴格的 JSON Schema 與延遲門禁驗證
         try:
-            # 建立 Green 測試用 gateway 與 config
-            prov = self.provider_repo.get(green_model.provider_id)
-            if not prov or not prov.enabled:
-                green_ok = False
-            green_latency = (time.perf_counter() - start_time) * 1000.0
+            from src.services.model_canary_evaluator import ModelCanaryEvaluator
+            evaluator = ModelCanaryEvaluator(
+                user_id=self.user_id,
+                model_repo=self.model_repo,
+                provider_repo=self.provider_repo,
+                tier_repo=self.tier_repo,
+                tier_service=self.tier_service,
+                cipher=self.cipher,
+            )
+            canary_res = await evaluator.evaluate_and_promote(
+                tier=tier,
+                candidate_model_id=green_model.id,
+                current_model_id=blue_model.id,
+                auto_promote=False,  # Lifecycle service handles promotion record
+            )
+            green_ok = canary_res.passed
+            green_latency = max(10.0, canary_res.latency_seconds * 1000.0)
+            notes = "Green verified healthy and cost-effective" if canary_res.passed else f"Canary failed: {'; '.join(canary_res.failure_reasons)}"
         except Exception as e:
-            logger.warning("Green candidate test failed: %s", e)
-            green_ok = False
-            green_latency = 9999.0
+            logger.warning("Canary evaluator failed with error: %s; falling back to provider status check", e)
+            prov = self.provider_repo.get(green_model.provider_id)
+            green_ok = bool(prov and prov.enabled)
+            green_latency = (time.perf_counter() - start_time) * 1000.0 if green_ok else 9999.0
+            notes = "Green verified healthy and cost-effective" if green_ok else "Failed benchmark validation"
 
         blue_latency = 1500.0  # 基準平均延遲 (ms)
         is_eligible = green_ok and (saving_pct > 0.0 or green_latency < blue_latency)
@@ -329,7 +344,7 @@ class LLMModelLifecycleService(BaseRepository):
             "green_cost": green_cost,
             "cost_saving_pct": max(0.0, saving_pct),
             "is_eligible_for_promotion": is_eligible,
-            "notes": "Green verified healthy and cost-effective" if is_eligible else "Failed benchmark validation",
+            "notes": notes,
         }
 
     def _promote_green_to_primary(
