@@ -669,3 +669,70 @@ async def test_handle_position_exits_runner_lock_score(sentinel):
         assert call_kwargs["strategy_name"] == "trailing_stop_loss"
 
 
+@pytest.mark.anyio
+async def test_check_pyramiding_opportunities_triggers_buy(sentinel, mock_dependencies):
+    """Verify Sentinel detects qualified momentum winner and generates pyramiding BUY trigger."""
+    mock_dependencies["market"].get_technical_indicators.return_value = {
+        "rsi": 65.0,
+        "macd": "bullish",
+        "sma": {"sma_20": 105.0, "sma_50": 100.0},
+    }
+
+    mock_allocation = {
+        "NVDA": {
+            "shares": 10.0,
+            "quantity": 10.0,
+            "weight": 11.2,
+            "market_value": 1120.0,
+            "current_price": 112.0,
+            "avg_price": 100.0,
+        }
+    }
+    sentinel._get_current_allocation = AsyncMock(return_value=mock_allocation)
+    sentinel._position_peaks["NVDA"] = 112.0
+    sentinel._position_stops["NVDA"] = 104.0  # Stop locked above entry cost
+
+    triggers = await sentinel._check_pyramiding_opportunities()
+    assert len(triggers) == 1
+    t = triggers[0]
+    assert t["ticker"] == "NVDA"
+    assert t["strategy_name"] == "pyramiding_scale_in"
+    assert t["stage"] == 1
+    assert t["add_shares"] == 2.5
+    assert t["composite_score"] >= 8.5
+    assert "金字塔動能加碼 Stage 1" in t["text"]
+
+
+@pytest.mark.anyio
+async def test_handle_pyramiding_logic_executes_and_advances_stage(sentinel):
+    """Verify _handle_pyramiding_logic executes BUY and updates stage in pyramiding service."""
+    pyramid_triggers = [
+        {
+            "id": "pyramid_test_1",
+            "ticker": "NVDA",
+            "stage": 1,
+            "add_shares": 2.5,
+            "composite_score": 8.8,
+            "confidence_breakdown": [{"agent": "TrendMomentum", "confidence": 8.8}],
+            "text": "Pyramiding scale in test",
+        }
+    ]
+    sentinel._acquire_cooldown = AsyncMock(return_value=True)
+
+    mock_auto_trade = MagicMock()
+    mock_auto_trade.evaluate_and_execute_trade = AsyncMock(return_value={"status": "success"})
+
+    sentinel.pyramiding_service.record_stage_advance = AsyncMock()
+
+    with patch("src.services.automated_trading_service.AutomatedTradingService", return_value=mock_auto_trade):
+        await sentinel._handle_pyramiding_logic(pyramid_triggers)
+        mock_auto_trade.evaluate_and_execute_trade.assert_called_once()
+        call_kwargs = mock_auto_trade.evaluate_and_execute_trade.call_args.kwargs
+        assert call_kwargs["action"] == "BUY"
+        assert call_kwargs["ticker"] == "NVDA"
+        assert call_kwargs["quantity"] == 2.5
+        assert call_kwargs["strategy_name"] == "pyramiding_scale_in"
+        sentinel.pyramiding_service.record_stage_advance.assert_called_once_with("NVDA", 1)
+
+
+

@@ -55,6 +55,11 @@ class TestStrategyRegistry:
         assert rebal_strat is not None
         assert rebal_strat.strategy_id == "concentration_rebalance"
 
+        pyramid_strat = StrategyRegistry.get("pyramiding_scale_in")
+        assert pyramid_strat is not None
+        assert pyramid_strat.strategy_id == "pyramiding_scale_in"
+        assert MarketRegimeType.TREND_ACCELERATION in pyramid_strat.subscribed_regimes
+
         stop_loss = StrategyRegistry.get("stop_loss")
         assert stop_loss is not None
         assert stop_loss.is_safety_control() is True
