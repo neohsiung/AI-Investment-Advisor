@@ -93,7 +93,6 @@ def _extract_score_object(text: str) -> Dict[str, Any]:
             float(raw)
         except (TypeError, ValueError):
             # Skips the echoed template, whose "score" is the literal <0-10>.
-            # 跳過被複述的模板，其 score 是字面的 <0-10>。
             continue
         best = obj
 

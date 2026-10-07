@@ -2609,6 +2609,7 @@ class SentinelService:
                     confidence_score=decision["composite_score"],  # Now uses 0-10 scale
                     rationale=rationale,
                     confidence_breakdown=decision.get("breakdown", []),  # New field for UI
+                    strategy_name="cash_deployment",
                 )
 
                 # Option B: If synthesized factor(s) participated in this trade decision, dispatch transparent alert

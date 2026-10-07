@@ -966,10 +966,11 @@ class AutomatedTradingService:
             }
             return True, labels.get(strategy_name, "安全出場自動執行")
 
-        # 再平衡買進自動執行 (Rebalance Buy Auto-execution)
-        # 若為經投組模型審核之再平衡配置買進，且達最低信賴門檻，由系統自動放行
-        if not is_sell and strategy_name in ("rebalance_diversification", "portfolio_rebalance", "concentration_rebalance") and effective_confidence >= min_threshold:
-            return True, "再平衡買進自動執行"
+        # 再平衡買進與現金部署自動執行 (Rebalance Buy & Cash Deployment Auto-execution)
+        # 若為經投組模型審核之再平衡配置買進或現金部署，且達最低信賴門檻，由系統自動放行
+        if not is_sell and strategy_name in ("rebalance_diversification", "portfolio_rebalance", "concentration_rebalance", "cash_deployment") and effective_confidence >= min_threshold:
+            label = "現金部署自動放行" if strategy_name == "cash_deployment" else "再平衡買進自動執行"
+            return True, label
 
         # 一般賣出且置信度達標
         if is_sell and effective_confidence >= threshold and auto_exit_enabled:

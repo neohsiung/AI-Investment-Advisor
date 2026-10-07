@@ -141,7 +141,7 @@ class StrategyRegistry:
         # Standard safety keywords fallback
         return strategy_id in (
             "stop_loss", "emergency_exit", "position_exit", "take_profit",
-            "capital_rotation", "rebalance_diversification"
+            "capital_rotation", "rebalance_diversification", "cash_deployment"
         )
 
     @classmethod
@@ -152,7 +152,7 @@ class StrategyRegistry:
         cls._initialized = True
 
         # 1. Register Safety Controls
-        for safe_name in ["stop_loss", "emergency_exit", "position_exit", "take_profit", "capital_rotation", "rebalance_diversification"]:
+        for safe_name in ["stop_loss", "emergency_exit", "position_exit", "take_profit", "capital_rotation", "rebalance_diversification", "cash_deployment"]:
             cls._strategies[safe_name] = SafetyExitContract(safe_name)
 
         # 2. Register Concentration Rebalance
