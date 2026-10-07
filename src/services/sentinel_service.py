@@ -3238,6 +3238,36 @@ class SentinelService:
                     institutional_support_price=support_price,
                 )
 
+                # 2a. Dynamic ATR Initial Stop-Loss (Tier 0: 進場初期波動度保護防線，需有停損授權)
+                if enable_fixed_stops and dynamic_exit.should_exit and dynamic_exit.ratchet_stage == "INITIAL":
+                    trigger_msg = f"🛑 [動態 ATR 初始停損觸發] {ticker}: {dynamic_exit.rationale}"
+                    triggers.append({
+                        "id": f"stop_loss_atr_{ticker}_{self.user_id[:8]}",
+                        "ticker": ticker,
+                        "action": "trigger_exit",
+                        "strategy_name": "stop_loss",
+                        "sell_quantity": shares,
+                        "current_price": current_price,
+                        "avg_price": avg_price,
+                        "stop_price": dynamic_exit.stop_price,
+                        "ratchet_stage": dynamic_exit.ratchet_stage,
+                        "tier": dynamic_exit.tier,
+                        "locked_profit_pct": dynamic_exit.locked_profit_pct,
+                        "return_pct": round(return_pct, 2) if return_pct is not None else 0.0,
+                        "current_weight_pct": weight,
+                        "text": trigger_msg,
+                        "severity": "critical",
+                        "priority": 1,
+                        "type": "position_exit",
+                        "trigger_type": "stop_loss",
+                        "timestamp": pd.Timestamp.now().isoformat(),
+                    })
+                    logger.warning(
+                        f"[Sentinel Exit] Dynamic ATR initial stop-loss triggered for {ticker}: "
+                        f"return={return_pct:.2f}%, stop=${dynamic_exit.stop_price:.2f}"
+                    )
+                    continue
+
                 is_dynamic_triggered = dynamic_exit.should_exit and dynamic_exit.ratchet_stage in ("BREAKEVEN", "TRAILING", "HARVEST", "SUPPORT_LOCKED")
 
                 if enable_trailing_stops and current_peak > (avg_price * 1.02) and (is_dynamic_triggered or is_drawdown_triggered or is_support_broken):

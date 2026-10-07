@@ -142,3 +142,27 @@ async def test_call_agent_llm(sentinel_service):
         response = await sentinel_service._call_agent_llm("Thematic", {"test": "data"})
         res_json = json.loads(response)
         assert res_json["status"] == "success"
+
+
+@pytest.mark.asyncio
+async def test_check_position_exits_atr_and_fixed_stops(sentinel_service):
+    """驗證 Tier 0 動態 ATR 初始停損與預設啟用之硬停損防線"""
+    # 模擬持倉配置: TSM 買入成本 480，現價 440 (-8.33% 跌幅)
+    allocation = {
+        "TSM": {
+            "shares": 10.0,
+            "avg_price": 480.0,
+            "current_price": 440.0,
+            "weight": 10.0,
+        }
+    }
+    sentinel_service._get_current_allocation = AsyncMock(return_value=allocation)
+    sentinel_service.settings_service.get_setting.side_effect = lambda key, default=None, *args: {
+        "enable_fixed_stops": True,
+        "stop_loss_pct": 8.0,
+    }.get(key, default)
+
+    triggers = await sentinel_service._check_position_exits()
+    assert len(triggers) >= 1
+    assert any("TSM" in t["ticker"] and t["action"] == "trigger_exit" for t in triggers)
+    assert any("停損觸發" in t["text"] for t in triggers)

@@ -543,4 +543,43 @@ async def test_evaluate_and_execute_trade_triggers_tiered_auto_approval(test_svc
     assert executed_order.quantity == 10.0
 
 
+@pytest.mark.anyio
+async def test_dynamic_kelly_sizing_scales_quantity_on_excess_cash(test_svc, mock_broker):
+    """驗證當現金充沛或檢測到現金過高時，部位從象徵性 $100 動態縮放至目標配置規模"""
+    user_id = "test_user"
+    # 模擬帳戶真實權益 $5,000，可用現金 $4,000 (80% 現金拖累)
+    mock_broker.get_account.return_value.total_equity = 5000.0
+    mock_broker.get_account.return_value.available_cash = 4000.0
+
+    test_svc.settings_repo.get.side_effect = lambda uid, key: {
+        "ai_trading_enabled": "true",
+        "auto_trade_threshold": "7.0",
+        "auto_trade_min_threshold": "3.0",
+        "tradable_capital_usd": 0,  # 解除實測上限，使用全額帳戶
+        "max_single_position_pct": 0.10,
+        "min_trade_amount": 10.0,
+        "cash_reserve_buffer_pct": 0.15,
+        "enable_dynamic_kelly_sizing": "true",
+    }.get(key)
+
+    with patch('src.services.automated_trading_service.BrokerFactory.get_broker', return_value=mock_broker), \
+         patch.object(test_svc, '_notify_via_api', new_callable=AsyncMock):
+        res = await test_svc.evaluate_and_execute_trade(
+            user_id=user_id,
+            ticker="NVDA",
+            action="BUY",
+            quantity=None,  # 未指定固定下單金額，觸發動態配置
+            confidence_score=9.0,
+            rationale="High conviction AI chip trend with excess cash",
+        )
+
+    assert res["status"] == "success"
+    mock_broker.execute_order.assert_called_once()
+    executed_order = mock_broker.execute_order.call_args[0][0]
+    assert executed_order.symbol == "NVDA"
+    # 動態部位應顯著大於微量 $100，受限於 10% NLV = $500
+    assert executed_order.quantity > 100.0
+    assert executed_order.quantity <= 500.0
+
+
 
