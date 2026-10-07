@@ -71,6 +71,26 @@ class ConcentrationRebalanceContract(StrategyContract):
         return None
 
 
+class PyramidingScaleInContract(StrategyContract):
+    """Contract for momentum breakout pyramiding position scaling."""
+    def __init__(self):
+        self.strategy_id = "pyramiding_scale_in"
+        self.subscribed_regimes = [MarketRegimeType.TREND_ACCELERATION, MarketRegimeType.NORMAL]
+        self.risk_budget = RiskBudget(
+            max_underlying_stop_pct=6.0,
+            trailing_stop_pct=5.0,
+            max_position_margin_pct=0.20,
+            max_holding_days=90,
+            max_allowed_leverage=1,
+        )
+
+    def evaluate_entry(self, market_context: Dict[str, Any]) -> Optional[StrategyExecutionPlan]:
+        return None
+
+    def evaluate_exit(self, position: Any, market_context: Dict[str, Any]) -> Optional[StrategyExecutionPlan]:
+        return None
+
+
 class StrategyRegistry:
     """
     Central registry for declarative strategy contracts.
@@ -163,7 +183,10 @@ class StrategyRegistry:
         # 2. Register Concentration Rebalance
         cls._strategies["concentration_rebalance"] = ConcentrationRebalanceContract()
 
-        # 3. Register VixPanicReboundStrategyContract
+        # 3. Register Pyramiding Scale-In Contract
+        cls._strategies["pyramiding_scale_in"] = PyramidingScaleInContract()
+
+        # 4. Register VixPanicReboundStrategyContract
         try:
             from src.services.vix_panic_rebound_strategy import VixPanicReboundStrategyContract
             cls._strategies["vix_panic_rebound"] = VixPanicReboundStrategyContract()

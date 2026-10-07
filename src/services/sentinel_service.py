@@ -80,6 +80,7 @@ class SentinelService:
         self._polygon_last_price: Dict[str, float] = {}
         # 2026-09-25: High-Water Mark tracking for Trailing Stop-Loss and Profit Ratchets
         self._position_peaks: Dict[str, float] = {}
+        self._position_stops: Dict[str, float] = {}
 
         # L1 pre-filter (2026-07-11): content-hash seen-set to drop duplicate/trivial
         # events before they reach the fast-tier classifier. {hash: epoch_seconds}.
@@ -119,6 +120,7 @@ class SentinelService:
         # Volatility State
         self.current_vix: float = 20.0 # Default fallback
         self.active_cognitive_blindspots: List[Any] = []
+        self._pyramiding_service = None
 
     def get_cognitive_blindspots(self) -> List[Any]:
         """Return currently observed market regimes that lack registered strategy contracts."""
@@ -297,6 +299,25 @@ class SentinelService:
         # Reset to "not built yet"; `unittest.mock.patch.object` deletes the
         # attribute on exit, and a lazy property must be re-buildable after that.
         self._gateway = None
+
+    @property
+    def pyramiding_service(self):
+        if getattr(self, "_pyramiding_service", None) is None:
+            from src.services.pyramiding_service import PyramidingService
+            self._pyramiding_service = PyramidingService(
+                user_id=self.user_id,
+                settings_service=self.settings_service,
+                market_data_service=self.market_service,
+            )
+        return self._pyramiding_service
+
+    @pyramiding_service.setter
+    def pyramiding_service(self, value) -> None:
+        self._pyramiding_service = value
+
+    @pyramiding_service.deleter
+    def pyramiding_service(self) -> None:
+        self._pyramiding_service = None
 
     @property
     def thresholds(self) -> Dict[str, Any]:
@@ -578,6 +599,11 @@ class SentinelService:
             # Dimension 11: Position Exit Engine (Stop-Loss, Take-Profit, Thesis Breakdown)
             position_exit_triggers = await self._check_position_exits()
             await self._handle_position_exits(position_exit_triggers)
+
+            # Dimension 11.3: Pyramiding Position Scaling (強勢股波段金字塔加碼)
+            pyramid_triggers = await self._check_pyramiding_opportunities()
+            await self._handle_pyramiding_logic(pyramid_triggers)
+            triggers += pyramid_triggers
             
             # ACT: Summon Council + Notifications if triggered
             if triggers:
@@ -3971,4 +3997,141 @@ class SentinelService:
                 logger.debug(f"[Capital Rotation] Discovery fallback failed: {e}")
 
         return candidates
+
+    async def _check_pyramiding_opportunities(self) -> List[Dict[str, Any]]:
+        """
+        Dimension 11.3: Pyramiding Position Scaling (強勢股波段金字塔加碼)
+        檢測當前持倉是否有浮盈充分、動能強勁且停損已鎖定在成本線之上的標的，進行金字塔順勢加碼。
+        """
+        triggers: List[Dict[str, Any]] = []
+        try:
+            current_allocation = await self._get_current_allocation()
+            if not current_allocation:
+                return triggers
+
+            # 計算投組總權益
+            portfolio_value = 0.0
+            for ticker, info in current_allocation.items():
+                portfolio_value += float(info.get("market_value", 0) or 0)
+
+            if portfolio_value <= 0:
+                return triggers
+
+            for ticker, info in current_allocation.items():
+                if str(ticker).upper() in ("CASH", "USD"):
+                    continue
+
+                shares = float(info.get("shares", 0) or info.get("quantity", 0))
+                if shares <= 0.0001:
+                    continue
+
+                current_price = float(info.get("current_price", 0) or 0)
+                avg_price = float(info.get("avg_price", 0) or 0)
+                if current_price <= 0 or avg_price <= 0:
+                    continue
+
+                # 讀取 peak 與 stop
+                current_peak = self._position_peaks.get(ticker, current_price) if hasattr(self, '_position_peaks') and self._position_peaks else current_price
+                active_stop = await self._resolve_ratchet_stop(ticker) or 0.0
+                current_weight = float(info.get("weight", 0.0) or 0.0)
+                mkt_val = float(info.get("market_value", 0) or (shares * current_price))
+
+                # 若 info 帶有權重且權重合理，由 (market_value / (weight / 100)) 推導整體投組規模（例如 mock 測試或單一持倉視圖）
+                effective_equity = portfolio_value
+                if current_weight > 0.01 and mkt_val > 0:
+                    implied_equity = mkt_val / (current_weight / 100.0)
+                    if implied_equity > effective_equity:
+                        effective_equity = implied_equity
+
+                decision = await self.pyramiding_service.evaluate_position(
+                    ticker=ticker,
+                    current_shares=shares,
+                    current_price=current_price,
+                    avg_price=avg_price,
+                    current_peak=current_peak,
+                    active_stop_price=active_stop,
+                    portfolio_total_equity=effective_equity,
+                    current_weight_pct=current_weight,
+                )
+
+                if decision and decision.should_scale_in:
+                    triggers.append({
+                        "id": f"pyramid_scale_{ticker}_{decision.stage}_{self.user_id[:8]}",
+                        "ticker": ticker,
+                        "action": "trigger_pyramid_scale_in",
+                        "strategy_name": "pyramiding_scale_in",
+                        "add_shares": decision.add_shares,
+                        "add_amount_usd": decision.add_amount_usd,
+                        "stage": decision.stage,
+                        "current_price": current_price,
+                        "avg_price": avg_price,
+                        "unrealized_pnl_pct": decision.unrealized_pnl_pct,
+                        "composite_score": decision.confidence_score,
+                        "confidence_breakdown": decision.confidence_breakdown,
+                        "current_weight_pct": decision.current_weight_pct,
+                        "projected_weight_pct": decision.projected_weight_pct,
+                        "text": decision.rationale,
+                        "severity": "high",
+                        "priority": 2,
+                        "type": "pyramiding_scale_in",
+                        "trigger_type": "pyramiding_scale_in",
+                        "timestamp": pd.Timestamp.now().isoformat(),
+                    })
+                    logger.info(
+                        f"[Sentinel Pyramiding] Qualified scale-in found for {ticker}: "
+                        f"Stage {decision.stage}, +{decision.unrealized_pnl_pct:.1f}%, Add {decision.add_shares} shares"
+                    )
+        except Exception as e:
+            logger.error(f"[Sentinel Pyramiding] Error scanning pyramiding opportunities: {e}", exc_info=True)
+
+        return triggers
+
+    async def _handle_pyramiding_logic(self, triggers: List[Dict[str, Any]]) -> None:
+        """
+        處理金字塔加碼觸發委託：防抖冷卻與路由至 AutomatedTradingService 自動執行。
+        """
+        if not triggers:
+            return
+
+        from src.services.automated_trading_service import AutomatedTradingService
+        auto_trade_svc = AutomatedTradingService()
+
+        for trigger in triggers:
+            ticker = trigger["ticker"]
+            stage = trigger.get("stage", 1)
+            add_shares = trigger.get("add_shares", 0.0)
+            if add_shares <= 0.001:
+                continue
+
+            # 防抖冷卻檢查 (預設 24 小時冷卻)
+            cooldown_key = f"pyramid_scale_{ticker}_{stage}"
+            if not await self._acquire_cooldown(cooldown_key, cooldown_seconds=86400):
+                logger.debug(f"[Sentinel Pyramiding] Cooldown active for {ticker} stage {stage}, skipping.")
+                continue
+
+            composite_score = float(trigger.get("composite_score", 8.8))
+            breakdown = trigger.get("confidence_breakdown", [])
+            rationale = trigger.get("text", f"金字塔順勢加碼 {ticker}")
+
+            logger.info(
+                f"[Sentinel Pyramiding] Executing scale-in for {ticker}: Stage {stage}, {add_shares} shares, score={composite_score}"
+            )
+
+            try:
+                res = await auto_trade_svc.evaluate_and_execute_trade(
+                    user_id=self.user_id,
+                    ticker=ticker,
+                    action="BUY",
+                    quantity=add_shares,
+                    confidence_score=composite_score,
+                    confidence_breakdown=breakdown,
+                    rationale=rationale,
+                    strategy_name="pyramiding_scale_in",
+                )
+                if res and res.get("status") in ("success", "executed"):
+                    await self.pyramiding_service.record_stage_advance(ticker, stage)
+                    logger.info(f"[Sentinel Pyramiding] Successfully recorded stage {stage} advance for {ticker}")
+            except Exception as e:
+                logger.error(f"[Sentinel Pyramiding] Execution failed for {ticker}: {e}", exc_info=True)
+
 

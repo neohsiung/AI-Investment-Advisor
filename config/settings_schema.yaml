@@ -502,6 +502,64 @@ settings:
     label_zh: 死資金修剪最短觀察天數
     help_en: Minimum holding duration in days before evaluating dead-capital momentum stall.
     help_zh: 評估死資金橫盤停滯的最短持倉天數門檻（預設 15 天）。
+  - key: enable_pyramiding
+    group: trading
+    type: bool
+    default: true
+    label_en: Enable momentum pyramiding position scaling
+    label_zh: 啟用波段動能金字塔順勢加碼
+    help_en: Pyramiding position scale-in on momentum breakout winners once trailing stop locks profits above cost (zero-risk guarantee).
+    help_zh: 當強勢股獲利進入成熟期且停損已鎖定在成本之上時，自動執行金字塔順勢遞減加碼擴大 Alpha 效益。
+  - key: max_pyramid_stages
+    group: trading
+    type: int
+    default: 2
+    min: 1
+    max: 5
+    label_en: Maximum pyramiding stages
+    label_zh: 金字塔加碼最高階梯數
+    help_en: Maximum number of scale-in stages allowed per winning position.
+    help_zh: 單一強勢股持倉允許執行的最大金字塔順勢加碼階梯數（預設 2 階）。
+  - key: pyramid_stage1_min_pnl_pct
+    group: trading
+    type: float
+    default: 8.0
+    min: 3.0
+    max: 50.0
+    label_en: Stage 1 minimum profit hurdle (%)
+    label_zh: 第一階加碼最低浮盈門檻 (%)
+    help_en: Minimum unrealized profit percentage required to trigger Stage 1 pyramiding scale-in.
+    help_zh: 觸發第一階金字塔加碼所需之最低未實現報酬率門檻（預設 +8.0%）。
+  - key: pyramid_stage2_min_pnl_pct
+    group: trading
+    type: float
+    default: 16.0
+    min: 5.0
+    max: 100.0
+    label_en: Stage 2 minimum profit hurdle (%)
+    label_zh: 第二階加碼最低浮盈門檻 (%)
+    help_en: Minimum unrealized profit percentage required to trigger Stage 2 pyramiding scale-in.
+    help_zh: 觸發第二階金字塔加碼所需之最低未實現報酬率門檻（預設 +16.0%）。
+  - key: pyramid_stage1_scale_ratio
+    group: trading
+    type: float
+    default: 0.25
+    min: 0.05
+    max: 0.50
+    label_en: Stage 1 scale-in ratio
+    label_zh: 第一階加碼部位比例
+    help_en: Position scale ratio for Stage 1 pyramiding (e.g. 0.25 = +25% of current shares).
+    help_zh: 第一階金字塔加碼部位比例（預設 0.25，即加碼現有股數之 25%）。
+  - key: pyramid_stage2_scale_ratio
+    group: trading
+    type: float
+    default: 0.15
+    min: 0.05
+    max: 0.50
+    label_en: Stage 2 scale-in ratio
+    label_zh: 第二階加碼部位比例
+    help_en: Position scale ratio for Stage 2 pyramiding (e.g. 0.15 = +15% of current shares).
+    help_zh: 第二階金字塔加碼部位比例（預設 0.15，即加碼現有股數之 15%）。
   - key: strategy_evolution_enabled
     group: trading
     type: bool
