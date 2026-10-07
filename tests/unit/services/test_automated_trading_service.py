@@ -369,6 +369,24 @@ async def test_autonomous_rebalance_executes_without_approval(test_svc, mock_bro
 
 
 @pytest.mark.anyio
+async def test_autonomous_cash_deployment_executes_without_approval(test_svc, mock_broker, mock_interaction_service):
+    """cash_deployment buy strategy executes autonomously without waiting for manual approval when >= min_threshold."""
+    user_id = "test_user"
+    with patch('src.services.automated_trading_service.BrokerFactory.get_broker', return_value=mock_broker), \
+         patch.object(test_svc, '_notify_via_api', new_callable=AsyncMock) as mock_notify:
+        res = await test_svc.evaluate_and_execute_trade(
+            user_id, "AAPL", "BUY", 100.0, confidence_score=6.5,
+            rationale="Deploy excess cash to top alpha AAPL", strategy_name="cash_deployment"
+        )
+    assert res["status"] == "success"
+    mock_interaction_service.request_approval.assert_not_called()
+    mock_broker.execute_order.assert_called_once()
+    mock_notify.assert_called_once()
+    assert mock_notify.call_args.kwargs["category"] == "trading"
+
+
+
+@pytest.mark.anyio
 async def test_weight_based_buy_order_sizing(test_svc):
     """Weight-based BUY calculates dollar amount (not shares) so min_amount check uses dollars."""
     user_id = "test_user"

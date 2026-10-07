@@ -93,9 +93,27 @@ def _extract_score_object(text: str) -> Dict[str, Any]:
             float(raw)
         except (TypeError, ValueError):
             # Skips the echoed template, whose "score" is the literal <0-10>.
-            # 跳過被複述的模板，其 score 是字面的 <0-10>。
             continue
         best = obj
+
+    # Fallback: if braces were unbalanced or cut off at end, attempt regex extraction for score & fields
+    if best is None:
+        import re
+        score_match = re.search(r'["\']score["\']\s*:\s*([0-9]+(?:\.[0-9]+)?)', text)
+        if score_match:
+            try:
+                score_val = float(score_match.group(1))
+                key_match = re.search(r'["\']key_factor["\']\s*:\s*["\']([^"\']+)["\']', text)
+                details_match = re.search(r'["\']details["\']\s*:\s*["\']([^"\']+)["\']', text)
+                rationale_match = re.search(r'["\']rationale["\']\s*:\s*["\']([^"\']+)["\']', text)
+                best = {
+                    "score": score_val,
+                    "key_factor": key_match.group(1) if key_match else "Extracted Factor",
+                    "details": details_match.group(1) if details_match else "",
+                    "rationale": rationale_match.group(1) if rationale_match else "Extracted from partial response",
+                }
+            except Exception:
+                best = None
 
     if best is None:
         # Preserve the old failure mode for the caller's except clause.

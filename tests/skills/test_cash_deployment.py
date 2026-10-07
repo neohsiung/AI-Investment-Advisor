@@ -111,3 +111,46 @@ async def test_cash_deployment_invalid_settings():
         assert result["status"] == "overweight"
         assert result["excess_cash"] == 2000.0
         assert result["target_ratio"] == 0.10
+
+
+@pytest.mark.asyncio
+async def test_cash_deployment_prioritizes_target_allocations_alpha():
+    """Verify that when dynamic discovery is empty, candidates are sourced from target allocations ordered by alpha/conviction."""
+    user_id = "test_user_123"
+
+    mock_settings = MagicMock()
+    mock_settings.get.return_value = 0.10
+
+    mock_broker = MagicMock()
+    mock_account = Account(
+        broker_type=BrokerType.MOCK,
+        account_id="test_acc",
+        total_equity=10000.0,
+        available_cash=3000.0,
+        currency="USD"
+    )
+    mock_broker.get_account = AsyncMock(return_value=mock_account)
+
+    mock_univ_repo = MagicMock()
+    mock_univ_repo.get_target_allocations.return_value = [
+        {"ticker": "CASH", "target_weight": 0.10, "confidence_score": 0.0},
+        {"ticker": "NVDA", "target_weight": 0.08, "confidence_score": 0.9},
+        {"ticker": "AAPL", "target_weight": 0.12, "confidence_score": 0.8},
+        {"ticker": "TSM", "target_weight": 0.10, "confidence_score": 0.85},
+    ]
+
+    with patch("src.agents.skills.cash_deployment.cli.AlchemySettingsRepository", return_value=mock_settings), \
+         patch("src.agents.skills.cash_deployment.cli.BrokerFactory.get_broker", return_value=mock_broker), \
+         patch("src.agents.skills.ticker_discovery.impl.ticker_discovery", new_callable=AsyncMock, return_value=json.dumps({"status": "error", "error": "discovery down"})), \
+         patch("src.repositories.ticker_universe_repository.TickerUniverseRepository", return_value=mock_univ_repo):
+
+        result_json = await cash_deployment(user_id)
+        result = json.loads(result_json)
+
+        assert result["status"] == "overweight"
+        assert len(result["candidates"]) == 3  # NVDA, TSM, AAPL (CASH filtered out)
+        tickers = [c["ticker"] for c in result["candidates"]]
+        assert tickers == ["NVDA", "TSM", "AAPL"]
+        assert result["candidates"][0]["source"] == "target_allocation_alpha"
+        assert "Top-Alpha Target Allocation" in result["candidates"][0]["reason"]
+

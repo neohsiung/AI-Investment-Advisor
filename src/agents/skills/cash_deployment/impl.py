@@ -10,6 +10,9 @@ import logging
 import json
 from typing import Optional
 
+from src.services.broker_factory import BrokerFactory
+from src.repositories.settings_repository import AlchemySettingsRepository
+
 logger = logging.getLogger(__name__)
 
 
@@ -21,10 +24,6 @@ async def cash_deployment(user_id: str) -> str:
     Returns a JSON-formatted deployment analysis and candidates.
     """
     try:
-        from src.services.broker_factory import BrokerFactory
-        from src.repositories.settings_repository import AlchemySettingsRepository
-        from src.agents.skills.ticker_discovery.impl import ticker_discovery
-
         # 1. Initialize resources
         settings_repo = AlchemySettingsRepository()
         broker = BrokerFactory.get_broker(user_id)
@@ -173,26 +172,50 @@ async def _get_deployment_candidates(user_id: str, amount: float) -> list:
     except Exception as e:
         logger.error(f"Error in dynamic deployment discovery: {e}")
 
-    # Fallback 1: Source from user's active ticker universe
+    # Fallback 1: Source from user's target allocations & active ticker universe (Alpha prioritized)
     if not results:
         try:
             from src.repositories.ticker_universe_repository import TickerUniverseRepository
             univ_repo = TickerUniverseRepository()
-            active_univ = univ_repo.get_all(user_id, status="active")
-            if active_univ:
-                target_candidates = active_univ[:5]
-                count = len(target_candidates)
-                amount_per = amount / count
-                for item in target_candidates:
-                    sym = item.get("ticker", "").upper().strip()
-                    if sym and sym != "CASH":
+            
+            # Prioritize target allocations with higher conviction / target weight
+            target_allocs = univ_repo.get_target_allocations(user_id)
+            if target_allocs:
+                # Filter out CASH and sort by target_weight desc
+                valid_targets = [t for t in target_allocs if str(t.get("ticker", "")).upper() not in ("", "CASH")]
+                valid_targets.sort(key=lambda x: (float(x.get("confidence_score") or 0.0), float(x.get("target_weight") or 0.0)), reverse=True)
+                top_targets = valid_targets[:5]
+                count = len(top_targets)
+                if count > 0:
+                    amount_per = amount / count
+                    for item in top_targets:
+                        sym = str(item.get("ticker", "")).upper().strip()
+                        tw = float(item.get("target_weight") or 0.0)
+                        conf = float(item.get("confidence_score") or 0.0)
                         results.append({
                             "ticker": sym,
                             "allocated_amount": round(amount_per, 2),
-                            "reason": f"Active Universe Allocation: deploy to active universe holding {sym}",
-                            "source": "universe_active",
+                            "reason": f"Top-Alpha Target Allocation: Conviction {conf*10:.1f}/10, Target Weight {tw*100:.1f}%",
+                            "source": "target_allocation_alpha",
                         })
-                logger.info(f"Cash deployment sourced {len(results)} candidates from active universe.")
+                    logger.info(f"Cash deployment sourced {len(results)} Alpha candidates from target allocations.")
+
+            if not results:
+                active_univ = univ_repo.get_all(user_id, status="active")
+                if active_univ:
+                    target_candidates = active_univ[:5]
+                    count = len(target_candidates)
+                    amount_per = amount / count
+                    for item in target_candidates:
+                        sym = item.get("ticker", "").upper().strip()
+                        if sym and sym != "CASH":
+                            results.append({
+                                "ticker": sym,
+                                "allocated_amount": round(amount_per, 2),
+                                "reason": f"Active Universe Allocation: deploy to active universe holding {sym}",
+                                "source": "universe_active",
+                            })
+                    logger.info(f"Cash deployment sourced {len(results)} candidates from active universe.")
         except Exception as ue:
             logger.warning(f"Active universe lookup failed: {ue}")
 
@@ -222,5 +245,21 @@ async def _get_deployment_candidates(user_id: str, amount: float) -> list:
         except Exception as e:
             logger.error(f"Fallback deployment failed: {e}")
 
+    # Fallback 3: Strategic market core if portfolio has no existing holdings or universe
+    if not results:
+        logger.info("No candidates from discovery, universe, or holdings. Falling back to strategic core (VOO/QQQ).")
+        core_candidates = [
+            {"ticker": "VOO", "reason": "Strategic Market Core (S&P 500)", "weight": 0.5},
+            {"ticker": "QQQ", "reason": "Technology Growth Focus (Nasdaq 100)", "weight": 0.5},
+        ]
+        for c in core_candidates:
+            results.append({
+                "ticker": c["ticker"],
+                "allocated_amount": round(amount * c["weight"], 2),
+                "reason": c["reason"],
+                "source": "strategic_core",
+            })
+
     return results
+
 
