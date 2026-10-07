@@ -963,6 +963,7 @@ class AutomatedTradingService:
                 "capital_rotation": "換庫自動執行",
                 "rebalance_diversification": "再平衡自動執行",
                 "concentration_rebalance": "再平衡自動執行",
+                "stagnation_pruning": "停滯修剪自動執行",
             }
             return True, labels.get(strategy_name, "安全出場自動執行")
 
