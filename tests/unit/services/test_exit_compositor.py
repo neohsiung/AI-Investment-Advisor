@@ -323,3 +323,52 @@ class TestDynamicAtrExit:
         assert res_exit.exit_type == "TRAILING_PROFIT"
         assert "HARVEST" in res_exit.rationale
 
+    def test_advancing_ratchet_at_12_pct(self):
+        from src.services.exit_compositor_service import compute_dynamic_atr_exit
+
+        # Reached 112 (gain 12%): advancing stop = max(112 - 2.2*2.0=107.6, 100 + 0.35*12=104.2) = 107.6
+        res = compute_dynamic_atr_exit(entry_price=100.0, current_price=110.0, highest_price=112.0, atr=2.0)
+        assert res.ratchet_stage == "ADVANCING"
+        assert res.tier == 1
+        assert res.stop_price == 107.6
+        assert not res.should_exit
+
+        # Pullback drops to 107.0 <= 107.6: triggers exit
+        res_exit = compute_dynamic_atr_exit(entry_price=100.0, current_price=107.0, highest_price=112.0, atr=2.0)
+        assert res_exit.should_exit
+        assert res_exit.exit_type == "TRAILING_PROFIT"
+        assert "ADVANCING" in res_exit.rationale
+
+    def test_runner_lock_ratchet_at_45_pct(self):
+        from src.services.exit_compositor_service import compute_dynamic_atr_exit
+
+        # Reached 145 (gain 45% >= 40%): runner stop = max(145 - 1.0*2.0=143.0, 100 + 0.75*45=133.75) = 143.0
+        res = compute_dynamic_atr_exit(entry_price=100.0, current_price=144.0, highest_price=145.0, atr=2.0)
+        assert res.ratchet_stage == "RUNNER_LOCK"
+        assert res.tier == 4
+        assert res.stop_price == 143.0
+        assert res.locked_profit_pct == 43.0
+        assert not res.should_exit
+
+        # Drops to 142.5 <= 143.0: triggers runner lock exit
+        res_exit = compute_dynamic_atr_exit(entry_price=100.0, current_price=142.5, highest_price=145.0, atr=2.0)
+        assert res_exit.should_exit
+        assert res_exit.exit_type == "TRAILING_PROFIT"
+        assert "RUNNER_LOCK" in res_exit.rationale
+
+    def test_monotonic_stop_never_decreases(self):
+        from src.services.exit_compositor_service import compute_dynamic_atr_exit
+
+        # Previously active stop was 116.0
+        # If ATR suddenly spikes from 2.0 to 10.0, formula might suggest 120 - 2.0*10 = 100.0
+        # But previous_stop_price ensures stop remains at least 116.0
+        res = compute_dynamic_atr_exit(
+            entry_price=100.0,
+            current_price=118.0,
+            highest_price=120.0,
+            atr=10.0,
+            previous_stop_price=116.0,
+        )
+        assert res.stop_price >= 116.0
+
+
