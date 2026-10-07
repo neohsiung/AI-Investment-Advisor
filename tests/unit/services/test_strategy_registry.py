@@ -101,6 +101,7 @@ class TestStrategyRegistry:
     def test_is_safety_control(self):
         """Verify safety controls are identified correctly vs alpha strategies."""
         assert StrategyRegistry.is_safety_control("stop_loss") is True
+        assert StrategyRegistry.is_safety_control("trailing_stop_loss") is True
         assert StrategyRegistry.is_safety_control("emergency_exit") is True
         assert StrategyRegistry.is_safety_control("take_profit") is True
         assert StrategyRegistry.is_safety_control("vix_panic_rebound") is False

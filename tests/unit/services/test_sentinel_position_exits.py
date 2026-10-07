@@ -542,3 +542,130 @@ async def test_handle_position_exits_trailing_stop_scores(sentinel):
         assert call_kwargs["confidence_score"] == 9.5
         assert call_kwargs["strategy_name"] == "trailing_stop_loss"
 
+
+@pytest.mark.anyio
+async def test_check_position_exits_advancing_mode(sentinel, mock_dependencies):
+    """Verify Tier 1.5 ADVANCING mode triggers when peak >= 10% and price pulls back."""
+    mock_dependencies["settings"]._settings_map["enable_trailing_stops"] = True
+    mock_dependencies["market"].get_technical_indicators.return_value = {"atr": 2.0}
+
+    # AAPL bought at $100, peaked at $112 (+12% gain)
+    sentinel._position_peaks["AAPL"] = 112.0
+
+    # In ADVANCING: advancing_stop = max(112 - 2.2*2.0=107.6, 100 + 0.35*12=104.2) = 107.6
+    # Price pulled back to $107.0 <= 107.6
+    mock_allocation = {
+        "AAPL": {
+            "shares": 10.0,
+            "quantity": 10.0,
+            "weight": 10.0,
+            "current_price": 107.0,
+            "avg_price": 100.0,
+        }
+    }
+    sentinel._get_current_allocation = AsyncMock(return_value=mock_allocation)
+    sentinel._check_capital_rotation_opportunities = AsyncMock(return_value=[])
+
+    triggers = await sentinel._check_position_exits()
+    assert len(triggers) == 1
+    t = triggers[0]
+    assert t["ticker"] == "AAPL"
+    assert t["strategy_name"] == "trailing_stop_loss"
+    assert t["ratchet_stage"] == "ADVANCING"
+    assert t["tier"] == 1
+    assert t["stop_price"] == 107.6
+    assert "ADVANCING" in t["text"]
+
+
+@pytest.mark.anyio
+async def test_check_position_exits_runner_lock_mode(sentinel, mock_dependencies):
+    """Verify Tier 4 RUNNER_LOCK mode triggers when peak >= 40% and price pulls back."""
+    mock_dependencies["settings"]._settings_map["enable_trailing_stops"] = True
+    mock_dependencies["market"].get_technical_indicators.return_value = {"atr": 2.0}
+
+    # PLTR bought at $100, peaked at $145 (+45% gain)
+    sentinel._position_peaks["PLTR"] = 145.0
+
+    # In RUNNER_LOCK: runner_stop = max(145 - 1.0*2.0=143.0, 100 + 0.75*45=133.75) = 143.0
+    # Price pulled back to $142.0 <= 143.0
+    mock_allocation = {
+        "PLTR": {
+            "shares": 10.0,
+            "quantity": 10.0,
+            "weight": 12.0,
+            "current_price": 142.0,
+            "avg_price": 100.0,
+        }
+    }
+    sentinel._get_current_allocation = AsyncMock(return_value=mock_allocation)
+    sentinel._check_capital_rotation_opportunities = AsyncMock(return_value=[])
+
+    triggers = await sentinel._check_position_exits()
+    assert len(triggers) == 1
+    t = triggers[0]
+    assert t["ticker"] == "PLTR"
+    assert t["strategy_name"] == "trailing_stop_loss"
+    assert t["ratchet_stage"] == "RUNNER_LOCK"
+    assert t["tier"] == 4
+    assert t["stop_price"] == 143.0
+    assert t["locked_profit_pct"] == 43.0
+    assert "RUNNER_LOCK" in t["text"]
+
+
+@pytest.mark.anyio
+async def test_resolve_and_update_ratchet_stop_with_redis(sentinel):
+    """Verify _resolve_ratchet_stop and _update_ratchet_stop persist and enforce monotonicity."""
+    stored = {"val": "105.0"}
+    async def fake_get(key):
+        return stored.get("val")
+    async def fake_set(key, val, ex=None):
+        stored["val"] = str(val)
+
+    mock_redis = MagicMock()
+    mock_redis.get = AsyncMock(side_effect=fake_get)
+    mock_redis.set = AsyncMock(side_effect=fake_set)
+
+    with patch("src.infrastructure.cache.redis_client.get_redis", return_value=mock_redis):
+        # Initial read from Redis
+        stop1 = await sentinel._resolve_ratchet_stop("AAPL")
+        assert stop1 == 105.0
+
+        # Update to higher stop 110.0 -> sets in redis
+        await sentinel._update_ratchet_stop("AAPL", 110.0)
+        assert sentinel._position_stops["AAPL"] == 110.0
+        assert stored["val"] == "110.0"
+
+        # Attempt to lower stop to 102.0 -> ignored, remains 110.0
+        mock_redis.set.reset_mock()
+        await sentinel._update_ratchet_stop("AAPL", 102.0)
+        assert sentinel._position_stops["AAPL"] == 110.0
+        mock_redis.set.assert_not_called()
+
+
+@pytest.mark.anyio
+async def test_handle_position_exits_runner_lock_score(sentinel):
+    """Verify _handle_position_exits assigns 9.8 for RUNNER_LOCK."""
+    exit_triggers = [
+        {
+            "id": "tsl_runner_test",
+            "action": "trigger_exit",
+            "ticker": "NVDA",
+            "sell_quantity": 10.0,
+            "strategy_name": "trailing_stop_loss",
+            "ratchet_stage": "RUNNER_LOCK",
+            "current_price": 142.0,
+            "text": "🛡️ Runner lock exit",
+        }
+    ]
+    sentinel._acquire_cooldown = AsyncMock(return_value=True)
+
+    mock_auto_trade = MagicMock()
+    mock_auto_trade.evaluate_and_execute_trade = AsyncMock(return_value={"status": "success"})
+
+    with patch("src.services.automated_trading_service.AutomatedTradingService", return_value=mock_auto_trade):
+        await sentinel._handle_position_exits(exit_triggers)
+        call_kwargs = mock_auto_trade.evaluate_and_execute_trade.call_args.kwargs
+        assert call_kwargs["confidence_score"] == 9.8
+        assert call_kwargs["strategy_name"] == "trailing_stop_loss"
+
+

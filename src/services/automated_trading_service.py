@@ -950,8 +950,9 @@ class AutomatedTradingService:
         """
         from src.services.strategy_registry import StrategyRegistry
 
-        if is_sell and strategy_name == "stop_loss":
-            return True, "停損自動執行"
+        if is_sell and strategy_name in ("stop_loss", "trailing_stop_loss", "trailing_stop"):
+            label = "移動停損自動執行" if strategy_name in ("trailing_stop_loss", "trailing_stop") else "停損自動執行"
+            return True, label
 
         if requires_approval_reason:
             return False, "審批要求阻斷"
@@ -959,6 +960,9 @@ class AutomatedTradingService:
         # 安全控制與再平衡出場
         if is_sell and StrategyRegistry.is_safety_control(strategy_name or "") and auto_exit_enabled:
             labels = {
+                "stop_loss": "停損自動執行",
+                "trailing_stop_loss": "移動停損自動執行",
+                "trailing_stop": "移動停損自動執行",
                 "take_profit": "停利自動執行",
                 "capital_rotation": "換庫自動執行",
                 "rebalance_diversification": "再平衡自動執行",

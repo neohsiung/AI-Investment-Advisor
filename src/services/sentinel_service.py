@@ -3115,6 +3115,44 @@ class SentinelService:
 
         return effective_peak
 
+    async def _resolve_ratchet_stop(self, ticker: str) -> Optional[float]:
+        """讀取歷史紀錄之最高停損價（支援 Redis 持久化 + 行程內字典快取）"""
+        if not hasattr(self, '_position_stops') or self._position_stops is None:
+            self._position_stops = {}
+        in_memory_stop = self._position_stops.get(ticker)
+
+        stored_stop = None
+        try:
+            from src.infrastructure.cache.redis_client import get_redis
+            r = await get_redis(decode_responses=True)
+            key = f"sentinel:stop:{self.user_id}:{ticker}"
+            cached = await r.get(key)
+            if cached:
+                stored_stop = float(cached)
+        except Exception as e:
+            logger.debug(f"Sentinel: Redis stop read skipped for {ticker}: {e}")
+
+        candidates = [s for s in (in_memory_stop, stored_stop) if s is not None and s > 0]
+        return max(candidates) if candidates else None
+
+    async def _update_ratchet_stop(self, ticker: str, current_stop: float) -> None:
+        """更新並持久化最高停損價（單調只升不降）"""
+        if current_stop <= 0:
+            return
+        if not hasattr(self, '_position_stops') or self._position_stops is None:
+            self._position_stops = {}
+
+        prev_stop = self._position_stops.get(ticker, 0.0)
+        if current_stop > prev_stop:
+            self._position_stops[ticker] = current_stop
+            try:
+                from src.infrastructure.cache.redis_client import get_redis
+                r = await get_redis(decode_responses=True)
+                key = f"sentinel:stop:{self.user_id}:{ticker}"
+                await r.set(key, str(current_stop), ex=86400 * 60)
+            except Exception as e:
+                logger.debug(f"Sentinel: Redis stop update skipped for {ticker}: {e}")
+
     async def _check_position_exits(self) -> List[Dict[str, Any]]:
         """
         Dimension 11: Active Position Exit Check
@@ -3230,6 +3268,7 @@ class SentinelService:
                 # Evaluate Non-Linear Tiered Dynamic ATR Exit
                 from src.services.exit_compositor_service import compute_dynamic_atr_exit
                 market_regime = "BEAR" if getattr(self, 'current_vix', 20.0) > 25 else "BULL" if getattr(self, 'current_vix', 20.0) < 18 else "NEUTRAL"
+                prev_ratchet_stop = await self._resolve_ratchet_stop(ticker)
                 dynamic_exit = compute_dynamic_atr_exit(
                     entry_price=avg_price,
                     current_price=current_price,
@@ -3237,7 +3276,10 @@ class SentinelService:
                     atr=ticker_atr,
                     regime=market_regime,
                     institutional_support_price=support_price,
+                    previous_stop_price=prev_ratchet_stop,
                 )
+                if dynamic_exit.stop_price > 0:
+                    await self._update_ratchet_stop(ticker, dynamic_exit.stop_price)
 
                 # 2a. Dynamic ATR Initial Stop-Loss (Tier 0: 進場初期波動度保護防線，需有停損授權)
                 if enable_fixed_stops and dynamic_exit.should_exit and dynamic_exit.ratchet_stage == "INITIAL":
@@ -3269,7 +3311,9 @@ class SentinelService:
                     )
                     continue
 
-                is_dynamic_triggered = dynamic_exit.should_exit and dynamic_exit.ratchet_stage in ("BREAKEVEN", "TRAILING", "HARVEST", "SUPPORT_LOCKED")
+                is_dynamic_triggered = dynamic_exit.should_exit and dynamic_exit.ratchet_stage in (
+                    "BREAKEVEN", "ADVANCING", "TRAILING", "HARVEST", "RUNNER_LOCK", "SUPPORT_LOCKED"
+                )
 
                 if enable_trailing_stops and current_peak > (avg_price * 1.02) and (is_dynamic_triggered or is_drawdown_triggered or is_support_broken):
                     if is_dynamic_triggered:
@@ -3616,7 +3660,7 @@ class SentinelService:
                     ]
                 elif strategy_name == "trailing_stop_loss":
                     stage = trigger.get("ratchet_stage", "TRAILING")
-                    composite_score = 9.5 if stage == "HARVEST" else 9.0 if stage in ("TRAILING", "SUPPORT_LOCKED") else 8.5
+                    composite_score = 9.8 if stage == "RUNNER_LOCK" else 9.5 if stage == "HARVEST" else 9.0 if stage in ("TRAILING", "SUPPORT_LOCKED") else 8.5
                     rationale = trigger.get("text") or f"🛡️ 移動停損觸發：鎖定獲利出場。"
                     breakdown = [{"agent": "Risk", "confidence": composite_score, "weight": 1.0, "key_factor": f"Dynamic TSL ({stage})"}]
                 elif strategy_name == "stagnation_pruning":

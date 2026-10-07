@@ -140,7 +140,7 @@ class StrategyRegistry:
             return True
         # Standard safety keywords fallback
         return strategy_id in (
-            "stop_loss", "emergency_exit", "position_exit", "take_profit",
+            "stop_loss", "trailing_stop_loss", "trailing_stop", "emergency_exit", "position_exit", "take_profit",
             "capital_rotation", "rebalance_diversification", "cash_deployment",
             "stagnation_pruning"
         )
@@ -154,7 +154,7 @@ class StrategyRegistry:
 
         # 1. Register Safety Controls
         for safe_name in [
-            "stop_loss", "emergency_exit", "position_exit", "take_profit",
+            "stop_loss", "trailing_stop_loss", "trailing_stop", "emergency_exit", "position_exit", "take_profit",
             "capital_rotation", "rebalance_diversification", "cash_deployment",
             "stagnation_pruning"
         ]:
