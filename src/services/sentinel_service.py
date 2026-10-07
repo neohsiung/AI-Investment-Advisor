@@ -3436,14 +3436,31 @@ class SentinelService:
                             decay_start_days=stagnation_min_days,
                         )
 
+                        stop_loss_pct = float(self.settings_service.get_setting("stop_loss_pct", -8.0, self.user_id) or -8.0)
+                        if stop_loss_pct > 0:
+                            stop_loss_pct = -stop_loss_pct
+
+                        is_flat_stagnant = (-4.0 <= return_pct <= 4.0)
+                        is_sub_stop_lag = (
+                            return_pct < -4.0
+                            and return_pct > stop_loss_pct
+                            and (decay_assessment.metrics.get("is_below_20ma") or decay_assessment.metrics.get("rsi", 50.0) < 45.0)
+                        )
+                        alpha_lag = (return_pct - benchmark_ret) if (benchmark_ret is not None and return_pct is not None) else 0.0
+                        is_alpha_drag = (benchmark_ret is not None and alpha_lag <= -5.0 and return_pct < 6.0)
+
                         if (
                             decay_assessment.is_stagnant
                             and holding_days >= stagnation_min_days
                             and not is_winner
-                            and return_pct is not None
-                            and -3.0 <= return_pct <= 3.0
                             and shares >= 0.01
+                            and return_pct is not None
+                            and (is_flat_stagnant or is_sub_stop_lag or is_alpha_drag)
                         ):
+                            stagnation_type = (
+                                f"大盤落後 Alpha 拖累 ({alpha_lag:+.1f}%)" if is_alpha_drag
+                                else ("次級跌勢破線" if is_sub_stop_lag else "橫盤鈍化")
+                            )
                             triggers.append({
                                 "id": f"stagnation_prune_{ticker}_{self.user_id[:8]}",
                                 "ticker": ticker,
@@ -3455,14 +3472,14 @@ class SentinelService:
                                 "holding_days": holding_days,
                                 "return_pct": round(return_pct, 2),
                                 "current_weight_pct": weight,
-                                "text": f"🍂 [死資金停滯修剪觸發] {ticker}: 持倉 {holding_days} 天報酬率 {return_pct:+.2f}% 橫盤且動能鈍化 ({decay_assessment.reason})，主動釋放資金換庫",
+                                "text": f"🍂 [死資金停滯修剪觸發] {ticker}: 持倉 {holding_days} 天報酬率 {return_pct:+.2f}% 屬{stagnation_type} ({decay_assessment.reason})，主動釋放資金換庫",
                                 "severity": "medium",
                                 "priority": 2,
                                 "type": "position_exit",
                                 "trigger_type": "stagnation_pruning",
                                 "timestamp": pd.Timestamp.now().isoformat(),
                             })
-                            logger.info(f"[Sentinel Exit] Stagnation pruning triggered for {ticker}: {decay_assessment.reason}")
+                            logger.info(f"[Sentinel Exit] Stagnation pruning triggered for {ticker}: {decay_assessment.reason} (Type: {stagnation_type})")
                             continue
                     except Exception as decay_err:
                         logger.debug(f"[Sentinel Exit] Stagnation check skipped for {ticker}: {decay_err}")
