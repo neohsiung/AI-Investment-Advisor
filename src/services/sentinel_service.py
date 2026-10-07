@@ -3373,6 +3373,99 @@ class SentinelService:
                     logger.info(f"[Sentinel Exit] Take-profit triggered for {ticker}: +{return_pct:.2f}% >= +{take_profit_pct:.1f}%")
                     continue
 
+                # 5. Stagnation / Dead-Capital Pruning Check (死資金停滯修剪防線)
+                enable_stagnation_pruning_val = self.settings_service.get_setting("enable_stagnation_pruning", True, self.user_id)
+                enable_stagnation = str(enable_stagnation_pruning_val).lower() in ("true", "1")
+                if enable_stagnation:
+                    try:
+                        from src.services.alpha_decay_service import AlphaDecayService
+                        decay_svc = AlphaDecayService(user_id=self.user_id, settings_service=self.settings_service, market_data_service=self.market_service)
+
+                        open_date = info.get("open_date")
+                        if not open_date:
+                            tx_df = self.transaction_service.get_transactions(self.user_id)
+                            if not tx_df.empty and "ticker" in tx_df.columns and "trade_date" in tx_df.columns:
+                                ticker_txs = tx_df[(tx_df["ticker"] == ticker) & (tx_df["action"] == "BUY")]
+                                if not ticker_txs.empty:
+                                    open_date = pd.to_datetime(ticker_txs["trade_date"].min())
+
+                        holding_days = decay_svc.calculate_holding_days(open_date)
+
+                        # Benchmark return (SPY) over holding duration
+                        benchmark_ret = None
+                        try:
+                            spy_data = self.market_service.get_ohlcv("SPY", days=max(30, holding_days + 5))
+                            if spy_data and spy_data.get("close") and len(spy_data["close"]) > 1:
+                                closes = spy_data["close"]
+                                benchmark_ret = ((closes[-1] - closes[0]) / closes[0]) * 100.0
+                        except Exception:
+                            benchmark_ret = 0.0
+
+                        ind = {}
+                        try:
+                            if hasattr(self.market_service, "get_technical_indicators"):
+                                ind = self.market_service.get_technical_indicators(ticker) or {}
+                        except Exception:
+                            pass
+
+                        sma_20 = float(ind.get("sma_20") or 0.0)
+                        rsi = float(ind.get("rsi") or 50.0)
+                        macd = str(ind.get("macd_signal") or "neutral")
+
+                        is_winner = False
+                        try:
+                            from src.services.long_term_winner_service import LongTermWinnerService
+                            w_svc = LongTermWinnerService(user_id=self.user_id)
+                            is_winner = w_svc.is_winner(ticker)
+                        except Exception:
+                            is_winner = False
+
+                        stagnation_min_days = int(self.settings_service.get_setting("stagnation_prune_min_days", 15, self.user_id) or 15)
+
+                        decay_assessment = decay_svc.evaluate_holding_decay(
+                            ticker=ticker,
+                            holding_days=holding_days,
+                            current_price=current_price,
+                            sma_20=sma_20,
+                            rsi=rsi,
+                            macd_status=macd,
+                            holding_return_pct=return_pct,
+                            benchmark_return_pct=benchmark_ret,
+                            is_long_term_winner=is_winner,
+                            decay_start_days=stagnation_min_days,
+                        )
+
+                        if (
+                            decay_assessment.is_stagnant
+                            and holding_days >= stagnation_min_days
+                            and not is_winner
+                            and return_pct is not None
+                            and -3.0 <= return_pct <= 3.0
+                            and shares >= 0.01
+                        ):
+                            triggers.append({
+                                "id": f"stagnation_prune_{ticker}_{self.user_id[:8]}",
+                                "ticker": ticker,
+                                "action": "trigger_exit",
+                                "strategy_name": "stagnation_pruning",
+                                "sell_quantity": shares,
+                                "current_price": current_price,
+                                "avg_price": avg_price,
+                                "holding_days": holding_days,
+                                "return_pct": round(return_pct, 2),
+                                "current_weight_pct": weight,
+                                "text": f"🍂 [死資金停滯修剪觸發] {ticker}: 持倉 {holding_days} 天報酬率 {return_pct:+.2f}% 橫盤且動能鈍化 ({decay_assessment.reason})，主動釋放資金換庫",
+                                "severity": "medium",
+                                "priority": 2,
+                                "type": "position_exit",
+                                "trigger_type": "stagnation_pruning",
+                                "timestamp": pd.Timestamp.now().isoformat(),
+                            })
+                            logger.info(f"[Sentinel Exit] Stagnation pruning triggered for {ticker}: {decay_assessment.reason}")
+                            continue
+                    except Exception as decay_err:
+                        logger.debug(f"[Sentinel Exit] Stagnation check skipped for {ticker}: {decay_err}")
+
                 # Candidate for Multi-Factor Exit check
                 eval_candidates.append({
                     "ticker": ticker,
@@ -3508,6 +3601,12 @@ class SentinelService:
                     composite_score = 9.5 if stage == "HARVEST" else 9.0 if stage in ("TRAILING", "SUPPORT_LOCKED") else 8.5
                     rationale = trigger.get("text") or f"🛡️ 移動停損觸發：鎖定獲利出場。"
                     breakdown = [{"agent": "Risk", "confidence": composite_score, "weight": 1.0, "key_factor": f"Dynamic TSL ({stage})"}]
+                elif strategy_name == "stagnation_pruning":
+                    composite_score = 8.0
+                    cost_info = f"(成本 ${avg_price:.2f}, 現價 ${current_price:.2f})" if avg_price and current_price else ""
+                    ret_str = f"{return_pct:+.2f}%" if return_pct is not None else "0.0%"
+                    rationale = f"🍂 觸發死資金停滯修剪：持倉橫盤動能鈍化 (報酬率 {ret_str} {cost_info})，主動平倉釋放資金換庫至高確信標的。"
+                    breakdown = [{"agent": "Risk", "confidence": 8.0, "weight": 1.0, "key_factor": "Stagnant Capital Pruned"}]
                 else:
                     composite_score = 7.5
                     rationale = trigger.get("text", "Position exit triggered.")

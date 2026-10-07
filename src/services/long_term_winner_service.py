@@ -70,6 +70,23 @@ class LongTermWinnerService:
             user_id=self.user_id, market_data_service=self.market
         )
 
+    def is_winner(self, ticker: str) -> bool:
+        """
+        Lightweight check to see if ticker is classified as a long-term winner
+        based on quality gate and moving averages.
+        """
+        ticker = ticker.upper().strip()
+        try:
+            tech = self.market.get_technical_indicators(ticker) or {}
+            sma_dict = tech.get("sma", {}) if isinstance(tech.get("sma"), dict) else {}
+            sma_50 = float(sma_dict.get("sma_50") or 0.0)
+            sma_200 = float(sma_dict.get("sma_200") or 0.0)
+            if sma_200 > 0 and sma_50 > 0:
+                return sma_50 >= sma_200
+            return False
+        except Exception:
+            return False
+
     async def evaluate_winner(
         self,
         ticker: str,

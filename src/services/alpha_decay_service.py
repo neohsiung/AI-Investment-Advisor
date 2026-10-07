@@ -99,14 +99,18 @@ class AlphaDecayService:
         holding_return_pct: Optional[float] = None,
         benchmark_return_pct: Optional[float] = None,
         is_long_term_winner: bool = False,
+        decay_start_days: Optional[int] = None,
     ) -> AlphaDecayAssessment:
         """
         Evaluate if a holding qualifies for alpha decay or winner compounding protection.
         """
         try:
-            start_days = int(self.settings_service.get_setting("holding_decay_start_days", self.DEFAULT_DECAY_START_DAYS))
+            if decay_start_days is not None:
+                start_days = int(decay_start_days)
+            else:
+                start_days = int(self.settings_service.get_setting("holding_decay_start_days", self.DEFAULT_DECAY_START_DAYS))
         except Exception:
-            start_days = self.DEFAULT_DECAY_START_DAYS
+            start_days = decay_start_days if decay_start_days is not None else self.DEFAULT_DECAY_START_DAYS
 
         try:
             decay_rate = float(self.settings_service.get_setting("holding_decay_rate", self.DEFAULT_DECAY_RATE))
