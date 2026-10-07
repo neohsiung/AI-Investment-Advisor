@@ -602,6 +602,9 @@ class AutomatedTradingService:
                         # against a $100 mandate would defeat the cap.
                         # 現金同樣受限，否則以 $100 授權動用 $400 現金即失去意義。
                         cash = min(float(account.available_cash), nlv)
+                        cash_ratio = float(account.available_cash) / float(account.total_equity) if account.total_equity > 0 else 0.0
+                        if cash_ratio > 0.35:
+                            is_excess_cash = True
 
                         # Dynamic settings (Rule #8: no hardcoded thresholds)
                         max_pct = float(self.settings_repo.get(user_id, "max_single_position_pct") or 0.10)
@@ -609,6 +612,48 @@ class AutomatedTradingService:
 
                         max_amount = nlv * max_pct
                         original_qty = quantity
+
+                        # Dynamic Kelly Sizing & Cash Drag Eliminator
+                        # 當檢測到現金水位過高 (is_excess_cash)、未指定固定股數 (quantity is None) 或顯式啟用 dynamic_kelly_sizing 時，
+                        # 結合 Kelly 準則與 AI 信心度計算最佳配置金額，擺脫固定微量下單與現金拖累。
+                        enable_dynamic_sizing_setting = self.settings_repo.get(user_id, "enable_dynamic_kelly_sizing")
+                        is_dynamic_enabled = (
+                            str(enable_dynamic_sizing_setting).lower() in ("true", "1")
+                            if enable_dynamic_sizing_setting is not None
+                            else False
+                        )
+                        if (is_dynamic_enabled or is_excess_cash or quantity is None) and delta_weight is None and nlv > 0:
+                            try:
+                                from src.services.kelly_sizing_service import KellySizingService
+
+                                kelly_svc = KellySizingService(
+                                    user_id=user_id,
+                                    settings_service=self.settings_repo,
+                                )
+                                kelly_assessment = kelly_svc.evaluate_from_decision_outcomes(ticker=ticker)
+
+                                # 依據 AI 信心度微調目標權重 (基礎 4% ~ max_pct)
+                                conf_mult = max(0.7, min(1.3, normalized_confidence / 8.0)) if normalized_confidence > 0 else 1.0
+                                dynamic_target_pct = min(
+                                    max_pct,
+                                    max(0.04, kelly_assessment.recommended_size * conf_mult)
+                                )
+                                target_dynamic_amount = nlv * dynamic_target_pct
+
+                                # 保留安全現金儲備緩衝 (預設 15%)
+                                cash_reserve_pct = float(self.settings_repo.get(user_id, "cash_reserve_buffer_pct") or 0.15)
+                                spendable_cash = max(0.0, cash - (nlv * cash_reserve_pct))
+
+                                if spendable_cash >= min_amount:
+                                    dynamic_scaled = min(target_dynamic_amount, spendable_cash)
+                                    if quantity is None or (is_excess_cash and dynamic_scaled > quantity):
+                                        logger.info(
+                                            f"Dynamic Kelly Sizing: Scaled {ticker} BUY ${quantity or 0:.2f} → ${dynamic_scaled:.2f} "
+                                            f"(Target: {dynamic_target_pct:.1%}, NLV: ${nlv:.2f}, Spendable Cash: ${spendable_cash:.2f})"
+                                        )
+                                        quantity = dynamic_scaled
+                            except Exception as k_err:
+                                logger.warning(f"Dynamic Kelly sizing non-blocking fallback: {k_err}")
 
                         # Clamp to available cash
                         if quantity > cash:
