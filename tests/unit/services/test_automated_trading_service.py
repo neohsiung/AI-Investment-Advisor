@@ -653,4 +653,38 @@ async def test_dynamic_kelly_sizing_scales_quantity_on_excess_cash(test_svc, moc
     assert executed_order.quantity <= 500.0
 
 
+def test_macro_volatility_hedge_auto_execution_policy():
+    """Verify macro_volatility_hedge buy and sell auto execution policies and labels."""
+    # Test BUY (e.g. inverse ETF hedge allocation with confidence >= min_threshold)
+    allowed_buy, label_buy = AutomatedTradingService._determine_auto_execution_policy(
+        is_sell=False,
+        strategy_name="macro_volatility_hedge",
+        effective_confidence=5.0,
+        threshold=7.0,
+        auto_exit_enabled=True,
+        autonomous_reporting_mode=False,
+        requires_approval_reason=None,
+        is_optimized=False,
+        min_threshold=3.0,
+    )
+    assert allowed_buy is True
+    assert label_buy == "宏觀避險自動放行"
+
+    # Test SELL (e.g. defensive trimming to raise cash or unwinding hedge)
+    allowed_sell, label_sell = AutomatedTradingService._determine_auto_execution_policy(
+        is_sell=True,
+        strategy_name="macro_volatility_hedge",
+        effective_confidence=4.0,
+        threshold=7.0,
+        auto_exit_enabled=True,
+        autonomous_reporting_mode=False,
+        requires_approval_reason=None,
+        is_optimized=False,
+        min_threshold=3.0,
+    )
+    assert allowed_sell is True
+    assert label_sell == "避險減碼自動執行"
+
+
+
 

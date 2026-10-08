@@ -162,7 +162,7 @@ class StrategyRegistry:
         return strategy_id in (
             "stop_loss", "trailing_stop_loss", "trailing_stop", "emergency_exit", "position_exit", "take_profit",
             "capital_rotation", "rebalance_diversification", "cash_deployment",
-            "stagnation_pruning"
+            "stagnation_pruning", "macro_volatility_hedge"
         )
 
     @classmethod
@@ -192,3 +192,11 @@ class StrategyRegistry:
             cls._strategies["vix_panic_rebound"] = VixPanicReboundStrategyContract()
         except Exception as e:
             logger.warning(f"StrategyRegistry: VixPanicReboundStrategyContract load deferred: {e}")
+
+        # 5. Register MacroVolatilityHedgeContract
+        try:
+            from src.services.macro_hedging_service import MacroVolatilityHedgeContract
+            cls._strategies["macro_volatility_hedge"] = MacroVolatilityHedgeContract()
+        except Exception as e:
+            logger.warning(f"StrategyRegistry: MacroVolatilityHedgeContract load deferred: {e}")
+

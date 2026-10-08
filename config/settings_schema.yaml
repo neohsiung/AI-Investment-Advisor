@@ -598,6 +598,50 @@ settings:
     label_zh: 假突破長上影線比例上限
     help_en: Maximum allowable upper shadow ratio of the candle before flagging as a false breakout / pin bar rejection.
     help_zh: K 線上影線佔整體振幅的最大允許比例，超過時判定為衝高回落假突破（預設 0.40 即 40%）。
+  - key: enable_macro_volatility_hedging
+    group: trading
+    type: bool
+    default: true
+    label_en: Enable macro volatility hedging
+    label_zh: 啟用跨市場波動率體制自動避險
+    help_en: Autonomously dynamically scale defensive cash and deploy inverse ETF hedges during market volatility spikes and regime shifts.
+    help_zh: 當大盤波動率體制突變進入恐慌／極端波動時，自主調整防禦陣型動態增厚現金或配置反向避險標的。
+  - key: macro_hedge_vix_threshold
+    group: trading
+    type: float
+    default: 30.0
+    min: 15.0
+    max: 60.0
+    label_en: Macro hedge VIX threshold
+    label_zh: 宏觀波動率避險觸發門檻 (VIX)
+    help_en: VIX level above which macro volatility defensive hedging and cash scaling are activated.
+    help_zh: 當 VIX 超過此門檻或 Z-Score 達到極端值時啟動避險機制（預設 30.0）。
+  - key: macro_hedge_target_cash_ratio
+    group: trading
+    type: float
+    default: 0.25
+    min: 0.10
+    max: 0.60
+    label_en: Defensive target cash ratio during macro hedge
+    label_zh: 避險模式目標防守現金比例
+    help_en: Target defensive cash ratio cap scaled up dynamically during high/critical volatility regimes.
+    help_zh: 極端波動時動態調升之防守現金佔比上限（預設 25%）。
+  - key: macro_hedge_instrument
+    group: trading
+    type: string
+    default: SH
+    label_en: Macro hedge instrument
+    label_zh: 預設反向指數避險標的
+    help_en: Recommended inverse ETF or defensive asset ticker for macro hedging (e.g. SH, SQQQ, TLT).
+    help_zh: 啟用指數對沖時推薦之反向/避險標的，如 SH、SQQQ 或 TLT（預設 SH）。
+  - key: enable_inverse_etf_hedge
+    group: trading
+    type: bool
+    default: false
+    label_en: Enable inverse ETF hedging allocation
+    label_zh: 啟用反向 ETF 避險標的建倉
+    help_en: Whether to directly purchase inverse ETF hedges in addition to dynamic cash scaling during extreme panic.
+    help_zh: 是否在極端恐慌時除拉高現金外，亦直接買入反向 ETF 對沖標的（預設關閉，優先現金防守）。
   - key: breakout_filter_fail_open
     group: trading
     type: bool

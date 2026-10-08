@@ -54,6 +54,7 @@ if [ -f "$BANDIT" ]; then
               src/services/intelligence_service.py \
               src/services/intraday_liquidity_circuit_breaker_service.py \
               src/services/intraday_liquidity_hunt_guard_service.py \
+              src/services/macro_hedging_service.py \
               src/services/macro_surprise_service.py \
               src/services/order_book_toxicity_detector_service.py \
               src/services/order_inflight_lock_service.py \
@@ -107,6 +108,7 @@ $PYTEST tests/unit/services/test_actionable_alert_service.py \
         tests/unit/services/test_adaptive_council_meta_learning.py \
         tests/unit/services/test_cognitive_blindspot_service.py \
         tests/unit/services/test_council_debate_memory_service.py \
+        tests/unit/services/test_macro_hedging_service.py \
         tests/unit/services/test_order_lifecycle_guard.py \
         tests/unit/services/test_order_inflight_lock_service.py \
         tests/unit/services/test_order_reconciliation_service.py \

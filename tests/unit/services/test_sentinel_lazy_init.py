@@ -29,6 +29,7 @@ LAZY_COLLABORATORS = [
     "snapshot_repo",
     "model_router",
     "gateway",
+    "macro_hedging_service",
 ]
 
 
