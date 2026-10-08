@@ -615,12 +615,18 @@ class AutomatedTradingService:
 
                         # Dynamic Kelly Sizing & Cash Drag Eliminator
                         # 當檢測到現金水位過高 (is_excess_cash)、未指定固定股數 (quantity is None) 或顯式啟用 dynamic_kelly_sizing 時，
-                        # 結合 Kelly 準則與 AI 信心度計算最佳配置金額，擺脫固定微量下單與現金拖累。
+                        # 結合非對稱凸性確信度 (Convex Kelly) 與行業漂移額度 (Sector Headroom)，計算最佳配置金額，擺脫固定微量下單與現金拖累。
                         enable_dynamic_sizing_setting = self.settings_repo.get(user_id, "enable_dynamic_kelly_sizing")
                         is_dynamic_enabled = (
                             str(enable_dynamic_sizing_setting).lower() in ("true", "1")
                             if enable_dynamic_sizing_setting is not None
-                            else False
+                            else True
+                        )
+                        enable_convex_conviction = self.settings_repo.get(user_id, "enable_convex_conviction_sizing")
+                        is_convex_enabled = (
+                            str(enable_convex_conviction).lower() in ("true", "1")
+                            if enable_convex_conviction is not None
+                            else True
                         )
                         if (is_dynamic_enabled or is_excess_cash or quantity is None) and delta_weight is None and nlv > 0:
                             try:
@@ -630,14 +636,57 @@ class AutomatedTradingService:
                                     user_id=user_id,
                                     settings_service=self.settings_repo,
                                 )
-                                kelly_assessment = kelly_svc.evaluate_from_decision_outcomes(ticker=ticker)
 
-                                # 依據 AI 信心度微調目標權重 (基礎 4% ~ max_pct)
-                                conf_mult = max(0.7, min(1.3, normalized_confidence / 8.0)) if normalized_confidence > 0 else 1.0
-                                dynamic_target_pct = min(
-                                    max_pct,
-                                    max(0.04, kelly_assessment.recommended_size * conf_mult)
+                                # Load broker positions for sector headroom evaluation
+                                current_positions = None
+                                try:
+                                    pos_objs = await broker.get_positions()
+                                    if pos_objs:
+                                        current_positions = []
+                                        for p in pos_objs:
+                                            p_sym = str(getattr(p, 'symbol', '')).strip().upper()
+                                            for suffix in [".US", ".RTH", ".EXT", ".L", ".UK"]:
+                                                if p_sym.endswith(suffix):
+                                                    p_sym = p_sym[:-len(suffix)]
+                                            current_positions.append({
+                                                "ticker": p_sym,
+                                                "market_value": float(getattr(p, "market_value", 0.0) or getattr(p, "current_value", 0.0) or 0.0),
+                                            })
+                                except Exception as p_err:
+                                    logger.debug(f"Could not load broker positions for sector headroom: {p_err}")
+
+                                kelly_assessment = kelly_svc.evaluate_from_decision_outcomes(ticker=ticker)
+                                base_kelly_size = kelly_assessment.recommended_size
+
+                                if is_convex_enabled:
+                                    dynamic_target_pct = kelly_svc.calculate_asymmetric_convex_size(
+                                        base_fractional_size=base_kelly_size,
+                                        confidence_score=normalized_confidence,
+                                    )
+                                    dynamic_target_pct = min(max_pct, max(0.04, dynamic_target_pct))
+                                    sizing_method_name = "Asymmetric Convex Kelly"
+                                else:
+                                    conf_mult = max(0.7, min(1.3, normalized_confidence / 8.0)) if normalized_confidence > 0 else 1.0
+                                    dynamic_target_pct = min(
+                                        max_pct,
+                                        max(0.04, base_kelly_size * conf_mult)
+                                    )
+                                    sizing_method_name = "Dynamic Kelly"
+
+                                # Sector Headroom Smoothing Adjustment (防漂移前置額度平滑微調)
+                                clamped_target_pct, headroom_reason = kelly_svc.adjust_size_for_sector_headroom(
+                                    recommended_pct=dynamic_target_pct,
+                                    ticker=ticker,
+                                    current_positions=current_positions or [],
+                                    total_nlv=nlv,
                                 )
+                                if clamped_target_pct < dynamic_target_pct:
+                                    logger.info(
+                                        f"Sector Headroom Guard: Scaled {ticker} from "
+                                        f"{dynamic_target_pct:.1%} → {clamped_target_pct:.1%} ({headroom_reason})"
+                                    )
+                                    dynamic_target_pct = clamped_target_pct
+
                                 target_dynamic_amount = nlv * dynamic_target_pct
 
                                 # 保留安全現金儲備緩衝 (預設 15%)
@@ -648,7 +697,7 @@ class AutomatedTradingService:
                                     dynamic_scaled = min(target_dynamic_amount, spendable_cash)
                                     if quantity is None or (is_excess_cash and dynamic_scaled > quantity):
                                         logger.info(
-                                            f"Dynamic Kelly Sizing: Scaled {ticker} BUY ${quantity or 0:.2f} → ${dynamic_scaled:.2f} "
+                                            f"{sizing_method_name}: Scaled {ticker} BUY ${quantity or 0:.2f} → ${dynamic_scaled:.2f} "
                                             f"(Target: {dynamic_target_pct:.1%}, NLV: ${nlv:.2f}, Spendable Cash: ${spendable_cash:.2f})"
                                         )
                                         quantity = dynamic_scaled
