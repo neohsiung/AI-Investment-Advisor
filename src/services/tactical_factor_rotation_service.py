@@ -22,6 +22,7 @@ Tactical Factor Rotation & Liquidity Premium Service
 """
 from __future__ import annotations
 
+import json
 import logging
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
@@ -217,6 +218,19 @@ class TacticalFactorRotationService:
         Return tactical factor allocation weights customized for the current market phase:
         [momentum, smart_money, liquidity_premium, quality, value, low_vol]
         """
+        # Check if evolved factor weights exist in settings
+        evolved_setting = self._get_setting("tactical_phase_factor_weights", None)
+        if evolved_setting:
+            try:
+                data = json.loads(evolved_setting) if isinstance(evolved_setting, str) else evolved_setting
+                if isinstance(data, dict):
+                    pw = data.get("phase_weights", data)
+                    phase_key = phase.value if hasattr(phase, "value") else str(phase)
+                    if phase_key in pw and isinstance(pw[phase_key], dict):
+                        return {k: float(v) for k, v in pw[phase_key].items()}
+            except Exception as e:
+                logger.debug(f"Failed to parse custom tactical_phase_factor_weights: {e}")
+
         if phase == TacticalMarketPhase.EARLY_REBOUND:
             # Rebound phase prizes highest elasticity: high momentum + liquidity surge + quality core
             weights = {
