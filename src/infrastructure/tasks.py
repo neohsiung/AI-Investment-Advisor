@@ -841,6 +841,68 @@ def run_strategy_evolution(user_id: str = None, force: bool = False):
         return f"Error: {str(e)}"
 
 
+@app.task(name="src.infrastructure.tasks.dispatch_factor_rotation_evolution")
+def dispatch_factor_rotation_evolution():
+    """Fan-out dispatcher: 為活躍租戶分派多因子歷史回放重播與退火調參任務。"""
+    users = _resolve_target_users()
+    for uid in users:
+        run_factor_rotation_evolution.delay(user_id=uid)
+    return f"Dispatched {len(users)} factor_rotation_evolution tasks"
+
+
+@app.task(name="src.infrastructure.tasks.run_factor_rotation_evolution", soft_time_limit=600, time_limit=660)
+def run_factor_rotation_evolution(user_id: str = None, iterations: int = 30, force: bool = False):
+    """
+    Factor Rotation Replay & Annealing Hyperparameter Evolution Task.
+    Performs historical time-series replay, Walk-Forward optimization,
+    and simulated annealing to dynamically optimize phase factor weight matrices.
+    """
+    user_id = user_id or os.getenv("PRIMARY_USER_ID") or os.getenv("USER_ID")
+    if not user_id:
+        logger.error("run_factor_rotation_evolution: user_id is required. Set PRIMARY_USER_ID env var or pass explicitly.")
+        return "Error: user_id is required"
+
+    try:
+        from src.services.settings_service import SettingsService
+        from src.services.strategy_auto_evolution_service import StrategyAutoEvolutionService
+        from src.services.factor_rotation_replay_engine import FactorRotationReplayEngine
+
+        settings_svc = SettingsService(user_id=user_id)
+        enabled = settings_svc.get_setting("enable_tactical_factor_replay_tuning", True, user_id=user_id)
+        if not enabled and not force:
+            logger.info("run_factor_rotation_evolution: Skipped because enable_tactical_factor_replay_tuning is disabled.")
+            return {"status": "skipped", "reason": "disabled"}
+
+        lookback = int(settings_svc.get_setting("replay_evolution_lookback_bars", 252, user_id=user_id))
+        train_ratio = float(settings_svc.get_setting("replay_evolution_wfo_train_ratio", 0.70, user_id=user_id))
+
+        bars = FactorRotationReplayEngine.generate_synthetic_replay_dataset(num_bars=lookback)
+        evo_svc = StrategyAutoEvolutionService(user_id=user_id, settings_repo=settings_svc.repository)
+
+        report = evo_svc.evolve_factor_rotation_matrix(
+            bars=bars,
+            iterations=iterations,
+            train_ratio=train_ratio,
+        )
+
+        if report.is_promotable:
+            evo_svc.apply_evolved_matrix_to_settings(report.best_matrix)
+            logger.info(f"run_factor_rotation_evolution: Promoted and applied best matrix for {user_id}. {report.promotion_reason}")
+
+        logger.info(f"run_factor_rotation_evolution completed for {user_id}: promotable={report.is_promotable}")
+        return {
+            "status": "success",
+            "is_promotable": report.is_promotable,
+            "promotion_reason": report.promotion_reason,
+            "wfo_efficiency": report.wfo_efficiency,
+            "sharpe_baseline": report.baseline_metrics.sharpe,
+            "sharpe_evolved": report.best_oos_metrics.sharpe,
+        }
+    except Exception as e:
+        logger.error(f"run_factor_rotation_evolution failed for {user_id}: {e}", exc_info=True)
+        return f"Error: {str(e)}"
+
+
 @app.task(name="src.infrastructure.tasks.dispatch_autonomous_evolution")
 def dispatch_autonomous_evolution():
     """

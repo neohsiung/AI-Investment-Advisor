@@ -145,6 +145,12 @@ app.conf.beat_schedule = {
         "task": "src.infrastructure.tasks.dispatch_strategy_evolution",
         "schedule": crontab(hour=21, minute=0, day_of_week="0"),  # Sun 21:00 EST
     },
+    # Factor Rotation Replay & Annealing Hyperparameter Evolution — runs weekly on Sunday night (22:30 EST)
+    # 多因子歷史回放重播與退火調參演進：每週日夜間回放驗證輪動參數並自動動態最佳化各週期因子權重矩陣。
+    "factor-rotation-replay-evolution": {
+        "task": "src.infrastructure.tasks.dispatch_factor_rotation_evolution",
+        "schedule": crontab(hour=22, minute=30, day_of_week="0"),  # Sun 22:30 EST
+    },
     # Autonomous Factor Exploration & Canary Evolution — runs daily at 01:30 AM EST (off-market hours)
     # 自主量化因子探索與金絲雀灰度演化：每日凌晨離線探索未覆蓋體制策略並自動滾動 14 天金絲雀影子追蹤。
     "daily-autonomous-factor-evolution": {

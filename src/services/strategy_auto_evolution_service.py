@@ -26,6 +26,7 @@ Key Architecture:
 from __future__ import annotations
 
 import itertools
+import json
 import logging
 import math
 import random
@@ -787,3 +788,95 @@ class StrategyAutoEvolutionService:
         except Exception as e:
             logger.error(f"Failed to apply candidate to settings repository: {e}")
             return False
+
+    def evolve_factor_rotation_matrix(
+        self,
+        bars: Optional[list[Any]] = None,
+        baseline_matrix: Optional[Any] = None,
+        iterations: int = 30,
+        train_ratio: float = 0.70,
+        objective: str = "SHARPE",
+        random_seed: Optional[int] = None,
+    ) -> Any:
+        """
+        Execute Walk-Forward Simulated Annealing on tactical factor rotation weights.
+        """
+        from src.services.factor_rotation_replay_engine import (
+            FactorRotationReplayEngine,
+            FactorWeightMatrix,
+        )
+
+        tuning_enabled = self._get_setting("enable_tactical_factor_replay_tuning", True, bool)
+        if not tuning_enabled:
+            logger.info("Factor replay tuning is disabled by settings.")
+
+        lookback = int(self._get_setting("replay_evolution_lookback_bars", 252, int))
+        wfo_ratio = float(self._get_setting("replay_evolution_wfo_train_ratio", train_ratio, float))
+
+        replay_bars = bars
+        if not replay_bars:
+            replay_bars = FactorRotationReplayEngine.generate_synthetic_replay_dataset(
+                num_bars=lookback,
+                random_seed=random_seed or 42,
+            )
+
+        base_mat = baseline_matrix
+        if base_mat is None:
+            # Check if existing matrix stored in settings
+            stored_pw = self._get_setting("tactical_phase_factor_weights", None, str)
+            if stored_pw:
+                try:
+                    pw_data = json.loads(stored_pw) if isinstance(stored_pw, str) else stored_pw
+                    base_mat = FactorWeightMatrix.from_dict(pw_data)
+                except Exception as e:
+                    logger.warning(f"Could not parse stored tactical_phase_factor_weights: {e}")
+                    base_mat = FactorWeightMatrix()
+            else:
+                base_mat = FactorWeightMatrix()
+
+        engine = FactorRotationReplayEngine()
+        report = engine.evolve_factor_weights(
+            bars=replay_bars,
+            baseline_matrix=base_mat,
+            max_iterations=iterations,
+            train_ratio=wfo_ratio,
+            objective=objective,
+            random_seed=random_seed,
+        )
+        return report
+
+    def apply_evolved_matrix_to_settings(self, matrix: Any) -> bool:
+        """
+        Persist evolved FactorWeightMatrix into SettingsRepository.
+        """
+        if not self.settings_repo:
+            logger.warning("Cannot apply evolved matrix: settings_repo is None")
+            return False
+
+        try:
+            mat_dict = matrix.to_dict() if hasattr(matrix, "to_dict") else dict(matrix)
+            # Store primary phase weights mapping
+            self.settings_repo.set(
+                self.user_id,
+                "tactical_phase_factor_weights",
+                json.dumps(mat_dict),
+            )
+            # Synchronize rotation hyperparameters if present
+            if "min_edge_pct" in mat_dict:
+                self.settings_repo.set(
+                    self.user_id,
+                    "tactical_rotation_min_edge_pct",
+                    float(mat_dict["min_edge_pct"]),
+                )
+            if "liquidity_premium_weight" in mat_dict:
+                self.settings_repo.set(
+                    self.user_id,
+                    "factor_liquidity_premium_weight",
+                    float(mat_dict["liquidity_premium_weight"]),
+                )
+            logger.info("Successfully applied evolved factor matrix to settings repository")
+            return True
+        except Exception as e:
+            logger.error(f"Failed to apply evolved factor matrix to settings: {e}")
+            return False
+

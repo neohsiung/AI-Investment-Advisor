@@ -688,6 +688,52 @@ settings:
     label_zh: 啟用恐慌拐點反彈現金直投
     help_en: Prioritize direct deployment of defensive cash into top alpha elasticity leaders during early market rebounds.
     help_zh: 當市場由極端恐慌回落或處於超跌反彈階段時，自動將防守閒置現金優先注入 Top Alpha 彈性領導標的。
+  - key: enable_tactical_factor_replay_tuning
+    group: trading
+    type: bool
+    default: true
+    label_en: Enable tactical factor replay auto-evolution
+    label_zh: 啟用多因子回放回測與夏普自動調參
+    help_en: Autonomously replay historical regimes and calibrate factor weight matrices using Simulated Annealing and Walk-Forward cross validation.
+    help_zh: 自動於背景排程執行歷史時間序列重播，透過模擬退火與 Walk-Forward 前向走查最佳化 4 大市場週期的因子權重矩陣。
+  - key: replay_evolution_lookback_bars
+    group: trading
+    type: int
+    default: 252
+    min: 60
+    max: 1260
+    label_en: Replay evolution lookback bars
+    label_zh: 歷史回放回測評估天數
+    help_en: Historical bar length used to partition In-Sample calibration and Out-of-Sample validation periods.
+    help_zh: 歷史回放回測使用的 Bar 數長度，用於切分 In-Sample 訓練與 Out-of-Sample 驗證集（預設 252 交易日）。
+  - key: replay_evolution_wfo_train_ratio
+    group: trading
+    type: float
+    default: 0.70
+    min: 0.50
+    max: 0.90
+    label_en: Walk-forward optimization train ratio
+    label_zh: WFO 前向走查訓練集比例
+    help_en: Proportion of historical bars allocated to In-Sample annealing calibration versus Out-of-Sample validation.
+    help_zh: 歷史資料中分配給 In-Sample 模擬退火校準的資料比例（預設 70% 訓練、30% 驗證）。
+  - key: replay_evolution_min_sharpe_improvement
+    group: trading
+    type: float
+    default: 0.15
+    min: 0.05
+    max: 0.50
+    label_en: Minimum Sharpe improvement for promotion
+    label_zh: 因子矩陣晉級夏普最低提升門檻
+    help_en: Minimum relative Out-of-Sample Sharpe improvement required to promote an evolved factor weight matrix.
+    help_zh: 演化出的新因子權重矩陣在 Out-of-Sample 驗證中相較基準至少需達到的 Sharpe 提升幅度（預設 +15%）。
+  - key: tactical_phase_factor_weights
+    group: trading
+    type: json
+    default: null
+    label_en: Evolved tactical phase factor weights matrix
+    label_zh: 已演化儲存之多市場週期因子權重矩陣
+    help_en: Calibrated factor weight assignments for 4 market phases produced by replay auto-evolution.
+    help_zh: 經歷史回放回測與模擬退火演化所驗證通過之 4 大市場週期因子權重矩陣（JSON 結構）。
   - key: breakout_filter_fail_open
     group: trading
     type: bool

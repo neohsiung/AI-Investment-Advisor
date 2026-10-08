@@ -51,6 +51,7 @@ if [ -f "$BANDIT" ]; then
               src/services/cross_market_contagion_service.py \
               src/services/cross_asset_volatility_spillover_service.py \
               src/services/dynamic_debate_termination_service.py \
+              src/services/factor_rotation_replay_engine.py \
               src/services/intelligence_service.py \
               src/services/intraday_liquidity_circuit_breaker_service.py \
               src/services/intraday_liquidity_hunt_guard_service.py \
@@ -111,9 +112,11 @@ $PYTEST tests/unit/services/test_actionable_alert_service.py \
         tests/unit/services/test_council_debate_memory_service.py \
         tests/unit/services/test_macro_hedging_service.py \
         tests/unit/services/test_tactical_factor_rotation_service.py \
+        tests/unit/services/test_factor_rotation_replay_engine.py \
         tests/unit/services/test_order_lifecycle_guard.py \
         tests/unit/services/test_order_inflight_lock_service.py \
         tests/unit/services/test_order_reconciliation_service.py \
+        tests/unit/services/test_self_ops_dispatcher_divergence.py \
         tests/unit/config/test_settings_schema.py -q
 
 echo -e "\n${GREEN}======================================================${NC}"
