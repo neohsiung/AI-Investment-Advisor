@@ -200,3 +200,10 @@ class StrategyRegistry:
         except Exception as e:
             logger.warning(f"StrategyRegistry: MacroVolatilityHedgeContract load deferred: {e}")
 
+        # 6. Register TacticalFactorRotationContract
+        try:
+            from src.services.tactical_factor_rotation_service import TacticalFactorRotationContract
+            cls._strategies["tactical_factor_rotation"] = TacticalFactorRotationContract()
+        except Exception as e:
+            logger.warning(f"StrategyRegistry: TacticalFactorRotationContract load deferred: {e}")
+
