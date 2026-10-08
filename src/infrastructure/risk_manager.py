@@ -133,7 +133,7 @@ class RiskManager:
         is_sell = str(action).upper() == "SELL" if action else False
         is_safety = StrategyRegistry.is_safety_control(strategy_name or "")
         is_rebalance = (strategy_name or "") in (
-            "rebalance_diversification", "portfolio_rebalance", "concentration_rebalance"
+            "rebalance_diversification", "portfolio_rebalance", "concentration_rebalance", "tactical_factor_rotation"
         )
 
         # 1. Daily Limit (僅約束一般主動買進開倉，不卡平倉與再平衡)

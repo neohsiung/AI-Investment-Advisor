@@ -642,6 +642,52 @@ settings:
     label_zh: 啟用反向 ETF 避險標的建倉
     help_en: Whether to directly purchase inverse ETF hedges in addition to dynamic cash scaling during extreme panic.
     help_zh: 是否在極端恐慌時除拉高現金外，亦直接買入反向 ETF 對沖標的（預設關閉，優先現金防守）。
+  - key: enable_tactical_factor_rotation
+    group: trading
+    type: bool
+    default: true
+    label_en: Enable tactical factor rotation & liquidity premium
+    label_zh: 啟用多因子流動性溢價與智能波段換倉
+    help_en: Autonomously rotate defensive cash and underperforming capital into top alpha elasticity leaders when market rebounds.
+    help_zh: 結合市場週期體制與量價流動性溢價，於大盤回穩或反轉時自動將防守避險釋放的現金精準切換至 Alpha 彈性最大板塊。
+  - key: factor_liquidity_premium_weight
+    group: trading
+    type: float
+    default: 0.35
+    min: 0.10
+    max: 0.70
+    label_en: Liquidity premium factor weight
+    label_zh: 流動性溢價因子評分權重
+    help_en: Base weight assigned to volume expansion and Amihud liquidity premium metrics in candidate scoring.
+    help_zh: 在候選標的綜合評分中，Amihud 與 ADV 放量之流動性溢價指標所佔的基礎權重。
+  - key: tactical_rotation_min_edge_pct
+    group: trading
+    type: float
+    default: 0.08
+    min: 0.03
+    max: 0.25
+    label_en: Tactical rotation minimum net alpha edge
+    label_zh: 波段換倉超額 Alpha 淨門檻
+    help_en: Minimum net alpha edge after roundtrip transaction and friction costs required before executing a portfolio swap.
+    help_zh: 新候選標的相較持有標的必須具備之最低超額評分差距，方可觸發汰弱換強換倉（預設 8% 即 0.08）。
+  - key: tactical_rotation_max_swaps_per_tick
+    group: trading
+    type: int
+    default: 2
+    min: 1
+    max: 5
+    label_en: Maximum tactical rotation swaps per cycle
+    label_zh: 單次波段換倉最大筆數限制
+    help_en: Maximum number of position swaps allowed per evaluation cycle to prevent excessive turnover.
+    help_zh: 防止頻繁過度交易，限制單一評估週期內最多執行之換倉組數（預設 2 組）。
+  - key: enable_rebound_cash_reinvestment
+    group: trading
+    type: bool
+    default: true
+    label_en: Enable rebound cash reinvestment
+    label_zh: 啟用恐慌拐點反彈現金直投
+    help_en: Prioritize direct deployment of defensive cash into top alpha elasticity leaders during early market rebounds.
+    help_zh: 當市場由極端恐慌回落或處於超跌反彈階段時，自動將防守閒置現金優先注入 Top Alpha 彈性領導標的。
   - key: breakout_filter_fail_open
     group: trading
     type: bool

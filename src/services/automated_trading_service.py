@@ -958,7 +958,7 @@ class AutomatedTradingService:
             return False, "審批要求阻斷"
 
         # 安全控制與再平衡出場
-        if is_sell and StrategyRegistry.is_safety_control(strategy_name or "") and auto_exit_enabled:
+        if is_sell and (StrategyRegistry.is_safety_control(strategy_name or "") or strategy_name == "tactical_factor_rotation") and auto_exit_enabled:
             labels = {
                 "stop_loss": "停損自動執行",
                 "trailing_stop_loss": "移動停損自動執行",
@@ -969,18 +969,21 @@ class AutomatedTradingService:
                 "concentration_rebalance": "再平衡自動執行",
                 "stagnation_pruning": "停滯修剪自動執行",
                 "macro_volatility_hedge": "避險減碼自動執行",
+                "tactical_factor_rotation": "波段換倉自動執行",
             }
             return True, labels.get(strategy_name, "安全出場自動執行")
 
         # 再平衡買進、現金部署、金字塔加碼與宏觀避險自動執行 (Rebalance Buy, Cash Deployment, Pyramiding & Macro Hedge Auto-execution)
         # 若為經投組模型審核之再平衡配置買進、現金部署、強勢股金字塔加碼或宏觀避險，且達最低信賴門檻，由系統自動放行
-        if not is_sell and strategy_name in ("rebalance_diversification", "portfolio_rebalance", "concentration_rebalance", "cash_deployment", "pyramiding_scale_in", "macro_volatility_hedge") and effective_confidence >= min_threshold:
+        if not is_sell and strategy_name in ("rebalance_diversification", "portfolio_rebalance", "concentration_rebalance", "cash_deployment", "pyramiding_scale_in", "macro_volatility_hedge", "tactical_factor_rotation") and effective_confidence >= min_threshold:
             if strategy_name == "pyramiding_scale_in":
                 label = "金字塔加碼自動執行"
             elif strategy_name == "cash_deployment":
                 label = "現金部署自動放行"
             elif strategy_name == "macro_volatility_hedge":
                 label = "宏觀避險自動放行"
+            elif strategy_name == "tactical_factor_rotation":
+                label = "波段輪動自動放行"
             else:
                 label = "再平衡買進自動執行"
             return True, label

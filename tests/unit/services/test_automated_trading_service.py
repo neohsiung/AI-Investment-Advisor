@@ -686,5 +686,38 @@ def test_macro_volatility_hedge_auto_execution_policy():
     assert label_sell == "避險減碼自動執行"
 
 
+def test_tactical_factor_rotation_auto_execution_policy():
+    """Verify tactical_factor_rotation buy and sell auto execution policies and labels."""
+    # Test BUY (e.g. allocating into top alpha leaders)
+    allowed_buy, label_buy = AutomatedTradingService._determine_auto_execution_policy(
+        is_sell=False,
+        strategy_name="tactical_factor_rotation",
+        effective_confidence=6.0,
+        threshold=7.0,
+        auto_exit_enabled=True,
+        autonomous_reporting_mode=False,
+        requires_approval_reason=None,
+        is_optimized=False,
+        min_threshold=3.0,
+    )
+    assert allowed_buy is True
+    assert label_buy == "波段輪動自動放行"
+
+    # Test SELL (e.g. swapping out lagging holdings)
+    allowed_sell, label_sell = AutomatedTradingService._determine_auto_execution_policy(
+        is_sell=True,
+        strategy_name="tactical_factor_rotation",
+        effective_confidence=5.0,
+        threshold=7.0,
+        auto_exit_enabled=True,
+        autonomous_reporting_mode=False,
+        requires_approval_reason=None,
+        is_optimized=False,
+        min_threshold=3.0,
+    )
+    assert allowed_sell is True
+    assert label_sell == "波段換倉自動執行"
+
+
 
 
