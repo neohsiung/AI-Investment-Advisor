@@ -253,8 +253,15 @@ class SectorDriftGuardService:
         max_cap = self.max_sector_limit
         warn_cap = self.warning_limit_pct
 
-        over_concentrated = [s for s, w in sector_weights.items() if w > max_cap and s != "Unknown"]
-        warning_sectors = [s for s, w in sector_weights.items() if warn_cap < w <= max_cap and s != "Unknown"]
+        # Over-concentration requires at least 2 stocks in the same sector (single stock is never crowded)
+        over_concentrated = [
+            s for s, w in sector_weights.items()
+            if w > max_cap and s != "Unknown" and sector_counts[s] > 1
+        ]
+        warning_sectors = [
+            s for s, w in sector_weights.items()
+            if warn_cap < w <= max_cap and s != "Unknown" and sector_counts[s] > 1
+        ]
 
         # Identify major market sectors absent or under-represented
         all_major_sectors = list(SECTOR_THEME_LEADERS.keys())
@@ -335,6 +342,10 @@ class SectorDriftGuardService:
         projected_sector_count = sec_counts.get(sec, 0) + 1
         projected_total = sum(sec_counts.values()) + 1
         effective_capacity = max(projected_total, max_active_capacity)
+
+        # Single stock in a sector is inherently non-concentrated
+        if projected_sector_count <= 1:
+            return True, f"符合行業分散門檻：[{sec}] 僅配置單一標的"
 
         projected_pct = projected_sector_count / effective_capacity
         limit = self.max_sector_limit

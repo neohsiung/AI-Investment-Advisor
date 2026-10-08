@@ -118,6 +118,7 @@ $PYTEST tests/unit/services/test_actionable_alert_service.py \
         tests/unit/services/test_order_inflight_lock_service.py \
         tests/unit/services/test_order_reconciliation_service.py \
         tests/unit/services/test_self_ops_dispatcher_divergence.py \
+        tests/unit/services/test_candidate_pool_lifecycle.py \
         tests/unit/services/test_universe_lifecycle_service.py \
         tests/unit/services/test_sector_drift_and_convex_kelly.py \
         tests/unit/config/test_settings_schema.py -q
