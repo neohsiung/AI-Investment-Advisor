@@ -2491,7 +2491,9 @@ class SentinelService:
             threshold = 1.80
             if profile == "Balanced":
                 # v8.4: Bullish Flexibility - Allow up to 2.0x if trend is good
-                trend = await self._get_market_trend("SPY")
+                import inspect
+                trend_val = self._get_market_trend("SPY")
+                trend = await trend_val if inspect.isawaitable(trend_val) else trend_val
                 vix_data = self.market_service.get_macro_data().get("market_indicators", {})
                 vix = vix_data.get("^VIX", 20.0) 
                 
