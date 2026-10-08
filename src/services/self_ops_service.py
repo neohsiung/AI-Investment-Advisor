@@ -82,6 +82,7 @@ DISPATCHER_CHILD_TASKS: Dict[str, str] = {
     "dispatch_universe_lifecycle": "run_universe_lifecycle",
     "dispatch_weekly_rebalance": "run_weekly_rebalance",
     "dispatch_strategy_evolution": "run_strategy_evolution",
+    "dispatch_factor_rotation_evolution": "run_factor_rotation_evolution",
     "dispatch_autonomous_evolution": "run_autonomous_evolution",
     "dispatch_shadow_ledger_eval": "run_shadow_ledger_eval",
     "dispatch_model_lifecycle": "run_model_lifecycle",
