@@ -18,7 +18,7 @@ from __future__ import annotations
 import logging
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
-from typing import Any
+from typing import Any, Optional
 
 from src.config.owner import resolve_user_id
 
@@ -329,3 +329,134 @@ class KellySizingService:
             adjusted = {t: round(w, 4) for t, w in adjusted.items()}
 
         return adjusted
+
+    def calculate_regime_multiplier(self, regime: Optional[str] = None) -> float:
+        """
+        Dynamically scale Kelly leverage based on the detected macro/market regime:
+        - Bullish/expansion trends: grant higher leverage (e.g. 1.25x - 1.35x).
+        - Rebound pivot: 1.20x to capture asymmetric elasticity.
+        - Late cycle: 0.85x to preserve gains.
+        - High volatility / defensive panic: aggressive 0.50x shrinkage.
+        """
+        if not regime:
+            return 1.0
+
+        r_upper = str(regime).upper()
+        if "BULL" in r_upper or "ACCELERATION" in r_upper:
+            return 1.35
+        elif "REBOUND" in r_upper or "PIVOT" in r_upper:
+            return 1.20
+        elif "LATE_CYCLE" in r_upper:
+            return 0.85
+        elif "INVERSION" in r_upper:
+            return 0.60
+        elif "DEFENSIVE" in r_upper or "HIGH_VOLATILITY" in r_upper or "EXTREME" in r_upper:
+            return 0.50
+        return 1.00
+
+    def calculate_asymmetric_convex_size(
+        self,
+        base_fractional_size: float,
+        confidence_score: float,
+        factor_composite_score: Optional[float] = None,
+        gamma: Optional[float] = None,
+        regime: Optional[str] = None,
+    ) -> float:
+        """
+        Apply Asymmetric Convex Scaling to fractional Kelly position size based on AI confidence
+        and multi-factor ratings, modulated by market regime:
+        - High conviction (Confidence >= 8.0): convex non-linear expansion (rewarding asymmetric upside).
+        - Factor resonance: extra bonus if composite factor score >= 0.70.
+        - Low conviction (Confidence < 6.5): quadratic concave damping.
+        - Clamped strictly within [min_position_pct, max_position_pct].
+        """
+        base_size = max(0.0, float(base_fractional_size))
+        if base_size <= 0:
+            return 0.0
+
+        # Normalization: ensure confidence is [0.0 ~ 10.0]
+        conf = max(0.0, min(10.0, float(confidence_score)))
+        exponent = float(gamma if gamma is not None else self._get_setting("convex_sizing_gamma", 1.8))
+
+        # Check if convex sizing is globally enabled
+        enabled = bool(self._get_setting("enable_convex_conviction_sizing", True))
+        if not enabled:
+            # Fallback to linear multiplier
+            linear_mult = max(0.70, min(1.30, conf / 8.0)) if conf > 0 else 1.0
+            sized = base_size * linear_mult
+        else:
+            # Non-linear convex scaling
+            if conf >= 8.0:
+                # Convex power boost above 7.0 pivot
+                spread = (conf - 7.0) / 3.0  # [0.33 ~ 1.0]
+                convex_boost = 0.40 * (spread ** exponent)
+                conv_mult = 1.0 + convex_boost
+
+                # Multi-factor score resonance bonus
+                if factor_composite_score is not None and factor_composite_score >= 0.70:
+                    f_spread = min(1.0, (factor_composite_score - 0.70) / 0.30)
+                    conv_mult += 0.20 * f_spread
+                sized = base_size * conv_mult
+            elif conf < 6.5:
+                # Quadratic concave damping below neutral 7.0
+                ratio = max(0.0, conf / 7.0)
+                damped_mult = max(0.35, ratio * ratio)
+                sized = base_size * damped_mult
+            else:
+                # Neutral linear transition zone [6.5, 8.0)
+                sized = base_size * (conf / 8.0)
+
+        # Modulate by macro regime
+        regime_mult = self.calculate_regime_multiplier(regime)
+        final_sized = sized * regime_mult
+
+        # Clamp within configured floor and ceiling
+        clamped = max(self.min_position_pct, min(self.max_position_pct, final_sized))
+        return round(clamped, 4)
+
+    def adjust_size_for_sector_headroom(
+        self,
+        recommended_pct: float,
+        ticker: str,
+        current_positions: list[Any],
+        total_nlv: float,
+        max_sector_pct: Optional[float] = None,
+        sector_override: Optional[str] = None,
+    ) -> tuple[float, str]:
+        """
+        Clamp recommended position percentage down to the remaining sector headroom,
+        preventing the order from tripping sector concentration blocks downstream.
+        """
+        rec_pct = max(0.0, float(recommended_pct))
+        if rec_pct <= 0 or total_nlv <= 0:
+            return 0.0, "Zero allocation or zero NLV"
+
+        try:
+            from src.services.sector_drift_guard_service import SectorDriftGuardService
+            drift_guard = SectorDriftGuardService(
+                user_id=self.user_id,
+                settings_service=self.settings_service,
+            )
+            headroom_dollars, headroom_pct, sec = drift_guard.get_sector_headroom(
+                ticker=ticker,
+                current_positions=current_positions,
+                total_nlv=total_nlv,
+                max_sector_limit=max_sector_pct,
+            )
+            if sector_override:
+                sec = sector_override
+
+            if rec_pct > headroom_pct:
+                clamped_pct = max(0.0, round(headroom_pct, 4))
+                reason = (
+                    f"行業額度限制：目標 {rec_pct:.1%} 超過 [{sec}] 剩餘可支配額度 "
+                    f"{headroom_pct:.1%} (${headroom_dollars:,.2f})，調降至 {clamped_pct:.1%}"
+                )
+                logger.info(f"Sector Headroom Sizing: {ticker} clamped {rec_pct:.1%} -> {clamped_pct:.1%} ({reason})")
+                return clamped_pct, reason
+            else:
+                return rec_pct, f"符合行業額度：[{sec}] 剩餘 {headroom_pct:.1%} 足以容納目標 {rec_pct:.1%}"
+        except Exception as e:
+            logger.debug(f"Sector headroom adjustment fallback: {e}")
+            return rec_pct, "Sector headroom calculation fallback"
+

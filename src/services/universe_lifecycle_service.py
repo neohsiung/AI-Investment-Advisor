@@ -69,6 +69,19 @@ class UniverseLifecycleService:
         self.quality_gate = quality_gate or QualityGateService(user_id=self.user_id, market_data_service=self.market)
         self.settings = SettingsService(user_id=self.user_id)
 
+    @property
+    def drift_guard(self):
+        """Lazily constructed sector drift guard service."""
+        if not hasattr(self, "_drift_guard") or self._drift_guard is None:
+            from src.services.sector_drift_guard_service import SectorDriftGuardService
+            self._drift_guard = SectorDriftGuardService(
+                user_id=self.user_id,
+                settings_service=self.settings,
+                repo=self.repo,
+                market=self.market,
+            )
+        return self._drift_guard
+
     async def detect_macro_regime(self) -> MacroRegime:
         """
         Evaluate external macro economic state to guide universe quality criteria.
@@ -289,6 +302,24 @@ class UniverseLifecycleService:
                     candidates_to_check.add(t_sym.upper())
         except Exception as de:
             logger.debug("Lifecycle dynamic ticker discovery skipped: %s", de)
+
+        # G. Dynamic Theme & Sector Drift Diversification Contenders
+        try:
+            theme_contenders = self.drift_guard.discover_theme_and_hot_sector_contenders(
+                existing_tickers=candidates_to_check,
+                top_n_per_sector=3,
+                prioritize_underrepresented=True,
+                current_active=current_active,
+            )
+            for tc in theme_contenders:
+                candidates_to_check.add(tc.upper())
+            if theme_contenders:
+                logger.info(
+                    "UniverseLifecycle: Injected %d dynamic sector/theme contenders for diversification",
+                    len(theme_contenders),
+                )
+        except Exception as se_err:
+            logger.debug("Lifecycle dynamic sector contenders lookup skipped: %s", se_err)
 
         # Exclude active tickers
         eligible_candidates = [c for c in candidates_to_check if c not in active_set and c]
@@ -534,77 +565,119 @@ class UniverseLifecycleService:
         # 3. Competitive Rotation (汰弱留強)
         rotations = []
         cand_idx = 0
+        simulated_active = list(current_active)
 
         for active_item, active_assessment in evaluated_unpinned:
             if len(rotations) >= max_rotations:
                 break
-            if cand_idx >= len(cand_assessments):
-                break
 
-            top_candidate = cand_assessments[cand_idx]
             active_sym = active_item["ticker"].upper()
-            cand_sym = top_candidate.ticker.upper()
             active_score = active_assessment.overall_score
-            cand_score = top_candidate.overall_score
 
-            # Check if candidate score outclasses active score by hurdle
-            if (cand_score - active_score) >= rotation_hurdle:
-                new_status = "removed" if active_score < eviction_threshold else "candidate"
-                demote_reason = (
-                    f"Rotated from active: Outclassed by candidate {cand_sym} "
-                    f"(Score {active_score:.2f} vs {cand_score:.2f}, hurdle {rotation_hurdle:.2f})"
-                )
-                self.repo.upsert(self.user_id, active_sym, status=new_status)
-                self.repo.add_log(
-                    self.user_id,
-                    active_sym,
-                    "active_rotated_out",
-                    "UniverseLifecycleService",
-                    reasoning=demote_reason,
-                    old_status="active",
-                    new_status=new_status,
-                )
+            # Find next eligible candidate that satisfies both the performance hurdle and the sector drift guard
+            selected_cand = None
+            selected_fin = None
+            while cand_idx < len(cand_assessments):
+                cand = cand_assessments[cand_idx]
+                cand_idx += 1
+                cand_sym = cand.ticker.upper()
+                cand_score = cand.overall_score
+
+                # If candidate does not meet hurdle, subsequent candidates (having lower scores) won't either
+                if (cand_score - active_score) < rotation_hurdle:
+                    break
 
                 fin = self.market.get_financials(cand_sym) or {}
-                company_name = str(fin.get("shortName") or fin.get("longName") or cand_sym)
-                sector = str(fin.get("sector") or "")[:100]
-                industry = str(fin.get("industry") or "")[:100]
+                cand_sector = str(fin.get("sector") or "")[:100]
 
-                self.repo.upsert(
-                    self.user_id,
-                    cand_sym,
-                    company_name=company_name,
-                    sector=sector,
-                    industry=industry,
-                    status="active",
-                )
-                promote_reason = (
-                    f"Promoted to active replacing {active_sym} "
-                    f"(Score {cand_score:.2f} vs {active_score:.2f}, hurdle {rotation_hurdle:.2f})"
-                )
-                self.repo.add_log(
-                    self.user_id,
-                    cand_sym,
-                    "active_rotated_in",
-                    "UniverseLifecycleService",
-                    reasoning=promote_reason,
-                    old_status="candidate",
-                    new_status="active",
+                # Check sector drift guard
+                allowed_sector, sec_reason = self.drift_guard.can_admit_or_rotate(
+                    ticker=cand_sym,
+                    target_sector=cand_sector,
+                    current_active_items=simulated_active,
+                    max_active_capacity=max_active,
+                    displaced_ticker=active_sym,
                 )
 
-                rotations.append({
-                    "demoted_ticker": active_sym,
-                    "demoted_score": round(active_score, 2),
-                    "demoted_to": new_status,
-                    "promoted_ticker": cand_sym,
-                    "promoted_score": round(cand_score, 2),
-                    "score_delta": round(cand_score - active_score, 2),
-                })
-                logger.info(
-                    "Competitive rotation: %s (score %.2f) -> %s; %s (score %.2f) -> active",
-                    active_sym, active_score, new_status, cand_sym, cand_score
-                )
-                cand_idx += 1
+                if allowed_sector:
+                    selected_cand = cand
+                    selected_fin = fin
+                    break
+                else:
+                    logger.info("UniverseLifecycle: Skipping candidate %s during active rotation: %s", cand_sym, sec_reason)
+
+            if not selected_cand:
+                continue
+
+            cand_sym = selected_cand.ticker.upper()
+            cand_score = selected_cand.overall_score
+            fin = selected_fin or {}
+
+            # Execute rotation
+            new_status = "removed" if active_score < eviction_threshold else "candidate"
+            demote_reason = (
+                f"Rotated from active: Outclassed by candidate {cand_sym} "
+                f"(Score {active_score:.2f} vs {cand_score:.2f}, hurdle {rotation_hurdle:.2f})"
+            )
+            self.repo.upsert(self.user_id, active_sym, status=new_status)
+            self.repo.add_log(
+                self.user_id,
+                active_sym,
+                "active_rotated_out",
+                "UniverseLifecycleService",
+                reasoning=demote_reason,
+                old_status="active",
+                new_status=new_status,
+            )
+
+            company_name = str(fin.get("shortName") or fin.get("longName") or cand_sym)
+            sector = str(fin.get("sector") or "")[:100]
+            industry = str(fin.get("industry") or "")[:100]
+
+            self.repo.upsert(
+                self.user_id,
+                cand_sym,
+                company_name=company_name,
+                sector=sector,
+                industry=industry,
+                status="active",
+            )
+            promote_reason = (
+                f"Promoted to active replacing {active_sym} "
+                f"(Score {cand_score:.2f} vs {active_score:.2f}, hurdle {rotation_hurdle:.2f})"
+            )
+            self.repo.add_log(
+                self.user_id,
+                cand_sym,
+                "active_rotated_in",
+                "UniverseLifecycleService",
+                reasoning=promote_reason,
+                old_status="candidate",
+                new_status="active",
+            )
+
+            # Update simulated active list
+            simulated_active = [x for x in simulated_active if x.get("ticker", "").upper() != active_sym]
+            simulated_active.append({
+                "ticker": cand_sym,
+                "company_name": company_name,
+                "sector": sector,
+                "industry": industry,
+                "status": "active",
+            })
+
+            rotations.append({
+                "demoted_ticker": active_sym,
+                "demoted_score": round(active_score, 2),
+                "demoted_to": new_status,
+                "promoted_ticker": cand_sym,
+                "promoted_score": round(cand_score, 2),
+                "score_delta": round(cand_score - active_score, 2),
+            })
+            logger.info(
+                "Competitive rotation: %s (score %.2f) -> %s; %s (score %.2f) -> active",
+                active_sym, active_score, new_status, cand_sym, cand_score
+            )
 
         summary = (
             f"Active pool evolution complete: {len(rotations)} rotated "
@@ -722,7 +795,11 @@ class UniverseLifecycleService:
 
         # 5. Admit top candidates up to available slots
         admitted = []
-        for assessment in assessments[:available_slots]:
+        simulated_active = list(current_active)
+        for assessment in assessments:
+            if len(admitted) >= available_slots:
+                break
+
             ticker = assessment.ticker.upper()
             fin = self.market.get_financials(ticker) or {}
             company_name = str(fin.get("shortName") or fin.get("longName") or ticker)
@@ -730,6 +807,18 @@ class UniverseLifecycleService:
             industry = str(fin.get("industry") or "")[:100]
 
             target_status = "shadow" if require_shadow_validation else "active"
+
+            # Check sector drift guard for direct active admissions
+            if target_status == "active":
+                allowed_sec, sec_reason = self.drift_guard.can_admit_or_rotate(
+                    ticker=ticker,
+                    target_sector=sector,
+                    current_active_items=simulated_active,
+                    max_active_capacity=max_active,
+                )
+                if not allowed_sec:
+                    logger.info("UniverseLifecycle: Skipping active admission for %s: %s", ticker, sec_reason)
+                    continue
 
             ok = self.repo.upsert(
                 self.user_id,
@@ -741,6 +830,14 @@ class UniverseLifecycleService:
             )
 
             if ok:
+                if target_status == "active":
+                    simulated_active.append({
+                        "ticker": ticker,
+                        "company_name": company_name,
+                        "sector": sector,
+                        "industry": industry,
+                        "status": "active",
+                    })
                 if require_shadow_validation:
                     try:
                         from src.services.shadow_ledger_service import ShadowLedgerService
@@ -860,11 +957,22 @@ class UniverseLifecycleService:
         current_candidates = self.repo.get_all(self.user_id, status="candidate")
         current_shadow = self.repo.get_all(self.user_id, status="shadow")
 
+        # 6. Sector drift guard analysis
+        drift_report = self.drift_guard.analyze_universe_sectors(current_active=current_active)
+        if drift_report.status.value != "BALANCED":
+            logger.warning(
+                "Lifecycle detected sector drift status [%s]: warning=%s, over_concentrated=%s",
+                drift_report.status.value,
+                drift_report.distribution.warning_sectors,
+                drift_report.distribution.over_concentrated_sectors,
+            )
+
         summary_message = (
             f"Lifecycle run completed [{regime.regime}]. "
             f"Active: {len(current_active)}/{max_active} (Evicted: {len(evicted)}, Rotated: {active_evolution.get('rotation_count', 0)}, Admitted: {len(admitted)}). "
             f"Shadow: {len(current_shadow)} (Graduated: {shadow_evolution.get('graduated_count', 0)}). "
-            f"Candidates: {len(current_candidates)}/30 (Admitted: {candidate_evolution.get('admitted_new_count', 0)}, Pruned: {candidate_evolution.get('pruned_count', 0)})."
+            f"Candidates: {len(current_candidates)}/30 (Admitted: {candidate_evolution.get('admitted_new_count', 0)}, Pruned: {candidate_evolution.get('pruned_count', 0)}). "
+            f"Sector Status: {drift_report.status.value} (HHI: {drift_report.distribution.hhi_index:.3f})."
         )
         logger.info(summary_message)
 
@@ -878,6 +986,7 @@ class UniverseLifecycleService:
                 "spy_above_200sma": regime.spy_above_200sma,
                 "summary": regime.summary,
             },
+            "sector_drift_report": drift_report.to_dict(),
             "evicted": evicted,
             "rotations": active_evolution.get("rotations", []),
             "active_evolution": active_evolution,
@@ -888,4 +997,5 @@ class UniverseLifecycleService:
             "shadow_count": len(current_shadow),
             "candidate_count": len(current_candidates),
         }
+
 

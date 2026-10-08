@@ -136,9 +136,9 @@ async def test_screen_and_admit_candidates(mock_deps):
     repo.upsert.return_value = True
     repo.add_log.return_value = True
 
-    market.get_financials.return_value = {
-        "shortName": "Candidate Corp",
-        "sector": "Tech",
+    market.get_financials.side_effect = lambda t: {
+        "shortName": f"{t} Corp",
+        "sector": "Technology" if t == "C1" else "Healthcare",
         "industry": "Software",
     }
     market.get_etf_holdings.return_value = []

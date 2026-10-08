@@ -1573,6 +1573,32 @@ settings:
     label_zh: 凱利歷史統計回顧窗口（天）
     help_en: Number of calendar days of historical realized decisions used to calculate rolling win rate and payoff ratio.
     help_zh: 用於統計滾動已實現勝率與盈虧賠率之歷史決策回顧天數窗口（預設 90 天）。
+  - key: enable_dynamic_kelly_sizing
+    group: allocation
+    type: bool
+    default: true
+    label_en: Enable dynamic Kelly sizing & cash drag eliminator
+    label_zh: 啟用動態凱利部位定價與現金拖累消除
+    help_en: "Dynamically sizes trade amounts according to Kelly criterion and conviction scores to avoid cash drag and micro-lots."
+    help_zh: "結合凱利準則與 AI 確信度動態調整下單金額，擺脫微量固定下單與現金拖累。"
+  - key: enable_convex_conviction_sizing
+    group: allocation
+    type: bool
+    default: true
+    label_en: Enable asymmetric convex conviction sizing
+    label_zh: 啟用非對稱凸性確信度部位縮放
+    help_en: "Scales position size non-linearly (gamma > 1) for high-conviction trades while dampening low-conviction allocations."
+    help_zh: "開啟時，高確信度交易享受非對稱凸性冪次放大效益，低確信度交易非線性衰減，最大化正向幾何成長率。"
+  - key: convex_sizing_gamma
+    group: allocation
+    type: float
+    default: 1.8
+    min: 1.0
+    max: 3.5
+    label_en: "Convex sizing convexity exponent (gamma)"
+    label_zh: "凸性部位縮放冪次指數 (gamma)"
+    help_en: "Non-linear convexity power exponent applied to confidence scores above neutral baseline (default: 1.8)."
+    help_zh: "施加於超越中性基準確信度之非對稱凸性冪次指數（預設 1.8，數值愈大對高信心度加碼愈顯著）。"
   - key: stress_test_cvar_budget
     group: allocation
     type: float
@@ -2026,6 +2052,34 @@ settings:
     label_zh: 實盤活躍持倉數量上限
     help_en: Capacity threshold beyond which shadow graduations must displace an existing decaying holding instead of opening direct new lots.
     help_zh: 投組實盤活躍持倉上限；超出此上限之影子畢業標的必須透過置換淘汰衰減持倉進行換庫，不可直接開立新倉。
+  - key: enable_sector_drift_guard
+    group: allocation
+    type: bool
+    default: true
+    label_en: Enable sector drift guard & dynamic universe balance
+    label_zh: 啟用行業主題漂移守衛與自適應板塊平衡
+    help_en: "Monitors sector concentration, guards against single-sector over-crowding (>30%), and dynamically admits thematic contenders from under-represented sectors."
+    help_zh: "實時監控投組與標的池行業集中度，嚴格防範單一產業過度擁擠（>30%），並自適應擴充低配產業優質龍頭。"
+  - key: sector_concentration_cap_pct
+    group: allocation
+    type: float
+    default: 0.30
+    min: 0.10
+    max: 0.60
+    label_en: Sector concentration hard limit cap
+    label_zh: 單一行業集中度剛性上限
+    help_en: "Rigid ceiling for any single sector aggregate weight in the active universe or portfolio positions (default: 30%)."
+    help_zh: "活躍標的池或投組合計在任一單一產業之剛性持倉上限比例（預設 30%）。"
+  - key: sector_drift_warning_pct
+    group: allocation
+    type: float
+    default: 0.25
+    min: 0.10
+    max: 0.50
+    label_en: Sector drift warning threshold
+    label_zh: 單一行業集中度預警門檻
+    help_en: "Early warning threshold triggering diagnostic alerts before a sector reaches the hard concentration cap (default: 25%)."
+    help_zh: "行業集中度早期預警臨界值（預設 25%），超標時發出診斷預警並優先引導資金轉向多元平衡產業。"
 
 
   # ── Sentinel ─────────────────────────────────────────────────────────────
