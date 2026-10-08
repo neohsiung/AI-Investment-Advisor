@@ -560,6 +560,52 @@ settings:
     label_zh: 第二階加碼部位比例
     help_en: Position scale ratio for Stage 2 pyramiding (e.g. 0.15 = +15% of current shares).
     help_zh: 第二階金字塔加碼部位比例（預設 0.15，即加碼現有股數之 15%）。
+  - key: enable_breakout_volume_filter
+    group: trading
+    type: bool
+    default: true
+    label_en: Enable breakout volume & false breakout filter
+    label_zh: 啟用量價突破與假突破過濾
+    help_en: Filter out false breakouts, low-volume traps, and overextended VWAP surges during momentum breakout and pyramiding entries.
+    help_zh: 在動能突破與順勢金字塔加碼時，檢驗成交量放量比率、VWAP 位階與長上影線，過濾無量誘多與假突破。
+  - key: breakout_min_volume_ratio
+    group: trading
+    type: float
+    default: 1.2
+    min: 0.5
+    max: 5.0
+    label_en: Minimum volume expansion ratio for breakout
+    label_zh: 突破最低放量倍數 (vs ADV20)
+    help_en: Minimum volume multiple relative to 20-day ADV required for breakout confirmation.
+    help_zh: 突破確認所需之最低放量倍數（相對於 20 日日均量 ADV20，預設 1.2 倍）。
+  - key: breakout_max_vwap_dev_pct
+    group: trading
+    type: float
+    default: 6.0
+    min: 1.0
+    max: 20.0
+    label_en: Maximum allowable VWAP deviation (%)
+    label_zh: VWAP 最大允許正乖離率 (%)
+    help_en: Maximum price deviation percentage above VWAP before flagging as overbought exhaustion.
+    help_zh: 現價高於 VWAP 的最大容許偏離百分比，超過時判定為短線過度延伸（預設 +6.0%）。
+  - key: breakout_max_upper_shadow_ratio
+    group: trading
+    type: float
+    default: 0.40
+    min: 0.10
+    max: 0.80
+    label_en: Maximum upper shadow ratio for pin bar rejection
+    label_zh: 假突破長上影線比例上限
+    help_en: Maximum allowable upper shadow ratio of the candle before flagging as a false breakout / pin bar rejection.
+    help_zh: K 線上影線佔整體振幅的最大允許比例，超過時判定為衝高回落假突破（預設 0.40 即 40%）。
+  - key: breakout_filter_fail_open
+    group: trading
+    type: bool
+    default: true
+    label_en: Breakout filter fail-open on missing data
+    label_zh: 缺少歷史量價數據時寬鬆放行
+    help_en: Allow trading signals to pass if historical OHLCV data is insufficient for breakout verification.
+    help_zh: 當歷史 OHLCV 數據不足無法評估量價時，預設寬鬆放行（Fail-Open）。
   - key: strategy_evolution_enabled
     group: trading
     type: bool

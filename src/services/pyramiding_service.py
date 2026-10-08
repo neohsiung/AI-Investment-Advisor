@@ -17,6 +17,7 @@ from typing import Any, Dict, List, Optional
 
 from src.services.long_term_winner_service import LongTermWinnerService
 from src.services.market_data_service import MarketDataService
+from src.services.breakout_filter_service import BreakoutFilterService
 
 logger = logging.getLogger(__name__)
 
@@ -52,11 +53,17 @@ class PyramidingService:
         user_id: str,
         settings_service: Optional[Any] = None,
         market_data_service: Optional[MarketDataService] = None,
+        breakout_filter_service: Optional[BreakoutFilterService] = None,
     ):
         self.user_id = user_id
         self.settings_service = settings_service
         self.market = market_data_service or MarketDataService(user_id=user_id)
         self.winner_service = LongTermWinnerService(user_id=user_id, market_data_service=self.market)
+        self.breakout_filter = breakout_filter_service or BreakoutFilterService(
+            market_data_service=self.market,
+            settings_service=settings_service,
+            user_id=user_id,
+        )
         self._in_memory_stages: Dict[str, int] = {}
 
     def _get_setting(self, key: str, default: Any) -> Any:
@@ -184,6 +191,17 @@ class PyramidingService:
             logger.debug(f"Pyramiding: {ticker} drawdown {drawdown_from_peak:.1f}% from peak is too deep.")
             return None
 
+        # 4.1 量價假突破過濾 (Volume-Price Spread & False Breakout Gate)
+        breakout_qual = self.breakout_filter.evaluate_breakout_quality(
+            ticker=ticker,
+            current_price=current_price,
+        )
+        if not breakout_qual.is_valid_breakout:
+            logger.info(
+                f"Pyramiding: {ticker} rejected by BreakoutFilter: {breakout_qual.rejection_reason}. Pyramiding blocked."
+            )
+            return None
+
         # 5. 金字塔遞減規模計算 (Pyramidal Decreasing Sizing)
         scale_ratio = float(self._get_setting(
             "pyramid_stage1_scale_ratio" if target_stage == 1 else "pyramid_stage2_scale_ratio",
@@ -247,12 +265,23 @@ class PyramidingService:
             base_score += 0.3
             breakdown.append({"agent": "TrendCross", "confidence": 8.8, "weight": 0.2, "key_factor": "Bullish MACD Structure"})
 
+        # 量價健康度加分 (Volume Expansion >= 1.5x ADV20)
+        if breakout_qual.volume_ratio >= 1.5:
+            base_score += 0.2
+            breakdown.append({
+                "agent": "VolumeExpansion",
+                "confidence": 9.2,
+                "weight": 0.2,
+                "key_factor": f"Strong Volume Expansion ({breakout_qual.volume_ratio:.1f}x ADV20)",
+            })
+
         confidence_score = round(min(9.8, base_score), 2)
 
+        vol_note = f", 量比 {breakout_qual.volume_ratio:.1f}x, VWAP 偏離 {breakout_qual.vwap_distance_pct:+.1f}%" if breakout_qual.volume_ratio > 0 else ""
         rationale = (
             f"🚀 [金字塔動能加碼 Stage {target_stage}] {ticker}: 浮盈 +{unrealized_pnl_pct:.1f}%，"
             f"移動停損已推進至 ${active_stop_price:.2f} (高於成本 ${avg_price:.2f})，鎖定底倉風險。"
-            f"動能指標健康 (RSI {rsi:.1f}, 站穩 20MA ${sma_20:.2f})，"
+            f"動能指標健康 (RSI {rsi:.1f}, 站穩 20MA ${sma_20:.2f}{vol_note})，"
             f"依金字塔原則順勢加碼 {add_shares} 股 (~${add_amount_usd:.2f})，預計權重至 {projected_weight_pct:.1f}%。"
         )
 
@@ -272,5 +301,13 @@ class PyramidingService:
             confidence_score=confidence_score,
             confidence_breakdown=breakdown,
             rationale=rationale,
-            metrics={"rsi": rsi, "sma_20": sma_20, "sma_50": sma_50, "drawdown_from_peak": drawdown_from_peak},
+            metrics={
+                "rsi": rsi,
+                "sma_20": sma_20,
+                "sma_50": sma_50,
+                "drawdown_from_peak": drawdown_from_peak,
+                "volume_ratio": breakout_qual.volume_ratio,
+                "vwap_distance_pct": breakout_qual.vwap_distance_pct,
+                "upper_shadow_ratio": breakout_qual.upper_shadow_ratio,
+            },
         )
