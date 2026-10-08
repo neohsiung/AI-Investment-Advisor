@@ -735,4 +735,34 @@ async def test_handle_pyramiding_logic_executes_and_advances_stage(sentinel):
         sentinel.pyramiding_service.record_stage_advance.assert_called_once_with("NVDA", 1)
 
 
+@pytest.mark.anyio
+async def test_on_realtime_event_with_breakout_filter(sentinel):
+    """Verify on_realtime_event enriches trade message with block trade anomaly detection."""
+    sentinel.process_event = AsyncMock()
+    # Mock evaluate_tick_anomaly to report a block trade
+    sentinel.breakout_filter_service.evaluate_tick_anomaly = MagicMock(return_value={
+        "ticker": "TSLA",
+        "price": 250.0,
+        "size": 5000.0,
+        "is_large_block": True,
+        "move_pct": 1.8,
+        "anomaly_detected": True,
+    })
+
+    event = {
+        "ev": "T",
+        "sym": "TSLA",
+        "p": 250.0,
+        "s": 5000,
+    }
+    await sentinel.on_realtime_event(event)
+
+    sentinel.process_event.assert_called_once()
+    payload = sentinel.process_event.call_args[0][0]
+    assert payload["source"] == "polygon_websocket"
+    assert "Block Trade: 5000 shares" in payload["data"]["msg"]
+    assert payload["data"]["ticker"] == "TSLA"
+
+
+
 

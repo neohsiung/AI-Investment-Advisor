@@ -121,6 +121,7 @@ class SentinelService:
         self.current_vix: float = 20.0 # Default fallback
         self.active_cognitive_blindspots: List[Any] = []
         self._pyramiding_service = None
+        self._breakout_filter_service = None
 
     def get_cognitive_blindspots(self) -> List[Any]:
         """Return currently observed market regimes that lack registered strategy contracts."""
@@ -318,6 +319,25 @@ class SentinelService:
     @pyramiding_service.deleter
     def pyramiding_service(self) -> None:
         self._pyramiding_service = None
+
+    @property
+    def breakout_filter_service(self):
+        if getattr(self, "_breakout_filter_service", None) is None:
+            from src.services.breakout_filter_service import BreakoutFilterService
+            self._breakout_filter_service = BreakoutFilterService(
+                market_data_service=self.market_service,
+                settings_service=self.settings_service,
+                user_id=self.user_id,
+            )
+        return self._breakout_filter_service
+
+    @breakout_filter_service.setter
+    def breakout_filter_service(self, value) -> None:
+        self._breakout_filter_service = value
+
+    @breakout_filter_service.deleter
+    def breakout_filter_service(self) -> None:
+        self._breakout_filter_service = None
 
     @property
     def thresholds(self) -> Dict[str, Any]:
@@ -714,24 +734,42 @@ class SentinelService:
         if ev_type == "T": # Trade
             price = event.get("p")
             size = event.get("s")
-            # Logic: If trade size is huge or price deviates from last tick significantly
-            # For now, bridge to process_event
+            
+            # 整合 BreakoutFilter 即時大單與異常波動檢測
+            extra_msg = ""
+            try:
+                anomaly = self.breakout_filter_service.evaluate_tick_anomaly(
+                    ticker=symbol,
+                    price=float(price or 0),
+                    size=float(size or 0) if size is not None else None,
+                    last_price=self._polygon_last_price.get(symbol),
+                )
+                if anomaly.get("is_large_block"):
+                    extra_msg = f" 🐋 [Block Trade: {size} shares]"
+            except Exception as e:
+                logger.debug(f"[Sentinel WebSocket] Breakout tick evaluation error: {e}")
+
             await self.process_event({
                 "source": "polygon_websocket",
                 "data": {
                     "ticker": symbol,
-                    "msg": f"Real-time Trade: ${price} (Size: {size})",
-                    "price": price
+                    "msg": f"Real-time Trade: ${price} (Size: {size}){extra_msg}",
+                    "price": price,
+                    "size": size,
                 }
             })
         elif ev_type == "A": # Aggregate
             close = event.get("c")
+            vol = event.get("v")
+            vwap = event.get("vw")
             await self.process_event({
                 "source": "polygon_websocket",
                 "data": {
                     "ticker": symbol,
-                    "msg": f"Real-time Bar Close: ${close}",
-                    "price": close
+                    "msg": f"Real-time Bar Close: ${close}" + (f" (Vol: {vol})" if vol else ""),
+                    "price": close,
+                    "volume": vol,
+                    "vwap": vwap,
                 }
             })
 
