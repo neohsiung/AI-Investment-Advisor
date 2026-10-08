@@ -53,6 +53,7 @@ class SentinelService:
         keyword_service: Optional[RiskKeywordService] = None,
         repo: Optional[AlchemySentinelRepository] = None,
         snapshot_repo: Optional[AlchemySnapshotRepository] = None,
+        macro_hedging_service: Optional[Any] = None,
     ):
         if not user_id:
             logger.warning("SentinelService: No user_id provided. Running in anonymous mode (testing only).")
@@ -70,6 +71,7 @@ class SentinelService:
         self._council_service = council_service
         self._keyword_service = keyword_service
         self._snapshot_repo = snapshot_repo
+        self._macro_hedging_service = macro_hedging_service
         self._model_router = None
         self._gateway = None
         self._thresholds: Optional[Dict[str, Any]] = None
@@ -119,6 +121,7 @@ class SentinelService:
         
         # Volatility State
         self.current_vix: float = 20.0 # Default fallback
+        self.current_vix_z_score: float = 0.0
         self.active_cognitive_blindspots: List[Any] = []
         self._pyramiding_service = None
         self._breakout_filter_service = None
@@ -338,6 +341,25 @@ class SentinelService:
     @breakout_filter_service.deleter
     def breakout_filter_service(self) -> None:
         self._breakout_filter_service = None
+
+    @property
+    def macro_hedging_service(self):
+        if getattr(self, "_macro_hedging_service", None) is None:
+            from src.services.macro_hedging_service import MacroHedgingService
+            self._macro_hedging_service = MacroHedgingService(
+                settings_service=self.settings_service,
+                market_service=self.market_service,
+                winner_service=getattr(self, "winner_service", None),
+            )
+        return self._macro_hedging_service
+
+    @macro_hedging_service.setter
+    def macro_hedging_service(self, value) -> None:
+        self._macro_hedging_service = value
+
+    @macro_hedging_service.deleter
+    def macro_hedging_service(self) -> None:
+        self._macro_hedging_service = None
 
     @property
     def thresholds(self) -> Dict[str, Any]:
@@ -802,6 +824,7 @@ class SentinelService:
                 variance = sum(((x - avg_vix) ** 2) for x in recent) / len(recent)
                 std_dev = variance ** 0.5
                 z_score = (current_vix - avg_vix) / std_dev if std_dev > 0 else 0
+                self.current_vix_z_score = float(z_score)
                 
                 # Dynamic Threshold (v3.5)
                 sigma_limit = self.thresholds.get("vix_spike_sigma", 2.5)
@@ -823,6 +846,7 @@ class SentinelService:
                         "priority": 1 # P1: Immediate/High Priority
                     })
             else:
+                self.current_vix_z_score = 0.0
                 if current_vix > self.thresholds.get("vix_high", 25.0):
                     triggers.append({
                         "text": f"⚠️ VIX High (Static): {current_vix:.2f}",
@@ -1158,7 +1182,8 @@ class SentinelService:
             # Check VIX from market indicators as supplementary
             market = macro.get("market_indicators", {})
             vix = market.get("^VIX", 0)
-            if isinstance(vix, (int, float)) and vix > self.thresholds["vix_extreme"]:
+            vix_extreme_limit = float(self.thresholds.get("vix_extreme", 40.0) if hasattr(self.thresholds, "get") else 40.0)
+            if isinstance(vix, (int, float)) and vix > vix_extreme_limit:
                 triggers.append({
                     "text": f"🔴 極端恐慌: VIX = {vix:.2f}",
                     "id": "macro_vix_extreme",
@@ -1196,9 +1221,36 @@ class SentinelService:
 
                     # 2. Match active strategies to regimes
                     matched = StrategyRegistry.match_regimes(active_regimes)
+                    portfolio_dict = {}
+                    if self.user_id and self.snapshot_repo:
+                        try:
+                            snap = self.snapshot_repo.get_latest_by_user(self.user_id)
+                            if snap is not None:
+                                portfolio_dict = snap if isinstance(snap, dict) else snap.to_dict()
+                        except Exception as snap_err:
+                            logger.debug(f"Sentinel: Failed to fetch snapshot for strategy matching: {snap_err}")
+
                     for strat in matched:
-                        plan = strat.evaluate_entry({"vix": float(vix), "indicators": market})
-                        if plan and plan.action == "BUY":
+                        plan = strat.evaluate_entry({
+                            "vix": float(vix),
+                            "indicators": market,
+                            "portfolio": portfolio_dict,
+                            "user_id": self.user_id,
+                            "vix_z_score": getattr(self, "current_vix_z_score", 0.0),
+                            "yield_spread": spread.get("value") if spread else None,
+                        })
+                        if plan and strat.strategy_id == "macro_volatility_hedge":
+                            triggers.append({
+                                "text": f"🛡️ 跨市場波動率體制自動避險 ({strat.strategy_id} Stage {plan.stage}): VIX = {vix:.2f} ({plan.reason})",
+                                "id": f"{strat.strategy_id}_defensive",
+                                "value": vix,
+                                "priority": 1 if (isinstance(vix, (int, float)) and vix >= self.thresholds.get("vix_extreme", 40.0)) else 2,
+                                "strategy_name": strat.strategy_id,
+                                "recommended_leverage": plan.target_leverage,
+                                "stop_loss_pct": plan.stop_loss_pct,
+                                "is_trailing_stop_loss": plan.is_trailing_stop_loss,
+                            })
+                        elif plan and plan.action == "BUY":
                             triggers.append({
                                 "text": f"🔥 逆勢恐慌抄底機會 ({strat.strategy_id} Stage {plan.stage}): VIX = {vix:.2f} ({plan.reason})",
                                 "id": f"{strat.strategy_id}_opportunity",
@@ -2439,7 +2491,9 @@ class SentinelService:
             threshold = 1.80
             if profile == "Balanced":
                 # v8.4: Bullish Flexibility - Allow up to 2.0x if trend is good
-                trend = self._get_market_trend("SPY")
+                import inspect
+                trend_val = self._get_market_trend("SPY")
+                trend = await trend_val if inspect.isawaitable(trend_val) else trend_val
                 vix_data = self.market_service.get_macro_data().get("market_indicators", {})
                 vix = vix_data.get("^VIX", 20.0) 
                 
@@ -2476,10 +2530,26 @@ class SentinelService:
         
         vix_triggers = self._check_vix_anomaly()
         vix_multiplier = 1.0
-        if any("VIX Spiked" in t.get("text", "") for t in vix_triggers):
+        if any(("VIX Spike" in t.get("text", "") or "VIX Spiked" in t.get("text", "")) for t in vix_triggers):
             vix_multiplier = 1.5
         
         final_target_cash = target_cash_base * inflation_mod * vix_multiplier
+
+        # v11.0: Cross-Asset Macro Volatility Hedging Dynamic Cash Integration
+        try:
+            vix_val = float(getattr(self, "current_vix", 20.0) or 20.0)
+            vix_z = float(getattr(self, "current_vix_z_score", 0.0) or 0.0)
+            port_data = latest if isinstance(latest, dict) else (latest.to_dict() if latest is not None else {})
+            hedge_eval = self.macro_hedging_service.evaluate_hedging(
+                portfolio=port_data,
+                vix=vix_val,
+                vix_z_score=vix_z,
+                user_id=uid,
+            )
+            if hedge_eval.is_hedging_active:
+                final_target_cash = max(final_target_cash, hedge_eval.target_cash_ratio)
+        except Exception as hedge_err:
+            logger.debug(f"Sentinel: Macro hedging dynamic cash integration skipped: {hedge_err}")
         
         actual_cash_ratio = 0.0
         if latest is not None:

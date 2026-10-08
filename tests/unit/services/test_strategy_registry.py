@@ -64,6 +64,14 @@ class TestStrategyRegistry:
         assert stop_loss is not None
         assert stop_loss.is_safety_control() is True
 
+        macro_hedge = StrategyRegistry.get("macro_volatility_hedge")
+        assert macro_hedge is not None
+        assert macro_hedge.strategy_id == "macro_volatility_hedge"
+        assert macro_hedge.is_safety_control() is True
+        assert StrategyRegistry.is_safety_control("macro_volatility_hedge") is True
+        assert MarketRegimeType.VOLATILITY_EXTREME in macro_hedge.subscribed_regimes
+        assert MarketRegimeType.LIQUIDITY_SHOCK not in macro_hedge.subscribed_regimes
+
     def test_custom_strategy_registration_and_lookup(self):
         """Verify dynamic registration and lookup of custom strategy contracts."""
         strat = MockCustomRegimeStrategy("trend_breakout_v1", MarketRegimeType.TREND_ACCELERATION)

@@ -968,16 +968,19 @@ class AutomatedTradingService:
                 "rebalance_diversification": "再平衡自動執行",
                 "concentration_rebalance": "再平衡自動執行",
                 "stagnation_pruning": "停滯修剪自動執行",
+                "macro_volatility_hedge": "避險減碼自動執行",
             }
             return True, labels.get(strategy_name, "安全出場自動執行")
 
-        # 再平衡買進、現金部署與金字塔加碼自動執行 (Rebalance Buy, Cash Deployment & Pyramiding Auto-execution)
-        # 若為經投組模型審核之再平衡配置買進、現金部署或強勢股金字塔加碼，且達最低信賴門檻，由系統自動放行
-        if not is_sell and strategy_name in ("rebalance_diversification", "portfolio_rebalance", "concentration_rebalance", "cash_deployment", "pyramiding_scale_in") and effective_confidence >= min_threshold:
+        # 再平衡買進、現金部署、金字塔加碼與宏觀避險自動執行 (Rebalance Buy, Cash Deployment, Pyramiding & Macro Hedge Auto-execution)
+        # 若為經投組模型審核之再平衡配置買進、現金部署、強勢股金字塔加碼或宏觀避險，且達最低信賴門檻，由系統自動放行
+        if not is_sell and strategy_name in ("rebalance_diversification", "portfolio_rebalance", "concentration_rebalance", "cash_deployment", "pyramiding_scale_in", "macro_volatility_hedge") and effective_confidence >= min_threshold:
             if strategy_name == "pyramiding_scale_in":
                 label = "金字塔加碼自動執行"
             elif strategy_name == "cash_deployment":
                 label = "現金部署自動放行"
+            elif strategy_name == "macro_volatility_hedge":
+                label = "宏觀避險自動放行"
             else:
                 label = "再平衡買進自動執行"
             return True, label
