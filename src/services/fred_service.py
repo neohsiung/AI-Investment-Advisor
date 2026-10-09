@@ -76,50 +76,52 @@ class FredService:
             "Unemployment": "UNRATE",
             "FedFunds": "FEDFUNDS",
             "10Y2Y_Spread": "T10Y2Y",
-            "ISM_Mfg_PMI": "NAPM", # ISM Manufacturing PMI
-            "ISM_Svc_PMI": "NM_NMF", # ISM Services PMI
-            "NFP": "PAYEMS", # Non-Farm Payrolls
-            "ISM_Mfg_Employment": "ISM_MAN_EMP", 
-            "ISM_Mfg_Inventory": "ISM_MAN_INV"
+            "NFP": "PAYEMS",
+            "Industrial_Production": "INDPRO",
+            "Initial_Claims": "ICSA",
         }
 
         result = {}
-        try:
-            for name, series_id in indicators.items():
-                # Fetch last 12 periods to see trend and calculate scorecard
+        success_count = 0
+        for name, series_id in indicators.items():
+            try:
                 series = self.client.get_series(series_id, limit=12, sort_order='desc')
+                success_count += 1
                 if not series.empty:
-                    current = series.iloc[0]
-                    prev = series.iloc[1] if len(series) > 1 else current
-                    trend = "Up" if current > prev else "Down"
-                    
-                    result[name] = {
-                        "value": float(current),
-                        "date": series.index[0].strftime("%Y-%m-%d"),
-                        "trend": trend,
-                        "history": series.tolist()[:12] # Keep limited history for scorecard logic
-                    }
-                    
-            # Labor Market Dynamic Cooling Model (Milestone 1.3)
-            # Evaluate if employment is cooling vs freezing based on NFP (PAYEMS) trend
-            nfp_data = result.get("NFP", {}).get("history", [])
-            labor_cooling_signal = False
-            if len(nfp_data) >= 3:
-                 # Cooling defined as positive but shrinking NFP growth over last 3 months
-                 # (Just an approximation since PAYEMS is total level, diff is monthly job growth)
-                 month1_growth = nfp_data[0] - nfp_data[1]  # Most recent
-                 month2_growth = nfp_data[1] - nfp_data[2]
-                 if 0 < month1_growth < month2_growth:
-                      labor_cooling_signal = True
-            
-            result["Labor_Cooling_Indicator"] = {
-                 "value": labor_cooling_signal,
-                 "date": result.get("NFP", {}).get("date", ""),
-                 "trend": "Cooling" if labor_cooling_signal else "Stable/Freezing"
-            }
-                    
-        except Exception as e:
-            self.logger.error(f"Error fetching FRED data: {e}")
+                    valid_series = series.dropna()
+                    if not valid_series.empty:
+                        current = valid_series.iloc[0]
+                        prev = valid_series.iloc[1] if len(valid_series) > 1 else current
+                        trend = "Up" if current > prev else "Down"
+                        
+                        result[name] = {
+                            "value": float(current),
+                            "date": valid_series.index[0].strftime("%Y-%m-%d"),
+                            "trend": trend,
+                            "history": valid_series.tolist()[:12]
+                        }
+            except Exception as ser_err:
+                self.logger.debug(f"FRED series '{name}' ({series_id}) fetch skipped: {ser_err}")
+
+        # If every call failed with exception (e.g. API error or network failure), return empty dict
+        if success_count == 0:
+            return {}
+
+        # Labor Market Dynamic Cooling Model (Milestone 1.3)
+        # Evaluate if employment is cooling vs freezing based on NFP (PAYEMS) trend
+        nfp_data = result.get("NFP", {}).get("history", [])
+        labor_cooling_signal = False
+        if len(nfp_data) >= 3:
+            month1_growth = nfp_data[0] - nfp_data[1]  # Most recent
+            month2_growth = nfp_data[1] - nfp_data[2]
+            if 0 < month1_growth < month2_growth:
+                labor_cooling_signal = True
+
+        result["Labor_Cooling_Indicator"] = {
+            "value": labor_cooling_signal,
+            "date": result.get("NFP", {}).get("date", ""),
+            "trend": "Cooling" if labor_cooling_signal else "Stable/Freezing"
+        }
         
         if result:
             governor.record_usage("fred", count=len(indicators))

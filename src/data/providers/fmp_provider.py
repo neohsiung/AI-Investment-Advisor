@@ -38,33 +38,29 @@ class FMPProvider(MarketDataProvider):
     @trace_external_call("fmp")
     def fetch_current_prices(self, tickers: List[str]) -> Dict[str, float]:
         """
-        Fetch current stock prices in bulk using FMP's stable quote endpoint.
-        使用 FMP 的穩定報價端點批次獲取目前股價。
+        Fetch current stock prices using FMP's stable quote endpoint.
+        使用 FMP 的穩定報價端點逐一獲取目前股價（相容 2025/2026 最新 stable API）。
         """
-        if not self.api_key or not tickers: return {}
+        if not self.api_key or not tickers:
+            return {}
         prices = {}
-        
-        # Chunking to avoid "URI Too Long" (Limit batch to 50)
-        batch_size = 50
-        
+
         try:
-            for i in range(0, len(tickers), batch_size):
-                chunk = tickers[i:i + batch_size]
-                ticker_str = ",".join(chunk)
-                
-                # Use Verified Stable Endpoint (2025/2026 Standard)
-                # Replaces Legacy /api/v3/quote
+            for ticker in tickers:
+                clean_sym = ticker.strip().upper()
                 url = "https://financialmodelingprep.com/stable/quote"
-                params = {"symbol": ticker_str, "apikey": self.api_key}
-                
+                params = {"symbol": clean_sym, "apikey": self.api_key}
+
                 resp = requests.get(url, params=params, timeout=5)
                 if resp.status_code == 200:
                     data = resp.json()
-                    for item in data:
-                        if 'symbol' in item and 'price' in item:
-                            prices[item['symbol']] = item['price']
+                    if isinstance(data, list) and len(data) > 0:
+                        item = data[0]
+                        p = item.get("price")
+                        if p is not None and float(p) > 0:
+                            prices[clean_sym] = float(p)
                 else:
-                     self.logger.warning(f"FMP Batch Failed ({resp.status_code})")
+                    self.logger.warning(f"FMP quote failed for {clean_sym} ({resp.status_code})")
         except Exception as e:
             self.logger.error(f"FMP fetch_current_prices error: {e}")
         return prices

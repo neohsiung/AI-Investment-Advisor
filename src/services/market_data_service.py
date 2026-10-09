@@ -164,49 +164,92 @@ class MarketDataService:
             
         return True
 
+    PRICE_CACHE_TTL_MARKET_OPEN = 60    # 盤中即時快取 60 秒 (美東 09:30-16:00)
+    PRICE_CACHE_TTL_OFF_HOURS = 300     # 盤後/休市快取 300 秒 (5 分鐘)
+
     async def get_current_prices(self, tickers: List[str]) -> Dict[str, float]:
         """
-        Get current prices with failover and merging. Iterates providers until all tickers are resolved.
-        獲取目前價格（含備援與合併）。遍歷提供者直到所有代號都解析完畢。
+        Get current prices with failover, merging, and distributed short-term caching.
+        Iterates providers until all tickers are resolved.
+        獲取目前價格（含 Redis 快取、備援與合併）。
         """
-        if not tickers: return {}
-        
-        all_prices = {}
-        missing_tickers = list(tickers)
-        
-        # Priority: Polygon (Unlimited) -> Tiingo (P1) -> FMP (300/min) -> FinancialData (300/day) -> YFinance (Free)
+        if not tickers:
+            return {}
+
+        clean_tickers = [t.strip().upper() for t in tickers if t and t.strip()]
+        all_prices: Dict[str, float] = {}
+
+        # 1. 優先從 Redis 讀取即時價格快取
+        redis_client = None
+        try:
+            from src.infrastructure.cache.redis_client import get_redis
+            redis_client = await get_redis(decode_responses=True)
+            if redis_client:
+                cached_vals = await redis_client.mget([f"market_data:price:{t}" for t in clean_tickers])
+                for t, val in zip(clean_tickers, cached_vals):
+                    if val is not None:
+                        try:
+                            f_val = float(val)
+                            if f_val > 0:
+                                all_prices[t] = f_val
+                        except (ValueError, TypeError):
+                            pass
+        except Exception as e:
+            self.logger.debug(f"Redis price cache lookup failed: {e}")
+
+        missing_tickers = [t for t in clean_tickers if t not in all_prices]
+        if not missing_tickers:
+            return all_prices
+
+        newly_fetched: Dict[str, float] = {}
+
+        # 2. 依能力鏈調用外部數據提供者
         for provider in self._chain("quote_batch"):
             if not missing_tickers:
                 break
             if not self._is_provider_enabled(provider):
                 continue
-                
+
             try:
-                # Only request missing tickers
                 prices = provider.fetch_current_prices(missing_tickers)
                 if prices:
                     self.logger.info(f"Fetched {len(prices)} prices from {self._get_provider_name(provider)}")
-                    
-                    # VALIDATION: Only accept positive prices
                     valid_prices = {}
                     for k, v in prices.items():
-                        if v > 0:
-                            valid_prices[k] = v
-                    
+                        norm_k = k.strip().upper()
+                        if v is not None and float(v) > 0:
+                            valid_prices[norm_k] = float(v)
+                            newly_fetched[norm_k] = float(v)
+
                     all_prices.update(valid_prices)
-                    # Update missing list
-                    missing_tickers = [t for t in tickers if t not in all_prices]
+                    missing_tickers = [t for t in clean_tickers if t not in all_prices]
             except Exception as e:
                 self.logger.warning(f"Provider {self._get_provider_name(provider)} failed for prices: {e}")
-        
-        # v4.2.3: Final Fallback: Internet Search for critical missing tickers
+
+        # 3. 最終備援：若仍有標的遺失，進行網路搜尋提取
         if missing_tickers:
-             self.logger.info(f"Final Fallback: Searching web for {missing_tickers}")
-             for ticker in missing_tickers:
-                 price = await self.get_price_from_search(ticker)
-                 if price > 0:
-                     all_prices[ticker] = price
-        
+            self.logger.info(f"Final Fallback: Searching web for {missing_tickers}")
+            for ticker in missing_tickers:
+                price = await self.get_price_from_search(ticker)
+                if price > 0:
+                    all_prices[ticker] = price
+                    newly_fetched[ticker] = price
+
+        # 4. 將新抓取之價格寫入 Redis 短期快取
+        if redis_client and newly_fetched:
+            try:
+                from src.utils.market_clock import MarketClock
+                clock = MarketClock()
+                is_open = clock.is_market_open()
+                ttl = self.PRICE_CACHE_TTL_MARKET_OPEN if is_open else self.PRICE_CACHE_TTL_OFF_HOURS
+                pipe = redis_client.pipeline()
+                for t, p in newly_fetched.items():
+                    pipe.setex(f"market_data:price:{t}", ttl, str(p))
+                await pipe.execute()
+                self.logger.debug(f"Cached {len(newly_fetched)} prices in Redis (TTL: {ttl}s)")
+            except Exception as e:
+                self.logger.debug(f"Failed to cache prices in Redis: {e}")
+
         return all_prices
 
     async def get_price_from_search(self, ticker: str) -> float:

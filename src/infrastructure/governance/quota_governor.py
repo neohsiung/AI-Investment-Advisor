@@ -63,6 +63,18 @@ DEFAULT_RULES: Dict[str, QuotaRule] = {
         utilization_cap=0.60,   # 60% 水位 = 36 RPM
         min_interval_seconds=0.2,
     ),
+    "finnhub": QuotaRule(
+        limit_count=60,         # 60 req/min
+        window_seconds=60.0,
+        utilization_cap=0.60,   # 60% 水位 = 最多 36 req/min
+        min_interval_seconds=0.5,
+    ),
+    "fmp": QuotaRule(
+        limit_count=100,        # 100 req/min
+        window_seconds=60.0,
+        utilization_cap=0.60,   # 60% 水位 = 最多 60 req/min
+        min_interval_seconds=0.5,
+    ),
 }
 
 
