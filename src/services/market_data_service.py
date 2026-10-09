@@ -241,6 +241,103 @@ class MarketDataService:
         except Exception as e:
             self.logger.warning(f"Search-based price fetch failed for {ticker}: {e}")
         return 0.0
+
+    async def get_quote(self, ticker: str) -> Dict[str, Any]:
+        """
+        Get real-time quote including Bid, Ask, Mid, and Spread for slippage control.
+        獲取標的即時報價，包括買價、賣價、中間價與買賣價差。
+        """
+        clean_ticker = ticker.strip().upper()
+        # 1. Try Polygon snapshot
+        poly_key = self.settings_service.get_setting("source_polygon_api_key")
+        if poly_key:
+            try:
+                import httpx
+                url = f"https://api.polygon.io/v2/snapshot/locale/us/markets/stocks/tickers/{clean_ticker}"
+                async with httpx.AsyncClient(timeout=4.0) as client:
+                    resp = await client.get(url, params={"apiKey": poly_key})
+                    if resp.status_code == 200:
+                        data = resp.json()
+                        t_data = data.get("ticker", {})
+                        last_quote = t_data.get("lastQuote", {}) or {}
+                        last_trade = t_data.get("lastTrade", {}) or {}
+                        day = t_data.get("day", {}) or {}
+                        min_bar = t_data.get("min", {}) or {}
+
+                        bid = float(last_quote.get("p", 0.0) or 0.0)
+                        ask = float(last_quote.get("P", 0.0) or 0.0)
+                        last = float(
+                            last_trade.get("p", 0.0)
+                            or day.get("c", 0.0)
+                            or min_bar.get("c", 0.0)
+                            or 0.0
+                        )
+
+                        if bid > 0 and ask > 0 and ask >= bid:
+                            mid = (bid + ask) / 2.0
+                            spread = ask - bid
+                            return {
+                                "ticker": clean_ticker,
+                                "bid": bid,
+                                "ask": ask,
+                                "last": last if last > 0 else mid,
+                                "mid": mid,
+                                "spread": spread,
+                                "spread_pct": spread / mid if mid > 0 else 0.0,
+                                "provider": "polygon",
+                            }
+                        elif last > 0:
+                            return {
+                                "ticker": clean_ticker,
+                                "bid": None,
+                                "ask": None,
+                                "last": last,
+                                "mid": last,
+                                "spread": None,
+                                "spread_pct": None,
+                                "provider": "polygon",
+                            }
+            except Exception as e:
+                self.logger.debug(f"Polygon quote lookup failed for {clean_ticker}: {e}")
+
+        # 2. Try Finnhub quote
+        finnhub_key = self.settings_service.get_setting("source_finnhub_api_key")
+        if finnhub_key:
+            try:
+                import httpx
+                url = f"https://finnhub.io/api/v1/quote?symbol={clean_ticker}&token={finnhub_key}"
+                async with httpx.AsyncClient(timeout=4.0) as client:
+                    resp = await client.get(url)
+                    if resp.status_code == 200:
+                        q = resp.json()
+                        c = float(q.get("c", 0.0) or 0.0)
+                        if c > 0:
+                            return {
+                                "ticker": clean_ticker,
+                                "bid": None,
+                                "ask": None,
+                                "last": c,
+                                "mid": c,
+                                "spread": None,
+                                "spread_pct": None,
+                                "provider": "finnhub",
+                            }
+            except Exception as e:
+                self.logger.debug(f"Finnhub quote lookup failed for {clean_ticker}: {e}")
+
+        # 3. Fallback to get_current_prices
+        prices = await self.get_current_prices([clean_ticker])
+        p = prices.get(clean_ticker)
+        return {
+            "ticker": clean_ticker,
+            "bid": None,
+            "ask": None,
+            "last": p,
+            "mid": p,
+            "spread": None,
+            "spread_pct": None,
+            "provider": "fallback",
+        }
     def get_market_context(self, tickers: List[str], enrich: bool = False) -> Dict[str, Any]:
         """
         Get detailed market context (OHLCV + Indicators) for a list of tickers.

@@ -386,6 +386,52 @@ settings:
     danger: true
     label_en: Auto-execute confidence (sell)
     label_zh: 自動執行信心門檻（賣出）
+  - key: enable_slippage_guard
+    group: trading
+    type: bool
+    default: true
+    label_en: Enable anti-slippage & spread circuit breaker
+    label_zh: 啟用防滑點與買賣價差熔斷守衛
+    help_en: Guards against broker spread markup and opening volatility by checking bid-ask spread before order execution.
+    help_zh: 下單前檢測即時買賣價差與開盤前 5 分鐘波動率，防止市價單被券商價差吃損。
+  - key: max_allowed_spread_pct
+    group: trading
+    type: float
+    default: 0.0015
+    min: 0.0005
+    max: 0.0100
+    label_en: Max allowed bid-ask spread (ratio)
+    label_zh: 允許之最大買賣價差比例
+    help_en: Maximum allowable (ask - bid) / mid spread ratio before triggering circuit breaker (default 0.0015 = 0.15%).
+    help_zh: 允許的最大買賣價差比率，超過即觸發熔斷保護暫緩市價下單（預設 0.0015 即 0.15%）。
+  - key: market_open_delay_minutes
+    group: trading
+    type: int
+    default: 5
+    min: 0
+    max: 30
+    label_en: Market open delay window (minutes)
+    label_zh: 美股開盤延遲保護視窗（分鐘）
+    help_en: Number of minutes after market open (09:30 EST) to pause market orders to avoid extreme opening auction spreads.
+    help_zh: 開盤（09:30 EST）後暫緩市價單之下單分鐘數，避開開盤集合競價極端價差（預設 5 分鐘至 09:35 EST）。
+  - key: enable_market_open_cash_deployment
+    group: trading
+    type: bool
+    default: true
+    label_en: Enable market-open disciplined batch cash deployment
+    label_zh: 啟用美股開盤階梯式分批建倉
+    help_en: Automatically deploys idle cash into top high-conviction holdings in disciplined batches at market open.
+    help_zh: 開盤 09:35 EST 定時評估閒置現金，以階梯式分批模式注入最高確信度核心標的。
+  - key: batch_cash_deployment_portion
+    group: trading
+    type: float
+    default: 0.33
+    min: 0.10
+    max: 1.00
+    label_en: Batch cash deployment portion
+    label_zh: 每批次建倉動用比例
+    help_en: Portion of deployable excess cash to deploy per batch (default 0.33 = 1/3 per batch).
+    help_zh: 每次批次建倉動用可支配現金的比例（預設 0.33 即 1/3，分 3 批推進）。
   - key: tiered_approval_enabled
     group: trading
     type: bool
