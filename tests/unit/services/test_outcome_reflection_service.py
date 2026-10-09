@@ -166,3 +166,25 @@ class TestOutcomeReflectionService(unittest.TestCase):
             self.assertEqual(summary["resolved"], 1)
             self.assertEqual(summary["skipped"], 1)
             self.assertEqual(summary["failed"], 0)
+
+    def test_clean_lesson_normal_text(self):
+        normal = "AAPL gained +1.50% alpha over SPY, validating entry timing."
+        cleaned = self.service._clean_lesson(normal, "AAPL", "BUY", 1.50)
+        self.assertEqual(cleaned, normal)
+
+    def test_clean_lesson_extracts_from_scratchpad(self):
+        scratchpad = """Here's a thinking process:
+1. Analyze User Request:
+   - Input: AAPL BUY
+Draft 1:
+"The BUY call on AAPL delivered +2.50% alpha vs SPY, showing strong relative strength."
+Check: looks good.
+"""
+        cleaned = self.service._clean_lesson(scratchpad, "AAPL", "BUY", 2.50)
+        self.assertEqual(cleaned, "The BUY call on AAPL delivered +2.50% alpha vs SPY, showing strong relative strength.")
+
+    def test_clean_lesson_fallback_when_no_quote(self):
+        corrupted = "Here's a thinking process: 1. Analyze User Request without quotes..."
+        cleaned = self.service._clean_lesson(corrupted, "AAPL", "BUY", 1.25)
+        self.assertIn("outperformed the SPY benchmark by 1.25pp", cleaned)
+
