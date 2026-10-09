@@ -310,24 +310,40 @@ class ConversationRouter:
             try:
                 from src.services.batch_cash_deployment_service import BatchCashDeploymentService
                 deploy_svc = BatchCashDeploymentService(user_id=resolved_user_id)
-                plan1 = await deploy_svc.get_deployment_plan(batch_number=1)
-                status = plan1.get("portfolio_status", {})
-                items1 = plan1.get("plan_items", [])
+                active_batch = await deploy_svc.get_active_batch_number()
+                target_batch = active_batch if active_batch > 0 else 1
+                plan = await deploy_svc.get_deployment_plan(batch_number=target_batch)
+                status = plan.get("status") or plan.get("portfolio_status", {})
+                items = plan.get("items") or plan.get("plan_items", [])
+
+                deployable = float(status.get("deployable_cash", 0.0) or 0.0)
+                reserve = float(status.get("required_reserve_usd", 0.0) or 0.0)
+                rem_cash = float(plan.get("expected_remaining_cash") or plan.get("projected_cash_after_deployment") or 0.0)
 
                 lines = [
                     "🚀 <b>【分批建倉計畫與排程進度】</b>",
                     "━━━━━━━━━━━━━━━━━━",
-                    f"💰 可支配建倉資金：${status.get('deployable_cash', 0.0):,.2f} USD",
-                    f"🛡️ 剛性防守儲備 (20%)：${status.get('required_reserve_usd', 0.0):,.2f} USD",
+                    f"💰 可支配建倉資金：${deployable:,.2f} USD",
+                    f"🛡️ 剛性防守儲備 (20%)：${reserve:,.2f} USD",
                     "━━━━━━━━━━━━━━━━━━",
-                    "<b>【第 1 批次（今晚 21:35 TST 自動觸發）】</b>"
                 ]
-                for it in items1:
-                    lines.append(f"• <b>{it['ticker']}</b>: ~${it['allocated_amount']:.2f} ({it['role']})")
 
-                lines.append(f"批次小計：${plan1.get('total_batch_amount', 0.0):.2f} USD (執行後現金保持 ${plan1.get('projected_cash_after_deployment', 0.0):.2f})")
+                if active_batch == 0:
+                    lines.append("🎉 <b>【全週期分批建倉已全部完成】</b>")
+                    lines.append("帳戶持倉已達成結構性平衡，並維持 20%~25% 防守現金儲備。")
+                else:
+                    timing_desc = "今晚 21:35 TST 自動觸發" if active_batch == 1 else "下週美股開盤 09:35 EST 自動觸發"
+                    lines.append(f"<b>【第 {active_batch} 批次（{timing_desc}）】</b>")
+                    for it in items:
+                        amt = float(it.get("amount_usd") or it.get("allocated_amount") or 0.0)
+                        lines.append(f"• <b>{it['ticker']}</b>: ~${amt:.2f} ({it.get('role', '')})")
+
+                    total_amt = float(plan.get("total_batch_amount", 0.0) or 0.0)
+                    lines.append(f"批次小計：${total_amt:.2f} USD (執行後現金保持 ${rem_cash:.2f})")
+
                 lines.append("━━━━━━━━━━━━━━━━━━")
-                lines.append("<b>【後續規劃】</b>")
+                lines.append("<b>【全週期批次藍圖】</b>")
+                lines.append("• 第 1 批次（今晚 21:35 TST）：NVDA ($114), TSM ($144), AAPL ($89)")
                 lines.append("• 第 2 批次（下週一 09:35 EST）：MSFT ($91), MU ($79), AMD ($77)")
                 lines.append("• 第 3 批次（下週三 09:35 EST）：SPCX ($76)")
                 lines.append("<i>全流程均受 0.15% 開盤價差熔斷與自適應限價守衛保護。</i>")

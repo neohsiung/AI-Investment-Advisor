@@ -364,3 +364,94 @@ class TestAutomatedTradingSlippageIntegration:
                 mock_broker.execute_order.assert_not_called()
 
         asyncio.run(_test())
+
+    def test_get_active_batch_number_logic(self):
+        async def _test():
+            settings = DummySettingsService()
+            broker = MagicMock()
+            account = MagicMock()
+            account.total_equity = 1692.50
+            account.available_cash = 1404.09
+            broker.get_account = AsyncMock(return_value=account)
+            broker.get_positions = AsyncMock(return_value=[])
+
+            svc = BatchCashDeploymentService(
+                user_id="test_user",
+                settings_service=settings,
+                broker=broker,
+            )
+
+            with patch("src.infrastructure.cache.redis_client.get_redis") as mock_redis_getter:
+                mock_redis = AsyncMock()
+                mock_redis.get.return_value = None
+                mock_redis_getter.return_value = mock_redis
+
+                # 1. No holdings -> batch 1
+                b = await svc.get_active_batch_number()
+                assert b == 1
+
+                # 2. NVDA & TSM held -> batch 2
+                p_nvda = MagicMock(symbol="NVDA", market_value=114.0)
+                p_tsm = MagicMock(symbol="TSM", market_value=144.0)
+                broker.get_positions = AsyncMock(return_value=[p_nvda, p_tsm])
+                b2 = await svc.get_active_batch_number()
+                assert b2 == 2
+
+                # 3. MU & AMD also held -> batch 3
+                p_mu = MagicMock(symbol="MU", market_value=80.0)
+                p_amd = MagicMock(symbol="AMD", market_value=77.0)
+                broker.get_positions = AsyncMock(return_value=[p_nvda, p_tsm, p_mu, p_amd])
+                b3 = await svc.get_active_batch_number()
+                assert b3 == 3
+
+                # 4. SPCX also held -> batch 0 (all complete)
+                p_spcx = MagicMock(symbol="SPCX", market_value=76.0)
+                broker.get_positions = AsyncMock(return_value=[p_nvda, p_tsm, p_mu, p_amd, p_spcx])
+                b0 = await svc.get_active_batch_number()
+                assert b0 == 0
+
+                # 5. When deployable cash < 10 -> returns 0
+                account.available_cash = 300.0  # reserve is 338.50, so deployable = 0
+                broker.get_positions = AsyncMock(return_value=[])
+                b_cash = await svc.get_active_batch_number()
+                assert b_cash == 0
+
+        asyncio.run(_test())
+
+    def test_conversation_router_batch_command_formatting(self):
+        async def _test():
+            from src.services.conversation_router import ConversationRouter
+            router = ConversationRouter()
+
+            with patch("src.services.batch_cash_deployment_service.BatchCashDeploymentService.get_active_batch_number", new_callable=AsyncMock) as mock_active, \
+                 patch("src.services.batch_cash_deployment_service.BatchCashDeploymentService.get_deployment_plan", new_callable=AsyncMock) as mock_plan:
+
+                mock_active.return_value = 1
+                mock_plan.return_value = {
+                    "batch_number": 1,
+                    "status": {
+                        "total_equity": 1692.50,
+                        "available_cash": 1404.09,
+                        "deployable_cash": 1065.59,
+                        "required_reserve_usd": 338.50,
+                    },
+                    "total_batch_amount": 347.00,
+                    "items": [
+                        {"ticker": "NVDA", "amount_usd": 114.00, "role": "Alpha Top 1 算力龍頭開倉"},
+                        {"ticker": "TSM", "amount_usd": 144.00, "role": "Alpha Top 2 先進製程開倉"},
+                        {"ticker": "AAPL", "amount_usd": 89.00, "role": "Top 3 核心終端生態底倉加碼補足"},
+                    ],
+                    "expected_remaining_cash": 1057.09,
+                }
+
+                res = await router._handle_system_command(None, "user", "/batch", "test_user")
+                assert "分批建倉計畫與排程進度" in res
+                assert "$1,065.59 USD" in res
+                assert "$338.50 USD" in res
+                assert "NVDA" in res
+                assert "TSM" in res
+                assert "AAPL" in res
+                assert "$347.00 USD" in res
+                assert "$1057.09" in res
+
+        asyncio.run(_test())

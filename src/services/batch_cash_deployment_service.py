@@ -102,6 +102,75 @@ class BatchCashDeploymentService:
             "deployable_cash": round(deployable_cash, 2),
         }
 
+    async def get_active_batch_number(self) -> int:
+        """
+        全自動判定當前應執行的批次 (1, 2, 3，若全數完成或資金達標則回傳 0)。
+        判定依據：
+        1. 檢視可支配建倉資金：若 deployable_cash < 10.0，無可動用資金，直接回傳 0 (建倉週期圓滿結束)。
+        2. 檢視 Redis 中儲存的當前批次狀態 batch_deployment:current_batch:{user_id}
+        3. 檢視券商真實持倉：
+           - 若 NVDA 與 TSM 已持倉 (市值各 >= $40)，視為第 1 批次已完成，推進至第 2 批次。
+           - 若 MU 與 AMD 已持倉 (市值各 >= $30)，視為第 2 批次已完成，推進至第 3 批次。
+           - 若 SPCX 已持倉 (市值 >= $30)，視為第 3 批次已完成。
+        4. 回傳當前有效批次 (1, 2, 3 或 0)。
+        """
+        try:
+            status = await self.get_portfolio_status()
+            deployable = float(status.get("deployable_cash", 0.0) or 0.0)
+            if deployable < 10.0:
+                return 0
+        except Exception as e:
+            logger.debug(f"Failed to check deployable cash for active batch: {e}")
+
+        stored_batch = 1
+        try:
+            from src.infrastructure.cache.redis_client import get_redis
+            r = await get_redis(decode_responses=True)
+            val = await r.get(f"batch_deployment:current_batch:{self.user_id}")
+            if val is not None:
+                stored_batch = int(val)
+        except Exception as e:
+            logger.debug(f"Could not read active batch from redis: {e}")
+
+        if stored_batch == 0:
+            return 0
+
+        holdings: Dict[str, float] = {}
+        try:
+            broker = await self._get_broker()
+            if broker:
+                positions = await broker.get_positions()
+                for p in positions:
+                    sym = getattr(p, "symbol", "")
+                    for suffix in [".US", ".RTH", ".EXT", ".L", ".UK"]:
+                        if sym.endswith(suffix):
+                            sym = sym[:-len(suffix)]
+                    holdings[sym] = float(getattr(p, "market_value", 0.0) or 0.0)
+        except Exception as e:
+            logger.debug(f"Could not read positions for batch inference: {e}")
+
+        has_b1_nvda = holdings.get("NVDA", 0.0) >= 40.0
+        has_b1_tsm = holdings.get("TSM", 0.0) >= 40.0
+        has_b2_mu = holdings.get("MU", 0.0) >= 30.0
+        has_b2_amd = holdings.get("AMD", 0.0) >= 30.0
+        has_b3_spcx = holdings.get("SPCX", 0.0) >= 30.0
+
+        derived_batch = 1
+        if has_b1_nvda and has_b1_tsm:
+            derived_batch = 2
+            if has_b2_mu and has_b2_amd:
+                derived_batch = 3
+                if has_b3_spcx:
+                    derived_batch = 0
+
+        if derived_batch == 0:
+            return 0
+
+        active_batch = max(stored_batch, derived_batch)
+        if active_batch > 3:
+            return 0
+        return active_batch
+
     async def get_deployment_plan(self, batch_number: int = 1) -> Dict[str, Any]:
         """
         產出分批建倉規劃：
@@ -172,6 +241,7 @@ class BatchCashDeploymentService:
             allocated_items.append({
                 "ticker": ticker,
                 "amount_usd": trade_amount,
+                "allocated_amount": trade_amount,
                 "confidence_score": round(conf_val, 2),
                 "target_pct": item["target_pct"],
                 "role": item["role"],
@@ -192,22 +262,40 @@ class BatchCashDeploymentService:
         return {
             "batch_number": batch_number,
             "status": status,
+            "portfolio_status": status,
             "can_execute": can_execute,
             "total_batch_amount": round(total_batch_amount, 2),
             "items": allocated_items,
+            "plan_items": allocated_items,
             "expected_remaining_cash": round(expected_remaining_cash, 2),
+            "projected_cash_after_deployment": round(expected_remaining_cash, 2),
             "expected_cash_ratio": round(expected_cash_ratio, 2),
         }
 
     async def execute_batch(
         self,
-        batch_number: int = 1,
+        batch_number: Optional[int] = None,
         force: bool = False,
         enforce_market_hours: bool = True,
     ) -> Dict[str, Any]:
         """
         執行特定批次建倉下單（整合開盤波動率防線與買賣價差熔斷守衛）。
+        若 batch_number 為 None，自動調用 get_active_batch_number() 自適應推進。
         """
+        # 0. 自適應判定當前應執行批次
+        if batch_number is None or batch_number <= 0:
+            batch_number = await self.get_active_batch_number()
+            if batch_number == 0:
+                msg = "分批建倉計畫已全數執行完畢，或可支配資金已達 20% 防守底線，無需額外建倉。"
+                logger.info(f"Batch Cash Deployment: {msg}")
+                return {
+                    "success": True,
+                    "status": "all_batches_completed",
+                    "message": msg,
+                    "batch_number": 0,
+                    "executed_trades": [],
+                    "errors": [],
+                }
         # 1. 市場開市檢查
         if enforce_market_hours and not force:
             if not self.market_clock.is_market_open():
@@ -348,6 +436,20 @@ class BatchCashDeploymentService:
             executed_trades=executed_trades,
             post_status=post_status,
         )
+
+        # 4. 若有成功下單，自動更新 Redis 批次進度至下一批次
+        successful_trades = [t for t in executed_trades if t.get("status") in ("executed", "pending")]
+        if successful_trades:
+            try:
+                from src.infrastructure.cache.redis_client import get_redis
+                r = await get_redis(decode_responses=True)
+                next_batch = (batch_number + 1) if batch_number < 3 else 0
+                await r.set(f"batch_deployment:current_batch:{self.user_id}", str(next_batch))
+                await r.set(f"batch_deployment:last_executed_at:{self.user_id}", datetime.utcnow().isoformat())
+                await r.set(f"batch_deployment:last_batch_executed:{self.user_id}", str(batch_number))
+                logger.info(f"Advanced batch state to {next_batch} after successful execution of Batch {batch_number}")
+            except Exception as e:
+                logger.warning(f"Failed to record batch advancement in redis: {e}")
 
         return {
             "success": len(errors) == 0 and any(t.get("status") == "executed" for t in executed_trades),

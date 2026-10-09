@@ -1,5 +1,6 @@
 import hashlib
 import os
+from typing import Any, Dict, List, Optional
 import pandas as pd
 try:
     import pandas_market_calendars as mcal
@@ -823,11 +824,12 @@ def dispatch_market_open_cash_deployment():
 
 
 @app.task(name="src.infrastructure.tasks.run_market_open_cash_deployment", soft_time_limit=600, time_limit=660)
-def run_market_open_cash_deployment(user_id: str = None, batch_number: int = 1, force: bool = False):
+def run_market_open_cash_deployment(user_id: str = None, batch_number: Optional[int] = None, force: bool = False):
     """
     Market-Open Cash Deployment & Anti-Slippage Guard Task:
     Executes disciplined batch cash deployment at 09:35 EST with real-time bid-ask spread protection.
-    美股開盤階梯式分批建倉與防滑點守衛任務：在 09:35 EST 避開開盤前 5 分鐘極端價差後有序執行第 1 批次建倉。
+    美股開盤階梯式分批建倉與防滑點守衛任務：在 09:35 EST 避開開盤前 5 分鐘極端價差後有序執行分批建倉。
+    若 batch_number 為 None，自動自適應判定當前應執行之批次。
     """
     user_id = user_id or os.getenv("PRIMARY_USER_ID") or os.getenv("USER_ID")
     if not user_id:
