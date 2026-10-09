@@ -79,6 +79,8 @@ class FredService:
             "NFP": "PAYEMS",
             "Industrial_Production": "INDPRO",
             "Initial_Claims": "ICSA",
+            "VIX": "VIXCLS",
+            "TNX_10Y": "DGS10",
         }
 
         result = {}

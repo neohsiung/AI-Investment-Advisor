@@ -694,17 +694,23 @@ class MarketDataService:
                 if fred_data:
                     macro_data["economics"] = fred_data
                     self.logger.info("Fetched macro data from FRED")
+                    market_inds = macro_data.setdefault("market_indicators", {})
+                    if "VIX" in fred_data and "^VIX" not in market_inds:
+                        market_inds["^VIX"] = fred_data["VIX"]["value"]
+                    if "TNX_10Y" in fred_data and "^TNX" not in market_inds:
+                        market_inds["^TNX"] = fred_data["TNX_10Y"]["value"]
         except Exception as e:
             self.logger.warning(f"FRED fetch failed: {e}")
 
-        # 2. Try YFinance (Backup/Real-time Sentiment)
+        # 2. Try YFinance only for remaining missing indicators (e.g. SPY)
         try:
-             tickers = ["^VIX", "^TNX", "SPY"]
-             prices = self.yfinance.fetch_current_prices(tickers)
-             if prices:
-                 macro_data["market_indicators"] = prices
+            missing = [t for t in ["^VIX", "^TNX", "SPY"] if t not in macro_data.get("market_indicators", {})]
+            if missing and self.yfinance and self._is_provider_enabled(self.yfinance):
+                prices = self.yfinance.fetch_current_prices(missing)
+                if prices:
+                    macro_data.setdefault("market_indicators", {}).update(prices)
         except Exception as e:
-             self.logger.error(f"YFinance Macro data error: {e}")
+            self.logger.debug(f"YFinance Macro data fallback skipped: {e}")
              
         return macro_data
 
