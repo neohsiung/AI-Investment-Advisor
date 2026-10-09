@@ -406,7 +406,7 @@ class AlchemyTransactionRepository(BaseRepository, ITransactionRepository):
     def calculate_net_invested_capital(self, user_id: str, account_id: str = None) -> float:
         """
         Calculates user-contributed capital, EXCLUDING internal balancing adjustments.
-        Filters by entry_category = 'capital_flow' so ETORO_SYNC entries are
+        Filters by entry_category = 'capital_flow' so sync_adjustment entries are
         automatically excluded regardless of their ticker value.
         Used for ROI and PnL metrics.
         """
@@ -550,11 +550,11 @@ class AlchemyTransactionRepository(BaseRepository, ITransactionRepository):
             ticker="CASH",
             date=datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
             action="DEPOSIT" if diff > 0 else "WITHDRAWAL",
-            quantity=0,
+            quantity=1.0,
             price=0,
             fees=0,
             amount=abs(diff),
-            entry_category=ENTRY_CATEGORY_CAPITAL_FLOW,
+            entry_category=ENTRY_CATEGORY_SYNC_ADJUSTMENT,
             source_file=account_id
         )
 
@@ -568,15 +568,25 @@ class AlchemyTransactionRepository(BaseRepository, ITransactionRepository):
         local_map: Dict[str, float] = {}
         local_avg_price_map: Dict[str, float] = {}
         for h in local_holdings:
-            t = str(h.get('ticker', '')).upper()
+            t = str(h.get('ticker') or h.get('symbol') or '').upper()
             if t and t != 'CASH':
                 local_map[t] = local_map.get(t, 0.0) + float(h.get('quantity', 0.0))
                 local_avg_price_map[t] = float(h.get('avg_price', 0.0) or 0.0)
         
+        # Zero-Drop Safety Guard:
+        # If live_positions is empty but local has active positions, it usually indicates
+        # broker API outage, timeout, or rate-limiting. DO NOT wipe out local positions!
+        if not live_positions and any(qty > 0.0001 for qty in local_map.values()):
+            logger.warning(
+                f"reconcile_positions: live_positions is empty while local has {len(local_map)} active positions! "
+                f"Aborting reconciliation to prevent catastrophic false liquidation for user {user_id}."
+            )
+            return
+
         # Map live positions - sum quantities across all lots for the same ticker
         live_map: Dict[str, float] = {}
         for p in live_positions:
-            t = str(p.get('ticker', '')).upper()
+            t = str(p.get('ticker') or p.get('symbol') or '').upper()
             if t and t != 'CASH':
                 live_map[t] = live_map.get(t, 0.0) + float(p.get('quantity', 0.0))
         
@@ -597,8 +607,8 @@ class AlchemyTransactionRepository(BaseRepository, ITransactionRepository):
             logger.info(f"Reconciling {ticker} for {user_id}: local={local_qty}, live={live_qty}, diff={diff}")
             
             # Step 1: Try current_price from live_positions
-            live_price = next((float(p.get('current_price', 0.0) or 0.0) for p in live_positions if p['ticker'].upper() == ticker), 0.0)
-            live_leverage = next((float(p.get('leverage', 1.0) or 1.0) for p in live_positions if p['ticker'].upper() == ticker), 1.0)
+            live_price = next((float(p.get('current_price', 0.0) or 0.0) for p in live_positions if str(p.get('ticker') or p.get('symbol') or '').upper() == ticker), 0.0)
+            live_leverage = next((float(p.get('leverage', 1.0) or 1.0) for p in live_positions if str(p.get('ticker') or p.get('symbol') or '').upper() == ticker), 1.0)
 
             # Step 2: Fallback to MarketDataService if live_price is missing or 0
             if live_price <= 0.0:

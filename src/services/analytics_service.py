@@ -408,6 +408,19 @@ async def update_daily_snapshot(db_path: str = None, user_id: str = None, force:
     calc = LeverageCalculator(user_id=user_id, repository=trans_repo, db_path=db_path)
     metrics = calc.calculate_metrics(current_prices, user_id)
 
+    # Prefer real broker equity & cash if available (single source of truth)
+    try:
+        from src.services.etoro_service import EtoroService
+        broker = EtoroService(user_id=user_id)
+        if broker.api_key and broker.user_key:
+            acc = await broker.get_account()
+            if acc and getattr(acc, 'total_equity', None) and acc.total_equity > 0:
+                metrics['nlv'] = float(acc.total_equity)
+                metrics['cash_balance'] = float(acc.available_cash)
+                logger.info(f"update_daily_snapshot: Anchored snapshot to live eToro account: NLV=${metrics['nlv']}, Cash=${metrics['cash_balance']}")
+    except Exception as e:
+        logger.debug(f"update_daily_snapshot: Broker account fallback to local metrics: {e}")
+
     recorder = SnapshotRecorder(db_path=db_path)
     recorder.record_daily_snapshot(
         metrics['nlv'], 

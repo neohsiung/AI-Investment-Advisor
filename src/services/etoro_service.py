@@ -60,10 +60,10 @@ class EtoroService(IBroker):
         # 從引數初始化 base_url
         self.base_url = base_url
 
-        # If user_id is provided, load settings from database
-        # 若提供 user_id，則自資料庫載入設定
-        if user_id:
-            self._load_credentials_from_db(user_id)
+        # If user_id is provided or resolved, load settings from database
+        # 若提供或已解析 user_id，則自資料庫載入設定
+        if self.user_id:
+            self._load_credentials_from_db(self.user_id)
         
         # Fallback to environment variables
         if not self.api_key:
@@ -1148,10 +1148,17 @@ class EtoroService(IBroker):
         
         existing_txs = self.transaction_repo.get_all_by_user(user_id)
         existing_sigs = set()
+        existing_tx_by_qty = {}  # (date, ticker, action, round(qty, 4)) -> list of prices
         for tx in existing_txs:
             try:
-                sig = f"{tx.trade_date}_{tx.action}_{float(tx.quantity):.4f}_{float(tx.price):.4f}"
+                t_ticker = str(getattr(tx, 'ticker', '')).upper()
+                t_date = str(tx.trade_date)[:10]
+                t_qty = round(float(tx.quantity), 4)
+                t_price = float(tx.price)
+                sig = f"{t_date}_{t_ticker}_{tx.action}_{t_qty:.4f}_{t_price:.4f}"
                 existing_sigs.add(sig)
+                key = (t_date, t_ticker, tx.action, t_qty)
+                existing_tx_by_qty.setdefault(key, []).append(t_price)
             except (ValueError, TypeError, AttributeError): continue
 
         for trade in history:
@@ -1178,11 +1185,22 @@ class EtoroService(IBroker):
             leverage = float(trade.get('leverage', 1.0))
             fees = abs(float(trade.get('fees', 0))) 
             
+            # Helper for fuzzy match (same date, ticker, action, quantity within 2% price tolerance)
+            def is_duplicate(d_str, act, qty, price):
+                exact_sig = f"{d_str}_{ticker.upper()}_{act}_{qty:.4f}_{price:.4f}"
+                if exact_sig in existing_sigs:
+                    return True
+                key = (d_str, ticker.upper(), act, round(qty, 4))
+                if key in existing_tx_by_qty:
+                    for ext_p in existing_tx_by_qty[key]:
+                        if ext_p > 0 and abs(price - ext_p) / ext_p < 0.02:
+                            return True
+                return False
+
             # 1. Opening Leg
             open_date_str = open_ts[:10] if open_ts else datetime.now().strftime('%Y-%m-%d')
-            open_sig = f"{open_date_str}_{open_action}_{quantity:.4f}_{open_price:.4f}"
             
-            if open_sig not in existing_sigs:
+            if not is_duplicate(open_date_str, open_action, quantity, open_price):
                 self.transaction_repo.add(
                     user_id=user_id,
                     ticker=ticker,
@@ -1191,9 +1209,12 @@ class EtoroService(IBroker):
                     quantity=quantity,
                     price=open_price,
                     fees=fees if not close_ts else 0.0,
-                    leverage=leverage
+                    leverage=leverage,
+                    source_file='ETORO_SYNC'
                 )
                 added_count += 1
+                key = (open_date_str, ticker.upper(), open_action, round(quantity, 4))
+                existing_tx_by_qty.setdefault(key, []).append(open_price)
             else:
                 skipped_count += 1
 
@@ -1204,9 +1225,8 @@ class EtoroService(IBroker):
                 if close_price <= 0 and open_price > 0:
                     close_price = open_price
                 close_date_str = close_ts[:10]
-                close_sig = f"{close_date_str}_{close_action}_{quantity:.4f}_{close_price:.4f}"
                 
-                if close_sig not in existing_sigs:
+                if not is_duplicate(close_date_str, close_action, quantity, close_price):
                     self.transaction_repo.add(
                         user_id=user_id,
                         ticker=ticker,
@@ -1215,9 +1235,12 @@ class EtoroService(IBroker):
                         quantity=quantity,
                         price=close_price,
                         fees=0.0,
-                        leverage=leverage
+                        leverage=leverage,
+                        source_file='ETORO_SYNC'
                     )
                     added_count += 1
+                    key = (close_date_str, ticker.upper(), close_action, round(quantity, 4))
+                    existing_tx_by_qty.setdefault(key, []).append(close_price)
                 else:
                     skipped_count += 1
             
@@ -1263,54 +1286,59 @@ class EtoroService(IBroker):
         local_cash = self.transaction_repo.get_cash_balance(user_id)
         diff = broker_cash - local_cash
         
-        SYNC_THRESHOLD = 0.05
+        SYNC_THRESHOLD = 0.50
         SAFETY_CAP = 5000.0
 
-        # 2. Check for existing sync entries on the same day to avoid duplication
-        # Get existing syncs for today
-        today_str = datetime.now().strftime('%Y-%m-%d')
-        with self.transaction_repo.engine.connect() as conn:
-            existing_today = conn.execute(
-                text("""
-                    SELECT amount, action FROM transactions 
-                    WHERE user_id = :uid AND ticker = 'CASH' 
-                    AND trade_date = :dt AND source_file = 'ETORO_SYNC'
-                """),
-                {"uid": user_id, "dt": today_str}
-            ).fetchall()
-        
-        # If we already have a sync today that covers this diff (within threshold), skip
-        for ext_amount, ext_action in existing_today:
-            ext_diff = float(ext_amount) if ext_action == 'DEPOSIT' else -float(ext_amount)
-            if abs(diff - ext_diff) < SYNC_THRESHOLD:
-                logger.info(f"Skipping duplicate cash sync for today: Diff={diff:.2f} matches existing={ext_diff:.2f}")
-                return
+        if abs(diff) < SYNC_THRESHOLD:
+            return
 
-        if abs(diff) > SYNC_THRESHOLD:
-            if abs(diff) > SAFETY_CAP:
-                logger.warning(
-                    f"Cash sync diff too large (${diff:.2f}), skipping. "
-                    f"Local={local_cash:.2f}, Broker={broker_cash:.2f}. "
-                    f"Investigate manually."
+        if abs(diff) > SAFETY_CAP:
+            logger.warning(
+                f"Cash sync diff too large (${diff:.2f}), skipping. "
+                f"Local={local_cash:.2f}, Broker={broker_cash:.2f}. "
+                f"Investigate manually."
+            )
+            return
+
+        # 2. Check for existing sync entry today - update in-place instead of creating endless transactions
+        today_str = datetime.now().strftime('%Y-%m-%d')
+        action = "DEPOSIT" if diff > 0 else "WITHDRAWAL"
+        logger.info(f"Syncing Cash: Local={local_cash:.2f}, Broker={broker_cash:.2f}, Diff={diff:.2f}, Action={action}")
+
+        import uuid as _uuid
+        import json as _json
+        trace = {
+            "reason": "Automated Portfolio Alignment",
+            "local_cash_at_sync": local_cash,
+            "broker_cash_reference": broker_cash,
+            "diff_to_align": diff,
+            "source": "eToro_PnL_AvailableCash",
+            "timestamp": datetime.now().isoformat()
+        }
+
+        with self.transaction_repo.engine.begin() as conn:
+            # Check if an ETORO_SYNC entry exists for today
+            existing = conn.execute(
+                text("SELECT id FROM transactions WHERE user_id = :uid AND ticker = 'CASH' AND trade_date = :dt AND source_file = 'ETORO_SYNC' LIMIT 1"),
+                {"uid": user_id, "dt": today_str}
+            ).fetchone()
+
+            if existing:
+                conn.execute(
+                    text("""
+                        UPDATE transactions 
+                        SET action = :action, price = :price, amount = :amount, raw_data = :raw, updated_at = NOW()
+                        WHERE id = :id
+                    """),
+                    {
+                        "id": existing[0],
+                        "action": action,
+                        "price": abs(diff),
+                        "amount": abs(diff),
+                        "raw": _json.dumps(trace)
+                    }
                 )
-                return
-            
-            action = "DEPOSIT" if diff > 0 else "WITHDRAWAL"
-            logger.info(f"Syncing Cash: Local={local_cash:.2f}, Broker={broker_cash:.2f}, Diff={diff:.2f}, Action={action}")
-            
-            with self.transaction_repo.engine.begin() as conn:
-                import uuid as _uuid
-                import json as _json
-                # [ENHANCED] Trace now includes context to avoid "unexplained" labels
-                trace = {
-                    "reason": "Automated Portfolio Alignment",
-                    "local_cash_at_sync": local_cash,
-                    "broker_cash_reference": broker_cash,
-                    "diff_to_align": diff,
-                    "source": "eToro_PnL_AvailableCash",
-                    "timestamp": datetime.now().isoformat()
-                }
-                
+            else:
                 conn.execute(
                     text("""
                         INSERT INTO transactions (id, user_id, ticker, trade_date, action, quantity, price, fees, amount, source_file, entry_category, raw_data)
