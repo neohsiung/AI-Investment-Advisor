@@ -13,10 +13,12 @@ Architecture:
   6. Cash reservation: higher confidence = deploy more, low = keep cash
 """
 
+import asyncio
 import json
 import logging
 import hashlib
 import math
+import re
 from typing import Dict, List, Any, Optional, Tuple
 from src.domain.interfaces import Message
 from dataclasses import dataclass
@@ -37,36 +39,66 @@ class AgentSubScore:
     timestamp: str
 
 
+def _clean_trailing_commas(json_str: str) -> str:
+    """Remove trailing commas before closing braces/brackets (common LLM glitch)."""
+    return re.sub(r",\s*([\]}])", r"\1", json_str)
+
+
+def _try_parse_score_dict(blob: str) -> Optional[Dict[str, Any]]:
+    """Attempt to parse a JSON dict and ensure it contains a valid float 'score'."""
+    if not blob or not blob.strip():
+        return None
+    obj = None
+    try:
+        obj = json.loads(blob)
+    except (ValueError, TypeError):
+        try:
+            obj = json.loads(_clean_trailing_commas(blob))
+        except (ValueError, TypeError):
+            return None
+
+    if not isinstance(obj, dict):
+        return None
+    raw = obj.get("score")
+    if raw is None:
+        return None
+    try:
+        float(raw)
+        return obj
+    except (TypeError, ValueError):
+        # Skips echoed template where score is literal "<float 0-10>"
+        return None
+
+
 def _extract_score_object(text: str) -> Dict[str, Any]:
     """
-    Pull the scoring object out of an LLM reply that may contain prose.
-    從可能夾雜自然語言的 LLM 回覆中取出評分物件。
+    Pull the scoring object out of an LLM reply that may contain reasoning or prose.
+    從可能夾雜思考過程或自然語言的 LLM 回覆中取出評分物件。
 
-    2026-08-12: the previous approach took everything from the first `{` to
-    the last `}`. Reasoning models routinely restate the prompt before
-    answering, and the prompt itself contains the template:
-
-        The user asks: "... Return ONLY JSON: {"score": <0-10>, ...}"
-        We need to provide a JSON object with ...
-        {"score": 7, "key_factor": "...", ...}
-
-    First-brace-to-last-brace spanned both, and `<0-10>` is not valid JSON, so
-    the parse threw and the caller substituted `_fallback_score()` — a hash of
-    the ticker. A model that answered perfectly well was recorded as noise.
-
-    Scans every balanced `{...}` region, parses each, and returns the last one
-    that both parses AND carries a usable "score" — the answer follows the
-    restatement, so the last valid object is the real one.
-
-    2026-08-12：舊做法取「第一個 { 到最後一個 }」。推理模型常先複述提示再作答，而
-    提示本身就含有 JSON 模板，該區間會同時涵蓋兩者，其中 `<0-10>` 並非合法 JSON，
-    解析因此失敗並退回以 ticker 雜湊產生的假分數——模型明明答對了卻被記成雜訊。
-    改為掃描所有成對的 {...}，回傳最後一個可解析且含有效 score 的物件。
+    Scans:
+      1. Strips <think>...</think> reasoning tags
+      2. Markdown code blocks ```(?:json)? {...} ``` (scanned from LAST to FIRST)
+      3. Balanced {...} regions (scanned from LAST to FIRST)
+      4. Innermost {"score": ...} regex fallback
     """
+    if not text:
+        raise json.JSONDecodeError("empty response", "", 0)
+
+    # 1. Strip <think>...</think> reasoning tags
+    cleaned = re.sub(r"(?is)<think>.*?</think>", "", text).strip()
+
+    # 2. Check for markdown code blocks (scan from LAST to FIRST, since final answers follow reasoning)
+    code_blocks = re.findall(r"(?is)```(?:json)?\s*(\{.*?\})\s*```", cleaned)
+    for block in reversed(code_blocks):
+        obj = _try_parse_score_dict(block.strip())
+        if obj is not None:
+            return obj
+
+    # 3. Scan all balanced {...} regions from LAST to FIRST
     candidates = []
     depth = 0
     start = -1
-    for i, ch in enumerate(text):
+    for i, ch in enumerate(cleaned):
         if ch == "{":
             if depth == 0:
                 start = i
@@ -75,32 +107,23 @@ def _extract_score_object(text: str) -> Dict[str, Any]:
             if depth > 0:
                 depth -= 1
                 if depth == 0 and start != -1:
-                    candidates.append(text[start:i + 1])
+                    candidates.append(cleaned[start:i + 1])
                     start = -1
 
-    best = None
-    for blob in candidates:
-        try:
-            obj = json.loads(blob)
-        except (ValueError, TypeError):
-            continue
-        if not isinstance(obj, dict):
-            continue
-        raw = obj.get("score")
-        if raw is None:
-            continue
-        try:
-            float(raw)
-        except (TypeError, ValueError):
-            # Skips the echoed template, whose "score" is the literal <0-10>.
-            continue
-        best = obj
+    for blob in reversed(candidates):
+        obj = _try_parse_score_dict(blob)
+        if obj is not None:
+            return obj
 
-    if best is None:
-        # Preserve the old failure mode for the caller's except clause.
-        # 維持原本的失敗行為，讓呼叫端的 except 分支照舊處理。
-        raise json.JSONDecodeError("no scoring object found in response", text[:200], 0)
-    return best
+    # 4. Fallback: regex search for any innermost {"score": ...} object
+    match = re.search(r"\{[^{}]*\"score\"[^{}]*\}", cleaned)
+    if match:
+        obj = _try_parse_score_dict(match.group(0))
+        if obj is not None:
+            return obj
+
+    # Preserve standard failure behavior for caller's except clause
+    raise json.JSONDecodeError("no scoring object found in response", text[:200], 0)
 
 
 class CompositorService:
@@ -182,14 +205,8 @@ class CompositorService:
                 Message(role="user", content=prompt),
             ])
 
-            # Extract JSON from response
-            cleaned = response.strip()
-            if "```json" in cleaned:
-                cleaned = cleaned.split("```json")[1].split("```")[0]
-            elif "```" in cleaned:
-                cleaned = cleaned.split("```")[1].split("```")[0]
-
-            data = _extract_score_object(cleaned)
+            # Extract JSON from response via resilient extractor
+            data = _extract_score_object(response)
             raw_score = data.get("score")
             if raw_score is None:
                 logger.warning(f"LLM returned null score for {agent_name}/{ticker}, response keys: {list(data.keys())}")
@@ -379,21 +396,26 @@ Return JSON:
         target_cash_ratio: float,
     ) -> List[AgentSubScore]:
         """Query each agent (via LLM scoring) for their sub-score and factors."""
-        sub_scores = []
+        sub_scores: List[AgentSubScore] = []
 
-        agent_configs = [
-            ("Fundamental", self._query_fundamental_agent(ticker)),
-            ("Momentum", self._query_momentum_agent(ticker)),
-            ("Sentiment", self._query_sentiment_agent(ticker)),
-            ("Risk", self._query_risk_agent(ticker, cash_ratio)),
-        ]
-
-        for agent_name, coro in agent_configs:
+        async def _safe_query(agent_name: str, coro_func) -> Tuple[str, float, Dict[str, Any]]:
             try:
-                score, factors = await coro
+                score, factors = await coro_func()
             except Exception as error:
                 logger.warning(f"{agent_name} Agent failed for {ticker}: {error}")
                 score, factors = 5.0, {"error": str(error), "key_factor": "Agent unavailable"}
+            return agent_name, score, factors
+
+        agent_tasks = [
+            _safe_query("Fundamental", lambda: self._query_fundamental_agent(ticker)),
+            _safe_query("Momentum", lambda: self._query_momentum_agent(ticker)),
+            _safe_query("Sentiment", lambda: self._query_sentiment_agent(ticker)),
+            _safe_query("Risk", lambda: self._query_risk_agent(ticker, cash_ratio)),
+        ]
+
+        results = await asyncio.gather(*agent_tasks)
+
+        for agent_name, score, factors in results:
             sub_scores.append(AgentSubScore(
                 agent_name=agent_name,
                 ticker=ticker,
@@ -584,19 +606,8 @@ Return JSON:
                 Message(role="user", content=prompt),
             ])
 
-            # Extract JSON
-            cleaned = response.strip()
-            if "```json" in cleaned:
-                cleaned = cleaned.split("```json")[1].split("```")[0]
-            elif "```" in cleaned:
-                cleaned = cleaned.split("```")[1].split("```")[0]
-
-            start = cleaned.find("{")
-            end = cleaned.rfind("}")
-            if start != -1 and end != -1:
-                cleaned = cleaned[start:end + 1]
-
-            data = json.loads(cleaned)
+            # Extract JSON via resilient extractor
+            data = _extract_score_object(response)
             score = float(data.get("score", 5.0))
             score = max(0.0, min(10.0, score))
 
