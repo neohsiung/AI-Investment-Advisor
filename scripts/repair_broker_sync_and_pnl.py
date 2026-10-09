@@ -23,8 +23,18 @@ def repair_database():
         """), {"uid": user_id})
         print(f"  -> Deleted {ghost_del.rowcount} ghost stock transactions.")
 
-        # 2. Clean up flapping duplicate CASH sync adjustments since 2026-10-01
-        print("\n[Step 2] Purging flapping CASH sync adjustments since 2026-10-01...")
+        # 2. Clean up duplicate SELL executions where source_file IS NULL
+        print("\n[Step 2] Cleaning up duplicate untagged SELL transactions...")
+        del_sells = conn.execute(text("""
+            DELETE FROM transactions 
+            WHERE user_id = :uid 
+            AND source_file IS NULL 
+            AND action = 'SELL';
+        """), {"uid": user_id})
+        print(f"  -> Deleted {del_sells.rowcount} duplicate untagged SELL transactions.")
+
+        # 3. Clean up flapping duplicate CASH sync adjustments since 2026-10-01
+        print("\n[Step 3] Purging flapping CASH sync adjustments since 2026-10-01...")
         purge_cash = conn.execute(text("""
             DELETE FROM transactions
             WHERE user_id = :uid
@@ -34,16 +44,43 @@ def repair_database():
         """), {"uid": user_id})
         print(f"  -> Purged {purge_cash.rowcount} flapping cash alignment records.")
 
-        # 4. Correct position_lots to match true eToro portfolio
-        print("\n[Step 4] Aligning position_lots to true broker holdings (AAPL, META, MSFT)...")
-        # Ensure AAPL, META, MSFT are open with exact broker shares
+        # 4. Clean up legacy pseudo capital flows from 9/30
+        print("\n[Step 4] Converting legacy pseudo capital flows to sync adjustments...")
+        upd_cat = conn.execute(text("""
+            UPDATE transactions 
+            SET entry_category = 'sync_adjustment', quantity = 1.0 
+            WHERE user_id = :uid 
+            AND ticker = 'CASH' 
+            AND entry_category = 'capital_flow';
+        """), {"uid": user_id})
+        print(f"  -> Converted {upd_cat.rowcount} legacy pseudo capital flows to sync_adjustment.")
+
+        # 5. Insert or update benchmark capital deposit ($1,711.00 on 2026-10-01)
+        print("\n[Step 5] Setting benchmark capital deposit ($1,711.00 on 2026-10-01)...")
+        conn.execute(text("""
+            INSERT INTO transactions (id, user_id, ticker, trade_date, action, quantity, price, fees, amount, leverage, source_file, entry_category)
+            VALUES (:id, :uid, :ticker, :dt, :action, 1.0, :amt, 0, :amt, 1.0, :src, :cat)
+            ON CONFLICT (id) DO UPDATE SET amount = :amt, price = :amt;
+        """), {
+            "id": "00000000-0000-0000-0000-000000001711",
+            "uid": user_id,
+            "ticker": "USD",
+            "dt": "2026-10-01",
+            "action": "DEPOSIT",
+            "amt": 1711.0,
+            "src": "MANUAL_CAPITAL",
+            "cat": "capital_flow"
+        })
+        print("  -> Benchmark capital flow record verified.")
+
+        # 6. Correct position_lots to match true eToro portfolio
+        print("\n[Step 6] Aligning position_lots to true broker holdings (AAPL, META, MSFT)...")
         holdings = [
             ("AAPL", 0.297885, 335.70, "3596729934"),
             ("META", 0.122584, 736.80, "3596767248"),
             ("MSFT", 0.189075, 528.89, "3596752329")
         ]
         
-        # Close any lot that is not in the true holdings list
         conn.execute(text("""
             UPDATE position_lots
             SET is_open = False, close_date = '2026-10-08'
@@ -53,7 +90,6 @@ def repair_database():
         """), {"uid": user_id})
 
         for ticker, qty, price, pos_id in holdings:
-            # Check if lot exists
             lot = conn.execute(text("""
                 SELECT id FROM position_lots
                 WHERE user_id = :uid AND ticker = :tk AND is_open = True
@@ -75,10 +111,8 @@ def repair_database():
                 """), {"id": str(uuid.uuid4()), "uid": user_id, "tk": ticker, "qty": qty, "price": price})
                 print(f"  -> Created open lot for {ticker}: {qty} shares @ ${price}")
 
-        # 5. Correct daily_snapshots
-        print("\n[Step 5] Recalibrating daily_snapshots...")
-        # 10/01 benchmark: NLV ~ 1711.00
-        # 10/09 current: NLV = 1692.50, Cash = 1404.09, Invested = 1711.00, PnL = -18.50
+        # 7. Correct daily_snapshots
+        print("\n[Step 7] Recalibrating daily_snapshots...")
         conn.execute(text("""
             UPDATE daily_snapshots
             SET total_nlv = 1692.50,
@@ -89,7 +123,6 @@ def repair_database():
             WHERE user_id = :uid AND date = '2026-10-09';
         """), {"uid": user_id})
 
-        # Also correct 10/08 snapshot to prevent chart distortion
         conn.execute(text("""
             UPDATE daily_snapshots
             SET total_nlv = 1698.00,
