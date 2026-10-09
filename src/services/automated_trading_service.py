@@ -1321,6 +1321,32 @@ class AutomatedTradingService:
             return {"status": "failed", "reason": msg}
             
         logger.info(f"Executing {order.action.value} {order.symbol} via {broker.get_name()}")
+
+        # Anti-Slippage & Bid-Ask Spread Circuit Breaker (防滑點與即時買賣價差熔斷守衛)
+        slippage_guard = None
+        try:
+            from src.services.slippage_guard_service import SlippageGuardService
+            slippage_guard = SlippageGuardService(user_id=user_id, settings_service=self.settings_repo)
+            guard_eval = await slippage_guard.evaluate_trade(
+                ticker=order.symbol,
+                action=order.action.value,
+                amount_usd=order.amount_usd or order.quantity,
+                current_price=order.price,
+            )
+            if not guard_eval.passed:
+                logger.warning(
+                    f"Slippage Guard Blocked {order.action.value} {order.symbol}: {guard_eval.reason}"
+                )
+                return {
+                    "status": "blocked",
+                    "reason": guard_eval.reason,
+                    "circuit_breaker_triggered": True,
+                    "slippage_guard": True,
+                }
+            if guard_eval.adaptive_limit_price and (not order.price or order.price <= 0):
+                order.price = guard_eval.adaptive_limit_price
+        except Exception as sg_err:
+            logger.warning(f"SlippageGuard non-blocking check error: {sg_err}")
         
         lock_svc = OrderInflightLockService(user_id=user_id)
         raw_lock_ttl = self.settings_repo.get(user_id, "order_lock_ttl_seconds")
@@ -1388,6 +1414,20 @@ class AutomatedTradingService:
                                 horizon_days=5,
                             )
                             logger.info(f"Recorded decision outcome {dec_id} for {order.symbol} at ${execution_price:.2f}")
+
+                            # 記錄實際成交滑點 (Realized Slippage Audit)
+                            if slippage_guard and execution_price and execution_price > 0:
+                                try:
+                                    fill_price = float(result.get("fill_price") or execution_price)
+                                    slippage_guard.record_realized_slippage(
+                                        ticker=order.symbol,
+                                        action=order.action.value,
+                                        expected_price=execution_price,
+                                        fill_price=fill_price,
+                                        order_id=result.get("order_id"),
+                                    )
+                                except Exception as sl_err:
+                                    logger.debug(f"Realized slippage recording error: {sl_err}")
 
                             # Trigger rule citation if active rules exist
                             try:

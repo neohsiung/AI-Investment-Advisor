@@ -1,7 +1,10 @@
 import hashlib
 import os
 import pandas as pd
-import pandas_market_calendars as mcal
+try:
+    import pandas_market_calendars as mcal
+except ImportError:
+    mcal = None
 from datetime import datetime
 from src.infrastructure.celery_app import app
 from src.services.intelligence_service import IntelligenceService
@@ -12,10 +15,12 @@ logger = setup_logger("CeleryTasks")
 
 def is_market_open_today():
     """Checks if the NYSE is open today (EST)."""
-    nyse = mcal.get_calendar("NYSE")
     today = pd.Timestamp.now(tz="US/Eastern").normalize()
-    schedule = nyse.schedule(start_date=today, end_date=today)
-    return not schedule.empty
+    if mcal is not None:
+        nyse = mcal.get_calendar("NYSE")
+        schedule = nyse.schedule(start_date=today, end_date=today)
+        return not schedule.empty
+    return today.weekday() < 5
 
 import asyncio
 
@@ -805,6 +810,38 @@ def run_weekly_rebalance(user_id: str = None):
         return result
     except Exception as e:
         logger.error(f"run_weekly_rebalance failed for {user_id}: {e}", exc_info=True)
+        return f"Error: {str(e)}"
+
+
+@app.task(name="src.infrastructure.tasks.dispatch_market_open_cash_deployment")
+def dispatch_market_open_cash_deployment():
+    """Fan-out dispatcher: 為活躍租戶分派美股開盤分批建倉與防滑點守衛任務。"""
+    users = _resolve_target_users()
+    for uid in users:
+        run_market_open_cash_deployment.delay(user_id=uid)
+    return f"Dispatched {len(users)} market_open_cash_deployment tasks"
+
+
+@app.task(name="src.infrastructure.tasks.run_market_open_cash_deployment", soft_time_limit=600, time_limit=660)
+def run_market_open_cash_deployment(user_id: str = None, batch_number: int = 1, force: bool = False):
+    """
+    Market-Open Cash Deployment & Anti-Slippage Guard Task:
+    Executes disciplined batch cash deployment at 09:35 EST with real-time bid-ask spread protection.
+    美股開盤階梯式分批建倉與防滑點守衛任務：在 09:35 EST 避開開盤前 5 分鐘極端價差後有序執行第 1 批次建倉。
+    """
+    user_id = user_id or os.getenv("PRIMARY_USER_ID") or os.getenv("USER_ID")
+    if not user_id:
+        logger.error("run_market_open_cash_deployment: user_id is required. Set PRIMARY_USER_ID env var or pass explicitly.")
+        return "Error: user_id is required"
+
+    try:
+        from src.services.batch_cash_deployment_service import BatchCashDeploymentService
+        svc = BatchCashDeploymentService(user_id=user_id)
+        result = _run_async_safe(svc.execute_batch(batch_number=batch_number, force=force, enforce_market_hours=True))
+        logger.info(f"run_market_open_cash_deployment completed for {user_id}: {result.get('success')}")
+        return result
+    except Exception as e:
+        logger.error(f"run_market_open_cash_deployment failed for {user_id}: {e}", exc_info=True)
         return f"Error: {str(e)}"
 
 

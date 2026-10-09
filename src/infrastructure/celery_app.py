@@ -163,6 +163,12 @@ app.conf.beat_schedule = {
         "task": "src.infrastructure.tasks.dispatch_weekly_rebalance",
         "schedule": crontab(hour=9, minute=35, day_of_week="1"),  # Mon 09:35 EST
     },
+    # Market-Open Cash Deployment & Anti-Slippage Guard — runs Monday-Friday post-market open (09:35 EST)
+    # 美股開盤分批建倉與防滑點守衛：每個交易日開盤後（09:35 EST）避開開盤前 5 分鐘極端價差後，評估並執行閒置現金分批建倉與防滑點守衛。
+    "market-open-cash-deployment": {
+        "task": "src.infrastructure.tasks.dispatch_market_open_cash_deployment",
+        "schedule": crontab(hour=9, minute=35, day_of_week="1-5"),  # Mon-Fri 09:35 EST
+    },
     # Shadow Ledger Evaluation (P2) — runs daily at 16:45 EST (after US market close)
     # 影子交易每日 MTM 損益計算與畢業考核：每個交易日盤後（16:45 EST）自動評估影子部位與提拔晉升。
     "daily-shadow-ledger-eval": {
