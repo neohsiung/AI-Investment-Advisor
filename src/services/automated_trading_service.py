@@ -407,8 +407,8 @@ class AutomatedTradingService:
         is_sell = str(action).upper() == "SELL"
         requires_approval_reason = None
         from src.services.strategy_registry import StrategyRegistry
-        is_safety_exit = is_sell and StrategyRegistry.is_safety_control(strategy_name or "")
-        if strategy_name and not is_safety_exit:
+        is_safety = StrategyRegistry.is_safety_control(strategy_name or "")
+        if strategy_name and not is_safety:
             try:
                 from src.services.broker_factory import effective_trading_mode
                 from src.services.strategy_validation_service import StrategyValidationService
@@ -954,9 +954,14 @@ class AutomatedTradingService:
             except Exception as tiered_err:
                 logger.warning(f"Tiered approval check failed non-blockingly: {tiered_err}")
 
-        # 3c. Autonomous Reporting Mode: Do not block or harass user with approval requests unless explicitly required by policy
-        if autonomous_reporting_mode and not requires_approval_reason:
-            skip_reason = f"Score {effective_confidence:.1f} below threshold {threshold:.1f}"
+        # 3c. Autonomous Reporting Mode: Do not block or harass user with approval requests
+        # 全自主通報模式：落實「從要我決策，變成跟我報告」，嚴禁發送交互審批卡住 worker 與打擾用戶
+        if autonomous_reporting_mode:
+            skip_reason = (
+                requires_approval_reason
+                if requires_approval_reason
+                else f"Score {effective_confidence:.1f} below threshold {threshold:.1f}"
+            )
             logger.info(
                 f"Autonomous Mode: {order.action.value} {ticker} not auto-executed ({skip_reason}). "
                 f"Skipping trade autonomously without interrupting user."
