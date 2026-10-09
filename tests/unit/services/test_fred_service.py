@@ -173,3 +173,21 @@ def test_get_macro_indicators_single_datapoint(mock_settings):
             if key != "Labor_Cooling_Indicator":
                 assert data['value'] == 3.5
                 assert data['trend'] == "Down"  # current == prev, so not >
+
+
+def test_get_macro_indicators_redis_cache_integration(mock_settings):
+    """Test reading from and writing to Redis cache with integer TTL."""
+    import json
+    mock_settings.get_all_settings.return_value = {"source_fred_api_key": "test_key"}
+    mock_redis = MagicMock()
+    mock_redis.get.return_value = json.dumps({"GDP": {"value": 28000.0, "date": "2025-01-01", "trend": "Up"}})
+
+    with patch('fredapi.Fred'), \
+         patch('src.infrastructure.cache.redis_client.get_redis_sync', return_value=mock_redis):
+        service = FredService(settings_service=mock_settings)
+        result = service.get_macro_indicators()
+
+        assert "GDP" in result
+        assert result["GDP"]["value"] == 28000.0
+        mock_redis.get.assert_called_with("market_data:fred_indicators")
+

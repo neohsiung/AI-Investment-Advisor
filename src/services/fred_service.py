@@ -43,7 +43,7 @@ class FredService:
         # In-memory macro caching (6 hours TTL) to conserve API quota
         self._macro_cache: Dict[str, Any] = {}
         self._macro_cache_time: float = 0.0
-        self._CACHE_TTL_SECONDS: float = 21600.0  # 6 hours
+        self._CACHE_TTL_SECONDS: int = 21600  # 6 hours
 
     def get_macro_indicators(self) -> Dict[str, Dict[str, Any]]:
         """
@@ -149,7 +149,7 @@ class FredService:
                 from src.infrastructure.cache.redis_client import get_redis_sync
                 r = get_redis_sync(decode_responses=True)
                 if r:
-                    r.setex("market_data:fred_indicators", self._CACHE_TTL_SECONDS, json.dumps(result))
+                    r.setex("market_data:fred_indicators", int(self._CACHE_TTL_SECONDS), json.dumps(result))
             except Exception as r_err:
                 self.logger.debug(f"Failed to cache fred indicators in Redis: {r_err}")
 
