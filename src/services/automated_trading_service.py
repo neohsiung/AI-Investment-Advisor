@@ -407,12 +407,8 @@ class AutomatedTradingService:
         is_sell = str(action).upper() == "SELL"
         requires_approval_reason = None
         from src.services.strategy_registry import StrategyRegistry
-        is_preauthorized_strategy = StrategyRegistry.is_safety_control(strategy_name or "") or strategy_name in (
-            "cash_deployment", "rebalance_diversification", "portfolio_rebalance",
-            "concentration_rebalance", "macro_volatility_hedge", "tactical_factor_rotation",
-            "pyramiding_scale_in"
-        )
-        if strategy_name and not is_preauthorized_strategy:
+        is_safety = StrategyRegistry.is_safety_control(strategy_name or "")
+        if strategy_name and not is_safety:
             try:
                 from src.services.broker_factory import effective_trading_mode
                 from src.services.strategy_validation_service import StrategyValidationService
