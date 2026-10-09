@@ -261,6 +261,16 @@ def reconcile_pending_orders_task(user_id: str = None):
             message = result.get("message", "skipped")
             logger.info(f"Order reconciliation skipped for {user_id}: {message}")
             return f"Skipped: {message}"
+
+        # P1 learning loop: resolve any decisions whose horizon has elapsed (Every 5 mins)
+        try:
+            from src.services.outcome_reflection_service import OutcomeReflectionService
+            outcome_res = OutcomeReflectionService(user_id=user_id).resolve_pending()
+            if outcome_res.get("resolved", 0) > 0:
+                logger.info(f"reconcile_pending_orders_task: resolved {outcome_res['resolved']} pending decisions")
+        except Exception as oe:
+            logger.debug(f"reconcile_pending_orders_task outcome resolution check non-blocking failed: {oe}")
+
         return "Success"
     except Exception as e:
         logger.error(f"Order reconciliation task failed: {e}")

@@ -38,9 +38,25 @@ DEFAULT_BENCHMARK = "SPY"
 
 
 class OutcomeReflectionService:
-    def __init__(self, user_id: str, db_path: Optional[str] = None):
+    def __init__(
+        self,
+        user_id: str,
+        db_path: Optional[str] = None,
+        market_data_service: Optional[Any] = None,
+    ):
         self.user_id = resolve_user_id(user_id)
         self.engine = get_db_engine(db_path)
+        self._mds = market_data_service
+
+    def _get_market_data_service(self) -> Optional[Any]:
+        if self._mds is None:
+            try:
+                from src.services.market_data_service import MarketDataService
+                self._mds = MarketDataService(user_id=self.user_id)
+            except Exception as exc:
+                logger.debug("Failed to instantiate MarketDataService for %s: %s", self.user_id, exc)
+                return None
+        return self._mds
 
     # ── Phase A: record ──────────────────────────────────────────────
 
@@ -131,7 +147,7 @@ class OutcomeReflectionService:
 
         ticker = row["ticker"]
         price_then = float(row["price_at_decision"])
-        current_price = self._fetch_price(ticker)
+        current_price = self._fetch_price(ticker, as_of=due_at)
         benchmark_then, benchmark_now = self._fetch_benchmark_window(decided_at, due_at)
         if current_price is None or not benchmark_then or not benchmark_now or price_then <= 0:
             # 2026-08-12: warning, not debug. This line is the exact moment a
@@ -188,44 +204,97 @@ class OutcomeReflectionService:
             })
         return True
 
-    def _fetch_price(self, ticker: str) -> Optional[float]:
+    def _fetch_price(self, ticker: str, as_of: Optional[datetime] = None) -> Optional[float]:
+        # 1. Primary: MarketDataService (Polygon / Tiingo / FMP / Finnhub resilient provider chain)
+        try:
+            mds = self._get_market_data_service()
+            if mds:
+                days = 5
+                if as_of:
+                    as_of_tz = as_of if as_of.tzinfo else as_of.replace(tzinfo=timezone.utc)
+                    days = max((datetime.now(timezone.utc) - as_of_tz).days + 5, 5)
+                ohlcv = mds.get_ohlcv(ticker, days=days)
+                dates = ohlcv.get("date", []) if ohlcv else []
+                closes = ohlcv.get("close", []) if ohlcv else []
+                if dates and closes:
+                    if as_of:
+                        as_of_str = as_of.strftime("%Y-%m-%d")
+                        candidates = [c for d, c in zip(dates, closes) if d <= as_of_str and c is not None and float(c) > 0]
+                        if candidates:
+                            return float(candidates[-1])
+                    valid_closes = [c for c in closes if c is not None and float(c) > 0]
+                    if valid_closes:
+                        return float(valid_closes[-1])
+
+                # Fallback within MDS: try quote batch providers
+                for provider in mds._chain("quote_batch"):
+                    if not mds._is_provider_enabled(provider):
+                        continue
+                    try:
+                        prices = provider.fetch_current_prices([ticker])
+                        if prices and prices.get(ticker) and float(prices[ticker]) > 0:
+                            return float(prices[ticker])
+                    except Exception:
+                        continue
+        except Exception as exc:
+            logger.debug("_fetch_price(%s) MarketDataService path failed: %s", ticker, exc)
+
+        # 2. Fallback: yfinance
         try:
             import yfinance as yf
             hist = yf.Ticker(ticker).history(period="5d")
-            if hist.empty:
-                return None
-            return float(hist["Close"].iloc[-1])
+            if not hist.empty:
+                return float(hist["Close"].iloc[-1])
         except Exception as exc:
-            # 2026-08-12: was debug. This is the gateway to resolving a
-            # decision, and an unresolved decision never reaches
-            # decision_outcomes.resolved_at — which is what
-            # TradingProtectionsService's BUY guards read. A persistent
-            # yfinance outage therefore keeps the guards permanently disabled,
-            # and at debug level nothing said so. self_ops_service's
-            # `decision_outcomes_not_stuck` check does catch it, but only once
-            # rows are past horizon+5 days.
-            # 2026-08-12：原為 debug。此處是決策結算的入口，結算不了就永遠不會寫入
-            # resolved_at，而 BUY 護欄正是讀它——資料源持續故障等於護欄長期停用，
-            # 而 debug 層級不會有任何人知道。
-            logger.warning("_fetch_price(%s) failed, decision cannot resolve: %s", ticker, exc)
-            return None
+            logger.warning("_fetch_price(%s) yfinance fallback failed: %s", ticker, exc)
 
-    def _fetch_benchmark_window(self, start: datetime, end: datetime) -> tuple:
+        logger.warning("_fetch_price(%s) failed across all providers, decision cannot resolve", ticker)
+        return None
+
+    def _fetch_benchmark_window(self, start: datetime, end: datetime) -> tuple[Optional[float], Optional[float]]:
         """Return (price_at_start, price_at_end) for the benchmark ticker."""
+        # 1. Primary: MarketDataService historical bars
+        try:
+            mds = self._get_market_data_service()
+            if mds:
+                now = datetime.now(timezone.utc)
+                start_tz = start if start.tzinfo else start.replace(tzinfo=timezone.utc)
+                end_tz = end if end.tzinfo else end.replace(tzinfo=timezone.utc)
+                days_needed = max((now - start_tz).days + 7, 15)
+                ohlcv = mds.get_ohlcv(DEFAULT_BENCHMARK, days=days_needed)
+                dates = ohlcv.get("date", []) if ohlcv else []
+                closes = ohlcv.get("close", []) if ohlcv else []
+                if dates and closes and len(closes) >= 2:
+                    start_str = start_tz.strftime("%Y-%m-%d")
+                    end_str = end_tz.strftime("%Y-%m-%d")
+
+                    # benchmark_then: first trading day on or after start date
+                    start_candidates = [float(c) for d, c in zip(dates, closes) if d >= start_str and c and float(c) > 0]
+                    then_price = start_candidates[0] if start_candidates else float(closes[0])
+
+                    # benchmark_now: last trading day on or before end date
+                    end_candidates = [float(c) for d, c in zip(dates, closes) if d <= end_str and c and float(c) > 0]
+                    now_price = end_candidates[-1] if end_candidates else float(closes[-1])
+
+                    if then_price > 0 and now_price > 0:
+                        return then_price, now_price
+        except Exception as exc:
+            logger.debug("_fetch_benchmark_window MarketDataService path failed: %s", exc)
+
+        # 2. Fallback: yfinance
         try:
             import yfinance as yf
             hist = yf.Ticker(DEFAULT_BENCHMARK).history(
                 start=start.strftime("%Y-%m-%d"),
                 end=(end + timedelta(days=2)).strftime("%Y-%m-%d"),
             )
-            if hist.empty or len(hist) < 2:
-                return None, None
-            return float(hist["Close"].iloc[0]), float(hist["Close"].iloc[-1])
+            if not hist.empty and len(hist) >= 2:
+                return float(hist["Close"].iloc[0]), float(hist["Close"].iloc[-1])
         except Exception as exc:
-            # Same reasoning as _fetch_price: no benchmark, no resolution.
-            # 與 _fetch_price 同理：取不到基準就無法結算。
-            logger.warning("_fetch_benchmark_window failed, decision cannot resolve: %s", exc)
-            return None, None
+            logger.warning("_fetch_benchmark_window yfinance fallback failed: %s", exc)
+
+        logger.warning("_fetch_benchmark_window failed across all providers, decision cannot resolve")
+        return None, None
 
     def _generate_lesson(self, ticker: str, signal: str, realized_pct: float,
                           benchmark_pct: float, alpha_pct: float) -> str:
@@ -247,7 +316,8 @@ class OutcomeReflectionService:
                 f"Alpha (realized - benchmark): {alpha_pct:+.2f}%.\n"
                 "Write a 2-4 sentence lesson for future decisions on this ticker. "
                 "You MUST cite the alpha figure explicitly. Be concrete and specific, "
-                "not generic platitudes."
+                "not generic platitudes. Output ONLY the lesson text directly without "
+                "preamble, reasoning trace, or meta-commentary."
             )
             pipeline = ResilientLLMPipeline(
                 config_chain=chain, user_id=self.user_id,
@@ -258,6 +328,11 @@ class OutcomeReflectionService:
                 resp, _ = await pipeline.execute(
                     [Message(role="user", content=prompt)], temperature=0.4, max_tokens=200,
                 )
+                if resp:
+                    cleaned = str(resp).strip()
+                    if "</think>" in cleaned:
+                        cleaned = cleaned.split("</think>")[-1].strip()
+                    return cleaned
                 return resp
 
             try:
