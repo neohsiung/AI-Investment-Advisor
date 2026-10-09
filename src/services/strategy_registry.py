@@ -70,6 +70,9 @@ class ConcentrationRebalanceContract(StrategyContract):
     def evaluate_exit(self, position: Any, market_context: Dict[str, Any]) -> Optional[StrategyExecutionPlan]:
         return None
 
+    def is_safety_control(self) -> bool:
+        return True
+
 
 class PyramidingScaleInContract(StrategyContract):
     """Contract for momentum breakout pyramiding position scaling."""
@@ -161,8 +164,8 @@ class StrategyRegistry:
         # Standard safety keywords fallback
         return strategy_id in (
             "stop_loss", "trailing_stop_loss", "trailing_stop", "emergency_exit", "position_exit", "take_profit",
-            "capital_rotation", "rebalance_diversification", "cash_deployment",
-            "stagnation_pruning", "macro_volatility_hedge"
+            "capital_rotation", "rebalance_diversification", "portfolio_rebalance", "concentration_rebalance",
+            "cash_deployment", "stagnation_pruning", "macro_volatility_hedge"
         )
 
     @classmethod
@@ -175,8 +178,8 @@ class StrategyRegistry:
         # 1. Register Safety Controls
         for safe_name in [
             "stop_loss", "trailing_stop_loss", "trailing_stop", "emergency_exit", "position_exit", "take_profit",
-            "capital_rotation", "rebalance_diversification", "cash_deployment",
-            "stagnation_pruning"
+            "capital_rotation", "rebalance_diversification", "portfolio_rebalance", "concentration_rebalance",
+            "cash_deployment", "stagnation_pruning"
         ]:
             cls._strategies[safe_name] = SafetyExitContract(safe_name)
 

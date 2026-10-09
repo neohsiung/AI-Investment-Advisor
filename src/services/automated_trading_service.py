@@ -695,7 +695,11 @@ class AutomatedTradingService:
 
                                 if spendable_cash >= min_amount:
                                     dynamic_scaled = min(target_dynamic_amount, spendable_cash)
-                                    if quantity is None or (is_excess_cash and dynamic_scaled > quantity):
+                                    if quantity is None or (
+                                        is_excess_cash
+                                        and dynamic_scaled > quantity
+                                        and strategy_name not in ("cash_deployment", "rebalance_diversification", "portfolio_rebalance", "concentration_rebalance")
+                                    ):
                                         logger.info(
                                             f"{sizing_method_name}: Scaled {ticker} BUY ${quantity or 0:.2f} → ${dynamic_scaled:.2f} "
                                             f"(Target: {dynamic_target_pct:.1%}, NLV: ${nlv:.2f}, Spendable Cash: ${spendable_cash:.2f})"
@@ -1020,6 +1024,7 @@ class AutomatedTradingService:
                 "take_profit": "停利自動執行",
                 "capital_rotation": "換庫自動執行",
                 "rebalance_diversification": "再平衡自動執行",
+                "portfolio_rebalance": "再平衡自動執行",
                 "concentration_rebalance": "再平衡自動執行",
                 "stagnation_pruning": "停滯修剪自動執行",
                 "macro_volatility_hedge": "避險減碼自動執行",
@@ -1027,19 +1032,26 @@ class AutomatedTradingService:
             }
             return True, labels.get(strategy_name, "安全出場自動執行")
 
-        # 再平衡買進、現金部署、金字塔加碼與宏觀避險自動執行 (Rebalance Buy, Cash Deployment, Pyramiding & Macro Hedge Auto-execution)
-        # 若為經投組模型審核之再平衡配置買進、現金部署、強勢股金字塔加碼或宏觀避險，且達最低信賴門檻，由系統自動放行
-        if not is_sell and strategy_name in ("rebalance_diversification", "portfolio_rebalance", "concentration_rebalance", "cash_deployment", "pyramiding_scale_in", "macro_volatility_hedge", "tactical_factor_rotation") and effective_confidence >= min_threshold:
+        # 系統排程與授權策略（分批建倉、再平衡、資本輪動）直接全自主放行 (Scheduled Cash Deployment & Rebalance Authorization Gate)
+        # 凡屬經系統排程或投組模型授權之分批建倉、資產配置再平衡與資本輪動，全權自主放行，杜絕卡住 Celery Worker 審批槽
+        if strategy_name in ("cash_deployment", "rebalance_diversification", "portfolio_rebalance", "concentration_rebalance", "capital_rotation"):
+            if not is_sell:
+                if strategy_name == "cash_deployment":
+                    return True, "自主分批建倉執行 (系統排程授權)"
+                return True, "自主再平衡買進 (模型授權)"
+            else:
+                return True, "自主再平衡賣出 (模型授權)"
+
+        # 金字塔加碼、宏觀避險與波段輪動自動執行
+        if not is_sell and strategy_name in ("pyramiding_scale_in", "macro_volatility_hedge", "tactical_factor_rotation") and effective_confidence >= min_threshold:
             if strategy_name == "pyramiding_scale_in":
                 label = "金字塔加碼自動執行"
-            elif strategy_name == "cash_deployment":
-                label = "現金部署自動放行"
             elif strategy_name == "macro_volatility_hedge":
                 label = "宏觀避險自動放行"
             elif strategy_name == "tactical_factor_rotation":
                 label = "波段輪動自動放行"
             else:
-                label = "再平衡買進自動執行"
+                label = "自動執行"
             return True, label
 
         # 一般賣出且置信度達標

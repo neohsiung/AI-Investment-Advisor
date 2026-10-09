@@ -752,5 +752,168 @@ async def test_autonomous_reporting_mode_suppresses_approval_prompts_completely(
     assert "Declined without human interruption" in res["reason"]
 
 
+@pytest.mark.anyio
+async def test_cash_deployment_unconditionally_auto_executes_without_human_approval(test_svc, mock_interaction_service, mock_broker):
+    """
+    Verify that scheduled cash_deployment BUY orders ALWAYS auto-execute without human approval,
+    even if the confidence score is below the standard auto_trade_threshold.
+    """
+    user_id = "test_user"
+
+    def get_mock(uid, key):
+        if key == "ai_trading_enabled":
+            return "true"
+        if key == "auto_trade_threshold":
+            return "8.5"
+        if key == "auto_trade_min_threshold":
+            return "3.0"
+        if key == "autonomous_reporting_mode":
+            return "true"
+        if key == "tradable_capital_usd":
+            return "2000.0"
+        if key == "max_single_position_pct":
+            return "0.20"
+        return None
+
+    test_svc.settings_repo.get.side_effect = get_mock
+
+    with patch('src.services.automated_trading_service.BrokerFactory.get_broker', return_value=mock_broker), \
+         patch.object(test_svc, '_notify_via_api', new_callable=AsyncMock), \
+         patch('src.services.slippage_guard_service.SlippageGuardService.evaluate_trade', new_callable=AsyncMock) as mock_sg:
+
+        mock_sg.return_value = MagicMock(passed=True, adaptive_limit_price=None, reason="Passed")
+
+        res = await test_svc.evaluate_and_execute_trade(
+            user_id, "NVDA", "buy", 114.0, 6.86, "第 1 批次建倉配置: Alpha Top 1 算力龍頭開倉 ($114.00)",
+            strategy_name="cash_deployment",
+        )
+
+    # Must NOT call request_approval — zero human interruption!
+    mock_interaction_service.request_approval.assert_not_called()
+    assert res["status"] == "success"
+    # Broker execute_order must have been called with cash_deployment
+    mock_broker.execute_order.assert_called_once()
+    order_arg = mock_broker.execute_order.call_args[0][0]
+    assert order_arg.symbol == "NVDA"
+    assert order_arg.strategy_name == "cash_deployment"
+
+
+@pytest.mark.anyio
+async def test_scheduled_portfolio_rebalance_auto_executes_unconditionally(test_svc, mock_interaction_service, mock_broker):
+    """
+    Verify that portfolio_rebalance and rebalance_diversification auto-execute unconditionally.
+    """
+    from src.services.automated_trading_service import AutomatedTradingService
+
+    # 1. Cash deployment
+    auto_exec, label = AutomatedTradingService._determine_auto_execution_policy(
+        is_sell=False,
+        strategy_name="cash_deployment",
+        effective_confidence=5.0,
+        threshold=8.0,
+        auto_exit_enabled=True,
+        autonomous_reporting_mode=True,
+        requires_approval_reason=None,
+        is_optimized=False,
+        min_threshold=3.0,
+    )
+    assert auto_exec is True
+    assert "自主分批建倉執行" in label
+
+    # 2. Portfolio rebalance buy
+    auto_exec, label = AutomatedTradingService._determine_auto_execution_policy(
+        is_sell=False,
+        strategy_name="portfolio_rebalance",
+        effective_confidence=4.5,
+        threshold=8.0,
+        auto_exit_enabled=True,
+        autonomous_reporting_mode=True,
+        requires_approval_reason=None,
+        is_optimized=False,
+        min_threshold=3.0,
+    )
+    assert auto_exec is True
+    assert "自主再平衡買進" in label
+
+    # 3. Portfolio rebalance sell
+    auto_exec, label = AutomatedTradingService._determine_auto_execution_policy(
+        is_sell=True,
+        strategy_name="rebalance_diversification",
+        effective_confidence=4.5,
+        threshold=8.0,
+        auto_exit_enabled=True,
+        autonomous_reporting_mode=True,
+        requires_approval_reason=None,
+        is_optimized=False,
+        min_threshold=3.0,
+    )
+    assert auto_exec is True
+    assert "自主再平衡賣出" in label or "再平衡自動執行" in label
+
+
+@pytest.mark.anyio
+async def test_strategy_registry_safety_controls_include_rebalance_strategies():
+    """
+    Verify that StrategyRegistry recognizes cash_deployment, portfolio_rebalance,
+    and concentration_rebalance as safety/exempt controls.
+    """
+    from src.services.strategy_registry import StrategyRegistry
+
+    assert StrategyRegistry.is_safety_control("cash_deployment") is True
+    assert StrategyRegistry.is_safety_control("portfolio_rebalance") is True
+    assert StrategyRegistry.is_safety_control("concentration_rebalance") is True
+    assert StrategyRegistry.is_safety_control("rebalance_diversification") is True
+    assert StrategyRegistry.is_safety_control("capital_rotation") is True
+
+
+@pytest.mark.anyio
+async def test_cash_deployment_quantity_not_inflated_by_dynamic_kelly_sizing(test_svc, mock_interaction_service, mock_broker):
+    """
+    Verify that an explicit dollar quantity passed for cash_deployment is NOT inflated
+    by dynamic Kelly sizing even when excess cash is detected.
+    """
+    user_id = "test_user"
+
+    def get_mock(uid, key):
+        if key == "ai_trading_enabled":
+            return "true"
+        if key == "auto_trade_threshold":
+            return "7.5"
+        if key == "auto_trade_min_threshold":
+            return "3.0"
+        if key == "enable_dynamic_kelly_sizing":
+            return "true"
+        if key == "autonomous_reporting_mode":
+            return "true"
+        if key == "tradable_capital_usd":
+            return "2000.0"
+        if key == "max_single_position_pct":
+            return "0.20"
+        return None
+
+    test_svc.settings_repo.get.side_effect = get_mock
+
+    # Mock high cash ratio (80% cash) to trigger is_excess_cash
+    mock_acc = MagicMock(total_equity=1000.0, available_cash=800.0)
+    mock_broker.get_account = AsyncMock(return_value=mock_acc)
+
+    with patch('src.services.automated_trading_service.BrokerFactory.get_broker', return_value=mock_broker), \
+         patch.object(test_svc, '_notify_via_api', new_callable=AsyncMock), \
+         patch('src.services.slippage_guard_service.SlippageGuardService.evaluate_trade', new_callable=AsyncMock) as mock_sg:
+
+        mock_sg.return_value = MagicMock(passed=True, adaptive_limit_price=None, reason="Passed")
+
+        res = await test_svc.evaluate_and_execute_trade(
+            user_id, "NVDA", "buy", 114.0, 6.86, "第 1 批次建倉配置: Alpha Top 1 算力龍頭開倉 ($114.00)",
+            strategy_name="cash_deployment",
+        )
+
+    assert res["status"] == "success"
+    order_arg = mock_broker.execute_order.call_args[0][0]
+    # Quantity must remain exactly the planned 114.00 and NOT inflated by Kelly sizing
+    assert order_arg.quantity == 114.00
+    assert order_arg.amount_usd == 114.00
+
+
 
 

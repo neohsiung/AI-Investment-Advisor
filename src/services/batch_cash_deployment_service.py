@@ -18,7 +18,7 @@ Batch Cash Deployment Service
 from __future__ import annotations
 
 import asyncio
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Any, Dict, List, Optional
 import pytz
 
@@ -315,6 +315,25 @@ class BatchCashDeploymentService:
         # 2. 開盤前 5 分鐘波動率視窗檢查 (09:30-09:35 EST)
         if not force:
             is_opening, open_reason = self.slippage_guard.is_opening_auction_window()
+            if is_opening:
+                # 若僅相差 2 分鐘以內即將結束開盤保護窗口，非同步等待至保護結束後自動繼續執行，避免錯過交易日排程
+                try:
+                    now_ny = datetime.now(self.slippage_guard._nyse_tz)
+                    open_time = now_ny.replace(hour=9, minute=30, second=0, microsecond=0)
+                    delay_m = self.slippage_guard._get_setting_int("market_open_delay_minutes", 5)
+                    delay_cutoff = open_time + timedelta(minutes=delay_m)
+                    remaining = int((delay_cutoff - now_ny).total_seconds())
+                    if 0 < remaining <= 120:
+                        wait_sec = remaining + 2
+                        logger.info(
+                            f"Opening window active ({open_reason}). "
+                            f"Auto-waiting {wait_sec}s for buffer window to clear before batch execution..."
+                        )
+                        await asyncio.sleep(wait_sec)
+                        is_opening, open_reason = self.slippage_guard.is_opening_auction_window()
+                except Exception as wait_err:
+                    logger.debug(f"Failed to auto-wait opening window: {wait_err}")
+
             if is_opening:
                 logger.warning(f"Batch Cash Deployment postponed: {open_reason}")
                 return {
