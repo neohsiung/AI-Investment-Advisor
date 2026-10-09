@@ -9,6 +9,7 @@ from src.domain.entities import RiskKeyword
 def mock_repo():
     repo = MagicMock()
     repo.engine = MagicMock()
+    repo.is_duplicate_alert.return_value = False
     repo.get_all_thresholds.return_value = {
         "vix_high": 25.0,
         "vix_extreme": 40.0,
@@ -36,6 +37,7 @@ def mock_tx_service():
 @pytest.fixture
 def mock_settings_service():
     service = MagicMock()
+    service.user_id = "test_user"
     service.get_setting.return_value = True
     return service
 
@@ -189,6 +191,7 @@ async def test_do_send_alert_council_timeout_activates_failsafe(sentinel_service
     """驗證當 Council 研議逾時，_do_send_alert 自動切換至安全模式並記錄警報"""
     sentinel_service.council_service = MagicMock()
     sentinel_service.council_service.start_session = AsyncMock(side_effect=asyncio.TimeoutError("debate hung"))
+    sentinel_service.repo.is_duplicate_alert.return_value = False
 
     triggers = [{
         "text": "🔴 VIX 突增逾時測試",
@@ -198,7 +201,10 @@ async def test_do_send_alert_council_timeout_activates_failsafe(sentinel_service
         "trigger_type": "risk"
     }]
 
-    with patch.object(sentinel_service, "_do_send_alert", wraps=sentinel_service._do_send_alert):
+    mock_broker = MagicMock()
+    mock_broker.get_pending_orders = AsyncMock(return_value=[])
+    with patch("src.services.broker_factory.BrokerFactory.get_broker", return_value=mock_broker), \
+         patch("src.services.event_aggregator.EventAggregator"):
         await sentinel_service._do_send_alert(triggers, source="Sentinel")
 
     # repo.log_alert should have been called with fail-safe content
