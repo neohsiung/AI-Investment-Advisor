@@ -397,3 +397,40 @@ def test_daily_portfolio_summary_self_evolution_length_constraints():
         assert len(title) <= 12, f"Title too long: {title}"
         # Description strictly within 30 characters
         assert len(desc) <= 30, f"Description exceeds 30 characters: {desc}"
+
+
+def test_macro_context_fast_path_and_prefetched_spy():
+    """
+    Verify _get_macro_context respects prefetched_spy and reads VIX/TNX directly
+    from FRED indicators without falling back to slow OHLCV network calls.
+    """
+    async def _test():
+        user_id = "00000000-0000-4000-a000-000000000001"
+        svc = DailyPortfolioSummaryService(user_id=user_id)
+
+        mock_macro_data = {
+            "economics": {
+                "VIX": {"value": 15.08, "trend": "Down"},
+                "TNX_10Y": {"value": 5.28, "trend": "Up"},
+                "10Y2Y_Spread": {"value": 0.16, "trend": "Up"},
+            },
+            "market_indicators": {
+                "^VIX": 15.08,
+                "^TNX": 5.28,
+            }
+        }
+
+        with patch.object(svc.market_svc, "get_macro_data", return_value=mock_macro_data), \
+             patch.object(svc.market_svc, "get_ohlcv") as mock_ohlcv:
+
+            res = svc._get_macro_context(prefetched_spy=575.50)
+
+            assert res["spy"] == "575.50"
+            assert res["vix"] == 15.08 or res["vix"] == "15.08"
+            assert res["spread"] == "0.16%"
+            assert "低波動擴張" in res["note"]
+            # Crucial: get_ohlcv must NEVER be called when data is prefetched and resolved from FRED
+            mock_ohlcv.assert_not_called()
+
+    asyncio.run(_test())
+

@@ -117,7 +117,15 @@ class DailyPortfolioSummaryService:
             today_trades = trades_df.to_dict(orient="records")
 
         # 3. Macro Market Context
-        macro_summary = self._get_macro_context()
+        prefetched_spy = None
+        try:
+            spy_prices = await self.market_svc.get_current_prices(["SPY"])
+            if spy_prices and "SPY" in spy_prices:
+                prefetched_spy = spy_prices["SPY"]
+        except Exception as e:
+            logger.debug(f"Prefetch SPY price skipped: {e}")
+
+        macro_summary = self._get_macro_context(prefetched_spy=prefetched_spy)
 
         # Fetch data subscription cost and compute amortized drag
         monthly_data_cost = 0.0
@@ -178,18 +186,29 @@ class DailyPortfolioSummaryService:
             "evolution_achievements": evolution_achievements,
         }
 
-    def _get_macro_context(self) -> Dict[str, Any]:
-        """Fetch macro indicators safely."""
+    def _get_macro_context(self, prefetched_spy: Optional[float] = None) -> Dict[str, Any]:
+        """Fetch macro indicators safely and with zero latency."""
         res = {"vix": "N/A", "spy": "N/A", "spread": "N/A", "note": "市場整體運行穩定"}
+        if prefetched_spy is not None and prefetched_spy > 0:
+            res["spy"] = f"{prefetched_spy:.2f}"
+
         try:
             macro = self.market_svc.get_macro_data()
             if "market_indicators" in macro:
                 inds = macro["market_indicators"]
-                res["vix"] = inds.get("^VIX", "N/A")
-                res["spy"] = inds.get("SPY", "N/A")
-            if "economics" in macro and "10Y2Y_Spread" in macro["economics"]:
-                s = macro["economics"]["10Y2Y_Spread"]
-                res["spread"] = f"{s.get('value', 'N/A')}%"
+                if res["vix"] == "N/A":
+                    res["vix"] = inds.get("^VIX", "N/A")
+                if res["spy"] == "N/A":
+                    res["spy"] = inds.get("SPY", "N/A")
+            if "economics" in macro:
+                econ = macro["economics"]
+                if "10Y2Y_Spread" in econ:
+                    s = econ["10Y2Y_Spread"]
+                    res["spread"] = f"{s.get('value', 'N/A')}%"
+                if res["vix"] == "N/A" and "VIX" in econ:
+                    res["vix"] = econ["VIX"].get("value", "N/A")
+                if res.get("spread") == "N/A" and "TNX_10Y" in econ:
+                    res["spread"] = f"{econ['TNX_10Y'].get('value', 'N/A')}%"
             
             # Simple regime interpretation
             vix_val = None
@@ -209,7 +228,7 @@ class DailyPortfolioSummaryService:
         except Exception as e:
             logger.warning(f"Failed to fetch macro context: {e}")
 
-        # Fallback for SPY and VIX if YFinance failed (e.g. rate-limited 429)
+        # Fallback for SPY and VIX only if still completely unresolved
         if res.get("spy") in ("N/A", None):
             try:
                 spy_data = self.market_svc.get_ohlcv("SPY", days=5)
