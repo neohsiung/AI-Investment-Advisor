@@ -33,26 +33,50 @@ def test_is_provider_enabled(market_data_service, mock_settings_service):
     mock_settings_service.get_setting.side_effect = lambda key, default=None: True if "enabled" in key else None
     assert market_data_service._is_provider_enabled(mock_provider) is False
 
-@pytest.mark.asyncio
-async def test_get_current_prices(market_data_service):
-    # Mock providers
-    market_data_service.polygon.fetch_current_prices = MagicMock(return_value={"AAPL": 150.0})
-    market_data_service.tiingo.fetch_current_prices = MagicMock(return_value={"MSFT": 300.0})
-    
-    # Disable others to avoid noise
-    with patch.object(market_data_service, '_is_provider_enabled', side_effect=lambda p: p.id in ["polygon", "tiingo"]):
-        prices = await market_data_service.get_current_prices(["AAPL", "MSFT"])
-        assert prices["AAPL"] == 150.0
-        assert prices["MSFT"] == 300.0
+def test_get_current_prices(market_data_service):
+    import asyncio
+    async def _test():
+        # Mock providers
+        market_data_service.polygon.fetch_current_prices = MagicMock(return_value={"AAPL": 150.0})
+        market_data_service.tiingo.fetch_current_prices = MagicMock(return_value={"MSFT": 300.0})
         
-@pytest.mark.asyncio
-async def test_get_price_from_search(market_data_service):
-    market_data_service.search_service.search_financial_context = AsyncMock(return_value=[
-        {"snippet": "The current price of AAPL is $155.50", "title": "AAPL Stock"}
-    ])
-    
-    price = await market_data_service.get_price_from_search("AAPL")
-    assert price == 155.50
+        # Disable others to avoid noise
+        with patch.object(market_data_service, '_is_provider_enabled', side_effect=lambda p: p.id in ["polygon", "tiingo"]):
+            prices = await market_data_service.get_current_prices(["AAPL", "MSFT"])
+            assert prices["AAPL"] == 150.0
+            assert prices["MSFT"] == 300.0
+
+    asyncio.run(_test())
+        
+def test_get_price_from_search(market_data_service):
+    import asyncio
+    async def _test():
+        market_data_service.search_service.search_financial_context = AsyncMock(return_value=[
+            {"snippet": "The current price of AAPL is $155.50", "title": "AAPL Stock"}
+        ])
+        
+        price = await market_data_service.get_price_from_search("AAPL")
+        assert price == 155.50
+
+    asyncio.run(_test())
+
+def test_get_current_prices_redis_cache_hit(market_data_service):
+    import asyncio
+    async def _test():
+        with patch("src.infrastructure.cache.redis_client.get_redis") as mock_get_redis:
+            mock_redis = AsyncMock()
+            # Redis cache returns price for NVDA immediately
+            mock_redis.mget.return_value = ["125.50"]
+            mock_get_redis.return_value = mock_redis
+
+            market_data_service.polygon.fetch_current_prices = MagicMock()
+
+            prices = await market_data_service.get_current_prices(["NVDA"])
+            assert prices["NVDA"] == 125.50
+            # Provider was never called because of cache hit!
+            market_data_service.polygon.fetch_current_prices.assert_not_called()
+
+    asyncio.run(_test())
 
 def test_get_ohlcv(market_data_service):
     mock_df = pd.DataFrame({

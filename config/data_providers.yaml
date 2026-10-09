@@ -73,6 +73,7 @@ providers:
     credentials: [source_finnhub_api_key, source_finnhub_webhook_secret]
     capabilities:
       quote: 30
+      quote_batch: 25
       news: 20
       fundamentals: 15
 
