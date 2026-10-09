@@ -76,7 +76,7 @@ class TestChainsMatchTheOriginalCode:
 
     EXPECTED = {
         "quote":        ["polygon", "tiingo", "finnhub", "fmp", "alpha_vantage", "yahoo_finance"],
-        "quote_batch":  ["polygon", "tiingo", "fmp", "financialdata", "yahoo_finance"],
+        "quote_batch":  ["polygon", "tiingo", "finnhub", "fmp", "financialdata", "yahoo_finance"],
         "history":      ["polygon", "tiingo", "fmp", "yahoo_finance"],
         "indicators":   ["polygon", "yahoo_finance"],
         "news":         ["tiingo", "finnhub", "alpha_vantage", "fmp", "yahoo_finance", "polygon"],
