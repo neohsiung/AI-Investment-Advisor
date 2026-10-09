@@ -97,3 +97,49 @@ class TestFailureModes:
         """
         with pytest.raises(json.JSONDecodeError):
             _extract_score_object('{"score": 7, "key_factor": "truncated mid-str')
+
+
+class TestThinkingAndMarkdownCodeBlocks:
+
+    def test_think_tags_stripped_completely(self):
+        raw = "<think>Let's think about this ticker.\nScore should be 8.5.\n{\n  'unparseable': true\n}</think>\n```json\n{\n  \"score\": 8.5,\n  \"key_factor\": \"Strong moat\"\n}\n```"
+        obj = _extract_score_object(raw)
+        assert obj["score"] == 8.5
+        assert obj["key_factor"] == "Strong moat"
+
+    def test_multiple_code_blocks_selects_last_valid(self):
+        raw = (
+            "Here's an initial draft:\n"
+            "```json\n"
+            "{\"score\": 4.0, \"key_factor\": \"draft\"}\n"
+            "```\n"
+            "Upon further reflection, the revised score is:\n"
+            "```json\n"
+            "{\"score\": 8.8, \"key_factor\": \"final revision\"}\n"
+            "```"
+        )
+        obj = _extract_score_object(raw)
+        assert obj["score"] == 8.8
+        assert obj["key_factor"] == "final revision"
+
+    def test_trailing_comma_handled_gracefully(self):
+        raw = '{"score": 9.0, "key_factor": "AI tailwinds",}'
+        obj = _extract_score_object(raw)
+        assert obj["score"] == 9.0
+
+    def test_heres_a_thinking_process_preamble(self):
+        raw = (
+            "Here's a thinking process:\n"
+            "1. Analyze User Request: score AMD\n"
+            "2. Consider { metrics: [PE, growth] }\n"
+            "Final Answer:\n"
+            "```json\n"
+            "{\n"
+            '  "score": 7.8,\n'
+            '  "key_factor": "Server market share"\n'
+            "}\n"
+            "```"
+        )
+        obj = _extract_score_object(raw)
+        assert obj["score"] == 7.8
+        assert obj["key_factor"] == "Server market share"

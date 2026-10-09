@@ -4032,6 +4032,8 @@ class SentinelService:
             best_candidate = None
             best_cand_score = 0.0
 
+            # Limit to at most 3 rotation candidate evaluations per tick to protect latency
+            unscored_count = 0
             for cand in candidates:
                 cand_ticker = cand.get("ticker")
                 if not cand_ticker or cand_ticker in active_holdings:
@@ -4039,11 +4041,17 @@ class SentinelService:
 
                 cand_score = cand.get("composite_score") or cand.get("confidence") or cand.get("score")
                 if cand_score is None:
+                    if unscored_count >= 3:
+                        continue
+                    unscored_count += 1
                     # Score candidate via CompositorService if not pre-scored
                     try:
                         from src.services.confidence_compositor_service import CompositorService
                         compositor = CompositorService(user_id=self.user_id)
-                        agent_scores = await compositor._gather_agent_scores(cand_ticker, cash_ratio=0.05, target_cash_ratio=0.1)
+                        agent_scores = await self._with_timeout(
+                            compositor._gather_agent_scores(cand_ticker, cash_ratio=0.05, target_cash_ratio=0.1),
+                            timeout=15.0,
+                        )
                         cand_score, _ = compositor._aggregate_scores(agent_scores)
                     except Exception as ce:
                         logger.debug(f"[Capital Rotation] Could not score candidate {cand_ticker}: {ce}")

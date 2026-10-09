@@ -259,7 +259,7 @@ def _load_from_db(user_id: str, tier: str) -> List[ModelCandidate]:
                 # 模型，會先花 token 推理再輸出答案；300 會把 JSON 從中截斷而拋錯，
                 # CompositorService 遂回傳以 ticker 雜湊產生的假分數——原本想省成本
                 # 的上限，實際上把已付費的呼叫變成了假分數。
-                "max_tokens": 1200 if tier == "fast" else (8192 if tier == "advanced" else 2048),
+                "max_tokens": 3000 if tier == "fast" else (8192 if tier == "advanced" else 4096),
                 "temperature": 0.2 if tier == "fast" else 0.7,
                 "headers": {
                     "Cache-Control": "ephem",
