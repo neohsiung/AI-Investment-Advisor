@@ -470,6 +470,16 @@ class BatchCashDeploymentService:
             except Exception as e:
                 logger.warning(f"Failed to record batch advancement in redis: {e}")
 
+        # 5. 若有待確認掛單 (pending orders)，排定 15 秒後自動對賬確認撮合成交
+        pending_trades = [t for t in executed_trades if t.get("status") == "pending"]
+        if pending_trades:
+            try:
+                from src.infrastructure.tasks import reconcile_pending_orders_task
+                reconcile_pending_orders_task.apply_async(args=[self.user_id], countdown=15)
+                logger.info(f"Scheduled prompt order reconciliation (in 15s) for {len(pending_trades)} pending batch orders.")
+            except Exception as recon_err:
+                logger.debug(f"Could not schedule prompt reconciliation task: {recon_err}")
+
         return {
             "success": len(errors) == 0 and any(t.get("status") == "executed" for t in executed_trades),
             "batch_number": batch_number,

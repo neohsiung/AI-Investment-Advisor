@@ -257,6 +257,10 @@ def reconcile_pending_orders_task(user_id: str = None):
             message = result.get("message", "unknown error")
             logger.error(f"Order reconciliation failed for {user_id}: {message}")
             return f"Error: {message}"
+        if isinstance(result, dict) and result.get("status") == "skipped":
+            message = result.get("message", "skipped")
+            logger.info(f"Order reconciliation skipped for {user_id}: {message}")
+            return f"Skipped: {message}"
         return "Success"
     except Exception as e:
         logger.error(f"Order reconciliation task failed: {e}")
