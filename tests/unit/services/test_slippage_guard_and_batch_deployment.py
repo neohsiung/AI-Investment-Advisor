@@ -455,3 +455,55 @@ class TestAutomatedTradingSlippageIntegration:
                 assert "$1057.09" in res
 
         asyncio.run(_test())
+
+    def test_execute_batch_graceful_opening_window_wait(self):
+        """
+        Verify that if execute_batch is called when only <= 120s remain in the opening window,
+        it auto-waits with asyncio.sleep instead of aborting the deployment.
+        """
+        async def _test():
+            settings = DummySettingsService({
+                "enable_slippage_guard": True,
+                "market_open_delay_minutes": 5,
+            })
+            broker = MagicMock()
+            account = MagicMock(total_equity=1000.0, available_cash=800.0)
+            broker.get_account = AsyncMock(return_value=account)
+            broker.get_positions = AsyncMock(return_value=[])
+
+            market_clock = MagicMock()
+            market_clock.is_market_open.return_value = True
+
+            svc = BatchCashDeploymentService(
+                user_id="test_user",
+                settings_service=settings,
+                broker=broker,
+                market_clock=market_clock,
+            )
+
+            # First check: in opening window (e.g. 09:34:55 EST -> 5s remaining)
+            # Second check: opening window has cleared
+            svc.slippage_guard.is_opening_auction_window = MagicMock(
+                side_effect=[(True, "美股開盤前 5 分鐘極端波動保護窗口"), (False, "開盤緩衝期已過")]
+            )
+
+            # Mock NY time to 09:34:55 (5s remaining)
+            ny_tz = pytz.timezone("US/Eastern")
+            mock_now = ny_tz.localize(datetime(2026, 10, 9, 9, 34, 55))
+
+            with patch("src.services.batch_cash_deployment_service.datetime") as mock_dt, \
+                 patch("asyncio.sleep", new_callable=AsyncMock) as mock_sleep, \
+                 patch.object(svc, "get_deployment_plan", new_callable=AsyncMock) as mock_plan:
+
+                mock_dt.now.return_value = mock_now
+                mock_plan.return_value = {"can_execute": False, "status": {"deployable_cash": 0.0}}
+
+                res = await svc.execute_batch(batch_number=1, force=False, enforce_market_hours=True)
+
+                # Should have auto-waited 5 + 2 = 7 seconds
+                mock_sleep.assert_called_once_with(7)
+                # And the second check was called, which cleared opening window
+                assert svc.slippage_guard.is_opening_auction_window.call_count == 2
+                assert res.get("status") != "opening_window_deferred"
+
+        asyncio.run(_test())
