@@ -214,8 +214,8 @@ class OpportunityCostService:
             try:
                 multiplier = float(self.settings_service.get_setting("rotation_friction_multiplier", self.DEFAULT_MULTIPLIER))
                 hurdle_rate = float(self.settings_service.get_setting("rotation_hurdle_rate", self.DEFAULT_HURDLE_RATE))
-            except Exception:
-                pass
+            except Exception as e:
+                logger.debug(f"OpportunityCostService: Failed to read rotation settings: {e}")
 
         friction_hurdle_score = (multiplier * friction * 100.0)  # e.g. 2.5 * 0.3% * 100 = 0.75 points
         hurdle_rate_score = (hurdle_rate * 100.0)                 # e.g. 1.0% * 100 = 1.00 points
@@ -393,7 +393,7 @@ class OpportunityCostService:
                 metrics=metrics,
             )
 
-        if raw_delta >= hurdle or net_delta >= hurdle:
+        if net_delta >= hurdle:
             return SwapDecision(
                 should_swap=True,
                 holding_ticker=sell_sym,
@@ -489,11 +489,23 @@ class OpportunityCostService:
                 continue
 
             sell_conf = float(s.get("confidence") or 0.5)
+            holding_state = {
+                "protection_status": s.get("protection_status"),
+                "is_runner": s.get("is_runner", False),
+                "unrealized_pnl_pct": s.get("unrealized_pnl_pct", 0.0),
+                "is_broken": s.get("is_broken", False),
+                "event_bias": s.get("event_bias", 0.0),
+            }
+            candidate_state = {
+                "event_bias": top_buy.get("event_bias", 0.0),
+            }
             assessment = self.evaluate_swap(
                 holding_ticker=ticker,
                 candidate_ticker=buy_ticker,
                 holding_score=sell_conf,
                 candidate_score=buy_conf,
+                holding_state=holding_state,
+                candidate_state=candidate_state,
                 is_pruning=is_pruning,
                 is_risk_trim=is_risk_trim,
             )

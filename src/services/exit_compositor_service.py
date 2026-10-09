@@ -635,10 +635,19 @@ def compute_dynamic_atr_exit(
     # 2. Institutional Support Anchor / Ratchet
     if institutional_support_price and institutional_support_price > 0:
         support_stop = institutional_support_price * 0.992  # 0.8% buffer below support
-        if support_stop > active_stop:
-            active_stop = support_stop
-            if active_stop >= entry_price:
+        if support_stop >= entry_price:
+            if support_stop > active_stop:
+                active_stop = support_stop
                 ratchet_stage = "SUPPORT_LOCKED"
+        else:
+            # Tier 0 initial stop-loss zone (below entry).
+            # Prevent institutional support from compressing stop too tight and causing whipsaw exits
+            # by requiring a minimum volatility noise buffer (at least 1.5x ATR or 4.5% below entry).
+            min_noise_distance = max(1.5 * effective_atr, entry_price * 0.045)
+            max_allowed_tier0_stop = entry_price - min_noise_distance
+            capped_support_stop = min(support_stop, max_allowed_tier0_stop)
+            if capped_support_stop > active_stop:
+                active_stop = capped_support_stop
 
     # 3. Tier 1: Profit Ratchet Stage: Breakeven (peak >= +5%)
     if peak_pnl_pct >= 5.0:

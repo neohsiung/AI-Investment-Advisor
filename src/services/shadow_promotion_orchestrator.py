@@ -631,7 +631,11 @@ class ShadowPromotionOrchestrator:
             positions = port.get("positions", [])
             total_equity = float(port.get("total_equity", 0.0))
             total_cash = float(port.get("total_cash", 0.0))
-            raw_total = total_equity + total_cash
+            stock_value = sum(float(getattr(p, "market_value", 0.0) or 0.0) for p in positions)
+            if total_equity >= (stock_value + total_cash * 0.8) and total_equity > 0:
+                raw_total = total_equity
+            else:
+                raw_total = total_equity + total_cash
 
             active_holdings = []
             pinned_tickers = {

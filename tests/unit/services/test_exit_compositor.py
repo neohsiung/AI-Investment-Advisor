@@ -371,4 +371,27 @@ class TestDynamicAtrExit:
         )
         assert res.stop_price >= 116.0
 
+    def test_tier0_initial_stop_preserves_volatility_noise_buffer_against_narrow_support(self):
+        from src.services.exit_compositor_service import compute_dynamic_atr_exit
+
+        # Entry at $160, ATR = $4.80. Normal initial stop = 160 - 2.0*4.80 = $150.40 (-6%)
+        # Suppose institutional support is detected at $158.50 (just 0.9% below entry).
+        # Without protection, support_stop = 158.50 * 0.992 = $157.23 (-1.7% from entry).
+        # A -2.31% normal intraday noise pullback (to $156.30) would get stopped out!
+        # With volatility noise buffer protection, Tier 0 requires at least 1.5x ATR (or 4.5%):
+        # max_allowed_stop = 160 - max(1.5*4.8=7.2, 160*0.045=7.2) = $152.80.
+        res = compute_dynamic_atr_exit(
+            entry_price=160.0,
+            current_price=156.30,  # -2.31% intraday pullback
+            highest_price=160.5,   # Just entered, peak < 5%
+            atr=4.80,
+            institutional_support_price=158.50,
+        )
+        # Should NOT exit on normal -2.31% intraday pullback!
+        assert res.should_exit is False
+        assert res.exit_type == "HOLD"
+        assert res.ratchet_stage == "INITIAL"
+        assert res.stop_price <= 152.80
+
+
 

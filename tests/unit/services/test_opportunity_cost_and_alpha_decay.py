@@ -86,6 +86,27 @@ class TestOpportunityCostService:
         assert "顯著超越非線性機會成本門檻" in assessment.reason
         assert "核准置換" in assessment.reason
 
+    def test_evaluate_swap_raw_delta_exceeds_but_net_delta_below_hurdle_rejected(self):
+        """
+        Verify bugfix: raw_delta >= hurdle (e.g. 2.10 >= 2.00)
+        but net_delta < hurdle (e.g. 1.81 < 2.00 after subtracting friction hurdle)
+        must be rejected (should_swap=False) to prevent churn from eroding edge.
+        """
+        service = OpportunityCostService(user_id="test-user", min_score_delta=2.0)
+        # holding score 5.0, candidate score 7.1 -> raw_delta = 2.10 >= 2.00
+        # net_delta = raw_delta - friction_hurdle_score (~0.30) = 1.80 < 2.00
+        # With raw_delta >= hurdle (2.10 >= 2.0) but net_delta < hurdle (1.80 < 2.0),
+        # the swap must be rejected to prevent churn from eroding the edge.
+        assessment = service.evaluate_swap(
+            holding_ticker="TSM",
+            candidate_ticker="AMD",
+            holding_score=5.0,
+            candidate_score=7.1,
+        )
+        assert assessment.should_swap is False
+        assert "未達非線性機會成本門檻" in assessment.reason
+        assert "抑制無謂換手" in assessment.reason
+
     def test_evaluate_swap_with_expected_returns(self):
         """Test expected return deltas scaled across 60-day horizon."""
         mock_settings = MagicMock()

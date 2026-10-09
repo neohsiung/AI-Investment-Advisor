@@ -675,7 +675,11 @@ class ConfidenceRebalanceService:
             # Portfolio weights MUST always sum to 100% of the actual portfolio (raw_total).
             # 持倉權重與現金比例之分母必須為真實總資產 (raw_total)，確保全帳戶權重加總恆等於 100.0%，
             # 避免因 tradable_capital 上限導致權重虛胖至 200%+ 而扭曲再平衡與買賣判斷。
-            raw_total = total_equity + total_cash
+            stock_value = sum(float(getattr(p, "market_value", 0.0) or 0.0) for p in positions)
+            if total_equity >= (stock_value + total_cash * 0.8) and total_equity > 0:
+                raw_total = total_equity
+            else:
+                raw_total = total_equity + total_cash
             effective_capital = tradable_capital(self.user_id, raw_total)
 
             base_for_weights = raw_total if raw_total > 0 else total_equity
