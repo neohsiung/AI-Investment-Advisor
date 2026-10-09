@@ -764,5 +764,48 @@ async def test_on_realtime_event_with_breakout_filter(sentinel):
     assert payload["data"]["ticker"] == "TSLA"
 
 
+@pytest.mark.anyio
+async def test_resolve_and_update_peak_discards_contaminated_stored_peak(sentinel):
+    """
+    Verify Sentinel discards an absurdly contaminated peak in Redis (e.g. $1474 for a $100 stock).
+    Such dirty peaks previously caused instant whipsaw exits.
+    """
+    mock_redis = AsyncMock()
+    # Stored peak is $1474.53 in Redis, but cost basis is $100.00 and current price is $102.00
+    mock_redis.get = AsyncMock(return_value="1474.53")
+    mock_redis.set = AsyncMock()
+    mock_redis.delete = AsyncMock()
+
+    with patch("src.infrastructure.cache.redis_client.get_redis", AsyncMock(return_value=mock_redis)):
+        peak = await sentinel._resolve_and_update_peak(
+            ticker="MU",
+            current_price=102.0,
+            avg_price=100.0,
+        )
+        # Should discard 1474.53 and set peak to max(avg_price, current_price) = 102.0
+        assert peak == 102.0
+        mock_redis.delete.assert_called_once()
+
+
+@pytest.mark.anyio
+async def test_clear_position_peak_and_stop_purges_memory_and_redis(sentinel):
+    """Verify _clear_position_peak_and_stop purges both in-memory state and Redis keys."""
+    sentinel._position_peaks = {"AMD": 657.4}
+    sentinel._position_stops = {"AMD": 624.68}
+
+    mock_redis = AsyncMock()
+    mock_redis.delete = AsyncMock()
+
+    with patch("src.infrastructure.cache.redis_client.get_redis", AsyncMock(return_value=mock_redis)):
+        await sentinel._clear_position_peak_and_stop("AMD")
+        assert "AMD" not in sentinel._position_peaks
+        assert "AMD" not in sentinel._position_stops
+        mock_redis.delete.assert_called_once_with(
+            f"sentinel:peak:{sentinel.user_id}:AMD",
+            f"sentinel:stop:{sentinel.user_id}:AMD",
+        )
+
+
+
 
 

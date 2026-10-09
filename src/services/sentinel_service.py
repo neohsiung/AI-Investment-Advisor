@@ -3234,6 +3234,21 @@ class SentinelService:
             self._position_peaks = {}
         in_memory_peak = self._position_peaks.get(ticker, 0.0)
 
+        # Anomaly / Dirty Data Defense:
+        # If stored_peak or in_memory_peak is wildly detached from current position's cost basis
+        # (e.g. > 2.0x avg_price while current_price is near avg_price), it is an invalid contaminated
+        # peak from an old cycle, test run, or data glitch. Discard and purge it.
+        if avg_price > 0:
+            if stored_peak > avg_price * 2.0 and current_price < avg_price * 1.5:
+                logger.warning(
+                    f"Sentinel: Stored peak ${stored_peak:.2f} for {ticker} is anomalously high "
+                    f"relative to cost basis ${avg_price:.2f} (current: ${current_price:.2f}). Discarding contaminated peak."
+                )
+                stored_peak = 0.0
+                await self._clear_position_peak_and_stop(ticker)
+            if in_memory_peak > avg_price * 2.0 and current_price < avg_price * 1.5:
+                in_memory_peak = 0.0
+
         effective_peak = max(stored_peak, in_memory_peak, avg_price, current_price)
         self._position_peaks[ticker] = effective_peak
 
@@ -3248,6 +3263,22 @@ class SentinelService:
                 logger.debug(f"Sentinel: Redis peak update skipped for {ticker}: {e}")
 
         return effective_peak
+
+    async def _clear_position_peak_and_stop(self, ticker: str) -> None:
+        """Clear cached peak price and ratchet stop for a closed/liquidated position."""
+        if hasattr(self, '_position_peaks') and self._position_peaks:
+            self._position_peaks.pop(ticker, None)
+        if hasattr(self, '_position_stops') and self._position_stops:
+            self._position_stops.pop(ticker, None)
+        try:
+            from src.infrastructure.cache.redis_client import get_redis
+            r = await get_redis(decode_responses=True)
+            peak_key = f"sentinel:peak:{self.user_id}:{ticker}"
+            stop_key = f"sentinel:stop:{self.user_id}:{ticker}"
+            await r.delete(peak_key, stop_key)
+            logger.info(f"Sentinel: Cleared peak and stop cache for {ticker}")
+        except Exception as e:
+            logger.debug(f"Sentinel: Redis cache clear skipped for {ticker}: {e}")
 
     async def _resolve_ratchet_stop(self, ticker: str) -> Optional[float]:
         """讀取歷史紀錄之最高停損價（支援 Redis 持久化 + 行程內字典快取）"""
@@ -3302,6 +3333,16 @@ class SentinelService:
             current_allocation = await self._get_current_allocation()
             if not current_allocation:
                 return triggers
+
+            # Active holdings reconciliation: clear memory cache for any closed tickers
+            if hasattr(self, '_position_peaks') and self._position_peaks:
+                for held_t in list(self._position_peaks.keys()):
+                    if held_t not in current_allocation:
+                        self._position_peaks.pop(held_t, None)
+            if hasattr(self, '_position_stops') and self._position_stops:
+                for held_t in list(self._position_stops.keys()):
+                    if held_t not in current_allocation:
+                        self._position_stops.pop(held_t, None)
 
             enable_fixed_stops_val = self.settings_service.get_setting("enable_fixed_stops", False, self.user_id)
             enable_fixed_stops = str(enable_fixed_stops_val).lower() in ("true", "1") if enable_fixed_stops_val is not None else False
@@ -3584,8 +3625,8 @@ class SentinelService:
                         try:
                             if hasattr(self.market_service, "get_technical_indicators"):
                                 ind = self.market_service.get_technical_indicators(ticker) or {}
-                        except Exception:
-                            pass
+                        except Exception as e:
+                            logger.debug(f"Sentinel: Technical indicators fetch skipped for {ticker}: {e}")
 
                         sma_20 = float(ind.get("sma_20") or 0.0)
                         rsi = float(ind.get("rsi") or 50.0)
@@ -3823,6 +3864,10 @@ class SentinelService:
                     rationale=rationale,
                     strategy_name=strategy_name,
                 )
+                if res and res.get("status") in ("success", "executed"):
+                    if strategy_name != "take_profit":
+                        await self._clear_position_peak_and_stop(ticker)
+
                 target_ticker = trigger.get("target_ticker")
                 if (
                     strategy_name == "capital_rotation"
