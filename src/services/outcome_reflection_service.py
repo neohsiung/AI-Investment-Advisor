@@ -326,14 +326,14 @@ class OutcomeReflectionService:
 
             async def _run():
                 resp, _ = await pipeline.execute(
-                    [Message(role="user", content=prompt)], temperature=0.4, max_tokens=200,
+                    [
+                        Message(role="system", content="You are a quantitative trading analyst. Output ONLY the 2-4 sentence lesson directly. Do not output any thought process or numbered analysis."),
+                        Message(role="user", content=prompt),
+                    ],
+                    temperature=0.3,
+                    max_tokens=600,
                 )
-                if resp:
-                    cleaned = str(resp).strip()
-                    if "</think>" in cleaned:
-                        cleaned = cleaned.split("</think>")[-1].strip()
-                    return cleaned
-                return resp
+                return self._clean_lesson(resp, ticker, signal, alpha_pct)
 
             try:
                 loop = asyncio.get_running_loop()
@@ -357,6 +357,25 @@ class OutcomeReflectionService:
             # 此非模型產出。
             logger.warning("_generate_lesson LLM call failed (%s); using templated fallback", exc)
             return f"[未經模型分析 / not model-generated] {self._fallback_lesson(ticker, signal, alpha_pct)}"
+
+    @staticmethod
+    def _clean_lesson(resp: Any, ticker: str, signal: str, alpha_pct: float) -> str:
+        if not resp:
+            return OutcomeReflectionService._fallback_lesson(ticker, signal, alpha_pct)
+        import re
+        t = str(resp).strip()
+        if "</think>" in t:
+            t = t.split("</think>")[-1].strip()
+        if any(m in t for m in ["Here's a thinking process:", "Analyze User Request", "Analyze the Request", "**Analyze"]):
+            quotes = re.findall(r'"([^"\n]{30,})"', t)
+            if quotes:
+                alpha_str = f"{abs(alpha_pct):.2f}"
+                for q in reversed(quotes):
+                    if alpha_str in q or ticker in q:
+                        return q.strip()
+                return quotes[-1].strip()
+            return OutcomeReflectionService._fallback_lesson(ticker, signal, alpha_pct)
+        return t
 
     @staticmethod
     def _fallback_lesson(ticker: str, signal: str, alpha_pct: float) -> str:
