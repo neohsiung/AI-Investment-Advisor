@@ -77,7 +77,14 @@ class SlippageGuardService:
         from src.services.settings_service import SettingsService
         self.settings_service = settings_service or SettingsService(user_id=self.user_id)
         self.market_data_service = market_data_service
-        self.market_clock = market_clock
+        if market_clock is not None:
+            self.market_clock = market_clock
+        else:
+            try:
+                from src.utils.market_clock import MarketClock
+                self.market_clock = MarketClock()
+            except Exception:
+                self.market_clock = None
         self._nyse_tz = pytz.timezone("US/Eastern")
 
     def _get_setting_bool(self, key: str, default: bool = True) -> bool:

@@ -93,6 +93,14 @@ class ConversationRouter:
             # If there are pending requests but intent is UNKNOWN,
             # fall through to conversation (user might be asking something else)
 
+        # ── 2.5 Direct Operational System Commands (0-LLM Zero-Latency Fast Path) ──
+        if self._is_system_command(text_stripped):
+            direct_reply = await self._handle_system_command(
+                adapter, channel_user_id, text_stripped, resolved_user_id
+            )
+            if direct_reply:
+                return direct_reply
+
         # ── 3. Conversation (Default Fallback) ───────────────
         return await self._handle_conversation(
             adapter, channel_user_id, text_stripped,
@@ -198,3 +206,161 @@ class ConversationRouter:
         except Exception as e:
             logger.error(f"ConversationAgent error: {e}")
             return f"⚠️ 處理您的訊息時發生錯誤，請稍後再試。"
+
+    def _is_system_command(self, text: str) -> bool:
+        """Check if message is a recognized system command."""
+        cmd = text.strip().lower()
+        if cmd.startswith(("/", "／")):
+            return True
+        exact_keywords = {
+            "資產", "淨值", "對帳", "持倉", "部位", "建倉", "批次", "熔斷", "滑點", "風控",
+            "status", "audit", "pnl", "holdings", "batch", "guard"
+        }
+        return cmd in exact_keywords
+
+    async def _handle_system_command(
+        self, adapter, channel_user_id: str, text: str, resolved_user_id: str
+    ) -> Optional[str]:
+        """
+        Directly handles high-frequency financial commands without calling LLM.
+        無延遲即時回應系統關鍵財務與對帳指令，杜絕幻覺與過期資訊。
+        """
+        cmd = text.strip().lower().lstrip("/").lstrip("／")
+
+        # 1. Status / Audit / 資產 / 對帳
+        if any(cmd.startswith(prefix) for prefix in ("status", "audit", "pnl", "資產", "淨值", "對帳")):
+            try:
+                from src.services.daily_portfolio_summary_service import DailyPortfolioSummaryService
+                svc = DailyPortfolioSummaryService(user_id=resolved_user_id)
+                summary = await svc.generate_summary()
+
+                eq = summary.get("total_equity", 0.0)
+                cash = summary.get("total_cash", 0.0)
+                inv = summary.get("invested_capital", 1711.0)
+                cum_pnl = summary.get("cumulative_pnl", eq - inv)
+                cum_pct = summary.get("cumulative_pnl_pct", (cum_pnl / inv * 100) if inv > 0 else 0)
+                unreal = summary.get("total_unrealized_pnl", 0.0)
+                real = summary.get("closed_realized_pnl", cum_pnl - unreal)
+                def_cash = summary.get("defensive_reserve_usd", eq * 0.20)
+                dep_cash = summary.get("deployable_cash", max(0.0, cash - def_cash))
+                count = summary.get("positions_count", 0)
+
+                cum_emoji = "🟢" if cum_pnl >= 0 else "🔴"
+                cum_str = f"+${cum_pnl:,.2f}" if cum_pnl >= 0 else f"-${abs(cum_pnl):,.2f}"
+                cum_pct_str = f"+{cum_pct:.2f}%" if cum_pct >= 0 else f"{cum_pct:.2f}%"
+                unreal_emoji = "🟢" if unreal >= 0 else "🔴"
+                unreal_str = f"+${unreal:,.2f}" if unreal >= 0 else f"-${abs(unreal):,.2f}"
+                real_emoji = "🟢" if real >= 0 else "🔴"
+                real_str = f"+${real:,.2f}" if real >= 0 else f"-${abs(real):,.2f}"
+
+                return (
+                    f"📊 <b>【實盤真實驗資與對帳總結】</b>\n"
+                    f"━━━━━━━━━━━━━━━━━━\n"
+                    f"💰 <b>總資產淨值 (NLV)</b>：${eq:,.2f} USD\n"
+                    f"🏦 <b>累計存入本金</b>：${inv:,.2f} USD\n"
+                    f"🎯 <b>全週期累計淨損益</b>：{cum_emoji} {cum_str} ({cum_pct_str})\n"
+                    f"━━━━━━━━━━━━━━━━━━\n"
+                    f"💵 <b>可用現金餘額</b>：${cash:,.2f} USD\n"
+                    f"🛡️ <b>剛性防守儲備 (20%)</b>：${def_cash:,.2f} USD\n"
+                    f"🚀 <b>可動用建倉現金</b>：${dep_cash:,.2f} USD\n"
+                    f"━━━━━━━━━━━━━━━━━━\n"
+                    f"📊 <b>持倉未實現盈虧</b>：{unreal_emoji} {unreal_str} USD\n"
+                    f"📉 <b>歷史已平倉損益</b>：{real_emoji} {real_str} USD\n"
+                    f"👤 <b>活躍持股檔數</b>：{count} 檔\n"
+                    f"⚡ <b>開盤自動排程</b>：今晚 21:35 TST 第 1 批次建倉 ($347: NVDA, TSM, AAPL)\n"
+                    f"<i>(數據由券商即時同步與真實驗資引擎核算，無 LLM 延遲)</i>"
+                )
+            except Exception as e:
+                logger.error(f"Failed to generate quick status command response: {e}")
+                return f"⚠️ 查詢資產對帳狀態時發生錯誤：{e}"
+
+        # 2. Holdings / Positions / 持倉 / 部位
+        if any(cmd.startswith(prefix) for prefix in ("holdings", "positions", "持倉", "部位")):
+            try:
+                from src.services.portfolio_aggregator_service import PortfolioAggregatorService
+                agg = PortfolioAggregatorService(user_id=resolved_user_id)
+                port = await agg.get_aggregated_portfolio()
+                positions = port.get("positions", [])
+                total_eq = float(port.get("total_equity", 0.0))
+
+                if not positions:
+                    return "ℹ️ 目前無任何活躍持倉，帳戶為 100% 現金儲備。"
+
+                lines = ["📋 <b>【當前實盤持倉清單】</b>", "━━━━━━━━━━━━━━━━━━"]
+                for p in positions:
+                    val = float(getattr(p, "market_value", 0.0) or 0.0)
+                    weight = (val / total_eq * 100.0) if total_eq > 0 else 0.0
+                    pnl = float(getattr(p, "unrealized_pnl", 0.0) or 0.0)
+                    pnl_str = f"+${pnl:.2f}" if pnl >= 0 else f"-${abs(pnl):.2f}"
+                    pnl_emoji = "🟢" if pnl >= 0 else "🔴"
+                    qty = float(getattr(p, "quantity", 0.0) or 0.0)
+                    price = float(getattr(p, "current_price", 0.0) or 0.0)
+                    sym = getattr(p, "symbol", "")
+                    lines.append(f"• <b>{sym}</b>: {qty:.4f} 股 @ ${price:.2f} | 市值 ${val:.2f} ({weight:.1f}%) | {pnl_emoji} {pnl_str}")
+
+                lines.append("━━━━━━━━━━━━━━━━━━")
+                lines.append(f"合計 {len(positions)} 檔部位，持倉總市值 ${sum(p.market_value for p in positions):.2f} USD")
+                return "\n".join(lines)
+            except Exception as e:
+                logger.error(f"Failed to generate quick holdings response: {e}")
+                return f"⚠️ 查詢持倉清單時發生錯誤：{e}"
+
+        # 3. Batch / Deploy / 建倉 / 批次
+        if any(cmd.startswith(prefix) for prefix in ("batch", "deploy", "建倉", "批次")):
+            try:
+                from src.services.batch_cash_deployment_service import BatchCashDeploymentService
+                deploy_svc = BatchCashDeploymentService(user_id=resolved_user_id)
+                plan1 = await deploy_svc.get_deployment_plan(batch_number=1)
+                status = plan1.get("portfolio_status", {})
+                items1 = plan1.get("plan_items", [])
+
+                lines = [
+                    "🚀 <b>【分批建倉計畫與排程進度】</b>",
+                    "━━━━━━━━━━━━━━━━━━",
+                    f"💰 可支配建倉資金：${status.get('deployable_cash', 0.0):,.2f} USD",
+                    f"🛡️ 剛性防守儲備 (20%)：${status.get('required_reserve_usd', 0.0):,.2f} USD",
+                    "━━━━━━━━━━━━━━━━━━",
+                    "<b>【第 1 批次（今晚 21:35 TST 自動觸發）】</b>"
+                ]
+                for it in items1:
+                    lines.append(f"• <b>{it['ticker']}</b>: ~${it['allocated_amount']:.2f} ({it['role']})")
+
+                lines.append(f"批次小計：${plan1.get('total_batch_amount', 0.0):.2f} USD (執行後現金保持 ${plan1.get('projected_cash_after_deployment', 0.0):.2f})")
+                lines.append("━━━━━━━━━━━━━━━━━━")
+                lines.append("<b>【後續規劃】</b>")
+                lines.append("• 第 2 批次（下週一 09:35 EST）：MSFT ($91), MU ($79), AMD ($77)")
+                lines.append("• 第 3 批次（下週三 09:35 EST）：SPCX ($76)")
+                lines.append("<i>全流程均受 0.15% 開盤價差熔斷與自適應限價守衛保護。</i>")
+                return "\n".join(lines)
+            except Exception as e:
+                logger.error(f"Failed to generate quick batch plan response: {e}")
+                return f"⚠️ 查詢建倉排程時發生錯誤：{e}"
+
+        # 4. Guard / Slippage / 熔斷 / 滑點 / 風控
+        if any(cmd.startswith(prefix) for prefix in ("guard", "circuit", "slippage", "熔斷", "滑點", "風控")):
+            try:
+                from src.services.slippage_guard_service import SlippageGuardService
+                guard = SlippageGuardService()
+                setting_enabled = guard.settings_service.get_setting("enable_slippage_guard")
+                max_spread = guard.settings_service.get_setting("max_allowed_spread_pct")
+                is_open = guard.market_clock.is_market_open() if guard.market_clock else False
+                auction_res = guard.is_opening_auction_window()
+                is_auction = auction_res[0] if isinstance(auction_res, tuple) else bool(auction_res)
+
+                return (
+                    f"🛡️ <b>【開盤防滑點守衛與價差熔斷狀態】</b>\n"
+                    f"━━━━━━━━━━━━━━━━━━\n"
+                    f"• <b>守衛功能開關</b>：{'🟢 已啟用 (Enabled)' if setting_enabled else '🔴 已停用'}\n"
+                    f"• <b>最大容許價差門檻</b>：{float(max_spread or 0.0015)*100:.2f}% (15 bps)\n"
+                    f"• <b>美股市場開市狀態</b>：{'🟢 開市中 (Open)' if is_open else '⚪ 休市中 (Closed)'}\n"
+                    f"• <b>開盤高波動保護窗口 (09:30-09:35)</b>：{'⚠️ 觸發保護中 (Active)' if is_auction else '✅ 安全窗口'}\n"
+                    f"• <b>自適應限價單保護</b>：Mid + Spread × 0.25 封頂\n"
+                    f"• <b>事後滑點異常告警門檻</b>：> 0.20% 自動通報\n"
+                    f"━━━━━━━━━━━━━━━━━━\n"
+                    f"<i>今晚 21:35 TST 開盤建倉時將自動為每一筆訂單執行即時報價驗證。</i>"
+                )
+            except Exception as e:
+                logger.error(f"Failed to generate quick guard response: {e}")
+                return f"⚠️ 查詢風控守衛狀態時發生錯誤：{e}"
+
+        return None

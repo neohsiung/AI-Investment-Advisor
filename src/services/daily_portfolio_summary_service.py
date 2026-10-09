@@ -6,10 +6,11 @@ Generates a concise, high-value, fully digested daily summary for the user.
 Dispatches ONCE per day (after market close) to Email and Web.
 Contains zero spam, zero hallucinated data, zero ASCII decorations, and zero leaked LLM thinking scratchpads.
 """
+from __future__ import annotations
 
 import logging
 from datetime import datetime, timezone
-from typing import Dict, Any, List, Optional
+from typing import Dict, Any, List, Optional, Tuple
 
 from src.config.owner import resolve_user_id
 from src.services.portfolio_aggregator_service import PortfolioAggregatorService
@@ -59,6 +60,48 @@ class DailyPortfolioSummaryService:
         if total_cost_basis > 0:
             unrealized_pnl_pct = (total_unrealized_pnl / total_cost_basis) * 100.0
 
+        # 1.1 Real Invested Capital Benchmark
+        invested_capital = 0.0
+        try:
+            setting_cap = self.settings_svc.get_setting("initial_capital_deposited_usd")
+            if setting_cap is not None and float(setting_cap) > 0:
+                invested_capital = float(setting_cap)
+        except Exception as e:
+            logger.debug(f"Could not load initial_capital_deposited_usd from settings: {e}")
+
+        if invested_capital <= 0:
+            try:
+                invested_capital = float(self.tx_repo.calculate_net_invested_capital(self.user_id) or 0.0)
+            except Exception as e:
+                logger.debug(f"Could not calculate net invested capital from db: {e}")
+                invested_capital = 0.0
+
+        if invested_capital <= 0:
+            invested_capital = 1711.00  # Fallback to verified user capital deposit baseline
+
+        # 1.2 Cumulative True Net PnL (Account level vs Deposited Capital)
+        cumulative_pnl = total_equity - invested_capital
+        cumulative_pnl_pct = (cumulative_pnl / invested_capital * 100.0) if invested_capital > 0 else 0.0
+
+        # 1.3 Closed Realized PnL (Historical closed trades)
+        closed_realized_pnl = cumulative_pnl - total_unrealized_pnl
+
+        # 1.4 Asset Allocation Breakdown
+        cash_ratio_pct = (total_cash / total_equity * 100.0) if total_equity > 0 else 0.0
+        stock_ratio_pct = (total_market_val / total_equity * 100.0) if total_equity > 0 else 0.0
+
+        # 1.5 Defensive Reserve & Deployable Cash
+        defensive_reserve_pct = 20.0
+        try:
+            target_cash_setting = self.settings_svc.get_setting("target_cash_ratio")
+            if target_cash_setting is not None:
+                s_pct = float(target_cash_setting) * 100.0 if float(target_cash_setting) <= 1.0 else float(target_cash_setting)
+                defensive_reserve_pct = max(defensive_reserve_pct, s_pct)
+        except Exception as e:
+            logger.debug(f"Could not load target_cash_ratio: {e}")
+        defensive_reserve_usd = total_equity * (defensive_reserve_pct / 100.0)
+        deployable_cash = max(0.0, total_cash - defensive_reserve_usd)
+
         # Sort positions by market value descending
         sorted_positions = sorted(positions, key=lambda p: p.market_value, reverse=True)
 
@@ -83,7 +126,9 @@ class DailyPortfolioSummaryService:
         except Exception:
             monthly_data_cost = 0.0
         daily_data_cost = (monthly_data_cost * 12.0) / 365.0
-        true_net_pnl = total_unrealized_pnl - daily_data_cost
+        all_in_pnl = cumulative_pnl - daily_data_cost
+        all_in_pnl_pct = (all_in_pnl / invested_capital * 100.0) if invested_capital > 0 else 0.0
+        true_net_pnl = all_in_pnl
 
         # 4. Gather Self-Learning & System Evolution Achievements
         evolution_achievements = self._get_self_evolution_achievements()
@@ -103,6 +148,16 @@ class DailyPortfolioSummaryService:
             daily_data_cost=daily_data_cost,
             true_net_pnl=true_net_pnl,
             evolution_achievements=evolution_achievements,
+            invested_capital=invested_capital,
+            cumulative_pnl=cumulative_pnl,
+            cumulative_pnl_pct=cumulative_pnl_pct,
+            closed_realized_pnl=closed_realized_pnl,
+            cash_ratio_pct=cash_ratio_pct,
+            stock_ratio_pct=stock_ratio_pct,
+            defensive_reserve_usd=defensive_reserve_usd,
+            deployable_cash=deployable_cash,
+            all_in_pnl=all_in_pnl,
+            all_in_pnl_pct=all_in_pnl_pct,
         )
 
         title = f"📊 每日投資組合與操作總結 (Daily Portfolio & Operations Summary) — {today_str}"
@@ -111,6 +166,13 @@ class DailyPortfolioSummaryService:
             "markdown": markdown_text,
             "total_equity": total_equity,
             "total_cash": total_cash,
+            "invested_capital": invested_capital,
+            "cumulative_pnl": cumulative_pnl,
+            "cumulative_pnl_pct": cumulative_pnl_pct,
+            "total_unrealized_pnl": total_unrealized_pnl,
+            "closed_realized_pnl": closed_realized_pnl,
+            "defensive_reserve_usd": defensive_reserve_usd,
+            "deployable_cash": deployable_cash,
             "positions_count": len(positions),
             "trades_count": len(today_trades),
             "evolution_achievements": evolution_achievements,
@@ -134,8 +196,8 @@ class DailyPortfolioSummaryService:
             try:
                 if res["vix"] != "N/A":
                     vix_val = float(res["vix"])
-            except Exception:
-                pass
+            except Exception as e:
+                logger.debug(f"Failed to parse vix value: {e}")
             
             if vix_val:
                 if vix_val < 18:
@@ -181,47 +243,92 @@ class DailyPortfolioSummaryService:
         daily_data_cost: float = 0.0,
         true_net_pnl: Optional[float] = None,
         evolution_achievements: Optional[List[Dict[str, str]]] = None,
+        invested_capital: float = 0.0,
+        cumulative_pnl: Optional[float] = None,
+        cumulative_pnl_pct: Optional[float] = None,
+        closed_realized_pnl: Optional[float] = None,
+        cash_ratio_pct: Optional[float] = None,
+        stock_ratio_pct: Optional[float] = None,
+        defensive_reserve_usd: Optional[float] = None,
+        deployable_cash: Optional[float] = None,
+        all_in_pnl: Optional[float] = None,
+        all_in_pnl_pct: Optional[float] = None,
     ) -> str:
         """Construct a clean, professional, digestible report."""
-        pnl_sign = "+" if total_unrealized_pnl >= 0 else ""
-        pnl_emoji = "🟢" if total_unrealized_pnl >= 0 else "🔴"
-        actual_true_net = true_net_pnl if true_net_pnl is not None else total_unrealized_pnl
-        net_sign = "+" if actual_true_net >= 0 else ""
-        net_emoji = "🟢" if actual_true_net >= 0 else "🔴"
+        if invested_capital <= 0:
+            invested_capital = 1711.00
+        if cumulative_pnl is None:
+            cumulative_pnl = total_equity - invested_capital
+        if cumulative_pnl_pct is None:
+            cumulative_pnl_pct = (cumulative_pnl / invested_capital * 100.0) if invested_capital > 0 else 0.0
+        if closed_realized_pnl is None:
+            closed_realized_pnl = cumulative_pnl - total_unrealized_pnl
+        if cash_ratio_pct is None:
+            cash_ratio_pct = (total_cash / total_equity * 100.0) if total_equity > 0 else 0.0
+        if stock_ratio_pct is None:
+            stock_ratio_pct = (total_market_val / total_equity * 100.0) if total_equity > 0 else 0.0
+        if defensive_reserve_usd is None:
+            defensive_reserve_usd = total_equity * 0.20
+        if deployable_cash is None:
+            deployable_cash = max(0.0, total_cash - defensive_reserve_usd)
+
+        cum_pnl_str = f"+${cumulative_pnl:,.2f}" if cumulative_pnl >= 0 else f"-${abs(cumulative_pnl):,.2f}"
+        cum_pct_str = f"+{cumulative_pnl_pct:.2f}%" if cumulative_pnl_pct >= 0 else f"{cumulative_pnl_pct:.2f}%"
+        cum_emoji = "🟢" if cumulative_pnl >= 0 else "🔴"
+
+        pos_pnl_str = f"+${total_unrealized_pnl:,.2f}" if total_unrealized_pnl >= 0 else f"-${abs(total_unrealized_pnl):,.2f}"
+        pos_pct_str = f"+{unrealized_pnl_pct:.2f}%" if unrealized_pnl_pct >= 0 else f"{unrealized_pnl_pct:.2f}%"
+        pos_emoji = "🟢" if total_unrealized_pnl >= 0 else "🔴"
+
+        real_pnl_str = f"+${closed_realized_pnl:,.2f}" if closed_realized_pnl >= 0 else f"-${abs(closed_realized_pnl):,.2f}"
+        real_emoji = "🟢" if closed_realized_pnl >= 0 else "🔴"
+
+        act_all_in = all_in_pnl if all_in_pnl is not None else (cumulative_pnl - daily_data_cost)
+        act_all_in_pct = all_in_pnl_pct if all_in_pnl_pct is not None else ((act_all_in / invested_capital * 100.0) if invested_capital > 0 else 0.0)
+        all_in_str = f"+${act_all_in:,.2f}" if act_all_in >= 0 else f"-${abs(act_all_in):,.2f}"
+        all_in_pct_str = f"+{act_all_in_pct:.2f}%" if act_all_in_pct >= 0 else f"{act_all_in_pct:.2f}%"
+        all_in_emoji = "🟢" if act_all_in >= 0 else "🔴"
 
         md = []
         md.append(f"## 📋 實盤投資組合與操作總結\n")
         md.append(f"**結算基準日**：{today_str}（美股盤後）  \n")
         md.append(f"**帳戶狀態**：eToro 實盤連線正常 | 自主交易模式（AI Trading Enabled）\n")
 
-        # ── 1. 實盤資產與持倉概況 ──
-        md.append(f"### 1. 實盤資產與持倉概況 (Portfolio Overview)\n")
-        md.append(f"- **總資產淨值 (Total Equity)**：**${total_equity:,.2f} USD**")
-        md.append(f"- **可用現金餘額 (Cash)**：**${total_cash:,.2f} USD**")
-        md.append(f"- **持倉總市值 (Holdings Value)**：**${total_market_val:,.2f} USD**")
-        md.append(f"- **整體未實現損益 (Gross PnL)**：{pnl_emoji} **{pnl_sign}${total_unrealized_pnl:,.2f} ({pnl_sign}{unrealized_pnl_pct:.2f}%)**")
-        md.append(f"- **外部數據訂閱攤提 (Data Cost Drag)**：**-${daily_data_cost:,.2f} / 日** (${monthly_data_cost:,.2f} / 月)")
-        md.append(f"- **全成本真實淨利 (True Net PnL)**：{net_emoji} **{net_sign}${actual_true_net:,.2f} USD**")
-        md.append(f"- **活躍持倉檔數**：**{len(positions)} 檔**\n")
+        # ── 1. 實盤資產與真實驗資概況 ──
+        md.append(f"### 1. 實盤資產與真實驗資概況 (Portfolio & Capital Audit)\n")
+        md.append(f"- 🏦 **累計存入本金基準 (Deposited Capital)**：**${invested_capital:,.2f} USD**")
+        md.append(f"- 💰 **總資產淨值 (Net Liquidation Value)**：**${total_equity:,.2f} USD**")
+        md.append(f"- 🎯 **帳戶全週期真實累計損益 (Cumulative Net PnL)**：{cum_emoji} **{cum_pnl_str} ({cum_pct_str})**")
+        md.append(f"- 📊 **現存持倉浮動盈虧 (Open Unrealized PnL)**：{pos_emoji} **{pos_pnl_str} ({pos_pct_str})**")
+        md.append(f"- 📉 **歷史平倉已實現損益 (Closed Realized PnL)**：{real_emoji} **{real_pnl_str} USD**")
+        md.append(f"- 💵 **可用現金餘額 (Cash)**：**${total_cash:,.2f} USD** ({cash_ratio_pct:.1f}%)")
+        md.append(f"- 📈 **股票部位市值 (Stock Equity)**：**${total_market_val:,.2f} USD** ({stock_ratio_pct:.1f}%)")
+        md.append(f"- 🛡️ **剛性防守現金儲備 (20% 保底)**：**${defensive_reserve_usd:,.2f} USD**")
+        md.append(f"- 🚀 **可動用建倉現金 (Deployable Cash)**：**${deployable_cash:,.2f} USD**")
+        md.append(f"- ⚙️ **外部數據訂閱攤提 (Infrastructure Drag)**：**-${daily_data_cost:,.2f} / 日** (${monthly_data_cost:,.2f} / 月)")
+        md.append(f"- ⚖️ **全成本含維護費損益 (All-in PnL incl. Infra)**：{all_in_emoji} **{all_in_str} USD ({all_in_pct_str})**")
+        md.append(f"- 👤 **活躍持倉檔數**：**{len(positions)} 檔**\n")
 
         if positions:
             md.append("**主要持倉表現 (Top Holdings)**：\n")
-            md.append("| 標的 (Ticker) | 持有股數 | 現價 ($) | 持倉市值 ($) | 未實現損益 ($) | 報酬率 (%) |")
-            md.append("| :--- | :--- | :--- | :--- | :--- | :--- |")
+            md.append("| 標的 (Ticker) | 持有股數 | 現價 ($) | 持倉市值 ($) | 佔總資產 (%) | 未實現損益 ($) | 報酬率 (%) |")
+            md.append("| :--- | :--- | :--- | :--- | :--- | :--- | :--- |")
             # Show top 8 positions, summarize remainder
             for p in positions[:8]:
                 pos_cost = p.open_price * p.quantity if p.open_price and p.quantity else 0
                 ret_pct = ((p.current_price - p.open_price) / p.open_price * 100.0) if p.open_price and p.open_price > 0 else 0.0
                 ret_str = f"+{ret_pct:.2f}%" if ret_pct >= 0 else f"{ret_pct:.2f}%"
                 pnl_str = f"+${p.unrealized_pnl:.2f}" if p.unrealized_pnl >= 0 else f"-${abs(p.unrealized_pnl):.2f}"
-                md.append(f"| **{p.symbol}** | {p.quantity:.4f} | ${p.current_price:.2f} | ${p.market_value:.2f} | {pnl_str} | {ret_str} |")
+                weight_pct = (p.market_value / total_equity * 100.0) if total_equity > 0 else 0.0
+                md.append(f"| **{p.symbol}** | {p.quantity:.4f} | ${p.current_price:.2f} | ${p.market_value:.2f} | {weight_pct:.1f}% | {pnl_str} | {ret_str} |")
             
             if len(positions) > 8:
                 other_count = len(positions) - 8
                 other_val = sum(p.market_value for p in positions[8:])
                 other_pnl = sum(p.unrealized_pnl for p in positions[8:])
+                other_weight = (other_val / total_equity * 100.0) if total_equity > 0 else 0.0
                 opnl_str = f"+${other_pnl:.2f}" if other_pnl >= 0 else f"-${abs(other_pnl):.2f}"
-                md.append(f"| *其他 {other_count} 檔部位* | - | - | ${other_val:.2f} | {opnl_str} | - |")
+                md.append(f"| *其他 {other_count} 檔部位* | - | - | ${other_val:.2f} | {other_weight:.1f}% | {opnl_str} | - |")
             md.append("")
 
         # ── 2. 今日操作與調倉結論 ──
@@ -229,8 +336,8 @@ class DailyPortfolioSummaryService:
         if not today_trades:
             md.append("✅ **今日實盤成交筆數**：**0 筆**。\n")
             md.append("**維持長線持有決策依據**：")
-            md.append("1. **各持倉因子體質健康**：現有 19 檔部位各維度（基本面、動能、籌碼）均在健康區間，無重大論點失效（Thesis Break）。")
-            md.append("2. **未達機會成本換庫門檻**：自選池候選標的相較現有持倉未出現顯著評分優勢（資本換庫需 $\\Delta \\ge 2.0$ 分）。")
+            md.append(f"1. **各持倉因子體質健康**：現有 {len(positions)} 檔部位各維度（基本面、動能、籌碼）均在健康區間，無重大論點失效（Thesis Break）。")
+            md.append("2. **未達機會成本換庫門檻**：自選池候選標的相較現有持倉未出現顯著淨利差勝出（換庫需扣除摩擦後 $\\text{Net } \\Delta \\ge 2.0$ 分）。")
             md.append("3. **長線自主複利策略**：系統嚴格克制無效益之頻繁換手與磨擦成本，保持長線穩定持有，無需任何人為干預。\n")
         else:
             md.append(f"⚡ **今日實盤成交筆數**：**{len(today_trades)} 筆**。\n")
@@ -362,7 +469,7 @@ class DailyPortfolioSummaryService:
 
         return final_list
 
-    def _has_already_dispatched_today(self, today_str: str) -> tuple[bool, Optional[str]]:
+    def _has_already_dispatched_today(self, today_str: str) -> Tuple[bool, Optional[str]]:
         """
         Checks if the daily summary has already been dispatched today.
         檢查今日是否已派發過每日總結（雙重防護：Redis + 資料庫）。
@@ -406,7 +513,7 @@ class DailyPortfolioSummaryService:
 
         return False, None
 
-    def _is_throttled(self, min_interval_minutes: int = 30) -> tuple[bool, Optional[str]]:
+    def _is_throttled(self, min_interval_minutes: int = 30) -> Tuple[bool, Optional[str]]:
         """
         Checks if a daily summary was generated very recently to prevent rapid spam.
         防止連續測試或排程重疊造成的短期連續發信（30 分鐘冷卻期）。

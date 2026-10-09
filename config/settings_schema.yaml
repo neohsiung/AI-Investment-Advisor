@@ -1855,6 +1855,16 @@ settings:
     label_zh: 極值理論 GPD 形狀參數上限保護
     help_en: Upper cap on shape parameter xi to ensure numerical stability and prevent infinite mean distortion during extreme disruptions.
     help_zh: 廣義帕雷托形狀參數 xi 之數值截斷上限（預設 0.80），確保極端動盪環境下數值運算穩定性。
+  - key: initial_capital_deposited_usd
+    group: allocation
+    type: float
+    default: 1711.00
+    min: 0.0
+    max: 10000000.0
+    label_en: Initial Deposited Capital (USD)
+    label_zh: 初始存入本金基準 (USD)
+    help_en: Total user-contributed capital benchmark used for calculating true cumulative return and audit reconciliations.
+    help_zh: 用戶實盤存入之本金基準（預設 1711.00 USD），用於精確計算全帳戶真實累計損益與真實驗資對帳，杜絕浮動損益誤報。
   - key: target_cash_ratio
     group: allocation
     type: float
