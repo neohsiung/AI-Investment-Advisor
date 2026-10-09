@@ -100,12 +100,16 @@ class TestIsMarketOpenToday:
         return cal
 
     def test_open_when_schedule_non_empty(self):
-        with patch.object(tasks.mcal, "get_calendar", return_value=self._calendar(empty=False)) as gc:
+        mock_mcal = MagicMock()
+        mock_mcal.get_calendar.return_value = self._calendar(empty=False)
+        with patch.object(tasks, "mcal", mock_mcal):
             assert tasks.is_market_open_today() is True
-            gc.assert_called_once_with("NYSE")
+            mock_mcal.get_calendar.assert_called_once_with("NYSE")
 
     def test_closed_when_schedule_empty(self):
-        with patch.object(tasks.mcal, "get_calendar", return_value=self._calendar(empty=True)):
+        mock_mcal = MagicMock()
+        mock_mcal.get_calendar.return_value = self._calendar(empty=True)
+        with patch.object(tasks, "mcal", mock_mcal):
             assert tasks.is_market_open_today() is False
 
 
