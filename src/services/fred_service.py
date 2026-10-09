@@ -55,10 +55,26 @@ class FredService:
             return {}
 
         import time
+        import json
         now = time.time()
         if self._macro_cache and (now - self._macro_cache_time < self._CACHE_TTL_SECONDS):
             self.logger.debug("Returning cached macro indicators from memory.")
             return self._macro_cache
+
+        # Check Redis distributed cache (1 hour TTL)
+        try:
+            from src.infrastructure.cache.redis_client import get_redis_sync
+            r = get_redis_sync(decode_responses=True)
+            if r:
+                cached_str = r.get("market_data:fred_indicators")
+                if cached_str:
+                    cached_data = json.loads(cached_str)
+                    self._macro_cache = cached_data
+                    self._macro_cache_time = now
+                    self.logger.info("Returning cached macro indicators from Redis.")
+                    return cached_data
+        except Exception as r_err:
+            self.logger.debug(f"Redis macro cache check skipped: {r_err}")
 
         # Quota Guard: Ensure <= 60% capacity utilization
         from src.infrastructure.governance.quota_governor import ExternalQuotaGovernor
@@ -129,5 +145,12 @@ class FredService:
             governor.record_usage("fred", count=len(indicators))
             self._macro_cache = result
             self._macro_cache_time = now
+            try:
+                from src.infrastructure.cache.redis_client import get_redis_sync
+                r = get_redis_sync(decode_responses=True)
+                if r:
+                    r.setex("market_data:fred_indicators", self._CACHE_TTL_SECONDS, json.dumps(result))
+            except Exception as r_err:
+                self.logger.debug(f"Failed to cache fred indicators in Redis: {r_err}")
 
         return result

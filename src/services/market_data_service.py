@@ -678,12 +678,26 @@ class MarketDataService:
         # For now, it returns financials which contains valuation data (market cap etc.)
         return self.get_financials(ticker)
 
-    def get_macro_data(self) -> Dict[str, Any]:
+    def get_macro_data(self, spy_price: Optional[float] = None) -> Dict[str, Any]:
         """
         Get comprehensive macro economic indicators and market sentiment.
         獲取全面的宏觀經濟指標與市場情緒。
         """
         macro_data = {}
+
+        # 0. Populate SPY from param or Redis cache to bypass external scraping
+        if spy_price is not None and spy_price > 0:
+            macro_data.setdefault("market_indicators", {})["SPY"] = spy_price
+        else:
+            try:
+                from src.infrastructure.cache.redis_client import get_redis_sync
+                r = get_redis_sync(decode_responses=True)
+                if r:
+                    cached_spy = r.get("market_data:price:SPY")
+                    if cached_spy:
+                        macro_data.setdefault("market_indicators", {})["SPY"] = float(cached_spy)
+            except Exception as r_err:
+                self.logger.debug(f"Redis SPY price cache check skipped: {r_err}")
         
         # 1. Try FRED (Primary)
         try:
@@ -702,7 +716,7 @@ class MarketDataService:
         except Exception as e:
             self.logger.warning(f"FRED fetch failed: {e}")
 
-        # 2. Try YFinance only for remaining missing indicators (e.g. SPY)
+        # 2. Try YFinance only for remaining missing indicators (e.g. SPY if still unresolved)
         try:
             missing = [t for t in ["^VIX", "^TNX", "SPY"] if t not in macro_data.get("market_indicators", {})]
             if missing and self.yfinance and self._is_provider_enabled(self.yfinance):

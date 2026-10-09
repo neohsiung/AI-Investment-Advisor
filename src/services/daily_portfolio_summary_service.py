@@ -193,7 +193,7 @@ class DailyPortfolioSummaryService:
             res["spy"] = f"{prefetched_spy:.2f}"
 
         try:
-            macro = self.market_svc.get_macro_data()
+            macro = self.market_svc.get_macro_data(spy_price=prefetched_spy)
             if "market_indicators" in macro:
                 inds = macro["market_indicators"]
                 if res["vix"] == "N/A":
