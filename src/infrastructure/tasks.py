@@ -184,9 +184,17 @@ def sentinel_tick(user_id: str = None):
         logger.error("sentinel_tick: user_id is required. Set PRIMARY_USER_ID env var or pass explicitly.")
         return "Error: user_id is required"
     try:
+        from celery.exceptions import SoftTimeLimitExceeded
+    except ImportError:
+        SoftTimeLimitExceeded = ()
+
+    try:
         from src.services.sentinel_service import SentinelService
         sentinel = SentinelService(user_id=user_id)
         _run_async_safe(sentinel.process_tick())
+        return "Success"
+    except SoftTimeLimitExceeded:
+        logger.warning(f"sentinel_tick: task hit worker soft time limit for user {user_id}; terminated gracefully.")
         return "Success"
     except Exception as e:
         logger.error(f"Sentinel heartbeat failed: {e}")

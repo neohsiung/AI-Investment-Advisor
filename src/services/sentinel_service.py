@@ -491,7 +491,15 @@ class SentinelService:
             ]
 
             logger.debug(f"Sentinel: Calling {agent_name} agent via tier={tier} (user={self.user_id})")
-            response, _ = await pipeline.execute(messages, temperature=temperature, max_tokens=max_tokens)
+            llm_timeout = float(os.getenv("SENTINEL_LLM_TIMEOUT_SECONDS", "45.0"))
+            try:
+                response, _ = await asyncio.wait_for(
+                    pipeline.execute(messages, temperature=temperature, max_tokens=max_tokens),
+                    timeout=llm_timeout,
+                )
+            except (asyncio.TimeoutError, TimeoutError):
+                logger.warning(f"Sentinel: {agent_name} agent LLM call timed out after {llm_timeout:.0f}s")
+                return json.dumps({"status": "failed", "error": f"LLM call timed out after {llm_timeout:.0f}s"})
 
             if not isinstance(response, str):
                 logger.error(f"Sentinel: Unexpected response type from pipeline: {type(response)}")
@@ -510,6 +518,13 @@ class SentinelService:
     # let the next scheduled one in early, short enough to self-heal.
     # 大於 60 秒的 tick 間隔，避免慢 tick 讓下一次提早進來；同時能自行復原。
     _TICK_LOCK_TTL_SECONDS = 120
+
+    @staticmethod
+    async def _with_timeout(coro_or_val: Any, timeout: float) -> Any:
+        """Safely apply an asyncio timeout to awaitables, returning non-coroutines directly."""
+        if asyncio.iscoroutine(coro_or_val) or isinstance(coro_or_val, (asyncio.Future, typing.Awaitable)):
+            return await asyncio.wait_for(coro_or_val, timeout=timeout)
+        return coro_or_val
 
     async def process_tick(self, force: bool = False) -> None:
         """
@@ -553,8 +568,13 @@ class SentinelService:
 
         self.thresholds = self.repo.get_all_thresholds()
 
-        # [Optimization] Check and Flush Buffer if deadline reached
-        await self._check_buffer_flush()
+        # [Optimization] Check and Flush Buffer if deadline reached (protected with 130s timeout)
+        try:
+            await self._with_timeout(self._check_buffer_flush(), timeout=130.0)
+        except (asyncio.TimeoutError, TimeoutError):
+            logger.warning("Sentinel: Buffer flush timed out after 130s; continuing tick.")
+        except Exception as e:
+            logger.error(f"Sentinel: Buffer flush error: {e}", exc_info=True)
         
         logger.info(f"Sentinel Check Started with {len(self.thresholds)} thresholds.")
         try:
@@ -571,8 +591,15 @@ class SentinelService:
             # Dimension 2: Position Price Moves (每次 tick)
             # Pass aggregated data to avoid redundant fetches
             if ticker_list:
-                current_prices = await self.market_service.get_current_prices(ticker_list)
-                triggers += await self._check_position_moves_v2(ticker_list, current_prices)
+                try:
+                    current_prices = await self._with_timeout(
+                        self.market_service.get_current_prices(ticker_list), timeout=30.0
+                    )
+                    triggers += await self._with_timeout(
+                        self._check_position_moves_v2(ticker_list, current_prices), timeout=30.0
+                    )
+                except (asyncio.TimeoutError, TimeoutError):
+                    logger.warning("Sentinel: Dimension 2 (Position Price Moves) timed out; continuing.")
             
             # Dimensions 3, 4 and 6 are deliberately rarer than the tick: they
             # hit paid APIs (Tavily) or slow-moving data (FRED).
@@ -595,7 +622,12 @@ class SentinelService:
                 self._interval_seconds("sentinel_breaking_news_interval_min", 30),
                 fail_open=False,
             ):
-                triggers += await self._check_breaking_news_v2(ticker_list)
+                try:
+                    triggers += await self._with_timeout(
+                        self._check_breaking_news_v2(ticker_list), timeout=45.0
+                    )
+                except (asyncio.TimeoutError, TimeoutError):
+                    logger.warning("Sentinel: Dimension 3 (Breaking News) timed out; continuing.")
 
             # Dimension 4: Macro Shifts (FRED updates slowly)
             if await self._acquire_cooldown(
@@ -603,10 +635,18 @@ class SentinelService:
                 self._interval_seconds("sentinel_macro_interval_min", 60),
                 fail_open=False,
             ):
-                triggers += await self._check_macro_shifts()
+                try:
+                    triggers += await self._with_timeout(
+                        self._check_macro_shifts(), timeout=30.0
+                    )
+                except (asyncio.TimeoutError, TimeoutError):
+                    logger.warning("Sentinel: Dimension 4 (Macro Shifts) timed out; continuing.")
 
             # Dimension 5: Active Polling
-            triggers += await self._check_active_sources()
+            try:
+                triggers += await self._with_timeout(self._check_active_sources(), timeout=30.0)
+            except (asyncio.TimeoutError, TimeoutError):
+                logger.warning("Sentinel: Dimension 5 (Active Sources) timed out; continuing.")
 
             # Dimension 6: Global Macro / Geopolitical Events
             # 持倉數量無關的全球重大事件掃描
@@ -615,41 +655,67 @@ class SentinelService:
                 self._interval_seconds("sentinel_deep_interval_min", 60),
                 fail_open=False,
             ):
-                triggers += await self._check_global_macro_events()
+                try:
+                    triggers += await self._with_timeout(
+                        self._check_global_macro_events(), timeout=45.0
+                    )
+                except (asyncio.TimeoutError, TimeoutError):
+                    logger.warning("Sentinel: Dimension 6 (Global Macro) timed out; continuing.")
             
             # Dimension 7: Risk Consistency & Dynamic Cash (每次 tick)
             # v5.0: Ensure leverage and cash levels match risk profile
-            new_triggers = await self._check_risk_consistency()
-            triggers.extend(new_triggers)
-            logger.debug("process_tick: %d triggers after risk check", len(triggers))
+            try:
+                new_triggers = await self._with_timeout(self._check_risk_consistency(), timeout=30.0)
+                triggers.extend(new_triggers)
+                logger.debug("process_tick: %d triggers after risk check", len(triggers))
+            except (asyncio.TimeoutError, TimeoutError):
+                logger.warning("Sentinel: Dimension 7 (Risk Consistency) timed out; continuing.")
             
             # Dimension 8: Capital Deployment (v9.0 Add-on)
             # Check for excess cash and trigger deployment logic if allowed
-            await self._handle_cash_deployment_logic(triggers)
+            try:
+                await self._with_timeout(self._handle_cash_deployment_logic(triggers), timeout=30.0)
+            except (asyncio.TimeoutError, TimeoutError):
+                logger.warning("Sentinel: Dimension 8 (Cash Deployment) timed out; continuing.")
             
             # Dimension 9: Infrastructure Health / Self-Healing (Phase 9)
-            triggers += await self._check_infrastructure_health()
+            try:
+                triggers += await self._with_timeout(self._check_infrastructure_health(), timeout=20.0)
+            except (asyncio.TimeoutError, TimeoutError):
+                logger.warning("Sentinel: Dimension 9 (Infrastructure Health) timed out; continuing.")
             
             # Dimension 10: Allocation Drift Check (v10.0 - Portfolio Rebalancing)
             # Check if current portfolio allocation deviates from target allocation
-            rebalance_triggers = await self._check_allocation_drift()
-            triggers += rebalance_triggers
-            
-            # Dimension 10.1: Execute Rebalancing (Phase 5)
-            await self._handle_rebalance_logic(rebalance_triggers)
+            try:
+                rebalance_triggers = await self._with_timeout(self._check_allocation_drift(), timeout=30.0)
+                triggers += rebalance_triggers
+                
+                # Dimension 10.1: Execute Rebalancing (Phase 5)
+                await self._with_timeout(self._handle_rebalance_logic(rebalance_triggers), timeout=60.0)
+            except (asyncio.TimeoutError, TimeoutError):
+                logger.warning("Sentinel: Dimension 10 (Allocation Drift/Rebalance) timed out; continuing.")
             
             # Dimension 11: Position Exit Engine (Stop-Loss, Take-Profit, Thesis Breakdown)
-            position_exit_triggers = await self._check_position_exits()
-            await self._handle_position_exits(position_exit_triggers)
+            try:
+                position_exit_triggers = await self._with_timeout(self._check_position_exits(), timeout=60.0)
+                await self._with_timeout(self._handle_position_exits(position_exit_triggers), timeout=30.0)
+            except (asyncio.TimeoutError, TimeoutError):
+                logger.warning("Sentinel: Dimension 11 (Position Exits) timed out; continuing.")
 
             # Dimension 11.3: Pyramiding Position Scaling (強勢股波段金字塔加碼)
-            pyramid_triggers = await self._check_pyramiding_opportunities()
-            await self._handle_pyramiding_logic(pyramid_triggers)
-            triggers += pyramid_triggers
+            try:
+                pyramid_triggers = await self._with_timeout(self._check_pyramiding_opportunities(), timeout=30.0)
+                await self._with_timeout(self._handle_pyramiding_logic(pyramid_triggers), timeout=30.0)
+                triggers += pyramid_triggers
+            except (asyncio.TimeoutError, TimeoutError):
+                logger.warning("Sentinel: Dimension 11.3 (Pyramiding) timed out; continuing.")
             
             # ACT: Summon Council + Notifications if triggered
             if triggers:
-                await self._escalate(triggers)
+                try:
+                    await self._with_timeout(self._escalate(triggers), timeout=60.0)
+                except (asyncio.TimeoutError, TimeoutError):
+                    logger.warning("Sentinel: Escalation timed out after 60s; continuing.")
             else:
                 logger.debug("Sentinel: All dimensions normal. No triggers.")
                 
@@ -1801,14 +1867,25 @@ class SentinelService:
                 if not user_id:
                     logger.warning("No user_id available for council session")
                     return None
-                summary = await self.council_service.start_session(
-                    topic, 
-                    context, 
-                    market_volatility=self.current_vix,
-                    user_id=user_id,
-                    mode="sentinel"
+                council_timeout = float(os.getenv("SENTINEL_COUNCIL_TIMEOUT_SECONDS", "120.0"))
+                summary = await asyncio.wait_for(
+                    self.council_service.start_session(
+                        topic, 
+                        context, 
+                        market_volatility=self.current_vix,
+                        user_id=user_id,
+                        mode="sentinel"
+                    ),
+                    timeout=council_timeout,
                 )
                 decision = summary.get('consensus', 'No Consensus')
+            except (asyncio.TimeoutError, TimeoutError):
+                logger.warning(f"Sentinel: Council session timed out after {council_timeout:.0f}s, falling back to Fail-safe Mode.")
+                decision = (
+                    "⚠️ **系統運行於安全模式 (Council Deliberation Timeout)**\n\n"
+                    f"AI 委員會研議超過 {council_timeout:.0f} 秒逾時，已轉為防禦性安全模式以確保即時守衛與不阻塞工作行程。\n"
+                    "請根據下方原始觸發訊號進行判斷。"
+                )
             except Exception as e:
                 logger.error(f"Council session failed: {e}", exc_info=True)
                 err_type = type(e).__name__

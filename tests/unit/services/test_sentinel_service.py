@@ -1,3 +1,4 @@
+import asyncio
 import pytest
 import json
 from unittest.mock import MagicMock, AsyncMock, patch
@@ -8,6 +9,7 @@ from src.domain.entities import RiskKeyword
 def mock_repo():
     repo = MagicMock()
     repo.engine = MagicMock()
+    repo.is_duplicate_alert.return_value = False
     repo.get_all_thresholds.return_value = {
         "vix_high": 25.0,
         "vix_extreme": 40.0,
@@ -35,6 +37,7 @@ def mock_tx_service():
 @pytest.fixture
 def mock_settings_service():
     service = MagicMock()
+    service.user_id = "test_user"
     service.get_setting.return_value = True
     return service
 
@@ -166,3 +169,66 @@ async def test_check_position_exits_atr_and_fixed_stops(sentinel_service):
     assert len(triggers) >= 1
     assert any("TSM" in t["ticker"] and t["action"] == "trigger_exit" for t in triggers)
     assert any("停損觸發" in t["text"] for t in triggers)
+
+
+@pytest.mark.asyncio
+async def test_call_agent_llm_timeout_handled(sentinel_service):
+    """驗證 _call_agent_llm 在遇到逾時時優雅降級並回傳 failed JSON"""
+    mock_pipeline = MagicMock()
+    mock_pipeline.execute = AsyncMock(side_effect=asyncio.TimeoutError("LLM took too long"))
+
+    with patch("src.infrastructure.llm.resilient_pipeline.ResilientLLMPipeline", return_value=mock_pipeline), \
+         patch("src.infrastructure.llm.llm_config_chain.build_config_chain", return_value=MagicMock()):
+
+        response = await sentinel_service._call_agent_llm("Sentinel", {"test": "data"})
+        res_json = json.loads(response)
+        assert res_json["status"] == "failed"
+        assert "timed out" in res_json["error"]
+
+
+@pytest.mark.asyncio
+async def test_do_send_alert_council_timeout_activates_failsafe(sentinel_service):
+    """驗證當 Council 研議逾時，_do_send_alert 自動切換至安全模式並記錄警報"""
+    sentinel_service.council_service = MagicMock()
+    sentinel_service.council_service.start_session = AsyncMock(side_effect=asyncio.TimeoutError("debate hung"))
+    sentinel_service.repo.is_duplicate_alert.return_value = False
+
+    triggers = [{
+        "text": "🔴 VIX 突增逾時測試",
+        "id": "vix_timeout_test",
+        "value": 45.0,
+        "priority": 1,
+        "trigger_type": "risk"
+    }]
+
+    mock_broker = MagicMock()
+    mock_broker.get_pending_orders = AsyncMock(return_value=[])
+    with patch("src.services.broker_factory.BrokerFactory.get_broker", return_value=mock_broker), \
+         patch("src.services.event_aggregator.EventAggregator"):
+        await sentinel_service._do_send_alert(triggers, source="Sentinel")
+
+    # repo.log_alert should have been called with fail-safe content
+    assert sentinel_service.repo.log_alert.called
+    logged_topic, logged_text = sentinel_service.repo.log_alert.call_args[0][:2]
+    assert "Council Deliberation Timeout" in sentinel_service.repo.log_alert.call_args[1]["metadata"]["decision"]
+
+
+@pytest.mark.asyncio
+async def test_with_timeout_helper():
+    """驗證 _with_timeout 輔助函數對協程、逾時與非協程之穩健性"""
+    # 正常協程
+    async def fast_coro():
+        return 42
+    res = await SentinelService._with_timeout(fast_coro(), timeout=5.0)
+    assert res == 42
+
+    # 逾時協程
+    async def slow_coro():
+        await asyncio.sleep(0.5)
+        return "too slow"
+    with pytest.raises((asyncio.TimeoutError, TimeoutError)):
+        await SentinelService._with_timeout(slow_coro(), timeout=0.01)
+
+    # 非協程普通值
+    res_plain = await SentinelService._with_timeout("sync_string", timeout=1.0)
+    assert res_plain == "sync_string"

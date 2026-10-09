@@ -15,6 +15,7 @@ question about the position, and the composite is their weighted sum.
 10、確信度再平衡 8），而這些常數又和有實際評分的買單比對同一個自動執行門檻，
 等於由字面常數決定真錢是否移動。
 """
+import asyncio
 import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -209,6 +210,42 @@ class TestRiskFactor:
         svc._llm._score_via_llm = AsyncMock(side_effect=RuntimeError("provider down"))
         d = await svc.score_exit("AAPL", 1.0, current_price=100.0, current_weight_pct=5.0)
         assert _factor(d, "risk")["confidence"] == 5.0
+
+    @pytest.mark.anyio
+    async def test_routine_holding_review_fast_path_exempts_llm(self):
+        """
+        Routine holding review with healthy position (max_possible_composite < 5.0)
+        exempts from the expensive LLM call and returns risk=3.0.
+        """
+        svc = _svc(
+            lots=[{"quantity": 1.0, "open_price": 90.0}],
+            closes=[100.0] * 20,
+        )
+        svc._score_risk = AsyncMock()
+        # current_price 100 vs open 90 -> +11.1% gain, weight 2.0% (tiny), above 20MA
+        d = await svc.score_exit(
+            "AAPL", 1.0, current_price=100.0, current_weight_pct=2.0,
+            reason_hint="Periodic holding review for AAPL"
+        )
+        assert _factor(d, "risk")["confidence"] == 3.0
+        assert _factor(d, "risk")["factors"].get("_fast_path_exempt") is True
+        svc._score_risk.assert_not_called()
+
+    @pytest.mark.anyio
+    async def test_risk_scoring_timeout_returns_neutral(self):
+        """
+        If LLM risk scoring times out, it safely falls back to neutral 5.0.
+        """
+        svc = _svc()
+
+        async def mock_wait_for(coro, timeout):
+            coro.close()
+            raise asyncio.TimeoutError("timed out")
+
+        with patch("src.services.exit_compositor_service.asyncio.wait_for", side_effect=mock_wait_for):
+            d = await svc.score_exit("AAPL", 1.0, current_price=100.0, current_weight_pct=5.0)
+            assert _factor(d, "risk")["confidence"] == 5.0
+            assert "逾時" in _factor(d, "risk")["factors"].get("key_factor", "")
 
 
 class TestOutputContract:
