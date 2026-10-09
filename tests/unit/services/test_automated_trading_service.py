@@ -854,16 +854,15 @@ async def test_scheduled_portfolio_rebalance_auto_executes_unconditionally(test_
 @pytest.mark.anyio
 async def test_strategy_registry_safety_controls_include_rebalance_strategies():
     """
-    Verify that StrategyRegistry recognizes cash_deployment, portfolio_rebalance,
-    and concentration_rebalance as safety/exempt controls.
+    Verify that StrategyRegistry recognizes cash_deployment and rebalance_diversification
+    as safety/exempt controls, while concentration_rebalance requires backtest validation.
     """
     from src.services.strategy_registry import StrategyRegistry
 
     assert StrategyRegistry.is_safety_control("cash_deployment") is True
-    assert StrategyRegistry.is_safety_control("portfolio_rebalance") is True
-    assert StrategyRegistry.is_safety_control("concentration_rebalance") is True
     assert StrategyRegistry.is_safety_control("rebalance_diversification") is True
     assert StrategyRegistry.is_safety_control("capital_rotation") is True
+    assert StrategyRegistry.is_safety_control("concentration_rebalance") is False
 
 
 @pytest.mark.anyio
