@@ -394,6 +394,13 @@ class TestSentinelTasks:
         assert result == "Error: boom"
         assert _SOFT_FAIL_RE.match(result)
 
+    def test_sentinel_tick_soft_time_limit_exceeded_handled_gracefully(self, run_async_identity):
+        from celery.exceptions import SoftTimeLimitExceeded
+        with patch("src.services.sentinel_service.SentinelService", side_effect=SoftTimeLimitExceeded()):
+            result = tasks.sentinel_tick(user_id=USER)
+
+        assert result == "Success"
+
     def test_trigger_rebalance_forces_past_the_tick_lock(self, run_async_identity):
         """force=True is the whole point of this task: the dashboard button
         must not be swallowed by the lock the minutely tick just took."""

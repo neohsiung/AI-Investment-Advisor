@@ -55,6 +55,7 @@ resolved history to calibrate against.
 """
 from __future__ import annotations
 
+import asyncio
 import logging
 from dataclasses import dataclass
 from datetime import datetime, timezone
@@ -172,7 +173,10 @@ class ExitCompositorService:
             + mom_score * EXIT_FACTOR_WEIGHTS["momentum_reversal"]
             + 10.0 * EXIT_FACTOR_WEIGHTS["risk"]
         )
-        if not effective_reason_hint and max_possible_composite < 5.0:
+        has_specific_adverse_event = bool(active_event_headline) or (
+            bool(reason_hint) and not reason_hint.lower().startswith("periodic holding review")
+        )
+        if not has_specific_adverse_event and max_possible_composite < 5.0:
             risk_score = 3.0
             risk_factors = {
                 "key_factor": "基本面與技術面強健（豁免 LLM 慢速呼叫）",
@@ -181,7 +185,17 @@ class ExitCompositorService:
             }
         else:
             try:
-                risk_score, risk_factors = await self._score_risk(ticker, effective_reason_hint)
+                risk_score, risk_factors = await asyncio.wait_for(
+                    self._score_risk(ticker, effective_reason_hint),
+                    timeout=30.0,
+                )
+            except (asyncio.TimeoutError, TimeoutError) as te:
+                logger.warning(f"ExitCompositor: risk scoring timed out for {ticker} after 30s: {te}")
+                risk_score, risk_factors = 5.0, {
+                    "key_factor": "風險評分逾時",
+                    "rationale": "LLM 呼叫超過 30 秒逾時，賦予中性風險值",
+                    "_insufficient_data": True,
+                }
             except Exception as e:
                 logger.warning(f"ExitCompositor: risk factor raised for {ticker}: {e}")
                 risk_score, risk_factors = 5.0, self._unavailable(e)
