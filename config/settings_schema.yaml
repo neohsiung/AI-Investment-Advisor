@@ -842,6 +842,14 @@ settings:
     label_zh: 自動執行部位出場與換庫
     help_en: Automatically execute capital rotation, rebalancing, and thesis exits without manual approval.
     help_zh: 自動執行機會成本換庫、風險再平衡與論點破壞出場，無需等待手動確認，減少人為介入。
+  - key: autonomous_reporting_mode
+    group: trading
+    type: bool
+    default: true
+    label_en: Autonomous Zero-Interruption Execution Mode
+    label_zh: 全自主無人值守運作模式（從要我決策變成跟我報告）
+    help_en: Transition from asking human to decide to reporting execution results. Suppresses interactive approval requests, auto-executes pre-authorized signals, and autonomously skips/logs unqualified trades without human interruption.
+    help_zh: 徹底切換為「從要我決策，變成跟我報告」之無人值守全自動運作模式。消滅 Telegram/LINE 之交互審批阻塞，符合標準自動執行並通報，不符標準則自主略過，不要求用戶手動介入。
   - key: auto_trade_min_threshold
     group: trading
     type: int

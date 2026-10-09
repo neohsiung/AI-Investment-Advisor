@@ -719,5 +719,38 @@ def test_tactical_factor_rotation_auto_execution_policy():
     assert label_sell == "波段換倉自動執行"
 
 
+@pytest.mark.anyio
+async def test_autonomous_reporting_mode_suppresses_approval_prompts_completely(test_svc, mock_interaction_service, mock_broker):
+    """
+    Verify that when autonomous_reporting_mode is enabled, the system NEVER halts or requests
+    human approval on Telegram/LINE, even when a signal would normally trigger approval.
+    """
+    user_id = "test_user"
+
+    def get_mock(uid, key):
+        if key == "ai_trading_enabled":
+            return "true"
+        if key == "auto_trade_threshold":
+            return "9"
+        if key == "auto_trade_min_threshold":
+            return "3"
+        if key == "autonomous_reporting_mode":
+            return "true"
+        return None
+
+    test_svc.settings_repo.get.side_effect = get_mock
+
+    with patch('src.services.automated_trading_service.BrokerFactory.get_broker', return_value=mock_broker), \
+         patch.object(test_svc, '_notify_via_api', new_callable=AsyncMock):
+        res = await test_svc.evaluate_and_execute_trade(
+            user_id, "AAPL", "buy", 10.0, 5, "Moderate momentum in autonomous mode"
+        )
+
+    # Must NOT call request_approval — zero human interruption!
+    mock_interaction_service.request_approval.assert_not_called()
+    assert res["status"] == "skipped"
+    assert "Declined without human interruption" in res["reason"]
+
+
 
 
