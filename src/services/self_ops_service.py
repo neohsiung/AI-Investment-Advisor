@@ -70,6 +70,7 @@ DISPATCHER_CHILD_TASKS: Dict[str, str] = {
     "dispatch_event_digest": "send_event_digest",
     "dispatch_daily_report": "generate_daily_report",
     "dispatch_weekly_report": "generate_weekly_report",
+    "dispatch_monthly_report": "generate_monthly_report",
     # Ingestion that used to run in n8n. Registered here so the divergence
     # monitor treats them like every other dispatcher: an n8n workflow failing
     # silently was invisible to this system, which is part of why moving these

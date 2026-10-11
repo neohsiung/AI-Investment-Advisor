@@ -235,3 +235,40 @@ def test_total_history_failure_is_logged_not_just_returned_empty(market_data_ser
 
     assert data == {}
     assert any("No provider returned history for NVDA" in str(c) for c in warn.call_args_list)
+
+
+def test_get_history_df_success(market_data_service):
+    expected_df = _ohlcv_frame(rows=50)
+    market_data_service.polygon.fetch_history = MagicMock(return_value=expected_df)
+
+    with patch.object(market_data_service, "_is_provider_enabled", return_value=True):
+        df = market_data_service.get_history_df("AAPL", days=30)
+
+    assert df is not None
+    assert len(df) == 30
+    market_data_service.polygon.fetch_history.assert_called_once_with("AAPL", days=30)
+
+
+def test_get_history_df_fallback_and_total_failure(market_data_service):
+    market_data_service.polygon.fetch_history = MagicMock(side_effect=RuntimeError("polygon 500"))
+    market_data_service.tiingo.fetch_history = MagicMock(return_value=_ohlcv_frame(rows=20))
+
+    with patch.object(market_data_service, "_is_provider_enabled", return_value=True):
+        df = market_data_service.get_history_df("AAPL", days=20)
+
+    assert df is not None
+    assert len(df) == 20
+    market_data_service.tiingo.fetch_history.assert_called_once_with("AAPL", days=20)
+
+    # Now all fail
+    market_data_service.tiingo.fetch_history = MagicMock(side_effect=RuntimeError("tiingo 500"))
+    market_data_service.fmp.fetch_history = MagicMock(side_effect=RuntimeError("fmp 500"))
+    market_data_service.yfinance.fetch_history = MagicMock(side_effect=RuntimeError("yf 500"))
+
+    with patch.object(market_data_service, "_is_provider_enabled", return_value=True), \
+         patch.object(market_data_service.logger, "warning") as warn:
+        df_failed = market_data_service.get_history_df("AAPL", days=20)
+
+    assert df_failed is None
+    assert any("No provider returned history DF for AAPL" in str(c) for c in warn.call_args_list)
+

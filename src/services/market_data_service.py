@@ -552,6 +552,33 @@ class MarketDataService:
                 results[ticker] = data
         return results
 
+    def get_history_df(self, ticker: str, days: int = 60) -> Optional[pd.DataFrame]:
+        """
+        Get historical OHLCV data for a specific ticker as a pandas DataFrame.
+        優先使用 Polygon -> Tiingo -> FMP -> YFinance 獲取歷史 OHLCV DataFrame。
+        """
+        history_providers = self._providers_for_symbol(
+            self._chain("history"), ticker
+        )
+
+        for provider in history_providers:
+            if not self._is_provider_enabled(provider):
+                continue
+            try:
+                df = provider.fetch_history(ticker, days=days)
+                if df is not None and not df.empty:
+                    self.logger.info(f"Fetched history DF for {ticker} from {self._get_provider_name(provider)}")
+                    return df.tail(days)
+            except Exception as e:
+                self.logger.warning(
+                    f"History DF fetch failed for {ticker} on {self._get_provider_name(provider)}: {e}"
+                )
+        self.logger.warning(
+            f"No provider returned history DF for {ticker} "
+            f"(tried: {', '.join(self._get_provider_name(p) for p in history_providers) or 'none'})"
+        )
+        return None
+
     def get_technical_indicators(self, ticker: str) -> Dict[str, Any]:
         """
         Calculate indicators. Relies on fetch_history (defaulting to YFinance).
