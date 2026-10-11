@@ -173,10 +173,15 @@ class AdaptiveExecutionSlippageCompensator:
 
     def _get_setting(self, key: str, default: Any, val_type: type = float) -> Any:
         """Helper to retrieve dynamic setting with fallback."""
-        if not self.settings_repo:
-            return default
         try:
-            val = self.settings_repo.get(self.user_id, key)
+            val = None
+            if hasattr(self.settings_repo, "get_setting"):
+                val = self.settings_repo.get_setting(key, default)
+            elif hasattr(self.settings_repo, "get"):
+                val = self.settings_repo.get(self.user_id, key)
+            elif hasattr(self.settings_repo, "settings_repo") and hasattr(self.settings_repo.settings_repo, "get"):
+                val = self.settings_repo.settings_repo.get(self.user_id, key)
+
             if val is None:
                 return default
             if val_type is bool:
