@@ -710,6 +710,13 @@ class SentinelService:
                 triggers += pyramid_triggers
             except (asyncio.TimeoutError, TimeoutError):
                 logger.warning("Sentinel: Dimension 11.3 (Pyramiding) timed out; continuing.")
+
+            # Dimension 11.4: Factor Drift & Concept Drift Auto-Healing (多因子特徵漂移與失效自癒)
+            try:
+                drift_triggers = await self._with_timeout(self._check_factor_drift_health(), timeout=30.0)
+                await self._with_timeout(self._handle_factor_drift_health(drift_triggers), timeout=30.0)
+            except (asyncio.TimeoutError, TimeoutError):
+                logger.warning("Sentinel: Dimension 11.4 (Factor Drift Health) timed out; continuing.")
             
             # ACT: Summon Council + Notifications if triggered
             if triggers:
@@ -4430,5 +4437,79 @@ class SentinelService:
                     logger.info(f"[Sentinel Pyramiding] Successfully recorded stage {stage} advance for {ticker}")
             except Exception as e:
                 logger.error(f"[Sentinel Pyramiding] Execution failed for {ticker}: {e}", exc_info=True)
+
+    # ──────────────────────────────────────────
+    # Dimension 11.4: Factor Drift & Concept Drift Auto-Healing (多因子特徵漂移與失效自癒)
+    # ──────────────────────────────────────────
+
+    async def _check_factor_drift_health(self) -> List[Dict[str, Any]]:
+        """
+        Dimension 11.4: Monitor multi-factor Rank IC performance, concept drift,
+        and auto-healing status.
+        Does not block execution; returns non-blocking telemetry triggers for auditing.
+        """
+        triggers: List[Dict[str, Any]] = []
+        try:
+            from src.services.factor_drift_guard_service import FactorDriftGuardService
+            from src.services.tactical_factor_rotation_service import TacticalFactorRotationService
+
+            t_service = TacticalFactorRotationService(
+                user_id=self.user_id,
+                settings_service=self.settings_service,
+                market_service=self.market_service,
+            )
+            phase, rationale = t_service.determine_market_phase()
+            base_weights = t_service.get_phase_factor_weights(phase, apply_auto_healing=False)
+
+            drift_service = FactorDriftGuardService(
+                user_id=self.user_id,
+                settings_service=self.settings_service,
+                market_service=self.market_service,
+            )
+            if not drift_service.is_enabled:
+                return triggers
+
+            report = drift_service.evaluate_factor_health(phase=phase, base_weights=base_weights)
+
+            if report.has_inverted_factors or report.healed_count > 0:
+                logger.info(
+                    f"Sentinel: Dimension 11.4 Factor Drift Detected! Health={report.overall_factor_health}, "
+                    f"Healed={report.healed_count}, Actions={len(report.healing_actions)}"
+                )
+                triggers.append({
+                    "dimension": "11.4",
+                    "type": "FACTOR_DRIFT_AUTO_HEALED",
+                    "priority": "P3",
+                    "phase": report.phase,
+                    "overall_factor_health": report.overall_factor_health,
+                    "healed_count": report.healed_count,
+                    "healing_actions": report.healing_actions,
+                    "report": report.to_dict(),
+                    "text": f"因子特徵漂移守衛已介入：{report.healed_count} 個因子完成自癒調整 (體制: {report.phase})",
+                })
+        except Exception as e:
+            logger.error(f"[Sentinel Factor Drift] Error checking factor drift health: {e}", exc_info=True)
+
+        return triggers
+
+    async def _handle_factor_drift_health(self, triggers: List[Dict[str, Any]]) -> None:
+        """
+        處理因子特徵漂移與自癒告警：防抖冷卻並非阻塞記錄審計與通知。
+        """
+        if not triggers:
+            return
+
+        for trigger in triggers:
+            healed_count = trigger.get("healed_count", 0)
+            if healed_count <= 0:
+                continue
+
+            # 跨行程 6 小時 (21600 秒) 防抖，避免每個 tick 重複發送非阻塞審計通知
+            cooldown_key = "factor_drift_healing_alert"
+            if not await self._acquire_cooldown(cooldown_key, seconds=21600, fail_open=False):
+                logger.debug("[Sentinel Factor Drift] Telemetry cooldown active, skipping notification.")
+                continue
+
+            logger.info(f"[Sentinel Factor Drift] Telemetry logged: {trigger.get('text')}")
 
 
