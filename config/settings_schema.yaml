@@ -432,6 +432,62 @@ settings:
     label_zh: 每批次建倉動用比例
     help_en: Portion of deployable excess cash to deploy per batch (default 0.33 = 1/3 per batch).
     help_zh: 每次批次建倉動用可支配現金的比例（預設 0.33 即 1/3，分 3 批推進）。
+  - key: enable_earnings_blackout_guard
+    group: trading
+    type: bool
+    default: true
+    label_en: Enable earnings release blackout guard
+    label_zh: 啟用財報發布避開守衛
+    help_en: Automatically defers opening positions in candidates within pre/post earnings blackout window to avoid binary event volatility.
+    help_zh: 標的於財報日前後視窗內自動暫緩建倉，規避二元財報波動與引申波動率 (IV) 崩跌風險。
+  - key: earnings_blackout_pre_hours
+    group: trading
+    type: float
+    default: 48.0
+    min: 12.0
+    max: 120.0
+    label_en: Earnings blackout pre-release window (hours)
+    label_zh: 財報發布前避開時間（小時）
+    help_en: Hours prior to earnings announcement to pause opening new positions (default 48.0h).
+    help_zh: 財報發布前暫緩開倉之保護小時數（預設 48 小時即 2 天）。
+  - key: earnings_blackout_post_hours
+    group: trading
+    type: float
+    default: 24.0
+    min: 6.0
+    max: 72.0
+    label_en: Earnings blackout post-release window (hours)
+    label_zh: 財報發布後沉澱時間（小時）
+    help_en: Hours after earnings announcement to pause opening new positions for volatility to settle (default 24.0h).
+    help_zh: 財報發布後暫緩開倉之市場消化沉澱小時數（預設 24 小時即 1 天）。
+  - key: enable_macro_calendar_blackout_guard
+    group: trading
+    type: bool
+    default: true
+    label_en: Enable high-impact macro calendar blackout guard
+    label_zh: 啟用重大宏觀數據發布避開守衛
+    help_en: Pauses market-wide order execution immediately around FOMC rate decisions and CPI releases to avoid extreme slippage.
+    help_zh: 於聯準會 FOMC 利率決議與 CPI 發布窗口暫緩市價下單，防範極端滑點與流動性真空。
+  - key: macro_blackout_pre_minutes
+    group: trading
+    type: int
+    default: 60
+    min: 15
+    max: 180
+    label_en: Macro event pre-release window (minutes)
+    label_zh: 宏觀數據發布前保護視窗（分鐘）
+    help_en: Minutes prior to high-impact macro event (FOMC/CPI/NFP) to pause market orders (default 60 min).
+    help_zh: 重大宏觀事件發布前暫緩市價下單之分鐘數（預設 60 分鐘）。
+  - key: macro_blackout_post_minutes
+    group: trading
+    type: int
+    default: 30
+    min: 10
+    max: 120
+    label_en: Macro event post-release window (minutes)
+    label_zh: 宏觀數據發布後沉澱視窗（分鐘）
+    help_en: Minutes after high-impact macro event to pause market orders (default 30 min).
+    help_zh: 重大宏觀事件發布後暫緩市價下單之沉澱分鐘數（預設 30 分鐘）。
   - key: tiered_approval_enabled
     group: trading
     type: bool

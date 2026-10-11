@@ -1383,6 +1383,25 @@ class AutomatedTradingService:
                 order.price = guard_eval.adaptive_limit_price
         except Exception as sg_err:
             logger.warning(f"SlippageGuard non-blocking check error: {sg_err}")
+
+        # Calendar Blackout Guard (宏觀事件與財報日避開守衛)
+        if order.action == OrderAction.BUY:
+            try:
+                from src.services.calendar_blackout_service import CalendarBlackoutService
+                blackout_guard = CalendarBlackoutService(user_id=user_id, settings_service=self.settings_repo)
+                blackout_eval = await blackout_guard.evaluate_candidate(order.symbol)
+                if blackout_eval.is_blackout:
+                    logger.warning(
+                        f"Calendar Blackout Guard Blocked BUY {order.symbol}: {blackout_eval.reason}"
+                    )
+                    return {
+                        "status": "blocked",
+                        "reason": blackout_eval.reason,
+                        "blackout_guard": True,
+                        "event_type": blackout_eval.event_type,
+                    }
+            except Exception as bg_err:
+                logger.warning(f"CalendarBlackoutService non-blocking check error: {bg_err}")
         
         lock_svc = OrderInflightLockService(user_id=user_id)
         raw_lock_ttl = self.settings_repo.get(user_id, "order_lock_ttl_seconds")

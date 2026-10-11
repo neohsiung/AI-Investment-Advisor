@@ -42,6 +42,7 @@ class BatchCashDeploymentService:
         broker: Optional[Any] = None,
         slippage_guard: Optional[Any] = None,
         market_clock: Optional[Any] = None,
+        blackout_guard: Optional[Any] = None,
     ):
         self.user_id = resolve_user_id(user_id)
         from src.services.settings_service import SettingsService
@@ -54,6 +55,11 @@ class BatchCashDeploymentService:
         )
         from src.utils.market_clock import MarketClock
         self.market_clock = market_clock or MarketClock()
+        from src.services.calendar_blackout_service import CalendarBlackoutService
+        self.blackout_guard = blackout_guard or CalendarBlackoutService(
+            user_id=self.user_id,
+            settings_service=self.settings_service,
+        )
 
     async def _get_broker(self) -> Any:
         if self.broker:
@@ -249,7 +255,16 @@ class BatchCashDeploymentService:
             else:
                 trade_amount = round(base_amt, 2)
 
-            is_executable = (trade_amount >= 10.0)
+            # 財報日與宏觀黑名單避開守衛檢驗
+            blackout_decision = await self.blackout_guard.evaluate_candidate(ticker)
+            is_blackout = blackout_decision.is_blackout
+            blackout_reason = blackout_decision.reason if is_blackout else None
+
+            # 若標的落入財報/宏觀避開視窗，不於此批次執行以防極端波動
+            if is_blackout:
+                trade_amount = 0.0
+
+            is_executable = (trade_amount >= 10.0 and not is_blackout)
             candidate_entry = {
                 "ticker": ticker,
                 "amount_usd": trade_amount if is_executable else 0.0,
@@ -259,6 +274,8 @@ class BatchCashDeploymentService:
                 "role": item["role"],
                 "rationale": f"第 {batch_number} 批次建倉配置: {item['role']} (${trade_amount:.2f})",
                 "already_satisfied": (current_val >= target_value * 0.95) if total_equity > 0 else False,
+                "blackout_active": is_blackout,
+                "blackout_reason": blackout_reason,
             }
             all_candidates_summary.append(candidate_entry)
 
@@ -293,6 +310,10 @@ class BatchCashDeploymentService:
         expected_remaining_cash = max(0.0, status.get("available_cash", 0.0) - total_batch_amount)
         expected_cash_ratio = (expected_remaining_cash / total_equity * 100.0) if total_equity > 0 else 0.0
 
+        # 產出全批次標的財報與宏觀日曆摘要
+        candidate_tickers = [c["ticker"] for c in all_candidates_summary]
+        calendar_summary = await self.blackout_guard.get_upcoming_calendar_summary(tickers=candidate_tickers)
+
         return {
             "batch_number": batch_number,
             "status": status,
@@ -305,6 +326,7 @@ class BatchCashDeploymentService:
             "expected_remaining_cash": round(expected_remaining_cash, 2),
             "projected_cash_after_deployment": round(expected_remaining_cash, 2),
             "expected_cash_ratio": round(expected_cash_ratio, 2),
+            "calendar_summary": calendar_summary,
         }
 
     async def warmup_batch_quotes(
@@ -472,6 +494,20 @@ class BatchCashDeploymentService:
                     "retry_after_seconds": 60,
                 }
 
+        # 2.5 重大宏觀事件避開視窗檢驗 (FOMC / CPI / NFP)
+        if not force:
+            macro_eval = self.blackout_guard.evaluate_macro_blackout()
+            if macro_eval.is_blackout:
+                logger.warning(f"Batch Cash Deployment postponed due to macro blackout: {macro_eval.reason}")
+                return {
+                    "success": False,
+                    "status": "macro_blackout_deferred",
+                    "message": macro_eval.reason,
+                    "event_type": macro_eval.event_type,
+                    "event_name": macro_eval.event_name,
+                    "event_time": macro_eval.event_time,
+                }
+
         # 3. 產出批次建倉清單
         plan = await self.get_deployment_plan(batch_number=batch_number)
         if not plan.get("can_execute") and not force:
@@ -517,6 +553,21 @@ class BatchCashDeploymentService:
                     "amount_usd": amount_usd,
                     "status": "skipped",
                     "reason": msg,
+                })
+                continue
+
+            # 財報日與個股黑名單避開守衛檢驗
+            blackout_eval = await self.blackout_guard.evaluate_candidate(ticker)
+            if blackout_eval.is_blackout and not force:
+                logger.warning(
+                    f"Calendar Blackout Guard triggered for {ticker}: {blackout_eval.reason}. Skipping trade."
+                )
+                executed_trades.append({
+                    "ticker": ticker,
+                    "amount_usd": amount_usd,
+                    "status": "blackout_deferred",
+                    "reason": blackout_eval.reason,
+                    "event_type": blackout_eval.event_type,
                 })
                 continue
 
@@ -707,7 +758,13 @@ class BatchCashDeploymentService:
             )
 
             success_trades = [t for t in executed_trades if t.get("status") in ("executed", "pending")]
-            deferred_trades = [t for t in executed_trades if "deferred" in t.get("status", "")]
+            blackout_trades = [t for t in executed_trades if t.get("status") == "blackout_deferred"]
+            circuit_trades = [t for t in executed_trades if t.get("status") == "circuit_breaker_deferred"]
+            other_deferred = [
+                t for t in executed_trades
+                if "deferred" in t.get("status", "") and t.get("status") not in ("blackout_deferred", "circuit_breaker_deferred")
+            ]
+            deferred_trades = blackout_trades + circuit_trades + other_deferred
             failed_trades = [t for t in executed_trades if t.get("status") in ("failed", "error")]
             skipped_trades = [t for t in executed_trades if t.get("status") == "skipped"]
 
@@ -726,16 +783,28 @@ class BatchCashDeploymentService:
                     hold_check = " [持倉確認: ✅]" if t.get("verified_in_holdings") else ""
                     lines.append(
                         f"  • **{t['ticker']}**: 買進 ${t['amount_usd']:.2f} "
-                        f"(單號: `{t.get('order_id', 'N/A')}`){hold_check} [防滑點通過]"
+                        f"(單號: `{t.get('order_id', 'N/A')}`){hold_check} [防滑點與日曆守衛通過]"
                     )
             else:
                 lines.append("  (無直接成交訂單)")
 
-            if deferred_trades:
+            if blackout_trades:
+                lines.append("")
+                lines.append("**📅 財報與重大宏觀避開守衛暫緩下單:**")
+                for bt in blackout_trades:
+                    lines.append(f"  • **{bt['ticker']}**: ${bt['amount_usd']:.2f} — {bt.get('reason', '落入財報/宏觀保護窗口')}")
+
+            if circuit_trades:
                 lines.append("")
                 lines.append("**🛡️ 防滑點熔斷暫緩下單:**")
-                for dt in deferred_trades:
+                for dt in circuit_trades:
                     lines.append(f"  • **{dt['ticker']}**: ${dt['amount_usd']:.2f} — {dt.get('reason', '價差過寬')}")
+
+            if other_deferred:
+                lines.append("")
+                lines.append("**⏳ 其他原因暫緩下單:**")
+                for ot in other_deferred:
+                    lines.append(f"  • **{ot['ticker']}**: ${ot['amount_usd']:.2f} — {ot.get('reason', '暫緩執行')}")
 
             if failed_trades or skipped_trades:
                 lines.append("")
