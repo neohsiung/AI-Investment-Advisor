@@ -272,3 +272,93 @@ def test_get_history_df_fallback_and_total_failure(market_data_service):
     assert df_failed is None
     assert any("No provider returned history DF for AAPL" in str(c) for c in warn.call_args_list)
 
+
+def test_get_ohlcv_redis_cache_hit(market_data_service):
+    import json
+    cached_data = {
+        "date": ["2026-10-01", "2026-10-02"],
+        "open": [100.0, 101.0],
+        "high": [105.0, 106.0],
+        "low": [99.0, 100.0],
+        "close": [104.0, 105.0],
+        "volume": [1000000, 1200000],
+    }
+    mock_redis = MagicMock()
+    mock_redis.get.return_value = json.dumps(cached_data)
+
+    with patch("src.infrastructure.cache.redis_client.get_redis_sync", return_value=mock_redis):
+        market_data_service.polygon.fetch_history = MagicMock()
+        res = market_data_service.get_ohlcv("NVDA", days=2)
+        assert res == cached_data
+        market_data_service.polygon.fetch_history.assert_not_called()
+        mock_redis.get.assert_called_once_with("market_data:ohlcv:NVDA:2")
+
+
+def test_get_history_df_redis_cache_hit(market_data_service):
+    mock_df = _ohlcv_frame(rows=10)
+    mock_redis = MagicMock()
+    mock_redis.get.return_value = mock_df.to_json(orient="split", date_format="iso")
+
+    with patch("src.infrastructure.cache.redis_client.get_redis_sync", return_value=mock_redis):
+        market_data_service.polygon.fetch_history = MagicMock()
+        df = market_data_service.get_history_df("AAPL", days=10)
+        assert df is not None
+        assert len(df) == 10
+        market_data_service.polygon.fetch_history.assert_not_called()
+        mock_redis.get.assert_called_once_with("market_data:history_df:AAPL:10")
+
+
+def test_get_technical_indicators_redis_cache_hit(market_data_service):
+    import json
+    cached_ind = {
+        "rsi": 65.5,
+        "macd": "bullish",
+        "macd_signal": "bullish",
+        "atr": 4.25,
+        "sma_20": 150.0,
+        "sma": {"sma_20": 150.0},
+    }
+    mock_redis = MagicMock()
+    mock_redis.get.return_value = json.dumps(cached_ind)
+
+    with patch("src.infrastructure.cache.redis_client.get_redis_sync", return_value=mock_redis):
+        market_data_service.polygon.fetch_history = MagicMock()
+        ind = market_data_service.get_technical_indicators("MSFT")
+        assert ind["rsi"] == 65.5
+        assert ind["atr"] == 4.25
+        assert ind["sma_20"] == 150.0
+        market_data_service.polygon.fetch_history.assert_not_called()
+        mock_redis.get.assert_called_once_with("market_data:tech:MSFT")
+
+
+def test_get_technical_indicators_atr_and_flat_aliases(market_data_service):
+    dates = pd.date_range(start="2024-01-01", periods=50)
+    mock_df = pd.DataFrame({
+        "Open": [100.0 + i for i in range(50)],
+        "High": [105.0 + i for i in range(50)],
+        "Low": [95.0 + i for i in range(50)],
+        "Close": [102.0 + i for i in range(50)],
+        "Volume": [10000 + i * 100 for i in range(50)],
+    }, index=dates)
+
+    market_data_service.polygon.fetch_history = MagicMock(return_value=mock_df)
+
+    with patch("src.infrastructure.cache.redis_client.get_redis_sync", return_value=None), \
+         patch.object(market_data_service, "_is_provider_enabled", return_value=True):
+        ind = market_data_service.get_technical_indicators("TSM")
+
+    assert "atr" in ind
+    assert ind["atr"] > 0
+    assert ind["sma_20"] == ind["sma"]["sma_20"]
+    assert ind["macd_signal"] == ind["macd"]
+    assert ind["sma_50"] == ind["sma"]["sma_50"]
+
+
+def test_search_service_lazy_initialization(market_data_service):
+    market_data_service._search_service = None
+    assert market_data_service._search_service is None
+    svc = market_data_service.search_service
+    assert svc is not None
+    assert market_data_service._search_service is svc
+
+
