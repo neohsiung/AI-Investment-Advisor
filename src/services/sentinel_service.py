@@ -568,11 +568,12 @@ class SentinelService:
 
         self.thresholds = self.repo.get_all_thresholds()
 
-        # [Optimization] Check and Flush Buffer if deadline reached (protected with 130s timeout)
+        # [Optimization] Check and Flush Buffer if deadline reached (protected with timeout aligned to Council deliberation)
+        buffer_flush_timeout = float(os.getenv("SENTINEL_BUFFER_FLUSH_TIMEOUT_SECONDS", "210.0"))
         try:
-            await self._with_timeout(self._check_buffer_flush(), timeout=130.0)
+            await self._with_timeout(self._check_buffer_flush(), timeout=buffer_flush_timeout)
         except (asyncio.TimeoutError, TimeoutError):
-            logger.warning("Sentinel: Buffer flush timed out after 130s; continuing tick.")
+            logger.warning("Sentinel: Buffer flush timed out after %.0fs; continuing tick.", buffer_flush_timeout)
         except Exception as e:
             logger.error(f"Sentinel: Buffer flush error: {e}", exc_info=True)
         
@@ -712,10 +713,11 @@ class SentinelService:
             
             # ACT: Summon Council + Notifications if triggered
             if triggers:
+                escalate_timeout = float(os.getenv("SENTINEL_ESCALATE_TIMEOUT_SECONDS", "210.0"))
                 try:
-                    await self._with_timeout(self._escalate(triggers), timeout=60.0)
+                    await self._with_timeout(self._escalate(triggers), timeout=escalate_timeout)
                 except (asyncio.TimeoutError, TimeoutError):
-                    logger.warning("Sentinel: Escalation timed out after 60s; continuing.")
+                    logger.warning("Sentinel: Escalation timed out after %.0fs; continuing.", escalate_timeout)
             else:
                 logger.debug("Sentinel: All dimensions normal. No triggers.")
                 
@@ -1777,7 +1779,11 @@ class SentinelService:
             vix_data = self.market_service.get_macro_data().get("market_indicators", {})
             vix = vix_data.get("^VIX", 20.0)
             contrarian_note = ""
-            if vix > 30:
+            try:
+                vix_float = float(vix)
+            except (ValueError, TypeError):
+                vix_float = 20.0
+            if vix_float > 30:
                 contrarian_note = (
                     "🔥 **【逆勢貪婪】目前市場處於極度恐懼 (VIX > 30)。**"
                     "根據『別人恐懼我貪婪』原則，請優先尋找因市場恐慌而被過度拋售、基本面優良的長線標的。此時可接受較高的波動以換取入場機會。"
@@ -1855,19 +1861,27 @@ class SentinelService:
         }
         
         # Council Deliberation:
-        # P3 routine news alerts bypass expensive multi-agent Council debate.
+        # P3 routine news alerts and routine excess cash alerts bypass expensive multi-agent Council debate.
         # Actionable triggers, price moves, risk spikes, and manual escalations proceed to Council.
         is_routine_news = has_news_trigger and max_priority >= 3 and not (has_excess_cash or has_risk_trigger or has_price_trigger or has_allocation_drift)
+        is_routine_cash = has_excess_cash and max_priority >= 3 and not (has_risk_trigger or has_price_trigger or has_allocation_drift)
         if is_routine_news:
             logger.info(f"Sentinel: P3 routine news bypassed Council session: {topic}")
             decision = f"ℹ️ **市場資訊監控 (P3)**：{'; '.join(display_texts[:3])}\n\n標的無重大基本面或結構性破壞，維持現有長線配置。"
+        elif is_routine_cash:
+            logger.info(f"Sentinel: P3 excess cash bypassed Council session: {topic}")
+            decision = (
+                f"ℹ️ **資金配置監控 (P3)**：{'; '.join(display_texts[:3])}\n\n"
+                f"閒置資金受自適應階梯分批建倉機制 (Disciplined Batch Deployment) 管制，"
+                f"維持 20% 防禦儲備底線，並將於美股開盤時段 (09:35 EST) 依信心度排序推進。"
+            )
         else:
             try:
                 user_id = self.settings_service.user_id or self.user_id
                 if not user_id:
                     logger.warning("No user_id available for council session")
                     return None
-                council_timeout = float(os.getenv("SENTINEL_COUNCIL_TIMEOUT_SECONDS", "120.0"))
+                council_timeout = float(os.getenv("SENTINEL_COUNCIL_TIMEOUT_SECONDS", "180.0"))
                 summary = await asyncio.wait_for(
                     self.council_service.start_session(
                         topic, 
@@ -1895,12 +1909,15 @@ class SentinelService:
                     "請根據下方原始觸發訊號進行判斷。"
                 )
         
+        is_extreme = any(t.get("level") == "CRITICAL" for t in filtered_triggers) or self.current_vix > 35
+
         # Format Notification (Improved UX / Clean Structured Layout)
         if "📊" in decision and "💡" in decision:
             alert_content = decision.strip()
         else:
             # Fallback/Fail-safe structured layout
-            alert_content = f"📊 {topic} - CRITICAL\n\n{decision.strip()}"
+            alert_suffix = " - CRITICAL" if (is_extreme or max_priority <= 1) else ""
+            alert_content = f"📊 {topic}{alert_suffix}\n\n{decision.strip()}"
 
         # Log Alert with Signal IDs for future suppression
         for t in filtered_triggers:
@@ -1916,7 +1933,6 @@ class SentinelService:
         actions = []
         
         is_actionable = any(kw in decision.lower() for kw in ["sell", "reduce", "trim", "buy", "exit", "hedge"])
-        is_extreme = any(t.get("level") == "CRITICAL" for t in filtered_triggers) or self.current_vix > 35
         
         # [Significance Filter v3.5]
         is_significant = is_actionable or is_extreme or "⚠️" in decision or "danger" in decision.lower()
@@ -2647,24 +2663,44 @@ class SentinelService:
             })
         
         if actual_cash_ratio > final_target_cash * 1.5:
-            # v5.0: New trigger for excess cash (Rule #8 & User Request)
-            is_aggressive = profile == "Aggressive"
-            severity = "high" if is_aggressive else "low"
-            priority = 1 if is_aggressive else 3
-            trigger_id = f"cash_ratio_high_{uid}"
-            logger.info(
-                "Sentinel: cash_ratio_high trigger: ratio=%.1f%% target=%.1f%%",
-                actual_cash_ratio * 100, final_target_cash * 100,
-            )
-            triggers.append({
-                "id": trigger_id,
-                "text": (f"💰 Excess Cash Alert: Actual {actual_cash_ratio*100:.1f}% "
-                        f"vs Adjusted Target {final_target_cash*100:.1f}%. "
-                        f"Consider searching for new investment opportunities."),
-                "severity": severity,
-                "priority": priority,
-                "type": "cash_management"
-            })
+            # Check if disciplined batch deployment is currently active or staged
+            is_batch_active = False
+            active_batch = 0
+            try:
+                from src.services.batch_cash_deployment_service import BatchCashDeploymentService
+                deploy_svc = BatchCashDeploymentService(user_id=uid, settings_service=self.settings_service)
+                active_batch = await deploy_svc.get_active_batch_number()
+                if active_batch > 0:
+                    is_batch_active = True
+            except Exception as batch_err:
+                logger.debug(f"Sentinel: Could not check active batch deployment: {batch_err}")
+
+            if is_batch_active:
+                logger.info(
+                    "Sentinel: Cash ratio is %.1f%% (> target %.1f%%), but disciplined Batch %d is staged/active. Suppressing excess cash alarm.",
+                    actual_cash_ratio * 100,
+                    final_target_cash * 100,
+                    active_batch,
+                )
+            else:
+                # v5.0: New trigger for excess cash (Rule #8 & User Request)
+                is_aggressive = profile == "Aggressive"
+                severity = "high" if is_aggressive else "low"
+                priority = 1 if is_aggressive else 3
+                trigger_id = f"cash_ratio_high_{uid}"
+                logger.info(
+                    "Sentinel: cash_ratio_high trigger: ratio=%.1f%% target=%.1f%%",
+                    actual_cash_ratio * 100, final_target_cash * 100,
+                )
+                triggers.append({
+                    "id": trigger_id,
+                    "text": (f"💰 Excess Cash Alert: Actual {actual_cash_ratio*100:.1f}% "
+                            f"vs Adjusted Target {final_target_cash*100:.1f}%. "
+                            f"Consider searching for new investment opportunities."),
+                    "severity": severity,
+                    "priority": priority,
+                    "type": "cash_management"
+                })
 
         return triggers
 
