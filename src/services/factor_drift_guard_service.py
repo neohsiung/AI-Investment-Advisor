@@ -31,7 +31,6 @@ from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional, Tuple
 
 import numpy as np
-from scipy import stats
 
 from src.config.owner import resolve_user_id
 from src.services.tactical_factor_rotation_service import (
@@ -225,23 +224,50 @@ class FactorDriftGuardService:
     ) -> float:
         """
         計算單一因子於給定截面標的之 Spearman Rank Information Coefficient (Rank IC)。
+        優先使用 scipy，若無則依賴內建之 pandas / numpy 進行秩相關度量。
         """
         common_symbols = [s for s in factor_scores if s in forward_returns]
         if len(common_symbols) < 3:
             return 0.0
 
-        scores = [factor_scores[s] for s in common_symbols]
-        returns = [forward_returns[s] for s in common_symbols]
+        scores = [float(factor_scores[s]) for s in common_symbols]
+        returns = [float(forward_returns[s]) for s in common_symbols]
 
+        # 1. 優先嘗試 scipy (若環境已安裝)
         try:
+            from scipy import stats
             res = stats.spearmanr(scores, returns)
             corr = res.statistic if hasattr(res, "statistic") else res[0]
-            if math.isnan(corr):
-                return 0.0
-            return float(max(-1.0, min(1.0, corr)))
-        except Exception as e:
-            logger.debug(f"Error computing Spearman Rank IC: {e}")
-            return 0.0
+            if not math.isnan(corr):
+                return float(max(-1.0, min(1.0, corr)))
+        except (ImportError, Exception):
+            pass
+
+        # 2. 備援使用 pandas (內建於基礎依賴)
+        try:
+            import pandas as pd
+            s_series = pd.Series(scores)
+            r_series = pd.Series(returns)
+            corr = float(s_series.corr(r_series, method="spearman"))
+            if not math.isnan(corr):
+                return float(max(-1.0, min(1.0, corr)))
+        except Exception:
+            pass
+
+        # 3. 備援使用純 numpy 計算秩相關
+        try:
+            arr_x = np.array(scores, dtype=float)
+            arr_y = np.array(returns, dtype=float)
+            rx = np.argsort(np.argsort(arr_x)).astype(float)
+            ry = np.argsort(np.argsort(arr_y)).astype(float)
+            if np.std(rx) > 0 and np.std(ry) > 0:
+                corr = float(np.corrcoef(rx, ry)[0, 1])
+                if not math.isnan(corr):
+                    return float(max(-1.0, min(1.0, corr)))
+        except Exception:
+            pass
+
+        return 0.0
 
     def inject_factor_drift(self, factor_name: str, target_ic: float) -> None:
         """
