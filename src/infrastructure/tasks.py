@@ -1045,6 +1045,81 @@ def run_factor_rotation_evolution(user_id: str = None, iterations: int = 30, for
         return f"Error: {str(e)}"
 
 
+@app.task(name="src.infrastructure.tasks.dispatch_factor_genetic_evolution")
+def dispatch_factor_genetic_evolution():
+    """Fan-out dispatcher: 為活躍租戶分派多因子權重遺傳演算法超參數演化排程任務。"""
+    users = _resolve_target_users()
+    for uid in users:
+        run_factor_genetic_evolution.delay(user_id=uid)
+    return f"Dispatched {len(users)} factor_genetic_evolution tasks"
+
+
+@app.task(name="src.infrastructure.tasks.run_factor_genetic_evolution", soft_time_limit=900, time_limit=960)
+def run_factor_genetic_evolution(
+    user_id: str = None,
+    population_size: int = None,
+    generations: int = None,
+    force: bool = False,
+):
+    """
+    Factor Genetic Hyper-Evolution Task (Phase 31).
+    Executes population-based genetic evolution with multi-objective fitness,
+    tournament selection, regime crossover, simplex mutation, and Walk-Forward OOS promotion.
+    """
+    user_id = user_id or os.getenv("PRIMARY_USER_ID") or os.getenv("USER_ID")
+    if not user_id:
+        logger.error("run_factor_genetic_evolution: user_id is required. Set PRIMARY_USER_ID env var or pass explicitly.")
+        return "Error: user_id is required"
+
+    try:
+        from src.services.settings_service import SettingsService
+        from src.services.strategy_auto_evolution_service import StrategyAutoEvolutionService
+        from src.services.factor_rotation_replay_engine import FactorRotationReplayEngine
+
+        settings_svc = SettingsService(user_id=user_id)
+        enabled = settings_svc.get_setting("enable_factor_genetic_evolution", True, user_id=user_id)
+        if not enabled and not force:
+            logger.info("run_factor_genetic_evolution: Skipped because enable_factor_genetic_evolution is disabled.")
+            return {"status": "skipped", "reason": "disabled"}
+
+        pop_size = population_size or int(settings_svc.get_setting("factor_ga_population_size", 20, user_id=user_id))
+        num_gens = generations or int(settings_svc.get_setting("factor_ga_generations", 20, user_id=user_id))
+        lookback = int(settings_svc.get_setting("replay_evolution_lookback_bars", 252, user_id=user_id))
+        train_ratio = float(settings_svc.get_setting("replay_evolution_wfo_train_ratio", 0.70, user_id=user_id))
+
+        bars = FactorRotationReplayEngine.generate_synthetic_replay_dataset(num_bars=lookback)
+        evo_svc = StrategyAutoEvolutionService(user_id=user_id, settings_repo=settings_svc.repository)
+
+        report = evo_svc.evolve_factor_matrix_genetic(
+            bars=bars,
+            population_size=pop_size,
+            generations=num_gens,
+            train_ratio=train_ratio,
+        )
+
+        logger.info(
+            f"run_factor_genetic_evolution completed for {user_id}: promotable={report.is_promotable}, "
+            f"applied={report.promoted_to_settings}, wfo={report.wfo_efficiency:.2f}, "
+            f"sharpe_oos={report.best_oos_metrics.sharpe:.2f}"
+        )
+        return {
+            "status": "success",
+            "run_id": report.run_id,
+            "is_promotable": report.is_promotable,
+            "promoted_to_settings": report.promoted_to_settings,
+            "promotion_reason": report.promotion_reason,
+            "wfo_efficiency": report.wfo_efficiency,
+            "sharpe_improvement_pct": report.sharpe_improvement_pct,
+            "mdd_expansion_pct": report.mdd_expansion_pct,
+            "factor_shannon_diversity": report.factor_shannon_diversity,
+            "sharpe_baseline_oos": report.baseline_oos_metrics.sharpe,
+            "sharpe_evolved_oos": report.best_oos_metrics.sharpe,
+        }
+    except Exception as e:
+        logger.error(f"run_factor_genetic_evolution failed for {user_id}: {e}", exc_info=True)
+        return f"Error: {str(e)}"
+
+
 @app.task(name="src.infrastructure.tasks.dispatch_autonomous_evolution")
 def dispatch_autonomous_evolution():
     """

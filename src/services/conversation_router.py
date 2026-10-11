@@ -219,6 +219,7 @@ class ConversationRouter:
             "warmup", "quote", "calendar", "earnings", "行事曆", "財報", "日曆", "大事記",
             "quality", "fills", "slippage", "成交品質", "滑點統計", "流動性",
             "factor", "factors", "ic", "因子", "特徵漂移", "因子自癒", "因子監控",
+            "evolve", "evolution", "ga", "演化", "基因演化", "因子演化", "遺傳演化",
         }
         return cmd in exact_keywords
 
@@ -746,10 +747,112 @@ class ConversationRouter:
                 lines.append("• 滾動度量 30d Spearman Rank IC，即時偵測 Concept Drift 與負向反轉 (IC < 0)。")
                 lines.append("• 失效因子施加 50%~90% 阻尼懲罰，多餘權重動態重平衡至防禦與高流動性錨點。")
                 lines.append("• 經由嚴格單體投影 (Simplex Normalization) 確保總權重嚴格收斂至 100.00%。")
+                lines.append("• <b>離線基因超參數演化 (P31)</b>：輸入 <code>/evolve</code> 檢視全歷史 Walk-Forward 遺傳演化終審進度與最佳矩陣。")
 
                 return "\n".join(lines)
             except Exception as e:
                 logger.error(f"Failed to generate factor drift report response: {e}")
                 return f"⚠️ 查詢因子特徵漂移與自癒狀態時發生錯誤：{e}"
+
+        # 9. Evolve / Evolution / GA / 演化 / 基因演化 / 因子演化 / 遺傳演化 (Phase 31)
+        if any(cmd.startswith(prefix) for prefix in ("evolve", "evolution", "ga", "演化", "基因演化", "因子演化", "遺傳演化")):
+            try:
+                from src.services.factor_genetic_evolution_engine import FactorGeneticEvolutionEngine
+                engine = FactorGeneticEvolutionEngine(user_id=resolved_user_id)
+                report = engine.load_latest_report()
+
+                if not report:
+                    return (
+                        "🧬 <b>【全歷史多因子遺傳演算法超參數演化 (Phase 31)】</b>\n"
+                        "━━━━━━━━━━━━━━━━━━\n"
+                        "ℹ️ 尚未產生離線遺傳演化報告。\n\n"
+                        "• <b>背景排程</b>：每週日 23:00 EST 自動執行 20 世代染色體交叉突變與 Walk-Forward 前向走查。\n"
+                        "• <b>即時因子狀態</b>：可輸入 <code>/factor</code> 檢視當前 6 大因子 Rank IC 與特徵漂移自癒。\n"
+                        "• <b>手動觸發演化</b>：管理員可透過 Celery 派發 <code>run_factor_genetic_evolution</code> 任務。"
+                    )
+
+                run_id = report.get("run_id", "N/A")
+                ts = report.get("timestamp", "N/A")[:19].replace("T", " ")
+                pop_size = report.get("population_size", 20)
+                gens = report.get("generations", 20)
+                mut_rate = report.get("mutation_rate", 0.20)
+                cross_rate = report.get("crossover_rate", 0.80)
+
+                wfo_eff = report.get("wfo_efficiency", 0.0)
+                sharpe_imp = report.get("sharpe_improvement_pct", 0.0)
+                mdd_exp = report.get("mdd_expansion_pct", 0.0)
+                diversity = report.get("factor_shannon_diversity", 0.0)
+                is_promotable = report.get("is_promotable", False)
+                promoted_to_settings = report.get("promoted_to_settings", False)
+                promo_reason = report.get("promotion_reason", "")
+
+                base_oos = report.get("baseline_oos_metrics", {})
+                best_oos = report.get("best_oos_metrics", {})
+                base_sharpe = base_oos.get("sharpe", 0.0)
+                best_sharpe = best_oos.get("sharpe", 0.0)
+                base_ret = base_oos.get("annualized_return", 0.0) * 100.0
+                best_ret = best_oos.get("annualized_return", 0.0) * 100.0
+                base_mdd = base_oos.get("max_drawdown", 0.0) * 100.0
+                best_mdd = best_oos.get("max_drawdown", 0.0) * 100.0
+
+                gate_badge = "✅ 終審通過 (PROMOTED)" if is_promotable else "⚠️ 維持基準 (REJECTED)"
+                applied_badge = "🚀 已生效至生產環境" if promoted_to_settings else "⏸️ 未套用至生產環境"
+
+                lines = [
+                    "🧬 <b>【全歷史動態多因子遺傳演算法超參數演化報告 (Phase 31)】</b>",
+                    "━━━━━━━━━━━━━━━━━━",
+                    f"• <b>演化批次 ID</b>：<code>{run_id}</code> ({ts} UTC)",
+                    f"• <b>超參數配置</b>：族群 <code>{pop_size}</code> | 世代 <code>{gens}</code> | 突變 <code>{mut_rate:.2f}</code> | 交叉 <code>{cross_rate:.2f}</code>",
+                    f"• <b>終審裁定狀態</b>：{gate_badge} ({applied_badge})",
+                    f"• <b>晉級評定原因</b>：{promo_reason}",
+                    "━━━━━━━━━━━━━━━━━━",
+                    "<b>【Out-of-Sample 盲測驗證 vs 基準對比】</b>",
+                    f"• <b>OOS 夏普比率 (Sharpe)</b>：<code>{base_sharpe:.2f} ➔ {best_sharpe:.2f}</code> ({sharpe_imp:+.1f}%)",
+                    f"• <b>OOS 年化回報 (Return)</b>：<code>{base_ret:+.1f}% ➔ {best_ret:+.1f}%</code>",
+                    f"• <b>OOS 最大回撤 (MDD)</b>：<code>{base_mdd:.1f}% ➔ {best_mdd:.1f}%</code> ({mdd_exp:+.1f}%)",
+                    f"• <b>WFO 效率係數</b>：<code>{wfo_eff:.2f}</code> (門檻 >= 0.55)",
+                    f"• <b>香農多因子多樣性</b>：<code>{diversity:.2f}</code> (門檻 >= 0.80，防止單因子過度偏激)",
+                ]
+
+                # 世代適應度躍遷歷程 (抽樣頭、中、尾世代)
+                history = report.get("generation_history", [])
+                if history:
+                    lines.append("━━━━━━━━━━━━━━━━━━")
+                    lines.append("📈 <b>【世代適應度演化進程 (Generational Progression)】</b>")
+                    sample_indices = sorted(list({0, len(history) // 2, len(history) - 1}))
+                    for idx in sample_indices:
+                        if idx < len(history):
+                            g = history[idx]
+                            lines.append(
+                                f"• Gen #{g.get('generation')}: 最優適應度 <code>{g.get('best_fitness'):.3f}</code> "
+                                f"| 平均 <code>{g.get('mean_fitness'):.3f}</code> "
+                                f"| IS Sharpe <code>{g.get('best_sharpe_is'):.2f}</code> "
+                                f"| 多樣性 <code>{g.get('diversity_score'):.2f}</code>"
+                            )
+
+                # 最佳矩陣配置摘要
+                best_matrix = report.get("best_matrix", {})
+                phase_weights = best_matrix.get("phase_weights", {})
+                if phase_weights:
+                    lines.append("━━━━━━━━━━━━━━━━━━")
+                    lines.append("🏆 <b>【演化最優冠軍權重矩陣 (Champion Weights)】</b>")
+                    phase_zh = {
+                        "EARLY_REBOUND": "早期反彈",
+                        "BULL_ACCELERATION": "多頭主升",
+                        "LATE_CYCLE_VALUE": "末期價值",
+                        "DEFENSIVE_CONSOLIDATION": "防禦震盪",
+                    }
+                    for ph, ws in phase_weights.items():
+                        ph_name = phase_zh.get(ph, ph)
+                        top_factors = sorted(ws.items(), key=lambda x: x[1], reverse=True)[:3]
+                        tf_str = ", ".join(f"{k}:{v*100:.0f}%" for k, v in top_factors)
+                        lines.append(f"• <b>{ph_name}</b>: {tf_str}")
+
+                lines.append("━━━━━━━━━━━━━━━━━━")
+                lines.append("💡 <i>本演化採用單體高斯變異 (Simplex Mutation) 與非線性回撤懲罰，杜絕過擬合與單因子極端集中。</i>")
+                return "\n".join(lines)
+            except Exception as e:
+                logger.error(f"Failed to generate genetic evolution response: {e}")
+                return f"⚠️ 查詢遺傳演化狀態時發生錯誤：{e}"
 
         return None

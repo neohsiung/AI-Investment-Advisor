@@ -880,3 +880,54 @@ class StrategyAutoEvolutionService:
             logger.error(f"Failed to apply evolved factor matrix to settings: {e}")
             return False
 
+    def evolve_factor_matrix_genetic(
+        self,
+        bars: Optional[list[Any]] = None,
+        baseline_matrix: Optional[Any] = None,
+        population_size: int = 20,
+        generations: int = 20,
+        train_ratio: float = 0.70,
+        random_seed: Optional[int] = None,
+    ) -> Any:
+        """
+        Execute Walk-Forward Genetic Algorithm on tactical factor rotation weights.
+        """
+        from src.services.factor_genetic_evolution_engine import FactorGeneticEvolutionEngine
+        from src.services.factor_rotation_replay_engine import (
+            FactorRotationReplayEngine,
+            FactorWeightMatrix,
+        )
+
+        lookback = int(self._get_setting("replay_evolution_lookback_bars", 252, int))
+        wfo_ratio = float(self._get_setting("replay_evolution_wfo_train_ratio", train_ratio, float))
+
+        replay_bars = bars
+        if not replay_bars:
+            replay_bars = FactorRotationReplayEngine.generate_synthetic_replay_dataset(
+                num_bars=lookback,
+                random_seed=random_seed or 42,
+            )
+
+        base_mat = baseline_matrix
+        if base_mat is None:
+            stored_pw = self._get_setting("tactical_phase_factor_weights", None, str)
+            if stored_pw:
+                try:
+                    pw_data = json.loads(stored_pw) if isinstance(stored_pw, str) else stored_pw
+                    base_mat = FactorWeightMatrix.from_dict(pw_data)
+                except Exception:
+                    base_mat = FactorWeightMatrix()
+            else:
+                base_mat = FactorWeightMatrix()
+
+        engine = FactorGeneticEvolutionEngine(user_id=self.user_id, settings_service=self.settings_repo)
+        report = engine.evolve(
+            bars=replay_bars,
+            baseline_matrix=base_mat,
+            population_size=population_size,
+            generations=generations,
+            train_ratio=wfo_ratio,
+            random_seed=random_seed,
+        )
+        return report
+
