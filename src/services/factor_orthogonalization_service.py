@@ -451,7 +451,7 @@ class FactorOrthogonalizationService:
 
         vif_scores: Dict[str, float] = {}
         for idx, fn in enumerate(factor_names):
-            score = float(max(1.0, vif_array[idx]))
+            score = float(min(20.0, max(1.0, vif_array[idx])))
             vif_scores[fn] = score
 
         max_vif = max(vif_scores.values()) if vif_scores else 1.0
