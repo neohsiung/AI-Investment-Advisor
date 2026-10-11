@@ -220,6 +220,7 @@ class BatchCashDeploymentService:
 
         selected_batch = batches.get(batch_number, batches[1])
         allocated_items = []
+        all_candidates_summary = []
         total_batch_amount = 0.0
 
         for item in selected_batch:
@@ -234,26 +235,58 @@ class BatchCashDeploymentService:
                 target_value = total_equity * item["target_pct"]
                 current_val = current_holdings.get(ticker, 0.0)
                 need_amount = max(0.0, target_value - current_val)
-                # 批次金額不超過缺額與預設金額
-                trade_amount = round(min(base_amt, need_amount if need_amount >= 10.0 else base_amt), 2)
+
+                # 若現有持倉已達到或超過目標權重 95% 且缺額不足 $10，標記為已達標無需重複加碼
+                if current_val >= target_value * 0.95 and need_amount < 10.0:
+                    trade_amount = 0.0
+                elif need_amount >= 10.0:
+                    trade_amount = round(min(base_amt, need_amount), 2)
+                elif need_amount > 2.0 and current_val < target_value * 0.85:
+                    # 存在合理缺額但小於券商最低門檻，以最低起投額 $10.00 補足
+                    trade_amount = 10.00
+                else:
+                    trade_amount = round(base_amt, 2)
             else:
                 trade_amount = round(base_amt, 2)
 
-            allocated_items.append({
+            is_executable = (trade_amount >= 10.0)
+            candidate_entry = {
                 "ticker": ticker,
-                "amount_usd": trade_amount,
-                "allocated_amount": trade_amount,
+                "amount_usd": trade_amount if is_executable else 0.0,
+                "allocated_amount": trade_amount if is_executable else 0.0,
                 "confidence_score": round(conf_val, 2),
                 "target_pct": item["target_pct"],
                 "role": item["role"],
                 "rationale": f"第 {batch_number} 批次建倉配置: {item['role']} (${trade_amount:.2f})",
-            })
-            total_batch_amount += trade_amount
+                "already_satisfied": (current_val >= target_value * 0.95) if total_equity > 0 else False,
+            }
+            all_candidates_summary.append(candidate_entry)
+
+            if is_executable:
+                allocated_items.append(candidate_entry)
+                total_batch_amount += trade_amount
+
+        # 動態縮放：若所需金額超過可支配資金但可支配資金 >= 10.0，等比縮放以確保不穿透防守儲備
+        if total_batch_amount > deployable and deployable >= 10.0 and allocated_items:
+            ratio = deployable / total_batch_amount
+            scaled_items = []
+            rem_cash = deployable
+            for it in allocated_items:
+                scaled_amt = round(it["amount_usd"] * ratio, 2)
+                if scaled_amt >= 10.0 and scaled_amt <= rem_cash:
+                    it["amount_usd"] = scaled_amt
+                    it["allocated_amount"] = scaled_amt
+                    scaled_items.append(it)
+                    rem_cash -= scaled_amt
+            if scaled_items:
+                allocated_items = scaled_items
+                total_batch_amount = round(sum(i["amount_usd"] for i in allocated_items), 2)
 
         # 檢驗可動用資金是否足夠覆蓋批次下單
         can_execute = (
             deployable >= total_batch_amount
             and total_batch_amount >= 10.0
+            and len(allocated_items) > 0
             and status.get("available_cash", 0.0) > status.get("required_reserve_usd", 0.0)
         )
 
@@ -268,6 +301,7 @@ class BatchCashDeploymentService:
             "total_batch_amount": round(total_batch_amount, 2),
             "items": allocated_items,
             "plan_items": allocated_items,
+            "all_candidates": all_candidates_summary,
             "expected_remaining_cash": round(expected_remaining_cash, 2),
             "projected_cash_after_deployment": round(expected_remaining_cash, 2),
             "expected_cash_ratio": round(expected_cash_ratio, 2),
@@ -470,9 +504,21 @@ class BatchCashDeploymentService:
 
         for item in items:
             ticker = item["ticker"]
-            amount_usd = item["amount_usd"]
+            amount_usd = round(item["amount_usd"], 2)
             conf = item["confidence_score"]
             role = item["role"]
+
+            # 券商微股數與最低下單物理約束 ($10.00 USD)
+            if amount_usd < 10.0:
+                msg = f"下單金額 ${amount_usd:.2f} 低於券商最低門檻 ($10.00 USD)，略過不送出"
+                logger.warning(f"Batch candidate {ticker}: {msg}")
+                executed_trades.append({
+                    "ticker": ticker,
+                    "amount_usd": amount_usd,
+                    "status": "skipped",
+                    "reason": msg,
+                })
+                continue
 
             # 防滑點與買賣價差熔斷守衛檢驗
             slippage_eval = await self.slippage_guard.evaluate_trade(
@@ -495,51 +541,91 @@ class BatchCashDeploymentService:
                 })
                 continue
 
-            # 透過 AutomatedTradingService 執行自動下單
-            try:
-                result = await trading_service.evaluate_and_execute_trade(
-                    user_id=self.user_id,
-                    ticker=ticker,
-                    action="BUY",
-                    quantity=amount_usd,
-                    confidence_score=conf,
-                    rationale=item["rationale"],
-                    strategy_name="cash_deployment",
-                )
+            # 透過 AutomatedTradingService 執行自動下單，含短暫瞬態錯誤重試 (Transient Error Retry)
+            max_retries = 2
+            attempt = 0
+            result: Dict[str, Any] = {}
 
-                is_ok = (
-                    result.get("status") in ("success", "executed")
-                    or result.get("execution_status") in ("executed", "pending")
-                )
-                trade_status = "executed" if is_ok else result.get("status", "failed")
-                order_id = result.get("order_id")
+            while attempt < max_retries:
+                attempt += 1
+                try:
+                    result = await trading_service.evaluate_and_execute_trade(
+                        user_id=self.user_id,
+                        ticker=ticker,
+                        action="BUY",
+                        quantity=amount_usd,
+                        confidence_score=conf,
+                        rationale=item["rationale"],
+                        strategy_name="cash_deployment",
+                    )
+                    err_str = str(result.get("error") or result.get("reason") or "").lower()
+                    is_transient = "429" in err_str or "rate limit" in err_str or "timeout" in err_str
+                    if is_transient and attempt < max_retries:
+                        logger.warning(
+                            f"Transient broker error for {ticker} ({err_str}); retrying in 2.0s (attempt {attempt}/{max_retries})..."
+                        )
+                        await asyncio.sleep(2.0)
+                        continue
+                    break
+                except Exception as trade_err:
+                    err_str = str(trade_err).lower()
+                    is_transient = "429" in err_str or "rate limit" in err_str or "timeout" in err_str
+                    if is_transient and attempt < max_retries:
+                        logger.warning(
+                            f"Transient exception for {ticker} ({trade_err}); retrying in 2.0s (attempt {attempt}/{max_retries})..."
+                        )
+                        await asyncio.sleep(2.0)
+                        continue
+                    logger.error(f"Error executing cash deployment for {ticker}: {trade_err}", exc_info=True)
+                    result = {"status": "error", "error": str(trade_err)}
+                    break
 
-                executed_trades.append({
-                    "ticker": ticker,
-                    "amount_usd": amount_usd,
-                    "status": trade_status,
-                    "order_id": order_id,
-                    "spread_pct": slippage_eval.spread_pct,
-                    "adaptive_limit": slippage_eval.adaptive_limit_price,
-                    "reason": result.get("reason"),
-                })
+            is_ok = (
+                result.get("status") in ("success", "executed")
+                or result.get("execution_status") in ("executed", "pending")
+            )
+            trade_status = "executed" if is_ok else result.get("status", "failed")
+            order_id = result.get("order_id")
+            fail_reason = result.get("reason") or result.get("error") or result.get("_fallback_reason")
 
-                if not is_ok:
-                    errors.append(f"{ticker} buy failed: {result.get('reason', 'unknown')}")
-                else:
-                    logger.info(f"✓ Batch {batch_number}: Successfully executed BUY {ticker} (${amount_usd:.2f})")
-                    # 避免連續併發下單撞擊券商速率限制
-                    await asyncio.sleep(1.5)
+            executed_trades.append({
+                "ticker": ticker,
+                "amount_usd": amount_usd,
+                "status": trade_status,
+                "order_id": order_id,
+                "spread_pct": slippage_eval.spread_pct if slippage_eval else None,
+                "adaptive_limit": slippage_eval.adaptive_limit_price if slippage_eval else None,
+                "reason": fail_reason,
+            })
 
-            except Exception as trade_err:
-                logger.error(f"Error executing cash deployment for {ticker}: {trade_err}", exc_info=True)
-                errors.append(f"{ticker} exception: {str(trade_err)}")
-                executed_trades.append({
-                    "ticker": ticker,
-                    "amount_usd": amount_usd,
-                    "status": "error",
-                    "error": str(trade_err),
-                })
+            if not is_ok:
+                errors.append(f"{ticker} buy failed: {fail_reason or 'unknown'}")
+            else:
+                logger.info(f"✓ Batch {batch_number}: Successfully executed BUY {ticker} (${amount_usd:.2f})")
+                # 避免連續併發下單撞擊券商速率限制
+                await asyncio.sleep(1.5)
+
+        # 交易後持倉撮合驗證 (Post-trade Position Verification)
+        actual_filled_tickers: List[str] = []
+        try:
+            if any(t.get("status") in ("executed", "pending") for t in executed_trades):
+                await asyncio.sleep(1.0)
+            broker = await self._get_broker()
+            if broker:
+                fresh_positions = await broker.get_positions()
+                for p in (fresh_positions or []):
+                    sym = str(getattr(p, "symbol", "")).strip().upper()
+                    for suffix in [".US", ".RTH", ".EXT", ".L", ".UK"]:
+                        if sym.endswith(suffix):
+                            sym = sym[:-len(suffix)]
+                    val = float(getattr(p, "market_value", 0.0) or getattr(p, "current_value", 0.0) or 0.0)
+                    if val >= 10.0:
+                        actual_filled_tickers.append(sym)
+        except Exception as pos_err:
+            logger.debug(f"Post-trade position verification non-blocking error: {pos_err}")
+
+        for t in executed_trades:
+            t["verified_in_holdings"] = (t["ticker"] in actual_filled_tickers)
 
         # 交易後資產與剩餘現金重算
         post_status = await self.get_portfolio_status()
@@ -551,19 +637,41 @@ class BatchCashDeploymentService:
             post_status=post_status,
         )
 
-        # 4. 若有成功下單，自動更新 Redis 批次進度至下一批次
-        successful_trades = [t for t in executed_trades if t.get("status") in ("executed", "pending")]
+        # 4. 批次推進狀態守衛：僅在當前批次全數成功（或資金已用罄）時才推進至下一批次
+        successful_trades = [
+            t for t in executed_trades
+            if t.get("status") in ("executed", "pending") or t.get("verified_in_holdings")
+        ]
+        unfulfilled_trades = [
+            t for t in executed_trades
+            if t.get("status") not in ("executed", "pending") and not t.get("verified_in_holdings")
+        ]
+
         if successful_trades:
             try:
                 from src.infrastructure.cache.redis_client import get_redis
                 r = await get_redis(decode_responses=True)
-                next_batch = (batch_number + 1) if batch_number < 3 else 0
+                now_iso = datetime.now(timezone.utc).isoformat()
+                await r.set(f"batch_deployment:last_executed_at:{self.user_id}", now_iso)
+                await r.set(f"batch_deployment:last_batch_executed:{self.user_id}", str(batch_number))
+
                 if post_status.get("deployable_cash", 0.0) < 10.0:
                     next_batch = 0
-                await r.set(f"batch_deployment:current_batch:{self.user_id}", str(next_batch))
-                await r.set(f"batch_deployment:last_executed_at:{self.user_id}", datetime.now(timezone.utc).isoformat())
-                await r.set(f"batch_deployment:last_batch_executed:{self.user_id}", str(batch_number))
-                logger.info(f"Advanced batch state to {next_batch} after successful execution of Batch {batch_number}")
+                    await r.set(f"batch_deployment:current_batch:{self.user_id}", "0")
+                    logger.info(
+                        f"Deployable cash depleted (${post_status.get('deployable_cash', 0.0):.2f} < $10.00). "
+                        f"Batch progression marked complete (0)."
+                    )
+                elif len(unfulfilled_trades) == 0:
+                    next_batch = (batch_number + 1) if batch_number < 3 else 0
+                    await r.set(f"batch_deployment:current_batch:{self.user_id}", str(next_batch))
+                    logger.info(f"Advanced batch state to {next_batch} after full execution of Batch {batch_number}")
+                else:
+                    # 部分標的遭熔斷暫緩或下單失敗，保留當前批次以供後續補單，避免跳過標的
+                    logger.info(
+                        f"Batch {batch_number} partially executed ({len(successful_trades)}/{len(items)}). "
+                        f"Retaining batch {batch_number} for subsequent completion of deferred candidates."
+                    )
             except Exception as e:
                 logger.warning(f"Failed to record batch advancement in redis: {e}")
 
@@ -598,8 +706,10 @@ class BatchCashDeploymentService:
                 settings_service=self.settings_service, user_id=self.user_id
             )
 
-            success_trades = [t for t in executed_trades if t.get("status") == "executed"]
+            success_trades = [t for t in executed_trades if t.get("status") in ("executed", "pending")]
             deferred_trades = [t for t in executed_trades if "deferred" in t.get("status", "")]
+            failed_trades = [t for t in executed_trades if t.get("status") in ("failed", "error")]
+            skipped_trades = [t for t in executed_trades if t.get("status") == "skipped"]
 
             title = f"🚀 [美股開盤建倉] 第 {batch_number} 批次配置執行完成"
             lines = [
@@ -613,7 +723,11 @@ class BatchCashDeploymentService:
 
             if success_trades:
                 for t in success_trades:
-                    lines.append(f"  • **{t['ticker']}**: 買進 ${t['amount_usd']:.2f} (單號: `{t.get('order_id', 'N/A')}`) [防滑點通過]")
+                    hold_check = " [持倉確認: ✅]" if t.get("verified_in_holdings") else ""
+                    lines.append(
+                        f"  • **{t['ticker']}**: 買進 ${t['amount_usd']:.2f} "
+                        f"(單號: `{t.get('order_id', 'N/A')}`){hold_check} [防滑點通過]"
+                    )
             else:
                 lines.append("  (無直接成交訂單)")
 
@@ -623,8 +737,24 @@ class BatchCashDeploymentService:
                 for dt in deferred_trades:
                     lines.append(f"  • **{dt['ticker']}**: ${dt['amount_usd']:.2f} — {dt.get('reason', '價差過寬')}")
 
+            if failed_trades or skipped_trades:
+                lines.append("")
+                lines.append("**⚠️ 未執行/略過標的:**")
+                for ft in failed_trades:
+                    lines.append(f"  • **{ft['ticker']}**: ${ft['amount_usd']:.2f} — 失敗: {ft.get('reason', '未知原因')}")
+                for st in skipped_trades:
+                    lines.append(f"  • **{st['ticker']}**: ${st['amount_usd']:.2f} — 略過: {st.get('reason', '未達門檻')}")
+
             lines.append("")
-            lines.append(f"📌 **資金守衛摘要:** 完成第 {batch_number} 批次配置後，現金餘額保持 ${post_status.get('available_cash', 0.0):,.2f}，穩居防禦底線之上，杜絕追高風險。")
+            if deferred_trades or failed_trades:
+                lines.append(
+                    f"📌 **執行狀態說明:** 本批次尚有標的暫緩或待補單，將於下一排程自動接續執行（保留第 {batch_number} 批次）。"
+                )
+            else:
+                lines.append(
+                    f"📌 **資金守衛摘要:** 完成第 {batch_number} 批次配置後，現金餘額保持 "
+                    f"${post_status.get('available_cash', 0.0):,.2f}，穩居防禦底線之上，杜絕追高風險。"
+                )
 
             content = "\n".join(lines)
             await notifier.notify_all(
