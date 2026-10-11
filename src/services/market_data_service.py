@@ -1,7 +1,8 @@
+import json
+from datetime import date, datetime, timezone
+from zoneinfo import ZoneInfo
+from typing import List, Dict, Tuple, Any, Optional, Callable
 import pandas as pd
-import typing
-from typing import List, Dict, Tuple, Any, Optional, Callable, Dict, List, Tuple, Any, Optional, Callable
-from datetime import date
 from src.utils.logger import setup_logger
 
 # Providers
@@ -75,11 +76,22 @@ class MarketDataService:
         ):
             setattr(self, _attr, self._provider_map.get(_pid))
 
-        # Initialize Search (Tavily Primary, DuckDuckGo Fallback)
-        self.search_service = InternetSearchService(settings_service=self.settings_service)
+        # Lazily-initialized search service (Tavily Primary, DuckDuckGo Fallback)
+        self._search_service: Optional[InternetSearchService] = None
 
         # Quote priority, derived from the manifest's `capabilities.quote`.
         self.providers: List[MarketDataProvider] = self._chain("quote")
+
+    @property
+    def search_service(self) -> InternetSearchService:
+        if self._search_service is None:
+            self._search_service = InternetSearchService(settings_service=self.settings_service)
+        return self._search_service
+
+    @search_service.setter
+    def search_service(self, value: Optional[InternetSearchService]) -> None:
+        self._search_service = value
+
 
     def _chain(self, capability: str) -> List[MarketDataProvider]:
         """
@@ -166,6 +178,20 @@ class MarketDataService:
 
     PRICE_CACHE_TTL_MARKET_OPEN = 60    # 盤中即時快取 60 秒 (美東 09:30-16:00)
     PRICE_CACHE_TTL_OFF_HOURS = 300     # 盤後/休市快取 300 秒 (5 分鐘)
+    HISTORY_CACHE_TTL_MARKET_OPEN = 300    # 盤中歷史/指標快取 300 秒 (5 分鐘)
+    HISTORY_CACHE_TTL_OFF_HOURS = 1800     # 盤後/休市歷史/指標快取 1800 秒 (30 分鐘)
+
+    def _get_history_cache_ttl(self) -> int:
+        """Return history/indicator cache TTL based on whether US equity market is currently open."""
+        try:
+            now_utc = datetime.now(timezone.utc)
+            now_est = now_utc.astimezone(ZoneInfo("America/New_York"))
+            # Monday=0, Sunday=6; market hours 09:30-16:00 EST
+            if now_est.weekday() < 5 and ((now_est.hour == 9 and now_est.minute >= 30) or (10 <= now_est.hour < 16)):
+                return self.HISTORY_CACHE_TTL_MARKET_OPEN
+        except Exception:
+            pass
+        return self.HISTORY_CACHE_TTL_OFF_HOURS
 
     async def get_current_prices(self, tickers: List[str]) -> Dict[str, float]:
         """
@@ -487,21 +513,37 @@ class MarketDataService:
 
     def get_ohlcv(self, ticker: str, days: int = 30) -> Dict[str, List[Any]]:
         """
-        Get historical OHLCV data for a specific ticker.
-        獲取特定標的的歷史 OHLCV 數據。
+        Get historical OHLCV data for a specific ticker with distributed Redis caching.
+        獲取特定標的的歷史 OHLCV 數據（含 Redis 快取）。
         """
+        clean_ticker = (ticker or "").strip().upper()
+        if not clean_ticker:
+            return {}
+
+        # 1. 優先從 Redis 讀取 OHLCV 快取
+        cache_key = f"market_data:ohlcv:{clean_ticker}:{days}"
+        try:
+            from src.infrastructure.cache.redis_client import get_redis_sync
+            r = get_redis_sync(decode_responses=True)
+            if r:
+                cached = r.get(cache_key)
+                if cached:
+                    return json.loads(cached)
+        except Exception as e:
+            self.logger.debug(f"Redis get_ohlcv cache lookup skipped: {e}")
+
         # Override Priority for History: Polygon -> Tiingo -> FMP -> YFinance
         # Index symbols skip the equity-only providers (see _providers_for_symbol).
         history_providers = self._providers_for_symbol(
-            self._chain("history"), ticker
+            self._chain("history"), clean_ticker
         )
 
         for provider in history_providers:
             if not self._is_provider_enabled(provider): continue
             try:
-                df = provider.fetch_history(ticker, days=days)
+                df = provider.fetch_history(clean_ticker, days=days)
                 if df is not None and not df.empty:
-                    self.logger.info(f"Fetched history for {ticker} from {self._get_provider_name(provider)}")
+                    self.logger.info(f"Fetched history for {clean_ticker} from {self._get_provider_name(provider)}")
                     # Ensure format
                     df = df.tail(days)
                     def to_list(series):
@@ -514,12 +556,12 @@ class MarketDataService:
                     bad_prices = [p for p in closes if p in suspicious_vals]
                     if bad_prices:
                         self.logger.warning(
-                            f"SUSPICIOUS HISTORICAL PRICE DETECTED for {ticker} from {self._get_provider_name(provider)}: "
+                            f"SUSPICIOUS HISTORICAL PRICE DETECTED for {clean_ticker} from {self._get_provider_name(provider)}: "
                             f"{bad_prices[0]}. This might be an API fallback error."
                         )
 
-                    return {
-                        "date": [d.strftime('%Y-%m-%d') for d in df.index],
+                    res = {
+                        "date": [d.strftime('%Y-%m-%d') if hasattr(d, 'strftime') else str(d)[:10] for d in df.index],
                         "open": to_list(df['Open']),
                         "high": to_list(df['High']),
                         "low": to_list(df['Low']),
@@ -527,15 +569,26 @@ class MarketDataService:
                         "volume": to_list(df['Volume'])
                     }
 
+                    # 寫入 Redis 快取
+                    try:
+                        from src.infrastructure.cache.redis_client import get_redis_sync
+                        r = get_redis_sync(decode_responses=True)
+                        if r:
+                            r.set(cache_key, json.dumps(res), ex=self._get_history_cache_ttl())
+                    except Exception as ce:
+                        self.logger.debug(f"Redis get_ohlcv cache write skipped: {ce}")
+
+                    return res
+
             except Exception as e:
                  self.logger.warning(
-                     f"History fetch failed for {ticker} on {self._get_provider_name(provider)}: {e}"
+                     f"History fetch failed for {clean_ticker} on {self._get_provider_name(provider)}: {e}"
                  )
         # Nobody served it. Say so once, plainly — otherwise the caller just
         # sees an empty dict and the only trace is per-provider warnings.
         # 全部提供者皆未回傳資料時明講一次，否則呼叫端只會看到空 dict。
         self.logger.warning(
-            f"No provider returned history for {ticker} "
+            f"No provider returned history for {clean_ticker} "
             f"(tried: {', '.join(self._get_provider_name(p) for p in history_providers) or 'none'})"
         )
         return {}
@@ -554,27 +607,59 @@ class MarketDataService:
 
     def get_history_df(self, ticker: str, days: int = 60) -> Optional[pd.DataFrame]:
         """
-        Get historical OHLCV data for a specific ticker as a pandas DataFrame.
-        優先使用 Polygon -> Tiingo -> FMP -> YFinance 獲取歷史 OHLCV DataFrame。
+        Get historical OHLCV data for a specific ticker as a pandas DataFrame with distributed Redis caching.
+        優先使用 Polygon -> Tiingo -> FMP -> YFinance 獲取歷史 OHLCV DataFrame（含 Redis 快取）。
         """
+        clean_ticker = (ticker or "").strip().upper()
+        if not clean_ticker:
+            return None
+
+        # 1. 優先從 Redis 讀取 DataFrame 快取
+        cache_key = f"market_data:history_df:{clean_ticker}:{days}"
+        try:
+            from src.infrastructure.cache.redis_client import get_redis_sync
+            r = get_redis_sync(decode_responses=True)
+            if r:
+                cached = r.get(cache_key)
+                if cached:
+                    import io
+                    df_cached = pd.read_json(io.StringIO(cached), orient="split")
+                    df_cached.index = pd.to_datetime(df_cached.index)
+                    return df_cached
+        except Exception as e:
+            self.logger.debug(f"Redis get_history_df cache lookup skipped: {e}")
+
         history_providers = self._providers_for_symbol(
-            self._chain("history"), ticker
+            self._chain("history"), clean_ticker
         )
 
         for provider in history_providers:
             if not self._is_provider_enabled(provider):
                 continue
             try:
-                df = provider.fetch_history(ticker, days=days)
+                df = provider.fetch_history(clean_ticker, days=days)
                 if df is not None and not df.empty:
-                    self.logger.info(f"Fetched history DF for {ticker} from {self._get_provider_name(provider)}")
-                    return df.tail(days)
+                    self.logger.info(f"Fetched history DF for {clean_ticker} from {self._get_provider_name(provider)}")
+                    df_result = df.tail(days)
+                    # 寫入 Redis 快取
+                    try:
+                        from src.infrastructure.cache.redis_client import get_redis_sync
+                        r = get_redis_sync(decode_responses=True)
+                        if r:
+                            r.set(
+                                cache_key,
+                                df_result.to_json(orient="split", date_format="iso"),
+                                ex=self._get_history_cache_ttl(),
+                            )
+                    except Exception as ce:
+                        self.logger.debug(f"Redis get_history_df cache write skipped: {ce}")
+                    return df_result
             except Exception as e:
                 self.logger.warning(
-                    f"History DF fetch failed for {ticker} on {self._get_provider_name(provider)}: {e}"
+                    f"History DF fetch failed for {clean_ticker} on {self._get_provider_name(provider)}: {e}"
                 )
         self.logger.warning(
-            f"No provider returned history DF for {ticker} "
+            f"No provider returned history DF for {clean_ticker} "
             f"(tried: {', '.join(self._get_provider_name(p) for p in history_providers) or 'none'})"
         )
         return None
@@ -582,18 +667,31 @@ class MarketDataService:
     def get_technical_indicators(self, ticker: str) -> Dict[str, Any]:
         """
         Calculate indicators. Relies on fetch_history (defaulting to YFinance).
-        計算指標。依賴 fetch_history（預設為 YFinance）。
+        計算指標（含 14 日 ATR、扁平別名相容層與 Redis 快取）。
         """
+        clean_ticker = (ticker or "").strip().upper()
+        if not clean_ticker:
+            return {"rsi": 50.0, "macd": "neutral", "sma": {}, "volume": {}}
+
+        # 1. 優先從 Redis 讀取指標快取
+        cache_key = f"market_data:tech:{clean_ticker}"
         try:
-            # We use self.get_ohlcv methodology but need DataFrame.
-            # So we call fetch_history on YFinance directly or iterate.
-            
+            from src.infrastructure.cache.redis_client import get_redis_sync
+            r = get_redis_sync(decode_responses=True)
+            if r:
+                cached = r.get(cache_key)
+                if cached:
+                    return json.loads(cached)
+        except Exception as e:
+            self.logger.debug(f"Redis get_technical_indicators cache lookup skipped: {e}")
+
+        try:
             df = pd.DataFrame()
             # Prioritize Polygon for indicators base data (Unlimited history);
             # index symbols route past it (see _providers_for_symbol).
-            for provider in self._providers_for_symbol(self._chain("indicators"), ticker):
+            for provider in self._providers_for_symbol(self._chain("indicators"), clean_ticker):
                 if not self._is_provider_enabled(provider): continue
-                df = provider.fetch_history(ticker, period="1y")
+                df = provider.fetch_history(clean_ticker, period="1y")
                 if not df.empty: break
 
             if df.empty or len(df) < 26:
@@ -601,11 +699,14 @@ class MarketDataService:
                 # or a data outage looks identical to a genuinely neutral chart.
                 # 中性預設值必須標記，否則資料中斷與真正的中性盤看起來一樣。
                 self.logger.warning(
-                    f"Technical indicators unavailable for {ticker}: "
+                    f"Technical indicators unavailable for {clean_ticker}: "
                     f"{len(df)} rows (need 26). Returning marked neutral defaults."
                 )
                 return {
-                    "rsi": 50, "macd": "neutral", "sma": {}, "volume": {},
+                    "rsi": 50.0, "macd": "neutral", "macd_status": "neutral", "macd_signal": "neutral",
+                    "macd_val": 0.0, "signal_val": 0.0, "atr": 0.0,
+                    "sma_20": 0.0, "sma_50": 0.0, "sma_200": 0.0,
+                    "sma": {}, "volume": {},
                     "_insufficient_data": True,
                 }
 
@@ -615,7 +716,7 @@ class MarketDataService:
             volume = df['Volume']
             if isinstance(volume, pd.DataFrame): volume = volume.iloc[:, 0]
 
-            # Indicators Logic (Same as before)
+            # Indicators Logic
             sma_20 = close.rolling(window=20).mean().iloc[-1]
             sma_50 = close.rolling(window=50).mean().iloc[-1]
             sma_200 = close.rolling(window=200).mean().iloc[-1]
@@ -638,23 +739,64 @@ class MarketDataService:
             signal_val = signal.iloc[-1]
             macd_status = "bullish" if macd_val > signal_val else "bearish"
 
-            return {
-                "rsi": round(float(current_rsi), 2) if pd.notna(current_rsi) else 50,
+            # 14-period True Range & ATR
+            atr_val = 0.0
+            if 'High' in df.columns and 'Low' in df.columns and len(df) >= 14:
+                try:
+                    high = df['High']
+                    if isinstance(high, pd.DataFrame): high = high.iloc[:, 0]
+                    low = df['Low']
+                    if isinstance(low, pd.DataFrame): low = low.iloc[:, 0]
+                    tr1 = high - low
+                    tr2 = (high - close.shift(1)).abs()
+                    tr3 = (low - close.shift(1)).abs()
+                    tr = pd.concat([tr1, tr2, tr3], axis=1).max(axis=1)
+                    atr_14 = tr.rolling(window=14).mean().iloc[-1]
+                    if pd.notna(atr_14):
+                        atr_val = round(float(atr_14), 2)
+                except Exception as atr_err:
+                    self.logger.debug(f"ATR calculation skipped for {clean_ticker}: {atr_err}")
+
+            sma_20_val = round(float(sma_20), 2) if pd.notna(sma_20) else 0.0
+            sma_50_val = round(float(sma_50), 2) if pd.notna(sma_50) else 0.0
+            sma_200_val = round(float(sma_200), 2) if pd.notna(sma_200) else 0.0
+            rsi_val = round(float(current_rsi), 2) if pd.notna(current_rsi) else 50.0
+
+            result = {
+                "rsi": rsi_val,
                 "macd": macd_status,
-                "macd_val": round(float(macd_val), 2) if pd.notna(macd_val) else 0,
+                "macd_status": macd_status,
+                "macd_signal": macd_status,
+                "macd_val": round(float(macd_val), 2) if pd.notna(macd_val) else 0.0,
+                "signal_val": round(float(signal_val), 2) if pd.notna(signal_val) else 0.0,
+                "atr": atr_val,
+                "sma_20": sma_20_val,
+                "sma_50": sma_50_val,
+                "sma_200": sma_200_val,
                 "sma": {
-                    "sma_20": round(float(sma_20), 2) if pd.notna(sma_20) else 0,
-                    "sma_50": round(float(sma_50), 2) if pd.notna(sma_50) else 0,
-                    "sma_200": round(float(sma_200), 2) if pd.notna(sma_200) else 0
+                    "sma_20": sma_20_val,
+                    "sma_50": sma_50_val,
+                    "sma_200": sma_200_val
                 },
                 "volume": {
                     "current": int(current_vol) if pd.notna(current_vol) else 0,
                     "avg_20": int(avg_vol_20) if pd.notna(avg_vol_20) else 0
                 }
             }
+
+            # 寫入 Redis 快取
+            try:
+                from src.infrastructure.cache.redis_client import get_redis_sync
+                r = get_redis_sync(decode_responses=True)
+                if r:
+                    r.set(cache_key, json.dumps(result), ex=self._get_history_cache_ttl())
+            except Exception as ce:
+                self.logger.debug(f"Redis get_technical_indicators cache write skipped: {ce}")
+
+            return result
         except Exception as e:
-            self.logger.error(f"Indicator calc error for {ticker}: {e}")
-            return {"rsi": 50, "macd": "neutral", "sma": {}, "volume": {}}
+            self.logger.error(f"Indicator calc error for {clean_ticker}: {e}")
+            return {"rsi": 50.0, "macd": "neutral", "sma": {}, "volume": {}}
 
     def get_news(self, ticker: str) -> List[Dict[str, Any]]:
         """

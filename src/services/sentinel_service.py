@@ -3427,6 +3427,44 @@ class SentinelService:
             take_profit_pct = float(self.settings_service.get_setting("take_profit_pct", 20.0, self.user_id))
             sell_threshold = float(self.settings_service.get_setting("auto_trade_threshold_sell", 6.0, self.user_id))
 
+            # Hoist loop-invariant settings and service collaborators outside the per-position loop
+            trailing_stop_pct = float(self.settings_service.get_setting("trailing_stop_pct", 6.0, self.user_id))
+            enable_trailing_stops_val = self.settings_service.get_setting("enable_trailing_stops", True, self.user_id)
+            enable_trailing_stops = str(enable_trailing_stops_val).lower() in ("true", "1")
+
+            enable_stagnation_pruning_val = self.settings_service.get_setting("enable_stagnation_pruning", True, self.user_id)
+            enable_stagnation = str(enable_stagnation_pruning_val).lower() in ("true", "1")
+            stagnation_min_days = int(self.settings_service.get_setting("stagnation_prune_min_days", 15, self.user_id) or 15)
+
+            decay_svc = None
+            w_svc = None
+            if enable_stagnation:
+                try:
+                    from src.services.alpha_decay_service import AlphaDecayService
+                    decay_svc = AlphaDecayService(
+                        user_id=self.user_id,
+                        settings_service=self.settings_service,
+                        market_data_service=self.market_service,
+                    )
+                except Exception as d_err:
+                    logger.debug(f"Sentinel: AlphaDecayService init skipped: {d_err}")
+
+                try:
+                    from src.services.long_term_winner_service import LongTermWinnerService
+                    w_svc = LongTermWinnerService(user_id=self.user_id, market_data_service=self.market_service)
+                except Exception as w_err:
+                    logger.debug(f"Sentinel: LongTermWinnerService init skipped: {w_err}")
+
+            sm_svc = None
+            if enable_trailing_stops:
+                try:
+                    from src.services.smart_money_support_service import SmartMoneySupportService
+                    sm_svc = SmartMoneySupportService()
+                except Exception as sm_err:
+                    logger.debug(f"Sentinel: SmartMoneySupportService init skipped: {sm_err}")
+
+            tx_df_cache = None
+
             eval_candidates: List[Dict[str, Any]] = []
             for ticker, info in current_allocation.items():
                 if str(ticker).upper() in ("CASH", "USD"):
@@ -3484,20 +3522,14 @@ class SentinelService:
                 # 2. High-Water Mark Tracking & Tiered Dynamic Trailing Stop-Loss (分段動態移動停損)
                 current_peak = await self._resolve_and_update_peak(ticker, current_price, avg_price)
 
-                trailing_stop_pct = float(self.settings_service.get_setting("trailing_stop_pct", 6.0, self.user_id))
-                enable_trailing_stops_val = self.settings_service.get_setting("enable_trailing_stops", True, self.user_id)
-                enable_trailing_stops = str(enable_trailing_stops_val).lower() in ("true", "1")
-
                 drawdown_from_peak_pct = ((current_price - current_peak) / current_peak) * 100.0 if current_peak > 0 else 0.0
 
                 # 只有當標的曾漲過成本線 (current_peak > avg_price * 1.02) 且自高點回檔達標或跌破主力支撐時啟動移動停損
                 is_drawdown_triggered = drawdown_from_peak_pct <= -abs(trailing_stop_pct)
                 is_support_broken = False
                 support_price = None
-                if enable_trailing_stops and current_peak > (avg_price * 1.02):
+                if enable_trailing_stops and current_peak > (avg_price * 1.02) and sm_svc is not None:
                     try:
-                        from src.services.smart_money_support_service import SmartMoneySupportService
-                        sm_svc = SmartMoneySupportService()
                         sm_res = sm_svc.calculate_institutional_support(ticker=ticker, current_price=current_price)
                         if sm_res and sm_res.support_type != "FALLBACK_PERCENTAGE":
                             support_price = sm_res.key_support_price
@@ -3671,18 +3703,14 @@ class SentinelService:
                     continue
 
                 # 5. Stagnation / Dead-Capital Pruning Check (死資金停滯修剪防線)
-                enable_stagnation_pruning_val = self.settings_service.get_setting("enable_stagnation_pruning", True, self.user_id)
-                enable_stagnation = str(enable_stagnation_pruning_val).lower() in ("true", "1")
-                if enable_stagnation:
+                if enable_stagnation and decay_svc is not None:
                     try:
-                        from src.services.alpha_decay_service import AlphaDecayService
-                        decay_svc = AlphaDecayService(user_id=self.user_id, settings_service=self.settings_service, market_data_service=self.market_service)
-
                         open_date = info.get("open_date")
                         if not open_date:
-                            tx_df = self.transaction_service.get_transactions(self.user_id)
-                            if not tx_df.empty and "ticker" in tx_df.columns and "trade_date" in tx_df.columns:
-                                ticker_txs = tx_df[(tx_df["ticker"] == ticker) & (tx_df["action"] == "BUY")]
+                            if tx_df_cache is None:
+                                tx_df_cache = self.transaction_service.get_transactions(self.user_id)
+                            if not tx_df_cache.empty and "ticker" in tx_df_cache.columns and "trade_date" in tx_df_cache.columns:
+                                ticker_txs = tx_df_cache[(tx_df_cache["ticker"] == ticker) & (tx_df_cache["action"] == "BUY")]
                                 if not ticker_txs.empty:
                                     open_date = pd.to_datetime(ticker_txs["trade_date"].min())
 
@@ -3705,19 +3733,16 @@ class SentinelService:
                         except Exception as e:
                             logger.debug(f"Sentinel: Technical indicators fetch skipped for {ticker}: {e}")
 
-                        sma_20 = float(ind.get("sma_20") or 0.0)
+                        sma_20 = float(ind.get("sma_20") or (ind.get("sma", {}).get("sma_20") if isinstance(ind.get("sma"), dict) else 0.0) or 0.0)
                         rsi = float(ind.get("rsi") or 50.0)
-                        macd = str(ind.get("macd_signal") or "neutral")
+                        macd = str(ind.get("macd_signal") or ind.get("macd") or "neutral")
 
                         is_winner = False
-                        try:
-                            from src.services.long_term_winner_service import LongTermWinnerService
-                            w_svc = LongTermWinnerService(user_id=self.user_id)
-                            is_winner = w_svc.is_winner(ticker)
-                        except Exception:
-                            is_winner = False
-
-                        stagnation_min_days = int(self.settings_service.get_setting("stagnation_prune_min_days", 15, self.user_id) or 15)
+                        if w_svc is not None:
+                            try:
+                                is_winner = w_svc.is_winner(ticker)
+                            except Exception:
+                                is_winner = False
 
                         decay_assessment = decay_svc.evaluate_holding_decay(
                             ticker=ticker,
@@ -3732,14 +3757,12 @@ class SentinelService:
                             decay_start_days=stagnation_min_days,
                         )
 
-                        stop_loss_pct = float(self.settings_service.get_setting("stop_loss_pct", -8.0, self.user_id) or -8.0)
-                        if stop_loss_pct > 0:
-                            stop_loss_pct = -stop_loss_pct
+                        effective_stop_pct = -abs(stop_loss_pct)
 
                         is_flat_stagnant = (-4.0 <= return_pct <= 4.0)
                         is_sub_stop_lag = (
                             return_pct < -4.0
-                            and return_pct > stop_loss_pct
+                            and return_pct > effective_stop_pct
                             and (decay_assessment.metrics.get("is_below_20ma") or decay_assessment.metrics.get("rsi", 50.0) < 45.0)
                         )
                         alpha_lag = (return_pct - benchmark_ret) if (benchmark_ret is not None and return_pct is not None) else 0.0
