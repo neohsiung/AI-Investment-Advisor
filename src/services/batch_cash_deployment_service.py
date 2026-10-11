@@ -260,22 +260,38 @@ class BatchCashDeploymentService:
             is_blackout = blackout_decision.is_blackout
             blackout_reason = blackout_decision.reason if is_blackout else None
 
-            # 若標的落入財報/宏觀避開視窗，不於此批次執行以防極端波動
-            if is_blackout:
+            # 盤中流動性黑洞與成交品質檢驗
+            is_black_hole = False
+            comp_multiplier = 1.0
+            if hasattr(self.slippage_guard, "compensator") and self.slippage_guard.compensator:
+                try:
+                    c_metrics = self.slippage_guard.compensator.get_metrics(ticker)
+                    comp_multiplier = c_metrics.slippage_multiplier
+                    if c_metrics.sample_count >= 2 and c_metrics.slippage_multiplier >= 2.5 and c_metrics.adverse_selection_count >= 2:
+                        is_black_hole = True
+                except Exception:
+                    is_black_hole = False
+
+            # 若標的落入財報/宏觀避開視窗或流動性黑洞，不於此批次執行以防極端波動
+            raw_trade_amount = trade_amount
+            if is_blackout or is_black_hole:
                 trade_amount = 0.0
 
-            is_executable = (trade_amount >= 10.0 and not is_blackout)
+            is_executable = (trade_amount >= 10.0 and not is_blackout and not is_black_hole)
             candidate_entry = {
                 "ticker": ticker,
                 "amount_usd": trade_amount if is_executable else 0.0,
+                "planned_amount_usd": round(raw_trade_amount, 2),
                 "allocated_amount": trade_amount if is_executable else 0.0,
                 "confidence_score": round(conf_val, 2),
                 "target_pct": item["target_pct"],
                 "role": item["role"],
-                "rationale": f"第 {batch_number} 批次建倉配置: {item['role']} (${trade_amount:.2f})",
+                "rationale": f"第 {batch_number} 批次建倉配置: {item['role']} (${raw_trade_amount:.2f})",
                 "already_satisfied": (current_val >= target_value * 0.95) if total_equity > 0 else False,
                 "blackout_active": is_blackout,
                 "blackout_reason": blackout_reason,
+                "liquidity_black_hole": is_black_hole,
+                "slippage_multiplier": round(comp_multiplier, 2),
             }
             all_candidates_summary.append(candidate_entry)
 
@@ -314,6 +330,14 @@ class BatchCashDeploymentService:
         candidate_tickers = [c["ticker"] for c in all_candidates_summary]
         calendar_summary = await self.blackout_guard.get_upcoming_calendar_summary(tickers=candidate_tickers)
 
+        # 產出候選標的流動性與成交品質追蹤摘要
+        fill_quality_summary = {}
+        if hasattr(self.slippage_guard, "compensator") and self.slippage_guard.compensator:
+            try:
+                fill_quality_summary = self.slippage_guard.compensator.get_fill_quality_summary(candidate_tickers)
+            except Exception as fq_err:
+                logger.debug(f"Non-blocking fill quality summary error: {fq_err}")
+
         return {
             "batch_number": batch_number,
             "status": status,
@@ -327,6 +351,7 @@ class BatchCashDeploymentService:
             "projected_cash_after_deployment": round(expected_remaining_cash, 2),
             "expected_cash_ratio": round(expected_cash_ratio, 2),
             "calendar_summary": calendar_summary,
+            "fill_quality_summary": fill_quality_summary,
         }
 
     async def warmup_batch_quotes(
@@ -580,15 +605,23 @@ class BatchCashDeploymentService:
             )
 
             if not slippage_eval.passed and not force:
+                is_black_hole = (
+                    getattr(slippage_eval, "fill_quality_grade", "") == "F"
+                    or "黑洞" in (slippage_eval.reason or "")
+                    or "black hole" in (slippage_eval.reason or "").lower()
+                )
+                trade_status = "liquidity_black_hole_deferred" if is_black_hole else "circuit_breaker_deferred"
                 logger.warning(
-                    f"Slippage Circuit Breaker triggered for {ticker}: {slippage_eval.reason}. Skipping trade."
+                    f"Slippage Circuit Breaker triggered for {ticker} ({trade_status}): {slippage_eval.reason}. Skipping trade."
                 )
                 executed_trades.append({
                     "ticker": ticker,
                     "amount_usd": amount_usd,
-                    "status": "circuit_breaker_deferred",
+                    "status": trade_status,
                     "reason": slippage_eval.reason,
                     "spread_pct": slippage_eval.spread_pct,
+                    "fill_quality_grade": getattr(slippage_eval, "fill_quality_grade", None),
+                    "fill_quality_multiplier": getattr(slippage_eval, "fill_quality_multiplier", None),
                 })
                 continue
 
@@ -655,6 +688,29 @@ class BatchCashDeploymentService:
                 logger.info(f"✓ Batch {batch_number}: Successfully executed BUY {ticker} (${amount_usd:.2f})")
                 # 避免連續併發下單撞擊券商速率限制
                 await asyncio.sleep(1.5)
+
+        # 將事前避開之候選標的 (財報避開 / 流動性黑洞) 納入執行審查記錄，確保不提前推進批次並如實呈報
+        for cand in plan.get("all_candidates", []):
+            c_ticker = cand.get("ticker")
+            if any(t["ticker"] == c_ticker for t in executed_trades):
+                continue
+            planned_amt = cand.get("planned_amount_usd") or cand.get("amount_usd", 0.0)
+            if cand.get("liquidity_black_hole"):
+                executed_trades.append({
+                    "ticker": c_ticker,
+                    "amount_usd": planned_amt,
+                    "status": "liquidity_black_hole_deferred",
+                    "reason": f"標的 {c_ticker} 近期成交品質嚴重惡化 (補償乘數 {cand.get('slippage_multiplier', 2.5):.2f}x)，觸發盤中流動性黑洞熔斷暫緩下單",
+                    "slippage_multiplier": cand.get("slippage_multiplier"),
+                    "fill_quality_grade": "F",
+                })
+            elif cand.get("blackout_active"):
+                executed_trades.append({
+                    "ticker": c_ticker,
+                    "amount_usd": planned_amt,
+                    "status": "blackout_deferred",
+                    "reason": cand.get("blackout_reason", "落入財報/宏觀保護窗口"),
+                })
 
         # 交易後持倉撮合驗證 (Post-trade Position Verification)
         actual_filled_tickers: List[str] = []
@@ -759,12 +815,14 @@ class BatchCashDeploymentService:
 
             success_trades = [t for t in executed_trades if t.get("status") in ("executed", "pending")]
             blackout_trades = [t for t in executed_trades if t.get("status") == "blackout_deferred"]
+            black_hole_trades = [t for t in executed_trades if t.get("status") == "liquidity_black_hole_deferred"]
             circuit_trades = [t for t in executed_trades if t.get("status") == "circuit_breaker_deferred"]
             other_deferred = [
                 t for t in executed_trades
-                if "deferred" in t.get("status", "") and t.get("status") not in ("blackout_deferred", "circuit_breaker_deferred")
+                if "deferred" in t.get("status", "")
+                and t.get("status") not in ("blackout_deferred", "circuit_breaker_deferred", "liquidity_black_hole_deferred")
             ]
-            deferred_trades = blackout_trades + circuit_trades + other_deferred
+            deferred_trades = blackout_trades + black_hole_trades + circuit_trades + other_deferred
             failed_trades = [t for t in executed_trades if t.get("status") in ("failed", "error")]
             skipped_trades = [t for t in executed_trades if t.get("status") == "skipped"]
 
@@ -793,6 +851,12 @@ class BatchCashDeploymentService:
                 lines.append("**📅 財報與重大宏觀避開守衛暫緩下單:**")
                 for bt in blackout_trades:
                     lines.append(f"  • **{bt['ticker']}**: ${bt['amount_usd']:.2f} — {bt.get('reason', '落入財報/宏觀保護窗口')}")
+
+            if black_hole_trades:
+                lines.append("")
+                lines.append("**🕳️ 盤中流動性黑洞熔斷暫緩下單:**")
+                for bh in black_hole_trades:
+                    lines.append(f"  • **{bh['ticker']}**: ${bh['amount_usd']:.2f} — {bh.get('reason', '成交品質惡化/逆向選擇防線生效')}")
 
             if circuit_trades:
                 lines.append("")

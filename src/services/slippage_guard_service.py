@@ -41,6 +41,9 @@ class SlippageGuardDecision:
     mid_price: Optional[float] = None
     last_price: Optional[float] = None
     adaptive_limit_price: Optional[float] = None
+    fill_quality_multiplier: Optional[float] = None
+    fill_quality_grade: Optional[str] = None
+    fill_quality_bps: Optional[float] = None
     recommended_action: str = "PROCEED"  # "PROCEED", "DEFER", "REJECT", "LIMIT_ORDER"
 
     def to_dict(self) -> Dict[str, Any]:
@@ -55,6 +58,9 @@ class SlippageGuardDecision:
             "mid_price": round(self.mid_price, 4) if self.mid_price is not None else None,
             "last_price": round(self.last_price, 4) if self.last_price is not None else None,
             "adaptive_limit_price": round(self.adaptive_limit_price, 4) if self.adaptive_limit_price is not None else None,
+            "fill_quality_multiplier": round(self.fill_quality_multiplier, 2) if self.fill_quality_multiplier is not None else None,
+            "fill_quality_grade": self.fill_quality_grade,
+            "fill_quality_bps": round(self.fill_quality_bps, 2) if self.fill_quality_bps is not None else None,
             "recommended_action": self.recommended_action,
         }
 
@@ -72,6 +78,7 @@ class SlippageGuardService:
         settings_service: Optional[Any] = None,
         market_data_service: Optional[Any] = None,
         market_clock: Optional[Any] = None,
+        compensator: Optional[Any] = None,
     ):
         self.user_id = resolve_user_id(user_id)
         from src.services.settings_service import SettingsService
@@ -86,6 +93,14 @@ class SlippageGuardService:
             except Exception:
                 self.market_clock = None
         self._nyse_tz = pytz.timezone("US/Eastern")
+
+        from src.services.adaptive_execution_slippage_compensator import (
+            AdaptiveExecutionSlippageCompensator,
+        )
+        self.compensator = compensator or AdaptiveExecutionSlippageCompensator(
+            user_id=self.user_id,
+            settings_repo=self.settings_service,
+        )
 
     def _get_setting_bool(self, key: str, default: bool = True) -> bool:
         val = self.settings_service.get_setting(key, default)
@@ -340,6 +355,44 @@ class SlippageGuardService:
         last = quote.get("last") or current_price
         spread_pct = quote.get("spread_pct")
 
+        # 2.5 盤中流動性黑洞與逆向選擇防線 (Dynamic Fill-Quality Black Hole Breaker)
+        comp_metrics = self.compensator.get_metrics(ticker)
+        black_hole_thresh = self._get_setting_float("liquidity_black_hole_multiplier_threshold", 2.50)
+        if (
+            self.compensator.is_enabled
+            and comp_metrics.sample_count >= 2
+            and comp_metrics.slippage_multiplier >= black_hole_thresh
+            and comp_metrics.adverse_selection_count >= 2
+        ):
+            hole_reason = (
+                f"⚠️ 標的 {ticker} 近期成交品質異常惡化（平均滑點 {comp_metrics.realized_slippage_bps_mean:.1f} bps，"
+                f"補償乘數 {comp_metrics.slippage_multiplier:.2f}x，逆向選擇次數 {comp_metrics.adverse_selection_count}），"
+                f"觸發盤中流動性黑洞熔斷保護暫緩建倉。"
+            )
+            logger.warning(f"SlippageGuard Liquidity Black Hole TRIGGERED for {action.upper()} {ticker}: {hole_reason}")
+            self._record_circuit_breaker_event(
+                ticker=ticker,
+                action=action,
+                spread_pct=spread_pct or 0.0,
+                threshold=max_spread,
+                bid=bid,
+                ask=ask,
+            )
+            return SlippageGuardDecision(
+                passed=False,
+                reason=hole_reason,
+                circuit_breaker_triggered=True,
+                spread_pct=spread_pct,
+                bid_price=bid,
+                ask_price=ask,
+                mid_price=mid,
+                last_price=last,
+                fill_quality_multiplier=comp_metrics.slippage_multiplier,
+                fill_quality_grade="F",
+                fill_quality_bps=comp_metrics.realized_slippage_bps_mean,
+                recommended_action="DEFER",
+            )
+
         # 3. 即時買賣價差熔斷檢測
         if spread_pct is not None and spread_pct > max_spread:
             reason = (
@@ -364,6 +417,9 @@ class SlippageGuardService:
                 ask_price=ask,
                 mid_price=mid,
                 last_price=last,
+                fill_quality_multiplier=comp_metrics.slippage_multiplier,
+                fill_quality_grade="D",
+                fill_quality_bps=comp_metrics.realized_slippage_bps_mean,
                 recommended_action="DEFER",
             )
 
@@ -372,17 +428,39 @@ class SlippageGuardService:
         adaptive_limit = None
         is_buy = str(action).upper() == "BUY"
 
+        # 自適應滑點補償調整係數
+        base_buffer = min(max_spread * 0.5, 0.0010)
+        mult = comp_metrics.slippage_multiplier if self.compensator.is_enabled else 1.0
+        dyn_mult = min(1.5, max(0.8, mult))
+        max_comp_buffer = self._get_setting_float("max_slippage_compensation_buffer", 0.0025)
+        adaptive_buffer = min(max_comp_buffer, base_buffer * dyn_mult)
+
         if is_buy:
-            # 買進自適應限價：保護上限至多為 ask (或 ref_price) 溢價 0.05%
+            # 買進自適應限價：保護上限至多為 ask (或 ref_price) 溢價 adaptive_buffer
             base_p = ask if (ask and ask > 0) else ref_price
-            adaptive_limit = round(base_p * (1.0 + min(max_spread * 0.5, 0.0010)), 2)
+            adaptive_limit = round(base_p * (1.0 + adaptive_buffer), 2)
         else:
-            # 賣出自適應限價：保護下限至多為 bid (或 ref_price) 折價 0.05%
+            # 賣出自適應限價：保護下限至多為 bid (或 ref_price) 折價 adaptive_buffer
             base_p = bid if (bid and bid > 0) else ref_price
-            adaptive_limit = round(base_p * (1.0 - min(max_spread * 0.5, 0.0010)), 2)
+            adaptive_limit = round(base_p * (1.0 - adaptive_buffer), 2)
+
+        # 評定成交品質等級
+        grade = "A"
+        if comp_metrics.sample_count == 0:
+            grade = "A"
+        elif comp_metrics.realized_slippage_bps_mean <= 3.0 and comp_metrics.adverse_selection_count == 0:
+            grade = "A+"
+        elif comp_metrics.realized_slippage_bps_mean <= 8.0:
+            grade = "A"
+        elif comp_metrics.realized_slippage_bps_mean <= 15.0:
+            grade = "B"
+        elif comp_metrics.realized_slippage_bps_mean <= 25.0:
+            grade = "C"
+        else:
+            grade = "D"
 
         if spread_pct is not None:
-            reason = f"即時買賣價差 {spread_pct:.3%} 符合風控門檻 (<= {max_spread:.3%})，流動性充裕放行"
+            reason = f"即時買賣價差 {spread_pct:.3%} 符合風控門檻 (<= {max_spread:.3%})，流動性充裕放行 (滑點乘數: {mult:.2f}x)"
         else:
             reason = "即時買賣報價未提供細部買賣價差，處於常規交易時段且非開盤波動期，予以放行"
 
@@ -396,6 +474,9 @@ class SlippageGuardService:
             mid_price=mid,
             last_price=last,
             adaptive_limit_price=adaptive_limit,
+            fill_quality_multiplier=mult,
+            fill_quality_grade=grade,
+            fill_quality_bps=comp_metrics.realized_slippage_bps_mean,
             recommended_action="PROCEED",
         )
 
@@ -410,6 +491,7 @@ class SlippageGuardService:
         """
         記錄並稽核訂單成交的實際滑點 (Realized Slippage)。
         若不利滑點超過門檻 (預設 0.20%)，寫入事件記錄並日誌警報。
+        自動將成交回報反饋注入至 AdaptiveExecutionSlippageCompensator 更新 EWMA 模型。
         """
         if not expected_price or expected_price <= 0 or not fill_price or fill_price <= 0:
             return 0.0
@@ -421,6 +503,21 @@ class SlippageGuardService:
         else:
             # 賣出成交價低於預期為不利滑點
             slippage_pct = (expected_price - fill_price) / expected_price
+
+        # 回饋至 AdaptiveExecutionSlippageCompensator 閉環模型
+        try:
+            from src.services.order_execution_feedback_service import ExecutionVenue, OrderAction as OA
+            self.compensator.record_fill(
+                order_id=order_id or f"fill_{ticker}_{int(datetime.now().timestamp())}",
+                symbol=ticker,
+                action=OA.BUY if is_buy else OA.SELL,
+                venue=ExecutionVenue.IBKR,
+                fill_price=fill_price,
+                fill_quantity=1.0,
+                arrival_price=expected_price,
+            )
+        except Exception as comp_err:
+            logger.debug(f"Failed to record fill into compensator: {comp_err}")
 
         warning_threshold = self._get_setting_float(
             "slippage_warning_pct", self.DEFAULT_SLIPPAGE_WARNING_PCT

@@ -217,6 +217,7 @@ class ConversationRouter:
             "資產", "淨值", "對帳", "持倉", "部位", "建倉", "批次", "熔斷", "滑點", "風控",
             "預熱", "報價", "行情", "status", "audit", "pnl", "holdings", "batch", "guard",
             "warmup", "quote", "calendar", "earnings", "行事曆", "財報", "日曆", "大事記",
+            "quality", "fills", "slippage", "成交品質", "滑點統計", "流動性",
         }
         return cmd in exact_keywords
 
@@ -440,7 +441,19 @@ class ConversationRouter:
                     blackout_info = f"{m_status_str} (下次宏觀事件：{next_m_str})"
                 except Exception as ce:
                     logger.debug(f"Calendar blackout info error: {ce}")
-                    blackout_info = "🟢 正常運行中"
+                # 盤中流動性黑洞與動態滑點補償追蹤
+                fill_quality_info = "🟢 正常追蹤中 (基準模型 5.0 bps / 1.00x)"
+                try:
+                    from src.services.adaptive_execution_slippage_compensator import AdaptiveExecutionSlippageCompensator
+                    comp = AdaptiveExecutionSlippageCompensator(user_id=resolved_user_id)
+                    f_sum = comp.get_fill_quality_summary(["MSFT", "MU", "AMD", "NVDA", "AAPL"])
+                    p_bps = f_sum.get("portfolio_avg_slippage_bps", 5.0)
+                    p_mult = f_sum.get("portfolio_avg_multiplier", 1.0)
+                    h_stat = f_sum.get("overall_liquidity_health", "OPTIMAL")
+                    h_icon = "🟢" if h_stat == "OPTIMAL" else ("🟡" if h_stat == "MODERATE" else "⚠️")
+                    fill_quality_info = f"{h_icon} {h_stat} (平均 {p_bps:.1f} bps，補償乘數 {p_mult:.2f}x)"
+                except Exception as fe:
+                    logger.debug(f"Fill quality info error in guard: {fe}")
 
                 return (
                     f"🛡️ <b>【開盤防滑點守衛與價差熔斷狀態】</b>\n"
@@ -449,13 +462,15 @@ class ConversationRouter:
                     f"• <b>最大容許價差門檻</b>：{float(max_spread or 0.0015)*100:.2f}% (15 bps)\n"
                     f"• <b>美股市場開市狀態</b>：{'🟢 開市中 (Open)' if is_open else '⚪ 休市中 (Closed)'}\n"
                     f"• <b>開盤高波動保護窗口 (09:30-09:35)</b>：{'⚠️ 觸發保護中 (Active)' if is_auction else '✅ 安全窗口'}\n"
+                    f"• <b>動態成交品質追蹤</b>：{fill_quality_info}\n"
+                    f"• <b>流動性黑洞熔斷 (Black Hole)</b>：補償乘數 ≥ 2.5x 且逆向選擇 ≥ 2 次自動暫緩\n"
                     f"• <b>宏觀行事曆發布避開</b>：{blackout_info}\n"
                     f"• <b>財報日前後避開保護</b>：前 48h 暫緩開倉 / 後 24h 消化波動\n"
                     f"• <b>開盤候選標的預熱</b>：{warmup_info}\n"
-                    f"• <b>自適應限價單保護</b>：Mid + Spread × 0.25 封頂\n"
+                    f"• <b>自適應限價單保護</b>：Mid + Spread × 0.25 封頂 (動態係數 0.8x~1.5x)\n"
                     f"• <b>事後滑點異常告警門檻</b>：> 0.20% 自動通報\n"
                     f"━━━━━━━━━━━━━━━━━━\n"
-                    f"<i>美股開盤 09:35 EST 建倉時將自動為每一筆訂單執行自適應限價、價差驗證與財報避開審核。</i>"
+                    f"<i>美股開盤 09:35 EST 建倉時將自動為每一筆訂單執行自適應限價、價差驗證、成交品質與財報避開審核。</i>"
                 )
             except Exception as e:
                 logger.error(f"Failed to generate quick guard response: {e}")
@@ -568,5 +583,81 @@ class ConversationRouter:
             except Exception as e:
                 logger.error(f"Failed to generate calendar response: {e}")
                 return f"⚠️ 查詢財報與宏觀行事曆時發生錯誤：{e}"
+
+        # 7. Quality / Fills / 成交品質 / 滑點統計 / 流動性
+        if any(cmd.startswith(prefix) for prefix in ("quality", "fills", "成交品質", "滑點統計", "流動性")):
+            try:
+                from src.services.adaptive_execution_slippage_compensator import AdaptiveExecutionSlippageCompensator
+                from src.services.batch_cash_deployment_service import BatchCashDeploymentService
+                compensator = AdaptiveExecutionSlippageCompensator(user_id=resolved_user_id)
+                deploy_svc = BatchCashDeploymentService(user_id=resolved_user_id)
+                active_b = await deploy_svc.get_active_batch_number()
+
+                # 收集活躍持倉與建倉候選標的
+                scan_symbols = ["MSFT", "MU", "AMD", "NVDA", "AAPL", "TSM"]
+                try:
+                    plan = await deploy_svc.get_deployment_plan(batch_number=active_b)
+                    for item in plan.get("items", []):
+                        sym = item.get("ticker")
+                        if sym and sym not in scan_symbols:
+                            scan_symbols.append(sym)
+                except Exception:
+                    pass
+
+                summary = compensator.get_fill_quality_summary(scan_symbols)
+                avg_bps = summary.get("portfolio_avg_slippage_bps", 5.0)
+                avg_mult = summary.get("portfolio_avg_multiplier", 1.0)
+                health = summary.get("overall_liquidity_health", "OPTIMAL")
+                symbols_data = summary.get("symbols", {})
+
+                health_badge = "🟢 優良 (OPTIMAL)" if health == "OPTIMAL" else ("🟡 平緩 (MODERATE)" if health == "MODERATE" else "🔴 惡化 (DEGRADED)")
+
+                lines = [
+                    "📈 <b>【標的成交品質與動態滑點補償追蹤 (P29)】</b>",
+                    "━━━━━━━━━━━━━━━━━━",
+                    f"• <b>投組平均實現滑點</b>：{avg_bps:.1f} bps (0.01% = 1 bps)",
+                    f"• <b>整體自適應補償乘數</b>：{avg_mult:.2f}x",
+                    f"• <b>綜合流動性健康度</b>：{health_badge}",
+                    "━━━━━━━━━━━━━━━━━━",
+                    "<b>【標的成交品質評級與動態限價緩衝】</b>",
+                ]
+
+                grade_emojis = {
+                    "A+": "🌟 A+",
+                    "A": "🟢 A",
+                    "B": "🔵 B",
+                    "C": "🟡 C",
+                    "D": "🟠 D",
+                    "F": "🔴 F (黑洞)",
+                }
+
+                for sym, info in symbols_data.items():
+                    grade = info.get("grade", "A")
+                    g_str = grade_emojis.get(grade, grade)
+                    r_bps = info.get("realized_slippage_bps", 0.0)
+                    mult = info.get("slippage_multiplier", 1.0)
+                    dyn_buf = info.get("dynamic_buffer_factor", 1.0)
+                    adv_cnt = info.get("adverse_selection_count", 0)
+                    samp_cnt = info.get("sample_count", 0)
+                    desc = info.get("description", "")
+
+                    sample_tag = f"({samp_cnt}筆樣本)" if samp_cnt > 0 else "(基準預估)"
+                    lines.append(
+                        f"• <b>{sym}</b> [{g_str}]: 滑點 <code>{r_bps:.1f} bps</code> | "
+                        f"補償乘數 <code>{mult:.2f}x</code> | 限價緩衝 <code>{dyn_buf:.2f}x</code> "
+                        f"{sample_tag}\n"
+                        f"  └ <i>{desc} (逆向選擇: {adv_cnt}次)</i>"
+                    )
+
+                lines.append("━━━━━━━━━━━━━━━━━━")
+                lines.append("🛡️ <b>自適應動態補償機制</b>：")
+                lines.append("• 依據 EWMA 平滑追蹤真實成交滑點，動態調整限價單保護緩衝 (0.8x ~ 1.5x)。")
+                lines.append("• 補償上限至多 25 bps，防止盤中極端劇烈行情擴大追價摩擦。")
+                lines.append("• 若補償乘數 ≥ 2.5x 且逆向選擇 ≥ 2 次，自動判定為流動性黑洞並暫緩下單。")
+
+                return "\n".join(lines)
+            except Exception as e:
+                logger.error(f"Failed to generate fill quality response: {e}")
+                return f"⚠️ 查詢成交品質與滑點統計時發生錯誤：{e}"
 
         return None

@@ -22,6 +22,7 @@ Key Capabilities:
 """
 from __future__ import annotations
 
+import json
 import logging
 import math
 from dataclasses import dataclass, field
@@ -51,7 +52,7 @@ class SlippageCompensationMetrics:
     calibrated_effective_slippage_bps: float
     calibrated_effective_slippage_pct: float
     sample_count: int
-    last_updated: str
+    last_updated: str = field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
 
     def to_dict(self) -> Dict[str, Any]:
         return {
@@ -342,7 +343,48 @@ class AdaptiveExecutionSlippageCompensator:
             last_updated=datetime.now(timezone.utc).isoformat(),
         )
         self._metrics_map[sym] = metrics
+        self._save_metrics_to_redis(metrics)
         return metrics
+
+    _REDIS_FILL_KEY_PREFIX = "fill_quality:metrics"
+
+    def _save_metrics_to_redis(self, metrics: SlippageCompensationMetrics) -> None:
+        """Persist asset metrics to Redis for cross-worker sharing with 7-day TTL."""
+        try:
+            from src.infrastructure.cache.redis_client import get_redis_sync
+            r = get_redis_sync(decode_responses=True)
+            if r:
+                key = f"{self._REDIS_FILL_KEY_PREFIX}:{self.user_id}:{metrics.symbol}"
+                payload = json.dumps(metrics.to_dict())
+                r.set(key, payload, ex=604800)  # 7 天有效
+        except Exception as e:
+            logger.debug(f"Non-blocking Redis write error for fill metrics ({metrics.symbol}): {e}")
+
+    def _load_metrics_from_redis(self, symbol: str) -> Optional[SlippageCompensationMetrics]:
+        """Load asset metrics from Redis if available."""
+        try:
+            from src.infrastructure.cache.redis_client import get_redis_sync
+            r = get_redis_sync(decode_responses=True)
+            if r:
+                key = f"{self._REDIS_FILL_KEY_PREFIX}:{self.user_id}:{symbol}"
+                raw = r.get(key)
+                if raw:
+                    data = json.loads(raw)
+                    return SlippageCompensationMetrics(
+                        symbol=data["symbol"],
+                        realized_slippage_bps_mean=float(data["realized_slippage_bps_mean"]),
+                        expected_slippage_bps_mean=float(data["expected_slippage_bps_mean"]),
+                        slippage_multiplier=float(data["slippage_multiplier"]),
+                        adverse_selection_count=int(data["adverse_selection_count"]),
+                        adverse_penalty_bps=float(data["adverse_penalty_bps"]),
+                        calibrated_effective_slippage_bps=float(data["calibrated_effective_slippage_bps"]),
+                        calibrated_effective_slippage_pct=float(data["calibrated_effective_slippage_pct"]),
+                        sample_count=int(data["sample_count"]),
+                        last_updated=data.get("last_updated", datetime.now(timezone.utc).isoformat()),
+                    )
+        except Exception as e:
+            logger.debug(f"Non-blocking Redis read error for fill metrics ({symbol}): {e}")
+        return None
 
     def get_metrics(self, symbol: str) -> SlippageCompensationMetrics:
         """Retrieve current calibrated compensation metrics for an asset."""
@@ -351,6 +393,15 @@ class AdaptiveExecutionSlippageCompensator:
 
         if sym in self._metrics_map:
             base_m = self._metrics_map[sym]
+        else:
+            cached_m = self._load_metrics_from_redis(sym)
+            if cached_m:
+                self._metrics_map[sym] = cached_m
+                base_m = cached_m
+            else:
+                base_m = None
+
+        if base_m is not None:
             if spillover_mult > 1.0:
                 combined_mult = min(self.max_multiplier, base_m.slippage_multiplier * spillover_mult)
                 eff_bps = max(1.0, (base_m.expected_slippage_bps_mean * combined_mult) + base_m.adverse_penalty_bps)
@@ -384,6 +435,99 @@ class AdaptiveExecutionSlippageCompensator:
             sample_count=0,
             last_updated=datetime.now(timezone.utc).isoformat(),
         )
+
+    def get_fill_quality_summary(self, symbols: List[str]) -> Dict[str, Any]:
+        """
+        產出候選標的或投組持倉之成交品質評級與動態滑點補償摘要表。
+        """
+        items: Dict[str, Any] = {}
+        total_realized_bps = 0.0
+        total_multiplier = 0.0
+        sample_symbols_count = 0
+        has_black_hole = False
+
+        for raw_sym in symbols:
+            sym = raw_sym.strip().upper()
+            if not sym or sym in ("CASH", "USD"):
+                continue
+            metrics = self.get_metrics(sym)
+            mean_bps = metrics.realized_slippage_bps_mean
+            mult = metrics.slippage_multiplier
+            adverse_cnt = metrics.adverse_selection_count
+            sample_cnt = metrics.sample_count
+
+            # 評定流動性與成交品質等級
+            if sample_cnt == 0:
+                grade = "A"  # 預設基準 (未有成交樣本)
+                liquidity_status = "NORMAL"
+                desc = "基準常態 (採用理論模型基準)"
+            elif mult >= 2.5 and adverse_cnt >= 2:
+                grade = "F"
+                liquidity_status = "BLACK_HOLE"
+                desc = f"⚠️ 流動性黑洞/逆向選擇 (滑點 {mean_bps:.1f} bps，補償乘數 {mult:.2f}x)"
+                has_black_hole = True
+            elif mult >= 1.8 or adverse_cnt >= 2:
+                grade = "D"
+                liquidity_status = "THIN"
+                desc = f"流動性偏弱 (滑點 {mean_bps:.1f} bps，補償乘數 {mult:.2f}x)"
+            elif mean_bps <= 3.0 and adverse_cnt == 0:
+                grade = "A+"
+                liquidity_status = "DEEP"
+                desc = f"極佳成交品質 (平均滑點 {mean_bps:.1f} bps)"
+            elif mean_bps <= 8.0:
+                grade = "A"
+                liquidity_status = "DEEP"
+                desc = f"優良成交品質 (平均滑點 {mean_bps:.1f} bps)"
+            elif mean_bps <= 15.0:
+                grade = "B"
+                liquidity_status = "NORMAL"
+                desc = f"標準正常成交 (平均滑點 {mean_bps:.1f} bps)"
+            elif mean_bps <= 25.0:
+                grade = "C"
+                liquidity_status = "ELEVATED"
+                desc = f"摩擦輕微升高 (平均滑點 {mean_bps:.1f} bps)"
+            else:
+                grade = "D"
+                liquidity_status = "THIN"
+                desc = f"滑點偏高 (平均滑點 {mean_bps:.1f} bps)"
+
+            if sample_cnt > 0:
+                total_realized_bps += mean_bps
+                total_multiplier += mult
+                sample_symbols_count += 1
+
+            dyn_buffer_factor = min(1.5, max(0.8, mult))
+
+            items[sym] = {
+                "symbol": sym,
+                "realized_slippage_bps": round(mean_bps, 2),
+                "expected_slippage_bps": round(metrics.expected_slippage_bps_mean, 2),
+                "slippage_multiplier": round(mult, 2),
+                "adverse_selection_count": adverse_cnt,
+                "sample_count": sample_cnt,
+                "grade": grade,
+                "liquidity_status": liquidity_status,
+                "dynamic_buffer_factor": round(dyn_buffer_factor, 2),
+                "description": desc,
+            }
+
+        avg_bps = round(total_realized_bps / sample_symbols_count, 2) if sample_symbols_count > 0 else self.baseline_slippage_bps
+        avg_mult = round(total_multiplier / sample_symbols_count, 2) if sample_symbols_count > 0 else 1.0
+
+        if has_black_hole:
+            overall_health = "DEGRADED"
+        elif avg_mult >= 1.3:
+            overall_health = "MODERATE"
+        else:
+            overall_health = "OPTIMAL"
+
+        return {
+            "portfolio_avg_slippage_bps": avg_bps,
+            "portfolio_avg_multiplier": avg_mult,
+            "overall_liquidity_health": overall_health,
+            "symbols": items,
+            "evaluated_at": datetime.now(timezone.utc).isoformat(),
+        }
 
     def get_all_metrics(self) -> Dict[str, SlippageCompensationMetrics]:
         """Retrieve all asset calibrated metrics."""
