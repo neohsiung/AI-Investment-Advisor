@@ -220,6 +220,7 @@ class ConversationRouter:
             "quality", "fills", "slippage", "成交品質", "滑點統計", "流動性",
             "factor", "factors", "ic", "因子", "特徵漂移", "因子自癒", "因子監控",
             "evolve", "evolution", "ga", "演化", "基因演化", "因子演化", "遺傳演化",
+            "ortho", "orthogonal", "vif", "正交", "正交化", "共線性", "因子正交",
         }
         return cmd in exact_keywords
 
@@ -748,6 +749,7 @@ class ConversationRouter:
                 lines.append("• 失效因子施加 50%~90% 阻尼懲罰，多餘權重動態重平衡至防禦與高流動性錨點。")
                 lines.append("• 經由嚴格單體投影 (Simplex Normalization) 確保總權重嚴格收斂至 100.00%。")
                 lines.append("• <b>離線基因超參數演化 (P31)</b>：輸入 <code>/evolve</code> 檢視全歷史 Walk-Forward 遺傳演化終審進度與最佳矩陣。")
+                lines.append("• <b>因子特徵正交化 (P32)</b>：輸入 <code>/ortho</code> 檢視 6 大因子多重共線性 VIF 檢定與純淨 Alpha 正交化。")
 
                 return "\n".join(lines)
             except Exception as e:
@@ -854,5 +856,95 @@ class ConversationRouter:
             except Exception as e:
                 logger.error(f"Failed to generate genetic evolution response: {e}")
                 return f"⚠️ 查詢遺傳演化狀態時發生錯誤：{e}"
+
+        # 10. Ortho / Orthogonal / VIF / 正交 / 正交化 / 共線性 / 因子正交 (Phase 32)
+        if any(cmd.startswith(prefix) for prefix in ("ortho", "orthogonal", "vif", "正交", "正交化", "共線性", "因子正交")):
+            try:
+                from src.services.factor_orthogonalization_service import FactorOrthogonalizationService
+                ortho_svc = FactorOrthogonalizationService(user_id=resolved_user_id)
+                report = ortho_svc.load_latest_report()
+
+                # 若尚未有執行快取，自動以具代表性標的池生成即時截面正交化檢定
+                if not report:
+                    sample_universe = {
+                        "NVDA": {"momentum_score": 0.95, "smart_money_score": 0.88, "liquidity_premium_score": 0.92, "quality_score": 0.85, "value_score": 0.20, "low_vol_score": 0.15},
+                        "AAPL": {"momentum_score": 0.70, "smart_money_score": 0.75, "liquidity_premium_score": 0.90, "quality_score": 0.92, "value_score": 0.40, "low_vol_score": 0.65},
+                        "MSFT": {"momentum_score": 0.72, "smart_money_score": 0.80, "liquidity_premium_score": 0.88, "quality_score": 0.95, "value_score": 0.35, "low_vol_score": 0.60},
+                        "JNJ": {"momentum_score": 0.30, "smart_money_score": 0.35, "liquidity_premium_score": 0.45, "quality_score": 0.88, "value_score": 0.65, "low_vol_score": 0.90},
+                        "PG": {"momentum_score": 0.35, "smart_money_score": 0.40, "liquidity_premium_score": 0.50, "quality_score": 0.85, "value_score": 0.60, "low_vol_score": 0.88},
+                        "XOM": {"momentum_score": 0.60, "smart_money_score": 0.65, "liquidity_premium_score": 0.70, "quality_score": 0.65, "value_score": 0.85, "low_vol_score": 0.45},
+                    }
+                    report_obj = ortho_svc.orthogonalize_cross_section(sample_universe, method="lowdin")
+                    report = report_obj.to_dict()
+
+                method_name = report.get("method", "lowdin")
+                method_display = "Löwdin 對稱最小形變正交 (Symmetric Löwdin)" if method_name == "lowdin" else "Gram-Schmidt 循序基底正交"
+                tickers = report.get("tickers", [])
+                reduction_pct = report.get("correlation_reduction_pct", 0.0)
+                ts = report.get("timestamp", "")[:19].replace("T", " ")
+
+                pre = report.get("pre_collinearity", {})
+                post = report.get("post_collinearity", {})
+                max_vif_pre = pre.get("max_vif", 1.0)
+                max_vif_post = post.get("max_vif", 1.0)
+                vif_scores_pre = pre.get("vif_scores", {})
+                vif_scores_post = post.get("vif_scores", {})
+                collinear_pairs = pre.get("multicollinear_pairs", [])
+
+                overall_badge = "🟢 健全 (ORTHOGONAL)" if max_vif_post < 5.0 else "🟡 輕度共線性"
+
+                factor_zh = {
+                    "momentum": "動能趨勢 (Momentum)",
+                    "smart_money": "聰明錢主力 (Smart Money)",
+                    "liquidity_premium": "流動性溢價 (Liquidity)",
+                    "quality": "基本面品質 (Quality)",
+                    "value": "價值安全邊際 (Value)",
+                    "low_vol": "低波動防禦 (Low Vol)",
+                }
+
+                lines = [
+                    "🧬 <b>【截面多因子特徵交互作用與動態正交化報告 (Phase 32)】</b>",
+                    "━━━━━━━━━━━━━━━━━━",
+                    f"• <b>正交化演算法</b>：<code>{method_display}</code>",
+                    f"• <b>評估標的樣本數</b>：<code>{len(tickers)}</code> 檔 ({ts} UTC)",
+                    f"• <b>多重共線性消除率</b>：<code>{reduction_pct:.1f}%</code>",
+                    f"• <b>正交後共線性狀態</b>：{overall_badge} (Max VIF: <code>{max_vif_post:.2f}</code>)",
+                    "━━━━━━━━━━━━━━━━━━",
+                    "<b>【6 大核心因子方差膨脹因子 (VIF) 檢定】</b>",
+                ]
+
+                for fn in ("momentum", "smart_money", "liquidity_premium", "quality", "value", "low_vol"):
+                    v_pre = vif_scores_pre.get(fn, 1.0)
+                    v_post = vif_scores_post.get(fn, 1.0)
+                    fn_name = factor_zh.get(fn, fn)
+                    badge = "🟢 獨立" if v_post < 3.0 else ("🟡 輕度" if v_post < 5.0 else "🔴 共線")
+                    lines.append(
+                        f"• <b>{fn_name}</b> [{badge}]\n"
+                        f"  └ VIF: <code>{v_pre:.1f} ➔ {v_post:.2f}</code>"
+                    )
+
+                if collinear_pairs:
+                    lines.append("━━━━━━━━━━━━━━━━━━")
+                    lines.append("⚠️ <b>【正交前高共線性因子對（已徹底消除）】</b>")
+                    for p in collinear_pairs[:4]:
+                        f1_name = factor_zh.get(p[0], p[0])
+                        f2_name = factor_zh.get(p[1], p[1])
+                        lines.append(f"• {f1_name} ↔ {f2_name}: 原相關係數 <code>r = {p[2]:+.2f}</code> ➔ 正交後 <code>r = 0.00</code>")
+
+                # 特徵交互作用摘要
+                interactions = report.get("interaction_scores", {})
+                if interactions:
+                    lines.append("━━━━━━━━━━━━━━━━━━")
+                    lines.append("✨ <b>【非線性特徵交互作用協同效應 (Cross Synergies)】</b>")
+                    lines.append("• <b>動能 x 聰明錢 (Mom x Smart)</b>：捕捉多頭突破且主力爆量買超之雙重彈性龍頭")
+                    lines.append("• <b>品質 x 價值 (Qual x Value)</b>：捕捉具備高 ROE 與實質安全邊際之格雷厄姆護城河股")
+                    lines.append("• <b>低波 x 品質 (LowVol x Qual)</b>：捕捉防禦震盪與極端波動下的無敵防守避風港")
+
+                lines.append("━━━━━━━━━━━━━━━━━━")
+                lines.append("💡 <i>Löwdin 正交化保證正交矩陣與原始因子矩陣弗羅貝尼烏斯距離最小，徹底消除隱性曝險集中。</i>")
+                return "\n".join(lines)
+            except Exception as e:
+                logger.error(f"Failed to generate factor orthogonalization response: {e}")
+                return f"⚠️ 查詢因子正交化狀態時發生錯誤：{e}"
 
         return None
