@@ -507,3 +507,100 @@ class TestAutomatedTradingSlippageIntegration:
                 assert res.get("status") != "opening_window_deferred"
 
         asyncio.run(_test())
+
+    def test_warmup_batch_quotes_success(self):
+        """Verify warmup_batch_quotes queries slippage guard and caches results in Redis."""
+        async def _test():
+            settings = DummySettingsService()
+            svc = BatchCashDeploymentService(user_id="test_user", settings_service=settings)
+
+            mock_redis = AsyncMock()
+
+            with patch.object(svc, "get_active_batch_number", new_callable=AsyncMock) as mock_active, \
+                 patch.object(svc, "get_deployment_plan", new_callable=AsyncMock) as mock_plan, \
+                 patch.object(svc.slippage_guard, "get_ticker_quote", new_callable=AsyncMock) as mock_quote, \
+                 patch("src.infrastructure.cache.redis_client.get_redis", new_callable=AsyncMock, return_value=mock_redis):
+
+                mock_active.return_value = 2
+                mock_plan.return_value = {
+                    "can_execute": True,
+                    "items": [
+                        {"ticker": "MSFT"},
+                        {"ticker": "MU"},
+                        {"ticker": "AMD"},
+                    ],
+                }
+                mock_quote.side_effect = [
+                    {"ticker": "MSFT", "bid": 420.0, "ask": 420.4, "last": 420.2, "mid": 420.2, "spread_pct": 0.00095, "source": "polygon"},
+                    {"ticker": "MU", "bid": 105.0, "ask": 105.1, "last": 105.05, "mid": 105.05, "spread_pct": 0.00095, "source": "polygon"},
+                    {"ticker": "AMD", "bid": 160.0, "ask": 160.2, "last": 160.1, "mid": 160.1, "spread_pct": 0.00125, "source": "polygon"},
+                ]
+
+                result = await svc.warmup_batch_quotes()
+
+                assert result["status"] == "warmed_up"
+                assert result["batch_number"] == 2
+                assert result["candidates_count"] == 3
+                assert result["can_execute"] is True
+                assert result["quotes"]["MSFT"]["ready"] is True
+                assert result["quotes"]["MSFT"]["bid"] == 420.0
+                assert result["quotes"]["MU"]["ready"] is True
+                assert result["quotes"]["AMD"]["ready"] is True
+                assert mock_redis.set.await_count == 1
+                call_args = mock_redis.set.call_args
+                assert "batch_deployment:warmup_quotes:test_user" in call_args[0][0]
+
+        asyncio.run(_test())
+
+    def test_warmup_batch_quotes_all_completed(self):
+        """Verify warmup_batch_quotes skips when all batches are completed."""
+        async def _test():
+            svc = BatchCashDeploymentService(user_id="test_user", settings_service=DummySettingsService())
+            with patch.object(svc, "get_active_batch_number", new_callable=AsyncMock) as mock_active:
+                mock_active.return_value = 0
+                result = await svc.warmup_batch_quotes()
+                assert result["status"] == "all_batches_completed"
+                assert result["batch_number"] == 0
+                assert result["candidates_count"] == 0
+
+        asyncio.run(_test())
+
+    def test_execute_batch_advances_to_zero_when_deployable_depleted(self):
+        """Verify execute_batch sets next batch to 0 in Redis when deployable cash drops below $10."""
+        async def _test():
+            svc = BatchCashDeploymentService(user_id="test_user", settings_service=DummySettingsService())
+            mock_redis = AsyncMock()
+
+            # Mock portfolio status: available_cash = 340, reserve = 338 -> deployable = 2.0 (< 10)
+            mock_post_status = {
+                "total_equity": 1690.0,
+                "available_cash": 340.0,
+                "required_reserve_usd": 338.0,
+                "deployable_cash": 2.0,
+                "cash_ratio_pct": 20.1,
+            }
+
+            with patch.object(svc, "get_active_batch_number", new_callable=AsyncMock, return_value=1), \
+                 patch.object(svc, "get_deployment_plan", new_callable=AsyncMock) as mock_plan, \
+                 patch.object(svc.slippage_guard, "evaluate_trade", new_callable=AsyncMock) as mock_eval, \
+                 patch("src.services.automated_trading_service.AutomatedTradingService.evaluate_and_execute_trade", new_callable=AsyncMock) as mock_trade, \
+                 patch.object(svc, "get_portfolio_status", new_callable=AsyncMock, return_value=mock_post_status), \
+                 patch.object(svc, "_send_deployment_notification", new_callable=AsyncMock), \
+                 patch("src.infrastructure.cache.redis_client.get_redis", new_callable=AsyncMock, return_value=mock_redis):
+
+                mock_plan.return_value = {
+                    "can_execute": True,
+                    "items": [{"ticker": "NVDA", "amount_usd": 114.0, "confidence_score": 7.0, "role": "Alpha Top 1", "rationale": "Test"}],
+                }
+                mock_eval.return_value = MagicMock(passed=True, spread_pct=0.0005, adaptive_limit_price=120.0)
+                mock_trade.return_value = {"status": "executed", "order_id": "ord_123"}
+
+                result = await svc.execute_batch(batch_number=1, force=True, enforce_market_hours=False)
+
+                assert result["success"] is True
+                # Assert redis set current_batch to 0 because deployable_cash = 2.0 < 10.0
+                set_calls = {call[0][0]: call[0][1] for call in mock_redis.set.call_args_list}
+                assert set_calls.get("batch_deployment:current_batch:test_user") == "0"
+
+        asyncio.run(_test())
+

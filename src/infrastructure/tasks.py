@@ -875,6 +875,38 @@ def run_weekly_rebalance(user_id: str = None):
         return f"Error: {str(e)}"
 
 
+@app.task(name="src.infrastructure.tasks.dispatch_market_open_warmup")
+def dispatch_market_open_warmup():
+    """Fan-out dispatcher: 為活躍租戶分派開盤前 15 分鐘 (09:20 EST) 標的報價預熱任務。"""
+    users = _resolve_target_users()
+    for uid in users:
+        run_market_open_warmup.delay(user_id=uid)
+    return f"Dispatched {len(users)} market_open_warmup tasks"
+
+
+@app.task(name="src.infrastructure.tasks.run_market_open_warmup", soft_time_limit=300, time_limit=360)
+def run_market_open_warmup(user_id: str = None, batch_number: Optional[int] = None):
+    """
+    Market-Open Quote Warmup Task:
+    Pre-warms real-time bid-ask quotes and connection caches at 09:20 EST (15m before market open).
+    開盤前標的報價預熱任務：在 09:20 EST 預載即將建倉標的之 Polygon/Finnhub 行情與價差快取。
+    """
+    user_id = user_id or os.getenv("PRIMARY_USER_ID") or os.getenv("USER_ID")
+    if not user_id:
+        logger.error("run_market_open_warmup: user_id is required. Set PRIMARY_USER_ID env var or pass explicitly.")
+        return "Error: user_id is required"
+
+    try:
+        from src.services.batch_cash_deployment_service import BatchCashDeploymentService
+        svc = BatchCashDeploymentService(user_id=user_id)
+        result = _run_async_safe(svc.warmup_batch_quotes(batch_number=batch_number))
+        logger.info(f"run_market_open_warmup completed for {user_id}: {result.get('status')}")
+        return result
+    except Exception as e:
+        logger.error(f"run_market_open_warmup failed for {user_id}: {e}", exc_info=True)
+        return f"Error: {str(e)}"
+
+
 @app.task(name="src.infrastructure.tasks.dispatch_market_open_cash_deployment")
 def dispatch_market_open_cash_deployment():
     """Fan-out dispatcher: 為活躍租戶分派美股開盤分批建倉與防滑點守衛任務。"""

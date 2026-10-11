@@ -173,3 +173,84 @@ def test_fallback_error_prevents_prompt_leakage(mock_settings_service):
     assert "今日全球市場焦點持續輪動" in res["executive_summary"]
     assert res["recommendation"] == "維持既有防禦姿態與風險預算配置，靜待盤前關鍵數據公布。"
 
+
+@pytest.mark.asyncio
+async def test_get_positions_summary_async_with_broker_and_batch(mock_settings_service):
+    """Verify _get_positions_summary_async aggregates active broker holdings and staged batch candidates."""
+    intel_service = IntelligenceService(settings_service=mock_settings_service, user_id="user_123")
+
+    mock_broker = MagicMock()
+    mock_p1 = MagicMock(symbol="AAPL.US")
+    mock_p2 = MagicMock(symbol="NVDA.US")
+    mock_p3 = MagicMock(symbol="TSM.US")
+    mock_broker.get_positions = AsyncMock(return_value=[mock_p1, mock_p2, mock_p3])
+
+    with patch("src.services.broker_factory.BrokerFactory.get_broker", return_value=mock_broker), \
+         patch("src.services.batch_cash_deployment_service.BatchCashDeploymentService.get_active_batch_number", new_callable=AsyncMock) as mock_active_batch, \
+         patch("src.services.batch_cash_deployment_service.BatchCashDeploymentService.get_deployment_plan", new_callable=AsyncMock) as mock_plan:
+
+        mock_active_batch.return_value = 2
+        mock_plan.return_value = {
+            "items": [
+                {"ticker": "MSFT"},
+                {"ticker": "MU"},
+                {"ticker": "AMD"},
+            ]
+        }
+
+        summary_text, focus_tickers = await intel_service._get_positions_summary_async()
+
+        assert "【當前核心活躍持倉】AAPL, NVDA, TSM" in summary_text
+        assert "【即將排程分批建倉標的 (第 2 批次)】MSFT, MU, AMD" in summary_text
+        assert focus_tickers == ["AAPL", "NVDA", "TSM", "MSFT", "MU", "AMD"]
+
+
+@pytest.mark.asyncio
+async def test_get_positions_summary_async_fallback_to_db(mock_settings_service):
+    """Verify _get_positions_summary_async falls back to DB active tickers when broker returns empty."""
+    intel_service = IntelligenceService(settings_service=mock_settings_service, user_id="user_123")
+
+    with patch("src.services.broker_factory.BrokerFactory.get_broker", return_value=None), \
+         patch("src.services.transaction_service.TransactionService.get_user_tickers", return_value=["NVDA", "TSM"]), \
+         patch("src.services.batch_cash_deployment_service.BatchCashDeploymentService.get_active_batch_number", new_callable=AsyncMock) as mock_active_batch:
+
+        mock_active_batch.return_value = 0
+
+        summary_text, focus_tickers = await intel_service._get_positions_summary_async()
+
+        assert "【當前核心活躍持倉】NVDA, TSM" in summary_text
+        assert focus_tickers == ["NVDA", "TSM"]
+
+
+@pytest.mark.asyncio
+async def test_tavily_search_dynamic_queries_with_focus_tickers(mock_settings_service):
+    """Verify _tavily_search constructs dynamic queries focusing on active and staged tickers."""
+    intel_service = IntelligenceService(settings_service=mock_settings_service, user_id="user_123")
+
+    import httpx
+    mock_resp = httpx.Response(200, json={"results": [{"title": "Tech Earnings", "content": "AI demand strong"}]})
+
+    captured_queries = []
+
+    async def mock_post(url, json=None):
+        if json and "query" in json:
+            captured_queries.append(json["query"])
+        return mock_resp
+
+    with patch("httpx.AsyncClient.post", side_effect=mock_post):
+        results = await intel_service._tavily_search("test_key", focus_tickers=["AAPL", "NVDA", "TSM", "MSFT", "MU"])
+
+        assert len(results) > 0
+        assert any("AAPL NVDA TSM MSFT 科技股最新動態財報與產業分析" in q for q in captured_queries)
+        assert any("美股半導體與 AI 算力供應鏈市場情緒" in q for q in captured_queries)
+
+
+def test_get_positions_summary_sync_active_tickers(mock_settings_service):
+    """Verify _get_positions_summary sync fallback prioritizes active tickers."""
+    intel_service = IntelligenceService(settings_service=mock_settings_service, user_id="user_123")
+
+    with patch("src.services.transaction_service.TransactionService.get_user_tickers", return_value=["AAPL", "TSM"]):
+        summary = intel_service._get_positions_summary()
+        assert "當前關鍵活躍持倉標的包括：AAPL, TSM" in summary
+
+
