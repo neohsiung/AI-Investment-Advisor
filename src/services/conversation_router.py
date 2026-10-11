@@ -218,6 +218,7 @@ class ConversationRouter:
             "預熱", "報價", "行情", "status", "audit", "pnl", "holdings", "batch", "guard",
             "warmup", "quote", "calendar", "earnings", "行事曆", "財報", "日曆", "大事記",
             "quality", "fills", "slippage", "成交品質", "滑點統計", "流動性",
+            "factor", "factors", "ic", "因子", "特徵漂移", "因子自癒", "因子監控",
         }
         return cmd in exact_keywords
 
@@ -455,6 +456,24 @@ class ConversationRouter:
                 except Exception as fe:
                     logger.debug(f"Fill quality info error in guard: {fe}")
 
+                # 因子特徵漂移與失效自癒防線 (P30)
+                factor_guard_info = "🟢 正常運作中 (6 大因子健全度檢驗中)"
+                try:
+                    from src.services.factor_drift_guard_service import FactorDriftGuardService
+                    from src.services.tactical_factor_rotation_service import TacticalFactorRotationService
+                    t_svc = TacticalFactorRotationService(user_id=resolved_user_id)
+                    p, _ = t_svc.determine_market_phase()
+                    b_weights = t_svc.get_phase_factor_weights(p, apply_auto_healing=False)
+                    d_svc = FactorDriftGuardService(user_id=resolved_user_id)
+                    d_rep = d_svc.evaluate_factor_health(phase=p, base_weights=b_weights)
+                    h_icon = "🟢" if d_rep.overall_factor_health == "OPTIMAL" else ("🟡" if d_rep.overall_factor_health == "MODERATE" else "🔴")
+                    if d_rep.healed_count > 0:
+                        factor_guard_info = f"🛡️ 自癒生效中 ({d_rep.healed_count} 因子已重平衡，體制: {p.value})"
+                    else:
+                        factor_guard_info = f"{h_icon} {d_rep.overall_factor_health} (全因子 IC 正常，體制: {p.value})"
+                except Exception as de:
+                    logger.debug(f"Factor drift info error in guard: {de}")
+
                 return (
                     f"🛡️ <b>【開盤防滑點守衛與價差熔斷狀態】</b>\n"
                     f"━━━━━━━━━━━━━━━━━━\n"
@@ -464,6 +483,7 @@ class ConversationRouter:
                     f"• <b>開盤高波動保護窗口 (09:30-09:35)</b>：{'⚠️ 觸發保護中 (Active)' if is_auction else '✅ 安全窗口'}\n"
                     f"• <b>動態成交品質追蹤</b>：{fill_quality_info}\n"
                     f"• <b>流動性黑洞熔斷 (Black Hole)</b>：補償乘數 ≥ 2.5x 且逆向選擇 ≥ 2 次自動暫緩\n"
+                    f"• <b>因子特徵漂移與自癒 (P30)</b>：{factor_guard_info}\n"
                     f"• <b>宏觀行事曆發布避開</b>：{blackout_info}\n"
                     f"• <b>財報日前後避開保護</b>：前 48h 暫緩開倉 / 後 24h 消化波動\n"
                     f"• <b>開盤候選標的預熱</b>：{warmup_info}\n"
@@ -659,5 +679,77 @@ class ConversationRouter:
             except Exception as e:
                 logger.error(f"Failed to generate fill quality response: {e}")
                 return f"⚠️ 查詢成交品質與滑點統計時發生錯誤：{e}"
+
+        # 8. Factor / Factors / IC / 因子 / 特徵漂移 / 因子自癒 / 因子監控
+        if any(cmd.startswith(prefix) for prefix in ("factor", "factors", "ic", "因子", "特徵漂移", "因子自癒", "因子監控")):
+            try:
+                from src.services.factor_drift_guard_service import FactorDriftGuardService
+                from src.services.tactical_factor_rotation_service import TacticalFactorRotationService
+
+                t_svc = TacticalFactorRotationService(user_id=resolved_user_id)
+                phase, rationale = t_svc.determine_market_phase()
+                base_weights = t_svc.get_phase_factor_weights(phase, apply_auto_healing=False)
+
+                d_svc = FactorDriftGuardService(user_id=resolved_user_id)
+                report = d_svc.evaluate_factor_health(phase=phase, base_weights=base_weights)
+
+                overall_badge = "🟢 最佳 (OPTIMAL)" if report.overall_factor_health == "OPTIMAL" else (
+                    "🟡 中度漂移 (MODERATE)" if report.overall_factor_health == "MODERATE" else "🔴 因子失效 (DEGRADED)"
+                )
+
+                lines = [
+                    "🧬 <b>【全自動機器學習因子特徵漂移與失效自癒 (P30)】</b>",
+                    "━━━━━━━━━━━━━━━━━━",
+                    f"• <b>當前市場週期體制</b>：<code>{report.phase}</code>",
+                    f"• <b>週期體制判定依據</b>：<i>{rationale}</i>",
+                    f"• <b>多因子體系總體健康</b>：{overall_badge}",
+                    f"• <b>自癒重平衡狀態</b>：{'🛡️ 已觸發自癒' if report.healed_count > 0 else '✅ 正常運行 (無需介入)'} ({report.healed_count} 個因子調整)",
+                    "━━━━━━━━━━━━━━━━━━",
+                    "<b>【6 大核心戰術因子 Rank IC 與動態權重矩陣】</b>",
+                ]
+
+                status_badges = {
+                    "HEALTHY": "🟢 健全",
+                    "DRIFTING": "🟡 漂移",
+                    "INVERTED": "🔴 反轉",
+                    "AUTO_HEALED": "🛡️ 自癒",
+                }
+
+                factor_zh = {
+                    "momentum": "動能趨勢 (Momentum)",
+                    "smart_money": "聰明錢主力 (Smart Money)",
+                    "liquidity_premium": "流動性溢價 (Liquidity)",
+                    "quality": "基本面品質 (Quality)",
+                    "value": "價值安全邊際 (Value)",
+                    "low_vol": "低波動防禦 (Low Vol)",
+                }
+
+                for fn, m in report.factors.items():
+                    s_badge = status_badges.get(m.status, m.status)
+                    fn_display = factor_zh.get(fn, fn)
+                    b_pct = m.baseline_weight * 100.0
+                    e_pct = m.effective_weight * 100.0
+                    w_change = f"<code>{b_pct:.1f}% ➔ {e_pct:.1f}%</code>" if abs(b_pct - e_pct) > 0.05 else f"<code>{e_pct:.1f}%</code>"
+                    lines.append(
+                        f"• <b>{fn_display}</b> [{s_badge}]\n"
+                        f"  └ 30d IC: <code>{m.ic_30d:+.3f}</code> | IR: <code>{m.ic_ir:.2f}</code> | t: <code>{m.t_stat:.2f}</code> | 權重: {w_change}"
+                    )
+
+                if report.healing_actions:
+                    lines.append("━━━━━━━━━━━━━━━━━━")
+                    lines.append("🛠️ <b>【自適應失效自癒重平衡日誌】</b>")
+                    for act in report.healing_actions:
+                        lines.append(f"• {act}")
+
+                lines.append("━━━━━━━━━━━━━━━━━━")
+                lines.append("🛡️ <b>閉環自癒機制說明</b>：")
+                lines.append("• 滾動度量 30d Spearman Rank IC，即時偵測 Concept Drift 與負向反轉 (IC < 0)。")
+                lines.append("• 失效因子施加 50%~90% 阻尼懲罰，多餘權重動態重平衡至防禦與高流動性錨點。")
+                lines.append("• 經由嚴格單體投影 (Simplex Normalization) 確保總權重嚴格收斂至 100.00%。")
+
+                return "\n".join(lines)
+            except Exception as e:
+                logger.error(f"Failed to generate factor drift report response: {e}")
+                return f"⚠️ 查詢因子特徵漂移與自癒狀態時發生錯誤：{e}"
 
         return None

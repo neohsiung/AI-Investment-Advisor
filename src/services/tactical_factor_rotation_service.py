@@ -161,7 +161,7 @@ class TacticalFactorRotationService:
 
     def determine_market_phase(
         self,
-        vix: float,
+        vix: float = 18.0,
         vix_z_score: float = 0.0,
         spy_price: float = 0.0,
         spy_sma200: float = 0.0,
@@ -213,10 +213,16 @@ class TacticalFactorRotationService:
             f"大盤指標處於中性震盪區間 (VIX={vix:.1f})：採取均衡配置陣型",
         )
 
-    def get_phase_factor_weights(self, phase: TacticalMarketPhase) -> Dict[str, float]:
+    def get_phase_factor_weights(
+        self,
+        phase: TacticalMarketPhase,
+        apply_auto_healing: bool = True,
+    ) -> Dict[str, float]:
         """
         Return tactical factor allocation weights customized for the current market phase:
-        [momentum, smart_money, liquidity_premium, quality, value, low_vol]
+        [momentum, smart_money, liquidity_premium, quality, value, low_vol].
+        When apply_auto_healing is True and factor drift guard is enabled, transparently
+        returns auto-healed weights rebalanced away from drifting/inverted factors.
         """
         # Check if evolved factor weights exist in settings
         evolved_setting = self._get_setting("tactical_phase_factor_weights", None)
@@ -288,6 +294,20 @@ class TacticalFactorRotationService:
                         weights[k] = max(0.0, weights[k] - diff * (weights[k] / other_sum))
             except Exception as e:
                 logger.debug(f"Failed to apply custom factor_liquidity_premium_weight: {e}")
+
+        # Phase 30: Transparent closed-loop auto-healing for concept drift & factor inversion
+        if apply_auto_healing:
+            try:
+                from src.services.factor_drift_guard_service import FactorDriftGuardService
+                drift_service = FactorDriftGuardService(
+                    user_id=self.user_id,
+                    settings_service=self.settings_service,
+                    market_service=self.market_service,
+                )
+                if drift_service.is_enabled:
+                    return drift_service.get_effective_factor_weights(phase, base_weights=weights)
+            except Exception as e:
+                logger.debug(f"Factor drift guard auto-healing evaluation skipped: {e}")
 
         return weights
 

@@ -874,6 +874,52 @@ settings:
     label_zh: 已演化儲存之多市場週期因子權重矩陣
     help_en: Calibrated factor weight assignments for 4 market phases produced by replay auto-evolution.
     help_zh: 經歷史回放回測與模擬退火演化所驗證通過之 4 大市場週期因子權重矩陣（JSON 結構）。
+  - key: enable_factor_drift_guard
+    group: trading
+    type: bool
+    default: true
+    label_en: Enable factor drift & concept drift guard
+    label_zh: 啟用因子特徵漂移與失效守衛
+    help_en: Monitors rolling 30d Spearman Rank IC and Information Ratio across core factors to detect concept drift and factor inversion.
+    help_zh: 滾動監控 6 大核心量化因子之 30 天 Spearman Rank IC 與資訊比率，即時偵測因子特徵漂移與失效。
+  - key: enable_factor_auto_healing
+    group: trading
+    type: bool
+    default: true
+    label_en: Enable closed-loop factor auto-healing
+    label_zh: 啟用閉環因子自癒重平衡
+    help_en: Automatically curtails weights of inverted/decaying factors and reallocates freed weights to regime-appropriate defensive anchors.
+    help_zh: 當因子發生顯著衰退或負向反轉時，自動施加阻尼抑制並將釋放出的權重動態重平衡至當前市場體制之防守因子。
+  - key: factor_ic_decay_threshold
+    group: trading
+    type: float
+    default: 0.00
+    min: -0.15
+    max: 0.05
+    label_en: Factor IC drift decay threshold
+    label_zh: 因子 IC 漂移衰退判定門檻
+    help_en: Rolling Rank IC threshold below which a factor is classified as decaying/inverted and subject to auto-healing curtailment.
+    help_zh: 因子滾動 Rank IC 低於此門檻時判定為特徵漂移失效，啟動自癒阻尼削弱（預設 0.00）。
+  - key: factor_ic_lookback_days
+    group: trading
+    type: int
+    default: 30
+    min: 10
+    max: 90
+    label_en: Factor IC evaluation lookback window (days)
+    label_zh: 因子 IC 評估回看天數
+    help_en: Number of rolling calendar days used to calculate Rank IC and Information Ratio.
+    help_zh: 用於計算因子 Rank IC 與 IC-IR 的滾動歷史回看天數（預設 30 天）。
+  - key: factor_healing_defense_bias
+    group: trading
+    type: float
+    default: 0.60
+    min: 0.20
+    max: 1.00
+    label_en: Factor auto-healing defensive anchor bias
+    label_zh: 因子自癒防守錨點偏向比率
+    help_en: Proportion of curtailed weight allocated to low-volatility anchor vs quality anchor during defensive rebalancing.
+    help_zh: 在防禦震盪與景氣末期體制下，自癒釋放權重分配給低波動防守因子的比率（預設 60%）。
   - key: breakout_filter_fail_open
     group: trading
     type: bool
