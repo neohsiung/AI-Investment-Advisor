@@ -30,6 +30,8 @@ class TestTacticalFactorRotationService:
             "enable_rebound_cash_reinvestment": True,
             "target_cash_ratio": 0.10,
             "max_single_position_pct": 0.20,
+            "enable_factor_drift_guard": False,
+            "enable_factor_orthogonalization": False,
         }
         settings.get_setting.side_effect = lambda k, default=None, user_id=None: config_map.get(k, default)
         return settings
@@ -43,7 +45,7 @@ class TestTacticalFactorRotationService:
     @pytest.fixture
     def rotation_service(self, mock_settings_service, mock_winner_service):
         return TacticalFactorRotationService(
-            user_id="test_user",
+            user_id="test_rotation_user",
             settings_service=mock_settings_service,
             winner_service=mock_winner_service,
         )

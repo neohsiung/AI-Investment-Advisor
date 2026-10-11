@@ -42,9 +42,10 @@ class TestFactorDriftGuardService:
 
     @pytest.fixture
     def service(self, mock_settings_service):
-        svc = FactorDriftGuardService(user_id="test_user", settings_service=mock_settings_service)
+        svc = FactorDriftGuardService(user_id="test_drift_user", settings_service=mock_settings_service)
         svc.clear_drift_cache()
-        return svc
+        yield svc
+        svc.clear_drift_cache()
 
     def test_calculate_rank_ic_perfect_positive(self):
         """驗證完全正相關之 Rank IC 應接近 +1.0"""
