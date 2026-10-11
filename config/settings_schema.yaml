@@ -404,6 +404,44 @@ settings:
     label_zh: 允許之最大買賣價差比例
     help_en: Maximum allowable (ask - bid) / mid spread ratio before triggering circuit breaker (default 0.0015 = 0.15%).
     help_zh: 允許的最大買賣價差比率，超過即觸發熔斷保護暫緩市價下單（預設 0.0015 即 0.15%）。
+  - key: enable_dynamic_fill_quality_tracking
+    group: trading
+    type: bool
+    default: true
+    label_en: Enable dynamic fill quality tracking
+    label_zh: 啟用動態成交品質追蹤
+    help_en: Tracks realized vs expected execution slippage using EWMA and syncs metrics to Redis.
+    help_zh: 透過 EWMA 動態追蹤實際與預期成交滑點偏離，並透過 Redis 分散式快取跨程序同步。
+  - key: fill_quality_ewma_alpha
+    group: trading
+    type: float
+    default: 0.20
+    min: 0.05
+    max: 0.50
+    label_en: Fill quality EWMA alpha factor
+    label_zh: 成交品質 EWMA 平滑係數
+    help_en: Exponential smoothing factor applied to new fill slippage deviations (default 0.20).
+    help_zh: 新成交滑點偏離套用之指數平滑權重係數（預設 0.20）。
+  - key: liquidity_black_hole_multiplier_threshold
+    group: trading
+    type: float
+    default: 2.50
+    min: 1.50
+    max: 5.00
+    label_en: Liquidity black hole multiplier threshold
+    label_zh: 流動性黑洞補償乘數熔斷門檻
+    help_en: Slippage multiplier threshold triggering liquidity black hole breaker when adverse fills occur (default 2.50x).
+    help_zh: 當連續發生逆向選擇時觸發流動性黑洞熔斷保護之滑價補償乘數門檻（預設 2.50 倍）。
+  - key: max_slippage_compensation_buffer
+    group: trading
+    type: float
+    default: 0.0025
+    min: 0.0005
+    max: 0.0100
+    label_en: Maximum slippage compensation limit price buffer
+    label_zh: 自適應限價最大滑價補償緩衝
+    help_en: Maximum price premium buffer added to adaptive limit orders (default 0.0025 = 25 bps).
+    help_zh: 自適應限價單允許之最大保護溢價緩衝（預設 0.0025 即 25 bps），防範極端追價摩擦。
   - key: market_open_delay_minutes
     group: trading
     type: int
