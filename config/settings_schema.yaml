@@ -1010,6 +1010,54 @@ settings:
     label_zh: 因子多重共線性 VIF 警報門檻
     help_en: Variance Inflation Factor threshold above which multicollinearity is flagged as severe.
     help_zh: 方差膨脹因子 (VIF) 超過此門檻時判定存在顯著共線性並發出警報（預設 5.0）。
+  - key: enable_dynamic_risk_parity
+    group: trading
+    type: bool
+    default: true
+    label_en: Enable dynamic risk parity allocation
+    label_zh: 啟用多資產動態風險平價配置
+    help_en: Dynamically balance portfolio risk contributions using Cyclical Coordinate Descent and Extreme Tail CVaR optimization.
+    help_zh: 啟用等風險貢獻 (ERC) 與極端尾部 CVaR 優化，確保各持倉對總風險貢獻均等並防範黑天鵝肥尾。
+  - key: risk_parity_lookback_days
+    group: trading
+    type: int
+    default: 60
+    min: 20
+    max: 252
+    label_en: Risk parity lookback days
+    label_zh: 風險平價協方差回看天數
+    help_en: Number of trading days used to estimate asset return covariance and historical tail CVaR.
+    help_zh: 計算資產報酬協方差矩陣與歷史尾部 CVaR 之回看交易日數（預設 60 天）。
+  - key: risk_parity_cvar_confidence
+    group: trading
+    type: float
+    default: 0.95
+    min: 0.90
+    max: 0.99
+    label_en: Risk parity CVaR confidence level
+    label_zh: 風險平價尾部 CVaR 信心水準
+    help_en: Confidence level for historical Conditional Value-at-Risk calculation (e.g. 0.95 for 95% tail shortfall).
+    help_zh: 歷史條件在險價值 (CVaR / Expected Shortfall) 之信心水準（預設 0.95）。
+  - key: risk_parity_cvar_penalty_weight
+    group: trading
+    type: float
+    default: 0.30
+    min: 0.0
+    max: 1.0
+    label_en: Extreme tail CVaR shrinkage penalty weight
+    label_zh: 極端尾部 CVaR 風險預算收縮權重
+    help_en: Sensitivity multiplier for penalizing risk budgets of assets exhibiting severe left-tail crash risks.
+    help_zh: 對具備左尾肥尾崩跌風險標的收縮風險預算之懲罰敏感度（預設 0.30）。
+  - key: risk_parity_max_weight_cap
+    group: trading
+    type: float
+    default: 0.35
+    min: 0.15
+    max: 0.50
+    label_en: Risk parity single asset weight cap
+    label_zh: 風險平價單一標的持倉上限
+    help_en: Maximum portfolio weight cap permitted for any single asset under risk parity allocation.
+    help_zh: 風險平價配置下任一單一標的之最大權重上限（預設 35%）。
   - key: breakout_filter_fail_open
     group: trading
     type: bool
