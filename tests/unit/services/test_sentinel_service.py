@@ -232,3 +232,125 @@ async def test_with_timeout_helper():
     # 非協程普通值
     res_plain = await SentinelService._with_timeout("sync_string", timeout=1.0)
     assert res_plain == "sync_string"
+
+
+@pytest.mark.asyncio
+async def test_do_send_alert_routine_cash_bypasses_council(sentinel_service):
+    """驗證 P3 常規閒置資金警報跳過昂貴的 10-agent Council 研議，並採用階梯建倉說明"""
+    sentinel_service.council_service = MagicMock()
+    sentinel_service.council_service.start_session = AsyncMock()
+    sentinel_service.repo.is_duplicate_alert.return_value = False
+
+    triggers = [{
+        "text": "💰 Excess Cash Alert: Actual 63.6% vs Adjusted Target 10.3%",
+        "id": "cash_ratio_high_test_user",
+        "value": 0.636,
+        "priority": 3,
+        "trigger_type": "cash_management"
+    }]
+
+    mock_broker = MagicMock()
+    mock_broker.get_pending_orders = AsyncMock(return_value=[])
+    with patch("src.services.broker_factory.BrokerFactory.get_broker", return_value=mock_broker), \
+         patch("src.services.event_aggregator.EventAggregator"):
+        await sentinel_service._do_send_alert(triggers, source="Sentinel")
+
+    # Council session must NOT be called for routine P3 cash
+    assert not sentinel_service.council_service.start_session.called
+    assert sentinel_service.repo.log_alert.called
+    metadata = sentinel_service.repo.log_alert.call_args[1]["metadata"]
+    assert "資金配置監控 (P3)" in metadata["decision"]
+    assert "階梯分批建倉" in metadata["decision"]
+
+
+@pytest.mark.asyncio
+async def test_do_send_alert_fallback_critical_suffix_only_for_extreme_or_p1(sentinel_service):
+    """驗證安全模式/Fallback 訊息僅在 P1 或極端行情標註 - CRITICAL，P3 不誤標"""
+    sentinel_service.council_service = MagicMock()
+    sentinel_service.council_service.start_session = AsyncMock(side_effect=asyncio.TimeoutError("timeout"))
+    sentinel_service.repo.is_duplicate_alert.return_value = False
+
+    # 1. P3 trigger: should NOT append - CRITICAL
+    p3_triggers = [{
+        "text": "Normal P3 alert",
+        "id": "normal_p3_alert",
+        "priority": 3,
+        "trigger_type": "generic"
+    }]
+
+    mock_broker = MagicMock()
+    mock_broker.get_pending_orders = AsyncMock(return_value=[])
+    sentinel_service._dispatch_notifications_direct = AsyncMock()
+
+    with patch("src.services.broker_factory.BrokerFactory.get_broker", return_value=mock_broker), \
+         patch("src.services.event_aggregator.EventAggregator"):
+        await sentinel_service._do_send_alert(p3_triggers, source="Sentinel")
+        assert sentinel_service._dispatch_notifications_direct.called
+        p3_content = sentinel_service._dispatch_notifications_direct.call_args[1]["content"]
+        assert "- CRITICAL" not in p3_content
+
+    # 2. P1 trigger: SHOULD append - CRITICAL in fail-safe fallback
+    p1_triggers = [{
+        "text": "Extreme P1 alert",
+        "id": "extreme_p1_alert",
+        "priority": 1,
+        "level": "CRITICAL",
+        "trigger_type": "risk"
+    }]
+    sentinel_service._dispatch_notifications_direct.reset_mock()
+    with patch("src.services.broker_factory.BrokerFactory.get_broker", return_value=mock_broker), \
+         patch("src.services.event_aggregator.EventAggregator"):
+        await sentinel_service._do_send_alert(p1_triggers, source="Sentinel")
+        assert sentinel_service._dispatch_notifications_direct.called
+        p1_content = sentinel_service._dispatch_notifications_direct.call_args[1]["content"]
+        assert "- CRITICAL" in p1_content
+
+
+@pytest.mark.asyncio
+async def test_check_risk_consistency_suppresses_cash_when_batch_active(sentinel_service):
+    """驗證當分批建倉服務有有效排程批次 (active_batch > 0) 時，動態壓制超額現金警報"""
+    mock_snapshot = MagicMock()
+    mock_snapshot.to_dict.return_value = {
+        "total_nlv": 1687.94,
+        "cash_balance": 1072.77,  # 63.6%
+        "leverage_ratio": 1.0,
+    }
+    sentinel_service.snapshot_repo.get_latest_by_user = MagicMock(return_value=mock_snapshot)
+    sentinel_service.settings_service.get_setting = MagicMock(return_value=0.10)
+    sentinel_service._check_vix_anomaly = MagicMock(return_value=[])
+
+    with patch("src.services.fred_service.FredService") as mock_fred, \
+         patch("src.services.batch_cash_deployment_service.BatchCashDeploymentService.get_active_batch_number", new_callable=AsyncMock) as mock_active:
+        mock_fred.return_value.get_macro_indicators.return_value = {}
+        # Active Batch 2 is staged
+        mock_active.return_value = 2
+
+        triggers = await sentinel_service._check_risk_consistency()
+        cash_high_triggers = [t for t in triggers if "cash_ratio_high" in t.get("id", "")]
+        assert len(cash_high_triggers) == 0
+
+
+@pytest.mark.asyncio
+async def test_check_risk_consistency_emits_cash_when_batch_not_active(sentinel_service):
+    """驗證當分批建倉無排程批次 (active_batch == 0) 時，正常發出超額現金警報"""
+    mock_snapshot = MagicMock()
+    mock_snapshot.to_dict.return_value = {
+        "total_nlv": 1687.94,
+        "cash_balance": 1072.77,  # 63.6%
+        "leverage_ratio": 1.0,
+    }
+    sentinel_service.snapshot_repo.get_latest_by_user = MagicMock(return_value=mock_snapshot)
+    sentinel_service.settings_service.get_setting = MagicMock(return_value=0.10)
+    sentinel_service._check_vix_anomaly = MagicMock(return_value=[])
+
+    with patch("src.services.fred_service.FredService") as mock_fred, \
+         patch("src.services.batch_cash_deployment_service.BatchCashDeploymentService.get_active_batch_number", new_callable=AsyncMock) as mock_active:
+        mock_fred.return_value.get_macro_indicators.return_value = {}
+        # No active batch staged
+        mock_active.return_value = 0
+
+        triggers = await sentinel_service._check_risk_consistency()
+        cash_high_triggers = [t for t in triggers if "cash_ratio_high" in t.get("id", "")]
+        assert len(cash_high_triggers) == 1
+        assert "Actual 63.6%" in cash_high_triggers[0]["text"]
+
