@@ -216,7 +216,7 @@ class ConversationRouter:
         exact_keywords = {
             "資產", "淨值", "對帳", "持倉", "部位", "建倉", "批次", "熔斷", "滑點", "風控",
             "預熱", "報價", "行情", "status", "audit", "pnl", "holdings", "batch", "guard",
-            "warmup", "quote",
+            "warmup", "quote", "calendar", "earnings", "行事曆", "財報", "日曆", "大事記",
         }
         return cmd in exact_keywords
 
@@ -427,6 +427,21 @@ class ConversationRouter:
                 except Exception:
                     pass
 
+                # 財報與重大宏觀避開守衛狀態
+                blackout_info = "⚪ 守衛狀態查詢中"
+                try:
+                    from src.services.calendar_blackout_service import CalendarBlackoutService
+                    c_guard = CalendarBlackoutService(user_id=resolved_user_id)
+                    m_eval = c_guard.evaluate_macro_blackout()
+                    c_summary = await c_guard.get_upcoming_calendar_summary(["MSFT", "MU", "AMD"])
+                    next_m = c_summary.get("macro_status", {}).get("next_event")
+                    next_m_str = f"{next_m['name']} ({next_m['time']} EST，約 {next_m['days_away']} 天後)" if next_m else "無即將發布之重大事件"
+                    m_status_str = "⚠️ 避開窗口觸發中" if m_eval.is_blackout else "✅ 安全窗口"
+                    blackout_info = f"{m_status_str} (下次宏觀事件：{next_m_str})"
+                except Exception as ce:
+                    logger.debug(f"Calendar blackout info error: {ce}")
+                    blackout_info = "🟢 正常運行中"
+
                 return (
                     f"🛡️ <b>【開盤防滑點守衛與價差熔斷狀態】</b>\n"
                     f"━━━━━━━━━━━━━━━━━━\n"
@@ -434,11 +449,13 @@ class ConversationRouter:
                     f"• <b>最大容許價差門檻</b>：{float(max_spread or 0.0015)*100:.2f}% (15 bps)\n"
                     f"• <b>美股市場開市狀態</b>：{'🟢 開市中 (Open)' if is_open else '⚪ 休市中 (Closed)'}\n"
                     f"• <b>開盤高波動保護窗口 (09:30-09:35)</b>：{'⚠️ 觸發保護中 (Active)' if is_auction else '✅ 安全窗口'}\n"
+                    f"• <b>宏觀行事曆發布避開</b>：{blackout_info}\n"
+                    f"• <b>財報日前後避開保護</b>：前 48h 暫緩開倉 / 後 24h 消化波動\n"
                     f"• <b>開盤候選標的預熱</b>：{warmup_info}\n"
                     f"• <b>自適應限價單保護</b>：Mid + Spread × 0.25 封頂\n"
                     f"• <b>事後滑點異常告警門檻</b>：> 0.20% 自動通報\n"
                     f"━━━━━━━━━━━━━━━━━━\n"
-                    f"<i>美股開盤 09:35 EST 建倉時將自動為每一筆訂單執行自適應限價與即時價差驗證。</i>"
+                    f"<i>美股開盤 09:35 EST 建倉時將自動為每一筆訂單執行自適應限價、價差驗證與財報避開審核。</i>"
                 )
             except Exception as e:
                 logger.error(f"Failed to generate quick guard response: {e}")
@@ -482,5 +499,74 @@ class ConversationRouter:
             except Exception as e:
                 logger.error(f"Failed to execute warmup command: {e}")
                 return f"⚠️ 執行即時報價預熱時發生錯誤：{e}"
+
+        # 6. Calendar / Earnings / 行事曆 / 財報 / 大事記
+        if any(cmd.startswith(prefix) for prefix in ("calendar", "earnings", "行事曆", "財報", "日曆", "大事記")):
+            try:
+                from src.services.calendar_blackout_service import CalendarBlackoutService
+                from src.services.batch_cash_deployment_service import BatchCashDeploymentService
+                c_guard = CalendarBlackoutService(user_id=resolved_user_id)
+                deploy_svc = BatchCashDeploymentService(user_id=resolved_user_id)
+                active_b = await deploy_svc.get_active_batch_number()
+
+                # 收集目前待建倉標的
+                scan_tickers = ["MSFT", "MU", "AMD", "NVDA", "AAPL"]
+                try:
+                    plan = await deploy_svc.get_deployment_plan(batch_number=active_b)
+                    batch_tickers = [it["ticker"] for it in plan.get("items", [])]
+                    for bt in batch_tickers:
+                        if bt not in scan_tickers:
+                            scan_tickers.append(bt)
+                except Exception:
+                    pass
+
+                summary = await c_guard.get_upcoming_calendar_summary(scan_tickers)
+                macro_stat = summary.get("macro_status", {})
+                next_macro = macro_stat.get("next_event")
+                tickers_cal = summary.get("tickers", {})
+
+                lines = [
+                    "📅 <b>【宏觀行事曆與企業財報避開守衛總覽】</b>",
+                    "━━━━━━━━━━━━━━━━━━",
+                ]
+
+                # 宏觀大事記
+                lines.append("🏛️ <b>即將發布之重大宏觀數據 (FOMC / CPI / NFP)</b>：")
+                if next_macro:
+                    lines.append(
+                        f"• <b>{next_macro['name']}</b>\n"
+                        f"  時間：<code>{next_macro['time']} EST</code> (倒數 <b>{next_macro['days_away']}</b> 天 / {next_macro['hours_away']} 小時)\n"
+                        f"  防護視窗：發布前 60 分鐘暫緩開倉至發布後 30 分鐘"
+                    )
+                else:
+                    lines.append("• <i>近期無表定高衝擊宏觀數據。</i>")
+
+                # 個股財報日曆
+                lines.append("")
+                batch_title = f"(含第 {active_b} 批次候選)" if active_b > 0 else ""
+                lines.append(f"📊 <b>核心持倉與待建倉標的財報日程 {batch_title}</b>：")
+                for sym, info in tickers_cal.items():
+                    blackout_tag = "⚠️ <b>[避開中 - 暫緩下單]</b>" if info.get("is_blackout") else "✅ [安全]"
+                    d_disp = info.get("display", "未定")
+                    h_to = info.get("hours_to_event")
+                    h_str = ""
+                    if h_to is not None:
+                        if h_to >= 0:
+                            h_str = f" (倒數 {h_to/24.0:.1f} 天)"
+                        else:
+                            h_str = f" ({abs(h_to)/24.0:.1f} 天前已發布)"
+                    lines.append(f"• <b>{sym}</b>: {d_disp}{h_str} — {blackout_tag}")
+
+                lines.append("")
+                lines.append("━━━━━━━━━━━━━━━━━━")
+                lines.append("🛡️ <b>守衛風控機制說明</b>：")
+                lines.append("• 財報發布前 48 小時自動暫緩配置，規避二元跳空與 IV Crush。")
+                lines.append("• 財報發布後 24 小時沉澱期，待市場充分消化營收與指引後再行部署。")
+                lines.append("• 重大宏觀事件窗口暫緩開倉，防範流動性真空與劇烈滑點。")
+
+                return "\n".join(lines)
+            except Exception as e:
+                logger.error(f"Failed to generate calendar response: {e}")
+                return f"⚠️ 查詢財報與宏觀行事曆時發生錯誤：{e}"
 
         return None
