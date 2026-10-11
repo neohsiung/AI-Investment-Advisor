@@ -733,6 +733,45 @@ def generate_weekly_report(user_id: str = None):
         return f"Error: {str(e)}"
 
 
+@app.task(name="src.infrastructure.tasks.dispatch_monthly_report")
+def dispatch_monthly_report():
+    """
+    Fan-out dispatcher for Monthly System Refinement & Evolution Report.
+    為活躍租戶分派月度系統進化與效能報告任務。
+    """
+    users = _resolve_target_users()
+    for uid in users:
+        generate_monthly_report.delay(user_id=uid)
+    return f"Dispatched {len(users)} monthly_report tasks"
+
+
+@app.task(name="src.infrastructure.tasks.generate_monthly_report", soft_time_limit=1800, time_limit=1860)
+def generate_monthly_report(user_id: str = None):
+    """
+    Monthly System Refinement & Evolution Report — runs RefinementService.run_monthly_refinement().
+    月度系統進化報告：執行 RefinementService.run_monthly_refinement() 進行月度效能回顧與 HR 系統優化。
+    """
+    user_id = user_id or os.getenv("PRIMARY_USER_ID") or os.getenv("USER_ID")
+    if not user_id:
+        logger.error("generate_monthly_report: user_id is required. Set PRIMARY_USER_ID env var or pass explicitly.")
+        return "Error: user_id is required"
+
+    try:
+        from src.services.refinement_service import RefinementService
+
+        service = RefinementService(user_id=user_id)
+        success = _run_async_safe(service.run_monthly_refinement())
+        if success:
+            logger.info(f"monthly_report completed for user {user_id}")
+            return f"Success: Monthly report generated for {user_id}"
+        else:
+            logger.warning(f"monthly_report completed with non-success status for user {user_id}")
+            return f"Error: Monthly report generation failed for {user_id}"
+    except Exception as e:
+        logger.error(f"monthly_report failed for user {user_id}: {e}")
+        return f"Error: {str(e)}"
+
+
 @app.task(name="src.infrastructure.tasks.dispatch_universe_lifecycle")
 def dispatch_universe_lifecycle():
     """Fan-out dispatcher: 為活躍租戶分派標的池生命週期演化任務。"""

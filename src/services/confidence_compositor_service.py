@@ -471,14 +471,14 @@ Return JSON:
             if not active_artifacts:
                 return sub_scores
 
-            # Fetch recent market data for ticker
+            # Fetch recent market data for ticker via resilient MarketDataService
             market_df = None
             try:
-                from src.data.providers.yfinance_provider import YFinanceProvider
-                yf_provider = YFinanceProvider()
-                market_df = yf_provider.fetch_history(ticker, period="60d")
+                from src.services.market_data_service import MarketDataService
+                mds = MarketDataService(user_id=self.user_id)
+                market_df = mds.get_history_df(ticker, days=60)
             except Exception as e:
-                logger.warning("Could not fetch market data from YFinanceProvider for %s: %s", ticker, e)
+                logger.warning("Could not fetch market data from MarketDataService for %s: %s", ticker, e)
 
             # Fallback data generation if market data is unavailable (e.g. offline/mock environment)
             if market_df is None or market_df.empty:

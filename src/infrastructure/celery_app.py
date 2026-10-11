@@ -122,13 +122,10 @@ app.conf.beat_schedule = {
     # 每分鐘就會跑，此排程只造成 :00/:30 重複，且正好打在付費的 Tavily/FRED 分支上。
     # 2026-08-23: this pointed at dispatch_market_intelligence, so the weekly
     # report had never once been generated on schedule — the entry fired the
-    # market-intelligence fan-out a second time instead (the "monthly-report"
-    # entry below still does; see the technical-debt list). The weekly logic
-    # itself was never dead: WeeklyWorkflow.run_weekly_cycle() exists and is
-    # covered by tests/e2e/test_weekly_report_flow.py, but its only caller was
-    # SchedulerService.job_weekly_report on the retired APScheduler side, which
-    # nothing instantiates any more.
-    # 原本指向市場情報任務，導致週報從未被排程產生過。
+    # market-intelligence fan-out a second time instead.
+    # Resolved 2026-10-11: weekly-report-trigger points to dispatch_weekly_report
+    # and monthly-report points to dispatch_monthly_report.
+    # 原本指向市場情報任務，現已統一修正指向各自的報表分派任務。
     "weekly-report-trigger": {
         "task": "src.infrastructure.tasks.dispatch_weekly_report",
         "schedule": crontab(hour=10, minute=0, day_of_week="6"),  # Sat 10:00
@@ -186,7 +183,7 @@ app.conf.beat_schedule = {
         "schedule": crontab(hour=22, minute=0, day_of_week="0"),
     },
     "monthly-report": {
-        "task": "src.infrastructure.tasks.dispatch_market_intelligence",
+        "task": "src.infrastructure.tasks.dispatch_monthly_report",
         "schedule": crontab(hour=9, minute=0, day_of_month="1"),
     },
     # P1-3: keyword_refine — 每週一 07:00 執行

@@ -1461,15 +1461,16 @@ class EtoroService(IBroker):
         if not symbols:
             return prices
 
+        unique_symbols = list(dict.fromkeys(symbols))
         try:
             from src.services.market_data_service import MarketDataService
             uid = self.user_id
             if not uid:
                 raise ValueError("user_id is required for eToro operations — caller must provide a valid tenant user_id")
             service = MarketDataService(user_id=uid)
-            prices = await service.get_current_prices(symbols)
+            prices = await service.get_current_prices(unique_symbols)
             if prices:
-                logger.info(f"Fetched {len(prices)}/{len(symbols)} current prices via MarketDataService.")
+                logger.info(f"Fetched {len(prices)}/{len(unique_symbols)} current prices via MarketDataService.")
         except Exception as e:
             logger.warning(f"Failed to fetch current prices via MarketDataService: {e}")
         

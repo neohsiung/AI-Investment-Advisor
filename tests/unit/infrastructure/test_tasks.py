@@ -70,6 +70,7 @@ _ALL_SERVICE_TARGETS = [
     "src.services.event_aggregator.EventAggregator",
     "src.services.workflow_service.DailyWorkflow",
     "src.services.universe_lifecycle_service.UniverseLifecycleService",
+    "src.services.refinement_service.RefinementService",
     "src.data.database.get_db_engine",
 ]
 
@@ -257,6 +258,7 @@ DISPATCHERS = [
     ("dispatch_event_digest", "send_event_digest"),
     ("dispatch_daily_report", "generate_daily_report"),
     ("dispatch_weekly_report", "generate_weekly_report"),
+    ("dispatch_monthly_report", "generate_monthly_report"),
     ("dispatch_universe_lifecycle", "run_universe_lifecycle"),
     ("dispatch_weekly_rebalance", "run_weekly_rebalance"),
 ]
@@ -319,6 +321,7 @@ USER_SCOPED_TASKS = [
     "send_event_digest",
     "generate_daily_report",
     "generate_weekly_report",
+    "generate_monthly_report",
     "run_universe_lifecycle",
     "run_weekly_rebalance",
 ]
@@ -765,6 +768,44 @@ class TestWeeklyReportBeatEntry:
 
         entry = app.conf.beat_schedule["weekly-report-trigger"]
         assert entry["task"] == "src.infrastructure.tasks.dispatch_weekly_report"
+
+
+class TestGenerateMonthlyReport:
+    """
+    generate_monthly_report runs RefinementService.run_monthly_refinement().
+    """
+
+    def test_success(self, run_async_identity):
+        with patch("src.services.refinement_service.RefinementService") as cls:
+            cls.return_value.run_monthly_refinement.return_value = True
+            result = tasks.generate_monthly_report(user_id=USER)
+
+        cls.assert_called_once_with(user_id=USER)
+        cls.return_value.run_monthly_refinement.assert_called_once()
+        assert result == f"Success: Monthly report generated for {USER}"
+
+    def test_failure_status(self, run_async_identity):
+        with patch("src.services.refinement_service.RefinementService") as cls:
+            cls.return_value.run_monthly_refinement.return_value = False
+            result = tasks.generate_monthly_report(user_id=USER)
+
+        assert result == f"Error: Monthly report generation failed for {USER}"
+        assert _SOFT_FAIL_RE.match(result)
+
+    def test_exception(self, run_async_identity):
+        with patch("src.services.refinement_service.RefinementService", side_effect=RuntimeError("db connection failed")):
+            result = tasks.generate_monthly_report(user_id=USER)
+
+        assert result == "Error: db connection failed"
+        assert _SOFT_FAIL_RE.match(result)
+
+
+class TestMonthlyReportBeatEntry:
+    def test_monthly_report_trigger_points_at_the_monthly_dispatcher(self):
+        from src.infrastructure.celery_app import app
+
+        entry = app.conf.beat_schedule["monthly-report"]
+        assert entry["task"] == "src.infrastructure.tasks.dispatch_monthly_report"
 
 
 # ─────────────────────────────────────────────────────────────────────────────
