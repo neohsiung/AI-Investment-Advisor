@@ -920,6 +920,62 @@ settings:
     label_zh: 因子自癒防守錨點偏向比率
     help_en: Proportion of curtailed weight allocated to low-volatility anchor vs quality anchor during defensive rebalancing.
     help_zh: 在防禦震盪與景氣末期體制下，自癒釋放權重分配給低波動防守因子的比率（預設 60%）。
+  - key: enable_factor_genetic_evolution
+    group: trading
+    type: bool
+    default: true
+    label_en: Enable factor genetic hyper-evolution
+    label_zh: 啟用多因子權重遺傳演算法超參數演化
+    help_en: Autonomously optimize regime factor weights and hyper-parameters using genetic algorithm with Walk-Forward cross validation.
+    help_zh: 啟用每週離線遺傳演算法 (GA)，以族群交叉突變與 Walk-Forward 走查最佳化 4 大體制多因子權重與超參數。
+  - key: factor_ga_population_size
+    group: trading
+    type: int
+    default: 20
+    min: 10
+    max: 100
+    label_en: Factor GA population size
+    label_zh: 因子遺傳演算法族群規模
+    help_en: Number of candidate factor weight chromosomes per generation.
+    help_zh: 因子權重遺傳演算法每代染色體個體數量（預設 20）。
+  - key: factor_ga_generations
+    group: trading
+    type: int
+    default: 20
+    min: 5
+    max: 100
+    label_en: Factor GA generations
+    label_zh: 因子遺傳演算法演化世代數
+    help_en: Number of evolution generations to execute per GA run.
+    help_zh: 因子權重遺傳演算法演化的總世代數（預設 20 代）。
+  - key: factor_ga_mutation_rate
+    group: trading
+    type: float
+    default: 0.20
+    min: 0.05
+    max: 0.80
+    label_en: Factor GA mutation rate
+    label_zh: 因子遺傳演算法變異機率
+    help_en: Probability of Gaussian simplex perturbation mutation on chromosomes.
+    help_zh: 因子染色體高斯擾動單體突變機率（預設 0.20）。
+  - key: factor_ga_crossover_rate
+    group: trading
+    type: float
+    default: 0.80
+    min: 0.20
+    max: 1.00
+    label_en: Factor GA crossover rate
+    label_zh: 因子遺傳演算法交叉機率
+    help_en: Probability of regime block swap and convex blend crossover between parents.
+    help_zh: 雙親體制區塊與凸幾何單體混血交叉重組機率（預設 0.80）。
+  - key: factor_ga_auto_promote
+    group: trading
+    type: bool
+    default: true
+    label_en: Auto-promote evolved GA factor matrix
+    label_zh: 因子遺傳演化通過晉級門檻自動生效
+    help_en: Automatically apply verified best genetic factor weights to production settings when passing WFO and Shannon diversity gates.
+    help_zh: 當遺傳演化最優染色體通過 WFO 效率、Sharpe 提升、回撤防守與香農多樣性門檻時，自動套用為生產環境權重。
   - key: breakout_filter_fail_open
     group: trading
     type: bool

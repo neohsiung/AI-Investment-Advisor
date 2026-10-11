@@ -148,6 +148,12 @@ app.conf.beat_schedule = {
         "task": "src.infrastructure.tasks.dispatch_factor_rotation_evolution",
         "schedule": crontab(hour=22, minute=30, day_of_week="0"),  # Sun 22:30 EST
     },
+    # Factor Genetic Hyper-Evolution — runs weekly on Sunday night (23:00 EST)
+    # 全歷史多因子權重遺傳演算法超參數演化：每週日夜間執行族群雜交變異演化、Walk-Forward 前向走查與自動晉級。
+    "factor-genetic-hyper-evolution": {
+        "task": "src.infrastructure.tasks.dispatch_factor_genetic_evolution",
+        "schedule": crontab(hour=23, minute=0, day_of_week="0"),  # Sun 23:00 EST
+    },
     # Autonomous Factor Exploration & Canary Evolution — runs daily at 01:30 AM EST (off-market hours)
     # 自主量化因子探索與金絲雀灰度演化：每日凌晨離線探索未覆蓋體制策略並自動滾動 14 天金絲雀影子追蹤。
     "daily-autonomous-factor-evolution": {
