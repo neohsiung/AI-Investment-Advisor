@@ -181,6 +181,14 @@ class MarketDataService:
     HISTORY_CACHE_TTL_MARKET_OPEN = 300    # 盤中歷史/指標快取 300 秒 (5 分鐘)
     HISTORY_CACHE_TTL_OFF_HOURS = 1800     # 盤後/休市歷史/指標快取 1800 秒 (30 分鐘)
 
+    def _get_price_cache_ttl(self) -> int:
+        """Return price/quote cache TTL based on whether US equity market is currently open."""
+        try:
+            from src.utils.market_clock import MarketClock
+            return self.PRICE_CACHE_TTL_MARKET_OPEN if MarketClock().is_market_open() else self.PRICE_CACHE_TTL_OFF_HOURS
+        except Exception:
+            return self.PRICE_CACHE_TTL_OFF_HOURS
+
     def _get_history_cache_ttl(self) -> int:
         """Return history/indicator cache TTL based on whether US equity market is currently open."""
         try:
@@ -311,13 +319,35 @@ class MarketDataService:
             self.logger.warning(f"Search-based price fetch failed for {ticker}: {e}")
         return 0.0
 
-    async def get_quote(self, ticker: str) -> Dict[str, Any]:
+    async def get_quote(self, ticker: str, force_refresh: bool = False) -> Dict[str, Any]:
         """
         Get real-time quote including Bid, Ask, Mid, and Spread for slippage control.
         獲取標的即時報價，包括買價、賣價、中間價與買賣價差。
+        支援 Redis 分散式快取，TTL 動態依美股開休市時間調整 (盤中 60s, 盤後 300s)。
         """
         clean_ticker = ticker.strip().upper()
-        # 1. Try Polygon snapshot
+        for suffix in [".US", ".RTH", ".EXT", ".L", ".UK"]:
+            if clean_ticker.endswith(suffix):
+                clean_ticker = clean_ticker[:-len(suffix)]
+
+        redis_client = None
+        # 1. 優先從 Redis 讀取即時報價快取（若未強制刷新）
+        if not force_refresh:
+            try:
+                from src.infrastructure.cache.redis_client import get_redis
+                redis_client = await get_redis(decode_responses=True)
+                if redis_client:
+                    cached_raw = await redis_client.get(f"market_data:quote:{clean_ticker}")
+                    if cached_raw:
+                        quote_dict = json.loads(cached_raw)
+                        if isinstance(quote_dict, dict) and (quote_dict.get("last") or quote_dict.get("bid")):
+                            return quote_dict
+            except Exception as e:
+                self.logger.debug(f"Redis quote cache lookup failed for {clean_ticker}: {e}")
+
+        quote_result = None
+
+        # 2. Try Polygon snapshot
         poly_key = self.settings_service.get_setting("source_polygon_api_key")
         if poly_key:
             try:
@@ -345,7 +375,7 @@ class MarketDataService:
                         if bid > 0 and ask > 0 and ask >= bid:
                             mid = (bid + ask) / 2.0
                             spread = ask - bid
-                            return {
+                            quote_result = {
                                 "ticker": clean_ticker,
                                 "bid": bid,
                                 "ask": ask,
@@ -356,7 +386,7 @@ class MarketDataService:
                                 "provider": "polygon",
                             }
                         elif last > 0:
-                            return {
+                            quote_result = {
                                 "ticker": clean_ticker,
                                 "bid": None,
                                 "ask": None,
@@ -369,44 +399,74 @@ class MarketDataService:
             except Exception as e:
                 self.logger.debug(f"Polygon quote lookup failed for {clean_ticker}: {e}")
 
-        # 2. Try Finnhub quote
-        finnhub_key = self.settings_service.get_setting("source_finnhub_api_key")
-        if finnhub_key:
-            try:
-                import httpx
-                url = f"https://finnhub.io/api/v1/quote?symbol={clean_ticker}&token={finnhub_key}"
-                async with httpx.AsyncClient(timeout=4.0) as client:
-                    resp = await client.get(url)
-                    if resp.status_code == 200:
-                        q = resp.json()
-                        c = float(q.get("c", 0.0) or 0.0)
-                        if c > 0:
-                            return {
-                                "ticker": clean_ticker,
-                                "bid": None,
-                                "ask": None,
-                                "last": c,
-                                "mid": c,
-                                "spread": None,
-                                "spread_pct": None,
-                                "provider": "finnhub",
-                            }
-            except Exception as e:
-                self.logger.debug(f"Finnhub quote lookup failed for {clean_ticker}: {e}")
+        # 3. Try Finnhub quote if polygon didn't yield quote
+        if not quote_result:
+            finnhub_key = self.settings_service.get_setting("source_finnhub_api_key")
+            if finnhub_key:
+                try:
+                    import httpx
+                    url = f"https://finnhub.io/api/v1/quote?symbol={clean_ticker}&token={finnhub_key}"
+                    async with httpx.AsyncClient(timeout=4.0) as client:
+                        resp = await client.get(url)
+                        if resp.status_code == 200:
+                            q = resp.json()
+                            c = float(q.get("c", 0.0) or 0.0)
+                            if c > 0:
+                                quote_result = {
+                                    "ticker": clean_ticker,
+                                    "bid": None,
+                                    "ask": None,
+                                    "last": c,
+                                    "mid": c,
+                                    "spread": None,
+                                    "spread_pct": None,
+                                    "provider": "finnhub",
+                                }
+                except Exception as e:
+                    self.logger.debug(f"Finnhub quote lookup failed for {clean_ticker}: {e}")
 
-        # 3. Fallback to get_current_prices
-        prices = await self.get_current_prices([clean_ticker])
-        p = prices.get(clean_ticker)
-        return {
-            "ticker": clean_ticker,
-            "bid": None,
-            "ask": None,
-            "last": p,
-            "mid": p,
-            "spread": None,
-            "spread_pct": None,
-            "provider": "fallback",
-        }
+        # 4. Fallback to get_current_prices
+        if not quote_result:
+            prices = await self.get_current_prices([clean_ticker])
+            p = prices.get(clean_ticker)
+            quote_result = {
+                "ticker": clean_ticker,
+                "bid": None,
+                "ask": None,
+                "last": p,
+                "mid": p,
+                "spread": None,
+                "spread_pct": None,
+                "provider": "fallback",
+            }
+
+        # 5. 寫入 Redis 快取供後續毫秒級複用
+        if quote_result and (quote_result.get("last") or quote_result.get("bid") or quote_result.get("mid")):
+            try:
+                if redis_client is None:
+                    from src.infrastructure.cache.redis_client import get_redis
+                    redis_client = await get_redis(decode_responses=True)
+                if redis_client:
+                    ttl = self._get_price_cache_ttl()
+                    pipe = redis_client.pipeline()
+                    pipe.set(
+                        f"market_data:quote:{clean_ticker}",
+                        json.dumps(quote_result),
+                        ex=ttl,
+                    )
+                    last_val = quote_result.get("last") or quote_result.get("mid")
+                    if last_val:
+                        pipe.setex(
+                            f"market_data:price:{clean_ticker}",
+                            ttl,
+                            str(last_val),
+                        )
+                    await pipe.execute()
+                    self.logger.debug(f"Cached quote for {clean_ticker} in Redis (TTL: {ttl}s)")
+            except Exception as e:
+                self.logger.debug(f"Failed to cache quote in Redis for {clean_ticker}: {e}")
+
+        return quote_result
     def get_market_context(self, tickers: List[str], enrich: bool = False) -> Dict[str, Any]:
         """
         Get detailed market context (OHLCV + Indicators) for a list of tickers.

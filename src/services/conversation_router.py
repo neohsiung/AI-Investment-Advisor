@@ -12,6 +12,7 @@ Routes incoming channel messages through a priority pipeline:
   - 規範四 (模組化設計): 獨立可單元測試
 """
 
+import json
 import logging
 from typing import Optional, List, Dict, Any
 
@@ -214,7 +215,8 @@ class ConversationRouter:
             return True
         exact_keywords = {
             "資產", "淨值", "對帳", "持倉", "部位", "建倉", "批次", "熔斷", "滑點", "風控",
-            "status", "audit", "pnl", "holdings", "batch", "guard"
+            "預熱", "報價", "行情", "status", "audit", "pnl", "holdings", "batch", "guard",
+            "warmup", "quote",
         }
         return cmd in exact_keywords
 
@@ -253,6 +255,21 @@ class ConversationRouter:
                 real_emoji = "🟢" if real >= 0 else "🔴"
                 real_str = f"+${real:,.2f}" if real >= 0 else f"-${abs(real):,.2f}"
 
+                # 取得動態分批建倉狀態
+                batch_schedule_str = "全週期分批建倉已完成 (維持 20% 防守底線)"
+                try:
+                    from src.services.batch_cash_deployment_service import BatchCashDeploymentService
+                    deploy_svc = BatchCashDeploymentService(user_id=resolved_user_id)
+                    active_b = await deploy_svc.get_active_batch_number()
+                    if active_b > 0:
+                        plan = await deploy_svc.get_deployment_plan(batch_number=active_b)
+                        plan_items = plan.get("items") or plan.get("plan_items", [])
+                        item_tickers = ", ".join(it.get("ticker", "") for it in plan_items)
+                        total_batch_amt = float(plan.get("total_batch_amount", 0.0) or 0.0)
+                        batch_schedule_str = f"待命執行第 {active_b} 批次建倉 (${total_batch_amt:.0f}: {item_tickers})"
+                except Exception as b_err:
+                    logger.debug(f"Failed to load dynamic batch schedule for status: {b_err}")
+
                 return (
                     f"📊 <b>【實盤真實驗資與對帳總結】</b>\n"
                     f"━━━━━━━━━━━━━━━━━━\n"
@@ -267,7 +284,7 @@ class ConversationRouter:
                     f"📊 <b>持倉未實現盈虧</b>：{unreal_emoji} {unreal_str} USD\n"
                     f"📉 <b>歷史已平倉損益</b>：{real_emoji} {real_str} USD\n"
                     f"👤 <b>活躍持股檔數</b>：{count} 檔\n"
-                    f"⚡ <b>開盤自動排程</b>：今晚 21:35 TST 第 1 批次建倉 ($347: NVDA, TSM, AAPL)\n"
+                    f"⚡ <b>開盤自動排程</b>：{batch_schedule_str}\n"
                     f"<i>(數據由券商即時同步與真實驗資引擎核算，無 LLM 延遲)</i>"
                 )
             except Exception as e:
@@ -320,6 +337,18 @@ class ConversationRouter:
                 reserve = float(status.get("required_reserve_usd", 0.0) or 0.0)
                 rem_cash = float(plan.get("expected_remaining_cash") or plan.get("projected_cash_after_deployment") or 0.0)
 
+                # 讀取 Redis 預熱行情快照 (若有)
+                warmed_quotes = {}
+                try:
+                    from src.infrastructure.cache.redis_client import get_redis
+                    r = await get_redis(decode_responses=True)
+                    if r:
+                        cached_raw = await r.get(f"batch_deployment:warmup_quotes:{resolved_user_id}")
+                        if cached_raw:
+                            warmed_quotes = json.loads(cached_raw).get("quotes", {})
+                except Exception as r_err:
+                    logger.debug(f"Could not load warmed quotes for batch command: {r_err}")
+
                 lines = [
                     "🚀 <b>【分批建倉計畫與排程進度】</b>",
                     "━━━━━━━━━━━━━━━━━━",
@@ -332,20 +361,39 @@ class ConversationRouter:
                     lines.append("🎉 <b>【全週期分批建倉已全部完成】</b>")
                     lines.append("帳戶持倉已達成結構性平衡，並維持 20%~25% 防守現金儲備。")
                 else:
-                    timing_desc = "今晚 21:35 TST 自動觸發" if active_batch == 1 else "下週美股開盤 09:35 EST 自動觸發"
+                    timing_desc = "美股開盤 09:35 EST 自動觸發"
                     lines.append(f"<b>【第 {active_batch} 批次（{timing_desc}）】</b>")
                     for it in items:
+                        ticker = it["ticker"]
                         amt = float(it.get("amount_usd") or it.get("allocated_amount") or 0.0)
-                        lines.append(f"• <b>{it['ticker']}</b>: ~${amt:.2f} ({it.get('role', '')})")
+                        role = it.get("role", "")
+                        q_info = warmed_quotes.get(ticker, {})
+                        quote_addon = ""
+                        if q_info and q_info.get("ready"):
+                            last_p = q_info.get("last") or q_info.get("mid")
+                            sp_pct = q_info.get("spread_pct")
+                            sp_str = f", 價差 {sp_pct*100:.2f}%" if sp_pct is not None else ""
+                            quote_addon = f" [市價 ${last_p:.2f}{sp_str}]"
+                        lines.append(f"• <b>{ticker}</b>: ~${amt:.2f} ({role}){quote_addon}")
 
                     total_amt = float(plan.get("total_batch_amount", 0.0) or 0.0)
                     lines.append(f"批次小計：${total_amt:.2f} USD (執行後現金保持 ${rem_cash:.2f})")
 
                 lines.append("━━━━━━━━━━━━━━━━━━")
-                lines.append("<b>【全週期批次藍圖】</b>")
-                lines.append("• 第 1 批次（今晚 21:35 TST）：NVDA ($114), TSM ($144), AAPL ($89)")
-                lines.append("• 第 2 批次（下週一 09:35 EST）：MSFT ($91), MU ($79), AMD ($77)")
-                lines.append("• 第 3 批次（下週三 09:35 EST）：SPCX ($76)")
+                lines.append("<b>【全週期批次進度藍圖】</b>")
+                batch_blueprints = [
+                    (1, "NVDA ($114), TSM ($144), AAPL ($89)"),
+                    (2, "MSFT ($91), MU ($79), AMD ($77)"),
+                    (3, "SPCX ($76)"),
+                ]
+                for b_num, b_desc in batch_blueprints:
+                    if active_batch == 0 or b_num < active_batch:
+                        badge = "✅ 已完成"
+                    elif b_num == active_batch:
+                        badge = "⏳ 待執行"
+                    else:
+                        badge = "📅 待命"
+                    lines.append(f"• {badge} 第 {b_num} 批次：{b_desc}")
                 lines.append("<i>全流程均受 0.15% 開盤價差熔斷與自適應限價守衛保護。</i>")
                 return "\n".join(lines)
             except Exception as e:
@@ -363,6 +411,22 @@ class ConversationRouter:
                 auction_res = guard.is_opening_auction_window()
                 is_auction = auction_res[0] if isinstance(auction_res, tuple) else bool(auction_res)
 
+                # 讀取 Redis 報價預熱狀態
+                warmup_info = "⚪ 尚未預熱（開盤前 15 分鐘 09:20 EST 自動預熱）"
+                try:
+                    from src.infrastructure.cache.redis_client import get_redis
+                    r = await get_redis(decode_responses=True)
+                    if r:
+                        cached_raw = await r.get(f"batch_deployment:warmup_quotes:{resolved_user_id}")
+                        if cached_raw:
+                            w_data = json.loads(cached_raw)
+                            w_time = w_data.get("warmed_at", "")[:19].replace("T", " ")
+                            q_cnt = len(w_data.get("quotes", {}))
+                            b_num = w_data.get("batch_number", 0)
+                            warmup_info = f"🟢 已預熱 (第 {b_num} 批次 {q_cnt} 檔標的已就緒，{w_time} UTC)"
+                except Exception:
+                    pass
+
                 return (
                     f"🛡️ <b>【開盤防滑點守衛與價差熔斷狀態】</b>\n"
                     f"━━━━━━━━━━━━━━━━━━\n"
@@ -370,13 +434,53 @@ class ConversationRouter:
                     f"• <b>最大容許價差門檻</b>：{float(max_spread or 0.0015)*100:.2f}% (15 bps)\n"
                     f"• <b>美股市場開市狀態</b>：{'🟢 開市中 (Open)' if is_open else '⚪ 休市中 (Closed)'}\n"
                     f"• <b>開盤高波動保護窗口 (09:30-09:35)</b>：{'⚠️ 觸發保護中 (Active)' if is_auction else '✅ 安全窗口'}\n"
+                    f"• <b>開盤候選標的預熱</b>：{warmup_info}\n"
                     f"• <b>自適應限價單保護</b>：Mid + Spread × 0.25 封頂\n"
                     f"• <b>事後滑點異常告警門檻</b>：> 0.20% 自動通報\n"
                     f"━━━━━━━━━━━━━━━━━━\n"
-                    f"<i>今晚 21:35 TST 開盤建倉時將自動為每一筆訂單執行即時報價驗證。</i>"
+                    f"<i>美股開盤 09:35 EST 建倉時將自動為每一筆訂單執行自適應限價與即時價差驗證。</i>"
                 )
             except Exception as e:
                 logger.error(f"Failed to generate quick guard response: {e}")
                 return f"⚠️ 查詢風控守衛狀態時發生錯誤：{e}"
+
+        # 5. Warmup / Quote / 預熱 / 報價
+        if any(cmd.startswith(prefix) for prefix in ("warmup", "quote", "預熱", "報價")):
+            try:
+                from src.services.batch_cash_deployment_service import BatchCashDeploymentService
+                deploy_svc = BatchCashDeploymentService(user_id=resolved_user_id)
+                res = await deploy_svc.warmup_batch_quotes()
+                active_b = res.get("batch_number", 0)
+                quotes = res.get("quotes", {})
+                lines = [
+                    "🔥 <b>【開盤標的即時報價預熱與價差掃描】</b>",
+                    "━━━━━━━━━━━━━━━━━━",
+                ]
+                if active_b == 0 or not quotes:
+                    lines.append(f"ℹ️ {res.get('message', '目前無待執行建倉批次。')}")
+                else:
+                    lines.append(f"🎯 <b>第 {active_b} 批次候選標的報價快照</b>：")
+                    for ticker, q in quotes.items():
+                        if q.get("ready"):
+                            last = q.get("last") or q.get("mid") or 0.0
+                            bid = q.get("bid")
+                            ask = q.get("ask")
+                            bid_str = f"${bid:.2f}" if bid else "N/A"
+                            ask_str = f"${ask:.2f}" if ask else "N/A"
+                            sp_pct = q.get("spread_pct")
+                            sp_str = f"{sp_pct*100:.2f}%" if sp_pct is not None else "N/A"
+                            source = q.get("source", "provider")
+                            lines.append(
+                                f"• <b>{ticker}</b>: 市價 ${last:.2f} | 買/賣: {bid_str}/{ask_str} (價差: {sp_str}) [{source}]"
+                            )
+                        else:
+                            err = q.get("error", "暫無即時報價")
+                            lines.append(f"• <b>{ticker}</b>: ⚠️ 報價未就緒 ({err})")
+                    lines.append("━━━━━━━━━━━━━━━━━━")
+                    lines.append("✅ <b>報價已寫入分散式快取</b>，開盤建倉可直接毫秒級讀取，免去外部連線延遲。")
+                return "\n".join(lines)
+            except Exception as e:
+                logger.error(f"Failed to execute warmup command: {e}")
+                return f"⚠️ 執行即時報價預熱時發生錯誤：{e}"
 
         return None

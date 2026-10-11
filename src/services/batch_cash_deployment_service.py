@@ -273,7 +273,9 @@ class BatchCashDeploymentService:
             "expected_cash_ratio": round(expected_cash_ratio, 2),
         }
 
-    async def warmup_batch_quotes(self, batch_number: Optional[int] = None) -> Dict[str, Any]:
+    async def warmup_batch_quotes(
+        self, batch_number: Optional[int] = None, force_refresh: bool = True
+    ) -> Dict[str, Any]:
         """
         開盤前 15 分鐘 (09:20 EST) 預熱即將建倉標的報價與快取。
         1. 確定當前待執行批次（若為 None 則自適應推進）。
@@ -315,7 +317,7 @@ class BatchCashDeploymentService:
         for item in items:
             ticker = item["ticker"]
             try:
-                quote = await self.slippage_guard.get_ticker_quote(ticker)
+                quote = await self.slippage_guard.get_ticker_quote(ticker, force_refresh=force_refresh)
                 spread_pct = quote.get("spread_pct")
                 bid = quote.get("bid")
                 ask = quote.get("ask")

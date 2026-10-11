@@ -146,7 +146,7 @@ class SlippageGuardService:
 
         return False, "常規市場時段或開盤緩衝期已過"
 
-    async def get_ticker_quote(self, ticker: str) -> Dict[str, Any]:
+    async def get_ticker_quote(self, ticker: str, force_refresh: bool = False) -> Dict[str, Any]:
         """
         獲取標的即時報價，包括 Bid、Ask、Last 與 Mid。
         """
@@ -159,9 +159,16 @@ class SlippageGuardService:
         if self.market_data_service is not None:
             if hasattr(self.market_data_service, "get_quote"):
                 try:
-                    q = await self.market_data_service.get_quote(clean_ticker)
+                    q = await self.market_data_service.get_quote(clean_ticker, force_refresh=force_refresh)
                     if q and (q.get("bid") or q.get("last") or q.get("price")):
                         return q
+                except TypeError:
+                    try:
+                        q = await self.market_data_service.get_quote(clean_ticker)
+                        if q and (q.get("bid") or q.get("last") or q.get("price")):
+                            return q
+                    except Exception as e:
+                        logger.debug(f"MarketDataService.get_quote failed for {clean_ticker}: {e}")
                 except Exception as e:
                     logger.debug(f"MarketDataService.get_quote failed for {clean_ticker}: {e}")
 

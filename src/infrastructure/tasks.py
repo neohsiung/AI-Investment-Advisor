@@ -885,12 +885,17 @@ def dispatch_market_open_warmup():
 
 
 @app.task(name="src.infrastructure.tasks.run_market_open_warmup", soft_time_limit=300, time_limit=360)
-def run_market_open_warmup(user_id: str = None, batch_number: Optional[int] = None):
+def run_market_open_warmup(user_id: str = None, batch_number: Optional[int] = None, force: bool = False):
     """
     Market-Open Quote Warmup Task:
     Pre-warms real-time bid-ask quotes and connection caches at 09:20 EST (15m before market open).
     開盤前標的報價預熱任務：在 09:20 EST 預載即將建倉標的之 Polygon/Finnhub 行情與價差快取。
+    遇休市/假日自動略過。
     """
+    if not is_market_open_today() and not force:
+        logger.info("run_market_open_warmup: Market is closed today (holiday/weekend). Skipping.")
+        return {"status": "skipped", "reason": "market_closed_today"}
+
     user_id = user_id or os.getenv("PRIMARY_USER_ID") or os.getenv("USER_ID")
     if not user_id:
         logger.error("run_market_open_warmup: user_id is required. Set PRIMARY_USER_ID env var or pass explicitly.")
@@ -923,7 +928,12 @@ def run_market_open_cash_deployment(user_id: str = None, batch_number: Optional[
     Executes disciplined batch cash deployment at 09:35 EST with real-time bid-ask spread protection.
     美股開盤階梯式分批建倉與防滑點守衛任務：在 09:35 EST 避開開盤前 5 分鐘極端價差後有序執行分批建倉。
     若 batch_number 為 None，自動自適應判定當前應執行之批次。
+    遇休市/假日自動略過。
     """
+    if not is_market_open_today() and not force:
+        logger.info("run_market_open_cash_deployment: Market is closed today (holiday/weekend). Skipping.")
+        return {"status": "skipped", "reason": "market_closed_today", "success": True}
+
     user_id = user_id or os.getenv("PRIMARY_USER_ID") or os.getenv("USER_ID")
     if not user_id:
         logger.error("run_market_open_cash_deployment: user_id is required. Set PRIMARY_USER_ID env var or pass explicitly.")

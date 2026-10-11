@@ -362,3 +362,81 @@ def test_search_service_lazy_initialization(market_data_service):
     assert market_data_service._search_service is svc
 
 
+def test_get_price_cache_ttl_market_open_and_closed(market_data_service):
+    with patch("src.utils.market_clock.MarketClock.is_market_open", return_value=True):
+        ttl_open = market_data_service._get_price_cache_ttl()
+        assert ttl_open == 60
+
+    with patch("src.utils.market_clock.MarketClock.is_market_open", return_value=False):
+        ttl_closed = market_data_service._get_price_cache_ttl()
+        assert ttl_closed == 300
+
+
+def test_get_quote_redis_cache_hit(market_data_service):
+    import asyncio
+    import json
+
+    async def _test():
+        cached_quote = {
+            "ticker": "NVDA",
+            "bid": 118.50,
+            "ask": 118.60,
+            "last": 118.55,
+            "mid": 118.55,
+            "spread": 0.10,
+            "spread_pct": 0.00084,
+            "provider": "polygon",
+        }
+        mock_redis = AsyncMock()
+        mock_redis.get.return_value = json.dumps(cached_quote)
+
+        with patch("src.infrastructure.cache.redis_client.get_redis", new_callable=AsyncMock, return_value=mock_redis):
+            res = await market_data_service.get_quote("NVDA")
+            assert res["ticker"] == "NVDA"
+            assert res["bid"] == 118.50
+            assert res["ask"] == 118.60
+            assert res["last"] == 118.55
+            mock_redis.get.assert_awaited_once_with("market_data:quote:NVDA")
+
+    asyncio.run(_test())
+
+
+def test_get_quote_force_refresh_bypasses_cache(market_data_service):
+    import asyncio
+    import httpx
+
+    async def _test():
+        mock_redis = AsyncMock()
+        mock_pipe = MagicMock()
+        mock_pipe.execute = AsyncMock()
+        mock_redis.pipeline = MagicMock(return_value=mock_pipe)
+        # Return something in cache, which should be ignored on force_refresh=True
+        mock_redis.get.return_value = '{"ticker": "NVDA", "last": 99.0}'
+
+        polygon_response_data = {
+            "ticker": {
+                "lastQuote": {"p": 120.0, "P": 120.10},
+                "lastTrade": {"p": 120.05},
+            }
+        }
+        mock_resp = MagicMock()
+        mock_resp.status_code = 200
+        mock_resp.json.return_value = polygon_response_data
+
+        with patch("src.infrastructure.cache.redis_client.get_redis", new_callable=AsyncMock, return_value=mock_redis), \
+             patch("httpx.AsyncClient.get", new_callable=AsyncMock, return_value=mock_resp):
+            res = await market_data_service.get_quote("NVDA", force_refresh=True)
+            # Cache lookup should be bypassed
+            mock_redis.get.assert_not_called()
+            assert res["ticker"] == "NVDA"
+            assert res["bid"] == 120.0
+            assert res["ask"] == 120.10
+            assert res["last"] == 120.05
+            assert res["provider"] == "polygon"
+            # Pipe should be executed to cache the new quote
+            mock_pipe.execute.assert_awaited_once()
+
+    asyncio.run(_test())
+
+
+
