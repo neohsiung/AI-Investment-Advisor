@@ -1071,22 +1071,27 @@ class TestMarketOpenWarmupTasks:
             assert res == "Dispatched 2 market_open_warmup tasks"
             assert mock_delay.call_count == 2
 
-    def test_run_market_open_warmup_missing_user_id(self):
+    def test_run_market_open_warmup_missing_user_id(self, market_open):
         res = tasks.run_market_open_warmup(user_id=None)
         assert res == "Error: user_id is required"
         assert _SOFT_FAIL_RE.match(res)
 
-    def test_run_market_open_warmup_success(self, run_async_identity):
+    def test_run_market_open_warmup_success(self, run_async_identity, market_open):
         with patch("src.services.batch_cash_deployment_service.BatchCashDeploymentService") as cls:
             cls.return_value.warmup_batch_quotes = MagicMock(return_value={"status": "warmed_up", "batch_number": 2})
             res = tasks.run_market_open_warmup(user_id=USER)
             assert res == {"status": "warmed_up", "batch_number": 2}
 
-    def test_run_market_open_warmup_failure(self, run_async_identity):
+    def test_run_market_open_warmup_failure(self, run_async_identity, market_open):
         with patch("src.services.batch_cash_deployment_service.BatchCashDeploymentService", side_effect=RuntimeError("Warmup crashed")):
             res = tasks.run_market_open_warmup(user_id=USER)
             assert res == "Error: Warmup crashed"
             assert _SOFT_FAIL_RE.match(res)
+
+    def test_run_market_open_warmup_skips_when_market_closed(self):
+        with patch.object(tasks, "is_market_open_today", return_value=False):
+            res = tasks.run_market_open_warmup(user_id=USER)
+            assert res == {"status": "skipped", "reason": "market_closed_today"}
 
 
 
