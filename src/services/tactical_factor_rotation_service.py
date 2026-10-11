@@ -372,19 +372,60 @@ class TacticalFactorRotationService:
         weights = self.get_phase_factor_weights(phase)
         liquidity_metrics = self.compute_liquidity_premium_metrics(candidate_data)
 
+        # Phase 32: Cross-Sectional Factor Orthogonalization & Interaction Engine
+        enable_ortho = self._get_setting("enable_factor_orthogonalization", True)
+        enable_interactions = self._get_setting("enable_factor_interaction_terms", True)
+        ortho_method = str(self._get_setting("factor_orthogonalization_method", "lowdin"))
+
+        # Build candidate data payload including liquidity_premium
+        augmented_candidate_data = {}
+        for ticker, data in candidate_data.items():
+            t_data = dict(data)
+            liq_metric = liquidity_metrics.get(ticker)
+            f_liq = liq_metric.liquidity_premium_score if liq_metric else 0.50
+            t_data["liquidity_premium_score"] = f_liq
+            augmented_candidate_data[ticker] = t_data
+
+        ortho_result = None
+        if enable_ortho and len(augmented_candidate_data) >= 3:
+            try:
+                from src.services.factor_orthogonalization_service import FactorOrthogonalizationService
+                ortho_svc = FactorOrthogonalizationService(
+                    user_id=self.user_id,
+                    settings_service=self.settings_service,
+                )
+                ortho_result = ortho_svc.orthogonalize_cross_section(
+                    candidate_data=augmented_candidate_data,
+                    method=ortho_method,
+                    enable_interactions=enable_interactions,
+                )
+            except Exception as e:
+                logger.debug(f"Factor orthogonalization failed, falling back to raw scores: {e}")
+
         scored_assets: List[TacticalAssetScore] = []
 
         for ticker, data in candidate_data.items():
-            # Extract standard factor scores [0.0 ~ 1.0]
-            f_mom = float(data.get("momentum_score") if data.get("momentum_score") is not None else data.get("momentum", 0.50))
-            f_qual = float(data.get("quality_score") if data.get("quality_score") is not None else data.get("quality", 0.50))
-            f_val = float(data.get("value_score") if data.get("value_score") is not None else data.get("value", 0.50))
-            f_low_vol = float(data.get("low_vol_score") if data.get("low_vol_score") is not None else data.get("low_vol", 0.50))
-            f_smart = float(data.get("smart_money_score") if data.get("smart_money_score") is not None else data.get("smart_money", 0.50))
             beta = float(data.get("beta", 1.0))
 
-            liq_metric = liquidity_metrics.get(ticker)
-            f_liq = liq_metric.liquidity_premium_score if liq_metric else 0.50
+            if ortho_result and ticker in ortho_result.orthogonal_scores:
+                o_scores = ortho_result.orthogonal_scores[ticker]
+                f_mom = o_scores.get("momentum", 0.50)
+                f_qual = o_scores.get("quality", 0.50)
+                f_val = o_scores.get("value", 0.50)
+                f_low_vol = o_scores.get("low_vol", 0.50)
+                f_smart = o_scores.get("smart_money", 0.50)
+                f_liq = o_scores.get("liquidity_premium", 0.50)
+                is_orthogonalized = True
+            else:
+                # Extract standard factor scores [0.0 ~ 1.0]
+                f_mom = float(data.get("momentum_score") if data.get("momentum_score") is not None else data.get("momentum", 0.50))
+                f_qual = float(data.get("quality_score") if data.get("quality_score") is not None else data.get("quality", 0.50))
+                f_val = float(data.get("value_score") if data.get("value_score") is not None else data.get("value", 0.50))
+                f_low_vol = float(data.get("low_vol_score") if data.get("low_vol_score") is not None else data.get("low_vol", 0.50))
+                f_smart = float(data.get("smart_money_score") if data.get("smart_money_score") is not None else data.get("smart_money", 0.50))
+                liq_metric = liquidity_metrics.get(ticker)
+                f_liq = liq_metric.liquidity_premium_score if liq_metric else 0.50
+                is_orthogonalized = False
 
             # Composite elasticity score
             composite = (
@@ -395,6 +436,22 @@ class TacticalFactorRotationService:
                 + weights.get("value", 0.0) * f_val
                 + weights.get("low_vol", 0.0) * f_low_vol
             )
+
+            # Phase 32: Apply synergistic interaction boosts
+            interaction_boost = 0.0
+            if ortho_result and ticker in ortho_result.interaction_scores:
+                inter = ortho_result.interaction_scores[ticker]
+                if phase in (TacticalMarketPhase.EARLY_REBOUND, TacticalMarketPhase.BULL_ACCELERATION):
+                    mom_smart_score = inter.get("mom_x_smart", 0.50)
+                    interaction_boost += 0.04 * (mom_smart_score - 0.50)
+                elif phase == TacticalMarketPhase.LATE_CYCLE_VALUE:
+                    qual_val_score = inter.get("qual_x_val", 0.50)
+                    interaction_boost += 0.04 * (qual_val_score - 0.50)
+                elif phase == TacticalMarketPhase.DEFENSIVE_CONSOLIDATION:
+                    lowvol_qual_score = inter.get("lowvol_x_qual", 0.50)
+                    interaction_boost += 0.04 * (lowvol_qual_score - 0.50)
+
+            composite = max(0.0, min(1.0, composite + interaction_boost))
 
             # In EARLY_REBOUND, beta elasticity acts as an accelerator (higher beta bounces faster)
             if phase == TacticalMarketPhase.EARLY_REBOUND and beta > 1.2:
@@ -408,11 +465,15 @@ class TacticalFactorRotationService:
                 "quality": f_qual,
                 "value": f_val,
                 "low_vol": f_low_vol,
+                "orthogonalized": is_orthogonalized,
             }
+            if ortho_result and ticker in ortho_result.interaction_scores:
+                breakdown["interactions"] = ortho_result.interaction_scores[ticker]
 
             reason = (
                 f"[{phase.value}] 綜合評分={composite:.3f} | 動能={f_mom:.2f}, "
                 f"流動性溢價={f_liq:.2f}, 聰明錢={f_smart:.2f}, Beta={beta:.2f}"
+                + (f" [正交化: {ortho_method}]" if is_orthogonalized else "")
             )
 
             scored_assets.append(TacticalAssetScore(

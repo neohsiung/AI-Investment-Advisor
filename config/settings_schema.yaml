@@ -976,6 +976,40 @@ settings:
     label_zh: 因子遺傳演化通過晉級門檻自動生效
     help_en: Automatically apply verified best genetic factor weights to production settings when passing WFO and Shannon diversity gates.
     help_zh: 當遺傳演化最優染色體通過 WFO 效率、Sharpe 提升、回撤防守與香農多樣性門檻時，自動套用為生產環境權重。
+  - key: enable_factor_orthogonalization
+    group: trading
+    type: bool
+    default: true
+    label_en: Enable cross-sectional factor orthogonalization
+    label_zh: 啟用截面因子動態正交化
+    help_en: Dynamically orthogonalize cross-sectional factor scores using Löwdin or Gram-Schmidt algorithms to eliminate multicollinearity.
+    help_zh: 啟用格拉姆-施密特或低丁對稱正交化，消除 6 大因子間的多重共線性與隱性曝險集中。
+  - key: factor_orthogonalization_method
+    group: trading
+    type: str
+    default: lowdin
+    label_en: Factor orthogonalization method
+    label_zh: 因子正交化演算法
+    help_en: Mathematical orthogonalization method to apply ('lowdin' for minimum deformation symmetric, 'gram_schmidt' for priority sequential).
+    help_zh: 因子截面正交化方法：lowdin（對稱正交化，保留最大經濟意涵）或 gram_schmidt（基底優先級正交化）。
+  - key: enable_factor_interaction_terms
+    group: trading
+    type: bool
+    default: true
+    label_en: Enable factor non-linear interaction terms
+    label_zh: 啟用因子非線性特徵交互作用
+    help_en: Evaluate and incorporate second-order cross-factor synergies (e.g. Momentum x Smart Money, Quality x Value).
+    help_zh: 啟用動能主力協同、品質價值協同等非線性交互項，捕捉多因子加成效應。
+  - key: factor_max_vif_threshold
+    group: trading
+    type: float
+    default: 5.0
+    min: 2.0
+    max: 20.0
+    label_en: Factor multicollinearity VIF alert threshold
+    label_zh: 因子多重共線性 VIF 警報門檻
+    help_en: Variance Inflation Factor threshold above which multicollinearity is flagged as severe.
+    help_zh: 方差膨脹因子 (VIF) 超過此門檻時判定存在顯著共線性並發出警報（預設 5.0）。
   - key: breakout_filter_fail_open
     group: trading
     type: bool
