@@ -160,6 +160,12 @@ app.conf.beat_schedule = {
         "task": "src.infrastructure.tasks.dispatch_weekly_rebalance",
         "schedule": crontab(hour=9, minute=35, day_of_week="1"),  # Mon 09:35 EST
     },
+    # Market-Open Quote Warmup — runs Monday-Friday 15 minutes before market open (09:20 EST)
+    # 開盤前標的報價預熱：每個交易日開盤前 15 分鐘（09:20 EST）預載建倉標的之行情、買賣價差與快取。
+    "market-open-quote-warmup": {
+        "task": "src.infrastructure.tasks.dispatch_market_open_warmup",
+        "schedule": crontab(hour=9, minute=20, day_of_week="1-5"),  # Mon-Fri 09:20 EST
+    },
     # Market-Open Cash Deployment & Anti-Slippage Guard — runs Monday-Friday post-market open (09:36 EST)
     # 美股開盤分批建倉與防滑點守衛：每個交易日開盤後（09:36 EST）避開開盤前 5 分鐘極端價差後，評估並執行閒置現金分批建倉與防滑點守衛。
     "market-open-cash-deployment": {

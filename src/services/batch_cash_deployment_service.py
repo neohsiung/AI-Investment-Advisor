@@ -18,7 +18,8 @@ Batch Cash Deployment Service
 from __future__ import annotations
 
 import asyncio
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
+import json
 from typing import Any, Dict, List, Optional
 import pytz
 
@@ -272,6 +273,98 @@ class BatchCashDeploymentService:
             "expected_cash_ratio": round(expected_cash_ratio, 2),
         }
 
+    async def warmup_batch_quotes(self, batch_number: Optional[int] = None) -> Dict[str, Any]:
+        """
+        開盤前 15 分鐘 (09:20 EST) 預熱即將建倉標的報價與快取。
+        1. 確定當前待執行批次（若為 None 則自適應推進）。
+        2. 若 batch_number == 0，表示全數完成或無待建倉標的，直接回傳。
+        3. 針對批次候選標的預先抓取即時報價 (Polygon/Finnhub/MarketDataService)，
+           預熱連線池、計算買賣價差與預先驗證報價品質。
+        4. 寫入 Redis 快取供開盤 09:35 EST 毫秒級讀取與守衛審核。
+        """
+        if batch_number is None or batch_number <= 0:
+            batch_number = await self.get_active_batch_number()
+
+        if batch_number == 0:
+            logger.info("BatchCashDeployment: All batches completed, skipping quote warmup.")
+            return {
+                "status": "all_batches_completed",
+                "batch_number": 0,
+                "candidates_count": 0,
+                "quotes": {},
+                "message": "分批建倉已全數完成或可支配資金已達 20% 防守底線，無需預熱報價。",
+            }
+
+        plan = await self.get_deployment_plan(batch_number=batch_number)
+        items = plan.get("items", [])
+        if not items:
+            return {
+                "status": "empty_batch",
+                "batch_number": batch_number,
+                "candidates_count": 0,
+                "quotes": {},
+                "message": f"第 {batch_number} 批次無候選標的。",
+            }
+
+        logger.info(
+            f"BatchCashDeployment: Warming up quotes for Batch {batch_number} "
+            f"({len(items)} candidates: {[item['ticker'] for item in items]})"
+        )
+
+        quotes_map: Dict[str, Any] = {}
+        for item in items:
+            ticker = item["ticker"]
+            try:
+                quote = await self.slippage_guard.get_ticker_quote(ticker)
+                spread_pct = quote.get("spread_pct")
+                bid = quote.get("bid")
+                ask = quote.get("ask")
+                last = quote.get("last")
+                has_price = (bid is not None and bid > 0) or (last is not None and last > 0)
+                quotes_map[ticker] = {
+                    "bid": bid,
+                    "ask": ask,
+                    "last": last,
+                    "mid": quote.get("mid"),
+                    "spread_pct": spread_pct,
+                    "source": quote.get("source") or quote.get("provider", "unknown"),
+                    "ready": bool(has_price),
+                }
+            except Exception as q_err:
+                logger.warning(f"Failed to warmup quote for {ticker}: {q_err}")
+                quotes_map[ticker] = {
+                    "ready": False,
+                    "error": str(q_err),
+                }
+
+        warmed_at = datetime.now(timezone.utc).isoformat()
+        try:
+            from src.infrastructure.cache.redis_client import get_redis
+            r = await get_redis(decode_responses=True)
+            warmup_payload = {
+                "batch_number": batch_number,
+                "warmed_at": warmed_at,
+                "quotes": quotes_map,
+                "can_execute": plan.get("can_execute", False),
+            }
+            await r.set(
+                f"batch_deployment:warmup_quotes:{self.user_id}",
+                json.dumps(warmup_payload),
+                ex=1800,  # 30 分鐘有效
+            )
+            logger.info(f"✓ Cached warmup quotes for Batch {batch_number} in Redis (TTL: 1800s)")
+        except Exception as r_err:
+            logger.debug(f"Could not cache warmup quotes in Redis: {r_err}")
+
+        return {
+            "status": "warmed_up",
+            "batch_number": batch_number,
+            "candidates_count": len(items),
+            "quotes": quotes_map,
+            "can_execute": plan.get("can_execute", False),
+            "warmed_at": warmed_at,
+        }
+
     async def execute_batch(
         self,
         batch_number: Optional[int] = None,
@@ -463,8 +556,10 @@ class BatchCashDeploymentService:
                 from src.infrastructure.cache.redis_client import get_redis
                 r = await get_redis(decode_responses=True)
                 next_batch = (batch_number + 1) if batch_number < 3 else 0
+                if post_status.get("deployable_cash", 0.0) < 10.0:
+                    next_batch = 0
                 await r.set(f"batch_deployment:current_batch:{self.user_id}", str(next_batch))
-                await r.set(f"batch_deployment:last_executed_at:{self.user_id}", datetime.utcnow().isoformat())
+                await r.set(f"batch_deployment:last_executed_at:{self.user_id}", datetime.now(timezone.utc).isoformat())
                 await r.set(f"batch_deployment:last_batch_executed:{self.user_id}", str(batch_number))
                 logger.info(f"Advanced batch state to {next_batch} after successful execution of Batch {batch_number}")
             except Exception as e:

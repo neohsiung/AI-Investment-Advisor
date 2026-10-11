@@ -261,6 +261,8 @@ DISPATCHERS = [
     ("dispatch_monthly_report", "generate_monthly_report"),
     ("dispatch_universe_lifecycle", "run_universe_lifecycle"),
     ("dispatch_weekly_rebalance", "run_weekly_rebalance"),
+    ("dispatch_market_open_warmup", "run_market_open_warmup"),
+    ("dispatch_market_open_cash_deployment", "run_market_open_cash_deployment"),
 ]
 
 
@@ -1059,6 +1061,33 @@ class TestAutonomousEvolutionTasks:
             res = tasks.run_autonomous_evolution(user_id=USER)
             assert res == "Error: Canary runner exploded"
             assert _SOFT_FAIL_RE.match(res)
+
+
+class TestMarketOpenWarmupTasks:
+    def test_dispatch_market_open_warmup(self):
+        with patch.object(tasks, "_resolve_target_users", return_value=["u1", "u2"]), \
+             patch.object(tasks.run_market_open_warmup, "delay") as mock_delay:
+            res = tasks.dispatch_market_open_warmup()
+            assert res == "Dispatched 2 market_open_warmup tasks"
+            assert mock_delay.call_count == 2
+
+    def test_run_market_open_warmup_missing_user_id(self):
+        res = tasks.run_market_open_warmup(user_id=None)
+        assert res == "Error: user_id is required"
+        assert _SOFT_FAIL_RE.match(res)
+
+    def test_run_market_open_warmup_success(self, run_async_identity):
+        with patch("src.services.batch_cash_deployment_service.BatchCashDeploymentService") as cls:
+            cls.return_value.warmup_batch_quotes = MagicMock(return_value={"status": "warmed_up", "batch_number": 2})
+            res = tasks.run_market_open_warmup(user_id=USER)
+            assert res == {"status": "warmed_up", "batch_number": 2}
+
+    def test_run_market_open_warmup_failure(self, run_async_identity):
+        with patch("src.services.batch_cash_deployment_service.BatchCashDeploymentService", side_effect=RuntimeError("Warmup crashed")):
+            res = tasks.run_market_open_warmup(user_id=USER)
+            assert res == "Error: Warmup crashed"
+            assert _SOFT_FAIL_RE.match(res)
+
 
 
 

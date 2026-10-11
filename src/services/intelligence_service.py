@@ -71,15 +71,15 @@ class IntelligenceService:
         """核心運算邏輯：真正執行 Tavily 搜尋與 LLM 生成 (耗時數十秒)"""
         tavily_key = self.settings.get_setting("source_tavily_api_key")
 
-        # Step 1: Tavily 搜尋
+        # Step 1: 整合現有持倉與排程分批建倉焦點標的
+        positions_summary, focus_tickers = await self._get_positions_summary_async()
+
+        # Step 2: Tavily 搜尋（針對真實組合與建倉焦點）
         news_items = []
         if tavily_key:
-            news_items = await self._tavily_search(tavily_key)
+            news_items = await self._tavily_search(tavily_key, focus_tickers=focus_tickers)
         else:
             logger.warning("Missing Tavily API Key, skipping search.")
-
-        # Step 2: 整合現有持倉資訊 (Mocked for now or fetched from Repo)
-        positions_summary = self._get_positions_summary()
 
         # Step 3: LLM 生成報告 (強制繁體中文) - 採用現代化 ResilientLLMPipeline
         try:
@@ -93,10 +93,16 @@ class IntelligenceService:
             res["self_evolution_summary"] = self._get_self_evolution_summary()
             return res
 
+    async def _tavily_search(self, api_key: str, focus_tickers: Optional[List[str]] = None) -> list:
+        """呼叫 Tavily 搜尋最新市場事件，動態聚焦核心持倉與排程建倉標的"""
+        queries = ["美股市場今日重要事件與走勢分析", "聯準會最新政策與美債殖利率動向"]
+        if focus_tickers:
+            tickers_str = " ".join(focus_tickers[:4])
+            queries.append(f"{tickers_str} 科技股最新動態財報與產業分析")
+            queries.append("美股半導體與 AI 算力供應鏈市場情緒")
+        else:
+            queries.extend(["科技股龍頭財報與產業動態分析", "美股半導體與市場情緒分析"])
 
-    async def _tavily_search(self, api_key: str) -> list:
-        """呼叫 Tavily 搜尋最新市場事件"""
-        queries = ["美股市場今日重要事件", "聯準會政策最新動態", "科技股龍頭財報分析", "Crypto Market Sentiment"]
         results = []
         async with httpx.AsyncClient(timeout=10) as client:
             # Parallel search for efficiency
@@ -112,9 +118,70 @@ class IntelligenceService:
         
         return results[:8]
 
-    def _get_positions_summary(self) -> str:
-        """從 DB 取得當前持倉摘要"""
+    async def _get_positions_summary_async(self) -> tuple[str, List[str]]:
+        """從券商真實持倉、DB 活躍持倉與分批建倉計畫動態生成組合摘要與聚焦標的"""
+        active_tickers: List[str] = []
+        # 1. 優先嘗試券商真實即時持倉
         try:
+            from src.services.broker_factory import BrokerFactory
+            broker = BrokerFactory.get_broker(self.user_id)
+            if broker:
+                positions = await broker.get_positions()
+                for p in positions:
+                    sym = getattr(p, "symbol", "")
+                    for suffix in [".US", ".RTH", ".EXT", ".L", ".UK"]:
+                        if sym.endswith(suffix):
+                            sym = sym[:-len(suffix)]
+                    if sym and sym not in active_tickers:
+                        active_tickers.append(sym)
+        except Exception as e:
+            logger.debug(f"Could not fetch broker positions for intelligence: {e}")
+
+        # 2. 若券商未回傳，備援查詢資料庫活躍持倉 (net_qty > 0)
+        if not active_tickers:
+            try:
+                from src.services.transaction_service import TransactionService
+                tx_service = TransactionService(user_id=self.user_id)
+                active_tickers = tx_service.get_user_tickers(self.user_id, only_active=True)
+            except Exception as e:
+                logger.debug(f"Could not fetch db active tickers for intelligence: {e}")
+
+        # 3. 獲取排程分批建倉候選標的
+        batch_tickers: List[str] = []
+        active_batch: int = 0
+        try:
+            from src.services.batch_cash_deployment_service import BatchCashDeploymentService
+            batch_service = BatchCashDeploymentService(user_id=self.user_id, settings_service=self.settings)
+            active_batch = await batch_service.get_active_batch_number()
+            if active_batch > 0:
+                plan = await batch_service.get_deployment_plan(batch_number=active_batch)
+                batch_tickers = [item["ticker"] for item in plan.get("items", []) if item.get("ticker")]
+        except Exception as e:
+            logger.debug(f"Could not fetch batch deployment tickers for intelligence: {e}")
+
+        focus_tickers = list(dict.fromkeys(active_tickers + batch_tickers))
+
+        lines = []
+        if active_tickers:
+            lines.append(f"【當前核心活躍持倉】{', '.join(active_tickers)}")
+        if batch_tickers:
+            lines.append(f"【即將排程分批建倉標的 (第 {active_batch} 批次)】{', '.join(batch_tickers)}")
+
+        if not lines:
+            return self._get_positions_summary(), focus_tickers
+
+        summary_text = "\n".join(lines) + "\n請針對上述核心活躍持倉與即將建倉標的，結合市場情緒、半導體/AI 科技產業鏈動態與宏觀利率走勢進行深入關聯分析。"
+        return summary_text, focus_tickers
+
+    def _get_positions_summary(self) -> str:
+        """從 DB 取得當前持倉摘要 (相容同步調用)"""
+        try:
+            from src.services.transaction_service import TransactionService
+            tx_service = TransactionService(user_id=self.user_id)
+            active_tickers = tx_service.get_user_tickers(self.user_id, only_active=True)
+            if active_tickers:
+                return f"當前關鍵活躍持倉標的包括：{', '.join(active_tickers[:15])}。請針對這些標的與目前市場情緒進行關聯分析。"
+
             from src.repositories.transaction_repository import AlchemyTransactionRepository
             repo = AlchemyTransactionRepository()
             transactions = repo.get_all_by_user(self.user_id)
