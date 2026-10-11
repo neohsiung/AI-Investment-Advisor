@@ -67,6 +67,7 @@ if [ -f "$BANDIT" ]; then
               src/services/shadow_promotion_orchestrator.py \
               src/services/slippage_guard_service.py \
               src/services/tactical_factor_rotation_service.py \
+              src/services/risk_parity_cvar_service.py \
               src/services/trading_protections_service.py \
               src/services/webhook_service.py -q -lll
     echo -e "${GREEN}✓ Bandit security baseline clean (0 high/medium issues)${NC}"
@@ -124,6 +125,7 @@ $PYTEST tests/unit/services/test_actionable_alert_service.py \
         tests/unit/services/test_universe_lifecycle_service.py \
         tests/unit/services/test_sector_drift_and_convex_kelly.py \
         tests/unit/services/test_slippage_guard_and_batch_deployment.py \
+        tests/unit/services/test_risk_parity_cvar_service.py \
         tests/unit/config/test_settings_schema.py -q
 
 echo -e "\n${GREEN}======================================================${NC}"

@@ -221,6 +221,7 @@ class ConversationRouter:
             "factor", "factors", "ic", "因子", "特徵漂移", "因子自癒", "因子監控",
             "evolve", "evolution", "ga", "演化", "基因演化", "因子演化", "遺傳演化",
             "ortho", "orthogonal", "vif", "正交", "正交化", "共線性", "因子正交",
+            "riskparity", "parity", "cvar", "mrc", "風險平價", "平價配置", "風險貢獻", "尾部風險",
         }
         return cmd in exact_keywords
 
@@ -491,6 +492,7 @@ class ConversationRouter:
                     f"• <b>開盤候選標的預熱</b>：{warmup_info}\n"
                     f"• <b>自適應限價單保護</b>：Mid + Spread × 0.25 封頂 (動態係數 0.8x~1.5x)\n"
                     f"• <b>事後滑點異常告警門檻</b>：> 0.20% 自動通報\n"
+                    f"• <b>動態風險平價與尾部 CVaR (P33)</b>：輸入 <code>/riskparity</code> 檢視全組合風險貢獻平衡與極端尾部配置\n"
                     f"━━━━━━━━━━━━━━━━━━\n"
                     f"<i>美股開盤 09:35 EST 建倉時將自動為每一筆訂單執行自適應限價、價差驗證、成交品質與財報避開審核。</i>"
                 )
@@ -750,6 +752,7 @@ class ConversationRouter:
                 lines.append("• 經由嚴格單體投影 (Simplex Normalization) 確保總權重嚴格收斂至 100.00%。")
                 lines.append("• <b>離線基因超參數演化 (P31)</b>：輸入 <code>/evolve</code> 檢視全歷史 Walk-Forward 遺傳演化終審進度與最佳矩陣。")
                 lines.append("• <b>因子特徵正交化 (P32)</b>：輸入 <code>/ortho</code> 檢視 6 大因子多重共線性 VIF 檢定與純淨 Alpha 正交化。")
+                lines.append("• <b>多資產動態風險平價 (P33)</b>：輸入 <code>/riskparity</code> 檢視等風險貢獻 (ERC) 與極端尾部 CVaR 資本配置。")
 
                 return "\n".join(lines)
             except Exception as e:
@@ -950,5 +953,81 @@ class ConversationRouter:
             except Exception as e:
                 logger.error(f"Failed to generate factor orthogonalization response: {e}")
                 return f"⚠️ 查詢因子正交化狀態時發生錯誤：{e}"
+
+        # 12. Dynamic Risk Parity & Extreme Tail CVaR Allocator (Phase 33)
+        if any(cmd.startswith(prefix) for prefix in (
+            "riskparity", "parity", "cvar", "mrc", "風險平價", "平價配置", "風險貢獻", "尾部風險"
+        )):
+            try:
+                from src.services.risk_parity_cvar_service import RiskParityCVaRService
+                rp_svc = RiskParityCVaRService(user_id=resolved_user_id)
+                cached_data = rp_svc.get_latest_cached_assessment()
+                if cached_data:
+                    data = cached_data
+                else:
+                    res_obj = await rp_svc.get_portfolio_risk_parity_assessment()
+                    data = res_obj.to_dict()
+
+                symbols = data.get("symbols", [])
+                metrics = data.get("asset_metrics", {})
+                cur_hhi = data.get("current_hhi_risk", 1.0)
+                final_hhi = data.get("cvar_hhi_risk", 1.0)
+                cur_enc = data.get("effective_risk_assets_current", 1.0)
+                final_enc = data.get("effective_risk_assets_cvar", 1.0)
+                hhi_reduction = data.get("risk_concentration_reduction_pct", 0.0)
+                cur_vol = data.get("portfolio_vol_current", 0.0)
+                final_vol = data.get("portfolio_vol_cvar_adjusted", 0.0)
+                ts = data.get("timestamp", "")[:19].replace("T", " ")
+
+                status_badge = "🟢 均衡 (BALANCED)" if final_hhi <= (1.5 / max(1, len(symbols))) else "🟡 輕度集中"
+
+                lines = [
+                    "⚖️ <b>【多資產動態風險平價與極端尾部 CVaR 配置報告 (Phase 33)】</b>",
+                    "━━━━━━━━━━━━━━━━━━",
+                    "• <b>核心演算法</b>：<code>循環坐標下降法 (CCD) + 尾部 CVaR 收縮</code>",
+                    f"• <b>評估標的數量</b>：<code>{len(symbols)}</code> 檔 ({ts} UTC)",
+                    f"• <b>風險集中度 (HHI)</b>：<code>{cur_hhi:.4f} ➔ {final_hhi:.4f}</code> (集中度降低 <code>{hhi_reduction:.1f}%</code>)",
+                    f"• <b>有效風險資產數 (ENC)</b>：<code>{cur_enc:.2f} 檔 ➔ {final_enc:.2f} 檔</code> ({status_badge})",
+                    f"• <b>組合預期年化波動</b>：<code>{cur_vol:.1%} ➔ {final_vol:.1%}</code>",
+                    "━━━━━━━━━━━━━━━━━━",
+                    "<b>【各標的風險貢獻 (TRC%) 與動態配置矩陣】</b>",
+                ]
+
+                tail_alerts = []
+                for sym in symbols:
+                    m = metrics.get(sym, {})
+                    vol = m.get("volatility", 0.0)
+                    cur_w = m.get("current_weight", 0.0)
+                    cur_trc = m.get("current_trc_pct", 0.0)
+                    parity_w = m.get("parity_weight", 0.0)
+                    final_w = m.get("final_target_weight", 0.0)
+                    parity_trc = m.get("parity_trc_pct", 0.0)
+                    var95 = m.get("var_95", 0.0)
+                    cvar95 = m.get("cvar_95", 0.0)
+                    is_tail = m.get("tail_risk_flag", False)
+
+                    badge = "⚠️ 肥尾" if is_tail else "🟢 平穩"
+                    if is_tail:
+                        tail_alerts.append((sym, cvar95))
+
+                    lines.append(
+                        f"• <b>{sym}</b> [{badge}]\n"
+                        f"  ├ 年化波動: <code>{vol:.1%}</code> | 現有權重: <code>{cur_w:.1%}</code> (風險佔比: <code>{cur_trc:.1%}</code>)\n"
+                        f"  ├ 純平價權重: <code>{parity_w:.1%}</code> ➔ <b>目標配置</b>: <code>{final_w:.1%}</code> (風險佔比: <code>{parity_trc:.1%}</code>)\n"
+                        f"  └ 95% 單日損失 (VaR/CVaR): <code>{var95:.2%} / {cvar95:.2%}</code>"
+                    )
+
+                if tail_alerts:
+                    lines.append("━━━━━━━━━━━━━━━━━━")
+                    lines.append("⚠️ <b>【極端左尾肥尾風險警示】</b>")
+                    for sym, cvar in tail_alerts:
+                        lines.append(f"• <b>{sym}</b>: 95% 單日期望損失達 <code>{cvar:.2%}</code>，已動態收縮其風險預算防止黑天鵝重創。")
+
+                lines.append("━━━━━━━━━━━━━━━━━━")
+                lines.append("💡 <i>動態風險平價保證各資產對總風險貢獻均等，極端尾部 CVaR 則在肥尾崩跌時主動降低資本曝險。</i>")
+                return "\n".join(lines)
+            except Exception as e:
+                logger.error(f"Failed to generate risk parity response: {e}")
+                return f"⚠️ 查詢動態風險平價狀態時發生錯誤：{e}"
 
         return None

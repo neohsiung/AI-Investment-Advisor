@@ -67,6 +67,16 @@ class BatchCashDeploymentService:
         from src.services.broker_factory import BrokerFactory
         return BrokerFactory.get_broker(self.user_id)
 
+    def _is_risk_parity_enabled(self) -> bool:
+        if self.settings_service:
+            try:
+                val = self.settings_service.get_setting("enable_dynamic_risk_parity")
+                if val is not None:
+                    return bool(val)
+            except Exception:
+                return False
+        return False
+
     async def get_portfolio_status(self) -> Dict[str, Any]:
         """獲取帳戶當前資產、閒置現金與防守現金餘額"""
         broker = await self._get_broker()
@@ -229,6 +239,31 @@ class BatchCashDeploymentService:
         all_candidates_summary = []
         total_batch_amount = 0.0
 
+        total_batch_target = sum(b.get("target_pct", 0.0) for b in selected_batch)
+        # 嘗試加載動態風險平價權重微調 (Phase 33)
+        risk_parity_weights = {}
+        risk_parity_result = None
+        if self._is_risk_parity_enabled():
+            try:
+                from src.services.risk_parity_cvar_service import RiskParityCVaRService
+                rp_svc = RiskParityCVaRService(user_id=self.user_id, settings_service=self.settings_service)
+                batch_symbols = [b["ticker"] for b in selected_batch]
+                combined_symbols = list(set(batch_symbols + [k for k, v in current_holdings.items() if v > 10.0]))
+                if len(combined_symbols) >= 2:
+                    rp_res = await rp_svc.get_portfolio_risk_parity_assessment(symbols=combined_symbols)
+                    if rp_res and rp_res.asset_metrics:
+                        risk_parity_result = rp_res
+                        batch_rp_weights = {
+                            s: rp_res.asset_metrics[s].final_target_weight
+                            for s in batch_symbols if s in rp_res.asset_metrics
+                        }
+                        sum_batch_rp = sum(batch_rp_weights.values())
+                        if sum_batch_rp > 0:
+                            for s, w in batch_rp_weights.items():
+                                risk_parity_weights[s] = total_batch_target * (w / sum_batch_rp)
+            except Exception as e:
+                logger.debug(f"Risk parity allocation refinement skipped: {e}")
+
         for item in selected_batch:
             ticker = item["ticker"]
             base_amt = item["base_amount"]
@@ -236,9 +271,13 @@ class BatchCashDeploymentService:
             conf = target_info.get("confidence_score")
             conf_val = float(conf) * 10.0 if (conf is not None and float(conf) <= 1.0) else (float(conf) if conf else item["confidence"])
 
+            effective_target_pct = item["target_pct"]
+            if risk_parity_weights and ticker in risk_parity_weights:
+                effective_target_pct = risk_parity_weights[ticker]
+
             # 依目前真實總資產動態適應金額（若有較大偏差）
             if total_equity > 0:
-                target_value = total_equity * item["target_pct"]
+                target_value = total_equity * effective_target_pct
                 current_val = current_holdings.get(ticker, 0.0)
                 need_amount = max(0.0, target_value - current_val)
 
@@ -277,6 +316,10 @@ class BatchCashDeploymentService:
             if is_blackout or is_black_hole:
                 trade_amount = 0.0
 
+            is_tail_alert = False
+            if risk_parity_result and ticker in risk_parity_result.asset_metrics:
+                is_tail_alert = bool(risk_parity_result.asset_metrics[ticker].tail_risk_flag)
+
             is_executable = (trade_amount >= 10.0 and not is_blackout and not is_black_hole)
             candidate_entry = {
                 "ticker": ticker,
@@ -284,7 +327,10 @@ class BatchCashDeploymentService:
                 "planned_amount_usd": round(raw_trade_amount, 2),
                 "allocated_amount": trade_amount if is_executable else 0.0,
                 "confidence_score": round(conf_val, 2),
-                "target_pct": item["target_pct"],
+                "target_pct": effective_target_pct,
+                "base_target_pct": item["target_pct"],
+                "risk_parity_target_pct": round(effective_target_pct, 4) if risk_parity_weights else None,
+                "cvar_tail_risk_flag": is_tail_alert,
                 "role": item["role"],
                 "rationale": f"第 {batch_number} 批次建倉配置: {item['role']} (${raw_trade_amount:.2f})",
                 "already_satisfied": (current_val >= target_value * 0.95) if total_equity > 0 else False,
@@ -352,6 +398,9 @@ class BatchCashDeploymentService:
             "expected_cash_ratio": round(expected_cash_ratio, 2),
             "calendar_summary": calendar_summary,
             "fill_quality_summary": fill_quality_summary,
+            "risk_parity_applied": bool(risk_parity_weights),
+            "risk_concentration_hhi": round(risk_parity_result.cvar_hhi_risk, 4) if risk_parity_result else None,
+            "effective_risk_assets": round(risk_parity_result.effective_risk_assets_cvar, 2) if risk_parity_result else None,
         }
 
     async def warmup_batch_quotes(
