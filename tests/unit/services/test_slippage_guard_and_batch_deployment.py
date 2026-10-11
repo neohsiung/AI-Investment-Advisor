@@ -604,3 +604,206 @@ class TestAutomatedTradingSlippageIntegration:
 
         asyncio.run(_test())
 
+
+class TestPhase26QuoteCacheHolidayGuardAndDynamicRouter:
+    """
+    Phase 26 Unit Tests:
+    - Holiday skip guard for market open warmup and cash deployment tasks.
+    - ConversationRouter dynamic /status, /batch, /guard, and /warmup commands.
+    """
+
+    def test_run_market_open_warmup_holiday_skip(self):
+        from src.infrastructure.tasks import run_market_open_warmup
+
+        with patch("src.infrastructure.tasks.is_market_open_today", return_value=False):
+            res = run_market_open_warmup(user_id="test_user", force=False)
+            assert res == {"status": "skipped", "reason": "market_closed_today"}
+
+    def test_run_market_open_cash_deployment_holiday_skip(self):
+        from src.infrastructure.tasks import run_market_open_cash_deployment
+
+        with patch("src.infrastructure.tasks.is_market_open_today", return_value=False):
+            res = run_market_open_cash_deployment(user_id="test_user", force=False)
+            assert res == {"status": "skipped", "reason": "market_closed_today", "success": True}
+
+    def test_conversation_router_dynamic_status_active_batch_2(self):
+        import asyncio
+        from src.services.conversation_router import ConversationRouter
+
+        async def _test():
+            router = ConversationRouter()
+            mock_summary = {
+                "total_equity": 1690.00,
+                "total_cash": 1070.00,
+                "invested_capital": 1711.00,
+                "cumulative_pnl": -21.00,
+                "cumulative_pnl_pct": -1.23,
+                "total_unrealized_pnl": 0.50,
+                "closed_realized_pnl": -21.50,
+                "defensive_reserve_usd": 338.00,
+                "deployable_cash": 732.00,
+                "positions_count": 5,
+            }
+            mock_plan = {
+                "batch_number": 2,
+                "total_batch_amount": 223.64,
+                "items": [
+                    {"ticker": "MSFT", "amount_usd": 67.64},
+                    {"ticker": "MU", "amount_usd": 79.00},
+                    {"ticker": "AMD", "amount_usd": 77.00},
+                ],
+            }
+
+            with patch("src.services.daily_portfolio_summary_service.DailyPortfolioSummaryService.generate_summary", new_callable=AsyncMock, return_value=mock_summary), \
+                 patch("src.services.batch_cash_deployment_service.BatchCashDeploymentService.get_active_batch_number", new_callable=AsyncMock, return_value=2), \
+                 patch("src.services.batch_cash_deployment_service.BatchCashDeploymentService.get_deployment_plan", new_callable=AsyncMock, return_value=mock_plan):
+
+                res = await router.route(
+                    adapter=MagicMock(),
+                    channel_user_id="u1",
+                    text="/status",
+                    resolved_user_id="test_user",
+                    channel_type="telegram",
+                )
+                assert "實盤真實驗資與對帳總結" in res
+                assert "第 2 批次建倉" in res
+                assert "MSFT, MU, AMD" in res
+                assert "$224" in res
+
+        asyncio.run(_test())
+
+    def test_conversation_router_batch_with_redis_warmup_quotes_and_badges(self):
+        import asyncio
+        import json
+        from src.services.conversation_router import ConversationRouter
+
+        async def _test():
+            router = ConversationRouter()
+            mock_plan = {
+                "batch_number": 2,
+                "status": {
+                    "total_equity": 1690.00,
+                    "available_cash": 1070.00,
+                    "deployable_cash": 732.00,
+                    "required_reserve_usd": 338.00,
+                },
+                "total_batch_amount": 223.64,
+                "items": [
+                    {"ticker": "MSFT", "amount_usd": 67.64, "role": "雲端 AI 企業端加碼"},
+                    {"ticker": "MU", "amount_usd": 79.00, "role": "HBM 記憶體"},
+                    {"ticker": "AMD", "amount_usd": 77.00, "role": "GPU 第二梯隊"},
+                ],
+                "expected_remaining_cash": 846.36,
+            }
+            warmup_cache = {
+                "batch_number": 2,
+                "warmed_at": "2026-10-11T14:20:00Z",
+                "quotes": {
+                    "MSFT": {"ready": True, "last": 420.50, "spread_pct": 0.0002},
+                    "MU": {"ready": True, "last": 102.30, "spread_pct": 0.0004},
+                    "AMD": {"ready": True, "last": 165.80, "spread_pct": 0.0003},
+                },
+            }
+            mock_redis = AsyncMock()
+            mock_redis.get.return_value = json.dumps(warmup_cache)
+
+            with patch("src.services.batch_cash_deployment_service.BatchCashDeploymentService.get_active_batch_number", new_callable=AsyncMock, return_value=2), \
+                 patch("src.services.batch_cash_deployment_service.BatchCashDeploymentService.get_deployment_plan", new_callable=AsyncMock, return_value=mock_plan), \
+                 patch("src.infrastructure.cache.redis_client.get_redis", new_callable=AsyncMock, return_value=mock_redis):
+
+                res = await router.route(
+                    adapter=MagicMock(),
+                    channel_user_id="u1",
+                    text="/batch",
+                    resolved_user_id="test_user",
+                    channel_type="telegram",
+                )
+                assert "分批建倉計畫與排程進度" in res
+                assert "第 2 批次" in res
+                assert "市價 $420.50" in res
+                assert "價差 0.02%" in res
+                assert "✅ 已完成 第 1 批次" in res
+                assert "⏳ 待執行 第 2 批次" in res
+                assert "📅 待命 第 3 批次" in res
+
+        asyncio.run(_test())
+
+    def test_conversation_router_guard_with_redis_warmup_status(self):
+        import asyncio
+        import json
+        from src.services.conversation_router import ConversationRouter
+
+        async def _test():
+            router = ConversationRouter()
+            warmup_cache = {
+                "batch_number": 2,
+                "warmed_at": "2026-10-11T14:20:00Z",
+                "quotes": {"MSFT": {}, "MU": {}, "AMD": {}},
+            }
+            mock_redis = AsyncMock()
+            mock_redis.get.return_value = json.dumps(warmup_cache)
+
+            with patch("src.services.settings_service.SettingsService.get_setting", side_effect=lambda k: True if k == "enable_slippage_guard" else 0.0015), \
+                 patch("src.utils.market_clock.MarketClock.is_market_open", return_value=False), \
+                 patch("src.services.slippage_guard_service.SlippageGuardService.is_opening_auction_window", return_value=False), \
+                 patch("src.infrastructure.cache.redis_client.get_redis", new_callable=AsyncMock, return_value=mock_redis):
+
+                res = await router.route(
+                    adapter=MagicMock(),
+                    channel_user_id="u1",
+                    text="/guard",
+                    resolved_user_id="test_user",
+                    channel_type="telegram",
+                )
+                assert "開盤防滑點守衛與價差熔斷狀態" in res
+                assert "開盤候選標的預熱" in res
+                assert "🟢 已預熱 (第 2 批次 3 檔標的已就緒" in res
+
+        asyncio.run(_test())
+
+    def test_conversation_router_warmup_command(self):
+        import asyncio
+        from src.services.conversation_router import ConversationRouter
+
+        async def _test():
+            router = ConversationRouter()
+            mock_warmup_result = {
+                "status": "warmed_up",
+                "batch_number": 2,
+                "quotes": {
+                    "MSFT": {"ready": True, "last": 420.50, "bid": 420.45, "ask": 420.55, "spread_pct": 0.00024, "source": "polygon_snapshot"},
+                    "MU": {"ready": True, "last": 102.30, "bid": 102.25, "ask": 102.35, "spread_pct": 0.00098, "source": "polygon_snapshot"},
+                    "AMD": {"ready": False, "error": "timeout"},
+                },
+            }
+
+            with patch("src.services.batch_cash_deployment_service.BatchCashDeploymentService.warmup_batch_quotes", new_callable=AsyncMock, return_value=mock_warmup_result):
+                res = await router.route(
+                    adapter=MagicMock(),
+                    channel_user_id="u1",
+                    text="/warmup",
+                    resolved_user_id="test_user",
+                    channel_type="telegram",
+                )
+                assert "開盤標的即時報價預熱與價差掃描" in res
+                assert "第 2 批次候選標的報價快照" in res
+                assert "MSFT" in res
+                assert "$420.50" in res
+                assert "420.45" in res
+                assert "報價已寫入分散式快取" in res
+                assert "AMD" in res
+                assert "報價未就緒" in res
+
+                # Test alias '預熱'
+                res_zh = await router.route(
+                    adapter=MagicMock(),
+                    channel_user_id="u1",
+                    text="預熱",
+                    resolved_user_id="test_user",
+                    channel_type="telegram",
+                )
+                assert "開盤標的即時報價預熱與價差掃描" in res_zh
+
+        asyncio.run(_test())
+
+
