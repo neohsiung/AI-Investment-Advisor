@@ -1339,6 +1339,25 @@ class AutomatedTradingService:
             
         logger.info(f"Executing {order.action.value} {order.symbol} via {broker.get_name()}")
 
+        # Phase 27: Fractional share precision & minimum size adaptor guard
+        if order.action == OrderAction.BUY:
+            buy_val = order.amount_usd if order.amount_usd is not None else order.quantity
+            if buy_val is not None:
+                buy_val = round(float(buy_val), 2)
+                order.quantity = buy_val
+                order.amount_usd = buy_val
+                if buy_val < 10.0:
+                    msg = f"Order amount ${buy_val:.2f} is below minimum required amount of $10.00 USD"
+                    logger.warning(f"AutomatedTrading blocked: {msg}")
+                    return {"status": "skipped", "reason": msg}
+        elif order.action == OrderAction.SELL:
+            if order.quantity is not None:
+                order.quantity = round(float(order.quantity), 4)
+                if order.quantity <= 0.0001:
+                    msg = f"Sell quantity {order.quantity} is below minimum precision threshold (0.0001 shares)"
+                    logger.warning(f"AutomatedTrading skipped: {msg}")
+                    return {"status": "skipped", "reason": msg}
+
         # Anti-Slippage & Bid-Ask Spread Circuit Breaker (防滑點與即時買賣價差熔斷守衛)
         slippage_guard = None
         try:

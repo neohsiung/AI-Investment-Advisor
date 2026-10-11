@@ -807,3 +807,351 @@ class TestPhase26QuoteCacheHolidayGuardAndDynamicRouter:
         asyncio.run(_test())
 
 
+class TestPhase27OrderLifecycleAndFractionalShareGuard:
+    """
+    Phase 27 Unit Tests:
+    - Fractional share precision & minimum size adaptor ($10.00 USD, 2 decimals)
+    - Skip already satisfied candidates (>95% of target)
+    - Dynamic scaling when total batch amount exceeds deployable cash
+    - Transient broker error retry (429/timeout)
+    - Post-execution position verification (verified_in_holdings)
+    - Robust batch state advancement (no premature advancement on partial execution)
+    - AutomatedTradingService buy/sell precision boundaries
+    """
+
+    def test_get_deployment_plan_skips_already_satisfied_candidate(self):
+        """Verify get_deployment_plan skips candidate if current holding >= 95% of target."""
+        async def _test():
+            settings = DummySettingsService()
+            broker = MagicMock()
+            account = MagicMock(total_equity=1692.50, available_cash=1404.09)
+            broker.get_account = AsyncMock(return_value=account)
+
+            # AAPL already held at $165.00 (target is 10% of 1692.50 = 169.25, > 97% held)
+            pos_aapl = MagicMock(symbol="AAPL", market_value=165.00)
+            broker.get_positions = AsyncMock(return_value=[pos_aapl])
+
+            svc = BatchCashDeploymentService(
+                user_id="test_user",
+                settings_service=settings,
+                broker=broker,
+            )
+
+            with patch("src.repositories.ticker_universe_repository.TickerUniverseRepository.get_target_allocations") as mock_targets:
+                mock_targets.return_value = [
+                    {"ticker": "AAPL", "target_weight": 0.10, "confidence_score": 0.686},
+                    {"ticker": "NVDA", "target_weight": 0.10, "confidence_score": 0.686},
+                    {"ticker": "TSM",  "target_weight": 0.10, "confidence_score": 0.669},
+                ]
+
+                plan = await svc.get_deployment_plan(batch_number=1)
+                active_tickers = [i["ticker"] for i in plan["items"]]
+                # AAPL is already satisfied, so it must not be in active items
+                assert "AAPL" not in active_tickers
+                assert "NVDA" in active_tickers
+                assert "TSM" in active_tickers
+
+                # AAPL should be recorded in all_candidates with already_satisfied=True
+                all_cands = {c["ticker"]: c for c in plan["all_candidates"]}
+                assert all_cands["AAPL"]["already_satisfied"] is True
+                assert all_cands["AAPL"]["amount_usd"] == 0.0
+
+        asyncio.run(_test())
+
+    def test_get_deployment_plan_scales_to_fit_deployable_cash(self):
+        """Verify get_deployment_plan scales items proportionally when total batch amount exceeds deployable cash."""
+        async def _test():
+            settings = DummySettingsService()
+            broker = MagicMock()
+            # Available cash 368.50, reserve 338.50 -> deployable cash = 30.00
+            account = MagicMock(total_equity=1692.50, available_cash=368.50)
+            broker.get_account = AsyncMock(return_value=account)
+            broker.get_positions = AsyncMock(return_value=[])
+
+            svc = BatchCashDeploymentService(
+                user_id="test_user",
+                settings_service=settings,
+                broker=broker,
+            )
+
+            with patch("src.repositories.ticker_universe_repository.TickerUniverseRepository.get_target_allocations") as mock_targets:
+                mock_targets.return_value = [
+                    {"ticker": "AAPL", "target_weight": 0.10, "confidence_score": 0.686},
+                    {"ticker": "NVDA", "target_weight": 0.10, "confidence_score": 0.686},
+                    {"ticker": "TSM",  "target_weight": 0.10, "confidence_score": 0.669},
+                ]
+
+                plan = await svc.get_deployment_plan(batch_number=1)
+                assert plan["total_batch_amount"] <= 30.00
+                assert plan["total_batch_amount"] >= 10.00
+                for item in plan["items"]:
+                    assert item["amount_usd"] >= 10.00
+
+        asyncio.run(_test())
+
+    def test_execute_batch_retains_batch_on_partial_execution(self):
+        """
+        Verify that if only a subset of candidates execute (e.g. MSFT executed, but MU and AMD
+        deferred by circuit breaker), the Redis batch state is NOT advanced to 3, but retained at 2.
+        """
+        async def _test():
+            settings = DummySettingsService()
+            svc = BatchCashDeploymentService(user_id="test_user", settings_service=settings)
+            mock_redis = AsyncMock()
+
+            # Post-trade cash remains healthy ($800 available, $338 reserve -> $462 deployable)
+            mock_post_status = {
+                "total_equity": 1690.0,
+                "available_cash": 800.0,
+                "required_reserve_usd": 338.0,
+                "deployable_cash": 462.0,
+                "cash_ratio_pct": 47.3,
+            }
+
+            plan = {
+                "can_execute": True,
+                "items": [
+                    {"ticker": "MSFT", "amount_usd": 67.63, "confidence_score": 6.5, "role": "Cloud", "rationale": "Buy MSFT"},
+                    {"ticker": "MU",   "amount_usd": 79.00, "confidence_score": 6.8, "role": "HBM",   "rationale": "Buy MU"},
+                    {"ticker": "AMD",  "amount_usd": 77.00, "confidence_score": 6.5, "role": "GPU",   "rationale": "Buy AMD"},
+                ],
+            }
+
+            # Slippage guard: MSFT passes; MU and AMD trigger spread circuit breaker
+            def eval_side_effect(ticker, **kwargs):
+                if ticker == "MSFT":
+                    return SlippageGuardDecision(passed=True, reason="價差合格", spread_pct=0.0003, adaptive_limit_price=420.0)
+                else:
+                    return SlippageGuardDecision(passed=False, reason="價差過寬 (0.28% > 0.15%)", circuit_breaker_triggered=True, spread_pct=0.0028)
+
+            mock_eval = AsyncMock(side_effect=eval_side_effect)
+            mock_trade = AsyncMock(return_value={"status": "executed", "order_id": "ord_msft_1"})
+
+            with patch.object(svc, "get_deployment_plan", new_callable=AsyncMock, return_value=plan), \
+                 patch.object(svc.slippage_guard, "evaluate_trade", mock_eval), \
+                 patch("src.services.automated_trading_service.AutomatedTradingService.evaluate_and_execute_trade", mock_trade), \
+                 patch.object(svc, "get_portfolio_status", new_callable=AsyncMock, return_value=mock_post_status), \
+                 patch.object(svc, "_send_deployment_notification", new_callable=AsyncMock), \
+                 patch("src.infrastructure.cache.redis_client.get_redis", new_callable=AsyncMock, return_value=mock_redis):
+
+                result = await svc.execute_batch(batch_number=2, force=False, enforce_market_hours=False)
+
+                # Exactly 1 trade executed, 2 deferred
+                executed = [t for t in result["executed_trades"] if t["status"] == "executed"]
+                deferred = [t for t in result["executed_trades"] if t["status"] == "circuit_breaker_deferred"]
+                assert len(executed) == 1
+                assert executed[0]["ticker"] == "MSFT"
+                assert len(deferred) == 2
+
+                # Verify current_batch was NOT advanced to 3 in Redis!
+                set_calls = {call[0][0]: call[0][1] for call in mock_redis.set.call_args_list}
+                assert set_calls.get("batch_deployment:current_batch:test_user") is None
+                # But execution timestamps were recorded
+                assert "batch_deployment:last_executed_at:test_user" in set_calls
+                assert set_calls.get("batch_deployment:last_batch_executed:test_user") == "2"
+
+        asyncio.run(_test())
+
+    def test_execute_batch_advances_when_all_candidates_succeed(self):
+        """Verify execute_batch advances to next batch when all candidates in current batch succeed."""
+        async def _test():
+            settings = DummySettingsService()
+            svc = BatchCashDeploymentService(user_id="test_user", settings_service=settings)
+            mock_redis = AsyncMock()
+
+            mock_post_status = {
+                "total_equity": 1690.0,
+                "available_cash": 800.0,
+                "required_reserve_usd": 338.0,
+                "deployable_cash": 462.0,
+                "cash_ratio_pct": 47.3,
+            }
+
+            plan = {
+                "can_execute": True,
+                "items": [
+                    {"ticker": "MSFT", "amount_usd": 67.63, "confidence_score": 6.5, "role": "Cloud", "rationale": "Buy MSFT"},
+                    {"ticker": "MU",   "amount_usd": 79.00, "confidence_score": 6.8, "role": "HBM",   "rationale": "Buy MU"},
+                ],
+            }
+
+            mock_eval = AsyncMock(return_value=SlippageGuardDecision(passed=True, reason="價差合格", spread_pct=0.0003, adaptive_limit_price=100.0))
+            mock_trade = AsyncMock(return_value={"status": "executed", "order_id": "ord_ok"})
+
+            with patch.object(svc, "get_deployment_plan", new_callable=AsyncMock, return_value=plan), \
+                 patch.object(svc.slippage_guard, "evaluate_trade", mock_eval), \
+                 patch("src.services.automated_trading_service.AutomatedTradingService.evaluate_and_execute_trade", mock_trade), \
+                 patch.object(svc, "get_portfolio_status", new_callable=AsyncMock, return_value=mock_post_status), \
+                 patch.object(svc, "_send_deployment_notification", new_callable=AsyncMock), \
+                 patch("src.infrastructure.cache.redis_client.get_redis", new_callable=AsyncMock, return_value=mock_redis):
+
+                result = await svc.execute_batch(batch_number=2, force=False, enforce_market_hours=False)
+                assert result["success"] is True
+                assert len(result["executed_trades"]) == 2
+
+                # All succeeded -> advances to Batch 3!
+                set_calls = {call[0][0]: call[0][1] for call in mock_redis.set.call_args_list}
+                assert set_calls.get("batch_deployment:current_batch:test_user") == "3"
+
+        asyncio.run(_test())
+
+    def test_execute_batch_transient_error_retry(self):
+        """Verify execute_batch retries on transient broker rate-limit (HTTP 429) and succeeds."""
+        async def _test():
+            settings = DummySettingsService()
+            svc = BatchCashDeploymentService(user_id="test_user", settings_service=settings)
+            mock_redis = AsyncMock()
+
+            plan = {
+                "can_execute": True,
+                "items": [
+                    {"ticker": "NVDA", "amount_usd": 114.00, "confidence_score": 7.0, "role": "GPU", "rationale": "Buy NVDA"},
+                ],
+            }
+
+            mock_eval = AsyncMock(return_value=SlippageGuardDecision(passed=True, reason="價差合格", spread_pct=0.0003, adaptive_limit_price=120.0))
+            # First attempt: 429 rate limit. Second attempt: success
+            mock_trade = AsyncMock(side_effect=[
+                {"status": "error", "error": "HTTP 429 Too Many Requests: Rate limit exceeded"},
+                {"status": "executed", "order_id": "ord_retry_success"},
+            ])
+
+            mock_post_status = {
+                "total_equity": 1690.0,
+                "available_cash": 800.0,
+                "required_reserve_usd": 338.0,
+                "deployable_cash": 462.0,
+                "cash_ratio_pct": 47.3,
+            }
+
+            with patch.object(svc, "get_deployment_plan", new_callable=AsyncMock, return_value=plan), \
+                 patch.object(svc.slippage_guard, "evaluate_trade", mock_eval), \
+                 patch("src.services.automated_trading_service.AutomatedTradingService.evaluate_and_execute_trade", mock_trade), \
+                 patch.object(svc, "get_portfolio_status", new_callable=AsyncMock, return_value=mock_post_status), \
+                 patch.object(svc, "_send_deployment_notification", new_callable=AsyncMock), \
+                 patch("src.infrastructure.cache.redis_client.get_redis", new_callable=AsyncMock, return_value=mock_redis), \
+                 patch("asyncio.sleep", new_callable=AsyncMock):
+
+                result = await svc.execute_batch(batch_number=1, force=False, enforce_market_hours=False)
+
+                assert mock_trade.call_count == 2
+                assert result["success"] is True
+                assert result["executed_trades"][0]["status"] == "executed"
+                assert result["executed_trades"][0]["order_id"] == "ord_retry_success"
+
+        asyncio.run(_test())
+
+    def test_execute_batch_post_trade_position_verification(self):
+        """Verify post-trade position verification marks verified_in_holdings based on broker positions."""
+        async def _test():
+            settings = DummySettingsService()
+            broker = MagicMock()
+            p_msft = MagicMock(symbol="MSFT", market_value=120.00)
+            broker.get_positions = AsyncMock(return_value=[p_msft])
+
+            svc = BatchCashDeploymentService(
+                user_id="test_user",
+                settings_service=settings,
+                broker=broker,
+            )
+            mock_redis = AsyncMock()
+
+            plan = {
+                "can_execute": True,
+                "items": [
+                    {"ticker": "MSFT", "amount_usd": 67.63, "confidence_score": 6.5, "role": "Cloud", "rationale": "Buy MSFT"},
+                ],
+            }
+
+            mock_eval = AsyncMock(return_value=SlippageGuardDecision(passed=True, reason="價差合格", spread_pct=0.0003, adaptive_limit_price=420.0))
+            mock_trade = AsyncMock(return_value={"status": "executed", "order_id": "ord_msft"})
+            mock_post_status = {
+                "total_equity": 1690.0,
+                "available_cash": 800.0,
+                "required_reserve_usd": 338.0,
+                "deployable_cash": 462.0,
+                "cash_ratio_pct": 47.3,
+            }
+
+            with patch.object(svc, "get_deployment_plan", new_callable=AsyncMock, return_value=plan), \
+                 patch.object(svc.slippage_guard, "evaluate_trade", mock_eval), \
+                 patch("src.services.automated_trading_service.AutomatedTradingService.evaluate_and_execute_trade", mock_trade), \
+                 patch.object(svc, "get_portfolio_status", new_callable=AsyncMock, return_value=mock_post_status), \
+                 patch.object(svc, "_send_deployment_notification", new_callable=AsyncMock), \
+                 patch("src.infrastructure.cache.redis_client.get_redis", new_callable=AsyncMock, return_value=mock_redis), \
+                 patch("asyncio.sleep", new_callable=AsyncMock):
+
+                result = await svc.execute_batch(batch_number=2, force=False, enforce_market_hours=False)
+
+                assert result["executed_trades"][0]["ticker"] == "MSFT"
+                assert result["executed_trades"][0]["verified_in_holdings"] is True
+
+        asyncio.run(_test())
+
+    def test_automated_trading_blocks_buy_sub_10(self):
+        """Verify AutomatedTradingService._execute_trade blocks BUY order below $10.00 USD."""
+        async def _test():
+            from src.services.automated_trading_service import AutomatedTradingService
+            settings = DummySettingsService({"auto_trade_threshold": 7.0})
+            trading_svc = AutomatedTradingService(settings_repo=settings, notification_service=MagicMock())
+
+            with patch("src.services.broker_factory.BrokerFactory.get_broker") as mock_bf:
+                mock_broker = MagicMock()
+                mock_broker.get_name.return_value = "MockBroker"
+                mock_bf.return_value = mock_broker
+
+                order = Order(
+                    symbol="NVDA",
+                    action=OrderAction.BUY,
+                    quantity=8.50,
+                    amount_usd=8.50,
+                )
+
+                result = await trading_svc._execute_trade(
+                    user_id="test_user",
+                    order=order,
+                    confidence_score=8.0,
+                    rationale="Test sub-10",
+                    approval_type="自動執行",
+                )
+
+                assert result["status"] == "skipped"
+                assert "below minimum required amount of $10.00 USD" in result["reason"]
+                mock_broker.execute_order.assert_not_called()
+
+        asyncio.run(_test())
+
+    def test_automated_trading_blocks_sell_sub_epsilon(self):
+        """Verify AutomatedTradingService._execute_trade blocks SELL order with quantity <= 0.0001."""
+        async def _test():
+            from src.services.automated_trading_service import AutomatedTradingService
+            settings = DummySettingsService()
+            trading_svc = AutomatedTradingService(settings_repo=settings, notification_service=MagicMock())
+
+            with patch("src.services.broker_factory.BrokerFactory.get_broker") as mock_bf:
+                mock_broker = MagicMock()
+                mock_broker.get_name.return_value = "MockBroker"
+                mock_bf.return_value = mock_broker
+
+                order = Order(
+                    symbol="TSM",
+                    action=OrderAction.SELL,
+                    quantity=0.00005,
+                )
+
+                result = await trading_svc._execute_trade(
+                    user_id="test_user",
+                    order=order,
+                    confidence_score=8.0,
+                    rationale="Test tiny sell",
+                    approval_type="自動執行",
+                )
+
+                assert result["status"] == "skipped"
+                assert "below minimum precision threshold" in result["reason"]
+                mock_broker.execute_order.assert_not_called()
+
+        asyncio.run(_test())
+
+
+
