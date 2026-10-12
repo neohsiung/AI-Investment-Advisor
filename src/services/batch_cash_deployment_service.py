@@ -46,6 +46,7 @@ class BatchCashDeploymentService:
         vpin_guard: Optional[Any] = None,
         jump_guard: Optional[Any] = None,
         rl_sor: Optional[Any] = None,
+        event_graph: Optional[Any] = None,
     ):
         self.user_id = resolve_user_id(user_id)
         from src.services.settings_service import SettingsService
@@ -108,6 +109,20 @@ class BatchCashDeploymentService:
                 )
             except Exception:
                 self.rl_sor = None
+
+        if event_graph is not None:
+            self.event_graph = event_graph
+        else:
+            try:
+                from src.services.macro_event_causal_graph_service import (
+                    MacroEventCausalGraphService,
+                )
+                self.event_graph = MacroEventCausalGraphService(
+                    user_id=self.user_id,
+                    settings_service=self.settings_service,
+                )
+            except Exception:
+                self.event_graph = None
 
     async def _get_broker(self) -> Any:
         if self.broker:
@@ -378,9 +393,36 @@ class BatchCashDeploymentService:
                 except Exception as je:
                     logger.debug(f"Candidate jump evaluation non-blocking error for {ticker}: {je}")
 
-            # 若標的落入財報/宏觀避開視窗、流動性黑洞或跳躍熔斷，不於此批次執行以防極端波動
+            # 宏觀突發事件因果圖譜受損度檢驗 (Phase 37)
+            is_event_shocked = False
+            event_damage_score = 0.0
+            event_damage_level = "NEUTRAL"
+            event_shock_reason = None
+            if self.event_graph and getattr(self.event_graph, "is_enabled", True):
+                try:
+                    dmg_eval = await self.event_graph.evaluate_ticker_damage(ticker)
+                    if dmg_eval:
+                        event_damage_score = dmg_eval.net_damage
+                        event_damage_level = (
+                            dmg_eval.damage_level.value
+                            if hasattr(dmg_eval.damage_level, "value")
+                            else str(dmg_eval.damage_level)
+                        )
+                        if (
+                            event_damage_score <= -0.35
+                            or dmg_eval.recommended_action in ("DEFER", "TRIM", "BLOCK")
+                            or (event_damage_level in ("SEVERE_DAMAGE", "MODERATE_DAMAGE") and event_damage_score <= -0.30)
+                        ):
+                            is_event_shocked = True
+                            event_shock_reason = (
+                                f"因果傳播鏈受損嚴重 (受損度: {event_damage_score:+.2f}, 衝擊級別: {event_damage_level})"
+                            )
+                except Exception as ee:
+                    logger.debug(f"Candidate event graph damage evaluation error for {ticker}: {ee}")
+
+            # 若標的落入財報/宏觀避開視窗、流動性黑洞、跳躍熔斷或因果圖譜重創，不於此批次執行以防極端波動
             raw_trade_amount = trade_amount
-            if is_blackout or is_black_hole or is_jump_acute:
+            if is_blackout or is_black_hole or is_jump_acute or is_event_shocked:
                 trade_amount = 0.0
 
             is_tail_alert = False
@@ -392,6 +434,7 @@ class BatchCashDeploymentService:
                 and not is_blackout
                 and not is_black_hole
                 and not is_jump_acute
+                and not is_event_shocked
             )
             candidate_entry = {
                 "ticker": ticker,
@@ -413,6 +456,10 @@ class BatchCashDeploymentService:
                 "jump_intensity": round(jump_intensity, 4),
                 "jump_regime": jump_regime,
                 "is_acute_jump": is_jump_acute,
+                "event_shock_active": is_event_shocked,
+                "event_damage_score": round(event_damage_score, 4),
+                "event_damage_level": event_damage_level,
+                "event_shock_reason": event_shock_reason,
             }
             all_candidates_summary.append(candidate_entry)
 
@@ -527,6 +574,25 @@ class BatchCashDeploymentService:
             except Exception as sor_err:
                 logger.debug(f"Non-blocking RL SOR summary error in deployment plan: {sor_err}")
 
+        # 產出候選標的宏觀突發事件因果圖譜衝擊摘要 (Phase 37)
+        event_graph_summary = {}
+        if self.event_graph and getattr(self.event_graph, "is_enabled", True):
+            try:
+                g_eval = await self.event_graph.evaluate_portfolio_shock(candidate_tickers)
+                event_graph_summary = g_eval.to_dict()
+                for it in allocated_items:
+                    t_sym = it.get("ticker", "")
+                    t_dmg = g_eval.ticker_damages.get(t_sym)
+                    if t_dmg:
+                        it["event_damage_score"] = t_dmg.net_damage
+                        it["event_damage_level"] = (
+                            t_dmg.damage_level.value
+                            if hasattr(t_dmg.damage_level, "value")
+                            else str(t_dmg.damage_level)
+                        )
+            except Exception as eg_err:
+                logger.debug(f"Non-blocking event graph summary error in deployment plan: {eg_err}")
+
         return {
             "batch_number": batch_number,
             "status": status,
@@ -544,6 +610,7 @@ class BatchCashDeploymentService:
             "vpin_summary": vpin_summary,
             "jump_summary": jump_summary,
             "rl_sor_summary": rl_sor_summary,
+            "event_graph_summary": event_graph_summary,
             "risk_parity_applied": bool(risk_parity_weights),
             "risk_concentration_hhi": round(risk_parity_result.cvar_hhi_risk, 4) if risk_parity_result else None,
             "effective_risk_assets": round(risk_parity_result.effective_risk_assets_cvar, 2) if risk_parity_result else None,
@@ -791,6 +858,34 @@ class BatchCashDeploymentService:
                 })
                 continue
 
+            # 宏觀突發事件因果圖譜重創檢驗 (Phase 37)
+            if self.event_graph and getattr(self.event_graph, "is_enabled", True) and not force:
+                try:
+                    eg_dmg = await self.event_graph.evaluate_ticker_damage(ticker)
+                    if eg_dmg and (
+                        eg_dmg.net_damage <= -0.35
+                        or eg_dmg.recommended_action in ("DEFER", "TRIM", "BLOCK")
+                        or (hasattr(eg_dmg, "damage_level") and getattr(eg_dmg.damage_level, "value", str(eg_dmg.damage_level)) == "SEVERE_DAMAGE")
+                    ):
+                        d_lvl = eg_dmg.damage_level.value if hasattr(eg_dmg.damage_level, "value") else str(eg_dmg.damage_level)
+                        reason = (
+                            f"宏觀突發事件因果圖譜熔斷觸發: {ticker} 淨受損度 {eg_dmg.net_damage:+.2f} "
+                            f"({d_lvl})，受突發傳導衝擊波波及，暫緩建倉避免接飛刀"
+                        )
+                        logger.warning(reason)
+                        executed_trades.append({
+                            "ticker": ticker,
+                            "amount_usd": amount_usd,
+                            "status": "event_graph_deferred",
+                            "reason": reason,
+                            "event_damage_score": eg_dmg.net_damage,
+                            "event_damage_level": d_lvl,
+                            "causal_chains": [c.to_dict() for c in getattr(eg_dmg, "causal_chains", [])[:2]],
+                        })
+                        continue
+                except Exception as eg_trade_err:
+                    logger.debug(f"Non-blocking event graph trade check error: {eg_trade_err}")
+
             # 防滑點與買賣價差熔斷守衛檢驗
             slippage_eval = await self.slippage_guard.evaluate_trade(
                 ticker=ticker,
@@ -939,6 +1034,15 @@ class BatchCashDeploymentService:
                     "amount_usd": planned_amt,
                     "status": "blackout_deferred",
                     "reason": cand.get("blackout_reason", "落入財報/宏觀保護窗口"),
+                })
+            elif cand.get("event_shock_active"):
+                executed_trades.append({
+                    "ticker": c_ticker,
+                    "amount_usd": planned_amt,
+                    "status": "event_graph_deferred",
+                    "reason": cand.get("event_shock_reason") or f"標的 {c_ticker} 遭受宏觀突發事件因果傳導重創，暫緩建倉",
+                    "event_damage_score": cand.get("event_damage_score"),
+                    "event_damage_level": cand.get("event_damage_level"),
                 })
 
         # 交易後持倉撮合驗證 (Post-trade Position Verification)

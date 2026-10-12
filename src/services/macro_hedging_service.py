@@ -65,6 +65,8 @@ class MacroHedgeEvaluation:
     target_cash_ratio: float
     required_cash_raise: float
     recommendations: List[HedgeRecommendation] = field(default_factory=list)
+    event_graph_shock: Optional[float] = None
+    severely_damaged_tickers: List[str] = field(default_factory=list)
     summary: str = ""
 
     def to_dict(self) -> Dict[str, Any]:
@@ -79,6 +81,8 @@ class MacroHedgeEvaluation:
             "current_cash_ratio": round(self.current_cash_ratio, 4),
             "target_cash_ratio": round(self.target_cash_ratio, 4),
             "required_cash_raise": round(self.required_cash_raise, 2),
+            "event_graph_shock": round(self.event_graph_shock, 3) if self.event_graph_shock is not None else None,
+            "severely_damaged_tickers": self.severely_damaged_tickers,
             "recommendations": [
                 {
                     "action": r.action.value,
@@ -109,11 +113,24 @@ class MacroHedgingService:
         market_service: Optional[Any] = None,
         event_impact_service: Optional[Any] = None,
         winner_service: Optional[Any] = None,
+        event_graph_service: Optional[Any] = None,
     ):
         self.settings_service = settings_service
         self.market_service = market_service
         self.event_impact_service = event_impact_service
         self.winner_service = winner_service
+        if event_graph_service is not None:
+            self.event_graph_service = event_graph_service
+        else:
+            try:
+                from src.services.macro_event_causal_graph_service import (
+                    MacroEventCausalGraphService,
+                )
+                self.event_graph_service = MacroEventCausalGraphService(
+                    settings_service=self.settings_service
+                )
+            except Exception:
+                self.event_graph_service = None
 
     def _get_setting(self, key: str, default: Any, user_id: Optional[str] = None) -> Any:
         if self.settings_service:
@@ -132,17 +149,24 @@ class MacroHedgingService:
         macro_stress_bias: float = 0.0,
         yield_spread: Optional[float] = None,
         vix_threshold: float = 30.0,
+        event_graph_shock: float = 0.0,
     ) -> HedgingSeverity:
         """
         Classify market stress severity based on multi-dimensional volatility & macro metrics.
         """
-        if vix >= 40.0 or vix_z_score >= 3.0 or macro_stress_bias <= -0.6:
+        if (
+            vix >= 40.0
+            or vix_z_score >= 3.0
+            or macro_stress_bias <= -0.6
+            or event_graph_shock >= 0.70
+        ):
             return HedgingSeverity.CRITICAL
 
         if (
             vix >= vix_threshold
             or vix_z_score >= 2.5
             or macro_stress_bias <= -0.3
+            or event_graph_shock >= 0.40
             or (yield_spread is not None and yield_spread < -0.5)
         ):
             return HedgingSeverity.HIGH
@@ -151,6 +175,7 @@ class MacroHedgingService:
             vix >= 24.0
             or vix_z_score >= 1.8
             or macro_stress_bias <= -0.15
+            or event_graph_shock >= 0.20
             or (yield_spread is not None and yield_spread < 0.0)
         ):
             return HedgingSeverity.ELEVATED
@@ -228,10 +253,11 @@ class MacroHedgingService:
         required_cash_raise: float,
         total_nlv: float,
         user_id: Optional[str] = None,
+        damages: Optional[Dict[str, Any]] = None,
     ) -> List[HedgeRecommendation]:
         """
-        Identify high-beta or weak positions to trim to raise required defensive cash.
-        Preserves certified long-term winners where possible.
+        Identify high-beta, weak, or severely shock-damaged positions to trim to raise required defensive cash.
+        Preserves certified long-term winners where possible unless under extreme direct shock.
         """
         if required_cash_raise <= 0 or not positions or total_nlv <= 0:
             return []
@@ -246,8 +272,6 @@ class MacroHedgingService:
                 logger.debug(f"Error querying winner_service: {e}")
 
         # Rank positions for trimming:
-        # Score higher = better candidate to trim
-        # Factors: High beta (>1.2), low unrealized return, non-winner
         scored_positions = []
         for p in positions:
             symbol = p.get("symbol") or p.get("ticker")
@@ -261,10 +285,16 @@ class MacroHedgingService:
             pnl_pct = float(p.get("unrealized_pnl_pct", 0.0) or 0.0)
             is_protected = symbol in protected_symbols
 
+            # 檢定事件因果圖譜傳播衝擊 (Causal Shock Damage)
+            dmg_obj = damages.get(symbol) if damages else None
+            net_dmg = dmg_obj.net_damage if dmg_obj else 0.0
+            causal_penalty = abs(min(0.0, net_dmg)) * 8.0
+
             # Trimming priority score:
-            # High beta increases score, negative return increases score, protected drastically lowers score
-            trim_score = (beta * 2.0) - (pnl_pct * 1.5)
-            if is_protected:
+            # High beta increases score, negative return increases score, protected lowers score,
+            # severe causal damage significantly elevates trimming priority
+            trim_score = (beta * 2.0) - (pnl_pct * 1.5) + causal_penalty
+            if is_protected and net_dmg > -0.40:
                 trim_score -= 10.0
 
             scored_positions.append({
@@ -275,6 +305,7 @@ class MacroHedgingService:
                 "pnl_pct": pnl_pct,
                 "is_protected": is_protected,
                 "trim_score": trim_score,
+                "dmg_obj": dmg_obj,
             })
 
         # Sort descending by trim score (highest priority to trim first)
@@ -296,8 +327,13 @@ class MacroHedgingService:
             trim_weight = trim_amount / total_nlv
             remaining_cash_needed -= trim_amount
 
+            path_desc = ""
+            dmg = sp.get("dmg_obj")
+            if dmg and dmg.net_damage <= -0.15:
+                path_desc = f" [因果受損: {dmg.net_damage:+.1%}, 傳導: {'->'.join(dmg.direct_exposure_path)}]"
+
             reason = (
-                f"宏觀波動率避險防守減碼：{sp['symbol']} (Beta={sp['beta']:.2f}, 損益={sp['pnl_pct']*100:.1f}%)，"
+                f"宏觀波動率避險防守減碼：{sp['symbol']} (Beta={sp['beta']:.2f}, 損益={sp['pnl_pct']*100:.1f}%{path_desc})，"
                 f"建議減碼 ${trim_amount:.0f} ({trim_weight*100:.1f}%) 以增厚防禦現金儲備"
             )
             recommendations.append(HedgeRecommendation(
@@ -347,12 +383,26 @@ class MacroHedgingService:
                 summary="宏觀波動率避險已由使用者設定停用 (enable_macro_volatility_hedging=false)",
             )
 
+        # 0. 查詢宏觀事件因果圖譜網絡 (Phase 37 Macro Event Causal Graph)
+        event_shock_val = 0.0
+        graph_damages = {}
+        severe_tickers = []
+        if self.event_graph_service and getattr(self.event_graph_service, "is_enabled", True):
+            try:
+                snap = self.event_graph_service.get_snapshot()
+                event_shock_val = snap.systemic_shock_score
+                graph_damages = snap.damages
+                severe_tickers = snap.severely_damaged_tickers
+            except Exception as ge:
+                logger.debug(f"Event graph query error in MacroHedgingService: {ge}")
+
         severity = self.classify_severity(
             vix=vix,
             vix_z_score=vix_z_score,
             macro_stress_bias=macro_stress_bias,
             yield_spread=yield_spread,
             vix_threshold=vix_threshold,
+            event_graph_shock=event_shock_val,
         )
 
         is_hedging_active = severity in (HedgingSeverity.HIGH, HedgingSeverity.CRITICAL)
@@ -387,13 +437,14 @@ class MacroHedgingService:
                     reason=f"宏觀波動率已平復 (VIX={vix:.1f}, Z={vix_z_score:.1f}σ)，建議平倉反向避險標的 {hedge_instrument} 回歸常態成長陣型",
                 ))
 
-        # 2. Defensive cash trim recommendations
+        # 2. Defensive cash trim recommendations (整合因果圖譜受損度)
         if is_hedging_active and required_cash_raise > 0:
             trim_recs = self.identify_trim_candidates(
                 positions=positions,
                 required_cash_raise=required_cash_raise,
                 total_nlv=total_nlv,
                 user_id=user_id,
+                damages=graph_damages,
             )
             recommendations.extend(trim_recs)
 
@@ -418,6 +469,10 @@ class MacroHedgingService:
                 f"⚠️ 宏觀波動率警戒啟動 [{severity.value}] (VIX={vix:.1f}, Z={vix_z_score:.1f}σ, 壓力={macro_stress_bias:.2f})。"
                 f"目標防守現金比例調升至 {target_cash_ratio*100:.1f}% (當前 {cash_ratio*100:.1f}%)。"
             )
+            if event_shock_val >= 0.30:
+                summary_parts.append(
+                    f"🚨 突發宏觀事件因果圖譜衝擊度 {event_shock_val:.2f} (重度波及標的: {', '.join(severe_tickers) if severe_tickers else '無'})。"
+                )
             if required_cash_raise > 0:
                 summary_parts.append(f"需籌措防守現金 ${required_cash_raise:.0f}。")
             if enable_inverse_etf:
@@ -437,6 +492,8 @@ class MacroHedgingService:
             target_cash_ratio=target_cash_ratio,
             required_cash_raise=required_cash_raise,
             recommendations=recommendations,
+            event_graph_shock=event_shock_val,
+            severely_damaged_tickers=severe_tickers,
             summary=" ".join(summary_parts),
         )
 
