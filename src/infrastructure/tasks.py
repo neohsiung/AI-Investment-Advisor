@@ -801,6 +801,11 @@ def run_universe_lifecycle(user_id: str = None, candidate_pool: list = None, for
         result = _run_async_safe(svc.run_lifecycle_cycle(candidate_pool=candidate_pool, force=force))
         msg = result.get("message") if isinstance(result, dict) else str(result)
         logger.info(f"run_universe_lifecycle completed for {user_id}: {msg}")
+        try:
+            if isinstance(result, dict) and result.get("success"):
+                _run_async_safe(svc.dispatch_lifecycle_notification(result))
+        except Exception as ne:
+            logger.warning(f"Failed to dispatch universe lifecycle notification for {user_id}: {ne}")
         return result
     except Exception as e:
         logger.error(f"run_universe_lifecycle failed for {user_id}: {e}", exc_info=True)

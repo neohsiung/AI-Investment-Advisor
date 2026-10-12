@@ -48,6 +48,7 @@ _SETTING_DEFAULTS = {
     "protection_sell_churn_enabled": SELL_CHURN_ENABLED,
     "protection_sell_churn_lookback_days": SELL_CHURN_LOOKBACK_DAYS,
     "protection_sell_churn_max_round_trips": SELL_CHURN_MAX_ROUND_TRIPS,
+    "protection_lockout_reset_at": None,
 }
 
 # `decision_outcomes.signal` carries a FIVE-value scale (structured.Rating:
@@ -124,7 +125,9 @@ class TradingProtectionsService:
                 if key not in stored or stored[key] in (None, ""):
                     continue
                 raw = stored[key]
-                if isinstance(default, bool):
+                if default is None:
+                    cfg[key] = str(raw).strip()
+                elif isinstance(default, bool):
                     cfg[key] = str(raw).strip().lower() in ("true", "1", "yes")
                 elif isinstance(default, int):
                     cfg[key] = int(float(raw))
@@ -265,21 +268,39 @@ class TradingProtectionsService:
         lookback_n = int(cfg["protection_drawdown_lookback_n"])
         threshold = float(cfg["protection_max_drawdown_alpha_pct"])
 
-        # Scoped to BUY-side signals: pooling BUY and SELL outcomes into one
-        # alpha average measured the wrong thing entirely.
-        # 限定買方 signal：把買賣結果混在一起算 alpha 是衡量錯對象。
-        stmt = text("""
-            SELECT alpha_pct FROM decision_outcomes
-            WHERE user_id = :user_id AND resolved_at IS NOT NULL
-              AND alpha_pct IS NOT NULL
-              AND UPPER(signal) IN :signals
-            ORDER BY resolved_at DESC LIMIT :n
-        """).bindparams(bindparam("signals", expanding=True))
+        reset_at_raw = cfg.get("protection_lockout_reset_at")
+        reset_at_dt = None
+        if reset_at_raw:
+            try:
+                from datetime import datetime, timezone
+                reset_at_dt = datetime.fromisoformat(str(reset_at_raw).strip())
+                if reset_at_dt.tzinfo is None:
+                    reset_at_dt = reset_at_dt.replace(tzinfo=timezone.utc)
+            except Exception:
+                reset_at_dt = None
+
+        if reset_at_dt:
+            stmt = text("""
+                SELECT alpha_pct FROM decision_outcomes
+                WHERE user_id = :user_id AND resolved_at IS NOT NULL
+                  AND alpha_pct IS NOT NULL
+                  AND UPPER(signal) IN :signals
+                  AND resolved_at > :reset_at
+                ORDER BY resolved_at DESC LIMIT :n
+            """).bindparams(bindparam("signals", expanding=True))
+            params = {"user_id": self.user_id, "n": lookback_n, "signals": list(BUY_SIDE_SIGNALS), "reset_at": reset_at_dt}
+        else:
+            stmt = text("""
+                SELECT alpha_pct FROM decision_outcomes
+                WHERE user_id = :user_id AND resolved_at IS NOT NULL
+                  AND alpha_pct IS NOT NULL
+                  AND UPPER(signal) IN :signals
+                ORDER BY resolved_at DESC LIMIT :n
+            """).bindparams(bindparam("signals", expanding=True))
+            params = {"user_id": self.user_id, "n": lookback_n, "signals": list(BUY_SIDE_SIGNALS)}
 
         with self.engine.connect() as conn:
-            rows = conn.execute(stmt, {
-                "user_id": self.user_id, "n": lookback_n, "signals": list(BUY_SIDE_SIGNALS),
-            }).fetchall()
+            rows = conn.execute(stmt, params).fetchall()
         if len(rows) < 3:
             return None  # not enough resolved history to judge
         avg_alpha = sum(float(r[0]) for r in rows) / len(rows)
@@ -327,18 +348,39 @@ class TradingProtectionsService:
         cfg = self._load_config()
         lockout_n = int(cfg["protection_consecutive_loss_lockout_n"])
 
-        stmt = text("""
-            SELECT alpha_pct FROM decision_outcomes
-            WHERE user_id = :user_id AND resolved_at IS NOT NULL
-              AND alpha_pct IS NOT NULL
-              AND UPPER(signal) IN :signals
-            ORDER BY resolved_at DESC LIMIT :n
-        """).bindparams(bindparam("signals", expanding=True))
+        reset_at_raw = cfg.get("protection_lockout_reset_at")
+        reset_at_dt = None
+        if reset_at_raw:
+            try:
+                from datetime import datetime, timezone
+                reset_at_dt = datetime.fromisoformat(str(reset_at_raw).strip())
+                if reset_at_dt.tzinfo is None:
+                    reset_at_dt = reset_at_dt.replace(tzinfo=timezone.utc)
+            except Exception:
+                reset_at_dt = None
+
+        if reset_at_dt:
+            stmt = text("""
+                SELECT alpha_pct FROM decision_outcomes
+                WHERE user_id = :user_id AND resolved_at IS NOT NULL
+                  AND alpha_pct IS NOT NULL
+                  AND UPPER(signal) IN :signals
+                  AND resolved_at > :reset_at
+                ORDER BY resolved_at DESC LIMIT :n
+            """).bindparams(bindparam("signals", expanding=True))
+            params = {"user_id": self.user_id, "n": lockout_n, "signals": list(BUY_SIDE_SIGNALS), "reset_at": reset_at_dt}
+        else:
+            stmt = text("""
+                SELECT alpha_pct FROM decision_outcomes
+                WHERE user_id = :user_id AND resolved_at IS NOT NULL
+                  AND alpha_pct IS NOT NULL
+                  AND UPPER(signal) IN :signals
+                ORDER BY resolved_at DESC LIMIT :n
+            """).bindparams(bindparam("signals", expanding=True))
+            params = {"user_id": self.user_id, "n": lockout_n, "signals": list(BUY_SIDE_SIGNALS)}
 
         with self.engine.connect() as conn:
-            rows = conn.execute(stmt, {
-                "user_id": self.user_id, "n": lockout_n, "signals": list(BUY_SIDE_SIGNALS),
-            }).fetchall()
+            rows = conn.execute(stmt, params).fetchall()
         if len(rows) < lockout_n:
             return None
         if all(float(r[0]) < 0 for r in rows):
@@ -347,6 +389,25 @@ class TradingProtectionsService:
                 "decisions all lost alpha. New BUY orders paused system-wide pending review."
             )
         return None
+
+    def reset_lockout(self) -> str:
+        """
+        Record current timestamp as the lockout reset watermark.
+        All decisions resolved before this timestamp will be treated as archived,
+        instantly unlocking new BUY orders and clearing false-positive re-triggers.
+        """
+        from datetime import datetime, timezone
+        from src.services.settings_service import SettingsService
+        now_iso = datetime.now(timezone.utc).isoformat()
+        ss = SettingsService(user_id=self.user_id)
+        ss.save_setting("protection_lockout_reset_at", now_iso)
+        ss.save_setting("ai_trading_enabled", "true")
+        self._cfg = None  # invalidate cached config
+        logger.info(
+            "TradingProtectionsService: Lockout reset watermark recorded at %s for %s",
+            now_iso, self.user_id,
+        )
+        return now_iso
 
     def _dispatch_protection_alert_safely(self, reason: str, ticker: str) -> None:
         """Fire-and-forget actionable alert dispatch on protection breach."""

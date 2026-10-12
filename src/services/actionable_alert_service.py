@@ -422,12 +422,15 @@ class ActionableAlertHubService:
                 return {"ok": False, "action": action, "ticker": ticker, "message": f"❌ 平倉失敗: {str(e)}"}
 
         elif action == "reset_protection":
-            # Re-enable trading and reset any soft halts
-            ss.save_setting("ai_trading_enabled", "true")
+            # Re-enable trading and reset any soft halts with lockout watermark
+            from src.services.trading_protections_service import TradingProtectionsService
+            prot = TradingProtectionsService(user_id=self.user_id)
+            reset_ts = prot.reset_lockout()
             return {
                 "ok": True,
                 "action": action,
-                "message": "🔄 風控保護機制已手動重設，AI 交易已恢復就緒。",
+                "reset_at": reset_ts,
+                "message": "🔄 風控保護機制已手動重設，歷史連虧已封存歸檔，AI 交易已恢復就緒。",
             }
 
         elif action == "confirm_eviction":
