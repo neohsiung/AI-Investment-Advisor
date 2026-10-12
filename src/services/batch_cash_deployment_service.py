@@ -47,6 +47,7 @@ class BatchCashDeploymentService:
         jump_guard: Optional[Any] = None,
         rl_sor: Optional[Any] = None,
         event_graph: Optional[Any] = None,
+        bayesian_hmm_factor: Optional[Any] = None,
     ):
         self.user_id = resolve_user_id(user_id)
         from src.services.settings_service import SettingsService
@@ -123,6 +124,20 @@ class BatchCashDeploymentService:
                 )
             except Exception:
                 self.event_graph = None
+
+        if bayesian_hmm_factor is not None:
+            self.bayesian_hmm_factor = bayesian_hmm_factor
+        else:
+            try:
+                from src.services.bayesian_hmm_factor_service import (
+                    BayesianHMMFactorService,
+                )
+                self.bayesian_hmm_factor = BayesianHMMFactorService(
+                    user_id=self.user_id,
+                    settings_service=self.settings_service,
+                )
+            except Exception:
+                self.bayesian_hmm_factor = None
 
     async def _get_broker(self) -> Any:
         if self.broker:
@@ -593,6 +608,15 @@ class BatchCashDeploymentService:
             except Exception as eg_err:
                 logger.debug(f"Non-blocking event graph summary error in deployment plan: {eg_err}")
 
+        # 產出貝葉斯隱馬爾可夫體制機率與連續因子權重摘要 (Phase 38)
+        bayesian_hmm_summary = {}
+        if self.bayesian_hmm_factor and getattr(self.bayesian_hmm_factor, "is_enabled", True):
+            try:
+                post = self.bayesian_hmm_factor.get_current_posterior()
+                bayesian_hmm_summary = post.to_dict()
+            except Exception as hmm_err:
+                logger.debug(f"Non-blocking Bayesian HMM summary error in deployment plan: {hmm_err}")
+
         return {
             "batch_number": batch_number,
             "status": status,
@@ -611,6 +635,7 @@ class BatchCashDeploymentService:
             "jump_summary": jump_summary,
             "rl_sor_summary": rl_sor_summary,
             "event_graph_summary": event_graph_summary,
+            "bayesian_hmm_summary": bayesian_hmm_summary,
             "risk_parity_applied": bool(risk_parity_weights),
             "risk_concentration_hhi": round(risk_parity_result.cvar_hhi_risk, 4) if risk_parity_result else None,
             "effective_risk_assets": round(risk_parity_result.effective_risk_assets_cvar, 2) if risk_parity_result else None,

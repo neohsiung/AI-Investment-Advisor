@@ -1248,6 +1248,52 @@ settings:
     label_zh: 啟用因果圖譜重創標的優先減碼調節
     help_en: Prioritize trimming assets with severe causal network damage when raising defensive cash during macro stress events.
     help_zh: 當宏觀壓力升高需拉高防守現金時，依據因果受損度優先調節重創標的，防範單一板塊斷鏈風險。
+  - key: enable_bayesian_hmm_factor_allocation
+    group: trading
+    type: bool
+    default: true
+    label_en: Enable Bayesian HMM continuous factor allocation
+    label_zh: 啟用貝葉斯隱馬爾可夫連續因子配置
+    help_en: Compute continuous posterior regime probabilities via Hamilton filter and blend multi-factor weights dynamically.
+    help_zh: 透過在線漢密爾頓貝葉斯濾波計算 4 大體制連續後驗機率，連續平滑混合 6 大因子權重，消除離散階梯斷層。
+  - key: bayesian_hmm_transition_stickiness
+    group: trading
+    type: float
+    default: 0.94
+    min: 0.70
+    max: 0.99
+    label_en: Bayesian HMM transition matrix diagonal stickiness
+    label_zh: 貝葉斯隱馬爾可夫轉移矩陣對角持續性
+    help_en: Diagonal persistence probability in the 4-state Markov transition matrix (default 0.94).
+    help_zh: 隱馬爾可夫 4 狀態轉移矩陣對角線持續機率（預設 0.94），避免噪音造成頻繁體制偽切換。
+  - key: bayesian_hmm_entropy_defense_threshold
+    group: trading
+    type: float
+    default: 1.15
+    min: 0.50
+    max: 1.90
+    label_en: Bayesian HMM Shannon entropy defense threshold
+    label_zh: 貝葉斯隱馬爾可夫香農熵防禦門檻
+    help_en: Entropy threshold above which regime ambiguity triggers defensive shift towards quality and low volatility.
+    help_zh: 當後驗體制分佈之香農熵超過此門檻時，判定為體制轉換劇烈模糊期，啟動防守因子偏向保護。
+  - key: enable_bayesian_hmm_entropy_guard
+    group: trading
+    type: bool
+    default: true
+    label_en: Enable Bayesian HMM entropy ambiguity guard
+    label_zh: 啟用貝葉斯隱馬爾可夫香農熵模糊守衛
+    help_en: Dynamically shifts factor allocations toward defensive anchors during regime transition ambiguity.
+    help_zh: 在體制轉換模糊過渡期，動態將因子配置向低波動與高品質防守錨點傾斜，抑制順勢追高甩轎摩擦。
+  - key: bayesian_hmm_observation_lookback
+    group: trading
+    type: int
+    default: 30
+    min: 10
+    max: 90
+    label_en: Bayesian HMM observation lookback days
+    label_zh: 貝葉斯隱馬爾可夫觀測變數回看天數
+    help_en: Lookback period for calculating VIX Z-score and trend metrics in market observations.
+    help_zh: 計算 VIX Z-score、趨勢偏離度等觀測特徵之歷史滾動天數（預設 30 天）。
   - key: breakout_filter_fail_open
     group: trading
     type: bool
