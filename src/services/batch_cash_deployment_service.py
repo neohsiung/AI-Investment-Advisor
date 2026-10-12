@@ -45,6 +45,7 @@ class BatchCashDeploymentService:
         blackout_guard: Optional[Any] = None,
         vpin_guard: Optional[Any] = None,
         jump_guard: Optional[Any] = None,
+        rl_sor: Optional[Any] = None,
     ):
         self.user_id = resolve_user_id(user_id)
         from src.services.settings_service import SettingsService
@@ -91,6 +92,22 @@ class BatchCashDeploymentService:
                 )
             except Exception:
                 self.jump_guard = None
+
+        if rl_sor is not None:
+            self.rl_sor = rl_sor
+        elif hasattr(self.slippage_guard, "rl_sor") and self.slippage_guard.rl_sor is not None:
+            self.rl_sor = self.slippage_guard.rl_sor
+        else:
+            try:
+                from src.services.rl_execution_sor_service import (
+                    RLExecutionSmartOrderRoutingService,
+                )
+                self.rl_sor = RLExecutionSmartOrderRoutingService(
+                    user_id=self.user_id,
+                    settings_service=self.settings_service,
+                )
+            except Exception:
+                self.rl_sor = None
 
     async def _get_broker(self) -> Any:
         if self.broker:
@@ -479,6 +496,37 @@ class BatchCashDeploymentService:
             except Exception as jump_err:
                 logger.debug(f"Non-blocking jump summary error in deployment plan: {jump_err}")
 
+        # 產出候選標的強化學習自適應智慧拆單排程 (RL SOR Phase 36)
+        rl_sor_summary = {}
+        if self.rl_sor and getattr(self.rl_sor, "is_enabled", True):
+            try:
+                sor_plans = {}
+                for it in allocated_items:
+                    t_sym = it.get("ticker", "")
+                    amt = it.get("amount_usd", 0.0)
+                    if amt >= 10.0:
+                        plan = await self.rl_sor.generate_execution_plan(
+                            symbol=t_sym,
+                            total_amount_usd=amt,
+                            target_window_minutes=15,
+                        )
+                        sor_plans[t_sym] = {
+                            "recommended_action": plan.selected_action,
+                            "recommended_slices": plan.recommended_slices_count,
+                            "expected_cost_bps": plan.total_expected_cost_bps,
+                            "q_value": plan.q_value,
+                            "summary": plan.strategy_summary,
+                        }
+                        it["sor_action"] = plan.selected_action
+                        it["recommended_slices"] = plan.recommended_slices_count
+                        it["sor_expected_cost_bps"] = plan.total_expected_cost_bps
+                rl_sor_summary = {
+                    "is_enabled": True,
+                    "plans": sor_plans,
+                }
+            except Exception as sor_err:
+                logger.debug(f"Non-blocking RL SOR summary error in deployment plan: {sor_err}")
+
         return {
             "batch_number": batch_number,
             "status": status,
@@ -495,6 +543,7 @@ class BatchCashDeploymentService:
             "fill_quality_summary": fill_quality_summary,
             "vpin_summary": vpin_summary,
             "jump_summary": jump_summary,
+            "rl_sor_summary": rl_sor_summary,
             "risk_parity_applied": bool(risk_parity_weights),
             "risk_concentration_hhi": round(risk_parity_result.cvar_hhi_risk, 4) if risk_parity_result else None,
             "effective_risk_assets": round(risk_parity_result.effective_risk_assets_cvar, 2) if risk_parity_result else None,
@@ -848,6 +897,8 @@ class BatchCashDeploymentService:
                 "order_id": order_id,
                 "spread_pct": slippage_eval.spread_pct if slippage_eval else None,
                 "adaptive_limit": slippage_eval.adaptive_limit_price if slippage_eval else None,
+                "sor_action": getattr(slippage_eval, "rl_sor_action", None) if slippage_eval else None,
+                "sor_slices": getattr(slippage_eval, "rl_sor_slices", None) if slippage_eval else None,
                 "reason": fail_reason,
             })
 

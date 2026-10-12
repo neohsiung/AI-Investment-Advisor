@@ -224,6 +224,7 @@ class ConversationRouter:
             "riskparity", "parity", "cvar", "mrc", "風險平價", "平價配置", "風險貢獻", "尾部風險",
             "vpin", "toxicity", "kyle", "毒性", "訂單流毒性", "微觀結構", "知情交易",
             "jump", "jumpdiffusion", "merton", "bayesian", "跳躍擴散", "跳躍", "跳空", "貝葉斯跳躍",
+            "sor", "rlexec", "qlearning", "smartrouting", "智慧路由", "強化學習拆單", "拆單路由", "rl",
         }
         return cmd in exact_keywords
 
@@ -497,6 +498,7 @@ class ConversationRouter:
                     f"• <b>動態風險平價與尾部 CVaR (P33)</b>：輸入 <code>/riskparity</code> 檢視全組合風險貢獻平衡與極端尾部配置\n"
                     f"• <b>訂單流毒性與 Kyle's λ 守衛 (P34)</b>：輸入 <code>/vpin</code> 檢視標的 VPIN 毒性體制與知情交易衝擊\n"
                     f"• <b>貝葉斯跳躍擴散守衛 (P35)</b>：輸入 <code>/jump</code> 檢視 Merton 跳躍強度 λ、擴散波動 σ 與體制卡片\n"
+                    f"• <b>強化學習動態拆單智慧路由 (P36)</b>：輸入 <code>/sor</code> 檢視 Q-Learning 動作空間、最優切片排程與摩擦最小化計畫\n"
                     f"━━━━━━━━━━━━━━━━━━\n"
                     f"<i>美股開盤 09:35 EST 建倉時將自動為每一筆訂單執行自適應限價、價差驗證、成交品質與財報避開審核。</i>"
                 )
@@ -1212,5 +1214,77 @@ class ConversationRouter:
             except Exception as e:
                 logger.error(f"Failed to generate Bayesian jump diffusion response: {e}")
                 return f"⚠️ 查詢貝葉斯跳躍擴散守衛狀態時發生錯誤：{e}"
+
+        # 15. Deep Q-Learning & RL Execution SOR Agent (Phase 36)
+        if any(cmd.startswith(prefix) for prefix in (
+            "sor", "rlexec", "qlearning", "smartrouting", "智慧路由", "強化學習拆單", "拆單路由", "rl"
+        )):
+            try:
+                from src.services.rl_execution_sor_service import (
+                    RLExecutionSmartOrderRoutingService,
+                )
+                from src.services.batch_cash_deployment_service import (
+                    BatchCashDeploymentService,
+                )
+                sor_svc = RLExecutionSmartOrderRoutingService(user_id=resolved_user_id)
+                snapshot = sor_svc.get_snapshot()
+
+                # 嘗試取得待建倉候選標的，若無則示範標準代表性標的 (e.g. MSFT $1,000)
+                sample_sym = "MSFT"
+                sample_amt = 1000.0
+                try:
+                    deploy_svc = BatchCashDeploymentService(user_id=resolved_user_id)
+                    act_b = await deploy_svc.get_active_batch_number()
+                    plan = await deploy_svc.get_deployment_plan(batch_number=act_b)
+                    items = plan.get("items", [])
+                    if items:
+                        sample_sym = items[0]["ticker"]
+                        sample_amt = max(50.0, float(items[0].get("amount_usd", 1000.0)))
+                except Exception:
+                    pass
+
+                demo_plan = await sor_svc.generate_execution_plan(
+                    symbol=sample_sym,
+                    total_amount_usd=sample_amt,
+                    target_window_minutes=15,
+                )
+
+                status_badge = "🟢 運行中 (Online)" if snapshot.is_enabled else "🔴 已停用 (Disabled)"
+                lines = [
+                    "🤖 <b>【強化學習自適應動態訂單拆單與智慧路由報告 (Phase 36)】</b>",
+                    "━━━━━━━━━━━━━━━━━━",
+                    "• <b>核心演算法</b>：<code>Tabular Q-Learning (MDP) + Almgren-Chriss (2000) 先驗注入 + TD(0) 貝爾曼最優更新</code>",
+                    f"• <b>引擎狀態</b>：{status_badge}",
+                    f"• <b>MDP 狀態空間格子</b>：<code>{snapshot.q_table_states_count}</code> 格 (540 維離散空間覆蓋)",
+                    f"• <b>歷史在線更新次數</b>：<code>{snapshot.total_updates_count}</code> 次 (學習率 α: <code>{snapshot.learning_rate:.2f}</code>, 折扣 γ: <code>{snapshot.discount_factor:.2f}</code>)",
+                    f"• <b>探索利用率 ε</b>：<code>{snapshot.exploration_rate:.1%}</code> (純利用率 <code>{1-snapshot.exploration_rate:.1%}</code>)",
+                    f"• <b>庫存方差風險厭惡係數 φ</b>：<code>{snapshot.inventory_risk_aversion:.2f}</code> (均值獎勵: <code>{snapshot.mean_reward:+.2f}</code>)",
+                    "━━━━━━━━━━━━━━━━━━",
+                    f"🎯 <b>【動態拆單排程示範：{sample_sym} (${sample_amt:.2f} USD，時窗 15 分鐘)】</b>",
+                    f"• <b>推薦首選動作</b>：<code>{demo_plan.selected_action}</code> (預期 Q-Value: <code>{demo_plan.q_value:+.2f}</code>)",
+                    f"• <b>預估總執行摩擦</b>：<code>{demo_plan.total_expected_cost_bps:.1f}</code> bps (涵蓋實現點差、暫時衝擊與方差風險)",
+                    f"• <b>自適應分步切片排程 ({demo_plan.recommended_slices_count} 批次)</b>：",
+                ]
+
+                for s in demo_plan.slices:
+                    lines.append(
+                        f"  ├ 批次 #{s.slice_index} (T+{s.target_minute_offset:02d}m): "
+                        f"<b>${s.amount_usd:.2f}</b> | <code>{s.action_name}</code> ({s.order_type} "
+                        f"{s.limit_tilt_bps:+.1f} bps) | 成本 ~{s.expected_cost_bps:.1f} bps"
+                    )
+
+                lines.append("━━━━━━━━━━━━━━━━━━")
+                lines.append("📊 <b>【離散動作空間累計調度分佈】</b>")
+                dist = snapshot.actions_distribution
+                for act in sor_svc.ACTIONS:
+                    cnt = dist.get(act.name, 0)
+                    lines.append(f"• <b>{act.name}</b> (步長 {act.pace_ratio:.0%}, {act.order_type}): <code>{cnt}</code> 次")
+
+                lines.append("━━━━━━━━━━━━━━━━━━")
+                lines.append("💡 <i>SOR 透過馬爾可夫決策過程即時平衡暫時性市場衝擊 η·√(V/ADV) 與庫存延遲風險 φ·q²·σ²。</i>")
+                return "\n".join(lines)
+            except Exception as e:
+                logger.error(f"Failed to generate RL execution SOR response: {e}")
+                return f"⚠️ 查詢強化學習智慧路由狀態時發生錯誤：{e}"
 
         return None
