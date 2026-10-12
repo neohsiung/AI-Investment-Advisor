@@ -225,6 +225,7 @@ class ConversationRouter:
             "vpin", "toxicity", "kyle", "毒性", "訂單流毒性", "微觀結構", "知情交易",
             "jump", "jumpdiffusion", "merton", "bayesian", "跳躍擴散", "跳躍", "跳空", "貝葉斯跳躍",
             "sor", "rlexec", "qlearning", "smartrouting", "智慧路由", "強化學習拆單", "拆單路由", "rl",
+            "eventgraph", "causal", "narrative", "shock", "因果圖譜", "事件圖譜", "敘事風險", "突發避險",
         }
         return cmd in exact_keywords
 
@@ -499,6 +500,7 @@ class ConversationRouter:
                     f"• <b>訂單流毒性與 Kyle's λ 守衛 (P34)</b>：輸入 <code>/vpin</code> 檢視標的 VPIN 毒性體制與知情交易衝擊\n"
                     f"• <b>貝葉斯跳躍擴散守衛 (P35)</b>：輸入 <code>/jump</code> 檢視 Merton 跳躍強度 λ、擴散波動 σ 與體制卡片\n"
                     f"• <b>強化學習動態拆單智慧路由 (P36)</b>：輸入 <code>/sor</code> 檢視 Q-Learning 動作空間、最優切片排程與摩擦最小化計畫\n"
+                    f"• <b>宏觀突發事件因果圖譜與避險 (P37)</b>：輸入 <code>/eventgraph</code> 檢視即時事件傳播震盪擴散與受損度矩陣 (支援 <code>/eventgraph sim</code> 模擬黑天鵝)\n"
                     f"━━━━━━━━━━━━━━━━━━\n"
                     f"<i>美股開盤 09:35 EST 建倉時將自動為每一筆訂單執行自適應限價、價差驗證、成交品質與財報避開審核。</i>"
                 )
@@ -1286,5 +1288,137 @@ class ConversationRouter:
             except Exception as e:
                 logger.error(f"Failed to generate RL execution SOR response: {e}")
                 return f"⚠️ 查詢強化學習智慧路由狀態時發生錯誤：{e}"
+
+        # 16. Macro Event Causal Graph & Narrative Risk Engine (Phase 37)
+        if any(cmd.startswith(prefix) for prefix in (
+            "eventgraph", "causal", "narrative", "shock", "因果圖譜", "事件圖譜", "敘事風險", "突發避險"
+        )):
+            try:
+                from src.services.macro_event_causal_graph_service import (
+                    MacroEventCausalGraphService,
+                    ShockDamageTier,
+                )
+                graph_svc = MacroEventCausalGraphService(user_id=resolved_user_id)
+
+                # 處理重置指令
+                if any(k in cmd for k in ("clear", "reset", "重置", "清空")):
+                    graph_svc.clear_active_events()
+                    return (
+                        "🔄 <b>【宏觀突發事件因果圖譜已重置】</b>\n"
+                        "━━━━━━━━━━━━━━━━━━\n"
+                        "所有活躍外生事件震盪已清除，因果網絡回復常態基準狀態。"
+                    )
+
+                # 處理黑天鵝劇本模擬
+                sim_mode = any(k in cmd for k in ("sim", "scenario", "模擬", "壓力測試"))
+                sim_result = None
+                if sim_mode:
+                    target_scenario = "TAIWAN_STRAIT_BLOCKADE"
+                    if any(k in cmd for k in ("fed", "hike", "央行", "升息", "powell")):
+                        target_scenario = "FED_INTERMEETING_HIKE"
+                    elif any(k in cmd for k in ("bank", "run", "銀行", "擠兌", "svb")):
+                        target_scenario = "REGIONAL_BANK_CASCADE"
+                    elif any(k in cmd for k in ("oil", "energy", "war", "中東", "原油")):
+                        target_scenario = "MIDDLE_EAST_OIL_WAR"
+
+                    sim_result = graph_svc.simulate_scenario(target_scenario)
+                    snapshot = graph_svc.get_snapshot()
+                else:
+                    snapshot = graph_svc.get_snapshot()
+
+                status_badge = "🟢 運行中 (Online)" if snapshot.is_enabled else "🔴 已停用 (Disabled)"
+                shock_val = snapshot.systemic_shock_score
+                if shock_val >= 0.70:
+                    shock_badge = f"🔴 系統性極端黑天鵝衝擊 ({shock_val:.2f}) - 啟動全防線避險與建倉熔斷"
+                elif shock_val >= 0.35:
+                    shock_badge = f"🟡 局部事件傳導升溫 ({shock_val:.2f}) - 啟動重創標的延緩建倉"
+                else:
+                    shock_badge = f"🟢 平靜無重大突發事件 ({shock_val:.2f}) - 因果傳播網絡平穩"
+
+                lines = [
+                    "🌐 <b>【宏觀突發事件即時輿情因果傳播與大腦避險報告 (Phase 37)】</b>",
+                    "━━━━━━━━━━━━━━━━━━",
+                    "• <b>核心演算法</b>：<code>Directed Weighted Causal Event Graph + PageRank Damped Shock Diffusion + Exponential Half-Life Decay</code>",
+                    f"• <b>引擎狀態</b>：{status_badge} (阻尼係數 d: <code>{snapshot.decay_factor:.2f}</code>, 半衰期: <code>{snapshot.half_life_hours:.0f}h</code>)",
+                    f"• <b>圖譜規模</b>：<code>{snapshot.nodes_count}</code> 個節點 (7 宏觀源 + 8 產業樞紐 + 13 標的) | <code>{snapshot.edges_count}</code> 條加權因果彈性邊",
+                    f"• <b>系統性因果震盪指標</b>：{shock_badge}",
+                    f"• <b>當前活躍突發事件</b>：<code>{snapshot.active_events_count}</code> 件",
+                ]
+
+                if sim_result:
+                    ev_info = sim_result.get("event", {})
+                    lines.append(
+                        f"⚠️ <b>[劇本模擬中: {sim_result.get('scenario')}]</b>\n"
+                        f"  ├ 事件快訊: <b>{ev_info.get('headline', '模擬劇本')}</b>\n"
+                        f"  └ 衝擊節點: <code>{ev_info.get('shock_node')}</code> (初始衝擊強度: <code>{ev_info.get('raw_intensity', 0.0):.2f}</code>)"
+                    )
+                elif snapshot.active_events:
+                    for ev in snapshot.active_events[:3]:
+                        lines.append(
+                            f"  ├ <b>{ev.headline[:35]}...</b>\n"
+                            f"  │ 節點: <code>{ev.shock_node}</code> | 有效強度: <code>{ev.effective_intensity:.2f}</code> ({ev.source})"
+                        )
+
+                lines.append("━━━━━━━━━━━━━━━━━━")
+                lines.append("🎯 <b>【各標的因果傳播淨受損度矩陣與大腦避險決策】</b>")
+
+                # 標的分組排序：重創 -> 避險受益 -> 中度 -> 中立
+                damages = list(snapshot.damages.values())
+                damages.sort(key=lambda d: d.net_damage)
+
+                severe_alerts = []
+                hedge_opportunities = []
+
+                for d in damages:
+                    sym = d.ticker
+                    dmg = d.net_damage
+                    tier = d.damage_tier
+                    path_str = " ➔ ".join(d.direct_exposure_path)
+
+                    if tier == ShockDamageTier.SEVERE_DAMAGE:
+                        badge = "🔴 SEVERE (重創)"
+                        act_disp = "⛔ <b>熔斷暫緩買入 / 優先減碼</b>"
+                        severe_alerts.append((sym, dmg, path_str))
+                    elif tier == ShockDamageTier.MODERATE_DAMAGE:
+                        badge = "🟡 MODERATE (中度承壓)"
+                        act_disp = "⚠️ <b>延後分批建倉</b>"
+                    elif tier == ShockDamageTier.POSITIVE_HEDGE:
+                        badge = "🟢 HEDGE (避險受益)"
+                        act_disp = "🛡️ <b>對沖工具加碼</b>"
+                        hedge_opportunities.append((sym, dmg, path_str))
+                    else:
+                        badge = "⚪ NEUTRAL (平穩)"
+                        act_disp = "✅ <b>正常配置運作</b>"
+
+                    lines.append(
+                        f"• <b>{sym}</b> [{badge}]\n"
+                        f"  ├ 淨受損度: <code>{dmg:+.1%}</code> | 避險優先級: <code>{d.hedge_priority:.2f}</code>\n"
+                        f"  ├ 因果鏈條: <code>{path_str}</code>\n"
+                        f"  └ 處置策略: {act_disp}"
+                    )
+
+                if severe_alerts:
+                    lines.append("━━━━━━━━━━━━━━━━━━")
+                    lines.append("🚨 <b>【突發因果傳導熔斷警示】</b>")
+                    for sym, dmg, p in severe_alerts:
+                        lines.append(
+                            f"• <b>{sym}</b> (淨受損 <code>{dmg:+.1%}</code>): 受宏觀衝擊經由 <code>{p}</code> 傳導波及，"
+                            f"分批建倉已前置自動熔斷 (event_graph_deferred)，防止盲目接刀！"
+                        )
+
+                if hedge_opportunities:
+                    lines.append("━━━━━━━━━━━━━━━━━━")
+                    lines.append("🛡️ <b>【對沖避險受益資產推薦】</b>")
+                    for sym, dmg, p in hedge_opportunities:
+                        lines.append(
+                            f"• <b>{sym}</b> (正向彈性 <code>{dmg:+.1%}</code>): 因果網絡推升避險溢價，可作為反向對沖配置。"
+                        )
+
+                lines.append("━━━━━━━━━━━━━━━━━━")
+                lines.append("💡 <i>輸入 <code>/eventgraph sim</code> 模擬台海斷鏈黑天鵝；支援 <code>fed</code>、<code>bank</code>、<code>oil</code>；輸入 <code>/eventgraph clear</code> 重置常態。</i>")
+                return "\n".join(lines)
+            except Exception as e:
+                logger.error(f"Failed to generate Macro Event Causal Graph response: {e}")
+                return f"⚠️ 查詢宏觀突發事件因果圖譜狀態時發生錯誤：{e}"
 
         return None

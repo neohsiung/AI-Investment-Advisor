@@ -1202,6 +1202,52 @@ settings:
     label_zh: 智慧路由庫存方差風險厭惡係數 (φ)
     help_en: Penalty coefficient applied to remaining inventory variance risk (phi * q^2 * sigma^2).
     help_zh: 懲罰持倉延遲暴露之庫存方差風險係數 φ（預設 0.15）；越高代表越傾向提早清空庫存避免價格不利波動。
+  - key: enable_macro_event_causal_graph
+    group: trading
+    type: bool
+    default: true
+    label_en: Enable Macro Event Causal Graph & Narrative Risk Engine
+    label_zh: 啟用宏觀突發事件即時輿情因果傳播與大腦避險代理
+    help_en: Maintains a directed weighted causal network graph and models real-time narrative shock diffusion across macro sources, industry hubs, and asset targets.
+    help_zh: 維護有向加權宏觀因果網絡圖譜，即時求解輿情突發事件在宏觀衝擊源、產業傳導樞紐與投資標的間之震盪擴散與淨受損度。
+  - key: event_graph_decay_factor
+    group: trading
+    type: float
+    default: 0.75
+    min: 0.10
+    max: 0.99
+    label_en: Causal graph shock diffusion damping/decay factor (d)
+    label_zh: 因果圖譜震盪擴散阻尼衰減係數 (d)
+    help_en: Damping factor governing the network shock propagation intensity across causal hops (default 0.75).
+    help_zh: 網絡拓撲震盪擴散之阻尼係數 d（預設 0.75），決定衝擊波跨節點傳導時的吸收衰減幅度。
+  - key: event_graph_shock_alert_threshold
+    group: trading
+    type: float
+    default: 0.40
+    min: 0.10
+    max: 1.00
+    label_en: Event graph systemic shock alert threshold
+    label_zh: 因果圖譜系統性衝擊通報門檻
+    help_en: Systemic shock intensity threshold triggering urgent hedging warnings and batch deployment deferrals (default 0.40).
+    help_zh: 觸發緊急避險預警與開盤建倉前置暫緩的系統性衝擊強度警戒門檻（預設 0.40）。
+  - key: event_graph_half_life_hours
+    group: trading
+    type: float
+    default: 24.0
+    min: 1.0
+    max: 168.0
+    label_en: Macro event narrative shock half-life (hours)
+    label_zh: 突發輿情衝擊指數半衰期 (小時)
+    help_en: Time half-life in hours for active macro news events before their shock impact naturally decays (default 24h).
+    help_zh: 突發新聞與輿情事件衝擊強度隨時間衰減的指數半衰期（預設 24 小時），模擬市場隨時間消化事件影響。
+  - key: enable_event_graph_auto_trim
+    group: trading
+    type: bool
+    default: true
+    label_en: Enable causal shock priority trimming
+    label_zh: 啟用因果圖譜重創標的優先減碼調節
+    help_en: Prioritize trimming assets with severe causal network damage when raising defensive cash during macro stress events.
+    help_zh: 當宏觀壓力升高需拉高防守現金時，依據因果受損度優先調節重創標的，防範單一板塊斷鏈風險。
   - key: breakout_filter_fail_open
     group: trading
     type: bool
