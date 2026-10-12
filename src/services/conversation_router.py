@@ -222,6 +222,7 @@ class ConversationRouter:
             "evolve", "evolution", "ga", "演化", "基因演化", "因子演化", "遺傳演化",
             "ortho", "orthogonal", "vif", "正交", "正交化", "共線性", "因子正交",
             "riskparity", "parity", "cvar", "mrc", "風險平價", "平價配置", "風險貢獻", "尾部風險",
+            "vpin", "toxicity", "kyle", "毒性", "訂單流毒性", "微觀結構", "知情交易",
         }
         return cmd in exact_keywords
 
@@ -493,6 +494,7 @@ class ConversationRouter:
                     f"• <b>自適應限價單保護</b>：Mid + Spread × 0.25 封頂 (動態係數 0.8x~1.5x)\n"
                     f"• <b>事後滑點異常告警門檻</b>：> 0.20% 自動通報\n"
                     f"• <b>動態風險平價與尾部 CVaR (P33)</b>：輸入 <code>/riskparity</code> 檢視全組合風險貢獻平衡與極端尾部配置\n"
+                    f"• <b>訂單流毒性與 Kyle's λ 守衛 (P34)</b>：輸入 <code>/vpin</code> 檢視標的 VPIN 毒性體制與知情交易衝擊\n"
                     f"━━━━━━━━━━━━━━━━━━\n"
                     f"<i>美股開盤 09:35 EST 建倉時將自動為每一筆訂單執行自適應限價、價差驗證、成交品質與財報避開審核。</i>"
                 )
@@ -1029,5 +1031,93 @@ class ConversationRouter:
             except Exception as e:
                 logger.error(f"Failed to generate risk parity response: {e}")
                 return f"⚠️ 查詢動態風險平價狀態時發生錯誤：{e}"
+
+        # 13. Microstructure VPIN & Kyle's Lambda Toxicity Guard (Phase 34)
+        if any(cmd.startswith(prefix) for prefix in (
+            "vpin", "toxicity", "kyle", "毒性", "訂單流毒性", "微觀結構", "知情交易"
+        )):
+            try:
+                from src.services.vpin_toxicity_guard_service import VPINToxicityGuardService
+                vpin_svc = VPINToxicityGuardService(user_id=resolved_user_id)
+                summary_data = await vpin_svc.get_latest_portfolio_summary()
+                if summary_data:
+                    data = summary_data
+                else:
+                    sum_obj = await vpin_svc.get_portfolio_vpin_assessment()
+                    data = sum_obj.to_dict()
+
+                overall_tox = data.get("overall_market_toxicity", "BENIGN")
+                mean_vpin = data.get("mean_vpin", 0.0)
+                mean_kyle = data.get("mean_kyle_lambda", 0.0)
+                toxic_syms = data.get("toxic_symbols", [])
+                elev_syms = data.get("elevated_symbols", [])
+                norm_syms = data.get("normal_symbols", [])
+                assessments = data.get("assessments", {})
+                ts = data.get("timestamp", "")[:19].replace("T", " ")
+
+                if overall_tox == "ACUTE_TOXICITY":
+                    overall_badge = "🔴 重度毒性 (ACUTE_TOXICITY) - 觸發熔斷暫緩下單"
+                elif overall_tox == "MODERATE":
+                    overall_badge = "🟡 中度升溫 (MODERATE) - 啟動拆單降速與滑點加成"
+                else:
+                    overall_badge = "🟢 流動性健康 (BENIGN) - 正常放行下單"
+
+                lines = [
+                    "🛡️ <b>【微觀結構訂單流毒性與知情交易者檢定報告 (Phase 34)】</b>",
+                    "━━━━━━━━━━━━━━━━━━",
+                    "• <b>核心模型</b>：<code>成交量時鐘切片 (VPIN) + Kyle's Lambda (λ) 價格衝擊回歸</code>",
+                    f"• <b>全市場微觀體制</b>：{overall_badge}",
+                    f"• <b>投組平均 VPIN</b>：<code>{mean_vpin:.1%}</code> (警戒線 <code>40.0%</code> | {ts} UTC)",
+                    f"• <b>平均 Kyle's λ</b>：<code>{mean_kyle:.6f}</code> $/k 股失衡衝擊",
+                    f"• <b>標的狀態統計</b>：正常 <code>{len(norm_syms)}</code> 檔 | 升溫 <code>{len(elev_syms)}</code> 檔 | 毒性 <code>{len(toxic_syms)}</code> 檔",
+                    "━━━━━━━━━━━━━━━━━━",
+                    "<b>【各標的微觀結構毒性體制與處置矩陣】</b>",
+                ]
+
+                toxic_alerts = []
+                for sym, ass in assessments.items():
+                    reg = ass.get("regime", "NORMAL")
+                    vp = ass.get("vpin", 0.0)
+                    kl = ass.get("kyle_lambda", 0.0)
+                    act = ass.get("recommended_action", "PROCEED")
+                    pace = ass.get("execution_pace_minutes", 0)
+                    boost = ass.get("slippage_boost", 0.0)
+                    k_metrics = ass.get("kyle_metrics", {})
+                    r_sq = k_metrics.get("r_squared", 0.0)
+                    alpha = k_metrics.get("informed_trader_ratio", 0.0)
+
+                    if reg == "TOXIC":
+                        badge = "🔴 TOXIC (知情聚集)"
+                        action_desc = f"⛔ <b>暫緩下單</b> (冷卻 {pace} 分鐘)"
+                        toxic_alerts.append((sym, vp, kl, pace))
+                    elif reg == "ELEVATED":
+                        badge = "🟡 ELEVATED (中度失衡)"
+                        action_desc = f"⚠️ <b>拆單降速</b> (滑點加成 +{boost:.2f}x)"
+                    else:
+                        badge = "🟢 NORMAL (流動性健康)"
+                        action_desc = "✅ <b>正常執行</b>"
+
+                    lines.append(
+                        f"• <b>{sym}</b> [{badge}]\n"
+                        f"  ├ VPIN 毒性機率: <code>{vp:.1%}</code> | 知情交易者比率 α: <code>{alpha:.1%}</code>\n"
+                        f"  ├ Kyle's λ 衝擊: <code>{kl:.6f}</code> (R²: <code>{r_sq:.2f}</code>)\n"
+                        f"  └ 執行處置: {action_desc}"
+                    )
+
+                if toxic_alerts:
+                    lines.append("━━━━━━━━━━━━━━━━━━")
+                    lines.append("🚨 <b>【知情交易者訂單流毒性急遽警示】</b>")
+                    for sym, vp, kl, pace in toxic_alerts:
+                        lines.append(
+                            f"• <b>{sym}</b>: VPIN 達 <code>{vp:.1%}</code> (>= 40.0%)，每千股衝擊 <code>{kl:.6f}</code>，"
+                            f"已前置阻斷市價建倉，防範逆向選擇吃損。"
+                        )
+
+                lines.append("━━━━━━━━━━━━━━━━━━")
+                lines.append("💡 <i>VPIN 衡量等量時鐘下買賣失衡機率，Kyle's Lambda 量化知情交易者對盤口造成的價格衝擊。</i>")
+                return "\n".join(lines)
+            except Exception as e:
+                logger.error(f"Failed to generate VPIN toxicity guard response: {e}")
+                return f"⚠️ 查詢微觀結構訂單流毒性狀態時發生錯誤：{e}"
 
         return None
