@@ -1058,6 +1058,54 @@ settings:
     label_zh: 風險平價單一標的持倉上限
     help_en: Maximum portfolio weight cap permitted for any single asset under risk parity allocation.
     help_zh: 風險平價配置下任一單一標的之最大權重上限（預設 35%）。
+  - key: enable_vpin_toxicity_guard
+    group: trading
+    type: bool
+    default: true
+    label_en: Enable VPIN & Kyle's Lambda Microstructure Guard
+    label_zh: 啟用微觀結構訂單流毒性與知情交易者檢定守衛
+    help_en: Guards against informed predatory order flow and adverse selection using Volume-Synchronized Probability of Toxicity (VPIN) and Kyle's Lambda price impact regression.
+    help_zh: 使用成交量同步機率毒性 (VPIN) 與 Kyle's Lambda 價格衝擊模型，檢定知情交易者聚集並在前置阻斷滑點吃損。
+  - key: vpin_bucket_size_adv_ratio
+    group: trading
+    type: float
+    default: 0.02
+    min: 0.005
+    max: 0.10
+    label_en: VPIN volume bucket size as ADV ratio
+    label_zh: VPIN 成交量桶大小佔 ADV 比率
+    help_en: Target share volume for each VPIN volume clock bucket as a fraction of Average Daily Volume (e.g. 0.02 for ~50 buckets/day).
+    help_zh: 單一成交量時鐘桶之目標股數佔日均成交量 (ADV) 之比率（預設 0.02，約每日 50 桶）。
+  - key: vpin_alert_threshold
+    group: trading
+    type: float
+    default: 0.40
+    min: 0.20
+    max: 0.80
+    label_en: VPIN toxic regime alert threshold
+    label_zh: VPIN 重度毒性熔斷門檻
+    help_en: VPIN threshold above which order flow is classified as TOXIC, triggering an execution halt to prevent adverse selection.
+    help_zh: VPIN 超過此門檻時判定體制為 TOXIC，前置熔斷暫緩下單以防範逆向選擇吃損（預設 0.40）。
+  - key: vpin_window_buckets
+    group: trading
+    type: int
+    default: 50
+    min: 10
+    max: 100
+    label_en: VPIN rolling window bucket count
+    label_zh: VPIN 滾動計算時鐘桶數
+    help_en: Number of completed volume buckets used to calculate rolling VPIN and Kyle's Lambda.
+    help_zh: 滾動計算 VPIN 與 Kyle's Lambda 價格衝擊回歸之已完成成交量桶數量（預設 50 桶）。
+  - key: vpin_execution_pace_minutes
+    group: trading
+    type: int
+    default: 5
+    min: 1
+    max: 15
+    label_en: VPIN toxic deferral cooling period (minutes)
+    label_zh: VPIN 毒性熔斷暫緩冷卻時間（分鐘）
+    help_en: Waiting buffer in minutes applied to order execution when severe toxic flow is detected.
+    help_zh: 當標的遭遇重度毒性訂單流時，下單執行之建議暫緩冷卻等待分鐘數（預設 5 分鐘）。
   - key: breakout_filter_fail_open
     group: trading
     type: bool

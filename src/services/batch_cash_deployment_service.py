@@ -43,6 +43,7 @@ class BatchCashDeploymentService:
         slippage_guard: Optional[Any] = None,
         market_clock: Optional[Any] = None,
         blackout_guard: Optional[Any] = None,
+        vpin_guard: Optional[Any] = None,
     ):
         self.user_id = resolve_user_id(user_id)
         from src.services.settings_service import SettingsService
@@ -60,6 +61,19 @@ class BatchCashDeploymentService:
             user_id=self.user_id,
             settings_service=self.settings_service,
         )
+        if vpin_guard is not None:
+            self.vpin_guard = vpin_guard
+        elif hasattr(self.slippage_guard, "vpin_guard") and self.slippage_guard.vpin_guard is not None:
+            self.vpin_guard = self.slippage_guard.vpin_guard
+        else:
+            try:
+                from src.services.vpin_toxicity_guard_service import VPINToxicityGuardService
+                self.vpin_guard = VPINToxicityGuardService(
+                    user_id=self.user_id,
+                    settings_service=self.settings_service,
+                )
+            except Exception:
+                self.vpin_guard = None
 
     async def _get_broker(self) -> Any:
         if self.broker:
@@ -384,6 +398,25 @@ class BatchCashDeploymentService:
             except Exception as fq_err:
                 logger.debug(f"Non-blocking fill quality summary error: {fq_err}")
 
+        # 產出候選標的微觀結構訂單流毒性與 Kyle's Lambda 摘要
+        vpin_summary = {}
+        if self.vpin_guard and getattr(self.vpin_guard, "is_enabled", True):
+            try:
+                vpin_obj = await self.vpin_guard.get_portfolio_vpin_assessment(candidate_tickers)
+                vpin_summary = vpin_obj.to_dict()
+                for it in allocated_items:
+                    t_sym = it.get("ticker", "")
+                    ass = vpin_obj.assessments.get(t_sym)
+                    if ass:
+                        it["vpin"] = ass.vpin
+                        it["kyle_lambda"] = ass.kyle_lambda
+                        it["vpin_regime"] = ass.regime.value
+                        it["is_vpin_toxic"] = ass.is_toxic
+                        if ass.is_toxic:
+                            it["vpin_action"] = "DEFER"
+            except Exception as vpin_err:
+                logger.debug(f"Non-blocking VPIN summary error in deployment plan: {vpin_err}")
+
         return {
             "batch_number": batch_number,
             "status": status,
@@ -398,6 +431,7 @@ class BatchCashDeploymentService:
             "expected_cash_ratio": round(expected_cash_ratio, 2),
             "calendar_summary": calendar_summary,
             "fill_quality_summary": fill_quality_summary,
+            "vpin_summary": vpin_summary,
             "risk_parity_applied": bool(risk_parity_weights),
             "risk_concentration_hhi": round(risk_parity_result.cvar_hhi_risk, 4) if risk_parity_result else None,
             "effective_risk_assets": round(risk_parity_result.effective_risk_assets_cvar, 2) if risk_parity_result else None,
@@ -654,12 +688,23 @@ class BatchCashDeploymentService:
             )
 
             if not slippage_eval.passed and not force:
+                is_vpin_toxic = (
+                    "知情交易" in (slippage_eval.reason or "")
+                    or "VPIN" in (slippage_eval.reason or "")
+                    or (getattr(slippage_eval, "vpin", None) is not None and getattr(slippage_eval, "vpin", 0.0) >= 0.40)
+                )
                 is_black_hole = (
                     getattr(slippage_eval, "fill_quality_grade", "") == "F"
                     or "黑洞" in (slippage_eval.reason or "")
                     or "black hole" in (slippage_eval.reason or "").lower()
                 )
-                trade_status = "liquidity_black_hole_deferred" if is_black_hole else "circuit_breaker_deferred"
+                if is_vpin_toxic:
+                    trade_status = "vpin_toxicity_deferred"
+                elif is_black_hole:
+                    trade_status = "liquidity_black_hole_deferred"
+                else:
+                    trade_status = "circuit_breaker_deferred"
+
                 logger.warning(
                     f"Slippage Circuit Breaker triggered for {ticker} ({trade_status}): {slippage_eval.reason}. Skipping trade."
                 )
@@ -671,6 +716,8 @@ class BatchCashDeploymentService:
                     "spread_pct": slippage_eval.spread_pct,
                     "fill_quality_grade": getattr(slippage_eval, "fill_quality_grade", None),
                     "fill_quality_multiplier": getattr(slippage_eval, "fill_quality_multiplier", None),
+                    "vpin": getattr(slippage_eval, "vpin", None),
+                    "kyle_lambda": getattr(slippage_eval, "kyle_lambda", None),
                 })
                 continue
 

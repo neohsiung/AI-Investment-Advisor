@@ -44,6 +44,8 @@ class SlippageGuardDecision:
     fill_quality_multiplier: Optional[float] = None
     fill_quality_grade: Optional[str] = None
     fill_quality_bps: Optional[float] = None
+    vpin: Optional[float] = None
+    kyle_lambda: Optional[float] = None
     recommended_action: str = "PROCEED"  # "PROCEED", "DEFER", "REJECT", "LIMIT_ORDER"
 
     def to_dict(self) -> Dict[str, Any]:
@@ -61,6 +63,8 @@ class SlippageGuardDecision:
             "fill_quality_multiplier": round(self.fill_quality_multiplier, 2) if self.fill_quality_multiplier is not None else None,
             "fill_quality_grade": self.fill_quality_grade,
             "fill_quality_bps": round(self.fill_quality_bps, 2) if self.fill_quality_bps is not None else None,
+            "vpin": round(self.vpin, 4) if self.vpin is not None else None,
+            "kyle_lambda": round(self.kyle_lambda, 6) if self.kyle_lambda is not None else None,
             "recommended_action": self.recommended_action,
         }
 
@@ -79,6 +83,7 @@ class SlippageGuardService:
         market_data_service: Optional[Any] = None,
         market_clock: Optional[Any] = None,
         compensator: Optional[Any] = None,
+        vpin_guard: Optional[Any] = None,
     ):
         self.user_id = resolve_user_id(user_id)
         from src.services.settings_service import SettingsService
@@ -101,6 +106,20 @@ class SlippageGuardService:
             user_id=self.user_id,
             settings_repo=self.settings_service,
         )
+
+        if vpin_guard is not None:
+            self.vpin_guard = vpin_guard
+        else:
+            try:
+                from src.services.vpin_toxicity_guard_service import VPINToxicityGuardService
+                self.vpin_guard = VPINToxicityGuardService(
+                    user_id=self.user_id,
+                    settings_service=self.settings_service,
+                    market_data_service=self.market_data_service,
+                )
+            except Exception as vpin_init_err:
+                logger.debug(f"Could not initialize VPINToxicityGuardService: {vpin_init_err}")
+                self.vpin_guard = None
 
     def _get_setting_bool(self, key: str, default: bool = True) -> bool:
         val = self.settings_service.get_setting(key, default)
@@ -393,6 +412,57 @@ class SlippageGuardService:
                 recommended_action="DEFER",
             )
 
+        # 2.6 微觀結構訂單流毒性與知情交易者檢定 (VPIN & Kyle's Lambda Guard)
+        vpin_boost = 0.0
+        vpin_val = None
+        kyle_val = None
+        if self.vpin_guard and getattr(self.vpin_guard, "is_enabled", True):
+            try:
+                vpin_eval = await self.vpin_guard.evaluate_ticker(ticker, action=action)
+                if vpin_eval:
+                    vpin_val = vpin_eval.vpin
+                    kyle_val = vpin_eval.kyle_lambda
+                    if vpin_eval.is_toxic:
+                        pace_m = getattr(vpin_eval, "execution_pace_minutes", 5)
+                        vpin_reason = (
+                            f"⚠️ 標的 {ticker} 偵測到知情交易者訂單流毒性急遽升高 (VPIN: {vpin_eval.vpin:.1%}, "
+                            f"Kyle's λ: {vpin_eval.kyle_lambda:.6f} $/k shares，體制: TOXIC)，"
+                            f"觸發微觀結構知情交易熔斷保護，暫緩下單並建議冷卻 {pace_m} 分鐘等待盤口回穩。"
+                        )
+                        logger.warning(f"SlippageGuard VPIN Toxicity Breaker TRIGGERED for {action.upper()} {ticker}: {vpin_reason}")
+                        self._record_circuit_breaker_event(
+                            ticker=ticker,
+                            action=action,
+                            spread_pct=spread_pct or 0.0,
+                            threshold=max_spread,
+                            bid=bid,
+                            ask=ask,
+                        )
+                        return SlippageGuardDecision(
+                            passed=False,
+                            reason=vpin_reason,
+                            circuit_breaker_triggered=True,
+                            spread_pct=spread_pct,
+                            bid_price=bid,
+                            ask_price=ask,
+                            mid_price=mid,
+                            last_price=last,
+                            fill_quality_multiplier=comp_metrics.slippage_multiplier,
+                            fill_quality_grade="F",
+                            fill_quality_bps=comp_metrics.realized_slippage_bps_mean,
+                            vpin=vpin_val,
+                            kyle_lambda=kyle_val,
+                            recommended_action="DEFER",
+                        )
+                    elif getattr(vpin_eval.regime, "value", str(vpin_eval.regime)) == "ELEVATED":
+                        vpin_boost = getattr(vpin_eval, "slippage_boost", 0.3)
+                        logger.info(
+                            f"SlippageGuard: {ticker} VPIN elevated ({vpin_eval.vpin:.1%}), "
+                            f"applying slippage boost +{vpin_boost:.2f}x"
+                        )
+            except Exception as vpin_err:
+                logger.debug(f"VPIN toxicity evaluation non-blocking error for {ticker}: {vpin_err}")
+
         # 3. 即時買賣價差熔斷檢測
         if spread_pct is not None and spread_pct > max_spread:
             reason = (
@@ -420,6 +490,8 @@ class SlippageGuardService:
                 fill_quality_multiplier=comp_metrics.slippage_multiplier,
                 fill_quality_grade="D",
                 fill_quality_bps=comp_metrics.realized_slippage_bps_mean,
+                vpin=vpin_val,
+                kyle_lambda=kyle_val,
                 recommended_action="DEFER",
             )
 
@@ -430,8 +502,8 @@ class SlippageGuardService:
 
         # 自適應滑點補償調整係數
         base_buffer = min(max_spread * 0.5, 0.0010)
-        mult = comp_metrics.slippage_multiplier if self.compensator.is_enabled else 1.0
-        dyn_mult = min(1.5, max(0.8, mult))
+        mult = (comp_metrics.slippage_multiplier if self.compensator.is_enabled else 1.0) + vpin_boost
+        dyn_mult = min(1.8, max(0.8, mult))
         max_comp_buffer = self._get_setting_float("max_slippage_compensation_buffer", 0.0025)
         adaptive_buffer = min(max_comp_buffer, base_buffer * dyn_mult)
 
@@ -477,6 +549,8 @@ class SlippageGuardService:
             fill_quality_multiplier=mult,
             fill_quality_grade=grade,
             fill_quality_bps=comp_metrics.realized_slippage_bps_mean,
+            vpin=vpin_val,
+            kyle_lambda=kyle_val,
             recommended_action="PROCEED",
         )
 
