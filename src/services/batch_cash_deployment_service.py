@@ -44,6 +44,7 @@ class BatchCashDeploymentService:
         market_clock: Optional[Any] = None,
         blackout_guard: Optional[Any] = None,
         vpin_guard: Optional[Any] = None,
+        jump_guard: Optional[Any] = None,
     ):
         self.user_id = resolve_user_id(user_id)
         from src.services.settings_service import SettingsService
@@ -74,6 +75,22 @@ class BatchCashDeploymentService:
                 )
             except Exception:
                 self.vpin_guard = None
+
+        if jump_guard is not None:
+            self.jump_guard = jump_guard
+        elif hasattr(self.slippage_guard, "jump_guard") and self.slippage_guard.jump_guard is not None:
+            self.jump_guard = self.slippage_guard.jump_guard
+        else:
+            try:
+                from src.services.bayesian_jump_diffusion_guard_service import (
+                    BayesianJumpDiffusionGuardService,
+                )
+                self.jump_guard = BayesianJumpDiffusionGuardService(
+                    user_id=self.user_id,
+                    settings_service=self.settings_service,
+                )
+            except Exception:
+                self.jump_guard = None
 
     async def _get_broker(self) -> Any:
         if self.broker:
@@ -325,16 +342,40 @@ class BatchCashDeploymentService:
                 except Exception:
                     is_black_hole = False
 
-            # 若標的落入財報/宏觀避開視窗或流動性黑洞，不於此批次執行以防極端波動
+            # 貝葉斯跳躍擴散守衛檢驗
+            is_jump_acute = False
+            jump_intensity = 0.0
+            jump_regime = "CALM_DIFFUSION"
+            if self.jump_guard and getattr(self.jump_guard, "is_enabled", True):
+                try:
+                    j_eval = await self.jump_guard.evaluate_ticker(ticker)
+                    if j_eval:
+                        jump_intensity = j_eval.jump_intensity
+                        jump_regime = (
+                            j_eval.regime.value
+                            if hasattr(j_eval.regime, "value")
+                            else str(j_eval.regime)
+                        )
+                        if j_eval.is_acute_jump or j_eval.recommended_action == "DEFER":
+                            is_jump_acute = True
+                except Exception as je:
+                    logger.debug(f"Candidate jump evaluation non-blocking error for {ticker}: {je}")
+
+            # 若標的落入財報/宏觀避開視窗、流動性黑洞或跳躍熔斷，不於此批次執行以防極端波動
             raw_trade_amount = trade_amount
-            if is_blackout or is_black_hole:
+            if is_blackout or is_black_hole or is_jump_acute:
                 trade_amount = 0.0
 
             is_tail_alert = False
             if risk_parity_result and ticker in risk_parity_result.asset_metrics:
                 is_tail_alert = bool(risk_parity_result.asset_metrics[ticker].tail_risk_flag)
 
-            is_executable = (trade_amount >= 10.0 and not is_blackout and not is_black_hole)
+            is_executable = (
+                trade_amount >= 10.0
+                and not is_blackout
+                and not is_black_hole
+                and not is_jump_acute
+            )
             candidate_entry = {
                 "ticker": ticker,
                 "amount_usd": trade_amount if is_executable else 0.0,
@@ -352,6 +393,9 @@ class BatchCashDeploymentService:
                 "blackout_reason": blackout_reason,
                 "liquidity_black_hole": is_black_hole,
                 "slippage_multiplier": round(comp_multiplier, 2),
+                "jump_intensity": round(jump_intensity, 4),
+                "jump_regime": jump_regime,
+                "is_acute_jump": is_jump_acute,
             }
             all_candidates_summary.append(candidate_entry)
 
@@ -417,6 +461,24 @@ class BatchCashDeploymentService:
             except Exception as vpin_err:
                 logger.debug(f"Non-blocking VPIN summary error in deployment plan: {vpin_err}")
 
+        # 產出候選標的多期動態貝葉斯跳躍擴散摘要
+        jump_summary = {}
+        if self.jump_guard and getattr(self.jump_guard, "is_enabled", True):
+            try:
+                jump_obj = await self.jump_guard.get_portfolio_jump_assessment(candidate_tickers)
+                jump_summary = jump_obj.to_dict()
+                for it in allocated_items:
+                    t_sym = it.get("ticker", "")
+                    ass = jump_obj.assessments.get(t_sym)
+                    if ass:
+                        it["jump_intensity"] = ass.jump_intensity
+                        it["jump_regime"] = ass.regime.value
+                        it["is_acute_jump"] = ass.is_acute_jump
+                        if ass.is_acute_jump or ass.recommended_action == "DEFER":
+                            it["jump_action"] = "DEFER"
+            except Exception as jump_err:
+                logger.debug(f"Non-blocking jump summary error in deployment plan: {jump_err}")
+
         return {
             "batch_number": batch_number,
             "status": status,
@@ -432,6 +494,7 @@ class BatchCashDeploymentService:
             "calendar_summary": calendar_summary,
             "fill_quality_summary": fill_quality_summary,
             "vpin_summary": vpin_summary,
+            "jump_summary": jump_summary,
             "risk_parity_applied": bool(risk_parity_weights),
             "risk_concentration_hhi": round(risk_parity_result.cvar_hhi_risk, 4) if risk_parity_result else None,
             "effective_risk_assets": round(risk_parity_result.effective_risk_assets_cvar, 2) if risk_parity_result else None,
@@ -688,6 +751,12 @@ class BatchCashDeploymentService:
             )
 
             if not slippage_eval.passed and not force:
+                is_jump_acute = (
+                    "跳躍" in (slippage_eval.reason or "")
+                    or "jump" in (slippage_eval.reason or "").lower()
+                    or getattr(slippage_eval, "jump_regime", "") == "ACUTE_JUMP_REGIME"
+                    or (getattr(slippage_eval, "jump_intensity", None) is not None and getattr(slippage_eval, "jump_intensity", 0.0) >= 6.0)
+                )
                 is_vpin_toxic = (
                     "知情交易" in (slippage_eval.reason or "")
                     or "VPIN" in (slippage_eval.reason or "")
@@ -698,7 +767,9 @@ class BatchCashDeploymentService:
                     or "黑洞" in (slippage_eval.reason or "")
                     or "black hole" in (slippage_eval.reason or "").lower()
                 )
-                if is_vpin_toxic:
+                if is_jump_acute:
+                    trade_status = "jump_diffusion_deferred"
+                elif is_vpin_toxic:
                     trade_status = "vpin_toxicity_deferred"
                 elif is_black_hole:
                     trade_status = "liquidity_black_hole_deferred"
@@ -718,6 +789,8 @@ class BatchCashDeploymentService:
                     "fill_quality_multiplier": getattr(slippage_eval, "fill_quality_multiplier", None),
                     "vpin": getattr(slippage_eval, "vpin", None),
                     "kyle_lambda": getattr(slippage_eval, "kyle_lambda", None),
+                    "jump_intensity": getattr(slippage_eval, "jump_intensity", None),
+                    "jump_regime": getattr(slippage_eval, "jump_regime", None),
                 })
                 continue
 
@@ -785,13 +858,22 @@ class BatchCashDeploymentService:
                 # 避免連續併發下單撞擊券商速率限制
                 await asyncio.sleep(1.5)
 
-        # 將事前避開之候選標的 (財報避開 / 流動性黑洞) 納入執行審查記錄，確保不提前推進批次並如實呈報
+        # 將事前避開之候選標的 (財報避開 / 流動性黑洞 / 跳躍熔斷) 納入執行審查記錄，確保不提前推進批次並如實呈報
         for cand in plan.get("all_candidates", []):
             c_ticker = cand.get("ticker")
             if any(t["ticker"] == c_ticker for t in executed_trades):
                 continue
             planned_amt = cand.get("planned_amount_usd") or cand.get("amount_usd", 0.0)
-            if cand.get("liquidity_black_hole"):
+            if cand.get("is_acute_jump"):
+                executed_trades.append({
+                    "ticker": c_ticker,
+                    "amount_usd": planned_amt,
+                    "status": "jump_diffusion_deferred",
+                    "reason": f"標的 {c_ticker} 處於重度跳躍衝擊體制 (跳躍強度 {cand.get('jump_intensity', 6.0):.2f} 次/年)，觸發貝葉斯跳躍擴散熔斷暫緩下單",
+                    "jump_intensity": cand.get("jump_intensity"),
+                    "jump_regime": cand.get("jump_regime", "ACUTE_JUMP_REGIME"),
+                })
+            elif cand.get("liquidity_black_hole"):
                 executed_trades.append({
                     "ticker": c_ticker,
                     "amount_usd": planned_amt,
@@ -912,13 +994,19 @@ class BatchCashDeploymentService:
             success_trades = [t for t in executed_trades if t.get("status") in ("executed", "pending")]
             blackout_trades = [t for t in executed_trades if t.get("status") == "blackout_deferred"]
             black_hole_trades = [t for t in executed_trades if t.get("status") == "liquidity_black_hole_deferred"]
+            jump_trades = [t for t in executed_trades if t.get("status") == "jump_diffusion_deferred"]
             circuit_trades = [t for t in executed_trades if t.get("status") == "circuit_breaker_deferred"]
             other_deferred = [
                 t for t in executed_trades
                 if "deferred" in t.get("status", "")
-                and t.get("status") not in ("blackout_deferred", "circuit_breaker_deferred", "liquidity_black_hole_deferred")
+                and t.get("status") not in (
+                    "blackout_deferred",
+                    "circuit_breaker_deferred",
+                    "liquidity_black_hole_deferred",
+                    "jump_diffusion_deferred",
+                )
             ]
-            deferred_trades = blackout_trades + black_hole_trades + circuit_trades + other_deferred
+            deferred_trades = blackout_trades + black_hole_trades + jump_trades + circuit_trades + other_deferred
             failed_trades = [t for t in executed_trades if t.get("status") in ("failed", "error")]
             skipped_trades = [t for t in executed_trades if t.get("status") == "skipped"]
 
@@ -953,6 +1041,12 @@ class BatchCashDeploymentService:
                 lines.append("**🕳️ 盤中流動性黑洞熔斷暫緩下單:**")
                 for bh in black_hole_trades:
                     lines.append(f"  • **{bh['ticker']}**: ${bh['amount_usd']:.2f} — {bh.get('reason', '成交品質惡化/逆向選擇防線生效')}")
+
+            if jump_trades:
+                lines.append("")
+                lines.append("**⚡ 貝葉斯跳躍擴散熔斷暫緩下單:**")
+                for jt in jump_trades:
+                    lines.append(f"  • **{jt['ticker']}**: ${jt['amount_usd']:.2f} — {jt.get('reason', '極端跳躍風險/防裂口跌勢')}")
 
             if circuit_trades:
                 lines.append("")
