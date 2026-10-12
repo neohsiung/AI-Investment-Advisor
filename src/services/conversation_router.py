@@ -227,6 +227,7 @@ class ConversationRouter:
             "sor", "rlexec", "qlearning", "smartrouting", "智慧路由", "強化學習拆單", "拆單路由", "rl",
             "eventgraph", "causal", "narrative", "shock", "因果圖譜", "事件圖譜", "敘事風險", "突發避險",
             "hmm", "bayesianfilter", "filter", "regimeprob", "hmmfactor", "隱馬爾可夫", "貝葉斯濾波", "體制機率", "連續體制",
+            "universe", "pool", "tickers", "標的池", "股票池", "標的", "候選池",
         }
         return cmd in exact_keywords
 
@@ -412,6 +413,25 @@ class ConversationRouter:
 
         # 4. Guard / Slippage / 熔斷 / 滑點 / 風控
         if any(cmd.startswith(prefix) for prefix in ("guard", "circuit", "slippage", "熔斷", "滑點", "風控")):
+            # 支援一鍵重設熔斷與封存連虧
+            if any(k in cmd for k in ("reset", "重設", "解鎖", "clear")):
+                try:
+                    from src.services.trading_protections_service import TradingProtectionsService
+                    prot_svc = TradingProtectionsService(user_id=resolved_user_id)
+                    reset_ts = prot_svc.reset_lockout()
+                    return (
+                        "🔄 <b>【風控熔斷與連續虧損鎖定已手動重設 (Circuit Breaker Reset)】</b>\n"
+                        "━━━━━━━━━━━━━━━━━━\n"
+                        f"• <b>重設時間戳</b>：<code>{reset_ts}</code>\n"
+                        "• <b>連虧歷史狀態</b>：已全數封存歸檔（重設前之負 Alpha 不再阻擋新單）\n"
+                        "• <b>交易權限</b>：🟢 <code>ai_trading_enabled = true</code> (所有 BUY 買單放行)\n"
+                        "• <b>建倉準備</b>：分批建倉與再平衡服務已解鎖就緒\n"
+                        "━━━━━━━━━━━━━━━━━━\n"
+                        "💡 <i>系統已準備就緒，後續將依據在線 HMM 連續體制平滑配置建倉。輸入 <code>/guard</code> 可隨時檢視風控守衛；輸入 <code>/universe</code> 檢視標的池。</i>"
+                    )
+                except Exception as re_err:
+                    return f"⚠️ 重設風控熔斷失敗：{re_err}"
+
             try:
                 from src.services.slippage_guard_service import SlippageGuardService
                 guard = SlippageGuardService()
@@ -503,6 +523,8 @@ class ConversationRouter:
                     f"• <b>強化學習動態拆單智慧路由 (P36)</b>：輸入 <code>/sor</code> 檢視 Q-Learning 動作空間、最優切片排程與摩擦最小化計畫\n"
                     f"• <b>宏觀突發事件因果圖譜與避險 (P37)</b>：輸入 <code>/eventgraph</code> 檢視即時事件傳播震盪擴散與受損度矩陣 (支援 <code>/eventgraph sim</code> 模擬黑天鵝)\n"
                     f"• <b>貝葉斯連續體制與因子配置 (P38)</b>：輸入 <code>/hmm</code> 檢視在線漢密爾頓濾波體制機率與連續平滑因子權重 (支援 <code>/hmm sim</code>)\n"
+                    f"• <b>標的池生命週期與候選審核 (P39)</b>：輸入 <code>/universe</code> 檢視實盤活躍與儲備候選池 (支援 <code>/universe scan</code>)\n"
+                    f"• <b>手動熔斷解鎖</b>：輸入 <code>/guard reset</code> 一鍵封存連虧歷史並即時重設交易保護\n"
                     f"━━━━━━━━━━━━━━━━━━\n"
                     f"<i>美股開盤 09:35 EST 建倉時將自動為每一筆訂單執行自適應限價、價差驗證、成交品質與財報避開審核。</i>"
                 )
@@ -1542,5 +1564,82 @@ class ConversationRouter:
             except Exception as e:
                 logger.error(f"Failed to generate Bayesian HMM Factor response: {e}")
                 return f"⚠️ 查詢貝葉斯隱馬爾可夫連續因子配置狀態時發生錯誤：{e}"
+
+        # 18. Universe / Pool / Tickers / 標的池 / 股票池 (Phase 39)
+        if any(cmd.startswith(prefix) for prefix in ("universe", "pool", "tickers", "標的池", "股票池", "標的", "候選池")):
+            try:
+                from src.services.universe_lifecycle_service import UniverseLifecycleService
+                from src.repositories.ticker_universe_repository import TickerUniverseRepository
+                from src.services.sector_drift_guard_service import SectorDriftGuardService
+
+                repo = TickerUniverseRepository()
+                uni_svc = UniverseLifecycleService(user_id=resolved_user_id, repo=repo)
+
+                # Subcommand: scan / refresh / 掃描 / 重跑
+                if any(k in cmd for k in ("scan", "refresh", "掃描", "重跑")):
+                    try:
+                        from src.infrastructure.tasks import run_universe_lifecycle
+                        run_universe_lifecycle.delay(user_id=resolved_user_id, force=True)
+                    except Exception as te:
+                        logger.debug(f"Celery delay unavailable, executing lifecycle cycle inline: {te}")
+                        await uni_svc.run_lifecycle_cycle(force=True)
+
+                    return (
+                        "🚀 <b>【標的池背景生命週期演化掃描已啟動】</b>\n"
+                        "━━━━━━━━━━━━━━━━━━\n"
+                        "• <b>執行模式</b>：強制全量掃描 (Force Lifecycle Evolution)\n"
+                        "• <b>檢驗項目</b>：宏觀環境 (VIX/殖利率)、個股品質門檻 (<4.0 汰除)、候選池 Top 30 競爭性輪換、板塊漂移 HHI\n"
+                        "• <b>即時通報</b>：演化完成後將透過 Telegram/Email 主動推播最新簡報卡片！\n"
+                        "━━━━━━━━━━━━━━━━━━\n"
+                        "💡 <i>輸入 <code>/universe</code> 可隨時檢視當前標的池分佈。</i>"
+                    )
+
+                # Normal status query
+                active_rows = repo.get_all(resolved_user_id, status="active")
+                candidate_rows = repo.get_all(resolved_user_id, status="candidate")
+                shadow_rows = repo.get_all(resolved_user_id, status="shadow")
+                removed_rows = repo.get_all(resolved_user_id, status="removed")
+
+                # Sector drift analysis
+                drift_svc = SectorDriftGuardService(user_id=resolved_user_id, repo=repo)
+                drift_rep = drift_svc.analyze_universe_sectors(current_active=active_rows)
+                hhi = drift_rep.distribution.hhi_index
+                hhi_status = drift_rep.status.value
+
+                # Macro regime
+                macro_reg = await uni_svc.detect_macro_regime()
+
+                lines = [
+                    "🌐 <b>【投資顧問標的池即時架構狀態 (Universe Telemetry)】</b>",
+                    "━━━━━━━━━━━━━━━━━━",
+                    f"• <b>宏觀環境體制</b>：<code>{macro_reg.regime}</code> (VIX: <code>{macro_reg.vix:.1f}</code>, 門檻微調: <code>{macro_reg.quality_score_adjustment:+.1f}</code>)",
+                    f"• <b>實盤活躍池</b>：<b>{len(active_rows)} / 8 檔</b> (上限容量)",
+                    f"• <b>儲備候選池</b>：<b>{len(candidate_rows)} / 30 檔</b> (競爭性儲備)",
+                    f"• <b>影子觀測池</b>：<b>{len(shadow_rows)} 檔</b> (MTM 畢業考評中)",
+                    f"• <b>歷史淘汰池</b>：<b>{len(removed_rows)} 檔</b>",
+                    f"• <b>板塊集中度</b>：<code>{hhi_status}</code> (HHI: <code>{hhi:.3f}</code>)",
+                    "━━━━━━━━━━━━━━━━━━",
+                    "🎯 <b>【實盤活躍標的 (Active Tickers)】</b>",
+                ]
+
+                for a in active_rows:
+                    sym = a["ticker"]
+                    sec = a.get("sector") or "科技與成長"
+                    pin_str = " 📌(置頂)" if a.get("is_pinned") else ""
+                    lines.append(f"• <b>{sym}</b> ({sec}){pin_str}")
+
+                lines.append("━━━━━━━━━━━━━━━━━━")
+                lines.append(f"📥 <b>【儲備候選池亮點 (Top Candidates, 共 {len(candidate_rows)} 檔)】</b>")
+                cand_symbols = [c["ticker"] for c in candidate_rows[:12]]
+                lines.append("<code>" + ", ".join(cand_symbols) + "</code>" + (" ... 等" if len(candidate_rows) > 12 else ""))
+
+                lines.append("━━━━━━━━━━━━━━━━━━")
+                lines.append(
+                    "💡 <i>指令提示：輸入 <code>/universe scan</code> 立即啟動全量重掃描；輸入 <code>/guard</code> 檢視風控守衛；輸入 <code>/hmm</code> 檢視體制機率。</i>"
+                )
+                return "\n".join(lines)
+            except Exception as e:
+                logger.error(f"Failed to generate Universe telemetry response: {e}")
+                return f"⚠️ 查詢標的池狀態時發生錯誤：{e}"
 
         return None

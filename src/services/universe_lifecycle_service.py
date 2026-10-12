@@ -998,4 +998,76 @@ class UniverseLifecycleService:
             "candidate_count": len(current_candidates),
         }
 
+    async def dispatch_lifecycle_notification(self, result: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+        """
+        Dispatches a rich Telegram / Email report after a universe lifecycle evolution run.
+        """
+        try:
+            from src.services.notification_service import NotificationService
+            noti_svc = NotificationService.create_with_settings(settings_service=self.settings, user_id=self.user_id)
+
+            regime_info = result.get("regime") or {}
+            regime_name = regime_info.get("regime", "NEUTRAL_BALANCED")
+            vix = float(regime_info.get("vix") or 18.0)
+            
+            evicted = result.get("evicted") or []
+            admitted = result.get("admitted") or []
+            rotations = result.get("rotations") or []
+            cand_evo = result.get("candidate_evolution") or {}
+            shadow_evo = result.get("shadow_evolution") or {}
+            drift = result.get("sector_drift_report") or {}
+            drift_status = drift.get("status", "BALANCED")
+            hhi = float((drift.get("distribution") or {}).get("hhi_index") or 0.0)
+
+            title = f"🌐 標的池週度演化簡報：體制 [{regime_name}]"
+            
+            content_lines = [
+                "標的池生命週期演化任務已執行完畢，最新狀態如下：\n",
+                f"• <b>宏觀環境評估</b>：<code>{regime_name}</code> (VIX: {vix:.1f})",
+                f"• <b>實盤活躍池</b>：{result.get('active_count', 8)} 檔 (容量上限: {self.settings.get_setting('universe_max_active_tickers') or 8})",
+                f"• <b>儲備候選池</b>：{result.get('candidate_count', 30)} 檔 (Top 30 競爭性保留)",
+                f"• <b>影子觀測池</b>：{result.get('shadow_count', 0)} 檔 (MTM 畢業考評中)",
+                f"• <b>板塊集中度</b>：<code>{drift_status}</code> (HHI: {hhi:.3f})\n",
+            ]
+            
+            changes = []
+            if evicted:
+                changes.append(f"🔻 <b>剔除劣化標的 ({len(evicted)})</b>：" + ", ".join(f"<code>{x}</code>" for x in evicted))
+            if rotations:
+                rot_str = ", ".join(f"{r.get('old_ticker')} ➔ {r.get('new_ticker')}" for r in rotations)
+                changes.append(f"🔄 <b>競爭性輪換 ({len(rotations)})</b>：{rot_str}")
+            if admitted:
+                changes.append(f"🟢 <b>新晉補足標的 ({len(admitted)})</b>：" + ", ".join(f"<code>{x}</code>" for x in admitted))
+            
+            cand_admitted = cand_evo.get("admitted_new_tickers") or []
+            if cand_admitted:
+                changes.append(f"📥 <b>候選池新收錄 ({len(cand_admitted)})</b>：" + ", ".join(f"<code>{x}</code>" for x in cand_admitted[:5]))
+
+            graduated = shadow_evo.get("graduated_tickers") or []
+            if graduated:
+                changes.append(f"🎓 <b>影子交易畢業 ({len(graduated)})</b>：" + ", ".join(f"<code>{x}</code>" for x in graduated))
+
+            if not changes:
+                changes.append("✨ 標的池結構穩定，無標的劣化或需要輪換。")
+
+            content_lines.append("<b>【本次演化異動】</b>\n" + "\n".join(changes))
+            content_lines.append("\n輸入 <code>/universe</code> 可隨時檢視完整標的池狀態與候選清單。")
+            content = "\n".join(content_lines)
+
+            actions = [
+                {"label": "📊 檢視標的池 (Universe)", "data": "action=view_universe", "key": "view_universe"},
+                {"label": "👌 確認知悉 (Dismiss)", "data": "action=dismiss", "key": "dismiss"},
+            ]
+
+            return await noti_svc.notify_all(
+                title=title,
+                content=content,
+                user_id=self.user_id,
+                actions=actions,
+                category="report",
+            )
+        except Exception as e:
+            logger.error("Failed to dispatch universe lifecycle notification: %s", e)
+            return None
+
 

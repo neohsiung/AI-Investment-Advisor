@@ -1294,6 +1294,40 @@ settings:
     label_zh: 貝葉斯隱馬爾可夫觀測變數回看天數
     help_en: Lookback period for calculating VIX Z-score and trend metrics in market observations.
     help_zh: 計算 VIX Z-score、趨勢偏離度等觀測特徵之歷史滾動天數（預設 30 天）。
+  - key: protection_lockout_reset_at
+    group: trading
+    type: string
+    default: ""
+    label_en: Lockout reset timestamp watermark
+    label_zh: 風控連虧熔斷重設時間戳
+    help_en: Watermark timestamp; decision outcomes resolved before this time are archived and ignored by consecutive loss lockout.
+    help_zh: 熔斷重設浮水印時間戳；在此時間點前結算之決策視為已歸檔歷史，不再觸發連續虧損鎖定。
+  - key: enable_unified_risk_gateway
+    group: trading
+    type: bool
+    default: true
+    label_en: Enable unified risk gateway
+    label_zh: 啟用統一中央風控閘門
+    help_en: Consolidates trading protections, calendar blackouts, VPIN toxicity, jump diffusion, and slippage guards into a unified pre-trade evaluation pipeline.
+    help_zh: 將分散的交易保護、財報避開、微觀訂單流毒性、跳躍擴散突波與滑點守衛整合為統一前置風險閘門。
+  - key: inference_cost_hurdle_enabled
+    group: trading
+    type: bool
+    default: true
+    label_en: Enable inference cost-to-alpha hurdle gate
+    label_zh: 啟用推理成本超額收益門檻閘門
+    help_en: Bypasses multi-agent LLM debates on small orders and routine rebalances to prevent AI fees from eroding net fund alpha.
+    help_zh: 在小額訂單與日常例行再平衡時自動分流至 0-LLM 數理引擎，避免昂貴的模型推理費用吞噬超額淨 Alpha。
+  - key: small_order_bypass_threshold_usd
+    group: trading
+    type: float
+    default: 250.0
+    min: 50.0
+    max: 2000.0
+    label_en: Small order 0-LLM math engine threshold (USD)
+    label_zh: 小額訂單 0-LLM 數理引擎分流門檻 (USD)
+    help_en: Trade amount below which routine execution bypasses full LLM council and uses deterministic mathematical allocation.
+    help_zh: 當交易金額小於此門檻時，日常執行直接採用確定性數理因子模型，杜絕無謂 Token 消耗。
   - key: breakout_filter_fail_open
     group: trading
     type: bool
