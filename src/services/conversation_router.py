@@ -226,6 +226,7 @@ class ConversationRouter:
             "jump", "jumpdiffusion", "merton", "bayesian", "跳躍擴散", "跳躍", "跳空", "貝葉斯跳躍",
             "sor", "rlexec", "qlearning", "smartrouting", "智慧路由", "強化學習拆單", "拆單路由", "rl",
             "eventgraph", "causal", "narrative", "shock", "因果圖譜", "事件圖譜", "敘事風險", "突發避險",
+            "hmm", "bayesianfilter", "filter", "regimeprob", "hmmfactor", "隱馬爾可夫", "貝葉斯濾波", "體制機率", "連續體制",
         }
         return cmd in exact_keywords
 
@@ -501,6 +502,7 @@ class ConversationRouter:
                     f"• <b>貝葉斯跳躍擴散守衛 (P35)</b>：輸入 <code>/jump</code> 檢視 Merton 跳躍強度 λ、擴散波動 σ 與體制卡片\n"
                     f"• <b>強化學習動態拆單智慧路由 (P36)</b>：輸入 <code>/sor</code> 檢視 Q-Learning 動作空間、最優切片排程與摩擦最小化計畫\n"
                     f"• <b>宏觀突發事件因果圖譜與避險 (P37)</b>：輸入 <code>/eventgraph</code> 檢視即時事件傳播震盪擴散與受損度矩陣 (支援 <code>/eventgraph sim</code> 模擬黑天鵝)\n"
+                    f"• <b>貝葉斯連續體制與因子配置 (P38)</b>：輸入 <code>/hmm</code> 檢視在線漢密爾頓濾波體制機率與連續平滑因子權重 (支援 <code>/hmm sim</code>)\n"
                     f"━━━━━━━━━━━━━━━━━━\n"
                     f"<i>美股開盤 09:35 EST 建倉時將自動為每一筆訂單執行自適應限價、價差驗證、成交品質與財報避開審核。</i>"
                 )
@@ -761,6 +763,7 @@ class ConversationRouter:
                 lines.append("• <b>離線基因超參數演化 (P31)</b>：輸入 <code>/evolve</code> 檢視全歷史 Walk-Forward 遺傳演化終審進度與最佳矩陣。")
                 lines.append("• <b>因子特徵正交化 (P32)</b>：輸入 <code>/ortho</code> 檢視 6 大因子多重共線性 VIF 檢定與純淨 Alpha 正交化。")
                 lines.append("• <b>多資產動態風險平價 (P33)</b>：輸入 <code>/riskparity</code> 檢視等風險貢獻 (ERC) 與極端尾部 CVaR 資本配置。")
+                lines.append("• <b>貝葉斯連續體制與因子配置 (P38)</b>：輸入 <code>/hmm</code> 檢視在線漢密爾頓濾波體制機率與連續平滑因子權重。")
 
                 return "\n".join(lines)
             except Exception as e:
@@ -1420,5 +1423,124 @@ class ConversationRouter:
             except Exception as e:
                 logger.error(f"Failed to generate Macro Event Causal Graph response: {e}")
                 return f"⚠️ 查詢宏觀突發事件因果圖譜狀態時發生錯誤：{e}"
+
+        # 17. Bayesian HMM Continuous Factor Allocation / 隱馬爾可夫 / 貝葉斯濾波 / 體制機率 (Phase 38)
+        if any(cmd.startswith(prefix) for prefix in ("hmm", "bayesianfilter", "filter", "regimeprob", "hmmfactor", "隱馬爾可夫", "貝葉斯濾波", "體制機率", "連續體制")):
+            try:
+                from src.services.bayesian_hmm_factor_service import (
+                    BayesianHMMFactorService,
+                    TacticalMarketPhase,
+                )
+                from src.services.settings_service import SettingsService
+
+                settings_svc = SettingsService(user_id=resolved_user_id)
+                hmm_svc = BayesianHMMFactorService(
+                    user_id=resolved_user_id,
+                    settings_service=settings_svc,
+                )
+
+                # Subcommand: reset / clear
+                if any(k in cmd for k in ("clear", "reset", "重置")):
+                    hmm_svc.reset_state()
+                    return (
+                        "🔄 <b>【貝葉斯隱馬爾可夫狀態已重置】</b>\n"
+                        "━━━━━━━━━━━━━━━━━━\n"
+                        "已清除 Redis 分散式後驗信念快取，體制機率分佈回復均勻無先驗基準。"
+                    )
+
+                # Subcommand: sim <REGIME>
+                sim_regime = None
+                if any(k in cmd for k in ("sim", "模擬")):
+                    parts = cmd.split()
+                    for p in parts:
+                        p_up = p.upper()
+                        if p_up in ("BULL", "ACCELERATION", "多頭"):
+                            sim_regime = "BULL"
+                        elif p_up in ("REBOUND", "PIVOT", "反彈"):
+                            sim_regime = "REBOUND"
+                        elif p_up in ("VALUE", "LATE", "價值"):
+                            sim_regime = "VALUE"
+                        elif p_up in ("DEFENSE", "BEAR", "CONSOLIDATION", "防禦"):
+                            sim_regime = "DEFENSE"
+
+                if sim_regime:
+                    sim_obs = hmm_svc.simulate_observation(sim_regime)
+                    posterior = hmm_svc.update_beliefs_sync(sim_obs, persist=True)
+                    sim_note = f"⚠️ <b>[情境模擬更新: {sim_regime}]</b> 已注入典型宏觀觀測值並推演後驗分佈\n"
+                else:
+                    sim_note = ""
+                    posterior = hmm_svc.get_current_posterior()
+
+                status_badge = "🟢 運行中 (Online)" if hmm_svc.is_enabled else "🟡 旁路 (Bypass)"
+
+                # Format phase probabilities bar
+                probs = posterior.probabilities
+                phase_labels = {
+                    TacticalMarketPhase.BULL_ACCELERATION.value: ("🚀 BULL (多頭動能加速)", probs.get(TacticalMarketPhase.BULL_ACCELERATION.value, 0.0)),
+                    TacticalMarketPhase.EARLY_REBOUND.value: ("🌱 REBOUND (超跌修復強彈)", probs.get(TacticalMarketPhase.EARLY_REBOUND.value, 0.0)),
+                    TacticalMarketPhase.LATE_CYCLE_VALUE.value: ("💎 VALUE (景氣高檔價值)", probs.get(TacticalMarketPhase.LATE_CYCLE_VALUE.value, 0.0)),
+                    TacticalMarketPhase.DEFENSIVE_CONSOLIDATION.value: ("🛡️ DEFENSE (低波品質防禦)", probs.get(TacticalMarketPhase.DEFENSIVE_CONSOLIDATION.value, 0.0)),
+                }
+
+                lines = [
+                    "🔮 <b>【在線連續貝葉斯濾波與隱馬爾可夫因子動態配置報告 (Phase 38)】</b>",
+                    "━━━━━━━━━━━━━━━━━━",
+                    "• <b>核心演算法</b>：<code>4-State Hidden Markov Model + Online Hamilton Filter + Shannon Entropy Guard</code>",
+                    f"• <b>引擎狀態</b>：{status_badge} (持續性 p: <code>{hmm_svc.transition_persistence:.2f}</code>, 熵防禦門檻: <code>{hmm_svc.entropy_defense_threshold:.2f}</code>)",
+                    f"• <b>當前主導體制</b>：<b>{posterior.dominant_phase.value}</b> (信心度: <code>{posterior.confidence:.1%}</code>)",
+                    f"• <b>香農不確定性熵</b>：<code>H={posterior.entropy:.2f}</code> (模糊指數: <code>{posterior.ambiguity_index:.1%}</code>)",
+                ]
+
+                if posterior.is_entropy_guard_active:
+                    lines.append("  └ ⚠️ <b>【體制模糊守衛啟動】</b>：市場處於體制轉換劇烈模糊期，已自適應向低波動/品質防禦錨點傾斜！")
+
+                if sim_note:
+                    lines.append(sim_note)
+
+                lines.append("━━━━━━━━━━━━━━━━━━")
+                lines.append("📊 <b>【4 大隱馬爾可夫風格體制連續後驗機率分佈】</b>")
+                for key, (label, p_val) in phase_labels.items():
+                    bar_len = int(p_val * 20)
+                    bar_str = "█" * bar_len + "░" * (20 - bar_len)
+                    is_dom = " ★" if key == posterior.dominant_phase.value else ""
+                    lines.append(f"• <b>{label}</b>{is_dom}\n  <code>[{bar_str}]</code> <b>{p_val:5.1%}</b>")
+
+                lines.append("━━━━━━━━━━━━━━━━━━")
+                lines.append("⚖️ <b>【連續平滑混合 6 大量化因子動態權重】</b>")
+                lines.append("<i>(消除離散階梯斷層跳躍，動態加權各體制最優 Alpha 暴露)</i>")
+
+                factor_names_zh = {
+                    "momentum": "動能趨勢 (Momentum)",
+                    "smart_money": "聰明錢大單 (Smart Money)",
+                    "liquidity_premium": "流動性溢價 (Liquidity Premium)",
+                    "quality": "基本面品質 (Quality)",
+                    "value": "價值安全邊際 (Value)",
+                    "low_vol": "低波動防守 (Low Volatility)",
+                }
+
+                active_weights = posterior.guarded_weights if posterior.is_entropy_guard_active else posterior.continuous_weights
+                for f_key in ("momentum", "smart_money", "liquidity_premium", "quality", "value", "low_vol"):
+                    w = active_weights.get(f_key, 0.0)
+                    w_bar = int(w * 25)
+                    bar = "■" * w_bar + "□" * (25 - w_bar)
+                    lines.append(f"• <b>{factor_names_zh.get(f_key, f_key)}</b>\n  <code>[{bar}]</code> <b>{w:5.1%}</b>")
+
+                obs = posterior.observation
+                if obs:
+                    lines.append("━━━━━━━━━━━━━━━━━━")
+                    lines.append("📡 <b>【多元宏觀高斯觀測向量 (Observation Vector)】</b>")
+                    lines.append(
+                        f"• <b>SPY 趨勢偏離 (200MA)</b>: <code>{obs.get('trend_ratio', 0.0):+.2%}</code> | "
+                        f"<b>VIX 水準</b>: <code>{obs.get('vix', 0.0):.1f}</code> (Z: <code>{obs.get('vix_z_score', 0.0):+.1f}σ</code>)\n"
+                        f"• <b>10Y-2Y 殖利率利差</b>: <code>{obs.get('yield_spread', 0.0):+.2f}%</code> | "
+                        f"<b>5日累積報酬</b>: <code>{obs.get('return_5d', 0.0):+.2%}</code>"
+                    )
+
+                lines.append("━━━━━━━━━━━━━━━━━━")
+                lines.append("💡 <i>輸入 <code>/hmm sim &lt;bull|rebound|value|defense&gt;</code> 模擬宏觀體制衝擊；輸入 <code>/hmm clear</code> 重置為無先驗基準。</i>")
+                return "\n".join(lines)
+            except Exception as e:
+                logger.error(f"Failed to generate Bayesian HMM Factor response: {e}")
+                return f"⚠️ 查詢貝葉斯隱馬爾可夫連續因子配置狀態時發生錯誤：{e}"
 
         return None

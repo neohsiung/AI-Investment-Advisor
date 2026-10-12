@@ -137,6 +137,7 @@ class TacticalFactorRotationService:
         multi_factor_service: Optional[Any] = None,
         opportunity_cost_service: Optional[Any] = None,
         winner_service: Optional[Any] = None,
+        bayesian_hmm_service: Optional[Any] = None,
     ):
         try:
             self.user_id = resolve_user_id(user_id) if user_id else None
@@ -147,6 +148,18 @@ class TacticalFactorRotationService:
         self.multi_factor_service = multi_factor_service
         self.opportunity_cost_service = opportunity_cost_service
         self.winner_service = winner_service
+        if bayesian_hmm_service is not None:
+            self.bayesian_hmm_service = bayesian_hmm_service
+        else:
+            try:
+                from src.services.bayesian_hmm_factor_service import BayesianHMMFactorService
+                self.bayesian_hmm_service = BayesianHMMFactorService(
+                    user_id=self.user_id,
+                    settings_service=self.settings_service,
+                    market_service=self.market_service,
+                )
+            except Exception:
+                self.bayesian_hmm_service = None
 
     def _get_setting(self, key: str, default: Any, user_id: Optional[str] = None) -> Any:
         uid = user_id or self.user_id
@@ -167,11 +180,23 @@ class TacticalFactorRotationService:
         spy_sma200: float = 0.0,
         yield_spread: Optional[float] = None,
         regime_hint: Optional[str] = None,
+        use_bayesian_hmm: bool = False,
     ) -> Tuple[TacticalMarketPhase, str]:
         """
         Classify current tactical market phase based on volatility trajectory,
         trend position vs SMA 200, and macro yield curves.
+        When use_bayesian_hmm is True, invokes the continuous online Hamilton filter.
         """
+        if use_bayesian_hmm and self.bayesian_hmm_service and getattr(self.bayesian_hmm_service, "is_enabled", True):
+            phase, rationale, _ = self.determine_market_phase_bayesian(
+                vix=vix,
+                vix_z_score=vix_z_score,
+                spy_price=spy_price,
+                spy_sma200=spy_sma200,
+                yield_spread=yield_spread,
+            )
+            return phase, rationale
+
         hint_upper = (regime_hint or "").upper()
         if "PIVOT" in hint_upper or "REBOUND" in hint_upper:
             return (
@@ -213,17 +238,70 @@ class TacticalFactorRotationService:
             f"大盤指標處於中性震盪區間 (VIX={vix:.1f})：採取均衡配置陣型",
         )
 
+    def determine_market_phase_bayesian(
+        self,
+        vix: float = 18.0,
+        vix_z_score: float = 0.0,
+        spy_price: float = 0.0,
+        spy_sma200: float = 0.0,
+        yield_spread: Optional[float] = None,
+        return_5d: float = 0.0,
+    ) -> Tuple[TacticalMarketPhase, str, Any]:
+        """
+        Classify tactical market phase via Bayesian Online Hamilton Filter.
+        Returns dominant phase, descriptive rationale with continuous probability breakdown,
+        and posterior belief state object.
+        """
+        trend = (spy_price - spy_sma200) / spy_sma200 if (spy_price > 0 and spy_sma200 > 0) else 0.0
+        ys = yield_spread if yield_spread is not None else 0.50
+
+        if not self.bayesian_hmm_service:
+            # Fallback
+            p, r = self.determine_market_phase(vix, vix_z_score, spy_price, spy_sma200, yield_spread)
+            return p, r, None
+
+        from src.services.bayesian_hmm_factor_service import HMMFactorObservation
+        obs = HMMFactorObservation(
+            trend_ratio=trend,
+            vix=vix,
+            vix_z_score=vix_z_score,
+            yield_spread=ys,
+            return_5d=return_5d,
+        )
+
+        post = self.bayesian_hmm_service.update_beliefs_sync(obs)
+        p_bull = post.probabilities.get(TacticalMarketPhase.BULL_ACCELERATION.value, 0.0)
+        p_reb = post.probabilities.get(TacticalMarketPhase.EARLY_REBOUND.value, 0.0)
+        p_val = post.probabilities.get(TacticalMarketPhase.LATE_CYCLE_VALUE.value, 0.0)
+        p_def = post.probabilities.get(TacticalMarketPhase.DEFENSIVE_CONSOLIDATION.value, 0.0)
+
+        rationale = (
+            f"在線貝葉斯隱馬爾可夫濾波 ({post.dominant_phase.value}，置信度 {post.confidence:.1%})："
+            f"多頭 {p_bull:.1%} | 反彈 {p_reb:.1%} | 價值 {p_val:.1%} | 防禦 {p_def:.1%} "
+            f"(香農熵 H={post.entropy:.2f})"
+        )
+        if post.is_entropy_guard_active:
+            rationale += " ⚠️ [體制過渡模糊守衛啟動：動態向品質與低波防守錨點傾斜]"
+
+        return post.dominant_phase, rationale, post
+
     def get_phase_factor_weights(
         self,
         phase: TacticalMarketPhase,
         apply_auto_healing: bool = True,
+        apply_continuous_hmm: bool = False,
     ) -> Dict[str, float]:
         """
         Return tactical factor allocation weights customized for the current market phase:
         [momentum, smart_money, liquidity_premium, quality, value, low_vol].
+        When apply_continuous_hmm is True, blends factor weights continuously across all regimes.
         When apply_auto_healing is True and factor drift guard is enabled, transparently
         returns auto-healed weights rebalanced away from drifting/inverted factors.
         """
+        # Phase 38: Continuous Bayesian HMM factor allocation mixture
+        if apply_continuous_hmm and self.bayesian_hmm_service and getattr(self.bayesian_hmm_service, "is_enabled", True):
+            return self.get_continuous_factor_weights(phase=phase, apply_auto_healing=apply_auto_healing)
+
         # Check if evolved factor weights exist in settings
         evolved_setting = self._get_setting("tactical_phase_factor_weights", None)
         if evolved_setting:
@@ -310,6 +388,38 @@ class TacticalFactorRotationService:
                 logger.debug(f"Factor drift guard auto-healing evaluation skipped: {e}")
 
         return weights
+
+    def get_continuous_factor_weights(
+        self,
+        phase: Optional[TacticalMarketPhase] = None,
+        observation: Optional[Any] = None,
+        apply_auto_healing: bool = True,
+    ) -> Dict[str, float]:
+        """
+        Retrieve continuous multi-factor mixture weights from BayesianHMMFactorService.
+        Optionally applies FactorDriftGuardService auto-healing on top.
+        """
+        if not self.bayesian_hmm_service or not getattr(self.bayesian_hmm_service, "is_enabled", True):
+            target_phase = phase or TacticalMarketPhase.BULL_ACCELERATION
+            return self.get_phase_factor_weights(target_phase, apply_auto_healing=apply_auto_healing, apply_continuous_hmm=False)
+
+        continuous_w = self.bayesian_hmm_service.get_effective_continuous_weights(observation=observation)
+
+        if apply_auto_healing:
+            try:
+                from src.services.factor_drift_guard_service import FactorDriftGuardService
+                drift_service = FactorDriftGuardService(
+                    user_id=self.user_id,
+                    settings_service=self.settings_service,
+                    market_service=self.market_service,
+                )
+                if drift_service.is_enabled:
+                    target_phase = phase or TacticalMarketPhase.BULL_ACCELERATION
+                    return drift_service.get_effective_factor_weights(target_phase, base_weights=continuous_w)
+            except Exception as e:
+                logger.debug(f"Factor drift auto-healing on continuous weights skipped: {e}")
+
+        return continuous_w
 
     def compute_liquidity_premium_metrics(
         self,
