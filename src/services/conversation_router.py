@@ -223,6 +223,7 @@ class ConversationRouter:
             "ortho", "orthogonal", "vif", "正交", "正交化", "共線性", "因子正交",
             "riskparity", "parity", "cvar", "mrc", "風險平價", "平價配置", "風險貢獻", "尾部風險",
             "vpin", "toxicity", "kyle", "毒性", "訂單流毒性", "微觀結構", "知情交易",
+            "jump", "jumpdiffusion", "merton", "bayesian", "跳躍擴散", "跳躍", "跳空", "貝葉斯跳躍",
         }
         return cmd in exact_keywords
 
@@ -495,6 +496,7 @@ class ConversationRouter:
                     f"• <b>事後滑點異常告警門檻</b>：> 0.20% 自動通報\n"
                     f"• <b>動態風險平價與尾部 CVaR (P33)</b>：輸入 <code>/riskparity</code> 檢視全組合風險貢獻平衡與極端尾部配置\n"
                     f"• <b>訂單流毒性與 Kyle's λ 守衛 (P34)</b>：輸入 <code>/vpin</code> 檢視標的 VPIN 毒性體制與知情交易衝擊\n"
+                    f"• <b>貝葉斯跳躍擴散守衛 (P35)</b>：輸入 <code>/jump</code> 檢視 Merton 跳躍強度 λ、擴散波動 σ 與體制卡片\n"
                     f"━━━━━━━━━━━━━━━━━━\n"
                     f"<i>美股開盤 09:35 EST 建倉時將自動為每一筆訂單執行自適應限價、價差驗證、成交品質與財報避開審核。</i>"
                 )
@@ -1119,5 +1121,96 @@ class ConversationRouter:
             except Exception as e:
                 logger.error(f"Failed to generate VPIN toxicity guard response: {e}")
                 return f"⚠️ 查詢微觀結構訂單流毒性狀態時發生錯誤：{e}"
+
+        # 14. Bayesian Regime-Switching Jump-Diffusion Guard (Phase 35)
+        if any(cmd.startswith(prefix) for prefix in (
+            "jump", "jumpdiffusion", "merton", "bayesian", "跳躍擴散", "跳躍", "跳空", "貝葉斯跳躍"
+        )):
+            try:
+                from src.services.bayesian_jump_diffusion_guard_service import (
+                    BayesianJumpDiffusionGuardService,
+                )
+                jump_svc = BayesianJumpDiffusionGuardService(user_id=resolved_user_id)
+                summary_data = await jump_svc.get_latest_portfolio_summary()
+                if summary_data:
+                    data = summary_data
+                else:
+                    sum_obj = await jump_svc.get_portfolio_jump_assessment()
+                    data = sum_obj.to_dict()
+
+                overall_regime = data.get("overall_market_jump_regime", "CALM")
+                mean_intensity = data.get("mean_jump_intensity", 0.0)
+                mean_rj = data.get("mean_relative_jump_ratio", 0.0)
+                acute_syms = data.get("acute_symbols", [])
+                mod_syms = data.get("moderate_symbols", [])
+                calm_syms = data.get("calm_symbols", [])
+                assessments = data.get("assessments", {})
+                ts = data.get("timestamp", "")[:19].replace("T", " ")
+
+                if overall_regime == "SYSTEMIC_JUMP_SHOCK":
+                    overall_badge = "🔴 系統性跳躍衝擊 (SYSTEMIC_JUMP_SHOCK) - 觸發熔斷暫緩下單"
+                elif overall_regime == "ELEVATED_JUMP_ACTIVITY":
+                    overall_badge = "🟡 跳躍活動升溫 (ELEVATED_JUMP_ACTIVITY) - 啟動部位縮減與緩衝加成"
+                else:
+                    overall_badge = "🟢 連續擴散平靜 (CALM) - 正常放行下單"
+
+                lines = [
+                    "⚡ <b>【多期動態貝葉斯更新與機制轉換跳躍擴散報告 (Phase 35)】</b>",
+                    "━━━━━━━━━━━━━━━━━━",
+                    "• <b>核心模型</b>：<code>Merton (1976) 跳躍擴散 + Bipower Variation (BV) + 在線共軛貝葉斯更新</code>",
+                    f"• <b>全市場跳躍體制</b>：{overall_badge}",
+                    f"• <b>平均跳躍強度 λ</b>：<code>{mean_intensity:.2f}</code> 次/年 (警戒線 <code>6.00</code> | {ts} UTC)",
+                    f"• <b>跳躍變異佔比 RJ</b>：<code>{mean_rj:.1%}</code> (離散跳躍方差 / 總實現方差)",
+                    f"• <b>標的狀態統計</b>：平靜 <code>{len(calm_syms)}</code> 檔 | 升溫 <code>{len(mod_syms)}</code> 檔 | 重度衝擊 <code>{len(acute_syms)}</code> 檔",
+                    "━━━━━━━━━━━━━━━━━━",
+                    "<b>【各標的跳躍擴散體制與風控處置矩陣】</b>",
+                ]
+
+                jump_alerts = []
+                for sym, ass in assessments.items():
+                    reg = ass.get("regime", "CALM_DIFFUSION")
+                    lam = ass.get("jump_intensity", 0.0)
+                    sig_c = ass.get("continuous_volatility", 0.0)
+                    sig_t = ass.get("total_volatility", 0.0)
+                    rj = ass.get("relative_jump_ratio", 0.0)
+                    j_mu = ass.get("jump_mean", 0.0)
+                    j_std = ass.get("jump_std", 0.0)
+                    pos_scale = ass.get("position_scale_multiplier", 1.0)
+                    sl_buff = ass.get("stop_loss_buffer_multiplier", 1.0)
+
+                    if reg == "ACUTE_JUMP_REGIME":
+                        badge = "🔴 ACUTE (劇烈跳躍)"
+                        action_desc = "⛔ <b>暫緩下單 (跳躍熔斷)</b>"
+                        jump_alerts.append((sym, lam, rj, j_mu))
+                    elif reg == "MODERATE_JUMP":
+                        badge = "🟡 MODERATE (中度跳躍)"
+                        action_desc = f"⚠️ <b>規模收縮 {int(pos_scale*100)}% / 停損緩衝 {sl_buff:.2f}x</b>"
+                    else:
+                        badge = "🟢 CALM (常規連續擴散)"
+                        action_desc = "✅ <b>正常執行 (100% 規模)</b>"
+
+                    lines.append(
+                        f"• <b>{sym}</b> [{badge}]\n"
+                        f"  ├ 跳躍強度 λ: <code>{lam:.2f}</code> 次/年 | 跳躍佔比 RJ: <code>{rj:.1%}</code>\n"
+                        f"  ├ 波動率分解: 連續 σ: <code>{sig_c:.1%}</code> | 總波動: <code>{sig_t:.1%}</code>\n"
+                        f"  ├ 跳躍幅度分佈: μ_J: <code>{j_mu:+.2%}</code>, σ_J: <code>{j_std:.2%}</code>\n"
+                        f"  └ 執行處置: {action_desc}"
+                    )
+
+                if jump_alerts:
+                    lines.append("━━━━━━━━━━━━━━━━━━")
+                    lines.append("🚨 <b>【非連續跳躍崩跌風險警示】</b>")
+                    for sym, lam, rj, j_mu in jump_alerts:
+                        lines.append(
+                            f"• <b>{sym}</b>: 跳躍強度達 <code>{lam:.2f}</code> 次/年 (RJ: <code>{rj:.1%}</code>, 均值 <code>{j_mu:+.1%}</code>)，"
+                            f"已前置阻斷市價建倉，防範裂口跌勢侵蝕本金。"
+                        )
+
+                lines.append("━━━━━━━━━━━━━━━━━━")
+                lines.append("💡 <i>BV 雙冪變異分離連續擴散波動與離散跳躍，Gamma-Poisson 貝葉斯更新適應跳躍體制轉換。</i>")
+                return "\n".join(lines)
+            except Exception as e:
+                logger.error(f"Failed to generate Bayesian jump diffusion response: {e}")
+                return f"⚠️ 查詢貝葉斯跳躍擴散守衛狀態時發生錯誤：{e}"
 
         return None

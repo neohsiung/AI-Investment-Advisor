@@ -1106,6 +1106,54 @@ settings:
     label_zh: VPIN 毒性熔斷暫緩冷卻時間（分鐘）
     help_en: Waiting buffer in minutes applied to order execution when severe toxic flow is detected.
     help_zh: 當標的遭遇重度毒性訂單流時，下單執行之建議暫緩冷卻等待分鐘數（預設 5 分鐘）。
+  - key: enable_bayesian_jump_guard
+    group: trading
+    type: bool
+    default: true
+    label_en: Enable Bayesian Regime-Switching Jump-Diffusion Guard
+    label_zh: 啟用多期動態貝葉斯更新與機制轉換跳躍擴散守衛
+    help_en: Decomposes price volatility into continuous diffusion and discrete jumps using Merton Jump-Diffusion and Bipower Variation, performing conjugate Gamma-Poisson Bayesian updating to halt trading during acute jump regimes.
+    help_zh: 運用 Merton 跳躍擴散與 Bipower 雙冪變異分離連續擴散波動與離散跳躍，並以 Gamma-Poisson 共軛貝葉斯更新跳躍頻率，於重度跳躍衝擊體制前置熔斷暫緩下單。
+  - key: jump_intensity_alert_threshold
+    group: trading
+    type: float
+    default: 6.0
+    min: 2.0
+    max: 20.0
+    label_en: Bayesian jump intensity acute alert threshold (jumps/year)
+    label_zh: 貝葉斯年化跳躍強度重度熔斷門檻（次/年）
+    help_en: Annualized jump intensity λ_jump threshold above which asset enters ACUTE_JUMP_REGIME, triggering immediate trade deferral.
+    help_zh: 年化跳躍強度 λ_jump 之警戒上限門檻（預設 6.0 次/年）；超過或伴隨下行跳躍衝擊時觸發 ACUTE_JUMP_REGIME 暫緩下單。
+  - key: jump_detection_sigma_multiplier
+    group: trading
+    type: float
+    default: 3.0
+    min: 1.5
+    max: 5.0
+    label_en: Jump detection continuous volatility multiplier
+    label_zh: 離散跳躍檢定之連續波動倍數門檻
+    help_en: Multiplier θ applied to daily continuous volatility σ_cont to statistically identify discrete jump returns (|r_t| > θ * σ_cont).
+    help_zh: 乘以日連續擴散波動率 σ_cont 之統計檢定倍數 θ（預設 3.0）；當日收益率絕對值超過該倍數時識別為離散跳躍事件。
+  - key: jump_bipower_lookback_days
+    group: trading
+    type: int
+    default: 60
+    min: 20
+    max: 252
+    label_en: Bipower variation rolling lookback days
+    label_zh: 雙冪變異與跳躍檢定滾動回看天數
+    help_en: Historical trading days lookback window used to calculate realized variance and bipower variation.
+    help_zh: 計算實現方差 (RV) 與連續雙冪方差 (BV) 之滾動歷史交易日天數（預設 60 天）。
+  - key: jump_acute_position_scale
+    group: trading
+    type: float
+    default: 0.50
+    min: 0.20
+    max: 1.00
+    label_en: Acute jump regime position scale multiplier
+    label_zh: 重度跳躍體制部位縮減係數
+    help_en: Position sizing multiplier applied when an asset is in acute jump conditions to limit tail loss exposure.
+    help_zh: 當標的遭遇極端跳躍風險但需防禦持有或調節時之部位規模縮減係數（預設 0.50）。
   - key: breakout_filter_fail_open
     group: trading
     type: bool
