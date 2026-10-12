@@ -1154,6 +1154,54 @@ settings:
     label_zh: 重度跳躍體制部位縮減係數
     help_en: Position sizing multiplier applied when an asset is in acute jump conditions to limit tail loss exposure.
     help_zh: 當標的遭遇極端跳躍風險但需防禦持有或調節時之部位規模縮減係數（預設 0.50）。
+  - key: enable_rl_execution_sor
+    group: trading
+    type: bool
+    default: true
+    label_en: Enable RL Execution Smart Order Routing (SOR)
+    label_zh: 啟用強化學習自適應動態訂單拆單與智慧路由
+    help_en: Optimizes multi-step order execution using Tabular Q-Learning MDP to minimize market impact, spread friction, and inventory variance risk.
+    help_zh: 運用強化學習馬爾可夫決策過程 (MDP) 求解動態最優清算軌道，最小化暫時市場衝擊、買賣價差摩擦與庫存方差風險。
+  - key: rl_sor_learning_rate
+    group: trading
+    type: float
+    default: 0.10
+    min: 0.01
+    max: 0.50
+    label_en: RL SOR TD(0) learning rate (alpha)
+    label_zh: 智慧路由強化學習 TD(0) 學習率 (α)
+    help_en: Temporal Difference learning rate determining the adaptation speed of Q-table updates from realized execution fills.
+    help_zh: 時間差分 TD(0) 學習率 α（預設 0.10），決定在線成交反饋對 Q-Table 價值函數的更新收斂步長。
+  - key: rl_sor_discount_factor
+    group: trading
+    type: float
+    default: 0.95
+    min: 0.50
+    max: 0.99
+    label_en: RL SOR discount factor (gamma)
+    label_zh: 智慧路由強化學習未來獎勵折扣因子 (γ)
+    help_en: Discount factor for future execution rewards in the Bellman optimality equation.
+    help_zh: 貝爾曼最優方程未來切片獎勵之折扣因子 γ（預設 0.95），權衡即期成交成本與跨期庫存風險。
+  - key: rl_sor_exploration_rate
+    group: trading
+    type: float
+    default: 0.05
+    min: 0.0
+    max: 0.50
+    label_en: RL SOR epsilon-greedy exploration rate
+    label_zh: 智慧路由 ε-greedy 隨機探索率
+    help_en: Probability of taking random actions during execution to discover non-obvious routing advantages.
+    help_zh: 實盤或模擬訓練時之隨機探索機率 ε（預設 0.05 即 5%），在利用已知最優與探索潛在優勢間取得平衡。
+  - key: rl_sor_inventory_risk_aversion
+    group: trading
+    type: float
+    default: 0.15
+    min: 0.01
+    max: 1.00
+    label_en: RL SOR inventory risk aversion coefficient (phi)
+    label_zh: 智慧路由庫存方差風險厭惡係數 (φ)
+    help_en: Penalty coefficient applied to remaining inventory variance risk (phi * q^2 * sigma^2).
+    help_zh: 懲罰持倉延遲暴露之庫存方差風險係數 φ（預設 0.15）；越高代表越傾向提早清空庫存避免價格不利波動。
   - key: breakout_filter_fail_open
     group: trading
     type: bool

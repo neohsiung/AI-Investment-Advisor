@@ -48,6 +48,9 @@ class SlippageGuardDecision:
     kyle_lambda: Optional[float] = None
     jump_intensity: Optional[float] = None
     jump_regime: Optional[str] = None
+    rl_sor_action: Optional[str] = None
+    rl_sor_slices: Optional[int] = None
+    rl_sor_expected_cost_bps: Optional[float] = None
     recommended_action: str = "PROCEED"  # "PROCEED", "DEFER", "REJECT", "LIMIT_ORDER"
 
     def to_dict(self) -> Dict[str, Any]:
@@ -69,6 +72,9 @@ class SlippageGuardDecision:
             "kyle_lambda": round(self.kyle_lambda, 6) if self.kyle_lambda is not None else None,
             "jump_intensity": round(self.jump_intensity, 4) if self.jump_intensity is not None else None,
             "jump_regime": self.jump_regime,
+            "rl_sor_action": self.rl_sor_action,
+            "rl_sor_slices": self.rl_sor_slices,
+            "rl_sor_expected_cost_bps": round(self.rl_sor_expected_cost_bps, 2) if self.rl_sor_expected_cost_bps is not None else None,
             "recommended_action": self.recommended_action,
         }
 
@@ -89,6 +95,7 @@ class SlippageGuardService:
         compensator: Optional[Any] = None,
         vpin_guard: Optional[Any] = None,
         jump_guard: Optional[Any] = None,
+        rl_sor: Optional[Any] = None,
     ):
         self.user_id = resolve_user_id(user_id)
         from src.services.settings_service import SettingsService
@@ -141,6 +148,25 @@ class SlippageGuardService:
             except Exception as jump_init_err:
                 logger.debug(f"Could not initialize BayesianJumpDiffusionGuardService: {jump_init_err}")
                 self.jump_guard = None
+
+        if rl_sor is not None:
+            self.rl_sor = rl_sor
+        else:
+            try:
+                from src.services.rl_execution_sor_service import (
+                    RLExecutionSmartOrderRoutingService,
+                )
+                self.rl_sor = RLExecutionSmartOrderRoutingService(
+                    user_id=self.user_id,
+                    settings_service=self.settings_service,
+                    market_data_service=self.market_data_service,
+                    compensator=self.compensator,
+                    vpin_guard=self.vpin_guard,
+                    jump_guard=self.jump_guard,
+                )
+            except Exception as rl_init_err:
+                logger.debug(f"Could not initialize RLExecutionSmartOrderRoutingService: {rl_init_err}")
+                self.rl_sor = None
 
     def _get_setting_bool(self, key: str, default: bool = True) -> bool:
         val = self.settings_service.get_setting(key, default)
@@ -621,6 +647,27 @@ class SlippageGuardService:
         else:
             reason = "即時買賣報價未提供細部買賣價差，處於常規交易時段且非開盤波動期，予以放行"
 
+        # 4.5 強化學習自適應智慧拆單與路由評估 (Phase 36 RL Execution SOR)
+        rl_action_val = None
+        rl_slices_val = None
+        rl_cost_val = None
+        if self.rl_sor and getattr(self.rl_sor, "is_enabled", True):
+            try:
+                sor_amount = amount_usd if (amount_usd is not None and amount_usd >= 10.0) else 500.0
+                sor_spread = (spread_pct * 10000.0) if spread_pct is not None else 10.0
+                sor_eval = await self.rl_sor.evaluate_trade_routing(
+                    symbol=ticker,
+                    amount_usd=sor_amount,
+                    action=action,
+                    spread_bps=sor_spread,
+                )
+                if sor_eval and sor_eval.get("enabled"):
+                    rl_action_val = sor_eval.get("recommended_action")
+                    rl_slices_val = sor_eval.get("recommended_slices")
+                    rl_cost_val = sor_eval.get("expected_cost_bps")
+            except Exception as sor_err:
+                logger.debug(f"RL SOR evaluation non-blocking error for {ticker}: {sor_err}")
+
         return SlippageGuardDecision(
             passed=True,
             reason=reason,
@@ -638,6 +685,9 @@ class SlippageGuardService:
             kyle_lambda=kyle_val,
             jump_intensity=jump_intensity_val,
             jump_regime=jump_regime_val,
+            rl_sor_action=rl_action_val,
+            rl_sor_slices=rl_slices_val,
+            rl_sor_expected_cost_bps=rl_cost_val,
             recommended_action="PROCEED",
         )
 
