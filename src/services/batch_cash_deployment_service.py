@@ -49,6 +49,7 @@ class BatchCashDeploymentService:
         event_graph: Optional[Any] = None,
         bayesian_hmm_factor: Optional[Any] = None,
         staggered_dip_service: Optional[Any] = None,
+        alpha_spread_bidding_service: Optional[Any] = None,
     ):
         self.user_id = resolve_user_id(user_id)
         from src.services.settings_service import SettingsService
@@ -160,6 +161,21 @@ class BatchCashDeploymentService:
             except Exception as sde:
                 logger.debug(f"Could not initialize StaggeredDipBuyingService: {sde}")
                 self.staggered_dip_service = None
+
+        if alpha_spread_bidding_service is not None:
+            self.alpha_spread_bidding_service = alpha_spread_bidding_service
+        else:
+            try:
+                from src.services.alpha_spread_bidding_service import AlphaSpreadBiddingService
+                self.alpha_spread_bidding_service = AlphaSpreadBiddingService(
+                    user_id=self.user_id,
+                    settings_service=self.settings_service,
+                    slippage_guard=self.slippage_guard,
+                    vpin_guard=self.vpin_guard,
+                )
+            except Exception as abe:
+                logger.debug(f"Could not initialize AlphaSpreadBiddingService: {abe}")
+                self.alpha_spread_bidding_service = None
 
     async def generate_staggered_dip_plan(
         self,
@@ -375,6 +391,7 @@ class BatchCashDeploymentService:
         # 跨板塊動能注入與 HHI 集中度自癒 (Phase 51)
         portfolio_sector_report = None
         cross_sector_injection_info = None
+        alpha_bidding_result = None
         try:
             from src.services.sector_drift_guard_service import SectorDriftGuardService, SectorDriftStatus
             drift_guard = SectorDriftGuardService(
@@ -436,6 +453,29 @@ class BatchCashDeploymentService:
 
                     if contender:
                         quota_pct = drift_guard.cross_sector_injection_quota_pct  # 預設 0.35 (35%)
+
+                        # 開盤前動態利差競標與自適應摩擦抵消 (Phase 57)
+                        try:
+                            if self.alpha_spread_bidding_service and self.alpha_spread_bidding_service.is_enabled:
+                                alpha_bidding_result = await self.alpha_spread_bidding_service.evaluate_bidding_for_batch(
+                                    batch_items=selected_batch,
+                                    contender=contender,
+                                    base_quota_pct=quota_pct,
+                                )
+                                quota_pct = alpha_bidding_result.cross_sector_adjusted_quota_pct
+                                c_metric = alpha_bidding_result.candidates.get(contender["ticker"])
+                                c_spread_str = f"{c_metric.net_alpha_spread_bps:+.1f} bps" if c_metric else "N/A"
+                                logger.info(
+                                    "BatchCashDeployment: Alpha spread bidding adjusted quota for %s from %.1f%% to %.1f%% (status: %s, net spread: %s)",
+                                    contender["ticker"],
+                                    alpha_bidding_result.base_quota_pct * 100.0,
+                                    quota_pct * 100.0,
+                                    alpha_bidding_result.bidding_status,
+                                    c_spread_str,
+                                )
+                        except Exception as b_err:
+                            logger.debug(f"Alpha spread bidding evaluation error: {b_err}")
+
                         total_orig_amt = sum(b.get("base_amount", 50.0) for b in selected_batch)
                         injected_amt = round(total_orig_amt * quota_pct, 2)
                         scale_factor = max(0.1, 1.0 - quota_pct)
@@ -465,6 +505,12 @@ class BatchCashDeploymentService:
                             "injected_amount": injected_amt,
                             "injected_quota_pct": quota_pct,
                             "reason": f"實盤科技板塊過度集中 (HHI: {portfolio_sector_report.hhi_index:.3f}, 科技佔比: {portfolio_sector_report.sector_weights.get('Technology', 0.0):.1%})，注入非科技龍頭自癒",
+                            "alpha_bidding_status": alpha_bidding_result.bidding_status if alpha_bidding_result else None,
+                            "alpha_net_spread_bps": (
+                                alpha_bidding_result.candidates[contender["ticker"]].net_alpha_spread_bps
+                                if (alpha_bidding_result and contender["ticker"] in alpha_bidding_result.candidates)
+                                else None
+                            ),
                         }
                         logger.info(
                             "BatchCashDeployment: Cross-sector momentum injection active! Injected %s (%s, $%.2f) to de-concentrate HHI",
@@ -472,6 +518,17 @@ class BatchCashDeploymentService:
                         )
         except Exception as cs_err:
             logger.debug(f"Cross-sector momentum injection evaluation error: {cs_err}")
+
+        # 若未觸發跨板塊競標評估但利差競標已啟用，對當前批次進行利差與摩擦評估
+        if alpha_bidding_result is None:
+            try:
+                if self.alpha_spread_bidding_service and self.alpha_spread_bidding_service.is_enabled:
+                    alpha_bidding_result = await self.alpha_spread_bidding_service.evaluate_bidding_for_batch(
+                        batch_items=selected_batch,
+                        contender=None,
+                    )
+            except Exception as be:
+                logger.debug(f"Alpha spread bidding batch evaluation error: {be}")
 
         allocated_items = []
         all_candidates_summary = []
@@ -654,6 +711,11 @@ class BatchCashDeploymentService:
                 "already_satisfied": (current_val >= target_value * 0.95) if total_equity > 0 else False,
                 "is_cross_sector_injected": item.get("is_cross_sector_injected", False),
                 "injected_sector": item.get("injected_sector"),
+                "bidding_metric": (
+                    alpha_bidding_result.candidates[ticker].to_dict()
+                    if (alpha_bidding_result and ticker in alpha_bidding_result.candidates)
+                    else None
+                ),
                 "blackout_active": is_blackout,
                 "blackout_reason": blackout_reason,
                 "liquidity_black_hole": is_black_hole,
@@ -831,6 +893,7 @@ class BatchCashDeploymentService:
             "effective_risk_assets": round(risk_parity_result.effective_risk_assets_cvar, 2) if risk_parity_result else None,
             "portfolio_sector_report": portfolio_sector_report.to_dict() if portfolio_sector_report else None,
             "cross_sector_injection": cross_sector_injection_info,
+            "alpha_bidding_summary": alpha_bidding_result.to_dict() if alpha_bidding_result else None,
         }
 
     async def warmup_batch_quotes(

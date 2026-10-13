@@ -3673,4 +3673,53 @@ settings:
     label_zh: 科技板塊全帳戶淨值集中度硬上限
     help_en: Maximum allowable technology sector exposure relative to total NLV before active injection is mandated.
     help_zh: 科技板塊佔總淨值之最大上限比例（預設 30%），超標時強制向低配板塊分散。
+  - key: enable_alpha_spread_bidding
+    group: trading
+    type: bool
+    default: true
+    label_en: Enable Pre-Market Alpha Spread Bidding & Friction Offset
+    label_zh: 啟用開盤建倉前動態利差競標與自適應摩擦抵消
+    help_en: Dynamically measures expected gross alpha and transaction friction pre-market to adjust cross-sector allocation quota.
+    help_zh: 在開盤前度量候選標的之預期超額利差與即時買賣摩擦，自適應調節跨板塊配額。
+  - key: alpha_bidding_hurdle_bps
+    group: trading
+    type: float
+    default: 15.0
+    min: 0.0
+    max: 100.0
+    label_en: Alpha Bidding Net Spread Hurdle (bps)
+    label_zh: 動態利差競標淨超額門檻 (bps)
+    help_en: Net alpha spread hurdle required to trigger quota expansion.
+    help_zh: 淨利差需覆蓋此基準門檻（預設 15.0 bps / 0.15%），方可觸發配額上浮。
+  - key: cross_sector_max_bidding_quota_pct
+    group: trading
+    type: float
+    default: 0.45
+    min: 0.20
+    max: 0.60
+    label_en: Cross-Sector Maximum Bidding Quota Percentage
+    label_zh: 跨板塊利差競標最大上浮配額比例
+    help_en: Maximum quota allocated to cross-sector contender when net alpha spread exceeds 1.5x hurdle.
+    help_zh: 當淨利差達到 1.5x Hurdle 時，跨板塊自癒標的配額最高可擴展之比例（預設 45%）。
+  - key: cross_sector_min_bidding_quota_pct
+    group: trading
+    type: float
+    default: 0.20
+    min: 0.05
+    max: 0.35
+    label_en: Cross-Sector Minimum Bidding Defensive Quota Percentage
+    label_zh: 跨板塊利差競標保底防守配額比例
+    help_en: Minimum defensive quota allocated to cross-sector contender when friction is elevated.
+    help_zh: 當交易摩擦過高或淨利差微弱時，跨板塊標的配額防守性下修之保底比例（預設 20%）。
+  - key: alpha_bidding_diversification_premium_bps
+    group: trading
+    type: float
+    default: 12.0
+    min: 0.0
+    max: 50.0
+    label_en: Cross-Sector Diversification Alpha Premium (bps)
+    label_zh: 跨板塊多角化降低 HHI 超額溢價加成 (bps)
+    help_en: Expected gross alpha premium awarded to cross-sector contenders for reducing portfolio HHI concentration.
+    help_zh: 跨板塊候選標的因降低投組集中度與非系統性風險所獲得的預期超額利差加成（預設 12.0 bps）。
+
 
