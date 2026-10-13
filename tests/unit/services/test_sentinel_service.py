@@ -140,11 +140,24 @@ async def test_call_agent_llm(sentinel_service):
     mock_pipeline.execute = AsyncMock(return_value=("{\"status\": \"success\", \"data\": \"test\"}", None))
     
     with patch("src.infrastructure.llm.resilient_pipeline.ResilientLLMPipeline", return_value=mock_pipeline), \
-         patch("src.infrastructure.llm.llm_config_chain.build_config_chain", return_value=MagicMock()):
+         patch("src.infrastructure.llm.llm_config_chain.build_config_chain", return_value=MagicMock()), \
+         patch("src.services.hard_token_budget_guard_service.HardTokenBudgetGuardService.should_allow_llm", return_value=(True, "allowed")):
         
         response = await sentinel_service._call_agent_llm("Thematic", {"test": "data"})
         res_json = json.loads(response)
         assert res_json["status"] == "success"
+        assert res_json["data"] == "test"
+
+
+@pytest.mark.asyncio
+async def test_call_agent_llm_zero_llm_guard_active(sentinel_service):
+    """驗證當 0-LLM 守衛生效時，_call_agent_llm 不調用外部模型直接回傳數理規則判定"""
+    with patch("src.services.hard_token_budget_guard_service.HardTokenBudgetGuardService.should_allow_llm", return_value=(False, "ZERO_LLM_ENFORCED")):
+        response = await sentinel_service._call_agent_llm("Sentinel", {"trigger_source": "price_move"})
+        res_json = json.loads(response)
+        assert res_json["priority"] == "P2"
+        assert res_json["target_agent"] == "CIO"
+        assert "0-LLM mathematical rule evaluation" in res_json["rationale"]
 
 
 @pytest.mark.asyncio
@@ -178,7 +191,8 @@ async def test_call_agent_llm_timeout_handled(sentinel_service):
     mock_pipeline.execute = AsyncMock(side_effect=asyncio.TimeoutError("LLM took too long"))
 
     with patch("src.infrastructure.llm.resilient_pipeline.ResilientLLMPipeline", return_value=mock_pipeline), \
-         patch("src.infrastructure.llm.llm_config_chain.build_config_chain", return_value=MagicMock()):
+         patch("src.infrastructure.llm.llm_config_chain.build_config_chain", return_value=MagicMock()), \
+         patch("src.services.hard_token_budget_guard_service.HardTokenBudgetGuardService.should_allow_llm", return_value=(True, "allowed")):
 
         response = await sentinel_service._call_agent_llm("Sentinel", {"test": "data"})
         res_json = json.loads(response)

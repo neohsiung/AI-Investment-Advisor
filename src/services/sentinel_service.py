@@ -449,8 +449,30 @@ class SentinelService:
         """
         PAD Phase 2: Replace AgentFactory.create_*_agent().run() with direct gateway calls.
         Generic method to call LLM for any agent role (Thematic, Sentinel, etc).
+        Phase 47: Enforce HardTokenBudgetGuardService to eliminate unnecessary token burn.
         """
         try:
+            # Phase 47: Zero-LLM Sentinel enforcement & Hard Budget Guard
+            from src.services.hard_token_budget_guard_service import HardTokenBudgetGuardService
+            budget_guard = HardTokenBudgetGuardService(user_id=self.user_id)
+            allow_llm, reason = budget_guard.should_allow_llm(task_type="sentinel_monitor")
+            if not allow_llm:
+                logger.info("Sentinel: 0-LLM guard active (%s) for agent %s, returning mathematical evaluation", reason, agent_name)
+                if agent_name == "Sentinel":
+                    source = context.get("trigger_source", "generic")
+                    p_str = "P1" if any(k in source.lower() for k in ("stop", "critical", "loss", "vpin")) else "P2"
+                    return json.dumps({
+                        "priority": p_str,
+                        "target_agent": "Risk" if p_str == "P1" else "CIO",
+                        "trigger_type": source,
+                        "affected_tickers": [],
+                        "rationale": f"0-LLM mathematical rule evaluation ({reason})"
+                    })
+                elif agent_name == "Thematic":
+                    return json.dumps({"status": "success", "data": ["CEG", "VST", "MSFT", "AMZN", "GOOGL"]})
+                else:
+                    return json.dumps({"status": "success", "action": "HOLD", "rationale": f"0-LLM fallback: {reason}"})
+
             from src.infrastructure.llm.llm_config_chain import build_config_chain
             from src.infrastructure.llm.resilient_pipeline import ResilientLLMPipeline
             from src.infrastructure.llm.auto_tier import resolve_effective_tier

@@ -48,6 +48,7 @@ class BatchCashDeploymentService:
         rl_sor: Optional[Any] = None,
         event_graph: Optional[Any] = None,
         bayesian_hmm_factor: Optional[Any] = None,
+        staggered_dip_service: Optional[Any] = None,
     ):
         self.user_id = resolve_user_id(user_id)
         from src.services.settings_service import SettingsService
@@ -138,6 +139,63 @@ class BatchCashDeploymentService:
                 )
             except Exception:
                 self.bayesian_hmm_factor = None
+
+        try:
+            from src.services.unified_risk_gateway_service import UnifiedRiskGatewayService
+            self.risk_gateway = UnifiedRiskGatewayService(user_id=self.user_id)
+        except Exception:
+            self.risk_gateway = None
+
+        if staggered_dip_service is not None:
+            self.staggered_dip_service = staggered_dip_service
+        else:
+            try:
+                from src.services.staggered_dip_buying_service import StaggeredDipBuyingService
+                self.staggered_dip_service = StaggeredDipBuyingService(
+                    user_id=self.user_id,
+                    settings_service=self.settings_service,
+                    broker=self.broker,
+                    market_clock=self.market_clock,
+                )
+            except Exception as sde:
+                logger.debug(f"Could not initialize StaggeredDipBuyingService: {sde}")
+                self.staggered_dip_service = None
+
+    async def generate_staggered_dip_plan(
+        self,
+        batch_number: Optional[int] = None,
+    ) -> Dict[str, Any]:
+        """產出 3-Tier 主力支撐階梯限價吸籌規劃"""
+        if self.staggered_dip_service is None:
+            from src.services.staggered_dip_buying_service import StaggeredDipBuyingService
+            self.staggered_dip_service = StaggeredDipBuyingService(
+                user_id=self.user_id,
+                settings_service=self.settings_service,
+                broker=self.broker,
+                market_clock=self.market_clock,
+            )
+        plan = await self.staggered_dip_service.generate_batch_staggered_plan(batch_number=batch_number)
+        return plan.to_dict()
+
+    async def execute_staggered_dip_deployment(
+        self,
+        batch_number: Optional[int] = None,
+        force: bool = False,
+    ) -> Dict[str, Any]:
+        """執行 3-Tier 主力支撐階梯限價吸籌"""
+        if self.staggered_dip_service is None:
+            from src.services.staggered_dip_buying_service import StaggeredDipBuyingService
+            self.staggered_dip_service = StaggeredDipBuyingService(
+                user_id=self.user_id,
+                settings_service=self.settings_service,
+                broker=self.broker,
+                market_clock=self.market_clock,
+            )
+        return await self.staggered_dip_service.execute_staggered_dip_deployment(
+            batch_number=batch_number,
+            force=force,
+        )
+
 
     async def _get_broker(self) -> Any:
         if self.broker:
@@ -312,7 +370,109 @@ class BatchCashDeploymentService:
             ],
         }
 
-        selected_batch = batches.get(batch_number, batches[1])
+        selected_batch = [dict(b) for b in batches.get(batch_number, batches[1])]
+
+        # 跨板塊動能注入與 HHI 集中度自癒 (Phase 51)
+        portfolio_sector_report = None
+        cross_sector_injection_info = None
+        try:
+            from src.services.sector_drift_guard_service import SectorDriftGuardService, SectorDriftStatus
+            drift_guard = SectorDriftGuardService(
+                user_id=self.user_id,
+                settings_service=self.settings_service,
+                repo=repo,
+            )
+            raw_positions = positions if broker else []
+            portfolio_sector_report = drift_guard.analyze_portfolio_holdings(raw_positions, total_equity=total_equity)
+
+            # 若啟用跨板塊注入，且實盤持倉有過度集中 (DRIFT_BREACH 或 HHI > 0.25 或科技股 > 30% NLV)
+            # 單一持倉建立時不判定為板塊過度集中，必須至少持有 2 檔部位
+            has_multiple_holdings = len(portfolio_sector_report.holdings_metrics) > 1
+            is_breach = (
+                has_multiple_holdings
+                and (
+                    portfolio_sector_report.status == SectorDriftStatus.DRIFT_BREACH
+                    or portfolio_sector_report.hhi_index >= drift_guard.portfolio_hhi_breach_threshold
+                    or portfolio_sector_report.nlv_sector_weights.get("Technology", 0.0) >= drift_guard.tech_concentration_cap_pct
+                    or portfolio_sector_report.sector_weights.get("Technology", 0.0) >= 0.50
+                )
+            )
+
+            if drift_guard.is_cross_sector_injection_enabled and is_breach and len(selected_batch) >= 2:
+                batch_sectors = [drift_guard.resolve_ticker_sector(b["ticker"]) for b in selected_batch]
+                tech_heavy_batch = all(s in ("Technology", "Communication Services") for s in batch_sectors)
+
+                if tech_heavy_batch:
+                    contender = None
+                    excluded_candidates = set()
+                    for _ in range(5):
+                        candidate = drift_guard.discover_cross_sector_injection_contender(
+                            current_positions=raw_positions,
+                            total_equity=total_equity,
+                            excluded_tickers=excluded_candidates,
+                        )
+                        if not candidate:
+                            break
+                        c_sym = candidate["ticker"]
+                        # 檢查是否落入財報避開或宏觀黑名單
+                        is_candidate_blocked = False
+                        if self.blackout_guard:
+                            try:
+                                b_dec = await self.blackout_guard.evaluate_candidate(c_sym)
+                                if b_dec.is_blackout:
+                                    is_candidate_blocked = True
+                                    logger.info(
+                                        "BatchCashDeployment: Cross-sector candidate %s in blackout (%s), rotating to next leader",
+                                        c_sym, b_dec.reason
+                                    )
+                            except Exception as be:
+                                logger.debug(f"Candidate blackout check error for {c_sym}: {be}")
+
+                        if is_candidate_blocked:
+                            excluded_candidates.add(c_sym)
+                        else:
+                            contender = candidate
+                            break
+
+                    if contender:
+                        quota_pct = drift_guard.cross_sector_injection_quota_pct  # 預設 0.35 (35%)
+                        total_orig_amt = sum(b.get("base_amount", 50.0) for b in selected_batch)
+                        injected_amt = round(total_orig_amt * quota_pct, 2)
+                        scale_factor = max(0.1, 1.0 - quota_pct)
+
+                        new_batch = []
+                        for b in selected_batch[:-1]:
+                            scaled_b = dict(b)
+                            scaled_b["base_amount"] = round(scaled_b["base_amount"] * scale_factor, 2)
+                            scaled_b["target_pct"] = round(scaled_b["target_pct"] * scale_factor, 4)
+                            new_batch.append(scaled_b)
+
+                        total_batch_target_orig = sum(b.get("target_pct", 0.0) for b in selected_batch)
+                        injected_item = {
+                            "ticker": contender["ticker"],
+                            "target_pct": round(total_batch_target_orig * quota_pct, 4),
+                            "base_amount": injected_amt,
+                            "confidence": 6.80,
+                            "role": contender["role"],
+                            "is_cross_sector_injected": True,
+                            "injected_sector": contender["sector"],
+                        }
+                        new_batch.append(injected_item)
+                        selected_batch = new_batch
+                        cross_sector_injection_info = {
+                            "injected_ticker": contender["ticker"],
+                            "injected_sector": contender["sector"],
+                            "injected_amount": injected_amt,
+                            "injected_quota_pct": quota_pct,
+                            "reason": f"實盤科技板塊過度集中 (HHI: {portfolio_sector_report.hhi_index:.3f}, 科技佔比: {portfolio_sector_report.sector_weights.get('Technology', 0.0):.1%})，注入非科技龍頭自癒",
+                        }
+                        logger.info(
+                            "BatchCashDeployment: Cross-sector momentum injection active! Injected %s (%s, $%.2f) to de-concentrate HHI",
+                            contender["ticker"], contender["sector"], injected_amt
+                        )
+        except Exception as cs_err:
+            logger.debug(f"Cross-sector momentum injection evaluation error: {cs_err}")
+
         allocated_items = []
         all_candidates_summary = []
         total_batch_amount = 0.0
@@ -372,10 +532,40 @@ class BatchCashDeploymentService:
             else:
                 trade_amount = round(base_amt, 2)
 
-            # 財報日與宏觀黑名單避開守衛檢驗
-            blackout_decision = await self.blackout_guard.evaluate_candidate(ticker)
-            is_blackout = blackout_decision.is_blackout
-            blackout_reason = blackout_decision.reason if is_blackout else None
+            is_blackout = False
+            blackout_reason = None
+            is_jump_acute = False
+            jump_intensity = 0.0
+            jump_regime = "CALM_DIFFUSION"
+
+            # 統一中央風控閘門檢驗 (Phase 39)
+            if self.risk_gateway is not None:
+
+                try:
+                    risk_res = await self.risk_gateway.evaluate_trade_risk(
+                        ticker=ticker, action="BUY", amount_usd=trade_amount
+                    )
+                    g_details = risk_res.guard_details or {}
+
+                    cal_info = g_details.get("calendar_blackout") or {}
+                    if cal_info.get("is_blackout"):
+                        is_blackout = True
+                        blackout_reason = cal_info.get("reason")
+
+                    jump_info = g_details.get("jump_diffusion") or {}
+                    if jump_info:
+                        jump_intensity = jump_info.get("jump_intensity", 0.0)
+                        jump_regime = jump_info.get("regime", "CALM_DIFFUSION")
+                        if jump_info.get("is_acute_jump") and risk_res.primary_blocker == "JumpDiffusion":
+                            is_jump_acute = True
+                except Exception as rge:
+                    logger.debug(f"Risk gateway unified check fallback for {ticker}: {rge}")
+
+            # 財報日與宏觀黑名單避開守衛檢驗 (退回備份守衛若尚未判定)
+            if not is_blackout and self.blackout_guard:
+                blackout_decision = await self.blackout_guard.evaluate_candidate(ticker)
+                is_blackout = blackout_decision.is_blackout
+                blackout_reason = blackout_decision.reason if is_blackout else None
 
             # 盤中流動性黑洞與成交品質檢驗
             is_black_hole = False
@@ -389,11 +579,8 @@ class BatchCashDeploymentService:
                 except Exception:
                     is_black_hole = False
 
-            # 貝葉斯跳躍擴散守衛檢驗
-            is_jump_acute = False
-            jump_intensity = 0.0
-            jump_regime = "CALM_DIFFUSION"
-            if self.jump_guard and getattr(self.jump_guard, "is_enabled", True):
+            # 貝葉斯跳躍擴散守衛檢驗 (若尚未由閘門判定)
+            if not is_jump_acute and self.jump_guard and getattr(self.jump_guard, "is_enabled", True):
                 try:
                     j_eval = await self.jump_guard.evaluate_ticker(ticker)
                     if j_eval:
@@ -407,6 +594,7 @@ class BatchCashDeploymentService:
                             is_jump_acute = True
                 except Exception as je:
                     logger.debug(f"Candidate jump evaluation non-blocking error for {ticker}: {je}")
+
 
             # 宏觀突發事件因果圖譜受損度檢驗 (Phase 37)
             is_event_shocked = False
@@ -464,6 +652,8 @@ class BatchCashDeploymentService:
                 "role": item["role"],
                 "rationale": f"第 {batch_number} 批次建倉配置: {item['role']} (${raw_trade_amount:.2f})",
                 "already_satisfied": (current_val >= target_value * 0.95) if total_equity > 0 else False,
+                "is_cross_sector_injected": item.get("is_cross_sector_injected", False),
+                "injected_sector": item.get("injected_sector"),
                 "blackout_active": is_blackout,
                 "blackout_reason": blackout_reason,
                 "liquidity_black_hole": is_black_hole,
@@ -639,6 +829,8 @@ class BatchCashDeploymentService:
             "risk_parity_applied": bool(risk_parity_weights),
             "risk_concentration_hhi": round(risk_parity_result.cvar_hhi_risk, 4) if risk_parity_result else None,
             "effective_risk_assets": round(risk_parity_result.effective_risk_assets_cvar, 2) if risk_parity_result else None,
+            "portfolio_sector_report": portfolio_sector_report.to_dict() if portfolio_sector_report else None,
+            "cross_sector_injection": cross_sector_injection_info,
         }
 
     async def warmup_batch_quotes(
@@ -740,11 +932,17 @@ class BatchCashDeploymentService:
         batch_number: Optional[int] = None,
         force: bool = False,
         enforce_market_hours: bool = True,
+        deployment_mode: Optional[str] = None,
     ) -> Dict[str, Any]:
         """
         執行特定批次建倉下單（整合開盤波動率防線與買賣價差熔斷守衛）。
         若 batch_number 為 None，自動調用 get_active_batch_number() 自適應推進。
+        若 deployment_mode 為 STAGGERED_LIMIT，則執行主力支撐階梯限價吸籌。
         """
+        if deployment_mode == "STAGGERED_LIMIT":
+            logger.info("BatchCashDeploymentService: delegating to StaggeredDipBuyingService (SSOT execution)")
+            return await self.execute_staggered_dip_deployment(batch_number=batch_number, force=force)
+
         # 0. 自適應判定當前應執行批次
         if batch_number is None or batch_number <= 0:
             batch_number = await self.get_active_batch_number()

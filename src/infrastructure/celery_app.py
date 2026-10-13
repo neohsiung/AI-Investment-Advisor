@@ -178,6 +178,42 @@ app.conf.beat_schedule = {
         "task": "src.infrastructure.tasks.dispatch_market_open_cash_deployment",
         "schedule": crontab(hour=9, minute=36, day_of_week="1-5"),  # Mon-Fri 09:36 EST
     },
+    # Smart Staggered Dip Buying — runs Monday-Friday post-market open (09:35 EST)
+    # 主力支撐階梯限價吸籌：每個交易日開盤後（09:35 EST）錨定主力籌碼成本線下發 3-Tier 限價吸籌單。
+    "staggered-dip-deployment": {
+        "task": "src.infrastructure.tasks.dispatch_staggered_dip_deployment",
+        "schedule": crontab(hour=9, minute=35, day_of_week="1-5"),  # Mon-Fri 09:35 EST
+    },
+    # Market-Close Staggered Orders Cleanup — runs Monday-Friday pre-market close (15:55 EST)
+    # 收盤前階梯限價掛單自動安全撤除：每個交易日收盤前（15:55 EST）自動撤除未成交掛單並釋放資金，杜絕隔夜風險。
+    "staggered-orders-cleanup": {
+        "task": "src.infrastructure.tasks.dispatch_staggered_orders_cleanup",
+        "schedule": crontab(hour=15, minute=55, day_of_week="1-5"),  # Mon-Fri 15:55 EST
+    },
+    # Intraday Staggered Fills Reconciliation — runs every 15 minutes during US market hours (09:45-15:45 EST)
+    # 盤中階梯限價掛單撮合對帳與持倉接管：美股交易時段內每 15 分鐘定時檢測限價單撮合成交狀態並自動掛載 ATR 停損保護。
+    "staggered-fills-reconciliation": {
+        "task": "src.infrastructure.tasks.dispatch_staggered_fills_reconciliation",
+        "schedule": crontab(minute="*/15", hour="9-15", day_of_week="1-5"),
+    },
+    # Intraday Staggered Orders Stalking — runs Monday-Friday at 14:00 EST
+    # 盤中動態追單改價：每日 14:00 EST 針對多頭強勢標的將 Tier 1/2 限價向日內 VWAP 微調，提高撮合率消滅現金拖累。
+    "staggered-orders-stalking": {
+        "task": "src.infrastructure.tasks.dispatch_staggered_orders_stalking",
+        "schedule": crontab(hour=14, minute=0, day_of_week="1-5"),  # Mon-Fri 14:00 EST
+    },
+    # Market-Close Staggered Dip MOC Conversion — runs Monday-Friday at 15:50 EST
+    # 尾盤動能接管強制建倉：每日 15:50 EST 撤單前將強勢標的 Tier 1 轉為市價/MOC 成交，強制配置閒置現金。
+    "staggered-orders-moc-conversion": {
+        "task": "src.infrastructure.tasks.dispatch_staggered_orders_moc_conversion",
+        "schedule": crontab(hour=15, minute=50, day_of_week="1-5"),  # Mon-Fri 15:50 EST
+    },
+    # Real-time Net Alpha & Cash Drag Attribution — runs post-market close daily at 16:15 EST
+    # 實時淨 Alpha 歸因與現金拖累量化分析：每個交易日美股盤後（16:15 EST）自動精算扣費淨 Alpha 與現金機會成本並推播。
+    "daily-net-alpha-attribution": {
+        "task": "src.infrastructure.tasks.dispatch_net_alpha_attribution",
+        "schedule": crontab(hour=16, minute=15, day_of_week="1-5"),  # Mon-Fri 16:15 EST
+    },
     # Shadow Ledger Evaluation (P2) — runs daily at 16:45 EST (after US market close)
     # 影子交易每日 MTM 損益計算與畢業考核：每個交易日盤後（16:45 EST）自動評估影子部位與提拔晉升。
     "daily-shadow-ledger-eval": {

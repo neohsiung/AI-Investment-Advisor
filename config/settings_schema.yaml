@@ -1328,6 +1328,120 @@ settings:
     label_zh: 小額訂單 0-LLM 數理引擎分流門檻 (USD)
     help_en: Trade amount below which routine execution bypasses full LLM council and uses deterministic mathematical allocation.
     help_zh: 當交易金額小於此門檻時，日常執行直接採用確定性數理因子模型，杜絕無謂 Token 消耗。
+  - key: enable_staggered_dip_buying
+    group: trading
+    type: bool
+    default: true
+    label_en: Enable smart staggered dip buying
+    label_zh: 啟用主力支撐階梯限價吸籌
+    help_en: Deploys intraday limit buy orders anchored to institutional support (AVWAP, POC, VAL) rather than aggressive market orders.
+    help_zh: 依據機構主力籌碼成本線（AVWAP、POC、VAL）分 3 階梯掛設被動限價買單，避免開盤盲目追高。
+  - key: staggered_tier1_allocation_pct
+    group: trading
+    type: float
+    default: 0.40
+    min: 0.10
+    max: 0.80
+    label_en: Staggered Tier 1 allocation ratio
+    label_zh: 階梯限價首檔配置比例
+    help_en: Fraction of target budget allocated to Tier 1 mild pullback (anchored to AVWAP/POC).
+    help_zh: 首檔輕度回踩限價單之資金配置比例（預設 40%）。
+  - key: staggered_tier2_allocation_pct
+    group: trading
+    type: float
+    default: 0.35
+    min: 0.10
+    max: 0.80
+    label_en: Staggered Tier 2 allocation ratio
+    label_zh: 階梯限價第二檔配置比例
+    help_en: Fraction of target budget allocated to Tier 2 structural support (anchored to VAL/Key Support).
+    help_zh: 第二檔結構支撐限價單之資金配置比例（預設 35%）。
+  - key: staggered_tier3_allocation_pct
+    group: trading
+    type: float
+    default: 0.25
+    min: 0.10
+    max: 0.80
+    label_en: Staggered Tier 3 allocation ratio
+    label_zh: 階梯限價第三檔配置比例
+    help_en: Fraction of target budget allocated to Tier 3 deep flush / stop-hunt discount.
+    help_zh: 第三檔恐慌甩轎深度折價限價單之資金配置比例（預設 25%）。
+  - key: staggered_tier1_dip_pct
+    group: trading
+    type: float
+    default: 0.008
+    min: 0.002
+    max: 0.05
+    label_en: Staggered Tier 1 dip discount ratio
+    label_zh: 階梯限價首檔預設折價幅度
+    help_en: Default price discount for Tier 1 if institutional anchor exceeds current price (0.008 = -0.8%).
+    help_zh: 首檔限價單相對於當前市價之預設折價幅度（0.008 代表 -0.8%）。
+  - key: staggered_tier2_dip_pct
+    group: trading
+    type: float
+    default: 0.020
+    min: 0.005
+    max: 0.10
+    label_en: Staggered Tier 2 dip discount ratio
+    label_zh: 階梯限價第二檔預設折價幅度
+    help_en: Default price discount for Tier 2 structural support (0.020 = -2.0%).
+    help_zh: 第二檔限價單相對於當前市價之預設折價幅度（0.020 代表 -2.0%）。
+  - key: staggered_tier3_dip_pct
+    group: trading
+    type: float
+    default: 0.038
+    min: 0.010
+    max: 0.15
+    label_en: Staggered Tier 3 dip discount ratio
+    label_zh: 階梯限價第三檔預設折價幅度
+    help_en: Default price discount for Tier 3 deep panic flush (0.038 = -3.8%).
+    help_zh: 第三檔限價單相對於當前市價之預設折價幅度（0.038 代表 -3.8%）。
+  - key: staggered_auto_cancel_at_market_close
+    group: trading
+    type: bool
+    default: true
+    label_en: Auto-cancel pending staggered orders at market close
+    label_zh: 收盤前自動撤銷未成交階梯掛單
+    help_en: Automatically sweeps and cancels all pending limit dip buy orders at 15:55 EST to release cash and prevent overnight risk.
+    help_zh: 美股收盤前（15:55 EST）自動撤除未成交掛單並釋放保留現金，杜絕留單過夜與隔日跳空風險。
+  - key: enable_universe_momentum_pruning
+    group: allocation
+    type: bool
+    default: true
+    label_en: Enable adaptive universe momentum pruning
+    label_zh: 啟用標的池自適應動能剪枝
+    help_en: Prunes stagnant candidates that fail to outperform SPY benchmark over 14 days and cleans stale shadow positions.
+    help_zh: 自動修剪在候選池停留超過 14 天且動能衰竭、落後 SPY 大盤之標的，並清理過期影子持倉。
+  - key: universe_candidate_max_stagnation_days
+    group: allocation
+    type: int
+    default: 14
+    min: 3
+    max: 60
+    label_en: Max candidate stagnation days before pruning
+    label_zh: 候選標的動能停滯容忍上限天數
+    help_en: Maximum days a candidate can remain without outperforming benchmark before being pruned to cold storage.
+    help_zh: 候選標的在未展現超越大盤 Alpha 前於候選池保留之最長天數（預設 14 天）。
+  - key: universe_candidate_relative_strength_cutoff
+    group: allocation
+    type: float
+    default: -0.025
+    min: -0.20
+    max: 0.05
+    label_en: Candidate relative strength cutoff vs SPY
+    label_zh: 候選標的相對 SPY 強弱門檻
+    help_en: 14-day cumulative return delta vs SPY below which a candidate is deemed stagnant (-0.025 = -2.5%).
+    help_zh: 候選標的 14 天相對於 SPY 報酬率差值低於此值時觸發動能淘汰（預設 -2.5%）。
+  - key: universe_max_contenders_per_sector
+    group: allocation
+    type: int
+    default: 3
+    min: 1
+    max: 10
+    label_en: Max candidate contenders per sector
+    label_zh: 單一產業板塊候選股上限
+    help_en: Maximum contenders allowed per sector in the active candidate pool to prevent sector crowding.
+    help_zh: 活躍候選池中同一板塊最多容納的候選標的檔數（預設 3 檔，防止板塊過度擁擠）。
   - key: breakout_filter_fail_open
     group: trading
     type: bool
@@ -3415,3 +3529,148 @@ settings:
     restart: true
     label_en: WebSocket port
     label_zh: WebSocket 連接埠
+  - key: enable_net_alpha_attribution
+    group: allocation
+    type: bool
+    default: true
+    label_en: Real-time Net Alpha & Cash Drag Attribution
+    label_zh: 實時淨 Alpha 歸因與現金拖累儀表
+    help_en: Quantifies gross vs net alpha deducting LLM and subscription costs, measuring cash drag vs downside protection.
+    help_zh: 自動扣除模型調用與訂閱成本精算實時淨 Alpha，並量化現金拖累機會成本與下行防守保護價值。
+  - key: target_annual_net_alpha_pct
+    group: allocation
+    type: float
+    default: 0.10
+    min: 0.01
+    max: 1.00
+    label_en: Target Annualized Net Alpha (Excess over SPY)
+    label_zh: 目標年化淨 Alpha (超越標普500超額)
+    help_en: Annual net alpha hurdle target after deducting all costs (default 0.10 = +10%).
+    help_zh: 扣除所有模型與運營成本後之年度淨超額目標（預設 0.10 即年化打贏大盤 10%）。
+  - key: monthly_saas_subscription_cost_usd
+    group: allocation
+    type: float
+    default: 0.0
+    min: 0.0
+    max: 1000.0
+    label_en: Monthly SaaS & Data Subscription Cost (USD)
+    label_zh: 每月軟體與數據訂閱費用攤提 (USD)
+    help_en: Monthly fixed software and data subscription cost prorated into net alpha calculations.
+    help_zh: 每月軟體與數據訂閱固定費用，於淨 Alpha 精算中按天數比例攤提扣除。
+  - key: enable_staggered_fills_reconciliation
+    group: trading
+    type: bool
+    default: true
+    label_en: Intraday Staggered Fills Reconciliation & Position Onboarding
+    label_zh: 盤中階梯限價單撮合對帳與持倉自動接管
+    help_en: Monitors intraday staggered limit orders and automatically onboards filled positions to trailing stop-loss guards.
+    help_zh: 盤中定時輪詢階梯限價單撮合成交狀態，並自動向 ExitCompositor 與 Sentinel 掛載動態保護停損。
+  - key: staggered_fills_reconciliation_interval_minutes
+    group: trading
+    type: int
+    default: 15
+    min: 5
+    max: 60
+    label_en: Staggered Fills Reconciliation Interval (Minutes)
+    label_zh: 階梯限價撮合對帳間隔 (分鐘)
+    help_en: Cadence in minutes between intraday limit order fill checks during US market hours.
+    help_zh: 美股交易時段內階梯掛單撮合輪詢與持倉接管之週期頻率（預設 15 分鐘）。
+  - key: enable_hard_token_budget_guard
+    group: ai
+    type: bool
+    default: true
+    label_en: Hard Token Budget Guard (Cost Defense)
+    label_zh: 帳戶級硬性代幣預算熔斷守衛
+    help_en: Enforces hard daily and monthly ceilings on LLM costs, locking down background calls to protect net alpha.
+    help_zh: 對 LLM 支出設置每日與每月硬性上限，超標時自動熔斷背景調用以保衛淨超額報酬。
+  - key: daily_llm_budget_usd
+    group: ai
+    type: float
+    default: 0.10
+    min: 0.01
+    max: 10.0
+    label_en: Daily LLM Token Budget (USD)
+    label_zh: 每日 LLM 模型花費上限 (USD)
+    help_en: Daily expenditure ceiling for LLM reasoning before triggering hard budget lockout (default $0.10).
+    help_zh: 每日 LLM 推理費用上限，超過即觸發硬性熔斷轉入 0-LLM 模式（預設 $0.10 USD）。
+  - key: monthly_llm_budget_usd
+    group: ai
+    type: float
+    default: 2.50
+    min: 0.10
+    max: 50.0
+    label_en: Monthly LLM Token Budget (USD)
+    label_zh: 每月 LLM 模型花費上限 (USD)
+    help_en: Monthly expenditure ceiling for LLM reasoning to ensure annual token friction stays under 1.5% of equity.
+    help_zh: 每月 LLM 總預算上限，確保全年模型摩擦成本低於總資產 1.5%（預設 $2.50 USD）。
+  - key: enable_sentinel_zero_llm_mode
+    group: ai
+    type: bool
+    default: true
+    label_en: Sentinel 100% 0-LLM Mathematical Patrol
+    label_zh: Sentinel 哨兵 100% 0-LLM 數理巡航
+    help_en: Forces Sentinel 10-minute patrols to run purely deterministic ATR, VPIN, and jump diffusion calculations.
+    help_zh: 強制 Sentinel 每 10 分鐘巡航採用純量化數理判定（ATR、VPIN、跳躍擴散），達成 0 Token 守護。
+  - key: enable_deterministic_council_fallback
+    group: ai
+    type: bool
+    default: true
+    label_en: Deterministic Mathematical Council Fallback
+    label_zh: 確定性數理議會替代決策器
+    help_en: Automatically routes routine rebalancing and sub-$250 allocations to 0-LLM quantitative engines.
+    help_zh: 例行再平衡與小額配置自動由 Bayesian HMM 與多因子數理議會替代，0 Token 0 秒延遲。
+  - key: enable_staggered_order_stalking
+    group: trading
+    type: bool
+    default: true
+    label_en: Intraday Staggered Order Stalking & Repricing
+    label_zh: 盤中階梯限價動態追單改價
+    help_en: Dynamically adjusts Tier 1/2 limit orders towards VWAP on strong intraday trending assets at 14:00 EST.
+    help_zh: 每日 14:00 EST 對多頭強勢標的將 Tier 1/2 限價向日內均價貼近微調，大幅提升吸籌成交率。
+  - key: enable_staggered_moc_conversion
+    group: trading
+    type: bool
+    default: true
+    label_en: Market-Close Dip Conversion to MOC Execution
+    label_zh: 尾盤動能接管強制吸籌建倉
+    help_en: Converts remaining Tier 1 limit orders to MOC fills at 15:50 EST for strong assets when cash ratio exceeds 35%.
+    help_zh: 每日 15:50 EST 撤單前，若現金仍高於 35%，將強勢標的 Tier 1 轉為市價/MOC 成交以消除現金拖累。
+  - key: enable_cross_sector_momentum_injection
+    group: trading
+    type: bool
+    default: true
+    label_en: Enable Cross-Sector Momentum Injection & HHI De-concentration
+    label_zh: 啟用跨板塊動能注入與 HHI 集中度自癒引擎
+    help_en: Dynamically injects top-momentum blue-chip leaders from under-represented sectors into batch plans when tech sector or HHI breaches limits.
+    help_zh: 當投組科技股集中度超標或板塊 HHI > 0.25 時，批次建倉自動保留配額注入儲備庫中非科技頂級龍頭（如能源 COP、材料 ECL、金融 V），主動平衡板塊風險。
+  - key: cross_sector_injection_quota_pct
+    group: trading
+    type: float
+    default: 0.35
+    min: 0.10
+    max: 0.60
+    label_en: Cross-Sector Injection Quota Percentage
+    label_zh: 跨板塊自癒注入預算配額比例
+    help_en: Percentage of batch deployment capital allocated to non-tech sector contenders during drift self-healing.
+    help_zh: 啟動集中度自癒時，分配給非科技主題標的之批次資金比例（預設 35%）。
+  - key: portfolio_hhi_breach_threshold
+    group: trading
+    type: float
+    default: 0.25
+    min: 0.10
+    max: 0.50
+    label_en: Portfolio Sector HHI Concentration Breach Threshold
+    label_zh: 投組實盤板塊 HHI 集中度熔斷門檻
+    help_en: Herfindahl-Hirschman Index threshold for portfolio sector weights above which self-healing de-concentration is triggered.
+    help_zh: 投組板塊 HHI 集中度上限，超過此門檻（預設 0.25）判定為 DRIFT_BREACH 並啟動跨板塊自癒注入。
+  - key: tech_sector_concentration_cap_pct
+    group: trading
+    type: float
+    default: 0.30
+    min: 0.15
+    max: 0.60
+    label_en: Technology Sector NLV Concentration Hard Cap
+    label_zh: 科技板塊全帳戶淨值集中度硬上限
+    help_en: Maximum allowable technology sector exposure relative to total NLV before active injection is mandated.
+    help_zh: 科技板塊佔總淨值之最大上限比例（預設 30%），超標時強制向低配板塊分散。
+

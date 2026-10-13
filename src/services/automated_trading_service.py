@@ -310,28 +310,59 @@ class AutomatedTradingService:
             logger.warning(f"Trade Execution Blocked: AI Trading is disabled for user {user_id}")
             return {"status": "blocked", "reason": "Trading is disabled in settings"}
 
-        # 1b. P4.2 (2026-07-11): declarative protections — global drawdown
-        # halt, per-ticker cooldown after a loss, consecutive-loss lockout.
-        # Grounded in real resolved decision_outcomes (P1), not self-graded.
-        # 2026-08-02: fails CLOSED for BUY. check() now returns a block reason
-        # rather than None on internal error, so this outer catch only ever
-        # sees import/constructor failures — which are still a reason to refuse
-        # a BUY. SELL stays permitted so a user is never trapped in a position.
-        # 2026-08-02：BUY 改為 fail-closed；SELL 維持放行，避免把人鎖在部位裡。
+        # 1b. P4.2 / Phase 39: Unified Risk Gateway (Consolidates Trading Protections,
+        # Calendar Blackout, VPIN Toxicity, Jump Diffusion, and Opening Auction Slippage).
+        # Fails CLOSED for BUY; fails OPEN for SELL so a user is never trapped.
         try:
-            from src.services.trading_protections_service import TradingProtectionsService
-            block_reason = TradingProtectionsService(user_id=user_id).check(ticker, action)
-            if block_reason:
-                logger.warning(f"Trade Execution Blocked by protection: {block_reason}")
-                return {"status": "blocked", "reason": block_reason}
-        except Exception as e:
-            if str(action).upper() == "BUY":
-                logger.error(f"Trading protections unavailable — blocking BUY: {e}")
+            from src.services.unified_risk_gateway_service import UnifiedRiskGatewayService
+            gateway = UnifiedRiskGatewayService(user_id=user_id)
+            eval_res = await gateway.evaluate_trade_risk(
+                ticker=ticker,
+                action=action,
+                amount_usd=float(quantity or 0.0),
+            )
+            if not eval_res.allowed:
+                block_reason = eval_res.reasons[0] if eval_res.reasons else f"Blocked by {eval_res.primary_blocker}"
+                logger.warning(f"Trade Execution Blocked by Unified Risk Gateway: {block_reason}")
                 return {
                     "status": "blocked",
-                    "reason": f"Protection subsystem unavailable ({type(e).__name__}); BUY blocked for safety",
+                    "reason": block_reason,
+                    "blocked_by": eval_res.primary_blocker,
+                    "risk_details": eval_res.guard_details,
                 }
-            logger.warning(f"Trading protections check failed (allowing {action}): {e}")
+        except Exception as e:
+            if str(action).upper() == "BUY":
+                logger.error(f"Unified Risk Gateway unavailable — blocking BUY: {e}")
+                return {
+                    "status": "blocked",
+                    "reason": f"Unified Risk Gateway unavailable ({type(e).__name__}); BUY blocked for safety",
+                }
+            logger.warning(f"Unified Risk Gateway check failed (allowing {action}): {e}")
+
+        # 1b-2. Phase 39: Inference Hurdle Gate (Safeguard Net Alpha)
+        # For small routine orders (<$250 USD), enforce 0-LLM mathematical engine
+        # and accumulate saved LLM inference costs in Redis.
+        try:
+            from src.services.inference_hurdle_gate_service import InferenceHurdleGateService
+            hurdle_svc = InferenceHurdleGateService(user_id=user_id)
+            is_routine = (strategy_name or "") in (
+                "rebalance", "batch_cash_deployment", "tactical_factor_rotation", "automated_trading"
+            )
+            hurdle_eval = hurdle_svc.evaluate_order_hurdle(
+                order_amount_usd=float(quantity or 0.0),
+                is_routine_rebalance=is_routine,
+            )
+            if not hurdle_eval.allow_llm:
+                hurdle_svc.record_savings(hurdle_eval.estimated_llm_cost_usd)
+                logger.info(
+                    "Inference Hurdle Gate: routed to %s, saving $%.4f USD (Alpha saved: +%.1f bps)",
+                    hurdle_eval.routing_mode,
+                    hurdle_eval.estimated_llm_cost_usd,
+                    hurdle_eval.estimated_alpha_saved_bps,
+                )
+        except Exception as he:
+            logger.debug("Inference hurdle gate evaluation non-blocking error: %s", he)
+
 
         # 1d. Shadow Validation Gate (P2: 影子交易 / 模擬跟單驗證軌道)
         # If the ticker is currently undergoing shadow validation (status='shadow' in ticker_universe),

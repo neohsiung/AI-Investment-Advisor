@@ -945,6 +945,23 @@ def run_market_open_cash_deployment(user_id: str = None, batch_number: Optional[
         return "Error: user_id is required"
 
     try:
+        from src.services.staggered_dip_buying_service import StaggeredDipBuyingService
+        staggered_svc = StaggeredDipBuyingService(user_id=user_id)
+        if staggered_svc._get_setting("enable_staggered_dip_buying", True) and not force:
+            active_orders = _run_async_safe(staggered_svc.get_active_staggered_orders())
+            pending_orders = [o for o in (active_orders or []) if o.get("status") == "PENDING"]
+            if pending_orders:
+                logger.info(
+                    "run_market_open_cash_deployment: %d pending staggered dip orders active for %s. Skipping redundant market open batch to prevent duplicate allocation.",
+                    len(pending_orders), user_id
+                )
+                return {
+                    "status": "skipped",
+                    "reason": "staggered_dip_orders_active",
+                    "pending_orders_count": len(pending_orders),
+                    "success": True,
+                }
+
         from src.services.batch_cash_deployment_service import BatchCashDeploymentService
         svc = BatchCashDeploymentService(user_id=user_id)
         result = _run_async_safe(svc.execute_batch(batch_number=batch_number, force=force, enforce_market_hours=True))
@@ -953,6 +970,232 @@ def run_market_open_cash_deployment(user_id: str = None, batch_number: Optional[
     except Exception as e:
         logger.error(f"run_market_open_cash_deployment failed for {user_id}: {e}", exc_info=True)
         return f"Error: {str(e)}"
+
+
+@app.task(name="src.infrastructure.tasks.dispatch_staggered_dip_deployment")
+def dispatch_staggered_dip_deployment():
+    """Fan-out dispatcher: 為活躍租戶分派美股主力支撐階梯限價吸籌任務 (09:35 EST)。"""
+    users = _resolve_target_users()
+    for uid in users:
+        run_staggered_dip_deployment.delay(user_id=uid)
+    return f"Dispatched {len(users)} staggered_dip_deployment tasks"
+
+
+@app.task(name="src.infrastructure.tasks.run_staggered_dip_deployment", soft_time_limit=600, time_limit=660)
+def run_staggered_dip_deployment(user_id: str = None, batch_number: Optional[int] = None, force: bool = False):
+    """
+    Smart Staggered Dip Buying Task:
+    Executes 3-tier limit buying anchored to institutional support (AVWAP, POC, VAL) post-market open (09:35 EST).
+    主力支撐階梯限價吸籌任務：於美股開盤避開開盤前極端撮合後，依主力支撐階梯下發被動限價掛單。
+    """
+    if not is_market_open_today() and not force:
+        logger.info("run_staggered_dip_deployment: Market is closed today (holiday/weekend). Skipping.")
+        return {"status": "skipped", "reason": "market_closed_today", "success": True}
+
+    user_id = user_id or os.getenv("PRIMARY_USER_ID") or os.getenv("USER_ID")
+    if not user_id:
+        logger.error("run_staggered_dip_deployment: user_id is required.")
+        return "Error: user_id is required"
+
+    try:
+        from src.services.staggered_dip_buying_service import StaggeredDipBuyingService
+        svc = StaggeredDipBuyingService(user_id=user_id)
+        if not force and not svc._get_setting("enable_staggered_dip_buying", True):
+            logger.info(f"run_staggered_dip_deployment: Staggered dip buying disabled for {user_id}. Skipping.")
+            return {"status": "skipped", "reason": "staggered_dip_buying_disabled", "success": True}
+
+        result = _run_async_safe(svc.execute_staggered_dip_deployment(batch_number=batch_number, force=force))
+        logger.info(f"run_staggered_dip_deployment completed for {user_id}: {result.get('success')}")
+        return result
+    except Exception as e:
+        logger.error(f"run_staggered_dip_deployment failed for {user_id}: {e}", exc_info=True)
+        return f"Error: {str(e)}"
+
+
+@app.task(name="src.infrastructure.tasks.dispatch_staggered_orders_cleanup")
+def dispatch_staggered_orders_cleanup():
+    """Fan-out dispatcher: 為活躍租戶分派收盤前階梯限價單自動撤銷清理任務 (15:55 EST)。"""
+    users = _resolve_target_users()
+    for uid in users:
+        run_staggered_orders_cleanup.delay(user_id=uid)
+    return f"Dispatched {len(users)} staggered_orders_cleanup tasks"
+
+
+@app.task(name="src.infrastructure.tasks.run_staggered_orders_cleanup", soft_time_limit=300, time_limit=360)
+def run_staggered_orders_cleanup(user_id: str = None, reason: str = "收盤前自動安全撤銷 (Market Close Cleanup)"):
+    """
+    Market-Close Pending Orders Cleanup Task:
+    Cancels all pending limit dip buy orders at 15:55 EST to release cash and prevent overnight risk.
+    收盤前階梯掛單清理任務：於 15:55 EST 自動撤除所有未成交之限價吸籌單，釋放資金避免留單過夜。
+    """
+    if not is_market_open_today():
+        logger.info("run_staggered_orders_cleanup: Market is closed today. Skipping.")
+        return {"status": "skipped", "reason": "market_closed_today", "success": True}
+
+    user_id = user_id or os.getenv("PRIMARY_USER_ID") or os.getenv("USER_ID")
+    if not user_id:
+        logger.error("run_staggered_orders_cleanup: user_id is required.")
+        return "Error: user_id is required"
+
+    try:
+        from src.services.staggered_dip_buying_service import StaggeredDipBuyingService
+        svc = StaggeredDipBuyingService(user_id=user_id)
+        if not svc._get_setting("staggered_auto_cancel_at_market_close", True):
+            logger.info(f"run_staggered_orders_cleanup: Auto-cancel disabled for {user_id}. Skipping.")
+            return {"status": "skipped", "reason": "auto_cancel_disabled", "success": True}
+
+        result = _run_async_safe(svc.cancel_all_pending_staggered_orders(reason=reason))
+        logger.info(f"run_staggered_orders_cleanup completed for {user_id}: {result.get('success')}")
+        return result
+    except Exception as e:
+        logger.error(f"run_staggered_orders_cleanup failed for {user_id}: {e}", exc_info=True)
+        return f"Error: {str(e)}"
+
+
+@app.task(name="src.infrastructure.tasks.dispatch_staggered_fills_reconciliation")
+def dispatch_staggered_fills_reconciliation():
+    """Fan-out dispatcher: 盤中定時分派階梯限價單撮合對帳與持倉接管任務。"""
+    users = _resolve_target_users()
+    for uid in users:
+        run_staggered_fills_reconciliation.delay(user_id=uid)
+    return f"Dispatched {len(users)} staggered_fills_reconciliation tasks"
+
+
+@app.task(name="src.infrastructure.tasks.run_staggered_fills_reconciliation", soft_time_limit=180, time_limit=240)
+def run_staggered_fills_reconciliation(user_id: str = None):
+    """
+    Intraday Staggered Fills Reconciliation & Position Onboarding:
+    Checks pending limit orders against intraday lows, onboards filled positions to trailing stops.
+    盤中階梯限價撮合對帳任務：檢測限價單觸及盤中低點成交狀況，自動交接動態保護停損。
+    """
+    if not is_market_open_today():
+        logger.info("run_staggered_fills_reconciliation: Market is closed today. Skipping.")
+        return {"status": "skipped", "reason": "market_closed_today", "success": True}
+
+    user_id = user_id or os.getenv("PRIMARY_USER_ID") or os.getenv("USER_ID")
+    if not user_id:
+        logger.error("run_staggered_fills_reconciliation: user_id is required.")
+        return "Error: user_id is required"
+
+    try:
+        from src.services.staggered_dip_buying_service import StaggeredDipBuyingService
+        svc = StaggeredDipBuyingService(user_id=user_id)
+        if not svc._get_setting("enable_staggered_fills_reconciliation", True):
+            logger.info(f"run_staggered_fills_reconciliation: Disabled for {user_id}. Skipping.")
+            return {"status": "skipped", "reason": "disabled", "success": True}
+
+        result = _run_async_safe(svc.reconcile_staggered_order_fills())
+        logger.info(f"run_staggered_fills_reconciliation completed for {user_id}: filled={result.get('filled_count')}")
+        return result
+    except Exception as e:
+        logger.error(f"run_staggered_fills_reconciliation failed for {user_id}: {e}", exc_info=True)
+        return f"Error: {str(e)}"
+
+
+@app.task(name="src.infrastructure.tasks.dispatch_staggered_orders_stalking")
+def dispatch_staggered_orders_stalking():
+    """Fan-out dispatcher: 盤中 14:00 EST 分派動態追單改價任務。"""
+    users = _resolve_target_users()
+    for uid in users:
+        run_staggered_orders_stalking.delay(user_id=uid)
+    return f"Dispatched {len(users)} staggered_orders_stalking tasks"
+
+
+@app.task(name="src.infrastructure.tasks.run_staggered_orders_stalking", soft_time_limit=180, time_limit=240)
+def run_staggered_orders_stalking(user_id: str = None):
+    """
+    Intraday Staggered Order Stalking Task:
+    Reprices pending limit bids closer to intraday VWAP for strong trending contenders.
+    盤中動態追單改價任務：將強勢標的限價點位向均價微調，提高成交機率。
+    """
+    if not is_market_open_today():
+        logger.info("run_staggered_orders_stalking: Market is closed today. Skipping.")
+        return {"status": "skipped", "reason": "market_closed_today", "success": True}
+
+    user_id = user_id or os.getenv("PRIMARY_USER_ID") or os.getenv("USER_ID")
+    if not user_id:
+        logger.error("run_staggered_orders_stalking: user_id is required.")
+        return "Error: user_id is required"
+
+    try:
+        from src.services.staggered_dip_buying_service import StaggeredDipBuyingService
+        svc = StaggeredDipBuyingService(user_id=user_id)
+        result = _run_async_safe(svc.stalk_and_reprice_pending_orders())
+        logger.info(f"run_staggered_orders_stalking completed for {user_id}: repriced={result.get('repriced_count')}")
+        return result
+    except Exception as e:
+        logger.error(f"run_staggered_orders_stalking failed for {user_id}: {e}", exc_info=True)
+        return f"Error: {str(e)}"
+
+
+@app.task(name="src.infrastructure.tasks.dispatch_staggered_orders_moc_conversion")
+def dispatch_staggered_orders_moc_conversion():
+    """Fan-out dispatcher: 尾盤 15:50 EST 分派動能接管吸籌任務。"""
+    users = _resolve_target_users()
+    for uid in users:
+        run_staggered_orders_moc_conversion.delay(user_id=uid)
+    return f"Dispatched {len(users)} staggered_orders_moc_conversion tasks"
+
+
+@app.task(name="src.infrastructure.tasks.run_staggered_orders_moc_conversion", soft_time_limit=180, time_limit=240)
+def run_staggered_orders_moc_conversion(user_id: str = None):
+    """
+    Market-On-Close Dip Conversion Task:
+    Converts remaining Tier 1 unfilled orders into MOC fills before cleanup to kill cash drag.
+    尾盤動能接管任務：收盤前強制將強勢標的未成交單轉為 MOC 撮合並掛載 ATR 停損。
+    """
+    if not is_market_open_today():
+        logger.info("run_staggered_orders_moc_conversion: Market is closed today. Skipping.")
+        return {"status": "skipped", "reason": "market_closed_today", "success": True}
+
+    user_id = user_id or os.getenv("PRIMARY_USER_ID") or os.getenv("USER_ID")
+    if not user_id:
+        logger.error("run_staggered_orders_moc_conversion: user_id is required.")
+        return "Error: user_id is required"
+
+    try:
+        from src.services.staggered_dip_buying_service import StaggeredDipBuyingService
+        svc = StaggeredDipBuyingService(user_id=user_id)
+        result = _run_async_safe(svc.convert_unfilled_dip_orders_to_moc())
+        logger.info(f"run_staggered_orders_moc_conversion completed for {user_id}: converted={result.get('converted_count')}")
+        return result
+    except Exception as e:
+        logger.error(f"run_staggered_orders_moc_conversion failed for {user_id}: {e}", exc_info=True)
+        return f"Error: {str(e)}"
+
+
+@app.task(name="src.infrastructure.tasks.dispatch_net_alpha_attribution")
+def dispatch_net_alpha_attribution():
+    """Fan-out dispatcher: 美股收盤後分派實時淨 Alpha 歸因與現金拖累量化分析。"""
+    users = _resolve_target_users()
+    for uid in users:
+        run_net_alpha_attribution.delay(user_id=uid)
+    return f"Dispatched {len(users)} net_alpha_attribution tasks"
+
+
+@app.task(name="src.infrastructure.tasks.run_net_alpha_attribution", soft_time_limit=180, time_limit=240)
+def run_net_alpha_attribution(user_id: str = None, lookback_days: int = 30):
+    """
+    Net Alpha & Cash Drag Attribution Task:
+    Computes real-time gross/net alpha deducting model costs, calculates cash drag vs protection.
+    實時淨 Alpha 歸因任務：扣除模型調用與訂閱成本精算淨 Alpha，量化現金機會成本並發布戰報。
+    """
+    user_id = user_id or os.getenv("PRIMARY_USER_ID") or os.getenv("USER_ID")
+    if not user_id:
+        logger.error("run_net_alpha_attribution: user_id is required.")
+        return "Error: user_id is required"
+
+    try:
+        from src.services.net_alpha_attribution_service import NetAlphaAttributionService
+        svc = NetAlphaAttributionService(user_id=user_id)
+        report = _run_async_safe(svc.calculate_complete_report(lookback_days=lookback_days))
+        _run_async_safe(svc.dispatch_attribution_alert(report))
+        logger.info(f"run_net_alpha_attribution completed for {user_id}: net_alpha={report.net_alpha_pct:.4f}")
+        return report.to_dict()
+    except Exception as e:
+        logger.error(f"run_net_alpha_attribution failed for {user_id}: {e}", exc_info=True)
+        return f"Error: {str(e)}"
+
 
 
 @app.task(name="src.infrastructure.tasks.dispatch_strategy_evolution")
