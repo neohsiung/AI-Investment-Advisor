@@ -76,6 +76,8 @@ class TickerStaggeredPlan:
     point_of_control: float = 0.0
     value_area_low: float = 0.0
     value_area_high: float = 0.0
+    is_cross_sector_injected: bool = False
+    injected_sector: Optional[str] = None
 
     def to_dict(self) -> Dict[str, Any]:
         return {
@@ -95,6 +97,8 @@ class TickerStaggeredPlan:
                 "value_area_low": round(self.value_area_low, 2),
                 "value_area_high": round(self.value_area_high, 2),
             },
+            "is_cross_sector_injected": self.is_cross_sector_injected,
+            "injected_sector": self.injected_sector,
         }
 
 
@@ -203,6 +207,8 @@ class StaggeredDipBuyingService:
         ticker: str,
         target_budget_usd: float,
         current_price: Optional[float] = None,
+        is_cross_sector_injected: bool = False,
+        injected_sector: Optional[str] = None,
     ) -> TickerStaggeredPlan:
         """
         針對特定標的精算 3-Tier 階梯限價進場點位與分配資金：
@@ -427,6 +433,8 @@ class StaggeredDipBuyingService:
             point_of_control=poc,
             value_area_low=val,
             value_area_high=vah,
+            is_cross_sector_injected=is_cross_sector_injected,
+            injected_sector=injected_sector,
         )
 
     # ═══════════════════════════════════════════════════════════════════════
@@ -472,12 +480,16 @@ class StaggeredDipBuyingService:
         for it in items:
             sym = it.get("ticker", "")
             amt = float(it.get("amount_usd", 0.0) or 0.0)
+            is_injected = bool(it.get("is_cross_sector_injected", False))
+            inj_sector = it.get("injected_sector")
             if not sym or amt < 10.0:
                 continue
 
             ticker_plan = await self.calculate_staggered_plan_for_ticker(
                 ticker=sym,
                 target_budget_usd=amt,
+                is_cross_sector_injected=is_injected,
+                injected_sector=inj_sector,
             )
             plans.append(ticker_plan)
             if ticker_plan.is_risk_allowed:
@@ -548,6 +560,8 @@ class StaggeredDipBuyingService:
                     "date": date_str,
                     "anchor_type": tier.support_anchor_type,
                     "broker_order_id": None,
+                    "is_cross_sector_injected": tp.is_cross_sector_injected,
+                    "injected_sector": tp.injected_sector,
                 }
 
                 # 若券商支援 place_order，下發 LIMIT 單
@@ -731,7 +745,8 @@ class StaggeredDipBuyingService:
                     content_lines.append(f"⛔ <code>{tp.ticker}</code>：風控阻斷 ({tp.risk_blocker or 'Risk Gateway'})")
                     continue
 
-                content_lines.append(f"🟢 <b>{tp.ticker}</b> (現價: <code>${tp.current_price:.2f}</code> | 預算: <code>${tp.total_budget_usd:.2f}</code>)：")
+                inject_badge = f" [跨板塊自癒: {tp.injected_sector}]" if tp.is_cross_sector_injected else ""
+                content_lines.append(f"🟢 <b>{tp.ticker}</b>{inject_badge} (現價: <code>${tp.current_price:.2f}</code> | 預算: <code>${tp.total_budget_usd:.2f}</code>)：")
                 for t in tp.tiers:
                     content_lines.append(
                         f"  └ <b>{t.name}</b>：<code>${t.target_price:.2f}</code> "
@@ -1013,6 +1028,9 @@ class StaggeredDipBuyingService:
         if not pending_orders:
             return {"status": "no_pending_orders", "repriced_count": 0, "orders": []}
 
+        # 排序：跨板塊自癒標的優先追單撮合，以加速 HHI 分散
+        pending_orders.sort(key=lambda o: (not bool(o.get("is_cross_sector_injected", False)), int(o.get("tier_number", 1))))
+
         mkt_svc = await self._get_market_data_service()
         repriced_orders: List[Dict[str, Any]] = []
 
@@ -1027,6 +1045,8 @@ class StaggeredDipBuyingService:
             if not sym or old_price <= 0:
                 continue
 
+            is_injected = bool(ord_rec.get("is_cross_sector_injected", False))
+
             try:
                 quote = mkt_svc.get_quote(sym)
                 current_price = float(quote.get("last", 0.0) or quote.get("close", 0.0) or 0.0)
@@ -1040,11 +1060,13 @@ class StaggeredDipBuyingService:
                     if o_col:
                         open_price = float(df[o_col].dropna().values[-1])
 
-                # 若今日呈現多頭震盪向上 (現價 >= 開盤價)
-                if current_price >= open_price * 0.995:
+                # 若今日呈現多頭震盪向上 (現價 >= 開盤價 * 0.995；跨板塊注入標的門檻放寬至 0.990 優先撮合)
+                reprice_threshold = 0.990 if is_injected else 0.995
+                if current_price >= open_price * reprice_threshold:
                     old_disc = float(ord_rec.get("discount_pct", 0.015) or 0.015)
-                    # 向上微調折價幅度 (貼近現價約 35%)
-                    new_disc = max(0.005, old_disc * 0.65)
+                    # 向上微調折價幅度 (跨板塊標的貼近現價 45%，一般標的 35%)
+                    discount_factor = 0.55 if is_injected else 0.65
+                    new_disc = max(0.004 if is_injected else 0.005, old_disc * discount_factor)
                     new_price = round(current_price * (1.0 - new_disc), 2)
 
                     if new_price > old_price:
@@ -1099,9 +1121,15 @@ class StaggeredDipBuyingService:
         if not pending_orders:
             return {"status": "no_pending_orders", "converted_count": 0, "orders": []}
 
-        # 優先挑選 Tier 1 掛單
-        tier1_pending = [o for o in pending_orders if int(o.get("tier_number", 1)) == 1]
-        target_candidates = tier1_pending if tier1_pending else pending_orders
+        # 優先挑選跨板塊注入標的 (is_cross_sector_injected=True) 優先接管，以消滅閒置現金並快速分散持倉；次選常規 Tier 1
+        def _moc_priority_key(o: Dict[str, Any]) -> Tuple[int, int]:
+            is_injected = bool(o.get("is_cross_sector_injected", False))
+            tier_num = int(o.get("tier_number", 1))
+            injected_rank = 0 if is_injected else 1
+            tier_rank = 0 if tier_num == 1 else 1
+            return (injected_rank, tier_rank)
+
+        target_candidates = sorted(pending_orders, key=_moc_priority_key)
 
         mkt_svc = await self._get_market_data_service()
         broker = await self._get_broker()
@@ -1148,7 +1176,13 @@ class StaggeredDipBuyingService:
                 ord_rec["fill_mechanism"] = "MOC_CONVERSION"
 
                 # 自動持倉接管 (Position Onboarding)
-                stop_price = await self._onboard_filled_position(sym, current_price, shares, self.user_id)
+                stop_price = await self._onboard_filled_position(
+                    ticker=sym,
+                    fill_price=current_price,
+                    amount_usd=amt_usd,
+                    tier_name=ord_rec.get("tier_name", "MOC Takeover"),
+                    discount_pct=0.0,
+                )
                 ord_rec["initial_stop_price"] = stop_price
                 converted_orders.append(ord_rec)
             except Exception as ce:
@@ -1186,7 +1220,8 @@ class StaggeredDipBuyingService:
                 new_p = float(o.get("limit_price", 0.0) or 0.0)
                 amt = float(o.get("amount_usd", 0.0) or 0.0)
                 disc = float(o.get("discount_pct", 0.0) or 0.0) * 100.0
-                lines.append(f"🟢 <b>{sym}</b> - <b>{t_name}</b> 改價：")
+                inj_badge = f" [跨板塊自癒: {o.get('injected_sector', '')}]" if o.get("is_cross_sector_injected") else ""
+                lines.append(f"🟢 <b>{sym}</b>{inj_badge} - <b>{t_name}</b> 改價：")
                 lines.append(f"  • 限價點位：<code>${old_p:.2f}</code> ➔ <code>${new_p:.2f} USD</code> (-{disc:.1f}%)")
                 lines.append(f"  • 預算額度：<code>${amt:.2f} USD</code> (貼近日內 VWAP 均價)")
                 lines.append("──────────────────")
@@ -1219,7 +1254,8 @@ class StaggeredDipBuyingService:
                 p = float(o.get("fill_price", 0.0) or 0.0)
                 amt = float(o.get("amount_usd", 0.0) or 0.0)
                 stop = float(o.get("initial_stop_price", 0.0) or 0.0)
-                lines.append(f"🟢 <b>{sym}</b> 尾盤成交：")
+                inj_badge = f" [跨板塊自癒: {o.get('injected_sector', '')}]" if o.get("is_cross_sector_injected") else ""
+                lines.append(f"🟢 <b>{sym}</b>{inj_badge} 尾盤成交：")
                 lines.append(f"  • 成交價格：<code>${p:.2f} USD</code> (MOC 接管)")
                 lines.append(f"  • 吸籌金額：<code>${amt:.2f} USD</code>")
                 lines.append(f"  • 自動風控：已掛載動態 ATR 保護停損點 <code>${stop:.2f} USD</code>")
