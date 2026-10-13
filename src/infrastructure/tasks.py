@@ -945,6 +945,23 @@ def run_market_open_cash_deployment(user_id: str = None, batch_number: Optional[
         return "Error: user_id is required"
 
     try:
+        from src.services.staggered_dip_buying_service import StaggeredDipBuyingService
+        staggered_svc = StaggeredDipBuyingService(user_id=user_id)
+        if staggered_svc._get_setting("enable_staggered_dip_buying", True) and not force:
+            active_orders = _run_async_safe(staggered_svc.get_active_staggered_orders())
+            pending_orders = [o for o in (active_orders or []) if o.get("status") == "PENDING"]
+            if pending_orders:
+                logger.info(
+                    "run_market_open_cash_deployment: %d pending staggered dip orders active for %s. Skipping redundant market open batch to prevent duplicate allocation.",
+                    len(pending_orders), user_id
+                )
+                return {
+                    "status": "skipped",
+                    "reason": "staggered_dip_orders_active",
+                    "pending_orders_count": len(pending_orders),
+                    "success": True,
+                }
+
         from src.services.batch_cash_deployment_service import BatchCashDeploymentService
         svc = BatchCashDeploymentService(user_id=user_id)
         result = _run_async_safe(svc.execute_batch(batch_number=batch_number, force=force, enforce_market_hours=True))

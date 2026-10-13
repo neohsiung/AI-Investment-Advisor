@@ -232,6 +232,7 @@ class ConversationRouter:
             "dipbuy", "stagger", "dip", "階梯掛單", "吸籌", "階梯吸籌", "限價吸籌",
             "alpha", "netalpha", "cashdrag", "歸因", "淨額", "成本歸因", "機會成本",
             "budget", "token", "tokens", "預算", "代幣", "成本預算", "額度",
+            "sector", "drift", "hhi", "板塊", "行業", "集中度", "板塊漂移", "板塊自癒",
         }
         return cmd in exact_keywords
 
@@ -1892,6 +1893,75 @@ class ConversationRouter:
             except Exception as e:
                 logger.error(f"Failed to generate Budget response: {e}")
                 return f"⚠️ 查詢代幣預算狀態時發生錯誤：{e}"
+
+        # 22. Sector Concentration & HHI Drift Guard (Phase 51 & 52)
+        if any(cmd.startswith(prefix) for prefix in ("sector", "drift", "hhi", "板塊", "行業", "集中度", "板塊漂移", "板塊自癒")):
+            try:
+                from src.services.broker_factory import BrokerFactory
+                from src.services.sector_drift_guard_service import SectorDriftGuardService, SectorDriftStatus
+                from src.repositories.ticker_universe_repository import TickerUniverseRepository
+
+                broker = BrokerFactory.get_broker(user_id=resolved_user_id)
+                positions = await broker.get_positions() if broker else []
+                account = await broker.get_account() if broker else None
+                total_equity = float(getattr(account, "total_equity", 0.0) or 0.0) if account else 0.0
+
+                repo = TickerUniverseRepository()
+                drift_guard = SectorDriftGuardService(user_id=resolved_user_id, repo=repo)
+                report = drift_guard.analyze_portfolio_holdings(positions, total_equity=total_equity)
+
+                status_emoji = "🟢" if report.status == SectorDriftStatus.BALANCED else ("🟡" if report.status == SectorDriftStatus.DRIFT_WARNING else "🔴")
+
+                bar_lines = []
+                sorted_sectors = sorted(report.sector_values.items(), key=lambda x: x[1], reverse=True)
+                for sec, val in sorted_sectors:
+                    w_stock = report.sector_weights.get(sec, 0.0)
+                    w_nlv = report.nlv_sector_weights.get(sec, 0.0)
+                    bars = int(round(w_stock * 10))
+                    bar_str = "▓" * bars + "░" * max(0, 10 - bars)
+                    bar_lines.append(f"• <b>{sec}</b>：<code>${val:,.2f}</code> ({w_stock:.1%} 股票 / {w_nlv:.1%} 淨值)\n  └ <code>[{bar_str}]</code>")
+
+                if not bar_lines:
+                    bar_lines.append("• <i>目前無持倉，100% 現金儲備</i>")
+
+                injected_str = "未觸發自癒"
+                contender = drift_guard.discover_cross_sector_injection_contender(
+                    current_positions=positions,
+                    total_equity=total_equity,
+                )
+                if contender:
+                    injected_str = f"推薦注入 <b>{contender['ticker']}</b> ({contender['sector']})"
+
+                over_str = ", ".join(report.over_concentrated_sectors) if report.over_concentrated_sectors else "無 (良好)"
+                under_str = ", ".join(report.under_represented_sectors[:3]) if report.under_represented_sectors else "無"
+
+                quota_pct = drift_guard.cross_sector_injection_quota_pct
+
+                rec_lines = "\n".join(f"  └ <i>{r}</i>" for r in report.recommendations[:2]) if report.recommendations else "  └ <i>投組板塊多角化分佈健康良好。</i>"
+
+                return (
+                    f"🌐 <b>【實盤投資組合板塊集中度與 HHI 診斷】</b>\n"
+                    f"━━━━━━━━━━━━━━━━━━\n"
+                    f"• <b>整體板塊狀態</b>：{status_emoji} <b>[{report.status.value}]</b>\n"
+                    f"• <b>實盤板塊 HHI 指數</b>：<code>{report.hhi_index:.4f}</code> (安全基準線: <code>0.2500</code>)\n"
+                    f"• <b>股票資產總值</b>：<code>${report.total_stock_value:,.2f} USD</code> ({report.stock_ratio_pct:.1f}% NLV)\n"
+                    f"• <b>帳戶總淨值 (NLV)</b>：<code>${report.total_equity:,.2f} USD</code>\n"
+                    f"━━━━━━━━━━━━━━━━━━\n"
+                    f"📊 <b>【各大行業主題持倉分佈】</b>\n"
+                    f"{chr(10).join(bar_lines)}\n"
+                    f"━━━━━━━━━━━━━━━━━━\n"
+                    f"🛡️ <b>【集中度防線與跨板塊自癒】</b>\n"
+                    f"• <b>過度集中行業</b>：<code>{over_str}</code> (硬上限: <code>{report.max_limit_pct:.0%}</code>)\n"
+                    f"• <b>欠配/未涵蓋板塊</b>：<code>{under_str}</code>\n"
+                    f"• <b>跨板塊自癒配額</b>：<code>{quota_pct:.0%}</code> ({injected_str})\n"
+                    f"<b>【診斷處置建議】</b>\n"
+                    f"{rec_lines}\n"
+                    f"━━━━━━━━━━━━━━━━━━\n"
+                    f"💡 <i>輸入 <code>/batch</code> 檢視建倉計畫，輸入 <code>/dipbuy plan</code> 檢視限價吸籌點位。</i>"
+                )
+            except Exception as e:
+                logger.error(f"Failed to generate Sector response: {e}")
+                return f"⚠️ 查詢板塊集中度與 HHI 診斷時發生錯誤：{e}"
 
         return None
 

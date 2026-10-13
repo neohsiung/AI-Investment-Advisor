@@ -32,7 +32,7 @@ logger = logging.getLogger("SectorDriftGuardService")
 # Comprehensive curated mapping of US market sectors and key blue-chip thematic leaders
 SECTOR_THEME_LEADERS: Dict[str, List[str]] = {
     "Technology": [
-        "AAPL", "MSFT", "NVDA", "GOOGL", "AVGO", "CRM", "AMD", "QCOM", "ORCL",
+        "AAPL", "MSFT", "NVDA", "TSM", "GOOGL", "AVGO", "CRM", "AMD", "QCOM", "ORCL",
         "NOW", "ADBE", "INTC", "AMAT", "LRCX", "PANW", "MU", "SNPS", "CDNS",
     ],
     "Financials": [
@@ -118,6 +118,49 @@ class SectorDriftReport:
         }
 
 
+@dataclass
+class PortfolioSectorReport:
+    """Consolidated diagnostic report on real portfolio holdings sector concentration."""
+    status: SectorDriftStatus
+    hhi_index: float
+    max_limit_pct: float
+    warning_limit_pct: float
+    sector_values: Dict[str, float] = field(default_factory=dict)
+    sector_weights: Dict[str, float] = field(default_factory=dict)
+    nlv_sector_weights: Dict[str, float] = field(default_factory=dict)
+    over_concentrated_sectors: List[str] = field(default_factory=list)
+    warning_sectors: List[str] = field(default_factory=list)
+    under_represented_sectors: List[str] = field(default_factory=list)
+    holdings_metrics: List[Dict[str, Any]] = field(default_factory=list)
+    total_stock_value: float = 0.0
+    total_equity: float = 0.0
+    stock_ratio_pct: float = 0.0
+    recommendations: List[str] = field(default_factory=list)
+    evaluated_at: str = field(
+        default_factory=lambda: datetime.now(timezone.utc).isoformat()
+    )
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            "status": self.status.value if hasattr(self.status, "value") else str(self.status),
+            "hhi_index": round(self.hhi_index, 4),
+            "max_limit_pct": round(self.max_limit_pct, 4),
+            "warning_limit_pct": round(self.warning_limit_pct, 4),
+            "sector_values": {k: round(v, 2) for k, v in self.sector_values.items()},
+            "sector_weights": {k: round(v, 4) for k, v in self.sector_weights.items()},
+            "nlv_sector_weights": {k: round(v, 4) for k, v in self.nlv_sector_weights.items()},
+            "over_concentrated_sectors": self.over_concentrated_sectors,
+            "warning_sectors": self.warning_sectors,
+            "under_represented_sectors": self.under_represented_sectors,
+            "holdings_metrics": self.holdings_metrics,
+            "total_stock_value": round(self.total_stock_value, 2),
+            "total_equity": round(self.total_equity, 2),
+            "stock_ratio_pct": round(self.stock_ratio_pct, 2),
+            "recommendations": self.recommendations,
+            "evaluated_at": self.evaluated_at,
+        }
+
+
 class SectorDriftGuardService:
     """
     Guards against sector concentration risk, alerts on theme drift,
@@ -184,6 +227,22 @@ class SectorDriftGuardService:
     @property
     def is_enabled(self) -> bool:
         return bool(self._get_setting("enable_sector_drift_guard", True))
+
+    @property
+    def portfolio_hhi_breach_threshold(self) -> float:
+        return float(self._get_setting("portfolio_hhi_breach_threshold", 0.25))
+
+    @property
+    def tech_concentration_cap_pct(self) -> float:
+        return float(self._get_setting("tech_sector_concentration_cap_pct", 0.30))
+
+    @property
+    def is_cross_sector_injection_enabled(self) -> bool:
+        return bool(self._get_setting("enable_cross_sector_momentum_injection", True))
+
+    @property
+    def cross_sector_injection_quota_pct(self) -> float:
+        return float(self._get_setting("cross_sector_injection_quota_pct", 0.35))
 
     def resolve_ticker_sector(self, ticker: str, fallback_sector: str = "Unknown") -> str:
         """Resolve sector classification for a ticker from repo or market data."""
@@ -443,3 +502,207 @@ class SectorDriftGuardService:
         if max_contenders is not None:
             return candidates[:max_contenders]
         return candidates
+
+    def analyze_portfolio_holdings(
+        self,
+        positions: List[Any],
+        total_equity: Optional[float] = None,
+    ) -> PortfolioSectorReport:
+        """
+        Analyze sector concentration in real portfolio holdings.
+        Computes exact market value by sector, weights relative to stock equity and total NLV,
+        portfolio sector HHI index, and flags over-concentrated / under-represented sectors.
+        """
+        parsed_holdings: List[Dict[str, Any]] = []
+        sector_values: Dict[str, float] = {}
+
+        for p in positions or []:
+            sym = (
+                getattr(p, "symbol", None)
+                or getattr(p, "ticker", None)
+                or (p.get("symbol") if isinstance(p, dict) else None)
+                or (p.get("ticker") if isinstance(p, dict) else None)
+            )
+            if not sym or str(sym).upper() in ("CASH", "USD"):
+                continue
+            sym = str(sym).upper()
+            for suffix in [".US", ".RTH", ".EXT", ".L", ".UK"]:
+                if sym.endswith(suffix):
+                    sym = sym[:-len(suffix)]
+
+            val = float(
+                getattr(p, "market_value", 0.0)
+                or getattr(p, "amount", 0.0)
+                or (p.get("market_value", 0.0) if isinstance(p, dict) else 0.0)
+                or (p.get("amount", 0.0) if isinstance(p, dict) else 0.0)
+            )
+            if val <= 0:
+                continue
+
+            sec = self.resolve_ticker_sector(sym)
+            sector_values[sec] = sector_values.get(sec, 0.0) + val
+            parsed_holdings.append({
+                "symbol": sym,
+                "sector": sec,
+                "market_value": val,
+            })
+
+        total_stock_val = sum(sector_values.values())
+        effective_nlv = max(float(total_equity or total_stock_val), total_stock_val, 1.0)
+        stock_ratio = (total_stock_val / effective_nlv * 100.0) if effective_nlv > 0 else 0.0
+
+        # Stock-based weights (for asset concentration & HHI)
+        denom_stock = max(total_stock_val, 1.0)
+        sector_weights = {s: v / denom_stock for s, v in sector_values.items()}
+
+        # NLV-based weights (for account-level exposure)
+        nlv_weights = {s: v / effective_nlv for s, v in sector_values.items()}
+
+        # Add weights to parsed holdings
+        for h in parsed_holdings:
+            h["weight_in_stocks"] = round(h["market_value"] / denom_stock, 4)
+            h["weight_in_nlv"] = round(h["market_value"] / effective_nlv, 4)
+
+        # HHI index across sectors
+        hhi = sum(w * w for w in sector_weights.values()) if total_stock_val > 0 else 0.0
+
+        max_cap = self.max_sector_limit
+        warn_cap = self.warning_limit_pct
+        hhi_thresh = self.portfolio_hhi_breach_threshold
+
+        over_concentrated = []
+        warning_sectors = []
+        for s, w_stock in sector_weights.items():
+            w_nlv = nlv_weights.get(s, 0.0)
+            if (w_nlv > max_cap or w_stock > 0.50) and len(parsed_holdings) > 1:
+                over_concentrated.append(s)
+            elif (w_nlv > warn_cap or w_stock > 0.35) and len(parsed_holdings) > 1:
+                warning_sectors.append(s)
+
+        all_major = list(SECTOR_THEME_LEADERS.keys())
+        under_represented = [s for s in all_major if sector_values.get(s, 0.0) == 0.0]
+
+        if over_concentrated or (hhi > hhi_thresh and len(parsed_holdings) > 1):
+            status = SectorDriftStatus.DRIFT_BREACH
+        elif warning_sectors or (hhi > (hhi_thresh * 0.72) and len(parsed_holdings) > 1):
+            status = SectorDriftStatus.DRIFT_WARNING
+        else:
+            status = SectorDriftStatus.BALANCED
+
+        recommendations: List[str] = []
+        if over_concentrated:
+            for s in over_concentrated:
+                recommendations.append(
+                    f"實盤板塊過度集中警告：[{s}] 佔股票市值 {sector_weights[s]:.1%} (佔總淨值 {nlv_weights[s]:.1%})，"
+                    f"HHI 指數高達 {hhi:.3f} (>{hhi_thresh:.2f})。建議啟動跨板塊自癒，暫停加碼該板塊。"
+                )
+        elif warning_sectors:
+            for s in warning_sectors:
+                recommendations.append(
+                    f"實盤板塊集中度偏高：[{s}] 佔股票市值 {sector_weights[s]:.1%}，建議優先配置其他板塊。"
+                )
+        if under_represented:
+            top_rec = ", ".join(under_represented[:3])
+            recommendations.append(f"推薦探索以下低配置或未涵蓋行業以提升多角化效益：{top_rec}")
+
+        return PortfolioSectorReport(
+            status=status,
+            hhi_index=hhi,
+            max_limit_pct=max_cap,
+            warning_limit_pct=warn_cap,
+            sector_values=sector_values,
+            sector_weights=sector_weights,
+            nlv_sector_weights=nlv_weights,
+            over_concentrated_sectors=over_concentrated,
+            warning_sectors=warning_sectors,
+            under_represented_sectors=under_represented,
+            holdings_metrics=parsed_holdings,
+            total_stock_value=total_stock_val,
+            total_equity=effective_nlv,
+            stock_ratio_pct=stock_ratio,
+            recommendations=recommendations,
+        )
+
+    def discover_cross_sector_injection_contender(
+        self,
+        current_positions: Optional[List[Any]] = None,
+        candidate_pool: Optional[List[str]] = None,
+        total_equity: Optional[float] = None,
+        excluded_tickers: Optional[Set[str]] = None,
+    ) -> Optional[Dict[str, Any]]:
+        """
+        Scouts and returns the best non-tech blue-chip leader from an under-represented
+        sector to de-concentrate the portfolio.
+        Returns a dict: {"ticker": sym, "sector": sec, "role": role, "source": src}
+        """
+        report = self.analyze_portfolio_holdings(current_positions or [], total_equity=total_equity)
+        under_represented = report.under_represented_sectors
+        if not under_represented:
+            sorted_sectors = sorted(report.sector_values.items(), key=lambda x: x[1])
+            under_represented = [s[0] for s in sorted_sectors if s[0] != "Unknown"]
+
+        target_sectors = [
+            s for s in under_represented 
+            if s not in ("Technology", "Communication Services")
+        ]
+        if not target_sectors:
+            target_sectors = [
+                s for s in list(SECTOR_THEME_LEADERS.keys())
+                if s not in ("Technology", "Communication Services")
+            ]
+
+        held_syms = set()
+        for p in current_positions or []:
+            sym = (
+                getattr(p, "symbol", None)
+                or getattr(p, "ticker", None)
+                or (p.get("symbol") if isinstance(p, dict) else None)
+                or (p.get("ticker") if isinstance(p, dict) else None)
+            )
+            if sym:
+                clean_sym = str(sym).upper()
+                for suffix in [".US", ".RTH", ".EXT", ".L", ".UK"]:
+                    if clean_sym.endswith(suffix):
+                        clean_sym = clean_sym[:-len(suffix)]
+                held_syms.add(clean_sym)
+
+        skip_set = set(held_syms)
+        if excluded_tickers:
+            skip_set.update(str(s).upper() for s in excluded_tickers)
+
+        db_candidates: List[Dict[str, Any]] = []
+        if self.repo:
+            try:
+                db_candidates = self.repo.get_all(self.user_id, status="candidate")
+            except Exception as e:
+                logger.debug(f"Repo candidate lookup error: {e}")
+
+        # Check candidate pool first
+        for sec in target_sectors:
+            for c in db_candidates:
+                c_sym = str(c.get("ticker", "")).upper()
+                c_sec = str(c.get("sector", "")).strip() or self.resolve_ticker_sector(c_sym)
+                if c_sec == sec and c_sym not in skip_set:
+                    return {
+                        "ticker": c_sym,
+                        "sector": sec,
+                        "company_name": c.get("company_name", c_sym),
+                        "role": f"跨板塊動能注入: {sec} 龍頭 ({c_sym}) 分散 HHI 自癒",
+                        "source": "candidate_pool",
+                    }
+
+        # Fallback to curated theme leaders in SECTOR_THEME_LEADERS
+        for sec in target_sectors:
+            leaders = SECTOR_THEME_LEADERS.get(sec, [])
+            for sym in leaders:
+                sym_clean = sym.upper()
+                if sym_clean not in skip_set:
+                    return {
+                        "ticker": sym_clean,
+                        "sector": sec,
+                        "company_name": sym_clean,
+                        "role": f"跨板塊動能注入: {sec} 龍頭 ({sym_clean}) 分散 HHI 自癒",
+                        "source": "curated_leaders",
+                    }
+
+        return None

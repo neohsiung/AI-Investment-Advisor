@@ -3635,4 +3635,42 @@ settings:
     label_zh: 尾盤動能接管強制吸籌建倉
     help_en: Converts remaining Tier 1 limit orders to MOC fills at 15:50 EST for strong assets when cash ratio exceeds 35%.
     help_zh: 每日 15:50 EST 撤單前，若現金仍高於 35%，將強勢標的 Tier 1 轉為市價/MOC 成交以消除現金拖累。
+  - key: enable_cross_sector_momentum_injection
+    group: trading
+    type: bool
+    default: true
+    label_en: Enable Cross-Sector Momentum Injection & HHI De-concentration
+    label_zh: 啟用跨板塊動能注入與 HHI 集中度自癒引擎
+    help_en: Dynamically injects top-momentum blue-chip leaders from under-represented sectors into batch plans when tech sector or HHI breaches limits.
+    help_zh: 當投組科技股集中度超標或板塊 HHI > 0.25 時，批次建倉自動保留配額注入儲備庫中非科技頂級龍頭（如能源 COP、材料 ECL、金融 V），主動平衡板塊風險。
+  - key: cross_sector_injection_quota_pct
+    group: trading
+    type: float
+    default: 0.35
+    min: 0.10
+    max: 0.60
+    label_en: Cross-Sector Injection Quota Percentage
+    label_zh: 跨板塊自癒注入預算配額比例
+    help_en: Percentage of batch deployment capital allocated to non-tech sector contenders during drift self-healing.
+    help_zh: 啟動集中度自癒時，分配給非科技主題標的之批次資金比例（預設 35%）。
+  - key: portfolio_hhi_breach_threshold
+    group: trading
+    type: float
+    default: 0.25
+    min: 0.10
+    max: 0.50
+    label_en: Portfolio Sector HHI Concentration Breach Threshold
+    label_zh: 投組實盤板塊 HHI 集中度熔斷門檻
+    help_en: Herfindahl-Hirschman Index threshold for portfolio sector weights above which self-healing de-concentration is triggered.
+    help_zh: 投組板塊 HHI 集中度上限，超過此門檻（預設 0.25）判定為 DRIFT_BREACH 並啟動跨板塊自癒注入。
+  - key: tech_sector_concentration_cap_pct
+    group: trading
+    type: float
+    default: 0.30
+    min: 0.15
+    max: 0.60
+    label_en: Technology Sector NLV Concentration Hard Cap
+    label_zh: 科技板塊全帳戶淨值集中度硬上限
+    help_en: Maximum allowable technology sector exposure relative to total NLV before active injection is mandated.
+    help_zh: 科技板塊佔總淨值之最大上限比例（預設 30%），超標時強制向低配板塊分散。
 

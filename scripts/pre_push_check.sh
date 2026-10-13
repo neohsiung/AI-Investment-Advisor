@@ -124,6 +124,7 @@ $PYTEST tests/unit/services/test_actionable_alert_service.py \
         tests/unit/services/test_candidate_pool_lifecycle.py \
         tests/unit/services/test_universe_lifecycle_service.py \
         tests/unit/services/test_sector_drift_and_convex_kelly.py \
+        tests/unit/services/test_cross_sector_momentum_funnel.py \
         tests/unit/services/test_slippage_guard_and_batch_deployment.py \
         tests/unit/services/test_risk_parity_cvar_service.py \
         tests/unit/config/test_settings_schema.py -q
