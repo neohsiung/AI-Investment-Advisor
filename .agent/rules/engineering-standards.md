@@ -168,3 +168,46 @@
 - **DB 優先**: 所有可啟用的功能、系統閾值、API 金鑰或管道配置，應優先存放於資料庫（`settings` 表）中，而非寫死在代碼或全域環境變數中。
 - **UI 管理**: 所有存放於 DB 的設定，必須在 Dashboard 中提供對應的介面進行操作（如 `SettingsService` 整合），確保非開發人員亦可安全調整系統行為。
 - **動態載入**: 系統在啟動或執行期應透過 `SettingsService` 動態獲取配置，確保變更能即時生效（或僅需服務重啟）。
+
+---
+
+## 7. AI Agent 交易與風控防錯開發標準 (Autonomous Trading & Risk Guard Standards)
+
+為了避免多智能體系統 (Agent Swarm) 在自主交易、風控攔截、跨頻道推播與模型調用中產生重複開發、邏輯漏洞或財務折損，所有 Agent 與開發者必須恪守以下五大剛性準則：
+
+### 7.1 單一真理風控閘門原則 (Single Source of Truth for Risk)
+- **禁止分散風控檢查**：嚴禁在各業務 Service（如 `BatchCashDeploymentService`, `AutomatedTradingService`, `SentinelService`）中私自分散實例化或個別呼叫風控組件（如 `CalendarBlackoutGuardService`, `JumpDiffusionGuardService`, `SlippageGuardService` 等）。
+- **唯一權威入口**：所有事前交易風險審查一律強制注入並調用 `UnifiedRiskGatewayService.evaluate_trade_risk(ticker, action, amount_usd)`，由中央閘門統一輸出標準化 `RiskGatewayResult`。
+- **Fail-Safe 剛性語義**：
+  - **BUY 買單 Fail-Closed**：風控任一環節報警、未捕捉例外或網絡超時，必須無條件判定為 `allowed=False` 阻斷買入開倉，捍衛本金安全。
+  - **SELL 出場 Fail-Open**：風控子系統異常時不得阻斷平倉或賣出（`allowed=True`），確保止損、移動停利與停滯修剪能順利出場。
+
+### 7.2 防禦性型別解包與 Truthiness 零陷阱 (Tuple Truthiness & Strict Unpacking)
+- **嚴禁對元組做隱式布林判斷**：針對回傳複合資料型別（如 `Tuple[bool, str]`、字典或物件）的守衛函式，嚴禁直接撰寫 `if guard_func():`。在 Python 中，非空元組 `(False, "reason")` 轉布林值恆為 `True`，會導致災難性邏輯誤判（如開盤跳空誤將所有買單阻斷）。
+- **強制明確解包**：必須顯式解包並精確判斷布林旗標：
+  ```python
+  # ❌ 嚴禁寫法：
+  # if slip_svc.is_opening_auction_window(): ...
+  
+  # ✅ 正確寫法：
+  is_window, win_reason = slip_svc.is_opening_auction_window()
+  if is_window:
+      ...
+  ```
+- **測試邊界覆蓋**：單元測試中必須專門覆蓋「回傳 `(False, ...)` 時不得進入分支」的假值反向測試案例。
+
+### 7.3 跨渠道通知格式化與互動鏡像標準 (Cross-Channel Notification Standards)
+- **換行相容性保護 (`nl2br`)**：Email HTML 轉換器必須啟用 `extensions=['tables', 'fenced_code', 'nl2br']`，確保 Markdown 的單行換行 `\n` 自動渲染為 `<br />`，杜絕 Telegram 排版在 Email 中被瀏覽器壓成單一長行的視覺崩潰。
+- **HTML 標籤相容子集**：通知文案必須使用 Telegram 嚴格支援之 HTML 標籤（`<b>`, `<i>`, `<code>`, `<a>`），禁止使用 Telegram 不支援的標籤。
+- **雙向行動能力鏡像**：當 Telegram 推播提供 Inline Keyboard 按鈕（如 `[🔄 重設熔斷]`）時，Email 與純文字頻道**必須同步提供對等之 0-LLM 快捷指令**（如 `💡 快捷指令：可於 Telegram 直接發送 /guard reset`），維持無摩擦行控體驗。
+
+### 7.4 財務約束與 0-LLM 推理成本門檻 (Inference ROI Hurdle & Net Alpha Gate)
+- **財務底線**：專案目標為**扣除所有模型調用與訂閱成本後，年化報酬率超越大盤 10%**。
+- **小額例行調倉 100% 0-LLM**：對於金額小於 $250 USD 的常規再平衡、例行建倉或因子輪動，**嚴禁**喚醒包含多位專家的評議會 (Council Swarm)；強制走數理引擎快速通道（逆波動平價、凱利公式、因子權重向量），將邊際推理成本壓至 $0.00。
+- **大額/黑天鵝升級機制**：僅在預期 Alpha 收益能充份覆蓋推論成本、或遭遇未登錄黑天鵝與宏觀突發事件時，才允許由 `InferenceHurdleGateService` 解鎖並調用高等級推理模型。
+
+### 7.5 知識庫 (Wiki) 與代碼庫雙向同步紀律 (Wiki & Codebase Bi-directional Sync)
+- **同步更新**：新增或修改任何核心服務與架構節點時，必須同步在 `wiki/` 建立/更新對應說明文檔，並在 `wiki/_Sidebar.md` 與 `wiki/Home.md` 登錄。
+- **扁平連結與驗證**：遵循 GitHub Wiki 扁平結構規範，提交前必須執行 `python .agent/skills/wiki-maintainer/scripts/verify_wiki_links.py` 確保 0 斷鏈。
+- **品質驗證門檻**：每次提交必須保證 615+ 回歸測試全綠、Bandit SAST 0 漏洞、Ruff 語法檢查通過。
+
