@@ -142,9 +142,9 @@ class LlamaIndexService:
         Build default PostgreSQL connection string from environment variables.
         從環境變數建立預設 PostgreSQL 連線字串。
         """
-        host = os.environ.get("PGHOST", "postgres")
-        port = os.environ.get("PGPORT", "5432")
-        db = os.environ.get("PGDATABASE", "advisor_prod")
+        host = os.environ.get("PGHOST", os.environ.get("DB_HOST", "postgres"))
+        port = os.environ.get("PGPORT", os.environ.get("DB_PORT", "5432"))
+        db = os.environ.get("PGDATABASE", os.environ.get("DB_NAME", "advisor_prod"))
         user = os.environ.get("DB_USER", "postgres")
         pw = os.environ.get("DB_PASS", "postgres")
         return f"postgresql+psycopg2://{user}:{pw}@{host}:{port}/{db}"

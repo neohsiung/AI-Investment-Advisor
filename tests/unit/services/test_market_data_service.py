@@ -265,6 +265,12 @@ def test_get_history_df_fallback_and_total_failure(market_data_service):
     market_data_service.fmp.fetch_history = MagicMock(side_effect=RuntimeError("fmp 500"))
     market_data_service.yfinance.fetch_history = MagicMock(side_effect=RuntimeError("yf 500"))
 
+    try:
+        from src.infrastructure.cache.redis_client import get_redis_sync
+        get_redis_sync().delete("market_data:history_df:AAPL:20")
+    except Exception:
+        pass
+
     with patch.object(market_data_service, "_is_provider_enabled", return_value=True), \
          patch.object(market_data_service.logger, "warning") as warn:
         df_failed = market_data_service.get_history_df("AAPL", days=20)

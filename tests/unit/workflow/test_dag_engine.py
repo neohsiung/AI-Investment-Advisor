@@ -54,6 +54,7 @@ async def test_workflow_cache_sqlite(tmp_path):
     """Test SQLite caching set, get, TTL, and fallback mechanisms."""
     db_file = str(tmp_path / "test_cache.db")
     cache = WorkflowCache(db_path=db_file, disable_cache=False)
+    cache._redis_failed = True
     
     node_name = "TestNode"
     inputs = {"symbol": "AAPL", "threshold": 150}
@@ -85,6 +86,7 @@ async def test_workflow_cache_ttl_expiry(tmp_path):
     """Verify that expired cache entries are cleaned up and return None."""
     db_file = str(tmp_path / "test_cache_ttl.db")
     cache = WorkflowCache(db_path=db_file, disable_cache=False)
+    cache._redis_failed = True
     
     node_name = "ExpireNode"
     inputs = {"key": "value"}
@@ -128,6 +130,7 @@ async def test_node_cache_hit_and_miss_telemetry(tmp_path):
     """Verify that node execution correctly increments cache hit/miss and workflow runs metrics."""
     db_file = str(tmp_path / "telemetry_test.db")
     cache = WorkflowCache(db_path=db_file, disable_cache=False)
+    cache._redis_failed = True
     
     # Simple deterministic Node with cache enabled (TTL > 0)
     called_count = 0

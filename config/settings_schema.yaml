@@ -3825,6 +3825,73 @@ settings:
     label_zh: 反獵殺階梯限價向下平移安全邊際比例
     help_en: Percentage to shift staggered limit buy orders downward when spoofing risk is elevated.
     help_zh: 偵測到微觀獵殺時，階梯吸籌買單向下平移之安全邊際幅度（預設 0.004 = 40 bps）。
+  - key: enable_dark_pool_pricing
+    group: trading
+    type: bool
+    default: true
+    label_en: Enable Cross-Market Dark Pool Pricing & Calibration
+    label_zh: 啟用跨市場暗池大宗換手與隔夜掛單動態校準
+    help_en: Tracks pre/after-market dark pool prints and FINRA ADF block trades to calibrate staggered limit dip targets.
+    help_zh: 盤前盤後追蹤暗池與大宗換手印痕，動態校準主力階梯限價吸籌錨點。
+  - key: dark_pool_accumulation_threshold
+    group: trading
+    type: float
+    default: 0.65
+    min: 0.50
+    max: 0.90
+    label_en: Dark Pool Accumulation Buy Ratio Threshold
+    label_zh: 暗池大宗機構吸籌買方佔比門檻
+    help_en: Dark pool buy ratio above which institutional accumulation is declared and limit order is anchored to block VWAP.
+    help_zh: 暗池大宗買單佔比達到此門檻時判定機構吸籌，將 Tier 1 吸籌限價錨定至 Block VWAP。
+  - key: dark_pool_distribution_threshold
+    group: trading
+    type: float
+    default: 0.65
+    min: 0.50
+    max: 0.90
+    label_en: Dark Pool Distribution Sell Ratio Threshold
+    label_zh: 暗池大宗機構出貨拋售佔比門檻
+    help_en: Dark pool sell ratio above which institutional distribution is declared and limit orders are shifted downward.
+    help_zh: 暗池大宗賣單佔比達到此門檻時判定機構出貨，階梯限價向下平移防範承接拋售潮。
+  - key: dark_pool_max_limit_shift_pct
+    group: trading
+    type: float
+    default: 0.008
+    min: 0.002
+    max: 0.030
+    label_en: Dark Pool Maximum Limit Price Shift Percentage
+    label_zh: 暗池大宗換手最大價格校準幅度
+    help_en: Maximum allowable percentage shift applied to limit orders based on dark pool prints.
+    help_zh: 依據暗池大宗印痕調整階梯限價之最大幅度（預設 0.008 = 80 bps）。
+  - key: enable_convex_sharpe_optimization
+    group: trading
+    type: bool
+    default: true
+    label_en: Enable Multi-Factor Convex Sharpe Frontier Optimization
+    label_zh: 啟用利差回流資本最優夏普邊界動態二次規劃
+    help_en: Optimizes recirculated capital deployment across high-alpha core assets using convex quadratic programming.
+    help_zh: 運用凸二次規劃精算回流利差與可支配資金在核心高 Alpha 標的之邊際夏普最優權重。
+  - key: convex_sharpe_max_weight_cap
+    group: trading
+    type: float
+    default: 0.25
+    min: 0.10
+    max: 0.50
+    label_en: Convex Sharpe Optimization Max Weight Cap per Ticker
+    label_zh: 凸二次規劃單一標的最高配置權重上限
+    help_en: Maximum capital allocation weight allowed for a single ticker to prevent over-concentration.
+    help_zh: 凸規劃求解中單一標的之權重剛性上限（預設 25%）。
+  - key: convex_sharpe_risk_free_rate
+    group: trading
+    type: float
+    default: 0.045
+    min: 0.000
+    max: 0.100
+    label_en: Convex Sharpe Optimization Risk-Free Benchmark Rate
+    label_zh: 凸二次規劃無風險基準利率
+    help_en: Annualized risk-free rate used in Sharpe ratio tangency calculation.
+    help_zh: 計算切線夏普比率時採用之年化無風險基準利率（預設 4.5%）。
+
 
 
 
