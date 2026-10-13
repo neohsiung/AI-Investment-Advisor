@@ -135,6 +135,7 @@ class StaggeredDipBuyingService:
         risk_gateway: Optional[Any] = None,
         broker: Optional[Any] = None,
         market_clock: Optional[Any] = None,
+        market_data_service: Optional[Any] = None,
     ):
         self.user_id = resolve_user_id(user_id)
         from src.services.settings_service import SettingsService
@@ -163,6 +164,7 @@ class StaggeredDipBuyingService:
         self.broker = broker
         from src.utils.market_clock import MarketClock
         self.market_clock = market_clock or MarketClock()
+        self.market_data_service = market_data_service
 
     async def _get_broker(self) -> Any:
         if self.broker:
@@ -173,6 +175,17 @@ class StaggeredDipBuyingService:
             return self.broker
         except Exception as be:
             logger.debug("Could not resolve BrokerService: %s", be)
+            return None
+
+    async def _get_market_data_service(self) -> Any:
+        if self.market_data_service:
+            return self.market_data_service
+        try:
+            from src.services.market_data_service import MarketDataService
+            self.market_data_service = MarketDataService(user_id=self.user_id)
+            return self.market_data_service
+        except Exception as me:
+            logger.debug("Could not resolve MarketDataService: %s", me)
             return None
 
     def _get_setting(self, key: str, default: Any) -> Any:
@@ -745,3 +758,225 @@ class StaggeredDipBuyingService:
         except Exception as ne:
             logger.error("Failed to dispatch staggered deployment alert: %s", ne)
             return None
+
+    # ═══════════════════════════════════════════════════════════════════════
+    # 7. 盤中限價單撮合對帳與持倉自動交接 (Intraday Fill Monitor & Onboarding)
+    # ═══════════════════════════════════════════════════════════════════════
+
+    async def _onboard_filled_position(
+        self,
+        ticker: str,
+        fill_price: float,
+        amount_usd: float,
+        tier_name: str,
+        discount_pct: float,
+    ) -> float:
+        """
+        持倉自動交接 (Position Onboarding)：
+        1. 撮合成交後，自動向 ExitCompositorService 計算初始動態 ATR 停損線。
+        2. 將最高價 (highest_price = fill_price) 與停損線寫入 Redis，移交 SentinelService 守護。
+        3. 回傳初始停損價位。
+        """
+        atr_pct = 0.03  # 預設 3% ATR 緩衝
+        try:
+            mkt_svc = await self._get_market_data_service()
+            df = mkt_svc.get_history_df(ticker, days=20)
+            if df is not None and not df.empty and len(df) >= 5:
+                import numpy as np
+                high = df["high"].values
+                low = df["low"].values
+                close = df["close"].values
+                tr1 = high[1:] - low[1:]
+                tr2 = np.abs(high[1:] - close[:-1])
+                tr3 = np.abs(low[1:] - close[:-1])
+                tr = np.maximum(tr1, np.maximum(tr2, tr3))
+                atr = float(np.mean(tr[-14:]))
+                if fill_price > 0:
+                    atr_pct = max(0.02, min(0.08, atr / fill_price))
+        except Exception as e:
+            logger.debug("Failed calculating ATR for %s onboarding: %s", ticker, e)
+
+        # 初始動態停損門檻：保證至少 4.5% 緩衝空間，避免日間甩轎
+        stop_discount = max(1.5 * atr_pct, 0.045)
+        initial_stop_price = round(fill_price * (1.0 - stop_discount), 2)
+
+        # 登錄至 Redis 供 SentinelService 追蹤
+        try:
+            from src.infrastructure.cache.redis_client import get_redis
+            r = await get_redis(decode_responses=True)
+            high_key = f"sentinel:highest_price:{self.user_id}:{ticker}"
+            stop_key = f"sentinel:trailing_stop:{self.user_id}:{ticker}"
+            # 保存 30 天
+            await r.setex(high_key, 2592000, str(fill_price))
+            await r.setex(stop_key, 2592000, str(initial_stop_price))
+            logger.info(
+                "Position onboarded for %s: fill=%.2f, initial_stop=%.2f (buffer=%.1f%%)",
+                ticker, fill_price, initial_stop_price, stop_discount * 100.0,
+            )
+        except Exception as re:
+            logger.warning("Failed to onboard position to Redis for %s: %s", ticker, re)
+
+        return initial_stop_price
+
+    async def reconcile_staggered_order_fills(self) -> Dict[str, Any]:
+        """
+        盤中階梯限價單撮合對帳與持倉自動接管 (Intraday Fill Monitor & Onboarding)：
+        1. 讀取今日 Redis 中的 PENDING 階梯訂單。
+        2. 檢查各標的即時行情（Low / Bid / Last），若盤中低點觸及 Target Price 則判定撮合成交。
+        3. 自動向券商補單（若為被動監控模式）並標記 FILLED。
+        4. 自動交接持倉 (Position Onboarding)，為該部位計算掛載動態 ATR 保護停損點。
+        5. 推播折價成交即時捷報。
+        """
+        ny_tz = pytz.timezone("US/Eastern")
+        now_ny = datetime.now(ny_tz)
+        date_str = now_ny.strftime("%Y-%m-%d")
+
+        try:
+            from src.infrastructure.cache.redis_client import get_redis
+            r = await get_redis(decode_responses=True)
+            r_key = f"{self.REDIS_KEY_PREFIX}:{self.user_id}:{date_str}"
+            existing = await r.get(r_key)
+            if not existing:
+                return {"status": "no_orders_today", "filled_count": 0, "filled_orders": []}
+
+            orders = json.loads(existing)
+        except Exception as e:
+            logger.warning("Failed to read staggered orders for reconciliation: %s", e)
+            return {"status": "error", "error": str(e), "filled_count": 0, "filled_orders": []}
+
+        pending_orders = [o for o in orders if o.get("status") == "PENDING"]
+        if not pending_orders:
+            return {"status": "no_pending_orders", "filled_count": 0, "filled_orders": []}
+
+        mkt_svc = await self._get_market_data_service()
+        broker = await self._get_broker()
+        filled_orders: List[Dict[str, Any]] = []
+
+        for ord_rec in pending_orders:
+            sym = ord_rec.get("ticker", "")
+            target_price = float(ord_rec.get("limit_price", 0.0) or 0.0)
+            amt_usd = float(ord_rec.get("amount_usd", 0.0) or 0.0)
+            if not sym or target_price <= 0:
+                continue
+
+            is_filled = False
+            market_fill_price = target_price
+
+            # 優先檢查券商委託狀態 (若有 broker_order_id)
+            if broker and ord_rec.get("broker_order_id") and hasattr(broker, "get_order"):
+                try:
+                    b_ord = await broker.get_order(ord_rec["broker_order_id"])
+                    if isinstance(b_ord, dict) and b_ord.get("status") in ("FILLED", "COMPLETED", "EXECUTED"):
+                        is_filled = True
+                        if b_ord.get("executed_price"):
+                            market_fill_price = float(b_ord["executed_price"])
+                except Exception as be:
+                    logger.debug("Failed querying broker order %s: %s", ord_rec["broker_order_id"], be)
+
+            # 若券商尚未回報成交或為被動模擬追蹤，比對即時盤中低點
+            if not is_filled and mkt_svc:
+                try:
+                    quote = await mkt_svc.get_quote(sym)
+                    low_p = float(quote.get("low", 0.0) or quote.get("last", 0.0) or quote.get("bid", 0.0) or 0.0)
+                    if low_p > 0 and low_p <= target_price:
+                        is_filled = True
+                        market_fill_price = target_price
+                        # 下發市價單於券商成交
+                        if broker and hasattr(broker, "place_order"):
+                            try:
+                                from src.domain.trading import OrderAction, OrderType
+                                await broker.place_order(
+                                    symbol=sym,
+                                    action=OrderAction.BUY if hasattr(OrderAction, "BUY") else "BUY",
+                                    order_type=OrderType.MARKET if hasattr(OrderType, "MARKET") else "MARKET",
+                                    amount=amt_usd,
+                                )
+                            except Exception as pe:
+                                logger.warning("Broker market execution during fill reconciliation: %s", pe)
+                except Exception as qe:
+                    logger.debug("Failed fetching quote for %s during reconciliation: %s", sym, qe)
+
+            if is_filled:
+                ord_rec["status"] = "FILLED"
+                ord_rec["fill_price"] = market_fill_price
+                ord_rec["filled_at"] = datetime.now(timezone.utc).isoformat()
+
+                # 自動交接持倉風控 (Position Onboarding)
+                stop_price = await self._onboard_filled_position(
+                    ticker=sym,
+                    fill_price=market_fill_price,
+                    amount_usd=amt_usd,
+                    tier_name=ord_rec.get("tier_name", "Limit Tier"),
+                    discount_pct=float(ord_rec.get("discount_pct", 0.0) or 0.0),
+                )
+                ord_rec["initial_stop_price"] = stop_price
+                filled_orders.append(ord_rec)
+
+        if filled_orders:
+            try:
+                await r.setex(r_key, 86400, json.dumps(orders, ensure_ascii=False))
+            except Exception as se:
+                logger.warning("Failed updating filled records to Redis: %s", se)
+
+            # 發送即時成交通報
+            await self.dispatch_staggered_fill_alert(filled_orders)
+
+        return {
+            "status": "reconciled",
+            "filled_count": len(filled_orders),
+            "filled_orders": filled_orders,
+            "remaining_pending_count": len([o for o in orders if o.get("status") == "PENDING"]),
+        }
+
+    async def dispatch_staggered_fill_alert(
+        self,
+        filled_orders: List[Dict[str, Any]],
+    ) -> Optional[Dict[str, Any]]:
+        """發送階梯限價吸籌成功成交捷報"""
+        if not filled_orders:
+            return None
+        try:
+            from src.services.notification_service import NotificationService
+            noti_svc = NotificationService.create_with_settings(
+                settings_service=self.settings_service,
+                user_id=self.user_id,
+            )
+
+            title = f"🎯 主力支撐階梯限價吸籌成交捷報 ({len(filled_orders)} 筆)"
+            content_lines = [
+                "<b>【盤中主力回踩折價吸籌成功】</b>",
+                "━━━━━━━━━━━━━━━━━━",
+            ]
+            for o in filled_orders:
+                sym = o.get("ticker", "")
+                t_name = o.get("tier_name", "Tier")
+                p = float(o.get("fill_price", 0.0) or 0.0)
+                disc = float(o.get("discount_pct", 0.0) or 0.0) * 100.0
+                amt = float(o.get("amount_usd", 0.0) or 0.0)
+                stop = float(o.get("initial_stop_price", 0.0) or 0.0)
+
+                content_lines.append(f"🟢 <b>{sym}</b> - <b>{t_name}</b> 成交：")
+                content_lines.append(f"  • 成交價格：<code>${p:.2f} USD</code> (折價 <b>-{disc:.1f}%</b>)")
+                content_lines.append(f"  • 吸籌金額：<code>${amt:.2f} USD</code>")
+                content_lines.append(f"  • 自動風控：已掛載動態 ATR 保護停損點 <code>${stop:.2f} USD</code>")
+                content_lines.append("──────────────────")
+
+            content_lines.append("💡 <i>持倉已自動移交 Sentinel 守護，啟動單調遞增移動棘輪。</i>")
+            content = "\n".join(content_lines)
+
+            actions = [
+                {"label": "📊 檢視持倉狀態", "data": "action=portfolio_status", "key": "portfolio_status"},
+                {"label": "📈 檢視淨 Alpha 儀表", "data": "action=alpha_attribution", "key": "alpha_attribution"},
+            ]
+
+            return await noti_svc.notify_all(
+                title=title,
+                content=content,
+                user_id=self.user_id,
+                actions=actions,
+                category="trade_action",
+            )
+        except Exception as ne:
+            logger.error("Failed to dispatch staggered fill alert: %s", ne)
+            return None
+

@@ -3529,3 +3529,50 @@ settings:
     restart: true
     label_en: WebSocket port
     label_zh: WebSocket 連接埠
+  - key: enable_net_alpha_attribution
+    group: allocation
+    type: bool
+    default: true
+    label_en: Real-time Net Alpha & Cash Drag Attribution
+    label_zh: 實時淨 Alpha 歸因與現金拖累儀表
+    help_en: Quantifies gross vs net alpha deducting LLM and subscription costs, measuring cash drag vs downside protection.
+    help_zh: 自動扣除模型調用與訂閱成本精算實時淨 Alpha，並量化現金拖累機會成本與下行防守保護價值。
+  - key: target_annual_net_alpha_pct
+    group: allocation
+    type: float
+    default: 0.10
+    min: 0.01
+    max: 1.00
+    label_en: Target Annualized Net Alpha (Excess over SPY)
+    label_zh: 目標年化淨 Alpha (超越標普500超額)
+    help_en: Annual net alpha hurdle target after deducting all costs (default 0.10 = +10%).
+    help_zh: 扣除所有模型與運營成本後之年度淨超額目標（預設 0.10 即年化打贏大盤 10%）。
+  - key: monthly_saas_subscription_cost_usd
+    group: allocation
+    type: float
+    default: 0.0
+    min: 0.0
+    max: 1000.0
+    label_en: Monthly SaaS & Data Subscription Cost (USD)
+    label_zh: 每月軟體與數據訂閱費用攤提 (USD)
+    help_en: Monthly fixed software and data subscription cost prorated into net alpha calculations.
+    help_zh: 每月軟體與數據訂閱固定費用，於淨 Alpha 精算中按天數比例攤提扣除。
+  - key: enable_staggered_fills_reconciliation
+    group: trading
+    type: bool
+    default: true
+    label_en: Intraday Staggered Fills Reconciliation & Position Onboarding
+    label_zh: 盤中階梯限價單撮合對帳與持倉自動接管
+    help_en: Monitors intraday staggered limit orders and automatically onboards filled positions to trailing stop-loss guards.
+    help_zh: 盤中定時輪詢階梯限價單撮合成交狀態，並自動向 ExitCompositor 與 Sentinel 掛載動態保護停損。
+  - key: staggered_fills_reconciliation_interval_minutes
+    group: trading
+    type: int
+    default: 15
+    min: 5
+    max: 60
+    label_en: Staggered Fills Reconciliation Interval (Minutes)
+    label_zh: 階梯限價撮合對帳間隔 (分鐘)
+    help_en: Cadence in minutes between intraday limit order fill checks during US market hours.
+    help_zh: 美股交易時段內階梯掛單撮合輪詢與持倉接管之週期頻率（預設 15 分鐘）。
+

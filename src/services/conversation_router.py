@@ -12,6 +12,7 @@ Routes incoming channel messages through a priority pipeline:
   - 規範四 (模組化設計): 獨立可單元測試
 """
 
+from datetime import datetime
 import json
 import logging
 from typing import Optional, List, Dict, Any
@@ -229,6 +230,7 @@ class ConversationRouter:
             "hmm", "bayesianfilter", "filter", "regimeprob", "hmmfactor", "隱馬爾可夫", "貝葉斯濾波", "體制機率", "連續體制",
             "universe", "pool", "tickers", "標的池", "股票池", "標的", "候選池",
             "dipbuy", "stagger", "dip", "階梯掛單", "吸籌", "階梯吸籌", "限價吸籌",
+            "alpha", "netalpha", "cashdrag", "歸因", "淨額", "成本歸因", "機會成本",
         }
         return cmd in exact_keywords
 
@@ -1720,6 +1722,20 @@ class ConversationRouter:
                         "💡 <i>掛單已進入隊列與券商，未成交部位將於 15:55 EST 收盤前自動安全撤銷。輸入 <code>/dipbuy status</code> 檢視狀態。</i>"
                     )
 
+                # Subcommand: reconcile / check / 撮合 / 對帳 (Phase 45)
+                if any(k in cmd for k in ("reconcile", "check", "撮合", "對帳")):
+                    rec_res = await stagger_svc.reconcile_staggered_order_fills()
+                    f_count = rec_res.get("filled_count", 0)
+                    rem_count = rec_res.get("remaining_pending_count", 0)
+                    return (
+                        f"🎯 <b>【階梯限價吸籌撮合對帳完成】</b>\n"
+                        f"━━━━━━━━━━━━━━━━━━\n"
+                        f"• <b>本次新撮合成交數</b>：<b>{f_count} 筆</b>\n"
+                        f"• <b>剩餘待成交掛單數</b>：{rem_count} 筆\n"
+                        f"━━━━━━━━━━━━━━━━━━\n"
+                        f"💡 <i>新成交部位已自動掛載動態 ATR 保護停損點並移交 Sentinel 守護。輸入 <code>/dipbuy status</code> 檢視明細。</i>"
+                    )
+
                 # Subcommand: plan / 計畫 / 預覽 / 點位
                 if any(k in cmd for k in ("plan", "計畫", "預覽", "點位")):
                     plan = await stagger_svc.generate_batch_staggered_plan()
@@ -1794,6 +1810,27 @@ class ConversationRouter:
             except Exception as e:
                 logger.error(f"Failed to generate Dipbuy response: {e}")
                 return f"⚠️ 處理階梯限價吸籌指令時發生錯誤：{e}"
+
+        # 20. Alpha / Net Alpha / Cash Drag Attribution (Phase 44)
+        if any(cmd.startswith(prefix) for prefix in ("alpha", "netalpha", "cashdrag", "歸因", "淨額", "成本歸因", "機會成本")):
+            try:
+                from src.services.net_alpha_attribution_service import NetAlphaAttributionService
+                alpha_svc = NetAlphaAttributionService(user_id=resolved_user_id)
+                lookback = 30
+                parts = cmd.split()
+                if len(parts) > 1:
+                    arg = parts[1].strip().lower()
+                    if arg == "ytd":
+                        today = datetime.now()
+                        lookback = max(1, (today - datetime(today.year, 1, 1)).days)
+                    elif arg.isdigit() and int(arg) > 0:
+                        lookback = int(arg)
+
+                report = await alpha_svc.calculate_complete_report(lookback_days=lookback)
+                return alpha_svc.format_telegram_report(report)
+            except Exception as e:
+                logger.error(f"Failed to generate Alpha attribution response: {e}")
+                return f"⚠️ 查詢淨 Alpha 歸因與現金拖累時發生錯誤：{e}"
 
         return None
 

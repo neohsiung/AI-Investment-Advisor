@@ -1035,6 +1035,80 @@ def run_staggered_orders_cleanup(user_id: str = None, reason: str = "收盤前�
         return f"Error: {str(e)}"
 
 
+@app.task(name="src.infrastructure.tasks.dispatch_staggered_fills_reconciliation")
+def dispatch_staggered_fills_reconciliation():
+    """Fan-out dispatcher: 盤中定時分派階梯限價單撮合對帳與持倉接管任務。"""
+    users = _resolve_target_users()
+    for uid in users:
+        run_staggered_fills_reconciliation.delay(user_id=uid)
+    return f"Dispatched {len(users)} staggered_fills_reconciliation tasks"
+
+
+@app.task(name="src.infrastructure.tasks.run_staggered_fills_reconciliation", soft_time_limit=180, time_limit=240)
+def run_staggered_fills_reconciliation(user_id: str = None):
+    """
+    Intraday Staggered Fills Reconciliation & Position Onboarding:
+    Checks pending limit orders against intraday lows, onboards filled positions to trailing stops.
+    盤中階梯限價撮合對帳任務：檢測限價單觸及盤中低點成交狀況，自動交接動態保護停損。
+    """
+    if not is_market_open_today():
+        logger.info("run_staggered_fills_reconciliation: Market is closed today. Skipping.")
+        return {"status": "skipped", "reason": "market_closed_today", "success": True}
+
+    user_id = user_id or os.getenv("PRIMARY_USER_ID") or os.getenv("USER_ID")
+    if not user_id:
+        logger.error("run_staggered_fills_reconciliation: user_id is required.")
+        return "Error: user_id is required"
+
+    try:
+        from src.services.staggered_dip_buying_service import StaggeredDipBuyingService
+        svc = StaggeredDipBuyingService(user_id=user_id)
+        if not svc._get_setting("enable_staggered_fills_reconciliation", True):
+            logger.info(f"run_staggered_fills_reconciliation: Disabled for {user_id}. Skipping.")
+            return {"status": "skipped", "reason": "disabled", "success": True}
+
+        result = _run_async_safe(svc.reconcile_staggered_order_fills())
+        logger.info(f"run_staggered_fills_reconciliation completed for {user_id}: filled={result.get('filled_count')}")
+        return result
+    except Exception as e:
+        logger.error(f"run_staggered_fills_reconciliation failed for {user_id}: {e}", exc_info=True)
+        return f"Error: {str(e)}"
+
+
+@app.task(name="src.infrastructure.tasks.dispatch_net_alpha_attribution")
+def dispatch_net_alpha_attribution():
+    """Fan-out dispatcher: 美股收盤後分派實時淨 Alpha 歸因與現金拖累量化分析。"""
+    users = _resolve_target_users()
+    for uid in users:
+        run_net_alpha_attribution.delay(user_id=uid)
+    return f"Dispatched {len(users)} net_alpha_attribution tasks"
+
+
+@app.task(name="src.infrastructure.tasks.run_net_alpha_attribution", soft_time_limit=180, time_limit=240)
+def run_net_alpha_attribution(user_id: str = None, lookback_days: int = 30):
+    """
+    Net Alpha & Cash Drag Attribution Task:
+    Computes real-time gross/net alpha deducting model costs, calculates cash drag vs protection.
+    實時淨 Alpha 歸因任務：扣除模型調用與訂閱成本精算淨 Alpha，量化現金機會成本並發布戰報。
+    """
+    user_id = user_id or os.getenv("PRIMARY_USER_ID") or os.getenv("USER_ID")
+    if not user_id:
+        logger.error("run_net_alpha_attribution: user_id is required.")
+        return "Error: user_id is required"
+
+    try:
+        from src.services.net_alpha_attribution_service import NetAlphaAttributionService
+        svc = NetAlphaAttributionService(user_id=user_id)
+        report = _run_async_safe(svc.calculate_complete_report(lookback_days=lookback_days))
+        _run_async_safe(svc.dispatch_attribution_alert(report))
+        logger.info(f"run_net_alpha_attribution completed for {user_id}: net_alpha={report.net_alpha_pct:.4f}")
+        return report.to_dict()
+    except Exception as e:
+        logger.error(f"run_net_alpha_attribution failed for {user_id}: {e}", exc_info=True)
+        return f"Error: {str(e)}"
+
+
+
 @app.task(name="src.infrastructure.tasks.dispatch_strategy_evolution")
 def dispatch_strategy_evolution():
     """Fan-out dispatcher: 為活躍租戶分派量化策略自主演進與優化任務。"""
