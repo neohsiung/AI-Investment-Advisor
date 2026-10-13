@@ -84,6 +84,8 @@ DISPATCHER_CHILD_TASKS: Dict[str, str] = {
     "dispatch_weekly_rebalance": "run_weekly_rebalance",
     "dispatch_market_open_warmup": "run_market_open_warmup",
     "dispatch_market_open_cash_deployment": "run_market_open_cash_deployment",
+    "dispatch_staggered_dip_deployment": "run_staggered_dip_deployment",
+    "dispatch_staggered_orders_cleanup": "run_staggered_orders_cleanup",
     "dispatch_strategy_evolution": "run_strategy_evolution",
     "dispatch_factor_rotation_evolution": "run_factor_rotation_evolution",
     "dispatch_factor_genetic_evolution": "run_factor_genetic_evolution",

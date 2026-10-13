@@ -178,6 +178,18 @@ app.conf.beat_schedule = {
         "task": "src.infrastructure.tasks.dispatch_market_open_cash_deployment",
         "schedule": crontab(hour=9, minute=36, day_of_week="1-5"),  # Mon-Fri 09:36 EST
     },
+    # Smart Staggered Dip Buying — runs Monday-Friday post-market open (09:35 EST)
+    # 主力支撐階梯限價吸籌：每個交易日開盤後（09:35 EST）錨定主力籌碼成本線下發 3-Tier 限價吸籌單。
+    "staggered-dip-deployment": {
+        "task": "src.infrastructure.tasks.dispatch_staggered_dip_deployment",
+        "schedule": crontab(hour=9, minute=35, day_of_week="1-5"),  # Mon-Fri 09:35 EST
+    },
+    # Market-Close Staggered Orders Cleanup — runs Monday-Friday pre-market close (15:55 EST)
+    # 收盤前階梯限價掛單自動安全撤除：每個交易日收盤前（15:55 EST）自動撤除未成交掛單並釋放資金，杜絕隔夜風險。
+    "staggered-orders-cleanup": {
+        "task": "src.infrastructure.tasks.dispatch_staggered_orders_cleanup",
+        "schedule": crontab(hour=15, minute=55, day_of_week="1-5"),  # Mon-Fri 15:55 EST
+    },
     # Shadow Ledger Evaluation (P2) — runs daily at 16:45 EST (after US market close)
     # 影子交易每日 MTM 損益計算與畢業考核：每個交易日盤後（16:45 EST）自動評估影子部位與提拔晉升。
     "daily-shadow-ledger-eval": {

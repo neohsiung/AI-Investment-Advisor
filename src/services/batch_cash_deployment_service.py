@@ -48,6 +48,7 @@ class BatchCashDeploymentService:
         rl_sor: Optional[Any] = None,
         event_graph: Optional[Any] = None,
         bayesian_hmm_factor: Optional[Any] = None,
+        staggered_dip_service: Optional[Any] = None,
     ):
         self.user_id = resolve_user_id(user_id)
         from src.services.settings_service import SettingsService
@@ -144,6 +145,56 @@ class BatchCashDeploymentService:
             self.risk_gateway = UnifiedRiskGatewayService(user_id=self.user_id)
         except Exception:
             self.risk_gateway = None
+
+        if staggered_dip_service is not None:
+            self.staggered_dip_service = staggered_dip_service
+        else:
+            try:
+                from src.services.staggered_dip_buying_service import StaggeredDipBuyingService
+                self.staggered_dip_service = StaggeredDipBuyingService(
+                    user_id=self.user_id,
+                    settings_service=self.settings_service,
+                    broker=self.broker,
+                    market_clock=self.market_clock,
+                )
+            except Exception as sde:
+                logger.debug(f"Could not initialize StaggeredDipBuyingService: {sde}")
+                self.staggered_dip_service = None
+
+    async def generate_staggered_dip_plan(
+        self,
+        batch_number: Optional[int] = None,
+    ) -> Dict[str, Any]:
+        """產出 3-Tier 主力支撐階梯限價吸籌規劃"""
+        if self.staggered_dip_service is None:
+            from src.services.staggered_dip_buying_service import StaggeredDipBuyingService
+            self.staggered_dip_service = StaggeredDipBuyingService(
+                user_id=self.user_id,
+                settings_service=self.settings_service,
+                broker=self.broker,
+                market_clock=self.market_clock,
+            )
+        plan = await self.staggered_dip_service.generate_batch_staggered_plan(batch_number=batch_number)
+        return plan.to_dict()
+
+    async def execute_staggered_dip_deployment(
+        self,
+        batch_number: Optional[int] = None,
+        force: bool = False,
+    ) -> Dict[str, Any]:
+        """執行 3-Tier 主力支撐階梯限價吸籌"""
+        if self.staggered_dip_service is None:
+            from src.services.staggered_dip_buying_service import StaggeredDipBuyingService
+            self.staggered_dip_service = StaggeredDipBuyingService(
+                user_id=self.user_id,
+                settings_service=self.settings_service,
+                broker=self.broker,
+                market_clock=self.market_clock,
+            )
+        return await self.staggered_dip_service.execute_staggered_dip_deployment(
+            batch_number=batch_number,
+            force=force,
+        )
 
 
     async def _get_broker(self) -> Any:
@@ -775,11 +826,16 @@ class BatchCashDeploymentService:
         batch_number: Optional[int] = None,
         force: bool = False,
         enforce_market_hours: bool = True,
+        deployment_mode: Optional[str] = None,
     ) -> Dict[str, Any]:
         """
         執行特定批次建倉下單（整合開盤波動率防線與買賣價差熔斷守衛）。
         若 batch_number 為 None，自動調用 get_active_batch_number() 自適應推進。
+        若 deployment_mode 為 STAGGERED_LIMIT，則執行主力支撐階梯限價吸籌。
         """
+        if deployment_mode == "STAGGERED_LIMIT":
+            return await self.execute_staggered_dip_deployment(batch_number=batch_number, force=force)
+
         # 0. 自適應判定當前應執行批次
         if batch_number is None or batch_number <= 0:
             batch_number = await self.get_active_batch_number()

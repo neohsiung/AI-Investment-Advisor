@@ -1328,6 +1328,120 @@ settings:
     label_zh: 小額訂單 0-LLM 數理引擎分流門檻 (USD)
     help_en: Trade amount below which routine execution bypasses full LLM council and uses deterministic mathematical allocation.
     help_zh: 當交易金額小於此門檻時，日常執行直接採用確定性數理因子模型，杜絕無謂 Token 消耗。
+  - key: enable_staggered_dip_buying
+    group: trading
+    type: bool
+    default: true
+    label_en: Enable smart staggered dip buying
+    label_zh: 啟用主力支撐階梯限價吸籌
+    help_en: Deploys intraday limit buy orders anchored to institutional support (AVWAP, POC, VAL) rather than aggressive market orders.
+    help_zh: 依據機構主力籌碼成本線（AVWAP、POC、VAL）分 3 階梯掛設被動限價買單，避免開盤盲目追高。
+  - key: staggered_tier1_allocation_pct
+    group: trading
+    type: float
+    default: 0.40
+    min: 0.10
+    max: 0.80
+    label_en: Staggered Tier 1 allocation ratio
+    label_zh: 階梯限價首檔配置比例
+    help_en: Fraction of target budget allocated to Tier 1 mild pullback (anchored to AVWAP/POC).
+    help_zh: 首檔輕度回踩限價單之資金配置比例（預設 40%）。
+  - key: staggered_tier2_allocation_pct
+    group: trading
+    type: float
+    default: 0.35
+    min: 0.10
+    max: 0.80
+    label_en: Staggered Tier 2 allocation ratio
+    label_zh: 階梯限價第二檔配置比例
+    help_en: Fraction of target budget allocated to Tier 2 structural support (anchored to VAL/Key Support).
+    help_zh: 第二檔結構支撐限價單之資金配置比例（預設 35%）。
+  - key: staggered_tier3_allocation_pct
+    group: trading
+    type: float
+    default: 0.25
+    min: 0.10
+    max: 0.80
+    label_en: Staggered Tier 3 allocation ratio
+    label_zh: 階梯限價第三檔配置比例
+    help_en: Fraction of target budget allocated to Tier 3 deep flush / stop-hunt discount.
+    help_zh: 第三檔恐慌甩轎深度折價限價單之資金配置比例（預設 25%）。
+  - key: staggered_tier1_dip_pct
+    group: trading
+    type: float
+    default: 0.008
+    min: 0.002
+    max: 0.05
+    label_en: Staggered Tier 1 dip discount ratio
+    label_zh: 階梯限價首檔預設折價幅度
+    help_en: Default price discount for Tier 1 if institutional anchor exceeds current price (0.008 = -0.8%).
+    help_zh: 首檔限價單相對於當前市價之預設折價幅度（0.008 代表 -0.8%）。
+  - key: staggered_tier2_dip_pct
+    group: trading
+    type: float
+    default: 0.020
+    min: 0.005
+    max: 0.10
+    label_en: Staggered Tier 2 dip discount ratio
+    label_zh: 階梯限價第二檔預設折價幅度
+    help_en: Default price discount for Tier 2 structural support (0.020 = -2.0%).
+    help_zh: 第二檔限價單相對於當前市價之預設折價幅度（0.020 代表 -2.0%）。
+  - key: staggered_tier3_dip_pct
+    group: trading
+    type: float
+    default: 0.038
+    min: 0.010
+    max: 0.15
+    label_en: Staggered Tier 3 dip discount ratio
+    label_zh: 階梯限價第三檔預設折價幅度
+    help_en: Default price discount for Tier 3 deep panic flush (0.038 = -3.8%).
+    help_zh: 第三檔限價單相對於當前市價之預設折價幅度（0.038 代表 -3.8%）。
+  - key: staggered_auto_cancel_at_market_close
+    group: trading
+    type: bool
+    default: true
+    label_en: Auto-cancel pending staggered orders at market close
+    label_zh: 收盤前自動撤銷未成交階梯掛單
+    help_en: Automatically sweeps and cancels all pending limit dip buy orders at 15:55 EST to release cash and prevent overnight risk.
+    help_zh: 美股收盤前（15:55 EST）自動撤除未成交掛單並釋放保留現金，杜絕留單過夜與隔日跳空風險。
+  - key: enable_universe_momentum_pruning
+    group: allocation
+    type: bool
+    default: true
+    label_en: Enable adaptive universe momentum pruning
+    label_zh: 啟用標的池自適應動能剪枝
+    help_en: Prunes stagnant candidates that fail to outperform SPY benchmark over 14 days and cleans stale shadow positions.
+    help_zh: 自動修剪在候選池停留超過 14 天且動能衰竭、落後 SPY 大盤之標的，並清理過期影子持倉。
+  - key: universe_candidate_max_stagnation_days
+    group: allocation
+    type: int
+    default: 14
+    min: 3
+    max: 60
+    label_en: Max candidate stagnation days before pruning
+    label_zh: 候選標的動能停滯容忍上限天數
+    help_en: Maximum days a candidate can remain without outperforming benchmark before being pruned to cold storage.
+    help_zh: 候選標的在未展現超越大盤 Alpha 前於候選池保留之最長天數（預設 14 天）。
+  - key: universe_candidate_relative_strength_cutoff
+    group: allocation
+    type: float
+    default: -0.025
+    min: -0.20
+    max: 0.05
+    label_en: Candidate relative strength cutoff vs SPY
+    label_zh: 候選標的相對 SPY 強弱門檻
+    help_en: 14-day cumulative return delta vs SPY below which a candidate is deemed stagnant (-0.025 = -2.5%).
+    help_zh: 候選標的 14 天相對於 SPY 報酬率差值低於此值時觸發動能淘汰（預設 -2.5%）。
+  - key: universe_max_contenders_per_sector
+    group: allocation
+    type: int
+    default: 3
+    min: 1
+    max: 10
+    label_en: Max candidate contenders per sector
+    label_zh: 單一產業板塊候選股上限
+    help_en: Maximum contenders allowed per sector in the active candidate pool to prevent sector crowding.
+    help_zh: 活躍候選池中同一板塊最多容納的候選標的檔數（預設 3 檔，防止板塊過度擁擠）。
   - key: breakout_filter_fail_open
     group: trading
     type: bool

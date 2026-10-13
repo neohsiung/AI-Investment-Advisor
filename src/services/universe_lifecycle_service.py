@@ -998,6 +998,257 @@ class UniverseLifecycleService:
             "candidate_count": len(current_candidates),
         }
 
+    # ═══════════════════════════════════════════════════════════════════════
+    # 7. 外圍標的池自適應動能剪枝與換血 (Adaptive Momentum Pruning & GC)
+    # ═══════════════════════════════════════════════════════════════════════
+
+    async def prune_stagnant_candidates(
+        self,
+        max_stagnation_days: Optional[int] = None,
+        relative_strength_cutoff: Optional[float] = None,
+    ) -> List[Dict[str, Any]]:
+        """
+        淘汰在候選池停留超過 14 天且動能衰竭、相對於 SPY 大盤落後之滯後標的。
+        """
+        if not self.settings.get_setting("enable_universe_momentum_pruning", True):
+            logger.info("prune_stagnant_candidates: Disabled via settings.")
+            return []
+
+        if max_stagnation_days is None:
+            max_stagnation_days = int(self.settings.get_setting("universe_candidate_max_stagnation_days", 14))
+        if relative_strength_cutoff is None:
+            relative_strength_cutoff = float(self.settings.get_setting("universe_candidate_relative_strength_cutoff", -0.025))
+
+        candidates = self.repo.get_all(self.user_id, status="candidate")
+        if not candidates:
+            return []
+
+        # 取得 SPY 基準 14 日報酬率
+        spy_return = 0.0
+        try:
+            spy_df = self.market.get_history_df("SPY", days=max_stagnation_days + 5)
+            if spy_df is not None and not spy_df.empty and len(spy_df) >= 2:
+                closes = spy_df["close"].dropna().values
+                if len(closes) >= 2 and closes[0] > 0:
+                    spy_return = float((closes[-1] - closes[0]) / closes[0])
+        except Exception as se:
+            logger.debug(f"Failed to fetch SPY history for RS benchmark: {se}")
+
+        now = datetime.now(timezone.utc)
+        pruned: List[Dict[str, Any]] = []
+
+        for cand in candidates:
+            if cand.get("is_pinned"):
+                continue
+
+            ticker = cand.get("ticker", "").upper()
+            added_at = cand.get("added_at")
+            if not added_at:
+                continue
+
+            # 計算進駐天數
+            if isinstance(added_at, str):
+                try:
+                    added_dt = datetime.fromisoformat(added_at.replace("Z", "+00:00"))
+                except Exception:
+                    continue
+            else:
+                added_dt = added_at
+
+            if added_dt.tzinfo is None:
+                added_dt = added_dt.replace(tzinfo=timezone.utc)
+
+            tenure_days = (now - added_dt).total_seconds() / 86400.0
+            if tenure_days < max_stagnation_days:
+                continue
+
+            # 計算標的 14 日報酬率
+            cand_return = 0.0
+            has_return = False
+            try:
+                c_df = self.market.get_history_df(ticker, days=max_stagnation_days + 5)
+                if c_df is not None and not c_df.empty and len(c_df) >= 2:
+                    closes = c_df["close"].dropna().values
+                    if len(closes) >= 2 and closes[0] > 0:
+                        cand_return = float((closes[-1] - closes[0]) / closes[0])
+                        has_return = True
+            except Exception as ce:
+                logger.debug(f"Failed to fetch history for {ticker}: {ce}")
+
+            if not has_return:
+                continue
+
+            rs_delta = cand_return - spy_return
+            if rs_delta < relative_strength_cutoff:
+                reason = (
+                    f"stagnant_alpha_pruned: tenure={tenure_days:.1f}d, "
+                    f"return={cand_return:.2%}, SPY={spy_return:.2%}, delta={rs_delta:.2%}"
+                )
+                ok = self.repo.remove(self.user_id, ticker, reason=reason)
+                if ok:
+                    self.repo.add_log(
+                        self.user_id, ticker, "pruned", "UniverseLifecycleService",
+                        f"Stagnant candidate pruned (RS delta {rs_delta*100:.1f}% vs SPY over {tenure_days:.0f}d)",
+                        "candidate", "removed",
+                    )
+                    pruned.append({
+                        "ticker": ticker,
+                        "tenure_days": round(tenure_days, 1),
+                        "cand_return": round(cand_return, 4),
+                        "spy_return": round(spy_return, 4),
+                        "rs_delta": round(rs_delta, 4),
+                        "reason": reason,
+                    })
+                    logger.info(f"Pruned stagnant candidate {ticker}: {reason}")
+
+        return pruned
+
+    async def prune_stale_shadow_positions(
+        self,
+        max_observation_days: int = 14,
+    ) -> List[Dict[str, Any]]:
+        """
+        清理在影子觀測池中超過 14 天且未展現超額 Alpha 或虧損之過期影子標的。
+        """
+        shadow_rows = self.repo.get_all(self.user_id, status="shadow")
+        if not shadow_rows:
+            return []
+
+        now = datetime.now(timezone.utc)
+        pruned: List[Dict[str, Any]] = []
+
+        for s in shadow_rows:
+            if s.get("is_pinned"):
+                continue
+
+            ticker = s.get("ticker", "").upper()
+            added_at = s.get("added_at")
+            if not added_at:
+                continue
+
+            if isinstance(added_at, str):
+                try:
+                    added_dt = datetime.fromisoformat(added_at.replace("Z", "+00:00"))
+                except Exception:
+                    continue
+            else:
+                added_dt = added_at
+
+            if added_dt.tzinfo is None:
+                added_dt = added_dt.replace(tzinfo=timezone.utc)
+
+            tenure_days = (now - added_dt).total_seconds() / 86400.0
+            if tenure_days < max_observation_days:
+                continue
+
+            # 檢驗 MTM 表現
+            shadow_ret = 0.0
+            try:
+                s_df = self.market.get_history_df(ticker, days=max_observation_days + 5)
+                if s_df is not None and not s_df.empty and len(s_df) >= 2:
+                    closes = s_df["close"].dropna().values
+                    if len(closes) >= 2 and closes[0] > 0:
+                        shadow_ret = float((closes[-1] - closes[0]) / closes[0])
+            except Exception:
+                pass
+
+            if shadow_ret <= 0.0:
+                reason = f"shadow_expired_pruned: tenure={tenure_days:.1f}d, mtm_return={shadow_ret:.2%}"
+                ok = self.repo.remove(self.user_id, ticker, reason=reason)
+                if ok:
+                    self.repo.add_log(
+                        self.user_id, ticker, "pruned", "UniverseLifecycleService",
+                        f"Stale shadow candidate pruned ({tenure_days:.0f}d MTM {shadow_ret*100:.1f}%)",
+                        "shadow", "removed",
+                    )
+                    pruned.append({
+                        "ticker": ticker,
+                        "tenure_days": round(tenure_days, 1),
+                        "shadow_return": round(shadow_ret, 4),
+                        "reason": reason,
+                    })
+                    logger.info(f"Pruned stale shadow candidate {ticker}: {reason}")
+
+        return pruned
+
+    async def enforce_sector_contender_quotas(
+        self,
+        max_per_sector: Optional[int] = None,
+    ) -> List[Dict[str, Any]]:
+        """
+        限制候選池中單一產業板塊的候選股上限（預設 3 檔），淘汰超額評分最低者，防止板塊過度擁擠。
+        """
+        if max_per_sector is None:
+            max_per_sector = int(self.settings.get_setting("universe_max_contenders_per_sector", 3))
+
+        candidates = self.repo.get_all(self.user_id, status="candidate")
+        if not candidates:
+            return []
+
+        # 按板塊分組
+        sector_map: Dict[str, List[Dict[str, Any]]] = {}
+        for c in candidates:
+            sec = c.get("sector") or "Unknown"
+            sector_map.setdefault(sec, []).append(c)
+
+        pruned: List[Dict[str, Any]] = []
+        for sec, items in sector_map.items():
+            if len(items) <= max_per_sector:
+                continue
+
+            # 排序：pinned 最優先，次之依據 target_weight / confidence_score
+            items.sort(
+                key=lambda x: (
+                    1 if x.get("is_pinned") else 0,
+                    float(x.get("confidence_score") or 0.0),
+                    float(x.get("target_weight") or 0.0),
+                ),
+                reverse=True,
+            )
+
+            # 超出配額者進行修剪
+            excess = items[max_per_sector:]
+            for ex in excess:
+                if ex.get("is_pinned"):
+                    continue
+                ticker = ex.get("ticker", "").upper()
+                reason = f"sector_quota_exceeded: sector={sec}, quota={max_per_sector}"
+                ok = self.repo.remove(self.user_id, ticker, reason=reason)
+                if ok:
+                    self.repo.add_log(
+                        self.user_id, ticker, "pruned", "UniverseLifecycleService",
+                        f"Sector contender quota exceeded for {sec} (kept top {max_per_sector})",
+                        "candidate", "removed",
+                    )
+                    pruned.append({
+                        "ticker": ticker,
+                        "sector": sec,
+                        "reason": reason,
+                    })
+                    logger.info(f"Pruned excess contender {ticker} for sector {sec}")
+
+        return pruned
+
+    async def prune_universe_momentum(self) -> Dict[str, Any]:
+        """
+        執行全套外圍標的池動能剪枝與垃圾回收閉環：
+        1. 淘汰 14 天動能/RS 衰竭標的。
+        2. 清理過期影子持倉。
+        3. 實施單一產業候選上限控管。
+        """
+        stagnant = await self.prune_stagnant_candidates()
+        stale_shadow = await self.prune_stale_shadow_positions()
+        sector_pruned = await self.enforce_sector_contender_quotas()
+
+        total_pruned = len(stagnant) + len(stale_shadow) + len(sector_pruned)
+        return {
+            "success": True,
+            "total_pruned": total_pruned,
+            "stagnant_candidates": stagnant,
+            "stale_shadow_positions": stale_shadow,
+            "sector_quota_pruned": sector_pruned,
+        }
+
     async def dispatch_lifecycle_notification(self, result: Dict[str, Any]) -> Optional[Dict[str, Any]]:
         """
         Dispatches a rich Telegram / Email report after a universe lifecycle evolution run.

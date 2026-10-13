@@ -1,6 +1,16 @@
 import json
 from datetime import date, datetime, timezone
-from zoneinfo import ZoneInfo
+try:
+    from zoneinfo import ZoneInfo
+except ImportError:
+    try:
+        from backports.zoneinfo import ZoneInfo
+    except ImportError:
+        import pytz
+
+        def ZoneInfo(key: str):
+            return pytz.timezone(key)
+
 from typing import List, Dict, Tuple, Any, Optional, Callable
 import pandas as pd
 from src.utils.logger import setup_logger

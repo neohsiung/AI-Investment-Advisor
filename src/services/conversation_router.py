@@ -228,6 +228,7 @@ class ConversationRouter:
             "eventgraph", "causal", "narrative", "shock", "因果圖譜", "事件圖譜", "敘事風險", "突發避險",
             "hmm", "bayesianfilter", "filter", "regimeprob", "hmmfactor", "隱馬爾可夫", "貝葉斯濾波", "體制機率", "連續體制",
             "universe", "pool", "tickers", "標的池", "股票池", "標的", "候選池",
+            "dipbuy", "stagger", "dip", "階梯掛單", "吸籌", "階梯吸籌", "限價吸籌",
         }
         return cmd in exact_keywords
 
@@ -1575,6 +1576,43 @@ class ConversationRouter:
                 repo = TickerUniverseRepository()
                 uni_svc = UniverseLifecycleService(user_id=resolved_user_id, repo=repo)
 
+                # Subcommand: prune / gc / clean / 修剪 / 換血 / 清理 (Phase 42)
+                if any(k in cmd for k in ("prune", "gc", "clean", "修剪", "換血", "清理")):
+                    prune_res = await uni_svc.prune_universe_momentum()
+                    stag = prune_res.get("stagnant_candidates", [])
+                    stale = prune_res.get("stale_shadow_positions", [])
+                    sec = prune_res.get("sector_quota_pruned", [])
+                    total_p = prune_res.get("total_pruned", 0)
+
+                    lines = [
+                        "🧹 <b>【標的池自適應動能剪枝與換血完成】</b>",
+                        "━━━━━━━━━━━━━━━━━━",
+                        f"• <b>本次清理總數</b>：<b>{total_p} 檔標的</b>",
+                        f"• <b>動能衰竭候選股 (RS < -2.5%)</b>：{len(stag)} 檔",
+                        f"• <b>過期未達標影子持倉</b>：{len(stale)} 檔",
+                        f"• <b>板塊超額候選股 (>3 檔)</b>：{len(sec)} 檔",
+                        "━━━━━━━━━━━━━━━━━━",
+                    ]
+                    if stag:
+                        lines.append("🔻 <b>動能淘汰候選股</b>：")
+                        for s in stag:
+                            lines.append(f"  └ <code>{s.get('ticker')}</code> (駐留 {s.get('tenure_days')} 天 | RS 相對差: {s.get('rs_delta', 0)*100:+.1f}%)")
+                    if stale:
+                        lines.append("🔻 <b>影子過期淘汰</b>：")
+                        for st in stale:
+                            lines.append(f"  └ <code>{st.get('ticker')}</code> (觀測 {st.get('tenure_days')} 天 | 影子 MTM: {st.get('shadow_return', 0)*100:+.1f}%)")
+                    if sec:
+                        lines.append("🔻 <b>板塊配額超額剪枝</b>：")
+                        for sc in sec:
+                            lines.append(f"  └ <code>{sc.get('ticker')}</code> ({sc.get('sector')})")
+
+                    if total_p == 0:
+                        lines.append("✨ 候選池與影子池標的皆維持健康動能與合規配額，無需修剪。")
+
+                    lines.append("━━━━━━━━━━━━━━━━━━")
+                    lines.append("💡 <i>配額已釋放，後續週期將自動納入新晉高 Alpha 潛力標的。輸入 <code>/universe</code> 檢視最新標的池。</i>")
+                    return "\n".join(lines)
+
                 # Subcommand: scan / refresh / 掃描 / 重跑
                 if any(k in cmd for k in ("scan", "refresh", "掃描", "重跑")):
                     try:
@@ -1591,7 +1629,7 @@ class ConversationRouter:
                         "• <b>檢驗項目</b>：宏觀環境 (VIX/殖利率)、個股品質門檻 (<4.0 汰除)、候選池 Top 30 競爭性輪換、板塊漂移 HHI\n"
                         "• <b>即時通報</b>：演化完成後將透過 Telegram/Email 主動推播最新簡報卡片！\n"
                         "━━━━━━━━━━━━━━━━━━\n"
-                        "💡 <i>輸入 <code>/universe</code> 可隨時檢視當前標的池分佈。</i>"
+                        "💡 <i>輸入 <code>/universe</code> 可隨時檢視當前標的池分佈；輸入 <code>/universe prune</code> 觸發動能換血。</i>"
                     )
 
                 # Normal status query
@@ -1635,11 +1673,127 @@ class ConversationRouter:
 
                 lines.append("━━━━━━━━━━━━━━━━━━")
                 lines.append(
-                    "💡 <i>指令提示：輸入 <code>/universe scan</code> 立即啟動全量重掃描；輸入 <code>/guard</code> 檢視風控守衛；輸入 <code>/hmm</code> 檢視體制機率。</i>"
+                    "💡 <i>指令提示：輸入 <code>/universe prune</code> 觸發動能換血剪枝；輸入 <code>/universe scan</code> 啟動全量重掃描；輸入 <code>/guard</code> 檢視風控守衛。</i>"
                 )
                 return "\n".join(lines)
             except Exception as e:
                 logger.error(f"Failed to generate Universe telemetry response: {e}")
                 return f"⚠️ 查詢標的池狀態時發生錯誤：{e}"
 
+        # 19. Dipbuy / Stagger / 階梯掛單 / 吸籌 (Phase 41)
+        if any(cmd.startswith(prefix) for prefix in ("dipbuy", "stagger", "dip", "階梯掛單", "吸籌", "階梯吸籌", "限價吸籌")):
+            try:
+                from src.services.staggered_dip_buying_service import StaggeredDipBuyingService
+                stagger_svc = StaggeredDipBuyingService(user_id=resolved_user_id)
+
+                # Subcommand: cancel / 撤單 / 取消
+                if any(k in cmd for k in ("cancel", "撤單", "取消")):
+                    cancel_res = await stagger_svc.cancel_all_pending_staggered_orders(
+                        reason="使用者手動透過 /dipbuy cancel 撤銷"
+                    )
+                    c_count = cancel_res.get("cancelled_count", 0)
+                    rel_cash = cancel_res.get("released_cash_usd", 0.0)
+                    f_count = cancel_res.get("filled_count", 0)
+                    f_cash = cancel_res.get("filled_cash_usd", 0.0)
+                    return (
+                        "🛑 <b>【主力支撐階梯掛單安全撤除完成】</b>\n"
+                        "━━━━━━━━━━━━━━━━━━\n"
+                        f"• <b>已撤除未成交掛單</b>：<b>{c_count} 筆</b>\n"
+                        f"• <b>即時釋放現金儲備</b>：<code>+${rel_cash:.2f} USD</code>\n"
+                        f"• <b>今日盤中累計成交</b>：{f_count} 筆 (<code>${f_cash:.2f} USD</code>)\n"
+                        "━━━━━━━━━━━━━━━━━━\n"
+                        "💡 <i>資金已全數解除保留，無任何過夜持倉或資金佔用風險。</i>"
+                    )
+
+                # Subcommand: run / exec / 執行 / 下單
+                if any(k in cmd for k in ("run", "exec", "執行", "下單")):
+                    exec_res = await stagger_svc.execute_staggered_dip_deployment(force=True)
+                    if not exec_res.get("success"):
+                        return f"⚠️ 階梯限價吸籌執行未成功：{exec_res.get('message', '未知原因')}"
+                    return (
+                        f"🎯 <b>【主力支撐階梯限價吸籌下發成功】</b>\n"
+                        "━━━━━━━━━━━━━━━━━━\n"
+                        f"• <b>下發批次</b>：第 {exec_res.get('batch_number')} 批次\n"
+                        f"• <b>下發階梯掛單數</b>：<b>{exec_res.get('order_count')} 筆</b>\n"
+                        f"• <b>預備吸籌總額</b>：<code>${exec_res.get('total_planned_usd', 0.0):.2f} USD</code>\n"
+                        "━━━━━━━━━━━━━━━━━━\n"
+                        "💡 <i>掛單已進入隊列與券商，未成交部位將於 15:55 EST 收盤前自動安全撤銷。輸入 <code>/dipbuy status</code> 檢視狀態。</i>"
+                    )
+
+                # Subcommand: plan / 計畫 / 預覽 / 點位
+                if any(k in cmd for k in ("plan", "計畫", "預覽", "點位")):
+                    plan = await stagger_svc.generate_batch_staggered_plan()
+                    lines = [
+                        f"🎯 <b>【主力支撐階梯限價吸籌規劃方案 (第 {plan.batch_number} 批次)】</b>",
+                        "━━━━━━━━━━━━━━━━━━",
+                        f"• <b>可支配建倉資金</b>：<code>${plan.total_deployable_cash:.2f} USD</code>",
+                        f"• <b>計畫吸籌總預算</b>：<code>${plan.total_planned_deployment_usd:.2f} USD</code>",
+                        f"• <b>執行許可狀態</b>：{'🟢 可執行' if plan.can_execute else '🔴 暫緩 (資金不足或風控阻斷)'}",
+                        "━━━━━━━━━━━━━━━━━━",
+                        "<b>【各標的 3-Tier 階梯限價點位】</b>",
+                    ]
+                    for tp in plan.plans:
+                        status_mark = "🟢" if tp.is_risk_allowed else "⛔"
+                        lines.append(f"{status_mark} <b>{tp.ticker}</b> (現價: <code>${tp.current_price:.2f}</code> | 預算: <code>${tp.total_budget_usd:.2f}</code>)：")
+                        if not tp.is_risk_allowed:
+                            lines.append(f"  └ <i>風控阻斷：{tp.risk_blocker or 'Risk Gateway'}</i>")
+                            continue
+                        for t in tp.tiers:
+                            lines.append(
+                                f"  └ <b>{t.name}</b>：<code>${t.target_price:.2f}</code> "
+                                f"(-{t.discount_pct * 100:.1f}%) | 金額: <code>${t.allocation_usd:.2f}</code> "
+                                f"({t.support_anchor_type})"
+                            )
+                    lines.append("━━━━━━━━━━━━━━━━━━")
+                    lines.append("💡 <i>輸入 <code>/dipbuy run</code> 立即下發掛單；輸入 <code>/dipbuy cancel</code> 一鍵撤單。</i>")
+                    return "\n".join(lines)
+
+                # Default: status 查詢今日掛單
+                orders = await stagger_svc.get_active_staggered_orders()
+                if not orders:
+                    # 若今日尚無掛單，引導預覽計畫
+                    plan = await stagger_svc.generate_batch_staggered_plan()
+                    return (
+                        "🎯 <b>【今日尚無活躍之階梯限價掛單】</b>\n"
+                        "━━━━━━━━━━━━━━━━━━\n"
+                        f"• <b>當前待建倉批次</b>：第 {plan.batch_number} 批次\n"
+                        f"• <b>可支配建倉資金</b>：<code>${plan.total_deployable_cash:.2f} USD</code>\n"
+                        f"• <b>本批候選標的數</b>：{len(plan.plans)} 檔\n"
+                        "━━━━━━━━━━━━━━━━━━\n"
+                        "💡 <i>系統每日於 09:35 EST 自動派發階梯單。輸入 <code>/dipbuy plan</code> 可預覽 3-Tier 點位，輸入 <code>/dipbuy run</code> 可手動下發。</i>"
+                    )
+
+                pending_orders = [o for o in orders if o.get("status") == "PENDING"]
+                filled_orders = [o for o in orders if o.get("status") == "FILLED"]
+                cancelled_orders = [o for o in orders if o.get("status") == "CANCELLED"]
+
+                lines = [
+                    "🎯 <b>【主力支撐階梯吸籌當日掛單狀態】</b>",
+                    "━━━━━━━━━━━━━━━━━━",
+                    f"• <b>總掛單數</b>：{len(orders)} 筆",
+                    f"• <b>待撮合成交 (PENDING)</b>：<b>{len(pending_orders)} 筆</b> (<code>${sum(float(o.get('amount_usd', 0)) for o in pending_orders):.2f} USD</code>)",
+                    f"• <b>已撮合成交 (FILLED)</b>：<b>{len(filled_orders)} 筆</b> (<code>${sum(float(o.get('amount_usd', 0)) for o in filled_orders):.2f} USD</code>)",
+                    f"• <b>已撤除/釋放 (CANCELLED)</b>：{len(cancelled_orders)} 筆",
+                    "━━━━━━━━━━━━━━━━━━",
+                    "<b>【明細清單】</b>",
+                ]
+                for o in orders:
+                    st = o.get("status")
+                    sym = o.get("ticker")
+                    tier_name = o.get("tier_name", f"Tier {o.get('tier_number')}")
+                    p = float(o.get("limit_price", 0))
+                    amt = float(o.get("amount_usd", 0))
+                    disc = float(o.get("discount_pct", 0)) * 100
+                    st_icon = "⏳" if st == "PENDING" else ("✅" if st == "FILLED" else "🚫")
+                    lines.append(f"{st_icon} <b>{sym}</b> {tier_name}：<code>${p:.2f}</code> (-{disc:.1f}%) | <code>${amt:.2f}</code> [{st}]")
+
+                lines.append("━━━━━━━━━━━━━━━━━━")
+                lines.append("💡 <i>提示：所有 PENDING 掛單將於 15:55 EST 自動撤除釋放現金。輸入 <code>/dipbuy cancel</code> 可立即手動撤銷。</i>")
+                return "\n".join(lines)
+
+            except Exception as e:
+                logger.error(f"Failed to generate Dipbuy response: {e}")
+                return f"⚠️ 處理階梯限價吸籌指令時發生錯誤：{e}"
+
         return None
+
