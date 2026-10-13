@@ -227,6 +227,7 @@ class TestBatchCashDeploymentService:
             slippage_guard=guard,
             market_clock=clock,
         )
+        svc.event_graph = None
         return svc
 
     def test_portfolio_status_preserves_defensive_cash(self, deployment_svc):

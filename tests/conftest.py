@@ -179,3 +179,44 @@ def isolate_quota_governor():
     except Exception:
         pass
 
+
+_REDIS_AVAILABLE = None
+
+
+def _check_redis_available() -> bool:
+    global _REDIS_AVAILABLE
+    if _REDIS_AVAILABLE is not None:
+        return _REDIS_AVAILABLE
+    try:
+        import os
+        redis_host = os.getenv("REDIS_HOST", "localhost")
+        redis_port = int(os.getenv("REDIS_PORT", "6379"))
+        import redis
+        client = redis.Redis(host=redis_host, port=redis_port, socket_connect_timeout=0.2)
+        client.ping()
+        _REDIS_AVAILABLE = True
+    except Exception:
+        _REDIS_AVAILABLE = False
+    return _REDIS_AVAILABLE
+
+
+@pytest.fixture(autouse=True)
+def isolate_redis():
+    """
+    Keep Redis cache and state hermetic across unit tests.
+    When a Redis server is available (e.g. CI service container), flush DB between tests.
+    """
+    if _check_redis_available():
+        try:
+            from src.infrastructure.cache.redis_client import get_redis_sync
+            get_redis_sync().flushdb()
+        except Exception:
+            pass
+    yield
+    if _check_redis_available():
+        try:
+            from src.infrastructure.cache.redis_client import get_redis_sync
+            get_redis_sync().flushdb()
+        except Exception:
+            pass
+

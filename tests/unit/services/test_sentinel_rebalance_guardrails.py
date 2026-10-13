@@ -133,6 +133,8 @@ class TestRebalanceCooldown:
 
         with patch("src.infrastructure.cache.redis_client.get_redis",
                    AsyncMock(side_effect=ConnectionError("max number of clients reached"))), \
+             patch("src.infrastructure.cache.redis_client.get_redis_sync",
+                   MagicMock(side_effect=ConnectionError("max number of clients reached"))), \
              patch("src.services.automated_trading_service.AutomatedTradingService",
                    return_value=auto_svc):
             await svc._handle_rebalance_logic(
@@ -264,7 +266,9 @@ class TestEscalationCooldown:
         svc = _sentinel()
 
         with patch("src.infrastructure.cache.redis_client.get_redis",
-                   AsyncMock(side_effect=ConnectionError("redis down"))):
+                   AsyncMock(side_effect=ConnectionError("redis down"))), \
+             patch("src.infrastructure.cache.redis_client.get_redis_sync",
+                   MagicMock(side_effect=ConnectionError("redis down"))):
             allowed = await svc._acquire_cooldown("escalate:test:u1", 1800, fail_open=True)
             blocked = await svc._acquire_cooldown("rebalance:u1", 1800, fail_open=False)
 
@@ -279,7 +283,9 @@ class TestEscalationCooldown:
         svc = _sentinel()
 
         with patch("src.infrastructure.cache.redis_client.get_redis",
-                   AsyncMock(side_effect=ConnectionError("redis down"))):
+                   AsyncMock(side_effect=ConnectionError("redis down"))), \
+             patch("src.infrastructure.cache.redis_client.get_redis_sync",
+                   MagicMock(side_effect=ConnectionError("redis down"))):
             first = await svc._acquire_cooldown("escalate:test:u1", 1800, fail_open=True)
             second = await svc._acquire_cooldown("escalate:test:u1", 1800, fail_open=True)
 
