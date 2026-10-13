@@ -238,6 +238,8 @@ class ConversationRouter:
             "betadamp", "beta", "damping", "corrdamp", "阻尼", "貝塔阻尼", "大盤相關性",
             "harvest", "rebalance", "recirculate", "收割", "再平衡", "利差回流",
             "spoof", "antihunt", "orderbook", "假單", "反欺詐", "獵殺防衛",
+            "darkpool", "prints", "blocktrades", "暗池", "大宗", "暗池定價",
+            "convex", "sharpe", "qp", "mvo", "凸規劃", "夏普邊界", "最優配置",
         }
         return cmd in exact_keywords
 
@@ -2165,6 +2167,94 @@ class ConversationRouter:
             except Exception as e:
                 logger.error(f"Failed to generate Spoofing Detector response: {e}")
                 return f"⚠️ 查詢微觀獵殺與反欺詐訂單簿嗅探儀表時發生錯誤：{e}"
+
+        # 27. Cross-Market Dark Pool Pricing & Block-Trade Calibration (Phase 60A)
+        if any(cmd.startswith(prefix) for prefix in ("darkpool", "prints", "blocktrades", "暗池", "大宗", "暗池定價")):
+            try:
+                from src.services.cross_market_dark_pool_pricing_service import (
+                    CrossMarketDarkPoolPricingService,
+                    DarkPoolTickerSummary,
+                )
+
+                dark_svc = CrossMarketDarkPoolPricingService(user_id=resolved_user_id)
+                evaluated_summaries: List[DarkPoolTickerSummary] = []
+                evaluated_symbols = set()
+
+                # 從當前活躍的階梯吸籌限價單中提取標的
+                try:
+                    from src.infrastructure.cache.redis_client import get_redis
+                    import pytz
+                    ny_tz = pytz.timezone("US/Eastern")
+                    date_str = datetime.now(ny_tz).strftime("%Y-%m-%d")
+                    r = await get_redis(decode_responses=True)
+                    r_key = f"staggered_orders:{resolved_user_id}:{date_str}"
+                    existing = await r.get(r_key)
+                    if existing:
+                        orders = json.loads(existing)
+                        for o in orders:
+                            sym = o.get("ticker")
+                            if sym and sym not in evaluated_symbols:
+                                cur_p = float(o.get("current_price", 0.0) or 0.0)
+                                if cur_p <= 0:
+                                    cur_p = float(o.get("limit_price", 100.0) or 100.0)
+                                summary = await dark_svc.evaluate_dark_pool_activity(
+                                    ticker=sym,
+                                    reference_price=cur_p,
+                                )
+                                evaluated_summaries.append(summary)
+                                evaluated_symbols.add(sym)
+                except Exception as oe:
+                    logger.debug("Could not read staggered orders for dark pool: %s", oe)
+
+                # 若當日無掛單，以預設核心焦點標的展示
+                if not evaluated_summaries:
+                    for sym, ref_p in [("NVDA", 125.0), ("V", 282.0), ("COP", 118.0)]:
+                        try:
+                            s = await dark_svc.evaluate_dark_pool_activity(
+                                ticker=sym,
+                                reference_price=ref_p,
+                            )
+                            evaluated_summaries.append(s)
+                        except Exception as de:
+                            logger.debug("Dark pool eval fallback error for %s: %s", sym, de)
+
+                return dark_svc.format_dark_pool_report(evaluated_summaries, channel="telegram")
+            except Exception as e:
+                logger.error(f"Failed to generate Dark Pool Pricing response: {e}")
+                return f"⚠️ 查詢跨市場暗池大宗換手與校準儀表時發生錯誤：{e}"
+
+        # 28. Multi-Factor Convex Sharpe Frontier Optimization (Phase 60B)
+        if any(cmd.startswith(prefix) for prefix in ("convex", "sharpe", "qp", "mvo", "凸規劃", "夏普邊界", "最優配置")):
+            try:
+                from src.services.multi_factor_convex_sharpe_optimizer_service import (
+                    MultiFactorConvexSharpeOptimizerService,
+                )
+
+                convex_svc = MultiFactorConvexSharpeOptimizerService(user_id=resolved_user_id)
+                available_capital = 1400.0
+
+                # 嘗試讀取已回流資金或批次建倉可支配現金
+                try:
+                    from src.infrastructure.cache.redis_client import get_redis
+                    r = await get_redis(decode_responses=True)
+                    cached_harvest = await r.get(f"portfolio:recirculated_cash:{resolved_user_id}")
+                    if cached_harvest:
+                        h_data = json.loads(cached_harvest)
+                        recirc = float(h_data.get("total_recirculated_cash_usd", 0.0) or 0.0)
+                        if recirc >= 10.0:
+                            available_capital = recirc
+                except Exception as re_err:
+                    logger.debug("Could not read recirculated cash in convex command: %s", re_err)
+
+                candidate_tickers = ["NVDA", "TSM", "AAPL", "MSFT", "V", "COP", "ECL"]
+                result = await convex_svc.optimize_recirculated_capital_allocation(
+                    candidate_tickers=candidate_tickers,
+                    available_capital_usd=available_capital,
+                )
+                return convex_svc.format_convex_sharpe_report(result, channel="telegram")
+            except Exception as e:
+                logger.error(f"Failed to generate Convex Sharpe Optimization response: {e}")
+                return f"⚠️ 查詢夏普邊界最優二次規劃儀表時發生錯誤：{e}"
 
         return None
 

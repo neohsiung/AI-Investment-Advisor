@@ -50,6 +50,7 @@ class BatchCashDeploymentService:
         bayesian_hmm_factor: Optional[Any] = None,
         staggered_dip_service: Optional[Any] = None,
         alpha_spread_bidding_service: Optional[Any] = None,
+        convex_optimizer: Optional[Any] = None,
     ):
         self.user_id = resolve_user_id(user_id)
         from src.services.settings_service import SettingsService
@@ -176,6 +177,21 @@ class BatchCashDeploymentService:
             except Exception as abe:
                 logger.debug(f"Could not initialize AlphaSpreadBiddingService: {abe}")
                 self.alpha_spread_bidding_service = None
+
+        if convex_optimizer is not None:
+            self.convex_optimizer = convex_optimizer
+        else:
+            try:
+                from src.services.multi_factor_convex_sharpe_optimizer_service import (
+                    MultiFactorConvexSharpeOptimizerService,
+                )
+                self.convex_optimizer = MultiFactorConvexSharpeOptimizerService(
+                    user_id=self.user_id,
+                    settings_service=self.settings_service,
+                )
+            except Exception as coe:
+                logger.debug(f"Could not initialize MultiFactorConvexSharpeOptimizerService: {coe}")
+                self.convex_optimizer = None
 
     async def generate_staggered_dip_plan(
         self,
@@ -869,6 +885,25 @@ class BatchCashDeploymentService:
             except Exception as hmm_err:
                 logger.debug(f"Non-blocking Bayesian HMM summary error in deployment plan: {hmm_err}")
 
+        # 產出最優夏普邊界二次規劃配置摘要 (Phase 60B)
+        convex_sharpe_summary = None
+        if self.convex_optimizer and getattr(self.convex_optimizer, "is_enabled", True) and candidate_tickers:
+            try:
+                opt_res = await self.convex_optimizer.optimize_recirculated_capital_allocation(
+                    candidate_tickers=candidate_tickers,
+                    available_capital_usd=total_batch_amount,
+                )
+                if opt_res:
+                    convex_sharpe_summary = opt_res.to_dict()
+                    weight_map = {w.ticker: w for w in opt_res.weights}
+                    for it in allocated_items:
+                        sym = it.get("ticker")
+                        if sym in weight_map:
+                            it["convex_optimal_weight"] = weight_map[sym].target_weight
+                            it["convex_marginal_sharpe"] = weight_map[sym].marginal_sharpe_contribution
+            except Exception as co_err:
+                logger.debug(f"Non-blocking convex Sharpe optimization error in deployment plan: {co_err}")
+
         return {
             "batch_number": batch_number,
             "status": status,
@@ -894,6 +929,7 @@ class BatchCashDeploymentService:
             "portfolio_sector_report": portfolio_sector_report.to_dict() if portfolio_sector_report else None,
             "cross_sector_injection": cross_sector_injection_info,
             "alpha_bidding_summary": alpha_bidding_result.to_dict() if alpha_bidding_result else None,
+            "convex_sharpe_summary": convex_sharpe_summary,
         }
 
     async def warmup_batch_quotes(

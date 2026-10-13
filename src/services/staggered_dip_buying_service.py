@@ -81,6 +81,8 @@ class TickerStaggeredPlan:
     injected_sector: Optional[str] = None
     spoof_regime: Optional[str] = None
     anti_hunt_offset_pct: float = 0.0
+    dark_pool_regime: Optional[str] = None
+    dark_pool_shift_pct: float = 0.0
 
     def to_dict(self) -> Dict[str, Any]:
         return {
@@ -104,6 +106,8 @@ class TickerStaggeredPlan:
             "injected_sector": self.injected_sector,
             "spoof_regime": self.spoof_regime,
             "anti_hunt_offset_pct": round(self.anti_hunt_offset_pct, 4),
+            "dark_pool_regime": self.dark_pool_regime,
+            "dark_pool_shift_pct": round(self.dark_pool_shift_pct, 4),
         }
 
 
@@ -147,6 +151,7 @@ class StaggeredDipBuyingService:
         market_data_service: Optional[Any] = None,
         beta_damping_service: Optional[Any] = None,
         spoofing_detector: Optional[Any] = None,
+        dark_pool_service: Optional[Any] = None,
     ):
         self.user_id = resolve_user_id(user_id)
         from src.services.settings_service import SettingsService
@@ -178,6 +183,24 @@ class StaggeredDipBuyingService:
         self.market_data_service = market_data_service
         self.beta_damping_service = beta_damping_service
         self.spoofing_detector = spoofing_detector
+        self.dark_pool_service = dark_pool_service
+
+    async def _get_dark_pool_service(self) -> Any:
+        if self.dark_pool_service:
+            return self.dark_pool_service
+        try:
+            from src.services.cross_market_dark_pool_pricing_service import (
+                CrossMarketDarkPoolPricingService,
+            )
+            self.dark_pool_service = CrossMarketDarkPoolPricingService(
+                user_id=self.user_id,
+                settings_service=self.settings_service,
+                market_data_service=self.market_data_service,
+            )
+            return self.dark_pool_service
+        except Exception as dpe:
+            logger.debug("Could not resolve CrossMarketDarkPoolPricingService: %s", dpe)
+            return None
 
     async def _get_spoofing_detector(self) -> Any:
         if self.spoofing_detector:
@@ -487,6 +510,41 @@ class StaggeredDipBuyingService:
             except Exception as se:
                 logger.debug("Spoofing detector error in plan calculation for %s: %s", ticker, se)
 
+        # 3.6 跨市場暗池大宗換手與隔夜掛單校準 (Phase 60A)
+        dark_regime = "BALANCED_DARK_LIQUIDITY"
+        dark_shift_pct = 0.0
+        dark_svc = await self._get_dark_pool_service()
+        if dark_svc and getattr(dark_svc, "is_enabled", True) and tiers:
+            try:
+                dark_summary = await dark_svc.evaluate_dark_pool_activity(
+                    ticker=ticker,
+                    reference_price=c_price,
+                )
+                if dark_summary:
+                    dark_regime = dark_summary.regime
+                    dark_shift_pct = dark_summary.recommended_limit_shift_pct
+                    if dark_summary.regime == "INSTITUTIONAL_ACCUMULATION" and dark_summary.block_vwap < c_price and dark_summary.block_vwap > 0:
+                        # 將 Tier 1 校準至 Block VWAP (若其在現價之下)
+                        t1 = tiers[0]
+                        cal_p = round(dark_summary.block_vwap, 2)
+                        if cal_p < c_price:
+                            t1.target_price = cal_p
+                            t1.discount_pct = round((c_price - cal_p) / c_price, 4)
+                            t1.shares = round(t1.allocation_usd / cal_p, 4)
+                            t1.rationale += f" [暗池大宗底價校準: ${cal_p:.2f}]"
+                    elif dark_summary.regime == "BLOCK_DISTRIBUTION_FLUSH" and dark_shift_pct < 0:
+                        # 機構出貨拋售，所有 Tier 等比向下平移
+                        for t in tiers:
+                            old_p = t.target_price
+                            new_p = round(old_p * (1.0 + dark_shift_pct), 2)
+                            if new_p < old_p and new_p > 0:
+                                t.target_price = new_p
+                                t.discount_pct = round((c_price - new_p) / c_price, 4)
+                                t.shares = round(t.allocation_usd / new_p, 4)
+                                t.rationale += f" [暗池拋售防禦平移: {dark_shift_pct*100:+.2f}%]"
+            except Exception as dpe_err:
+                logger.debug("Dark pool pricing calibration error for %s: %s", ticker, dpe_err)
+
         return TickerStaggeredPlan(
             ticker=ticker,
             current_price=c_price,
@@ -505,6 +563,8 @@ class StaggeredDipBuyingService:
             injected_sector=injected_sector,
             spoof_regime=spoof_regime,
             anti_hunt_offset_pct=anti_hunt_offset,
+            dark_pool_regime=dark_regime,
+            dark_pool_shift_pct=dark_shift_pct,
         )
 
     # ═══════════════════════════════════════════════════════════════════════
