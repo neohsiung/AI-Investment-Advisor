@@ -107,6 +107,7 @@ def sentinel():
     svc.repo.get_all_thresholds.return_value = {}
     svc._check_buffer_flush = AsyncMock()
     svc._redis_buffer = MagicMock()
+    svc._maybe_calibrate_thresholds = AsyncMock()
     return svc
 
 
