@@ -233,6 +233,7 @@ class ConversationRouter:
             "alpha", "netalpha", "cashdrag", "歸因", "淨額", "成本歸因", "機會成本",
             "budget", "token", "tokens", "預算", "代幣", "成本預算", "額度",
             "sector", "drift", "hhi", "板塊", "行業", "集中度", "板塊漂移", "板塊自癒",
+            "spread", "bidding", "friction", "利差", "摩擦",
         }
         return cmd in exact_keywords
 
@@ -1962,6 +1963,34 @@ class ConversationRouter:
             except Exception as e:
                 logger.error(f"Failed to generate Sector response: {e}")
                 return f"⚠️ 查詢板塊集中度與 HHI 診斷時發生錯誤：{e}"
+
+        # 23. Alpha Spread Bidding & Friction Offset Engine (Phase 57)
+        if any(cmd.startswith(prefix) for prefix in ("spread", "bidding", "friction", "利差", "摩擦")):
+            try:
+                from src.services.alpha_spread_bidding_service import (
+                    AlphaSpreadBiddingService,
+                    BiddingAssessmentResult,
+                )
+                from src.services.batch_cash_deployment_service import BatchCashDeploymentService
+
+                bidding_svc = AlphaSpreadBiddingService(user_id=resolved_user_id)
+                batch_svc = BatchCashDeploymentService(
+                    user_id=resolved_user_id,
+                    alpha_spread_bidding_service=bidding_svc,
+                )
+                plan = await batch_svc.get_deployment_plan()
+
+                bidding_summary = plan.get("alpha_bidding_summary")
+                if bidding_summary and isinstance(bidding_summary, dict):
+                    assessment = BiddingAssessmentResult.from_dict(bidding_summary)
+                else:
+                    items = plan.get("items") or []
+                    assessment = await bidding_svc.evaluate_bidding_for_batch(batch_items=items)
+
+                return bidding_svc.format_spread_bidding_report(assessment, channel="telegram")
+            except Exception as e:
+                logger.error(f"Failed to generate Spread Bidding response: {e}")
+                return f"⚠️ 查詢動態利差競標與摩擦抵消儀表時發生錯誤：{e}"
 
         return None
 
