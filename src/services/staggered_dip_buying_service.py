@@ -79,6 +79,8 @@ class TickerStaggeredPlan:
     value_area_high: float = 0.0
     is_cross_sector_injected: bool = False
     injected_sector: Optional[str] = None
+    spoof_regime: Optional[str] = None
+    anti_hunt_offset_pct: float = 0.0
 
     def to_dict(self) -> Dict[str, Any]:
         return {
@@ -100,6 +102,8 @@ class TickerStaggeredPlan:
             },
             "is_cross_sector_injected": self.is_cross_sector_injected,
             "injected_sector": self.injected_sector,
+            "spoof_regime": self.spoof_regime,
+            "anti_hunt_offset_pct": round(self.anti_hunt_offset_pct, 4),
         }
 
 
@@ -142,6 +146,7 @@ class StaggeredDipBuyingService:
         market_clock: Optional[Any] = None,
         market_data_service: Optional[Any] = None,
         beta_damping_service: Optional[Any] = None,
+        spoofing_detector: Optional[Any] = None,
     ):
         self.user_id = resolve_user_id(user_id)
         from src.services.settings_service import SettingsService
@@ -172,6 +177,24 @@ class StaggeredDipBuyingService:
         self.market_clock = market_clock or MarketClock()
         self.market_data_service = market_data_service
         self.beta_damping_service = beta_damping_service
+        self.spoofing_detector = spoofing_detector
+
+    async def _get_spoofing_detector(self) -> Any:
+        if self.spoofing_detector:
+            return self.spoofing_detector
+        try:
+            from src.services.microstructure_spoofing_detector_service import (
+                MicrostructureSpoofingDetectorService,
+            )
+            self.spoofing_detector = MicrostructureSpoofingDetectorService(
+                user_id=self.user_id,
+                settings_service=self.settings_service,
+                market_data_service=self.market_data_service,
+            )
+            return self.spoofing_detector
+        except Exception as sde:
+            logger.debug("Could not resolve MicrostructureSpoofingDetectorService: %s", sde)
+            return None
 
     async def _get_beta_damping_service(self) -> Any:
         if self.beta_damping_service:
@@ -439,6 +462,31 @@ class StaggeredDipBuyingService:
                 primary_blocker = "RiskGatewayException"
                 reasons = [f"Risk gateway unavailable ({type(rge).__name__}); Fail-Closed active"]
 
+        # 3.5 盤中微觀反欺詐嗅探與反獵殺平移 (Phase 59B)
+        spoof_regime = "CLEAN_ORDER_FLOW"
+        anti_hunt_offset = 0.0
+        spoof_detector = await self._get_spoofing_detector()
+        if spoof_detector and getattr(spoof_detector, "is_enabled", True) and tiers:
+            try:
+                spoof_metric = await spoof_detector.evaluate_spoofing_risk(
+                    ticker=ticker,
+                    current_price=c_price,
+                    target_price=tiers[0].target_price,
+                )
+                if spoof_metric and spoof_metric.anti_hunt_downward_offset_pct > 0:
+                    spoof_regime = spoof_metric.regime
+                    anti_hunt_offset = spoof_metric.anti_hunt_downward_offset_pct
+                    for t in tiers:
+                        old_p = t.target_price
+                        new_p = round(old_p * (1.0 - anti_hunt_offset), 2)
+                        if new_p < old_p and new_p > 0:
+                            t.target_price = new_p
+                            t.discount_pct = round((c_price - new_p) / c_price, 4)
+                            t.shares = round(t.allocation_usd / new_p, 4)
+                            t.rationale += f" [微觀反獵殺平移: -{anti_hunt_offset*100:.2f}% ({spoof_regime})]"
+            except Exception as se:
+                logger.debug("Spoofing detector error in plan calculation for %s: %s", ticker, se)
+
         return TickerStaggeredPlan(
             ticker=ticker,
             current_price=c_price,
@@ -455,6 +503,8 @@ class StaggeredDipBuyingService:
             value_area_high=vah,
             is_cross_sector_injected=is_cross_sector_injected,
             injected_sector=injected_sector,
+            spoof_regime=spoof_regime,
+            anti_hunt_offset_pct=anti_hunt_offset,
         )
 
     # ═══════════════════════════════════════════════════════════════════════
@@ -1053,6 +1103,7 @@ class StaggeredDipBuyingService:
 
         mkt_svc = await self._get_market_data_service()
         beta_damp_svc = await self._get_beta_damping_service()
+        spoof_detector = await self._get_spoofing_detector()
         repriced_orders: List[Dict[str, Any]] = []
 
         for ord_rec in pending_orders:
@@ -1118,6 +1169,22 @@ class StaggeredDipBuyingService:
 
                     new_disc = max(0.004 if is_injected else 0.005, old_disc * discount_factor)
                     new_price = round(current_price * (1.0 - new_disc), 2)
+
+                    # 若偵測到盤中微觀獵殺假單，向下套用反獵殺平移安全邊際 (Phase 59B)
+                    if spoof_detector and getattr(spoof_detector, "is_enabled", True):
+                        try:
+                            s_metric = await spoof_detector.evaluate_spoofing_risk(
+                                ticker=sym,
+                                current_price=current_price,
+                                target_price=new_price,
+                            )
+                            if s_metric and s_metric.anti_hunt_downward_offset_pct > 0:
+                                new_price = round(new_price * (1.0 - s_metric.anti_hunt_downward_offset_pct), 2)
+                                new_disc = round((current_price - new_price) / current_price, 4)
+                                ord_rec["spoof_regime"] = s_metric.regime
+                                ord_rec["anti_hunt_offset_pct"] = s_metric.anti_hunt_downward_offset_pct
+                        except Exception as se_err:
+                            logger.debug("Spoofing check error in stalking: %s", se_err)
 
                     if new_price > old_price:
                         ord_rec["original_limit_price"] = old_price

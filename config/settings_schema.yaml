@@ -3769,6 +3769,63 @@ settings:
     label_zh: 大盤跳水觸發門檻（%）
     help_en: Intraday benchmark drawdown percentage that triggers MARKET_STRESS_DAMPED (0.50x hard damping, FREEZE_STALKING).
     help_zh: 大盤 SPY 日內跌幅觸及此門檻且標的貝塔敏感時，啟動 0.50x 剛性阻尼並凍結追單改價以捍衛現金。
+  - key: enable_cross_sector_harvest_rebalance
+    group: trading
+    type: bool
+    default: true
+    label_en: Enable Cross-Sector Dynamic Harvest & Rebalance
+    label_zh: 啟用跨板塊注入標的動態出清與再平衡利差回流
+    help_en: Periodically harvests defensive contenders once portfolio HHI de-concentration is achieved and recirculates capital.
+    help_zh: 當投組 HHI 集中度自癒完成且標的利潤達標時，分批收割鎖利並將資金循環回流至核心資產。
+  - key: cross_sector_harvest_min_profit_pct
+    group: trading
+    type: float
+    default: 10.0
+    min: 2.0
+    max: 50.0
+    label_en: Cross-Sector Harvest Minimum Profit Percentage
+    label_zh: 跨板塊收割最低未實現利潤門檻（%）
+    help_en: Minimum unrealized profit required to trigger partial profit harvesting.
+    help_zh: 跨板塊防守標的未實現利潤達到此門檻（預設 10.0%）且 HHI 健康時啟動分批減碼。
+  - key: cross_sector_harvest_safe_hhi_threshold
+    group: trading
+    type: float
+    default: 0.18
+    min: 0.10
+    max: 0.30
+    label_en: Cross-Sector Harvest Safe HHI Target Threshold
+    label_zh: 跨板塊收割投組健康 HHI 基準門檻
+    help_en: Portfolio HHI threshold below which de-concentration is considered achieved and harvesting is permitted.
+    help_zh: 投組板塊 HHI 降至此門檻（預設 0.18）以下時判定集中度自癒完成，允許資金收割回流。
+  - key: enable_microstructure_spoofing_shield
+    group: trading
+    type: bool
+    default: true
+    label_en: Enable Microstructure Quote Spoofing & Depth Shielder
+    label_zh: 啟用盤中微觀獵殺與自適應反欺詐訂單簿嗅探
+    help_en: Sniffs predatory order book cancel-to-fill ratios and shifts staggered limit buys downward to catch true distress flush.
+    help_zh: 即時嗅探盤口假單撤單比率 (CFR) 與微觀空洞，將階梯吸籌目標價向下平移防範誘單接飛刀。
+  - key: spoofing_cancel_to_fill_ratio_threshold
+    group: trading
+    type: float
+    default: 3.0
+    min: 1.5
+    max: 10.0
+    label_en: Microstructure Spoofing Cancel-to-Fill Ratio Threshold
+    label_zh: 微觀假單撤單比率 (CFR) 警示門檻
+    help_en: Cancel-to-fill ratio above which predatory spoofing or stop-hunt risk is declared.
+    help_zh: 當盤口短時撤單與成交比率達到此門檻（預設 3.0）時觸發 SPOOF_HUNT_DETECTED。
+  - key: spoofing_anti_hunt_downward_offset_pct
+    group: trading
+    type: float
+    default: 0.004
+    min: 0.001
+    max: 0.020
+    label_en: Anti-Hunt Downward Price Offset Percentage
+    label_zh: 反獵殺階梯限價向下平移安全邊際比例
+    help_en: Percentage to shift staggered limit buy orders downward when spoofing risk is elevated.
+    help_zh: 偵測到微觀獵殺時，階梯吸籌買單向下平移之安全邊際幅度（預設 0.004 = 40 bps）。
+
 
 
 

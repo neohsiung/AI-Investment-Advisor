@@ -13,6 +13,7 @@ Routes incoming channel messages through a priority pipeline:
 """
 
 from datetime import datetime
+import inspect
 import json
 import logging
 from typing import Optional, List, Dict, Any
@@ -235,6 +236,8 @@ class ConversationRouter:
             "sector", "drift", "hhi", "板塊", "行業", "集中度", "板塊漂移", "板塊自癒",
             "spread", "bidding", "friction", "利差", "摩擦",
             "betadamp", "beta", "damping", "corrdamp", "阻尼", "貝塔阻尼", "大盤相關性",
+            "harvest", "rebalance", "recirculate", "收割", "再平衡", "利差回流",
+            "spoof", "antihunt", "orderbook", "假單", "反欺詐", "獵殺防衛",
         }
         return cmd in exact_keywords
 
@@ -2068,6 +2071,100 @@ class ConversationRouter:
             except Exception as e:
                 logger.error(f"Failed to generate Beta Damping response: {e}")
                 return f"⚠️ 查詢跨板塊即時貝塔阻尼儀表時發生錯誤：{e}"
+
+        # 25. Cross-Sector Harvest & Profit Recirculation (Phase 59A)
+        if any(cmd.startswith(prefix) for prefix in ("harvest", "rebalance", "recirculate", "收割", "再平衡", "利差回流")):
+            try:
+                from src.services.broker_factory import BrokerFactory
+                from src.services.cross_sector_harvest_rebalance_service import CrossSectorHarvestRebalanceService
+
+                harvest_svc = CrossSectorHarvestRebalanceService(user_id=resolved_user_id)
+                positions = []
+                total_equity = 1685.0
+                try:
+                    broker = BrokerFactory.get_broker(user_id=resolved_user_id)
+                    if broker and hasattr(broker, "get_positions"):
+                        pos_call = broker.get_positions()
+                        positions = await pos_call if inspect.isawaitable(pos_call) else pos_call
+                    if broker and hasattr(broker, "get_account"):
+                        acc_call = broker.get_account()
+                        acc = await acc_call if inspect.isawaitable(acc_call) else acc_call
+                        if acc:
+                            total_equity = float(getattr(acc, "total_equity", 0.0) or (acc.get("total_equity") if isinstance(acc, dict) else 0.0) or 1685.0)
+                except Exception as be:
+                    logger.debug("Broker resolution error in harvest command: %s", be)
+
+                assessment = await harvest_svc.evaluate_portfolio_harvest(
+                    positions=positions,
+                    total_equity=total_equity,
+                )
+                return harvest_svc.format_harvest_report(assessment, channel="telegram")
+            except Exception as e:
+                logger.error(f"Failed to generate Harvest & Rebalance response: {e}")
+                return f"⚠️ 查詢跨板塊動態收割與利差回流儀表時發生錯誤：{e}"
+
+        # 26. Microstructure Quote Spoofing & Anti-Hunt Detector (Phase 59B)
+        if any(cmd.startswith(prefix) for prefix in ("spoof", "antihunt", "orderbook", "假單", "反欺詐", "獵殺防衛")):
+            try:
+                from src.services.microstructure_spoofing_detector_service import (
+                    MicrostructureSpoofingDetectorService,
+                    SpoofingMetric,
+                )
+
+                spoof_svc = MicrostructureSpoofingDetectorService(user_id=resolved_user_id)
+                evaluated_metrics: List[SpoofingMetric] = []
+                evaluated_symbols = set()
+
+                # 從當前活躍的階梯吸籌限價單中提取標的
+                try:
+                    from src.infrastructure.cache.redis_client import get_redis
+                    import pytz
+                    ny_tz = pytz.timezone("US/Eastern")
+                    date_str = datetime.now(ny_tz).strftime("%Y-%m-%d")
+                    r = await get_redis(decode_responses=True)
+                    r_key = f"staggered_orders:{resolved_user_id}:{date_str}"
+                    existing = await r.get(r_key)
+                    if existing:
+                        orders = json.loads(existing)
+                        for o in orders:
+                            sym = o.get("ticker")
+                            if sym and sym not in evaluated_symbols:
+                                cur_p = float(o.get("current_price", 0.0) or 0.0)
+                                tgt_p = float(o.get("limit_price", 0.0) or (cur_p * 0.985))
+                                if cur_p <= 0:
+                                    cur_p = tgt_p / 0.985 if tgt_p > 0 else 100.0
+                                metric = await spoof_svc.evaluate_spoofing_risk(
+                                    ticker=sym,
+                                    current_price=cur_p,
+                                    target_price=tgt_p,
+                                )
+                                evaluated_metrics.append(metric)
+                                evaluated_symbols.add(sym)
+                except Exception as oe:
+                    logger.debug("Could not read staggered orders for spoofing detector: %s", oe)
+
+                # 若當日無掛單，以預設焦點標的進行微觀流動性嗅探展示
+                if not evaluated_metrics:
+                    sample_targets = [
+                        ("NVDA", 125.0, 122.5),
+                        ("V", 282.0, 277.8),
+                        ("COP", 118.0, 115.6),
+                    ]
+                    for sym, cp, tp in sample_targets:
+                        try:
+                            m = await spoof_svc.evaluate_spoofing_risk(
+                                ticker=sym,
+                                current_price=cp,
+                                target_price=tp,
+                            )
+                            evaluated_metrics.append(m)
+                        except Exception as se:
+                            logger.debug("Spoof eval fallback error for %s: %s", sym, se)
+
+                return spoof_svc.format_spoofing_report(evaluated_metrics, channel="telegram")
+            except Exception as e:
+                logger.error(f"Failed to generate Spoofing Detector response: {e}")
+                return f"⚠️ 查詢微觀獵殺與反欺詐訂單簿嗅探儀表時發生錯誤：{e}"
 
         return None
 
