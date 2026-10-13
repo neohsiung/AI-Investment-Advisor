@@ -87,6 +87,8 @@ DISPATCHER_CHILD_TASKS: Dict[str, str] = {
     "dispatch_staggered_dip_deployment": "run_staggered_dip_deployment",
     "dispatch_staggered_orders_cleanup": "run_staggered_orders_cleanup",
     "dispatch_staggered_fills_reconciliation": "run_staggered_fills_reconciliation",
+    "dispatch_staggered_orders_stalking": "run_staggered_orders_stalking",
+    "dispatch_staggered_orders_moc_conversion": "run_staggered_orders_moc_conversion",
     "dispatch_net_alpha_attribution": "run_net_alpha_attribution",
     "dispatch_strategy_evolution": "run_strategy_evolution",
     "dispatch_factor_rotation_evolution": "run_factor_rotation_evolution",

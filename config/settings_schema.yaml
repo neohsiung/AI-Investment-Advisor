@@ -3575,4 +3575,64 @@ settings:
     label_zh: 階梯限價撮合對帳間隔 (分鐘)
     help_en: Cadence in minutes between intraday limit order fill checks during US market hours.
     help_zh: 美股交易時段內階梯掛單撮合輪詢與持倉接管之週期頻率（預設 15 分鐘）。
+  - key: enable_hard_token_budget_guard
+    group: ai
+    type: bool
+    default: true
+    label_en: Hard Token Budget Guard (Cost Defense)
+    label_zh: 帳戶級硬性代幣預算熔斷守衛
+    help_en: Enforces hard daily and monthly ceilings on LLM costs, locking down background calls to protect net alpha.
+    help_zh: 對 LLM 支出設置每日與每月硬性上限，超標時自動熔斷背景調用以保衛淨超額報酬。
+  - key: daily_llm_budget_usd
+    group: ai
+    type: float
+    default: 0.10
+    min: 0.01
+    max: 10.0
+    label_en: Daily LLM Token Budget (USD)
+    label_zh: 每日 LLM 模型花費上限 (USD)
+    help_en: Daily expenditure ceiling for LLM reasoning before triggering hard budget lockout (default $0.10).
+    help_zh: 每日 LLM 推理費用上限，超過即觸發硬性熔斷轉入 0-LLM 模式（預設 $0.10 USD）。
+  - key: monthly_llm_budget_usd
+    group: ai
+    type: float
+    default: 2.50
+    min: 0.10
+    max: 50.0
+    label_en: Monthly LLM Token Budget (USD)
+    label_zh: 每月 LLM 模型花費上限 (USD)
+    help_en: Monthly expenditure ceiling for LLM reasoning to ensure annual token friction stays under 1.5% of equity.
+    help_zh: 每月 LLM 總預算上限，確保全年模型摩擦成本低於總資產 1.5%（預設 $2.50 USD）。
+  - key: enable_sentinel_zero_llm_mode
+    group: ai
+    type: bool
+    default: true
+    label_en: Sentinel 100% 0-LLM Mathematical Patrol
+    label_zh: Sentinel 哨兵 100% 0-LLM 數理巡航
+    help_en: Forces Sentinel 10-minute patrols to run purely deterministic ATR, VPIN, and jump diffusion calculations.
+    help_zh: 強制 Sentinel 每 10 分鐘巡航採用純量化數理判定（ATR、VPIN、跳躍擴散），達成 0 Token 守護。
+  - key: enable_deterministic_council_fallback
+    group: ai
+    type: bool
+    default: true
+    label_en: Deterministic Mathematical Council Fallback
+    label_zh: 確定性數理議會替代決策器
+    help_en: Automatically routes routine rebalancing and sub-$250 allocations to 0-LLM quantitative engines.
+    help_zh: 例行再平衡與小額配置自動由 Bayesian HMM 與多因子數理議會替代，0 Token 0 秒延遲。
+  - key: enable_staggered_order_stalking
+    group: trading
+    type: bool
+    default: true
+    label_en: Intraday Staggered Order Stalking & Repricing
+    label_zh: 盤中階梯限價動態追單改價
+    help_en: Dynamically adjusts Tier 1/2 limit orders towards VWAP on strong intraday trending assets at 14:00 EST.
+    help_zh: 每日 14:00 EST 對多頭強勢標的將 Tier 1/2 限價向日內均價貼近微調，大幅提升吸籌成交率。
+  - key: enable_staggered_moc_conversion
+    group: trading
+    type: bool
+    default: true
+    label_en: Market-Close Dip Conversion to MOC Execution
+    label_zh: 尾盤動能接管強制吸籌建倉
+    help_en: Converts remaining Tier 1 limit orders to MOC fills at 15:50 EST for strong assets when cash ratio exceeds 35%.
+    help_zh: 每日 15:50 EST 撤單前，若現金仍高於 35%，將強勢標的 Tier 1 轉為市價/MOC 成交以消除現金拖累。
 

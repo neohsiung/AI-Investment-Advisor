@@ -231,6 +231,7 @@ class ConversationRouter:
             "universe", "pool", "tickers", "標的池", "股票池", "標的", "候選池",
             "dipbuy", "stagger", "dip", "階梯掛單", "吸籌", "階梯吸籌", "限價吸籌",
             "alpha", "netalpha", "cashdrag", "歸因", "淨額", "成本歸因", "機會成本",
+            "budget", "token", "tokens", "預算", "代幣", "成本預算", "額度",
         }
         return cmd in exact_keywords
 
@@ -1736,6 +1737,44 @@ class ConversationRouter:
                         f"💡 <i>新成交部位已自動掛載動態 ATR 保護停損點並移交 Sentinel 守護。輸入 <code>/dipbuy status</code> 檢視明細。</i>"
                     )
 
+                # Subcommand: stalk / reprice / 追單 / 改價
+                if any(k in cmd for k in ("stalk", "reprice", "追單", "改價")):
+                    res = await stagger_svc.stalk_and_reprice_pending_orders()
+                    rep_cnt = res.get("repriced_count", 0)
+                    rep_orders = res.get("orders", [])
+                    lines = [
+                        "🏹 <b>【盤中動態追單改價完成】</b>",
+                        "━━━━━━━━━━━━━━━━━━",
+                        f"• <b>本次改價掛單數</b>：<b>{rep_cnt} 筆</b>",
+                    ]
+                    if rep_cnt == 0:
+                        lines.append("✨ <i>當前所有 PENDING 訂單已符合最新均價，或市場無顯著多頭跳空，暫無需改價。</i>")
+                    else:
+                        for o in rep_orders:
+                            lines.append(f"  └ <b>{o.get('ticker')}</b> Tier {o.get('tier_number')}：<code>${o.get('original_limit_price', 0):.2f}</code> ➔ <code>${o.get('limit_price', 0):.2f} USD</code>")
+                    lines.append("━━━━━━━━━━━━━━━━━━")
+                    lines.append("💡 <i>輸入 <code>/dipbuy status</code> 檢視即時掛單狀態。</i>")
+                    return "\n".join(lines)
+
+                # Subcommand: moc / conversion / 尾盤 / 接管
+                if any(k in cmd for k in ("moc", "conversion", "尾盤", "接管")):
+                    res = await stagger_svc.convert_unfilled_dip_orders_to_moc()
+                    conv_cnt = res.get("converted_count", 0)
+                    conv_orders = res.get("orders", [])
+                    lines = [
+                        "🏁 <b>【尾盤動能接管吸籌完成】</b>",
+                        "━━━━━━━━━━━━━━━━━━",
+                        f"• <b>本次強制接管成交數</b>：<b>{conv_cnt} 筆</b>",
+                    ]
+                    if conv_cnt == 0:
+                        lines.append("✨ <i>今日無待接管訂單或現金水位已處於安全目標區。</i>")
+                    else:
+                        for o in conv_orders:
+                            lines.append(f"  └ 🟢 <b>{o.get('ticker')}</b>：<code>${o.get('fill_price', 0):.2f} USD</code> (金額: <code>${o.get('amount_usd', 0):.2f}</code>, 停損: <code>${o.get('initial_stop_price', 0):.2f}</code>)")
+                    lines.append("━━━━━━━━━━━━━━━━━━")
+                    lines.append("💡 <i>持倉已自動移交 Sentinel 守護。輸入 <code>/alpha</code> 檢視最新淨超額。</i>")
+                    return "\n".join(lines)
+
                 # Subcommand: plan / 計畫 / 預覽 / 點位
                 if any(k in cmd for k in ("plan", "計畫", "預覽", "點位")):
                     plan = await stagger_svc.generate_batch_staggered_plan()
@@ -1831,6 +1870,28 @@ class ConversationRouter:
             except Exception as e:
                 logger.error(f"Failed to generate Alpha attribution response: {e}")
                 return f"⚠️ 查詢淨 Alpha 歸因與現金拖累時發生錯誤：{e}"
+
+        # 21. Hard Token Budget Guard & 0-LLM Status (Phase 47)
+        if any(cmd.startswith(prefix) for prefix in ("budget", "token", "預算", "代幣", "成本預算", "額度")):
+            try:
+                from src.services.hard_token_budget_guard_service import HardTokenBudgetGuardService
+                guard_svc = HardTokenBudgetGuardService(user_id=resolved_user_id)
+                parts = cmd.split()
+                sub = parts[1].strip().lower() if len(parts) > 1 else "status"
+                if sub in ("reset", "clear", "重設", "解鎖"):
+                    res = guard_svc.reset_budget_lockout()
+                    return (
+                        "🔄 <b>【AI 代幣硬性預算熔斷已重設】</b>\n"
+                        "━━━━━━━━━━━━━━━━━━\n"
+                        f"• <b>重設時間</b>：<code>{res.get('reset_at')}</code>\n"
+                        f"• <b>扣除今日已消耗額度</b>：<code>${res.get('daily_offset_applied_usd', 0.0):.4f} USD</code>\n"
+                        "━━━━━━━━━━━━━━━━━━\n"
+                        "✨ <i>今日預算已重新開放，例行巡航仍維持 0-LLM 數理引擎節能模式。</i>"
+                    )
+                return guard_svc.format_budget_report()
+            except Exception as e:
+                logger.error(f"Failed to generate Budget response: {e}")
+                return f"⚠️ 查詢代幣預算狀態時發生錯誤：{e}"
 
         return None
 

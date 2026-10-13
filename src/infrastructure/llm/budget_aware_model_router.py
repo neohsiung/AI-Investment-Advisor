@@ -74,21 +74,39 @@ class BudgetAwareModelRouter:
 
     def is_budget_critical(self, user_id: str = None) -> bool:
         """
-        Check if the weekly budget has reached the soft limit ($16.0). [Phase 7]
+        Check if the weekly budget has reached the soft limit ($16.0) or hard token budget breached. [Phase 47]
         """
         user_id = user_id or self.settings.user_id
         if not user_id:
             return False
             
+        try:
+            from src.services.hard_token_budget_guard_service import HardTokenBudgetGuardService
+            guard = HardTokenBudgetGuardService(user_id=user_id)
+            if guard.get_budget_status().is_hard_locked:
+                return True
+        except Exception:
+            pass
+
         spend_summary = self.token_logger.get_user_spending(user_id, days=7)
         total_spent = spend_summary.get("total_cost", 0.0)
         
         return total_spent >= self.BUDGET_SOFT_LIMIT
 
-    def _resolve_tier(self, requested: str, spend: float) -> str:
+    def _resolve_tier(self, requested: str, spend: float, user_id: str = None) -> str:
         """
         Logic for tier downgrading.
         """
+        # Phase 47: Check Hard Token Budget Guard
+        if user_id:
+            try:
+                from src.services.hard_token_budget_guard_service import HardTokenBudgetGuardService
+                guard = HardTokenBudgetGuardService(user_id=user_id)
+                if guard.get_budget_status().is_hard_locked:
+                    return "fast"
+            except Exception:
+                pass
+
         # Hard Limit reached: Force everything to 'fast'
         if spend >= self.BUDGET_HARD_LIMIT:
             return "fast"

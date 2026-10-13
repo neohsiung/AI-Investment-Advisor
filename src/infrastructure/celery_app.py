@@ -196,6 +196,18 @@ app.conf.beat_schedule = {
         "task": "src.infrastructure.tasks.dispatch_staggered_fills_reconciliation",
         "schedule": crontab(minute="*/15", hour="9-15", day_of_week="1-5"),
     },
+    # Intraday Staggered Orders Stalking — runs Monday-Friday at 14:00 EST
+    # 盤中動態追單改價：每日 14:00 EST 針對多頭強勢標的將 Tier 1/2 限價向日內 VWAP 微調，提高撮合率消滅現金拖累。
+    "staggered-orders-stalking": {
+        "task": "src.infrastructure.tasks.dispatch_staggered_orders_stalking",
+        "schedule": crontab(hour=14, minute=0, day_of_week="1-5"),  # Mon-Fri 14:00 EST
+    },
+    # Market-Close Staggered Dip MOC Conversion — runs Monday-Friday at 15:50 EST
+    # 尾盤動能接管強制建倉：每日 15:50 EST 撤單前將強勢標的 Tier 1 轉為市價/MOC 成交，強制配置閒置現金。
+    "staggered-orders-moc-conversion": {
+        "task": "src.infrastructure.tasks.dispatch_staggered_orders_moc_conversion",
+        "schedule": crontab(hour=15, minute=50, day_of_week="1-5"),  # Mon-Fri 15:50 EST
+    },
     # Real-time Net Alpha & Cash Drag Attribution — runs post-market close daily at 16:15 EST
     # 實時淨 Alpha 歸因與現金拖累量化分析：每個交易日美股盤後（16:15 EST）自動精算扣費淨 Alpha 與現金機會成本並推播。
     "daily-net-alpha-attribution": {
