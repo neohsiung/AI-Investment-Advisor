@@ -135,7 +135,7 @@ class EmailNotifier:
             else:
                 # Content is Markdown
                 part1 = MIMEText(content, 'plain', 'utf-8')
-                html_body = markdown.markdown(content, extensions=['tables', 'fenced_code'])
+                html_body = markdown.markdown(content, extensions=['tables', 'fenced_code', 'nl2br'])
                 full_html = self._structure_html(subject, html_body)
                 part2 = MIMEText(full_html, 'html', 'utf-8')
             

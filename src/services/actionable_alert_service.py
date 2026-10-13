@@ -99,17 +99,19 @@ class ActionableAlertHubService:
 
         details = []
         if consecutive_losses is not None:
-            details.append(f"• 連續虧損筆數：{consecutive_losses}")
+            details.append(f"• <b>連續虧損筆數</b>：{consecutive_losses} 筆")
         if drawdown_pct is not None:
-            details.append(f"• 歷史回撤幅度：{drawdown_pct:.2f}%")
+            details.append(f"• <b>歷史回撤幅度</b>：{drawdown_pct:.2f}%")
         details_str = ("\n" + "\n".join(details)) if details else ""
 
         content = (
             f"系統已自動觸發交易保護機制，暫停新單下發以防範風險擴大！\n\n"
             f"• <b>保護規則</b>：{rule_name}\n"
             f"• <b>觸發原因</b>：{reason}{details_str}\n\n"
-            f"若您已評估市場狀況並確認安全，可點選下方按鈕重設保護或維持暫停："
+            f"若您已評估市場狀況並確認安全，可點選下方按鈕重設保護或維持暫停。\n"
+            f"<i>💡 快捷指令：亦可於任一對話頻道輸入 <code>/guard reset</code> 一鍵解鎖。</i>"
         )
+
 
         actions = [
             {"label": "🔄 重設熔斷 (Reset)", "data": "action=reset_protection", "key": "reset_protection"},

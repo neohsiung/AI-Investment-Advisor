@@ -139,6 +139,13 @@ class BatchCashDeploymentService:
             except Exception:
                 self.bayesian_hmm_factor = None
 
+        try:
+            from src.services.unified_risk_gateway_service import UnifiedRiskGatewayService
+            self.risk_gateway = UnifiedRiskGatewayService(user_id=self.user_id)
+        except Exception:
+            self.risk_gateway = None
+
+
     async def _get_broker(self) -> Any:
         if self.broker:
             return self.broker
@@ -372,10 +379,40 @@ class BatchCashDeploymentService:
             else:
                 trade_amount = round(base_amt, 2)
 
-            # 財報日與宏觀黑名單避開守衛檢驗
-            blackout_decision = await self.blackout_guard.evaluate_candidate(ticker)
-            is_blackout = blackout_decision.is_blackout
-            blackout_reason = blackout_decision.reason if is_blackout else None
+            is_blackout = False
+            blackout_reason = None
+            is_jump_acute = False
+            jump_intensity = 0.0
+            jump_regime = "CALM_DIFFUSION"
+
+            # 統一中央風控閘門檢驗 (Phase 39)
+            if self.risk_gateway is not None:
+
+                try:
+                    risk_res = await self.risk_gateway.evaluate_trade_risk(
+                        ticker=ticker, action="BUY", amount_usd=trade_amount
+                    )
+                    g_details = risk_res.guard_details or {}
+
+                    cal_info = g_details.get("calendar_blackout") or {}
+                    if cal_info.get("is_blackout"):
+                        is_blackout = True
+                        blackout_reason = cal_info.get("reason")
+
+                    jump_info = g_details.get("jump_diffusion") or {}
+                    if jump_info:
+                        jump_intensity = jump_info.get("jump_intensity", 0.0)
+                        jump_regime = jump_info.get("regime", "CALM_DIFFUSION")
+                        if jump_info.get("is_acute_jump") and risk_res.primary_blocker == "JumpDiffusion":
+                            is_jump_acute = True
+                except Exception as rge:
+                    logger.debug(f"Risk gateway unified check fallback for {ticker}: {rge}")
+
+            # 財報日與宏觀黑名單避開守衛檢驗 (退回備份守衛若尚未判定)
+            if not is_blackout and self.blackout_guard:
+                blackout_decision = await self.blackout_guard.evaluate_candidate(ticker)
+                is_blackout = blackout_decision.is_blackout
+                blackout_reason = blackout_decision.reason if is_blackout else None
 
             # 盤中流動性黑洞與成交品質檢驗
             is_black_hole = False
@@ -389,11 +426,8 @@ class BatchCashDeploymentService:
                 except Exception:
                     is_black_hole = False
 
-            # 貝葉斯跳躍擴散守衛檢驗
-            is_jump_acute = False
-            jump_intensity = 0.0
-            jump_regime = "CALM_DIFFUSION"
-            if self.jump_guard and getattr(self.jump_guard, "is_enabled", True):
+            # 貝葉斯跳躍擴散守衛檢驗 (若尚未由閘門判定)
+            if not is_jump_acute and self.jump_guard and getattr(self.jump_guard, "is_enabled", True):
                 try:
                     j_eval = await self.jump_guard.evaluate_ticker(ticker)
                     if j_eval:
@@ -407,6 +441,7 @@ class BatchCashDeploymentService:
                             is_jump_acute = True
                 except Exception as je:
                     logger.debug(f"Candidate jump evaluation non-blocking error for {ticker}: {je}")
+
 
             # 宏觀突發事件因果圖譜受損度檢驗 (Phase 37)
             is_event_shocked = False

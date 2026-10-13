@@ -205,10 +205,11 @@ class UnifiedRiskGatewayService:
         try:
             from src.services.slippage_guard_service import SlippageGuardService
             slip_svc = SlippageGuardService()
-            if slip_svc.is_opening_auction_window():
-                guard_details["slippage_guard"] = {"auction_window": True}
+            is_window, win_reason = slip_svc.is_opening_auction_window()
+            if is_window:
+                guard_details["slippage_guard"] = {"auction_window": True, "reason": win_reason}
                 if is_buy:
-                    reasons.append("[SlippageGuard] Opening auction window active (09:30-09:35 EST); order deferred")
+                    reasons.append(f"[SlippageGuard] Opening auction window active ({win_reason}); order deferred")
                     return RiskGatewayResult(
                         allowed=False,
                         severity=RiskSeverity.DEGRADED,
@@ -217,6 +218,7 @@ class UnifiedRiskGatewayService:
                         guard_details=guard_details,
                         evaluated_at=now_iso,
                     )
+
         except Exception as e:
             logger.debug("UnifiedRiskGateway: Slippage auction check skipped/failed: %s", e)
 
