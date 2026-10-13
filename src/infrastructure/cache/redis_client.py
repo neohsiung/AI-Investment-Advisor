@@ -69,7 +69,13 @@ def _redis_url() -> str:
     failed AUTH against a `--requirepass` server. Read only `REDIS_URL`.
     僅讀 REDIS_URL；CELERY_BROKER_URL 在 prod 從未設定，會退化成無密碼連線。
     """
-    return os.getenv("REDIS_URL", "redis://redis:6379/0")
+    if os.getenv("REDIS_URL"):
+        return os.getenv("REDIS_URL")
+    redis_host = os.getenv("REDIS_HOST")
+    redis_port = os.getenv("REDIS_PORT", "6379")
+    if redis_host:
+        return f"redis://{redis_host}:{redis_port}/0"
+    return "redis://redis:6379/0"
 
 
 def _max_connections() -> int:

@@ -15,6 +15,7 @@ class TestInternetSearchService(unittest.IsolatedAsyncioTestCase):
         with patch.dict('os.environ', {'TAVILY_API_KEY': ''}):
             with patch('src.services.search_service.SettingsService'):
                 service = InternetSearchService(user_id="test_user", cache_ttl=10)
+                service.redis_cache = None
             
             # Mock internal ddgs
             service.ddgs = MagicMock()
@@ -36,6 +37,7 @@ class TestInternetSearchService(unittest.IsolatedAsyncioTestCase):
         with patch.dict('os.environ', {'TAVILY_API_KEY': ''}):
             with patch('src.services.search_service.SettingsService'):
                 service = InternetSearchService(user_id="test_user", cache_ttl=0.1)
+                service.redis_cache = None
             
             service.ddgs = MagicMock()
             service.ddgs.text.return_value = [{'title': 'A', 'body': 'B', 'href': 'C'}]
