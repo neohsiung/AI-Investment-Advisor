@@ -783,16 +783,20 @@ class StaggeredDipBuyingService:
             df = mkt_svc.get_history_df(ticker, days=20)
             if df is not None and not df.empty and len(df) >= 5:
                 import numpy as np
-                high = df["high"].values
-                low = df["low"].values
-                close = df["close"].values
-                tr1 = high[1:] - low[1:]
-                tr2 = np.abs(high[1:] - close[:-1])
-                tr3 = np.abs(low[1:] - close[:-1])
-                tr = np.maximum(tr1, np.maximum(tr2, tr3))
-                atr = float(np.mean(tr[-14:]))
-                if fill_price > 0:
-                    atr_pct = max(0.02, min(0.08, atr / fill_price))
+                h_col = "High" if "High" in df.columns else ("high" if "high" in df.columns else None)
+                l_col = "Low" if "Low" in df.columns else ("low" if "low" in df.columns else None)
+                c_col = "Close" if "Close" in df.columns else ("close" if "close" in df.columns else None)
+                if h_col and l_col and c_col:
+                    high = df[h_col].values
+                    low = df[l_col].values
+                    close = df[c_col].values
+                    tr1 = high[1:] - low[1:]
+                    tr2 = np.abs(high[1:] - close[:-1])
+                    tr3 = np.abs(low[1:] - close[:-1])
+                    tr = np.maximum(tr1, np.maximum(tr2, tr3))
+                    atr = float(np.mean(tr[-14:]))
+                    if fill_price > 0:
+                        atr_pct = max(0.02, min(0.08, atr / fill_price))
         except Exception as e:
             logger.debug("Failed calculating ATR for %s onboarding: %s", ticker, e)
 

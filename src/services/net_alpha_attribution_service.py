@@ -223,12 +223,14 @@ class NetAlphaAttributionService:
         try:
             spy_df = mkt_svc.get_history_df("SPY", days=max(10, lookback_days + 5))
             if spy_df is not None and not spy_df.empty and len(spy_df) >= 2:
-                closes = spy_df["close"].dropna().values
-                if len(closes) >= 2:
-                    p_start = float(closes[0])
-                    p_end = float(closes[-1])
-                    if p_start > 0:
-                        spy_return = (p_end - p_start) / p_start
+                close_col = "Close" if "Close" in spy_df.columns else ("close" if "close" in spy_df.columns else None)
+                if close_col is not None:
+                    closes = spy_df[close_col].dropna().values
+                    if len(closes) >= 2:
+                        p_start = float(closes[0])
+                        p_end = float(closes[-1])
+                        if p_start > 0:
+                            spy_return = (p_end - p_start) / p_start
         except Exception as se:
             logger.warning("Failed calculating SPY return: %s", se)
 
@@ -321,10 +323,12 @@ class NetAlphaAttributionService:
             try:
                 df = mkt_svc.get_history_df(sym, days=max(10, lookback_days + 5))
                 if df is not None and not df.empty and len(df) >= 2:
-                    closes = df["close"].dropna().values
-                    if len(closes) >= 2 and float(closes[0]) > 0:
-                        r = (float(closes[-1]) - float(closes[0])) / float(closes[0])
-                        returns_list.append(r)
+                    close_col = "Close" if "Close" in df.columns else ("close" if "close" in df.columns else None)
+                    if close_col is not None:
+                        closes = df[close_col].dropna().values
+                        if len(closes) >= 2 and float(closes[0]) > 0:
+                            r = (float(closes[-1]) - float(closes[0])) / float(closes[0])
+                            returns_list.append(r)
             except Exception:
                 continue
 
