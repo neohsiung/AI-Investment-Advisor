@@ -55,6 +55,7 @@ if [ -f "$BANDIT" ]; then
               src/services/cross_asset_volatility_spillover_service.py \
               src/services/cross_sector_harvest_rebalance_service.py \
               src/services/dynamic_debate_termination_service.py \
+              src/services/dynamic_iv_surface_skew_hedging_service.py \
               src/services/factor_rotation_replay_engine.py \
               src/services/intelligence_service.py \
               src/services/intraday_cross_sector_beta_damping_service.py \
@@ -62,6 +63,7 @@ if [ -f "$BANDIT" ]; then
               src/services/intraday_liquidity_hunt_guard_service.py \
               src/services/macro_hedging_service.py \
               src/services/macro_surprise_service.py \
+              src/services/microstructure_order_flow_imbalance_service.py \
               src/services/microstructure_spoofing_detector_service.py \
               src/services/multi_factor_convex_sharpe_optimizer_service.py \
               src/services/order_book_toxicity_detector_service.py \
@@ -137,6 +139,9 @@ $PYTEST tests/unit/services/test_actionable_alert_service.py \
         tests/unit/services/test_intraday_cross_sector_beta_damping.py \
         tests/unit/services/test_cross_sector_harvest_and_anti_hunt.py \
         tests/unit/services/test_dark_pool_and_convex_sharpe.py \
+        tests/unit/services/test_dynamic_iv_surface_skew_hedging_service.py \
+        tests/unit/services/test_microstructure_order_flow_imbalance_service.py \
+        tests/unit/services/test_phase61_integration_and_routing.py \
         tests/unit/services/test_staggered_dip_buying_service.py \
         tests/unit/services/test_staggered_stalking_and_moc.py \
         tests/unit/services/test_slippage_guard_and_batch_deployment.py \

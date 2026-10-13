@@ -3891,6 +3891,82 @@ settings:
     label_zh: 凸二次規劃無風險基準利率
     help_en: Annualized risk-free rate used in Sharpe ratio tangency calculation.
     help_zh: 計算切線夏普比率時採用之年化無風險基準利率（預設 4.5%）。
+  - key: enable_iv_surface_skew_hedging
+    group: trading
+    type: bool
+    default: true
+    label_en: Enable Dynamic IV Surface Skew & Tail Risk Hedging
+    label_zh: 啟用動態隱含波動率曲面偏度與極端尾部避險引擎
+    help_en: Monitors option IV skew and term structure inversion to protect against extreme tail risk crashes.
+    help_zh: 監控選擇權隱含波動率偏度與期限結構倒掛，防範極端黑天鵝尾部風險。
+  - key: iv_skew_warning_threshold
+    group: trading
+    type: float
+    default: 1.25
+    min: 1.05
+    max: 2.00
+    label_en: IV Skew Warning Ratio Threshold
+    label_zh: 選擇權隱含波動率偏度預警門檻
+    help_en: 25-Delta Put/Call IV ratio threshold triggering elevated risk warning and limit price downward shift.
+    help_zh: 25-Delta Put/Call 隱含波動率比率達到此門檻時啟動風控預警並下移限價掛單。
+  - key: iv_skew_extreme_threshold
+    group: trading
+    type: float
+    default: 1.50
+    min: 1.20
+    max: 2.50
+    label_en: IV Skew Extreme Panic Threshold
+    label_zh: 選擇權隱含波動率極端恐慌倒掛門檻
+    help_en: 25-Delta Put/Call IV ratio threshold triggering tail risk emergency defense and aggressive limit downward shift.
+    help_zh: 25-Delta Put/Call 隱含波動率比率達到此門檻時判定黑天鵝極端恐慌，建倉規模壓縮至 40% 並大幅下移掛單。
+  - key: iv_term_structure_inversion_threshold
+    group: trading
+    type: float
+    default: -0.03
+    min: -0.10
+    max: 0.00
+    label_en: IV Term Structure Inversion Threshold
+    label_zh: 隱含波動率期限結構倒掛門檻
+    help_en: Term structure slope (90d - 30d IV) below which acute crash panic backwardation is declared.
+    help_zh: 遠期與短期隱含波動率之差小於此門檻時判定極端短期恐慌倒掛（預設 -3.0% vol）。
+  - key: iv_skew_max_limit_shift_pct
+    group: trading
+    type: float
+    default: 0.008
+    min: 0.002
+    max: 0.030
+    label_en: Maximum IV Skew Limit Price Shift Percentage
+    label_zh: 選擇權隱含波動率偏度最大限價下移幅度
+    help_en: Maximum allowable downward shift percentage applied to limit orders under elevated IV skew.
+    help_zh: 遭遇隱含波動率偏度恐慌時階梯限價單向下平移之最大幅度（預設 0.008 = 80 bps）。
+  - key: enable_microstructure_ofi_defense
+    group: trading
+    type: bool
+    default: true
+    label_en: Enable Microstructure Order Flow Imbalance & Vacuum Defense
+    label_zh: 啟用微觀訂單流失衡率與做市商流動性真空防禦
+    help_en: Monitors order flow imbalance (OFI) and spreads to block orders during market maker liquidity vacuums.
+    help_zh: 監控 Cont et al. (2014) OFI 訂單流失衡與價差衝擊，在做市商撤單形成的流動性真空期間阻斷買單。
+  - key: ofi_spread_shock_multiplier
+    group: trading
+    type: float
+    default: 2.5
+    min: 1.5
+    max: 5.0
+    label_en: Microstructure Spread Shock Multiplier
+    label_zh: 微觀做市商價差衝擊倍數門檻
+    help_en: Spread expansion multiple relative to median spread triggering liquidity vacuum freeze defense.
+    help_zh: 當前買賣價差相對於中位數價差之跳增倍數達到此門檻時判定做市商撤單真空（預設 2.5x）。
+  - key: ofi_vacuum_cooldown_seconds
+    group: trading
+    type: int
+    default: 120
+    min: 30
+    max: 600
+    label_en: Microstructure Liquidity Vacuum Freeze Cooldown Seconds
+    label_zh: 微觀流動性真空防禦冷凍冷卻時長（秒）
+    help_en: Number of seconds to freeze aggressive buy orders following a detected liquidity vacuum shock.
+    help_zh: 偵測到流動性真空價差衝擊後，暫停新開多頭以防滑點吞噬之冷卻秒數（預設 120 秒）。
 
 
 

@@ -240,6 +240,8 @@ class ConversationRouter:
             "spoof", "antihunt", "orderbook", "假單", "反欺詐", "獵殺防衛",
             "darkpool", "prints", "blocktrades", "暗池", "大宗", "暗池定價",
             "convex", "sharpe", "qp", "mvo", "凸規劃", "夏普邊界", "最優配置",
+            "ivskew", "skew", "iv", "波動率偏度", "選擇權偏度", "尾部避險",
+            "ofi", "orderflow", "訂單流失衡", "流動性真空", "微觀失衡",
         }
         return cmd in exact_keywords
 
@@ -2255,6 +2257,60 @@ class ConversationRouter:
             except Exception as e:
                 logger.error(f"Failed to generate Convex Sharpe Optimization response: {e}")
                 return f"⚠️ 查詢夏普邊界最優二次規劃儀表時發生錯誤：{e}"
+
+        # 29. Dynamic IV Surface Skew & Tail Risk Hedging (Phase 61A)
+        if any(cmd.startswith(prefix) for prefix in ("ivskew", "skew", "iv", "波動率偏度", "選擇權偏度", "尾部避險")):
+            try:
+                from src.services.dynamic_iv_surface_skew_hedging_service import (
+                    DynamicIVSurfaceSkewHedgingService,
+                    IVSurfaceTickerMetric,
+                )
+
+                iv_svc = DynamicIVSurfaceSkewHedgingService(user_id=resolved_user_id)
+                metrics: List[IVSurfaceTickerMetric] = []
+                evaluated_symbols = set()
+
+                candidates = ["SPY", "QQQ", "NVDA", "TSM", "AAPL"]
+                for sym in candidates:
+                    if sym not in evaluated_symbols:
+                        try:
+                            m = await iv_svc.assess_iv_surface(sym)
+                            metrics.append(m)
+                            evaluated_symbols.add(sym)
+                        except Exception as se:
+                            logger.debug("IV skew router eval error for %s: %s", sym, se)
+
+                return iv_svc.format_iv_skew_report(metrics, channel="telegram")
+            except Exception as e:
+                logger.error(f"Failed to generate IV Skew Hedging response: {e}")
+                return f"⚠️ 查詢隱含波動率曲面偏度與極端尾部避險儀表時發生錯誤：{e}"
+
+        # 30. Microstructure Order Flow Imbalance & Liquidity Vacuum Defense (Phase 61B)
+        if any(cmd.startswith(prefix) for prefix in ("ofi", "orderflow", "訂單流失衡", "流動性真空", "微觀失衡")):
+            try:
+                from src.services.microstructure_order_flow_imbalance_service import (
+                    MicrostructureOrderFlowImbalanceService,
+                    OFITickerMetric,
+                )
+
+                ofi_svc = MicrostructureOrderFlowImbalanceService(user_id=resolved_user_id)
+                metrics: List[OFITickerMetric] = []
+                evaluated_symbols = set()
+
+                candidates = ["NVDA", "TSM", "AAPL", "MSFT", "V"]
+                for sym in candidates:
+                    if sym not in evaluated_symbols:
+                        try:
+                            m = await ofi_svc.evaluate_order_flow_imbalance(sym)
+                            metrics.append(m)
+                            evaluated_symbols.add(sym)
+                        except Exception as se:
+                            logger.debug("OFI router eval error for %s: %s", sym, se)
+
+                return ofi_svc.format_ofi_report(metrics, channel="telegram")
+            except Exception as e:
+                logger.error(f"Failed to generate Microstructure OFI response: {e}")
+                return f"⚠️ 查詢微觀訂單流失衡率與流動性真空儀表時發生錯誤：{e}"
 
         return None
 

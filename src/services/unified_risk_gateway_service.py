@@ -10,6 +10,8 @@ Integrated Guard Pipeline:
     3. VPINToxicityGuardService (Informed trader adverse selection & Kyle's Lambda)
     4. BayesianJumpDiffusionGuardService (Jump intensity & acute discontinuous jump risk)
     5. SlippageGuardService (Opening auction window & bid-ask spread expansion)
+    6. DynamicIVSurfaceSkewHedgingService (Phase 61A: Extreme tail inversion & IV skew panic)
+    7. MicrostructureOrderFlowImbalanceService (Phase 61B: Order flow imbalance & liquidity vacuum freeze)
 
 Design Contract:
     - SELL / EXIT orders fail OPEN: protections must never prevent getting OUT of a position.
@@ -151,7 +153,7 @@ class UnifiedRiskGatewayService:
             try:
                 from src.services.vpin_toxicity_guard_service import VPINToxicityGuardService
                 vpin_svc = VPINToxicityGuardService(user_id=self.user_id)
-                vpin_res = await vpin_svc.assess_ticker(sym)
+                vpin_res = await vpin_svc.evaluate_ticker(sym)
                 guard_details["vpin_toxicity"] = {
                     "vpin": vpin_res.vpin,
                     "is_toxic": vpin_res.is_toxic,
@@ -180,7 +182,7 @@ class UnifiedRiskGatewayService:
                     BayesianJumpDiffusionGuardService,
                 )
                 jump_svc = BayesianJumpDiffusionGuardService(user_id=self.user_id)
-                jump_res = await jump_svc.assess_ticker(sym)
+                jump_res = await jump_svc.evaluate_ticker(sym)
                 guard_details["jump_diffusion"] = {
                     "jump_intensity": jump_res.jump_intensity,
                     "is_acute_jump": jump_res.is_acute_jump,
@@ -221,6 +223,71 @@ class UnifiedRiskGatewayService:
 
         except Exception as e:
             logger.debug("UnifiedRiskGateway: Slippage auction check skipped/failed: %s", e)
+
+        # ---------------------------------------------------------
+        # 6. Dynamic IV Surface Skew & Tail Risk Hedging (Phase 61A)
+        # ---------------------------------------------------------
+        if is_buy:
+            try:
+                from src.services.dynamic_iv_surface_skew_hedging_service import (
+                    DynamicIVSurfaceSkewHedgingService,
+                )
+                iv_svc = DynamicIVSurfaceSkewHedgingService(user_id=self.user_id)
+                if await iv_svc.is_enabled():
+                    iv_metric = await iv_svc.assess_iv_surface(sym, current_price=current_price)
+                    guard_details["iv_surface_skew"] = {
+                        "regime": iv_metric.regime,
+                        "skew_ratio": iv_metric.skew_ratio,
+                        "tail_risk_index": iv_metric.tail_risk_index,
+                        "term_structure_slope": iv_metric.term_structure_slope,
+                        "risk_budget_multiplier": iv_metric.risk_budget_multiplier,
+                        "recommended_downward_shift_pct": iv_metric.recommended_downward_shift_pct,
+                    }
+                    if iv_metric.regime == "EXTREME_TAIL_INVERSION":
+                        reasons.append(
+                            f"[IVSurfaceSkew] Extreme tail risk inversion active (Skew={iv_metric.skew_ratio:.2f}, Slope={iv_metric.term_structure_slope*100:.1f}%)"
+                        )
+                        return RiskGatewayResult(
+                            allowed=False,
+                            severity=RiskSeverity.DEGRADED,
+                            primary_blocker="ExtremeIVTailInversion",
+                            reasons=reasons,
+                            guard_details=guard_details,
+                            evaluated_at=now_iso,
+                        )
+            except Exception as e:
+                logger.debug("UnifiedRiskGateway: IV surface skew check skipped/failed: %s", e)
+
+        # ---------------------------------------------------------
+        # 7. Microstructure OFI & Liquidity Vacuum Defense (Phase 61B)
+        # ---------------------------------------------------------
+        if is_buy:
+            try:
+                from src.services.microstructure_order_flow_imbalance_service import (
+                    MicrostructureOrderFlowImbalanceService,
+                )
+                ofi_svc = MicrostructureOrderFlowImbalanceService(user_id=self.user_id)
+                if await ofi_svc.is_enabled():
+                    is_frozen, freeze_reason, freeze_ttl = await ofi_svc.is_vacuum_frozen(sym)
+                    if is_frozen:
+                        guard_details["microstructure_ofi"] = {
+                            "is_vacuum_frozen": True,
+                            "reason": freeze_reason,
+                            "remaining_seconds": freeze_ttl,
+                        }
+                        reasons.append(
+                            f"[MicrostructureOFI] Market maker liquidity vacuum freeze active ({freeze_reason}, {freeze_ttl}s remaining)"
+                        )
+                        return RiskGatewayResult(
+                            allowed=False,
+                            severity=RiskSeverity.BLOCKED,
+                            primary_blocker="LiquidityVacuumFreeze",
+                            reasons=reasons,
+                            guard_details=guard_details,
+                            evaluated_at=now_iso,
+                        )
+            except Exception as e:
+                logger.debug("UnifiedRiskGateway: Microstructure OFI check skipped/failed: %s", e)
 
         # All guards cleared!
         return RiskGatewayResult(

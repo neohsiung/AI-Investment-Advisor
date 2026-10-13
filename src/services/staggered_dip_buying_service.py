@@ -83,6 +83,8 @@ class TickerStaggeredPlan:
     anti_hunt_offset_pct: float = 0.0
     dark_pool_regime: Optional[str] = None
     dark_pool_shift_pct: float = 0.0
+    iv_skew_regime: Optional[str] = None
+    iv_skew_shift_pct: float = 0.0
 
     def to_dict(self) -> Dict[str, Any]:
         return {
@@ -108,6 +110,8 @@ class TickerStaggeredPlan:
             "anti_hunt_offset_pct": round(self.anti_hunt_offset_pct, 4),
             "dark_pool_regime": self.dark_pool_regime,
             "dark_pool_shift_pct": round(self.dark_pool_shift_pct, 4),
+            "iv_skew_regime": self.iv_skew_regime,
+            "iv_skew_shift_pct": round(self.iv_skew_shift_pct, 4),
         }
 
 
@@ -152,6 +156,7 @@ class StaggeredDipBuyingService:
         beta_damping_service: Optional[Any] = None,
         spoofing_detector: Optional[Any] = None,
         dark_pool_service: Optional[Any] = None,
+        iv_surface_service: Optional[Any] = None,
     ):
         self.user_id = resolve_user_id(user_id)
         from src.services.settings_service import SettingsService
@@ -184,6 +189,24 @@ class StaggeredDipBuyingService:
         self.beta_damping_service = beta_damping_service
         self.spoofing_detector = spoofing_detector
         self.dark_pool_service = dark_pool_service
+        self.iv_surface_service = iv_surface_service
+
+    async def _get_iv_surface_service(self) -> Any:
+        if self.iv_surface_service:
+            return self.iv_surface_service
+        try:
+            from src.services.dynamic_iv_surface_skew_hedging_service import (
+                DynamicIVSurfaceSkewHedgingService,
+            )
+            self.iv_surface_service = DynamicIVSurfaceSkewHedgingService(
+                user_id=self.user_id,
+                settings_service=self.settings_service,
+                market_data_service=self.market_data_service,
+            )
+            return self.iv_surface_service
+        except Exception as ive:
+            logger.debug("Could not resolve DynamicIVSurfaceSkewHedgingService: %s", ive)
+            return None
 
     async def _get_dark_pool_service(self) -> Any:
         if self.dark_pool_service:
@@ -545,6 +568,31 @@ class StaggeredDipBuyingService:
             except Exception as dpe_err:
                 logger.debug("Dark pool pricing calibration error for %s: %s", ticker, dpe_err)
 
+        # 3.7 動態隱含波動率曲面偏度與極端尾部避險平移 (Phase 61A)
+        iv_regime = "NORMAL_SMILE"
+        iv_shift_pct = 0.0
+        iv_svc = await self._get_iv_surface_service()
+        if iv_svc and getattr(iv_svc, "is_enabled", True) and tiers:
+            try:
+                iv_metric = await iv_svc.assess_iv_surface(
+                    ticker=ticker,
+                    current_price=c_price,
+                )
+                if iv_metric:
+                    iv_regime = iv_metric.regime
+                    if iv_metric.recommended_downward_shift_pct > 0:
+                        iv_shift_pct = iv_metric.recommended_downward_shift_pct
+                        for t in tiers:
+                            old_p = t.target_price
+                            new_p = round(old_p * (1.0 - iv_shift_pct), 2)
+                            if new_p < old_p and new_p > 0:
+                                t.target_price = new_p
+                                t.discount_pct = round((c_price - new_p) / c_price, 4)
+                                t.shares = round(t.allocation_usd / new_p, 4)
+                                t.rationale += f" [IV尾部避險平移: -{iv_shift_pct*10000:.0f} bps ({iv_regime})]"
+            except Exception as ive_err:
+                logger.debug("IV surface skew shift error for %s: %s", ticker, ive_err)
+
         return TickerStaggeredPlan(
             ticker=ticker,
             current_price=c_price,
@@ -565,6 +613,8 @@ class StaggeredDipBuyingService:
             anti_hunt_offset_pct=anti_hunt_offset,
             dark_pool_regime=dark_regime,
             dark_pool_shift_pct=dark_shift_pct,
+            iv_skew_regime=iv_regime,
+            iv_skew_shift_pct=iv_shift_pct,
         )
 
     # ═══════════════════════════════════════════════════════════════════════
