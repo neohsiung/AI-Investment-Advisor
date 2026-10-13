@@ -19,6 +19,7 @@ from __future__ import annotations
 import asyncio
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
+import inspect
 import json
 import logging
 import os
@@ -140,6 +141,7 @@ class StaggeredDipBuyingService:
         broker: Optional[Any] = None,
         market_clock: Optional[Any] = None,
         market_data_service: Optional[Any] = None,
+        beta_damping_service: Optional[Any] = None,
     ):
         self.user_id = resolve_user_id(user_id)
         from src.services.settings_service import SettingsService
@@ -169,6 +171,24 @@ class StaggeredDipBuyingService:
         from src.utils.market_clock import MarketClock
         self.market_clock = market_clock or MarketClock()
         self.market_data_service = market_data_service
+        self.beta_damping_service = beta_damping_service
+
+    async def _get_beta_damping_service(self) -> Any:
+        if self.beta_damping_service:
+            return self.beta_damping_service
+        try:
+            from src.services.intraday_cross_sector_beta_damping_service import (
+                IntradayCrossSectorBetaDampingService,
+            )
+            self.beta_damping_service = IntradayCrossSectorBetaDampingService(
+                user_id=self.user_id,
+                settings_service=self.settings_service,
+                market_data_service=self.market_data_service,
+            )
+            return self.beta_damping_service
+        except Exception as bde:
+            logger.debug("Could not resolve IntradayCrossSectorBetaDampingService: %s", bde)
+            return None
 
     async def _get_broker(self) -> Any:
         if self.broker:
@@ -1032,6 +1052,7 @@ class StaggeredDipBuyingService:
         pending_orders.sort(key=lambda o: (not bool(o.get("is_cross_sector_injected", False)), int(o.get("tier_number", 1))))
 
         mkt_svc = await self._get_market_data_service()
+        beta_damp_svc = await self._get_beta_damping_service()
         repriced_orders: List[Dict[str, Any]] = []
 
         for ord_rec in pending_orders:
@@ -1048,12 +1069,35 @@ class StaggeredDipBuyingService:
             is_injected = bool(ord_rec.get("is_cross_sector_injected", False))
 
             try:
-                quote = mkt_svc.get_quote(sym)
-                current_price = float(quote.get("last", 0.0) or quote.get("close", 0.0) or 0.0)
+                # 評估跨板塊即時 Beta 與相關性阻尼 (Phase 58)
+                damping_metric = None
+                if is_injected and beta_damp_svc and getattr(beta_damp_svc, "is_enabled", True):
+                    try:
+                        damping_metric = await beta_damp_svc.evaluate_ticker_beta_damping(
+                            ticker=sym,
+                            sector=ord_rec.get("injected_sector"),
+                        )
+                    except Exception as bde:
+                        logger.debug("Beta damping evaluation failed for %s: %s", sym, bde)
+
+                if damping_metric:
+                    ord_rec["beta_regime"] = damping_metric.regime
+                    ord_rec["beta_damping_factor"] = damping_metric.damping_factor
+                    ord_rec["beta_stalking_action"] = damping_metric.stalking_action
+                    if damping_metric.stalking_action == "FREEZE_STALKING":
+                        logger.info(
+                            "Stalking frozen for %s due to MARKET_STRESS_DAMPED (beta: %.2f)",
+                            sym, damping_metric.beta
+                        )
+                        continue
+
+                quote_call = mkt_svc.get_quote(sym) if mkt_svc else None
+                quote = await quote_call if inspect.isawaitable(quote_call) else quote_call
+                current_price = float(quote.get("last", 0.0) or quote.get("close", 0.0) or 0.0) if quote else 0.0
                 if current_price <= 0:
                     continue
 
-                df = mkt_svc.get_history_df(sym, days=5)
+                df = mkt_svc.get_history_df(sym, days=5) if mkt_svc else None
                 open_price = current_price
                 if df is not None and not df.empty:
                     o_col = "Open" if "Open" in df.columns else ("open" if "open" in df.columns else None)
@@ -1064,8 +1108,14 @@ class StaggeredDipBuyingService:
                 reprice_threshold = 0.990 if is_injected else 0.995
                 if current_price >= open_price * reprice_threshold:
                     old_disc = float(ord_rec.get("discount_pct", 0.015) or 0.015)
-                    # 向上微調折價幅度 (跨板塊標的貼近現價 45%，一般標的 35%)
-                    discount_factor = 0.55 if is_injected else 0.65
+                    # 向上微調折價幅度：依貝塔阻尼調度決策動態收斂
+                    if damping_metric and damping_metric.stalking_action == "BOOST_STALKING":
+                        discount_factor = 0.45  # 低貝塔解耦加速吸籌
+                    elif damping_metric and damping_metric.stalking_action == "DAMP_STALKING":
+                        discount_factor = 0.75  # 高貝塔傳染減速防護
+                    else:
+                        discount_factor = 0.55 if is_injected else 0.65
+
                     new_disc = max(0.004 if is_injected else 0.005, old_disc * discount_factor)
                     new_price = round(current_price * (1.0 - new_disc), 2)
 
@@ -1133,6 +1183,7 @@ class StaggeredDipBuyingService:
 
         mkt_svc = await self._get_market_data_service()
         broker = await self._get_broker()
+        beta_damp_svc = await self._get_beta_damping_service()
         converted_orders: List[Dict[str, Any]] = []
 
         # 限制每次尾盤最多接管 2 筆，控制資金節奏
@@ -1142,9 +1193,33 @@ class StaggeredDipBuyingService:
             if not sym or amt_usd <= 0:
                 continue
 
+            is_injected = bool(ord_rec.get("is_cross_sector_injected", False))
+
             try:
-                quote = mkt_svc.get_quote(sym)
-                current_price = float(quote.get("last", 0.0) or quote.get("close", 0.0) or 0.0)
+                # 評估跨板塊即時 Beta 與相關性阻尼 (Phase 58 MOC 接管縮額防護)
+                if is_injected and beta_damp_svc and getattr(beta_damp_svc, "is_enabled", True):
+                    try:
+                        damping_metric = await beta_damp_svc.evaluate_ticker_beta_damping(
+                            ticker=sym,
+                            sector=ord_rec.get("injected_sector"),
+                        )
+                        if damping_metric and damping_metric.damping_factor < 1.0:
+                            orig_amt = amt_usd
+                            amt_usd = max(10.0, round(amt_usd * damping_metric.damping_factor, 2))
+                            ord_rec["original_amount_usd"] = orig_amt
+                            ord_rec["amount_usd"] = amt_usd
+                            ord_rec["beta_regime"] = damping_metric.regime
+                            ord_rec["beta_damping_factor"] = damping_metric.damping_factor
+                            logger.info(
+                                "MOC conversion damped for %s: $%.2f -> $%.2f (factor: %.2f, regime: %s)",
+                                sym, orig_amt, amt_usd, damping_metric.damping_factor, damping_metric.regime
+                            )
+                    except Exception as bde:
+                        logger.debug("Beta damping in MOC conversion failed for %s: %s", sym, bde)
+
+                quote_call = mkt_svc.get_quote(sym) if mkt_svc else None
+                quote = await quote_call if inspect.isawaitable(quote_call) else quote_call
+                current_price = float(quote.get("last", 0.0) or quote.get("close", 0.0) or 0.0) if quote else 0.0
                 if current_price <= 0:
                     continue
 

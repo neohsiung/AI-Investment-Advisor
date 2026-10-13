@@ -3721,5 +3721,54 @@ settings:
     label_zh: 跨板塊多角化降低 HHI 超額溢價加成 (bps)
     help_en: Expected gross alpha premium awarded to cross-sector contenders for reducing portfolio HHI concentration.
     help_zh: 跨板塊候選標的因降低投組集中度與非系統性風險所獲得的預期超額利差加成（預設 12.0 bps）。
+  - key: enable_cross_sector_beta_damping
+    group: trading
+    type: bool
+    default: true
+    label_en: Enable Cross-Sector Beta & Correlation Damping
+    label_zh: 啟用跨板塊標的即時波動率相關性動態阻尼
+    help_en: Dynamically measures rolling beta and correlation against SPY to scale dip stalking and MOC orders.
+    help_zh: 盤中即時度量跨板塊標的與 SPY 基準之滾動貝塔與相關性，自適應調控追單收斂速度與尾盤 MOC 金額。
+  - key: beta_damping_contagion_threshold
+    group: trading
+    type: float
+    default: 1.25
+    min: 1.0
+    max: 2.5
+    label_en: Beta Damping Contagion Amplified Threshold
+    label_zh: 貝塔阻尼高貝塔系統性傳染門檻
+    help_en: Beta threshold at or above which contagion damping is activated (0.60x - 0.85x damping).
+    help_zh: 有效貝塔大於等於此門檻時觸發 CONTAGION_AMPLIFIED，啟動 0.60x ~ 0.85x 阻尼收縮。
+  - key: beta_damping_decoupled_threshold
+    group: trading
+    type: float
+    default: 0.75
+    min: 0.2
+    max: 1.0
+    label_en: Beta Damping Defensive Decoupled Threshold
+    label_zh: 貝塔阻尼低貝塔解耦防守門檻
+    help_en: Beta threshold below which defensive boost is activated (1.15x boost, BOOST_STALKING).
+    help_zh: 有效貝塔小於等於此門檻且弱相關時觸發 DEFENSIVE_DECOUPLED，啟動 1.15x 激勵追單吸籌。
+  - key: beta_damping_correlation_threshold
+    group: trading
+    type: float
+    default: 0.75
+    min: 0.4
+    max: 0.95
+    label_en: Beta Damping Correlation Contagion Threshold
+    label_zh: 貝塔阻尼相關性傳染門檻
+    help_en: Pearson correlation threshold paired with beta > 1.0 to trigger contagion damping.
+    help_zh: 當標的與大盤相關性大於等於此門檻且貝塔大於 1.0 時，亦判定為系統性傳染並阻尼縮額。
+  - key: beta_damping_market_stress_drawdown_pct
+    group: trading
+    type: float
+    default: -1.2
+    min: -5.0
+    max: -0.5
+    label_en: Market Stress Drawdown Trigger (%)
+    label_zh: 大盤跳水觸發門檻（%）
+    help_en: Intraday benchmark drawdown percentage that triggers MARKET_STRESS_DAMPED (0.50x hard damping, FREEZE_STALKING).
+    help_zh: 大盤 SPY 日內跌幅觸及此門檻且標的貝塔敏感時，啟動 0.50x 剛性阻尼並凍結追單改價以捍衛現金。
+
 
 

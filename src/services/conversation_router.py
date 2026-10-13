@@ -234,6 +234,7 @@ class ConversationRouter:
             "budget", "token", "tokens", "預算", "代幣", "成本預算", "額度",
             "sector", "drift", "hhi", "板塊", "行業", "集中度", "板塊漂移", "板塊自癒",
             "spread", "bidding", "friction", "利差", "摩擦",
+            "betadamp", "beta", "damping", "corrdamp", "阻尼", "貝塔阻尼", "大盤相關性",
         }
         return cmd in exact_keywords
 
@@ -1991,6 +1992,82 @@ class ConversationRouter:
             except Exception as e:
                 logger.error(f"Failed to generate Spread Bidding response: {e}")
                 return f"⚠️ 查詢動態利差競標與摩擦抵消儀表時發生錯誤：{e}"
+
+        # 24. Intraday Cross-Sector Correlation & Beta Damping (Phase 58)
+        if any(cmd.startswith(prefix) for prefix in ("betadamp", "beta", "damping", "corrdamp", "阻尼", "貝塔阻尼", "大盤相關性")):
+            try:
+                from src.services.intraday_cross_sector_beta_damping_service import (
+                    IntradayCrossSectorBetaDampingService,
+                    IntradayBetaMetric,
+                )
+                from src.services.sector_drift_guard_service import SectorDriftGuardService
+
+                beta_svc = IntradayCrossSectorBetaDampingService(user_id=resolved_user_id)
+                drift_guard = SectorDriftGuardService(user_id=resolved_user_id)
+
+                evaluated_metrics: List[IntradayBetaMetric] = []
+                evaluated_symbols = set()
+
+                # 從當前活躍的階梯吸籌限價單中提取標的
+                try:
+                    from src.infrastructure.cache.redis_client import get_redis
+                    import pytz
+                    ny_tz = pytz.timezone("US/Eastern")
+                    date_str = datetime.now(ny_tz).strftime("%Y-%m-%d")
+                    r = await get_redis(decode_responses=True)
+                    r_key = f"staggered_orders:{resolved_user_id}:{date_str}"
+                    existing = await r.get(r_key)
+                    if existing:
+                        orders = json.loads(existing)
+                        for o in orders:
+                            sym = o.get("ticker")
+                            if sym and sym not in evaluated_symbols:
+                                sec = o.get("injected_sector")
+                                metric = await beta_svc.evaluate_ticker_beta_damping(
+                                    ticker=sym,
+                                    sector=sec,
+                                )
+                                evaluated_metrics.append(metric)
+                                evaluated_symbols.add(sym)
+                except Exception as oe:
+                    logger.debug("Could not read staggered orders for betadamp: %s", oe)
+
+                # 若今日尚未掛單，直接查詢自癒候選標的與核心觀察標的
+                if not evaluated_metrics:
+                    candidates = []
+                    try:
+                        from src.services.broker_factory import BrokerFactory
+                        broker = BrokerFactory.get_broker(user_id=resolved_user_id)
+                        positions = await broker.get_positions() if (broker and hasattr(broker, "get_positions")) else []
+                        account = await broker.get_account() if (broker and hasattr(broker, "get_account")) else None
+                        equity = float(getattr(account, "total_equity", 0.0) or 0.0) if account else 1685.0
+                        contender = drift_guard.discover_cross_sector_injection_contender(
+                            current_positions=positions,
+                            total_equity=equity,
+                        )
+                        if contender:
+                            candidates.append((contender["ticker"], contender.get("sector")))
+                    except Exception as ce:
+                        logger.debug("Contender discovery in betadamp fallback: %s", ce)
+
+                    for s, sec in [("V", "Financials"), ("COP", "Energy"), ("ECL", "Materials")]:
+                        if not any(c[0] == s for c in candidates):
+                            candidates.append((s, sec))
+
+                    for sym, sec in candidates[:3]:
+                        try:
+                            m = await beta_svc.evaluate_ticker_beta_damping(
+                                ticker=sym,
+                                sector=sec,
+                            )
+                            evaluated_metrics.append(m)
+                        except Exception as me:
+                            logger.debug("Beta eval fallback error for %s: %s", sym, me)
+
+                return beta_svc.format_beta_damping_report(evaluated_metrics, channel="telegram")
+            except Exception as e:
+                logger.error(f"Failed to generate Beta Damping response: {e}")
+                return f"⚠️ 查詢跨板塊即時貝塔阻尼儀表時發生錯誤：{e}"
 
         return None
 
