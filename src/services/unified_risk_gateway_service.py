@@ -12,6 +12,10 @@ Integrated Guard Pipeline:
     5. SlippageGuardService (Opening auction window & bid-ask spread expansion)
     6. DynamicIVSurfaceSkewHedgingService (Phase 61A: Extreme tail inversion & IV skew panic)
     7. MicrostructureOrderFlowImbalanceService (Phase 61B: Order flow imbalance & liquidity vacuum freeze)
+    8. KalmanPairsTradingService (Phase 62B: Structural break & co-integration breakdown)
+    9. TrendHysteresisLockoutService (Phase 63A: Schmitt Trigger Hysteresis & Macro Bull Long-Only Lock)
+    10. FrictionAwareTrancheSizingService (Phase 63B/64A: Turnover Friction Hurdle & Tranche Sizing)
+    11. CrossCurrencyFXHedgingService (Phase 65: Multi-currency margin liquidity buffer & FX VaR guard)
 
 Design Contract:
     - SELL / EXIT orders fail OPEN: protections must never prevent getting OUT of a position.
@@ -414,6 +418,32 @@ class UnifiedRiskGatewayService:
                     )
         except Exception as e:
             logger.debug("UnifiedRiskGateway: Turnover friction hurdle check skipped/failed: %s", e)
+
+        # ---------------------------------------------------------
+        # 12. Cross-Currency FX Dynamic Hedging & Liquidity Buffer (Phase 65)
+        # ---------------------------------------------------------
+        try:
+            from src.services.cross_currency_fx_hedging_service import CrossCurrencyFXHedgingService
+            fx_svc = CrossCurrencyFXHedgingService(user_id=self.user_id)
+            if await fx_svc.is_enabled():
+                fx_decision = await fx_svc.evaluate_order_fx_liquidity(
+                    ticker=sym,
+                    action=act,
+                    order_amount_usd=amount_usd,
+                )
+                guard_details["fx_liquidity_buffer"] = fx_decision.to_dict()
+                if not fx_decision.allowed and is_buy:
+                    reasons.append(fx_decision.reason)
+                    return RiskGatewayResult(
+                        allowed=False,
+                        severity=RiskSeverity.BLOCKED,
+                        primary_blocker="FXLiquidityBufferDeficit",
+                        reasons=reasons,
+                        guard_details=guard_details,
+                        evaluated_at=now_iso,
+                    )
+        except Exception as e:
+            logger.debug("UnifiedRiskGateway: FX liquidity buffer check skipped/failed: %s", e)
 
         # All guards cleared!
         return RiskGatewayResult(

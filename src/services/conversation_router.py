@@ -245,6 +245,7 @@ class ConversationRouter:
             "gex", "gamma", "flip", "pinning", "伽馬", "做市商伽馬", "釘盤",
             "pair", "pairs", "arb", "kalman", "配對", "統計套利", "協整",
             "tranche", "trend", "hysteresis", "schmitt", "倉位分級", "底倉", "自癒", "漂移自癒",
+            "fx", "forex", "hedging", "外匯", "匯率", "避險", "匯率避險", "保證金緩衝",
         }
         return cmd in exact_keywords
 
@@ -2401,5 +2402,33 @@ class ConversationRouter:
                 logger.error(f"Failed to generate Friction & Tranche response: {e}")
                 return f"⚠️ 查詢做市商摩擦成本與核心/衛星倉位分級儀表時發生錯誤：{e}"
 
+        # 35. Cross-Currency FX Dynamic Hedging & Liquidity Buffer (Phase 65)
+        if any(cmd.startswith(prefix) for prefix in ("fx", "forex", "hedge", "hedging", "外匯", "匯率", "避險", "匯率避險", "保證金緩衝")):
+            try:
+                from src.services.cross_currency_fx_hedging_service import CrossCurrencyFXHedgingService
+                fx_svc = CrossCurrencyFXHedgingService(user_id=resolved_user_id)
+                parts = text.strip().split()
+
+                # Check if requesting hedge execution plan (/fx hedge [currency])
+                is_hedge = any(p.lower() in ("hedge", "hedging", "對沖", "避險", "結匯", "鎖匯") for p in parts[1:]) or cmd.startswith(("hedge", "hedging", "避險", "匯率避險"))
+
+                # Extract custom base currency if provided (e.g. /fx TWD, /fx EUR, /fx hedge JPY)
+                custom_curr = None
+                for p in parts[1:]:
+                    clean_p = p.upper().strip("$#")
+                    if clean_p in fx_svc.PRIOR_FX_BENCHMARKS and clean_p not in ("HEDGE", "HEDGING", "FX", "FOREX", "STATUS", "RUN", "PLAN"):
+                        custom_curr = clean_p
+                        break
+
+                report = await fx_svc.calculate_portfolio_fx_exposure(base_currency=custom_curr)
+
+                if is_hedge:
+                    return fx_svc.format_hedge_suggestion(report)
+                return fx_svc.format_fx_report(report)
+            except Exception as e:
+                logger.error(f"Failed to generate FX Hedging response: {e}")
+                return f"⚠️ 查詢跨市場外匯對沖與多幣種保證金流動性儀表時發生錯誤：{e}"
+
         return None
+
 

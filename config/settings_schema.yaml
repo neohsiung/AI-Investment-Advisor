@@ -4171,6 +4171,43 @@ settings:
     label_zh: 強制階梯限價吸籌嚴格綁定衛星部位預算
     help_en: Constrains 3-tier staggered dip buying plans within the 30% satellite tranche budget cap to protect the 70% core holding.
     help_zh: 將主力支撐 3 檔階梯限價吸籌嚴格約束於 30% 衛星波段可用額度內，保護 70% 核心底倉不被階梯單透支。
+  - key: enable_fx_dynamic_hedging
+    group: trading
+    type: bool
+    default: true
+    label_en: Enable Cross-Currency FX Dynamic Hedging & Buffer
+    label_zh: 啟用跨市場即時外匯對沖與多幣種保證金流動性緩衝
+    help_en: Evaluates USD moving average trend regimes and sizes multi-currency liquidity buffers using 99% 10-day FX VaR.
+    help_zh: 即時追蹤美元對基準貨幣均線走勢，動態評估外匯體制，並精算 99% 10日 FX VaR 多幣種保證金流動性緩衝。
+  - key: portfolio_base_currency
+    group: trading
+    type: str
+    default: "TWD"
+    label_en: Portfolio Settlement Base Currency
+    label_zh: 投組結算基準貨幣
+    help_en: Base accounting currency for calculating FX drag and margin liquidity buffers (e.g. TWD, EUR, JPY, GBP, AUD, CAD, SGD, HKD).
+    help_zh: 用於計算外匯拖累與保證金流動性緩衝之結算基準貨幣（如 TWD, EUR, JPY, GBP, AUD, CAD, SGD, HKD 等）。
+  - key: fx_liquidity_buffer_ratio
+    group: trading
+    type: float
+    default: 0.08
+    min: 0.01
+    max: 0.50
+    label_en: FX Margin Liquidity Buffer Ratio
+    label_zh: 多幣種保證金最低流動性緩衝比率
+    help_en: Baseline unencumbered cash buffer ratio of total NAV held in base currency to protect against margin calls (default 0.08 = 8%).
+    help_zh: 應保留於本幣帳戶之最低無負擔現金緩衝佔總淨值比例（預設 0.08 即 8%），防止保證金追繳與券商強制換匯罰息。
+  - key: fx_hedging_vol_lookback_days
+    group: trading
+    type: int
+    default: 60
+    min: 20
+    max: 252
+    label_en: FX Volatility Calculation Lookback Days
+    label_zh: 外匯波動率回測天數
+    help_en: Lookback window in trading days for calculating foreign exchange historical volatility and 99% VaR.
+    help_zh: 用於計算外匯歷史波動率與 99% 10日 VaR 之交易日回測天數（預設 60 日）。
+
 
 
 
