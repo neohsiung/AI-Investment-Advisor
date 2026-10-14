@@ -246,6 +246,7 @@ class ConversationRouter:
             "pair", "pairs", "arb", "kalman", "配對", "統計套利", "協整",
             "tranche", "trend", "hysteresis", "schmitt", "倉位分級", "底倉", "自癒", "漂移自癒",
             "fx", "forex", "hedging", "外匯", "匯率", "避險", "匯率避險", "保證金緩衝",
+            "attribution", "decay", "halflife", "residual", "收益歸因", "正交歸因", "因子歸因", "因子衰減", "半衰期", "因子半衰期",
         }
         return cmd in exact_keywords
 
@@ -735,7 +736,7 @@ class ConversationRouter:
                 return f"⚠️ 查詢成交品質與滑點統計時發生錯誤：{e}"
 
         # 8. Factor / Factors / IC / 因子 / 特徵漂移 / 因子自癒 / 因子監控
-        if any(cmd.startswith(prefix) for prefix in ("factor", "factors", "ic", "因子", "特徵漂移", "因子自癒", "因子監控")):
+        if any(cmd.startswith(prefix) for prefix in ("factor", "factors", "ic", "因子", "特徵漂移", "因子自癒", "因子監控")) and not any(sub in cmd for sub in ("attribution", "decay", "halflife", "residual", "歸因", "衰減", "半衰期")):
             try:
                 from src.services.factor_drift_guard_service import FactorDriftGuardService
                 from src.services.tactical_factor_rotation_service import TacticalFactorRotationService
@@ -2429,6 +2430,36 @@ class ConversationRouter:
                 logger.error(f"Failed to generate FX Hedging response: {e}")
                 return f"⚠️ 查詢跨市場外匯對沖與多幣種保證金流動性儀表時發生錯誤：{e}"
 
+        # 36. Factor Orthogonal Residual Attribution & Decay Monitoring (Phase 66)
+        if any(cmd.startswith(prefix) for prefix in ("attribution", "decay", "halflife", "residual", "收益歸因", "正交歸因", "因子歸因", "因子衰減", "半衰期", "因子半衰期")) or (
+            any(cmd.startswith(prefix) for prefix in ("factor", "factors", "因子")) and any(sub in cmd for sub in ("attribution", "decay", "halflife", "residual", "歸因", "衰減", "半衰期"))
+        ):
+            try:
+                from src.services.factor_orthogonal_attribution_service import FactorOrthogonalAttributionService
+                attr_svc = FactorOrthogonalAttributionService(user_id=resolved_user_id)
+                parts = text.strip().split()
+
+                # Check if requesting decay / half-life board
+                is_decay = any(p.lower() in ("decay", "halflife", "half-life", "衰減", "半衰期", "健康度", "status") for p in parts) or any(cmd.startswith(p) for p in ("decay", "halflife", "因子衰減", "半衰期", "因子半衰期"))
+
+                # Check if custom lookback days specified (e.g. /attribution 30)
+                custom_lookback = None
+                for p in parts[1:]:
+                    if p.isdigit():
+                        custom_lookback = int(p)
+                        break
+
+                if is_decay:
+                    decay_metrics = attr_svc.calculate_factor_decay_metrics()
+                    return attr_svc.format_decay_board(decay_metrics)
+                else:
+                    report = attr_svc.decompose_orthogonal_returns(lookback_days=custom_lookback)
+                    return attr_svc.format_attribution_report(report)
+            except Exception as e:
+                logger.error(f"Failed to generate Factor Attribution & Decay response: {e}")
+                return f"⚠️ 查詢因子正交殘差收益歸因與多因子風險衰減看板時發生錯誤：{e}"
+
         return None
+
 
 

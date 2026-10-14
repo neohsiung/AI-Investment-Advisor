@@ -4207,6 +4207,45 @@ settings:
     label_zh: 外匯波動率回測天數
     help_en: Lookback window in trading days for calculating foreign exchange historical volatility and 99% VaR.
     help_zh: 用於計算外匯歷史波動率與 99% 10日 VaR 之交易日回測天數（預設 60 日）。
+  - key: enable_factor_orthogonal_attribution
+    group: trading
+    type: bool
+    default: true
+    label_en: Enable Factor Orthogonal Residual Attribution & Decay Monitoring
+    label_zh: 啟用因子正交殘差收益歸因與風險衰減半衰期監控
+    help_en: Performs sequential Gram-Schmidt orthogonalization to decompose portfolio returns into market beta, orthogonal style factors, execution spread, FX drag, and idiosyncratic alpha, while monitoring factor half-life decay.
+    help_zh: 啟用施密特循序正交化多因子收益歸因分解（市場 Beta、正交風格因子、造市利差、外匯損益與純特異 Alpha），並即時監控因子 IC 與半衰期衰減。
+  - key: factor_attribution_lookback_days
+    group: trading
+    type: int
+    default: 60
+    min: 10
+    max: 252
+    label_en: Factor Attribution Lookback Days
+    label_zh: 因子正交收益歸因回測天數
+    help_en: Rolling historical window in trading days for multi-factor orthogonal return decomposition and regression.
+    help_zh: 多因子正交收益分解與多元迴歸之滾動歷史回測天數（預設 60 交易日）。
+  - key: factor_decay_haircut_threshold
+    group: trading
+    type: float
+    default: 0.02
+    min: 0.0
+    max: 0.20
+    label_en: Factor Decay IC Haircut Threshold
+    label_zh: 因子衰減 IC 剔除折價門檻
+    help_en: Information Coefficient threshold below which a factor is classified as exhausted/inverted and receives a 100% allocation haircut.
+    help_zh: 因子滾動資訊係數（IC）低於此門檻時，視為因子失效或方向反轉，配置權重強制打折歸零（預設 0.02）。
+  - key: min_factor_half_life_days
+    group: trading
+    type: int
+    default: 5
+    min: 1
+    max: 30
+    label_en: Minimum Factor Half-Life Days
+    label_zh: 因子健康半衰期最低天數
+    help_en: First-order autocorrelation half-life threshold below which a factor is classified as crowded/decaying and receives defensive weight dampening.
+    help_zh: 因子一階自相關半衰期（t_1/2）低於此天數時，判定因子過度擁擠鈍化，觸發防守權重打折（預設 5 日）。
+
 
 
 
