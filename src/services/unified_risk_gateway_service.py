@@ -371,11 +371,11 @@ class UnifiedRiskGatewayService:
                     confidence_score=confidence_score,
                 )
                 guard_details["trend_hysteresis"] = hyst_details
-                if not allowed_h:
+                if not allowed_h and is_buy:
                     reasons.append(block_reason_h or "[TrendHysteresis] Blocked by hysteresis or trend lock")
                     return RiskGatewayResult(
                         allowed=False,
-                        severity=RiskSeverity.DEGRADED if is_buy else RiskSeverity.BLOCKED,
+                        severity=RiskSeverity.DEGRADED,
                         primary_blocker="TrendHysteresisLockout",
                         reasons=reasons,
                         guard_details=guard_details,
@@ -399,11 +399,11 @@ class UnifiedRiskGatewayService:
                     strategy_name=strategy_name,
                 )
                 guard_details["friction_tranche"] = f_metric.to_dict()
-                if not f_metric.passed_hurdle:
+                if not f_metric.passed_hurdle and is_buy:
                     reasons.append(f_metric.reason)
                     return RiskGatewayResult(
                         allowed=False,
-                        severity=RiskSeverity.DEGRADED if is_buy else RiskSeverity.BLOCKED,
+                        severity=RiskSeverity.DEGRADED,
                         primary_blocker="TurnoverFrictionHurdle",
                         reasons=reasons,
                         guard_details=guard_details,

@@ -328,15 +328,27 @@ class TrendHysteresisLockoutService:
         if act in ("BUY", "STRONG_BUY", "ADD", "ACCUMULATE"):
             if metric.current_state == HysteresisState.HOLD_BUFFER.value:
                 # If confidence is explicitly provided and below buy threshold, block BUY noise
-                cfg = self._load_config()
-                conf_buy = float(cfg.get("trend_hysteresis_confidence_buy", self.DEFAULT_CONFIDENCE_BUY))
-                if confidence_score is not None and metric.confidence_score < conf_buy:
-                    block_msg = (
-                        f"[TrendHysteresis] BUY blocked by Schmitt Trigger Deadband: "
-                        f"Confidence {metric.confidence_score:.1f} < {conf_buy:.1f} and Price/MA20 "
-                        f"{metric.price_deviation_pct*100:+.2f}% within buffer."
+                # Exemption: non-momentum strategies, cash deployments, dip buying, rebalance, and approval flows
+                is_deadband_exempt = (
+                    not strat
+                    or any(
+                        k in strat
+                        for k in (
+                            "deploy", "cash", "dip", "staggered", "rebalance",
+                            "rotation", "tier", "approval", "manual", "reporting", "pruning"
+                        )
                     )
-                    return False, block_msg, details
+                )
+                if not is_deadband_exempt:
+                    cfg = self._load_config()
+                    conf_buy = float(cfg.get("trend_hysteresis_confidence_buy", self.DEFAULT_CONFIDENCE_BUY))
+                    if confidence_score is not None and metric.confidence_score < conf_buy:
+                        block_msg = (
+                            f"[TrendHysteresis] BUY blocked by Schmitt Trigger Deadband: "
+                            f"Confidence {metric.confidence_score:.1f} < {conf_buy:.1f} and Price/MA20 "
+                            f"{metric.price_deviation_pct*100:+.2f}% within buffer."
+                        )
+                        return False, block_msg, details
             elif metric.current_state == HysteresisState.BEAR_ACTIVE.value:
                 block_msg = (
                     f"[TrendHysteresis] BUY blocked: Ticker {sym} is in active BEAR state "
