@@ -2346,7 +2346,37 @@ class ConversationRouter:
                 return pairs_svc.format_pairs_report(metric)
             except Exception as e:
                 logger.error(f"Failed to generate Kalman Pairs Cointegration response: {e}")
-                return f"⚠️ 查詢卡爾曼濾波動態協整與統計套利儀表時發生錯誤：{e}"
+        # 33. Trend Hysteresis Band & Macro Long-Only Lock (Phase 63A)
+        if any(cmd.startswith(prefix) for prefix in ("trend", "hysteresis", "schmitt", "趨勢", "遲滯", "大趨勢", "單向鎖定")):
+            try:
+                from src.services.trend_hysteresis_lockout_service import TrendHysteresisLockoutService
+                hyst_svc = TrendHysteresisLockoutService(user_id=resolved_user_id)
+                parts = text.strip().split()
+                target_sym = parts[1].upper() if len(parts) > 1 and parts[1].isalpha() else "NVDA"
+                metric = await hyst_svc.evaluate_ticker_trend(target_sym)
+                return hyst_svc.format_trend_report(metric)
+            except Exception as e:
+                logger.error(f"Failed to generate Trend Hysteresis response: {e}")
+                return f"⚠️ 查詢遲滯回差帶與大趨勢單向鎖定儀表時發生錯誤：{e}"
+
+        # 34. Friction-Aware Turnover Hurdle & Tranche Sizing (Phase 63B)
+        if any(cmd.startswith(prefix) for prefix in ("tranche", "friction", "core", "satellite", "分級", "底倉", "做市商摩擦", "摩擦成本")):
+            try:
+                from src.services.friction_aware_tranche_sizing_service import FrictionAwareTrancheSizingService
+                tranche_svc = FrictionAwareTrancheSizingService(user_id=resolved_user_id)
+                parts = text.strip().split()
+                target_sym = parts[1].upper() if len(parts) > 1 and parts[1].isalpha() else "NVDA"
+                metric = await tranche_svc.evaluate_order_friction_and_tranche(
+                    ticker=target_sym,
+                    action="SELL",
+                    quantity=10.0,
+                    strategy_name="routine_rebalance",
+                    total_held_shares=100.0,
+                )
+                return tranche_svc.format_tranche_report(metric)
+            except Exception as e:
+                logger.error(f"Failed to generate Friction & Tranche response: {e}")
+                return f"⚠️ 查詢做市商摩擦成本與核心/衛星倉位分級儀表時發生錯誤：{e}"
 
         return None
 

@@ -1676,6 +1676,41 @@ class SentinelService:
             logger.info(f"Sentinel: Flushing {len(to_flush)} trigger(s) from Redis buffer.")
             await self._do_send_alert(to_flush, source=source)
 
+    async def _is_trigger_debounced(self, trigger: Dict[str, Any], default_debounce_seconds: int = 300) -> bool:
+        """
+        Sliding-window debounce check (Phase 63):
+        Suppresses non-emergency alerts for the same ticker or trigger ID within debounce_seconds (default 5 min).
+        P0 critical emergency triggers bypass debounce unconditionally.
+        """
+        priority = trigger.get("priority", 3)
+        lvl = str(trigger.get("level", "")).upper()
+        # P0 or emergency triggers are never debounced
+        if priority == 0 or lvl in ("EMERGENCY",):
+            return False
+
+        thresholds_dict = getattr(self, "thresholds", {}) or {}
+        debounce_seconds = int(thresholds_dict.get("sentinel_debounce_window_seconds", default_debounce_seconds))
+        if debounce_seconds <= 0:
+            return False
+
+        t_id = str(trigger.get("id", "generic"))
+        ticker = str(trigger.get("ticker") or "").upper()
+        dedup_target = ticker if ticker else t_id
+        lock_key = f"sentinel:debounce:{self.user_id}:{dedup_target}"
+
+        try:
+            acquired = await self._redis_buffer.try_acquire(lock_key, ttl_seconds=debounce_seconds)
+            if not acquired:
+                logger.info(
+                    "Sentinel: Debouncing alert for %s (triggered within %ds window) to prevent alert fatigue.",
+                    dedup_target, debounce_seconds,
+                )
+                return True
+            return False
+        except Exception as e:
+            logger.debug("Sentinel: Debounce check failed (allowing alert): %s", e)
+            return False
+
     async def _do_send_alert(self, triggers: List[Dict[str, Any]], source: str = "Sentinel") -> None:
         """
         Final execution logic for sending alerts, including Council deliberation and multi-channel notification.
@@ -1741,6 +1776,14 @@ class SentinelService:
                     continue
             
             filtered_triggers.append(t)
+
+        # 1.5. Sliding-window alert debounce (Phase 63)
+        debounced_triggers = []
+        for t in filtered_triggers:
+            if await self._is_trigger_debounced(t):
+                continue
+            debounced_triggers.append(t)
+        filtered_triggers = debounced_triggers
 
         if not filtered_triggers:
             return
@@ -2275,6 +2318,31 @@ class SentinelService:
             system_status = "✅ 投資委員會研議核定 (Council Deliberated)"
             decision_content = decision.strip()
 
+        # 6b. Determine Operator Action Directive & Autonomous Defense Items
+        is_actionable = any(kw in decision.lower() for kw in ["sell", "reduce", "trim", "buy", "exit", "hedge"])
+        if is_actionable:
+            operator_guide = (
+                "> ⚠️ **【用戶手動介入指南：建議審閱處置】**\n"
+                "> 1. **研議建議**：投資委員會/風控引擎建議執行必要倉位調整，請參考下方評估明細。\n"
+                "> 2. **風控審查**：若進行交易，系統閘門將嚴格檢核遲滯回差與做市商摩擦成本。\n"
+                "> 3. **冷靜應對**：若無明確策略依據，切勿於急跌或流動性真空期間盲目市價拋售。"
+            )
+        else:
+            operator_guide = (
+                "> ✅ **【用戶手動介入指南：系統狀態安全，無需人工干預】**\n"
+                "> 核心持倉已受大趨勢單向鎖定與遲滯回差帶嚴密防護，常規短期波動雜訊已自動過濾。\n"
+                "> 策略依紀律持續守衛持倉，請安心維持現狀。"
+            )
+
+        autonomous_defense = (
+            "- 🔒 **反向進出冷卻鎖 (24h Flip-Flop Lockout Guard)**：凍結同標的 24 小時內短線反向買賣，杜絕雜訊洗盤磨損。\n"
+            "- 🛡️ **做市商 Gamma 與微觀流動性真空守衛**：在負 Gamma 與流動性驟降體制下，限制市價追單並保護滑點。\n"
+            "- 📈 **遲滯回差帶過濾器 (Schmitt Trigger Hysteresis)**：非對稱雙向門檻鎖定，緩衝帶維持現狀，消除臨界點微幅雜訊造成的來回洗盤。\n"
+            "- 🐂 **大趨勢多頭單向鎖定 (Macro Long-Only Lock)**：長期牛市通道內凍結常規調倉賣出，守護 70% 核心底倉長線複利。\n"
+            "- ⚖️ **做市商摩擦成本感知 (Turnover Friction Hurdle)**：要求淨超額收益顯著覆蓋雙向點差與滑點損耗（> 0.8%），強制阻斷無效益換手。\n"
+            "- 📊 **自適應階梯吸籌模式**：建倉買單自動下移至主力成交密集支撐區，不予市價追高。"
+        )
+
         # 7. Construct Complete Structured Body
         content = (
             f"{header_line}\n\n"
@@ -2282,6 +2350,10 @@ class SentinelService:
             f"> 📌 **警報等級**：`{priority_label}` ({severity_badge}) &nbsp;|&nbsp; **觸發來源**：`{source}`\n"
             f"> 🎯 **監控標的**：`{ticker_display}` &nbsp;|&nbsp; **市場體制**：`VIX {vix_val:.2f}` ({vix_regime})\n"
             f"> 🕒 **評估時間**：`{now_str}` &nbsp;|&nbsp; **系統狀態**：{system_status}\n\n"
+            f"### 🛡️ 【系統已自主完成之防守處置】(Autonomous System Defense)\n"
+            f"{autonomous_defense}\n\n"
+            f"### 🧭 【用戶手動介入指南】(Operator Action Directives)\n"
+            f"{operator_guide}\n\n"
             f"### 📋 觸發指標對照表 (Triggered Signals & Details)\n\n"
             f"{table_md}\n\n"
             f"### 🧠 風控研議與自主處置 (Assessment & Directives)\n\n"
