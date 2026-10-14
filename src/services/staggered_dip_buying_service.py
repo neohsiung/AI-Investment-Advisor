@@ -85,6 +85,9 @@ class TickerStaggeredPlan:
     dark_pool_shift_pct: float = 0.0
     iv_skew_regime: Optional[str] = None
     iv_skew_shift_pct: float = 0.0
+    tranche_type: str = "SATELLITE"
+    satellite_budget_cap_usd: Optional[float] = None
+    is_tranche_capped: bool = False
 
     def to_dict(self) -> Dict[str, Any]:
         return {
@@ -112,6 +115,9 @@ class TickerStaggeredPlan:
             "dark_pool_shift_pct": round(self.dark_pool_shift_pct, 4),
             "iv_skew_regime": self.iv_skew_regime,
             "iv_skew_shift_pct": round(self.iv_skew_shift_pct, 4),
+            "tranche_type": self.tranche_type,
+            "satellite_budget_cap_usd": round(self.satellite_budget_cap_usd, 2) if self.satellite_budget_cap_usd is not None else None,
+            "is_tranche_capped": self.is_tranche_capped,
         }
 
 
@@ -157,6 +163,7 @@ class StaggeredDipBuyingService:
         spoofing_detector: Optional[Any] = None,
         dark_pool_service: Optional[Any] = None,
         iv_surface_service: Optional[Any] = None,
+        tranche_service: Optional[Any] = None,
     ):
         self.user_id = resolve_user_id(user_id)
         from src.services.settings_service import SettingsService
@@ -190,6 +197,20 @@ class StaggeredDipBuyingService:
         self.spoofing_detector = spoofing_detector
         self.dark_pool_service = dark_pool_service
         self.iv_surface_service = iv_surface_service
+        self.tranche_service = tranche_service
+
+    async def _get_tranche_service(self) -> Any:
+        if self.tranche_service:
+            return self.tranche_service
+        try:
+            from src.services.friction_aware_tranche_sizing_service import (
+                FrictionAwareTrancheSizingService,
+            )
+            self.tranche_service = FrictionAwareTrancheSizingService(user_id=self.user_id)
+            return self.tranche_service
+        except Exception as te:
+            logger.debug("Could not resolve FrictionAwareTrancheSizingService: %s", te)
+            return None
 
     async def _get_iv_surface_service(self) -> Any:
         if self.iv_surface_service:
@@ -298,6 +319,7 @@ class StaggeredDipBuyingService:
         current_price: Optional[float] = None,
         is_cross_sector_injected: bool = False,
         injected_sector: Optional[str] = None,
+        satellite_budget_cap_usd: Optional[float] = None,
     ) -> TickerStaggeredPlan:
         """
         針對特定標的精算 3-Tier 階梯限價進場點位與分配資金：
@@ -305,9 +327,24 @@ class StaggeredDipBuyingService:
         2. 依預算規模動態折疊檔位（確保單檔限價至少滿足券商起投額 $10 USD）。
         3. 錨定結構位並設定安全折價，強制單調遞減：P_t3 < P_t2 < P_t1 < P_curr。
         4. 透過 UnifiedRiskGatewayService 執行事前風控核驗 (Fail-Closed)。
+        5. (Phase 64C) 綁定 SATELLITE 倉位屬性，支援衛星預算上限約制與等比截斷。
         """
         ticker = (ticker or "").upper().strip()
         target_budget_usd = max(0.0, float(target_budget_usd or 0.0))
+
+        # Phase 64C: 階梯單嚴格綁定衛星倉位，保護 70% 核心底倉不被透支
+        enforce_satellite = bool(self._get_setting("staggered_dip_enforce_satellite_tranche", True))
+        is_tranche_capped = False
+        effective_cap = satellite_budget_cap_usd
+
+        if enforce_satellite and effective_cap is not None and effective_cap > 0:
+            if target_budget_usd > effective_cap:
+                logger.info(
+                    "[Phase64C] Clamping staggered dip budget for %s from $%.2f to satellite cap $%.2f",
+                    ticker, target_budget_usd, effective_cap,
+                )
+                target_budget_usd = effective_cap
+                is_tranche_capped = True
 
         # 1. 取得即時價格與主力籌碼結構
         support_res = None
@@ -615,6 +652,9 @@ class StaggeredDipBuyingService:
             dark_pool_shift_pct=dark_shift_pct,
             iv_skew_regime=iv_regime,
             iv_skew_shift_pct=iv_shift_pct,
+            tranche_type="SATELLITE",
+            satellite_budget_cap_usd=effective_cap,
+            is_tranche_capped=is_tranche_capped,
         )
 
     # ═══════════════════════════════════════════════════════════════════════
@@ -673,7 +713,7 @@ class StaggeredDipBuyingService:
             )
             plans.append(ticker_plan)
             if ticker_plan.is_risk_allowed:
-                total_planned += amt
+                total_planned += ticker_plan.total_budget_usd
 
         can_exec = bool(plans) and any(p.is_risk_allowed for p in plans) and deployable_cash >= 10.0
 

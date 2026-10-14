@@ -4137,6 +4137,40 @@ settings:
     label_zh: Sentinel 風控警報滑動時間窗防抖 (秒)
     help_en: Sliding time window in seconds during which non-emergency alerts for the same asset are aggregated and debounced.
     help_zh: 同標的/同類別非緊急風控警報之防抖聚合滑動時間窗（預設 300 秒即 5 分鐘），避免警報洗版轟炸。
+  - key: enable_tranche_auto_healing
+    group: trading
+    type: bool
+    default: true
+    label_en: Enable Dynamic Tranche Drift Auto-Healing
+    label_zh: 啟用核心/衛星部位動態漂移自癒
+    help_en: Automatically monitors portfolio drift away from the 70/30 target and recommends rebalancing when outside the tolerance band.
+    help_zh: 自動監控持股相對於 70/30 目標之漂移，超出容差帶時提供自癒再平衡建議，杜絕緩衝區內的摩擦損耗。
+  - key: tranche_drift_tolerance_pct
+    group: trading
+    type: float
+    default: 0.05
+    min: 0.01
+    max: 0.15
+    label_en: Tranche Drift Tolerance Band Buffer (%)
+    label_zh: 核心倉位漂移容差緩衝帶 (%)
+    help_en: Allowable core ratio buffer around 70% target (e.g. 0.05 = +/-5%, resulting in a 65%~75% holding zone) where no micro-adjustments occur.
+    help_zh: 70% 核心目標之上下容差緩衝帶（預設 0.05 即 ±5%，區間為 65%~75%），在此容差帶內不微調以消除做市商摩擦。
+  - key: enable_live_spread_feed
+    group: trading
+    type: bool
+    default: true
+    label_en: Enable Live Bid-Ask Spread Injection
+    label_zh: 啟用實時盤口微觀點差注入
+    help_en: Feeds live microstructure orderbook bid-ask spreads into the friction hurdle model; falls back to static lookup table if unavailable.
+    help_zh: 將實時盤口買賣點差反饋注入摩擦損耗模型，精算即時 Net Alpha；若無盤口資料則無縫降級至靜態流動性表。
+  - key: staggered_dip_enforce_satellite_tranche
+    group: trading
+    type: bool
+    default: true
+    label_en: Enforce Satellite Tranche Bound on Staggered Dip Buying
+    label_zh: 強制階梯限價吸籌嚴格綁定衛星部位預算
+    help_en: Constrains 3-tier staggered dip buying plans within the 30% satellite tranche budget cap to protect the 70% core holding.
+    help_zh: 將主力支撐 3 檔階梯限價吸籌嚴格約束於 30% 衛星波段可用額度內，保護 70% 核心底倉不被階梯單透支。
 
 
 

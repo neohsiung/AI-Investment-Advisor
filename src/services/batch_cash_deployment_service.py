@@ -1073,7 +1073,7 @@ class BatchCashDeploymentService:
                 }
 
         # 2. 開盤前 5 分鐘波動率視窗檢查 (09:30-09:35 EST)
-        if not force:
+        if enforce_market_hours and not force:
             is_opening, open_reason = self.slippage_guard.is_opening_auction_window()
             if is_opening:
                 # 若僅相差 2 分鐘以內即將結束開盤保護窗口，非同步等待至保護結束後自動繼續執行，避免錯過交易日排程
@@ -1104,7 +1104,7 @@ class BatchCashDeploymentService:
                 }
 
         # 2.5 重大宏觀事件避開視窗檢驗 (FOMC / CPI / NFP)
-        if not force:
+        if enforce_market_hours and not force:
             macro_eval = self.blackout_guard.evaluate_macro_blackout()
             if macro_eval.is_blackout:
                 logger.warning(f"Batch Cash Deployment postponed due to macro blackout: {macro_eval.reason}")

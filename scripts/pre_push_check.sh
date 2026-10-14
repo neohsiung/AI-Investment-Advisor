@@ -152,7 +152,10 @@ $PYTEST tests/unit/services/test_actionable_alert_service.py \
         tests/unit/services/test_flip_flop_lockout_guard.py \
         tests/unit/services/test_option_gamma_exposure_gex_service.py \
         tests/unit/services/test_kalman_pairs_cointegration_service.py \
+        tests/unit/services/test_friction_aware_tranche_sizing_service.py \
         tests/unit/core/test_conversation_router_p62.py \
+        tests/unit/core/test_conversation_router_p63.py \
+        tests/unit/core/test_conversation_router_p64.py \
         tests/unit/config/test_settings_schema.py -q
 
 echo -e "\n${GREEN}======================================================${NC}"

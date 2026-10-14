@@ -244,6 +244,7 @@ class ConversationRouter:
             "ofi", "orderflow", "訂單流失衡", "流動性真空", "微觀失衡",
             "gex", "gamma", "flip", "pinning", "伽馬", "做市商伽馬", "釘盤",
             "pair", "pairs", "arb", "kalman", "配對", "統計套利", "協整",
+            "tranche", "trend", "hysteresis", "schmitt", "倉位分級", "底倉", "自癒", "漂移自癒",
         }
         return cmd in exact_keywords
 
@@ -2359,13 +2360,35 @@ class ConversationRouter:
                 logger.error(f"Failed to generate Trend Hysteresis response: {e}")
                 return f"⚠️ 查詢遲滯回差帶與大趨勢單向鎖定儀表時發生錯誤：{e}"
 
-        # 34. Friction-Aware Turnover Hurdle & Tranche Sizing (Phase 63B)
-        if any(cmd.startswith(prefix) for prefix in ("tranche", "friction", "core", "satellite", "分級", "底倉", "做市商摩擦", "摩擦成本")):
+        # 34. Friction-Aware Turnover Hurdle & Tranche Sizing (Phase 63B/64A)
+        if any(cmd.startswith(prefix) for prefix in ("tranche", "friction", "core", "satellite", "分級", "底倉", "做市商摩擦", "摩擦成本", "自癒", "漂移自癒")):
             try:
                 from src.services.friction_aware_tranche_sizing_service import FrictionAwareTrancheSizingService
                 tranche_svc = FrictionAwareTrancheSizingService(user_id=resolved_user_id)
                 parts = text.strip().split()
-                target_sym = parts[1].upper() if len(parts) > 1 and parts[1].isalpha() else "NVDA"
+
+                # Check if requesting auto-healing simulation/execution (/tranche heal [ticker])
+                is_heal = any(p.lower() in ("heal", "rebalance", "autoheal", "自癒", "再平衡") for p in parts[1:]) or cmd.startswith(("自癒", "漂移自癒"))
+
+                # Extract target ticker symbol
+                target_sym = "NVDA"
+                for p in parts[1:]:
+                    clean_p = p.upper().strip("$#")
+                    if clean_p.isalpha() and clean_p.lower() not in ("heal", "rebalance", "autoheal", "status", "plan", "run", "自癒", "再平衡"):
+                        target_sym = clean_p
+                        break
+
+                if is_heal:
+                    # Execute or simulate tranche auto-healing (dry-run by default)
+                    heal_res = tranche_svc.auto_heal_tranche_drift(
+                        ticker=target_sym,
+                        current_price=135.0,
+                        total_shares=100.0,
+                        current_core_shares=85.0,
+                        dry_run=True,
+                    )
+                    return tranche_svc.format_drift_heal_report(heal_res)
+
                 metric = await tranche_svc.evaluate_order_friction_and_tranche(
                     ticker=target_sym,
                     action="SELL",
