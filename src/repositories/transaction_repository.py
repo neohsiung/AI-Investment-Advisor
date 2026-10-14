@@ -140,7 +140,7 @@ class AlchemyTransactionRepository(BaseRepository, ITransactionRepository):
                 SELECT * FROM transactions 
                 WHERE user_id = :user_id 
                 AND (:account_id IS NULL OR source_file = :account_id)
-                ORDER BY trade_date DESC, action DESC
+                ORDER BY COALESCE(created_at, trade_date) DESC, id DESC
             """)
             params = {"user_id": user_id, "account_id": account_id}
             return conn.execute(query, params).fetchall()
@@ -151,7 +151,7 @@ class AlchemyTransactionRepository(BaseRepository, ITransactionRepository):
                 SELECT * FROM transactions 
                 WHERE user_id = :user_id 
                 AND (:account_id IS NULL OR source_file = :account_id)
-                ORDER BY trade_date DESC, action DESC
+                ORDER BY COALESCE(created_at, trade_date) DESC, id DESC
             """)
             params = {"user_id": user_id, "account_id": account_id}
             return pd.read_sql(query, conn, params=params)

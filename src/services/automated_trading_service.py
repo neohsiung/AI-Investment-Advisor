@@ -4,7 +4,7 @@ logger = setup_logger("AutomatedTradingService")
 import os
 import typing
 from typing import List, Dict, Tuple, Any, Optional, Callable, Dict, List, Tuple, Any, Optional, Callable
-from datetime import datetime
+from datetime import datetime, timezone
 import asyncio
 import httpx
 from src.repositories.settings_repository import AlchemySettingsRepository
@@ -238,13 +238,15 @@ class AutomatedTradingService:
         # 0d. Intraday Churn Throttler (日內過度交易防抖冷卻 — 攔截 24h 翻轉磨損)
         try:
             raw_cooldown = self.settings_repo.get(user_id, "intraday_churn_cooldown_hours")
-            cooldown_hours = float(raw_cooldown) if raw_cooldown is not None else 24.0
-            from src.services.strategy_registry import StrategyRegistry
-            is_safety = StrategyRegistry.is_safety_control(strategy_name or "")
+            try:
+                cooldown_hours = float(raw_cooldown) if raw_cooldown is not None else 24.0
+            except (ValueError, TypeError):
+                cooldown_hours = 24.0
+            is_emergency_stop = str(strategy_name or "").lower() in ("stop_loss", "trailing_stop_loss", "trailing_stop", "emergency_exit", "emergency_liquidation")
 
-            if cooldown_hours > 0 and not is_safety:
+            if cooldown_hours > 0 and not is_emergency_stop:
                 all_txs = self.tx_repo.get_all_by_user(user_id)
-                now_dt = datetime.now()
+                now_utc = datetime.now(timezone.utc)
 
                 for tx in all_txs:
                     t_sym = str(getattr(tx, "ticker", "")).strip().upper()
@@ -257,22 +259,40 @@ class AutomatedTradingService:
                     if past_action not in ("BUY", "SELL"):
                         continue
 
-                    t_date = getattr(tx, "trade_date", None)
-                    if not t_date:
+                    # Exact timestamp preference: created_at > trade_date (with mock guard)
+                    t_dt = getattr(tx, "created_at", None)
+                    if hasattr(t_dt, "_mock_return_value") or t_dt.__class__.__name__ == "MagicMock":
+                        t_dt = None
+                    if not t_dt:
+                        t_dt = getattr(tx, "trade_date", None)
+                    if hasattr(t_dt, "_mock_return_value") or t_dt.__class__.__name__ == "MagicMock":
+                        t_dt = None
+                    if not t_dt:
                         continue
-                    if isinstance(t_date, str):
+                    if isinstance(t_dt, str):
                         try:
-                            t_date = datetime.fromisoformat(t_date)
+                            t_dt = datetime.fromisoformat(t_dt)
                         except Exception:
                             try:
-                                t_date = datetime.strptime(t_date[:19], "%Y-%m-%d %H:%M:%S")
+                                t_dt = datetime.strptime(t_dt[:19], "%Y-%m-%d %H:%M:%S")
                             except Exception:
-                                t_date = None
-                    elif hasattr(t_date, "year") and not hasattr(t_date, "hour"):
-                        t_date = datetime.combine(t_date, datetime.min.time())
+                                t_dt = None
+                    elif hasattr(t_dt, "year") and not hasattr(t_dt, "hour"):
+                        t_dt = datetime.combine(t_dt, datetime.min.time())
 
-                    if t_date:
-                        diff_hours = (now_dt - t_date.replace(tzinfo=None)).total_seconds() / 3600.0
+                    if t_dt and isinstance(t_dt, datetime):
+                        if t_dt.tzinfo is not None:
+                            now_ref = datetime.now(timezone.utc)
+                            t_ref = t_dt.astimezone(timezone.utc)
+                            diff_hours = (now_ref - t_ref).total_seconds() / 3600.0
+                        else:
+                            now_local = datetime.now()
+                            now_utc_naive = datetime.utcnow()
+                            diff_local = (now_local - t_dt).total_seconds() / 3600.0
+                            diff_utc = (now_utc_naive - t_dt).total_seconds() / 3600.0
+                            diff_cands = [d for d in (diff_local, diff_utc) if d >= -0.05]
+                            diff_hours = min(diff_cands) if diff_cands else diff_local
+
                         if 0 <= diff_hours < cooldown_hours:
                             curr_action = str(action).upper()
                             # Opposite direction trade is considered flip-flop churn

@@ -48,6 +48,8 @@ _SETTING_DEFAULTS = {
     "protection_sell_churn_enabled": SELL_CHURN_ENABLED,
     "protection_sell_churn_lookback_days": SELL_CHURN_LOOKBACK_DAYS,
     "protection_sell_churn_max_round_trips": SELL_CHURN_MAX_ROUND_TRIPS,
+    "protection_flip_flop_lockout_enabled": True,
+    "protection_flip_flop_cooldown_hours": 24.0,
     "protection_lockout_reset_at": None,
 }
 
@@ -140,11 +142,11 @@ class TradingProtectionsService:
         self._cfg = cfg
         return cfg
 
-    def check(self, ticker: str, action: str) -> Optional[str]:
+    def check(self, ticker: str, action: str, strategy_name: Optional[str] = None) -> Optional[str]:
         """
         Returns None if the trade may proceed, or a human-readable block
-        reason string if a protection rule fires. Only BUY-side actions are
-        gated (protections should never block getting OUT of a position).
+        reason string if a protection rule fires. Both BUY and SELL are gated
+        by 24h flip-flop lockout to prevent churn, while emergency stop-loss exits remain exempt.
 
         An unrecognized action is REFUSED rather than waved through: the
         caller turns anything that isn't "BUY" into a SELL order, so passing
@@ -164,15 +166,19 @@ class TradingProtectionsService:
         if side == "HOLD":
             return None
 
+        # 24h Flip-Flop Lockout Check (Applies to both BUY and SELL)
+        try:
+            flip_flop_reason = self._check_flip_flop_lockout(ticker, side, strategy_name=strategy_name)
+            if flip_flop_reason:
+                self._dispatch_protection_alert_safely(flip_flop_reason, ticker)
+                return flip_flop_reason
+        except Exception as exc:
+            logger.error("TradingProtectionsService: Flip-flop lockout check error: %s", exc)
+            if side == "BUY":
+                return f"Protection check unavailable ({type(exc).__name__}); BUY blocked for safety"
+
         if side == "SELL":
-            # SELL is gated ONLY by the churn rule, and it fails OPEN.
-            # The three BUY rules key off "recent decision alpha is negative",
-            # which is precisely when a user most needs to exit — applying them
-            # to SELL would lock people into falling positions. And a churn
-            # guard is a nice-to-have, so it must never itself become the
-            # reason someone cannot get out.
-            # SELL 只走 churn 規則且 fail-open：三條 BUY 規則的觸發條件正是使用者
-            # 最需要出場的時候；churn 只是加分項，不能變成無法出場的理由。
+            # SELL is gated ONLY by churn rule and flip-flop, and fails OPEN for legacy multi-day churn.
             try:
                 return self._check_sell_churn(ticker)
             except Exception as exc:
@@ -198,6 +204,86 @@ class TradingProtectionsService:
             # 2026-08-02：改為 fail-closed。此處只會是 BUY，擋下不會把人鎖在部位裡。
             logger.error("TradingProtectionsService: check failed — blocking BUY: %s", exc)
             return f"Protection check unavailable ({type(exc).__name__}); BUY blocked for safety"
+
+    def _check_flip_flop_lockout(self, ticker: str, side: str, strategy_name: Optional[str] = None) -> Optional[str]:
+        """
+        24h Flip-Flop Lockout Guard:
+        Enforces a strict 24-hour non-stop-loss lockout against reversing positions on the same ticker.
+        - If attempting to BUY: rejects if a SELL of the same ticker occurred within 24 hours.
+        - If attempting to SELL: rejects if a BUY of the same ticker occurred within 24 hours (unless emergency stop-loss).
+        """
+        cfg = self._load_config()
+        if not cfg.get("protection_flip_flop_lockout_enabled", True):
+            return None
+
+        # Emergency stop-losses are strictly exempt from sell blocks
+        if side == "SELL":
+            strat = str(strategy_name or "").lower()
+            if any(k in strat for k in ("stop_loss", "trailing_stop", "emergency", "panic")):
+                return None
+
+        cooldown_hours = float(cfg.get("protection_flip_flop_cooldown_hours", 24.0))
+        from datetime import datetime, timezone
+
+        try:
+            with self.engine.connect() as conn:
+                stmt = text("""
+                    SELECT action, created_at, trade_date FROM transactions
+                    WHERE user_id = :user_id AND ticker = :ticker
+                      AND UPPER(action) IN ('BUY', 'SELL')
+                      AND (entry_category IS NULL OR entry_category IN ('trade', 'sync_adjustment'))
+                    ORDER BY COALESCE(created_at, trade_date) DESC, id DESC
+                    LIMIT 10
+                """)
+                rows = conn.execute(stmt, {"user_id": self.user_id, "ticker": ticker}).fetchall()
+
+            if not rows:
+                return None
+
+            opposite_action = "SELL" if side == "BUY" else "BUY"
+            now_utc = datetime.now(timezone.utc)
+
+            for r in rows:
+                past_action = str(r[0]).upper()
+                if past_action == opposite_action:
+                    t_dt = r[1] or r[2]
+                    if isinstance(t_dt, str):
+                        try:
+                            t_dt = datetime.fromisoformat(t_dt)
+                        except Exception:
+                            try:
+                                t_dt = datetime.strptime(t_dt[:19], "%Y-%m-%d %H:%M:%S")
+                            except Exception:
+                                t_dt = None
+                    elif hasattr(t_dt, "year") and not hasattr(t_dt, "hour"):
+                        t_dt = datetime.combine(t_dt, datetime.min.time())
+
+                    if t_dt and isinstance(t_dt, datetime):
+                        if t_dt.tzinfo is not None:
+                            now_ref = datetime.now(timezone.utc)
+                            t_ref = t_dt.astimezone(timezone.utc)
+                            diff_hours = (now_ref - t_ref).total_seconds() / 3600.0
+                        else:
+                            now_local = datetime.now()
+                            now_utc_naive = datetime.utcnow()
+                            diff_local = (now_local - t_dt).total_seconds() / 3600.0
+                            diff_utc = (now_utc_naive - t_dt).total_seconds() / 3600.0
+                            diff_cands = [d for d in (diff_local, diff_utc) if d >= -0.05]
+                            diff_hours = min(diff_cands) if diff_cands else diff_local
+
+                        if 0 <= diff_hours < cooldown_hours:
+                            return (
+                                f"{ticker} 24h Flip-Flop Lockout: Blocked {side} because opposite {past_action} "
+                                f"occurred {diff_hours:.1f}h ago (< {cooldown_hours:.1f}h cooldown). "
+                                "Prevents noise-driven round-trip churn and spread friction."
+                            )
+                    # Once evaluated the latest opposite, break
+                    break
+        except Exception as query_err:
+            logger.warning("TradingProtectionsService: Flip-flop query failed: %s", query_err)
+            return None
+
+        return None
 
     def _check_sell_churn(self, ticker: str) -> Optional[str]:
         """

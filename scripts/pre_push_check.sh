@@ -76,6 +76,8 @@ if [ -f "$BANDIT" ]; then
               src/services/slippage_guard_service.py \
               src/services/staggered_dip_buying_service.py \
               src/services/tactical_factor_rotation_service.py \
+              src/services/kalman_pairs_cointegration_service.py \
+              src/services/option_gamma_exposure_gex_service.py \
               src/services/risk_parity_cvar_service.py \
               src/services/trading_protections_service.py \
               src/services/webhook_service.py -q -lll
@@ -146,6 +148,11 @@ $PYTEST tests/unit/services/test_actionable_alert_service.py \
         tests/unit/services/test_staggered_stalking_and_moc.py \
         tests/unit/services/test_slippage_guard_and_batch_deployment.py \
         tests/unit/services/test_risk_parity_cvar_service.py \
+        tests/unit/services/test_sentinel_alert_email_formatting.py \
+        tests/unit/services/test_flip_flop_lockout_guard.py \
+        tests/unit/services/test_option_gamma_exposure_gex_service.py \
+        tests/unit/services/test_kalman_pairs_cointegration_service.py \
+        tests/unit/core/test_conversation_router_p62.py \
         tests/unit/config/test_settings_schema.py -q
 
 echo -e "\n${GREEN}======================================================${NC}"
