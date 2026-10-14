@@ -75,6 +75,7 @@ class UnifiedRiskGatewayService:
         action: str,
         amount_usd: float = 0.0,
         current_price: Optional[float] = None,
+        strategy_name: Optional[str] = None,
     ) -> RiskGatewayResult:
         """
         Evaluate an order through the consolidated risk gateway.
@@ -87,12 +88,12 @@ class UnifiedRiskGatewayService:
         is_buy = act in ("BUY", "STRONG_BUY", "ADD", "ACCUMULATE")
 
         # ---------------------------------------------------------
-        # 1. Trading Protections (Drawdown, Lockout, Cooldown, Churn)
+        # 1. Trading Protections (Drawdown, Lockout, Cooldown, Churn, Flip-Flop)
         # ---------------------------------------------------------
         try:
             from src.services.trading_protections_service import TradingProtectionsService
             prot_svc = TradingProtectionsService(user_id=self.user_id)
-            block_reason = prot_svc.check(sym, act)
+            block_reason = prot_svc.check(sym, act, strategy_name=strategy_name)
             guard_details["trading_protections"] = {"passed": block_reason is None, "reason": block_reason}
             if block_reason:
                 reasons.append(f"[TradingProtections] {block_reason}")
@@ -288,6 +289,71 @@ class UnifiedRiskGatewayService:
                         )
             except Exception as e:
                 logger.debug("UnifiedRiskGateway: Microstructure OFI check skipped/failed: %s", e)
+
+        # ---------------------------------------------------------
+        # 8. Option Gamma Exposure (GEX) Volatility Accelerator (Phase 62A)
+        # ---------------------------------------------------------
+        if is_buy:
+            try:
+                from src.services.option_gamma_exposure_gex_service import OptionGammaExposureGEXService
+                gex_svc = OptionGammaExposureGEXService(user_id=self.user_id)
+                if await gex_svc.is_enabled():
+                    gex_metric = await gex_svc.evaluate_ticker_gex(sym, spot_price=current_price)
+                    guard_details["gamma_exposure_gex"] = {
+                        "regime": gex_metric.regime,
+                        "net_gex": gex_metric.net_gex,
+                        "zero_gamma_flip_point": gex_metric.zero_gamma_flip_point,
+                        "distance_to_flip_pct": gex_metric.distance_to_flip_pct,
+                        "volatility_damping_multiplier": gex_metric.volatility_damping_multiplier,
+                        "requires_protection": gex_metric.requires_protection,
+                    }
+                    if gex_metric.regime == OptionGammaExposureGEXService.REGIME_NEGATIVE_GAMMA and gex_metric.distance_to_flip_pct < -0.05:
+                        reasons.append(
+                            f"[OptionGEX] Market maker negative gamma regime active (Net GEX=${gex_metric.net_gex/1e6:.2f}M, Spot < Flip ${gex_metric.zero_gamma_flip_point:.2f})"
+                        )
+                        return RiskGatewayResult(
+                            allowed=False,
+                            severity=RiskSeverity.DEGRADED,
+                            primary_blocker="NegativeGammaVolatilityAccelerator",
+                            reasons=reasons,
+                            guard_details=guard_details,
+                            evaluated_at=now_iso,
+                        )
+            except Exception as e:
+                logger.debug("UnifiedRiskGateway: Option GEX check skipped/failed: %s", e)
+
+        # ---------------------------------------------------------
+        # 9. Kalman Pairs Cointegration & Structural Break Defense (Phase 62B)
+        # ---------------------------------------------------------
+        try:
+            strat_lower = str(strategy_name or "").lower()
+            if "pair" in strat_lower or "arbitrage" in strat_lower:
+                from src.services.kalman_pairs_cointegration_service import KalmanPairsCointegrationService
+                pairs_svc = KalmanPairsCointegrationService(user_id=self.user_id)
+                if await pairs_svc.is_enabled():
+                    pair_x = guard_details.get("paired_ticker") or ("SPY" if sym != "SPY" else "QQQ")
+                    pairs_metric = await pairs_svc.evaluate_pairs_cointegration(sym, str(pair_x))
+                    guard_details["kalman_pairs"] = {
+                        "regime": pairs_metric.regime,
+                        "dynamic_beta": pairs_metric.dynamic_beta,
+                        "spread_zscore": pairs_metric.spread_zscore,
+                        "ou_half_life_days": pairs_metric.ou_half_life_days,
+                        "requires_circuit_breaker": pairs_metric.requires_circuit_breaker,
+                    }
+                    if pairs_metric.requires_circuit_breaker:
+                        reasons.append(
+                            f"[KalmanPairs] Structural break stop-loss triggered for pair {sym}/{pair_x} (Z={pairs_metric.spread_zscore:+.2f}σ, t1/2={pairs_metric.ou_half_life_days:.1f}d)"
+                        )
+                        return RiskGatewayResult(
+                            allowed=False,
+                            severity=RiskSeverity.BLOCKED,
+                            primary_blocker="KalmanPairsStructuralBreak",
+                            reasons=reasons,
+                            guard_details=guard_details,
+                            evaluated_at=now_iso,
+                        )
+        except Exception as e:
+            logger.debug("UnifiedRiskGateway: Kalman pairs check skipped/failed: %s", e)
 
         # All guards cleared!
         return RiskGatewayResult(

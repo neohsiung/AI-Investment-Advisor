@@ -3967,6 +3967,83 @@ settings:
     label_zh: 微觀流動性真空防禦冷凍冷卻時長（秒）
     help_en: Number of seconds to freeze aggressive buy orders following a detected liquidity vacuum shock.
     help_zh: 偵測到流動性真空價差衝擊後，暫停新開多頭以防滑點吞噬之冷卻秒數（預設 120 秒）。
+  - key: enable_option_gamma_exposure_gex
+    group: trading
+    type: bool
+    default: true
+    label_en: Enable Option Gamma Exposure (GEX) & Pinning Forecasting
+    label_zh: 啟用做市商淨伽馬暴露與波動率釘盤預測引擎
+    help_en: Measures dealer Net GEX, zero-gamma flip point S*, and OpEx pinning gravity to forecast volatility regimes.
+    help_zh: 精算做市商淨伽馬暴露 (Net GEX)、零伽馬翻轉點 S* 與到期日釘盤引力，預測波動率黏性或加速體制。
+  - key: gex_flip_point_warning_threshold_pct
+    group: trading
+    type: float
+    default: 0.012
+    min: 0.005
+    max: 0.050
+    label_en: GEX Zero-Gamma Flip Point Warning Proximity (%)
+    label_zh: 零伽馬翻轉點警戒逼近百分比 (%)
+    help_en: Distance ratio between spot and zero-gamma flip point triggering flip regime warning (default 0.012 = 1.2%).
+    help_zh: 現貨價格逼近零伽馬翻轉點 S* 之警戒距離比例（預設 0.012 即 1.2%）。
+  - key: gex_opex_pinning_days_threshold
+    group: trading
+    type: int
+    default: 3
+    min: 1
+    max: 7
+    label_en: OpEx Pinning Window Days to Expiry
+    label_zh: 期權到期日釘盤引力生效天數門檻
+    help_en: Days to options expiration where dealer delta-hedging pinning gravity activates.
+    help_zh: 距離期權到期日在此天數以內時，啟動做市商向最大未平倉量履約價釘盤引力預測（預設 3 天）。
+  - key: gex_negative_volatility_damping_cap
+    group: trading
+    type: float
+    default: 1.50
+    min: 1.00
+    max: 3.00
+    label_en: Negative Gamma Volatility Accelerator Multiplier Cap
+    label_zh: 負伽馬波動率放大倍數上限
+    help_en: Multiplier applied to price volatility when spot breaks below zero-gamma flip point into negative gamma.
+    help_zh: 當標的跌破零伽馬翻轉點落入負 Gamma 體制時之波動率放大乘數（預設 1.50x）。
+  - key: enable_kalman_pairs_cointegration
+    group: trading
+    type: bool
+    default: true
+    label_en: Enable Kalman Filter Dynamic Pairs Cointegration & Stat-Arb
+    label_zh: 啟用卡爾曼濾波動態協整與統計套利配對引擎
+    help_en: Online state-space estimation of dynamic hedge ratio beta and Ornstein-Uhlenbeck mean-reverting statistical arbitrage.
+    help_zh: 線上遞迴狀態空間估計動態對沖比率 β_t 與 OU 均值回歸半衰期，執行無 Beta 市場中性統計套利。
+  - key: kalman_pairs_divergence_entry_zscore
+    group: trading
+    type: float
+    default: 1.50
+    min: 1.00
+    max: 2.50
+    label_en: Kalman Pairs Stat-Arb Divergence Entry Z-Score
+    label_zh: 卡爾曼配對統計套利發散進場 Z-Score 門檻
+    help_en: Absolute Z-Score threshold on residual spread to trigger market-neutral pairs trade entry.
+    help_zh: 殘差價差偏離均值回歸中樞之絕對 Z-Score 門檻，達到時觸發統計套利進場信號（預設 1.50σ）。
+  - key: kalman_pairs_structural_break_zscore
+    group: trading
+    type: float
+    default: 3.00
+    min: 2.50
+    max: 5.00
+    label_en: Kalman Pairs Structural Break Stop-Loss Z-Score
+    label_zh: 卡爾曼配對結構破裂停損熔斷 Z-Score 門檻
+    help_en: Absolute Z-Score threshold marking broken cointegration and triggering emergency stop-loss.
+    help_zh: 判定配對標的協整關係破裂之極端 Z-Score 門檻，觸發強制停損與防禦熔斷（預設 3.00σ）。
+  - key: kalman_pairs_ou_halflife_max_days
+    group: trading
+    type: float
+    default: 18.0
+    min: 5.0
+    max: 45.0
+    label_en: Maximum Ornstein-Uhlenbeck Half-Life for Pairs Entry (Days)
+    label_zh: 統計套利進場最大容許 OU 半衰期（天）
+    help_en: Maximum allowable Ornstein-Uhlenbeck mean-reversion half-life for valid pairs trading entry.
+    help_zh: 允許執行統計套利配對進場之最大 OU 均值回歸半衰期天數（預設 18.0 天）。
+
 
 
 

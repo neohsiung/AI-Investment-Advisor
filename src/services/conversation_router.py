@@ -242,6 +242,8 @@ class ConversationRouter:
             "convex", "sharpe", "qp", "mvo", "凸規劃", "夏普邊界", "最優配置",
             "ivskew", "skew", "iv", "波動率偏度", "選擇權偏度", "尾部避險",
             "ofi", "orderflow", "訂單流失衡", "流動性真空", "微觀失衡",
+            "gex", "gamma", "flip", "pinning", "伽馬", "做市商伽馬", "釘盤",
+            "pair", "pairs", "arb", "kalman", "配對", "統計套利", "協整",
         }
         return cmd in exact_keywords
 
@@ -2311,6 +2313,40 @@ class ConversationRouter:
             except Exception as e:
                 logger.error(f"Failed to generate Microstructure OFI response: {e}")
                 return f"⚠️ 查詢微觀訂單流失衡率與流動性真空儀表時發生錯誤：{e}"
+
+        # 31. Option Gamma Exposure GEX & Volatility Pinning (Phase 62A)
+        if any(cmd.startswith(prefix) for prefix in ("gex", "gamma", "flip", "pinning", "伽馬", "做市商伽馬", "釘盤")):
+            try:
+                from src.services.option_gamma_exposure_gex_service import OptionGammaExposureGEXService
+                gex_svc = OptionGammaExposureGEXService(user_id=resolved_user_id)
+                parts = text.strip().split()
+                target_sym = parts[1].upper() if len(parts) > 1 and parts[1].isalpha() else "SPY"
+                metric = await gex_svc.evaluate_ticker_gex(target_sym)
+                return gex_svc.format_gex_report(metric)
+            except Exception as e:
+                logger.error(f"Failed to generate Option GEX response: {e}")
+                return f"⚠️ 查詢做市商淨伽馬暴露與釘盤預測儀表時發生錯誤：{e}"
+
+        # 32. Kalman Pairs Cointegration & Stat-Arb (Phase 62B)
+        if any(cmd.startswith(prefix) for prefix in ("pair", "pairs", "arb", "kalman", "配對", "統計套利", "協整")):
+            try:
+                from src.services.kalman_pairs_cointegration_service import KalmanPairsCointegrationService
+                pairs_svc = KalmanPairsCointegrationService(user_id=resolved_user_id)
+                parts = text.strip().split()
+                if len(parts) >= 3 and parts[1].isalpha() and parts[2].isalpha():
+                    target_y = parts[1].upper()
+                    target_x = parts[2].upper()
+                elif len(parts) == 2 and parts[1].isalpha():
+                    target_y = parts[1].upper()
+                    target_x = "QQQ" if target_y != "QQQ" else "SPY"
+                else:
+                    target_y = "NVDA"
+                    target_x = "AMD"
+                metric = await pairs_svc.evaluate_pairs_cointegration(target_y, target_x)
+                return pairs_svc.format_pairs_report(metric)
+            except Exception as e:
+                logger.error(f"Failed to generate Kalman Pairs Cointegration response: {e}")
+                return f"⚠️ 查詢卡爾曼濾波動態協整與統計套利儀表時發生錯誤：{e}"
 
         return None
 

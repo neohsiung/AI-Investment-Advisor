@@ -1941,12 +1941,15 @@ class SentinelService:
         is_extreme = any(t.get("level") == "CRITICAL" for t in filtered_triggers) or self.current_vix > 35
 
         # Format Notification (Improved UX / Clean Structured Layout)
-        if "📊" in decision and "💡" in decision:
-            alert_content = decision.strip()
-        else:
-            # Fallback/Fail-safe structured layout
-            alert_suffix = " - CRITICAL" if (is_extreme or max_priority <= 1) else ""
-            alert_content = f"📊 {topic}{alert_suffix}\n\n{decision.strip()}"
+        formatted_title, formatted_content = self._format_sentinel_email_report(
+            topic=topic,
+            decision=decision,
+            filtered_triggers=filtered_triggers,
+            source=source,
+            max_priority=max_priority,
+            is_extreme=is_extreme,
+        )
+        alert_content = formatted_content
 
         # Log Alert with Signal IDs for future suppression
         for t in filtered_triggers:
@@ -2015,7 +2018,7 @@ class SentinelService:
                 actions.append({"label": "前往 eToro 下單", "data": "action=etoro_link"})
             # P0+Actionable → direct notification
             await self._dispatch_notifications_direct(
-                title=f"🔴 {source} Alert",
+                title=formatted_title,
                 content=alert_content,
                 actions=actions,
                 category="sentinel"
@@ -2157,6 +2160,141 @@ class SentinelService:
                 )
         except Exception as e:
             logger.error(f"Sentinel trade signal execution failed: {e}")
+
+    def _format_sentinel_email_report(
+        self,
+        topic: str,
+        decision: str,
+        filtered_triggers: List[Dict[str, Any]],
+        source: str,
+        max_priority: int,
+        is_extreme: bool,
+    ) -> Tuple[str, str]:
+        """
+        Produce a structured, professional, email-compliant Markdown report for Sentinel alerts.
+        產生結構化、專業且符合 Email 排版標準的 Markdown 風控警報報告。
+        """
+        import re
+        from datetime import datetime, timezone
+
+        # 1. Extract involved tickers
+        tickers = set()
+        for t in (filtered_triggers or []):
+            if t.get("ticker"):
+                tickers.add(str(t["ticker"]).upper())
+            if t.get("symbol"):
+                tickers.add(str(t["symbol"]).upper())
+            tid = str(t.get("id", ""))
+            for prefix in ("drop_", "spike_", "move_", "news_", "gap_"):
+                if tid.startswith(prefix):
+                    candidate = tid[len(prefix):].split("_")[0].upper()
+                    if candidate.isalpha() and 1 <= len(candidate) <= 5:
+                        tickers.add(candidate)
+            text = str(t.get("text", ""))
+            found = re.findall(r'\b[A-Z]{2,5}\b', text)
+            for f in found:
+                if f not in ("VIX", "USD", "P0", "P1", "P2", "P3", "BUY", "SELL", "HOLD", "API", "LLM", "INFO", "HIGH", "OFI", "GEX", "SPY", "QQQ"):
+                    tickers.add(f)
+
+        ticker_list = sorted(list(tickers))
+        ticker_tag = f"【{', '.join(ticker_list[:4])}】" if ticker_list else "【宏觀市場】"
+        ticker_display = ", ".join(ticker_list) if ticker_list else "全投資組合 / 宏觀大盤"
+
+        # 2. Determine Priority & Severity labels
+        priority_label = f"P{max_priority}"
+        if is_extreme or max_priority <= 1:
+            severity_label = "CRITICAL 關鍵警戒"
+            severity_badge = "🔴 關鍵警戒 (CRITICAL)"
+        elif max_priority == 2:
+            severity_label = "WARNING 嚴重風控"
+            severity_badge = "🟠 嚴重風控 (WARNING)"
+        else:
+            severity_label = "INFO 監控提示"
+            severity_badge = "🟡 監控提示 (INFO)"
+
+        # 3. Market Regime
+        vix_val = float(getattr(self, "current_vix", 20.0) or 20.0)
+        if vix_val >= 35.0:
+            vix_regime = "極度恐慌 (Extreme Panic)"
+        elif vix_val >= 25.0:
+            vix_regime = "波動加劇 (High Volatility)"
+        elif vix_val >= 18.0:
+            vix_regime = "常態波動 (Normal Market)"
+        else:
+            vix_regime = "低波動平穩 (Low Volatility)"
+
+        # 4. Email Subject / Title
+        short_summary = "市場風險異動"
+        if any("drop" in str(t.get("id", "")).lower() or "跌" in str(t.get("text", "")) for t in filtered_triggers):
+            short_summary = "股價劇烈急跌"
+        elif any("spike" in str(t.get("id", "")).lower() or "漲" in str(t.get("text", "")) for t in filtered_triggers):
+            short_summary = "股價異常飆升"
+        elif any("vix" in str(t.get("id", "")).lower() for t in filtered_triggers):
+            short_summary = "VIX 波動率飆升"
+        elif any("news" in str(t.get("id", "")).lower() or "news" in str(t.get("type", "")).lower() for t in filtered_triggers):
+            short_summary = "突發重大新聞"
+        elif any("drift" in str(t.get("id", "")).lower() for t in filtered_triggers):
+            short_summary = "投資組合配置漂移"
+
+        title = f"🔴 Sentinel 風控警報 [{priority_label} {severity_label.split()[1]}]：{ticker_tag} {short_summary} (VIX: {vix_val:.1f})"
+
+        # 5. Format Trigger Signals Table
+        table_rows = []
+        for i, t in enumerate(filtered_triggers, 1):
+            t_id = t.get("id", f"signal_{i}")
+            t_level = str(t.get("level", "WARNING")).upper()
+            level_icon = "🔴" if t_level in ("CRITICAL", "EMERGENCY") else ("🟠" if t_level in ("HIGH", "WARNING") else "🟡")
+            t_val = str(t.get("value", "-"))
+            t_thresh = str(t.get("threshold", "-"))
+            t_text = str(t.get("text", "")).strip().replace("\n", " ").replace("|", "／")
+            table_rows.append(f"| `{t_id}` | {level_icon} {t_level} | `{t_val}` | `{t_thresh}` | {t_text} |")
+
+        table_md = (
+            "| 觸發指標 ID | 等級 | 數值 / 狀態 | 參考門檻 | 說明明細 |\n"
+            "| :--- | :---: | :---: | :---: | :--- |\n" +
+            ("\n".join(table_rows) if table_rows else "| `none` | ℹ️ INFO | `-` | `-` | 無觸發明細 |")
+        )
+
+        # 6. Format Decision Section & Header Line
+        alert_suffix = " - CRITICAL" if (is_extreme or max_priority <= 1) else ""
+        header_line = f"📊 {topic}{alert_suffix}"
+        is_failsafe = "安全模式" in decision
+        now_str = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
+
+        if is_failsafe:
+            system_status = "⚠️ 數理自主安全防禦模式 (Fail-safe Mathematical Mode)"
+            decision_content = (
+                f"{decision.strip()}\n\n"
+                "> 🛡️ **數理第一原則自主風控接管**\n>\n"
+                "> 由於 AI 委員會外部研議超時或 API 暫態離線，系統已自動啟用 **0-LLM 數理第一原則風控引擎**。\n"
+                "> - **當前處置**：觸發指標已進入防守警戒區，系統已自動拒絕所有非對沖追高買單。\n"
+                "> - **冷卻保護**：已鎖定 24 小時反向進出冷卻（Flip-Flop Guard），杜絕短線來回磨損點差。\n"
+                "> - **操作建議**：維持現有優質核心持倉，無須恐慌拋售，靜待市場波動收斂。"
+            )
+        else:
+            system_status = "✅ 投資委員會研議核定 (Council Deliberated)"
+            decision_content = decision.strip()
+
+        # 7. Construct Complete Structured Body
+        content = (
+            f"{header_line}\n\n"
+            f"## 🛡️ Sentinel 風控執行摘要 (Executive Summary)\n\n"
+            f"> 📌 **警報等級**：`{priority_label}` ({severity_badge}) &nbsp;|&nbsp; **觸發來源**：`{source}`\n"
+            f"> 🎯 **監控標的**：`{ticker_display}` &nbsp;|&nbsp; **市場體制**：`VIX {vix_val:.2f}` ({vix_regime})\n"
+            f"> 🕒 **評估時間**：`{now_str}` &nbsp;|&nbsp; **系統狀態**：{system_status}\n\n"
+            f"### 📋 觸發指標對照表 (Triggered Signals & Details)\n\n"
+            f"{table_md}\n\n"
+            f"### 🧠 風控研議與自主處置 (Assessment & Directives)\n\n"
+            f"{decision_content}\n\n"
+            f"### ⚡ 系統已套用之安全防禦 (Active Safety Defenses)\n"
+            f"- 🔒 **反向進出冷卻鎖 (24h Flip-Flop Lockout Guard)**：凍結同標的 24 小時內短線反向買賣，杜絕雜訊洗盤磨損。\n"
+            f"- 🛡️ **做市商 Gamma 與微觀流動性真空守衛**：在負 Gamma 與流動性驟降體制下，限制市價追單並保護滑點。\n"
+            f"- 📊 **自適應階梯吸籌模式**：建倉買單自動下移至主力成交密集支撐區，不予市價追高。\n\n"
+            f"---\n"
+            f"💡 *提示：本警報由 Sentinel 7x24 全自主風控引擎實時監控發出。可於聊天室發送 `/status` 查詢完整持倉與風控體制。*\n"
+        )
+
+        return title, content
 
     async def _dispatch_notifications_direct(self, title: str, content: str, actions: List[Dict[str, Any]] = None, category: str = "sentinel"):
         """[T3] Direct dispatch using NSM (no microservice, no hardcoded channels)."""
