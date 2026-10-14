@@ -166,19 +166,15 @@ class TradingProtectionsService:
         if side == "HOLD":
             return None
 
-        # 24h Flip-Flop Lockout Check (Applies to both BUY and SELL)
-        try:
-            flip_flop_reason = self._check_flip_flop_lockout(ticker, side, strategy_name=strategy_name)
-            if flip_flop_reason:
-                self._dispatch_protection_alert_safely(flip_flop_reason, ticker)
-                return flip_flop_reason
-        except Exception as exc:
-            logger.error("TradingProtectionsService: Flip-flop lockout check error: %s", exc)
-            if side == "BUY":
-                return f"Protection check unavailable ({type(exc).__name__}); BUY blocked for safety"
-
         if side == "SELL":
-            # SELL is gated ONLY by churn rule and flip-flop, and fails OPEN for legacy multi-day churn.
+            # SELL is gated ONLY by the churn rule, and it fails OPEN.
+            # The three BUY rules key off "recent decision alpha is negative",
+            # which is precisely when a user most needs to exit — applying them
+            # to SELL would lock people into falling positions. And a churn
+            # guard is a nice-to-have, so it must never itself become the
+            # reason someone cannot get out.
+            # SELL 只走 churn 規則且 fail-open：三條 BUY 規則的觸發條件正是使用者
+            # 最需要出場的時候；churn 只是加分項，不能變成無法出場的理由。
             try:
                 return self._check_sell_churn(ticker)
             except Exception as exc:
@@ -186,6 +182,16 @@ class TradingProtectionsService:
                     "TradingProtectionsService: SELL churn check failed — allowing exit: %s", exc
                 )
                 return None
+
+        # 24h Flip-Flop Lockout Check (Applies to BUY: blocks re-entering right after selling)
+        try:
+            flip_flop_reason = self._check_flip_flop_lockout(ticker, side, strategy_name=strategy_name)
+            if flip_flop_reason:
+                self._dispatch_protection_alert_safely(flip_flop_reason, ticker)
+                return flip_flop_reason
+        except Exception as exc:
+            logger.error("TradingProtectionsService: Flip-flop lockout check error: %s", exc)
+            return f"Protection check unavailable ({type(exc).__name__}); BUY blocked for safety"
 
         try:
             reason = (
@@ -208,19 +214,15 @@ class TradingProtectionsService:
     def _check_flip_flop_lockout(self, ticker: str, side: str, strategy_name: Optional[str] = None) -> Optional[str]:
         """
         24h Flip-Flop Lockout Guard:
-        Enforces a strict 24-hour non-stop-loss lockout against reversing positions on the same ticker.
+        Enforces a strict 24-hour lockout against re-buying the same ticker right after exit.
         - If attempting to BUY: rejects if a SELL of the same ticker occurred within 24 hours.
-        - If attempting to SELL: rejects if a BUY of the same ticker occurred within 24 hours (unless emergency stop-loss).
         """
+        if side != "BUY":
+            return None
+
         cfg = self._load_config()
         if not cfg.get("protection_flip_flop_lockout_enabled", True):
             return None
-
-        # Emergency stop-losses are strictly exempt from sell blocks
-        if side == "SELL":
-            strat = str(strategy_name or "").lower()
-            if any(k in strat for k in ("stop_loss", "trailing_stop", "emergency", "panic")):
-                return None
 
         cooldown_hours = float(cfg.get("protection_flip_flop_cooldown_hours", 24.0))
         from datetime import datetime, timezone
@@ -230,12 +232,23 @@ class TradingProtectionsService:
                 stmt = text("""
                     SELECT action, created_at, trade_date FROM transactions
                     WHERE user_id = :user_id AND ticker = :ticker
-                      AND UPPER(action) IN ('BUY', 'SELL')
+                      AND UPPER(action) = 'SELL'
                       AND (entry_category IS NULL OR entry_category IN ('trade', 'sync_adjustment'))
                     ORDER BY COALESCE(created_at, trade_date) DESC, id DESC
                     LIMIT 10
                 """)
-                rows = conn.execute(stmt, {"user_id": self.user_id, "ticker": ticker}).fetchall()
+                try:
+                    rows = conn.execute(stmt, {"user_id": self.user_id, "ticker": ticker}).fetchall()
+                except Exception:
+                    stmt_fallback = text("""
+                        SELECT action, trade_date, trade_date FROM transactions
+                        WHERE user_id = :user_id AND ticker = :ticker
+                          AND UPPER(action) = 'SELL'
+                          AND (entry_category IS NULL OR entry_category IN ('trade', 'sync_adjustment'))
+                        ORDER BY trade_date DESC, id DESC
+                        LIMIT 10
+                    """)
+                    rows = conn.execute(stmt_fallback, {"user_id": self.user_id, "ticker": ticker}).fetchall()
 
             if not rows:
                 return None

@@ -2255,13 +2255,16 @@ class SentinelService:
             ("\n".join(table_rows) if table_rows else "| `none` | ℹ️ INFO | `-` | `-` | 無觸發明細 |")
         )
 
-        # 6. Format Decision Section
+        # 6. Format Decision Section & Header Line
+        alert_suffix = " - CRITICAL" if (is_extreme or max_priority <= 1) else ""
+        header_line = f"📊 {topic}{alert_suffix}"
         is_failsafe = "安全模式" in decision
         now_str = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
 
         if is_failsafe:
             system_status = "⚠️ 數理自主安全防禦模式 (Fail-safe Mathematical Mode)"
             decision_content = (
+                f"{decision.strip()}\n\n"
                 "> 🛡️ **數理第一原則自主風控接管**\n>\n"
                 "> 由於 AI 委員會外部研議超時或 API 暫態離線，系統已自動啟用 **0-LLM 數理第一原則風控引擎**。\n"
                 "> - **當前處置**：觸發指標已進入防守警戒區，系統已自動拒絕所有非對沖追高買單。\n"
@@ -2274,6 +2277,7 @@ class SentinelService:
 
         # 7. Construct Complete Structured Body
         content = (
+            f"{header_line}\n\n"
             f"## 🛡️ Sentinel 風控執行摘要 (Executive Summary)\n\n"
             f"> 📌 **警報等級**：`{priority_label}` ({severity_badge}) &nbsp;|&nbsp; **觸發來源**：`{source}`\n"
             f"> 🎯 **監控標的**：`{ticker_display}` &nbsp;|&nbsp; **市場體制**：`VIX {vix_val:.2f}` ({vix_regime})\n"

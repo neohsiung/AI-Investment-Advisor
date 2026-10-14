@@ -410,14 +410,23 @@ class OptionGammaExposureGEXService:
 
         # 1. 取得現貨市價
         spot = spot_price or 0.0
-        if spot <= 0 and self.market_data_service:
-            try:
-                prices = await self.market_data_service.get_current_prices([sym])
-                spot = float(prices.get(sym, 0.0) or 0.0)
-            except Exception as pe:
-                logger.debug(f"Failed to fetch live price for {sym}: {pe}")
         if spot <= 0:
-            spot = 100.0  # Normalized fallback
+            try:
+                r = await self._get_redis()
+                if r:
+                    cached_p = await r.get(f"market:price:{sym}")
+                    if cached_p:
+                        spot = float(cached_p)
+            except Exception:
+                pass
+
+        if spot <= 0:
+            prior_price_map = {
+                "SPY": 580.0, "QQQ": 490.0, "NVDA": 135.0, "AAPL": 230.0,
+                "MSFT": 420.0, "TSM": 190.0, "META": 580.0, "AMD": 160.0,
+                "AMZN": 190.0, "GOOGL": 170.0, "TSLA": 220.0,
+            }
+            spot = prior_price_map.get(sym, 100.0)
 
         # 2. 獲取選擇權鏈
         chain = await self.get_or_synthesize_options_chain(sym, spot)

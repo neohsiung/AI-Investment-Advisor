@@ -134,27 +134,43 @@ class AlchemyTransactionRepository(BaseRepository, ITransactionRepository):
 
     def get_all_by_user(self, user_id: str, account_id: str = None) -> List[Any]:
         with self.engine.connect() as conn:
-            sql = "SELECT * FROM transactions WHERE user_id = :user_id"
-            params = {"user_id": user_id}
-            query = text("""
-                SELECT * FROM transactions 
-                WHERE user_id = :user_id 
-                AND (:account_id IS NULL OR source_file = :account_id)
-                ORDER BY COALESCE(created_at, trade_date) DESC, id DESC
-            """)
             params = {"user_id": user_id, "account_id": account_id}
-            return conn.execute(query, params).fetchall()
+            try:
+                query = text("""
+                    SELECT * FROM transactions 
+                    WHERE user_id = :user_id 
+                    AND (:account_id IS NULL OR source_file = :account_id)
+                    ORDER BY COALESCE(created_at, trade_date) DESC, id DESC
+                """)
+                return conn.execute(query, params).fetchall()
+            except Exception:
+                query = text("""
+                    SELECT * FROM transactions 
+                    WHERE user_id = :user_id 
+                    AND (:account_id IS NULL OR source_file = :account_id)
+                    ORDER BY trade_date DESC, id DESC
+                """)
+                return conn.execute(query, params).fetchall()
 
     def get_all_by_user_df(self, user_id: str, account_id: str = None) -> pd.DataFrame:
         with self.engine.connect() as conn:
-            query = text("""
-                SELECT * FROM transactions 
-                WHERE user_id = :user_id 
-                AND (:account_id IS NULL OR source_file = :account_id)
-                ORDER BY COALESCE(created_at, trade_date) DESC, id DESC
-            """)
             params = {"user_id": user_id, "account_id": account_id}
-            return pd.read_sql(query, conn, params=params)
+            try:
+                query = text("""
+                    SELECT * FROM transactions 
+                    WHERE user_id = :user_id 
+                    AND (:account_id IS NULL OR source_file = :account_id)
+                    ORDER BY COALESCE(created_at, trade_date) DESC, id DESC
+                """)
+                return pd.read_sql(query, conn, params=params)
+            except Exception:
+                query = text("""
+                    SELECT * FROM transactions 
+                    WHERE user_id = :user_id 
+                    AND (:account_id IS NULL OR source_file = :account_id)
+                    ORDER BY trade_date DESC, id DESC
+                """)
+                return pd.read_sql(query, conn, params=params)
 
     def get_active_tickers(self, user_id: str, account_id: str = None) -> List[str]:
         with self.engine.connect() as conn:

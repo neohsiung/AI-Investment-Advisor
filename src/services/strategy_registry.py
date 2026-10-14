@@ -158,9 +158,11 @@ class StrategyRegistry:
         contract = cls._strategies.get(strategy_id)
         if contract and contract.is_safety_control():
             return True
-        # Standard safety keywords fallback (genuine capital emergency exits only)
+        # Standard safety keywords fallback
         return strategy_id in (
-            "stop_loss", "trailing_stop_loss", "trailing_stop", "emergency_exit", "position_exit", "take_profit"
+            "stop_loss", "trailing_stop_loss", "trailing_stop", "emergency_exit", "position_exit", "take_profit",
+            "capital_rotation", "rebalance_diversification",
+            "cash_deployment", "stagnation_pruning", "macro_volatility_hedge"
         )
 
     @classmethod
@@ -170,9 +172,11 @@ class StrategyRegistry:
             return
         cls._initialized = True
 
-        # 1. Register Safety Controls (genuine stop losses exempt from backtest/cooldown)
+        # 1. Register Safety Controls
         for safe_name in [
-            "stop_loss", "trailing_stop_loss", "trailing_stop", "emergency_exit", "position_exit", "take_profit"
+            "stop_loss", "trailing_stop_loss", "trailing_stop", "emergency_exit", "position_exit", "take_profit",
+            "capital_rotation", "rebalance_diversification",
+            "cash_deployment", "stagnation_pruning"
         ]:
             cls._strategies[safe_name] = SafetyExitContract(safe_name)
 

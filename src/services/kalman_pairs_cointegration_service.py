@@ -341,15 +341,24 @@ class KalmanPairsCointegrationService:
                 logger.debug(f"Direct history fetch failed for pair ({sy}, {sx}): {e}")
 
         # 數理第一原則降級：獲取即時價格並基於板塊相關性生成微觀高頻序列
-        py = 100.0
-        px = 100.0
-        if self.market_data_service:
-            try:
-                prices = await self.market_data_service.get_current_prices([sy, sx])
-                py = float(prices.get(sy, 100.0) or 100.0)
-                px = float(prices.get(sx, 100.0) or 100.0)
-            except Exception:
-                pass
+        prior_price_map = {
+            "SPY": 580.0, "QQQ": 490.0, "NVDA": 135.0, "AAPL": 230.0,
+            "MSFT": 420.0, "TSM": 190.0, "META": 580.0, "AMD": 160.0,
+            "AMZN": 190.0, "GOOGL": 170.0, "TSLA": 220.0,
+        }
+        py = prior_price_map.get(sy, 100.0)
+        px = prior_price_map.get(sx, 100.0)
+        try:
+            r = await self._get_redis()
+            if r:
+                cp_y = await r.get(f"market:price:{sy}")
+                cp_x = await r.get(f"market:price:{sx}")
+                if cp_y:
+                    py = float(cp_y)
+                if cp_x:
+                    px = float(cp_x)
+        except Exception:
+            pass
 
         # 依據標的特性設定預期動態對沖比例
         expected_ratio = py / px if px > 0 else 1.0

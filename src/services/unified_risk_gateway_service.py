@@ -97,14 +97,15 @@ class UnifiedRiskGatewayService:
             guard_details["trading_protections"] = {"passed": block_reason is None, "reason": block_reason}
             if block_reason:
                 reasons.append(f"[TradingProtections] {block_reason}")
-                return RiskGatewayResult(
-                    allowed=False,
-                    severity=RiskSeverity.BLOCKED,
-                    primary_blocker="TradingProtections",
-                    reasons=reasons,
-                    guard_details=guard_details,
-                    evaluated_at=now_iso,
-                )
+                if is_buy:
+                    return RiskGatewayResult(
+                        allowed=False,
+                        severity=RiskSeverity.BLOCKED,
+                        primary_blocker="TradingProtections",
+                        reasons=reasons,
+                        guard_details=guard_details,
+                        evaluated_at=now_iso,
+                    )
         except Exception as e:
             logger.error("UnifiedRiskGateway: TradingProtections check error: %s", e)
             if is_buy:

@@ -122,8 +122,11 @@ async def test_trade_approval_with_ok_reply(anyio_backend):
             rationale="Strong signal detected"
         ))
         
-        # Give it a moment to send the request
-        await asyncio.sleep(0.1)
+        # Give it a moment to send the request (robust polling across CI environments)
+        for _ in range(40):
+            if len(interaction_svc._pending_requests) == 1:
+                break
+            await asyncio.sleep(0.05)
         
         # 4. Verify Request was sent
         assert len(interaction_svc._pending_requests) == 1

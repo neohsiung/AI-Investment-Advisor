@@ -1,8 +1,9 @@
 import pytest
 from datetime import datetime, timezone, timedelta
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock, patch, AsyncMock
 from src.services.trading_protections_service import TradingProtectionsService
 from src.services.unified_risk_gateway_service import UnifiedRiskGatewayService
+from src.services.automated_trading_service import AutomatedTradingService
 
 @pytest.fixture
 def mock_engine():
@@ -29,8 +30,8 @@ def test_flip_flop_blocks_buy_after_recent_sell():
     assert "Blocked BUY" in result
     assert "opposite SELL" in result
 
-def test_flip_flop_blocks_routine_sell_after_recent_buy():
-    """If a BUY occurred 3 hours ago, a routine (non-stop-loss) SELL must be blocked."""
+def test_trading_protections_fails_open_on_sell():
+    """TradingProtectionsService check must never trap positions on SELL."""
     service = TradingProtectionsService(user_id="test_user")
     service.engine = MagicMock()
 
@@ -41,31 +42,42 @@ def test_flip_flop_blocks_routine_sell_after_recent_buy():
     ]
     service.engine.connect.return_value.__enter__.return_value = mock_conn
 
-    # Check routine SELL (e.g. capital_rotation or routine exit)
+    # SELL returns None in TradingProtectionsService
     result = service.check("NVDA", "SELL", strategy_name="capital_rotation")
-    assert result is not None
-    assert "24h Flip-Flop Lockout" in result
-    assert "Blocked SELL" in result
-    assert "opposite BUY" in result
-
-def test_flip_flop_allows_emergency_stop_loss_after_recent_buy():
-    """Emergency stop-loss SELL is exempt from 24h lockout."""
-    service = TradingProtectionsService(user_id="test_user")
-    service.engine = MagicMock()
-
-    recent_buy_time = datetime.now(timezone.utc) - timedelta(hours=1)
-    mock_conn = MagicMock()
-    mock_conn.execute.return_value.fetchall.return_value = [
-        ("BUY", recent_buy_time, recent_buy_time.date())
-    ]
-    service.engine.connect.return_value.__enter__.return_value = mock_conn
-
-    # Stop-loss must be permitted!
-    result = service.check("NVDA", "SELL", strategy_name="stop_loss")
     assert result is None
 
-    result_trailing = service.check("NVDA", "SELL", strategy_name="trailing_stop_loss")
-    assert result_trailing is None
+@pytest.mark.anyio
+async def test_automated_trading_blocks_routine_sell_after_recent_buy():
+    """AutomatedTradingService skips routine SELL if a BUY occurred within intraday cooldown."""
+    settings_repo = MagicMock()
+    settings_repo.get.side_effect = lambda uid, key: {
+        "ai_trading_enabled": "true",
+        "intraday_churn_cooldown_hours": "24.0",
+        "auto_trade_threshold": "5",
+        "auto_trade_min_threshold": "1",
+    }.get(key)
+
+    tx_repo = MagicMock()
+    recent_buy_tx = MagicMock()
+    recent_buy_tx.ticker = "NVDA"
+    recent_buy_tx.action = "BUY"
+    recent_buy_tx.entry_category = "trade"
+    recent_buy_tx.created_at = datetime.now(timezone.utc) - timedelta(hours=2)
+    recent_buy_tx.trade_date = (datetime.now(timezone.utc) - timedelta(hours=2)).date()
+    tx_repo.get_all_by_user.return_value = [recent_buy_tx]
+
+    auto_svc = AutomatedTradingService(settings_repo=settings_repo, tx_repo=tx_repo)
+    res = await auto_svc.evaluate_and_execute_trade(
+        user_id="test_user",
+        ticker="NVDA",
+        action="SELL",
+        quantity=1.0,
+        confidence_score=8,
+        strategy_name="capital_rotation",
+    )
+    assert res is not None
+    assert res.get("status") == "blocked"
+    assert "Intraday churn throttler" in res.get("reason", "")
 
 def test_flip_flop_allows_trade_after_cooldown_expired():
     """If the opposite trade occurred 26 hours ago (> 24h cooldown), trade is allowed."""
