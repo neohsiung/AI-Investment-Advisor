@@ -371,11 +371,14 @@ class UnifiedRiskGatewayService:
                     confidence_score=confidence_score,
                 )
                 guard_details["trend_hysteresis"] = hyst_details
-                if not allowed_h and is_buy:
+                is_routine_sell_to_block = (not is_buy) and any(
+                    k in str(strategy_name or "").lower() for k in ("routine_rebalance", "routine_sell")
+                )
+                if not allowed_h and (is_buy or is_routine_sell_to_block):
                     reasons.append(block_reason_h or "[TrendHysteresis] Blocked by hysteresis or trend lock")
                     return RiskGatewayResult(
                         allowed=False,
-                        severity=RiskSeverity.DEGRADED,
+                        severity=RiskSeverity.DEGRADED if is_buy else RiskSeverity.BLOCKED,
                         primary_blocker="TrendHysteresisLockout",
                         reasons=reasons,
                         guard_details=guard_details,
