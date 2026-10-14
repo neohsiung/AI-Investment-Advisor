@@ -147,6 +147,9 @@ class AutomatedTradingService:
             settings_svc = SettingsService(user_id=user_id)
             self.notification_service = NotificationService.create_with_settings(settings_service=settings_svc, user_id=user_id)
 
+        # Initialize current price holder
+        current_price = None
+
         # [NEW v7.0 / v8.3] Weight-based quantity calculation
         # If target_weight is provided, calculate quantity from delta_weight:
         # BUY: quantity is in USD (eToro /market-open-orders/by-amount and downstream cash guards expect USD)
@@ -220,6 +223,35 @@ class AutomatedTradingService:
                     }
             except Exception as hurdle_err:
                 logger.warning(f"Min turnover hurdle check failed non-blockingly: {hurdle_err}")
+
+        # ── Normalize confidence to 0-10 scale for consistent comparison ──
+        if confidence_score is not None:
+            normalized_confidence = float(confidence_score) / 10.0 if float(confidence_score) > 10 else float(confidence_score)
+        else:
+            normalized_confidence = None
+
+        # 0b-1. Strategy Low-Confidence Skip Gate (低信心評分跳過 — 屬正常策略過濾非風控阻斷)
+        is_sell_action = str(action).upper() == "SELL"
+        from src.services.strategy_registry import StrategyRegistry
+        is_safety_action = is_sell_action and StrategyRegistry.is_safety_control(strategy_name or "")
+
+        raw_min_th = self.settings_repo.get(user_id, "auto_trade_min_threshold")
+        if raw_min_th is not None:
+            try:
+                min_th = float(raw_min_th)
+                if min_th > 10:
+                    min_th = min_th / 10.0
+            except (ValueError, TypeError):
+                min_th = 3.0
+        else:
+            min_th = 3.0
+
+        if not is_safety_action and normalized_confidence is not None and normalized_confidence < min_th:
+            logger.info(
+                f"Score {normalized_confidence:.1f} < min_threshold {min_th:.1f}. "
+                f"Skipping silently for {ticker}."
+            )
+            return {"status": "skipped", "reason": f"Score {normalized_confidence:.1f} below minimum threshold {min_th:.1f}"}
 
         # 0c. Ticker In-Flight Lock Guard (標的在途鎖 — 杜絕並發重複送單)
         lock_svc = OrderInflightLockService(user_id=user_id)
@@ -340,6 +372,9 @@ class AutomatedTradingService:
                 ticker=ticker,
                 action=action,
                 amount_usd=float(quantity or 0.0),
+                current_price=current_price,
+                strategy_name=strategy_name,
+                confidence_score=normalized_confidence,
             )
             if not eval_res.allowed:
                 block_reason = eval_res.reasons[0] if eval_res.reasons else f"Blocked by {eval_res.primary_blocker}"

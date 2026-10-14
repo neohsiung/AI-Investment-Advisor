@@ -4043,6 +4043,101 @@ settings:
     label_zh: 統計套利進場最大容許 OU 半衰期（天）
     help_en: Maximum allowable Ornstein-Uhlenbeck mean-reversion half-life for valid pairs trading entry.
     help_zh: 允許執行統計套利配對進場之最大 OU 均值回歸半衰期天數（預設 18.0 天）。
+  - key: enable_trend_hysteresis_lockout
+    group: trading
+    type: bool
+    default: true
+    label_en: Enable Schmitt Trigger Trend Hysteresis & Long-Only Lock
+    label_zh: 啟用施密特觸發器遲滯回差帶與大趨勢單向鎖定
+    help_en: Asymmetric entry/exit thresholds with hold deadband to eliminate flip-flop churn, and long-only lock for secular bull channels.
+    help_zh: 非對稱進出場門檻與維持緩衝帶，徹底杜絕臨界點微幅雜訊造成的來回洗盤；長期牛市通道內全面凍結常規調倉賣出。
+  - key: trend_hysteresis_confidence_buy
+    group: trading
+    type: float
+    default: 8.0
+    min: 5.0
+    max: 10.0
+    label_en: Trend Hysteresis Buy Confidence Threshold
+    label_zh: 遲滯回差帶買入訊號最低信心門檻
+    help_en: Minimum signal confidence required to confirm bullish breakout into BULL_ACTIVE state.
+    help_zh: 突破進入多頭狀態 (BULL_ACTIVE) 所需之最低訊號信心門檻（預設 8.0/10.0）。
+  - key: trend_hysteresis_confidence_sell
+    group: trading
+    type: float
+    default: 5.0
+    min: 1.0
+    max: 7.0
+    label_en: Trend Hysteresis Sell Confidence Threshold
+    label_zh: 遲滯回差帶賣出訊號最高信心門檻
+    help_en: Maximum signal confidence to confirm bearish breakdown into BEAR_ACTIVE state.
+    help_zh: 跌破進入空頭狀態 (BEAR_ACTIVE) 所需之最高訊號信心門檻（預設 5.0/10.0）。
+  - key: trend_hysteresis_price_band_pct
+    group: trading
+    type: float
+    default: 0.015
+    min: 0.005
+    max: 0.050
+    label_en: Trend Hysteresis Price Buffer Band (%)
+    label_zh: 遲滯回差帶價格相對於 MA20 緩衝百分比 (%)
+    help_en: Price deviation ratio relative to baseline MA20 required to trigger state transition (default 0.015 = 1.5%).
+    help_zh: 價格相對於基準均線 MA20 之偏離幅度門檻，在此緩衝區間內嚴格維持前一狀態（預設 1.5%）。
+  - key: enable_macro_trend_long_only_lock
+    group: trading
+    type: bool
+    default: true
+    label_en: Enable Macro Trend Long-Only Lock
+    label_zh: 啟用大趨勢多頭單向持股鎖定
+    help_en: When in secular bull channel (SMA50 > SMA200 & Price > SMA50), prohibits routine profit-taking and rebalance sells.
+    help_zh: 處於大趨勢多頭通道（SMA50 > SMA200 且現價高於 SMA50）時，禁止常規調倉與獲利賣出，僅允許移動停利與硬性停損。
+  - key: enable_friction_aware_tranche_sizing
+    group: trading
+    type: bool
+    default: true
+    label_en: Enable Friction-Aware Turnover Hurdle & Tranche Sizing
+    label_zh: 啟用做市商摩擦成本感知與核心/衛星分級倉位
+    help_en: Hurdle rate requiring net alpha to beat round-trip turnover friction, and 70/30 core vs satellite tranche segregation.
+    help_zh: 要求調倉淨超額回報顯著高於做市商雙向點差滑點摩擦，並對持倉實施 70% 核心底倉與 30% 衛星波段分級隔離。
+  - key: min_friction_hurdle_pct
+    group: trading
+    type: float
+    default: 0.008
+    min: 0.001
+    max: 0.030
+    label_en: Minimum Net Alpha Turnover Friction Hurdle (%)
+    label_zh: 最低調倉換手淨超額回報門檻 (%)
+    help_en: Minimum net alpha above round-trip turnover friction required to allow a rebalance trade (default 0.008 = 0.80% / 80 bps).
+    help_zh: 調倉換手所需之最低淨超額回報門檻（預設 0.008 即 0.80% 或 80 bps），低於此門檻視為無效益換手並予以阻斷。
+  - key: core_tranche_ratio
+    group: trading
+    type: float
+    default: 0.70
+    min: 0.50
+    max: 0.90
+    label_en: Core Long-Term Tranche Ratio
+    label_zh: 核心長線底倉比例
+    help_en: Ratio of holding assigned to the core tranche, shielded from routine trading and profit-taking (default 0.70 = 70%).
+    help_zh: 分配至核心底倉之部位比例（預設 70%），受大趨勢鎖定嚴格保護，不參與短波折騰。
+  - key: satellite_tranche_ratio
+    group: trading
+    type: float
+    default: 0.30
+    min: 0.10
+    max: 0.50
+    label_en: Satellite Tactical Tranche Ratio
+    label_zh: 衛星戰術波段比例
+    help_en: Ratio of holding assigned to satellite tranche for limit ladder accumulation and stat-arb (default 0.30 = 30%).
+    help_zh: 分配至衛星波段之部位比例（預設 30%），支援階梯吸籌、做市商釘盤與統計套利。
+  - key: sentinel_debounce_window_seconds
+    group: sentinel
+    type: int
+    default: 300
+    min: 60
+    max: 1800
+    label_en: Sentinel Alert Sliding-Window Debounce (Seconds)
+    label_zh: Sentinel 風控警報滑動時間窗防抖 (秒)
+    help_en: Sliding time window in seconds during which non-emergency alerts for the same asset are aggregated and debounced.
+    help_zh: 同標的/同類別非緊急風控警報之防抖聚合滑動時間窗（預設 300 秒即 5 分鐘），避免警報洗版轟炸。
+
 
 
 

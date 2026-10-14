@@ -76,6 +76,7 @@ class UnifiedRiskGatewayService:
         amount_usd: float = 0.0,
         current_price: Optional[float] = None,
         strategy_name: Optional[str] = None,
+        confidence_score: Optional[float] = None,
     ) -> RiskGatewayResult:
         """
         Evaluate an order through the consolidated risk gateway.
@@ -354,6 +355,62 @@ class UnifiedRiskGatewayService:
                         )
         except Exception as e:
             logger.debug("UnifiedRiskGateway: Kalman pairs check skipped/failed: %s", e)
+
+        # ---------------------------------------------------------
+        # 10. Trend Hysteresis Band & Macro Long-Only Lock (Phase 63A)
+        # ---------------------------------------------------------
+        try:
+            from src.services.trend_hysteresis_lockout_service import TrendHysteresisLockoutService
+            hyst_svc = TrendHysteresisLockoutService(user_id=self.user_id)
+            if await hyst_svc.is_enabled():
+                allowed_h, block_reason_h, hyst_details = await hyst_svc.evaluate_trade_action(
+                    ticker=sym,
+                    action=act,
+                    strategy_name=strategy_name,
+                    current_price=current_price,
+                    confidence_score=confidence_score,
+                )
+                guard_details["trend_hysteresis"] = hyst_details
+                if not allowed_h:
+                    reasons.append(block_reason_h or "[TrendHysteresis] Blocked by hysteresis or trend lock")
+                    return RiskGatewayResult(
+                        allowed=False,
+                        severity=RiskSeverity.DEGRADED if is_buy else RiskSeverity.BLOCKED,
+                        primary_blocker="TrendHysteresisLockout",
+                        reasons=reasons,
+                        guard_details=guard_details,
+                        evaluated_at=now_iso,
+                    )
+        except Exception as e:
+            logger.debug("UnifiedRiskGateway: Trend hysteresis check skipped/failed: %s", e)
+
+        # ---------------------------------------------------------
+        # 11. Turnover Friction Hurdle & Tranche Sizing (Phase 63B)
+        # ---------------------------------------------------------
+        try:
+            from src.services.friction_aware_tranche_sizing_service import FrictionAwareTrancheSizingService
+            tranche_svc = FrictionAwareTrancheSizingService(user_id=self.user_id)
+            if await tranche_svc.is_enabled():
+                f_metric = await tranche_svc.evaluate_order_friction_and_tranche(
+                    ticker=sym,
+                    action=act,
+                    quantity=amount_usd,
+                    current_price=current_price,
+                    strategy_name=strategy_name,
+                )
+                guard_details["friction_tranche"] = f_metric.to_dict()
+                if not f_metric.passed_hurdle:
+                    reasons.append(f_metric.reason)
+                    return RiskGatewayResult(
+                        allowed=False,
+                        severity=RiskSeverity.DEGRADED if is_buy else RiskSeverity.BLOCKED,
+                        primary_blocker="TurnoverFrictionHurdle",
+                        reasons=reasons,
+                        guard_details=guard_details,
+                        evaluated_at=now_iso,
+                    )
+        except Exception as e:
+            logger.debug("UnifiedRiskGateway: Turnover friction hurdle check skipped/failed: %s", e)
 
         # All guards cleared!
         return RiskGatewayResult(
