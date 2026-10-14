@@ -422,8 +422,8 @@ class CrossCurrencyFXHedgingService:
                 logger.debug("Failed to pull daily portfolio summary: %s", e)
                 summary = {}
 
-        eq_usd = float(summary.get("total_equity", 10000.0))
-        cash_usd = float(summary.get("total_cash", 1500.0))
+        eq_usd = float(summary.get("total_equity", 0.0) or 0.0)
+        cash_usd = float(summary.get("total_cash", 0.0) or 0.0)
         rate = quote.rate_usd_to_base
 
         eq_base = round(eq_usd * rate, 2)
