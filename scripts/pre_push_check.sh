@@ -80,6 +80,7 @@ if [ -f "$BANDIT" ]; then
               src/services/option_gamma_exposure_gex_service.py \
               src/services/risk_parity_cvar_service.py \
               src/services/trading_protections_service.py \
+              src/services/cross_currency_fx_hedging_service.py \
               src/services/webhook_service.py -q -lll
     echo -e "${GREEN}✓ Bandit security baseline clean (0 high/medium issues)${NC}"
 fi
@@ -153,9 +154,11 @@ $PYTEST tests/unit/services/test_actionable_alert_service.py \
         tests/unit/services/test_option_gamma_exposure_gex_service.py \
         tests/unit/services/test_kalman_pairs_cointegration_service.py \
         tests/unit/services/test_friction_aware_tranche_sizing_service.py \
+        tests/unit/services/test_cross_currency_fx_hedging_service.py \
         tests/unit/core/test_conversation_router_p62.py \
         tests/unit/core/test_conversation_router_p63.py \
         tests/unit/core/test_conversation_router_p64.py \
+        tests/unit/core/test_conversation_router_p65.py \
         tests/unit/config/test_settings_schema.py -q
 
 echo -e "\n${GREEN}======================================================${NC}"
