@@ -332,3 +332,58 @@ def test_conversation_router_dipbuy_commands():
             assert "+$100.00 USD" in reply
 
     asyncio.run(_test())
+
+
+def test_calculate_staggered_plan_satellite_tranche_binding(
+    mock_support_service, mock_risk_gateway, mock_settings_service, mock_broker
+):
+    """驗證 Phase 64C: 階梯單預設綁定 SATELLITE 倉位類型。"""
+    async def _test():
+        service = StaggeredDipBuyingService(
+            user_id="test_user",
+            settings_service=mock_settings_service,
+            support_service=mock_support_service,
+            risk_gateway=mock_risk_gateway,
+            broker=mock_broker,
+        )
+
+        plan = await service.calculate_staggered_plan_for_ticker(
+            ticker="NVDA",
+            target_budget_usd=80.0,
+            current_price=142.0,
+        )
+        assert plan.tranche_type == "SATELLITE"
+        assert plan.is_tranche_capped is False
+        assert plan.to_dict()["tranche_type"] == "SATELLITE"
+
+    asyncio.run(_test())
+
+
+def test_calculate_staggered_plan_satellite_budget_clamping(
+    mock_support_service, mock_risk_gateway, mock_settings_service, mock_broker
+):
+    """驗證 Phase 64C: 階梯單預算超額時受衛星上限約束截斷，守護 70% 核心底倉。"""
+    async def _test():
+        service = StaggeredDipBuyingService(
+            user_id="test_user",
+            settings_service=mock_settings_service,
+            support_service=mock_support_service,
+            risk_gateway=mock_risk_gateway,
+            broker=mock_broker,
+        )
+
+        # 請求 150 USD，但衛星上限僅 60 USD
+        plan = await service.calculate_staggered_plan_for_ticker(
+            ticker="NVDA",
+            target_budget_usd=150.0,
+            current_price=142.0,
+            satellite_budget_cap_usd=60.0,
+        )
+        assert plan.total_budget_usd == 60.0
+        assert plan.is_tranche_capped is True
+        assert plan.satellite_budget_cap_usd == 60.0
+        assert round(sum(t.allocation_usd for t in plan.tiers), 2) == 60.0
+        assert plan.to_dict()["is_tranche_capped"] is True
+
+    asyncio.run(_test())
+
