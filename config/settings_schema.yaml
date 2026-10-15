@@ -4281,6 +4281,44 @@ settings:
     label_zh: 強制衰減調倉執行微觀摩擦機會成本門檻
     help_en: Verifies that expected alpha gains strictly exceed round-trip commission and bid-ask spread hurdle before executing swaps.
     help_zh: 換倉前強制檢驗超額收益是否嚴格超越雙向手續費與盤口點差之機會成本門檻。
+  - key: enable_factor_stress_testing
+    group: trading
+    type: bool
+    default: true
+    label_en: Enable Multi-Factor Extreme Stress Testing
+    label_zh: 啟用跨市場多因子極端情境壓力測試
+    help_en: Evaluates portfolio resilience and tail-risk drawdowns against historical and synthetic extreme factor collapse scenarios.
+    help_zh: 針對歷史與合成極端因子崩塌與流動性擠壓情境進行投組生存能力與尾部風險評估。
+  - key: stress_test_var_confidence
+    group: trading
+    type: float
+    default: 0.99
+    min: 0.90
+    max: 0.999
+    label_en: Stress Test VaR Confidence Level
+    label_zh: 壓力測試 VaR 風險值信賴水準
+    help_en: Confidence level for computing Stressed Value-at-Risk and Expected Shortfall under extreme shocks (default 0.99 = 99%).
+    help_zh: 極端衝擊下計算壓力風險值 (VaR) 與條件風險值 (CVaR) 之信賴水準（預設 0.99 即 99%）。
+  - key: stress_test_liquidity_haircut_pct
+    group: trading
+    type: float
+    default: 0.50
+    min: 0.10
+    max: 0.90
+    label_en: Stress Test Liquidity Volume Haircut
+    label_zh: 壓力測試流動性日均量折損比例
+    help_en: Assumed percentage collapse in market ADV during liquidity crisis to simulate market impact slippage (default 0.50 = 50%).
+    help_zh: 危機情境中預設之市場日均量萎縮折損比例（預設 0.50 即 50%），用以精算做市商抽單之非線性衝擊滑點。
+  - key: stress_test_max_tolerable_drawdown
+    group: trading
+    type: float
+    default: 0.20
+    min: 0.05
+    max: 0.40
+    label_en: Stress Test Max Tolerable Drawdown Threshold
+    label_zh: 壓力測試最大可容忍回撤門檻
+    help_en: Maximum portfolio drawdown tolerance under extreme shocks before triggering critical survival warnings (default 0.20 = 20%).
+    help_zh: 極端衝擊下投組最大可容忍之回撤門檻（預設 0.20 即 20%），超出時觸發高危生存告警。
 
 
 
