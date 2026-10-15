@@ -4228,6 +4228,41 @@ class SentinelService:
                 f"[Sentinel Exit Execution] Submitting {strategy_name} for {ticker}: {sell_qty} shares, score={composite_score}"
             )
 
+            # Pre-Flight Gate for Capital Rotation: Ensure target_ticker can actually be BOUGHT
+            # before placing any live SELL order to avoid one-legged liquidation.
+            if strategy_name == "capital_rotation":
+                target_ticker = trigger.get("target_ticker")
+                if not target_ticker:
+                    logger.warning(f"[Sentinel Exit Execution] Rotation sell for {ticker} skipped: no target_ticker defined")
+                    continue
+                est_proceeds = round(sell_qty * (current_price or 0), 2)
+                if est_proceeds < 10.0:
+                    logger.warning(
+                        f"[Sentinel Exit Execution] Rotation sell for {ticker} skipped: proceeds ${est_proceeds} < $10.00 minimum order size"
+                    )
+                    continue
+
+                try:
+                    from src.services.unified_risk_gateway_service import UnifiedRiskGatewayService
+                    risk_gw = UnifiedRiskGatewayService(user_id=self.user_id)
+                    cand_score = float(trigger.get("candidate_score", 8.0))
+                    preflight = await risk_gw.evaluate_trade_risk(
+                        ticker=target_ticker,
+                        action="BUY",
+                        amount_usd=est_proceeds,
+                        current_price=None,
+                        strategy_name="capital_rotation",
+                        confidence_score=cand_score,
+                    )
+                    if not preflight.allowed:
+                        logger.error(
+                            f"[Sentinel Exit Execution] PRE-FLIGHT BLOCKED: Cannot sell {ticker} to buy {target_ticker} because "
+                            f"target BUY is blocked: {preflight.reasons}. Aborting rotation sell to prevent one-legged liquidation."
+                        )
+                        continue
+                except Exception as pfe:
+                    logger.warning(f"[Sentinel Exit Execution] Pre-flight check error for {target_ticker}: {pfe}")
+
             try:
                 res = await auto_trade_svc.evaluate_and_execute_trade(
                     user_id=self.user_id,
@@ -4252,12 +4287,12 @@ class SentinelService:
                 ):
                     cand_score = float(trigger.get("candidate_score", 8.0))
                     est_proceeds = round(sell_qty * (current_price or 0), 2)
-                    if est_proceeds > 5.0:
+                    if est_proceeds >= 10.0:
                         logger.info(
                             f"[Sentinel Exit Execution] Rotation sell executed for {ticker}; "
                             f"deploying proceeds (~${est_proceeds}) into target {target_ticker}"
                         )
-                        await auto_trade_svc.evaluate_and_execute_trade(
+                        buy_res = await auto_trade_svc.evaluate_and_execute_trade(
                             user_id=self.user_id,
                             ticker=target_ticker,
                             action="BUY",
@@ -4274,6 +4309,13 @@ class SentinelService:
                             rationale=f"🔄 換庫買入：自 {ticker} 換庫釋放資金，轉進高確信標的 {target_ticker} (評分 {cand_score:.1f}/10)",
                             strategy_name="capital_rotation",
                         )
+                        if not buy_res or buy_res.get("status") not in ("success", "executed"):
+                            logger.critical(
+                                f"[Sentinel Exit Execution] CATASTROPHIC ROTATION LEG FAILURE: Sold {ticker} but failed to buy {target_ticker}: {buy_res}. "
+                                f"Locking capital rotation for 6 hours to prevent domino liquidation."
+                            )
+                            cooldown_key = f"capital_rotation_eval:{self.user_id}"
+                            await self._acquire_cooldown(cooldown_key, 21600, fail_open=False)
             except Exception as e:
                 logger.error(f"[Sentinel Exit Execution] Failed to execute exit for {ticker}: {e}", exc_info=True)
 
@@ -4330,12 +4372,28 @@ class SentinelService:
             best_candidate = None
             best_cand_score = 0.0
 
+            # Import TradingProtectionsService for candidate sanitization
+            try:
+                from src.services.trading_protections_service import TradingProtectionsService
+                protections_svc = TradingProtectionsService(user_id=self.user_id)
+            except Exception:
+                protections_svc = None
+
             # Limit to at most 3 rotation candidate evaluations per tick to protect latency
             unscored_count = 0
             for cand in candidates:
                 cand_ticker = cand.get("ticker")
                 if not cand_ticker or cand_ticker in active_holdings:
                     continue
+
+                # Filter out candidate if it is currently locked out or in cooldown
+                if protections_svc:
+                    prot_reason = protections_svc.check(ticker=cand_ticker, action="BUY", strategy_name="capital_rotation")
+                    if prot_reason:
+                        logger.info(
+                            f"[Capital Rotation] Candidate {cand_ticker} disqualified by TradingProtections: {prot_reason}"
+                        )
+                        continue
 
                 cand_score = cand.get("composite_score") or cand.get("confidence") or cand.get("score")
                 if cand_score is None:
@@ -4450,6 +4508,34 @@ class SentinelService:
             )
 
             if swap_decision.should_swap:
+                est_proceeds = round(shares_to_sell * price, 2)
+                if est_proceeds < 10.0:
+                    logger.info(
+                        f"[Capital Rotation] Swap rejected: estimated proceeds ${est_proceeds} < $10.00 minimum trade size"
+                    )
+                    return []
+
+                # Pre-flight check via UnifiedRiskGateway
+                try:
+                    from src.services.unified_risk_gateway_service import UnifiedRiskGatewayService
+                    risk_gw = UnifiedRiskGatewayService(user_id=self.user_id)
+                    preflight = await risk_gw.evaluate_trade_risk(
+                        ticker=target_sym,
+                        action="BUY",
+                        amount_usd=est_proceeds,
+                        current_price=None,
+                        strategy_name="capital_rotation",
+                        confidence_score=best_cand_score,
+                    )
+                    if not preflight.allowed:
+                        logger.warning(
+                            f"[Capital Rotation] Swap rejected by Pre-Flight Risk Gateway: "
+                            f"Target BUY {target_sym} blocked by {preflight.primary_blocker} - {preflight.reasons}"
+                        )
+                        return []
+                except Exception as pfe:
+                    logger.warning(f"[Capital Rotation] Pre-flight check error: {pfe}")
+
                 score_delta = swap_decision.raw_delta
                 rationale = (
                     f"🔄 機會成本換庫核准：發現更優投資機會 {target_sym} (評分 {best_cand_score:.1f}/10)，"

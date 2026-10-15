@@ -248,6 +248,7 @@ class ConversationRouter:
             "fx", "forex", "hedging", "外匯", "匯率", "避險", "匯率避險", "保證金緩衝",
             "attribution", "decay", "halflife", "residual", "收益歸因", "正交歸因", "因子歸因", "因子衰減", "半衰期", "因子半衰期",
             "decayrebalance", "調倉", "自適應調倉", "衰減調倉", "因子調倉",
+            "stresstest", "stress", "stress_test", "壓力測試", "情境測試", "流動性擠壓", "極端情境",
         }
         return cmd in exact_keywords
 
@@ -2496,6 +2497,41 @@ class ConversationRouter:
             except Exception as e:
                 logger.error(f"Failed to generate Tactical Decay Rebalance response: {e}")
                 return f"⚠️ 查詢戰術因子衰減自適應調倉儀表時發生錯誤：{e}"
+
+        # 38. Multi-Factor Extreme Stress Testing & Liquidity Squeeze Simulator (Phase 68)
+        if any(cmd.startswith(prefix) for prefix in ("stresstest", "stress_test", "stress", "liquidity_squeeze", "壓力測試", "情境測試", "情境壓力測試", "流動性擠壓", "極端情境")):
+            try:
+                from src.services.multi_factor_stress_test_service import MultiFactorStressTestService
+                stress_svc = MultiFactorStressTestService(user_id=resolved_user_id)
+                parts = text.strip().split()
+
+                # Fetch real portfolio if available
+                portfolio_data = {}
+                try:
+                    from src.services.daily_portfolio_summary_service import DailyPortfolioSummaryService
+                    summary_svc = DailyPortfolioSummaryService(user_id=resolved_user_id)
+                    summary = await summary_svc.generate_summary()
+                    portfolio_data = {
+                        "total_nlv": summary.get("total_equity", 10000.0),
+                        "available_cash": summary.get("total_cash", 2000.0),
+                        "positions": summary.get("positions", []),
+                    }
+                except Exception as pe:
+                    logger.debug(f"Portfolio summary fallback for stress testing: {pe}")
+
+                # Check if specific scenario requested (e.g. /stresstest covid, /stresstest 2007)
+                specific_scenario = None
+                if len(parts) > 1 and parts[1].lower() not in ("summary", "all", "總覽", "report"):
+                    specific_scenario = parts[1]
+
+                report = stress_svc.run_stress_test(portfolio=portfolio_data, scenario_id_filter=specific_scenario)
+
+                if specific_scenario:
+                    return stress_svc.format_scenario_deep_dive(report, specific_scenario)
+                return stress_svc.format_stress_test_dashboard(report)
+            except Exception as e:
+                logger.error(f"Failed to generate Multi-Factor Stress Test response: {e}")
+                return f"⚠️ 執行多因子極端情境壓力測試與流動性擠壓模擬時發生錯誤：{e}"
 
         return None
 
