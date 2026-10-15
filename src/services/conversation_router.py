@@ -247,6 +247,7 @@ class ConversationRouter:
             "tranche", "trend", "hysteresis", "schmitt", "倉位分級", "底倉", "自癒", "漂移自癒",
             "fx", "forex", "hedging", "外匯", "匯率", "避險", "匯率避險", "保證金緩衝",
             "attribution", "decay", "halflife", "residual", "收益歸因", "正交歸因", "因子歸因", "因子衰減", "半衰期", "因子半衰期",
+            "decayrebalance", "調倉", "自適應調倉", "衰減調倉", "因子調倉",
         }
         return cmd in exact_keywords
 
@@ -736,7 +737,7 @@ class ConversationRouter:
                 return f"⚠️ 查詢成交品質與滑點統計時發生錯誤：{e}"
 
         # 8. Factor / Factors / IC / 因子 / 特徵漂移 / 因子自癒 / 因子監控
-        if any(cmd.startswith(prefix) for prefix in ("factor", "factors", "ic", "因子", "特徵漂移", "因子自癒", "因子監控")) and not any(sub in cmd for sub in ("attribution", "decay", "halflife", "residual", "歸因", "衰減", "半衰期")):
+        if any(cmd.startswith(prefix) for prefix in ("factor", "factors", "ic", "因子", "特徵漂移", "因子自癒", "因子監控")) and not any(sub in cmd for sub in ("attribution", "decay", "halflife", "residual", "rebalance", "調倉", "歸因", "衰減", "半衰期")):
             try:
                 from src.services.factor_drift_guard_service import FactorDriftGuardService
                 from src.services.tactical_factor_rotation_service import TacticalFactorRotationService
@@ -2082,7 +2083,9 @@ class ConversationRouter:
                 return f"⚠️ 查詢跨板塊即時貝塔阻尼儀表時發生錯誤：{e}"
 
         # 25. Cross-Sector Harvest & Profit Recirculation (Phase 59A)
-        if any(cmd.startswith(prefix) for prefix in ("harvest", "rebalance", "recirculate", "收割", "再平衡", "利差回流")):
+        if any(cmd.startswith(prefix) for prefix in ("harvest", "recirculate", "收割", "利差回流")) or (
+            cmd.startswith(("rebalance", "再平衡")) and any(sub in cmd for sub in ("harvest", "recirculate", "收割", "利差", "profit"))
+        ):
             try:
                 from src.services.broker_factory import BrokerFactory
                 from src.services.cross_sector_harvest_rebalance_service import CrossSectorHarvestRebalanceService
@@ -2431,9 +2434,9 @@ class ConversationRouter:
                 return f"⚠️ 查詢跨市場外匯對沖與多幣種保證金流動性儀表時發生錯誤：{e}"
 
         # 36. Factor Orthogonal Residual Attribution & Decay Monitoring (Phase 66)
-        if any(cmd.startswith(prefix) for prefix in ("attribution", "decay", "halflife", "residual", "收益歸因", "正交歸因", "因子歸因", "因子衰減", "半衰期", "因子半衰期")) or (
-            any(cmd.startswith(prefix) for prefix in ("factor", "factors", "因子")) and any(sub in cmd for sub in ("attribution", "decay", "halflife", "residual", "歸因", "衰減", "半衰期"))
-        ):
+        if ((any(cmd.startswith(prefix) for prefix in ("attribution", "decay", "halflife", "residual", "收益歸因", "正交歸因", "因子歸因", "因子衰減", "半衰期", "因子半衰期")) and not any(sub in cmd for sub in ("rebalance", "調倉"))) or (
+            any(cmd.startswith(prefix) for prefix in ("factor", "factors", "因子")) and any(sub in cmd for sub in ("attribution", "decay", "halflife", "residual", "歸因", "衰減", "半衰期")) and not any(sub in cmd for sub in ("rebalance", "調倉"))
+        )):
             try:
                 from src.services.factor_orthogonal_attribution_service import FactorOrthogonalAttributionService
                 attr_svc = FactorOrthogonalAttributionService(user_id=resolved_user_id)
@@ -2458,6 +2461,41 @@ class ConversationRouter:
             except Exception as e:
                 logger.error(f"Failed to generate Factor Attribution & Decay response: {e}")
                 return f"⚠️ 查詢因子正交殘差收益歸因與多因子風險衰減看板時發生錯誤：{e}"
+
+        # 37. Tactical Decay-Driven Portfolio Rebalancing (Phase 67)
+        if any(cmd.startswith(prefix) for prefix in ("rebalance", "decay_rebalance", "decayrebalance", "factor_rebalance", "tactical_rebalance", "調倉", "自適應調倉", "衰減調倉", "因子調倉")) or (
+            any(cmd.startswith(prefix) for prefix in ("factor", "factors", "decay", "因子")) and any(sub in cmd for sub in ("rebalance", "調倉"))
+        ):
+            try:
+                from src.services.tactical_decay_rebalancer_service import TacticalDecayRebalancerService
+                rebal_svc = TacticalDecayRebalancerService(user_id=resolved_user_id)
+                parts = text.strip().split()
+
+                # Check if requesting execution plan (/rebalance plan)
+                is_plan = any(p.lower() in ("plan", "order", "orders", "執行", "方案", "訂單") for p in parts[1:]) or "plan" in cmd
+
+                # Fetch real portfolio if available
+                portfolio_data = {}
+                try:
+                    from src.services.daily_portfolio_summary_service import DailyPortfolioSummaryService
+                    summary_svc = DailyPortfolioSummaryService(user_id=resolved_user_id)
+                    summary = await summary_svc.generate_summary()
+                    portfolio_data = {
+                        "total_nlv": summary.get("total_equity", 10000.0),
+                        "available_cash": summary.get("total_cash", 2000.0),
+                        "positions": summary.get("positions", []),
+                    }
+                except Exception as pe:
+                    logger.debug(f"Portfolio summary fallback for decay rebalancer: {pe}")
+
+                plan = rebal_svc.generate_decay_rebalance_plan(portfolio=portfolio_data)
+
+                if is_plan:
+                    return rebal_svc.format_rebalance_plan(plan)
+                return rebal_svc.format_rebalance_dashboard(plan)
+            except Exception as e:
+                logger.error(f"Failed to generate Tactical Decay Rebalance response: {e}")
+                return f"⚠️ 查詢戰術因子衰減自適應調倉儀表時發生錯誤：{e}"
 
         return None
 
