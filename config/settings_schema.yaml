@@ -4245,6 +4245,43 @@ settings:
     label_zh: 因子健康半衰期最低天數
     help_en: First-order autocorrelation half-life threshold below which a factor is classified as crowded/decaying and receives defensive weight dampening.
     help_zh: 因子一階自相關半衰期（t_1/2）低於此天數時，判定因子過度擁擠鈍化，觸發防守權重打折（預設 5 日）。
+  - key: enable_tactical_decay_rebalancing
+    group: trading
+    type: bool
+    default: true
+    label_en: Enable Tactical Decay-Driven Rebalancing
+    label_zh: 啟用戰術因子衰減自適應調倉引擎
+    help_en: Dynamically tilts multi-factor weights based on empirical half-life decay and solves convex Sharpe frontier to formulate rebalance plans.
+    help_zh: 結合因子半衰期衰減傾斜乘數與凸二次規劃最優夏普比率，自適應調整投組資產權重並輸出換倉訂單。
+  - key: decay_rebalance_drift_threshold
+    group: trading
+    type: float
+    default: 0.03
+    min: 0.01
+    max: 0.15
+    label_en: Decay Rebalancing Drift Tolerance Threshold
+    label_zh: 衰減調倉部位漂移容差門檻
+    help_en: Minimum target vs current weight drift required to trigger a rebalancing trade to prevent friction losses (default 0.03 = 3%).
+    help_zh: 觸發再平衡換倉交易之最低目標權重漂移門檻（預設 0.03 即 3%），過濾無效微調以防範手續費與滑價摩擦。
+  - key: decay_rebalance_max_turnover
+    group: trading
+    type: float
+    default: 0.25
+    min: 0.05
+    max: 0.60
+    label_en: Decay Rebalancing Maximum Turnover Cap
+    label_zh: 衰減調倉最高單向換手率上限
+    help_en: Hard cap on total portfolio one-way turnover per rebalancing cycle to prevent aggressive over-trading (default 0.25 = 25%).
+    help_zh: 單次再平衡週期中允許之總單向換手率上限（預設 0.25 即 25%），防範過度換倉衝擊成本。
+  - key: decay_rebalance_enforce_friction_hurdle
+    group: trading
+    type: bool
+    default: true
+    label_en: Enforce Microstructure Friction Hurdle on Decay Rebalance
+    label_zh: 強制衰減調倉執行微觀摩擦機會成本門檻
+    help_en: Verifies that expected alpha gains strictly exceed round-trip commission and bid-ask spread hurdle before executing swaps.
+    help_zh: 換倉前強制檢驗超額收益是否嚴格超越雙向手續費與盤口點差之機會成本門檻。
+
 
 
 
