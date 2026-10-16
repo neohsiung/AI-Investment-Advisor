@@ -13,6 +13,7 @@
 that scores trade decisions with a multi-agent ensemble and executes them
 against eToro.
 
+<!-- MISSION:BEGIN -->
 ## Mission & Non-Negotiable Invariants (read first)
 
 `config/mission.yaml` is the **single source of truth** for what this system optimises and what it may
@@ -33,6 +34,7 @@ Rules every AI coding agent must follow, whatever its capability level:
 5. **Touching any `config/*.yaml`: run `tests/unit/config` and `tests/invariants` before deploying** (a malformed
    settings schema once made the quality gate crash and evicted 7 of 8 active tickers).
 6. **Do not write numbers that drift (trade counts, costs, caps) into docs** — query the DB or the API instead.
+<!-- MISSION:END -->
 
 **Current capability (stated honestly; re-verify from the DB, do not trust this text).** The order path is wired
 end to end to a live eToro account and has filled trades; whether it earns a net excess return over SPY is

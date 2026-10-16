@@ -25,3 +25,13 @@ def test_mission_thresholds_not_duplicated_in_code():
     pat = re.compile(r"\b(MAX_NONSAFETY_SELL\w*|MIN_BENCHMARK_WEIGHT\w*|MAX_ANNUAL_TURNOVER\w*|MIN_DEFLATED_SHARPE\w*)\s*=")
     offenders = [rel(p) for p in py_files() if p.name != "mission.py" and pat.search(p.read_text(encoding="utf-8"))]
     assert offenders == [], f"mission constants re-declared outside src/config/mission.py: {offenders}"
+
+
+def test_agent_instruction_files_are_in_sync_with_agents_md():
+    """Every tool's instruction file carries the same mission rules (generated from AGENTS.md)."""
+    import subprocess
+    import sys
+
+    r = subprocess.run([sys.executable, str(REPO / "scripts" / "gen_agent_shims.py"), "--check"],
+                       capture_output=True, text=True)
+    assert r.returncode == 0, r.stdout + r.stderr
