@@ -4343,6 +4343,12 @@ class SentinelService:
                 ):
                     cand_score = float(trigger.get("candidate_score", 8.0))
                     est_proceeds = round(sell_qty * (current_price or 0), 2)
+                    # Same single-order cap as batch deployment; the remainder stays cash (benchmark parking / next batch).
+                    # 與批次建倉相同的單筆上限；餘額留作現金。
+                    max_order = float(self.settings_service.get_setting("batch_deploy_max_order_usd", 100.0, self.user_id) or 100.0)
+                    if est_proceeds > max_order:
+                        logger.info(f"[Sentinel Exit Execution] Rotation buy capped ${est_proceeds} -> ${max_order:.2f}")
+                        est_proceeds = round(max_order, 2)
                     if est_proceeds >= 10.0:
                         logger.info(
                             f"[Sentinel Exit Execution] Rotation sell executed for {ticker}; "
@@ -4374,6 +4380,27 @@ class SentinelService:
                             await self._acquire_cooldown(cooldown_key, 21600, fail_open=False)
             except Exception as e:
                 logger.error(f"[Sentinel Exit Execution] Failed to execute exit for {ticker}: {e}", exc_info=True)
+
+    def _holding_age_days(self, ticker: str, info: Dict[str, Any]) -> Optional[float]:
+        """Days since the position's most recent BUY (adds reset the clock). None = unknown.
+        自最近一次買進起算的持有天數（加碼會重置）；None 表示無法判定。"""
+        try:
+            opened = info.get("open_date")
+            if not opened:
+                df = self.transaction_service.get_transactions(self.user_id)
+                if df is None or df.empty or "ticker" not in df.columns or "trade_date" not in df.columns:
+                    return None
+                buys = df[(df["ticker"] == ticker) & (df["action"] == "BUY")]
+                if buys.empty:
+                    return None
+                opened = buys["trade_date"].max()
+            ts = pd.to_datetime(opened)
+            if getattr(ts, "tzinfo", None) is not None:
+                ts = ts.tz_localize(None) if hasattr(ts, "tz_localize") else ts.replace(tzinfo=None)
+            return max(0.0, (pd.Timestamp.now() - ts).total_seconds() / 86400.0)
+        except Exception as e:
+            logger.warning(f"[Capital Rotation] holding age unavailable for {ticker}: {e}")
+            return None
 
     async def _check_capital_rotation_opportunities(
         self,
@@ -4490,7 +4517,23 @@ class SentinelService:
             weakest_exit_decision = None
             weakest_info = None
 
-            for ticker, info in active_holdings.items():
+            # Minimum holding period: a position cannot be rotated out until it has been held long enough
+            # to outlast round-trip friction. Unknown age fails closed (no sell on absent evidence).
+            # 最短持有期：持倉須先撐過來回摩擦才可被換出；年齡未知則不賣（缺證據不當作可賣）。
+            min_hold = float(self.settings_service.get_setting("rotation_min_holding_days", 5, self.user_id) or 0)
+            sellable = {}
+            for t_, i_ in active_holdings.items():
+                age = self._holding_age_days(t_, i_)
+                if age is None:
+                    logger.info(f"[Capital Rotation] {t_} skipped as rotation source: holding age unknown (fail closed)")
+                elif age < min_hold:
+                    logger.info(f"[Capital Rotation] {t_} skipped as rotation source: held {age:.1f}d < {min_hold:.0f}d minimum")
+                else:
+                    sellable[t_] = i_
+            if not sellable:
+                return []
+
+            for ticker, info in sellable.items():
                 shares = float(info.get("shares", 0) or info.get("quantity", 0) or 0)
                 current_price = float(info.get("current_price", 0) or 0)
                 avg_price = float(info.get("avg_price", 0) or 0)

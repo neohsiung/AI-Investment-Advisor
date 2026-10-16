@@ -210,6 +210,7 @@ async def test_check_position_exits_capital_rotation_success(sentinel):
             "market_value": 600.0,
             "current_price": 30.0,
             "avg_price": 35.0,
+            "open_date": __import__("datetime").datetime.now() - __import__("datetime").timedelta(days=10),
         }
     }
     sentinel._acquire_cooldown = AsyncMock(return_value=True)
@@ -364,7 +365,7 @@ async def test_handle_position_exits_capital_rotation_executes_buy(sentinel):
         # Second call: BUY TSM with proceeds ($600.0)
         assert calls[1].kwargs["ticker"] == "TSM"
         assert calls[1].kwargs["action"] == "BUY"
-        assert calls[1].kwargs["quantity"] == 600.0
+        assert calls[1].kwargs["quantity"] == 100.0  # capped at batch_deploy_max_order_usd (sell proceeds were $600)
         assert calls[1].kwargs["confidence_score"] == 8.8
         assert calls[1].kwargs["strategy_name"] == "capital_rotation"
 

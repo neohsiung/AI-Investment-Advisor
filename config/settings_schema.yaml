@@ -1391,6 +1391,16 @@ settings:
     label_zh: 研究分數最大有效天數
     help_en: Research older than this counts as unresearched (neutral score) when computing target allocations.
     help_zh: 超過此天數的研究分數在計算目標配置時視為未研究（中性分數）。
+  - key: rotation_min_holding_days
+    group: trading
+    type: int
+    default: 5
+    min: 0
+    max: 90
+    label_en: Minimum holding days before capital rotation
+    label_zh: 換庫前最短持有天數
+    help_en: A position cannot be sold by capital rotation until it has been held this many days since its latest buy. Unknown age blocks the sell. 0 disables the check.
+    help_zh: 持倉自最近一次買進起須滿此天數才可被換庫賣出；年齡未知則不賣；0 為關閉此檢查。
   - key: batch_deploy_max_order_usd
     group: trading
     type: float
