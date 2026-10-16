@@ -138,6 +138,54 @@ class UniverseLifecycleService:
             summary=summary,
         )
 
+    async def refresh_research_scores(self, max_candidates: int = 10) -> Dict[str, Any]:
+        """
+        Re-run the quality gate for every active ticker (plus the first N candidates) and persist
+        a fresh research row, so allocation/deployment decisions never rest on weeks-old scores.
+        0-LLM. Tickers whose evaluation lacks data are skipped and reported, never written with
+        a made-up score. expected_return is left NULL (no evidence to estimate it).
+        對每檔 active（及前 N 檔候選）重跑品質閘門並寫入新研究紀錄；0-LLM。
+        資料不足者略過並回報，不寫入虛構分數；expected_return 留空（無依據估計）。
+        """
+        tickers = [t["ticker"].upper() for t in self.repo.get_all(self.user_id, status="active")]
+        cands = [t["ticker"].upper() for t in self.repo.get_all(self.user_id, status="candidate")]
+        tickers += [c for c in cands[:max_candidates] if c not in tickers]
+
+        refreshed: List[Dict[str, Any]] = []
+        skipped: List[Dict[str, str]] = []
+        for sym in tickers:
+            try:
+                a = await self.quality_gate.evaluate_ticker(sym)
+            except Exception as e:
+                logger.warning("refresh_research_scores: %s evaluation failed: %s", sym, e)
+                skipped.append({"ticker": sym, "reason": f"error: {e}"})
+                continue
+            if a is None or a._insufficient_data:
+                skipped.append({"ticker": sym, "reason": "insufficient_data"})
+                continue
+            ok = self.repo.add_research(
+                self.user_id, sym, "QualityGateService", "quality_evaluation",
+                round(max(0.0, min(1.0, a.overall_score / 10.0)), 4),
+                target_weight=None,
+                expected_return=None,
+                risk_score=None,
+                thesis="; ".join(a.reasons)[:500],
+                risks=None,
+                data_sources={"fundamentals_available": a.fundamentals_available},
+                raw_analysis=a.to_dict(),
+            )
+            if ok:
+                refreshed.append({
+                    "ticker": sym,
+                    "score": a.overall_score,
+                    "fundamentals_available": a.fundamentals_available,
+                })
+            else:
+                skipped.append({"ticker": sym, "reason": "persist_failed"})
+
+        logger.info("refresh_research_scores: %d refreshed, %d skipped", len(refreshed), len(skipped))
+        return {"success": True, "refreshed": refreshed, "skipped": skipped}
+
     async def review_and_evict_active_tickers(
         self,
         eviction_threshold: Optional[float] = None
@@ -351,9 +399,24 @@ class UniverseLifecycleService:
         winners = valid_assessments[:max_candidates]
         winner_symbols = {w.ticker.upper() for w in winners}
 
+        # Data-outage guard: if most contenders could not be evaluated (provider failures), the
+        # "winners" are an artefact of missing data, so pruning everyone else would wipe the pool
+        # (2026-10-13 audit: 28 candidates pruned in one run). Skip pruning and say so.
+        # 資料中斷防護：多數候選無法評估（供應商失敗）時，「勝出者」只是缺資料的假象，
+        # 此時剔除其餘候選會清空候選池（2026-10-13 一次剔除 28 檔）；改為略過剔除並記 warning。
+        evaluated_ok = len(valid_assessments)
+        prune_blocked = bool(eligible_candidates) and evaluated_ok < 0.5 * len(eligible_candidates)
+        if prune_blocked:
+            logger.warning(
+                "Candidate pruning SKIPPED: only %d/%d contenders evaluated successfully (data outage?)",
+                evaluated_ok, len(eligible_candidates),
+            )
+
         # 4. 汰弱 (Pruning of weak candidates from DB)
         pruned = []
         for sym, cand_item in current_cand_map.items():
+            if prune_blocked:
+                break
             if sym not in winner_symbols:
                 # Check if this candidate was designated/pinned by the user
                 if cand_item.get("is_pinned"):
@@ -437,6 +500,7 @@ class UniverseLifecycleService:
             "admitted_new_count": len(admitted_new),
             "retained_count": len(retained),
             "pruned_count": len(pruned),
+            "prune_skipped_data_outage": prune_blocked,
             "admitted_new": admitted_new,
             "retained": retained,
             "pruned": pruned,

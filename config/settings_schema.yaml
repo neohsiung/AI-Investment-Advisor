@@ -1344,6 +1344,16 @@ settings:
     label_zh: 小額訂單 0-LLM 數理引擎分流門檻 (USD)
     help_en: Trade amount below which routine execution bypasses full LLM council and uses deterministic mathematical allocation.
     help_zh: 當交易金額小於此門檻時，日常執行直接採用確定性數理因子模型，杜絕無謂 Token 消耗。
+  - key: universe_research_max_age_days
+    group: trading
+    type: int
+    default: 14
+    min: 1
+    max: 90
+    label_en: Max research age (days)
+    label_zh: 研究分數最大有效天數
+    help_en: Research older than this counts as unresearched (neutral score) when computing target allocations.
+    help_zh: 超過此天數的研究分數在計算目標配置時視為未研究（中性分數）。
   - key: batch_deploy_max_order_usd
     group: trading
     type: float

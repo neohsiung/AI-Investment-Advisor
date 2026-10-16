@@ -136,6 +136,12 @@ app.conf.beat_schedule = {
         "task": "src.infrastructure.tasks.dispatch_universe_lifecycle",
         "schedule": crontab(hour=8, minute=0, day_of_week="1"),  # Mon 08:00 EST
     },
+    # Universe research refresh — weekdays 07:30 EST (before the 09:35 deployment/rebalance tasks)
+    # 標的池研究分數刷新：交易日 07:30 EST（早於 09:35 建倉/再平衡），0-LLM。
+    "universe-research-refresh": {
+        "task": "src.infrastructure.tasks.dispatch_universe_research_refresh",
+        "schedule": crontab(hour=7, minute=30, day_of_week="1-5"),
+    },
     # Strategy Lifecycle & Discovery Evolution — runs weekly on Sunday night (21:00 EST)
     # 策略生命週期與自主探索演進：每週自動滾動執行歷史回測掃描、檢驗既有策略績效、探索新體制候選策略並更新註冊中心。
     "strategy-lifecycle-evolution": {

@@ -772,6 +772,46 @@ def generate_monthly_report(user_id: str = None):
         return f"Error: {str(e)}"
 
 
+@app.task(name="src.infrastructure.tasks.dispatch_universe_research_refresh")
+def dispatch_universe_research_refresh():
+    """Fan-out dispatcher: 為活躍租戶分派標的池研究分數刷新任務（0-LLM）。"""
+    users = _resolve_target_users()
+    for uid in users:
+        run_universe_research_refresh.delay(user_id=uid)
+    return f"Dispatched {len(users)} universe_research_refresh tasks"
+
+
+@app.task(name="src.infrastructure.tasks.run_universe_research_refresh", soft_time_limit=900, time_limit=960)
+def run_universe_research_refresh(user_id: str = None, reoptimize: bool = True):
+    """
+    Refresh quality-based research scores for active/candidate tickers, then recompute target
+    allocations from them (no orders are placed). 0-LLM.
+    刷新 active/候選標的的品質研究分數，並據此重算目標配置（不下單）；0-LLM。
+    """
+    user_id = user_id or os.getenv("PRIMARY_USER_ID") or os.getenv("USER_ID")
+    if not user_id:
+        logger.error("run_universe_research_refresh: user_id is required.")
+        return "Error: user_id is required"
+    try:
+        from src.services.universe_lifecycle_service import UniverseLifecycleService
+        svc = UniverseLifecycleService(user_id=user_id)
+        res = _run_async_safe(svc.refresh_research_scores())
+        n_ok = len(res.get("refreshed", []))
+        opt_msg = "skipped"
+        if reoptimize and n_ok > 0:
+            from src.services.ticker_universe_service import TickerUniverseService
+            opt = TickerUniverseService(user_id=user_id).optimize_allocations()
+            opt_msg = f"targets={len(opt.get('targets', []))} success={opt.get('success')}"
+        elif reoptimize:
+            logger.warning("run_universe_research_refresh: nothing refreshed; targets NOT recomputed")
+        logger.info("run_universe_research_refresh for %s: refreshed=%d skipped=%d optimize=%s",
+                    user_id, n_ok, len(res.get("skipped", [])), opt_msg)
+        return {"refreshed": n_ok, "skipped": res.get("skipped", []), "optimize": opt_msg}
+    except Exception as e:
+        logger.error(f"run_universe_research_refresh failed for {user_id}: {e}", exc_info=True)
+        return f"Error: {str(e)}"
+
+
 @app.task(name="src.infrastructure.tasks.dispatch_universe_lifecycle")
 def dispatch_universe_lifecycle():
     """Fan-out dispatcher: 為活躍租戶分派標的池生命週期演化任務。"""

@@ -186,7 +186,18 @@ class YFinanceProvider(MarketDataProvider):
                     "trailing_pe": info.get('trailingPE'),
                     "forward_pe": info.get('forwardPE'),
                     "sector": info.get('sector'),
-                    "industry": info.get('industry')
+                    "industry": info.get('industry'),
+                    # Fundamentals consumed by QualityGateService (None when Yahoo omits them).
+                    # 供 QualityGateService 使用的基本面欄位（Yahoo 缺漏時為 None）。
+                    "returnOnEquity": info.get('returnOnEquity'),
+                    "debtToEquity": info.get('debtToEquity'),
+                    "operatingMargins": info.get('operatingMargins'),
+                    "profitMargins": info.get('profitMargins'),
+                    "revenueGrowth": info.get('revenueGrowth'),
+                    "trailingPE": info.get('trailingPE'),
+                    "forwardPE": info.get('forwardPE'),
+                    "currentPrice": info.get('currentPrice') or info.get('regularMarketPrice'),
+                    "averageVolume": info.get('averageVolume'),
                 }
             except Exception as e:
                 self.logger.warning(

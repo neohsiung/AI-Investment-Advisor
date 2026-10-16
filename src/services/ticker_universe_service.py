@@ -470,13 +470,38 @@ class TickerUniverseService:
             if beta is None:
                 beta = self.calculate_ticker_beta(ticker, spy_returns=spy_returns, days=60, default_beta=1.0)
 
-            if research:
-                scores = [float(r["confidence_score"]) for r in research if r.get("confidence_score")]
+            # Use the NEWEST research row only (rows are ordered newest first); taking max()
+            # over history let a stale high score override fresh ones. Research older than
+            # universe_research_max_age_days counts as unresearched (neutral 0.5), never as fresh.
+            # 只採最新一筆研究（max() 會讓過期高分蓋過新分數）；超齡研究視為未研究（中性 0.5）。
+            latest = research[0] if research else None
+            if latest is not None:
+                try:
+                    max_age_days = float(self.settings_service.get_setting("universe_research_max_age_days", 14))
+                except Exception:
+                    max_age_days = 14.0
+                created = latest.get("created_at")
+                age_days = None
+                try:
+                    from datetime import datetime as _dt, timezone as _tz
+                    if created is not None:
+                        c = created if hasattr(created, "tzinfo") else _dt.fromisoformat(str(created))
+                        if c.tzinfo is None:
+                            c = c.replace(tzinfo=_tz.utc)
+                        age_days = (_dt.now(_tz.utc) - c).total_seconds() / 86400.0
+                except Exception:
+                    age_days = None
+                if age_days is not None and age_days > max_age_days:
+                    logger.warning(
+                        "Research for %s is %.0f days old (> %.0f); treating as unresearched",
+                        ticker, age_days, max_age_days,
+                    )
+                    latest = None
+            if latest is not None:
+                latest_conf = float(latest["confidence_score"]) if latest.get("confidence_score") else 0.5
                 ticker_scores[ticker] = {
-                    "confidence": max(scores) if scores else 0.5,
-                    "expected_return": float(max(
-                        (r.get("expected_return") or 0.0) for r in research
-                    )) or 0.05,
+                    "confidence": latest_conf,
+                    "expected_return": float(latest.get("expected_return") or 0.0) or 0.05,
                     "volatility": float(vol) if vol and float(vol) > 0 else 0.25,
                     "beta": float(beta) if beta and float(beta) > 0 else 1.0,
                     "sector": t.get("sector", ""),
