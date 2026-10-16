@@ -281,7 +281,9 @@ class TestBddSmartCashDeployment:
 
         # 3. 資金完全自給自足，現金缺口為 0
         assert plan["summary"]["cash_shortfall"] == 0.0
-        assert plan["summary"]["total_buy_amount"] == 300.0
+        # each buy is ramped in under the per-order cap (batch_deploy_max_order_usd, default $100)
+        assert all(b["delta_amount"] <= 100.0 for b in buys)
+        assert plan["summary"]["total_buy_amount"] == 200.0
 
 
 class TestBddLongTermWinnerAndOpportunityCostWorkflow:

@@ -394,6 +394,30 @@ class ConfidenceRebalanceService:
         buy_budget = max(0.0, current_cash_usd - cash_buffer_usd) + sum(abs(t["delta_amount"]) for t in sells)
         buys = scale_buys_to_budget(buys, buy_budget, min_trade_usd)
 
+        # Ramp-in cap (same limits as batch deployment): at most N tickers per run, each order capped. Without
+        # it a weekly run on an all-cash account would deploy ~60% of NAV into 8 names in one go.
+        # 逐步建倉上限（與批次建倉相同）：每次最多 N 檔、每筆有金額上限；否則全現金帳戶的每週再平衡
+        # 會一次把約 60% 淨值投入 8 檔。
+        try:
+            from src.services.settings_service import SettingsService as _SS
+            _cfg = _SS(user_id=self.user_id)
+            max_order = float(_cfg.get_setting("batch_deploy_max_order_usd", 100.0) or 100.0)
+            max_names = int(float(_cfg.get_setting("batch_deploy_max_tickers", 3) or 3))
+        except Exception as e:
+            logger.warning("ConfidenceRebalance: ramp-in settings unreadable (%s); using defaults 100/3", e)
+            max_order, max_names = 100.0, 3
+        if buys:
+            ranked = sorted(buys, key=lambda b: (float(b.get("confidence") or 0.0), b["delta_amount"]), reverse=True)
+            kept = []
+            for b in ranked[:max(1, max_names)]:
+                amt = min(float(b["delta_amount"]), max_order)
+                if amt >= min_trade_usd:
+                    ratio = amt / float(b["delta_amount"]) if float(b["delta_amount"]) else 1.0
+                    kept.append({**b, "delta_amount": round(amt, 2),
+                                 "delta_weight": round(float(b.get("delta_weight", 0.0)) * ratio, 2),
+                                 "ramp_capped": amt < float(b["delta_amount"]) or len(ranked) > max_names})
+            buys = kept
+
         total_buy_amount = sum(t["delta_amount"] for t in buys)
         total_sell_amount = sum(abs(t["delta_amount"]) for t in sells)
         pruned_amount = sum(abs(t["delta_amount"]) for t in pruned_lots)

@@ -358,3 +358,22 @@ async def test_rebalance_never_prunes_the_benchmark_core():
     plan = await svc.get_rebalance_plan()
     assert "SPY" not in [s["ticker"] for s in plan["trades"]["sells"]]
     assert "SPY" not in [b["ticker"] for b in plan["guard"]["blocked_sells"]]
+
+
+@pytest.mark.asyncio
+async def test_rebalance_buys_are_ramped_in_not_dumped(monkeypatch):
+    """An all-cash account must not receive eight $100-$180 buys (~60% of NAV) from a single weekly run."""
+    from src.services.confidence_rebalance_service import ConfidenceRebalanceService
+
+    svc = ConfidenceRebalanceService(user_id="test-user")
+    tickers = [f"T{i}" for i in range(8)]
+    svc._get_current_weights = AsyncMock(return_value={
+        "weights": {}, "cash_weight": 100.0, "total_value": 1661.0, "positions_map": {},
+    })
+    svc.ticker_service.optimize_allocations = MagicMock(return_value={"success": True, "targets": [
+        {"ticker": t, "target_weight": 0.10, "confidence_score": 0.9 - i * 0.01} for i, t in enumerate(tickers)]})
+    plan = await svc.get_rebalance_plan()
+    buys = plan["trades"]["buys"]
+    assert len(buys) == 3                                   # batch_deploy_max_tickers default
+    assert all(b["delta_amount"] <= 100.0 for b in buys)    # batch_deploy_max_order_usd default
+    assert [b["ticker"] for b in buys] == ["T0", "T1", "T2"]    # strongest first
