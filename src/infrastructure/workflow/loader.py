@@ -33,6 +33,7 @@ from typing import Any, Dict, List, Optional
 
 from src.infrastructure.workflow.base import AgentNode, BaseNode, CodeNode
 from src.infrastructure.workflow.nodes import get_node
+from src.utils.safe_path import resolve_within
 
 logger = logging.getLogger(__name__)
 
@@ -192,10 +193,12 @@ def load_workflow(wf_id: str, force: bool = False) -> WorkflowSpec:
     if not safe_name or safe_name != wf_id or not re.match(r"^[a-zA-Z0-9_-]+$", safe_name):
         raise WorkflowError(f"invalid workflow id: {wf_id!r}")
 
-    base_dir = workflows_dir().resolve()
-    path = (base_dir / f"{safe_name}.yaml").resolve()
-    if not path.is_relative_to(base_dir) or not path.exists():
-        raise WorkflowError(f"workflow {wf_id!r} not found at {path}")
+    try:
+        path = Path(resolve_within(workflows_dir(), f"{safe_name}.yaml"))
+    except ValueError:
+        raise WorkflowError(f"invalid workflow id: {wf_id!r}")
+    if not path.exists():
+        raise WorkflowError(f"workflow {wf_id!r} not found")
 
     mtime = path.stat().st_mtime
     with _lock:

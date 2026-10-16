@@ -125,9 +125,12 @@ class MarketNewsFilterService:
         """Normalize headline text for semantic deduplication."""
         if not title:
             return ""
-        t = title.lower()
+        # Bound the input and the gap below: an unbounded `.*?` is polynomial on
+        # long headlines without a publisher (CodeQL py/polynomial-redos).
+        # 限制輸入與間隔長度，避免長標題造成多項式回溯。
+        t = title[:500].lower()
         # Remove publisher suffixes (e.g., "| Reuters", "- Bloomberg", "[CNBC]")
-        t = re.sub(r"[\-|\|\[\(].*?(reuters|bloomberg|cnbc|wsj|yahoo finance|marketwatch|investing\.com|the wall street journal)[\)\]]?", "", t)
+        t = re.sub(r"[\-|\|\[\(][^\]\)]{0,80}?(reuters|bloomberg|cnbc|wsj|yahoo finance|marketwatch|investing\.com|the wall street journal)[\)\]]?", "", t)
         # Remove punctuation and extra whitespace
         t = re.sub(r"[^\w\s]", " ", t)
         t = re.sub(r"\s+", " ", t).strip()

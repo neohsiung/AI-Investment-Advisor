@@ -30,6 +30,7 @@ from llama_index.llms.ollama import Ollama
 from llama_index.vector_stores.postgres import PGVectorStore
 from llama_index.readers.file import PDFReader
 from src.utils.logger import setup_logger
+from src.utils.safe_path import resolve_within
 
 logger = setup_logger("LlamaIndexService")
 
@@ -191,8 +192,20 @@ class LlamaIndexService:
         Returns:
             Dict with ingested document count and metadata
         """
+        # This is exposed as an MCP tool, so `file_path` is caller-controlled:
+        # confine it to the ingest root (default ./data) instead of reading any
+        # PDF on disk. Absolute paths outside the root are rejected.
+        # 此為 MCP 工具，路徑由呼叫端決定；限制在 ingest 根目錄（預設 ./data）內。
+        try:
+            file_path = resolve_within(
+                os.environ.get("RAG_INGEST_ROOT", "data"), file_path
+            )
+        except ValueError:
+            raise ValueError(
+                "PDF path must be inside the ingest root (RAG_INGEST_ROOT, default ./data)"
+            )
         if not os.path.exists(file_path):
-            raise FileNotFoundError(f"PDF not found: {file_path}")
+            raise FileNotFoundError(f"PDF not found: {os.path.basename(file_path)}")
 
         try:
             documents = self._pdf_reader.load_data(file_path)

@@ -148,7 +148,8 @@ async def health_check():
         health["components"]["database"] = "ok"
     except Exception as e:
         health["status"] = "degraded"
-        health["components"]["database"] = f"error: {str(e)}"
+        logger.error(f"Health check: database failed: {e}")
+        health["components"]["database"] = f"error: {type(e).__name__}"
 
     # 2. Check Redis/Celery
     try:
@@ -168,7 +169,8 @@ async def health_check():
             health["components"]["celery_workers"] = "no active workers"
             health["status"] = "degraded"
     except Exception as e:
-        health["components"]["celery_workers"] = f"error: {str(e)}"
+        logger.error(f"Health check: celery failed: {e}")
+        health["components"]["celery_workers"] = f"error: {type(e).__name__}"
         health["status"] = "degraded"
 
     if health["status"] == "healthy":
