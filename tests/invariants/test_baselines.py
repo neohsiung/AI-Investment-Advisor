@@ -31,9 +31,9 @@ def test_src_imports_resolve():
 # 2. Single order executor: only the execution service may place/close broker orders.
 EXECUTOR = "src/services/automated_trading_service.py"
 KNOWN_ORDER_CALLERS = {
-    "src/services/actionable_alert_service.py": 1,
+    # Both are fenced by `hasattr(broker, "place_order")` (no real broker has it) and refuse to record
+    # simulated fills; remove them when a real limit-order path goes through the executor.
     "src/services/cross_sector_harvest_rebalance_service.py": 1,
-    "src/services/shadow_ledger_service.py": 2,
     "src/services/staggered_dip_buying_service.py": 3,
 }
 

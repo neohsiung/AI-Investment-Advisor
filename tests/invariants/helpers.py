@@ -37,7 +37,7 @@ def unresolved_src_imports():
     return bad
 
 
-ORDER_CALL_RE = re.compile(r"\.(execute_order|place_order|close_position|place_close|place_trade)\(")
+ORDER_CALL_RE = re.compile(r"\.(execute_order|place_order|place_close|place_trade)\(|(?:etoro|broker)\w*\.close_position\(")
 
 
 def order_call_files():

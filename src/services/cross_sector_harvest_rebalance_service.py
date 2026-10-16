@@ -360,6 +360,7 @@ class CrossSectorHarvestRebalanceService:
 
         risk_gateway = await self._get_risk_gateway()
         executed_orders: List[Dict[str, Any]] = []
+        skipped_orders: List[Dict[str, Any]] = []
 
         for c in assessment.candidates:
             if c.status not in ("HARVEST_ELIGIBLE", "RUNNER_PRESERVE") or c.recommended_harvest_shares <= 0:
@@ -378,26 +379,36 @@ class CrossSectorHarvestRebalanceService:
                         price=c.current_price,
                         order_type="MARKET",
                     )
-                    if not risk_res.is_allowed:
+                    if not getattr(risk_res, "is_allowed", getattr(risk_res, "allowed", False)):
                         logger.warning("Harvest sell risk blocked for %s: %s", sym, risk_res.reasons)
+                        skipped_orders.append({"ticker": sym, "reason": "risk_blocked"})
                         continue
                 except Exception as re:
-                    logger.debug("Risk gateway error in harvest sell: %s", re)
-
-            # 券商委託
-            order_id = "sim_harvest_" + sym
-            if exec_broker and hasattr(exec_broker, "place_order"):
-                try:
-                    place_res = await exec_broker.place_order(
-                        symbol=sym,
-                        action="SELL",
-                        shares=shares,
-                        order_type="MARKET",
-                    )
-                    order_id = str(place_res.get("order_id") or order_id)
-                except Exception as oe:
-                    logger.error("Failed executing harvest sell for %s: %s", sym, oe)
+                    # A risk check that cannot run is not a pass: skip the order (fail closed) and say so.
+                    # 無法執行的風控檢查不等於通過：略過該筆委託（fail-closed）並明確記錄。
+                    logger.warning("Risk gateway error in harvest sell for %s — order skipped: %s", sym, re)
+                    skipped_orders.append({"ticker": sym, "reason": f"risk_check_error: {re}"})
                     continue
+
+            # 券商委託 — only a broker that can really place orders may execute; never record a simulated
+            # fill as executed (same bug as the staggered-order service).
+            # 只有真的能下單的券商才可執行；絕不把模擬成交記為已執行（與階梯單服務同一類錯誤）。
+            if not (exec_broker and hasattr(exec_broker, "place_order")):
+                logger.warning("Harvest sell for %s NOT executed: no execution broker with place_order", sym)
+                skipped_orders.append({"ticker": sym, "reason": "no_execution_broker"})
+                continue
+            try:
+                place_res = await exec_broker.place_order(
+                    symbol=sym,
+                    action="SELL",
+                    shares=shares,
+                    order_type="MARKET",
+                )
+                order_id = str(place_res.get("order_id"))
+            except Exception as oe:
+                logger.error("Failed executing harvest sell for %s: %s", sym, oe)
+                skipped_orders.append({"ticker": sym, "reason": f"order_error: {oe}"})
+                continue
 
             executed_orders.append({
                 "ticker": sym,
@@ -412,6 +423,7 @@ class CrossSectorHarvestRebalanceService:
             "status": "success",
             "executed_count": len(executed_orders),
             "orders": executed_orders,
+            "skipped_orders": skipped_orders,
             "total_recirculated_usd": round(sum(o["recirculated_usd"] for o in executed_orders), 2),
         }
 

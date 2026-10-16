@@ -4253,6 +4253,18 @@ class SentinelService:
                 f"[Sentinel Exit Execution] Submitting {strategy_name} for {ticker}: {sell_qty} shares, score={composite_score}"
             )
 
+            # Mission invariant: a non-safety sell needs a replacement plan. Stagnation pruning only frees
+            # cash (one-legged); swapping dead money into a better holding is capital_rotation's job, which
+            # carries a pre-flighted target_ticker. Without a target the prune is skipped, not executed.
+            # 使命不變量：非安全類賣出必須有換入計畫。停滯修剪只會釋放現金（單腿）；把死資金換進更好標的
+            # 是 capital_rotation 的工作（帶有預檢過的 target_ticker）。沒有 target 就略過，不執行。
+            if strategy_name == "stagnation_pruning" and not trigger.get("target_ticker"):
+                logger.warning(
+                    f"[Sentinel Exit Execution] Stagnation prune of {ticker} SKIPPED: no replacement target "
+                    f"(non-safety sells require a replacement plan; capital_rotation handles swaps)"
+                )
+                continue
+
             # Pre-Flight Gate for Capital Rotation: Ensure target_ticker can actually be BOUGHT
             # before placing any live SELL order to avoid one-legged liquidation.
             if strategy_name == "capital_rotation":

@@ -809,3 +809,22 @@ async def test_clear_position_peak_and_stop_purges_memory_and_redis(sentinel):
 
 
 
+
+
+@pytest.mark.anyio
+async def test_stagnation_prune_without_replacement_target_is_skipped(sentinel):
+    """Mission invariant: non-safety sells need a replacement plan; a one-legged stagnation prune must not run."""
+    trig = {
+        "id": "stagnation_prune_AAPL_test", "action": "trigger_exit", "ticker": "AAPL",
+        "sell_quantity": 5.0, "strategy_name": "stagnation_pruning", "current_price": 100.0,
+        "avg_price": 100.0, "return_pct": 0.1,
+    }
+    sentinel._acquire_cooldown = AsyncMock(return_value=True)
+    mock_auto_trade = MagicMock()
+    mock_auto_trade.evaluate_and_execute_trade = AsyncMock(return_value={"status": "success"})
+    with patch("src.services.automated_trading_service.AutomatedTradingService", return_value=mock_auto_trade):
+        await sentinel._handle_position_exits([trig])
+        mock_auto_trade.evaluate_and_execute_trade.assert_not_called()
+        # with a replacement target it proceeds like any rotation-style exit
+        await sentinel._handle_position_exits([{**trig, "target_ticker": "MSFT", "candidate_score": 8.0}])
+        assert mock_auto_trade.evaluate_and_execute_trade.call_count >= 1
