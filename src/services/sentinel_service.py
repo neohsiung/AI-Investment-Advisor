@@ -1257,7 +1257,12 @@ class SentinelService:
             
             # Check Fed Funds Rate trend
             fed = economics.get("FedFunds", {})
-            if fed and fed.get("trend") == "Up":
+            # "trend == Up" is a STATE that stays true until the next FOMC move; alert once per
+            # observation date, not on every tick (2026-10 audit: same 3.75% alert 10x in 14 days).
+            # 「趨勢向上」是持續成立的狀態；同一觀測日期只警報一次，避免每個 tick 重複。
+            if fed and fed.get("trend") == "Up" and await self._acquire_cooldown(
+                f"macro_fed_rate_up:{fed.get('date', 'na')}", 30 * 24 * 3600, fail_open=True
+            ):
                 triggers.append({
                     "text": f"🏦 聯邦利率上升: {fed.get('value', 'N/A')}% (as of {fed.get('date', 'N/A')})",
                     "id": "macro_fed_rate_up",
@@ -1268,7 +1273,9 @@ class SentinelService:
             # Check Yield Curve Inversion
             spread = economics.get("10Y2Y_Spread", {})
             if spread and isinstance(spread.get("value"), (int, float)):
-                if spread["value"] < 0:
+                if spread["value"] < 0 and await self._acquire_cooldown(
+                    "macro_yield_inversion", 24 * 3600, fail_open=True
+                ):
                     triggers.append({
                         "text": f"⚠️ 殖利率曲線倒掛: 10Y-2Y = {spread['value']:.2f}%",
                         "id": "macro_yield_inversion",
@@ -1380,37 +1387,55 @@ class SentinelService:
                 "geopolitical conflict sanctions impact stock market today",
             ]
 
-            seen_ids = set()
+            from src.services.global_event_filter import GlobalEventFilter, DEFAULT_BLOCKED_DOMAINS
+
+            blocked = self.settings_service.get_setting("sentinel_global_event_blocked_domains", None)
+            if not isinstance(blocked, (list, tuple)) or not blocked:
+                blocked = DEFAULT_BLOCKED_DOMAINS
+            try:
+                min_sources = int(self.settings_service.get_setting("sentinel_global_event_min_sources", 2) or 2)
+                dedupe_hours = int(self.settings_service.get_setting("sentinel_global_event_dedupe_hours", 72) or 72)
+            except (TypeError, ValueError):
+                min_sources, dedupe_hours = 2, 72
+            gate = GlobalEventFilter(blocked_domains=blocked, min_sources=min_sources)
+
+            scored: List[Dict[str, Any]] = []
             for query in queries:
                 try:
-                    results = await self.search_service.search_financial_context(query, max_results=3)
-                    if not results:
-                        continue
-
-                    for item in results:
-                        title = item.get("title", "")
-                        content = item.get("content", "")
-                        combined = f"{title} {content}"
-
-                        # Score using keyword service (cached + records hits)
-                        total_weight, matched = self.keyword_service.score_text(combined)
-
+                    results = await self.search_service.search_financial_context(query, max_results=5)
+                    for item in results or []:
+                        title = item.get("title") or ""
+                        # The search service returns `link`/`snippet` (not url/content).
+                        # 搜尋服務回傳的欄位是 link/snippet，而非 url/content。
+                        url = item.get("link") or item.get("url") or ""
+                        snippet = item.get("snippet") or item.get("content") or ""
+                        total_weight, matched = self.keyword_service.score_text(f"{title} {snippet}")
                         if total_weight >= risk_threshold:
-                            event_id = f"global_macro_{hash(title) % 100000}"
-                            if event_id not in seen_ids:
-                                seen_ids.add(event_id)
-                                triggers.append({
-                                    "text": f"🌍 全球重大事件: {title[:100]} (加權分數: {total_weight:.2f})",
-                                    "id": event_id,
-                                    "ticker": "GLOBAL",
-                                    "priority": 2, # P2: Geopolitical
-                                    "data": {
-                                        "keywords": matched[:5],
-                                        "source": item.get("url", ""),
-                                    }
-                                })
+                            scored.append({"title": title, "url": url, "weight": total_weight, "matched": matched})
                 except Exception as e:
-                    logger.debug(f"Global macro search query failed: {e}")
+                    logger.warning(f"Global macro search query failed: {e}")
+
+            report = gate.filter_scan(scored)
+            if report.rejected:
+                logger.info(
+                    "Sentinel Dimension 6: filtered %d/%d candidates (%s)",
+                    len(report.rejected), len(scored),
+                    "; ".join(f"{r}" for _, r in report.rejected[:6]),
+                )
+            for it in report.accepted:
+                # Same page must not re-fire for dedupe_hours, across all workers.
+                # 同一頁面在 dedupe_hours 內不得跨 worker 重複觸發。
+                if not await self._acquire_cooldown(
+                    f"global_event:{it['event_id']}", dedupe_hours * 3600, fail_open=True
+                ):
+                    continue
+                triggers.append({
+                    "text": f"🌍 全球重大事件: {it['title'][:100]} (加權分數: {it['weight']:.2f})",
+                    "id": it["event_id"],
+                    "ticker": "GLOBAL",
+                    "priority": 2,
+                    "data": {"keywords": it["matched"][:5], "source": it["url"], "domain": it["domain"]},
+                })
 
             if triggers:
                 logger.info(f"Sentinel Dimension 6: Detected {len(triggers)} global macro events.")

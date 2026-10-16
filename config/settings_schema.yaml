@@ -2918,6 +2918,34 @@ settings:
     min: 1
     label_en: Macro (FRED) scan interval (minutes)
     label_zh: 總經（FRED）掃描間隔（分鐘）
+  - key: sentinel_global_event_min_sources
+    group: sentinel
+    type: int
+    default: 2
+    min: 1
+    max: 5
+    label_en: Global events: min corroborating domains
+    label_zh: 全球事件：最少佐證網域數
+    help_en: A global-event alert fires only if this many distinct, non-blocked domains flag it in the same scan.
+    help_zh: 同一次掃描中至少有此數量的不同（未被封鎖）網域同時示警，才會觸發全球事件警報。
+  - key: sentinel_global_event_dedupe_hours
+    group: sentinel
+    type: int
+    default: 72
+    min: 1
+    max: 720
+    label_en: Global events: dedupe window (hours)
+    label_zh: 全球事件：去重窗口（小時）
+    help_en: The same page cannot re-trigger an alert within this window.
+    help_zh: 同一頁面在此窗口內不會重複觸發警報。
+  - key: sentinel_global_event_blocked_domains
+    group: sentinel
+    type: json
+    default: []
+    label_en: Global events: extra blocked domains
+    label_zh: 全球事件：封鎖網域清單
+    help_en: Domains never treated as breaking events. Empty = built-in default list (Wikipedia, Investopedia, quiz/video/social sites, ...).
+    help_zh: 不視為即時事件的網域；留空表示使用內建預設（維基百科、Investopedia、測驗/影音/社群等）。
   - key: sentinel_deep_interval_min
     group: sentinel
     type: int
