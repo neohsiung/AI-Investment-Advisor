@@ -90,6 +90,7 @@ DISPATCHER_CHILD_TASKS: Dict[str, str] = {
     "dispatch_staggered_orders_stalking": "run_staggered_orders_stalking",
     "dispatch_staggered_orders_moc_conversion": "run_staggered_orders_moc_conversion",
     "dispatch_net_alpha_attribution": "run_net_alpha_attribution",
+    "dispatch_universe_research_refresh": "run_universe_research_refresh",
     "dispatch_strategy_evolution": "run_strategy_evolution",
     "dispatch_factor_rotation_evolution": "run_factor_rotation_evolution",
     "dispatch_factor_genetic_evolution": "run_factor_genetic_evolution",
