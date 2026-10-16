@@ -38,7 +38,7 @@ class TestTradableCapital:
         A cap above the balance must not invent money.
         上限高於餘額時不得憑空放大資金。
         """
-        assert tradable_capital("u1", 40.0, _repo(tradable_capital_usd=100)) == 40.0
+        assert tradable_capital("u1", 40.0, _repo(tradable_capital_usd=100, tradable_capital_pct=100)) == 40.0
 
     def test_defaults_to_the_100_cap_when_unset(self):
         """
@@ -48,8 +48,10 @@ class TestTradableCapital:
         """
         assert tradable_capital("u1", 1048.64, _repo()) == DEFAULT_TRADABLE_CAPITAL_USD
 
-    def test_zero_is_the_documented_way_to_uncap(self):
-        assert tradable_capital("u1", 1048.64, _repo(tradable_capital_usd=0)) == 1048.64
+    def test_zero_usd_cap_removes_only_the_usd_cap(self):
+        """USD cap 0 = no USD cap; the percentage cap (default 75%) still applies."""
+        assert tradable_capital("u1", 1000.0, _repo(tradable_capital_usd=0)) == 750.0
+        assert tradable_capital("u1", 1000.0, _repo(tradable_capital_usd=0, tradable_capital_pct=100)) == 1000.0
 
     def test_unreadable_settings_keep_the_cap(self):
         """
@@ -133,3 +135,28 @@ class TestSmallTestWaiver:
             "u1", 1048.64, _repo(tradable_capital_usd=500)
         ) is True
 
+
+
+class TestPercentageCap:
+    """2026-10-16: the system may deploy at most 75% of the real account (config: tradable_capital_pct)."""
+
+    def test_default_is_75_percent_when_unset(self):
+        assert tradable_capital("u1", 1661.37, _repo(tradable_capital_usd=0)) == pytest.approx(1246.0275)
+
+    def test_explicit_percentage(self):
+        assert tradable_capital("u1", 2000.0, _repo(tradable_capital_usd=0, tradable_capital_pct=50)) == 1000.0
+
+    def test_usd_cap_and_pct_cap_take_the_stricter(self):
+        assert tradable_capital("u1", 2000.0, _repo(tradable_capital_usd=500, tradable_capital_pct=75)) == 500.0
+        assert tradable_capital("u1", 400.0, _repo(tradable_capital_usd=500, tradable_capital_pct=75)) == 300.0
+
+    @pytest.mark.parametrize("pct", [0, -10, "0"])
+    def test_zero_or_negative_percentage_disables_trading(self, pct):
+        """Invariant (mission.yaml: trading_disabled_when_capital_cap_is_zero)."""
+        assert tradable_capital("u1", 1700.0, _repo(tradable_capital_usd=0, tradable_capital_pct=pct)) == 0.0
+
+    def test_garbage_percentage_falls_back_to_default_not_full_account(self):
+        assert tradable_capital("u1", 1000.0, _repo(tradable_capital_usd=0, tradable_capital_pct="abc")) == 750.0
+
+    def test_percentage_above_100_is_clamped(self):
+        assert tradable_capital("u1", 1000.0, _repo(tradable_capital_usd=0, tradable_capital_pct=250)) == 1000.0

@@ -69,3 +69,14 @@ KNOWN_EVOLUTION_SET_SETTING = {"src/services/factor_genetic_evolution_engine.py"
 
 def test_evolution_code_does_not_write_live_settings():
     assert evolution_files_calling_set_setting() == KNOWN_EVOLUTION_SET_SETTING
+
+
+# 5. mission invariant: trading_disabled_when_capital_cap_is_zero (percentage cap of 0 must block all sizing).
+def test_zero_percentage_cap_disables_trading():
+    from unittest.mock import MagicMock
+
+    from src.services.capital_policy import tradable_capital
+
+    repo = MagicMock()
+    repo.get.side_effect = lambda uid, key: {"tradable_capital_pct": 0, "tradable_capital_usd": 0}.get(key)
+    assert tradable_capital("u1", 1700.0, repo) == 0.0

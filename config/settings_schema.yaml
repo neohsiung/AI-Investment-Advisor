@@ -1585,6 +1585,17 @@ settings:
     danger: true
     label_en: Max trades per day
     label_zh: 每日最大交易次數
+  - key: tradable_capital_pct
+    group: trading
+    type: float
+    default: 75.0
+    min: 0
+    max: 100
+    danger: true
+    label_en: "Tradable capital (% of account)"
+    label_zh: 可交易資本（占帳戶百分比）
+    help_en: "Share of the real account the autonomous path may deploy; the rest stays cash. 0 DISABLES trading."
+    help_zh: 自動交易最多可動用的帳戶比例，其餘保持現金；設為 0 代表禁止交易。
   - key: tradable_capital_usd
     group: trading
     type: float
@@ -1593,7 +1604,7 @@ settings:
     danger: true
     label_en: Tradable capital (USD)
     label_zh: 可交易資本（USD）
-    help_en: Hard cap on capital the autonomous path may deploy.
+    help_en: "Additional hard USD cap on capital the autonomous path may deploy (0 = no USD cap; the percentage cap still applies)."
   - key: monthly_data_subscription_cost_usd
     group: trading
     type: float
