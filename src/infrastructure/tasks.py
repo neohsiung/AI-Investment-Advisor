@@ -788,6 +788,30 @@ def run_litellm_spend_collect():
         return f"Error: {str(e)}"
 
 
+@app.task(name="src.infrastructure.tasks.run_benchmark_parking", soft_time_limit=300, time_limit=360)
+def run_benchmark_parking(user_id: str = None):
+    """
+    Park idle capital in the mission benchmark (default OFF: benchmark_parking_enabled). Weekdays after the
+    market-open deployments. Buys only; never sells the benchmark.
+    把閒置資金停泊於使命基準（預設關閉）；交易日開盤建倉之後執行；只買不賣。
+    """
+    if not is_market_open_today():
+        return {"status": "skipped", "reason": "market_closed_today"}
+    user_id = user_id or os.getenv("PRIMARY_USER_ID") or os.getenv("USER_ID")
+    if not user_id:
+        logger.error("run_benchmark_parking: user_id is required.")
+        return "Error: user_id is required"
+    try:
+        from src.services.benchmark_parking_service import BenchmarkParkingService
+        res = _run_async_safe(BenchmarkParkingService(user_id=user_id).run())
+        logger.info("run_benchmark_parking: action=%s amount=%s executed=%s reason=%s",
+                    res.get("action"), res.get("amount_usd"), res.get("executed"), res.get("reason"))
+        return res
+    except Exception as e:
+        logger.error(f"run_benchmark_parking failed: {e}", exc_info=True)
+        return f"Error: {str(e)}"
+
+
 @app.task(name="src.infrastructure.tasks.run_mission_watchdog", soft_time_limit=120, time_limit=150)
 def run_mission_watchdog(user_id: str = None):
     """

@@ -136,6 +136,12 @@ app.conf.beat_schedule = {
         "task": "src.infrastructure.tasks.dispatch_universe_lifecycle",
         "schedule": crontab(hour=8, minute=0, day_of_week="1"),  # Mon 08:00 EST
     },
+    # Benchmark parking — weekdays 09:50 EST, after the 09:35/09:36 deployments (default OFF via setting)
+    # 基準停泊：交易日 09:50 EST（晚於 09:35/09:36 建倉；設定預設關閉）。
+    "benchmark-parking": {
+        "task": "src.infrastructure.tasks.run_benchmark_parking",
+        "schedule": crontab(hour=9, minute=50, day_of_week="1-5"),
+    },
     # Mission watchdog — daily 06:00 EST, 0-LLM; alerts on kill-criteria breaches (never halts trading by itself)
     # 使命看門狗：每日 06:00 EST，0-LLM；kill criteria 觸發即通知（不會自行停止交易）。
     "mission-watchdog": {

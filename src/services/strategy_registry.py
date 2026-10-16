@@ -162,7 +162,7 @@ class StrategyRegistry:
         return strategy_id in (
             "stop_loss", "trailing_stop_loss", "trailing_stop", "emergency_exit", "position_exit", "take_profit",
             "capital_rotation", "rebalance_diversification",
-            "cash_deployment", "stagnation_pruning", "macro_volatility_hedge"
+            "cash_deployment", "stagnation_pruning", "macro_volatility_hedge", "benchmark_parking"
         )
 
     @classmethod
@@ -176,7 +176,7 @@ class StrategyRegistry:
         for safe_name in [
             "stop_loss", "trailing_stop_loss", "trailing_stop", "emergency_exit", "position_exit", "take_profit",
             "capital_rotation", "rebalance_diversification",
-            "cash_deployment", "stagnation_pruning"
+            "cash_deployment", "stagnation_pruning", "benchmark_parking"
         ]:
             cls._strategies[safe_name] = SafetyExitContract(safe_name)
 

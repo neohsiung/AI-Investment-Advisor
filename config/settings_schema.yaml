@@ -1585,6 +1585,29 @@ settings:
     danger: true
     label_en: Max trades per day
     label_zh: 每日最大交易次數
+  - key: benchmark_parking_enabled
+    group: trading
+    type: bool
+    default: false
+    danger: true
+    label_en: "Park idle capital in the benchmark (SPY)"
+    label_zh: 將閒置資金停泊於基準（SPY）
+    help_en: "OFF by default. When ON, a daily job buys the benchmark toward mission.min_benchmark_weight_pct of tradable capital (never sells it). Preview first: GET /api/v1/mission/parking-plan."
+    help_zh: 預設關閉。開啟後每日排程會把基準買到可交易資本的 mission 最低基準權重（絕不賣出）。請先用 GET /api/v1/mission/parking-plan 預覽。
+  - key: benchmark_parking_max_order_usd
+    group: trading
+    type: float
+    default: 250.0
+    min: 10
+    label_en: Benchmark parking max order (USD per run)
+    label_zh: 基準停泊單次最大金額（USD）
+  - key: benchmark_parking_min_gap_usd
+    group: trading
+    type: float
+    default: 50.0
+    min: 10
+    label_en: Benchmark parking minimum gap (USD)
+    label_zh: 基準停泊最小差距（USD，帶寬）
   - key: tradable_capital_pct
     group: trading
     type: float

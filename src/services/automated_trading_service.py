@@ -1404,6 +1404,56 @@ class AutomatedTradingService:
             logger.warning(f"Failed to record order transaction: {e}")
             return None
 
+    async def execute_benchmark_parking(self, user_id: str, amount_usd: float, rationale: str) -> Dict[str, Any]:
+        """
+        Buy the mission benchmark (config/mission.yaml objective.benchmark) with idle capital.
+        This is the ONLY entry point for benchmark parking, so it lives in the single execution service. It is
+        rule-based (no score): the caller (BenchmarkParkingService) already sized the amount against the
+        tradable-capital cap and the benchmark target; here we re-check the kill switch and the risk gateway
+        and fail closed on any error. Position-sizing/Kelly clamps are intentionally NOT applied — they exist
+        for single-stock bets and would shrink the core allocation into a noisy trickle of tiny orders.
+        以閒置資金買入使命基準（SPY）。這是基準停泊的唯一入口，因此放在唯一的執行服務內。
+        規則導向（不用分數）：呼叫端已依可交易資本上限與基準目標定額；這裡重新檢查總開關與風控閘門，
+        任何錯誤一律 fail-closed。刻意不套用單股部位/Kelly 限縮（那是為個股押注設計的）。
+        """
+        from src.config.mission import load_mission
+
+        benchmark = load_mission().objective.benchmark.upper()
+        trading_enabled = self.settings_repo.get(user_id, "ai_trading_enabled")
+        if str(trading_enabled).lower() not in ("true", "1"):
+            return {"status": "blocked", "reason": "Trading is disabled in settings"}
+        if amount_usd is None or float(amount_usd) < 10.0:
+            return {"status": "skipped", "reason": f"amount ${amount_usd} below the $10 broker minimum"}
+        try:
+            from src.services.unified_risk_gateway_service import UnifiedRiskGatewayService
+            gw = await UnifiedRiskGatewayService(user_id=user_id).evaluate_trade_risk(
+                ticker=benchmark, action="BUY", amount_usd=float(amount_usd),
+                current_price=None, strategy_name="benchmark_parking", confidence_score=None,
+            )
+        except Exception as e:
+            logger.error("Benchmark parking blocked: risk gateway error (fail closed): %s", e)
+            return {"status": "blocked", "reason": f"risk gateway error: {e}"}
+        if not gw.allowed:
+            return {"status": "blocked", "reason": "; ".join(gw.reasons) or "risk gateway blocked"}
+
+        order = Order(
+            symbol=benchmark,
+            action=OrderAction.BUY,
+            quantity=float(amount_usd),
+            amount_usd=float(amount_usd),
+            sizing_mode=OrderSizingMode.AMOUNT,
+            order_type=OrderType.MARKET,
+            leverage=1,
+            reason=rationale,
+            strategy_name="benchmark_parking",
+        )
+        # confidence_score=10 is the authorisation level of a rule-based allocation, not a prediction.
+        return await self._execute_trade(
+            user_id, order, 10, rationale, "benchmark_parking (rule-based)",
+            confidence_breakdown=[],   # no per-agent scores: this is a rule, not a prediction
+            threshold=None, strategy_name="benchmark_parking",
+        )
+
     async def _execute_trade(
         self,
         user_id: str,

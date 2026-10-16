@@ -341,3 +341,20 @@ def _rebalance_guard_env(monkeypatch):
     from src.services.confidence_rebalance_service import ConfidenceRebalanceService
     monkeypatch.setattr(ConfidenceRebalanceService, "_sells_today", lambda self: (0, 0.0))
     monkeypatch.setattr(ConfidenceRebalanceService, "_latest_score", lambda self, ticker: 6.0)
+
+
+@pytest.mark.asyncio
+async def test_rebalance_never_prunes_the_benchmark_core():
+    """SPY is not in the universe targets by design; it must not be treated as dead capital to liquidate."""
+    from src.services.confidence_rebalance_service import ConfidenceRebalanceService
+
+    svc = ConfidenceRebalanceService(user_id="test-user")
+    svc._get_current_weights = AsyncMock(return_value={
+        "weights": {"SPY": 50.0, "AAPL": 10.0}, "cash_weight": 40.0, "total_value": 1000.0,
+        "positions_map": {"SPY": {"current_price": 700.0}, "AAPL": {"current_price": 300.0}},
+    })
+    svc.ticker_service.optimize_allocations = MagicMock(return_value={"success": True, "targets": [
+        {"ticker": "AAPL", "target_weight": 0.10, "confidence_score": 0.8}]})
+    plan = await svc.get_rebalance_plan()
+    assert "SPY" not in [s["ticker"] for s in plan["trades"]["sells"]]
+    assert "SPY" not in [b["ticker"] for b in plan["guard"]["blocked_sells"]]

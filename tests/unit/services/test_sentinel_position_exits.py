@@ -828,3 +828,19 @@ async def test_stagnation_prune_without_replacement_target_is_skipped(sentinel):
         # with a replacement target it proceeds like any rotation-style exit
         await sentinel._handle_position_exits([{**trig, "target_ticker": "MSFT", "candidate_score": 8.0}])
         assert mock_auto_trade.evaluate_and_execute_trade.call_count >= 1
+
+
+@pytest.mark.anyio
+async def test_benchmark_core_is_never_exited_by_stop_loss(sentinel, mock_dependencies):
+    """The mission benchmark (SPY) is the default allocation; discretionary exits must not touch it."""
+    mock_dependencies["settings"]._settings_map["enable_fixed_stops"] = True
+    allocation = {
+        "SPY": {"shares": 2.0, "quantity": 2.0, "weight": 60.0, "market_value": 1400.0,
+                "current_price": 700.0, "avg_price": 800.0},          # -12.5%, would trip an 8% stop
+        "AAPL": {"shares": 10.0, "quantity": 10.0, "weight": 15.0, "market_value": 900.0,
+                 "current_price": 90.0, "avg_price": 100.0},           # -10% -> still exits
+    }
+    sentinel._get_current_allocation = AsyncMock(return_value=allocation)
+    sentinel._check_capital_rotation_opportunities = AsyncMock(return_value=[])
+    triggers = await sentinel._check_position_exits()
+    assert [t["ticker"] for t in triggers] == ["AAPL"]

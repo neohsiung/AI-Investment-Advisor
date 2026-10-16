@@ -163,8 +163,9 @@ class ConfidenceRebalanceService:
         # 3a. Inspect positions held that are NOT in target allocations (evicted tickers / dead capital)
         # 淘汰標的與死資本：全額平倉以最大化釋放流動性
         pruned_lots = []
+        from src.services.core_holdings import is_core
         for held_ticker, held_pct in current_weights.items():
-            if held_ticker == "CASH" or held_ticker in target_map:
+            if held_ticker == "CASH" or held_ticker in target_map or is_core(held_ticker):
                 continue
             held_w = held_pct / 100.0
             delta = 0.0 - held_w

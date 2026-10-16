@@ -3456,7 +3456,10 @@ class SentinelService:
                     logger.warning(f"[Cash Concentration] Cash weight={cash_weight:.1f}% exceeds limit={max_single_weight:.1f}%")
 
             # 4b. Check for Concentration Risk
+            from src.services.core_holdings import is_core as _is_core_c
             for ticker, info in current_allocation.items():
+                if _is_core_c(ticker):
+                    continue   # the benchmark core is meant to be large (mission: >= 70% of tradable capital)
                 current_weight = info.get('weight', 0)
                 
                 if current_weight >= max_single_weight:
@@ -3779,9 +3782,12 @@ class SentinelService:
             tx_df_cache = None
 
             eval_candidates: List[Dict[str, Any]] = []
+            from src.services.core_holdings import is_core
             for ticker, info in current_allocation.items():
                 if str(ticker).upper() in ("CASH", "USD"):
                     continue
+                if is_core(ticker):
+                    continue   # benchmark core is never exited by discretionary logic
 
                 shares = float(info.get("shares", 0) or info.get("quantity", 0))
                 if shares <= 0.0001:
@@ -4394,8 +4400,9 @@ class SentinelService:
 
             # Filter valid holdings
             active_holdings = {}
+            from src.services.core_holdings import is_core as _is_core
             for ticker, info in current_allocation.items():
-                if str(ticker).upper() in ("CASH", "USD"):
+                if str(ticker).upper() in ("CASH", "USD") or _is_core(ticker):
                     continue
                 shares = float(info.get("shares", 0) or info.get("quantity", 0) or 0)
                 price = float(info.get("current_price", 0) or 0)
@@ -4691,6 +4698,9 @@ class SentinelService:
 
             for ticker, info in current_allocation.items():
                 if str(ticker).upper() in ("CASH", "USD"):
+                    continue
+                from src.services.core_holdings import is_core as _is_core_p
+                if _is_core_p(ticker):
                     continue
 
                 shares = float(info.get("shares", 0) or info.get("quantity", 0))

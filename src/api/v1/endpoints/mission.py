@@ -22,3 +22,16 @@ async def get_mission_status(user_id: str = Depends(get_current_user_id)) -> Dic
     except Exception as e:
         logger.error(f"get_mission_status failed: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/parking-plan")
+async def get_parking_plan(user_id: str = Depends(get_current_user_id)) -> Dict[str, Any]:
+    """Dry-run preview of benchmark parking: what it would buy today. Never places an order.
+    基準停泊的乾跑預覽：今天會買多少；絕不下單。"""
+    try:
+        from src.services.benchmark_parking_service import BenchmarkParkingService
+
+        return {"status": "success", "data": await BenchmarkParkingService(user_id=user_id).build_plan()}
+    except Exception as e:
+        logger.error(f"get_parking_plan failed: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
