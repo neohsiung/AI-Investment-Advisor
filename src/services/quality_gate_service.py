@@ -400,4 +400,10 @@ class QualityGateService:
                 reasons=[f"Evaluation failed due to exception: {str(e)}"],
                 metrics={},
                 _fallback_reason=f"Exception: {str(e)}",
+                # An evaluation crash is a data/infra failure, not a verdict on the ticker. Mark it
+                # so lifecycle eviction and research refresh skip it (2026-10-16: a settings parse
+                # error produced score 0.00 and 7 of 8 active tickers were evicted).
+                # 評估崩潰是資料/基礎設施故障而非標的裁決；標記後生命週期不會據此剔除標的。
+                _insufficient_data=True,
+                fundamentals_available=False,
             )

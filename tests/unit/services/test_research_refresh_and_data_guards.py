@@ -164,3 +164,23 @@ def test_optimizer_treats_stale_research_as_unresearched():
     old = datetime.now(timezone.utc) - timedelta(days=40)
     out = _optimizer_scores([{"confidence_score": 0.90, "expected_return": 0.15, "created_at": old}])
     assert out["AAA"]["confidence_score"] == 0.5
+
+
+@pytest.mark.asyncio
+async def test_evaluation_crash_is_marked_insufficient_and_never_evicts():
+    market = MagicMock()
+    market.get_financials.side_effect = RuntimeError("settings schema unreadable")
+    with patch("src.services.quality_gate_service.SettingsService") as sc:
+        sc.return_value.get_setting.side_effect = lambda k, d=None: None
+        qg = QualityGateService(user_id="u", market_data_service=market)
+        a = await qg.evaluate_ticker("AAPL")
+    assert a._insufficient_data is True and a.overall_score == 0.0
+
+    repo = MagicMock()
+    repo.get_all.side_effect = lambda uid, status: {"active": [{"ticker": "AAPL", "is_pinned": False}]}.get(status, [])
+    qg_mock = MagicMock()
+    qg_mock.evaluate_ticker = AsyncMock(return_value=a)
+    svc = _lifecycle(repo, qg_mock)
+    evicted = await svc.review_and_evict_active_tickers()
+    assert evicted == []
+    repo.remove.assert_not_called()
