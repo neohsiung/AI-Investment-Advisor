@@ -98,6 +98,7 @@ class NetAlphaAttributionReport:
     annualization_reliable: bool = False      # 有效日數是否足以年化
     avg_equity_usd: float = 0.0               # 成本拖累所用之分母（視窗平均權益）
     data_quality_notes: List[str] = field(default_factory=list)
+    llm_cost_source: str = "unknown"          # "litellm_billed" | "benchmark_estimate"
     created_at: str = field(
         default_factory=lambda: datetime.now(timezone.utc).isoformat()
     )
@@ -128,6 +129,7 @@ class NetAlphaAttributionReport:
             "annualization_reliable": self.annualization_reliable,
             "avg_equity_usd": round(self.avg_equity_usd, 2),
             "data_quality_notes": list(self.data_quality_notes),
+            "llm_cost_source": self.llm_cost_source,
             "created_at": self.created_at,
         }
 
@@ -396,9 +398,13 @@ class NetAlphaAttributionService:
 
         # 4. 取得 AI 模型花費與 SaaS 成本攤提
         llm_cost = 0.0
+        llm_cost_source = "unknown"
         try:
             spending = token_svc.get_user_spending(self.user_id, days=eff_days)
             llm_cost = float(spending.get("total_cost", 0.0) or 0.0)
+            llm_cost_source = str(spending.get("cost_source") or "unknown")
+            if llm_cost_source != "litellm_billed":
+                notes.append("LLM cost is a benchmark ESTIMATE (real billed cost unavailable for this window).")
         except Exception as te:
             logger.debug("Failed querying user spending: %s", te)
 
@@ -454,6 +460,7 @@ class NetAlphaAttributionService:
             annualization_reliable=annualization_reliable,
             avg_equity_usd=avg_equity,
             data_quality_notes=notes,
+            llm_cost_source=llm_cost_source,
         )
 
     async def _calculate_cash_drag_metrics(
