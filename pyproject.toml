@@ -33,7 +33,7 @@ dependencies = [
     "lxml==6.1.0",
     "Mako>=1.3.12",
     "markdown==3.8.1",
-    "mcp>=1.28.1",
+    "mcp>=2.2.0",
     "numpy==1.26.4",
     "ollama>=0.4.0",
     "pandas==2.3.3",
@@ -67,7 +67,7 @@ dependencies = [
 # 這是 ~900MB 的 torch 層；未安裝時 forecast_service 會改用 numpy 版實作。
 forecast = [
     "timesfm[torch]==2.0.2",
-    "transformers==5.5.0",
+    "transformers>=5.10.1,<6",
 ]
 
 # Portfolio optimisation. Currently no module imports either package — kept as
