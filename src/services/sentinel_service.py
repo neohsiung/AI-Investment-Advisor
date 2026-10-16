@@ -2915,7 +2915,20 @@ class SentinelService:
             cash = latest_dict.get("cash_balance", 0.0)
             if nlv > 0:
                 actual_cash_ratio = cash / nlv
-        
+
+        # A cash ratio outside [0, 1.05] is impossible for a real account (2026-09-29 showed -38.5% from a
+        # drifted local ledger, right before a mass liquidation). Treat it as bad data: no cash alerts.
+        # 現金比例不可能落在 [0, 1.05] 之外（9/29 曾因本地帳本漂移出現 -38.5%，隨後發生大量清倉）；
+        # 視為壞資料，不發現金警報。
+        if not (0.0 <= actual_cash_ratio <= 1.05):
+            logger.warning(
+                "Sentinel: implausible cash ratio %.1f%% (cash=%s nlv=%s) — cash checks skipped as bad data",
+                actual_cash_ratio * 100.0,
+                latest_dict.get("cash_balance") if latest is not None else None,
+                latest_dict.get("total_nlv") if latest is not None else None,
+            )
+            return triggers
+
         if actual_cash_ratio < final_target_cash * 0.9:
             triggers.append({
                 "id": f"cash_ratio_low_{uid}",

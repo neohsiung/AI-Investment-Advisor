@@ -136,6 +136,12 @@ app.conf.beat_schedule = {
         "task": "src.infrastructure.tasks.dispatch_universe_lifecycle",
         "schedule": crontab(hour=8, minute=0, day_of_week="1"),  # Mon 08:00 EST
     },
+    # Mission watchdog — daily 06:00 EST, 0-LLM; alerts on kill-criteria breaches (never halts trading by itself)
+    # 使命看門狗：每日 06:00 EST，0-LLM；kill criteria 觸發即通知（不會自行停止交易）。
+    "mission-watchdog": {
+        "task": "src.infrastructure.tasks.run_mission_watchdog",
+        "schedule": crontab(hour=6, minute=0),
+    },
     # Real LLM cost collector — every 15 minutes (LiteLLM /key/info delta -> llm_real_cost_daily)
     # 真實 LLM 成本收集：每 15 分鐘輪詢 LiteLLM /key/info 並記帳。
     "litellm-spend-collect": {

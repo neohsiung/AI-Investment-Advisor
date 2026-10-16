@@ -788,6 +788,39 @@ def run_litellm_spend_collect():
         return f"Error: {str(e)}"
 
 
+@app.task(name="src.infrastructure.tasks.run_mission_watchdog", soft_time_limit=120, time_limit=150)
+def run_mission_watchdog(user_id: str = None):
+    """
+    Daily 0-LLM check of the mission kill criteria. Alerts on any breach (and on 'partial' only in the log).
+    It never changes trading state by itself; auto-halt is a separate, default-off R3 behaviour.
+    每日 0-LLM 檢查使命 kill criteria；任一觸發即通知。本任務不會自行改變交易狀態。
+    """
+    user_id = user_id or os.getenv("PRIMARY_USER_ID") or os.getenv("USER_ID")
+    if not user_id:
+        logger.error("run_mission_watchdog: user_id is required.")
+        return "Error: user_id is required"
+    try:
+        from src.services.mission_watchdog_service import MissionWatchdogService
+        res = MissionWatchdogService(user_id=user_id).evaluate()
+        logger.info("run_mission_watchdog: overall=%s breaches=%s", res["overall"], res["breaches"])
+        if res["breaches"]:
+            lines = [f"• {c['id']} {c['name']}: {c['value']} (limit {c['threshold']} {c['unit']}) — {c['note']}"
+                     for c in res["criteria"] if c["status"] == "breach"]
+            try:
+                from src.services.settings_service import SettingsService
+                from src.services.notification_service import NotificationService
+                noti = NotificationService.create_with_settings(
+                    settings_service=SettingsService(user_id=user_id), user_id=user_id)
+                _run_async_safe(noti.notify_all(
+                    "🚨 使命 kill criteria 觸發 / Mission kill criteria breached", "\n".join(lines), user_id=user_id))
+            except Exception as ne:
+                logger.error("run_mission_watchdog: breach notification failed: %s", ne)
+        return res
+    except Exception as e:
+        logger.error(f"run_mission_watchdog failed: {e}", exc_info=True)
+        return f"Error: {str(e)}"
+
+
 @app.task(name="src.infrastructure.tasks.dispatch_universe_research_refresh")
 def dispatch_universe_research_refresh():
     """Fan-out dispatcher: 為活躍租戶分派標的池研究分數刷新任務（0-LLM）。"""

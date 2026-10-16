@@ -34,6 +34,7 @@ from src.api.v1.endpoints import backtest
 from src.api.v1.endpoints import council
 from src.api.v1.endpoints import loop_health
 from src.api.v1.endpoints import net_alpha
+from src.api.v1.endpoints import mission as mission_ep
 from src.api.v1.endpoints import workflows
 from src.api.v1.endpoints import agents as agents_ep
 from src.api.v1.endpoints import skills as skills_ep
@@ -53,6 +54,7 @@ api_v1_router.include_router(backtest.router, prefix="/backtest", tags=["Backtes
 api_v1_router.include_router(council.router, prefix="/council", tags=["Council Decisions"])
 api_v1_router.include_router(loop_health.router, prefix="/loop-health", tags=["Loop Health"])
 api_v1_router.include_router(net_alpha.router, prefix="/net-alpha", tags=["Net Alpha"])
+api_v1_router.include_router(mission_ep.router, prefix="/mission", tags=["Mission"])
 api_v1_router.include_router(workflows.router, prefix="/workflows", tags=["Workflows"])
 api_v1_router.include_router(agents_ep.router, prefix="/agents", tags=["Agents"])
 api_v1_router.include_router(skills_ep.router, prefix="/skills", tags=["Skills"])
