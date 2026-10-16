@@ -166,6 +166,11 @@ app.conf.beat_schedule = {
         "task": "src.infrastructure.tasks.dispatch_universe_research_refresh",
         "schedule": crontab(hour=7, minute=30, day_of_week="1-5"),
     },
+    # Finnhub news polling (replaces public webhook); no-op unless finnhub_poll_enabled.
+    "finnhub-news-poll": {
+        "task": "src.infrastructure.tasks.run_finnhub_poll",
+        "schedule": crontab(minute="*/30", hour="8-17", day_of_week="1-5"),
+    },
     # Strategy Lifecycle & Discovery Evolution — runs weekly on Sunday night (21:00 EST)
     # 策略生命週期與自主探索演進：每週自動滾動執行歷史回測掃描、檢驗既有策略績效、探索新體制候選策略並更新註冊中心。
     "strategy-lifecycle-evolution": {

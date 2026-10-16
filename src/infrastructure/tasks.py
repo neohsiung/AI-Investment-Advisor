@@ -911,6 +911,22 @@ def run_universe_research_refresh(user_id: str = None, reoptimize: bool = True):
         return f"Error: {str(e)}"
 
 
+@app.task(name="src.infrastructure.tasks.run_finnhub_poll", soft_time_limit=600, time_limit=660)
+def run_finnhub_poll(user_id: str = None):
+    """Poll Finnhub company news for active tickers (replaces the public webhook). Default OFF.
+    輪詢 Finnhub 新聞（取代公網 webhook），預設關閉。"""
+    user_id = user_id or os.getenv("PRIMARY_USER_ID") or os.getenv("USER_ID")
+    if not user_id:
+        logger.error("run_finnhub_poll: user_id is required.")
+        return "Error: user_id is required"
+    try:
+        from src.services.finnhub_poll_service import FinnhubPollService
+        return _run_async_safe(FinnhubPollService(user_id).run())
+    except Exception as e:
+        logger.error(f"run_finnhub_poll failed for {user_id}: {e}", exc_info=True)
+        return f"Error: {str(e)}"
+
+
 @app.task(name="src.infrastructure.tasks.dispatch_universe_lifecycle")
 def dispatch_universe_lifecycle():
     """Fan-out dispatcher: 為活躍租戶分派標的池生命週期演化任務。"""

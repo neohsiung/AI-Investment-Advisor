@@ -1344,6 +1344,24 @@ settings:
     label_zh: 小額訂單 0-LLM 數理引擎分流門檻 (USD)
     help_en: Trade amount below which routine execution bypasses full LLM council and uses deterministic mathematical allocation.
     help_zh: 當交易金額小於此門檻時，日常執行直接採用確定性數理因子模型，杜絕無謂 Token 消耗。
+  - key: finnhub_poll_enabled
+    group: trading
+    type: bool
+    default: false
+    label_en: Poll Finnhub news (replaces webhook)
+    label_zh: 輪詢 Finnhub 新聞（取代 webhook）
+    help_en: Poll company news for active tickers every 30 min on weekdays and run event analysis on new items. Lets you drop the public ngrok webhook. Each analysed item costs LLM tokens.
+    help_zh: 平日每 30 分鐘輪詢活躍標的新聞並進行事件分析，可取代公網 ngrok webhook；每則分析會耗用 LLM。
+  - key: finnhub_poll_max_events
+    group: trading
+    type: int
+    default: 3
+    min: 0
+    max: 20
+    label_en: Max Finnhub events per poll
+    label_zh: 每次輪詢最多分析事件數
+    help_en: Cap on LLM-analysed news items per poll; the rest are deferred to the next run.
+    help_zh: 每次輪詢最多送 LLM 分析的新聞數，其餘延後。
   - key: universe_research_max_age_days
     group: trading
     type: int
