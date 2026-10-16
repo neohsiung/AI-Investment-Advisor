@@ -41,6 +41,7 @@ from src.infrastructure.workflow.loader import (
 )
 from src.infrastructure.workflow.nodes import list_nodes
 from src.utils.logger import setup_logger
+from src.utils.safe_path import resolve_within
 
 logger = setup_logger("API_Workflows")
 router = APIRouter()
@@ -131,9 +132,11 @@ async def available_nodes(user_id: str = Depends(get_current_user_id)):
 @router.get("/{wf_id}", response_model=WorkflowDetail)
 async def get_one(wf_id: str, user_id: str = Depends(get_current_user_id)):
     safe_name = _safe_id(wf_id)
-    base_dir = workflows_dir().resolve()
-    path = (base_dir / f"{safe_name}.yaml").resolve()
-    if not path.is_relative_to(base_dir) or not path.exists():
+    try:
+        path = Path(resolve_within(workflows_dir(), f"{safe_name}.yaml"))
+    except ValueError:
+        raise HTTPException(status_code=404, detail=f"workflow '{wf_id}' not found")
+    if not path.exists():
         raise HTTPException(status_code=404, detail=f"workflow '{wf_id}' not found")
 
     raw = path.read_text()
@@ -208,24 +211,24 @@ async def save(wf_id: str, payload: WorkflowSaveRequest,
 
     directory = workflows_dir().resolve()
     directory.mkdir(parents=True, exist_ok=True)
-    path = (directory / f"{safe_name}.yaml").resolve()
-    if not path.is_relative_to(directory):
+    try:
+        path = Path(resolve_within(directory, f"{safe_name}.yaml"))
+    except ValueError:
         raise HTTPException(status_code=400, detail="invalid workflow path")
 
     # Snapshot the outgoing version before overwriting.
     if path.exists():
-        history = (directory / ".history").resolve()
+        history = Path(resolve_within(directory, ".history"))
         history.mkdir(exist_ok=True)
         stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
-        snapshot_file = (history / f"{safe_name}.{stamp}.yaml").resolve()
-        if snapshot_file.is_relative_to(history):
-            try:
-                shutil.copy2(path, snapshot_file)
-            except OSError as exc:
-                # Losing the snapshot is not worth failing the save, but the operator
-                # should know their undo is missing.
-                # 快照失敗不值得中止儲存，但必須讓使用者知道少了還原點。
-                logger.warning("could not snapshot %s before overwrite: %s", safe_name, exc)
+        snapshot_file = resolve_within(history, f"{safe_name}.{stamp}.yaml")
+        try:
+            shutil.copy2(path, snapshot_file)
+        except OSError as exc:
+            # Losing the snapshot is not worth failing the save, but the operator
+            # should know their undo is missing.
+            # 快照失敗不值得中止儲存，但必須讓使用者知道少了還原點。
+            logger.warning("could not snapshot %s before overwrite: %s", safe_name, exc)
 
     # Atomic replace: a partially written workflow file would fail to parse on
     # the next load, taking the graph down between two keystrokes.
