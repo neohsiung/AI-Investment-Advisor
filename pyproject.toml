@@ -22,7 +22,7 @@ dependencies = [
     # `proxies` kwarg and had been dead since httpx 0.28.
     "ddgs==9.14.4",
     "diskcache==5.6.3",
-    "fastapi==0.124.4",
+    "fastapi>=0.128.0",
     "feedparser>=6.0.10",
     "filelock==3.20.3",
     "fredapi==0.5.1",
@@ -38,7 +38,7 @@ dependencies = [
     "ollama>=0.4.0",
     "pandas==2.3.3",
     "pandas-market-calendars==4.4.1",
-    "pgvector==0.2.4",
+    "pgvector>=0.3.6",
     "psycopg2-binary==2.9.9",
     "pydantic-settings>=2.0",
     "pydub==0.25.1",
@@ -51,9 +51,9 @@ dependencies = [
     "schedule==1.2.1",
     "slowapi==0.1.9",
     "sqlalchemy>=2.0.31",
-    "starlette==0.49.1",
+    "starlette>=1.3.1",
     "tavily-python==0.5.0",
-    "urllib3==2.7.0",
+    "urllib3>=2.8.0",
     "uvicorn[standard]>=0.31.1",
     "yfinance==0.2.50",
 ]
@@ -82,11 +82,11 @@ optimize = [
 memory = [
     "mem0ai>=2.0.0",
     "qdrant-client==1.17.1",
-    "llama-index-core>=0.12.0",
+    "llama-index-core>=0.14.0",
     "llama-index-embeddings-ollama>=0.3.0",
     "llama-index-llms-ollama>=0.3.0",
     "llama-index-vector-stores-postgres>=0.2.0",
-    "llama-index-readers-file>=0.2.0",
+    "llama-index-readers-file>=0.7.0",
     "nltk>=3.10.0",
 ]
 
