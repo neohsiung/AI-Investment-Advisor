@@ -1,0 +1,50 @@
+# Mission & invariants — the single source of truth for what this system optimises and may never do.
+# 使命與不變量 — 本系統最佳化什麼、絕對不可做什麼的唯一真相。
+#
+# Rules / 規則:
+#   * Code, docs and agent instruction files REFERENCE this file; they must not copy its numbers
+#     (enforced by tests/invariants/test_mission.py).
+#   * Changing any value here is an R3 change: needs human approval and an ADR entry in `adr`.
+#   * Config validated by src/config/mission.py (pydantic); an invalid file fails CI and pre-deploy.
+version: 1
+adr:
+  - id: ADR-001
+    date: 2026-10-16
+    decision: "Primary objective reset from a fixed 10%/yr excess return to benchmark-relative, evidence-gated active trading; 10% kept as an aspiration."
+    reason: "Opus research: 10% net excess is not statistically/economically achievable at ~$1.7k; baseline is SPY."
+
+objective:
+  benchmark: SPY
+  metric: net_excess_return_vs_benchmark   # after LLM, data subscription and broker costs; beta-adjusted
+  aspiration_annual_pct: 10.0              # vision only — NOT an acceptance criterion
+  default_allocation: benchmark            # idle capital sits in the benchmark, never in cash by default
+
+budgets:
+  max_total_cost_pct_of_nav: 3.0           # rolling 12 months: LLM + data + fees
+  max_llm_usd_per_year: 50
+  max_hypothesis_trials_per_quarter: 40    # every trial counts toward the multiple-testing correction N
+
+invariants:
+  max_nonsafety_sells_per_day: 2
+  max_nonsafety_sell_pct_of_nav: 20.0
+  max_annual_turnover_x_nav: 2.0
+  min_benchmark_weight_pct: 70.0
+  max_tracking_error_pct: 8.0
+  sells_require_replacement_plan: true
+  single_order_executor: true              # only the execution service may place/close broker orders
+  trading_disabled_when_capital_cap_is_zero: true
+
+promotion:
+  min_deflated_sharpe: 0.95
+  min_t_stat: 3.0
+  min_forward_shadow_days: 180
+  max_initial_live_weight_pct: 10.0
+
+kill_criteria:                              # any one flips the system to 100% benchmark and stops active trading
+  - {id: K1, name: cost_ratio,            threshold: 3.0,  unit: pct_of_nav_rolling_12m}
+  - {id: K2, name: ledger_broker_mismatch, threshold: 1,    unit: trading_days}
+  - {id: K3, name: single_day_sell,        threshold: 20.0, unit: pct_of_nav}
+  - {id: K4, name: annual_turnover,        threshold: 2.0,  unit: x_nav}
+  - {id: K5, name: active_sleeve_underperformance, threshold: -3.0, unit: pct_rolling_12m_beta_adjusted}
+  - {id: K6, name: decision_path_fallback, threshold: 1,    unit: occurrences}
+  - {id: K7, name: evaluator_dsr_or_trials_missing, threshold: 0.95, unit: dsr}

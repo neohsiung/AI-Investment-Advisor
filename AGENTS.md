@@ -13,23 +13,40 @@
 that scores trade decisions with a multi-agent ensemble and executes them
 against eToro.
 
-**Current capability, stated honestly (2026-08-23).** The order path is wired
-end to end and connected to a live eToro account, but it has never filled a
-trade: `transactions` holds **0 rows** with `entry_category='trade'`. Treat
-"autonomous trading" as built and under test, not as demonstrated. Earlier
-revisions of this file described the intent as though it were the capability.
+## Mission & Non-Negotiable Invariants (read first)
 
-The `TRADING_MODE=paper` brake was **lifted on 2026-08-23** — orders now reach
-the real account, bounded by the `tradable_capital_usd` cap (currently $100)
-and `ai_trading_enabled`. Paper mode is not a usable fallback here: the eToro
-token has no demo permission (a deliberate decision — there is no demo path in
-this project), so setting `TRADING_MODE=paper` makes every broker call return
-`InsufficientPermissions`. It is a full stop, not a degraded mode.
+`config/mission.yaml` is the **single source of truth** for what this system optimises and what it may
+never do (objective vs SPY net of costs, budgets, invariants, promotion thresholds, kill criteria, ADR log).
+Do not copy its numbers into code or docs — load them with `src.config.mission.load_mission()`.
+Enforced by `tests/invariants/` (run them before any deploy; they gate `./start.sh up|upgrade`).
 
-訂單路徑已接通實盤帳戶但至今從未成交（`entry_category='trade'` 為 0 筆）。
-2026-08-23 已解除 paper 煞車，目前受 $100 資本上限與 `ai_trading_enabled` 約束。
-paper 模式不是可用的降級模式——token 無 demo 權限（刻意決定，本專案不走 demo），
-掛上去只會讓所有 broker 呼叫回 `InsufficientPermissions`。
+使命與不可違反的不變量以 `config/mission.yaml` 為唯一真相；程式與文件不得複製其數字，
+請用 `load_mission()` 讀取；`tests/invariants/` 強制執行。
+
+Rules every AI coding agent must follow, whatever its capability level:
+1. **Money paths are R3**: broker writes, `unified_risk_gateway`, `capital_policy`, `automated_trading`,
+   `etoro_service`, `ai_trading_enabled`, `tradable_capital_usd`, `mission.yaml` — need human approval + an ADR.
+2. **Only the execution service places or closes broker orders**; LLM output may *propose*, deterministic code *decides*.
+3. **No non-safety sell without a replacement plan**; no hardcoded decision scores; no `exec` of generated code;
+   no evolution code writing live settings (promotion goes through a proposal table).
+4. **Never fail silent on decision paths** (constraint #0 below). Missing data = skip + mark, never a plausible default.
+5. **Touching any `config/*.yaml`: run `tests/unit/config` and `tests/invariants` before deploying** (a malformed
+   settings schema once made the quality gate crash and evicted 7 of 8 active tickers).
+6. **Do not write numbers that drift (trade counts, costs, caps) into docs** — query the DB or the API instead.
+
+**Current capability (stated honestly; re-verify from the DB, do not trust this text).** The order path is wired
+end to end to a live eToro account and has filled trades; whether it earns a net excess return over SPY is
+**not demonstrated** and is not assumed. Use `/api/v1/net-alpha` and the `transactions` /
+`llm_real_cost_daily` tables for current facts.
+
+The `TRADING_MODE=paper` brake was lifted on 2026-08-23. Paper mode is not a usable fallback: the eToro token
+has no demo permission (deliberate — there is no demo path), so `TRADING_MODE=paper` makes every broker call
+return `InsufficientPermissions` (a full stop, not a degraded mode). The `tradable_capital_usd` cap and
+`ai_trading_enabled` bound live risk; **a cap of 0 currently means "uncapped" in code — treat that as a bug
+(see governance plan P-1) until changed.**
+
+訂單路徑已接通實盤並已有成交；是否相對 SPY 賺得淨超額報酬**尚未被證明**。請以資料庫與 API 查證，勿信文字。
+`tradable_capital_usd=0` 目前在程式中代表「不設上限」，視為待修缺陷。
 
 **Agent counts refer to different subsystems — four numbers, all real**
 (verified against source 2026-08-23; canonical table in the wiki page
