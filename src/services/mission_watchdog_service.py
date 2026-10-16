@@ -61,6 +61,14 @@ class MissionWatchdogService:
                                   "AND entry_category = 'trade' AND trade_date >= :d"), {"u": self.user_id, "d": since}).fetchall()
         return [{"date": r[0], "ticker": r[1], "action": r[2], "amount": float(r[3] or 0.0)} for r in rows]
 
+    def _trial_stats(self):
+        """(number of trials ever recorded, shadow candidates lacking a DSR). / （累計試驗數, 缺少 DSR 的候選數）"""
+        with self.engine.connect() as c:
+            n = int(c.execute(text("SELECT COUNT(*) FROM strategy_trials")).scalar() or 0)
+            bad = int(c.execute(text("SELECT COUNT(*) FROM strategy_trials WHERE status = 'shadow_candidate' "
+                                     "AND (last_verdict IS NULL OR last_verdict NOT LIKE '%dsr%')")).scalar() or 0)
+        return n, bad
+
     # ── evaluation ────────────────────────────────────────────────────────────
     def evaluate(self, today: Optional[date] = None) -> Dict[str, Any]:
         m = load_mission()
@@ -147,8 +155,16 @@ class MissionWatchdogService:
                             f"needs >= {MIN_HISTORY_DAYS_FOR_ALPHA} broker-anchored days and an active-sleeve attribution (not built yet)"))
         results.append(_row("K6", c6.name, "not_measurable", None, c6.threshold, c6.unit,
                             "enforced statically by tests/invariants and test_fail_silent_policy, not at runtime"))
-        results.append(_row("K7", c7.name, "not_measurable", None, c7.threshold, c7.unit,
-                            "no walk-forward evaluator with DSR/trial accounting exists yet (Phase 3C)"))
+        try:
+            n_trials, bad = self._trial_stats()
+            if n_trials == 0:
+                results.append(_row("K7", c7.name, "not_measurable", None, c7.threshold, c7.unit,
+                                    "trial ledger is empty — the strategy lab has not run yet"))
+            else:
+                results.append(_row("K7", c7.name, "breach" if bad else "ok", float(bad), 0.0, "candidates_without_dsr",
+                                    f"{n_trials} trials recorded; every promotion verdict must carry a DSR"))
+        except Exception as e:
+            results.append(_row("K7", c7.name, "not_measurable", None, c7.threshold, c7.unit, f"trial ledger unreadable: {e}"))
 
         breaches = [r for r in results if r["status"] == "breach"]
         return {

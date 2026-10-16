@@ -9,6 +9,7 @@ def _svc(trades=None, nav=1700.0, llm30=0.0, sub=0.0, local_cash=1000.0, broker_
     s = MissionWatchdogService("u", engine=MagicMock(), nav_usd=nav, llm_cost_30d_usd=llm30,
                                monthly_subscription_usd=sub, local_cash_usd=local_cash, broker_cash_usd=broker_cash)
     s._trades = lambda since: trades or []
+    s._trial_stats = lambda: (0, 0)
     return s
 
 
@@ -22,7 +23,7 @@ def test_all_measurable_ok():
     assert c["K1"]["status"] == "ok" and c["K2"]["status"] == "ok"
     assert c["K3"]["status"] == "ok" and c["K4"]["status"] == "ok"
     assert res["overall"] == "PARTIAL"            # K5-K7 are explicitly not measurable
-    assert {c[k]["status"] for k in ("K5", "K6", "K7")} == {"not_measurable"}
+    assert {c[k]["status"] for k in ("K5", "K6")} == {"not_measurable"}
 
 
 def test_cost_ratio_breach():
@@ -73,3 +74,11 @@ def test_endpoint_returns_status(monkeypatch):
     with patch("src.services.mission_watchdog_service.MissionWatchdogService.evaluate", return_value={"overall": "OK", "criteria": []}):
         r = TestClient(app).get("/api/v1/mission/status")
     assert r.status_code == 200 and r.json()["data"]["overall"] == "OK"
+
+
+def test_k7_measurable_once_trials_exist():
+    s = _svc()
+    s._trial_stats = lambda: (9, 0)
+    assert _by_id(s.evaluate())["K7"]["status"] == "ok"
+    s._trial_stats = lambda: (9, 2)
+    assert _by_id(s.evaluate())["K7"]["status"] == "breach"

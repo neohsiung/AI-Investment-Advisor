@@ -136,6 +136,12 @@ app.conf.beat_schedule = {
         "task": "src.infrastructure.tasks.dispatch_universe_lifecycle",
         "schedule": crontab(hour=8, minute=0, day_of_week="1"),  # Mon 08:00 EST
     },
+    # Strategy lab — Saturday 12:00 EST, 0-LLM weekly evaluation with multiple-testing accounting
+    # 策略實驗室：週六 12:00 EST，0-LLM 每週評估（含多重檢定記帳）。
+    "strategy-lab": {
+        "task": "src.infrastructure.tasks.run_strategy_lab",
+        "schedule": crontab(hour=12, minute=0, day_of_week="6"),
+    },
     # Benchmark parking — weekdays 09:50 EST, after the 09:35/09:36 deployments (default OFF via setting)
     # 基準停泊：交易日 09:50 EST（晚於 09:35/09:36 建倉；設定預設關閉）。
     "benchmark-parking": {

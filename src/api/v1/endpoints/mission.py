@@ -35,3 +35,17 @@ async def get_parking_plan(user_id: str = Depends(get_current_user_id)) -> Dict[
     except Exception as e:
         logger.error(f"get_parking_plan failed: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/strategies")
+async def get_strategy_trials(user_id: str = Depends(get_current_user_id)) -> Dict[str, Any]:
+    """Every strategy variant ever evaluated (the multiple-testing ledger) and its verdict.
+    所有評估過的策略變體（多重檢定帳本）及其判定。"""
+    try:
+        from src.services.strategy_lab_service import StrategyLabService
+
+        lab = StrategyLabService()
+        return {"status": "success", "data": {"n_trials_total": lab.trial_count(), "trials": lab.list_trials()}}
+    except Exception as e:
+        logger.error(f"get_strategy_trials failed: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))

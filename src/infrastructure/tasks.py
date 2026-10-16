@@ -788,6 +788,32 @@ def run_litellm_spend_collect():
         return f"Error: {str(e)}"
 
 
+@app.task(name="src.infrastructure.tasks.run_strategy_lab", soft_time_limit=1500, time_limit=1620)
+def run_strategy_lab():
+    """
+    Weekly 0-LLM evaluation of every pre-registered strategy variant on real prices, net of costs, relative to the
+    benchmark, with cumulative trial accounting (Deflated Sharpe). Never allocates capital; candidates go to shadow.
+    每週 0-LLM 評估所有預先登記的策略變體（真實價格、扣成本、相對基準、累計試驗數 DSR）；絕不配置資金。
+    """
+    try:
+        from src.config.mission import load_mission
+        from src.evaluation.data import load_price_panel
+        from src.services.market_data_service import MarketDataService
+        from src.services.strategy_lab_service import StrategyLabService
+        from src.services.universe_lifecycle_service import DEFAULT_CANDIDATE_POOL
+
+        benchmark = load_mission().objective.benchmark
+        uid = os.getenv("PRIMARY_USER_ID") or os.getenv("USER_ID")
+        prices = load_price_panel(MarketDataService(user_id=uid), DEFAULT_CANDIDATE_POOL, days=2600, benchmark=benchmark)
+        res = StrategyLabService().run(prices, benchmark=benchmark)
+        logger.info("run_strategy_lab: N=%s variants=%s shadow_candidates=%s",
+                    res["n_trials_total"], res["variants_evaluated"], len(res["shadow_candidates"]))
+        return {k: res[k] for k in ("n_trials_total", "variants_evaluated", "shadow_candidates")}
+    except Exception as e:
+        logger.error(f"run_strategy_lab failed: {e}", exc_info=True)
+        return f"Error: {str(e)}"
+
+
 @app.task(name="src.infrastructure.tasks.run_benchmark_parking", soft_time_limit=300, time_limit=360)
 def run_benchmark_parking(user_id: str = None):
     """
