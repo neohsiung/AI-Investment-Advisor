@@ -1344,6 +1344,36 @@ settings:
     label_zh: 小額訂單 0-LLM 數理引擎分流門檻 (USD)
     help_en: Trade amount below which routine execution bypasses full LLM council and uses deterministic mathematical allocation.
     help_zh: 當交易金額小於此門檻時，日常執行直接採用確定性數理因子模型，杜絕無謂 Token 消耗。
+  - key: batch_deploy_max_order_usd
+    group: trading
+    type: float
+    default: 100.0
+    min: 10.0
+    max: 100000.0
+    label_en: Max single order in batch deployment (USD)
+    label_zh: 分批建倉單筆上限 (USD)
+    help_en: Hard cap on any single buy order created by batch cash deployment.
+    help_zh: 分批建倉所產生之任一買單的金額硬上限。
+  - key: batch_deploy_max_tickers
+    group: trading
+    type: int
+    default: 3
+    min: 1
+    max: 10
+    label_en: Max tickers per deployment run
+    label_zh: 單次建倉最多標的數
+    help_en: Top-N universe candidates (by research confidence, then funding gap) funded per run.
+    help_zh: 每次建倉依研究信心與缺口排序，最多投入前 N 檔 universe 候選。
+  - key: batch_deploy_min_confidence
+    group: trading
+    type: float
+    default: 5.5
+    min: 0.0
+    max: 10.0
+    label_en: Min research confidence to deploy (0-10)
+    label_zh: 建倉最低研究信心 (0-10)
+    help_en: Candidates below this score (including unresearched ones, which default to 5.0) are never funded.
+    help_zh: 低於此分數（含無研究紀錄、預設 5.0 者）的候選不會被投入資金。
   - key: enable_staggered_dip_buying
     group: trading
     type: bool
