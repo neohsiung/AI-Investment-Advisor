@@ -127,11 +127,27 @@ settings:
   - key: auto_promote_synthesized_factors
     group: ai
     type: bool
-    default: true
+    default: false
     label_en: Auto-promote synthesized factors
     label_zh: 自動晉升自研量化因子
     help_en: Automatically promote synthesized code artifacts from provisional canary shadow tracking to active status upon passing evaluation.
     help_zh: 當自研因子通過回測、WFA、蒙地卡羅與金絲雀影子考覈無異常時，由排程自動晉升為實盤 ACTIVE 因子。
+  - key: allow_synthesized_factor_live_exec
+    group: ai
+    type: bool
+    default: false
+    label_en: Allow live exec of synthesized factor code
+    label_zh: 允許實盤執行自研因子程式碼
+    help_en: Off by default. ACTIVE artifacts are LLM-generated code validated only on synthetic data; enabling runs them in-process during scoring.
+    help_zh: 預設關閉。ACTIVE 因子為 LLM 生成程式碼且僅經合成資料驗證；開啟後會在評分時於程序內直接執行。
+  - key: enable_autonomous_evolution_beat
+    group: ai
+    type: bool
+    default: false
+    label_en: Enable synthetic-data evolution schedules
+    label_zh: 啟用合成資料演化排程
+    help_en: Off by default. Gates factor-rotation, genetic and autonomous-factor beat tasks that tune live settings from synthetic data.
+    help_zh: 預設關閉。控管以合成資料調整實盤設定的因子輪動、遺傳與自主因子排程。
   - key: factor_max_correlation_threshold
     group: ai
     type: float

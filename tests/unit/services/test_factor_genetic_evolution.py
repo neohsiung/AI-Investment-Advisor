@@ -257,9 +257,10 @@ class TestFactorGeneticEvolutionExecution:
 class TestFactorGeneticEvolutionTasksAndCommands:
     """Celery background task and 0-LLM conversation commands test."""
 
+    @patch("src.infrastructure.tasks._synthetic_evolution_enabled", return_value=True)
     @patch("src.infrastructure.tasks.run_factor_genetic_evolution.delay")
     @patch("src.infrastructure.tasks._resolve_target_users")
-    def test_dispatch_factor_genetic_evolution(self, mock_resolve_users, mock_delay):
+    def test_dispatch_factor_genetic_evolution(self, mock_resolve_users, mock_delay, _gate):
         """驗證 dispatch_factor_genetic_evolution 正確 fan-out 派發任務。"""
         from src.infrastructure.tasks import dispatch_factor_genetic_evolution
         mock_resolve_users.return_value = ["user_1", "user_2"]

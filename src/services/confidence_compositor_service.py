@@ -471,6 +471,20 @@ Return JSON:
             if not active_artifacts:
                 return sub_scores
 
+            # Live exec of LLM-generated code is OFF unless explicitly enabled: the
+            # artifacts were validated on synthetic data only (see 2026-10-16 audit).
+            # 實盤執行 LLM 生成程式碼預設關閉：這些因子僅在合成資料上驗證過。
+            from src.services.settings_service import SettingsService
+            allow_exec = SettingsService(user_id=self.user_id).get_setting(
+                "allow_synthesized_factor_live_exec", False
+            )
+            if not (allow_exec is True or str(allow_exec).lower() == "true"):
+                logger.warning(
+                    "Synthesized factors skipped for %s: allow_synthesized_factor_live_exec is off "
+                    "(%d ACTIVE artifacts ignored)", ticker, len(active_artifacts),
+                )
+                return sub_scores
+
             # Fetch recent market data for ticker via resilient MarketDataService
             market_df = None
             try:
@@ -480,22 +494,11 @@ Return JSON:
             except Exception as e:
                 logger.warning("Could not fetch market data from MarketDataService for %s: %s", ticker, e)
 
-            # Fallback data generation if market data is unavailable (e.g. offline/mock environment)
+            # No real prices -> no factor score. Never score on a random series.
+            # 無真實行情就不給因子分數，絕不以隨機序列代算。
             if market_df is None or market_df.empty:
-                import numpy as np
-                import pandas as pd
-                n = 40
-                dates = pd.date_range(end=datetime.now(), periods=n, freq="D")
-                seed = self._ticker_hash(ticker)
-                np.random.seed(seed % 10000)
-                close = 100.0 + np.cumsum(np.random.normal(0.1, 1.0, n))
-                market_df = pd.DataFrame({
-                    "Open": close - 0.5,
-                    "High": close + 1.0,
-                    "Low": close - 1.0,
-                    "Close": close,
-                    "Volume": np.random.randint(1000, 20000, n),
-                }, index=dates)
+                logger.warning("Synthesized factors skipped for %s: no market data", ticker)
+                return sub_scores
 
             for art in active_artifacts:
                 try:

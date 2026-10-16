@@ -277,6 +277,27 @@ def test_aggregate_scores_with_active_synthesized_factor(compositor):
     assert execute_5 is True
 
 
+def _synth_live_exec_on():
+    """Enable live exec flag and supply real-shaped OHLCV (no random fallback anymore).
+    開啟實盤執行旗標並提供 OHLCV 資料（已不再有隨機價格後備）。"""
+    import contextlib
+    import pandas as pd
+
+    df = pd.DataFrame(
+        {"Open": range(1, 61), "High": range(2, 62), "Low": range(0, 60),
+         "Close": [100.0 + i for i in range(60)], "Volume": [1000] * 60}
+    )
+    settings = MagicMock()
+    settings.get_setting.return_value = True
+    mds = MagicMock()
+    mds.get_history_df.return_value = df
+    stack = contextlib.ExitStack()
+    stack.enter_context(patch("src.services.settings_service.SettingsService", return_value=settings))
+    stack.enter_context(patch("src.services.market_data_service.MarketDataService", return_value=mds))
+    return stack
+
+
+
 @pytest.mark.asyncio
 async def test_gather_synthesized_factor_scores_success(compositor):
     """
@@ -295,7 +316,8 @@ async def test_gather_synthesized_factor_scores_success(compositor):
         parameters={"target_regime": "TREND_ACCELERATION"},
     )
 
-    with patch("src.services.canary_shadow_runner.canary_runner.list_artifacts", return_value=[mock_art]):
+    with patch("src.services.canary_shadow_runner.canary_runner.list_artifacts", return_value=[mock_art]), \
+         _synth_live_exec_on():
         synth_scores = await compositor._gather_synthesized_factor_scores("AAPL")
         assert len(synth_scores) == 1
         sub = synth_scores[0]
@@ -323,7 +345,8 @@ async def test_gather_synthesized_factor_scores_graceful_fallback(compositor):
         parameters={"target_regime": "VOLATILITY_PIVOT"},
     )
 
-    with patch("src.services.canary_shadow_runner.canary_runner.list_artifacts", return_value=[mock_art]):
+    with patch("src.services.canary_shadow_runner.canary_runner.list_artifacts", return_value=[mock_art]), \
+         _synth_live_exec_on():
         synth_scores = await compositor._gather_synthesized_factor_scores("AAPL")
         assert len(synth_scores) == 1
         sub = synth_scores[0]

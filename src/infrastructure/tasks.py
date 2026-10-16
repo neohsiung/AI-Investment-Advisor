@@ -1231,13 +1231,34 @@ def run_strategy_evolution(user_id: str = None, force: bool = False):
         return f"Error: {str(e)}"
 
 
+def _synthetic_evolution_enabled(user_id: str) -> bool:
+    """
+    Gate for evolution loops that tune live settings from synthetic data.
+    Off unless `enable_autonomous_evolution_beat` is explicitly true; a read failure
+    keeps it off (fail-closed) and is logged at warning level.
+    以合成資料調整實盤設定的演化迴圈總開關；預設關閉，讀取失敗亦維持關閉並以 warning 記錄。
+    """
+    try:
+        from src.services.settings_service import SettingsService
+        val = SettingsService(user_id=user_id).get_setting("enable_autonomous_evolution_beat", False)
+        return val is True or str(val).lower() == "true"
+    except Exception as e:
+        logger.warning("enable_autonomous_evolution_beat unreadable for %s (%s); evolution stays off", user_id, e)
+        return False
+
+
 @app.task(name="src.infrastructure.tasks.dispatch_factor_rotation_evolution")
 def dispatch_factor_rotation_evolution():
     """Fan-out dispatcher: 為活躍租戶分派多因子歷史回放重播與退火調參任務。"""
     users = _resolve_target_users()
+    dispatched = 0
     for uid in users:
+        if not _synthetic_evolution_enabled(uid):
+            logger.warning("dispatch_factor_rotation_evolution: skipped for %s (enable_autonomous_evolution_beat is off)", uid)
+            continue
         run_factor_rotation_evolution.delay(user_id=uid)
-    return f"Dispatched {len(users)} factor_rotation_evolution tasks"
+        dispatched += 1
+    return f"Dispatched {dispatched} factor_rotation_evolution tasks"
 
 
 @app.task(name="src.infrastructure.tasks.run_factor_rotation_evolution", soft_time_limit=600, time_limit=660)
@@ -1297,9 +1318,14 @@ def run_factor_rotation_evolution(user_id: str = None, iterations: int = 30, for
 def dispatch_factor_genetic_evolution():
     """Fan-out dispatcher: 為活躍租戶分派多因子權重遺傳演算法超參數演化排程任務。"""
     users = _resolve_target_users()
+    dispatched = 0
     for uid in users:
+        if not _synthetic_evolution_enabled(uid):
+            logger.warning("dispatch_factor_genetic_evolution: skipped for %s (enable_autonomous_evolution_beat is off)", uid)
+            continue
         run_factor_genetic_evolution.delay(user_id=uid)
-    return f"Dispatched {len(users)} factor_genetic_evolution tasks"
+        dispatched += 1
+    return f"Dispatched {dispatched} factor_genetic_evolution tasks"
 
 
 @app.task(name="src.infrastructure.tasks.run_factor_genetic_evolution", soft_time_limit=900, time_limit=960)
@@ -1375,9 +1401,14 @@ def dispatch_autonomous_evolution():
     Dispatches off-market autonomous factor exploration and canary shadow day stepping.
     """
     users = _resolve_target_users()
+    dispatched = 0
     for uid in users:
+        if not _synthetic_evolution_enabled(uid):
+            logger.warning("dispatch_autonomous_evolution: skipped for %s (enable_autonomous_evolution_beat is off)", uid)
+            continue
         run_autonomous_evolution.delay(user_id=uid)
-    return f"Dispatched {len(users)} autonomous_evolution tasks"
+        dispatched += 1
+    return f"Dispatched {dispatched} autonomous_evolution tasks"
 
 
 @app.task(name="src.infrastructure.tasks.run_autonomous_evolution", soft_time_limit=600, time_limit=660)
@@ -1409,7 +1440,7 @@ def run_autonomous_evolution(user_id: str = None, force: bool = False):
         try:
             from src.services.settings_service import SettingsService
             settings_svc = SettingsService(user_id=user_id)
-            auto_promote_enabled = bool(settings_svc.get_setting("auto_promote_synthesized_factors", True))
+            auto_promote_enabled = bool(settings_svc.get_setting("auto_promote_synthesized_factors", False))
         except Exception as e:
             logger.warning("Could not read auto_promote_synthesized_factors setting for %s: %s", user_id, e)
 
