@@ -1585,6 +1585,15 @@ settings:
     danger: true
     label_en: Max trades per day
     label_zh: 每日最大交易次數
+  - key: autonomous_confidence_boost_enabled
+    group: trading
+    type: bool
+    default: false
+    danger: true
+    label_en: "Allow keyword-based confidence boosts"
+    label_zh: 允許依關鍵字提升信心分數
+    help_en: "OFF by default. When ON, AutonomousConfidenceOptimizer adds points to sub-threshold scores based on words in the rationale text."
+    help_zh: 預設關閉。開啟後優化器會依理由文字中的關鍵字替低於門檻的分數加分。
   - key: benchmark_parking_enabled
     group: trading
     type: bool

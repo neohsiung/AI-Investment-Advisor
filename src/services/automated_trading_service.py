@@ -967,7 +967,13 @@ class AutomatedTradingService:
 
         # 自主判決置信度優化 (Autonomous Confidence Optimizer)
         optimized_confidence = normalized_confidence
-        if normalized_confidence < threshold and (autonomous_reporting_mode or auto_exit_enabled):
+        # The optimizer ADDS points to a sub-threshold score based on keywords found in the free-text rationale
+        # (e.g. "rebalance" +1.5 on a BUY, "excess cash" +1.0). A score that moves money must not be inflatable by
+        # wording, so it is OFF unless explicitly enabled (default false, 2026-10-16 mission audit).
+        # 優化器依自由文字理由中的關鍵字替低於門檻的分數加分；會動用資金的分數不得被措辭灌水，預設關閉。
+        boost_flag = self.settings_repo.get(user_id, "autonomous_confidence_boost_enabled")
+        boost_enabled = str(boost_flag).lower() in ("true", "1")
+        if boost_enabled and normalized_confidence < threshold and (autonomous_reporting_mode or auto_exit_enabled):
             try:
                 from src.services.autonomous_reporting_service import AutonomousConfidenceOptimizer
                 optimized_confidence, boosts = AutonomousConfidenceOptimizer.optimize_confidence(
