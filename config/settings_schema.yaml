@@ -1344,6 +1344,16 @@ settings:
     label_zh: 小額訂單 0-LLM 數理引擎分流門檻 (USD)
     help_en: Trade amount below which routine execution bypasses full LLM council and uses deterministic mathematical allocation.
     help_zh: 當交易金額小於此門檻時，日常執行直接採用確定性數理因子模型，杜絕無謂 Token 消耗。
+  - key: event_analysis_daily_cap
+    group: trading
+    type: int
+    default: 8
+    min: 0
+    max: 100
+    label_en: Max full event analyses per day
+    label_zh: 每日完整事件分析上限
+    help_en: Caps how many ingested news events pass the relevance filter into the multi-agent (LLM) analysis each US/Eastern day; events on held tickers get double. 0 = unlimited.
+    help_zh: 每個美東日通過相關性篩選、進入多代理（耗 LLM）分析的事件數上限；持倉標的加倍；0 為不限。
   - key: finnhub_poll_enabled
     group: trading
     type: bool

@@ -1282,6 +1282,32 @@ class EventAnalysisWorkflow(BaseWorkflow):
         """
         return ""
 
+    def _event_budget_exceeded(self, held: bool) -> str:
+        """Return a reason string when today's full-analysis budget is spent, else ''. Counts this event if allowed."""
+        try:
+            from src.services.settings_service import SettingsService
+            cap = int(SettingsService(user_id=self.user_id).get_setting("event_analysis_daily_cap", 8))
+        except (TypeError, ValueError):
+            cap = 8
+        if cap <= 0:
+            return ""  # 0 = unlimited
+        limit = cap * 2 if held else cap
+        try:
+            from datetime import datetime
+            from zoneinfo import ZoneInfo
+            from src.infrastructure.cache.redis_client import get_redis_sync
+            r = get_redis_sync()
+            key = f"event_analysis:count:{self.user_id}:{'held' if held else 'other'}:{datetime.now(ZoneInfo('America/New_York')).date()}"
+            n = int(r.incr(key))
+            if n == 1:
+                r.expire(key, 2 * 86400)
+            if n > limit:
+                return f"daily event-analysis budget {limit} spent ({'held' if held else 'other'})"
+            return ""
+        except Exception as e:  # cost control only: cannot count -> allow, but say so
+            self.logger.warning(f"EventAnalysisWorkflow: budget counter unavailable ({e}); analysing without cap")
+            return ""
+
     async def run(self, dry_run: bool = False, force_refresh: bool = False) -> str:
         """
         Executes the 5-Stage Market Intelligence Pipeline:
@@ -1325,6 +1351,14 @@ class EventAnalysisWorkflow(BaseWorkflow):
                 )
                 # Discarded! Zero LLM spend, zero DB clutter, zero notifications.
                 return f"Dropped: {filter_res.reason}"
+
+            # ── Cost gate: bounded number of full (LLM) analyses per ET day ──
+            # 成本閘門：每個美東日完整（耗 LLM）分析的事件數有上限；持倉相關事件額度加倍，超額明確丟棄。
+            budget_block = self._event_budget_exceeded(
+                held=bool(set(filter_res.matched_tickers or []) & user_holding_tickers))
+            if budget_block:
+                self.logger.info(f"EventAnalysisWorkflow: Event from {self.event_source} deferred by daily budget: {budget_block}")
+                return f"Dropped: {budget_block}"
 
             # ── Stage 3: 進入探勘研究 (Deep Scout / Fact Dossier) ──
             target_tickers = filter_res.matched_tickers or ([self.ticker] if self.ticker != "GLOBAL" else ["SPY"])

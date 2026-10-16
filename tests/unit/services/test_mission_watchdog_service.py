@@ -82,3 +82,16 @@ def test_k7_measurable_once_trials_exist():
     assert _by_id(s.evaluate())["K7"]["status"] == "ok"
     s._trial_stats = lambda: (9, 2)
     assert _by_id(s.evaluate())["K7"]["status"] == "breach"
+
+
+def test_k3_k4_report_when_history_clears():
+    from datetime import date, timedelta
+    from src.services.mission_watchdog_service import MissionWatchdogService
+    today = date(2026, 10, 16)
+    svc = MissionWatchdogService("u", nav_usd=1000.0, llm_cost_30d_usd=0.0, monthly_subscription_usd=0.0,
+                                 local_cash_usd=0.0, broker_cash_usd=0.0)
+    svc._trades = lambda since: [{"date": today - timedelta(days=2), "ticker": f"T{i}", "action": "SELL", "amount": 200.0} for i in range(5)]
+    svc._trial_stats = lambda: (0, 0)
+    res = {r["id"]: r for r in svc.evaluate(today)["criteria"]}
+    assert res["K3"]["status"] == "breach" and "clears 2026-11-" in res["K3"]["note"]
+    assert res["K4"]["status"] == "breach" and "clears 2026-11-" in res["K4"]["note"]

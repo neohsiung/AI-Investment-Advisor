@@ -68,3 +68,25 @@ def test_redis_fault_treated_as_seen():
     svc.webhook._redis = MagicMock(exists=MagicMock(side_effect=RuntimeError("down")))
     res, wf = _run(svc)
     assert res["new"] == 0 and not wf.called
+
+
+def test_event_budget_gate_caps_and_doubles_for_held():
+    from src.services.workflow_service import EventAnalysisWorkflow
+
+    class R:
+        def __init__(self): self.c = {}
+        def incr(self, k): self.c[k] = self.c.get(k, 0) + 1; return self.c[k]
+        def expire(self, k, t): pass
+
+    r = R()
+    wf = EventAnalysisWorkflow.__new__(EventAnalysisWorkflow)
+    wf.user_id = "u"; wf.logger = MagicMock()
+    with patch("src.services.settings_service.SettingsService") as SS, \
+         patch("src.infrastructure.cache.redis_client.get_redis_sync", return_value=r):
+        SS.return_value.get_setting.return_value = 2
+        assert wf._event_budget_exceeded(False) == ""
+        assert wf._event_budget_exceeded(False) == ""
+        assert "budget" in wf._event_budget_exceeded(False)      # 3rd non-held over cap 2
+        assert wf._event_budget_exceeded(True) == ""             # held has its own, doubled counter
+        SS.return_value.get_setting.return_value = 0
+        assert wf._event_budget_exceeded(False) == ""            # 0 = unlimited

@@ -69,6 +69,17 @@ class MissionWatchdogService:
                                      "AND (last_verdict IS NULL OR last_verdict NOT LIKE '%dsr%')")).scalar() or 0)
         return n, bad
 
+    @staticmethod
+    def _clears_on(trades: List[Dict[str, Any]], today: date, nav: float, window: int, test) -> Optional[date]:
+        """First future date on which `test(window_trades)` is False assuming no new trades (None = beyond 60 days).
+        假設之後不再有新交易，回傳窗口滾動後該項不再違規的最早日期。"""
+        for ahead in range(1, 61):
+            d = today + timedelta(days=ahead)
+            win = [t for t in trades if t["date"] > d - timedelta(days=window)]
+            if not test(win):
+                return d
+        return None
+
     # ── evaluation ────────────────────────────────────────────────────────────
     def evaluate(self, today: Optional[date] = None) -> Dict[str, Any]:
         m = load_mission()
@@ -140,11 +151,28 @@ class MissionWatchdogService:
             worst_n = max((len(d["tickers"]) for d in by_day.values()), default=0)
             max_n = m.invariants.max_nonsafety_sells_per_day
             b3 = worst_pct > c3.threshold or worst_n > max_n
-            results.append(_row("K3", c3.name, "breach" if b3 else "ok", worst_pct, c3.threshold, c3.unit,
-                                f"worst day in 30d: {worst_n} tickers (limit {max_n}); safety exits not separated"))
+            def _k3_bad(win):
+                bd: Dict[date, Dict[str, Any]] = {}
+                for t in win:
+                    if t["action"] == "SELL":
+                        d = bd.setdefault(t["date"], {"amt": 0.0, "tickers": set()})
+                        d["amt"] += t["amount"]; d["tickers"].add(t["ticker"])
+                return any(v["amt"] / nav * 100.0 > c3.threshold or len(v["tickers"]) > max_n for v in bd.values())
+
+            def _k4_bad(win):
+                return (sum(t["amount"] for t in win) / 2.0) / nav * (365.0 / 30.0) > c4.threshold
+
+            k3_note = f"worst day in 30d: {worst_n} tickers (limit {max_n}); safety exits not separated"
+            if b3:
+                clr = self._clears_on(trades, today, nav, 30, _k3_bad)
+                k3_note += f"; history-driven, clears {clr.isoformat() if clr else '>60d'} if no new offending day"
+            results.append(_row("K3", c3.name, "breach" if b3 else "ok", worst_pct, c3.threshold, c3.unit, k3_note))
             turnover = (sum(t["amount"] for t in trades) / 2.0) / nav * (365.0 / 30.0)
-            results.append(_row("K4", c4.name, "breach" if turnover > c4.threshold else "ok", turnover, c4.threshold, c4.unit,
-                                "annualised from the last 30 days"))
+            k4_note = "annualised from the last 30 days"
+            if turnover > c4.threshold:
+                clr = self._clears_on(trades, today, nav, 30, _k4_bad)
+                k4_note += f"; clears {clr.isoformat() if clr else '>60d'} if no new trades"
+            results.append(_row("K4", c4.name, "breach" if turnover > c4.threshold else "ok", turnover, c4.threshold, c4.unit, k4_note))
         except Exception as e:
             results.append(_row("K3", c3.name, "not_measurable", None, c3.threshold, c3.unit, str(e)))
             results.append(_row("K4", c4.name, "not_measurable", None, c4.threshold, c4.unit, str(e)))

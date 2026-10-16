@@ -23,6 +23,12 @@ VALID_ENTRY_CATEGORIES: frozenset = frozenset({
     ENTRY_CATEGORY_SYNC_ADJUSTMENT,
 })
 
+# Single-row cash anchor: the broker-anchored offset applied on top of the trade/capital ledger.
+# Legacy per-day CASH sync rows still count via get_cash_flow_sum; the anchor is the remaining offset to broker cash,
+# stored in exactly ONE row per user and added separately, so repeated syncs converge instead of compounding.
+# 舊的逐日 CASH 同步列仍計入現金流；錨點是其餘到券商現金的偏移量，每位使用者僅一列、另行加總，重複同步不會疊加。
+LEDGER_ANCHOR_SOURCE = "LEDGER_ANCHOR"
+
 # Actions that represent real asset transactions (must have a non-empty ticker).
 TRADE_ACTIONS: frozenset = frozenset({"BUY", "SELL"})
 
@@ -414,8 +420,9 @@ class AlchemyTransactionRepository(BaseRepository, ITransactionRepository):
                 END) FROM transactions 
                 WHERE user_id = :user_id 
                 AND (:account_id IS NULL OR LOWER(source_file) = LOWER(:account_id) OR LOWER(source_file) LIKE LOWER(:account_id) || '%')
+                AND (source_file IS NULL OR source_file != :anchor_src)
             """)
-            params = {"user_id": user_id, "account_id": account_id}
+            params = {"user_id": user_id, "account_id": account_id, "anchor_src": LEDGER_ANCHOR_SOURCE}
             result = conn.execute(query, params).fetchone()
             return float(result[0]) if result and result[0] is not None else 0.0
 
@@ -445,7 +452,14 @@ class AlchemyTransactionRepository(BaseRepository, ITransactionRepository):
             result = conn.execute(query, params).fetchone()
             return float(result[0]) if result and result[0] is not None else 0.0
 
-    def get_cash_balance(self, user_id: str, account_id: str = None) -> float:
+    def _anchor_offset(self, conn, user_id: str) -> float:
+        row = conn.execute(text("""
+            SELECT SUM(CASE WHEN action = 'DEPOSIT' THEN amount WHEN action = 'WITHDRAWAL' THEN -amount ELSE 0 END)
+            FROM transactions WHERE user_id = :user_id AND source_file = :src AND entry_category = :cat
+        """), {"user_id": user_id, "src": LEDGER_ANCHOR_SOURCE, "cat": ENTRY_CATEGORY_SYNC_ADJUSTMENT}).scalar()
+        return float(row or 0.0)
+
+    def get_cash_balance(self, user_id: str, account_id: str = None, include_anchor: bool = True) -> float:
         with self.engine.connect() as conn:
             cash_flow_sum = self.get_cash_flow_sum(user_id, account_id)
             query_actions = text("""
@@ -464,7 +478,8 @@ class AlchemyTransactionRepository(BaseRepository, ITransactionRepository):
             """)
             params = {"user_id": user_id, "account_id": account_id, "exclude_category": ENTRY_CATEGORY_SYNC_ADJUSTMENT}
             impact = conn.execute(query_actions, params).scalar() or 0.0
-            return float(float(cash_flow_sum) + float(impact))
+            anchor = self._anchor_offset(conn, user_id) if (include_anchor and account_id is None) else 0.0
+            return float(float(cash_flow_sum) + float(impact) + anchor)
 
     def delete(self, user_id: str, transaction_id: str) -> None:
         with self.engine.begin() as conn:
@@ -546,33 +561,33 @@ class AlchemyTransactionRepository(BaseRepository, ITransactionRepository):
             query = text("SELECT DISTINCT source_file FROM transactions WHERE user_id = :uid AND source_file IS NOT NULL")
             rows = conn.execute(query, {"uid": user_id}).fetchall()
             return [r[0] for r in rows]
+    def set_cash_anchor(self, user_id: str, target_balance: float) -> float:
+        """
+        Make get_cash_balance(user) equal the broker cash by (re)writing the single anchor row.
+        Idempotent: running twice with the same target changes nothing. Returns the offset applied.
+        讓本地現金等於券商現金：重寫唯一的錨點列，可重複執行；回傳套用的偏移量。
+        """
+        with self.engine.begin() as conn:
+            conn.execute(text("DELETE FROM transactions WHERE user_id = :u AND source_file = :s AND entry_category = :c"),
+                         {"u": user_id, "s": LEDGER_ANCHOR_SOURCE, "c": ENTRY_CATEGORY_SYNC_ADJUSTMENT})
+        base = self.get_cash_balance(user_id, None, include_anchor=False)
+        diff = float(target_balance) - base
+        if abs(diff) < 0.005:
+            return 0.0
+        self.add(
+            user_id=user_id, ticker="CASH", date=datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            action="DEPOSIT" if diff > 0 else "WITHDRAWAL", quantity=1.0, price=0, fees=0, amount=abs(diff),
+            entry_category=ENTRY_CATEGORY_SYNC_ADJUSTMENT, source_file=LEDGER_ANCHOR_SOURCE,
+            raw_data={"reason": "broker_cash_anchor", "base_cash": base, "broker_cash": float(target_balance)},
+        )
+        return diff
+
     def reconcile_cash_balance(self, user_id: str, target_balance: float, account_id: str = None) -> None:
         """
-        Adjusts local cash balance to match live broker balance.
-        調整本地現金餘額以匹配券商即時餘額。
+        Align local cash to the live broker balance via the single anchor row (single-broker deployment).
+        以單一錨點列將本地現金對齊券商即時餘額（單一券商部署）。
         """
-        current_balance = self.get_cash_balance(user_id, account_id)
-        diff = target_balance - current_balance
-        
-        # Avoid tiny adjustments due to rounding
-        if abs(diff) < 0.01:
-            return
-            
-        print(f"Reconciling cash for {user_id}: current={current_balance}, target={target_balance}, diff={diff}")
-        
-        # Add a sync adjustment transaction
-        self.add(
-            user_id=user_id,
-            ticker="CASH",
-            date=datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-            action="DEPOSIT" if diff > 0 else "WITHDRAWAL",
-            quantity=1.0,
-            price=0,
-            fees=0,
-            amount=abs(diff),
-            entry_category=ENTRY_CATEGORY_SYNC_ADJUSTMENT,
-            source_file=account_id
-        )
+        self.set_cash_anchor(user_id, target_balance)
 
     def reconcile_positions(self, user_id: str, live_positions: List[Dict[str, Any]], account_id: str = None) -> None:
         """
