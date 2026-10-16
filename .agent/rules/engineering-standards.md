@@ -109,10 +109,9 @@
 
 - 嚴禁使用 `MD5` 或 `SHA1` 進行任何具備安全性意涵的雜湊 (Hashing)。
 - 所有信號 ID (Signal ID) 或 實體識別碼 (Entity IDs) 生成必須使用 **SHA256**。
-- **使用者認證架構 (FastAPI Auth Hub)**:
-  - **原則**: 嚴禁在 Streamlit 異步渲染週期內直接進行 OAuth 回調處理或設置 Cookie (極度不穩定)。
-  - **流程**: Streamlit (`<a>` tag) → `FastAPI /api/auth/login` → Google OAuth → `FastAPI /api/auth/callback` → `HTTP 302 Redirect` → Streamlit。
-  - **前端驗證**: 使用 `st.context.cookies.get(cookie_name)` 同步讀取，透過 `auth_guard` 進行頁面阻斷。Cookie 屬性需設定 `samesite="lax"`。
+- **使用者認證架構（單一操作者）**:
+  - 本專案已收斂為單一操作者，沒有登入流程：`AUTH_MODE=none`（預設，回傳 `OWNER_ID`）或 `AUTH_MODE=token`（以 `ADMIN_TOKEN` 驗證）。見 `src/api/v1/dependencies.py:get_current_user_id`。
+  - 舊的 Streamlit／Google OAuth 流程已移除；不得重新引入需要瀏覽器 Cookie 的認證路徑。
 
 ### 3.5 第三方工具與 Skill 審計 (Third-party Audit)
 

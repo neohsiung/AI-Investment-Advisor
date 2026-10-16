@@ -43,7 +43,7 @@
 ---
 
 > [!WARNING]
-> **Not investment advice. Trades real money at your own risk.** This is autonomous quantitative trading software — if configured with live broker credentials, it will execute real orders with real money. Provided "AS IS" with no warranty (see [LICENSE](LICENSE) / [NOTICE](NOTICE)). Always start in paper/demo mode and understand the system before connecting a funded account.
+> **Not investment advice. Trades real money at your own risk.** This is autonomous quantitative trading software — if configured with live broker credentials, it will execute real orders with real money. Provided "AS IS" with no warranty (see [LICENSE](LICENSE) / [NOTICE](NOTICE)). Understand the system before connecting a funded account. Note: in this project `TRADING_MODE=paper` is a full stop, not a simulation — the eToro token has no demo permission, so every broker call fails with `InsufficientPermissions`; the safe brakes are `ai_trading_enabled=false` and the `tradable_capital_pct` cap (0 disables trading).
 
 > [!TIP]
 > **Your portfolio has an institutional-grade quantitative brain watching it 24/7.** This platform orchestrates an autonomous multi-agent swarm, Bayesian regime nowcasting, Extreme Value Theory (EVT) tail risk defenses, multi-factor alpha synthesis, and real-time smart order routing — the way a modern quantitative hedge fund operates.
