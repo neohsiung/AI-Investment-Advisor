@@ -54,7 +54,7 @@ DECISION_SCORE_MODULES = [
     "src/services/sentinel_service.py",
 ]
 KNOWN_HARDCODED_CONFIDENCE = {
-    "src/services/confidence_rebalance_service.py": 1,
+    # confidence_rebalance_service.py is clean since the 2026-10-16 rebalance lock (was 1).
     "src/services/sentinel_service.py": 3,
 }
 

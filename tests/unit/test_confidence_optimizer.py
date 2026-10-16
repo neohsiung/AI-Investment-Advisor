@@ -328,3 +328,16 @@ class TestRebalanceExecuteSafety:
         assert result["status"] == "market_closed"
         assert "休市中" in result["message"]
         svc._execute_trade.assert_not_called()
+
+import pytest as _pytest_guard
+
+
+@_pytest_guard.fixture(autouse=True)
+def _rebalance_guard_env(monkeypatch):
+    """The plan tests exercise sizing/selection logic, not the DB-backed daily sell counter or research
+    lookups; give the guard healthy, neutral inputs. Guard behaviour has its own tests
+    (tests/unit/services/test_rebalance_guard.py).
+    這些測試驗證部位計算/選擇邏輯；護欄的資料庫查詢以中性值取代，護欄行為另有專屬測試。"""
+    from src.services.confidence_rebalance_service import ConfidenceRebalanceService
+    monkeypatch.setattr(ConfidenceRebalanceService, "_sells_today", lambda self: (0, 0.0))
+    monkeypatch.setattr(ConfidenceRebalanceService, "_latest_score", lambda self, ticker: 6.0)

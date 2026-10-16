@@ -51,6 +51,34 @@ class ConfidenceRebalanceService:
         self.opportunity_cost_service = OpportunityCostService(user_id=user_id)
         self.alpha_decay_service = AlphaDecayService(user_id=user_id, market_data_service=market_data_service)
 
+    def _latest_score(self, ticker: str) -> Optional[float]:
+        """Newest real research score on a 0-10 scale, or None. Never invents a number.
+        最新真實研究分數（0-10），沒有就回傳 None，絕不捏造數字。"""
+        try:
+            rows = self.ticker_service.repo.get_research(self.user_id, ticker, limit=1)
+        except Exception as e:
+            logger.warning("ConfidenceRebalance: research lookup failed for %s: %s", ticker, e)
+            return None
+        if not rows or not rows[0].get("confidence_score"):
+            return None
+        v = float(rows[0]["confidence_score"])
+        return v * 10.0 if v <= 1.0 else v
+
+    def _sells_today(self) -> tuple:
+        """(distinct tickers sold today, total sold value). Raises on DB failure so the caller fails closed.
+        今日已賣出的（標的數, 金額）；資料庫失敗時拋出例外，由呼叫端 fail-closed。"""
+        from datetime import datetime, timezone
+        from sqlalchemy import text
+        from src.data.database import get_db_engine
+        with get_db_engine().connect() as conn:
+            row = conn.execute(
+                text("SELECT COUNT(DISTINCT ticker), COALESCE(SUM(amount), 0) FROM transactions "
+                     "WHERE user_id = :uid AND action = 'SELL' AND entry_category = 'trade' "
+                     "AND trade_date = :d"),
+                {"uid": self.user_id, "d": datetime.now(timezone.utc).date()},
+            ).fetchone()
+        return int(row[0] or 0), float(row[1] or 0.0)
+
     async def _get_regime_policy(self) -> Any:
         """Query current market regime to determine adaptive cash buffer and buy permission."""
         try:
@@ -151,7 +179,7 @@ class ConfidenceRebalanceService:
                 "delta_weight": round(delta * 100, 2),
                 "delta_amount": round(delta_amount, 2),
                 "action": "SELL",
-                "confidence": 8.5,
+                "confidence": self._latest_score(held_ticker),   # None -> blocked by rebalance_guard (no invented score)
                 "is_pruning": True,
             }
             sells.append(trade_item)
@@ -340,6 +368,31 @@ class ConfidenceRebalanceService:
             suppressed_swaps = filter_res["suppressed_sells"]
             holding_runners.extend(suppressed_swaps)
 
+        # Mission guard: real scores, replacement plan, daily caps, healthy data (see rebalance_guard.py).
+        # 使命護欄：需真實分數、需換入計畫、每日上限、資料健康（fail-closed）。
+        from src.services.rebalance_guard import evaluate_sells, scale_buys_to_budget
+        data_healthy = bool(positions_map is not None) and all(
+            float(p.get("current_price", 0.0) or 0.0) > 0.0 for p in positions_map.values()
+        )
+        try:
+            sold_today_count, sold_today_amount = self._sells_today()
+        except Exception as e:
+            logger.warning("ConfidenceRebalance: cannot read today's sells (%s); failing closed", e)
+            sold_today_count, sold_today_amount = 10 ** 6, 10 ** 12
+        guard = evaluate_sells(
+            sells, buys, total_portfolio_value, data_healthy, sold_today_count, sold_today_amount
+        )
+        if guard.rejected:
+            logger.warning(
+                "ConfidenceRebalance guard blocked %d/%d sells: %s",
+                len(guard.rejected), len(sells),
+                "; ".join(f"{r['ticker']}:{r['guard_reason']}" for r in guard.rejected),
+            )
+        sells = guard.approved
+        # Buys may only spend cash that really exists once the blocked sells are removed.
+        buy_budget = max(0.0, current_cash_usd - cash_buffer_usd) + sum(abs(t["delta_amount"]) for t in sells)
+        buys = scale_buys_to_budget(buys, buy_budget, min_trade_usd)
+
         total_buy_amount = sum(t["delta_amount"] for t in buys)
         total_sell_amount = sum(abs(t["delta_amount"]) for t in sells)
         pruned_amount = sum(abs(t["delta_amount"]) for t in pruned_lots)
@@ -363,6 +416,11 @@ class ConfidenceRebalanceService:
                 "allow_new_buys": allow_new_buys,
                 "buy_confidence_threshold": getattr(policy, "buy_confidence_threshold", 7.5),
                 "rationale": getattr(policy, "rationale", ""),
+            },
+            "guard": {
+                "blocked_sells": guard.rejected,
+                "reasons": guard.reasons,
+                "limits": guard.limits,
             },
             "trades": {
                 "all": trades + holding_runners,
@@ -438,7 +496,11 @@ class ConfidenceRebalanceService:
                 is_pruning = trade.get("is_pruning", False)
                 conf = float(trade.get("confidence") or 0.0)
                 if conf <= 0.0:
-                    conf = 8.5
+                    # Never invent a score for a sell: the guard already rejects unscored sells.
+                    # 絕不為賣單捏造分數（護欄已擋下無分數賣單）。
+                    errors.append(f"{trade['ticker']} sell: no real score — skipped")
+                    executed_trades.append({**trade, "status": "skipped_no_score"})
+                    continue
                 elif 0.0 < conf <= 1.0:
                     conf *= 10.0
 
@@ -538,7 +600,7 @@ class ConfidenceRebalanceService:
         self,
         candidate_ticker: str,
         target_amount: float,
-        candidate_score: float = 8.5,
+        candidate_score: float,
         execute: bool = False,
     ) -> Dict[str, Any]:
         """
@@ -632,6 +694,24 @@ class ConfidenceRebalanceService:
                 "reason": f"Capital rotation for {candidate_ticker}: liquidate {item['ticker']} (score={item['score']:.1f} vs {candidate_score:.1f})",
             })
 
+        # Same mission guard as the rebalance: the candidate buy is the replacement plan; caps apply.
+        # 與再平衡相同的使命護欄：候選買單即換入計畫，並受每日上限約束。
+        from src.services.rebalance_guard import evaluate_sells
+        try:
+            sold_count, sold_amount = self._sells_today()
+        except Exception as e:
+            logger.warning("Reclaim: cannot read today's sells (%s); failing closed", e)
+            sold_count, sold_amount = 10 ** 6, 10 ** 12
+        guard = evaluate_sells(
+            [{**c, "delta_amount": c["amount"]} for c in candidate_sells],
+            [{"delta_amount": target_amount}],
+            total_value, True, sold_count, sold_amount,
+        )
+        blocked = [{"ticker": r["ticker"], "guard_reason": r["guard_reason"]} for r in guard.rejected]
+        approved_tickers = {a["ticker"] for a in guard.approved}
+        candidate_sells = [c for c in candidate_sells if c["ticker"] in approved_tickers]
+        reclaimed = sum(c["amount"] for c in candidate_sells)
+
         executed = []
         if execute and candidate_sells:
             for s in candidate_sells:
@@ -652,6 +732,7 @@ class ConfidenceRebalanceService:
             "available_cash_before": round(available_cash, 2),
             "reclaimed_amount": round(reclaimed, 2),
             "shortfall_remaining": round(max(0.0, shortfall - reclaimed), 2),
+            "blocked_by_guard": blocked,
             "sells": executed if execute else candidate_sells,
         }
 
@@ -738,7 +819,10 @@ class ConfidenceRebalanceService:
         )
 
         strat = strategy_name or ("rebalance_diversification" if action.upper() == "SELL" else "portfolio_rebalance")
-        score_to_use = 8.5 if (confidence_score is None or confidence_score <= 0.0) else confidence_score
+        if confidence_score is None or confidence_score <= 0.0:
+            logger.error("ConfidenceRebalance: refusing %s %s — no real confidence score", action, ticker)
+            return {"status": "rejected", "reason": "missing_confidence_score", "order_id": None}
+        score_to_use = confidence_score
         rationale_to_use = rationale or f"Confidence-driven rebalance: {action} {ticker} (delta={delta_weight:+.2%})"
 
         return await trading.evaluate_and_execute_trade(

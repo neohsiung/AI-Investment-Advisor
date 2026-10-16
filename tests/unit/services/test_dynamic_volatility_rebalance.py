@@ -154,9 +154,13 @@ class TestConfidenceRebalanceRegimeBuffer:
         assert plan["summary"]["allow_new_buys"] is False
         assert plan["summary"]["target_cash_pct"] == 50.0
 
-        # DEAD_STOCK must be sold
+        # DEAD_STOCK is NOT sold: with new buys halted there is no replacement plan, and the mission
+        # guard forbids non-safety sells without one (cash is not a replacement).
+        # 買入被暫停時沒有換入計畫，依使命護欄不可賣出（現金不算換入）。
         sell_tickers = [s["ticker"] for s in plan["trades"]["sells"]]
-        assert "DEAD_STOCK" in sell_tickers
+        assert "DEAD_STOCK" not in sell_tickers
+        assert any(b["ticker"] == "DEAD_STOCK" and b["guard_reason"] == "no_replacement_plan"
+                   for b in plan["guard"]["blocked_sells"])
 
         # BUYS MUST BE COMPLETELY EMPTY (Catching falling knives prohibited!)
         assert len(plan["trades"]["buys"]) == 0
@@ -272,3 +276,17 @@ class TestInverseVolatilityRiskParity:
         assert res["success"] is True
         for t in res["targets"]:
             assert t["target_weight"] <= 0.21, f"{t['ticker']} weight {t['target_weight']} exceeded 20% cap!"
+
+
+import pytest as _pytest_guard
+
+
+@_pytest_guard.fixture(autouse=True)
+def _rebalance_guard_env(monkeypatch):
+    """The plan tests exercise sizing/selection logic, not the DB-backed daily sell counter or research
+    lookups; give the guard healthy, neutral inputs. Guard behaviour has its own tests
+    (tests/unit/services/test_rebalance_guard.py).
+    這些測試驗證部位計算/選擇邏輯；護欄的資料庫查詢以中性值取代，護欄行為另有專屬測試。"""
+    from src.services.confidence_rebalance_service import ConfidenceRebalanceService
+    monkeypatch.setattr(ConfidenceRebalanceService, "_sells_today", lambda self: (0, 0.0))
+    monkeypatch.setattr(ConfidenceRebalanceService, "_latest_score", lambda self, ticker: 6.0)
