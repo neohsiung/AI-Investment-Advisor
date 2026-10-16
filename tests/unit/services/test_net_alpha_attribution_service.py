@@ -305,3 +305,33 @@ def test_avg_equity_excludes_outlier_snapshot(
     report = asyncio.run(svc.calculate_complete_report(lookback_days=30))
     assert "2026-09-29" in report.excluded_days
     assert report.avg_equity_usd < 2000
+
+
+def test_valid_since_limits_window_and_cost_days(
+    mock_broker, mock_market_data_service, mock_token_logger_service
+):
+    from datetime import date as _d, timedelta as _t
+
+    since = (_d.today() - _t(days=5)).isoformat()
+    settings = MagicMock()
+    settings.get_setting.side_effect = lambda key, default=None: {
+        "net_alpha_valid_since": since,
+    }.get(key, default)
+    seen = {}
+    loader_since = {}
+
+    def snaps(uid, s):
+        loader_since["since"] = s
+        return []
+
+    token = mock_token_logger_service
+    token.get_user_spending.side_effect = lambda uid, days: seen.setdefault("days", days) and {"total_cost": 0.5}
+    svc = NetAlphaAttributionService(
+        user_id="u1", settings_service=settings, broker=mock_broker,
+        market_data_service=mock_market_data_service, token_logger_service=token,
+        snapshot_loader=snaps, flow_loader=lambda uid, s: {},
+    )
+    report = asyncio.run(svc.calculate_complete_report(lookback_days=30))
+    assert report.lookback_days == 5
+    assert seen["days"] == 5
+    assert loader_since["since"] == _d.today() - _t(days=6)

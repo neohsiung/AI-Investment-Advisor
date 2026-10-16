@@ -308,6 +308,26 @@ class NetAlphaAttributionService:
             except Exception as be:
                 logger.warning("Failed to get broker account for attribution: %s", be)
 
+        # Only broker-anchored snapshots are trustworthy; earlier ones were derived from a
+        # drifting local ledger (2026-10 audit). Window = max(lookback, valid_since).
+        # 僅採用券商錨定後的快照；視窗取 lookback 與 valid_since 的較晚者。
+        from datetime import date as _d, timedelta as _t
+        window_start = _d.today() - _t(days=lookback_days)
+        valid_since_raw = None
+        if settings_svc:
+            try:
+                valid_since_raw = settings_svc.get_setting("net_alpha_valid_since")
+            except Exception as e:
+                logger.warning("net_alpha_valid_since unreadable (%s); using lookback window", e)
+        if valid_since_raw:
+            try:
+                vs = _d.fromisoformat(str(valid_since_raw)[:10])
+                if vs > window_start:
+                    window_start = vs
+            except ValueError:
+                logger.warning("Invalid net_alpha_valid_since=%r; ignored", valid_since_raw)
+        eff_days = max(1, (_d.today() - window_start).days)
+
         portfolio_pnl = current_equity - initial_capital
         portfolio_return = portfolio_pnl / max(1.0, initial_capital)
         return_method = "point_in_time_fallback"
@@ -317,7 +337,7 @@ class NetAlphaAttributionService:
         notes: List[str] = []
         try:
             from datetime import date as _date, timedelta as _td
-            since = _date.today() - _td(days=lookback_days + 1)
+            since = window_start - _td(days=1)
             navs = self._load_snapshots(since)
             flows = self._load_flows(since)
             if len(navs) >= 2:
@@ -343,7 +363,19 @@ class NetAlphaAttributionService:
         # 3. 取得 SPY 大盤基準報酬率
         spy_return = 0.0
         try:
-            spy_df = mkt_svc.get_history_df("SPY", days=max(10, lookback_days + 5))
+            spy_df = mkt_svc.get_history_df("SPY", days=max(10, eff_days + 5))
+            if spy_df is not None and not spy_df.empty:
+                # Align SPY to the same window as the portfolio TWR when dates are available.
+                # 若有日期索引，將 SPY 對齊至與投組 TWR 相同的視窗。
+                try:
+                    import pandas as _pd
+                    _cut = _pd.Timestamp(window_start)
+                    _idx = _pd.to_datetime(spy_df.index, errors="coerce")
+                    _sub = spy_df[_idx >= _cut]
+                    if len(_sub) >= 2:
+                        spy_df = _sub
+                except Exception as _e:
+                    logger.warning("SPY window alignment skipped: %s", _e)
             if spy_df is not None and not spy_df.empty and len(spy_df) >= 2:
                 close_col = "Close" if "Close" in spy_df.columns else ("close" if "close" in spy_df.columns else None)
                 if close_col is not None:
@@ -361,17 +393,17 @@ class NetAlphaAttributionService:
         # 4. 取得 AI 模型花費與 SaaS 成本攤提
         llm_cost = 0.0
         try:
-            spending = token_svc.get_user_spending(self.user_id, days=lookback_days)
+            spending = token_svc.get_user_spending(self.user_id, days=eff_days)
             llm_cost = float(spending.get("total_cost", 0.0) or 0.0)
         except Exception as te:
             logger.debug("Failed querying user spending: %s", te)
 
-        saas_cost = monthly_saas * (lookback_days / 30.0)
+        saas_cost = monthly_saas * (eff_days / 30.0)
         total_cost = llm_cost + saas_cost
         cost_drag = total_cost / max(1.0, avg_equity)
 
         net_alpha = gross_alpha - cost_drag
-        annualized_factor = 365.0 / max(1, lookback_days)
+        annualized_factor = 365.0 / max(1, eff_days)
         annualized_net_alpha = net_alpha * annualized_factor
         alpha_target_gap = annualized_net_alpha - target_alpha
         annualization_reliable = (
@@ -389,13 +421,13 @@ class NetAlphaAttributionService:
             current_equity=current_equity,
             available_cash=available_cash,
             spy_return=spy_return,
-            lookback_days=lookback_days,
+            lookback_days=eff_days,
             mkt_svc=mkt_svc,
         )
 
         return NetAlphaAttributionReport(
             user_id=self.user_id,
-            lookback_days=lookback_days,
+            lookback_days=eff_days,
             initial_capital_usd=initial_capital,
             current_equity_usd=current_equity,
             portfolio_pnl_usd=portfolio_pnl,

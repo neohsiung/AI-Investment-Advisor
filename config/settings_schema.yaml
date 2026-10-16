@@ -3563,6 +3563,14 @@ settings:
     label_zh: 目標年化淨 Alpha (超越標普500超額)
     help_en: Annual net alpha hurdle target after deducting all costs (default 0.10 = +10%).
     help_zh: 扣除所有模型與運營成本後之年度淨超額目標（預設 0.10 即年化打贏大盤 10%）。
+  - key: net_alpha_valid_since
+    group: allocation
+    type: string
+    default: "2026-10-15"
+    label_en: Net alpha valid-since date (YYYY-MM-DD)
+    label_zh: 淨 Alpha 有效起算日 (YYYY-MM-DD)
+    help_en: Snapshots before this date are ignored by net alpha (they were derived from a drifting local ledger, not the broker).
+    help_zh: 此日期之前的快照不納入淨 Alpha（當時由本地帳本推算，與券商不一致）。
   - key: monthly_saas_subscription_cost_usd
     group: allocation
     type: float
