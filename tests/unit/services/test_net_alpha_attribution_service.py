@@ -291,3 +291,17 @@ def test_report_reads_canonical_subscription_key(
     report = asyncio.run(svc.calculate_complete_report(lookback_days=30))
     assert report.saas_subscription_cost_usd == pytest.approx(63.98)
     assert report.return_method == "point_in_time_fallback"
+
+
+def test_avg_equity_excludes_outlier_snapshot(
+    mock_broker, mock_settings_service, mock_market_data_service, mock_token_logger_service
+):
+    navs = [(date(2026, 9, 28), 1000.0), (date(2026, 9, 29), 296545.77), (date(2026, 9, 30), 1010.0), (date(2026, 10, 1), 1020.0)]
+    svc = NetAlphaAttributionService(
+        user_id="u1", settings_service=mock_settings_service, broker=mock_broker,
+        market_data_service=mock_market_data_service, token_logger_service=mock_token_logger_service,
+        snapshot_loader=lambda uid, since: navs, flow_loader=lambda uid, since: {},
+    )
+    report = asyncio.run(svc.calculate_complete_report(lookback_days=30))
+    assert "2026-09-29" in report.excluded_days
+    assert report.avg_equity_usd < 2000

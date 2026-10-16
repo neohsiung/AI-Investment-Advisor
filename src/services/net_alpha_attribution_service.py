@@ -325,7 +325,9 @@ class NetAlphaAttributionService:
                 if twr_days >= 1:
                     portfolio_return = twr
                     return_method = "twr_snapshots"
-                    valid_navs = [n for _, n in navs if n and n > 0]
+                    # Exclude the same implausible days so one bad snapshot cannot inflate the denominator.
+                    # 排除同樣的異常日，避免單筆壞快照撐大分母。
+                    valid_navs = [n for d, n in navs if n and n > 0 and str(d) not in excluded_days]
                     avg_equity = sum(valid_navs) / len(valid_navs) if valid_navs else current_equity
                     portfolio_pnl = portfolio_return * avg_equity
             if return_method != "twr_snapshots":
