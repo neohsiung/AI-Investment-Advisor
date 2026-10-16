@@ -19,7 +19,6 @@ KNOWN_UNRESOLVED_IMPORTS = {
     ("src/agents/cio.py", "src.repositories.broker_account_repository"),
     ("src/agents/cio.py", "src.repositories.holdings_repository"),
     ("src/services/staggered_dip_buying_service.py", "src.infrastructure.broker_service"),
-    ("src/services/trend_hysteresis_lockout_service.py", "src.utils.redis_client"),
 }
 
 
@@ -80,3 +79,12 @@ def test_zero_percentage_cap_disables_trading():
     repo = MagicMock()
     repo.get.side_effect = lambda uid, key: {"tradable_capital_pct": 0, "tradable_capital_usd": 0}.get(key)
     assert tradable_capital("u1", 1700.0, repo) == 0.0
+
+
+# 6. SlippageGuardService must be handed a SettingsService (get_setting), not a repository (only .get):
+#    the mismatch made the guard crash on every order and never run (2026-10-16 audit).
+def test_slippage_guard_gets_a_settings_service():
+    from tests.invariants.helpers import REPO
+
+    src = (REPO / "src/services/automated_trading_service.py").read_text(encoding="utf-8")
+    assert "SlippageGuardService(user_id=user_id, settings_service=self.settings_repo)" not in src

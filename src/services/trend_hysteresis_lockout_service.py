@@ -141,15 +141,15 @@ class TrendHysteresisLockoutService:
         sym = ticker.upper().strip()
         cache_key = f"{self.REDIS_KEY_PREFIX}{self.user_id}:{sym}"
         try:
-            from src.utils.redis_client import get_redis_client
+            from src.infrastructure.cache.redis_client import get_redis_sync
 
-            r = get_redis_client()
+            r = get_redis_sync(decode_responses=True)
             if r is not None:
                 val = r.get(cache_key)
                 if val:
                     return val.decode("utf-8") if isinstance(val, bytes) else str(val)
         except Exception as e:
-            logger.debug("Redis read failed in TrendHysteresisLockoutService: %s", e)
+            logger.warning("Redis read failed in TrendHysteresisLockoutService (falling back to in-memory state): %s", e)
 
         mem_key = f"{self.user_id}:{sym}"
         return self._in_memory_state.get(mem_key, HysteresisState.NEUTRAL.value)
@@ -161,13 +161,13 @@ class TrendHysteresisLockoutService:
         self._in_memory_state[mem_key] = state
 
         try:
-            from src.utils.redis_client import get_redis_client
+            from src.infrastructure.cache.redis_client import get_redis_sync
 
-            r = get_redis_client()
+            r = get_redis_sync(decode_responses=True)
             if r is not None:
                 r.set(cache_key, state, ex=86400 * 7)  # 7-day TTL
         except Exception as e:
-            logger.debug("Redis write failed in TrendHysteresisLockoutService: %s", e)
+            logger.warning("Redis write failed in TrendHysteresisLockoutService (state kept in memory only): %s", e)
 
     def _resolve_price_and_mas(
         self, ticker: str, current_price: Optional[float] = None

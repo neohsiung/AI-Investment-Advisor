@@ -1448,14 +1448,27 @@ class AutomatedTradingService:
         slippage_guard = None
         try:
             from src.services.slippage_guard_service import SlippageGuardService
-            slippage_guard = SlippageGuardService(user_id=user_id, settings_service=self.settings_repo)
-            guard_eval = await slippage_guard.evaluate_trade(
-                ticker=order.symbol,
-                action=order.action.value,
-                amount_usd=order.amount_usd or order.quantity,
-                current_price=order.price,
-            )
-            if not guard_eval.passed:
+            # SlippageGuardService reads settings via SettingsService.get_setting(); the repository object
+            # (self.settings_repo) has no such method, so the guard used to crash and never ran.
+            # SlippageGuardService 需要 SettingsService.get_setting()；repository 物件沒有此方法，
+            # 護欄過去每次都崩潰而從未真正執行。
+            from src.services.settings_service import SettingsService as _SS
+            from src.services.strategy_registry import StrategyRegistry as _SR
+            slippage_guard = SlippageGuardService(user_id=user_id, settings_service=_SS(user_id=user_id))
+            # Safety exits (stop-loss, trailing stop, emergency) must never be deferred by the opening-window or
+            # spread breaker: getting out matters more than the fill quality. Only entries and discretionary
+            # sells are subject to it.
+            # 安全類出場（停損/追蹤停損/緊急）不得被開盤窗口或價差熔斷延後；只有進場與非安全賣出受此限制。
+            if order.action.value.upper() == "SELL" and _SR.is_safety_control(strategy_name or ""):
+                guard_eval = None
+            else:
+                guard_eval = await slippage_guard.evaluate_trade(
+                    ticker=order.symbol,
+                    action=order.action.value,
+                    amount_usd=order.amount_usd or order.quantity,
+                    current_price=order.price,
+                )
+            if guard_eval is not None and not guard_eval.passed:
                 logger.warning(
                     f"Slippage Guard Blocked {order.action.value} {order.symbol}: {guard_eval.reason}"
                 )
@@ -1465,7 +1478,7 @@ class AutomatedTradingService:
                     "circuit_breaker_triggered": True,
                     "slippage_guard": True,
                 }
-            if guard_eval.adaptive_limit_price and (not order.price or order.price <= 0):
+            if guard_eval is not None and guard_eval.adaptive_limit_price and (not order.price or order.price <= 0):
                 order.price = guard_eval.adaptive_limit_price
         except Exception as sg_err:
             logger.warning(f"SlippageGuard non-blocking check error: {sg_err}")

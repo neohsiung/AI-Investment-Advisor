@@ -238,20 +238,17 @@ class CompositorService:
             return fallback_score, fallback_factors
 
     def _fallback_score(self, ticker: str, agent_name: str) -> Tuple[float, Dict[str, Any]]:
-        """Deterministic hash-based fallback when LLM is unavailable."""
-        seed = self._ticker_hash(ticker + "_" + agent_name.lower())
-
-        base_map = {
-            "fundamental": 7.0 + (seed % 5) * 0.5,
-            "momentum": 5.0 + (seed % 5) * 0.8,
-            "sentiment": 6.0 + (seed % 4) * 0.7,
-            "risk": 5.0 + (seed % 5) * 0.6,
-        }
-        base = base_map.get(agent_name.lower(), 6.0)
-        return min(10.0, base), {
-            "key_factor": "Fallback (hash-based)",
-            "details": f"LLM unavailable, used deterministic seed {seed}",
-            "rationale": f"{agent_name} evaluated (fallback mode)",
+        """LLM unavailable: return NO evidence, not a plausible-looking score.
+        Previously this returned a hash of the ticker (7.0-9.0 for "fundamental"), which could pass the buy
+        threshold on pure noise. The result is flagged `_insufficient_data`; `_aggregate_scores` drops it
+        and refuses to execute if too little real evidence remains.
+        LLM 不可用時回傳『沒有證據』而非看似合理的分數（以前是 ticker 雜湊，fundamental 可高達 7–9 分，
+        足以靠雜訊通過買入門檻）。標記為 _insufficient_data，由 _aggregate_scores 排除。"""
+        return 0.0, {
+            "key_factor": "Unavailable (no evidence)",
+            "details": "LLM scoring unavailable; this agent is excluded from the composite",
+            "rationale": f"{agent_name}: insufficient data",
+            "_insufficient_data": True,
         }
 
     # ── Agent Scoring Prompts ──
@@ -644,6 +641,20 @@ Return JSON:
         base_scores = [s for s in sub_scores if not s.agent_name.startswith("Synth_") and s.agent_name != "Event_Bias"]
         synth_scores = [s for s in sub_scores if s.agent_name.startswith("Synth_")]
         event_bias_score = next((s for s in sub_scores if s.agent_name == "Event_Bias"), None)
+
+        # Agents with no real evidence (LLM failed) are excluded. If less than half of the configured
+        # base weight remains, there is not enough evidence to trade at all.
+        # 無真實證據的代理（LLM 失敗）一律排除；若剩餘權重不足設定總權重的一半，則整體視為證據不足、不得交易。
+        usable_base = [s for s in base_scores if not s.factors.get("_insufficient_data")]
+        total_cfg = sum(self.agent_weights.get(s.agent_name.lower(), 0.25) for s in base_scores)
+        usable_cfg = sum(self.agent_weights.get(s.agent_name.lower(), 0.25) for s in usable_base)
+        if base_scores and (not usable_base or usable_cfg < 0.5 * total_cfg):
+            logger.warning(
+                "Composite blocked: only %.0f%% of agent weight has real evidence (%d/%d agents)",
+                100.0 * usable_cfg / total_cfg if total_cfg else 0.0, len(usable_base), len(base_scores),
+            )
+            return 0.0, False
+        base_scores = usable_base
 
         # Case 1: Standard 4-agent ensemble (no active synthesized factors)
         if not synth_scores:

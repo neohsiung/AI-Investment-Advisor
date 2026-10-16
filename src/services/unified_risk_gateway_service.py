@@ -150,7 +150,7 @@ class UnifiedRiskGatewayService:
                         evaluated_at=now_iso,
                     )
             except Exception as e:
-                logger.debug("UnifiedRiskGateway: Calendar blackout check skipped/failed: %s", e)
+                self._guard_degraded(guard_details, "Calendar blackout", e)
 
         # ---------------------------------------------------------
         # 3. Microstructure VPIN & Kyle's Lambda Toxicity Guard
@@ -177,7 +177,7 @@ class UnifiedRiskGatewayService:
                         evaluated_at=now_iso,
                     )
             except Exception as e:
-                logger.debug("UnifiedRiskGateway: VPIN toxicity check skipped/failed: %s", e)
+                self._guard_degraded(guard_details, "VPIN toxicity", e)
 
         # ---------------------------------------------------------
         # 4. Bayesian Jump Diffusion Guard (Tail Jump Shocks)
@@ -205,7 +205,7 @@ class UnifiedRiskGatewayService:
                         evaluated_at=now_iso,
                     )
             except Exception as e:
-                logger.debug("UnifiedRiskGateway: Jump diffusion check skipped/failed: %s", e)
+                self._guard_degraded(guard_details, "Jump diffusion", e)
 
         # ---------------------------------------------------------
         # 5. Slippage & Auction Window Guard
@@ -228,7 +228,7 @@ class UnifiedRiskGatewayService:
                     )
 
         except Exception as e:
-            logger.debug("UnifiedRiskGateway: Slippage auction check skipped/failed: %s", e)
+            self._guard_degraded(guard_details, "Slippage auction", e)
 
         # ---------------------------------------------------------
         # 6. Dynamic IV Surface Skew & Tail Risk Hedging (Phase 61A)
@@ -262,7 +262,7 @@ class UnifiedRiskGatewayService:
                             evaluated_at=now_iso,
                         )
             except Exception as e:
-                logger.debug("UnifiedRiskGateway: IV surface skew check skipped/failed: %s", e)
+                self._guard_degraded(guard_details, "IV surface skew", e)
 
         # ---------------------------------------------------------
         # 7. Microstructure OFI & Liquidity Vacuum Defense (Phase 61B)
@@ -293,7 +293,7 @@ class UnifiedRiskGatewayService:
                             evaluated_at=now_iso,
                         )
             except Exception as e:
-                logger.debug("UnifiedRiskGateway: Microstructure OFI check skipped/failed: %s", e)
+                self._guard_degraded(guard_details, "Microstructure OFI", e)
 
         # ---------------------------------------------------------
         # 8. Option Gamma Exposure (GEX) Volatility Accelerator (Phase 62A)
@@ -325,7 +325,7 @@ class UnifiedRiskGatewayService:
                             evaluated_at=now_iso,
                         )
             except Exception as e:
-                logger.debug("UnifiedRiskGateway: Option GEX check skipped/failed: %s", e)
+                self._guard_degraded(guard_details, "Option GEX", e)
 
         # ---------------------------------------------------------
         # 9. Kalman Pairs Cointegration & Structural Break Defense (Phase 62B)
@@ -358,7 +358,7 @@ class UnifiedRiskGatewayService:
                             evaluated_at=now_iso,
                         )
         except Exception as e:
-            logger.debug("UnifiedRiskGateway: Kalman pairs check skipped/failed: %s", e)
+            self._guard_degraded(guard_details, "Kalman pairs", e)
 
         # ---------------------------------------------------------
         # 10. Trend Hysteresis Band & Macro Long-Only Lock (Phase 63A)
@@ -389,7 +389,7 @@ class UnifiedRiskGatewayService:
                         evaluated_at=now_iso,
                     )
         except Exception as e:
-            logger.debug("UnifiedRiskGateway: Trend hysteresis check skipped/failed: %s", e)
+            self._guard_degraded(guard_details, "Trend hysteresis", e)
 
         # ---------------------------------------------------------
         # 11. Turnover Friction Hurdle & Tranche Sizing (Phase 63B)
@@ -417,7 +417,7 @@ class UnifiedRiskGatewayService:
                         evaluated_at=now_iso,
                     )
         except Exception as e:
-            logger.debug("UnifiedRiskGateway: Turnover friction hurdle check skipped/failed: %s", e)
+            self._guard_degraded(guard_details, "Turnover friction hurdle", e)
 
         # ---------------------------------------------------------
         # 12. Cross-Currency FX Dynamic Hedging & Liquidity Buffer (Phase 65)
@@ -443,7 +443,7 @@ class UnifiedRiskGatewayService:
                         evaluated_at=now_iso,
                     )
         except Exception as e:
-            logger.debug("UnifiedRiskGateway: FX liquidity buffer check skipped/failed: %s", e)
+            self._guard_degraded(guard_details, "FX liquidity buffer", e)
 
         # All guards cleared!
         return RiskGatewayResult(
@@ -454,6 +454,13 @@ class UnifiedRiskGatewayService:
             guard_details=guard_details,
             evaluated_at=now_iso,
         )
+
+    def _guard_degraded(self, guard_details: Dict[str, Any], name: str, err: Exception) -> None:
+        """A guard crashed. Never swallow quietly: log at WARNING and leave a marker in the result so the
+        caller/UI can show that this check did NOT run (the order is evaluated by the remaining guards).
+        某個護欄執行失敗：以 WARNING 記錄並在結果中留下標記（表示該項檢查未執行），不再靜默吞掉。"""
+        logger.warning("UnifiedRiskGateway: %s check DEGRADED (did not run): %s", name, err)
+        guard_details.setdefault("_degraded_guards", []).append({"guard": name, "error": str(err)[:200]})
 
     def reset_all_protections(self) -> Dict[str, Any]:
         """
