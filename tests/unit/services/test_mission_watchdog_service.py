@@ -95,3 +95,15 @@ def test_k3_k4_report_when_history_clears():
     res = {r["id"]: r for r in svc.evaluate(today)["criteria"]}
     assert res["K3"]["status"] == "breach" and "clears 2026-11-" in res["K3"]["note"]
     assert res["K4"]["status"] == "breach" and "clears 2026-11-" in res["K4"]["note"]
+
+
+def test_k1_breach_note_names_top_spenders():
+    from datetime import date
+    from src.services.mission_watchdog_service import MissionWatchdogService
+    svc = MissionWatchdogService("u", nav_usd=1000.0, llm_cost_30d_usd=10.0, monthly_subscription_usd=0.0,
+                                 local_cash_usd=0.0, broker_cash_usd=0.0)
+    svc._top_cost_agents = lambda days=7, n=3: "; top spend CIO 60%, Risk 20% (7d)"
+    svc._trades = lambda since: []
+    svc._trial_stats = lambda: (0, 0)
+    k1 = {r["id"]: r for r in svc.evaluate(date(2026, 10, 17))["criteria"]}["K1"]
+    assert k1["status"] == "breach" and "top spend CIO 60%" in k1["note"]

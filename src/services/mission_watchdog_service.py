@@ -69,6 +69,24 @@ class MissionWatchdogService:
                                      "AND (last_verdict IS NULL OR last_verdict NOT LIKE '%dsr%')")).scalar() or 0)
         return n, bad
 
+    def _top_cost_agents(self, days: int = 7, n: int = 3) -> str:
+        """Share of LLM spend by agent over `days`, from the internal usage log (relative shares only — its absolute
+        dollars are list-price estimates, the billed total comes from LiteLLM). '' when unavailable.
+        以內部用量日誌估算各代理佔比（僅看相對比例；實際金額以 LiteLLM 計費為準），不可用時回空字串。"""
+        try:
+            with self.engine.connect() as c:
+                rows = c.execute(text(
+                    "SELECT agent_name, SUM(total_cost_usd) FROM llm_usage_logs "
+                    "WHERE user_id = :u AND timestamp > NOW() - make_interval(days => :d) "
+                    "GROUP BY 1 ORDER BY 2 DESC"), {"u": self.user_id, "d": days}).fetchall()
+        except Exception as e:
+            logger.warning("watchdog: agent cost split unavailable: %s", e)
+            return ""
+        total = sum(float(r[1] or 0.0) for r in rows)
+        if total <= 0:
+            return ""
+        return "; top spend " + ", ".join(f"{r[0]} {float(r[1]) / total * 100:.0f}%" for r in rows[:n]) + f" ({days}d)"
+
     @staticmethod
     def _clears_on(trades: List[Dict[str, Any]], today: date, nav: float, window: int, test) -> Optional[date]:
         """First future date on which `test(window_trades)` is False assuming no new trades (None = beyond 60 days).
@@ -115,7 +133,7 @@ class MissionWatchdogService:
             annual = llm30 * (365.0 / 30.0) + sub * 12.0
             ratio = annual / nav * 100.0
             results.append(_row("K1", c1.name, "breach" if ratio > c1.threshold else "ok", ratio, c1.threshold, c1.unit,
-                                f"annualised cost ${annual:.0f} on NAV ${nav:.0f}"))
+                                f"annualised cost ${annual:.0f} on NAV ${nav:.0f}" + (self._top_cost_agents() if ratio > c1.threshold else "")))
         except Exception as e:
             results.append(_row("K1", c1.name, "not_measurable", None, c1.threshold, c1.unit, str(e)))
 
