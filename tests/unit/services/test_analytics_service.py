@@ -92,3 +92,24 @@ class TestAnalyticsService:
         assert service.user_id == owner
 
         reset_owner_cache()
+
+
+@pytest.mark.asyncio
+async def test_update_daily_snapshot_skips_when_broker_anchor_fails():
+    """Broker configured but unreachable -> no ledger-derived NAV is recorded (fail loud)."""
+    from unittest.mock import patch, MagicMock, AsyncMock
+    from src.services import analytics_service as asvc
+
+    broker = MagicMock(api_key="k", user_key="u")
+    broker.get_account = AsyncMock(side_effect=RuntimeError("etoro 401"))
+    recorder = MagicMock()
+    with patch.object(asvc, "AlchemySnapshotRepository") as repo_cls, \
+         patch.object(asvc, "AlchemyTransactionRepository") as tr_cls, \
+         patch.object(asvc, "LeverageCalculator") as calc_cls, \
+         patch.object(asvc, "SnapshotRecorder", return_value=recorder), \
+         patch("src.services.etoro_service.EtoroService", return_value=broker):
+        repo_cls.return_value.get_latest_by_user.return_value = None
+        tr_cls.return_value.get_active_tickers.return_value = []
+        calc_cls.return_value.calculate_metrics.return_value = {"nlv": 9999.0, "cash_balance": 9999.0}
+        await asvc.update_daily_snapshot(user_id="u1", force=True, current_prices={})
+    recorder.record_daily_snapshot.assert_not_called()
