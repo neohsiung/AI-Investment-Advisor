@@ -75,6 +75,9 @@ class FinnhubPollService:
     async def run(self) -> Dict[str, Any]:
         if not self.settings.get_setting(SETTING_ENABLED, False):
             return {"status": "disabled"}
+        if str(self.settings.get_setting("event_llm_mode", "off") or "off").strip().lower() == "off":
+            # Analysis is off: polling would only mark items seen without ever analysing them.
+            return {"status": "disabled", "reason": "event_llm_mode=off"}
         if not getattr(self.provider, "api_key", None):
             logger.warning("FinnhubPollService: no Finnhub API key configured")
             return {"status": "error", "reason": "missing_api_key"}

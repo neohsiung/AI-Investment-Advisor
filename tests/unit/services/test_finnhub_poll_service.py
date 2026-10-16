@@ -25,7 +25,7 @@ class _Redis:
         return True
 
 
-def _svc(enabled=True, key="k", items=None, cap=3):
+def _svc(enabled=True, key="k", items=None, cap=3, mode="on"):
     prov = MagicMock(api_key=key)
     prov.fetch_news.return_value = items if items is not None else [
         {"title": f"h{i}", "url": f"http://x/{i}"} for i in range(5)]
@@ -35,7 +35,7 @@ def _svc(enabled=True, key="k", items=None, cap=3):
     repo = MagicMock()
     repo.get_all.return_value = [{"ticker": "AAPL"}]
     return FinnhubPollService("u", provider=prov, webhook=wh,
-                              settings=_Settings(finnhub_poll_enabled=enabled, finnhub_poll_max_events=cap), repo=repo)
+                              settings=_Settings(finnhub_poll_enabled=enabled, finnhub_poll_max_events=cap, event_llm_mode=mode), repo=repo)
 
 
 def _run(svc):
@@ -90,3 +90,8 @@ def test_event_budget_gate_caps_and_doubles_for_held():
         assert wf._event_budget_exceeded(True) == ""             # held has its own, doubled counter
         SS.return_value.get_setting.return_value = 0
         assert wf._event_budget_exceeded(False) == ""            # 0 = unlimited
+
+
+def test_poll_idle_when_event_llm_mode_off():
+    res, wf = _run(_svc(mode="off"))
+    assert res == {"status": "disabled", "reason": "event_llm_mode=off"} and not wf.called

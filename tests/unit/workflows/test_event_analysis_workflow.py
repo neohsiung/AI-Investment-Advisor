@@ -37,6 +37,7 @@ async def test_event_analysis_workflow_basic():
         mock_llm.side_effect = side_effect
         
         workflow = EventAnalysisWorkflow(user_id, event_source, event_data)
+        workflow._event_llm_mode = lambda: "on"   # legacy full-LLM path (default is now "off")
         
         # Run workflow
         result = await workflow.run(dry_run=False)
@@ -100,6 +101,7 @@ async def test_event_analysis_workflow_non_actionable_suppresses_notification():
         mock_llm.side_effect = side_effect
 
         workflow = EventAnalysisWorkflow(user_id, event_source, event_data)
+        workflow._event_llm_mode = lambda: "on"   # legacy full-LLM path (default is now "off")
         result = await workflow.run(dry_run=False)
 
         assert "TSM" in result

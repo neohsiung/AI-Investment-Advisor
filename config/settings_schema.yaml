@@ -1344,6 +1344,15 @@ settings:
     label_zh: 小額訂單 0-LLM 數理引擎分流門檻 (USD)
     help_en: Trade amount below which routine execution bypasses full LLM council and uses deterministic mathematical allocation.
     help_zh: 當交易金額小於此門檻時，日常執行直接採用確定性數理因子模型，杜絕無謂 Token 消耗。
+  - key: event_llm_mode
+    group: trading
+    type: enum
+    enum: ["off", "held_only", "on"]
+    default: "off"
+    label_en: LLM analysis of news events
+    label_zh: 新聞事件的 LLM 分析模式
+    help_en: "off = events that pass the free filter get no LLM analysis, no impact rows and no orders (default, cheapest). held_only = analyse only events on tickers you hold. on = analyse every event that passes the filter (capped by the daily cap)."
+    help_zh: "off＝通過免費篩選的事件不做 LLM 分析、不寫影響值、不下單（預設、最省）；held_only＝只分析持倉標的事件；on＝通過篩選的事件都分析（受每日上限約束）。"
   - key: event_analysis_daily_cap
     group: trading
     type: int
