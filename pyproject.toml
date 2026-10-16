@@ -67,7 +67,7 @@ dependencies = [
 # 這是 ~900MB 的 torch 層；未安裝時 forecast_service 會改用 numpy 版實作。
 forecast = [
     "timesfm[torch]==2.0.2",
-    "transformers==5.5.0",
+    "transformers==5.10.1",
 ]
 
 # Portfolio optimisation. Currently no module imports either package — kept as
