@@ -949,7 +949,13 @@ def run_market_open_cash_deployment(user_id: str = None, batch_number: Optional[
         staggered_svc = StaggeredDipBuyingService(user_id=user_id)
         if staggered_svc._get_setting("enable_staggered_dip_buying", True) and not force:
             active_orders = _run_async_safe(staggered_svc.get_active_staggered_orders())
-            pending_orders = [o for o in (active_orders or []) if o.get("status") == "PENDING"]
+            # Only orders that reached the broker count as in-flight; records without a
+            # broker_order_id are bookkeeping only and must not block real deployment.
+            # 只有真正送到券商（有 broker_order_id）的委託才算在途；純紀錄不得阻擋真實建倉。
+            pending_orders = [
+                o for o in (active_orders or [])
+                if o.get("status") == "PENDING" and o.get("broker_order_id")
+            ]
             if pending_orders:
                 logger.info(
                     "run_market_open_cash_deployment: %d pending staggered dip orders active for %s. Skipping redundant market open batch to prevent duplicate allocation.",

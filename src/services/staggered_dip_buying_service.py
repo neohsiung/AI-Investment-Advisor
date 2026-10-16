@@ -753,6 +753,26 @@ class StaggeredDipBuyingService:
             }
 
         broker = await self._get_broker()
+        # Without a broker that can really place LIMIT orders this service only produces
+        # simulated records: they are later marked FILLED from quotes, onboard phantom
+        # positions, and make the real market-open batch skip as "duplicate allocation"
+        # (2026-10 audit: BrokerService module does not exist, so no real order was ever
+        # placed). Refuse loudly instead of simulating.
+        # 沒有能真實下限價單的券商時，本服務只會產生「模擬」紀錄：之後以報價標為 FILLED、
+        # 接管不存在的持倉，並讓真正的開盤分批建倉誤判重複而略過（2026-10 稽核：BrokerService
+        # 模組不存在，從未真正下過單）。因此直接明確拒絕，不再模擬。
+        if not (broker and hasattr(broker, "place_order")):
+            logger.warning(
+                "Staggered dip deployment refused for %s: no execution broker with place_order "
+                "(no simulated orders are recorded).", self.user_id,
+            )
+            return {
+                "success": False,
+                "status": "no_execution_broker",
+                "message": "無可下限價單之券商，已拒絕以模擬紀錄代替真實委託",
+                "plan": plan.to_dict(),
+                "orders_placed": [],
+            }
         placed_orders: List[Dict[str, Any]] = []
         ny_tz = pytz.timezone("US/Eastern")
         now_ny = datetime.now(ny_tz)
