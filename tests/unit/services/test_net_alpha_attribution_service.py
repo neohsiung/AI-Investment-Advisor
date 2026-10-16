@@ -334,4 +334,4 @@ def test_valid_since_limits_window_and_cost_days(
     report = asyncio.run(svc.calculate_complete_report(lookback_days=30))
     assert report.lookback_days == 5
     assert seen["days"] == 5
-    assert loader_since["since"] == _d.today() - _t(days=6)
+    assert loader_since["since"] == _d.today() - _t(days=5)

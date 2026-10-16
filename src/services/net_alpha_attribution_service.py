@@ -314,6 +314,7 @@ class NetAlphaAttributionService:
         from datetime import date as _d, timedelta as _t
         window_start = _d.today() - _t(days=lookback_days)
         valid_since_raw = None
+        bounded_by_valid_since = False
         if settings_svc:
             try:
                 valid_since_raw = settings_svc.get_setting("net_alpha_valid_since")
@@ -324,6 +325,7 @@ class NetAlphaAttributionService:
                 vs = _d.fromisoformat(str(valid_since_raw)[:10])
                 if vs > window_start:
                     window_start = vs
+                    bounded_by_valid_since = True
             except ValueError:
                 logger.warning("Invalid net_alpha_valid_since=%r; ignored", valid_since_raw)
         eff_days = max(1, (_d.today() - window_start).days)
@@ -337,7 +339,9 @@ class NetAlphaAttributionService:
         notes: List[str] = []
         try:
             from datetime import date as _date, timedelta as _td
-            since = window_start - _td(days=1)
+            # Base day must itself be trusted when bounded by valid_since.
+            # 受 valid_since 限制時，基準日本身也必須可信，故不再往前多取一天。
+            since = window_start if bounded_by_valid_since else window_start - _td(days=1)
             navs = self._load_snapshots(since)
             flows = self._load_flows(since)
             if len(navs) >= 2:
