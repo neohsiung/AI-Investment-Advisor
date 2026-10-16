@@ -136,6 +136,12 @@ app.conf.beat_schedule = {
         "task": "src.infrastructure.tasks.dispatch_universe_lifecycle",
         "schedule": crontab(hour=8, minute=0, day_of_week="1"),  # Mon 08:00 EST
     },
+    # Real LLM cost collector — every 15 minutes (LiteLLM /key/info delta -> llm_real_cost_daily)
+    # 真實 LLM 成本收集：每 15 分鐘輪詢 LiteLLM /key/info 並記帳。
+    "litellm-spend-collect": {
+        "task": "src.infrastructure.tasks.run_litellm_spend_collect",
+        "schedule": crontab(minute="*/15"),
+    },
     # Universe research refresh — weekdays 07:30 EST (before the 09:35 deployment/rebalance tasks)
     # 標的池研究分數刷新：交易日 07:30 EST（早於 09:35 建倉/再平衡），0-LLM。
     "universe-research-refresh": {

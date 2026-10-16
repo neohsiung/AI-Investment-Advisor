@@ -772,6 +772,22 @@ def generate_monthly_report(user_id: str = None):
         return f"Error: {str(e)}"
 
 
+@app.task(name="src.infrastructure.tasks.run_litellm_spend_collect", soft_time_limit=60, time_limit=90)
+def run_litellm_spend_collect():
+    """
+    Poll LiteLLM /key/info and book the spend delta into llm_real_cost_daily (real billed cost).
+    輪詢 LiteLLM /key/info，將花費增量記入每日真實成本表。
+    """
+    try:
+        from src.services.litellm_spend_service import LiteLLMSpendService
+        res = LiteLLMSpendService().collect()
+        return res
+    except Exception as e:
+        # Surface loudly: a silent gap makes the cost metric fall back to estimates.
+        logger.error(f"run_litellm_spend_collect failed: {e}", exc_info=True)
+        return f"Error: {str(e)}"
+
+
 @app.task(name="src.infrastructure.tasks.dispatch_universe_research_refresh")
 def dispatch_universe_research_refresh():
     """Fan-out dispatcher: 為活躍租戶分派標的池研究分數刷新任務（0-LLM）。"""
