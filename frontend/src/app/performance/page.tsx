@@ -8,6 +8,7 @@ import {
   LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, AreaChart, Area,
   BarChart, Bar, Cell, Legend
 } from 'recharts';
+import NetAlphaCard from "@/components/dashboard/NetAlphaCard";
 import { TrendingUp, TrendingDown, Target, Zap, ShieldAlert, BarChart3, Clock, Activity } from "lucide-react";
 
 type PositionItem = {
@@ -96,6 +97,8 @@ export default function PerformancePage() {
           </div>
         </div>
       </div>
+
+      <NetAlphaCard lookbackDays={30} />
 
       {/* Charts Section */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 lg:gap-8 mb-6 lg:mb-8">

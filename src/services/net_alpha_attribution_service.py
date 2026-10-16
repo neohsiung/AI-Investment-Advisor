@@ -90,6 +90,14 @@ class NetAlphaAttributionReport:
     alpha_target_gap_pct: float               # 與目標差距 (Annualized_Net - Target)
     is_beating_target: bool                   # 是否達成年化超越大盤 10%
     cash_metrics: CashDragMetrics             # 現金分析指標
+    # Data-quality markers (never silently substitute a plausible number).
+    # 資料品質標記：任何代換都必須可被呼叫端看見。
+    return_method: str = "point_in_time_fallback"   # "twr_snapshots" | "point_in_time_fallback"
+    twr_days_used: int = 0                    # 納入 TWR 的有效日數
+    excluded_days: List[str] = field(default_factory=list)  # 因異常被排除的日期
+    annualization_reliable: bool = False      # 有效日數是否足以年化
+    avg_equity_usd: float = 0.0               # 成本拖累所用之分母（視窗平均權益）
+    data_quality_notes: List[str] = field(default_factory=list)
     created_at: str = field(
         default_factory=lambda: datetime.now(timezone.utc).isoformat()
     )
@@ -114,8 +122,51 @@ class NetAlphaAttributionReport:
             "alpha_target_gap_pct": round(self.alpha_target_gap_pct * 100.0, 2),
             "is_beating_target": self.is_beating_target,
             "cash_metrics": self.cash_metrics.to_dict(),
+            "return_method": self.return_method,
+            "twr_days_used": self.twr_days_used,
+            "excluded_days": list(self.excluded_days),
+            "annualization_reliable": self.annualization_reliable,
+            "avg_equity_usd": round(self.avg_equity_usd, 2),
+            "data_quality_notes": list(self.data_quality_notes),
             "created_at": self.created_at,
         }
+
+
+MAX_ABS_DAILY_RETURN = 0.5      # a >50% single-day move is treated as bad data / 單日 >50% 視為壞資料
+MIN_DAYS_FOR_ANNUALIZATION = 20  # fewer valid days -> annualized figure is noise / 少於此日數年化無意義
+
+
+def compute_twr(
+    navs: List[Tuple[Any, float]],
+    flows: Optional[Dict[Any, float]] = None,
+    max_abs_daily: float = MAX_ABS_DAILY_RETURN,
+) -> Tuple[float, int, List[str]]:
+    """
+    Time-weighted return from ordered (date, NAV) points, neutralising deposits/withdrawals
+    (`flows[date]` = net external flow booked on that date). Days whose implied return is
+    implausible (|r| > max_abs_daily) or whose base NAV is non-positive are excluded and
+    reported, never silently included.
+    由有序 (日期, NAV) 計算時間加權報酬，排除當日外部資金進出；
+    隱含報酬不合理（|r|>上限）或前值非正的日子會被排除並回報，不會默默納入。
+    Returns (twr, valid_days, excluded_dates).
+    """
+    flows = flows or {}
+    growth = 1.0
+    used = 0
+    excluded: List[str] = []
+    for i in range(1, len(navs)):
+        d, nav = navs[i]
+        prev_nav = navs[i - 1][1]
+        if prev_nav is None or nav is None or prev_nav <= 0:
+            excluded.append(str(d))
+            continue
+        r = (nav - flows.get(d, 0.0)) / prev_nav - 1.0
+        if abs(r) > max_abs_daily:
+            excluded.append(str(d))
+            continue
+        growth *= 1.0 + r
+        used += 1
+    return growth - 1.0, used, excluded
 
 
 class NetAlphaAttributionService:
@@ -135,7 +186,12 @@ class NetAlphaAttributionService:
         broker: Any = None,
         market_data_service: Any = None,
         token_logger_service: Any = None,
+        snapshot_loader: Any = None,
+        flow_loader: Any = None,
     ):
+        # snapshot_loader(user_id, since_date) -> [(date, nav)]; flow_loader(user_id, since_date) -> {date: usd}
+        self.snapshot_loader = snapshot_loader
+        self.flow_loader = flow_loader
         self.user_id = resolve_user_id(user_id)
         self.settings_service = settings_service
         self.broker = broker
@@ -174,6 +230,38 @@ class NetAlphaAttributionService:
     # 1. 核心歸因計算 (Core Net Alpha & Cash Drag Attribution)
     # ═══════════════════════════════════════════════════════════════════════
 
+    def _load_snapshots(self, since: Any) -> List[Tuple[Any, float]]:
+        if self.snapshot_loader:
+            return list(self.snapshot_loader(self.user_id, since))
+        from sqlalchemy import text
+        from src.data.database import get_db_engine
+        with get_db_engine().connect() as conn:
+            rows = conn.execute(
+                text(
+                    "SELECT date, MAX(total_nlv) AS nav FROM daily_snapshots "
+                    "WHERE user_id = :uid AND date >= :since AND total_nlv IS NOT NULL "
+                    "GROUP BY date ORDER BY date ASC"
+                ),
+                {"uid": self.user_id, "since": since},
+            ).fetchall()
+        return [(r[0], float(r[1])) for r in rows]
+
+    def _load_flows(self, since: Any) -> Dict[Any, float]:
+        if self.flow_loader:
+            return dict(self.flow_loader(self.user_id, since))
+        from sqlalchemy import text
+        from src.data.database import get_db_engine
+        with get_db_engine().connect() as conn:
+            rows = conn.execute(
+                text(
+                    "SELECT trade_date, SUM(CASE WHEN action = 'WITHDRAWAL' THEN -amount ELSE amount END) "
+                    "FROM transactions WHERE user_id = :uid AND entry_category = 'capital_flow' "
+                    "AND trade_date >= :since GROUP BY trade_date"
+                ),
+                {"uid": self.user_id, "since": since},
+            ).fetchall()
+        return {r[0]: float(r[1]) for r in rows}
+
     async def calculate_complete_report(
         self,
         lookback_days: int = 30,
@@ -198,7 +286,12 @@ class NetAlphaAttributionService:
                 target_val = settings_svc.get_setting("target_annual_net_alpha_pct")
                 if target_val is not None:
                     target_alpha = float(target_val)
-                saas_val = settings_svc.get_setting("monthly_saas_subscription_cost_usd")
+                # Canonical key is monthly_data_subscription_cost_usd; the legacy
+                # monthly_saas_* key is honoured only when the canonical one is unset.
+                # 標準鍵為 monthly_data_subscription_cost_usd；舊鍵僅在標準鍵未設時沿用。
+                saas_val = settings_svc.get_setting("monthly_data_subscription_cost_usd")
+                if saas_val is None:
+                    saas_val = settings_svc.get_setting("monthly_saas_subscription_cost_usd")
                 if saas_val is not None:
                     monthly_saas = float(saas_val)
             except Exception as e:
@@ -217,6 +310,33 @@ class NetAlphaAttributionService:
 
         portfolio_pnl = current_equity - initial_capital
         portfolio_return = portfolio_pnl / max(1.0, initial_capital)
+        return_method = "point_in_time_fallback"
+        twr_days = 0
+        excluded_days: List[str] = []
+        avg_equity = current_equity
+        notes: List[str] = []
+        try:
+            from datetime import date as _date, timedelta as _td
+            since = _date.today() - _td(days=lookback_days + 1)
+            navs = self._load_snapshots(since)
+            flows = self._load_flows(since)
+            if len(navs) >= 2:
+                twr, twr_days, excluded_days = compute_twr(navs, flows)
+                if twr_days >= 1:
+                    portfolio_return = twr
+                    return_method = "twr_snapshots"
+                    valid_navs = [n for _, n in navs if n and n > 0]
+                    avg_equity = sum(valid_navs) / len(valid_navs) if valid_navs else current_equity
+                    portfolio_pnl = portfolio_return * avg_equity
+            if return_method != "twr_snapshots":
+                notes.append("Fewer than 2 usable snapshots in window; using point-in-time return vs initial capital.")
+        except Exception as e:
+            logger.warning("TWR snapshot load failed (%s); falling back to point-in-time return", e)
+            notes.append(f"Snapshot load failed: {e}; using point-in-time return vs initial capital.")
+        if excluded_days:
+            notes.append(f"Excluded implausible snapshot days: {', '.join(excluded_days)}")
+        if return_method == "point_in_time_fallback":
+            avg_equity = initial_capital
 
         # 3. 取得 SPY 大盤基準報酬率
         spy_return = 0.0
@@ -246,13 +366,21 @@ class NetAlphaAttributionService:
 
         saas_cost = monthly_saas * (lookback_days / 30.0)
         total_cost = llm_cost + saas_cost
-        cost_drag = total_cost / max(1.0, initial_capital)
+        cost_drag = total_cost / max(1.0, avg_equity)
 
         net_alpha = gross_alpha - cost_drag
         annualized_factor = 365.0 / max(1, lookback_days)
         annualized_net_alpha = net_alpha * annualized_factor
         alpha_target_gap = annualized_net_alpha - target_alpha
-        is_beating = annualized_net_alpha >= target_alpha
+        annualization_reliable = (
+            return_method == "twr_snapshots" and twr_days >= MIN_DAYS_FOR_ANNUALIZATION
+        )
+        if not annualization_reliable:
+            notes.append(
+                f"Annualized figure unreliable (valid days={twr_days}, need >={MIN_DAYS_FOR_ANNUALIZATION}); "
+                "is_beating_target forced False."
+            )
+        is_beating = annualization_reliable and annualized_net_alpha >= target_alpha
 
         # 5. 精算現金機會成本 (Cash Drag) 與防守期權價值 (Cash Put Value)
         cash_metrics = await self._calculate_cash_drag_metrics(
@@ -282,6 +410,12 @@ class NetAlphaAttributionService:
             alpha_target_gap_pct=alpha_target_gap,
             is_beating_target=is_beating,
             cash_metrics=cash_metrics,
+            return_method=return_method,
+            twr_days_used=twr_days,
+            excluded_days=excluded_days,
+            annualization_reliable=annualization_reliable,
+            avg_equity_usd=avg_equity,
+            data_quality_notes=notes,
         )
 
     async def _calculate_cash_drag_metrics(

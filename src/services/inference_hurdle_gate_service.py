@@ -192,7 +192,10 @@ class InferenceHurdleGateService:
             "monthly_inference_dollars_saved": round(monthly_saved, 2),
             "max_hurdle_ratio_bps": int(DEFAULT_MAX_HURDLE_RATIO * 10000),
             "small_order_bypass_threshold_usd": DEFAULT_SMALL_ORDER_BYPASS_THRESHOLD_USD,
-            "alpha_preservation_status": "OPTIMAL_ZERO_LLM_COST",
+            # Not a verdict: this gate only measures avoided spend. Real net alpha
+            # (with actual LLM + subscription cost) is served by /api/v1/net-alpha.
+            # 非結論：本閘門只衡量省下的花費；真實淨 Alpha 請見 /api/v1/net-alpha。
+            "alpha_preservation_status": "SAVINGS_ONLY_SEE_NET_ALPHA_API",
             "target_net_alpha_pct": 10.0,
-            "estimated_annual_cost_drag_avoided_pct": round((total_saved / 1689.0) * 100, 2),
+            "estimated_annual_cost_drag_avoided_pct": None,
         }

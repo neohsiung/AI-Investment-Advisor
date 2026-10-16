@@ -224,3 +224,70 @@ def test_conversation_router_alpha_command(
             mock_svc.calculate_complete_report.assert_awaited_once_with(lookback_days=7)
 
     asyncio.run(_test())
+
+
+# ── Phase 1: time-weighted return, data-quality markers ──────────────────────
+from datetime import date
+
+from src.services.net_alpha_attribution_service import compute_twr
+
+
+def test_compute_twr_neutralises_deposit():
+    navs = [(date(2026, 10, 1), 1000.0), (date(2026, 10, 2), 2010.0), (date(2026, 10, 3), 2030.1)]
+    twr, used, excluded = compute_twr(navs, {date(2026, 10, 2): 1000.0})
+    assert used == 2 and excluded == []
+    assert twr == pytest.approx(1.01 * 1.01 - 1.0, rel=1e-6)
+
+
+def test_compute_twr_excludes_implausible_day():
+    navs = [(date(2026, 9, 28), 209.0), (date(2026, 9, 29), 296545.77), (date(2026, 9, 30), 1217.76)]
+    twr, used, excluded = compute_twr(navs, {})
+    assert used == 0
+    assert excluded == ["2026-09-29", "2026-09-30"]
+    assert twr == 0.0
+
+
+def test_report_uses_twr_and_marks_unreliable_annualization(
+    mock_broker, mock_settings_service, mock_market_data_service, mock_token_logger_service
+):
+    navs = [(date(2026, 10, 1), 1000.0), (date(2026, 10, 2), 1010.0), (date(2026, 10, 3), 1020.1)]
+    svc = NetAlphaAttributionService(
+        user_id="u1",
+        settings_service=mock_settings_service,
+        broker=mock_broker,
+        market_data_service=mock_market_data_service,
+        token_logger_service=mock_token_logger_service,
+        snapshot_loader=lambda uid, since: navs,
+        flow_loader=lambda uid, since: {},
+    )
+    report = asyncio.run(svc.calculate_complete_report(lookback_days=30))
+    assert report.return_method == "twr_snapshots"
+    assert report.twr_days_used == 2
+    assert report.portfolio_return_pct == pytest.approx(0.0201, rel=1e-3)
+    # cost drag uses average window equity (~1010), not the 1711 default capital
+    assert report.cost_drag_pct == pytest.approx(0.50 / report.avg_equity_usd, rel=1e-6)
+    assert report.annualization_reliable is False
+    assert report.is_beating_target is False
+    assert any("unreliable" in n for n in report.data_quality_notes)
+
+
+def test_report_reads_canonical_subscription_key(
+    mock_broker, mock_market_data_service, mock_token_logger_service
+):
+    settings = MagicMock()
+    settings.get_setting.side_effect = lambda key, default=None: {
+        "monthly_data_subscription_cost_usd": 63.98,
+        "monthly_saas_subscription_cost_usd": 0.0,
+    }.get(key, default)
+    svc = NetAlphaAttributionService(
+        user_id="u1",
+        settings_service=settings,
+        broker=mock_broker,
+        market_data_service=mock_market_data_service,
+        token_logger_service=mock_token_logger_service,
+        snapshot_loader=lambda uid, since: [],
+        flow_loader=lambda uid, since: {},
+    )
+    report = asyncio.run(svc.calculate_complete_report(lookback_days=30))
+    assert report.saas_subscription_cost_usd == pytest.approx(63.98)
+    assert report.return_method == "point_in_time_fallback"
