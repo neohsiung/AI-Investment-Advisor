@@ -148,40 +148,19 @@ class SystemEngineerAgent(BaseAgent):
             return await self._run_alpha_discovery(context)
 
     async def _run_alpha_discovery(self, context: Any) -> str:
+        """
+        Disabled: CodeGenerator is a hardcoded stub and BacktestRunner returns random Sharpe,
+        so "discovered" alphas were noise (and polluted the settings table).
+        Real discovery lives in the walk-forward pipeline (see Phase 3 of the 2026-10-16 plan).
+        已停用：CodeGenerator 為寫死的 stub、BacktestRunner 回傳隨機 Sharpe，產出的 alpha 只是雜訊
+        （並污染 settings 表）。真實探索將由 Walk-Forward 管線取代（2026-10-16 計畫 Phase 3）。
+        """
         ticker = context.get("ticker", "SPY")
-        generations = context.get("generations", 3)
-        population_size = context.get("population_size", 3)
-        
-        logger.info(f"AlphaEngineer: Starting Genetic Algorithm for {ticker}")
-        
-        best_code = ""
-        best_score = -999.0
-        best_metrics = {}
-        
-        for g in range(generations):
-            for p in range(population_size):
-                instruction = f"Create a trading alpha factor for {ticker} using price momentum and volume."
-                if best_code:
-                    instruction += f" Mutate this baseline code to improve Sharpe:\n{best_code}"
-                
-                new_code = self.code_gen.generate(instruction)
-                metrics = self.backtester.run(new_code, ticker)
-                score = metrics["sharpe_ratio"]
-                
-                if score > best_score:
-                    best_score = score
-                    best_code = new_code
-                    best_metrics = metrics
-                    
-        alpha_id = f"alpha_{ticker.lower()}_{uuid.uuid4().hex[:4]}"
-        self.settings.set(self.user_id, alpha_id, json.dumps({
-            "code": best_code,
-            "metrics": best_metrics
-        }))
-        
-        return (f"### 🧬 Alpha Discovery Complete ({ticker})\n"
-                f"- **Best Model ID**: `{alpha_id}`\n- **Sharpe**: {best_score}\n\n"
-                f"**Code**:\n```python\n{best_code}```")
+        logger.warning("AlphaEngineer discovery for %s refused: stub generator/random backtest is disabled", ticker)
+        return (
+            f"### Alpha Discovery Disabled ({ticker})\n"
+            "- AlphaEngineer uses a stub generator and random backtests; nothing was generated or saved."
+        )
 
     async def _run_prompt_optimization(self, context: Dict[str, Any]) -> List[Dict[str, Any]]:
         cio_report = context.get("cio_report", "")
