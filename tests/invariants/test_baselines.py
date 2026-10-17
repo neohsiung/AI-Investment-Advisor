@@ -8,6 +8,7 @@ fix the code or write an ADR in config/mission.yaml.
 """
 from tests.invariants.helpers import (
     evolution_files_calling_set_setting,
+    executor_call_sites,
     hardcoded_confidence_counts,
     order_call_files,
     unresolved_src_imports,
@@ -46,6 +47,29 @@ def test_only_executor_places_orders():
     )
 
 
+# 2b. Callers of the executor entry point (`evaluate_and_execute_trade`), measured by AST on 2026-10-17.
+#     The count may only shrink (WP7 shrink order); a new caller or a stale entry fails.
+#     執行器入口呼叫點基線（AST 實測）；只能縮小，新增或過期條目皆失敗。
+KNOWN_EXECUTOR_CALLERS = {
+    "src/agents/skills/evaluate_trade/impl.py": 1,
+    "src/services/actionable_alert_service.py": 1,
+    "src/services/automated_trading_service.py": 1,
+    "src/services/batch_cash_deployment_service.py": 1,
+    "src/services/confidence_rebalance_service.py": 1,
+    "src/services/sentinel_service.py": 8,
+    "src/services/socket_manager.py": 1,
+    "src/services/workflow_service.py": 3,
+}
+
+
+def test_no_new_executor_call_sites():
+    now = executor_call_sites()
+    assert now == KNOWN_EXECUTOR_CALLERS, (
+        "executor call sites changed. New callers are forbidden; removed callers must be deleted from "
+        f"KNOWN_EXECUTOR_CALLERS. now={now}"
+    )
+
+
 # 3. No hardcoded decision scores in decision modules (a literal confidence 8.5 let a rebalance sell 11 holdings).
 DECISION_SCORE_MODULES = [
     "src/services/confidence_rebalance_service.py",
@@ -63,7 +87,11 @@ def test_no_new_hardcoded_confidence_scores():
 
 
 # 4. Evolution/synthesis code must not write live settings directly (promotion goes through a proposal table).
-KNOWN_EVOLUTION_SET_SETTING = {"src/services/factor_genetic_evolution_engine.py"}
+KNOWN_EVOLUTION_SET_SETTING = {
+    "src/services/factor_genetic_evolution_engine.py",
+    # Writes live settings via `settings_repo.set(` (blind spot until WP2 widened the matcher).
+    "src/services/strategy_auto_evolution_service.py",
+}
 
 
 def test_evolution_code_does_not_write_live_settings():

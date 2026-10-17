@@ -77,3 +77,47 @@ def test_compositor_never_uses_random_prices():
          patch("src.services.market_data_service.MarketDataService", return_value=mds):
         out = asyncio.run(svc._gather_synthesized_factor_scores("NVDA"))
     assert out == []
+
+
+# ── WP1: legacy evolution jobs are gated; force does not bypass ──
+import ast  # noqa: E402
+from pathlib import Path  # noqa: E402
+
+import pytest  # noqa: E402
+
+
+@pytest.mark.parametrize(
+    "task_name",
+    ["run_strategy_evolution", "run_factor_rotation_evolution", "run_factor_genetic_evolution", "run_autonomous_evolution"],
+)
+def test_legacy_evolution_task_skipped_when_gate_off_even_with_force(task_name):
+    from src.infrastructure import tasks
+
+    with patch.object(tasks, "_synthetic_evolution_enabled", return_value=False):
+        res = getattr(tasks, task_name)(user_id="u1", force=True)
+    assert res["status"] == "skipped"
+
+
+def test_dispatch_strategy_evolution_gated_off():
+    from src.infrastructure import tasks
+
+    with patch.object(tasks, "_resolve_target_users", return_value=["u1", "u2"]), \
+         patch.object(tasks, "_synthetic_evolution_enabled", return_value=False), \
+         patch.object(tasks.run_strategy_evolution, "delay") as delay:
+        res = tasks.dispatch_strategy_evolution()
+    assert res == "Dispatched 0 strategy_evolution tasks"
+    assert delay.call_count == 0
+
+
+def test_sentinel_never_references_run_strategy_evolution():
+    src = Path("src/services/sentinel_service.py").read_text(encoding="utf-8")
+    tree = ast.parse(src)
+    names = set()
+    for n in ast.walk(tree):
+        if isinstance(n, ast.Name):
+            names.add(n.id)
+        elif isinstance(n, ast.Attribute):
+            names.add(n.attr)
+        elif isinstance(n, ast.alias):
+            names.add(n.name)
+    assert "run_strategy_evolution" not in names

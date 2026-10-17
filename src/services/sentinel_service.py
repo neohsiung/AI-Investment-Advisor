@@ -1316,12 +1316,8 @@ class SentinelService:
                     self.active_cognitive_blindspots = blindspots
                     if blindspots and not getattr(self, "_blindspot_evolution_triggered", False):
                         self._blindspot_evolution_triggered = True
-                        try:
-                            from src.infrastructure.tasks import run_strategy_evolution
-                            run_strategy_evolution.delay(user_id=self.user_id, force=True)
-                            logger.info(f"Sentinel: Automatically triggered strategy evolution for blindspots: {[b.value for b in blindspots]}")
-                        except Exception as trigger_err:
-                            logger.warning(f"Sentinel: Failed to trigger async strategy evolution: {trigger_err}")
+                        # WP1: no evolution trigger here; legacy evolution is gated off. Log only.
+                        logger.warning(f"Sentinel: cognitive blindspots detected (no automatic evolution): {[b.value for b in blindspots]}")
 
                     # 2. Match active strategies to regimes
                     matched = StrategyRegistry.match_regimes(active_regimes)
